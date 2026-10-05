@@ -72,6 +72,7 @@ const ALL_EXPECTED_KEYS = [
   'Em atenção::Ads',
   'Dentro do equilíbrio::Ads',
   'Sem referência::Ads',
+  'Ads sobre a margem::Ads',
 ];
 
 describe('kpi-descriptions', () => {

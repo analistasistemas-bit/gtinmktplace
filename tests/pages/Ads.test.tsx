@@ -18,10 +18,10 @@ const PAINEL: PainelAds = {
   familias: [
     { ...metr, codigoPai: 'A', nome: 'Fam A', grupos: 1, custoCompartilhado: 0, custo: 50, vendasDiretas: 400,
       vendasTotais: 500, roas: 10, roasDireto: 8, acos: 0.1, acosDireto: 0.125, lucroAntes: 250, resultado: 200,
-      margemConsumida: 0.2, acosEquilibrio: 0.25, semaforo: 'dentro', motivo: null, fonteCusto: 'real' },
+      margemConsumida: 0.2, acosEquilibrio: 0.25, semaforo: 'dentro', motivo: null, fonteCusto: 'real', markup: 0.8 },
     { ...metr, codigoPai: 'B', nome: 'Fam B', grupos: 1, custoCompartilhado: 0, custo: 30, vendasDiretas: 0,
       vendasTotais: 0, roas: 0, roasDireto: 0, acos: null, acosDireto: null, lucroAntes: 0, resultado: -30,
-      margemConsumida: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_vendas', fonteCusto: null },
+      margemConsumida: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_vendas', fonteCusto: null, markup: null },
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
 };
@@ -475,7 +475,9 @@ describe('Ads', () => {
     const linha = within(screen.getByRole('row', { name: /Fam A/ }));
 
     expect(linha.getByText('sem venda direta')).toBeVisible();
+    expect(linha.getByText(/até 25,0% possíveis/)).toBeVisible();
     expect(linha.getByText('Acima do equilíbrio')).toBeVisible();
+    expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
   });
 
   it.each(['parcial', 'estimado'] as const)(
@@ -677,5 +679,42 @@ describe('Ads', () => {
     const links = screen.getAllByRole('link', { name: 'Fam A' });
     expect(links).toHaveLength(2);
     for (const l of links) expect(l).toHaveAttribute('title', 'Fam A');
+  });
+
+  it('uso da margem: barra proporcional e "Ads X% de Y% possíveis"', () => {
+    montar();
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+    expect(linha.getByText('Ads 12,5% de 25,0% possíveis')).toBeVisible();
+    const barra = linha.getByTestId('barra-uso-margem');
+    expect(barra).toHaveStyle({ width: '50%' });
+    expect(barra).toHaveClass('bg-success');
+  });
+
+  it('uso da margem acima do equilíbrio: barra cheia e vermelha', () => {
+    montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], acosDireto: 0.4, semaforo: 'acima' }] });
+    const barra = within(screen.getByRole('row', { name: /Fam A/ })).getByTestId('barra-uso-margem');
+    expect(barra).toHaveStyle({ width: '100%' });
+    expect(barra).toHaveClass('bg-danger');
+  });
+
+  it('uso da margem sem referência: texto sem barra', () => {
+    montar();
+    const linha = within(screen.getByRole('row', { name: /Fam B/ }));
+    expect(linha.getByText(/sem referência/)).toBeVisible();
+    expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
+  });
+
+  it('(i) da coluna explica como ler o campo', () => {
+    montar();
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Ads sobre a margem' }));
+    expect(screen.getByText(/de cada R\$ 100 vendidos/)).toBeVisible();
+  });
+
+  it('detalhe mostra o markup antes de Ads', () => {
+    montar();
+    fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
+    const linha = screen.getAllByText('Markup antes de Ads')[0].closest('div')!;
+    expect(within(linha).getByText('+80%')).toBeInTheDocument();
   });
 });

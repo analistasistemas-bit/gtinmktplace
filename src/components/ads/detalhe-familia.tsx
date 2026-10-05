@@ -1,4 +1,4 @@
-import { fmtBRL, fmtBRLSinal } from '@/lib/formato';
+import { fmtBRL, fmtBRLSinal, fmtMarkup } from '@/lib/formato';
 import type { ContaPainel, FamiliaPainel } from '@/lib/ads-painel';
 import { NADA, pct, razao } from '@/lib/ads-apresentacao';
 
@@ -33,6 +33,7 @@ export function DetalheFamilia({ familia: f, conta }: DetalheFamiliaProps) {
         </dl>
         <dl className="space-y-1.5">
           <Linha rotulo="Lucro antes de Ads" valor={f.lucroAntes == null ? NADA : fmtBRLSinal(f.lucroAntes)} />
+          <Linha rotulo="Markup antes de Ads" valor={fmtMarkup(f.markup)} />
           <Linha rotulo="Margem consumida" valor={pct(f.margemConsumida)} />
         </dl>
         <dl className="space-y-1.5">

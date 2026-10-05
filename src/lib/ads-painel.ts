@@ -14,7 +14,8 @@ export interface ContaDia { dia: string; cost: number; clicks: number; prints: n
 export interface GrupoPainel { ad_group_id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; status: string; cost: number;
   clicks: number; prints: number; direct_amount: number; indirect_amount: number; total_amount: number; membros: string[] }
 export interface FontePainelAds { sync: SyncPainel | null; conta: ContaDia[]; grupos: GrupoPainel[] }
-export interface LucroFamilia { nome: string | null; lucro: number | null; brutoComCusto: number; fonteCusto: FonteCusto }
+export interface LucroFamilia { nome: string | null; lucro: number | null; brutoComCusto: number; fonteCusto: FonteCusto;
+  markup: number | null }   // lucro ÷ custo do produto (mesma conta de Vendas SKU)
 export interface MetricasAds { custo: number; vendasDiretas: number; vendasTotais: number; cliques: number;
   impressoes: number; roas: number | null; roasDireto: number | null; acos: number | null }
 export type EstadoPainel = 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso' | 'coletando' | 'sem_ads' | 'ok';
@@ -29,6 +30,7 @@ export interface FamiliaPainel extends MetricasAds {
   acosDireto: number | null;            // custo ÷ vendas diretas — a base do semáforo
   acosEquilibrio: number | null; semaforo: Semaforo | null; motivo: MotivoFamilia;
   fonteCusto: FonteCusto | null;
+  markup: number | null;                // antes de Ads; só com lucro conhecido e custo completo (mesma trava do equilíbrio)
 }
 export interface ContaPainel extends MetricasAds {
   lucroAntes: number | null; resultado: number | null; margemConsumida: number | null; fonteCusto: FonteCusto | null;
@@ -161,15 +163,15 @@ export function montarPainelAds(p: {
       : f.compartilhadoC > 0 ? 'compartilhado' : proprio.motivo;
     const bloqueado = motivo === 'cobertura' || motivo === 'historico' || motivo === 'compartilhado';
     const acosDireto = div(m.custo, m.vendasDiretas);
-    const acosEquilibrio = proprio.motivo !== 'custo_parcial' && lucroAntes != null && l && l.brutoComCusto > 0
-      ? lucroAntes / l.brutoComCusto : null;
+    const lucroConfiavel = proprio.motivo !== 'custo_parcial' && lucroAntes != null && l;
+    const acosEquilibrio = lucroConfiavel && l.brutoComCusto > 0 ? lucroAntes / l.brutoComCusto : null;
     return {
       ...m, codigoPai, nome: l?.nome ?? p.nomeDaFamilia.get(codigoPai) ?? null, grupos: f.grupos, custoCompartilhado, lucroAntes,
       resultado: !bloqueado && lucroAntes != null ? (cents(lucroAntes) - f.soma.custoC) / 100 : null,
       margemConsumida: !bloqueado && lucroAntes != null && lucroAntes > 0 ? m.custo / lucroAntes : null,
       acosDireto, acosEquilibrio,
       semaforo: p.baseAcosValidada && !bloqueado ? semaforo(acosEquilibrio, m.vendasDiretas, acosDireto) : null,
-      motivo, fonteCusto: l?.fonteCusto ?? null,
+      motivo, fonteCusto: l?.fonteCusto ?? null, markup: lucroConfiavel ? l.markup : null,
     };
   }).sort((a, b) => b.custo - a.custo || a.codigoPai.localeCompare(b.codigoPai));
 

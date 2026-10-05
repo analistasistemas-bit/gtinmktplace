@@ -154,6 +154,11 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Famílias cujo ACOS direto está dentro da referência pela margem observada no período.',
   'Sem referência::Ads':
     'Famílias sem semáforo disponível. Inclui todas as famílias enquanto o semáforo estiver em validação.',
+  'Ads sobre a margem::Ads':
+    'Quanto da margem o Ads está usando. Ex.: "Ads 9,2% de 25,6% possíveis" = de cada R$ 100 vendidos, o Ads custou '
+    + 'R$ 9,20 (ACOS direto: gasto ÷ vendas diretas do anúncio) e o lucro antes do Ads era R$ 25,60 (equilíbrio). '
+    + 'Barra verde: sobra lucro. Barra vermelha cheia: o Ads passou do equilíbrio e a venda pelo anúncio dá prejuízo. '
+    + '"Sem venda direta": gastou sem vender pelo próprio anúncio.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

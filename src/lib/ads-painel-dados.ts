@@ -81,7 +81,8 @@ export function janelaBRT(desde: string, ate: string): Janela {
 /** codigoPai → lucro do período. Usado pelo hook e pelo teste de integração (mesma fiação). */
 export function lucroPorFamilia(linhas: LinhaSku[]): Map<string, LucroFamilia> {
   return new Map(agruparPorFamilia(linhas).map((f) =>
-    [f.codigoPai, { nome: f.nomeFamilia, lucro: f.m.lucro, brutoComCusto: f.acc.brutoComCusto, fonteCusto: f.m.fonteCusto }]));
+    [f.codigoPai, { nome: f.nomeFamilia, lucro: f.m.lucro, brutoComCusto: f.acc.brutoComCusto, fonteCusto: f.m.fonteCusto,
+      markup: f.m.markup }]));
 }
 
 const num = (v: unknown) => Number(v ?? 0);

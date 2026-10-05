@@ -28,7 +28,7 @@ const base = (f: Partial<FontePainelAds> = {}) => ({
   codigosPorMlb: new Map([['MLB1', ['A1']], ['MLB2', ['A2']], ['MLB3', ['B1']], ['MLB4', []]]),
   familiaDoCodigo: new Map([['A1', 'A'], ['A2', 'A'], ['B1', 'B']]),
   nomeDaFamilia: new Map<string, string>(),
-  lucroPorFamilia: new Map([['A', { nome: 'Fam A', lucro: 250, brutoComCusto: 1000, fonteCusto: 'real' as const }]]),
+  lucroPorFamilia: new Map([['A', { nome: 'Fam A', lucro: 250, brutoComCusto: 1000, fonteCusto: 'real' as const, markup: 0.5 }]]),
   lucroConta: { lucro: 300, fonteCusto: 'real' as const },
 });
 
@@ -38,7 +38,7 @@ describe('montarPainelAds', () => {
     expect(p.familias).toHaveLength(1);
     expect(p.familias[0]).toMatchObject({ codigoPai: 'A', custo: 80, vendasTotais: 800, roas: 10, roasDireto: 8.75,
       acos: 0.1, lucroAntes: 250, resultado: 170, margemConsumida: 0.32, acosEquilibrio: 0.25, semaforo: 'dentro',
-      custoCompartilhado: 0, motivo: null });
+      custoCompartilhado: 0, motivo: null, markup: 0.5 });
     expect(p.familias[0].acosDireto).toBeCloseTo(80 / 700);
   });
   it('identidade exata: famílias + compartilhado + não identificado = total da conta', () => {
@@ -112,7 +112,7 @@ describe('montarPainelAds', () => {
     const b = base({ grupos: [grupo(1, 30, ['MLB3'])] });
     b.historicoDesde = '2026-09-02T03:00:00.000Z';
     const p = montarPainelAds(b);
-    expect(p.familias[0]).toMatchObject({ lucroAntes: null, resultado: null, motivo: 'historico' });
+    expect(p.familias[0]).toMatchObject({ lucroAntes: null, resultado: null, motivo: 'historico', markup: null });
     expect(p.conta?.lucroAntes).toBeNull();
   });
   it('histórico começando no meio do 1º dia do período bloqueia (ISO, não dia)', () => {
@@ -138,16 +138,16 @@ describe('montarPainelAds', () => {
   it('família com gasto e sem venda: lucro 0, resultado −gasto, sem equilíbrio', () => {
     const p = montarPainelAds(base({ grupos: [grupo(1, 30, ['MLB3'])] }));
     expect(p.familias[0]).toMatchObject({ codigoPai: 'B', lucroAntes: 0, resultado: -30, acosEquilibrio: null,
-      semaforo: null, motivo: 'sem_vendas', roas: 0, acos: null });
+      semaforo: null, motivo: 'sem_vendas', roas: 0, acos: null, markup: null });
   });
   it('família só com canceladas/devolvidas (lucro null, fonte real) → sem vendas', () => {
     const b = base({ grupos: [grupo(1, 10, ['MLB1'])] });
-    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: null, brutoComCusto: 0, fonteCusto: 'real' });
+    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: null, brutoComCusto: 0, fonteCusto: 'real', markup: null });
     expect(montarPainelAds(b).familias[0]).toMatchObject({ lucroAntes: 0, motivo: 'sem_vendas' });
   });
   it('margem ≤ 0 → sem espaço para Ads', () => {
     const b = base({ grupos: [grupo(1, 10, ['MLB1'], 100, 100)] });
-    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: -5, brutoComCusto: 100, fonteCusto: 'real' });
+    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: -5, brutoComCusto: 100, fonteCusto: 'real', markup: -0.1 });
     expect(montarPainelAds(b).familias[0].semaforo).toBe('sem_espaco');
   });
   it('ACOS direto acima do equilíbrio → acima (mesmo com ACOS total dentro)', () => {
@@ -157,12 +157,12 @@ describe('montarPainelAds', () => {
   });
   it('custo parcial → lucro mostrado, semáforo indisponível', () => {
     const b = base({ grupos: [grupo(1, 10, ['MLB1'], 100, 100)] });
-    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: 20, brutoComCusto: 80, fonteCusto: 'parcial' });
-    expect(montarPainelAds(b).familias[0]).toMatchObject({ lucroAntes: 20, acosEquilibrio: null, semaforo: null, motivo: 'custo_parcial' });
+    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: 20, brutoComCusto: 80, fonteCusto: 'parcial', markup: 0.4 });
+    expect(montarPainelAds(b).familias[0]).toMatchObject({ lucroAntes: 20, markup: null, acosEquilibrio: null, semaforo: null, motivo: 'custo_parcial' });
   });
   it('sem custo cadastrado → lucro null com motivo', () => {
     const b = base({ grupos: [grupo(1, 10, ['MLB1'], 100)] });
-    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo' });
+    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo', markup: null });
     expect(montarPainelAds(b).familias[0]).toMatchObject({ lucroAntes: null, resultado: null, motivo: 'sem_custo' });
   });
   it('dias com atribuição em aberto contam como provisórios', () => {
@@ -218,9 +218,9 @@ describe('montarPainelAds × vendas reais (integração)', () => {
       catalogo: new Map(catalogo.map((c) => [c.codigo, c])), devolucoes: [] });
 
     const lucro = lucroPorFamilia(vs.linhas);
-    expect(lucro.get('A')).toEqual({ nome: 'Fam A', lucro: 6, brutoComCusto: 10, fonteCusto: 'real' });   // cancelada fora
-    expect(lucro.get('K')).toEqual({ nome: 'Fam K', lucro: 22, brutoComCusto: 30, fonteCusto: 'real' });
-    expect(lucro.get('B')).toEqual({ nome: 'Fam B', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo' });
+    expect(lucro.get('A')).toEqual({ nome: 'Fam A', lucro: 6, brutoComCusto: 10, fonteCusto: 'real', markup: 1.5 });   // cancelada fora
+    expect(lucro.get('K')).toEqual({ nome: 'Fam K', lucro: 22, brutoComCusto: 30, fonteCusto: 'real', markup: 2.75 });
+    expect(lucro.get('B')).toEqual({ nome: 'Fam B', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo', markup: null });
 
     const p = montarPainelAds({ ...base({ grupos: [grupo(1, 2, ['MLB1'], 10, 10), grupo(2, 3, ['MLBK'], 30, 30),
       grupo(3, 1, ['MLBB'], 10, 10)] }),

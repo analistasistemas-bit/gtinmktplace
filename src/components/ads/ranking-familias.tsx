@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { KpiCard } from '@/components/ui/kpi-card';
+import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import { Section } from '@/components/ui/section';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtBRL, fmtBRLSinal } from '@/lib/formato';
@@ -42,15 +42,35 @@ function NomeFamilia({ f }: { f: FamiliaPainel }) {
   );
 }
 
-/** ACOS direto × equilíbrio + semáforo recebido do domínio (nunca fabricado aqui). */
-function Referencia({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
-  const sem = liberado && f.semaforo ? SEMAFORO[f.semaforo] : null;
+const ROTULO_USO = 'Ads sobre a margem';
+const INFO_USO = `${ROTULO_USO}::Ads`;
+
+function CabecalhoUso() {
   return (
-    <div className="space-y-1">
+    <span className="inline-flex items-center gap-1.5">{ROTULO_USO}<KpiInfoButton infoKey={INFO_USO} /></span>
+  );
+}
+
+/** Uso da margem pelo Ads: ACOS direto sobre o ACOS de equilíbrio. Cor e selo vêm do semáforo do domínio (nunca
+ *  fabricados aqui); a largura é só a proporção, travada em 100%. */
+function UsoMargem({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
+  const sem = liberado && f.semaforo ? SEMAFORO[f.semaforo] : null;
+  const ads = f.vendasDiretas === 0 ? null : f.acosDireto;
+  const eq = f.acosEquilibrio;
+  const largura = ads != null && eq != null && eq > 0 ? Math.min(ads / eq, 1) : null;
+  const limite = eq == null ? ' · sem referência' : eq <= 0 ? ' · sem margem para Ads'
+    : ads == null ? ` · até ${pct(eq)} possíveis` : ` de ${pct(eq)} possíveis`;
+  return (
+    <div className="space-y-1.5">
+      {largura != null && (
+        <div aria-hidden className="ml-auto h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-muted">
+          <div data-testid="barra-uso-margem" style={{ width: `${largura * 100}%` }}
+            className={cn('h-full rounded-full motion-safe:transition-[width]',
+              sem?.tom === 'danger' ? 'bg-danger' : sem?.tom === 'success' ? 'bg-success' : 'bg-primary')} />
+        </div>
+      )}
       <span className="block tabular-nums">
-        {f.vendasDiretas === 0 ? <span>sem venda direta</span> : pct(f.acosDireto)}
-        <span className="text-muted-foreground"> × </span>
-        {pct(f.acosEquilibrio)}
+        Ads {ads == null ? <span>sem venda direta</span> : pct(ads)}{limite}
       </span>
       {sem && <StatusPill tone={sem.tom}>{sem.txt}</StatusPill>}
     </div>
@@ -108,7 +128,7 @@ function LinhaFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
       <TableRow>
         <TableCell className={CELULA}><NomeFamilia f={f} /></TableCell>
         <TableCell className={NUM}>{fmtBRL(f.custo)}</TableCell>
-        <TableCell className={NUM}><Referencia f={f} liberado={liberado} /></TableCell>
+        <TableCell className={NUM}><UsoMargem f={f} liberado={liberado} /></TableCell>
         <TableCell className={NUM}><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></TableCell>
         <TableCell className={`${CELULA} text-right`}>
           <BotaoDetalhes f={f} aberto={aberto} controla={id} onClick={() => setAberto(v => !v)} compacto />
@@ -137,8 +157,8 @@ function CartaoFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
           <dd className="text-right tabular-nums">{fmtBRL(f.custo)}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
-          <dt className="text-muted-foreground">ACOS direto × equilíbrio</dt>
-          <dd className="text-right"><Referencia f={f} liberado={liberado} /></dd>
+          <dt className="text-muted-foreground"><CabecalhoUso /></dt>
+          <dd className="text-right"><UsoMargem f={f} liberado={liberado} /></dd>
         </div>
         <div className="flex items-start justify-between gap-3">
           <dt className="text-muted-foreground">Resultado após Ads</dt>
@@ -208,7 +228,7 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
             <TableRow>
               <TableHead scope="col" className="w-[34%] px-3 align-bottom whitespace-normal">Família</TableHead>
               <TableHead scope="col" className="w-[14%] px-3 text-right align-bottom whitespace-normal">Gasto</TableHead>
-              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal">ACOS direto × equilíbrio</TableHead>
+              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal"><CabecalhoUso /></TableHead>
               <TableHead scope="col" className="w-[24%] px-3 text-right align-bottom whitespace-normal">Resultado após Ads</TableHead>
               <TableHead scope="col" className="w-[6%] px-3 text-right align-bottom whitespace-normal"><span className="sr-only">Detalhes</span></TableHead>
             </TableRow>
@@ -226,7 +246,7 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
 
   return (
     <div role="region" aria-label="Ranking de famílias">
-      <Section title="Famílias por gasto" description="ACOS direto comparado à margem observada.">
+      <Section title="Famílias por gasto" description="Quanto da margem de cada família o Ads está usando.">
         {familias.length === 0
           ? <p className="text-sm text-muted-foreground">Nenhum gasto de Ads por família no período.</p>
           : <>{filtros}{conteudoRanking}</>}
