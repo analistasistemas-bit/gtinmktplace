@@ -1,311 +1,384 @@
-# Redesenho premium do módulo Ads: plano de implementação
+# Redesenho premium do módulo Ads — plano de implementação revisado
 
-> **Execução:** outro agente implementa; Opus 5.5 revisa este plano. Usar `superpowers:executing-plans` na implementação, tarefa por tarefa, com os checkboxes abaixo.
+> **Execução:** usar `superpowers:executing-plans`, tarefa por tarefa, acompanhando os checkboxes. Cada commit deve passar em `pnpm build`.
 >
-> **Status:** planejamento concluído em modo somente leitura. Nenhum arquivo alterado; testes e validação visual da proposta ainda não executados.
+> **Status:** plano reescrito após leitura da revisão do Opus e conferência do código atual. Trabalho somente leitura: nenhum arquivo alterado; builds, testes e validação visual da implementação ainda não executados.
 
-**Objetivo:** permitir que Diego identifique rapidamente **quanto gastou, quanto sobrou após Ads e quais famílias precisam de atenção**, incluindo o filtro **Mês atual**.
+**Objetivo:** tornar imediata a leitura de **quanto foi gasto, quanto sobrou após Ads e quais famílias precisam de atenção**, acrescentando **Mês atual** sem alterar os contratos financeiros.
 
-**Arquitetura:** preservar `montarPainelAds` e os contratos financeiros. Alterar a apresentação, acrescentar uma resolução explícita de período mensal e reaproveitar o seletor compartilhado com opções compatíveis com Ads.
+**Arquitetura:** preservar `montarPainelAds`, `fimDiasAds` e os contratos de vendas. Resolver o período no hook, acrescentar o quarto botão diretamente em `Ads.tsx` e reorganizar os componentes existentes com detalhes expansíveis. As contagens são filtros locais derivados dos semáforos existentes.
 
-**Stack confirmada:** React 18, TypeScript, Tailwind 4, shadcn/ui, Radix, Lucide, TanStack Query e Vitest. `recharts ^3.8.1` já está instalado; nenhum gráfico novo será necessário.
+**Stack:** React 18, TypeScript, Tailwind 4, TanStack Query, componentes UI existentes, Lucide, Vitest e Testing Library. Nenhuma dependência nova.
 
-**Referências de domínio:** `docs/decisions/0179-painel-de-ads.md`, `docs/superpowers/specs/2026-10-04-painel-de-ads-design.md` e termos de Ads em `docs/reference/glossario.md`.
+**Referências:** [ADR-0179](../../decisions/0179-painel-de-ads.md), [spec do painel](../specs/2026-10-04-painel-de-ads-design.md) e revisão em `/Users/diego/.claude/jobs/c9eb53e2/tmp/opus_review_ui.md`.
 
-**Estimativa:** 6–8 horas de implementação e testes; 1–2 horas de validação visual e ajustes.
+**Estimativa:** 4–5 horas, incluindo testes direcionados, builds por commit e validação visual.
 
-## 1. Base da proposta
+## 1. Base conferida e limites
 
-### 1.1 Modo de design e fontes consultadas
+### 1.1 Evidências do código atual
 
-Este é **system work**: evolução de uma tela dentro de um produto existente.
-
-| Fonte | Aplicação no plano |
+| Local | Contrato confirmado |
 |---|---|
-| `frontend-design-fable5/SKILL.md` | Priorizar integração ao sistema, hierarquia dos dados, densidade por alinhamento e cobertura de estados. |
-| `ui-ux-pro-max-fable5/SKILL.md` e `references/quick-reference.md` | Divulgação progressiva, números tabulares, recuperação de erros, teclado, contraste e alvos de toque. |
-| `taste-design-fable5/SKILL.md` | A skill exclui dashboards do seu escopo. Aproveitar a disciplina de preservação; não aplicar prescrições de landing page, novas fontes ou identidade. |
-| `src/index.css` e componentes `ui` | Herdar Geist Variable, tokens semânticos, raios, foco e superfícies claro/escuro. |
-| Promoções, Vitrine e Dashboard | Reaproveitar o idioma de filtros, informações contextuais, números destacados e acesso ao dossiê. |
+| `src/pages/Ads.tsx` | Presets locais 7/30/90; preferência na chave `ads-painel-dias`; chamada atual `useAdsPainel(dias)`. |
+| `src/hooks/useAdsPainel.ts` | Sync precede as consultas financeiras; Ads e vendas usam o mesmo intervalo; montagem depende também de catálogo e códigos. |
+| `src/lib/ads-painel-dados.ts` | `DiasAds = 7 \| 30 \| 90`; `periodoAds`, `janelaBRT`, `lucroPorFamilia` e RPC existentes. |
+| `src/lib/ads-painel.ts` | Semáforo ligado; valores conciliados em centavos; resultado desconhecido é `null`; `conta.fonteCusto === null` identifica histórico insuficiente. |
+| `src/lib/sku-ads.ts` | `fimDiasAds` termina ontem ou anteontem; o recuo adicional é limitado a um dia. |
 
-O motor da `ui-ux-pro-max-fable5` foi executado somente leitura:
+| Componente ou teste | Consequência para a implementação |
+|---|---|
+| `src/components/ads/resumo-conta.tsx` | Já apresenta selo provisório, marca de custo e divergência; essas informações devem permanecer visíveis após a compactação. |
+| `src/components/ads/ranking-familias.tsx` | Hoje mistura oito colunas, cartões completos e gastos compartilhados. Separar detalhes sem eliminar informações. |
+| `src/components/ui/page-header.tsx` | Já possui `actions: ReactNode`; não precisa mudar. |
+| `src/components/ui/section.tsx` | Já produz `h2.text-h3`; não aceita `aria-label`. Nomear o contêiner externo quando necessário. |
+| `src/components/ui/kpi-card.tsx` | Já possui `size="compact"`, `onClick`, `ativo`, suporte a teclado e `aria-pressed`. |
 
-```bash
-rtk proxy python3 -B /Users/diego/.claude/skills/ui-ux-pro-max-fable5/scripts/search.py \
-  "dashboard analytics SaaS financeiro" \
-  --design-system -p "PubliAI Ads" --variance 2 --motion 1 --density 8
-```
+Os testes de página existentes usam `PAINEL`, `montar` e `hook`. Os testes do hook usam `m`, `FONTE`, `vendasQ` e `ultimaChamada`.
 
-**Adotado:** filtros explícitos, baixa ornamentação, foco visível, contraste e densidade de dashboard. A consulta complementar para shadcn recomendou tabela semântica.
+**Atenção ao build:** `src/hooks/__tests__/useAdsPainel.test.ts` está dentro de `src` e entra no TypeScript da aplicação. Alterar a assinatura do hook exige atualizar esse arquivo no mesmo commit.
 
-**Descartado:** o motor sugeriu também uma landing operacional, tipografia exagerada e Fira. Isso não atende ao produto existente. Manter Geist, tokens e componentes do PubliAI.
-
-`graphify-out/` não existe neste worktree. Foram consultados o vault de Faturamento, os documentos indicados e os arquivos do módulo. A instrução de somente leitura prevaleceu sobre a criação de outro worktree.
+`graphify-out/` não existe neste worktree. Foram consultados o vault de Faturamento, os documentos de status, tarefas, roadmap, ADR e spec. A leitura permaneceu no worktree fornecido, conforme o pedido de somente leitura.
 
 ### 1.2 Restrições globais
 
-1. **Não alterar cálculos:** agregação por Σ/Σ, deduplicação de grupos, cobertura, atribuição, histórico, custos e bloqueios permanecem em `montarPainelAds`.
-2. **Preservar significado:** resultado após Ads não é lucro causal; desconhecido é `—`; gasto compartilhado ou não identificado nunca é rateado.
-3. **Preservar semáforo ligado:** usar `FamiliaPainel.semaforo`, condicionado a `painel.semaforoLiberado`; a comparação continua sendo **ACOS direto × ACOS de equilíbrio**.
-4. **Preservar escopo:** nenhuma escrita no Mercado Livre, mudança de tenant, RPC, migration ou dependência nova.
-5. **Preservar identidade:** claro/escuro, Geist, tokens existentes e Lucide; sem gradiente de cabeçalho, BorderTrail ou efeitos do Pulse.
+1. Preservar agregação por Σ/Σ, reconciliação em centavos, deduplicação, cobertura, atribuição, histórico e custos.
+2. Preservar `—` para desconhecido, sinais monetários e marcas de custo parcial/estimado. Não ratear compartilhados ou não identificados.
+3. Preservar `FamiliaPainel.semaforo`, condicionado a `painel.semaforoLiberado`; a referência continua **ACOS direto × ACOS de equilíbrio**.
+4. Não alterar RPC, banco, autorização, tenant, coletor, dossiê, seletor compartilhado ou dados de produção.
+5. Preservar Geist, tokens, temas, componentes e linguagem visual do aplicativo. Sem gráfico novo, gradiente, animação de números ou efeitos do Pulse.
 
-### 1.3 Pontos obrigatórios da revisão
+### 1.3 Foco da revisão e respectivas provas
 
-| Risco a revisar | Evidência exigida |
+| Condição | Comportamento exigido | Prova |
+|---|---|---|
+| Virada do mês e diferença entre UTC/BRT | Não consultar mês anterior como “Mês atual” nem produzir intervalo invertido | Tarefas 1 e 2 |
+| Troca de período com consulta anterior pendente | Nunca montar o novo recorte com a resposta antiga | Tarefa 2 |
+| Resultado desconhecido | Mostrar `—` e motivo; não renderizar ponte inválida | Tarefas 4 e 5 |
+| Informação financeira condicionada | Provisório, custo e divergência visíveis com detalhes fechados | Tarefas 4 e 5 |
+| Sem referência ou semáforo desligado | Não classificar como saudável; mensagem de validação em um único lugar | Tarefa 5 |
+
+## 2. Decisões de produto
+
+### 2.1 Período padrão: decisão do Diego (2026-10-05) — **Mês atual**
+
+O Diego escolheu abrir a tela em **Mês atual** (mês civil BRT até o último dia coletado). No início do mês, antes da
+1ª coleta, a página mostra o estado `aguardando_mes` com o atalho "Ver últimos 30 dias". A escolha fica numa
+única constante, em `src/lib/ads-painel-dados.ts`:
+
+```ts
+export const PERIODO_PADRAO_ADS: PeriodoAds = {
+  tipo: 'mes_atual',
+};
+```
+
+Preferências válidas já salvas sempre vencem o padrão. Testes de fallback comparam com `PERIODO_PADRAO_ADS`, sem
+repetir a decisão.
+
+### 2.2 Escopo de períodos
+
+Entram **7 dias, 30 dias, 90 dias e Mês atual**.
+
+**Mês anterior fica registrado como próxima entrega**, para fechamento mensal. Deverá usar o mês civil anterior inteiro, preservar cobertura e atribuição aberta e não encurtar silenciosamente o intervalo.
+
+Hoje e Personalizado permanecem fora desta entrega.
+
+### 2.3 “Onde agir” é o próprio conjunto de filtros
+
+Não haverá painel adicional “Onde agir” nem botão “Ver famílias em atenção”.
+
+Os cartões compactos de contagem serão os próprios filtros:
+
+| Rótulo | Filtro |
 |---|---|
-| Virada do mês e fuso do navegador | Testes BRT, dia 1, dia 2 antes da coleta e dezembro/janeiro. |
-| Dados antigos sob filtro novo | Teste com respostas assíncronas fora de ordem e janela compartilhada por vendas/Ads. |
-| Desconhecido apresentado como zero | Testes de conta indisponível e motivos por família. |
-| Famílias sem referência interpretadas como saudáveis | Contagem separada e mensagem sem conclusão de “tudo certo”. |
-| Perda de informação ao compactar | Testes de expansão, valores total/direto, compartilhados, procedência e teclado. |
+| Todas | Todas as famílias recebidas |
+| Em atenção | `acima` ou `sem_espaco` |
+| Dentro do equilíbrio | `dentro` |
+| Sem referência | Semáforo nulo; todas quando o semáforo estiver desligado |
 
-## 2. Diagnóstico dos prints
+O clique no filtro ativo volta para `todas`. A ordenação por gasto recebida do domínio permanece intacta.
 
-Os prints representam versões diferentes. Os prints 3 e 6 têm tabela cortada; o print 1 já mostra uma correção de largura. Os avisos de semáforo desligado também ficaram antigos: o código atual contém `BASE_ACOS_VALIDADA = true`.
+Com zero famílias em atenção, não renderizar um botão “Em atenção 0”. Mostrar:
 
-Não há um print de 1920 px identificável entre os sete anexos; essa largura permanece como validação obrigatória da implementação.
+- Todas avaliáveis: **“Nenhuma família acima do equilíbrio neste período.”**
+- Com famílias sem referência: **“Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.”**
+- Sem famílias: **“Nenhum gasto de Ads por família no período.”**
 
-### 2.1 Hierarquia e decisão
+Com semáforo desligado, mostrar uma única mensagem de validação; não acrescentar uma frase sugerindo que todas estão bem.
 
-| Problema | Evidência | Consequência |
-|---|---|---|
-| 1. Despesa e resultado têm pouco destaque relativo | Prints 1–3 | As respostas centrais competem com ROAS, ACOS e ressalvas. |
-| 2. Falta “Mês atual” | Prints 2, 3, 5 e 6 | O usuário precisa interpretar 30 dias como se fosse um recorte mensal. |
-| 3. Não existe leitura imediata de onde agir | Prints 1, 3 e 6 | É necessário percorrer famílias e comparar indicadores manualmente. |
-| 4. O resumo mobile consome quase toda a primeira tela | Print 2 | A decisão por família fica distante dos números principais. |
-| 5. Há repetição de informações total/direto com pesos semelhantes | Prints 1–4 | A tela exige decodificação de pares antes de permitir comparação. |
+## 3. Direção visual e hierarquia
 
-### 2.2 Densidade, confiança e interação
+### 3.1 Ordem da página
 
-| Problema | Evidência | Consequência |
-|---|---|---|
-| 6. A tabela tenta expor oito colunas simultaneamente | Prints 3 e 6 | Colunas decisivas ficam fora da área visível; a correção do print 1 ainda produz cabeçalhos densos. |
-| 7. O cartão mobile reproduz a tabela inteira | Print 4 | Cada família vira um relatório longo, prejudicando comparação. |
-| 8. Motivos longos ocupam o espaço do resultado | Print 1 | Ausência de dado e valor financeiro deixam de ter representação consistente. |
-| 9. Divergência aparece como texto dentro de uma composição aparentemente normal | Print 6 | O usuário pode interpretar parcelas incompatíveis como uma soma válida. |
-| 10. Estados e controles são pouco orientados à recuperação | Print 5 e código atual | O vazio não oferece outro período; botões `size="sm"` têm 28 px de altura. |
+1. `PageHeader`: título, descrição, presets e legenda BRT no slot `actions`.
+2. Resumo: despesa e resultado, ressalvas visíveis, ponte e composição expansível.
+3. `Section title="Famílias por gasto"`: filtros com contagem e ranking.
+4. Gastos associados: compartilhados e não identificados, independentes do filtro.
+5. Procedência e início do histórico de vendas.
 
-## 3. Direção de design
+Não criar coluna lateral com as mesmas contagens dos filtros.
 
-**Assunto:** despesa de Product Ads confrontada com a margem observada da conta e das famílias.
-
-**Público:** operador de marketplace que precisa decidir onde investigar o investimento.
-
-**Trabalho da página:** responder “quanto gastei, quanto sobrou e onde preciso olhar”.
-
-**Intenção visual:** uma demonstração de resultado curta, seguida de uma lista comparável de famílias.
-
-O aspecto premium virá de alinhamento, seleção de informação e estados bem resolvidos. Não será uma nova identidade visual.
-
-### 3.1 Hierarquia da página
-
-1. **Cabeçalho e período:** título, descrição curta, presets e intervalo efetivo BRT.
-2. **Resumo e atenção:** despesa, resultado, ponte financeira e famílias que pedem análise.
-3. **Ranking:** cinco colunas no desktop; cartões compactos no mobile; detalhes expansíveis.
-4. **Gastos fora das famílias exclusivas:** compartilhados e não identificados em bloco próprio.
-5. **Procedência:** fonte da despesa, ressalva causal e início do histórico de vendas.
-
-**Acima da dobra em 1440×900:** cabeçalho, período, resumo, “Onde agir”, filtros e pelo menos três famílias no cenário normal.
-
-**Acima da dobra em 360×800:** cabeçalho, período, despesa, resultado, ressalva causal e início de “Onde agir”. O objetivo não depende de esconder alertas ou motivos longos.
-
-### 3.2 Grid, escala e tokens
+### 3.2 Layout, escala e controles
 
 | Elemento | Especificação |
 |---|---|
 | Contêiner | `mx-auto w-full max-w-[1440px] min-w-0 p-4 sm:p-6` |
-| Ritmo principal | `space-y-6`; dentro dos blocos, `gap-3` e `gap-4` |
-| Topo | `grid grid-cols-1 gap-4 xl:grid-cols-12`; resumo `xl:col-span-8`, atenção `xl:col-span-4` |
-| Superfícies | `rounded-lg border border-border bg-card`; sem glow, blur ou gradiente |
-| Tipografia | `text-h1` no título; `text-h3` nas seções; valores principais `text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums` |
+| Ritmo | `space-y-6`; agrupamentos internos com `gap-3` ou `gap-4` |
+| Superfícies | `rounded-lg border border-border bg-card` |
+| Valores primários | `text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums` |
+| Textos e números | Corpo `text-sm`; legendas `text-xs`; números alinhados à direita |
 
-Detalhes de composição:
+Presets, ações de recuperação e botões de detalhes usam **`h-11 sm:h-8`**. Botões apenas com ícone usam `h-11 w-11 sm:h-8 sm:w-8`.
 
-- Rótulos e informações operacionais: `text-sm leading-5`.
-- Legendas auxiliares: `text-xs leading-5 text-muted-foreground`; nunca reduzir números principais para fazê-los caber.
-- Números em tabela: `text-right tabular-nums`.
-- Texto de família: `min-w-0 whitespace-normal break-words`.
-- Em 1920 px, limitar a largura do conteúdo para evitar colunas excessivamente afastadas.
-- Em valores excepcionalmente longos, permitir quebra entre `R$` e o número; não abreviar silenciosamente dinheiro para “mil” ou “mi”.
+Os cartões `KpiCard` mantêm sua altura natural, suficiente para rótulo e valor; não comprimir cartões em 32 px.
 
-### 3.3 Cor e interação
+Presets selecionados usam o padrão do aplicativo:
 
-| Situação | Tratamento |
+```tsx
+variant={selecionado ? 'default' : 'outline'}
+```
+
+O primário sólido indica seleção. Não criar outra linguagem de seleção com `bg-primary/10`.
+
+Manter foco visível e `gap-2` entre controles independentes. Em mobile, os quatro presets formam uma grade de duas colunas.
+
+### 3.3 Wireframe desktop
+
+```text
+Ads                              [7 dias] [30 dias] [90 dias] [Mês atual]
+Quanto o Ads custa...             01/10/2026 a 03/10/2026 · BRT
+
+┌ Resumo da conta ────────────────────────────────────────────────────┐
+│ Despesa de Ads                  Resultado após Ads                  │
+│ R$ 345,00                       R$ 2.872,87                          │
+│                                provisório · custo estimado         │
+│                                aviso de divergência, quando houver │
+│                                                                    │
+│ Lucro antes de Ads − Despesa de Ads = Resultado após Ads             │
+│ R$ 3.217,87        − R$ 345,00      = R$ 2.872,87                    │
+│ Não é o lucro causado pelo Ads.                                     │
+│ [Composição e indicadores ▾]                                       │
+└────────────────────────────────────────────────────────────────────┘
+
+Famílias por gasto
+ACOS direto comparado à margem observada.
+[Todas N] [Em atenção N] [Dentro do equilíbrio N] [Sem referência N]
+
+Família          Gasto        ACOS direto × equilíbrio    Resultado   Detalhes
+Nome / código    R$ 89,21      15% × 12%                   R$ 32,00    [v]
+                              Acima do equilíbrio         ressalvas
+
+Gastos associados
+Procedência e histórico
+```
+
+### 3.4 Wireframe mobile — 360 px
+
+```text
+Ads
+Quanto o Ads custa e o que sobra depois dele.
+
+[7 dias       ] [30 dias      ]
+[90 dias      ] [Mês atual    ]
+01/10/2026 a 03/10/2026 · BRT
+
+┌ Resumo da conta ──────────────┐
+│ Despesa de Ads                │
+│ R$ 345,00                     │
+│                              │
+│ Resultado após Ads           │
+│ R$ 2.872,87                   │
+│ provisório · custo estimado  │
+│ aviso de divergência         │
+│                              │
+│ Lucro antes de Ads  3.217,87  │
+│ Não é o lucro causado        │
+│ pelo Ads.                    │
+│ [Composição e indicadores v] │
+└──────────────────────────────┘
+
+Famílias por gasto
+[Todas N]        [Em atenção N]
+[Dentro N]       [Sem referência N]
+
+Cartões de família
+```
+
+Em 360 px, a ponte contém **somente a linha “Lucro antes de Ads”**. Não repetir despesa e resultado já destacados.
+
+Metas para o cenário normal:
+
+- Em 1440×900: cabeçalho, resumo, filtros e pelo menos três famílias.
+- Em 360×800: despesa, resultado e início da seção de famílias.
+- Alertas, zoom e textos longos podem aumentar a altura; nunca ocultar ressalvas para cumprir a dobra.
+
+### 3.5 Ranking fechado e expansão
+
+Desktop em `xl:block`, cartões em `xl:hidden`.
+
+| Coluna | Largura |
+|---|---:|
+| Família | 34% |
+| Gasto | 14% |
+| ACOS direto × equilíbrio | 22% |
+| Resultado após Ads | 24% |
+| Detalhes | 6% |
+
+Usar `Table` com `table-fixed`, `px-3 py-3 align-top`, cabeçalhos quebráveis e `scope="col"`. Não usar `overflow-hidden` para disfarçar colunas cortadas.
+
+Linha e cartão fechados mostram nome, código, gasto, resultado, referência, motivo e marca de custo. Nome é link; expansão é botão separado.
+
+Detalhes mostram:
+
+| Grupo | Conteúdo |
 |---|---|
-| Dentro do equilíbrio | `StatusPill tone="success"` + `CircleCheck` + texto “Dentro do equilíbrio” |
-| Acima do equilíbrio | `StatusPill tone="danger"` + `CircleAlert` + texto “Acima do equilíbrio” |
-| Sem espaço para Ads | `StatusPill tone="danger"` + `CircleX` + texto completo |
-| Provisório, desatualizado ou divergente | `warning`, acompanhado de texto; sem pulsação |
-| Sem referência ou desconhecido | `neutral`, valor `—` e motivo disponível |
+| Atribuição | Vendas atribuídas total/direta |
+| Eficiência | ROAS total/direto e ACOS total/direto |
+| Margem | Lucro antes de Ads e margem consumida |
+| Associação | Quantidade de grupos exclusivos e gasto compartilhado associado |
+| Contexto | Aviso percentual de não identificado, quando disponível, e nome completo |
 
-Resultado positivo permanece em `text-foreground`; resultado negativo usa `text-danger`, preservando o sinal. ROAS alto não recebe verde automaticamente.
+O nome pode usar `line-clamp-2` fechado, desde que apareça completo no detalhe.
 
-O roxo existente indica seleção e foco, sem significado financeiro. Para controles selecionados do Ads, preferir fundo sutil `bg-primary/10`, texto `text-foreground` e borda `border-primary`, sujeitos à medição de contraste.
+O link permanece:
 
-Todos os controles novos terão:
-
-```text
-min-h-11
-focus-visible:outline-none
-focus-visible:ring-2
-focus-visible:ring-ring
-focus-visible:ring-offset-2
-focus-visible:ring-offset-background
+```tsx
+to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`}
 ```
 
-Usar `size-11` para botões apenas com ícone. Espaçamento entre alvos: `gap-2`. Transições restritas a cor/opacidade, sem animação de números ou entrada escalonada.
+Não prometer preservar período ou selecionar a aba Ads do dossiê sem contrato de navegação existente.
 
-### 3.4 Wireframe desktop: 1440 px
+## 4. Contratos financeiros e ressalvas
 
-Valores ilustrativos extraídos do cenário injetado; não representam nova medição.
+### 4.1 Valores e semáforo
 
-```text
-┌───────────────────┬─────────────────────────────────────────────────────────┐
-│ Navegação do app  │ Ads                                                     │
-│ existente         │ Quanto o Ads custa e o que sobra depois dele.           │
-│                   │                                                         │
-│                   │ Período  [7 dias] [30 dias] [90 dias] [Mês atual]        │
-│                   │ 01/10/2026 a 03/10/2026 · horário de Brasília            │
-│                   │                                                         │
-│                   │ ┌ Resumo da conta ─────────────────┐ ┌ Onde agir ─────┐ │
-│                   │ │ provisório — N dias...           │ │ Acima: N      │ │
-│                   │ │                                  │ │ Sem espaço: N │ │
-│                   │ │ Despesa de Ads  Resultado após Ads│ │ Sem ref.: N   │ │
-│                   │ │ R$ 345,00       R$ 2.872,87       │ │               │ │
-│                   │ │                                  │ │ [Ver famílias │ │
-│                   │ │ Lucro antes  − Despesa = Resultado│ │  em atenção]  │ │
-│                   │ │ R$ 3.217,87  − 345,00 = 2.872,87  │ └───────────────┘ │
-│                   │ │ Não é o lucro causado pelo Ads.  │                   │
-│                   │ │ [Composição e indicadores  v]    │                   │
-│                   │ └──────────────────────────────────┘                   │
-│                   │                                                         │
-│                   │ Famílias por gasto                                     │
-│                   │ [Todas N] [Em atenção N] [Dentro N] [Sem referência N] │
-│                   │ ACOS direto comparado à margem observada.              │
-│                   │ ┌─────────────┬─────────┬─────────────┬──────────┬─────┐ │
-│                   │ │ Família     │ Gasto   │ ACOS direto │Resultado │     │ │
-│                   │ │             │         │× equilíbrio │após Ads  │     │ │
-│                   │ ├─────────────┼─────────┼─────────────┼──────────┼─────┤ │
-│                   │ │ Nome e cód. │R$ 89,21 │15% × 12%    │R$ 32,00 │ [v] │ │
-│                   │ │             │         │Acima         │          │     │ │
-│                   │ └─────────────┴─────────┴─────────────┴──────────┴─────┘ │
-│                   │ Compartilhados e gasto não identificado                │
-│                   │ Procedência e histórico de vendas                      │
-└───────────────────┴─────────────────────────────────────────────────────────┘
-```
+A apresentação não recalcula lucro, resultado, semáforo ou percentuais.
 
-A ponte repete os valores de propósito: explica a relação entre lucro, despesa e resultado. Deve ser discreta, sem três cartões adicionais.
+| Condição | Apresentação |
+|---|---|
+| `resultado === null` | `—` e motivo visível |
+| Resultado negativo conhecido | Valor negativo com `fmtBRLSinal` e `text-danger` |
+| Resultado positivo | `text-foreground`; não colorir automaticamente de verde |
+| Zero medido | Valor zero formatado; nunca `—` |
+| Denominador indisponível | `—`, salvo o texto específico de ausência de venda direta |
 
-### 3.5 Wireframe mobile: 360 px
+A comparação principal mostra **ACOS direto × equilíbrio**. Nos detalhes, os pares continuam **total/direto**.
 
-```text
-┌──────────────────────────────────┐
-│ Cabeçalho global existente       │
-├──────────────────────────────────┤
-│ Ads                              │
-│ Quanto o Ads custa e o que        │
-│ sobra depois dele.               │
-│                                  │
-│ Período                          │
-│ [ 7 dias       ] [ 30 dias      ] │
-│ [ 90 dias      ] [ Mês atual    ] │
-│ 01/10/2026 a 03/10/2026 · BRT      │
-│                                  │
-│ ┌ Resumo da conta ─────────────┐ │
-│ │ provisório — N dias com      │ │
-│ │ atribuição em aberto         │ │
-│ │                             │ │
-│ │ Despesa de Ads              │ │
-│ │ R$ 345,00                   │ │
-│ │                             │ │
-│ │ Resultado após Ads          │ │
-│ │ R$ 2.872,87                 │ │
-│ │                             │ │
-│ │ Lucro antes       3.217,87   │ │
-│ │ Despesa de Ads     −345,00   │ │
-│ │ Resultado         2.872,87   │ │
-│ │ Não é o lucro causado       │ │
-│ │ pelo Ads.                   │ │
-│ │ [Composição e indicadores v]│ │
-│ └─────────────────────────────┘ │
-│ Onde agir                        │
-│ N acima · N sem espaço            │
-│ N famílias sem referência         │
-│ [Ver famílias em atenção]         │
-├──────── dobra-alvo ───────────────┤
-│ Famílias por gasto                │
-│ [Todas N] [Em atenção N]          │
-│ [Dentro N] [Sem referência N]     │
-│ ┌ Cartão de família ──────────┐  │
-│ └─────────────────────────────┘  │
-└──────────────────────────────────┘
-```
+Quando `vendasDiretas === 0`, mostrar **“sem venda direta”** no lugar do ACOS direto numérico. Não mudar o semáforo recebido:
 
-A dobra é uma meta para o cenário normal em 360×800. Em zoom, alertas simultâneos ou textos maiores, a página cresce naturalmente.
+- Com equilíbrio positivo e elegibilidade, o domínio retorna `acima`.
+- Com equilíbrio não positivo, retorna `sem_espaco`.
+- Sem referência ou com bloqueio, pode permanecer nulo.
 
-### 3.6 Linha e cartão de família
+A UI não deve fabricar `acima` para uma família bloqueada.
 
-**Desktop, fechado:**
+### 4.2 Motivos da conta
 
-```text
-Família / código       Gasto       ACOS direto × equilíbrio    Resultado       Detalhes
-Eucerin Aquaphor       R$ 25,00    62,5% × 19,7%               —               [v]
-Família 00000028                  [Acima do equilíbrio]        Gasto compartilhado
-```
-
-**Mobile, fechado:**
-
-```text
-┌────────────────────────────────┐
-│ Eucerin Aquaphor Duo Pack      │
-│ Pomada Reparadora 18g          │
-│ Família 00000028               │
-│ [Acima do equilíbrio]          │
-│                                │
-│ Gasto              Resultado   │
-│ R$ 25,00           —           │
-│ Gasto compartilhado com outra  │
-│ família                        │
-│                                │
-│ ACOS direto 62,5%               │
-│ Equilíbrio 19,7%                │
-│ [Ver detalhes               v] │
-└────────────────────────────────┘
-```
-
-**Detalhe expandido, comum às duas apresentações:**
-
-```text
-Nome completo da família
-Vendas atribuídas: total / direta
-ROAS: total / direto
-ACOS: total / direto
-Lucro antes de Ads · Margem consumida · Marca de custo
-Grupos exclusivos · Gasto compartilhado associado
-Aviso do gasto não identificado da conta
-[Abrir dossiê da família]
-```
-
-Não abrir a linha inteira por clique: o nome é um link, e o botão de expansão é uma ação separada.
-
-## 4. Período: decisão funcional
-
-### 4.1 Presets da entrega
-
-**Entram:** 7 dias, 30 dias, 90 dias e **Mês atual**.
-
-**Padrão preservado:** 30 dias para quem não tem preferência válida. Adicionar “Mês atual” não deve mudar silenciosamente o recorte inicial dos usuários.
-
-**Não entram nesta entrega:** Hoje, Personalizado e Mês anterior.
-
-“Mês anterior” é útil para fechamento, mas não é necessário para resolver a solicitação urgente. Além disso, **mês civil encerrado não significa atribuição finalizada**. Quando implementado, deverá usar o mês anterior inteiro, preservar o selo provisório e mostrar cobertura incompleta se o último dia ainda não tiver sido coletado, sem encurtar silenciosamente o mês.
-
-### 4.2 Regra de “Mês atual”
-
-Usar o mês corrente em **BRT**, calculado por `diaBRT(agora.getTime())`, disponível em `src/lib/calendario-brt.ts`.
+`ResumoConta` recebe:
 
 ```ts
+{
+  conta: ContaPainel;
+  historicoDesde: string | null;
+}
+```
+
+Não recebe nem calcula `historicoCobre`.
+
+```ts
+function motivoResultadoConta(
+  conta: ContaPainel,
+  historicoDesde: string | null,
+): string | null {
+  if (conta.resultado != null) return null;
+
+  if (conta.fonteCusto == null) {
+    return historicoDesde
+      ? `período antes do histórico de vendas (desde ${dataBRT(historicoDesde)})`
+      : 'período antes do histórico de vendas';
+  }
+
+  return 'sem custo cadastrado';
+}
+```
+
+No domínio atual, resultado nulo com fonte não nula decorre de lucro indisponível por custo.
+
+Com `lucroAntes === null`, **não renderizar a ponte**, nem no desktop nem no mobile. O resultado continua mostrando `—` com o motivo.
+
+Nunca produzir:
+
+```text
+— − R$ 345,00 = —
+```
+
+### 4.3 Informações que permanecem fora da expansão
+
+| Informação | Local obrigatório |
+|---|---|
+| `provisório — N dias com atribuição em aberto` | Junto ao resultado da conta, mesmo com composição fechada |
+| `custo parcial` / `custo estimado` | Junto ao resultado da conta e da família, na linha/cartão fechado |
+| Motivo de resultado ou referência indisponível | Linha/cartão fechado |
+| Divergência da conta | Aviso completo junto ao resultado da conta, antes de qualquer expansão |
+| Ressalva causal | Visível junto ao resumo |
+
+A família não possui `diasAbertos`. Não inventar contagem por família. Se a informação provisória for repetida junto ao resultado da família, identificá-la como **“Atribuição da conta em aberto”**, derivada de `conta.diasAbertos`.
+
+Para divergência, manter **uma ocorrência do aviso completo**:
+
+> A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.
+
+Nas linhas/cartões fechados, usar a indicação curta **“Composição da conta divergente”**, sem repetir o alerta completo nem bloquear resultados válidos.
+
+### 4.4 Composição, compartilhados e não identificado
+
+A expansão da conta contém as parcelas disponíveis, ROAS, ACOS total, vendas atribuídas e margem consumida.
+
+Em divergência:
+
+- Preservar despesa total e resultados válidos.
+- Preservar valores conhecidos de famílias e compartilhados.
+- Não apresentar a decomposição como soma conciliada.
+- Ocultar o valor e o percentual de não identificado.
+- Manter o aviso de divergência visível fora da expansão.
+
+O bloco “Gastos associados” permanece independente do filtro de famílias. Reaproveitar a soma e os textos existentes de grupos compartilhados, inclusive:
+
+```text
+Grupo 7: sem código identificado (1 anúncio)
+```
+
+Não transformar `custoCompartilhado` em parte do gasto exclusivo da família.
+
+Quando `naoIdentificadoPct > 0`, o detalhe da família informa:
+
+> X% do gasto da conta não tem família identificada e não foi rateado entre famílias.
+
+### 4.5 Motivos das famílias
+
+Preservar os textos:
+
+| Motivo | Texto |
+|---|---|
+| `compartilhado` | gasto compartilhado com outra família |
+| `cobertura` | coleta de Ads incompleta no período |
+| `historico` | período antes do histórico de vendas (desde DD/MM/AAAA), quando houver data |
+| `sem_vendas` | sem vendas no período |
+| `sem_custo` | sem custo cadastrado |
+| `custo_parcial` | custo parcial: sem semáforo |
+
+`sem_vendas` não elimina um resultado negativo conhecido. Custo parcial/estimado não vira custo real.
+
+## 5. Período e ciclo de dados
+
+### 5.1 Tipos e resolução mensal
+
+Adicionar a `src/lib/ads-painel-dados.ts`:
+
+```ts
+import type { Periodo } from '@/lib/metricas';
+import { diaBRT } from '@/lib/calendario-brt';
+
 export type PeriodoAds = Extract<
   Periodo,
   { tipo: 'preset' } | { tipo: 'mes_atual' }
@@ -329,320 +402,286 @@ export function resolverPeriodoAds(
   periodo: PeriodoAds,
   agora: Date,
   ultimoOkEm: string | null,
-): ResolucaoPeriodoAds;
+): ResolucaoPeriodoAds {
+  if (periodo.tipo === 'preset') {
+    return {
+      tipo: 'pronto',
+      janela: periodoAds(periodo.dias, agora, ultimoOkEm),
+    };
+  }
+
+  const inicioMes = `${diaBRT(agora.getTime()).slice(0, 7)}-01`;
+  const fimDisponivel = fimDiasAds(agora, ultimoOkEm);
+
+  if (fimDisponivel < inicioMes) {
+    return {
+      tipo: 'aguardando_mes',
+      janela: null,
+      inicioMes,
+      fimDisponivel,
+    };
+  }
+
+  return {
+    tipo: 'pronto',
+    janela: { desde: inicioMes, ate: fimDisponivel },
+  };
+}
 ```
 
-Implementar em `src/lib/ads-painel-dados.ts`, preservando `periodoAds(dias, agora, ultimoOkEm)` para os consumidores e testes atuais.
+Preservar `periodoAds` e `fimDiasAds` integralmente.
 
-| Situação | Resultado |
-|---|---|
-| Preset 7/30/90 | Delegar a `periodoAds`; comportamento atual intacto. |
-| Mês atual com `fimDiasAds >= primeiro dia do mês` | `{ desde: primeiroDiaBRT, ate: fimDiasAds(...) }`. |
-| Dia 1, inclusive depois da coleta | `aguardando_mes`: Ads não possui hoje; o fim continua no mês anterior. |
-| Dia 2 antes da coleta, fim ainda no mês anterior | `aguardando_mes`. |
-| Sync ausente ou antigo, mas intervalo não vazio | Preservar o fallback de `fimDiasAds`; cobertura e estado do backend determinam a disponibilidade. |
+### 5.2 Os 11 casos mensais obrigatórios
 
-**Não substituir** `fimDiasAds` por uma busca indefinida do último dia coletado. O recuo máximo de um dia é parte da regra existente.
+| # | Agora | Último sync | Resultado |
+|---:|---|---|---|
+| 1 | `2026-10-05T08:00:00-03:00` | `2026-10-04T14:17:00Z` | 01/10 a 03/10 |
+| 2 | `2026-10-05T12:00:00-03:00` | `2026-10-05T14:17:00Z` | 01/10 a 04/10 |
+| 3 | `2026-10-05T08:00:00-03:00` | `null` | 01/10 a 04/10 |
+| 4 | `2026-10-05T08:00:00-03:00` | `2026-10-01T14:17:00Z` | 01/10 a 04/10; sem recuo ilimitado |
+| 5 | `2026-10-01T08:00:00-03:00` | `2026-09-30T14:17:00Z` | `aguardando_mes` |
+| 6 | `2026-10-01T12:00:00-03:00` | `2026-10-01T14:17:00Z` | `aguardando_mes` |
+| 7 | `2026-10-02T08:00:00-03:00` | `2026-10-01T14:17:00Z` | `aguardando_mes` |
+| 8 | `2027-01-01T12:00:00-03:00` | `2027-01-01T14:17:00Z` | `aguardando_mes` |
+| 9 | `2026-10-02T12:00:00-03:00` | `2026-10-02T14:17:00Z` | 01/10 a 01/10 |
+| 10 | `2026-10-01T02:30:00Z` | `null` | 01/09 a 29/09; ainda é setembro em BRT |
+| 11 | `2028-02-29T15:00:00-03:00` | `null` | 01/02 a 28/02 |
 
-Quando `aguardando_mes`:
+O fallback de sync ausente ou antigo permanece o existente. Cobertura e estado do backend determinam a disponibilidade dos dados.
 
-- Mostrar “Aguardando o primeiro dia de Ads deste mês”.
-- Explicar: “Os dados de hoje ainda não entram no painel. O mês aparecerá quando houver um dia encerrado coletado.”
-- Oferecer **Ver últimos 30 dias**.
-- Não chamar `ads_painel`, não habilitar a consulta de vendas para esse intervalo e não chamar `montarPainelAds`.
-- Não apresentar zero, datas invertidas nem dados do mês anterior.
+### 5.3 Persistência local, sem migração
 
-A legenda será **“01/10/2026 a 03/10/2026 · BRT”**. Não afirmar “último dia coletado” em todos os casos: `fimDiasAds` também retorna ontem quando o sync está ausente ou parado.
-
-### 4.3 Um recorte para todas as métricas
-
-Resolver o período uma única vez no hook:
-
-```text
-sync concluído
-    ↓
-resolverPeriodoAds
-    ├── aguardando_mes → estado informativo, sem consulta financeira
-    └── pronto
-          ├── buscarPainelAds(desde, ate)
-          ├── useVendasSku({ tipo: 'range', desde, ate }, janelaBRT(...), true)
-          └── montarPainelAds({ janela: { desde, ate }, ... })
-```
-
-`useVendasSku` também busca uma janela estendida internamente. Preservar esse comportamento: o importante é que a agregação financeira recebida pelo painel use a mesma `janelaBRT`.
-
-Todos os períodos expostos terão no máximo 90 dias.
-
-## 5. Componentes e arquivos
-
-### 5.1 Período e carregamento
-
-| Arquivo | Mudança e contrato |
-|---|---|
-| `src/lib/ads-painel-dados.ts` | Adicionar tipos e `resolverPeriodoAds`; manter a RPC e `periodoAds`. |
-| `src/hooks/usePeriodoAds.ts` **novo** | `usePeriodoAds(): { periodo: PeriodoAds; escolherPeriodo: (p: PeriodoAds) => void }`; preferência versionada e fallback seguro. |
-| `src/hooks/useAdsPainel.ts` | Receber `PeriodoAds`; devolver `janela: JanelaDiasAds \| null`, `situacaoPeriodo`, `isFetching`, `ultimoOkEm`, além dos campos atuais. |
-| `src/components/ui/seletor-periodo.tsx` | Adicionar opções retrocompatíveis para ocultar Hoje/Personalizado e ajustar classes; manter os defaults atuais. |
-| `src/components/ads/periodo-ads.tsx` **novo** | Adaptar o seletor ao subconjunto de Ads, exibir intervalo BRT e atualização. |
-
-Props adicionais do seletor compartilhado:
+Continuar usando:
 
 ```ts
-mostrarHoje?: boolean;          // default true
-mostrarPersonalizado?: boolean; // default true
-buttonClassName?: string;
-grupoClassName?: string;
+const CHAVE = 'ads-painel-dias';
 ```
 
-Também acrescentar `aria-pressed` aos presets, Hoje e Mês atual. Não alterar `resolverJanela` global nem introduzir regras BRT no componente de UI.
+Valores aceitos: **`'7' | '30' | '90' | 'mes_atual'`**.
 
-Uso em Ads:
+Em `Ads.tsx`:
+
+```ts
+function periodoSalvo(): PeriodoAds {
+  try {
+    const valor = localStorage.getItem(CHAVE);
+
+    if (valor === 'mes_atual') return { tipo: 'mes_atual' };
+
+    if (valor === '7' || valor === '30' || valor === '90') {
+      const dias: DiasAds = valor === '7' ? 7 : valor === '30' ? 30 : 90;
+      return { tipo: 'preset', dias };
+    }
+  } catch {
+    return PERIODO_PADRAO_ADS;
+  }
+
+  return PERIODO_PADRAO_ADS;
+}
+```
+
+Inicialização lazy:
 
 ```tsx
-<SeletorPeriodo
-  periodo={periodo}
-  onPeriodo={receberPeriodoSuportado}
-  mostrarMesAtual
-  mostrarHoje={false}
-  mostrarPersonalizado={false}
-  rotulo="Período"
-  carregando={isFetching}
-  grupoClassName="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto"
-  buttonClassName="h-11 px-3 text-sm aria-pressed:bg-primary/10 aria-pressed:text-foreground aria-pressed:border-primary"
-/>
+const [periodo, setPeriodo] = useState<PeriodoAds>(periodoSalvo);
+
+const escolherPeriodo = (proximo: PeriodoAds) => {
+  setPeriodo(proximo);
+
+  try {
+    localStorage.setItem(
+      CHAVE,
+      proximo.tipo === 'preset' ? String(proximo.dias) : 'mes_atual',
+    );
+  } catch {
+    // A seleção continua válida nesta visita.
+  }
+};
 ```
 
-`receberPeriodoSuportado` deve estreitar o tipo por `p.tipo`, sem `as PeriodoAds` indiscriminado.
+Não criar chave versionada, JSON, migração, `usePeriodoAds.ts` ou componente de período.
 
-### 5.2 Resumo e famílias
-
-| Arquivo | Responsabilidade e props |
-|---|---|
-| `src/components/ads/resumo-conta.tsx` | Reorganizar `ResumoConta({ conta, historicoDesde })`; destaque financeiro, ponte, motivo de resultado desconhecido e detalhes secundários. |
-| `src/components/ads/onde-agir-ads.tsx` **novo** | `OndeAgirAds({ familias, semaforoLiberado, onVerAtencao })`; contagens derivadas, sem pontuação nova. |
-| `src/components/ads/ranking-familias.tsx` | `RankingFamilias({ painel, historicoDesde, filtro, onFiltro })`; cinco colunas, cartões, filtros e expansão. |
-| `src/components/ads/detalhe-familia.tsx` **novo** | `DetalheFamilia({ familia, conta, historicoDesde })`; métricas secundárias compartilhadas por desktop/mobile. |
-| `src/lib/ads-apresentacao.ts` **novo** | Mover `pct`, `razao` e textos de motivos; fornecer contagem e filtragem sem recalcular métricas. |
-
-Tipos de apresentação:
+### 5.4 Contrato do hook
 
 ```ts
-export type FiltroFamiliasAds =
-  | 'todas'
-  | 'atencao'
-  | 'dentro'
-  | 'sem_referencia';
+export interface RetornoAdsPainel {
+  painel: PainelAds | null;
+  janela: JanelaDiasAds | null;
+  situacaoPeriodo: 'carregando' | 'pronto' | 'aguardando_mes';
+  historicoDesde: string | null;
+  ultimoOkEm: string | null;
+  isLoading: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  refetch: () => Promise<void>;
+}
 
-export type ContagemFamiliasAds = {
-  total: number;
-  acima: number;
-  semEspaco: number;
-  dentro: number;
-  semReferencia: number;
-};
-
-export function contarFamiliasAds(
-  familias: readonly FamiliaPainel[],
-  liberado: boolean,
-): ContagemFamiliasAds;
-
-export function filtrarFamiliasAds(
-  familias: readonly FamiliaPainel[],
-  filtro: FiltroFamiliasAds,
-  liberado: boolean,
-): FamiliaPainel[];
+export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel;
 ```
 
-`atencao` inclui apenas `acima` e `sem_espaco`. `sem_referencia` inclui semáforo nulo; quando o semáforo estiver desabilitado, todas as famílias ficam sem referência.
+Calcular a data BRT **a cada render**, sem timer ou listener:
 
-Preservar a ordenação original por gasto; filtros não classificam por uma pontuação nova.
+```ts
+const hoje = diaBRT(Date.now());
+const tipo = periodo.tipo;
+const dias = periodo.tipo === 'preset' ? periodo.dias : null;
+const ultimoOkEm = syncQ.data ?? null;
 
-### 5.3 Estados, gastos associados e composição da página
+const resolucao = useMemo(() => {
+  const selecionado: PeriodoAds =
+    tipo === 'preset' && dias !== null
+      ? { tipo: 'preset', dias }
+      : { tipo: 'mes_atual' };
 
-| Arquivo | Responsabilidade |
-|---|---|
-| `src/components/ads/gastos-associados.tsx` **novo** | Compartilhados, expansão de grupos, anúncios sem código e gasto não identificado. Props: `{ painel: PainelAds }`. |
-| `src/components/ads/estado-ads.tsx` **novo** | `EstadoAds` para estados bloqueantes e `AvisosAds` para condições parciais; usar `EmptyState`, `Button` e `Skeleton`. |
-| `src/pages/Ads.tsx` | Compor seções, controlar filtro, coordenar foco e reiniciar expansão/filtro quando o período efetivo mudar. |
-| `tests/pages/Ads.test.tsx` | Adaptar consultas à hierarquia nova e preservar contratos de negócio. |
-| `docs/decisions/0179-painel-de-ads.md` | Registrar a ampliação dos presets e que “Onde agir” é um filtro local, sem fila operacional. |
+  return resolverPeriodoAds(
+    selecionado,
+    new Date(`${hoje}T12:00:00-03:00`),
+    ultimoOkEm,
+  );
+}, [tipo, dias, hoje, ultimoOkEm]);
+```
 
-A procedência pode continuar como pequena função privada em `Ads.tsx`; não precisa de um arquivo próprio.
+Usar meio-dia BRT aqui é seguro: a resolução depende do dia civil e do sync, não da hora dentro do dia.
 
-### 5.4 O que sai e o que entra
+Não incluir o objeto `periodo` nas dependências. Nos demais memos, preferir também os limites primitivos `desde` e `ate`.
 
-| Sai | Entra |
-|---|---|
-| Resumo com sete métricas disputando o mesmo peso | Duas métricas primárias, ponte e “Composição e indicadores” |
-| Oito colunas abertas | Cinco colunas decisórias, com detalhe expansível |
-| Cartão mobile com todas as linhas financeiras | Cartão com gasto, resultado, referência e motivo |
-| Compartilhados como pseudo-famílias no ranking | Bloco separado, preservado mesmo quando o ranking está filtrado |
-| Avisos genéricos sem próxima ação | Estados com título, explicação e recuperação apropriada |
+### 5.5 Consultas, atualização e precedência
 
-### 5.5 Regras dos componentes
-
-**Resumo da conta**
-
-A região mantém `aria-label="Resumo da conta"`.
-
-A expansão “Composição e indicadores” mostra:
-
-| Grupo | Informação |
-|---|---|
-| Composição | Em famílias; compartilhado entre famílias; gasto não identificado e percentual |
-| Eficiência | ROAS total/direto; ACOS total |
-| Vendas | Vendas atribuídas total/direta |
-| Margem | Margem consumida; marca de custo parcial/estimado |
-
-O selo **“provisório — N dias com atribuição em aberto”** permanece visível fora da expansão. Permitir quebra natural no selo em 360 px.
-
-Se `resultado === null`, mostrar `—` e um motivo visível. Para a conta existente, distinguir histórico insuficiente usando `historicoCobre`; se o histórico cobre e falta lucro, informar ausência de custo disponível. Não criar um resultado substituto.
-
-**Onde agir**
-
-Exibir contagens de acima, sem espaço e sem referência. O botão aplica `atencao` e leva o foco ao título do ranking, com `tabIndex={-1}`.
-
-Se nenhuma família pede atenção:
-
-- Com todas avaliáveis: “Nenhuma família acima do equilíbrio neste período.”
-- Com famílias sem referência: “Nenhuma família avaliável acima do equilíbrio. N famílias estão sem referência.”
-- Sem família: “Não há famílias com gasto para avaliar.”
-- Semáforo desligado: mostrar a mensagem de validação já existente; não afirmar que está tudo bem.
-
-Sem CTA para pausar anúncio, aumentar orçamento ou escrever no ML.
-
-**Tabela**
-
-Usar `Table` existente, com `table-fixed`, em `xl:block`; cartões em `xl:hidden`. Aumentar o breakpoint atual evita comprimir a tabela entre 768 e 1279 px.
-
-Distribuição:
-
-| Coluna | Largura |
-|---|---:|
-| Família | 34% |
-| Gasto | 14% |
-| ACOS direto × equilíbrio | 22% |
-| Resultado após Ads | 24% |
-| Expandir | 6% |
-
-Usar `px-3 py-3 align-top`; cabeçalhos podem quebrar em duas linhas. Preservar o wrapper de `Table`; não esconder overflow como solução para conteúdo cortado.
-
-O nome pode usar `line-clamp-2` na apresentação fechada, desde que o detalhe revele o nome completo. Não depender de `title` para acessibilidade.
-
-**Expansão**
-
-Cada botão tem `aria-expanded`, `aria-controls` e nome como “Ver detalhes de Eucerin Aquaphor”. Usar IDs distintos nas apresentações desktop e mobile.
-
-No desktop, inserir `<tr><td colSpan={5}>…</td></tr>`. Não envolver `<tr>` em um `div`.
-
-**Sem referência e motivos**
-
-Mostrar sempre `—` quando o resultado for desconhecido, mesmo que haja um motivo. Preservar:
+Resolver uma janela e compartilhá-la entre:
 
 ```text
-compartilhado → gasto compartilhado com outra família
-cobertura    → coleta de Ads incompleta no período
-historico    → período antes do histórico de vendas (desde DD/MM/AAAA)
-sem_vendas   → sem vendas no período
-sem_custo    → sem custo cadastrado
-custo_parcial→ custo parcial: sem semáforo
+buscarPainelAds(desde, ate)
+useVendasSku({ tipo: 'range', desde, ate }, janelaBRT(desde, ate), true)
+montarPainelAds({ janela: { desde, ate }, ... })
 ```
 
-`sem_vendas` não apaga um resultado negativo conhecido. Custo parcial/estimado não se transforma em custo real.
+Enquanto o sync não concluir ou o mês estiver aguardando:
 
-**Compartilhados e não identificado**
+- `janela` pública e `painel` são `null`.
+- Não habilitar `buscarPainelAds`, busca de códigos ou vendas do período.
+- Não chamar `montarPainelAds`.
+- Chamar hooks incondicionalmente.
+- Para os argumentos obrigatórios de vendas, fornecer internamente um dia válido no início do mês, sempre com `enabled=false`.
 
-Manter valores independentes do filtro de famílias. O detalhe por família pode mostrar `custoCompartilhado`, identificado como gasto associado que **não foi somado ao gasto exclusivo**.
+Esse intervalo interno não pode aparecer no retorno ou na montagem. `useVendasSku` possui consultas auxiliares próprias; a garantia não é “zero rede”.
 
-Quando `naoIdentificadoPct > 0`, o detalhe da família informa:
+Usar query keys com o intervalo efetivo, sem `placeholderData` que reaproveite números do período anterior. Códigos só ficam habilitados quando o período está pronto e a fonte atual concluiu.
 
-> X% do gasto da conta não tem família identificada e não foi rateado entre famílias.
-
-Em divergência, ocultar a parcela numérica de não identificado e mostrar:
-
-> A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.
-
-Não desenhar uma barra de composição nem uma igualdade falsa. O total informado pela conta e a ponte lucro−despesa continuam válidos conforme o contrato existente.
-
-### 5.6 Gráfico e dossiê
-
-**Sem gráfico novo.** O `PainelAds` atual entrega agregados; uma série exigiria ampliar o contrato e a decisão de análise temporal. Uma barra de composição também ocuparia espaço sem acrescentar decisão à decomposição numérica.
-
-**Sem redesenho de `ads-dossie.tsx`.** A aba do dossiê tem outra função: evolução temporal e alcance do gasto de uma família/SKU. Já usa tokens, BRT e gráfico próprios. Preservar seus testes como regressão.
-
-O link do ranking continua em:
-
-```text
-/faturamento/sku/familia/:codigoPai
-```
-
-Usar `encodeURIComponent(codigoPai)`. Não prometer abrir a aba Ads com o mesmo período sem um contrato de navegação já suportado.
-
-## 6. Estados e precedência
-
-### 6.1 Estados bloqueantes
-
-| Estado | Apresentação | Ação |
-|---|---|---|
-| Carregando | Skeleton com forma do resumo e três famílias; `aria-busy` | Nenhuma ação falsa de sincronização |
-| Erro de consulta | “Não foi possível carregar o painel de Ads.”, `role="alert"` | Tentar de novo |
-| `sem_coleta` / `coletando` | Textos atuais, título e ícone coerentes | Verificar novamente, sem disparar coletor |
-| `sem_permissao` / `sem_acesso` | Explicar recusa e preservar orientação existente | Abrir `/canais` |
-| `sem_advertiser` | Explicar ausência de anunciante Product Ads | Instrução “Meu perfil → Publicidade”; sem URL externa inventada |
-
-### 6.2 Estados vazios e parciais
-
-| Estado | Comportamento |
-|---|---|
-| `aguardando_mes` | Manter Mês atual selecionado; explicar ausência de dia encerrado; oferecer 30 dias. |
-| `sem_ads` | Preservar “Nenhum gasto de Ads no período”; oferecer 90 dias se não estiver selecionado. |
-| `desatualizado` | Aviso visível antes do resumo; manter os dados e seus limites; não afirmar que foram atualizados. |
-| Conta indisponível | Região de resumo com “Total da conta indisponível: a coleta ainda não cobre este período”; ranking continua. |
-| Divergente | Aviso na composição; números da conta e famílias preservados; sem parcela inventada. |
-
-Precedência:
+Precedência pública:
 
 ```text
 erro de sync
 → sync carregando
 → aguardando_mes
-→ erro das fontes do período
-→ fontes carregando
-→ estado de acesso/coleta
-→ sem_ads
-→ dados com avisos parciais
+→ erro das fontes habilitadas
+→ carregamento das fontes necessárias
+→ painel disponível
 ```
 
-Erros de consultas desabilitadas de um período anterior não devem substituir `aguardando_mes`.
+Em `aguardando_mes`, erros de consultas desabilitadas e estados auxiliares antigos não podem substituir o estado mensal nem manter loading infinito.
 
-No refetch do **mesmo** período, manter os dados visíveis e mostrar “Atualizando…”. Na troca de período, não usar `placeholderData` que apresente valores anteriores como pertencentes ao novo recorte.
+`refetch()`:
+
+1. Atualiza primeiro `syncQ`.
+2. Se houver erro, não inicia consultas financeiras.
+3. Resolve novamente com o sync retornado e o dia BRT atual.
+4. Se a janela mudou, deixa as novas query keys carregar; não chama manualmente refetch da janela antiga.
+5. Se permaneceu igual e pronta, repete fonte, códigos, vendas e catálogo; em mês aguardando, encerra sem consultar finanças.
+
+Se o usuário trocar o preset durante a espera do sync, não continuar a atualização manual do preset abandonado. Uma referência à identidade primitiva da seleção é suficiente; não criar controlador genérico.
+
+No mesmo período, manter os dados durante refetch e apresentar **“Atualizando…”**. Uma aba parada não ganha timer próprio: a virada do dia é observada no próximo render, retorno de consulta ou interação.
+
+## 6. Estados da página
+
+### 6.1 Bloqueantes e recuperação
+
+| Estado | Conteúdo | Ação |
+|---|---|---|
+| Carregando | Skeleton de resumo e três famílias; `aria-busy` | Sem ação falsa de sincronização |
+| Erro | “Não foi possível carregar o painel de Ads.”; `role="alert"` | Tentar de novo |
+| `sem_coleta` / `coletando` | Preservar explicações atuais | Verificar novamente |
+| `sem_permissao` / `sem_acesso` | Preservar orientação atual | Abrir Canais, em `/canais` |
+| `sem_advertiser` | Preservar orientação “Meu perfil → Publicidade” | Sem URL externa inventada |
+
+### 6.2 Vazios e condições parciais
+
+| Estado | Conteúdo |
+|---|---|
+| `aguardando_mes` | “Aguardando o primeiro dia de Ads deste mês”; ação **Ver últimos 30 dias** |
+| `sem_ads` | “Nenhum gasto de Ads no período”; oferecer **Ver últimos 90 dias** se 90 não estiver selecionado |
+| Conta indisponível | Região “Resumo da conta” com motivo de cobertura; ranking preservado |
+| Desatualizado | Aviso antes do resumo; dados preservados, sem afirmar atualização bem-sucedida |
+| Divergente | Aviso junto ao resultado, visível fechado; parcela não identificada sem número |
+
+Explicação de `aguardando_mes`:
+
+> Os dados de hoje ainda não entram no painel. O mês aparecerá quando houver um dia encerrado coletado.
+
+Não apresentar zero, datas invertidas ou números do mês anterior.
 
 A procedência fica fora das ramificações de sucesso:
 
 > Despesa informada pela API de Ads do Mercado Livre.  
-> Resultado após a despesa de Ads; não é o lucro causado pelo Ads.  
 > Vendas desde DD/MM/AAAA, quando a organização começou a vender pelo PubliAI.
 
-Se a data ainda não estiver disponível, preservar a formulação atual sobre a entrada da organização no PubliAI. Não inventar uma data.
+Sem data disponível:
 
-## 7. Tarefas de implementação e TDD
+> Vendas desde a entrada da organização no PubliAI.
 
-Os trechos abaixo são **testes a acrescentar**, não substitutos dos arquivos inteiros. Onde aparece `PAINEL`, `montar`, `m` ou `wrapper`, usar os fixtures/helpers já existentes nos testes indicados.
+A ressalva causal aparece uma vez junto ao resumo quando ele existe. Nos estados sem resumo financeiro, aparece junto à procedência.
 
-Cada tarefa segue: teste → falha confirmada → implementação mínima → teste verde → commit.
+## 7. Arquivos e sequência de commits
 
-### Tarefa 1 — Resolver “Mês atual” em BRT
+### 7.1 Mapa de alterações
 
-**Tempo:** 25–35 minutos.  
-**Arquivos:** `src/lib/ads-painel-dados.ts`, `tests/lib/ads-painel-dados.test.ts`.
+| Grupo | Arquivos |
+|---|---|
+| Período e hook | `src/lib/ads-painel-dados.ts`, `src/hooks/useAdsPainel.ts` |
+| Página | `src/pages/Ads.tsx` |
+| Componentes existentes | `src/components/ads/resumo-conta.tsx`, `src/components/ads/ranking-familias.tsx` |
+| Extrações necessárias | `src/lib/ads-apresentacao.ts`, `src/components/ads/detalhe-familia.tsx`, `src/components/ads/gastos-associados.tsx` |
+| Documentação | Uma linha em `docs/decisions/0179-painel-de-ads.md` |
 
-**Produz:** `PeriodoAds`, `ResolucaoPeriodoAds` e `resolverPeriodoAds`.
+Testes: arquivos existentes de dados, hook e página; novo `tests/lib/ads-apresentacao.test.ts`.
 
-- [ ] Acrescentar os testes abaixo.
-- [ ] Executar o teste e confirmar falha por export ausente.
-- [ ] Implementar a resolução; preservar `periodoAds` e `fimDiasAds`.
-- [ ] Executar os testes de dados e `sku-ads`.
-- [ ] Commit: `feat(ads): resolve current month using BRT collection window`.
+As quatro descrições dos filtros entram no dicionário existente `src/lib/kpi-descriptions.ts`, com cobertura em `src/lib/__tests__/kpi-descriptions.test.ts`.
+
+**Não criar:** `usePeriodoAds.ts`, `periodo-ads.tsx`, `onde-agir-ads.tsx`, `estado-ads.tsx` ou teste do seletor compartilhado. As ramificações de estado continuam em `Ads.tsx`.
+
+**Não modificar:** `seletor-periodo.tsx`, `page-header.tsx`, `section.tsx`, `kpi-card.tsx`, `ads-painel.ts`, `sku-ads.ts` ou componentes do dossiê.
+
+### 7.2 Regra de cada commit
+
+Cada tarefa segue teste vermelho → implementação → teste verde → build → commit.
+
+Executar **`rtk pnpm build` antes de cada commit**, inclusive o último. O script real é `tsc -b && vite build`.
+
+Não criar commits intermediários com assinatura incompatível, imports pendentes ou testes TypeScript quebrados.
+
+| Tarefa | Tempo |
+|---|---:|
+| 1. Resolução mensal | 25 min |
+| 2. Hook e migração atômica dos consumidores | 50 min |
+| 3. Período, cabeçalho e estados | 45 min |
+| 4. Resumo financeiro | 35 min |
+| 5. Filtros, ranking e detalhes | 80 min |
+| 6. Validação visual e documentação | 35 min |
+| **Total previsto** | **270 min — 4 h 30 min** |
+
+### Tarefa 1 — Resolver Mês atual preservando o calendário existente
+
+**Modificar:** `src/lib/ads-painel-dados.ts`, `tests/lib/ads-painel-dados.test.ts`.
+
+**Produz:** `PeriodoAds`, `JanelaDiasAds`, `ResolucaoPeriodoAds`, `resolverPeriodoAds` e `PERIODO_PADRAO_ADS`.
+
+- [ ] Acrescentar os 11 casos abaixo e equivalência dos presets.
+- [ ] Executar o teste e confirmar falha pela ausência do resolver.
+- [ ] Implementar o código de §5.1 e a constante de §2.1.
+- [ ] Executar testes direcionados e `rtk pnpm build`.
+- [ ] Commit: `feat(ads): resolve current month in BRT`.
+
+Acrescentar `resolverPeriodoAds` aos imports do teste existente:
 
 ```ts
 describe('resolverPeriodoAds: mês atual', () => {
@@ -653,7 +692,7 @@ describe('resolverPeriodoAds: mês atual', () => {
     ['2026-10-05T12:00:00-03:00', '2026-10-05T14:17:00Z', '2026-10-04'],
     ['2026-10-05T08:00:00-03:00', null, '2026-10-04'],
     ['2026-10-05T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-04'],
-  ])('resolve %s sem recuo ilimitado', (agora, sync, ate) => {
+  ])('resolve %s com o recuo existente', (agora, sync, ate) => {
     expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
       tipo: 'pronto',
       janela: { desde: '2026-10-01', ate },
@@ -661,16 +700,22 @@ describe('resolverPeriodoAds: mês atual', () => {
   });
 
   it.each([
-    ['2026-10-01T08:00:00-03:00', '2026-09-30T14:17:00Z'],
-    ['2026-10-01T12:00:00-03:00', '2026-10-01T14:17:00Z'],
-    ['2026-10-02T08:00:00-03:00', '2026-10-01T14:17:00Z'],
-    ['2027-01-01T12:00:00-03:00', '2027-01-01T14:17:00Z'],
-  ])('não gera intervalo invertido em %s', (agora, sync) => {
-    expect(resolverPeriodoAds(mensal, new Date(agora), sync))
-      .toMatchObject({ tipo: 'aguardando_mes', janela: null });
-  });
+    ['2026-10-01T08:00:00-03:00', '2026-09-30T14:17:00Z', '2026-10-01', '2026-09-29'],
+    ['2026-10-01T12:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
+    ['2026-10-02T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
+    ['2027-01-01T12:00:00-03:00', '2027-01-01T14:17:00Z', '2027-01-01', '2026-12-31'],
+  ])('aguarda sem gerar intervalo invertido em %s',
+    (agora, sync, inicioMes, fimDisponivel) => {
+      expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
+        tipo: 'aguardando_mes',
+        janela: null,
+        inicioMes,
+        fimDisponivel,
+      });
+    },
+  );
 
-  it('libera o primeiro dia depois da coleta do dia 2', () => {
+  it('libera o primeiro dia após a coleta do dia 2', () => {
     expect(resolverPeriodoAds(
       mensal,
       new Date('2026-10-02T12:00:00-03:00'),
@@ -681,9 +726,11 @@ describe('resolverPeriodoAds: mês atual', () => {
     });
   });
 
-  it('usa o mês BRT mesmo quando UTC já virou o mês', () => {
+  it('usa setembro quando UTC já está em outubro', () => {
     expect(resolverPeriodoAds(
-      mensal, new Date('2026-10-01T02:30:00Z'), null,
+      mensal,
+      new Date('2026-10-01T02:30:00Z'),
+      null,
     )).toEqual({
       tipo: 'pronto',
       janela: { desde: '2026-09-01', ate: '2026-09-29' },
@@ -692,98 +739,123 @@ describe('resolverPeriodoAds: mês atual', () => {
 
   it('respeita fevereiro bissexto', () => {
     expect(resolverPeriodoAds(
-      mensal, new Date('2028-02-29T15:00:00-03:00'), null,
+      mensal,
+      new Date('2028-02-29T15:00:00-03:00'),
+      null,
     )).toEqual({
       tipo: 'pronto',
       janela: { desde: '2028-02-01', ate: '2028-02-28' },
     });
   });
+
+  it.each([7, 30, 90] as const)('preserva o preset de %i dias', dias => {
+    const agora = new Date('2026-10-05T08:00:00-03:00');
+    const sync = '2026-10-04T14:17:00Z';
+
+    expect(resolverPeriodoAds({ tipo: 'preset', dias }, agora, sync))
+      .toEqual({
+        tipo: 'pronto',
+        janela: periodoAds(dias, agora, sync),
+      });
+  });
 });
 ```
 
-Preservar os testes numéricos existentes de 7/30/90. Acrescentar equivalência entre `resolverPeriodoAds({ tipo: 'preset', dias })` e `periodoAds(dias, ...)`.
+Validação:
 
 ```bash
 rtk pnpm exec vitest run tests/lib/ads-painel-dados.test.ts tests/lib/sku-ads.test.ts
+rtk pnpm build
 ```
 
-### Tarefa 2 — Persistir a intenção de período
+### Tarefa 2 — Alterar o hook e seus consumidores no mesmo commit
 
-**Tempo:** 20–30 minutos.  
-**Criar:** `src/hooks/usePeriodoAds.ts`, `src/hooks/__tests__/usePeriodoAds.test.ts`.
+**Modificar:** `src/hooks/useAdsPainel.ts`, `src/pages/Ads.tsx`, `src/hooks/__tests__/useAdsPainel.test.ts`, `tests/pages/Ads.test.tsx`.
 
-**Consome:** `PeriodoAds`.  
-**Produz:** estado controlado do período.
+**Consome:** resolução da Tarefa 1.  
+**Produz:** `RetornoAdsPainel` e o comportamento de §5.4–§5.5.
 
-Persistir em `ads-painel-periodo-v1`:
+- [ ] Acrescentar testes mensais, de mudança de janela e de resposta tardia.
+- [ ] Confirmar falhas e atualizar os mocks para o contrato público completo.
+- [ ] Implementar o hook e migrar todos os consumidores neste commit.
+- [ ] Executar os testes direcionados e `rtk pnpm build`.
+- [ ] Commit: `feat(ads): share resolved period across panel data sources`.
 
-```json
-{"versao":1,"periodo":{"tipo":"mes_atual"}}
+**Migração atômica obrigatória em `Ads.tsx`:**
+
+```tsx
+const {
+  painel,
+  janela,
+  historicoDesde,
+  isError,
+  refetch,
+} = useAdsPainel({ tipo: 'preset', dias });
 ```
 
-Persistir o preset, nunca as datas resolvidas. Na ausência da chave nova, ler `ads-painel-dias` e migrar 7/30/90 em memória. Não apagar a chave antiga.
+Nesta tarefa, o estado local ainda pode continuar sendo `dias`. O quarto botão entra na Tarefa 3.
 
-- [ ] Testar default, migração, JSON inválido e storage bloqueado.
-- [ ] Confirmar testes vermelhos.
-- [ ] Implementar leitura lazy e escrita em `escolherPeriodo`, ambas com `try/catch`.
-- [ ] Executar os testes; restaurar spies e limpar storage entre casos.
-- [ ] Commit: `feat(ads): persist period preference with safe legacy fallback`.
+Como `janela` passa a admitir `null`, atualizar imediatamente a guarda da legenda:
+
+```tsx
+{painel && janela && (
+  <p className="text-xs text-muted-foreground tabular-nums">
+    {`${diaMesLiteral(janela.desde)} – ${diaMesLiteral(janela.ate)} · até ${diaMesLiteral(janela.ate)}`}
+  </p>
+)}
+```
+
+Atualizar o teste existente:
+
+```tsx
+it('trocar o período chama o hook com o preset estruturado', () => {
+  localStorage.setItem('ads-painel-dias', '30');
+  montar();
+
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+
+  fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
+
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 7 });
+});
+```
+
+No teste do hook, substituir `useAdsPainel(30)` por `useAdsPainel({ tipo: 'preset', dias: 30 })`.
+
+Substituir o wrapper que cria um `QueryClient` durante cada render por uma fábrica estável por montagem:
 
 ```ts
-it('migra o preset antigo sem perder a preferência', () => {
-  localStorage.setItem('ads-painel-dias', '90');
-  const { result } = renderHook(() => usePeriodoAds());
-  expect(result.current.periodo).toEqual({ tipo: 'preset', dias: 90 });
-});
-
-it('salva mês atual como intenção, sem datas fixas', () => {
-  const { result } = renderHook(() => usePeriodoAds());
-  act(() => result.current.escolherPeriodo({ tipo: 'mes_atual' }));
-
-  expect(JSON.parse(localStorage.getItem('ads-painel-periodo-v1')!))
-    .toEqual({ versao: 1, periodo: { tipo: 'mes_atual' } });
-});
-
-it('funciona quando ler ou gravar storage lança exceção', () => {
-  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-    throw new DOMException('blocked', 'SecurityError');
-  });
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-    throw new DOMException('blocked', 'SecurityError');
+function criarWrapper() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   });
 
-  const { result } = renderHook(() => usePeriodoAds());
-  expect(result.current.periodo).toEqual({ tipo: 'preset', dias: 30 });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client: qc }, children);
+  };
+}
 
-  act(() => result.current.escolherPeriodo({ tipo: 'mes_atual' }));
-  expect(result.current.periodo).toEqual({ tipo: 'mes_atual' });
-});
+const render = () => renderHook(
+  () => useAdsPainel({ tipo: 'preset', dias: 30 }),
+  { wrapper: criarWrapper() },
+);
 ```
 
-Validar explicitamente JSON com versão incorreta, `dias: 31`, `tipo: 'range'` e `null`: todos caem no fallback válido, sem coerção.
-
-```bash
-rtk pnpm exec vitest run src/hooks/__tests__/usePeriodoAds.test.ts
-```
-
-### Tarefa 3 — Integrar o período ao hook sem consultas indevidas
-
-**Tempo:** 45–60 minutos.  
-**Arquivos:** `src/hooks/useAdsPainel.ts`, `src/hooks/__tests__/useAdsPainel.test.ts`.
-
-**Consome:** `resolverPeriodoAds`.  
-**Produz:** hook preparado para janela nula e mudança de mês.
-
-- [ ] Atualizar os testes existentes para receber `{ tipo: 'preset', dias: 30 }`; acrescentar casos mensais.
-- [ ] Confirmar falhas de gating e de igualdade das janelas.
-- [ ] Implementar habilitação, carregamento, atualização do calendário e retry.
-- [ ] Executar os testes do hook e a regressão do dossiê.
-- [ ] Commit: `feat(ads): share resolved period across ads and sales queries`.
-
-Teste central, reutilizando os mocks existentes:
+Nos testes existentes que desestruturam `janela`, estreitar o tipo:
 
 ```ts
-it('mês atual usa o mesmo recorte em vendas, RPC e montagem', async () => {
+const { janela } = r.result.current;
+if (!janela) throw new Error('O período deveria estar pronto');
+```
+
+Acrescentar `isFetching` e `refetch` aos mocks de catálogo e vendas. O `refetch` de catálogo retorna uma Promise. Restaurar esses campos no `beforeEach`.
+
+Os testes existentes de erro de vendas/catálogo devem aguardar a conclusão do sync antes de esperar `isError`, respeitando a nova precedência.
+
+**Testes concretos a acrescentar:**
+
+```ts
+it('mês atual usa a mesma janela em Ads, vendas e montagem', async () => {
   vi.useFakeTimers({
     toFake: ['Date'],
     now: new Date('2026-10-05T08:00:00-03:00'),
@@ -792,12 +864,14 @@ it('mês atual usa o mesmo recorte em vendas, RPC e montagem', async () => {
 
   const { result } = renderHook(
     () => useAdsPainel({ tipo: 'mes_atual' }),
-    { wrapper },
+    { wrapper: criarWrapper() },
   );
 
   await waitFor(() => expect(result.current.painel).not.toBeNull());
 
   const janela = { desde: '2026-10-01', ate: '2026-10-03' };
+
+  expect(result.current.janela).toEqual(janela);
   expect(m.buscarPainelAds).toHaveBeenCalledWith(janela.desde, janela.ate);
   expect(m.useVendasSku).toHaveBeenLastCalledWith(
     { tipo: 'range', ...janela },
@@ -807,16 +881,17 @@ it('mês atual usa o mesmo recorte em vendas, RPC e montagem', async () => {
   expect(ultimaChamada().janela).toEqual(janela);
 });
 
-it('mês sem dia disponível não consulta dados financeiros', async () => {
+it('mês aguardando não consulta finanças nem herda erro de vendas', async () => {
   vi.useFakeTimers({
     toFake: ['Date'],
     now: new Date('2026-10-01T12:00:00-03:00'),
   });
   m.buscarUltimoOkAds.mockResolvedValue('2026-10-01T14:17:00Z');
+  m.useVendasSku.mockReturnValue(vendasQ(null, { isError: true }));
 
   const { result } = renderHook(
     () => useAdsPainel({ tipo: 'mes_atual' }),
-    { wrapper },
+    { wrapper: criarWrapper() },
   );
 
   await waitFor(() =>
@@ -826,413 +901,1050 @@ it('mês sem dia disponível não consulta dados financeiros', async () => {
   expect(result.current.janela).toBeNull();
   expect(result.current.painel).toBeNull();
   expect(result.current.isLoading).toBe(false);
+  expect(result.current.isError).toBe(false);
   expect(m.buscarPainelAds).not.toHaveBeenCalled();
   expect(m.buscarCodigosMlbs).not.toHaveBeenCalled();
   expect(m.montarPainelAds).not.toHaveBeenCalled();
-  expect(m.useVendasSku.mock.calls.every((call) => call[2] === false)).toBe(true);
+  expect(m.useVendasSku.mock.calls.every(call => call[2] === false)).toBe(true);
 });
-```
 
-Decisões de implementação:
+it('recalcula o mês no próximo render, sem timer próprio', async () => {
+  vi.useFakeTimers({
+    toFake: ['Date'],
+    now: new Date('2026-09-30T15:00:00-03:00'),
+  });
+  m.buscarUltimoOkAds.mockResolvedValue(null);
 
-- Hooks continuam sendo chamados incondicionalmente. Para `useVendasSku`, que exige uma janela válida, fornecer internamente um intervalo de um dia no início do mês **com `enabled=false`**. Esse intervalo não sai pelo retorno público nem entra na montagem.
-- O `enabled` atual de `useVendasSku` bloqueia a busca de vendas, não todas as consultas auxiliares. Não prometer “zero chamadas de rede”.
-- Desabilitar também a consulta de códigos enquanto não houver período pronto.
-- Incluir catálogo no estado de carregamento pertinente; não deixar skeleton eterno após erro.
-- Recalcular o dia BRT à meia-noite e ao voltar à aba, com cleanup do timer/listener. Uma mudança do mês deve resolver novamente o preset persistido.
-
-Acrescentar testes de virada de mês com o componente montado, transição antes/depois da coleta e resposta tardia de um período anterior.
-
-`refetch()` deve atualizar primeiro o sync. Se o intervalo mudar, as novas query keys carregam as fontes; não refazer manualmente a janela antiga. Se permanecer igual, repetir as fontes necessárias, inclusive as que falharam.
-
-```bash
-rtk pnpm exec vitest run src/hooks/__tests__/useAdsPainel.test.ts src/hooks/__tests__/useSkuDossie.test.ts
-```
-
-### Tarefa 4 — Reaproveitar o seletor com controles acessíveis
-
-**Tempo:** 25–35 minutos.  
-**Modificar:** `src/components/ui/seletor-periodo.tsx`.  
-**Criar:** `src/components/ads/periodo-ads.tsx`, `tests/components/seletor-periodo.test.tsx`.
-
-- [ ] Testar configuração Ads e defaults dos consumidores existentes.
-- [ ] Confirmar falha.
-- [ ] Implementar as quatro props opcionais e `aria-pressed`; compor `PeriodoAdsBar`.
-- [ ] Executar teste do seletor e regressão dos filtros de movimentos.
-- [ ] Commit: `feat(ads): add current month using shared period selector`.
-
-```tsx
-it('expõe mês atual sem Hoje nem Personalizado no Ads', () => {
-  const onPeriodo = vi.fn();
-
-  render(
-    <SeletorPeriodo
-      periodo={{ tipo: 'mes_atual' }}
-      onPeriodo={onPeriodo}
-      mostrarMesAtual
-      mostrarHoje={false}
-      mostrarPersonalizado={false}
-    />,
+  const { result, rerender } = renderHook(
+    () => useAdsPainel({ tipo: 'mes_atual' }),
+    { wrapper: criarWrapper() },
   );
 
-  expect(screen.queryByRole('button', { name: 'Hoje' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Personalizado' }))
-    .not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Mês atual' }))
-    .toHaveAttribute('aria-pressed', 'true');
+  await waitFor(() => expect(result.current.painel).not.toBeNull());
+  expect(result.current.janela).toEqual({
+    desde: '2026-09-01',
+    ate: '2026-09-29',
+  });
 
-  fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
-  expect(onPeriodo).toHaveBeenCalledWith({ tipo: 'preset', dias: 7 });
-});
+  m.buscarPainelAds.mockClear();
+  m.montarPainelAds.mockClear();
 
-it('preserva os controles atuais quando as novas props são omitidas', () => {
-  render(
-    <SeletorPeriodo
-      periodo={{ tipo: 'preset', dias: 30 }}
-      onPeriodo={vi.fn()}
-    />,
-  );
+  vi.setSystemTime(new Date('2026-10-01T12:00:00-03:00'));
+  rerender();
 
-  expect(screen.getByRole('button', { name: 'Hoje' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Personalizado' })).toBeInTheDocument();
+  expect(result.current.situacaoPeriodo).toBe('aguardando_mes');
+  expect(result.current.janela).toBeNull();
+  expect(result.current.painel).toBeNull();
+  expect(m.buscarPainelAds).not.toHaveBeenCalled();
+  expect(m.montarPainelAds).not.toHaveBeenCalled();
 });
 ```
 
-Não usar o rascunho local de Personalizado para resolver datas do Ads.
-
-```bash
-rtk pnpm exec vitest run tests/components/seletor-periodo.test.tsx tests/components/filtros-movimentos.test.tsx
-```
-
-### Tarefa 5 — Criar a leitura “Onde agir”
-
-**Tempo:** 30–40 minutos.  
-**Criar:** `src/lib/ads-apresentacao.ts`, `src/components/ads/onde-agir-ads.tsx`, `tests/lib/ads-apresentacao.test.ts`.  
-**Modificar:** `tests/pages/Ads.test.tsx`.
-
-- [ ] Testar contagens, filtros e semáforo desligado.
-- [ ] Confirmar falha.
-- [ ] Implementar a derivação e o bloco; manter a ordem de gasto.
-- [ ] Testar a ação de filtrar e mover foco.
-- [ ] Commit: `feat(ads): expose actionable family status counts`.
-
-No teste de apresentação, usar uma família-base tipada e criar variações explícitas:
+Adicionar `act` aos imports e usar o helper abaixo para as corridas:
 
 ```ts
-it('atenção inclui acima e sem espaço, preservando a ordem recebida', () => {
-  const familias: FamiliaPainel[] = [
-    { ...base, codigoPai: 'A', semaforo: 'dentro' },
-    { ...base, codigoPai: 'B', semaforo: 'acima' },
-    { ...base, codigoPai: 'C', semaforo: null },
-    { ...base, codigoPai: 'D', semaforo: 'sem_espaco' },
-  ];
-
-  expect(contarFamiliasAds(familias, true)).toEqual({
-    total: 4, acima: 1, semEspaco: 1, dentro: 1, semReferencia: 1,
+function pendente<T>() {
+  let resolver!: (valor: T) => void;
+  const promise = new Promise<T>(resolve => {
+    resolver = resolve;
   });
-  expect(filtrarFamiliasAds(familias, 'atencao', true).map(f => f.codigoPai))
-    .toEqual(['B', 'D']);
-  expect(contarFamiliasAds(familias, false).semReferencia).toBe(4);
-  expect(filtrarFamiliasAds(familias, 'atencao', false)).toEqual([]);
+  return { promise, resolver };
+}
+```
+
+```ts
+it('ignora a resposta tardia do preset anterior', async () => {
+  vi.useFakeTimers({
+    toFake: ['Date'],
+    now: new Date('2026-10-05T12:00:00-03:00'),
+  });
+
+  const antiga = pendente<FontePainelAds>();
+  m.buscarUltimoOkAds.mockResolvedValue(null);
+  m.buscarPainelAds.mockImplementation((desde: string) =>
+    desde === '2026-09-05' ? antiga.promise : Promise.resolve(FONTE),
+  );
+
+  const { result, rerender } = renderHook(
+    ({ dias }: { dias: 7 | 30 }) => useAdsPainel({ tipo: 'preset', dias }),
+    { initialProps: { dias: 30 }, wrapper: criarWrapper() },
+  );
+
+  await waitFor(() =>
+    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-05', '2026-10-04'),
+  );
+
+  rerender({ dias: 7 });
+
+  await waitFor(() => expect(result.current.painel).not.toBeNull());
+  expect(result.current.janela).toEqual({
+    desde: '2026-09-28',
+    ate: '2026-10-04',
+  });
+
+  await act(async () => {
+    antiga.resolver(FONTE);
+    await antiga.promise;
+  });
+
+  expect(ultimaChamada().janela).toEqual({
+    desde: '2026-09-28',
+    ate: '2026-10-04',
+  });
+});
+
+it('refetch do dia 2 libera o mês após atualizar o sync', async () => {
+  vi.useFakeTimers({
+    toFake: ['Date'],
+    now: new Date('2026-10-02T12:00:00-03:00'),
+  });
+  m.buscarUltimoOkAds.mockResolvedValue('2026-10-01T14:17:00Z');
+
+  const { result } = renderHook(
+    () => useAdsPainel({ tipo: 'mes_atual' }),
+    { wrapper: criarWrapper() },
+  );
+
+  await waitFor(() =>
+    expect(result.current.situacaoPeriodo).toBe('aguardando_mes'),
+  );
+
+  m.buscarUltimoOkAds.mockResolvedValue('2026-10-02T14:17:00Z');
+
+  await act(async () => {
+    await result.current.refetch();
+  });
+
+  await waitFor(() => expect(result.current.painel).not.toBeNull());
+
+  expect(result.current.janela).toEqual({
+    desde: '2026-10-01',
+    ate: '2026-10-01',
+  });
+  expect(m.buscarPainelAds).toHaveBeenCalledTimes(1);
+  expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-10-01', '2026-10-01');
 });
 ```
 
-A base deve conter todos os campos de `FamiliaPainel`, sem `as unknown as`. Este teste verifica apresentação; os testes existentes de `montarPainelAds` continuam sendo a prova financeira.
+Cobrir também os seguintes contratos no mesmo arquivo:
 
-Na página:
+| Teste | Preparação e assertivas |
+|---|---|
+| Catálogo carregando | `data=undefined`, `isLoading=true`; depois do sync, `painel=null` e `isLoading=true` |
+| Erro de catálogo | `isError=true`; depois do sync, `isError=true`, sem skeleton permanente |
+| Refetch da mesma janela | Fixar data e sync; após refetch, RPC repete os mesmos argumentos, vendas e catálogo recebem refetch |
+| Refetch muda o fim | Sync de 04/10 passa para 05/10; novas chamadas financeiras terminam em 04/10, sem refetch manual do intervalo que terminava em 03/10 |
+| Troca durante refetch | Segurar a Promise do sync, mudar 30→7 e liberá-la; não repetir manualmente as fontes de 30 dias |
 
-```tsx
-fireEvent.click(screen.getByRole('button', { name: 'Ver famílias em atenção' }));
-expect(screen.getByRole('heading', { name: 'Famílias por gasto' })).toHaveFocus();
-expect(screen.getByRole('button', { name: /Em atenção/ }))
-  .toHaveAttribute('aria-pressed', 'true');
-```
+Validação:
 
 ```bash
-rtk pnpm exec vitest run tests/lib/ads-apresentacao.test.ts tests/pages/Ads.test.tsx
+rtk pnpm exec vitest run src/hooks/__tests__/useAdsPainel.test.ts tests/pages/Ads.test.tsx tests/lib/ads-painel-dados.test.ts
+rtk pnpm build
 ```
 
-### Tarefa 6 — Reorganizar o resumo financeiro
+### Tarefa 3 — Acrescentar o quarto preset, cabeçalho e estados
 
-**Tempo:** 35–50 minutos.  
-**Modificar:** `src/components/ads/resumo-conta.tsx`, `src/lib/ads-apresentacao.ts`, `tests/pages/Ads.test.tsx`.
+**Modificar:** `src/pages/Ads.tsx`, `tests/pages/Ads.test.tsx`.
 
-- [ ] Acrescentar testes de divulgação, desconhecido, provisório e divergência.
-- [ ] Confirmar falhas esperadas.
-- [ ] Implementar destaque, ponte e expansão acessível.
-- [ ] Executar testes da página e da regra pura.
-- [ ] Commit: `refactor(ads): prioritize spend and after-ads result`.
+**Consome:** contrato completo do hook.  
+**Produz:** seleção persistida, cabeçalho e recuperação de estados.
+
+- [ ] Acrescentar testes de storage, Mês atual, legenda e recuperação.
+- [ ] Confirmar falhas.
+- [ ] Implementar estado local de período, `PageHeader.actions` e ramificações de §6.
+- [ ] Executar o teste de página e `rtk pnpm build`.
+- [ ] Commit: `feat(ads): add monthly preset and period recovery states`.
+
+Declarar os quatro presets em `Ads.tsx`:
+
+```ts
+const PRESETS: {
+  valor: '7' | '30' | '90' | 'mes_atual';
+  label: string;
+  periodo: PeriodoAds;
+}[] = [
+  { valor: '7', label: '7 dias', periodo: { tipo: 'preset', dias: 7 } },
+  { valor: '30', label: '30 dias', periodo: { tipo: 'preset', dias: 30 } },
+  { valor: '90', label: '90 dias', periodo: { tipo: 'preset', dias: 90 } },
+  { valor: 'mes_atual', label: 'Mês atual', periodo: { tipo: 'mes_atual' } },
+];
+```
+
+Usar `useAdsPainel(periodo)`. Comparar a seleção pelo valor primitivo.
+
+A legenda não usa `new Date('YYYY-MM-DD')`. Formatar datas literais:
+
+```ts
+const dataDia = (dia: string) =>
+  `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+```
+
+Exemplo de composição dentro de `actions`:
 
 ```tsx
-it('mantém os números centrais visíveis e revela a composição sob demanda', () => {
+<div className="w-full min-w-0 space-y-2 sm:w-auto">
+  <div
+    role="group"
+    aria-label="Período"
+    className="grid grid-cols-2 gap-2 sm:flex"
+  >
+    {PRESETS.map(p => {
+      const atual = periodo.tipo === 'preset'
+        ? String(periodo.dias)
+        : 'mes_atual';
+      const selecionado = atual === p.valor;
+
+      return (
+        <Button
+          key={p.valor}
+          size="sm"
+          variant={selecionado ? 'default' : 'outline'}
+          aria-pressed={selecionado}
+          className="h-11 sm:h-8"
+          onClick={() => escolherPeriodo(p.periodo)}
+        >
+          {p.label}
+        </Button>
+      );
+    })}
+  </div>
+
+  {janela && (
+    <p className="text-xs text-muted-foreground tabular-nums">
+      {`${dataDia(janela.desde)} a ${dataDia(janela.ate)} · BRT`}
+    </p>
+  )}
+
+  {isFetching && painel && (
+    <p role="status" className="text-xs text-muted-foreground">
+      Atualizando…
+    </p>
+  )}
+</div>
+```
+
+Esse conteúdo vai em:
+
+```tsx
+<PageHeader
+  title="Ads"
+  subtitle="Quanto o Ads custa e o que sobra depois dele."
+  actions={acoesPeriodo}
+/>
+```
+
+`acoesPeriodo` é a expressão JSX anterior, declarada no componente. Não alterar `PageHeader`.
+
+**Fixture de página:** importar `RetornoAdsPainel` como tipo e atualizar o helper existente:
+
+```tsx
+const montar = (
+  painel: PainelAds | null = PAINEL,
+  extra: Partial<RetornoAdsPainel> = {},
+) => {
+  const retorno: RetornoAdsPainel = {
+    painel,
+    janela: { desde: '2026-09-04', ate: '2026-10-03' },
+    situacaoPeriodo: 'pronto',
+    historicoDesde: '2026-01-01T03:00:00.000Z',
+    ultimoOkEm: '2026-10-04T14:17:00Z',
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn().mockResolvedValue(undefined),
+    ...extra,
+  };
+
+  hook.mockReturnValue(retorno);
+  return render(<MemoryRouter><Ads /></MemoryRouter>);
+};
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+  hook.mockReset();
+});
+```
+
+Acrescentar `afterEach(() => vi.restoreAllMocks())`.
+
+Testes de storage permanecem **em `Ads.test.tsx`**:
+
+```tsx
+it.each([7, 30, 90] as const)('preserva a preferência existente de %i dias', dias => {
+  localStorage.setItem('ads-painel-dias', String(dias));
+  montar();
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias });
+});
+
+it.each([null, '', '31', '0', '030', 'range', '{"tipo":"mes_atual"}'])(
+  'usa o padrão para preferência inválida %s',
+  valor => {
+    if (valor !== null) localStorage.setItem('ads-painel-dias', valor);
+    montar();
+    expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+  },
+);
+
+it('salva e restaura mês atual na chave existente', () => {
+  const primeira = montar();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+
+  expect(localStorage.getItem('ads-painel-dias')).toBe('mes_atual');
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+
+  primeira.unmount();
+  montar();
+
+  expect(screen.getByRole('button', { name: 'Mês atual' }))
+    .toHaveAttribute('aria-pressed', 'true');
+});
+
+it('permite selecionar período com storage bloqueado', () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError');
+  });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError');
+  });
+
+  montar();
+
+  expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+  expect(screen.getByRole('button', { name: 'Mês atual' }))
+    .toHaveAttribute('aria-pressed', 'true');
+});
+
+it('mês aguardando oferece os últimos 30 dias sem apresentar números', () => {
+  localStorage.setItem('ads-painel-dias', 'mes_atual');
+  montar(null, { janela: null, situacaoPeriodo: 'aguardando_mes' });
+
+  expect(screen.getByText('Aguardando o primeiro dia de Ads deste mês'))
+    .toBeVisible();
+  expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 30 dias' }));
+
+  expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+  expect(localStorage.getItem('ads-painel-dias')).toBe('30');
+});
+
+it('mostra o intervalo completo em BRT', () => {
+  montar();
+  expect(screen.getByText('04/09/2026 a 03/10/2026 · BRT')).toBeVisible();
+});
+```
+
+Acrescentar testes de estado:
+
+```tsx
+it.each(['sem_permissao', 'sem_acesso'] as const)(
+  '%s oferece Canais sem apresentar resultado',
+  estado => {
+    montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] });
+
+    expect(screen.getByRole('link', { name: 'Abrir Canais' }))
+      .toHaveAttribute('href', '/canais');
+    expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+  },
+);
+
+it('erro oferece uma nova consulta', () => {
+  const refetch = vi.fn().mockResolvedValue(undefined);
+  montar(null, { isError: true, refetch });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+  expect(refetch).toHaveBeenCalledTimes(1);
+});
+
+it('refetch mantém os dados da mesma janela visíveis', () => {
+  montar(PAINEL, { isFetching: true });
+
+  expect(screen.getByText('Atualizando…')).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Resumo da conta' }))
+    .toBeInTheDocument();
+});
+```
+
+Para `sem_ads`, testar a ação de 90 dias e sua ausência quando 90 já está selecionado. Para `sem_coleta` e `coletando`, testar “Verificar novamente” chamando `refetch`. Preservar o teste de ausência de anunciante.
+
+Validação:
+
+```bash
+rtk pnpm exec vitest run tests/pages/Ads.test.tsx
+rtk pnpm build
+```
+
+### Tarefa 4 — Destacar despesa e resultado sem esconder ressalvas
+
+**Modificar:** `src/components/ads/resumo-conta.tsx`, `src/pages/Ads.tsx`, `tests/pages/Ads.test.tsx`.
+
+**Consome:** `ContaPainel` e `historicoDesde`.  
+**Produz:** resumo com duas métricas primárias, ponte condicional e composição expansível.
+
+- [ ] Acrescentar testes de motivo, ponte, custo e divergência fechada.
+- [ ] Confirmar falhas.
+- [ ] Reorganizar o componente e passar `historicoDesde` pela página.
+- [ ] Executar testes de página/domínio e `rtk pnpm build`.
+- [ ] Commit: `refactor(ads): prioritize financial result with visible caveats`.
+
+Manter `pct` e `razao` exportados de `resumo-conta.tsx` até a Tarefa 5, porque o ranking atual os importa. Não quebrar esse import antecipadamente.
+
+Contrato de acessibilidade:
+
+| Elemento | Contrato |
+|---|---|
+| Resumo | `section aria-label="Resumo da conta"` |
+| Valores primários | `role="group"` com `aria-labelledby` |
+| Ponte | Contêiner nomeado “Cálculo do resultado”, apenas com valores conhecidos |
+| Expansão | Botão “Composição e indicadores”, `aria-expanded`, `aria-controls` |
+| Conteúdo expandido | Montagem condicional em região “Composição e indicadores” |
+
+A ponte desktop usa os valores já fornecidos pelo domínio, sem recalcular `resultado`. No mobile, mostra só “Lucro antes de Ads”.
+
+Testes:
+
+```tsx
+it('revela a composição sob demanda', () => {
   montar();
   const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
 
   expect(resumo.getByText('Despesa de Ads')).toBeVisible();
   expect(resumo.getByText('Resultado após Ads')).toBeVisible();
+  expect(resumo.queryByText('Em famílias')).not.toBeInTheDocument();
 
   fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+
   expect(resumo.getByText('Em famílias')).toBeVisible();
   expect(resumo.getByText('Compartilhado entre famílias')).toBeVisible();
   expect(resumo.getByText('Gasto de Ads não identificado')).toBeVisible();
 });
 
-it('não converte resultado desconhecido em zero', () => {
+it.each([
+  [null, 'período antes do histórico de vendas (desde 10/09/2026)'],
+  ['sem_custo', 'sem custo cadastrado'],
+] as const)('explica resultado nulo com fonte %s e oculta a ponte', (fonteCusto, motivo) => {
   montar({
     ...PAINEL,
-    conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null },
-  });
+    conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null, fonteCusto },
+  }, { historicoDesde: '2026-09-10T15:00:00.000Z' });
 
-  const resultado = screen.getByRole('group', { name: 'Resultado após Ads' });
+  const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+  const resultado = resumo.getByRole('group', { name: 'Resultado após Ads' });
+
   expect(resultado).toHaveTextContent('—');
+  expect(resultado).toHaveTextContent(motivo);
   expect(resultado).not.toHaveTextContent(/R\$\s*0,00/);
+  expect(resumo.queryByRole('group', { name: 'Cálculo do resultado' }))
+    .not.toBeInTheDocument();
 });
 
-it('mantém o selo provisório visível com detalhes fechados', () => {
-  montar({ ...PAINEL, conta: { ...PAINEL.conta!, diasAbertos: 14 } });
-  expect(screen.getByText('provisório — 14 dias com atribuição em aberto'))
-    .toBeVisible();
-});
-```
+it.each(['parcial', 'estimado'] as const)(
+  'mantém custo %s junto ao resultado com composição fechada',
+  fonteCusto => {
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, fonteCusto } });
 
-Usar `role="group"` com `aria-labelledby` nos grupos financeiros, permitindo consultas sem depender da posição do DOM.
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    const resultado = within(resumo.getByRole('group', { name: 'Resultado após Ads' }));
 
-Para divergência, abrir a composição e confirmar aviso visível, ausência de valor não identificado e preservação da despesa total.
-
-```bash
-rtk pnpm exec vitest run tests/pages/Ads.test.tsx tests/lib/ads-painel.test.ts
-```
-
-### Tarefa 7 — Compactar ranking e preservar detalhes
-
-**Tempo:** 60–80 minutos.  
-**Modificar:** `src/components/ads/ranking-familias.tsx`, `tests/pages/Ads.test.tsx`.  
-**Criar:** `src/components/ads/detalhe-familia.tsx`, `src/components/ads/gastos-associados.tsx`.
-
-- [ ] Testar expansão, motivo visível, pares total/direto e grupos compartilhados.
-- [ ] Confirmar falhas.
-- [ ] Implementar cinco colunas, cartões e bloco de gastos associados.
-- [ ] Executar testes da página e apresentação.
-- [ ] Commit: `refactor(ads): add compact family ranking with progressive details`.
-
-```tsx
-it('mostra o motivo sem exigir expansão e mantém resultado conhecido', () => {
-  montar();
-
-  const linha = screen.getByRole('row', { name: /Fam B/ });
-  expect(within(linha).getByText(/sem vendas no período/i)).toBeVisible();
-  expect(linha).toHaveTextContent(/30,00/);
-});
-
-it('expande métricas secundárias sem alterar a navegação do nome', () => {
-  montar();
-
-  const linha = screen.getByRole('row', { name: /Fam A/ });
-  const botao = within(linha).getByRole('button', {
-    name: 'Ver detalhes de Fam A',
-  });
-
-  fireEvent.click(botao);
-  expect(botao).toHaveAttribute('aria-expanded', 'true');
-
-  const detalhe = document.getElementById(botao.getAttribute('aria-controls')!)!;
-  expect(within(detalhe).getByText('ROAS (total / direto)')).toBeVisible();
-  expect(within(detalhe).getByText('Vendas atribuídas (total / direta)'))
-    .toBeVisible();
-
-  expect(within(linha).getByRole('link', { name: /Fam A/ }))
-    .toHaveAttribute('href', '/faturamento/sku/familia/A');
-});
-```
-
-Ajustar os testes existentes conscientemente:
-
-| Teste atual | Nova expectativa |
-|---|---|
-| Parcelas da despesa no resumo | Abrir “Composição e indicadores” antes de consultar. |
-| Compartilhado/não identificado na coluna Gasto | Consultar a região “Gastos associados”; deixa de ser linha da tabela de famílias. |
-| ROAS total/direto em toda a tela | Abrir os detalhes; preservar a ordem do par. |
-| Data repetida “intervalo · até” | Consultar o intervalo completo e BRT. |
-| Hook chamado com número | Esperar `PeriodoAds` estruturado. |
-
-O novo comparativo **ACOS direto × equilíbrio** é uma exceção intencional aos pares total/direto: compara métricas diferentes. Dentro dos detalhes, manter **ACOS total/direto**.
-
-O JSDOM não reproduz os breakpoints do Tailwind. Nos testes, consultar a região de tabela ou lista explicitamente; a alternância visual desktop/mobile será validada no navegador.
-
-```bash
-rtk pnpm exec vitest run tests/pages/Ads.test.tsx tests/lib/ads-apresentacao.test.ts
-```
-
-### Tarefa 8 — Compor página e estados completos
-
-**Tempo:** 45–60 minutos.  
-**Criar:** `src/components/ads/estado-ads.tsx`.  
-**Modificar:** `src/pages/Ads.tsx`, `tests/pages/Ads.test.tsx`.
-
-- [ ] Parametrizar testes dos estados e recuperação.
-- [ ] Confirmar falhas.
-- [ ] Compor o layout, avisos, procedência e reset do filtro por período.
-- [ ] Executar a bateria direcionada.
-- [ ] Commit: `refactor(ads): compose responsive page and complete state coverage`.
-
-```tsx
-it.each(['sem_permissao', 'sem_acesso'] as const)(
-  '%s oferece acesso a Canais sem apresentar números',
-  estado => {
-    montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] });
-    expect(screen.getByRole('link', { name: /Abrir Canais/i }))
-      .toHaveAttribute('href', '/canais');
-    expect(screen.queryByRole('region', { name: 'Resumo da conta' }))
-      .not.toBeInTheDocument();
+    expect(resultado.getByText(`custo ${fonteCusto}`)).toBeVisible();
+    expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+      .toHaveAttribute('aria-expanded', 'false');
   },
 );
 
-it('conta indisponível não remove famílias nem inventa zero', () => {
-  montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura' });
-  expect(screen.getByText(/Total da conta indisponível/)).toBeVisible();
-  expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
-});
-
-it('mês aguardando coleta oferece 30 dias', () => {
-  hook.mockReturnValue({
-    painel: null,
-    janela: null,
-    situacaoPeriodo: 'aguardando_mes',
-    historicoDesde: null,
-    isLoading: false,
-    isFetching: false,
-    isError: false,
-    refetch: vi.fn(),
+it('mantém provisório e divergência visíveis antes da expansão', () => {
+  montar({
+    ...PAINEL,
+    conta: {
+      ...PAINEL.conta!,
+      diasAbertos: 14,
+      divergente: true,
+      naoIdentificado: null,
+      naoIdentificadoPct: null,
+    },
   });
-  render(<MemoryRouter><Ads /></MemoryRouter>);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 30 dias' }));
-  expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+  const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+
+  expect(resumo.getByText('provisório — 14 dias com atribuição em aberto'))
+    .toBeVisible();
+  expect(screen.getByText(/não fecha com o total da conta/)).toBeVisible();
+  expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+    .toHaveAttribute('aria-expanded', 'false');
+
+  fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+
+  expect(resumo.queryByText('Gasto de Ads não identificado')).not.toBeInTheDocument();
+  expect(resumo.getByRole('group', { name: 'Despesa de Ads' }))
+    .toHaveTextContent(/R\$\s*100,00/);
+  expect(resumo.getByRole('group', { name: 'Resultado após Ads' }))
+    .toHaveTextContent(/200,00/);
 });
 ```
 
-Acrescentar `localStorage.clear()` no `beforeEach` de `Ads.test.tsx` e restaurar mocks após os testes de storage.
+Atualizar nesta tarefa o teste existente de histórico incompleto para usar `fonteCusto: null`, como o domínio realmente entrega.
 
-Cobrir também `sem_coleta`, `coletando`, `sem_advertiser`, `sem_ads`, erro/retry, desatualizado e ausência de famílias. Os testes devem verificar texto e comportamento, sem snapshots extensos de classes.
+O teste existente **“conta divergente: mostra o aviso…” continua passando sem clicar em expansão**.
 
-```bash
-rtk pnpm exec vitest run tests/pages/Ads.test.tsx tests/lib/ads-painel.test.ts tests/lib/ads-painel-dados.test.ts src/hooks/__tests__/useAdsPainel.test.ts src/hooks/__tests__/usePeriodoAds.test.ts
-```
-
-### Tarefa 9 — Validar visualmente e registrar a mudança
-
-**Tempo:** 60–120 minutos.  
-**Arquivos:** somente os componentes que precisarem de correção; atualização pontual do ADR-0179.
-
-- [ ] Gerar a matriz de prints e medir overflow/contraste.
-- [ ] Corrigir desvios de layout, foco e legibilidade.
-- [ ] Executar testes afetados, lint dos arquivos alterados e preflight da skill.
-- [ ] Registrar evidências e a exceção dos travessões obrigatórios.
-- [ ] Commit: `test(ads): verify responsive states and document monthly preset`.
-
-Antes do Vite, garantir `.env.local` no worktree com as variáveis exigidas pelo projeto, sem imprimir valores.
-
-A etapa não exige alterações no dossiê. Executar sua regressão porque o seletor compartilhado mudou:
+Validação:
 
 ```bash
-rtk pnpm exec vitest run src/hooks/__tests__/useSkuDossie.test.ts tests/lib/sku-ads.test.ts tests/components/seletor-periodo.test.tsx tests/components/filtros-movimentos.test.tsx
+rtk pnpm exec vitest run tests/pages/Ads.test.tsx tests/lib/ads-painel.test.ts
+rtk pnpm build
 ```
 
-## 8. Critérios de aceite visual e funcional
+### Tarefa 5 — Unificar contagens e filtros; compactar ranking
 
-### 8.1 Matriz de screenshots
+**Criar:** `src/lib/ads-apresentacao.ts`, `tests/lib/ads-apresentacao.test.ts`, `src/components/ads/detalhe-familia.tsx`, `src/components/ads/gastos-associados.tsx`.
 
-| Cenário | Capturas |
+**Modificar:** ranking, resumo, página, testes de página e dicionário/teste de descrições de KPI.
+
+**Consome:** `PainelAds`, semáforos e motivos existentes.  
+**Produz:** filtros, cinco colunas, cartões compactos e detalhes preservados.
+
+- [ ] Testar contagens, filtragem, expansão e ressalvas fechadas.
+- [ ] Confirmar falhas.
+- [ ] Implementar helpers e reorganizar componentes com `Section` e `KpiCard`.
+- [ ] Executar os testes direcionados e `rtk pnpm build`.
+- [ ] Commit: `refactor(ads): compact family ranking and reuse status filters`.
+
+#### Helpers de apresentação
+
+Mover `pct`, `razao` e `textoMotivo` para `ads-apresentacao.ts`, atualizando todos os imports no mesmo commit.
+
+```ts
+export type FiltroFamiliasAds =
+  | 'todas'
+  | 'atencao'
+  | 'dentro'
+  | 'sem_referencia';
+
+export interface ContagemFamiliasAds {
+  total: number;
+  acima: number;
+  semEspaco: number;
+  dentro: number;
+  semReferencia: number;
+}
+
+export function contarFamiliasAds(
+  familias: readonly FamiliaPainel[],
+  liberado: boolean,
+): ContagemFamiliasAds {
+  const contagem: ContagemFamiliasAds = {
+    total: familias.length,
+    acima: 0,
+    semEspaco: 0,
+    dentro: 0,
+    semReferencia: 0,
+  };
+
+  for (const familia of familias) {
+    const estado = liberado ? familia.semaforo : null;
+    if (estado === 'acima') contagem.acima++;
+    else if (estado === 'sem_espaco') contagem.semEspaco++;
+    else if (estado === 'dentro') contagem.dentro++;
+    else contagem.semReferencia++;
+  }
+
+  return contagem;
+}
+
+export function filtrarFamiliasAds(
+  familias: readonly FamiliaPainel[],
+  filtro: FiltroFamiliasAds,
+  liberado: boolean,
+): FamiliaPainel[] {
+  return familias.filter(familia => {
+    const estado = liberado ? familia.semaforo : null;
+
+    if (filtro === 'todas') return true;
+    if (filtro === 'atencao') return estado === 'acima' || estado === 'sem_espaco';
+    if (filtro === 'dentro') return estado === 'dentro';
+    return estado === null;
+  });
+}
+```
+
+Fixture completa do novo teste:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import type { FamiliaPainel } from '@/lib/ads-painel';
+import { contarFamiliasAds, filtrarFamiliasAds } from '@/lib/ads-apresentacao';
+
+const base: FamiliaPainel = {
+  codigoPai: 'A',
+  nome: 'Fam A',
+  grupos: 1,
+  custoCompartilhado: 0,
+  custo: 50,
+  vendasDiretas: 400,
+  vendasTotais: 500,
+  cliques: 0,
+  impressoes: 0,
+  roas: 10,
+  roasDireto: 8,
+  acos: 0.1,
+  acosDireto: 0.125,
+  lucroAntes: 250,
+  resultado: 200,
+  margemConsumida: 0.2,
+  acosEquilibrio: 0.25,
+  semaforo: 'dentro',
+  motivo: null,
+  fonteCusto: 'real',
+};
+
+describe('apresentação de famílias Ads', () => {
+  const familias: FamiliaPainel[] = [
+    base,
+    { ...base, codigoPai: 'B', semaforo: 'acima' },
+    { ...base, codigoPai: 'C', semaforo: null },
+    { ...base, codigoPai: 'D', semaforo: 'sem_espaco' },
+  ];
+
+  it('conta estados e preserva a ordem recebida', () => {
+    expect(contarFamiliasAds(familias, true)).toEqual({
+      total: 4,
+      acima: 1,
+      semEspaco: 1,
+      dentro: 1,
+      semReferencia: 1,
+    });
+
+    expect(filtrarFamiliasAds(familias, 'atencao', true).map(f => f.codigoPai))
+      .toEqual(['B', 'D']);
+    expect(filtrarFamiliasAds(familias, 'dentro', true).map(f => f.codigoPai))
+      .toEqual(['A']);
+    expect(filtrarFamiliasAds(familias, 'sem_referencia', true).map(f => f.codigoPai))
+      .toEqual(['C']);
+  });
+
+  it('semáforo desligado torna todas sem referência', () => {
+    expect(contarFamiliasAds(familias, false)).toEqual({
+      total: 4,
+      acima: 0,
+      semEspaco: 0,
+      dentro: 0,
+      semReferencia: 4,
+    });
+    expect(filtrarFamiliasAds(familias, 'atencao', false)).toEqual([]);
+    expect(filtrarFamiliasAds(familias, 'sem_referencia', false)).toEqual(familias);
+  });
+});
+```
+
+#### Composição dos filtros
+
+Manter filtro e expansões locais ao ranking. Usar uma `key` na página formada por seleção e janela efetiva para reiniciá-los ao mudar período; um refetch da mesma janela não muda a key.
+
+`RankingFamilias` mantém props enxutas:
+
+```ts
+{
+  painel: PainelAds;
+  historicoDesde: string | null;
+}
+```
+
+Compor:
+
+```tsx
+<div role="region" aria-label="Ranking de famílias">
+  <Section
+    title="Famílias por gasto"
+    description="ACOS direto comparado à margem observada."
+  >
+    {filtros}
+    {conteudoRanking}
+  </Section>
+</div>
+```
+
+`filtros` e `conteudoRanking` são expressões JSX locais do ranking. Não passar props inexistentes a `Section`.
+
+Exemplo do cartão de atenção:
+
+```tsx
+<KpiCard
+  size="compact"
+  label="Em atenção"
+  infoKey="Em atenção::Ads"
+  value={contagem.acima + contagem.semEspaco}
+  tom="warning"
+  ativo={filtro === 'atencao'}
+  onClick={() => setFiltro(atual => atual === 'atencao' ? 'todas' : 'atencao')}
+/>
+```
+
+Renderizá-lo somente quando a contagem for maior que zero.
+
+O nome acessível real do componente será **“Filtrar por Em atenção”** ou **“Remover filtro Em atenção”**. Os testes devem usar esse contrato existente.
+
+Adicionar quatro descrições ao dicionário:
+
+```ts
+'Todas::Ads':
+  'Famílias presentes no painel neste período, mantendo a ordem por gasto.',
+'Em atenção::Ads':
+  'Famílias acima do ACOS de equilíbrio ou sem espaço para Ads. O filtro usa o semáforo existente e não recomenda alteração de orçamento.',
+'Dentro do equilíbrio::Ads':
+  'Famílias cujo ACOS direto está dentro da referência pela margem observada no período.',
+'Sem referência::Ads':
+  'Famílias sem semáforo disponível. Inclui todas as famílias enquanto o semáforo estiver em validação.',
+```
+
+Acrescentar essas quatro chaves à lista `ALL_EXPECTED_KEYS` do teste existente. Não alterar `KpiCard`.
+
+#### Detalhes e gastos associados
+
+Interfaces:
+
+```ts
+export interface DetalheFamiliaProps {
+  familia: FamiliaPainel;
+  conta: ContaPainel | null;
+  historicoDesde: string | null;
+}
+
+export interface GastosAssociadosProps {
+  painel: PainelAds;
+}
+```
+
+`DetalheFamilia` apresenta os campos de §3.5 e o aviso percentual de §4.4. Ressalvas obrigatórias permanecem no conteúdo fechado.
+
+`GastosAssociados` recebe o painel completo, nunca a lista filtrada. Usar uma única região responsiva `aria-label="Gastos associados"`; não duplicar os grupos em uma tabela desktop e outro bloco mobile.
+
+A tabela possui `aria-label="Famílias por gasto"`. A lista mobile possui `aria-label="Famílias por gasto em cartões"`.
+
+Botões de expansão:
+
+```text
+Ver detalhes de Fam A
+aria-expanded="false|true"
+aria-controls="<id único>"
+```
+
+Usar IDs distintos por apresentação, preferencialmente com `useId` em componentes de linha/cartão. No desktop, detalhes ocupam um segundo `<tr>` com `<td colSpan={5}>`.
+
+Não envolver `<tr>` em `<div>`.
+
+#### Testes de interação e confiança
+
+```tsx
+it('os cartões de contagem filtram sem alterar gastos associados', () => {
+  montar({
+    ...PAINEL,
+    familias: [
+      PAINEL.familias[0],
+      { ...PAINEL.familias[1], semaforo: 'acima', acosEquilibrio: 0.2 },
+    ],
+  });
+
+  const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+  const associados = screen.getByRole('region', { name: 'Gastos associados' });
+  const antes = associados.textContent;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em atenção' }));
+
+  expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
+  expect(tabela.getByRole('row', { name: /Fam B/ })).toBeInTheDocument();
+  expect(associados.textContent).toBe(antes);
+  expect(screen.getByRole('button', { name: 'Remover filtro Em atenção' }))
+    .toHaveAttribute('aria-pressed', 'true');
+});
+
+it('zero em atenção mostra frase sem botão de atenção', () => {
+  montar();
+
+  expect(screen.queryByRole('button', { name: /Filtrar por Em atenção/ }))
+    .not.toBeInTheDocument();
+  expect(screen.getByText(
+    'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.',
+  )).toBeVisible();
+});
+
+it('sem venda direta tem texto explícito e preserva o semáforo', () => {
+  montar({
+    ...PAINEL,
+    familias: [{
+      ...PAINEL.familias[0],
+      vendasDiretas: 0,
+      acosDireto: null,
+      acosEquilibrio: 0.25,
+      semaforo: 'acima',
+    }],
+  });
+
+  const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+
+  expect(linha.getByText('sem venda direta')).toBeVisible();
+  expect(linha.getByText('Acima do equilíbrio')).toBeVisible();
+});
+
+it.each(['parcial', 'estimado'] as const)(
+  'família mantém custo %s no resultado fechado',
+  fonteCusto => {
+    montar({
+      ...PAINEL,
+      familias: [{
+        ...PAINEL.familias[0],
+        fonteCusto,
+        motivo: fonteCusto === 'parcial' ? 'custo_parcial' : null,
+        semaforo: fonteCusto === 'parcial' ? null : 'dentro',
+      }],
+    });
+
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+    const resultado = linha.getByRole('group', { name: 'Resultado após Ads' });
+
+    expect(resultado).toHaveTextContent(
+      fonteCusto === 'parcial' ? 'custo parcial: sem semáforo' : 'custo estimado',
+    );
+    expect(linha.getByRole('button', { name: 'Ver detalhes de Fam A' }))
+      .toHaveAttribute('aria-expanded', 'false');
+  },
+);
+
+it('resultado bloqueado conserva travessão e motivo', () => {
+  montar({
+    ...PAINEL,
+    familias: [{
+      ...PAINEL.familias[0],
+      resultado: null,
+      custoCompartilhado: 20,
+      semaforo: null,
+      motivo: 'compartilhado',
+    }],
+  });
+
+  const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+  const resultado = linha.getByRole('group', { name: 'Resultado após Ads' });
+
+  expect(resultado).toHaveTextContent('—');
+  expect(resultado).toHaveTextContent('gasto compartilhado com outra família');
+});
+
+it('expande métricas secundárias e preserva o link do nome', () => {
+  montar();
+
+  const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+  const botao = linha.getByRole('button', { name: 'Ver detalhes de Fam A' });
+
+  fireEvent.click(botao);
+
+  expect(botao).toHaveAttribute('aria-expanded', 'true');
+
+  const id = botao.getAttribute('aria-controls');
+  if (!id) throw new Error('Expansão sem aria-controls');
+
+  const detalhe = document.getElementById(id);
+  if (!detalhe) throw new Error('Conteúdo da expansão não encontrado');
+
+  expect(within(detalhe).getByText('ROAS (total / direto)')).toBeVisible();
+  expect(within(detalhe).getByText('Vendas atribuídas (total / direta)'))
+    .toBeVisible();
+  expect(linha.getByRole('link', { name: /Fam A/ }))
+    .toHaveAttribute('href', '/faturamento/sku/familia/A');
+});
+
+it('semáforo em validação tem uma única mensagem', () => {
+  montar({
+    ...PAINEL,
+    semaforoLiberado: false,
+    familias: [{ ...PAINEL.familias[0], semaforo: null }],
+  });
+
+  expect(screen.getByText(/Semáforo em validação:/)).toBeVisible();
+  expect(screen.getAllByText(/Semáforo em validação:/)).toHaveLength(1);
+  expect(within(screen.getByRole('row', { name: /Fam A/ }))
+    .queryByText('Dentro do equilíbrio')).not.toBeInTheDocument();
+});
+```
+
+A mensagem completa de semáforo em validação permanece em `Ads.tsx`. Ranking e filtros não a repetem.
+
+**Adaptação explícita dos testes atuais:**
+
+| Teste atual | Nova consulta |
 |---|---|
-| Dados completos, semáforo ligado, nomes longos | 360×800, 1440×900 e 1920×1080, claro e escuro: seis capturas |
-| Histórico insuficiente, compartilhados, custo parcial e zero medido | 360 e 1440, ambos os temas |
-| Sem Ads e Mês atual aguardando coleta | 360 e 1440, ambos os temas |
-| Conta indisponível, divergente e desatualizado | 360 e 1440, ambos os temas |
-| Expansão, foco por teclado e erro/retry | 360 e 1440; incluir detalhe aberto e foco visível |
+| Três parcelas no resumo | Abrir “Composição e indicadores” antes de consultar parcelas |
+| Compartilhado/não identificado na coluna Gasto | Consultar “Gastos associados”; não são mais linhas de família |
+| Ordem total/direto | Abrir composição e detalhe de uma família; manter a ordem |
+| Período com “intervalo · até” | Consultar intervalo completo com ano e `· BRT` |
+| Hook chamado com dias | Objeto `PeriodoAds`, corrigido desde a Tarefa 2 |
+| Semáforo em validação | `getByText` encontra uma única mensagem |
+| Conta divergente | Aviso passa **sem expandir**; após expansão, número não identificado continua ausente |
+| Grupo sem família | Expandir o grupo na região “Gastos associados” |
+| Sem famílias | Mensagem única; não criar tabela vazia |
+| Histórico incompleto | Data do motivo preservada e fixture da conta com `fonteCusto: null` |
 
-Usar fixtures locais para estados injetados. Não alterar dados de produção para produzir screenshots.
+Acrescentar um teste de reset: aplicar atenção, expandir uma família, trocar o período e verificar retorno a `todas` com detalhes fechados. O mesmo estado permanece durante `isFetching=true` sem mudança de seleção/janela.
 
-Cada captura deve registrar tema, viewport, preset, intervalo efetivo e cenário. Não comparar contas ou períodos diferentes como se fossem evidência de regressão financeira.
+JSDOM não comprova breakpoints. Consultar tabela e lista explicitamente; a exclusão visual de uma delas será verificada no navegador.
 
-### 8.2 Medições objetivas
+Validação:
 
-**Overflow da página:**
+```bash
+rtk pnpm exec vitest run tests/lib/ads-apresentacao.test.ts tests/pages/Ads.test.tsx tests/lib/ads-painel.test.ts src/lib/__tests__/kpi-descriptions.test.ts
+rtk pnpm build
+```
+
+### Tarefa 6 — Validar a interface e registrar o preset
+
+**Modificar:** somente arquivos da entrega que precisarem de correção e uma linha do ADR-0179.
+
+**Produz:** evidências de layout, acessibilidade e regressão.
+
+- [ ] Preparar fixtures locais e gerar as dez capturas de §8.1.
+- [ ] Medir overflow, contraste e comportamento por teclado.
+- [ ] Corrigir os achados em um lote e repetir somente as verificações afetadas.
+- [ ] Executar a regressão direcionada, `rtk pnpm preflight:static` e `rtk pnpm build`.
+- [ ] Commit: `docs(ads): record monthly preset and validate premium layout`.
+
+Antes de iniciar Vite, garantir `.env.local` com `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`, sem imprimir valores. Em branco de tela, verificar primeiro o console e o ambiente.
+
+Adicionar **somente esta linha** ao ADR:
+
+> A interface passa a oferecer o preset “Mês atual”, do primeiro dia do mês BRT até `fimDiasAds`; sem dia elegível, apresenta “aguardando mês” com acesso aos últimos 30 dias.
+
+Não alterar o status de piloto nem declarar cumprido o aceite D7.
+
+Regressão final:
+
+```bash
+rtk pnpm exec vitest run tests/pages/Ads.test.tsx tests/lib/ads-apresentacao.test.ts tests/lib/ads-painel.test.ts tests/lib/ads-painel-dados.test.ts src/hooks/__tests__/useAdsPainel.test.ts src/lib/__tests__/kpi-descriptions.test.ts src/hooks/__tests__/useSkuDossie.test.ts tests/lib/sku-ads.test.ts
+rtk pnpm preflight:static
+rtk pnpm build
+```
+
+Os testes do dossiê protegem o calendário compartilhado e os contratos preservados. Não incluir regressão de seletor de movimentos por uma alteração que não ocorreu.
+
+## 8. Validação visual e critérios de aceite
+
+### 8.1 Matriz reduzida de capturas
+
+| Cenário | Viewports e temas | Quantidade |
+|---|---|---:|
+| Dados completos, semáforo ligado e nomes longos | 360×800 e 1440×900, claro e escuro | 4 |
+| Mês atual aguardando | 360×800 e 1440×900, claro e escuro | 4 |
+| Conta divergente, detalhes fechados | 1440×900, escuro | 1 |
+| Conta indisponível com famílias | 1440×900, escuro | 1 |
+| **Total** | | **10** |
+
+Usar fixtures locais, sem alterar produção. Registrar cenário, tema, viewport, seleção e intervalo de cada captura.
+
+Na fixture divergente, incluir custo parcial/estimado e atribuição aberta para verificar que as ressalvas permanecem visíveis.
+
+Em 1920 px, fazer medição de largura e inspeção funcional, **sem acrescentar capturas obrigatórias**.
+
+### 8.2 Overflow e hierarquia
+
+Executar nas larguras 360, 1440 e 1920, com detalhes fechados e abertos:
 
 ```js
 document.documentElement.scrollWidth <=
   document.documentElement.clientWidth + 1
 ```
 
-Deve ser verdadeiro nas três larguras, com detalhes abertos e fechados.
+Resultado esperado: `true`.
 
-**Tabela em 1440 px:**
+Em 1440 e 1920, verificar a tabela:
 
 ```js
-const tabela = document.querySelector('[data-slot="table-container"]');
-tabela.scrollWidth <= tabela.clientWidth + 1;
+const tabela = document.querySelector(
+  '[aria-label="Famílias por gasto"]',
+);
+
+const contêiner = tabela?.closest('[data-slot="table-container"]');
+
+contêiner != null &&
+  contêiner.scrollWidth <= contêiner.clientWidth + 1;
 ```
 
-Deve caber sem scroll horizontal no cenário de títulos e valores representativos. Não aceitar `overflow-hidden` como correção de colunas cortadas.
+Resultado esperado: `true` com nomes e valores representativos.
 
-**Hierarquia:**
-
-- Em 1440×900, resumo, atenção, filtros e três famílias visíveis no cenário normal.
-- Em 360×800, despesa, resultado e começo de “Onde agir” visíveis.
-- O nome completo, métricas secundárias e motivos continuam acessíveis.
-- Valores desconhecidos são `—`; zeros medidos usam formato monetário/numérico.
-- A ordem dos pares total/direto é consistente.
+Não aceitar corte por `overflow-hidden`, abreviação silenciosa de dinheiro ou remoção de motivos para passar na medição.
 
 ### 8.3 Acessibilidade
 
 | Verificação | Aceite |
 |---|---|
-| Contraste | Texto normal ≥4,5:1; texto grande ≥3:1; controles/foco ≥3:1 contra adjacências. Medir claro e escuro. |
-| Toque | Alvos novos ≥44×44 px; intervalos de 8 px entre controles independentes. |
-| Teclado | Selecionar período, filtrar, expandir, abrir dossiê e repetir consulta sem mouse. |
-| Leitor de tela | Um `h1`; seções nomeadas; `<th scope="col">`; `aria-pressed`, `aria-expanded` e IDs únicos. |
-| Ampliação | Zoom de 200%, texto longo e movimento reduzido sem perda de acesso às ações. |
+| Contraste | Texto normal ≥4,5:1; texto grande ≥3:1; foco e contornos necessários ≥3:1 |
+| Mobile | Presets e ações com altura de 44 px; botões só com ícone com largura de 44 px |
+| Desktop | Controles `sm:h-8`, com foco e espaçamento preservados |
+| Teclado | Selecionar período, filtrar, expandir, abrir dossiê e repetir consulta |
+| Semântica | Um `h1`; `Section` com `h2.text-h3`; cabeçalhos de tabela; IDs únicos; `aria-pressed` e `aria-expanded` |
 
-Não presumir que a existência de um token garante AA em qualquer combinação de opacidade. Medir `StatusPill`, botão selecionado, textos auxiliares e superfícies reais.
+Medir contraste nos dois temas, especialmente `StatusPill`, botão selecionado, textos auxiliares e alertas.
 
-### 8.4 Preflight da skill
+Testar zoom de 200%, nomes longos e valores monetários extensos. O conteúdo deve crescer e quebrar naturalmente.
 
-Executar sobre os arquivos alterados:
+### 8.4 Validações mecânicas
 
-```bash
-rtk proxy bash /Users/diego/.claude/skills/frontend-design-fable5/scripts/preflight.sh \
-  --allow-lucide \
-  src/pages/Ads.tsx \
-  src/components/ads \
-  src/components/ui/seletor-periodo.tsx \
-  src/lib/ads-apresentacao.ts
-```
+Executar **`pnpm preflight:static`** do projeto.
 
-O scanner foi inspecionado: ele reprova qualquer `—` ou `–`.
+**Não executar o `preflight.sh` da skill de frontend.** Ele reprova os travessões obrigatórios deste domínio e foi removido deste plano.
 
-**Exceção explícita do brief:** manter `—` para desconhecido e o texto “provisório — N dias com atribuição em aberto”. A exigência do produto prevalece sobre a skill. Registrar os locais atingidos; não substituir por zero, ocultar o caractere com escape ou declarar exit code zero quando não ocorreu.
+O caractere `—` continua obrigatório para desconhecido e no selo provisório. Não substituí-lo por zero nem escondê-lo com escapes para satisfazer scanner.
 
-Checklist final:
+### 8.5 Aceite final
 
-- [ ] Tokens e componentes existentes; nenhuma identidade nova ou efeito do Pulse.
-- [ ] Estados completos e informação essencial acessível sem hover.
-- [ ] Nenhuma falha mecânica não justificada pelo brief.
-- [ ] Revisão independente da UI construída com evidência de arquivo/linha e screenshots.
-- [ ] Rubrica de system work: consistência, cobertura de estados, tipografia, contenção e acessibilidade.
+- [ ] Os 11 casos mensais e a compatibilidade 7/30/90 passam.
+- [ ] Cada commit passa em `pnpm build`.
+- [ ] Resultado, custo, provisório, motivos e divergência permanecem corretos com detalhes fechados.
+- [ ] As dez capturas e medições comprovam a composição responsiva nos dois temas.
+- [ ] Nenhum cálculo financeiro, seletor compartilhado, dossiê ou dado de produção foi alterado.
 
-A revisão do plano pelo Opus não substitui a revisão da interface renderizada.
-
-## 9. Riscos e limites de escopo
+## 9. Riscos e limites
 
 | Risco | Controle |
 |---|---|
-| Expandir um seletor usado em outras telas | Props opcionais com defaults preservados; testes dos consumidores relevantes. |
-| Mês sem dias elegíveis virar loading infinito ou consulta inválida | União discriminada, janela pública nula e gating testado. |
-| Compactação esconder ressalvas financeiras | Motivos bloqueantes e selo provisório fora da expansão; demais detalhes com acesso explícito. |
-| “Onde agir” parecer recomendação automática de orçamento | Apenas classificação existente e link ao dossiê; sem fila, escrita ou nova pontuação. |
-| Prints antigos conduzirem regressão | Código e ADR prevalecem: semáforo ligado, pares consistentes e limites BRT preservados. |
+| Trocar assinatura e quebrar commits intermediários | Hook, chamada da página, mocks e testes dentro de `src` migram juntos na Tarefa 2 |
+| Mês vazio virar intervalo inválido ou loading infinito | União discriminada, janela pública nula e gating testado |
+| Compactação esconder confiança financeira | Selo provisório, custo parcial/estimado, motivos e divergência fora da expansão, junto ao resultado |
+| Resposta atrasada aparecer sob outro filtro | Query keys por intervalo, ausência de dados anteriores como placeholder e teste de corrida |
+| Sem referência parecer situação saudável | Contagem própria, mensagem única de validação e nenhuma recomendação automática |
 
-**Fora desta entrega:** Mês anterior, Personalizado, gráficos novos, comparações de tendência, campanhas, metas configuráveis, exportação, busca/paginação nova, alteração de custos, rateio, escrita no ML e redesenho do dossiê.
+Sem timer de meia-noite: a virada é reconhecida no próximo render. Esse limite é deliberado.
 
-**Nenhum campo novo em `ads-painel.ts` é necessário.** As contagens são derivadas dos semáforos existentes; a situação mensal pertence ao recorte temporal do hook.
+Ficam fora desta entrega: Mês anterior — próxima entrega registrada —, Personalizado, tendências, gráficos novos, campanhas, metas, exportação, busca/paginação, alteração de custos, rateio, escrita no ML e redesenho do dossiê.
 
-**Próxima ação, 2 minutos:** encaminhar este plano ao Opus 5.5 para revisar os contratos de período, a preservação das regras financeiras e a matriz de estados.
+Não são necessários campos novos em `PainelAds`, `ContaPainel` ou `FamiliaPainel`.
+
+## 10. Ajustes da revisão do Opus
+
+| Achado | Onde foi aplicado |
+|---:|---|
+| **1 — Ressalvas fora da expansão** | §4.3–§4.4, Tarefas 4 e 5 e §9: provisório, custo parcial/estimado, motivos e divergência visíveis fechados; somente o número não identificado fica indisponível em divergência. |
+| **2 — Commits compiláveis ao mudar o hook** | Tarefa 2: `Ads.tsx` passa imediatamente `{ tipo: 'preset', dias }`; teste da página, teste do hook e guardas de `janela` migram juntos. §7.2 exige build em cada commit. |
+| **3 — Seletor e persistência locais** | §5.3 e Tarefa 3: quarto botão no grupo de `Ads.tsx`, primário sólido, chave `ads-painel-dias`, sem migração. Arquivos extras de período e teste do seletor removidos. |
+| **4 — Sem timer/listener** | §5.4–§5.5 e Tarefa 2: `diaBRT(Date.now())` a cada render, dependências primitivas e teste de virada por rerender. |
+| **5 — Motivo da conta pelo contrato existente** | §4.2 e Tarefa 4: `fonteCusto == null` distingue histórico; lucro nulo com fonte não nula indica custo ausente; ponte não existe com lucro desconhecido. |
+| **6 — Contagens são “Onde agir”** | §2.3 e Tarefa 5: `KpiCard` compacto como filtro; removidos painel duplicado, CTA e teste de transferência de foco. Zero atenção apresenta frase sem botão. |
+| **7 — Regressões de mensagem e divergência** | Tarefas 4 e 5: tabela de ajustes inclui semáforo em validação em um único lugar e divergência verificável sem expansão. |
+| **8 — Componentes de cabeçalho e seção** | §3.1 e Tarefas 3 e 5: período/legenda em `PageHeader.actions`; ranking usa `Section` com `h2.text-h3`. |
+| **9 — Sem venda direta** | §4.1 e Tarefa 5: célula mostra “sem venda direta”; semáforo recebido do domínio é preservado. |
+| **10 — Altura responsiva dos controles** | §3.2 e §8.3: `h-11 sm:h-8`; 44 px no mobile, sem impor essa altura ao desktop. |
+| **11 — Retirar preflight incompatível** | Tarefa 6 e §8.4: removido `preflight.sh`; mantidos screenshots, medições e `pnpm preflight:static`. |
+| **12 — Padrão, recuperação e ponte mobile** | §2.1: decisão do Diego via `PERIODO_PADRAO_ADS`; §2.2: Mês anterior como próxima entrega; §6.2: ação de 30 dias; §3.4: ponte mobile só com Lucro antes de Ads. |
+
+| Corte solicitado | Aplicação |
+|---|---|
+| Tarefa antiga de seletor compartilhado | Eliminada integralmente |
+| Persistência como subsistema próprio | Substituída por leitura/escrita local na página |
+| `onde-agir-ads.tsx` e teste de foco | Eliminados |
+| Matriz extensa de screenshots | Reduzida a dez capturas |
+| ADR e estimativa | Uma linha sobre o preset; alvo de 4–5 horas |
+
+**Decisão registrada:** `PERIODO_PADRAO_ADS = { tipo: 'mes_atual' }` (Diego, 2026-10-05).
