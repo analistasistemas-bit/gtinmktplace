@@ -71,9 +71,14 @@ Deno.serve(async (req) => {
 
   // Demais orders dos mesmos envios/packs (inclusive as que liberam em outro dia): o frete do envio
   // é gravado inteiro em cada order e precisa ser rateado entre todas — ver liquidoDasLiberadas.
-  const membros = await carregarMembrosDosEnvios(admin, vendasHoje);
-  if (membros === null) return json({ erro: 'falha ao carregar membros dos envios' }, 500);
-  const liquidoPorVenda = liquidoDasLiberadas(vendasHoje, membros);
+  // Rateio por org: dois envios de orgs diferentes nunca dividem frete (revisão Grok).
+  const liquidoPorVenda = new Map<string, number>();
+  for (const orgId of new Set(vendasHoje.map((v) => v.org_id))) {
+    const daOrg = vendasHoje.filter((v) => v.org_id === orgId);
+    const membros = await carregarMembrosDosEnvios(admin, orgId, daOrg);
+    if (membros === null) return json({ erro: 'falha ao carregar membros dos envios' }, 500);
+    for (const [id, liq] of liquidoDasLiberadas(daOrg, membros)) liquidoPorVenda.set(id, liq);
+  }
 
   // Agrupa por org_id (E7 — config do Telegram é por organização, não por usuário).
   const porOrg = new Map<string, { ids: string[]; total: number }>();
@@ -113,16 +118,18 @@ Deno.serve(async (req) => {
 
 const COLUNAS_RATEIO = 'status, shipping_id, pack_id, frete_vendedor, sale_fee_total, total_amount, cupom_vendedor, liquido';
 
-/** Todas as orders (da mesma org) que compartilham envio ou pack com as liberadas. null = erro. */
+/** Orders da org que compartilham envio ou pack com as liberadas. null = erro. Em lotes de 80
+ *  liberadas: cada lote traz poucas centenas de linhas, longe do corte silencioso de 1000 do PostgREST. */
 async function carregarMembrosDosEnvios(
   admin: ReturnType<typeof adminClient>,
-  vendas: Array<VendaLiberacao & { org_id: string }>,
+  orgId: string,
+  vendas: VendaLiberacao[],
 ): Promise<VendaLiberacao[] | null> {
   const membros: VendaLiberacao[] = [];
-  for (const orgId of new Set(vendas.map((v) => v.org_id))) {
-    const daOrg = vendas.filter((v) => v.org_id === orgId);
-    const envios = [...new Set(daOrg.map((v) => v.shipping_id).filter((x) => x != null))];
-    const packs = [...new Set(daOrg.map((v) => v.pack_id).filter((x) => x != null))];
+  for (let i = 0; i < vendas.length; i += 80) {
+    const lote = vendas.slice(i, i + 80);
+    const envios = [...new Set(lote.map((v) => v.shipping_id).filter((x) => x != null))];
+    const packs = [...new Set(lote.map((v) => v.pack_id).filter((x) => x != null))];
     const filtros = [
       envios.length ? `shipping_id.in.(${envios.join(',')})` : null,
       packs.length ? `pack_id.in.(${packs.join(',')})` : null,
@@ -131,6 +138,7 @@ async function carregarMembrosDosEnvios(
     const { data, error } = await admin.from('ml_vendas').select(`id, ${COLUNAS_RATEIO}`)
       .eq('org_id', orgId).or(filtros);
     if (error) { console.error(`membros dos envios (org ${orgId}):`, error.message); return null; }
+    if ((data ?? []).length >= 1000) { console.error(`membros dos envios (org ${orgId}): corte de 1000 linhas`); return null; }
     membros.push(...(data as VendaLiberacao[]));
   }
   return membros;
