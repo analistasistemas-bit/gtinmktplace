@@ -976,6 +976,50 @@ export type Database = {
           },
         ]
       }
+      ml_ads_conta_dia: {
+        Row: {
+          clicks: number
+          coletado_em: string
+          cost: number
+          dia: string
+          direct_amount: number
+          indirect_amount: number
+          org_id: string
+          prints: number
+          total_amount: number
+        }
+        Insert: {
+          clicks: number
+          coletado_em: string
+          cost: number
+          dia: string
+          direct_amount: number
+          indirect_amount: number
+          org_id: string
+          prints: number
+          total_amount: number
+        }
+        Update: {
+          clicks?: number
+          coletado_em?: string
+          cost?: number
+          dia?: string
+          direct_amount?: number
+          indirect_amount?: number
+          org_id?: string
+          prints?: number
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_ads_conta_dia_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_ads_grupo: {
         Row: {
           ad_group_id: number
@@ -1101,6 +1145,7 @@ export type Database = {
           advertiser_id: number | null
           carga_inicial_ok: boolean
           cobertura_desde: string | null
+          conta_cobertura_desde: string | null
           cursor: string | null
           custo_listado: number | null
           custo_resumo: number | null
@@ -1117,6 +1162,7 @@ export type Database = {
           advertiser_id?: number | null
           carga_inicial_ok?: boolean
           cobertura_desde?: string | null
+          conta_cobertura_desde?: string | null
           cursor?: string | null
           custo_listado?: number | null
           custo_resumo?: number | null
@@ -1133,6 +1179,7 @@ export type Database = {
           advertiser_id?: number | null
           carga_inicial_ok?: boolean
           cobertura_desde?: string | null
+          conta_cobertura_desde?: string | null
           cursor?: string | null
           custo_listado?: number | null
           custo_resumo?: number | null
@@ -3712,6 +3759,8 @@ export type Database = {
         }
         Returns: string
       }
+      ads_painel: { Args: { p_desde: string; p_ate: string }; Returns: Json }
+      ads_resumo_periodo: { Args: { p_desde: string; p_ate: string }; Returns: Json }
       ajustar_estoque: {
         Args: {
           p_codigo: string
@@ -3837,6 +3886,15 @@ export type Database = {
           expires_at: string
           refresh_token: string
         }[]
+      }
+      gravar_ads_conta_dias: {
+        Args: {
+          p_coletado_em: string
+          p_dias: Json
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
       }
       gravar_ads_lote: {
         Args: {
