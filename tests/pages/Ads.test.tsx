@@ -58,6 +58,7 @@ describe('Ads', () => {
     montar();
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
     expect(resumo.getByText('Resultado após Ads')).toBeInTheDocument();
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
     expect(resumo.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
     expect(screen.getByText(/não é o lucro causado pelo Ads/)).toBeInTheDocument();
     expect(screen.getAllByText(/R\$\s?200,00/).length).toBeGreaterThan(0);
@@ -99,7 +100,7 @@ describe('Ads', () => {
     expect(within(screen.getByRole('row', { name: /Fam A/ })).queryByText(/dentro/i)).not.toBeInTheDocument();
   });
   it('mostra desde quando há vendas; com histórico incompleto, lucro e resultado não aparecem', () => {
-    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null },
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null, fonteCusto: null },
       familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
     { historicoDesde: '2026-09-10T15:00:00.000Z' });
     expect(screen.getByText(/Vendas desde/)).toBeInTheDocument();
@@ -115,6 +116,91 @@ describe('Ads', () => {
     expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
     expect(screen.getByText(/anunciante/i)).toBeInTheDocument();
   });
+  it('revela a composição sob demanda', () => {
+    montar();
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+
+    expect(resumo.getByText('Despesa de Ads')).toBeVisible();
+    expect(resumo.getByText('Resultado após Ads')).toBeVisible();
+    expect(resumo.queryByText('Em famílias')).not.toBeInTheDocument();
+
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+
+    expect(resumo.getByText('Em famílias')).toBeVisible();
+    expect(resumo.getByText('Compartilhado entre famílias')).toBeVisible();
+    expect(resumo.getByText('Gasto de Ads não identificado')).toBeVisible();
+  });
+
+  it.each([
+    [null, 'período antes do histórico de vendas (desde 10/09/2026)'],
+    ['sem_custo', 'sem custo cadastrado'],
+  ] as const)('explica resultado nulo com fonte %s e oculta a ponte', (fonteCusto, motivo) => {
+    montar({
+      ...PAINEL,
+      conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null, fonteCusto },
+    }, { historicoDesde: '2026-09-10T15:00:00.000Z' });
+
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    const resultado = resumo.getByRole('group', { name: 'Resultado após Ads' });
+
+    expect(resultado).toHaveTextContent('—');
+    expect(resultado).toHaveTextContent(motivo);
+    expect(resultado).not.toHaveTextContent(/R\$\s*0,00/);
+    expect(resumo.queryByRole('group', { name: 'Cálculo do resultado' }))
+      .not.toBeInTheDocument();
+  });
+
+  it.each(['parcial', 'estimado'] as const)(
+    'mantém custo %s junto ao resultado com composição fechada',
+    fonteCusto => {
+      montar({ ...PAINEL, conta: { ...PAINEL.conta!, fonteCusto } });
+
+      const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+      const resultado = within(resumo.getByRole('group', { name: 'Resultado após Ads' }));
+
+      expect(resultado.getByText(`custo ${fonteCusto}`)).toBeVisible();
+      expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+        .toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it('mantém provisório e divergência visíveis antes da expansão', () => {
+    montar({
+      ...PAINEL,
+      conta: {
+        ...PAINEL.conta!,
+        diasAbertos: 14,
+        divergente: true,
+        naoIdentificado: null,
+        naoIdentificadoPct: null,
+      },
+    });
+
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+
+    expect(resumo.getByText('provisório — 14 dias com atribuição em aberto'))
+      .toBeVisible();
+    expect(screen.getByText(/não fecha com o total da conta/)).toBeVisible();
+    expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+      .toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+
+    expect(resumo.queryByText('Gasto de Ads não identificado')).not.toBeInTheDocument();
+    expect(resumo.getByRole('group', { name: 'Despesa de Ads' }))
+      .toHaveTextContent(/R\$\s*100,00/);
+    expect(resumo.getByRole('group', { name: 'Resultado após Ads' }))
+      .toHaveTextContent(/200,00/);
+  });
+
+  it('ponte usa os valores do domínio quando o lucro é conhecido', () => {
+    montar();
+    const ponte = screen.getByRole('group', { name: 'Cálculo do resultado' });
+    expect(ponte).toHaveTextContent(/R\$\s*300,00/);
+    expect(ponte).toHaveTextContent(/R\$\s*100,00/);
+    expect(ponte).toHaveTextContent(/R\$\s*200,00/);
+  });
+
   it.each([7, 30, 90] as const)('preserva a preferência existente de %i dias', dias => {
     localStorage.setItem('ads-painel-dias', String(dias));
     montar();

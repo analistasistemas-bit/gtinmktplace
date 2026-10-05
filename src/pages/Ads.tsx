@@ -138,6 +138,8 @@ export default function Ads() {
     <Button asChild variant="outline" size="sm" className={BOTAO_ACAO}><Link to="/canais">Abrir Canais</Link></Button>
   );
 
+  // A ressalva causal fica junto ao resumo quando ele existe; sem resumo, vai para a procedência.
+  let temResumo = false;
   let corpo;
   if (isError) {
     corpo = (
@@ -190,6 +192,7 @@ export default function Ads() {
       />
     );
   } else {
+    temResumo = painel.conta != null;
     corpo = (
       <>
         {painel.desatualizado && (
@@ -201,7 +204,7 @@ export default function Ads() {
           <p className="text-xs text-muted-foreground">Semáforo em validação: por ora o painel mostra o ACOS de equilíbrio de cada família como referência, sem verde ou vermelho.</p>
         )}
         {painel.conta
-          ? <ResumoConta conta={painel.conta} />
+          ? <ResumoConta conta={painel.conta} historicoDesde={historicoDesde} />
           : <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">Total da conta indisponível: a coleta ainda não cobre este período.</p>}
         <RankingFamilias painel={painel} historicoDesde={historicoDesde} />
       </>
@@ -219,7 +222,7 @@ export default function Ads() {
         {corpo}
         <div className="space-y-1 text-xs text-muted-foreground">
           <p>Despesa informada pela API de Ads do Mercado Livre.</p>
-          <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>
+          {!temResumo && <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>}
           <p>
             {historicoDesde
               ? `Vendas desde ${dataBRT(historicoDesde)}, quando a organização começou a vender pelo PubliAI.`
