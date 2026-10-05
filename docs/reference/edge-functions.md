@@ -1464,7 +1464,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram
   (ADR-0035). Runbook: [../runbooks/monitorar-moderados.md](../runbooks/monitorar-moderados.md).
-- **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040).
+- **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040). O total do aviso rateia o frete do envio entre todas as orders do pack/envio (`_shared/faturamento/liberacao.ts` → `ratearLiquidoPorFrete`, mesma regra do Financeiro), por org e em lotes de 80 — o `liquido` gravado traz o frete inteiro em cada order e somá-lo cobrava o frete N vezes (corrigido em 2026-10-05).
 
 ### Pulse (ADR-0119)
 - **pulse-coletar** — **ADR-0173:** desde 28/09, o modo fan-out por org (só orgs com o módulo

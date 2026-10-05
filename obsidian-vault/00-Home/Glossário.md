@@ -50,6 +50,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 
 | Termo | Definição |
 |---|---|
+| **Cupom do vendedor** | Cupom bancado pelo vendedor no ML: invisível no `/orders`, lido do MP (`coupon_fee` pago pelo collector). `ml_vendas.cupom_vendedor`; sai da venda, do líquido e do imposto em todos os menus; billing segue no valor cheio (ADR-0180). Ver [[Faturamento]]. |
 | **Custo congelado** | O custo do item é copiado para `venda_item_custo` no primeiro sync da venda e não muda mais (insert-once + trigger que faz `UPDATE` falhar, ADR-0109). Planilha nova só afeta vendas posteriores. Ver [[Faturamento]]. |
 | **Custo vigente** | Resolvido pela cadeia `variação → anúncio → GTIN → código`, com desempate pela linha **mais recente** (`atualizado_em`, ADR-0108) — não pela de maior custo. |
 | **Alíquota por origem** | 8% nacional / 16% importado, por org, exigindo confirmação explícita (ADR-0055/0086). Nunca defaulta em silêncio. |
@@ -83,7 +84,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 | Termo | Definição |
 |---|---|
 | **ML** | Mercado Livre. Marketplace primário. OAuth 2.0, API de items, webhooks. Ver [[Integrações]]. |
-| **MP** | Mercado Pago. Origem de **estorno** e **data de liberação** por pagamento. O **líquido não vem do MP** — é `bruto − comissão − frete real` (ADR-0042). Não existe "conexão do Mercado Pago": a conta MP é lida com o token da conexão `mercado_livre` da própria org (ADR-0093). |
+| **MP** | Mercado Pago. Origem de **estorno** e **data de liberação** por pagamento. O **líquido não vem do MP** — é `bruto − comissão − frete real − cupom do vendedor` (ADR-0042, ADR-0180). Não existe "conexão do Mercado Pago": a conta MP é lida com o token da conexão `mercado_livre` da própria org (ADR-0093). |
 | **OpenRouter** | Gateway de IA compatível com OpenAI SDK. Copy + Vision. Ver [[IA]]. |
 | **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações). |
 
