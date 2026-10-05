@@ -6,6 +6,7 @@
 
 ## Snapshot
 
+- **Cupom do vendedor na venda, EM PRODUÇÃO (2026-10-05, ADR-0180)** — o cupom bancado pelo vendedor (MP `coupon_fee`, invisível no `/orders` do ML) sai da venda, do líquido e da base do imposto em todos os menus (Faturamento, Financeiro, Dashboard, Publicados, Vendas SKU, dossiê, cockpit, vitrine). Migration `20261005143525_cupom_vendedor`; backfill da Avil (73 orders, R$ 230,00). Billing da plataforma segue no `total_amount`. Ver `docs/TASKS.md`.
 - **I2 Painel de Ads com margem real, EM PILOTO (2026-10-05, ADR-0179)** — em produção: migration `20261005013741_ads_painel`, `coletar-ads-ml` v12 (série diária do anunciante) e `usuarios` v45 (menu `ads`). Tela `/ads`, módulo `ads` e dossiê D2 entram com o merge da branch `worktree-i2-painel-ads`; o módulo nasce desligado em todas as orgs. Semáforo do ACOS de equilíbrio ligado em 05/10 pelo Diego (spike 055; ACOS do Ads 1,5–7 % otimista por canceladas). Emenda ao ADR-0172: gasto fora dos grupos vira aviso, não bloqueio. Falta a Task 8 (Diego: ligar na Avil, total ≤ 1 % do Mercado Ads, 2 semanas, ≥ 1 decisão). Ver `docs/TASKS.md`.
 - **Multiget do ML via `/items/bulk` EM PRODUÇÃO (2026-10-04, ADR-0177)** — o ML desliga `GET /items?ids=` em 25/10/2026; as 14 chamadas restantes passam pelo adaptador `_shared/ml/multiget.ts` (envelope antigo preservado), implantado em 5 fatias com manifesto de hash (28 edges iguais à `main`). Pendente: atualizar o Graphify a partir da raiz.
 

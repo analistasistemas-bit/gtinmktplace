@@ -2,12 +2,13 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Cupom do vendedor na venda (ADR-0180) — branch `worktree-fix-cupom-vendas`
+## Cupom do vendedor na venda (ADR-0180) — em produção desde 2026-10-05 (main ec0f756e)
 
 - [x] Diagnóstico: pack 2000014948061807 mostrava R$ 132,80; ML mostra R$ 127,80 (cupom −R$ 5,00 bancado pelo vendedor, só visível no `coupon_fee` do MP).
 - [x] Migration `20261005143525_cupom_vendedor` (colunas + receita da vitrine); sync grava/preserva o cupom; `brutoDaVenda`/`valorDoItem` em Faturamento, Financeiro, Dashboard, Publicados, Vendas SKU, dossiê, cockpit; notificação de nova venda.
-- [ ] Revisão Codex gpt-6.1-sol (diff) + Grok pré-merge; merge; `db push`; deploy das edges de `_shared/faturamento` e `_shared/platform-admin`.
-- [ ] Backfill do histórico (prévia read-only + autorização do Diego, AGENTS.md).
+- [x] Revisões: Codex gpt-6.1-sol (plano e diff; achados corrigidos) e Grok 4.7 xhigh pré-merge (aprovado). `db push`; deploy de 22 edges (ex.: `sync-venda` v99, `reconciliar-faturamento` v96, `platform-admin` v14), `verify_jwt` conferido.
+- [x] Backfill autorizado pelo Diego (prévia read-only): Avil 73 orders com cupom (R$ 230,00, desde 09/09/2026); demais orders lidas gravadas com 0. Sem leitura: 2 da DSA (MP 404) e 14 da Hairflay (sem conexão). Pack do caso no banco: líquido 37,93 por order (= `net_received_amount` do MP); pelas funções do app, Venda 127,80 · Líquido 94,16 · Imposto 20,44 · Lucro 21,72.
+- Pendência: billing da plataforma sobre o valor sem cupom, se o Diego decidir (ADR-0180 item 6).
 - Follow-up fora do escopo: `notificar-liberacao` soma o frete repetido por order do pack (bug anterior, independente do cupom).
 
 ## Promoções: aba "Em promoção" + par normal/catálogo em uma linha (ADR-0174, emenda 2026-10-05) — em produção desde 2026-10-05 (main f99e1e42)
