@@ -24,12 +24,12 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 2. **Gasto de Ads não identificado** entra inteiro no total da conta numa linha própria; nas famílias vira aviso
    com o % da conta. **Emenda ao ADR-0172:** no dossiê SKU, `fora_dos_grupos` deixa de bloquear o Lucro após Ads
    e passa a aviso; gasto compartilhado e cobertura incompleta continuam bloqueando.
-3. **ACOS de equilíbrio** (margem % antes de Ads da família) como referência, com semáforo contra o ACOS real;
+3. **ACOS de equilíbrio** (margem % antes de Ads da família) como referência, com semáforo contra o ACOS direto (gasto ÷ venda direta);
    sem meta configurável no MVP.
 4. **Tela própria `/ads`**, módulo por org, nasce desligado; ligado na Avil no lançamento.
 5. **Só leitura no ML.** Total da conta por período vem de uma **série diária do anunciante** gravada por org
    (`campaigns/search?aggregation_type=DAILY`, todos os status), relida nos 15 dias da atribuição em aberto;
-   **não identificado(período) = Σ conta − Σ grupos** e o % do aviso é o do período exibido, não fixo em 90 dias
+   **não identificado(período) = Σ conta − Σ grupos com membro** e o % do aviso é o do período exibido, não fixo em 90 dias
    (substitui a Ruling 2c-8 para este fim). Medido no [spike 054](../spikes/054-total-de-ads-por-periodo.md):
    4 fontes do ML batem ao centavo; Avil 0,03 % não identificado em 30 dias.
 
