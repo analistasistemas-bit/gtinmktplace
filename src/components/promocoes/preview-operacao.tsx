@@ -146,7 +146,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{formatarNomeProduto(l.titulo) || l.ml_item_id}</p>
-                    <p className="text-xs text-muted-foreground">{l.ml_item_id}</p>
+                    <p className="text-xs text-muted-foreground">{l.rotulo ?? l.ml_item_id}</p>
                     {l.motivoBloqueio && <p className="text-xs text-muted-foreground">{l.motivoBloqueio}</p>}
                     {l.motivoErro && <p className="text-xs text-danger">{l.motivoErro}</p>}
                   </div>

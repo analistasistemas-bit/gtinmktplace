@@ -206,6 +206,7 @@ function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
     carregarCadastro: vi.fn(async () => montarCadastro([linhaVar({ id: 'a' })], [])),
     tarifaEm: vi.fn(async () => tarifa10),
     gravarLote: vi.fn(async () => {}),
+    removerItens: vi.fn(async () => {}),
     continuar: vi.fn(async () => {}),
     concluir: vi.fn(async () => true),
     falhar: vi.fn(async () => {}),
@@ -304,6 +305,18 @@ describe('sincronizarPromocao', () => {
       const multipla = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar({ [C]: { relacionados: [N, 'MLB9'] } })) });
       await sincronizarPromocao(multipla, msg, opts);
       expect(gravados(multipla).map((l) => [l.ml_item_id, l.anuncio_normal_id])).toEqual([[N, null], [C, null]]);
+
+      // Codex #1: relação de um lado só não esconde o normal nem dá a cara dele ao catálogo.
+      const unilateral = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar({ [C]: { relacionados: [] } })) });
+      await sincronizarPromocao(unilateral, msg, opts);
+      expect(gravados(unilateral).map((l) => [l.ml_item_id, l.anuncio_normal_id])).toEqual([[N, null], [C, null]]);
+    });
+
+    // Codex #2: tentativa anterior da mesma rodada gravou o normal (sincronizado_em = rodada, o concluir não apaga).
+    it('normal escondido é removido explicitamente da Central', async () => {
+      const d = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar()) });
+      await sincronizarPromocao(d, msg, opts);
+      expect(d.removerItens).toHaveBeenCalledWith([N]);
     });
   });
 

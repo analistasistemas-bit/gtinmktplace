@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Promoções: aba "Em promoção" + par normal/catálogo em uma linha (ADR-0174, emenda 2026-10-05) — branch `worktree-promocoes-em-promocao`
+
+Plano `docs/superpowers/plans/2026-10-05-em-promocao-par-catalogo.md` (revisado pelo Codex: REVISE → corrigido).
+
+- [x] Aba "Em promoção" (`?aba=participando`): tudo que participa, por campanha; DEAL/SMART saem em lote pelo motor; demais tipos com link para o Seller Center.
+- [x] Sync grava o par normal/catálogo (mesmo User Product) como a linha do catálogo com a cara do normal (`anuncio_normal_id`); dossiê, aviso da Revisão e preview acham/mostram pelo normal.
+- [ ] Merge + `db push` + deploy `sincronizar-promocoes`, `operacoes-massa` e edges que importam `_shared/promocoes/sincronizar.ts`; conferir na Hairfly (`P-MLB18061082`: só `MLB7736509406` com `anuncio_normal_id = MLB5322348511`).
+- Follow-ups: espelho do motor só atualiza `status`; Reverter pode usar cache velho da Central logo após a operação.
+
 ## I2 — Painel de Ads com margem real (ADR-0179) — em piloto (2026-10-05) — branch `worktree-i2-painel-ads`
 
 Spec `docs/superpowers/specs/2026-10-04-painel-de-ads-design.md`; plano `docs/superpowers/plans/2026-10-04-painel-de-ads.md`; spikes `docs/spikes/054-total-de-ads-por-periodo.md` e `055-base-acos-equilibrio.md`.

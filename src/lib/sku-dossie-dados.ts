@@ -65,11 +65,14 @@ export const buscarPerguntas = (mlbs: string[]) => emLotes<Pergunta>(mlbs, (lote
     .in('item_id', lote).order('criada_em').order('id').range(de, ate));
 
 /** Situação atual dos MLBs nas campanhas: duas leituras (a FK composta não tem relationship no
- *  typegen) e join no cliente, como em promocoes.ts. */
+ *  typegen) e join no cliente, como em promocoes.ts. O par normal/catálogo é gravado como a linha do
+ *  catálogo (ADR-0174, emenda 2026-10-05): acha também por `anuncio_normal_id` e mostra o MLB do normal. */
 export async function buscarCampanhas(mlbs: string[]): Promise<ItemCampanha[]> {
-  const itens = await emLotes<Omit<ItemCampanha, 'promocao'>>(mlbs, (lote, de, ate) =>
-    supabase.from('ml_promocao_itens').select('promocao_id, ml_item_id, status, preco_promo, sincronizado_em')
-      .in('ml_item_id', lote).order('ml_item_id').order('promocao_id').range(de, ate));
+  const linhas = await emLotes<Omit<ItemCampanha, 'promocao'> & { anuncio_normal_id: string | null }>(mlbs, (lote, de, ate) =>
+    supabase.from('ml_promocao_itens').select('promocao_id, ml_item_id, anuncio_normal_id, status, preco_promo, sincronizado_em')
+      .or(`ml_item_id.in.(${lote.join(',')}),anuncio_normal_id.in.(${lote.join(',')})`)
+      .order('ml_item_id').order('promocao_id').range(de, ate));
+  const itens = linhas.map(({ anuncio_normal_id, ...i }) => ({ ...i, ml_item_id: anuncio_normal_id ?? i.ml_item_id }));
   const ids = [...new Set(itens.map((i) => i.promocao_id))];
   const promos = await emLotes<Campanha>(ids, (lote, de, ate) =>
     supabase.from('ml_promocoes').select('promocao_id, nome, tipo, status, inicio, fim, sincronizado_em')

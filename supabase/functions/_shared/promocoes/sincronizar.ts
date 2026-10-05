@@ -40,6 +40,8 @@ export interface DepsLeitura {
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
   /** Upsert das linhas com sincronizado_em = rodada. */
   gravarLote(linhas: LinhaItem[]): Promise<void>;
+  /** Apaga da Central da promoção os normais que viraram a linha do catálogo (par normal/catálogo). */
+  removerItens(mlItemIds: string[]): Promise<void>;
   /** Publica a mesma mensagem com o cursor = último ml_item_id processado. */
   continuar(cursor: string): Promise<void>;
   /** Só com a posse da rodada: apaga itens com sincronizado_em < rodada, recalcula a contagem no banco,
@@ -232,8 +234,9 @@ export async function sincronizarPromocao(
       const ml = new Map(await deps.buscarItensML(ids));
       const faltam = relacionadosFaltando(ids, ml, campanha);
       if (faltam.length) for (const [k, v] of await deps.buscarItensML(faltam)) ml.set(k, v);
-      const visiveis = lote.map((it) => ({ it, par: papelNoPar(it.ml_item_id, ml, campanha) }))
-        .filter((x) => x.par.papel !== 'normal_escondido');
+      const papeis = lote.map((it) => ({ it, par: papelNoPar(it.ml_item_id, ml, campanha) }));
+      const visiveis = papeis.filter((x) => x.par.papel !== 'normal_escondido');
+      const escondidos = papeis.filter((x) => x.par.papel === 'normal_escondido').map((x) => x.it.ml_item_id);
       const linhas = await emParalelo(visiveis, opts.concorrencia, async ({ it, par }) => {
         const l = await projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q));
         if (par.papel !== 'catalogo') return l;
@@ -243,6 +246,8 @@ export async function sincronizarPromocao(
       // O lote leva segundos: reconfere a posse logo antes de escrever.
       if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: feitos };
       if (linhas.length) await deps.gravarLote(linhas);
+      // Uma tentativa anterior desta rodada pode ter gravado o normal (mesmo sincronizado_em: o concluir não apaga).
+      if (escondidos.length) await deps.removerItens(escondidos);
       feitos += lote.length;
     }
     if (!(await deps.concluir())) return { resultado: 'obsoleta', processados: feitos };

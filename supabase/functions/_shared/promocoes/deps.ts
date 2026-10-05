@@ -173,6 +173,12 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
       falhou('gravarLote', error);
     },
 
+    async removerItens(mlItemIds) {
+      const { error } = await admin.from('ml_promocao_itens').delete()
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).in('ml_item_id', mlItemIds);
+      falhou('removerItens', error);
+    },
+
     async continuar(cursor) {
       const m = { ...msg, cursor };
       await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1, deduplicationId: dedupId(m) });

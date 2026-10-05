@@ -14,6 +14,7 @@ function fakeChain(resultado: unknown) {
   const chain: any = {
     select: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    or: vi.fn(() => chain),
     order: vi.fn(() => chain),
     range: vi.fn(() => chain),
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
@@ -199,6 +200,17 @@ describe('fetchers de eventos', () => {
     expect(promos.in).toHaveBeenCalledWith('promocao_id', ['P1', 'P2']);
     expect(r[0].promocao?.nome).toBe('Dia');
     expect(r[1].promocao).toBeNull();
+  });
+
+  // ADR-0174, emenda 2026-10-05: o par normal/catálogo vira a linha do catálogo; o dossiê só conhece o normal.
+  it('buscarCampanhas: acha a linha do catálogo pelo normal e a mostra com o MLB do normal', async () => {
+    const itens = fakeChain({ data: [
+      { promocao_id: 'P1', ml_item_id: 'MLB7', anuncio_normal_id: 'MLB5', status: 'candidate', preco_promo: null, sincronizado_em: 's1' },
+    ], error: null });
+    mockFrom.mockImplementation((t: string) => (t === 'ml_promocao_itens' ? itens : fakeChain({ data: [], error: null })));
+    const r = await buscarCampanhas(['MLB5']);
+    expect(itens.or).toHaveBeenCalledWith('ml_item_id.in.(MLB5),anuncio_normal_id.in.(MLB5)');
+    expect(r[0].ml_item_id).toBe('MLB5');
   });
 
   it('erro → lança', async () => {

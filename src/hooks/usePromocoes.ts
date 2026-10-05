@@ -46,10 +46,11 @@ export function useParticipacoesPorItem(mlItemIds: string[]) {
     enabled: habilitado && ids.length > 0,
     staleTime: 60_000,
     queryFn: async () => {
+      // Par normal/catálogo (ADR-0174, emenda 2026-10-05): a linha é a do catálogo; a família conhece o normal.
       const { data: itens, error } = await supabase
         .from('ml_promocao_itens')
-        .select('ml_item_id, promocao_id, status')
-        .in('ml_item_id', ids)
+        .select('ml_item_id, anuncio_normal_id, promocao_id, status')
+        .or(`ml_item_id.in.(${ids.join(',')}),anuncio_normal_id.in.(${ids.join(',')})`)
         .in('status', ['started', 'pending']);
       if (error) throw error;
       const mapa = new Map<string, string>();
@@ -65,7 +66,9 @@ export function useParticipacoesPorItem(mlItemIds: string[]) {
       );
       for (const it of itens ?? []) {
         const nome = nomePorPromocao.get(it.promocao_id);
-        if (nome) mapa.set(it.ml_item_id, nome);
+        if (!nome) continue;
+        mapa.set(it.ml_item_id, nome);
+        if (it.anuncio_normal_id) mapa.set(it.anuncio_normal_id, nome);
       }
       return mapa;
     },

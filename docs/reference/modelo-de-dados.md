@@ -914,7 +914,10 @@ Um anúncio candidato/participante dentro de uma promoção. `org_id` + `promoca
 bancado pelo ML), `vendedor_pct`, `estoque_min`, `estoque_max`, `titulo`, `thumbnail`,
 `permalink`, `listing_type_id`, `projecao jsonb` (margem líquida projetada por cor, default
 `[]`), `pior_semaforo` (`verde|amarelo|vermelho|indisponivel`), `sincronizado_em`. Índice
-`(org_id, promocao_id, pior_semaforo)`.
+`(org_id, promocao_id, pior_semaforo)`. `anuncio_normal_id` (migration
+`20261005113104_promocao_itens_anuncio_normal`, ADR-0174 emenda 2026-10-05): preenchido na linha do
+catálogo quando o par normal/catálogo do mesmo User Product está na campanha — a linha do normal não
+é gravada e `titulo`/`thumbnail`/`permalink` vêm do normal.
 
 ### `ml_promocoes_sync`
 Estado de sincronização por organização. `org_id` (PK, FK organizations, cascade), `estado`

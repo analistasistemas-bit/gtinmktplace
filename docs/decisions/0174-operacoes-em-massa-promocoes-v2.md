@@ -189,6 +189,18 @@ por `item_relations` sem `variation_id`. O ML convida os dois, mas só aceita a 
    campanhas ativas/futuras, agrupados por campanha. DEAL/SMART têm seleção e "Sair" por campanha, que abre
    o mesmo preview/motor (uma operação por campanha); demais tipos ficam só leitura com link para o
    Seller Center. Cupons e campanhas encerradas ficam fora.
+5. **Quem lê pelo MLB do normal acha a linha do catálogo:** dossiê do SKU e aviso da Revisão consultam
+   `ml_item_id` **ou** `anuncio_normal_id`; o preview da operação mostra o MLB do normal e envia o do catálogo.
+
+**Revisão do plano (Codex gpt-6.1-sol, REVISE → corrigido):** simetria garantida por predicado 1↔1 avaliado
+dos dois lados (relação unilateral ou múltipla não junta nada); normal escondido é apagado explicitamente
+(`removerItens`), porque uma tentativa anterior da mesma rodada pode tê-lo gravado com o mesmo `sincronizado_em`.
+
+**Limites aceitos (o sync seguinte, a cada 6 h, corrige):** o normal que passa a participar entre duas
+mensagens da mesma rodada some até a próxima leitura; depois de sair com o normal participando, as duas linhas
+ficam até o próximo sync. Os dois casos exigem inscrição pelo normal, que o motor bloqueia.
+**Follow-ups fora do escopo (já existiam):** o espelho do motor só atualiza `status` (preço/contagem ficam do
+sync anterior); o Reverter pode montar o preview com cache velho da Central logo após a operação.
 
 ## Consequências
 

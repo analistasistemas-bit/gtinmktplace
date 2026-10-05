@@ -16,10 +16,11 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({
 }));
 
 const itensQueryMock = vi.fn();
+const orMock = vi.fn();
 const promosQueryMock = vi.fn();
 const fromMock = vi.fn((tabela: string) => {
   if (tabela === 'ml_promocao_itens') {
-    return { select: () => ({ in: () => ({ in: itensQueryMock }) }) };
+    return { select: () => ({ or: orMock.mockImplementation(() => ({ in: itensQueryMock })) }) };
   }
   if (tabela === 'ml_promocoes') {
     return { select: () => ({ in: promosQueryMock }) };
@@ -73,6 +74,24 @@ describe('useParticipacoesPorItem', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(new Map([['MLB1', 'Campanha Ativa']]));
+  });
+
+  // ADR-0174, emenda 2026-10-05: o par normal/catálogo é a linha do catálogo; a família conhece o normal.
+  it('acha a participação do catálogo pelo MLB do normal', async () => {
+    itensQueryMock.mockResolvedValue({
+      data: [{ ml_item_id: 'MLB7', anuncio_normal_id: 'MLB5', promocao_id: 'P1', status: 'started' }],
+      error: null,
+    });
+    promosQueryMock.mockResolvedValue({
+      data: [{ promocao_id: 'P1', nome: 'Campanha Ativa', tipo: 'DEAL', status: 'started' }],
+      error: null,
+    });
+
+    const { result } = renderHook(() => useParticipacoesPorItem(['MLB5']), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(orMock).toHaveBeenCalledWith('ml_item_id.in.(MLB5),anuncio_normal_id.in.(MLB5)');
+    expect(result.current.data?.get('MLB5')).toBe('Campanha Ativa');
   });
 
   // Fix round 2 (achado 3 da revisão final): RPC de módulos em erro desliga esta query
