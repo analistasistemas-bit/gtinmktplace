@@ -14,6 +14,7 @@ const base: DadosAds = {
   totais: { custo: 100, cliques: 50, impressoes: 900, vendasDiretas: 100, vendasIndiretas: 90, vendasTotais: 190,
     unidadesDiretas: 2, unidades: 3, cpc: 2, roas: 1.9, acos: 100 / 190 },
   lucroAposAds: 400, fonteLucro: 'real', motivoSemLucro: null, naoIdentificadoPct: null, naoIdentificadoMotivo: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
+  historicoDesde: '2026-01-01T03:00:00.000Z', fimDia: '2026-09-26',
   serie: IVS.map((intervalo, i) => ({ intervalo, custo: i ? 90 : 10, vendas: i ? 90 : 100, aberto: i === 1 })),
   serieDiaria: ['14', '15'].map((d) => ({ intervalo: dia(d), custo: 5, vendas: 20, aberto: true })),
   grupos: [{ id: 3000001, tipo: 'FAMILY', status: 'ACTIVE', campanhaId: 2000001, custo: 100, exclusivo: true, mlbs: ['MLB1'], codigos: ['A'], semVinculo: 0 }],

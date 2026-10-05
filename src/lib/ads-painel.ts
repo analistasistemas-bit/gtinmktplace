@@ -2,7 +2,7 @@
 // (ad_group_id) com o lucro por família. Grupo é atribuído inteiro a UMA família ou fica compartilhado —
 // nunca rateado. A reconciliação com a série da conta é em centavos inteiros; só a saída volta a reais.
 // Gasto parcial (fora da cobertura) ou lucro desconhecido (antes do histórico) nunca vira resultado.
-import { atribuicaoFinal, diaCoberto, diasEntre } from './sku-ads';
+import { atribuicaoFinal, diaCoberto, diasEntre, historicoCobre } from './sku-ads';
 import type { FonteCusto } from './vendas-sku';
 
 export interface SyncPainel {
@@ -112,6 +112,7 @@ export function montarPainelAds(p: {
   fonte: FontePainelAds; janela: { desde: string; ate: string };   // dias BRT 'YYYY-MM-DD'
   codigosPorMlb: Map<string, string[]>;           // de buscarCodigosMlbs
   familiaDoCodigo: Map<string, string>;           // código → codigoPai (catálogo)
+  nomeDaFamilia: Map<string, string>;             // codigoPai → nome (catálogo): família sem venda no período
   lucroPorFamilia: Map<string, LucroFamilia>;     // codigoPai → lucro do período (só famílias com linha de venda)
   lucroConta: { lucro: number | null; fonteCusto: FonteCusto };
   historicoDesde: string | null;                  // VendasSku.historicoDesde (ISO) — antes dele não há venda conhecida
@@ -121,8 +122,7 @@ export function montarPainelAds(p: {
   const { sync, grupos } = p.fonte;
   const dias = diasEntre(p.janela.desde, p.janela.ate);
   const gruposCobertos = !!sync && sync.carga_inicial_ok && dias.length > 0 && dias.every((d) => diaCoberto(d, sync));
-  // ISO com ISO: histórico começando no meio do 1º dia bloqueia o período (início do dia BRT = 03:00Z).
-  const historicoOk = p.historicoDesde != null && Date.parse(p.historicoDesde) <= Date.parse(`${p.janela.desde}T03:00:00.000Z`);
+  const historicoOk = historicoCobre(p.historicoDesde, p.janela.desde);
 
   // Grupos → famílias exclusivas ou compartilhados.
   const porFamilia = new Map<string, { soma: Soma; grupos: number; compartilhadoC: number }>();
@@ -163,7 +163,7 @@ export function montarPainelAds(p: {
     const acosEquilibrio = proprio.motivo !== 'custo_parcial' && lucroAntes != null && l && l.brutoComCusto > 0
       ? lucroAntes / l.brutoComCusto : null;
     return {
-      ...m, codigoPai, nome: l?.nome ?? null, grupos: f.grupos, custoCompartilhado, lucroAntes,
+      ...m, codigoPai, nome: l?.nome ?? p.nomeDaFamilia.get(codigoPai) ?? null, grupos: f.grupos, custoCompartilhado, lucroAntes,
       resultado: !bloqueado && lucroAntes != null ? (cents(lucroAntes) - f.soma.custoC) / 100 : null,
       margemConsumida: !bloqueado && lucroAntes != null && lucroAntes > 0 ? m.custo / lucroAntes : null,
       acosDireto, acosEquilibrio,

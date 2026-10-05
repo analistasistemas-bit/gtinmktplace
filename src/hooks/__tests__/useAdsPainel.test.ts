@@ -1,7 +1,7 @@
 // Painel de Ads: fontes mockadas (vendas, catálogo, RPC do Ads, códigos dos MLBs); a regra
 // (montarPainelAds) e a agregação de vendas (vendas-sku) rodam de verdade, com espião para ver o que recebem.
 import { createElement, type ReactNode } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { somarAcumuladores, metricas, type AcumuladorSku, type LinhaSku } from '@/lib/vendas-sku';
@@ -9,11 +9,11 @@ import { janelaBRT } from '@/lib/ads-painel-dados';
 import type { FontePainelAds } from '@/lib/ads-painel';
 
 const m = vi.hoisted(() => ({
-  buscarPainelAds: vi.fn(), buscarCodigosMlbs: vi.fn(), useVendasSku: vi.fn(), montarPainelAds: vi.fn(),
+  buscarPainelAds: vi.fn(), buscarCodigosMlbs: vi.fn(), buscarUltimoOkAds: vi.fn(), useVendasSku: vi.fn(), montarPainelAds: vi.fn(),
   catQ: { data: undefined as unknown, isLoading: false, isError: false },
 }));
 vi.mock('@/lib/ads-painel-dados', async (orig) => ({ ...(await orig<object>()), buscarPainelAds: m.buscarPainelAds }));
-vi.mock('@/lib/sku-dossie-dados', () => ({ buscarCodigosMlbs: m.buscarCodigosMlbs }));
+vi.mock('@/lib/sku-dossie-dados', () => ({ buscarCodigosMlbs: m.buscarCodigosMlbs, buscarUltimoOkAds: m.buscarUltimoOkAds }));
 vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: m.useVendasSku }));
 vi.mock('@/hooks/useCatalogoVendasSku', () => ({ useCatalogoVendasSku: () => m.catQ }));
 vi.mock('@/lib/ads-painel', async (orig) => {
@@ -47,17 +47,19 @@ const ultimaChamada = () => m.montarPainelAds.mock.calls.at(-1)![0];
 beforeEach(() => {
   m.buscarPainelAds.mockReset().mockResolvedValue(FONTE);
   m.buscarCodigosMlbs.mockReset().mockResolvedValue(new Map([['MLB1', ['A1']]]));
+  m.buscarUltimoOkAds.mockReset().mockResolvedValue(null);
   m.useVendasSku.mockReset().mockReturnValue(vendasQ([]));
   m.montarPainelAds.mockClear();
-  Object.assign(m.catQ, { data: [{ codigo: 'A1', codigoPai: 'A' }], isLoading: false, isError: false });
+  Object.assign(m.catQ, { data: [{ codigo: 'A1', codigoPai: 'A', nomeFamilia: 'Fam A' }], isLoading: false, isError: false });
 });
+afterEach(() => vi.useRealTimers());
 
 describe('useAdsPainel', () => {
   it('(a) vendas no mesmo recorte do Ads: range com os dias da janela e janela BRT explícita', async () => {
     const r = render();
     await waitFor(() => expect(r.result.current.painel).not.toBeNull());
     const { janela } = r.result.current;
-    expect(m.useVendasSku).toHaveBeenCalledWith({ tipo: 'range', ...janela }, janelaBRT(janela.desde, janela.ate));
+    expect(m.useVendasSku).toHaveBeenLastCalledWith({ tipo: 'range', ...janela }, janelaBRT(janela.desde, janela.ate), true);
     expect(m.buscarPainelAds).toHaveBeenCalledWith(janela.desde, janela.ate);
     expect(ultimaChamada().janela).toEqual(janela);
   });
@@ -126,5 +128,34 @@ describe('useAdsPainel', () => {
     m.useVendasSku.mockReturnValue(vendasQ([]));
     m.catQ.isError = true;
     expect(render().result.current.isError).toBe(true);
+  });
+
+  it('(e) período termina no último dia coletado (08:00 BRT, antes da coleta do dia → anteontem)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T08:00:00-03:00') });
+    m.buscarUltimoOkAds.mockResolvedValue('2026-10-04T14:17:00Z');
+    const r = render();
+    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
+    expect(r.result.current.janela).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
+    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-04', '2026-10-03');
+    expect(m.buscarPainelAds).toHaveBeenCalledTimes(1);
+  });
+
+  it('(f) fonte e vendas esperam o sync; erro no sync → isError', async () => {
+    m.buscarUltimoOkAds.mockReturnValue(new Promise(() => {}));
+    const r = render();
+    await waitFor(() => expect(m.buscarUltimoOkAds).toHaveBeenCalled());
+    expect(m.buscarPainelAds).not.toHaveBeenCalled();
+    expect(m.useVendasSku.mock.calls.every((c) => c[2] === false)).toBe(true);
+    expect(r.result.current.isLoading).toBe(true);
+
+    m.buscarUltimoOkAds.mockRejectedValue(new Error('rls'));
+    const r2 = render();
+    await waitFor(() => expect(r2.result.current.isError).toBe(true));
+  });
+
+  it('(g) nome da família do catálogo vai como fallback', async () => {
+    const r = render();
+    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
+    expect(ultimaChamada().nomeDaFamilia).toEqual(new Map([['A', 'Fam A']]));
   });
 });

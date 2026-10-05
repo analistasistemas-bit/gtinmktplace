@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { montarPainelAds, type FontePainelAds, type GrupoPainel } from '@/lib/ads-painel';
-import { janelaBRT, lucroPorFamilia } from '@/lib/ads-painel-dados';
+import { janelaBRT, lucroPorFamilia, periodoAds } from '@/lib/ads-painel-dados';
+import { diasEntre } from '@/lib/sku-ads';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { montarVendasSku } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
@@ -21,6 +22,7 @@ const base = (f: Partial<FontePainelAds> = {}) => ({
   janela, agora, historicoDesde: '2026-01-01T03:00:00.000Z', baseAcosValidada: true,
   codigosPorMlb: new Map([['MLB1', ['A1']], ['MLB2', ['A2']], ['MLB3', ['B1']], ['MLB4', []]]),
   familiaDoCodigo: new Map([['A1', 'A'], ['A2', 'A'], ['B1', 'B']]),
+  nomeDaFamilia: new Map<string, string>(),
   lucroPorFamilia: new Map([['A', { nome: 'Fam A', lucro: 250, brutoComCusto: 1000, fonteCusto: 'real' as const }]]),
   lucroConta: { lucro: 300, fonteCusto: 'real' as const },
 });
@@ -86,6 +88,20 @@ describe('montarPainelAds', () => {
     const p = montarPainelAds(base({ sync: { ...sync, ultimo_ok_em: '2026-09-02T14:00:00Z' }, grupos: [grupo(1, 50, ['MLB1'], 500, 500)] }));
     expect(p.gruposCobertos).toBe(false);
     expect(p.familias[0]).toMatchObject({ resultado: null, semaforo: null, motivo: 'cobertura' });
+  });
+  it('às 08:00 BRT (coleta de hoje ainda não rodou) o período termina anteontem e fica coberto', () => {
+    const agora8 = new Date('2026-10-05T08:00:00-03:00');
+    const s8 = { ...sync, ultimo_ok_em: '2026-10-04T14:17:00Z' };
+    const j = periodoAds(7, agora8, s8.ultimo_ok_em);
+    const conta = diasEntre(j.desde, j.ate).map((d) => dia(d, 10));
+    const p = montarPainelAds({ ...base({ sync: s8, conta, grupos: [grupo(1, 30, ['MLB1'], 300, 300)] }), janela: j, agora: agora8 });
+    expect(p.gruposCobertos).toBe(true);
+    expect(p.conta).not.toBeNull();
+    expect(p.familias.every((f) => f.motivo !== 'cobertura')).toBe(true);
+  });
+  it('família sem venda no período usa o nome do catálogo, não o código', () => {
+    const p = montarPainelAds({ ...base({ grupos: [grupo(1, 30, ['MLB3'])] }), nomeDaFamilia: new Map([['B', 'Fam B do catálogo']]) });
+    expect(p.familias[0]).toMatchObject({ codigoPai: 'B', nome: 'Fam B do catálogo' });
   });
   it('período antes do histórico de vendas → lucro desconhecido, nunca zero', () => {
     const b = base({ grupos: [grupo(1, 30, ['MLB3'])] });

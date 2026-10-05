@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { atribuicaoFinal, montarAds } from '@/lib/sku-ads';
+import { atribuicaoFinal, fimDiasAds, montarAds } from '@/lib/sku-ads';
+import { montarPainelAds } from '@/lib/ads-painel';
 import { intervalosBRT } from '@/lib/calendario-brt';
 import type { AdsDia, AdsGrupo, AdsSync, FonteAds } from '@/lib/sku-dossie-dados';
 
@@ -35,7 +36,7 @@ type Entrada = Parameters<typeof montarAds>[0];
 const monta = (o: Partial<Entrada> & Pick<Entrada, 'fonte'>) => montarAds({
   alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs: new Map([['MLB1', ['A']]]),
   intervalos: IVS, janela: JANELA, lucroPeriodo: 500, fonteCusto: 'real', agora: AGORA,
-  resumo: 'carregando', diasFinanceiros: DIAS_FIN, ...o,
+  resumo: 'carregando', diasFinanceiros: DIAS_FIN, historicoDesde: '2026-01-01T03:00:00.000Z', ...o,
 });
 const DIAS_FIN = { desde: '2026-09-14', ate: '2026-09-26' };
 const DIAS = 13;
@@ -233,5 +234,50 @@ describe('montarAds', () => {
     expect(monta({ mlbs: new Map(), fonte: fonte(base) }).alcance).toBe('indisponivel');
     expect(monta({ fonte: 'carregando' }).estado).toBe('carregando');
     expect(monta({ fonte: 'erro' }).estado).toBe('erro');
+  });
+});
+
+describe('montarAds — histórico de vendas (mesma regra do painel)', () => {
+  const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 7 })] });
+  it('histórico começando depois do 1º dia → historico e lucro null', () => {
+    expect(monta({ fonte: f, historicoDesde: '2026-09-20T12:00:00Z' })).toMatchObject({ motivoSemLucro: 'historico', lucroAposAds: null });
+  });
+  it('histórico exatamente às 00:00 BRT do 1º dia → lucro calculado', () => {
+    expect(monta({ fonte: f, historicoDesde: '2026-09-14T03:00:00.000Z' })).toMatchObject({ motivoSemLucro: null, lucroAposAds: 493 });
+  });
+  it('sem histórico → historico', () => {
+    expect(monta({ fonte: f, historicoDesde: null })).toMatchObject({ motivoSemLucro: 'historico', lucroAposAds: null });
+  });
+  it('compartilhado vem antes de historico', () => {
+    const comp = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A', 'Z'] }, dias: [dia(11, '2026-09-15', { cost: 7 })] });
+    expect(monta({ fonte: comp, historicoDesde: null }).motivoSemLucro).toBe('compartilhado');
+  });
+  it('paridade com o painel: mesma família, janela e histórico → os dois bloqueiam por historico', () => {
+    const historicoDesde = '2026-09-20T12:00:00Z';
+    const ads = monta({ alvo: { tipo: 'familia', codigoPai: 'P' }, codigos: ['A'], fonte: f, historicoDesde });
+    const painel = montarPainelAds({
+      fonte: { sync: { ...SYNC, conta_cobertura_desde: SYNC.cobertura_desde }, conta: [], grupos: [{ ad_group_id: 11, tipo: 'FAMILY',
+        status: 'ACTIVE', cost: 7, clicks: 0, prints: 0, direct_amount: 0, indirect_amount: 0, total_amount: 0, membros: ['MLB1'] }] },
+      janela: DIAS_FIN, agora: AGORA, codigosPorMlb: new Map([['MLB1', ['A']]]), familiaDoCodigo: new Map([['A', 'P']]),
+      nomeDaFamilia: new Map(), lucroPorFamilia: new Map([['P', { nome: 'P', lucro: 500, brutoComCusto: 1000, fonteCusto: 'real' }]]),
+      lucroConta: { lucro: 500, fonteCusto: 'real' }, historicoDesde, baseAcosValidada: false,
+    });
+    expect(ads).toMatchObject({ motivoSemLucro: 'historico', lucroAposAds: null });
+    expect(painel.familias[0]).toMatchObject({ motivo: 'historico', resultado: null });
+  });
+});
+
+describe('montarAds — fim no último dia coletado', () => {
+  it('às 08:00 BRT, antes da coleta do dia, o período vai até anteontem e o lucro após Ads aparece', () => {
+    const agora = new Date('2026-10-05T08:00:00-03:00');
+    const sync = { ...SYNC, ultimo_ok_em: '2026-10-04T14:17:00Z' };
+    const janela = { desde: '2026-09-28T03:00:00.000Z', ate: '2026-10-06T02:59:59.999Z' };
+    const ate = fimDiasAds(agora, sync.ultimo_ok_em);
+    expect(ate).toBe('2026-10-03');
+    const dias = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03'].map((d) => dia(11, d, { cost: 1 }));
+    const a = monta({ agora, janela, intervalos: intervalosBRT(janela.desde, janela.ate, 'semana', agora),
+      diasFinanceiros: { desde: '2026-09-28', ate }, fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias, sync }) });
+    expect(a).toMatchObject({ motivoSemLucro: null, lucroAposAds: 494 });
+    expect(a.serieDiaria.at(-1)!.intervalo.rotulo).toBe('03/10');
   });
 });

@@ -134,6 +134,14 @@ export async function buscarAdsSync(): Promise<AdsSync | null> {
     custo_listado: data.custo_listado == null ? null : Number(data.custo_listado) };
 }
 
+/** Só o `ultimo_ok_em` da coleta de Ads (fim do período: `fimDiasAds`). Chave de cache `['ads-sync-fim']`,
+ *  compartilhada pelo painel e pelo dossiê. */
+export async function buscarUltimoOkAds(): Promise<string | null> {
+  const { data, error } = await supabase.from('ml_ads_sync').select('ultimo_ok_em').maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.ultimo_ok_em ?? null;
+}
+
 /** MLB → códigos de MLBs arbitrários — RPC `vendas_sku_codigos_mlbs` (mesma UNION de vendas_sku_mlbs).
  *  MLB sem código não vem no objeto. */
 export async function buscarCodigosMlbs(mlbs: string[]): Promise<Map<string, string[]>> {

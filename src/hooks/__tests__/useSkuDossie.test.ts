@@ -19,7 +19,7 @@ const { custosQ, catQ, devQ, dados, montarAdsSpy } = vi.hoisted(() => ({
     buscarIdsDossie: vi.fn(), buscarMlbsDossie: vi.fn(), buscarMovimentos: vi.fn(),
     buscarModeracoes: vi.fn(), buscarPerguntas: vi.fn(), buscarCampanhas: vi.fn(), buscarVendasPorIds: vi.fn(),
     buscarVisitasDia: vi.fn(), buscarPrecoDia: vi.fn(), buscarTrafegoSync: vi.fn(), buscarFonteAds: vi.fn(),
-    buscarResumoAds: vi.fn(),
+    buscarResumoAds: vi.fn(), buscarUltimoOkAds: vi.fn(),
   },
   montarAdsSpy: vi.fn(),
 }));
@@ -37,7 +37,7 @@ vi.mock('@/lib/sku-dossie-dados', () => ({
   buscarMovimentos: dados.buscarMovimentos, buscarModeracoes: dados.buscarModeracoes,
   buscarPerguntas: dados.buscarPerguntas, buscarCampanhas: dados.buscarCampanhas,
   buscarVisitasDia: dados.buscarVisitasDia, buscarPrecoDia: dados.buscarPrecoDia, buscarTrafegoSync: dados.buscarTrafegoSync,
-  buscarFonteAds: dados.buscarFonteAds, buscarResumoAds: dados.buscarResumoAds,
+  buscarFonteAds: dados.buscarFonteAds, buscarResumoAds: dados.buscarResumoAds, buscarUltimoOkAds: dados.buscarUltimoOkAds,
 }));
 vi.mock('@/lib/sku-ads', async (orig) => {
   const m = await orig<typeof import('@/lib/sku-ads')>();
@@ -87,6 +87,7 @@ function servir(vendas: Venda[], mlbs: Record<string, string[]> = {}) {
   dados.buscarTrafegoSync.mockResolvedValue(null);
   dados.buscarFonteAds.mockResolvedValue({ sync: null, grupos: [], membros: [], dias: [], codigosDosMembros: new Map() });
   dados.buscarResumoAds.mockResolvedValue({ custo_conta: 0, dias_conta: 0, custo_grupos_com_membro: 0 });
+  dados.buscarUltimoOkAds.mockResolvedValue(null);
 }
 
 async function assentar(alvo: Parameters<typeof useSkuDossie>[0]) {
@@ -310,6 +311,29 @@ describe('useSkuDossie — tráfego', () => {
       expect(d.linhaPeriodo!.acc.unidades).toBe(2);
       h.unmount();
     }
+  });
+
+  it('Ads: às 08:00 BRT (coleta do dia não rodou) os dias financeiros terminam no mesmo dia do painel', async () => {
+    vi.setSystemTime(new Date('2026-10-05T08:00:00-03:00'));
+    const ultimoOk = '2026-10-04T14:17:00Z';
+    servir([venda({ id: 'a' })], { MLB1: ['A'] });
+    dados.buscarUltimoOkAds.mockResolvedValue(ultimoOk);
+    montarAdsSpy.mockClear();
+    const h = renderHook(() => useSkuDossie(sku('A'), { tipo: 'range', desde: '2026-09-28', ate: '2026-10-05' }, 'semana'), { wrapper });
+    await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
+    const { periodoAds } = await import('@/lib/ads-painel-dados');
+    expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros).toEqual({ desde: '2026-09-28', ate: periodoAds(7, new Date(), ultimoOk).ate });
+    expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros.ate).toBe('2026-10-03');
+  });
+
+  it('Ads: histórico = 1ª venda da ORG (catálogo inteiro), não a do alvo', async () => {
+    Object.assign(catQ, { data: [cat({ primeiraVenda: '2026-09-20T12:00:00Z' }),
+      cat({ codigo: 'B', codigoPai: 'Q', primeiraVenda: '2026-03-01T12:00:00Z' })] });
+    servir([venda({ id: 'a' })], { MLB1: ['A'] });
+    montarAdsSpy.mockClear();
+    const h = renderHook(() => useSkuDossie(sku('A'), SET, 'semana'), { wrapper });
+    await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
+    expect(montarAdsSpy.mock.lastCall![0].historicoDesde).toBe('2026-03-01T12:00:00Z');
   });
 
   it('Ads: mais de 366 dias financeiros → não consulta o resumo e passa periodo_longo', async () => {

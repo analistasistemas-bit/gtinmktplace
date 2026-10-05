@@ -17,11 +17,11 @@ import { janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-s
 
 /** Mesmos resolvers e mesma fonte da aba Vendas (aba-vendas.tsx:173-190): é isso que faz a soma bater. */
 /** `janelaFixa`: janela ISO pronta (ex.: dias BRT do painel de Ads), no lugar de `resolverJanela(periodo)`. */
-export function useVendasSku(periodo: Periodo, janelaFixa?: Janela) {
+export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = true) {
   const janela = useMemo(() => janelaFixa ?? resolverJanela(periodo), [periodo, janelaFixa]);
   const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const estendida = useMemo(() => janelaEstendida(janela, anterior), [janela, anterior]);
-  const vendasQ = useVendas(estendida, 'todos');
+  const vendasQ = useVendas(estendida, 'todos', 'todos', enabled);
   const custosQ = useCustos();
   const custos = custosQ.data;
   const { data: fotos } = useFotosProduto();

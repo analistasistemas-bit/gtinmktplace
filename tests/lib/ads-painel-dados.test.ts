@@ -2,12 +2,30 @@ import { describe, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc } }));
 import { buscarPainelAds, janelaBRT, periodoAds } from '@/lib/ads-painel-dados';
+import { fimDiasAds } from '@/lib/sku-ads';
 import { dentroDaJanela } from '@/lib/vendas-sku';
 
 describe('periodoAds', () => {
   it('30 dias inteiros terminando ontem (BRT), mesmo às 00:30', () => {
-    expect(periodoAds(30, new Date('2026-10-04T00:30:00-03:00'))).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
-    expect(periodoAds(7, new Date('2026-10-04T23:50:00-03:00'))).toEqual({ desde: '2026-09-27', ate: '2026-10-03' });
+    expect(periodoAds(30, new Date('2026-10-04T00:30:00-03:00'), null)).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
+    expect(periodoAds(7, new Date('2026-10-04T23:50:00-03:00'), null)).toEqual({ desde: '2026-09-27', ate: '2026-10-03' });
+  });
+  // A coleta roda às 11:17 BRT e lê até D-1: antes dela "ontem" ainda não existe (achado D2 da validação).
+  const MANHA = new Date('2026-10-05T08:00:00-03:00');
+  const TARDE = new Date('2026-10-05T12:00:00-03:00');
+  it('fim = último dia coletado quando ele é anteontem (recuo de no máximo 1 dia)', () => {
+    expect(fimDiasAds(MANHA, '2026-10-04T14:17:00Z')).toBe('2026-10-03');
+    expect(fimDiasAds(TARDE, '2026-10-05T14:17:00Z')).toBe('2026-10-04');
+  });
+  it('sem coleta, ou worker parado há mais de 1 dia → ontem (a cobertura falha e o aviso cobre)', () => {
+    expect(fimDiasAds(MANHA, null)).toBe('2026-10-04');
+    expect(fimDiasAds(MANHA, '2026-10-02T14:17:00Z')).toBe('2026-10-04');
+  });
+  it('N dias inteiros terminando no fim coletado', () => {
+    const u = '2026-10-04T14:17:00Z';
+    expect(periodoAds(7, MANHA, u)).toEqual({ desde: '2026-09-27', ate: '2026-10-03' });
+    expect(periodoAds(30, MANHA, u)).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
+    expect(periodoAds(90, MANHA, u)).toEqual({ desde: '2026-07-06', ate: '2026-10-03' });
   });
 });
 describe('janelaBRT', () => {

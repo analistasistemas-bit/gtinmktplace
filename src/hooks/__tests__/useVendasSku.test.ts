@@ -87,13 +87,13 @@ describe('useVendasSku — janelaFixa', () => {
     const fixa = { desde: '2026-09-04T07:00:00.000Z', ate: '2026-10-04T06:59:59.999Z' };
     useVendas.mockClear();
     renderHook(() => useVendasSku(range, fixa));
-    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(fixa, janelaAnterior(fixa, range)), 'todos');
+    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(fixa, janelaAnterior(fixa, range)), 'todos', 'todos', true);
   });
 
   it('sem janelaFixa, o comportamento atual não muda (resolverJanela do período)', () => {
     const j = resolverJanela(range);
     useVendas.mockClear();
     renderHook(() => useVendasSku(range));
-    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(j, janelaAnterior(j, range)), 'todos');
+    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(j, janelaAnterior(j, range)), 'todos', 'todos', true);
   });
 });

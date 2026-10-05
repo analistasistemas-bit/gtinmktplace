@@ -40,7 +40,7 @@ export function chaveJanela(janela: Janela): [string, string] {
   return [janela.desde, ateEhHoje ? hoje : janela.ate];
 }
 
-export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo = 'todos') {
+export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo = 'todos', enabled = true) {
   const qc = useQueryClient();
   const [desdeDia, ateDia] = chaveJanela(janela);
   const queryKey = ['vendas', desdeDia, ateDia, origem, canal] as const;
@@ -66,6 +66,7 @@ export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo
       const delta = await buscarVendas(janela, origem, canal, marca);
       return mesclarVendas(prev!, delta);
     },
+    enabled,
     staleTime: 5 * 60_000,
     refetchInterval: 180_000,
     refetchOnWindowFocus: true,

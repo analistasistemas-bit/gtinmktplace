@@ -15,13 +15,13 @@ import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { buscarVendasPorIds, type Venda } from '@/lib/faturamento';
 import {
   buscarIdsDossie, buscarMlbsDossie, buscarMovimentos, buscarModeracoes, buscarPerguntas, buscarCampanhas,
-  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync, buscarFonteAds, buscarResumoAds,
+  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync, buscarFonteAds, buscarResumoAds, buscarUltimoOkAds,
 } from '@/lib/sku-dossie-dados';
 import { diaBRT, intervalosBRT, type Passo } from '@/lib/calendario-brt';
 import { janelaBRT } from '@/lib/ads-painel-dados';
 import { montarDossie, type AlvoDossie, type DossieSku, type EstadoDossie } from '@/lib/sku-dossie';
 import { conjuntoTrafego, faixaTrafego, montarTrafego } from '@/lib/sku-trafego';
-import { diasEntre, montarAds, type AdsDossie } from '@/lib/sku-ads';
+import { diasEntre, fimDiasAds, montarAds, type AdsDossie } from '@/lib/sku-ads';
 
 const HOJE_30: Periodo = { tipo: 'preset', dias: 30 };
 
@@ -31,13 +31,16 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const intervalos = useMemo(() => intervalosBRT(janela.desde, janela.ate, passo), [janela, passo]);
-  // Dias financeiros do Ads: do 1º dia do período até min(último dia, ontem) — o Ads nunca tem hoje.
+  // Dias financeiros do Ads: do 1º dia do período até min(último dia, fim do Ads) — o Ads nunca tem hoje e,
+  // antes da coleta do dia, nem ontem (fimDiasAds, o mesmo fim do /ads). Falha no sync → ontem (não derruba o dossiê).
   // Período só de hoje → desde > ate: sem dias (sem resumo nem lucroAds).
+  const syncFimQ = useQuery({ queryKey: ['ads-sync-fim'], queryFn: buscarUltimoOkAds, staleTime: 5 * 60_000 });
+  const syncFimPronto = syncFimQ.isSuccess || syncFimQ.isError;
   const diasFin = useMemo(() => {
-    const ontem = diaBRT(Date.now() - 86_400_000);
+    const fim = fimDiasAds(new Date(), syncFimQ.data ?? null);
     const ate = diaBRT(Date.parse(janela.ate));
-    return { desde: diaBRT(Date.parse(janela.desde)), ate: ate < ontem ? ate : ontem };
-  }, [janela]);
+    return { desde: diaBRT(Date.parse(janela.desde)), ate: ate < fim ? ate : fim };
+  }, [janela, syncFimQ.data]);
   const semDiasFin = diasFin.desde > diasFin.ate;
   const janelaAds = useMemo(() => (semDiasFin ? null : janelaBRT(diasFin.desde, diasFin.ate)), [diasFin, semDiasFin]);
   // O resumo recusa > 366 dias; o intervalo livre do dossiê não tem teto: acima disso não consulta.
@@ -119,7 +122,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
   const resumoQ = useQuery({
     queryKey: ['sku-dossie-ads-resumo', diasFin],
     queryFn: () => buscarResumoAds(diasFin.desde, diasFin.ate),
-    enabled: temAds && !longo && !semDiasFin,
+    enabled: temAds && !longo && !semDiasFin && syncFimPronto,
     staleTime: 5 * 60_000,
   });
 
@@ -137,7 +140,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     if (!catQ.data) return { estado: 'carregando', dados: null };
     if (!codigos.length) return { estado: 'nao_encontrado', dados: null }; // família fora do catálogo
     // Espera custos (sem erro) e devoluções como useVendasSku: nada de "sem custo" ou taxa 0 no load.
-    if (!vendasQ.data || !extrasQ.data || !devQ.data || (!custos && !custosQ.isError)) return { estado: 'carregando', dados: null };
+    if (!vendasQ.data || !extrasQ.data || !devQ.data || (!custos && !custosQ.isError) || !syncFimPronto) return { estado: 'carregando', dados: null };
     const hoje = resolverJanela(HOJE_30); // posição de hoje: "agora" reancora a cada recálculo
     return montarDossie({
       alvo: alvoM, codigos, vendas: vendasQ.data, agrupar,
@@ -145,7 +148,15 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
       janelaAds, ...extrasQ.data,
     });
   }, [catQ.isError, devQ.isError, vendasQ.isError, extrasQ.isError, catQ.data, alvoM, codigos, vendasQ.data, extrasQ.data, devQ.data,
-    custos, custosQ.isError, agrupar, janela, anterior, intervalos, janelaAds]);
+    custos, custosQ.isError, agrupar, janela, anterior, intervalos, janelaAds, syncFimPronto]);
+
+  // 1ª venda da ORG (mínimo do catálogo inteiro, como vendas-sku): a do alvo bloquearia família que só
+  // começou depois — antes da 1ª venda dela o zero é real.
+  const historicoOrg = useMemo(() => {
+    let min: string | null = null;
+    for (const c of catQ.data ?? []) if (c.primeiraVenda && (min == null || Date.parse(c.primeiraVenda) < Date.parse(min))) min = c.primeiraVenda;
+    return min;
+  }, [catQ.data]);
 
   // Memo à parte: o tráfego chegar (ou falhar) não recalcula o dossiê.
   const dados = useMemo<DossieSku | null>(() => {
@@ -166,16 +177,16 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
       lucroPeriodo: r.dados.lucroAds?.lucro ?? null, fonteCusto: r.dados.lucroAds?.fonteCusto ?? null, agora: new Date(),
       fonte: adsQ.isError ? 'erro' : adsQ.data ?? 'carregando',
       resumo: semDiasFin ? null : longo ? 'periodo_longo' : resumoQ.isError ? 'erro' : resumoQ.data === undefined ? 'carregando' : resumoQ.data,
-      diasFinanceiros: diasFin,
+      diasFinanceiros: diasFin, historicoDesde: historicoOrg,
     });
-  }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data, semDiasFin, longo, resumoQ.isError, resumoQ.data, diasFin]);
+  }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data, semDiasFin, longo, resumoQ.isError, resumoQ.data, diasFin, historicoOrg]);
 
   return {
     estado: r.estado, dados, ads,
     refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(),
       // refetch() roda a queryFn mesmo com enabled=false: sem conjunto, não há o que ler.
       ...(temTrafego ? [trafegoQ.refetch()] : []), ...(temAds ? [adsQ.refetch()] : []),
-      ...(temAds && !longo && !semDiasFin ? [resumoQ.refetch()] : [])]),
+      ...(temAds && !longo && !semDiasFin ? [resumoQ.refetch()] : []), syncFimQ.refetch()]),
     /** "Tentar de novo" do painel de tráfego: só a query dele. */
     refetchTrafego: async () => { if (temTrafego) await trafegoQ.refetch(); },
     /** "Tentar de novo" da aba Ads: só a query dela. */

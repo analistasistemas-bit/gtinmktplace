@@ -11,7 +11,7 @@ import type { FonteCusto } from './vendas-sku';
 export type AlcanceAds = 'sku' | 'anuncio' | 'familia' | 'indisponivel';
 export type EstadoAds = 'carregando' | 'erro' | 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso'
   | 'parcial' | 'desatualizado' | 'sem_ads' | 'ok';
-export type MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | null;
+export type MotivoSemLucro = 'compartilhado' | 'historico' | 'sem_lucro' | 'cobertura' | null;
 /** Por que o % de gasto não identificado não aparece (a tela diz o motivo). */
 export type MotivoSemNaoIdentificado = 'periodo_longo' | 'incompleto' | 'divergente' | 'erro' | null;
 
@@ -47,6 +47,10 @@ export interface AdsDossie {
    *  null quando não dá para medir (ver naoIdentificadoMotivo) ou ainda carregando. */
   naoIdentificadoPct: number | null;
   naoIdentificadoMotivo: MotivoSemNaoIdentificado;
+  /** 1ª venda da org (texto do motivo `historico`). */
+  historicoDesde: string | null;
+  /** Último dia BRT do período de Ads (ontem, ou anteontem antes da coleta do dia); null sem dados. */
+  fimDia: string | null;
   /** Códigos de fora do alvo e membros sem código nos grupos do alcance. */
   compartilhadoCom: { codigos: string[]; semVinculo: number };
   /** Pelos intervalos do dossiê (Semana/Mês). */
@@ -76,11 +80,28 @@ export function diasEntre(desde: string, ate: string): string[] {
  *  coletado_em: com o worker parado, o dia continua em aberto por mais velho que seja. */
 export const atribuicaoFinal = (dia: string, coletadoEm: string) => difDias(diaBRT(Date.parse(coletadoEm)), dia) >= 15;
 
+/** Último dia BRT que a coleta ok leu (ela lê até D-1). */
+export const ultimoDiaColetado = (ultimoOkEm: string | null): string | null =>
+  ultimoOkEm ? somarDias(diaBRT(Date.parse(ultimoOkEm)), -1) : null;
+
+/** Fim do período de Ads (painel e dossiê): ontem, ou anteontem enquanto a coleta do dia não rodou (ela roda
+ *  ~11:17 BRT). Recuo de no máximo 1 dia: sync nulo ou worker parado → ontem, e a cobertura/aviso cobrem. */
+export function fimDiasAds(agora: Date, ultimoOkEm: string | null): string {
+  const ontem = somarDias(diaBRT(agora.getTime()), -1);
+  const u = ultimoDiaColetado(ultimoOkEm);
+  return u === somarDias(ontem, -1) ? u : ontem;
+}
+
+/** Histórico de vendas cobre o período inteiro: ISO ≤ início do 1º dia BRT (03:00Z). Antes dele o lucro é
+ *  desconhecido, nunca zero. Mesma regra no painel (/ads) e no dossiê. */
+export const historicoCobre = (historicoDesde: string | null, desdeDia: string): boolean =>
+  historicoDesde != null && Date.parse(historicoDesde) <= Date.parse(`${desdeDia}T03:00:00.000Z`);
+
 /** Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
  *  Dentro da cobertura, dia sem linha = gasto zero real (conferido no worker: ele grava a série densa de
  *  todo grupo com gasto na janela; grupo sem gasto não tem linha). Fora dela = sem dado. */
 export function diaCoberto(d: string, sync: { cobertura_desde: string | null; ultimo_ok_em: string | null }): boolean {
-  const ultimoDia = sync.ultimo_ok_em ? somarDias(diaBRT(Date.parse(sync.ultimo_ok_em)), -1) : null;
+  const ultimoDia = ultimoDiaColetado(sync.ultimo_ok_em);
   return sync.cobertura_desde != null && ultimoDia != null && d >= sync.cobertura_desde && d <= ultimoDia;
 }
 
@@ -125,12 +146,14 @@ export function montarAds(p: {
   resumo: ResumoAds | null | 'carregando' | 'erro' | 'periodo_longo';
   /** Dias BRT do 1º dia do período até min(último dia, ontem). */
   diasFinanceiros: { desde: string; ate: string };
+  /** 1ª venda da ORG (mínimo do catálogo inteiro, como vendas-sku), nunca a do alvo. */
+  historicoDesde: string | null;
 }): AdsDossie {
   const cods = new Set(p.codigos);
   const mlbsAlvo = new Set([...p.mlbs].filter(([, cs]) => cs.some((c) => cods.has(c))).map(([m]) => m));
   const vazio = (estado: EstadoAds, erro: string | null = null): AdsDossie => ({
     estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, fonteLucro: null, motivoSemLucro: null,
-    naoIdentificadoPct: null, naoIdentificadoMotivo: null, compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null, ultimoOkEm: null,
+    naoIdentificadoPct: null, naoIdentificadoMotivo: null, historicoDesde: p.historicoDesde, fimDia: null, compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null, ultimoOkEm: null,
     diasAbertos: 0, erro,
   });
   if (!mlbsAlvo.size) return vazio('ok');
@@ -161,7 +184,8 @@ export function montarAds(p: {
     .map((d) => [`${d.ad_group_id}|${d.dia}`, d] as const)).values()];
   const desdeDia = diaBRT(Date.parse(p.janela.desde));
   const fimJanela = diaBRT(Date.parse(p.janela.ate));
-  const ateDia = fimJanela < ontem ? fimJanela : ontem;
+  const fimAds = fimDiasAds(p.agora, sync.ultimo_ok_em);
+  const ateDia = fimJanela < fimAds ? fimJanela : fimAds;
   // Despesa do período = mesmo recorte do gráfico: só dia coberto. Na carga parcial não há despesa (totais null).
   const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia && coberto(d.dia));
   const diasPeriodo = diasEntre(desdeDia, ateDia);
@@ -188,11 +212,12 @@ export function montarAds(p: {
     : !sync.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS ? 'desatualizado'
       : totais.custo === 0 && periodoCoberto ? 'sem_ads' : 'ok';
   // Sem dia financeiro (período só de hoje) não há o que medir: cobertura, não "sem custo".
+  const nDias = diasEntre(p.diasFinanceiros.desde, p.diasFinanceiros.ate).length;
   const motivoSemLucro: MotivoSemLucro = alcance === 'anuncio' ? 'compartilhado'
-    : p.lucroPeriodo == null && diasPeriodo.length ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : null;
+    : nDias && !historicoCobre(p.historicoDesde, p.diasFinanceiros.desde) ? 'historico'
+      : p.lucroPeriodo == null && diasPeriodo.length ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : null;
   // Gasto da conta fora dos grupos com membro (provável grupo excluído) não bloqueia mais: vira o % de aviso,
   // medido no período financeiro (não na faixa do gráfico) — trocar Semana/Mês não muda o aviso.
-  const nDias = diasEntre(p.diasFinanceiros.desde, p.diasFinanceiros.ate).length;
   const r = typeof p.resumo === 'object' ? p.resumo : null;
   const contaC = r ? Math.round(r.custo_conta * 100) : 0;
   const gruposC = r ? Math.round(r.custo_grupos_com_membro * 100) : 0;
@@ -227,6 +252,7 @@ export function montarAds(p: {
 
   return {
     estado, alcance, totais, lucroAposAds, fonteLucro, motivoSemLucro, naoIdentificadoPct, naoIdentificadoMotivo,
+    historicoDesde: p.historicoDesde, fimDia: ateDia,
     compartilhadoCom: {
       codigos: [...new Set(grupos.flatMap((g) => g.codigos.filter((c) => !cods.has(c))))].sort(),
       semVinculo: grupos.reduce((s, g) => s + g.semVinculo, 0),
