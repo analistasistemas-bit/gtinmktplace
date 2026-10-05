@@ -78,6 +78,10 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
   a oferecer o preset **Mês atual** (padrão, por decisão do Diego), do primeiro dia do mês BRT até `fimDiasAds`; sem
   dia elegível, mostra "aguardando mês" com acesso aos últimos 30 dias. Despesa e resultado em destaque, ressalvas
   sempre visíveis, filtros por contagem e ranking compacto com detalhe expansível.
+- **Ads sobre a margem (2026-10-05, pedido do Diego):** a coluna "ACOS direto × equilíbrio" vira barra + "Ads X% de
+  Y% possíveis", com (i) explicando a leitura. A barra só aparece com semáforo (cor e selo vêm do domínio); sem
+  semáforo fica só o texto. O detalhe da família mostra o **markup antes de Ads** (lucro ÷ custo do produto, a mesma
+  conta de Vendas SKU), com a trava do equilíbrio: custo parcial, lucro desconhecido ou bruto zero → "—".
 - **Emenda ao ADR-0172:** `fora_dos_grupos` deixa de bloquear o Lucro após Ads (vira aviso do % do período).
 - **Pendente (Task 8, Diego):** ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de
   piloto e ≥ 1 decisão registrada. Só então o épico fecha; até lá o status é "em piloto".
