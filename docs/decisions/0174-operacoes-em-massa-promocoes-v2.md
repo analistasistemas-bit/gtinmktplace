@@ -168,7 +168,7 @@ Design: `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`.
 
 ## Emenda 2026-10-05 — aba "Em promoção" e par normal/catálogo em uma linha
 
-**Status da emenda:** aceita em 2026-10-05 (pedido do Diego); implementação na branch `worktree-promocoes-em-promocao`.
+**Status da emenda:** em produção desde 2026-10-05 (main `f99e1e42`; migration `20261005113104_promocao_itens_anuncio_normal`; `sincronizar-promocoes` v19, `operacoes-massa` v13).
 
 Achado em produção (Hairfly, DEAL `P-MLB18061082`): o produto `00000009` aparecia 2× na campanha —
 `MLB5322348511` (normal) e `MLB7736509406` (catálogo), mesmo `user_product_id` (`MLBU5371930296`), ligados
