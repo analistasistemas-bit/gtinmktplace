@@ -1,7 +1,8 @@
 // Painel de Ads (I2, ADR-0179): período BRT, janela de vendas BRT e leitura da RPC `ads_painel`.
 import { supabase } from '@/lib/supabase';
 import type { FontePainelAds, LucroFamilia } from '@/lib/ads-painel';
-import type { Janela } from '@/lib/metricas';
+import type { Janela, Periodo } from '@/lib/metricas';
+import { diaBRT } from '@/lib/calendario-brt';
 import { agruparPorFamilia, type LinhaSku } from '@/lib/vendas-sku';
 import { fimDiasAds } from '@/lib/sku-ads';
 
@@ -14,6 +15,62 @@ const somarDias = (dia: string, n: number) =>
 export function periodoAds(dias: DiasAds, agora: Date, ultimoOkEm: string | null): { desde: string; ate: string } {
   const ate = fimDiasAds(agora, ultimoOkEm);
   return { desde: somarDias(ate, -(dias - 1)), ate };
+}
+
+export type PeriodoAds = Extract<
+  Periodo,
+  { tipo: 'preset' } | { tipo: 'mes_atual' }
+>;
+
+export type JanelaDiasAds = {
+  desde: string;
+  ate: string;
+};
+
+export type ResolucaoPeriodoAds =
+  | { tipo: 'pronto'; janela: JanelaDiasAds }
+  | {
+      tipo: 'aguardando_mes';
+      janela: null;
+      inicioMes: string;
+      fimDisponivel: string;
+    };
+
+/** Período padrão da tela /ads: decisão do Diego (2026-10-05). Preferência salva vence. */
+export const PERIODO_PADRAO_ADS: PeriodoAds = {
+  tipo: 'mes_atual',
+};
+
+/** Mês atual = mês civil BRT até o último dia coletado (`fimDiasAds`). Antes do 1º dia coletado do mês,
+ *  `aguardando_mes` — nunca intervalo invertido nem mês anterior. Presets delegam a `periodoAds`. */
+export function resolverPeriodoAds(
+  periodo: PeriodoAds,
+  agora: Date,
+  ultimoOkEm: string | null,
+): ResolucaoPeriodoAds {
+  if (periodo.tipo === 'preset') {
+    return {
+      tipo: 'pronto',
+      janela: periodoAds(periodo.dias, agora, ultimoOkEm),
+    };
+  }
+
+  const inicioMes = `${diaBRT(agora.getTime()).slice(0, 7)}-01`;
+  const fimDisponivel = fimDiasAds(agora, ultimoOkEm);
+
+  if (fimDisponivel < inicioMes) {
+    return {
+      tipo: 'aguardando_mes',
+      janela: null,
+      inicioMes,
+      fimDisponivel,
+    };
+  }
+
+  return {
+    tipo: 'pronto',
+    janela: { desde: inicioMes, ate: fimDisponivel },
+  };
 }
 
 /** Dias BRT → janela ISO com offset fixo (Brasil sem horário de verão desde 2019): não depende do fuso do navegador. */

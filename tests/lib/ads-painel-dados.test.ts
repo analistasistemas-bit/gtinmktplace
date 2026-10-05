@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc } }));
-import { buscarPainelAds, janelaBRT, periodoAds } from '@/lib/ads-painel-dados';
+import { buscarPainelAds, janelaBRT, periodoAds, resolverPeriodoAds } from '@/lib/ads-painel-dados';
 import { fimDiasAds } from '@/lib/sku-ads';
 import { dentroDaJanela } from '@/lib/vendas-sku';
 
@@ -53,5 +53,81 @@ describe('buscarPainelAds', () => {
   it('erro da RPC propaga', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
     await expect(buscarPainelAds('2026-09-01', '2026-09-01')).rejects.toThrow('boom');
+  });
+});
+
+describe('resolverPeriodoAds: mês atual', () => {
+  const mensal = { tipo: 'mes_atual' } as const;
+
+  it.each([
+    ['2026-10-05T08:00:00-03:00', '2026-10-04T14:17:00Z', '2026-10-03'],
+    ['2026-10-05T12:00:00-03:00', '2026-10-05T14:17:00Z', '2026-10-04'],
+    ['2026-10-05T08:00:00-03:00', null, '2026-10-04'],
+    ['2026-10-05T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-04'],
+  ])('resolve %s com o recuo existente', (agora, sync, ate) => {
+    expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
+      tipo: 'pronto',
+      janela: { desde: '2026-10-01', ate },
+    });
+  });
+
+  it.each([
+    ['2026-10-01T08:00:00-03:00', '2026-09-30T14:17:00Z', '2026-10-01', '2026-09-29'],
+    ['2026-10-01T12:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
+    ['2026-10-02T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
+    ['2027-01-01T12:00:00-03:00', '2027-01-01T14:17:00Z', '2027-01-01', '2026-12-31'],
+  ])('aguarda sem gerar intervalo invertido em %s',
+    (agora, sync, inicioMes, fimDisponivel) => {
+      expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
+        tipo: 'aguardando_mes',
+        janela: null,
+        inicioMes,
+        fimDisponivel,
+      });
+    },
+  );
+
+  it('libera o primeiro dia após a coleta do dia 2', () => {
+    expect(resolverPeriodoAds(
+      mensal,
+      new Date('2026-10-02T12:00:00-03:00'),
+      '2026-10-02T14:17:00Z',
+    )).toEqual({
+      tipo: 'pronto',
+      janela: { desde: '2026-10-01', ate: '2026-10-01' },
+    });
+  });
+
+  it('usa setembro quando UTC já está em outubro', () => {
+    expect(resolverPeriodoAds(
+      mensal,
+      new Date('2026-10-01T02:30:00Z'),
+      null,
+    )).toEqual({
+      tipo: 'pronto',
+      janela: { desde: '2026-09-01', ate: '2026-09-29' },
+    });
+  });
+
+  it('respeita fevereiro bissexto', () => {
+    expect(resolverPeriodoAds(
+      mensal,
+      new Date('2028-02-29T15:00:00-03:00'),
+      null,
+    )).toEqual({
+      tipo: 'pronto',
+      janela: { desde: '2028-02-01', ate: '2028-02-28' },
+    });
+  });
+
+  it.each([7, 30, 90] as const)('preserva o preset de %i dias', dias => {
+    const agora = new Date('2026-10-05T08:00:00-03:00');
+    const sync = '2026-10-04T14:17:00Z';
+
+    expect(resolverPeriodoAds({ tipo: 'preset', dias }, agora, sync))
+      .toEqual({
+        tipo: 'pronto',
+        janela: periodoAds(dias, agora, sync),
+      });
   });
 });
