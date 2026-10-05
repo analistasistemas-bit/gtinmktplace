@@ -7,7 +7,7 @@ import { decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizar
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { rodarVinculacaoCatalogo, guardKitVinculado, type FilhoCatalogoUP } from './vinculacao.ts';
+import { rodarVinculacaoCatalogo, guardKitVinculado, anuncioSemVariacao, type FilhoCatalogoUP } from './vinculacao.ts';
 
 // `alertar` vive só no body do job (spec §1.4): estendido aqui por interseção para não tocar
 // queue.ts — mudar o arquivo compartilhado arrastaria a frota QStash inteira para o redeploy.
@@ -113,6 +113,7 @@ Deno.serve(async (req) => {
     // vive granularmente em anuncios_externos_itens.catalog_* (não há um único ml_item_id/variação
     // para mapear); espelhar N itens num só ml_item_id fabricaria estrutura — pulado de propósito.
     let cores: string[] = [];
+    let semVariacao: boolean;
     if (vinc.tipo === 'legacy') {
       const { data: varsEspelho } = await admin.from('variacoes')
         .select('codigo, cor, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
@@ -129,8 +130,10 @@ Deno.serve(async (req) => {
         .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto' || v.catalog_status === 'nao_elegivel' || v.catalog_status === 'pendente')
         .map((v) => (v as { cor?: string | null }).cor)
         .filter((c): c is string => !!c))];
+      semVariacao = anuncioSemVariacao({ tipo: 'legacy', mlItemId: familia.ml_item_id, variacoes: varsEspelho ?? [] });
     } else {
       cores = await coresNoMatchUP(admin, familia, vinc.filhos);
+      semVariacao = anuncioSemVariacao({ tipo: 'up', mlItemId: familia.ml_item_id, qtdItensUP: vinc.filhos.length });
     }
 
     if (resultado.deveAlertar && !silencioso) {
@@ -142,6 +145,7 @@ Deno.serve(async (req) => {
             titulo: familia.nome_pai ?? null,
             cores,
             motivo: decidirMotivoAlertaCatalogo(resumo),
+            semVariacao,
             categoriaSugerida:
               resumo.ficha_divergente > 0 && familia.catalogo_categoria_sugerida_id && familia.catalogo_categoria_sugerida_nome
                 ? { id: familia.catalogo_categoria_sugerida_id, nome: familia.catalogo_categoria_sugerida_nome }

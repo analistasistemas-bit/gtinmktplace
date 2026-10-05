@@ -39,6 +39,8 @@ export interface CatalogoNoMatchAlerta {
   motivo?: 'elegibilidade_esgotada' | 'sem_variation_id' | 'elegibilidade_nao_resolvida';
   /** Categoria compatível com a ficha do GTIN, calculada ANTES de publicar (spec 2026-08-22). */
   categoriaSugerida?: { id: string; nome: string } | null;
+  /** SKU único, sem variação no ML: a mensagem fala do anúncio, sem cor nem "variação". */
+  semVariacao?: boolean;
 }
 
 // Alerta PROATIVO (ADR-0036): no opt-in de catálogo, alguma variação não tem ficha equivalente
@@ -50,17 +52,22 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
   const cores = item.cores.join(', ');
   const plural = item.cores.length === 1 ? 'a variação' : 'as variações';
   const url = `https://www.mercadolivre.com.br/produzir/catalogo/${item.ml_item_id}`;
+  const um = item.semVariacao || item.cores.length === 1;
   const causa = item.motivo === 'elegibilidade_esgotada'
-    ? `${item.cores.length === 1 ? 'teve' : 'tiveram'} elegibilidade esgotada após múltiplas tentativas`
+    ? `${um ? 'teve' : 'tiveram'} elegibilidade esgotada após múltiplas tentativas`
     : item.motivo === 'elegibilidade_nao_resolvida'
-    ? `${item.cores.length === 1 ? 'ficou' : 'ficaram'} sem resposta de elegibilidade do Mercado Livre após todas as tentativas`
+    ? `${um ? 'ficou' : 'ficaram'} sem resposta de elegibilidade do Mercado Livre após todas as tentativas`
     : item.motivo === 'sem_variation_id'
     ? 'não tem identificador de variação no Mercado Livre'
     : 'não tem ficha equivalente';
   return [
-    `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" ${causa} e não vai competir.`,
+    item.semVariacao
+      ? `⚠️ Catálogo: o anúncio "${nome}" ${causa} e não vai competir.`
+      : `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" ${causa} e não vai competir.`,
     `Se ficar assim, o Mercado Livre pode pausar/inativar o anúncio.`,
-    `Para evitar: abra o link → Publicar no catálogo → na cor sem ficha clique "Não encontro minha variação" → Confirmar.`,
+    item.semVariacao
+      ? `Para evitar: abra o link → Publicar no catálogo → associe a ficha do produto ou informe que ela não existe → Confirmar.`
+      : `Para evitar: abra o link → Publicar no catálogo → na cor sem ficha clique "Não encontro minha variação" → Confirmar.`,
     // Regra do projeto: NUNCA trocar categoria de anúncio publicado (re-moderação, incidente
     // Aquaphor) — a sugestão é para a PRÓXIMA publicação, e a mensagem diz isso.
     ...(item.categoriaSugerida

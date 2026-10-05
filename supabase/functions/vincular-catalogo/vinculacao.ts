@@ -91,6 +91,20 @@ export function guardKitVinculado(
   return { status: 200, body: { ok: true, skip: 'kit vinculado — sem catálogo por design' } };
 }
 
+/**
+ * Anúncio de SKU único (sem variação no ML): Legacy item plano (ADR-0084: a única variação guarda o
+ * próprio ml_item_id) ou família UP com 1 item só. O alerta no-match deixa de falar em "variação X"
+ * — a cor ali vem da foto, não de uma variação que o operador consiga achar na UI do ML.
+ */
+export function anuncioSemVariacao(
+  a:
+    | { tipo: 'legacy'; mlItemId: string; variacoes: Array<{ ml_variation_id: string | null }> }
+    | { tipo: 'up'; mlItemId: string; qtdItensUP: number },
+): boolean {
+  if (a.tipo === 'up') return a.qtdItensUP === 1;
+  return a.variacoes.length === 1 && a.variacoes[0].ml_variation_id === a.mlItemId;
+}
+
 export interface RodarVinculacaoDeps {
   vincularUP?: typeof vincularItensCatalogoUP;
   vincularLegacy?: typeof vincularVariacoesCatalogo;

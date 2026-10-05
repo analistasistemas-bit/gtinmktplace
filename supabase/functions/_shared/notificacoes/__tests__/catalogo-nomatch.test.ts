@@ -65,6 +65,19 @@ describe('montarMensagemCatalogoNoMatch', () => {
     expect(msg).toContain('Não troque a categoria');
   });
 
+  // Caso real (MLB5322386919, 2026-10-05): produto de SKU único com cor da foto ("Vermelho") virava
+  // "a variação Vermelho" e mandava clicar "Não encontro minha variação" — que não existe ali.
+  it('anúncio sem variação fala do anúncio, sem citar cor nem "variação"', () => {
+    const msg = montarMensagemCatalogoNoMatch({
+      ml_item_id: 'MLB5322386919', titulo: 'Kit Cauterização Tanox 300ml', cores: ['Vermelho'],
+      motivo: 'elegibilidade_esgotada', semVariacao: true,
+    });
+    expect(msg).toContain('o anúncio "Kit Cauterização Tanox 300ml" teve elegibilidade esgotada');
+    expect(msg).not.toContain('Vermelho');
+    expect(msg.toLowerCase()).not.toContain('variação');
+    expect(msg).toContain('https://www.mercadolivre.com.br/produzir/catalogo/MLB5322386919');
+  });
+
   it('sem categoriaSugerida o texto fica idêntico ao atual', () => {
     const msg = montarMensagemCatalogoNoMatch({ ml_item_id: 'MLB1', titulo: 'X', cores: ['Preto'] });
     expect(msg).not.toContain('Sugestão:');

@@ -4,6 +4,7 @@ import {
   carregarFilhosCatalogoUP,
   rodarVinculacaoCatalogo,
   guardKitVinculado,
+  anuncioSemVariacao,
 } from '../vinculacao';
 
 // Fake admin configurável por tabela; cada query é thenable e devolve o dataset da tabela.
@@ -185,5 +186,21 @@ describe('guardKitVinculado — ADR-0151 D-5: kit vinculado nunca entra no alert
 
   it('família comum (sem kit) segue o fluxo normal', () => {
     expect(guardKitVinculado({ kit_multiplicador: null })).toEqual(null);
+  });
+});
+
+describe('anuncioSemVariacao — alerta no-match fala do anúncio, não de "variação X"', () => {
+  it('Legacy item plano: 1 variação cujo ml_variation_id é o próprio item', () => {
+    expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [{ ml_variation_id: 'MLB1' }] })).toBe(true);
+  });
+  it('Legacy com variação real (id numérico do ML) não é sem variação', () => {
+    expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [{ ml_variation_id: '182736451' }] })).toBe(false);
+  });
+  it('Legacy com várias variações não é sem variação', () => {
+    expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [{ ml_variation_id: 'MLB1' }, { ml_variation_id: '9' }] })).toBe(false);
+  });
+  it('UP com 1 item só é sem variação; com 2+ itens não', () => {
+    expect(anuncioSemVariacao({ tipo: 'up', mlItemId: 'MLB1', qtdItensUP: 1 })).toBe(true);
+    expect(anuncioSemVariacao({ tipo: 'up', mlItemId: 'MLB1', qtdItensUP: 2 })).toBe(false);
   });
 });
