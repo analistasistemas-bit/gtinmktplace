@@ -74,6 +74,10 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
   histórico da org (mínimo da primeira venda do catálogo), em paridade com o painel.
 - **Semáforo do ACOS de equilíbrio ligado em 2026-10-05** por decisão do Diego (`BASE_ACOS_VALIDADA = true`), com
   base no spike 055 (`docs/spikes/055-base-acos-equilibrio.md`).
+- **Redesenho da tela (2026-10-05, plano `docs/superpowers/plans/2026-10-05-ads-ui-premium.md`):** a interface passa
+  a oferecer o preset **Mês atual** (padrão, por decisão do Diego), do primeiro dia do mês BRT até `fimDiasAds`; sem
+  dia elegível, mostra "aguardando mês" com acesso aos últimos 30 dias. Despesa e resultado em destaque, ressalvas
+  sempre visíveis, filtros por contagem e ranking compacto com detalhe expansível.
 - **Emenda ao ADR-0172:** `fora_dos_grupos` deixa de bloquear o Lucro após Ads (vira aviso do % do período).
 - **Pendente (Task 8, Diego):** ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de
   piloto e ≥ 1 decisão registrada. Só então o épico fecha; até lá o status é "em piloto".
