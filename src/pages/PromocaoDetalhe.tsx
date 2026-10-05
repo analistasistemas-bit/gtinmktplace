@@ -17,7 +17,7 @@ import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import type { AcaoPromocao } from '@/lib/operacoes';
 import {
-  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloMlb, rotuloSemLiquido, rotuloTipo,
+  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
@@ -124,7 +124,7 @@ export default function PromocaoDetalhe() {
       ), className: 'w-10',
       cell: (r: ItemPromocao) => (
         <Checkbox
-          aria-label={`Selecionar ${r.ml_item_id}`} checked={selecionados.has(r.ml_item_id)}
+          aria-label={`Selecionar ${mlbExibido(r)}`} checked={selecionados.has(r.ml_item_id)}
           onCheckedChange={() => alternarItem(r.ml_item_id)} onClick={(e) => e.stopPropagation()}
         />
       ),
@@ -186,7 +186,7 @@ export default function PromocaoDetalhe() {
       key: 'ml', header: <span className="sr-only">Abrir no Mercado Livre</span>, stickyRight: true,
       cell: (r) => r.permalink ? (
         <a href={r.permalink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-          aria-label={`Abrir ${r.ml_item_id} no Mercado Livre`} className="inline-flex size-11 items-center justify-center rounded-md hover:bg-muted">
+          aria-label={`Abrir ${mlbExibido(r)} no Mercado Livre`} className="inline-flex size-11 items-center justify-center rounded-md hover:bg-muted">
           <ExternalLink className="size-4" aria-hidden />
         </a>
       ) : null,
@@ -297,7 +297,7 @@ function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, o
             {podeSelecionar && (
               <div className="absolute left-3 top-4 z-10">
                 <Checkbox
-                  aria-label={`Selecionar ${r.ml_item_id}`} checked={selecionados.has(r.ml_item_id)}
+                  aria-label={`Selecionar ${mlbExibido(r)}`} checked={selecionados.has(r.ml_item_id)}
                   onCheckedChange={() => onToggle(r.ml_item_id)} onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -345,7 +345,7 @@ function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, o
             </button>
             {r.permalink && (
               <a href={r.permalink} target="_blank" rel="noreferrer"
-                aria-label={`Abrir ${r.ml_item_id} no Mercado Livre`}
+                aria-label={`Abrir ${mlbExibido(r)} no Mercado Livre`}
                 className="absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-md hover:bg-muted">
                 <ExternalLink className="size-4" aria-hidden />
               </a>

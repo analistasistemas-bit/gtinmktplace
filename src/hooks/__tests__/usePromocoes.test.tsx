@@ -94,6 +94,16 @@ describe('useParticipacoesPorItem', () => {
     expect(result.current.data?.get('MLB5')).toBe('Campanha Ativa');
   });
 
+  // Grok #4: o .or repete a lista nos dois filtros; centenas de MLBs estouram a URL → fatia em 80.
+  it('fatia os MLBs em blocos de 80', async () => {
+    orMock.mockClear();
+    itensQueryMock.mockResolvedValue({ data: [], error: null });
+    const ids = Array.from({ length: 170 }, (_, i) => `MLB${i}`);
+    const { result } = renderHook(() => useParticipacoesPorItem(ids), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(orMock).toHaveBeenCalledTimes(3);
+  });
+
   // Fix round 2 (achado 3 da revisão final): RPC de módulos em erro desliga esta query
   // (habilitado=false → enabled=false), que sozinha nunca chega a isError.
   it('conta como falha quando a RPC de módulos falha', async () => {

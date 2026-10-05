@@ -213,6 +213,16 @@ describe('fetchers de eventos', () => {
     expect(r[0].ml_item_id).toBe('MLB5');
   });
 
+  // Grok #5: normal e catálogo em blocos diferentes do .in → a mesma linha volta nas duas consultas.
+  it('buscarCampanhas: a mesma linha achada em dois blocos aparece uma vez só', async () => {
+    const itens = fakeChain({ data: [
+      { promocao_id: 'P1', ml_item_id: 'MLB7', anuncio_normal_id: 'MLB5', status: 'started', preco_promo: 9, sincronizado_em: 's1' },
+    ], error: null });
+    mockFrom.mockImplementation((t: string) => (t === 'ml_promocao_itens' ? itens : fakeChain({ data: [], error: null })));
+    const mlbs = Array.from({ length: 81 }, (_, i) => `MLB${i + 100}`);
+    expect(await buscarCampanhas(mlbs)).toHaveLength(1);
+  });
+
   it('erro → lança', async () => {
     mockFrom.mockReturnValue(fakeChain({ data: null, error: { message: 'boom' } }));
     await expect(buscarModeracoes(['MLB1'])).rejects.toThrow('boom');

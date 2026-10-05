@@ -66,6 +66,7 @@ export function abaDa(p: Pick<Promocao, 'status' | 'fim'>, agoraMs: number): Aba
 }
 
 /** MLB que a tela mostra: o normal quando a linha é do catálogo do mesmo User Product (a operação segue no catálogo). */
+export const mlbExibido = (it: Pick<ItemPromocao, 'ml_item_id' | 'anuncio_normal_id'>) => it.anuncio_normal_id ?? it.ml_item_id;
 export const rotuloMlb = (it: Pick<ItemPromocao, 'ml_item_id' | 'anuncio_normal_id'>) =>
   (it.anuncio_normal_id ? `${it.anuncio_normal_id} · promoção via catálogo ${it.ml_item_id}` : it.ml_item_id);
 

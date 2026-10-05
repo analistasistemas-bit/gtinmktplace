@@ -1,6 +1,6 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
-import { ateQuantoDaLinha, rotuloMlb, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
+import { ateQuantoDaLinha, mlbExibido, rotuloMlb, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
 export type AcaoPromocao = 'aderir' | 'sair';
@@ -16,6 +16,7 @@ export interface LinhaPreview {
   sugerido: number | null; ateQuanto: number | null; semaforo: Semaforo; marcado: boolean;
   /** MLB exibido (o normal no par normal/catálogo); o pedido segue por `ml_item_id`. */
   rotulo?: string;
+  mlb?: string;
 }
 
 const PESO: Record<Semaforo, number> = { indisponivel: 0, verde: 1, amarelo: 2, vermelho: 3 };
@@ -53,7 +54,7 @@ export function montarPreview(acao: AcaoPromocao, tipo: 'DEAL' | 'SMART', itens:
     const preco = acao === 'sair' ? it.preco_promo : tipo === 'DEAL' ? it.preco_sugerido : it.preco_promo;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
-      ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), titulo: it.titulo, preco, min: it.preco_min, max: it.preco_max,
+      ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), mlb: mlbExibido(it), titulo: it.titulo, preco, min: it.preco_min, max: it.preco_max,
       sugerido: it.preco_sugerido, ateQuanto: ateQuantoDaLinha(it).valor, semaforo,
       marcado: acao === 'sair' ? true : semaforo === 'verde',
     };

@@ -68,6 +68,13 @@ describe('ListaParticipando', () => {
     expect(within(bloco).getByRole('link', { name: /Gerenciar no Mercado Livre/ })).toBeTruthy();
   });
 
+  it('falha na carga não vira lista vazia', () => {
+    vi.mocked(useParticipacoes).mockReturnValue({ data: undefined, isLoading: false, isError: true } as never);
+    renderLista();
+    expect(screen.getByText('Não foi possível carregar os anúncios em promoção.')).toBeTruthy();
+    expect(screen.queryByText('Nenhum anúncio em promoção.')).toBeNull();
+  });
+
   it('sem participações: estado vazio', () => {
     vi.mocked(useParticipacoes).mockReturnValue({ data: [], isLoading: false } as never);
     renderLista();

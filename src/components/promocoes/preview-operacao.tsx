@@ -138,7 +138,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
               <li key={l.ml_item_id} className="flex flex-col gap-2 py-3">
                 <div className="flex items-start gap-3">
                   <Checkbox
-                    aria-label={`Selecionar ${l.ml_item_id}`}
+                    aria-label={`Selecionar ${l.mlb ?? l.ml_item_id}`}
                     checked={l.marcado}
                     disabled={!!l.motivoBloqueio}
                     onCheckedChange={() => alternarMarcado(l.ml_item_id)}
@@ -160,7 +160,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                       value={l.precoTexto}
                       onChange={(e) => editarPreco(l.ml_item_id, e.target.value)}
                       inputMode="decimal"
-                      aria-label={`Preço de ${l.ml_item_id}`}
+                      aria-label={`Preço de ${l.mlb ?? l.ml_item_id}`}
                       className={cn('w-24', precoInvalido(l) && 'border-danger')}
                     />
                     <div className="flex flex-wrap items-center gap-2">

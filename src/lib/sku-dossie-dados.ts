@@ -72,7 +72,9 @@ export async function buscarCampanhas(mlbs: string[]): Promise<ItemCampanha[]> {
     supabase.from('ml_promocao_itens').select('promocao_id, ml_item_id, anuncio_normal_id, status, preco_promo, sincronizado_em')
       .or(`ml_item_id.in.(${lote.join(',')}),anuncio_normal_id.in.(${lote.join(',')})`)
       .order('ml_item_id').order('promocao_id').range(de, ate));
-  const itens = linhas.map(({ anuncio_normal_id, ...i }) => ({ ...i, ml_item_id: anuncio_normal_id ?? i.ml_item_id }));
+  // Normal e catálogo em blocos diferentes: a mesma linha volta nas duas consultas.
+  const unicas = new Map(linhas.map((l) => [`${l.promocao_id}|${l.ml_item_id}`, l]));
+  const itens = [...unicas.values()].map(({ anuncio_normal_id, ...i }) => ({ ...i, ml_item_id: anuncio_normal_id ?? i.ml_item_id }));
   const ids = [...new Set(itens.map((i) => i.promocao_id))];
   const promos = await emLotes<Campanha>(ids, (lote, de, ate) =>
     supabase.from('ml_promocoes').select('promocao_id, nome, tipo, status, inicio, fim, sincronizado_em')

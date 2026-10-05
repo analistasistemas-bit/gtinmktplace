@@ -236,7 +236,10 @@ export async function sincronizarPromocao(
       if (faltam.length) for (const [k, v] of await deps.buscarItensML(faltam)) ml.set(k, v);
       const papeis = lote.map((it) => ({ it, par: papelNoPar(it.ml_item_id, ml, campanha) }));
       const visiveis = papeis.filter((x) => x.par.papel !== 'normal_escondido');
-      const escondidos = papeis.filter((x) => x.par.papel === 'normal_escondido').map((x) => x.it.ml_item_id);
+      // O normal do catálogo mesclado também sai: num lote anterior o ML pode não ter devolvido o catálogo
+      // (code ≠ 200) e o normal ficou gravado solto, já atrás do cursor.
+      const escondidos = [...new Set(papeis.flatMap((x) =>
+        x.par.papel === 'normal_escondido' ? [x.it.ml_item_id] : x.par.papel === 'catalogo' ? [x.par.normal.id] : []))];
       const linhas = await emParalelo(visiveis, opts.concorrencia, async ({ it, par }) => {
         const l = await projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q));
         if (par.papel !== 'catalogo') return l;

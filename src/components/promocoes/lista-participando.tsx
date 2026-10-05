@@ -11,7 +11,7 @@ import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
 import {
-  URL_PROMOCOES_ML, agruparParticipacoes, descontoPct, rotuloMlb, rotuloTipo, type GrupoParticipacao, type Participacao,
+  URL_PROMOCOES_ML, agruparParticipacoes, descontoPct, mlbExibido, rotuloMlb, rotuloTipo, type GrupoParticipacao, type Participacao,
 } from '@/lib/promocoes';
 import { SEMAFORO_UI } from './contagem-semaforo';
 import { PreviewOperacao } from './preview-operacao';
@@ -26,6 +26,9 @@ export function ListaParticipando() {
 
   if (promocoes.isLoading || participacoes.isLoading) {
     return <div className="mt-4 flex flex-col gap-4">{[0, 1].map((i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+  }
+  if (promocoes.isError || participacoes.isError) {
+    return <EmptyState icon={BadgePercent} title="Não foi possível carregar os anúncios em promoção." description="Tente atualizar a página." className="mt-4" />;
   }
   if (grupos.length === 0) return <EmptyState icon={BadgePercent} title="Nenhum anúncio em promoção." className="mt-4" />;
   return <div className="mt-4 flex flex-col gap-4">{grupos.map((g) => <BlocoCampanha key={g.promocao.promocao_id} grupo={g} />)}</div>;
@@ -90,7 +93,7 @@ function LinhaParticipacao({ r, operavel, marcado, onToggle }: {
 }) {
   const ui = SEMAFORO_UI[r.pior_semaforo];
   const d = descontoPct(r.preco_original, r.preco_avaliado);
-  const mlb = r.anuncio_normal_id ?? r.ml_item_id;
+  const mlb = mlbExibido(r);
   return (
     <li className="flex items-center gap-3 p-3 sm:px-4">
       {operavel && <Checkbox aria-label={`Selecionar ${mlb}`} checked={marcado} onCheckedChange={() => onToggle(r.ml_item_id)} />}

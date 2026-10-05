@@ -47,7 +47,7 @@ describe('montarPreview', () => {
   // ADR-0174, emenda 2026-10-05 (Codex #9): a confirmação mostra o MLB que a tela mostrou; o pedido segue no catálogo.
   it('par normal/catálogo: rótulo com o normal, ml_item_id do catálogo', () => {
     const [linha] = montarPreview('sair', 'DEAL', [item({ ml_item_id: 'MLB7', anuncio_normal_id: 'MLB5' })]);
-    expect(linha).toMatchObject({ ml_item_id: 'MLB7', rotulo: 'MLB5 · promoção via catálogo MLB7' });
+    expect(linha).toMatchObject({ ml_item_id: 'MLB7', mlb: 'MLB5', rotulo: 'MLB5 · promoção via catálogo MLB7' });
   });
 
   it('SMART aderir usa o preço da oferta (preco_promo)', () => {

@@ -47,12 +47,18 @@ export function useParticipacoesPorItem(mlItemIds: string[]) {
     staleTime: 60_000,
     queryFn: async () => {
       // Par normal/catálogo (ADR-0174, emenda 2026-10-05): a linha é a do catálogo; a família conhece o normal.
-      const { data: itens, error } = await supabase
-        .from('ml_promocao_itens')
-        .select('ml_item_id, anuncio_normal_id, promocao_id, status')
-        .or(`ml_item_id.in.(${ids.join(',')}),anuncio_normal_id.in.(${ids.join(',')})`)
-        .in('status', ['started', 'pending']);
-      if (error) throw error;
+      // O .or repete a lista nos dois filtros: blocos de 80 para a URL não estourar (mesmo lote do dossiê).
+      const itens: { ml_item_id: string; anuncio_normal_id: string | null; promocao_id: string; status: string }[] = [];
+      for (let i = 0; i < ids.length; i += 80) {
+        const lote = ids.slice(i, i + 80).join(',');
+        const { data, error } = await supabase
+          .from('ml_promocao_itens')
+          .select('ml_item_id, anuncio_normal_id, promocao_id, status')
+          .or(`ml_item_id.in.(${lote}),anuncio_normal_id.in.(${lote})`)
+          .in('status', ['started', 'pending']);
+        if (error) throw error;
+        itens.push(...(data ?? []));
+      }
       const mapa = new Map<string, string>();
       const promocaoIds = [...new Set((itens ?? []).map((i) => i.promocao_id))];
       if (promocaoIds.length === 0) return mapa;

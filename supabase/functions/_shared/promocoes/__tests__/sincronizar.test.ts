@@ -318,6 +318,21 @@ describe('sincronizarPromocao', () => {
       await sincronizarPromocao(d, msg, opts);
       expect(d.removerItens).toHaveBeenCalledWith([N]);
     });
+
+    // Grok #1: no lote do normal o ML não devolveu o catálogo (code ≠ 200) → o normal foi gravado solto;
+    // quando o par fecha no lote do catálogo, o normal (já atrás do cursor) também sai da Central.
+    it('par fechado só no lote do catálogo: apaga o normal gravado antes', async () => {
+      const m = mlPar();
+      let chamadas = 0;
+      const buscarItensML = vi.fn(async (ids: string[]) => {
+        chamadas++;
+        return new Map(ids.filter((id) => m.has(id) && !(chamadas <= 2 && id === C)).map((id) => [id, m.get(id)!]));
+      });
+      const d = depsLeitura({ listarItens: vi.fn(async () => [N, 'MLB6', C].map((id) => item({ ml_item_id: id }))), buscarItensML });
+      await sincronizarPromocao(d, msg, opts);
+      expect(gravados(d).find((l) => l.ml_item_id === C)).toMatchObject({ anuncio_normal_id: N });
+      expect(d.removerItens).toHaveBeenCalledWith([N]);
+    });
   });
 
   it('orçamento esgotado: grava o que fez e continua do cursor', async () => {
