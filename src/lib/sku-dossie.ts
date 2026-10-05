@@ -237,7 +237,8 @@ export interface DossieSku {
   /** KPIs do período = linha do ranking (montarVendasSku); família numa chave só (pedidos por order). */
   linhaPeriodo: LinhaSku | null;
   linhaAnterior: LinhaSku | null;
-  /** Lucro do alvo só nos dias que o Ads cobre (do 1º dia do período até ontem); null sem linha. */
+  /** Lucro do alvo só nos dias que o Ads cobre (do 1º dia do período até ontem); sem venda nesses dias = 0;
+   *  null só sem dia financeiro (período só de hoje). */
   lucroAds: { lucro: number | null; fonteCusto: FonteCusto } | null;
   /** Posição de hoje (30 dias até agora); null sem venda nenhuma. */
   tendencia: Tendencia | null;
@@ -297,8 +298,14 @@ export function montarDossie(p: {
   const periodo = montarVendasSku({ ...base, janela: p.janela, anterior: p.anterior });
   const hoje = montarVendasSku({ ...base, janela: p.hoje, anterior: p.hojeAnterior });
   const daChave = (ls: LinhaSku[]) => ls.find((l) => l.codigo === chave) ?? null;
-  const mAds = p.janelaAds && daChave(montarVendasSku({ ...base, janela: p.janelaAds, anterior: p.janelaAds }).linhas)?.m;
-  const lucroAds = mAds ? { lucro: mAds.lucro, fonteCusto: mAds.fonteCusto } : null;
+  // Sem venda nos dias do Ads o lucro é 0 (como no /ads): null esconderia o prejuízo da despesa.
+  const linhaAds = p.janelaAds
+    ? daChave(montarVendasSku({ ...base, janela: p.janelaAds, anterior: p.janelaAds }).linhas)
+    : null;
+  const lucroAds = !p.janelaAds ? null
+    : !linhaAds || linhaAds.acc.pedidos === 0
+      ? { lucro: 0, fonteCusto: 'real' as const }
+      : { lucro: linhaAds.m.lucro, fonteCusto: linhaAds.m.fonteCusto };
 
   // Kit só quando todos os códigos são kit: numa família mista, kits (estoque da base) e unidades
   // não se somam — o saldo é o das variações comuns e a cobertura segue em dias.

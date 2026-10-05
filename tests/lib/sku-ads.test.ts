@@ -170,6 +170,10 @@ describe('montarAds', () => {
     expect(a.naoIdentificadoPct).toBeNull();
     expect(a.naoIdentificadoMotivo).toBe('divergente');
   });
+  it('lucro 0 nos dias do Ads (sem venda) com despesa 30 → Lucro após Ads −30, não indisponível', () => {
+    const a = monta({ lucroPeriodo: 0, fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 30 })] }) });
+    expect(a).toMatchObject({ lucroAposAds: -30, motivoSemLucro: null, fonteLucro: 'real' });
+  });
   it('período só de hoje (sem dia financeiro): sem %, lucro após Ads indisponível por cobertura', () => {
     const a = monta({ ...entrada, lucroPeriodo: null, resumo: null, diasFinanceiros: { desde: '2026-09-27', ate: '2026-09-26' },
       janela: { desde: '2026-09-27T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' } });

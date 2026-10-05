@@ -88,6 +88,12 @@ describe('PainelAds', () => {
     expect(screen.queryByText(/não tem família identificada/)).toBeNull();
   });
 
+  it('lucro 0 com despesa 30: Lucro após Ads −R$ 30,00 em vermelho', () => {
+    renderiza({ ...base, totais: { ...base.totais!, custo: 30 }, lucroAposAds: -30 });
+    const v = screen.getByText('-R$ 30,00');
+    expect(v).toHaveClass('text-danger');
+  });
+
   it('% não identificado indisponível: a tela diz o motivo (período acima de 1 ano)', () => {
     renderiza({ ...base, naoIdentificadoMotivo: 'periodo_longo' });
     expect(screen.getAllByText(/aviso indisponível para períodos acima de 1 ano/).length).toBeGreaterThan(0);

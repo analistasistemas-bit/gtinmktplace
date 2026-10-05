@@ -136,7 +136,7 @@ describe('montarDossie: lucroAds (mesmos dias do Ads, até ontem)', () => {
   };
   const ontem = venda({ id: 'o', order_id: 1, date_closed: '2026-09-26T15:00:00Z', itens: [item({ id: 'i1', codigo: 'A', quantity: 1, unit_price: 30 })] });
   const hoje = venda({ id: 'h', order_id: 2, date_closed: '2026-09-27T15:00:00Z', itens: [item({ id: 'i2', codigo: 'A', quantity: 2, unit_price: 50 })] });
-  const monta = (vendas: Venda[], janelaAds = { desde: '2026-09-25T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' }) => montarDossie({
+  const monta = (vendas: Venda[], janelaAds: { desde: string; ate: string } | null = { desde: '2026-09-25T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' }) => montarDossie({
     alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], vendas, agrupar, catalogo: [cat], devolucoes: [],
     janela: { desde: '2026-09-25T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' }, // 25/09 a hoje (27/09)
     anterior: { desde: '2026-09-22T03:00:00.000Z', ate: '2026-09-25T02:59:59.999Z' },
@@ -155,8 +155,12 @@ describe('montarDossie: lucroAds (mesmos dias do Ads, até ontem)', () => {
     expect(d.lucroAds!.fonteCusto).toBe(soOntem.linhaPeriodo!.m.fonteCusto);
   });
 
-  it('sem venda nos dias do Ads → lucroAds null', () => {
-    expect(monta([hoje]).lucroAds).toBeNull();
+  it('sem venda nos dias do Ads (só hoje) → lucro 0 real, não null (null esconderia o prejuízo do Ads)', () => {
+    expect(monta([hoje]).lucroAds).toEqual({ lucro: 0, fonteCusto: 'real' });
+  });
+
+  it('sem dia financeiro (janelaAds null) → lucroAds null', () => {
+    expect(monta([ontem, hoje], null).lucroAds).toBeNull();
   });
 });
 
