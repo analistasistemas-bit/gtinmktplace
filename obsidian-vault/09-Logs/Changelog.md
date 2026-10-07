@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-07
 
+**Canais vira seção de Configurações (ADR-0077, emenda 2026-10-07).** O item "Canais" saiu do menu lateral: conectar e acompanhar marketplaces fica em **Configurações › Canais** (`/configuracoes/canais`). A permissão `canais` continua valendo para a seção; `/canais` e o retorno do OAuth do ML redirecionam para lá. Só front.
+
 **Operações vira aba de Publicados (ADR-0174, emenda 2026-10-07).** O item "Operações" saiu do menu lateral: pausar, reativar e reajuste de preço são acompanhados em **Publicados › Operações** (`?aba=operacoes`); aderir/sair continua em **Promoções › Operações**. `/operacoes` redireciona para a aba nova. Só front.
 
 ## 2026-10-04

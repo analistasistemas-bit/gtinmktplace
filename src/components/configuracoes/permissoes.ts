@@ -42,6 +42,8 @@ export function usePermissoesConfig() {
     podeEditarConfig: podeEscrever && (isAdmin || context?.scope === 'full'),
     podeEditarEmpresa: podeEscrever && isAdmin,
     podeVerMembros: menus.includes('usuarios'),
+    podeVerCanais: menus.includes('canais'),
+    podeVerConfig: menus.includes('configuracoes'),
     profileLoading,
   };
 }

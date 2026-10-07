@@ -24,7 +24,7 @@ export function PainelEstadoSync({ estado, temDados, onAtualizar, atualizando, a
     return (
       <EmptyState icon={PlugZap} title="O Mercado Livre não liberou promoções para esta conta."
         description="Isso depende da reputação da conta e da permissão de ofertas da conexão."
-        action={<Button asChild variant="outline"><Link to="/canais">Reconectar em Canais</Link></Button>} />
+        action={<Button asChild variant="outline"><Link to="/configuracoes/canais">Reconectar em Canais</Link></Button>} />
     );
   }
   if (estado?.estado === 'sem_promocoes' && !temDados) {

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { useProfile } from '@/hooks/useProfile';
@@ -14,7 +13,7 @@ import { useMlConnection } from '@/hooks/useMlConnection';
 import { QK, fetchConexoes } from '@/lib/queries';
 import { iniciarConexaoML, desconectarML, confirmarConexaoML } from '@/lib/ml-oauth';
 
-/** Vitrine + gestão de canais (D4): card por marketplace do registry. */
+/** Vitrine + gestão de canais (D4): card por marketplace do registry. Seção de /configuracoes. */
 export default function Canais() {
   const { data: habilitados = ['mercado_livre'], isError: erroHabilitados } = useCanaisHabilitados();
   const {
@@ -82,12 +81,9 @@ export default function Canais() {
     }
   }
 
+  // Montada como a seção Canais de /configuracoes, que já traz título, descrição e padding.
   return (
-    <div className="p-4 sm:p-6">
-      <PageHeader
-        title="Canais"
-        subtitle="Marketplaces integrados ao PubliAI — conecte sua conta e publique da mesma planilha."
-      />
+    <div>
 
       {!carregandoML && (mlConectado || conectadoAgora) && conexaoML?.conectado && (
         <p className="mb-4 rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
@@ -181,10 +177,6 @@ export default function Canais() {
           );
         })}
       </div>
-
-      <p className="mt-6 text-xs text-muted-foreground">
-        As demais configurações do app continuam em <Link to="/configuracoes" className="underline">Configurações</Link>.
-      </p>
     </div>
   );
 }

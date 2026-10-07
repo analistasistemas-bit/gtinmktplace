@@ -319,7 +319,7 @@ describe('Ads', () => {
       montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] });
 
       expect(screen.getByRole('link', { name: 'Abrir Canais' }))
-        .toHaveAttribute('href', '/canais');
+        .toHaveAttribute('href', '/configuracoes/canais');
       expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
     },
   );

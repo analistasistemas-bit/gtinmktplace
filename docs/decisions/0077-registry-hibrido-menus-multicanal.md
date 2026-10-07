@@ -74,3 +74,18 @@ operacionalmente quando havia 2+ canais reais para escolher.
   Revisão ainda tem texto fixo "Publicar no Mercado Livre" — corrigir quando o 2º canal
   operável existir; sub-abas do Faturamento (Devoluções/Perguntas/Mensagens/Geografia) ainda
   não recebem o parâmetro de canal (sem efeito hoje, só ML tem dado).
+
+## Emenda 2026-10-07 — Canais vira seção de Configurações (sai do menu)
+
+A tela de canais sai do menu lateral e vira a seção **Configurações › Canais** (`/configuracoes/canais`),
+logo depois de Geral. A vitrine multicanal continua sempre visível; só muda o endereço.
+
+- **Permissão inalterada:** a chave de menu `canais` continua existindo e governa a seção
+  (`menuKeyForPath('/configuracoes/canais') = 'canais'`). Quem tem só `canais` vê o item Configurações
+  apontando direto para a seção; quem tem só `configuracoes` não vê a seção Canais.
+- **OAuth do ML (ADR-0091):** o callback segue em `/configuracoes` (URL fixa da edge, sem redeploy); o guard
+  de `Configuracoes.tsx` redireciona para `/configuracoes/canais` preservando a query, e não redireciona
+  quando já está na seção (sem loop).
+- `/canais` redireciona para a seção; os links internos apontam direto para ela. O bloco "Canais conectados"
+  da seção Geral saiu (duplicado). Só front.
+

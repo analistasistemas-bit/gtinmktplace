@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Plug, Boxes, Activity, BadgePercent, Store, Megaphone } from 'lucide-react';
+import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Boxes, Activity, BadgePercent, Store, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
 import { useProfile } from '@/hooks/useProfile';
@@ -26,7 +26,6 @@ export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboar
   { to: '/faturamento', label: 'Faturamento', icon: Receipt, end: false, key: 'faturamento' },
   { to: '/financeiro', label: 'Financeiro', icon: Wallet, end: false, key: 'financeiro' },
   { to: '/viabilidade', label: 'Viabilidade', icon: Scale, end: false, key: 'viabilidade' },
-  { to: '/canais', label: 'Canais', icon: Plug, end: false, key: 'canais' },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false, key: 'configuracoes' },
 ];
 
@@ -49,6 +48,12 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   if (modulosLoading || modulos !== undefined) {
     for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
   }
+  // Canais é seção de Configurações: quem só tem 'canais' vê o item e cai direto na seção.
+  const itens = NAV_ITEMS.flatMap((item) => {
+    if (allowed.has(item.key)) return [item];
+    if (item.key === 'configuracoes' && allowed.has('canais')) return [{ ...item, to: '/configuracoes/canais' }];
+    return [];
+  });
   // Quem não vê o menu Pulse não paga a query do badge — não é hook, então não afeta a ordem.
   const { data: alertasPulse = 0 } = useQuery({
     queryKey: QK.pulseAlertasContagem('acao'),
@@ -58,7 +63,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   });
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
-      {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end, key }) => (
+      {itens.map(({ to, label, icon: Icon, end, key }) => (
         // Glow só no Pulse: aura permanente marca o módulo, e a versão forte diz que há alerta
         // esperando. Item comum passa reto pelo wrapper, sem aura.
         <GlowEffect

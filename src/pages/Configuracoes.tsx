@@ -12,15 +12,16 @@ import { usePermissoesConfig } from '@/components/configuracoes/permissoes';
  * componente, que só usa `useSearchParams`, e não dentro do layout, que monta ~15 hooks.
  *
  * A edge function devolve o callback em /configuracoes (URL fixa), mas quem confirma a
- * conexão é /canais. `ml_claim` entrou com o ADR-0091. A query PRECISA ser preservada:
- * `Canais.tsx` lê esses parâmetros para chamar `confirmarConexaoML` — um `<Navigate
- * to="/canais">` sem a search mata a confirmação sem erro visível.
+ * conexão é a seção Canais. `ml_claim` entrou com o ADR-0091. A query PRECISA ser preservada:
+ * `Canais.tsx` lê esses parâmetros para chamar `confirmarConexaoML` — um `<Navigate>` sem a
+ * search mata a confirmação sem erro visível. Já na seção, não redireciona (senão é loop).
  */
 export default function Configuracoes() {
   const [searchParams] = useSearchParams();
+  const { pathname } = useLocation();
 
-  if (searchParams.get('ml_conectado') || searchParams.get('ml_erro') || searchParams.get('ml_claim')) {
-    return <Navigate to={{ pathname: '/canais', search: searchParams.toString() }} replace />;
+  if (pathname !== '/configuracoes/canais' && (searchParams.get('ml_conectado') || searchParams.get('ml_erro') || searchParams.get('ml_claim'))) {
+    return <Navigate to={{ pathname: '/configuracoes/canais', search: searchParams.toString() }} replace />;
   }
 
   return <ConfiguracoesLayout />;
@@ -28,7 +29,7 @@ export default function Configuracoes() {
 
 function ConfiguracoesLayout() {
   const { pathname } = useLocation();
-  const { podeVerMembros, profileLoading } = usePermissoesConfig();
+  const { podeVerMembros, podeVerCanais, podeVerConfig, profileLoading } = usePermissoesConfig();
   const { data: aliquotas } = useAliquotas();
 
   // O marcador de "alíquotas não confirmadas" vive na sub-nav, então a query mora aqui, no
@@ -36,7 +37,7 @@ function ConfiguracoesLayout() {
   // queryKey da seção, então o react-query dedupe — uma requisição só.
   const fiscalPendente = aliquotas != null && !aliquotas.confirmada;
 
-  const visiveis = SECOES.filter((s) => !s.somenteMembros || podeVerMembros);
+  const visiveis = SECOES.filter((s) => (s.somenteMembros ? podeVerMembros : s.somenteCanais ? podeVerCanais : podeVerConfig));
   const slug = pathname.replace(/^\/configuracoes\/?/, '').split('/')[0];
   const secao = visiveis.find((s) => s.slug === slug);
 
@@ -49,9 +50,10 @@ function ConfiguracoesLayout() {
     );
   }
 
-  // Slug ausente, desconhecido, ou de seção invisível ao perfil. `visiveis` nunca é vazio —
-  // `geral` não tem gate — então o destino existe sempre e não há como haver loop.
-  if (!secao) return <Navigate to={`/configuracoes/${visiveis[0].slug}`} replace />;
+  // Slug ausente, desconhecido, ou de seção invisível ao perfil. O MenuGuard só deixa entrar
+  // quem tem 'configuracoes' (Geral) ou 'canais' (Canais), então `visiveis` não é vazio; o
+  // fallback para '/' só evita tela quebrada se alguém montar a rota sem o guard.
+  if (!secao) return <Navigate to={visiveis[0] ? `/configuracoes/${visiveis[0].slug}` : '/'} replace />;
 
   const Conteudo = secao.Componente;
 

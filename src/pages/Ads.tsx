@@ -136,7 +136,7 @@ export default function Ads() {
     <Button variant="outline" size="sm" className={BOTAO_ACAO} onClick={() => refetch()}>Verificar novamente</Button>
   );
   const abrirCanais = (
-    <Button asChild variant="outline" size="sm" className={BOTAO_ACAO}><Link to="/canais">Abrir Canais</Link></Button>
+    <Button asChild variant="outline" size="sm" className={BOTAO_ACAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
   );
 
   // A ressalva causal fica junto ao resumo quando ele existe; sem resumo, vai para a procedência.

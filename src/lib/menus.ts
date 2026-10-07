@@ -39,11 +39,14 @@ const PREFIX: Record<string, MenuKey> = {
 };
 
 export function menuKeyForPath(pathname: string): MenuKey | null {
+  // Canais é seção de Configurações, mas mantém a própria permissão (quem só tem 'canais' entra).
+  if (pathname === '/configuracoes/canais' || pathname.startsWith('/configuracoes/canais/')) return 'canais';
   const seg = pathname.replace(/^\//, '').split('/')[0];
   return PREFIX[seg] ?? null;
 }
 
 // Chave de menu → rota de destino (p/ redirecionar ao primeiro menu permitido).
 export function pathForMenu(key: MenuKey): string {
+  if (key === 'canais') return '/configuracoes/canais';
   return key === 'dashboard' ? '/' : `/${key}`;
 }

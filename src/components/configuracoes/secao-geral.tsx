@@ -1,5 +1,3 @@
-import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useMostrarLucroDashboard, useSalvarMostrarLucroDashboard } from '@/hooks/useConfiguracoes';
 import { usePermissoesConfig } from './permissoes';
@@ -12,17 +10,6 @@ export function SecaoGeral() {
 
   return (
     <div className="space-y-4">
-      <SettingsGroup titulo="Canais conectados" descricao="Mercado Livre e próximos marketplaces ficam no menu Canais.">
-        <SettingsRow
-          titulo="Gerenciar conexões"
-          descricao="Conectar, reconectar e acompanhar a saúde de cada marketplace."
-        >
-          <Button asChild variant="outline" size="sm">
-            <Link to="/canais">Abrir Canais</Link>
-          </Button>
-        </SettingsRow>
-      </SettingsGroup>
-
       <SettingsGroup
         titulo="Exibição"
         aviso={!podeEditarConfig && <AvisoLeitura>Só um administrador altera estas opções.</AvisoLeitura>}

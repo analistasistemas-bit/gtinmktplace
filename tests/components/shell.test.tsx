@@ -10,9 +10,10 @@ import { QK } from '@/lib/queries';
 
 // Perfil não-admin com TODOS os menus permitidos. O que sobra na sidebar depende só do
 // gate de módulo (E6b, D-13): 'estoque' está em MENU_KEYS mas é de módulo pago.
+let allowedMenus: string[] = [...MENU_KEYS];
 vi.mock('@/hooks/useProfile', () => ({
   useProfile: () => ({
-    profile: { id: 'u1', is_admin: false, is_active: true, allowed_menus: [...MENU_KEYS], nome: 'Op' },
+    profile: { id: 'u1', is_admin: false, is_active: true, allowed_menus: allowedMenus, nome: 'Op' },
     isAdmin: false,
     profileLoading: false,
   }),
@@ -55,11 +56,11 @@ describe('ThemeToggle', () => {
 });
 
 describe('SidebarNav', () => {
-  beforeEach(() => { modulosHabilitados = []; alertasPulse = 0; });
+  beforeEach(() => { modulosHabilitados = []; alertasPulse = 0; allowedMenus = [...MENU_KEYS]; });
 
-  it('org sem o módulo estoque: renderiza os 10 links com hrefs corretos, sem Estoque', () => {
+  it('org sem o módulo estoque: renderiza os 9 links com hrefs corretos, sem Estoque', () => {
     renderNav();
-    expect(screen.getAllByRole('link')).toHaveLength(10);
+    expect(screen.getAllByRole('link')).toHaveLength(9);
     // Operações virou aba de Publicados (?aba=operacoes), não é mais item do menu.
     expect(screen.queryByRole('link', { name: /Operações/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Estoque/i })).toBeNull();
@@ -68,13 +69,21 @@ describe('SidebarNav', () => {
     expect(screen.getByRole('link', { name: /Faturamento/i }).getAttribute('href')).toBe('/faturamento');
     expect(screen.getByRole('link', { name: /Financeiro/i }).getAttribute('href')).toBe('/financeiro');
     expect(screen.getByRole('link', { name: /Viabilidade/i }).getAttribute('href')).toBe('/viabilidade');
-    expect(screen.getByRole('link', { name: /Canais/i }).getAttribute('href')).toBe('/canais');
+    // Canais virou seção de Configurações, não é mais item do menu.
+    expect(screen.queryByRole('link', { name: /Canais/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /Configurações/i }).getAttribute('href')).toBe('/configuracoes');
+  });
+
+  it('perfil só com Canais (sem Configurações) ainda alcança a seção pelo menu Configurações', () => {
+    allowedMenus = ['dashboard', 'canais'];
+    renderNav();
+    expect(screen.getByRole('link', { name: /Configurações/i }).getAttribute('href')).toBe('/configuracoes/canais');
   });
 
   it('org COM o módulo estoque: o menu Estoque aparece', () => {
     modulosHabilitados = ['estoque'];
     renderNav();
-    expect(screen.getAllByRole('link')).toHaveLength(11);
+    expect(screen.getAllByRole('link')).toHaveLength(10);
     expect(screen.getByRole('link', { name: /Estoque/i }).getAttribute('href')).toBe('/estoque');
   });
 

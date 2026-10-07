@@ -49,7 +49,7 @@ export default function Faturamento() {
           icon={PackageOpen}
           title={`Ainda sem vendas no ${infoCanal(canalAtivo)?.nome ?? canalAtivo}`}
           description="Assim que este canal tiver pedidos, eles aparecem aqui."
-          action={<Button asChild variant="outline"><Link to="/canais">Ver canais</Link></Button>}
+          action={<Button asChild variant="outline"><Link to="/configuracoes/canais">Ver canais</Link></Button>}
         />
       ) : (
         <Tabs value={aba} onValueChange={setAba}>

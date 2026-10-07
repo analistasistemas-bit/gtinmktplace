@@ -28,6 +28,7 @@ vi.mock('@/components/configuracoes/secao-fiscal', () => ({ SecaoFiscal: () => <
 vi.mock('@/components/configuracoes/secao-ia', () => ({ SecaoIA: () => <div>conteudo-ia</div> }));
 vi.mock('@/components/configuracoes/secao-notificacoes', () => ({ SecaoNotificacoes: () => <div>conteudo-notificacoes</div> }));
 vi.mock('@/pages/Usuarios', () => ({ default: () => <div>conteudo-membros</div> }));
+vi.mock('@/pages/Canais', () => ({ default: () => <div>conteudo-canais</div> }));
 
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16, confirmada: false } }),
@@ -50,7 +51,8 @@ function montar(rota: string) {
         <Suspense fallback={<div>carregando-secao</div>}>
           <Routes>
             <Route path="/configuracoes/*" element={<Configuracoes />} />
-            <Route path="/canais" element={<div>tela-canais</div>} />
+            {/* Espelha App.tsx: /canais virou redirect para a seção Canais. */}
+            <Route path="/canais" element={<Navigate to="/configuracoes/canais" replace />} />
             {/* Espelha App.tsx: /usuarios virou redirect para a seção Membros. */}
             <Route path="/usuarios" element={<Navigate to="/configuracoes/membros" replace />} />
           </Routes>
@@ -72,19 +74,56 @@ beforeEach(() => {
 
 describe('Configurações — guard de OAuth', () => {
   // A edge devolve o callback do ML em /configuracoes (URL fixa), mas quem confirma a conexão
-  // é /canais, lendo esses parâmetros. Perder a query mata a conexão sem erro visível.
+  // é a seção Canais, lendo esses parâmetros. Perder a query mata a conexão sem erro visível.
+  beforeEach(() => { perfil.atual = { ...perfil.atual, allowed_menus: ['configuracoes', 'canais'] }; });
+
   it.each(['ml_claim', 'ml_conectado', 'ml_erro'])(
-    'redireciona %s para /canais preservando a query',
-    (param) => {
+    'redireciona %s para a seção Canais preservando a query',
+    async (param) => {
       montar(`/configuracoes?${param}=abc123`);
-      expect(url()).toBe(`/canais?${param}=abc123`);
-      expect(screen.getByText('tela-canais')).toBeInTheDocument();
+      // A seção Canais é lazy(): na 1ª carga suspende antes de a navegação assentar.
+      expect(await screen.findByText('conteudo-canais')).toBeInTheDocument();
+      expect(url()).toBe(`/configuracoes/canais?${param}=abc123`);
     },
   );
 
   it('roda ANTES do redirecionamento de seção, mesmo com slug na URL', () => {
     montar('/configuracoes/fiscal?ml_claim=abc123');
-    expect(url()).toBe('/canais?ml_claim=abc123');
+    expect(url()).toBe('/configuracoes/canais?ml_claim=abc123');
+  });
+
+  it('já na seção Canais com a query, não redireciona de novo (sem loop)', () => {
+    montar('/configuracoes/canais?ml_claim=abc123');
+    expect(url()).toBe('/configuracoes/canais?ml_claim=abc123');
+    expect(screen.getByText('conteudo-canais')).toBeInTheDocument();
+  });
+});
+
+describe('Configurações — seção Canais (ex-menu Canais)', () => {
+  it('com as duas permissões, Canais aparece na sub-nav e abre por deep-link', () => {
+    perfil.atual = { ...perfil.atual, allowed_menus: ['configuracoes', 'canais'] };
+    montar('/configuracoes/canais');
+    expect(screen.getByText('conteudo-canais')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^canais$/i })).toBeInTheDocument();
+  });
+
+  it('sem a permissão canais, a seção não existe', () => {
+    montar('/configuracoes/canais');
+    expect(url()).toBe('/configuracoes/geral');
+    expect(screen.queryByText('conteudo-canais')).not.toBeInTheDocument();
+  });
+
+  it('só com canais (sem configuracoes), vê só a seção Canais', () => {
+    perfil.atual = { ...perfil.atual, allowed_menus: ['canais'] };
+    montar('/configuracoes');
+    expect(url()).toBe('/configuracoes/canais');
+    expect(screen.queryByRole('link', { name: /preços/i })).not.toBeInTheDocument();
+  });
+
+  it('rota legada /canais cai na seção', () => {
+    perfil.atual = { ...perfil.atual, allowed_menus: ['configuracoes', 'canais'] };
+    montar('/canais');
+    expect(url()).toBe('/configuracoes/canais');
   });
 });
 

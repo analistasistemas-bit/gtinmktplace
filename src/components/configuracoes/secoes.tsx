@@ -1,5 +1,5 @@
 import { lazy, type ComponentType } from 'react';
-import { Boxes, Bell, Building2, Cpu, Settings2, Users } from 'lucide-react';
+import { Boxes, Bell, Building2, Cpu, Plug, Settings2, Users } from 'lucide-react';
 import { SecaoGeral } from './secao-geral';
 import { SecaoPrecos } from './secao-precos';
 import { SecaoFiscal } from './secao-fiscal';
@@ -9,6 +9,8 @@ import { SecaoNotificacoes } from './secao-notificacoes';
 // A página de Usuários vira uma seção. O lazy vive aqui, não em App.tsx, senão sobra uma
 // declaração não usada lá e o ESLint reprova.
 const Usuarios = lazy(() => import('@/pages/Usuarios'));
+// O ex-menu Canais também vira seção (mesmo motivo do lazy acima).
+const Canais = lazy(() => import('@/pages/Canais'));
 
 function SecaoMembros() {
   return <Usuarios semCabecalho />;
@@ -19,8 +21,10 @@ export interface Secao {
   titulo: string;
   descricao: string;
   icone: ComponentType<{ className?: string }>;
-  /** Só `Membros` tem gate de visibilidade — leitura das demais é liberada na org. */
+  /** `Membros` exige o menu 'usuarios'; `Canais` exige o menu 'canais' (permissão própria, herdada
+   *  do antigo menu Canais); as demais exigem 'configuracoes' — leitura liberada na org. */
   somenteMembros?: true;
+  somenteCanais?: true;
   /** Tabela (não formulário): usa a largura cheia do painel. */
   larguraCheia?: true;
   Componente: ComponentType;
@@ -30,9 +34,18 @@ export const SECOES: Secao[] = [
   {
     slug: 'geral',
     titulo: 'Geral',
-    descricao: 'Canais conectados e o que aparece no Dashboard.',
+    descricao: 'O que aparece no Dashboard.',
     icone: Settings2,
     Componente: SecaoGeral,
+  },
+  {
+    slug: 'canais',
+    titulo: 'Canais',
+    descricao: 'Marketplaces integrados ao PubliAI — conecte sua conta e publique da mesma planilha.',
+    icone: Plug,
+    somenteCanais: true,
+    larguraCheia: true,
+    Componente: Canais,
   },
   {
     slug: 'precos',
