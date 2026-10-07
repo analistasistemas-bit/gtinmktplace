@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-04
+atualizado: 2026-10-07
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-10-04
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-07
+
+**Operações vira aba de Publicados (ADR-0174, emenda 2026-10-07).** O item "Operações" saiu do menu lateral: pausar, reativar e reajuste de preço são acompanhados em **Publicados › Operações** (`?aba=operacoes`); aderir/sair continua em **Promoções › Operações**. `/operacoes` redireciona para a aba nova. Só front.
 
 ## 2026-10-04
 

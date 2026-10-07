@@ -72,7 +72,7 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 
 ### Pausar/reativar em massa (emenda 2026-10-04 — em produção desde 2026-10-04)
 
-- 2º tipo do mesmo motor, mas **fora de Promoções**: seleção, barra e preview em Publicados; acompanhamento na tela global `/operacoes` (sem gate de módulo). Esta aba Operações é a mesma lista filtrada por promoção.
+- 2º tipo do mesmo motor, mas **fora de Promoções**: seleção, barra e preview em Publicados; acompanhamento na aba **Publicados › Operações** (`?aba=operacoes`; a tela global `/operacoes` saiu do menu em 2026-10-07 e redireciona para lá). Esta aba Operações é a mesma lista filtrada por promoção.
 - Lê o status fresco no ML antes de escrever; já no alvo = "já estava"; moderado/encerrado/migração PxV = bloqueado; Kit Virtual fora. Reverter só sobre o que a original aplicou.
 - Ver `docs/reference/edge-functions.md` (operacoes-massa) e ADR-0174 (emenda 2026-10-04).
 

@@ -123,7 +123,7 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
   );
 }
 
-export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
+export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' } = {}) {
   const operacoes = useOperacoes(filtro);
   const podeExecutar = usePodeExecutarOperacao();
   const { data: nomes } = useNomesUsuarios();
@@ -227,7 +227,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
   if ((operacoes.data ?? []).length === 0) {
     return (
       <EmptyState icon={History} title="Nenhuma operação ainda."
-        description={filtro === 'promocao' ? 'Selecione anúncios numa campanha para aderir ou sair.' : 'Selecione anúncios em Publicados ou numa campanha de Promoções.'}
+        description={filtro === 'promocao' ? 'Selecione anúncios numa campanha para aderir ou sair.' : 'Selecione anúncios na aba Anúncios para pausar, reativar ou reajustar o preço.'}
         className="mt-4" />
     );
   }

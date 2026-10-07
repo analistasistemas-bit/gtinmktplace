@@ -202,6 +202,17 @@ ficam até o próximo sync. Os dois casos exigem inscrição pelo normal, que o 
 **Follow-ups fora do escopo (já existiam):** o espelho do motor só atualiza `status` (preço/contagem ficam do
 sync anterior); o Reverter pode montar o preview com cache velho da Central logo após a operação.
 
+## Emenda 2026-10-07 — Operações vira aba de Publicados (sai do menu)
+
+A tela global `/operacoes` (emenda 2026-10-04, item 4) confundia: um item de menu vazio que só faz sentido
+depois de selecionar anúncios em outra tela. Cada origem passa a ter a sua aba, no padrão que Promoções já usava:
+
+- **Publicados › Operações** (`/publicados?aba=operacoes`): pausar, reativar e reajuste de preço
+  (`useOperacoes('publicados')` filtra `acao in (pausar, reativar, reajustar)` no servidor).
+- **Promoções › Operações**: aderir/sair, sem mudança.
+- O item "Operações" sai do menu lateral; `/operacoes` redireciona para `/publicados?aba=operacoes` (links e
+  favoritos antigos). Permissão inalterada (menu `publicados`). `Operacoes.tsx` removido. Só front.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de

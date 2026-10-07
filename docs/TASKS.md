@@ -47,6 +47,10 @@ Spec `docs/superpowers/specs/2026-10-04-painel-de-ads-design.md`; plano `docs/su
 - [x] **Validação em campo (DSA, pelo app):** MLB5140706557 (plano/Legacy sem variações) R$ 39,99 → +1% → R$ 40,39 confirmado no ML e no banco (`preco_publicacao`, `preco_editado_pelo_operador=true`, `preco_publicado_ml`); Reverter devolveu o ML a R$ 39,99 e o banco ao estado anterior. Os outros 6 anúncios ativos da DSA ficaram corretamente fora do lote (par de catálogo). Latência do preview ~6–10 s para 7 itens.
 - [ ] **Não validado em campo:** Legacy com variações e User Products (sem anúncios elegíveis na DSA).
 
+## Operações vira aba de Publicados (ADR-0174, emenda 2026-10-07)
+
+- [x] Aba **Anúncios | Operações** em Publicados (`?aba=operacoes`), lista filtrada por `useOperacoes('publicados')` (pausar/reativar/reajuste); item "Operações" sai do menu; `/operacoes` redireciona; `Operacoes.tsx` removido. Só front.
+
 ## Pausar/reativar em massa (ADR-0174, emenda 2026-10-04) — em produção desde 2026-10-04
 
 2º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`; plano `docs/superpowers/plans/2026-10-04-pausar-reativar-em-massa.md` (revisado pelo Codex em 3 rodadas).

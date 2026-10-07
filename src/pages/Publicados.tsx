@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2 } from 'lucide-react';
@@ -39,6 +39,8 @@ import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
@@ -951,7 +953,37 @@ function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelPr
 // Página principal
 // ============================================================================
 
+// Operações em massa de Publicados (pausar/reativar, reajuste) vivem numa aba aqui, não num menu
+// próprio: a aba vive na URL (?aba=operacoes), como em Promoções. /operacoes redireciona para cá.
 export default function Publicados() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const aba = searchParams.get('aba') === 'operacoes' ? 'operacoes' : 'anuncios';
+  const setAba = (v: string) => setSearchParams((prev) => {
+    const p = new URLSearchParams(prev);
+    if (v === 'operacoes') p.set('aba', v); else p.delete('aba');
+    return p;
+  }, { replace: true });
+  const abas = (
+    <Tabs value={aba} onValueChange={setAba} className="mb-4">
+      <TabsList>
+        <TabsTrigger value="anuncios">Anúncios</TabsTrigger>
+        <TabsTrigger value="operacoes">Operações</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+  if (aba === 'operacoes') {
+    return (
+      <div className="p-4 sm:p-6">
+        <PageHeader title="Publicados" />
+        {abas}
+        <ListaOperacoes filtro="publicados" />
+      </div>
+    );
+  }
+  return <AbaAnuncios abas={abas} />;
+}
+
+function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const navigate = useNavigate();
   const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
@@ -1363,6 +1395,8 @@ export default function Publicados() {
         }
       />
 
+      {abas}
+
       <CanalTabs
         canal={canalAtivo}
         onCanal={setCanal}
@@ -1698,7 +1732,7 @@ export default function Publicados() {
                 setPreviewAcao(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => navigate('/operacoes') } });
+                toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => navigate('/publicados?aba=operacoes') } });
               }}
             />
           )}
@@ -1718,7 +1752,7 @@ export default function Publicados() {
                 setReajuste(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => navigate('/operacoes') } });
+                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => navigate('/publicados?aba=operacoes') } });
               }}
             />
           )}

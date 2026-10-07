@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import Publicados from '@/pages/Publicados';
 import type { PublicadoItem } from '@/lib/publicados';
 
@@ -249,6 +249,11 @@ vi.mock('@/components/operacoes/preview-reajuste', () => ({
   PreviewReajuste: ({ pedido }: { pedido: unknown }) => <div data-testid="preview-reajuste">{JSON.stringify(pedido)}</div>,
 }));
 
+// Aba Operações: a lista tem teste próprio; aqui só o roteamento da aba e o filtro passado.
+vi.mock('@/components/operacoes/lista-operacoes', () => ({
+  ListaOperacoes: ({ filtro }: { filtro?: string }) => <div data-testid="lista-operacoes">{filtro}</div>,
+}));
+
 const FORNECEDORES = ['BUFALO', 'ACME'];
 function lote() {
   // 11 anúncios ativos (BUFALO nos pares, ACME nos ímpares) + 1 Kit Virtual + 1 moderado = 13 (2 páginas de 10).
@@ -353,5 +358,41 @@ describe('Publicados — seleção em massa', () => {
     expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({
       familias: [], ml_item_ids: ['MLB2'], ajuste: { tipo: 'pct', sentido: '+', valor: 5 },
     });
+  });
+});
+
+function Local() {
+  return <div data-testid="location-search">{useLocation().search}</div>;
+}
+
+describe('Publicados — aba Operações', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    mockHooksPadrao();
+    lote();
+  });
+
+  it('abre em Anúncios por padrão, sem a lista de operações', () => {
+    renderPagina();
+    expect(screen.getByRole('tab', { name: 'Anúncios' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByTestId('lista-operacoes')).not.toBeInTheDocument();
+  });
+
+  it('?aba=operacoes mostra só as operações de Publicados (filtro publicados)', () => {
+    render(<MemoryRouter initialEntries={['/publicados?aba=operacoes']}><Publicados /></MemoryRouter>);
+    expect(screen.getByRole('tab', { name: 'Operações' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('lista-operacoes')).toHaveTextContent('publicados');
+    expect(screen.queryByRole('checkbox', { name: 'Selecionar PRODUTO 01' })).not.toBeInTheDocument();
+  });
+
+  it('clicar nas abas grava e limpa ?aba=operacoes na URL', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    render(<MemoryRouter initialEntries={['/publicados']}><Publicados /><Local /></MemoryRouter>);
+    await user.click(screen.getByRole('tab', { name: 'Operações' }));
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?aba=operacoes');
+    expect(screen.getByTestId('lista-operacoes')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Anúncios' }));
+    expect(screen.getByTestId('location-search')).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('lista-operacoes')).not.toBeInTheDocument();
   });
 });

@@ -38,15 +38,17 @@ async function lerErroEdge(error: unknown, fallback: string): Promise<ErroOperac
 }
 
 /** Lista da org, mais recente primeiro; recarrega a cada 5 s enquanto alguma operação está executando.
- *  `filtro='promocao'` filtra no servidor (senão 50 pausas empurram uma operação de promoção para fora da página).
+ *  `filtro` filtra no servidor (senão 50 pausas empurram uma operação de promoção para fora da página):
+ *  'promocao' = aba de Promoções, 'publicados' = aba de Publicados (pausar/reativar/reajuste).
  *  Rascunho de reajuste (preview não confirmado, expira em 30 min) não é operação: fica fora da lista, no servidor. */
-export function useOperacoes(filtro?: 'promocao') {
+export function useOperacoes(filtro?: 'promocao' | 'publicados') {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
     queryFn: async () => {
       let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status, incluido)').neq('status', 'rascunho');
       if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
+      if (filtro === 'publicados') q = q.in('acao', ['pausar', 'reativar', 'reajustar']);
       const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
       if (error) throw error;
       return (data ?? []) as unknown as OperacaoRow[];

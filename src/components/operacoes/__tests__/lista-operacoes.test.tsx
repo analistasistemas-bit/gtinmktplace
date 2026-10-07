@@ -83,16 +83,16 @@ beforeEach(() => {
   vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: null, isLoading: false } as never);
 });
 
-function renderLista(filtro?: 'promocao') {
+function renderLista(filtro?: 'promocao' | 'publicados') {
   return render(<MemoryRouter><ListaOperacoes filtro={filtro} /></MemoryRouter>);
 }
 
 describe('ListaOperacoes', () => {
-  it('lista vazia', () => {
+  it('lista vazia na aba de Publicados aponta para a aba Anúncios', () => {
     vi.mocked(useOperacoes).mockReturnValue({ data: [], isLoading: false } as never);
-    renderLista();
+    renderLista('publicados');
     expect(screen.getByText('Nenhuma operação ainda.')).toBeInTheDocument();
-    expect(screen.getByText('Selecione anúncios em Publicados ou numa campanha de Promoções.')).toBeInTheDocument();
+    expect(screen.getByText('Selecione anúncios na aba Anúncios para pausar, reativar ou reajustar o preço.')).toBeInTheDocument();
   });
 
   it('lista vazia com filtro de promoção mantém a dica de campanha', () => {

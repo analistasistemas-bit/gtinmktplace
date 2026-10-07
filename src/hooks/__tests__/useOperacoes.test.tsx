@@ -72,10 +72,10 @@ describe('useItensOperacao', () => {
 describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', () => {
   const op = (over: Record<string, unknown>) => ({ id: 'OP1', acao: 'pausar', status: 'concluida', concluido_em: new Date().toISOString(), itens: [], ...over });
   let invalida: { mock: { calls: unknown[][] } };
-  const montar = (filtro?: 'promocao') => {
+  const montar = (filtro?: 'promocao' | 'publicados') => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     invalida = vi.spyOn(queryClient, 'invalidateQueries');
-    return renderHook((p: { filtro?: 'promocao' }) => useOperacoes(p.filtro), { initialProps: { filtro }, wrapper });
+    return renderHook((p: { filtro?: 'promocao' | 'publicados' }) => useOperacoes(p.filtro), { initialProps: { filtro }, wrapper });
   };
   const invalidou = (chave: readonly unknown[]) => invalida.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(chave)).length;
   const statusInvalidado = () => invalidou(QK.statusPublicados);
@@ -138,6 +138,13 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     await waitFor(() => expect(r2.current.isSuccess).toBe(true));
     expect(inMock).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledWith(50);
+  });
+
+  it("filtro 'publicados' traz só pausar/reativar/reajustar (aba Operações de Publicados)", async () => {
+    const { result } = montar('publicados');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(inMock).toHaveBeenCalledWith('acao', ['pausar', 'reativar', 'reajustar']);
+    expect(inLimitMock).toHaveBeenCalledWith(50);
   });
 
   it('exclui rascunhos de reajuste no servidor, antes do .limit(50)', async () => {
