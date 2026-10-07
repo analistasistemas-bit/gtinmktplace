@@ -1038,6 +1038,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // não empilhar histórico a cada tecla. Mudar filtro/ordenação volta à página 1.
   const [searchParams, setSearchParams] = useSearchParams();
   const { filtro, ord, pagina, tamanho } = useMemo(() => paramsParaEstado(searchParams), [searchParams]);
+  // Preserva filtros/ordem/página na URL: voltar para Anúncios só apaga `aba` (revisão Grok).
+  const irParaOperacoes = () => setSearchParams((prev) => { const p = new URLSearchParams(prev); p.set('aba', 'operacoes'); return p; }, { replace: true });
   const [removendoId, setRemovendoId] = useState<string | null>(null);
   const [republicandoId, setRepublicandoId] = useState<string | null>(null);
   const [pausandoId, setPausandoId] = useState<string | null>(null);
@@ -1355,14 +1357,18 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
 
   if (loadingPublicados) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Carregando publicados...</div>
+      <div className="p-4 sm:p-6">
+        {abas}
+        <div className="text-sm text-muted-foreground">Carregando publicados...</div>
+      </div>
     );
   }
 
   if (erroPublicados) {
     return (
-      <div className="p-6 text-sm text-destructive">
-        Erro ao carregar: {(erroPublicados as Error).message}
+      <div className="p-4 sm:p-6">
+        {abas}
+        <div className="text-sm text-destructive">Erro ao carregar: {(erroPublicados as Error).message}</div>
       </div>
     );
   }
@@ -1732,7 +1738,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 setPreviewAcao(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => navigate('/publicados?aba=operacoes') } });
+                toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
               }}
             />
           )}
@@ -1752,7 +1758,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 setReajuste(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => navigate('/publicados?aba=operacoes') } });
+                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
               }}
             />
           )}

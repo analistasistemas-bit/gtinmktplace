@@ -385,6 +385,13 @@ describe('Publicados — aba Operações', () => {
     expect(screen.queryByRole('checkbox', { name: 'Selecionar PRODUTO 01' })).not.toBeInTheDocument();
   });
 
+  it('abas aparecem enquanto a lista carrega (Operações continua alcançável)', () => {
+    usePublicadosMock.mockReturnValue({ data: [], isLoading: true, error: null, refetch: vi.fn() });
+    renderPagina();
+    expect(screen.getByText('Carregando publicados...')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Operações' })).toBeInTheDocument();
+  });
+
   it('clicar nas abas grava e limpa ?aba=operacoes na URL', async () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     render(<MemoryRouter initialEntries={['/publicados']}><Publicados /><Local /></MemoryRouter>);
