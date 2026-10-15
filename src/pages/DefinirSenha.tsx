@@ -24,10 +24,16 @@ export default function DefinirSenha() {
       setErro('Link inválido ou expirado.');
       return;
     }
-    supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
-      if (error) setErro('Link inválido ou expirado.');
-      else setReady(true);
-    });
+    // verifyOtp não espera o client terminar de recuperar a sessão guardada. Se havia uma
+    // sessão velha no navegador, o refresh dela falha (400) e o client apaga a sessão — inclusive
+    // a do convite, gravada no meio — e o updateUser cai em "Auth session missing!". O getSession
+    // espera essa recuperação assentar antes de validar o link.
+    supabase.auth.getSession()
+      .then(() => supabase.auth.verifyOtp({ token_hash, type }))
+      .then(({ error }) => {
+        if (error) setErro('Link inválido ou expirado.');
+        else setReady(true);
+      });
   }, [params]);
 
   async function salvar(e: React.FormEvent) {
