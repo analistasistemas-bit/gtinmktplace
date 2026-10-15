@@ -90,24 +90,21 @@ de revisão. A importação nunca publica nada (revisão humana obrigatória). O
 (`adicionar-variacoes-familia`) publica; a importação não o reusa como está.
 *A verificar no plano:* o push de estoque precisa ignorar SKU ausente do anúncio.
 
-**D-9 — Custo documentado, custos adicionais e custo de precificação** *(revisado pelo parecer
-contábil; validar com o Diego)*.
+**D-9 — Custo documentado, custos adicionais e custo de precificação.**
 - **Custo da nota:** `vProd` mais frete, seguro, IPI, ST e outras despesas, menos o desconto. Usa os
   valores **discriminados por item** do XML; o rateio proporcional (por valor, fechando os centavos com
   o total) só cobre o que vier apenas no total.
 - **Custos adicionais documentados:** CT-e de frete de compra, seguro e guias pagas à parte. São
   vinculados à nota e aos itens beneficiados e rateados. **Integram o custo de aquisição**, conforme o
   parecer (CPC 16 itens 11/16/18, NBC TG 1002 13.2).
-- **Custo de precificação:** `variacoes.custo`. Nasce igual ao custo de aquisição, é editável e alimenta
-  markup e preço (ADR-0055 intocado). A edição exige **motivo** e um destes tipos: `estimativa`
-  (gerencial) ou `diferença paga`.
-- **Diferença paga:** quando o pago foi maior que o documentado, a diferença exige comprovante e **vai
-  no pacote do contador** como "diferença declarada, pendente de regularização". O XML fica íntegro e a
-  diferença não entra sozinha no inventário.
+- **Custo de precificação:** `variacoes.custo`, um custo **gerencial**. Nasce igual ao custo de
+  aquisição, é editável pelo operador e alimenta markup e preço (ADR-0055 intocado). Não integra o
+  pacote contábil, que reflete só os documentos fiscais e o custo de aquisição deles.
 
-*Revertido:* a versão anterior ("custo real nunca vai ao contador"). Um sistema que mantém
-deliberadamente informação de custo pago escondida da contabilidade se enquadra no risco da Lei
-8.137/1990, art. 2º, V. O controle gerencial continua permitido; a ocultação, não.
+*Decisão do Diego (2026-10-15), contra a recomendação do parecer simulado (item 5):* o parecer pedia
+que, quando o custo de precificação refletir valor efetivamente pago acima do documentado, a
+diferença fosse informada à contabilidade com comprovante. O Diego manteve o custo de precificação
+fora do pacote. A orientação contábil desse caso fica com a empresa e o contador dela.
 
 A tela mostra lado a lado o custo de aquisição e o custo de precificação.
 
@@ -150,11 +147,12 @@ importada aparece marcado "sem nota de compra", nunca com custo inventado.
 - **compras:** XMLs originais e planilha de entradas (data, fornecedor, CNPJ, número, chave, CFOP,
   NCM, CSOSN, quantidade e valores da nota);
 - **inventário:** D-12;
-- **vendas:** XMLs de venda, eventos (cancelamento, CC-e) e devoluções do Faturador do ML, obtidos pelo
-  **download por período** da API, que é preferido à busca pedido a pedido porque esta perde devolução
-  emitida para pedido antigo. A coleta é **mensal e guardada em arquivo durável** (storage privado da
-  org, não linhas no banco), conforme o parecer: a busca ao vivo só no fechamento não garante a
-  conservação exigida (LC 123 art. 26, II). Não há exclusão automática aos 5 anos.
+- **vendas:** XMLs de venda, eventos (cancelamento, CC-e) e devoluções do Faturador do ML, obtidos **ao vivo** pelo
+  **download por período** da API na hora da exportação, **sem gravar** no PubliAI. O download por
+  período é preferido à busca pedido a pedido, que perde devolução emitida para pedido antigo.
+  *Decisão do Diego (2026-10-15):* as notas de venda ficam sempre disponíveis no portal do ML, e guardar
+  cópia só inflaria o banco. A **conservação legal** (LC 123 art. 26, II) é da empresa, apoiada no
+  repositório do ML e no pacote exportado que ela entrega ao contador.
   - Vai em lotes retomáveis com manifesto de documentos e falhas.
   - API indisponível ≠ ausência de nota; pacote parcial é declarado como parcial.
   - Inclui conciliação pedidos × notas e vendas sem nota.
@@ -195,8 +193,8 @@ venda bruta (LC 123 art. 3º, §1º).
    tratamento validado).
 4. **Devolução ao fornecedor:** a PUBLIAI emite (RICMS/PE arts. 530–531), por exemplo pelo Emissor
    Sebrae (gratuito); CFOP 5.202/6.202. A **devolução de venda** o Faturador do ML emite. → D-13.
-5. **Pago acima da nota:** não esconder da contabilidade. Registrar com comprovante e explicação; o
-   custo gerencial é permitido e a ocultação não (Lei 8.137/1990 arts. 1º II/IV, 2º V). → D-9.
+5. **Custo pago acima do documentado:** informar à contabilidade com comprovante; custo gerencial é
+   permitido (Lei 8.137/1990 arts. 1º II/IV, 2º V). → **Não adotado** (D-9, decisão do Diego).
 6. **O que o contador recebe:**
    - **todo mês:** vendas (XMLs, eventos, devoluções, conciliação); compras e estoque (XMLs, CT-e,
      divergências); ML/MP (bruto, tarifas, repasses), que é fase futura; extratos, despesas e tributos
