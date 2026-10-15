@@ -294,6 +294,7 @@ export type Database = {
           cnpj: string | null
           complemento: string | null
           criado_em: string
+          csosn_padrao_revenda: string | null
           cst_cofins: string | null
           cst_pis: string | null
           emissao_a_partir_de: string | null
@@ -320,6 +321,7 @@ export type Database = {
           cnpj?: string | null
           complemento?: string | null
           criado_em?: string
+          csosn_padrao_revenda?: string | null
           cst_cofins?: string | null
           cst_pis?: string | null
           emissao_a_partir_de?: string | null
@@ -346,6 +348,7 @@ export type Database = {
           cnpj?: string | null
           complemento?: string | null
           criado_em?: string
+          csosn_padrao_revenda?: string | null
           cst_cofins?: string | null
           cst_pis?: string | null
           emissao_a_partir_de?: string | null
@@ -489,6 +492,7 @@ export type Database = {
           desconto_pct: number | null
           descricao_editada_pelo_operador: boolean
           descricao_erro: string | null
+          descricao_fiscal: string | null
           descricao_ml: string | null
           descricao_pai: string | null
           descricao_status: string | null
@@ -518,6 +522,7 @@ export type Database = {
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem: Database["public"]["Enums"]["origem_produto"]
+          origem_cadastro: string | null
           origem_nfe: number | null
           preco_reancorado_lider: boolean
           publicado_em: string | null
@@ -574,6 +579,7 @@ export type Database = {
           desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_erro?: string | null
+          descricao_fiscal?: string | null
           descricao_ml?: string | null
           descricao_pai?: string | null
           descricao_status?: string | null
@@ -603,6 +609,7 @@ export type Database = {
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          origem_cadastro?: string | null
           origem_nfe?: number | null
           preco_reancorado_lider?: boolean
           publicado_em?: string | null
@@ -659,6 +666,7 @@ export type Database = {
           desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_erro?: string | null
+          descricao_fiscal?: string | null
           descricao_ml?: string | null
           descricao_pai?: string | null
           descricao_status?: string | null
@@ -688,6 +696,7 @@ export type Database = {
           operacao?: Database["public"]["Enums"]["operacao_ml"]
           org_id?: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          origem_cadastro?: string | null
           origem_nfe?: number | null
           preco_reancorado_lider?: boolean
           publicado_em?: string | null
@@ -2114,6 +2123,215 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ml_webhook_eventos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notas_compra: {
+        Row: {
+          assinada: boolean
+          chave: string
+          desfeita_em: string | null
+          desfeita_por: string | null
+          divergencia_total_aceita: number | null
+          emitente_cnpj: string
+          emitente_nome: string
+          emitida_em: string
+          id: string
+          importada_em: string
+          importada_por: string | null
+          numero: number
+          org_id: string
+          serie: number
+          status: string
+          valor_total: number
+          xml_path: string
+          xml_sha256: string | null
+        }
+        Insert: {
+          assinada: boolean
+          chave: string
+          desfeita_em?: string | null
+          desfeita_por?: string | null
+          divergencia_total_aceita?: number | null
+          emitente_cnpj: string
+          emitente_nome: string
+          emitida_em: string
+          id?: string
+          importada_em?: string
+          importada_por?: string | null
+          numero: number
+          org_id: string
+          serie: number
+          status?: string
+          valor_total: number
+          xml_path: string
+          xml_sha256?: string | null
+        }
+        Update: {
+          assinada?: boolean
+          chave?: string
+          desfeita_em?: string | null
+          desfeita_por?: string | null
+          divergencia_total_aceita?: number | null
+          emitente_cnpj?: string
+          emitente_nome?: string
+          emitida_em?: string
+          id?: string
+          importada_em?: string
+          importada_por?: string | null
+          numero?: number
+          org_id?: string
+          serie?: number
+          status?: string
+          valor_total?: number
+          xml_path?: string
+          xml_sha256?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_compra_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notas_compra_distribuicao: {
+        Row: {
+          codigo: string
+          custo_aquisicao_unit: number
+          custo_precificacao_unit: number
+          id: string
+          item_id: string
+          org_id: string
+          quantidade: number
+        }
+        Insert: {
+          codigo: string
+          custo_aquisicao_unit: number
+          custo_precificacao_unit: number
+          id?: string
+          item_id: string
+          org_id: string
+          quantidade: number
+        }
+        Update: {
+          codigo?: string
+          custo_aquisicao_unit?: number
+          custo_precificacao_unit?: number
+          id?: string
+          item_id?: string
+          org_id?: string
+          quantidade?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_compra_distribuicao_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "notas_compra_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_compra_distribuicao_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notas_compra_itens: {
+        Row: {
+          cfop: string
+          codigo_pai: string
+          cprod: string
+          fator_conversao: number
+          gtin: string | null
+          id: string
+          n_item: number
+          ncm: string | null
+          nota_id: string
+          org_id: string
+          orig: number | null
+          qcom: number
+          rateio: Json
+          ucom: string
+          v_desc: number
+          v_fcpst: number
+          v_frete: number
+          v_ipi: number
+          v_outro: number
+          v_prod: number
+          v_seg: number
+          v_st: number
+          xprod: string
+        }
+        Insert: {
+          cfop: string
+          codigo_pai: string
+          cprod: string
+          fator_conversao?: number
+          gtin?: string | null
+          id?: string
+          n_item: number
+          ncm?: string | null
+          nota_id: string
+          org_id: string
+          orig?: number | null
+          qcom: number
+          rateio?: Json
+          ucom: string
+          v_desc?: number
+          v_fcpst?: number
+          v_frete?: number
+          v_ipi?: number
+          v_outro?: number
+          v_prod: number
+          v_seg?: number
+          v_st?: number
+          xprod: string
+        }
+        Update: {
+          cfop?: string
+          codigo_pai?: string
+          cprod?: string
+          fator_conversao?: number
+          gtin?: string | null
+          id?: string
+          n_item?: number
+          ncm?: string | null
+          nota_id?: string
+          org_id?: string
+          orig?: number | null
+          qcom?: number
+          rateio?: Json
+          ucom?: string
+          v_desc?: number
+          v_fcpst?: number
+          v_frete?: number
+          v_ipi?: number
+          v_outro?: number
+          v_prod?: number
+          v_seg?: number
+          v_st?: number
+          xprod?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_compra_itens_nota_id_fkey"
+            columns: ["nota_id"]
+            isOneToOne: false
+            referencedRelation: "notas_compra"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_compra_itens_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -3712,6 +3930,41 @@ export type Database = {
             columns: ["venda_id"]
             isOneToOne: false
             referencedRelation: "ml_vendas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vinculos_fornecedor: {
+        Row: {
+          atualizado_em: string
+          cnpj_fornecedor: string
+          codigo_pai: string
+          cprod: string
+          fator_conversao: number
+          org_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          cnpj_fornecedor: string
+          codigo_pai: string
+          cprod: string
+          fator_conversao?: number
+          org_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          cnpj_fornecedor?: string
+          codigo_pai?: string
+          cprod?: string
+          fator_conversao?: number
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vinculos_fornecedor_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
