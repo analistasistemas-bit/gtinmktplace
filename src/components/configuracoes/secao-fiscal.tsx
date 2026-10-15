@@ -141,6 +141,8 @@ export function SecaoFiscal() {
   const [erroUf, setErroUf] = useState<string | null>(null);
   const [erroCep, setErroCep] = useState<string | null>(null);
   const consultaCep = useRef(0);
+  // Invalida consulta em voo: evita gravar o endereço na organização seguinte.
+  useEffect(() => () => { consultaCep.current += 1; }, []);
   const [emissaoInput, setEmissaoInput] = useState('');
   useEffect(() => { setEmissaoInput(empresa?.emissao_a_partir_de ?? ''); }, [empresa?.emissao_a_partir_de]);
 

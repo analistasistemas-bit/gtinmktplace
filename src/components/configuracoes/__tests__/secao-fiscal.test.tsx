@@ -142,6 +142,19 @@ describe('CEP preenche o endereço (ViaCEP)', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(gravados()).not.toContainEqual({ municipio: 'Recife' });
   });
+  it('desmontar durante a consulta: a resposta tardia não grava', async () => {
+    let resolver!: (v: unknown) => void;
+    buscarCep.mockImplementationOnce(() => new Promise((r) => { resolver = r; }));
+    const user = userEvent.setup();
+    const { unmount } = renderSecao({ empresa: EMPRESA_BASE });
+    await user.type(screen.getByLabelText('CEP'), '51021530');
+    await user.tab();
+    await waitFor(() => expect(buscarCep).toHaveBeenCalled());
+    unmount();
+    resolver({ logradouro: 'Rua A', bairro: 'Bairro A', municipio: 'Recife', uf: 'PE', municipio_ibge: '2611606' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(gravados().some((p) => 'municipio' in p)).toBe(false);
+  });
   it('UF e IBGE inválidos do ViaCEP: normaliza a UF e pula o IBGE', async () => {
     buscarCep.mockResolvedValue({ logradouro: 'Rua', bairro: 'B', municipio: 'Recife', uf: 'pe', municipio_ibge: '261160' });
     const user = userEvent.setup();
