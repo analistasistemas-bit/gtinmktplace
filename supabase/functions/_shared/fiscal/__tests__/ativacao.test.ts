@@ -25,11 +25,23 @@ describe('pendenciasAtivacaoFiscal (spec §5.3 — lista tudo de uma vez)', () =
   });
   it('campos vazios são listados TODOS de uma vez, nomeados', () => {
     const p = pendenciasAtivacaoFiscal(
-      { tipoPessoa: 'pj' }, { ...completa, cnpj: null, cep: null, cst_pis: null }, 'PE');
+      { tipoPessoa: 'pj' }, { ...completa, cnpj: null, cep: null, bairro: null }, 'PE');
     expect(p.length).toBeGreaterThanOrEqual(3);
     expect(p.join(' ')).toMatch(/CNPJ/);
     expect(p.join(' ')).toMatch(/CEP/);
-    expect(p.join(' ')).toMatch(/PIS/);
+    expect(p.join(' ')).toMatch(/bairro/);
+  });
+  it('campos de portabilidade (natureza, CFOPs, CST PIS/COFINS) são opcionais — emenda 2026-10-15', () => {
+    const semPortabilidade = {
+      ...completa,
+      natureza_operacao: null, cfop_dentro_uf: null, cfop_fora_uf_nao_contribuinte: null,
+      cfop_fora_uf_contribuinte: null, cst_pis: null, cst_cofins: null,
+    };
+    expect(pendenciasAtivacaoFiscal({ tipoPessoa: 'pj' }, semPortabilidade, 'PE')).toEqual([]);
+  });
+  it('origin_type continua obrigatório (é o que vai ao ML)', () => {
+    expect(pendenciasAtivacaoFiscal({ tipoPessoa: 'pj' }, { ...completa, origin_type: null }, 'PE')
+      .join(' ')).toMatch(/origin_type/);
   });
   it('CNPJ com dígito errado é pendência própria', () => {
     expect(pendenciasAtivacaoFiscal({ tipoPessoa: 'pj' }, { ...completa, cnpj: '11222333000180' }, 'PE')

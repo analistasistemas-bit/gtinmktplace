@@ -14,14 +14,15 @@ export interface EmpresaFiscalRow {
 }
 
 // cfop_fora_uf_contribuinte, nome_fantasia e complemento são OPCIONAIS (spec §2.2).
+// Emenda 2026-10-15 (ADR-0135 D-3/D-7): natureza_operacao, CFOPs e CST de PIS/COFINS também
+// saem da lista — o Faturador do ML não os recebe (da empresa, só origin_type vai no payload); ficam
+// guardados como portabilidade para troca de emissor. Espelho: OBRIGATORIOS em
+// src/components/configuracoes/secao-fiscal.tsx — manter os dois iguais.
 const OBRIGATORIOS: Array<[keyof EmpresaFiscalRow, string]> = [
   ['cnpj', 'CNPJ'], ['razao_social', 'razão social'],
   ['inscricao_estadual', 'inscrição estadual'], ['regime_tributario', 'regime tributário'],
   ['cep', 'CEP'], ['logradouro', 'logradouro'], ['numero', 'número'], ['bairro', 'bairro'],
   ['municipio', 'município'], ['municipio_ibge', 'código IBGE do município'], ['uf', 'UF'],
-  ['natureza_operacao', 'natureza da operação'], ['cfop_dentro_uf', 'CFOP dentro da UF'],
-  ['cfop_fora_uf_nao_contribuinte', 'CFOP fora da UF (não contribuinte)'],
-  ['cst_pis', 'CST de PIS'], ['cst_cofins', 'CST de COFINS'],
   ['origin_type', 'papel da empresa (origin_type)'],
   ['emissao_a_partir_de', 'data de início da emissão (emissao_a_partir_de)'],
 ];
