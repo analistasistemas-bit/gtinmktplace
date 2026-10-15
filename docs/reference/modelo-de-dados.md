@@ -719,6 +719,7 @@ Grupos de colunas:
   módulo valida LOUD que as duas UFs coincidem, nomeando as duas se divergirem.
 - **Operação:** `natureza_operacao`, `cfop_dentro_uf`, `cfop_fora_uf_nao_contribuinte`,
   `cfop_fora_uf_contribuinte` (nullable — slot para PJ com IE), `cst_pis`, `cst_cofins`.
+  Opcionais (portabilidade, não exigidos para ativar — ADR-0135, emenda 2026-10-15).
 - **ML:** `origin_type` (check `manufacturer`/`reseller`/`imported`) — papel da empresa, exigido
   pelo payload de `fiscal_information` (é da org, não do produto).
 - **Corte temporal:** `emissao_a_partir_de date` — vendas com `date_created` anterior nunca viram

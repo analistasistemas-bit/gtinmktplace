@@ -2,6 +2,11 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
+
+- [x] `ativacao.ts` não exige mais natureza/CFOPs/CST PIS-COFINS; Configurações → Fiscal: UF da venda em dropdown, CEP preenche endereço/UF/IBGE (ViaCEP), Operação fiscal só pede Papel da empresa (portabilidade recolhida), aviso de Regime Normal.
+- Deploy pendente no merge: edge `usuarios` (importa `fiscal/ativacao`), via CLI completa, SEM `--no-verify-jwt`; conferir versão pós-deploy.
+
 ## Cupom do vendedor na venda (ADR-0180) — em produção desde 2026-10-05 (main ec0f756e)
 
 - [x] Diagnóstico: pack 2000014948061807 mostrava R$ 132,80; ML mostra R$ 127,80 (cupom −R$ 5,00 bancado pelo vendedor, só visível no `coupon_fee` do MP).

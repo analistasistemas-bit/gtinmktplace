@@ -229,6 +229,22 @@ construído). Opt-in, certificado e série ficam invisíveis à API — o onboar
 no painel do ML que o PubliAI só consegue verificar indiretamente (`can_invoice`). E a v1 cobre só
 Simples: o primeiro cliente de Lucro Presumido espera a V2.
 
+## Emenda — 2026-10-15: portabilidade opcional, CEP automático
+
+- **D-3 / D-7.3:** `natureza_operacao`, `cfop_dentro_uf`, `cfop_fora_uf_nao_contribuinte`,
+  `cst_pis` e `cst_cofins` deixam de ser exigidos para ligar o módulo. Motivo medido no código: da
+  empresa, só `origin_type` entra no payload do ML (`_shared/canais/fiscal-ml.ts`); `regime_tributario`
+  só é lido localmente (`sincronizar-fiscal-ml`) para CSOSN×CST. No Simples o ML dispensa regras
+  tributárias (doc oficial `envio-regras-tributarias`). As colunas
+  ficam (portabilidade para troca de emissor) e aparecem na tela num bloco recolhido opcional.
+  "`empresa_fiscal` completa" passa a ser: CNPJ válido, razão social, IE, regime, endereço
+  (CEP, logradouro, número, bairro, município, IBGE, UF), `origin_type` e `emissao_a_partir_de`.
+- **Regime Normal** segue recusado na ativação (D-6); a tela só avisa — os campos de `tax_rules`
+  nascem com a V2.
+- **CEP:** a tela consulta o ViaCEP (navegador, sem chave) e preenche logradouro, bairro,
+  município, UF e código IBGE. Falha na consulta não bloqueia — endereço segue editável.
+- Decisão do Diego em 2026-10-15 (opção "opcionais, recolhidos").
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a
