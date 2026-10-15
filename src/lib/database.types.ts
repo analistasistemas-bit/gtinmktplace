@@ -2231,11 +2231,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "notas_compra_distribuicao_item_id_fkey"
-            columns: ["item_id"]
+            foreignKeyName: "notas_compra_distribuicao_item_org_fkey"
+            columns: ["item_id", "org_id"]
             isOneToOne: false
             referencedRelation: "notas_compra_itens"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "org_id"]
           },
           {
             foreignKeyName: "notas_compra_distribuicao_org_id_fkey"
@@ -2324,11 +2324,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "notas_compra_itens_nota_id_fkey"
-            columns: ["nota_id"]
+            foreignKeyName: "notas_compra_itens_nota_org_fkey"
+            columns: ["nota_id", "org_id"]
             isOneToOne: false
             referencedRelation: "notas_compra"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "org_id"]
           },
           {
             foreignKeyName: "notas_compra_itens_org_id_fkey"
