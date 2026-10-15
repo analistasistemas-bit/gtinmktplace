@@ -218,7 +218,15 @@ export function SecaoFiscal() {
     }
     if (n !== consultaCep.current) return;
     if (!endereco) { setErroCep('CEP não encontrado — confira ou preencha o endereço à mão.'); return; }
-    for (const [c, valor] of Object.entries(endereco)) if (valor) gravarEmpresa(c, valor);
+    // Resposta externa passa pelas mesmas checks do banco (uf ^[A-Z]{2}$, municipio_ibge ^\d{7}$):
+    // campo inválido é pulado e o usuário preenche à mão.
+    for (const [c, bruto] of Object.entries(endereco)) {
+      const valor = c === 'uf' ? bruto.trim().toUpperCase() : bruto;
+      if (!valor) continue;
+      if (c === 'uf' && !/^[A-Z]{2}$/.test(valor)) continue;
+      if (c === 'municipio_ibge' && !/^\d{7}$/.test(valor)) continue;
+      gravarEmpresa(c, valor);
+    }
   };
 
   const campo = (id: string, rotulo: string, extras: Partial<Parameters<typeof CampoEmpresa>[0]> = {}) => (

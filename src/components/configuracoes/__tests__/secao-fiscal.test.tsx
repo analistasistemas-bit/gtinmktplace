@@ -142,6 +142,15 @@ describe('CEP preenche o endereço (ViaCEP)', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(gravados()).not.toContainEqual({ municipio: 'Recife' });
   });
+  it('UF e IBGE inválidos do ViaCEP: normaliza a UF e pula o IBGE', async () => {
+    buscarCep.mockResolvedValue({ logradouro: 'Rua', bairro: 'B', municipio: 'Recife', uf: 'pe', municipio_ibge: '261160' });
+    const user = userEvent.setup();
+    renderSecao({ empresa: EMPRESA_BASE });
+    await user.type(screen.getByLabelText('CEP'), '51021530');
+    await user.tab();
+    await waitFor(() => expect(gravados()).toContainEqual({ uf: 'PE' }));
+    expect(gravados().some((p) => 'municipio_ibge' in p)).toBe(false);
+  });
   it('falha ao gravar o CEP aparece no campo', async () => {
     buscarCep.mockResolvedValue(null);
     salvarEmpresa.mockRejectedValueOnce(new Error('falha de rede ao salvar'));
