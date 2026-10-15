@@ -155,18 +155,20 @@ importada aparece marcado "sem nota de compra", nunca com custo inventado.
   repositório do ML e no pacote exportado que ela entrega ao contador.
   - Vai em lotes retomáveis com manifesto de documentos e falhas.
   - API indisponível ≠ ausência de nota; pacote parcial é declarado como parcial.
-  - Inclui conciliação pedidos × notas e vendas sem nota.
-  - Inclui planilha item a item (data, número, chave, valor, CFOP, NCM, CEST, CSOSN, UF, status).
+  - **Relatório de vendas detalhado** (pedido do contador real, 2026-10-15): uma linha por venda e por
+    nota, **em ordem crescente de data**, com data da venda, pedido ML, data de emissão, número, série,
+    chave, valor dos produtos, frete, desconto, valor total e status (autorizada, cancelada, devolução).
+    Venda sem nota autorizada aparece na mesma lista, sinalizada, nunca omitida.
   - Devolução entra no mês de emissão da nota de devolução.
 - **devoluções emitidas fora do ML:** a devolução **ao fornecedor** é emitida pela própria org (CFOP
   5.202/6.202), por emissor externo, como o Emissor gratuito do Sebrae. O PubliAI **importa** esse XML,
   vincula à nota de compra e baixa o estoque. Reembolso de venda sem retorno físico **não** volta ao
   estoque.
 
-O PubliAI **não classifica** ST nem monofásico. Cada item sai com a coluna **"tratamento fiscal:
-pendente/validado"**, preenchida pela contabilidade. Totais por CSOSN são só auxiliares, e o CSOSN da
-compra nunca define a tributação da revenda (parecer, pergunta 3). Confecção dos capítulos 61/62
-não é monofásica por padrão.
+O PubliAI **não classifica** ST nem monofásico. O contador apura a partir dos XMLs. O contador real
+confirmou que o essencial para ele são **os XMLs de todas as vendas + o relatório detalhado**. A
+planilha item a item com CSOSN/NCM e a coluna de "tratamento fiscal" do parecer simulado saíram do
+escopo.
 
 O pacote **não substitui** livro Caixa, DEFIS nem escrituração.
 
