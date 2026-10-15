@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAliquotas, useSalvarAliquotas, useEmpresaFiscal, useSalvarEmpresaFiscal } from '@/hooks/useConfiguracoes';
+import { buscarCep } from '@/lib/cep';
 import { UFS, validarCnpj } from '@/lib/fiscal';
 import { cn } from '@/lib/utils';
 import { usePermissoesConfig } from './permissoes';
@@ -137,6 +138,8 @@ export function SecaoFiscal() {
   const [erroCnpj, setErroCnpj] = useState<string | null>(null);
   const [erroIbge, setErroIbge] = useState<string | null>(null);
   const [erroUf, setErroUf] = useState<string | null>(null);
+  const [erroCep, setErroCep] = useState<string | null>(null);
+  const consultaCep = useRef(0);
   const [emissaoInput, setEmissaoInput] = useState('');
   useEffect(() => { setEmissaoInput(empresa?.emissao_a_partir_de ?? ''); }, [empresa?.emissao_a_partir_de]);
 
@@ -192,6 +195,30 @@ export function SecaoFiscal() {
     if (!/^[A-Z]{2}$/.test(u)) { setErroUf('UF inválida (2 letras, ex.: PE).'); return; }
     setErroUf(null);
     gravarEmpresa('uf', u);
+  };
+
+  // CEP → ViaCEP preenche o resto do endereço (emenda ADR-0135, 2026-10-15). Campo vazio na
+  // resposta (CEP geral de cidade) não sobrescreve o que o usuário já digitou. Falha na consulta
+  // não bloqueia: o CEP fica salvo e o endereço segue editável à mão.
+  // Cada blur invalida a consulta anterior: resposta que chega depois de um CEP mais novo é
+  // descartada (A→B terminando B→A gravaria o endereço de A).
+  const salvarCep = async (v: string) => {
+    const n = ++consultaCep.current;
+    const d = v.replace(/\D/g, '');
+    if (d === '') { setErroCep(null); gravarEmpresa('cep', null); return; }
+    if (d.length !== 8) { setErroCep('CEP inválido (8 dígitos).'); return; }
+    setErroCep(null);
+    gravarEmpresa('cep', d);
+    let endereco;
+    try {
+      endereco = await buscarCep(d);
+    } catch {
+      if (n === consultaCep.current) setErroCep('Não foi possível consultar o CEP agora — preencha o endereço à mão.');
+      return;
+    }
+    if (n !== consultaCep.current) return;
+    if (!endereco) { setErroCep('CEP não encontrado — confira ou preencha o endereço à mão.'); return; }
+    for (const [c, valor] of Object.entries(endereco)) if (valor) gravarEmpresa(c, valor);
   };
 
   const campo = (id: string, rotulo: string, extras: Partial<Parameters<typeof CampoEmpresa>[0]> = {}) => (
@@ -389,7 +416,12 @@ export function SecaoFiscal() {
             </Subgrupo>
 
             <Subgrupo titulo="Endereço" campos={OBRIGATORIOS.endereco} empresa={empresa as Empresa}>
-              {campo('cep', 'CEP')}
+              {campo('cep', 'CEP', {
+                placeholder: '00000-000',
+                // falha de gravação da fila vem primeiro: o aviso local (formato/ViaCEP) não pode escondê-la
+                erro: filaEmpresa.erros.cep ?? erroCep ?? null,
+                onSalvar: (v) => void salvarCep(v),
+              })}
               {campo('logradouro', 'Logradouro')}
               {campo('numero', 'Número')}
               {campo('complemento', 'Complemento')}
