@@ -84,16 +84,19 @@ manual separada.
 *Rejeitado:* aceitar divergência ou "saldo a distribuir", porque a entrada deixaria de espelhar o
 documento.
 
-**D-8 — Variação faltante usa os fluxos que já existem** *(revisado 2026-10-15, OK do Diego após a
-revisão do plano pelo Codex)*. Quando a nota traz tamanho ou cor que o produto não tem, o assistente não
-cria variação sozinho:
-- **produto publicado:** abre o "adicionar variação/estender grade" existente (ADR-0129, admin), que
-  publica por ação explícita do operador;
-- **produto não publicado:** orienta a editar o cadastro.
+**D-8 — Variação faltante entra pelo fluxo existente, com a referência da nota** *(revisado 2026-10-15,
+OK do Diego após 2 rodadas de revisão do Codex)*. Quando a nota traz tamanho ou cor que o produto não tem:
+- **produto publicado:** o assistente abre o "adicionar variação/estender grade" (ADR-0129, admin), com o
+  estoque inicial = as peças da nota para aquele SKU e a **referência de ledger da nota**
+  (`nfe:{chave}:{nItem}:{codigo}`). A variação é publicada por ação explícita do operador. Na confirmação
+  da importação, `registrar_entrada` reconhece a mesma referência e **não soma de novo**. Se a quantidade
+  já lançada divergir da nota, a importação é recusada;
+- **produto não publicado:** v1 recusa o item e orienta a cadastrar a grade completa (não existe edição de
+  composição de produto não publicado).
 
-Depois disso, a distribuição continua. *Rejeitado:* criar a variação "local, não publicada", porque
-`excluida_da_publicacao` não significa "fora do anúncio" (filtrá-la no push cortaria SKU ainda publicado) e
-uma variação local numa família já publicada não tem caminho até a Revisão.
+*Rejeitado:* variação "local, não publicada", porque `excluida_da_publicacao` não significa "fora do
+anúncio" e uma variação local numa família publicada não tem caminho até a Revisão. *Rejeitado:* abrir o
+fluxo existente sem a referência, porque ele exige estoque inicial > 0 e somaria em dobro com a nota.
 
 **D-9 — Custo documentado, custos adicionais e custo de precificação.**
 - **Custo da nota:** `vProd` mais frete, seguro, IPI, ST e outras despesas, menos o desconto. Usa os
@@ -224,7 +227,9 @@ mas depende da API do ML no momento da exportação.
 
 ## A verificar antes de codar
 
-1. `fiscal_information.title` é o texto impresso no `xProd` da nota do Faturador (conta de teste).
+1. `fiscal_information.title` é o texto impresso no `xProd` da nota do Faturador. A Zaven foi conectada ao
+   ML em 2026-10-15 (seller `3760134495`), ainda sem anúncios nem vendas. Decisão do Diego: codar e
+   verificar na **primeira venda faturada** da Zaven.
 2. Download por período dos XMLs do Faturador: autenticação, filtros (canceladas e devoluções),
    histórico disponível, volume e bytes por mês, limites, e CPU e memória da montagem do zip (ADR-0173).
 3. O push de estoque ignora o SKU não publicado (D-8).
@@ -233,4 +238,5 @@ mas depende da API do ML no momento da exportação.
    Inventário em PE, cobertura da devolução de venda no Faturador do ML e emissor da devolução ao
    fornecedor (Sebrae × NFA-e). A v1 segue sem eles: coluna "tratamento fiscal" pendente, inventário em
    planilha, importação de devolução emitida fora.
-5. Pedir ao fornecedor um XML original da SEFAZ e testar os dois formatos (D-2).
+5. ~~XML original da SEFAZ~~: dispensado pelo Diego em 2026-10-15. Os testes usam a exportação de ERP
+   real (forma) e uma fixture no formato SEFAZ.

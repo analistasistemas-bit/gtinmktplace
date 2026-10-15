@@ -2,14 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Revisão 2** — incorpora a revisão do Codex `gpt-6.1-sol` (2026-10-15, VERDICT: REVISE): 12 bloqueadores,
-5 importantes e 3 menores. Mudanças centrais:
+**Revisão 3** — incorpora a rodada 2 do Codex `gpt-6.1-sol` (5 bloqueadores novos: leitor endurecido,
+rateio por maiores restos com sinais validados, XML endereçado por hash, D-8 com referência da nota,
+`codigoPai` no contrato tipado) e as decisões do Diego de 2026-10-15 (D-8 com referência da nota; XML de
+exportação do ERP como base dos testes; Zaven sendo conectada ao ML).
+
+**Revisão 2** — incorporou a rodada 1 do Codex (12 bloqueadores, 5 importantes, 3 menores). Mudanças centrais:
 - o servidor lê o próprio XML, e o navegador só manda **decisões**;
 - o arquivo da nota é imutável e a importação concorrente é serializada;
 - o desfazer trava os SKUs antes de ler o saldo e é idempotente;
 - há conciliação de totais e rateio;
 - a distribuição pode ir para vários produtos;
-- a variação nova reusa os fluxos existentes. **Isso troca a D-8, aprovado pelo Diego em 2026-10-15.**
+- a variação nova entra pelo fluxo existente com a referência da nota (D-8 revisada, aprovada pelo Diego).
 
 **Goal:** O operador importa o XML de uma NF-e de compra em `/estoque`. O sistema liga cada item a um
 produto (vínculo de fornecedor), distribui a quantidade na grade e dá entrada no estoque numa única
@@ -37,17 +41,11 @@ Distribuição na grade, Custo de aquisição, Custo de precificação, Descriç
 (export mensal, XMLs de venda ao vivo do ML), custos adicionais por CT-e (parte de D-9). Este plano grava
 o `custo_aquisicao_unit` por SKU distribuído, que é o insumo do custo médio do Plano 2.
 
-**D-8 revisada (OK do Diego em 2026-10-15; ADR-0181 atualizado):**
-- **O que muda:** "Variação nova nasce só no PubliAI, não publicada" vira **"variação nova usa os fluxos que
-  já existem"**.
-  - **Produto publicado:** abre o `dialog-adicionar-variacao-roteador` (ADR-0129, admin, publica com o clique
-    do operador).
-  - **Produto ainda não publicado:** o assistente indica a edição do cadastro.
-- **Motivo (Codex, verificado):**
-  - `excluida_da_publicacao` não significa "ausente do anúncio" (`src/components/familia-expanded.tsx:550-564`).
-  - Filtrar essa flag no push cortaria SKU ainda publicado.
-  - Uma variação local numa família `publicado` não tem caminho até a Revisão: o claim só aceita `pronto` e
-    `erro` (`20261004202356_reajuste_preco_rpcs.sql:397`).
+**D-8 revisada (OK do Diego em 2026-10-15; ADR-0181 atualizado):** a variação faltante entra pelo
+`dialog-adicionar-variacao-roteador` existente (produto publicado, admin). O estoque inicial é a quantidade
+da nota para aquele SKU, e a referência de ledger é a da nota (`nfe:{chave}:{nItem}:{codigo}`). Na
+confirmação, `registrar_entrada` reconhece a referência e não soma de novo (Task 11). Produto não publicado:
+v1 recusa o item e orienta a cadastrar a grade completa.
 
 ## Global Constraints
 
@@ -142,27 +140,37 @@ insert into public.profiles (id, org_id, is_active) values
 on conflict (id) do update set org_id = excluded.org_id, is_active = true;
 insert into public.notas_compra (org_id, chave, numero, serie, emitente_cnpj, emitente_nome, emitida_em,
   valor_total, assinada, xml_path)
-values ('93100000-0000-0000-0000-00000000000a', '26261011222333000181550010000010511000030324', 1, 1,
-  '11222333000181', 'F', now(), 1, false, '93100000-0000-0000-0000-00000000000a/x.xml');
+values
+  ('93100000-0000-0000-0000-00000000000a', '26261011222333000181550010000010511000030324', 1, 1,
+   '11222333000181', 'F', now(), 1, false, '93100000-0000-0000-0000-00000000000a/x.xml'),
+  ('93100000-0000-0000-0000-00000000000b', '26261011222333000181550010000010511000030324', 1, 1,
+   '11222333000181', 'F', now(), 1, false, '93100000-0000-0000-0000-00000000000b/x.xml');
+insert into storage.objects (bucket_id, name) values
+  ('notas-compra', '93100000-0000-0000-0000-00000000000a/x.xml'),
+  ('notas-compra', '93100000-0000-0000-0000-00000000000b/x.xml');
 
+-- current_org_id() lê profiles.org_id do auth.uid() ativo (20260725224000_support_access.sql:183),
+-- mesmo padrão de supabase/tests/estoque_rpc_tamanho.sql:70.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"93100000-0000-0000-0000-0000000000b1","role":"authenticated"}';
 do $$
 begin
-  if exists (select 1 from public.notas_compra) then raise exception 'org B enxergou nota da org A'; end if;
-  begin
-    perform public.importar_nota_compra('93100000-0000-0000-0000-00000000000b',
-      '93100000-0000-0000-0000-0000000000b1', '{}'::jsonb, '[]'::jsonb);
-    raise exception 'authenticated conseguiu executar importar_nota_compra';
-  exception when insufficient_privilege or undefined_function then null;
-  end;
+  -- Controle positivo: a identidade resolve para a org B (senão "não vê A" passaria por cegueira total).
+  if public.current_org_id() is distinct from '93100000-0000-0000-0000-00000000000b'::uuid then
+    raise exception 'current_org_id não resolveu a org B: %', public.current_org_id(); end if;
+  if (select count(*) from public.notas_compra) <> 1 then raise exception 'B deveria ver exatamente a própria nota'; end if;
+  if exists (select 1 from public.notas_compra where org_id = '93100000-0000-0000-0000-00000000000a') then
+    raise exception 'org B enxergou nota da org A'; end if;
+  if (select count(*) from storage.objects where bucket_id = 'notas-compra') <> 1 then
+    raise exception 'B deveria ver só o próprio XML no bucket'; end if;
   raise exception 'TESTE_OK' using errcode = 'P0001';
 end $$;
 rollback;
 ```
 
-O bloco de `importar_nota_compra` aceita `undefined_function` porque, na Task 1, a RPC ainda não existe. A
-Task 2 roda este teste de novo, e aí o que vale é `insufficient_privilege`.
+Sessão de suporte (read/expirada) não ganha teste próprio aqui: o isolamento passa por `current_org_id()`,
+que já trata a sessão de suporte e é coberto pelos testes do ADR-0092. A recusa de `authenticated` ao
+executar as RPCs fica no teste da Task 2.
 
 - [ ] **Step 2: Rodar e ver falhar (prova de vermelho)**
 
@@ -368,9 +376,14 @@ declare r jsonb; r2 jsonb; v_p integer; v_m integer; v_o integer; v_custo numeri
                     {"codigo":"09300002","quantidade":20,"custo_aquisicao_unit":10,"custo_precificacao_unit":14},
                     {"codigo":"09310001","quantidade":5,"custo_aquisicao_unit":10,"custo_precificacao_unit":14}]}]';
 begin
+  -- D-8: o M "nasceu" pelo fluxo existente já com as 20 peças e a ref da nota.
+  perform public.registrar_entrada('93000000-0000-0000-0000-000000000001', '09300002', 20, 14, 'addvar', null,
+        '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000030324:1:09300002');
   r := public.importar_nota_compra('93000000-0000-0000-0000-000000000001',
         '93000000-0000-0000-0000-000000000101', v_nota, v_itens);
   if (r->>'duplicada')::boolean then raise exception '1a importação veio duplicada'; end if;
+  if (select estoque from public.variacoes where codigo='09300002') <> 20 then
+    raise exception 'ref da nota já aplicada foi somada de novo (D-8)'; end if;
   if (select array_agg(x order by x) from jsonb_array_elements_text(r->'codigos_pai') x)
      <> array['09300000','09310000'] then
     raise exception 'push precisa ir para os 2 produtos tocados: %', r; end if;
@@ -424,6 +437,42 @@ begin
   exception when sqlstate '23514' then null;
   end;
 
+  -- Ref da nota já aplicada com quantidade DIFERENTE da distribuição: recusa a nota inteira.
+  perform public.registrar_entrada('93000000-0000-0000-0000-000000000001', '09310001', 3, 14, 'addvar', null,
+        '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000099991:1:09310001');
+  begin
+    perform public.importar_nota_compra('93000000-0000-0000-0000-000000000001',
+        '93000000-0000-0000-0000-000000000101',
+        jsonb_set(v_nota, '{chave}', '"26261011222333000181550010000010511000099991"'),
+        '[{"n_item":1,"cprod":"REF 09","xprod":"X","ncm":null,"cfop":"5102","gtin":null,"ucom":"PC","qcom":5,
+          "fator_conversao":1,"v_prod":50,"v_frete":0,"v_seg":0,"v_desc":0,"v_outro":0,"v_ipi":0,"v_st":0,
+          "rateio":{},"orig":0,"codigo_pai":"09310000",
+          "distribuicao":[{"codigo":"09310001","quantidade":5,"custo_aquisicao_unit":10,"custo_precificacao_unit":14}]}]');
+    raise exception 'quantidade divergente da ref já aplicada deveria recusar';
+  exception when sqlstate '23514' then null;
+  end;
+  if exists (select 1 from public.notas_compra where chave = '26261011222333000181550010000010511000099991') then
+    raise exception 'nota recusada deixou registro (deveria ser atômica)'; end if;
+end $$;
+
+-- authenticated nunca executa as RPCs (escrita só via edge/service_role).
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"93000000-0000-0000-0000-000000000101","role":"authenticated"}';
+do $$
+begin
+  begin
+    perform public.importar_nota_compra('93000000-0000-0000-0000-000000000001',
+      '93000000-0000-0000-0000-000000000101', '{}'::jsonb, '[]'::jsonb);
+    raise exception 'authenticated executou importar_nota_compra';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.desfazer_nota_compra('93000000-0000-0000-0000-000000000001',
+      '93000000-0000-0000-0000-000000000101', gen_random_uuid(), 'desfeita');
+    raise exception 'authenticated executou desfazer_nota_compra';
+  exception when insufficient_privilege then null;
+  end;
   raise exception 'TESTE_OK' using errcode = 'P0001';
 end $$;
 rollback;
@@ -450,6 +499,7 @@ as $$
 declare
   v_chave text := p_nota->>'chave';
   v_nota uuid; v_status text; v_item jsonb; v_item_id uuid; v_d jsonb; v_doc text; v_pais jsonb;
+  v_ref text; v_ret integer; v_lancada integer;
 begin
   -- Serializa importações concorrentes da MESMA nota: a segunda espera e cai em "duplicada"
   -- em vez de estourar a unique (org_id, chave).
@@ -500,9 +550,19 @@ begin
           (v_d->>'custo_aquisicao_unit')::numeric, (v_d->>'custo_precificacao_unit')::numeric);
 
         -- Ledger guarda o custo de PRECIFICAÇÃO (D-3); o de aquisição fica na nota.
-        perform public.registrar_entrada(p_org, v_d->>'codigo', (v_d->>'quantidade')::int,
-          (v_d->>'custo_precificacao_unit')::numeric, v_doc, null, p_user,
-          'nfe:' || v_chave || ':' || (v_item->>'n_item') || ':' || (v_d->>'codigo'));
+        v_ref := 'nfe:' || v_chave || ':' || (v_item->>'n_item') || ':' || (v_d->>'codigo');
+        v_ret := public.registrar_entrada(p_org, v_d->>'codigo', (v_d->>'quantidade')::int,
+          (v_d->>'custo_precificacao_unit')::numeric, v_doc, null, p_user, v_ref);
+        if v_ret is null then
+          -- Ref já aplicada: a variação nasceu pelo fluxo existente com a referência da nota (D-8).
+          -- A quantidade lançada tem de ser a da nota, senão a nota e o ledger divergem.
+          select m.quantidade into v_lancada from public.estoque_movimentos m
+           where m.org_id = p_org and m.referencia_externa = v_ref;
+          if v_lancada is distinct from (v_d->>'quantidade')::int then
+            raise exception 'importar_nota_compra: % já recebeu % unidades por esta nota; a distribuição diz %',
+              v_d->>'codigo', v_lancada, v_d->>'quantidade' using errcode = '23514';
+          end if;
+        end if;
       end loop;
     end loop;
   end if;
@@ -585,7 +645,7 @@ npm run db:check
 python3 scripts/teste-sql-desfeito.py supabase/tests/nota_compra.sql
 python3 scripts/teste-sql-desfeito.py supabase/tests/nota_compra_schema.sql
 ```
-Expected: os dois com `TESTE_OK` (o schema agora prova `insufficient_privilege` para `authenticated`).
+Expected: os dois com `TESTE_OK`.
 
 - [ ] **Step 5: Commit**
 
@@ -615,7 +675,8 @@ export interface ItemNotaLido {
 }
 export type CampoAcessorio = 'vFrete' | 'vSeg' | 'vDesc' | 'vOutro' | 'vIPI' | 'vST';
 export interface TotaisNota {
-  vProd: number; vFrete: number; vSeg: number; vDesc: number; vOutro: number; vIPI: number; vST: number; vNF: number;
+  vProd: number; vFrete: number; vSeg: number; vDesc: number; vOutro: number; vIPI: number; vST: number;
+  vII: number; vIPIDevol: number; vFCPST: number; vNF: number;
 }
 export interface NotaCompraLida {
   chave: string; numero: number; serie: number; modelo: number; tipoNf: number;
@@ -636,19 +697,27 @@ export function gtinValido(gtin: string): boolean;               // GTIN-8/12/13
 export const CFOPS_ACEITOS: ReadonlySet<string>;
 export function cfopAceito(cfop: string): boolean;
 export function quantidadeEmEstoque(qCom: number, fator: number): { ok: true; quantidade: number } | { ok: false; erro: string };
-export function conciliarItens(nota: NotaCompraLida): { ok: true; itens: ItemConciliado[] } | { ok: false; erro: string };
+export function conciliarItens(nota: NotaCompraLida): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null } | { ok: false; erro: string };
 export function custoAquisicaoUnit(item: ItemConciliado, fator: number): number; // sem arredondar
 export function erroDistribuicao(esperado: number, linhas: LinhaDistribuicao[]): string | null;
 export function limparDescricaoFornecedor(xProd: string): string;
 export function origemSugerida(orig: number | null): { origemNfe: number; origem: 'nacional' | 'importado' } | null;
 ```
 
-`conciliarItens`:
-- Soma dos `vProd` dos itens ≠ `totais.vProd` (tolerância 0,01) → recusa.
+`conciliarItens` (tudo em **centavos inteiros**, sem tolerância):
+- Qualquer valor negativo, por item ou no total → recusa.
+- Soma dos `vProd` dos itens ≠ `totais.vProd` → recusa.
 - Para cada campo acessório:
-  - soma dos itens ≈ total → usa os valores por item;
-  - soma dos itens = 0 e total > 0 → **rateia** o total proporcionalmente ao `vProd`, arredondando a centavos, e o **último** item absorve o resíduo para fechar exato. O valor rateado é somado ao campo do item e registrado em `rateio`;
+  - soma dos itens = total → usa os valores por item;
+  - soma dos itens = 0 e total > 0 → **rateia** o total proporcionalmente ao `vProd` pelo método dos **maiores
+    restos**. Cada parcela recebe o piso, e os centavos que sobram vão, um a um, aos maiores restos (empate →
+    menor `nItem`). Nenhuma parcela fica negativa e a soma fecha exata. O valor rateado é somado ao campo do
+    item e registrado em `rateio`;
   - nos demais casos → recusa ("totais de {campo} não batem").
+- Composição de `vNF`: `vProd − vDesc + vST + vFCPST + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol`. Se
+  divergir do `vNF`, **não recusa**: devolve `avisoTotal`, que o assistente mostra para o operador conferir.
+  Isso porque há componentes, como `vICMSDeson` e `vServ`, que só valem em leiautes específicos e recusar
+  barraria nota válida.
 
 `origemSugerida`:
 - `null` → `null` (fica pendente, nunca vira "nacional").
@@ -672,7 +741,7 @@ const item = (o: Partial<ItemNotaLido> = {}): ItemNotaLido => ({
   nItem: 1, cProd: 'REF 06', xProd: 'Short', ncm: '62034900', cfop: '5102', gtin: null, uCom: 'PC',
   qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0, ...o,
 });
-const zero = { vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vNF: 0 };
+const zero = { vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 0 };
 const nota = (itens: ItemNotaLido[], tot: Partial<typeof zero>): NotaCompraLida => ({
   chave: '26261011222333000181550010000010511000030324', numero: 1, serie: 1, modelo: 55, tipoNf: 1,
   emitidaEm: '2026-10-13T00:00:00-03:00', emitenteCnpj: '11222333000181', emitenteNome: 'F',
@@ -714,22 +783,43 @@ describe('quantidadeEmEstoque', () => {
 
 describe('conciliarItens', () => {
   it('usa os valores por item quando batem com o total', () => {
-    const r = conciliarItens(nota([item({ vFrete: 5 })], { vProd: 350, vFrete: 5 }));
-    expect(r.ok && r.itens[0].vFrete).toBe(5);
-    expect(r.ok && r.itens[0].rateio).toEqual({});
+    const r = conciliarItens(nota([item({ vFrete: 5 })], { vProd: 350, vFrete: 5, vNF: 355 }));
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.itens[0].vFrete).toBe(5);
+    expect(r.itens[0].rateio).toEqual({});
+    expect(r.avisoTotal).toBeNull();
   });
-  it('rateia frete só do total por vProd e fecha os centavos no último item', () => {
+  it('rateia por maiores restos: 10,00 em 3 itens iguais', () => {
     const r = conciliarItens(nota(
       [item({ nItem: 1, vProd: 100 }), item({ nItem: 2, vProd: 100 }), item({ nItem: 3, vProd: 100 })],
-      { vProd: 300, vFrete: 10 },
+      { vProd: 300, vFrete: 10, vNF: 310 },
     ));
     if (!r.ok) throw new Error(r.erro);
-    expect(r.itens.map((i) => i.vFrete)).toEqual([3.33, 3.33, 3.34]);
-    expect(r.itens[2].rateio).toEqual({ vFrete: 3.34 });
+    expect(r.itens.map((i) => i.vFrete)).toEqual([3.34, 3.33, 3.33]);
+    expect(r.itens[0].rateio).toEqual({ vFrete: 3.34 });
   });
-  it('recusa soma de vProd diferente do total e acessório parcial que não bate', () => {
+  it('0,02 em 4 itens nunca gera parcela negativa; 0,01 só no total também rateia', () => {
+    const quatro = [1, 2, 3, 4].map((n) => item({ nItem: n, vProd: 10 }));
+    const r = conciliarItens(nota(quatro, { vProd: 40, vFrete: 0.02, vNF: 40.02 }));
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.itens.map((i) => i.vFrete)).toEqual([0.01, 0.01, 0, 0]);
+    const um = conciliarItens(nota([item({ vProd: 10 })], { vProd: 10, vSeg: 0.01, vNF: 10.01 }));
+    expect(um.ok && um.itens[0].vSeg).toBe(0.01);
+  });
+  it('desconto só no total é rateado e reduz (não aumenta) o custo', () => {
+    const r = conciliarItens(nota([item({ nItem: 1, vProd: 75 }), item({ nItem: 2, vProd: 25 })],
+      { vProd: 100, vDesc: 10, vNF: 90 }));
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.itens.map((i) => i.vDesc)).toEqual([7.5, 2.5]);
+  });
+  it('recusa negativo, vProd que não bate e acessório parcial', () => {
+    expect(conciliarItens(nota([item({ vFrete: -5 })], { vProd: 350, vFrete: -5 })).ok).toBe(false);
     expect(conciliarItens(nota([item({ vProd: 100 })], { vProd: 300 })).ok).toBe(false);
     expect(conciliarItens(nota([item({ vFrete: 2 })], { vProd: 350, vFrete: 5 })).ok).toBe(false);
+  });
+  it('vNF fora da composição vira aviso, não recusa', () => {
+    const r = conciliarItens(nota([item()], { vProd: 350, vNF: 999999 }));
+    expect(r.ok && r.avisoTotal).toMatch(/999999/);
   });
 });
 
@@ -737,7 +827,7 @@ describe('custoAquisicaoUnit', () => {
   it('soma acessórios, subtrai desconto e divide pela quantidade convertida', () => {
     const r = conciliarItens(nota(
       [item({ qCom: 2, vProd: 240, vFrete: 12, vSeg: 1, vOutro: 2, vIPI: 6, vST: 3, vDesc: 4 })],
-      { vProd: 240, vFrete: 12, vSeg: 1, vOutro: 2, vIPI: 6, vST: 3, vDesc: 4 },
+      { vProd: 240, vFrete: 12, vSeg: 1, vOutro: 2, vIPI: 6, vST: 3, vDesc: 4, vNF: 260 },
     ));
     if (!r.ok) throw new Error(r.erro);
     expect(custoAquisicaoUnit(r.itens[0], 12)).toBeCloseTo(260 / 24, 10);
@@ -838,29 +928,49 @@ export function quantidadeEmEstoque(
 const CAMPOS: CampoAcessorio[] = ['vFrete', 'vSeg', 'vDesc', 'vOutro', 'vIPI', 'vST'];
 const cent = (n: number) => Math.round(n * 100);
 
-export function conciliarItens(nota: NotaCompraLida): { ok: true; itens: ItemConciliado[] } | { ok: false; erro: string } {
+/** Divide `total` (centavos) proporcionalmente a `pesos` pelos maiores restos: soma exata, sem negativos. */
+function maioresRestos(total: number, pesos: number[]): number[] {
+  const somaPesos = pesos.reduce((s, p) => s + p, 0);
+  const brutos = pesos.map((p) => (total * p) / somaPesos);
+  const partes = brutos.map(Math.floor);
+  let sobra = total - partes.reduce((s, p) => s + p, 0);
+  const ordem = brutos.map((b, i) => ({ i, resto: b - Math.floor(b) }))
+    .sort((a, b) => b.resto - a.resto || a.i - b.i);
+  for (const { i } of ordem) { if (sobra <= 0) break; partes[i] += 1; sobra -= 1; }
+  return partes;
+}
+
+export function conciliarItens(
+  nota: NotaCompraLida,
+): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null } | { ok: false; erro: string } {
   const itens: ItemConciliado[] = nota.itens.map((i) => ({ ...i, rateio: {} }));
-  const somaProd = cent(itens.reduce((s, i) => s + i.vProd, 0));
-  if (Math.abs(somaProd - cent(nota.totais.vProd)) > 1) {
+  const negativo = [...itens.flatMap((i) => [i.vProd, ...CAMPOS.map((c) => i[c])]), ...Object.values(nota.totais)]
+    .some((v) => v < 0);
+  if (negativo) return { ok: false, erro: 'A nota tem valor negativo — não é possível conferir os totais.' };
+
+  const prodItens = itens.map((i) => cent(i.vProd));
+  const somaProd = prodItens.reduce((s, v) => s + v, 0);
+  if (somaProd !== cent(nota.totais.vProd)) {
     return { ok: false, erro: `A soma dos itens (${somaProd / 100}) não bate com o total de produtos da nota (${nota.totais.vProd}).` };
   }
   for (const campo of CAMPOS) {
-    const somaItens = cent(itens.reduce((s, i) => s + i[campo], 0));
+    const somaItens = itens.reduce((s, i) => s + cent(i[campo]), 0);
     const total = cent(nota.totais[campo]);
-    if (Math.abs(somaItens - total) <= 1) continue;
-    if (somaItens !== 0 || total < 0) {
+    if (somaItens === total) continue;
+    if (somaItens !== 0 || somaProd === 0) {
       return { ok: false, erro: `Os totais de ${campo} não batem entre os itens e o total da nota.` };
     }
-    // Rateio proporcional ao vProd; o último item absorve o resíduo (fecha exato).
-    let restante = total;
-    itens.forEach((i, idx) => {
-      const parte = idx === itens.length - 1 ? restante : Math.round((total * cent(i.vProd)) / somaProd);
-      restante -= parte;
-      i[campo] = parte / 100;
-      i.rateio[campo] = parte / 100;
+    maioresRestos(total, prodItens).forEach((parte, idx) => {
+      itens[idx][campo] = parte / 100;
+      if (parte > 0) itens[idx].rateio[campo] = parte / 100;
     });
   }
-  return { ok: true, itens };
+  const t = nota.totais;
+  const composto = cent(t.vProd) - cent(t.vDesc) + cent(t.vST) + cent(t.vFCPST) + cent(t.vFrete) + cent(t.vSeg)
+    + cent(t.vOutro) + cent(t.vII) + cent(t.vIPI) + cent(t.vIPIDevol);
+  const avisoTotal = composto === cent(t.vNF) ? null
+    : `O total da nota (${t.vNF}) difere da soma dos componentes (${composto / 100}). Confira antes de confirmar.`;
+  return { ok: true, itens, avisoTotal };
 }
 
 export function custoAquisicaoUnit(item: ItemConciliado, fator: number): number {
@@ -988,6 +1098,30 @@ describe('lerNfe — XML da SEFAZ', () => {
   });
 });
 
+describe('lerNfe — endurecimento (rodada 2 do Codex)', () => {
+  const base = fx('nfe-exportacao-erp.xml');
+  it('NF-e escondida em comentário não conta como documento', () => {
+    expect(lerNfe(`<?xml version="1.0"?><outro><!-- ${base.replace('<?xml version="1.0" encoding="utf-8"?>', '')} --></outro>`).ok).toBe(false);
+  });
+  it('chNFe do protocolo diferente do Id da infNFe recusa', () => {
+    expect(lerNfe(base.replace('<chNFe>26261011222333000181550010000010511000030324</chNFe>',
+      '<chNFe>26261011222333000181550010000010511000099991</chNFe>')).ok).toBe(false);
+  });
+  it('protocolo presente sem cStat recusa (não é "sem protocolo")', () => {
+    expect(lerNfe(base.replace('<cStat>100</cStat>', '')).ok).toBe(false);
+  });
+  it('mais de uma infNFe recusa', () => {
+    const dup = base.replace('</NFe>', '</NFe><NFe><infNFe Id="NFe1"></infNFe></NFe>');
+    expect(lerNfe(dup).ok).toBe(false);
+  });
+  it('aceita prefixo de namespace com hífen/ponto (nfe-1:)', () => {
+    const pref = base.replace(/<(\/?)([A-Za-z])/g, '<$1nfe-1:$2').replace('<nfe-1:?xml', '<?xml');
+    const r = lerNfe(pref);
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.nota.itens).toHaveLength(2);
+  });
+});
+
 describe('lerNfe — recusas', () => {
   it('não é NF-e, sem itens, número inválido', () => {
     expect(lerNfe('<?xml version="1.0"?><cteProc/>')).toEqual({ ok: false, erro: expect.stringContaining('NF-e') });
@@ -1009,21 +1143,24 @@ Expected: FAIL.
 // subconjunto da NF-e: aceita o XML da SEFAZ (nItem atributo, Signature) e a exportação de ERP
 // (nItem elemento, sem Signature).
 // ponytail: não é um parser XML genérico — não trata CDATA nem tags homônimas aninhadas (a NF-e
-// não as usa nos campos lidos). Upgrade: parser XML completo se aparecer leiaute fora disso.
+// não as usa nos campos lidos). Comentários são removidos; exige uma única infNFe; protocolo é
+// casado pela chave. Upgrade: parser XML completo se aparecer leiaute fora disso.
 import type { ItemNotaLido, NotaCompraLida, TotaisNota } from './tipos.ts';
 import { gtinValido } from './regras.ts';
 
 const ENT: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 const decodificar = (s: string) => s.replace(/&(amp|lt|gt|quot|apos);/g, (_, e) => ENT[e]);
+// Prefixo de namespace XML válido (NCName): letras, dígitos, '-', '_', '.'.
+const PFX = '(?:[A-Za-z_][\\w.-]*:)?';
 
 function blocos(xml: string, tag: string): Array<{ attrs: string; corpo: string }> {
-  const re = new RegExp(`<(?:\\w+:)?${tag}\\b([^>]*)>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, 'g');
+  const re = new RegExp(`<${PFX}${tag}\\b([^>]*)>([\\s\\S]*?)</${PFX}${tag}>`, 'g');
   return Array.from(xml.matchAll(re), (m) => ({ attrs: m[1], corpo: m[2] }));
 }
 const bloco = (xml: string | null, tag: string): string | null => (xml === null ? null : blocos(xml, tag)[0]?.corpo ?? null);
 function texto(xml: string | null, tag: string): string | null {
   if (xml === null) return null;
-  const m = xml.match(new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([^<]*)</(?:\\w+:)?${tag}>`));
+  const m = xml.match(new RegExp(`<${PFX}${tag}\\b[^>]*>([^<]*)</${PFX}${tag}>`));
   const t = m ? decodificar(m[1]).trim() : '';
   return t === '' ? null : t;
 }
@@ -1042,16 +1179,27 @@ const obrig = (xml: string | null, tag: string): string => {
   return t;
 };
 
-export function lerNfe(xml: string): { ok: true; nota: NotaCompraLida } | { ok: false; erro: string } {
+export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { ok: false; erro: string } {
   try {
-    const inf = blocos(xml, 'infNFe')[0];
-    if (!inf) return { ok: false, erro: 'O arquivo não é uma NF-e (falta infNFe).' };
-    const chave = texto(xml, 'chNFe') ?? (inf.attrs.match(/Id="NFe(\d{44})"/)?.[1] ?? '');
+    // Comentários e instruções de processamento não são documento: removidos antes de tudo.
+    const xml = entrada.replace(/<!--[\s\S]*?-->/g, '').replace(/<\?(?!xml\s)[\s\S]*?\?>/g, '');
+    const infs = blocos(xml, 'infNFe');
+    if (infs.length === 0) return { ok: false, erro: 'O arquivo não é uma NF-e (falta infNFe).' };
+    if (infs.length > 1) return { ok: false, erro: 'O arquivo tem mais de uma NF-e; envie uma nota por arquivo.' };
+    const inf = infs[0];
+    const chave = inf.attrs.match(/Id="NFe(\d{44})"/)?.[1] ?? '';
     const ide = bloco(inf.corpo, 'ide');
     const emit = bloco(inf.corpo, 'emit');
     const dest = bloco(inf.corpo, 'dest');
     const tot = bloco(inf.corpo, 'ICMSTot');
-    const cStat = texto(bloco(xml, 'infProt'), 'cStat');
+    // Protocolo é associado à NF-e pela chave; protocolo sem status NÃO é "sem protocolo".
+    const prot = bloco(xml, 'infProt');
+    const cStat = texto(prot, 'cStat');
+    if (prot !== null) {
+      if (cStat === null) return { ok: false, erro: 'O protocolo de autorização está sem status (cStat).' };
+      const chProt = texto(prot, 'chNFe');
+      if (chProt !== chave) return { ok: false, erro: 'A chave do protocolo não corresponde à chave da NF-e.' };
+    }
 
     const dets = blocos(inf.corpo, 'det');
     if (dets.length === 0) return { ok: false, erro: 'A nota não tem itens.' };
@@ -1080,7 +1228,8 @@ export function lerNfe(xml: string): { ok: true; nota: NotaCompraLida } | { ok: 
     const totais: TotaisNota = {
       vProd: numero(tot, 'vProd', true), vFrete: numero(tot, 'vFrete'), vSeg: numero(tot, 'vSeg'),
       vDesc: numero(tot, 'vDesc'), vOutro: numero(tot, 'vOutro'), vIPI: numero(tot, 'vIPI'),
-      vST: numero(tot, 'vST'), vNF: numero(tot, 'vNF', true),
+      vST: numero(tot, 'vST'), vII: numero(tot, 'vII'), vIPIDevol: numero(tot, 'vIPIDevol'),
+      vFCPST: numero(tot, 'vFCPST'), vNF: numero(tot, 'vNF', true),
     };
     return {
       ok: true,
@@ -1092,7 +1241,7 @@ export function lerNfe(xml: string): { ok: true; nota: NotaCompraLida } | { ok: 
         emitenteCnpj: obrig(emit, 'CNPJ'), emitenteNome: obrig(emit, 'xNome'),
         destinatarioCnpj: texto(dest, 'CNPJ') ?? '',
         totais,
-        assinada: /<(?:\w+:)?Signature\b/.test(xml),
+        assinada: new RegExp(`<${PFX}Signature\\b`).test(xml),
         cStat: cStat === null ? null : Number(cStat),
         itens,
       },
@@ -1129,7 +1278,10 @@ git commit -m "feat(adr-0181): leitor puro de NF-e de compra (SEFAZ e exportaç�
 
 **Interfaces:**
 - Consumes: Tasks 2, 3, 4; `enfileirarSincronizacaoEstoque` (`_shared/queue.ts:222`).
-- Produces: `POST importar-nota-compra` com body `{ xml: string; decisoes: DecisaoImportacao[] }` → 200 `{ notaId; duplicada; pushOk }` | 400 `{ error }` | 403 `{ error }`.
+- Produces:
+  - `POST importar-nota-compra` com body `{ xml: string; decisoes: DecisaoImportacao[] }` → 200 `{ notaId; duplicada; pushOk }` | 400 `{ error }` | 403 `{ error }`.
+  - `POST importar-nota-compra` com body `{ reenviarPush: { chave: string } }` → 200 `{ pushOk }`. Reenfileira o push dos produtos tocados pela nota (importação **ou** desfazer), sem nenhuma movimentação. É a recuperação quando `pushOk` veio `false` (N-I3).
+  - `reenviarPush(deps: Pick<DepsImportacao, 'enfileirar'> & { codigosDaNota(orgId: string, chave: string): Promise<string[]> }, orgId: string, chave: string): Promise<{ pushOk: boolean }>`
   - `validarImportacao(body: unknown, cnpjOrg: string): { ok: true; nota: NotaCompraLida; itens: ItemConciliado[]; decisoes: DecisaoImportacao[]; xml: string } | { ok: false; erro: string }`
   - `montarItensRpc(itens: ItemConciliado[], decisoes: DecisaoImportacao[]): Record<string, unknown>[]`
   - `processarImportacao(deps: DepsImportacao, p: { orgId; userId; nota; itens; decisoes; xml; sha256: string }): Promise<{ notaId: string; duplicada: boolean; pushOk: boolean }>`
@@ -1277,7 +1429,7 @@ export function validarImportacao(
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { processarImportacao, montarItensRpc, type DepsImportacao } from '../processar';
+import { processarImportacao, montarItensRpc, reenviarPush, type DepsImportacao } from '../processar';
 import type { NotaCompraLida, ItemConciliado, DecisaoImportacao } from '../../_shared/nfe/tipos';
 
 const item: ItemConciliado = { nItem: 1, cProd: 'REF 06', xProd: 'Short', ncm: '62034900', cfop: '5102', gtin: null,
@@ -1313,10 +1465,10 @@ describe('montarItensRpc', () => {
 });
 
 describe('processarImportacao', () => {
-  it('confere existência, sobe XML sem sobrescrever, chama RPC e enfileira todos os produtos', async () => {
+  it('confere existência, sobe XML endereçado pelo hash, chama RPC e enfileira todos os produtos', async () => {
     const { d, log, jobs } = deps();
     const r = await processarImportacao(d, P);
-    expect(log).toEqual(['existe?', `upload:org-1/${nota.chave}.xml`, 'rpc']);
+    expect(log).toEqual(['existe?', `upload:org-1/${nota.chave}/h1.xml`, 'rpc']);
     expect(jobs).toEqual(['P1', 'P2']);
     expect(r).toEqual({ notaId: 'n1', duplicada: false, pushOk: true });
   });
@@ -1334,11 +1486,20 @@ describe('processarImportacao', () => {
     await expect(processarImportacao(d, P)).rejects.toThrow(/desfeita/);
     expect(log).toEqual([]);
   });
-  it('objeto já existe no storage (corrida): segue para a RPC sem sobrescrever', async () => {
+  it('objeto já existe no storage (mesmo hash = mesmo conteúdo): segue para a RPC sem sobrescrever', async () => {
     const { d, log } = deps({ upload: async () => 'ja_existia' });
     const r = await processarImportacao(d, P);
     expect(log).toContain('rpc');
     expect(r.notaId).toBe('n1');
+  });
+  it('reenviarPush: só enfileira os produtos da nota, sem RPC de estoque', async () => {
+    const jobs: string[] = [];
+    const r = await reenviarPush({
+      codigosDaNota: async () => ['P1', 'P2'],
+      enfileirar: async (j) => { jobs.push(j.codigo_pai); return 'm'; },
+    }, 'org-1', nota.chave);
+    expect(jobs).toEqual(['P1', 'P2']);
+    expect(r).toEqual({ pushOk: true });
   });
   it('erro da RPC propaga; falha de push dá pushOk=false', async () => {
     await expect(processarImportacao(deps({ rpc: async () => ({ data: null, error: { message: 'x' } }) }).d, P)).rejects.toThrow('x');
@@ -1394,9 +1555,10 @@ export async function processarImportacao(
   if (existente && existente.status !== 'importada') {
     throw new Error(`Esta nota está ${existente.status} e não pode ser importada de novo.`);
   }
-  const xmlPath = `${p.orgId}/${p.nota.chave}.xml`;
-  // Nota concluída é imutável: só sobe o arquivo quando a nota ainda não existe, e nunca
-  // sobrescreve (corrida entre duas abas → o primeiro arquivo vale).
+  // Endereçado pelo CONTEÚDO: o path carrega o sha256 do XML que gerou os dados desta chamada.
+  // Duas tentativas com XMLs diferentes da mesma chave nunca compartilham objeto, e quem vence a
+  // RPC grava o path/hash do próprio arquivo (N-B3). 'ja_existia' = mesmo hash = mesmo conteúdo.
+  const xmlPath = `${p.orgId}/${p.nota.chave}/${p.sha256}.xml`;
   if (!existente) await deps.upload(xmlPath, p.xml);
 
   const { data, error } = await deps.rpc('importar_nota_compra', {
@@ -1420,6 +1582,19 @@ export async function processarImportacao(
   }
   return { notaId: r.nota_id, duplicada: r.duplicada, pushOk };
 }
+
+export async function reenviarPush(
+  deps: Pick<DepsImportacao, 'enfileirar'> & { codigosDaNota(orgId: string, chave: string): Promise<string[]> },
+  orgId: string, chave: string,
+): Promise<{ pushOk: boolean }> {
+  let pushOk = true;
+  for (const codigoPai of await deps.codigosDaNota(orgId, chave)) {
+    try {
+      await deps.enfileirar({ org_id: orgId, codigo_pai: codigoPai, canal_origem: null, reativar: true }, orgId);
+    } catch (e) { pushOk = false; console.error('reenviar_push_falhou', codigoPai, String(e)); }
+  }
+  return { pushOk };
+}
 ```
 
 - [ ] **Step 6: Rodar e ver passar**
@@ -1438,7 +1613,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 import { validarImportacao } from './validar.ts';
-import { processarImportacao } from './processar.ts';
+import { processarImportacao, reenviarPush } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1467,6 +1642,22 @@ Deno.serve(async (req) => {
 
   let body: unknown;
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
+
+  const reenvio = (body as { reenviarPush?: { chave?: unknown } })?.reenviarPush;
+  if (reenvio) {
+    if (typeof reenvio.chave !== 'string' || !/^\d{44}$/.test(reenvio.chave)) return json({ error: 'chave inválida' }, 400);
+    const r = await reenviarPush({
+      codigosDaNota: async (o, chave) => {
+        const { data, error } = await admin.from('estoque_movimentos').select('codigo_pai').eq('org_id', o)
+          .or(`referencia_externa.like.nfe:${chave}:%,referencia_externa.like.nfe-desfazer:${chave}:%`);
+        if (error) throw new Error(error.message);
+        return [...new Set((data ?? []).map((m) => m.codigo_pai as string).filter(Boolean))];
+      },
+      enfileirar: (job, o) => enfileirarSincronizacaoEstoque(job, o),
+    }, orgId, reenvio.chave);
+    return json(r);
+  }
+
   const v = validarImportacao(body, emp.cnpj as string);
   if (!v.ok) return json({ error: v.erro }, 400);
 
@@ -1481,7 +1672,8 @@ Deno.serve(async (req) => {
         const { error } = await admin.storage.from('notas-compra')
           .upload(path, new Blob([xml], { type: 'application/xml' }), { upsert: false, contentType: 'application/xml' });
         if (!error) return 'criado';
-        // Objeto já existe (corrida ou retry depois de falha na RPC): o primeiro arquivo vale.
+        // Objeto já existe com o MESMO hash no path: mesmo conteúdo (retry/corrida). storage-js 2.108.2
+        // (deno.lock:9) devolve "The resource already exists"/"Duplicate" com statusCode 400/409.
         if (/exists|duplicate|409/i.test(`${error.message} ${(error as { statusCode?: string }).statusCode ?? ''}`)) return 'ja_existia';
         throw new Error(`upload do XML: ${error.message}`);
       },
@@ -1672,7 +1864,9 @@ git commit -m "feat(adr-0181): edge desfazer-nota-compra (admin, idempotente)"
 
 **Interfaces:**
 - Produces: `FamiliaFiscalPush.descricao_fiscal: string | null`; `ProdutoEntrada.fiscal.descricaoFiscal?: string | null`.
-- **Semântica de ausência:** campo **ausente** (`undefined`, cliente antigo) **não altera** a coluna. `null` ou string vazia **limpa**.
+- **Contrato único (N-I2):** a descrição viaja **sempre dentro do bloco `fiscal`**, como `fiscal.descricaoFiscal`, tanto no `cadastrar-produto` quanto no `atualizar-fiscal-familia`. O `dialog-fiscal-produto.tsx:117` já envia `body.fiscal`, e o processador lê `entrada.fiscal` em `atualizar-fiscal-familia/processar.ts:63`.
+- **Semântica de ausência:** chave **ausente** dentro de `fiscal` (cliente antigo) **não altera** a coluna. `null` ou string vazia **limpa**.
+- **Sem módulo fiscal:** `cadastrar-produto/index.ts:66` descarta o bloco fiscal inteiro, e a descrição fiscal também **não** é gravada. É intencional: ela só tem efeito no push ao Faturador, que exige o módulo. A Zaven tem o módulo ligado.
 
 - [ ] **Step 1: Testes que falham**
 
@@ -1692,10 +1886,10 @@ it('title usa descrição fiscal; nula ou vazia cai no nome_pai', () => {
 ```ts
 // atualizar-fiscal-familia/__tests__/processar.test.ts — seguir a fábrica de deps do arquivo
 it('descricaoFiscal: ausente preserva, null limpa, texto grava com trim, >120 recusa', async () => {
-  // 1) corpo sem a chave descricaoFiscal → o update NÃO contém descricao_fiscal
-  // 2) descricaoFiscal: null → update com descricao_fiscal: null
-  // 3) descricaoFiscal: ' Short ' → update com descricao_fiscal: 'Short'
-  // 4) descricaoFiscal: 'x'.repeat(121) → erro de validação no campo descricaoFiscal
+  // 1) body.fiscal sem a chave descricaoFiscal → o update NÃO contém descricao_fiscal
+  // 2) body.fiscal.descricaoFiscal: null → update com descricao_fiscal: null
+  // 3) body.fiscal.descricaoFiscal: ' Short ' → update com descricao_fiscal: 'Short'
+  // 4) body.fiscal.descricaoFiscal: 'x'.repeat(121) → erro de validação em fiscal.descricaoFiscal
 });
 ```
 
@@ -1720,8 +1914,8 @@ Expected: FAIL.
   - `montarLinhasProduto` grava `descricao_fiscal: (descricaoFiscal ?? '').trim() || null` só quando o
     bloco fiscal existe.
   - Espelho em `src/lib/produto-entrada.ts`.
-- `atualizar-fiscal-familia/processar.ts`: `if ('descricaoFiscal' in body)`, validar e incluir no update.
-  Se a chave não vier no corpo, não mexer.
+- `atualizar-fiscal-familia/processar.ts`: `if ('descricaoFiscal' in entrada.fiscal)`, validar e incluir no
+  update. Se a chave não vier dentro de `fiscal`, não mexer.
 - `use-cadastro-produto.ts`: o estado `fiscal` ganha `descricaoFiscal` e o serializador inclui
   `descricaoFiscal: fiscal.descricaoFiscal.trim() || null`.
 - `etapa-fiscal-form.tsx`:
@@ -1781,7 +1975,7 @@ export interface DecisaoItem {
   candidatosGtin: string[];            // >1 = conflito: operador escolhe (D-6)
   distribuicao: LinhaDistribuicao[];
 }
-export interface EstadoImportacao { nota: NotaCompraLida; itens: ItemConciliado[]; xml: string; decisoes: DecisaoItem[] }
+export interface EstadoImportacao { nota: NotaCompraLida; itens: ItemConciliado[]; xml: string; avisoTotal: string | null; decisoes: DecisaoItem[] }
 export function recusaInicial(nota: NotaCompraLida, cnpjEmpresa: string, existente: { status: string; importadaEm: string } | null): string | null;
 export function estadoInicial(nota: NotaCompraLida, xml: string, vinculos: Vinculo[], porGtin: Record<string, string[]>): EstadoImportacao;
 export function definirProduto(e: EstadoImportacao, nItem: number, codigoPai: string): EstadoImportacao;
@@ -1808,7 +2002,7 @@ import { describe, it, expect } from 'vitest';
 import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial } from '../estado';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
-const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vNF: 590 };
+const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 590 };
 const nota: NotaCompraLida = {
   chave: '26261011222333000181550010000010511000030324', numero: 1, serie: 1, modelo: 55, tipoNf: 1,
   emitidaEm: '2026-10-13T00:00:00-03:00', emitenteCnpj: '11222333000181', emitenteNome: 'F',
@@ -1888,7 +2082,7 @@ export interface DecisaoItem {
   nItem: number; codigoPai: string | null; fator: number;
   origemVinculo: 'vinculo' | 'gtin' | 'manual' | null; candidatosGtin: string[]; distribuicao: LinhaDistribuicao[];
 }
-export interface EstadoImportacao { nota: NotaCompraLida; itens: ItemConciliado[]; xml: string; decisoes: DecisaoItem[] }
+export interface EstadoImportacao { nota: NotaCompraLida; itens: ItemConciliado[]; xml: string; avisoTotal: string | null; decisoes: DecisaoItem[] }
 
 const dataBR = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
@@ -1912,7 +2106,7 @@ export function estadoInicial(
   if (!conc.ok) throw new Error(conc.erro);
   const porCprod = new Map(vinculos.map((v) => [v.cprod, v]));
   return {
-    nota, itens: conc.itens, xml,
+    nota, itens: conc.itens, xml, avisoTotal: conc.avisoTotal,
     decisoes: nota.itens.map((i) => {
       const base = { nItem: i.nItem, fator: 1, candidatosGtin: [] as string[], distribuicao: [] };
       const v = porCprod.get(i.cProd);
@@ -2005,6 +2199,7 @@ git commit -m "feat(adr-0181): estado do assistente (vínculo, GTIN ambíguo, mu
    - Sem recusa: `buscarVinculos` + `produtosPorGtin` → `estadoInicial`.
    - Mostra fornecedor, nº/série, emissão, total e nº de itens.
    - `!assinada` → aviso amarelo "Cópia sem assinatura digital — confira com o XML original quando possível".
+   - `avisoTotal` → aviso amarelo com o texto (não bloqueia).
 2. **Itens:** uma linha por item, com descrição do fornecedor, `qCom uCom`, custo de aquisição unitário
    (`custoAquisicaoUnit`, `fmtBRL`) e selo ("Vinculado", "Casou pelo GTIN", "GTIN ambíguo — escolha" ou
    "Escolha o produto"). Na linha:
@@ -2019,7 +2214,8 @@ git commit -m "feat(adr-0181): estado do assistente (vínculo, GTIN ambíguo, mu
    - **"+ SKU de outro produto"**: busca SKU em qualquer produto da org (`skus_estoque_org()`) e adiciona uma
      linha (D-7).
    - "Repetir custo em todos".
-   - "Falta um tamanho/cor?" (Task 11).
+   - "Falta um tamanho/cor?" (Task 11). A linha do SKU criado por ali fica com a quantidade **travada** (o
+     ledger já recebeu essas peças com a referência da nota).
 4. **Resumo:** lista `pendencias(e)`, e cada item leva à etapa certa. Sem pendências:
    - mostra o total por produto e a nota "A entrada é registrada de uma vez. A nota fica guardada e pode ser
      desfeita por um administrador enquanto houver saldo.";
@@ -2027,6 +2223,8 @@ git commit -m "feat(adr-0181): estado do assistente (vínculo, GTIN ambíguo, mu
      - **Sucesso:** toast ("Nota 1051 importada · 70 unidades"; com `duplicada`, "já tinha sido importada —
        nada foi somado"). Invalida `QK.produtosEstoqueResumo`, `QK.notasCompra`,
        `QK.vinculosFornecedor(cnpj)` e `QK.variacoesEstoque(codigoPai)` de cada produto tocado. Fecha.
+     - **`pushOk: false`:** em vez do toast verde, aviso "Estoque gravado, mas o envio aos canais falhou —
+       use 'Reenviar estoque' em Notas de compra" (Task 12).
      - **Erro:** toast com a mensagem da edge; o diálogo continua aberto.
 
 Botão em `Estoque.tsx`: "Importar nota de compra".
@@ -2081,7 +2279,8 @@ git commit -m "feat(adr-0181): assistente Importar nota de compra em /estoque"
 **Files:**
 - Modify: `supabase/functions/cadastrar-produto/index.ts` (variável `codigoPai` comum aos ramos de criação e retry; resposta com `codigoPai`; `origemNota: true` recusa `estoqueInicial > 0`)
 - Modify: `supabase/functions/_shared/produto/validar.ts` + `src/lib/produto-entrada.ts` (`origemNota?: boolean`)
-- Modify: `src/components/estoque/use-cadastro-produto.ts:125,239` (callback `onCadastrado({ codigoPai })`; com `origemNota`, `estoqueInicial` é **sempre** omitido no payload)
+- Modify: `src/lib/produtos-saldo.ts:489` (`ResultadoCadastro` ganha `codigoPai: string`; `cadastrarProduto` em `:498` continua devolvendo esse tipo)
+- Modify: `src/components/estoque/use-cadastro-produto.ts:125,237,239` (callback `onCadastrado({ codigoPai })`; com `origemNota`, `estoqueInicial` é **sempre** omitido no payload)
 - Modify: `src/components/estoque/dialog-cadastro-produto.tsx` (`CadastroInicial` `:43`; prop `origemNota`; campo de estoque inicial oculto)
 - Modify: `src/components/estoque/dialog-cadastro-grade.tsx` (aceita `inicial` + `origemNota` com a mesma semântica)
 - Modify: `src/components/estoque/linha-variacao-form.tsx:59,163` (oculta estoque inicial com `origemNota`)
@@ -2106,12 +2305,21 @@ Regras (D-4, D-5, D-6, D-10):
   {Nacional|Importado} — escolha para confirmar". `familias.origem` define o imposto e não pode vir
   pré-escolhida. Na etapa fiscal, NCM e Origem NF-e vêm preenchidos com o selo e um checkbox obrigatório
   "Conferi NCM e origem".
-- **Grade:**
-  - item de grade, ou org com tipo de produto habilitado → abre `DialogCadastroGrade`;
-  - caso contrário → abre `DialogCadastroProduto`.
-  - O assistente pergunta: "Este produto tem tamanho/cor? Grade / Simples".
+- **Grade:** só é oferecida quando `organizations.tipos_produto_habilitados` não está vazio, porque o
+  diálogo de grade depende do tipo (`dialog-cadastro-grade.tsx:67,78`) e o servidor recusa tamanho sem tipo
+  (`cadastrar-produto/processar.ts:29`).
+  - Com tipo habilitado: o assistente pergunta "Este produto tem tamanho/cor? Grade / Simples" e abre
+    `DialogCadastroGrade` ou `DialogCadastroProduto`.
+  - Sem tipo: abre direto o `DialogCadastroProduto`, com a nota "Para cadastrar grade (tamanho), habilite
+    roupa/calçado em Configurações".
+  - O callback `onCadastrado` também precisa chegar ao `useCadastroProduto({ aberto })` do diálogo de grade
+    (`dialog-cadastro-grade.tsx:106`).
 - **Estoque inicial:** com `origemNota`, o servidor recusa `estoqueInicial > 0` com
   `{ campo: 'variacoes[i].estoqueInicial', mensagem: 'Na importação por nota o saldo entra pela nota.' }`.
+  - ponytail: o modo não é persistido. Um retry com a mesma `chaveCadastro` **sem** `origemNota` e com estoque
+    poderia aplicar a entrada (`cadastrar-produto/processar.ts:227`). Teto: o retry vem do mesmo hook, que
+    monta o payload de forma determinística a partir do mesmo estado. Upgrade: gravar o modo na família e
+    conferir no retry, se aparecer um segundo chamador.
 
 - [ ] **Step 1: Testes que falham**
 
@@ -2148,7 +2356,8 @@ describe('prefillCadastro', () => {
 it('origemNota recusa estoqueInicial > 0', () => {
   const r = validarProdutoNovo({ ...produtoValido, origemNota: true,
     variacoes: [{ ...produtoValido.variacoes[0], estoqueInicial: 5 }] });
-  expect(r.erros).toContainEqual(expect.objectContaining({ campo: 'variacoes[0].estoqueInicial' }));
+  // validarProdutoNovo devolve ErroValidacao[] direto (_shared/produto/validar.ts:53).
+  expect(r).toContainEqual(expect.objectContaining({ campo: 'variacoes[0].estoqueInicial' }));
 });
 ```
 
@@ -2191,60 +2400,101 @@ git commit -m "feat(adr-0181): cadastrar produto (simples ou grade) a partir da 
 
 ---
 
-### Task 11: "Falta um tamanho/cor?" — reusa os fluxos existentes (D-8 revisada, aprovada)
+### Task 11: Variação faltante pelo fluxo existente, com a referência da nota (D-8 revisada)
 
 **Files:**
-- Modify: `src/components/estoque/importar-nota/etapa-distribuicao.tsx`
-- Create: função pura `acaoVariacaoFaltante(produto: { publicado: boolean }, isAdmin: boolean): 'adicionar-publicado' | 'editar-cadastro' | 'pedir-admin'` em `estado.ts` + teste
+- Modify: `supabase/functions/adicionar-variacoes-familia/processar.ts` (validação do corpo; `registrarEstoqueInicial` em `:382-393`)
+- Modify: `supabase/functions/adicionar-variacoes-familia/index.ts` (repassa `refNota` até o ledger, `:354-359`)
+- Test: `supabase/functions/adicionar-variacoes-familia/__tests__/processar.test.ts`
+- Modify: `src/components/estoque/dialog-adicionar-variacao-roteador.tsx`, `dialog-adicionar-variacao.tsx`, `dialog-estender-grade.tsx` (props opcionais `refNota`, `estoqueFixo`)
+- Modify: `src/components/estoque/importar-nota/etapa-distribuicao.tsx`, `estado.ts`
+- Test: `src/components/estoque/importar-nota/__tests__/estado.test.ts`
 
 **Interfaces:**
-- Consumes: `dialog-adicionar-variacao-roteador.tsx` (ADR-0129, admin; publica com o clique do operador); o modo edição do cadastro (ADR-0135 D-9).
+- Consumes: `adicionar-variacoes-familia` (ADR-0129, admin), que hoje grava o estoque inicial com a ref `addvar:{familiaId}:{codigo}` (`processar.ts:393`) e exige `estoqueInicial > 0` (`processar.ts:98`). A importação **mantém** esse > 0: as peças da nota são o estoque inicial.
+- Produces:
+  - Corpo de `adicionar-variacoes-familia` ganha `refNota?: string` (formato `nfe:{chave44}:{nItem}`, validado por `/^nfe:\d{44}:\d{1,3}$/`). Com `refNota`, a ref de ledger de cada variação nova vira `${refNota}:${codigo}`. Sem ela, nada muda (`addvar:...`).
+  - Na volta, a edge devolve os códigos novos (conferir o nome do campo na resposta atual; se não devolver, acrescentar `codigos: string[]`).
+  - Props `refNota?: string` e `estoqueFixo?: number` nos três diálogos. Com `estoqueFixo`, o campo de estoque inicial vem com esse valor, **travado**.
+  - `acaoVariacaoFaltante(produto: { publicado: boolean }, isAdmin: boolean): 'adicionar-publicado' | 'pedir-admin' | 'recusar-nao-publicado'` em `estado.ts`.
+  - `travarLinhaNova(e: EstadoImportacao, nItem: number, codigo: string, quantidade: number, custo: number): EstadoImportacao`: acrescenta a linha à distribuição com `travada: true`. Por isso `LinhaDistribuicao` do estado do front ganha `travada?: boolean`, que é **removido** no `payload()`.
 
-**Comportamento:** o link "Falta um tamanho/cor?" na distribuição decide por `acaoVariacaoFaltante`:
-- **produto publicado + admin** → abre o `DialogAdicionarVariacaoRoteador` do produto. A publicação acontece ali, por ação explícita do operador; o assistente não publica nada;
-- **produto publicado + não admin** → mensagem "Peça a um administrador para adicionar o tamanho/cor e volte";
-- **produto não publicado** → mensagem "Inclua o tamanho/cor editando o produto (Estoque › produto › Editar) e volte".
+**Por que fecha sem dupla contagem:**
+1. O fluxo existente lança as N peças com a ref `nfe:{chave}:{nItem}:{codigo}` e publica a variação por clique
+   do operador.
+2. Na confirmação da nota, a RPC (Task 2) chama `registrar_entrada` com a **mesma** ref e recebe `null`
+   (duplicada). Em seguida confere se a quantidade lançada é a da distribuição; se não for, recusa a nota.
+3. O teste SQL da Task 2 já cobre os dois casos (bate e diverge).
 
-Ao fechar o diálogo existente, o assistente recarrega os SKUs do produto (`QK.variacoesEstoque(codigoPai)`)
-**preservando** a distribuição já feita.
+Se o operador abandonar a importação depois de criar a variação, a entrada fica no ledger com documento e
+ref da nota. Reimportar a mesma nota fecha a conta.
 
-- [ ] **Step 1: Verificar o fluxo existente (sem código)**
+- [ ] **Step 1: Teste da edge que falha**
 
-Ler `dialog-adicionar-variacao-roteador.tsx` e `adicionar-variacoes-familia/index.ts`, e responder no
-relatório da task:
-- (a) o diálogo pede **estoque inicial** para a variação nova?
-- (b) se pedir, o valor entra pelo `registrar_entrada`?
+No arquivo de teste existente de `adicionar-variacoes-familia`, seguir a fábrica de `admin` mockado que já
+existe. Três casos:
+- com `refNota: 'nfe:26261011222333000181550010000010511000030324:1'`, o `registrar_entrada` recebe `p_ref = 'nfe:26261011222333000181550010000010511000030324:1:<codigo novo>'`;
+- sem `refNota`, continua `addvar:{familiaId}:{codigo}`;
+- `refNota` malformado (`'nfe:123:1'`, `'addvar:x'`) dá erro de validação no campo `refNota`.
 
-Se pedir, abrir o diálogo com o estoque inicial **zerado e travado**. Se o roteador não aceitar essa prop,
-acrescentá-la opcional (default igual ao atual), porque o saldo vem da nota (D-4). Reportar antes de seguir
-se o caminho exigir mudança na edge.
+- [ ] **Step 2: Rodar e ver falhar**
 
-- [ ] **Step 2: Teste que falha**
+Run: `pnpm test -- supabase/functions/adicionar-variacoes-familia`
+Expected: FAIL.
+
+- [ ] **Step 3: Implementar na edge**
+
+- `processar.ts`:
+  - validar `refNota` opcional com a regex acima;
+  - `registrarEstoqueInicial` recebe `refNota?: string` e monta
+    `p_ref: refNota ? `${refNota}:${it.codigo}` : `addvar:${e.familiaId}:${it.codigo}``;
+  - `p_doc` passa a ser `refNota ? 'NF-e (variação nova)' : <valor atual>`.
+- `index.ts`: ler `body.refNota`, passar ao validador e ao `registrarEstoqueInicial`.
+- Caminho de retry (`reaplicar`, `processar.ts:259`): reaplicar com a **mesma** ref. Guardar `refNota` junto da
+  intenção que o retry já persiste. Se a intenção é recalculada do corpo, o corpo do retry traz o mesmo
+  `refNota`, porque o diálogo é o mesmo. Conferir e cobrir com teste.
+
+- [ ] **Step 4: Testes de estado que falham**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { acaoVariacaoFaltante } from '../estado';
+import { acaoVariacaoFaltante, travarLinhaNova } from '../estado';
 
-describe('acaoVariacaoFaltante', () => {
-  it('publicado+admin abre o fluxo existente; demais orientam', () => {
+describe('variação faltante (D-8)', () => {
+  it('publicado+admin abre o fluxo; publicado sem admin pede admin; não publicado recusa', () => {
     expect(acaoVariacaoFaltante({ publicado: true }, true)).toBe('adicionar-publicado');
     expect(acaoVariacaoFaltante({ publicado: true }, false)).toBe('pedir-admin');
-    expect(acaoVariacaoFaltante({ publicado: false }, true)).toBe('editar-cadastro');
+    expect(acaoVariacaoFaltante({ publicado: false }, true)).toBe('recusar-nao-publicado');
+  });
+  it('linha nova entra travada e o payload não carrega a flag', () => {
+    let e = estadoInicial(nota, '<x/>', [], {});
+    e = definirProduto(e, 1, 'P1');
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 30, custoPrecificacao: 10 }]);
+    e = travarLinhaNova(e, 1, 'S9', 5, 10);
+    expect(e.decisoes[0].distribuicao.find((l) => l.codigo === 'S9')).toMatchObject({ quantidade: 5, travada: true });
+    e = definirProduto(e, 2, 'P2'); e = definirFator(e, 2, 12);
+    e = definirDistribuicao(e, 2, [{ codigo: 'S2', quantidade: 24, custoPrecificacao: 10 }]);
+    expect(JSON.stringify(payload(e))).not.toContain('travada');
   });
 });
 ```
 
-- [ ] **Step 3: Rodar, implementar e passar**
+(Usar a `nota` e os imports já definidos no topo do arquivo de teste da Task 8.)
 
-Run: `pnpm test -- src/components/estoque/importar-nota`. Implementar a função, o link e a integração com o
-roteador.
+- [ ] **Step 5: Implementar o front**
 
-- [ ] **Step 4: Build e commit**
+- `estado.ts`: `acaoVariacaoFaltante = (p, isAdmin) => !p.publicado ? 'recusar-nao-publicado' : isAdmin ? 'adicionar-publicado' : 'pedir-admin'`. `travarLinhaNova` acrescenta `{ codigo, quantidade, custoPrecificacao: custo, travada: true }`, e `payload()` mapeia as linhas para `{ codigo, quantidade, custoPrecificacao }`.
+- `etapa-distribuicao.tsx`, link "Falta um tamanho/cor?":
+  - `adicionar-publicado`: pede a quantidade da nota para o tamanho novo (≤ unidades ainda não distribuídas) e abre o `DialogAdicionarVariacaoRoteador` com `refNota = `nfe:${chave}:${nItem}`` e `estoqueFixo = quantidade`. Ao concluir, chama `travarLinhaNova` com o código devolvido e recarrega `QK.variacoesEstoque(codigoPai)`;
+  - `pedir-admin`: "Peça a um administrador para adicionar o tamanho/cor e volte";
+  - `recusar-nao-publicado`: "Este produto ainda não foi publicado e não aceita tamanho novo nesta versão. Cadastre a grade completa ou publique antes."
+- Diálogos existentes: `refNota` repassado no corpo da edge; `estoqueFixo` preenche e trava o campo. Sem as props, o comportamento atual fica idêntico (os chamadores atuais não mudam).
+
+- [ ] **Step 6: Rodar tudo e commit**
 
 ```bash
-pnpm preflight:static
-git add src/components/estoque
-git commit -m "feat(adr-0181): variação faltante na nota usa os fluxos existentes (D-8 revisado)"
+pnpm test -- supabase/functions/adicionar-variacoes-familia src/components/estoque && pnpm preflight:static
+git add -A supabase/functions/adicionar-variacoes-familia src/components/estoque
+git commit -m "feat(adr-0181): variação faltante pelo fluxo existente com a referência da nota (D-8)"
 ```
 
 ---
@@ -2265,6 +2515,10 @@ git commit -m "feat(adr-0181): variação faltante na nota usa os fluxos existen
   - **Baixar XML** (`urlXmlNota` + `window.open`);
   - **Desfazer** e **Marcar como cancelada**: só com `podeDesfazer`, via `alert-dialog` que explica a redução
     do saldo.
+  - **Reenviar estoque** (qualquer membro com escrita, em nota de qualquer status): chama
+    `importar-nota-compra` com `{ reenviarPush: { chave } }` (Task 5). Não mexe em saldo, só reenfileira o
+    push dos produtos da nota. É a recuperação quando a importação ou o desfazer voltaram com `pushOk: false`.
+    O wrapper `reenviarEstoqueNota(chave)` vai em `src/lib/notas-compra.ts`.
 - **Sucesso do desfazer:** invalida `QK.notasCompra`, `QK.produtosEstoqueResumo` e `QK.variacoesEstoque` dos
   produtos da nota.
 - **Erro:** `toast.error` com a mensagem, que lista os SKUs.
@@ -2342,7 +2596,7 @@ Para cada arquivo `_shared/*.ts` que aparecer na lista, repetir o grep pelo **no
 nada novo (dependência transitiva). Deploy da lista final **mais** estas, explícitas:
 
 ```bash
-supabase functions deploy importar-nota-compra desfazer-nota-compra atualizar-fiscal-familia cadastrar-produto sincronizar-fiscal-ml <demais da lista>
+supabase functions deploy importar-nota-compra desfazer-nota-compra atualizar-fiscal-familia cadastrar-produto adicionar-variacoes-familia sincronizar-fiscal-ml <demais da lista>
 supabase functions list
 ```
 Expected: cada uma `ACTIVE` com versão incrementada e `verify_jwt` preservado.
@@ -2359,14 +2613,21 @@ Em sessão Playwright isolada (skill `playwright-cli`), com screenshot de cada p
 3. Distribuir 24 unidades (fator 12) em 2 SKUs, um deles de outro produto. Confirmar.
 4. Conferir os saldos.
 5. Reimportar: aparece "já importada" e o XML no bucket não muda (mesmo `xml_sha256`).
-6. Desfazer como admin: saldos voltam e o status fica "Desfeita". Desfazer de novo: no-op.
+6. Desfazer como admin: saldos voltam e o status fica "Desfeita". Chamar o desfazer de novo pela edge
+   (curl com o JWT da sessão de teste) responde `jaEstava: true`, sem mexer no saldo. "Reenviar estoque"
+   responde `pushOk: true`.
+7. A Zaven está conectada ao ML (seller `3760134495`, 2026-10-15) e ainda sem anúncios. O push enfileira e
+   não acha anúncio. Conferir no log que não há erro.
 
-- [ ] **Step 5: Pendências do ADR que este plano não fecha (registrar no ADR, não fingir)**
+- [ ] **Step 5: Pendências do ADR (registrar no ADR, não fingir)**
 
-- `fiscal_information.title` → `xProd` da nota do Faturador: **pendente** até a Zaven conectar a conta ML.
-  Entra no Plano 2, Task 0.
-- XML original da SEFAZ do fornecedor: **pendente** até o Diego enviar. Quando chegar, rodar `lerNfe` contra
-  ele num teste local (**sem commitar o arquivo**) e registrar o resultado no ADR.
+- `fiscal_information.title` → `xProd` da nota do Faturador: a Zaven foi conectada em 2026-10-15, mas com 0
+  anúncios e 0 vendas. Só dá para verificar numa **nota de venda emitida**. Verificar na **primeira venda
+  faturada da Zaven**: `GET /users/3760134495/invoices/orders/{order_id}`, abrir o XML e comparar o `xProd`
+  com a `descricao_fiscal` da família. Registrar o resultado no ADR. Até lá, a descrição fiscal é gravada e
+  enviada, mas a afirmação "sai na nota" fica **não verificada**.
+- XML original da SEFAZ: **dispensado pelo Diego** (2026-10-15). A base dos testes é a exportação de ERP
+  (forma do arquivo real) mais a fixture no formato SEFAZ.
 
 - [ ] **Step 6: Commit das docs**
 
@@ -2377,41 +2638,23 @@ git commit -m "docs(adr-0181): entrada por nota de compra — referência, model
 
 ---
 
-## Self-Review (revisão 2)
+## Self-Review (revisão 3)
 
-- **Cobertura do ADR:**
-  - D-1 (Tasks 5, 9);
-  - D-2: o servidor lê o XML (Tasks 3, 4, 5, 9);
-  - D-3: arquivo imutável + sha256 (Tasks 1, 2, 5);
-  - D-4: lock, idempotência e sem estoque inicial (Tasks 2, 10);
-  - D-5 (Tasks 1, 7, 10);
-  - D-6: vínculo, fator e GTIN com conflito (Tasks 2, 8, 9);
-  - D-7: multiproduto (Tasks 2, 8, 9);
-  - D-8: revisado e aprovado pelo Diego (Task 11);
-  - D-9 parcial: conciliação, rateio, aquisição × precificação (Tasks 3, 5, 9); CT-e fica no Plano 2;
-  - D-10: origem binária confirmada mesmo sem módulo fiscal (Tasks 3, 7, 10);
-  - D-11: desfazer travado e idempotente (Tasks 2, 6, 12).
-- **Achados do Codex (revisão 1):**
-  - Todos os 12 bloqueadores foram tratados:
-    - integridade do JSON → Tasks 4 e 5;
-    - totais e rateio → Task 3;
-    - XML imutável e concorrência → Tasks 2 e 5;
-    - lock do desfazer → Task 2;
-    - `codigoPai` em `cadastrar-produto` → Task 10;
-    - grade e estoque inicial → Task 10;
-    - origem → Tasks 3 e 10;
-    - flag excluída e variação local → Task 11, que não mexe no push;
-    - tipagem da RPC de variação → Task removida;
-    - multiproduto → Tasks 8 e 9;
-    - deploy → Task 13.
-  - Importantes tratados:
-    - GTIN → Task 8;
-    - percurso da `descricaoFiscal` → Task 7;
-    - `git add -N` → Global Constraints e Tasks 5 e 6;
-    - testes de autorização → Tasks 1 e 6;
-    - verificações do ADR registradas como pendentes → Task 13;
-    - teste do push com nome de campo errado → removido junto com a Task 11 antiga.
-  - Menores tratados: React 18; invalidações (Tasks 9 e 12).
-- **Conferências que o executor faz no código** (marcadas nas tasks): assinaturas de
-  `enfileirarSincronizacaoEstoque`/`auditarOperacaoSuporte`; mensagem de "objeto já existe" do storage-js;
-  exportação de `ORIGENS_NFE_POR_ORIGEM` no Deno; estoque inicial no roteador de variação (Task 11, Step 1).
+- **Rodada 2 do Codex:**
+  - N-B1: leitor endurecido (comentários, `infNFe` única, `chNFe` = `Id`, protocolo sem `cStat`, prefixo NCName) → Task 4.
+  - N-B2: centavos inteiros, sinais, maiores restos, aviso de `vNF` → Task 3.
+  - N-B3: XML endereçado por `sha256` → Task 5.
+  - N-B4: D-8 com a referência da nota no fluxo existente, mais a checagem de quantidade na RPC → Tasks 2 e 11.
+  - N-B5: `codigoPai` em `ResultadoCadastro` e no diálogo de grade → Task 10.
+  - N-I1: ponytail documentado → Task 10.
+  - N-I2: contrato único `fiscal.descricaoFiscal` → Task 7.
+  - N-I3: "Reenviar estoque" e tratamento de `pushOk` → Tasks 5, 9 e 12.
+  - N-I4: controle positivo e storage entre orgs → Task 1; privilégio separado → Task 2.
+  - N-I5: grade só com tipo de produto habilitado → Task 10.
+  - Menor 4: asserção sobre `r` → Task 10.
+  - I5 (verificações do ADR): decisão do Diego, registrada → Task 13, Step 5.
+- **Cobertura do ADR:** D-1 a D-11 (D-8 revisada e aprovada); D-12 e D-13 no Plano 2.
+- **Conferências do executor no código:** assinaturas de `enfileirarSincronizacaoEstoque` e
+  `auditarOperacaoSuporte`; nome do campo de códigos na resposta de `adicionar-variacoes-familia`; persistência
+  do retry dessa edge (Task 11, Step 3); `insert into storage.objects` no teste SQL (colunas exigidas pelo
+  schema `storage`).
