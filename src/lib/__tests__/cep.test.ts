@@ -7,6 +7,7 @@ const resposta = (body: unknown, status = 200) =>
 
 describe('buscarCep (ViaCEP)', () => {
   it('mapeia a resposta para os campos de empresa_fiscal', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
     const f = resposta({
       cep: '51021-530', logradouro: 'Rua Padre Luiz Marques Teixeira', bairro: 'Boa Viagem',
       localidade: 'Recife', uf: 'PE', ibge: '2611606',
@@ -15,7 +16,9 @@ describe('buscarCep (ViaCEP)', () => {
       logradouro: 'Rua Padre Luiz Marques Teixeira', bairro: 'Boa Viagem',
       municipio: 'Recife', uf: 'PE', municipio_ibge: '2611606',
     });
-    expect(f).toHaveBeenCalledWith('https://viacep.com.br/ws/51021530/json/', expect.anything());
+    expect(f).toHaveBeenCalledWith('https://viacep.com.br/ws/51021530/json/', { signal: expect.any(AbortSignal) });
+    expect(timeout).toHaveBeenCalledWith(5000);
+    timeout.mockRestore();
   });
   it('CEP inexistente ({erro:true}) devolve null', async () => {
     expect(await buscarCep('99999999', resposta({ erro: true }))).toBeNull();
