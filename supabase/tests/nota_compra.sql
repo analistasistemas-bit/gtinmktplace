@@ -142,6 +142,8 @@ begin
   exception when sqlstate '23514' then
     if sqlerrm not like '%09300001%' then raise exception 'mensagem não cita o SKU órfão: %', sqlerrm; end if;
   end;
+  if exists (select 1 from public.notas_compra where chave = '26261011222333000181550010000010511000099992') then
+    raise exception 'nota com SKU órfão deixou registro (deveria ser atômica)'; end if;
 
   -- registrar_entrada_nota_pendente: nota já importada (a 1a, agora desfeita) recusa; ref de outra nota recusa.
   begin
@@ -186,6 +188,19 @@ begin
     perform public.desfazer_nota_compra('93000000-0000-0000-0000-000000000001',
       '93000000-0000-0000-0000-000000000101', gen_random_uuid(), 'desfeita');
     raise exception 'authenticated executou desfazer_nota_compra';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.registrar_entrada_nota_pendente('93000000-0000-0000-0000-000000000001',
+      '26261011222333000181550010000010511000077772', '09300001', 1, 14, 'addvar',
+      '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000077772:1:09300001');
+    raise exception 'authenticated executou registrar_entrada_nota_pendente';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.codigos_pai_da_nota('93000000-0000-0000-0000-000000000001',
+      '26261011222333000181550010000010511000030324');
+    raise exception 'authenticated executou codigos_pai_da_nota';
   exception when insufficient_privilege then null;
   end;
   raise exception 'TESTE_OK' using errcode = 'P0001';
