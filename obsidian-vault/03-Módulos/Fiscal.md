@@ -111,3 +111,8 @@ este ADR. Item futuro nomeado, não pendência silenciosa.
 Consumo da nota emitida (chave/XML/DANFE na tela de vendas) · entrada por XML do fornecedor ·
 Regime Normal (`tax_rules` completo) · IE por UF (`state_registry`) · adaptador de emissor externo
 (a porta já existe; o segundo adaptador só quando houver cliente que recuse o Faturador do ML).
+
+**Entrada por nota de compra + pacote do contador:** desenho fechado em 2026-10-15 no
+ADR-0181 (proposto, não implementado) — descrição fiscal própria, distribuição na grade exata,
+vínculo de fornecedor, custo da nota × custo real, fiscal da nota como sugestão confirmada,
+export mensal (compras, inventário, XMLs de venda ao vivo do ML).

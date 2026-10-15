@@ -246,6 +246,13 @@ Simples: o primeiro cliente de Lucro Presumido espera a V2.
   município, UF e código IBGE. Falha na consulta não bloqueia — endereço segue editável.
 - Decisão do Diego em 2026-10-15 (opção "opcionais, recolhidos").
 
+## Emenda — 2026-10-15: origem vinda da nota de compra
+
+- **D-5:** "digitado explicitamente, nunca derivado" passa a admitir **sugestão confirmada** vinda da
+  nota de compra do fornecedor (`orig` → `origem_nfe`, e `familias.origem`): pré-preenchida, marcada
+  como vinda da nota, gravada só com confirmação ativa item a item, nunca em lote. A trava de
+  coerência fica. Desenho completo da V2 #2 em [ADR-0181](0181-entrada-por-nota-de-compra-e-pacote-do-contador.md).
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a
