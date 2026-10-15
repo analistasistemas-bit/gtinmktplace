@@ -3,13 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAliquotas, useSalvarAliquotas, useEmpresaFiscal, useSalvarEmpresaFiscal } from '@/hooks/useConfiguracoes';
-import { validarCnpj } from '@/lib/fiscal';
+import { UFS, validarCnpj } from '@/lib/fiscal';
 import { cn } from '@/lib/utils';
 import { usePermissoesConfig } from './permissoes';
 import {
   AvisoLeitura, EstadoSalvo, LinhasCarregando, SettingsGroup, SettingsRow,
   useFilaDeSalvamento, type EstadoCampo,
 } from './settings-row';
+
+// Radix Select não aceita value="" — sentinela para "sem alíquota interna" (ADR-0112).
+const UF_NENHUMA = '__nenhuma__';
 
 // Obrigatórios por subgrupo, transcritos do ADR-0135 (§ "Campos") — não inferidos do
 // formulário. O único marcado como opcional lá é `cfop_fora_uf_contribuinte`, então ele fica
@@ -303,16 +306,29 @@ export function SecaoFiscal() {
               erro={erroInterna ?? filaAliquotas.erros.ufEmpresa ?? null}
             >
               <div className="flex items-center gap-2">
-                <Input
-                  aria-label="UF da empresa"
-                  className="h-8 w-16 text-sm uppercase"
-                  maxLength={2}
-                  placeholder="PE"
-                  value={ufEmpresaInput}
+                <Select
+                  value={ufEmpresaInput === '' ? UF_NENHUMA : ufEmpresaInput}
                   disabled={!podeEditarConfig}
-                  onChange={(e) => setUfEmpresaInput(e.target.value.toUpperCase())}
-                  onBlur={() => salvarInterna(ufEmpresaInput, internaInput)}
-                />
+                  onValueChange={(v) => {
+                    // "Nenhuma" desliga a regra inteira: limpa UF e % juntos, senão o
+                    // percentual órfão cairia na trava de meia-configuração.
+                    if (v === UF_NENHUMA) {
+                      setUfEmpresaInput(''); setInternaInput('');
+                      salvarInterna('', '');
+                      return;
+                    }
+                    setUfEmpresaInput(v);
+                    salvarInterna(v, internaInput);
+                  }}
+                >
+                  <SelectTrigger aria-label="UF da venda dentro do estado" className="h-8 w-24 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UF_NENHUMA}>Nenhuma</SelectItem>
+                    {UFS.map((uf) => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 <Input
                   aria-label="Alíquota dentro do estado"
                   type="number" min={0} max={100} step={0.5}
