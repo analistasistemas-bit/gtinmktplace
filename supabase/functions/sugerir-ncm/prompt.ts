@@ -13,7 +13,10 @@ export function montarPromptNcm(p: { nome: string; descricao: string | null; cat
 export function extrairSugestaoNcm(raw: string): { ncm: string | null; justificativa: string } {
   try {
     const j = JSON.parse(raw) as { ncm?: unknown; justificativa?: unknown };
-    const ncm = typeof j.ncm === 'string' && /^\d{8}$/.test(j.ncm) ? j.ncm : null;
+    // A IA às vezes devolve o NCM na grafia da tabela ("6109.10.00"): tira só pontuação e
+    // espaço — letra ou dígito a menos continua reprovando.
+    const limpo = typeof j.ncm === 'string' ? j.ncm.replace(/[.\s-]/g, '') : '';
+    const ncm = /^\d{8}$/.test(limpo) ? limpo : null;
     return { ncm, justificativa: typeof j.justificativa === 'string' ? j.justificativa : '' };
   } catch {
     return { ncm: null, justificativa: 'resposta da IA fora do formato esperado' };

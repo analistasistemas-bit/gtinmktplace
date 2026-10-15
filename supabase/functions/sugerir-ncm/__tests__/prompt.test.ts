@@ -10,6 +10,14 @@ describe('sugerir-ncm — parser defensivo (a IA sugere, nunca decide)', () => {
     expect(extrairSugestaoNcm('{"ncm":"3926.90","justificativa":"x"}').ncm).toBeNull();
     expect(extrairSugestaoNcm('nao é json').ncm).toBeNull();
   });
+  it('NCM com pontuação (6109.10.00) é normalizado para 8 dígitos', () => {
+    expect(extrairSugestaoNcm('{"ncm":"6109.10.00","justificativa":"camiseta"}').ncm).toBe('61091000');
+    expect(extrairSugestaoNcm('{"ncm":"6109 10 00","justificativa":"x"}').ncm).toBe('61091000');
+    expect(extrairSugestaoNcm('{"ncm":"6109-10-00","justificativa":"x"}').ncm).toBe('61091000');
+  });
+  it('só pontuação é removida — letras continuam reprovando', () => {
+    expect(extrairSugestaoNcm('{"ncm":"NCM 61091000","justificativa":"x"}').ncm).toBeNull();
+  });
   it('prompt inclui nome, descrição e categoria', () => {
     const p = montarPromptNcm({ nome: 'Zíper 20cm', descricao: 'Zíper de nylon', categoria: 'Aviamentos' });
     expect(p).toContain('Zíper 20cm');
