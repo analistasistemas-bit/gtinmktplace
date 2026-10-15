@@ -15,14 +15,15 @@ import {
 // Radix Select não aceita value="" — sentinela para "sem alíquota interna" (ADR-0112).
 const UF_NENHUMA = '__nenhuma__';
 
-// Obrigatórios por subgrupo, transcritos do ADR-0135 (§ "Campos") — não inferidos do
-// formulário. O único marcado como opcional lá é `cfop_fora_uf_contribuinte`, então ele fica
-// fora do denominador. `complemento` está na lista de "endereço fiscal completo" do ADR e por
-// isso conta: se isso estiver errado, o erro é do ADR e aparece aqui, em vez de sumir.
+// Obrigatórios por subgrupo — espelho exato de OBRIGATORIOS em
+// supabase/functions/_shared/fiscal/ativacao.ts (front e Deno não compartilham módulo; manter
+// os dois iguais). Emenda 2026-10-15 (ADR-0135 D-3/D-7): natureza, CFOPs e CST de PIS/COFINS
+// são portabilidade — o Faturador do ML não os recebe — e não contam; nome fantasia e
+// complemento já eram opcionais no servidor.
 const OBRIGATORIOS = {
-  identidade: ['cnpj', 'razao_social', 'nome_fantasia', 'inscricao_estadual', 'regime_tributario'],
-  endereco: ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'municipio_ibge', 'uf'],
-  operacao: ['natureza_operacao', 'cfop_dentro_uf', 'cfop_fora_uf_nao_contribuinte', 'cst_pis', 'cst_cofins', 'origin_type'],
+  identidade: ['cnpj', 'razao_social', 'inscricao_estadual', 'regime_tributario'],
+  endereco: ['cep', 'logradouro', 'numero', 'bairro', 'municipio', 'municipio_ibge', 'uf'],
+  operacao: ['origin_type'],
   emissao: ['emissao_a_partir_de'],
 } as const;
 
@@ -440,12 +441,12 @@ export function SecaoFiscal() {
             </Subgrupo>
 
             <Subgrupo titulo="Operação fiscal" campos={OBRIGATORIOS.operacao} empresa={empresa as Empresa}>
-              {campo('natureza_operacao', 'Natureza da operação')}
-              {campo('cfop_dentro_uf', 'CFOP dentro da UF')}
-              {campo('cfop_fora_uf_nao_contribuinte', 'CFOP fora da UF (não contribuinte)')}
-              {campo('cfop_fora_uf_contribuinte', 'CFOP fora da UF (contribuinte, opcional)')}
-              {campo('cst_pis', 'CST de PIS')}
-              {campo('cst_cofins', 'CST de COFINS')}
+              {empresa?.regime_tributario === 'normal' && (
+                <p className="text-xs text-warning sm:col-span-2">
+                  Regime Normal ainda não emite pelo PubliAI (v2) — o módulo fiscal só liga no
+                  Simples Nacional (ADR-0135 D-6).
+                </p>
+              )}
               <div className="flex flex-col gap-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <label htmlFor="origin_type" className="text-xs font-medium">Papel da empresa</label>
@@ -466,6 +467,23 @@ export function SecaoFiscal() {
                   </SelectContent>
                 </Select>
               </div>
+              <details className="sm:col-span-2">
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                  Para trocar de emissor (opcional)
+                </summary>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  O Faturador do Mercado Livre não usa estes dados. Ficam guardados para uma futura
+                  troca de emissor.
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {campo('natureza_operacao', 'Natureza da operação')}
+                  {campo('cfop_dentro_uf', 'CFOP dentro da UF')}
+                  {campo('cfop_fora_uf_nao_contribuinte', 'CFOP fora da UF (não contribuinte)')}
+                  {campo('cfop_fora_uf_contribuinte', 'CFOP fora da UF (contribuinte)')}
+                  {campo('cst_pis', 'CST de PIS')}
+                  {campo('cst_cofins', 'CST de COFINS')}
+                </div>
+              </details>
             </Subgrupo>
 
             <Subgrupo titulo="Emissão" campos={OBRIGATORIOS.emissao} empresa={empresa as Empresa}>

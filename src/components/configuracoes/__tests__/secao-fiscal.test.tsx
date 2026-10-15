@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -159,5 +159,29 @@ describe('CEP preenche o endereço (ViaCEP)', () => {
     await user.type(screen.getByLabelText('CEP'), '51021530');
     await user.tab();
     expect(await screen.findByText(/falha de rede ao salvar/)).toBeInTheDocument();
+  });
+});
+
+describe('Operação fiscal conforme o regime', () => {
+  it('Simples: só Papel da empresa à vista; portabilidade num bloco recolhido', () => {
+    renderSecao({ empresa: { ...EMPRESA_BASE, natureza_operacao: 'Venda de mercadoria' } });
+    expect(screen.getByRole('combobox', { name: 'Papel da empresa' })).toBeInTheDocument();
+    const bloco = screen.getByText('Para trocar de emissor (opcional)').closest('details')!;
+    expect(bloco).not.toHaveAttribute('open');
+    expect(within(bloco).getByLabelText('Natureza da operação')).toHaveValue('Venda de mercadoria');
+    expect(within(bloco).getByLabelText('CST de COFINS')).toBeInTheDocument();
+    expect(screen.queryByText(/Regime Normal ainda não emite/)).not.toBeInTheDocument();
+  });
+  it('Regime Normal: aviso de v2', () => {
+    renderSecao({ empresa: { ...EMPRESA_BASE, regime_tributario: 'normal' } });
+    expect(screen.getByText(/Regime Normal ainda não emite pelo PubliAI/)).toBeInTheDocument();
+  });
+  it('contadores seguem a lista do servidor (complemento, nome fantasia e portabilidade não contam)', () => {
+    renderSecao({ empresa: {
+      cnpj: '69541033000145', razao_social: 'X LTDA', inscricao_estadual: '1', regime_tributario: 'simples',
+      cep: '51021530', logradouro: 'Rua', numero: '1', bairro: 'B', municipio: 'Recife', municipio_ibge: '2611606', uf: 'PE',
+    } });
+    expect(screen.getAllByText('✓ completo')).toHaveLength(2); // Identidade + Endereço
+    expect(screen.getAllByText('0 de 1')).toHaveLength(2);     // Operação (origin_type) + Emissão
   });
 });
