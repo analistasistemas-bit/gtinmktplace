@@ -253,6 +253,7 @@ create table public.notas_compra_itens (
   v_outro         numeric(14,2) not null default 0,
   v_ipi           numeric(14,2) not null default 0,
   v_st            numeric(14,2) not null default 0,
+  v_fcpst         numeric(14,2) not null default 0,
   rateio          jsonb not null default '{}'::jsonb,
   orig            smallint check (orig between 0 and 8),
   codigo_pai      text not null,
@@ -342,7 +343,7 @@ git commit -m "feat(adr-0181): schema da nota de compra, vínculo de fornecedor 
   - `public.registrar_entrada_nota_pendente(p_org, p_chave, p_codigo, p_qtd, p_custo, p_doc, p_user, p_ref) returns integer`: usado **só** pela Task 11. Mesmo lock da importação; recusa se a nota já existe.
   - `public.codigos_pai_da_nota(p_org uuid, p_chave text) returns text[]`.
   - Contrato de `p_nota`: `{chave, numero, serie, emitente_cnpj, emitente_nome, emitida_em, valor_total, assinada, xml_path, xml_sha256}`.
-  - Contrato de `p_itens[]`: `{n_item, cprod, xprod, ncm, cfop, gtin, ucom, qcom, fator_conversao, v_prod, v_frete, v_seg, v_desc, v_outro, v_ipi, v_st, rateio, orig, codigo_pai, distribuicao:[{codigo, quantidade, custo_aquisicao_unit, custo_precificacao_unit}]}`.
+  - Contrato de `p_itens[]`: `{n_item, cprod, xprod, ncm, cfop, gtin, ucom, qcom, fator_conversao, v_prod, v_frete, v_seg, v_desc, v_outro, v_ipi, v_st, v_fcpst, rateio, orig, codigo_pai, distribuicao:[{codigo, quantidade, custo_aquisicao_unit, custo_precificacao_unit}]}`.
   - Ref do ledger: `nfe:{chave}:{n_item}:{codigo}`. Ref do desfazer: `nfe-desfazer:{chave}:{codigo}`.
 
 - [ ] **Step 1: Escrever o teste SQL que falha**
@@ -401,6 +402,8 @@ begin
   if (r->>'duplicada')::boolean then raise exception '1a importação veio duplicada'; end if;
   if (select estoque from public.variacoes where codigo='09300002') <> 20 then
     raise exception 'ref da nota já aplicada foi somada de novo (D-8)'; end if;
+  if (select custo from public.variacoes where codigo='09300002') <> 14 then
+    raise exception 'custo confirmado na nota não chegou ao SKU da entrada prévia (R5-I1)'; end if;
   if (select array_agg(x order by x) from jsonb_array_elements_text(r->'codigos_pai') x)
      <> array['09300000','09310000'] then
     raise exception 'push precisa ir para os 2 produtos tocados: %', r; end if;
@@ -585,13 +588,14 @@ begin
 
     for v_item in select * from jsonb_array_elements(p_itens) loop
       insert into public.notas_compra_itens (nota_id, org_id, n_item, cprod, xprod, ncm, cfop, gtin,
-        ucom, qcom, fator_conversao, v_prod, v_frete, v_seg, v_desc, v_outro, v_ipi, v_st, rateio,
+        ucom, qcom, fator_conversao, v_prod, v_frete, v_seg, v_desc, v_outro, v_ipi, v_st, v_fcpst, rateio,
         orig, codigo_pai)
       values (v_nota, p_org, (v_item->>'n_item')::smallint, v_item->>'cprod', v_item->>'xprod',
         v_item->>'ncm', v_item->>'cfop', v_item->>'gtin', v_item->>'ucom', (v_item->>'qcom')::numeric,
         (v_item->>'fator_conversao')::int, (v_item->>'v_prod')::numeric, (v_item->>'v_frete')::numeric,
         (v_item->>'v_seg')::numeric, (v_item->>'v_desc')::numeric, (v_item->>'v_outro')::numeric,
-        (v_item->>'v_ipi')::numeric, (v_item->>'v_st')::numeric, coalesce(v_item->'rateio', '{}'::jsonb),
+        (v_item->>'v_ipi')::numeric, (v_item->>'v_st')::numeric, coalesce((v_item->>'v_fcpst')::numeric, 0),
+        coalesce(v_item->'rateio', '{}'::jsonb),
         (v_item->>'orig')::smallint, v_item->>'codigo_pai')
       returning id into v_item_id;
 
@@ -621,6 +625,11 @@ begin
             raise exception 'importar_nota_compra: % já recebeu % unidades por esta nota; a distribuição diz %',
               v_d->>'codigo', v_lancada, v_d->>'quantidade' using errcode = '23514';
           end if;
+          -- R5-I1: registrar_entrada não atualiza o custo quando a ref é duplicada. O custo confirmado
+          -- na nota vai para a variação canônica (só custo; saldo e ledger intocados).
+          update public.variacoes v set custo = (v_d->>'custo_precificacao_unit')::numeric
+           where v.id = (select v2.id from public.variacoes v2 join public.familias f on f.id = v2.familia_id
+                          where v2.org_id = p_org and v2.codigo = v_d->>'codigo' order by f.criado_em desc limit 1);
         end if;
       end loop;
     end loop;
@@ -780,9 +789,10 @@ export interface ItemNotaLido {
   nItem: number; cProd: string; xProd: string; ncm: string | null; cfop: string;
   gtin: string | null; uCom: string; qCom: number;
   vProd: number; vFrete: number; vSeg: number; vDesc: number; vOutro: number; vIPI: number; vST: number;
+  vFCPST: number; // FCP retido por ST: integra o custo como o ST (R5-I2)
   orig: number | null;
 }
-export type CampoAcessorio = 'vFrete' | 'vSeg' | 'vDesc' | 'vOutro' | 'vIPI' | 'vST';
+export type CampoAcessorio = 'vFrete' | 'vSeg' | 'vDesc' | 'vOutro' | 'vIPI' | 'vST' | 'vFCPST';
 export interface TotaisNota {
   vProd: number; vFrete: number; vSeg: number; vDesc: number; vOutro: number; vIPI: number; vST: number;
   vII: number; vIPIDevol: number; vFCPST: number; vNF: number;
@@ -823,6 +833,8 @@ export function origemSugerida(orig: number | null): { origemNfe: number; origem
     menor `nItem`). Nenhuma parcela fica negativa e a soma fecha exata. O valor rateado é somado ao campo do
     item e registrado em `rateio`;
   - nos demais casos → recusa ("totais de {campo} não batem").
+- `vFCPST` é acessório por item, como o ST: entra no custo de aquisição e no rateio. `vII > 0` ou
+  `vIPIDevol > 0` → recusa (importação direta e devolução estão fora do suporte).
 - Composição de `vNF`: `vProd − vDesc + vST + vFCPST + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol`.
   Se divergir, devolve `divergenciaTotal` (em R$, `vNF − composição`) e `avisoTotal`. **A importação só segue
   com confirmação ativa do operador** (R3-I2): o servidor recusa sem `aceitarDivergenciaTotal: true` e grava o
@@ -849,7 +861,7 @@ import type { ItemNotaLido, NotaCompraLida } from '../tipos';
 
 const item = (o: Partial<ItemNotaLido> = {}): ItemNotaLido => ({
   nItem: 1, cProd: 'REF 06', xProd: 'Short', ncm: '62034900', cfop: '5102', gtin: null, uCom: 'PC',
-  qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0, ...o,
+  qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, ...o,
 });
 const zero = { vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 0 };
 const nota = (itens: ItemNotaLido[], tot: Partial<typeof zero>): NotaCompraLida => ({
@@ -936,6 +948,19 @@ describe('conciliarItens', () => {
     const r = conciliarItens(nota([4, 3, 2, 1].map((n) => item({ nItem: n, vProd: 10 })), { vProd: 40, vFrete: 0.02, vNF: 40.02 }));
     if (!r.ok) throw new Error(r.erro);
     expect(Object.fromEntries(r.itens.map((i) => [i.nItem, i.vFrete]))).toEqual({ 1: 0.01, 2: 0.01, 3: 0, 4: 0 });
+  });
+});
+
+describe('vFCPST, vII e vIPIDevol', () => {
+  it('vFCPST entra no custo de aquisição (só no total → rateado)', () => {
+    const r = conciliarItens(nota([item({ vProd: 700, qCom: 70 })], { vProd: 700, vFCPST: 14, vNF: 714 }));
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.itens[0].vFCPST).toBe(14);
+    expect(custoAquisicaoUnit(r.itens[0], 1)).toBeCloseTo(714 / 70, 10);
+  });
+  it('vII ou vIPIDevol > 0 recusa', () => {
+    expect(conciliarItens(nota([item()], { vProd: 350, vII: 1, vNF: 351 })).ok).toBe(false);
+    expect(conciliarItens(nota([item()], { vProd: 350, vIPIDevol: 1, vNF: 351 })).ok).toBe(false);
   });
 });
 
@@ -1041,7 +1066,7 @@ export function quantidadeEmEstoque(
   return { ok: true, quantidade: arred };
 }
 
-const CAMPOS: CampoAcessorio[] = ['vFrete', 'vSeg', 'vDesc', 'vOutro', 'vIPI', 'vST'];
+const CAMPOS: CampoAcessorio[] = ['vFrete', 'vSeg', 'vDesc', 'vOutro', 'vIPI', 'vST', 'vFCPST'];
 const cent = (n: number) => Math.round(n * 100);
 
 /** Divide `total` (centavos) proporcionalmente a `pesos` pelos maiores restos: soma exata, sem negativos.
@@ -1059,8 +1084,11 @@ function maioresRestos(total: number, pesos: number[], desempate: number[]): num
 
 export function conciliarItens(
   nota: NotaCompraLida,
-): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null } | { ok: false; erro: string } {
+): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null; divergenciaTotal: number } | { ok: false; erro: string } {
   const itens: ItemConciliado[] = nota.itens.map((i) => ({ ...i, rateio: {} }));
+  // Fora do suporte (compra nacional para revenda): imposto de importação e IPI devolvido.
+  if (nota.totais.vII > 0) return { ok: false, erro: 'Nota com Imposto de Importação (vII) não é suportada — é compra de importação direta.' };
+  if (nota.totais.vIPIDevol > 0) return { ok: false, erro: 'Nota com IPI devolvido (vIPIDevol) não é compra para revenda.' };
   const negativo = [...itens.flatMap((i) => [i.vProd, ...CAMPOS.map((c) => i[c])]), ...Object.values(nota.totais)]
     .some((v) => v < 0);
   if (negativo) return { ok: false, erro: 'A nota tem valor negativo — não é possível conferir os totais.' };
@@ -1092,7 +1120,7 @@ export function conciliarItens(
 }
 
 export function custoAquisicaoUnit(item: ItemConciliado, fator: number): number {
-  const total = item.vProd + item.vFrete + item.vSeg + item.vOutro + item.vIPI + item.vST - item.vDesc;
+  const total = item.vProd + item.vFrete + item.vSeg + item.vOutro + item.vIPI + item.vST + item.vFCPST - item.vDesc;
   return total / (item.qCom * fator);
 }
 
@@ -1196,7 +1224,7 @@ describe('lerNfe — exportação de ERP', () => {
     if (!r.ok) throw new Error(r.erro);
     expect(r.nota.itens[0]).toEqual({
       nItem: 1, cProd: 'REF 06', xProd: 'Short masculino - DIV - DIV', ncm: '62034900', cfop: '5102',
-      gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0,
+      gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0,
     });
     expect(r.nota.itens[1].xProd).toBe('Conjunto infantil & bebê - DIV - DIV');
   });
@@ -1348,7 +1376,7 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
         uCom: obrig(prod, 'uCom'), qCom: numero(prod, 'qCom', true),
         vProd: numero(prod, 'vProd', true), vFrete: numero(prod, 'vFrete'), vSeg: numero(prod, 'vSeg'),
         vDesc: numero(prod, 'vDesc'), vOutro: numero(prod, 'vOutro'),
-        vIPI: numero(ipi, 'vIPI'), vST: numero(icms, 'vICMSST'),
+        vIPI: numero(ipi, 'vIPI'), vST: numero(icms, 'vICMSST'), vFCPST: numero(icms, 'vFCPST'),
         orig: orig === null ? null : Number(orig),
       };
     });
@@ -1573,7 +1601,7 @@ import { processarImportacao, montarItensRpc, reenviarPush, type DepsImportacao 
 import type { NotaCompraLida, ItemConciliado, DecisaoImportacao } from '../../_shared/nfe/tipos';
 
 const item: ItemConciliado = { nItem: 1, cProd: 'REF 06', xProd: 'Short', ncm: '62034900', cfop: '5102', gtin: null,
-  uCom: 'PC', qCom: 3, vProd: 100, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0, rateio: {} };
+  uCom: 'PC', qCom: 3, vProd: 100, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, rateio: {} };
 const nota = { chave: '26261011222333000181550010000010511000030324', numero: 1051, serie: 1,
   emitenteCnpj: '11222333000181', emitenteNome: 'F', emitidaEm: '2026-10-13T15:57:33-03:00',
   totais: { vNF: 100 }, assinada: false } as unknown as NotaCompraLida;
@@ -1680,7 +1708,7 @@ export function montarItensRpc(itens: ItemConciliado[], decisoes: DecisaoImporta
       n_item: i.nItem, cprod: i.cProd, xprod: i.xProd, ncm: i.ncm, cfop: i.cfop, gtin: i.gtin,
       ucom: i.uCom, qcom: i.qCom, fator_conversao: d.fator,
       v_prod: i.vProd, v_frete: i.vFrete, v_seg: i.vSeg, v_desc: i.vDesc, v_outro: i.vOutro,
-      v_ipi: i.vIPI, v_st: i.vST, rateio: i.rateio, orig: i.orig, codigo_pai: d.codigoPai,
+      v_ipi: i.vIPI, v_st: i.vST, v_fcpst: i.vFCPST, rateio: i.rateio, orig: i.orig, codigo_pai: d.codigoPai,
       distribuicao: d.distribuicao.map((l) => ({
         codigo: l.codigo, quantidade: l.quantidade,
         custo_aquisicao_unit: custo, custo_precificacao_unit: l.custoPrecificacao,
@@ -2129,7 +2157,7 @@ export async function importarNotaCompra(b: { xml: string; decisoes: DecisaoImpo
 export async function desfazerNotaCompra(notaId: string, status: 'desfeita' | 'cancelada'): Promise<{ pushOk: boolean; jaEstava: boolean }>;
 export async function urlXmlNota(xmlPath: string): Promise<string>;
 /** Entradas já lançadas com a ref desta nota (variação criada pela D-8), para a retomada (R3-B1). */
-export async function entradasPreviasDaNota(chave: string): Promise<Array<{ nItem: number; codigo: string; quantidade: number; custo: number }>>;
+export async function entradasPreviasDaNota(chave: string): Promise<Array<{ nItem: number; codigo: string; quantidade: number; custo: number | null }>>;
 export async function reenviarEstoqueNota(chave: string): Promise<{ pushOk: boolean }>;
 
 // estado.ts
@@ -2188,9 +2216,9 @@ const nota: NotaCompraLida = {
   destinatarioCnpj: '11444777000161', totais: zero, assinada: false, cStat: 100,
   itens: [
     { nItem: 1, cProd: 'REF 06', xProd: 'Short', ncm: null, cfop: '5102', gtin: null, uCom: 'PC', qCom: 35,
-      vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0 },
+      vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0 },
     { nItem: 2, cProd: 'X9', xProd: 'Meia', ncm: null, cfop: '5102', gtin: '7891234567895', uCom: 'CX', qCom: 2,
-      vProd: 240, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0 },
+      vProd: 240, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0 },
   ],
 };
 
@@ -2564,7 +2592,7 @@ import { describe, it, expect } from 'vitest';
 import { prefillCadastro } from '../prefill-cadastro';
 
 const item = { nItem: 1, cProd: 'REF 06', xProd: 'Short masculino - DIV - DIV', ncm: '62034900', cfop: '5102',
-  gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, orig: 0, rateio: {} };
+  gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, rateio: {} };
 const nota = { emitenteNome: 'FORNECEDOR TESTE LTDA' } as never;
 
 describe('prefillCadastro', () => {
@@ -2666,6 +2694,15 @@ git commit -m "feat(adr-0181): cadastrar produto (simples ou grade) a partir da 
 
 Se o operador abandonar a importação depois de criar a variação, a entrada fica no ledger com documento e
 ref da nota. Reimportar a mesma nota fecha a conta.
+
+**Risco pré-existente, não introduzido aqui (R5-B1, registrado no ADR-0181):** o `adicionar-variacoes-familia`
+lê o saldo (`index.ts:264-279`), cria a família nova e clona as variações com esse retrato (`:309,345`), sem
+lock. Qualquer entrada ou venda que caia nessa janela se perde quando a família nova vira a canônica. Isso
+vale para venda do ML e entrada manual, não só para a nota. O próprio `registrar_entrada` resolve o SKU antes
+de travar a linha, então um lock na edge não fecha a janela. A correção é do **modelo de família canônica**
+(ADR-0094/0129) e fica num issue próprio, fora deste plano. Aqui, a nota fica protegida contra lançamento
+depois do fechamento (`registrar_entrada_nota_pendente`). O retrato desatualizado de outros SKUs segue com o
+mesmo risco de hoje.
 
 - [ ] **Step 1: Teste da edge que falha**
 
@@ -2866,7 +2903,8 @@ Em sessão Playwright isolada (skill `playwright-cli`), com screenshot de cada p
    responde `pushOk: true`.
 7. Concorrência: (a) "Confirmar" a mesma nota em duas abas ao mesmo tempo → o saldo soma uma vez; (b) com a
    nota aberta em duas abas, confirmar na aba A e, na aba B, tentar "Falta um tamanho/cor?" → 409 "já
-   importada", sem criar variação.
+   importada", sem criar variação. (c) O risco pré-existente do R5-B1 (retrato do saldo durante o
+   "adicionar variação") não é testado aqui: está no issue do modelo de família canônica.
 8. A Zaven está conectada ao ML (seller `3760134495`, 2026-10-15) e ainda sem anúncios. O push enfileira e
    não acha anúncio. Conferir no log que não há erro.
 

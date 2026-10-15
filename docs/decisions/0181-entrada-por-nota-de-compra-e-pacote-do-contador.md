@@ -223,6 +223,13 @@ conta do ML.
 
 ## Consequências
 
+**Risco pré-existente herdado (achado na revisão do plano, 2026-10-15):** o "adicionar variação"
+(ADR-0129) lê o saldo, cria a família nova e clona as variações com esse retrato, sem lock. Entrada ou
+venda que caia nessa janela se perde quando a família nova vira a canônica (ADR-0094). Isso vale para
+qualquer origem, não só para a nota. A D-8 usa esse fluxo e herda o risco. A nota em si fica protegida
+contra lançamento depois do fechamento (`registrar_entrada_nota_pendente`). Correção: issue próprio sobre o
+modelo de família canônica.
+
 O cliente sem ERP sai com cadastro, estoque e um pacote mensal a partir de documentos que já recebe.
 Guardar a nota como documento à parte custa uma tabela nova, mas mantém o caminho financeiro
 existente intacto e dá ao contador dados exatos. A busca de XML de venda ao vivo não guarda passivo,
