@@ -221,5 +221,9 @@ mas depende da API do ML no momento da exportação.
 2. Download por período dos XMLs do Faturador: autenticação, filtros (canceladas e devoluções),
    histórico disponível, volume e bytes por mês, limites, e CPU e memória da montagem do zip (ADR-0173).
 3. O push de estoque ignora o SKU não publicado (D-8).
-4. Validar o pacote com o **contador real** do cliente. O parecer abaixo é simulado.
+4. Validar o pacote com o **contador real** do cliente. O parecer acima é simulado. **Adiado para a
+   V2 (decisão do Diego, 2026-10-15):** ST/antecipação de PE por mercadoria, formalidades do Livro de
+   Inventário em PE, cobertura da devolução de venda no Faturador do ML e emissor da devolução ao
+   fornecedor (Sebrae × NFA-e). A v1 segue sem eles: coluna "tratamento fiscal" pendente, inventário em
+   planilha, importação de devolução emitida fora.
 5. Pedir ao fornecedor um XML original da SEFAZ e testar os dois formatos (D-2).
