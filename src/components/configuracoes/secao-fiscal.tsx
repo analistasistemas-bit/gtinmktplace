@@ -359,7 +359,7 @@ export function SecaoFiscal() {
                     salvarInterna(v, internaInput);
                   }}
                 >
-                  <SelectTrigger aria-label="UF da venda dentro do estado" className="h-8 w-24 text-sm">
+                  <SelectTrigger aria-label="UF da venda dentro do estado" className="h-8 w-28 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
