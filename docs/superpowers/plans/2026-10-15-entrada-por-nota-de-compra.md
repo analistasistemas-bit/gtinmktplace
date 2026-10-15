@@ -77,7 +77,7 @@ v1 recusa o item e orienta a cadastrar a grade completa.
 1. **A mesma nota importada duas vezes, inclusive ao mesmo tempo** (duplo clique, retry, duas abas): o saldo não pode somar duas vezes e o XML guardado não pode ser trocado. A segunda chamada devolve `duplicada: true` (Task 2: lock + teste SQL; Task 5: verificação antes do upload e `upsert: false`).
 2. **Item em caixa** (`uCom = CX`, `qCom = 2`, 12 por caixa): a distribuição tem que exigir 24 unidades (Task 3).
 3. **Desfazer com venda acontecendo no meio**: o saldo é relido com os SKUs travados. Com saldo insuficiente, recusa listando os SKUs, sem ajuste pela metade. Repetir o desfazer já concluído é no-op que reenfileira o push (Task 2).
-4. **XML de outra empresa, de natureza errada ou com totais incoerentes** (destinatário ≠ CNPJ, CFOP de remessa ou bonificação, `cStat` ≠ 100, DV inválido, soma dos itens ≠ total): recusa antes de gravar, com o motivo, e a decisão é tomada **sobre o XML lido no servidor** (Tasks 3 e 5).
+4. **XML de outra empresa, de natureza errada ou com totais incoerentes** (destinatário ≠ CNPJ, CFOP de remessa ou bonificação, `cStat` ≠ 100, DV inválido, soma dos itens ≠ total): recusa antes de gravar, com o motivo, e a decisão é tomada **sobre o XML lido no servidor** (Tasks 3 e 5). Exceção registrada no ADR D-2: divergência apenas entre `vNF` e a composição dos totais exige **aceite ativo**, que fica gravado em `divergencia_total_aceita`.
 5. **REF genérica distribuída em SKUs de produtos diferentes**: a UI permite e o push sai para todos os produtos tocados (Task 2: `codigo_pai` lido do ledger; Task 9: SKU de outro produto).
 
 ---
@@ -339,6 +339,8 @@ git commit -m "feat(adr-0181): schema da nota de compra, vínculo de fornecedor 
 - Produces:
   - `public.importar_nota_compra(p_org uuid, p_user uuid, p_nota jsonb, p_itens jsonb) returns jsonb` → `{nota_id, duplicada, codigos_pai}`.
   - `public.desfazer_nota_compra(p_org uuid, p_user uuid, p_nota_id uuid, p_status text) returns jsonb` → `{codigos_pai, ja_estava: boolean}`.
+  - `public.registrar_entrada_nota_pendente(p_org, p_chave, p_codigo, p_qtd, p_custo, p_doc, p_user, p_ref) returns integer`: usado **só** pela Task 11. Mesmo lock da importação; recusa se a nota já existe.
+  - `public.codigos_pai_da_nota(p_org uuid, p_chave text) returns text[]`.
   - Contrato de `p_nota`: `{chave, numero, serie, emitente_cnpj, emitente_nome, emitida_em, valor_total, assinada, xml_path, xml_sha256}`.
   - Contrato de `p_itens[]`: `{n_item, cprod, xprod, ncm, cfop, gtin, ucom, qcom, fator_conversao, v_prod, v_frete, v_seg, v_desc, v_outro, v_ipi, v_st, rateio, orig, codigo_pai, distribuicao:[{codigo, quantidade, custo_aquisicao_unit, custo_precificacao_unit}]}`.
   - Ref do ledger: `nfe:{chave}:{n_item}:{codigo}`. Ref do desfazer: `nfe-desfazer:{chave}:{codigo}`.
@@ -484,6 +486,27 @@ begin
   exception when sqlstate '23514' then
     if sqlerrm not like '%09300001%' then raise exception 'mensagem não cita o SKU órfão: %', sqlerrm; end if;
   end;
+
+  -- registrar_entrada_nota_pendente: nota já importada (a 1a, agora desfeita) recusa; ref de outra nota recusa.
+  begin
+    perform public.registrar_entrada_nota_pendente('93000000-0000-0000-0000-000000000001',
+      '26261011222333000181550010000010511000030324', '09300001', 5, 14, 'addvar',
+      '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000030324:1:09300001');
+    raise exception 'entrada pendente aceitou nota já fechada';
+  exception when sqlstate '23514' then null;
+  end;
+  begin
+    perform public.registrar_entrada_nota_pendente('93000000-0000-0000-0000-000000000001',
+      '26261011222333000181550010000010511000077771', '09300001', 5, 14, 'addvar',
+      '93000000-0000-0000-0000-000000000101', 'nfe:99999999999999999999999999999999999999999999:1:09300001');
+    raise exception 'entrada pendente aceitou ref de outra nota';
+  exception when sqlstate '22023' then null;
+  end;
+  if public.registrar_entrada_nota_pendente('93000000-0000-0000-0000-000000000001',
+      '26261011222333000181550010000010511000077771', '09300001', 5, 14, 'addvar',
+      '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000077771:1:09300001') is null then
+    raise exception 'entrada pendente de nota ainda não importada deveria aplicar';
+  end if;
 
   -- codigos_pai_da_nota devolve os produtos da 1a nota (importação + desfazer).
   if (select array_agg(x order by x) from unnest(public.codigos_pai_da_nota('93000000-0000-0000-0000-000000000001',
@@ -682,6 +705,27 @@ begin
   return jsonb_build_object('codigos_pai', v_pais, 'ja_estava', v_status <> 'importada');
 end $$;
 
+-- D-8 / R3-B1 (rodada 4): entrada de variação nova com a ref de uma nota AINDA NÃO importada. Pega o
+-- MESMO advisory lock da importação: depois que a nota fecha (qualquer status), recusa — senão uma aba
+-- antiga somaria peças fora da distribuição já confirmada.
+create or replace function public.registrar_entrada_nota_pendente(
+  p_org uuid, p_chave text, p_codigo text, p_qtd integer, p_custo numeric, p_doc text, p_user uuid, p_ref text
+) returns integer language plpgsql security invoker set search_path = ''
+as $$
+begin
+  if p_ref not like 'nfe:' || p_chave || ':%' then
+    raise exception 'registrar_entrada_nota_pendente: ref % não pertence à nota %', p_ref, p_chave using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('nfe:' || p_org::text || ':' || p_chave, 0));
+  if exists (select 1 from public.notas_compra where org_id = p_org and chave = p_chave) then
+    raise exception 'registrar_entrada_nota_pendente: a nota % já foi importada; adicione o tamanho/cor sem a nota', p_chave
+      using errcode = '23514';
+  end if;
+  return public.registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, null, p_user, p_ref);
+end $$;
+revoke all on function public.registrar_entrada_nota_pendente(uuid, text, text, integer, numeric, text, uuid, text) from public, anon, authenticated;
+grant execute on function public.registrar_entrada_nota_pendente(uuid, text, text, integer, numeric, text, uuid, text) to service_role;
+
 -- Produtos tocados pela nota (importação e desfazer), para o "Reenviar estoque" (R3-I4: sem
 -- paginação de PostgREST, distinto no banco).
 create or replace function public.codigos_pai_da_nota(p_org uuid, p_chave text)
@@ -762,7 +806,7 @@ export function gtinValido(gtin: string): boolean;               // GTIN-8/12/13
 export const CFOPS_ACEITOS: ReadonlySet<string>;
 export function cfopAceito(cfop: string): boolean;
 export function quantidadeEmEstoque(qCom: number, fator: number): { ok: true; quantidade: number } | { ok: false; erro: string };
-export function conciliarItens(nota: NotaCompraLida): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null; divergenciaTotal: number } | { ok: false; erro: string };
+export function conciliarItens(nota: NotaCompraLida): { ok: true; itens: ItemConciliado[]; avisoTotal: string | null; divergenciaTotal: number } | { ok: false; erro: string }; // divergenciaTotal em R$ (vNF − composição)
 export function custoAquisicaoUnit(item: ItemConciliado, fator: number): number; // sem arredondar
 export function erroDistribuicao(esperado: number, linhas: LinhaDistribuicao[]): string | null;
 export function limparDescricaoFornecedor(xProd: string): string;
@@ -2102,7 +2146,7 @@ export interface EstadoImportacao {
 }
 export function recusaInicial(nota: NotaCompraLida, cnpjEmpresa: string, existente: { status: string; importadaEm: string } | null): string | null;
 export function estadoInicial(nota: NotaCompraLida, xml: string, vinculos: Vinculo[], porGtin: Record<string, string[]>,
-  previas?: Array<{ nItem: number; codigo: string; quantidade: number; custo: number }>): EstadoImportacao;
+  previas?: Array<{ nItem: number; codigo: string; quantidade: number; custo: number | null }>): EstadoImportacao;
 export function aceitarDivergencia(e: EstadoImportacao, aceita: boolean): EstadoImportacao;
 export function definirProduto(e: EstadoImportacao, nItem: number, codigoPai: string): EstadoImportacao;
 export function definirFator(e: EstadoImportacao, nItem: number, fator: number): EstadoImportacao;
@@ -2116,8 +2160,10 @@ Regras:
 - **Retomada (R3-B1):** `previas` (de `entradasPreviasDaNota`, que lê `estoque_movimentos` com
   `referencia_externa like 'nfe:{chave}:%'` e extrai `nItem` e `codigo` da ref) entram como linhas
   `travada: true` no item correspondente. `definirProduto` **preserva** as linhas travadas, e
-  `definirDistribuicao` também (as linhas travadas recebidas são mantidas e não podem ser editadas). A trava
-  da UI é conveniência; a garantia é a checagem da RPC (Task 2).
+  `definirDistribuicao` também. Numa linha travada, **SKU e quantidade** ficam fixos e o **custo de
+  precificação é editável**: uma linha recebida com o mesmo SKU atualiza só o custo (R4-B1; o ledger aceita
+  custo nulo, `20260729084329_e6b_estoque_movimentos.sql:21`). Custo prévio nulo nasce com o custo de
+  aquisição do item, com 2 casas. A trava da UI é conveniência; a garantia é a checagem da RPC (Task 2).
 - **Divergência de `vNF`:** com `divergenciaTotal ≠ 0` e sem `aceitarDivergencia`, há uma pendência
   (`nItem: 0`): "Confirme a divergência do total da nota".
 - A ordem do vínculo é: vínculo salvo → GTIN com **exatamente 1** produto candidato → nenhum.
@@ -2185,6 +2231,17 @@ describe('estado da importação', () => {
     // e a pendência cobra só o restante: 5 de 35
     expect(pendencias(e).find((p) => p.nItem === 1)?.erro).toMatch(/5 de 35/);
   });
+  it('linha travada com custo nulo: nasce com o custo de aquisição e o custo é editável; quantidade não', () => {
+    let e = estadoInicial(nota, '<x/>', [], {}, [{ nItem: 1, codigo: 'S9', quantidade: 5, custo: null }]);
+    expect(e.decisoes[0].distribuicao[0]).toMatchObject({ codigo: 'S9', quantidade: 5, custoPrecificacao: 10, travada: true });
+    e = definirProduto(e, 1, 'P1');
+    e = definirDistribuicao(e, 1, [{ codigo: 'S9', quantidade: 99, custoPrecificacao: 12 },
+                                   { codigo: 'S1', quantidade: 30, custoPrecificacao: 10 }]);
+    expect(e.decisoes[0].distribuicao).toEqual([
+      { codigo: 'S9', quantidade: 5, custoPrecificacao: 12, travada: true },
+      { codigo: 'S1', quantidade: 30, custoPrecificacao: 10 }]);
+    expect(pendencias(e).find((p) => p.nItem === 1)).toBeUndefined();
+  });
   it('divergência de vNF vira pendência até o aceite e segue no payload', () => {
     const div = { ...nota, totais: { ...nota.totais, vNF: 600 } };
     let e = estadoInicial(div, '<x/>', [], {});
@@ -2216,7 +2273,7 @@ Expected: FAIL.
 
 ```ts
 // ADR-0181 — estado puro do assistente de importação (sem React).
-import { cfopAceito, conciliarItens, quantidadeEmEstoque, erroDistribuicao } from '../../../../supabase/functions/_shared/nfe/regras.ts';
+import { cfopAceito, conciliarItens, custoAquisicaoUnit, quantidadeEmEstoque, erroDistribuicao } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import type { DecisaoImportacao, ItemConciliado, LinhaDistribuicao, NotaCompraLida } from '../../../../supabase/functions/_shared/nfe/tipos.ts';
 import type { Vinculo } from '@/lib/notas-compra';
 
@@ -2247,13 +2304,18 @@ export function recusaInicial(
 
 export function estadoInicial(
   nota: NotaCompraLida, xml: string, vinculos: Vinculo[], porGtin: Record<string, string[]>,
-  previas: Array<{ nItem: number; codigo: string; quantidade: number; custo: number }> = [],
+  previas: Array<{ nItem: number; codigo: string; quantidade: number; custo: number | null }> = [],
 ): EstadoImportacao {
   const conc = conciliarItens(nota);
   if (!conc.ok) throw new Error(conc.erro);
   const porCprod = new Map(vinculos.map((v) => [v.cprod, v]));
+  const custoDefault = (nItem: number) => {
+    const it = conc.itens.find((i) => i.nItem === nItem)!;
+    return Math.round(custoAquisicaoUnit(it, porCprod.get(it.cProd)?.fator ?? 1) * 100) / 100;
+  };
   const travadas = (nItem: number): LinhaEstado[] => previas.filter((p) => p.nItem === nItem)
-    .map((p) => ({ codigo: p.codigo, quantidade: p.quantidade, custoPrecificacao: p.custo, travada: true }));
+    .map((p) => ({ codigo: p.codigo, quantidade: p.quantidade, travada: true,
+      custoPrecificacao: p.custo !== null && p.custo > 0 ? p.custo : custoDefault(nItem) }));
   return {
     nota, itens: conc.itens, xml, avisoTotal: conc.avisoTotal,
     divergenciaTotal: conc.divergenciaTotal, aceitarDivergencia: false,
@@ -2276,10 +2338,13 @@ export const definirProduto = (e: EstadoImportacao, nItem: number, codigoPai: st
   mudar(e, nItem, (d) => (d.codigoPai === codigoPai ? d
     : { ...d, codigoPai, origemVinculo: 'manual', candidatosGtin: [], distribuicao: soTravadas(d.distribuicao) }));
 export const definirFator = (e: EstadoImportacao, nItem: number, fator: number) => mudar(e, nItem, (d) => ({ ...d, fator }));
-// Linhas travadas (já no ledger) são sempre preservadas; as recebidas com o mesmo código são ignoradas.
+// Linhas travadas (já no ledger) são sempre preservadas com SKU e quantidade; de uma linha recebida com o
+// mesmo código só se aproveita o custo de precificação (R4-B1).
 export const definirDistribuicao = (e: EstadoImportacao, nItem: number, linhas: LinhaDistribuicao[]) =>
   mudar(e, nItem, (d) => {
-    const fixas = soTravadas(d.distribuicao);
+    const porCod = new Map(linhas.map((l) => [l.codigo, l]));
+    const fixas = soTravadas(d.distribuicao).map((f) =>
+      ({ ...f, custoPrecificacao: porCod.get(f.codigo)?.custoPrecificacao ?? f.custoPrecificacao }));
     const cods = new Set(fixas.map((f) => f.codigo));
     return { ...d, distribuicao: [...fixas, ...linhas.filter((l) => !cods.has(l.codigo))] };
   });
@@ -2326,7 +2391,7 @@ Usar o client e os helpers que `src/lib/produtos-saldo.ts` já importa: o mesmo 
 - **`statusDaNota`:** `from('notas_compra').select('status, importada_em').eq('chave', chave).maybeSingle()`.
 - **`listarNotasCompra`:** `order('emitida_em', { ascending: false }).limit(200)`.
 - **`importarNotaCompra`**, **`desfazerNotaCompra`** e **`reenviarEstoqueNota`** (`invoke('importar-nota-compra', { body: { reenviarPush: { chave } } })`): `supabase.functions.invoke(...)`; em erro, `throw await erroDaEdge(error)`.
-- **`entradasPreviasDaNota`:** `from('estoque_movimentos').select('codigo, quantidade, custo_unitario, referencia_externa').like('referencia_externa', \`nfe:${chave}:%\`)`; `nItem` = 3º segmento da ref. Conferir que a policy de select de `estoque_movimentos` é por org (é lida hoje pela seção "Movimentos de estoque").
+- **`entradasPreviasDaNota`:** `from('estoque_movimentos').select('codigo, quantidade, custo_unitario, referencia_externa').like('referencia_externa', 'nfe:' + chave + ':%').order('id')`, **paginado** com `.range(i, i + 999)` até vir página com menos de 1000 linhas (PostgREST `max_rows = 1000`; usar o helper de `src/lib/paginacao-supabase.ts`). `nItem` = 3º segmento da ref. Conferir que a policy de select de `estoque_movimentos` é por org (é lida hoje pela seção "Movimentos de estoque").
 - **`urlXmlNota`:** `signedUrl('notas-compra', path, 60)`.
 
 - [ ] **Step 5: Rodar testes e lint**
@@ -2611,7 +2676,9 @@ existe. Casos:
 - `refNota` malformado (`'nfe:123:1'`, `'addvar:x'`) dá erro de validação no campo `refNota`;
 - `refNota` com 2 variações no corpo dá erro de validação (uma por vez);
 - retry com a mesma `chave` e a mesma `refNota` reaplica com a mesma ref (no-op no ledger);
-- retry com `refNota` diferente ou ausente é recusado.
+- retry com `refNota` diferente ou ausente é recusado;
+- com `refNota` de nota já importada: 409 antes de inserir a variação (nenhum insert, nenhum enfileiramento);
+- com `refNota`, a RPC chamada é `registrar_entrada_nota_pendente` com `p_chave` = os 44 dígitos da ref.
 
 - [ ] **Step 2: Rodar e ver falhar**
 
@@ -2622,6 +2689,11 @@ Expected: FAIL.
 
 - `processar.ts`:
   - validar `refNota` opcional com a regex acima e, com ela, exigir exatamente 1 variação;
+  - com `refNota`, **antes de qualquer insert**, conferir que não existe `notas_compra` com essa chave para a org.
+    Se existir, devolver 409 "Esta nota já foi importada" (falha cedo, sem criar nem publicar variação). A
+    garantia contra a corrida vem do passo seguinte;
+  - com `refNota`, `aplicarEstoqueInicial` chama `registrar_entrada_nota_pendente` (Task 2, mesmo lock da
+    importação) em vez de `registrar_entrada`, passando `p_chave` extraída da `refNota`;
   - `aplicarEstoqueInicial` recebe `refNota?: string` e monta
     `p_ref: refNota ? `${refNota}:${it.codigo}` : `addvar:${e.familiaId}:${it.codigo}``;
   - `p_doc` passa a ser `refNota ? 'NF-e (variação nova)' : <valor atual>`.
@@ -2792,7 +2864,10 @@ Em sessão Playwright isolada (skill `playwright-cli`), com screenshot de cada p
 6. Desfazer como admin: saldos voltam e o status fica "Desfeita". Chamar o desfazer de novo pela edge
    (curl com o JWT da sessão de teste) responde `jaEstava: true`, sem mexer no saldo. "Reenviar estoque"
    responde `pushOk: true`.
-7. A Zaven está conectada ao ML (seller `3760134495`, 2026-10-15) e ainda sem anúncios. O push enfileira e
+7. Concorrência: (a) "Confirmar" a mesma nota em duas abas ao mesmo tempo → o saldo soma uma vez; (b) com a
+   nota aberta em duas abas, confirmar na aba A e, na aba B, tentar "Falta um tamanho/cor?" → 409 "já
+   importada", sem criar variação.
+8. A Zaven está conectada ao ML (seller `3760134495`, 2026-10-15) e ainda sem anúncios. O push enfileira e
    não acha anúncio. Conferir no log que não há erro.
 
 - [ ] **Step 5: Pendências do ADR (registrar no ADR, não fingir)**

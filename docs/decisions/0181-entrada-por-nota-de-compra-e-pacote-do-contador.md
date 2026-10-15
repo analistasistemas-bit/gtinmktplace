@@ -39,7 +39,10 @@ de ERP. Valida:
 - o dígito verificador da chave;
 - o destinatário = CNPJ da org;
 - `cStat = 100` quando houver protocolo;
-- a coerência entre a soma dos itens e o total da nota.
+- a coerência entre a soma dos itens e o total da nota. Soma dos itens ≠ total de cada componente é
+  recusada. Já a divergência só entre `vNF` e a composição dos totais exige **aceite ativo** do operador
+  (gravado em `notas_compra.divergencia_total_aceita`), porque há componentes de leiaute específico
+  (`vICMSDeson`, ISSQN) que não entram na composição verificada. Revisão do plano, 2026-10-15.
 
 Nota sem assinatura entra com o aviso "cópia sem assinatura". O risco de fraude é baixo, porque quem
 envia é a própria org. Só entram CFOPs de **venda/revenda do fornecedor** (`51xx`/`61xx`, ST
