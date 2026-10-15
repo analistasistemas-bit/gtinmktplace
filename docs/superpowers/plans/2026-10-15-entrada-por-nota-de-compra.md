@@ -9,7 +9,7 @@
 - o desfazer trava os SKUs antes de ler o saldo e é idempotente;
 - há conciliação de totais e rateio;
 - a distribuição pode ir para vários produtos;
-- a variação nova reusa os fluxos existentes. **Isso troca a D-8 e precisa do OK do Diego.**
+- a variação nova reusa os fluxos existentes. **Isso troca a D-8, aprovado pelo Diego em 2026-10-15.**
 
 **Goal:** O operador importa o XML de uma NF-e de compra em `/estoque`. O sistema liga cada item a um
 produto (vínculo de fornecedor), distribui a quantidade na grade e dá entrada no estoque numa única
@@ -37,7 +37,7 @@ Distribuição na grade, Custo de aquisição, Custo de precificação, Descriç
 (export mensal, XMLs de venda ao vivo do ML), custos adicionais por CT-e (parte de D-9). Este plano grava
 o `custo_aquisicao_unit` por SKU distribuído, que é o insumo do custo médio do Plano 2.
 
-**⚠ Decisão pendente do Diego (reverte a D-8 do ADR-0181):**
+**D-8 revisada (OK do Diego em 2026-10-15; ADR-0181 atualizado):**
 - **O que muda:** "Variação nova nasce só no PubliAI, não publicada" vira **"variação nova usa os fluxos que
   já existem"**.
   - **Produto publicado:** abre o `dialog-adicionar-variacao-roteador` (ADR-0129, admin, publica com o clique
@@ -48,8 +48,6 @@ o `custo_aquisicao_unit` por SKU distribuído, que é o insumo do custo médio d
   - Filtrar essa flag no push cortaria SKU ainda publicado.
   - Uma variação local numa família `publicado` não tem caminho até a Revisão: o claim só aceita `pronto` e
     `erro` (`20261004202356_reajuste_preco_rpcs.sql:397`).
-- **Se o Diego recusar,** a Task 11 precisa de desenho novo (rascunho de UPDATE + alvos de push por vínculo
-  efetivo) antes de ser executada.
 
 ## Global Constraints
 
@@ -2193,7 +2191,7 @@ git commit -m "feat(adr-0181): cadastrar produto (simples ou grade) a partir da 
 
 ---
 
-### Task 11: "Falta um tamanho/cor?" — reusa os fluxos existentes ⚠ requer OK do Diego (D-8)
+### Task 11: "Falta um tamanho/cor?" — reusa os fluxos existentes (D-8 revisada, aprovada)
 
 **Files:**
 - Modify: `src/components/estoque/importar-nota/etapa-distribuicao.tsx`
@@ -2389,7 +2387,7 @@ git commit -m "docs(adr-0181): entrada por nota de compra — referência, model
   - D-5 (Tasks 1, 7, 10);
   - D-6: vínculo, fator e GTIN com conflito (Tasks 2, 8, 9);
   - D-7: multiproduto (Tasks 2, 8, 9);
-  - D-8: revisado, pendente do Diego (Task 11);
+  - D-8: revisado e aprovado pelo Diego (Task 11);
   - D-9 parcial: conciliação, rateio, aquisição × precificação (Tasks 3, 5, 9); CT-e fica no Plano 2;
   - D-10: origem binária confirmada mesmo sem módulo fiscal (Tasks 3, 7, 10);
   - D-11: desfazer travado e idempotente (Tasks 2, 6, 12).

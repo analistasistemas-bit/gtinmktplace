@@ -84,11 +84,16 @@ manual separada.
 *Rejeitado:* aceitar divergência ou "saldo a distribuir", porque a entrada deixaria de espelhar o
 documento.
 
-**D-8 — Variação nova nasce só no PubliAI, não publicada.** Quando a nota traz tamanho ou cor que a
-família não tem, a variação é criada localmente como **não publicada** e vai ao ML pelo fluxo normal
-de revisão. A importação nunca publica nada (revisão humana obrigatória). O caminho existente
-(`adicionar-variacoes-familia`) publica; a importação não o reusa como está.
-*A verificar no plano:* o push de estoque precisa ignorar SKU ausente do anúncio.
+**D-8 — Variação faltante usa os fluxos que já existem** *(revisado 2026-10-15, OK do Diego após a
+revisão do plano pelo Codex)*. Quando a nota traz tamanho ou cor que o produto não tem, o assistente não
+cria variação sozinho:
+- **produto publicado:** abre o "adicionar variação/estender grade" existente (ADR-0129, admin), que
+  publica por ação explícita do operador;
+- **produto não publicado:** orienta a editar o cadastro.
+
+Depois disso, a distribuição continua. *Rejeitado:* criar a variação "local, não publicada", porque
+`excluida_da_publicacao` não significa "fora do anúncio" (filtrá-la no push cortaria SKU ainda publicado) e
+uma variação local numa família já publicada não tem caminho até a Revisão.
 
 **D-9 — Custo documentado, custos adicionais e custo de precificação.**
 - **Custo da nota:** `vProd` mais frete, seguro, IPI, ST e outras despesas, menos o desconto. Usa os
