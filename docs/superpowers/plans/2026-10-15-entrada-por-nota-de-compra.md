@@ -395,15 +395,21 @@ declare r jsonb; r2 jsonb; v_p integer; v_m integer; v_o integer; v_custo numeri
                     {"codigo":"09310001","quantidade":5,"custo_aquisicao_unit":10,"custo_precificacao_unit":14}]}]';
 begin
   -- D-8: o M "nasceu" pelo fluxo existente já com as 20 peças e a ref da nota.
-  perform public.registrar_entrada('93000000-0000-0000-0000-000000000001', '09300002', 20, 14, 'addvar', null,
+  perform public.registrar_entrada('93000000-0000-0000-0000-000000000001', '09300002', 20, 9, 'addvar', null,
         '93000000-0000-0000-0000-000000000101', 'nfe:26261011222333000181550010000010511000030324:1:09300002');
   r := public.importar_nota_compra('93000000-0000-0000-0000-000000000001',
         '93000000-0000-0000-0000-000000000101', v_nota, v_itens);
   if (r->>'duplicada')::boolean then raise exception '1a importação veio duplicada'; end if;
   if (select estoque from public.variacoes where codigo='09300002') <> 20 then
     raise exception 'ref da nota já aplicada foi somada de novo (D-8)'; end if;
+  -- R6-M1: a entrada prévia veio com custo 9; a nota confirma 14. Custo vira 14, saldo e movimento intactos.
   if (select custo from public.variacoes where codigo='09300002') <> 14 then
     raise exception 'custo confirmado na nota não chegou ao SKU da entrada prévia (R5-I1)'; end if;
+  if (select count(*) from public.estoque_movimentos
+       where referencia_externa = 'nfe:26261011222333000181550010000010511000030324:1:09300002') <> 1
+     or (select custo_unitario from public.estoque_movimentos
+       where referencia_externa = 'nfe:26261011222333000181550010000010511000030324:1:09300002') <> 9 then
+    raise exception 'movimento original da entrada prévia foi alterado/duplicado'; end if;
   if (select array_agg(x order by x) from jsonb_array_elements_text(r->'codigos_pai') x)
      <> array['09300000','09310000'] then
     raise exception 'push precisa ir para os 2 produtos tocados: %', r; end if;
@@ -2048,6 +2054,8 @@ git commit -m "feat(adr-0181): edge desfazer-nota-compra (admin, idempotente)"
 - Modify: `supabase/functions/_shared/canais/fiscal-ml.ts:20-44` e todo chamador que monta `FamiliaFiscalPush` (`grep -rn "montarFiscalInformation\|FamiliaFiscalPush" supabase/functions --include=*.ts`)
 - Modify: `supabase/functions/_shared/produto/validar.ts` (`ProdutoEntrada.fiscal.descricaoFiscal`, `montarLinhasProduto`) + espelho `src/lib/produto-entrada.ts`
 - Modify: `supabase/functions/atualizar-fiscal-familia/processar.ts:82-88`
+- Modify: `supabase/functions/ingest-lote/index.ts:151` (o select da família anterior lê `descricao_fiscal`) e `supabase/functions/ingest-lote/verificar-fiscal.ts:33` (`resolverCamposFiscais` herda `descricao_fiscal` da família anterior no UPDATE, como já faz com os demais campos fiscais)
+- Test: `supabase/functions/ingest-lote/__tests__/` (teste existente de `resolverCamposFiscais`)
 - Modify: `src/components/estoque/use-cadastro-produto.ts:73-81` (serializador), `src/components/estoque/etapa-fiscal-form.tsx`, `src/components/estoque/dialog-fiscal-produto.tsx:69,117-125`, `src/components/configuracoes/secao-fiscal.tsx`
 - Test: `_shared/canais/__tests__/fiscal-ml.test.ts`, `atualizar-fiscal-familia/__tests__/processar.test.ts`, teste existente de `montarLinhasProduto`, `src/components/estoque/__tests__/` (serializador)
 
@@ -2082,6 +2090,10 @@ it('descricaoFiscal: ausente preserva, null limpa, texto grava com trim, >120 re
 });
 ```
 
+**R6-I1:** no teste de `resolverCamposFiscais`, a família anterior com `descricao_fiscal: 'Short masculino'`
+deve resultar em `descricao_fiscal: 'Short masculino'` na família de UPDATE. Sem herança, o próximo push
+fiscal (`update-familia-ml/processar.ts:569`) mandaria o `nome_pai` como `title`.
+
 Escrever os 4 casos acima como 4 `expect` concretos, usando o mesmo formato de captura de `update` que o
 arquivo já usa. Para o serializador do cadastro, extrair de `use-cadastro-produto.ts` a função pura
 `montarPayload` (se ainda não for exportada) e testar que `fiscal.descricaoFiscal` sai com `trim()`, e `null`
@@ -2105,6 +2117,9 @@ Expected: FAIL.
   - Espelho em `src/lib/produto-entrada.ts`.
 - `atualizar-fiscal-familia/processar.ts`: `if ('descricaoFiscal' in entrada.fiscal)`, validar e incluir no
   update. Se a chave não vier dentro de `fiscal`, não mexer.
+- `ingest-lote`: incluir `descricao_fiscal` no select da família anterior (`index.ts:151`) e na herança de
+  `resolverCamposFiscais` (`verificar-fiscal.ts:33`). A planilha não tem coluna de descrição fiscal, então o
+  UPDATE sempre herda.
 - `use-cadastro-produto.ts`: o estado `fiscal` ganha `descricaoFiscal` e o serializador inclui
   `descricaoFiscal: fiscal.descricaoFiscal.trim() || null`.
 - `etapa-fiscal-form.tsx`:
@@ -2881,7 +2896,7 @@ Para cada arquivo `_shared/*.ts` que aparecer na lista, repetir o grep pelo **no
 nada novo (dependência transitiva). Deploy da lista final **mais** estas, explícitas:
 
 ```bash
-supabase functions deploy importar-nota-compra desfazer-nota-compra atualizar-fiscal-familia cadastrar-produto adicionar-variacoes-familia sincronizar-fiscal-ml <demais da lista>
+supabase functions deploy importar-nota-compra desfazer-nota-compra atualizar-fiscal-familia cadastrar-produto adicionar-variacoes-familia ingest-lote sincronizar-fiscal-ml <demais da lista>
 supabase functions list
 ```
 Expected: cada uma `ACTIVE` com versão incrementada e `verify_jwt` preservado.
