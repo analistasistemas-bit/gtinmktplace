@@ -234,7 +234,8 @@ Simples: o primeiro cliente de Lucro Presumido espera a V2.
 - **D-3 / D-7.3:** `natureza_operacao`, `cfop_dentro_uf`, `cfop_fora_uf_nao_contribuinte`,
   `cst_pis` e `cst_cofins` deixam de ser exigidos para ligar o módulo. Motivo medido no código: da
   empresa, só `origin_type` entra no payload do ML (`_shared/canais/fiscal-ml.ts`); `regime_tributario`
-  só é lido localmente (`sincronizar-fiscal-ml`) para CSOSN×CST. No Simples o ML dispensa regras
+  só é lido localmente (`sincronizar-fiscal-ml`), para validar que a org é Simples Nacional antes
+  do push — não vai no payload. No Simples o ML dispensa regras
   tributárias (doc oficial `envio-regras-tributarias`). As colunas
   ficam (portabilidade para troca de emissor) e aparecem na tela num bloco recolhido opcional.
   "`empresa_fiscal` completa" passa a ser: CNPJ válido, razão social, IE, regime, endereço

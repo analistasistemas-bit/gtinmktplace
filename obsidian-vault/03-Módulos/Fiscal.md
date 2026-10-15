@@ -51,6 +51,11 @@ fiscal). Tudo nullable no schema; a obrigatoriedade é só do **gate de ativaç�
    as duas
 5. `emissao_a_partir_de` preenchida
 
+Emenda 2026-10-15 (ADR-0135): natureza, CFOPs e CST PIS/COFINS viram opcionais (portabilidade,
+bloco recolhido "Para trocar de emissor"); no Simples a tela pede só o Papel da empresa; Regime
+Normal mostra aviso de v2. CEP preenche endereço, UF e IBGE via ViaCEP. UF da venda dentro do
+estado vira dropdown com as 27 UFs.
+
 ## Cadastro fiscal do produto — por família, empurrado por SKU
 
 NCM, CSOSN/CST, CEST e origem fiscal **não mudam com a cor** — vivem em `familias`, não em
