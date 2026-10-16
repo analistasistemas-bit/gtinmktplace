@@ -19,15 +19,19 @@ export async function buscarVinculos(cnpjFornecedor: string): Promise<Vinculo[]>
   return (data ?? []).map((r) => ({ cprod: r.cprod, codigoPai: r.codigo_pai, fator: Number(r.fator_conversao) }));
 }
 
-/** gtin → codigo_pai[] distintos. Só GTIN válido; lotes de 200. */
+/** gtin → codigo_pai[] distintos. Só GTIN válido; lotes de 200, cada lote paginado (o PostgREST corta
+ *  em 1000 linhas e cada família de UPDATE repete o GTIN — sem paginar, um GTIN de dois produtos
+ *  podia parecer único e casar sozinho). */
 export async function produtosPorGtin(gtins: string[]): Promise<Record<string, string[]>> {
+  type Linha = { gtin: string | null; familias: { codigo_pai: string } | { codigo_pai: string }[] | null };
   const validos = [...new Set(gtins.filter(gtinValido))];
   const out: Record<string, Set<string>> = {};
   for (let i = 0; i < validos.length; i += 200) {
-    const { data, error } = await supabase.from('variacoes')
-      .select('gtin, familias!inner(codigo_pai)').in('gtin', validos.slice(i, i + 200));
-    if (error) throw new Error(error.message);
-    for (const r of (data ?? []) as unknown as Array<{ gtin: string | null; familias: { codigo_pai: string } | { codigo_pai: string }[] | null }>) {
+    const lote = validos.slice(i, i + 200);
+    const data = await buscarTodasPaginas<Linha>((de, ate) => supabase.from('variacoes')
+      .select('gtin, familias!inner(codigo_pai)').in('gtin', lote).order('id').range(de, ate) as unknown as
+      PromiseLike<{ data: Linha[] | null; error: { message: string } | null }>);
+    for (const r of data) {
       const fam = Array.isArray(r.familias) ? r.familias[0] : r.familias;
       if (r.gtin && fam?.codigo_pai) (out[r.gtin] ??= new Set()).add(fam.codigo_pai);
     }

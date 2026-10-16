@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirErroPendente, decidirIncompleto,
-  decidirRetry, detectarUP, haAtualizacaoComErro, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirErroPendente, decidirIncompleto,
+  decidirRetry, desfazerCriacao, ehNotaJaImportada, MSG_NOTA_JA_IMPORTADA, detectarUP, haAtualizacaoComErro, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
@@ -609,7 +609,7 @@ describe('aplicarEstoqueInicial', () => {
     const entrada = { orgId: 'org', familiaId: 'fam', userId: 'u', itens: [
       { codigo: '00000001', qtd: 3, custo: null }, { codigo: '00000002', qtd: 1, custo: 5 },
     ] };
-    expect(await aplicarEstoqueInicial(admin, entrada)).toEqual(['00000002: kit']);
+    expect(await aplicarEstoqueInicial(admin, entrada)).toEqual({ falhas: ['00000002: kit'], notaFechada: false });
     await aplicarEstoqueInicial(admin, entrada);
     expect(rpcArgs.map((a) => a.p_ref)).toEqual([
       'addvar:fam:00000001', 'addvar:fam:00000002', 'addvar:fam:00000001', 'addvar:fam:00000002',
@@ -804,10 +804,10 @@ describe('aplicarEstoqueInicial — refNota', () => {
     expect(rpcArgs[0].p_ref).toBe('addvar:fam:00000107');
   });
   it('falha da RPC vira falhasEstoque (não aborta)', async () => {
-    const { admin } = fakeAdmin({}, () => ({ error: { message: 'já foi importada' } }));
+    const { admin } = fakeAdmin({}, () => ({ error: { message: 'timeout' } }));
     expect(await aplicarEstoqueInicial(admin, {
       orgId: 'org', familiaId: 'fam', userId: 'u', refNota: REF, itens: [{ codigo: '00000107', qtd: 5, custo: null }],
-    })).toEqual(['00000107: já foi importada']);
+    })).toEqual({ falhas: ['00000107: timeout'], notaFechada: false });
   });
 });
 
@@ -828,6 +828,57 @@ describe('notaJaImportada', () => {
   });
 });
 
+// Resposta real da RPC quando a outra aba confirma a nota entre a checagem cedo e o lançamento.
+const ERRO_NOTA_FECHADA = {
+  code: '23514',
+  message: `registrar_entrada_nota_pendente: a nota ${CHAVE44} já foi importada; adicione o tamanho/cor sem a nota`,
+};
+
+describe('ehNotaJaImportada', () => {
+  it('exige código E texto (23514 também sai dos guards de kit)', () => {
+    expect(ehNotaJaImportada(ERRO_NOTA_FECHADA)).toBe(true);
+    expect(ehNotaJaImportada({ code: '23514', message: 'Produto tem kit vinculado ativo' })).toBe(false);
+    expect(ehNotaJaImportada({ code: 'P0001', message: 'já foi importada' })).toBe(false);
+    expect(ehNotaJaImportada(null)).toBe(false);
+  });
+});
+
+describe('nota importada durante a criação (D-8, revisão pré-merge)', () => {
+  const entrada = { orgId: 'org', familiaId: 'fam', userId: 'u', refNota: REF, itens: [{ codigo: '00000107', qtd: 5, custo: null }] };
+  it('RPC recusa por nota fechada → recusar, e o desfazer apaga o lote (cascata leva família e variações)', async () => {
+    const { admin } = fakeAdmin({}, () => ({ error: ERRO_NOTA_FECHADA }));
+    const estoque = await aplicarEstoqueInicial(admin, entrada);
+    expect(estoque.notaFechada).toBe(true);
+    expect(decidirAposEstoque(REF, estoque)).toBe('recusar_nota_importada');
+
+    const b = bancoFake({ lotes: [{ id: 'lo' }], familias: [{ id: 'fam', lote_id: 'lo' }] });
+    expect(await desfazerCriacao(b.admin, { loteId: 'lo', familiaId: 'fam', motivo: MSG_NOTA_JA_IMPORTADA })).toBe(true);
+    expect(b.apagados).toEqual(['lotes:lo']);
+  });
+  it('falha transitória com nota → publica (caminho atual: trava a linha, a confirmação aplica)', async () => {
+    const { admin } = fakeAdmin({}, () => ({ error: { code: '57014', message: 'timeout' } }));
+    expect(decidirAposEstoque(REF, await aplicarEstoqueInicial(admin, entrada))).toBe('publicar');
+  });
+  it('sem nota nunca recusa', () => {
+    expect(decidirAposEstoque(undefined, { notaFechada: true })).toBe('publicar');
+  });
+  it('DELETE falhou → família vira erro e lote vai para revisao (nenhum retry a encontra em pronto)', async () => {
+    const ops: Array<[string, string, unknown]> = [];
+    const q = (t: string) => ({
+      delete: () => ({ eq: async () => { ops.push([t, 'delete', null]); return { error: { message: 'boom' } }; } }),
+      update: (v: unknown) => ({ eq: async () => { ops.push([t, 'update', v]); return { error: null }; } }),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = { from: q } as any;
+    expect(await desfazerCriacao(admin, { loteId: 'lo', familiaId: 'fam', motivo: MSG_NOTA_JA_IMPORTADA })).toBe(false);
+    expect(ops).toEqual([
+      ['lotes', 'delete', null],
+      ['familias', 'update', { status: 'erro', erro_mensagem: MSG_NOTA_JA_IMPORTADA }],
+      ['lotes', 'update', { status: 'revisao' }],
+    ]);
+  });
+});
+
 describe('index.ts — ordem do modo nota (leitura do código)', () => {
   const src = readFileSync(resolve(process.cwd(), 'supabase/functions/adicionar-variacoes-familia/index.ts'), 'utf8');
   it('confere a nota antes de reservar código e de qualquer insert', () => {
@@ -837,6 +888,22 @@ describe('index.ts — ordem do modo nota (leitura do código)', () => {
     const alvos = [src.indexOf("rpc('proximo_codigo_produto'"), src.indexOf(".from('lotes')\n    .insert"),
       src.lastIndexOf('encadearPublicacao(req')];
     for (const a of alvos) { expect(a).toBeGreaterThan(0); expect(i).toBeLessThan(a); }
+  });
+  it('nota fechada na criação: desfaz e responde 409 ANTES de encadear a publicação', () => {
+    const decisao = src.lastIndexOf("decidirAposEstoque(refNota, estoque) === 'recusar_nota_importada'");
+    const desfaz = src.indexOf('desfazerCriacao(admin', decisao);
+    const resp409 = src.indexOf('return json({ error: MSG_NOTA_JA_IMPORTADA }, 409);', desfaz);
+    const publica = src.lastIndexOf('encadearPublicacao(req');
+    for (const a of [decisao, desfaz, resp409]) expect(a).toBeGreaterThan(0);
+    expect(decisao).toBeLessThan(desfaz);
+    expect(desfaz).toBeLessThan(resp409);
+    expect(resp409).toBeLessThan(publica);
+  });
+  it('retry ainda pronto com nota fechada: 409 antes de re-encadear', () => {
+    const guard = src.indexOf("decidirAposEstoque(mudanca?.refNota, { notaFechada }) === 'recusar_nota_importada'");
+    const reencadeia = src.indexOf("publicacaoOk = await encadearPublicacao(req");
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(reencadeia);
   });
 });
 

@@ -409,11 +409,13 @@ export async function notaJaImportada(admin: Admin, orgId: string, refNota: stri
  *  idempotente pelo índice único de `referencia_externa` — reaplicar no retry é no-op no que já
  *  entrou. Falha NÃO aborta: devolve `'<codigo>: <mensagem>'` por SKU e o operador repõe pela tela.
  *  ADR-0181 D-8: com `refNota`, a ref é a da nota (`{refNota}:{codigo}`) e a RPC é a que pega o lock
- *  da importação e recusa nota já fechada — a confirmação da nota reconhece a ref e não soma de novo. */
+ *  da importação e recusa nota já fechada — a confirmação da nota reconhece a ref e não soma de novo.
+ *  `notaFechada`: a RPC recusou porque a nota fechou depois da checagem cedo (ver `decidirAposEstoque`). */
 export async function aplicarEstoqueInicial(admin: Admin, e: {
   orgId: string; familiaId: string; userId: string; itens: ItemEstoqueInicial[]; refNota?: string;
-}): Promise<string[]> {
+}): Promise<{ falhas: string[]; notaFechada: boolean }> {
   const falhas: string[] = [];
+  let notaFechada = false;
   for (const it of e.itens) {
     const { error } = e.refNota
       ? await admin.rpc('registrar_entrada_nota_pendente', {
@@ -427,8 +429,43 @@ export async function aplicarEstoqueInicial(admin: Admin, e: {
         p_criado_por: e.userId, p_ref: `addvar:${e.familiaId}:${it.codigo}`,
       });
     if (error) falhas.push(`${it.codigo}: ${error.message}`);
+    if (e.refNota && ehNotaJaImportada(error)) notaFechada = true;
   }
-  return falhas;
+  return { falhas, notaFechada };
+}
+
+/** Recusa de `registrar_entrada_nota_pendente` por nota já registrada. Código E texto: 23514 sozinho
+ *  também sai dos guards de kit e das outras RPCs da nota. */
+export function ehNotaJaImportada(error: { code?: string; message?: string } | null | undefined): boolean {
+  return error?.code === '23514' && /já foi importada/.test(error.message ?? '');
+}
+
+export const MSG_NOTA_JA_IMPORTADA = 'Esta nota já foi importada; adicione o tamanho/cor sem a nota';
+
+/** ADR-0181 D-8: depois do lançamento do estoque, publica ou não? A nota fechou entre a checagem cedo
+ *  e o lançamento → nada publica (a confirmação da nota caiu no atalho de duplicada e não lança este
+ *  SKU — publicar mandaria saldo 0 fora da nota). Qualquer outra falha é transitória: segue publicando
+ *  e a confirmação da nota grava a ref. */
+export function decidirAposEstoque(
+  refNota: string | undefined, estoque: { notaFechada: boolean },
+): 'publicar' | 'recusar_nota_importada' {
+  return refNota && estoque.notaFechada ? 'recusar_nota_importada' : 'publicar';
+}
+
+/** Desfaz o que a criação deste request gravou: o lote é dedicado a ele, e um único DELETE leva a
+ *  família e as variações pelas cascatas `lotes → familias → variacoes` (20260527125643). Os guards
+ *  de delete de `familias` (kit vinculado/kit virtual) liberam porque a publicada `anterior` segue com
+ *  o mesmo codigo_pai. Se o DELETE falhar, a família vira 'erro' (fora do caminho `jaExistente` →
+ *  'pronto' → publicar de um retry com a mesma chave) e o lote vai para 'revisao' para ser descartado. */
+export async function desfazerCriacao(
+  admin: Admin, e: { loteId: string; familiaId: string; motivo: string },
+): Promise<boolean> {
+  const { error } = await admin.from('lotes').delete().eq('id', e.loteId);
+  if (!error) return true;
+  console.error('adicionar_variacoes_familia_desfazer_falhou', { loteId: e.loteId, erro: error.message });
+  await admin.from('familias').update({ status: 'erro', erro_mensagem: e.motivo }).eq('id', e.familiaId);
+  await admin.from('lotes').update({ status: 'revisao' }).eq('id', e.loteId);
+  return false;
 }
 
 // Colunas removidas do clone de `familias` (verificado contra 20260527125643 e as migrations

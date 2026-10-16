@@ -17,9 +17,9 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
-  notaJaImportada,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirIncompleto, decidirRetry,
+  desfazerCriacao, haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  MSG_NOTA_JA_IMPORTADA, notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
     // Família criada antes desta versão não tem `intencao` → comportamento antigo (`legado`).
     const mudanca = jaExistente.mudanca_estrutural as { novas?: string[]; intencao?: IntencaoGravada[]; refNota?: string } | null;
     let falhasEstoque: string[] = [];
+    let notaFechada = false;
     if (Array.isArray(mudanca?.intencao)) {
       const { data: persistidas, error: persErr } = await admin.from('variacoes').select('codigo')
         .eq('familia_id', jaExistente.id as string).in('codigo', mudanca.intencao.map((it) => it.codigo));
@@ -124,10 +125,18 @@ Deno.serve(async (req) => {
       if (decisao.tipo === 'reaplicar') {
         // A ref GRAVADA (igual à do corpo, conferido acima): sem ela o retry lançaria `addvar:` por
         // cima da entrada `nfe:` e a nota somaria em dobro.
-        falhasEstoque = await aplicarEstoqueInicial(admin, {
+        ({ falhas: falhasEstoque, notaFechada } = await aplicarEstoqueInicial(admin, {
           orgId, familiaId: jaExistente.id as string, userId, itens: decisao.itens, refNota: mudanca.refNota,
-        });
+        }));
       }
+    }
+    // D-8 no retry: ainda 'pronto' (nunca publicou) e a nota fechou → não publica. Sem DELETE aqui:
+    // a 1ª tentativa pode ter lançado a ref antes de a nota fechar, e o ledger a manteria órfã. Vira
+    // 'erro' (visível em Lotes, decisão humana) em vez de seguir 'pronto' a cada clique.
+    if (jaExistente.status === 'pronto' && decidirAposEstoque(mudanca?.refNota, { notaFechada }) === 'recusar_nota_importada') {
+      await admin.from('familias').update({ status: 'erro', erro_mensagem: MSG_NOTA_JA_IMPORTADA }).eq('id', jaExistente.id as string);
+      await admin.from('lotes').update({ status: 'revisao' }).eq('id', jaExistente.lote_id as string);
+      return json({ error: MSG_NOTA_JA_IMPORTADA }, 409);
     }
     let publicacaoOk = true;
     if (jaExistente.status === 'pronto') {
@@ -153,7 +162,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Falha verificando a nota de compra.' }, 500);
     }
     if (jaImportada) {
-      return json({ error: 'Esta nota já foi importada.' }, 409);
+      return json({ error: MSG_NOTA_JA_IMPORTADA }, 409);
     }
   }
 
@@ -376,13 +385,21 @@ Deno.serve(async (req) => {
     return json({ error: varErr.message }, 500);
   }
 
-  // Ledger: estoque inicial de cada cor nova (mesmo padrão de cadastrar-produto/index.ts:253-263,
-  // ref. `addvar:{familiaId}:{codigo}` própria desta feature). Falha aqui NÃO aborta — família e
-  // variações já existem; o operador vê `falhasEstoque` e repõe manualmente pela tela Estoque.
-  const falhasEstoque = await aplicarEstoqueInicial(admin, {
+  // Ledger: estoque inicial de cada cor nova (mesmo padrão de cadastrar-produto/index.ts:253-263).
+  // Sem nota: ref `addvar:{familiaId}:{codigo}`; falha NÃO aborta — o operador vê `falhasEstoque` e
+  // repõe pela tela Estoque ("Dar entrada"). Com nota (D-8): ref `{refNota}:{codigo}`; falha
+  // transitória também segue — a linha trava e a confirmação da nota aplica o estoque pela ref.
+  // Nota fechada entre a checagem cedo e aqui → desfaz este request e não publica (abaixo).
+  const estoque = await aplicarEstoqueInicial(admin, {
     orgId, familiaId, userId, refNota,
     itens: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i]!, qtd: v.estoqueInicial, custo: v.custo })),
   });
+  if (decidirAposEstoque(refNota, estoque) === 'recusar_nota_importada') {
+    await desfazerCriacao(admin, { loteId, familiaId, motivo: MSG_NOTA_JA_IMPORTADA });
+    await auditarOperacaoSuporte(admin, context, target, 'failed');
+    return json({ error: MSG_NOTA_JA_IMPORTADA }, 409);
+  }
+  const falhasEstoque = estoque.falhas;
 
   // Encadeia publicar-familias (desvio 1) — server-to-server, JWT do chamador encaminhado (a
   // edge de destino faz o próprio requireUserOrg, então autorização não é perdida no repasse).
