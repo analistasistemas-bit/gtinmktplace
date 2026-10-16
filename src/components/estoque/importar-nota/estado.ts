@@ -64,7 +64,10 @@ const soTravadas = (l: LinhaEstado[]) => l.filter((x) => x.travada);
 export const definirProduto = (e: EstadoImportacao, nItem: number, codigoPai: string) =>
   mudar(e, nItem, (d) => (d.codigoPai === codigoPai ? d
     : { ...d, codigoPai, origemVinculo: 'manual', candidatosGtin: [], distribuicao: soTravadas(d.distribuicao) }));
-export const definirFator = (e: EstadoImportacao, nItem: number, fator: number) => mudar(e, nItem, (d) => ({ ...d, fator }));
+// Fator novo muda quantidade e custo por unidade: as linhas não travadas (calculadas com o fator antigo) saem
+// e o semear recalcula o default. As travadas (já no ledger) ficam — mesma regra de definirProduto.
+export const definirFator = (e: EstadoImportacao, nItem: number, fator: number) =>
+  mudar(e, nItem, (d) => (d.fator === fator ? d : { ...d, fator, distribuicao: soTravadas(d.distribuicao) }));
 // Linhas travadas (já no ledger) são sempre preservadas com SKU e quantidade; de uma linha recebida com o
 // mesmo código só se aproveita o custo de precificação (R4-B1).
 export const definirDistribuicao = (e: EstadoImportacao, nItem: number, linhas: LinhaDistribuicao[]) =>
