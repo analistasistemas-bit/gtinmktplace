@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Entrada por nota de compra (ADR-0181, Plano 1) — implementado na branch `worktree-grill-entrada-xml-compra`, aguardando deploy/merge
+## Entrada por nota de compra (ADR-0181, Plano 1) — EM PRODUÇÃO desde 2026-10-16 (main `4c2ca2a1`)
 
 - [x] Migrations 20261015231837, 20261015233207, 20261015234006, 20261015235604, 20261016001451 aplicadas em produção.
 - [x] Edges novas `importar-nota-compra` e `desfazer-nota-compra`; `_shared/nfe/*`; diálogo de importação, lista de notas e desfazer/cancelar/reenviar estoque no `/estoque`.

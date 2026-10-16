@@ -292,4 +292,4 @@ de qualquer organização a qualquer usuário autenticado.
 Lista de notas no `/estoque`: importar XML (SEFAZ ou exportação de ERP), conciliar itens com
 famílias (vínculo de fornecedor), distribuir quantidade e custo na grade, confirmar. A edge
 `importar-nota-compra` lê o XML no servidor e lança a entrada via ledger (ref `nfe:{chave}:{nItem}:{codigo}`);
-`desfazer-nota-compra` (admin) estorna ou cancela. Implementado na branch, aguardando deploy/merge.
+`desfazer-nota-compra` (admin) estorna ou cancela. Em produção desde 2026-10-16 (main `4c2ca2a1`).

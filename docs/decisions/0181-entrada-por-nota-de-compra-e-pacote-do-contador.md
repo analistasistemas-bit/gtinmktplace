@@ -1,7 +1,7 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** aceito — implementado na branch `worktree-grill-entrada-xml-compra` (Plano 1), aguardando merge/deploy.
+**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). Plano 2 (pacote do contador) pendente.
 Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
 Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)

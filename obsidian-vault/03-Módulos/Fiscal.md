@@ -113,6 +113,6 @@ Regime Normal (`tax_rules` completo) · IE por UF (`state_registry`) · adaptado
 (a porta já existe; o segundo adaptador só quando houver cliente que recuse o Faturador do ML).
 
 **Entrada por nota de compra + pacote do contador:** desenho fechado em 2026-10-15 no
-ADR-0181 (aceito; Plano 1 implementado na branch, aguardando deploy/merge; pacote do contador no Plano 2) — descrição fiscal própria, distribuição na grade exata,
+ADR-0181 (aceito; Plano 1 em produção desde 2026-10-16; pacote do contador no Plano 2) — descrição fiscal própria, distribuição na grade exata,
 vínculo de fornecedor, custo da nota × custo real, fiscal da nota como sugestão confirmada,
 export mensal (compras, inventário, XMLs de venda ao vivo do ML).
