@@ -130,10 +130,11 @@ Deno.serve(async (req) => {
         }));
       }
     }
-    // D-8 no retry: ainda 'pronto' (nunca publicou) e a nota fechou → não publica. Sem DELETE aqui:
-    // a 1ª tentativa pode ter lançado a ref antes de a nota fechar, e o ledger a manteria órfã. Vira
-    // 'erro' (visível em Lotes, decisão humana) em vez de seguir 'pronto' a cada clique.
-    if (jaExistente.status === 'pronto' && decidirAposEstoque(mudanca?.refNota, { notaFechada }) === 'recusar_nota_importada') {
+    // D-8 no retry: nunca publicou ('pronto', ou 'erro' deixado por este mesmo guard/`desfazerCriacao`
+    // num clique anterior com a mesma chave) e a nota fechou → não publica e responde 409, senão o
+    // 200 + `falhasEstoque` travaria a linha. Sem DELETE aqui: a 1ª tentativa pode ter lançado a ref
+    // antes de a nota fechar, e o ledger a manteria órfã. Vira 'erro' (visível em Lotes, decisão humana).
+    if ((jaExistente.status === 'pronto' || jaExistente.status === 'erro') && decidirAposEstoque(mudanca?.refNota, { notaFechada }) === 'recusar_nota_importada') {
       await admin.from('familias').update({ status: 'erro', erro_mensagem: MSG_NOTA_JA_IMPORTADA }).eq('id', jaExistente.id as string);
       await admin.from('lotes').update({ status: 'revisao' }).eq('id', jaExistente.lote_id as string);
       return json({ error: MSG_NOTA_JA_IMPORTADA }, 409);

@@ -904,6 +904,8 @@ describe('index.ts — ordem do modo nota (leitura do código)', () => {
     const reencadeia = src.indexOf("publicacaoOk = await encadearPublicacao(req");
     expect(guard).toBeGreaterThan(0);
     expect(guard).toBeLessThan(reencadeia);
+    // 2º clique (mesma chave) acha a família em 'erro' deixada pelo 1º: também 409, não 200 que trava a linha.
+    expect(src.slice(guard - 90, guard)).toContain("(jaExistente.status === 'pronto' || jaExistente.status === 'erro') &&");
   });
 });
 
