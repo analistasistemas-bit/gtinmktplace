@@ -497,6 +497,11 @@ export default function DetalheFinanceiro() {
 
   const markupTotal = totaisFiltrados.markup;
 
+  // Com linhas marcadas, o export leva só elas (na ordem da tela); sem marcação, o filtro inteiro.
+  const pedidosExport = selecionadosVisiveis.length > 0
+    ? pedidosOrdenados.filter((p) => selecionados.has(p.chave))
+    : pedidosOrdenados;
+
   return (
     <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
@@ -509,11 +514,11 @@ export default function DetalheFinanceiro() {
             <BotaoExportar
               temExpansao
               temKpis
-              totalLinhas={pedidosOrdenados.length}
+              totalLinhas={pedidosExport.length}
               montarReport={(config) =>
                 buildFinanceiroDetalheReport({
-                  pedidos: pedidosOrdenados,
-                  totais: totaisFiltrados,
+                  pedidos: pedidosExport,
+                  totais: selecionadosVisiveis.length > 0 ? totaisFinanceiro(pedidosExport) : totaisFiltrados,
                   filtroLib,
                   periodo,
                   config,
