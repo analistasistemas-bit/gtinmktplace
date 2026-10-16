@@ -20,6 +20,16 @@ Codex 4 rodadas). O executor lê a spec inteira antes da sua task. Toda regra ci
 - Migrations só por `supabase migration new <nome>`. **Nada de `supabase db push` até o Diego pedir o deploy** (Task 9).
   Prova de SQL: `python3 scripts/teste-sql-desfeito.py supabase/tests/<t>.sql <migrations…>` (transação desfeita em
   produção). Sucesso = `TESTE_OK`. Rodar também **sem** a migration nova, para provar o vermelho.
+- `npm run db:check` **antes do deploy** (Codex plano r1): vale verde se as únicas divergências listadas forem as
+  migrations novas desta branch, só do lado local. Qualquer outra divergência bloqueia. Depois da Task 9, tem de dar
+  "alinhadas". Nunca usar `db push` para satisfazer o check.
+- Testes SQL rodam dentro de `BEGIN … ROLLBACK` (`scripts/teste-sql-desfeito.py:42`). Nada que faça `COMMIT` (a procedure)
+  é chamado neles: os testes usam a função por org da Task 4. O commit da procedure só se prova pelo job real (Task 9).
+  Não mexer no `BEGIN` do runner.
+- `custo_medio` sai **nulo** quando `qtd_valorizada = 0` (o `c` residual do replay não é exposto); `valor_total = 0.00`.
+- Referências fora do repo: memória `~/.claude/projects/-Users-diego-Desktop-IA-Anuncios-MktPlace/memory/project_entrada_nota_compra.md`
+  (procedimento da org de teste + VALIDATION); skills `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/skills/docs-update-checklist/SKILL.md`
+  e `…/.claude/skills/graphify-update-maintenance/SKILL.md` (ler o SKILL.md e seguir).
 - Repo público: fixtures com CNPJ `11222333000181` / `11444777000161`. Nenhum dado real de cliente.
 - Org de teste SQL no padrão de `supabase/tests/estoque_rpc_tamanho.sql` (organizations → auth.users → profiles → lotes →
   familias → variacoes). IDs fixos com prefixo `93…`. `now()` é fixo na transação: famílias e movimentos que precisam de
@@ -88,7 +98,12 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 
 - [ ] **Step 1:** Medir e registrar:
   - (a) `select max(n) from (select org_id, count(*) n from estoque_movimentos group by 1) t` e o mesmo para variações
-    (volume sintético da Task 3);
+    (volume sintético da Task 3), mais `select count(*) from estoque_movimentos` (custo do backfill);
+  - (a2) inspeção de código, sem banco: listar todo caminho que insere `variacoes` com `estoque ≠ 0` ou grava
+    `variacoes.estoque` fora das 4 RPCs (`ingest-lote/index.ts:345-416`, `adicionar-variacoes-familia/index.ts:362-380`,
+    `cadastrar-produto`, `criar-kit-vinculado`, demais por `grep -rn "estoque" supabase/functions --include=*.ts`).
+    Classificar cada um como marco (lote 'planilha'), contínuo (clone) ou saldo 0 + ledger, e confirmar que as variações de
+    uma família entram num único insert (spec §Universo de SKUs);
   - (b) códigos (org anonimizada como `org-1..n`) com movimento `nfe:` e qualquer outro movimento: quantos são (corte da
     Task 3);
   - (c) transações com o mesmo código em mais de um movimento `nfe:` com o mesmo `criado_em`;
@@ -117,11 +132,22 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     valor_total numeric(14,2), marcas text[])`. Marcas possíveis: `sem_nota` (qtd_sem_nota > 0), `historico_incompleto`,
     `ncm_ausente`, `saldo_negativo`.
 
-- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_calculo.sql`. Cenários com valores exatos. "Nota" = linhas em
-  `notas_compra` (status 'importada'), `notas_compra_itens` e `notas_compra_distribuicao`, mais
-  `registrar_entrada(org, codigo, q, null, 'NF', null, user, 'nfe:{chave}:{n_item}:{codigo}')`. "Venda" = `baixar_estoque`.
-  "Planilha N" = família nova em lote `origem 'planilha'` com a variação já com `estoque = N`. A tabela abaixo usa a
-  saída de `inventario_calcular`.
+- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_calculo.sql`. Cenários com valores exatos. Montagem (assinaturas
+  reais):
+  - "Nota" = linhas em `notas_compra` (status 'importada'), `notas_compra_itens` e `notas_compra_distribuicao`, mais
+    `registrar_entrada(org, codigo, q, null, 'NF', null, user, 'nfe:{chave}:{n_item}:{codigo}')`;
+  - "Venda" = `baixar_estoque(org, codigo, qtd, canal, ref)`;
+  - "Desfazer" = `desfazer_nota_compra(org, user, nota_id, 'desfeita')`;
+  - "Pendente" = `registrar_entrada_nota_pendente(org, chave, codigo, qtd, custo, doc, user, ref)`, chamada **antes** de
+    existir a linha em `notas_compra`;
+  - "Planilha N" = família nova em lote `origem 'planilha'` com a variação já com `estoque = N`;
+  - "Clone" = família nova em lote `'manual'` com `operacao = 'UPDATE'` (o guard só deixa copiar saldo assim,
+    `20260820143736_guard_estoque_update_manual.sql:35-43`);
+  - "Lacuna" (G) = `set local role estoque_rpc_executor; update variacoes set estoque = 3 …; reset role;` (o guard libera
+    só esse papel, `20260804113000…:56-60`);
+  - cada passo grava `criado_em` explícito, crescente (famílias e movimentos), por `update` depois da RPC.
+
+  A tabela abaixo usa a saída de `inventario_calcular`. "—" = nulo.
 
   | Cenário | Sequência | qtd_valorizada | qtd_sem_nota | custo_medio | valor_total | marcas contém |
   |---|---|---|---|---|---|---|
@@ -134,7 +160,8 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   | F | nota 10 @ 10 → planilha −5 → nota 10 @ 20 | 5 | 0 | 20.000000 | 100.00 | historico_incompleto |
   | G | nota 10 @ 10 → `update variacoes set estoque = 3` → venda 1 | 0 | 2 | — | 0.00 | historico_incompleto |
   | H1 | nota 10 @ 10 → exclui a família → planilha 10 (sem limpeza) | 0 | 10 | — | 0.00 | historico_incompleto |
-  | H2 | nota 10 @ 10 → exclui → cadastro manual (lote 'manual', saldo 0) + `registrar_entrada` 10 ref `cadastro:x:y` | 0 | 10 | — | 0.00 | sem_nota |
+  | H2 | nota 10 @ 10 → exclui → cadastro manual (lote 'manual', saldo 0) + `registrar_entrada` 10 ref `cadastro:x:y` | 0 | 10 | — | 0.00 | historico_incompleto, sem_nota |
+  | H1′/H2′ | H1 e H2 seguidos de `limpar_movimentos_orfaos(org)` (preserva, o código existe) | iguais a H1/H2 | | | | |
   | I | nota 10 @ 10 → clone (família nova em lote 'manual' copiando estoque 10) → venda 2 | 8 | 0 | 10.000000 | 80.00 | — |
   | J | nota 10 @ 10 + linha em `inventario_corte_backfill` com `ate_ordem` = ordem da entrada | 0 | 10 | — | 0.00 | historico_incompleto |
   | K | nota 10 @ 10 → `desfazer_nota_compra(…, 'desfeita')` | 0 | 0 | — | 0.00 | — |
@@ -146,6 +173,9 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   | Q | família com 1 variação + família mais nova do mesmo `codigo_pai` sem variação | SKU presente | | | | |
 
   Mais as asserções:
+  - em todas as linhas de todos os cenários: `qtd_valorizada ≤` soma das quantidades de nota importada do código,
+    `qtd_valorizada + qtd_sem_nota = max(quantidade_sistema, 0)`, e `custo_medio` (quando não nulo) entre o menor e o maior
+    `custo_aquisicao_unit` das notas do código;
   - `ordem` atribuída e crescente nas 4 RPCs (entrada, venda, estorno, ajuste);
   - um insert com `estoque_resultante` já preenchido também recebe `ordem`, se a Task 2 achou esse caminho;
   - `has_function_privilege('anon'|'authenticated', 'public.inventario_calcular(uuid)', 'execute') = false`;
@@ -159,11 +189,18 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 - [ ] **Step 3: Migration.**
   - `alter table estoque_movimentos add column ordem bigint`, sequência, `grant usage on sequence … to
     estoque_rpc_executor`;
-  - trigger `before update` que preenche `ordem := nextval(…)` quando `old.estoque_resultante is null and
-    new.estoque_resultante is not null and new.ordem is null` (mais `before insert` se a Task 2 mandar);
-  - backfill `ordem` por `(criado_em, id)` nas linhas existentes;
-  - `inventario_corte_backfill`, com RLS ligada e sem policy, preenchida com `max(ordem)` de cada código que tem movimento
-    `nfe:` e outro movimento (consulta (b) da Task 2);
+  - **backfill atômico** (a migration roda numa transação), nesta ordem:
+    - `lock table public.estoque_movimentos in share row exclusive mode` (bloqueia escrita, deixa leitura) — duração medida
+      pelo (a) da Task 2;
+    - `update … set ordem = s.rn from (select id, row_number() over (order by criado_em, id) rn …) s`;
+    - `select setval('public.estoque_movimentos_ordem_seq', coalesce(max(ordem), 0) + 1, false)`;
+    - preenche `inventario_corte_backfill` (RLS ligada, sem policy) com `max(ordem)` de cada código que tem movimento
+      `nfe:` e outro movimento (consulta (b) da Task 2);
+    - **só então** cria o trigger `before update` que preenche `ordem := nextval(…)` quando `old.estoque_resultante is
+      null and new.estoque_resultante is not null and new.ordem is null` (mais `before insert` se a Task 2 mandar).
+
+    Assim, nenhum movimento novo recebe ordem antiga nem cai abaixo do corte. O teste confere que `nextval` > `max(ordem)`
+    do backfill;
   - `inventario_calcular` como **uma instrução SQL** (`language sql`, CTE recursiva por SKU), implementando o pseudocódigo
     da spec §Critério de avaliação literalmente. Onde ele conta como "entrada de nota com custo": movimento com
     `referencia_externa = 'nfe:'||chave||':'||n_item||':'||codigo` e nota `importada`; `q = quantidade` da distribuição
@@ -173,7 +210,7 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 - [ ] **Step 5: Orçamento.** No mesmo teste (bloco separado), gerar volume sintético = (a) da Task 2 numa org de teste e
   rodar `explain analyze select * from inventario_calcular(org)`. Registrar o tempo em `…-medicoes.md`. Critério: **≤ 10
   s**. Acima disso, criar `index (org_id, codigo, ordem)` e medir de novo.
-- [ ] **Step 6:** `npm run db:check` verde.
+- [ ] **Step 6:** `npm run db:check` → só esta migration pendente do lado local (Global Constraints).
 - [ ] **Step 7: Commit** `feat(adr-0181): ordem do ledger e cálculo do custo médio do inventário`.
 
 ---
@@ -188,31 +225,45 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 - Consumes: `inventario_calcular(p_org)` (Task 3).
 - Produces:
   - tabelas `public.inventarios` e `public.inventarios_itens` com as colunas exatas da spec §Modelo de dados;
+  - `public.gerar_foto_inventario_org(p_org uuid, p_data_base date, p_origem text) returns text` (função, **sem
+    commit**): grava a foto de uma org e devolve `'gerada' | 'existia' | 'falhou'`. Pula a org que já tem cabeçalho
+    'aberto'/'confirmado'. Apaga e refaz a que está em 'falhou'. Erro do cálculo → `exception when others` grava o cabeçalho
+    'falhou' com `sqlerrm`. É o que os testes chamam;
+  - `public.inventario_data_base(p_agora timestamptz) returns date`;
   - `public.gerar_fotos_inventario(p_data_base date default null, p_origem text default 'cron', p_org uuid default null)`
-    (procedure);
+    (procedure): só itera as orgs elegíveis chamando `gerar_foto_inventario_org` e faz `commit` depois de cada uma;
   - `public.inventario_hoje_json(p_org uuid) returns jsonb` → `{cabecalho:{data_base, gerado_em, cnpj, inscricao_estadual,
     razao_social, status:'hoje'}, itens:[…linhas de inventario_calcular…]}`;
   - `public.inventario_foto_json(p_org uuid, p_data_base date) returns jsonb` → `null` (sem foto) ou `{cabecalho:{id,
     data_base, gerado_em, origem, status, erro, versao, cnpj, inscricao_estadual, razao_social, confirmado_em,
     confirmado_por_nome}, itens:[…todas as colunas de inventarios_itens…]}`, numa instrução só.
 
-- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_foto.sql`:
-  - **elegibilidade:** org PJ com CNPJ `11222333000181` e módulo `estoque` ganha foto; org PF, org sem módulo e org sem
-    CNPJ não ganham;
-  - **data-base:** função auxiliar `public.inventario_data_base(p_agora timestamptz) returns date` (exposta para teste):
-    `2026-12-31 23:59 -03` → `2026-12-31`; `2027-01-01 01:00 -03` → `2026-12-31`; `2026-12-31 10:00 -03` → `2025-12-31`;
-  - **idempotência:** segunda chamada não duplica; foto em 'falhou' é refeita;
-  - **falha isolada:** org com dado que faz `inventario_calcular` lançar → 'falhou' com `erro`, e a outra org ganha foto
-    'aberto';
+- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_foto.sql`. Ele nunca chama a procedure (tem `COMMIT`); usa
+  `gerar_foto_inventario_org`:
+  - **elegibilidade:** a query de orgs elegíveis da procedure fica numa view ou função `public.inventario_orgs_elegiveis()
+    returns setof uuid`, testada à parte. A org PJ com CNPJ `11222333000181` e módulo `estoque` entra; org PF, org sem
+    módulo e org sem CNPJ não entram;
+  - **data-base:** `2026-12-31 23:59 -03` → `2026-12-31`; `2027-01-01 01:00 -03` → `2026-12-31`; `2026-12-31 10:00 -03` →
+    `2025-12-31`;
+  - **idempotência:** a segunda chamada devolve `'existia'` e não duplica; foto em 'falhou' é refeita (`'gerada'`);
+  - **falha isolada:** dentro da transação do teste (desfeita no fim), `create or replace function
+    public.inventario_calcular` com uma versão que dá `raise exception` só para a org A, mantendo a assinatura → `'falhou'`
+    com `erro` na A; logo em seguida a org B → `'gerada'`. Depois recriar a versão real (ou separar em bloco próprio);
   - **família nova vazia** (Review Focus 1): o SKU continua na foto;
-  - **imutabilidade:**
-    - update de `quantidade_sistema`, `codigo`, `inventario_id` ou `org_id` → erro;
-    - update de `quantidade_contada` com cabeçalho 'confirmado' → erro;
-    - update de `qtd_final` sem a flag `publiai.inventario_confirmando` → erro;
-    - insert direto em itens → erro;
-  - **privilégios:** `has_table_privilege('authenticated','public.inventarios_itens','update|insert|delete') = false`;
-    leitura com RLS como `authenticated` da outra org → 0 linhas; `anon`/`authenticated` sem `execute` nas funções;
-  - `inventario_foto_json` de outra org → `null`; `inventario_hoje_json` traz `status 'hoje'` e as linhas.
+  - **1.200 SKUs:** `jsonb_array_length(inventario_hoje_json(org)->'itens') = 1200` e o mesmo para `inventario_foto_json`
+    (resposta escalar única, sem corte de 1000);
+  - **imutabilidade, itens:** update de cada coluna da foto (`codigo`, `codigo_pai`, `descricao`, `ncm`, `unidade`, `cor`,
+    `tamanho`, `quantidade_sistema`, `qtd_valorizada`, `qtd_sem_nota`, `custo_medio`, `valor_total`, `marcas`) e de
+    `inventario_id`/`org_id` → erro. `quantidade_contada` com cabeçalho 'confirmado' ou 'falhou' → erro. Qualquer
+    `*_final` sem a flag `publiai.inventario_confirmando` → erro. Insert direto → erro;
+  - **imutabilidade, cabeçalho:** `status` de 'aberto' para 'confirmado' sem a flag → erro; `cnpj`, `data_base`,
+    `gerado_em` → erro; qualquer update com 'confirmado' → erro;
+  - **privilégios, um por chamada:** `has_table_privilege('authenticated', t, p) = false` para `t` em (`inventarios`,
+    `inventarios_itens`, `inventario_corte_backfill`) e `p` em (`insert`, `update`, `delete`); o mesmo para `anon`, com
+    `select` incluído. Como `authenticated` da org B, `select` em `inventarios` → só a org B. `has_function_privilege` de
+    `anon`/`authenticated` em cada função nova = false. Positivo: `set local role service_role` gera e lê a foto;
+  - **duas orgs com foto na mesma data:** `inventario_foto_json(A, d)` só traz itens de A, e o de B só de B. Sem foto →
+    `null`. `inventario_hoje_json` traz `status 'hoje'` e as linhas.
 
   Termina com `TESTE_OK`.
 - [ ] **Step 2:** rodar sem a migration → falha.
@@ -223,13 +274,14 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     - o insert em itens só passa com `publiai.inventario_gerando = 'on'`, que a procedure liga com `set_config(…, true)`.
   - A procedure, em ordem:
     - resolve `p_data_base` por `inventario_data_base(now())` quando nulo;
-    - itera as orgs elegíveis (ou só `p_org`);
-    - para cada org: `begin … exception when others → grava cabeçalho 'falhou' com sqlerrm … end; commit;`;
-    - pula a org que já tem cabeçalho 'aberto'/'confirmado' e apaga e refaz a que está em 'falhou'.
+    - itera `inventario_orgs_elegiveis()` (ou só `p_org`);
+    - para cada org: `perform public.gerar_foto_inventario_org(org, data, origem); commit;`.
+
+    A procedure é a única peça sem teste SQL. O commit dela é provado pelo job real na Task 9.
   - Cron: desagenda o job `inventario-foto-31-12` por nome e agenda com a expressão da Task 2 (d) (`59 2 1 1 *` se o fuso
     for GMT), comando exatamente `call public.gerar_fotos_inventario()`.
 - [ ] **Step 4:** teste com a migration da Task 3 + esta → `TESTE_OK`.
-- [ ] **Step 5:** `npm run db:check` verde.
+- [ ] **Step 5:** `npm run db:check` → só as migrations da branch pendentes do lado local.
 - [ ] **Step 6: Commit** `feat(adr-0181): foto anual imutável do inventário`.
 
 ---
@@ -247,8 +299,8 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   - `public.confirmar_inventario(p_org uuid, p_id uuid, p_versao int, p_user uuid) returns jsonb` →
     `{produtos: [{codigo_pai text, reativar boolean}]}` (`reativar = true` quando o produto teve sobra).
 
-- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_confirmar.sql`, sobre uma foto gerada pela procedure numa org
-  de teste:
+- [ ] **Step 1: Teste vermelho** `supabase/tests/inventario_confirmar.sql`, sobre uma foto gerada por
+  `gerar_foto_inventario_org` (nunca pela procedure) numa org de teste:
   - **salvar:**
     - versão errada → erro com a mensagem exata `A contagem mudou em outra aba; recarregue.`;
     - código fora da foto → erro;
@@ -265,8 +317,9 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     - versão obsoleta → recusa;
     - cabeçalho 'falhou' → recusa;
   - **idempotência:** a segunda chamada devolve a mesma lista `produtos` e não cria movimento;
-  - **guard canônico:** família nova do código inserida entre a trava e a RPC → erro `40001` (simular como no teste do
-    desfazer);
+  - **guard canônico:** um trigger temporário `after insert on estoque_movimentos` (função em `pg_temp`, só para ref
+    `inventario:%`) insere uma família mais nova do mesmo código com 1 variação. A confirmação tem de falhar com `40001`, e
+    nenhum movimento pode sobrar (a transação aborta; conferir num bloco `begin … exception` do teste);
   - **positivo como `service_role`:** `set local role service_role; select confirmar_inventario(…)` aplica;
   - **negativo:** `anon`/`authenticated` sem `execute`; `p_id` de outra org → erro.
 
@@ -280,7 +333,7 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   - a lista de retorno vem dos movimentos `inventario:{id}:%` (falta → `reativar false`, sobra → `true`; produto com as
     duas → `true`).
 - [ ] **Step 4:** teste com as migrations das Tasks 3, 4 e 5 → `TESTE_OK`.
-- [ ] **Step 5:** `npm run db:check` verde.
+- [ ] **Step 5:** `npm run db:check` → só as migrations da branch pendentes do lado local.
 - [ ] **Step 6: Commit** `feat(adr-0181): contagem física e confirmação do inventário`.
 
 ---
@@ -304,7 +357,9 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     outra aba; recarregue.'}`;
   - `{acao:'confirmar', inventario_id, versao}` → `200 {push:'ok'|'pendente'}`;
   - não-admin em `salvar`/`confirmar` → `403`; módulo desligado → `403`; corpo inválido → `400`.
-  - Toda resposta 200 leva o header `X-Org-Id` (o card confere a org, como em `baixar.ts`).
+  - Toda resposta 200 leva `X-Org-Id` **e** `Access-Control-Expose-Headers: X-Org-Id`, como em
+    `baixar-notas-venda/index.ts:56-57`. Sem o expose, o navegador não lê o header. O card confere a org, como em
+    `baixar.ts`. O teste de `processar` confere os dois headers.
 
 - [ ] **Step 1: Testes vermelhos.**
   - `validar.test.ts`: ação desconhecida; `data_base` que não é `AAAA-12-31`; `versao` não inteira; itens com
@@ -347,17 +402,28 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     classes de `baixar.ts`);
   - `salvarContagem(id: string, versao: number, itens: ContagemItem[]): Promise<number>`;
   - `confirmarInventario(id: string, versao: number): Promise<'ok' | 'pendente'>`;
-  - `gerarRelatorioInventarioXlsx(l: LeituraInventario): Uint8Array` e `gerarRelatorioInventarioPdf(l:
-    LeituraInventario): Uint8Array`.
+  - `gerarRelatorioInventarioXlsx(l: LeituraInventario): Uint8Array`, `montarRelatorioInventarioPdf(l:
+    LeituraInventario): jsPDF` e `gerarRelatorioInventarioPdf(l: LeituraInventario): Uint8Array`;
+  - `COLUNAS_LIVRO = ['Código', 'Descrição', 'NCM', 'Unidade', 'Cor', 'Tamanho', 'Quantidade', 'Qtd. avaliada', 'Custo
+    médio unitário', 'Valor total', 'Qtd. sem nota de compra', 'Marcas']` e `COLUNAS_CONFERENCIA_INV = ['Código',
+    'Descrição', 'Sistema', 'Contada', 'Diferença', 'Justificativa', 'Marcas']`.
+  - Quantidade "final" de uma linha = `qtd_final` quando o cabeçalho é 'confirmado'; `quantidade_contada ??
+    quantidade_sistema` quando 'aberto'; `quantidade_sistema` em "hoje". Avaliada, sem nota e valor seguem a mesma regra
+    (`*_final` só na foto confirmada).
 
-- [ ] **Step 1: Testes vermelhos** (`relatorio-inventario.test.ts`, lendo o xlsx com SheetJS como
-  `relatorio-compras.test.ts`):
-  - aba "Livro" sem as linhas de quantidade final 0;
-  - aba "Conferência" com uma divergência sistema 4 → contada 0 e a justificativa, e com a linha `saldo_negativo`;
-  - totais (valor avaliado = soma de `valor_final`, ou de `valor_total` quando não confirmado; unidades sem nota);
-  - os 5 avisos fixos com o texto exato da spec;
-  - status com o texto exato dos 3 casos;
-  - CNPJ `11222333000181` no cabeçalho.
+- [ ] **Step 1: Testes vermelhos** (`relatorio-inventario.test.ts`; xlsx lido com SheetJS como em
+  `relatorio-compras.test.ts`; PDF por `montarRelatorioInventarioPdf(...).output()` como em `relatorio-pdf.test.ts`):
+  - **xlsx e PDF:**
+    - cabeçalho do Livro = `COLUNAS_LIVRO`;
+    - Livro sem as linhas de quantidade final ≤ 0;
+    - foto confirmada usa as colunas `*_final`;
+    - Conferência com a divergência sistema 4 → contada 0 e a justificativa, e com as linhas marcadas `saldo_negativo`,
+      `historico_incompleto` e `ncm_ausente`;
+    - totais: valor avaliado, unidades avaliadas, unidades sem nota;
+    - os 5 avisos fixos com o texto exato da spec;
+    - status com o texto exato dos 3 casos;
+    - CNPJ `11222333000181`;
+    - bytes do PDF começam com `%PDF`.
 
   `inventario-fonte.test.ts`: `X-Org-Id` divergente → `ErroOrgMudou`; `{vazio:true}` → `null`; 500 → lança.
 
@@ -374,6 +440,11 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 
 **Files:**
 - Modify: `src/components/estoque/pacote-contador/card-pacote-contador.tsx`
+- Modify: `src/lib/pacote-contador/tipos.ts:20-32` (campo opcional `avisos?: string[]` em `conferencia`: avisos sem selo
+  PARCIAL) e `src/lib/pacote-contador/cabecalho.ts` (`linhasConferencia` imprime `avisos` logo depois dos avisos fixos;
+  xlsx e PDF de vendas usam essa função)
+- Modify: `src/lib/pacote-contador/montar.ts` (`ultimoTrintaEUmDezembro(agora: Date): string` → `AAAA-12-31` do último
+  31/12 até agora, em America/Sao_Paulo; constante `INVENTARIO_DESDE = '2026-12-31'`)
 - Create: `src/components/estoque/pacote-contador/dialog-contagem-inventario.tsx`
 - Test: `src/components/estoque/pacote-contador/__tests__/card-pacote-contador.test.tsx` (estender),
   `__tests__/dialog-contagem-inventario.test.tsx`
@@ -388,8 +459,13 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     - mês `AAAA-12` com foto → o zip tem `inventario/`;
     - mês `AAAA-12` sem foto → zip sem `inventario/`, Conferência com "foto de 31/12 inexistente" e **sem** PARCIAL;
     - mês `AAAA-12` com erro ao ler a foto → toast de erro e nenhum `salvarArquivo`;
+    - na abertura, o card busca a foto de `ultimoTrintaEUmDezembro(agora)`;
     - foto 'aberto' → aviso "Foto de 31/12 aguardando contagem" + botão "Conferir contagem";
-    - 'falhou', ou ausente de 01/01 em diante → "Foto de 31/12 não gerada — acione o suporte.";
+    - 'falhou' → "Foto de 31/12 não gerada — acione o suporte.";
+    - ausente → a mesma frase **só se** a data-base for `>= INVENTARIO_DESDE` (em 10/2026, sem foto de 2025-12-31, não
+      aparece aviso nenhum);
+    - `avisos` com "foto de 31/12 inexistente" aparece na Conferência do xlsx **e** do PDF de vendas (teste em
+      `relatorio-xlsx.test.ts` e `relatorio-pdf.test.ts`), sem PARCIAL;
     - org trocada no meio → nada salvo.
   - **Diálogo:**
     - justificativa obrigatória quando contada ≠ sistema (o botão Confirmar desabilita);
@@ -399,9 +475,11 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
     - `push:'pendente'` → botão "Tentar de novo" que chama `confirmarInventario` de novo.
 - [ ] **Step 2:** `pnpm test -- src/components/estoque/pacote-contador` → falha.
 - [ ] **Step 3:** Implementar:
-  - a geração do pacote de dezembro chama `buscarFoto(\`${ano}-12-31\`)` antes de `montarPacote` e passa por `conferir()`;
+  - a geração do pacote de dezembro chama `buscarFoto(\`${ano}-12-31\`, org, ctl.signal)` antes de `montarPacote`, com
+    `conferir()` logo depois;
   - o botão "Inventário de hoje" usa a mesma trava `emCurso` e o mesmo `conferir()`;
-  - a linha da Conferência de vendas recebe "foto de 31/12 inexistente" (texto exato) só em dezembro;
+  - em dezembro sem foto, `vendas.conferencia.avisos = ['Foto de 31/12 inexistente — o inventário não vai neste pacote.']`
+    (texto exato);
   - a tela de contagem usa os componentes de UI já existentes em `src/components/ui/`.
 - [ ] **Step 4:** `pnpm test -- src/components/estoque/pacote-contador` → passa.
 - [ ] **Step 5: Commit** `feat(adr-0181): inventário no card do pacote do contador`.
@@ -415,19 +493,29 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
 - [ ] **Step 1:** `supabase db push`, `supabase functions deploy inventario`, conferir a versão ativa
   (`supabase functions list`). `select jobname, schedule, command from cron.job where jobname = 'inventario-foto-31-12'`
   → o comando é exatamente `call public.gerar_fotos_inventario()`.
-- [ ] **Step 2:** Org de teste descartável PJ (CNPJ `11444777000161`, módulo `estoque`) + conta VALIDATION (procedimento do
-  Plano 1, `project_entrada_nota_compra`). Montar estes 3 cenários:
-  - planilha de 5 un;
-  - nota de 10 @ R$ 10 importada pela tela;
-  - ajuste de −7.
+- [ ] **Step 2:** Org de teste descartável PJ (CNPJ `11444777000161`, módulo `estoque`) + conta VALIDATION (procedimento da
+  memória citada em Global Constraints). Dois SKUs:
+  - **SKU 1:** planilha de 5 un → nota de 10 @ R$ 10 importada pela tela → ajuste para 8 (−7);
+  - **SKU 2:** planilha de 4 un, sem nota.
 
-  Conferir: o "inventário de hoje" mostra 8 avaliadas, R$ 80,00, 0 sem nota.
-- [ ] **Step 3:** Agendar um job **temporário** do pg_cron, `call public.gerar_fotos_inventario('2026-10-16', 'manual',
-  '<org teste>')`, para daqui a 2 minutos. Conferir `cron.job_run_details` com status `succeeded` e a foto gravada. Depois
-  desagendar.
-- [ ] **Step 4:** Na tela, conferir a contagem com uma falta e uma sobra, salvar, confirmar. Conferir saldo, movimentos
-  `inventario:` e push enfileirado. Gerar um pacote com a foto (mês correspondente à data de teste, se a UI permitir; senão
-  o relatório avulso da foto via `buscarFoto`).
+  Conferir que o "inventário de hoje" baixado mostra:
+  - SKU 1: 8 avaliadas, R$ 80,00;
+  - SKU 2: 0 avaliadas, 4 sem nota.
+- [ ] **Step 3:** Agendar um job **temporário** do pg_cron, `call public.gerar_fotos_inventario('2025-12-31', 'manual',
+  '<org teste>')` (2025-12 aparece no seletor de meses em 10/2026), para daqui a 2 minutos. Conferir:
+  - `cron.job_run_details` com status `succeeded`;
+  - a foto gravada e visível de outra conexão (prova do commit).
+
+  Depois desagendar o job.
+- [ ] **Step 4:** Com o card aberto (busca a foto de 2025-12-31):
+  1. Aparece "Foto de 31/12 aguardando contagem".
+  2. Em "Conferir contagem": SKU 1 contado 6 (falta 2, justificativa) e SKU 2 contado 5 (sobra 1, justificativa). Salvar,
+     confirmar.
+  3. Conferir no banco: SKU 1 com saldo 6 e movimento `ajuste`; SKU 2 com saldo 5 e movimento `entrada` sem custo, ambos
+     com ref `inventario:{id}:{codigo}`. Conferir também 2 jobs na fila QStash `estoque-…`.
+  4. Gerar o pacote de 2025-12. O zip tem `inventario/relatorio-inventario.xlsx` e `.pdf` com "Confirmado em…" e as
+     colunas finais.
+  5. Abrir xlsx e PDF e conferir os números à mão.
 - [ ] **Step 5: Limpeza total.** Org, usuário de teste, fotos, movimentos, notas e objetos no bucket. Conferir por consulta
   que zerou.
 
@@ -446,8 +534,10 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   - `docs/project-status.md`;
   - `docs/TASKS.md`.
 
-- [ ] **Step 1:** Atualizar os docs seguindo a skill `docs-update-checklist`.
-- [ ] **Step 2:** Graphify `--update` seguindo a skill `graphify-update-maintenance`.
+- [ ] **Step 1:** Atualizar os docs listados, seguindo o mapeamento de
+  `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/skills/docs-update-checklist/SKILL.md`.
+- [ ] **Step 2:** Graphify `--update` e `python3 scripts/graphify-podar-falsos.py`, seguindo
+  `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/skills/graphify-update-maintenance/SKILL.md`.
 - [ ] **Step 3:** `pnpm preflight` → verde (colar o resumo).
 - [ ] **Step 4:** Revisão do Grok 4.7 xhigh sobre o diff da branch (rodada única), corrigir os achados, `pnpm preflight`
   de novo.
