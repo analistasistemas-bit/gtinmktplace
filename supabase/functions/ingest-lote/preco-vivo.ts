@@ -28,7 +28,8 @@ export function parsePrecosVivos(json: unknown, ids: readonly string[]): Map<str
   return out;
 }
 
-/** Blocos de 20 (limite do multiget). HTTP de erro lança — o chamador cai no snapshot. */
+/** Blocos de 20 (limite do multiget). Bloco com HTTP de erro (ex.: 429) é pulado: os itens dele
+ *  caem no snapshot sem descartar os blocos já lidos. */
 export async function lerPrecosVivosML(
   token: string, ids: readonly string[], fetchLike: typeof fetch = fetch,
 ): Promise<Map<string, PrecoVivoItem>> {
@@ -39,7 +40,10 @@ export async function lerPrecosVivosML(
     const resp = await fetchLike(`${API}${caminhoMultiget(bloco, 'id,price,variations')}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!resp.ok) throw new Error(`multiget de preços falhou (${resp.status})`);
+    if (!resp.ok) {
+      console.error(`multiget de preços falhou (${resp.status}) — ${bloco.length} itens usam o snapshot`);
+      continue;
+    }
     for (const [id, p] of parsePrecosVivos(await resp.json(), bloco)) out.set(id, p);
   }
   return out;
@@ -53,6 +57,7 @@ export function precoVivoDaVariacao(
 ): number | null {
   if (p.itemUP) return vivos.get(p.itemUP)?.price ?? null;
   if (!p.itemLegacy || p.mlVariationId == null) return null;
-  const item = vivos.get(p.itemLegacy);
-  return item?.porVariacao.get(String(p.mlVariationId)) ?? item?.price ?? null;
+  // Sem fallback para item.price: em família dividida em faixas (ADR-0078) `itemLegacy` é só a
+  // partição 0 — a variação de outra faixa não está aqui e herdaria o preço errado.
+  return vivos.get(p.itemLegacy)?.porVariacao.get(String(p.mlVariationId)) ?? null;
 }

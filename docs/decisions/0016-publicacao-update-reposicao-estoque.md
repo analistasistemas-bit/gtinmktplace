@@ -273,7 +273,9 @@ UP em "somente estoque" nem regrava), então mudança feita direto no ML depois 
 achado da revisão Codex. Falha do ML/token → usa o snapshot. Exceções: preço fixado pelo operador
 (`preco_editado_pelo_operador`, D15 do ADR-0178) continua herdando `preco_publicacao`. Variação
 sem `preco_publicado_ml` próprio (nunca foi ao anúncio, ex.: ficou fora por falta de foto) usa o
-**menor preço confirmado da família** — sem isso, uma família Legacy ficaria com dois preços
+**preço confirmado da família** quando ela tem preço único (família dividida em faixas mantém o
+próprio de cada variação; o preço vivo também só vale para a variação presente no item lido, nunca
+o `price` da partição 0) — sem isso, uma família Legacy ficaria com dois preços
 (confirmadas no preço do ML, não confirmadas no preço velho) e cairia no split/LOUD do ADR-0078;
 sem nenhum confirmado na família, mantém `preco_publicacao`. Esse fallback é só Legacy: em UP o
 preço é por SKU (ADR-0160) e o SKU sem confirmação mantém o próprio. A cor casada herda ainda o próprio

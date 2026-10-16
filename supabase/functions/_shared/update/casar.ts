@@ -64,7 +64,10 @@ export function casarVariacoesUpdate(
     .map((a) => a.preco_publicado_ml)
     .filter((p): p is number | string => p != null)
     .map(Number);
-  const precoConfirmadoFamilia = ehLegacy && confirmados.length ? Math.min(...confirmados) : null;
+  // Só com preço único: família dividida em faixas (ADR-0078) tem confirmados divergentes e o
+  // menor seria o preço de outra faixa — lá a variação sem confirmação mantém o próprio.
+  const precoUnico = confirmados.length > 0 && confirmados.every((p) => p === confirmados[0]);
+  const precoConfirmadoFamilia = ehLegacy && precoUnico ? confirmados[0] : null;
 
   const herdados: Record<string, Herdado> = {};
   const novasCores: string[] = [];

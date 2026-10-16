@@ -21,6 +21,9 @@ describe('precoVivoDaVariacao', () => {
   it('Legacy: preço da própria variação no anúncio', () => {
     expect(precoVivoDaVariacao(vivos, { itemLegacy: 'MLB1', mlVariationId: '222' })).toBe(21);
   });
+  it('Legacy dividido em faixas: variação que não está neste item → null (nunca o price da partição 0)', () => {
+    expect(precoVivoDaVariacao(vivos, { itemLegacy: 'MLB1', mlVariationId: '999' })).toBeNull();
+  });
   it('Legacy: variação fora do anúncio (sem ml_variation_id) não tem preço vivo', () => {
     expect(precoVivoDaVariacao(vivos, { itemLegacy: 'MLB1', mlVariationId: null })).toBeNull();
   });
@@ -33,12 +36,14 @@ describe('precoVivoDaVariacao', () => {
 });
 
 describe('lerPrecosVivosML', () => {
-  it('blocos de 20 ids e HTTP de erro lança', async () => {
+  it('blocos de 20 ids; bloco com HTTP de erro é pulado sem perder os outros', async () => {
     const ids = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
-    const fetchOk = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }));
-    await lerPrecosVivosML('tok', ids, fetchOk as unknown as typeof fetch);
-    expect(fetchOk).toHaveBeenCalledTimes(2);
-    const fetchErro = vi.fn(async () => new Response('x', { status: 500 }));
-    await expect(lerPrecosVivosML('tok', ['MLB1'], fetchErro as unknown as typeof fetch)).rejects.toThrow();
+    let chamada = 0;
+    const fetchMisto = vi.fn(async () => (++chamada === 1
+      ? new Response('x', { status: 429 })
+      : new Response(JSON.stringify([{ status_code: 200, body: { id: 'MLB20', price: 7, variations: [] } }]), { status: 200 })));
+    const m = await lerPrecosVivosML('tok', ids, fetchMisto as unknown as typeof fetch);
+    expect(fetchMisto).toHaveBeenCalledTimes(2);
+    expect(m.get('MLB20')?.price).toBe(7);
   });
 });

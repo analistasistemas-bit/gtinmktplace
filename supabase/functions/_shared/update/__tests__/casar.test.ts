@@ -28,6 +28,14 @@ describe('casarVariacoesUpdate', () => {
     expect(r.herdados['00000102'].preco_publicacao).toBe(19);
     expect(r.herdados['00000102'].preco_publicado_ml).toBe(null);
   });
+  it('Legacy dividido em faixas (confirmados divergentes): sem confirmação mantém o próprio preço', () => {
+    const r = casarVariacoesUpdate([{ codigo: '00000101' }, { codigo: '00000102' }, { codigo: '00000103' }], [
+      { ...anteriores[0], preco_publicacao: 10, preco_publicado_ml: 10 },
+      { ...anteriores[1], preco_publicacao: 12, preco_publicado_ml: 12 },
+      { ...anteriores[1], codigo: '00000103', ml_variation_id: null, preco_publicacao: 12, preco_publicado_ml: null },
+    ]);
+    expect(r.herdados['00000103'].preco_publicacao).toBe(12);
+  });
   it('UP (sem ml_variation_id): SKU sem confirmação mantém o próprio preço — preço é por SKU (ADR-0160)', () => {
     const r = casarVariacoesUpdate([{ codigo: '00000101' }, { codigo: '00000102' }], [
       { ...anteriores[0], ml_variation_id: null, preco_publicacao: 19, preco_publicado_ml: 19 },
