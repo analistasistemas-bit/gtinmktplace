@@ -15,7 +15,7 @@ import {
   buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosPorGtin, statusDaNota,
 } from '@/lib/notas-compra';
 import { lerNfe } from '../../../../supabase/functions/_shared/nfe/ler-nfe.ts';
-import { definirProduto, estadoInicial, payload, pendencias, podeAvancarEtapa, recusaInicial, type EstadoImportacao } from './estado';
+import { definirProduto, estadoInicial, payload, pendencias, motivoBloqueioEtapa, recusaInicial, type EstadoImportacao } from './estado';
 import { prefillCadastro } from './prefill-cadastro';
 import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
@@ -111,7 +111,8 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   });
 
   const semPendencias = !!e && pendencias(e).length === 0;
-  const podeAvancar = etapa === 0 ? !!e && !recusa : !!e && podeAvancarEtapa(e, etapa);
+  const bloqueio = e && etapa > 0 ? motivoBloqueioEtapa(e, etapa) : null;
+  const podeAvancar = etapa === 0 ? !!e && !recusa : !!e && !bloqueio;
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o && !confirmar.isPending) onFechar(); }}>
@@ -137,6 +138,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
         </div>
 
         <DialogFooter>
+          {etapa < 3 && bloqueio && <p className="mr-auto self-center text-sm text-muted-foreground">{bloqueio}</p>}
           {etapa > 0 && <Button variant="outline" onClick={() => setEtapa(etapa - 1)} disabled={confirmar.isPending}>Voltar</Button>}
           {etapa < 3 ? (
             <Button onClick={() => setEtapa(etapa + 1)} disabled={!podeAvancar}>Avançar</Button>

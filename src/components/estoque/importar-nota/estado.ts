@@ -112,14 +112,21 @@ export function pendencias(e: EstadoImportacao): Array<{ nItem: number; erro: st
   return out;
 }
 
-/** Trava do "Avançar": Produtos exige produto e fator válidos; Distribuição exige a soma exata (D-2). */
-export function podeAvancarEtapa(e: EstadoImportacao, etapa: number): boolean {
+/** Por que o "Avançar" está travado (null = livre). Produtos exige produto e fator válidos; Distribuição,
+ *  a soma exata (D-2). O texto vai para o rodapé — a trava nunca fica muda. */
+export function motivoBloqueioEtapa(e: EstadoImportacao, etapa: number): string | null {
   if (etapa === 1) {
-    return e.decisoes.every((d) => !!d.codigoPai
-      && quantidadeEmEstoque(e.itens.find((i) => i.nItem === d.nItem)!.qCom, d.fator).ok);
+    for (const d of e.decisoes) {
+      if (!d.codigoPai) return `Item ${d.nItem}: escolha ou cadastre o produto.`;
+      const q = quantidadeEmEstoque(e.itens.find((i) => i.nItem === d.nItem)!.qCom, d.fator);
+      if (!q.ok) return `Item ${d.nItem}: ${q.erro}`;
+    }
   }
-  if (etapa === 2) return pendencias(e).every((p) => p.nItem === 0);
-  return true;
+  if (etapa === 2) {
+    const p = pendencias(e).find((x) => x.nItem !== 0);
+    if (p) return `Item ${p.nItem}: ${p.erro}`;
+  }
+  return null;
 }
 
 export function payload(e: EstadoImportacao): { xml: string; decisoes: DecisaoImportacao[]; aceitarDivergenciaTotal: boolean } {

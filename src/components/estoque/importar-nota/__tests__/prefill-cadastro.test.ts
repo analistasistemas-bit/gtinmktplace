@@ -31,5 +31,7 @@ describe('prefillCadastro', () => {
     expect(prefillCadastro({ ...item, uCom: ' pc ' }, nota, 1).unidade).toBe('PC');
     expect(prefillCadastro({ ...item, uCom: 'CX' }, nota, 12)).not.toHaveProperty('unidade');
     expect(prefillCadastro({ ...item, uCom: 'XPTO' }, nota, 1)).not.toHaveProperty('unidade');
+    expect(prefillCadastro({ ...item, uCom: 'CX' }, nota, 1)).not.toHaveProperty('unidade');
+    expect(prefillCadastro({ ...item, uCom: 'KG' }, nota, 1).unidade).toBe('KG');
   });
 });

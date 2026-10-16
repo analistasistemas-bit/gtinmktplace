@@ -9,13 +9,17 @@ import type { ItemConciliado, NotaCompraLida } from '../../../../supabase/functi
 import type { CadastroInicial } from '@/components/estoque/dialog-cadastro-produto';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 
+const EMBALAGENS = new Set(['CX', 'PCT', 'KIT', 'SC']);
+
 export function prefillCadastro(item: ItemConciliado, nota: NotaCompraLida, fator: number): CadastroInicial {
   const texto = limparDescricaoFornecedor(item.xProd);
   const custo = Math.round(custoAquisicaoUnit(item, fator) * 100) / 100;
   const origem = origemSugerida(item.orig);
-  // Com fator ≠ 1 a unidade do estoque não é a da nota (CX de 12 → UN). Fora das fiscais: default UN.
+  // Só unidade de item avulso. Embalagem (CX/PCT/KIT/SC) costuma virar fator > 1 depois do cadastro — e a
+  // unidade gravada não acompanha o fator —, então fica no default UN. Fator ≠ 1 idem (CX de 12 → UN).
   const ucom = item.uCom.trim().toUpperCase();
-  const unidade = fator === 1 && (UNIDADES_FISCAIS as readonly string[]).includes(ucom) ? ucom : undefined;
+  const avulsa = (UNIDADES_FISCAIS as readonly string[]).includes(ucom) && !EMBALAGENS.has(ucom);
+  const unidade = fator === 1 && avulsa ? ucom : undefined;
   return {
     nomePai: texto,
     descricaoFiscal: texto,
