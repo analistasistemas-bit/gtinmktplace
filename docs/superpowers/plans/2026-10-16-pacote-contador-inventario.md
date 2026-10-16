@@ -271,7 +271,9 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   - Tabelas, FK composta, `unique (org_id, data_base)`, RLS `select` por `(select current_org_id())`.
   - Triggers de imutabilidade:
     - a flag de transação é `current_setting('publiai.inventario_confirmando', true) = 'on'`;
-    - o insert em itens só passa com `publiai.inventario_gerando = 'on'`, que a procedure liga com `set_config(…, true)`.
+    - o insert em itens só passa com `publiai.inventario_gerando = 'on'`, que **`gerar_foto_inventario_org`** liga com
+      `set_config(…, true)` antes de inserir os itens e desliga logo depois (Codex plano r2: os testes chamam a função
+      direto).
   - A procedure, em ordem:
     - resolve `p_data_base` por `inventario_data_base(now())` quando nulo;
     - itera `inventario_orgs_elegiveis()` (ou só `p_org`);
@@ -407,9 +409,11 @@ com o `SUPABASE_ACCESS_TOKEN` de `.env.local` (mesmo token de `scripts/teste-sql
   - `COLUNAS_LIVRO = ['Código', 'Descrição', 'NCM', 'Unidade', 'Cor', 'Tamanho', 'Quantidade', 'Qtd. avaliada', 'Custo
     médio unitário', 'Valor total', 'Qtd. sem nota de compra', 'Marcas']` e `COLUNAS_CONFERENCIA_INV = ['Código',
     'Descrição', 'Sistema', 'Contada', 'Diferença', 'Justificativa', 'Marcas']`.
-  - Quantidade "final" de uma linha = `qtd_final` quando o cabeçalho é 'confirmado'; `quantidade_contada ??
-    quantidade_sistema` quando 'aberto'; `quantidade_sistema` em "hoje". Avaliada, sem nota e valor seguem a mesma regra
-    (`*_final` só na foto confirmada).
+  - Valores do Livro (quantidade, avaliada, sem nota, valor): foto 'confirmado' → colunas `*_final`; foto 'aberto' e
+    "hoje" → colunas da foto/cálculo (`quantidade_sistema`, `qtd_valorizada`, `qtd_sem_nota`, `valor_total`). A contagem
+    em andamento (aberto) aparece **só** na Conferência (sistema, contada, diferença, justificativa), nunca misturada à
+    avaliação (Codex plano r2). Teste: foto aberta com 10 avaliadas a R$ 10 e contada 7 → Livro mostra 10 / R$ 100,00, e
+    a Conferência mostra 10 → 7.
 
 - [ ] **Step 1: Testes vermelhos** (`relatorio-inventario.test.ts`; xlsx lido com SheetJS como em
   `relatorio-compras.test.ts`; PDF por `montarRelatorioInventarioPdf(...).output()` como em `relatorio-pdf.test.ts`):
