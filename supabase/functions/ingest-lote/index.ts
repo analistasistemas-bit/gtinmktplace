@@ -18,7 +18,8 @@ import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-or
 import { exigirFiscalExplicito, resolverCamposFiscais } from './verificar-fiscal.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
-import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { casarVariacoesUpdate, excluidaNoUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { paginarTudo } from '../_shared/pagina.ts';
 import { precoHerdadoUpdate } from './preco-herdado.ts';
 import { donoDoPathNaOrg, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
@@ -158,6 +159,34 @@ Deno.serve(async (req) => {
     const anteriorPorPai = new Map<string, NonNullable<typeof anteriores>[number]>();
     for (const a of anteriores ?? []) {
       if (!anteriorPorPai.has(a.codigo_pai)) anteriorPorPai.set(a.codigo_pai, a);
+    }
+
+    // ADR-0088: em família User Products a cor publicada não tem ml_variation_id — o sinal é o SKU
+    // ativo em anuncios_externos_itens. Sem ele, toda cor UP sem foto no lote entrava desmarcada.
+    // Paginado (teto de 1000 linhas do PostgREST) e em blocos de raízes (tamanho da URL).
+    const skusAtivosUP = new Map<string, Set<string>>();
+    const paisUpdate = [...anteriorPorPai.keys()];
+    if (paisUpdate.length > 0) {
+      const raizes = await paginarTudo<{ id: string; codigo_pai: string }>((de, ate) => admin
+        .from('anuncios_externos').select('id, codigo_pai')
+        .eq('org_id', lote.org_id).eq('canal', 'mercado_livre').in('codigo_pai', paisUpdate)
+        .order('id').range(de, ate));
+      const paiDaRaiz = new Map(raizes.map((r) => [r.id, r.codigo_pai]));
+      const rootIds = [...paiDaRaiz.keys()];
+      for (let i = 0; i < rootIds.length; i += 100) {
+        const bloco = rootIds.slice(i, i + 100);
+        const itens = await paginarTudo<{ anuncio_externo_id: string; sku: string | null }>((de, ate) => admin
+          .from('anuncios_externos_itens').select('anuncio_externo_id, sku')
+          .eq('org_id', lote.org_id).in('anuncio_externo_id', bloco)
+          .eq('retirado', false).not('item_externo_id', 'is', null)
+          .order('id').range(de, ate));
+        for (const it of itens) {
+          const pai = paiDaRaiz.get(it.anuncio_externo_id);
+          if (!pai || !it.sku) continue;
+          if (!skusAtivosUP.has(pai)) skusAtivosUP.set(pai, new Set());
+          skusAtivosUP.get(pai)!.add(normalizarCodigo(it.sku));
+        }
+      }
     }
 
     // Casamento lote↔anúncio anterior por código (herança + mudança estrutural).
@@ -338,7 +367,12 @@ Deno.serve(async (req) => {
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
             // D15 do reajuste: a marca de preço fixado vem junto (selo na Revisão; o preço em si já é copiado).
             ...precoHerdadoUpdate(h, precoPubFamilia, v.PRECO),
-            excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0),
+            excluida_da_publicacao: excluidaNoUpdate({
+              mlVariationId: h?.ml_variation_id ?? null,
+              ativaUP: skusAtivosUP.get(g.codigo_pai)?.has(codigo) ?? false,
+              temFoto: base.imagem_path != null,
+              estoque: base.estoque,
+            }),
           });
         } else {
           // CREATE: cor sem foto entra DESMARCADA (mesma política do opt-in da cor nova

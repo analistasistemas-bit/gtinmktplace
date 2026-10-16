@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { casarVariacoesUpdate } from '../casar';
+import { casarVariacoesUpdate, excluidaNoUpdate } from '../casar';
 
 const anteriores = [
   { codigo: '00000101', ml_variation_id: 'V1', cor: 'Azul', cor_origem: 'descricao', ml_picture_id: 'P1', estoque: 5, preco_publicacao: 12 },
@@ -28,5 +28,21 @@ describe('casarVariacoesUpdate', () => {
     const r = casarVariacoesUpdate([{ codigo: '00000101' }, { codigo: '00000102' }], anteriores);
     expect(r.mudancaEstrutural.novas).toEqual([]);
     expect(r.mudancaEstrutural.removidas).toEqual([]);
+  });
+});
+
+describe('excluidaNoUpdate', () => {
+  it('Legacy: cor casada (ml_variation_id) entra mesmo sem foto', () => {
+    expect(excluidaNoUpdate({ mlVariationId: 'V1', ativaUP: false, temFoto: false, estoque: 5 })).toBe(false);
+  });
+  it('UP: SKU ativo no ML entra mesmo sem foto e com ml_variation_id null (ADR-0088)', () => {
+    expect(excluidaNoUpdate({ mlVariationId: null, ativaUP: true, temFoto: false, estoque: 5 })).toBe(false);
+  });
+  it('cor nova sem foto entra desmarcada', () => {
+    expect(excluidaNoUpdate({ mlVariationId: null, ativaUP: false, temFoto: false, estoque: 5 })).toBe(true);
+  });
+  it('cor nova com foto e estoque entra marcada; sem estoque, desmarcada', () => {
+    expect(excluidaNoUpdate({ mlVariationId: null, ativaUP: false, temFoto: true, estoque: 5 })).toBe(false);
+    expect(excluidaNoUpdate({ mlVariationId: null, ativaUP: false, temFoto: true, estoque: 0 })).toBe(true);
   });
 });

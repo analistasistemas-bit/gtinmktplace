@@ -29,6 +29,20 @@ export interface ResultadoCasamento {
   mudancaEstrutural: MudancaEstrutural;
 }
 
+// Cor já no anúncio sempre entra no UPDATE. "Já no anúncio": Legacy = tem ml_variation_id;
+// User Products (ADR-0088) = SKU ativo em anuncios_externos_itens (ml_variation_id é sempre null lá —
+// sem isto toda cor UP sem foto no lote virava "nova" e saía da publicação). Cor nova entra marcada
+// só com foto E estoque (zerada dorme até repor); senão desmarcada, o operador reinclui na Revisão.
+export function excluidaNoUpdate(p: {
+  mlVariationId: string | null;
+  ativaUP: boolean;
+  temFoto: boolean;
+  estoque: number;
+}): boolean {
+  if (p.mlVariationId != null || p.ativaUP) return false;
+  return !(p.temFoto && p.estoque > 0);
+}
+
 export function casarVariacoesUpdate(
   novas: VarNova[],
   anteriores: VarAnterior[],

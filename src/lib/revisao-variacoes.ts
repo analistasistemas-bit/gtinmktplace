@@ -1,5 +1,8 @@
 import type { Familia, Variacao } from './tipos-dominio';
 import { compararCor } from './cor';
+import { casadaNoMl } from './publicavel';
+
+// "Já no anúncio" = casadaNoMl (Legacy: ml_variation_id; User Products: jaCasadaUP, ADR-0088).
 
 // Variações exibidas na Revisão: sempre em ordem alfabética de cor. Depois de a família
 // ser publicada, mostra só as que NÃO foram para o anúncio (sem ml_variation_id) — as
@@ -12,7 +15,7 @@ export function variacoesParaRevisao(
   ocultarSemEstoque = false,
 ): Variacao[] {
   const ordenadas = [...variacoes].sort(compararCor);
-  let r = publicado ? ordenadas.filter((v) => !v.mlVariationId) : ordenadas;
+  let r = publicado ? ordenadas.filter((v) => !casadaNoMl(v)) : ordenadas;
   if (ocultarSemEstoque) r = r.filter((v) => v.estoque > 0);
   return r;
 }
@@ -30,7 +33,7 @@ export function agruparRevisaoUpdate(variacoes: Variacao[]): GruposRevisao {
   const reposicao: Variacao[] = [];
   const novas: Variacao[] = [];
   for (const v of variacoes) {
-    if (v.mlVariationId) reposicao.push(v);
+    if (casadaNoMl(v)) reposicao.push(v);
     else novas.push(v);
   }
   return { reposicao, novas };
@@ -44,7 +47,7 @@ export function agruparRevisaoUpdate(variacoes: Variacao[]): GruposRevisao {
 export function coresNovasComEstoque(familia: Familia): Variacao[] {
   if (familia.operacao !== 'UPDATE') return [];
   return familia.variacoes
-    .filter((v) => !v.mlVariationId && v.estoque > 0)
+    .filter((v) => !casadaNoMl(v) && v.estoque > 0)
     .sort(compararCor);
 }
 
