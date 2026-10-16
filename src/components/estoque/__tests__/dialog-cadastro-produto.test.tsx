@@ -1031,3 +1031,82 @@ describe('DialogCadastroProduto — irParaRevisaoAoConcluir', () => {
     expect(onFechar).not.toHaveBeenCalled();
   });
 });
+
+// ADR-0181 D-4/D-10: cadastro aberto pela importação de nota de compra.
+describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
+  const inicialNota: CadastroInicial = {
+    nomePai: 'Short masculino', descricaoFiscal: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA',
+    custo: 10, fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '' },
+    origemSugerida: 'nacional', sugestaoDaNota: true,
+  };
+  afterEach(() => {
+    modulosMock.mockReturnValue({ data: [], isLoading: false });
+    cadastrarProdutoMock.mockClear();
+  });
+
+  function renderNota(onCadastrado?: (r: { codigoPai: string }) => void) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroProduto aberto onFechar={() => {}} inicial={inicialNota} origemNota onCadastrado={onCadastrado} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('origem nasce vazia com o selo, sem estoque inicial, e o payload sai sem estoque e com origemNota', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'lote-1', familiaId: 'fam-1', codigoPai: '00000010', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000011' }],
+    });
+    const onCadastrado = vi.fn();
+    const antes = cadastrarProdutoMock.mock.calls.length;
+    const user = userEvent.setup();
+    renderNota(onCadastrado);
+
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Importado' })).not.toBeChecked();
+    expect(screen.getByText(/Sugestão da nota: Nacional — escolha para confirmar/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estoque inicial da variação 1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('10');
+    expect(screen.getByLabelText('Fornecedor')).toHaveValue('FORNECEDOR TESTE LTDA');
+
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    // Baseline, não `toHaveBeenCalledTimes(1)`: o describe anterior não limpa o histórico do mock.
+    await waitFor(() => expect(cadastrarProdutoMock.mock.calls.length).toBe(antes + 1));
+    const payload = cadastrarProdutoMock.mock.calls.at(-1)![0];
+    expect(payload.origemNota).toBe(true);
+    expect(payload.origem).toBe('nacional');
+    expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
+    expect(payload.variacoes[0].custo).toBe(10);
+    expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000010' });
+  });
+
+  it('com módulo fiscal: NCM/origem NF-e prefilled, CSOSN vazio e "Conferi NCM e origem" obrigatório', async () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
+    const user = userEvent.setup();
+    renderNota();
+
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    expect(await screen.findByLabelText('NCM')).toHaveValue('62034900');
+    expect(screen.getByLabelText(/Origem fiscal/i)).toHaveValue('0');
+    expect(screen.getByLabelText('CSOSN')).toHaveValue('');
+    expect(screen.getByLabelText('Descrição na nota fiscal')).toHaveValue('Short masculino');
+    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(2);
+
+    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Conferi NCM e origem' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+});

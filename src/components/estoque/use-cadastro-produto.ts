@@ -46,6 +46,9 @@ export function montarPayload(
   // ADR-0135: só a org com o módulo fiscal preenche a etapa fiscal — sem módulo, `fiscal` fica
   // `undefined` e o payload sai byte a byte igual ao de hoje.
   fiscal?: FiscalForm,
+  // ADR-0181 D-4: cadastro a partir da nota — a CHAVE `estoqueInicial` sai do payload (o saldo
+  // entra só pela nota) e `origemNota: true` faz a edge recusar qualquer estoque e marcar a família.
+  origemNota?: boolean,
 ): ProdutoEntrada {
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
@@ -55,7 +58,7 @@ export function montarPayload(
     gtin: l.gtin.trim() || null,
     preco: numOuNull(l.preco) ?? 0,
     custo: numOuNull(l.custo),
-    estoqueInicial: numOuNull(l.estoqueInicial),
+    ...(origemNota ? {} : { estoqueInicial: numOuNull(l.estoqueInicial) }),
     pesoGramas: numOuNull(l.pesoGramas),
     alturaCm: numOuNull(l.alturaCm),
     larguraCm: numOuNull(l.larguraCm),
@@ -81,6 +84,7 @@ export function montarPayload(
         descricaoFiscal: fiscal.descricaoFiscal.trim() || null,
       },
     } : {}),
+    ...(origemNota ? { origemNota: true } : {}),
   };
 }
 
@@ -123,7 +127,7 @@ export interface CadastroProdutoApi {
 }
 
 export function useCadastroProduto(
-  { aberto, onCadastrado }: { aberto: boolean; onCadastrado?: () => void },
+  { aberto, onCadastrado }: { aberto: boolean; onCadastrado?: (r: { codigoPai: string }) => void },
 ): CadastroProdutoApi {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -237,7 +241,7 @@ export function useCadastroProduto(
     try {
       const r = await cadastrarProduto(payload);
       setResultado(r);
-      onCadastrado?.();
+      onCadastrado?.({ codigoPai: r.codigoPai });
       setChaveCadastro(crypto.randomUUID());
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       const falhasDeFoto = await subirLoteDeFotos(r, fotos);

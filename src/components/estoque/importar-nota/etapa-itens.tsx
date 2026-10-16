@@ -42,14 +42,21 @@ function SeletorProduto({ produtos, candidatos, onEscolher }: {
   );
 }
 
-export function EtapaItens({ e, setE, produtos, onCadastrarNovo }: {
+export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, carregandoTipos }: {
   e: EstadoImportacao;
   setE: (e: EstadoImportacao) => void;
   produtos: ProdutoEstoqueResumo[];
-  /** Task 10 pluga aqui o cadastro de produto novo. */
-  onCadastrarNovo?: (nItem: number) => void;
+  onCadastrarNovo?: (nItem: number, modo: 'grade' | 'simples') => void;
+  /** `undefined` = "não sei" (query em voo ou falhou) — nunca é "org sem tipo" (ADR-0166). */
+  tiposProduto?: string[];
+  carregandoTipos?: boolean;
 }) {
   const [trocando, setTrocando] = useState<Set<number>>(new Set());
+  // Grade só existe com tipo de produto habilitado: o diálogo de grade depende do tipo e a edge
+  // recusa tamanho sem tipo.
+  const [perguntando, setPerguntando] = useState<number | null>(null);
+  const comGrade = !!tiposProduto && tiposProduto.length > 0;
+  const semTipo = !!tiposProduto && tiposProduto.length === 0;
   return (
     <div className="space-y-3">
       {e.decisoes.map((d) => {
@@ -101,11 +108,25 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo }: {
                   />
                 </label>
               )}
-              {/* ponytail: Task 10 implementa o cadastro; aqui só o gancho. */}
-              <Button size="sm" variant="outline" disabled={!onCadastrarNovo} onClick={() => onCadastrarNovo?.(d.nItem)}>
+              <Button
+                size="sm" variant="outline" disabled={!onCadastrarNovo || carregandoTipos}
+                onClick={() => (comGrade ? setPerguntando(d.nItem) : onCadastrarNovo?.(d.nItem, 'simples'))}
+              >
                 Cadastrar produto novo
               </Button>
+              {semTipo && (
+                <span className="text-xs text-muted-foreground">
+                  Para cadastrar grade (tamanho), habilite roupa/calçado em Configurações.
+                </span>
+              )}
             </div>
+            {perguntando === d.nItem && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2 text-sm">
+                <span>Este produto tem tamanho/cor?</span>
+                <Button size="sm" onClick={() => { setPerguntando(null); onCadastrarNovo?.(d.nItem, 'grade'); }}>Grade</Button>
+                <Button size="sm" variant="outline" onClick={() => { setPerguntando(null); onCadastrarNovo?.(d.nItem, 'simples'); }}>Simples</Button>
+              </div>
+            )}
           </div>
         );
       })}

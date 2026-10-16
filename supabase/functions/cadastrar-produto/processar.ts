@@ -228,3 +228,13 @@ export function estoqueInicialDiverge(
     return qtd !== (v.estoqueInicial ?? 0);
   });
 }
+
+/** ADR-0181 D-4 / N-I1: produto cadastrado a partir da nota nasce com saldo 0 — o saldo entra
+ *  só pela importação da nota. Vale pelo payload (`origemNota`) E pelo modo PERSISTIDO na
+ *  família (`origem_cadastro = 'nota'`): um retry com payload alterado, sem `origemNota` e com
+ *  `estoqueInicial`, não passa pelo guard de `validarProdutoNovo` — é esta função que o trava. */
+export function aplicaEstoqueInicial(
+  p: Pick<ProdutoEntrada, 'origemNota'>, origemCadastroGravada: string | null,
+): boolean {
+  return !p.origemNota && origemCadastroGravada !== 'nota';
+}

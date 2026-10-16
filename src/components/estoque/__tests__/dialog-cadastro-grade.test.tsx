@@ -810,3 +810,55 @@ describe('DialogCadastroGrade — salvar', () => {
     await waitFor(() => expect(screen.getByText('Foto por variação')).toBeInTheDocument());
   });
 });
+
+// ADR-0181 D-4/D-10: grade aberta pela importação de nota de compra.
+describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
+  function Rota() {
+    return <span data-testid="rota">{useLocation().pathname}</span>;
+  }
+  it('origem vazia com selo, sem aba de estoque, payload sem estoque e sem navegar', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', codigoPai: '00000020', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000021' }],
+    });
+    const onCadastrado = vi.fn();
+    const onFechar = vi.fn();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/estoque']}>
+          <Rota />
+          <DialogCadastroGrade
+            aberto onFechar={onFechar} origemNota onCadastrado={onCadastrado}
+            inicial={{ nomePai: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA', custo: 10,
+              origemSugerida: 'importado', sugestaoDaNota: true, fiscal: { tributacaoIcms: '' } }}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    expect(screen.getByLabelText('Nome')).toHaveValue('Short masculino');
+    expect(screen.getByLabelText('Custo')).toHaveValue('10');
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Importado' })).not.toBeChecked();
+    expect(screen.getByText(/Sugestão da nota: Importado — escolha para confirmar/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Importado' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    expect(screen.getByRole('button', { name: 'GTIN', pressed: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estoque' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const payload = cadastrarProdutoMock.mock.calls[0][0];
+    expect(payload.origemNota).toBe(true);
+    expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
+    expect(payload.variacoes[0].custo).toBe(10);
+    await waitFor(() => expect(onFechar).toHaveBeenCalledTimes(1));
+    expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000020' });
+    expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
+  });
+});

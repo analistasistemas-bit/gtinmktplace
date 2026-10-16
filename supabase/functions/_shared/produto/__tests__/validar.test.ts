@@ -150,3 +150,29 @@ describe('montarLinhasProduto', () => {
     }
   });
 });
+
+// ADR-0181 D-4: produto cadastrado a partir da nota nasce com saldo 0 — o saldo vem só da nota.
+describe('origemNota (ADR-0181 D-4)', () => {
+  const ctx = {
+    loteId: 'lote-1', userId: 'user-1', orgId: 'org-1',
+    codigoPai: '09912345', codigos: ['09912346', '09912347'],
+    chaveCadastro: '11111111-1111-1111-1111-111111111111',
+  };
+
+  it('origemNota recusa estoqueInicial > 0', () => {
+    const r = validarProdutoNovo({ ...valido, origemNota: true,
+      variacoes: [{ ...valido.variacoes[0], estoqueInicial: 5 }] });
+    expect(r).toContainEqual({ campo: 'variacoes[0].estoqueInicial', mensagem: 'Na importação por nota o saldo entra pela nota.' });
+  });
+
+  it('origemNota sem estoque inicial (ausente ou 0) é válido', () => {
+    expect(validarProdutoNovo({ ...valido, origemNota: true,
+      variacoes: [{ ...valido.variacoes[0], estoqueInicial: undefined }, { ...valido.variacoes[1], estoqueInicial: 0 }] }))
+      .toEqual([]);
+  });
+
+  it('montarLinhasProduto grava origem_cadastro=nota só com origemNota', () => {
+    expect(montarLinhasProduto({ ...valido, origemNota: true }, ctx).familia.origem_cadastro).toBe('nota');
+    expect(montarLinhasProduto(valido, ctx).familia).not.toHaveProperty('origem_cadastro');
+  });
+});

@@ -41,7 +41,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 export function MatrizGrade({
   linhas, resolvidas, cores, tamanhos, removidas, desabilitado, bloqueadas,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
-  onAplicarMassa,
+  onAplicarMassa, semEstoqueInicial,
 }: {
   linhas: readonly LinhaGrade[];
   resolvidas: readonly LinhaResolvida[];
@@ -63,14 +63,17 @@ export function MatrizGrade({
   onRemoverCelula: (cor: string, tamanho: string) => void;
   onReincluirCelula: (cor: string, tamanho: string) => void;
   onAplicarMassa: (opts: OpcoesMassa) => void;
+  /** ADR-0181 D-4: cadastro a partir da nota — sem aba/campo de estoque inicial. */
+  semEstoqueInicial?: boolean;
 }) {
-  const [modo, setModo] = useState<ModoGrade>('estoqueInicial');
+  const modos = semEstoqueInicial ? MODOS.filter((m) => m.valor !== 'estoqueInicial') : MODOS;
+  const [modo, setModo] = useState<ModoGrade>(modos[0].valor);
   // SÓ o clientId, nunca a linha: a linha vem sempre de `linhas`, que é a fonte.
   const [detalhesDe, setDetalhesDe] = useState<string | null>(null);
   // A referência é do CONTAINER, não de célula nenhuma: o alvo é encontrado por seletor a cada
   // tecla. Guardar "célula ativa" em estado React rerenderizaria as até 60 células por tecla.
   const containerRef = useRef<HTMLDivElement>(null);
-  const def = MODOS.find((m) => m.valor === modo)!;
+  const def = modos.find((m) => m.valor === modo)!;
   // Derivado A CADA RENDER, nunca memoizado num estado: `linhas` é a fonte, e um cache aqui
   // divergiria na primeira reconciliação.
   const indice = new Map(linhas.map((l, i) => [chaveGrade(l.cor, l.tamanho), i]));
@@ -308,7 +311,7 @@ export function MatrizGrade({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={containerRef} onKeyDown={teclado} className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <SeletorDeModo modo={modo} onMudar={setModo} />
+        <SeletorDeModo modos={modos} modo={modo} onMudar={setModo} />
         <PreencherEmMassa
           escopoInicial={{ tipo: 'todos' }}
           campoInicial={modo}
@@ -318,6 +321,7 @@ export function MatrizGrade({
           gatilho="Preencher em massa"
           rotuloGatilho="Preencher em massa"
           onAplicar={onAplicarMassa}
+          semEstoqueInicial={semEstoqueInicial}
         />
       </div>
 
@@ -351,6 +355,7 @@ export function MatrizGrade({
                   gatilho={t}
                   rotuloGatilho={`Preencher em massa no tamanho ${t}`}
                   onAplicar={onAplicarMassa}
+                  semEstoqueInicial={semEstoqueInicial}
                 />
               </TableHead>
             ))}
@@ -370,6 +375,7 @@ export function MatrizGrade({
                   gatilho={cor}
                   rotuloGatilho={`Preencher em massa na cor ${cor}`}
                   onAplicar={onAplicarMassa}
+                  semEstoqueInicial={semEstoqueInicial}
                 />
               </TableHead>
               {tamanhos.map((tamanho, c) => (
@@ -425,8 +431,8 @@ export function MatrizGrade({
  *  - `data-state` E `data-active` no botão ativo: `data-active:` é o nome da classe, mas neste
  *    Tailwind ele casa com `data-state="active"` (medição do projeto; `radio-group.tsx:27` usa a
  *    mesma premissa com `data-checked:`). Emitir só um é apostar em qual — os dois custam nada. */
-function SeletorDeModo({ modo, onMudar }: {
-  modo: ModoGrade; onMudar: (m: ModoGrade) => void;
+function SeletorDeModo({ modos, modo, onMudar }: {
+  modos: typeof MODOS; modo: ModoGrade; onMudar: (m: ModoGrade) => void;
 }) {
   return (
     <div className="group/tabs" data-orientation="horizontal">
@@ -436,7 +442,7 @@ function SeletorDeModo({ modo, onMudar }: {
         role="group"
         aria-label="Modo de edição da grade"
       >
-        {MODOS.map((m) => {
+        {modos.map((m) => {
           const ativo = modo === m.valor;
           return (
             <button

@@ -489,6 +489,8 @@ export class CadastroResultadoAmbiguoError extends Error {}
 export interface ResultadoCadastro {
   loteId: string;
   familiaId: string;
+  /** ADR-0181: código do PAI gerado (ou o da família já gravada, no retry idempotente). */
+  codigoPai: string;
   /** false = produto gravado, mas o enriquecimento por IA não foi enfileirado. */
   filaOk: boolean;
   falhasEstoque: string[];

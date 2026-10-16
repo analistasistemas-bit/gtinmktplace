@@ -20,7 +20,7 @@ import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '..
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
-  estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
+  aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
   entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
@@ -106,12 +106,16 @@ Deno.serve(async (req) => {
   // rede de segurança de verdade. Um select que falhar aqui não duplica nada — cai no insert
   // normal, que se colidir é pego pelo ramo 23505 mais abaixo.
   const { data: jaCadastrado } = await admin.from('familias')
-    .select('id, lote_id, qstash_message_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+    .select('id, lote_id, qstash_message_id, codigo_pai, origem_cadastro').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
     .maybeSingle();
 
   let familiaId: string;
   let loteId: string;
   let variacoesCriadas: { id: string; codigo: string }[];
+  // ADR-0181: comum aos dois ramos — o assistente de nota vincula o item pelo código do PAI.
+  let codigoPai: string;
+  // ADR-0181 N-I1: modo do cadastro. No retry vem da família GRAVADA, nunca do payload.
+  let origemCadastro: string | null;
   // Enfileirar de novo dispara o enriquecimento por IA (OpenRouter, pago) e pode sobrescrever
   // título/descrição que o operador já tenha editado — "idempotente" precisa valer para esse
   // efeito colateral caro, não só para o estado no banco. `false` para o caminho de criação
@@ -169,6 +173,8 @@ Deno.serve(async (req) => {
     loteId = jaCadastrado.lote_id as string;
     variacoesCriadas = vars;
     jaEnfileirado = jaCadastrado.qstash_message_id != null;
+    codigoPai = jaCadastrado.codigo_pai as string;
+    origemCadastro = (jaCadastrado.origem_cadastro as string | null) ?? null;
   } else {
     // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
     // colisão falham sem deixar lote/família pela metade.
@@ -202,6 +208,8 @@ Deno.serve(async (req) => {
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : 'Falha na numeração automática.' }, 500);
     }
+    codigoPai = gerados.codigoPai;
+    origemCadastro = produto.origemNota ? 'nota' : null;
 
     // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
     const { data: aberto } = await admin.from('lotes')
@@ -302,7 +310,10 @@ Deno.serve(async (req) => {
   // o casamento por índice abaixo correto; sem a ordenação, o estoque inicial entra no SKU
   // errado, em silêncio, e alimenta markup e preço.
   const falhasEstoque: string[] = [];
+  // ADR-0181 D-4: cadastro pela nota nasce com saldo 0 — nenhuma chamada a registrar_entrada.
+  const estoqueAplicavel = aplicaEstoqueInicial(produto, origemCadastro);
   for (const [i, v] of produto.variacoes.entries()) {
+    if (!estoqueAplicavel) break;
     if (!v.estoqueInicial || v.estoqueInicial <= 0) continue;
     const codigo = variacoesCriadas[i].codigo;
     const { error } = await admin.rpc('registrar_entrada', {
@@ -338,7 +349,7 @@ Deno.serve(async (req) => {
   // Estado parcial é devolvido explicitamente, nunca escondido — a tela avisa o operador em vez
   // de deixá-lo achar que deu tudo certo.
   return json({
-    loteId, familiaId, filaOk, falhasEstoque,
+    loteId, familiaId, codigoPai, filaOk, falhasEstoque,
     variacoes: variacoesCriadas.map((v) => ({ id: v.id, codigo: v.codigo })),
   });
 });

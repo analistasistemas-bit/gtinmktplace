@@ -13,10 +13,11 @@
 // (opção A da §8.2), não bug; quem depende da cor por Vision resolve na Revisão.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { StatusPill } from '@/components/ui/status-pill';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -46,10 +47,48 @@ export interface CadastroInicial {
   descricaoPai?: string;
   variacao?: Partial<Pick<LinhaVariacao,
     'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm'>>;
+  // ADR-0181 (prefill da nota de compra — importar-nota/prefill-cadastro.ts).
+  fornecedor?: string;
+  descricaoFiscal?: string;
+  /** Custo de aquisição unitário (R$). Vale para a variação (simples) ou o cabeçalho (grade). */
+  custo?: number;
+  /** `tributacaoIcms` é sempre vazio: o CSOSN do fornecedor nunca é copiado (D-10). */
+  fiscal?: { ncm?: string; origemNfe?: number; tributacaoIcms?: '' };
+  /** SÓ o selo "Sugestão da nota" — a origem binária continua nascendo vazia (V-3). */
+  origemSugerida?: 'nacional' | 'importado';
+  /** Campos vieram da nota do fornecedor: selos + "Conferi NCM e origem" obrigatório. */
+  sugestaoDaNota?: boolean;
+}
+
+/** Número → texto do input do cadastro (vírgula decimal, lida por `parseNumeroPtBr`). */
+export function numParaInputCadastro(n: number): string {
+  return String(n).replace('.', ',');
+}
+
+/** Etapa fiscal pré-preenchida pelo `inicial`. `origemNfe` pode ser 0 — `!= null`, nunca `||`. */
+export function fiscalDoInicial(inicial: CadastroInicial | undefined): FiscalForm {
+  const f = inicial?.fiscal;
+  return {
+    ...fiscalVazio(),
+    ncm: f?.ncm ?? '',
+    origemNfe: f?.origemNfe != null ? String(f.origemNfe) : '',
+    descricaoFiscal: inicial?.descricaoFiscal ?? '',
+  };
+}
+
+/** ADR-0181 D-10: a origem binária define o imposto e nunca vem pré-escolhida — só sugerida. */
+export function SeloSugestaoOrigem({ inicial }: { inicial?: CadastroInicial }) {
+  if (!inicial?.sugestaoDaNota || !inicial.origemSugerida) return null;
+  return (
+    <StatusPill tone="info" className="w-fit">
+      <FileText className="h-3 w-3" />
+      Sugestão da nota: {inicial.origemSugerida === 'nacional' ? 'Nacional' : 'Importado'} — escolha para confirmar
+    </StatusPill>
+  );
 }
 
 export function DialogCadastroProduto({
-  aberto, onFechar, inicial, onCadastrado, irParaRevisaoAoConcluir = false,
+  aberto, onFechar, inicial, onCadastrado, irParaRevisaoAoConcluir = false, origemNota = false,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -60,11 +99,13 @@ export function DialogCadastroProduto({
   inicial?: CadastroInicial;
   /** Chamado em `salvar()` logo após o sucesso do cadastro — permite ao chamador (ex.: a linha
    *  da Viabilidade) marcar o item como já cadastrado sem esperar nova análise. */
-  onCadastrado?: () => void;
+  onCadastrado?: (r: { codigoPai: string }) => void;
   /** Cadastro + fotos sem nenhuma pendência → fecha e abre a Revisão direto, sem parar na etapa
    *  de fotos. O diálogo segue "processando" até a navegação. A Viabilidade não liga: o operador
    *  cadastra vários itens da mesma análise e não pode ser tirado da lista. */
   irParaRevisaoAoConcluir?: boolean;
+  /** ADR-0181 D-4: aberto pela importação de nota — sem estoque inicial (o saldo entra pela nota). */
+  origemNota?: boolean;
 }) {
   const navigate = useNavigate();
   const { data: modulos } = useModulosHabilitados();
@@ -91,6 +132,8 @@ export function DialogCadastroProduto({
   // ADR-0135 D-9: etapa intermediária, só existe com o módulo fiscal ativo.
   const [etapaFiscal, setEtapaFiscal] = useState(false);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+  // ADR-0181 D-10: confirmação ativa do NCM/origem vindos da nota.
+  const [conferiuFiscal, setConferiuFiscal] = useState(false);
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
@@ -104,6 +147,7 @@ export function DialogCadastroProduto({
     setTentouSalvar(false);
     setEtapaFiscal(false);
     setFiscal(fiscalVazio());
+    setConferiuFiscal(false);
   }, [aberto]);
 
   // Efeito de ABERTURA (T5) — separado do reset acima, que roda ao FECHAR e fica intocado.
@@ -113,7 +157,12 @@ export function DialogCadastroProduto({
     if (!aberto || !inicial) return;
     setNomePai(inicial.nomePai ?? '');
     setDescricaoPai(inicial.descricaoPai ?? '');
-    setLinhas([{ ...novaLinha(), ...inicial.variacao }]);
+    setFornecedor(inicial.fornecedor ?? '');
+    setLinhas([{
+      ...novaLinha(), ...inicial.variacao,
+      ...(inicial.custo != null ? { custo: numParaInputCadastro(inicial.custo) } : {}),
+    }]);
+    setFiscal(fiscalDoInicial(inicial));
   }, [aberto, inicial]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
@@ -135,7 +184,7 @@ export function DialogCadastroProduto({
           // não só o valor, quebraria `dialog-cadastro-grade.tsx` sem nenhum teste acusar.
           genero: null,
         },
-        linhas, api.chaveCadastro, fiscalAtivo ? fiscal : undefined,
+        linhas, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota,
       ),
       { capa: fotosCapa, porLinha: linhas.map((l) => l.foto) },
     );
@@ -201,6 +250,9 @@ export function DialogCadastroProduto({
             carregandoSugestao={carregandoSugestao}
             onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
             csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
+            sugestaoDaNota={!!inicial?.sugestaoDaNota}
+            conferido={conferiuFiscal}
+            onConferir={setConferiuFiscal}
           />
         ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
@@ -280,6 +332,7 @@ export function DialogCadastroProduto({
                 {!origem && (
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
+                <SeloSugestaoOrigem inicial={inicial} />
               </div>
             </div>
 
@@ -336,6 +389,7 @@ export function DialogCadastroProduto({
                     indice={i}
                     podeRemover={linhas.length > 1}
                     tentouSalvar={tentouSalvar}
+                    origemNota={origemNota}
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
                     onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
                   />
@@ -371,7 +425,7 @@ export function DialogCadastroProduto({
               <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={api.salvando}>Voltar</Button>
               <Button
                 onClick={submeter}
-                disabled={!fiscalCompleto(fiscal, origem) || api.salvando}
+                disabled={!fiscalCompleto(fiscal, origem) || (!!inicial?.sugestaoDaNota && !conferiuFiscal) || api.salvando}
               >
                 {api.salvando ? rotuloSalvando : 'Cadastrar'}
               </Button>

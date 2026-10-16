@@ -40,6 +40,9 @@ import {
 } from '@/components/estoque/etapa-fiscal-form';
 import { EtapaFotos } from '@/components/estoque/etapa-fotos';
 import {
+  SeloSugestaoOrigem, fiscalDoInicial, numParaInputCadastro, type CadastroInicial,
+} from '@/components/estoque/dialog-cadastro-produto';
+import {
   CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm,
 } from '@/components/estoque/use-cadastro-produto';
 import { cn } from '@/lib/utils';
@@ -59,9 +62,16 @@ const GENEROS: { valor: Exclude<Genero, ''>; rotulo: string }[] = [
 /** Ação destrutiva pendente de confirmação (desmarcar um eixo com dado, trocar de tipo). */
 interface Confirmacao { titulo: string; texto: string; rotulo: string; acao: () => void }
 
-export function DialogCadastroGrade({ aberto, onFechar }: {
+export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = false, onCadastrado }: {
   aberto: boolean;
   onFechar: () => void;
+  /** ADR-0181: prefill da nota — mesma semântica do `DialogCadastroProduto` (snapshot ESTÁVEL,
+   *  guardado em `useState` pelo chamador; origem binária nunca vem pré-escolhida). */
+  inicial?: CadastroInicial;
+  /** ADR-0181 D-4: aberto pela importação de nota — sem estoque inicial e sem ir para a Revisão
+   *  (o operador continua no assistente da nota). */
+  origemNota?: boolean;
+  onCadastrado?: (r: { codigoPai: string }) => void;
 }) {
   const { data: modulos } = useModulosHabilitados();
   // ADR-0181 D-10: CSOSN padrão só vira botão de sugestão na etapa fiscal.
@@ -105,8 +115,10 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   // ADR-0135 D-9: etapa intermediária, só existe com o módulo fiscal ativo.
   const [etapaFiscal, setEtapaFiscal] = useState(false);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+  // ADR-0181 D-10: confirmação ativa do NCM/origem vindos da nota.
+  const [conferiuFiscal, setConferiuFiscal] = useState(false);
 
-  const api = useCadastroProduto({ aberto });
+  const api = useCadastroProduto({ aberto, onCadastrado });
   // Alias de leitura, sem dependência de nada — movido para antes do `useEffect` de reconciliação
   // logo abaixo, que lê `resultado` na guarda central. `null` enquanto `salvando`: a tela segue na
   // grade com o sinal de processando até o lote de fotos terminar (senão o operador via a etapa de
@@ -137,7 +149,21 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setTentouSalvar(false);
     setConfirmar(null);
+    setConferiuFiscal(false);
   }, [aberto]);
+
+  // Efeito de ABERTURA (ADR-0181), separado do reset acima. `origem` nunca é tocada aqui.
+  useEffect(() => {
+    if (!aberto || !inicial) return;
+    setNomePai(inicial.nomePai ?? '');
+    setDescricaoPai(inicial.descricaoPai ?? '');
+    setFornecedor(inicial.fornecedor ?? '');
+    setCabecalho({
+      ...CABECALHO_VAZIO,
+      ...(inicial.custo != null ? { custo: numParaInputCadastro(inicial.custo) } : {}),
+    });
+    setFiscal(fiscalDoInicial(inicial));
+  }, [aberto, inicial]);
 
   // A seleção JÁ É a ação: nenhum botão "Gerar". `reconciliarGrade` é pura e devolve o diff —
   // aqui só aplicamos. Ordenar por `ordem` mantém a lista agrupada por cor mesmo depois de o
@@ -381,13 +407,14 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
     const loteId = await api.salvar(
       montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem, genero },
-        variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined,
+        variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota,
       ),
       { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
     );
     // Sem pendência (fotos, fila, estoque) → direto para a Revisão; a etapa de fotos fica só como
     // caminho de correção quando algo falhou.
-    if (loteId) { onFechar(); api.irParaRevisao(loteId); }
+    // Pela nota (ADR-0181) só fecha: navegar destruiria o assistente da importação.
+    if (loteId) { onFechar(); if (!origemNota) api.irParaRevisao(loteId); }
   }
 
   const passo0 = tipos.length > 1 && tipoEscolhido === null;
@@ -493,6 +520,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
               carregandoSugestao={carregandoSugestao}
               onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
               csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
+              sugestaoDaNota={!!inicial?.sugestaoDaNota}
+              conferido={conferiuFiscal}
+              onConferir={setConferiuFiscal}
             />
           ) : passo0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -605,6 +635,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                 {!origem && (
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
+                <SeloSugestaoOrigem inicial={inicial} />
               </div>
 
               <div className="flex flex-col gap-2">
@@ -713,6 +744,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                     onRemoverCelula={removerLinha}
                     onReincluirCelula={reincluirLinha}
                     onAplicarMassa={aplicarMassa}
+                    semEstoqueInicial={origemNota}
                   />
                 </div>
               )}
@@ -748,7 +780,10 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                 <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={api.salvando}>
                   Voltar
                 </Button>
-                <Button onClick={submeter} disabled={!fiscalCompleto(fiscal, origem) || api.salvando}>
+                <Button
+                  onClick={submeter}
+                  disabled={!fiscalCompleto(fiscal, origem) || (!!inicial?.sugestaoDaNota && !conferiuFiscal) || api.salvando}
+                >
                   {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>
               </>

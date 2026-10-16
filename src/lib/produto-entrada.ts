@@ -52,4 +52,7 @@ export interface ProdutoEntrada {
   chaveCadastro: string;
   variacoes: VariacaoEntrada[];
   fiscal?: FiscalEntrada;
+  /** ADR-0181 D-4: cadastro a partir da nota de compra — nunca leva estoque inicial (o saldo
+   *  entra pela nota; a edge recusa `estoqueInicial > 0` junto com esta flag). */
+  origemNota?: boolean;
 }

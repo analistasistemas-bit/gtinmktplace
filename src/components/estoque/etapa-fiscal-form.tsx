@@ -2,7 +2,7 @@
 // org tem o módulo fiscal): ver dialog-cadastro-produto.tsx. As regras de completude espelham
 // `camposFiscaisFaltantes` (supabase/functions/_shared/fiscal/validar.ts) para os campos que
 // este form cobre — a edge continua sendo a autoridade final (400 com `erros[]`).
-import { Loader2, Sparkles } from 'lucide-react';
+import { FileText, Loader2, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
@@ -77,8 +77,18 @@ function soDigitos(v: string, max: number): string {
   return v.replace(/\D/g, '').slice(0, max);
 }
 
+/** ADR-0181 D-10: selo dos campos que vieram da nota do fornecedor. */
+function SeloNota() {
+  return (
+    <StatusPill tone="info" className="w-fit">
+      <FileText className="h-3 w-3" /> Veio da nota do fornecedor — confira
+    </StatusPill>
+  );
+}
+
 export function EtapaFiscalForm({
   valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao, csosnPadrao,
+  sugestaoDaNota, conferido, onConferir,
 }: {
   valor: FiscalForm;
   origem: 'nacional' | 'importado' | null;
@@ -89,6 +99,11 @@ export function EtapaFiscalForm({
   /** ADR-0181 D-10: `empresa_fiscal.csosn_padrao_revenda`. Só SUGERE (botão) — nunca preenche
    *  sozinho: campo fiscal nunca entra por default silencioso. */
   csosnPadrao?: string | null;
+  /** ADR-0181 D-10: NCM e origem NF-e pré-preenchidos pela nota — selo + "Conferi" obrigatório
+   *  (o dialog trava o Cadastrar até `conferido`). */
+  sugestaoDaNota?: boolean;
+  conferido?: boolean;
+  onConferir?: (v: boolean) => void;
 }) {
   const codigosOrigem = origem ? ORIGENS_NFE_POR_ORIGEM[origem] : [];
   const sugerirCsosn = !valor.tributacaoIcms && !!csosnPadrao
@@ -113,6 +128,7 @@ export function EtapaFiscalForm({
         <span className="text-xs text-muted-foreground">
           8 dígitos — a Nomenclatura Comum do Mercosul do produto.
         </span>
+        {sugestaoDaNota && <SeloNota />}
         {/* Só afirma proveniência IA enquanto o campo está vazio ou ainda bate com a sugestão —
             uma vez que o operador digita por cima, o valor deixou de ser "da IA". */}
         {sugestaoNcm?.ncm && (!valor.ncm || valor.ncm === sugestaoNcm.ncm) && (
@@ -159,6 +175,7 @@ export function EtapaFiscalForm({
               <option key={c} value={String(c)}>{ROTULOS_ORIGEM_NFE[c]}</option>
             ))}
           </select>
+          {sugestaoDaNota && <SeloNota />}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -231,6 +248,13 @@ export function EtapaFiscalForm({
           É o texto que sai na nota de venda do Mercado Livre. Vazio = usa o nome do produto.
         </span>
       </div>
+
+      {sugestaoDaNota && (
+        <label className="flex items-center gap-2 rounded-md border border-info/40 bg-info/5 p-2 text-sm">
+          <input type="checkbox" checked={!!conferido} onChange={(e) => onConferir?.(e.target.checked)} />
+          Conferi NCM e origem<span className="text-destructive" aria-hidden="true"> *</span>
+        </label>
+      )}
     </div>
   );
 }

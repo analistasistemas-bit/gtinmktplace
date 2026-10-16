@@ -23,6 +23,7 @@ const CLASSE_SELECT =
 
 export function PreencherEmMassa({
   escopoInicial, campoInicial, cores, tamanhos, desabilitado, gatilho, rotuloGatilho, onAplicar,
+  semEstoqueInicial,
 }: {
   escopoInicial: EscopoMassa;
   /** Aba ativa da matriz. Obrigatório: um default aqui dentro faria o popover discordar da tela. */
@@ -33,7 +34,10 @@ export function PreencherEmMassa({
   gatilho: React.ReactNode;
   rotuloGatilho: string;
   onAplicar: (opts: OpcoesMassa) => void;
+  /** ADR-0181 D-4: cadastro a partir da nota — sem estoque inicial. */
+  semEstoqueInicial?: boolean;
 }) {
+  const campos = semEstoqueInicial ? CAMPOS.filter((c) => c.valor !== 'estoqueInicial') : CAMPOS;
   // `useId`, não id fixo: a Task 8 renderiza uma instância por cabeçalho (até ~36 numa grade de
   // calçado). Hoje só não colide porque o `PopoverContent` do Radix desmonta fechado — depender
   // disso é depender de detalhe de implementação de terceiro para a associação label/input.
@@ -119,7 +123,7 @@ export function PreencherEmMassa({
             value={campo}
             onChange={(e) => setCampo(e.target.value as CampoMassa)}
           >
-            {CAMPOS.map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
+            {campos.map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
           </select>
         </div>
 

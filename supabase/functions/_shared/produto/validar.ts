@@ -44,6 +44,9 @@ export interface ProdutoEntrada {
   chaveCadastro: string;
   variacoes: VariacaoEntrada[];
   fiscal?: FiscalEntrada;
+  /** ADR-0181 D-4: cadastro aberto a partir da importação de nota de compra. O saldo vem SÓ da
+   *  nota — estoque inicial aqui somaria em dobro; a família é marcada `origem_cadastro='nota'`. */
+  origemNota?: boolean;
 }
 
 export interface ErroValidacao { campo: string; mensagem: string }
@@ -130,6 +133,9 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
     if (v.estoqueInicial != null && v.estoqueInicial < 0) {
       erros.push({ campo: `variacoes[${i}].estoqueInicial`, mensagem: 'Estoque inicial não pode ser negativo.' });
     }
+    if (p.origemNota && v.estoqueInicial != null && v.estoqueInicial > 0) {
+      erros.push({ campo: `variacoes[${i}].estoqueInicial`, mensagem: 'Na importação por nota o saldo entra pela nota.' });
+    }
   });
 
   // ADR-0166: com dois eixos, o par (cor, tamanho) é a identidade do SKU. Duas linhas com o mesmo
@@ -182,6 +188,8 @@ export function montarLinhasProduto(
     genero: p.genero ?? null,
     operacao: 'CREATE',
     status: 'pendente',
+    // ADR-0181 N-I1: modo persistido — o retry desta família nunca aplica estoque inicial.
+    ...(p.origemNota ? { origem_cadastro: 'nota' } : {}),
     // ADR-0135 D-4: colunas fiscais só quando a entrada trouxe fiscal (org com módulo).
     // O regime que gerou o valor fica gravado junto (detecção de troca de regime, D-6).
     ...(p.fiscal ? {

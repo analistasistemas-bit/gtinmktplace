@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
+  aplicaEstoqueInicial, entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
   validarTamanhosDaEntrada, variacoesDivergem,
 } from '../processar.ts';
 
@@ -389,5 +389,20 @@ describe('validarTamanhosDaEntrada (ADR-0166 / R7)', () => {
     const sem = { ...comTamanho('P'), variacoes: [{ nome: 'Azul', preco: 50 }] };
     expect(validarTamanhosDaEntrada(sem, ['roupa'])).toEqual([]);
     expect(validarTamanhosDaEntrada(sem, [])).toEqual([]);
+  });
+});
+
+describe('aplicaEstoqueInicial (ADR-0181 D-4 / N-I1)', () => {
+  it('cadastro normal aplica', () => {
+    expect(aplicaEstoqueInicial({}, null)).toBe(true);
+  });
+  it('payload com origemNota não aplica', () => {
+    expect(aplicaEstoqueInicial({ origemNota: true }, null)).toBe(false);
+  });
+  // Retry com payload alterado (traz estoqueInicial e NÃO traz origemNota) sobre família gravada
+  // pela nota: o guard do validador não é alcançado — o modo persistido é quem trava, e o laço de
+  // registrar_entrada não roda nenhuma vez.
+  it('retry sobre família origem_cadastro=nota não aplica, mesmo sem origemNota no payload', () => {
+    expect(aplicaEstoqueInicial({}, 'nota')).toBe(false);
   });
 });

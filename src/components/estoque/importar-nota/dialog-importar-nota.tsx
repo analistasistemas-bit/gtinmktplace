@@ -6,13 +6,17 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
+import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
+import { DialogCadastroProduto, type CadastroInicial } from '@/components/estoque/dialog-cadastro-produto';
+import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
 import { QK } from '@/lib/queries';
 import { fetchProdutosEstoqueResumo } from '@/lib/produtos-saldo';
 import {
   buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosPorGtin, statusDaNota,
 } from '@/lib/notas-compra';
 import { lerNfe } from '../../../../supabase/functions/_shared/nfe/ler-nfe.ts';
-import { estadoInicial, payload, pendencias, recusaInicial, type EstadoImportacao } from './estado';
+import { definirProduto, estadoInicial, payload, pendencias, recusaInicial, type EstadoImportacao } from './estado';
+import { prefillCadastro } from './prefill-cadastro';
 import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
 import { EtapaDistribuicao } from './etapa-distribuicao';
@@ -20,13 +24,11 @@ import { EtapaResumo } from './etapa-resumo';
 
 const TITULOS = ['Arquivo da nota', 'Produtos', 'Distribuição', 'Resumo'];
 
-export function DialogImportarNota({ aberto, onFechar, onVerNota, onCadastrarNovo, onVariacaoFaltante }: {
+export function DialogImportarNota({ aberto, onFechar, onVerNota, onVariacaoFaltante }: {
   aberto: boolean;
   onFechar: () => void;
   /** Notas de compra (Task 12) pluga aqui o "Ver nota". */
   onVerNota?: (chave: string) => void;
-  /** Task 10. */
-  onCadastrarNovo?: (nItem: number) => void;
   /** Task 11. */
   onVariacaoFaltante?: (nItem: number, codigoPai: string) => void;
 }) {
@@ -38,6 +40,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onCadastrarNov
   const [recusa, setRecusa] = useState<Recusa | null>(null);
   const [erroLeitura, setErroLeitura] = useState<string | null>(null);
   const [lendo, setLendo] = useState(false);
+  // "Cadastrar produto novo" (ADR-0181 D-4/D-10). `inicial` é snapshot ESTÁVEL, montado no clique.
+  const [cadastro, setCadastro] = useState<{ nItem: number; modo: 'grade' | 'simples'; inicial: CadastroInicial } | null>(null);
+  const { data: tiposProduto, isLoading: carregandoTipos } = useTiposProdutoHabilitados();
 
   const { data: resumo } = useQuery({
     queryKey: QK.produtosEstoqueResumo, queryFn: fetchProdutosEstoqueResumo, enabled: aberto, staleTime: 180_000,
@@ -46,8 +51,22 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onCadastrarNov
 
   useEffect(() => {
     if (aberto) return;
-    setEtapa(0); setE(null); setRecusa(null); setErroLeitura(null); setLendo(false);
+    setEtapa(0); setE(null); setRecusa(null); setErroLeitura(null); setLendo(false); setCadastro(null);
   }, [aberto]);
+
+  function cadastrarNovo(nItem: number, modo: 'grade' | 'simples') {
+    if (!e) return;
+    const item = e.itens.find((i) => i.nItem === nItem)!;
+    const d = e.decisoes.find((x) => x.nItem === nItem)!;
+    setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator) });
+  }
+
+  function aoCadastrar(nItem: number, { codigoPai }: { codigoPai: string }) {
+    // Edge antiga (sem `codigoPai` na resposta): o produto foi gravado, mas não dá para vincular.
+    if (!codigoPai) { toast.error('Produto cadastrado, mas não foi possível vinculá-lo ao item — escolha-o na lista.'); return; }
+    setE((s) => (s ? definirProduto(s, nItem, codigoPai) : s));
+    qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
+  }
 
   async function lerArquivo(file: File) {
     setLendo(true); setE(null); setRecusa(null); setErroLeitura(null);
@@ -108,7 +127,10 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onCadastrarNov
             <EtapaArquivo e={e} setE={setE} recusa={recusa} erroLeitura={erroLeitura} lendo={lendo}
               onArquivo={lerArquivo} onVerNota={onVerNota} />
           )}
-          {etapa === 1 && e && <EtapaItens e={e} setE={setE} produtos={produtos} onCadastrarNovo={onCadastrarNovo} />}
+          {etapa === 1 && e && (
+            <EtapaItens e={e} setE={setE} produtos={produtos} onCadastrarNovo={cadastrarNovo}
+              tiposProduto={tiposProduto} carregandoTipos={carregandoTipos} />
+          )}
           {etapa === 2 && e && (
             <EtapaDistribuicao e={e} onVariacaoFaltante={onVariacaoFaltante}
               atualizar={(f) => setE((s) => (s ? f(s) : s))} />
@@ -126,6 +148,20 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onCadastrarNov
             </Button>
           )}
         </DialogFooter>
+
+        {/* DENTRO do DialogContent da importação: na árvore React do assistente, o Radix trata o
+            cadastro como camada aninhada — como irmão, um clique nele contaria como "fora" e
+            fecharia a importação (que zera o estado no fechamento). */}
+        <DialogCadastroProduto
+          aberto={cadastro?.modo === 'simples'} onFechar={() => setCadastro(null)}
+          inicial={cadastro?.modo === 'simples' ? cadastro.inicial : undefined} origemNota
+          onCadastrado={(r) => cadastro && aoCadastrar(cadastro.nItem, r)}
+        />
+        <DialogCadastroGrade
+          aberto={cadastro?.modo === 'grade'} onFechar={() => setCadastro(null)}
+          inicial={cadastro?.modo === 'grade' ? cadastro.inicial : undefined} origemNota
+          onCadastrado={(r) => cadastro && aoCadastrar(cadastro.nItem, r)}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -68,7 +68,7 @@ const LOGISTICA = [
 
 export function LinhaVariacaoForm({
   linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, nomeObrigatorio, estoqueInicialObrigatorio,
-  onMudar, onRemover,
+  origemNota, onMudar, onRemover,
 }: {
   linha: LinhaVariacao;
   indice: number;
@@ -86,6 +86,8 @@ export function LinhaVariacaoForm({
    *  do Diego: "tem campos obrigatórios pro ML e não aparece o * vermelho, ex.: estoque"). */
   nomeObrigatorio?: boolean;
   estoqueInicialObrigatorio?: boolean;
+  /** ADR-0181 D-4: cadastro a partir da nota — sem estoque inicial (o saldo entra pela nota). */
+  origemNota?: boolean;
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
@@ -166,7 +168,8 @@ export function LinhaVariacaoForm({
       </div>
 
       <div className="grid gap-2 sm:grid-cols-3">
-        {NUMERICOS.map((c) => campoTexto(c.campo, c.rotulo, { prefixo: c.prefixo }))}
+        {NUMERICOS.filter((c) => !(origemNota && c.campo === 'estoqueInicial'))
+          .map((c) => campoTexto(c.campo, c.rotulo, { prefixo: c.prefixo }))}
       </div>
       {/* Texto conferido contra `sugerir.ts:49` e `semaforo.ts:13`: o piso é comparado com o
           LÍQUIDO (após comissão, frete e imposto), não com o preço de venda, e o sistema NÃO
