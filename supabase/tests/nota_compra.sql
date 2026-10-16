@@ -166,6 +166,22 @@ begin
     raise exception 'entrada pendente de nota ainda não importada deveria aplicar';
   end if;
 
+  -- Status 'cancelada': importa outra nota e cancela; saldo volta e status fica 'cancelada'.
+  select estoque into v_o from public.variacoes where codigo='09310001';
+  r2 := public.importar_nota_compra('93000000-0000-0000-0000-000000000001',
+        '93000000-0000-0000-0000-000000000101',
+        jsonb_set(v_nota, '{chave}', '"26261011222333000181550010000010511000088881"'),
+        '[{"n_item":1,"cprod":"REF 11","xprod":"X","ncm":null,"cfop":"5102","gtin":null,"ucom":"PC","qcom":2,
+          "fator_conversao":1,"v_prod":20,"v_frete":0,"v_seg":0,"v_desc":0,"v_outro":0,"v_ipi":0,"v_st":0,
+          "rateio":{},"orig":0,"codigo_pai":"09310000",
+          "distribuicao":[{"codigo":"09310001","quantidade":2,"custo_aquisicao_unit":10,"custo_precificacao_unit":14}]}]');
+  perform public.desfazer_nota_compra('93000000-0000-0000-0000-000000000001',
+        '93000000-0000-0000-0000-000000000101', (r2->>'nota_id')::uuid, 'cancelada');
+  if (select status from public.notas_compra where id = (r2->>'nota_id')::uuid) <> 'cancelada' then
+    raise exception 'desfazer com cancelada não gravou o status'; end if;
+  if (select estoque from public.variacoes where codigo='09310001') <> v_o then
+    raise exception 'cancelar não devolveu o saldo de 09310001'; end if;
+
   -- codigos_pai_da_nota devolve os produtos da 1a nota (importação + desfazer).
   if (select array_agg(x order by x) from unnest(public.codigos_pai_da_nota('93000000-0000-0000-0000-000000000001',
         '26261011222333000181550010000010511000030324')) x) <> array['09300000','09310000'] then
