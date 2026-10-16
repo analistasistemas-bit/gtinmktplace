@@ -21,7 +21,8 @@ média de custos de aquisição reais de notas importadas. Quando a linhagem se 
 recomeça. As unidades com nota anteriores passam a "sem nota", e a média passa a ignorar essas notas. Isso pode **mudar
 o valor para menos ou para mais** em relação à média que teria sido calculada com a linhagem inteira (Codex rodada 3: nota
 barata → planilha → nota cara → venda). Esse caso fica marcado `historico_incompleto` na Conferência, para o contador
-avaliar.
+avaliar. **Única exceção conhecida:** a corrida do clone (risco herdado, ver "Limitações"), em que a nota perdida na
+cópia antiga ainda conta como camada.
 
 ## Decisões do Diego (2026-10-16)
 
