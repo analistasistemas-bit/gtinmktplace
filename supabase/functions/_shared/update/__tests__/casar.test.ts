@@ -28,6 +28,13 @@ describe('casarVariacoesUpdate', () => {
     expect(r.herdados['00000102'].preco_publicacao).toBe(19);
     expect(r.herdados['00000102'].preco_publicado_ml).toBe(null);
   });
+  it('UP (sem ml_variation_id): SKU sem confirmação mantém o próprio preço — preço é por SKU (ADR-0160)', () => {
+    const r = casarVariacoesUpdate([{ codigo: '00000101' }, { codigo: '00000102' }], [
+      { ...anteriores[0], ml_variation_id: null, preco_publicacao: 19, preco_publicado_ml: 19 },
+      { ...anteriores[1], ml_variation_id: null, preco_publicacao: 40, preco_publicado_ml: null },
+    ]);
+    expect(r.herdados['00000102'].preco_publicacao).toBe(40);
+  });
   it('preço fixado pelo operador continua herdando preco_publicacao (D15 do reajuste)', () => {
     const r = casarVariacoesUpdate([{ codigo: '00000101' }], [
       { ...anteriores[0], preco_publicacao: 15, preco_publicado_ml: 19, preco_editado_pelo_operador: true },

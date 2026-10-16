@@ -20,6 +20,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, excluidaNoUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
+import { lerPrecosVivosML, precoVivoDaVariacao, type PrecoVivoItem } from './preco-vivo.ts';
 import { precoHerdadoUpdate } from './preco-herdado.ts';
 import { donoDoPathNaOrg, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
@@ -164,7 +165,9 @@ Deno.serve(async (req) => {
     // ADR-0088: em família User Products a cor publicada não tem ml_variation_id — o sinal é o SKU
     // ativo em anuncios_externos_itens. Sem ele, toda cor UP sem foto no lote entrava desmarcada.
     // Paginado (teto de 1000 linhas do PostgREST) e em blocos de raízes (tamanho da URL).
-    const skusAtivosUP = new Map<string, Set<string>>();
+    // Só status 'ativo': 'pausado'-não-retirado e afins travam a saga UP inteira se incluídos
+    // (atualizar-composicao, filho_em_estado_terminal). Valor = item ML do SKU (preço vivo).
+    const skusAtivosUP = new Map<string, Map<string, string>>();
     const paisUpdate = [...anteriorPorPai.keys()];
     if (paisUpdate.length > 0) {
       const raizes = await paginarTudo<{ id: string; codigo_pai: string }>((de, ate) => admin
@@ -175,17 +178,36 @@ Deno.serve(async (req) => {
       const rootIds = [...paiDaRaiz.keys()];
       for (let i = 0; i < rootIds.length; i += 100) {
         const bloco = rootIds.slice(i, i + 100);
-        const itens = await paginarTudo<{ anuncio_externo_id: string; sku: string | null }>((de, ate) => admin
-          .from('anuncios_externos_itens').select('anuncio_externo_id, sku')
+        const itens = await paginarTudo<{ anuncio_externo_id: string; sku: string | null; item_externo_id: string }>((de, ate) => admin
+          .from('anuncios_externos_itens').select('anuncio_externo_id, sku, item_externo_id')
           .eq('org_id', lote.org_id).in('anuncio_externo_id', bloco)
-          .eq('retirado', false).not('item_externo_id', 'is', null)
+          .eq('retirado', false).eq('status', 'ativo').not('item_externo_id', 'is', null)
           .order('id').range(de, ate));
         for (const it of itens) {
           const pai = paiDaRaiz.get(it.anuncio_externo_id);
           if (!pai || !it.sku) continue;
-          if (!skusAtivosUP.has(pai)) skusAtivosUP.set(pai, new Set());
-          skusAtivosUP.get(pai)!.add(normalizarCodigo(it.sku));
+          if (!skusAtivosUP.has(pai)) skusAtivosUP.set(pai, new Map());
+          skusAtivosUP.get(pai)!.set(normalizarCodigo(it.sku), it.item_externo_id);
         }
+      }
+    }
+
+    // ADR-0016 adendo 2026-10-16: preço que está no ar AGORA (Legacy: item da família; UP: item de
+    // cada SKU ativo). Falha de ML/token → segue com o snapshot preco_publicado_ml (resiliente).
+    const conexaoReconciliacao = await resolverConexao(admin, orgId, 'mercado_livre');
+    let tokenML: string | null = null;
+    let precosVivos = new Map<string, PrecoVivoItem>();
+    const idsPrecoVivo = [...anteriorPorPai.values()].flatMap((a) => {
+      const up = skusAtivosUP.get(a.codigo_pai);
+      return up ? [...up.values()] : a.ml_item_id ? [a.ml_item_id] : [];
+    });
+    if (idsPrecoVivo.length > 0) {
+      try {
+        if (!conexaoReconciliacao) throw new Error('Organização sem conexão com o Mercado Livre');
+        tokenML = await getValidAccessTokenConexao(conexaoReconciliacao);
+        precosVivos = await lerPrecosVivosML(tokenML, idsPrecoVivo);
+      } catch (e) {
+        console.error(`Preço vivo do ML falhou (usa o snapshot): ${e instanceof Error ? e.message : e}`);
       }
     }
 
@@ -194,6 +216,7 @@ Deno.serve(async (req) => {
     for (const g of grupos) {
       const ant = anteriorPorPai.get(g.codigo_pai);
       if (!ant) continue; // CREATE
+      const upDoPai = skusAtivosUP.get(g.codigo_pai);
       const varsAnteriores: VarAnterior[] = (ant.variacoes ?? []).map((v) => ({
         codigo: v.codigo,
         ml_variation_id: v.ml_variation_id,
@@ -202,7 +225,11 @@ Deno.serve(async (req) => {
         ml_picture_id: v.ml_picture_id,
         estoque: v.estoque,
         preco_publicacao: v.preco_publicacao,
-        preco_publicado_ml: v.preco_publicado_ml,
+        preco_publicado_ml: precoVivoDaVariacao(precosVivos, {
+          itemUP: upDoPai?.get(normalizarCodigo(v.codigo)),
+          itemLegacy: upDoPai ? null : ant.ml_item_id,
+          mlVariationId: v.ml_variation_id,
+        }) ?? v.preco_publicado_ml,
         preco_editado_pelo_operador: v.preco_editado_pelo_operador,
       }));
       const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
@@ -213,8 +240,6 @@ Deno.serve(async (req) => {
     // desatualizado (lote excluído, cor adicionada fora do app), marcando como "nova"
     // uma cor que JÁ existe no anúncio. Só consulta o ML nas famílias com suposta cor
     // nova (raro). Falha de ML/token → mantém o casamento local (resiliente).
-    const conexaoReconciliacao = await resolverConexao(admin, orgId, 'mercado_livre');
-    let tokenML: string | null = null;
     for (const g of grupos) {
       const cas = casamentoPorPai.get(g.codigo_pai);
       const ant = anteriorPorPai.get(g.codigo_pai);

@@ -252,7 +252,8 @@ se a cor já estava no anúncio; toda cor UP sem foto no lote entrava excluída 
 incluídas é pausado — uma inclusão parcial teria tirado cores do ar.
 
 **Decisão:** "já no anúncio" = `ml_variation_id` (Legacy) **ou** SKU ativo em
-`anuncios_externos_itens` (`retirado=false`, `item_externo_id` preenchido). Implementação:
+`anuncios_externos_itens` (`retirado=false`, `status='ativo'`, `item_externo_id` preenchido —
+SKU `pausado`-não-retirado incluído trava a saga UP inteira com `filho_em_estado_terminal`). Implementação:
 `excluidaNoUpdate` (`_shared/update/casar.ts`), usada pelo `ingest-lote`; a Revisão usa
 `casadaNoMl` (`src/lib/publicavel.ts`).
 
@@ -264,14 +265,18 @@ junho e R$ 19 no ar). Efeitos: o selo "preço alterado" (ADR-0078) acendia em qu
 (89 famílias, 832 variações no lote de 16/10) e "Atualizar tudo" derrubaria o preço no ML para o
 valor antigo.
 
-**Decisão (Diego, 2026-10-16):** a cor casada herda o **preço confirmado no ML**
-(`preco_publicado_ml` da família anterior, gravado em todo UPDATE — inclusive "somente estoque" —
-com o preço vivo devolvido pelo ML). Exceções: preço fixado pelo operador
+**Decisão (Diego, 2026-10-16):** a cor casada herda o **preço que está no ar no momento do
+import**. O `ingest-lote` lê o ML via `/items/bulk` (`ingest-lote/preco-vivo.ts`): Legacy = preço da
+própria variação no anúncio (só variações com `ml_variation_id`); UP = `price` do item de cada SKU
+ativo. O snapshot `preco_publicado_ml` não basta: só é regravado quando o app publica (e o caminho
+UP em "somente estoque" nem regrava), então mudança feita direto no ML depois ficaria invisível —
+achado da revisão Codex. Falha do ML/token → usa o snapshot. Exceções: preço fixado pelo operador
 (`preco_editado_pelo_operador`, D15 do ADR-0178) continua herdando `preco_publicacao`. Variação
 sem `preco_publicado_ml` próprio (nunca foi ao anúncio, ex.: ficou fora por falta de foto) usa o
 **menor preço confirmado da família** — sem isso, uma família Legacy ficaria com dois preços
 (confirmadas no preço do ML, não confirmadas no preço velho) e cairia no split/LOUD do ADR-0078;
-sem nenhum confirmado na família, mantém `preco_publicacao`. A cor casada herda ainda o próprio
+sem nenhum confirmado na família, mantém `preco_publicacao`. Esse fallback é só Legacy: em UP o
+preço é por SKU (ADR-0160) e o SKU sem confirmação mantém o próprio. A cor casada herda ainda o próprio
 `preco_publicado_ml` — antes o ingest não o copiava, a linha nova nascia com `null` e o selo do
 ADR-0078 nunca acendia **antes** de publicar (só depois, quando o UPDATE gravava o preço vivo).
 Com isso o selo "preço alterado" passa a significar "o preço a enviar (fixado na Revisão/reajuste)

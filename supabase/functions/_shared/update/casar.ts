@@ -57,11 +57,14 @@ export function casarVariacoesUpdate(
   // Preço confirmado da família (menor, como o precoPubFamilia do ingest): fallback da variação que
   // nunca foi confirmada no ML (ex.: cor que ficou fora por falta de foto). Sem ele, Legacy ficaria
   // com dois preços (confirmadas no preço do ML, não confirmadas no preço velho) → split/LOUD.
+  // Só Legacy (alguma variação com ml_variation_id): em User Products o preço é por SKU (ADR-0160)
+  // e um SKU sem confirmação mantém o próprio preço.
+  const ehLegacy = anteriores.some((a) => a.ml_variation_id != null);
   const confirmados = anteriores
     .map((a) => a.preco_publicado_ml)
     .filter((p): p is number | string => p != null)
     .map(Number);
-  const precoConfirmadoFamilia = confirmados.length ? Math.min(...confirmados) : null;
+  const precoConfirmadoFamilia = ehLegacy && confirmados.length ? Math.min(...confirmados) : null;
 
   const herdados: Record<string, Herdado> = {};
   const novasCores: string[] = [];
