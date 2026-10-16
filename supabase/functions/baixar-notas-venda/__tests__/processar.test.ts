@@ -102,6 +102,28 @@ describe('baixarLoteMes', () => {
     await r.body.cancel('cliente saiu');
     expect(d.liberar).toHaveBeenCalledWith('lock:notas-venda:cx1', 60);
   });
+  it('prazo/abort: perdedores do race que rejeitam depois não viram unhandled rejection', async () => {
+    const soltas: unknown[] = [];
+    const ouvir = (e: unknown) => { soltas.push(e); };
+    process.on('unhandledRejection', ouvir);
+    try {
+      const abortErr = () => new DOMException('abort', 'AbortError');
+      // fetch que rejeita quando o signal aborta
+      const a = deps(async () => zipResp());
+      a.d.fetchMl.mockImplementation((_u: string, _t: string, s: AbortSignal) =>
+        new Promise<Response>((_, rej) => s.addEventListener('abort', () => rej(abortErr()))));
+      expect(await baixarLoteMes(a.d, p({ prazoMs: 30 }))).toEqual({ tipo: 'erro', status: 502, mensagem: INDISP });
+      // token que rejeita depois do abort
+      const b = deps(async () => zipResp(), () => new Promise<string>((_, rej) => setTimeout(() => rej(new Error('token tarde')), 60)));
+      expect(await baixarLoteMes(b.d, p({ prazoMs: 30 }))).toEqual({ tipo: 'erro', status: 502, mensagem: INDISP });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(soltas).toEqual([]);
+    } finally { process.off('unhandledRejection', ouvir); }
+  });
+  it('content-type application/gzip é ambíguo', async () => {
+    const { d } = deps(async () => new Response(new Uint8Array([1]), { status: 200, headers: { 'Content-Type': 'application/gzip' } }));
+    expect(await baixarLoteMes(d, p())).toEqual({ tipo: 'erro', status: 502, mensagem: AMBIG });
+  });
   it('mês inválido não trava nem chama o ML', async () => {
     const { d } = deps(async () => zipResp());
     expect(await baixarLoteMes(d, p({ mes: '2026-12' }))).toMatchObject({ tipo: 'erro', status: 400 });

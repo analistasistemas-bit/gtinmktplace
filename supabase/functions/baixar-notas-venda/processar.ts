@@ -56,7 +56,7 @@ function encadear(primeiro: Uint8Array, reader: ReadableStreamDefaultReader<Uint
 async function interpretar(r: Response, fim: () => Promise<void>): Promise<SaidaNotas> {
   if (r.status === 200) {
     const tipo = r.headers.get('Content-Type') ?? '';
-    if (!r.body || !/zip|octet-stream/.test(tipo)) { await r.body?.cancel().catch(() => {}); return { tipo: 'erro', status: 502, mensagem: AMBIGUO }; }
+    if (!r.body || !/^application\/(zip|octet-stream)\b/i.test(tipo)) { await r.body?.cancel().catch(() => {}); return { tipo: 'erro', status: 502, mensagem: AMBIGUO }; }
     const reader = r.body.getReader();
     const { done, value } = await reader.read();
     if (done || !value || value.length === 0) { await reader.cancel().catch(() => {}); return { tipo: 'erro', status: 502, mensagem: AMBIGUO }; }
