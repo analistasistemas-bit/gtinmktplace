@@ -45,6 +45,13 @@ describe('tamanhosValidosParaTipos', () => {
     expect(tamanhosValidosParaTipos(['calcado'])).not.toContain('P');
   });
 
+  it('roupa inclui infantil e calca', () => {
+    const v = tamanhosValidosParaTipos(['roupa']);
+    expect(v).toContain('2');
+    expect(v).toContain('48');
+    expect(v).toContain('GG');
+  });
+
   it('ordem canonica, nao a do payload', () => {
     expect(tamanhosValidosParaTipos(['calcado', 'roupa'])[0]).toBe('P');
   });
