@@ -74,7 +74,7 @@ O XML vai para o zip com **os mesmos bytes** baixados (os que geraram o hash da 
 | Valores do item (do XML) | Produtos · Frete · Seguro · Desconto · Outras · IPI · ST · FCP-ST |
 
 **Totais por nota** (componentes do `ICMSTot`, não a soma dos itens): chave · número · fornecedor · vProd · vFrete · vSeg ·
-vDesc · vOutro · vIPI · vST · vFCPST · **vNF** · **diferença** (`vNF − (vProd − vDesc + vFrete + vSeg + vOutro + vIPI + vST + vFCPST)`)
+vDesc · vOutro · vIPI · vST · vFCPST · **vNF** · **diferença** (`vNF − (vProd − vDesc + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol + vST + vFCPST)`; vII e vIPIDevol integram o vNF no leiaute)
 · divergência aceita na importação (`divergencia_total_aceita`, quando houver). **Total do mês** = soma dos `vNF` das notas
 **detalhadas**; a Conferência informa à parte o total das notas listadas sem detalhe (XML indisponível/ilegível), se houver.
 
@@ -99,7 +99,7 @@ de novo depois."; sem `xmls/`). `indisponível` marca o **pacote inteiro** como 
 
 | Falha da parte de vendas | Fora do suporte | Em suporte |
 |---|---|---|
-| `ErroPacote` 429 (ML ou trava local), 409 (sem conexão / sem permissão), 502/503/504, `TypeError` de rede antes dos headers, 200 sem `X-Org-Id`, `ErroDownloadIncompleto`, falha ao **ler** o zip de vendas | **indisponível** | aborta |
+| `ErroPacote` 429 (ML ou trava local), 409 (sem conexão / sem permissão), 502/503/504, `ErroRede` (falha do `fetch` antes dos headers — só esse ponto vira erro de rede; `TypeError` de código continua bug), 200 sem `X-Org-Id`, `ErroDownloadIncompleto` (também quando o zip de vendas não abre) | **indisponível** | aborta |
 | `ErroAuditoria`, `ErroOrgMudou`, `ErroPacote` 401 ou 403 (sessão/perfil/módulo), `AbortError` | aborta | aborta |
 | erro inesperado (bug) | aborta (não vira "indisponível") | aborta |
 
