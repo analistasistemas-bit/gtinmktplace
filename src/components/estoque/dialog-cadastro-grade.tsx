@@ -158,6 +158,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     setNomePai(inicial.nomePai ?? '');
     setDescricaoPai(inicial.descricaoPai ?? '');
     setFornecedor(inicial.fornecedor ?? '');
+    setUnidade(inicial.unidade ?? 'UN');
     setCabecalho({
       ...CABECALHO_VAZIO,
       ...(inicial.custo != null ? { custo: numParaInputCadastro(inicial.custo) } : {}),

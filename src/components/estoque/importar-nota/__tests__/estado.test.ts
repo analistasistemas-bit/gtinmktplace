@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova } from '../estado';
+import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova, podeAvancarEtapa } from '../estado';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
 const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 590 };
@@ -105,5 +105,25 @@ describe('variação faltante (D-8)', () => {
     e = travarLinhaNova(e, 1, 'S9', 5, 10);
     e = travarLinhaNova(e, 1, 'S9', 5, 10);
     expect(e.decisoes[0].distribuicao.filter((l) => l.codigo === 'S9')).toHaveLength(1);
+  });
+});
+
+describe('podeAvancarEtapa', () => {
+  it('etapa Produtos só avança com produto e fator válido em todo item', () => {
+    let e = estadoInicial(nota, '<x/>', [], {});
+    expect(podeAvancarEtapa(e, 1)).toBe(false);
+    e = definirProduto(e, 1, 'P1');
+    expect(podeAvancarEtapa(e, 1)).toBe(false);
+    e = definirProduto(e, 2, 'P2');
+    expect(podeAvancarEtapa(e, 1)).toBe(true);
+    expect(podeAvancarEtapa(definirFator(e, 2, 0), 1)).toBe(false);
+  });
+  it('etapa Distribuição só avança com a soma exata em todo item', () => {
+    let e = definirProduto(definirProduto(estadoInicial(nota, '<x/>', [], {}), 1, 'P1'), 2, 'P2');
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 34, custoPrecificacao: 10 }]);
+    e = definirDistribuicao(e, 2, [{ codigo: 'S2', quantidade: 2, custoPrecificacao: 120 }]);
+    expect(podeAvancarEtapa(e, 2)).toBe(false);
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }]);
+    expect(podeAvancarEtapa(e, 2)).toBe(true);
   });
 });

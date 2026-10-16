@@ -26,4 +26,10 @@ describe('prefillCadastro', () => {
     expect(prefillCadastro(item, nota, 12).custo).toBe(0.83);
     expect(prefillCadastro({ ...item, vProd: 0 }, nota, 1)).not.toHaveProperty('custo');
   });
+  it('unidade vem do uCom só quando é unidade fiscal e o fator é 1', () => {
+    expect(prefillCadastro(item, nota, 1).unidade).toBe('PC');
+    expect(prefillCadastro({ ...item, uCom: ' pc ' }, nota, 1).unidade).toBe('PC');
+    expect(prefillCadastro({ ...item, uCom: 'CX' }, nota, 12)).not.toHaveProperty('unidade');
+    expect(prefillCadastro({ ...item, uCom: 'XPTO' }, nota, 1)).not.toHaveProperty('unidade');
+  });
 });

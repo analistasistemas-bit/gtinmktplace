@@ -112,6 +112,16 @@ export function pendencias(e: EstadoImportacao): Array<{ nItem: number; erro: st
   return out;
 }
 
+/** Trava do "Avançar": Produtos exige produto e fator válidos; Distribuição exige a soma exata (D-2). */
+export function podeAvancarEtapa(e: EstadoImportacao, etapa: number): boolean {
+  if (etapa === 1) {
+    return e.decisoes.every((d) => !!d.codigoPai
+      && quantidadeEmEstoque(e.itens.find((i) => i.nItem === d.nItem)!.qCom, d.fator).ok);
+  }
+  if (etapa === 2) return pendencias(e).every((p) => p.nItem === 0);
+  return true;
+}
+
 export function payload(e: EstadoImportacao): { xml: string; decisoes: DecisaoImportacao[]; aceitarDivergenciaTotal: boolean } {
   if (pendencias(e).length > 0) throw new Error('Há pendências na importação.');
   return {

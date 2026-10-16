@@ -15,7 +15,7 @@ import {
   buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosPorGtin, statusDaNota,
 } from '@/lib/notas-compra';
 import { lerNfe } from '../../../../supabase/functions/_shared/nfe/ler-nfe.ts';
-import { definirProduto, estadoInicial, payload, pendencias, recusaInicial, type EstadoImportacao } from './estado';
+import { definirProduto, estadoInicial, payload, pendencias, podeAvancarEtapa, recusaInicial, type EstadoImportacao } from './estado';
 import { prefillCadastro } from './prefill-cadastro';
 import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
@@ -111,7 +111,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   });
 
   const semPendencias = !!e && pendencias(e).length === 0;
-  const podeAvancar = etapa === 0 ? !!e && !recusa : true;
+  const podeAvancar = etapa === 0 ? !!e && !recusa : !!e && podeAvancarEtapa(e, etapa);
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o && !confirmar.isPending) onFechar(); }}>

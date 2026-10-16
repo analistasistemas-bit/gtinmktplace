@@ -49,6 +49,8 @@ export interface CadastroInicial {
     'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm'>>;
   // ADR-0181 (prefill da nota de compra — importar-nota/prefill-cadastro.ts).
   fornecedor?: string;
+  /** uCom da nota, quando é uma das UNIDADES_FISCAIS. */
+  unidade?: string;
   descricaoFiscal?: string;
   /** Custo de aquisição unitário (R$). Vale para a variação (simples) ou o cabeçalho (grade). */
   custo?: number;
@@ -161,6 +163,7 @@ export function DialogCadastroProduto({
     setNomePai(inicial.nomePai ?? '');
     setDescricaoPai(inicial.descricaoPai ?? '');
     setFornecedor(inicial.fornecedor ?? '');
+    setUnidade(inicial.unidade ?? 'UN');
     setLinhas([{
       ...novaLinha(), ...inicial.variacao,
       ...(inicial.custo != null ? { custo: numParaInputCadastro(inicial.custo) } : {}),
