@@ -301,7 +301,7 @@ Card em `/estoque`: escolhe o mês (padrão: anterior) e baixa `pacote-AAAA-MM.z
 só repassa o zip; o navegador valida (CRC), lê e monta, sem gravar. 1 download por vez por conta (460 s) + 60 s de intervalo; suporte em
 modo somente leitura não exporta. EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1).
 
-### Compras no pacote (Plano 2b-1) — implementado na branch, aguardando revisão final, merge e redeploy da edge
+### Compras no pacote (Plano 2b-1) — EM PRODUÇÃO desde 2026-10-16 (main `ff67a7e6`; edge `baixar-notas-venda` v2)
 
 O mesmo zip passa a levar `relatorio-compras.xlsx`/`.pdf` (aba/página "Compras" com uma linha por item e "Conferência de compras") e os XMLs das notas
 importadas em `compras/xmls/`; desfeitas em `compras/xmls-desfeitas/` e marcadas canceladas em `compras/xmls-canceladas/` (fora da planilha e dos totais).

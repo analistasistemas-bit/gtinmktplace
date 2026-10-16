@@ -30,14 +30,14 @@
 - [x] Validação de runtime (Task 8) — ver ADR-0181: TTFB e tempo total de um mês real, zip íntegro, duplo clique → 429 local, conferência de NF-e × pedidos pagos e de notas sorteadas contra o XML, filtro sem CT-e vs `others=all`.
 - [ ] Pendência: aba "Vendas sem nota" e colunas Pedido ML/Data da venda — depende de onde o pedido do ML aparece no XML da primeira venda faturada pelo Faturador.
 
-## Pacote do contador — compras (ADR-0181, Plano 2b-1) — implementado na branch `worktree-plano2b-compras-inventario`, aguardando merge/deploy
+## Pacote do contador — compras (ADR-0181, Plano 2b-1) — EM PRODUÇÃO desde 2026-10-16 (main `ff67a7e6`; edge `baixar-notas-venda` v2)
 
 - [x] Spec, plano e ADR-0181 (D-13 compras, decisões 1–5, ruling R1), edge-functions, project-status, Fiscal/Estoque no vault.
 - [x] `src/lib/pacote-contador/*` (leitura/montagem das compras, fonte com fila de 4 downloads e timeout de 30 s, relatórios xlsx/PDF, estados de vendas), card com vendas e compras em paralelo, edge `baixar-notas-venda` (alvo `pacote_contador_mes`, `codigo: 'auditoria'`).
-- [ ] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
-- [ ] Merge na main (fast-forward, CI verde).
-- [ ] Redeploy da edge `baixar-notas-venda` via CLI completa; conferir versão ativa pós-deploy (sem ele, a falha de auditoria em suporte perde o `codigo`).
-- [ ] Task 7 — validação de runtime: org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `compras/xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
+- [x] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
+- [x] Merge na main (fast-forward, CI verde).
+- [x] Redeploy da edge `baixar-notas-venda` via CLI completa; conferir versão ativa pós-deploy (sem ele, a falha de auditoria em suporte perde o `codigo`).
+- [x] Task 7 — validação de runtime (ver ADR-0181): org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `compras/xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
 - [ ] Plano 2b-2 (inventário, D-12) pendente.
 
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
