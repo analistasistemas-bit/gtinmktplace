@@ -2,7 +2,7 @@
 
 **Data:** 2026-10-16 · **ADR:** [0181](../../decisions/0181-entrada-por-nota-de-compra-e-pacote-do-contador.md) (D-12; D-13, parte "inventário")
 **Base:** Planos 1, 2a e 2b-1 em produção (main `1344d638`) — notas de compra, card "Pacote do contador" em `/estoque`.
-**Revisão:** adversarial Codex `gpt-6.1-sol` high, rodada 1 (2026-10-16): 14 achados incorporados (marcados `[Rn]`).
+**Revisão:** adversarial Codex `gpt-6.1-sol` high, rodada 1 (2026-10-16): 14 achados incorporados (marcados `[Rn]`); rodada 2: 7 achados (F1–F7) incorporados.
 
 ## Objetivo
 
@@ -47,9 +47,13 @@ confere que **todas** as RPCs que preenchem `estoque_resultante` (`registrar_ent
 estorno) o fazem com a variação travada, e que nenhuma insere o movimento já com `estoque_resultante` preenchido. Se alguma
 fizer isso, o trigger também cobre `before insert`.
 
-**Backfill** dos movimentos existentes: `ordem` por `(criado_em, id)`. O plano mede em produção (só leitura) quantas
-transações têm o mesmo SKU em mais de um movimento `nfe:`. Se houver, o backfill dessas usa a cadeia
-`estoque_anterior → estoque_resultante`.
+**Backfill** dos movimentos existentes: `ordem` por `(criado_em, id)`. Essa ordem não é confiável quando transações do
+mesmo SKU se sobrepõem, e a cadeia de saldos pode fechar mesmo na ordem errada (rodada 2: F3). Por isso a migration grava
+um **corte por SKU** numa tabela `inventario_corte_backfill (org_id, codigo, ate_ordem)` para todo código que, antes da
+migration, tenha entrada `nfe:` e qualquer outro movimento. O replay trata o corte como marco: zera `k` e marca
+`historico_incompleto`. Hoje só as notas importadas desde 16/10 entram nisso. O plano lista esses códigos em produção (só
+leitura) antes do deploy, e o efeito é avaliar para menos uma vez, só o histórico anterior. Daí em diante vale a `ordem`
+exata do trigger.
 
 ## Critério de avaliação (fonte única em SQL)
 
@@ -65,21 +69,38 @@ distribuição, só muda o status), casadas com o movimento `entrada` de `refere
 A entrada pendente de nota (`registrar_entrada_nota_pendente`, gravada antes da importação com a mesma ref) vale na posição
 original, porque a ref é a mesma.
 
-**Replay por SKU** sobre **todos** os movimentos do código com `estoque_anterior`/`estoque_resultante` preenchidos, em
-`ordem` `[R1]`. `k` = unidades com nota ainda em estoque, `c` = custo médio; início `k = 0`, `c = null`:
+**Marco de linhagem `[R1][R7]` (rodada 2: F1, F5).** O único caminho que grava saldo fora do ledger é a inserção de
+variação com saldo pela planilha (`ingest-lote/index.ts:367,416`). Duas gravações assim podem voltar ao mesmo número e
+esconder um vale (nota 10 → planilha 0 → planilha 10). A recriação de um código excluído pela planilha, antes de
+`limpar_movimentos_orfaos` rodar, preserva o histórico antigo. Então: **marco = `criado_em` da família mais recente do
+código criada pela planilha**. Movimentos anteriores ao marco não levam custo, e o replay começa com `k = 0` no marco.
+Clone do "adicionar variação" (`adicionar-variacoes-familia`, `clonarVariacao` copia o saldo) e cadastro manual (nasce
+com saldo 0 e entra pelo ledger) **não** são marco. O plano identifica no código o discriminador confiável de "família
+criada por `ingest-lote`" (lote/origem), e enumera **todo** caminho que insere variação com saldo ≠ 0 ou grava
+`variacoes.estoque` fora das RPCs. Cada caminho achado vira marco ou é provado contínuo. Sem discriminador confiável, a
+regra cai para "toda família nova do código que não seja clone".
+
+**Replay por SKU** sobre **todos** os movimentos do código com `estoque_anterior`/`estoque_resultante` preenchidos, depois
+do marco, em `ordem` `[R1]`. `k` = unidades com nota ainda em estoque, `c` = custo médio. Início `k = 0`, `c = null`.
+Invariante em **toda** transição: `0 ≤ k ≤ max(saldo, 0)` (rodada 2: F2).
 
 ```
+p(x) = max(x, 0)
+anterior_esperado = null
 para cada movimento m (em ordem):
-  k = min(k, m.estoque_anterior)        -- piso: o saldo logo antes de m (pega saída e salto fora do ledger)
+  se anterior_esperado ≠ null e m.estoque_anterior ≠ anterior_esperado:
+     k = 0; marca 'historico_incompleto'      -- lacuna na cadeia = escrita fora do ledger: não carrega custo
+  k = min(k, p(m.estoque_anterior))           -- piso: saldo logo antes de m
   se m é entrada de nota com custo (q, u):
-     c = (k = 0) ? u : (k·c + q·u) / (k + q)          [R3]
-     k = k + q
+     c = (k = 0) ? u : (k·c + q·u) / (k + q)               [R3]
+     k = min(k + q, p(m.estoque_resultante))
   senão:
-     k = min(k, m.estoque_resultante)   -- saída consome "sem nota" primeiro; só o que passa do resto sai de k
-no fim: k = min(k, saldo_atual)
-        se saldo_atual <= 0: qtd_valorizada = 0, marca 'saldo_negativo' se < 0     [R13]
-        senão: qtd_valorizada = k;  qtd_sem_nota = saldo_atual − k
-        valor = round(qtd_valorizada · c, 2)
+     k = min(k, p(m.estoque_resultante))      -- saída consome "sem nota" primeiro
+  anterior_esperado = m.estoque_resultante
+no fim: se anterior_esperado ≠ null e saldo_atual ≠ anterior_esperado: k = 0; marca 'historico_incompleto'
+        k = min(k, p(saldo_atual))
+        qtd_valorizada = k;  qtd_sem_nota = p(saldo_atual) − k;  marca 'saldo_negativo' se saldo_atual < 0   [R13]
+        valor = (k = 0) ? 0 : round(k · c, 2)
 ```
 
 Por que funciona: na convenção "sem nota sai primeiro", as unidades com nota só saem quando o saldo cai abaixo de `k`. O
@@ -91,17 +112,19 @@ limite. O contraexemplo do Codex (nota 10 → vende 10 → entrada manual 10) d�
 `_shared/nfe/regras.ts:101-104`). `c` em `numeric(14,6)`.
 
 **Limitações conhecidas (sempre para menos, nunca custo inventado):**
-- **Salto fora do ledger** (planilha via `ingest-lote` grava `variacoes.estoque` sem movimento): é pego pelo
-  `estoque_anterior` do próximo movimento ou pelo saldo final. Duas escritas fora do ledger seguidas, sem movimento entre
-  elas, escondem um vale intermediário (raro; aviso no relatório).
+- **Planilha** (salto fora do ledger): zera a camada no marco ou na lacuna da cadeia. Unidades com nota anteriores passam a
+  "sem nota".
 - **Devolução/estorno** aumenta o saldo sem aumentar `k`, então a unidade devolvida sai "sem nota".
 - **Nota desfeita** fica fora das entradas. As unidades dela entram e saem do saldo como "sem nota".
 - **Entrada de nota sem movimento no ledger** (o produto foi excluído e `limpar_movimentos_orfaos` apagou o histórico): é
   ignorada, e o SKU recebe a marca `historico_incompleto`.
-- **Código reutilizado `[R7]`:** `limpar_movimentos_orfaos` apaga o histórico assim que o último código some
-  (`20260801092323…:39-50`). Clonagem de família (`adicionar-variacoes-familia`) mantém o código vivo e é a mesma linhagem
-  do SKU, então o histórico continua valendo. Resta o caso em que a limpeza (best-effort) falhou e o código foi recriado:
-  aí o produto novo herdaria as camadas antigas. Isso fica registrado como risco residual, sem tratamento na v1.
+- **Código reutilizado `[R7]`:**
+  - recriação pela planilha → marco;
+  - recriação pelo cadastro manual → nasce com saldo 0, e o primeiro movimento (`estoque_anterior = 0`) zera `k` pelo
+    piso;
+  - clonagem de família mantém o código vivo e é a mesma linhagem.
+
+  O teste cobre o entrelaçamento "excluir → recriar → limpeza" nos dois caminhos.
 
 ## Modelo de dados (migration)
 
@@ -131,17 +154,23 @@ transição aberto → confirmado só passam com a flag de transação `publiai.
 inserção fora de `gerar_foto_inventario`. **Exclusão:** sem grant para `authenticated`/`anon`; só a service_role exclui
 (exclusão de org em cascata e limpeza da validação).
 
-**Matriz de privilégios `[R5]`** (todas as funções com `security definer`, `set search_path = public, pg_temp`, `revoke all … from
-public, anon, authenticated` antes do grant, no padrão de `20260811203500_fix_grants_ajustar_estoque.sql`):
+**Matriz de privilégios `[R5]`** (rodada 2: F7). Todas as funções novas são **`security invoker`**, no padrão de
+`importar_nota_compra` (`20261015234006…:7`, invoker chamado pela service_role, que já tem `EXECUTE` em
+`registrar_entrada`/`ajustar_estoque` — `20260811203500_fix_grants_ajustar_estoque.sql:35`). Nenhuma troca de identidade, então
+nada de owner novo precisando de grant. `set search_path = public, pg_temp` nas funções. `revoke all … from public, anon,
+authenticated` antes do grant:
 
-| Objeto | Owner | Execute/acesso |
-|---|---|---|
-| `inventarios`, `inventarios_itens` | postgres | RLS `select` por `(select current_org_id())` para `authenticated`; sem insert/update/delete para `authenticated`/`anon` |
-| `inventario_calcular(p_org)` | postgres | service_role |
-| `inventario_hoje_json(p_org)` / `inventario_foto_json(p_org, p_id)` | postgres | service_role (a edge passa o org do token) |
-| `gerar_fotos_inventario(…)` (procedure) | postgres | service_role (pg_cron roda como postgres) |
-| `salvar_contagem_inventario(p_org, p_id, p_versao, p_itens)` | postgres | service_role |
-| `confirmar_inventario(p_org, p_id, p_versao, p_user)` | mesmo owner de `importar_nota_compra` (que já chama `registrar_entrada`/`ajustar_estoque`) | service_role |
+| Objeto | Execute/acesso |
+|---|---|
+| `inventarios`, `inventarios_itens`, `inventario_corte_backfill` | RLS `select` por `(select current_org_id())` para `authenticated` (o corte: sem acesso); sem insert/update/delete para `authenticated`/`anon` |
+| `inventario_calcular(p_org)` | service_role |
+| `inventario_hoje_json(p_org)` / `inventario_foto_json(p_org, p_id)` | service_role (a edge passa o org do token) |
+| `gerar_fotos_inventario(…)` (procedure, invoker, **sem** `set search_path` — atributos que impedem `commit` na procedure; nomes qualificados com `public.`) | service_role; o pg_cron roda como postgres |
+| `salvar_contagem_inventario(p_org, p_id, p_versao, p_itens)` | service_role |
+| `confirmar_inventario(p_org, p_id, p_versao, p_user)` | service_role |
+
+Teste positivo: `confirmar` executado como `service_role` aplica ajuste e entrada de fato. Testes negativos: `anon` e
+`authenticated` recusados.
 
 Toda função que recebe `p_id` valida `p_id` **junto com `p_org`** (cross-org = erro). Os testes chamam cada função como
 `authenticated` e `anon` (precisa negar) e com o `p_id` de outra org.
@@ -154,10 +183,15 @@ Toda função que recebe `p_id` valida `p_id` **junto com `p_org`** (cross-org =
   - orgs elegíveis: `'estoque' = any(modulos_habilitados)`, `tipo_pessoa = 'pj'`, `empresa_fiscal.cnpj` preenchido (ou só
     `p_org`, na contingência);
   - pula org que já tem foto 'aberto'/'confirmado' nessa data, e refaz a que está em 'falhou';
-  - **uma org por transação** (`commit` entre orgs) com `set local statement_timeout` (valor medido no plano). A falha de
-    uma org grava o cabeçalho em `status = 'falhou'` com `erro` e segue para a próxima.
-- `pg_cron` no padrão de `20260726153552_finalize_support_access.sql` (desagenda por nome, agenda), com o comando
-  `call public.gerar_fotos_inventario()`. O plano confere `cron.timezone` no projeto. Em GMT, a expressão é `59 2 1 1 *`.
+  - **uma org por transação** (`commit` entre orgs). Erro comum de uma org (`when others`) grava o cabeçalho em
+    `status = 'falhou'` com `erro`, faz commit e segue para a próxima.
+  - **Timeout (rodada 2: F4):** `statement_timeout` vale para o comando inteiro, não por org. O comando do cron é `set
+    statement_timeout = '<global, medido>'; call public.gerar_fotos_inventario();`. Se o tempo global estourar
+    (`query_canceled`, que `when others` não captura), as orgs já commitadas ficam e as restantes ficam sem foto. A detecção do
+    card e a contingência manual (que pula quem já tem foto) cobrem esse caso. O teste provoca o cancelamento e prova que as
+    orgs já processadas ficaram gravadas.
+- `pg_cron` no padrão de `20260726153552_finalize_support_access.sql` (desagenda por nome, agenda). O plano confere
+  `cron.timezone` no projeto. Em GMT, a expressão é `59 2 1 1 *`.
 - **Contingência:** suporte roda `call gerar_fotos_inventario('AAAA-12-31', 'manual', '<org>')`. O relatório mostra "saldo
   lido em <gerado_em>", e quando a leitura é posterior a 31/12 23:59 isso fica explícito. Não há reconstrução de data
   passada (D-12).
@@ -189,8 +223,9 @@ repassa, para caber nos 2 s de CPU (ADR-0173). O card mantém o controle de troc
 0 e que a justificativa não é vazia quando contada ≠ sistema. Grava e faz `versao + 1`.
 
 **`confirmar_inventario`**, numa transação:
-1. trava o cabeçalho (`for update`). Se já está 'confirmado', vai direto ao passo 5 (idempotente). Exige `versao = p_versao`
-   (a versão que o operador revisou no diálogo) `[R8]`;
+1. trava o cabeçalho (`for update`). Se já está 'confirmado', vai direto ao passo 5 (idempotente). Senão exige
+   `status = 'aberto'` (recusa 'falhou', rodada 2: F6) e `versao = p_versao` (a versão que o operador revisou no diálogo)
+   `[R8]`;
 2. recusa se houver diferença sem justificativa;
 3. para cada diferença `d = contada − sistema`, **em ordem de `codigo`** (locks determinísticos). A diferença é relativa,
    porque o saldo de hoje já andou desde 31/12:
@@ -255,14 +290,25 @@ código reutilizado após falha da limpeza.
 
 - **SQL** (`scripts/teste-sql-desfeito.py`, sem Docker):
   - `ordem`: atribuída sob trava; duas entradas do mesmo SKU na mesma transação na ordem certa;
-  - `inventario_calcular`: planilha + nota + vendas; nota → vende tudo → entrada manual (sai "sem nota"); duas notas com
-    venda entre elas (média móvel ≠ média simples); camada esgotada e reiniciada (`c = u`); salto de planilha fora do
-    ledger; nota desfeita; entrada pendente de nota; entrada sem ledger → marca; SKU sem nota; saldo negativo;
+  - `inventario_calcular`:
+    - planilha + nota + vendas;
+    - nota → vende tudo → entrada manual (sai "sem nota");
+    - duas notas com venda entre elas (média móvel ≠ média simples);
+    - camada esgotada e reiniciada (`c = u`);
+    - nota → planilha 0 → planilha 10, sem movimentos (marco, R$ 0);
+    - nota → planilha −5 → nota (sem custo inflado, sem divisão por zero, `k` nunca negativo);
+    - lacuna na cadeia → reinício;
+    - excluir → recriar (planilha e manual) → limpeza;
+    - clone do "adicionar variação" mantém a camada;
+    - corte do backfill;
+    - nota desfeita; entrada pendente de nota; entrada sem ledger → marca;
+    - SKU sem nota; saldo negativo no fim;
+    - propriedade: a soma valorizada nunca passa do total das notas ainda cabível no saldo;
   - triggers de imutabilidade (foto, identidade, insert, contagem fora de 'aberto', confirmação sem a flag);
   - privilégios: cada função como `authenticated`/`anon` → negado; `p_id` de outra org → erro;
   - `salvar`: versão obsoleta, item alheio, contagem negativa, justificativa vazia;
-  - `confirmar`: falta, sobra, sem justificativa, saldo insuficiente, versão obsoleta, idempotência (lista de push igual
-    no retry);
+  - `confirmar`: falta, sobra, sem justificativa, saldo insuficiente, versão obsoleta, cabeçalho 'falhou' recusado,
+    idempotência (lista de push igual no retry), execução positiva como service_role;
   - `gerar_fotos_inventario`: data-base às 23:59 de 31/12 e às 01:00 de 01/01, idempotência, refaz 'falhou', só orgs
     elegíveis, falha de uma org não afeta outra; volume medido com `EXPLAIN ANALYZE` dentro do orçamento.
 - **Vitest:**
