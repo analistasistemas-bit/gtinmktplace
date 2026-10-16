@@ -23,4 +23,10 @@ describe('temAlteracaoPreco (F2: por variação)', () => {
   it('diferença abaixo de 1 centavo não acusa', () => {
     expect(temAlteracaoPreco({ variacoes: [v(10.001, 10.004)] })).toBe(false);
   });
+  it('família já publicada → sem badge (escolha feita; "somente estoque" deixa a divergência de propósito)', () => {
+    expect(temAlteracaoPreco({ status: 'publicado', variacoes: [v(10.45, 19)] })).toBe(false);
+  });
+  it('família pronta com divergência → badge', () => {
+    expect(temAlteracaoPreco({ status: 'pronto', variacoes: [v(10.45, 19)] })).toBe(true);
+  });
 });

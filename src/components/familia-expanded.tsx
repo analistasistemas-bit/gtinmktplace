@@ -34,7 +34,7 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
-import { criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao } from '@/lib/publicavel';
+import { casadaNoMl, criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { alvosAplicarPreco, exigeDivisaoUpdate, familiaEhUP } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
@@ -527,7 +527,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const renderVariacao = (v: (typeof variacoesExibidas)[number]) => {
     // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
     // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
-    const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
+    const corNova = familia.operacao === 'UPDATE' && !casadaNoMl(v);
     // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
     const criticas = criticasVariacao(v, familia.operacao, { exigeCor, exigeFoto });
     return (
@@ -571,7 +571,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               }
             }}
           />
-          {familia.operacao === 'UPDATE' && !v.mlVariationId && (
+          {familia.operacao === 'UPDATE' && !casadaNoMl(v) && (
             <StatusPill tone="success" className="mt-2 shrink-0">
               nova
             </StatusPill>

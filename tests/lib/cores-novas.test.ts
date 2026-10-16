@@ -144,3 +144,15 @@ describe('coresNovasSemFoto', () => {
     expect(totalCoresNovasSemFoto([f1, f2])).toBe(3);
   });
 });
+
+describe('coresNovasSemFoto em família User Products', () => {
+  it('cor UP ativa (jaCasadaUP) sem foto não é cor nova (ADR-0088)', () => {
+    const f = familia({
+      variacoes: [
+        variacao({ codigo: '00000101', jaCasadaUP: true }),
+        variacao({ codigo: '00000102', jaCasadaUP: false }),
+      ],
+    });
+    expect(coresNovasSemFoto([f])).toEqual([{ codigoPai: '00000100', titulo: 'FITA EXEMPLO', codigos: ['00000102'] }]);
+  });
+});

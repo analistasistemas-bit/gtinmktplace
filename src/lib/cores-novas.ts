@@ -1,4 +1,5 @@
 import type { Familia } from './tipos-dominio';
+import { casadaNoMl } from './publicavel';
 
 export interface FamiliaCorNova {
   codigoPai: string;
@@ -16,7 +17,7 @@ export function coresNovasSemFoto(familias: Familia[]): FamiliaCorNova[] {
   for (const f of familias) {
     if (f.operacao !== 'UPDATE') continue;
     const codigos = f.variacoes
-      .filter((v) => !v.mlVariationId && !v.fotoPath && v.estoque > 0)
+      .filter((v) => !casadaNoMl(v) && !v.fotoPath && v.estoque > 0)
       .map((v) => v.codigo);
     if (codigos.length > 0) {
       out.push({ codigoPai: f.codigoPai, titulo: f.titulo, codigos });

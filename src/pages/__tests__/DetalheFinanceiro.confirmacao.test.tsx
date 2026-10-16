@@ -9,6 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import DetalheFinanceiro from '../DetalheFinanceiro';
 import { useVendas } from '@/hooks/useVendas';
+import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -25,7 +26,11 @@ vi.mock('@/lib/faturamento', async (orig) => ({
   registrarSaque: vi.fn().mockResolvedValue(undefined),
   desfazerSaque: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/components/export/botao-exportar', () => ({ BotaoExportar: () => null }));
+vi.mock('@/components/export/botao-exportar', () => ({
+  BotaoExportar: ({ montarReport }: { montarReport: (c: { incluirKpis: boolean }) => unknown }) => (
+    <button type="button" onClick={() => montarReport({ incluirKpis: true })}>Exportar</button>
+  ),
+}));
 // Corta a cadeia jspdf/html2canvas do adapter de export: montar a página inteira só para
 // abrir um diálogo não justifica ~20s de transform no worker.
 vi.mock('@/lib/export/adapters', () => ({ buildFinanceiroDetalheReport: vi.fn() }));
@@ -103,5 +108,36 @@ describe('DetalheFinanceiro — confirmação de saque em massa', () => {
 
     expect(screen.getByText(/Registrar saque de 25 pedidos\?/)).toBeInTheDocument();
     expect(screen.queryByText(/Registrar saque de 17 pedidos\?/)).not.toBeInTheDocument();
+  });
+});
+
+describe('DetalheFinanceiro — exportar', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    vi.mocked(useVendas).mockReset();
+    vi.mocked(buildFinanceiroDetalheReport).mockClear();
+  });
+
+  it('com pedidos marcados, exporta só os marcados (e os totais deles)', async () => {
+    mockVendas(vendasDe(3));
+    const user = userEvent.setup();
+    render(tela());
+
+    await user.click(screen.getAllByLabelText(/^Selecionar pedido /)[0]);
+    await user.click(screen.getByRole('button', { name: 'Exportar' }));
+
+    const args = vi.mocked(buildFinanceiroDetalheReport).mock.calls[0][0];
+    expect(args.pedidos).toHaveLength(1);
+    expect(args.totais.bruto).toBe(100);
+  });
+
+  it('sem seleção, exporta o filtro inteiro', async () => {
+    mockVendas(vendasDe(3));
+    const user = userEvent.setup();
+    render(tela());
+
+    await user.click(screen.getByRole('button', { name: 'Exportar' }));
+
+    expect(vi.mocked(buildFinanceiroDetalheReport).mock.calls[0][0].pedidos).toHaveLength(3);
   });
 });

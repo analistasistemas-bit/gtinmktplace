@@ -172,3 +172,21 @@ describe('coresSemFotoExcluidas', () => {
     expect(coresSemFotoExcluidas(f)).toHaveLength(0);
   });
 });
+
+// ADR-0088: em User Products ml_variation_id é sempre null; "já no anúncio" = jaCasadaUP.
+describe('família User Products (jaCasadaUP)', () => {
+  const up = v({ codigo: '1', cor: 'Amarelo', fotoPath: undefined, jaCasadaUP: true, estoque: 10 });
+  const nova = v({ codigo: '2', cor: 'Azul', fotoPath: undefined, jaCasadaUP: false, estoque: 10 });
+  it('agruparRevisaoUpdate põe a cor UP ativa em reposição, não em novas', () => {
+    const g = agruparRevisaoUpdate([up, nova]);
+    expect(g.reposicao.map((x) => x.codigo)).toEqual(['1']);
+    expect(g.novas.map((x) => x.codigo)).toEqual(['2']);
+  });
+  it('coresNovasComEstoque ignora a cor UP ativa', () => {
+    const f = fam({ operacao: 'UPDATE', variacoes: [up, nova] });
+    expect(coresNovasComEstoque(f).map((x) => x.codigo)).toEqual(['2']);
+  });
+  it('variacoesParaRevisao pós-publicação esconde a cor UP ativa', () => {
+    expect(variacoesParaRevisao([up, nova], true).map((x) => x.codigo)).toEqual(['2']);
+  });
+});
