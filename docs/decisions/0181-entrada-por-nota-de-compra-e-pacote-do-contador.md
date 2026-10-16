@@ -1,7 +1,7 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). **Plano 2b-1 (pacote do contador: compras) implementado na branch `worktree-plano2b-compras-inventario`, aguardando revisão final, merge e redeploy da edge `baixar-notas-venda`.** Plano 2b-2 (inventário, D-12) pendente.
+**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). **Plano 2b-1 (pacote do contador: compras) implementado na branch `worktree-plano2b-compras-inventario`, aguardando revisão final, merge e redeploy da edge `baixar-notas-venda`.** Plano 2b-2 (inventário, D-12) em implementação na branch `worktree-adr0181-plano-2b2-inventario`.
 Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
 Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)
@@ -203,6 +203,13 @@ CT-e fica fora do download (`others=correction_letter`): documento de transporte
 4. Notas desfeitas e marcadas canceladas vão no zip em pastas próprias (`compras/xmls-desfeitas/`, `compras/xmls-canceladas/`), listadas na Conferência com o rótulo "desfeita no PubliAI em <data>" / "marcada cancelada no PubliAI em <data>" (data = `desfeita_em`) e fora da planilha e dos totais ("desfazer" é operação de estoque; "cancelada" é marcação do operador, não evento SEFAZ verificado).
 5. Em sessão de suporte não há fallback: falha na parte de vendas aborta o pacote; a edge audita o pacote inteiro (vendas + compras).
 Ruling R1: a diferença por nota é `vNF − (vProd − vDesc + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol + vST + vFCPST)`, pois `vII` e `vIPIDevol` integram o `vNF` no leiaute. XML vai com os mesmos bytes baixados do bucket (hash SHA-256 conferido contra o da importação; fila de 4 downloads, 30 s cada). Cobertura: só notas importadas; quantidade, unidade e CFOP são os do fornecedor. Falha ao listar aborta; falha de uma nota vai para a Conferência e marca PARCIAL. Inventário (D-12) fica no Plano 2b-2.
+**Plano 2b-2 — inventário (D-12) — decisões do Diego (2026-10-16).** Spec: `docs/superpowers/specs/2026-10-16-pacote-contador-inventario-design.md`; plano: `docs/superpowers/plans/2026-10-16-pacote-contador-inventario.md`.
+1. Camadas por SKU: unidades com nota avaliadas pelo custo médio móvel; o resto aparece como "sem nota de compra" (só quantidade, sem valor); as unidades sem nota saem primeiro; planilha, cadastro e entrada manual são "sem nota", mesmo com custo informado (`variacoes.custo` é de precificação).
+2. Separação próprio / Full / terceiros fora da v1: o saldo total sai como estoque próprio, com aviso fixo (inclui o que estiver no Full; terceiros não são controlados).
+3. Foto em tabela (`inventarios`, `inventarios_itens`, imutáveis por trigger; `pg_cron` em 31/12 23:59 America/Sao_Paulo) e diferença da contagem vira movimento: falta = ajuste relativo, sobra = entrada sem custo, com justificativa obrigatória e push ao canal.
+4. Entrega: botão "Inventário de hoje" no card (xlsx/pdf avulso) e a foto de 31/12 dentro do `pacote-AAAA-12.zip` (`inventario/`), com status "confirmado" ou "aguardando contagem"; os outros meses não levam inventário.
+Garantia: a quantidade avaliada nunca passa das unidades de nota ainda cabíveis no saldo e o custo médio é sempre média de custos de aquisição reais de notas importadas. Quando a linhagem se perde (planilha, lacuna, corte) a camada recomeça e o SKU fica marcado `historico_incompleto`; isso pode mudar o valor para menos ou para mais.
+
 Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`. Validado em produção (2026-10-16): mês sem nota na org PF → pacote só com relatórios (TTFB 2,3 s); zip real de setembro de uma loja com ~1.400 vendas/mês (emissão por ERP), filtro de produção: 1.351 NF-e, 6,2 MB, 30 s (com `others=all` vinham as mesmas 1.351 NF-e + 1.347 CT-e: o filtro não perde documento fiscal); leitura 1,9 s + relatórios 1,0 s; 1.337 vendas autorizadas + 14 remessas em comodato (CFOP 6908) em "outros", sem PARCIAL; soma e 4 notas conferidas contra o XML por leitura independente; segundo clique durante a trava recebe a mensagem local.
 
 ## Parecer do contador (simulado)
@@ -239,6 +246,8 @@ PE por mercadoria; formalidades estaduais do livro de inventário; uso de NFA-e;
 conta do ML.
 
 ## Consequências
+
+**Pendências do Plano 2b-2:** (1) separação Full / terceiros no inventário (decisão 2): o banco guarda um saldo por SKU; (2) corrida do clone do "adicionar variação" (ver risco herdado abaixo): única exceção à garantia do inventário, a nota perdida na cópia antiga ainda conta como camada.
 
 **Risco pré-existente herdado (achado na revisão do plano, 2026-10-15):** o "adicionar variação"
 (ADR-0129) lê o saldo, cria a família nova e clona as variações com esse retrato, sem lock. Entrada ou
