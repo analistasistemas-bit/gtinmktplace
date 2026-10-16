@@ -36,6 +36,10 @@ describe('relatório de compras', () => {
     expect(conf).toContain('desfeita no PubliAI em');
     expect(conf).toContain(CH(2));
     expect(conf).toContain('finNFe 2');
+    // O SheetJS só lê `!cols` de volta com cellStyles.
+    const cols = XLSX.read(gerarRelatorioComprasXlsx(comp, CAB), { type: 'array', cellNF: true, cellStyles: true }).Sheets.Compras['!cols'] ?? [];
+    expect(cols[col('Chave')]?.wch).toBeGreaterThanOrEqual(44);   // 44 dígitos legíveis sem alargar à mão
+    expect(cols[col('Fornecedor')]?.wch).toBeGreaterThanOrEqual(30);
   });
   it('PDF: colunas exigidas, totais e conferência; PARCIAL quando há falha', () => {
     const t = montarRelatorioComprasPdf(comp, CAB).output();

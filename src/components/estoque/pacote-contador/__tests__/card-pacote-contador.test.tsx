@@ -146,6 +146,22 @@ describe('CardPacoteContador', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('timeout'));
     expect(salvar).not.toHaveBeenCalled();
   });
+  it('falha ao listar compras NÃO aborta o download de vendas em curso (evita cooldown/429)', async () => {
+    let sinalVendas: AbortSignal | undefined;
+    baixar.mockImplementationOnce((_m: string, _o: string, s: AbortSignal) => { sinalVendas = s; return new Promise(() => {}); });
+    listar.mockRejectedValueOnce(new Error('timeout'));
+    render(<CardPacoteContador />); clicar();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('timeout'));
+    expect(sinalVendas?.aborted).toBe(false);
+  });
+  it('org trocada aborta o download de vendas em curso', async () => {
+    let sinalVendas: AbortSignal | undefined;
+    baixar.mockImplementationOnce((_m: string, _o: string, s: AbortSignal) => { sinalVendas = s; return new Promise(() => {}); });
+    listar.mockImplementationOnce(async () => { orgAtual = 'org-2'; return []; });
+    render(<CardPacoteContador />); clicar();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(new ErroOrgMudou().message));
+    expect(sinalVendas?.aborted).toBe(true);
+  });
   it('vendas indisponíveis + compra com falha: PARCIAL e selo nos 4 relatórios', async () => {
     baixar.mockRejectedValueOnce(new ErroPacote('limite', 429));
     listar.mockResolvedValueOnce([row({ n: 1 })]);

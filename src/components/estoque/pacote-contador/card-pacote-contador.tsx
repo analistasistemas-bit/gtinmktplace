@@ -94,7 +94,9 @@ export function CardPacoteContador() {
       else toast.success(`Pacote de ${mes} gerado.`);
     } catch (e) {
       const cancelado = ctl.signal.aborted || (e as Error)?.name === 'AbortError';
-      if (!ctl.signal.aborted) ctl.abort();   // derruba downloads pendentes
+      // Só cancelamento/org trocada derrubam o download de vendas: abortá-lo à toa faz a edge gravar cooldown
+      // (60 s) e o clique seguinte cair em 429. Nos demais erros ele termina sozinho e o resultado é ignorado.
+      if ((cancelado || e instanceof ErroOrgMudou) && !ctl.signal.aborted) ctl.abort();
       if (montado.current && !cancelado) toast.error(e instanceof Error ? e.message : 'Não foi possível gerar o pacote.');
     } finally {
       emCurso.current = false;

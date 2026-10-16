@@ -41,6 +41,8 @@ export function gerarRelatorioComprasXlsx(l: LeituraCompras, cab: Cabecalho): Ui
     const cel = ws[XLSX.utils.encode_cell({ r: f.r, c: f.c })] as XLSX.CellObject | undefined;
     if (cel?.t === 'n') cel.z = f.z;
   }
+  // Larguras na ordem de COLUNAS_COMPRAS: datas 16, Fornecedor/Descrição 30, Chave 46 (44 dígitos), dinheiro 12.
+  ws['!cols'] = [16, 16, 30, 16, 10, 6, 46, 10, 8, 16, 30, 10, 6, 10, 10, 10, 8, 12, 12, 12, 12, 12, 12, 12, 12].map((wch) => ({ wch }));
   const conf = XLSX.utils.aoa_to_sheet(linhasConferenciaCompras(l, cab));
   conf['!cols'] = [{ wch: 60 }, { wch: 80 }];
   const wb = XLSX.utils.book_new();

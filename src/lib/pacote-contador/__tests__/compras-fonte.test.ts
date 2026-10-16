@@ -77,27 +77,43 @@ describe('baixarXmlCompra', () => {
 
 describe('baixarXmlsCompra', () => {
   it('no máximo 4 em paralelo, inclusive após timeouts; progresso; uma falha não derruba as outras', async () => {
-    let ativos = 0; let pico = 0; let k = 0;
-    download.mockImplementation((_p: string, _o: unknown, f: { signal: AbortSignal }) => {
-      ativos += 1; pico = Math.max(pico, ativos);
-      const i = k++;
-      return new Promise((res, rej) => {
-        let feito = false;
-        const fim = () => { if (!feito) { feito = true; ativos -= 1; } };
-        f.signal.addEventListener('abort', () => { fim(); rej(new DOMException('a', 'AbortError')); });
-        if (i < 4) return;                              // os 4 primeiros estouram o timeout
-        if (i === 5) { setTimeout(() => { fim(); rej(new TypeError('Failed to fetch')); }, 2); return; }
-        setTimeout(() => { fim(); res({ data: new Blob([bom]), error: null }); }, 2);
+    // Determinístico: timers falsos + digest mockado; só os 4 primeiros dependem do relógio (o timeout).
+    vi.useFakeTimers();
+    const dig = createHash('sha256').update(bom).digest();
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(dig.buffer.slice(dig.byteOffset, dig.byteOffset + dig.byteLength));
+    try {
+      let ativos = 0; let pico = 0; let k = 0;
+      download.mockImplementation((_p: string, _o: unknown, f: { signal: AbortSignal }) => {
+        ativos += 1; pico = Math.max(pico, ativos);
+        const i = k++;
+        return new Promise((res, rej) => {
+          let feito = false;
+          const fim = () => { if (!feito) { feito = true; ativos -= 1; } };
+          f.signal.addEventListener('abort', () => { fim(); rej(new DOMException('a', 'AbortError')); });
+          if (i < 4) return;                              // os 4 primeiros só terminam pelo timeout
+          queueMicrotask(() => {
+            fim();
+            if (i === 5) rej(new TypeError('Failed to fetch'));
+            else res({ data: { arrayBuffer: async () => bom.buffer.slice(0) }, error: null });
+          });
+        });
       });
-    });
-    const notas = Array.from({ length: 10 }, (_, i) => row({ n: i + 1, xml_sha256: H }));
-    const prog: number[] = [];
-    const r = await baixarXmlsCompra(notas, sinal(), (f) => prog.push(f), 4, 15);
-    expect(pico).toBeLessThanOrEqual(4);
-    expect(r.size).toBe(10);
-    expect([...r.values()].filter((x) => x.tipo === 'ok')).toHaveLength(5);
-    expect(r.get('id-6')).toEqual({ tipo: 'indisponivel', motivo: 'Failed to fetch' });
-    expect(prog.at(-1)).toBe(10);
+      const notas = Array.from({ length: 10 }, (_, i) => row({ n: i + 1, xml_sha256: H }));
+      const prog: number[] = [];
+      const pendente = baixarXmlsCompra(notas, sinal(), (f) => prog.push(f), 4, 15);
+      await vi.advanceTimersByTimeAsync(15);   // estoura só os 4 primeiros; os demais terminam em microtasks
+      const r = await pendente;
+      const vals = [...r.values()];
+      expect(pico).toBe(4);
+      expect(r.size).toBe(10);
+      expect(vals.filter((x) => x.tipo === 'indisponivel' && x.motivo === 'tempo esgotado')).toHaveLength(4);
+      expect(vals.filter((x) => x.tipo === 'ok')).toHaveLength(5);
+      expect(r.get('id-6')).toEqual({ tipo: 'indisponivel', motivo: 'Failed to fetch' });
+      expect(prog.at(-1)).toBe(10);
+    } finally {
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
   });
   it('cancelamento antes e durante', async () => {
     const ac = new AbortController(); ac.abort();

@@ -28,7 +28,7 @@
 - [ ] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
 - [ ] Merge na main (fast-forward, CI verde).
 - [ ] Redeploy da edge `baixar-notas-venda` via CLI completa; conferir versão ativa pós-deploy (sem ele, a falha de auditoria em suporte perde o `codigo`).
-- [ ] Task 7 — validação de runtime: org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
+- [ ] Task 7 — validação de runtime: org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `compras/xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
 - [ ] Plano 2b-2 (inventário, D-12) pendente.
 
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
