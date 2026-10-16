@@ -173,14 +173,6 @@ importada aparece marcado "sem nota de compra", nunca com custo inventado.
     chave, valor dos produtos, frete, desconto, valor total e status (autorizada, cancelada, devolução).
     Venda sem nota autorizada aparece na mesma lista, sinalizada, nunca omitida.
   - Devolução entra no mês de emissão da nota de devolução.
-
-**Emendas de 2026-10-16 (Diego, após o spike da API):**
-1. "Vendas sem nota" sai do Plano 2a e fica pendente até a primeira venda faturada pelo Faturador mostrar onde o
-   pedido ML aparece no XML (o prefixo do nome do arquivo não é pedido, pack nem envio).
-2. 1 lote = 1 mês: a API aceita no máximo ~1 mês por chamada e devolve 429 após 3–4 chamadas em poucos minutos,
-   sem `Retry-After`. "Retomar" = baixar o mês de novo; o manifesto é a aba Conferência.
-CT-e fica fora do download (`others=correction_letter`): documento de transporte, não de venda.
-Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.
 - **devoluções emitidas fora do ML:** a devolução **ao fornecedor** é emitida pela própria org (CFOP
   5.202/6.202), por emissor externo, como o Emissor gratuito do Sebrae. O PubliAI **importa** esse XML,
   vincula à nota de compra e baixa o estoque. Reembolso de venda sem retorno físico **não** volta ao
@@ -197,6 +189,14 @@ O pacote **não substitui** livro Caixa, DEFIS nem escrituração.
 tarifas, fretes, publicidade, estornos, repasses) para o livro Caixa. O PubliAI já tem esses dados no
 Financeiro, e o contador precisa deles todo mês. Repasse líquido **não** é faturamento: a base do Simples é a
 venda bruta (LC 123 art. 3º, §1º).
+
+**Emendas de 2026-10-16 (Diego, após o spike da API):**
+1. "Vendas sem nota" sai do Plano 2a e fica pendente até a primeira venda faturada pelo Faturador mostrar onde o
+   pedido ML aparece no XML (o prefixo do nome do arquivo não é pedido, pack nem envio).
+2. 1 lote = 1 mês: a API aceita no máximo ~1 mês por chamada e devolve 429 após 3–4 chamadas em poucos minutos,
+   sem `Retry-After`. "Retomar" = baixar o mês de novo; o manifesto é a aba Conferência.
+CT-e fica fora do download (`others=correction_letter`): documento de transporte, não de venda.
+Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.
 
 ## Parecer do contador (simulado)
 

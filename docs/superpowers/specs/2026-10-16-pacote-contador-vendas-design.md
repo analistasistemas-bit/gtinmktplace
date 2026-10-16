@@ -57,7 +57,7 @@ ML e não aparece no pacote. A Conferência diz isso por escrito.
 ```
 /estoque [Pacote do contador · mês · Baixar]
   └─ navegador ── fetch POST {mes} (JWT) ──▶ edge baixar-notas-venda
-                                  requireUserOrg(full) → módulo estoque → conexão ML da org
+                                  requireUserOrg(read) → módulo estoque → conexão ML da org
                                   trava Redis por conexão (460 s enquanto baixa + cooldown de 60 s ao terminar)
                                   getValidAccessTokenConexao → GET .../period/stream
                  ◀── stream ───── 200 application/octet-stream + X-Org-Id + X-Conta-Ml (sem gravar o zip)
@@ -129,6 +129,7 @@ pacote de novo." e **nenhum** pacote é montado.
 |---|---|---|
 | NF-e de venda | `nfeProc` com `protNFe` `cStat` 100/150, `tpNF`=1, `finNFe` 1 ou 2, e **todo** item com CFOP da lista explícita de venda (R6, abaixo) | aba Vendas, tipo **venda** (ou **complementar** se `finNFe`=2) |
 | NF-e de devolução de venda | `tpNF`=0, `finNFe`=4, com `refNFe`, e **todo** item com CFOP da lista explícita de devolução de venda (R6, abaixo) | aba Vendas, tipo **devolução** |
+| NF-e denegada | `protNFe` `cStat` 110/301/302/303 | Conferência, "notas denegadas" (sem selo PARCIAL) |
 | NF-e de saída sem CFOP de venda (remessa Full, transferência etc.) ou CFOP misto | demais `nfeProc` | Conferência, "outros documentos fiscais" (lista chave + CFOPs) |
 | Cancelamento | `procEventoNFe` `tpEvento` 110111 com `retEvento` `cStat` **135/155** | marca a chave como cancelada; sem nota no zip → Conferência "cancelamento de nota de outro mês" |
 | CC-e | `tpEvento` 110110 com `retEvento` `cStat` **135** (R7) | coluna booleana "Carta de correção" (sim/não); a "maior sequência" saiu, pois o relatório não exibe o texto da correção |
@@ -163,8 +164,8 @@ Frete (`vFrete`) · Desconto (`vDesc`) · Total (`vNF`) · Carta de correção.
 autorizada/cancelada, em ordem fixa, mesmo com zero.
 
 **Aba "Conferência"** (no PDF: página própria): org, CNPJ (de `empresa_fiscal`, se houver), conta ML, mês, data/hora da
-geração; contagem por classificação; outros documentos fiscais; cancelamentos de nota de outro mês; eventos
-rejeitados; inutilizações; ilegíveis/incompletos e divergências de chave; notas fora do período; avisos fixos:
+geração; contagem por classificação; outros documentos fiscais; cancelamentos de nota de outro mês; notas denegadas; eventos
+não aplicados; inutilizações; ilegíveis/incompletos e divergências de chave; notas fora do período; avisos fixos:
 "Conciliação com as vendas não incluída nesta versão" e "Notas emitidas fora do Mercado Livre e não enviadas a ele
 não aparecem aqui"; "Mês em andamento" quando for o mês atual; "Nenhuma nota no mês" quando o ML respondeu 404 vazio.
 Selo **PACOTE PARCIAL** em destaque (topo das duas abas e do PDF) com os motivos listados.
@@ -175,8 +176,7 @@ Selo **PACOTE PARCIAL** em destaque (topo das duas abas e do PDF) com os motivos
 
 1. `ler.ts` — zips montados com `fflate` a partir de XMLs sintéticos (formato SEFAZ com namespace, CNPJs de fixture
    `11222333000181`/`11444777000161`): venda; complementar; remessa Full (CFOP 5949/6949) fora das vendas; CFOP misto;
-   devolução de venda; cancelamento homologado; cancelamento rejeitado; cancelamento de nota fora do zip; CC-e com 2
-   sequências; inutilização homologada e rejeitada; chave duplicada igual e divergente; XML com `<parsererror>`;
+   devolução de venda; cancelamento homologado; cancelamento não aplicado (cStat ≠ 135/155) e 136 sem vínculo; cancelamento de nota fora do zip; CC-e booleana, só cStat 135 (155 não vale); inutilização homologada e rejeitada; chave duplicada igual e divergente; XML com `<parsererror>`;
    campo obrigatório ausente; zip truncado (rejeitado inteiro); zip sem documentos; nota de 30/09 23:30−03:00 em
    pacote de setembro e de outubro; os dois formatos de nome de pasta medidos.
 2. xlsx: reler com SheetJS — tipos das células (chave como texto), ordem, totais por grupo, Conferência, selo PARCIAL.
@@ -185,7 +185,7 @@ Selo **PACOTE PARCIAL** em destaque (topo das duas abas e do PDF) com os motivos
 5. edge (`processar.ts`): intervalo do mês (fevereiro/bissexto), mês futuro no fuso de São Paulo, toda a tabela de
    status, trava ocupada → 429 local.
 6. **Runtime** (app em produção, org DSA com a conta VALIDATION, que já é membro dela; nenhuma conexão alterada):
-   - setembro: tempo até o primeiro byte e total; zip binário íntegro; preflight com `x-region`;
+   - setembro: tempo até o primeiro byte e total; zip binário íntegro; preflight OPTIONS sem `x-region` (o fetch cru não envia — R5);
    - **conferência independente:** nº de NF-e de venda autorizadas × pedidos pagos de `ml_vendas` no mês (diferença
      explicada) e 5 notas sorteadas conferidas campo a campo contra o XML aberto à mão;
    - duplo clique / duas abas → segunda recebe 429 local;
