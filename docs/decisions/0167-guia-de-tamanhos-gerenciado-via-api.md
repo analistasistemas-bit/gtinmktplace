@@ -101,3 +101,5 @@ Remover `_shared/ml/size-chart.ts` e a tabela `ml_size_charts` (não destrutivo 
 por dado de negócio, só por cache); reverter `montarPayloadItem`/`montarAnuncioCanonico` aos
 campos anteriores. Famílias com tamanho voltam a falhar alto na publicação (mesmo comportamento de
 antes desta feature — nunca publicava roupa/calçado com tamanho).
+
+> **Emenda 2026-10-16:** guia de quadril (`SHORTS`/`PANTS`) e `CLOTHING_LOTS` sem guia → ver [ADR-0182](0182-grades-infantil-calca-e-guia-de-quadril.md).

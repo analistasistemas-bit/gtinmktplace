@@ -32,8 +32,8 @@ Nenhum anúncio foi criado ou alterado.
   infantil como `"N anos"` (`2 anos` … `16 anos`). `SIZE_GRID_ID`/`SIZE_GRID_ROW_ID` presentes.
 - **GENDER** (as três categorias): `Feminino 339665`, `Masculino 339666`, `Meninas`,
   `Meninos 339667` (id lido na resposta do chart, seção 4), `Bebês`, `Sem gênero infantil`,
-  `Sem gênero 110461`. Ids de `Meninas`/`Sem gênero infantil`: ler da categoria, não confirmados
-  aqui.
+  `Sem gênero 110461`. Ids lidos de `GET /categories/MLB188064/attributes` e `MLB271219`
+  (2026-10-16): `Meninas 339668`, `Sem gênero infantil 19159491`.
 - **CLOTHING_LOTS:** não tem `SIZE` nem `SIZE_GRID_ID`. O tamanho vai em `CLOTHING_LOT_SIZE`
   (string livre, allow_variations). `COLOR` required.
 
