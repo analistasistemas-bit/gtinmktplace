@@ -7,9 +7,19 @@
 - [x] Migrations 20261015231837, 20261015233207, 20261015234006, 20261015235604, 20261016001451 aplicadas em produção.
 - [x] Edges novas `importar-nota-compra` e `desfazer-nota-compra`; `_shared/nfe/*`; diálogo de importação, lista de notas e desfazer/cancelar/reenviar estoque no `/estoque`.
 - [x] Docs: edge-functions, modelo-de-dados, ADR-0181 (aceito), deploy, Fiscal/Estoque no vault.
-- [ ] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge; validação de runtime na Zaven (Diego).
+- [x] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge (feito em 2026-10-16); validação de runtime na Zaven (Diego).
 - [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
-- [ ] Plano 2 (D-12/D-13): pacote do contador.
+- [ ] Plano 2b (D-12/D-13): pacote do contador, parte de compras e inventário.
+
+## Pacote do contador — vendas (ADR-0181, Plano 2a) — implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão/merge/deploy
+
+- [x] Spec reconciliada (`docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`), ADR-0181 (emendas e resultado do spike), edge-functions, project-status, Fiscal/Estoque no vault.
+- [x] `src/lib/pacote-contador/*` (leitura/integridade do zip, relatório xlsx e PDF, montagem), card "Pacote do contador" em `/estoque`, edge `baixar-notas-venda` (`verify_jwt = true`).
+- [ ] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
+- [ ] Merge na main (fast-forward, CI verde).
+- [ ] Deploy da edge `baixar-notas-venda` via CLI; conferir versão ativa pós-deploy (a edge é nova: merge sem deploy deixa o card sem backend).
+- [ ] Validação de runtime (Task 8): TTFB e tempo total de um mês real, zip íntegro, duplo clique → 429 local, conferência de NF-e × pedidos pagos e de notas sorteadas contra o XML, filtro sem CT-e vs `others=all`.
+- [ ] Pendência: aba "Vendas sem nota" e colunas Pedido ML/Data da venda — depende de onde o pedido do ML aparece no XML da primeira venda faturada pelo Faturador.
 
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
 

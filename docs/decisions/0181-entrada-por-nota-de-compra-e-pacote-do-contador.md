@@ -173,6 +173,14 @@ importada aparece marcado "sem nota de compra", nunca com custo inventado.
     chave, valor dos produtos, frete, desconto, valor total e status (autorizada, cancelada, devolução).
     Venda sem nota autorizada aparece na mesma lista, sinalizada, nunca omitida.
   - Devolução entra no mês de emissão da nota de devolução.
+
+**Emendas de 2026-10-16 (Diego, após o spike da API):**
+1. "Vendas sem nota" sai do Plano 2a e fica pendente até a primeira venda faturada pelo Faturador mostrar onde o
+   pedido ML aparece no XML (o prefixo do nome do arquivo não é pedido, pack nem envio).
+2. 1 lote = 1 mês: a API aceita no máximo ~1 mês por chamada e devolve 429 após 3–4 chamadas em poucos minutos,
+   sem `Retry-After`. "Retomar" = baixar o mês de novo; o manifesto é a aba Conferência.
+CT-e fica fora do download (`others=correction_letter`): documento de transporte, não de venda.
+Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.
 - **devoluções emitidas fora do ML:** a devolução **ao fornecedor** é emitida pela própria org (CFOP
   5.202/6.202), por emissor externo, como o Emissor gratuito do Sebrae. O PubliAI **importa** esse XML,
   vincula à nota de compra e baixa o estoque. Reembolso de venda sem retorno físico **não** volta ao
@@ -255,6 +263,13 @@ mas depende da API do ML no momento da exportação.
    verificar na **primeira venda faturada** da Zaven.
 2. Download por período dos XMLs do Faturador: autenticação, filtros (canceladas e devoluções),
    histórico disponível, volume e bytes por mês, limites, e CPU e memória da montagem do zip (ADR-0173).
+   **Resolvido pelo spike de 2026-10-16** (só leitura, duas lojas): endpoint
+   `GET /users/{id}/invoices/sites/MLB/batch_request/period/stream` com o token atual do app (sem escopo novo),
+   devolvendo `application/zip` direto; intervalo máximo de ~1 mês por chamada (mais que isso → 400); mês sem
+   documento → 404 com corpo vazio; 429 após 3–4 chamadas em poucos minutos, sem `Retry-After`; volume de uma loja com
+   ~1.400 vendas/mês (emissão por ERP): ~1.350 NF-e, ~6 MB, ~30 s sem CT-e (~12 MB e ~56 s com CT-e). A montagem do
+   zip fica no navegador, não na edge (CPU de 2 s, ADR-0173). Não medidos: fuso/inclusividade de `start`/`end`,
+   critério temporal dos eventos, TTFB e escopo da cota (conta ou app).
 3. O push de estoque ignora o SKU não publicado (D-8).
 4. Validar o pacote com o **contador real** do cliente. O parecer acima é simulado. **Adiado para a
    V2 (decisão do Diego, 2026-10-15):** ST/antecipação de PE por mercadoria, formalidades do Livro de

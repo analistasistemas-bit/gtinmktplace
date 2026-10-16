@@ -293,3 +293,10 @@ Lista de notas no `/estoque`: importar XML (SEFAZ ou exportação de ERP), conci
 famílias (vínculo de fornecedor), distribuir quantidade e custo na grade, confirmar. A edge
 `importar-nota-compra` lê o XML no servidor e lança a entrada via ledger (ref `nfe:{chave}:{nItem}:{codigo}`);
 `desfazer-nota-compra` (admin) estorna ou cancela. Em produção desde 2026-10-16 (main `4c2ca2a1`).
+
+## Pacote do contador — vendas (ADR-0181, Plano 2a)
+
+Card em `/estoque`: escolhe o mês (padrão: anterior) e baixa `pacote-AAAA-MM.zip` com os XMLs fiscais do mês do ML + `relatorio-vendas.xlsx` e `.pdf`
+(uma linha por nota, ordem crescente de data, aba/página Conferência com selo PACOTE PARCIAL quando algo falta). A edge `baixar-notas-venda`
+só repassa o zip; o navegador valida (CRC), lê e monta, sem gravar. 1 download por vez por conta (460 s) + 60 s de intervalo; suporte em
+modo somente leitura não exporta. Implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão/merge/deploy.
