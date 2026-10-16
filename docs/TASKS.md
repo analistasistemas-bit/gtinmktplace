@@ -11,14 +11,14 @@
 - [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
 - [ ] Plano 2b (D-12/D-13): pacote do contador, parte de compras e inventário.
 
-## Pacote do contador — vendas (ADR-0181, Plano 2a) — implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão/merge/deploy
+## Pacote do contador — vendas (ADR-0181, Plano 2a) — EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1)
 
 - [x] Spec reconciliada (`docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`), ADR-0181 (emendas e resultado do spike), edge-functions, project-status, Fiscal/Estoque no vault.
 - [x] `src/lib/pacote-contador/*` (leitura/integridade do zip, relatório xlsx e PDF, montagem), card "Pacote do contador" em `/estoque`, edge `baixar-notas-venda` (`verify_jwt = true`).
-- [ ] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
-- [ ] Merge na main (fast-forward, CI verde).
-- [ ] Deploy da edge `baixar-notas-venda` via CLI; conferir versão ativa pós-deploy (a edge é nova: merge sem deploy deixa o card sem backend).
-- [ ] Validação de runtime (Task 8): TTFB e tempo total de um mês real, zip íntegro, duplo clique → 429 local, conferência de NF-e × pedidos pagos e de notas sorteadas contra o XML, filtro sem CT-e vs `others=all`.
+- [x] Revisão final do diff da branch (Grok 4.7 xhigh) e correção dos achados.
+- [x] Merge na main (fast-forward, CI verde).
+- [x] Deploy da edge `baixar-notas-venda` via CLI (v1, ACTIVE, `verify_jwt=true`, 401 sem auth); conferir versão ativa pós-deploy (a edge é nova: merge sem deploy deixa o card sem backend).
+- [x] Validação de runtime (Task 8) — ver ADR-0181: TTFB e tempo total de um mês real, zip íntegro, duplo clique → 429 local, conferência de NF-e × pedidos pagos e de notas sorteadas contra o XML, filtro sem CT-e vs `others=all`.
 - [ ] Pendência: aba "Vendas sem nota" e colunas Pedido ML/Data da venda — depende de onde o pedido do ML aparece no XML da primeira venda faturada pelo Faturador.
 
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`

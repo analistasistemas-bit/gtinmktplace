@@ -2,7 +2,7 @@
 
 **Data:** 2026-10-16 · **ADR:** [0181](../../decisions/0181-entrada-por-nota-de-compra-e-pacote-do-contador.md) (D-13, parte "vendas")
 **Revisão:** adversarial Codex `gpt-6.1-sol` high (2026-10-16) — 15 achados incorporados, 1 recusado, 2 decididos pelo Diego.
-**Status:** implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão final, merge e deploy da edge. Reconciliado com os rulings R1–R7 do plano (`docs/superpowers/plans/2026-10-16-pacote-contador-vendas.md`).
+**Status:** EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1). Reconciliado com os rulings R1–R7 do plano (`docs/superpowers/plans/2026-10-16-pacote-contador-vendas.md`).
 **Fora deste plano:** compras e inventário (D-12, D-13 "compras"/"inventário") → Plano 2b.
 
 ## Objetivo

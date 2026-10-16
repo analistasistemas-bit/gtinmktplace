@@ -1094,7 +1094,7 @@ falha ao ler `organizations` não libera.
   importada. **Admin-only** (`autorizarDesfazer`) e gate `estoque`. Chama a RPC `desfazer_nota_compra`
   (advisory lock + `FOR UPDATE` no saldo, guard de família canônica). Idempotente: nota já desfeita
   responde `{ jaEstava: true }` sem mexer no saldo. Resposta `{ pushOk, jaEstava }`.
-- **baixar-notas-venda** (ADR-0181 Plano 2a; implementada na branch `worktree-plano2-pacote-contador`, **deploy pendente**) —
+- **baixar-notas-venda** (ADR-0181 Plano 2a; em produção desde 2026-10-16, v1) —
   repassa o zip de XMLs fiscais do mês (download por período do ML) para o pacote do contador montado no navegador.
   `verify_jwt = true`, gate `estoque`, conexão ML da org; `POST { mes: 'AAAA-MM' }`. Devolve `application/octet-stream`
   (stream, sem parse nem gravação) com `X-Org-Id`, `X-Conta-Ml` e `Access-Control-Expose-Headers: X-Org-Id, X-Conta-Ml`; mês sem nota → `200 { vazio: true }`; erros em JSON (400 mês

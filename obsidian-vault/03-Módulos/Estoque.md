@@ -299,4 +299,4 @@ famílias (vínculo de fornecedor), distribuir quantidade e custo na grade, conf
 Card em `/estoque`: escolhe o mês (padrão: anterior) e baixa `pacote-AAAA-MM.zip` com os XMLs fiscais do mês do ML + `relatorio-vendas.xlsx` e `.pdf`
 (uma linha por nota, ordem crescente de data, aba/página Conferência com selo PACOTE PARCIAL quando algo falta). A edge `baixar-notas-venda`
 só repassa o zip; o navegador valida (CRC), lê e monta, sem gravar. 1 download por vez por conta (460 s) + 60 s de intervalo; suporte em
-modo somente leitura não exporta. Implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão/merge/deploy.
+modo somente leitura não exporta. EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1).

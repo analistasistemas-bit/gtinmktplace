@@ -116,7 +116,7 @@ Regime Normal (`tax_rules` completo) · IE por UF (`state_registry`) · adaptado
 ADR-0181 (aceito; Plano 1 em produção desde 2026-10-16; pacote do contador no Plano 2) — descrição fiscal própria, distribuição na grade exata,
 vínculo de fornecedor, custo da nota × custo real, fiscal da nota como sugestão confirmada,
 export mensal (compras, inventário, XMLs de venda ao vivo do ML).
-Plano 2a (vendas) implementado na branch `worktree-plano2-pacote-contador`, aguardando revisão/merge/deploy: um zip por
+Plano 2a (vendas) EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1): um zip por
 mês com os XMLs do download por período do ML (sem CT-e) + relatório xlsx/PDF, classificados pelo conteúdo do XML
 (CFOP de venda/devolução, cancelamento 135/155, CC-e 135), sem gravar nada. Cobertura: nota emitida fora do ML e não
 enviada a ele não aparece. "Vendas sem nota" pendente. Spec: `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.

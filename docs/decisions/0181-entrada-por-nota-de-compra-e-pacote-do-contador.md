@@ -1,7 +1,7 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). Plano 2 (pacote do contador) pendente.
+**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). Plano 2b (compras/inventário) pendente.
 Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
 Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)
@@ -196,7 +196,7 @@ venda bruta (LC 123 art. 3º, §1º).
 2. 1 lote = 1 mês: a API aceita no máximo ~1 mês por chamada e devolve 429 após 3–4 chamadas em poucos minutos,
    sem `Retry-After`. "Retomar" = baixar o mês de novo; o manifesto é a aba Conferência.
 CT-e fica fora do download (`others=correction_letter`): documento de transporte, não de venda.
-Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.
+Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`. Validado em produção (2026-10-16): mês sem nota na org PF → pacote só com relatórios (TTFB 2,3 s); zip real de setembro de uma loja com ~1.400 vendas/mês (emissão por ERP), filtro de produção: 1.351 NF-e, 6,2 MB, 30 s (com `others=all` vinham as mesmas 1.351 NF-e + 1.347 CT-e: o filtro não perde documento fiscal); leitura 1,9 s + relatórios 1,0 s; 1.337 vendas autorizadas + 14 remessas em comodato (CFOP 6908) em "outros", sem PARCIAL; soma e 4 notas conferidas contra o XML por leitura independente; segundo clique durante a trava recebe a mensagem local.
 
 ## Parecer do contador (simulado)
 
