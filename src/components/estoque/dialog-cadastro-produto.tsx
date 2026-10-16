@@ -89,6 +89,7 @@ export function SeloSugestaoOrigem({ inicial }: { inicial?: CadastroInicial }) {
 
 export function DialogCadastroProduto({
   aberto, onFechar, inicial, onCadastrado, irParaRevisaoAoConcluir = false, origemNota = false,
+  avisoSemGrade = false,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -106,6 +107,8 @@ export function DialogCadastroProduto({
   irParaRevisaoAoConcluir?: boolean;
   /** ADR-0181 D-4: aberto pela importação de nota — sem estoque inicial (o saldo entra pela nota). */
   origemNota?: boolean;
+  /** ADR-0181: org sem tipo de produto habilitado — avisa que a grade depende de habilitá-lo. */
+  avisoSemGrade?: boolean;
 }) {
   const navigate = useNavigate();
   const { data: modulos } = useModulosHabilitados();
@@ -371,6 +374,11 @@ export function DialogCadastroProduto({
               <span className="text-xs text-muted-foreground">
                 Códigos gerados automaticamente ao salvar.
               </span>
+              {avisoSemGrade && (
+                <span className="text-xs text-muted-foreground">
+                  Para cadastrar grade (tamanho), habilite roupa/calçado em Configurações.
+                </span>
+              )}
               {/* A dúvida recorrente do operador é o produto SEM variação — a tela só mostra
                   "Variação 1" e nada diz que deixá-la sem cor é o caminho certo. Some quando ele
                   adiciona a 2ª linha: aí o produto tem variação de fato e a dica viraria ruído. */}
@@ -445,12 +453,15 @@ export function DialogCadastroProduto({
           ) : (
             <>
               <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>Fechar</Button>
-              <Button
-                disabled={api.pendencias || api.ocupado}
-                onClick={() => api.comConfirmacao(() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); })}
-              >
-                Ir para a Revisão
-              </Button>
+              {/* Pela nota (ADR-0181), navegar destruiria o assistente da importação. */}
+              {!origemNota && (
+                <Button
+                  disabled={api.pendencias || api.ocupado}
+                  onClick={() => api.comConfirmacao(() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); })}
+                >
+                  Ir para a Revisão
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

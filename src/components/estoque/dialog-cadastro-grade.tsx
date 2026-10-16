@@ -768,12 +768,15 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
                   Fechar
                 </Button>
-                <Button
-                  disabled={api.pendencias || api.ocupado}
-                  onClick={() => api.comConfirmacao(() => { onFechar(); api.irParaRevisao(resultado.loteId); })}
-                >
-                  Ir para a Revisão
-                </Button>
+                {/* Pela nota (ADR-0181), navegar destruiria o assistente da importação. */}
+                {!origemNota && (
+                  <Button
+                    disabled={api.pendencias || api.ocupado}
+                    onClick={() => api.comConfirmacao(() => { onFechar(); api.irParaRevisao(resultado.loteId); })}
+                  >
+                    Ir para a Revisão
+                  </Button>
+                )}
               </>
             ) : etapaFiscal ? (
               <>

@@ -155,6 +155,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onVariacaoFalt
         <DialogCadastroProduto
           aberto={cadastro?.modo === 'simples'} onFechar={() => setCadastro(null)}
           inicial={cadastro?.modo === 'simples' ? cadastro.inicial : undefined} origemNota
+          avisoSemGrade={tiposProduto?.length === 0}
           onCadastrado={(r) => cadastro && aoCadastrar(cadastro.nItem, r)}
         />
         <DialogCadastroGrade

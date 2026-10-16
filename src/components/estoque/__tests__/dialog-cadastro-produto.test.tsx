@@ -1044,12 +1044,15 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     cadastrarProdutoMock.mockClear();
   });
 
-  function renderNota(onCadastrado?: (r: { codigoPai: string }) => void) {
+  function renderNota(onCadastrado?: (r: { codigoPai: string }) => void, avisoSemGrade = false) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <DialogCadastroProduto aberto onFechar={() => {}} inicial={inicialNota} origemNota onCadastrado={onCadastrado} />
+          <DialogCadastroProduto
+            aberto onFechar={() => {}} inicial={inicialNota} origemNota onCadastrado={onCadastrado}
+            avisoSemGrade={avisoSemGrade}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -1085,6 +1088,14 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
     expect(payload.variacoes[0].custo).toBe(10);
     expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000010' });
+    // Etapa de fotos: só "Fechar" — "Ir para a Revisão" sairia do assistente da nota.
+    expect(await screen.findByRole('button', { name: 'Fechar' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ir para a Revisão' })).not.toBeInTheDocument();
+  });
+
+  it('avisoSemGrade mostra como habilitar a grade', () => {
+    renderNota(undefined, true);
+    expect(screen.getByText(/Para cadastrar grade \(tamanho\), habilite roupa\/calçado em Configurações/)).toBeInTheDocument();
   });
 
   it('com módulo fiscal: NCM/origem NF-e prefilled, CSOSN vazio e "Conferi NCM e origem" obrigatório', async () => {

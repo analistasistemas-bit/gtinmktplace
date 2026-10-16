@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -860,5 +860,40 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     await waitFor(() => expect(onFechar).toHaveBeenCalledTimes(1));
     expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000020' });
     expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
+  });
+
+  it('foto que falhou: etapa de fotos sem "Ir para a Revisão"', async () => {
+    // jsdom sem URL.createObjectURL — mesmo mock do describe "salvar".
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn((f: File) => `blob:${f.name}`) });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    onTestFinished(() => {
+      cleanup();
+      Reflect.deleteProperty(URL, 'createObjectURL');
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    });
+    const { uploadFotoProduto } = await import('@/lib/produtos-saldo');
+    vi.mocked(uploadFotoProduto).mockRejectedValueOnce(new Error('falhou'));
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', codigoPai: '00000020', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000021' }],
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><DialogCadastroGrade aberto onFechar={() => {}} origemNota inicial={{ sugestaoDaNota: true }} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.upload(screen.getByLabelText('Foto da cor Preto'), new File(['x'], 'preto.jpg', { type: 'image/jpeg' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fechar' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ir para a Revisão' })).not.toBeInTheDocument();
   });
 });

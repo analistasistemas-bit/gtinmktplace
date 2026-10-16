@@ -56,7 +56,6 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
   // recusa tamanho sem tipo.
   const [perguntando, setPerguntando] = useState<number | null>(null);
   const comGrade = !!tiposProduto && tiposProduto.length > 0;
-  const semTipo = !!tiposProduto && tiposProduto.length === 0;
   return (
     <div className="space-y-3">
       {e.decisoes.map((d) => {
@@ -114,11 +113,6 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
               >
                 Cadastrar produto novo
               </Button>
-              {semTipo && (
-                <span className="text-xs text-muted-foreground">
-                  Para cadastrar grade (tamanho), habilite roupa/calçado em Configurações.
-                </span>
-              )}
             </div>
             {perguntando === d.nItem && (
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2 text-sm">
