@@ -300,3 +300,10 @@ Card em `/estoque`: escolhe o mês (padrão: anterior) e baixa `pacote-AAAA-MM.z
 (uma linha por nota, ordem crescente de data, aba/página Conferência com selo PACOTE PARCIAL quando algo falta). A edge `baixar-notas-venda`
 só repassa o zip; o navegador valida (CRC), lê e monta, sem gravar. 1 download por vez por conta (460 s) + 60 s de intervalo; suporte em
 modo somente leitura não exporta. EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1).
+
+### Compras no pacote (Plano 2b-1) — implementado na branch, aguardando revisão final, merge e redeploy da edge
+
+O mesmo zip passa a levar `relatorio-compras.xlsx`/`.pdf` (aba/página "Compras" com uma linha por item e "Conferência de compras") e os XMLs das notas
+importadas em `compras/xmls/`; desfeitas em `compras/xmls-desfeitas/` e marcadas canceladas em `compras/xmls-canceladas/` (fora da planilha e dos totais).
+Competência = data de emissão. Downloads do bucket em fila de 4, 30 s cada; falha de uma nota marca o pacote PARCIAL. Se o ML falhar (fora do suporte),
+sai com "vendas indisponíveis" e selo PARCIAL; em sessão de suporte a falha de vendas aborta. Inventário (Plano 2b-2) pendente.

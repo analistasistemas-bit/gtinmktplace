@@ -1,7 +1,7 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). Plano 2b (compras/inventário) pendente.
+**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). **Plano 2b-1 (pacote do contador: compras) implementado na branch `worktree-plano2b-compras-inventario`, aguardando revisão final, merge e redeploy da edge `baixar-notas-venda`.** Plano 2b-2 (inventário, D-12) pendente.
 Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
 Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)
@@ -196,6 +196,13 @@ venda bruta (LC 123 art. 3º, §1º).
 2. 1 lote = 1 mês: a API aceita no máximo ~1 mês por chamada e devolve 429 após 3–4 chamadas em poucos minutos,
    sem `Retry-After`. "Retomar" = baixar o mês de novo; o manifesto é a aba Conferência.
 CT-e fica fora do download (`others=correction_letter`): documento de transporte, não de venda.
+**Plano 2b-1 — compras no pacote (D-13, parte "compras"; implementado na branch, aguardando revisão final, merge e redeploy da edge `baixar-notas-venda`).** Spec: `docs/superpowers/specs/2026-10-16-pacote-contador-compras-design.md`; plano: `docs/superpowers/plans/2026-10-16-pacote-contador-compras.md`. O mesmo `pacote-AAAA-MM.zip` passa a levar `relatorio-compras.xlsx`/`.pdf` (uma linha por item, com CSOSN/CST do XML) e os XMLs das notas de compra importadas (`compras/xmls/<chave>.xml`). Tudo no navegador: sem migration, sem edge nova; só `baixar-notas-venda` muda (alvo de auditoria `pacote_contador_mes`, falha de auditoria responde `codigo: 'auditoria'`). Decisões do Diego (2026-10-16):
+1. Competência = data de emissão (`emitida_em`, mês em America/Sao_Paulo); a planilha mostra também a data de importação.
+2. Mesmo pacote das vendas, com fallback "vendas indisponíveis" (selo PARCIAL nos quatro relatórios) quando o ML falha fora do suporte.
+3. Uma linha por item, com o cabeçalho da nota repetido e CSOSN/CST lido do XML.
+4. Notas desfeitas e marcadas canceladas vão no zip em pastas próprias (`compras/xmls-desfeitas/`, `compras/xmls-canceladas/`), listadas na Conferência e fora da planilha e dos totais ("desfazer" é operação de estoque; "cancelada" é marcação do operador, não evento SEFAZ verificado).
+5. Em sessão de suporte não há fallback: falha na parte de vendas aborta o pacote; a edge audita o pacote inteiro (vendas + compras).
+Ruling R1: a diferença por nota é `vNF − (vProd − vDesc + vFrete + vSeg + vOutro + vII + vIPI + vIPIDevol + vST + vFCPST)`, pois `vII` e `vIPIDevol` integram o `vNF` no leiaute. XML vai com os mesmos bytes baixados do bucket (hash SHA-256 conferido contra o da importação; fila de 4 downloads, 30 s cada). Cobertura: só notas importadas; quantidade, unidade e CFOP são os do fornecedor. Falha ao listar aborta; falha de uma nota vai para a Conferência e marca PARCIAL. Inventário (D-12) fica no Plano 2b-2.
 Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`. Validado em produção (2026-10-16): mês sem nota na org PF → pacote só com relatórios (TTFB 2,3 s); zip real de setembro de uma loja com ~1.400 vendas/mês (emissão por ERP), filtro de produção: 1.351 NF-e, 6,2 MB, 30 s (com `others=all` vinham as mesmas 1.351 NF-e + 1.347 CT-e: o filtro não perde documento fiscal); leitura 1,9 s + relatórios 1,0 s; 1.337 vendas autorizadas + 14 remessas em comodato (CFOP 6908) em "outros", sem PARCIAL; soma e 4 notas conferidas contra o XML por leitura independente; segundo clique durante a trava recebe a mensagem local.
 
 ## Parecer do contador (simulado)

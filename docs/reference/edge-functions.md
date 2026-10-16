@@ -1101,6 +1101,8 @@ falha ao ler `organizations` não libera.
   inválido/futuro, 409 sem conexão ou ML recusou, 429 limite do ML ou trava local, 502 ML indisponível/resposta ambígua ou falha interna Redis/banco/token — "Falha interna ao preparar o download…"; erro de sessão/acesso → JSON "Sessão expirada ou sem acesso — entre de novo." com o status original).
   Trava Redis `lock:notas-venda:<conexaoId>` (460 s enquanto baixa, cooldown de 60 s ao terminar). Lógica em
   `processar.ts` (testada); `index.ts` só HTTP. Suporte em modo somente leitura não exporta.
+  Plano 2b-1 (implementado na branch, aguardando merge e redeploy): o alvo da auditoria passa a ser `{ type: 'pacote_contador_mes', id: mes }`
+  (audita o pacote inteiro, vendas + compras) e a falha de auditoria responde 502 `{ error, codigo: 'auditoria' }`, que o navegador trata como erro fatal. As compras do pacote não passam por esta edge (leitura direta por RLS no navegador).
 
 ### Kit Virtual (ADR-0154)
 
