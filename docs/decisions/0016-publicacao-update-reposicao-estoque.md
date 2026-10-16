@@ -267,8 +267,11 @@ valor antigo.
 **Decisão (Diego, 2026-10-16):** a cor casada herda o **preço confirmado no ML**
 (`preco_publicado_ml` da família anterior, gravado em todo UPDATE — inclusive "somente estoque" —
 com o preço vivo devolvido pelo ML). Exceções: preço fixado pelo operador
-(`preco_editado_pelo_operador`, D15 do ADR-0178) continua herdando `preco_publicacao`; sem
-`preco_publicado_ml` (nunca confirmado) também. A cor casada herda ainda o próprio
+(`preco_editado_pelo_operador`, D15 do ADR-0178) continua herdando `preco_publicacao`. Variação
+sem `preco_publicado_ml` próprio (nunca foi ao anúncio, ex.: ficou fora por falta de foto) usa o
+**menor preço confirmado da família** — sem isso, uma família Legacy ficaria com dois preços
+(confirmadas no preço do ML, não confirmadas no preço velho) e cairia no split/LOUD do ADR-0078;
+sem nenhum confirmado na família, mantém `preco_publicacao`. A cor casada herda ainda o próprio
 `preco_publicado_ml` — antes o ingest não o copiava, a linha nova nascia com `null` e o selo do
 ADR-0078 nunca acendia **antes** de publicar (só depois, quando o UPDATE gravava o preço vivo).
 Com isso o selo "preço alterado" passa a significar "o preço a enviar (fixado na Revisão/reajuste)

@@ -54,6 +54,15 @@ export function casarVariacoesUpdate(
   const porCodigo = new Map(anteriores.map((a) => [a.codigo, a]));
   const codigosNovos = new Set(novas.map((n) => n.codigo));
 
+  // Preço confirmado da família (menor, como o precoPubFamilia do ingest): fallback da variação que
+  // nunca foi confirmada no ML (ex.: cor que ficou fora por falta de foto). Sem ele, Legacy ficaria
+  // com dois preços (confirmadas no preço do ML, não confirmadas no preço velho) → split/LOUD.
+  const confirmados = anteriores
+    .map((a) => a.preco_publicado_ml)
+    .filter((p): p is number | string => p != null)
+    .map(Number);
+  const precoConfirmadoFamilia = confirmados.length ? Math.min(...confirmados) : null;
+
   const herdados: Record<string, Herdado> = {};
   const novasCores: string[] = [];
   for (const n of novas) {
@@ -67,9 +76,9 @@ export function casarVariacoesUpdate(
         estoque_anterior: ant.estoque,
         // ADR-0016 adendo 2026-10-16: herda o preço que está no ar (preço mudado direto no ML não
         // volta ao valor velho do app); preço fixado pelo operador (D15) mantém o fixado.
-        preco_publicacao: ant.preco_editado_pelo_operador !== true && ant.preco_publicado_ml != null
-          ? ant.preco_publicado_ml
-          : ant.preco_publicacao,
+        preco_publicacao: ant.preco_editado_pelo_operador === true
+          ? ant.preco_publicacao
+          : ant.preco_publicado_ml ?? precoConfirmadoFamilia ?? ant.preco_publicacao,
         preco_publicado_ml: ant.preco_publicado_ml ?? null,
         preco_editado_pelo_operador: ant.preco_editado_pelo_operador,
       };
