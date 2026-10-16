@@ -2,7 +2,8 @@
 
 **Data:** 2026-10-16 · **ADR:** [0181](../../decisions/0181-entrada-por-nota-de-compra-e-pacote-do-contador.md) (D-12; D-13, parte "inventário")
 **Base:** Planos 1, 2a e 2b-1 em produção (main `1344d638`) — notas de compra, card "Pacote do contador" em `/estoque`.
-**Revisão:** adversarial Codex `gpt-6.1-sol` high, rodada 1 (2026-10-16): 14 achados incorporados (marcados `[Rn]`); rodada 2: 7 achados (F1–F7) incorporados.
+**Revisão:** adversarial Codex `gpt-6.1-sol` high, rodada 1 (2026-10-16): 14 achados incorporados (marcados `[Rn]`); rodada 2: 7 achados (F1–F7) incorporados; rodada 3: 5 achados (grant da sequência, comando do cron, garantia de valor
+reescrita, corrida do clone documentada como herdada, família sem variações).
 
 ## Objetivo
 
@@ -14,7 +15,13 @@ Dar à empresa e ao contador o inventário avaliado pelo **custo médio ponderad
 
 **Sucesso:** em janeiro a empresa abre a foto de 31/12, confere a contagem, confirma, e o pacote de dezembro leva o
 inventário confirmado. Nenhum SKU aparece com custo que não veio de nota; nenhuma unidade nem divergência some do relatório.
-Erro de avaliação, quando inevitável, é sempre **para menos** (unidade com nota tratada como "sem nota"), nunca para mais.
+
+**Garantia:** a quantidade avaliada nunca passa das unidades de nota ainda cabíveis no saldo, e o custo médio é sempre uma
+média de custos de aquisição reais de notas importadas. Quando a linhagem se perde (planilha, lacuna, corte), a camada
+recomeça. As unidades com nota anteriores passam a "sem nota", e a média passa a ignorar essas notas. Isso pode **mudar
+o valor para menos ou para mais** em relação à média que teria sido calculada com a linhagem inteira (Codex rodada 3: nota
+barata → planilha → nota cara → venda). Esse caso fica marcado `historico_incompleto` na Conferência, para o contador
+avaliar.
 
 ## Decisões do Diego (2026-10-16)
 
@@ -42,7 +49,10 @@ Erro de avaliação, quando inevitável, é sempre **para menos** (unidade com n
 **Coluna nova `estoque_movimentos.ordem bigint`** (nullable, sem default: sem reescrita da tabela) + sequência + trigger
 `before update` que atribui `ordem = nextval()` quando `estoque_resultante` passa de null a valor. Esse update acontece
 **depois** do `update variacoes`, com a linha da variação ainda travada até o commit. Assim, para um mesmo SKU, `ordem`
-segue a ordem real de aplicação, inclusive na mesma transação (nota com o SKU em dois itens). Nenhuma RPC muda. O plano
+segue a ordem real de aplicação, inclusive na mesma transação (nota com o SKU em dois itens). Nenhuma RPC muda. As RPCs
+rodam como `estoque_rpc_executor` (`20260804113000_guard_manual_product_direct_writes.sql:40`), e o trigger herda essa
+identidade: a migration dá `grant usage on sequence … to estoque_rpc_executor`. O teste exercita entrada, venda, estorno e
+ajuste pelo caminho real com o trigger instalado (Codex rodada 3). O plano
 confere que **todas** as RPCs que preenchem `estoque_resultante` (`registrar_entrada`, `ajustar_estoque`, `baixar_estoque`,
 estorno) o fazem com a variação travada, e que nenhuma insere o movimento já com `estoque_resultante` preenchido. Se alguma
 fizer isso, o trigger também cobre `before insert`.
@@ -61,8 +71,13 @@ Uma função SQL `inventario_calcular(p_org uuid)` calcula tudo. O inventário d
 formata. **É uma única instrução SQL** (CTE recursiva por SKU), para ler saldo, notas e movimentos num só snapshot
 `[R10]`.
 
-**Universo de SKUs:** variações da família canônica (mesma regra de `produtos_estoque_resumo()`: `distinct on (codigo_pai)
-… order by criado_em desc`, `kit_multiplicador is null`). Saldo = `variacoes.estoque` da canônica.
+**Universo de SKUs:** variações da família canônica (regra de `produtos_estoque_resumo()`: `distinct on (codigo_pai)
+… order by criado_em desc`, `kit_multiplicador is null`), **restrita a famílias com ao menos uma variação** (Codex rodada 3:
+`ingest-lote` e o clone gravam a família e as variações em chamadas separadas — `ingest-lote/index.ts:330,416`,
+`adicionar-variacoes-familia/index.ts:344,380`; uma foto nessa janela pegaria a família nova vazia e perderia os SKUs). O
+plano confirma que, nos dois caminhos, as variações de uma família entram num único insert. Se não entrarem, a foto tem de
+detectar a família em composição e falhar a org ('falhou'), em vez de gravar silenciosamente. Saldo = `variacoes.estoque`
+da canônica.
 
 **Entradas com custo:** linhas de `notas_compra_distribuicao` com nota em `status = 'importada'` (desfazer não apaga a
 distribuição, só muda o status), casadas com o movimento `entrada` de `referencia_externa = 'nfe:{chave}:{n_item}:{codigo}'`.
@@ -111,7 +126,7 @@ limite. O contraexemplo do Codex (nota 10 → vende 10 → entrada manual 10) d�
 `u` = `custo_aquisicao_unit` (nota + frete/seguro/outros/IPI/ST − desconto, por unidade de estoque, já com fator —
 `_shared/nfe/regras.ts:101-104`). `c` em `numeric(14,6)`.
 
-**Limitações conhecidas (sempre para menos, nunca custo inventado):**
+**Limitações conhecidas (nunca custo inventado; ver "Garantia"):**
 - **Planilha** (salto fora do ledger): zera a camada no marco ou na lacuna da cadeia. Unidades com nota anteriores passam a
   "sem nota".
 - **Devolução/estorno** aumenta o saldo sem aumentar `k`, então a unidade devolvida sai "sem nota".
@@ -125,6 +140,11 @@ limite. O contraexemplo do Codex (nota 10 → vende 10 → entrada manual 10) d�
   - clonagem de família mantém o código vivo e é a mesma linhagem.
 
   O teste cobre o entrelaçamento "excluir → recriar → limpeza" nos dois caminhos.
+- **Corrida do clone (risco herdado):** `registrar_entrada` escolhe a variação antes de travá-la
+  (`20260903002527…:42,71`), e o clone copia o saldo sem lock. Uma nota aplicada na cópia antiga durante a clonagem perde
+  as unidades (risco já registrado no ADR-0181, "Consequências"). O ledger não guarda qual variação foi movimentada, então
+  o replay pode dar o custo dessa nota a unidades do clone (Codex rodada 3). A janela é a da clonagem (milissegundos). A
+  correção é a mesma do issue do modelo de família canônica, fora deste plano.
 
 ## Modelo de dados (migration)
 
@@ -185,11 +205,13 @@ Toda função que recebe `p_id` valida `p_id` **junto com `p_org`** (cross-org =
   - pula org que já tem foto 'aberto'/'confirmado' nessa data, e refaz a que está em 'falhou';
   - **uma org por transação** (`commit` entre orgs). Erro comum de uma org (`when others`) grava o cabeçalho em
     `status = 'falhou'` com `erro`, faz commit e segue para a próxima.
-  - **Timeout (rodada 2: F4):** `statement_timeout` vale para o comando inteiro, não por org. O comando do cron é `set
-    statement_timeout = '<global, medido>'; call public.gerar_fotos_inventario();`. Se o tempo global estourar
-    (`query_canceled`, que `when others` não captura), as orgs já commitadas ficam e as restantes ficam sem foto. A detecção do
-    card e a contingência manual (que pula quem já tem foto) cobrem esse caso. O teste provoca o cancelamento e prova que as
-    orgs já processadas ficaram gravadas.
+  - **Comando e timeout (rodada 2: F4; rodada 3):** o job agenda **só** `call public.gerar_fotos_inventario()`, uma
+    instrução top-level. Com `set …;` antes, o texto vira transação implícita e o `commit` interno falha. O timeout é o da
+    role que o pg_cron usa (postgres), e o plano consulta o valor. Com ≤ 10 s por org medidos, o total fica longe dele. Se
+    estourar (`query_canceled`, que `when others` não captura), as orgs já commitadas ficam e as restantes ficam sem foto. A
+    detecção do card e a contingência manual (que pula quem já tem foto) cobrem esse caso.
+  - **Validação do commit pelo job real:** o plano agenda um job temporário do pg_cron com `p_org` = org de teste e data
+    de teste, confirma em `cron.job_run_details` e no banco que a foto foi gravada com commit, e remove o job e a foto.
 - `pg_cron` no padrão de `20260726153552_finalize_support_access.sql` (desagenda por nome, agenda). O plano confere
   `cron.timezone` no projeto. Em GMT, a expressão é `59 2 1 1 *`.
 - **Contingência:** suporte roda `call gerar_fotos_inventario('AAAA-12-31', 'manual', '<org>')`. O relatório mostra "saldo
@@ -303,7 +325,10 @@ código reutilizado após falha da limpeza.
     - corte do backfill;
     - nota desfeita; entrada pendente de nota; entrada sem ledger → marca;
     - SKU sem nota; saldo negativo no fim;
-    - propriedade: a soma valorizada nunca passa do total das notas ainda cabível no saldo;
+    - nota barata → planilha (mesmo saldo) → nota cara → venda: marca `historico_incompleto`, custo = média só da nota cara;
+    - família nova sem variações não esconde os SKUs da anterior;
+    - propriedade: a quantidade avaliada nunca passa das unidades de nota ainda cabíveis no saldo, e o custo está entre o
+      menor e o maior `custo_aquisicao_unit` das notas da camada;
   - triggers de imutabilidade (foto, identidade, insert, contagem fora de 'aberto', confirmação sem a flag);
   - privilégios: cada função como `authenticated`/`anon` → negado; `p_id` de outra org → erro;
   - `salvar`: versão obsoleta, item alheio, contagem negativa, justificativa vazia;
