@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
     // preço e análise de concorrência de OUTRA org para dentro desta família.
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao, preco_editado_pelo_operador)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, descricao_fiscal, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao, preco_editado_pelo_operador)')
       .in('codigo_pai', codigosPai)
       .eq('org_id', lote.org_id)
       .not('ml_item_id', 'is', null)

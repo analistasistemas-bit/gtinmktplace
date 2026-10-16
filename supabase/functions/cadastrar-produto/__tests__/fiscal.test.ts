@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { montarLinhasProduto, type ProdutoEntrada } from '../../_shared/produto/validar.ts';
+import { montarLinhasProduto, validarProdutoNovo, type ProdutoEntrada } from '../../_shared/produto/validar.ts';
 import { validarFiscalDaEntrada, fiscalEfetivo } from '../processar.ts';
 
 const entrada: ProdutoEntrada = {
@@ -45,5 +45,26 @@ describe('fiscal no cadastro manual (ADR-0135)', () => {
       codigos: ['00101'], chaveCadastro: entrada.chaveCadastro,
     });
     expect(familia.ncm).toBeUndefined();
+  });
+
+  // ADR-0181 D-5: descrição fiscal = texto que sai na nota de venda do Faturador do ML.
+  const ctx = {
+    loteId: 'l', userId: 'u', orgId: 'o', codigoPai: '00100',
+    codigos: ['00101'], chaveCadastro: entrada.chaveCadastro, regimeOrg: 'simples' as const,
+  };
+  it('montarLinhasProduto grava descricao_fiscal com trim; vazia ou ausente vira null', () => {
+    const com = (d: string | null | undefined) =>
+      montarLinhasProduto({ ...entrada, fiscal: { ...entrada.fiscal!, descricaoFiscal: d } }, ctx).familia.descricao_fiscal;
+    expect(com(' Short masculino ')).toBe('Short masculino');
+    expect(com('   ')).toBeNull();
+    expect(com(null)).toBeNull();
+    expect(com(undefined)).toBeNull();
+    expect(montarLinhasProduto({ ...entrada, fiscal: undefined }, ctx).familia).not.toHaveProperty('descricao_fiscal');
+  });
+  it('validarProdutoNovo recusa descrição fiscal > 120 após trim e tipo não-string', () => {
+    const v = (d: unknown) => validarProdutoNovo({ ...entrada, fiscal: { ...entrada.fiscal!, descricaoFiscal: d as string } });
+    expect(v(`  ${'x'.repeat(120)}  `)).toEqual([]);
+    expect(v('x'.repeat(121)).map((e) => e.campo)).toContain('fiscal.descricaoFiscal');
+    expect(v(5).map((e) => e.campo)).toContain('fiscal.descricaoFiscal');
   });
 });

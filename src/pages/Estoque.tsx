@@ -274,6 +274,7 @@ export default function Estoque() {
         onFechar={() => setFiscalAberto(null)}
         onAvancar={setFiscalAberto}
         onSalvo={() => qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo })}
+        csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
       />
     </div>
   );

@@ -49,4 +49,35 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
     fireEvent.change(screen.getByLabelText(/origem fiscal/i), { target: { value: '5' } });
     expect(onMudar).toHaveBeenCalledWith({ origemNfe: '5' });
   });
+
+  // ADR-0181 D-10: o CSOSN padrão da empresa é SUGERIDO — nunca preenchido sozinho.
+  describe('CSOSN padrão de revenda', () => {
+    const props = { origem: 'nacional' as const, sugestaoNcm: null, carregandoSugestao: false, onAplicarSugestao: vi.fn() };
+    it('mostra o botão, não preenche sozinho e aplica só no clique', () => {
+      const onMudar = vi.fn();
+      render(<EtapaFiscalForm valor={fiscalVazio()} onMudar={onMudar} csosnPadrao="102" {...props} />);
+      expect(onMudar).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: /Usar padrão da empresa \(102\)/ }));
+      expect(onMudar).toHaveBeenCalledWith({ tributacaoIcms: '102' });
+    });
+    it('sem botão quando o CSOSN já está escolhido, não há padrão ou o padrão é inválido', () => {
+      const { unmount } = render(<EtapaFiscalForm valor={{ ...fiscalVazio(), tributacaoIcms: '500' }}
+        onMudar={vi.fn()} csosnPadrao="102" {...props} />);
+      expect(screen.queryByRole('button', { name: /padrão da empresa/ })).toBeNull();
+      unmount();
+      const r2 = render(<EtapaFiscalForm valor={fiscalVazio()} onMudar={vi.fn()} csosnPadrao={null} {...props} />);
+      expect(screen.queryByRole('button', { name: /padrão da empresa/ })).toBeNull();
+      r2.unmount();
+      render(<EtapaFiscalForm valor={fiscalVazio()} onMudar={vi.fn()} csosnPadrao="999" {...props} />);
+      expect(screen.queryByRole('button', { name: /padrão da empresa/ })).toBeNull();
+    });
+    it('campo Descrição na nota fiscal propaga o texto', () => {
+      const onMudar = vi.fn();
+      render(<EtapaFiscalForm valor={fiscalVazio()} onMudar={onMudar} {...props} />);
+      const input = screen.getByLabelText(/Descrição na nota fiscal/i) as HTMLInputElement;
+      expect(input.maxLength).toBe(120);
+      fireEvent.change(input, { target: { value: 'Short masculino' } });
+      expect(onMudar).toHaveBeenCalledWith({ descricaoFiscal: 'Short masculino' });
+    });
+  });
 });

@@ -14,6 +14,9 @@ import {
 
 // Radix Select não aceita value="" — sentinela para "sem alíquota interna" (ADR-0112).
 const UF_NENHUMA = '__nenhuma__';
+// ADR-0181 D-10: mesma sentinela para "CSOSN padrão não definido".
+const CSOSN_NENHUM = '__nenhum__';
+const CSOSNS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'];
 
 // Obrigatórios por subgrupo — espelho exato de OBRIGATORIOS em
 // supabase/functions/_shared/fiscal/ativacao.ts (front e Deno não compartilham módulo; manter
@@ -468,6 +471,28 @@ export function SecaoFiscal() {
                     <SelectItem value="imported">Importador</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <label htmlFor="csosn_padrao_revenda" className="text-xs font-medium">CSOSN padrão de revenda</label>
+                  <EstadoSalvo estado={filaEmpresa.estados.csosn_padrao_revenda} />
+                </div>
+                <Select
+                  value={empresa?.csosn_padrao_revenda ?? CSOSN_NENHUM}
+                  disabled={!podeEditarEmpresa || !filaEmpresa.pronto}
+                  onValueChange={(v) => gravarEmpresa('csosn_padrao_revenda', v === CSOSN_NENHUM ? null : v)}
+                >
+                  <SelectTrigger id="csosn_padrao_revenda" aria-label="CSOSN padrão de revenda" className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={CSOSN_NENHUM}>Não definido</SelectItem>
+                    {CSOSNS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Combine com seu contador. É sugerido no cadastro de produto e sempre pede confirmação.
+                </p>
               </div>
               <details className="sm:col-span-2">
                 <summary className="cursor-pointer text-xs font-medium text-muted-foreground">

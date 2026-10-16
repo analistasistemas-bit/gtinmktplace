@@ -194,3 +194,30 @@ describe('validarShapeEntrada', () => {
   });
 });
 
+// ADR-0181 D-5 — descrição fiscal viaja dentro de `fiscal` (contrato N-I2).
+describe('processarAtualizacaoFiscal — descricaoFiscal', () => {
+  it('ausente preserva, null limpa, texto grava com trim, >120 recusa', async () => {
+    const roda = async (fiscal: EntradaFiscal['fiscal']) => {
+      const { admin, writes } = fakeAdmin();
+      const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal });
+      return { r, writes };
+    };
+    // 1) chave ausente (cliente antigo) → update NÃO mexe na coluna
+    expect((await roda(FISCAL_OK)).writes[0].payload).not.toHaveProperty('descricao_fiscal');
+    // 2) null → limpa
+    expect((await roda({ ...FISCAL_OK, descricaoFiscal: null })).writes[0].payload.descricao_fiscal).toBeNull();
+    // 3) texto → grava com trim
+    expect((await roda({ ...FISCAL_OK, descricaoFiscal: ' Short ' })).writes[0].payload.descricao_fiscal).toBe('Short');
+    // 4) >120 depois do trim → inválido, nada gravado
+    const longo = await roda({ ...FISCAL_OK, descricaoFiscal: 'x'.repeat(121) });
+    expect(longo.r.tipo).toBe('invalido');
+    if (longo.r.tipo === 'invalido') expect(longo.r.erros.join(' ')).toMatch(/descrição fiscal.*120/i);
+    expect(longo.writes.length).toBe(0);
+  });
+
+  it('validarShapeEntrada: descricaoFiscal não-string e não-null → erro de shape', () => {
+    expect(validarShapeEntrada({ familiaId: 'f', fiscal: { descricaoFiscal: 5 } })).toMatch(/descricaoFiscal/);
+    expect(validarShapeEntrada({ familiaId: 'f', fiscal: { descricaoFiscal: null } })).toBeNull();
+    expect(validarShapeEntrada({ familiaId: 'f', fiscal: { descricaoFiscal: 'x' } })).toBeNull();
+  });
+});

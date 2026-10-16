@@ -14,10 +14,12 @@ export interface FiscalForm {
   fci: string;
   exTipi: string;
   tributacaoIcms: string;
+  /** ADR-0181 D-5: texto da nota de venda do ML. Vazio = usa o nome do produto. */
+  descricaoFiscal: string;
 }
 
 export function fiscalVazio(): FiscalForm {
-  return { ncm: '', cest: '', origemNfe: '', fci: '', exTipi: '', tributacaoIcms: '' };
+  return { ncm: '', cest: '', origemNfe: '', fci: '', exTipi: '', tributacaoIcms: '', descricaoFiscal: '' };
 }
 
 // Códigos de origem_nfe que exigem FCI (spec §2.3). Usado tanto na validação (fiscalCompleto)
@@ -75,15 +77,22 @@ function soDigitos(v: string, max: number): string {
   return v.replace(/\D/g, '').slice(0, max);
 }
 
-export function EtapaFiscalForm({ valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao }: {
+export function EtapaFiscalForm({
+  valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao, csosnPadrao,
+}: {
   valor: FiscalForm;
   origem: 'nacional' | 'importado' | null;
   onMudar: (patch: Partial<FiscalForm>) => void;
   sugestaoNcm: { ncm: string; justificativa: string } | null;
   carregandoSugestao: boolean;
   onAplicarSugestao: () => void;
+  /** ADR-0181 D-10: `empresa_fiscal.csosn_padrao_revenda`. Só SUGERE (botão) — nunca preenche
+   *  sozinho: campo fiscal nunca entra por default silencioso. */
+  csosnPadrao?: string | null;
 }) {
   const codigosOrigem = origem ? ORIGENS_NFE_POR_ORIGEM[origem] : [];
+  const sugerirCsosn = !valor.tributacaoIcms && !!csosnPadrao
+    && CSOSN_OPCOES.some((o) => o.valor === csosnPadrao);
   const fciVisivel = ORIGENS_COM_FCI.includes(Number(valor.origemNfe));
 
   return (
@@ -166,6 +175,15 @@ export function EtapaFiscalForm({ valor, origem, onMudar, sugestaoNcm, carregand
             <option value="">Selecione…</option>
             {CSOSN_OPCOES.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
           </select>
+          {sugerirCsosn && (
+            <button
+              type="button"
+              onClick={() => onMudar({ tributacaoIcms: csosnPadrao! })}
+              className="w-fit text-left text-xs text-info underline-offset-2 hover:underline"
+            >
+              Usar padrão da empresa ({csosnPadrao})
+            </button>
+          )}
         </div>
       </div>
 
@@ -199,6 +217,19 @@ export function EtapaFiscalForm({ valor, origem, onMudar, sugestaoNcm, carregand
         <label htmlFor="fiscal-ex-tipi" className="text-sm font-medium">EX TIPI</label>
         <Input id="fiscal-ex-tipi" value={valor.exTipi} onChange={(e) => onMudar({ exTipi: e.target.value })} />
         <span className="text-xs text-muted-foreground">Opcional.</span>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="fiscal-descricao" className="text-sm font-medium">Descrição na nota fiscal</label>
+        <Input
+          id="fiscal-descricao"
+          value={valor.descricaoFiscal}
+          maxLength={120}
+          onChange={(e) => onMudar({ descricaoFiscal: e.target.value })}
+        />
+        <span className="text-xs text-muted-foreground">
+          É o texto que sai na nota de venda do Mercado Livre. Vazio = usa o nome do produto.
+        </span>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ interface FamiliaFiscalAnterior {
   origem_nfe?: number | null;
   tributacao_icms?: string | null;
   tributacao_icms_regime?: string | null;
+  descricao_fiscal?: string | null;
 }
 
 /**
@@ -40,6 +41,8 @@ export function resolverCamposFiscais(g: GrupoFiscal, ant: FamiliaFiscalAnterior
     origem_nfe: g.origem_nfe ?? ant?.origem_nfe ?? null,
     tributacao_icms: g.tributacao_icms ?? ant?.tributacao_icms ?? null,
     tributacao_icms_regime: g.tributacao_icms ? 'simples' : ant?.tributacao_icms_regime ?? null,
+    // ADR-0181 D-5: a planilha não tem coluna de descrição fiscal — sempre herda no UPDATE.
+    descricao_fiscal: ant?.descricao_fiscal ?? null,
   };
 }
 

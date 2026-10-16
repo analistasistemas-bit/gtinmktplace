@@ -77,6 +77,14 @@ describe('resolverCamposFiscais (re-ingest herda opcionais vazios — fix round 
     expect(r.tributacao_icms_regime).toBeNull();
   });
 
+  // R6-I1 (ADR-0181): a planilha não tem coluna de descrição fiscal — o UPDATE sempre herda.
+  // Sem isto, o próximo push fiscal mandaria o nome_pai como `title` ao Faturador.
+  it('descricao_fiscal herda da família anterior no UPDATE', () => {
+    const r = resolverCamposFiscais(grupoVazio, { ...anterior, descricao_fiscal: 'Short masculino' });
+    expect(r.descricao_fiscal).toBe('Short masculino');
+    expect(resolverCamposFiscais(grupoVazio, undefined).descricao_fiscal).toBeNull();
+  });
+
   it('NCM nunca herda (obrigatório na própria planilha)', () => {
     const r = resolverCamposFiscais({ ...grupoVazio, ncm: '3926.90.90' }, anterior);
     expect(r.ncm).toBe('39269090');

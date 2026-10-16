@@ -12,6 +12,8 @@ export interface EntradaFiscal {
     // reprova para sempre a mesma unidade inválida gravada). Opcional: ausente = comportamento
     // intacto (usa `familia.unidade`); presente = valida contra a whitelist e grava.
     unidade?: string;
+    /** ADR-0181 D-5: ausente = não altera; null/'' = limpa (title volta ao nome_pai). */
+    descricaoFiscal?: string | null;
   };
 }
 export interface DepsAtualizarFiscal {
@@ -38,6 +40,8 @@ export function validarShapeEntrada(body: unknown): string | null {
   // TypeError cru (500) em vez de um 400 de validação.
   const unidade = (b.fiscal as { unidade?: unknown }).unidade;
   if (unidade !== undefined && typeof unidade !== 'string') return 'fiscal.unidade deve ser string';
+  const descricao = (b.fiscal as { descricaoFiscal?: unknown }).descricaoFiscal;
+  if (descricao != null && typeof descricao !== 'string') return 'fiscal.descricaoFiscal deve ser string ou null';
   return null;
 }
 
@@ -79,11 +83,19 @@ export async function processarAtualizacaoFiscal(
   }, regime);
   if (erros.length) return { tipo: 'invalido', erros };
 
+  // ADR-0181 D-5: chave ausente (cliente antigo) não mexe na coluna.
+  const temDescricao = 'descricaoFiscal' in f;
+  const descricaoFiscal = (f.descricaoFiscal ?? '').trim() || null;
+  if (descricaoFiscal && descricaoFiscal.length > 120) {
+    return { tipo: 'invalido', erros: ['descrição fiscal: até 120 caracteres'] };
+  }
+
   const { error } = await admin.from('familias').update({
     ncm: f.ncm, cest: f.cest?.trim() || null, origem_nfe: f.origemNfe,
     fci: f.fci?.trim() || null, ex_tipi: f.exTipi?.trim() || null,
     tributacao_icms: f.tributacaoIcms, tributacao_icms_regime: regime,
     ...(f.unidade !== undefined ? { unidade: unidadeEfetiva } : {}),
+    ...(temDescricao ? { descricao_fiscal: descricaoFiscal } : {}),
     atualizado_em: new Date().toISOString(),
   }).eq('id', familia.id);
   if (error) return { tipo: 'falha', mensagem: error.message };

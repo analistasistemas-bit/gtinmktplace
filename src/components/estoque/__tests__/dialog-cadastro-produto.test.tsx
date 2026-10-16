@@ -845,6 +845,7 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     const payload = cadastrarProdutoMock.mock.calls[0][0];
     expect(payload.fiscal).toEqual({
       ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102',
+      descricaoFiscal: null,
     });
   });
 

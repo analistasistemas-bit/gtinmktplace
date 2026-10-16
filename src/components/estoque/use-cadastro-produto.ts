@@ -78,6 +78,7 @@ export function montarPayload(
         fci: fiscal.fci || null,
         exTipi: fiscal.exTipi || null,
         tributacaoIcms: fiscal.tributacaoIcms,
+        descricaoFiscal: fiscal.descricaoFiscal.trim() || null,
       },
     } : {}),
   };

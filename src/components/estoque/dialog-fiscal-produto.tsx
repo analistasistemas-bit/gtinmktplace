@@ -31,13 +31,15 @@ function unidadeValida(u: string | null | undefined): boolean {
   return !!u && (UNIDADES_FISCAIS as readonly string[]).includes(u.toUpperCase().trim());
 }
 
-export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSalvo }: {
+export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSalvo, csosnPadrao }: {
   familiaId: string | null;
   /** ids ordenados dos pendentes — usado só para achar o próximo em "Salvar e próximo". */
   fila: string[];
   onFechar: () => void;
   onAvancar: (proximoId: string) => void;
   onSalvo: () => void;
+  /** ADR-0181 D-10: CSOSN padrão da empresa — só sugestão (botão), ver EtapaFiscalForm. */
+  csosnPadrao?: string | null;
 }) {
   const [familia, setFamilia] = useState<FamiliaFiscalCarregada | null>(null);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
@@ -66,7 +68,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
     let ignore = false;
 
     supabase.from('familias')
-      .select('nome_pai, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, unidade')
+      .select('nome_pai, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, unidade, descricao_fiscal')
       .eq('id', familiaId).maybeSingle()
       .then(({ data, error }) => {
         if (ignore) return;
@@ -78,6 +80,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
           fci: data.fci ?? '',
           exTipi: data.ex_tipi ?? '',
           tributacaoIcms: data.tributacao_icms ?? '',
+          descricaoFiscal: data.descricao_fiscal ?? '',
         };
         setFamilia({ nomePai: data.nome_pai, origem: data.origem as 'nacional' | 'importado', unidade: data.unidade });
         setFiscal(f);
@@ -121,6 +124,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
           fci: fiscal.fci || null,
           exTipi: fiscal.exTipi || null,
           tributacaoIcms: fiscal.tributacaoIcms,
+          descricaoFiscal: fiscal.descricaoFiscal.trim() || null,
           ...(precisaEscolherUnidade ? { unidade } : {}),
         },
       },
@@ -178,6 +182,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
               sugestaoNcm={sugestaoNcm}
               carregandoSugestao={carregandoSugestao}
               onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+              csosnPadrao={csosnPadrao}
             />
 
             {precisaEscolherUnidade && (

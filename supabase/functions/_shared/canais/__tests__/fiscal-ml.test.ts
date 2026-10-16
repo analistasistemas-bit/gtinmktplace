@@ -18,7 +18,7 @@ function fakeFetch(respostas: Array<{ status: number; body?: unknown }>) {
 describe('montarFiscalInformation (payload puro)', () => {
   it('converte peso de gramas para kg e omite cest/fci quando ausentes', () => {
     const p = montarFiscalInformation(
-      { nome_pai: 'X', unidade: 'un', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102' },
+      { nome_pai: 'X', unidade: 'un', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },
       { codigo: '00101', gtin: '789', peso_gramas: 200, ml_variation_id: null },
       { origin_type: 'reseller' },
     );
@@ -32,7 +32,7 @@ describe('montarFiscalInformation (payload puro)', () => {
 
   it('inclui cest/fci quando presentes', () => {
     const p = montarFiscalInformation(
-      { nome_pai: 'X', unidade: 'UN', ncm: '39269090', cest: '0100100', origem_nfe: 3, fci: 'ABC123', ex_tipi: '01', tributacao_icms: '500' },
+      { nome_pai: 'X', unidade: 'UN', ncm: '39269090', cest: '0100100', origem_nfe: 3, fci: 'ABC123', ex_tipi: '01', tributacao_icms: '500', descricao_fiscal: null },
       { codigo: '00101', gtin: null, peso_gramas: null, ml_variation_id: null },
       { origin_type: 'reseller' },
     );
@@ -41,6 +41,16 @@ describe('montarFiscalInformation (payload puro)', () => {
     expect(tax.cest).toBe('0100100');
     expect(tax.fci).toBe('ABC123');
     expect(tax.ex_tipi).toBe('01');
+  });
+
+  it('title usa descrição fiscal; nula ou vazia cai no nome_pai', () => {
+    const base = { nome_pai: 'Short Masculino Tactel Praia', unidade: 'UN', ncm: '62034900', cest: null,
+      origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102' };
+    const v = { codigo: 'S1', gtin: null, peso_gramas: null, ml_variation_id: null };
+    const t = (d: string | null) => montarFiscalInformation({ ...base, descricao_fiscal: d }, v, { origin_type: 'reseller' }).title;
+    expect(t('Short masculino')).toBe('Short masculino');
+    expect(t(null)).toBe('Short Masculino Tactel Praia');
+    expect(t('  ')).toBe('Short Masculino Tactel Praia');
   });
 });
 

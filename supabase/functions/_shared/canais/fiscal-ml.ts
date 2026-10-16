@@ -18,6 +18,8 @@ export interface FamiliaFiscalPush {
   nome_pai: string; unidade: string | null; ncm: string | null; cest: string | null;
   origem_nfe: number | null; fci: string | null; ex_tipi: string | null;
   tributacao_icms: string | null;
+  /** ADR-0181 D-5: texto da nota de venda. null/vazio = usa nome_pai. */
+  descricao_fiscal: string | null;
 }
 export interface VariacaoFiscalPush {
   codigo: string; gtin: string | null; peso_gramas: number | null; ml_variation_id: string | null;
@@ -39,7 +41,7 @@ export function montarFiscalInformation(
   if (variacao.gtin) tax.ean = variacao.gtin;
   return {
     sku: variacao.codigo,
-    title: familia.nome_pai,
+    title: familia.descricao_fiscal?.trim() || familia.nome_pai,
     type: 'single',
     measurement_unit: (familia.unidade ?? 'UN').toUpperCase().trim(),
     origin_type: empresa.origin_type,

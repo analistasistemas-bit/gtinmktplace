@@ -25,6 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import {
   LinhaVariacaoForm, novaLinha, erroCampo, type LinhaVariacao,
@@ -67,6 +68,8 @@ export function DialogCadastroProduto({
 }) {
   const navigate = useNavigate();
   const { data: modulos } = useModulosHabilitados();
+  // ADR-0181 D-10: CSOSN padrão só vira botão de sugestão na etapa fiscal.
+  const { data: empresaFiscal } = useEmpresaFiscal();
   const fiscalAtivo = !!modulos?.includes('fiscal');
 
   const [nomePai, setNomePai] = useState('');
@@ -197,6 +200,7 @@ export function DialogCadastroProduto({
             sugestaoNcm={sugestaoNcm}
             carregandoSugestao={carregandoSugestao}
             onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+            csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
           />
         ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao

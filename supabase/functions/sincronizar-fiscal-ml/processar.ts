@@ -35,7 +35,7 @@ export async function processarSincronizacaoFiscal(
 ): Promise<{ status: number; body: unknown }> {
   const { admin } = deps;
   const { data: familia } = await admin.from('familias')
-    .select('id, org_id, codigo_pai, nome_pai, ml_item_id, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime')
+    .select('id, org_id, codigo_pai, nome_pai, ml_item_id, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime, descricao_fiscal')
     .eq('id', job.familia_id).single();
   if (!familia) return { status: 404, body: { erro: 'família não encontrada' } };
 

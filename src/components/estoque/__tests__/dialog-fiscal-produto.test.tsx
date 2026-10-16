@@ -115,7 +115,7 @@ describe('DialogFiscalProduto — Salvar', () => {
       {
         body: {
           familiaId: 'fam-1',
-          fiscal: { ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102' },
+          fiscal: { ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102', descricaoFiscal: null },
         },
       },
     ));
@@ -251,7 +251,7 @@ describe('DialogFiscalProduto — unidade fora do vocabulário (ruling do contro
           familiaId: 'fam-1',
           fiscal: {
             ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102',
-            unidade: 'PC',
+            descricaoFiscal: null, unidade: 'PC',
           },
         },
       },

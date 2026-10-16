@@ -33,6 +33,8 @@ export interface FiscalEntrada {
   fci?: string | null;
   exTipi?: string | null;
   tributacaoIcms: string;
+  /** ADR-0181 D-5: texto da nota de venda (≤ 120 após trim). Ausente/null/vazio = nome do produto. */
+  descricaoFiscal?: string | null;
 }
 
 export interface ProdutoEntrada {

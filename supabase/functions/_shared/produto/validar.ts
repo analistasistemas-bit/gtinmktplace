@@ -26,6 +26,8 @@ export interface FiscalEntrada {
   fci?: string | null;
   exTipi?: string | null;
   tributacaoIcms: string;
+  /** ADR-0181 D-5: texto da nota de venda (≤ 120 após trim). Ausente/null/vazio = nome do produto. */
+  descricaoFiscal?: string | null;
 }
 
 export interface ProdutoEntrada {
@@ -100,6 +102,16 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
           + 'produto com tamanho/numeração e define a tabela de medidas usada na publicação.',
       });
     }
+  }
+
+  // ADR-0181 D-5: mesmo limite do CHECK da coluna — recusa aqui (400) em vez de 500 do banco.
+  const descricaoFiscal = p.fiscal?.descricaoFiscal;
+  if (descricaoFiscal != null
+    && (typeof descricaoFiscal !== 'string' || descricaoFiscal.trim().length > 120)) {
+    erros.push({
+      campo: 'fiscal.descricaoFiscal',
+      mensagem: 'Descrição fiscal deve ser texto de até 120 caracteres.',
+    });
   }
 
   if (!p.variacoes || p.variacoes.length === 0) {
@@ -180,6 +192,7 @@ export function montarLinhasProduto(
       ex_tipi: p.fiscal.exTipi?.trim() || null,
       tributacao_icms: p.fiscal.tributacaoIcms,
       tributacao_icms_regime: ctx.regimeOrg ?? 'simples',
+      descricao_fiscal: (p.fiscal.descricaoFiscal ?? '').trim() || null,
     } : {}),
   };
 
