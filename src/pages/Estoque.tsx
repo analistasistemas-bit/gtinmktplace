@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogImportarNota } from '@/components/estoque/importar-nota/dialog-importar-nota';
+import { SecaoNotasCompra } from '@/components/estoque/importar-nota/secao-notas-compra';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
@@ -59,6 +60,7 @@ export default function Estoque() {
   const [ordem, setOrdem] = useState<OrdemEstoque>('nome');
   const [entradaAberta, setEntradaAberta] = useState(false);
   const [notaAberta, setNotaAberta] = useState(false);
+  const [chaveDestacada, setChaveDestacada] = useState<string | null>(null);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
   // spec 2026-09-19 §1: segundo botão, SÓ para org com tipo de produto habilitado (ADR-0166).
@@ -271,7 +273,12 @@ export default function Estoque() {
         skuInicial={alvoEntrada?.sku}
         codigoPaiInicial={alvoEntrada?.codigoPai}
       />
-      <DialogImportarNota aberto={notaAberta} onFechar={() => setNotaAberta(false)} />
+      <SecaoNotasCompra destacarChave={chaveDestacada} />
+      <DialogImportarNota
+        aberto={notaAberta}
+        onFechar={() => setNotaAberta(false)}
+        onVerNota={(chave) => { setNotaAberta(false); setChaveDestacada(chave); }}
+      />
       <DialogAjuste
         produto={produtoAjuste}
         aberto={produtoAjuste != null}
