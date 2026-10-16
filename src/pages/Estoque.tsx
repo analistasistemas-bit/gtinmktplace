@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogImportarNota } from '@/components/estoque/importar-nota/dialog-importar-nota';
+import { CardPacoteContador } from '@/components/estoque/pacote-contador/card-pacote-contador';
 import { SecaoNotasCompra } from '@/components/estoque/importar-nota/secao-notas-compra';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
@@ -278,6 +279,7 @@ export default function Estoque() {
         skuInicial={alvoEntrada?.sku}
         codigoPaiInicial={alvoEntrada?.codigoPai}
       />
+      <CardPacoteContador razaoSocial={empresaFiscal?.razao_social ?? null} cnpj={empresaFiscal?.cnpj ?? null} />
       <SecaoNotasCompra destacarChave={chaveDestacada} />
       <DialogImportarNota
         aberto={notaAberta}
