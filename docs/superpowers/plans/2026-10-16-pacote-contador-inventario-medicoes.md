@@ -80,3 +80,13 @@ Pontos para a Task 3:
 - `estornar_estoque` tem também `for update` no movimento da venda original (`:191-195`) antes do insert; não muda a ordem em relação à variação.
 - Movimentos que **nunca** recebem `estoque_resultante` (ficam com `ordem` nula): tombstones `cancelamento_sem_baixa` (`:200-203`), `estorno_sku_nao_encontrado` (`:229-233`, quantidade zerada) e, em `baixar_estoque`, `venda_sku_nao_encontrado` (`:140`) e `venda_cancelada_antes` (`:123-126`, reaproveita o tombstone). A Task 3 deve ignorá-los (`quantidade = 0`, sem efeito no saldo) e o backfill não pode exigir `ordem` não nula em toda linha.
 - `registrar_entrada_nota_pendente` (`20261015234006_adr181_rpc_nota_compra.sql:168`) delega a `registrar_entrada`; não grava resultante por conta própria.
+
+## (f) Orçamento de `inventario_calcular` (Task 3, Step 5)
+
+Volume sintético = o maior medido em (a), numa org de teste dentro de `teste-sql-desfeito.py` (transação desfeita): 11.717 variações (2.930 famílias de planilha) e 3.756 movimentos, com o pior caso de recursão (um SKU com cadeia de 1.000 movimentos + 689 SKUs com 4) e 889 entradas de nota importada. Teste: `supabase/tests/inventario_calculo_volume.sql`.
+
+| Medida | Resultado | Critério |
+|---|---|---|
+| `explain (analyze) select * from inventario_calcular(org)` — Execution Time | **297 ms** (11.717 linhas) | ≤ 10 s |
+
+Leitura: folga de ~30×; o índice `(org_id, codigo, ordem)` não foi criado (o plano só o pede acima de 10 s).
