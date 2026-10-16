@@ -176,3 +176,31 @@ describe('origemNota (ADR-0181 D-4)', () => {
     expect(montarLinhasProduto(valido, ctx).familia).not.toHaveProperty('origem_cadastro');
   });
 });
+
+describe('grade e gênero (ADR-0182)', () => {
+  const com = (gradeTamanho: ProdutoEntrada['gradeTamanho'], genero: ProdutoEntrada['genero'], tamanho = '34'): ProdutoEntrada => ({
+    ...valido, gradeTamanho, genero,
+    variacoes: [{ nome: 'Azul', tamanho, preco: 10 }],
+  });
+  const ctx = {
+    loteId: 'l', userId: 'u', orgId: 'o', codigoPai: '1', codigos: ['2'],
+    chaveCadastro: '11111111-1111-1111-1111-111111111111',
+  };
+
+  it('infantil + meninos ok; calça + meninos e infantil + masculino erram em genero', () => {
+    expect(validarProdutoNovo(com('infantil', 'meninos', '4'))).toEqual([]);
+    expect(validarProdutoNovo(com('calca', 'meninos')).map((e) => e.campo)).toEqual(['genero']);
+    expect(validarProdutoNovo(com('infantil', 'masculino', '4')).map((e) => e.campo)).toEqual(['genero']);
+  });
+
+  it('gênero inventado erra e a mensagem lista as opções da grade', () => {
+    const e = validarProdutoNovo(com('infantil', 'xyz' as never, '4'));
+    expect(e[0].mensagem).toMatch(/meninos, meninas, sem_genero_infantil/);
+  });
+
+  it('montarLinhasProduto grava grade_tamanho efetiva; sem tamanho grava null', () => {
+    expect(montarLinhasProduto(com('infantil', 'meninas', '4'), ctx).familia.grade_tamanho).toBe('infantil');
+    expect(montarLinhasProduto(com(undefined, 'masculino', 'P'), ctx).familia.grade_tamanho).toBe('letras');
+    expect(montarLinhasProduto(valido, ctx).familia.grade_tamanho).toBeNull();
+  });
+});

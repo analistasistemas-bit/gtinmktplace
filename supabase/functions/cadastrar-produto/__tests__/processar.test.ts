@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aplicaEstoqueInicial, entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
-  validarTamanhosDaEntrada, variacoesDivergem,
+  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem,
 } from '../processar.ts';
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
@@ -367,8 +367,10 @@ describe('validarTamanhosDaEntrada (ADR-0166 / R7)', () => {
   it('org de roupa RECUSA numeracao de calcado', () => {
     const erros = validarTamanhosDaEntrada(comTamanho('42'), ['roupa']);
     expect(erros).toHaveLength(1);
-    expect(erros[0].campo).toBe('variacoes[0].tamanho');
-    expect(erros[0].mensagem).toMatch(/42/);
+    // ADR-0182: '42' agora é tamanho válido de Calça; sem gradeTamanho o legado infere calçado,
+    // que a org de roupa não tem — erro na grade, não no tamanho.
+    expect(erros[0].campo).toBe('gradeTamanho');
+    expect(erros[0].mensagem).toMatch(/calcado/);
   });
 
   it('org de calcado aceita numeracao e recusa P', () => {
@@ -404,5 +406,64 @@ describe('aplicaEstoqueInicial (ADR-0181 D-4 / N-I1)', () => {
   // registrar_entrada não roda nenhuma vez.
   it('retry sobre família origem_cadastro=nota não aplica, mesmo sem origemNota no payload', () => {
     expect(aplicaEstoqueInicial({}, 'nota')).toBe(false);
+  });
+});
+
+const entradaGrade = (tamanhos: string[], over: Record<string, unknown> = {}) => ({
+  nomePai: 'Peça', origem: 'nacional' as const,
+  chaveCadastro: '11111111-1111-4111-8111-111111111111',
+  genero: 'masculino' as const,
+  variacoes: tamanhos.map((tamanho) => ({ nome: 'Azul', tamanho, preco: 50 })),
+  ...over,
+});
+
+describe('grade de tamanhos (ADR-0182)', () => {
+  it('entradaTamanhoEfetiva zera gradeTamanho em org sem tipo', () => {
+    expect(entradaTamanhoEfetiva(entradaGrade(['P'], { gradeTamanho: 'letras' }), []).gradeTamanho).toBeUndefined();
+  });
+
+  it('calça aceita 48 e recusa GG', () => {
+    expect(validarTamanhosDaEntrada(entradaGrade(['48'], { gradeTamanho: 'calca' }), ['roupa'])).toEqual([]);
+    const erros = validarTamanhosDaEntrada(entradaGrade(['GG'], { gradeTamanho: 'calca' }), ['roupa']);
+    expect(erros.map((e) => e.campo)).toEqual(['variacoes[0].tamanho']);
+  });
+
+  it('infantil em org só de calçado: erro em gradeTamanho', () => {
+    const erros = validarTamanhosDaEntrada(entradaGrade(['34'], { gradeTamanho: 'infantil' }), ['calcado']);
+    expect(erros.map((e) => e.campo)).toEqual(['gradeTamanho']);
+  });
+
+  it('front atual (sem gradeTamanho): infere letras e calçado; mistura é erro', () => {
+    expect(validarTamanhosDaEntrada(entradaGrade(['P', 'M']), ['roupa'])).toEqual([]);
+    expect(validarTamanhosDaEntrada(entradaGrade(['34', '35']), ['calcado'])).toEqual([]);
+    const erros = validarTamanhosDaEntrada(entradaGrade(['P', '34']), ['roupa', 'calcado']);
+    expect(erros.map((e) => e.campo)).toEqual(['gradeTamanho']);
+  });
+
+  it('calça sem gradeTamanho: legado infere calçado (34/36) ou nada (48) — exige a grade explícita', () => {
+    expect(validarTamanhosDaEntrada(entradaGrade(['34', '36']), ['roupa', 'calcado'])).toEqual([]);
+    expect(validarTamanhosDaEntrada(entradaGrade(['34', '48']), ['roupa']).map((e) => e.campo)).toEqual(['gradeTamanho']);
+    expect(validarTamanhosDaEntrada(entradaGrade(['34', '48'], { gradeTamanho: 'calca' }), ['roupa'])).toEqual([]);
+  });
+
+  describe('gradeOuGeneroDivergem (retry)', () => {
+    const calca = entradaGrade(['34'], { gradeTamanho: 'calca' });
+    it('grade diferente da gravada diverge', () => {
+      const p = entradaGrade(['34'], { gradeTamanho: 'calcado' });
+      expect(gradeOuGeneroDivergem(p, { grade_tamanho: 'calca', genero: 'masculino' }, ['34'])).toBe(true);
+    });
+    it('gênero diferente diverge', () => {
+      expect(gradeOuGeneroDivergem(calca, { grade_tamanho: 'calca', genero: 'feminino' }, ['34'])).toBe(true);
+    });
+    it('iguais não divergem', () => {
+      expect(gradeOuGeneroDivergem(calca, { grade_tamanho: 'calca', genero: 'masculino' }, ['34'])).toBe(false);
+    });
+    it('payload legado sem gradeTamanho sobre família letras não diverge', () => {
+      expect(gradeOuGeneroDivergem(entradaGrade(['P']), { grade_tamanho: 'letras', genero: 'masculino' }, ['P'])).toBe(false);
+    });
+    it('família antiga com grade null usa a inferência dos tamanhos gravados', () => {
+      expect(gradeOuGeneroDivergem(entradaGrade(['P']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(false);
+      expect(gradeOuGeneroDivergem(entradaGrade(['34']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(true);
+    });
   });
 });

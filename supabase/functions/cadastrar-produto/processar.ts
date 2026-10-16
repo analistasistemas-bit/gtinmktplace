@@ -3,9 +3,12 @@
 // estoque na variação errada — valor financeiro não se assume, falha alto. Contagem NÃO basta:
 // reordenar duas linhas, ou excluir uma e adicionar outra, mantém a contagem.
 import { centavosExatos } from '../_shared/dinheiro.ts';
+import { gradeEfetivaDaEntrada } from '../_shared/produto/validar.ts';
 import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
-import { tamanhosValidosParaTipos } from '../_shared/produto/tipos-produto-valores.ts';
+import {
+  GRADES_DO_TIPO, gradeDaFamilia, tamanhosDaGrade, tamanhosValidosParaTipos, type GradeTamanho,
+} from '../_shared/produto/tipos-produto-valores.ts';
 
 /** Org sem módulo fiscal nunca deve gravar fiscal — `montarLinhasProduto` grava a coluna pela
  *  mera PRESENÇA de `fiscal`, então um payload com o campo (engano, ou chamada HTTP direta) tem
@@ -49,6 +52,7 @@ export function entradaTamanhoEfetiva(
   return {
     ...p,
     genero: undefined,
+    gradeTamanho: undefined,
     // Achado do code-quality review: payload sem `variacoes` (o próprio caso que este
     // comentário cita — "chamada HTTP direta") derrubava esta função com TypeError ANTES de
     // `validarProdutoNovo` (index.ts) ter a chance de devolver o 400 de sempre ("Cadastre ao
@@ -83,7 +87,52 @@ export function validarTamanhosDaEntrada(
       });
     }
   });
+  if (erros.length > 0) return erros;
+
+  // ADR-0182: a grade (enviada, ou inferida para o front antigo) tem que existir, pertencer a um
+  // tipo habilitado da org e conter todos os tamanhos. Sem variação com tamanho: nada a checar.
+  const comTamanho = (p.variacoes ?? []).some((v) => v.tamanho?.trim());
+  if (!comTamanho) return erros;
+  const grade = gradeEfetivaDaEntrada(p);
+  if (!grade) {
+    erros.push({
+      campo: 'gradeTamanho',
+      mensagem: 'Não foi possível identificar a grade de tamanhos — informe a grade (letras, infantil, calça ou calçado).',
+    });
+    return erros;
+  }
+  const permitidas = tipos.flatMap((t) => (GRADES_DO_TIPO as Record<string, readonly GradeTamanho[]>)[t] ?? []);
+  if (!permitidas.includes(grade)) {
+    erros.push({
+      campo: 'gradeTamanho',
+      mensagem: `A grade "${grade}" não está habilitada para o tipo de produto desta organização.`,
+    });
+    return erros;
+  }
+  const daGrade = tamanhosDaGrade(grade);
+  p.variacoes?.forEach((v, i) => {
+    const t = v.tamanho?.trim();
+    if (t && !daGrade.includes(t)) {
+      erros.push({
+        campo: `variacoes[${i}].tamanho`,
+        mensagem: `Tamanho "${t}" não pertence à grade "${grade}".`,
+      });
+    }
+  });
   return erros;
+}
+
+/** ADR-0182: retry idempotente com grade/gênero diferentes do gravado é divergência (409) — a
+ *  grade define a tabela de medidas e o gênero o GENDER do anúncio. Família antiga sem
+ *  `grade_tamanho` cai na inferência legada dos tamanhos gravados. */
+export function gradeOuGeneroDivergem(
+  p: ProdutoEntrada,
+  gravada: { grade_tamanho?: string | null; genero?: string | null },
+  tamanhosGravados: ReadonlyArray<string | null | undefined>,
+): boolean {
+  const tams = tamanhosGravados.map((t) => t?.trim()).filter((t): t is string => !!t);
+  if (gradeEfetivaDaEntrada(p) !== gradeDaFamilia(gravada.grade_tamanho ?? null, tams)) return true;
+  return (p.genero ?? null) !== (gravada.genero ?? null);
 }
 
 /** Org com módulo fiscal exige entrada fiscal completa; sem módulo, ignora (spec §5). */

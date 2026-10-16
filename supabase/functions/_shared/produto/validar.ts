@@ -1,6 +1,9 @@
 // E6b (ADR-0094, D-3/D-4/D-9): validação e montagem do produto cadastrado à mão.
 // Grava exatamente as mesmas colunas que o ingest-lote grava a partir da planilha — o
 // downstream (IA, Revisão, publicação) não sabe de onde o produto veio.
+import {
+  type Genero, type GradeTamanho, GENEROS_VALIDOS, generosDaGrade, gradeDaFamilia,
+} from './tipos-produto-valores.ts';
 
 export interface VariacaoEntrada {
   nome?: string | null;
@@ -38,7 +41,10 @@ export interface ProdutoEntrada {
   origem: 'nacional' | 'importado';
   /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
    *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
-  genero?: 'masculino' | 'feminino' | 'unissex' | null;
+  genero?: Genero | null;
+  /** ADR-0182: grade de tamanhos da família. Ausente = o front atual (só Letras/Calçado, inferido
+   *  pelos tamanhos) — ver `gradeEfetivaDaEntrada`. */
+  gradeTamanho?: GradeTamanho | null;
   // Idempotência da submissão (spec 2026-07-31, D-9). Sem ela um retry criaria um segundo
   // produto: o código é gerado, então os guards de duplicata NÃO pegam a repetição.
   chaveCadastro: string;
@@ -50,6 +56,14 @@ export interface ProdutoEntrada {
 }
 
 export interface ErroValidacao { campo: string; mensagem: string }
+
+/** ADR-0182: a grade que vai para `familias.grade_tamanho` e para a comparação do retry — a
+ *  enviada, ou (front antigo, sem o campo) a inferida dos tamanhos. Sem variação com tamanho: null. */
+export function gradeEfetivaDaEntrada(p: ProdutoEntrada): GradeTamanho | null {
+  const tamanhos = (p.variacoes ?? []).map((v) => v.tamanho?.trim()).filter((t): t is string => !!t);
+  if (tamanhos.length === 0) return null;
+  return p.gradeTamanho ?? gradeDaFamilia(null, tamanhos);
+}
 
 const ORIGENS_VALIDAS = ['nacional', 'importado'];
 
@@ -80,12 +94,17 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
   // ADR-0166. Ausente é válido (org sem tipo habilitado). Presente e fora da lista FALHA: o ML
   // recusa a publicação inteira quando o gênero do anúncio não bate com o da tabela de medidas,
   // e "corrigir para unissex" seria afirmar sobre o produto um dado que ninguém informou.
-  const GENEROS_VALIDOS = ['masculino', 'feminino', 'unissex'];
-  if (p.genero != null && !GENEROS_VALIDOS.includes(p.genero)) {
-    erros.push({
-      campo: 'genero',
-      mensagem: 'Gênero inválido — use masculino, feminino ou unissex.',
-    });
+  // ADR-0182: o gênero tem que pertencer à grade (Infantil → meninos/meninas/sem gênero infantil;
+  // as demais → masculino/feminino/unissex). Payload forjado (infantil + masculino) → 400.
+  const grade = gradeEfetivaDaEntrada(p);
+  if (p.genero != null) {
+    const opcoes = grade ? generosDaGrade(grade) : GENEROS_VALIDOS;
+    if (!(GENEROS_VALIDOS as readonly string[]).includes(p.genero) || !opcoes.includes(p.genero)) {
+      erros.push({
+        campo: 'genero',
+        mensagem: `Gênero inválido — use ${opcoes.join(', ')}.`,
+      });
+    }
   }
 
   // R3 (revisão do Fable): gênero é OBRIGATÓRIO quando alguma variação tem tamanho. O ML exige
@@ -101,7 +120,7 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
     if (!p.genero) {
       erros.push({
         campo: 'genero',
-        mensagem: 'Informe o gênero (masculino, feminino ou unissex) — ele é obrigatório para '
+        mensagem: `Informe o gênero (${(grade ? generosDaGrade(grade) : GENEROS_VALIDOS).join(', ')}) — ele é obrigatório para `
           + 'produto com tamanho/numeração e define a tabela de medidas usada na publicação.',
       });
     }
@@ -186,6 +205,8 @@ export function montarLinhasProduto(
     // ADR-0166: explícito, e null quando não informado — a coluna é nullable sem default e null
     // é o estado de toda família de org sem tipo de produto habilitado.
     genero: p.genero ?? null,
+    // ADR-0182: a grade EFETIVA (enviada ou inferida), null sem variação com tamanho.
+    grade_tamanho: gradeEfetivaDaEntrada(p),
     operacao: 'CREATE',
     status: 'pendente',
     // ADR-0181 N-I1: modo persistido — o retry desta família nunca aplica estoque inicial.
