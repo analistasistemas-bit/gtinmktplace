@@ -1,11 +1,25 @@
-// ADR-0181 Plano 2a — pacote final: XMLs originais (xmls/<caminho do ML>) + relatórios.
+// ADR-0181 Plano 2a/2b — pacote final: XMLs de venda (xmls/<caminho do ML>), de compra (compras/…) + relatórios.
 import { zipSync } from 'fflate';
 import type { LeituraPacote } from './tipos';
+import type { LeituraCompras } from './tipos-compras';
 
-export function montarPacote(l: LeituraPacote, xlsx: Uint8Array, pdf: Uint8Array): Uint8Array {
-  const arquivos: Record<string, Uint8Array> = { 'relatorio-vendas.xlsx': xlsx, 'relatorio-vendas.pdf': pdf };
-  for (const [nome, dados] of Object.entries(l.arquivos)) arquivos[`xmls/${nome}`] = dados;
+export function montarPacote(p: {
+  vendas: LeituraPacote; xlsxVendas: Uint8Array; pdfVendas: Uint8Array;
+  compras: LeituraCompras; xlsxCompras: Uint8Array; pdfCompras: Uint8Array;
+}): Uint8Array {
+  const arquivos: Record<string, Uint8Array> = {
+    'relatorio-vendas.xlsx': p.xlsxVendas, 'relatorio-vendas.pdf': p.pdfVendas,
+    'relatorio-compras.xlsx': p.xlsxCompras, 'relatorio-compras.pdf': p.pdfCompras,
+  };
+  for (const [nome, dados] of Object.entries(p.vendas.arquivos)) arquivos[`xmls/${nome}`] = dados;
+  Object.assign(arquivos, p.compras.arquivos);   // já vêm com compras/xmls…/<chave>.xml
   return zipSync(arquivos, { level: 6 });
+}
+
+/** Cópia com o selo PARCIAL do pacote inteiro (vendas + compras) — os 4 relatórios mostram os mesmos motivos. */
+export function comSeloGlobal<T extends { conferencia: { parcial: boolean; motivosParcial: string[] } }>(l: T, motivos: string[]): T {
+  if (!motivos.length) return l;
+  return { ...l, conferencia: { ...l.conferencia, parcial: true, motivosParcial: motivos } };
 }
 
 export const nomePacote = (mes: string) => `pacote-${mes}.zip`;
