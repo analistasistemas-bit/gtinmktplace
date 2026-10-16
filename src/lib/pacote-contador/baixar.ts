@@ -9,6 +9,10 @@ export class ErroPacote extends Error {
 }
 const ehAbort = (e: unknown) => (e as { name?: string })?.name === 'AbortError';
 
+async function lerJson(r: Response): Promise<{ error?: string; vazio?: boolean } | null> {
+  try { return await r.json(); } catch (e) { if (ehAbort(e)) throw e; return null; }
+}
+
 export async function baixarNotasMes(mes: string, orgEsperada: string, signal?: AbortSignal): Promise<ResultadoDownload> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new ErroPacote('Sessão expirada — entre de novo.', 401);
@@ -19,7 +23,7 @@ export async function baixarNotasMes(mes: string, orgEsperada: string, signal?: 
   });
   const tipo = r.headers.get('Content-Type') ?? '';
   if (!r.ok || !r.headers.get('X-Org-Id')) {
-    const j = tipo.includes('json') ? await r.json().catch(() => null) : null;
+    const j = tipo.includes('json') ? await lerJson(r) : null;
     throw new ErroPacote(j?.error ?? 'Não foi possível confirmar as notas do mês.', r.status);
   }
   if (r.headers.get('X-Org-Id') !== orgEsperada) {
@@ -27,7 +31,7 @@ export async function baixarNotasMes(mes: string, orgEsperada: string, signal?: 
   }
   const contaMl = r.headers.get('X-Conta-Ml') ?? '';
   if (tipo.includes('json')) {
-    const j = await r.json().catch(() => null);
+    const j = await lerJson(r);
     if (j?.vazio === true) return { tipo: 'vazio', contaMl };
     throw new ErroPacote('Não foi possível confirmar as notas do mês.', 502);
   }

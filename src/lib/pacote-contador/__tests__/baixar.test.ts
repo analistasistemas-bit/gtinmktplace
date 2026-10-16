@@ -30,6 +30,16 @@ describe('baixarNotasMes', () => {
     expect(e).toBeInstanceOf(ErroPacote);
     expect(e).toMatchObject({ message: 'limite', status: 429 });
   });
+  it('cancelamento durante a leitura do JSON continua AbortError', async () => {
+    const spy = vi.spyOn(Response.prototype, 'json').mockRejectedValue(new DOMException('cancelado', 'AbortError'));
+    try {
+      const h = { 'Content-Type': 'application/json', 'X-Conta-Ml': '99' };
+      vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp('{}', { status: 200, headers: { ...h, 'X-Org-Id': 'org-1' } })));
+      await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toMatchObject({ name: 'AbortError' });
+      vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp('{}', { status: 500, headers: h })));
+      await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toMatchObject({ name: 'AbortError' });
+    } finally { spy.mockRestore(); }
+  });
   it('corpo cortado no meio vira ErroDownloadIncompleto; cancelamento continua AbortError', async () => {
     const quebrado = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array([0x50, 0x4b])); c.error(new TypeError('terminated')); } });
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp(quebrado, { status: 200, headers: ZIPH() })));
