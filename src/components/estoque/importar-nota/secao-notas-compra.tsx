@@ -1,5 +1,5 @@
 // ADR-0181 — lista recolhível de notas de compra em /estoque: XML, desfazer, cancelar, reenviar estoque.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -15,6 +15,8 @@ import { QK } from '@/lib/queries';
 import {
   desfazerNotaCompra, listarNotasCompra, reenviarEstoqueNota, urlXmlNota, type NotaCompraResumo,
 } from '@/lib/notas-compra';
+
+export const idLinhaNota = (chave: string): string => `nota-compra-${chave}`;
 
 export const podeDesfazer = (n: NotaCompraResumo, isAdmin: boolean): boolean => isAdmin && n.status === 'importada';
 
@@ -32,22 +34,23 @@ export function SecaoNotasCompra({ destacarChave }: { destacarChave?: string | n
   const { isAdmin } = useProfile();
   const [aberta, setAberta] = useState(false);
   const [alvo, setAlvo] = useState<{ nota: NotaCompraResumo; status: 'desfeita' | 'cancelada' } | null>(null);
-  const destaqueRef = useRef<HTMLTableRowElement>(null);
   // A página só monta esta seção com o módulo estoque habilitado (senão redireciona).
   const { data: notas = [], isError } = useQuery({ queryKey: QK.notasCompra, queryFn: listarNotasCompra });
 
   // "Ver nota" do assistente: expande a seção e rola até a linha destacada.
   useEffect(() => { if (destacarChave) setAberta(true); }, [destacarChave]);
-  useEffect(() => { if (aberta && destacarChave) destaqueRef.current?.scrollIntoView?.({ block: 'center' }); }, [aberta, destacarChave, notas]);
+  useEffect(() => { if (aberta && destacarChave) document.getElementById(idLinhaNota(destacarChave))?.scrollIntoView?.({ block: 'center' }); }, [aberta, destacarChave, notas]);
 
   const desfazer = useMutation({
     mutationFn: ({ nota, status }: { nota: NotaCompraResumo; status: 'desfeita' | 'cancelada' }) => desfazerNotaCompra(nota.id, status),
-    onSuccess: (r) => {
+    onSuccess: (r, { status }) => {
       // Prefixo, não por código: o desfazer mexe em poucos produtos e as listas são baratas de refazer.
       void qc.invalidateQueries({ queryKey: QK.notasCompra });
       void qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       void qc.invalidateQueries({ queryKey: ['variacoes-estoque'] });
-      if (r.pushOk) toast.success(r.jaEstava ? 'Nota já estava desfeita.' : 'Nota desfeita e saldo ajustado.');
+      if (r.pushOk) toast.success(status === 'cancelada'
+        ? (r.jaEstava ? 'Nota já estava cancelada.' : 'Nota cancelada e saldo ajustado.')
+        : (r.jaEstava ? 'Nota já estava desfeita.' : 'Nota desfeita e saldo ajustado.'));
       else toast.warning(AVISO_PUSH);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -61,8 +64,11 @@ export function SecaoNotasCompra({ destacarChave }: { destacarChave?: string | n
   });
 
   async function baixarXml(n: NotaCompraResumo) {
-    try { window.open(await urlXmlNota(n.xmlPath), '_blank', 'noopener'); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível baixar o XML.'); }
+    // Abre a aba no clique (antes do await) para o navegador não bloquear o pop-up.
+    const aba = window.open('', '_blank');
+    if (!aba) { toast.error('O navegador bloqueou a nova aba. Libere pop-ups para este site e tente de novo.'); return; }
+    try { aba.location.href = await urlXmlNota(n.xmlPath); }
+    catch (e) { aba.close(); toast.error(e instanceof Error ? e.message : 'Não foi possível baixar o XML.'); }
   }
 
   if (!isError && notas.length === 0) return null;
@@ -85,7 +91,7 @@ export function SecaoNotasCompra({ destacarChave }: { destacarChave?: string | n
           </TableHeader>
           <TableBody>
             {notas.map((n) => (
-              <TableRow key={n.id} ref={n.chave === destacarChave ? destaqueRef : undefined}
+              <TableRow key={n.id} id={idLinhaNota(n.chave)}
                 className={n.chave === destacarChave ? 'bg-warning/10' : undefined}>
                 <TableCell>{data(n.emitidaEm)}</TableCell>
                 <TableCell>{n.emitenteNome}</TableCell>

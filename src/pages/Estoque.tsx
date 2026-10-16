@@ -61,6 +61,11 @@ export default function Estoque() {
   const [entradaAberta, setEntradaAberta] = useState(false);
   const [notaAberta, setNotaAberta] = useState(false);
   const [chaveDestacada, setChaveDestacada] = useState<string | null>(null);
+  useEffect(() => {
+    if (!chaveDestacada) return;
+    const t = setTimeout(() => setChaveDestacada(null), 6000);
+    return () => clearTimeout(t);
+  }, [chaveDestacada]);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
   // spec 2026-09-19 §1: segundo botão, SÓ para org com tipo de produto habilitado (ADR-0166).
