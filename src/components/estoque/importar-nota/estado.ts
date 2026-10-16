@@ -106,3 +106,8 @@ export function payload(e: EstadoImportacao): { xml: string; decisoes: DecisaoIm
     })),
   };
 }
+
+/** Linhas de partida da distribuição: com 1 SKU a quantidade vem preenchida (editável); com vários, zerada. */
+export function linhasIniciais(skus: Array<{ codigo: string }>, quantidade: number, custo: number): LinhaDistribuicao[] {
+  return skus.map((s) => ({ codigo: s.codigo, quantidade: skus.length === 1 ? quantidade : 0, custoPrecificacao: custo }));
+}

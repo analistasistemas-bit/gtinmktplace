@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Boxes, Plus, PackagePlus, Grid3x3 } from 'lucide-react';
+import { Boxes, Plus, PackagePlus, Grid3x3, FileUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
+import { DialogImportarNota } from '@/components/estoque/importar-nota/dialog-importar-nota';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
 import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
@@ -56,6 +58,7 @@ export default function Estoque() {
   const [filtro, setFiltro] = useState<FiltroEstoque>('todos');
   const [ordem, setOrdem] = useState<OrdemEstoque>('nome');
   const [entradaAberta, setEntradaAberta] = useState(false);
+  const [notaAberta, setNotaAberta] = useState(false);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
   // spec 2026-09-19 §1: segundo botão, SÓ para org com tipo de produto habilitado (ADR-0166).
@@ -166,6 +169,26 @@ export default function Estoque() {
               <PackagePlus className="mr-2 h-4 w-4" />
               Dar entrada
             </Button>
+            {empresaFiscal?.cnpj ? (
+              <Button variant="outline" onClick={() => setNotaAberta(true)}>
+                <FileUp className="mr-2 h-4 w-4" />
+                Importar nota de compra
+              </Button>
+            ) : (
+              <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button variant="outline" disabled className="pointer-events-none">
+                      <FileUp className="mr-2 h-4 w-4" />
+                      Importar nota de compra
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Cadastre o CNPJ em Configurações › Fiscal</TooltipContent>
+              </Tooltip>
+              </TooltipProvider>
+            )}
             {temTipoProduto && (
               <Button variant="outline" onClick={() => setGradeAberta(true)}>
                 <Grid3x3 className="mr-2 h-4 w-4" />
@@ -248,6 +271,7 @@ export default function Estoque() {
         skuInicial={alvoEntrada?.sku}
         codigoPaiInicial={alvoEntrada?.codigoPai}
       />
+      <DialogImportarNota aberto={notaAberta} onFechar={() => setNotaAberta(false)} />
       <DialogAjuste
         produto={produtoAjuste}
         aberto={produtoAjuste != null}
