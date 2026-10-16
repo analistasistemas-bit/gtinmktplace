@@ -1417,6 +1417,50 @@ vença. Segunda tentativa é replay e falha.
 
 ---
 
+## Nota de compra (ADR-0181)
+
+Migrations `20261015231837_adr181_nota_compra`, `20261015233207_adr181_nota_compra_fk_org`,
+`20261015234006_adr181_rpc_nota_compra`, `20261015235604_adr181_desfazer_locks` e
+`20261016001451_adr181_desfazer_guard_canonico`. Escrita só por `service_role` (edges
+`importar-nota-compra` / `desfazer-nota-compra`); RLS de `select` por `org_id = current_org_id()`.
+
+### `notas_compra`
+`id`, `org_id`, `chave` (44 dígitos), `numero`, `serie`, `emitente_cnpj`, `emitente_nome`,
+`emitida_em`, `valor_total`, `assinada`, `xml_path`, `xml_sha256`, `divergencia_total_aceita`
+(R$ aceito pelo operador entre `vNF` e a composição dos totais), `status`
+(`importada|desfeita|cancelada`), `importada_por/_em`, `desfeita_por/_em`. `unique (org_id, chave)`
+e `unique (id, org_id)` (alvo das FKs compostas).
+
+### `notas_compra_itens`
+Um por `det`: `n_item`, `cprod`, `xprod`, `ncm`, `cfop`, `gtin`, `ucom`, `qcom`, `fator_conversao`,
+valores exatos da nota (`v_prod`, `v_frete`, `v_seg`, `v_desc`, `v_outro`, `v_ipi`, `v_st`,
+`v_fcpst`), `rateio jsonb` (o que só existia no total), `orig`, `codigo_pai`. FK composta
+`(nota_id, org_id)` — a filha herda a org do pai.
+
+### `notas_compra_distribuicao`
+Distribuição na grade: `item_id`, `codigo` (SKU), `quantidade`, `custo_aquisicao_unit`
+(`numeric(14,6)`), `custo_precificacao_unit` (vira `variacoes.custo`). FK composta `(item_id, org_id)`.
+
+### `vinculos_fornecedor`
+PK `(org_id, cnpj_fornecedor, cprod)` -> `codigo_pai` + `fator_conversao`; memória do vínculo para a
+próxima nota do mesmo fornecedor.
+
+### Colunas novas em tabelas existentes
+- `familias.descricao_fiscal` (text, 1-120, null = usa `nome_pai`) — vira `fiscal_information.title`.
+- `familias.origem_cadastro` (`'nota'` ou null) — cadastro pela nota nunca aplica estoque inicial no retry.
+- `empresa_fiscal.csosn_padrao_revenda` (3 dígitos) — CSOSN de saída sugerido; nunca aplicado sem confirmação.
+
+### Storage
+Bucket **`notas-compra`** (privado). Path com a org como 1º segmento (`{org_id}/...`). Policy de
+`select` pela org; sem policy de escrita (upload só pela edge).
+
+### RPCs (todas `service_role`-only)
+`importar_nota_compra(p_org, p_user, p_nota, p_itens)`, `desfazer_nota_compra(p_org, p_user, p_nota_id,
+p_status)`, `registrar_entrada_nota_pendente(...)` (entrada com ref `nfe:...`) e
+`codigos_pai_da_nota(p_org, p_chave)`.
+
+---
+
 ## Storage
 
 Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram
@@ -1456,6 +1500,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` | ADR-0094: baixa atômica e idempotente de estoque na venda paga — service_role-only |
 | `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo)` | ADR-0094: repõe só o que foi de fato baixado no cancelamento pré-despacho — service_role-only |
 | `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref)` | ADR-0094: entrada de mercadoria, sobrescreve custo quando informado — service_role-only |
+| `importar_nota_compra(p_org, p_user, p_nota, p_itens)` / `desfazer_nota_compra(p_org, p_user, p_nota_id, p_status)` | ADR-0181: importação e desfazer atômicos da nota de compra (advisory lock por nota; entrada via `registrar_entrada_nota_pendente`) — service_role-only |
 | `vendas_sku_catalogo()` | ADR-0172 (Fatia 1 + 2a, ainda não em produção): enriquecimento por `codigo` para a aba Vendas SKU e para o Dossiê do SKU — nome de família, cor, tamanho, estoque, fornecedor, origem, kit e 1ª/última venda faturável, mais (Fatia 2a) `kit_multiplicador`, `kit_base_codigo` e `estoque_kit` do **Kit Virtual vinculado** (saldo do kit = `floor(estoque da base / multiplicador)`, base = família mais recente do `codigo_pai` alvo com exatamente 1 variação; ambíguo ou ausente → `null`/`0`, nunca inventa). Família mais recente por `(org, codigo)`, mesma âncora do estoque canônico (ADR-0025). Não calcula dinheiro (o lucro vem dos itens de `agruparPorPedido` no navegador). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
 | `vendas_sku_dossie_ids(p_codigos text[]) → uuid[]` | ADR-0172 (Fatia 2a, ainda não em produção): ids de `ml_vendas` do Dossiê do SKU — a venda com item de algum código do array, **mais** todo membro do mesmo `pack_id`/`shipping_id`, para o rateio de frete de `agruparPorPedido` bater com a aba Vendas ao reagrupar o pack inteiro. Retorna valor único (`uuid[]`) por POST, sem depender de `Range` (mesmo truque de `platform_org_cost_catalog` contra o teto de 1.000 linhas do PostgREST). `security definer`, `search_path=''`, org só via `current_org_id()`, revogada de `public`/`anon`, concedida a `authenticated` |
 | `vendas_sku_mlbs(p_codigos text[]) → jsonb` | ADR-0172 (Fatia 2a, ainda não em produção): mapa `{mlb: [codigo, ...]}` — de onde a UI deriva o **vínculo do MLB**: `exato` (1 código), `compartilhado` (2+ códigos) ou `não resolvido` (MLB fora do mapa). Casa por `ml_vendas_itens.ml_item_id`, `anuncios_externos_itens` (User Products), `anuncios_externos.variacoes_externas` (Legacy) e `anuncios_externos.migracao_pxv_snapshot` via `ml_item_id_anterior` (MLB encerrado pela migração PxV, ADR-0161 — o campo do snapshot é `sku`, não `seller_custom_field`). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |

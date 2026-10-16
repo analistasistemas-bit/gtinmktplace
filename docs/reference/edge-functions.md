@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 71 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 73 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -53,6 +53,8 @@
 | ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
+| importar-nota-compra | **true** | HTTP (frontend) | sim (advisory lock por `org+chave`; `ref` do ledger `nfe:{chave}:{nItem}:{codigo}`) |
+| desfazer-nota-compra | **true** | HTTP (frontend, **admin**) | sim (repetir devolve `jaEstava: true`) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
 | **Preço por Variação (ADR-0161)** ||||
@@ -287,6 +289,7 @@ mesmo por engano.
 | `cors.ts` | Headers CORS padrão (inclui `upstash-signature`) |
 | `supabase.ts` | `adminClient()` (service_role) e `userClient(jwt)` (respeita RLS) |
 | `queue.ts` | QStash: `enfileirarFamilia`, `enfileirarPublicacoes` (lote, substituiu `enfileirarPublicacao/Atualizacao/Split` — ver abaixo), `enfileirarVinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura`; **E6 (ADR-0061):** `enfileirarPublicacaoCanal`, `garantirFilaSerialCanal`, `filaCanal` — fila serial por `(canal, org)`. `enfileirarFamilias` (plural, lote #44 03/08) publica em blocos via `enfileirar-em-blocos.ts` (`Client.batchJSON`, até 100/bloco) em vez de 1 publish por família — usado por `ingest-lote` e `reprocessar-familia`, que iteram N famílias; `cadastrar-produto` fica no singular (1 família por chamada). Lógica de blocos/erro parcial (`enfileirados` no erro quando um bloco falha depois de outro já ter publicado) isolada em `enfileirar-em-blocos.ts` sem import Deno, só pra ficar testável pelo vitest do frontend. **Upsert de fila memoizado por nome** (`memoizar-por-chave.ts`, 03/08): `garantirFilaSerial`/`garantirFilaSerialCanal` faziam `queue().upsert()` 1x por item dentro dos loops (`publicar-familias` por família×canal; `despacharPushPendente` até 1000 grupos numa execução do `reconciliar-estoque`) — sempre a MESMA fila. `queues` é endpoint **com** rate limit por segundo na Upstash (publish/batch/enqueue não têm), então era o candidato real a estourar limite. Memoiza a Promise por nome de fila no isolate; falha não é memoizada (o próximo chamador refaz). **`enfileirarPublicacoes`** (lote #45, 03/08): `publicar-familias` marcava as N famílias como `publicando` de uma vez e depois enfileirava UMA POR UMA; o loop morreu no meio com 126 famílias — 68 enfileiradas e **58 presas em `publicando` sem mensagem**, invisíveis (não são `erro`, então o "Reenviar"/`reprocessar-familia` nem as alcançava) e só recuperáveis por reenfileiramento manual. Agora é 1 batch por (dono, alvo) na mesma fila serial, devolvendo os messageIds na ordem de entrada; se o batch falhar, as famílias sem mensagem viram `erro` com a causa (recuperáveis pela UI). Substituiu `enfileirarPublicacao`/`enfileirarAtualizacao`/`enfileirarSplit`, que eram idênticas exceto pelo worker de destino. |
+| `nfe/*` | ADR-0181: `ler-nfe.ts` (leitor textual de NF-e SEFAZ/ERP, puro), `regras.ts` (DV da chave, CFOP aceito, conciliação, rateio em centavos, distribuição na grade), `tipos.ts`. Importável pelo front e pela edge (só imports relativos folha). Usado por `importar-nota-compra` |
 | `ml/*` | Integração ML: `token.ts` → `getValidAccessTokenConexao(conexao)` (token da **conexão** da org, ADR-0027; substitui o antigo `getValidAccessToken(userId)`), criar/atualizar item, descrição, concorrência, catálogo, tarifa, atacado. **`anuncio-atualizavel.ts`** (lote #45, 03/08): guard entre o GET e o PUT do UPDATE — anúncio `closed`/`inactive` ou com sub_status `deleted`/`forbidden` falha alto com a causa certa ("Anúncio removido no Mercado Livre — republique") em vez do erro cru do ML (`variations is not modifiable ... Revise os atributos da categoria`), que apontava o operador para um lugar onde não havia nada a revisar. `paused` **não** bloqueia (é o estado de quem zerou estoque, ADR-0060, e repor é o caminho de volta); status desconhecido/transitório (`under_review`) também não — fail-open deliberado, para não travar em silêncio uma atualização que funcionaria. `buscarItemML` passou a pedir `status,sub_status` no GET. |
 | `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM; `modelos.ts` → `resolverModeloTexto(admin, orgId)` (ADR-0074) lê `configuracoes.ai_model_texto` da org e cai no fallback `MODELO_COPY`/env em `null`/erro (nunca propaga) |
 | `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
@@ -1074,6 +1077,23 @@ falha ao ler `organizations` não libera.
   base** que os reclama depois, via claim atômico `pronto|erro → publicando` em
   `publish-familia-ml/processar.ts` (sem o claim, `decidirStatusLote` reabriria o lote técnico
   como `'revisao'` ao publicar o primeiro kit).
+
+- **importar-nota-compra** (ADR-0181) — importa NF-e de compra (XML) e dá entrada no estoque.
+  `verify_jwt = true`, `requireUserOrg(write)`, gate `exigirModulo('estoque')` e exige PJ com CNPJ
+  em `empresa_fiscal` (403 sem ele). Body: o **XML em texto** + as decisões do operador
+  (distribuição na grade, fator de conversão, aceite da divergência de `vNF`); **o servidor lê o
+  próprio XML** (`_shared/nfe/ler-nfe.ts`) e recalcula conciliação, rateio e custos
+  (`_shared/nfe/regras.ts`) — nada vindo do navegador é confiado (D-2). Grava o XML no bucket
+  privado `notas-compra` (endereçado por `xml_sha256`; reenvio idêntico = `ja_existia`, não
+  sobrescreve) e chama a RPC `importar_nota_compra` (transação única: nota, itens, distribuição,
+  vínculos de fornecedor e `registrar_entrada_nota_pendente` com ref `nfe:{chave}:{nItem}:{codigo}`).
+  Chave já importada responde "já importada" sem somar de novo. Push de estoque enfileirado por
+  `codigo_pai`; `{ pushOk }` no corpo. Variante `{ reenviarPush: { chave } }` só reenfileira o push
+  ("Reenviar estoque"). 400 com `{ error }` em validação/regra.
+- **desfazer-nota-compra** (ADR-0181 D-11) — desfaz (`desfeita`) ou cancela (`cancelada`) uma nota
+  importada. **Admin-only** (`autorizarDesfazer`) e gate `estoque`. Chama a RPC `desfazer_nota_compra`
+  (advisory lock + `FOR UPDATE` no saldo, guard de família canônica). Idempotente: nota já desfeita
+  responde `{ jaEstava: true }` sem mexer no saldo. Resposta `{ pushOk, jaEstava }`.
 
 ### Kit Virtual (ADR-0154)
 

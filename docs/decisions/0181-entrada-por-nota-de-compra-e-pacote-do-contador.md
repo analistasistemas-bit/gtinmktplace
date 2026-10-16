@@ -1,8 +1,9 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** proposto. Design fechado em grilling com o Diego, revisado pelo Codex `gpt-6-astra`
-(FALTA-INFORMAÇÃO → lacunas respondidas abaixo e validadas pelo Diego). Nada implementado.
+**Status:** aceito — implementado na branch `worktree-grill-entrada-xml-compra` (Plano 1), aguardando merge/deploy.
+Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
+Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)
 e parte da V2 #1 (consumo da nota emitida, só para exportação).
 **Emenda:** ADR-0135 D-5 (origem passa a aceitar sugestão confirmada vinda da nota).
@@ -35,7 +36,8 @@ módulo `fiscal` ligado. Notas, vínculos, arquivos e exportações são org-sco
 também nos workers.
 
 **D-2 — Aceitação da nota.** Aceita os dois formatos, o XML da SEFAZ (`nfeProc` assinado) e a exportação
-de ERP. Valida:
+de ERP. **O servidor lê o próprio XML** com um leitor textual (`_shared/nfe/ler-nfe.ts`, sem parser XML
+genérico); do navegador só vêm as decisões do operador (distribuição, fator, aceites). Valida:
 - o dígito verificador da chave;
 - o destinatário = CNPJ da org;
 - `cStat = 100` quando houver protocolo;
@@ -234,6 +236,17 @@ O cliente sem ERP sai com cadastro, estoque e um pacote mensal a partir de docum
 Guardar a nota como documento à parte custa uma tabela nova, mas mantém o caminho financeiro
 existente intacto e dá ao contador dados exatos. A busca de XML de venda ao vivo não guarda passivo,
 mas depende da API do ML no momento da exportação.
+
+## Pendências de verificação (pós-implementação)
+
+- **`fiscal_information.title` -> `xProd`:** a descrição fiscal é gravada e enviada, mas a afirmação "sai
+  na nota" segue **não verificada**. Verificar na primeira venda faturada da Zaven:
+  `GET /users/3760134495/invoices/orders/{order_id}`, abrir o XML e comparar o `xProd` com a
+  `descricao_fiscal` da família. Registrar o resultado aqui.
+- **storage-js 2.110.0:** a mensagem de objeto duplicado no upload foi lida do `deno.lock`; confirmar em
+  runtime que o reenvio do mesmo XML devolve `ja_existia`.
+- Validação em runtime (org Zaven, concorrência em duas abas, desfazer) e deploy: ver
+  [deploy-e-migrations](../how-to/deploy-e-migrations.md).
 
 ## A verificar antes de codar
 

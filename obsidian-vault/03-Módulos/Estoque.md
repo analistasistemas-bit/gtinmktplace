@@ -1,6 +1,6 @@
 ---
 tags: [modulo, estoque]
-atualizado: 2026-09-20
+atualizado: 2026-10-15
 ---
 
 # Estoque
@@ -286,3 +286,10 @@ a migration em transação. Foi assim que `ajustar_estoque` ficou publicada com 
 `PUBLIC`/`anon`/`authenticated` até a migration `20260811203500` corrigir. Como toda RPC daqui é
 `security definer` e recebe `p_org` por parâmetro, esse no-op equivale a expor escrita de estoque
 de qualquer organização a qualquer usuário autenticado.
+
+## Entrada por nota de compra (ADR-0181, Plano 1)
+
+Lista de notas no `/estoque`: importar XML (SEFAZ ou exportação de ERP), conciliar itens com
+famílias (vínculo de fornecedor), distribuir quantidade e custo na grade, confirmar. A edge
+`importar-nota-compra` lê o XML no servidor e lança a entrada via ledger (ref `nfe:{chave}:{nItem}:{codigo}`);
+`desfazer-nota-compra` (admin) estorna ou cancela. Implementado na branch, aguardando deploy/merge.

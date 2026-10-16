@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Entrada por nota de compra (ADR-0181, Plano 1) — implementado na branch `worktree-grill-entrada-xml-compra`, aguardando deploy/merge
+
+- [x] Migrations 20261015231837, 20261015233207, 20261015234006, 20261015235604, 20261016001451 aplicadas em produção.
+- [x] Edges novas `importar-nota-compra` e `desfazer-nota-compra`; `_shared/nfe/*`; diálogo de importação, lista de notas e desfazer/cancelar/reenviar estoque no `/estoque`.
+- [x] Docs: edge-functions, modelo-de-dados, ADR-0181 (aceito), deploy, Fiscal/Estoque no vault.
+- [ ] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge; validação de runtime na Zaven (Diego).
+- [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
+- [ ] Plano 2 (D-12/D-13): pacote do contador.
+
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
 
 - [x] `ativacao.ts` não exige mais natureza/CFOPs/CST PIS-COFINS; Configurações → Fiscal: UF da venda em dropdown, CEP preenche endereço/UF/IBGE (ViaCEP), Operação fiscal só pede Papel da empresa (portabilidade recolhida), aviso de Regime Normal.

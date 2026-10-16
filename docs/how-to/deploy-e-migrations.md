@@ -349,3 +349,43 @@ Numa org de teste (`is_test`): marcar PJ, preencher `empresa_fiscal`, ligar o m�
 (esperar recusa nomeando pendências quando faltar campo), cadastrar produto com fiscal completo, e
 confirmar que a publicação sem NCM é recusada nomeando o campo. Comparar 1:1 com a tela antes de
 fechar a branch.
+
+---
+
+## Deploy pós-merge — entrada por nota de compra (ADR-0181)
+
+Ordem: **migrations, depois edges, depois front** (o front chama as edges novas; o cadastro precisa de
+`codigoPai` na resposta). Nunca mergear a main antes das edges.
+
+### Migrations — já aplicadas em produção, nada a fazer (conferir com `npm run db:check`)
+
+- `20261015231837_adr181_nota_compra`
+- `20261015233207_adr181_nota_compra_fk_org`
+- `20261015234006_adr181_rpc_nota_compra`
+- `20261015235604_adr181_desfazer_locks`
+- `20261016001451_adr181_desfazer_guard_canonico`
+
+### Edge Functions
+
+Lista conferida por grep de imports reais dos `_shared/` alterados (`canais/fiscal-ml`,
+`produto/validar`, `nfe/`; `_shared/fiscal/` não foi alterado), com fechamento transitivo:
+`fiscal-ml` é importado por `sincronizar-fiscal-ml` e `monitorar-moderados`; `produto/validar` por
+`cadastrar-produto` e `adicionar-variacoes-familia`; `nfe/` só pelas edges novas.
+`atualizar-fiscal-familia` e `ingest-lote` mudaram o próprio código.
+
+```bash
+supabase functions deploy importar-nota-compra desfazer-nota-compra \
+  cadastrar-produto adicionar-variacoes-familia ingest-lote atualizar-fiscal-familia \
+  sincronizar-fiscal-ml monitorar-moderados
+supabase functions list
+```
+
+- **Novas (2):** `importar-nota-compra`, `desfazer-nota-compra` (`verify_jwt = true`, já no `config.toml`).
+- **Alteradas (6):** as demais acima. Conferir `ACTIVE`, versão incrementada e `verify_jwt` preservado.
+
+### Verificações pendentes
+
+- `title` -> `xProd` na primeira venda faturada da Zaven (ver ADR-0181, "Pendências de verificação").
+- Mensagem de objeto duplicado do storage-js 2.110.0 em runtime.
+- Validação de runtime na org Zaven (importar, distribuir, reimportar, desfazer, duas abas) com
+  screenshots, antes do merge.
