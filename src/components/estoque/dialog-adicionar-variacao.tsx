@@ -30,6 +30,10 @@ import {
 } from '@/components/estoque/linha-variacao-form';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import { formatarNomeProduto } from '@/lib/texto';
+import type { ModoNota } from '@/components/estoque/dialog-adicionar-variacao-roteador';
+
+/** ADR-0181 D-8: falha do ledger no modo nota — nunca sugerir entrada manual (somaria em dobro). */
+export const MSG_ESTOQUE_PELA_NOTA = 'O estoque desta variação será aplicado ao confirmar a importação da nota.';
 
 type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
@@ -106,11 +110,11 @@ function erroCodigo(codigo: string, todos: string[]): string | null {
   return null;
 }
 
-export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
+export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, estoqueFixo, onConcluido }: {
   produto: ProdutoEstoqueResumo | null;
   aberto: boolean;
   onFechar: () => void;
-}) {
+} & ModoNota) {
   const qc = useQueryClient();
   const [linhas, setLinhas] = useState<LinhaAddVariacao[]>([]);
   // "Adicionar variação" clicado ao menos uma vez — mesmo padrão blur/tentouSalvar do cadastro.
@@ -189,7 +193,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
     && linhas.every((l) => !erroCodigo(l.codigo, codigos))
     && linhas.every((l) => l.nome.trim() !== '')
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])))
-    && linhas.every((l) => (numOuNull(l.estoqueInicial) ?? 0) > 0)
+    && linhas.every((l) => (estoqueFixo ?? numOuNull(l.estoqueInicial) ?? 0) > 0)
     && linhas.every((l) => l.foto != null);
 
   async function salvar() {
@@ -215,7 +219,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
           gtin: l.gtin.trim() || null,
           preco: numOuNull(l.preco) ?? 0,
           custo: numOuNull(l.custo),
-          estoqueInicial: numOuNull(l.estoqueInicial) ?? 0,
+          estoqueInicial: estoqueFixo ?? numOuNull(l.estoqueInicial) ?? 0,
           pesoGramas: numOuNull(l.pesoGramas),
           alturaCm: numOuNull(l.alturaCm),
           larguraCm: numOuNull(l.larguraCm),
@@ -225,7 +229,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
       }
 
       const { data, error } = await supabase.functions.invoke('adicionar-variacoes-familia', {
-        body: { familia_id: prefill.id, chave, variacoes },
+        body: { familia_id: prefill.id, chave, variacoes, ...(refNota ? { refNota } : {}) },
       });
       if (error) {
         const detalhe = await corpoDoErroDaEdge(error);
@@ -236,6 +240,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
       }
       const r = data as {
         loteId: string; familiaId: string; publicacaoOk: boolean; falhasEstoque: string[]; jaExistia?: boolean;
+        codigos: string[];
       };
       qc.invalidateQueries({ queryKey: QK.familiasNaoPublicadas });
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
@@ -261,8 +266,11 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
         toast.warning('Gravado, mas a publicação não foi disparada — conclua pela tela Lotes.');
       }
       if (r.falhasEstoque.length > 0) {
-        toast.warning(`Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. Use "Dar entrada" para corrigir.`);
+        toast.warning(refNota
+          ? `Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. ${MSG_ESTOQUE_PELA_NOTA}`
+          : `Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. Use "Dar entrada" para corrigir.`);
       }
+      onConcluido?.({ codigos: r.codigos ?? [] });
       onFechar();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao adicionar variação.');
@@ -303,7 +311,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
           <div className="flex flex-col gap-3">
             {linhas.map((l, i) => {
               const erroCod = erroCodigo(l.codigo, codigos);
-              const estoqueInvalido = (numOuNull(l.estoqueInicial) ?? 0) <= 0;
+              const estoqueInvalido = estoqueFixo == null && (numOuNull(l.estoqueInicial) ?? 0) <= 0;
               return (
                 <div key={l.clientId} className="flex flex-col gap-2">
                   <div className="flex flex-col gap-1.5">
@@ -332,6 +340,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
                     fotoObrigatoria
                     nomeObrigatorio
                     estoqueInicialObrigatorio
+                    origemNota={estoqueFixo != null}
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (
                       x.clientId === l.clientId ? { ...x, ...patch } : x
                     )))}
@@ -345,17 +354,23 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
                   {l.estoqueInicial.trim() !== '' && estoqueInvalido && (
                     <span className="text-xs text-destructive">Estoque inicial deve ser maior que zero.</span>
                   )}
+                  {estoqueFixo != null && (
+                    <span className="text-sm">Estoque inicial: <strong>{estoqueFixo}</strong> peça(s) da nota</span>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          <Button
-            type="button" variant="outline" size="sm" className="self-start"
-            onClick={() => setLinhas((l) => [...l, novaLinhaComPrefill(irmaRef)])}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
-          </Button>
+          {/* Modo nota: uma variação por vez (a edge recusa mais de uma). */}
+          {!refNota && (
+            <Button
+              type="button" variant="outline" size="sm" className="self-start"
+              onClick={() => setLinhas((l) => [...l, novaLinhaComPrefill(irmaRef)])}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
+            </Button>
+          )}
           <span className="text-xs text-muted-foreground">* obrigatório</span>
         </div>
 

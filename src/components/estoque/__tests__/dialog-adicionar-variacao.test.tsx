@@ -474,3 +474,50 @@ describe('DialogAdicionarVariacao', () => {
     expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('00000006: falha no ledger'));
   });
 });
+
+describe('DialogAdicionarVariacao — modo nota (ADR-0181 D-8)', () => {
+  const REF = 'nfe:26261011222333000181550010000010511000030324:1';
+  function renderNota(onConcluido = vi.fn(), onFechar = vi.fn()) {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DialogAdicionarVariacao produto={produto} aberto onFechar={onFechar} refNota={REF} estoqueFixo={7} onConcluido={onConcluido} />
+      </QueryClientProvider>,
+    );
+    return { onConcluido, onFechar };
+  }
+
+  it('sem "adicionar linha", estoque fixo travado, refNota no corpo e onConcluido com o código da edge', async () => {
+    const user = userEvent.setup();
+    invokeMock.mockResolvedValue({
+      data: { loteId: 'l', familiaId: 'f', publicacaoOk: true, falhasEstoque: ['00000006: lock'], codigos: ['00000006'] }, error: null,
+    });
+    const { onConcluido, onFechar } = renderNota();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /Adicionar variação/ })).toBeNull();
+    expect(screen.queryByLabelText('Estoque inicial da variação 1')).toBeNull();
+    await preencherLinha(user, 1, { codigo: '6', estoqueInicial: '' });
+    await user.click(BOTAO_SALVAR());
+    await waitFor(() => expect(onConcluido).toHaveBeenCalledWith({ codigos: ['00000006'] }));
+    const body = invokeMock.mock.calls[0][1].body;
+    expect(body.refNota).toBe(REF);
+    expect(body.variacoes).toHaveLength(1);
+    expect(body.variacoes[0].estoqueInicial).toBe(7);
+    const aviso = vi.mocked(toast.warning).mock.calls.map((c) => String(c[0])).join('\n');
+    expect(aviso).toMatch(/será aplicado ao confirmar a importação da nota/);
+    expect(aviso).not.toMatch(/Dar entrada/);
+    expect(onFechar).toHaveBeenCalled();
+  });
+
+  it('sem refNota o corpo não ganha a chave (chamadores atuais intactos)', async () => {
+    const user = userEvent.setup();
+    invokeMock.mockResolvedValue({
+      data: { loteId: 'l', familiaId: 'f', publicacaoOk: true, falhasEstoque: [], codigos: ['00000006'] }, error: null,
+    });
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await preencherLinha(user, 1);
+    await user.click(BOTAO_SALVAR());
+    await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+    expect('refNota' in invokeMock.mock.calls[0][1].body).toBe(false);
+  });
+});

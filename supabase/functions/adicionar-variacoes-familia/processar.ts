@@ -29,6 +29,9 @@ export type VariacaoNovaResolvida = Omit<VariacaoNovaEntrada, 'codigo' | 'imagem
 export interface ErroValidacao { campo: string; mensagem: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** ADR-0181 D-8: referência da nota de compra (`nfe:{chave44}:{nItem}`). */
+const REF_NOTA = /^nfe:\d{44}:\d{1,3}$/;
+const chaveDaRef = (refNota: string) => refNota.split(':')[1];
 
 /** Normaliza 1-8 dígitos para 8 com padStart; null se não for só-dígitos ou vazio/9+. */
 export function normalizarCodigo8(codigo: string): string | null {
@@ -44,7 +47,7 @@ export function normalizarCodigo8(codigo: string): string | null {
  * malicioso escreveria fora da pasta do usuário ou fora do bucket.
  */
 export function validarEntrada(
-  body: { familia_id?: unknown; chave?: unknown; variacoes?: unknown }, userId: string,
+  body: { familia_id?: unknown; chave?: unknown; variacoes?: unknown; refNota?: unknown }, userId: string,
 ): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
 
@@ -55,10 +58,19 @@ export function validarEntrada(
     erros.push({ campo: 'chave', mensagem: 'Chave de idempotência ausente ou inválida.' });
   }
 
+  const refNotaValida = typeof body.refNota === 'string' && REF_NOTA.test(body.refNota);
+  if (body.refNota !== undefined && !refNotaValida) {
+    erros.push({ campo: 'refNota', mensagem: 'Referência da nota inválida.' });
+  }
+
   const variacoes = body.variacoes;
   if (!Array.isArray(variacoes) || variacoes.length === 0) {
     erros.push({ campo: 'variacoes', mensagem: 'Informe ao menos uma variação nova.' });
     return erros;
+  }
+  // ADR-0181 D-8 (R3-B2): a ref do ledger é por SKU, mas a quantidade vem de UM item da nota.
+  if (refNotaValida && variacoes.length !== 1) {
+    erros.push({ campo: 'variacoes', mensagem: 'Na importação por nota, adicione um tamanho/cor por vez.' });
   }
 
   const codigosVistos = new Map<string, number>();
@@ -246,11 +258,15 @@ export interface ItemEstoqueInicial { codigo: string; qtd: number; custo: number
  */
 export function decidirRetry(
   intencao: IntencaoGravada[] | null | undefined, body: VariacaoNovaEntrada[], codigosPersistidos: string[],
+  // ADR-0181 D-8 (R3-I1): a ref da nota é da SUBMISSÃO, não de cada variação — gravada à parte em
+  // `mudanca_estrutural.refNota` (ausente = sem nota, inclusive em intenção anterior a esta versão).
+  refNota: { gravada?: string; corpo?: string } = {},
 ): { tipo: 'legado' } | { tipo: 'incompleto' } | { tipo: 'divergente' } | { tipo: 'reaplicar'; itens: ItemEstoqueInicial[] } {
   if (!Array.isArray(intencao)) return { tipo: 'legado' };
   const persistidos = new Set(codigosPersistidos);
   if (intencao.filter((it) => persistidos.has(it.codigo)).length < intencao.length) return { tipo: 'incompleto' };
   if (body.length !== intencao.length) return { tipo: 'divergente' };
+  if ((refNota.gravada ?? null) !== (refNota.corpo ?? null)) return { tipo: 'divergente' };
   const diverge = body.some((b, i) => {
     const gravada = intencao[i] as Record<string, unknown>;
     return Object.entries(normalizarIntencao(b)).some(([k, valor]) => gravada[k] !== valor);
@@ -379,19 +395,37 @@ export async function carregarContextoGrade(
   return { classe, ehUP, tiposHabilitados };
 }
 
+/** ADR-0181 D-8: a nota já tem registro na org (qualquer status)? Falha cedo, antes de criar ou
+ *  publicar variação — a garantia contra a corrida é do `registrar_entrada_nota_pendente`.
+ *  Fail-closed: erro de consulta lança. */
+export async function notaJaImportada(admin: Admin, orgId: string, refNota: string): Promise<boolean> {
+  const { data, error } = await admin.from('notas_compra').select('id')
+    .eq('org_id', orgId).eq('chave', chaveDaRef(refNota)).maybeSingle();
+  if (error) throw new Error(`Falha verificando a nota: ${error.message}`);
+  return data != null;
+}
+
 /** Ledger do estoque inicial (mesmo padrão de cadastrar-produto): ref `addvar:{familiaId}:{codigo}`
  *  idempotente pelo índice único de `referencia_externa` — reaplicar no retry é no-op no que já
- *  entrou. Falha NÃO aborta: devolve `'<codigo>: <mensagem>'` por SKU e o operador repõe pela tela. */
+ *  entrou. Falha NÃO aborta: devolve `'<codigo>: <mensagem>'` por SKU e o operador repõe pela tela.
+ *  ADR-0181 D-8: com `refNota`, a ref é a da nota (`{refNota}:{codigo}`) e a RPC é a que pega o lock
+ *  da importação e recusa nota já fechada — a confirmação da nota reconhece a ref e não soma de novo. */
 export async function aplicarEstoqueInicial(admin: Admin, e: {
-  orgId: string; familiaId: string; userId: string; itens: ItemEstoqueInicial[];
+  orgId: string; familiaId: string; userId: string; itens: ItemEstoqueInicial[]; refNota?: string;
 }): Promise<string[]> {
   const falhas: string[] = [];
   for (const it of e.itens) {
-    const { error } = await admin.rpc('registrar_entrada', {
-      p_org: e.orgId, p_codigo: it.codigo, p_qtd: it.qtd,
-      p_custo: it.custo ?? null, p_doc: 'Variação adicionada', p_obs: null,
-      p_criado_por: e.userId, p_ref: `addvar:${e.familiaId}:${it.codigo}`,
-    });
+    const { error } = e.refNota
+      ? await admin.rpc('registrar_entrada_nota_pendente', {
+        p_org: e.orgId, p_chave: chaveDaRef(e.refNota), p_codigo: it.codigo, p_qtd: it.qtd,
+        p_custo: it.custo ?? null, p_doc: 'NF-e (variação nova)', p_user: e.userId,
+        p_ref: `${e.refNota}:${it.codigo}`,
+      })
+      : await admin.rpc('registrar_entrada', {
+        p_org: e.orgId, p_codigo: it.codigo, p_qtd: it.qtd,
+        p_custo: it.custo ?? null, p_doc: 'Variação adicionada', p_obs: null,
+        p_criado_por: e.userId, p_ref: `addvar:${e.familiaId}:${it.codigo}`,
+      });
     if (error) falhas.push(`${it.codigo}: ${error.message}`);
   }
   return falhas;

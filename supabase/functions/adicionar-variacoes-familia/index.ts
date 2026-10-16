@@ -19,6 +19,7 @@ import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.t
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
   haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
@@ -71,7 +72,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
 
-  let body: { familia_id?: unknown; chave?: unknown; variacoes?: unknown };
+  let body: { familia_id?: unknown; chave?: unknown; variacoes?: unknown; refNota?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
 
   const erros = validarEntrada(body, userId);
@@ -79,6 +80,8 @@ Deno.serve(async (req) => {
   const familiaIdRecebida = body.familia_id as string;
   const chave = body.chave as string;
   const variacoesEntrada = body.variacoes as VariacaoNovaEntrada[];
+  // ADR-0181 D-8: variação faltante de uma nota de compra (já validada: `nfe:{chave44}:{nItem}`).
+  const refNota = body.refNota as string | undefined;
 
   const target = { type: 'familia', id: familiaIdRecebida };
 
@@ -94,13 +97,16 @@ Deno.serve(async (req) => {
     // Ledger no retry (Codex #3, r2 #2): confere o body contra a intenção GRAVADA na criação e
     // reaplica o estoque com as quantidades DELA (p_ref idempotente → no-op no que já entrou).
     // Família criada antes desta versão não tem `intencao` → comportamento antigo (`legado`).
-    const mudanca = jaExistente.mudanca_estrutural as { novas?: string[]; intencao?: IntencaoGravada[] } | null;
+    const mudanca = jaExistente.mudanca_estrutural as { novas?: string[]; intencao?: IntencaoGravada[]; refNota?: string } | null;
     let falhasEstoque: string[] = [];
     if (Array.isArray(mudanca?.intencao)) {
       const { data: persistidas, error: persErr } = await admin.from('variacoes').select('codigo')
         .eq('familia_id', jaExistente.id as string).in('codigo', mudanca.intencao.map((it) => it.codigo));
       if (persErr) return json({ error: `Falha conferindo a solicitação anterior: ${persErr.message}` }, 500);
-      const decisao = decidirRetry(mudanca.intencao, variacoesEntrada, (persistidas ?? []).map((v) => v.codigo as string));
+      const decisao = decidirRetry(
+        mudanca.intencao, variacoesEntrada, (persistidas ?? []).map((v) => v.codigo as string),
+        { gravada: mudanca.refNota, corpo: refNota },
+      );
       // Retry caiu entre o insert da família e o das variações: a 1ª tentativa ainda está em voo.
       if (decisao.tipo === 'incompleto') {
         // Insert multi-row é atômico → incompleto = 0 variações. Órfã antiga (a 1ª tentativa
@@ -116,8 +122,10 @@ Deno.serve(async (req) => {
         return json({ error: 'Esta solicitação difere da original. Recarregue a tela e confira o produto antes de reenviar.' }, 409);
       }
       if (decisao.tipo === 'reaplicar') {
+        // A ref GRAVADA (igual à do corpo, conferido acima): sem ela o retry lançaria `addvar:` por
+        // cima da entrada `nfe:` e a nota somaria em dobro.
         falhasEstoque = await aplicarEstoqueInicial(admin, {
-          orgId, familiaId: jaExistente.id as string, userId, itens: decisao.itens,
+          orgId, familiaId: jaExistente.id as string, userId, itens: decisao.itens, refNota: mudanca.refNota,
         });
       }
     }
@@ -132,6 +140,21 @@ Deno.serve(async (req) => {
       jaExistia: true, familiaId: jaExistente.id, loteId: jaExistente.lote_id,
       publicacaoOk, falhasEstoque, codigos: mudanca?.novas ?? [],
     });
+  }
+
+  // ADR-0181 D-8: nota já registrada → recusa ANTES de reservar código, criar lote/variação ou
+  // publicar. A corrida (nota fechando depois daqui) é barrada pelo lock de
+  // `registrar_entrada_nota_pendente` no ledger.
+  if (refNota) {
+    let jaImportada: boolean;
+    try { jaImportada = await notaJaImportada(admin, orgId, refNota); }
+    catch (e) {
+      console.error('adicionar_variacoes_familia_nota_falhou', { orgId, erro: String(e) });
+      return json({ error: 'Falha verificando a nota de compra.' }, 500);
+    }
+    if (jaImportada) {
+      return json({ error: 'Esta nota já foi importada.' }, 409);
+    }
   }
 
   // Resolve codigo_pai a partir da família canônica que a tela Estoque conhece (valida org).
@@ -304,6 +327,8 @@ Deno.serve(async (req) => {
   familiaClonada.mudanca_estrutural = {
     novas: codigosNovos, removidas: [],
     intencao: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i], ...normalizarIntencao(v) })),
+    // Só com nota: sem ela o objeto gravado fica idêntico ao de antes.
+    ...(refNota ? { refNota } : {}),
   };
 
   const { data: familiaCriada, error: famErr } = await admin.from('familias')
@@ -355,7 +380,7 @@ Deno.serve(async (req) => {
   // ref. `addvar:{familiaId}:{codigo}` própria desta feature). Falha aqui NÃO aborta — família e
   // variações já existem; o operador vê `falhasEstoque` e repõe manualmente pela tela Estoque.
   const falhasEstoque = await aplicarEstoqueInicial(admin, {
-    orgId, familiaId, userId,
+    orgId, familiaId, userId, refNota,
     itens: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i]!, qtd: v.estoqueInicial, custo: v.custo })),
   });
 

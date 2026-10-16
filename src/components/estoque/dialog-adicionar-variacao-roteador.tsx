@@ -6,9 +6,16 @@ import { DialogEstenderGrade } from '@/components/estoque/dialog-estender-grade'
 import { DialogAdicionarVariacao } from '@/components/estoque/dialog-adicionar-variacao';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
-export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
+/** ADR-0181 D-8: modo nota (todas opcionais; sem elas, o fluxo de sempre). */
+export interface ModoNota {
+  refNota?: string;
+  estoqueFixo?: number;
+  onConcluido?: (r: { codigos: string[] }) => void;
+}
+
+export function DialogAdicionarVariacaoRoteador({ produto, onFechar, ...modoNota }: {
   produto: ProdutoEstoqueResumo | null; onFechar: () => void;
-}) {
+} & ModoNota) {
   // A palavra final é do dialog de grade, que lê a família PUBLICADA com a mesma
   // `classificarFamilia` da edge; se ela disser 'simples', cai para o fluxo antigo (Codex r4 #1).
   const [forcarSimples, setForcarSimples] = useState(false);
@@ -21,11 +28,13 @@ export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
         aberto={produto != null && ehGrade}
         onFechar={onFechar}
         onNaoEhGrade={() => setForcarSimples(true)}
+        {...modoNota}
       />
       <DialogAdicionarVariacao
         produto={ehGrade ? null : produto}
         aberto={produto != null && !ehGrade}
         onFechar={onFechar}
+        {...modoNota}
       />
     </>
   );

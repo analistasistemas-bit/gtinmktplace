@@ -24,13 +24,11 @@ import { EtapaResumo } from './etapa-resumo';
 
 const TITULOS = ['Arquivo da nota', 'Produtos', 'Distribuição', 'Resumo'];
 
-export function DialogImportarNota({ aberto, onFechar, onVerNota, onVariacaoFaltante }: {
+export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   aberto: boolean;
   onFechar: () => void;
   /** Notas de compra (Task 12) pluga aqui o "Ver nota". */
   onVerNota?: (chave: string) => void;
-  /** Task 11. */
-  onVariacaoFaltante?: (nItem: number, codigoPai: string) => void;
 }) {
   const qc = useQueryClient();
   const { data: empresa } = useEmpresaFiscal();
@@ -133,8 +131,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onVariacaoFalt
               tiposProduto={tiposProduto} carregandoTipos={carregandoTipos} />
           )}
           {etapa === 2 && e && (
-            <EtapaDistribuicao e={e} onVariacaoFaltante={onVariacaoFaltante}
-              atualizar={(f) => setE((s) => (s ? f(s) : s))} />
+            <EtapaDistribuicao e={e} atualizar={(f) => setE((s) => (s ? f(s) : s))} />
           )}
           {etapa === 3 && e && <EtapaResumo e={e} produtos={produtos} irPara={setEtapa} />}
         </div>

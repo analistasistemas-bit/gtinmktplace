@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia } from '../estado';
+import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova } from '../estado';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
 const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 590 };
@@ -81,5 +81,29 @@ describe('estado da importação', () => {
       { nItem: 1, codigoPai: 'P1', fator: 1, distribuicao: [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }] },
       { nItem: 2, codigoPai: 'P2', fator: 12, distribuicao: [{ codigo: 'S2', quantidade: 24, custoPrecificacao: 10 }] },
     ] });
+  });
+});
+
+describe('variação faltante (D-8)', () => {
+  it('publicado+admin abre o fluxo; publicado sem admin pede admin; não publicado recusa', () => {
+    expect(acaoVariacaoFaltante({ publicado: true }, true)).toBe('adicionar-publicado');
+    expect(acaoVariacaoFaltante({ publicado: true }, false)).toBe('pedir-admin');
+    expect(acaoVariacaoFaltante({ publicado: false }, true)).toBe('recusar-nao-publicado');
+  });
+  it('linha nova entra travada e o payload não carrega a flag', () => {
+    let e = estadoInicial(nota, '<x/>', [], {});
+    e = definirProduto(e, 1, 'P1');
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 30, custoPrecificacao: 10 }]);
+    e = travarLinhaNova(e, 1, 'S9', 5, 10);
+    expect(e.decisoes[0].distribuicao.find((l) => l.codigo === 'S9')).toMatchObject({ quantidade: 5, travada: true });
+    e = definirProduto(e, 2, 'P2'); e = definirFator(e, 2, 12);
+    e = definirDistribuicao(e, 2, [{ codigo: 'S2', quantidade: 24, custoPrecificacao: 10 }]);
+    expect(JSON.stringify(payload(e))).not.toContain('travada');
+  });
+  it('repetir o mesmo código (retry jaExistia) substitui a linha em vez de duplicar', () => {
+    let e = definirProduto(estadoInicial(nota, '<x/>', [], {}), 1, 'P1');
+    e = travarLinhaNova(e, 1, 'S9', 5, 10);
+    e = travarLinhaNova(e, 1, 'S9', 5, 10);
+    expect(e.decisoes[0].distribuicao.filter((l) => l.codigo === 'S9')).toHaveLength(1);
   });
 });

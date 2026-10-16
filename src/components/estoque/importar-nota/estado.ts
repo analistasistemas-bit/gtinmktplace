@@ -77,6 +77,18 @@ export const definirDistribuicao = (e: EstadoImportacao, nItem: number, linhas: 
   });
 export const aceitarDivergencia = (e: EstadoImportacao, aceita: boolean): EstadoImportacao => ({ ...e, aceitarDivergencia: aceita });
 
+/** D-8: "Falta um tamanho/cor?" — só produto publicado ganha SKU novo, e só por admin (ADR-0129). */
+export const acaoVariacaoFaltante = (p: { publicado: boolean }, isAdmin: boolean) =>
+  (!p.publicado ? 'recusar-nao-publicado' : isAdmin ? 'adicionar-publicado' : 'pedir-admin') as
+    'adicionar-publicado' | 'pedir-admin' | 'recusar-nao-publicado';
+
+/** D-8: SKU criado com a ref da nota já está no ledger — entra travado (substitui o mesmo código). */
+export const travarLinhaNova = (e: EstadoImportacao, nItem: number, codigo: string, quantidade: number, custo: number) =>
+  mudar(e, nItem, (d) => ({
+    ...d,
+    distribuicao: [...d.distribuicao.filter((l) => l.codigo !== codigo), { codigo, quantidade, custoPrecificacao: custo, travada: true }],
+  }));
+
 export function pendencias(e: EstadoImportacao): Array<{ nItem: number; erro: string }> {
   const out: Array<{ nItem: number; erro: string }> = [];
   if (e.divergenciaTotal !== 0 && !e.aceitarDivergencia) {

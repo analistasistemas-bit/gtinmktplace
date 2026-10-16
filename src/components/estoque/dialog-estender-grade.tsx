@@ -51,6 +51,8 @@ import { CAMPOS_NUMERICOS } from '@/components/estoque/use-cadastro-produto';
 import { fetchVariacoesProduto, type ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import { cn } from '@/lib/utils';
 import { normalizarNomeCor } from '../../../supabase/functions/_shared/cor/value-id';
+import type { ModoNota } from '@/components/estoque/dialog-adicionar-variacao-roteador';
+import { MSG_ESTOQUE_PELA_NOTA } from '@/components/estoque/dialog-adicionar-variacao';
 
 const CABECALHO_VAZIO: CamposHerdaveis = {
   preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
@@ -110,14 +112,14 @@ function estoqueValido(v: string): boolean {
 
 interface Confirmacao { titulo: string; texto: string; rotulo: string; acao: () => void }
 
-export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }: {
+export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, refNota, estoqueFixo, onConcluido }: {
   produto: ProdutoEstoqueResumo | null;
   aberto: boolean;
   onFechar: () => void;
   /** A família publicada não é grade (ou o resumo divergiu dela) — o roteador cai para o dialog
    *  antigo. Nunca chamado pra 'mista': esse caso mostra aviso de bloqueio aqui mesmo. */
   onNaoEhGrade: () => void;
-}) {
+} & ModoNota) {
   const qc = useQueryClient();
   const codigoPai = produto?.codigoPai;
 
@@ -412,9 +414,11 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
           : null;
   const bloqueadoPorTipo = carregandoTipos || !!motivoBloqueioTipo;
 
-  const podeSalvar = !!familiaCanonica && !bloqueadoPorTipo && !emVoo && linhas.length > 0
-    && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, r[c])))
-    && resolvidas.every((r) => estoqueValido(r.estoqueInicial))
+  // ADR-0181 D-8: modo nota = UMA combinação nova (a edge recusa mais) e estoque fixo = peças da nota.
+  const variasNoModoNota = !!refNota && linhas.length > 1;
+  const podeSalvar = !!familiaCanonica && !bloqueadoPorTipo && !emVoo && linhas.length > 0 && !variasNoModoNota
+    && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => (estoqueFixo != null && c === 'estoqueInicial') || !erroCampo(c, r[c])))
+    && (estoqueFixo != null || resolvidas.every((r) => estoqueValido(r.estoqueInicial)))
     && resolvidas.every((r) => r.foto != null || fotoHerdavel(r.cor, skus) != null);
 
   async function salvar() {
@@ -438,10 +442,11 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
           imagemPorClientId.set(r.clientId, path);
         }
       }
-      const variacoes = payloadEstender(resolvidas, skus, imagemPorClientId);
+      const variacoes = payloadEstender(resolvidas, skus, imagemPorClientId)
+        .map((v) => (estoqueFixo != null ? { ...v, estoqueInicial: estoqueFixo } : v));
 
       const { data, error } = await supabase.functions.invoke('adicionar-variacoes-familia', {
-        body: { familia_id: familiaCanonica.id, chave, variacoes },
+        body: { familia_id: familiaCanonica.id, chave, variacoes, ...(refNota ? { refNota } : {}) },
       });
       if (error) {
         const detalhe = await corpoDoErroDaEdge(error);
@@ -469,8 +474,11 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
         toast.warning('Gravado, mas a publicação não foi disparada — conclua pela tela Lotes.');
       }
       if (r.falhasEstoque.length > 0) {
-        toast.warning(`Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. Use "Dar entrada" para corrigir.`);
+        toast.warning(refNota
+          ? `Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. ${MSG_ESTOQUE_PELA_NOTA}`
+          : `Estoque inicial não aplicado em: ${r.falhasEstoque.join(', ')}. Use "Dar entrada" para corrigir.`);
       }
+      onConcluido?.({ codigos: r.codigos ?? [] });
       onFechar();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao estender a grade.');
@@ -648,9 +656,17 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Grade</span>
                     <span className="text-xs text-muted-foreground">
-                      {linhas.length} SKU(s) novo(s) · {totais.geral} unidades
+                      {estoqueFixo != null
+                        ? `${linhas.length} SKU(s) novo(s) · ${estoqueFixo} peça(s) da nota`
+                        : `${linhas.length} SKU(s) novo(s) · ${totais.geral} unidades`}
                     </span>
                   </div>
+                  {variasNoModoNota && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+                      <span>Na importação por nota, adicione um tamanho/cor por vez — remova as outras células novas.</span>
+                    </div>
+                  )}
                   <MatrizGrade
                     linhas={linhas}
                     resolvidas={resolvidas}
@@ -666,6 +682,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
                     onRemoverCelula={removerLinha}
                     onReincluirCelula={reincluirLinha}
                     onAplicarMassa={aplicarMassa}
+                    semEstoqueInicial={estoqueFixo != null}
                   />
                 </div>
               )}

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirErroPendente, decidirIncompleto,
   decidirRetry, detectarUP, haAtualizacaoComErro, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
 } from '../processar.ts';
@@ -759,5 +760,107 @@ describe('decidirRetry (Codex #3, r2 #2, r3 #2)', () => {
   });
   it.each(Object.keys(alteracoes))('campo %s alterado isoladamente → divergente', (campo) => {
     expect(decidirRetry(intencao(), [{ ...corpo(), ...alteracoes[campo] }], ['00000103'])).toEqual({ tipo: 'divergente' });
+  });
+});
+
+// ─── ADR-0181 D-8: variação faltante pela nota (refNota) ─────────────────────────────────────
+const CHAVE44 = '26261011222333000181550010000010511000030324';
+const REF = `nfe:${CHAVE44}:1`;
+
+describe('validarEntrada — refNota (ADR-0181 D-8)', () => {
+  const v = () => ({
+    codigo: '9', nome: 'Verde', gtin: null, preco: 10, custo: null, estoqueInicial: 5,
+    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: 'user-1/c/x.jpg',
+  });
+  const body = (extra: Record<string, unknown>) => ({ familia_id: 'f', chave: '11111111-1111-1111-1111-111111111111', variacoes: [v()], ...extra });
+  it('refNota válida com 1 variação passa', () => {
+    expect(validarEntrada(body({ refNota: REF }), 'user-1')).toEqual([]);
+  });
+  it.each(['nfe:123:1', 'addvar:x', `nfe:${CHAVE44}:1234`, `nfe:${CHAVE44}:1:00000001`, 42])('refNota malformada (%s) → erro no campo refNota', (ref) => {
+    expect(validarEntrada(body({ refNota: ref }), 'user-1').map((e) => e.campo)).toContain('refNota');
+  });
+  it('refNota com 2 variações → uma por vez', () => {
+    const erros = validarEntrada(body({ refNota: REF, variacoes: [v(), { ...v(), codigo: '8' }] }), 'user-1');
+    expect(erros).toContainEqual({ campo: 'variacoes', mensagem: 'Na importação por nota, adicione um tamanho/cor por vez.' });
+  });
+});
+
+describe('aplicarEstoqueInicial — refNota', () => {
+  it('com refNota chama registrar_entrada_nota_pendente com p_chave e ref da nota', async () => {
+    const { admin, chamadas, rpcArgs } = fakeAdmin({});
+    await aplicarEstoqueInicial(admin, {
+      orgId: 'org', familiaId: 'fam', userId: 'u', refNota: REF, itens: [{ codigo: '00000107', qtd: 5, custo: 10 }],
+    });
+    expect(chamadas).toEqual(['rpc:registrar_entrada_nota_pendente']);
+    expect(rpcArgs[0]).toEqual({
+      p_org: 'org', p_chave: CHAVE44, p_codigo: '00000107', p_qtd: 5, p_custo: 10,
+      p_doc: 'NF-e (variação nova)', p_user: 'u', p_ref: `${REF}:00000107`,
+    });
+  });
+  it('sem refNota continua registrar_entrada com addvar', async () => {
+    const { admin, chamadas, rpcArgs } = fakeAdmin({});
+    await aplicarEstoqueInicial(admin, { orgId: 'org', familiaId: 'fam', userId: 'u', itens: [{ codigo: '00000107', qtd: 5, custo: null }] });
+    expect(chamadas).toEqual(['rpc:registrar_entrada']);
+    expect(rpcArgs[0].p_ref).toBe('addvar:fam:00000107');
+  });
+  it('falha da RPC vira falhasEstoque (não aborta)', async () => {
+    const { admin } = fakeAdmin({}, () => ({ error: { message: 'já foi importada' } }));
+    expect(await aplicarEstoqueInicial(admin, {
+      orgId: 'org', familiaId: 'fam', userId: 'u', refNota: REF, itens: [{ codigo: '00000107', qtd: 5, custo: null }],
+    })).toEqual(['00000107: já foi importada']);
+  });
+});
+
+describe('notaJaImportada', () => {
+  it('consulta notas_compra pela org e pelos 44 dígitos da ref', async () => {
+    let filtros: Record<string, unknown> = {};
+    const { admin } = fakeAdmin({ notas_compra: (f) => { filtros = f; return { data: { id: 'n1' } }; } });
+    expect(await notaJaImportada(admin, 'org', REF)).toBe(true);
+    expect(filtros).toEqual({ org_id: 'org', chave: CHAVE44 });
+  });
+  it('sem nota → false', async () => {
+    const { admin } = fakeAdmin({ notas_compra: () => ({ data: null }) });
+    expect(await notaJaImportada(admin, 'org', REF)).toBe(false);
+  });
+  it('erro na consulta → lança (fail-closed)', async () => {
+    const { admin } = fakeAdmin({ notas_compra: () => ({ data: null, error: { message: 'boom' } }) });
+    await expect(notaJaImportada(admin, 'org', REF)).rejects.toThrow(/boom/);
+  });
+});
+
+describe('index.ts — ordem do modo nota (leitura do código)', () => {
+  const src = readFileSync(resolve(process.cwd(), 'supabase/functions/adicionar-variacoes-familia/index.ts'), 'utf8');
+  it('confere a nota antes de reservar código e de qualquer insert', () => {
+    const i = src.indexOf('notaJaImportada(admin');
+    expect(i).toBeGreaterThan(0);
+    // Os alvos existem (senão indexOf = -1 e o toBeLessThan passaria vazio).
+    const alvos = [src.indexOf("rpc('proximo_codigo_produto'"), src.indexOf(".from('lotes')\n    .insert"),
+      src.lastIndexOf('encadearPublicacao(req')];
+    for (const a of alvos) { expect(a).toBeGreaterThan(0); expect(i).toBeLessThan(a); }
+  });
+});
+
+describe('decidirRetry — refNota', () => {
+  const corpo = (): VariacaoNovaEntrada => ({
+    nome: 'Verde', tamanho: 'P', gtin: null, preco: 10, custo: null, estoqueInicial: 2,
+    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: 'u1/x.jpg',
+  });
+  const intencao = () => [{ codigo: '00000103', ...normalizarIntencao(corpo()) }];
+  const reaplicar = { tipo: 'reaplicar', itens: [{ codigo: '00000103', qtd: 2, custo: null }] };
+  it('mesma refNota → reaplicar', () => {
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: REF, corpo: REF })).toEqual(reaplicar);
+  });
+  it('refNota diferente → divergente', () => {
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: REF, corpo: `nfe:${CHAVE44}:2` })).toEqual({ tipo: 'divergente' });
+  });
+  it('refNota removida no retry → divergente', () => {
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: REF, corpo: undefined })).toEqual({ tipo: 'divergente' });
+  });
+  it('refNota acrescentada no retry → divergente', () => {
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: undefined, corpo: REF })).toEqual({ tipo: 'divergente' });
+  });
+  it('sem refNota dos dois lados (intenção antiga) → reaplicar como sempre', () => {
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'])).toEqual(reaplicar);
+    expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: undefined, corpo: undefined })).toEqual(reaplicar);
   });
 });

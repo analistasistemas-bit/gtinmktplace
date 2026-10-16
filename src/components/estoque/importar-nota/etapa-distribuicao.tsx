@@ -1,24 +1,31 @@
 // ADR-0181 — etapa 3: distribuição das unidades de cada item pelos SKUs do produto.
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { QK } from '@/lib/queries';
-import { fetchSkusEstoqueOrg, fetchVariacoesProduto } from '@/lib/produtos-saldo';
+import { fetchProdutosEstoqueResumo, fetchSkusEstoqueOrg, fetchVariacoesProduto } from '@/lib/produtos-saldo';
+import { useProfile } from '@/hooks/useProfile';
+import { DialogAdicionarVariacaoRoteador } from '@/components/estoque/dialog-adicionar-variacao-roteador';
 import { filtrarOpcoesSku, montarOpcoesSku } from '@/lib/dialog-entrada-busca';
 import { custoAquisicaoUnit, quantidadeEmEstoque } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import {
-  definirDistribuicao, semearDistribuicao, type DecisaoItem, type EstadoImportacao, type LinhaEstado,
+  acaoVariacaoFaltante, definirDistribuicao, semearDistribuicao, travarLinhaNova,
+  type DecisaoItem, type EstadoImportacao, type LinhaEstado,
 } from './estado';
 
 type Atualizar = (f: (s: EstadoImportacao) => EstadoImportacao) => void;
 interface Rotulo { cor: string | null; tamanho: string | null; estoque: number }
 
-function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
-  e: EstadoImportacao; atualizar: Atualizar; d: DecisaoItem;
-  onVariacaoFaltante?: (nItem: number, codigoPai: string) => void;
-}) {
+const MSG_FALTANTE = {
+  'pedir-admin': 'Peça a um administrador para adicionar o tamanho/cor e volte.',
+  'recusar-nao-publicado': 'Este produto ainda não foi publicado e não aceita tamanho novo nesta versão. Cadastre a grade completa ou publique antes.',
+} as const;
+
+function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar: Atualizar; d: DecisaoItem }) {
+  const qc = useQueryClient();
   const item = e.itens.find((i) => i.nItem === d.nItem)!;
   const q = quantidadeEmEstoque(item.qCom, d.fator);
   const custoDef = Math.round(custoAquisicaoUnit(item, d.fator) * 100) / 100;
@@ -35,6 +42,15 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
   const { data: skusOrg = [], isError: erroOrg, error: erroOrgMsg } = useQuery({
     queryKey: ['skus-estoque-org'], queryFn: fetchSkusEstoqueOrg, enabled: buscando || temExtras, staleTime: 30_000,
   });
+  // D-8 "Falta um tamanho/cor?": mesma consulta (cache) do assistente; publicado = tem anúncio no ML.
+  const { isAdmin } = useProfile();
+  const { data: resumo } = useQuery({
+    queryKey: QK.produtosEstoqueResumo, queryFn: fetchProdutosEstoqueResumo, staleTime: 180_000,
+  });
+  const produto = resumo?.produtos.find((p) => p.codigoPai === d.codigoPai) ?? null;
+  const [faltante, setFaltante] = useState<ReturnType<typeof acaoVariacaoFaltante> | null>(null);
+  const [qtdNova, setQtdNova] = useState('');
+  const [qtdNoDialog, setQtdNoDialog] = useState<number | null>(null);
 
   // Monta o buffer local uma vez, semeado com o que já está salvo (voltar/Corrigir não regrava nada).
   useEffect(() => {
@@ -72,6 +88,23 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
   const num = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const soma = linhas.reduce((s, l) => s + (l.quantidade || 0), 0);
+  const restante = (q.ok ? q.quantidade : 0) - soma;
+  const qtdValida = /^\d+$/.test(qtdNova) && Number(qtdNova) >= 1 && Number(qtdNova) <= restante;
+
+  // O SKU nasceu com a ref da nota (já no ledger): entra travado no estado E no buffer local, que só
+  // é semeado uma vez. Código vindo da edge (8 dígitos) — é o que está na ref do ledger.
+  const aoCriarVariacao = (codigos: string[], qtd: number) => {
+    const codigo = codigos[0];
+    if (!codigo) {
+      toast.error('Variação criada, mas não foi possível incluí-la na distribuição. Feche e reabra a importação desta nota.');
+      return;
+    }
+    atualizar((s) => travarLinhaNova(s, d.nItem, codigo, qtd, custoDef));
+    setLinhas((prev) => [...(prev ?? []).filter((l) => l.codigo !== codigo),
+      { codigo, quantidade: qtd, custoPrecificacao: custoDef, travada: true }]);
+    qc.invalidateQueries({ queryKey: QK.variacoesEstoque(d.codigoPai!) });
+    setFaltante(null); setQtdNova('');
+  };
 
   return (
     <div className="space-y-2 rounded-md border p-3">
@@ -124,11 +157,42 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
         >
           Repetir custo em todos
         </Button>
-        {/* ponytail: Task 11 implementa o fluxo; aqui só o gancho. */}
-        <Button size="sm" variant="link" disabled={!onVariacaoFaltante} onClick={() => onVariacaoFaltante?.(d.nItem, d.codigoPai!)}>
+        <Button
+          size="sm" variant="link" disabled={!produto}
+          onClick={() => setFaltante(acaoVariacaoFaltante({ publicado: produto?.mlItemId != null }, isAdmin))}
+        >
           Falta um tamanho/cor?
         </Button>
       </div>
+      {faltante && faltante !== 'adicionar-publicado' && (
+        <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">{MSG_FALTANTE[faltante]}</p>
+      )}
+      {faltante === 'adicionar-publicado' && (
+        <div className="space-y-2 rounded-md border p-3 text-sm">
+          {restante <= 0 ? (
+            <p role="status">Todas as unidades deste item já estão distribuídas. Reduza a quantidade de um SKU para liberar peças para o tamanho/cor novo.</p>
+          ) : (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1">
+                <span>Peças da nota para o tamanho/cor novo (até {restante})</span>
+                <Input
+                  type="number" min={1} max={restante} step={1} className="w-28" aria-label="Peças do tamanho/cor novo"
+                  value={qtdNova} onChange={(ev) => setQtdNova(ev.target.value)}
+                />
+              </label>
+              <Button size="sm" disabled={!qtdValida} onClick={() => setQtdNoDialog(Number(qtdNova))}>Continuar</Button>
+            </div>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => { setFaltante(null); setQtdNova(''); }}>Cancelar</Button>
+        </div>
+      )}
+      {qtdNoDialog != null && (
+        <DialogAdicionarVariacaoRoteador
+          produto={produto} onFechar={() => setQtdNoDialog(null)}
+          refNota={`nfe:${e.nota.chave}:${d.nItem}`} estoqueFixo={qtdNoDialog}
+          onConcluido={({ codigos }) => aoCriarVariacao(codigos, qtdNoDialog)}
+        />
+      )}
       {buscando && (
         <div className="space-y-1">
           <Input placeholder="Buscar SKU em qualquer produto" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
@@ -157,16 +221,12 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
   );
 }
 
-export function EtapaDistribuicao({ e, atualizar, onVariacaoFaltante }: {
-  e: EstadoImportacao; atualizar: Atualizar;
-  /** Task 11 pluga aqui "Falta um tamanho/cor?". */
-  onVariacaoFaltante?: (nItem: number, codigoPai: string) => void;
-}) {
+export function EtapaDistribuicao({ e, atualizar }: { e: EstadoImportacao; atualizar: Atualizar }) {
   return (
     <div className="space-y-3">
       {e.decisoes.map((d) => d.codigoPai ? (
         <ItemDistribuicao
-          key={`${d.nItem}-${d.codigoPai}-${d.fator}`} e={e} atualizar={atualizar} d={d} onVariacaoFaltante={onVariacaoFaltante}
+          key={`${d.nItem}-${d.codigoPai}-${d.fator}`} e={e} atualizar={atualizar} d={d}
         />
       ) : (
         <p key={d.nItem} className="rounded-md border p-3 text-sm text-muted-foreground">
