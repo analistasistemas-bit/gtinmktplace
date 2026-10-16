@@ -1,4 +1,5 @@
 // ADR-0181 — etapa 1: arquivo XML, dados da nota e avisos.
+import { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { FileUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,12 +18,19 @@ export function EtapaArquivo({ e, setE, recusa, erroLeitura, lendo, onArquivo, o
   onArquivo: (file: File) => void;
   onVerNota?: (chave: string) => void;
 }) {
+  const [rejeicao, setRejeicao] = useState<string | null>(null);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'application/xml': ['.xml'], 'text/xml': ['.xml'] },
     multiple: false,
     maxSize: 1024 * 1024,
     disabled: lendo,
-    onDrop: (files) => { if (files[0]) onArquivo(files[0]); },
+    onDrop: (files) => { setRejeicao(null); if (files[0]) onArquivo(files[0]); },
+    onDropRejected: (rej) => {
+      const codes = rej[0]?.errors.map((x) => x.code) ?? [];
+      setRejeicao(codes.includes('file-too-large') ? 'O arquivo passa de 1 MB.'
+        : codes.includes('file-invalid-type') ? 'Envie um arquivo .xml.'
+        : codes.includes('too-many-files') ? 'Envie um arquivo por vez.' : 'Arquivo recusado.');
+    },
   });
 
   return (
@@ -36,13 +44,15 @@ export function EtapaArquivo({ e, setE, recusa, erroLeitura, lendo, onArquivo, o
         <span>{lendo ? 'Lendo a nota…' : 'Arraste o XML da nota de compra ou clique para escolher (até 1 MB)'}</span>
       </div>
 
+      {rejeicao && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{rejeicao}</p>}
+
       {erroLeitura && <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{erroLeitura}</p>}
 
       {recusa && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           <span>{recusa.mensagem}</span>
-          {recusa.jaImportada && onVerNota && (
-            <Button size="sm" variant="outline" onClick={() => onVerNota(recusa.chave)}>Ver nota</Button>
+          {recusa.jaImportada && (
+            <Button size="sm" variant="outline" disabled={!onVerNota} onClick={() => onVerNota?.(recusa.chave)}>Ver nota</Button>
           )}
         </div>
       )}

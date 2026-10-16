@@ -3,7 +3,8 @@ import { cfopAceito, conciliarItens, custoAquisicaoUnit, quantidadeEmEstoque, er
 import type { DecisaoImportacao, ItemConciliado, LinhaDistribuicao, NotaCompraLida } from '../../../../supabase/functions/_shared/nfe/tipos.ts';
 import type { Vinculo } from '@/lib/notas-compra';
 
-export type LinhaEstado = LinhaDistribuicao & { travada?: boolean };
+// codigoPai: só do front (SKU de outro produto, D-7) — para invalidar o cache; payload() não o envia.
+export type LinhaEstado = LinhaDistribuicao & { travada?: boolean; codigoPai?: string };
 export interface DecisaoItem {
   nItem: number; codigoPai: string | null; fator: number;
   origemVinculo: 'vinculo' | 'gtin' | 'manual' | null; candidatosGtin: string[]; distribuicao: LinhaEstado[];
@@ -110,4 +111,20 @@ export function payload(e: EstadoImportacao): { xml: string; decisoes: DecisaoIm
 /** Linhas de partida da distribuição: com 1 SKU a quantidade vem preenchida (editável); com vários, zerada. */
 export function linhasIniciais(skus: Array<{ codigo: string }>, quantidade: number, custo: number): LinhaDistribuicao[] {
   return skus.map((s) => ({ codigo: s.codigo, quantidade: skus.length === 1 ? quantidade : 0, custoPrecificacao: custo }));
+}
+
+/**
+ * Buffer da etapa Distribuição ao montar: o que já foi salvo no estado manda (quantidade, custo, SKU de
+ * outro produto); `linhasIniciais` só vale quando ainda não há nenhuma linha salva.
+ */
+export function semearDistribuicao(
+  skus: Array<{ codigo: string }>, salva: LinhaEstado[], quantidade: number, custo: number,
+): LinhaEstado[] {
+  if (salva.length === 0) return linhasIniciais(skus, quantidade, custo);
+  const porCod = new Map(salva.map((l) => [l.codigo, l]));
+  const doProduto = new Set(skus.map((s) => s.codigo));
+  return [
+    ...skus.map((s) => porCod.get(s.codigo) ?? { codigo: s.codigo, quantidade: 0, custoPrecificacao: custo }),
+    ...salva.filter((l) => !doProduto.has(l.codigo)),
+  ];
 }

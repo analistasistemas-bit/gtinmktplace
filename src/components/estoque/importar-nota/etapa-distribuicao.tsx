@@ -9,7 +9,7 @@ import { fetchSkusEstoqueOrg, fetchVariacoesProduto } from '@/lib/produtos-saldo
 import { filtrarOpcoesSku, montarOpcoesSku } from '@/lib/dialog-entrada-busca';
 import { custoAquisicaoUnit, quantidadeEmEstoque } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import {
-  definirDistribuicao, linhasIniciais, type DecisaoItem, type EstadoImportacao, type LinhaEstado,
+  definirDistribuicao, semearDistribuicao, type DecisaoItem, type EstadoImportacao, type LinhaEstado,
 } from './estado';
 
 type Atualizar = (f: (s: EstadoImportacao) => EstadoImportacao) => void;
@@ -22,28 +22,24 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
   const item = e.itens.find((i) => i.nItem === d.nItem)!;
   const q = quantidadeEmEstoque(item.qCom, d.fator);
   const custoDef = Math.round(custoAquisicaoUnit(item, d.fator) * 100) / 100;
-  const { data: skus, isLoading } = useQuery({
+  const { data: skus, isLoading, isError: erroSkus, error: erroSkusMsg } = useQuery({
     queryKey: QK.variacoesEstoque(d.codigoPai!),
     queryFn: () => fetchVariacoesProduto(d.codigoPai!),
     staleTime: 30_000,
   });
   const [linhas, setLinhas] = useState<LinhaEstado[] | null>(null);
-  const [rotulos, setRotulos] = useState<Record<string, Rotulo>>({});
   const [buscando, setBuscando] = useState(false);
   const [busca, setBusca] = useState('');
-  const { data: skusOrg = [] } = useQuery({
-    queryKey: ['skus-estoque-org'], queryFn: fetchSkusEstoqueOrg, enabled: buscando, staleTime: 30_000,
+  // Também carrega quando há SKU de outro produto já salvo: é de lá que vêm cor/tamanho/saldo dele.
+  const temExtras = d.distribuicao.some((l) => l.codigoPai);
+  const { data: skusOrg = [], isError: erroOrg, error: erroOrgMsg } = useQuery({
+    queryKey: ['skus-estoque-org'], queryFn: fetchSkusEstoqueOrg, enabled: buscando || temExtras, staleTime: 30_000,
   });
 
-  // Monta o buffer local uma vez (zeros ficam aqui; o estado só recebe quantidade > 0).
+  // Monta o buffer local uma vez, semeado com o que já está salvo (voltar/Corrigir não regrava nada).
   useEffect(() => {
     if (linhas || isLoading || !skus) return;
-    const travadas = d.distribuicao.filter((l) => l.travada);
-    const porCod = new Map(travadas.map((l) => [l.codigo, l]));
-    const base = linhasIniciais(skus, q.ok ? q.quantidade : 0, custoDef).map((l) => porCod.get(l.codigo) ?? l);
-    const doProduto = new Set(skus.map((s) => s.codigo));
-    setLinhas([...base, ...travadas.filter((l) => !doProduto.has(l.codigo))]);
-    setRotulos(Object.fromEntries(skus.map((s) => [s.codigo, { cor: s.cor, tamanho: s.tamanho, estoque: s.estoque }])));
+    setLinhas(semearDistribuicao(skus, d.distribuicao, q.ok ? q.quantidade : 0, custoDef));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skus, isLoading]);
 
@@ -58,7 +54,19 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
     [skusOrg, busca, linhas],
   );
 
+  if (erroSkus) {
+    return <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+      Não foi possível carregar os SKUs do item {item.nItem}: {erroSkusMsg instanceof Error ? erroSkusMsg.message : 'erro desconhecido'}
+    </p>;
+  }
   if (!linhas) return <p className="text-sm text-muted-foreground">Carregando SKUs…</p>;
+
+  const rotuloDe = (codigo: string): Rotulo | undefined => {
+    const doProduto = skus?.find((x) => x.codigo === codigo);
+    if (doProduto) return { cor: doProduto.cor, tamanho: doProduto.tamanho, estoque: doProduto.estoque };
+    const o = skusOrg.find((x) => x.codigo === codigo);
+    return o ? { cor: o.cor, tamanho: o.tamanho, estoque: o.estoque } : undefined;
+  };
 
   const alterar = (codigo: string, parte: Partial<LinhaEstado>) =>
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
@@ -82,7 +90,7 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
         </TableHeader>
         <TableBody>
           {linhas.map((l) => {
-            const r = rotulos[l.codigo];
+            const r = rotuloDe(l.codigo);
             return (
               <TableRow key={l.codigo}>
                 <TableCell>{l.codigo}</TableCell>
@@ -93,7 +101,7 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
                   <Input
                     type="number" min={0} step={1} className="w-24" aria-label={`Quantidade ${l.codigo}`}
                     value={l.quantidade} disabled={l.travada}
-                    onChange={(ev) => alterar(l.codigo, { quantidade: num(ev.target.value) })}
+                    onChange={(ev) => alterar(l.codigo, { quantidade: Math.round(num(ev.target.value)) })}
                   />
                 </TableCell>
                 <TableCell>
@@ -125,14 +133,16 @@ function ItemDistribuicao({ e, atualizar, d, onVariacaoFaltante }: {
         <div className="space-y-1">
           <Input placeholder="Buscar SKU em qualquer produto" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
           <ul className="max-h-40 overflow-auto rounded-md border text-sm">
-            {opcoes.length === 0 && <li className="p-2 text-muted-foreground">Nenhum SKU encontrado.</li>}
+            {erroOrg && <li role="alert" className="p-2 text-destructive">
+              Não foi possível carregar os SKUs: {erroOrgMsg instanceof Error ? erroOrgMsg.message : 'erro desconhecido'}
+            </li>}
+            {!erroOrg && opcoes.length === 0 && <li className="p-2 text-muted-foreground">Nenhum SKU encontrado.</li>}
             {opcoes.map((o) => (
               <li key={o.codigo}>
                 <button
                   type="button" className="w-full px-2 py-1.5 text-left hover:bg-muted"
                   onClick={() => {
-                    setRotulos({ ...rotulos, [o.codigo]: { cor: null, tamanho: null, estoque: o.estoque } });
-                    setLinhas([...linhas, { codigo: o.codigo, quantidade: 0, custoPrecificacao: custoDef }]);
+                    setLinhas([...linhas, { codigo: o.codigo, quantidade: 0, custoPrecificacao: custoDef, codigoPai: o.codigoPai }]);
                     setBuscando(false); setBusca('');
                   }}
                 >

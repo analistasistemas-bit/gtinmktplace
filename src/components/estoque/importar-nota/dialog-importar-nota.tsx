@@ -95,11 +95,12 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota, onVariacaoFalt
     mutationFn: () => importarNotaCompra(payload(e!)),
     onSuccess: (r) => {
       const n = e!.nota;
-      const unidades = e!.decisoes.reduce((s, d) => s + d.distribuicao.reduce((t, l) => t + l.quantidade, 0), 0);
+      const unidades = e!.decisoes.reduce((s, d) => s + d.distribuicao.reduce((t, l) => t + (l.travada ? 0 : l.quantidade), 0), 0);
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       qc.invalidateQueries({ queryKey: QK.notasCompra });
       qc.invalidateQueries({ queryKey: QK.vinculosFornecedor(n.emitenteCnpj) });
-      for (const cp of new Set(e!.decisoes.map((d) => d.codigoPai!))) {
+      const tocados = e!.decisoes.flatMap((d) => [d.codigoPai!, ...d.distribuicao.map((l) => l.codigoPai).filter((c): c is string => !!c)]);
+      for (const cp of new Set(tocados)) {
         qc.invalidateQueries({ queryKey: QK.variacoesEstoque(cp) });
       }
       if (r.duplicada) toast.info(`Nota ${n.numero} já tinha sido importada — nada foi somado.`);
