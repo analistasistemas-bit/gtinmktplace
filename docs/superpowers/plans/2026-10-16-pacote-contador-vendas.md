@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md` (ADR-0181, D-13 parte vendas, com as emendas 1 e 2 do Diego).
 
-**Revisão do plano:** Codex `gpt-6.1-sol` high (2026-10-16, rodada 1: 16 achados — 14 incorporados, 2 com ruling R4/R5).
+**Revisão do plano:** Codex `gpt-6.1-sol` high (2026-10-16) — rodada 1: 16 achados (14 incorporados, 2 com ruling R4/R5); rodada 2: 5 achados, todos incorporados.
 
 ## Global Constraints
 
@@ -169,10 +169,13 @@ export function nfe(o: {
     + `<protNFe versao="4.00"><infProt><chNFe>${ch}</chNFe><cStat>${o.cStat ?? '100'}</cStat></infProt></protNFe></nfeProc>`;
 }
 
-export function evento(o: { n: number; tpEvento: '110111' | '110110'; cStat?: string; seq?: number; chaveRet?: string; semRet?: boolean }): string {
+export function evento(o: {
+  n: number; tpEvento: '110111' | '110110'; cStat?: string; seq?: number; chaveRet?: string; semRet?: boolean;
+  tpRet?: string; seqRet?: number; semCStat?: boolean;
+}): string {
   const ch = CHAVE(o.n);
-  const ret = o.semRet ? '' : `<retEvento versao="1.00"><infEvento><tpEvento>${o.tpEvento}</tpEvento><nSeqEvento>${o.seq ?? 1}</nSeqEvento>`
-    + `<cStat>${o.cStat ?? '135'}</cStat><chNFe>${o.chaveRet ?? ch}</chNFe></infEvento></retEvento>`;
+  const ret = o.semRet ? '' : `<retEvento versao="1.00"><infEvento><tpEvento>${o.tpRet ?? o.tpEvento}</tpEvento><nSeqEvento>${o.seqRet ?? o.seq ?? 1}</nSeqEvento>`
+    + `${o.semCStat ? '' : `<cStat>${o.cStat ?? '135'}</cStat>`}<chNFe>${o.chaveRet ?? ch}</chNFe></infEvento></retEvento>`;
   return `<?xml version="1.0"?><procEventoNFe ${NS} versao="1.00"><evento versao="1.00"><infEvento>`
     + `<chNFe>${ch}</chNFe><tpEvento>${o.tpEvento}</tpEvento><nSeqEvento>${o.seq ?? 1}</nSeqEvento></infEvento></evento>${ret}</procEventoNFe>`;
 }
@@ -215,6 +218,15 @@ describe('zip íntegro', () => {
     const corrompido = z.slice(); corrompido[i + 5] = '9'.charCodeAt(0);
     expect(() => lerPacote(corrompido, SET, AGORA)).toThrow(ErroDownloadIncompleto);
   });
+  it('EOCD adulterado (contagem +8, ou as duas contagens reduzidas) é rejeitado', () => {
+    const z = zip({ 'x/a.xml': nfe({ n: 1 }), 'x/b.xml': nfe({ n: 2 }) });
+    let i = z.length - 22;
+    while (i >= 0 && !(z[i] === 0x50 && z[i + 1] === 0x4b && z[i + 2] === 0x05 && z[i + 3] === 0x06)) i--;
+    const so8 = z.slice(); so8[i + 8] = 0; so8[i + 9] = 0;
+    expect(() => lerPacote(so8, SET, AGORA)).toThrow(ErroDownloadIncompleto);
+    const ambas = z.slice(); ambas[i + 8] = 1; ambas[i + 9] = 0; ambas[i + 10] = 1; ambas[i + 11] = 0;
+    expect(() => lerPacote(ambas, SET, AGORA)).toThrow(ErroDownloadIncompleto);
+  });
   it('dois formatos reais de pasta, sem documentos fiscais', () => {
     const l = ler({ 'Emitidas_Mercado_Livre/NF-e de venda/XML/Autorizadas/a.xml': nfe({ n: 1 }),
       'Emitidas_ERP/NF-e de venda/XML/Autorizadas/b.xml': nfe({ n: 2 }) });
@@ -234,6 +246,8 @@ describe('lerPacote', () => {
   it('complementar (finNFe 2) e devolução de venda (tpNF 0, finNFe 4, CFOP 1202, refNFe)', () => {
     const l = ler({ 'x/a.xml': nfe({ n: 1, finNFe: '2' }), 'x/b.xml': nfe({ n: 2, tpNF: '0', finNFe: '4', cfops: ['1202'], refNFe: CHAVE(9) }) });
     expect(l.notas.map((n) => n.tipo)).toEqual(['complementar', 'devolucao']);
+    const ex = ler({ 'x/c.xml': nfe({ n: 3, tpNF: '0', finNFe: '4', cfops: ['3202'], refNFe: CHAVE(9) }) });
+    expect(ex.notas[0].tipo).toBe('devolucao');
   });
   it('transferências, remessas e CFOP misto vão para "outros"', () => {
     const l = ler({
@@ -251,11 +265,12 @@ describe('lerPacote', () => {
     expect(l.notas.map((n) => n.status)).toEqual(['cancelada', 'autorizada', 'autorizada']);
     expect(l.conferencia.eventosNaoAplicados.map((e) => e.cStat)).toEqual(['573', '136']);
   });
-  it('evento sem retorno, ou com chave do retorno diferente, é incompleto (PARCIAL)', () => {
+  it('evento sem retorno, sem cStat, ou com chave/tipo/sequência do retorno diferentes é incompleto (PARCIAL)', () => {
     const l = ler({ 'x/a.xml': nfe({ n: 1 }), 'x/b.xml': evento({ n: 1, tpEvento: '110111', semRet: true }),
-      'x/c.xml': evento({ n: 1, tpEvento: '110111', chaveRet: CHAVE(8) }) });
+      'x/c.xml': evento({ n: 1, tpEvento: '110111', chaveRet: CHAVE(8) }), 'x/d.xml': evento({ n: 1, tpEvento: '110111', semCStat: true }),
+      'x/e.xml': evento({ n: 1, tpEvento: '110111', tpRet: '110110' }), 'x/f.xml': evento({ n: 1, tpEvento: '110111', seq: 1, seqRet: 2 }) });
     expect(l.notas[0].status).toBe('autorizada');
-    expect(l.conferencia.incompletos.map((i) => i.arquivo)).toEqual(['x/b.xml', 'x/c.xml']);
+    expect(l.conferencia.incompletos.map((i) => i.arquivo)).toEqual(['x/b.xml', 'x/c.xml', 'x/d.xml', 'x/e.xml', 'x/f.xml']);
     expect(l.conferencia.parcial).toBe(true);
   });
   it('cancelamento de nota que não está no zip vai para "cancelamento de nota de outro mês"', () => {
@@ -357,8 +372,11 @@ function crcsDoDiretorio(b: Uint8Array): Map<string, number> {
   const utf8 = new TextDecoder();
   for (let i = b.length - 22; i >= Math.max(0, b.length - 22 - 0xffff); i--) {
     if (u32(b, i) !== 0x06054b50) continue;
-    const total = u16(b, i + 10);
+    const totalDisco = u16(b, i + 8), total = u16(b, i + 10), tamanhoDir = u32(b, i + 12);
     let p = u32(b, i + 16);
+    // Contagens do EOCD têm de bater e o diretório tem de terminar exatamente onde o EOCD começa
+    // (o fflate usa +8; contagem adulterada omitiria notas em silêncio).
+    if (totalDisco !== total || p + tamanhoDir !== i) throw new ErroDownloadIncompleto();
     const m = new Map<string, number>();
     for (let k = 0; k < total; k++) {
       if (p + 46 > b.length || u32(b, p) !== 0x02014b50) throw new ErroDownloadIncompleto();
@@ -367,6 +385,7 @@ function crcsDoDiretorio(b: Uint8Array): Map<string, number> {
       m.set(flags & 0x800 ? utf8.decode(bytesNome) : latin1(bytesNome), crc);
       p += 46 + ln + le + lc;
     }
+    if (p !== i || m.size !== total) throw new ErroDownloadIncompleto();
     return m;
   }
   throw new ErroDownloadIncompleto();
@@ -381,6 +400,7 @@ export function abrirZipIntegro(bytes: Uint8Array): Record<string, Uint8Array> {
   } catch {
     throw new ErroDownloadIncompleto();
   }
+  if (Object.keys(arquivos).length !== crcs.size) throw new ErroDownloadIncompleto();
   for (const [nome, dados] of Object.entries(arquivos)) {
     if (dados.length !== declarado[nome] || crcs.get(nome) !== crc32(dados)) throw new ErroDownloadIncompleto();
   }
@@ -403,7 +423,7 @@ const CFOP_VENDA = new Set([
   '6401', '6402', '6403', '6404',
   '7101', '7102', '7105', '7106', '7127',
 ]);
-const CFOP_DEVOLUCAO_VENDA = new Set(['1201', '1202', '1203', '1204', '1410', '1411', '2201', '2202', '2203', '2204', '2410', '2411']);
+const CFOP_DEVOLUCAO_VENDA = new Set(['1201', '1202', '1203', '1204', '1410', '1411', '2201', '2202', '2203', '2204', '2410', '2411', '3201', '3202', '3211']);
 const AUTORIZADA = new Set(['100', '150']);
 const DENEGADA = new Set(['110', '301', '302', '303']);
 const OK_CANCELAMENTO = new Set(['135', '155']);
@@ -505,8 +525,14 @@ export function lerPacote(bytes: Uint8Array, mes: string, agora: Date = new Date
       const ret = el(el(doc, 'retEvento'), 'infEvento');
       const chave = tx(ped, 'chNFe') ?? '';
       const tpEvento = tx(ped, 'tpEvento') ?? '';
-      if (!ret || !/^\d{44}$/.test(chave) || tx(ret, 'chNFe') !== chave || !tpEvento) { incompleto(nome, 'evento sem retorno ou com chave inconsistente'); continue; }
-      const cStat = tx(ret, 'cStat') ?? '';
+      const seq = tx(ped, 'nSeqEvento');
+      const cStat = tx(ret, 'cStat');
+      // tpEvento/nSeqEvento do retorno são conferidos quando presentes (o leiaute permite omiti-los).
+      const tpRet = tx(ret, 'tpEvento'), seqRet = tx(ret, 'nSeqEvento');
+      if (!ret || !/^\d{44}$/.test(chave) || tx(ret, 'chNFe') !== chave || !tpEvento || !seq || !cStat
+        || (tpRet !== null && tpRet !== tpEvento) || (seqRet !== null && seqRet !== seq)) {
+        incompleto(nome, 'evento sem retorno ou inconsistente com o pedido'); continue;
+      }
       if (tpEvento === '110111' && OK_CANCELAMENTO.has(cStat)) cancelamentos.push({ arquivo: nome, chave });
       else if (tpEvento === '110110' && OK_CCE.has(cStat)) cces.add(chave);
       else if (tpEvento === '110111' || tpEvento === '110110') { c.eventosNaoAplicados.push({ arquivo: nome, chave, tpEvento, cStat }); conta('eventos_nao_aplicados'); continue; }
@@ -1116,6 +1142,18 @@ describe('baixarLoteMes', () => {
     expect(d.travar).not.toHaveBeenCalled();
     expect(d.fetchMl).not.toHaveBeenCalled();
   });
+  it('abort durante a trava: sem token nem ML, cooldown uma vez', async () => {
+    const { d } = deps(async () => zipResp());
+    let soltar: (v: boolean) => void = () => {};
+    d.travar.mockImplementationOnce(() => new Promise<boolean>((r) => { soltar = r; }));
+    const ac = new AbortController();
+    const pend = baixarLoteMes(d, p({ signal: ac.signal }));
+    ac.abort(); soltar(true);
+    expect(await pend).toEqual({ tipo: 'erro', status: 502, mensagem: INDISP });
+    expect(d.token).not.toHaveBeenCalled();
+    expect(d.fetchMl).not.toHaveBeenCalled();
+    expect(d.liberar).toHaveBeenCalledTimes(1);
+  });
   it('prazo cobre token pendente, headers sem bytes e 404 sem fim', async () => {
     const nunca = () => new Promise<never>(() => {});
     const semBytes = () => Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200, headers: { 'Content-Type': 'application/zip' } }));
@@ -1245,9 +1283,11 @@ export async function baixarLoteMes(
   };
   const abortado = new Promise<never>((_, rej) => ctl.signal.addEventListener('abort', () => rej(new Error('abortado')), { once: true }));
   abortado.catch(() => {});
+  if (p.signal.aborted) cancelar();   // abortou enquanto esperava a trava
   const prazo = setTimeout(cancelar, p.prazoMs ?? PRAZO_MS);
 
   try {
+    ctl.signal.throwIfAborted();
     const token = await Promise.race([deps.token(), abortado]);
     const r = await Promise.race([deps.fetchMl(urlLote(p.conta, iv.start, iv.end), token, ctl.signal), abortado]);
     const saida = await Promise.race([interpretar(r, fim), abortado]);
@@ -1416,7 +1456,22 @@ describe('CardPacoteContador', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A organização mudou durante o download — gere o pacote de novo.'));
     expect(salvar).not.toHaveBeenCalled();
   });
-  it('desmontar durante o processamento não salva', async () => {
+  it('desmontar ou trocar a org durante as pausas de leitura/montagem não salva', async () => {
+    for (const acao of ['desmontar', 'trocar'] as const) {
+      salvar.mockReset(); orgAtual = 'org-1';
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
+      const { unmount } = render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
+      for (let i = 0; i < 10; i++) await Promise.resolve();   // download resolvido; parado na 1ª pausa
+      if (acao === 'desmontar') unmount(); else orgAtual = 'org-2';
+      await vi.runAllTimersAsync();
+      expect(salvar).not.toHaveBeenCalled();
+      if (acao === 'trocar') { expect(toast.error).toHaveBeenCalledWith('A organização mudou durante o download — gere o pacote de novo.'); unmount(); }
+      vi.useRealTimers();
+    }
+  });
+  it('desmontar durante o download não salva', async () => {
     let soltar: (v: unknown) => void = () => {};
     baixar.mockImplementationOnce(() => new Promise((r) => { soltar = r; }));
     const { unmount } = render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
