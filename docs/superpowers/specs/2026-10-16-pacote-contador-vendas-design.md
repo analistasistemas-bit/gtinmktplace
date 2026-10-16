@@ -108,6 +108,8 @@ Dependência nova: `fflate`. O download **não** usa `supabase.functions.invoke(
   | 429 | 429 JSON | "O Mercado Livre limitou os downloads — tente de novo em alguns minutos (cerca de 5)." |
   | 401 / 403 | 409 JSON | "A conta do Mercado Livre não autorizou o download das notas." |
   | 5xx / timeout antes dos headers | 502 JSON | "Mercado Livre indisponível — o pacote não foi gerado." |
+  | Falha interna (Redis, banco, token) | 502 JSON | "Falha interna ao preparar o download — o pacote não foi gerado." |
+  | `requireUserOrg` recusa (401/403) | mesmo status, JSON | "Sessão expirada ou sem acesso — entre de novo." |
 
 - Falha **depois** dos headers (stream cortado) não vira 502: o cliente detecta pelo zip inválido (abaixo). Cancelar no
   navegador aborta a chamada ao ML (`AbortSignal` propagado).

@@ -7,35 +7,44 @@ const baixar = vi.fn();
 vi.mock('@/lib/pacote-contador/baixar', async (orig) => ({ ...(await orig<object>()), baixarNotasMes: (...a: unknown[]) => baixar(...a) }));
 const salvar = vi.fn();
 vi.mock('@/lib/pacote-contador/montar', async (orig) => ({ ...(await orig<object>()), salvarArquivo: (...a: unknown[]) => salvar(...a) }));
+const empresa = vi.fn();
+vi.mock('@/lib/queries', () => ({ fetchEmpresaFiscal: (...a: unknown[]) => empresa(...a) }));
+const xlsx = vi.fn();
+vi.mock('@/lib/pacote-contador/relatorio-xlsx', async (orig) => {
+  const m = await orig<typeof import('@/lib/pacote-contador/relatorio-xlsx')>();
+  return { ...m, gerarRelatorioXlsx: (l: Parameters<typeof m.gerarRelatorioXlsx>[0], cab: Parameters<typeof m.gerarRelatorioXlsx>[1]) => { xlsx(cab); return m.gerarRelatorioXlsx(l, cab); } };
+});
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 import { toast } from 'sonner';
 import { CardPacoteContador } from '../card-pacote-contador';
 import { ErroPacote } from '@/lib/pacote-contador/baixar';
 
-beforeEach(() => { orgAtual = 'org-1'; baixar.mockReset(); salvar.mockReset(); vi.mocked(toast.error).mockReset(); });
+beforeEach(() => { orgAtual = 'org-1'; xlsx.mockReset(); empresa.mockReset(); empresa.mockResolvedValue(null); baixar.mockReset(); salvar.mockReset(); vi.mocked(toast.error).mockReset(); });
 
 describe('CardPacoteContador', () => {
   it('padrão = mês anterior; sem mês futuro; vazio gera pacote', async () => {
     vi.setSystemTime(new Date('2026-10-16T12:00:00-03:00'));
     baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
-    render(<CardPacoteContador razaoSocial="EMPRESA TESTE LTDA" cnpj="11444777000161" />);
+    empresa.mockResolvedValue({ razao_social: 'EMPRESA TESTE LTDA', cnpj: '11444777000161' });
+    render(<CardPacoteContador />);
     const sel = screen.getByLabelText('Mês') as HTMLSelectElement;
     expect(sel.value).toBe('2026-09');
     expect([...sel.options].map((o) => o.value)).not.toContain('2026-11');
     fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
     await waitFor(() => expect(salvar).toHaveBeenCalledWith('pacote-2026-09.zip', expect.any(Uint8Array), 'application/zip'));
     expect(baixar).toHaveBeenCalledWith('2026-09', 'org-1', expect.any(AbortSignal));
+    expect(xlsx).toHaveBeenCalledWith(expect.objectContaining({ org: 'EMPRESA TESTE LTDA', cnpj: '11444777000161' }));
     vi.useRealTimers();
   });
   it('erro do servidor vira toast com a mensagem', async () => {
     baixar.mockRejectedValueOnce(new ErroPacote('O Mercado Livre limitou os downloads — tente de novo em alguns minutos (cerca de 5).', 429));
-    render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
+    render(<CardPacoteContador />);
     fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('O Mercado Livre limitou os downloads — tente de novo em alguns minutos (cerca de 5).'));
   });
   it('org trocada durante o download não salva', async () => {
     baixar.mockImplementationOnce(async () => { orgAtual = 'org-2'; return { tipo: 'vazio', contaMl: '99' }; });
-    render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
+    render(<CardPacoteContador />);
     fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A organização mudou durante o download — gere o pacote de novo.'));
     expect(salvar).not.toHaveBeenCalled();
@@ -45,7 +54,7 @@ describe('CardPacoteContador', () => {
       salvar.mockReset(); orgAtual = 'org-1';
       vi.useFakeTimers({ toFake: ['setTimeout'] });
       baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
-      const { unmount } = render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
+      const { unmount } = render(<CardPacoteContador />);
       fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
       await act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });   // download resolvido; parado na 1ª pausa
       if (acao === 'desmontar') unmount(); else orgAtual = 'org-2';
@@ -58,11 +67,35 @@ describe('CardPacoteContador', () => {
   it('desmontar durante o download não salva', async () => {
     let soltar: (v: unknown) => void = () => {};
     baixar.mockImplementationOnce(() => new Promise((r) => { soltar = r; }));
-    const { unmount } = render(<CardPacoteContador razaoSocial={null} cnpj={null} />);
+    const { unmount } = render(<CardPacoteContador />);
     fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
     unmount();
     soltar({ tipo: 'vazio', contaMl: '99' });
     await new Promise((r) => setTimeout(r, 20));
     expect(salvar).not.toHaveBeenCalled();
+  });
+  it('org trocada durante a busca da empresa fiscal não salva', async () => {
+    baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
+    empresa.mockImplementationOnce(async () => { orgAtual = 'org-2'; return null; });
+    render(<CardPacoteContador />);
+    fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A organização mudou durante o download — gere o pacote de novo.'));
+    expect(salvar).not.toHaveBeenCalled();
+  });
+  it('falha ao buscar a empresa fiscal vira toast e não salva', async () => {
+    baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
+    empresa.mockRejectedValueOnce(new Error('falha de rede'));
+    render(<CardPacoteContador />);
+    fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('falha de rede'));
+    expect(salvar).not.toHaveBeenCalled();
+  });
+  it('clique duplo instantâneo baixa uma vez só', async () => {
+    baixar.mockResolvedValue({ tipo: 'vazio', contaMl: '99' });
+    render(<CardPacoteContador />);
+    const b = screen.getByRole('button', { name: 'Baixar pacote' });
+    fireEvent.click(b); fireEvent.click(b);
+    await waitFor(() => expect(salvar).toHaveBeenCalledTimes(1));
+    expect(baixar).toHaveBeenCalledTimes(1);
   });
 });

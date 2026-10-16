@@ -279,7 +279,7 @@ export default function Estoque() {
         skuInicial={alvoEntrada?.sku}
         codigoPaiInicial={alvoEntrada?.codigoPai}
       />
-      <CardPacoteContador razaoSocial={empresaFiscal?.razao_social ?? null} cnpj={empresaFiscal?.cnpj ?? null} />
+      <CardPacoteContador />
       <SecaoNotasCompra destacarChave={chaveDestacada} />
       <DialogImportarNota
         aberto={notaAberta}

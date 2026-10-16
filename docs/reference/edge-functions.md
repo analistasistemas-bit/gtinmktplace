@@ -1098,7 +1098,7 @@ falha ao ler `organizations` não libera.
   repassa o zip de XMLs fiscais do mês (download por período do ML) para o pacote do contador montado no navegador.
   `verify_jwt = true`, gate `estoque`, conexão ML da org; `POST { mes: 'AAAA-MM' }`. Devolve `application/octet-stream`
   (stream, sem parse nem gravação) com `X-Org-Id`, `X-Conta-Ml` e `Access-Control-Expose-Headers: X-Org-Id, X-Conta-Ml`; mês sem nota → `200 { vazio: true }`; erros em JSON (400 mês
-  inválido/futuro, 409 sem conexão ou ML recusou, 429 limite do ML ou trava local, 502 ML indisponível/resposta ambígua).
+  inválido/futuro, 409 sem conexão ou ML recusou, 429 limite do ML ou trava local, 502 ML indisponível/resposta ambígua ou falha interna Redis/banco/token — "Falha interna ao preparar o download…"; erro de sessão/acesso → JSON "Sessão expirada ou sem acesso — entre de novo." com o status original).
   Trava Redis `lock:notas-venda:<conexaoId>` (460 s enquanto baixa, cooldown de 60 s ao terminar). Lógica em
   `processar.ts` (testada); `index.ts` só HTTP. Suporte em modo somente leitura não exporta.
 

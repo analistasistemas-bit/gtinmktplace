@@ -28,6 +28,17 @@ describe('gerarRelatorioXlsx', () => {
     expect(conf).toContain('Conciliação com as vendas não incluída nesta versão.');
     expect(conf).toContain('11444777000161');
   });
+  it('colunas de dinheiro com 2 casas mesmo em valor inteiro; quantidade sem formato', () => {
+    const l = lerPacote(zip({ 'a.xml': nfe({ n: 1, dhEmi: '2026-09-05T10:00:00-03:00', vNF: '10.00' }) }), '2026-09', AG);
+    const wb = XLSX.read(gerarRelatorioXlsx(l, CAB), { type: 'array', cellNF: true });
+    const rows = linhas(wb, 'Vendas');
+    const iCab = rows.findIndex((r) => r[0] === 'Data de emissão');
+    const cel = (r: number, c: number) => wb.Sheets.Vendas[XLSX.utils.encode_cell({ r, c })];
+    expect(cel(iCab + 1, 9).z).toBe('#,##0.00');
+    const iTot = rows.findIndex((r) => r[0] === 'Vendas autorizadas');
+    expect(cel(iTot, 5).z).toBe('#,##0.00');
+    expect(cel(iTot, 1).z).not.toBe('#,##0.00');
+  });
   it('selo PACOTE PARCIAL no topo das duas abas', () => {
     const wb = abrir(gerarRelatorioXlsx(lerPacote(zip({ 'a.xml': '<x' }), '2026-09', AG), CAB));
     for (const aba of ['Vendas', 'Conferência']) expect(String(linhas(wb, aba)[0][0])).toMatch(/^PACOTE PARCIAL/);

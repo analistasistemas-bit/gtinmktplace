@@ -19,8 +19,8 @@ Deno.serve(async (req) => {
   let ctx: Awaited<ReturnType<typeof requireUserOrg>>;
   try { ctx = await requireUserOrg(req, { access: 'read' }); }
   catch (resp) {
-    if (resp instanceof Response) {   // requireUserOrg devolve sem CORS — o navegador precisa ler o erro
-      return new Response(resp.body, { status: resp.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (resp instanceof Response) {   // corpo cru pode ser texto e vem sem CORS — responde JSON próprio
+      return json({ error: 'Sessão expirada ou sem acesso — entre de novo.' }, resp.status);
     }
     throw resp;
   }
@@ -60,6 +60,6 @@ Deno.serve(async (req) => {
     return new Response(saida.body, { status: 200, headers: { ...corsHeaders, ...ident, 'Content-Type': 'application/octet-stream' } });
   } catch (e) {
     console.error('baixar_notas_venda_falhou', String(e));   // Redis, banco ou token fora do caminho previsto
-    return json({ error: 'Mercado Livre indisponível — o pacote não foi gerado.' }, 502);
+    return json({ error: 'Falha interna ao preparar o download — o pacote não foi gerado.' }, 502);
   }
 });

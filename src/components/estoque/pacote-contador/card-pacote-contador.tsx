@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { fetchEmpresaFiscal } from '@/lib/queries';
 import { effectiveOrgId } from '@/stores/support-store';
 import { baixarNotasMes, ErroPacote } from '@/lib/pacote-contador/baixar';
 import { lerPacote, lerPacoteVazio } from '@/lib/pacote-contador/ler';
@@ -15,17 +16,20 @@ type Etapa = 'ocioso' | 'baixando' | 'lendo' | 'montando';
 const ROTULO: Record<Etapa, string> = { ocioso: '', baixando: 'Baixando do Mercado Livre…', lendo: 'Lendo as notas…', montando: 'Montando o pacote…' };
 const respirar = () => new Promise((r) => setTimeout(r, 0));   // deixa a tela atualizar entre etapas pesadas
 
-export function CardPacoteContador({ razaoSocial, cnpj }: { razaoSocial: string | null; cnpj: string | null }) {
+export function CardPacoteContador() {
   const agora = useMemo(() => new Date(), []);
   const meses = useMemo(() => mesesDisponiveis(agora), [agora]);
   const [mes, setMes] = useState(() => mesAnteriorSP(agora));
   const [etapa, setEtapa] = useState<Etapa>('ocioso');
   const atual = useRef<AbortController | null>(null);
+  const emCurso = useRef(false);   // trava síncrona: o `etapa` só desabilita o botão no próximo render
   useEffect(() => () => atual.current?.abort(), []);
 
   async function gerar() {
+    if (emCurso.current) return;
     const org = effectiveOrgId();
     if (!org) { toast.error('Organização não identificada — recarregue a página.'); return; }
+    emCurso.current = true;
     const ctl = new AbortController();
     atual.current = ctl;
     // Depois de cada espera: componente desmontado → para; org trocada (suporte) → recusa.
@@ -37,10 +41,12 @@ export function CardPacoteContador({ razaoSocial, cnpj }: { razaoSocial: string 
       setEtapa('baixando');
       const r = await baixarNotasMes(mes, org, ctl.signal);
       conferir();
+      const emp = await fetchEmpresaFiscal();   // dados da org de AGORA, não do render
+      conferir();
       setEtapa('lendo'); await respirar(); conferir();
       const leitura = r.tipo === 'vazio' ? lerPacoteVazio(mes) : lerPacote(r.bytes, mes);
       setEtapa('montando'); await respirar(); conferir();
-      const cab = { org: razaoSocial ?? `Organização ${org}`, cnpj, contaMl: r.contaMl, geradoEm: new Date() };
+      const cab = { org: emp?.razao_social ?? `Organização ${org}`, cnpj: emp?.cnpj ?? null, contaMl: r.contaMl, geradoEm: new Date() };
       const pacote = montarPacote(leitura, gerarRelatorioXlsx(leitura, cab), gerarRelatorioPdf(leitura, cab));
       conferir();
       salvarArquivo(nomePacote(mes), pacote, 'application/zip');
@@ -49,6 +55,7 @@ export function CardPacoteContador({ razaoSocial, cnpj }: { razaoSocial: string 
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') toast.error(e instanceof Error ? e.message : 'Não foi possível gerar o pacote.');
     } finally {
+      emCurso.current = false;
       if (!ctl.signal.aborted) setEtapa('ocioso');
     }
   }
