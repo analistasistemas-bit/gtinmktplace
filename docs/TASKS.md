@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## UPDATE: cor User Products e preço herdado do ML (ADR-0016 adendos 2026-10-16) — EM PRODUÇÃO desde 2026-10-16 (main `d60f3a4a` e `e53e486a`)
+
+- [x] Cor UP já publicada não vira "cor nova": ingest usa SKU ativo em `anuncios_externos_itens`; Revisão usa `casadaNoMl`. Reparo no banco: 96 variações de 8 famílias do lote `9c1e8a12` reincluídas (autorizado pelo Diego).
+- [x] Re-import herda o preço que está no ar (`/items/bulk`, `ingest-lote/preco-vivo.ts`); grava `preco_publicado_ml`; selo "preço alterado" não aparece em família publicada.
+- [x] Revisões: Codex gpt-6.1-sol (3 achados corrigidos) e Grok 4.7 xhigh (2 corrigidos). Deploy `ingest-lote` conferido por download da fonte.
+- [ ] Validar no primeiro import real: família com preço mudado no ML herda o preço do ar, sem selo.
+- [ ] Não verificado: se o `price` do `/items` traz preço promocional durante campanha (nenhum anúncio em promoção em 16/10).
+- [ ] Pré-existente, fora do escopo: SKU UP `pausado`-não-retirado com foto e estoque entra como cor nova e trava a saga (`filho_em_estado_terminal`).
+
 ## Entrada por nota de compra (ADR-0181, Plano 1) — EM PRODUÇÃO desde 2026-10-16 (main `4c2ca2a1`)
 
 - [x] Migrations 20261015231837, 20261015233207, 20261015234006, 20261015235604, 20261016001451 aplicadas em produção.

@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-07
+atualizado: 2026-10-16
 ---
 
 # Changelog
@@ -8,6 +8,12 @@ atualizado: 2026-10-07
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-16
+
+**Cor User Products deixa de virar "cor nova" no UPDATE (ADR-0016, adendo).** Em UP o `ml_variation_id` é sempre nulo; o ingest e a Revisão usavam só ele e marcavam 96 cores ativas no ML (8 famílias) como novas e fora da publicação. Agora "já no anúncio" também é SKU ativo em `anuncios_externos_itens`. Dados do lote reparados no banco.
+
+**Re-import herda o preço que está no ar (ADR-0016, adendo).** O UPDATE copiava um preço do app que ficava velho quando o preço era mudado direto no ML (R$ 10,45 desde junho × R$ 19 no ar); o selo "preço alterado" acendia em 89 famílias já publicadas como "somente estoque", e "Atualizar tudo" derrubaria o preço. O `ingest-lote` lê o preço vivo via `/items/bulk`; o selo só aparece antes de publicar. Revisado por Codex e Grok.
 
 ## 2026-10-07
 

@@ -342,6 +342,15 @@ mesmo por engano.
   No re-ingest UPDATE herda o `*_ml_picture_id`/`ml_picture_id` só quando NÃO veio foto nova no lote
   (reposição só-planilha preserva a publicada); com foto nova, zera para forçar re-upload da atual —
   senão republicaria a imagem antiga cacheada no ML (plano 031, `herdarPictureId`).
+  **Cor já no anúncio (ADR-0016 adendo 2026-10-16):** Legacy = `ml_variation_id`; User Products =
+  SKU em `anuncios_externos_itens` com `retirado=false`, `status='ativo'` e `item_externo_id` — sempre
+  entra no UPDATE, com ou sem foto (`excluidaNoUpdate`, `_shared/update/casar.ts`).
+  **Preço herdado = preço no ar:** lê o ML via `/items/bulk` (`ingest-lote/preco-vivo.ts`, blocos de
+  20; bloco com erro cai no snapshot `preco_publicado_ml`). Legacy = preço da própria variação no item
+  (nunca o `price` da partição 0 em família dividida em faixas); UP = `price` do item de cada SKU.
+  Preço fixado pelo operador (`preco_editado_pelo_operador`) mantém o fixado; variação Legacy nunca
+  publicada usa o preço da família quando ele é único. A linha nova também grava `preco_publicado_ml`
+  (base do selo "preço alterado", ADR-0078).
   `planilha_path` é escrito pelo cliente e baixado com `service_role` (RLS de storage não se
   aplica) — antes do download, `donoDoPathNaOrg` (`_shared/lote/exclusao.ts`) confirma que o
   profile do 1º segmento do path é da mesma org do chamador, senão aborta 400 (achado F2,
