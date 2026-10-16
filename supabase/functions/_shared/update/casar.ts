@@ -6,6 +6,8 @@ export interface VarAnterior {
   ml_picture_id: string | null;
   estoque: number;
   preco_publicacao: number | string | null;
+  /** Último preço confirmado no ML (ADR-0078 F1) — gravado em todo UPDATE, inclusive "somente estoque". */
+  preco_publicado_ml?: number | string | null;
   /** D1 do reajuste: preço fixado pelo operador/reajuste — o re-ingest herda junto com o preço. */
   preco_editado_pelo_operador?: boolean;
 }
@@ -18,6 +20,8 @@ export interface Herdado {
   ml_picture_id: string | null;
   estoque_anterior: number | null;
   preco_publicacao: number | string | null;
+  /** Ausente = nunca confirmado no ML (mesmo que null). */
+  preco_publicado_ml?: number | string | null;
   preco_editado_pelo_operador?: boolean;
 }
 export interface MudancaEstrutural {
@@ -61,11 +65,16 @@ export function casarVariacoesUpdate(
         cor_origem: ant.cor_origem,
         ml_picture_id: ant.ml_picture_id,
         estoque_anterior: ant.estoque,
-        preco_publicacao: ant.preco_publicacao,
+        // ADR-0016 adendo 2026-10-16: herda o preço que está no ar (preço mudado direto no ML não
+        // volta ao valor velho do app); preço fixado pelo operador (D15) mantém o fixado.
+        preco_publicacao: ant.preco_editado_pelo_operador !== true && ant.preco_publicado_ml != null
+          ? ant.preco_publicado_ml
+          : ant.preco_publicacao,
+        preco_publicado_ml: ant.preco_publicado_ml ?? null,
         preco_editado_pelo_operador: ant.preco_editado_pelo_operador,
       };
     } else {
-      herdados[n.codigo] = { ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null, preco_publicacao: null };
+      herdados[n.codigo] = { ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null, preco_publicacao: null, preco_publicado_ml: null };
       novasCores.push(n.codigo);
     }
   }

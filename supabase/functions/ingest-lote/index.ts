@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
     // preço e análise de concorrência de OUTRA org para dentro desta família.
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, descricao_fiscal, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao, preco_editado_pelo_operador)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, descricao_fiscal, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao, preco_publicado_ml, preco_editado_pelo_operador)')
       .in('codigo_pai', codigosPai)
       .eq('org_id', lote.org_id)
       .not('ml_item_id', 'is', null)
@@ -202,6 +202,7 @@ Deno.serve(async (req) => {
         ml_picture_id: v.ml_picture_id,
         estoque: v.estoque,
         preco_publicacao: v.preco_publicacao,
+        preco_publicado_ml: v.preco_publicado_ml,
         preco_editado_pelo_operador: v.preco_editado_pelo_operador,
       }));
       const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
@@ -367,6 +368,9 @@ Deno.serve(async (req) => {
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
             // D15 do reajuste: a marca de preço fixado vem junto (selo na Revisão; o preço em si já é copiado).
             ...precoHerdadoUpdate(h, precoPubFamilia, v.PRECO),
+            // ADR-0078 + adendo 2026-10-16 do ADR-0016: sem isto a linha nasce sem o preço confirmado
+            // e o selo "preço alterado" só acendia depois de publicar.
+            preco_publicado_ml: h?.preco_publicado_ml ?? null,
             excluida_da_publicacao: excluidaNoUpdate({
               mlVariationId: h?.ml_variation_id ?? null,
               ativaUP: skusAtivosUP.get(g.codigo_pai)?.has(codigo) ?? false,

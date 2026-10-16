@@ -242,3 +242,35 @@ controle continua, só muda o padrão. Cor casada (reposição) segue sempre inc
 **Implementação:** uma linha em `ingest-lote/index.ts` (ramo UPDATE) —
 `excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0)`.
 Alinha o UPDATE à regra do CREATE (`excluida = imagem_path == null`), com o reforço de estoque.
+
+## Adendo (2026-10-16) — Cor User Products já publicada é casada
+
+**Contexto:** em família User Products (ADR-0088) cada cor é um item ML próprio e
+`variacoes.ml_variation_id` é sempre `null`. A regra acima usava só `ml_variation_id` para saber
+se a cor já estava no anúncio; toda cor UP sem foto no lote entrava excluída e aparecia como
+"cor nova" (lote de 16/10: 8 famílias, 96 cores ativas no ML). No caminho UP, SKU ativo fora das
+incluídas é pausado — uma inclusão parcial teria tirado cores do ar.
+
+**Decisão:** "já no anúncio" = `ml_variation_id` (Legacy) **ou** SKU ativo em
+`anuncios_externos_itens` (`retirado=false`, `item_externo_id` preenchido). Implementação:
+`excluidaNoUpdate` (`_shared/update/casar.ts`), usada pelo `ingest-lote`; a Revisão usa
+`casadaNoMl` (`src/lib/publicavel.ts`).
+
+## Adendo (2026-10-16) — UPDATE herda o preço que está no ar
+
+**Contexto:** o UPDATE copiava `preco_publicacao` da família anterior. Quando o preço é mudado
+direto no ML, esse valor fica velho para sempre (ex.: `00445932` com R$ 10,45 desde o CREATE de
+junho e R$ 19 no ar). Efeitos: o selo "preço alterado" (ADR-0078) acendia em quase todo UPDATE
+(89 famílias, 832 variações no lote de 16/10) e "Atualizar tudo" derrubaria o preço no ML para o
+valor antigo.
+
+**Decisão (Diego, 2026-10-16):** a cor casada herda o **preço confirmado no ML**
+(`preco_publicado_ml` da família anterior, gravado em todo UPDATE — inclusive "somente estoque" —
+com o preço vivo devolvido pelo ML). Exceções: preço fixado pelo operador
+(`preco_editado_pelo_operador`, D15 do ADR-0178) continua herdando `preco_publicacao`; sem
+`preco_publicado_ml` (nunca confirmado) também. A cor casada herda ainda o próprio
+`preco_publicado_ml` — antes o ingest não o copiava, a linha nova nascia com `null` e o selo do
+ADR-0078 nunca acendia **antes** de publicar (só depois, quando o UPDATE gravava o preço vivo).
+Com isso o selo "preço alterado" passa a significar "o preço a enviar (fixado na Revisão/reajuste)
+difere do que está no ar". Família já publicada não exibe o selo (a escolha foi feita).
+Implementação: `casarVariacoesUpdate` (`_shared/update/casar.ts`) + `ingest-lote`.

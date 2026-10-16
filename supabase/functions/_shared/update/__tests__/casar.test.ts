@@ -11,12 +11,26 @@ describe('casarVariacoesUpdate', () => {
     const r = casarVariacoesUpdate([{ codigo: '00000101' }], anteriores);
     expect(r.herdados['00000101']).toEqual({
       ml_variation_id: 'V1', cor: 'Azul', cor_origem: 'descricao', ml_picture_id: 'P1', estoque_anterior: 5, preco_publicacao: 12,
+      preco_publicado_ml: null,
     });
+  });
+  it('cor casada herda o preço que está no ar (preco_publicado_ml), não o preço velho do app', () => {
+    const r = casarVariacoesUpdate([{ codigo: '00000101' }], [{ ...anteriores[0], preco_publicacao: 10.45, preco_publicado_ml: 19 }]);
+    expect(r.herdados['00000101'].preco_publicacao).toBe(19);
+    expect(r.herdados['00000101'].preco_publicado_ml).toBe(19);
+  });
+  it('preço fixado pelo operador continua herdando preco_publicacao (D15 do reajuste)', () => {
+    const r = casarVariacoesUpdate([{ codigo: '00000101' }], [
+      { ...anteriores[0], preco_publicacao: 15, preco_publicado_ml: 19, preco_editado_pelo_operador: true },
+    ]);
+    expect(r.herdados['00000101'].preco_publicacao).toBe(15);
+    expect(r.herdados['00000101'].preco_publicado_ml).toBe(19);
   });
   it('cor nova (sem correspondente) herda nulos e vira mudança estrutural', () => {
     const r = casarVariacoesUpdate([{ codigo: '00000999' }], anteriores);
     expect(r.herdados['00000999']).toEqual({
       ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null, preco_publicacao: null,
+      preco_publicado_ml: null,
     });
     expect(r.mudancaEstrutural.novas).toEqual(['00000999']);
   });
