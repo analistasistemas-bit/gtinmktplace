@@ -36,6 +36,8 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
 3. Gênero incoerente com a grade vindo por payload forjado (ex.: grade Infantil + `masculino`, ou Calça + `meninos`) → 400, nunca grava — teste em Task 4.
 4. Cache `ml_size_charts` de jaqueta/camiseta existente continua servindo sem recriar chart e sem trocar coluna (peito) — teste em Task 5.
 5. Ordenação de calçado (33 antes de 34; pares depois dos isolados) não muda ao entrar a lista de calça — teste em Task 7.
+6. (Codex r1) Calça classificada em domínio de calçado (`SNEAKERS`/`SANDALS_AND_CLOGS`) ou calçado em `PANTS`: recusa ANTES de chart/publicação — teste em Task 5/6.
+7. (Codex r1) `CLOTHING_LOT_SIZE` herdado da ficha da família/irmão: cada SKU sai com exatamente um, o seu — teste em Task 6.
 
 ---
 
@@ -89,15 +91,16 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - Recriar `familias_genero_valido` e `ml_size_charts_genero_check` (nomes reais conferidos em prod 2026-10-16) com os 6 gêneros; `familias` continua aceitando null.
   - `comment on column familias.grade_tamanho` citando ADR-0182.
 - [ ] **Step 2:** Rodar com `scripts/teste-sql-desfeito.py` (transação desfeita): inserir família com `grade_tamanho='calca'`, `genero='meninos'` passa; `grade_tamanho='xg'` falha; `genero='menino'` falha → `TESTE_OK`.
-- [ ] **Step 3:** `npm run db:check` → OK. **Não** rodar `db push` aqui (vai na Task 9).
+- [ ] **Step 3:** `npm run db:check` → a ÚNICA divergência é esta migration (pendente local). Alinhamento completo só depois do `db push` (Task 9). **Não** rodar `db push` aqui.
 - [ ] **Step 4:** Commit `feat(adr-0182): coluna grade_tamanho e gêneros infantis`.
 
 ### Task 4: Cadastro (edge `cadastrar-produto`) grava e valida a grade
 
 **Files:**
-- Modify: `supabase/functions/_shared/produto/validar.ts` (`ProdutoEntrada`, `validarProdutoNovo`, `validarTamanhosDaEntrada`, `montarLinhasProduto`)
-- Modify: `supabase/functions/cadastrar-produto/processar.ts` (`entradaTamanhoEfetiva`: zera `gradeTamanho` junto com `genero`/`tamanho` em org sem tipo)
-- Test: `supabase/functions/_shared/produto/__tests__/validar.test.ts`, `validar-tamanho.test.ts`
+- Modify: `supabase/functions/_shared/produto/validar.ts` (`ProdutoEntrada`, `validarProdutoNovo`, `montarLinhasProduto`)
+- Modify: `supabase/functions/cadastrar-produto/processar.ts` (`entradaTamanhoEfetiva`: zera `gradeTamanho` junto com `genero`/`tamanho` em org sem tipo; **`validarTamanhosDaEntrada` mora aqui, `:71`** — é a função que o handler usa)
+- Modify: `supabase/functions/cadastrar-produto/index.ts` (ramo de retry `:109-153`: selecionar `grade_tamanho, genero` da família existente e comparar com a entrada; divergência → 409, antes de qualquer efeito)
+- Test: `supabase/functions/_shared/produto/__tests__/validar.test.ts`, `supabase/functions/cadastrar-produto/__tests__/processar.test.ts` (e o teste do retry do index, se existir; senão extrair a comparação para função pura em `processar.ts` e testá-la)
 
 **Interfaces:**
 - Consumes: Task 2 (`GradeTamanho`, `GRADES_VALIDAS`, `GRADES_DO_TIPO`, `tamanhosDaGrade`, `generosDaGrade`, `GENEROS_VALIDOS`, `Genero`)
@@ -109,6 +112,7 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - `validarTamanhosDaEntrada` com grade `'calca'` e tamanho `'GG'` → erro; com `'calca'` e `'48'` → ok; grade `'infantil'` em org só `['calcado']` → erro campo `gradeTamanho`.
   - `montarLinhasProduto` grava `grade_tamanho: 'infantil'`; sem grade grava `null`.
   - `entradaTamanhoEfetiva` em org sem tipo zera `gradeTamanho`.
+  - retry com mesma chave e grade `'calcado'` sobre família gravada `'calca'` (mesma cor/tamanho `34`) → 409; idem gênero diferente; grade e gênero iguais → comportamento atual de retry.
 - [ ] **Step 2:** `pnpm test supabase/functions/_shared/produto supabase/functions/cadastrar-produto` → FAIL.
 - [ ] **Step 3:** Implementar. Mensagem de gênero inválido lista as opções da grade. Remover o `GENEROS_VALIDOS` local de `validar.ts:83` em favor do da fonte única.
 - [ ] **Step 4:** mesmos testes → PASS; `pnpm check:functions`.
@@ -126,7 +130,9 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - `Genero` reexportado da fonte única; `GENDER_VALUE: Record<Genero, {id, nome}>` com os 6 valores das Global Constraints
   - `DOMINIOS_QUADRIL = new Set(['SHORTS','PANTS'])`, `DOMINIOS_SEM_GUIA = new Set(['CLOTHING_LOTS'])`; ambos em `DOMINIOS_SUPORTADOS`
   - `montarLinhasChart(tamanhos, sizeValores, filtravelValores, medidasCm = CONTORNO_PEITO_CM, coluna: 'CHEST_CIRCUMFERENCE_FROM' | 'HIP_CIRCUMFERENCE_FROM' = 'CHEST_CIRCUMFERENCE_FROM', nomeFiltravel: (t: string) => string = (t) => t)`
-  - `garantirChart(...)`: retorno `Promise<ChartResolvido | null>`; `null` **só** quando o domínio está em `DOMINIOS_SEM_GUIA` (sem ler/gravar cache, sem chamar o ML)
+  - `garantirChart(admin, token, connectionId, categoriaId, genero, tamanhos, grade: GradeTamanho)`: retorno `Promise<ChartResolvido | null>`; `null` **só** quando o domínio está em `DOMINIOS_SEM_GUIA` (sem ler/gravar cache, sem chamar o ML)
+  - `dominioAceitaGrade(domainId: string, grade: GradeTamanho): boolean` — `'calcado'` só em domínios de calçado; `'letras'` em peito/quadril/sem guia; `'infantil'`/`'calca'` só em quadril/sem guia. `garantirChart` chama ANTES do cache e lança `Guia de tamanhos: grade ${grade} incompatível com o domínio ${domainId} — confira a categoria do produto.`
+  - `nomeChart`: normaliza também o gênero (`_` → espaço) — nomes adultos existentes não mudam
   - `criarChartVestuario`: domínio de quadril → superset = chaves de `tabelaQuadril(genero)` presentes no `SIZE` da categoria, coluna `HIP_CIRCUMFERENCE_FROM`, `nomeFiltravel` = `` `${t} anos` `` para gênero infantil; demais domínios inalterados (peito)
 
 - [ ] **Step 1: testes que falham:**
@@ -135,6 +141,8 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - domínio `PANTS`, gênero `feminino`, sem cache → POST com 12 linhas (P,M,G,GG + 34..48) e coluna `HIP_CIRCUMFERENCE_FROM`; `40` → `'102 cm'`.
   - domínio `JACKETS_AND_COATS` com cache existente → devolve o cache, sem POST (regressão; Review Focus 4).
   - `GENDER_VALUE.sem_genero_infantil.id === '19159491'`.
+  - `garantirChart` grade `'calca'` em domínio `SNEAKERS` → lança "incompatível"; grade `'calcado'` em `PANTS` → lança; nenhum dos dois toca cache/fetch.
+  - `nomeChart('SHORTS','sem_genero_infantil',…)` não contém `_`; `nomeChart('JACKETS_AND_COATS','masculino',['P'])` igual ao valor atual.
 - [ ] **Step 2:** `pnpm test supabase/functions/_shared/ml/__tests__/size-chart.test.ts` → FAIL.
 - [ ] **Step 3:** Implementar. Atualizar comentário de `DOMINIOS_*` citando Spike 056.
 - [ ] **Step 4:** teste → PASS; `pnpm check:functions` (os chamadores de `garantirChart` vão quebrar no tipo `| null` — corrigidos na Task 6; se o check falhar só por isso, seguir).
@@ -146,6 +154,8 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
 - Modify: `supabase/functions/_shared/ml/publicar.ts` (tipo da variação ~`:46-55`; ramo de tamanho `:187-202`)
 - Modify: `supabase/functions/_shared/user-products/publicar-familia-up.ts` (`:72-92`, `:150-160`)
 - Modify: `supabase/functions/_shared/user-products/atualizar-familia-up.ts` (`:223-280`)
+- Modify: `supabase/functions/_shared/user-products/atributos-divergentes.ts:19` (lista de atributos por SKU)
+- Modify: todo `select` que alimenta `publicarFamiliaUP`/`atualizarFamiliaUP` e já lista `genero` (ex.: `reconciliar-convergencia-up/processar.ts:60`, `publish-familia-ml`, `update-familia-ml` — `grep -rn "genero" supabase/functions/*/` nos selects) passa a trazer `grade_tamanho`
 - Modify: `supabase/functions/adicionar-variacoes-familia/processar.ts` (`:160-215`), `supabase/functions/adicionar-variacoes-familia/index.ts:209` (passar `gradeTamanho: anterior.grade_tamanho`)
 - Test: `supabase/functions/_shared/ml/__tests__/publicar.test.ts`, `supabase/functions/_shared/user-products/__tests__/publicar-familia-up.test.ts`, `atualizar-familia-up.test.ts`, `supabase/functions/adicionar-variacoes-familia/__tests__/processar.test.ts`
 
@@ -159,8 +169,10 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - `atualizarFamiliaUP` SKU novo com chart `null` → mesmo par de atributos.
   - adicionar-variações: família `grade_tamanho:'calca'` com vivas `34,36` em org `['roupa','calcado']` → aceita `'38'`, recusa `'39'`; família `grade_tamanho:null` com vivas `P,M` → comportamento atual. Mensagem de tipo desativado continua.
   - `clonarFamilia(anterior)` preserva `grade_tamanho` (Review Focus 2).
+  - herança: irmão publicado com `CLOTHING_LOT_SIZE '4'` na ficha + SKU novo `'6'` → o novo sai com exatamente um `CLOTHING_LOT_SIZE`, `'6'`; `atributosDivergentes` nunca propaga `CLOTHING_LOT_SIZE` para todos os filhos na reposição (Review Focus 7).
+  - `publicarFamiliaUP` passa a `grade` (`gradeDaFamilia(familia.grade_tamanho, tamanhos)`) ao `garantirChart`; grade `null` com tamanho → lança antes do chart.
 - [ ] **Step 2:** rodar os 4 arquivos → FAIL.
-- [ ] **Step 3:** Implementar: chamadores marcam `tamanhoSemGuia: !!v.tamanho && chart === null`; adicionar-variações troca `tipoDaGrade` por `gradeDaFamilia(ctx.gradeTamanho, …)` e valida contra `tamanhosDaGrade(grade)` e `tipoDaGradeTamanho(grade)`; a checagem `numeracaoPublicavel` continua só para `'calcado'`.
+- [ ] **Step 3:** Implementar: `CLOTHING_LOT_SIZE` entra nos `IDS_SUBSTITUIDOS` (publicar `:88`), nas exclusões de herança/UPDATE (atualizar `:227` em diante) e na lista por SKU de `atributos-divergentes.ts`; chamadores marcam `tamanhoSemGuia: !!v.tamanho && chart === null`; adicionar-variações troca `tipoDaGrade` por `gradeDaFamilia(ctx.gradeTamanho, …)` e valida contra `tamanhosDaGrade(grade)` e `tipoDaGradeTamanho(grade)`; a checagem `numeracaoPublicavel` continua só para `'calcado'`.
 - [ ] **Step 4:** testes → PASS; `pnpm check:functions` → OK; `pnpm lint:functions`.
 - [ ] **Step 5:** Commit `feat(adr-0182): publicação com quadril/CLOTHING_LOT_SIZE e extensão por grade gravada`.
 
@@ -183,8 +195,9 @@ payload leva `CLOTHING_LOT_SIZE` em vez de `SIZE`/`SIZE_GRID_*`.
   - `montarPayload` com `gradeTamanho:'calca'` → payload `gradeTamanho:'calca'`.
 - [ ] **Step 2:** `pnpm test src/lib` → FAIL.
 - [ ] **Step 3:** `ORDEM_TAMANHO = [...TAMANHOS_ROUPA, ...TAMANHOS_INFANTIL, ...isolados adultos 33..48 sem repetição, em ordem numérica, ...pares]` — derivado das listas, não redigitado.
-- [ ] **Step 4:** `pnpm test src/lib` → PASS; `tsc -b --force` (os diálogos podem quebrar — corrigidos na Task 8).
-- [ ] **Step 5:** Commit `feat(adr-0182): listas, ordem e payload de grade no front`.
+- [ ] **Step 4:** Ajuste mecânico dos 2 chamadores de `opcoesDeTamanho` para o build ficar verde neste commit: cadastro passa `tipoEscolhido === 'calcado' ? 'calcado' : tipoEscolhido === 'roupa' ? 'letras' : null` (provisório, substituído na Task 8); estender passa `gradeDaFamilia(null, tamanhosIncluidos)`.
+- [ ] **Step 5:** `pnpm test src/lib` → PASS; `tsc -b --force` → OK (typecheck vermelho não conclui a task).
+- [ ] **Step 6:** Commit `feat(adr-0182): listas, ordem e payload de grade no front`.
 
 ### Task 8: Telas de cadastro e extensão de grade
 
@@ -212,9 +225,11 @@ Comportamento (spec §6): com tipo Roupa, um `<select id="grade-tamanho">` "Grad
 **Files:**
 - Modify: docs vivos conforme skill `docs-update-checklist` (`docs/reference/edge-functions.md`, `docs/project-status.md`, glossário de grade/gênero no obsidian-vault se existir)
 
-- [ ] **Step 1:** `/items/validate` real (não cria item) com o payload gerado pelo código, via `scripts/ops/validar-payload-ml.ts` na conexão Daludi (`57e11ff5-6098-4a25-b959-f43c92535b85`): SHORTS infantil e PANTS adulto (o `garantirChart` cria o chart de quadril definitivo na conta — o mesmo que a 1ª publicação criaria; **pedir OK do Diego antes**), CLOTHING_LOTS (sem chart). Esperado: nenhum erro `fashion_grid`/`SIZE`/`GENDER`; só foto/atributos de categoria. Registrar ids dos charts criados no Spike 056 §8. Se o ML recusar o chart misto (12 linhas), separar o cache por grade (spec §8) e repetir.
-- [ ] **Step 2:** `pnpm preflight` → verde.
-- [ ] **Step 3:** Revisão do diff da branch pelo Grok 4.7 xhigh (`cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null`); corrigir achados (rodada única).
-- [ ] **Step 4:** ultraqa + browser real (sessão isolada): cadastrar conjunto infantil 2–16 Meninos e uma calça 34–48 até a Revisão; screenshot.
-- [ ] **Step 5:** Merge fast-forward na main com CI verde; `supabase db push`; `supabase functions deploy` de **todas** as funções que importam `size-chart.ts`, `publicar.ts`, `validar.ts`, `tipos-produto-valores.ts`, `publicar-familia-up.ts`, `atualizar-familia-up.ts` (listar com `grep -rl` em `supabase/functions/*/index.ts` e imports transitivos); conferir versão e `verify_jwt` pós-deploy.
-- [ ] **Step 6:** Atualizar Graphify; remover worktree e branch.
+- [ ] **Step 1:** `pnpm preflight` → verde.
+- [ ] **Step 2:** Revisão do diff da branch pelo Grok 4.7 xhigh (`cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null`); corrigir achados (rodada única) e repetir `pnpm preflight`.
+- [ ] **Step 3:** `supabase db push` (migration é aditiva: coluna nullable + CHECKs ampliados — compatível com as edges e o front atuais); `npm run db:check` → alinhado.
+- [ ] **Step 4:** `supabase functions deploy` de **todas** as funções que importam (direta ou transitivamente) `size-chart.ts`, `publicar.ts`, `validar.ts`, `tipos-produto-valores.ts`, `publicar-familia-up.ts`, `atualizar-familia-up.ts`, `atributos-divergentes.ts` (listar com `grep -rl` nos imports a partir de cada `supabase/functions/*/index.ts`); conferir versão nova e `verify_jwt` contra `supabase/config.toml` pós-deploy. Edges antes do front: o front atual não manda `gradeTamanho` e continua funcionando (Letras/Calçado, `grade_tamanho` null).
+- [ ] **Step 5:** `/items/validate` real (não cria item) com o payload gerado pelo código implantado, via `scripts/ops/validar-payload-ml.ts` na conexão Daludi (`57e11ff5-6098-4a25-b959-f43c92535b85`): SHORTS infantil e PANTS adulto (o `garantirChart` cria o chart de quadril definitivo na conta — o mesmo que a 1ª publicação criaria; **pedir OK do Diego antes**), CLOTHING_LOTS (sem chart), e um `sem_genero_infantil` (nome do chart sem `_`). Esperado: nenhum erro `fashion_grid`/`SIZE`/`GENDER`; só foto/atributos de categoria; **linha correspondente gravada em `ml_size_charts`** (consulta read-only) — falha de cache reprova o ensaio. Registrar ids dos charts no Spike 056 §8. Se o ML recusar o chart misto (12 linhas), separar o cache por grade (spec §8), redeployar e repetir.
+- [ ] **Step 6:** ultraqa + browser real (sessão isolada, front local da branch contra o backend de produção): cadastrar conjunto infantil 2–16 Meninos e uma calça 34–48 até a Revisão; screenshot.
+- [ ] **Step 7:** Merge fast-forward na main com CI verde (libera o front pelo auto-deploy do Render); docs vivos commitados antes.
+- [ ] **Step 8:** Atualizar Graphify; remover worktree e branch.
