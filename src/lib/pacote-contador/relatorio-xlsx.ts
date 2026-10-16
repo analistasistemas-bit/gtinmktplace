@@ -9,17 +9,22 @@ export function gerarRelatorioXlsx(l: LeituraPacote, cab: Cabecalho): Uint8Array
   const c = l.conferencia;
   const aoa: Array<Array<string | number>> = [];
   if (c.parcial) aoa.push([`PACOTE PARCIAL — ${c.motivosParcial.join('; ')}`], []);
-  aoa.push([`Relatório de vendas · ${cab.org} · ${c.mes}`], [], CABECALHO);
+  aoa.push([`Relatório de vendas · ${cab.org} · ${c.mes}`], []);
   const dinheiro = new Map<number, [number, number]>();   // linha → [1ª, última] coluna de dinheiro
-  for (const n of l.notas) {
-    dinheiro.set(aoa.length, [6, 9]);
-    aoa.push([dataHoraBR(n.instante), rotuloTipo(n.tipo), rotuloStatus(n.status), n.numero, n.serie, n.chave,
-      reais(n.produtosC), reais(n.freteC), reais(n.descontoC), reais(n.totalC), n.cartaCorrecao ? 'sim' : '']);
-  }
-  aoa.push([], ['Grupo', 'Quantidade', 'Produtos', 'Frete', 'Desconto', 'Total']);
-  for (const t of totaisPorGrupo(l.notas)) {
-    dinheiro.set(aoa.length, [2, 5]);
-    aoa.push([t.grupo, t.quantidade, reais(t.produtosC), reais(t.freteC), reais(t.descontoC), reais(t.totalC)]);
+  if (c.indisponivel) {
+    aoa.push([c.indisponivel]);   // sem notas nem totais: valores desconhecidos
+  } else {
+    aoa.push(CABECALHO);
+    for (const n of l.notas) {
+      dinheiro.set(aoa.length, [6, 9]);
+      aoa.push([dataHoraBR(n.instante), rotuloTipo(n.tipo), rotuloStatus(n.status), n.numero, n.serie, n.chave,
+        reais(n.produtosC), reais(n.freteC), reais(n.descontoC), reais(n.totalC), n.cartaCorrecao ? 'sim' : '']);
+    }
+    aoa.push([], ['Grupo', 'Quantidade', 'Produtos', 'Frete', 'Desconto', 'Total']);
+    for (const t of totaisPorGrupo(l.notas)) {
+      dinheiro.set(aoa.length, [2, 5]);
+      aoa.push([t.grupo, t.quantidade, reais(t.produtosC), reais(t.freteC), reais(t.descontoC), reais(t.totalC)]);
+    }
   }
   const vendas = XLSX.utils.aoa_to_sheet(aoa);   // strings viram células 't: s' — chave de 44 dígitos fica texto
   for (const [r, [c0, c1]] of dinheiro) {

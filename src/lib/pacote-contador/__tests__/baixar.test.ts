@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) } } }));
-import { baixarNotasMes, ErroPacote } from '../baixar';
+import { baixarNotasMes, ErroPacote, ErroOrgMudou, ErroAuditoria, ErroRede } from '../baixar';
 import { ErroDownloadIncompleto } from '../tipos';
 import { zip, nfe } from './fixtures';
 
@@ -21,6 +21,13 @@ describe('baixarNotasMes', () => {
   it('org divergente recusa', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp(new Uint8Array([1]), { status: 200, headers: ZIPH('org-2') })));
     await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toThrow('A organização mudou durante o download — gere o pacote de novo.');
+    await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toBeInstanceOf(ErroOrgMudou);
+  });
+  it('erro de auditoria vira ErroAuditoria; falha do fetch vira ErroRede', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp(JSON.stringify({ error: 'Não foi possível registrar a auditoria do suporte — o pacote não foi liberado.', codigo: 'auditoria' }), { status: 502, headers: { 'Content-Type': 'application/json' } })));
+    await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toBeInstanceOf(ErroAuditoria);
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => { throw new TypeError('Failed to fetch'); }));
+    await expect(baixarNotasMes('2026-09', 'org-1')).rejects.toBeInstanceOf(ErroRede);
   });
   it('vazio e erro com mensagem do servidor', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => resp(JSON.stringify({ vazio: true }), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Org-Id': 'org-1', 'X-Conta-Ml': '99' } })));

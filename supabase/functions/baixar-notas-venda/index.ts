@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
     const body: unknown = await req.json().catch(() => null);
     const mes = body && typeof body === 'object' && typeof (body as { mes?: unknown }).mes === 'string' ? (body as { mes: string }).mes : '';
-    const alvo = { type: 'notas_venda_mes', id: mes || 'invalido' };
+    const alvo = { type: 'pacote_contador_mes', id: mes || 'invalido' };
 
     const saida = await baixarLoteMes({
       travar: (chave, ttl) => redisSetNX(chave, '1', ttl),
@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');   // antes de liberar os bytes
     } catch {
       if (saida.tipo === 'zip') await saida.body.cancel('auditoria falhou').catch(() => {});
-      return json({ error: 'Não foi possível registrar a auditoria do suporte — o pacote não foi liberado.' }, 502);
+      return json({ error: 'Não foi possível registrar a auditoria do suporte — o pacote não foi liberado.', codigo: 'auditoria' }, 502);
     }
     const ident = {
       'X-Org-Id': ctx.orgId, 'X-Conta-Ml': conexao.contaExternaId,

@@ -17,24 +17,27 @@ export function montarRelatorioPdf(l: LeituraPacote, cab: Cabecalho): jsPDF {
   }
   doc.setFontSize(12);
   doc.text(`Relatório de vendas · ${cab.org} · ${c.mes}`, 10, y); y += 4;
+  if (c.indisponivel) {
+    doc.setFontSize(10);
+    doc.text(c.indisponivel, 10, y + 6, { maxWidth: 270 });
+  } else {
+    autoTable(doc, {
+      startY: y + 2,
+      head: [['Data de emissão', 'Tipo', 'Status', 'Número', 'Série', 'Chave', 'Produtos', 'Frete', 'Desconto', 'Total', 'CC-e']],
+      body: l.notas.map((n) => [dataHoraBR(n.instante), rotuloTipo(n.tipo), rotuloStatus(n.status), n.numero, n.serie, n.chave,
+        brl(n.produtosC), brl(n.freteC), brl(n.descontoC), brl(n.totalC), n.cartaCorrecao ? 'sim' : '']),
+      styles: { fontSize: 7, cellPadding: 1 },
+      headStyles: { fillColor: [60, 60, 60] },
+      columnStyles: { 5: { fontSize: 6, cellWidth: 78 }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' } },
+      showHead: 'everyPage',
+    });
 
-  autoTable(doc, {
-    startY: y + 2,
-    head: [['Data de emissão', 'Tipo', 'Status', 'Número', 'Série', 'Chave', 'Produtos', 'Frete', 'Desconto', 'Total', 'CC-e']],
-    body: l.notas.map((n) => [dataHoraBR(n.instante), rotuloTipo(n.tipo), rotuloStatus(n.status), n.numero, n.serie, n.chave,
-      brl(n.produtosC), brl(n.freteC), brl(n.descontoC), brl(n.totalC), n.cartaCorrecao ? 'sim' : '']),
-    styles: { fontSize: 7, cellPadding: 1 },
-    headStyles: { fillColor: [60, 60, 60] },
-    columnStyles: { 5: { fontSize: 6, cellWidth: 78 }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' } },
-    showHead: 'everyPage',
-  });
-
-  autoTable(doc, {
-    head: [['Grupo', 'Quantidade', 'Produtos', 'Frete', 'Desconto', 'Total']],
-    body: totaisPorGrupo(l.notas).map((t) => [t.grupo, String(t.quantidade), brl(t.produtosC), brl(t.freteC), brl(t.descontoC), brl(t.totalC)]),
-    styles: { fontSize: 8 },
-  });
-
+    autoTable(doc, {
+      head: [['Grupo', 'Quantidade', 'Produtos', 'Frete', 'Desconto', 'Total']],
+      body: totaisPorGrupo(l.notas).map((t) => [t.grupo, String(t.quantidade), brl(t.produtosC), brl(t.freteC), brl(t.descontoC), brl(t.totalC)]),
+      styles: { fontSize: 8 },
+    });
+  }
   doc.addPage();
   doc.setFontSize(12);
   doc.text('Conferência', 10, 12);

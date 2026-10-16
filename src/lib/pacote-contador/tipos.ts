@@ -18,7 +18,7 @@ export interface Inutilizacao {
 }
 
 export interface Conferencia {
-  mes: string; vazio: boolean; mesEmAndamento: boolean;
+  mes: string; vazio: boolean; mesEmAndamento: boolean; indisponivel: string | null;
   parcial: boolean; motivosParcial: string[];
   totalArquivos: number;
   contagem: Record<string, number>;

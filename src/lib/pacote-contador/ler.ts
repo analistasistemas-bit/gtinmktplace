@@ -37,7 +37,7 @@ export function competenciaSP(ms: number): string {
 
 function conferenciaVazia(mes: string, agora: Date, vazio: boolean): Conferencia {
   return {
-    mes, vazio, mesEmAndamento: competenciaSP(agora.getTime()) === mes, parcial: false, motivosParcial: [],
+    mes, vazio, mesEmAndamento: competenciaSP(agora.getTime()) === mes, indisponivel: null, parcial: false, motivosParcial: [],
     totalArquivos: 0, contagem: {}, outros: [], denegadas: [], cancelamentosOutroMes: [], eventosNaoAplicados: [],
     inutilizacoes: [], incompletos: [], divergentes: [], foraDoPeriodo: [],
   };
@@ -45,6 +45,15 @@ function conferenciaVazia(mes: string, agora: Date, vazio: boolean): Conferencia
 
 export function lerPacoteVazio(mes: string, agora: Date = new Date()): LeituraPacote {
   return { notas: [], conferencia: conferenciaVazia(mes, agora, true), arquivos: {} };
+}
+
+/** Vendas não confirmadas (ML/servidor falhou): sem totais conhecidos; o pacote inteiro fica PARCIAL. */
+export function lerPacoteIndisponivel(mes: string, motivo: string, agora: Date = new Date()): LeituraPacote {
+  const c = conferenciaVazia(mes, agora, false);
+  c.indisponivel = `Vendas indisponíveis: ${motivo} — gere o pacote de novo depois.`;
+  c.motivosParcial.push('vendas indisponíveis');
+  c.parcial = true;
+  return { notas: [], conferencia: c, arquivos: {} };
 }
 
 export function lerPacote(bytes: Uint8Array, mes: string, agora: Date = new Date()): LeituraPacote {

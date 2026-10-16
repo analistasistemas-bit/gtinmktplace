@@ -14,6 +14,7 @@ export function linhasConferencia(l: LeituraPacote, cab: Cabecalho): Array<[stri
   out.push(['Organização', cab.org], ['CNPJ', cab.cnpj ?? '—'], ['Conta Mercado Livre', cab.contaMl],
     ['Mês', c.mes], ['Gerado em', dataHoraBR(cab.geradoEm.getTime())], ['Arquivos no download', String(c.totalArquivos)]);
   if (c.vazio) out.push(['Nenhuma nota no mês', '']);
+  if (c.indisponivel) out.push([c.indisponivel, '']);
   if (c.mesEmAndamento) out.push(['Mês em andamento — o pacote fica incompleto até o fim do mês.', '']);
   for (const a of AVISOS_FIXOS) out.push([a, '']);
   for (const [k, v] of Object.entries(c.contagem).sort()) out.push([`Quantidade: ${k}`, String(v)]);
