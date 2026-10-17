@@ -10,7 +10,7 @@ vi.mock('@/lib/notas-compra', () => ({
   buscarVinculos: async () => [], entradasPreviasDaNota: async () => [], importarNotaCompra: vi.fn(),
   produtosPorGtin: async () => ({}), statusDaNota: async () => null, produtosCadastradosDaNota: m.cadastrados,
 }));
-vi.mock('@/lib/produtos-saldo', () => ({ fetchProdutosEstoqueResumo: async () => ({ produtos: [] }) }));
+vi.mock('@/lib/produtos-saldo', async (orig) => ({ ...(await orig<object>()), fetchProdutosEstoqueResumo: async () => ({ produtos: [] }) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({ useEmpresaFiscal: () => ({ data: { cnpj: '11444777000161' } }) }));
 vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({ useTiposProdutoHabilitados: () => ({ data: [], isLoading: false }) }));
 vi.mock('@/components/estoque/dialog-cadastro-produto', () => ({ DialogCadastroProduto: () => null }));
