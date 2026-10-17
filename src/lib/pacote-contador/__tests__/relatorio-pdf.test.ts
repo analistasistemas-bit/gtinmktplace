@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { montarRelatorioPdf, gerarRelatorioPdf } from '../relatorio-pdf';
-import { lerPacote } from '../ler';
+import { lerPacote, lerPacoteVazio } from '../ler';
 import { nfe, zip } from './fixtures';
 
 const CAB = { org: 'EMPRESA TESTE LTDA', cnpj: '11444777000161', contaMl: '98765', geradoEm: new Date('2026-10-16T12:00:00-03:00') };
@@ -25,5 +25,12 @@ describe('relatório PDF', () => {
     expect(texto).toContain('98765');
     expect(texto).toContain('quebrado.xml');
     expect(new TextDecoder().decode(gerarRelatorioPdf(l, CAB).slice(0, 4))).toBe('%PDF');
+  });
+  it('avisos extras aparecem na Conferência, sem selo PARCIAL', () => {
+    const l = lerPacoteVazio('2025-12', AG);
+    l.conferencia.avisos = ['Foto de 31/12 inexistente — o inventário não vai neste pacote.'];
+    const texto = montarRelatorioPdf(l, CAB).output();
+    expect(texto).toContain('Foto de 31/12 inexistente');
+    expect(texto).not.toContain('PACOTE PARCIAL');
   });
 });

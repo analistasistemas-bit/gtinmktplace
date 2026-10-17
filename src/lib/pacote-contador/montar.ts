@@ -55,3 +55,13 @@ export function mesesDisponiveis(agora: Date, n = 12): string[] {
   return out;
 }
 export const mesAnteriorSP = (agora: Date) => mesesDisponiveis(agora, 2)[1];
+
+/** A foto de 31/12 só existe para datas-base a partir daqui (ADR-0181 Plano 2b-2); antes disso, ausência não é falha. */
+export const INVENTARIO_DESDE = '2026-12-31';
+
+/** `AAAA-12-31` do último 31/12 já alcançado (hoje inclusive), em America/Sao_Paulo. */
+export function ultimoTrintaEUmDezembro(agora: Date): string {
+  const [a, m] = anoMesSP(agora);
+  const dia = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', day: '2-digit' }).format(agora));
+  return `${m === 12 && dia === 31 ? a : a - 1}-12-31`;
+}

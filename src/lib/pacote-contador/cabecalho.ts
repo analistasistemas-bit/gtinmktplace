@@ -17,6 +17,7 @@ export function linhasConferencia(l: LeituraPacote, cab: Cabecalho): Array<[stri
   if (c.indisponivel) out.push([c.indisponivel, '']);
   if (c.mesEmAndamento) out.push(['Mês em andamento — o pacote fica incompleto até o fim do mês.', '']);
   for (const a of AVISOS_FIXOS) out.push([a, '']);
+  for (const a of c.avisos ?? []) out.push([a, '']);
   for (const [k, v] of Object.entries(c.contagem).sort()) out.push([`Quantidade: ${k}`, String(v)]);
   const secao = (titulo: string, itens: Array<[string, string]>) => { if (itens.length) out.push(['', ''], [titulo, ''], ...itens); };
   secao('Outros documentos fiscais (não são venda)', c.outros.map((o) => [o.chave || o.arquivo, o.cfops.join(', ')]));

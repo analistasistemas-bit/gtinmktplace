@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { unzipSync, strFromU8 } from 'fflate';
 import * as XLSX from 'xlsx';
@@ -23,10 +23,17 @@ vi.mock('@/lib/pacote-contador/relatorio-xlsx', async (orig) => {
   const m = await orig<typeof import('@/lib/pacote-contador/relatorio-xlsx')>();
   return { ...m, gerarRelatorioXlsx: (l: Parameters<typeof m.gerarRelatorioXlsx>[0], cab: Parameters<typeof m.gerarRelatorioXlsx>[1]) => { xlsx(cab); return m.gerarRelatorioXlsx(l, cab); } };
 });
+const buscarFoto = vi.fn(); const buscarHoje = vi.fn();
+vi.mock('@/lib/pacote-contador/inventario-fonte', () => ({
+  buscarFoto: (...a: unknown[]) => buscarFoto(...a), buscarInventarioHoje: (...a: unknown[]) => buscarHoje(...a),
+  salvarContagem: vi.fn(), confirmarInventario: vi.fn(),
+}));
+vi.mock('@/hooks/useProfile', () => ({ useProfile: () => ({ isAdmin: true }) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 import { toast } from 'sonner';
 import { CardPacoteContador } from '../card-pacote-contador';
 import { ErroPacote, ErroOrgMudou, ErroAuditoria, ErroRede } from '@/lib/pacote-contador/baixar';
+import type { LeituraInventario } from '@/lib/pacote-contador/tipos-inventario';
 import { row } from '@/lib/pacote-contador/__tests__/fixtures-compras';
 
 beforeEach(() => {
@@ -34,6 +41,7 @@ beforeEach(() => {
   orgAtual = 'org-1'; suporte = null;
   xlsx.mockReset(); empresa.mockReset(); empresa.mockResolvedValue(null);
   baixar.mockReset(); salvar.mockReset();
+  buscarFoto.mockReset().mockResolvedValue(null); buscarHoje.mockReset();
   listar.mockReset().mockResolvedValue([]); baixarXmls.mockReset().mockResolvedValue(new Map());
   vi.mocked(toast.error).mockReset(); vi.mocked(toast.success).mockReset();
 });
@@ -191,5 +199,90 @@ describe('CardPacoteContador', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(toast.error).not.toHaveBeenCalled();
     expect(salvar).not.toHaveBeenCalled();
+  });
+
+  describe('inventário (ADR-0181 Plano 2b-2)', () => {
+    const leitura = (status: 'hoje' | 'aberto' | 'confirmado' | 'falhou', data = '2025-12-31'): LeituraInventario => ({
+      cabecalho: { id: 'inv-1', versao: 1, data_base: data, gerado_em: '2026-01-01T02:59:00Z', status, cnpj: '11222333000181', inscricao_estadual: null, razao_social: 'EMPRESA TESTE LTDA' },
+      itens: [{ codigo: 'A1', codigo_pai: 'P1', descricao: 'Produto', ncm: '61091000', unidade: 'UN', cor: null, tamanho: null, quantidade_sistema: 3, qtd_valorizada: 3, qtd_sem_nota: 0, custo_medio: 2, valor_total: 6, marcas: [] }],
+    });
+    const esperaMontagem = async () => { await waitFor(() => expect(buscarFoto).toHaveBeenCalled()); };
+    const gerarDezembro = async () => {
+      baixar.mockResolvedValue({ tipo: 'vazio', contaMl: '99' });
+      render(<CardPacoteContador />); await esperaMontagem();
+      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2025-12' } });
+      clicar();
+    };
+
+    it('botão "Inventário de hoje" baixa xlsx e pdf', async () => {
+      buscarHoje.mockResolvedValueOnce(leitura('hoje', '2026-10-16'));
+      render(<CardPacoteContador />);
+      fireEvent.click(screen.getByRole('button', { name: 'Inventário de hoje' }));
+      await waitFor(() => expect(salvar).toHaveBeenCalledTimes(2));
+      expect(buscarHoje).toHaveBeenCalledWith('org-1', expect.any(AbortSignal));
+      expect(salvar.mock.calls.map((c) => c[0])).toEqual(['inventario-2026-10-16.xlsx', 'inventario-2026-10-16.pdf']);
+    });
+    it('org trocada durante o inventário de hoje não salva', async () => {
+      buscarHoje.mockImplementationOnce(async () => { orgAtual = 'org-2'; return leitura('hoje', '2026-10-16'); });
+      render(<CardPacoteContador />);
+      fireEvent.click(screen.getByRole('button', { name: 'Inventário de hoje' }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      expect(salvar).not.toHaveBeenCalled();
+    });
+    it('na abertura busca a foto do último 31/12', async () => {
+      render(<CardPacoteContador />);
+      await waitFor(() => expect(buscarFoto).toHaveBeenCalledWith('2025-12-31', 'org-1'));
+    });
+    it('mês de dezembro com foto: o zip leva inventario/', async () => {
+      buscarFoto.mockResolvedValue(leitura('aberto'));
+      await gerarDezembro();
+      await waitFor(() => expect(salvar).toHaveBeenCalled());
+      const z = unzipSync(salvar.mock.calls[0][1] as Uint8Array);
+      expect(Object.keys(z)).toEqual(expect.arrayContaining(['inventario/relatorio-inventario.xlsx', 'inventario/relatorio-inventario.pdf']));
+      expect(buscarFoto).toHaveBeenCalledWith('2025-12-31', 'org-1', expect.any(AbortSignal));
+    });
+    it('mês de dezembro sem foto: zip sem inventario/, aviso na Conferência e sem PARCIAL', async () => {
+      await gerarDezembro();
+      await waitFor(() => expect(salvar).toHaveBeenCalled());
+      const z = unzipSync(salvar.mock.calls[0][1] as Uint8Array);
+      expect(Object.keys(z).some((n) => n.startsWith('inventario/'))).toBe(false);
+      const wb = XLSX.read(z['relatorio-vendas.xlsx'], { type: 'array' });
+      const conf = XLSX.utils.sheet_to_json<string[]>(wb.Sheets['Conferência'], { header: 1 }).flat().join(' | ');
+      expect(conf).toContain('Foto de 31/12 inexistente — o inventário não vai neste pacote.');
+      expect(conf).not.toContain('PARCIAL');
+      expect(toast.success).toHaveBeenCalledWith('Pacote de 2025-12 gerado.');
+    });
+    it('mês de dezembro com erro ao ler a foto: toast e nada salvo', async () => {
+      buscarFoto.mockRejectedValue(new ErroPacote('falha ao ler', 500));
+      baixar.mockResolvedValue({ tipo: 'vazio', contaMl: '99' });
+      render(<CardPacoteContador />);
+      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2025-12' } });
+      clicar();
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('falha ao ler'));
+      expect(salvar).not.toHaveBeenCalled();
+    });
+    it('foto aberta: aviso e botão Conferir contagem', async () => {
+      buscarFoto.mockResolvedValue(leitura('aberto'));
+      render(<CardPacoteContador />);
+      expect(await screen.findByText('Foto de 31/12 aguardando contagem')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Conferir contagem' }));
+      expect(await screen.findByText(/Contagem do inventário de 31\/12/)).toBeInTheDocument();
+    });
+    it('foto falhou: pede suporte (data-base >= INVENTARIO_DESDE)', async () => {
+      vi.setSystemTime(new Date('2027-01-10T12:00:00-03:00'));
+      buscarFoto.mockResolvedValue(leitura('falhou', '2026-12-31'));
+      render(<CardPacoteContador />);
+      expect(await screen.findByText('Foto de 31/12 não gerada — acione o suporte.')).toBeInTheDocument();
+    });
+    it('foto ausente: aviso só a partir de INVENTARIO_DESDE', async () => {
+      render(<CardPacoteContador />);   // 10/2026 → data-base 2025-12-31, sem aviso
+      await esperaMontagem();
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.queryByText(/não gerada/)).toBeNull();
+      cleanup();
+      vi.setSystemTime(new Date('2027-01-10T12:00:00-03:00'));
+      render(<CardPacoteContador />);
+      expect(await screen.findByText('Foto de 31/12 não gerada — acione o suporte.')).toBeInTheDocument();
+    });
   });
 });

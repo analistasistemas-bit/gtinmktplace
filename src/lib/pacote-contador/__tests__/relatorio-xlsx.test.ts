@@ -47,4 +47,11 @@ describe('gerarRelatorioXlsx', () => {
     const wb = abrir(gerarRelatorioXlsx(lerPacoteVazio('2026-09', AG), CAB));
     expect(linhas(wb, 'Conferência').flat().join(' ')).toContain('Nenhuma nota no mês');
   });
+  it('avisos extras aparecem na Conferência, sem selo PARCIAL', () => {
+    const l = lerPacoteVazio('2025-12', AG);
+    l.conferencia.avisos = ['Foto de 31/12 inexistente — o inventário não vai neste pacote.'];
+    const conf = linhas(abrir(gerarRelatorioXlsx(l, CAB)), 'Conferência').flat().join(' | ');
+    expect(conf).toContain('Foto de 31/12 inexistente');
+    expect(conf).not.toContain('PARCIAL');
+  });
 });

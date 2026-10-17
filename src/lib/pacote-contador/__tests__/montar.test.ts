@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { montarPacote, comSeloGlobal, nomePacote, mesesDisponiveis, mesAnteriorSP, nomeInventarioHoje } from '../montar';
+import { montarPacote, comSeloGlobal, nomePacote, mesesDisponiveis, mesAnteriorSP, nomeInventarioHoje, ultimoTrintaEUmDezembro } from '../montar';
 import { lerPacote, lerPacoteVazio, lerPacoteIndisponivel } from '../ler';
 import { montarCompras } from '../compras-ler';
 import { nfe, zip } from './fixtures';
@@ -47,5 +47,11 @@ describe('montarPacote', () => {
     expect(mesesDisponiveis(virada, 3)).toEqual(['2026-10', '2026-09', '2026-08']);
     expect(mesAnteriorSP(virada)).toBe('2026-09');
     expect(mesesDisponiveis(new Date('2026-01-10T12:00:00-03:00'), 2)).toEqual(['2026-01', '2025-12']);
+  });
+  it('ultimoTrintaEUmDezembro: 31/12 já alcançado, em São Paulo', () => {
+    expect(ultimoTrintaEUmDezembro(new Date('2026-10-16T12:00:00-03:00'))).toBe('2025-12-31');
+    expect(ultimoTrintaEUmDezembro(new Date('2026-12-30T12:00:00-03:00'))).toBe('2025-12-31');
+    expect(ultimoTrintaEUmDezembro(new Date('2026-12-31T23:30:00-03:00'))).toBe('2026-12-31');
+    expect(ultimoTrintaEUmDezembro(new Date('2027-01-01T01:00:00-03:00'))).toBe('2026-12-31');
   });
 });

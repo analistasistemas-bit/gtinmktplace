@@ -20,6 +20,7 @@ export interface Inutilizacao {
 export interface Conferencia {
   mes: string; vazio: boolean; mesEmAndamento: boolean; indisponivel: string | null;
   parcial: boolean; motivosParcial: string[];
+  avisos?: string[];   // avisos informativos, sem selo PARCIAL (ex.: foto de 31/12 inexistente)
   totalArquivos: number;
   contagem: Record<string, number>;
   outros: Array<{ arquivo: string; chave: string; cfops: string[] }>;
