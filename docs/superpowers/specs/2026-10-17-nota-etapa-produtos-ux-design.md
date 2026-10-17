@@ -24,8 +24,10 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
      `custoAquisicaoUnit` já existentes.
    - Progresso por item em texto + barra: **"Distribuídas: X de Q · faltam Q−X"** (Q = unidades
      convertidas; X = soma já distribuída do item). Não comunicar só por cor/barra.
-   - Topo: **"N de M itens prontos"**, com "pronto" = a mesma regra que trava o "Avançar" hoje
-     (produto escolhido **e** fator válido) — derivar da função existente de pendências, não duplicar.
+   - Topo: **"N de M itens prontos"**. "Pronto" = predicado único por item `itemPronto(d)` (produto
+     escolhido **e** fator inteiro ≥ 1), usado **tanto** pelo contador **quanto** pela trava da etapa
+     Produtos (`motivoBloqueioEtapa(e, 1)`). Distribuição não entra (é a etapa 3): item com produto e
+     fator válidos e distribuição zerada conta como pronto.
    - Item sem produto: selo **"Sem produto"**, botões **Cadastrar produto novo** (primário) e
      **Escolher existente…** (secundário, abre a busca já focada). A busca só aparece ao pedir.
    - Selos atuais (Vinculado / Casou pelo GTIN / Produto escolhido / GTIN ambíguo) continuam, mais
@@ -41,8 +43,14 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
      com o mesmo cProd não interferem.
    - **`vinculos_fornecedor` não muda**: continua nascendo só na confirmação da nota (RPC do
      ADR-0181). Nenhum fator é gravado antes da confirmação.
-   - Prioridade quando há mais de uma origem para o item: vínculo do fornecedor > GTIN único >
-     "Cadastrado desta nota" > nada. Se o operador trocar, vale a escolha manual da sessão.
+   - Prioridade quando há mais de uma origem para o item: **"Cadastrado desta nota" > vínculo do
+     fornecedor > GTIN único > nada** — o cadastro feito para aquele `nItem` é a informação mais
+     específica (ex.: vínculo antigo aponta A, operador cadastrou B para este item → reabre com B).
+     Se o operador trocar, vale a escolha manual da sessão.
+   - Mais de um `codigo_pai` com a mesma `refNota` (cadastrou duas vezes para o mesmo item): deduplicar
+     por `codigo_pai` (versões da mesma família contam uma vez); com códigos distintos **não** ligar
+     sozinho — selo **"Cadastrado mais de uma vez — escolha"** e esses códigos como candidatos iniciais
+     em "Escolher existente…" (mesmo tratamento do GTIN ambíguo).
    - Idempotência: `refNota` entra na comparação do retry da mesma `chaveCadastro` (como
      `grade_tamanho`/`genero` no ADR-0182): retry com `refNota` diferente da gravada → 409, antes de
      qualquer efeito. `refNota` só é aceito com `origemNota` e formato válido (`REF_NOTA`); org vem do
@@ -76,8 +84,10 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
     antecipado. Sem migration.
   - O cadastro feito pela nota **não** cria vínculo para notas futuras; isso continua acontecendo na
     confirmação (como hoje).
-  - Falha ao reaplicar na reabertura (query de famílias falhou) não bloqueia: item fica "Sem produto"
-    com aviso "Não foi possível conferir produtos já cadastrados desta nota" e a busca resolve.
+  - Falha ao consultar os produtos já cadastrados desta nota: os itens sem decisão mostram estado
+    próprio **"Não foi possível conferir produtos já cadastrados desta nota"** com **Tentar novamente**;
+    nesse estado "Escolher existente…" fica primário e "Cadastrar produto novo" secundário (evita
+    duplicar justamente quando a retomada falhou).
 - **ADR:** emenda curta ao ADR-0181 (origem `refNota` também no cadastro pela nota; retomada por item).
 
 ## 6. Validação
@@ -85,8 +95,11 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
 - Unit (edge): grava `refNota` com `origemNota` válido; recusa `refNota` sem `origemNota` ou fora do
   formato; retry com `refNota` diferente → 409 sem efeito; cadastro sem nota inalterado; org do token.
 - Unit (front): reabertura liga item ao produto com `refNota` daquele `nItem`; dois itens com mesmo
-  cProd ligam cada um ao seu; vínculo/GTIN têm prioridade; busca com texto ignora restrição de GTIN;
-  "pronto" acompanha a trava do Avançar (fator inválido = não pronto).
+  cProd ligam cada um ao seu; vínculo antigo A + cadastro B do item → B; duas famílias distintas com a
+  mesma `refNota` → não liga, selo "Cadastrado mais de uma vez", candidatos = as duas; versões da mesma
+  família → liga; busca com texto ignora restrição de candidatos; `itemPronto` com fator válido e
+  distribuição zerada = pronto, fator inválido = não pronto, e é o mesmo usado pela trava; falha da
+  consulta → estado "Não foi possível conferir" + Tentar novamente.
 - Componente: cartão vinculado (foto/nome/código/SKUs, "Distribuídas: 0 de 35 · faltam 35"); item sem
   produto (selo + dois botões, sem lista); Trocar → Cancelar preserva; topo "1 de 2 itens prontos".
 - Browser real (sessão isolada, sem gravar em produção) na etapa 2 com a NF 1051.
