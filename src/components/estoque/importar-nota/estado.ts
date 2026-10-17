@@ -1,15 +1,20 @@
 // ADR-0181 — estado puro do assistente de importação (sem React).
 import { cfopAceito, conciliarItens, custoAquisicaoUnit, quantidadeEmEstoque, erroDistribuicao } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import type { DecisaoImportacao, ItemConciliado, LinhaDistribuicao, NotaCompraLida } from '../../../../supabase/functions/_shared/nfe/tipos.ts';
-import type { Vinculo } from '@/lib/notas-compra';
+import type { SugestaoDistribuicao, Vinculo } from '@/lib/notas-compra';
 
 // codigoPai: só do front (SKU de outro produto, D-7) — para invalidar o cache; payload() não o envia.
-export type LinhaEstado = LinhaDistribuicao & { travada?: boolean; codigoPai?: string };
+// sugerida: veio da sugestão do cadastro pela nota — o custo é recalculado ao semear a etapa 3 (custoPadraoSku).
+export type LinhaEstado = LinhaDistribuicao & { travada?: boolean; codigoPai?: string; sugerida?: boolean };
 export interface DecisaoItem {
   nItem: number; codigoPai: string | null; fator: number;
   origemVinculo: 'nota' | 'vinculo' | 'gtin' | 'manual' | null; candidatosGtin: string[]; candidatosNota: string[];
   distribuicao: LinhaEstado[];
+  /** Por que a sugestão do cadastro não entrou inteira (fator mudou / SKU não existe mais). */
+  avisoSugestao?: string | null;
 }
+export const AVISO_FATOR_MUDOU = 'Sugestão do cadastro descartada: fator da nota mudou';
+export const AVISO_SKU_SUMIU = 'Parte da sugestão é de SKUs que não existem mais — redistribua';
 export interface EstadoImportacao {
   nota: NotaCompraLida; itens: ItemConciliado[]; xml: string;
   avisoTotal: string | null; divergenciaTotal: number; aceitarDivergencia: boolean; decisoes: DecisaoItem[];
@@ -65,22 +70,55 @@ const soTravadas = (l: LinhaEstado[]) => l.filter((x) => x.travada);
 // Escolha explícita é sempre `manual` (nada automático a sobrescreve depois); com o mesmo código só marca.
 export const definirProduto = (e: EstadoImportacao, nItem: number, codigoPai: string) =>
   mudar(e, nItem, (d) => (d.codigoPai === codigoPai ? { ...d, origemVinculo: 'manual' }
-    : { ...d, codigoPai, origemVinculo: 'manual', distribuicao: soTravadas(d.distribuicao) }));
+    : { ...d, codigoPai, origemVinculo: 'manual', distribuicao: soTravadas(d.distribuicao), avisoSugestao: null }));
 
-/** Produtos já cadastrados DESTA nota (refNota) superam vínculo/GTIN; escolha `manual` nunca é tocada. */
+/** Semeia a sugestão (linhas `sugerida`) por cima das travadas, que sempre vencem. O custo é só um
+ *  placeholder seguro (custo da nota com o fator da sugestão) — a etapa 3 recalcula por SKU.
+ *  `codigosValidos` (SKUs canônicos atuais): código fora dela é descartado com aviso. */
+function semearSugestao(e: EstadoImportacao, d: DecisaoItem, s: SugestaoDistribuicao, codigosValidos?: string[]): DecisaoItem {
+  const item = e.itens.find((i) => i.nItem === d.nItem)!;
+  const custo = Math.round(custoAquisicaoUnit(item, s.fator) * 100) / 100;
+  const fixas = soTravadas(d.distribuicao);
+  const travados = new Set(fixas.map((f) => f.codigo));
+  const validas = codigosValidos ? s.linhas.filter((l) => codigosValidos.includes(l.codigo)) : s.linhas;
+  return {
+    ...d, fator: s.fator, avisoSugestao: validas.length < s.linhas.length ? AVISO_SKU_SUMIU : null,
+    distribuicao: [...fixas, ...validas.filter((l) => !travados.has(l.codigo))
+      .map((l) => ({ codigo: l.codigo, quantidade: l.quantidade, custoPrecificacao: custo, sugerida: true }))],
+  };
+}
+
+/** Produtos já cadastrados DESTA nota (refNota) superam vínculo/GTIN; escolha `manual` nunca é tocada.
+ *  Com um só produto e sugestão gravada, semeia a distribuição — só se não há linha não travada (edição
+ *  do operador / SKU de outro produto); vínculo com fator diferente descarta a sugestão com aviso. */
 export function aplicarCadastradosDaNota(
-  e: EstadoImportacao, lista: Array<{ nItem: number; codigosPai: string[] }>,
+  e: EstadoImportacao,
+  lista: Array<{ nItem: number; codigosPai: string[]; sugestao?: SugestaoDistribuicao | null; codigosValidos?: string[] }>,
 ): EstadoImportacao {
   return {
     ...e,
     decisoes: e.decisoes.map((d) => {
-      const cods = lista.find((x) => x.nItem === d.nItem)?.codigosPai ?? [];
+      const x = lista.find((y) => y.nItem === d.nItem);
+      const cods = x?.codigosPai ?? [];
       if (d.origemVinculo === 'manual' || cods.length === 0) return d;
       if (cods.length > 1) return { ...d, codigoPai: null, origemVinculo: null, candidatosNota: cods, distribuicao: soTravadas(d.distribuicao) };
-      if (d.codigoPai === cods[0]) return { ...d, origemVinculo: 'nota', candidatosNota: [] };
-      return { ...d, codigoPai: cods[0], origemVinculo: 'nota', candidatosNota: [], distribuicao: soTravadas(d.distribuicao) };
+      const novo: DecisaoItem = d.codigoPai === cods[0] ? { ...d, origemVinculo: 'nota', candidatosNota: [] }
+        : { ...d, codigoPai: cods[0], origemVinculo: 'nota', candidatosNota: [], distribuicao: soTravadas(d.distribuicao) };
+      const s = x?.sugestao;
+      if (!s || novo.distribuicao.some((l) => !l.travada)) return novo;
+      if (d.origemVinculo === 'vinculo' && d.fator !== s.fator) return { ...novo, avisoSugestao: AVISO_FATOR_MUDOU };
+      return semearSugestao(e, novo, s, x?.codigosValidos);
     }),
   };
+}
+
+/** Sessão (`aoCadastrar`): aplica a sugestão que a edge acabou de gravar — códigos recém-gerados, sem
+ *  validar. Fator diferente do que o item tem agora ⇒ descarta com aviso. Sem sugestão: estado igual. */
+export function aplicarSugestaoCadastro(
+  e: EstadoImportacao, nItem: number, s: SugestaoDistribuicao | null | undefined,
+): EstadoImportacao {
+  if (!s) return e;
+  return mudar(e, nItem, (d) => (d.fator !== s.fator ? { ...d, avisoSugestao: AVISO_FATOR_MUDOU } : semearSugestao(e, d, s)));
 }
 
 export function itemPronto(e: EstadoImportacao, d: DecisaoItem): boolean {
@@ -91,7 +129,7 @@ export const contarProntos = (e: EstadoImportacao) => ({ prontos: e.decisoes.fil
 // Fator novo muda quantidade e custo por unidade: as linhas não travadas (calculadas com o fator antigo) saem
 // e o semear recalcula o default. As travadas (já no ledger) ficam — mesma regra de definirProduto.
 export const definirFator = (e: EstadoImportacao, nItem: number, fator: number) =>
-  mudar(e, nItem, (d) => (d.fator === fator ? d : { ...d, fator, distribuicao: soTravadas(d.distribuicao) }));
+  mudar(e, nItem, (d) => (d.fator === fator ? d : { ...d, fator, distribuicao: soTravadas(d.distribuicao), avisoSugestao: null }));
 // Linhas travadas (já no ledger) são sempre preservadas com SKU e quantidade; de uma linha recebida com o
 // mesmo código só se aproveita o custo de precificação (R4-B1).
 export const definirDistribuicao = (e: EstadoImportacao, nItem: number, linhas: LinhaDistribuicao[]) =>
@@ -165,9 +203,22 @@ export function payload(e: EstadoImportacao): { xml: string; decisoes: DecisaoIm
   };
 }
 
+/** ADR-0181 D-9 (emenda 2026-10-17): custo padrão do SKU na etapa 3. O custo cadastrado
+ *  (`variacoes.custo`, sem arredondar) só vale com prova positiva de 1ª entrada do produto e saldo 0;
+ *  qualquer outro caso (recompra, planilha, manual, consulta falhou) = custo de aquisição da nota. */
+export function custoPadraoSku(
+  sku: { custo: number | null; saldo: number }, produtoNuncaTeveEstoque: boolean, custoNota: number,
+): number {
+  return produtoNuncaTeveEstoque && sku.saldo === 0 && sku.custo != null && sku.custo > 0 ? sku.custo : custoNota;
+}
+
+type SkuSemente = { codigo: string; custo?: number | null; estoque?: number };
+const custoDoSku = (s: SkuSemente, prova: boolean, custo: number) =>
+  custoPadraoSku({ custo: s.custo ?? null, saldo: s.estoque ?? 0 }, prova, custo);
+
 /** Linhas de partida da distribuição: com 1 SKU a quantidade vem preenchida (editável); com vários, zerada. */
-export function linhasIniciais(skus: Array<{ codigo: string }>, quantidade: number, custo: number): LinhaDistribuicao[] {
-  return skus.map((s) => ({ codigo: s.codigo, quantidade: skus.length === 1 ? quantidade : 0, custoPrecificacao: custo }));
+export function linhasIniciais(skus: SkuSemente[], quantidade: number, custo: number, prova = false): LinhaDistribuicao[] {
+  return skus.map((s) => ({ codigo: s.codigo, quantidade: skus.length === 1 ? quantidade : 0, custoPrecificacao: custoDoSku(s, prova, custo) }));
 }
 
 /**
@@ -175,13 +226,19 @@ export function linhasIniciais(skus: Array<{ codigo: string }>, quantidade: numb
  * outro produto); `linhasIniciais` só vale quando ainda não há nenhuma linha salva.
  */
 export function semearDistribuicao(
-  skus: Array<{ codigo: string }>, salva: LinhaEstado[], quantidade: number, custo: number,
+  skus: SkuSemente[], salva: LinhaEstado[], quantidade: number, custo: number, prova = false,
 ): LinhaEstado[] {
-  if (salva.length === 0) return linhasIniciais(skus, quantidade, custo);
+  if (salva.length === 0) return linhasIniciais(skus, quantidade, custo, prova);
   const porCod = new Map(salva.map((l) => [l.codigo, l]));
   const doProduto = new Set(skus.map((s) => s.codigo));
   return [
-    ...skus.map((s) => porCod.get(s.codigo) ?? { codigo: s.codigo, quantidade: 0, custoPrecificacao: custo }),
-    ...salva.filter((l) => !doProduto.has(l.codigo)),
+    ...skus.map((s) => {
+      const l = porCod.get(s.codigo);
+      if (!l) return { codigo: s.codigo, quantidade: 0, custoPrecificacao: custoDoSku(s, prova, custo) };
+      // Sugestão do cadastro: quantidade dela, custo pelo SKU (o do estado é só placeholder).
+      return l.sugerida ? { codigo: l.codigo, quantidade: l.quantidade, custoPrecificacao: custoDoSku(s, prova, custo) } : l;
+    }),
+    // Sugerida fora do produto nunca vira "SKU de outro produto".
+    ...salva.filter((l) => !doProduto.has(l.codigo) && !l.sugerida),
   ];
 }

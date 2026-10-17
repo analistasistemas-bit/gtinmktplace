@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { linhasIniciais, semearDistribuicao, definirFator, definirDistribuicao, estadoInicial } from '../estado';
+import { linhasIniciais, semearDistribuicao, definirFator, definirDistribuicao, estadoInicial, custoPadraoSku } from '../estado';
 import { custoAquisicaoUnit } from '../../../../../supabase/functions/_shared/nfe/regras';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
@@ -49,5 +49,49 @@ describe('definirFator', () => {
     expect(semearDistribuicao([{ codigo: 'S1' }], e.decisoes[0].distribuicao, 24, custo)).toEqual([
       { codigo: 'S1', quantidade: 0, custoPrecificacao: 10 }, expect.objectContaining({ codigo: 'T1' })]);
     expect(definirFator(e, 1, 12).decisoes[0]).toBe(e.decisoes[0]);
+  });
+});
+
+// ADR-0181 D-9 (emenda 2026-10-17): custo padrão = custo cadastrado só com prova positiva de 1ª entrada.
+describe('custoPadraoSku', () => {
+  it('prova positiva + custo > 0 + saldo 0 ⇒ custo cadastrado (casos reais 00000010 → 17, 00000043 → 14,50)', () => {
+    expect(custoPadraoSku({ custo: 17, saldo: 0 }, true, 10)).toBe(17);
+    expect(custoPadraoSku({ custo: 14.5, saldo: 0 }, true, 10)).toBe(14.5);
+    // custo numeric sem escala: nunca arredondar (sobrescreveria o valor no confirmar).
+    expect(custoPadraoSku({ custo: 4.251, saldo: 0 }, true, 10)).toBe(4.251);
+  });
+  it('sem prova (recompra, planilha, manual, histórico com estoque, consulta falhou) ⇒ custo da nota', () => {
+    expect(custoPadraoSku({ custo: 17, saldo: 0 }, false, 10)).toBe(10);
+  });
+  it('saldo > 0, custo nulo ou 0 ⇒ custo da nota', () => {
+    expect(custoPadraoSku({ custo: 17, saldo: 3 }, true, 10)).toBe(10);
+    expect(custoPadraoSku({ custo: null, saldo: 0 }, true, 10)).toBe(10);
+    expect(custoPadraoSku({ custo: 0, saldo: 0 }, true, 10)).toBe(10);
+  });
+});
+
+describe('linhasIniciais / semearDistribuicao com custo do SKU', () => {
+  const skus = [{ codigo: 'S1', custo: 17, estoque: 0 }, { codigo: 'S2', custo: 17, estoque: 0 }];
+  it('com prova: todos os SKUs com 17 e quantidade 0 (short 00000010)', () => {
+    expect(linhasIniciais(skus, 32, 10, true)).toEqual([
+      { codigo: 'S1', quantidade: 0, custoPrecificacao: 17 }, { codigo: 'S2', quantidade: 0, custoPrecificacao: 17 }]);
+  });
+  it('sem prova (recompra com saldo > 0 e custo antigo): custo da nota', () => {
+    expect(linhasIniciais([{ codigo: 'S1', custo: 17, estoque: 5 }], 32, 10, true)[0].custoPrecificacao).toBe(10);
+    expect(linhasIniciais(skus, 32, 10, false).map((l) => l.custoPrecificacao)).toEqual([10, 10]);
+  });
+  it('linha sugerida: quantidade da sugestão e custo recalculado pelo SKU (não o placeholder da nota)', () => {
+    const salva = [{ codigo: 'S1', quantidade: 5, custoPrecificacao: 10, sugerida: true }];
+    expect(semearDistribuicao(skus, salva, 32, 10, true)).toEqual([
+      { codigo: 'S1', quantidade: 5, custoPrecificacao: 17 }, { codigo: 'S2', quantidade: 0, custoPrecificacao: 17 }]);
+    expect(semearDistribuicao(skus, salva, 32, 10, false)[0]).toEqual({ codigo: 'S1', quantidade: 5, custoPrecificacao: 10 });
+  });
+  it('travada e linha já editada mantêm o custo salvo; outro produto preservado', () => {
+    const salva = [
+      { codigo: 'S1', quantidade: 3, custoPrecificacao: 9, travada: true },
+      { codigo: 'X9', quantidade: 2, custoPrecificacao: 8, codigoPai: 'OUTRO' },
+    ];
+    expect(semearDistribuicao(skus, salva, 32, 10, true)).toEqual([
+      salva[0], { codigo: 'S2', quantidade: 0, custoPrecificacao: 17 }, salva[1]]);
   });
 });

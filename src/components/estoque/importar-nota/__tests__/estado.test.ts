@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova, motivoBloqueioEtapa, aplicarCadastradosDaNota, itemPronto, contarProntos } from '../estado';
+import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova, motivoBloqueioEtapa, aplicarCadastradosDaNota, itemPronto, contarProntos, aplicarSugestaoCadastro } from '../estado';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
 const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 590 };
@@ -187,5 +187,88 @@ describe('itemPronto / contarProntos', () => {
     const meio = { ...e, itens: e.itens.map((i) => (i.nItem === 1 ? { ...i, qCom: 0.5 } : i)) };
     expect(itemPronto(meio, meio.decisoes[0])).toBe(false);
     expect(motivoBloqueioEtapa(meio, 1)).toMatch(/^Item 1:/);
+  });
+});
+
+// ADR-0181 (emenda 2026-10-17): sugestão de distribuição gravada no cadastro pela nota.
+describe('sugestão de distribuição do cadastro', () => {
+  const sug = (fator: number, linhas: Array<[string, number]>) =>
+    ({ fator, linhas: linhas.map(([codigo, quantidade]) => ({ codigo, quantidade })) });
+  const linhasDe = (e: ReturnType<typeof estadoInicial>, n: number) =>
+    e.decisoes[n].distribuicao.map(({ codigo, quantidade, travada, sugerida }) => ({ codigo, quantidade, travada, sugerida }));
+
+  it('reabrir: produto `nota` aplicado ⇒ distribuição semeada com a sugestão (sugerida, sem travar)', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 20], ['S2', 15]]) }]);
+    expect(linhasDe(e, 0)).toEqual([
+      { codigo: 'S1', quantidade: 20, travada: undefined, sugerida: true },
+      { codigo: 'S2', quantidade: 15, travada: undefined, sugerida: true }]);
+    expect(pendencias(e).filter((p) => p.nItem === 1)).toEqual([]);
+  });
+  it('fator 12 gravado é restaurado ao reabrir (2 CX × 12 = 24)', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 2, codigosPai: ['P2'], sugestao: sug(12, [['M1', 24]]) }]);
+    expect(e.decisoes[1]).toMatchObject({ codigoPai: 'P2', fator: 12, avisoSugestao: null });
+    expect(itemPronto(e, e.decisoes[1])).toBe(true);
+    expect(pendencias(e).filter((p) => p.nItem === 2)).toEqual([]);
+  });
+  it('vínculo com fator diferente ⇒ sugestão descartada com aviso; fator do vínculo fica', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [{ cprod: 'X9', codigoPai: 'P2', fator: 6 }], {}),
+      [{ nItem: 2, codigosPai: ['P2'], sugestao: sug(12, [['M1', 24]]) }]);
+    expect(e.decisoes[1]).toMatchObject({ fator: 6, distribuicao: [], avisoSugestao: 'Sugestão do cadastro descartada: fator da nota mudou' });
+  });
+  it('código que não existe mais é descartado + aviso (nunca vira SKU de outro produto)', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 20], ['VELHO', 15]]), codigosValidos: ['S1', 'S2'] }]);
+    expect(linhasDe(e, 0)).toEqual([{ codigo: 'S1', quantidade: 20, travada: undefined, sugerida: true }]);
+    expect(e.decisoes[0].distribuicao.some((l) => l.codigoPai)).toBe(false);
+    expect(e.decisoes[0].avisoSugestao).toBe('Parte da sugestão é de SKUs que não existem mais — redistribua');
+  });
+  it('travadas vencem; escolha manual e linhas não travadas já editadas não são tocadas', () => {
+    const previas = [{ nItem: 1, codigo: 'S1', quantidade: 3, custo: 5 }];
+    const e0 = estadoInicial(nota, '<x/>', [], {}, previas);
+    const e = aplicarCadastradosDaNota(e0, [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 20], ['S2', 15]]) }]);
+    expect(linhasDe(e, 0)).toEqual([
+      { codigo: 'S1', quantidade: 3, travada: true, sugerida: undefined },
+      { codigo: 'S2', quantidade: 15, travada: undefined, sugerida: true }]);
+    const manual = definirProduto(estadoInicial(nota, '<x/>', [], {}), 1, 'OUTRO');
+    expect(aplicarCadastradosDaNota(manual, [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 35]]) }]).decisoes[0])
+      .toEqual(manual.decisoes[0]);
+    const vinc = [{ cprod: 'REF 06', codigoPai: 'P1', fator: 1 }];
+    const editado = definirDistribuicao(estadoInicial(nota, '<x/>', vinc, {}), 1, [{ codigo: 'X', quantidade: 1, custoPrecificacao: 8, codigoPai: 'Z' } as never]);
+    const r = aplicarCadastradosDaNota(editado, [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 35]]) }]);
+    expect(r.decisoes[0].distribuicao.map((l) => l.codigo)).toEqual(['X']);
+  });
+  it('vários códigos para o item: sugestão não é aplicada', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1', 'P9'], sugestao: sug(1, [['S1', 35]]) }]);
+    expect(e.decisoes[0].distribuicao).toEqual([]);
+  });
+  it('trocar produto ou fator descarta a sugestão', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 35]]) }]);
+    expect(definirProduto(e, 1, 'P9').decisoes[0].distribuicao).toEqual([]);
+    expect(definirFator(e, 1, 2).decisoes[0].distribuicao).toEqual([]);
+  });
+  it('sugestão que não soma Q aparece como está e bloqueia a etapa', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 10]]) }]);
+    expect(linhasDe(e, 0)).toEqual([{ codigo: 'S1', quantidade: 10, travada: undefined, sugerida: true }]);
+    expect(motivoBloqueioEtapa(e, 2)).toMatch(/^Item 1:/);
+  });
+  it('sessão (aoCadastrar): aplica a sugestão devolvida pela edge; sem sugestão, só vincula', () => {
+    let e = definirProduto(estadoInicial(nota, '<x/>', [], {}), 2, 'P2');
+    e = definirFator(e, 2, 12);
+    const com = aplicarSugestaoCadastro(e, 2, sug(12, [['M1', 20], ['M2', 4]]));
+    expect(linhasDe(com, 1).map((l) => [l.codigo, l.quantidade, l.sugerida])).toEqual([['M1', 20, true], ['M2', 4, true]]);
+    expect(aplicarSugestaoCadastro(e, 2, undefined)).toBe(e);
+    expect(aplicarSugestaoCadastro(e, 2, null)).toBe(e);
+    expect(aplicarSugestaoCadastro(definirFator(e, 2, 6), 2, sug(12, [['M1', 24]])).decisoes[1])
+      .toMatchObject({ fator: 6, distribuicao: [], avisoSugestao: 'Sugestão do cadastro descartada: fator da nota mudou' });
+  });
+  it('payload não carrega a flag sugerida', () => {
+    const e = aplicarCadastradosDaNota(estadoInicial(nota, '<x/>', [], {}),
+      [{ nItem: 1, codigosPai: ['P1'], sugestao: sug(1, [['S1', 35]]) }, { nItem: 2, codigosPai: ['P2'], sugestao: sug(1, [['M1', 2]]) }]);
+    expect(JSON.stringify(payload(e))).not.toContain('sugerida');
   });
 });

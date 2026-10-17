@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,9 +11,11 @@ import { fetchProdutosEstoqueResumo, fetchSkusEstoqueOrg, fetchVariacoesProduto 
 import { useProfile } from '@/hooks/useProfile';
 import { DialogAdicionarVariacaoRoteador } from '@/components/estoque/dialog-adicionar-variacao-roteador';
 import { filtrarOpcoesSku, montarOpcoesSku } from '@/lib/dialog-entrada-busca';
+import { primeiraEntradaComprovada } from '@/lib/notas-compra';
+import { fmtBRLSemSimbolo } from '@/lib/formato';
 import { custoAquisicaoUnit, quantidadeEmEstoque } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import {
-  acaoVariacaoFaltante, definirDistribuicao, semearDistribuicao, travarLinhaNova,
+  acaoVariacaoFaltante, custoPadraoSku, definirDistribuicao, semearDistribuicao, travarLinhaNova,
   type DecisaoItem, type EstadoImportacao, type LinhaEstado,
 } from './estado';
 
@@ -34,6 +37,14 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
     queryFn: () => fetchVariacoesProduto(d.codigoPai!),
     staleTime: 30_000,
   });
+  // D-9 (emenda 2026-10-17): prova de 1ª entrada. Sem cache (staleTime/gcTime 0): um `true` antigo
+  // aplicaria o custo do cadastro a uma recompra logo depois de confirmar. Falha concluída = false.
+  const { data: provaOk, status: statusProva } = useQuery({
+    queryKey: ['primeira-entrada', d.codigoPai],
+    queryFn: () => primeiraEntradaComprovada(d.codigoPai!),
+    staleTime: 0, gcTime: 0, retry: false,
+  });
+  const prova = provaOk === true;
   const [linhas, setLinhas] = useState<LinhaEstado[] | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [busca, setBusca] = useState('');
@@ -53,11 +64,12 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
   const [qtdNoDialog, setQtdNoDialog] = useState<number | null>(null);
 
   // Monta o buffer local uma vez, semeado com o que já está salvo (voltar/Corrigir não regrava nada).
+  // Só depois das DUAS leituras (SKUs e prova): pendente ≠ falha; resposta tardia nunca re-semeia.
   useEffect(() => {
-    if (linhas || isLoading || !skus) return;
-    setLinhas(semearDistribuicao(skus, d.distribuicao, q.ok ? q.quantidade : 0, custoDef));
+    if (linhas || isLoading || !skus || statusProva === 'pending') return;
+    setLinhas(semearDistribuicao(skus, d.distribuicao, q.ok ? q.quantidade : 0, custoDef, prova));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skus, isLoading]);
+  }, [skus, isLoading, statusProva]);
 
   // Estado inicial já com as linhas preenchidas (1 SKU) — sem isso o Resumo acusaria pendência sem o operador tocar.
   useEffect(() => {
@@ -84,6 +96,13 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
     return o ? { cor: o.cor, tamanho: o.tamanho, estoque: o.estoque } : undefined;
   };
 
+  // Selo enquanto o valor da linha é o custo cadastrado que veio como padrão (editou → some).
+  const doCadastro = (l: LinhaEstado) => {
+    const s = skus?.find((x) => x.codigo === l.codigo);
+    if (!s || l.travada) return false;
+    const padrao = custoPadraoSku({ custo: s.custo, saldo: s.estoque }, prova, custoDef);
+    return padrao !== custoDef && l.custoPrecificacao === padrao;
+  };
   const alterar = (codigo: string, parte: Partial<LinhaEstado>) =>
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
   const num = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -108,6 +127,9 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
 
   return (
     <div className="space-y-2 rounded-md border p-3">
+      {d.avisoSugestao && (
+        <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-sm">{d.avisoSugestao}</p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium">{item.nItem}. {item.xProd}</p>
         <p className={`text-sm ${q.ok && soma === q.quantidade ? 'text-success' : 'text-muted-foreground'}`}>
@@ -143,6 +165,9 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
                     value={l.custoPrecificacao}
                     onChange={(ev) => alterar(l.codigo, { custoPrecificacao: num(ev.target.value) })}
                   />
+                  {/* D-9: aquisição ao lado do custo de precificação; o selo nunca deixa o custo do cadastro silencioso. */}
+                  <p className="mt-1 text-xs text-muted-foreground">Aquisição R$ {fmtBRLSemSimbolo(custoDef)}/un</p>
+                  {doCadastro(l) && <Badge variant="secondary" className="mt-1">Custo do cadastro (1ª entrada)</Badge>}
                 </TableCell>
               </TableRow>
             );

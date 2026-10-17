@@ -10,12 +10,13 @@ import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { DialogCadastroProduto, type CadastroInicial } from '@/components/estoque/dialog-cadastro-produto';
 import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
 import { QK } from '@/lib/queries';
-import { fetchProdutosEstoqueResumo } from '@/lib/produtos-saldo';
+import { fetchProdutosEstoqueResumo, fetchVariacoesProduto } from '@/lib/produtos-saldo';
 import {
   buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosCadastradosDaNota, produtosPorGtin, statusDaNota,
+  type SugestaoDistribuicao,
 } from '@/lib/notas-compra';
 import { lerNfe } from '../../../../supabase/functions/_shared/nfe/ler-nfe.ts';
-import { aplicarCadastradosDaNota, definirProduto, estadoInicial, payload, pendencias, motivoBloqueioEtapa, recusaInicial, type EstadoImportacao } from './estado';
+import { aplicarCadastradosDaNota, aplicarSugestaoCadastro, definirProduto, estadoInicial, payload, pendencias, motivoBloqueioEtapa, recusaInicial, type EstadoImportacao } from './estado';
 import { prefillCadastro } from './prefill-cadastro';
 import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
@@ -66,10 +67,12 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator) });
   }
 
-  function aoCadastrar(nItem: number, { codigoPai }: { codigoPai: string }) {
+  function aoCadastrar(nItem: number, { codigoPai, sugestaoDistribuicao }: { codigoPai: string; sugestaoDistribuicao?: SugestaoDistribuicao | null }) {
     // Edge antiga (sem `codigoPai` na resposta): o produto foi gravado, mas não dá para vincular.
     if (!codigoPai) { toast.error('Produto cadastrado, mas não foi possível vinculá-lo ao item — escolha-o na lista.'); return; }
-    setE((s) => (s ? definirProduto(s, nItem, codigoPai) : s));
+    // ADR-0181 (emenda 2026-10-17): quantidades da nota digitadas no cadastro chegam já distribuídas.
+    // Edge antiga (sem `sugestaoDistribuicao`): só vincula, como antes.
+    setE((s) => (s ? aplicarSugestaoCadastro(definirProduto(s, nItem, codigoPai), nItem, sugestaoDistribuicao) : s));
     qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
   }
 
@@ -78,7 +81,18 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     const atual = () => leitura.current.geracao === geracao && leitura.current.chave === chave;
     setConferindo(true);
     try {
-      const lista = await produtosCadastradosDaNota(chave);
+      const lista = await Promise.all((await produtosCadastradosDaNota(chave)).map(async (x) => {
+        if (!x.sugestao || x.codigosPai.length !== 1) return x;
+        // Sugestão só com códigos que ainda são SKUs do produto (mesma fonte da etapa 3). Sem validar, descarta.
+        try {
+          const skus = await qc.fetchQuery({
+            queryKey: QK.variacoesEstoque(x.codigosPai[0]), queryFn: () => fetchVariacoesProduto(x.codigosPai[0]), staleTime: 30_000,
+          });
+          return { ...x, codigosValidos: skus.map((v) => v.codigo) };
+        } catch {
+          return { ...x, sugestao: null };
+        }
+      }));
       if (!atual()) return;
       setE((s) => (s ? aplicarCadastradosDaNota(s, lista) : s));
       setConferirFalhou(false);
