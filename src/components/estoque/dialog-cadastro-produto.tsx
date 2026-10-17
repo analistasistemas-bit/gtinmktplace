@@ -36,7 +36,7 @@ import { CampoFoto } from '@/components/estoque/campo-foto';
 import { EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm } from '@/components/estoque/etapa-fiscal-form';
 import { EtapaFotos } from '@/components/estoque/etapa-fotos';
 import {
-  CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm,
+  CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm, type Cadastrado,
 } from '@/components/estoque/use-cadastro-produto';
 
 // Prefill vindo da Viabilidade (T5, plano 2026-08-08). `origem` de propósito NÃO tem campo
@@ -63,6 +63,11 @@ export interface CadastroInicial {
   sugestaoDaNota?: boolean;
   /** `nfe:{chave}:{nItem}` — vai ao payload (só com `origemNota`) para a importação retomar o vínculo. */
   refNota?: string;
+  /** ADR-0181 (emenda 2026-10-17): Q do item (`quantidadeEmEstoque(qCom, fator)`), para o contador
+   *  "X de Q" da aba "Quantidade da nota". Ausente = quantidade inválida, sem contador. */
+  quantidadeNota?: number;
+  /** Fator `uCom → peça` usado no cadastro (inteiro ≥ 1). Sem ele não há aba "Quantidade da nota". */
+  fatorNota?: number;
 }
 
 /** Número → texto do input do cadastro (vírgula decimal, lida por `parseNumeroPtBr`). */
@@ -105,7 +110,7 @@ export function DialogCadastroProduto({
   inicial?: CadastroInicial;
   /** Chamado em `salvar()` logo após o sucesso do cadastro — permite ao chamador (ex.: a linha
    *  da Viabilidade) marcar o item como já cadastrado sem esperar nova análise. */
-  onCadastrado?: (r: { codigoPai: string }) => void;
+  onCadastrado?: (r: Cadastrado) => void;
   /** Cadastro + fotos sem nenhuma pendência → fecha e abre a Revisão direto, sem parar na etapa
    *  de fotos. O diálogo segue "processando" até a navegação. A Viabilidade não liga: o operador
    *  cadastra vários itens da mesma análise e não pode ser tirado da lista. */

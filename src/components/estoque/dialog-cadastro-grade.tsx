@@ -47,7 +47,7 @@ import {
   SeloSugestaoOrigem, fiscalDoInicial, numParaInputCadastro, type CadastroInicial,
 } from '@/components/estoque/dialog-cadastro-produto';
 import {
-  CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm,
+  CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm, type Cadastrado,
 } from '@/components/estoque/use-cadastro-produto';
 import { cn } from '@/lib/utils';
 
@@ -69,7 +69,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   /** ADR-0181 D-4: aberto pela importação de nota — sem estoque inicial e sem ir para a Revisão
    *  (o operador continua no assistente da nota). */
   origemNota?: boolean;
-  onCadastrado?: (r: { codigoPai: string }) => void;
+  onCadastrado?: (r: Cadastrado) => void;
 }) {
   const { data: modulos } = useModulosHabilitados();
   // ADR-0181 D-10: CSOSN padrão só vira botão de sugestão na etapa fiscal.
@@ -394,6 +394,10 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   // inline aqui daria dois números para a mesma pergunta, que divergiriam na primeira mudança.
   const totais = totaisDaGrade(resolvidas, eixos.cores, eixos.tamanhos);
   const unidades = totais.geral;
+  // ADR-0181 (emenda 2026-10-17): pela nota, a coluna de estoque vira "Quantidade da nota" — sugestão
+  // para a etapa Distribuição, nunca estoque (D-4). Só com o fator do item (sem ele não há sugestão).
+  const comQuantidadeNota = origemNota && inicial?.fatorNota != null;
+  const qNota = comQuantidadeNota ? inicial?.quantidadeNota : undefined;
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
   const podeSalvar = !!nomePai.trim() && !!origem && !!genero && !!grade && linhas.length > 0
@@ -432,6 +436,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
       montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem, genero, gradeTamanho: grade },
         variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota, inicial?.refNota,
+        comQuantidadeNota ? inicial?.fatorNota : undefined,
       ),
       { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
     );
@@ -774,6 +779,11 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                       {totais.semGtin > 0 && ` · ${totais.semGtin} sem GTIN`}
                     </span>
                   </div>
+                  {qNota != null && (
+                    <span className={cn('text-xs tabular-nums', unidades === qNota ? 'text-success' : 'text-muted-foreground')}>
+                      {unidades} de {qNota} · faltam {Math.max(0, qNota - unidades)}
+                    </span>
+                  )}
                   <MatrizGrade
                     linhas={linhas}
                     resolvidas={resolvidas}
@@ -788,7 +798,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     onRemoverCelula={removerLinha}
                     onReincluirCelula={reincluirLinha}
                     onAplicarMassa={aplicarMassa}
-                    semEstoqueInicial={origemNota}
+                    semEstoqueInicial={origemNota && !comQuantidadeNota}
+                    rotuloEstoque={comQuantidadeNota ? 'Quantidade da nota' : undefined}
                   />
                 </div>
               )}

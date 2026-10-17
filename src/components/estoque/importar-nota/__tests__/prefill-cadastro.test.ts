@@ -37,4 +37,14 @@ describe('prefillCadastro', () => {
   it('preenche refNota com chave e nItem', () => {
     expect(prefillCadastro({ ...item, nItem: 7 }, nota, 1).refNota).toBe(`nfe:${'2'.repeat(44)}:7`);
   });
+  it('leva Q (quantidade convertida) e o fator; fator inválido não leva nenhum dos dois', () => {
+    expect(prefillCadastro(item, nota, 1)).toMatchObject({ quantidadeNota: 35, fatorNota: 1 });
+    expect(prefillCadastro({ ...item, uCom: 'CX', qCom: 2 }, nota, 12)).toMatchObject({ quantidadeNota: 24, fatorNota: 12 });
+    const frac = prefillCadastro({ ...item, qCom: 2.5 }, nota, 1);
+    expect(frac.fatorNota).toBe(1);
+    expect(frac).not.toHaveProperty('quantidadeNota');
+    const ruim = prefillCadastro(item, nota, 1.5);
+    expect(ruim).not.toHaveProperty('fatorNota');
+    expect(ruim).not.toHaveProperty('quantidadeNota');
+  });
 });

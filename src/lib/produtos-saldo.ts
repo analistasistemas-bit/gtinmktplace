@@ -7,6 +7,7 @@ import { erroDaEdge, corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { compararCor } from '@/lib/cor';
 import { ordenarVariacoesGrade } from '@/lib/rotulo-variacao';
 import type { ProdutoEntrada } from '@/lib/produto-entrada';
+import type { SugestaoDistribuicao } from '@/lib/notas-compra';
 
 export interface LinhaVariacaoCrua {
   codigo: string; nome: string | null; cor: string | null; gtin: string | null;
@@ -495,6 +496,8 @@ export interface ResultadoCadastro {
   filaOk: boolean;
   falhasEstoque: string[];
   variacoes: Array<{ id: string; codigo: string }>;
+  /** ADR-0181 (emenda 2026-10-17): sugestão gravada pela edge (null = sem; ausente = edge antiga). */
+  sugestaoDistribuicao?: SugestaoDistribuicao | null;
 }
 
 export async function cadastrarProduto(produto: ProdutoEntrada): Promise<ResultadoCadastro> {

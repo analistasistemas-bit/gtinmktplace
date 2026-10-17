@@ -905,6 +905,48 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
   });
 
+  it('aba "Quantidade da nota" (sem "Estoque"), contador X de Q e payload com quantidadeNota, nunca estoqueInicial', async () => {
+    const sugestaoDistribuicao = { fator: 1, linhas: [{ codigo: '00000021', quantidade: 2 }] };
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', codigoPai: '00000020', filaOk: true, falhasEstoque: [], sugestaoDistribuicao,
+      variacoes: [{ id: 'v1', codigo: '00000021' }, { id: 'v2', codigo: '00000022' }],
+    });
+    const onCadastrado = vi.fn();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroGrade
+            aberto onFechar={() => {}} origemNota onCadastrado={onCadastrado}
+            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, fiscal: { tributacaoIcms: '' },
+              refNota: `nfe:${'1'.repeat(44)}:2`, quantidadeNota: 3, fatorNota: 1 }}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await escolherGrade(user, 'letras');
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    expect(screen.getByRole('button', { name: 'Quantidade da nota', pressed: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estoque' })).not.toBeInTheDocument();
+    expect(screen.getByText('0 de 3 · faltam 3')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Quantidade da nota de Preto · P'), '2');
+    expect(screen.getByText('2 de 3 · faltam 1')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const payload = cadastrarProdutoMock.mock.calls[0][0];
+    expect(payload.fatorNota).toBe(1);
+    expect(payload.variacoes.map((v: { quantidadeNota?: number }) => v.quantidadeNota)).toEqual([2, 0]);
+    expect(payload.variacoes.some((v: object) => 'estoqueInicial' in v)).toBe(false);
+    expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000020', sugestaoDistribuicao });
+  });
+
   it('foto que falhou: etapa de fotos sem "Ir para a Revisão"', async () => {
     // jsdom sem URL.createObjectURL — mesmo mock do describe "salvar".
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn((f: File) => `blob:${f.name}`) });

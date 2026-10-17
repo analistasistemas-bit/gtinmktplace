@@ -41,7 +41,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 export function MatrizGrade({
   linhas, resolvidas, cores, tamanhos, removidas, desabilitado, bloqueadas,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
-  onAplicarMassa, semEstoqueInicial,
+  onAplicarMassa, semEstoqueInicial, rotuloEstoque,
 }: {
   linhas: readonly LinhaGrade[];
   resolvidas: readonly LinhaResolvida[];
@@ -65,8 +65,12 @@ export function MatrizGrade({
   onAplicarMassa: (opts: OpcoesMassa) => void;
   /** ADR-0181 D-4: cadastro a partir da nota — sem aba/campo de estoque inicial. */
   semEstoqueInicial?: boolean;
+  /** ADR-0181 (emenda 2026-10-17): a coluna de estoque com outro nome ("Quantidade da nota"). */
+  rotuloEstoque?: string;
 }) {
-  const modos = semEstoqueInicial ? MODOS.filter((m) => m.valor !== 'estoqueInicial') : MODOS;
+  const modos = semEstoqueInicial ? MODOS.filter((m) => m.valor !== 'estoqueInicial')
+    : rotuloEstoque ? MODOS.map((m) => (m.valor === 'estoqueInicial' ? { ...m, aba: rotuloEstoque, rotulo: rotuloEstoque } : m))
+      : MODOS;
   const [modo, setModo] = useState<ModoGrade>(modos[0].valor);
   // SÓ o clientId, nunca a linha: a linha vem sempre de `linhas`, que é a fonte.
   const [detalhesDe, setDetalhesDe] = useState<string | null>(null);
@@ -198,7 +202,8 @@ export function MatrizGrade({
     // de vermelho sem o operador ter feito nada (o "muro vermelho"). Célula com valor real
     // inválido ("-1", "abc") continua acusando na hora. Um só cálculo para a borda e o texto: dois
     // gates iguais escritos em dois lugares divergem na primeira edição.
-    const erro = valor !== '' ? erroCampo(modo, valor) : null;
+    const erroBruto = valor !== '' ? erroCampo(modo, valor) : null;
+    const erro = erroBruto && rotuloEstoque && modo === 'estoqueInicial' ? erroBruto.replace('Estoque inicial', rotuloEstoque) : erroBruto;
     // Posicional (r, c), não `chaveGrade`: o id vai num `aria-describedby`, que é lista separada
     // por ESPAÇO — cor com espaço no nome ("Azul Marinho") quebraria a referência em dois tokens.
     const idErro = `matriz-erro-${r}-${c}`;
@@ -322,6 +327,7 @@ export function MatrizGrade({
           rotuloGatilho="Preencher em massa"
           onAplicar={onAplicarMassa}
           semEstoqueInicial={semEstoqueInicial}
+          rotuloEstoque={rotuloEstoque}
         />
       </div>
 
@@ -356,6 +362,7 @@ export function MatrizGrade({
                   rotuloGatilho={`Preencher em massa no tamanho ${t}`}
                   onAplicar={onAplicarMassa}
                   semEstoqueInicial={semEstoqueInicial}
+                  rotuloEstoque={rotuloEstoque}
                 />
               </TableHead>
             ))}
@@ -376,6 +383,7 @@ export function MatrizGrade({
                   rotuloGatilho={`Preencher em massa na cor ${cor}`}
                   onAplicar={onAplicarMassa}
                   semEstoqueInicial={semEstoqueInicial}
+                  rotuloEstoque={rotuloEstoque}
                 />
               </TableHead>
               {tamanhos.map((tamanho, c) => (

@@ -44,3 +44,30 @@ describe('montarPayload — refNota', () => {
     expect(montarPayload(PAI, [linha], 'k', undefined, true)).not.toHaveProperty('refNota');
   });
 });
+
+// ADR-0181 (emenda 2026-10-17): quantidade da nota vira sugestão, nunca estoque inicial.
+describe('montarPayload — quantidadeNota', () => {
+  const ref = `nfe:${'1'.repeat(44)}:3`;
+  const l5 = { ...linha, estoqueInicial: '5' };
+  it('origemNota + refNota + fator: cada variação leva quantidadeNota (vazio = 0) e a entrada leva fatorNota', () => {
+    const p = montarPayload(PAI, [l5, linha], 'k', undefined, true, ref, 12);
+    expect(p.fatorNota).toBe(12);
+    expect(p.variacoes.map((v) => v.quantidadeNota)).toEqual([5, 0]);
+    expect(p.variacoes[0]).not.toHaveProperty('estoqueInicial');
+  });
+  it('sem fator (cadastro simples), sem refNota válida ou sem origemNota: nenhum campo novo', () => {
+    for (const p of [
+      montarPayload(PAI, [l5], 'k', undefined, true, ref),
+      montarPayload(PAI, [l5], 'k', undefined, true, 'nfe:123:3', 12),
+      montarPayload(PAI, [l5], 'k', undefined, true, undefined, 12),
+    ]) {
+      expect(p).not.toHaveProperty('fatorNota');
+      expect(p.variacoes[0]).not.toHaveProperty('quantidadeNota');
+      expect(p.variacoes[0]).not.toHaveProperty('estoqueInicial');
+    }
+    const normal = montarPayload(PAI, [l5], 'k', undefined, false, undefined, 12);
+    expect(normal).not.toHaveProperty('fatorNota');
+    expect(normal.variacoes[0]).toMatchObject({ estoqueInicial: 5 });
+    expect(normal.variacoes[0]).not.toHaveProperty('quantidadeNota');
+  });
+});

@@ -18,6 +18,8 @@ export interface VariacaoEntrada {
   preco: number;
   custo?: number | null;
   estoqueInicial?: number | null;
+  /** ADR-0181 (emenda 2026-10-17): peças da nota sugeridas para o SKU — só com origemNota + refNota. */
+  quantidadeNota?: number | null;
   pesoGramas?: number | null;
   alturaCm?: number | null;
   larguraCm?: number | null;
@@ -61,4 +63,6 @@ export interface ProdutoEntrada {
   origemNota?: boolean;
   /** ADR-0181: `nfe:{chave}:{nItem}` — só com `origemNota`; a edge grava na família e a importação retoma por ela. */
   refNota?: string;
+  /** ADR-0181 (emenda 2026-10-17): fator do item usado no cadastro (inteiro ≥ 1); vai junto de `quantidadeNota`. */
+  fatorNota?: number;
 }

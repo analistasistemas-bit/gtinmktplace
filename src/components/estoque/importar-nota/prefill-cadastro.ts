@@ -3,7 +3,7 @@
 // o CSOSN do fornecedor nunca é copiado (`tributacaoIcms: ''`) e não existe estoque inicial — o
 // saldo entra pela nota (D-4).
 import {
-  custoAquisicaoUnit, limparDescricaoFornecedor, origemSugerida,
+  custoAquisicaoUnit, limparDescricaoFornecedor, origemSugerida, quantidadeEmEstoque,
 } from '../../../../supabase/functions/_shared/nfe/regras.ts';
 import type { ItemConciliado, NotaCompraLida } from '../../../../supabase/functions/_shared/nfe/tipos.ts';
 import type { CadastroInicial } from '@/components/estoque/dialog-cadastro-produto';
@@ -20,6 +20,9 @@ export function prefillCadastro(item: ItemConciliado, nota: NotaCompraLida, fato
   const ucom = item.uCom.trim().toUpperCase();
   const avulsa = (UNIDADES_FISCAIS as readonly string[]).includes(ucom) && !EMBALAGENS.has(ucom);
   const unidade = fator === 1 && avulsa ? ucom : undefined;
+  // Emenda 2026-10-17: Q e fator para a aba "Quantidade da nota" (sugestão, nunca estoque — D-4).
+  const fatorOk = Number.isInteger(fator) && fator >= 1;
+  const q = fatorOk ? quantidadeEmEstoque(item.qCom, fator) : null;
   return {
     nomePai: texto,
     descricaoFiscal: texto,
@@ -35,5 +38,7 @@ export function prefillCadastro(item: ItemConciliado, nota: NotaCompraLida, fato
     ...(origem ? { origemSugerida: origem.origem } : {}),
     sugestaoDaNota: true,
     refNota: `nfe:${nota.chave}:${item.nItem}`,
+    ...(fatorOk ? { fatorNota: fator } : {}),
+    ...(q?.ok ? { quantidadeNota: q.quantidade } : {}),
   };
 }

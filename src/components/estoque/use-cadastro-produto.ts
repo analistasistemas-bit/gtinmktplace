@@ -19,8 +19,11 @@ import type { Genero, GradeTamanho } from '@/lib/tamanhos';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
 import { parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import type { FiscalForm } from '@/components/estoque/etapa-fiscal-form';
+import { REF_NOTA } from '../../../supabase/functions/_shared/nfe/ref-nota.ts';
 
 export type AlvoFoto = Parameters<typeof uploadFotoProduto>[3];
+/** O que o diálogo devolve a quem abriu (ADR-0181: a importação vincula e aplica a sugestão). */
+export type Cadastrado = Pick<ResultadoCadastro, 'codigoPai' | 'sugestaoDistribuicao'>;
 
 // Todo campo numérico que `erroCampo` valida — usado pelo gate `podeSalvar` para travar o
 // submit se QUALQUER um, em QUALQUER linha, tiver erro (não só `preco`).
@@ -52,7 +55,11 @@ export function montarPayload(
   // entra só pela nota) e `origemNota: true` faz a edge recusar qualquer estoque e marcar a família.
   origemNota?: boolean,
   refNota?: string,
+  // ADR-0181 (emenda 2026-10-17): com fator (só a grade pela nota manda), o campo `estoqueInicial` da
+  // linha é a "Quantidade da nota" — vai como `quantidadeNota` (sugestão), nunca como estoque.
+  fatorNota?: number,
 ): ProdutoEntrada {
+  const comQuantidadeNota = !!origemNota && !!refNota && REF_NOTA.test(refNota) && fatorNota != null;
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
     // ADR-0166: string vazia vira null — a edge normaliza de novo, mas mandar '' faria o guard
@@ -62,6 +69,7 @@ export function montarPayload(
     preco: numOuNull(l.preco) ?? 0,
     custo: numOuNull(l.custo),
     ...(origemNota ? {} : { estoqueInicial: numOuNull(l.estoqueInicial) }),
+    ...(comQuantidadeNota ? { quantidadeNota: numOuNull(l.estoqueInicial) ?? 0 } : {}),
     pesoGramas: numOuNull(l.pesoGramas),
     alturaCm: numOuNull(l.alturaCm),
     larguraCm: numOuNull(l.larguraCm),
@@ -89,6 +97,7 @@ export function montarPayload(
       },
     } : {}),
     ...(origemNota ? { origemNota: true, ...(refNota ? { refNota } : {}) } : {}),
+    ...(comQuantidadeNota ? { fatorNota } : {}),
   };
 }
 
@@ -131,7 +140,7 @@ export interface CadastroProdutoApi {
 }
 
 export function useCadastroProduto(
-  { aberto, onCadastrado }: { aberto: boolean; onCadastrado?: (r: { codigoPai: string }) => void },
+  { aberto, onCadastrado }: { aberto: boolean; onCadastrado?: (r: Cadastrado) => void },
 ): CadastroProdutoApi {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -245,7 +254,8 @@ export function useCadastroProduto(
     try {
       const r = await cadastrarProduto(payload);
       setResultado(r);
-      onCadastrado?.({ codigoPai: r.codigoPai });
+      // Edge antiga não devolve `sugestaoDistribuicao` — a chave só vai quando veio.
+      onCadastrado?.({ codigoPai: r.codigoPai, ...(r.sugestaoDistribuicao !== undefined ? { sugestaoDistribuicao: r.sugestaoDistribuicao } : {}) });
       setChaveCadastro(crypto.randomUUID());
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       const falhasDeFoto = await subirLoteDeFotos(r, fotos);
