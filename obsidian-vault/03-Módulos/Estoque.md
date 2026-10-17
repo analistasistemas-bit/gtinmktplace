@@ -306,4 +306,11 @@ modo somente leitura não exporta. EM PRODUÇÃO desde 2026-10-16 (main `8694964
 O mesmo zip passa a levar `relatorio-compras.xlsx`/`.pdf` (aba/página "Compras" com uma linha por item e "Conferência de compras") e os XMLs das notas
 importadas em `compras/xmls/`; desfeitas em `compras/xmls-desfeitas/` e marcadas canceladas em `compras/xmls-canceladas/` (fora da planilha e dos totais).
 Competência = data de emissão. Downloads do bucket em fila de 4, 30 s cada; falha de uma nota marca o pacote PARCIAL. Se o ML falhar (fora do suporte),
-sai com "vendas indisponíveis" e selo PARCIAL; em sessão de suporte a falha de vendas aborta. Inventário (Plano 2b-2) pendente.
+sai com "vendas indisponíveis" e selo PARCIAL; em sessão de suporte a falha de vendas aborta. Inventário (Plano 2b-2): implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada).
+
+### Inventário (ADR-0181 D-12, Plano 2b-2) — implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)
+
+Card "Pacote do contador" ganha "Inventário de hoje" (xlsx/PDF avulso, não é foto) e a foto de 31/12 entra no `pacote-AAAA-12.zip` em `inventario/` com status
+"Confirmado em <data> por <nome>" ou "Foto de 31/12 — aguardando contagem". Valor = custo médio ponderado móvel das unidades com nota; o resto sai como "sem nota de compra"
+(só quantidade). Foto gerada pelo `pg_cron` `inventario-foto-31-12` (23:59 SP) em `inventarios`/`inventarios_itens` (imutáveis); admin conta no diálogo de contagem (edge `inventario`,
+ações `hoje`/`foto`/`salvar`/`confirmar`) e a confirmação vira movimento (falta = ajuste, sobra = entrada sem custo) com push ao canal. Próprio/Full/terceiros não separados na v1.

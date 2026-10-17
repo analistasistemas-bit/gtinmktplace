@@ -185,7 +185,7 @@ authenticated` antes do grant:
 |---|---|
 | `inventarios`, `inventarios_itens`, `inventario_corte_backfill` | RLS `select` por `(select current_org_id())` para `authenticated` (o corte: sem acesso); sem insert/update/delete para `authenticated`/`anon` |
 | `inventario_calcular(p_org)` | service_role |
-| `inventario_hoje_json(p_org)` / `inventario_foto_json(p_org, p_id)` | service_role (a edge passa o org do token) |
+| `inventario_hoje_json(p_org)` / `inventario_foto_json(p_org, p_data_base)` | service_role (a edge passa o org do token) |
 | `gerar_fotos_inventario(…)` (procedure, invoker, **sem** `set search_path` — atributos que impedem `commit` na procedure; nomes qualificados com `public.`) | service_role; o pg_cron roda como postgres |
 | `salvar_contagem_inventario(p_org, p_id, p_versao, p_itens)` | service_role |
 | `confirmar_inventario(p_org, p_id, p_versao, p_user)` | service_role |
@@ -199,7 +199,7 @@ Toda função que recebe `p_id` valida `p_id` **junto com `p_org`** (cross-org =
 ## Foto de 31/12 `[R11][R12]`
 
 - Procedure `gerar_fotos_inventario(p_data_base date default null, p_origem text default 'cron', p_org uuid default null)`:
-  - `p_data_base` nulo = **último 31/12 até `now() at time zone 'America/Sao_Paulo' + 1 hora`**. O disparo de 23:59 resolve
+  - `p_data_base` nulo = **último 31/12 já encerrado até `now() at time zone 'America/Sao_Paulo' + 1 hora`** (31/12 às 10:00 ainda resolve para o ano anterior; contingência manual no próprio 31/12 passa a data explícita). O disparo de 23:59 resolve
     para o 31/12 do ano corrente, e um disparo atrasado na madrugada de 01/01 também. Nunca usa `current_date` em UTC;
   - orgs elegíveis: `'estoque' = any(modulos_habilitados)`, `tipo_pessoa = 'pj'`, `empresa_fiscal.cnpj` preenchido (ou só
     `p_org`, na contingência);
@@ -233,7 +233,7 @@ os controles do card (`card-pacote-contador.tsx:2`). As leituras em suporte "ful
 | Ação | Quem | Faz |
 |---|---|---|
 | `hoje` | membro (read) | `inventario_hoje_json(org)` → JSON (cabeçalho com `gerado_em` + linhas), numa chamada só, sem paginação |
-| `foto` | membro (read) | `inventario_foto_json(org, id)` → cabeçalho + itens numa instrução só (consistente com uma confirmação concorrente) |
+| `foto` | membro (read) | `inventario_foto_json(org, data_base)` → cabeçalho + itens numa instrução só (consistente com uma confirmação concorrente) |
 | `salvar` | admin | `salvar_contagem_inventario` |
 | `confirmar` | admin | `confirmar_inventario` + push |
 
@@ -354,6 +354,18 @@ código reutilizado após falha da limpeza.
 - Entrada de nota sem ledger é ignorada e marcada, em vez de bloquear o inventário.
 - Uma edge (`inventario`) com quatro ações.
 - `ordem` por trigger em vez de mudar as RPCs de estoque.
+
+## Decisões tomadas na execução
+
+- R1: versão obsoleta em `salvar_contagem_inventario` = `errcode 40001` ("A contagem mudou em outra aba; recarregue."), edge responde 409.
+- R7: `inventario_foto_json(p_org, p_data_base)` (a edge pede por data, não por id).
+- R8: data-base nula = último 31/12 já encerrado até now()+1h (SP).
+- R9: `confirmado_por_nome` = `profiles.nome`, vazio → `profiles.email`; `confirmado_por` sem FK (cascata bateria na imutabilidade).
+- R10: orgs arquivadas continuam elegíveis à foto.
+- R12: copy de status exata do plano, com maiúscula inicial.
+- R14: foto 'falhou' no pacote de dezembro = sem inventário + aviso próprio, sem PARCIAL.
+- R15: avisos fixos com a redação literal da spec, inicial maiúscula e ponto final.
+- R16: status 'falhou' = "Foto de 31/12 — geração falhou".
 
 ## Docs a atualizar
 

@@ -18,7 +18,7 @@
 - [x] Docs: edge-functions, modelo-de-dados, ADR-0181 (aceito), deploy, Fiscal/Estoque no vault.
 - [x] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge (feito em 2026-10-16); validação de runtime na Zaven (Diego).
 - [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
-- [ ] Plano 2b-2 (D-12): inventário no pacote do contador (custo médio ponderado móvel; unidades sem nota; sem separação Full no banco).
+- [ ] Plano 2b-2 (D-12): ver a seção "Pacote do contador — inventário" abaixo.
 
 ## Pacote do contador — vendas (ADR-0181, Plano 2a) — EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1)
 
@@ -38,7 +38,16 @@
 - [x] Merge na main (fast-forward, CI verde).
 - [x] Redeploy da edge `baixar-notas-venda` via CLI completa; conferir versão ativa pós-deploy (sem ele, a falha de auditoria em suporte perde o `codigo`).
 - [x] Task 7 — validação de runtime (ver ADR-0181): org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `compras/xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
-- [ ] Plano 2b-2 (inventário, D-12) pendente.
+- [ ] Plano 2b-2 (inventário, D-12): ver a seção abaixo.
+
+## Pacote do contador — inventário (ADR-0181, Plano 2b-2) — implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)
+
+- [x] Spec, plano e ADR-0181 (decisões 1–4), edge-functions, modelo-de-dados, glossário, project-status, Fiscal/Estoque no vault.
+- [x] Migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`, `20261017002438_adr181_inventario_confirmar` (escritas, testadas em transação desfeita).
+- [x] Edge `inventario`, relatório xlsx/PDF, card e diálogo de contagem em `/estoque`.
+- [ ] Revisão final do diff (Grok 4.7 xhigh), CI verde, merge fast-forward.
+- [ ] Deploy: `supabase db push` das 3 migrations (`npm run db:check`) e `supabase functions deploy inventario`; conferir versão ativa e o job `inventario-foto-31-12` em `cron.job`.
+- [ ] Validação de runtime com org de teste descartável (foto à mão, contagem com falta e sobra, confirmação, pacote de dezembro).
 
 ## Fiscal: portabilidade opcional + CEP automático (ADR-0135, emenda 2026-10-15) — branch `worktree-fiscal-ux-regime-cep`
 

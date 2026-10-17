@@ -1459,6 +1459,39 @@ Bucket **`notas-compra`** (privado). Path com a org como 1º segmento (`{org_id}
 p_status)`, `registrar_entrada_nota_pendente(...)` (entrada com ref `nfe:...`) e
 `codigos_pai_da_nota(p_org, p_chave)`.
 
+
+## Inventário (ADR-0181 D-12, Plano 2b-2)
+
+Implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada). Migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`
+e `20261017002438_adr181_inventario_confirmar`. Escrita só por `service_role` (edge `inventario`) e pelo `pg_cron`.
+
+### `inventarios`
+Cabeçalho da foto: `id`, `org_id`, `data_base` (`unique (org_id, data_base)`), `gerado_em`, `origem` (`cron|manual`),
+`cnpj`/`inscricao_estadual`/`razao_social` congelados de `empresa_fiscal`, `status` (`aberto|confirmado|falhou`), `erro`,
+`versao` (sobe a cada `salvar_contagem_inventario`), `confirmado_por` (sem FK, de propósito)/`confirmado_em`. Imutável por trigger
+(só contagem/confirmação mexem).
+
+### `inventarios_itens`
+Um SKU por linha, inclusive saldo 0: foto congelada (`codigo`, `codigo_pai`, `descricao`, `ncm`, `unidade`, `cor`, `tamanho`,
+`quantidade_sistema`, `qtd_valorizada`, `qtd_sem_nota`, `custo_medio numeric(14,6)`, `valor_total`, `marcas text[]`), contagem
+(`quantidade_contada`, `justificativa`) e resultado da confirmação (`qtd_final`, `qtd_valorizada_final`, `qtd_sem_nota_final`,
+`valor_final`). FK composta `(inventario_id, org_id)`; `unique (inventario_id, codigo)`; insert bloqueado após a geração.
+
+### `inventario_corte_backfill`
+`(org_id, codigo)` -> `ate_ordem`. Marco por SKU do histórico anterior à coluna `ordem`; o replay trata o corte como início de camada.
+RLS ligada sem policy (sem acesso de `anon`/`authenticated`).
+
+### Coluna nova em tabela existente
+`estoque_movimentos.ordem bigint` — ordem total do ledger, atribuída por trigger (`estoque_movimentos_atribuir_ordem`, sequência própria);
+o backfill numerou o histórico por `(criado_em, id)`.
+
+### Funções
+`inventario_calcular(p_org)` (replay do ledger com camadas de nota), `inventario_data_base(p_agora)`, `inventario_orgs_elegiveis()`,
+`gerar_foto_inventario_org(p_org, p_data_base, p_origem)`, procedure `gerar_fotos_inventario(p_data_base, p_origem, p_org)` (uma org por
+transação), `inventario_hoje_json(p_org)`, `inventario_foto_json(p_org, p_data_base)`, `salvar_contagem_inventario(p_org, p_id, p_versao, p_itens)`
+e `confirmar_inventario(p_org, p_id, p_versao, p_user)`. Job `pg_cron` `inventario-foto-31-12`, `59 2 1 1 *` (GMT = 23:59 em São Paulo):
+`call public.gerar_fotos_inventario()`.
+
 ---
 
 ## Storage

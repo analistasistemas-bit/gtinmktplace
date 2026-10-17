@@ -55,6 +55,7 @@
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | importar-nota-compra | **true** | HTTP (frontend) | sim (advisory lock por `org+chave`; `ref` do ledger `nfe:{chave}:{nItem}:{codigo}`) |
 | desfazer-nota-compra | **true** | HTTP (frontend, **admin**) | sim (repetir devolve `jaEstava: true`) |
+| inventario | **true** | HTTP (frontend; leituras membro, `salvar`/`confirmar` **admin**) | sim (`salvar` por versão; `confirmar` por movimento com ref do inventário) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
 | **Preço por Variação (ADR-0161)** ||||
@@ -1103,6 +1104,12 @@ falha ao ler `organizations` não libera.
   importada. **Admin-only** (`autorizarDesfazer`) e gate `estoque`. Chama a RPC `desfazer_nota_compra`
   (advisory lock + `FOR UPDATE` no saldo, guard de família canônica). Idempotente: nota já desfeita
   responde `{ jaEstava: true }` sem mexer no saldo. Resposta `{ pushOk, jaEstava }`.
+- **inventario** (ADR-0181 D-12, Plano 2b-2; implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)) — `verify_jwt = true`, gate `estoque`; `POST` com `acao`.
+  `hoje` (membro): saldo × custo médio ponderado móvel agora, via `inventario_hoje_json` (não é foto). `foto` com `data_base: 'AAAA-12-31'`
+  (membro): cabeçalho + itens via `inventario_foto_json(p_org, p_data_base)`. `salvar` com `inventario_id`, `versao`, `itens` (**admin**):
+  `salvar_contagem_inventario`; versão obsoleta → 409. `confirmar` com `inventario_id`, `versao` (**admin**): `confirmar_inventario`
+  converte a diferença em movimento (falta = ajuste relativo, sobra = entrada sem custo; justificativa obrigatória) e enfileira o push de estoque.
+  Erros de regra → 400/404/409 com `{ error }`. A foto em si nasce no `pg_cron`, não na edge.
 - **baixar-notas-venda** (ADR-0181 Plano 2a; em produção desde 2026-10-16, v1) —
   repassa o zip de XMLs fiscais do mês (download por período do ML) para o pacote do contador montado no navegador.
   `verify_jwt = true`, gate `estoque`, conexão ML da org; `POST { mes: 'AAAA-MM' }`. Devolve `application/octet-stream`
