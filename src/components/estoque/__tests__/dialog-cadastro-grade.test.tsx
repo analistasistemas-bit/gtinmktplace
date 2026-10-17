@@ -997,6 +997,10 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
   });
 
   it('Infantil + meninos -> Trocar tipo -> Calçado: gênero zera e o botão trava até escolher gênero adulto', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
     tiposProdutoMock.mockReturnValue({ data: ['roupa', 'calcado'] });
     const user = userEvent.setup();
     renderGrade();
@@ -1014,5 +1018,8 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    expect(cadastrarProdutoMock.mock.calls[0][0]).toMatchObject({ gradeTamanho: 'calcado', genero: 'masculino' });
   });
 });
