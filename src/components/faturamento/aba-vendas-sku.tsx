@@ -280,7 +280,7 @@ export function AbaVendasSku() {
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <Select value={familia || TODOS} onValueChange={(v) => setFamilia(v === TODOS ? '' : v)}>
           <SelectTrigger size="sm" className={SELECT} aria-label="Família"><SelectValue /></SelectTrigger>
-          <SelectContent>
+          <SelectContent className="max-w-(--radix-select-trigger-width) min-w-(--radix-select-trigger-width)">
             <SelectItem value={TODOS}>Todas as famílias</SelectItem>
             {opcoes.familias.map((f) => <SelectItem key={f} value={f}>{formatarNomeProduto(f)}</SelectItem>)}
           </SelectContent>

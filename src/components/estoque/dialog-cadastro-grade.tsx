@@ -860,7 +860,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
       {/* Uma confirmação só para toda ação destrutiva da grade — mesmo padrão já usado no
           projeto (familia-expanded.tsx, lote-card.tsx, dialog-cadastro-produto.tsx). */}
       <AlertDialog open={!!confirmar} onOpenChange={(o) => { if (!o) setConfirmar(null); }}>
-        <AlertDialogContent>
+        {/* Foco no painel, não num botão: o Enter que escolheu a opção do Select não pode ativar "Continuar aqui". */}
+        <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmar?.titulo}</AlertDialogTitle>
             <AlertDialogDescription>{confirmar?.texto}</AlertDialogDescription>

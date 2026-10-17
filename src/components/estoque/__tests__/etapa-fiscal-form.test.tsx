@@ -12,6 +12,21 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
     const valores = (await screen.findAllByRole('option')).map((o) => o.textContent!.split(' — ')[0]);
     expect(valores).toEqual(['0', '3', '4', '5', '8']);
   });
+  it.each([['0', { fci: '' }], ['3', {}], ['4', { fci: '' }], ['5', {}], ['8', {}]])(
+    'escolher a origem %s no select envia { origemNfe } ao onMudar', async (codigo, extra) => {
+      const onMudar = vi.fn();
+      render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={onMudar}
+        sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} />);
+      await escolherNoSelect(userEvent.setup(), /origem fiscal/i, codigo);
+      expect(onMudar).toHaveBeenCalledWith({ origemNfe: codigo, ...extra });
+    });
+  it('escolher um CSOSN no select envia { tributacaoIcms } ao onMudar', async () => {
+    const onMudar = vi.fn();
+    render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={onMudar}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} />);
+    await escolherNoSelect(userEvent.setup(), 'CSOSN', '102');
+    expect(onMudar).toHaveBeenCalledWith({ tributacaoIcms: '102' });
+  });
   it('sugestão de NCM aparece marcada como sugestão e só entra no clique', () => {
     const aplicar = vi.fn();
     render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={vi.fn()}
