@@ -1,0 +1,202 @@
+import { describe, it, expect } from 'vitest';
+import {
+  atualizarSecaoTamanhos,
+  linhaTamanhos,
+  montarUserPrompt,
+  posProcessarDescricao,
+  tamanhosDaGradeCopy,
+} from '../copywriter-prompt';
+
+// ADR-0183 — fixtures reais: Conjunto 00000043 (Estampa × 2/4/6/8, infantil) e Short 00000010
+// (cores × P–GG, grade_tamanho null). No cadastro em grade `nome == cor`.
+const CONJUNTO = 'Conjunto Infantil Proteção Solar UV';
+const variacoesConjunto = ['Estampa 1', 'Estampa 2', 'Estampa 3'].flatMap((cor, i) =>
+  ['8', '2', '6', '4'].map((tamanho, j) => ({
+    codigo: `${i}${j}`, cor, nome: cor, preco: 59.9, tamanho, excluida_da_publicacao: false,
+  }))
+);
+const variacoesShort = ['Cinza', 'Amarelo'].flatMap((cor) =>
+  ['GG', 'P', 'M', 'G'].map((tamanho) => ({ codigo: cor + tamanho, cor, nome: cor, preco: 89, tamanho }))
+);
+
+const DESCRICAO_IA = [
+  '🧵 CONJUNTO INFANTIL COM PROTEÇÃO UV',
+  '',
+  'Parágrafo um.',
+  '',
+  '✅ POR QUE ESCOLHER',
+  '',
+  '✔ Proteção UV 50+',
+  '✔ Comprimento de 40 cm na blusa',
+  '',
+  '📌 ESPECIFICAÇÕES',
+  '',
+  '• Composição: 85% Poliamida 15% Elastano',
+  '• Proteção: FPU 50+',
+  '• Tamanho: 2 a 8 anos',
+  '• Comprimento: 40 cms',
+  '',
+  '🎯 INDICAÇÕES DE USO',
+  '',
+  '✔ Praia',
+  '✔ Piscina',
+  '',
+  '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+  '',
+  '▪ Qual a composição? 85% Poliamida 15% Elastano.',
+  '▪ Qual a medida da blusa? 40 centimetros.',
+  '▪ Tem proteção UV? Sim, FPU 50+.',
+  '',
+  '🎨 ESTAMPAS DISPONÍVEIS',
+  '',
+  '- Estampa 1',
+  '- Estampa 2',
+  '- Estampa 3',
+  '',
+  '📦 O QUE VOCÊ RECEBE',
+  '',
+  '• 1 conjunto',
+  '',
+  'Garanta o conjunto e aproveite o sol com proteção.',
+].join('\n');
+
+describe('tamanhosDaGradeCopy (ADR-0183)', () => {
+  it('grade infantil → tamanhos distintos em ordem numérica', () => {
+    expect(tamanhosDaGradeCopy(variacoesConjunto)).toEqual(['2', '4', '6', '8']);
+  });
+  it('letras → ordem P, M, G, GG', () => {
+    expect(tamanhosDaGradeCopy(variacoesShort)).toEqual(['P', 'M', 'G', 'GG']);
+  });
+  it('sem tamanho (simples, kit, partição) → null', () => {
+    expect(tamanhosDaGradeCopy([{ codigo: '1', cor: 'Azul', preco: 1 }])).toBeNull();
+  });
+  it('mista → null', () => {
+    expect(tamanhosDaGradeCopy([
+      { codigo: '1', cor: 'Azul', preco: 1, tamanho: 'P' },
+      { codigo: '2', cor: 'Azul', preco: 1, tamanho: null },
+    ])).toBeNull();
+  });
+  it('excluída da publicação não conta', () => {
+    expect(tamanhosDaGradeCopy([
+      { codigo: '1', cor: 'Azul', preco: 1, tamanho: 'P' },
+      { codigo: '2', cor: 'Azul', preco: 1, tamanho: 'G', excluida_da_publicacao: true },
+    ])).toEqual(['P']);
+  });
+});
+
+describe('linhaTamanhos', () => {
+  it('infantil ganha "anos"', () => {
+    expect(linhaTamanhos(['2', '4', '6', '8'])).toBe('Tamanhos disponíveis: 2, 4, 6 e 8 anos.');
+  });
+  it('letras sem sufixo; tamanho único sem "e"', () => {
+    expect(linhaTamanhos(['P', 'M', 'G', 'GG'])).toBe('Tamanhos disponíveis: P, M, G e GG.');
+    expect(linhaTamanhos(['M'])).toBe('Tamanhos disponíveis: M.');
+  });
+});
+
+describe('posProcessarDescricao em grade (ADR-0183)', () => {
+  const out = posProcessarDescricao(DESCRICAO_IA, CONJUNTO, 'Conjunto com proteção UV 50+.', variacoesConjunto);
+
+  it('remove 🎯 e 📦 mas preserva a frase de fechamento', () => {
+    expect(out).not.toContain('🎯');
+    expect(out).not.toContain('Piscina');
+    expect(out).not.toContain('📦');
+    expect(out).not.toContain('1 conjunto');
+    expect(out.trimEnd().endsWith('Garanta o conjunto e aproveite o sol com proteção.')).toBe(true);
+  });
+
+  it('injeta 📏 entre 📌 e ❓ com os tamanhos e o aviso das fotos', () => {
+    expect(out).toContain('📏 GUIA DE TAMANHOS');
+    expect(out).toContain('Tamanhos disponíveis: 2, 4, 6 e 8 anos.');
+    expect(out).toContain('Confira nas fotos as medidas em centímetros de cada peça antes de escolher o tamanho.');
+    expect(out.indexOf('📌')).toBeLessThan(out.indexOf('📏'));
+    expect(out.indexOf('📏')).toBeLessThan(out.indexOf('❓'));
+    expect(out.match(/📏/g)).toHaveLength(1);
+  });
+
+  it('nenhum bullet com medida sobrevive; rótulo Tamanho sai; prosa e percentuais ficam', () => {
+    expect(out).not.toMatch(/40 cm/);
+    expect(out).not.toContain('Comprimento');
+    expect(out).not.toContain('• Tamanho');
+    expect(out).toContain('85% Poliamida');
+    expect(out).toContain('Parágrafo um.');
+  });
+
+  it('pergunta fixa de tamanho entra uma vez e conta no mínimo de 3', () => {
+    expect(out.match(/Como escolher o tamanho\?/g)).toHaveLength(1);
+    expect(out).toContain('▪ Tem proteção UV? Sim, FPU 50+.');
+  });
+
+  it('idempotente', () => {
+    expect(posProcessarDescricao(out, CONJUNTO, '', variacoesConjunto)).toBe(out);
+  });
+
+  it('seção ❓ ausente: 2 specs mapeáveis + fixa reconstroem a seção', () => {
+    const semPerguntas = [
+      '🧵 SHORT', '', 'Texto.', '', '📌 ESPECIFICAÇÕES', '', '• Composição: Linho', '• Marca: Mauricinho',
+      '', '🎨 CORES DISPONÍVEIS', '', '- Amarelo', '- Cinza', '', 'Escolha o seu.',
+    ].join('\n');
+    const r = posProcessarDescricao(semPerguntas, 'Short Linho', '', variacoesShort);
+    expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('▪ Qual a composição? Linho.');
+    expect(r).toContain('Como escolher o tamanho?');
+    expect(r).toContain('Tamanhos disponíveis: P, M, G e GG.');
+    expect(r.indexOf('📏')).toBeLessThan(r.indexOf('❓'));
+  });
+
+  it('📏 escrito pela IA é substituído pelo do sistema', () => {
+    const comGuiaIA = DESCRICAO_IA.replace('🎯 INDICAÇÕES DE USO', '📏 GUIA DE TAMANHOS\n\n- 2 anos: 50 cm\n\n🎯 INDICAÇÕES DE USO');
+    const r = posProcessarDescricao(comGuiaIA, CONJUNTO, '', variacoesConjunto);
+    expect(r.match(/📏/g)).toHaveLength(1);
+    expect(r).not.toContain('50 cm');
+  });
+
+  it('📏 da IA em prosa no meio do template sai inteiro, fechamento preservado, idempotente', () => {
+    const comGuiaProsa = DESCRICAO_IA.replace(
+      '🎯 INDICAÇÕES DE USO',
+      '📏 GUIA DE TAMANHOS\n\nO tamanho 2 anos veste crianças de 50 cm de quadril.\n\n🎯 INDICAÇÕES DE USO',
+    );
+    const r = posProcessarDescricao(comGuiaProsa, CONJUNTO, '', variacoesConjunto);
+    expect(r).not.toContain('50 cm');
+    expect(r.match(/Tamanhos disponíveis/g)).toHaveLength(1);
+    expect(r.trimEnd().endsWith('Garanta o conjunto e aproveite o sol com proteção.')).toBe(true);
+    expect(posProcessarDescricao(r, CONJUNTO, '', variacoesConjunto)).toBe(r);
+  });
+});
+
+describe('não-grade inalterado (ADR-0183)', () => {
+  it('sem tamanho, 🎯/📦 continuam e não há 📏', () => {
+    const r = posProcessarDescricao(DESCRICAO_IA, 'Fita', '', [{ codigo: '1', cor: 'Estampa 1', nome: 'Estampa 1', preco: 1 }]);
+    expect(r).toContain('🎯 INDICAÇÕES DE USO');
+    expect(r).toContain('📦 O QUE VOCÊ RECEBE');
+    expect(r).not.toContain('📏');
+    expect(r).toContain('Comprimento: 40 cms');
+  });
+});
+
+describe('montarUserPrompt em grade', () => {
+  it('rótulo ESTAMPAS quando toda cor é "Estampa N"; avisa grade; não lista tamanhos', () => {
+    const p = montarUserPrompt({ nome: CONJUNTO, descricao_detalhado: 'x', variacoes: variacoesConjunto });
+    expect(p).toContain('"🎨 ESTAMPAS DISPONÍVEIS"');
+    expect(p.match(/- Estampa 1/g)).toHaveLength(1);
+    expect(p).toContain('GRADE');
+    expect(p).not.toContain('- 2\n');
+  });
+  it('cores reais → CORES DISPONÍVEIS', () => {
+    const p = montarUserPrompt({ nome: 'Short', descricao_detalhado: 'x', variacoes: variacoesShort });
+    expect(p).toContain('"🎨 CORES DISPONÍVEIS"');
+  });
+});
+
+describe('atualizarSecaoTamanhos (UPDATE)', () => {
+  const base = '📏 GUIA DE TAMANHOS\n\nTamanhos disponíveis: 2, 4 e 6 anos.\n\nConfira nas fotos.';
+  it('reescreve só a linha de tamanhos e é idempotente', () => {
+    const r = atualizarSecaoTamanhos(base, ['2', '4', '6', '10']);
+    expect(r).toBe('📏 GUIA DE TAMANHOS\n\nTamanhos disponíveis: 2, 4, 6 e 10 anos.\n\nConfira nas fotos.');
+    expect(atualizarSecaoTamanhos(r, ['2', '4', '6', '10'])).toBe(r);
+  });
+  it('sem a linha ou sem tamanhos → intacto', () => {
+    expect(atualizarSecaoTamanhos('texto qualquer', ['P'])).toBe('texto qualquer');
+    expect(atualizarSecaoTamanhos(base, [])).toBe(base);
+  });
+});

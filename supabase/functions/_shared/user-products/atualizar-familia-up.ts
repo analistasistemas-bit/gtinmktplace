@@ -11,6 +11,7 @@ import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
 import { criarItemML, atualizarSecaoCores } from '../ml/criar-item.ts';
+import { atualizarSecaoTamanhos, tamanhosDaGradeCopy } from '../ai/copywriter-prompt.ts';
 import { atualizarStatusML, atualizarItemPlanoML } from '../ml/atualizar-item.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
@@ -461,7 +462,9 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       const cores = [...new Set(
         variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)),
       )];
-      const novaDescricao = atualizarSecaoCores(familia.descricao_ml, cores);
+      // ADR-0183: tamanho novo na grade também reescreve a linha "Tamanhos disponíveis" do 📏.
+      const tamanhos = tamanhosDaGradeCopy(variacoes.map((v) => ({ codigo: v.codigo, cor: v.cor, preco: 0, tamanho: v.tamanho }))) ?? [];
+      const novaDescricao = atualizarSecaoCores(atualizarSecaoTamanhos(familia.descricao_ml, tamanhos), cores);
 
       let todosOk = true;
       const falhas: string[] = [];

@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
-      .select('id, codigo, gtin, cor, cor_origem, nome, preco, custo, preco_editado_pelo_operador, imagem_path, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+      .select('id, codigo, gtin, cor, cor_origem, nome, tamanho, excluida_da_publicacao, preco, custo, preco_editado_pelo_operador, imagem_path, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id);
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
@@ -231,6 +231,9 @@ Deno.serve(async (req) => {
       cor: v.cor,
       preco: Number(v.preco),
       nome: v.nome,
+      // ADR-0183: tamanho decide o template de grade (guia 📏, sem 🎯/📦).
+      tamanho: v.tamanho,
+      excluida_da_publicacao: v.excluida_da_publicacao,
     }));
     const copy = await gerarCopy({
       nome: claimed.nome_pai,

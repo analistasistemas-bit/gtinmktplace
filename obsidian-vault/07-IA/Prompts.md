@@ -34,6 +34,16 @@ livre. Ver [[IA]] (por que closed-set).
 Usado como camada 2 (fallback) da resolução de cor, quando o dicionário de texto não resolve.
 Ver [[Processamento IA]].
 
+## Copy de grade (ADR-0183, 2026-10-17)
+
+Família em grade usa o bloco `PRODUTO EM GRADE` do `SYSTEM` (`_shared/ai/copywriter-prompt.ts`),
+que segue o guia "Descrição que facilita a compra".
+
+- **O código insere:** o guia 📏 e a pergunta de tamanho.
+- **O código remove:** 🎯, 📦 e qualquer bullet com medida.
+
+A descrição nunca cita centímetros: as medidas de cada peça estão nas fotos.
+
 ## Princípio comum
 
 Todos os prompts de produção são desenhados para **restringir** a liberdade do modelo (closed-

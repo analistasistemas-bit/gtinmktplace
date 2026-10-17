@@ -8,6 +8,7 @@ import {
   ROTULO_GENERICO,
   resolverEixoVariacao,
 } from './eixo-variacao.ts';
+import { classificarFamilia, TAMANHOS_INFANTIL, TAMANHOS_ROUPA } from '../produto/tipos-produto-valores.ts';
 
 export interface InputCopy {
   nome: string;
@@ -17,7 +18,12 @@ export interface InputCopy {
    * que é o comportamento anterior. Opcional de propósito: `titulo-particao.ts` monta variações
    * sintéticas que não têm nome de planilha.
    */
-  variacoes: Array<{ codigo: string; cor: string | null; preco: number; nome?: string | null }>;
+  variacoes: Array<{
+    codigo: string; cor: string | null; preco: number; nome?: string | null;
+    /** ADR-0183: com tamanho em toda variação incluída, a família é grade e ganha o template de grade. */
+    tamanho?: string | null;
+    excluida_da_publicacao?: boolean;
+  }>;
   unidade?: string | null;
   categoria_hint?: 'linhas' | 'botoes' | 'fitas';
 }
@@ -218,7 +224,11 @@ const RE_BULLET_ESPECIFICACAO = /^\s*•\s*([^:]+?)\s*:\s*(.+?)\s*$/;
  * espírito de garantirLargura/MetragemDescricao: dado da fonte cravado deterministicamente,
  * porque o prompt pede mas não garante.
  */
-export function garantirPerguntas(descricao: string): string {
+export function garantirPerguntas(
+  descricao: string,
+  /** ADR-0183: perguntas fixas (já com "▪ ") que entram no fim da seção e contam no mínimo. */
+  fixas: string[] = [],
+): string {
   if (descricao.includes(SECAO_PERGUNTAS)) return descricao;
 
   const idxSecao = descricao.indexOf(SECAO_ESPECIFICACOES);
@@ -243,6 +253,7 @@ export function garantirPerguntas(descricao: string): string {
     const valor = /[.!?]$/.test(m[2]) ? m[2] : `${m[2]}.`;
     perguntas.push(`▪ ${par[1]} ${valor}`);
   }
+  perguntas.push(...fixas);
   if (perguntas.length < MIN_PERGUNTAS) return descricao;
 
   return inserirAntesDoProximoCabecalho(
@@ -333,7 +344,10 @@ export function garantirDisclaimerTonalidade(descricao: string): string {
   return [...linhas.slice(0, fim), '', DISCLAIMER_TONALIDADE, ...linhas.slice(fim)].join('\n');
 }
 
-const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚]';
+// 📏 = guia de tamanhos da grade (ADR-0183), só existe em família grade.
+const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚📏]';
+const ehCabecalho = (linha: string) => new RegExp(`^${EMOJIS_CABECALHO}\\s*\\S`, 'u').test(linha.trim());
+const ehBullet = (linha: string) => /^[✔•▪-]\s+/.test(linha.trim());
 
 /**
  * O schema garante texto, mas não garante que o modelo respeite as linhas em branco do
@@ -346,8 +360,6 @@ export function formatarDescricao(descricao: string): string {
     .split('\n')
     .map((linha) => linha.trim())
     .filter(Boolean);
-  const ehCabecalho = (linha: string) => new RegExp(`^${EMOJIS_CABECALHO}\\s*\\S`, 'u').test(linha);
-  const ehBullet = (linha: string) => /^[✔•▪-]\s+/.test(linha);
   const saida: string[] = [];
   let emPerguntas = false;
 
@@ -366,6 +378,133 @@ export function formatarDescricao(descricao: string): string {
   }
 
   return saida.join('\n');
+}
+
+// ─── ADR-0183: produto em grade ────────────────────────────────────────────────────────────
+
+/** Tamanhos das variações incluídas, em ordem canônica (P, M, G, GG, depois numérica), ou null
+ *  quando a família não é grade (simples, mista, kit e partição não passam tamanho). */
+export function tamanhosDaGradeCopy(variacoes: InputCopy['variacoes']): string[] | null {
+  const vivas = variacoes.map((v) => ({ tamanho: v.tamanho ?? null, excluida_da_publicacao: !!v.excluida_da_publicacao }));
+  if (classificarFamilia(vivas) !== 'grade') return null;
+  const tamanhos = [...new Set(
+    variacoes.filter((v) => !v.excluida_da_publicacao).map((v) => (v.tamanho ?? '').trim()),
+  )];
+  const letra = (t: string) => (TAMANHOS_ROUPA as readonly string[]).indexOf(t);
+  return tamanhos.sort((a, b) => {
+    const [ia, ib] = [letra(a), letra(b)];
+    if (ia > -1 || ib > -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    return a.localeCompare(b, 'pt-BR', { numeric: true });
+  });
+}
+
+const PREFIXO_TAMANHOS = 'Tamanhos disponíveis:';
+
+/** "Tamanhos disponíveis: 2, 4, 6 e 8 anos." — "anos" só quando a grade inteira é infantil
+ *  (2–16, disjunta das outras grades). */
+export function linhaTamanhos(tamanhos: string[]): string {
+  const lista = tamanhos.length > 1
+    ? `${tamanhos.slice(0, -1).join(', ')} e ${tamanhos[tamanhos.length - 1]}`
+    : tamanhos[0];
+  const infantil = tamanhos.every((t) => (TAMANHOS_INFANTIL as readonly string[]).includes(t));
+  return `${PREFIXO_TAMANHOS} ${lista}${infantil ? ' anos' : ''}.`;
+}
+
+/** UPDATE (ADR-0016): a copy não é regenerada, então tamanho novo só aparece se esta linha for
+ *  reescrita — simétrica a `atualizarSecaoCores`. Sem a linha (família antiga) fica intacta. */
+export function atualizarSecaoTamanhos(descricao: string, tamanhos: string[]): string {
+  if (tamanhos.length === 0) return descricao;
+  return descricao
+    .split('\n')
+    .map((l) => (l.trim().startsWith(PREFIXO_TAMANHOS) ? linhaTamanhos(tamanhos) : l))
+    .join('\n');
+}
+
+const SECAO_GUIA = '📏 GUIA DE TAMANHOS';
+// Sem número de medida na descrição (decisão do Diego): as medidas de cada peça estão nas fotos,
+// e a tabela do chart do ML é de CORPO, não de peça.
+const AVISO_FOTOS = 'Confira nas fotos as medidas em centímetros de cada peça antes de escolher o tamanho.';
+const PERGUNTA_TAMANHO = '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.';
+
+/** Remove a seção do emoji. `ateProximoCabecalho=false` leva só cabeçalho + bullets/linhas vazias,
+ *  preservando a frase de fechamento em prosa que vem depois de 📦 (última seção do template). */
+function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boolean): string {
+  const linhas = descricao.split('\n');
+  const ini = linhas.findIndex((l) => l.trim().startsWith(emoji));
+  if (ini === -1) return descricao;
+  let fim = ini + 1;
+  while (
+    fim < linhas.length &&
+    (ateProximoCabecalho ? !ehCabecalho(linhas[fim]) : linhas[fim].trim() === '' || ehBullet(linhas[fim]))
+  ) fim++;
+  return [...linhas.slice(0, ini), ...linhas.slice(fim)].join('\n');
+}
+
+const RE_MEDIDA = /\d+(?:[.,]\d+)?\s*(?:cm|cms|mm|m|metros?|cent[ií]metros?|mil[ií]metros?)\b/i;
+const RE_ROTULO_MEDIDA = /^(tamanhos?|medidas?|dimens[õo]es|comprimento|largura|altura|metragem)$/i;
+
+/** Bullet com medida ou com rótulo de medida/tamanho sai INTEIRO — mesma doutrina de
+ *  `removerPerguntasIncompletas`: bloco estruturado, nunca corte no meio da prosa. */
+function removerBulletsDeMedida(descricao: string): string {
+  return descricao
+    .split('\n')
+    .filter((l) => {
+      if (!ehBullet(l)) return true;
+      const rotulo = l.match(RE_BULLET_ESPECIFICACAO)?.[1];
+      return !RE_MEDIDA.test(l) && !(rotulo && RE_ROTULO_MEDIDA.test(rotulo));
+    })
+    .join('\n');
+}
+
+/** Pergunta fixa no fim da lista de ❓, se a seção existir e ainda não a tiver. */
+function garantirPerguntaTamanho(descricao: string): string {
+  if (!descricao.includes(SECAO_PERGUNTAS) || descricao.includes(PERGUNTA_TAMANHO)) return descricao;
+  const linhas = descricao.split('\n');
+  const ini = linhas.findIndex((l) => l.includes(SECAO_PERGUNTAS));
+  let ultima = ini;
+  for (let i = ini + 1; i < linhas.length && !ehCabecalho(linhas[i]); i++) {
+    if (linhas[i].trim().startsWith('▪')) ultima = i;
+  }
+  linhas.splice(ultima + 1, 0, PERGUNTA_TAMANHO);
+  return linhas.join('\n');
+}
+
+/** Guia antes do primeiro cabeçalho que vem DEPOIS de 📌 (ordem do infográfico: specs → guia → FAQ). */
+function inserirGuiaTamanhos(descricao: string, tamanhos: string[]): string {
+  const bloco = `${SECAO_GUIA}\n\n${linhaTamanhos(tamanhos)}\n\n${AVISO_FOTOS}`;
+  const desde = Math.max(descricao.indexOf(SECAO_ESPECIFICACOES), 0);
+  const posicoes = CABECALHOS_APOS_ESPECIFICACOES.map((h) => descricao.indexOf(h, desde)).filter((i) => i > -1);
+  const idx = posicoes.length > 0 ? Math.min(...posicoes) : descricao.length;
+  return `${descricao.slice(0, idx).trimEnd()}\n\n${bloco}\n\n${descricao.slice(idx)}`.trim();
+}
+
+/** A ordem é parte da correção: medida sai ANTES de `garantirPerguntas` (senão um bullet
+ *  "Medidas" vira pergunta com cm), e a fixa entra ANTES da poda (conta no mínimo de 3). 📏 só é
+ *  injetado no fim, então as fronteiras globais dos guards não precisam conhecê-lo. Largura,
+ *  metragem e conteúdo da embalagem não rodam: injetariam medida ou recriariam 📦. */
+function posProcessarGrade(descricao: string, tamanhos: string[]): string {
+  let d = removerSecao(removerSecao(descricao, '🎯', false), '📦', false);
+  // ponytail: 📏 da IA sai até o próximo cabeçalho; se a IA o puser por último, leva a frase final junto.
+  d = removerSecao(d, '📏', true);
+  d = garantirPerguntaTamanho(removerBulletsDeMedida(d));
+  d = garantirPerguntas(removerPerguntasIncompletas(d), [PERGUNTA_TAMANHO]);
+  d = inserirGuiaTamanhos(garantirPerguntaTamanho(d), tamanhos);
+  return formatarDescricao(garantirDisclaimerTonalidade(d));
+}
+
+/** Seção 🎨 da grade: no cadastro em grade `nome == cor`, então o eixo do ADR-0115 (sufixo do
+ *  nome) não se resolve. Rótulo ESTAMPAS só quando toda opção é "Estampa N" — ambos casam
+ *  `RE_HEADER_VARIACAO` do UPDATE. Tamanho nunca vira item aqui: o UPDATE troca a lista pelas cores. */
+function eixoDaGrade(variacoes: InputCopy['variacoes']): { rotulo: string; valores: string[] } | null {
+  const cores = [...new Set(
+    variacoes.filter((v) => !v.excluida_da_publicacao).map((v) => v.cor)
+      .filter((c): c is string => !ehCorIndefinida(c)),
+  )];
+  if (cores.length === 0) return null;
+  const estampas = cores.every((c) => /^estampa\s*\d+$/i.test(c.trim()));
+  return estampas
+    ? { rotulo: ROTULO_ESTAMPA, valores: cores.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })) }
+    : { rotulo: ROTULO_COR, valores: ordenarCoresAlfabetica(cores) };
 }
 
 /**
@@ -393,6 +532,9 @@ export function posProcessarDescricao(
    */
   variacoes: InputCopy['variacoes'] = [],
 ): string {
+  const tamanhos = tamanhosDaGradeCopy(variacoes);
+  if (tamanhos) return posProcessarGrade(descricao, tamanhos);
+
   const podada = removerPerguntasIncompletas(descricao);
   const ancorada = garantirMetragemDescricao(
     garantirLarguraDescricao(podada, nomePai, descricaoPai),
@@ -651,6 +793,18 @@ quando a fonte declara um pacote com mais de uma peça.]
 [Frase final de 1 linha — feche pelo ganho concreto que os dados deste produto sustentam, não por urgência genérica. "Garanta já o seu" é insuficiente.]
 
 ═══════════════════════════════════════════════════════
+PRODUTO EM GRADE (só quando o input disser "vendido em GRADE")
+═══════════════════════════════════════════════════════
+Roupa ou calçado vendido em tamanhos. O template acima vale, com estas regras por cima — o comprador precisa achar a informação rápido e sem repetição:
+- Abertura: no máximo 2 parágrafos curtos, de até 4 linhas cada.
+- ✅ POR QUE ESCOLHER: no máximo 6 bullets.
+- 📌 ESPECIFICAÇÕES: no máximo 8 bullets. NUNCA inclua tamanho, medida, comprimento, largura, altura ou centímetros — as medidas de cada peça estão nas fotos do anúncio.
+- NÃO escreva as seções 🎯 INDICAÇÕES DE USO e 📦 O QUE VOCÊ RECEBE: repetem os benefícios. NÃO escreva guia de tamanhos: o sistema insere o guia.
+- ❓ PERGUNTAS: só sobre dados da fonte (composição, proteção, cuidados...). NÃO escreva pergunta sobre tamanho ou medida: o sistema insere.
+- Em NENHUM lugar da descrição escreva número de medida (cm, mm, metros).
+- Frase final: convite direto para comprar, ancorado no ganho concreto que os dados sustentam.
+
+═══════════════════════════════════════════════════════
 TOM E ESTILO
 ═══════════════════════════════════════════════════════
 Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 ❓ 🎨 📦) e nos bullets (✔ • - ▪). Evite emojis decorativos no meio dos parágrafos.
@@ -662,7 +816,10 @@ export function montarUserPrompt(input: InputCopy): string {
   // vence a cor, que na melhor hipótese é dicionário e na pior é o Vision adivinhando pela foto
   // — foi assim que uma família de 7 estampas de Natal foi anunciada como "Verde Musgo" e
   // "Vermelho". Sem eixo derivável, tudo segue pelo caminho de cor de sempre.
-  const eixo = resolverEixoVariacao(input.variacoes, input.nome, input.descricao_detalhado);
+  const grade = tamanhosDaGradeCopy(input.variacoes) !== null;
+  const eixo = grade
+    ? eixoDaGrade(input.variacoes)
+    : resolverEixoVariacao(input.variacoes, input.nome, input.descricao_detalhado);
   // Só cores REAIS entram na descrição. 'Outra' (veredito do Vision) e o placeholder de cor
   // não-identificada são descartados — não viram item da lista nem placeholder. Sem nenhuma cor
   // real (produto sem cor, como o pote de lápis do lote #31), a seção 🎨 é omitida.
@@ -682,6 +839,7 @@ export function montarUserPrompt(input: InputCopy): string {
         `Opções (copie literalmente, não deduza cor a partir delas):\n` +
         opcoes.valores.map((v) => `- ${v}`).join('\n')
       : `Este produto NÃO tem variação. NÃO escreva a seção "🎨" nem cite cores.`,
+    grade ? 'Este produto é vendido em GRADE de tamanhos — aplique as regras do bloco PRODUTO EM GRADE.' : '',
     unidade ? `Unidade de venda: ${unidade}` : '',
     rotulo ? `Rótulo sugerido para a quantidade: "${rotulo}"` : '',
     input.categoria_hint ? `Categoria sugerida: ${input.categoria_hint}` : '',
