@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-16
 
+**Grades Infantil e Calça e guia de quadril (ADR-0182).** "Cadastrar em grade" ganha as grades Letras (P–GG), Infantil (2–16) e Calça (34–48) e gêneros infantis. No ML: chart de quadril em `SHORTS`/`PANTS`, `CLOTHING_LOTS` sem guia (`CLOTHING_LOT_SIZE`), cache `ml_size_charts` por grade. Corrige a reposição UP, que reenviava `GENDER`/`SIZE*` de `atributos_ml`. Migrations e 21 edge functions em produção; front pendente de merge. Runner `scripts/ops/ensaio-grade-ml.ts` (só `/items/validate`).
+
 **Cor User Products deixa de virar "cor nova" no UPDATE (ADR-0016, adendo).** Em UP o `ml_variation_id` é sempre nulo; o ingest e a Revisão usavam só ele e marcavam 96 cores ativas no ML (8 famílias) como novas e fora da publicação. Agora "já no anúncio" também é SKU ativo em `anuncios_externos_itens`. Dados do lote reparados no banco.
 
 **Re-import herda o preço que está no ar (ADR-0016, adendo).** O UPDATE copiava um preço do app que ficava velho quando o preço era mudado direto no ML (R$ 10,45 desde junho × R$ 19 no ar); o selo "preço alterado" acendia em 89 famílias já publicadas como "somente estoque", e "Atualizar tudo" derrubaria o preço. O `ingest-lote` lê o preço vivo via `/items/bulk`; o selo só aparece antes de publicar. Revisado por Codex e Grok.

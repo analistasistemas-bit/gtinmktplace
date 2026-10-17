@@ -199,3 +199,4 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0181 | [Entrada por nota de compra (XML) e pacote do contador](../../docs/decisions/0181-entrada-por-nota-de-compra-e-pacote-do-contador.md) — **Aceito (2026-10-15) — Plano 1 implementado na branch, aguardando deploy/merge**. Nota de compra como documento à parte (4 tabelas + bucket `notas-compra`), servidor lê o XML, custo de aquisição × precificação, descrição fiscal por família. Emenda ADR-0135 D-5. |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
+| 0182 | [Grades Infantil e Calça, guia de quadril e kits sem guia](../../docs/decisions/0182-grades-infantil-calca-e-guia-de-quadril.md) — **Aceito (2026-10-16)**. `familias.grade_tamanho`, gêneros infantis (meninos/meninas/sem_genero_infantil), chart de quadril em `SHORTS`/`PANTS`, `CLOTHING_LOTS` sem guia (`CLOTHING_LOT_SIZE` por SKU). Emenda ADR-0166 e ADR-0167. |

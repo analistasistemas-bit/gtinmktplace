@@ -207,6 +207,7 @@ Deno.serve(async (req) => {
   const errosGrade = validarGrade(variacoesEntrada, {
     vivas, tiposHabilitados: contextoGrade.tiposHabilitados,
     genero: (anterior.genero as string | null) ?? null, ehUP: contextoGrade.ehUP,
+    gradeTamanho: (anterior.grade_tamanho as string | null) ?? null,
   });
   if (errosGrade.length > 0) return json({ erros: errosGrade }, 400);
   const familiaGrade = contextoGrade.classe === 'grade';

@@ -21,7 +21,7 @@ import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
   aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
-  entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada,
+  entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada, gradeOuGeneroDivergem,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
   // rede de segurança de verdade. Um select que falhar aqui não duplica nada — cai no insert
   // normal, que se colidir é pego pelo ramo 23505 mais abaixo.
   const { data: jaCadastrado } = await admin.from('familias')
-    .select('id, lote_id, qstash_message_id, codigo_pai, origem_cadastro').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+    .select('id, lote_id, qstash_message_id, codigo_pai, origem_cadastro, grade_tamanho, genero').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
     .maybeSingle();
 
   let familiaId: string;
@@ -151,6 +151,8 @@ Deno.serve(async (req) => {
       loteId: jaCadastrado.lote_id as string,
     }, 409);
     if (variacoesDivergem(produto.variacoes, vars)) return divergiu();
+    // ADR-0182: grade/gênero mudados entre as tentativas — antes de qualquer efeito (estoque, fila).
+    if (gradeOuGeneroDivergem(produto, jaCadastrado, vars.map((v) => v.tamanho as string | null))) return divergiu();
 
     // Estoque inicial tem contrapartida no LEDGER, não em `variacoes.estoque` (que nasce 0 e
     // continua 0 se a primeira tentativa morreu antes do laço). Sem esta conferência, mudar o

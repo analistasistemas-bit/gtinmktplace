@@ -4,15 +4,23 @@
 // só criar um novo quando o conjunto de tamanhos muda.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ehCategoriaMlValida, lerSchemaAtributos } from '../categoria/schema.ts';
-import { COMPRIMENTO_PE_CM } from './medidas-valores.ts';
+import { COMPRIMENTO_PE_CM, tabelaQuadril } from './medidas-valores.ts';
+import {
+  GENEROS_INFANTIL, generosDaGrade, tamanhosDaGrade, type Genero, type GradeTamanho,
+} from '../produto/tipos-produto-valores.ts';
 
-export type Genero = 'masculino' | 'feminino' | 'unissex';
+// ADR-0182: fonte única dos gêneros (adulto + infantil) em `tipos-produto-valores.ts`.
+export type { Genero };
 
 // Spike 051 §5, confirmado via GET /categories/{id}/attributes — não existe "Unissex" literal no ML.
+// ADR-0182 D3 / Spike 056 §2: ids infantis lidos de MLB188064 / MLB271219 (2026-10-16).
 export const GENDER_VALUE: Record<Genero, { id: string; nome: string }> = {
   masculino: { id: '339666', nome: 'Masculino' },
   feminino: { id: '339665', nome: 'Feminino' },
   unissex: { id: '110461', nome: 'Sem gênero' },
+  meninos: { id: '339667', nome: 'Meninos' },
+  meninas: { id: '339668', nome: 'Meninas' },
+  sem_genero_infantil: { id: '19159491', nome: 'Sem gênero infantil' },
 };
 
 // ADR-0167 Decisão 3: tabela padrão do varejo BR (contorno de peito, piso da faixa), decisão do
@@ -48,11 +56,27 @@ export const DOMINIOS_VESTUARIO = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS'
 export const DOMINIOS_CALCADO_STANDARD = new Set(['SNEAKERS']);
 export const DOMINIOS_CALCADO_SPECIFIC = new Set(['SANDALS_AND_CLOGS']);
 
+// Spike 056 §3/§4 (ADR-0182 D4): SHORTS/PANTS não têm STANDARD; chart SPECIFIC exige
+// SIZE + FILTRABLE_SIZE + HIP_CIRCUMFERENCE_FROM (confirmado via POST /catalog/charts real).
+export const DOMINIOS_QUADRIL = new Set(['SHORTS', 'PANTS']);
+// Spike 056 §3/§5 (ADR-0182 D7): CLOTHING_LOTS não tem guia ("Domain MLB-CLOTHING_LOTS not
+// active"); o item plano valida sem grid, com o tamanho em CLOTHING_LOT_SIZE.
+export const DOMINIOS_SEM_GUIA = new Set(['CLOTHING_LOTS']);
+
 // Qualquer outro domínio falha alto — a coluna exigida (ou a disponibilidade de STANDARD) não
 // foi confirmada, adivinhar aqui seria inventar payload de marketplace.
 export const DOMINIOS_SUPORTADOS = new Set([
   ...DOMINIOS_VESTUARIO, ...DOMINIOS_CALCADO_STANDARD, ...DOMINIOS_CALCADO_SPECIFIC,
+  ...DOMINIOS_QUADRIL, ...DOMINIOS_SEM_GUIA,
 ]);
+
+/** ADR-0182 D8.1: a grade da família tem que caber no domínio da categoria — calça classificada
+ *  como tênis (ou calçado em PANTS) recusa antes de qualquer chart/publicação. */
+export function dominioAceitaGrade(domainId: string, grade: GradeTamanho): boolean {
+  if (grade === 'calcado') return DOMINIOS_CALCADO_STANDARD.has(domainId) || DOMINIOS_CALCADO_SPECIFIC.has(domainId);
+  const quadrilOuSemGuia = DOMINIOS_QUADRIL.has(domainId) || DOMINIOS_SEM_GUIA.has(domainId);
+  return grade === 'letras' ? quadrilOuSemGuia || DOMINIOS_VESTUARIO.has(domainId) : quadrilOuSemGuia;
+}
 
 // Achado real (2026-09-19, sandália): o SIZE do ITEM tem que bater com o rótulo da linha do
 // chart ("37 BR"), não com o valor cru da categoria ("37") — /items/validate real devolveu
@@ -87,7 +111,7 @@ export function domainIdSemPrefixo(catalogDomain: string | null | undefined): st
 export function nomeChart(domainId: string, genero: Genero, tamanhos: readonly string[]): string {
   const dominioLegivel = domainId.replace(/_/g, ' ')
     .toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-  return `PubliAI Guia ${dominioLegivel} ${genero} ${tamanhos.join('-')}`.slice(0, 60);
+  return `PubliAI Guia ${dominioLegivel} ${genero.replace(/_/g, ' ')} ${tamanhos.join('-')}`.slice(0, 60);
 }
 
 // Achado real (2026-09-19, Spike 051 §12): "Tamanho Único" foi testado a fundo (3 chamadas reais)
@@ -141,12 +165,15 @@ export function montarLinhasChart(
   tamanhos: readonly string[],
   sizeValores: readonly { id: string; nome: string }[],
   filtravelValores: readonly { id: string; nome: string }[],
-  contornoPeitoCm: Readonly<Record<string, number>> = CONTORNO_PEITO_CM,
+  medidasCm: Readonly<Record<string, number>> = CONTORNO_PEITO_CM,
+  // ADR-0182 D6: quadril usa HIP_CIRCUMFERENCE_FROM; infantil tem FILTRABLE_SIZE "<n> anos".
+  coluna: 'CHEST_CIRCUMFERENCE_FROM' | 'HIP_CIRCUMFERENCE_FROM' = 'CHEST_CIRCUMFERENCE_FROM',
+  nomeFiltravel: (t: string) => string = (t) => t,
 ): LinhaChart[] {
   return tamanhos.map((t) => {
     const sizeVal = sizeValores.find((v) => v.nome === t);
-    const filtVal = filtravelValores.find((v) => v.nome === t);
-    const cm = contornoPeitoCm[t];
+    const filtVal = filtravelValores.find((v) => v.nome === nomeFiltravel(t));
+    const cm = medidasCm[t];
     if (!sizeVal || !filtVal || cm == null) {
       throw new Error(`Guia de tamanhos: tamanho "${t}" sem valor/medida confirmado para esta categoria.`);
     }
@@ -154,7 +181,7 @@ export function montarLinhasChart(
       attributes: [
         { id: 'SIZE', values: [{ id: sizeVal.id, name: sizeVal.nome }] },
         { id: 'FILTRABLE_SIZE', values: [{ id: filtVal.id, name: filtVal.nome }] },
-        { id: 'CHEST_CIRCUMFERENCE_FROM', values: [{ name: `${cm} cm` }] },
+        { id: coluna, values: [{ name: `${cm} cm` }] },
       ],
     };
   });
@@ -221,8 +248,9 @@ export async function lerDominioCategoria(categoriaId: string): Promise<string |
   return domainIdSemPrefixo(json?.settings?.catalog_domain);
 }
 
-/** Resolve o chart de (conexão, domínio, gênero) — lê do cache (`ml_size_charts`) ou cria via
- *  `POST /catalog/charts` e persiste. Nunca dá update num chart existente (ADR-0167 Decisão 4). */
+/** Resolve o chart de (conexão, domínio, gênero, grade) — lê do cache (`ml_size_charts`) ou cria via
+ *  `POST /catalog/charts` e persiste. Nunca dá update num chart existente (ADR-0167 Decisão 4).
+ *  `null` só para domínio sem guia (`DOMINIOS_SEM_GUIA`, ADR-0182 D7): nem cache nem ML. */
 export async function garantirChart(
   admin: SupabaseClient,
   token: string,
@@ -230,7 +258,8 @@ export async function garantirChart(
   categoriaId: string,
   genero: Genero,
   tamanhos: readonly string[],
-): Promise<ChartResolvido> {
+  grade: GradeTamanho,
+): Promise<ChartResolvido | null> {
   const domainId = await lerDominioCategoria(categoriaId);
   if (!domainId) {
     throw new Error(`Guia de tamanhos: não foi possível ler o domínio da categoria ${categoriaId}.`);
@@ -241,10 +270,20 @@ export async function garantirChart(
       + 'desconhecida, publicação bloqueada em vez de inventar payload.',
     );
   }
+  // `genero` vem do banco com cast nos chamadores: valor fora de GENDER_VALUE cairia na tabela
+  // masculina de `tabelaQuadril` em silêncio. Gênero incoerente com a grade também nunca publica.
+  if (!Object.hasOwn(GENDER_VALUE, genero) || !generosDaGrade(grade).includes(genero)) {
+    throw new Error(`Guia de tamanhos: gênero "${genero}" inválido para a grade ${grade}.`);
+  }
+  if (!dominioAceitaGrade(domainId, grade)) {
+    throw new Error(`Guia de tamanhos: grade ${grade} incompatível com o domínio ${domainId} — confira a categoria do produto.`);
+  }
+  if (DOMINIOS_SEM_GUIA.has(domainId)) return null;
 
   const { data: cached } = await admin.from('ml_size_charts')
     .select('chart_id, linhas')
     .eq('connection_id', connectionId).eq('domain_id', domainId).eq('genero', genero)
+    .eq('grade_tamanho', grade)
     .maybeSingle();
   if (cached) {
     // Cache pré-existente (charts criados antes de 0cec85cb) grava `linhas` como
@@ -264,7 +303,7 @@ export async function garantirChart(
     if (faltando.length > 0) {
       throw new Error(
         `Guia de tamanhos: chart existente (conexão=${connectionId}, domínio=${domainId}, `
-        + `gênero=${genero}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
+        + `gênero=${genero}, grade=${grade}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
         + 'Decisão 4), amplie o superset em size-chart.ts e crie um chart novo.',
       );
     }
@@ -275,14 +314,14 @@ export async function garantirChart(
     ? await buscarChartStandardCalcado(token, domainId, genero, tamanhos)
     : DOMINIOS_CALCADO_SPECIFIC.has(domainId)
       ? await criarChartCalcadoEspecifico(token, domainId, genero, tamanhos)
-      : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos);
+      : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos, grade);
 
-  // Duas publicações concorrentes (mesma conexão+domínio+gênero, 1ª vez) podem criar 2 charts em
+  // Duas publicações concorrentes (mesma conexão+domínio+gênero+grade, 1ª vez) podem criar 2 charts em
   // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
   // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
   // ESTA chamada acabou de resolver (é o que o payload desta publicação já referencia).
   const { error: insertErr } = await admin.from('ml_size_charts').insert({
-    connection_id: connectionId, domain_id: domainId, genero,
+    connection_id: connectionId, domain_id: domainId, genero, grade_tamanho: grade,
     chart_id: resolvido.chartId, linhas: Object.fromEntries(resolvido.linhaPorTamanho),
   });
   if (insertErr) console.error('ml_size_charts insert falhou (chart resolvido, cache não salvo):', insertErr.message);
@@ -290,10 +329,15 @@ export async function garantirChart(
   return resolvido;
 }
 
-/** Vestuário (JACKETS_AND_COATS/SPORT_T_SHIRTS): cria um chart SPECIFIC com o superset de
- *  CONTORNO_PEITO_CM (ADR-0167 Decisão 2 — nunca só os tamanhos desta família). */
+/** Vestuário: cria um chart SPECIFIC com o superset da tabela do domínio (ADR-0167 Decisão 2 —
+ *  nunca só os tamanhos desta família). JACKETS_AND_COATS/SPORT_T_SHIRTS → peito
+ *  (CONTORNO_PEITO_CM); SHORTS/PANTS → quadril do gênero, superset = a lista da PRÓPRIA grade
+ *  (ADR-0182 D6: Letras = P–GG, Calça = 34–48, Infantil = 2–16 com FILTRABLE_SIZE "<n> anos").
+ *  Nunca Letras + Calça no mesmo chart: o ML recusa com `value_is_not_the_same_type` (ensaio
+ *  real 2026-10-16, Spike 056 §8). */
 async function criarChartVestuario(
   token: string, categoriaId: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+  grade: GradeTamanho,
 ): Promise<ChartResolvido> {
   const schema = await lerSchemaAtributos(token, categoriaId);
   const sizeAttr = schema.find((a) => a.id === 'SIZE');
@@ -301,12 +345,18 @@ async function criarChartVestuario(
   if (!sizeAttr || !filtravelAttr) {
     throw new Error('Guia de tamanhos: schema da categoria não trouxe SIZE/FILTRABLE_SIZE.');
   }
-  const supersetTamanhos = Object.keys(CONTORNO_PEITO_CM)
-    .filter((t) => sizeAttr.valores.some((v) => v.nome === t));
+  const quadril = DOMINIOS_QUADRIL.has(domainId);
+  const tabela = quadril ? tabelaQuadril(genero) : CONTORNO_PEITO_CM;
+  const infantil = (GENEROS_INFANTIL as readonly string[]).includes(genero);
+  const nomeFiltravel = quadril && infantil ? (t: string) => `${t} anos` : (t: string) => t;
+  const supersetTamanhos = (quadril ? tamanhosDaGrade(grade) : Object.keys(tabela))
+    .filter((t) => t in tabela && sizeAttr.valores.some((v) => v.nome === t));
   const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
   if (foraDoSuperset.length > 0) throw new Error(mensagemForaDoSuperset(foraDoSuperset));
 
-  const rows = montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores);
+  const rows = quadril
+    ? montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores, tabela, 'HIP_CIRCUMFERENCE_FROM', nomeFiltravel)
+    : montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores);
   const respJson = await postCatalogChart(token, domainId, genero, supersetTamanhos, 'SIZE', rows);
   return { chartId: String(respJson.id), linhaPorTamanho: parseLinhasResposta(respJson.rows) };
 }

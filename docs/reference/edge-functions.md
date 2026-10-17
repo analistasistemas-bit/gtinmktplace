@@ -532,7 +532,11 @@ mesmo por engano.
   **Guia de tamanhos / Size Charts (ADR-0167):** quando a família tem `tipo_produto` preenchido
   (vestuário/calçado), resolve ou cria a tabela de medidas oficial no Mercado Livre via
   `_shared/ml/size-chart.ts` (cache imutável em `ml_size_charts`), associando `SIZE_GRID_ID` no
-  item e `SIZE_GRID_ROW_ID` nas variações.
+  item e `SIZE_GRID_ROW_ID` nas variações. **ADR-0182:** `SHORTS`/`PANTS` criam chart pela circunferência
+  do quadril; `CLOTHING_LOTS` (Kits de Conjuntos de Roupa) publica sem chart, com `CLOTHING_LOT_SIZE`
+  por SKU; o cache `ml_size_charts` é por grade (Letras, Infantil, Calça). No UPDATE/reposição UP
+  (`atualizar-familia-up.ts`), `comGeneroDaFamilia` impede reenviar `GENDER`/`SIZE*`/`CLOTHING_LOT_SIZE`
+  de `atributos_ml`. Deploy 2026-10-16 das 21 funções que usam o `_shared/` alterado.
   **User Products / multi-cor (ADR-0088):** categoria UP com >1 variação (`criarAnuncio` devolve
   `FORMATO_INCOMPATIVEL`) roteia pra saga `_shared/user-products/publicar-grupo.ts`
   (`publicar-familia-up.ts` orquestra): cria N itens técnicos separados (1 por SKU/cor) linkados pelo

@@ -203,7 +203,56 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
   it('chart resolvido uma vez, com gênero e todos os tamanhos da família', async () => {
     await atualizarFamiliaUP(argsGrade());
     expect(chartFake).toHaveBeenCalledTimes(1);
-    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G']]);
+    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G'], 'letras']);
+  });
+
+  // ADR-0182 D2: grade gravada vence; sem ela e com tamanho não inferível → 400 antes do chart.
+  it('grade gravada (calca) chega ao garantirChart', async () => {
+    const fn = vi.fn(async () => ({ chartId: 'CH1', linhaPorTamanho: new Map([['40', { rowId: 'CH1:9', sizeLabel: '40' }]]) }));
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), grade_tamanho: 'calca' } as never,
+      variacoes: [
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '40', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: fn as never,
+    }));
+    expect((fn.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['40'], 'calca']);
+  });
+
+  // ADR-0182 D7 / Review Focus 7: CLOTHING_LOT_SIZE é por SKU — o do irmão ('4') e o de
+  // atributos_ml nunca vazam; o SKU novo sai com exatamente um, o seu ('6').
+  it('chart null (CLOTHING_LOTS): SKU novo sai com GENDER infantil e só o SEU CLOTHING_LOT_SIZE', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
+      ...ATRIBUTOS_DO_IRMAO,
+      { id: 'GENDER', value_id: '339667', value_name: 'Meninos' },
+      { id: 'CLOTHING_LOT_SIZE', value_id: null, value_name: '4' },
+    ] }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), genero: 'meninos', grade_tamanho: 'infantil',
+        atributos_ml: [{ id: 'CLOTHING_LOT_SIZE', value_name: '2' }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul-petróleo', tamanho: '4', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '6', estoque: 40, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: vi.fn(async () => null) as never,
+    }));
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '6' }]);
+    expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339667' }]);
+    expect(attrs.map((a) => a.id)).not.toContain('SIZE');
+  });
+
+  it('grade não resolvível (tamanho infantil sem grade_tamanho) → erro 400 antes do chart', async () => {
+    const err = await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), genero: 'meninos', grade_tamanho: null } as never,
+      variacoes: [
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '4', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+    })).then(() => null, (e: unknown) => e);
+    expect(String(err)).toMatch(/grade de tamanho/);
+    expect((err as { status?: number }).status).toBe(400);
+    expect(chartFake).not.toHaveBeenCalled();
+    expect(criarItemSpy).not.toHaveBeenCalled();
   });
 
   it('família com tamanho e sem gênero falha alto, sem criar item', async () => {
@@ -240,5 +289,78 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
     const attrs = atributosEnviados();
     expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
     expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
+  });
+});
+
+// Achado pré-merge (Codex gpt-6.1-sol): "Atualizar tudo" reenvia o delta de `atributos_ml` aos
+// filhos (ADR-0157). Com grade, GENDER sai de `familias.genero` e SIZE* nunca vai família-level —
+// mesma regra do CREATE (publicar-familia-up.ts IDS_SUBSTITUIDOS). Saga REAL, PUT capturado no fetch.
+describe('atualizarFamiliaUP — reposição não reenvia GENDER/SIZE* de atributos_ml', () => {
+  type Attr = { id: string; value_id?: string | null; value_name?: string };
+  const fichaMl = (genderId: string): Attr[] => [
+    ...ATRIBUTOS_DO_IRMAO,
+    { id: 'GENDER', value_id: genderId },
+    { id: 'SIZE', value_name: '4' }, { id: 'SIZE_GRID_ID', value_name: 'CH9' }, { id: 'SIZE_GRID_ROW_ID', value_name: 'CH9:1' },
+  ];
+  let puts: Array<{ available_quantity?: number; price?: number; attributes?: Attr[] }>;
+  function mockMl(ficha: Attr[]) {
+    puts = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        puts.push(JSON.parse(String(init.body)));
+        return new Response('{}', { status: 200 });
+      }
+      return new Response(JSON.stringify({ attributes: ficha }), { status: 200 });
+    }) as typeof fetch;
+  }
+  beforeEach(() => mockMl(fichaMl('339667')));
+  const ATRIBUTOS_IA: Attr[] = [
+    { id: 'GENDER', value_id: '339668' },
+    { id: 'SIZE', value_name: '8' }, { id: 'SIZE_GRID_ID', value_name: 'XX' }, { id: 'SIZE_GRID_ROW_ID', value_name: 'XX:1' },
+    { id: 'LENGTH', value_name: '10 m' },
+  ];
+  function argsRepor(fam: Record<string, unknown> = {}, extra: Partial<AtualizarFamiliaUPArgs> = {}) {
+    const base = args();
+    return args({
+      familia: { ...(base.familia as object), genero: 'meninos', grade_tamanho: 'infantil',
+        atributos_ml: ATRIBUTOS_IA, ...fam } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul-petróleo', tamanho: '4', estoque: 3, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
+      ] as never,
+      executarSaga: undefined,
+      ...extra,
+    });
+  }
+
+  it('gênero meninos estruturado × meninas em atributos_ml: PUT nunca leva 339668 nem SIZE*', async () => {
+    await atualizarFamiliaUP(argsRepor());
+    expect(puts).toHaveLength(1);
+    const attrs = puts[0]!.attributes ?? [];
+    expect(attrs.find((a) => a.value_id === '339668')).toBeUndefined();
+    expect(attrs.filter((a) => a.id === 'GENDER').every((a) => a.value_id === '339667')).toBe(true);
+    for (const id of ['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']) expect(attrs.map((a) => a.id)).not.toContain(id);
+    expect(attrs).toContainEqual({ id: 'LENGTH', value_name: '10 m' });
+  });
+
+  it('ML com gênero errado: a reposição corrige para o de familias.genero', async () => {
+    mockMl(fichaMl('339668'));
+    await atualizarFamiliaUP(argsRepor());
+    expect((puts[0]!.attributes ?? []).filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339667' }]);
+  });
+
+  it('família sem tamanho: delta de atributos_ml segue como antes (GENDER/SIZE* inclusos)', async () => {
+    await atualizarFamiliaUP(argsRepor({ genero: null, grade_tamanho: null }, {
+      variacoes: [{ codigo: 'A', cor: 'Azul-petróleo', estoque: 3, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' }] as never,
+    }));
+    expect(puts[0]!.attributes).toEqual([
+      { id: 'GENDER', value_id: '339668' }, { id: 'SIZE', value_name: '8' },
+      { id: 'SIZE_GRID_ID', value_name: 'XX' }, { id: 'SIZE_GRID_ROW_ID', value_name: 'XX:1' },
+      { id: 'LENGTH', value_name: '10 m' },
+    ]);
+  });
+
+  it('somenteEstoque: PUT só com available_quantity, sem attributes', async () => {
+    await atualizarFamiliaUP(argsRepor({}, { somenteEstoque: true }));
+    expect(puts).toEqual([{ available_quantity: 3 }]);
   });
 });

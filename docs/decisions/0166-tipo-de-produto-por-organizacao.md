@@ -213,3 +213,5 @@ Remover as colunas `familias.genero`, `variacoes.tamanho` e
 organização em produção tem o array preenchido e as duas colunas de produto são nulas em todas as
 linhas, então a reversão não perde dado. Migration antiga nunca é editada (ADR-0043): a reversão é
 uma migration nova.
+
+> **Emenda 2026-10-16:** grades Infantil e Calça, gênero infantil e `familias.grade_tamanho` → ver [ADR-0182](0182-grades-infantil-calca-e-guia-de-quadril.md).

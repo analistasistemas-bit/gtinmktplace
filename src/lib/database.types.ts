@@ -509,6 +509,7 @@ export type Database = {
           fornecedor: string | null
           frete_gratis: boolean
           genero: string | null
+          grade_tamanho: string | null
           id: string
           kit_base_codigo_pai: string | null
           kit_multiplicador: number | null
@@ -596,6 +597,7 @@ export type Database = {
           fornecedor?: string | null
           frete_gratis?: boolean
           genero?: string | null
+          grade_tamanho?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
@@ -683,6 +685,7 @@ export type Database = {
           fornecedor?: string | null
           frete_gratis?: boolean
           genero?: string | null
+          grade_tamanho?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
@@ -1791,6 +1794,7 @@ export type Database = {
           criado_em: string
           domain_id: string
           genero: string
+          grade_tamanho: string
           linhas: Json
         }
         Insert: {
@@ -1799,6 +1803,7 @@ export type Database = {
           criado_em?: string
           domain_id: string
           genero: string
+          grade_tamanho: string
           linhas: Json
         }
         Update: {
@@ -1807,6 +1812,7 @@ export type Database = {
           criado_em?: string
           domain_id?: string
           genero?: string
+          grade_tamanho?: string
           linhas?: Json
         }
         Relationships: [

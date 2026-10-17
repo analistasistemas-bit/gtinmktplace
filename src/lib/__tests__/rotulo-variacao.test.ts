@@ -33,4 +33,16 @@ describe('ordenarVariacoesGrade', () => {
     const vs = [{ cor: 'Preto', nome: null, tamanho: '40' }, { cor: 'Preto', nome: null, tamanho: '38' }];
     expect(ordenarVariacoesGrade(vs).map((v) => v.tamanho)).toEqual(['38', '40']);
   });
+  it('calçado: 33 antes de 34 e pares depois dos isolados', () => {
+    const vs = ['34', '33', '33/34'].map((tamanho) => ({ cor: 'Preto', nome: null, tamanho }));
+    expect(ordenarVariacoesGrade(vs).map((v) => v.tamanho)).toEqual(['33', '34', '33/34']);
+  });
+  it('calça em ordem numérica', () => {
+    const vs = ['48', '34', '40'].map((tamanho) => ({ cor: 'Preto', nome: null, tamanho }));
+    expect(ordenarVariacoesGrade(vs).map((v) => v.tamanho)).toEqual(['34', '40', '48']);
+  });
+  it('infantil em ordem numérica (10 depois de 2)', () => {
+    const vs = ['10', '2'].map((tamanho) => ({ cor: 'Preto', nome: null, tamanho }));
+    expect(ordenarVariacoesGrade(vs).map((v) => v.tamanho)).toEqual(['2', '10']);
+  });
 });

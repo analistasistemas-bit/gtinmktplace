@@ -1,7 +1,7 @@
 // ADR-0166 amendment 2026-09-24c: rótulo ÚNICO da variação nas telas do Estoque. Antes cada tela
 // fazia `cor ?? nome` por conta própria e nenhuma mostrava o tamanho — numa grade, cinco SKUs
 // "Preto" indistinguíveis na hora de dar entrada. Sem tamanho o resultado é idêntico ao antigo.
-import { TAMANHOS_ROUPA, NUMERACOES_CALCADO } from '@/lib/tamanhos';
+import { TAMANHOS_ROUPA, TAMANHOS_INFANTIL, TAMANHOS_CALCA, NUMERACOES_CALCADO } from '@/lib/tamanhos';
 import { compararCor } from '@/lib/cor';
 
 type Identificavel = {
@@ -20,7 +20,16 @@ export function rotuloVariacao(v: { cor: string | null; nome: string | null; tam
   return base ? `${base} · ${tamanho}` : tamanho;
 }
 
-const ORDEM_TAMANHO: readonly string[] = [...TAMANHOS_ROUPA, ...NUMERACOES_CALCADO];
+// ADR-0182: Letras, Infantil, números adultos isolados (33..48, sem repetir os que Calça e
+// Calçado compartilham) em ordem numérica, e por último os pares de meio-número.
+const ehPar = (t: string) => t.includes('/');
+const ORDEM_TAMANHO: readonly string[] = [
+  ...TAMANHOS_ROUPA,
+  ...TAMANHOS_INFANTIL,
+  ...[...new Set([...TAMANHOS_CALCA, ...NUMERACOES_CALCADO.filter((t) => !ehPar(t))])]
+    .sort((a, b) => Number(a) - Number(b)),
+  ...NUMERACOES_CALCADO.filter(ehPar),
+];
 
 function indiceTamanho(t: string | null | undefined): number {
   const i = t ? ORDEM_TAMANHO.indexOf(t) : -1;

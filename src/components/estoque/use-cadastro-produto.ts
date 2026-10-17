@@ -15,6 +15,7 @@ import {
   cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError, CadastroResultadoAmbiguoError,
   type ResultadoCadastro,
 } from '@/lib/produtos-saldo';
+import type { Genero, GradeTamanho } from '@/lib/tamanhos';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
 import { parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import type { FiscalForm } from '@/components/estoque/etapa-fiscal-form';
@@ -39,7 +40,8 @@ export function montarPayload(
   pai: {
     nomePai: string; descricaoPai: string; unidade: string; fornecedor: string;
     origem: 'nacional' | 'importado';
-    genero: 'masculino' | 'feminino' | 'unissex' | null;
+    genero: Genero | null;
+    gradeTamanho?: GradeTamanho | null;
   },
   linhas: LinhaVariacao[],
   chaveCadastro: string,
@@ -71,6 +73,7 @@ export function montarPayload(
     fornecedor: pai.fornecedor.trim() || null,
     origem: pai.origem,
     genero: pai.genero,
+    ...(pai.gradeTamanho ? { gradeTamanho: pai.gradeTamanho } : {}),
     chaveCadastro,
     variacoes,
     ...(fiscal ? {

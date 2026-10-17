@@ -14,6 +14,7 @@ import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
+import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -27,6 +28,8 @@ export interface PublicarFamiliaUPArgs {
     titulo_ml: string | null; nome_pai: string | null; descricao_ml: string | null;
     /** ADR-0166/0167. Ausente/null = família sem tamanho, comportamento intacto (INV-1). */
     genero?: Genero | null;
+    /** ADR-0182 D2. null = família legada (inferência só Letras/Calçado). */
+    grade_tamanho?: string | null;
     atacado?: unknown; [k: string]: unknown;
   };
   anuncio: AnuncioCanonico;
@@ -78,14 +81,24 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         + 'GENDER junto com o guia de tamanhos (ADR-0167 Decisão 6); nunca publica sem gênero.',
       );
     }
-    chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos);
+    // ADR-0182 D2: grade gravada vence; sem ela só Letras/Calçado são inferíveis (calça 34–46
+    // nunca vira calçado). Sem grade não há como escolher tabela/domínio — falha antes do chart.
+    const grade = gradeDaFamilia(familia.grade_tamanho ?? null, tamanhos);
+    if (!grade) {
+      throw new Error(
+        `Família ${familia.id}: tamanhos ${tamanhos.join(', ')} sem grade de tamanho definida `
+        + '(familias.grade_tamanho) — recadastre o produto escolhendo a grade antes de publicar.',
+      );
+    }
+    chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos, grade);
     const genderValue = GENDER_VALUE[familia.genero];
     // Achado do checkpoint Fable: GENDER é `required` no schema — a IA/Revisão pode já ter
     // preenchido `atributos_ml` com um GENDER (possivelmente divergente do `familias.genero`
     // estruturado). SIZE/SIZE_GRID_ID/SIZE_GRID_ROW_ID entram por SKU em montarPayloadItem — se a
     // IA também os tivesse posto em atributos_ml (nível família), duplicariam do mesmo jeito.
     // `familias.genero` (ADR-0166, escolhido pelo operador) é sempre a fonte de verdade aqui.
-    const IDS_SUBSTITUIDOS = new Set(['GENDER', 'SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
+    // ADR-0182 D7: CLOTHING_LOT_SIZE também é por SKU — nunca herdado do nível família.
+    const IDS_SUBSTITUIDOS = new Set(['GENDER', 'SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'CLOTHING_LOT_SIZE']);
     atributosComGenero = [
       ...anuncio.atributos.filter((a) => !a.id || !IDS_SUBSTITUIDOS.has(a.id)),
       { id: 'GENDER', value_id: genderValue.id },
@@ -157,6 +170,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
         sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: !!v.tamanho && chart === null,
         corValueId: resolverCorValueId(v.cor, valoresCor),
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,

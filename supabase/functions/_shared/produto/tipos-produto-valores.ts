@@ -35,11 +35,60 @@ export const NUMERACOES_CALCADO = [
   '33/34', '35/36', '37/38', '39/40', '41/42', '43/44', '45/46',
 ] as const;
 
+/** ADR-0182: grades de roupa além das Letras. Infantil = idade em anos; Calça = numeração
+ *  de cintura/quadril brasileira. '34'-'46' colidem com `NUMERACOES_CALCADO` de propósito:
+ *  quem decide é `grade_tamanho` da família (ver `gradeDaFamilia`), nunca o valor sozinho. */
+export const TAMANHOS_INFANTIL = ['2', '4', '6', '8', '10', '12', '14', '16'] as const;
+export const TAMANHOS_CALCA = ['34', '36', '38', '40', '42', '44', '46', '48'] as const;
+
+export type GradeTamanho = 'letras' | 'infantil' | 'calca' | 'calcado';
+export const GRADES_VALIDAS: readonly GradeTamanho[] = ['letras', 'infantil', 'calca', 'calcado'];
+
+export const GRADES_DO_TIPO: Record<TipoProduto, readonly GradeTamanho[]> = {
+  roupa: ['letras', 'infantil', 'calca'],
+  calcado: ['calcado'],
+};
+
+export function tamanhosDaGrade(g: GradeTamanho): readonly string[] {
+  switch (g) {
+    case 'letras': return TAMANHOS_ROUPA;
+    case 'infantil': return TAMANHOS_INFANTIL;
+    case 'calca': return TAMANHOS_CALCA;
+    case 'calcado': return NUMERACOES_CALCADO;
+  }
+}
+
+export function tipoDaGradeTamanho(g: GradeTamanho): TipoProduto {
+  return g === 'calcado' ? 'calcado' : 'roupa';
+}
+
+export type Genero = 'masculino' | 'feminino' | 'unissex' | 'meninos' | 'meninas' | 'sem_genero_infantil';
+export const GENEROS_ADULTO = ['masculino', 'feminino', 'unissex'] as const;
+export const GENEROS_INFANTIL = ['meninos', 'meninas', 'sem_genero_infantil'] as const;
+export const GENEROS_VALIDOS: readonly Genero[] = [...GENEROS_ADULTO, ...GENEROS_INFANTIL];
+
+export function generosDaGrade(g: GradeTamanho): readonly Genero[] {
+  return g === 'infantil' ? GENEROS_INFANTIL : GENEROS_ADULTO;
+}
+
+/** Grade de uma família: a gravada (válida) vence. Sem ela (família legada) só Letras e Calçado
+ *  são inferíveis — Calça '34'-'46' é indistinguível de calçado pelo valor, então fica `null`
+ *  só quando misturada; sozinha cai em `'calcado'` (comportamento legado, intocado). */
+export function gradeDaFamilia(gravada: string | null, tamanhos: readonly string[]): GradeTamanho | null {
+  if (gravada && (GRADES_VALIDAS as readonly string[]).includes(gravada)) return gravada as GradeTamanho;
+  if (tamanhos.length === 0) return null;
+  if (tamanhos.every((t) => (TAMANHOS_ROUPA as readonly string[]).includes(t))) return 'letras';
+  if (tamanhos.every((t) => (NUMERACOES_CALCADO as readonly string[]).includes(t))) return 'calcado';
+  return null;
+}
+
 /** Todos os valores de tamanho aceitáveis para uma org, dados os tipos habilitados.
  *  Org sem tipo → lista vazia → nenhum tamanho é aceitável (INV-1). */
 export function tamanhosValidosParaTipos(tipos: readonly string[]): string[] {
   const valores: string[] = [];
-  if (tipos.includes('roupa')) valores.push(...TAMANHOS_ROUPA);
+  if (tipos.includes('roupa')) {
+    for (const g of GRADES_DO_TIPO.roupa) valores.push(...tamanhosDaGrade(g));
+  }
   if (tipos.includes('calcado')) valores.push(...NUMERACOES_CALCADO);
   return valores;
 }
@@ -80,7 +129,7 @@ export function classificarFamilia(
  *  O front (`src/lib/tamanhos.ts`) delega para cá e acrescenta só o caso "gênero ainda vazio". */
 export function numeracaoPublicavel(
   numeracao: string,
-  genero: 'masculino' | 'feminino' | 'unissex',
+  genero: Genero,
 ): boolean {
   if (!(NUMERACOES_CALCADO as readonly string[]).includes(numeracao)) return true;
   const tabela = genero === 'feminino' ? COMPRIMENTO_PE_CM.feminino : COMPRIMENTO_PE_CM.masculino;

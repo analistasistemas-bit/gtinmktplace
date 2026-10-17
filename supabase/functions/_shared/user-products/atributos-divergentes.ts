@@ -15,8 +15,10 @@
 import type { AtributoItem } from '../canais/contrato.ts';
 
 /** Por SKU: o valor certo é o da variação, não o da família. Reenviá-los a partir de
- *  `atributos_ml` publicaria a cor/GTIN errados. Mesma lista de `atributos-irmao.ts`. */
-const POR_SKU = new Set(['COLOR', 'GTIN', 'EMPTY_GTIN_REASON', 'SELLER_SKU']);
+ *  `atributos_ml` publicaria a cor/GTIN errados. Lista de `atributos-irmao.ts` + o tamanho de
+ *  kit (ADR-0182 D7: `CLOTHING_LOT_SIZE` é por SKU; na herança do irmão a exclusão fica em
+ *  `IDS_TAMANHO` de `atualizar-familia-up.ts`). */
+const POR_SKU = new Set(['COLOR', 'GTIN', 'EMPTY_GTIN_REASON', 'SELLER_SKU', 'CLOTHING_LOT_SIZE']);
 
 /** Dimensões/peso da embalagem: dado nosso, com caminho próprio (ADR-0018). Fora daqui. */
 const PREFIXO_PACOTE = 'SELLER_PACKAGE_';

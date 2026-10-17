@@ -24,7 +24,10 @@ import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { TIPOS_PRODUTO, type TipoProdutoId } from '@/lib/tipos-produto';
-import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho } from '@/lib/tamanhos';
+import {
+  LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, generosDaGrade, GRADES_DO_TIPO,
+  ROTULO_GRADE, ROTULO_GENERO, GENEROS_ADULTO, type GradeTamanho, type Genero as GeneroId,
+} from '@/lib/tamanhos';
 import {
   aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
   totaisDaGrade, totalDaGrade,
@@ -51,13 +54,7 @@ const CABECALHO_VAZIO: CamposHerdaveis = {
   preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
 };
 
-type Genero = 'masculino' | 'feminino' | 'unissex' | '';
-
-const GENEROS: { valor: Exclude<Genero, ''>; rotulo: string }[] = [
-  { valor: 'masculino', rotulo: 'Masculino' },
-  { valor: 'feminino', rotulo: 'Feminino' },
-  { valor: 'unissex', rotulo: 'Unissex' },
-];
+type Genero = GeneroId | '';
 
 /** Ação destrutiva pendente de confirmação (desmarcar um eixo com dado, trocar de tipo). */
 interface Confirmacao { titulo: string; texto: string; rotulo: string; acao: () => void }
@@ -89,7 +86,12 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const [tipoManual, setTipoManual] = useState<TipoProdutoId | null>(null);
   const tipoEscolhido: TipoProdutoId | null =
     tipos.length === 1 ? (tipos[0] as TipoProdutoId) : tipoManual;
-  const gruposTamanho = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []);
+  // ADR-0182: Roupa tem 3 grades, sem default (o operador escolhe); Calçado é sempre `calcado`.
+  // Como o tipo, só a escolha MANUAL fica em state; a grade efetiva é derivada.
+  const [gradeManual, setGradeManual] = useState<GradeTamanho | null>(null);
+  const grade: GradeTamanho | null =
+    tipoEscolhido === 'calcado' ? 'calcado' : tipoEscolhido === 'roupa' ? gradeManual : null;
+  const gruposTamanho = opcoesDeTamanho(grade);
 
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
@@ -138,7 +140,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   // org de 2 tipos pularia o passo 0 e cairia direto no tipo da sessão anterior.
   useEffect(() => {
     if (aberto) return;
-    setTipoManual(null);
+    setTipoManual(null); setGradeManual(null);
     setEtapaFiscal(false);
     setFiscal(fiscalVazio());
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
@@ -191,7 +193,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     // Tamanhos canônicos derivados de `tipoEscolhido` (primitivo). Pôr `gruposTamanho` nas
     // dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve array NOVO sempre.
     // Cores são A→Z em `ordenarEixos`; `CORES_POPULARES` aqui só mantém a assinatura.
-    const canonicos = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []).flatMap((g) => g.valores);
+    const canonicos = opcoesDeTamanho(grade).flatMap((g) => g.valores);
     const eixos = ordenarEixos(cores, tamanhos, { cores: CORES_POPULARES, tamanhos: canonicos });
 
     // Poda das exclusões ANTES do updater: é o único efeito colateral do ciclo e não pertence
@@ -213,7 +215,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
         (pos.get(chaveGrade(a.cor, a.tamanho)) ?? 0) - (pos.get(chaveGrade(b.cor, b.tamanho)) ?? 0)
       ));
     });
-  }, [cores, tamanhos, removidas, tipoEscolhido, api.salvando, resultado]);
+  }, [cores, tamanhos, removidas, tipoEscolhido, grade, api.salvando, resultado]);
 
   /** Linha "tem dado" = apagá-la perderia algo que o operador digitou/escolheu. */
   function temDado(l: LinhaGrade): boolean {
@@ -294,7 +296,9 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   function trocarTipo() {
     const acao = () => {
       if (api.salvando) return;
-      setTipoManual(null);
+      setTipoManual(null); setGradeManual(null);
+      // O tipo novo ainda não existe: gênero infantil nunca vale para Calçado/Letras/Calça.
+      if (genero && !(GENEROS_ADULTO as readonly string[]).includes(genero)) setGenero('');
       setCores(new Set()); setTamanhos(new Set()); setRemovidas(new Set());
       setLinhas([]); setFotoPorCor({});
     };
@@ -302,6 +306,24 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     setConfirmar({
       titulo: 'Trocar o tipo de produto?',
       texto: `As ${linhas.length} linha(s) da grade serão apagadas — os tamanhos de roupa e de calçado não são os mesmos.`,
+      rotulo: 'Trocar mesmo assim',
+      acao,
+    });
+  }
+
+  function trocarGrade(nova: GradeTamanho | null) {
+    const acao = () => {
+      if (api.salvando) return;
+      setGradeManual(nova);
+      // Cores e fotos por cor valem para qualquer grade; só tamanhos e linhas mudam.
+      setTamanhos(new Set()); setRemovidas(new Set()); setLinhas([]);
+      // Gênero incoerente com a grade nova (ex.: meninos → Calça) não pode sobreviver à troca.
+      if (genero && (!nova || !generosDaGrade(nova).includes(genero))) setGenero('');
+    };
+    if (linhas.length === 0) { acao(); return; }
+    setConfirmar({
+      titulo: 'Trocar a grade?',
+      texto: `As ${linhas.length} linha(s) da grade serão apagadas — os tamanhos das grades não são os mesmos.`,
       rotulo: 'Trocar mesmo assim',
       acao,
     });
@@ -373,7 +395,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const unidades = totais.geral;
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
-  const podeSalvar = !!nomePai.trim() && !!origem && !!genero && linhas.length > 0
+  const podeSalvar = !!nomePai.trim() && !!origem && !!genero && !!grade && linhas.length > 0
     && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, r[c])));
   // Único motivo de `podeSalvar=false` que ficou SEM sinal na tela depois do fix pós-revisão da
   // Task 9 (borda/texto de erro só aparecem com valor não-vazio, matando o "muro vermelho"):
@@ -395,7 +417,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
       : `Preencha o preço mínimo (líquido) em: ${semPreco.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${semPreco.length > 3 ? ` e mais ${semPreco.length - 3}` : ''}.`;
 
   async function submeter() {
-    if (!origem || !genero) return;
+    if (!origem || !genero || !grade) return;
     setTentouSalvar(true);
     // `resolvidas` é a MESMA lista que a tela mostra — o payload nunca resolve herança por conta
     // própria (spec §2: `resolverLinha` é a única fonte do valor efetivo).
@@ -407,7 +429,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     }));
     const loteId = await api.salvar(
       montarPayload(
-        { nomePai, descricaoPai, unidade, fornecedor, origem, genero },
+        { nomePai, descricaoPai, unidade, fornecedor, origem, genero, gradeTamanho: grade },
         variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota,
       ),
       { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
@@ -615,7 +637,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     onChange={(e) => setGenero(e.target.value as Genero)}
                   >
                     <option value="">Selecione…</option>
-                    {GENEROS.map((g) => <option key={g.valor} value={g.valor}>{g.rotulo}</option>)}
+                    {(grade ? generosDaGrade(grade) : GENEROS_ADULTO).map((g) => <option key={g} value={g}>{ROTULO_GENERO[g]}</option>)}
                   </select>
                 </div>
               </div>
@@ -676,6 +698,25 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                   })}
                 </div>
               </div>
+
+              {tipoEscolhido === 'roupa' && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="flex items-baseline gap-1 text-sm font-medium">
+                    <label htmlFor="grade-tamanho">Grade de tamanhos</label>
+                    <span className="text-destructive" aria-hidden="true">*</span>
+                  </span>
+                  <select
+                    id="grade-tamanho"
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={gradeManual ?? ''}
+                    disabled={api.salvando}
+                    onChange={(e) => trocarGrade((e.target.value || null) as GradeTamanho | null)}
+                  >
+                    <option value="">Selecione…</option>
+                    {GRADES_DO_TIPO.roupa.map((g) => <option key={g} value={g}>{ROTULO_GRADE[g]}</option>)}
+                  </select>
+                </div>
+              )}
 
               <GeradorVariacoes
                 gruposTamanho={gruposTamanho}

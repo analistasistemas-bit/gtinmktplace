@@ -27,3 +27,12 @@ describe('montarPayload — descrição fiscal', () => {
     expect(montarPayload(PAI, [linha], 'k')).not.toHaveProperty('fiscal');
   });
 });
+
+describe('montarPayload — grade', () => {
+  it('envia gradeTamanho', () => {
+    expect(montarPayload({ ...PAI, gradeTamanho: 'calca' }, [linha], 'k').gradeTamanho).toBe('calca');
+  });
+  it('aceita gênero infantil', () => {
+    expect(montarPayload({ ...PAI, genero: 'meninas', gradeTamanho: 'infantil' }, [linha], 'k').genero).toBe('meninas');
+  });
+});

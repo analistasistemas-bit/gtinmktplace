@@ -6,7 +6,7 @@ import type { adminClient } from '../_shared/supabase.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 import { normalizarNomeCor } from '../_shared/cor/value-id.ts';
 import {
-  classificarFamilia, numeracaoPublicavel, tamanhosDoTipo, tipoDaGrade,
+  classificarFamilia, gradeDaFamilia, numeracaoPublicavel, tamanhosDaGrade, tipoDaGradeTamanho,
 } from '../_shared/produto/tipos-produto-valores.ts';
 
 type Admin = ReturnType<typeof adminClient>;
@@ -163,6 +163,8 @@ const chaveGradeEdge = (cor: string, tamanho: string) => `${cor}\u0000${tamanho}
 export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
   vivas: Array<{ codigo: string; cor: string | null; tamanho: string | null; excluida_da_publicacao: boolean }>;
   tiposHabilitados: readonly string[]; genero: string | null; ehUP: boolean;
+  /** ADR-0182 D2: `familias.grade_tamanho` da publicada. null = legada (só Letras/Calçado). */
+  gradeTamanho: string | null;
 }): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
   // Só as INCLUÍDAS definem o que o anúncio é (Codex r3 #1): uma excluída sem tamanho (ou com)
@@ -179,18 +181,21 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
   if (familiaGrade && !ctx.genero) {
     return [{ campo: 'familia_id', mensagem: 'Produto de grade sem gênero cadastrado — o Mercado Livre exige gênero junto com a tabela de medidas.' }];
   }
-  // O tipo é da FAMÍLIA publicada, não da org (Codex r2 #1): org com roupa e calçado não pode
+  // A grade é da FAMÍLIA publicada, não da org (Codex r2 #1): org com roupa e calçado não pode
   // pôr numeração numa jaqueta — o chart de vestuário recusaria DEPOIS de SKU e ledger gravados.
-  const tipo = familiaGrade
-    ? tipoDaGrade(incluidas.map((v) => (v.tamanho ?? '').trim()))
+  // ADR-0182 D2: a gravada vence; sem ela só Letras/Calçado são inferíveis (calça 34–46 nunca
+  // vira calçado).
+  const grade = familiaGrade
+    ? gradeDaFamilia(ctx.gradeTamanho, incluidas.map((v) => (v.tamanho ?? '').trim()))
     : null;
-  if (familiaGrade && !tipo) {
+  if (familiaGrade && !grade) {
     return [{ campo: 'familia_id', mensagem: 'Os tamanhos publicados deste produto não pertencem a um único tipo (roupa ou calçado) — ajuste pelo suporte.' }];
   }
+  const tipo = grade ? tipoDaGradeTamanho(grade) : null;
   if (tipo && !ctx.tiposHabilitados.includes(tipo)) {
     return [{ campo: 'familia_id', mensagem: `O tipo ${tipo === 'roupa' ? 'Roupa' : 'Calçado'} está desativado nesta organização — peça ao administrador da plataforma para reativar.` }];
   }
-  const tamanhosValidos = tipo ? tamanhosDoTipo(tipo) : [];
+  const tamanhosValidos = grade ? tamanhosDaGrade(grade) : [];
   const norm = (s: string | null | undefined) => (s ?? '').trim();
   // Cor comparada pela MESMA normalização do dicionário do ML (`resolverCorValueId`): "Azul
   // Marinho" e "Azul-marinho" viram a mesma cor lá, então são o mesmo par aqui.
@@ -207,7 +212,7 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
     if (!tam) { erros.push({ campo: `${p}.tamanho`, mensagem: 'Tamanho é obrigatório neste produto.' }); return; }
     if (v.codigo !== undefined) { erros.push({ campo: `${p}.codigo`, mensagem: 'Em produto de grade o código é gerado pelo sistema.' }); return; }
     if (!tamanhosValidos.includes(tam)) { erros.push({ campo: `${p}.tamanho`, mensagem: `Tamanho "${tam}" não é válido para este produto.` }); return; }
-    if (tipo === 'calcado' && !numeracaoPublicavel(tam, ctx.genero as 'masculino' | 'feminino' | 'unissex')) {
+    if (grade === 'calcado' && !numeracaoPublicavel(tam, ctx.genero as 'masculino' | 'feminino' | 'unissex')) {
       erros.push({ campo: `${p}.tamanho`, mensagem: `Numeração ${tam} não tem guia de tamanhos no Mercado Livre para este gênero.` }); return;
     }
     const k = chaveGradeEdge(normalizarNomeCor(v.nome), tam);

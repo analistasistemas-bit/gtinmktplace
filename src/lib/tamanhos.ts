@@ -15,23 +15,38 @@
 // Antes elas só existiam no frontend — e por isso a edge não tinha como recusar um valor de
 // tamanho fora da lista do tipo da org. Este arquivo guarda apenas o que é de UI.
 import {
-  TAMANHOS_ROUPA, NUMERACOES_CALCADO, classificarFamilia, tipoDaGrade, tamanhosDoTipo,
+  TAMANHOS_ROUPA, TAMANHOS_INFANTIL, TAMANHOS_CALCA, NUMERACOES_CALCADO, classificarFamilia,
+  tipoDaGrade, tamanhosDoTipo, tamanhosDaGrade, gradeDaFamilia, generosDaGrade,
+  GRADES_DO_TIPO, GRADES_VALIDAS, GENEROS_ADULTO, GENEROS_INFANTIL, GENEROS_VALIDOS,
   numeracaoPublicavel as numeracaoPublicavelNoMl,
+  type GradeTamanho, type Genero,
 } from '../../supabase/functions/_shared/produto/tipos-produto-valores';
 
 // Ruling R1 (2026-09-24): a regra "é grade", o tipo inferido e a publicabilidade da numeração
 // vivem em `_shared` — a edge `adicionar-variacoes-familia` e o dialog decidem com a MESMA função.
-export { TAMANHOS_ROUPA, NUMERACOES_CALCADO, classificarFamilia, tipoDaGrade, tamanhosDoTipo };
+export {
+  TAMANHOS_ROUPA, TAMANHOS_INFANTIL, TAMANHOS_CALCA, NUMERACOES_CALCADO, classificarFamilia,
+  tipoDaGrade, tamanhosDoTipo, tamanhosDaGrade, gradeDaFamilia, generosDaGrade,
+  GRADES_DO_TIPO, GRADES_VALIDAS, GENEROS_ADULTO, GENEROS_INFANTIL, GENEROS_VALIDOS,
+};
+export type { GradeTamanho, Genero };
+
+// ADR-0182: rótulos de UI das grades e dos gêneros (o backend só conhece os ids).
+export const ROTULO_GRADE: Record<GradeTamanho, string> = {
+  letras: 'Letras (P–GG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
+};
+export const ROTULO_GENERO: Record<Genero, string> = {
+  masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex',
+  meninos: 'Meninos', meninas: 'Meninas', sem_genero_infantil: 'Sem gênero infantil',
+};
 
 export interface GrupoTamanho { grupo: string; valores: readonly string[] }
 
-/** Grupos oferecidos ao operador, conforme os tipos habilitados na org.
- *  Lista vazia = nenhum grupo = o campo Tamanho não é renderizado (INV-1). */
-export function opcoesDeTamanho(tipos: readonly string[]): GrupoTamanho[] {
-  const grupos: GrupoTamanho[] = [];
-  if (tipos.includes('roupa')) grupos.push({ grupo: 'Tamanho', valores: TAMANHOS_ROUPA });
-  if (tipos.includes('calcado')) grupos.push({ grupo: 'Numeração', valores: NUMERACOES_CALCADO });
-  return grupos;
+/** Grupo oferecido ao operador para a grade da família. `null` = nenhum grupo = o campo
+ *  Tamanho não é renderizado (INV-1). Calçado chama-se "Numeração"; as demais, "Tamanho". */
+export function opcoesDeTamanho(grade: GradeTamanho | null): GrupoTamanho[] {
+  if (!grade) return [];
+  return [{ grupo: grade === 'calcado' ? 'Numeração' : 'Tamanho', valores: tamanhosDaGrade(grade) }];
 }
 
 /** Teto de linhas geradas de uma vez numa grade (`totalDaGrade`). `proximo_codigo_produto`
@@ -49,7 +64,7 @@ export const LIMITE_VARIACOES_GERADAS = 60;
  *  O resto da regra é o de `_shared/produto/tipos-produto-valores.ts` (fonte única). */
 export function numeracaoPublicavel(
   numeracao: string,
-  genero: 'masculino' | 'feminino' | 'unissex' | '',
+  genero: Genero | '',
 ): boolean {
   return !genero || numeracaoPublicavelNoMl(numeracao, genero);
 }
