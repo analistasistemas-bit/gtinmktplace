@@ -88,16 +88,22 @@ describe('relatório de inventário (PDF)', () => {
     expect(vezes('Produto A1')).toBe(2);   // Livro + Conferência
     expect(vezes('Produto B2')).toBe(1);   // final 0: só na Conferência
     expect(vezes('Produto C3')).toBe(1);   // −2: só na Conferência
-    expect(montarRelatorioInventarioPdf(leitura('hoje')).output()).toContain('Inventário de hoje - não é foto, não confirmado');   // travessão sai hífen no PDF
-    expect(montarRelatorioInventarioPdf(leitura('aberto')).output()).toContain('Foto de 31/12 - aguardando contagem');
+    // O travessão vai em WinAnsi no PDF: não depender do caractere Unicode no output().
+    const hoje = montarRelatorioInventarioPdf(leitura('hoje')).output();
+    expect(hoje).toContain('Inventário de hoje');
+    expect(hoje).toContain('não é foto, não confirmado');
+    const aberto = montarRelatorioInventarioPdf(leitura('aberto')).output();
+    expect(aberto).toContain('Foto de 31/12');
+    expect(aberto).toContain('aguardando contagem');
     expect(t).toMatch(/Confirmado em .+ por Maria Teste/);
   });
-  it('foto aberta: Livro 10 / 100,00 e Conferência 10 → 7', () => {
-    const doc = montarRelatorioInventarioPdf(leitura('aberto'));
-    const t = doc.output();
-    expect(t).toContain('100,00');
+  it('foto aberta: Livro 10 / 100,00 e Conferência sistema 10 → contada 7', () => {
+    const t = montarRelatorioInventarioPdf(leitura('aberto')).output();
+    const cel = Array.from(t.matchAll(/\((.*)\) Tj/g), (m) => m[1]);   // uma entrada por célula, na ordem do PDF
+    const seq = (...c: string[]) => cel.findIndex((_, i) => c.every((x, k) => cel[i + k] === x));
+    expect(seq('A1', 'Produto A1', '61091000', 'UN', 'Azul', 'M', '10', '10', '10,000000', '100,00', '0')).toBeGreaterThanOrEqual(0);   // Livro
+    expect(seq('A1', 'Produto A1', '10', '7', '-3', 'extravio')).toBeGreaterThanOrEqual(0);   // Conferência
     expect(t).not.toContain('70,00');
-    expect(t).toContain('extravio');
   });
   it('bytes começam com %PDF', () => {
     expect(new TextDecoder().decode(gerarRelatorioInventarioPdf(leitura('hoje')).slice(0, 4))).toBe('%PDF');

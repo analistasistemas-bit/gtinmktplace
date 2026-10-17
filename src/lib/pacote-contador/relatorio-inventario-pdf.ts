@@ -13,8 +13,7 @@ export function montarRelatorioInventarioPdf(l: LeituraInventario): jsPDF {
   doc.setFontSize(12);
   doc.text('Relatório de inventário', 10, 12);
   autoTable(doc, { startY: 16, showHead: 'never', columns: [{ header: '', dataKey: 0 }, { header: '', dataKey: 1 }],
-    // A fonte padrão do jsPDF descarta o travessão (U+2014): sai hífen, senão a frase do status perde o separador.
-    body: linhasCabecalhoInv(l).map(([k, v]) => [k, v.replace(/—/g, '-')]), styles: { fontSize: 8 }, columnStyles: { 0: { cellWidth: 40 } } });
+    body: linhasCabecalhoInv(l), styles: { fontSize: 8 }, columnStyles: { 0: { cellWidth: 40 } } });
   autoTable(doc, {
     head: [COLUNAS_LIVRO],
     body: livro.map((x) => [x.item.codigo, x.item.descricao ?? '', x.item.ncm ?? '', x.item.unidade ?? '', x.item.cor ?? '', x.item.tamanho ?? '',
