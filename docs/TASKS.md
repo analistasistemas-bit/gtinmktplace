@@ -19,6 +19,7 @@
 - [x] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge (feito em 2026-10-16); validação de runtime na Zaven (Diego).
 - [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
 - [ ] Plano 2b-2 (D-12): ver a seção "Pacote do contador — inventário" abaixo.
+- [x] Etapa 2 "Produtos" da importação redesenhada em cartões enxutos (ADR-0181, emenda 2026-10-17; spec `docs/superpowers/specs/2026-10-17-nota-etapa-produtos-ux-design.md`); `cadastrar-produto` grava `refNota`. Edges deployadas 2026-10-17 (`cadastrar-produto` v29, `adicionar-variacoes-familia` v19), sem migration; front aguardando merge.
 
 ## Pacote do contador — vendas (ADR-0181, Plano 2a) — EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1)
 
