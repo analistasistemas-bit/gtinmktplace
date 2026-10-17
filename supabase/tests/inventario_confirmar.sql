@@ -309,6 +309,88 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
+-- 5b) Falta sobre SKU com camada de nota (org D, Ruling 11): planilha 3 + nota 10 @ 10,00 → foto 13
+--     (valorizada 10, sem nota 3). (a) contada 11: a falta para na "sem nota"; (b) contada 6: invade a valorizada.
+-- ---------------------------------------------------------------------------------------------
+insert into public.organizations (id, nome, slug, tipo_pessoa, modulos_habilitados) values
+  ('93700000-0000-0000-0000-000000000005', 'Inv conf D', 'inv-conf-d', 'pj', '{estoque}');
+insert into public.empresa_fiscal (org_id, cnpj, inscricao_estadual, razao_social) values
+  ('93700000-0000-0000-0000-000000000005', '11222333000181', '555555555', 'Empresa D Teste');
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('93700000-0000-0000-0000-000000000105', 'inv-conf-d@test.local', '{"org_id":"93700000-0000-0000-0000-000000000005"}'::jsonb);
+insert into public.profiles (id, org_id, is_active, email, nome) values
+  ('93700000-0000-0000-0000-000000000105', '93700000-0000-0000-0000-000000000005', true, 'inv-conf-d@test.local', '')
+on conflict (id) do update set org_id = excluded.org_id, is_active = true, email = excluded.email, nome = excluded.nome;
+
+-- Nota importada (como inventario_calculo.sql) + a entrada nfe:{chave}:{n_item}:{codigo} no ledger.
+create function pg_temp.nota_d(p_codigo text, p_chave text, p_qtd int, p_custo numeric) returns void
+  language plpgsql as $$
+declare d uuid := '93700000-0000-0000-0000-000000000005'; v_nota uuid; v_item uuid;
+begin
+  insert into public.notas_compra (org_id, chave, numero, serie, emitente_cnpj, emitente_nome, emitida_em,
+    valor_total, assinada, xml_path)
+  values (d, p_chave, 1, 1, '11444777000161', 'Fornecedor Teste', now(), p_qtd * p_custo, false, d || '/x.xml')
+  returning id into v_nota;
+  insert into public.notas_compra_itens (nota_id, org_id, n_item, cprod, xprod, cfop, ucom, qcom, v_prod, codigo_pai)
+  values (v_nota, d, 1, 'REF', 'Item', '5102', 'UN', p_qtd, p_qtd * p_custo, 'X')
+  returning id into v_item;
+  insert into public.notas_compra_distribuicao (item_id, org_id, codigo, quantidade, custo_aquisicao_unit,
+    custo_precificacao_unit)
+  values (v_item, d, p_codigo, p_qtd, p_custo, round(p_custo * 1.4, 2));
+  perform public.registrar_entrada(d, p_codigo, p_qtd, null, 'NF', null, '93700000-0000-0000-0000-000000000105',
+    'nfe:' || p_chave || ':1:' || p_codigo);
+end $$;
+
+do $$
+declare d uuid := '93700000-0000-0000-0000-000000000005'; v_id uuid; v jsonb; it record; m record;
+begin
+  perform pg_temp.fam(d, '93700000-0000-0000-0000-000000000105', '09370800', '09370801', 3, null, '2026-01-01 00:00+00');
+  perform pg_temp.fam(d, '93700000-0000-0000-0000-000000000105', '09370900', '09370901', 3, null, '2026-01-01 00:00+00');
+  perform pg_temp.nota_d('09370801', '93700000000000000000000000000000000000000801', 10, 10.00);
+  perform pg_temp.nota_d('09370901', '93700000000000000000000000000000000000000901', 10, 10.00);
+  if public.gerar_foto_inventario_org(d, '2026-12-31', 'manual') <> 'gerada' then raise exception 'foto D'; end if;
+  v_id := pg_temp.inv(d);
+  if (select array_agg(row(codigo, quantidade_sistema, qtd_valorizada, qtd_sem_nota, custo_medio, valor_total)::text
+                       order by codigo) from public.inventarios_itens where inventario_id = v_id)
+     is distinct from array['(09370801,13,10,3,10.000000,100.00)', '(09370901,13,10,3,10.000000,100.00)'] then
+    raise exception 'foto D: %', (select array_agg(row(codigo, quantidade_sistema, qtd_valorizada, qtd_sem_nota,
+      custo_medio, valor_total)::text order by codigo) from public.inventarios_itens where inventario_id = v_id);
+  end if;
+  -- Saldo anda depois da foto: 09370801 13 → 12; 09370901 fica 13.
+  perform public.ajustar_estoque(d, '09370801', 12, 'teste', '93700000-0000-0000-0000-000000000105', 'teste-inv-conf:d');
+
+  perform public.salvar_contagem_inventario(d, v_id, 0,
+    '[{"codigo":"09370801","quantidade_contada":11,"justificativa":"falta pequena"},
+      {"codigo":"09370901","quantidade_contada":6,"justificativa":"falta grande"}]');
+  v := public.confirmar_inventario(d, v_id, 1, '93700000-0000-0000-0000-000000000105');
+  if v <> '{"produtos":[{"codigo_pai":"09370800","reativar":false},{"codigo_pai":"09370900","reativar":false}]}'::jsonb then
+    raise exception 'retorno D: %', v;
+  end if;
+
+  -- (a) falta 2 para na "sem nota": 12 − 2 = 10.
+  select * into it from public.inventarios_itens where inventario_id = v_id and codigo = '09370801';
+  if it.qtd_final <> 11 or it.qtd_valorizada_final <> 10 or it.qtd_sem_nota_final <> 1 or it.valor_final <> 100.00
+     or it.custo_medio <> 10 then
+    raise exception 'D (a) finais: %', row_to_json(it);
+  end if;
+  select * into m from public.estoque_movimentos where org_id = d and referencia_externa = 'inventario:' || v_id || ':09370801';
+  if pg_temp.saldo(d, '09370801') <> 10 or m.quantidade <> -2 or m.estoque_anterior <> 12 or m.estoque_resultante <> 10 then
+    raise exception 'D (a) saldo % movimento %', pg_temp.saldo(d, '09370801'), row_to_json(m);
+  end if;
+
+  -- (b) falta 7 invade a valorizada: 13 − 7 = 6.
+  select * into it from public.inventarios_itens where inventario_id = v_id and codigo = '09370901';
+  if it.qtd_final <> 6 or it.qtd_valorizada_final <> 6 or it.qtd_sem_nota_final <> 0 or it.valor_final <> 60.00
+     or it.custo_medio <> 10 then
+    raise exception 'D (b) finais: %', row_to_json(it);
+  end if;
+  select * into m from public.estoque_movimentos where org_id = d and referencia_externa = 'inventario:' || v_id || ':09370901';
+  if pg_temp.saldo(d, '09370901') <> 6 or m.quantidade <> -7 or m.estoque_anterior <> 13 or m.estoque_resultante <> 6 then
+    raise exception 'D (b) saldo % movimento %', pg_temp.saldo(d, '09370901'), row_to_json(m);
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------------------------
 -- 6) Guard canônico (org C): família mais nova do código inserida durante a confirmação → 40001.
 -- ---------------------------------------------------------------------------------------------
 create function pg_temp.familia_no_meio() returns trigger language plpgsql security definer
