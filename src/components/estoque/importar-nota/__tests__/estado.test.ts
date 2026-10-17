@@ -155,7 +155,7 @@ describe('aplicarCadastradosDaNota (retomada por refNota)', () => {
   it('definirProduto preserva candidatosGtin; casados guardam candidatosGtin', () => {
     const e = estadoInicial(nota, '<x/>', [{ cprod: 'X9', codigoPai: 'P1', fator: 1 }], { '7891234567895': ['P2', 'P3'] });
     expect(e.decisoes[1]).toMatchObject({ codigoPai: 'P1', origemVinculo: 'vinculo', candidatosGtin: ['P2', 'P3'] });
-    expect(definirProduto(e, 1, 'Z').decisoes[1].candidatosGtin).toEqual(['P2', 'P3']);
+    expect(definirProduto(e, 2, 'Z').decisoes[1]).toMatchObject({ codigoPai: 'Z', origemVinculo: 'manual', candidatosGtin: ['P2', 'P3'] });
     const u = estadoInicial(nota, '<x/>', [], { '7891234567895': ['P2'] });
     expect(u.decisoes[1]).toMatchObject({ codigoPai: 'P2', origemVinculo: 'gtin', candidatosGtin: ['P2'] });
     expect(definirProduto(amb(), 2, 'P3').decisoes[1].candidatosGtin).toEqual(['P2', 'P3']);

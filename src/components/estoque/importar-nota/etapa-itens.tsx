@@ -136,7 +136,9 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
                     {d.codigoPai}{produto && <> · {produto.qtdSkus} {produto.qtdSkus === 1 ? 'SKU' : 'SKUs'}</>}
                   </p>
                 </div>
-                {!travado && !aberto && <Button size="sm" variant="ghost" onClick={() => abrir(d.nItem)}>Trocar</Button>}
+                {!travado && (aberto
+                  ? <Button size="sm" variant="ghost" onClick={() => fechar(d.nItem)}>Cancelar</Button>
+                  : <Button size="sm" variant="ghost" onClick={() => abrir(d.nItem)}>Trocar</Button>)}
               </div>
             )}
 
@@ -145,19 +147,10 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
                 produtos={produtos}
                 candidatos={d.candidatosNota.length > 0 ? d.candidatosNota : d.candidatosGtin}
                 carregando={carregandoProdutos} erro={erroProdutos} foco={aberto}
-                onCancelar={aberto ? () => fechar(d.nItem) : undefined}
+                onCancelar={aberto && !d.codigoPai ? () => fechar(d.nItem) : undefined}
                 onEscolher={(cp) => { setE(definirProduto(e, d.nItem, cp)); fechar(d.nItem); }}
               />
             )}
-
-            {d.codigoPai && (q.ok ? (
-              <div className="space-y-1">
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  Distribuídas: {distribuidas} de {q.quantidade} · faltam {Math.max(0, q.quantidade - distribuidas)}
-                </p>
-                <Progress value={pct} aria-valuenow={pct} aria-label={`Distribuição do item ${item.nItem}`} />
-              </div>
-            ) : !itemPronto(e, d) && <p className="text-xs text-destructive">{q.erro}</p>)}
 
             <div className="flex flex-wrap items-center gap-3">
               {mostrarFator && (
@@ -194,6 +187,14 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
                 <Button size="sm" variant="outline" onClick={() => { setPerguntando(null); onCadastrarNovo?.(d.nItem, 'simples'); }}>Simples</Button>
               </div>
             )}
+            {d.codigoPai && (q.ok ? (
+              <div className="space-y-1">
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  Distribuídas: {distribuidas} de {q.quantidade} · faltam {Math.max(0, q.quantidade - distribuidas)}
+                </p>
+                <Progress className="bg-muted-foreground/25" value={pct} aria-valuenow={pct} aria-label={`Distribuição do item ${item.nItem}`} />
+              </div>
+            ) : !itemPronto(e, d) && <p className="text-xs text-destructive">{q.erro}</p>)}
           </div>
         );
       })}

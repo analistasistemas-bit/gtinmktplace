@@ -55,18 +55,30 @@ describe('DialogImportarNota — corrida da consulta de cadastrados', () => {
     expect(screen.getByText(/escolha ou cadastre o produto/i)).toBeInTheDocument();
   });
 
-  it('resposta atrasada após fechar o diálogo é descartada', async () => {
+  it('resposta (ou rejeição) atrasada da nota A após fechar/reabrir não altera a nota B', async () => {
     let resolverA!: (v: unknown) => void;
-    m.cadastrados.mockImplementationOnce(() => new Promise((r) => { resolverA = r; }));
+    let rejeitarA!: (e: unknown) => void;
+    const pendA = new Promise((r) => { resolverA = r; });
+    const pendA2 = new Promise((_, r) => { rejeitarA = r; });
+    m.cadastrados.mockImplementationOnce(() => pendA).mockResolvedValueOnce([{ nItem: 1, codigosPai: ['PRODUTO-DA-B'] }]);
     const user = userEvent.setup();
     const { reabrir } = montar();
     await user.upload(screen.getByTestId('nfe-input'), arquivo('A'));
     await waitFor(() => expect(m.cadastrados).toHaveBeenCalledTimes(1));
     reabrir(false); reabrir(true);
+    await user.upload(screen.getByTestId('nfe-input'), arquivo('B'));
+    await waitFor(() => expect(m.cadastrados).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Avançar' })).toBeEnabled());
     resolverA([{ nItem: 1, codigosPai: ['PRODUTO-DA-A'] }]);
     await new Promise((r) => setTimeout(r, 20));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect((await screen.findAllByText(/PRODUTO-DA-B/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/PRODUTO-DA-A/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Avançar' })).toBeDisabled();
+    rejeitarA(new Error('rede tardia'));
+    await pendA2.catch(() => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getAllByText(/PRODUTO-DA-B/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('enquanto a consulta está pendente, Avançar fica travado; depois, o produto da nota vale', async () => {
