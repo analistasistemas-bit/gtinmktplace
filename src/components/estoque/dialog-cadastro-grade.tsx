@@ -24,7 +24,7 @@ import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { TIPOS_PRODUTO, type TipoProdutoId } from '@/lib/tipos-produto';
-import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho } from '@/lib/tamanhos';
+import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, type GradeTamanho } from '@/lib/tamanhos';
 import {
   aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
   totaisDaGrade, totalDaGrade,
@@ -89,7 +89,10 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const [tipoManual, setTipoManual] = useState<TipoProdutoId | null>(null);
   const tipoEscolhido: TipoProdutoId | null =
     tipos.length === 1 ? (tipos[0] as TipoProdutoId) : tipoManual;
-  const gruposTamanho = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []);
+  // provisório (Task 8 troca por escolha de grade no dialog)
+  const gradeProvisoria: GradeTamanho | null =
+    tipoEscolhido === 'calcado' ? 'calcado' : tipoEscolhido === 'roupa' ? 'letras' : null;
+  const gruposTamanho = opcoesDeTamanho(gradeProvisoria);
 
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
@@ -191,7 +194,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     // Tamanhos canônicos derivados de `tipoEscolhido` (primitivo). Pôr `gruposTamanho` nas
     // dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve array NOVO sempre.
     // Cores são A→Z em `ordenarEixos`; `CORES_POPULARES` aqui só mantém a assinatura.
-    const canonicos = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []).flatMap((g) => g.valores);
+    const canonicos = opcoesDeTamanho(gradeProvisoria).flatMap((g) => g.valores);
     const eixos = ordenarEixos(cores, tamanhos, { cores: CORES_POPULARES, tamanhos: canonicos });
 
     // Poda das exclusões ANTES do updater: é o único efeito colateral do ciclo e não pertence

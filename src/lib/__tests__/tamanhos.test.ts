@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TAMANHOS_ROUPA, NUMERACOES_CALCADO,
-  opcoesDeTamanho, numeracaoPublicavel, classificarFamilia, tipoDaGrade, tamanhosDoTipo,
+  opcoesDeTamanho, ROTULO_GRADE, ROTULO_GENERO, numeracaoPublicavel, classificarFamilia, tipoDaGrade, tamanhosDoTipo,
 } from '@/lib/tamanhos';
 
 describe('TAMANHOS_ROUPA', () => {
@@ -24,20 +24,38 @@ describe('NUMERACOES_CALCADO', () => {
 });
 
 describe('opcoesDeTamanho', () => {
-  it('org sem tipo nao oferece nenhum grupo — o campo Tamanho nem aparece', () => {
-    expect(opcoesDeTamanho([])).toEqual([]);
+  it('sem grade nao oferece nenhum grupo — o campo Tamanho nem aparece', () => {
+    expect(opcoesDeTamanho(null)).toEqual([]);
   });
 
-  it('so roupa oferece so Tamanho', () => {
-    expect(opcoesDeTamanho(['roupa']).map((g) => g.grupo)).toEqual(['Tamanho']);
+  it('letras oferece o grupo Tamanho', () => {
+    expect(opcoesDeTamanho('letras')).toEqual([{ grupo: 'Tamanho', valores: ['P', 'M', 'G', 'GG'] }]);
   });
 
-  it('so calcado oferece so Numeracao', () => {
-    expect(opcoesDeTamanho(['calcado']).map((g) => g.grupo)).toEqual(['Numeração']);
+  it('infantil oferece 2 a 16', () => {
+    expect(opcoesDeTamanho('infantil')[0].valores).toEqual(['2', '4', '6', '8', '10', '12', '14', '16']);
   });
 
-  it('os dois habilitados oferecem os dois grupos (combinavel, nao exclusivo)', () => {
-    expect(opcoesDeTamanho(['calcado', 'roupa']).map((g) => g.grupo)).toEqual(['Tamanho', 'Numeração']);
+  it('calca oferece 34 a 48', () => {
+    expect(opcoesDeTamanho('calca')[0].valores).toEqual(['34', '36', '38', '40', '42', '44', '46', '48']);
+  });
+
+  it('calcado oferece o grupo Numeração', () => {
+    expect(opcoesDeTamanho('calcado').map((g) => g.grupo)).toEqual(['Numeração']);
+  });
+});
+
+describe('rotulos de grade e genero', () => {
+  it('ROTULO_GRADE', () => {
+    expect(ROTULO_GRADE).toEqual({
+      letras: 'Letras (P–GG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
+    });
+  });
+  it('ROTULO_GENERO cobre os 6 generos', () => {
+    expect(ROTULO_GENERO).toEqual({
+      masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex',
+      meninos: 'Meninos', meninas: 'Meninas', sem_genero_infantil: 'Sem gênero infantil',
+    });
   });
 });
 

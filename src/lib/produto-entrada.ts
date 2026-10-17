@@ -37,6 +37,8 @@ export interface FiscalEntrada {
   descricaoFiscal?: string | null;
 }
 
+import type { Genero, GradeTamanho } from '@/lib/tamanhos';
+
 export interface ProdutoEntrada {
   nomePai: string;
   descricaoPai?: string | null;
@@ -45,7 +47,9 @@ export interface ProdutoEntrada {
   origem: 'nacional' | 'importado';
   /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
    *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
-  genero?: 'masculino' | 'feminino' | 'unissex' | null;
+  genero?: Genero | null;
+  /** ADR-0182: grade escolhida (Letras/Infantil/Calça/Calçado). Ausente/null = legado. */
+  gradeTamanho?: GradeTamanho | null;
   // Idempotência da submissão: o mesmo uuid reenviado devolve o cadastro original em vez de
   // criar um segundo produto. Só troca quando o diálogo fecha ou após sucesso confirmado —
   // nunca a cada tentativa (ver dialog-cadastro-produto.tsx).

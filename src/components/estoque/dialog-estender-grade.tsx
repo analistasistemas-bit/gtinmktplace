@@ -33,7 +33,7 @@ import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { fetchFamiliasNaoPublicadas, familiaEmVoo } from '@/lib/estoque-update-status';
-import { classificarFamilia, LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, tipoDaGrade } from '@/lib/tamanhos';
+import { gradeDaFamilia, classificarFamilia, LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, tipoDaGrade } from '@/lib/tamanhos';
 import {
   aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
   totaisDaGrade, totalDaGrade,
@@ -210,7 +210,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
   const incluidos = skus.filter((s) => !s.excluida);
   const eixosFixos = eixosExistentes(incluidos);
   const tipo = classe === 'grade' ? tipoDaGrade(incluidos.map((s) => s.tamanho)) : null;
-  const gruposTamanho = opcoesDeTamanho(tipo ? [tipo] : []);
+  const gruposTamanho = opcoesDeTamanho(tipo ? gradeDaFamilia(null, incluidos.map((s) => s.tamanho)) : null);
   const generoNorm = (familiaPublicada?.genero as Genero | null) ?? null;
 
   // Teto igual ao da edge (`vivas.length + novas`, index.ts): o cartesiano já conta as travadas
