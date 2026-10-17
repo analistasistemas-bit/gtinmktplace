@@ -68,4 +68,27 @@ describe('DialogImportarNota — corrida da consulta de cadastrados', () => {
     expect(screen.queryByText(/PRODUTO-DA-A/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Avançar' })).toBeDisabled();
   });
+
+  it('enquanto a consulta está pendente, Avançar fica travado; depois, o produto da nota vale', async () => {
+    let resolverA!: (v: unknown) => void;
+    m.cadastrados.mockImplementationOnce(() => new Promise((r) => { resolverA = r; }));
+    const user = userEvent.setup();
+    montar();
+    await user.upload(screen.getByTestId('nfe-input'), arquivo('A'));
+    await waitFor(() => expect(m.cadastrados).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Conferindo produtos já cadastrados desta nota…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Avançar' })).toBeDisabled();
+    resolverA([{ nItem: 1, codigosPai: ['PRODUTO-B'] }]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Avançar' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect((await screen.findAllByText(/PRODUTO-B/)).length).toBeGreaterThan(0);
+  });
+
+  it('consulta que falha não trava o Avançar', async () => {
+    m.cadastrados.mockRejectedValueOnce(new Error('rede'));
+    const user = userEvent.setup();
+    montar();
+    await user.upload(screen.getByTestId('nfe-input'), arquivo('A'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Avançar' })).toBeEnabled());
+  });
 });

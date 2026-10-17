@@ -98,6 +98,7 @@ export async function produtosCadastradosDaNota(chave: string): Promise<Array<{ 
       .like('mudanca_estrutural->>refNota', `nfe:${chave}:%`).order('id').range(de, ate));
   const porItem = new Map<number, Set<string>>();
   for (const r of rows) {
+    if (!(r.ref ?? '').startsWith(`nfe:${chave}:`)) continue; // defesa: o filtro `like` já faz isso no servidor
     const nItem = Number((r.ref ?? '').split(':')[2]);
     if (!Number.isInteger(nItem)) continue;
     porItem.set(nItem, (porItem.get(nItem) ?? new Set()).add(r.codigo_pai));

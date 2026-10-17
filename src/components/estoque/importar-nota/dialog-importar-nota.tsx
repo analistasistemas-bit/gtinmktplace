@@ -39,6 +39,8 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   const [erroLeitura, setErroLeitura] = useState<string | null>(null);
   const [lendo, setLendo] = useState(false);
   const [conferirFalhou, setConferirFalhou] = useState(false);
+  // Consulta de "cadastrados desta nota" em voo: enquanto pendente, nada avança (senão confirma no produto antigo).
+  const [conferindo, setConferindo] = useState(false);
   // Guarda de corrida: leitura (geração) e nota atuais. Resposta de leitura antiga ou de diálogo fechado é descartada.
   const leitura = useRef({ geracao: 0, chave: null as string | null });
   // "Cadastrar produto novo" (ADR-0181 D-4/D-10). `inicial` é snapshot ESTÁVEL, montado no clique.
@@ -53,7 +55,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   useEffect(() => {
     if (aberto) return;
     leitura.current = { geracao: leitura.current.geracao + 1, chave: null };
-    setConferirFalhou(false);
+    setConferirFalhou(false); setConferindo(false);
     setEtapa(0); setE(null); setRecusa(null); setErroLeitura(null); setLendo(false); setCadastro(null);
   }, [aberto]);
 
@@ -74,6 +76,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   // Consulta separada do Promise.all: se falhar, a importação segue (sem retomada) e o operador pode repetir.
   async function conferirCadastrados(chave: string, geracao: number) {
     const atual = () => leitura.current.geracao === geracao && leitura.current.chave === chave;
+    setConferindo(true);
     try {
       const lista = await produtosCadastradosDaNota(chave);
       if (!atual()) return;
@@ -81,6 +84,8 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
       setConferirFalhou(false);
     } catch {
       if (atual()) setConferirFalhou(true);
+    } finally {
+      if (atual()) setConferindo(false);
     }
   }
 
@@ -93,7 +98,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     const geracao = ++leitura.current.geracao;
     leitura.current.chave = null;
     const atual = () => leitura.current.geracao === geracao;
-    setConferirFalhou(false);
+    setConferirFalhou(false); setConferindo(false);
     setLendo(true); setE(null); setRecusa(null); setErroLeitura(null);
     try {
       const xml = await file.text();
@@ -143,8 +148,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   });
 
   const semPendencias = !!e && pendencias(e).length === 0;
-  const bloqueio = e && etapa > 0 ? motivoBloqueioEtapa(e, etapa) : null;
-  const podeAvancar = etapa === 0 ? !!e && !recusa : !!e && !bloqueio;
+  const aguardando = !!e && conferindo ? 'Conferindo produtos já cadastrados desta nota…' : null;
+  const bloqueio = aguardando ?? (e && etapa > 0 ? motivoBloqueioEtapa(e, etapa) : null);
+  const podeAvancar = etapa === 0 ? !!e && !recusa && !aguardando : !!e && !bloqueio;
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o && !confirmar.isPending) onFechar(); }}>
@@ -172,12 +178,12 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
         </div>
 
         <DialogFooter>
-          {etapa < 3 && bloqueio && <p className="mr-auto self-center text-sm text-muted-foreground">{bloqueio}</p>}
+          {(etapa < 3 || aguardando) && bloqueio && <p className="mr-auto self-center text-sm text-muted-foreground">{bloqueio}</p>}
           {etapa > 0 && <Button variant="outline" onClick={() => setEtapa(etapa - 1)} disabled={confirmar.isPending}>Voltar</Button>}
           {etapa < 3 ? (
             <Button onClick={() => setEtapa(etapa + 1)} disabled={!podeAvancar}>Avançar</Button>
           ) : (
-            <Button onClick={() => confirmar.mutate()} disabled={!semPendencias || confirmar.isPending}>
+            <Button onClick={() => confirmar.mutate()} disabled={!semPendencias || !!aguardando || confirmar.isPending}>
               {confirmar.isPending ? 'Importando…' : 'Confirmar'}
             </Button>
           )}
