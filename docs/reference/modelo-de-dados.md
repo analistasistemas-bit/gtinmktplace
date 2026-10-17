@@ -290,6 +290,9 @@ Grupos de colunas:
   `'feminino' | 'masculino' | 'unissex' | 'meninas' | 'meninos' | 'bebes'` ou null, migration
   `20260919114029_adr166_genero_e_tamanho.sql`), `ml_size_chart_id` (text, nullable, ID do guia de tamanhos
   vinculado no Mercado Livre, migration `20260919154953_adr167_ml_size_charts.sql`).
+  **ADR-0182:** `grade_tamanho` (eixo de tamanho da família: Letras P–GG, Infantil 2–16 ou Calça 34–48,
+  migration `20261016234319_adr182_grade_tamanho_genero_infantil.sql`) e o check de `genero` passa a
+  aceitar `meninos`, `meninas` e `sem_genero_infantil` (6 gêneros).
 - **Sugestão de categoria pela ficha de catálogo (ADR-0131):** `catalogo_categoria_sugerida_id`,
   `catalogo_categoria_sugerida_nome`, `catalogo_categoria_sugerida_vendedores` (nullable, mesmo
   padrão de `concorrencia_categoria_id`/ADR-0057). Escritas por `process-familia` só no fluxo CREATE
@@ -496,16 +499,16 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 *Migration `20260722145236_adr88_user_products_itens_e_formato.sql`.*
 
 ### `ml_size_charts`
-Cache imutável de tabelas/guias de tamanhos oficiais do Mercado Livre por conexão + domínio + gênero
-(ADR-0167, Spike 051). O guia de tamanhos é propriedade da conta do ML e imutável após criado;
+Cache imutável de tabelas/guias de tamanhos oficiais do Mercado Livre por conexão + domínio + gênero + grade
+(ADR-0167, Spike 051; ADR-0182: o ML recusa chart que mistura Letras e números, então o cache é por grade). O guia de tamanhos é propriedade da conta do ML e imutável após criado;
 um conjunto de tamanhos novo cria um chart novo. Mesma arquitetura de cache por conexão do
 `ml_formato_publicacao`.
-PK `(connection_id, domain_id, genero)`.
+PK `(connection_id, domain_id, genero, grade_tamanho)` (ADR-0182).
 Colunas: `connection_id` (FK `marketplace_connections`), `domain_id` (text), `genero`
 (text check `'masculino' | 'feminino' | 'unissex'`), `chart_id` (text), `linhas` (jsonb mapeando
 tamanho para row_id da tabela de medidas, ex: `{"P": "8522331:1", "M": "8522331:2"}`), `criado_em`.
 RLS: leitura via `exists` contra `marketplace_connections` por `current_org_id()`; escrita `service_role`-only.
-*Migration `20260919154953_adr167_ml_size_charts.sql`.*
+*Migrations `20260919154953_adr167_ml_size_charts.sql` e `20261017013349_adr182_ml_size_charts_por_grade.sql`.*
 
 ### `kits_virtuais`
 Anúncio de **combinação** do Mercado Livre: de 2 a 6 produtos **distintos** já publicados,
