@@ -6,6 +6,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,7 +27,9 @@ const comDelta = (d: Delta | null, rot: string) => (!d ? {}
 const valorOrdem = (l: Pick<LinhaSku, 'acc' | 'm'>, k: ChaveOrdem): number =>
   k === 'lucro' ? l.m.lucro ?? -Infinity : k === 'lucroPorUnidade' ? l.m.lucroPorUnidade ?? -Infinity
     : k === 'bruto' ? l.acc.bruto : l.acc.unidades;
-const SELECT = 'h-7 max-w-full rounded-md border border-input bg-background px-2 text-xs dark:[color-scheme:dark] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+// Radix não aceita item com value vazio: "todos" usa este sentinela e o estado segue ''.
+const TODOS = '__todos__';
+const SELECT = 'max-w-full text-xs';
 const BOTAO = 'h-7 px-2.5 text-xs';
 
 function Carregando() {
@@ -275,19 +278,28 @@ export function AbaVendasSku() {
       <div className="flex flex-wrap items-center gap-2">
         <Input className="h-7 w-full text-xs sm:w-56" placeholder="Buscar SKU ou produto…" aria-label="Buscar SKU"
           value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className={SELECT} value={familia} onChange={(e) => setFamilia(e.target.value)} aria-label="Família">
-          <option value="">Todas as famílias</option>
-          {opcoes.familias.map((f) => <option key={f} value={f}>{formatarNomeProduto(f)}</option>)}
-        </select>
-        <select className={SELECT} value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} aria-label="Fornecedor">
-          <option value="">Todos os fornecedores</option>
-          {opcoes.fornecedores.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <select className={SELECT} value={origem} onChange={(e) => setOrigem(e.target.value as typeof origem)} aria-label="Origem">
-          <option value="">Nacional e importado</option>
-          <option value="nacional">Nacional</option>
-          <option value="importado">Importado</option>
-        </select>
+        <Select value={familia || TODOS} onValueChange={(v) => setFamilia(v === TODOS ? '' : v)}>
+          <SelectTrigger size="sm" className={SELECT} aria-label="Família"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODOS}>Todas as famílias</SelectItem>
+            {opcoes.familias.map((f) => <SelectItem key={f} value={f}>{formatarNomeProduto(f)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={fornecedor || TODOS} onValueChange={(v) => setFornecedor(v === TODOS ? '' : v)}>
+          <SelectTrigger size="sm" className={SELECT} aria-label="Fornecedor"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODOS}>Todos os fornecedores</SelectItem>
+            {opcoes.fornecedores.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={origem || TODOS} onValueChange={(v) => setOrigem((v === TODOS ? '' : v) as typeof origem)}>
+          <SelectTrigger size="sm" className={SELECT} aria-label="Origem"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODOS}>Nacional e importado</SelectItem>
+            <SelectItem value="nacional">Nacional</SelectItem>
+            <SelectItem value="importado">Importado</SelectItem>
+          </SelectContent>
+        </Select>
         <Button size="sm" className={BOTAO} variant={soSemCusto ? 'default' : 'outline'} aria-pressed={soSemCusto}
           onClick={() => setSoSemCusto((v) => !v)}>Só sem custo</Button>
         <Button size="sm" className={BOTAO} variant={porFamilia ? 'default' : 'outline'} aria-pressed={porFamilia}

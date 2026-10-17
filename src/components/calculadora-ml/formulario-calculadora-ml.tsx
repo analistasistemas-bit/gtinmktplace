@@ -1,12 +1,15 @@
 import type { ChangeEvent } from 'react'
-import { ChevronDown, Package } from 'lucide-react'
+import { Package } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { BuscaCategoriaML } from './busca-categoria-ml'
 import type { ProdutoCalculadoraML, TaxasManuaisML } from '@/hooks/useCalculadoraML'
 import type { DimensoesProduto, EntradaCalculadoraML } from '@/lib/calculadora-ml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatarNomeProduto } from '@/lib/texto'
+
+const AVULSO = '__avulso__'
 
 interface FormularioCalculadoraMLProps {
   entrada: EntradaCalculadoraML
@@ -83,13 +86,20 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
         </div>
         <div className="space-y-1.5">
           <label htmlFor="produto-cadastrado" className="flex items-center gap-1.5 text-sm font-medium"><Package className="size-4 text-muted-foreground" aria-hidden="true" /> Produto cadastrado <span className="font-normal text-muted-foreground">(opcional)</span></label>
-          <div className="relative">
-            <select id="produto-cadastrado" className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent px-2.5 pr-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={produtoSelecionado?.codigoPai ?? ''} onChange={(event) => onProduto(produtos.find((produto) => produto.codigoPai === event.target.value) ?? null)} disabled={produtosCarregando}>
-              <option value="">Produto avulso</option>
-              {produtos.map((produto) => <option key={produto.codigoPai} value={produto.codigoPai}>{formatarNomeProduto(produto.nomePai)}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-2 size-4 text-muted-foreground" aria-hidden="true" />
-          </div>
+          {/* Radix não aceita item com value vazio: "Produto avulso" usa o sentinela AVULSO. */}
+          <Select
+            value={produtoSelecionado?.codigoPai ?? AVULSO}
+            onValueChange={(v) => onProduto(produtos.find((produto) => produto.codigoPai === v) ?? null)}
+            disabled={produtosCarregando}
+          >
+            <SelectTrigger id="produto-cadastrado" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={AVULSO}>Produto avulso</SelectItem>
+              {produtos.map((produto) => <SelectItem key={produto.codigoPai} value={produto.codigoPai}>{formatarNomeProduto(produto.nomePai)}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <BuscaCategoriaML value={entrada.categoriaId} onSelect={(categoria) => onEntrada({ categoriaId: categoria.id })} />
       </section>

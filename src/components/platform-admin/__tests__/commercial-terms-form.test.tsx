@@ -3,6 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommercialTermsForm } from '../commercial-terms-form';
 import type { CommercialTerms } from '@/lib/platform-admin';
+import { escolherNoSelect as escolher } from '@/test/select';
+
+const ROTULOS_OPCAO = {
+  '1': 'Modalidade 1 · Gestão Completa Daludi',
+  '2': 'Modalidade 2 · Gestão Completa + Inteligência',
+  '2026-09-01': 'Este mês (2026-09-01)',
+  '2026-10-01': 'Próximo mês (2026-10-01)',
+};
+const escolherNoSelect = (user: ReturnType<typeof userEvent.setup>, rotulo: string, valor: string) =>
+  escolher(user, rotulo, valor, ROTULOS_OPCAO);
 
 const mocks = vi.hoisted(() => ({
   save: vi.fn(),
@@ -51,7 +61,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     await user.clear(screen.getByLabelText('Sonar por consulta'));
     await user.type(screen.getByLabelText('Sonar por consulta'), '600,00');
     await user.type(screen.getByLabelText('Motivo'), 'novo contrato');
@@ -71,7 +81,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-10-01');
+    await escolherNoSelect(user, 'Início da vigência', '2026-10-01');
     await user.type(screen.getByLabelText('Motivo'), 'início futuro');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 
@@ -87,7 +97,7 @@ describe('CommercialTermsForm', () => {
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
     // Seleciona vigencia para o proximo mes (2026-10-01)
-    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-10-01');
+    await escolherNoSelect(user, 'Início da vigência', '2026-10-01');
 
     // Simula alteracao manual no campo Mes da implantacao de volta para 2026-09
     const setupInput = screen.getByLabelText('Mês da implantação');
@@ -110,7 +120,7 @@ describe('CommercialTermsForm', () => {
     vi.setSystemTime(new Date('2026-10-01T02:59:00Z'));
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-09-01');
+    expect(screen.getByRole('combobox', { name: 'Início da vigência' })).toHaveTextContent('2026-09-01');
     expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-09');
 
     // 2026-10-01T03:01:00Z corresponde a 2026-10-01 00:01:00 em America/Fortaleza (virou o mês!)
@@ -120,7 +130,7 @@ describe('CommercialTermsForm', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-10-01');
+    expect(screen.getByRole('combobox', { name: 'Início da vigência' })).toHaveTextContent('2026-10-01');
     expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-10');
     expect(screen.getByText(/A competência do mês virou/)).toBeInTheDocument();
   });
@@ -130,7 +140,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-09-01');
+    expect(screen.getByRole('combobox', { name: 'Início da vigência' })).toHaveTextContent('2026-09-01');
     expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-09');
 
     // Simula passagem do tempo para o mês seguinte em Fortaleza
@@ -141,7 +151,7 @@ describe('CommercialTermsForm', () => {
 
     // Salvar não deve ter sido executado com dados passados
     expect(mocks.save).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-10-01');
+    expect(screen.getByRole('combobox', { name: 'Início da vigência' })).toHaveTextContent('2026-10-01');
     expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-10');
     expect(screen.getByText(/A competência do mês virou/)).toBeInTheDocument();
   });
@@ -150,7 +160,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-09-01');
+    await escolherNoSelect(user, 'Início da vigência', '2026-09-01');
     await user.type(screen.getByLabelText('Motivo'), 'início imediato');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 
@@ -208,7 +218,7 @@ describe('CommercialTermsForm', () => {
     const monthly = screen.getByLabelText('Infraestrutura mensal');
     await user.clear(monthly);
     await user.type(monthly, '0');
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     expect(monthly).toHaveValue('0,00');
     await user.type(screen.getByLabelText('Motivo'), 'manter gratuidade');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
@@ -230,11 +240,11 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('7,00');
     await user.clear(screen.getByLabelText('Percentual até R$100 mil'));
     await user.type(screen.getByLabelText('Percentual até R$100 mil'), '4,25');
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+    await escolherNoSelect(user, 'Modalidade', '1');
 
     expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('4,25');
   });
@@ -291,7 +301,7 @@ describe('CommercialTermsForm', () => {
     expect(screen.getByLabelText('Sonar por consulta')).toBeDisabled();
     expect(screen.getByLabelText('Sonar por consulta')).toHaveValue('0,00');
 
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     expect(screen.getByLabelText('Sonar por consulta')).not.toBeDisabled();
     expect(screen.getByLabelText('Infraestrutura mensal')).toBeDisabled();
     expect(screen.getByLabelText('Infraestrutura mensal')).toHaveValue('0,00');
@@ -303,7 +313,7 @@ describe('CommercialTermsForm', () => {
 
     await user.clear(screen.getByLabelText('Infraestrutura mensal'));
     await user.type(screen.getByLabelText('Infraestrutura mensal'), '999,00');
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 
@@ -314,10 +324,10 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await escolherNoSelect(user, 'Modalidade', '2');
     await user.clear(screen.getByLabelText('Sonar por consulta'));
     await user.type(screen.getByLabelText('Sonar por consulta'), '888,00');
-    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+    await escolherNoSelect(user, 'Modalidade', '1');
     await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 

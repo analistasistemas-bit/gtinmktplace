@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { usePlatformTerms, useSavePlatformTerms } from '@/hooks/usePlatformAdmin';
@@ -228,12 +229,10 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Modalidade</span>
-              <select
-                aria-label="Modalidade"
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3"
+              <Select
                 value={form.modality}
-                onChange={(event) => {
-                  const modality = event.target.value as '1' | '2';
+                onValueChange={(value) => {
+                  const modality = value as '1' | '2';
                   setForm((previous) => ({
                     ...previous,
                     modality,
@@ -245,9 +244,14 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   }));
                 }}
               >
-                <option value="1">Modalidade 1 · Gestão Completa Daludi</option>
-                <option value="2">Modalidade 2 · Gestão Completa + Inteligência</option>
-              </select>
+                <SelectTrigger aria-label="Modalidade" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Modalidade 1 · Gestão Completa Daludi</SelectItem>
+                  <SelectItem value="2">Modalidade 2 · Gestão Completa + Inteligência</SelectItem>
+                </SelectContent>
+              </Select>
             </label>
             <label className="space-y-1 text-sm" htmlFor="terms-monthly">
               <span className="font-medium">Infraestrutura mensal</span>
@@ -364,12 +368,9 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
             {isFirstContract ? (
               <label className="space-y-1 text-sm md:col-span-2">
                 <span className="font-medium">Início da vigência</span>
-                <select
-                  aria-label="Início da vigência"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3"
+                <Select
                   value={startsOn}
-                  onChange={(event) => {
-                    const newStartsOn = event.target.value;
+                  onValueChange={(newStartsOn) => {
                     setStartsOn(newStartsOn);
                     const minSetupMonth = newStartsOn.slice(0, 7);
                     setForm((previous) => {
@@ -380,9 +381,14 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                     });
                   }}
                 >
-                  <option value={currentMonthStart()}>Este mês ({currentMonthStart()})</option>
-                  <option value={nextMonthStart()}>Próximo mês ({nextMonthStart()})</option>
-                </select>
+                  <SelectTrigger aria-label="Início da vigência" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={currentMonthStart()}>Este mês ({currentMonthStart()})</SelectItem>
+                    <SelectItem value={nextMonthStart()}>Próximo mês ({nextMonthStart()})</SelectItem>
+                  </SelectContent>
+                </Select>
               </label>
             ) : null}
             <p className="text-sm text-muted-foreground md:col-span-2">
