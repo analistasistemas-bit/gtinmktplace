@@ -142,6 +142,11 @@ describe('aplicarCadastradosDaNota (retomada por refNota)', () => {
     expect(aplicarCadastradosDaNota(e, [{ nItem: 2, codigosPai: ['B', 'D'] }]).decisoes[1])
       .toMatchObject({ codigoPai: null, candidatosNota: ['B', 'D'] });
   });
+  it('vários códigos limpam o aviso de sugestão anterior', () => {
+    const e = estadoInicial(nota, '<x/>', [], {});
+    const c = { ...e, decisoes: e.decisoes.map((d) => ({ ...d, avisoSugestao: 'velho' })) };
+    expect(aplicarCadastradosDaNota(c, [{ nItem: 2, codigosPai: ['B', 'D'] }]).decisoes[1].avisoSugestao).toBeNull();
+  });
   it('mesmo cProd em itens distintos: cada um com o seu', () => {
     const dup = { ...nota, totais: { ...zero, vProd: 700, vNF: 700 }, itens: [nota.itens[0], { ...nota.itens[0], nItem: 2 }] };
     const e = estadoInicial(dup, '<x/>', vinc, {});

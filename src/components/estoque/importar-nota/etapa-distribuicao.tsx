@@ -160,10 +160,9 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
                   />
                 </TableCell>
                 <TableCell>
-                  <Input
-                    type="number" min={0} step={0.01} className="w-28" aria-label={`Custo ${l.codigo}`}
-                    value={l.custoPrecificacao}
-                    onChange={(ev) => alterar(l.codigo, { custoPrecificacao: num(ev.target.value) })}
+                  <CampoCusto
+                    valor={l.custoPrecificacao} aria-label={`Custo ${l.codigo}`}
+                    onChange={(v) => alterar(l.codigo, { custoPrecificacao: v })}
                   />
                   {/* D-9: aquisição ao lado do custo de precificação; o selo nunca deixa o custo do cadastro silencioso. */}
                   <p className="mt-1 text-xs text-muted-foreground">Aquisição R$ {fmtBRLSemSimbolo(custoDef)}/un</p>
@@ -243,6 +242,17 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
         </div>
       )}
     </div>
+  );
+}
+
+/** Custo com 2 casas ao semear ("14.50"); enquanto o operador digita, o texto dele não é reformatado. */
+function CampoCusto({ valor, onChange, ...rest }: { valor: number; onChange: (v: number) => void; 'aria-label': string }) {
+  const [txt, setTxt] = useState(valor.toFixed(2));
+  const atual = Number.isFinite(Number(txt)) ? Number(txt) : 0;
+  if (atual !== valor) setTxt(valor.toFixed(2)); // mudança externa (semeadura, "Repetir custo")
+  return (
+    <Input type="number" min={0} step={0.01} className="w-28" value={txt} {...rest}
+      onChange={(ev) => { setTxt(ev.target.value); onChange(Number.isFinite(Number(ev.target.value)) ? Number(ev.target.value) : 0); }} />
   );
 }
 

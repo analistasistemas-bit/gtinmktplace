@@ -52,7 +52,9 @@ describe('etapa Distribuição — custo padrão da 1ª entrada', () => {
     m.skus.mockReturnValue(s.p); m.prova.mockReturnValue(p.p);
     montar();
     s.r([sku('S1'), sku('S2')]);
-    await new Promise((r) => setTimeout(r, 20));
+    // SKUs resolvidos, prova pendente: continua carregando (condição estável, sem relógio)
+    await waitFor(() => expect(m.skus).toHaveBeenCalled());
+    await s.p;
     expect(screen.getByText('Carregando SKUs…')).toBeInTheDocument();
     p.r(true);
     expect(await screen.findByLabelText('Custo S1')).toHaveValue(17);
@@ -72,6 +74,7 @@ describe('etapa Distribuição — custo padrão da 1ª entrada', () => {
     m.prova.mockRejectedValue(new Error('rede'));
     montar();
     expect(await screen.findByLabelText('Custo S1')).toHaveValue(10);
+    expect(screen.getByLabelText('Custo S1')).toHaveDisplayValue('10.00');
     expect(screen.queryByText('Custo do cadastro (1ª entrada)')).not.toBeInTheDocument();
     expect(screen.getAllByText('Aquisição R$ 10,00/un')).toHaveLength(2);
   });

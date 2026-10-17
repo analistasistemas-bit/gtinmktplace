@@ -101,7 +101,7 @@ export function aplicarCadastradosDaNota(
       const x = lista.find((y) => y.nItem === d.nItem);
       const cods = x?.codigosPai ?? [];
       if (d.origemVinculo === 'manual' || cods.length === 0) return d;
-      if (cods.length > 1) return { ...d, codigoPai: null, origemVinculo: null, candidatosNota: cods, distribuicao: soTravadas(d.distribuicao) };
+      if (cods.length > 1) return { ...d, codigoPai: null, origemVinculo: null, candidatosNota: cods, distribuicao: soTravadas(d.distribuicao), avisoSugestao: null };
       const novo: DecisaoItem = d.codigoPai === cods[0] ? { ...d, origemVinculo: 'nota', candidatosNota: [] }
         : { ...d, codigoPai: cods[0], origemVinculo: 'nota', candidatosNota: [], distribuicao: soTravadas(d.distribuicao) };
       const s = x?.sugestao;
