@@ -14,6 +14,7 @@ import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
+import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -27,6 +28,8 @@ export interface PublicarFamiliaUPArgs {
     titulo_ml: string | null; nome_pai: string | null; descricao_ml: string | null;
     /** ADR-0166/0167. Ausente/null = família sem tamanho, comportamento intacto (INV-1). */
     genero?: Genero | null;
+    /** ADR-0182 D2. null = família legada (inferência só Letras/Calçado). */
+    grade_tamanho?: string | null;
     atacado?: unknown; [k: string]: unknown;
   };
   anuncio: AnuncioCanonico;
@@ -78,7 +81,16 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         + 'GENDER junto com o guia de tamanhos (ADR-0167 Decisão 6); nunca publica sem gênero.',
       );
     }
-    chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos);
+    // ADR-0182 D2: grade gravada vence; sem ela só Letras/Calçado são inferíveis (calça 34–46
+    // nunca vira calçado). Sem grade não há como escolher tabela/domínio — falha antes do chart.
+    const grade = gradeDaFamilia(familia.grade_tamanho ?? null, tamanhos);
+    if (!grade) {
+      throw new Error(
+        `Família ${familia.id}: tamanhos ${tamanhos.join(', ')} sem grade de tamanho definida `
+        + '(familias.grade_tamanho) — recadastre o produto escolhendo a grade antes de publicar.',
+      );
+    }
+    chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos, grade);
     const genderValue = GENDER_VALUE[familia.genero];
     // Achado do checkpoint Fable: GENDER é `required` no schema — a IA/Revisão pode já ter
     // preenchido `atributos_ml` com um GENDER (possivelmente divergente do `familias.genero`

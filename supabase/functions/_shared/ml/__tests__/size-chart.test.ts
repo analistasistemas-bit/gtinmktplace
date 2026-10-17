@@ -1,10 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, domainIdSemPrefixo, garantirChart, mensagemForaDoSuperset,
-  mensagemNumeracaoNaoSuportada, montarLinhasChart, montarLinhasChartCalcado, nomeChart,
-  parseLinhasCalcado, parseLinhasResposta, tabelaComprimentoPe,
+  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, DOMINIOS_SUPORTADOS, GENDER_VALUE, domainIdSemPrefixo,
+  dominioAceitaGrade, garantirChart, mensagemForaDoSuperset, mensagemNumeracaoNaoSuportada,
+  montarLinhasChart, montarLinhasChartCalcado, nomeChart, parseLinhasCalcado, parseLinhasResposta,
+  tabelaComprimentoPe,
 } from '../size-chart.ts';
+import { tabelaQuadril } from '../medidas-valores.ts';
+import { lerSchemaAtributos } from '../../categoria/schema.ts';
+
+// Só o schema da categoria é fake (rede + Redis); `ehCategoriaMlValida` segue real.
+vi.mock('../../categoria/schema.ts', async (orig) => ({
+  ...(await orig<typeof import('../../categoria/schema.ts')>()),
+  lerSchemaAtributos: vi.fn(),
+}));
 
 // Achado real (produção, 2026-09-19): a 1ª tentativa de publicação real ficou presa em retry
 // porque POST /catalog/charts recusou o nome com `invalid_chart_name` — a mensagem cita "máximo
@@ -241,11 +250,11 @@ describe('garantirChart — cache em formato antigo (ADR-0167, achado real Fable
 
     const resolvido = await garantirChart(
       adminStub({ P: '8522331:1', M: '8522331:2' }),
-      'token', 'conexao-1', 'MLB123', 'masculino', ['P', 'M'],
+      'token', 'conexao-1', 'MLB123', 'masculino', ['P', 'M'], 'letras',
     );
 
-    expect(resolvido.linhaPorTamanho.get('P')).toEqual({ rowId: '8522331:1', sizeLabel: 'P' });
-    expect(resolvido.linhaPorTamanho.get('M')).toEqual({ rowId: '8522331:2', sizeLabel: 'M' });
+    expect(resolvido!.linhaPorTamanho.get('P')).toEqual({ rowId: '8522331:1', sizeLabel: 'P' });
+    expect(resolvido!.linhaPorTamanho.get('M')).toEqual({ rowId: '8522331:2', sizeLabel: 'M' });
 
     vi.unstubAllGlobals();
   });
@@ -258,11 +267,197 @@ describe('garantirChart — cache em formato antigo (ADR-0167, achado real Fable
 
     const resolvido = await garantirChart(
       adminStub({ 37: { rowId: '8078230:5', sizeLabel: '37 BR' } }),
-      'token', 'conexao-1', 'MLB123', 'unissex', ['37'],
+      'token', 'conexao-1', 'MLB123', 'unissex', ['37'], 'calcado',
     );
 
-    expect(resolvido.linhaPorTamanho.get('37')).toEqual({ rowId: '8078230:5', sizeLabel: '37 BR' });
+    expect(resolvido!.linhaPorTamanho.get('37')).toEqual({ rowId: '8078230:5', sizeLabel: '37 BR' });
 
     vi.unstubAllGlobals();
+  });
+});
+
+// ADR-0182 / Spike 056: quadril (SHORTS/PANTS), CLOTHING_LOTS sem guia, grade × domínio.
+// "Sem chamar o ML" = nenhuma URL de /catalog/charts: o GET /categories (domínio) é inevitável.
+describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(lerSchemaAtributos).mockReset(); });
+
+  /** Admin fake que registra toda chamada a `from` (cache `ml_size_charts`). */
+  function adminFake(cached: unknown = null) {
+    const inserts: unknown[] = [];
+    const from = vi.fn(() => ({
+      select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({
+        maybeSingle: () => Promise.resolve({ data: cached }),
+      }) }) }) }),
+      insert: (row: unknown) => { inserts.push(row); return Promise.resolve({ error: null }); },
+    }));
+    return { admin: { from } as unknown as SupabaseClient, from, inserts };
+  }
+
+  type Row = { attributes: Array<{ id: string; values: Array<{ name: string }> }> };
+  /** fetch fake: GET /categories devolve o domínio; POST /catalog/charts ecoa as linhas com id. */
+  function fetchFake(dominio: string) {
+    const posts: Array<{ url: string; body: { rows: Row[]; names: unknown; attributes: unknown } }> = [];
+    const fn = vi.fn(async (url: string, init?: { body?: string }) => {
+      if (url.includes('/categories/')) {
+        return { ok: true, json: async () => ({ settings: { catalog_domain: `MLB-${dominio}` } }) };
+      }
+      const body = JSON.parse(init?.body ?? '{}');
+      posts.push({ url, body });
+      return {
+        ok: true, status: 201,
+        json: async () => ({ id: 999, rows: body.rows.map((r: Row, i: number) => ({ id: `999:${i + 1}`, ...r })) }),
+      };
+    });
+    vi.stubGlobal('fetch', fn as unknown as typeof fetch);
+    return { posts, urls: () => fn.mock.calls.map((c) => String(c[0])) };
+  }
+
+  it('GENDER_VALUE tem os 6 gêneros com os ids do Spike 056 / ADR-0182 D3', () => {
+    expect(GENDER_VALUE.sem_genero_infantil).toEqual({ id: '19159491', nome: 'Sem gênero infantil' });
+    expect(GENDER_VALUE.meninos).toEqual({ id: '339667', nome: 'Meninos' });
+    expect(GENDER_VALUE.meninas).toEqual({ id: '339668', nome: 'Meninas' });
+    expect(GENDER_VALUE.masculino.id).toBe('339666');
+    expect(GENDER_VALUE.feminino.id).toBe('339665');
+    expect(GENDER_VALUE.unissex.id).toBe('110461');
+  });
+
+  it('SHORTS, PANTS e CLOTHING_LOTS entram em DOMINIOS_SUPORTADOS', () => {
+    for (const d of ['SHORTS', 'PANTS', 'CLOTHING_LOTS', 'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'SNEAKERS', 'SANDALS_AND_CLOGS']) {
+      expect(DOMINIOS_SUPORTADOS.has(d)).toBe(true);
+    }
+  });
+
+  it('montarLinhasChart de quadril infantil: FILTRABLE_SIZE "4 anos" e HIP_CIRCUMFERENCE_FROM "62 cm"', () => {
+    const size = [{ id: '4119847', nome: '4' }];
+    const filt = [{ id: '99', nome: '4' }, { id: '12189465', nome: '4 anos' }];
+    const linhas = montarLinhasChart(['4'], size, filt, tabelaQuadril('meninos'), 'HIP_CIRCUMFERENCE_FROM', (t) => `${t} anos`);
+    expect(linhas).toEqual([{ attributes: [
+      { id: 'SIZE', values: [{ id: '4119847', name: '4' }] },
+      { id: 'FILTRABLE_SIZE', values: [{ id: '12189465', name: '4 anos' }] },
+      { id: 'HIP_CIRCUMFERENCE_FROM', values: [{ name: '62 cm' }] },
+    ] }]);
+  });
+
+  it('dominioAceitaGrade: calçado só em domínio de calçado; infantil/calça só em quadril/sem guia', () => {
+    expect(dominioAceitaGrade('SNEAKERS', 'calcado')).toBe(true);
+    expect(dominioAceitaGrade('SANDALS_AND_CLOGS', 'calcado')).toBe(true);
+    expect(dominioAceitaGrade('PANTS', 'calcado')).toBe(false);
+    expect(dominioAceitaGrade('CLOTHING_LOTS', 'calcado')).toBe(false);
+    expect(dominioAceitaGrade('JACKETS_AND_COATS', 'letras')).toBe(true);
+    expect(dominioAceitaGrade('SHORTS', 'letras')).toBe(true);
+    expect(dominioAceitaGrade('CLOTHING_LOTS', 'letras')).toBe(true);
+    expect(dominioAceitaGrade('SNEAKERS', 'letras')).toBe(false);
+    expect(dominioAceitaGrade('PANTS', 'calca')).toBe(true);
+    expect(dominioAceitaGrade('CLOTHING_LOTS', 'infantil')).toBe(true);
+    expect(dominioAceitaGrade('SNEAKERS', 'calca')).toBe(false);
+    expect(dominioAceitaGrade('JACKETS_AND_COATS', 'infantil')).toBe(false);
+  });
+
+  it('CLOTHING_LOTS → null, sem tocar o cache nem chamar /catalog/charts', async () => {
+    const { admin, from } = adminFake();
+    const f = fetchFake('CLOTHING_LOTS');
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB271219', 'meninos', ['4', '6'], 'infantil');
+    expect(r).toBeNull();
+    expect(from).not.toHaveBeenCalled();
+    expect(f.urls().every((u) => u.includes('/categories/'))).toBe(true);
+  });
+
+  it.each([['SNEAKERS', 'calca'], ['PANTS', 'calcado']] as const)(
+    'grade %s/%s incompatível lança antes de cache/chart', async (dominio, grade) => {
+      const { admin, from } = adminFake();
+      const f = fetchFake(dominio);
+      await expect(garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['40'], grade))
+        .rejects.toThrow(`Guia de tamanhos: grade ${grade} incompatível com o domínio ${dominio} — confira a categoria do produto.`);
+      expect(from).not.toHaveBeenCalled();
+      expect(f.urls().every((u) => u.includes('/categories/'))).toBe(true);
+    },
+  );
+
+  it('gênero fora de GENDER_VALUE lança antes do cache (nunca cai na tabela masculina em silêncio)', async () => {
+    const { admin, from } = adminFake();
+    fetchFake('PANTS');
+    await expect(garantirChart(admin, 'token', 'c', 'MLB1', 'bebes' as never, ['40'], 'calca')).rejects.toThrow(/gênero/);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('gênero incoerente com a grade (Calça + meninos) lança antes do cache', async () => {
+    const { admin, from } = adminFake();
+    fetchFake('PANTS');
+    await expect(garantirChart(admin, 'token', 'c', 'MLB1', 'meninos', ['40'], 'calca')).rejects.toThrow(/gênero/);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('PANTS feminino sem cache → POST com 12 linhas (Letras + Calça), coluna HIP_CIRCUMFERENCE_FROM, 40 → 102 cm', async () => {
+    const tamanhosCategoria = ['P', 'M', 'G', 'GG', '34', '36', '38', '40', '42', '44', '46', '48', '2', '4'];
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'SIZE', valores: tamanhosCategoria.map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: [...tamanhosCategoria.slice(0, 12), '2 anos', '4 anos'].map((t, i) => ({ id: `f${i}`, nome: t })) },
+    ] as never);
+    const { admin, inserts } = adminFake();
+    const f = fetchFake('PANTS');
+
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB188065', 'feminino', ['40'], 'calca');
+
+    expect(f.posts).toHaveLength(1);
+    const rows = f.posts[0].body.rows;
+    expect(rows).toHaveLength(12);
+    const nomesSize = rows.map((row) => row.attributes.find((a) => a.id === 'SIZE')!.values[0].name);
+    expect(new Set(nomesSize)).toEqual(new Set(['P', 'M', 'G', 'GG', '34', '36', '38', '40', '42', '44', '46', '48']));
+    for (const row of rows) {
+      expect(row.attributes.map((a) => a.id)).toEqual(['SIZE', 'FILTRABLE_SIZE', 'HIP_CIRCUMFERENCE_FROM']);
+    }
+    const linha40 = rows.find((row) => row.attributes[0].values[0].name === '40')!;
+    expect(linha40.attributes[1].values[0].name).toBe('40');
+    expect(linha40.attributes[2].values[0].name).toBe('102 cm');
+    expect(f.posts[0].body.attributes).toEqual([{ id: 'GENDER', values: [{ id: '339665', name: 'Feminino' }] }]);
+    expect(r!.linhaPorTamanho.get('40')?.sizeLabel).toBe('40');
+    expect(inserts).toHaveLength(1);
+  });
+
+  it('SHORTS meninos sem cache → 8 linhas infantis com FILTRABLE_SIZE "<n> anos"', async () => {
+    const infantil = ['2', '4', '6', '8', '10', '12', '14', '16'];
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'SIZE', valores: [...infantil, 'P'].map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: infantil.map((t, i) => ({ id: `f${i}`, nome: `${t} anos` })) },
+    ] as never);
+    const { admin } = adminFake();
+    const f = fetchFake('SHORTS');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB188064', 'meninos', ['4'], 'infantil');
+    const rows = f.posts[0].body.rows;
+    expect(rows).toHaveLength(8);
+    const linha4 = rows.find((row) => row.attributes[0].values[0].name === '4')!;
+    expect(linha4.attributes[1].values[0].name).toBe('4 anos');
+    expect(linha4.attributes[2]).toEqual({ id: 'HIP_CIRCUMFERENCE_FROM', values: [{ name: '62 cm' }] });
+    expect((f.posts[0].body.names as { MLB: string }).MLB).not.toContain('_');
+  });
+
+  it('JACKETS_AND_COATS com cache existente devolve o cache, sem POST (regressão, Review Focus 4)', async () => {
+    const { admin, inserts } = adminFake({ chart_id: '8522331', linhas: { P: { rowId: '8522331:1', sizeLabel: 'P' } } });
+    const f = fetchFake('JACKETS_AND_COATS');
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['P'], 'letras');
+    expect(r).toEqual({ chartId: '8522331', linhaPorTamanho: new Map([['P', { rowId: '8522331:1', sizeLabel: 'P' }]]) });
+    expect(f.posts).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+    expect(lerSchemaAtributos).not.toHaveBeenCalled();
+  });
+
+  it('JACKETS_AND_COATS sem cache segue no peito (CHEST_CIRCUMFERENCE_FROM, regressão)', async () => {
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'SIZE', valores: ['P', 'M', 'G', 'GG'].map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: ['P', 'M', 'G', 'GG'].map((t, i) => ({ id: `f${i}`, nome: t })) },
+    ] as never);
+    const { admin } = adminFake();
+    const f = fetchFake('JACKETS_AND_COATS');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['P'], 'letras');
+    const rows = f.posts[0].body.rows;
+    expect(rows.map((row) => row.attributes[0].values[0].name)).toEqual(['P', 'M', 'G', 'GG']);
+    expect(rows.every((row) => row.attributes[2].id === 'CHEST_CIRCUMFERENCE_FROM')).toBe(true);
+    expect(rows[0].attributes[2].values[0].name).toBe('88 cm');
+    expect(f.posts[0].body.names).toEqual({ MLB: 'PubliAI Guia Jackets And Coats masculino P-M-G-GG' });
+  });
+
+  it('nomeChart normaliza o gênero infantil e mantém os nomes adultos', () => {
+    expect(nomeChart('SHORTS', 'sem_genero_infantil', ['2', '4'])).not.toContain('_');
+    expect(nomeChart('JACKETS_AND_COATS', 'masculino', ['P'])).toBe('PubliAI Guia Jackets And Coats masculino P');
   });
 });

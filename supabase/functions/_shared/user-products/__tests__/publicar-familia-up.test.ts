@@ -240,8 +240,37 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
     });
     expect(garantirChartFn).toHaveBeenCalledTimes(1);
     expect(garantirChartFn).toHaveBeenCalledWith(
-      admin, 'tok', 'conn-1', 'MLB108803', 'masculino', ['P', 'M'],
+      admin, 'tok', 'conn-1', 'MLB108803', 'masculino', ['P', 'M'], 'letras',
     );
+  });
+
+  // ADR-0182 D2: a grade gravada vence; sem ela só Letras/Calçado são inferíveis.
+  it('passa a grade gravada (calca) ao garantirChart', async () => {
+    const fn = vi.fn().mockResolvedValue({ chartId: '1', linhaPorTamanho: new Map([['40', { rowId: '1:1', sizeLabel: '40' }]]) });
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'masculino', grade_tamanho: 'calca' } as never,
+      anuncio: { ...ANUNCIO, variacoes: [{ sku: 's-40', cor: 'Azul', estoque: 1, preco: 99, gtin: null, fotoId: 'F1', tamanho: '40' }] },
+      categoriaId: 'MLB188065',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn: fn,
+    });
+    expect(fn).toHaveBeenCalledWith(admin, 'tok', 'conn-1', 'MLB188065', 'masculino', ['40'], 'calca');
+  });
+
+  it('grade não resolvível (sem grade_tamanho, tamanho infantil) lança ANTES do chart', async () => {
+    const fn = vi.fn();
+    const { admin } = fakeAdmin([]);
+    await expect(publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'meninos', grade_tamanho: null } as never,
+      anuncio: { ...ANUNCIO, variacoes: [{ sku: 's-4', cor: 'Azul', estoque: 1, preco: 99, gtin: null, fotoId: 'F1', tamanho: '4' }] },
+      categoriaId: 'MLB188064',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn: fn,
+    })).rejects.toThrow(/grade de tamanho/);
+    expect(fn).not.toHaveBeenCalled();
   });
 
   it('cada SKU recebe tamanho + sizeGridId + sizeGridRowId da sua própria linha do chart', async () => {

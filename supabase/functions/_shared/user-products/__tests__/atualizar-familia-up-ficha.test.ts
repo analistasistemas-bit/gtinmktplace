@@ -203,7 +203,33 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
   it('chart resolvido uma vez, com gênero e todos os tamanhos da família', async () => {
     await atualizarFamiliaUP(argsGrade());
     expect(chartFake).toHaveBeenCalledTimes(1);
-    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G']]);
+    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G'], 'letras']);
+  });
+
+  // ADR-0182 D2: grade gravada vence; sem ela e com tamanho não inferível → 400 antes do chart.
+  it('grade gravada (calca) chega ao garantirChart', async () => {
+    const fn = vi.fn(async () => ({ chartId: 'CH1', linhaPorTamanho: new Map([['40', { rowId: 'CH1:9', sizeLabel: '40' }]]) }));
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), grade_tamanho: 'calca' } as never,
+      variacoes: [
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '40', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: fn as never,
+    }));
+    expect((fn.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['40'], 'calca']);
+  });
+
+  it('grade não resolvível (tamanho infantil sem grade_tamanho) → erro 400 antes do chart', async () => {
+    const err = await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), genero: 'meninos', grade_tamanho: null } as never,
+      variacoes: [
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '4', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+    })).then(() => null, (e: unknown) => e);
+    expect(String(err)).toMatch(/grade de tamanho/);
+    expect((err as { status?: number }).status).toBe(400);
+    expect(chartFake).not.toHaveBeenCalled();
+    expect(criarItemSpy).not.toHaveBeenCalled();
   });
 
   it('família com tamanho e sem gênero falha alto, sem criar item', async () => {

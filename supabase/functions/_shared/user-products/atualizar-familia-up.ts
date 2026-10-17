@@ -20,6 +20,7 @@ import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
+import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
 } from './atualizar-composicao.ts';
@@ -55,6 +56,8 @@ export interface AtualizarFamiliaUPArgs {
     capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null; capa3_ml_picture_id: string | null;
     atacado?: unknown; atacado_status?: string | null;
     genero?: string | null;
+    /** ADR-0182 D2. null = família legada (inferência só Letras/Calçado). */
+    grade_tamanho?: string | null;
   };
   raiz: RaizUP;
   variacoes: VariacaoUP[];
@@ -236,8 +239,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       throw definitivo(`Família ${familia.id}: SKU com tamanho mas familias.genero ausente — o ML exige GENDER com o guia de tamanhos (ADR-0167 D6).`);
     }
     if (!familia.categoria_ml_id) throw definitivo(`Família ${familia.id}: sem categoria_ml_id para resolver o guia de tamanhos.`);
+    // ADR-0182 D2: mesma regra do CREATE (publicar-familia-up.ts).
+    const grade = gradeDaFamilia(familia.grade_tamanho ?? null, tamanhos);
+    if (!grade) {
+      throw definitivo(`Família ${familia.id}: tamanhos ${tamanhos.join(', ')} sem grade de tamanho definida (familias.grade_tamanho) — recadastre o produto escolhendo a grade.`);
+    }
     return (args.garantirChartFn ?? garantirChart)(
-      admin, await ctx.getToken(), conexao.id, familia.categoria_ml_id, familia.genero as Genero, tamanhos,
+      admin, await ctx.getToken(), conexao.id, familia.categoria_ml_id, familia.genero as Genero, tamanhos, grade,
     );
   })());
 
