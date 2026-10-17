@@ -229,6 +229,14 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // LANÇA (size-chart.ts:259-270) — falha alto, sem rotação automática (Codex r2 #9).
   // ADR-0182 D7: CLOTHING_LOT_SIZE é por SKU — o do irmão/atributos_ml nunca vaza pro SKU novo.
   const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'CLOTHING_LOT_SIZE']);
+  // Mesma regra do CREATE (publicar-familia-up.ts IDS_SUBSTITUIDOS) para todo atributo
+  // família-level que sai daqui com grade: SIZE* é por SKU, GENDER vem de familias.genero (o da
+  // IA/irmão pode divergir — Codex #2). Sem gênero não há fonte de verdade: GENDER não vai.
+  const comGeneroDaFamilia = <T extends { id?: string }>(attrs: T[]): Array<T | { id: string; value_id: string }> => [
+    ...attrs.filter((a) => !a.id || (!IDS_TAMANHO.has(a.id) && a.id !== 'GENDER')),
+    ...(familia.genero ? [{ id: 'GENDER', value_id: GENDER_VALUE[familia.genero as Genero].id }] : []),
+  ];
+  const temTamanho = variacoes.some((v) => !!v.tamanho?.trim());
   let chartPromessa: Promise<ChartResolvido | null> | null = null;
   const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
     const tamanhos = [...new Set(variacoes.map((v) => v.tamanho?.trim()).filter((t): t is string => !!t))];
@@ -271,12 +279,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     // (IDS_SUBSTITUIDOS). GENDER: mesma regra do CREATE (publicar-familia-up.ts) —
     // familias.genero, escolhido pelo operador, é a fonte de verdade; o do irmão/IA pode divergir
     // ou faltar (Codex #2). Sem tamanho, a herança fica exatamente como antes (INV-1).
-    const atributos = v.tamanho
-      ? [
-        ...atributosMesclados.filter((a) => !a.id || (!IDS_TAMANHO.has(a.id) && a.id !== 'GENDER')),
-        { id: 'GENDER', value_id: GENDER_VALUE[familia.genero as Genero].id },
-      ]
-      : atributosMesclados;
+    const atributos = v.tamanho ? comGeneroDaFamilia(atributosMesclados) : atributosMesclados;
     const payload = montarPayloadItem(
       { ...familiaInput, atributos_ml: atributos } as never,
       [{
@@ -569,7 +572,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       // I10: "adicionar variação" também não reescreve a ficha das irmãs (ADR-0157 manda os
       // atributos divergentes na reposição). Preservar preço e reescrever atributos seria meia
       // promessa — o fluxo diz que só a cor nova é tocada.
-      atributosFamilia: args.preservarPublicadas ? undefined : familia.atributos_ml,
+      // ADR-0182: com grade, o delta da reposição segue a mesma regra do CREATE (comGeneroDaFamilia)
+      // — senão o GENDER da IA e o SIZE* família-level iriam a TODOS os filhos (achado pré-merge).
+      atributosFamilia: args.preservarPublicadas
+        ? undefined
+        : temTamanho && Array.isArray(familia.atributos_ml)
+          ? comGeneroDaFamilia(familia.atributos_ml as Array<{ id?: string }>)
+          : familia.atributos_ml,
     });
   } catch (e) {
     // Fix 1: exceção não tratada com a composição já iniciada — limpa a flag (best-effort, nunca
