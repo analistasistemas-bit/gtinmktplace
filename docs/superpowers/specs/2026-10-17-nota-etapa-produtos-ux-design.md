@@ -17,67 +17,82 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
 
 1. **Layout A — cartões enxutos** (escolhido no mockup de 2026-10-17):
    - Destaque do cartão = produto vinculado: foto (capa), nome formatado, código, nº de SKUs, botão
-     **Trocar**.
+     **Trocar** (com **Cancelar**, que preserva a seleção anterior).
    - Texto do fornecedor rebaixado a linha de detalhe:
-     `Item N · na nota: "<xProd>" · <q> peças · R$ <custo>/peça`.
-   - Progresso por item: **"X de Q"** + barra (X = soma já distribuída do item, Q = quantidade da nota ×
-     fator; na etapa 2 normalmente 0).
-   - Topo: **"N de M itens prontos"** (item pronto = produto escolhido).
+     `Item N · na nota: "<xProd>" · <qCom> <uCom> × <fator> = <unidades> unidades · R$ <custo>/unidade`
+     (custo por unidade convertida; quando fator = 1 omite "× 1"). Reusar `quantidadeEmEstoque` /
+     `custoAquisicaoUnit` já existentes.
+   - Progresso por item em texto + barra: **"Distribuídas: X de Q · faltam Q−X"** (Q = unidades
+     convertidas; X = soma já distribuída do item). Não comunicar só por cor/barra.
+   - Topo: **"N de M itens prontos"**, com "pronto" = a mesma regra que trava o "Avançar" hoje
+     (produto escolhido **e** fator válido) — derivar da função existente de pendências, não duplicar.
    - Item sem produto: selo **"Sem produto"**, botões **Cadastrar produto novo** (primário) e
-     **Escolher existente…** (secundário). A busca só aparece ao clicar em "Escolher existente…".
-   - Selos atuais (Vinculado / Casou pelo GTIN / Produto escolhido / GTIN ambíguo) continuam, só que
-     visualmente coerentes com o layout.
-2. **Vínculo gravado no cadastro pela nota:** ao cadastrar produto novo a partir de um item, a edge
-   `cadastrar-produto` grava `vinculos_fornecedor (org, cnpj_fornecedor, cprod, codigo_pai,
-   fator_conversao)` com `on conflict (org_id, cnpj_fornecedor, cprod) do nothing` — **nunca
-   sobrescreve** vínculo existente (só a confirmação da nota, pela RPC do ADR-0181, pode trocá-lo;
-   um cadastro abandonado não estraga o vínculo bom de notas anteriores). Ao reabrir a nota (ou numa próxima nota do mesmo fornecedor com o mesmo cProd), o item já
-   chega **Vinculado** pelo caminho existente (`buscarVinculos`).
-3. **"Escolher existente…" sem sugestão sem relação:** a lista inicial (sem texto digitado) mostra só
-   candidatos de **GTIN igual** (`candidatosGtin` já existente; o vínculo exato cProd→produto já chega
-   como "Vinculado"); sem candidato, mostra "Digite para buscar" em vez de listar qualquer produto.
-   Não casa por nome de fornecedor (texto livre). Com texto digitado, busca em todos (como hoje).
+     **Escolher existente…** (secundário, abre a busca já focada). A busca só aparece ao pedir.
+   - Selos atuais (Vinculado / Casou pelo GTIN / Produto escolhido / GTIN ambíguo) continuam, mais
+     um novo: **"Cadastrado desta nota"** (ver item 2).
+   - Estados distintos: carregando produtos, erro ao carregar, busca sem resultado.
+2. **Produto cadastrado pela nota volta ligado ao mesmo item ao reabrir a nota.**
+   - Ao cadastrar produto novo a partir de um item, a edge `cadastrar-produto` grava na família a
+     origem `mudanca_estrutural.refNota = "nfe:<chave44>:<nItem>"` — **mesmo formato** já usado por
+     `adicionar-variacoes-familia` (`REF_NOTA`), junto com o `origem_cadastro='nota'` que já grava.
+   - Ao abrir a nota, o front busca (RLS da org) as famílias com `origem_cadastro='nota'` e `refNota`
+     com prefixo `nfe:<chave>:`, e para cada `nItem` **sem decisão** (sem vínculo/GTIN/escolha) aplica
+     o `codigo_pai` com selo "Cadastrado desta nota". Por item (`nItem`), nunca por cProd — dois itens
+     com o mesmo cProd não interferem.
+   - **`vinculos_fornecedor` não muda**: continua nascendo só na confirmação da nota (RPC do
+     ADR-0181). Nenhum fator é gravado antes da confirmação.
+   - Prioridade quando há mais de uma origem para o item: vínculo do fornecedor > GTIN único >
+     "Cadastrado desta nota" > nada. Se o operador trocar, vale a escolha manual da sessão.
+   - Idempotência: `refNota` entra na comparação do retry da mesma `chaveCadastro` (como
+     `grade_tamanho`/`genero` no ADR-0182): retry com `refNota` diferente da gravada → 409, antes de
+     qualquer efeito. `refNota` só é aceito com `origemNota` e formato válido (`REF_NOTA`); org vem do
+     usuário autenticado, nunca do payload.
+3. **"Escolher existente…" sem sugestão sem relação:** sem texto digitado, mostra só candidatos de
+   **GTIN igual** (`candidatosGtin`, preservados mesmo após escolha manual, para o "Trocar"); sem
+   candidato, "Digite para buscar". **Com texto digitado, busca em todos os produtos** (corrige o
+   comportamento atual em que GTIN ambíguo restringe a busca, `etapa-itens.tsx:24`). Não casa por nome
+   de fornecedor.
 
 ## 3. Não-objetivos
 
 - Juntar as etapas Produtos e Distribuição (opção C rejeitada).
-- Mudar a etapa Distribuição, Resumo ou a RPC de confirmação.
+- Mudar a etapa Distribuição, Resumo, a RPC de confirmação ou `vinculos_fornecedor`.
 - Similaridade de nome por IA/fuzzy para sugerir produto.
-- Desfazer/editar vínculos existentes (fora do fluxo atual de "Trocar").
 
 ## 4. Anti-objetivos
 
-- Item vinculado automaticamente a produto errado (vínculo só nasce de cadastro feito para aquele
-  cProd daquele CNPJ, ou da confirmação da nota — nunca por nome).
+- Item ligado automaticamente a produto errado (só por vínculo confirmado, GTIN único ou cadastro
+  feito para aquele mesmo `nItem` daquela mesma nota — nunca por nome).
 - Somar estoque no cadastro (continua sem estoque inicial — ADR-0181 D-4).
 - Esconder o texto do fornecedor por completo (é o que o Diego confere contra o papel).
 
 ## 5. Decisões
 
-- **Diego:** layout A; produto vinculado e "quanto falta" em destaque; vínculo automático do produto
-  cadastrado pela nota.
+- **Diego:** layout A; produto vinculado e "quanto falta" em destaque; produto cadastrado pela nota
+  volta ligado.
 - **Minhas (podem ser contestadas):**
-  - Vínculo gravado pela edge `cadastrar-produto` (service_role; `vinculos_fornecedor` não tem policy
-    de escrita) quando o payload tem `origemNota` + `vinculoNota: { cnpjFornecedor, cprod, fator }`.
-    Sem migration. Falha ao gravar o vínculo **não** desfaz o cadastro: o produto existe, o front já o
-    vincula na sessão (`aoCadastrar`); a edge loga e responde sucesso com aviso.
-  - O CNPJ vem do XML já lido (`nota.emitenteCnpj`), o cProd e o fator do item/decisão — o prefill
-    passa os três ao diálogo de cadastro (simples e grade).
-  - Regra de "pronto" do topo = produto escolhido (não depende de distribuição, que é a etapa 3).
-- **ADR:** emenda curta ao ADR-0181 (vínculo também nasce no cadastro pela nota).
+  - Retomada por `refNota` (nota+item) em vez de gravar `vinculos_fornecedor` antecipado — revisão do
+    Codex (2026-10-17) mostrou que o vínculo global quebra com cProd repetido, vínculo antigo e fator
+    antecipado. Sem migration.
+  - O cadastro feito pela nota **não** cria vínculo para notas futuras; isso continua acontecendo na
+    confirmação (como hoje).
+  - Falha ao reaplicar na reabertura (query de famílias falhou) não bloqueia: item fica "Sem produto"
+    com aviso "Não foi possível conferir produtos já cadastrados desta nota" e a busca resolve.
+- **ADR:** emenda curta ao ADR-0181 (origem `refNota` também no cadastro pela nota; retomada por item).
 
 ## 6. Validação
 
-- Unit: edge grava vínculo com `origemNota` + `vinculoNota` (também no ramo de retry idempotente);
-  não grava sem `origemNota`; vínculo existente **não** é alterado; cadastro sem nota inalterado.
-- Componente: cartão com produto vinculado mostra foto/nome/código/SKUs e "0 de 35"; item sem produto
-  mostra "Sem produto" + dois botões e nenhuma lista; "Escolher existente…" sem texto não lista
-  produto sem relação; topo "1 de 2 itens prontos".
+- Unit (edge): grava `refNota` com `origemNota` válido; recusa `refNota` sem `origemNota` ou fora do
+  formato; retry com `refNota` diferente → 409 sem efeito; cadastro sem nota inalterado; org do token.
+- Unit (front): reabertura liga item ao produto com `refNota` daquele `nItem`; dois itens com mesmo
+  cProd ligam cada um ao seu; vínculo/GTIN têm prioridade; busca com texto ignora restrição de GTIN;
+  "pronto" acompanha a trava do Avançar (fator inválido = não pronto).
+- Componente: cartão vinculado (foto/nome/código/SKUs, "Distribuídas: 0 de 35 · faltam 35"); item sem
+  produto (selo + dois botões, sem lista); Trocar → Cancelar preserva; topo "1 de 2 itens prontos".
 - Browser real (sessão isolada, sem gravar em produção) na etapa 2 com a NF 1051.
 
 ## 7. A cargo do builder
 
 - Componentes e classes (seguir `ui/` existentes, dark/light).
-- De onde vem a foto (capa) e o nº de SKUs — `ProdutoEstoqueResumo` já tem o que precisar? se não,
-  incluir no select existente.
-- Nome do campo no payload (`vinculoNota`) e validação (CNPJ 14 dígitos, cProd não vazio, fator > 0).
+- Foto e nº de SKUs: `ProdutoEstoqueResumo` já tem `qtdSkus`, `capaStoragePath`, `capaMlPictureId`.
+- Nome do campo no payload (`refNota`) e onde montar (`prefill-cadastro.ts` recebe chave e nItem).
