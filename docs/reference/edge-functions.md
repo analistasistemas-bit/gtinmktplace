@@ -369,7 +369,7 @@ mesmo por engano.
   Org sem o módulo: as 4 colunas são ignoradas — planilhas de hoje continuam válidas.
 
 ### Processamento / publicação
-- **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor
+- **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor *(2026-10-17, ADR-0026: o desempate de categoria por IA recebe o caminho completo de cada candidato — `GET /categories/{id}` `path_from_root`, cache Redis `catpath:<id>` 30 dias, orçamento ~3 s — e o gênero cadastrado `familias.genero`; o fallback de categoria do catálogo de concorrentes passa pelo mesmo desempate)*
   (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
   atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão, **frete**
   grátis do vendedor e **imposto por origem**, ADR-0050/ADR-0055) e análise de mercado;
@@ -704,7 +704,7 @@ mesmo por engano.
   obrigatórios que ela não cobre: `preencherUnitsPerPack` (kit) e `preencherNomeObrigatorio`
   (`NAME` = nome do produto quando a categoria o exige — adendo ADR-0052, lote #11).
 - **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os
-  obrigatórios não preenchidos COM schema (tipo/valores) e `action:'salvar'` valida um valor
+  obrigatórios não preenchidos COM schema (tipo/valores; `faltantesEditaveis` não pede `SIZE` quando `classificarFamilia === 'grade'` nem `GENDER` quando `familias.genero` está preenchido, 2026-10-17; o gate de publicação não muda) e `action:'salvar'` valida um valor
   server-side, faz merge em `atributos_ml`, marca `atributos_editados_pelo_operador` e recalcula
   `atributos_faltantes`. Base do editor inline na Revisão. `action:'buscar-categoria'` (ADR-0057)
   busca categorias reais do ML por texto livre (`buscarCategoriaPreditor`) e devolve também a
