@@ -25,7 +25,7 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
    - Progresso por item em texto + barra: **"Distribuídas: X de Q · faltam Q−X"** (Q = unidades
      convertidas; X = soma já distribuída do item). Não comunicar só por cor/barra.
    - Topo: **"N de M itens prontos"**. "Pronto" = predicado único por item `itemPronto(d)` (produto
-     escolhido **e** fator inteiro ≥ 1), usado **tanto** pelo contador **quanto** pela trava da etapa
+     escolhido **e** fator inteiro ≥ 1 **e** `quantidadeEmEstoque(item.qCom, fator).ok`), usado **tanto** pelo contador **quanto** pela trava da etapa
      Produtos (`motivoBloqueioEtapa(e, 1)`). Distribuição não entra (é a etapa 3): item com produto e
      fator válidos e distribuição zerada conta como pronto.
    - Item sem produto: selo **"Sem produto"**, botões **Cadastrar produto novo** (primário) e
@@ -38,7 +38,8 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
      origem `mudanca_estrutural.refNota = "nfe:<chave44>:<nItem>"` — **mesmo formato** já usado por
      `adicionar-variacoes-familia` (`REF_NOTA`), junto com o `origem_cadastro='nota'` que já grava.
    - Ao abrir a nota, o front busca (RLS da org) as famílias com `origem_cadastro='nota'` e `refNota`
-     com prefixo `nfe:<chave>:`, e para cada `nItem` **sem decisão** (sem vínculo/GTIN/escolha) aplica
+     com prefixo `nfe:<chave>:`, e para cada `nItem` **sem escolha manual na sessão** (decisão vazia ou
+     automática por vínculo/GTIN) aplica
      o `codigo_pai` com selo "Cadastrado desta nota". Por item (`nItem`), nunca por cProd — dois itens
      com o mesmo cProd não interferem.
    - **`vinculos_fornecedor` não muda**: continua nascendo só na confirmação da nota (RPC do
@@ -84,9 +85,11 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
     antecipado. Sem migration.
   - O cadastro feito pela nota **não** cria vínculo para notas futuras; isso continua acontecendo na
     confirmação (como hoje).
-  - Falha ao consultar os produtos já cadastrados desta nota: os itens sem decisão mostram estado
+  - Falha ao consultar os produtos já cadastrados desta nota: os itens sem escolha manual (vazios
+    **ou** resolvidos automaticamente por vínculo/GTIN, que poderiam ser superados por um cadastro do
+    item) mostram aviso; os vazios mostram estado
     próprio **"Não foi possível conferir produtos já cadastrados desta nota"** com **Tentar novamente**;
-    nesse estado "Escolher existente…" fica primário e "Cadastrar produto novo" secundário (evita
+    o "Tentar novamente" preserva escolhas manuais; nesse estado "Escolher existente…" fica primário e "Cadastrar produto novo" secundário (evita
     duplicar justamente quando a retomada falhou).
 - **ADR:** emenda curta ao ADR-0181 (origem `refNota` também no cadastro pela nota; retomada por item).
 
