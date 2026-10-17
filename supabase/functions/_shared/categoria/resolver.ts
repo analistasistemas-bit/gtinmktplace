@@ -15,6 +15,9 @@ export interface InputCategoria {
   /** Substantivo do tipo de produto, grounded pelo copywriter (ADR-0054). Alimenta uma 2ª
    * busca ao preditor quando o nome bruto é ruído de SKU (ex.: "EUROROMA 4/6 CORES 600G"). */
   tipoProdutoBusca?: string;
+  /** familias.genero (ADR-0166/0182). Só informa o público ao desempate LLM (ADR-0026 emenda
+   * 2026-10-17); nunca veta candidato. */
+  genero?: string | null;
 }
 
 export interface ResultadoCategoria {
@@ -112,11 +115,22 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
     deps.preditor(input.nome).catch(() => [] as CategoriaCandidata[]),
     buscaLimpa ? deps.preditor(buscaLimpa).catch(() => [] as CategoriaCandidata[]) : Promise.resolve([] as CategoriaCandidata[]),
   ]);
-  const candidatos = mesclarCandidatos(brutos, limpos);
+  return escolherEntreCandidatos(input, mesclarCandidatos(brutos, limpos), deps.llm);
+}
+
+/**
+ * Passos 3–4 do resolver sobre candidatos JÁ buscados (pista forte → genéricos → desempate LLM →
+ * topo específico). Exportado p/ o fallback por catálogo do concorrente (process-familia) passar
+ * pelo MESMO desempate, em vez de aplicar o 1º específico às cegas.
+ */
+export async function escolherEntreCandidatos(
+  input: InputCategoria,
+  candidatos: CategoriaCandidata[],
+  llm?: DepsResolver['llm'],
+): Promise<ResultadoCategoria> {
   if (candidatos.length === 0) {
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }
-
   const topo = candidatos[0];
   // Genéricos da lista COMPLETA (não só quando "só sobrou genérico"): usado como rede de
   // segurança sempre que o fluxo abaixo desistiria de um específico. Ex. real (ADR-0058,
@@ -156,8 +170,8 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
   // ambiguidade). Abstenção deliberada (null): nunca aceita o falso-amigo que sobrou —
   // cai no genérico do segmento se a busca também trouxe um (ADR-0058), senão manual.
   // Falha técnica (undefined) → cai no topo específico (resiliente, comportamento de sempre).
-  if (deps.llm) {
-    const resultado = await deps.llm(input, especificos).catch(() => undefined as string | null | undefined);
+  if (llm) {
+    const resultado = await llm(input, especificos).catch(() => undefined as string | null | undefined);
     if (resultado === null) {
       return genericoOuManual();
     }

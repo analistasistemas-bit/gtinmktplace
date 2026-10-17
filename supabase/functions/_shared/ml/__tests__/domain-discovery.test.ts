@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buscarCategoriaDireta, buscarNomeCategoria, buscarDominioCategoria, parseDomainDiscovery } from '../domain-discovery';
+import { buscarCategoriaDireta, buscarNomeCategoria, buscarDominioCategoria, buscarCaminhosCategorias, parseDomainDiscovery } from '../domain-discovery';
 
 // Shape real do probe 2026-06-14 (furadeira → 2 domains distintos).
 const REAL = [
@@ -142,5 +142,86 @@ describe('buscarDominioCategoria', () => {
 
     await buscarDominioCategoria('token', 'MLB277750', fakeFetch);
     expect(signalRecebido).toBeInstanceOf(AbortSignal);
+  });
+});
+
+// Caminho completo da categoria p/ o desempate por IA (ADR-0026 emenda 2026-10-17).
+describe('buscarCaminhosCategorias', () => {
+  const corpo = (id: string) => ({
+    MLB278065: { id, path_from_root: [{ id: 'MLB1384', name: 'Bebês' }, { id: 'MLB1', name: 'Roupas de Bebê' }, { id, name: 'Shorts' }] },
+    MLB188064: { id, path_from_root: [{ id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' }, { id, name: 'Bermudas e Shorts' }] },
+  } as Record<string, unknown>)[id];
+  const semCache = { cacheGet: async () => null, cacheSet: async () => {} };
+
+  it('une path_from_root[].name com " > " (GET público, sem token)', async () => {
+    const inits: (RequestInit | undefined)[] = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      inits.push(init);
+      const id = String(input).split('/').pop()!;
+      return new Response(JSON.stringify(corpo(id)), { status: 200 });
+    }) as typeof fetch;
+    const r = await buscarCaminhosCategorias(['MLB278065', 'MLB188064'], { fetchFn, ...semCache });
+    expect(r).toEqual({
+      MLB278065: 'Bebês > Roupas de Bebê > Shorts',
+      MLB188064: 'Calçados, Roupas e Bolsas > Bermudas e Shorts',
+    });
+    for (const i of inits) {
+      expect(i?.signal).toBeInstanceOf(AbortSignal);
+      expect(new Headers(i?.headers).has('Authorization')).toBe(false);
+    }
+  });
+
+  it('falha de 1 id (rede/HTTP) não derruba os demais', async () => {
+    const fetchFn = (async (input: string | URL | Request) => {
+      const id = String(input).split('/').pop()!;
+      if (id === 'MLB278065') throw new Error('rede');
+      if (id === 'MLB999') return new Response(null, { status: 404 });
+      return new Response(JSON.stringify(corpo(id)), { status: 200 });
+    }) as typeof fetch;
+    const r = await buscarCaminhosCategorias(['MLB278065', 'MLB188064', 'MLB999'], { fetchFn, ...semCache });
+    expect(r).toEqual({ MLB188064: 'Calçados, Roupas e Bolsas > Bermudas e Shorts' });
+  });
+
+  it('cache hit não faz GET', async () => {
+    let gets = 0;
+    const fetchFn = (async () => { gets++; return new Response(null, { status: 500 }); }) as typeof fetch;
+    const r = await buscarCaminhosCategorias(['MLB278065'], {
+      fetchFn,
+      cacheGet: async (k) => (k === 'catpath:MLB278065' ? 'Bebês > Roupas de Bebê > Shorts' : null),
+      cacheSet: async () => {},
+    });
+    expect(r).toEqual({ MLB278065: 'Bebês > Roupas de Bebê > Shorts' });
+    expect(gets).toBe(0);
+  });
+
+  it('grava no cache o caminho lido (30 dias)', async () => {
+    const sets: [string, string, number][] = [];
+    const fetchFn = (async () => new Response(JSON.stringify(corpo('MLB188064')), { status: 200 })) as typeof fetch;
+    await buscarCaminhosCategorias(['MLB188064'], { fetchFn, cacheGet: async () => null, cacheSet: async (k, v, t) => { sets.push([k, v, t]); } });
+    expect(sets).toEqual([['catpath:MLB188064', 'Calçados, Roupas e Bolsas > Bermudas e Shorts', 30 * 24 * 60 * 60]]);
+  });
+
+  it('id fora do formato MLB\\d+ não chama a API (guard de SSRF)', async () => {
+    let gets = 0;
+    const fetchFn = (async () => { gets++; return new Response(null, { status: 200 }); }) as typeof fetch;
+    expect(await buscarCaminhosCategorias(['../x'], { fetchFn, ...semCache })).toEqual({});
+    expect(gets).toBe(0);
+  });
+
+  it('fetch e Redis pendurados: devolve dentro do orçamento, só com o que chegou', async () => {
+    const fetchFn = (async (input: string | URL | Request) => {
+      const id = String(input).split('/').pop()!;
+      if (id === 'MLB278065') return new Promise<Response>(() => {}); // nunca responde (fake ignora o signal)
+      return new Response(JSON.stringify(corpo(id)), { status: 200 });
+    }) as typeof fetch;
+    const t0 = Date.now();
+    const r = await buscarCaminhosCategorias(['MLB278065', 'MLB188064'], {
+      fetchFn,
+      cacheGet: (k) => (k.endsWith('MLB188064') ? new Promise<string | null>(() => {}) : Promise.resolve(null)),
+      cacheSet: async () => {},
+      timeoutMs: 50,
+    });
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(r).toEqual({ MLB188064: 'Calçados, Roupas e Bolsas > Bermudas e Shorts' });
   });
 });

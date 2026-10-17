@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolverCategoria, type DepsResolver } from '../resolver';
+import { resolverCategoria, escolherEntreCandidatos, type DepsResolver } from '../resolver';
 import type { CategoriaCandidata } from '../../ml/domain-discovery';
 
 const furadeira: CategoriaCandidata[] = [
@@ -210,5 +210,29 @@ describe('resolverCategoria — tipo_produto_busca + candidatos genéricos + abs
     );
     expect(r.categoriaId).toBe('MLB270273');
     expect(r.origem).toBe('preditor');
+  });
+
+  it('(s) gênero do input chega ao desempate LLM', async () => {
+    let generoRecebido: string | null | undefined;
+    await resolverCategoria({ nome: 'Short', genero: 'masculino' }, deps(furadeira, async (i) => { generoRecebido = i.genero; return undefined; }));
+    expect(generoRecebido).toBe('masculino');
+  });
+});
+
+describe('escolherEntreCandidatos (candidatos já buscados — fallback por catálogo)', () => {
+  it('sem LLM → 1º específico, origem preditor', async () => {
+    const r = await escolherEntreCandidatos({ nome: 'X' }, furadeira);
+    expect(r).toMatchObject({ categoriaId: 'MLB189007', origem: 'preditor' });
+  });
+  it('LLM escolhe outro → ia', async () => {
+    const r = await escolherEntreCandidatos({ nome: 'X' }, furadeira, async () => 'MLB430376');
+    expect(r).toMatchObject({ categoriaId: 'MLB430376', origem: 'ia' });
+  });
+  it('abstenção sem genérico → manual (categoriaId null)', async () => {
+    const r = await escolherEntreCandidatos({ nome: 'X' }, furadeira, async () => null);
+    expect(r).toMatchObject({ categoriaId: null, origem: 'manual' });
+  });
+  it('lista vazia → manual', async () => {
+    expect((await escolherEntreCandidatos({ nome: 'X' }, [])).origem).toBe('manual');
   });
 });

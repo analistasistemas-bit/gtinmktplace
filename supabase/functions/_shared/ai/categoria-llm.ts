@@ -2,7 +2,7 @@ import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
 import { escolherCandidatoValido, montarPromptDesempate, ehAbstencaoDeliberada, SCHEMA_DESEMPATE } from './categoria-llm-core.ts';
-import type { CategoriaCandidata } from '../ml/domain-discovery.ts';
+import { buscarCaminhosCategorias, type CategoriaCandidata } from '../ml/domain-discovery.ts';
 import type { InputCategoria } from '../categoria/resolver.ts';
 
 export { escolherCandidatoValido, montarPromptDesempate, ehAbstencaoDeliberada } from './categoria-llm-core.ts';
@@ -21,15 +21,19 @@ export async function desempatarCategoriaLLM(
   candidatos: CategoriaCandidata[],
   modelo: string = MODELO_COPY,
   onCusto?: (centavos: number) => void,
+  buscarCaminhos: (ids: string[]) => Promise<Record<string, string>> = buscarCaminhosCategorias,
 ): Promise<string | null | undefined> {
   if (candidatos.length === 0) return undefined;
+  // Caminho completo de cada candidato (ADR-0026 emenda 2026-10-17) — FORA do try abaixo: falha
+  // aqui não pode virar "falha técnica" e pular o LLM; só tira o caminho do prompt.
+  const caminhos = await buscarCaminhos(candidatos.map((c) => c.categoriaId)).catch(() => ({}));
   try {
     const client = openrouterClient();
     const resp = await client.chat.completions.create({
       model: modelo,
       messages: [
         { role: 'system', content: 'Você classifica produtos em categorias de marketplace. Responda só com um category_id da lista fornecida.' },
-        { role: 'user', content: montarPromptDesempate(input, candidatos) },
+        { role: 'user', content: montarPromptDesempate(input, candidatos, caminhos) },
       ],
       response_format: { type: 'json_schema', json_schema: SCHEMA_DESEMPATE },
       temperature: 0,

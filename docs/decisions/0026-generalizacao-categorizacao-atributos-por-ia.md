@@ -89,3 +89,26 @@ preenchimento por IA é o E4.
 - Overrides e IDs do canal são **cache verificável**, não verdade eterna (ML recategoriza desde 29/10/2025);
   o preditor nativo alinha com isso. Monitorar status pós-publicação.
 - A taxonomia canônica continua sendo pré-requisito do mapeamento N×M e entra no E5.
+
+## Emenda 2026-10-17 — desempate vê o caminho da categoria e o gênero do produto
+
+**Caso:** short adulto masculino (00000010, org Zaven). O `domain_discovery` devolveu 1º `MLB188064`
+(Bermudas e Shorts) e 2º `MLB278065` (Bebês › Roupas de Bebê › Shorts), os dois no domínio `MLB-SHORTS`.
+O prompt do desempate só mostrava "domínio > folha" ("Shorts > Bermudas e Shorts" × "Shorts > Shorts"),
+sem o público, e a IA escolheu o de bebê. Categorias-irmãs do mesmo domínio diferem por público
+(adulto/infantil/bebê/gestante), e isso é sistemático em vestuário.
+
+**Decisão:**
+- Quando o desempate roda, cada candidato passa a aparecer com o **caminho completo**
+  (`GET /categories/{id}` público → `path_from_root[].name` unido por " > "). A leitura é em paralelo, com
+  cache no Redis (`catpath:{id}`, 30 dias) e orçamento total de ~3 s. Uma falha num candidato deixa só
+  aquele com a linha antiga "domínio > folha", e a falha nunca impede a chamada ao LLM.
+- O prompt passa a levar o **gênero cadastrado** (`familias.genero`) com o público explícito:
+  masculino/feminino/unissex = adulto; meninos/meninas/sem gênero infantil = infantil. Leva também a
+  instrução de respeitar o público mostrado nos caminhos e no gênero.
+- **Sem veto determinístico.** Um veto por "mesmo domínio" erraria no sentido inverso (ex.: "Short bebê"
+  com o adulto em 1º), então a IA continua livre para corrigir nas duas direções.
+- O fallback por nome do catálogo do concorrente (process-familia, lote #27) aplicava o 1º específico
+  sem desempate. Agora ele passa pelo **mesmo** desempate (`escolherEntreCandidatos`). Abstenção, só
+  genérico ou falha mantêm o resultado textual, como antes.
+- A pista forte de vertical (ferramenta elétrica) não muda.

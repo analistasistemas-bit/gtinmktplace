@@ -140,3 +140,64 @@ export async function buscarDominioCategoria(
   if (dominio) await redisSet(key, dominio, TTL_DOMINIO_S).catch(() => {});
   return dominio;
 }
+
+const TTL_CAMINHO_S = 30 * 24 * 60 * 60; // mesmo TTL de catnome/catdom — árvore de categorias muda raro.
+
+/** Resolve com `fallback` se `p` não resolver em `ms` (o timer é limpo em seguida). */
+function comPrazo<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const prazo = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); });
+  return Promise.race([p, prazo]).finally(() => clearTimeout(timer));
+}
+
+export interface DepsCaminhoCategoria {
+  fetchFn?: typeof fetch;
+  cacheGet?: (chave: string) => Promise<string | null>;
+  cacheSet?: (chave: string, valor: string, ttlSegundos: number) => Promise<void>;
+  /** Orçamento TOTAL do enriquecimento (as leituras correm em paralelo). */
+  timeoutMs?: number;
+}
+
+/**
+ * Caminho completo de cada categoria (`GET /categories/{id}` público → `path_from_root[].name`
+ * unido por " > ", ex. "Bebês > Roupas de Bebê > Shorts"), p/ o desempate por IA distinguir
+ * categorias-irmãs por público (ADR-0026 emenda 2026-10-17). Best-effort e isolado por id:
+ * cache miss/rede/4xx/timeout → o id simplesmente fica fora do mapa. Nunca lança. Toda espera é
+ * limitada: leitura do Redis com prazo próprio, fetch com AbortSignal e cada id com o orçamento
+ * total, então o conjunto devolve em ~timeoutMs mesmo com rede ou Redis pendurados.
+ */
+export async function buscarCaminhosCategorias(
+  ids: string[],
+  deps: DepsCaminhoCategoria = {},
+): Promise<Record<string, string>> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const cacheGet = deps.cacheGet ?? redisGet;
+  const cacheSet = deps.cacheSet ?? redisSet;
+  const orcamento = deps.timeoutMs ?? 3_000;
+  const prazoRedis = Math.min(500, Math.floor(orcamento / 3));
+
+  const um = async (id: string): Promise<string | null> => {
+    // Guard de SSRF: o id vira caminho de URL (mesmo guard de buscarNomeCategoria).
+    if (!ehCategoriaMlValida(id)) return null;
+    const key = `catpath:${id}`;
+    const cached = await comPrazo(cacheGet(key).catch(() => null), prazoRedis, null);
+    if (cached) return cached;
+    const r = await fetchFn(`https://api.mercadolibre.com/categories/${id}`, { signal: AbortSignal.timeout(orcamento) });
+    if (!r.ok) return null;
+    const json = await r.json().catch(() => null) as { path_from_root?: Array<{ name?: unknown }> } | null;
+    const nomes = (json?.path_from_root ?? [])
+      .map((n) => (typeof n?.name === 'string' ? n.name.trim() : ''))
+      .filter(Boolean);
+    if (nomes.length === 0) return null;
+    const caminho = nomes.join(' > ');
+    // Gravação não segura a resposta: falha/lentidão do Redis só perde o cache.
+    cacheSet(key, caminho, TTL_CAMINHO_S).catch(() => {});
+    return caminho;
+  };
+
+  const unicos = [...new Set(ids)];
+  const lidos = await Promise.all(unicos.map((id) => comPrazo(um(id).catch(() => null), orcamento, null)));
+  const out: Record<string, string> = {};
+  unicos.forEach((id, i) => { const c = lidos[i]; if (c) out[id] = c; });
+  return out;
+}

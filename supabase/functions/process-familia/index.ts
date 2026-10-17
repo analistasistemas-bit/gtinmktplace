@@ -21,11 +21,12 @@ import { preSubirFotosFamilia } from '../_shared/anuncios/pre-subir-fotos.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
-import { resolverCategoria, ehCategoriaGenerica } from '../_shared/categoria/resolver.ts';
+import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
+import { inputCategoriaDaFamilia, categoriaPorCatalogo } from './categoria-familia.ts';
 import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha } from '../_shared/ml/catalogo.ts';
-import { buscarCategoriaPreditor, buscarDominioCategoria, buscarNomeCategoria } from '../_shared/ml/domain-discovery.ts';
+import { buscarCategoriaPreditor, buscarDominioCategoria, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
 import { calcularSugestaoCatalogo, type SugestaoCatalogoPersistir } from './sugestao-catalogo.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
@@ -65,7 +66,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -261,13 +262,12 @@ Deno.serve(async (req) => {
     // família — antes eram descartados (só o custo do gerarCopy entrava em custo_centavos).
     let custoDesempateLLM = 0;
     const acumularDesempate = (centavos: number) => { custoDesempateLLM += centavos; };
-    const cat = await resolverCategoria(
-      { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, tipoProdutoBusca: copy.tipo_produto_busca },
-      {
-        preditor: (q) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
-        llm: (input, candidatos) => desempatarCategoriaLLM(input, candidatos, modeloTexto, acumularDesempate),
-      },
-    );
+    const inputCategoria = inputCategoriaDaFamilia(claimed, copy.tipo_produto_busca);
+    const depsCategoria = {
+      preditor: (q: string) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
+      llm: (input: InputCategoria, candidatos: CategoriaCandidata[]) => desempatarCategoriaLLM(input, candidatos, modeloTexto, acumularDesempate),
+    };
+    const cat = await resolverCategoria(inputCategoria, depsCategoria);
     let tipo = cat.tipo;
     let categoriaMlId = cat.categoriaId;
     let categoriaNome = cat.categoriaNome;
@@ -279,15 +279,15 @@ Deno.serve(async (req) => {
     // ... Crochê") resolve a categoria certa. Re-roda o preditor com ele e pega o 1º candidato
     // específico. Verificado: o nome de catálogo do BRILHO → MLB271471 "Lãs". O category_id do
     // produto de catálogo NÃO é exposto pela API (só domain_id), por isso vamos pelo nome.
-    // Resiliente: falha/rede/só genérico → mantém o resultado do preditor textual.
+    // Os candidatos passam pelo MESMO desempate do resolver (ADR-0026 emenda 2026-10-17).
+    // Resiliente: falha/rede/só genérico/abstenção → mantém o resultado do preditor textual.
     if ((cat.origem === 'generico' || cat.origem === 'manual') && concorrencia.product_name && token) {
-      const candidatos = await buscarCategoriaPreditor(token, concorrencia.product_name).catch(() => []);
-      const especifico = candidatos.find((c) => !ehCategoriaGenerica(c.categoriaNome));
-      if (especifico) {
-        categoriaMlId = especifico.categoriaId;
-        categoriaNome = especifico.categoriaNome;
-        tipo = tipoParaCategoria(especifico.categoriaId);
-        categoriaOrigem = 'preditor'; // categoria vinda do nome canônico do catálogo, não do texto sujo
+      const porCatalogo = await categoriaPorCatalogo(inputCategoria, concorrencia.product_name, depsCategoria);
+      if (porCatalogo) {
+        categoriaMlId = porCatalogo.categoriaId;
+        categoriaNome = porCatalogo.categoriaNome;
+        tipo = porCatalogo.tipo;
+        categoriaOrigem = porCatalogo.origem; // 'preditor' (1º específico) ou 'ia' (desempate trocou)
       }
     }
 
