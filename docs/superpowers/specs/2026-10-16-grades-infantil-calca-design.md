@@ -101,9 +101,10 @@ família. Ficam em módulo folha de `_shared` (padrão de `medidas-valores.ts`),
   as três; nenhum tipo novo em `tipos_produto_habilitados`.
 - **Coluna de medida por domínio**: `JACKETS_AND_COATS`/`SPORT_T_SHIRTS` → peito (atual, intacto);
   `SHORTS`/`PANTS` → quadril (tabela por gênero). `CLOTHING_LOTS` → sem chart.
-- **Cache de chart**: mantém a chave `(connection_id, domain_id, genero)`. O superset do chart de
-  quadril adulto num domínio = Letras + Calça (12 linhas) para aquele gênero; infantil = 8 linhas.
-  Os gêneros infantis já separam o infantil do adulto.
+- **Cache de chart**: chave `(connection_id, domain_id, genero, grade_tamanho)` — atualizado em
+  2026-10-16 após o ensaio real: o ML recusa chart com Letras + Calça misturadas
+  (`All FILTRABLE_SIZE values must be the same type, only numbers or alphanumeric`). Superset do
+  chart de quadril = tamanhos da própria grade (Letras 4, Calça 8, Infantil 8).
 - **ADR**: decisão nova e estrutural → **ADR-0182** (ou o próximo livre após `git fetch`) escrito
   antes do código, referenciando 0166/0167 e o Spike 056; emenda curta em 0166/0167 apontando para ele.
 
@@ -165,9 +166,8 @@ Diego troca a categoria para `MLB188064` (Bermudas e Shorts) pela tela. Não é 
   `tipos-produto-valores.ts`, regra R7).
 - Ler e registrar os `value_id` de `Meninas` e `Sem gênero infantil` (GET de categoria) antes de
   codificar.
-- Confirmar, na primeira criação real, que o ML aceita chart com Letras + numeração misturadas
-  (12 linhas); se recusar, separar o cache por grade (`domain × genero × grade`) — sem mudar o
-  comportamento visível.
+- ~~Confirmar se o ML aceita chart misto~~ — confirmado em 2026-10-16 que recusa; cache separado
+  por grade (ver §5.3).
 - Mapear a categoria do short já cadastrado para `SHORTS` (deve vir do classificador atual; só
   conferir).
 - Unificar ou não os tipos `Genero` duplicados (7 lugares, mapeados no levantamento) — mínimo é
