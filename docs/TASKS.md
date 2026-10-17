@@ -34,7 +34,9 @@
 - [x] Deploy das edges (ver `docs/how-to/deploy-e-migrations.md`), depois merge (feito em 2026-10-16); validação de runtime na Zaven (Diego).
 - [ ] Verificar `title` -> `xProd` na primeira venda faturada da Zaven; storage-js 2.110.0 em runtime.
 - [ ] Plano 2b-2 (D-12): ver a seção "Pacote do contador — inventário" abaixo.
-- [x] Etapa 2 "Produtos" da importação redesenhada em cartões enxutos (ADR-0181, emenda 2026-10-17; spec `docs/superpowers/specs/2026-10-17-nota-etapa-produtos-ux-design.md`); `cadastrar-produto` grava `refNota`. Edges deployadas 2026-10-17 (`cadastrar-produto` v29, `adicionar-variacoes-familia` v19), sem migration; front aguardando merge.
+- [x] Etapa 2 "Produtos" da importação redesenhada em cartões enxutos (ADR-0181, emenda 2026-10-17; spec `docs/superpowers/specs/2026-10-17-nota-etapa-produtos-ux-design.md`); `cadastrar-produto` grava `refNota`. Edges deployadas 2026-10-17 (`cadastrar-produto` v29, `adicionar-variacoes-familia` v19), sem migration. Em produção (main `c94ea08f`).
+- [x] Distribuição da nota com custo e quantidades do cadastro (ADR-0181 emenda 2026-10-17; plano `docs/superpowers/plans/2026-10-17-distribuicao-custo-quantidades.md`): cadastro pela nota ganha a aba "Quantidade da nota" (sugestão gravada em `familias.mudanca_estrutural.sugestaoDistribuicao`, nunca estoque); etapa 3 chega preenchida (inclusive ao reabrir) e usa o custo cadastrado na 1ª entrada comprovada (selo "Custo do cadastro (1ª entrada)" ao lado de "Aquisição R$ X/un"); recompra mantém o custo da nota. Edge `cadastrar-produto` v30, sem migration. Revisões: Codex (plano, 4 rodadas), Kimi K3 Max (diff — Codex sem cota).
+- [x] Todos os `<select>` nativos de `src/` trocados pelo `Select` de `src/components/ui/select.tsx` (Radix); regra registrada no `CLAUDE.md` (Regras operacionais). Enter no select de grade não fecha mais a confirmação "Trocar a grade?".
 
 ## Pacote do contador — vendas (ADR-0181, Plano 2a) — EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1)
 
