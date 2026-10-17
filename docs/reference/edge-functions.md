@@ -438,6 +438,19 @@ mesmo por engano.
   em slot incortável transformaria um título viável em `TituloInviavelError`. Existe porque a
   instrução equivalente no prompt foi medida e falhou — o modelo devolveu `produto="Tecido Oxford
   Liso"` com 23 caracteres sobrando.
+  **Copy de grade (ADR-0183):** família grade (`classificarFamilia = 'grade'`, toda variação
+  incluída com `tamanho`) segue um template próprio, derivado de `tamanhosDaGradeCopy`. O
+  `process-familia` e o `regenerar-copy-familia` passam `tamanho` e `excluida_da_publicacao`.
+  - **Seções removidas:** 🎯 e 📦 saem, e não fica nenhum bullet com medida ou com rótulo de
+    tamanho.
+  - **Pergunta fixa:** ❓ ganha uma pergunta fixa de tamanho.
+  - **Guia 📏 GUIA DE TAMANHOS:** é determinístico e fica entre 📌 e ❓. Tem a linha "Tamanhos
+    disponíveis: …" (com "anos" na grade infantil) e um aviso para conferir as medidas nas fotos.
+    Não traz nenhum número de medida.
+  - **Seção 🎨:** lista cor ou estampa, nunca tamanho.
+  - **UPDATE UP:** `atualizarSecaoTamanhos` reescreve a linha de tamanhos junto com
+    `atualizarSecaoCores`.
+
   **Eixo de variação (ADR-0115):** `_shared/ai/eixo-variacao.ts` deriva o eixo da família do
   SUFIXO do nome de cada variação em relação ao `nome_pai` (`… Est.6` → `Estampa 6`), não da cor.
   O rótulo da seção da descrição vem da palavra da fonte: `🎨 ESTAMPAS DISPONÍVEIS`,

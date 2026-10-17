@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Copy de produto em grade (ADR-0183) — EM PRODUÇÃO desde 2026-10-17 (main `b1433c81`)
+
+- [x] Template de grade:
+  - intro de até 2 parágrafos, ✅ até 6 e 📌 até 8, sem medida;
+  - sem 🎯/📦;
+  - 📏 guia determinístico que remete às fotos;
+  - pergunta fixa de tamanho;
+  - convite final.
+- [x] 🎨 ESTAMPAS/CORES derivado da grade (`nome == cor`). A família `00000043` saía como "CORES: Estampa 1…".
+- [x] UPDATE UP atualiza a linha "Tamanhos disponíveis".
+- [x] Revisão do plano pelo Codex gpt-6.1-sol: r1 com 5 achados, r2 com 1 achado, todos incorporados.
+- [x] Revisão do diff pelo Grok 4.7 xhigh: 4 achados não bloqueantes, todos corrigidos.
+- [x] Deploy em 2026-10-17 11:47 de `process-familia`, `regenerar-copy-familia`, `preview-kit-virtual`, `publicar-split-ml`, `update-familia-ml` e `reconciliar-convergencia-up`. Fonte conferida por download.
+- [ ] Validar na primeira família em grade processada: 📏 presente, sem cm, sem 🎯/📦.
+
 ## UPDATE: cor User Products e preço herdado do ML (ADR-0016 adendos 2026-10-16) — EM PRODUÇÃO desde 2026-10-16 (main `d60f3a4a` e `e53e486a`)
 
 - [x] Cor UP já publicada não vira "cor nova": ingest usa SKU ativo em `anuncios_externos_itens`; Revisão usa `casadaNoMl`. Reparo no banco: 96 variações de 8 famílias do lote `9c1e8a12` reincluídas (autorizado pelo Diego).

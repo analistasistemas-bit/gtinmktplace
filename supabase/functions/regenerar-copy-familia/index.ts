@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     // lugar de "Búfalo").
     // `variacoes.nome` alimenta o eixo de variação (ADR-0115). Sem ele a regeneração cairia no
     // caminho de cor e desfaria, em silêncio, a lista de estampas que a publicação original tinha.
-    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, nome, cor, preco)')
+    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, nome, cor, preco, tamanho, excluida_da_publicacao)')
     .eq('id', body.familia_id)
     .eq('org_id', context.orgId)
     .maybeSingle();
@@ -59,6 +59,9 @@ Deno.serve(async (req) => {
       cor: typeof v.cor === 'string' ? v.cor : null,
       preco: Number(v.preco ?? 0),
       nome: typeof v.nome === 'string' ? v.nome : null,
+      // ADR-0183: sem tamanho a regeneração desfaria o template de grade.
+      tamanho: typeof v.tamanho === 'string' ? v.tamanho : null,
+      excluida_da_publicacao: v.excluida_da_publicacao === true,
     }));
 
     const result = await gerarCopy({
