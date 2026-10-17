@@ -167,6 +167,13 @@ describe('clonarFamilia', () => {
     expect(fam.nome_pai).toBe('P');
   });
 
+  // ADR-0182 D2 / Review Focus 2: nova versão sem grade_tamanho deixaria a calça ambígua.
+  it('preserva grade_tamanho e genero', () => {
+    const fam = clonarFamilia({ id: 'a', grade_tamanho: 'calca', genero: 'feminino' }, { loteId: 'l1', userId: 'u1', chave: 'k1' });
+    expect(fam.grade_tamanho).toBe('calca');
+    expect(fam.genero).toBe('feminino');
+  });
+
   it('STRIP_FAMILIA cobre timestamps de processamento e diagnóstico do title pipeline', () => {
     expect(STRIP_FAMILIA).toEqual(expect.arrayContaining([
       'id', 'criado_em', 'atualizado_em', 'lote_id', 'status', 'chave_cadastro',
@@ -362,9 +369,37 @@ describe('validarGrade', () => {
     { codigo: '00000001', cor: 'Preto', tamanho: 'P', excluida_da_publicacao: false },
     { codigo: '00000002', cor: 'Preto', tamanho: 'M', excluida_da_publicacao: false },
   ];
-  const ctx = { vivas, tiposHabilitados: ['roupa'], genero: 'masculino', ehUP: true };
+  const ctx = { vivas, tiposHabilitados: ['roupa'], genero: 'masculino', ehUP: true, gradeTamanho: null as string | null };
   const nova = (cor: string, tamanho?: string, extra: object = {}) => ({ nome: cor, tamanho, gtin: null, preco: 10, custo: null, estoqueInicial: 1,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: 'u/x', ...extra }) as VariacaoNovaEntrada;
+  // ADR-0182 D2 / Review Focus 1: calça 34–46 nunca é inferida como calçado quando a grade está gravada.
+  describe('grade gravada (ADR-0182)', () => {
+    const vivasCalca = [
+      { codigo: '00000001', cor: 'Preto', tamanho: '34', excluida_da_publicacao: false },
+      { codigo: '00000002', cor: 'Preto', tamanho: '36', excluida_da_publicacao: false },
+    ];
+    const cCalca = { ...ctx, vivas: vivasCalca, tiposHabilitados: ['roupa', 'calcado'], gradeTamanho: 'calca' };
+    it('calça gravada em org roupa+calçado: aceita 38, recusa 39', () => {
+      expect(validarGrade([nova('Preto', '38')], cCalca)).toEqual([]);
+      expect(validarGrade([nova('Preto', '39')], cCalca)[0]!.mensagem).toMatch(/Tamanho "39" não é válido/);
+    });
+    it('calça não passa pela checagem de numeração de calçado (46 feminino aceito)', () => {
+      expect(validarGrade([nova('Preto', '46')], { ...cCalca, genero: 'feminino' })).toEqual([]);
+    });
+    it('calça gravada com Roupa desligada na org → mensagem de tipo desativado', () => {
+      expect(validarGrade([nova('Preto', '38')], { ...cCalca, tiposHabilitados: ['calcado'] })[0]!.mensagem)
+        .toMatch(/Roupa está desativado/);
+    });
+    it('infantil gravada aceita 8 e recusa P', () => {
+      const c = { ...ctx, vivas: [{ codigo: '00000001', cor: 'Azul', tamanho: '4', excluida_da_publicacao: false }], genero: 'meninos', gradeTamanho: 'infantil' };
+      expect(validarGrade([nova('Azul', '8')], c)).toEqual([]);
+      expect(validarGrade([nova('Azul', 'P')], c)).toHaveLength(1);
+    });
+    it('grade null com vivas P,M segue a inferência legada (Letras)', () => {
+      expect(validarGrade([nova('Verde', 'G')], { ...ctx, gradeTamanho: null })).toEqual([]);
+      expect(validarGrade([nova('Verde', '38')], { ...ctx, gradeTamanho: null, tiposHabilitados: ['roupa', 'calcado'] })).toHaveLength(1);
+    });
+  });
   it('aceita cor nova e tamanho novo', () => {
     expect(validarGrade([nova('Verde', 'P'), nova('Preto', 'G')], ctx)).toEqual([]);
   });

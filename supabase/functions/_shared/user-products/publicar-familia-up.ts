@@ -97,7 +97,8 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     // estruturado). SIZE/SIZE_GRID_ID/SIZE_GRID_ROW_ID entram por SKU em montarPayloadItem — se a
     // IA também os tivesse posto em atributos_ml (nível família), duplicariam do mesmo jeito.
     // `familias.genero` (ADR-0166, escolhido pelo operador) é sempre a fonte de verdade aqui.
-    const IDS_SUBSTITUIDOS = new Set(['GENDER', 'SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
+    // ADR-0182 D7: CLOTHING_LOT_SIZE também é por SKU — nunca herdado do nível família.
+    const IDS_SUBSTITUIDOS = new Set(['GENDER', 'SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'CLOTHING_LOT_SIZE']);
     atributosComGenero = [
       ...anuncio.atributos.filter((a) => !a.id || !IDS_SUBSTITUIDOS.has(a.id)),
       { id: 'GENDER', value_id: genderValue.id },
@@ -169,6 +170,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
         sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: !!v.tamanho && chart === null,
         corValueId: resolverCorValueId(v.cor, valoresCor),
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,

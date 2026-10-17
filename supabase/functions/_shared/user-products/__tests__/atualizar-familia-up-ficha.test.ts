@@ -219,6 +219,29 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
     expect((fn.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['40'], 'calca']);
   });
 
+  // ADR-0182 D7 / Review Focus 7: CLOTHING_LOT_SIZE é por SKU — o do irmão ('4') e o de
+  // atributos_ml nunca vazam; o SKU novo sai com exatamente um, o seu ('6').
+  it('chart null (CLOTHING_LOTS): SKU novo sai com GENDER infantil e só o SEU CLOTHING_LOT_SIZE', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
+      ...ATRIBUTOS_DO_IRMAO,
+      { id: 'GENDER', value_id: '339667', value_name: 'Meninos' },
+      { id: 'CLOTHING_LOT_SIZE', value_id: null, value_name: '4' },
+    ] }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(argsGrade().familia as object), genero: 'meninos', grade_tamanho: 'infantil',
+        atributos_ml: [{ id: 'CLOTHING_LOT_SIZE', value_name: '2' }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul-petróleo', tamanho: '4', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
+        { codigo: 'NOVA', cor: 'Preto', tamanho: '6', estoque: 40, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: vi.fn(async () => null) as never,
+    }));
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '6' }]);
+    expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339667' }]);
+    expect(attrs.map((a) => a.id)).not.toContain('SIZE');
+  });
+
   it('grade não resolvível (tamanho infantil sem grade_tamanho) → erro 400 antes do chart', async () => {
     const err = await atualizarFamiliaUP(argsGrade({
       familia: { ...(argsGrade().familia as object), genero: 'meninos', grade_tamanho: null } as never,

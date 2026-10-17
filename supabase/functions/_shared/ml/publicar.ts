@@ -53,6 +53,9 @@ interface VariacaoInput {
    *  /items/validate real devolveu `invalid.fashion_grid.size.values` com o valor cru. Em
    *  vestuário os dois coincidem (P=P), por isso cai em `tamanho` quando ausente. */
   sizeLabel?: string | null;
+  /** ADR-0182 D7: domínio sem guia de tamanhos (CLOTHING_LOTS, `garantirChart` → null). O
+   *  tamanho vai em `CLOTHING_LOT_SIZE` (Spike 056 §5), sem SIZE/SIZE_GRID_*. */
+  tamanhoSemGuia?: boolean;
   /** `value_id` da cor no dicionário da categoria, resolvido pelo caller com o schema
    *  (`_shared/cor/value-id.ts`). Ausente/null = cor fora do dicionário: vai só pelo nome. */
   corValueId?: string | null;
@@ -188,7 +191,9 @@ export function montarPayloadItem(
     // ML exige SIZE + SIZE_GRID_ID + SIZE_GRID_ROW_ID simultaneamente nas categorias que exigem
     // guia de tamanhos. `v.tamanho` sem grid resolvido falha LOUD: nunca publica um SIZE solto
     // que o ML vai rejeitar de qualquer forma, com uma mensagem que esconde a causa real.
-    if (v.tamanho) {
+    if (v.tamanho && v.tamanhoSemGuia) {
+      atributosFlat.push({ id: 'CLOTHING_LOT_SIZE', value_name: v.tamanho });
+    } else if (v.tamanho) {
       if (!v.sizeGridId || !v.sizeGridRowId) {
         throw new Error(
           `SKU ${v.codigo}: tamanho "${v.tamanho}" sem guia de tamanhos resolvida `

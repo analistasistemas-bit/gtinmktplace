@@ -206,6 +206,25 @@ describe('montarPayloadItem', () => {
     expect(() => montarPayloadItem(roupa, [v], capaPictureId, null, null, undefined, null, undefined, 'plano'))
       .toThrow(/guia de tamanhos/i);
   });
+
+  // ADR-0182 D7 / Spike 056 §5: CLOTHING_LOTS valida sem grid, tamanho em CLOTHING_LOT_SIZE.
+  it('tamanhoSemGuia: envia CLOTHING_LOT_SIZE e nenhum SIZE/SIZE_GRID_* (ADR-0182 D7)', () => {
+    const kit = { ...familia, categoria_ml_id: 'MLB271219' };
+    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: true };
+    const p = montarPayloadItem(kit, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(p.attributes.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '4' }]);
+    const ids = p.attributes.map((a) => a.id);
+    expect(ids).not.toContain('SIZE');
+    expect(ids).not.toContain('SIZE_GRID_ID');
+    expect(ids).not.toContain('SIZE_GRID_ROW_ID');
+  });
+
+  it('tamanhoSemGuia falso e sem grid continua falhando LOUD', () => {
+    const kit = { ...familia, categoria_ml_id: 'MLB271219' };
+    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: false };
+    expect(() => montarPayloadItem(kit, [v], capaPictureId, null, null, undefined, null, undefined, 'plano'))
+      .toThrow(/sem guia de tamanhos resolvida/);
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

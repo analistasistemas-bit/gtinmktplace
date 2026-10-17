@@ -227,7 +227,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // por execução (SIZE_GRID_ID é o mesmo para a família inteira). O chart nasce com o superset de
   // tamanhos (ADR-0167 D2), então isto é cache hit. Tamanho fora do chart em cache: garantirChart
   // LANÇA (size-chart.ts:259-270) — falha alto, sem rotação automática (Codex r2 #9).
-  const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
+  // ADR-0182 D7: CLOTHING_LOT_SIZE é por SKU — o do irmão/atributos_ml nunca vaza pro SKU novo.
+  const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'CLOTHING_LOT_SIZE']);
   let chartPromessa: Promise<ChartResolvido | null> | null = null;
   const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
     const tamanhos = [...new Set(variacoes.map((v) => v.tamanho?.trim()).filter((t): t is string => !!t))];
@@ -284,6 +285,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         // Tamanho sem linha no chart → o guard de montarPayloadItem lança "sem guia de tamanhos".
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
         sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: !!v.tamanho && chart === null,
       }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
       undefined, dimensoes, aceitaEmptyGtin, 'plano',

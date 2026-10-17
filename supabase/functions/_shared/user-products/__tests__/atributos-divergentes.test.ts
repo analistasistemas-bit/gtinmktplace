@@ -1,6 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { atributosDivergentes } from '../atributos-divergentes';
 
+// ADR-0182 D7 / Review Focus 7: CLOTHING_LOT_SIZE é por SKU — a reposição nunca o empurra a
+// todos os filhos a partir de `atributos_ml` (nível família).
+describe('atributosDivergentes — CLOTHING_LOT_SIZE (ADR-0182)', () => {
+  it('nunca propaga CLOTHING_LOT_SIZE, mesmo divergente do ML', () => {
+    expect(atributosDivergentes(
+      [{ id: 'CLOTHING_LOT_SIZE', value_name: '2' }],
+      [{ id: 'CLOTHING_LOT_SIZE', value_id: null, value_name: '4' }],
+    )).toEqual([]);
+  });
+});
+
 /**
  * Ficha real de `MLB5197880975` (Lantejoula Holográfica Carnaval, org Avil) lida do ML em
  * 07/09/2026, depois de o UPDATE ter rodado sem propagar nada. É o caso que motivou o ADR-0157:

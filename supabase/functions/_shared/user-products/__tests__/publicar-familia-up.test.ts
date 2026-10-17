@@ -259,6 +259,31 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
     expect(fn).toHaveBeenCalledWith(admin, 'tok', 'conn-1', 'MLB188065', 'masculino', ['40'], 'calca');
   });
 
+  // ADR-0182 D7: CLOTHING_LOTS (chart null) → GENDER infantil + CLOTHING_LOT_SIZE próprio do SKU,
+  // mesmo que atributos_ml (IA/Revisão) já traga um CLOTHING_LOT_SIZE de nível família.
+  it('chart null (CLOTHING_LOTS), gênero meninos → GENDER 339667 + exatamente um CLOTHING_LOT_SIZE', async () => {
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'meninos', grade_tamanho: 'infantil' } as never,
+      anuncio: {
+        ...ANUNCIO, atributos: [{ id: 'CLOTHING_LOT_SIZE', value_name: '2' }],
+        variacoes: [
+          { sku: 's-4', cor: 'Azul', estoque: 1, preco: 99, gtin: null, fotoId: 'F1', tamanho: '4' },
+          { sku: 's-6', cor: 'Azul', estoque: 1, preco: 99, gtin: null, fotoId: 'F2', tamanho: '6' },
+        ],
+      },
+      categoriaId: 'MLB271219',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn: vi.fn().mockResolvedValue(null),
+    });
+    const montarPayloadPlano = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_id?: string; value_name?: string }[] } }).montarPayloadPlano;
+    const p6 = montarPayloadPlano('s-6');
+    expect(p6.attributes.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339667' }]);
+    expect(p6.attributes.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '6' }]);
+    expect(p6.attributes.map((a) => a.id)).not.toContain('SIZE');
+  });
+
   it('grade não resolvível (sem grade_tamanho, tamanho infantil) lança ANTES do chart', async () => {
     const fn = vi.fn();
     const { admin } = fakeAdmin([]);
