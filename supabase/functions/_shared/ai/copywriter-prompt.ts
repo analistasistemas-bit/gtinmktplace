@@ -440,18 +440,22 @@ function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boo
   return [...linhas.slice(0, ini), ...linhas.slice(fim)].join('\n');
 }
 
-const RE_MEDIDA = /\d+(?:[.,]\d+)?\s*(?:cm|cms|mm|m|metros?|cent[ií]metros?|mil[ií]metros?)\b/i;
-const RE_ROTULO_MEDIDA = /^(tamanhos?|medidas?|dimens[õo]es|comprimento|largura|altura|metragem)$/i;
+// Sem flag i: "3M" (marca) não é metro. Lookahead Unicode no lugar de \b: "1 máscara" não é metro.
+const RE_MEDIDA = /\d+(?:[.,]\d+)?\s*(?:cms?|CM|mm|MM|m|metros?|cent[ií]metros?|mil[ií]metros?)(?![\p{L}\d])/u;
+// Rótulo por PREFIXO, em qualquer bullet: "• Tamanhos disponíveis: 2 e 4", "✔ Tamanho: 2 a 8 anos".
+const RE_ROTULO_MEDIDA = /^[✔•▪-]\s*(tamanho|medida|dimens|comprimento|largura|altura|metragem)[^:]*:/i;
+// Pergunta da IA sobre tamanho/medida: o sistema já insere a fixa, a da IA duplicaria.
+const RE_PERGUNTA_TAMANHO = /^▪.*\b(tamanhos?|medidas?)\b/i;
 
-/** Bullet com medida ou com rótulo de medida/tamanho sai INTEIRO — mesma doutrina de
- *  `removerPerguntasIncompletas`: bloco estruturado, nunca corte no meio da prosa. */
+/** Bullet com medida, rótulo de medida/tamanho ou pergunta de tamanho sai INTEIRO — mesma
+ *  doutrina de `removerPerguntasIncompletas`: bloco estruturado, nunca corte no meio da prosa. */
 function removerBulletsDeMedida(descricao: string): string {
   return descricao
     .split('\n')
     .filter((l) => {
-      if (!ehBullet(l)) return true;
-      const rotulo = l.match(RE_BULLET_ESPECIFICACAO)?.[1];
-      return !RE_MEDIDA.test(l) && !(rotulo && RE_ROTULO_MEDIDA.test(rotulo));
+      const t = l.trim();
+      if (!ehBullet(t) || t === PERGUNTA_TAMANHO) return true;
+      return !RE_MEDIDA.test(t) && !RE_ROTULO_MEDIDA.test(t) && !RE_PERGUNTA_TAMANHO.test(t);
     })
     .join('\n');
 }
@@ -469,11 +473,19 @@ function garantirPerguntaTamanho(descricao: string): string {
   return linhas.join('\n');
 }
 
-/** Guia antes do primeiro cabeçalho que vem DEPOIS de 📌 (ordem do infográfico: specs → guia → FAQ). */
+/** Guia logo após a lista de 📌 (ordem do infográfico: specs → guia → FAQ). Ancorar no fim da
+ *  lista, e não no próximo cabeçalho, evita cair depois da frase final quando a ❓ foi recriada
+ *  no fim do texto. Sem 📌: antes do primeiro cabeçalho posterior, senão no fim. */
 function inserirGuiaTamanhos(descricao: string, tamanhos: string[]): string {
   const bloco = `${SECAO_GUIA}\n\n${linhaTamanhos(tamanhos)}\n\n${AVISO_FOTOS}`;
-  const desde = Math.max(descricao.indexOf(SECAO_ESPECIFICACOES), 0);
-  const posicoes = CABECALHOS_APOS_ESPECIFICACOES.map((h) => descricao.indexOf(h, desde)).filter((i) => i > -1);
+  const linhas = descricao.split('\n');
+  const ini = linhas.findIndex((l) => l.includes(SECAO_ESPECIFICACOES));
+  if (ini > -1) {
+    let fim = ini + 1;
+    while (fim < linhas.length && (linhas[fim].trim() === '' || ehBullet(linhas[fim]))) fim++;
+    return [...linhas.slice(0, fim), '', bloco, '', ...linhas.slice(fim)].join('\n').trim();
+  }
+  const posicoes = CABECALHOS_APOS_ESPECIFICACOES.map((h) => descricao.indexOf(h)).filter((i) => i > -1);
   const idx = posicoes.length > 0 ? Math.min(...posicoes) : descricao.length;
   return `${descricao.slice(0, idx).trimEnd()}\n\n${bloco}\n\n${descricao.slice(idx)}`.trim();
 }

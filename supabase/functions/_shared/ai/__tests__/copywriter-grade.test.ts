@@ -164,6 +164,43 @@ describe('posProcessarDescricao em grade (ADR-0183)', () => {
   });
 });
 
+describe('achados da revisão Grok (ADR-0183)', () => {
+  const base = (specs: string[], extra: string[] = []) => [
+    '🧵 CONJUNTO', '', 'Texto.', '', '✅ POR QUE ESCOLHER', '', '✔ Faixa refletiva 3M', '✔ Tamanho: 2 a 8 anos',
+    '', '📌 ESPECIFICAÇÕES', '', ...specs, ...extra, '', 'Garanta o seu.',
+  ].join('\n');
+
+  it('rótulo de tamanho por prefixo em qualquer bullet sai; marca 3M e "1 máscara" ficam', () => {
+    const r = posProcessarDescricao(
+      base(['• Marca: 3M', '• Conteúdo: 1 máscara', '• Tamanhos disponíveis: 2 e 4', '• Composição: Poliamida']),
+      CONJUNTO, '', variacoesConjunto,
+    );
+    expect(r).toContain('✔ Faixa refletiva 3M');
+    expect(r).toContain('• Marca: 3M');
+    expect(r).toContain('• Conteúdo: 1 máscara');
+    expect(r).not.toContain('Tamanho: 2 a 8');
+    expect(r).not.toContain('2 e 4');
+    expect(r.match(/Tamanhos disponíveis/g)).toHaveLength(1);
+  });
+
+  it('pergunta de tamanho da IA sai; fica só a fixa', () => {
+    const r = posProcessarDescricao(base(['• Composição: Poliamida'], [
+      '', '❓ PERGUNTAS SOBRE ESTE PRODUTO', '', '▪ Qual o tamanho? Do 2 ao 8 anos.',
+      '▪ Qual a composição? Poliamida.', '▪ Tem proteção UV? Sim.',
+    ]), CONJUNTO, '', variacoesConjunto);
+    expect(r).not.toContain('Do 2 ao 8');
+    expect(r.match(/tamanho\?/gi)).toHaveLength(1);
+  });
+
+  it('❓ recriada no fim: guia fica logo após 📌, antes da frase final', () => {
+    const r = posProcessarDescricao(
+      base(['• Composição: Poliamida', '• Marca: Lulu', '• Modelo: Praia']), CONJUNTO, '', variacoesConjunto,
+    );
+    expect(r.indexOf('📏')).toBeLessThan(r.indexOf('Garanta o seu.'));
+    expect(r.indexOf('📌')).toBeLessThan(r.indexOf('📏'));
+  });
+});
+
 describe('não-grade inalterado (ADR-0183)', () => {
   it('sem tamanho, 🎯/📦 continuam e não há 📏', () => {
     const r = posProcessarDescricao(DESCRICAO_IA, 'Fita', '', [{ codigo: '1', cor: 'Estampa 1', nome: 'Estampa 1', preco: 1 }]);
