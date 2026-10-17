@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aplicaEstoqueInicial, entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
-  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem,
+  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem, refNotaDiverge,
 } from '../processar.ts';
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
@@ -465,5 +465,18 @@ describe('grade de tamanhos (ADR-0182)', () => {
       expect(gradeOuGeneroDivergem(entradaGrade(['P']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(false);
       expect(gradeOuGeneroDivergem(entradaGrade(['34']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(true);
     });
+  });
+});
+
+describe('refNotaDiverge (retry)', () => {
+  const A = `nfe:${'1'.repeat(44)}:1`;
+  const B = `nfe:${'1'.repeat(44)}:2`;
+  it('compara a gravada com a entrada', () => {
+    expect(refNotaDiverge({ refNota: A }, B)).toBe(true);
+    expect(refNotaDiverge(null, undefined)).toBe(false);
+    expect(refNotaDiverge({ refNota: A }, A)).toBe(false);
+    expect(refNotaDiverge({ refNota: A }, undefined)).toBe(true);
+    expect(refNotaDiverge(null, A)).toBe(true);
+    expect(refNotaDiverge({}, undefined)).toBe(false);
   });
 });

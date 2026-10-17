@@ -204,3 +204,28 @@ describe('grade e gênero (ADR-0182)', () => {
     expect(montarLinhasProduto(valido, ctx).familia.grade_tamanho).toBeNull();
   });
 });
+
+describe('refNota (ADR-0181 emenda)', () => {
+  const ref = (n: number) => `nfe:${'1'.repeat(44)}:${n}`;
+  const ctx = {
+    loteId: 'lote-1', userId: 'user-1', orgId: 'org-1',
+    codigoPai: '09912345', codigos: ['09912346', '09912347'],
+    chaveCadastro: '11111111-1111-1111-1111-111111111111',
+  };
+
+  it('origemNota + refNota válida: sem erro', () => {
+    expect(validarProdutoNovo({ ...valido, origemNota: true, refNota: ref(2),
+      variacoes: valido.variacoes.map((v) => ({ ...v, estoqueInicial: undefined })) })).toEqual([]);
+  });
+  it('refNota sem origemNota: erro no campo refNota', () => {
+    expect(validarProdutoNovo({ ...valido, refNota: ref(2) }).map((e) => e.campo)).toContain('refNota');
+  });
+  it('refNota malformada: erro no campo refNota', () => {
+    expect(validarProdutoNovo({ ...valido, origemNota: true, refNota: 'nfe:123:2' }).map((e) => e.campo)).toContain('refNota');
+  });
+  it('montarLinhasProduto grava mudanca_estrutural só com refNota', () => {
+    const com = montarLinhasProduto({ ...valido, origemNota: true, refNota: ref(2) }, ctx).familia;
+    expect(com.mudanca_estrutural).toEqual({ refNota: ref(2) });
+    expect('mudanca_estrutural' in montarLinhasProduto(valido, ctx).familia).toBe(false);
+  });
+});

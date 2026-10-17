@@ -135,6 +135,13 @@ export function gradeOuGeneroDivergem(
   return (p.genero ?? null) !== (gravada.genero ?? null);
 }
 
+/** ADR-0181 (emenda): retry com refNota diferente da gravada (ou presente só de um lado)
+ *  é divergência (409) — a referência liga o produto ao item da nota. */
+export function refNotaDiverge(gravada: unknown, entrada: string | undefined): boolean {
+  const g = (gravada as { refNota?: unknown } | null)?.refNota;
+  return (typeof g === 'string' ? g : undefined) !== entrada;
+}
+
 /** Org com módulo fiscal exige entrada fiscal completa; sem módulo, ignora (spec §5). */
 export function validarFiscalDaEntrada(
   p: ProdutoEntrada, moduloFiscalAtivo: boolean, regimeOrg: 'simples' | 'normal',

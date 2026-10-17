@@ -5,6 +5,7 @@
 import type { adminClient } from '../_shared/supabase.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 import { normalizarNomeCor } from '../_shared/cor/value-id.ts';
+import { REF_NOTA } from '../_shared/nfe/ref-nota.ts';
 import {
   classificarFamilia, gradeDaFamilia, numeracaoPublicavel, tamanhosDaGrade, tipoDaGradeTamanho,
 } from '../_shared/produto/tipos-produto-valores.ts';
@@ -29,8 +30,6 @@ export type VariacaoNovaResolvida = Omit<VariacaoNovaEntrada, 'codigo' | 'imagem
 export interface ErroValidacao { campo: string; mensagem: string }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** ADR-0181 D-8: referência da nota de compra (`nfe:{chave44}:{nItem}`). */
-const REF_NOTA = /^nfe:\d{44}:\d{1,3}$/;
 const chaveDaRef = (refNota: string) => refNota.split(':')[1];
 
 /** Normaliza 1-8 dígitos para 8 com padStart; null se não for só-dígitos ou vazio/9+. */

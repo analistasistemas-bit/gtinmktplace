@@ -4,6 +4,7 @@
 import {
   type Genero, type GradeTamanho, GENEROS_VALIDOS, generosDaGrade, gradeDaFamilia,
 } from './tipos-produto-valores.ts';
+import { REF_NOTA } from '../nfe/ref-nota.ts';
 
 export interface VariacaoEntrada {
   nome?: string | null;
@@ -53,6 +54,8 @@ export interface ProdutoEntrada {
   /** ADR-0181 D-4: cadastro aberto a partir da importação de nota de compra. O saldo vem SÓ da
    *  nota — estoque inicial aqui somaria em dobro; a família é marcada `origem_cadastro='nota'`. */
   origemNota?: boolean;
+  /** ADR-0181 (emenda): `nfe:{chave44}:{nItem}` do item da nota; só com `origemNota`. */
+  refNota?: string;
 }
 
 export interface ErroValidacao { campo: string; mensagem: string }
@@ -72,6 +75,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
   if (!p.nomePai?.trim()) erros.push({ campo: 'nomePai', mensagem: 'Nome do produto é obrigatório.' });
+
+  if (p.refNota !== undefined && (!p.origemNota || typeof p.refNota !== 'string' || !REF_NOTA.test(p.refNota))) {
+    erros.push({ campo: 'refNota', mensagem: 'Referência da nota inválida.' });
+  }
 
   // Trava LOUD da idempotência: sem chave válida o retry duplica produto e duplica o estoque
   // inicial. "Edge Functions idempotentes" é regra inegociável do projeto — não trocar por um
@@ -211,6 +218,8 @@ export function montarLinhasProduto(
     status: 'pendente',
     // ADR-0181 N-I1: modo persistido — o retry desta família nunca aplica estoque inicial.
     ...(p.origemNota ? { origem_cadastro: 'nota' } : {}),
+    // ADR-0181 (emenda): origem do item na nota — só quando há; sem refNota a linha não muda.
+    ...(p.refNota ? { mudanca_estrutural: { refNota: p.refNota } } : {}),
     // ADR-0135 D-4: colunas fiscais só quando a entrada trouxe fiscal (org com módulo).
     // O regime que gerou o valor fica gravado junto (detecção de troca de regime, D-6).
     ...(p.fiscal ? {
