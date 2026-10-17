@@ -28,8 +28,8 @@ export interface LinhaVariacaoCrua {
  * aqui é o `ml_picture_id`. `-V` é a variante reduzida (~30 KB); `-O` é a original e pesa o
  * dobro sem ganho nenhum num thumb de 40px.
  */
-export function urlFotoMl(pictureId: string | null | undefined): string | null {
-  return pictureId ? `https://http2.mlstatic.com/D_${pictureId}-V.jpg` : null;
+export function urlFotoMl(pictureId: string | null | undefined, variante: 'V' | 'O' = 'V'): string | null {
+  return pictureId ? `https://http2.mlstatic.com/D_${pictureId}-${variante}.jpg` : null;
 }
 
 /** Kit vinculado ativo sob este produto-base (ADR-0151 D-13). Saldo virtual calculado ao

@@ -110,13 +110,25 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
   };
   // Declutter: aquisição e selo ficam no cabeçalho do item; a linha só sinaliza quando foge do padrão do item.
   const qtdCadastro = linhas.filter(doCadastro).length;
-  const foraDoPadrao = (l: LinhaEstado) => !l.travada
-    && (qtdCadastro > 0 ? !doCadastro(l) : l.custoPrecificacao !== custoDef);
+  // Padrão PRÓPRIO da linha (o que a semeadura daria): SKU do produto pode ter custo de cadastro; os demais, a aquisição.
+  const padraoDa = (l: LinhaEstado) => {
+    const s = skus?.find((x) => x.codigo === l.codigo);
+    return s ? custoPadraoSku({ custo: s.custo, saldo: s.estoque }, prova, custoDef) : custoDef;
+  };
+  const foraDoPadrao = (l: LinhaEstado) => !l.travada && l.custoPrecificacao !== padraoDa(l);
+  // Foto e capa pelo produto DA LINHA: SKU de outro produto não herda a capa do produto principal.
+  const fotoDa = (l: LinhaEstado) => {
+    const proprio = !l.codigoPai || l.codigoPai === d.codigoPai;
+    return {
+      v: proprio ? skus?.find((x) => x.codigo === l.codigo) : undefined,
+      capa: proprio ? produto : (resumo?.produtos.find((p) => p.codigoPai === l.codigoPai) ?? null),
+    };
+  };
   const alterar = (codigo: string, parte: Partial<LinhaEstado>) =>
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
   const linhasViz: LinhaVisualizador[] = linhas.map((l) => ({
     codigo: l.codigo, cor: rotuloDe(l.codigo)?.cor ?? null, tamanho: rotuloDe(l.codigo)?.tamanho ?? null,
-    v: skus?.find((x) => x.codigo === l.codigo), quantidade: l.quantidade, travada: l.travada,
+    v: fotoDa(l).v, capa: fotoDa(l).capa, quantidade: l.quantidade, travada: l.travada,
   }));
   const indiceViz = visualizando ? linhas.findIndex((l) => l.codigo === visualizando) : -1;
   const num = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -170,7 +182,7 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
               <TableRow key={l.codigo}>
                 <TableCell>
                   <MiniaturaSku
-                    v={skus?.find((x) => x.codigo === l.codigo)} produto={produto} codigo={l.codigo}
+                    v={fotoDa(l).v} produto={fotoDa(l).capa} codigo={l.codigo}
                     cor={r?.cor ?? null} tamanho={r?.tamanho ?? null}
                     refBotao={(el) => { if (el) miniaturas.current.set(l.codigo, el); else miniaturas.current.delete(l.codigo); }}
                     onAbrir={() => { ultimoVisto.current = l.codigo; setVisualizando(l.codigo); }}
@@ -200,7 +212,7 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
         </TableBody>
       </Table>
       <VisualizadorSku
-        linhas={linhasViz} indice={indiceViz >= 0 ? indiceViz : null} produto={produto} soma={soma} total={q.ok ? q.quantidade : '?'}
+        linhas={linhasViz} indice={indiceViz >= 0 ? indiceViz : null} soma={soma} total={q.ok ? q.quantidade : '?'}
         onIndice={(i) => { ultimoVisto.current = linhas[i].codigo; setVisualizando(linhas[i].codigo); }}
         onQuantidade={(codigo, quantidade) => alterar(codigo, { quantidade })}
         onFechar={() => setVisualizando(null)}

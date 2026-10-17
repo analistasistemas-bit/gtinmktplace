@@ -1,19 +1,19 @@
 // Etapa 3: miniatura da foto por SKU, visualizador com quantidade editável e cabeçalho do item
 // com aquisição/selo uma única vez.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-const m = vi.hoisted(() => ({ skus: vi.fn(), prova: vi.fn(), resumo: vi.fn() }));
+const m = vi.hoisted(() => ({ skus: vi.fn(), prova: vi.fn(), resumo: vi.fn(), org: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(), functions: { invoke: vi.fn() } } }));
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: (p: string | null | undefined) => ({ data: p ? `https://storage/${p}` : null }) }));
 vi.mock('@/lib/produtos-saldo', async (orig) => ({
   ...(await orig<object>()),
   fetchVariacoesProduto: m.skus,
   fetchProdutosEstoqueResumo: m.resumo,
-  fetchSkusEstoqueOrg: async () => [],
+  fetchSkusEstoqueOrg: m.org,
 }));
 vi.mock('@/lib/notas-compra', async (orig) => ({ ...(await orig<object>()), primeiraEntradaComprovada: m.prova }));
 vi.mock('@/hooks/useProfile', () => ({ useProfile: () => ({ isAdmin: false }) }));
@@ -37,20 +37,22 @@ const sku = (codigo: string, extra: object = {}) => ({
 });
 const capa = { codigoPai: '00000010', capaStoragePath: null, capaMlPictureId: 'CAPA1', mlItemId: null };
 
-function Montar() {
-  const [e, setE] = useState<EstadoImportacao>(() => definirProduto(estadoInicial(nota, '<x/>', [], {}), 1, '00000010'));
+type Previas = Parameters<typeof estadoInicial>[4];
+function Montar({ previas }: { previas?: Previas }) {
+  const [e, setE] = useState<EstadoImportacao>(() => definirProduto(estadoInicial(nota, '<x/>', [], {}, previas), 1, '00000010'));
   return <EtapaDistribuicao e={e} atualizar={(f) => setE((s) => f(s))} />;
 }
-function montar() {
+function montar(previas?: Previas) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><Montar /></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><Montar previas={previas} /></QueryClientProvider>);
 }
-afterEach(() => { cleanup(); m.skus.mockReset(); m.prova.mockReset(); m.resumo.mockReset(); });
+afterEach(() => { cleanup(); m.skus.mockReset(); m.prova.mockReset(); m.resumo.mockReset(); m.org.mockReset(); });
 
 function preparar(skus: object[], prova = true) {
   m.skus.mockResolvedValue(skus);
   m.prova.mockResolvedValue(prova);
   m.resumo.mockResolvedValue({ produtos: [capa] });
+  m.org.mockResolvedValue([]);
 }
 const tres = () => [
   sku('P', { imagemPath: 'v/p.jpg' }),
@@ -129,5 +131,83 @@ describe('etapa Distribuição — fotos', () => {
     await user.clear(screen.getByLabelText('Custo G'));
     await user.type(screen.getByLabelText('Custo G'), '99');
     expect(await screen.findAllByText('Custo editado')).toHaveLength(1);
+  });
+
+  it('SKU de outro produto usa a capa do SEU produto (ou ícone), nunca a do produto principal', async () => {
+    preparar([sku('P')]);
+    m.resumo.mockResolvedValue({ produtos: [capa, { codigoPai: '00000020', capaStoragePath: null, capaMlPictureId: 'CAPA2', mlItemId: null }] });
+    m.org.mockResolvedValue([
+      { codigo: 'X1', codigoPai: '00000020', nome: 'Outro', cor: 'Azul', estoque: 0, tamanho: 'U' },
+      { codigo: 'Y1', codigoPai: '00000030', nome: 'Sem capa', cor: 'Rosa', estoque: 0, tamanho: 'U' },
+    ]);
+    montar();
+    const user = userEvent.setup();
+    await screen.findByLabelText('Custo P');
+    for (const cod of ['X1', 'Y1']) {
+      await user.click(screen.getByRole('button', { name: '+ SKU de outro produto' }));
+      await user.click(await screen.findByRole('button', { name: new RegExp(`^${cod} `) }));
+    }
+    expect(screen.getByAltText('Foto de Floral P')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_CAPA1-V.jpg');
+    expect(screen.getByAltText('Foto de Azul U')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_CAPA2-V.jpg');
+    expect(screen.queryByAltText('Foto de Rosa U')).not.toBeInTheDocument();
+    expect(screen.getByTestId('foto-sku-placeholder')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ampliar foto do SKU X1' }));
+    expect(within(await screen.findByRole('dialog')).getByAltText('Foto de Azul U')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_CAPA2-O.jpg');
+  });
+
+  it('linhas travadas (início, meio e fim): setas e Enter seguem funcionando, foco fica no diálogo', async () => {
+    preparar(tres());
+    montar([{ nItem: 1, codigo: 'P', quantidade: 1, custo: 10 }, { nItem: 1, codigo: 'M', quantidade: 1, custo: 10 }, { nItem: 1, codigo: 'G', quantidade: 1, custo: 10 }]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Ampliar foto do SKU P' }));
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).getByLabelText('Quantidade no visualizador P')).toBeDisabled();
+    expect(dlg.contains(document.activeElement)).toBe(true);
+    await user.keyboard('{ArrowRight}');
+    expect(within(dlg).getByText('M · Floral · M')).toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(within(dlg).getByText('G · Floral · G')).toBeInTheDocument();
+    expect(within(dlg).getByRole('button', { name: 'Próximo SKU' })).toBeDisabled();
+    expect(dlg.contains(document.activeElement)).toBe(true);
+    await user.keyboard('{ArrowLeft}');
+    expect(within(dlg).getByText('M · Floral · M')).toBeInTheDocument();
+    await user.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(within(dlg).getByText('P · Floral · P')).toBeInTheDocument();
+  });
+
+  it('erro de imagem tenta o próximo candidato: Storage, ML, capa e por fim o ícone', async () => {
+    preparar([sku('P', { imagemPath: 'v/p.jpg', mlPictureId: 'ML1' })]);
+    montar();
+    await screen.findByLabelText('Custo P');
+    const src = () => screen.getByAltText('Foto de Floral P').getAttribute('src');
+    expect(src()).toBe('https://storage/v/p.jpg');
+    fireEvent.error(screen.getByAltText('Foto de Floral P'));
+    expect(src()).toBe('https://http2.mlstatic.com/D_ML1-V.jpg');
+    fireEvent.error(screen.getByAltText('Foto de Floral P'));
+    expect(src()).toBe('https://http2.mlstatic.com/D_CAPA1-V.jpg');
+    fireEvent.error(screen.getByAltText('Foto de Floral P'));
+    expect(screen.queryByAltText('Foto de Floral P')).not.toBeInTheDocument();
+    expect(screen.getByTestId('foto-sku-placeholder')).toBeInTheDocument();
+  });
+
+  it('visualizador usa a variante original do ML (-O); a miniatura segue em -V', async () => {
+    preparar([sku('M', { mlPictureId: 'ML123' })]);
+    montar();
+    await screen.findByLabelText('Custo M');
+    expect(screen.getByAltText('Foto de Floral M')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_ML123-V.jpg');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Ampliar foto do SKU M' }));
+    expect(within(await screen.findByRole('dialog')).getByAltText('Foto de Floral M')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_ML123-O.jpg');
+  });
+
+  it('"Custo editado" compara cada linha com o SEU padrão (padrões mistos não acusam edição)', async () => {
+    preparar([sku('P'), sku('M', { custo: null }), sku('G', { custo: null })]);
+    montar();
+    await screen.findByLabelText('Custo P');
+    expect(screen.queryByText('Custo editado')).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.clear(screen.getByLabelText('Custo G'));
+    await user.type(screen.getByLabelText('Custo G'), '99');
+    expect(await screen.findAllByText('Custo editado')).toHaveLength(1);
+    expect(within(screen.getByLabelText('Custo G').closest('td')!).getByText('Custo editado')).toBeInTheDocument();
   });
 });
