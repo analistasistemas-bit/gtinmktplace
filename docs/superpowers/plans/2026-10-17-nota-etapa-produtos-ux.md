@@ -61,12 +61,15 @@
 **Files:**
 - Modify: `src/lib/notas-compra.ts` — `produtosCadastradosDaNota(chave: string): Promise<Array<{ nItem: number; codigosPai: string[] }>>` (select em `familias` com `origem_cadastro = 'nota'` e `mudanca_estrutural->>refNota` com prefixo `nfe:<chave>:`; extrai `nItem`; deduplica `codigo_pai`; RLS faz o escopo da org)
 - Modify: `src/components/estoque/importar-nota/estado.ts`:
-  - `DecisaoItem.origemVinculo` ganha `'nota'`; `candidatosGtin` passa a ser preservado em `definirProduto`; novo `candidatosNota: string[]`
+  - `DecisaoItem.origemVinculo` ganha `'nota'`; `candidatosGtin` é **sempre** calculado em `estadoInicial` (antes dos retornos por vínculo/GTIN único) e preservado em `definirProduto`; novo `candidatosNota: string[]`
+  - `definirProduto` passa a marcar **sempre** `origemVinculo: 'manual'` na escolha explícita, inclusive quando o código é o mesmo (aí preserva a distribuição)
   - `aplicarCadastradosDaNota(e: EstadoImportacao, lista: Array<{ nItem: number; codigosPai: string[] }>): EstadoImportacao` — para cada item **não `manual`**: 1 código → `codigoPai` = ele, `origemVinculo: 'nota'` (supera vínculo/GTIN; limpa distribuição não travada se mudou); >1 → `codigoPai: null`, `candidatosNota` = códigos; 0 → inalterado
   - `itemPronto(e: EstadoImportacao, d: DecisaoItem): boolean` = `codigoPai` && `quantidadeEmEstoque(item.qCom, d.fator).ok`; `motivoBloqueioEtapa(e, 1)` passa a usá-lo (mantendo as mesmas mensagens)
   - `contarProntos(e): { prontos: number; total: number }`
-- Modify: `src/components/estoque/importar-nota/dialog-importar-nota.tsx` (`lerArquivo`: chamar `produtosCadastradosDaNota` **separado** do `Promise.all` atual; sucesso → `aplicarCadastradosDaNota`; falha → estado `conferirFalhou: true` exposto à etapa, com função `tentarNovamente()` que repete só essa consulta e aplica preservando escolhas manuais)
-- Modify: `prefill-cadastro.ts` / `dialog-importar-nota.tsx` / `use-cadastro-produto.ts` `montarPayload` — cadastro aberto pela nota envia `refNota = 'nfe:'+chave+':'+nItem`
+- Modify: `src/components/estoque/importar-nota/dialog-importar-nota.tsx` (`lerArquivo`: chamar `produtosCadastradosDaNota` **separado** do `Promise.all` atual; sucesso → `aplicarCadastradosDaNota`; falha → estado `conferirFalhou: true` exposto à etapa, com função `tentarNovamente()` que repete só essa consulta e aplica preservando escolhas manuais). **Toda resposta (sucesso ou falha) só é aplicada se a chave da nota e o contador de leitura ainda forem os atuais** — resposta atrasada após fechar o diálogo ou ler outra nota é descartada
+- Modify (caminho completo do `refNota` até a edge): `src/lib/produto-entrada.ts:42` (`ProdutoEntrada.refNota?`), `CadastroInicial` em `src/components/estoque/dialog-cadastro-produto.tsx:45` (`refNota?: string`), `prefill-cadastro.ts` (recebe chave+nItem e preenche `refNota`), `use-cadastro-produto.ts` `montarPayload` (parâmetro/campo `refNota`), e os **dois** chamadores de `montarPayload`: `dialog-cadastro-produto.tsx:185` e `dialog-cadastro-grade.tsx:431` (passam `inicial.refNota`)
+- Modify: `src/components/estoque/importar-nota/etapa-itens.tsx` — **só a assinatura** de `EtapaItens` ganha as props novas (`conferirFalhou`, `onTentarNovamente`, `carregandoProdutos`, `erroProdutos`), sem mudar o layout (Task 4), para o typecheck ficar verde
+- Modify: `dialog-importar-nota.tsx:45-48` — transportar `isLoading`/`isError` da consulta de produtos (hoje vira `[]`) para `EtapaItens`
 - Test: `src/components/estoque/importar-nota/__tests__/estado.test.ts` (ou o arquivo de teste existente de `estado.ts`), teste de `montarPayload`
 
 **Interfaces — Produces:** `aplicarCadastradosDaNota`, `itemPronto`, `contarProntos`, `produtosCadastradosDaNota`, `origemVinculo: 'nota'`, `candidatosNota`, prop `conferirFalhou` + `onTentarNovamente` para a etapa.
@@ -77,7 +80,10 @@
   - lista `[{ nItem:2, codigosPai:['B','D'] }]` → `codigoPai null`, `candidatosNota ['B','D']`.
   - dois itens com o mesmo cProd e listas diferentes → cada um com o seu.
   - lista vazia (short antigo sem refNota) → estado igual ao de entrada.
-  - `definirProduto` preserva `candidatosGtin`.
+  - `definirProduto` preserva `candidatosGtin`; item casado por vínculo **e** por GTIN, e item de GTIN único, também guardam `candidatosGtin` (para o Trocar).
+  - automático A → `definirProduto(A)` → `origemVinculo 'manual'`, distribuição preservada → `aplicarCadastradosDaNota` com B → continua A.
+  - leitura da nota A em voo, nova leitura da nota B, resposta de A chega → estado de B inalterado (promises controladas).
+  - `body.refNota` chega no payload enviado pelos **dois** diálogos (simples e grade) quando abertos pela nota.
   - `itemPronto`: produto + `qCom 35`, fator 1, distribuição vazia → true; `qCom 0.5`, fator 1 → false; e `motivoBloqueioEtapa(e,1)` null ⇔ todos `itemPronto`.
   - `contarProntos` com 1 de 2 → `{ prontos:1, total:2 }`.
   - `montarPayload` com `refNota` → payload com `refNota`; sem → sem a chave.
@@ -94,13 +100,14 @@
 
 **Interfaces — Consumes:** Task 3 (`itemPronto`, `contarProntos`, `origemVinculo 'nota'`, `candidatosNota`, `conferirFalhou`, `onTentarNovamente`); `ProdutoEstoqueResumo` (`nomePai`, `codigoPai`, `qtdSkus`, `capaStoragePath`, `capaMlPictureId`); `quantidadeEmEstoque`, `custoAquisicaoUnit`, `formatarNomeProduto`, `fmtBRL`.
 
-Comportamento (spec §2.1, textos das Global Constraints): topo "N de M itens prontos"; cartão com produto = foto (mesma resolução de capa usada na tela Estoque), nome, código, "N SKUs", selo (Vinculado / Casou pelo GTIN / Produto escolhido / Cadastrado desta nota), "Trocar" → seletor + "Cancelar"; linha de detalhe `Item N · na nota: "<xProd>" · <qCom> <uCom> [× fator = Q unidades] · R$ <custo>/unidade`; progresso "Distribuídas: X de Q · faltam R" + barra com `aria-valuenow`; sem produto = selo "Sem produto" (ou "Cadastrado mais de uma vez — escolha" com `candidatosNota`) + "Cadastrar produto novo" (primário) e "Escolher existente…" (secundário, foca a busca); com `conferirFalhou`: aviso + "Tentar novamente", e nos itens vazios "Escolher existente…" vira primário; seletor sem texto mostra só candidatos (`candidatosNota` ou `candidatosGtin`) ou "Digite para buscar"; com texto busca em **todos** os produtos; estados carregando/erro/sem resultado. Campo "Unidades por …" e a pergunta Grade/Simples mantidos.
+Comportamento (spec §2.1, textos das Global Constraints): topo "N de M itens prontos"; cartão com produto = foto (mesma resolução de capa usada na tela Estoque), nome, código, "N SKUs", selo (Vinculado / Casou pelo GTIN / Produto escolhido / Cadastrado desta nota), "Trocar" → seletor + "Cancelar" + "Cadastrar produto novo" (mantido acessível durante o Trocar — é a saída indicada pela Distribuição para grade incompleta de produto não publicado; Cancelar preserva a seleção); linha de detalhe `Item N · na nota: "<xProd>" · <qCom> <uCom> [× fator = Q unidades] · R$ <custo>/unidade`; progresso "Distribuídas: X de Q · faltam R" + barra com `aria-valuenow`; sem produto = selo "Sem produto" (ou "Cadastrado mais de uma vez — escolha" com `candidatosNota`) + "Cadastrar produto novo" (primário) e "Escolher existente…" (secundário, foca a busca); com `conferirFalhou`: aviso + "Tentar novamente", e nos itens vazios "Escolher existente…" vira primário; seletor sem texto mostra só candidatos (`candidatosNota` ou `candidatosGtin`) ou "Digite para buscar"; com texto busca em **todos** os produtos; estados carregando/erro/sem resultado do catálogo (props `carregandoProdutos`/`erroProdutos`, distintos de catálogo vazio). Campo "Unidades por …" e a pergunta Grade/Simples mantidos.
 
 - [ ] **Step 1: testes que falham** (render com estado montado à mão):
   - item vinculado mostra nome, código, "32 SKUs", selo e "Distribuídas: 0 de 35 · faltam 35"; não mostra input de busca.
   - item sem produto mostra "Sem produto", os dois botões e **nenhum** produto listado; clicar "Escolher existente…" mostra "Digite para buscar" e foca o input.
   - digitar "short" lista o short mesmo com `candidatosGtin` de 2 outros produtos.
-  - "Trocar" → "Cancelar" mantém o produto anterior.
+  - "Trocar" → "Cancelar" mantém o produto anterior; "Trocar" mostra também "Cadastrar produto novo".
+  - `erroProdutos` mostra erro (não "Digite para buscar"); `carregandoProdutos` mostra carregando.
   - `candidatosNota` de 2 → selo "Cadastrado mais de uma vez — escolha" e os 2 listados sem digitar.
   - `conferirFalhou` → aviso + "Tentar novamente" chama `onTentarNovamente`.
   - topo "1 de 2 itens prontos".
