@@ -59,4 +59,6 @@ export interface ProdutoEntrada {
   /** ADR-0181 D-4: cadastro a partir da nota de compra — nunca leva estoque inicial (o saldo
    *  entra pela nota; a edge recusa `estoqueInicial > 0` junto com esta flag). */
   origemNota?: boolean;
+  /** ADR-0181: `nfe:{chave}:{nItem}` — só com `origemNota`; a edge grava na família e a importação retoma por ela. */
+  refNota?: string;
 }

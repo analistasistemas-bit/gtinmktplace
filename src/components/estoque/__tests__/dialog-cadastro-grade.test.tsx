@@ -866,7 +866,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
           <DialogCadastroGrade
             aberto onFechar={onFechar} origemNota onCadastrado={onCadastrado}
             inicial={{ nomePai: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA', custo: 10,
-              origemSugerida: 'importado', sugestaoDaNota: true, fiscal: { tributacaoIcms: '' } }}
+              origemSugerida: 'importado', sugestaoDaNota: true, fiscal: { tributacaoIcms: '' }, refNota: `nfe:${'1'.repeat(44)}:2` }}
           />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -891,6 +891,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     const payload = cadastrarProdutoMock.mock.calls[0][0];
     expect(payload.origemNota).toBe(true);
+    expect(payload.refNota).toBe(`nfe:${'1'.repeat(44)}:2`);
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
     expect(payload.variacoes[0].custo).toBe(10);
     await waitFor(() => expect(onFechar).toHaveBeenCalledTimes(1));

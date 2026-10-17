@@ -34,5 +34,6 @@ export function prefillCadastro(item: ItemConciliado, nota: NotaCompraLida, fato
     },
     ...(origem ? { origemSugerida: origem.origem } : {}),
     sugestaoDaNota: true,
+    refNota: `nfe:${nota.chave}:${item.nItem}`,
   };
 }

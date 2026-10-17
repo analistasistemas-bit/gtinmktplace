@@ -1,6 +1,6 @@
 // ADR-0181 — assistente "Importar nota de compra": arquivo → itens → distribuição → resumo.
 // A entrada é gravada de uma vez pela edge `importar-nota-compra`; nada é publicado em marketplace.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,10 +12,10 @@ import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade'
 import { QK } from '@/lib/queries';
 import { fetchProdutosEstoqueResumo } from '@/lib/produtos-saldo';
 import {
-  buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosPorGtin, statusDaNota,
+  buscarVinculos, entradasPreviasDaNota, importarNotaCompra, produtosCadastradosDaNota, produtosPorGtin, statusDaNota,
 } from '@/lib/notas-compra';
 import { lerNfe } from '../../../../supabase/functions/_shared/nfe/ler-nfe.ts';
-import { definirProduto, estadoInicial, payload, pendencias, motivoBloqueioEtapa, recusaInicial, type EstadoImportacao } from './estado';
+import { aplicarCadastradosDaNota, definirProduto, estadoInicial, payload, pendencias, motivoBloqueioEtapa, recusaInicial, type EstadoImportacao } from './estado';
 import { prefillCadastro } from './prefill-cadastro';
 import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
@@ -38,17 +38,22 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   const [recusa, setRecusa] = useState<Recusa | null>(null);
   const [erroLeitura, setErroLeitura] = useState<string | null>(null);
   const [lendo, setLendo] = useState(false);
+  const [conferirFalhou, setConferirFalhou] = useState(false);
+  // Guarda de corrida: leitura (geração) e nota atuais. Resposta de leitura antiga ou de diálogo fechado é descartada.
+  const leitura = useRef({ geracao: 0, chave: null as string | null });
   // "Cadastrar produto novo" (ADR-0181 D-4/D-10). `inicial` é snapshot ESTÁVEL, montado no clique.
   const [cadastro, setCadastro] = useState<{ nItem: number; modo: 'grade' | 'simples'; inicial: CadastroInicial } | null>(null);
   const { data: tiposProduto, isLoading: carregandoTipos } = useTiposProdutoHabilitados();
 
-  const { data: resumo } = useQuery({
+  const { data: resumo, isLoading: carregandoProdutos, isError: erroProdutos } = useQuery({
     queryKey: QK.produtosEstoqueResumo, queryFn: fetchProdutosEstoqueResumo, enabled: aberto, staleTime: 180_000,
   });
   const produtos = resumo?.produtos ?? [];
 
   useEffect(() => {
     if (aberto) return;
+    leitura.current = { geracao: leitura.current.geracao + 1, chave: null };
+    setConferirFalhou(false);
     setEtapa(0); setE(null); setRecusa(null); setErroLeitura(null); setLendo(false); setCadastro(null);
   }, [aberto]);
 
@@ -66,14 +71,38 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
   }
 
+  // Consulta separada do Promise.all: se falhar, a importação segue (sem retomada) e o operador pode repetir.
+  async function conferirCadastrados(chave: string, geracao: number) {
+    const atual = () => leitura.current.geracao === geracao && leitura.current.chave === chave;
+    try {
+      const lista = await produtosCadastradosDaNota(chave);
+      if (!atual()) return;
+      setE((s) => (s ? aplicarCadastradosDaNota(s, lista) : s));
+      setConferirFalhou(false);
+    } catch {
+      if (atual()) setConferirFalhou(true);
+    }
+  }
+
+  function tentarNovamente() {
+    const { geracao, chave } = leitura.current;
+    if (chave) { setConferirFalhou(false); void conferirCadastrados(chave, geracao); }
+  }
+
   async function lerArquivo(file: File) {
+    const geracao = ++leitura.current.geracao;
+    leitura.current.chave = null;
+    const atual = () => leitura.current.geracao === geracao;
+    setConferirFalhou(false);
     setLendo(true); setE(null); setRecusa(null); setErroLeitura(null);
     try {
       const xml = await file.text();
+      if (!atual()) return;
       const r = lerNfe(xml);
       if (!r.ok) { setErroLeitura(r.erro); return; }
       const nota = r.nota;
       const existente = await statusDaNota(nota.chave);
+      if (!atual()) return;
       const msg = recusaInicial(nota, cnpj, existente);
       if (msg) { setRecusa({ mensagem: msg, jaImportada: existente?.status === 'importada', chave: nota.chave }); return; }
       const [vinculos, porGtin, previas] = await Promise.all([
@@ -81,11 +110,14 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
         produtosPorGtin(nota.itens.map((i) => i.gtin).filter((g): g is string => !!g)),
         entradasPreviasDaNota(nota.chave),
       ]);
+      if (!atual()) return;
       setE(estadoInicial(nota, xml, vinculos, porGtin, previas));
+      leitura.current.chave = nota.chave;
+      void conferirCadastrados(nota.chave, geracao);
     } catch (err) {
-      setErroLeitura(err instanceof Error ? err.message : 'Não foi possível ler a nota.');
+      if (atual()) setErroLeitura(err instanceof Error ? err.message : 'Não foi possível ler a nota.');
     } finally {
-      setLendo(false);
+      if (atual()) setLendo(false);
     }
   }
 
@@ -129,7 +161,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
           )}
           {etapa === 1 && e && (
             <EtapaItens e={e} setE={setE} produtos={produtos} onCadastrarNovo={cadastrarNovo}
-              tiposProduto={tiposProduto} carregandoTipos={carregandoTipos} />
+              tiposProduto={tiposProduto} carregandoTipos={carregandoTipos}
+              conferirFalhou={conferirFalhou} onTentarNovamente={tentarNovamente}
+              carregandoProdutos={carregandoProdutos} erroProdutos={erroProdutos} />
           )}
           {etapa === 2 && e && (
             <EtapaDistribuicao e={e} atualizar={(f) => setE((s) => (s ? f(s) : s))} />

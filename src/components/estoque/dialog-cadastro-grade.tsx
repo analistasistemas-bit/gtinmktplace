@@ -430,7 +430,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     const loteId = await api.salvar(
       montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem, genero, gradeTamanho: grade },
-        variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota,
+        variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota, inicial?.refNota,
       ),
       { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
     );

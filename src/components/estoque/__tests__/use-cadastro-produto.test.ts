@@ -36,3 +36,11 @@ describe('montarPayload — grade', () => {
     expect(montarPayload({ ...PAI, genero: 'meninas', gradeTamanho: 'infantil' }, [linha], 'k').genero).toBe('meninas');
   });
 });
+
+describe('montarPayload — refNota', () => {
+  it('com refNota sai no payload; sem, sem a chave', () => {
+    const ref = `nfe:${'1'.repeat(44)}:3`;
+    expect(montarPayload(PAI, [linha], 'k', undefined, true, ref).refNota).toBe(ref);
+    expect(montarPayload(PAI, [linha], 'k', undefined, true)).not.toHaveProperty('refNota');
+  });
+});

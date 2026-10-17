@@ -88,3 +88,19 @@ export async function entradasPreviasDaNota(chave: string): Promise<Array<{ nIte
     quantidade: Number(r.quantidade), custo: r.custo_unitario === null ? null : Number(r.custo_unitario),
   }));
 }
+
+/** Produtos cadastrados a partir desta nota (familias.mudanca_estrutural.refNota = `nfe:{chave}:{nItem}`), por item. */
+export async function produtosCadastradosDaNota(chave: string): Promise<Array<{ nItem: number; codigosPai: string[] }>> {
+  const rows = await buscarTodasPaginas<{ codigo_pai: string; ref: string | null }>(
+    (de, ate) => supabase.from('familias')
+      .select('codigo_pai, ref:mudanca_estrutural->>refNota')
+      .eq('origem_cadastro', 'nota')
+      .like('mudanca_estrutural->>refNota', `nfe:${chave}:%`).order('id').range(de, ate));
+  const porItem = new Map<number, Set<string>>();
+  for (const r of rows) {
+    const nItem = Number((r.ref ?? '').split(':')[2]);
+    if (!Number.isInteger(nItem)) continue;
+    porItem.set(nItem, (porItem.get(nItem) ?? new Set()).add(r.codigo_pai));
+  }
+  return [...porItem].map(([nItem, c]) => ({ nItem, codigosPai: [...c] }));
+}

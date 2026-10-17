@@ -7,7 +7,8 @@ import type { Vinculo } from '@/lib/notas-compra';
 export type LinhaEstado = LinhaDistribuicao & { travada?: boolean; codigoPai?: string };
 export interface DecisaoItem {
   nItem: number; codigoPai: string | null; fator: number;
-  origemVinculo: 'vinculo' | 'gtin' | 'manual' | null; candidatosGtin: string[]; distribuicao: LinhaEstado[];
+  origemVinculo: 'nota' | 'vinculo' | 'gtin' | 'manual' | null; candidatosGtin: string[]; candidatosNota: string[];
+  distribuicao: LinhaEstado[];
 }
 export interface EstadoImportacao {
   nota: NotaCompraLida; itens: ItemConciliado[]; xml: string;
@@ -47,12 +48,12 @@ export function estadoInicial(
     nota, itens: conc.itens, xml, avisoTotal: conc.avisoTotal,
     divergenciaTotal: conc.divergenciaTotal, aceitarDivergencia: false,
     decisoes: nota.itens.map((i) => {
-      const base = { nItem: i.nItem, fator: 1, candidatosGtin: [] as string[], distribuicao: travadas(i.nItem) };
       const v = porCprod.get(i.cProd);
-      if (v) return { ...base, codigoPai: v.codigoPai, fator: v.fator, origemVinculo: 'vinculo' as const };
       const cands = i.gtin ? (porGtin[i.gtin] ?? []) : [];
+      const base = { nItem: i.nItem, fator: 1, candidatosGtin: cands, candidatosNota: [] as string[], distribuicao: travadas(i.nItem) };
+      if (v) return { ...base, codigoPai: v.codigoPai, fator: v.fator, origemVinculo: 'vinculo' as const };
       if (cands.length === 1) return { ...base, codigoPai: cands[0], origemVinculo: 'gtin' as const };
-      return { ...base, codigoPai: null, origemVinculo: null, candidatosGtin: cands };
+      return { ...base, codigoPai: null, origemVinculo: null };
     }),
   };
 }
@@ -61,9 +62,32 @@ const mudar = (e: EstadoImportacao, nItem: number, f: (d: DecisaoItem) => Decisa
   ({ ...e, decisoes: e.decisoes.map((d) => (d.nItem === nItem ? f(d) : d)) });
 
 const soTravadas = (l: LinhaEstado[]) => l.filter((x) => x.travada);
+// Escolha explícita é sempre `manual` (nada automático a sobrescreve depois); com o mesmo código só marca.
 export const definirProduto = (e: EstadoImportacao, nItem: number, codigoPai: string) =>
-  mudar(e, nItem, (d) => (d.codigoPai === codigoPai ? d
-    : { ...d, codigoPai, origemVinculo: 'manual', candidatosGtin: [], distribuicao: soTravadas(d.distribuicao) }));
+  mudar(e, nItem, (d) => (d.codigoPai === codigoPai ? { ...d, origemVinculo: 'manual' }
+    : { ...d, codigoPai, origemVinculo: 'manual', distribuicao: soTravadas(d.distribuicao) }));
+
+/** Produtos já cadastrados DESTA nota (refNota) superam vínculo/GTIN; escolha `manual` nunca é tocada. */
+export function aplicarCadastradosDaNota(
+  e: EstadoImportacao, lista: Array<{ nItem: number; codigosPai: string[] }>,
+): EstadoImportacao {
+  return {
+    ...e,
+    decisoes: e.decisoes.map((d) => {
+      const cods = lista.find((x) => x.nItem === d.nItem)?.codigosPai ?? [];
+      if (d.origemVinculo === 'manual' || cods.length === 0) return d;
+      if (cods.length > 1) return { ...d, codigoPai: null, origemVinculo: null, candidatosNota: cods, distribuicao: soTravadas(d.distribuicao) };
+      if (d.codigoPai === cods[0]) return { ...d, origemVinculo: 'nota', candidatosNota: [] };
+      return { ...d, codigoPai: cods[0], origemVinculo: 'nota', candidatosNota: [], distribuicao: soTravadas(d.distribuicao) };
+    }),
+  };
+}
+
+export function itemPronto(e: EstadoImportacao, d: DecisaoItem): boolean {
+  const item = e.itens.find((i) => i.nItem === d.nItem);
+  return !!d.codigoPai && !!item && quantidadeEmEstoque(item.qCom, d.fator).ok;
+}
+export const contarProntos = (e: EstadoImportacao) => ({ prontos: e.decisoes.filter((d) => itemPronto(e, d)).length, total: e.decisoes.length });
 // Fator novo muda quantidade e custo por unidade: as linhas não travadas (calculadas com o fator antigo) saem
 // e o semear recalcula o default. As travadas (já no ledger) ficam — mesma regra de definirProduto.
 export const definirFator = (e: EstadoImportacao, nItem: number, fator: number) =>
@@ -117,9 +141,10 @@ export function pendencias(e: EstadoImportacao): Array<{ nItem: number; erro: st
 export function motivoBloqueioEtapa(e: EstadoImportacao, etapa: number): string | null {
   if (etapa === 1) {
     for (const d of e.decisoes) {
+      if (itemPronto(e, d)) continue;
       if (!d.codigoPai) return `Item ${d.nItem}: escolha ou cadastre o produto.`;
       const q = quantidadeEmEstoque(e.itens.find((i) => i.nItem === d.nItem)!.qCom, d.fator);
-      if (!q.ok) return `Item ${d.nItem}: ${q.erro}`;
+      return `Item ${d.nItem}: ${q.ok ? 'quantidade inválida.' : q.erro}`;
     }
   }
   if (etapa === 2) {

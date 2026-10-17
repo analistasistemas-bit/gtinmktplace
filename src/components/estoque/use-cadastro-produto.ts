@@ -51,6 +51,7 @@ export function montarPayload(
   // ADR-0181 D-4: cadastro a partir da nota — a CHAVE `estoqueInicial` sai do payload (o saldo
   // entra só pela nota) e `origemNota: true` faz a edge recusar qualquer estoque e marcar a família.
   origemNota?: boolean,
+  refNota?: string,
 ): ProdutoEntrada {
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
@@ -87,7 +88,7 @@ export function montarPayload(
         descricaoFiscal: fiscal.descricaoFiscal.trim() || null,
       },
     } : {}),
-    ...(origemNota ? { origemNota: true } : {}),
+    ...(origemNota ? { origemNota: true, ...(refNota ? { refNota } : {}) } : {}),
   };
 }
 

@@ -1037,7 +1037,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
   const inicialNota: CadastroInicial = {
     nomePai: 'Short masculino', descricaoFiscal: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA',
     custo: 10, fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '' },
-    origemSugerida: 'nacional', sugestaoDaNota: true,
+    origemSugerida: 'nacional', sugestaoDaNota: true, refNota: `nfe:${'1'.repeat(44)}:1`,
   };
   afterEach(() => {
     modulosMock.mockReturnValue({ data: [], isLoading: false });
@@ -1084,6 +1084,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     await waitFor(() => expect(cadastrarProdutoMock.mock.calls.length).toBe(antes + 1));
     const payload = cadastrarProdutoMock.mock.calls.at(-1)![0];
     expect(payload.origemNota).toBe(true);
+    expect(payload.refNota).toBe(`nfe:${'1'.repeat(44)}:1`);
     expect(payload.origem).toBe('nacional');
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
     expect(payload.variacoes[0].custo).toBe(10);

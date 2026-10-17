@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova, motivoBloqueioEtapa } from '../estado';
+import { estadoInicial, definirProduto, definirFator, definirDistribuicao, pendencias, payload, recusaInicial, aceitarDivergencia, acaoVariacaoFaltante, travarLinhaNova, motivoBloqueioEtapa, aplicarCadastradosDaNota, itemPronto, contarProntos } from '../estado';
 import type { NotaCompraLida } from '../../../../../supabase/functions/_shared/nfe/tipos';
 
 const zero = { vProd: 590, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 590 };
@@ -125,5 +125,67 @@ describe('motivoBloqueioEtapa', () => {
     expect(motivoBloqueioEtapa(e, 2)).toBe('Item 1: A distribuição soma 34 de 35 unidades da nota.');
     e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }]);
     expect(motivoBloqueioEtapa(e, 2)).toBeNull();
+  });
+});
+
+describe('aplicarCadastradosDaNota (retomada por refNota)', () => {
+  const vinc = [{ cprod: 'REF 06', codigoPai: 'A', fator: 1 }];
+  it('supera vínculo; manual nunca é sobrescrito', () => {
+    const e = estadoInicial(nota, '<x/>', vinc, {});
+    expect(aplicarCadastradosDaNota(e, [{ nItem: 1, codigosPai: ['B'] }]).decisoes[0])
+      .toMatchObject({ codigoPai: 'B', origemVinculo: 'nota' });
+    const m = definirProduto(e, 1, 'C');
+    expect(aplicarCadastradosDaNota(m, [{ nItem: 1, codigosPai: ['B'] }]).decisoes[0].codigoPai).toBe('C');
+  });
+  it('vários códigos viram candidatosNota sem produto', () => {
+    const e = estadoInicial(nota, '<x/>', [], {});
+    expect(aplicarCadastradosDaNota(e, [{ nItem: 2, codigosPai: ['B', 'D'] }]).decisoes[1])
+      .toMatchObject({ codigoPai: null, candidatosNota: ['B', 'D'] });
+  });
+  it('mesmo cProd em itens distintos: cada um com o seu', () => {
+    const dup = { ...nota, totais: { ...zero, vProd: 700, vNF: 700 }, itens: [nota.itens[0], { ...nota.itens[0], nItem: 2 }] };
+    const e = estadoInicial(dup, '<x/>', vinc, {});
+    const r = aplicarCadastradosDaNota(e, [{ nItem: 1, codigosPai: ['B'] }, { nItem: 2, codigosPai: ['D'] }]);
+    expect(r.decisoes.map((d) => d.codigoPai)).toEqual(['B', 'D']);
+  });
+  it('lista vazia deixa o estado igual', () => {
+    const e = estadoInicial(nota, '<x/>', vinc, {});
+    expect(aplicarCadastradosDaNota(e, [])).toEqual(e);
+  });
+  it('definirProduto preserva candidatosGtin; casados guardam candidatosGtin', () => {
+    const e = estadoInicial(nota, '<x/>', [{ cprod: 'X9', codigoPai: 'P1', fator: 1 }], { '7891234567895': ['P2', 'P3'] });
+    expect(e.decisoes[1]).toMatchObject({ codigoPai: 'P1', origemVinculo: 'vinculo', candidatosGtin: ['P2', 'P3'] });
+    expect(definirProduto(e, 1, 'Z').decisoes[1].candidatosGtin).toEqual(['P2', 'P3']);
+    const u = estadoInicial(nota, '<x/>', [], { '7891234567895': ['P2'] });
+    expect(u.decisoes[1]).toMatchObject({ codigoPai: 'P2', origemVinculo: 'gtin', candidatosGtin: ['P2'] });
+    expect(definirProduto(amb(), 2, 'P3').decisoes[1].candidatosGtin).toEqual(['P2', 'P3']);
+  });
+  it('automático A -> definirProduto(A) vira manual, preserva distribuição e resiste à nota', () => {
+    let e = estadoInicial(nota, '<x/>', vinc, {});
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }]);
+    e = definirProduto(e, 1, 'A');
+    expect(e.decisoes[0]).toMatchObject({ origemVinculo: 'manual', distribuicao: [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }] });
+    expect(aplicarCadastradosDaNota(e, [{ nItem: 1, codigosPai: ['B'] }]).decisoes[0].codigoPai).toBe('A');
+  });
+  it('limpa distribuição não travada quando o produto muda', () => {
+    let e = estadoInicial(nota, '<x/>', vinc, {});
+    e = definirDistribuicao(e, 1, [{ codigo: 'S1', quantidade: 35, custoPrecificacao: 10 }]);
+    expect(aplicarCadastradosDaNota(e, [{ nItem: 1, codigosPai: ['B'] }]).decisoes[0].distribuicao).toEqual([]);
+  });
+  function amb() { return estadoInicial(nota, '<x/>', [], { '7891234567895': ['P2', 'P3'] }); }
+});
+
+describe('itemPronto / contarProntos', () => {
+  it('produto + quantidade inteira = pronto; motivoBloqueio null sse todos prontos', () => {
+    let e = estadoInicial(nota, '<x/>', [{ cprod: 'REF 06', codigoPai: 'A', fator: 1 }], {});
+    expect(itemPronto(e, e.decisoes[0])).toBe(true);
+    expect(itemPronto(e, e.decisoes[1])).toBe(false);
+    expect(contarProntos(e)).toEqual({ prontos: 1, total: 2 });
+    expect(motivoBloqueioEtapa(e, 1)).not.toBeNull();
+    e = definirProduto(e, 2, 'B');
+    expect(motivoBloqueioEtapa(e, 1)).toBeNull();
+    const meio = { ...e, itens: e.itens.map((i) => (i.nItem === 1 ? { ...i, qCom: 0.5 } : i)) };
+    expect(itemPronto(meio, meio.decisoes[0])).toBe(false);
+    expect(motivoBloqueioEtapa(meio, 1)).toMatch(/^Item 1:/);
   });
 });

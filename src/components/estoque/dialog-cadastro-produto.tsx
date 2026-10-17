@@ -60,6 +60,8 @@ export interface CadastroInicial {
   origemSugerida?: 'nacional' | 'importado';
   /** Campos vieram da nota do fornecedor: selos + "Conferi NCM e origem" obrigatório. */
   sugestaoDaNota?: boolean;
+  /** `nfe:{chave}:{nItem}` — vai ao payload (só com `origemNota`) para a importação retomar o vínculo. */
+  refNota?: string;
 }
 
 /** Número → texto do input do cadastro (vírgula decimal, lida por `parseNumeroPtBr`). */
@@ -190,7 +192,7 @@ export function DialogCadastroProduto({
           // não só o valor, quebraria `dialog-cadastro-grade.tsx` sem nenhum teste acusar.
           genero: null,
         },
-        linhas, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota,
+        linhas, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota, inicial?.refNota,
       ),
       { capa: fotosCapa, porLinha: linhas.map((l) => l.foto) },
     );

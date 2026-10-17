@@ -50,6 +50,11 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
   /** `undefined` = "não sei" (query em voo ou falhou) — nunca é "org sem tipo" (ADR-0166). */
   tiposProduto?: string[];
   carregandoTipos?: boolean;
+  /** Task 4 (layout): aviso "não foi possível conferir" + retry; carga/erro da lista de produtos. */
+  conferirFalhou?: boolean;
+  onTentarNovamente?: () => void;
+  carregandoProdutos?: boolean;
+  erroProdutos?: boolean;
 }) {
   const [trocando, setTrocando] = useState<Set<number>>(new Set());
   // Grade só existe com tipo de produto habilitado: o diálogo de grade depende do tipo e a edge
