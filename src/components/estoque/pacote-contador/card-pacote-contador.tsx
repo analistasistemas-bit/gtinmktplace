@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { fetchEmpresaFiscal } from '@/lib/queries';
 import { useSupportStore, effectiveOrgId } from '@/stores/support-store';
@@ -170,10 +171,14 @@ export function CardPacoteContador() {
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
         <label htmlFor="pacote-mes" className="text-sm font-medium">Mês</label>
-        <select id="pacote-mes" value={mes} disabled={ocupado} onChange={(e) => setMes(e.target.value)}
-          className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm">
-          {meses.map((m) => <option key={m} value={m}>{m.split('-').reverse().join('/')}</option>)}
-        </select>
+        <Select value={mes} disabled={ocupado} onValueChange={setMes}>
+          <SelectTrigger id="pacote-mes" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {meses.map((m) => <SelectItem key={m} value={m}>{m.split('-').reverse().join('/')}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Button onClick={gerar} disabled={ocupado}>{ocupado ? 'Gerando…' : 'Baixar pacote'}</Button>
         <Button variant="outline" onClick={inventarioHoje} disabled={ocupado}>Inventário de hoje</Button>
         {ocupado && <span className="text-sm text-muted-foreground" aria-live="polite">{ROTULO[etapa]}{progresso ? ` (${progresso})` : ''}</span>}

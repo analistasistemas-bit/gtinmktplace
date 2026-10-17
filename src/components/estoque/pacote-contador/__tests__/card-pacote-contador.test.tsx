@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import { StrictMode } from 'react';
+import userEvent from '@testing-library/user-event';
+import { abrirSelect, escolherNoSelect } from '@/test/select';
 import { unzipSync, strFromU8 } from 'fflate';
 import * as XLSX from 'xlsx';
 
@@ -52,9 +54,10 @@ describe('CardPacoteContador', () => {
     baixar.mockResolvedValueOnce({ tipo: 'vazio', contaMl: '99' });
     empresa.mockResolvedValue({ razao_social: 'EMPRESA TESTE LTDA', cnpj: '11444777000161' });
     render(<CardPacoteContador />);
-    const sel = screen.getByLabelText('Mês') as HTMLSelectElement;
-    expect(sel.value).toBe('2026-09');
-    expect([...sel.options].map((o) => o.value)).not.toContain('2026-11');
+    expect(screen.getByRole('combobox', { name: 'Mês' })).toHaveTextContent('09/2026');
+    await abrirSelect(userEvent.setup(), 'Mês');
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).not.toContain('11/2026');
+    await userEvent.keyboard('{Escape}');
     fireEvent.click(screen.getByRole('button', { name: 'Baixar pacote' }));
     await waitFor(() => expect(salvar).toHaveBeenCalledWith('pacote-2026-09.zip', expect.any(Uint8Array), 'application/zip'));
     expect(baixar).toHaveBeenCalledWith('2026-09', 'org-1', expect.any(AbortSignal));
@@ -210,7 +213,7 @@ describe('CardPacoteContador', () => {
     const gerarDezembro = async () => {
       baixar.mockResolvedValue({ tipo: 'vazio', contaMl: '99' });
       render(<CardPacoteContador />); await esperaMontagem();
-      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2025-12' } });
+      await escolherNoSelect(userEvent.setup(), 'Mês', '12/2025');
       clicar();
     };
 
@@ -256,7 +259,7 @@ describe('CardPacoteContador', () => {
       buscarFoto.mockRejectedValue(new ErroPacote('falha ao ler', 500));
       baixar.mockResolvedValue({ tipo: 'vazio', contaMl: '99' });
       render(<CardPacoteContador />);
-      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2025-12' } });
+      await escolherNoSelect(userEvent.setup(), 'Mês', '12/2025');
       clicar();
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith('falha ao ler'));
       expect(salvar).not.toHaveBeenCalled();

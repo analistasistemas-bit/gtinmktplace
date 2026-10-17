@@ -6,6 +6,7 @@
 import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ROTULOS } from '@/components/estoque/detalhes-sku';
 import {
@@ -18,8 +19,7 @@ const CAMPOS: { valor: CampoMassa; rotulo: string }[] = [
   ...CAMPOS_HERDAVEIS.map((c) => ({ valor: c as CampoMassa, rotulo: ROTULOS[c].rotulo })),
 ];
 
-const CLASSE_SELECT =
-  'h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';
+const CLASSE_SELECT = 'w-full';
 
 export function PreencherEmMassa({
   escopoInicial, campoInicial, cores, tamanhos, desabilitado, gatilho, rotuloGatilho, onAplicar,
@@ -89,15 +89,16 @@ export function PreencherEmMassa({
       <PopoverContent className="flex w-64 flex-col gap-2">
         <div className="flex flex-col gap-1">
           <label htmlFor={`${uid}-escopo`} className="text-xs text-muted-foreground">Aplicar em</label>
-          <select
-            id={`${uid}-escopo`} className={CLASSE_SELECT}
-            value={escopo.tipo}
-            onChange={(e) => trocarTipo(e.target.value as EscopoMassa['tipo'])}
-          >
-            <option value="todos">Toda a grade</option>
-            <option value="cor">Uma cor</option>
-            <option value="tamanho">Um tamanho</option>
-          </select>
+          <Select value={escopo.tipo} onValueChange={(v) => trocarTipo(v as EscopoMassa['tipo'])}>
+            <SelectTrigger id={`${uid}-escopo`} className={CLASSE_SELECT}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Toda a grade</SelectItem>
+              <SelectItem value="cor">Uma cor</SelectItem>
+              <SelectItem value="tamanho">Um tamanho</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {escopo.tipo !== 'todos' && (
@@ -105,26 +106,28 @@ export function PreencherEmMassa({
             <label htmlFor={`${uid}-eixo`} className="text-xs text-muted-foreground">
               {escopo.tipo === 'cor' ? 'Cor' : 'Tamanho'}
             </label>
-            <select
-              id={`${uid}-eixo`} className={CLASSE_SELECT}
-              value={escopo.valor}
-              onChange={(e) => setEscopo({ tipo: escopo.tipo, valor: e.target.value })}
-            >
-              {(escopo.tipo === 'cor' ? cores : tamanhos)
-                .map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
+            <Select value={escopo.valor} onValueChange={(v) => setEscopo({ tipo: escopo.tipo, valor: v })}>
+              <SelectTrigger id={`${uid}-eixo`} className={CLASSE_SELECT}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(escopo.tipo === 'cor' ? cores : tamanhos)
+                  .map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
         <div className="flex flex-col gap-1">
           <label htmlFor={`${uid}-campo`} className="text-xs text-muted-foreground">Campo</label>
-          <select
-            id={`${uid}-campo`} className={CLASSE_SELECT}
-            value={campo}
-            onChange={(e) => setCampo(e.target.value as CampoMassa)}
-          >
-            {campos.map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
-          </select>
+          <Select value={campo} onValueChange={(v) => setCampo(v as CampoMassa)}>
+            <SelectTrigger id={`${uid}-campo`} className={CLASSE_SELECT}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {campos.map((c) => <SelectItem key={c.valor} value={c.valor}>{c.rotulo}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1">

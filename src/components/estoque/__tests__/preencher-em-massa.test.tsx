@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PreencherEmMassa } from '@/components/estoque/preencher-em-massa';
+import { escolherNoSelect as escolher } from '@/test/select';
+
+const ROTULOS_OPCAO = { todos: 'Toda a grade', preco: 'Preço mínimo (líquido)', custo: 'Custo', gtin: 'GTIN' };
+const escolherNoSelect = (user: ReturnType<typeof userEvent.setup>, rotulo: string, valor: string) =>
+  escolher(user, rotulo, valor, ROTULOS_OPCAO);
+const combo = (nome: string) => screen.getByRole('combobox', { name: nome });
 
 type Escopo = Parameters<typeof PreencherEmMassa>[0]['escopoInicial'];
 
@@ -39,15 +45,15 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { rotulo } = montar({ tipo: 'tamanho', valor: 'GG' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    expect(screen.getByLabelText('Aplicar em')).toHaveValue('tamanho');
-    expect(screen.getByLabelText('Tamanho')).toHaveValue('GG');
+    expect(combo('Aplicar em')).toHaveTextContent('Um tamanho');
+    expect(combo('Tamanho')).toHaveTextContent('GG');
   });
 
   it('aplica o valor no campo e escopo escolhidos', async () => {
     const user = userEvent.setup();
     const { onAplicar, rotulo } = montar({ tipo: 'tamanho', valor: 'GG' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    await user.selectOptions(screen.getByLabelText('Campo'), 'preco');
+    await escolherNoSelect(user, 'Campo', 'preco');
     await user.type(screen.getByLabelText('Valor'), '64,90');
     await user.click(screen.getByRole('button', { name: 'Aplicar' }));
     expect(onAplicar).toHaveBeenCalledWith({
@@ -59,7 +65,7 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { onAplicar, rotulo } = montar({ tipo: 'tamanho', valor: 'GG' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    await user.selectOptions(screen.getByLabelText('Aplicar em'), 'todos');
+    await escolherNoSelect(user, 'Aplicar em', 'todos');
     expect(screen.queryByLabelText('Tamanho')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Valor'), '3');
     await user.click(screen.getByRole('button', { name: 'Aplicar' }));
@@ -74,7 +80,7 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { onAplicar, rotulo } = montar({ tipo: 'cor', valor: 'Preto' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    await user.selectOptions(screen.getByLabelText('Campo'), 'custo');
+    await escolherNoSelect(user, 'Campo', 'custo');
     await user.click(screen.getByRole('button', { name: 'Voltar ao herdado' }));
     expect(onAplicar).toHaveBeenCalledWith({
       campo: 'custo', escopo: { tipo: 'cor', valor: 'Preto' }, valor: null,
@@ -87,7 +93,7 @@ describe('PreencherEmMassa', () => {
     await user.click(screen.getByRole('button', { name: rotulo }));
     expect(screen.getByRole('button', { name: 'Limpar' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Voltar ao herdado' })).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Campo'), 'preco');
+    await escolherNoSelect(user, 'Campo', 'preco');
     expect(screen.queryByRole('button', { name: 'Limpar' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Voltar ao herdado' })).toBeInTheDocument();
   });
@@ -97,7 +103,7 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { rotulo } = montar({ tipo: 'todos' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    await user.selectOptions(screen.getByLabelText('Campo'), 'gtin');
+    await escolherNoSelect(user, 'Campo', 'gtin');
     expect(screen.queryByRole('button', { name: /gerar/i })).not.toBeInTheDocument();
   });
 
@@ -108,13 +114,13 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { rotulo } = montar({ tipo: 'cor', valor: 'Preto' });
     await user.click(screen.getByRole('button', { name: rotulo }));
-    await user.selectOptions(screen.getByLabelText('Campo'), 'gtin');
+    await escolherNoSelect(user, 'Campo', 'gtin');
     await user.type(screen.getByLabelText('Valor'), '789');
     // Fechar SEM aplicar: `emitir` já limpa o valor, então fechar pelo "Aplicar" não reproduz.
     await user.keyboard('{Escape}');
     expect(screen.queryByLabelText('Campo')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: rotulo }));
-    expect(screen.getByLabelText('Campo')).toHaveValue('estoqueInicial');
+    expect(combo('Campo')).toHaveTextContent('Estoque inicial');
     expect(screen.getByLabelText('Valor')).toHaveValue('');
   });
 
@@ -122,7 +128,7 @@ describe('PreencherEmMassa', () => {
     const user = userEvent.setup();
     const { rotulo } = montar({ tipo: 'todos' }, false, 'preco');
     await user.click(screen.getByRole('button', { name: rotulo }));
-    expect(screen.getByLabelText('Campo')).toHaveValue('preco');
+    expect(combo('Campo')).toHaveTextContent('Preço mínimo (líquido)');
   });
 
   it('desabilitado não abre', async () => {

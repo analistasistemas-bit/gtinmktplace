@@ -761,7 +761,7 @@ describe('DialogCadastroGrade — salvar', () => {
     await user.click(screen.getByRole('checkbox', { name: 'GG' }));
 
     await user.click(screen.getByRole('button', { name: 'Preencher em massa no tamanho GG' }));
-    await user.selectOptions(screen.getByLabelText('Campo'), 'preco');
+    await escolherNoSelectBase(user, 'Campo', 'Preço mínimo (líquido)');
     await user.type(screen.getByLabelText('Valor'), '64,90');
     await user.click(screen.getByRole('button', { name: 'Aplicar' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
