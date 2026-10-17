@@ -33,7 +33,7 @@ import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { fetchFamiliasNaoPublicadas, familiaEmVoo } from '@/lib/estoque-update-status';
-import { gradeDaFamilia, classificarFamilia, LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, tipoDaGrade } from '@/lib/tamanhos';
+import { gradeDaFamilia, classificarFamilia, LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho, tipoDaGrade, ROTULO_GENERO, type Genero } from '@/lib/tamanhos';
 import {
   aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
   totaisDaGrade, totalDaGrade,
@@ -64,10 +64,6 @@ const CABECALHO_VAZIO: CamposHerdaveis = {
 // aponta pro único jeito real de recuperar: fechar e reabrir o dialog.
 const MSG_ERRO_CARGA = 'Não foi possível carregar o produto. Tente de novo.';
 
-type Genero = 'masculino' | 'feminino' | 'unissex';
-
-const ROTULO_GENERO: Record<Genero, string> = { masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex' };
-
 interface VariacaoPublicadaRaw {
   codigo: string; cor: string | null; tamanho: string | null; estoque: number;
   imagem_path: string | null; ml_picture_id: string | null;
@@ -78,6 +74,7 @@ interface VariacaoPublicadaRaw {
 interface FamiliaPublicada {
   id: string;
   genero: string | null;
+  grade_tamanho: string | null;
   variacoes: VariacaoPublicadaRaw[];
 }
 
@@ -88,7 +85,7 @@ interface FamiliaPublicada {
 async function fetchFamiliaPublicada(codigoPai: string): Promise<FamiliaPublicada | null> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, genero, variacoes(codigo, cor, tamanho, estoque, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco, excluida_da_publicacao)')
+    .select('id, genero, grade_tamanho, variacoes(codigo, cor, tamanho, estoque, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco, excluida_da_publicacao)')
     .eq('codigo_pai', codigoPai).not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false, nullsFirst: false }).limit(1);
   if (error) throw error;
@@ -209,8 +206,13 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
   // não decide o que o anúncio é nem traz coluna/linha nova para a grade (Codex r5/r6 do brief).
   const incluidos = skus.filter((s) => !s.excluida);
   const eixosFixos = eixosExistentes(incluidos);
-  const tipo = classe === 'grade' ? tipoDaGrade(incluidos.map((s) => s.tamanho)) : null;
-  const gruposTamanho = opcoesDeTamanho(tipo ? gradeDaFamilia(null, incluidos.map((s) => s.tamanho)) : null);
+  const tamanhosIncluidos = incluidos.map((s) => s.tamanho);
+  // ADR-0182: a grade gravada vence (Calça 34–46 é indistinguível de calçado pelo valor).
+  const gradeGravada = classe === 'grade' ? gradeDaFamilia(familiaPublicada?.grade_tamanho ?? null, tamanhosIncluidos) : null;
+  const tipo = classe !== 'grade' ? null
+    : familiaPublicada?.grade_tamanho && gradeGravada ? (gradeGravada === 'calcado' ? 'calcado' : 'roupa')
+      : tipoDaGrade(tamanhosIncluidos);
+  const gruposTamanho = opcoesDeTamanho(tipo ? gradeGravada : null);
   const generoNorm = (familiaPublicada?.genero as Genero | null) ?? null;
 
   // Teto igual ao da edge (`vivas.length + novas`, index.ts): o cartesiano já conta as travadas

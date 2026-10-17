@@ -605,3 +605,20 @@ describe('DialogEstenderGrade — família em voo', () => {
     expect(BOTAO_SALVAR()).toBeDisabled();
   });
 });
+
+describe('DialogEstenderGrade — grade gravada (ADR-0182)', () => {
+  it('familia grade_tamanho=calca mostra 34..48 e nao P', async () => {
+    familiaPublicadaMock.mockReturnValue([{
+      id: 'fam-pub-1', genero: 'unissex', grade_tamanho: 'calca',
+      variacoes: [
+        variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: '38', estoque: 5, temFoto: true }),
+        variacaoBase({ codigo: '00000002', cor: 'Preto', tamanho: '40', estoque: 5, temFoto: true }),
+      ],
+    }]);
+    renderDialog();
+    await screen.findByTitle('Preto · 38: já publicado, 5 em estoque');
+    expect(screen.getByRole('checkbox', { name: '34' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '48' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'P' })).not.toBeInTheDocument();
+  });
+});
