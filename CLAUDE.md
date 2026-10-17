@@ -76,6 +76,7 @@ Prioridade MCP: supabase-mcp-server, upstash, render, shadcn, context7.
 - Tokens e segredos nunca em código ou repositório.
 - RLS por `user_id` ou `org_id` obrigatória em tabelas de domínio.
 - Sempre há revisão humana antes de publicar em marketplace.
+- Dropdown/select de formulário: sempre o `Select` de `src/components/ui/select.tsx` (Radix, padrão premium do sistema) — nunca `<select>` nativo em tela nova ou alterada.
 - Trabalho de dev sai em branch/worktree — nunca editar a main direto (app em produção).
 - Preferir o caminho pragmático e verificável ao mais elegante.
 

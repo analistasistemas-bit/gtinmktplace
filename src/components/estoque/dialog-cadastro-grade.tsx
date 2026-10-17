@@ -10,6 +10,7 @@
 // têm segunda implementação aqui.
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -630,15 +631,14 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     <label htmlFor="grade-genero">Gênero</label>
                     <span className="text-destructive" aria-hidden="true">*</span>
                   </span>
-                  <select
-                    id="grade-genero"
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={genero}
-                    onChange={(e) => setGenero(e.target.value as Genero)}
-                  >
-                    <option value="">Selecione…</option>
-                    {(grade ? generosDaGrade(grade) : GENEROS_ADULTO).map((g) => <option key={g} value={g}>{ROTULO_GENERO[g]}</option>)}
-                  </select>
+                  <Select value={genero} onValueChange={(v) => setGenero(v as Genero)}>
+                    <SelectTrigger id="grade-genero" className="w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(grade ? generosDaGrade(grade) : GENEROS_ADULTO).map((g) => <SelectItem key={g} value={g}>{ROTULO_GENERO[g]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -705,16 +705,18 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     <label htmlFor="grade-tamanho">Grade de tamanhos</label>
                     <span className="text-destructive" aria-hidden="true">*</span>
                   </span>
-                  <select
-                    id="grade-tamanho"
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  <Select
                     value={gradeManual ?? ''}
                     disabled={api.salvando}
-                    onChange={(e) => trocarGrade((e.target.value || null) as GradeTamanho | null)}
+                    onValueChange={(v) => trocarGrade(v as GradeTamanho)}
                   >
-                    <option value="">Selecione…</option>
-                    {GRADES_DO_TIPO.roupa.map((g) => <option key={g} value={g}>{ROTULO_GRADE[g]}</option>)}
-                  </select>
+                    <SelectTrigger id="grade-tamanho" className="w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GRADES_DO_TIPO.roupa.map((g) => <SelectItem key={g} value={g}>{ROTULO_GRADE[g]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 

@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ROTULO_GRADE, ROTULO_GENERO } from '@/lib/tamanhos';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -39,8 +40,33 @@ function renderGrade(onFechar = () => {}) {
   );
 }
 
+// jsdom não implementa scrollIntoView, que o Radix Select chama ao mover o item ativo.
+beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
+
+const ROTULOS: Record<string, string> = { ...ROTULO_GRADE, ...ROTULO_GENERO };
+
+// Radix Select por teclado (jsdom não tem hasPointerCapture; padrão de barra-filtros-estoque.test).
+async function abrirSelect(user: ReturnType<typeof userEvent.setup>, rotulo: RegExp) {
+  screen.getByRole('combobox', { name: rotulo }).focus();
+  await user.keyboard('{Enter}');
+}
+async function escolherNoSelect(user: ReturnType<typeof userEvent.setup>, rotulo: RegExp, valor: string) {
+  await abrirSelect(user, rotulo);
+  await screen.findAllByRole('option');
+  // Radix abre com o foco no item selecionado (ou no primeiro): navega por setas até o alvo.
+  const itens = screen.getAllByRole('option');
+  const alvo = itens.findIndex((o) => o.textContent === (ROTULOS[valor] ?? valor));
+  const atual = Math.max(0, itens.findIndex((o) => o === document.activeElement));
+  const passos = alvo - atual;
+  if (passos) await user.keyboard(`{${passos > 0 ? 'ArrowDown' : 'ArrowUp'}>${Math.abs(passos)}/}`);
+  // Um único keydown: Enter faria o keypress/click cair no botão do AlertDialog que abre em seguida; Espaço seleciona no keydown e o keyup vai para o item.
+  const item = document.activeElement!;
+  await user.keyboard('{ >}');
+  fireEvent.keyUp(item, { key: ' ' });
+}
+
 async function escolherGrade(user: ReturnType<typeof userEvent.setup>, grade: string) {
-  await user.selectOptions(screen.getByLabelText(/^Grade de tamanhos/i), grade);
+  await escolherNoSelect(user, /^Grade de tamanhos/i, grade);
 }
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); tiposProdutoMock.mockReturnValue({ data: ['roupa'] }); });
@@ -396,9 +422,9 @@ describe('DialogCadastroGrade — aviso de numeração não publicável', () => 
   it('aparece e some conforme o Gênero do cabeçalho', async () => {
     const user = userEvent.setup();
     renderGrade();
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'feminino');
+    await escolherNoSelect(user, /^Gênero/i, 'feminino');
     expect(screen.getAllByText(/não publica no Mercado Livre/).length).toBeGreaterThan(0);
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     // 45/46 publicam no masculino; só os pares continuam avisando.
     expect(screen.getAllByText(/não publica no Mercado Livre/)).toHaveLength(7);
   });
@@ -433,7 +459,7 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
@@ -451,7 +477,7 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
@@ -468,7 +494,7 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -490,7 +516,7 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
@@ -513,7 +539,7 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -535,7 +561,7 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -586,7 +612,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.type(screen.getByLabelText('Peso'), '300');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
@@ -612,7 +638,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -649,7 +675,7 @@ describe('DialogCadastroGrade — salvar', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -694,7 +720,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -720,7 +746,7 @@ describe('DialogCadastroGrade — salvar', () => {
     await user.click(screen.getByRole('button', { name: 'Roupa' }));
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -747,7 +773,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -777,7 +803,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'Branco' }));
@@ -815,7 +841,7 @@ describe('DialogCadastroGrade — salvar', () => {
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -879,7 +905,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     expect(screen.getByText(/Sugestão da nota: Importado — escolha para confirmar/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: 'Importado' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -923,7 +949,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
@@ -949,14 +975,15 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(screen.getByRole('checkbox', { name: '2' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '16' })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'P' })).not.toBeInTheDocument();
-    const genero = screen.getByLabelText(/^Gênero/i);
-    expect(within(genero).getByRole('option', { name: 'Meninos' })).toBeInTheDocument();
-    expect(within(genero).getByRole('option', { name: 'Sem gênero infantil' })).toBeInTheDocument();
-    expect(within(genero).queryByRole('option', { name: 'Masculino' })).not.toBeInTheDocument();
+    await abrirSelect(user, /^Gênero/i);
+    expect(await screen.findByRole('option', { name: 'Meninos' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sem gênero infantil' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Masculino' })).not.toBeInTheDocument();
+    (screen.getByRole('option', { name: 'Meninos' })).focus();
+    await user.keyboard('{Enter}');
 
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(genero, 'meninos');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: '4' }));
@@ -971,7 +998,7 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(screen.queryByRole('checkbox', { name: 'P' })).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     expect(screen.queryByLabelText(/^Estoque inicial de/)).not.toBeInTheDocument();
@@ -982,19 +1009,19 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     const user = userEvent.setup();
     renderGrade();
     await escolherGrade(user, 'infantil');
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'meninos');
+    await escolherNoSelect(user, /^Gênero/i, 'meninos');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: '4' }));
     expect(screen.getByLabelText('Estoque inicial de Preto · 4')).toBeInTheDocument();
 
     await escolherGrade(user, 'calca');
-    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
       'As 1 linha(s) da grade serão apagadas — os tamanhos das grades não são os mesmos.',
     );
     await user.click(screen.getByRole('button', { name: /Trocar mesmo assim/i }));
     expect(screen.queryByLabelText('Estoque inicial de Preto · 4')).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '34' })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Gênero/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /^Gênero/i })).toHaveTextContent('Selecione…');
   });
 
   it('Infantil + meninos -> Trocar tipo -> Calçado: gênero zera e o botão trava até escolher gênero adulto', async () => {
@@ -1007,17 +1034,17 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     renderGrade();
     await user.click(screen.getByRole('button', { name: 'Roupa' }));
     await escolherGrade(user, 'infantil');
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'meninos');
+    await escolherNoSelect(user, /^Gênero/i, 'meninos');
     await user.click(screen.getByRole('button', { name: 'Trocar tipo' }));
     await user.click(screen.getByRole('button', { name: 'Calçado' }));
-    expect(screen.getByLabelText(/^Gênero/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /^Gênero/i })).toHaveTextContent('Selecione…');
     await user.type(screen.getByLabelText('Nome'), 'Tênis');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: '42' }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
