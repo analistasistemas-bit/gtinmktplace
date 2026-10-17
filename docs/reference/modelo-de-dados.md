@@ -1465,7 +1465,7 @@ p_status)`, `registrar_entrada_nota_pendente(...)` (entrada com ref `nfe:...`) e
 
 ## Inventário (ADR-0181 D-12, Plano 2b-2)
 
-Implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada). Migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`
+EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável). Migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`
 e `20261017002438_adr181_inventario_confirmar`. Escrita só por `service_role` (edge `inventario`) e pelo `pg_cron`.
 
 ### `inventarios`

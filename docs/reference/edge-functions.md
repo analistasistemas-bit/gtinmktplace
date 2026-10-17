@@ -1109,7 +1109,7 @@ falha ao ler `organizations` não libera.
   importada. **Admin-only** (`autorizarDesfazer`) e gate `estoque`. Chama a RPC `desfazer_nota_compra`
   (advisory lock + `FOR UPDATE` no saldo, guard de família canônica). Idempotente: nota já desfeita
   responde `{ jaEstava: true }` sem mexer no saldo. Resposta `{ pushOk, jaEstava }`.
-- **inventario** (ADR-0181 D-12, Plano 2b-2; implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)) — `verify_jwt = true`, gate `estoque`; `POST` com `acao`.
+- **inventario** (ADR-0181 D-12, Plano 2b-2; EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável)) — `verify_jwt = true`, gate `estoque`; `POST` com `acao`.
   `hoje` (membro): saldo × custo médio ponderado móvel agora, via `inventario_hoje_json` (não é foto). `foto` com `data_base: 'AAAA-12-31'`
   (membro): cabeçalho + itens via `inventario_foto_json(p_org, p_data_base)`. `salvar` com `inventario_id`, `versao`, `itens` (**admin**):
   `salvar_contagem_inventario`; versão obsoleta → 409. `confirmar` com `inventario_id`, `versao` (**admin**): `confirmar_inventario`

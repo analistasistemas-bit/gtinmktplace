@@ -81,7 +81,7 @@ export function DialogContagemInventario({ foto, isAdmin, onOpenChange, onRecarr
   return (
     <>
       <Dialog open onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Contagem do inventário de {dm}</DialogTitle>
             <DialogDescription>

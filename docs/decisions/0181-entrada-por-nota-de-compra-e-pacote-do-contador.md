@@ -1,7 +1,7 @@
 # ADR-0181 — Entrada de mercadoria por nota de compra (XML) e pacote do contador
 
 **Data:** 2026-10-15
-**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). **Plano 2b-1 (pacote do contador: compras) implementado na branch `worktree-plano2b-compras-inventario`, aguardando revisão final, merge e redeploy da edge `baixar-notas-venda`.** **Plano 2b-2 (inventário, D-12) implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada).**
+**Status:** aceito — **Plano 1 EM PRODUÇÃO desde 2026-10-16** (main `4c2ca2a1`; 8 edges deployadas; 5 migrations aplicadas). **Plano 2a (pacote do contador: vendas) EM PRODUÇÃO desde 2026-10-16** (main `8694964e`). **Plano 2b-1 (pacote do contador: compras) EM PRODUÇÃO desde 2026-10-16** (main `ff67a7e6`; edge `baixar-notas-venda` v2). **Plano 2b-2 (inventário, D-12) EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável).**
 Design fechado em grilling com o Diego, revisado pelo Codex (lacunas respondidas abaixo e validadas pelo
 Diego). D-12 e D-13 (pacote do contador) ficam no Plano 2.
 **Desenha:** V2 #2 do [ADR-0135](0135-cadastro-fiscal-e-faturador-do-ml.md) (entrada por XML do fornecedor)
@@ -253,7 +253,7 @@ conta do ML.
 
 ## Consequências
 
-**Plano 2b-2 — estado (implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)):** migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`, `20261017002438_adr181_inventario_confirmar`; edge `inventario` (`verify_jwt = true`; ações `hoje`/`foto`/`salvar`/`confirmar`); gerador xlsx/PDF e card em `/estoque`; foto de 31/12 no `pacote-AAAA-12.zip`. Job `pg_cron` `inventario-foto-31-12` (`59 2 1 1 *`, `cron.timezone` = GMT, ou seja 23:59 em São Paulo) chama `gerar_fotos_inventario()`. Rulings de execução: ver a seção "Decisões tomadas na execução" da spec.
+**Plano 2b-2 — estado (EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável)):** migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`, `20261017002438_adr181_inventario_confirmar`; edge `inventario` (`verify_jwt = true`; ações `hoje`/`foto`/`salvar`/`confirmar`); gerador xlsx/PDF e card em `/estoque`; foto de 31/12 no `pacote-AAAA-12.zip`. Job `pg_cron` `inventario-foto-31-12` (`59 2 1 1 *`, `cron.timezone` = GMT, ou seja 23:59 em São Paulo) chama `gerar_fotos_inventario()`. Rulings de execução: ver a seção "Decisões tomadas na execução" da spec.
 **Pendências do Plano 2b-2:** (1) separação Full / terceiros no inventário (decisão 2): o banco guarda um saldo por SKU; (2) corrida do clone do "adicionar variação" (ver risco herdado abaixo): única exceção à garantia do inventário, a nota perdida na cópia antiga ainda conta como camada.
 
 **Risco pré-existente herdado (achado na revisão do plano, 2026-10-15):** o "adicionar variação"
