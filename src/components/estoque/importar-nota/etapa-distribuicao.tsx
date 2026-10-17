@@ -1,7 +1,8 @@
 // ADR-0181 — etapa 3: distribuição das unidades de cada item pelos SKUs do produto.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { MiniaturaSku, VisualizadorSku, type LinhaVisualizador } from './visualizador-sku';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,6 +63,10 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
   const [faltante, setFaltante] = useState<ReturnType<typeof acaoVariacaoFaltante> | null>(null);
   const [qtdNova, setQtdNova] = useState('');
   const [qtdNoDialog, setQtdNoDialog] = useState<number | null>(null);
+  // Visualizador de foto: o SKU aberto, e o último aberto (para devolver o foco à miniatura ao fechar).
+  const [visualizando, setVisualizando] = useState<string | null>(null);
+  const ultimoVisto = useRef<string | null>(null);
+  const miniaturas = useRef(new Map<string, HTMLButtonElement>());
 
   // Monta o buffer local uma vez, semeado com o que já está salvo (voltar/Corrigir não regrava nada).
   // Só depois das DUAS leituras (SKUs e prova): pendente ≠ falha; resposta tardia nunca re-semeia.
@@ -103,8 +108,17 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
     const padrao = custoPadraoSku({ custo: s.custo, saldo: s.estoque }, prova, custoDef);
     return padrao !== custoDef && l.custoPrecificacao === padrao;
   };
+  // Declutter: aquisição e selo ficam no cabeçalho do item; a linha só sinaliza quando foge do padrão do item.
+  const qtdCadastro = linhas.filter(doCadastro).length;
+  const foraDoPadrao = (l: LinhaEstado) => !l.travada
+    && (qtdCadastro > 0 ? !doCadastro(l) : l.custoPrecificacao !== custoDef);
   const alterar = (codigo: string, parte: Partial<LinhaEstado>) =>
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
+  const linhasViz: LinhaVisualizador[] = linhas.map((l) => ({
+    codigo: l.codigo, cor: rotuloDe(l.codigo)?.cor ?? null, tamanho: rotuloDe(l.codigo)?.tamanho ?? null,
+    v: skus?.find((x) => x.codigo === l.codigo), quantidade: l.quantidade, travada: l.travada,
+  }));
+  const indiceViz = visualizando ? linhas.findIndex((l) => l.codigo === visualizando) : -1;
   const num = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const soma = linhas.reduce((s, l) => s + (l.quantidade || 0), 0);
   const restante = (q.ok ? q.quantidade : 0) - soma;
@@ -132,13 +146,19 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium">{item.nItem}. {item.xProd}</p>
-        <p className={`text-sm ${q.ok && soma === q.quantidade ? 'text-success' : 'text-muted-foreground'}`}>
-          {soma} de {q.ok ? q.quantidade : '?'} unidades
-        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span className={q.ok && soma === q.quantidade ? 'text-success' : 'text-muted-foreground'}>
+            {soma} de {q.ok ? q.quantidade : '?'} unidades
+          </span>
+          {/* D-9: aquisição ao lado do custo de precificação; o selo nunca deixa o custo do cadastro silencioso. */}
+          <span className="text-xs text-muted-foreground">· Aquisição R$ {fmtBRLSemSimbolo(custoDef)}/un</span>
+          {qtdCadastro > 0 && <Badge variant="secondary">Custo do cadastro (1ª entrada)</Badge>}
+        </div>
       </div>
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-12"><span className="sr-only">Foto</span></TableHead>
             <TableHead>SKU</TableHead><TableHead>Cor</TableHead><TableHead>Tamanho</TableHead>
             <TableHead className="text-right">Saldo</TableHead><TableHead>Quantidade</TableHead><TableHead>Custo (R$)</TableHead>
           </TableRow>
@@ -148,6 +168,14 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
             const r = rotuloDe(l.codigo);
             return (
               <TableRow key={l.codigo}>
+                <TableCell>
+                  <MiniaturaSku
+                    v={skus?.find((x) => x.codigo === l.codigo)} produto={produto} codigo={l.codigo}
+                    cor={r?.cor ?? null} tamanho={r?.tamanho ?? null}
+                    refBotao={(el) => { if (el) miniaturas.current.set(l.codigo, el); else miniaturas.current.delete(l.codigo); }}
+                    onAbrir={() => { ultimoVisto.current = l.codigo; setVisualizando(l.codigo); }}
+                  />
+                </TableCell>
                 <TableCell>{l.codigo}</TableCell>
                 <TableCell>{r?.cor ?? '—'}</TableCell>
                 <TableCell>{r?.tamanho ?? '—'}</TableCell>
@@ -164,15 +192,20 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
                     valor={l.custoPrecificacao} aria-label={`Custo ${l.codigo}`}
                     onChange={(v) => alterar(l.codigo, { custoPrecificacao: v })}
                   />
-                  {/* D-9: aquisição ao lado do custo de precificação; o selo nunca deixa o custo do cadastro silencioso. */}
-                  <p className="mt-1 text-xs text-muted-foreground">Aquisição R$ {fmtBRLSemSimbolo(custoDef)}/un</p>
-                  {doCadastro(l) && <Badge variant="secondary" className="mt-1">Custo do cadastro (1ª entrada)</Badge>}
+                  {foraDoPadrao(l) && <p className="mt-1 text-xs text-muted-foreground">Custo editado</p>}
                 </TableCell>
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
+      <VisualizadorSku
+        linhas={linhasViz} indice={indiceViz >= 0 ? indiceViz : null} produto={produto} soma={soma} total={q.ok ? q.quantidade : '?'}
+        onIndice={(i) => { ultimoVisto.current = linhas[i].codigo; setVisualizando(linhas[i].codigo); }}
+        onQuantidade={(codigo, quantidade) => alterar(codigo, { quantidade })}
+        onFechar={() => setVisualizando(null)}
+        onFocoDevolvido={() => miniaturas.current.get(ultimoVisto.current ?? '')?.focus()}
+      />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() => setBuscando(!buscando)}>+ SKU de outro produto</Button>
         <Button

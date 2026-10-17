@@ -60,8 +60,8 @@ describe('etapa Distribuição — custo padrão da 1ª entrada', () => {
     expect(await screen.findByLabelText('Custo S1')).toHaveValue(17);
     expect(screen.getByLabelText('Custo S2')).toHaveValue(17);
     expect(screen.getByLabelText('Quantidade S1')).toHaveValue(0);
-    expect(screen.getAllByText('Custo do cadastro (1ª entrada)')).toHaveLength(2);
-    expect(screen.getAllByText('Aquisição R$ 10,00/un')).toHaveLength(2);
+    expect(screen.getAllByText('Custo do cadastro (1ª entrada)')).toHaveLength(1);
+    expect(screen.getAllByText(/Aquisição R\$ 10,00\/un/)).toHaveLength(1);
     const user = userEvent.setup();
     await user.clear(screen.getByLabelText('Quantidade S1'));
     await user.type(screen.getByLabelText('Quantidade S1'), '20');
@@ -76,7 +76,7 @@ describe('etapa Distribuição — custo padrão da 1ª entrada', () => {
     expect(await screen.findByLabelText('Custo S1')).toHaveValue(10);
     expect(screen.getByLabelText('Custo S1')).toHaveDisplayValue('10.00');
     expect(screen.queryByText('Custo do cadastro (1ª entrada)')).not.toBeInTheDocument();
-    expect(screen.getAllByText('Aquisição R$ 10,00/un')).toHaveLength(2);
+    expect(screen.getAllByText(/Aquisição R\$ 10,00\/un/)).toHaveLength(1);
   });
 
   it('prova false (recompra/planilha) ⇒ custo da nota', async () => {
