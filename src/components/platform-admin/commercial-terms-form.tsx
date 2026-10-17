@@ -227,7 +227,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
           </summary>
           <CardContent>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
-            <label className="space-y-1 text-sm">
+            <label className="space-y-1 text-sm" htmlFor="terms-modality">
               <span className="font-medium">Modalidade</span>
               <Select
                 value={form.modality}
@@ -244,7 +244,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   }));
                 }}
               >
-                <SelectTrigger aria-label="Modalidade" className="w-full">
+                <SelectTrigger id="terms-modality" aria-label="Modalidade" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -366,7 +366,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
               />
             </label>
             {isFirstContract ? (
-              <label className="space-y-1 text-sm md:col-span-2">
+              <label className="space-y-1 text-sm md:col-span-2" htmlFor="terms-starts-on">
                 <span className="font-medium">Início da vigência</span>
                 <Select
                   value={startsOn}
@@ -381,7 +381,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                     });
                   }}
                 >
-                  <SelectTrigger aria-label="Início da vigência" className="w-full">
+                  <SelectTrigger id="terms-starts-on" aria-label="Início da vigência" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

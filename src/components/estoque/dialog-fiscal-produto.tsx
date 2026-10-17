@@ -189,7 +189,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
             {precisaEscolherUnidade && (
               <div className="flex flex-col gap-1.5">
                 {/* Select, não Input: mesmo padrão de Origem fiscal/CSOSN em etapa-fiscal-form.tsx
-                    — o `aria-label` do <select> já dá o nome acessível, sem <label htmlFor>. */}
+                    — o `aria-label` do select já dá o nome acessível, sem <label htmlFor>. */}
                 <span className="text-sm font-medium">
                   Unidade<span className="text-destructive"> *</span>
                 </span>

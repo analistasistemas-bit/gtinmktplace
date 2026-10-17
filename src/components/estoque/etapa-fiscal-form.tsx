@@ -155,7 +155,7 @@ export function EtapaFiscalForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          {/* Sem <label htmlFor>: o `aria-label` do <select> já dá o nome acessível exato
+          {/* Sem <label htmlFor>: o `aria-label` do select já dá o nome acessível exato
               ("Origem fiscal (NF-e)") usado por getByLabelText — igual ao rádio de Origem em
               dialog-cadastro-produto.tsx, que também usa <span>, não <label>. */}
           <span className="text-sm font-medium">
