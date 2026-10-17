@@ -210,4 +210,15 @@ describe('etapa Distribuição — fotos', () => {
     expect(await screen.findAllByText('Custo editado')).toHaveLength(1);
     expect(within(screen.getByLabelText('Custo G').closest('td')!).getByText('Custo editado')).toBeInTheDocument();
   });
+
+  it('linha travada que não é SKU do produto principal: ícone, nunca a capa do principal', async () => {
+    preparar([sku('P')]);
+    montar([{ nItem: 1, codigo: 'Z', quantidade: 1, custo: 10 }]);
+    await screen.findByLabelText('Custo Z');
+    expect(screen.getByAltText('Foto de Floral P')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_CAPA1-V.jpg');
+    expect(screen.getAllByTestId('foto-sku-placeholder')).toHaveLength(1);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Ampliar foto do SKU Z' }));
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).getByTestId('foto-sku-placeholder')).toBeInTheDocument();
+  });
 });

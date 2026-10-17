@@ -117,12 +117,13 @@ function ItemDistribuicao({ e, atualizar, d }: { e: EstadoImportacao; atualizar:
   };
   const foraDoPadrao = (l: LinhaEstado) => !l.travada && l.custoPrecificacao !== padraoDa(l);
   // Foto e capa pelo produto DA LINHA: SKU de outro produto não herda a capa do produto principal.
+  // Só é do produto principal quem está entre os SKUs dele; senão o pai vem do código (se a lista da org já
+  // carregou) e, sem dado, fica o ícone — nunca a capa do principal (linha travada volta sem codigoPai).
   const fotoDa = (l: LinhaEstado) => {
-    const proprio = !l.codigoPai || l.codigoPai === d.codigoPai;
-    return {
-      v: proprio ? skus?.find((x) => x.codigo === l.codigo) : undefined,
-      capa: proprio ? produto : (resumo?.produtos.find((p) => p.codigoPai === l.codigoPai) ?? null),
-    };
+    const v = skus?.find((x) => x.codigo === l.codigo);
+    if (v) return { v, capa: produto };
+    const pai = l.codigoPai ?? skusOrg.find((x) => x.codigo === l.codigo)?.codigoPai;
+    return { v: undefined, capa: pai ? (resumo?.produtos.find((p) => p.codigoPai === pai) ?? null) : null };
   };
   const alterar = (codigo: string, parte: Partial<LinhaEstado>) =>
     setLinhas(linhas.map((l) => (l.codigo === codigo ? { ...l, ...parte } : l)));
