@@ -212,6 +212,12 @@ Garantia: a quantidade avaliada nunca passa das unidades de nota ainda cabíveis
 
 Plano 2a: spec `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`. Validado em produção (2026-10-16): mês sem nota na org PF → pacote só com relatórios (TTFB 2,3 s); zip real de setembro de uma loja com ~1.400 vendas/mês (emissão por ERP), filtro de produção: 1.351 NF-e, 6,2 MB, 30 s (com `others=all` vinham as mesmas 1.351 NF-e + 1.347 CT-e: o filtro não perde documento fiscal); leitura 1,9 s + relatórios 1,0 s; 1.337 vendas autorizadas + 14 remessas em comodato (CFOP 6908) em "outros", sem PARCIAL; soma e 4 notas conferidas contra o XML por leitura independente; segundo clique durante a trava recebe a mensagem local.
 
+**Emenda de 2026-10-17 (etapa Produtos da importação; spec: [nota-etapa-produtos-ux-design](../superpowers/specs/2026-10-17-nota-etapa-produtos-ux-design.md)):**
+1. O cadastro de produto feito a partir de um item da nota também grava a origem `familias.mudanca_estrutural.refNota = "nfe:<chave44>:<nItem>"` (mesmo formato do `adicionar-variacoes-familia`), junto de `origem_cadastro='nota'`. A edge só aceita `refNota` com `origemNota` e formato válido, a org vem do usuário autenticado, e `refNota` diferente da gravada no retry da mesma `chaveCadastro` responde 409 antes de qualquer efeito.
+2. Retomada por item: ao reabrir a nota, cada `nItem` sem escolha manual da sessão liga ao `codigo_pai` cadastrado para aquele item. Prioridade: cadastrado desta nota > vínculo do fornecedor > GTIN único > nada. A escolha manual nunca é sobrescrita. Versões da mesma família contam uma vez; códigos distintos para a mesma `refNota` não ligam sozinhos (escolha explícita, selo "Cadastrado mais de uma vez — escolha").
+3. `vinculos_fornecedor` continua nascendo só na confirmação da nota (RPC); nenhum fator é gravado antes. Sem migration.
+4. Etapa 2 redesenhada em cartões enxutos: produto vinculado em destaque, texto do fornecedor como linha de detalhe, "Distribuídas: X de Q · faltam R" por item e "N de M itens prontos" no topo.
+
 ## Parecer do contador (simulado)
 
 > Gerado em 2026-10-15 pelo Codex `gpt-6-astra` **no papel de contador** da empresa (Simples, comércio,
