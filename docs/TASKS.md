@@ -40,7 +40,7 @@
 - [x] Task 7 — validação de runtime (ver ADR-0181): org de teste descartável, importar uma nota, gerar o pacote do mês da emissão e conferir linhas/totais contra o XML; desfazer e gerar de novo (vai para `compras/xmls-desfeitas/`); vendas indisponíveis → PARCIAL; limpar tudo.
 - [ ] Plano 2b-2 (inventário, D-12): ver a seção abaixo.
 
-## Pacote do contador — inventário (ADR-0181, Plano 2b-2) — implementado na branch `worktree-adr0181-plano-2b2-inventario`, aguardando merge e deploy (nenhuma migration aplicada, nenhuma edge deployada)
+## Pacote do contador — inventário (ADR-0181, Plano 2b-2) — EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável)
 
 - [x] Spec, plano e ADR-0181 (decisões 1–4), edge-functions, modelo-de-dados, glossário, project-status, Fiscal/Estoque no vault.
 - [x] Migrations `20261016233218_adr181_inventario_calculo`, `20261017000123_adr181_inventario_foto`, `20261017002438_adr181_inventario_confirmar` (escritas, testadas em transação desfeita).
