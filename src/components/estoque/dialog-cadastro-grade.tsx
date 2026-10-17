@@ -297,6 +297,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     const acao = () => {
       if (api.salvando) return;
       setTipoManual(null); setGradeManual(null);
+      // O tipo novo ainda não existe: gênero infantil nunca vale para Calçado/Letras/Calça.
+      if (genero && !(GENEROS_ADULTO as readonly string[]).includes(genero)) setGenero('');
       setCores(new Set()); setTamanhos(new Set()); setRemovidas(new Set());
       setLinhas([]); setFotoPorCor({});
     };

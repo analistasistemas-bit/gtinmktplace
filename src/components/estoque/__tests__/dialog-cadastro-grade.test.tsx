@@ -995,4 +995,24 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(screen.getByRole('checkbox', { name: '34' })).toBeInTheDocument();
     expect(screen.getByLabelText(/^Gênero/i)).toHaveValue('');
   });
+
+  it('Infantil + meninos -> Trocar tipo -> Calçado: gênero zera e o botão trava até escolher gênero adulto', async () => {
+    tiposProdutoMock.mockReturnValue({ data: ['roupa', 'calcado'] });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.click(screen.getByRole('button', { name: 'Roupa' }));
+    await escolherGrade(user, 'infantil');
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'meninos');
+    await user.click(screen.getByRole('button', { name: 'Trocar tipo' }));
+    await user.click(screen.getByRole('button', { name: 'Calçado' }));
+    expect(screen.getByLabelText(/^Gênero/i)).toHaveValue('');
+    await user.type(screen.getByLabelText('Nome'), 'Tênis');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: '42' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
 });
