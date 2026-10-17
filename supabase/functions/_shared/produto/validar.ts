@@ -15,6 +15,9 @@ export interface VariacaoEntrada {
   preco: number;
   custo?: number | null;
   estoqueInicial?: number | null;
+  /** ADR-0181 (emenda 2026-10-17): peças da nota sugeridas para este SKU na etapa Distribuição.
+   *  Só com `origemNota` + `refNota`; vira `mudanca_estrutural.sugestaoDistribuicao`, NUNCA estoque. */
+  quantidadeNota?: number | null;
   pesoGramas?: number | null;
   alturaCm?: number | null;
   larguraCm?: number | null;
@@ -56,9 +59,25 @@ export interface ProdutoEntrada {
   origemNota?: boolean;
   /** ADR-0181 (emenda): `nfe:{chave44}:{nItem}` do item da nota; só com `origemNota`. */
   refNota?: string;
+  /** ADR-0181 (emenda 2026-10-17): fator `uCom → peça` do item usado no cadastro (inteiro ≥ 1);
+   *  obrigatório quando alguma `quantidadeNota` > 0. */
+  fatorNota?: number;
 }
 
 export interface ErroValidacao { campo: string; mensagem: string }
+
+export interface SugestaoDistribuicao { fator: number; linhas: Array<{ codigo: string; quantidade: number }> }
+
+/** Sugestão gravada em `mudanca_estrutural`: `variacoes[i]` ↔ `codigos[i]`, o MESMO pareamento de
+ *  `montarLinhasProduto` (identidade da variação inserida, nunca a ordem do RETURNING). Só
+ *  quantidade > 0; sem nenhuma (ou sem fator), null — a família fica como antes, só com `refNota`. */
+export function montarSugestaoDistribuicao(p: ProdutoEntrada, codigos: readonly string[]): SugestaoDistribuicao | null {
+  if (p.fatorNota == null) return null;
+  const linhas = (p.variacoes ?? [])
+    .map((v, i) => ({ codigo: codigos[i], quantidade: v.quantidadeNota ?? 0 }))
+    .filter((l) => l.quantidade > 0);
+  return linhas.length > 0 ? { fator: p.fatorNota, linhas } : null;
+}
 
 /** ADR-0182: a grade que vai para `familias.grade_tamanho` e para a comparação do retry — a
  *  enviada, ou (front antigo, sem o campo) a inferida dos tamanhos. Sem variação com tamanho: null. */
@@ -78,6 +97,22 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
 
   if (p.refNota !== undefined && (p.origemNota !== true || typeof p.refNota !== 'string' || !REF_NOTA.test(p.refNota))) {
     erros.push({ campo: 'refNota', mensagem: 'Referência da nota inválida.' });
+  }
+
+  // ADR-0181 (emenda 2026-10-17): sugestão de distribuição só existe no cadastro pela nota.
+  const daNota = p.origemNota === true && typeof p.refNota === 'string' && REF_NOTA.test(p.refNota);
+  if (p.fatorNota !== undefined && (!daNota || !Number.isInteger(p.fatorNota) || p.fatorNota < 1)) {
+    erros.push({ campo: 'fatorNota', mensagem: 'Fator da nota inválido.' });
+  }
+  (p.variacoes ?? []).forEach((v, i) => {
+    const q = v.quantidadeNota;
+    if (q == null) return;
+    if (!daNota || typeof q !== 'number' || !Number.isInteger(q) || q < 0) {
+      erros.push({ campo: `variacoes[${i}].quantidadeNota`, mensagem: 'Quantidade da nota deve ser inteiro ≥ 0, só no cadastro pela nota.' });
+    }
+  });
+  if (p.fatorNota === undefined && (p.variacoes ?? []).some((v) => (v.quantidadeNota ?? 0) > 0)) {
+    erros.push({ campo: 'fatorNota', mensagem: 'Informe o fator da nota junto da quantidade da nota.' });
   }
 
   // Trava LOUD da idempotência: sem chave válida o retry duplica produto e duplica o estoque
@@ -219,7 +254,11 @@ export function montarLinhasProduto(
     // ADR-0181 N-I1: modo persistido — o retry desta família nunca aplica estoque inicial.
     ...(p.origemNota ? { origem_cadastro: 'nota' } : {}),
     // ADR-0181 (emenda): origem do item na nota — só quando há; sem refNota a linha não muda.
-    ...(p.refNota ? { mudanca_estrutural: { refNota: p.refNota } } : {}),
+    // Emenda 2026-10-17: + sugestão de distribuição (gravada junto, no MESMO insert da família).
+    ...(p.refNota ? { mudanca_estrutural: (() => {
+      const sugestao = montarSugestaoDistribuicao(p, ctx.codigos);
+      return sugestao ? { refNota: p.refNota, sugestaoDistribuicao: sugestao } : { refNota: p.refNota };
+    })() } : {}),
     // ADR-0135 D-4: colunas fiscais só quando a entrada trouxe fiscal (org com módulo).
     // O regime que gerou o valor fica gravado junto (detecção de troca de regime, D-6).
     ...(p.fiscal ? {

@@ -4,7 +4,7 @@
 // reordenar duas linhas, ou excluir uma e adicionar outra, mantém a contagem.
 import { centavosExatos } from '../_shared/dinheiro.ts';
 import { gradeEfetivaDaEntrada } from '../_shared/produto/validar.ts';
-import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao } from '../_shared/produto/validar.ts';
+import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao, SugestaoDistribuicao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
 import {
   GRADES_DO_TIPO, gradeDaFamilia, tamanhosDaGrade, tamanhosValidosParaTipos, type GradeTamanho,
@@ -140,6 +140,20 @@ export function gradeOuGeneroDivergem(
 export function refNotaDiverge(gravada: unknown, entrada: string | undefined): boolean {
   const g = (gravada as { refNota?: unknown } | null)?.refNota;
   return (typeof g === 'string' ? g : undefined) !== entrada;
+}
+
+/** ADR-0181 (emenda 2026-10-17): retry com sugestão de distribuição diferente da gravada (ou
+ *  presente só de um lado) é divergência (409). Comparação estrutural — jsonb reordena chaves, e a
+ *  ordem das linhas não carrega significado. `esperada` = `montarSugestaoDistribuicao` da entrada
+ *  sobre os códigos já gravados (só depois de `variacoesDivergem` = false). */
+export function sugestaoDiverge(gravada: unknown, esperada: SugestaoDistribuicao | null): boolean {
+  const g = (gravada as { sugestaoDistribuicao?: SugestaoDistribuicao } | null)?.sugestaoDistribuicao ?? null;
+  if (!g || !esperada) return g !== esperada;
+  const norm = (s: SugestaoDistribuicao) => JSON.stringify([
+    Number(s.fator),
+    [...(s.linhas ?? [])].map((l) => [String(l.codigo), Number(l.quantidade)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  ]);
+  return norm(g) !== norm(esperada);
 }
 
 /** Org com módulo fiscal exige entrada fiscal completa; sem módulo, ignora (spec §5). */

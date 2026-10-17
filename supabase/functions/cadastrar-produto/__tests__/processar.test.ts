@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
   aplicaEstoqueInicial, entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
-  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem, refNotaDiverge,
+  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem, refNotaDiverge, sugestaoDiverge,
 } from '../processar.ts';
+
+describe('sugestaoDiverge (retry, ADR-0181 emenda 2026-10-17)', () => {
+  const s = (fator: number, linhas: Array<[string, number]>) =>
+    ({ fator, linhas: linhas.map(([codigo, quantidade]) => ({ codigo, quantidade })) });
+  it('iguais (ordem das linhas e das chaves do jsonb não importa) não divergem', () => {
+    expect(sugestaoDiverge({ refNota: 'x', sugestaoDistribuicao: s(12, [['A', 5], ['C', 3]]) }, s(12, [['A', 5], ['C', 3]]))).toBe(false);
+    expect(sugestaoDiverge({ sugestaoDistribuicao: { linhas: [{ quantidade: 3, codigo: 'C' }, { quantidade: 5, codigo: 'A' }], fator: 12 } },
+      s(12, [['A', 5], ['C', 3]]))).toBe(false);
+    expect(sugestaoDiverge({ refNota: 'x' }, null)).toBe(false);
+    expect(sugestaoDiverge(null, null)).toBe(false);
+  });
+  it('quantidade, código, fator ou presença diferentes divergem', () => {
+    const g = { sugestaoDistribuicao: s(12, [['A', 5], ['C', 3]]) };
+    expect(sugestaoDiverge(g, s(12, [['A', 4], ['C', 3]]))).toBe(true);
+    expect(sugestaoDiverge(g, s(12, [['A', 5], ['B', 3]]))).toBe(true);
+    expect(sugestaoDiverge(g, s(6, [['A', 5], ['C', 3]]))).toBe(true);
+    expect(sugestaoDiverge(g, s(12, [['A', 5]]))).toBe(true);
+    expect(sugestaoDiverge(g, null)).toBe(true);
+    expect(sugestaoDiverge({ refNota: 'x' }, s(1, [['A', 1]]))).toBe(true);
+  });
+});
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
 const enviada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });

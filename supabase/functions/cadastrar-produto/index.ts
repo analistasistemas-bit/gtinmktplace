@@ -16,12 +16,15 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
+import {
+  validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, type ProdutoEntrada, type SugestaoDistribuicao,
+} from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
   aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
   entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada, gradeOuGeneroDivergem, refNotaDiverge,
+  sugestaoDiverge,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 
@@ -116,6 +119,8 @@ Deno.serve(async (req) => {
   let codigoPai: string;
   // ADR-0181 N-I1: modo do cadastro. No retry vem da família GRAVADA, nunca do payload.
   let origemCadastro: string | null;
+  // ADR-0181 (emenda 2026-10-17): sugestão de distribuição gravada com a família (devolvida ao front).
+  let sugestaoDistribuicao: SugestaoDistribuicao | null;
   // Enfileirar de novo dispara o enriquecimento por IA (OpenRouter, pago) e pode sobrescrever
   // título/descrição que o operador já tenha editado — "idempotente" precisa valer para esse
   // efeito colateral caro, não só para o estado no banco. `false` para o caminho de criação
@@ -155,6 +160,10 @@ Deno.serve(async (req) => {
     if (gradeOuGeneroDivergem(produto, jaCadastrado, vars.map((v) => v.tamanho as string | null))) return divergiu();
     // ADR-0181 (emenda): refNota diferente da gravada — também antes de qualquer efeito.
     if (refNotaDiverge(jaCadastrado.mudanca_estrutural, produto.refNota)) return divergiu();
+    // Emenda 2026-10-17: quantidades da nota diferentes da sugestão gravada — idem. Os códigos
+    // gravados (ordenados) casam por índice com o payload: `variacoesDivergem` já descartou reordenação.
+    sugestaoDistribuicao = montarSugestaoDistribuicao(produto, vars.map((v) => v.codigo as string));
+    if (sugestaoDiverge(jaCadastrado.mudanca_estrutural, sugestaoDistribuicao)) return divergiu();
 
     // Estoque inicial tem contrapartida no LEDGER, não em `variacoes.estoque` (que nasce 0 e
     // continua 0 se a primeira tentativa morreu antes do laço). Sem esta conferência, mudar o
@@ -214,6 +223,8 @@ Deno.serve(async (req) => {
     }
     codigoPai = gerados.codigoPai;
     origemCadastro = produto.origemNota ? 'nota' : null;
+    // Mesmo pareamento `variacoes[i]` ↔ `codigos[i]` que `montarLinhasProduto` grava na família.
+    sugestaoDistribuicao = montarSugestaoDistribuicao(produto, gerados.codigos);
 
     // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
     const { data: aberto } = await admin.from('lotes')
@@ -353,7 +364,7 @@ Deno.serve(async (req) => {
   // Estado parcial é devolvido explicitamente, nunca escondido — a tela avisa o operador em vez
   // de deixá-lo achar que deu tudo certo.
   return json({
-    loteId, familiaId, codigoPai, filaOk, falhasEstoque,
+    loteId, familiaId, codigoPai, filaOk, falhasEstoque, sugestaoDistribuicao,
     variacoes: variacoesCriadas.map((v) => ({ id: v.id, codigo: v.codigo })),
   });
 });

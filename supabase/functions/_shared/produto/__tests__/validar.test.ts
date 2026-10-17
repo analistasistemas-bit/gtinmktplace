@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validarProdutoNovo, montarLinhasProduto } from '../validar';
+import { validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao } from '../validar';
 import type { ProdutoEntrada } from '../validar';
 
 const valido: ProdutoEntrada = {
@@ -233,5 +233,68 @@ describe('refNota (ADR-0181 emenda)', () => {
     const com = montarLinhasProduto({ ...valido, origemNota: true, refNota: ref(2) }, ctx).familia;
     expect(com.mudanca_estrutural).toEqual({ refNota: ref(2) });
     expect('mudanca_estrutural' in montarLinhasProduto(valido, ctx).familia).toBe(false);
+  });
+});
+
+describe('quantidadeNota / fatorNota (sugestão de distribuição, ADR-0181 emenda 2026-10-17)', () => {
+  const ref = (n: number) => `nfe:${'1'.repeat(44)}:${n}`;
+  const semEstoque = valido.variacoes.map((v) => ({ ...v, estoqueInicial: undefined }));
+  const daNota = (quantidades: Array<number | undefined>, extra: Partial<ProdutoEntrada> = {}): ProdutoEntrada => ({
+    ...valido, origemNota: true, refNota: ref(2), fatorNota: 1,
+    variacoes: semEstoque.map((v, i) => ({ ...v, quantidadeNota: quantidades[i] })),
+    ...extra,
+  });
+  const campos = (p: ProdutoEntrada) => validarProdutoNovo(p).map((e) => e.campo);
+
+  it('origemNota + refNota + fator + quantidades inteiras ≥ 0: sem erro', () => {
+    expect(validarProdutoNovo(daNota([5, 0]))).toEqual([]);
+    expect(validarProdutoNovo(daNota([5, 0], { fatorNota: 12 }))).toEqual([]);
+  });
+  it('quantidadeNota sem origemNota (ou sem refNota): erro', () => {
+    expect(campos({ ...valido, variacoes: semEstoque.map((v) => ({ ...v, quantidadeNota: 1 })) }))
+      .toContain('variacoes[0].quantidadeNota');
+    expect(campos(daNota([1, 0], { refNota: undefined }))).toContain('variacoes[0].quantidadeNota');
+  });
+  it('quantidadeNota negativa ou fracionária: erro', () => {
+    expect(campos(daNota([-1, 0]))).toContain('variacoes[0].quantidadeNota');
+    expect(campos(daNota([0, 1.5]))).toContain('variacoes[1].quantidadeNota');
+  });
+  it('fatorNota inválido (0, fração, sem origemNota): erro', () => {
+    expect(campos(daNota([1, 0], { fatorNota: 0 }))).toContain('fatorNota');
+    expect(campos(daNota([1, 0], { fatorNota: 1.5 }))).toContain('fatorNota');
+    expect(campos({ ...valido, fatorNota: 1 })).toContain('fatorNota');
+  });
+  it('quantidade > 0 sem fatorNota: erro (a sugestão não teria fator)', () => {
+    expect(campos(daNota([1, 0], { fatorNota: undefined }))).toContain('fatorNota');
+  });
+
+  describe('montarSugestaoDistribuicao', () => {
+    it('associa por posição do payload aos códigos gerados e guarda só quantidade > 0', () => {
+      const base = daNota([5, 0], { fatorNota: 12 });
+      const p = { ...base, variacoes: [...base.variacoes, { preco: 10, quantidadeNota: 3 }] };
+      expect(montarSugestaoDistribuicao(p, ['A', 'B', 'C']))
+        .toEqual({ fator: 12, linhas: [{ codigo: 'A', quantidade: 5 }, { codigo: 'C', quantidade: 3 }] });
+    });
+    it('sem quantidade positiva (ou sem fator): null', () => {
+      expect(montarSugestaoDistribuicao(daNota([0, 0]), ['A', 'B'])).toBeNull();
+      expect(montarSugestaoDistribuicao(daNota([undefined, undefined], { fatorNota: undefined }), ['A', 'B'])).toBeNull();
+    });
+  });
+
+  it('montarLinhasProduto grava a sugestão em mudanca_estrutural; sem quantidades fica só refNota', () => {
+    const ctx = {
+      loteId: 'lote-1', userId: 'user-1', orgId: 'org-1',
+      codigoPai: '09912345', codigos: ['09912346', '09912347'],
+      chaveCadastro: '11111111-1111-1111-1111-111111111111',
+    };
+    const { familia, variacoes } = montarLinhasProduto(daNota([4, 2], { fatorNota: 6 }), ctx);
+    expect(familia.mudanca_estrutural).toEqual({
+      refNota: ref(2),
+      sugestaoDistribuicao: { fator: 6, linhas: [{ codigo: '09912346', quantidade: 4 }, { codigo: '09912347', quantidade: 2 }] },
+    });
+    // Nunca vira estoque (D-4): o SKU nasce com 0 e não existe coluna de quantidade da nota.
+    expect(variacoes.map((v) => v.estoque)).toEqual([0, 0]);
+    expect(variacoes.some((v) => 'quantidadeNota' in v || 'quantidade_nota' in v)).toBe(false);
+    expect(montarLinhasProduto(daNota([0, 0]), ctx).familia.mudanca_estrutural).toEqual({ refNota: ref(2) });
   });
 });
