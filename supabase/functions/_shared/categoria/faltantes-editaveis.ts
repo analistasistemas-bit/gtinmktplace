@@ -1,5 +1,6 @@
 import type { AtributoSchema } from './schema.ts';
 import { TAGS_NAO_FALTANTE, type AtributoML } from './atributos.ts';
+import { classificarFamilia } from '../produto/tipos-produto-valores.ts';
 
 // COLOR/GTIN/EMPTY_GTIN_REASON são resolvidos por variação/publicação; não editáveis aqui.
 const IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
@@ -32,9 +33,29 @@ function tipoDe(a: AtributoSchema): 'closed' | 'numero' | 'texto' {
   return 'texto';
 }
 
-/** Obrigatórios da categoria ainda não preenchidos, com a forma editável (tipo/valores/unidades). */
-export function faltantesEditaveis(schema: AtributoSchema[], atributos: AtributoML[]): CampoFaltante[] {
+/** O que o cadastro estruturado já resolve (ADR-0167): SIZE vem da grade (variacoes.tamanho) e
+ *  GENDER de familias.genero — ambos injetados na publicação, nunca via atributos_ml. */
+export type ContextoFaltantes = { temGrade?: boolean; temGenero?: boolean };
+
+/** Contexto a partir da família: grade só pela regra canônica (`classificarFamilia`: só incluídas,
+ *  `trim`; `mista`/`simples` = sem grade); gênero só se gravado. */
+export function contextoFaltantes(
+  genero: string | null,
+  vivas: Array<{ tamanho: string | null; excluida_da_publicacao: boolean }>,
+): ContextoFaltantes {
+  return { temGrade: classificarFamilia(vivas) === 'grade', temGenero: genero != null };
+}
+
+/** Obrigatórios da categoria ainda não preenchidos, com a forma editável (tipo/valores/unidades).
+ *  Com `contexto`, SIZE/GENDER já resolvidos pelo cadastro somem (sem contexto: comportamento antigo). */
+export function faltantesEditaveis(
+  schema: AtributoSchema[],
+  atributos: AtributoML[],
+  contexto: ContextoFaltantes = {},
+): CampoFaltante[] {
   const presentes = new Set(atributos.filter((a) => a.value_name || a.value_id).map((a) => a.id));
+  if (contexto.temGrade) presentes.add('SIZE');
+  if (contexto.temGenero) presentes.add('GENDER');
   return schema
     .filter((a) =>
       (a.required || a.conditionalRequired) &&

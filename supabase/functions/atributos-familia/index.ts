@@ -6,7 +6,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
-import { faltantesEditaveis, validarValorAtributo } from '../_shared/categoria/faltantes-editaveis.ts';
+import { contextoFaltantes, faltantesEditaveis, validarValorAtributo, type ContextoFaltantes } from '../_shared/categoria/faltantes-editaveis.ts';
 import { buscarCategoriaPreditor, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
 
 // Camada 2B (ADR-0052) + busca livre de categoria (ADR-0057). Fallback manual de atributos e
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
   // RLS garante que só famílias visíveis ao usuário são lidas/escritas.
   const { data: familia, error } = await sb.from('familias')
-    .select('id, categoria_ml_id, atributos_ml, user_id, concorrencia_categoria_id')
+    .select('id, categoria_ml_id, atributos_ml, user_id, concorrencia_categoria_id, genero')
     .eq('id', body.familia_id).maybeSingle();
   if (error || !familia) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
 
@@ -81,7 +81,14 @@ Deno.serve(async (req) => {
   const atuais = (familia.atributos_ml as AtributoML[] | null) ?? [];
 
   if (body.action === 'faltantes') {
-    return new Response(JSON.stringify({ campos: faltantesEditaveis(schema, atuais) }),
+    // SIZE/GENDER já resolvidos pela grade/gênero da família não são pedidos (ADR-0167). Erro ao
+    // ler as variações → sem contexto (comportamento antigo): nunca esconder campo por falha.
+    const { data: vivas, error: vErr } = await sb.from('variacoes')
+      .select('tamanho, excluida_da_publicacao').eq('familia_id', familia.id);
+    const contexto: ContextoFaltantes = vErr || !vivas
+      ? {}
+      : contextoFaltantes(familia.genero as string | null, vivas as { tamanho: string | null; excluida_da_publicacao: boolean }[]);
+    return new Response(JSON.stringify({ campos: faltantesEditaveis(schema, atuais, contexto) }),
       { headers: { ...corsHeaders, 'content-type': 'application/json' } });
   }
 
