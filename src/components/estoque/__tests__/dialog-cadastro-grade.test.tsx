@@ -1,6 +1,7 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ROTULO_GRADE, ROTULO_GENERO } from '@/lib/tamanhos';
+import { abrirSelect, escolherNoSelect as escolherNoSelectBase } from '@/test/select';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -40,30 +41,9 @@ function renderGrade(onFechar = () => {}) {
   );
 }
 
-// jsdom não implementa scrollIntoView, que o Radix Select chama ao mover o item ativo.
-beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
-
 const ROTULOS: Record<string, string> = { ...ROTULO_GRADE, ...ROTULO_GENERO };
-
-// Radix Select por teclado (jsdom não tem hasPointerCapture; padrão de barra-filtros-estoque.test).
-async function abrirSelect(user: ReturnType<typeof userEvent.setup>, rotulo: RegExp) {
-  screen.getByRole('combobox', { name: rotulo }).focus();
-  await user.keyboard('{Enter}');
-}
-async function escolherNoSelect(user: ReturnType<typeof userEvent.setup>, rotulo: RegExp, valor: string) {
-  await abrirSelect(user, rotulo);
-  await screen.findAllByRole('option');
-  // Radix abre com o foco no item selecionado (ou no primeiro): navega por setas até o alvo.
-  const itens = screen.getAllByRole('option');
-  const alvo = itens.findIndex((o) => o.textContent === (ROTULOS[valor] ?? valor));
-  const atual = Math.max(0, itens.findIndex((o) => o === document.activeElement));
-  const passos = alvo - atual;
-  if (passos) await user.keyboard(`{${passos > 0 ? 'ArrowDown' : 'ArrowUp'}>${Math.abs(passos)}/}`);
-  // Um único keydown: Enter faria o keypress/click cair no botão do AlertDialog que abre em seguida; Espaço seleciona no keydown e o keyup vai para o item.
-  const item = document.activeElement!;
-  await user.keyboard('{ >}');
-  fireEvent.keyUp(item, { key: ' ' });
-}
+const escolherNoSelect = (user: ReturnType<typeof userEvent.setup>, rotulo: RegExp, valor: string) =>
+  escolherNoSelectBase(user, rotulo, valor, ROTULOS);
 
 async function escolherGrade(user: ReturnType<typeof userEvent.setup>, grade: string) {
   await escolherNoSelect(user, /^Grade de tamanhos/i, grade);
@@ -571,8 +551,8 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     await user.type(screen.getByLabelText('NCM'), '61091000');
     // Origem fiscal 0 (nacional) de propósito: não está em ORIGENS_COM_FCI, então não abre o
     // campo FCI obrigatório.
-    await user.selectOptions(screen.getByLabelText('Origem fiscal (NF-e)'), '0');
-    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    await escolherNoSelectBase(user, 'Origem fiscal (NF-e)', '0');
+    await escolherNoSelectBase(user, 'CSOSN', '102');
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));

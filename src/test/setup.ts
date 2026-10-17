@@ -32,3 +32,8 @@ if (typeof window !== 'undefined' && typeof window.ResizeObserver === 'undefined
   }
   window.ResizeObserver = ResizeObserverPolyfill as unknown as typeof ResizeObserver;
 }
+
+// jsdom não implementa scrollIntoView, que o Radix Select chama ao mover o item ativo.
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {};
+}

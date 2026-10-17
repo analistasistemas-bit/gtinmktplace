@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { escolherNoSelect } from '@/test/select';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
@@ -835,8 +836,8 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
 
     await user.type(screen.getByLabelText('NCM'), '39269090');
-    await user.selectOptions(screen.getByLabelText(/Origem fiscal/i), '0');
-    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    await escolherNoSelect(user, /Origem fiscal/i, '0');
+    await escolherNoSelect(user, 'CSOSN', '102');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
@@ -1111,12 +1112,12 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
 
     expect(await screen.findByLabelText('NCM')).toHaveValue('62034900');
-    expect(screen.getByLabelText(/Origem fiscal/i)).toHaveValue('0');
-    expect(screen.getByLabelText('CSOSN')).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /Origem fiscal/i })).toHaveTextContent('0 — Nacional');
+    expect(screen.getByRole('combobox', { name: 'CSOSN' })).toHaveTextContent('Selecione…');
     expect(screen.getByLabelText('Descrição na nota fiscal')).toHaveValue('Short masculino');
     expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(2);
 
-    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    await escolherNoSelect(user, 'CSOSN', '102');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     await user.click(screen.getByRole('checkbox', { name: 'Conferi NCM e origem' }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();

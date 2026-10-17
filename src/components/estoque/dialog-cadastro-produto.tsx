@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, AlertTriangle, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
@@ -308,14 +309,14 @@ export function DialogCadastroProduto({
                     UNIDADES_FISCAIS (a edge recusa qualquer outra, ADR-0135). Sem módulo, texto
                     livre — comportamento intacto. */}
                 {fiscalAtivo ? (
-                  <select
-                    id="cad-unidade"
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={unidade}
-                    onChange={(e) => setUnidade(e.target.value)}
-                  >
-                    {UNIDADES_FISCAIS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  <Select value={unidade} onValueChange={setUnidade}>
+                    <SelectTrigger id="cad-unidade" className="w-full">
+                      <SelectValue placeholder="Selecione…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UNIDADES_FISCAIS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <Input id="cad-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
                 )}

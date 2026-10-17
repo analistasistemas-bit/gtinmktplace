@@ -4,6 +4,7 @@
 // este form cobre — a edge continua sendo a autoridade final (400 com `erros[]`).
 import { FileText, Loader2, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
 
@@ -160,21 +161,19 @@ export function EtapaFiscalForm({
           <span className="text-sm font-medium">
             Origem fiscal (NF-e)<span className="text-destructive"> *</span>
           </span>
-          <select
-            id="fiscal-origem-nfe"
-            aria-label="Origem fiscal (NF-e)"
-            className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          <Select
             value={valor.origemNfe}
-            onChange={(e) => {
-              const v = e.target.value;
-              onMudar({ origemNfe: v, ...(ORIGENS_COM_FCI.includes(Number(v)) ? {} : { fci: '' }) });
-            }}
+            onValueChange={(v) => onMudar({ origemNfe: v, ...(ORIGENS_COM_FCI.includes(Number(v)) ? {} : { fci: '' }) })}
           >
-            <option value="">Selecione…</option>
-            {codigosOrigem.map((c) => (
-              <option key={c} value={String(c)}>{ROTULOS_ORIGEM_NFE[c]}</option>
-            ))}
-          </select>
+            <SelectTrigger id="fiscal-origem-nfe" aria-label="Origem fiscal (NF-e)" className="w-full">
+              <SelectValue placeholder="Selecione…" />
+            </SelectTrigger>
+            <SelectContent>
+              {codigosOrigem.map((c) => (
+                <SelectItem key={c} value={String(c)}>{ROTULOS_ORIGEM_NFE[c]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {sugestaoDaNota && <SeloNota />}
         </div>
 
@@ -182,16 +181,14 @@ export function EtapaFiscalForm({
           <span className="text-sm font-medium">
             CSOSN<span className="text-destructive"> *</span>
           </span>
-          <select
-            id="fiscal-csosn"
-            aria-label="CSOSN"
-            className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            value={valor.tributacaoIcms}
-            onChange={(e) => onMudar({ tributacaoIcms: e.target.value })}
-          >
-            <option value="">Selecione…</option>
-            {CSOSN_OPCOES.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
-          </select>
+          <Select value={valor.tributacaoIcms} onValueChange={(v) => onMudar({ tributacaoIcms: v })}>
+            <SelectTrigger id="fiscal-csosn" aria-label="CSOSN" className="w-full">
+              <SelectValue placeholder="Selecione…" />
+            </SelectTrigger>
+            <SelectContent>
+              {CSOSN_OPCOES.map((o) => <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {sugerirCsosn && (
             <button
               type="button"

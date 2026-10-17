@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
@@ -192,16 +193,14 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
                 <span className="text-sm font-medium">
                   Unidade<span className="text-destructive"> *</span>
                 </span>
-                <select
-                  id="fiscal-unidade"
-                  aria-label="Unidade"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={unidade}
-                  onChange={(e) => setUnidade(e.target.value)}
-                >
-                  <option value="">Selecione…</option>
-                  {UNIDADES_FISCAIS.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <Select value={unidade} onValueChange={setUnidade}>
+                  <SelectTrigger id="fiscal-unidade" aria-label="Unidade" className="w-full">
+                    <SelectValue placeholder="Selecione…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UNIDADES_FISCAIS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 <span className="text-xs text-muted-foreground">
                   A unidade cadastrada (&quot;{familia.unidade}&quot;) não é aceita pela NF-e — escolha uma da lista.
                 </span>

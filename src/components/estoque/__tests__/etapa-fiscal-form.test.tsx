@@ -1,13 +1,15 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { abrirSelect, escolherNoSelect } from '@/test/select';
 import { describe, expect, it, vi } from 'vitest';
 import { EtapaFiscalForm, fiscalCompleto, fiscalVazio } from '../etapa-fiscal-form';
 
 describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
-  it('origem nacional só oferece códigos 0/3/4/5/8 no select de origem fiscal', () => {
+  it('origem nacional só oferece códigos 0/3/4/5/8 no select de origem fiscal', async () => {
     render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={vi.fn()}
       sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} />);
-    const select = screen.getByLabelText(/origem fiscal/i) as HTMLSelectElement;
-    const valores = Array.from(select.options).map((o) => o.value).filter(Boolean);
+    await abrirSelect(userEvent.setup(), /origem fiscal/i);
+    const valores = (await screen.findAllByRole('option')).map((o) => o.textContent!.split(' — ')[0]);
     expect(valores).toEqual(['0', '3', '4', '5', '8']);
   });
   it('sugestão de NCM aparece marcada como sugestão e só entra no clique', () => {
@@ -28,25 +30,25 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
   // F2, fix round 1: trocar de uma origem que exige FCI (3/5/8) para uma que não exige
   // precisa LIMPAR o fci no mesmo patch — senão o valor sobrevive escondido (campo oculto) e
   // vai no payload como dado fiscal sujo em silêncio.
-  it('trocar origemNfe de 3 para 0 limpa o fci no mesmo patch', () => {
+  it('trocar origemNfe de 3 para 0 limpa o fci no mesmo patch', async () => {
     const onMudar = vi.fn();
     render(<EtapaFiscalForm
       valor={{ ...fiscalVazio(), origemNfe: '3', fci: 'FCI-ANTIGO' }}
       origem="nacional" onMudar={onMudar}
       sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()}
     />);
-    fireEvent.change(screen.getByLabelText(/origem fiscal/i), { target: { value: '0' } });
+    await escolherNoSelect(userEvent.setup(), /origem fiscal/i, '0');
     expect(onMudar).toHaveBeenCalledWith({ origemNfe: '0', fci: '' });
   });
 
-  it('trocar origemNfe de 3 para 5 (ambas exigem FCI) preserva o fci', () => {
+  it('trocar origemNfe de 3 para 5 (ambas exigem FCI) preserva o fci', async () => {
     const onMudar = vi.fn();
     render(<EtapaFiscalForm
       valor={{ ...fiscalVazio(), origemNfe: '3', fci: 'FCI-ATUAL' }}
       origem="nacional" onMudar={onMudar}
       sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()}
     />);
-    fireEvent.change(screen.getByLabelText(/origem fiscal/i), { target: { value: '5' } });
+    await escolherNoSelect(userEvent.setup(), /origem fiscal/i, '5');
     expect(onMudar).toHaveBeenCalledWith({ origemNfe: '5' });
   });
 

@@ -610,14 +610,14 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                   {/* Com o módulo fiscal ativo a coluna alimenta a NF-e — a edge recusa qualquer
                       valor fora de UNIDADES_FISCAIS (ADR-0135). */}
                   {fiscalAtivo ? (
-                    <select
-                      id="grade-unidade"
-                      className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                      value={unidade}
-                      onChange={(e) => setUnidade(e.target.value)}
-                    >
-                      {UNIDADES_FISCAIS.map((u) => <option key={u} value={u}>{u}</option>)}
-                    </select>
+                    <Select value={unidade} onValueChange={setUnidade}>
+                      <SelectTrigger id="grade-unidade" className="w-full">
+                        <SelectValue placeholder="Selecione…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNIDADES_FISCAIS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <Input id="grade-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
                   )}

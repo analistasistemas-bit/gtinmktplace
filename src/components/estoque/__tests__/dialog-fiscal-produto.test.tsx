@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { escolherNoSelect } from '@/test/select';
 import { DialogFiscalProduto } from '../dialog-fiscal-produto';
 import { supabase } from '@/lib/supabase';
 
@@ -70,8 +71,8 @@ describe('DialogFiscalProduto — carrega valores existentes', () => {
   it('popula NCM, origem fiscal e CSOSN com os valores já gravados', async () => {
     renderDialog();
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
-    expect(screen.getByLabelText(/Origem fiscal/i)).toHaveValue('0');
-    expect(screen.getByLabelText('CSOSN')).toHaveValue('102');
+    expect(screen.getByRole('combobox', { name: /Origem fiscal/i })).toHaveTextContent('0 — Nacional');
+    expect(screen.getByRole('combobox', { name: 'CSOSN' })).toHaveTextContent('102 — Simples, sem crédito');
   });
 
   // Fix round 1 (I2): só busca sugestão quando a família vem SEM ncm — 1 chamada LLM a menos
@@ -218,7 +219,7 @@ describe('DialogFiscalProduto — unidade fora do vocabulário (ruling do contro
     mockFamilia({ ...FAMILIA_MOCK, unidade: 'PACOTE' });
     renderDialog();
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
-    expect(screen.getByLabelText(/Unidade/i)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: /Unidade/i })).toHaveTextContent('Selecione…');
   });
 
   it('família com unidade válida NÃO mostra o select de unidade', async () => {
@@ -240,7 +241,7 @@ describe('DialogFiscalProduto — unidade fora do vocabulário (ruling do contro
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled();
 
-    await user.selectOptions(screen.getByLabelText(/Unidade/i), 'PC');
+    await escolherNoSelect(user, /Unidade/i, 'PC');
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Salvar' }));
