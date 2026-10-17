@@ -9,11 +9,11 @@ const MARCAS_CONFERENCIA = ['saldo_negativo', 'historico_incompleto', 'ncm_ausen
 const ms = (iso: string) => dataHoraBR(Date.parse(iso));
 
 export function statusInventario(c: LeituraInventario['cabecalho']): string {
-  if (c.status === 'hoje') return 'inventário de hoje — não é foto, não confirmado';
+  if (c.status === 'hoje') return 'Inventário de hoje — não é foto, não confirmado';
   const dm = `${c.data_base.slice(8, 10)}/${c.data_base.slice(5, 7)}`;
-  if (c.status === 'confirmado') return `confirmado em ${c.confirmado_em ? ms(c.confirmado_em) : '—'} por ${c.confirmado_por_nome ?? '—'}`;
-  if (c.status === 'aberto') return `foto de ${dm} — aguardando contagem`;
-  return `foto de ${dm} — geração falhou`;
+  if (c.status === 'confirmado') return `Confirmado em ${c.confirmado_em ? ms(c.confirmado_em) : '—'} por ${c.confirmado_por_nome ?? '—'}`;
+  if (c.status === 'aberto') return `Foto de ${dm} — aguardando contagem`;
+  return `Foto de ${dm} — geração falhou`;
 }
 
 /** Valores do Livro: confirmado → *_final; aberto e hoje → foto/cálculo. A contagem em andamento nunca entra aqui. */

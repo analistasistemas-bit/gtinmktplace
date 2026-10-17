@@ -70,11 +70,11 @@ describe('relatório de inventário (xlsx)', () => {
     const hoje = textos(abrir(gerarRelatorioInventarioXlsx(leitura('hoje'))));
     for (const a of AVISOS_INVENTARIO) expect(hoje).toContain(a);
     expect(hoje).toContain('11222333000181');
-    expect(hoje).toContain('inventário de hoje — não é foto, não confirmado');
+    expect(hoje).toContain('Inventário de hoje — não é foto, não confirmado');
     expect(hoje).toContain('Saldo lido em');
-    expect(textos(abrir(gerarRelatorioInventarioXlsx(leitura('aberto'))))).toContain('foto de 31/12 — aguardando contagem');
+    expect(textos(abrir(gerarRelatorioInventarioXlsx(leitura('aberto'))))).toContain('Foto de 31/12 — aguardando contagem');
     const conf = textos(abrir(gerarRelatorioInventarioXlsx(CONFIRMADO)));
-    expect(conf).toMatch(/confirmado em .+ por Maria Teste/);
+    expect(conf).toMatch(/Confirmado em .+ por Maria Teste/);
   });
 });
 
@@ -83,8 +83,21 @@ describe('relatório de inventário (PDF)', () => {
     const t = montarRelatorioInventarioPdf(CONFIRMADO).output();
     for (const s of [...COLUNAS_LIVRO.slice(0, 3), 'Qtd. avaliada', 'Conferência', 'perda total', 'saldo_negativo', 'historico_incompleto', 'ncm_ausente',
       'Totais', '11222333000181', 'por Maria Teste', ...AVISOS_INVENTARIO]) expect(t).toContain(s);
-    expect(montarRelatorioInventarioPdf(leitura('hoje')).output()).toContain('inventário de hoje');
-    expect(montarRelatorioInventarioPdf(leitura('aberto')).output()).toContain('aguardando contagem');
+    for (const c of COLUNAS_LIVRO) expect(t).toContain(c);
+    const vezes = (s: string) => t.split(s).length - 1;
+    expect(vezes('Produto A1')).toBe(2);   // Livro + Conferência
+    expect(vezes('Produto B2')).toBe(1);   // final 0: só na Conferência
+    expect(vezes('Produto C3')).toBe(1);   // −2: só na Conferência
+    expect(montarRelatorioInventarioPdf(leitura('hoje')).output()).toContain('Inventário de hoje - não é foto, não confirmado');   // travessão sai hífen no PDF
+    expect(montarRelatorioInventarioPdf(leitura('aberto')).output()).toContain('Foto de 31/12 - aguardando contagem');
+    expect(t).toMatch(/Confirmado em .+ por Maria Teste/);
+  });
+  it('foto aberta: Livro 10 / 100,00 e Conferência 10 → 7', () => {
+    const doc = montarRelatorioInventarioPdf(leitura('aberto'));
+    const t = doc.output();
+    expect(t).toContain('100,00');
+    expect(t).not.toContain('70,00');
+    expect(t).toContain('extravio');
   });
   it('bytes começam com %PDF', () => {
     expect(new TextDecoder().decode(gerarRelatorioInventarioPdf(leitura('hoje')).slice(0, 4))).toBe('%PDF');

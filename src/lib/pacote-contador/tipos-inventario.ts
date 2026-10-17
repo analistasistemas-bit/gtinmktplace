@@ -30,7 +30,7 @@ export interface LeituraInventario { cabecalho: CabecalhoInventario; itens: Item
 export interface ContagemItem { codigo: string; quantidade_contada: number | null; justificativa: string | null }
 
 export const AVISOS_INVENTARIO = [
-  'Critério: custo médio ponderado móvel de aquisição; unidades sem nota saem primeiro.',
+  'Critério: custo médio ponderado móvel de aquisição, unidades sem nota saem primeiro.',
   'O saldo inclui o Full.',
   'Mercadoria de terceiros não é controlada.',
   'Devolução e escrita de planilha podem ser avaliadas para menos.',
