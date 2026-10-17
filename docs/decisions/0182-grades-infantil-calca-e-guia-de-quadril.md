@@ -85,14 +85,23 @@ módulo folha de `_shared` (padrão de `medidas-valores.ts`).
 
 Tamanho fora da tabela falha alto; nunca há quadril defaultado ou estimado.
 
-**D6 — Superset do chart (ADR-0167 D2) e cache.** O chart de quadril é sempre o superset do
-gênero, nunca só os tamanhos da família: gênero adulto = Letras + Calça (12 linhas); infantil = 8
-linhas. Chave de cache inalterada `(connection_id, domain_id, genero)`; os gêneros infantis já
-separam infantil de adulto. Colunas: `SIZE` + `FILTRABLE_SIZE` + `HIP_CIRCUMFERENCE_FROM`
-(`"<n> cm"`); `FILTRABLE_SIZE` infantil = `"<n> anos"`, adulto = mesmo texto do tamanho. O nome do
-chart normaliza o gênero (`_` → espaço, ex.: `sem genero infantil`). Se o ML recusar, na primeira
-criação real, o chart com Letras e numeração misturadas, o cache passa a separar por
-`domain × genero × grade`, sem mudar o comportamento visível.
+**D6 — Superset do chart (ADR-0167 D2) e cache.** O chart de quadril é sempre o superset da
+**grade** naquele gênero, nunca só os tamanhos da família: Letras = P/M/G/GG (4 linhas), Calça =
+34–48 (8 linhas), Infantil = 2–16 (8 linhas), cada lista cruzada com o `SIZE` da categoria e com
+`tabelaQuadril(genero)` para o cm. Chave de cache `(connection_id, domain_id, genero,
+grade_tamanho)`. Colunas: `SIZE` + `FILTRABLE_SIZE` + `HIP_CIRCUMFERENCE_FROM` (`"<n> cm"`);
+`FILTRABLE_SIZE` infantil = `"<n> anos"`, adulto = mesmo texto do tamanho. O nome do chart
+normaliza o gênero (`_` → espaço, ex.: `sem genero infantil`). Peito (JACKETS_AND_COATS /
+SPORT_T_SHIRTS) e calçado não mudam de comportamento; só passam a ser cacheados com a sua grade
+(`letras` / `calcado`).
+
+*Emenda 2026-10-16 (fallback previsto acionado).* A versão original juntava Letras + Calça num
+chart adulto de 12 linhas com a chave `(connection_id, domain_id, genero)`. No ensaio real o ML
+recusou esse chart em `POST /catalog/charts` com `value_is_not_the_same_type: "All FILTRABLE_SIZE
+values must be the same type, only numbers or alphanumeric"` (Spike 056 §8). Os charts infantis
+foram criados sem erro. Migration `20261017013349_adr182_ml_size_charts_por_grade`: coluna
+`grade_tamanho` (backfill: SNEAKERS/SANDALS_AND_CLOGS → `calcado`, gênero infantil → `infantil`,
+resto → `letras`), `not null` sem default, CHECK nas 4 grades e PK nas 4 colunas.
 
 **D7 — CLOTHING_LOTS publica sem guia.** Não chama `garantirChart`; o item leva
 `CLOTHING_LOT_SIZE = <tamanho>` e não leva `SIZE`/`SIZE_GRID_*`. `CLOTHING_LOT_SIZE` é atributo

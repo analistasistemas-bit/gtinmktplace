@@ -6,7 +6,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ehCategoriaMlValida, lerSchemaAtributos } from '../categoria/schema.ts';
 import { COMPRIMENTO_PE_CM, tabelaQuadril } from './medidas-valores.ts';
 import {
-  GENEROS_INFANTIL, generosDaGrade, type Genero, type GradeTamanho,
+  GENEROS_INFANTIL, generosDaGrade, tamanhosDaGrade, type Genero, type GradeTamanho,
 } from '../produto/tipos-produto-valores.ts';
 
 // ADR-0182: fonte única dos gêneros (adulto + infantil) em `tipos-produto-valores.ts`.
@@ -248,7 +248,7 @@ export async function lerDominioCategoria(categoriaId: string): Promise<string |
   return domainIdSemPrefixo(json?.settings?.catalog_domain);
 }
 
-/** Resolve o chart de (conexão, domínio, gênero) — lê do cache (`ml_size_charts`) ou cria via
+/** Resolve o chart de (conexão, domínio, gênero, grade) — lê do cache (`ml_size_charts`) ou cria via
  *  `POST /catalog/charts` e persiste. Nunca dá update num chart existente (ADR-0167 Decisão 4).
  *  `null` só para domínio sem guia (`DOMINIOS_SEM_GUIA`, ADR-0182 D7): nem cache nem ML. */
 export async function garantirChart(
@@ -283,6 +283,7 @@ export async function garantirChart(
   const { data: cached } = await admin.from('ml_size_charts')
     .select('chart_id, linhas')
     .eq('connection_id', connectionId).eq('domain_id', domainId).eq('genero', genero)
+    .eq('grade_tamanho', grade)
     .maybeSingle();
   if (cached) {
     // Cache pré-existente (charts criados antes de 0cec85cb) grava `linhas` como
@@ -302,7 +303,7 @@ export async function garantirChart(
     if (faltando.length > 0) {
       throw new Error(
         `Guia de tamanhos: chart existente (conexão=${connectionId}, domínio=${domainId}, `
-        + `gênero=${genero}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
+        + `gênero=${genero}, grade=${grade}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
         + 'Decisão 4), amplie o superset em size-chart.ts e crie um chart novo.',
       );
     }
@@ -313,14 +314,14 @@ export async function garantirChart(
     ? await buscarChartStandardCalcado(token, domainId, genero, tamanhos)
     : DOMINIOS_CALCADO_SPECIFIC.has(domainId)
       ? await criarChartCalcadoEspecifico(token, domainId, genero, tamanhos)
-      : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos);
+      : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos, grade);
 
-  // Duas publicações concorrentes (mesma conexão+domínio+gênero, 1ª vez) podem criar 2 charts em
+  // Duas publicações concorrentes (mesma conexão+domínio+gênero+grade, 1ª vez) podem criar 2 charts em
   // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
   // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
   // ESTA chamada acabou de resolver (é o que o payload desta publicação já referencia).
   const { error: insertErr } = await admin.from('ml_size_charts').insert({
-    connection_id: connectionId, domain_id: domainId, genero,
+    connection_id: connectionId, domain_id: domainId, genero, grade_tamanho: grade,
     chart_id: resolvido.chartId, linhas: Object.fromEntries(resolvido.linhaPorTamanho),
   });
   if (insertErr) console.error('ml_size_charts insert falhou (chart resolvido, cache não salvo):', insertErr.message);
@@ -330,10 +331,13 @@ export async function garantirChart(
 
 /** Vestuário: cria um chart SPECIFIC com o superset da tabela do domínio (ADR-0167 Decisão 2 —
  *  nunca só os tamanhos desta família). JACKETS_AND_COATS/SPORT_T_SHIRTS → peito
- *  (CONTORNO_PEITO_CM); SHORTS/PANTS → quadril do gênero (ADR-0182 D5/D6: adulto = Letras +
- *  Calça, infantil = 2–16 com FILTRABLE_SIZE "<n> anos"). */
+ *  (CONTORNO_PEITO_CM); SHORTS/PANTS → quadril do gênero, superset = a lista da PRÓPRIA grade
+ *  (ADR-0182 D6: Letras = P–GG, Calça = 34–48, Infantil = 2–16 com FILTRABLE_SIZE "<n> anos").
+ *  Nunca Letras + Calça no mesmo chart: o ML recusa com `value_is_not_the_same_type` (ensaio
+ *  real 2026-10-16, Spike 056 §8). */
 async function criarChartVestuario(
   token: string, categoriaId: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+  grade: GradeTamanho,
 ): Promise<ChartResolvido> {
   const schema = await lerSchemaAtributos(token, categoriaId);
   const sizeAttr = schema.find((a) => a.id === 'SIZE');
@@ -345,8 +349,8 @@ async function criarChartVestuario(
   const tabela = quadril ? tabelaQuadril(genero) : CONTORNO_PEITO_CM;
   const infantil = (GENEROS_INFANTIL as readonly string[]).includes(genero);
   const nomeFiltravel = quadril && infantil ? (t: string) => `${t} anos` : (t: string) => t;
-  const supersetTamanhos = Object.keys(tabela)
-    .filter((t) => sizeAttr.valores.some((v) => v.nome === t));
+  const supersetTamanhos = (quadril ? tamanhosDaGrade(grade) : Object.keys(tabela))
+    .filter((t) => t in tabela && sizeAttr.valores.some((v) => v.nome === t));
   const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
   if (foraDoSuperset.length > 0) throw new Error(mensagemForaDoSuperset(foraDoSuperset));
 

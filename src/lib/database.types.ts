@@ -1794,6 +1794,7 @@ export type Database = {
           criado_em: string
           domain_id: string
           genero: string
+          grade_tamanho: string
           linhas: Json
         }
         Insert: {
@@ -1802,6 +1803,7 @@ export type Database = {
           criado_em?: string
           domain_id: string
           genero: string
+          grade_tamanho: string
           linhas: Json
         }
         Update: {
@@ -1810,6 +1812,7 @@ export type Database = {
           criado_em?: string
           domain_id?: string
           genero?: string
+          grade_tamanho?: string
           linhas?: Json
         }
         Relationships: [

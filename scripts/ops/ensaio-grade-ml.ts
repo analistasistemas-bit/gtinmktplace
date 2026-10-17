@@ -114,7 +114,8 @@ const dominio = await lerDominioCategoria(categoriaId);
 const { data: cache, error: cErr } = await admin.from('ml_size_charts')
   .select('chart_id, domain_id, genero, linhas')
   .eq('connection_id', connectionId).eq('domain_id', dominio ?? '').eq('genero', genero)
+  .eq('grade_tamanho', grade)
   .maybeSingle();
 if (cErr) console.error('erro lendo ml_size_charts:', cErr.message);
-else if (!cache) console.log(`ml_size_charts: SEM LINHA para (${dominio}, ${genero})${chart ? ' — FALHA DE CACHE' : ' (esperado: sem guia)'}`);
+else if (!cache) console.log(`ml_size_charts: SEM LINHA para (${dominio}, ${genero}, ${grade})${chart ? ' — FALHA DE CACHE' : ' (esperado: sem guia)'}`);
 else console.log(`ml_size_charts: chart_id=${cache.chart_id} domínio=${cache.domain_id} gênero=${cache.genero} tamanhos=${Object.keys(cache.linhas as object).join(',')}`);

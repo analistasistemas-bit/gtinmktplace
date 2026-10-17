@@ -89,3 +89,16 @@ não quadril).
 - Adulto 34–48: masculino `2n+20` (34→88 … 48→116; confere com Maxturbos ±1 cm), feminino `2n+22`
   (34→90 … 48→118; igual à tabela EU da Halti). Sem gênero usa a masculina.
 - P/M/G/GG: masculino 96/100/104/108 (≈38/40/42/44), feminino 94/102/110/118 (≈36/40/44/48).
+
+## 8. Ensaio 2026-10-16 — chart adulto misto RECUSADO
+
+Rodado com `scripts/ops/ensaio-grade-ml.ts` (`garantirChart` real + `/items/validate`, sem criar
+item).
+
+- Infantil criado e cacheado em `ml_size_charts`: chart **10161653** (SHORTS, Meninos) e chart
+  **10161579** (SHORTS, Sem gênero infantil), 8 linhas 2–16 com `FILTRABLE_SIZE "<n> anos"`.
+- Adulto com Letras + Calça no mesmo chart (P, M, G, GG + 34…48) **recusado** em
+  `POST /catalog/charts`: `value_is_not_the_same_type: "All FILTRABLE_SIZE values must be the
+  same type, only numbers or alphanumeric"`.
+- Consequência (ADR-0182 D6, emenda): um chart por grade — cache passa a ser
+  `(connection_id, domain_id, genero, grade_tamanho)`; Letras = 4 linhas, Calça = 8 linhas.

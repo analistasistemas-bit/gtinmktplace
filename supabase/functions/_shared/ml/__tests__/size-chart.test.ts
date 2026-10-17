@@ -233,7 +233,9 @@ describe('garantirChart — cache em formato antigo (ADR-0167, achado real Fable
           eq: () => ({
             eq: () => ({
               eq: () => ({
-                maybeSingle: () => Promise.resolve({ data: { chart_id: '8522331', linhas } }),
+                eq: () => ({
+                  maybeSingle: () => Promise.resolve({ data: { chart_id: '8522331', linhas } }),
+                }),
               }),
             }),
           }),
@@ -281,14 +283,23 @@ describe('garantirChart — cache em formato antigo (ADR-0167, achado real Fable
 describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.mocked(lerSchemaAtributos).mockReset(); });
 
-  /** Admin fake que registra toda chamada a `from` (cache `ml_size_charts`). */
-  function adminFake(cached: unknown = null) {
-    const inserts: unknown[] = [];
+  /** Admin fake que registra toda chamada a `from` (cache `ml_size_charts`). O cache é indexado
+   *  pela chave completa `conexão|domínio|gênero|grade` (ADR-0182 D6): só devolve a linha se os
+   *  4 filtros `eq` baterem — prova que a busca usa a chave inteira. */
+  function adminFake(cache: Record<string, unknown> = {}) {
+    const inserts: Array<Record<string, unknown>> = [];
     const from = vi.fn(() => ({
-      select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({
-        maybeSingle: () => Promise.resolve({ data: cached }),
-      }) }) }) }),
-      insert: (row: unknown) => { inserts.push(row); return Promise.resolve({ error: null }); },
+      select: () => {
+        const filtros: Record<string, unknown> = {};
+        const q = {
+          eq: (col: string, v: unknown) => { filtros[col] = v; return q; },
+          maybeSingle: () => Promise.resolve({ data: cache[
+            [filtros.connection_id, filtros.domain_id, filtros.genero, filtros.grade_tamanho].join('|')
+          ] ?? null }),
+        };
+        return q;
+      },
+      insert: (row: Record<string, unknown>) => { inserts.push(row); return Promise.resolve({ error: null }); },
     }));
     return { admin: { from } as unknown as SupabaseClient, from, inserts };
   }
@@ -387,7 +398,7 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(from).not.toHaveBeenCalled();
   });
 
-  it('PANTS feminino sem cache → POST com 12 linhas (Letras + Calça), coluna HIP_CIRCUMFERENCE_FROM, 40 → 102 cm', async () => {
+  it('PANTS feminino calça sem cache → POST só com as 8 linhas da Calça (Letras fora: ML recusa FILTRABLE_SIZE misto), 40 → 102 cm', async () => {
     const tamanhosCategoria = ['P', 'M', 'G', 'GG', '34', '36', '38', '40', '42', '44', '46', '48', '2', '4'];
     vi.mocked(lerSchemaAtributos).mockResolvedValue([
       { id: 'SIZE', valores: tamanhosCategoria.map((t, i) => ({ id: `s${i}`, nome: t })) },
@@ -400,9 +411,9 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
 
     expect(f.posts).toHaveLength(1);
     const rows = f.posts[0].body.rows;
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(8);
     const nomesSize = rows.map((row) => row.attributes.find((a) => a.id === 'SIZE')!.values[0].name);
-    expect(new Set(nomesSize)).toEqual(new Set(['P', 'M', 'G', 'GG', '34', '36', '38', '40', '42', '44', '46', '48']));
+    expect(new Set(nomesSize)).toEqual(new Set(['34', '36', '38', '40', '42', '44', '46', '48']));
     for (const row of rows) {
       expect(row.attributes.map((a) => a.id)).toEqual(['SIZE', 'FILTRABLE_SIZE', 'HIP_CIRCUMFERENCE_FROM']);
     }
@@ -412,6 +423,53 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(f.posts[0].body.attributes).toEqual([{ id: 'GENDER', values: [{ id: '339665', name: 'Feminino' }] }]);
     expect(r!.linhaPorTamanho.get('40')?.sizeLabel).toBe('40');
     expect(inserts).toHaveLength(1);
+  });
+
+  // ADR-0182 D6 (ensaio real 2026-10-16): o ML recusou o chart adulto misto Letras + Calça com
+  // `value_is_not_the_same_type` — cache e superset passam a ser por grade.
+  function schemaAdulto() {
+    const tamanhos = ['P', 'M', 'G', 'GG', '34', '36', '38', '40', '42', '44', '46', '48', '2', '4'];
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'SIZE', valores: tamanhos.map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: tamanhos.map((t, i) => ({ id: `f${i}`, nome: t })) },
+    ] as never);
+  }
+  const nomes = (rows: Row[]) => rows.map((row) => row.attributes[0].values[0].name);
+
+  it('PANTS masculino calça → POST com exatamente 34..48 e cache gravado com grade_tamanho calca', async () => {
+    schemaAdulto();
+    const { admin, inserts } = adminFake();
+    const f = fetchFake('PANTS');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['40'], 'calca');
+    expect(f.posts).toHaveLength(1);
+    expect(nomes(f.posts[0].body.rows)).toEqual(['34', '36', '38', '40', '42', '44', '46', '48']);
+    expect(f.posts[0].body.rows[3].attributes[2]).toEqual({ id: 'HIP_CIRCUMFERENCE_FROM', values: [{ name: '100 cm' }] });
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      connection_id: 'conexao-1', domain_id: 'PANTS', genero: 'masculino', grade_tamanho: 'calca', chart_id: '999',
+    });
+  });
+
+  it('SHORTS masculino letras → POST com 4 linhas (P, M, G, GG)', async () => {
+    schemaAdulto();
+    const { admin, inserts } = adminFake();
+    const f = fetchFake('SHORTS');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['M'], 'letras');
+    expect(nomes(f.posts[0].body.rows)).toEqual(['P', 'M', 'G', 'GG']);
+    expect(inserts[0]).toMatchObject({ grade_tamanho: 'letras' });
+  });
+
+  it('cache de (conexão, SHORTS, masculino, letras) não serve um pedido de calça → chart novo', async () => {
+    schemaAdulto();
+    const { admin, inserts } = adminFake({
+      'conexao-1|SHORTS|masculino|letras': { chart_id: '111', linhas: { P: { rowId: '111:1', sizeLabel: 'P' } } },
+    });
+    const f = fetchFake('SHORTS');
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['40'], 'calca');
+    expect(f.posts).toHaveLength(1);
+    expect(nomes(f.posts[0].body.rows)).toEqual(['34', '36', '38', '40', '42', '44', '46', '48']);
+    expect(r!.chartId).toBe('999');
+    expect(inserts[0]).toMatchObject({ domain_id: 'SHORTS', grade_tamanho: 'calca' });
   });
 
   it('SHORTS meninos sem cache → 8 linhas infantis com FILTRABLE_SIZE "<n> anos"', async () => {
@@ -432,7 +490,9 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
   });
 
   it('JACKETS_AND_COATS com cache existente devolve o cache, sem POST (regressão, Review Focus 4)', async () => {
-    const { admin, inserts } = adminFake({ chart_id: '8522331', linhas: { P: { rowId: '8522331:1', sizeLabel: 'P' } } });
+    const { admin, inserts } = adminFake({
+      'conexao-1|JACKETS_AND_COATS|masculino|letras': { chart_id: '8522331', linhas: { P: { rowId: '8522331:1', sizeLabel: 'P' } } },
+    });
     const f = fetchFake('JACKETS_AND_COATS');
     const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['P'], 'letras');
     expect(r).toEqual({ chartId: '8522331', linhaPorTamanho: new Map([['P', { rowId: '8522331:1', sizeLabel: 'P' }]]) });
