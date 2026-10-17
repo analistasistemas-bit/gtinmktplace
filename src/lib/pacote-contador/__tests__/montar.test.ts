@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { montarPacote, comSeloGlobal, nomePacote, mesesDisponiveis, mesAnteriorSP } from '../montar';
+import { montarPacote, comSeloGlobal, nomePacote, mesesDisponiveis, mesAnteriorSP, nomeInventarioHoje } from '../montar';
 import { lerPacote, lerPacoteVazio, lerPacoteIndisponivel } from '../ler';
 import { montarCompras } from '../compras-ler';
 import { nfe, zip } from './fixtures';
@@ -17,6 +17,17 @@ describe('montarPacote', () => {
     expect(Object.keys(z).sort()).toEqual([`compras/xmls-canceladas/${CH(3)}.xml`, `compras/xmls-desfeitas/${CH(2)}.xml`, `compras/xmls/${CH(1)}.xml`,
       'relatorio-compras.pdf', 'relatorio-compras.xlsx', 'relatorio-vendas.pdf', 'relatorio-vendas.xlsx', 'xmls/Emitidas/a.xml']);
     expect(strFromU8(z['xmls/Emitidas/a.xml'])).toBe(nfe({ n: 1 }));
+  });
+  it('inventário opcional: entra em inventario/, e sem ele não há a pasta', () => {
+    const l = lerPacote(zip({ 'Emitidas/a.xml': nfe({ n: 1 }) }), '2026-12', AG);
+    const base = { vendas: l, xlsxVendas: B, pdfVendas: B, compras: COMP, xlsxCompras: B, pdfCompras: B };
+    const com = Object.keys(unzipSync(montarPacote({ ...base, inventario: { xlsx: B, pdf: B } })));
+    expect(com).toEqual(expect.arrayContaining(['inventario/relatorio-inventario.xlsx', 'inventario/relatorio-inventario.pdf']));
+    expect(Object.keys(unzipSync(montarPacote(base))).some((k) => k.startsWith('inventario/'))).toBe(false);
+  });
+  it('nomeInventarioHoje usa a data de São Paulo', () => {
+    expect(nomeInventarioHoje(new Date('2026-10-17T01:30:00Z'))).toBe('inventario-2026-10-16');   // 22:30 em SP
+    expect(nomeInventarioHoje(new Date('2026-10-17T12:00:00Z'))).toBe('inventario-2026-10-17');
   });
   it('vendas vazias ou indisponíveis: sem xmls/ de vendas', () => {
     for (const vendas of [lerPacoteVazio('2026-09', AG), lerPacoteIndisponivel('2026-09', 'x', AG)]) {
