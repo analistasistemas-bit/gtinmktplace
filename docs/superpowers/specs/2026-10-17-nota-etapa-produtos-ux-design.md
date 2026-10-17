@@ -29,8 +29,9 @@ Na etapa 2 ("Produtos"), o Diego quer ver primeiro, em cada item: **qual produto
      visualmente coerentes com o layout.
 2. **Vínculo gravado no cadastro pela nota:** ao cadastrar produto novo a partir de um item, a edge
    `cadastrar-produto` grava `vinculos_fornecedor (org, cnpj_fornecedor, cprod, codigo_pai,
-   fator_conversao)` com o mesmo `on conflict (org_id, cnpj_fornecedor, cprod) do update` da RPC do
-   ADR-0181. Ao reabrir a nota (ou numa próxima nota do mesmo fornecedor com o mesmo cProd), o item já
+   fator_conversao)` com `on conflict (org_id, cnpj_fornecedor, cprod) do nothing` — **nunca
+   sobrescreve** vínculo existente (só a confirmação da nota, pela RPC do ADR-0181, pode trocá-lo;
+   um cadastro abandonado não estraga o vínculo bom de notas anteriores). Ao reabrir a nota (ou numa próxima nota do mesmo fornecedor com o mesmo cProd), o item já
    chega **Vinculado** pelo caminho existente (`buscarVinculos`).
 3. **"Escolher existente…" sem sugestão sem relação:** a lista inicial (sem texto digitado) mostra só
    candidatos de **GTIN igual** (`candidatosGtin` já existente; o vínculo exato cProd→produto já chega
