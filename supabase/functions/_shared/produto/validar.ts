@@ -76,7 +76,7 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
   if (!p.nomePai?.trim()) erros.push({ campo: 'nomePai', mensagem: 'Nome do produto é obrigatório.' });
 
-  if (p.refNota !== undefined && (!p.origemNota || typeof p.refNota !== 'string' || !REF_NOTA.test(p.refNota))) {
+  if (p.refNota !== undefined && (p.origemNota !== true || typeof p.refNota !== 'string' || !REF_NOTA.test(p.refNota))) {
     erros.push({ campo: 'refNota', mensagem: 'Referência da nota inválida.' });
   }
 

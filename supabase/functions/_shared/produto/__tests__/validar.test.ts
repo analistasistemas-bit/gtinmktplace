@@ -220,6 +220,12 @@ describe('refNota (ADR-0181 emenda)', () => {
   it('refNota sem origemNota: erro no campo refNota', () => {
     expect(validarProdutoNovo({ ...valido, refNota: ref(2) }).map((e) => e.campo)).toContain('refNota');
   });
+  it('origemNota truthy não-booleano ("false", 1, {}) com refNota: erro no campo refNota', () => {
+    for (const o of ['false', 1, {}]) {
+      const r = validarProdutoNovo({ ...valido, origemNota: o as unknown as boolean, refNota: ref(2) });
+      expect(r.map((e) => e.campo)).toContain('refNota');
+    }
+  });
   it('refNota malformada: erro no campo refNota', () => {
     expect(validarProdutoNovo({ ...valido, origemNota: true, refNota: 'nfe:123:2' }).map((e) => e.campo)).toContain('refNota');
   });
