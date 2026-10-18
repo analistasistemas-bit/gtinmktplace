@@ -78,3 +78,28 @@ o número publica o GTIN. Sem re-ingest, sem SQL.
 - **Abortar o lote no ingest quando o GTIN não fecha (modelo ADR-0107):** ORIGEM define
   alíquota — errar custa dinheiro, então falhar alto se justifica. GTIN ausente é situação
   normal e prevista pelo ML; travar o lote seria desproporcional.
+
+## Emenda 2026-10-17 — GTIN inválido não é mais gravado
+
+**Mudança:** `variacoes.gtin` deixa de guardar o valor cru quando ele não fecha GS1. `gtinOuNull`
+(`_shared/produto/gtin.ts`, reusa `gtinValido` de `_shared/nfe/regras.ts`) grava `NULL` para
+comprimento fora de 8/12/13/14 ou dígito verificador errado; `3000*` continua gravado (mesma
+régua de `gtinInvalido` do front). Aplicado em todo ponto de escrita: `cadastrar-produto`
+(gravação e comparação do retry, os dois lados normalizados para não dar 409 em retry de
+gravação antiga), `adicionar-variacoes-familia` (nova, intenção e clone), `criar-kit-vinculado`
+e `ingest-lote` (`mapear-linha`; célula numérica de 11 dígitos volta o zero do UPC-A). O
+cadastro avisa "EAN inválido — será descartado" sem bloquear. Edição manual na Revisão fica
+fora: é digitação explícita e a tela já avisa.
+
+**Por quê:** NF 1051 — no cadastro pela nota a matriz abria na aba GTIN (estoque oculto, D-4 do
+ADR-0181) e as quantidades viraram EAN "1"/"2" em 34 SKUs; o operador teria de apagar um a um
+na Revisão. O ML já tratava esses valores como ausentes (`gtinAusente`), então o anúncio sai
+igual — só some o lixo da tela.
+
+**Revoga** a linha "Vendas por EAN … `variacoes.gtin` cru, que continua guardando o que a
+planilha trouxe". Sem efeito na atribuição: o match do ADR-0045 cruza com o GTIN dos atributos
+do item no ML, que o próprio ML exige válido — um valor que não fecha GS1 nunca casaria.
+
+**Limite conhecido:** EAN-8 com zero à esquerda gravado como número no XLSX chega com 7 dígitos
+e vira `NULL` (antes ia cru e o ML tratava como ausente — sem piora). Correção exige ler a célula
+formatada (`.w`) no ingest.

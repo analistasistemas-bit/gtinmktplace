@@ -374,6 +374,10 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   pack, gerando divergência entre as duas telas.
 - **Markup/custo por pacote** — inconsistência entre telas no cálculo de KPI.
 
+- **EAN "1"/"2" na Revisão (2026-10-17)** — cadastro pela nota (NF 1051) abria a matriz na aba
+  GTIN e as quantidades viraram EAN em 34 SKUs. Limpo no banco; desde então GTIN inválido grava
+  `NULL` em todo ponto de escrita (`gtinOuNull`, emenda ADR-0116), `3000*` mantido.
+
 ## Da linha do tempo do projeto (`docs/project-history.md`)
 
 - **Busca de concorrência** — `/sites/MLB/search` retornava `403` (descontinuado pelo ML);
