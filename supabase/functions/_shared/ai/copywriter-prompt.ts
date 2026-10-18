@@ -174,6 +174,15 @@ export function removerPerguntasIncompletas(descricao: string): string {
   const posteriores = CABECALHOS_APOS_PERGUNTAS
     .map((h) => descricao.indexOf(h, ini))
     .filter((i) => i > -1);
+  // Emenda ADR-0183 (2026-10-18, camisa 00000069): ❓ por último (depois de 🎨) não pode levar a
+  // frase final junto — a seção também termina na primeira linha de prosa (nem ▪ nem vazia).
+  const prosa = descricao.slice(ini).split('\n').slice(1)
+    .reduce<{ pos: number; achou: number }>((acc, l) => {
+      if (acc.achou === -1 && l.trim() !== '' && !l.trim().startsWith('▪')) acc.achou = acc.pos;
+      acc.pos += l.length + 1;
+      return acc;
+    }, { pos: descricao.indexOf('\n', ini) + 1, achou: -1 }).achou;
+  if (prosa > -1) posteriores.push(prosa);
   const fim = posteriores.length > 0 ? Math.min(...posteriores) : descricao.length;
 
   const quantas = (descricao.slice(ini, fim).match(/^\s*▪/gm) ?? []).length;
@@ -436,6 +445,16 @@ const SECAO_GUIA = '📏 GUIA DE TAMANHOS';
 // e a tabela do chart do ML é de CORPO, não de peça.
 const AVISO_FOTOS = 'Confira nas fotos as medidas em centímetros de cada peça antes de escolher o tamanho.';
 const PERGUNTA_TAMANHO = '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.';
+// Emenda ADR-0183 (2026-10-18): fonte só com composição dava 1 derivada + fixa = 2 e a ❓ sumia
+// inteira. O gênero do cadastro (ADR-0182) é dado estruturado e não muda no UPDATE (cor mudaria).
+const PUBLICO_POR_GENERO: Record<string, string> = {
+  masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex', meninos: 'Infantil, meninos',
+  meninas: 'Infantil, meninas', sem_genero_infantil: 'Infantil, sem gênero',
+};
+function perguntaPublico(genero?: string | null): string[] {
+  const p = genero ? PUBLICO_POR_GENERO[genero] : undefined;
+  return p ? [`▪ Para qual público é indicado? ${p}.`] : [];
+}
 
 /** Remove a seção do emoji. `ateProximoCabecalho=false` leva só cabeçalho + bullets/linhas vazias,
  *  preservando a frase de fechamento em prosa que vem depois de 📦 (última seção do template). */
@@ -505,12 +524,12 @@ function inserirGuiaTamanhos(descricao: string, tamanhos: string[]): string {
  *  "Medidas" vira pergunta com cm), e a fixa entra ANTES da poda (conta no mínimo de 3). 📏 só é
  *  injetado no fim, então as fronteiras globais dos guards não precisam conhecê-lo. Largura,
  *  metragem e conteúdo da embalagem não rodam: injetariam medida ou recriariam 📦. */
-function posProcessarGrade(descricao: string, tamanhos: string[]): string {
+function posProcessarGrade(descricao: string, tamanhos: string[], genero?: string | null): string {
   let d = removerSecao(removerSecao(descricao, '🎯', false), '📦', false);
   // ponytail: 📏 da IA sai até o próximo cabeçalho; se a IA o puser por último, leva a frase final junto.
   d = removerSecao(d, '📏', true);
   d = garantirPerguntaTamanho(removerBulletsDeMedida(d));
-  d = garantirPerguntas(removerPerguntasIncompletas(d), [PERGUNTA_TAMANHO]);
+  d = garantirPerguntas(removerPerguntasIncompletas(d), [...perguntaPublico(genero), PERGUNTA_TAMANHO]);
   d = inserirGuiaTamanhos(garantirPerguntaTamanho(d), tamanhos);
   return formatarDescricao(garantirDisclaimerTonalidade(d));
 }
@@ -555,9 +574,11 @@ export function posProcessarDescricao(
    * simplesmente não disparam — degradar é preferível a exigir o argumento em toda chamada.
    */
   variacoes: InputCopy['variacoes'] = [],
+  /** familias.genero — só a grade usa (pergunta de público em ❓). */
+  genero?: string | null,
 ): string {
   const tamanhos = tamanhosDaGradeCopy(variacoes);
-  if (tamanhos) return posProcessarGrade(descricao, tamanhos);
+  if (tamanhos) return posProcessarGrade(descricao, tamanhos, genero);
 
   const podada = removerPerguntasIncompletas(descricao);
   const ancorada = garantirMetragemDescricao(
@@ -851,7 +872,7 @@ Roupa ou calçado vendido em tamanhos. O template acima vale, com estas regras p
 - NÃO escreva as seções 🎯 INDICAÇÕES DE USO e 📦 O QUE VOCÊ RECEBE: repetem os benefícios. NÃO escreva guia de tamanhos: o sistema insere o guia.
 - ❓ PERGUNTAS: só sobre dados da fonte (composição, proteção, cuidados...). NÃO escreva pergunta sobre tamanho ou medida: o sistema insere.
 - Em NENHUM lugar da descrição escreva número de medida (cm, mm, metros).
-- Frase final: convite direto para comprar, ancorado no ganho concreto que os dados sustentam.
+- Frase final: OBRIGATÓRIA, mesmo sem a seção 📦 — é a última linha da descrição, depois de 🎨. Convite direto para comprar, ancorado no ganho concreto que os dados sustentam.
 
 ═══════════════════════════════════════════════════════
 TOM E ESTILO

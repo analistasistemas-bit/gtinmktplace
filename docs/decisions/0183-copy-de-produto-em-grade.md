@@ -81,3 +81,20 @@ Vale **só para família em grade**. Simples e mista seguem como estão.
 - **Anúncios já publicados não mudam sozinhos.** Regenerar a copy grava o texto novo em
   `descricao_ml`, mas o UPDATE só reenvia a descrição quando as variações mudam (gate
   `houveMudanca`, ADR-0160). É comportamento pré-existente para toda família e fica fora deste ADR.
+
+## Emenda (2026-10-18): ❓ com fonte pobre e fechamento preservado
+
+Família real `00000069` (camisa, só "Composição" na fonte) saiu sem ❓ e sem frase final:
+- 1 pergunta derivada de 📌 + a fixa de tamanho = 2, abaixo do mínimo de 3, e `garantirPerguntas`
+  descartava a seção inteira, levando a pergunta fixa junto.
+- `removerPerguntasIncompletas` cortava do ❓ até o próximo 🎨/📦/🚚 ou até o fim do texto; com ❓
+  depois de 🎨, a frase final ia junto.
+
+Decisão:
+1. **Pergunta fixa de público**, do gênero cadastrado (ADR-0182), entra antes da de tamanho e conta
+   no mínimo: "▪ Para qual público é indicado? Masculino." É dado estruturado que não muda no UPDATE
+   (uma pergunta de cores ficaria velha quando o UPDATE troca a lista 🎨). Sem gênero, não entra.
+2. A seção ❓ também termina na **primeira linha de prosa**: a poda nunca leva a frase final.
+3. O prompt de grade diz que a frase final é obrigatória mesmo sem 📦 e é a última linha.
+
+Limite: grade sem nenhuma spec mapeável e sem gênero continua abaixo de 3 e fica sem ❓.

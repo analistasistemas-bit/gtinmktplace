@@ -534,7 +534,7 @@ Deno.serve(async (req) => {
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: tituloFinal,
       titulo_descartes: tituloDescartes,
-      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesCopy),
+      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesCopy, claimed.genero as string | null),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos + custoDesempateLLM,

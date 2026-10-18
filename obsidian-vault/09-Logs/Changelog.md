@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-18
 
+**Copy de grade corrigida (emendas ADR-0183/0184).** Camisa da Zaven saiu "Camisa Masculino … 90% 10% Elastano" e sem perguntas/fechamento. Título agora concorda o público com a peça pelo código e não deixa percentual solto; a descrição ganha a pergunta de público (gênero do cadastro), que completa as 3 perguntas quando a fonte só tem composição, e a frase final não é mais cortada.
+
 **Roupas e calçados A–D (emenda ADR-0182).** Pedido do Diego: publicar qualquer roupa. Auditoria da árvore de vestuário do ML mostrou só 10 tipos cobertos; entram vestido, moletom, blusa, colete, suéter, camisola, roupão, jaleco, kimono, poncho (peito), saia, calcinha, cueca, legging, short/calça fitness, calça de trabalho/tática, tutu (quadril), bota, sapato social, scarpin, sapatilha, pantufa, alpargata (calçado) e terno, macacão, conjuntos fitness/lingerie, top, corset, baby doll, cinta, meia-calça e uniformes (sem guia). Ensaio real: 87/93 casos OK; o resto recusa com mensagem tamanho que a categoria não tem. Fora: bebê, meias, sutiã/pijama (falta tabela de busto).
 
 **Camiseta e camisa na grade Letras (emenda ADR-0182).** Camisa masculina da Zaven (`00000069`) chegou na Revisão com "Categoria indefinida": o ML só sugeriu Camisetas e Regatas e Camisas, domínios que a guia de tamanhos ainda não cobria, e o filtro da grade descartou os dois. Medido na API real: exigem as mesmas colunas da camiseta esportiva (peito). Agora entram na guia de tamanhos e na escolha de categoria.

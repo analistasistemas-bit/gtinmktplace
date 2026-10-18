@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Copy de grade: título e ❓ da camisa 00000069 (emendas ADR-0183/0184) — 2026-10-18
+
+- [x] Título: concordância do público sempre do código ("Camisa Masculina"), com exceções (pijama, sutiã, cardigã / legging, lingerie, polo); percentual não fica órfão na deduplicação.
+- [x] Descrição: pergunta fixa de público (gênero do cadastro) completa o mínimo de 3 em ❓; poda do ❓ não leva a frase final; prompt exige a frase final em grade.
+- [ ] Grade sem spec mapeável e sem gênero segue sem ❓.
+
 ## Roupas e calçados A–D publicáveis no ML (emenda ADR-0182) — 2026-10-18
 
 - [x] Auditoria `MLB1430` (145 folhas): só 10 domínios publicavam. Colunas medidas por `POST /catalog/charts` real.

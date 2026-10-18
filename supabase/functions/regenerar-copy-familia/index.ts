@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
       }
       throw e;
     }
-    const descricaoFinal = posProcessarDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '', variacoes);
+    const descricaoFinal = posProcessarDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '', variacoes, familia.genero as string | null);
 
     const { error: upErr } = await sb
       .from('familias')

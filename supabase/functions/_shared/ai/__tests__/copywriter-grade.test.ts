@@ -241,6 +241,45 @@ describe('caso real Conjunto Sereia (2026-10-18)', () => {
   });
 });
 
+// Família real 00000069 (camisa Zaven, 18/10): fonte só com composição → 1 derivada + fixa = 2,
+// abaixo do mínimo; a seção ❓ (e a pergunta fixa de tamanho) sumia inteira.
+describe('caso real camisa 00000069 (emenda ADR-0183, 2026-10-18)', () => {
+  const variacoesCamisa = ['Azul Claro', 'Preto'].flatMap((cor) =>
+    ['P', 'M', 'G', 'GG', 'GGG'].map((tamanho) => ({ codigo: cor + tamanho, cor, nome: cor, preco: 37.5, tamanho }))
+  );
+  const base = [
+    '🧵 CAMISAS MASCULINAS DE ALGODÃO EGÍPCIO', '', 'Parágrafo.', '',
+    '✅ POR QUE ESCOLHER', '', '✔ Algodão egípcio', '',
+    '📌 ESPECIFICAÇÕES', '', '• Composição: 90% Algodão 10% Elastano', '',
+  ];
+  const cores = ['🎨 CORES DISPONÍVEIS', '', '- Azul Claro', '- Preto', '', 'A tonalidade pode variar conforme a tela do dispositivo.', ''];
+  const FECHO = 'Leve a camisa que alia algodão egípcio e elastano no seu dia a dia.';
+
+  it('1 spec + público + fixa de tamanho → ❓ com 3 perguntas; fechamento preservado', () => {
+    const d = posProcessarDescricao([...base, ...cores, FECHO].join('\n'), 'Camisa', '', variacoesCamisa, 'masculino');
+    const perguntas = d.split('\n').filter((l) => l.startsWith('▪'));
+    expect(perguntas).toEqual([
+      '▪ Qual a composição? 90% Algodão 10% Elastano.',
+      '▪ Para qual público é indicado? Masculino.',
+      '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.',
+    ]);
+    expect(d.trim().endsWith(FECHO)).toBe(true);
+    expect(posProcessarDescricao(d, 'Camisa', '', variacoesCamisa, 'masculino')).toBe(d);
+  });
+
+  it('❓ incompleta depois de 🎨 é podada sem levar a frase final', () => {
+    const ia = [...base, ...cores, '❓ PERGUNTAS SOBRE ESTE PRODUTO', '', '▪ Qual a composição? 90% algodão.', '', FECHO].join('\n');
+    const d = posProcessarDescricao(ia, 'Camisa', '', variacoesCamisa, 'masculino');
+    expect(d.trim().endsWith(FECHO)).toBe(true);
+    expect(d.split('\n').filter((l) => l.startsWith('▪')).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('sem gênero: comportamento anterior (sem pergunta de público)', () => {
+    const d = posProcessarDescricao([...base, ...cores, FECHO].join('\n'), 'Camisa', '', variacoesCamisa);
+    expect(d).not.toContain('Para qual público');
+  });
+});
+
 describe('não-grade inalterado (ADR-0183)', () => {
   it('sem tamanho, 🎯/📦 continuam e não há 📏', () => {
     const r = posProcessarDescricao(DESCRICAO_IA, 'Fita', '', [{ codigo: '1', cor: 'Estampa 1', nome: 'Estampa 1', preco: 1 }]);
