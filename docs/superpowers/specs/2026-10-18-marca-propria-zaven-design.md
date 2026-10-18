@@ -75,8 +75,10 @@ a mudança é **por organização**, não global.
   - `_shared/categoria/resolver-atributos-genericos.ts:43`
   Org com `marca_propria` e `marca_padrao` nulo/vazio = erro explícito (nunca cair no fornecedor nem no
   default `'Avil'`).
-- **Mapa de marcas do título** (`marcaDoFornecedor` em `titulo-guards.ts:464`): com `marca_propria`,
-  não consultar (passar fornecedor nulo). Não vaza hoje, mas fecha a porta.
+- **Título: sem mudança.** Revisto no plano: `diagnosticarTitulo` usa o fornecedor também para
+  *remover* do título marca que só veio do fornecedor (`titulo-guards.ts:551-558`); zerá-lo para a
+  Zaven tiraria essa proteção. O mapa (`marcaDoFornecedor`) só conhece marcas reais (Búfalo…), não os
+  atacadistas da Zaven, e os 7 títulos estão limpos.
 - **Anúncios já publicados:** o UPDATE UP manda o delta a partir de `familias.atributos_ml`, que hoje
   guarda `BRAND=<fornecedor>`. Corrigir BRAND/MANUFACTURER gravados das 7 famílias da Zaven para
   `Zaven` (data fix na mesma migration, restrito a `org_id` da Zaven e às chaves BRAND/MANUFACTURER do
