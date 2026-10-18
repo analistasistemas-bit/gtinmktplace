@@ -13,7 +13,7 @@ describe('tamanhosDaGrade', () => {
   it('calca, infantil e letras', () => {
     expect(tamanhosDaGrade('calca')).toEqual(['34', '36', '38', '40', '42', '44', '46', '48']);
     expect(tamanhosDaGrade('infantil')).toEqual(['2', '4', '6', '8', '10', '12', '14', '16']);
-    expect(tamanhosDaGrade('letras')).toEqual(['P', 'M', 'G', 'GG']);
+    expect(tamanhosDaGrade('letras')).toEqual(['P', 'M', 'G', 'GG', 'GGG']);
   });
   it('tipo da grade', () => {
     expect(tipoDaGradeTamanho('calca')).toBe('roupa');

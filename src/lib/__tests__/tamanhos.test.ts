@@ -6,7 +6,7 @@ import {
 
 describe('TAMANHOS_ROUPA', () => {
   it('e a lista fechada decidida no grilling', () => {
-    expect(TAMANHOS_ROUPA).toEqual(['P', 'M', 'G', 'GG']);
+    expect(TAMANHOS_ROUPA).toEqual(['P', 'M', 'G', 'GG', 'GGG']);
   });
 
   // Spike 051 §12: testado contra a API real — não existe guia de tamanhos para "Tamanho Único"
@@ -29,7 +29,7 @@ describe('opcoesDeTamanho', () => {
   });
 
   it('letras oferece o grupo Tamanho', () => {
-    expect(opcoesDeTamanho('letras')).toEqual([{ grupo: 'Tamanho', valores: ['P', 'M', 'G', 'GG'] }]);
+    expect(opcoesDeTamanho('letras')).toEqual([{ grupo: 'Tamanho', valores: ['P', 'M', 'G', 'GG', 'GGG'] }]);
   });
 
   it('infantil oferece 2 a 16', () => {
@@ -48,7 +48,7 @@ describe('opcoesDeTamanho', () => {
 describe('rotulos de grade e genero', () => {
   it('ROTULO_GRADE', () => {
     expect(ROTULO_GRADE).toEqual({
-      letras: 'Letras (P–GG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
+      letras: 'Letras (P–GGG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
     });
   });
   it('ROTULO_GENERO cobre os 6 generos', () => {

@@ -26,7 +26,7 @@ export interface TipoProdutoUI {
 const ROTULOS: Record<TipoProdutoId, Omit<TipoProdutoUI, 'id'>> = {
   roupa: {
     nome: 'Roupa',
-    descricao: 'O cadastro ganha Tamanho em grade: Letras (P–GG), Infantil (2–16) ou Calça (34–48), além da cor.',
+    descricao: 'O cadastro ganha Tamanho em grade: Letras (P–GGG), Infantil (2–16) ou Calça (34–48), além da cor.',
   },
   calcado: {
     nome: 'Calçado',

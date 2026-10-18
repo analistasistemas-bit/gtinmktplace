@@ -510,7 +510,7 @@ describe('tipoDaGrade / numeracaoPublicavel', () => {
     expect(tipoDaGrade(['XGG'])).toBeNull();
   });
   it('tamanhosDoTipo devolve a lista canônica do tipo', () => {
-    expect(tamanhosDoTipo('roupa')).toEqual(['P', 'M', 'G', 'GG']);
+    expect(tamanhosDoTipo('roupa')).toEqual(['P', 'M', 'G', 'GG', 'GGG']);
     expect(tamanhosDoTipo('calcado')).toContain('41/42');
   });
   it('mesma regra que o front usava (conferir 45/46 feminino e pares contra COMPRIMENTO_PE_CM)', () => {

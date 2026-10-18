@@ -157,3 +157,15 @@ Remover `familias.grade_tamanho`, restringir os CHECKs de `genero` aos três val
 remover os ramos `SHORTS`/`PANTS`/`CLOTHING_LOTS` de `size-chart.ts`/`montarPayloadItem`. Não
 destrutivo: nenhuma família existente usa os valores novos antes do deploy. Migration antiga nunca é
 editada (ADR-0043): a reversão é uma migration nova.
+
+## Emenda (2026-10-18): GGG na grade Letras
+
+`TAMANHOS_ROUPA` ganha `GGG` no fim da lista (P, M, G, GG, GGG) — pedido do Diego para cadastrar
+camisa com extra G. Vale para cadastro, estoque e whitelist da edge `cadastrar-produto`.
+
+**Guia de tamanhos do ML NÃO cobre GGG ainda.** O ML não tem `GGG` em `SIZE` nem em
+`FILTRABLE_SIZE` (consultado em `MLB31447` e `MLB278065`: só `XG`, `XGG`, `EGG`, `G1`…), e
+`CONTORNO_PEITO_CM` para em GG. Publicar família com GGG em domínio com guia falha alto
+(`mensagemForaDoSuperset`, ou "chart existente não cobre" quando já há chart Letras em cache).
+Suportar exige decisão do Diego (FILTRABLE_SIZE equivalente + cm de peito) e rotação do cache
+`ml_size_charts` (chart é imutável, ADR-0167 D4).

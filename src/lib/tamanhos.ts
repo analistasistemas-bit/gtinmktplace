@@ -33,7 +33,7 @@ export type { GradeTamanho, Genero };
 
 // ADR-0182: rótulos de UI das grades e dos gêneros (o backend só conhece os ids).
 export const ROTULO_GRADE: Record<GradeTamanho, string> = {
-  letras: 'Letras (P–GG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
+  letras: 'Letras (P–GGG)', infantil: 'Infantil (2–16)', calca: 'Calça (34–48)', calcado: 'Numeração',
 };
 export const ROTULO_GENERO: Record<Genero, string> = {
   masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex',
