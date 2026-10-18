@@ -32,6 +32,7 @@ vi.mock('@/hooks/useFamiliaMutations', () => ({
   useUpdateVariacaoGtin: () => ({ mutateAsync: vi.fn() }),
   useUpdateFamiliaTitulo: () => ({ mutateAsync: vi.fn() }),
   useUpdateFamiliaDescricao: () => ({ mutateAsync: vi.fn() }),
+  useUpdateFamiliaFonte: () => ({ mutateAsync: vi.fn() }),
   useRegenerarCopy: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateVariacaoPrincipal: () => ({ mutate: vi.fn() }),
 }));
