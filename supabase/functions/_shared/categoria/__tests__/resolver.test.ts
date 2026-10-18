@@ -263,6 +263,11 @@ describe('escolherEntreCandidatos — família em grade', () => {
     const r = await escolherEntreCandidatos(input, [praia[0]], async () => undefined);
     expect(r).toMatchObject({ categoriaId: null, origem: 'manual' });
   });
+  it('domínio desconhecido (vazio) não é descartado — a publicação confere pelo id', async () => {
+    const semDominio = { ...praia[2], domainId: '' };
+    const r = await escolherEntreCandidatos(input, [praia[0], semDominio]);
+    expect(r.categoriaId).toBe('MLB430391');
+  });
   it('sem grade: comportamento intocado (topo BABY_SWIMWEAR)', async () => {
     const r = await escolherEntreCandidatos({ nome: input.nome }, praia);
     expect(r.categoriaId).toBe('MLB39961');

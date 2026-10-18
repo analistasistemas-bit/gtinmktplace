@@ -135,11 +135,12 @@ export async function escolherEntreCandidatos(
 ): Promise<ResultadoCategoria> {
   // Bug PAI 00000064 (2026-10-18): o topo BABY_SWIMWEAR venceu o SWIMWEAR que estava na lista, e
   // a publicação da grade recusa BABY_SWIMWEAR. Sem candidato publicável → manual (operador escolhe).
+  // Domínio desconhecido (vazio) não é descartado: garantirChart lê o domínio pelo id na publicação.
   const grade = input.grade;
   if (grade) {
     candidatos = candidatos.filter((c) => {
       const d = domainIdSemPrefixo(c.domainId);
-      return !!d && DOMINIOS_SUPORTADOS.has(d) && dominioAceitaGrade(d, grade);
+      return !d || (DOMINIOS_SUPORTADOS.has(d) && dominioAceitaGrade(d, grade));
     });
   }
   if (candidatos.length === 0) {
