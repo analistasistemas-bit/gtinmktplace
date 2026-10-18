@@ -54,6 +54,8 @@ export interface ContextoCorte {
   variacaoDiscrimina: boolean;
   /** ADR-0184: ordem, corte e caixa próprios do título de roupa em grade. */
   grade?: boolean;
+  /** Emenda ADR-0184 (2026-10-18): público feminino de vestido/legging pode sair por último. */
+  publicoCortavel?: boolean;
 }
 
 /**
@@ -73,9 +75,10 @@ function slotsIncortaveis(ctx: ContextoCorte): Set<SlotTitulo> {
   // `produto` é a identidade e `medida` distingue SKUs (10m ≠ 100m; 1kg ≠ 500g) — é a razão de
   // existir do garantirMetragemTitulo, cujo histórico registra a IA descartando a metragem sob
   // o teto de 60. `variacao` entra só quando discrimina.
-  // Grade (ADR-0184): Peça + Público + Marca + 1 diferencial ficam sempre; kit também.
+  // Grade (ADR-0184, emenda 2026-10-18): peça, 1º diferencial e kit ficam sempre; público também,
+  // salvo vestido/legging feminino. Marca virou cortável.
   const base: SlotTitulo[] = ctx.grade
-    ? ['produto', 'publico', 'marca', 'caracteristica', 'quantidade']
+    ? ['produto', 'caracteristica', 'quantidade', ...(ctx.publicoCortavel ? [] : ['publico' as const])]
     : ['produto', 'medida'];
   if (ctx.variacaoDiscrimina) base.push('variacao');
   return new Set(base);

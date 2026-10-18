@@ -60,12 +60,16 @@ export const TODOS_SLOTS = [
   ...ORDEM_LEITURA, 'publico', 'caracteristica', 'caracteristica2',
 ] as const satisfies readonly SlotTitulo[];
 
-/** ADR-0184: Peça + Público + Marca + Característica + Material + (cor única) + Kit. Slot fora
- *  desta lista não é renderizado na grade. */
+/** ADR-0184 (emenda 2026-10-18, palavras-chave): [Kit N] + Peça + [Sinônimo] + Público +
+ *  Característica + [Característica 2] + Tecido + [Uso] + [Cor única] + [Marca]. Slot fora desta
+ *  lista (modelo, medida, compatibilidade) não é renderizado na grade. */
 export const ORDEM_LEITURA_GRADE = [
-  'produto', 'publico', 'marca', 'caracteristica', 'caracteristica2', 'material', 'variacao', 'quantidade',
+  'quantidade', 'produto', 'sinonimo', 'publico', 'caracteristica', 'caracteristica2', 'material',
+  'aplicacao', 'variacao', 'marca',
 ] as const satisfies readonly SlotTitulo[];
 
-/** Regra do Diego: acima de 60 sai a 2ª característica, depois o material. Os demais são
- *  incortáveis (titulo-montar.ts). */
-export const ORDEM_CORTE_GRADE = ['caracteristica2', 'material'] as const satisfies readonly SlotTitulo[];
+/** Acima de 60 sai primeiro o sinônimo, depois uso, marca, 2ª característica, tecido e — só em
+ *  vestido/legging feminino — o público. Incortáveis: titulo-montar.ts. */
+export const ORDEM_CORTE_GRADE = [
+  'sinonimo', 'aplicacao', 'marca', 'caracteristica2', 'material', 'publico',
+] as const satisfies readonly SlotTitulo[];

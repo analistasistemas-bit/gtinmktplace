@@ -40,8 +40,10 @@ O bloco `TÍTULO EM GRADE` do `SYSTEM` pede 3 slots novos: `publico`, `caracteri
 `caracteristica2`. O guard `titulo-grade.ts` então valida o público pelo gênero cadastrado,
 ancora característica e material na fonte e remove os proibidos.
 
-Na grade, o T6 se inverte: o título usa o espaço até perto de 60 caracteres, mas só com palavras
-da fonte.
+Emenda de 2026-10-18 (palavras-chave): o título de grade é `[Kit N] + Peça + [Sinônimo] + Público +
+Característica + [Característica 2] + Tecido + [Uso] + [Cor] + [Marca]`, só com dado da fonte (o T6
+volta a valer: não encher os 60). O tecido sai sem percentual, o sinônimo vem de um dicionário
+fechado e precisa estar na fonte, e a característica é uma expressão copiada da fonte.
 
 ## Copy de grade (ADR-0183, 2026-10-17)
 

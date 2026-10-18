@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título de grade orientado a palavras-chave (emenda ADR-0184) — 2026-10-18
+
+- [x] Pesquisa (JoomPulse, 1.166 títulos): zero títulos top com composição percentual; modelo/corte, sinônimo da peça, Kit no início e nome do tecido separam os mais vendidos.
+- [x] Regra definida pelo Codex por delegação do Diego: `[Kit N] + Peça + [Sinônimo] + Público + Característica + [Característica 2] + Tecido + [Uso] + [Cor] + [Marca]`; tecido sem percentual; sinônimo por dicionário fechado (Short/Bermuda, Moletom/Blusa De Frio, Jaqueta/Casaco) e só da fonte; característica por expressão contígua da fonte (negação respeitada); marca no fim e cortável; público do código (Infantil Menino/Menina) e cortável só em vestido/legging feminino.
+- [ ] Medir em produção títulos de grade regenerados (descartes ADR-0116) depois de uma semana.
+
 ## Copy de grade: título e ❓ da camisa 00000069 (emendas ADR-0183/0184) — 2026-10-18
 
 - [x] Título: concordância do público sempre do código ("Camisa Masculina"), com exceções (pijama, sutiã, cardigã / legging, lingerie, polo); percentual não fica órfão na deduplicação.

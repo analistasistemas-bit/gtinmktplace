@@ -31,8 +31,9 @@ describe('título de grade — estrutura (ADR-0184)', () => {
   });
 
   it('slots fora da estrutura (aplicacao, sinonimo, modelo, medida) não entram', () => {
+    // Emenda 2026-10-18: sinônimo da fonte (Bermuda) entra; uso sem respaldo e modelo não.
     expect(titulo({ produto: 'Short', publico: 'Masculino', aplicacao: 'Para Praia', sinonimo: 'Bermuda', modelo: 'Casual' }))
-      .toBe('Short Masculino');
+      .toBe('Short Bermuda Masculino');
   });
 
   it('acima de 60: sai a 2ª característica, depois o material; o resto fica', () => {
@@ -58,10 +59,10 @@ describe('público', () => {
     })).toBe('Jaqueta Corta Vento Feminina');
   });
 
-  it('infantil: Menina aceito para meninas; Masculino recusado vira Infantil', () => {
+  it('infantil: o código decide (Infantil Menina), a IA não', () => {
     const f = { nomePai: 'Conjunto Praia Proteção Solar UV', descricaoPai: '', genero: 'meninas' };
-    expect(titulo({ produto: 'Conjunto Praia', publico: 'Menina' }, f)).toBe('Conjunto Praia Menina');
-    expect(titulo({ produto: 'Conjunto Praia', publico: 'Masculino' }, f)).toBe('Conjunto Praia Infantil');
+    expect(titulo({ produto: 'Conjunto Praia', publico: 'Menina' }, f)).toBe('Conjunto Praia Infantil Menina');
+    expect(titulo({ produto: 'Conjunto Praia', publico: 'Masculino' }, f)).toBe('Conjunto Praia Infantil Menina');
   });
 
   it('peça que já traz o gênero não ganha outro', () => {
@@ -77,9 +78,9 @@ describe('público', () => {
     expect(titulo({ produto: 'Short', publico: 'Masculino' }, { genero: null as unknown as string })).toBe('Short');
   });
 
-  it('Plus Size só com respaldo na fonte', () => {
-    expect(titulo({ produto: 'Short', publico: 'Masculino Plus Size' })).toBe('Short Masculino');
-    expect(titulo({ produto: 'Short', publico: 'Masculino Plus Size' }, { descricaoPai: 'Modelo plus size.' }))
+  it('Plus Size é característica e só com respaldo na fonte', () => {
+    expect(titulo({ produto: 'Short', caracteristica: 'Plus Size' })).toBe('Short Masculino');
+    expect(titulo({ produto: 'Short', caracteristica: 'Plus Size' }, { descricaoPai: 'Modelo plus size.' }))
       .toBe('Short Masculino Plus Size');
   });
 });
@@ -99,7 +100,7 @@ describe('limpeza', () => {
   });
 
   it('pontuação decorativa sai; toda palavra com maiúscula; UV em caixa alta', () => {
-    expect(titulo({ produto: 'Short', publico: 'Masculino', caracteristica: 'com Cordão!!!' })).toBe('Short Masculino Com Cordão');
+    expect(titulo({ produto: 'Short', publico: 'Masculino', caracteristica: 'Cós Elástico!!!' })).toBe('Short Masculino Cós Elástico');
     expect(titulo({ produto: 'Conjunto Infantil Proteção Solar Uv' }, {
       nomePai: 'Conjunto Infantil Proteção Solar UV', descricaoPai: '', genero: 'meninas',
     })).toBe('Conjunto Infantil Proteção Solar UV');
@@ -121,7 +122,7 @@ describe('emenda 2026-10-18 — concordância e percentual órfão', () => {
   it('a concordância é do código mesmo quando a IA escolhe uma forma da lista', () => {
     expect(titulo({
       produto: 'Camisa', publico: 'Masculino', caracteristica: 'Algodão Egípcio', material: '90% Algodão 10% Elastano',
-    }, CAMISA)).toBe('Camisa Masculina Algodão Egípcio 10% Elastano');
+    }, CAMISA)).toBe('Camisa Masculina Algodão Egípcio Com Elastano');
     expect(titulo({ produto: 'Short', publico: 'Masculina' })).toBe('Short Masculino');
   });
 
@@ -135,8 +136,8 @@ describe('emenda 2026-10-18 — concordância e percentual órfão', () => {
     })).toBe(esperado);
   });
 
-  it('Plus Size segue junto da forma corrigida', () => {
-    expect(titulo({ produto: 'Calça', publico: 'Feminino Plus Size' }, {
+  it('Plus Size (característica) vem depois da forma corrigida', () => {
+    expect(titulo({ produto: 'Calça', publico: 'Feminino', caracteristica: 'Plus Size' }, {
       nomePai: 'Calça Feminina', descricaoPai: 'Modelo plus size.', genero: 'feminino',
     })).toBe('Calça Feminina Plus Size');
   });
@@ -153,7 +154,7 @@ describe('cor e kit', () => {
   it('kit da fonte vira "Kit N" e fica', () => {
     expect(titulo({ produto: 'Cueca Boxer', publico: 'Masculina' }, {
       nomePai: 'Cueca Boxer Masculina', descricaoPai: 'Kit com 3 unidades.',
-    })).toBe('Cueca Boxer Masculina Kit 3');
+    })).toBe('Kit 3 Cueca Boxer Masculina');
   });
 });
 
@@ -177,7 +178,7 @@ describe('achados da revisão do diff (Codex)', () => {
 
   it('contagem compacta da fonte ("3un") vira Kit 3', () => {
     expect(titulo({ produto: 'Cueca Boxer', publico: 'Masculina', quantidade: '3un' }, { ...cueca, descricaoPai: 'Pacote com 3un.' }))
-      .toBe('Cueca Boxer Masculina Kit 3');
+      .toBe('Kit 3 Cueca Boxer Masculina');
   });
 
   it('T3 vale para característica', () => {
@@ -193,6 +194,100 @@ describe('achados da revisão do diff (Codex)', () => {
   it('tipo coberto só por slot descartado na grade é prefixado na peça', () => {
     expect(titulo({ produto: 'Boxer', modelo: 'Cueca', publico: 'Masculina' }, { ...cueca, descricaoPai: '', tipoProdutoBusca: 'cueca' }))
       .toBe('Cueca Boxer Masculina');
+  });
+});
+
+// Emenda ADR-0184 (2026-10-18, palavras-chave; spec docs/superpowers/specs/2026-10-18-titulo-grade-palavras-chave-design.md).
+describe('palavras-chave (spec Codex)', () => {
+  const t = (s: Partial<TituloSlots>, f: Partial<typeof SHORT>) => titulo(s, { descricaoPai: '', cores: [], ...f });
+
+  it('camisa com fonte pobre: tecido sem percentual, nada inventado', () => {
+    const f = {
+      nomePai: 'Camisa de Algodão Egípcio Premium com Elastano',
+      descricaoPai: 'Composição: 90% Algodão e 10% Elastano', genero: 'masculino',
+    };
+    expect(t({ produto: 'Camisa', material: 'Algodão Egípcio Com Elastano' }, f)).toBe('Camisa Masculina Algodão Egípcio Com Elastano');
+    expect(t({ produto: 'Camisa', material: '90% Algodão e 10% Elastano' }, f)).toBe('Camisa Masculina Algodão Com Elastano');
+    expect(t({ produto: 'Camisa', caracteristica: 'Social', caracteristica2: 'Slim Fit', material: 'Algodão Egípcio Com Elastano' }, f))
+      .toBe('Camisa Masculina Algodão Egípcio Com Elastano');
+    expect(t({ produto: 'Camisa', material: 'Algodão Egípcio Com Elastano' }, { ...f, genero: null as unknown as string }))
+      .toBe('Camisa Algodão Egípcio Com Elastano');
+  });
+
+  it('short com sinônimo da fonte', () => {
+    expect(t({ produto: 'Short', sinonimo: 'Bermuda', caracteristica: 'Esporte Fino', material: 'Linho' }, {
+      nomePai: 'Short Linho Mauricinho Masculino Bermuda Esporte Fino', genero: 'masculino',
+    })).toBe('Short Bermuda Masculino Esporte Fino Linho');
+  });
+
+  it('calça jeans, vestido, moletom', () => {
+    expect(t({ produto: 'Calça', caracteristica: 'Wide Leg', caracteristica2: 'Cintura Alta', material: 'Jeans' }, {
+      nomePai: 'Calça Jeans Feminina Wide Leg Cintura Alta', genero: 'feminino',
+    })).toBe('Calça Feminina Wide Leg Cintura Alta Jeans');
+    expect(t({ produto: 'Vestido', caracteristica: 'Midi', caracteristica2: 'Com Fenda', material: 'Canelado' }, {
+      nomePai: 'Vestido Feminino Midi Com Fenda Canelado', genero: 'feminino',
+    })).toBe('Vestido Feminino Midi Com Fenda Canelado');
+    expect(t({ produto: 'Moletom', sinonimo: 'Blusa De Frio', caracteristica: 'Canguru', caracteristica2: 'Flanelado' }, {
+      nomePai: 'Moletom Blusa De Frio Unissex Canguru Flanelado', genero: 'unissex',
+    })).toBe('Moletom Blusa De Frio Unissex Canguru Flanelado');
+  });
+
+  it('kit infantil: Kit N abre o título; público Infantil Menino', () => {
+    expect(t({ produto: 'Camiseta', quantidade: '3un', caracteristica: 'Manga Curta', material: '100% Algodão' }, {
+      nomePai: 'Kit 3 unidades de camiseta infantil menino manga curta', descricaoPai: 'Composição: 100% Algodão', genero: 'meninos',
+    })).toBe('Kit 3 Camiseta Infantil Menino Manga Curta Algodão');
+  });
+
+  it('proteções: 100% some, sinônimo fora da fonte some, negação não comprova', () => {
+    expect(t({ produto: 'Camiseta', material: '100% Algodão' }, { nomePai: 'Camiseta 100% Algodão', genero: 'masculino' }))
+      .toBe('Camiseta Masculina Algodão');
+    expect(t({ produto: 'Moletom', sinonimo: 'Blusa De Frio' }, { nomePai: 'Moletom Unissex', genero: 'unissex' }))
+      .toBe('Moletom Unissex');
+    expect(t({ produto: 'Short', caracteristica: 'Com Bolso' }, { nomePai: 'Short Sem Bolso', genero: 'masculino' }))
+      .toBe('Short Masculino');
+    expect(t({ produto: 'Short', sinonimo: 'Calção' }, { nomePai: 'Short Calção', genero: 'masculino' }))
+      .toBe('Short Masculino');
+  });
+
+  it('cor única e marca no fim', () => {
+    expect(t({ produto: 'Camisa', caracteristica: 'Manga Curta', material: 'Algodão', marca: 'Lunar' }, {
+      nomePai: 'Camisa Masculina Manga Curta Algodão Azul Lunar', genero: 'masculino', cores: ['Azul'],
+    })).toBe('Camisa Masculina Manga Curta Algodão Azul Lunar');
+  });
+
+  it('corte: sinônimo → aplicação → marca, e para quando cabe', () => {
+    const r = diagnosticarTitulo(slots({
+      produto: 'Short', sinonimo: 'Bermuda', caracteristica: 'Cós Elástico', caracteristica2: 'Com Cordão',
+      material: 'Linho', aplicacao: 'Para Praia', marca: 'Lunar',
+    }), {
+      ...SHORT, nomePai: 'Short Bermuda Masculino Cós Elástico Com Cordão Linho', descricaoPai: 'Para Praia Azul Marinho Lunar',
+      cores: ['Azul Marinho'],
+    });
+    expect(r.titulo).toBe('Short Masculino Cós Elástico Com Cordão Linho Azul Marinho');
+    expect(r.descartes.filter((d) => d.etapa === 'corte').map((d) => d.slot).sort()).toEqual(['aplicacao', 'marca', 'sinonimo']);
+  });
+
+  it('público feminino de vestido é o último a cair', () => {
+    expect(t({ produto: 'Vestido', caracteristica: 'Com Fechamento Por Botões De Madeira' }, {
+      nomePai: 'Vestido Feminino Com Fechamento Por Botões De Madeira Azul Marinho', genero: 'feminino', cores: ['Azul Marinho'],
+    })).toBe('Vestido Com Fechamento Por Botões De Madeira Azul Marinho');
+  });
+
+  it('marca sai inteira acima de 60', () => {
+    const f = (marca: string) => ({
+      nomePai: `Camisa Masculina Social Slim Fit Algodão Egípcio Azul ${marca}`, genero: 'masculino', cores: ['Azul'],
+    });
+    const s = (marca: string) => ({ produto: 'Camisa', caracteristica: 'Social', caracteristica2: 'Slim Fit', material: 'Algodão Egípcio', marca });
+    expect(t(s('Lunarx'), f('Lunarx'))).toBe('Camisa Masculina Social Slim Fit Algodão Egípcio Azul Lunarx');
+    expect(t(s('Lunarxx'), f('Lunarxx'))).toBe('Camisa Masculina Social Slim Fit Algodão Egípcio Azul');
+  });
+
+  it('conjunto de 2 peças não vira kit; tamanho não entra em característica', () => {
+    expect(t({ produto: 'Conjunto', quantidade: '2pc', caracteristica: 'Manga 3/4' }, {
+      nomePai: 'Conjunto 2 Peças Manga 3/4', genero: 'feminino',
+    })).toBe('Conjunto Feminino Manga 3/4');
+    expect(t({ produto: 'Short', caracteristica: 'GG', caracteristica2: '2 Anos' }, { nomePai: 'Short GG 2 Anos', genero: 'masculino' }))
+      .toBe('Short Masculino');
   });
 });
 

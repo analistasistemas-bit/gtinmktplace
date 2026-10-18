@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-18
 
+**Título de roupa em grade orientado a palavras-chave (emenda ADR-0184).** Diego reprovou composição no título ("Camisa Masculina 90% Algodão 10% Elastano"). Pesquisa nos mais vendidos do ML mostrou que ninguém usa percentual; o que vende é peça + gênero + modelo/corte + nome do tecido, com sinônimo da peça e "Kit N" no começo. Regra nova definida pelo Codex (delegação do Diego): tecido sem percentual, sinônimo só de dicionário e da fonte, característica copiada da fonte como expressão, marca no fim e cortável. A camisa vira "Camisa Masculina Algodão Egípcio Com Elastano".
+
 **Copy de grade corrigida (emendas ADR-0183/0184).** Camisa da Zaven saiu "Camisa Masculino … 90% 10% Elastano" e sem perguntas/fechamento. Título agora concorda o público com a peça pelo código e não deixa percentual solto; a descrição ganha a pergunta de público (gênero do cadastro), que completa as 3 perguntas quando a fonte só tem composição, e a frase final não é mais cortada.
 
 **Roupas e calçados A–D (emenda ADR-0182).** Pedido do Diego: publicar qualquer roupa. Auditoria da árvore de vestuário do ML mostrou só 10 tipos cobertos; entram vestido, moletom, blusa, colete, suéter, camisola, roupão, jaleco, kimono, poncho (peito), saia, calcinha, cueca, legging, short/calça fitness, calça de trabalho/tática, tutu (quadril), bota, sapato social, scarpin, sapatilha, pantufa, alpargata (calçado) e terno, macacão, conjuntos fitness/lingerie, top, corset, baby doll, cinta, meia-calça e uniformes (sem guia). Ensaio real: 87/93 casos OK; o resto recusa com mensagem tamanho que a categoria não tem. Fora: bebê, meias, sutiã/pijama (falta tabela de busto).

@@ -321,8 +321,9 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     const palavras = normalizar(tipo).split(/\s+/).filter((w) => w.length >= 3);
     const prefixo = `${tipo.toUpperCase()} `;
     // ADR-0184: na grade só conta o que a grade RENDERIZA — `medida`/`modelo` são descartados lá.
+    // Emenda ADR-0184 (2026-10-18): na grade só a peça é durável — sinônimo é o 1º a ser cortado.
     const duravel = (slot: SlotTitulo) =>
-      slot === 'produto' || (!fonte.grade && slot === 'medida') || out[slot].length < prefixo.length;
+      slot === 'produto' || (!fonte.grade && (slot === 'medida' || out[slot].length < prefixo.length));
     const textoDuravel = (fonte.grade ? ORDEM_LEITURA_GRADE : ORDEM_LEITURA).filter((s) => out[s] && duravel(s)).map((s) => out[s]).join(' ');
     const presente = palavras.some((w) => jaContem(normalizar(textoDuravel), w))
       || termoColado(textoDuravel, tipo);
