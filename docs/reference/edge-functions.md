@@ -796,6 +796,19 @@ mesmo por engano.
   sumiu, seguro; erro transiente aborta fail-closed ANTES de qualquer mutação local). Antes disso
   o anúncio Legacy ficava ativo e órfão no ML e a republicação criava duplicado. Esse caminho
   agora exige conexão ML viva (a remoção de Legacy/UP-esvaziada continua sem token).
+  **Produto dividido (2026-10-18, revisão das Ações de Publicados):** `familias.ml_item_id` é só a
+  partição 0 — as partições >0 vivem em `anuncios_externos.item_externo_id`. Desde v74 o Remover
+  checa `sold_quantity` e encerra **todas** as partições (antes a venda na partição 1 não bloqueava
+  e ela ficava viva e órfã no ML), o Republicar pausa todas antes de cortar o vínculo, e o guard de
+  Kit Virtual (D-13) casa também pelos MLBs das partições.
+  **Republicar pela família vigente (ADR-0185, v75, 2026-10-18):** o corte local é a RPC
+  transacional `preparar_republicacao` — volta à Revisão a cópia **mais nova** com `ml_item_id`
+  (`criado_em desc`, inclui snapshot de UPDATE ainda não publicado), os SKUs que só existem nas
+  cópias anteriores passam para ela, as cópias anteriores são apagadas e os lotes recontados; a 2ª
+  chamada recusa (`nao_publicada`), nunca um 2º CREATE. Recusa `em_processamento` (409) **antes** de
+  pausar no ML se a cópia vigente estiver `pendente`/`processando`/`publicando`.
+  `_shared/lote/recontar.ts` passou a lançar em erro de leitura — antes virava "lote vazio" e apagava
+  o lote com as famílias restantes (vale também para `excluir-lote` v35 e `excluir-produto` v16).
   **Guarda completa de remoção UP (ADR-0088, 2026-07-23):** mini-saga própria
   (`_shared/user-products/remover-composicao.ts`) pausa TODOS os filhos com `item_externo_id`
   (mesmo os já `retirado=true` — nunca confia nesse campo como "seguro pular", crash real na janela
@@ -840,6 +853,8 @@ mesmo por engano.
 - **retentar-catalogo** *(HTTP, JWT manual — ADR-0021, 2026-08-14)* — re-enfileira
   `vincular-catalogo` (delay 60s) para família `publicado` com variação Legacy ou item UP em
   `erro`/`nao_elegivel`/`sem_produto`/`pendente` sem `catalog_listing_id`. Não altera estado no banco.
+  **2026-10-18 (v14):** age na família `publicado` mais nova do `codigo_pai` (`publicado_em desc`,
+  mesma ordem do `ingest-lote`), não na da linha (a mais antiga); a tela esconde o ↻ nas partições >0.
   `sem_produto` e `pendente` entraram em **2026-09-11**: sem eles a lista tornava terminais os dois
   estados mais transitórios que existem — o ML libera o opt-in mas a ficha ainda não existe
   (`sem_produto`), ou ainda está computando a elegibilidade (`pendente`). Caso que motivou: o
@@ -1909,6 +1924,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   **ADR-0161 (J13):** recusa (400) enquanto o produto estiver migrando para preço por variação — o
   ML rejeita alterações durante a migração, e o encerramento que ele faz no fim pode colidir com um
   `paused` nosso.
+  **User Products (emenda ADR-0060, 2026-10-18):** a edge continua comando de item único; quem
+  expande é a tela — Pausar/Reativar numa família UP chama a edge **um SKU por vez, em sequência**
+  (`alvosStatus`), e a pausa em massa manda todos os SKUs para `operacoes-massa`. Antes só o SKU
+  principal pausava e a linha seguia "Ativo" (incidente Zaven, short com 32 SKUs).
 - **migrar-preco-por-variacao** *(ADR-0161, `verify_jwt=true`)* — dispara no ML a migração **UPtin**
   do anúncio (`{familia_id}`): o item original é ENCERRADO e cada cor vira um anúncio próprio.
   **Irreversível.** Admin-only (gate do ADR-0060) e com verificação de que a família é da org do
@@ -1917,7 +1936,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   tocado: produto de outra org, não publicado, **dividido em N anúncios** (a adoção zeraria o vínculo
   das cores das outras partições), sem raiz de partição 0, já migrando, raiz/família mais nova
   incoerentes, família publicando, **componente de kit virtual**, inelegível pelo ML, snapshot vazio,
-  **duas variações com a mesma cor**, e perda do claim atômico. Grava estado + **snapshot de
+  **duas variações com a mesma cor**, e perda do claim atômico (desde 2026-10-18 também **User
+  Products**, que já é um anúncio por SKU — v18; erro ao consultar os itens UP aborta antes da
+  elegibilidade). Grava estado + **snapshot de
   `variations[]`** na raiz ANTES do POST; falha no POST **não** limpa o estado (a idempotência do
   endpoint não é documentada, então "falhou" não prova "não começou") e o acompanhamento é
   enfileirado assim mesmo.

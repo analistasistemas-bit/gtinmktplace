@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Ações de Publicados: pausar UP, produto dividido, republicar pela vigente (emenda ADR-0060, ADR-0185) — EM PRODUÇÃO desde 2026-10-18
+
+- [x] Pausar/Reativar em User Products atinge todos os SKUs (antes 1 de 32 no short da Zaven; linha seguia "Ativo") — botão e pausa em massa (main `ec5bf54f`, emenda ADR-0060).
+- [x] Remover e Republicar em produto dividido em vários anúncios: venda/encerramento/pausa em todas as partições; guard de Kit Virtual pelos MLBs das partições (`remover-publicado` v74).
+- [x] Migrar preço por variação recusa User Products antes do ML (`migrar-preco-por-variacao` v18); retentar catálogo na família publicada mais nova e sem ↻ em partição (`retentar-catalogo` v14).
+- [x] Permissões da tela = predicado das edges (`usePodeExecutarOperacao`): suporte `full` libera, `read` bloqueia, inclusive o Remover (main `0138a830`).
+- [x] Republicar pela família vigente numa transação (RPC `preparar_republicacao`, ADR-0185): cópia mais nova volta à Revisão, SKUs das cópias antigas incorporados, cópias antigas apagadas (`remover-publicado` v75, main `2a26c2a7`).
+- [x] Criar kit usa a família publicada mais nova (`familiaIdVigente`).
+- [x] `recontarOuRemoverLote` não apaga mais lote em erro de leitura (`excluir-lote` v35, `excluir-produto` v16).
+- [ ] Decidir se Remover/Republicar exigem admin (hoje: qualquer membro com escrita; Pausar exige admin).
+- [ ] Validar Republicar de ponta a ponta num produto real com vários lotes (pausa anúncio real no ML — só com aval).
+
 ## FAQ e rótulo de estampa na copy de grade (emenda ADR-0183/0115) — 2026-10-18
 
 - [x] Pergunta frequente reconstruída também de "Proteção UV/FPU", "Quantidade" e "Aplicação/Indicação/Uso" (caso Conjunto Sereia: ❓ sumia com 2 perguntas).

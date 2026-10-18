@@ -38,10 +38,11 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
   filtro próprio; antes passava por publicada. Complementa o filtro **"sem vínculo de catálogo"**.
   O texto do chip não promete ação que o não-admin não tem
 - **Moderação** — `monitorar-moderados` varre anúncios pausados/moderados e alerta Telegram
-- **Remoção** — `remover-publicado` (ADR-0168): sem venda no ML (`sold_quantity=0`) encerra+apaga no ML e limpa PubliAI; com venda, bloqueia os dois lados. `excluir-lote` preserva publicados
+- **Remoção** — `remover-publicado` (ADR-0168): sem venda no ML (`sold_quantity=0`) encerra+apaga no ML e limpa PubliAI; com venda, bloqueia os dois lados. `excluir-lote` preserva publicados. Produto dividido: checa/encerra/pausa **todas** as partições (2026-10-18). "Corrigir e republicar" = RPC `preparar_republicacao` (ADR-0185): a cópia mais nova volta à Revisão, cópias antigas apagadas
 - **Pausar/reativar** — toggle na linha (só admin, `atualizar-status-publicado`); pausar exige
   confirmação, reativar é direto. Sem persistência local de status — invalida o cache de
-  status ao vivo após a ação (ADR-0060)
+  status ao vivo após a ação (ADR-0060). **User Products:** a tela chama a edge um SKU por vez para
+  todos os SKUs da família (emenda 2026-10-18 — antes só o principal pausava)
 - **Split de produto** — produtos com >100 cores aparecem como N anúncios; ver
   [[Publicação Mercado Livre]]
 - **Calculadora ML em Viabilidade** — compara Clássico e Premium com lucro, margem, custo total,

@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-16
+atualizado: 2026-10-18
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-10-16
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-18
+
+**Ações de Publicados revisadas (emenda ADR-0060, ADR-0185).** Pausar em User Products pausava 1 de 32 SKUs (short da Zaven) e a linha seguia "Ativo" — botão e pausa em massa agora atingem todos os SKUs. Remover/Republicar passam a enxergar todas as partições de produto dividido (antes a partição 1 ficava viva e órfã no ML, e a venda nela não bloqueava o Remover). "Corrigir e republicar" vira a RPC transacional `preparar_republicacao`: a cópia mais nova volta à Revisão, sem perder SKUs, e nunca gera 2º CREATE. Criar kit usa a família publicada mais nova; Migrar recusa UP; ↻ de catálogo some nas partições; permissões da tela iguais às das edges (suporte `full`/`read`). Corrige também `recontarOuRemoverLote`, que apagava o lote inteiro num erro de leitura. Revisado pelo Codex (plano 2×, diffs 3×).
 
 ## 2026-10-16
 

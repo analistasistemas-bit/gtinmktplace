@@ -1,6 +1,6 @@
 # ADR-0185 — Republicar e Criar kit agem na família vigente; preparação da republicação é atômica
 
-- **Status:** proposto
+- **Status:** aceito (em produção desde 2026-10-18, main `2a26c2a7`)
 - **Data:** 2026-10-18
 - **Emenda:** [ADR-0168](0168-remover-publicado-encerra-ml-sem-venda.md) (modo republicar do `remover-publicado`)
 - **Relaciona:** ADR-0016 (UPDATE com reposição), ADR-0019 (exclusão preserva publicados), ADR-0048 (split),
