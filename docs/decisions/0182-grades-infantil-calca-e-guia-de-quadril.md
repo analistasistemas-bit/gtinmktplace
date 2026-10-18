@@ -163,9 +163,15 @@ editada (ADR-0043): a reversão é uma migration nova.
 `TAMANHOS_ROUPA` ganha `GGG` no fim da lista (P, M, G, GG, GGG) — pedido do Diego para cadastrar
 camisa com extra G. Vale para cadastro, estoque e whitelist da edge `cadastrar-produto`.
 
-**Guia de tamanhos do ML NÃO cobre GGG ainda.** O ML não tem `GGG` em `SIZE` nem em
-`FILTRABLE_SIZE` (consultado em `MLB31447` e `MLB278065`: só `XG`, `XGG`, `EGG`, `G1`…), e
-`CONTORNO_PEITO_CM` para em GG. Publicar família com GGG em domínio com guia falha alto
-(`mensagemForaDoSuperset`, ou "chart existente não cobre" quando já há chart Letras em cache).
-Suportar exige decisão do Diego (FILTRABLE_SIZE equivalente + cm de peito) e rotação do cache
-`ml_size_charts` (chart é imutável, ADR-0167 D4).
+**Guia de tamanhos (peito: JACKETS_AND_COATS, SPORT_T_SHIRTS).** O ML não tem `GGG` em `SIZE` nem
+em `FILTRABLE_SIZE` (consultado em `MLB31447`, `MLB424836`, `MLB108803`: só `XG`, `XGG`, `EGG`,
+`G1`…). Decisão do Diego: GGG = equivalência `FILTRABLE_SIZE` **XG** com **120 cm** de peito
+(passo de 8 cm da tabela). `POST /catalog/charts` real (chart `10367347`, SPORT_T_SHIRTS feminino,
+2026-10-18) aceitou a linha com `SIZE` "GGG" **sem value_id** (SIZE é string livre).
+
+**Rotação do cache (ADR-0167 D4).** Chart em `ml_size_charts` que não cobre um tamanho pedido não
+lança mais: `garantirChart` cria um chart novo com o superset atual e faz upsert na chave
+(conexão, domínio, gênero, grade). O chart antigo segue válido nos itens já publicados. Os caches
+Letras existentes (P–GG) rotacionam na primeira publicação que pedir GGG.
+
+Fora de escopo: GGG em SHORTS/PANTS (quadril) — `tabelaQuadril` não tem GGG, segue falhando alto.

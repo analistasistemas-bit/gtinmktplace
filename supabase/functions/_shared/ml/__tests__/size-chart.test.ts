@@ -107,8 +107,17 @@ describe('montarLinhasChart (ADR-0167 / Spike 051 §3)', () => {
     expect(() => montarLinhasChart(['G'], sizeValores, filtravelValores)).toThrow();
   });
 
-  it('CONTORNO_PEITO_CM só cobre P/M/G/GG — trava contra regressão silenciosa', () => {
-    expect(Object.keys(CONTORNO_PEITO_CM).sort()).toEqual(['G', 'GG', 'M', 'P']);
+  it('CONTORNO_PEITO_CM só cobre P/M/G/GG/GGG — trava contra regressão silenciosa', () => {
+    expect(Object.keys(CONTORNO_PEITO_CM).sort()).toEqual(['G', 'GG', 'GGG', 'M', 'P']);
+  });
+
+  it('GGG (emenda ADR-0182, chart real 10367347): SIZE sem value_id, FILTRABLE_SIZE XG, 120 cm', () => {
+    const linhas = montarLinhasChart(['GGG'], sizeValores, [{ id: '12917774', nome: 'XG' }]);
+    expect(linhas).toEqual([{ attributes: [
+      { id: 'SIZE', values: [{ name: 'GGG' }] },
+      { id: 'FILTRABLE_SIZE', values: [{ id: '12917774', name: 'XG' }] },
+      { id: 'CHEST_CIRCUMFERENCE_FROM', values: [{ name: '120 cm' }] },
+    ] }]);
   });
 });
 
@@ -300,6 +309,7 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
         return q;
       },
       insert: (row: Record<string, unknown>) => { inserts.push(row); return Promise.resolve({ error: null }); },
+      upsert: (row: Record<string, unknown>) => { inserts.push(row); return Promise.resolve({ error: null }); },
     }));
     return { admin: { from } as unknown as SupabaseClient, from, inserts };
   }
@@ -508,16 +518,46 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
   it('JACKETS_AND_COATS sem cache segue no peito (CHEST_CIRCUMFERENCE_FROM, regressão)', async () => {
     vi.mocked(lerSchemaAtributos).mockResolvedValue([
       { id: 'SIZE', valores: ['P', 'M', 'G', 'GG'].map((t, i) => ({ id: `s${i}`, nome: t })) },
-      { id: 'FILTRABLE_SIZE', valores: ['P', 'M', 'G', 'GG'].map((t, i) => ({ id: `f${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: ['P', 'M', 'G', 'GG', 'XG'].map((t, i) => ({ id: `f${i}`, nome: t })) },
     ] as never);
     const { admin } = adminFake();
     const f = fetchFake('JACKETS_AND_COATS');
     await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'masculino', ['P'], 'letras');
     const rows = f.posts[0].body.rows;
-    expect(rows.map((row) => row.attributes[0].values[0].name)).toEqual(['P', 'M', 'G', 'GG']);
+    expect(rows.map((row) => row.attributes[0].values[0].name)).toEqual(['P', 'M', 'G', 'GG', 'GGG']);
     expect(rows.every((row) => row.attributes[2].id === 'CHEST_CIRCUMFERENCE_FROM')).toBe(true);
     expect(rows[0].attributes[2].values[0].name).toBe('88 cm');
-    expect(f.posts[0].body.names).toEqual({ MLB: 'PubliAI Guia Jackets And Coats masculino P-M-G-GG' });
+    expect(rows[4].attributes[1].values[0].name).toBe('XG');
+    expect(f.posts[0].body.names).toEqual({ MLB: 'PubliAI Guia Jackets And Coats masculino P-M-G-GG-GGG' });
+  });
+
+  it('cache P–GG + pedido GGG → chart novo com o superset e cache substituído (ADR-0167 D4)', async () => {
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'SIZE', valores: ['P', 'M', 'G', 'GG'].map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: ['P', 'M', 'G', 'GG', 'XG'].map((t, i) => ({ id: `f${i}`, nome: t })) },
+    ] as never);
+    const antigas = Object.fromEntries(['P', 'M', 'G', 'GG'].map((t, i) => [t, { rowId: `8827145:${i + 1}`, sizeLabel: t }]));
+    const { admin, inserts } = adminFake({
+      'conexao-1|SPORT_T_SHIRTS|feminino|letras': { chart_id: '8827145', linhas: antigas },
+    });
+    const f = fetchFake('SPORT_T_SHIRTS');
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'feminino', ['G', 'GGG'], 'letras');
+    expect(f.posts).toHaveLength(1);
+    expect(r).toMatchObject({ chartId: '999' });
+    expect((r as { linhaPorTamanho: Map<string, unknown> }).linhaPorTamanho.get('GGG')).toEqual({ rowId: '999:5', sizeLabel: 'GGG' });
+    expect(inserts).toEqual([expect.objectContaining({ chart_id: '999', domain_id: 'SPORT_T_SHIRTS', grade_tamanho: 'letras' })]);
+  });
+
+  it('cache que já cobre o pedido segue sem POST mesmo sem GGG no cache', async () => {
+    const antigas = Object.fromEntries(['P', 'M', 'G', 'GG'].map((t, i) => [t, { rowId: `8827145:${i + 1}`, sizeLabel: t }]));
+    const { admin, inserts } = adminFake({
+      'conexao-1|SPORT_T_SHIRTS|feminino|letras': { chart_id: '8827145', linhas: antigas },
+    });
+    const f = fetchFake('SPORT_T_SHIRTS');
+    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'feminino', ['P', 'GG'], 'letras');
+    expect(f.posts).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+    expect(r).toMatchObject({ chartId: '8827145' });
   });
 
   it('nomeChart normaliza o gênero infantil e mantém os nomes adultos', () => {

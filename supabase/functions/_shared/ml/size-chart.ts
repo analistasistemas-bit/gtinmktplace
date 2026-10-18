@@ -24,9 +24,16 @@ export const GENDER_VALUE: Record<Genero, { id: string; nome: string }> = {
 };
 
 // ADR-0167 Decisão 3: tabela padrão do varejo BR (contorno de peito, piso da faixa), decisão do
-// Diego — não é medida do produto real. Só cobre P/M/G/GG: "Tamanho Único" não tem contorno de
+// Diego — não é medida do produto real. Cobre P/M/G/GG/GGG: "Tamanho Único" não tem contorno de
 // peito aplicável, falha alto em vez de inventar (nunca CLAUDE.md "inventar dado de produto").
-export const CONTORNO_PEITO_CM: Readonly<Record<string, number>> = { P: 88, M: 96, G: 104, GG: 112 };
+// GGG = 120 cm (passo de 8 cm da tabela) — decisão do Diego, emenda ADR-0182 (2026-10-18).
+export const CONTORNO_PEITO_CM: Readonly<Record<string, number>> = { P: 88, M: 96, G: 104, GG: 112, GGG: 120 };
+
+// Emenda ADR-0182 (2026-10-18): o ML não tem "GGG" em SIZE nem em FILTRABLE_SIZE. POST
+// /catalog/charts real (chart 10367347, SPORT_T_SHIRTS feminino) aceitou SIZE "GGG" sem value_id
+// (SIZE é string livre) com a equivalência FILTRABLE_SIZE "XG" — decisão do Diego.
+export const FILTRAVEL_EQUIVALENTE: Readonly<Record<string, string>> = { GGG: 'XG' };
+const SIZE_SEM_VALUE_ID = new Set(['GGG']);
 
 // Spike 051 §13 (2026-09-19): FOOTWEAR usa BR_SIZE + FOOT_LENGTH, não SIZE/FILTRABLE_SIZE/
 // CHEST_CIRCUMFERENCE — confirmado via POST /catalog/charts real contra SANDALS_AND_CLOGS. Os
@@ -181,10 +188,11 @@ export function montarLinhasChart(
   medidasCm: Readonly<Record<string, number>> = CONTORNO_PEITO_CM,
   // ADR-0182 D6: quadril usa HIP_CIRCUMFERENCE_FROM; infantil tem FILTRABLE_SIZE "<n> anos".
   coluna: 'CHEST_CIRCUMFERENCE_FROM' | 'HIP_CIRCUMFERENCE_FROM' = 'CHEST_CIRCUMFERENCE_FROM',
-  nomeFiltravel: (t: string) => string = (t) => t,
+  nomeFiltravel: (t: string) => string = (t) => FILTRAVEL_EQUIVALENTE[t] ?? t,
 ): LinhaChart[] {
   return tamanhos.map((t) => {
-    const sizeVal = sizeValores.find((v) => v.nome === t);
+    const sizeVal: { id?: string; nome: string } | undefined = sizeValores.find((v) => v.nome === t)
+      ?? (SIZE_SEM_VALUE_ID.has(t) ? { nome: t } : undefined);
     const filtVal = filtravelValores.find((v) => v.nome === nomeFiltravel(t));
     const cm = medidasCm[t];
     if (!sizeVal || !filtVal || cm == null) {
@@ -192,7 +200,7 @@ export function montarLinhasChart(
     }
     return {
       attributes: [
-        { id: 'SIZE', values: [{ id: sizeVal.id, name: sizeVal.nome }] },
+        { id: 'SIZE', values: [sizeVal.id ? { id: sizeVal.id, name: sizeVal.nome } : { name: sizeVal.nome }] },
         { id: 'FILTRABLE_SIZE', values: [{ id: filtVal.id, name: filtVal.nome }] },
         { id: coluna, values: [{ name: `${cm} cm` }] },
       ],
@@ -308,19 +316,13 @@ export async function garantirChart(
       Object.entries(cached.linhas as Record<string, LinhaChartResolvida | string>)
         .map(([t, l]) => [t, typeof l === 'string' ? { rowId: l, sizeLabel: t } : l] as const),
     );
-    // ADR-0167 Decisão 4 (chart imutável): se o cache não cobre um tamanho pedido, NUNCA editar o
-    // chart existente — falha alto com mensagem clara em vez da mensagem enganosa que vinha de
-    // publicar.ts ("garantirChart precisa rodar antes"). Não deveria acontecer se a criação sempre
-    // usa o superset (abaixo); mensagem serve de rede de segurança se o superset mudar no futuro.
+    // ADR-0167 Decisão 4 (chart imutável): cache que não cobre um tamanho pedido (superset
+    // ampliado, ex.: GGG em 2026-10-18) NUNCA edita o chart existente — cai na criação de um chart
+    // novo com o superset atual, que substitui o cache; o antigo segue válido nos itens publicados.
+    // Tamanho fora do superset atual falha alto na criação (mensagemForaDoSuperset).
     const faltando = tamanhos.filter((t) => !linhaPorTamanho.has(t));
-    if (faltando.length > 0) {
-      throw new Error(
-        `Guia de tamanhos: chart existente (conexão=${connectionId}, domínio=${domainId}, `
-        + `gênero=${genero}, grade=${grade}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
-        + 'Decisão 4), amplie o superset em size-chart.ts e crie um chart novo.',
-      );
-    }
-    return { chartId: cached.chart_id as string, linhaPorTamanho };
+    if (faltando.length === 0) return { chartId: cached.chart_id as string, linhaPorTamanho };
+    console.warn(`Guia de tamanhos: chart ${cached.chart_id} não cobre ${faltando.join(', ')} — criando chart novo.`);
   }
 
   const resolvido = DOMINIOS_CALCADO_STANDARD.has(domainId)
@@ -329,15 +331,15 @@ export async function garantirChart(
       ? await criarChartCalcadoEspecifico(token, domainId, genero, tamanhos)
       : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos, grade);
 
-  // Duas publicações concorrentes (mesma conexão+domínio+gênero+grade, 1ª vez) podem criar 2 charts em
-  // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
-  // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
-  // ESTA chamada acabou de resolver (é o que o payload desta publicação já referencia).
-  const { error: insertErr } = await admin.from('ml_size_charts').insert({
+  // Upsert: substitui o cache quando o superset cresceu (chart novo acima). Duas publicações
+  // concorrentes (mesma chave, 1ª vez) podem criar 2 charts em paralelo — inofensivo (o ML aceita,
+  // cada uma referencia o seu); vence a última gravação. Falha aqui não é fatal: logar e seguir com
+  // o chart que ESTA chamada resolveu (é o que o payload desta publicação já referencia).
+  const { error: insertErr } = await admin.from('ml_size_charts').upsert({
     connection_id: connectionId, domain_id: domainId, genero, grade_tamanho: grade,
     chart_id: resolvido.chartId, linhas: Object.fromEntries(resolvido.linhaPorTamanho),
-  });
-  if (insertErr) console.error('ml_size_charts insert falhou (chart resolvido, cache não salvo):', insertErr.message);
+  }, { onConflict: 'connection_id,domain_id,genero,grade_tamanho' });
+  if (insertErr) console.error('ml_size_charts upsert falhou (chart resolvido, cache não salvo):', insertErr.message);
 
   return resolvido;
 }
@@ -363,7 +365,7 @@ async function criarChartVestuario(
   const infantil = (GENEROS_INFANTIL as readonly string[]).includes(genero);
   const nomeFiltravel = quadril && infantil ? (t: string) => `${t} anos` : (t: string) => t;
   const supersetTamanhos = (quadril ? tamanhosDaGrade(grade) : Object.keys(tabela))
-    .filter((t) => t in tabela && sizeAttr.valores.some((v) => v.nome === t));
+    .filter((t) => t in tabela && (SIZE_SEM_VALUE_ID.has(t) || sizeAttr.valores.some((v) => v.nome === t)));
   const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
   if (foraDoSuperset.length > 0) throw new Error(mensagemForaDoSuperset(foraDoSuperset));
 

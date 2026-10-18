@@ -226,8 +226,9 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   };
   // ADR-0166 2026-09-24c: SKU novo de grade precisa do chart ANTES do payload. Resolvido uma vez
   // por execução (SIZE_GRID_ID é o mesmo para a família inteira). O chart nasce com o superset de
-  // tamanhos (ADR-0167 D2), então isto é cache hit. Tamanho fora do chart em cache: garantirChart
-  // LANÇA (size-chart.ts:259-270) — falha alto, sem rotação automática (Codex r2 #9).
+  // tamanhos (ADR-0167 D2), então isto é cache hit. Tamanho fora do chart em cache (superset
+  // ampliado, ex.: GGG): garantirChart cria chart novo e substitui o cache (ADR-0167 D4); fora do
+  // superset atual, falha alto.
   // ADR-0182 D7: CLOTHING_LOT_SIZE é por SKU — o do irmão/atributos_ml nunca vaza pro SKU novo.
   const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID', 'CLOTHING_LOT_SIZE']);
   // Mesma regra do CREATE (publicar-familia-up.ts IDS_SUBSTITUIDOS) para todo atributo
