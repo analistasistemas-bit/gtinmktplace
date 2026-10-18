@@ -124,6 +124,18 @@ export function alvosStatus(item: Pick<PublicadoItem, 'mlItemId' | 'mlItemIdsUP'
   return item.mlItemIdsUP?.length ? item.mlItemIdsUP : [item.mlItemId];
 }
 
+/** Atalho "ML" de família UP: a página /up/ mostra todas as cores/tamanhos; o permalink de um SKU
+ *  (familias.ml_permalink) só mostra aquele item — e pausado se zerou. O ML completa o slug sozinho.
+ *  Prefere o 1º SKU com estoque: /up/ de SKU zerado abre como "indisponível". */
+export function linkPaginaUP(
+  itens: { sku: string; userProductId: string | null }[] | undefined,
+  estoquePorSku: Map<string, number>,
+): string | null {
+  const comUP = (itens ?? []).filter((i) => i.userProductId).sort((a, b) => a.sku.localeCompare(b.sku));
+  const alvo = comUP.find((i) => (estoquePorSku.get(i.sku) ?? 0) > 0) ?? comUP[0];
+  return alvo ? `https://www.mercadolivre.com.br/up/${alvo.userProductId}` : null;
+}
+
 /** Vendas da linha: UP soma todos os SKUs (par do status/estoque agregados — senão a família
  *  "ativa" com 0 vendas no SKU principal caía em Encalhados); Legacy, o próprio item. */
 export function vendasDoAnuncio<V extends { unidades: number; valor: number }>(

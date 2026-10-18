@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { agregarStatusUP, resumirVariacoesPorCor, vendasDoAnuncio } from '../publicados';
+import { agregarStatusUP, linkPaginaUP, resumirVariacoesPorCor, vendasDoAnuncio } from '../publicados';
+
+// 18/10: o atalho "ML" abria o permalink do 1º SKU (sem estoque → página pausada, sem as outras
+// estampas). A página /up/ mostra o grupo inteiro; aponta para um SKU com estoque.
+describe('linkPaginaUP', () => {
+  const itens = [
+    { sku: '00000045', userProductId: 'MLBU45' },
+    { sku: '00000044', userProductId: 'MLBU44' },
+  ];
+
+  it('1º SKU (por código) com estoque', () => {
+    expect(linkPaginaUP(itens, new Map([['00000044', 0], ['00000045', 2]])))
+      .toBe('https://www.mercadolivre.com.br/up/MLBU45');
+  });
+
+  it('nenhum com estoque → 1º SKU', () => {
+    expect(linkPaginaUP(itens, new Map())).toBe('https://www.mercadolivre.com.br/up/MLBU44');
+  });
+
+  it('Legacy (sem itens UP) ou sem user_product_id → null', () => {
+    expect(linkPaginaUP(undefined, new Map())).toBeNull();
+    expect(linkPaginaUP([{ sku: '1', userProductId: null }], new Map())).toBeNull();
+  });
+});
 
 // Zaven 17/10: short UP com 32 itens (1 por SKU) aparecia "Pausado · estoque 0" porque a linha lia
 // só o item de familias.ml_item_id (um SKU zerado, pausado pelo ML), com o anúncio vendendo.

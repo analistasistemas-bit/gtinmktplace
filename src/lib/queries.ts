@@ -21,7 +21,7 @@ import type {
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { FaixaAtacado } from './atacado';
 import type { PublicadoItem, StatusPublicado } from './publicados';
-import { dedupePublicados } from './publicados';
+import { dedupePublicados, linkPaginaUP } from './publicados';
 import {
   catalogStatusRetentavelEmEspelho,
   familiaTemCatalogoRetentavel,
@@ -219,14 +219,14 @@ async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<
 async function fetchItensAtivosUP(
   codigosPai: string[],
   { propagarErro = false }: { propagarErro?: boolean } = {},
-): Promise<Map<string, { sku: string; itemId: string }[]>> {
-  const porCodigo = new Map<string, { sku: string; itemId: string }[]>();
+): Promise<Map<string, { sku: string; itemId: string; userProductId: string | null }[]>> {
+  const porCodigo = new Map<string, { sku: string; itemId: string; userProductId: string | null }[]>();
   if (codigosPai.length === 0) return porCodigo;
   // I5: Publicados passa TODOS os produtos publicados — paginar (teto de 1000 linhas do PostgREST), senão
   // produto UP além do teto parece Legacy e o reajuste pega só um SKU. Erro continua degradando para
   // "sem SKUs" (comportamento anterior dos outros chamadores).
   let raizes: { id: string; codigo_pai: string }[];
-  let itens: { anuncio_externo_id: string; sku: string; item_externo_id: string | null }[];
+  let itens: { anuncio_externo_id: string; sku: string; item_externo_id: string | null; user_product_id: string | null }[];
   try {
     raizes = await buscarTodasPaginas((de, ate) => supabase
       .from('anuncios_externos')
@@ -239,7 +239,7 @@ async function fetchItensAtivosUP(
     const rootIdsPag = raizes.map((r) => r.id);
     itens = rootIdsPag.length === 0 ? [] : await buscarTodasPaginas((de, ate) => supabase
       .from('anuncios_externos_itens')
-      .select('anuncio_externo_id, sku, item_externo_id')
+      .select('anuncio_externo_id, sku, item_externo_id, user_product_id')
       .in('anuncio_externo_id', rootIdsPag)
       .eq('retirado', false)
       .not('item_externo_id', 'is', null)
@@ -257,7 +257,7 @@ async function fetchItensAtivosUP(
     const codigoPai = codigoPorRaiz.get(it.anuncio_externo_id);
     if (!codigoPai || !it.item_externo_id) continue; // .not(null) na query; guarda só pro tipo
     const lista = porCodigo.get(codigoPai) ?? [];
-    lista.push({ sku: it.sku, itemId: it.item_externo_id });
+    lista.push({ sku: it.sku, itemId: it.item_externo_id, userProductId: it.user_product_id });
     porCodigo.set(codigoPai, lista);
   }
   return porCodigo;
@@ -1123,12 +1123,12 @@ async function carregarItensUpRetentaveisPorCodigo(
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id, estoque)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
 
-  const rows = (data ?? []) as Array<FamiliaRow & { variacoes: VariacaoPub[] }>;
+  const rows = (data ?? []) as Array<FamiliaRow & { variacoes: (VariacaoPub & { estoque?: number | null })[] }>;
   const codigosPai = [...new Set(rows.map((r) => r.codigo_pai))];
   const itensUpPorCodigo = await carregarItensUpRetentaveisPorCodigo(codigosPai);
   // ADR-0161: quais produtos estão migrando para preço por variação. Durante a migração o ML recusa
@@ -1147,6 +1147,10 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const principais = dedupePublicados(
     rows.map((r) => ({
       ...publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai)),
+      mlPermalink: linkPaginaUP(
+        itensUp.get(r.codigo_pai),
+        new Map((r.variacoes ?? []).map((v) => [v.codigo, v.estoque ?? 0])),
+      ) ?? r.ml_permalink ?? null,
       migracaoEmAndamento: paisMigrando.has(r.codigo_pai),
       produtoDividido: (anunciosPorPai.get(r.codigo_pai) ?? []).length > 1,
       userProducts: (itensUp.get(r.codigo_pai)?.length ?? 0) > 0,
