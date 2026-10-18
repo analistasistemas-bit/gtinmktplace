@@ -833,6 +833,31 @@ describe('Publicados', () => {
     });
   });
 
+  // Zaven 18/10: Pausar no short UP mandava só o MLB principal — 1 de 32 SKUs pausava e a linha
+  // seguia "Ativo". Agora vão todos os SKUs da família.
+  it('Pausar em User Products manda todos os SKUs da família', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ total: 3, falhas: [] });
+    usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
+    useStatusPublicadosMock.mockReturnValue({
+      data: { itens: ['MLB1', 'MLB2', 'MLB3'].map((id) => ({ ml_item_id: id, status: 'ativo', motivo: null, estoque: 5, preco: 24.1 })) },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    usePublicadosMock.mockReturnValue({
+      data: [itemBase({ userProducts: true, mlItemIdsUP: ['MLB1', 'MLB2', 'MLB3'] })],
+      isLoading: false,
+      error: null,
+    });
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Pausar$/ }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ mlItemIds: ['MLB1', 'MLB2', 'MLB3'], status: 'pausado' }));
+  });
+
   describe('botão Migrar para preço por variação', () => {
     const BOTAO = 'Migrar para preço por variação';
 
@@ -886,6 +911,21 @@ describe('Publicados', () => {
       comStatusAoVivo('MLB1', 'ativo');
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ qtdVariacoesFamilia: 2, produtoDividido: true })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+    });
+
+    it('não aparece em User Products (já é um MLB por SKU)', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, userProducts: true })],
         isLoading: false,
         error: null,
       });

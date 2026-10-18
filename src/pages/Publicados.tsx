@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, alvosStatus, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
@@ -237,7 +237,7 @@ interface LinhaProps {
   removendo: boolean;
   onRepublicar: (familiaId: string) => Promise<void>;
   republicando: boolean;
-  onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => Promise<void>;
+  onPausarReativar: (item: PublicadoItem, novoStatus: 'ativo' | 'pausado') => Promise<void>;
   pausando: boolean;
   onRetentarCatalogo: (familiaId: string) => void;
   retentandoCatalogo: boolean;
@@ -435,7 +435,8 @@ function LinhaTabela({
           {/* `!item.produtoDividido` (ADR-0161 J10): produto publicado como vários anúncios não pode
               migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições. A edge
               function recusa de qualquer forma; esconder evita oferecer o que será negado. */}
-          {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && (
+          {/* UP (ADR-0088) já tem um MLB por SKU — não há o que migrar e a edge recusaria. */}
+          {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && !item.userProducts && (
             <AlertDialog open={migrarAberto} onOpenChange={setMigrarAberto}>
               <AlertDialogTrigger asChild>
                 <Button
@@ -493,7 +494,7 @@ function LinhaTabela({
               title={motivoDesabilitado ?? 'Reativar'}
               className="h-7 px-2 text-xs"
               disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}
-              onClick={(e) => { e.stopPropagation(); onPausarReativar(item.mlItemId, 'ativo'); }}
+              onClick={(e) => { e.stopPropagation(); onPausarReativar(item, 'ativo'); }}
             >
               <Play className="h-3 w-3" />
             </Button>
@@ -531,7 +532,7 @@ function LinhaTabela({
                     onClick={async (e) => {
                       e.preventDefault();
                       try {
-                        await onPausarReativar(item.mlItemId, 'pausado');
+                        await onPausarReativar(item, 'pausado');
                       } finally {
                         setPausarAberto(false);
                       }
@@ -566,7 +567,7 @@ function LinhaTabela({
                 aria-label="Corrigir e republicar"
                 title="Corrigir e republicar"
                 className="h-7 px-2 text-xs"
-                disabled={!isAdmin || republicando}
+                disabled={!isAdmin || republicando || migracaoAtiva}
                 onClick={(e) => e.stopPropagation()}
               >
                 <RotateCcw className="h-3 w-3" />
@@ -1107,11 +1108,19 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   };
 
   // Desabilita só a linha em pausa/reativação (não todas).
-  const handlePausarReativar = async (mlItemId: string, novoStatus: 'ativo' | 'pausado') => {
+  const handlePausarReativar = async (item: PublicadoItem, novoStatus: 'ativo' | 'pausado') => {
+    const { mlItemId } = item;
     setPausandoId(mlItemId);
     try {
-      await pausarReativarAsync({ mlItemId, status: novoStatus });
-      toast.success(novoStatus === 'pausado' ? 'Anúncio pausado' : 'Anúncio reativado');
+      const { total, falhas } = await pausarReativarAsync({ mlItemIds: alvosStatus(item), status: novoStatus });
+      if (falhas.length === 0) {
+        toast.success(novoStatus === 'pausado' ? 'Anúncio pausado' : 'Anúncio reativado');
+      } else {
+        const verbo = novoStatus === 'pausado' ? 'pausados' : 'reativados';
+        toast.error(`${total - falhas.length} de ${total} SKUs ${verbo}`, {
+          description: [...new Set(falhas.map((f) => f.erro))].join(' · '),
+        });
+      }
     } catch (err) {
       toast.error(novoStatus === 'pausado' ? 'Falha ao pausar' : 'Falha ao reativar', {
         description: err instanceof Error ? err.message : String(err),
@@ -1727,10 +1736,9 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
           {previewAcao && (
             <PreviewStatus
               acao={previewAcao}
-              itens={(previewAcao === 'pausar' ? ativos : pausados).map((id) => ({
-                ml_item_id: id,
-                titulo: itensSelecionados.find((x) => x.mlItemId === id)?.titulo ?? null,
-              }))}
+              itens={itensSelecionados
+                .filter((x) => x.status === (previewAcao === 'pausar' ? 'ativo' : 'pausado'))
+                .flatMap((x) => alvosStatus(x).map((id) => ({ ml_item_id: id, titulo: x.titulo })))}
               foraDoLote={[{
                 motivo: previewAcao === 'pausar' ? 'já pausados' : 'já ativos',
                 quantidade: (previewAcao === 'pausar' ? pausados : ativos).length,

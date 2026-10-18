@@ -57,6 +57,17 @@ erro sobe, então o retry do operador ou do QStash repete tudo. Na ordem inversa
 `sincronizar-estoque` leria o item já ativo e nunca voltaria ao catálogo. Vale para os dois chamadores: o botão Pausar/Reativar e a
 reativação após reposição (`sincronizar-estoque`, ADR-0111).
 
+## Emenda 2026-10-18 — User Products: pausar/reativar a família inteira
+
+Incidente (Zaven, short UP com 32 SKUs): o botão mandava só `mlItemId` (o SKU principal). O ML
+pausou 1 SKU, os outros seguiram vendendo e a linha continuou "Ativo" (`agregarStatusUP`: qualquer
+filho ativo → ativo). A edge continua **item único** (ADR-0088 §2); quem expande é a tela:
+`alvosStatus(item)` (`src/lib/publicados.ts`) devolve todos os SKUs não retirados de uma família UP
+(`mlItemIdsUP`) ou o próprio MLB no Legacy. O botão chama a edge **um SKU por vez, em sequência**
+(chamadas concorrentes poderiam renovar o token da conexão em paralelo) e, em falha parcial, avisa
+"X de N SKUs". A pausa em massa (ADR-0174) manda os mesmos alvos para `operacoes-massa`, que já
+aceita MLB de `anuncios_externos_itens`.
+
 ## Como reverter
 
 Remover `atualizarStatus` do contrato e da implementação ML, apagar a edge function e o

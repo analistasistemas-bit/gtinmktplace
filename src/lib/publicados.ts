@@ -112,6 +112,12 @@ export function agregarStatusUP<S extends { status: StatusPublicado; estoque: nu
   };
 }
 
+/** MLBs que Pausar/Reativar atingem (emenda ADR-0060): UP, todos os SKUs não retirados — pausar só
+ *  o principal deixava os irmãos vendendo e a linha seguia "Ativo"; Legacy, o próprio anúncio. */
+export function alvosStatus(item: Pick<PublicadoItem, 'mlItemId' | 'mlItemIdsUP'>): string[] {
+  return item.mlItemIdsUP?.length ? item.mlItemIdsUP : [item.mlItemId];
+}
+
 /** Vendas da linha: UP soma todos os SKUs (par do status/estoque agregados — senão a família
  *  "ativa" com 0 vendas no SKU principal caía em Encalhados); Legacy, o próprio item. */
 export function vendasDoAnuncio<V extends { unidades: number; valor: number }>(

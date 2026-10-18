@@ -362,11 +362,11 @@ describe('Publicados — race entre linhas concorrentes', () => {
     });
 
     let resolverA!: () => void;
-    const mutateAsync = vi.fn((args: { mlItemId: string; status: string }) => {
-      if (args.mlItemId === 'MLB1') {
-        return new Promise<void>((res) => { resolverA = res; });
+    const mutateAsync = vi.fn((args: { mlItemIds: string[]; status: string }) => {
+      if (args.mlItemIds[0] === 'MLB1') {
+        return new Promise((res) => { resolverA = () => res({ total: 1, falhas: [] }); });
       }
-      return new Promise<void>(() => {}); // B nunca resolve neste teste.
+      return new Promise(() => {}); // B nunca resolve neste teste.
     });
     usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
 

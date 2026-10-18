@@ -250,6 +250,11 @@ vi.mock('@/components/operacoes/preview-reajuste', () => ({
 }));
 
 // Aba Operações: a lista tem teste próprio; aqui só o roteamento da aba e o filtro passado.
+vi.mock('@/components/operacoes/preview-status', () => ({
+  PreviewStatus: ({ acao, itens }: { acao: string; itens: { ml_item_id: string }[] }) => (
+    <div data-testid="preview-status">{JSON.stringify({ acao, ids: itens.map((i) => i.ml_item_id) })}</div>
+  ),
+}));
 vi.mock('@/components/operacoes/lista-operacoes', () => ({
   ListaOperacoes: ({ filtro }: { filtro?: string }) => <div data-testid="lista-operacoes">{filtro}</div>,
 }));
@@ -340,6 +345,22 @@ describe('Publicados — seleção em massa', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver preview' }));
     expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({
       familias: ['f1'], ml_item_ids: ['MLB2'], ajuste: { tipo: 'pct', sentido: '+', valor: 5 },
+    });
+  });
+
+  // Zaven 18/10: pausa em massa de linha UP ia só com o MLB principal (1 SKU).
+  it('Pausar em massa: UP manda todos os SKUs, Legacy o MLB', async () => {
+    const { data } = usePublicadosMock() as { data: PublicadoItem[] };
+    usePublicadosMock.mockReturnValue({
+      data: data.map((i) => (i.mlItemId === 'MLB1' ? { ...i, userProducts: true, mlItemIdsUP: ['MLB1', 'MLB1B', 'MLB1C'] } : i)),
+      isLoading: false, error: null, refetch: vi.fn(),
+    });
+    renderPagina();
+    fireEvent.click(caixaTitulo('01'));
+    fireEvent.click(caixaTitulo('02'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar 2' }));
+    expect(JSON.parse((await screen.findByTestId('preview-status')).textContent!)).toEqual({
+      acao: 'pausar', ids: ['MLB1', 'MLB1B', 'MLB1C', 'MLB2'],
     });
   });
 
