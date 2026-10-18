@@ -11,7 +11,7 @@ import { montarPayloadItem } from '../ml/publicar.ts';
 import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './publicar-grupo.ts';
 import { criarPortasSupabase } from './portas-supabase.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
-import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
+import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
@@ -72,7 +72,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const tamanhos = [...new Set(
     anuncio.variacoes.map((v) => v.tamanho).filter((t): t is string => !!t?.trim()),
   )];
-  let chart: ChartResolvido | null = null;
+  let chart: ChartResolvido | ChartSemGuia | null = null;
   let atributosComGenero = anuncio.atributos;
   if (tamanhos.length > 0) {
     if (!familia.genero) {
@@ -163,14 +163,15 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     // RÓTULO da linha do chart ("37 BR"), não com `v.tamanho` cru ("37") — /items/validate real
     // devolveu invalid.fashion_grid.size.values com o valor cru. `montarPayloadItem` recebe os
     // dois: sizeLabel (o que vai no payload) e tamanho (só usado pro guard "sem grid resolvido").
-    const linha = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
+    const grid = chart && 'chartId' in chart ? chart : null;
+    const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
     return montarPayloadItem(
       familiaInput,
       [{
         codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
-        sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
-        tamanhoSemGuia: !!v.tamanho && chart === null,
+        sizeGridId: grid?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: v.tamanho && chart && 'semGuia' in chart ? chart.semGuia : null,
         corValueId: resolverCorValueId(v.cor, valoresCor),
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,

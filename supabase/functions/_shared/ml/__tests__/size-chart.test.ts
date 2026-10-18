@@ -332,8 +332,8 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(GENDER_VALUE.unissex.id).toBe('110461');
   });
 
-  it('SHORTS, PANTS e CLOTHING_LOTS entram em DOMINIOS_SUPORTADOS', () => {
-    for (const d of ['SHORTS', 'PANTS', 'CLOTHING_LOTS', 'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'SNEAKERS', 'SANDALS_AND_CLOGS']) {
+  it('SHORTS, PANTS, CLOTHING_LOTS e SWIMWEAR entram em DOMINIOS_SUPORTADOS', () => {
+    for (const d of ['SHORTS', 'PANTS', 'CLOTHING_LOTS', 'SWIMWEAR', 'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'SNEAKERS', 'SANDALS_AND_CLOGS']) {
       expect(DOMINIOS_SUPORTADOS.has(d)).toBe(true);
     }
   });
@@ -362,16 +362,20 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(dominioAceitaGrade('CLOTHING_LOTS', 'infantil')).toBe(true);
     expect(dominioAceitaGrade('SNEAKERS', 'calca')).toBe(false);
     expect(dominioAceitaGrade('JACKETS_AND_COATS', 'infantil')).toBe(false);
+    expect(dominioAceitaGrade('SWIMWEAR', 'infantil')).toBe(true);
+    expect(dominioAceitaGrade('SWIMWEAR', 'calcado')).toBe(false);
   });
 
-  it('CLOTHING_LOTS → null, sem tocar o cache nem chamar /catalog/charts', async () => {
-    const { admin, from } = adminFake();
-    const f = fetchFake('CLOTHING_LOTS');
-    const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB271219', 'meninos', ['4', '6'], 'infantil');
-    expect(r).toBeNull();
-    expect(from).not.toHaveBeenCalled();
-    expect(f.urls().every((u) => u.includes('/categories/'))).toBe(true);
-  });
+  it.each([['CLOTHING_LOTS', 'CLOTHING_LOT_SIZE'], ['SWIMWEAR', 'SIZE']] as const)(
+    '%s → sem guia (tamanho em %s), sem tocar o cache nem chamar /catalog/charts', async (dominio, atributo) => {
+      const { admin, from } = adminFake();
+      const f = fetchFake(dominio);
+      const r = await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'meninas', ['4', '6'], 'infantil');
+      expect(r).toEqual({ semGuia: atributo });
+      expect(from).not.toHaveBeenCalled();
+      expect(f.urls().every((u) => u.includes('/categories/'))).toBe(true);
+    },
+  );
 
   it.each([['SNEAKERS', 'calca'], ['PANTS', 'calcado']] as const)(
     'grade %s/%s incompatível lança antes de cache/chart', async (dominio, grade) => {

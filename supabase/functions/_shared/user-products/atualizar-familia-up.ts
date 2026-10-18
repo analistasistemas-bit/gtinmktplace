@@ -20,7 +20,7 @@ import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
-import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
+import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
@@ -238,8 +238,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     ...(familia.genero ? [{ id: 'GENDER', value_id: GENDER_VALUE[familia.genero as Genero].id }] : []),
   ];
   const temTamanho = variacoes.some((v) => !!v.tamanho?.trim());
-  let chartPromessa: Promise<ChartResolvido | null> | null = null;
-  const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
+  let chartPromessa: Promise<ChartResolvido | ChartSemGuia | null> | null = null;
+  const resolverChart = (): Promise<ChartResolvido | ChartSemGuia | null> => (chartPromessa ??= (async () => {
     const tamanhos = [...new Set(variacoes.map((v) => v.tamanho?.trim()).filter((t): t is string => !!t))];
     if (tamanhos.length === 0) return null;
     // 400: erro de cadastro determinístico — sem status, `decidirRetryPorErro` o retentaria como
@@ -273,7 +273,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       comprimento_cm: num(v.comprimento_cm), peso_gramas: num(v.peso_gramas),
     };
     const chart = v.tamanho ? await resolverChart() : null;
-    const linha = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
+    const grid = chart && 'chartId' in chart ? chart : null;
+    const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
     const atributosMesclados = mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao());
     // SIZE* vão por SKU em montarPayloadItem; se a família também os tiver em atributos_ml
     // (IA/Revisão) ou herdar do irmão, duplicariam — mesma limpeza de publicar-familia-up.ts
@@ -288,8 +289,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         gtin: v.gtin, ml_picture_id: picId, corValueId: resolverCorValueId(v.cor, valoresCor),
         // Tamanho sem linha no chart → o guard de montarPayloadItem lança "sem guia de tamanhos".
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
-        sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
-        tamanhoSemGuia: !!v.tamanho && chart === null,
+        sizeGridId: grid?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: v.tamanho && chart && 'semGuia' in chart ? chart.semGuia : null,
       }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
       undefined, dimensoes, aceitaEmptyGtin, 'plano',

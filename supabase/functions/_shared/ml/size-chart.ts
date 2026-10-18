@@ -61,7 +61,15 @@ export const DOMINIOS_CALCADO_SPECIFIC = new Set(['SANDALS_AND_CLOGS']);
 export const DOMINIOS_QUADRIL = new Set(['SHORTS', 'PANTS']);
 // Spike 056 §3/§5 (ADR-0182 D7): CLOTHING_LOTS não tem guia ("Domain MLB-CLOTHING_LOTS not
 // active"); o item plano valida sem grid, com o tamanho em CLOTHING_LOT_SIZE.
-export const DOMINIOS_SEM_GUIA = new Set(['CLOTHING_LOTS']);
+// Emenda ADR-0182 (2026-10-17): SWIMWEAR (Moda Praia, MLB430391) não tem SIZE_GRID_ID no schema;
+// /items/validate real passou com SIZE cru ("2"/"4"/"8"), GENDER Meninas e SWIMWEAR_TYPE
+// "Conjunto infantil". O mapa diz em qual atributo o tamanho do SKU vai.
+export type AtributoTamanhoSemGuia = 'CLOTHING_LOT_SIZE' | 'SIZE';
+export const ATRIBUTO_TAMANHO_SEM_GUIA: Readonly<Record<string, AtributoTamanhoSemGuia>> = {
+  CLOTHING_LOTS: 'CLOTHING_LOT_SIZE',
+  SWIMWEAR: 'SIZE',
+};
+export const DOMINIOS_SEM_GUIA = new Set(Object.keys(ATRIBUTO_TAMANHO_SEM_GUIA));
 
 // Qualquer outro domínio falha alto — a coluna exigida (ou a disponibilidade de STANDARD) não
 // foi confirmada, adivinhar aqui seria inventar payload de marketplace.
@@ -93,6 +101,11 @@ export interface LinhaChartResolvida {
 export interface ChartResolvido {
   chartId: string;
   linhaPorTamanho: ReadonlyMap<string, LinhaChartResolvida>;
+}
+
+/** Domínio sem guia de tamanhos (`DOMINIOS_SEM_GUIA`): o tamanho do SKU vai cru em `semGuia`. */
+export interface ChartSemGuia {
+  semGuia: AtributoTamanhoSemGuia;
 }
 
 /** `settings.catalog_domain` de `GET /categories/{id}` vem com o prefixo `MLB-` (ex.:
@@ -250,7 +263,7 @@ export async function lerDominioCategoria(categoriaId: string): Promise<string |
 
 /** Resolve o chart de (conexão, domínio, gênero, grade) — lê do cache (`ml_size_charts`) ou cria via
  *  `POST /catalog/charts` e persiste. Nunca dá update num chart existente (ADR-0167 Decisão 4).
- *  `null` só para domínio sem guia (`DOMINIOS_SEM_GUIA`, ADR-0182 D7): nem cache nem ML. */
+ *  Domínio sem guia (`DOMINIOS_SEM_GUIA`, ADR-0182 D7) → `{ semGuia }`: nem cache nem ML. */
 export async function garantirChart(
   admin: SupabaseClient,
   token: string,
@@ -259,7 +272,7 @@ export async function garantirChart(
   genero: Genero,
   tamanhos: readonly string[],
   grade: GradeTamanho,
-): Promise<ChartResolvido | null> {
+): Promise<ChartResolvido | ChartSemGuia> {
   const domainId = await lerDominioCategoria(categoriaId);
   if (!domainId) {
     throw new Error(`Guia de tamanhos: não foi possível ler o domínio da categoria ${categoriaId}.`);
@@ -278,7 +291,7 @@ export async function garantirChart(
   if (!dominioAceitaGrade(domainId, grade)) {
     throw new Error(`Guia de tamanhos: grade ${grade} incompatível com o domínio ${domainId} — confira a categoria do produto.`);
   }
-  if (DOMINIOS_SEM_GUIA.has(domainId)) return null;
+  if (DOMINIOS_SEM_GUIA.has(domainId)) return { semGuia: ATRIBUTO_TAMANHO_SEM_GUIA[domainId] };
 
   const { data: cached } = await admin.from('ml_size_charts')
     .select('chart_id, linhas')

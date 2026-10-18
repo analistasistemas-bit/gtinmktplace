@@ -5,6 +5,7 @@ import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
 
 // E6 (ADR-0061): o tipo é dono no contrato; importado p/ uso local e re-exportado p/ compat.
 import type { AtributoItem } from '../canais/contrato.ts';
+import type { AtributoTamanhoSemGuia } from './size-chart.ts';
 export type { AtributoItem };
 export interface PictureRef { id: string; }
 export interface VariacaoItem {
@@ -53,9 +54,10 @@ interface VariacaoInput {
    *  /items/validate real devolveu `invalid.fashion_grid.size.values` com o valor cru. Em
    *  vestuário os dois coincidem (P=P), por isso cai em `tamanho` quando ausente. */
   sizeLabel?: string | null;
-  /** ADR-0182 D7: domínio sem guia de tamanhos (CLOTHING_LOTS, `garantirChart` → null). O
-   *  tamanho vai em `CLOTHING_LOT_SIZE` (Spike 056 §5), sem SIZE/SIZE_GRID_*. */
-  tamanhoSemGuia?: boolean;
+  /** ADR-0182 D7: domínio sem guia de tamanhos (`garantirChart` → `{ semGuia }`). O tamanho vai
+   *  cru neste atributo — `CLOTHING_LOT_SIZE` (CLOTHING_LOTS, Spike 056 §5) ou `SIZE` (SWIMWEAR,
+   *  emenda 2026-10-17) — sem SIZE_GRID_*. */
+  tamanhoSemGuia?: AtributoTamanhoSemGuia | null;
   /** `value_id` da cor no dicionário da categoria, resolvido pelo caller com o schema
    *  (`_shared/cor/value-id.ts`). Ausente/null = cor fora do dicionário: vai só pelo nome. */
   corValueId?: string | null;
@@ -192,7 +194,7 @@ export function montarPayloadItem(
     // guia de tamanhos. `v.tamanho` sem grid resolvido falha LOUD: nunca publica um SIZE solto
     // que o ML vai rejeitar de qualquer forma, com uma mensagem que esconde a causa real.
     if (v.tamanho && v.tamanhoSemGuia) {
-      atributosFlat.push({ id: 'CLOTHING_LOT_SIZE', value_name: v.tamanho });
+      atributosFlat.push({ id: v.tamanhoSemGuia, value_name: v.tamanho });
     } else if (v.tamanho) {
       if (!v.sizeGridId || !v.sizeGridRowId) {
         throw new Error(

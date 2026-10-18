@@ -114,6 +114,18 @@ resto → `letras`), `not null` sem default, CHECK nas 4 grades e PK nas 4 colun
    publicar; Infantil/Calça em domínio de chart por peito falha alto (fora do superset).
 2. Retry/idempotência compara `grade_tamanho` e `genero` além do restante: divergência devolve 409.
 
+*Emenda 2026-10-17 (moda praia sem guia).* O conjunto infantil de proteção UV (família `00000043`)
+travou com `domínio BABY_SWIMWEAR não confirmado`. Medido na API real do ML:
+`MLB39961` (Bebês › Moda Praia, `BABY_SWIMWEAR`) fixa `GENDER = Bebês` e recusa "Infantil" no título
+(`invalid.title.gender`, inclusive com o título exato de um concorrente antigo). `MLB430391` (Moda
+Praia, `SWIMWEAR`) não tem `SIZE_GRID_ID` no schema, tem `SWIMWEAR_TYPE = Conjunto infantil`
+(obrigatório), aceita `GENDER = Meninas` e `SIZE` cru `2`/`4`/`8`: `/items/validate` passou (só o
+aviso de envio `me1`). Decisão do Diego: opção A, `MLB430391`. `SWIMWEAR` entra em
+`DOMINIOS_SEM_GUIA`, que vira o mapa `ATRIBUTO_TAMANHO_SEM_GUIA` (domínio → atributo do tamanho):
+`CLOTHING_LOTS → CLOTHING_LOT_SIZE`, `SWIMWEAR → SIZE`. `garantirChart` devolve `{ semGuia }` em vez
+de `null`; o SKU leva o tamanho cru no atributo indicado, sem `SIZE_GRID_*`. `BABY_SWIMWEAR` segue
+fora (falha alto).
+
 ## Consequências
 
 - Nenhuma família ou anúncio existente é alterado ou reprocessado (jaquetas, camisetas, calçados,

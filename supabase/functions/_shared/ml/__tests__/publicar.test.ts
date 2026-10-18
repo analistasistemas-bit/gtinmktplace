@@ -210,7 +210,7 @@ describe('montarPayloadItem', () => {
   // ADR-0182 D7 / Spike 056 §5: CLOTHING_LOTS valida sem grid, tamanho em CLOTHING_LOT_SIZE.
   it('tamanhoSemGuia: envia CLOTHING_LOT_SIZE e nenhum SIZE/SIZE_GRID_* (ADR-0182 D7)', () => {
     const kit = { ...familia, categoria_ml_id: 'MLB271219' };
-    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: true };
+    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: 'CLOTHING_LOT_SIZE' as const };
     const p = montarPayloadItem(kit, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
     expect(p.attributes.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '4' }]);
     const ids = p.attributes.map((a) => a.id);
@@ -219,9 +219,21 @@ describe('montarPayloadItem', () => {
     expect(ids).not.toContain('SIZE_GRID_ROW_ID');
   });
 
-  it('tamanhoSemGuia falso e sem grid continua falhando LOUD', () => {
+  // Emenda ADR-0182 (2026-10-17): SWIMWEAR não tem guia — tamanho cru em SIZE, sem SIZE_GRID_*.
+  it('tamanhoSemGuia SIZE (SWIMWEAR): envia SIZE cru e nenhum SIZE_GRID_*/CLOTHING_LOT_SIZE', () => {
+    const praia = { ...familia, categoria_ml_id: 'MLB430391' };
+    const v = { ...variacoes[0], tamanho: '6', tamanhoSemGuia: 'SIZE' as const };
+    const p = montarPayloadItem(praia, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(p.attributes.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: '6' }]);
+    const ids = p.attributes.map((a) => a.id);
+    expect(ids).not.toContain('SIZE_GRID_ID');
+    expect(ids).not.toContain('SIZE_GRID_ROW_ID');
+    expect(ids).not.toContain('CLOTHING_LOT_SIZE');
+  });
+
+  it('tamanhoSemGuia ausente e sem grid continua falhando LOUD', () => {
     const kit = { ...familia, categoria_ml_id: 'MLB271219' };
-    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: false };
+    const v = { ...variacoes[0], tamanho: '4', tamanhoSemGuia: null };
     expect(() => montarPayloadItem(kit, [v], capaPictureId, null, null, undefined, null, undefined, 'plano'))
       .toThrow(/sem guia de tamanhos resolvida/);
   });

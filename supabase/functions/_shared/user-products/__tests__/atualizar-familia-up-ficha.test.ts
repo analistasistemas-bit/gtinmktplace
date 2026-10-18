@@ -221,7 +221,7 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
 
   // ADR-0182 D7 / Review Focus 7: CLOTHING_LOT_SIZE é por SKU — o do irmão ('4') e o de
   // atributos_ml nunca vazam; o SKU novo sai com exatamente um, o seu ('6').
-  it('chart null (CLOTHING_LOTS): SKU novo sai com GENDER infantil e só o SEU CLOTHING_LOT_SIZE', async () => {
+  it('sem guia (CLOTHING_LOTS): SKU novo sai com GENDER infantil e só o SEU CLOTHING_LOT_SIZE', async () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
       ...ATRIBUTOS_DO_IRMAO,
       { id: 'GENDER', value_id: '339667', value_name: 'Meninos' },
@@ -234,7 +234,7 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
         { codigo: 'A', cor: 'Azul-petróleo', tamanho: '4', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
         { codigo: 'NOVA', cor: 'Preto', tamanho: '6', estoque: 40, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
       ] as never,
-      garantirChartFn: vi.fn(async () => null) as never,
+      garantirChartFn: vi.fn(async () => ({ semGuia: 'CLOTHING_LOT_SIZE' })) as never,
     }));
     const attrs = atributosEnviados();
     expect(attrs.filter((a) => a.id === 'CLOTHING_LOT_SIZE')).toEqual([{ id: 'CLOTHING_LOT_SIZE', value_name: '6' }]);
