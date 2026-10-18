@@ -125,7 +125,7 @@
 Regras (o algoritmo que os testes fixam):
 1. `org = lerMarcaOrg`; `!org.marcaPropria` → 400 (nada é lido do ML).
 2. `listarFilhos` = `anuncios_externos_itens` não retirados com `item_externo_id`, do `anuncios_externos` (org, canal `mercado_livre`, `codigo_pai`). Vazio → 400.
-3. Lê **todos** os itens antes de qualquer PUT; `familyId` diferente entre eles → para (`motivo: 'family_id divergente antes'`), nenhum PUT.
+3. Lê **todos** os itens antes de qualquer PUT; algum `familyId` **ausente/null** ou diferente entre eles → para (`motivo: 'family_id ausente ou divergente antes'`), nenhum PUT. Na releitura, `familyId` null também conta como divergência.
 4. Por SKU, em ordem: "certo" = BRAND com `value_name` igual (trim, sem caixa) a `marcaPadrao` **e sem `value_id`** de outra marca, e MANUFACTURER ausente ou igual. Certo → `jaCertos`. Senão, se `dry_run` → lista em `corrigidos` sem PUT; senão `putAtributos(itemId, [{BRAND}, ...(MANUFACTURER presente ? [{MANUFACTURER}] : [])])`, relê e exige BRAND certo **e** `familyId` igual ao inicial **e** `status` igual ao inicial; falhou qualquer um → `parouEm` e **retorna sem tocar os SKUs seguintes** (status 200 com corpo, sem retry do QStash).
 5. Erro do PUT (ex.: ML recusa item pausado) → `parouEm` com a mensagem do ML; 200 (não retenta sozinho).
 6. Erro de leitura (rede) antes de qualquer PUT → 500 (QStash retenta; idempotente pela regra 4).
@@ -137,10 +137,10 @@ Regras (o algoritmo que os testes fixam):
   - BRAND `{value_name:'Zaven Store', value_id:'123'}` → divergente, recebe PUT (Review Focus 3).
   - item com MANUFACTURER `FEIRA` → PUT inclui `{id:'MANUFACTURER',value_name:'Zaven'}`.
   - releitura com `familyId` diferente após o 1º PUT → `parouEm.sku` = 1º SKU, 2º SKU sem PUT (Review Focus 4); idem `status` `paused`→`active`.
-  - `familyId` divergente antes → zero PUT.
+  - `familyId` divergente antes → zero PUT; `familyId` null em qualquer item antes → zero PUT; `familyId` null na releitura → `parouEm`.
   - `dry_run: true` → zero PUT, `corrigidos` listados.
   - Run: `pnpm test -- sincronizar-marca-ml` → FAIL.
-- [ ] **Step 2: Implementar** `processar.ts` + `index.ts` (portas reais: `resolverConexao` + `getValidAccessTokenConexao`; `lerItem` = `GET /items/{id}?attributes=id,status,attributes` + `family_id` do item — conferir campo no retorno real com `scripts/ops/ml-get.ts` antes; `putAtributos` = `PUT /items/{id}` body `{ attributes }`).
+- [ ] **Step 2: Implementar** `processar.ts` + `index.ts` (portas reais: `resolverConexao` + `getValidAccessTokenConexao`; `lerItem` = `GET /items/{id}?attributes=id,status,family_id,attributes` (mesmo campo pedido em `_shared/ml/buscar-item.ts:120`; conferir no retorno real com `scripts/ops/ml-get.ts` antes); `putAtributos` = `PUT /items/{id}` body `{ attributes }`).
 - [ ] **Step 3:** `pnpm test -- sincronizar-marca-ml` → PASS; `pnpm preflight:static` → OK.
 - [ ] **Step 4: Commit** `feat(marca-propria): worker sincronizar-marca-ml (só BRAND, para na 1ª divergência)`.
 
@@ -165,6 +165,7 @@ Ordem: `00000064` sozinho; depois `00000105`, `00000112`, `00000119`, `00000043`
 - [ ] **Step 1:** publicar no QStash `{ org_id: Zaven, codigo_pai: '00000064', dry_run: true }` para `sincronizar-marca-ml` → conferir `corrigidos` = 4, `parouEm` ausente.
 - [ ] **Step 2:** mesmo job com `dry_run: false` → esperado `corrigidos` = 4, sem `parouEm`.
 - [ ] **Step 3:** conferência independente com `scripts/ops/ml-get.ts` nos 4: BRAND=Zaven, `status=paused`, 1 `family_id`. Repetir ~30 min depois.
+- [ ] **Step 4a — qualquer SKU que não esteja `paused` ao fim (inclusive reativação inesperada após PUT, `parouEm` por status):** pausar **pelo app** imediatamente e confirmar `paused` por SKU via `ml-get.ts` antes de encerrar ou reportar; reconferir após 30 min.
 - [ ] **Step 4 — se `parouEm` por item pausado:** reativar **pelo app** (Publicados → Reativar, ADR-0060), rodar o job de novo, e **pausar de novo pelo app em qualquer desfecho** (sucesso ou erro); confirmar `paused` por SKU via `ml-get.ts`, e de novo após 30 min. Qualquer outro `parouEm` (family_id, status, recusa) → parar e reportar ao Diego. **Nunca republicar.**
 - [ ] **Step 5:** OK do `00000064` → repetir Steps 1–4 nas outras 6, uma por vez.
 - [ ] **Step 6:** relatório ao Diego: 109 SKUs com BRAND=Zaven, 7 `family_id` intactos, todos `paused`.
