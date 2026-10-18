@@ -211,8 +211,9 @@ Listas exatas: `_shared/ml/size-chart.ts`. Cada domínio passou por `scripts/ops
 ficou fora.
 
 **Gênero × categoria (revisão Codex).** A grade valida gênero × grade, não gênero × domínio (cueca
-não aceita Feminino). `garantirChart` lê o `GENDER` do schema da categoria e recusa, com mensagem,
-o gênero que ela não lista. Schema indisponível ou sem `GENDER` não bloqueia: o ML segue como juiz.
+não aceita Feminino). Antes de criar chart, `garantirChart` lê o `GENDER` do schema da categoria e
+recusa (400, sem retry) o gênero que ela não lista. Chart em cache e domínio sem guia não passam
+pelo veto (família já publicada segue intocada); schema indisponível ou sem `GENDER` não bloqueia.
 
 **Fora, de propósito:** domínios de bebê (`BABY_*`, `BABIES_FOOTWEAR`; tamanhos de bebê não existem
 nas grades), `BABY_SWIMWEAR` (emenda 17/10), "Outros" (`CLOTHING`, `SPORTSWEAR`, genéricos), e
