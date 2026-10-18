@@ -115,6 +115,16 @@ a mudança é **por organização**, não global.
   (como hoje). Nada novo enviado onde a categoria não pede.
 - **`mercado-livre.ts:312`** só recebe `a.marca` já decidido pelo chamador — coberto pelos chamadores.
 
+## Emenda 2026-10-18 (revisão Codex do plano + OK do Diego)
+
+- **Gatilho dos 7 trocado:** nada de planilha/"Atualizar tudo" — os 7 têm grade e o `ingest-lote`
+  perde `tamanho`/`genero`. Correção por worker novo `sincronizar-marca-ml` (aprovado pelo Diego:
+  "pode criar, mas não republique"): PUT só de BRAND (+MANUFACTURER se existir) por SKU, relê e para
+  na 1ª divergência de marca/`family_id`/status; idempotente; `dry_run`.
+- **Política imposta, não só decidida:** `forcarMarcaPropria` também nos caminhos que preservam/copiam
+  atributos (edição do operador, kit, herança do irmão UP), senão o fornecedor volta.
+- **Migration:** só reescreve linhas que têm BRAND/MANUFACTURER (`[]` quebraria o NOT NULL).
+
 ## Verificação
 
 - Teste unitário da função de decisão (com/sem `marca_propria`, `marca_padrao` vazio → erro) e dos
