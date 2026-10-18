@@ -45,7 +45,7 @@ grade (109 SKUs, 0 vendas), pausados pelo Diego de propósito, com imagens coloc
   falha parcial pode deixar SKU com marca antiga sem o app perceber. Reparo: rodar
   `sincronizar-marca-ml` na família.
 - **Medido em produção (00000064, 18/10):** trocar BRAND faz o ML reagrupar a família UP **inteira**
-  num `family_id` novo, minutos depois do PUT (a releitura imediata ainda mostra o antigo); MLBU,
+  num `family_id` novo, de segundos (00000043: ~15 s, no meio da rodada) a minutos depois do PUT; MLBU,
   fotos e status não mudam. O worker grava o `family_id` vigente no vínculo local
   (`anuncios_externos_itens`) a cada rodada em que lê os SKUs unificados — rodá-lo de novo depois da
   convergência alinha o banco. Sem isso, a próxima cor nova acusaria "família desagrupada".

@@ -64,23 +64,43 @@ export async function processarSincronizacaoMarca(
   }
 
   const r: ResultadoMarca = { dryRun: !!job.dry_run, corrigidos: [], jaCertos: [] };
-  const familyIds = new Set(lidos.map((l) => l.familyId));
-  if (familyIds.has(null) || familyIds.size !== 1) {
+  // Trocar BRAND faz o ML reagrupar os SKUs corrigidos numa família NOVA, segundos depois do PUT
+  // (00000064 e 00000043, 18/10) — inclusive no meio da rodada. A transição esperada tem no máximo
+  // 1 família antiga (SKUs com o fornecedor) e 1 nova (SKUs já com a marca da org). Id ausente,
+  // segunda família de qualquer lado, ou família fora dessas duas = algo que não entendemos: para.
+  const certo = lidos.map((l) => atributosACorrigir(l, marca).length === 0);
+  const famCertos = new Set(lidos.filter((_, i) => certo[i]).map((l) => l.familyId));
+  const famPendentes = new Set(lidos.filter((_, i) => !certo[i]).map((l) => l.familyId));
+  if (famCertos.has(null) || famPendentes.has(null) || famCertos.size > 1 || famPendentes.size > 1) {
     return { status: 200, body: { ...r, parouEm: { sku: null, motivo: 'family_id ausente ou divergente antes de qualquer PUT' } } };
   }
-  const familyId = lidos[0].familyId!;
-  r.familyId = familyId;
-  // Trocar BRAND faz o ML reagrupar a família UP inteira num family_id NOVO, minutos depois do PUT
-  // (medido no 00000064, 18/10 — a releitura logo após o PUT ainda mostra o antigo). Toda rodada
-  // que lê os SKUs unificados grava o id vigente no vínculo local; rodar de novo depois da
-  // convergência fecha o ciclo. Sem isso, a próxima cor nova acusaria "família desagrupada".
-  if (!r.dryRun) {
-    try {
-      await deps.portas.gravarFamilyIdLocal(job.org_id, filhos.map((f) => f.itemId), familyId);
-    } catch (e) {
-      return { status: 500, body: { erro: `gravar family_id local falhou: ${(e as Error).message}` } };
+  const familiaAntiga = [...famPendentes][0] as string | undefined;
+  let familiaNova = [...famCertos][0] as string | undefined;
+  if (familiaNova === familiaAntiga) familiaNova = undefined;
+
+  // Família unificada: grava o id vigente no vínculo local — rodar de novo depois da convergência
+  // fecha o ciclo. Sem isso, a próxima cor nova acusaria "família desagrupada".
+  const unicas = new Set([...famCertos, ...famPendentes]);
+  if (unicas.size === 1) {
+    const familyId = [...unicas][0]!;
+    r.familyId = familyId;
+    if (!r.dryRun) {
+      try {
+        await deps.portas.gravarFamilyIdLocal(job.org_id, filhos.map((f) => f.itemId), familyId);
+      } catch (e) {
+        return { status: 500, body: { erro: `gravar family_id local falhou: ${(e as Error).message}` } };
+      }
     }
   }
+
+  // Depois do PUT o SKU fica na família em que estava ou passa para a nova; a 1ª nova vista vira a
+  // referência das seguintes.
+  const familiaInesperada = (antes: string | null, depois: string | null): boolean => {
+    if (depois == null) return true;
+    if (depois === antes || depois === familiaNova) return false;
+    if (familiaNova === undefined) { familiaNova = depois; return false; }
+    return true;
+  };
 
   for (let i = 0; i < filhos.length; i++) {
     const { sku, itemId } = filhos[i];
@@ -101,7 +121,7 @@ export async function processarSincronizacaoMarca(
       return { status: 200, body: { ...r, parouEm: { sku, motivo: `releitura falhou após o PUT: ${(e as Error).message}` } } };
     }
     const motivo = atributosACorrigir(depois, marca).length > 0 ? 'marca não ficou certa após o PUT'
-      : depois.familyId !== familyId ? `family_id mudou (${familyId} → ${depois.familyId})`
+      : familiaInesperada(antes.familyId, depois.familyId) ? `family_id inesperado (${antes.familyId} → ${depois.familyId})`
       : depois.status !== antes.status ? `status mudou (${antes.status} → ${depois.status})`
       : null;
     if (motivo) return { status: 200, body: { ...r, parouEm: { sku, motivo } } };

@@ -1284,8 +1284,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
 ### Marca própria (ADR-0186)
 - **sincronizar-marca-ml** *(worker QStash, disparo manual `{ org_id, codigo_pai, dry_run? }`)* — corrige
   BRAND (e MANUFACTURER, se o item já o tiver) dos SKUs User Products já publicados de org com
-  `marca_propria`, sem republicar. Lê todos os filhos antes; `family_id` ausente/divergente → nenhum
-  PUT. Um PUT só de `attributes` por SKU, relê e para na 1ª divergência (marca, `family_id`, status) —
+  `marca_propria`, sem republicar. Lê todos os filhos antes; aceita no máximo 1 `family_id` entre os SKUs
+  ainda com o fornecedor e 1 entre os já certos (o ML reagrupa os corrigidos numa família nova segundos
+  depois do PUT, inclusive no meio da rodada); id ausente ou 3ª família → nenhum PUT. Um PUT só de `attributes` por SKU, relê e para na 1ª divergência (marca, `family_id`, status) —
   200 com `parouEm`, sem retry. Erro de leitura antes de escrever = 500 (QStash retenta). Org sem
   marca própria = 400. `dry_run` só lista o que corrigiria. Fora do `dry_run`, SKUs unificados num
   `family_id` → grava esse id em `anuncios_externos_itens` (o ML reagrupa a família após trocar BRAND;

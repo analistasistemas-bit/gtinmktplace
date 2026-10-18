@@ -87,16 +87,6 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     expect(f.puts[0].attrs).toEqual([{ id: 'BRAND', value_name: 'Zaven' }, { id: 'MANUFACTURER', value_name: 'Zaven' }]);
   });
 
-  it('family_id mudou depois do PUT → para no 1º SKU, o 2º não é tocado', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
-      aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-2' }),
-    });
-    const r = await processarSincronizacaoMarca(f.deps, JOB);
-    expect(f.puts.map((p) => p.itemId)).toEqual(['A']);
-    expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ parouEm: { sku: 'SKU1' } });
-  });
-
   it('status mudou depois do PUT (paused → active) → para', async () => {
     const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
       aposPut: (_id, atual) => ({ ...atual, status: 'active' }),
@@ -167,5 +157,55 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     const f = fake({ A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }), B: item({ value_name: 'Zaven' }) });
     await processarSincronizacaoMarca(f.deps, JOB);
     expect(f.familyIdsGravados).toEqual([]);
+  });
+
+  // Medido no 00000043 (18/10, 20 SKUs): o ML reagrupa os SKUs já corrigidos num family_id novo
+  // ~15 s depois — DURANTE a rodada. A divisão é a transição esperada: 1 família antiga (fornecedor)
+  // e 1 nova (marca da org). Qualquer terceira família, ou id ausente, continua parando tudo.
+  it('reagrupamento durante a rodada: SKU corrigido que aparece numa família nova não para a rodada', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+      aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-NOVA' }),
+    });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts.map((p) => p.itemId)).toEqual(['A', 'B', 'C']);
+    expect(r.body).toMatchObject({ corrigidos: ['SKU1', 'SKU2', 'SKU3'] });
+    expect(r.body).not.toHaveProperty('parouEm');
+  });
+
+  it('segunda família nova diferente da primeira → para', async () => {
+    let n = 0;
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+      aposPut: (_id, atual) => ({ ...atual, familyId: `FAM-NOVA-${++n}` }),
+    });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts).toHaveLength(2);
+    expect(r.body).toMatchObject({ parouEm: { sku: 'SKU2' } });
+  });
+
+  it('retomada com a família dividida pela marca (certos na nova, pendentes na antiga) → corrige os pendentes', async () => {
+    const f = fake({
+      A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }),
+      B: item({ value_name: 'FEIRA' }),
+    }, ZAVEN, { aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-NOVA' }) });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts.map((p) => p.itemId)).toEqual(['B']);
+    expect(r.body).toMatchObject({ corrigidos: ['SKU2'], jaCertos: ['SKU1'] });
+    expect(f.familyIdsGravados).toEqual([]); // ainda não unificada no início da rodada
+  });
+
+  it('pendentes espalhados em duas famílias antigas → nenhum PUT', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }, { familyId: 'FAM-9' }) });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts).toHaveLength(0);
+    expect(r.body).toMatchObject({ parouEm: { sku: null } });
+  });
+
+  it('certos em duas famílias → nenhum PUT', async () => {
+    const f = fake({
+      A: item({ value_name: 'Zaven' }, { familyId: 'FAM-X' }), B: item({ value_name: 'Zaven' }, { familyId: 'FAM-Y' }),
+      C: item({ value_name: 'FEIRA' }),
+    });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts).toHaveLength(0);
   });
 });
