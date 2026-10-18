@@ -540,6 +540,18 @@ describe('Publicados', () => {
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Remover' })).toBeDisabled();
     });
+
+    it('suporte read: Remover publicação incompleta também desabilitado', () => {
+      useProfileMock.mockReturnValue({ isAdmin: true });
+      sessao('read');
+      usePublicadosMock.mockReturnValue({ data: [itemBase({ publicacaoIncompleta: true })], isLoading: false, error: null });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('button', { name: 'Remover publicação incompleta' })).toBeDisabled();
+    });
   });
 
   // ADR-0151 D-2/D-10/D-12: gatilho "Criar kit" — desabilitado + tooltip, nunca escondido.

@@ -718,6 +718,8 @@ interface LinhaIncompletaProps {
 function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompletaProps) {
   // Confirmação controlada: segura aberta mostrando o sinal até a resposta do ML chegar.
   const [removerAberto, setRemoverAberto] = useState(false);
+  // Suporte só-leitura: a edge recusa (403) qualquer escrita.
+  const somenteLeitura = useSupportStore((s) => s.context?.scope === 'read');
   return (
     <TableRow className="bg-destructive/5 hover:bg-destructive/10">
       <TableCell />
@@ -766,7 +768,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                 aria-label="Remover publicação incompleta"
                 title="Encerra no Mercado Livre (sem venda) e remove o vínculo"
-                disabled={removendo}
+                disabled={removendo || somenteLeitura}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -787,7 +789,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                     de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
                     garante o fechamento mesmo se o handler rejeitar. */}
                 <AlertDialogAction
-                  disabled={removendo}
+                  disabled={removendo || somenteLeitura}
                   onClick={async (e) => {
                     e.preventDefault();
                     try {
