@@ -48,6 +48,14 @@ a mudança é **por organização**, não global.
 
 ## Decisões do Diego
 
+- **Proibido republicar** (remover + publicar de novo) qualquer um dos 7, em qualquer cenário de falha.
+- Se o ML exigir item ativo para aceitar a troca: pode despausar pelo app, atualizar, e **pausar de
+  novo** pelo app logo em seguida (conferir `paused` no fim).
+- Nada pode sobrescrever as fotos que o Diego colocou direto no ML. Conferido: o Atualizar UP não envia
+  `pictures`; a descrição só é reenviada se a lista de cores mudar (`houveMudanca`). Guard do rollout:
+  antes de atualizar, conferir que os SKUs desejados = filhos atuais (nenhuma cor nova/removida) —
+  divergiu → não atualizar, voltar ao Diego.
+
 - Opção vale **só para a Zaven**, ligada **direto no banco**, sem UI.
 - Os anúncios já publicados entram no mesmo trabalho ("ao finalizar, já ajuste nos anúncios").
 
@@ -75,7 +83,8 @@ a mudança é **por organização**, não global.
   jsonb), depois rodar **Atualizar** pelo app.
 - **Ordem de rollout dos 7:** primeiro só `00000064` (4 SKUs). Conferir via `ml-get.ts`: BRAND =
   Zaven nos 4 e `family_id` único. Só então as outras 6. Se o ML recusar a troca ou desagrupar:
-  parar, voltar ao Diego e republicar (remover + publicar de novo — sem vendas, custo baixo).
+  **parar e voltar ao Diego. NUNCA republicar** (decisão do Diego, 18/10: há imagens colocadas direto
+  no ML que se perderiam).
 
 ## Respostas do builder check (minhas, conferidas no código/banco)
 
