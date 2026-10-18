@@ -216,6 +216,17 @@ function validarTextoLivre(bruto: string, input: InputAtributos): string | null 
   return null;
 }
 
+// Caso real 2026-10-17 (MLB430391): a IA omitiu SWIMWEAR_TYPE mesmo com a sugestão "Conjunto
+// infantil" literal no título. Texto-livre com sugestões: se EXATAMENTE uma sugestão consta no
+// texto (mesma regra de ouro de validarTextoLivre), preenche sem IA. 2+ casando → a IA decide.
+function preencherSugestaoLiteral(input: InputAtributos, alvos: AtributoAlvo[]): AtributoML[] {
+  return alvos.flatMap((a) => {
+    if (a.tipo !== 'texto' || a.valores.length === 0) return [];
+    const casam = a.valores.filter((v) => validarTextoLivre(v.nome, input));
+    return casam.length === 1 ? [{ id: a.id, value_name: casam[0].nome }] : [];
+  });
+}
+
 /**
  * Valida a resposta da IA. Closed-set: só aceita value_id/value_name que casa com a lista.
  * Numérico: só número (+ unidade permitida) que também conste no texto do produto. Texto-livre:
@@ -269,7 +280,7 @@ export async function preencherAtributosClosedSet(
   llm: (input: InputAtributos, alvos: AtributoAlvo[]) => Promise<Record<string, string>>,
 ): Promise<AtributoML[]> {
   const alvos = atributosAlvo(schema, base);
-  const obvios = preencherMedidasObvias(input, alvos);
+  const obvios = [...preencherMedidasObvias(input, alvos), ...preencherSugestaoLiteral(input, alvos)];
   const baseComObvios = [...base, ...obvios];
   const restantes = atributosAlvo(schema, baseComObvios);
   if (restantes.length === 0) return baseComObvios;

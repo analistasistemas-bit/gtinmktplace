@@ -169,3 +169,17 @@ inteiro, o gate do kit sai de `["Formato da fórmula infantil"]` para `[]`.
 Dívida nomeada (adiada de propósito): quando a informação **não** está no título nem na descrição, o kit
 continua sem saída — o diálogo de criar kit não tem o editor "Complete para publicar" que a Revisão tem
 (ADR-0151 D-3/D-4). Saída de hoje: corrigir o título da base, ou escolher outra categoria.
+
+## Adendo (2026-10-17) — sugestão literal única preenche sem IA
+
+Caso real: conjunto infantil UV (família `00000043`) na categoria Moda Praia `MLB430391`. O obrigatório
+`SWIMWEAR_TYPE` (`value_type=string`, com a sugestão "Conjunto infantil") ficou faltante: com o schema real e
+o título "Conjunto Infantil Proteção Solar UV", o `gpt-4.1-mini` devolveu `{}`, mesmo com a sugestão
+literalmente no título. O operador teria que digitar à mão.
+
+Decisão: `preencherSugestaoLiteral` (`_shared/ai/atributos-llm-core.ts`) roda antes da IA, junto com
+`preencherMedidasObvias`. Para atributo texto-livre com sugestões, se **exatamente uma** sugestão consta no
+título/descrição (mesmo casamento por tokens contíguos de `validarTextoLivre`, então não é invenção), grava
+o nome da sugestão. Se 2+ casam, quem decide é a IA, como antes. Fragmento de palavra não conta ("Shorts" não
+casa com "Short"). Vale para todo caminho que usa `preencherAtributosClosedSet` (`process-familia`,
+`definir-categoria-familia`).

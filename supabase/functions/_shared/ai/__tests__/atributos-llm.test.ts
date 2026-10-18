@@ -322,6 +322,28 @@ describe('preencherAtributosClosedSet', () => {
     const r = await preencherAtributosClosedSet(schema, [], { nome: 'Barbante Anne 400g' }, async () => ({ LINE: 'Marca Fantasma' }));
     expect(r).toEqual([]);
   });
+
+  // Caso real 2026-10-17 (00000043, MLB430391): gpt-4.1-mini devolveu {} para SWIMWEAR_TYPE com
+  // "Conjunto infantil" sugerido E literal no título — o obrigatório travava a Revisão.
+  const SWIMWEAR_TYPE = A({
+    id: 'SWIMWEAR_TYPE', nome: 'Tipo de traje de banho', required: true,
+    valores: [{ id: '9891489', nome: 'Sunga' }, { id: '9891490', nome: 'Short' }, { id: '74211086', nome: 'Conjunto infantil' }],
+  });
+  it('texto com sugestão literal única no título: preenche sem depender da IA', async () => {
+    let alvosIA: string[] = [];
+    const r = await preencherAtributosClosedSet([SWIMWEAR_TYPE], [], { nome: 'Conjunto Infantil Proteção Solar UV' },
+      async (_i, alvos) => { alvosIA = alvos.map((a) => a.id); return {}; });
+    expect(r).toEqual([{ id: 'SWIMWEAR_TYPE', value_name: 'Conjunto infantil' }]);
+    expect(alvosIA).not.toContain('SWIMWEAR_TYPE');
+  });
+  it('texto com 2+ sugestões literais no título: não escolhe sozinho, fica com a IA', async () => {
+    const r = await preencherAtributosClosedSet([SWIMWEAR_TYPE], [], { nome: 'Kit Sunga e Short Praia' }, async () => ({}));
+    expect(r).toEqual([]);
+  });
+  it('sugestão só como fragmento de palavra não conta ("Shorts" ≠ "Short")', async () => {
+    const r = await preencherAtributosClosedSet([SWIMWEAR_TYPE], [], { nome: 'Shorts Praia' }, async () => ({}));
+    expect(r).toEqual([]);
+  });
 });
 
 describe('multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)', () => {
