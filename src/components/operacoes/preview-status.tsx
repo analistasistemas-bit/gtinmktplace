@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, type RecusaItem } from '@/hooks/useOperacoes';
 import type { AcaoStatus } from '@/lib/operacoes';
 import { formatarNomeProduto } from '@/lib/texto';
+import { MAX_ITENS } from '../../../supabase/functions/_shared/operacoes/validar.ts';
 
 interface Props {
   acao: AcaoStatus;
@@ -23,6 +24,8 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
   const verbo = acao === 'pausar' ? 'Pausar' : 'Reativar';
   const rotulo = `${verbo} ${itens.length} anúncio${itens.length === 1 ? '' : 's'}`;
 
+  // Família UP vira um item por SKU: a seleção pode passar do teto que o servidor recusa inteiro.
+  const excedeu = itens.length > MAX_ITENS;
   const [recusas, setRecusas] = useState<RecusaItem[]>([]);
   const tituloDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.titulo ?? id;
   const executar = async () => {
@@ -49,6 +52,11 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
         {foraDoLote.map((f) => (
           <p key={f.motivo} className="text-sm text-muted-foreground">{f.quantidade} fora do lote: {f.motivo}</p>
         ))}
+        {excedeu && (
+          <p className="text-sm text-destructive">
+            São {itens.length} anúncios (cada SKU de User Products conta um) — o limite é {MAX_ITENS} por operação. Selecione menos produtos.
+          </p>
+        )}
         {recusas.length > 0 && (
           <ul className="space-y-1 rounded border border-destructive/40 bg-destructive/5 p-2 text-sm" aria-label="Anúncios recusados">
             {recusas.map((r) => <li key={r.ml_item_id}>{tituloDe(r.ml_item_id)} ({r.ml_item_id}): {r.motivo}</li>)}
@@ -66,7 +74,7 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
         <DialogFooter>
           <Button variant="ghost" onClick={onFechar}>Cancelar</Button>
           {podeExecutar
-            ? <Button onClick={executar} disabled={criar.isPending || itens.length === 0}>{rotulo}</Button>
+            ? <Button onClick={executar} disabled={criar.isPending || itens.length === 0 || excedeu}>{rotulo}</Button>
             : <p className="text-sm text-muted-foreground">Só administradores executam.</p>}
         </DialogFooter>
       </DialogContent>

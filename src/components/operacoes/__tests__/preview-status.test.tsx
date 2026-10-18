@@ -45,6 +45,12 @@ describe('PreviewStatus', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Pausar 2 anúncios' }));
     expect(await screen.findByText(/Toalha Verde \(MLB2\): O anúncio não é desta organização/)).toBeInTheDocument();
   });
+  it('acima do teto do servidor (500) avisa e não executa — 16 famílias UP de 32 SKUs = 512', () => {
+    const muitos = Array.from({ length: 512 }, (_, i) => ({ ml_item_id: `MLB${i}`, titulo: 'Short' }));
+    render(<PreviewStatus acao="pausar" itens={muitos} foraDoLote={[]} origemId={null} aberto onFechar={() => {}} onCriada={() => {}} />);
+    expect(screen.getByText(/o limite é 500 por operação/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pausar 512 anúncios' })).toBeDisabled();
+  });
   it('membro comum vê o preview mas não executa', () => {
     vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
     render(<PreviewStatus acao="pausar" itens={itens} foraDoLote={[]} origemId={null} aberto onFechar={() => {}} onCriada={() => {}} />);

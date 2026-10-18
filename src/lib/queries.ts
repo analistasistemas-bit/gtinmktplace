@@ -218,6 +218,7 @@ async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<
 
 async function fetchItensAtivosUP(
   codigosPai: string[],
+  { propagarErro = false }: { propagarErro?: boolean } = {},
 ): Promise<Map<string, { sku: string; itemId: string }[]>> {
   const porCodigo = new Map<string, { sku: string; itemId: string }[]>();
   if (codigosPai.length === 0) return porCodigo;
@@ -244,7 +245,10 @@ async function fetchItensAtivosUP(
       .not('item_externo_id', 'is', null)
       .order('id')
       .range(de, ate));
-  } catch {
+  } catch (err) {
+    // Publicados não pode degradar: sem os SKUs, a linha UP parece Legacy e Pausar/Reajustar
+    // atingem só o MLB principal (incidente Zaven 18/10).
+    if (propagarErro) throw err;
     return porCodigo;
   }
   const codigoPorRaiz = new Map<string, string>();
@@ -1130,7 +1134,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   // ADR-0161: quais produtos estão migrando para preço por variação. Durante a migração o ML recusa
   // qualquer alteração no anúncio, então a tela desabilita migrar/pausar/reativar/remover — as edge
   // functions também recusam (J13), mas deixar o botão clicável só entregaria um erro evitável.
-  const [anunciosPorPai, itensUp] = await Promise.all([fetchAnunciosPorCodigoPai(codigosPai), fetchItensAtivosUP(codigosPai)]);
+  const [anunciosPorPai, itensUp] = await Promise.all([fetchAnunciosPorCodigoPai(codigosPai), fetchItensAtivosUP(codigosPai, { propagarErro: true })]);
   const paisMigrando = new Set(
     [...anunciosPorPai.entries()]
       .filter(([, lista]) => lista.some(

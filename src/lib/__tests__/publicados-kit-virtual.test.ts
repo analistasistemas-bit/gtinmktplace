@@ -16,6 +16,7 @@ function fakeChain(resultado: unknown) {
     eq: () => chain,
     in: () => chain,
     order: () => chain,
+    range: () => chain,
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
   };
   return chain;
