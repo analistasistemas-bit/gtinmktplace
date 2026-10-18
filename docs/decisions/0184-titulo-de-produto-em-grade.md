@@ -81,3 +81,17 @@ Para os demais, a saída é idêntica à anterior.
 - **Partição de split** (`titulo-particao`) segue o título padrão, porque não recebe o sinal de grade.
 - **Alcance:** vale para famílias processadas ou regeneradas depois do deploy. Este ADR não
   reescreve anúncios já publicados.
+
+## Emenda (2026-10-18): concordância sempre do código e percentual órfão
+
+Família real `00000069` (camisa, masculino) saiu "Camisa **Masculino** Algodão Egípcio **90% 10%**
+Elastano". Duas falhas da regra original:
+
+1. **Concordância.** A IA devolveu "Masculino", que está na lista do gênero, e o fallback só corria
+   para valor fora da lista. Agora, em gênero adulto (masculino/feminino), o código sempre decide a
+   forma pela 1ª palavra da peça; "Plus Size" da IA é preservado. Exceções da regra do "a" final:
+   masculinas terminadas em "a"/"ã" (`pijama`, `sutiã`, `cardigã`) e femininas sem "a" (`legging`,
+   `lingerie`, `polo`). Infantil e Unissex seguem como antes.
+2. **Percentual órfão.** A deduplicação tirou "Algodão" do material "90% Algodão 10% Elastano"
+   (já estava na característica) e deixou "90%" solto. Agora um percentual imediatamente antes da
+   palavra removida sai junto: "Camisa Masculina Algodão Egípcio 10% Elastano".

@@ -110,6 +110,38 @@ describe('limpeza', () => {
   });
 });
 
+// Família real 00000069 (camisa Zaven, 18/10): a IA devolveu "Masculino" (está na lista) e o
+// material "90% Algodão 10% Elastano" perdeu "Algodão" para a característica → "90% 10% Elastano".
+describe('emenda 2026-10-18 — concordância e percentual órfão', () => {
+  const CAMISA = {
+    nomePai: 'Camisa de Algodão Egípcio Premium com Elastano',
+    descricaoPai: 'Camisa de Algodão Egípcio Premium com Elastano\n\nComposição: 90% Algodão e 10% Elastano',
+  };
+
+  it('a concordância é do código mesmo quando a IA escolhe uma forma da lista', () => {
+    expect(titulo({
+      produto: 'Camisa', publico: 'Masculino', caracteristica: 'Algodão Egípcio', material: '90% Algodão 10% Elastano',
+    }, CAMISA)).toBe('Camisa Masculina Algodão Egípcio 10% Elastano');
+    expect(titulo({ produto: 'Short', publico: 'Masculina' })).toBe('Short Masculino');
+  });
+
+  it.each([
+    ['Pijama', 'masculino', 'Pijama Masculino'], ['Sutiã', 'feminino', 'Sutiã Feminino'],
+    ['Cardigã', 'feminino', 'Cardigã Feminino'], ['Legging', 'feminino', 'Legging Feminina'],
+    ['Lingerie', 'feminino', 'Lingerie Feminina'], ['Polo', 'masculino', 'Polo Masculina'],
+  ])('exceção do "a" final: %s (%s) → %s', (produto, genero, esperado) => {
+    expect(titulo({ produto, publico: genero === 'masculino' ? 'Masculina' : 'Feminina' }, {
+      nomePai: produto, descricaoPai: '', genero,
+    })).toBe(esperado);
+  });
+
+  it('Plus Size segue junto da forma corrigida', () => {
+    expect(titulo({ produto: 'Calça', publico: 'Feminino Plus Size' }, {
+      nomePai: 'Calça Feminina', descricaoPai: 'Modelo plus size.', genero: 'feminino',
+    })).toBe('Calça Feminina Plus Size');
+  });
+});
+
 describe('cor e kit', () => {
   it('cor única entra depois do material; várias cores não; tamanho nunca', () => {
     expect(titulo({ produto: 'Short', publico: 'Masculino', material: 'Linho' }, { cores: ['Preto'] }))

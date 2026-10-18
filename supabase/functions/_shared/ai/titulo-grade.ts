@@ -45,14 +45,17 @@ const TODO_VOCABULARIO_GENERO = new Set([
   ...Object.values(PUBLICO_POR_GENERO).flat(), 'masculinos', 'femininos', 'meninas', 'meninos',
 ]);
 
-/** Fallback determinístico quando a IA erra ou omite o público.
- *  ponytail: concordância pelo "a" final da peça — erra em exceções ("Pijama" sai feminino); a IA
- *  recebe o gênero e acerta a concordância na maioria dos casos. */
+// Emenda ADR-0184 (2026-10-18): a IA escreveu "Camisa Masculino" (forma da lista, concordância
+// errada). Exceções medidas da regra do "a" final; peça nova fora delas segue a regra.
+const PECA_MASCULINA_EM_A = new Set(['pijama', 'sutia', 'cardiga']);
+const PECA_FEMININA_SEM_A = new Set(['legging', 'leggings', 'lingerie', 'polo']);
+
+/** Público determinístico pelo gênero do cadastro, concordando com a 1ª palavra da peça. */
 function publicoPadrao(genero: string, produto: string): string {
   if (genero === 'unissex') return 'Unissex';
   if (genero === 'masculino' || genero === 'feminino') {
     const peca = tok(produto.split(/\s+/)[0] ?? '');
-    const fem = peca.endsWith('a');
+    const fem = PECA_FEMININA_SEM_A.has(peca) || (peca.endsWith('a') && !PECA_MASCULINA_EM_A.has(peca));
     return genero === 'masculino' ? (fem ? 'Masculina' : 'Masculino') : (fem ? 'Feminina' : 'Feminino');
   }
   return 'Infantil';
@@ -76,7 +79,13 @@ function guardPublico(slots: TituloSlots, fonte: DadosFonteTitulo): { produto: s
   const ts = tokens(slots.publico);
   const valido = ts.some((t) => aceitos.includes(t))
     && ts.every((t) => aceitos.includes(t) || (plusSize && (t === 'plus' || t === 'size')));
-  return { produto, publico: valido ? slots.publico.trim() : publicoPadrao(genero!, produto) };
+  if (!valido) return { produto, publico: publicoPadrao(genero!, produto) };
+  // Adulto: a concordância é sempre do código (a IA erra mesmo escolhendo da lista); Plus Size fica.
+  if (genero === 'masculino' || genero === 'feminino') {
+    const resto = slots.publico.trim().split(/\s+/).filter((p) => !aceitos.includes(tok(p)));
+    return { produto, publico: [publicoPadrao(genero, produto), ...resto].join(' ') };
+  }
+  return { produto, publico: slots.publico.trim() };
 }
 
 function semProibidos(valor: string, slot: SlotTitulo): string {
@@ -109,10 +118,10 @@ function deduplicar(slots: TituloSlots): TituloSlots {
   const vistos = new Set(fixos.flatMap((s) => tokens(out[s])).filter((t) => !ATONAS.has(t)));
   for (const slot of ORDEM_LEITURA_GRADE) {
     if (fixos.includes(slot) || !out[slot]) continue;
-    const mantidas = out[slot].split(/\s+/).filter((p) => {
-      const t = tok(p);
-      return !t || ATONAS.has(t) || !vistos.has(t);
-    });
+    // Percentual colado na palavra removida sai junto ("90% Algodão" → nada, nunca "90%" órfão).
+    const palavras = out[slot].split(/\s+/);
+    const sai = palavras.map((p) => { const t = tok(p); return !!t && !ATONAS.has(t) && vistos.has(t); });
+    const mantidas = palavras.filter((p, i) => !sai[i] && !(/^\d+(?:[.,]\d+)?%$/.test(p) && sai[i + 1]));
     // Átona pendurada nas pontas DEPOIS de uma remoção sai ("Linho com Linho" → "com" solto);
     // sem remoção, "Com Bolso" é legítimo e fica.
     if (mantidas.length < out[slot].split(/\s+/).length) {
