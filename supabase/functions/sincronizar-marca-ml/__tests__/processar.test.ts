@@ -21,7 +21,7 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
 } = {}) {
   const puts: Array<{ itemId: string; attrs: Array<{ id: string; value_name: string }> }> = [];
   let leituras = 0;
-  const familyIdsGravados: string[] = [];
+  const familyIdsGravados: Array<{ familyId: string; itemIds: string[] }> = [];
   const deps: DepsMarca = {
     lerMarcaOrg: async () => org,
     portas: {
@@ -31,7 +31,7 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
         if (opts.falhaLeitura) throw Object.assign(new Error('rede'), { status: 503 });
         return structuredClone(itens[id]);
       },
-      gravarFamilyIdLocal: async (_orgId, _codigoPai, familyId) => { familyIdsGravados.push(familyId); },
+      gravarFamilyIdLocal: async (_orgId, itemIds, familyId) => { familyIdsGravados.push({ familyId, itemIds }); },
       putAtributos: async (id, attrs) => {
         const erro = opts.falhaPut?.(id);
         if (erro) throw erro;
@@ -158,7 +158,8 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   it('SKUs unificados num family_id → grava esse family_id no vínculo local (rodada de convergência)', async () => {
     const f = fake({ A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }), B: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }) });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
-    expect(f.familyIdsGravados).toEqual(['FAM-NOVA']);
+    // Só os vínculos efetivamente lidos — SKU criado depois da leitura não herda um id não conferido.
+    expect(f.familyIdsGravados).toEqual([{ familyId: 'FAM-NOVA', itemIds: ['A', 'B'] }]);
     expect(r.body).toMatchObject({ jaCertos: ['SKU1', 'SKU2'], familyId: 'FAM-NOVA' });
   });
 

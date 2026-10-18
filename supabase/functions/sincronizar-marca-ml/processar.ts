@@ -17,8 +17,8 @@ export interface DepsMarca {
     listarFilhos: (orgId: string, codigoPai: string) => Promise<{ sku: string; itemId: string }[]>;
     lerItem: (itemId: string) => Promise<ItemLido>;
     putAtributos: (itemId: string, attrs: AtributoMarca[]) => Promise<void>;
-    /** Grava o family_id vigente no vínculo local (`anuncios_externos_itens`) da família. */
-    gravarFamilyIdLocal: (orgId: string, codigoPai: string, familyId: string) => Promise<void>;
+    /** Grava o family_id vigente no vínculo local (`anuncios_externos_itens`) — só nos itens lidos. */
+    gravarFamilyIdLocal: (orgId: string, itemIds: string[], familyId: string) => Promise<void>;
   };
 }
 
@@ -76,7 +76,7 @@ export async function processarSincronizacaoMarca(
   // convergência fecha o ciclo. Sem isso, a próxima cor nova acusaria "família desagrupada".
   if (!r.dryRun) {
     try {
-      await deps.portas.gravarFamilyIdLocal(job.org_id, job.codigo_pai, familyId);
+      await deps.portas.gravarFamilyIdLocal(job.org_id, filhos.map((f) => f.itemId), familyId);
     } catch (e) {
       return { status: 500, body: { erro: `gravar family_id local falhou: ${(e as Error).message}` } };
     }

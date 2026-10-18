@@ -62,14 +62,9 @@ Deno.serve(async (req) => {
           attrs: (j.attributes as ItemLido['attrs'] | undefined) ?? [],
         };
       },
-      gravarFamilyIdLocal: async (orgId, codigoPai, familyId) => {
-        const { data: raizes, error: rErr } = await admin.from('anuncios_externos')
-          .select('id').eq('org_id', orgId).eq('canal', 'mercado_livre').eq('codigo_pai', codigoPai);
-        if (rErr) throw new Error(`raízes: ${rErr.message}`);
-        const ids = (raizes ?? []).map((x) => x.id as string);
-        if (ids.length === 0) return;
+      gravarFamilyIdLocal: async (orgId, itemIds, familyId) => {
         const { error } = await admin.from('anuncios_externos_itens').update({ family_id: familyId })
-          .in('anuncio_externo_id', ids).eq('retirado', false).not('item_externo_id', 'is', null);
+          .eq('org_id', orgId).in('item_externo_id', itemIds).eq('retirado', false);
         if (error) throw new Error(`family_id local: ${error.message}`);
       },
       putAtributos: async (itemId, attrs) => {
