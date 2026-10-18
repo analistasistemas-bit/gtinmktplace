@@ -1143,14 +1143,21 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       .map(([codigoPai]) => codigoPai),
   );
 
+  // Estoque por SKU da família mais recente (rows vem por publicado_em desc): o dedupe abaixo mantém
+  // a família mais antiga, cujo saldo fica defasado após UPDATE (achado da revisão Codex).
+  const estoqueVigente = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const porSku = estoqueVigente.get(r.codigo_pai) ?? new Map<string, number>();
+    for (const v of r.variacoes ?? []) if (!porSku.has(v.codigo)) porSku.set(v.codigo, v.estoque ?? 0);
+    estoqueVigente.set(r.codigo_pai, porSku);
+  }
+
   // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
   const principais = dedupePublicados(
     rows.map((r) => ({
       ...publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai)),
-      mlPermalink: linkPaginaUP(
-        itensUp.get(r.codigo_pai),
-        new Map((r.variacoes ?? []).map((v) => [v.codigo, v.estoque ?? 0])),
-      ) ?? r.ml_permalink ?? null,
+      mlPermalink: linkPaginaUP(itensUp.get(r.codigo_pai), estoqueVigente.get(r.codigo_pai) ?? new Map())
+        ?? r.ml_permalink ?? null,
       migracaoEmAndamento: paisMigrando.has(r.codigo_pai),
       produtoDividido: (anunciosPorPai.get(r.codigo_pai) ?? []).length > 1,
       userProducts: (itensUp.get(r.codigo_pai)?.length ?? 0) > 0,
