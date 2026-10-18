@@ -607,23 +607,42 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
 
   // Codex (revisão do plano, 18/10): a grade valida gênero × grade, não gênero × domínio. O schema
   // de GENDER da categoria restringe (cueca MLB108789 = Masculino/Meninos/Sem gênero[ infantil]).
-  it('gênero que a categoria não aceita lança antes do cache e de qualquer chart', async () => {
+  it('gênero que a categoria não aceita lança 400 antes de criar chart', async () => {
     vi.mocked(lerSchemaAtributos).mockResolvedValue([
       { id: 'GENDER', valores: [{ id: '339666', nome: 'Masculino' }, { id: '339667', nome: 'Meninos' }] },
     ] as never);
     const { admin, from } = adminFake();
     const f = fetchFake('UNDERPANTS');
     await expect(garantirChart(admin, 'token', 'conexao-1', 'MLB108789', 'feminino', ['M'], 'letras'))
-      .rejects.toThrow('Guia de tamanhos: a categoria MLB108789 não aceita o gênero Feminino (aceita: Masculino, Meninos).');
-    expect(from).not.toHaveBeenCalled();
+      .rejects.toMatchObject({
+        message: 'Guia de tamanhos: a categoria MLB108789 não aceita o gênero Feminino (aceita: Masculino, Meninos).',
+        status: 400,
+      });
     expect(f.posts).toHaveLength(0);
   });
 
-  it('schema sem GENDER (ou indisponível) não bloqueia — o ML segue como juiz final', async () => {
-    vi.mocked(lerSchemaAtributos).mockRejectedValue(new Error('rede'));
+  it('schema indisponível não bloqueia a criação — o ML segue como juiz final', async () => {
+    vi.mocked(lerSchemaAtributos).mockRejectedValueOnce(new Error('rede')).mockResolvedValue([
+      { id: 'SIZE', valores: ['P', 'M'].map((t, i) => ({ id: `s${i}`, nome: t })) },
+      { id: 'FILTRABLE_SIZE', valores: ['P', 'M', 'XG'].map((t, i) => ({ id: `f${i}`, nome: t })) },
+    ] as never);
     const { admin } = adminFake();
+    const f = fetchFake('DRESSES');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB108704', 'feminino', ['M'], 'letras');
+    expect(f.posts).toHaveLength(1);
+  });
+
+  // Revisão Codex do diff (18/10): família já publicada com chart em cache (ou sem guia) não pode
+  // ser barrada pelo veto novo num UPDATE que só adiciona SKU.
+  it('chart em cache ou domínio sem guia não passam pelo veto de gênero', async () => {
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([{ id: 'GENDER', valores: [{ id: '339666', nome: 'Masculino' }] }] as never);
+    const { admin } = adminFake({
+      'conexao-1|UNDERPANTS|unissex|letras': { chart_id: '7', linhas: { M: { rowId: '7:1', sizeLabel: 'M' } } },
+    });
+    fetchFake('UNDERPANTS');
+    expect(await garantirChart(admin, 'token', 'conexao-1', 'MLB108789', 'unissex', ['M'], 'letras')).toMatchObject({ chartId: '7' });
     fetchFake('SUITS');
-    expect(await garantirChart(admin, 'token', 'conexao-1', 'MLB108831', 'feminino', ['M'], 'letras')).toEqual({ semGuia: 'SIZE' });
+    expect(await garantirChart(adminFake().admin, 'token', 'conexao-1', 'MLB108831', 'unissex', ['M'], 'letras')).toEqual({ semGuia: 'SIZE' });
   });
 
   it('nomeChart normaliza o gênero infantil e mantém os nomes adultos', () => {

@@ -101,8 +101,10 @@ for (const tamanho of tamanhos) {
   let causas: { type?: string; code?: string; message?: string }[] = [];
   try { causas = (JSON.parse(texto) as { cause?: typeof causas }).cause ?? []; } catch { /* corpo vazio = ok */ }
   const proibidas = causas.filter((c) => c.type === 'error' && PROIBIDA.test(`${c.code} ${c.message}`));
-  if (resp.status >= 500 || proibidas.length > 0) reprovado = true;
-  console.log(`${proibidas.length > 0 ? 'REPROVADO' : 'ok'} ${tamanho} HTTP ${resp.status}`
+  // 401/403/429/5xx não validaram nada: inconclusivo também reprova (revisão Codex 2026-10-18).
+  const inconclusivo = !(resp.status < 300 || resp.status === 400);
+  if (inconclusivo || proibidas.length > 0) reprovado = true;
+  console.log(`${inconclusivo ? 'INCONCLUSIVO' : proibidas.length > 0 ? 'REPROVADO' : 'ok'} ${tamanho} HTTP ${resp.status}`
     + proibidas.map((c) => `\n  causa [${c.type}] ${c.code}: ${c.message}`).join(''));
 }
 

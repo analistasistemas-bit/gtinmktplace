@@ -322,17 +322,6 @@ export async function garantirChart(
   if (!dominioAceitaGrade(domainId, grade)) {
     throw new Error(`Guia de tamanhos: grade ${grade} incompatível com o domínio ${domainId} — confira a categoria do produto.`);
   }
-  // Gênero × categoria (revisão Codex 2026-10-18): a grade não sabe que cueca não aceita
-  // Feminino — o schema de GENDER da categoria sabe. Schema indisponível/sem GENDER não bloqueia
-  // (o ML segue como juiz final); nunca derruba publicação que já funciona pelo cache.
-  const generosCategoria = (await lerSchemaAtributos(token, categoriaId).catch(() => []))
-    ?.find((a) => a.id === 'GENDER')?.valores ?? [];
-  if (generosCategoria.length > 0 && !generosCategoria.some((v) => v.id === GENDER_VALUE[genero].id)) {
-    throw new Error(
-      `Guia de tamanhos: a categoria ${categoriaId} não aceita o gênero ${GENDER_VALUE[genero].nome} `
-      + `(aceita: ${generosCategoria.map((v) => v.nome).join(', ')}).`,
-    );
-  }
   if (DOMINIOS_SEM_GUIA.has(domainId)) return { semGuia: ATRIBUTO_TAMANHO_SEM_GUIA[domainId] };
 
   const { data: cached } = await admin.from('ml_size_charts')
@@ -357,6 +346,19 @@ export async function garantirChart(
     const faltando = tamanhos.filter((t) => !linhaPorTamanho.has(t));
     if (faltando.length === 0) return { chartId: cached.chart_id as string, linhaPorTamanho };
     console.warn(`Guia de tamanhos: chart ${cached.chart_id} não cobre ${faltando.join(', ')} — criando chart novo.`);
+  }
+
+  // Gênero × categoria (revisão Codex 2026-10-18): a grade não sabe que cueca não aceita
+  // Feminino — o schema de GENDER da categoria sabe. Só antes de CRIAR chart: família publicada
+  // com chart em cache (ou sem guia) segue intocada; schema indisponível/sem GENDER não bloqueia
+  // (o ML segue como juiz). 400 = definitivo, sem retry (mesmo padrão de atualizar-familia-up).
+  const generosCategoria = (await lerSchemaAtributos(token, categoriaId).catch(() => []))
+    ?.find((a) => a.id === 'GENDER')?.valores ?? [];
+  if (generosCategoria.length > 0 && !generosCategoria.some((v) => v.id === GENDER_VALUE[genero].id)) {
+    throw Object.assign(new Error(
+      `Guia de tamanhos: a categoria ${categoriaId} não aceita o gênero ${GENDER_VALUE[genero].nome} `
+      + `(aceita: ${generosCategoria.map((v) => v.nome).join(', ')}).`,
+    ), { status: 400 });
   }
 
   const resolvido = DOMINIOS_CALCADO_STANDARD.has(domainId)
