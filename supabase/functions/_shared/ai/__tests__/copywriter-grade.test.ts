@@ -201,6 +201,32 @@ describe('achados da revisão Grok (ADR-0183)', () => {
   });
 });
 
+describe('caso real Conjunto Sereia (2026-10-18)', () => {
+  // A IA omitiu ❓; Proteção UV/Quantidade/Aplicação não viravam pergunta → 1 + fixa = 2 < 3.
+  const SEREIA = [
+    '🧵 CONJUNTO INFANTIL COM PROTEÇÃO SOLAR UV SEREIA', '', 'Texto.', '',
+    '📌 ESPECIFICAÇÕES', '',
+    '• Composição: 90% poliamida e 10% elastano', '• Proteção UV: 30', '• Quantidade: 1 unidade', '• Aplicação: praia',
+    '', '🎨 CORES DISPONÍVEIS', '', '- Estampa Sereia', '', 'Conjunto com proteção solar para dias de sol.',
+  ].join('\n');
+  const vs = ['4', '6', '8', '10'].map((tamanho) => ({ codigo: tamanho, cor: 'Estampa Sereia', nome: 'Estampa Sereia', preco: 1, tamanho }));
+
+  it('reconstrói ❓ com proteção UV, quantidade e aplicação', () => {
+    const r = posProcessarDescricao(SEREIA, 'Conjunto Infantil Proteção Solar UV', '', vs);
+    expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('▪ Qual a composição? 90% poliamida e 10% elastano.');
+    expect(r).toContain('▪ Qual o fator de proteção UV? 30.');
+    expect(r).toContain('▪ Quantas unidades acompanham? 1 unidade.');
+    expect(r).toContain('▪ Para qual uso é indicado? praia.');
+    expect(r).toContain('Como escolher o tamanho?');
+  });
+
+  it('"Estampa Sereia" (sem número) → ESTAMPAS DISPONÍVEIS', () => {
+    const p = montarUserPrompt({ nome: 'Conjunto', descricao_detalhado: 'x', variacoes: vs });
+    expect(p).toContain('"🎨 ESTAMPAS DISPONÍVEIS"');
+  });
+});
+
 describe('não-grade inalterado (ADR-0183)', () => {
   it('sem tamanho, 🎯/📦 continuam e não há 📏', () => {
     const r = posProcessarDescricao(DESCRICAO_IA, 'Fita', '', [{ codigo: '1', cor: 'Estampa 1', nome: 'Estampa 1', preco: 1 }]);

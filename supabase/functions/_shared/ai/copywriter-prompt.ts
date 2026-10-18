@@ -209,6 +209,11 @@ const PERGUNTA_POR_ROTULO: Array<[RegExp, string]> = [
   [/^jardas$/i, 'Quantas jardas possui?'],
   [/^voltagem$/i, 'Qual a voltagem?'],
   [/^capacidade$/i, 'Qual a capacidade?'],
+  // 2026-10-18 (Conjunto Sereia, grade): rótulos de roupa que a IA escreve e não viravam pergunta —
+  // a seção ficava em 2 (composição + fixa de tamanho) com quatro dados disponíveis.
+  [/^(prote[çc][ãa]o( (uv|solar))?|fp[su]|fator de prote[çc][ãa]o)$/i, 'Qual o fator de proteção UV?'],
+  [/^quantidade$/i, 'Quantas unidades acompanham?'],
+  [/^(aplica[çc][ãa]o|indica[çc][ãa]o|uso)$/i, 'Para qual uso é indicado?'],
 ];
 
 // "• Composição: 100% Poliéster" → rótulo e valor.
@@ -507,7 +512,7 @@ function posProcessarGrade(descricao: string, tamanhos: string[]): string {
 }
 
 /** Seção 🎨 da grade: no cadastro em grade `nome == cor`, então o eixo do ADR-0115 (sufixo do
- *  nome) não se resolve. Rótulo ESTAMPAS só quando toda opção é "Estampa N" — ambos casam
+ *  nome) não se resolve. Rótulo ESTAMPAS só quando toda opção começa com "Estampa" — ambos casam
  *  `RE_HEADER_VARIACAO` do UPDATE. Tamanho nunca vira item aqui: o UPDATE troca a lista pelas cores. */
 function eixoDaGrade(variacoes: InputCopy['variacoes']): { rotulo: string; valores: string[] } | null {
   const cores = [...new Set(
@@ -515,7 +520,8 @@ function eixoDaGrade(variacoes: InputCopy['variacoes']): { rotulo: string; valor
       .filter((c): c is string => !ehCorIndefinida(c)),
   )];
   if (cores.length === 0) return null;
-  const estampas = cores.every((c) => /^estampa\s*\d+$/i.test(c.trim()));
+  // Qualquer opção "Estampa …" (numerada ou nomeada, ex. "Estampa Sereia") é estampa.
+  const estampas = cores.every((c) => /^estampa\b/i.test(c.trim()));
   return estampas
     ? { rotulo: ROTULO_ESTAMPA, valores: cores.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })) }
     : { rotulo: ROTULO_COR, valores: ordenarCoresAlfabetica(cores) };

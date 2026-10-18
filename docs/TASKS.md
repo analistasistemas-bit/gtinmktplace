@@ -2,6 +2,11 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## FAQ e rótulo de estampa na copy de grade (emenda ADR-0183/0115) — 2026-10-18
+
+- [x] Pergunta frequente reconstruída também de "Proteção UV/FPU", "Quantidade" e "Aplicação/Indicação/Uso" (caso Conjunto Sereia: ❓ sumia com 2 perguntas).
+- [x] "Estampa Sereia" (estampa nomeada) → `ESTAMPAS DISPONÍVEIS`, não `CORES`.
+
 ## Título de produto em grade (ADR-0184) — EM PRODUÇÃO desde 2026-10-18 (main `fbb42c6e`)
 
 - [x] Peça + Público (gênero cadastrado) + Marca (só da fonte) + Característica + Material + cor única + Kit.

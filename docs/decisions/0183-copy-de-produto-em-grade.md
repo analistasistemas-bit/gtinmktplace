@@ -64,7 +64,7 @@ Vale **só para família em grade**. Simples e mista seguem como estão.
      recriar a pergunta a partir de um bullet "Medidas".
 6. **Seção 🎨 em grade:**
    - Lista as cores ou estampas distintas, sem as variações excluídas.
-   - Se toda cor for "Estampa N", o rótulo é `ESTAMPAS DISPONÍVEIS`. Caso contrário é
+   - Se toda cor começar com "Estampa" ("Estampa 1", "Estampa Sereia"; emenda 2026-10-18), o rótulo é `ESTAMPAS DISPONÍVEIS`. Caso contrário é
      `CORES DISPONÍVEIS`. Os dois rótulos são casados por `RE_HEADER_VARIACAO` no UPDATE.
    - Os tamanhos **nunca** entram como itens de 🎨, porque o UPDATE substitui essa lista inteira
      pelas cores.
