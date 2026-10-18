@@ -591,10 +591,10 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
       expect(screen.queryByText('Fiscal')).not.toBeInTheDocument();
-      expect(screen.queryByText('Fiscal OK')).not.toBeInTheDocument();
+      expect(screen.queryByText('OK')).not.toBeInTheDocument();
     });
 
-    it('canInvoice=true: pill "Fiscal OK"', () => {
+    it('canInvoice=true: pill "OK"', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ canInvoice: true })],
@@ -608,7 +608,7 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
       expect(screen.getByText('Fiscal')).toBeInTheDocument(); // header
-      expect(screen.getByText('Fiscal OK')).toBeInTheDocument();
+      expect(screen.getByText('OK')).toBeInTheDocument();
     });
 
     it('canInvoice=null: pill neutra "Fiscal —"', () => {
@@ -627,7 +627,7 @@ describe('Publicados', () => {
       expect(screen.getByText('Fiscal —')).toBeInTheDocument();
     });
 
-    it('canInvoice=false: pill "Fiscal pendente" e o clique abre o dialog sem expandir a linha', () => {
+    it('canInvoice=false: pill "Pendente" e o clique abre o dialog sem expandir a linha', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ canInvoice: false })],
@@ -640,7 +640,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const pill = screen.getByText('Fiscal pendente');
+      const pill = screen.getByText('Pendente');
       expect(pill.closest('[data-tone="danger"]')).toBeInTheDocument();
 
       fireEvent.click(pill);

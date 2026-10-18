@@ -134,7 +134,7 @@ function BadgeFiscal({ familiaId, canInvoice, onPreencher }: {
   if (!familiaId) {
     return <StatusPill tone="neutral">Sem cadastro fiscal — vincular a produto</StatusPill>;
   }
-  if (canInvoice === true) return <StatusPill tone="success">Fiscal OK</StatusPill>;
+  if (canInvoice === true) return <StatusPill tone="success">OK</StatusPill>;
   if (fiscalPendente({ canInvoice })) {
     return (
       <button
@@ -143,7 +143,7 @@ function BadgeFiscal({ familiaId, canInvoice, onPreencher }: {
         className="text-left"
         title="O ML ainda não consegue emitir a nota deste anúncio — complete o cadastro fiscal."
       >
-        <StatusPill tone="danger">Fiscal pendente</StatusPill>
+        <StatusPill tone="danger">Pendente</StatusPill>
       </button>
     );
   }
@@ -404,7 +404,7 @@ function LinhaTabela({
         <div className="absolute right-2 top-0">
           <SeloModo listingType={item.listingType} />
         </div>
-        <div className="flex max-w-[8.5rem] flex-wrap items-center gap-1 pt-4">
+        <div className="grid grid-cols-[repeat(4,auto)] items-center justify-start justify-items-start gap-1 pt-4">
           <Button
             asChild
             variant="ghost"
@@ -926,12 +926,13 @@ interface ThOrdenavelProps {
 function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelProps) {
   const ativo = ord?.coluna === coluna;
   return (
-    <TableHead className={className}>
+    // Rótulo quebra em 2 linhas: libera largura p/ a coluna Ações (grid 4×2) sem rolagem lateral.
+    <TableHead className={cn('whitespace-normal', className)}>
       <button
         type="button"
         onClick={() => onOrdenar(coluna)}
         className={cn(
-          'flex items-center gap-1 transition-colors hover:text-foreground',
+          'flex items-center gap-1 text-left transition-colors hover:text-foreground',
           ativo && 'text-foreground',
         )}
         aria-label={`Ordenar por ${label}`}
