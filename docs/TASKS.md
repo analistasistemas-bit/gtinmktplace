@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Camiseta e camisa (T_SHIRTS, SHIRTS) na grade Letras (emenda ADR-0182) — 2026-10-18
+
+- [x] Bug PAI `00000069` (camisa Zaven, Letras): preditor só trouxe `T_SHIRTS`/`SHIRTS`, fora de `DOMINIOS_SUPORTADOS` → filtro da grade zerou os candidatos → "Categoria indefinida".
+- [x] Colunas medidas por `POST /catalog/charts` real (Daludi): `FILTRABLE_SIZE` + `CHEST_CIRCUMFERENCE_FROM`, iguais a `SPORT_T_SHIRTS`; os dois entram em `DOMINIOS_VESTUARIO`. Ensaio real: charts `9906364` (T_SHIRTS) e `9906148` (SHIRTS) com P–GGG.
+- [ ] `FOOTBALL_SHIRTS` e demais camisas esportivas — não medidos, seguem fora.
+
 ## Tamanho GGG na grade Letras (emenda ADR-0182) — EM PRODUÇÃO desde 2026-10-18
 
 - [x] `TAMANHOS_ROUPA` = P, M, G, GG, GGG — cadastro, estoque e whitelist da edge `cadastrar-produto` (main `a10c61de`).

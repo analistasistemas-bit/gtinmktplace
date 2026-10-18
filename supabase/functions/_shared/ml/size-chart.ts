@@ -54,8 +54,9 @@ export function tabelaComprimentoPe(genero: Genero): Readonly<Record<string, num
 }
 
 // Spike 051 §3/§7: domínios de vestuário com a coluna de medida confirmada
-// (CHEST_CIRCUMFERENCE_FROM) via POST /catalog/charts real.
-export const DOMINIOS_VESTUARIO = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS']);
+// (CHEST_CIRCUMFERENCE_FROM) via POST /catalog/charts real. T_SHIRTS/SHIRTS: mesmo erro real
+// em 2026-10-18 (ADR-0182, emenda camiseta e camisa).
+export const DOMINIOS_VESTUARIO = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'T_SHIRTS', 'SHIRTS']);
 
 // Spike 051 §13: SNEAKERS tem chart STANDARD oficial do ML (não criamos, só buscamos e
 // referenciamos — sem risco de inventar medida). SANDALS_AND_CLOGS não tem STANDARD (testado,
@@ -345,7 +346,7 @@ export async function garantirChart(
 }
 
 /** Vestuário: cria um chart SPECIFIC com o superset da tabela do domínio (ADR-0167 Decisão 2 —
- *  nunca só os tamanhos desta família). JACKETS_AND_COATS/SPORT_T_SHIRTS → peito
+ *  nunca só os tamanhos desta família). DOMINIOS_VESTUARIO → peito
  *  (CONTORNO_PEITO_CM); SHORTS/PANTS → quadril do gênero, superset = a lista da PRÓPRIA grade
  *  (ADR-0182 D6: Letras = P–GG, Calça = 34–48, Infantil = 2–16 com FILTRABLE_SIZE "<n> anos").
  *  Nunca Letras + Calça no mesmo chart: o ML recusa com `value_is_not_the_same_type` (ensaio

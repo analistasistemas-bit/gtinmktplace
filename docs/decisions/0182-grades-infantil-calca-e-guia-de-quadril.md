@@ -175,3 +175,21 @@ lança mais: `garantirChart` cria um chart novo com o superset atual e faz upser
 Letras existentes (P–GG) rotacionam na primeira publicação que pedir GGG.
 
 Fora de escopo: GGG em SHORTS/PANTS (quadril) — `tabelaQuadril` não tem GGG, segue falhando alto.
+
+## Emenda (2026-10-18): camiseta e camisa (T_SHIRTS, SHIRTS) na grade Letras
+
+A família `00000069` (camisa masculina, Letras) ficou com "Categoria indefinida". O
+`domain_discovery` real devolveu só `MLB31447` (`T_SHIRTS`, Camisetas e Regatas) e categorias
+`SHIRTS` (`MLB107292` Camisas e afins), e nenhum dos dois estava em `DOMINIOS_SUPORTADOS`: o filtro
+da emenda "categoria da grade" descartou tudo. Escolher a categoria à mão também não resolvia, porque
+`garantirChart` recusaria o domínio na publicação.
+
+Medido na API real (conta Daludi Shop, 2026-10-18): `POST /catalog/charts` com linha só de `SIZE`
+devolve `required_row_attribute_not_found` para **`FILTRABLE_SIZE`** e **`CHEST_CIRCUMFERENCE_FROM`**,
+idêntico em `T_SHIRTS` e `SHIRTS`. São as mesmas colunas de `SPORT_T_SHIRTS` (Spike 051 §7).
+`MLB31447` e `MLB107292` têm `P`/`M`/`G`/`GG` em `SIZE` e `XG` em `FILTRABLE_SIZE`.
+
+Decisão: `T_SHIRTS` e `SHIRTS` entram em `DOMINIOS_VESTUARIO` (chart SPECIFIC por peito,
+`CONTORNO_PEITO_CM`, mesmo caminho de `SPORT_T_SHIRTS`). Só na grade Letras; Infantil e Calça
+seguem recusando esses domínios (`dominioAceitaGrade`). `FOOTBALL_SHIRTS` e demais camisas
+esportivas não foram medidos e continuam fora.

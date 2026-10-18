@@ -251,6 +251,9 @@ listou as colunas obrigatórias antes de eu adivinhar nenhuma):
 - `CHEST_CIRCUMFERENCE_FROM` — obrigatória, medida corporal (contorno do peito), formato
   `"<número> cm"`.
 
+**CONFIRMADO em 2026-10-18 para `T_SHIRTS` e `SHIRTS`** (mesmo método, conta Daludi Shop): as
+mesmas duas colunas, `FILTRABLE_SIZE` + `CHEST_CIRCUMFERENCE_FROM` (ADR-0182, emenda de 18/10).
+
 **NÃO CONFIRMADO:** se calça/vestido exigem colunas de medida diferentes (ex. `WAIST_
 CIRCUMFERENCE` em vez de `CHEST_CIRCUMFERENCE_FROM`) — plausível por analogia de domínio, mas não
 testado. Antes da Fase 4 cobrir BOTTOMS/DRESSES, repetir o `POST /catalog/charts` com corpo

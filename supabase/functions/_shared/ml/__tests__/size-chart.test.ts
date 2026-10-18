@@ -343,7 +343,7 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
   });
 
   it('SHORTS, PANTS, CLOTHING_LOTS e SWIMWEAR entram em DOMINIOS_SUPORTADOS', () => {
-    for (const d of ['SHORTS', 'PANTS', 'CLOTHING_LOTS', 'SWIMWEAR', 'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'SNEAKERS', 'SANDALS_AND_CLOGS']) {
+    for (const d of ['SHORTS', 'PANTS', 'CLOTHING_LOTS', 'SWIMWEAR', 'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'T_SHIRTS', 'SHIRTS', 'SNEAKERS', 'SANDALS_AND_CLOGS']) {
       expect(DOMINIOS_SUPORTADOS.has(d)).toBe(true);
     }
   });

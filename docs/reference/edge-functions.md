@@ -565,7 +565,8 @@ mesmo por engano.
   por SKU; o cache `ml_size_charts` é por grade (Letras, Infantil, Calça). **Emenda ADR-0182
   (2026-10-18):** Letras inclui GGG (peito 120 cm, `FILTRABLE_SIZE` XG, `SIZE` "GGG" sem value_id);
   cache que não cobre um tamanho pedido gera chart novo com o superset e é substituído (upsert,
-  ADR-0167 D4) — antes lançava. No UPDATE/reposição UP
+  ADR-0167 D4) — antes lançava. Camiseta (`T_SHIRTS`) e camisa (`SHIRTS`) usam o mesmo chart de
+  peito de `SPORT_T_SHIRTS` (emenda ADR-0182 de 18/10). No UPDATE/reposição UP
   (`atualizar-familia-up.ts`), `comGeneroDaFamilia` impede reenviar `GENDER`/`SIZE*`/`CLOTHING_LOT_SIZE`
   de `atributos_ml`. Deploy 2026-10-16 das 21 funções que usam o `_shared/` alterado.
   **User Products / multi-cor (ADR-0088):** categoria UP com >1 variação (`criarAnuncio` devolve

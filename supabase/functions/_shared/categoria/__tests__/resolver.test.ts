@@ -272,4 +272,23 @@ describe('escolherEntreCandidatos — família em grade', () => {
     const r = await escolherEntreCandidatos({ nome: input.nome }, praia);
     expect(r.categoriaId).toBe('MLB39961');
   });
+
+  // Bug 2026-10-18 (PAI 00000069, camisa masculina Zaven): domain_discovery real devolveu só
+  // T_SHIRTS/SHIRTS, fora da lista da grade → "Categoria indefinida". Spike 051 §7 (emenda
+  // 2026-10-18): os dois exigem as mesmas colunas de SPORT_T_SHIRTS.
+  it('camisa em grade Letras: T_SHIRTS e SHIRTS são publicáveis', async () => {
+    const camisa: CategoriaCandidata[] = [
+      { domainId: 'MLB-T_SHIRTS', domainName: 'Camisetas', categoriaId: 'MLB31447', categoriaNome: 'Camisetas e Regatas' },
+      { domainId: 'MLB-SHIRTS', domainName: 'Camisas', categoriaId: 'MLB107292', categoriaNome: 'Camisas' },
+      { domainId: 'MLB-FOOTBALL_SHIRTS', domainName: 'Camisas de futebol', categoriaId: 'MLB183804', categoriaNome: 'Camisas de Futebol' },
+    ];
+    let vistos: string[] = [];
+    const r = await escolherEntreCandidatos(
+      { nome: 'Camisa Masculina Algodão Egípcio 90% 10% Elastano', genero: 'masculino', grade: 'letras' },
+      camisa,
+      async (_i, c) => { vistos = c.map((x) => x.categoriaId); return undefined; },
+    );
+    expect(vistos).toEqual(['MLB31447', 'MLB107292']);
+    expect(r).toMatchObject({ categoriaId: 'MLB31447', origem: 'preditor' });
+  });
 });
