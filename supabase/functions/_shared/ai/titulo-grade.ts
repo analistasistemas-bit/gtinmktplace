@@ -7,6 +7,7 @@
  */
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import type { DadosFonteTitulo } from './titulo-guards.ts';
+import { extrairContagem } from './titulo.ts';
 import { ORDEM_LEITURA_GRADE, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 
 // Sem acento, minúsculo, só letra/dígito/% — compara TOKEN inteiro, nunca substring.
@@ -57,20 +58,25 @@ function publicoPadrao(genero: string, produto: string): string {
   return 'Infantil';
 }
 
-function guardPublico(slots: TituloSlots, fonte: DadosFonteTitulo): string {
+/** Devolve o `publico` e, se a IA pôs na peça um gênero que contradiz o cadastro, a peça sem ele. */
+function guardPublico(slots: TituloSlots, fonte: DadosFonteTitulo): { produto: string; publico: string } {
   const genero = fonte.genero?.trim();
   const aceitos = genero ? PUBLICO_POR_GENERO[genero] : undefined;
-  if (!aceitos) return ''; // sem gênero cadastrado: nunca inventa
-  // Peça que já traz o gênero ("Conjunto Infantil", "Jaqueta ... Feminino") não ganha outro.
-  if (tokens(slots.produto).some((t) => TODO_VOCABULARIO_GENERO.has(t))) return '';
+  if (!aceitos) return { produto: slots.produto, publico: '' }; // sem gênero cadastrado: nunca inventa
+  const generoNaPeca = tokens(slots.produto).filter((t) => TODO_VOCABULARIO_GENERO.has(t));
+  // Peça que já traz o gênero CERTO ("Conjunto Infantil") não ganha outro.
+  if (generoNaPeca.length > 0 && generoNaPeca.every((t) => aceitos.includes(t))) {
+    return { produto: slots.produto, publico: '' };
+  }
+  // Gênero errado na peça ("Cueca Boxer Feminina" numa família masculina): a palavra sai (achado Codex).
+  const produto = slots.produto.split(/\s+/).filter((p) => !TODO_VOCABULARIO_GENERO.has(tok(p))).join(' ');
 
   const fonteTokens = new Set(tokens(`${fonte.nomePai} ${fonte.descricaoPai}`));
   const plusSize = fonteTokens.has('plus') && fonteTokens.has('size');
   const ts = tokens(slots.publico);
   const valido = ts.some((t) => aceitos.includes(t))
     && ts.every((t) => aceitos.includes(t) || (plusSize && (t === 'plus' || t === 'size')));
-  if (valido) return slots.publico.trim();
-  return publicoPadrao(genero!, slots.produto);
+  return { produto, publico: valido ? slots.publico.trim() : publicoPadrao(genero!, produto) };
 }
 
 function semProibidos(valor: string, slot: SlotTitulo): string {
@@ -132,12 +138,13 @@ export function aplicarRegrasGrade(slots: TituloSlots, fonte: DadosFonteTitulo):
   for (const slot of ['material', 'caracteristica', 'caracteristica2'] as const) {
     out[slot] = out[slot] ? ancorado(out[slot], fonteTokens) : '';
   }
-  out.publico = guardPublico(out, fonte);
+  ({ produto: out.produto, publico: out.publico } = guardPublico(out, fonte));
 
   // Kit: aplicarGuardsTitulo já reduziu a contagem ancorada a "Nun"/"Npc" (N > 1).
   // O número também precisa estar na fonte (a contagem da IA sem respaldo não entra).
   const n = out.quantidade.match(/^(\d+)(?:un|pc)$/i)?.[1];
-  out.quantidade = n && fonteTokens.has(n) ? `Kit ${n}` : '';
+  const daFonte = extrairContagem(`${fonte.nomePai}\n${fonte.descricaoPai}`)?.match(/^\d+/)?.[0];
+  out.quantidade = n && (n === daFonte || fonteTokens.has(n)) ? `Kit ${n}` : '';
 
   // Cor (ADR-0044, decisão do Diego): só a cor única entra, e só se a peça/público ainda não a
   // dizem. Sem cor única, `variacao` vazia — tamanho nunca vai para o título.

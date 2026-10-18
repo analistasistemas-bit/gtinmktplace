@@ -2,7 +2,7 @@ import {
   extrairContagem, extrairLargura, extrairMetragem, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
 } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
-import { ORDEM_LEITURA, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { ORDEM_LEITURA, ORDEM_LEITURA_GRADE, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export interface DadosFonteTitulo {
@@ -320,8 +320,10 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   if (tipo) {
     const palavras = normalizar(tipo).split(/\s+/).filter((w) => w.length >= 3);
     const prefixo = `${tipo.toUpperCase()} `;
-    const duravel = (slot: SlotTitulo) => slot === 'produto' || slot === 'medida' || out[slot].length < prefixo.length;
-    const textoDuravel = ORDEM_LEITURA.filter((s) => out[s] && duravel(s)).map((s) => out[s]).join(' ');
+    // ADR-0184: na grade só conta o que a grade RENDERIZA — `medida`/`modelo` são descartados lá.
+    const duravel = (slot: SlotTitulo) =>
+      slot === 'produto' || (!fonte.grade && slot === 'medida') || out[slot].length < prefixo.length;
+    const textoDuravel = (fonte.grade ? ORDEM_LEITURA_GRADE : ORDEM_LEITURA).filter((s) => out[s] && duravel(s)).map((s) => out[s]).join(' ');
     const presente = palavras.some((w) => jaContem(normalizar(textoDuravel), w))
       || termoColado(textoDuravel, tipo);
     if (palavras.length > 0 && !presente) out.produto = `${prefixo}${out.produto}`.trim();
@@ -531,12 +533,14 @@ export function validarSlotsAncorados(slots: TituloSlots, fonte: DadosFonteTitul
   const tokensFonte = new Set(
     `${fonte.nomePai} ${fonte.descricaoPai}`.split(/\s+/).filter(Boolean).map(normalizarToken),
   );
-  for (const slot of ORDEM_LEITURA) {
+  // TODOS_SLOTS: os slots da grade (ADR-0184) também passam pelo marketing e pelo T3; fora da
+  // grade já chegam vazios, então o não-grade não muda.
+  for (const slot of TODOS_SLOTS) {
     if (out[slot]) out[slot] = removerMarketingNaoAncorado(out[slot], tokensFonte);
   }
 
   // T3: adjetivo vazio sai de QUALQUER slot.
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of TODOS_SLOTS) {
     const v = normalizar(out[slot]).toLowerCase();
     if (v && ADJETIVOS_VAZIOS.includes(v)) out[slot] = '';
   }

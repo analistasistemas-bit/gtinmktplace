@@ -140,6 +140,30 @@ describe('achados Codex r2', () => {
   });
 });
 
+describe('achados da revisão do diff (Codex)', () => {
+  const cueca = { nomePai: 'Cueca Boxer', genero: 'masculino' };
+
+  it('contagem compacta da fonte ("3un") vira Kit 3', () => {
+    expect(titulo({ produto: 'Cueca Boxer', publico: 'Masculina', quantidade: '3un' }, { ...cueca, descricaoPai: 'Pacote com 3un.' }))
+      .toBe('Cueca Boxer Masculina Kit 3');
+  });
+
+  it('T3 vale para característica', () => {
+    expect(titulo({ produto: 'Short', publico: 'Masculino', caracteristica: 'Alta Qualidade' }, { descricaoPai: 'Alta qualidade.' }))
+      .toBe('Short Masculino');
+  });
+
+  it('gênero contrário ao cadastro na peça sai e o público certo entra', () => {
+    expect(titulo({ produto: 'Cueca Boxer Feminina', publico: 'Masculina' }, { ...cueca, descricaoPai: '' }))
+      .toBe('Cueca Boxer Masculina');
+  });
+
+  it('tipo coberto só por slot descartado na grade é prefixado na peça', () => {
+    expect(titulo({ produto: 'Boxer', modelo: 'Cueca', publico: 'Masculina' }, { ...cueca, descricaoPai: '', tipoProdutoBusca: 'cueca' }))
+      .toBe('Cueca Boxer Masculina');
+  });
+});
+
 describe('não-grade inalterado', () => {
   it('slots novos zerados e fora do título', () => {
     const r = diagnosticarTitulo(slots({ produto: 'Linha', medida: '10000m', publico: 'Masculino', caracteristica: 'Forte' }), {
