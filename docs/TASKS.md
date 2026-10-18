@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Tamanho GGG na grade Letras (emenda ADR-0182) — EM PRODUÇÃO desde 2026-10-18
+
+- [x] `TAMANHOS_ROUPA` = P, M, G, GG, GGG — cadastro, estoque e whitelist da edge `cadastrar-produto` (main `a10c61de`).
+- [x] Guia de tamanhos do ML (peito): GGG = `FILTRABLE_SIZE` XG, 120 cm, `SIZE` "GGG" sem value_id — contrato confirmado por `POST /catalog/charts` real (chart `10367347`) (main `f27cfcba`).
+- [x] `garantirChart` rotaciona o cache `ml_size_charts` quando o superset cresce (upsert) em vez de lançar; 24 edges redeployadas.
+- [ ] 1ª publicação real de família com GGG (valida o item; o chart já foi validado).
+- [ ] GGG em SHORTS/PANTS (quadril) — sem medida em `tabelaQuadril`, segue falhando alto.
+
 ## Ações de Publicados: pausar UP, produto dividido, republicar pela vigente (emenda ADR-0060, ADR-0185) — EM PRODUÇÃO desde 2026-10-18
 
 - [x] Pausar/Reativar em User Products atinge todos os SKUs (antes 1 de 32 no short da Zaven; linha seguia "Ativo") — botão e pausa em massa (main `ec5bf54f`, emenda ADR-0060).

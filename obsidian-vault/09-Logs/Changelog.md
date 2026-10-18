@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-18
 
+**Tamanho GGG na grade Letras (emenda ADR-0182).** Cadastro em grade oferece P–GGG. No ML o GGG publica com guia de tamanhos: equivalência `XG`, 120 cm de peito, `SIZE` "GGG" livre (o ML não tem o valor; aceito em `POST /catalog/charts` real). Cache `ml_size_charts` que não cobre o tamanho pedido agora gera chart novo e é substituído, em vez de travar a publicação. Short/calça GGG segue fora. Revisado pelo Codex (2×, sem achados).
+
 **Ações de Publicados revisadas (emenda ADR-0060, ADR-0185).** Pausar em User Products pausava 1 de 32 SKUs (short da Zaven) e a linha seguia "Ativo" — botão e pausa em massa agora atingem todos os SKUs. Remover/Republicar passam a enxergar todas as partições de produto dividido (antes a partição 1 ficava viva e órfã no ML, e a venda nela não bloqueava o Remover). "Corrigir e republicar" vira a RPC transacional `preparar_republicacao`: a cópia mais nova volta à Revisão, sem perder SKUs, e nunca gera 2º CREATE. Criar kit usa a família publicada mais nova; Migrar recusa UP; ↻ de catálogo some nas partições; permissões da tela iguais às das edges (suporte `full`/`read`). Corrige também `recontarOuRemoverLote`, que apagava o lote inteiro num erro de leitura. Revisado pelo Codex (plano 2×, diffs 3×).
 
 ## 2026-10-16
