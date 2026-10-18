@@ -208,4 +208,24 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     await processarSincronizacaoMarca(f.deps, JOB);
     expect(f.puts).toHaveLength(0);
   });
+
+  it('ao fim da rodada, SKUs corrigidos espalhados em duas famílias novas → parouEm (cenário do Codex)', async () => {
+    const itens = { A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) };
+    const f = fake(itens, ZAVEN, {
+      aposPut: (id, atual) => {
+        if (id === 'B') { itens.A = { ...itens.A, familyId: 'N1' }; return { ...atual, familyId: 'N2' }; }
+        return atual;
+      },
+    });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(r.body).toMatchObject({ parouEm: { sku: null, motivo: expect.stringContaining('após a rodada') } });
+  });
+
+  it('ao fim da rodada, todos numa única família nova → sem parouEm', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+      aposPut: (_id, atual) => ({ ...atual, familyId: 'N1' }),
+    });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(r.body).not.toHaveProperty('parouEm');
+  });
 });

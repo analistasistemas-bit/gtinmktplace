@@ -127,5 +127,21 @@ export async function processarSincronizacaoMarca(
     if (motivo) return { status: 200, body: { ...r, parouEm: { sku, motivo } } };
     r.corrigidos.push(sku);
   }
+
+  // Conferência final (achado Codex): a releitura por SKU não vê um SKU JÁ corrigido migrar para
+  // outra família depois. Uma passada no fim — reler tudo a cada PUT custaria O(n²) GETs — garante
+  // que nenhuma rodada termina "ok" com os corrigidos espalhados em mais de uma família nova.
+  if (!r.dryRun && r.corrigidos.length > 0) {
+    let finais: ItemLido[];
+    try {
+      finais = await Promise.all(filhos.map((f) => deps.portas.lerItem(f.itemId)));
+    } catch (e) {
+      return { status: 200, body: { ...r, parouEm: { sku: null, motivo: `conferência após a rodada falhou: ${(e as Error).message}` } } };
+    }
+    const novas = new Set(finais.map((l) => l.familyId).filter((id) => id !== familiaAntiga));
+    if (novas.has(null) || novas.size > 1) {
+      return { status: 200, body: { ...r, parouEm: { sku: null, motivo: `após a rodada: SKUs em ${novas.size} famílias novas (${[...novas].join(', ')})` } } };
+    }
+  }
   return { status: 200, body: r };
 }
