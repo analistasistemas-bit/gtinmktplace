@@ -43,6 +43,16 @@ describe('montarFiscalInformation (payload puro)', () => {
     expect(tax.ex_tipi).toBe('01');
   });
 
+  // ML recusou em produção (Zaven, 17/10): 400 "tax_information.origin_type is required".
+  it('origin_type vai dentro de tax_information', () => {
+    const p = montarFiscalInformation(
+      { nome_pai: 'X', unidade: 'UN', ncm: '62034900', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },
+      { codigo: 'S1', gtin: null, peso_gramas: null, ml_variation_id: null },
+      { origin_type: 'reseller' },
+    );
+    expect((p.tax_information as Record<string, unknown>).origin_type).toBe('reseller');
+  });
+
   it('title usa descrição fiscal; nula ou vazia cai no nome_pai', () => {
     const base = { nome_pai: 'Short Masculino Tactel Praia', unidade: 'UN', ncm: '62034900', cest: null,
       origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102' };

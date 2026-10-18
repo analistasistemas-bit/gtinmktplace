@@ -34,6 +34,9 @@ export function montarFiscalInformation(
     ncm: familia.ncm,
     origin_detail: String(familia.origem_nfe),
     csosn: familia.tributacao_icms, // v1 é Simples-only; o gate (D-7) garante isso antes.
+    // ML exige aqui dentro (400 "tax_information.origin_type is required", Zaven 17/10); o da
+    // raiz foi aceito sem erro e fica por compatibilidade.
+    origin_type: empresa.origin_type,
   };
   if (familia.cest) tax.cest = familia.cest;
   if (familia.fci) tax.fci = familia.fci;
