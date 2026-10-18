@@ -294,6 +294,15 @@ describe('caso real camisa 00000069 (emenda ADR-0183, 2026-10-18)', () => {
     expect(posProcessarDescricao(d, 'Camisa', '', variacoesCamisa, 'masculino')).toBe(d);
   });
 
+  // Reprocessamento real (18/10): a IA escreveu "Qual o público indicado? Produto masculino." e a
+  // fixa entrou de novo — duas perguntas de público.
+  it('❓ da IA que já pergunta o público não ganha a fixa', () => {
+    const ia = [...base, '❓ PERGUNTAS SOBRE ESTE PRODUTO', '', '▪ Qual a composição? 90% algodão.', '',
+      '▪ Qual o público indicado? Produto masculino.', '', '▪ Qual a marca? Zaven.', '', ...cores, FECHO].join('\n');
+    const d = posProcessarDescricao(ia, 'Camisa', '', variacoesCamisa, 'masculino');
+    expect(d.split('\n').filter((l) => /p[úu]blico/i.test(l))).toEqual(['▪ Qual o público indicado? Produto masculino.']);
+  });
+
   it('sem gênero: comportamento anterior (sem pergunta de público)', () => {
     const d = posProcessarDescricao([...base, ...cores, FECHO].join('\n'), 'Camisa', '', variacoesCamisa);
     expect(d).not.toContain('Para qual público');

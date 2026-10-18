@@ -537,8 +537,10 @@ function posProcessarGrade(descricao: string, tamanhos: string[], genero?: strin
   d = removerSecao(d, '📏', true);
   d = garantirPerguntaTamanho(removerBulletsDeMedida(d));
   d = garantirPerguntas(removerPerguntasIncompletas(d), [...perguntaPublico(genero), PERGUNTA_TAMANHO]);
-  // ❓ da IA que sobreviveu à poda também ganha a de público (revisão Codex).
-  for (const p of perguntaPublico(genero)) d = garantirPerguntaFixa(d, p);
+  // ❓ da IA que sobreviveu à poda também ganha a de público (revisão Codex) — salvo se a IA já
+  // perguntou o público (reprocessamento real 18/10 saiu com as duas).
+  const jaPerguntaPublico = d.split('\n').some((l) => l.trim().startsWith('▪') && /\bp[úu]blico\b/i.test(l));
+  if (!jaPerguntaPublico) for (const p of perguntaPublico(genero)) d = garantirPerguntaFixa(d, p);
   d = inserirGuiaTamanhos(garantirPerguntaTamanho(d), tamanhos);
   return formatarDescricao(garantirDisclaimerTonalidade(d));
 }
