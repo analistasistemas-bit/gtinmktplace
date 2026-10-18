@@ -1226,7 +1226,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
 
   const handleCriarKit = (item: PublicadoItem) =>
     setKitAlvo({
-      familiaId: item.familiaId,
+      // ADR-0185 D-3: a vigente — preview e `familia_base_id` saem da mesma família.
+      familiaId: item.familiaIdVigente ?? item.familiaId,
       codigoPai: item.codigoPai,
       // Preço de venda real (o mesmo da coluna "Preço atual"/"Preço publicado"), não o mínimo
       // líquido de `variacoes.preco` — ver baseParaKit.

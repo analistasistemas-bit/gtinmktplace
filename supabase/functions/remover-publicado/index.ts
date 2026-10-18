@@ -63,6 +63,9 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     case 'em_voo':
       await auditarOperacaoSuporte(admin, context, target, 'denied');
       return json({ erro: 'Há uma publicação em andamento para este código. Aguarde terminar antes de remover.' }, 409);
+    case 'em_processamento':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({ erro: 'A cópia mais nova deste produto ainda está sendo processada ou publicada. Aguarde terminar e tente de novo — nada foi alterado.' }, 409);
     case 'remocao_pendente':
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return json({

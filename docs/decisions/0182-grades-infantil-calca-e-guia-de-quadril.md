@@ -126,6 +126,13 @@ aviso de envio `me1`). Decisão do Diego: opção A, `MLB430391`. `SWIMWEAR` ent
 de `null`; o SKU leva o tamanho cru no atributo indicado, sem `SIZE_GRID_*`. `BABY_SWIMWEAR` segue
 fora (falha alto).
 
+*Emenda 2026-10-18 (foto da grade de cor única).* A família `00000064` (Estampa Sereia, 4/6/8/10,
+só capa) acusava "sem foto" nas 4 variações. Grade de 1 cor só difere no tamanho, e Legacy e UP já
+montam a galeria de cada SKU a partir da capa (`ordenarFotosVariacao`, `capa ?? propria`).
+`familiaExigeFotoPorVariacao` (`src/lib/publicavel.ts`) passa a dispensar a foto por variação em
+CREATE + `tipoAviamento='outro'` + 1 cor entre as incluídas + capa. Com 2+ cores, sem capa, em
+UPDATE ou em aviamento, a exigência continua (main `c3a02c13`).
+
 ## Consequências
 
 - Nenhuma família ou anúncio existente é alterado ou reprocessado (jaquetas, camisetas, calçados,

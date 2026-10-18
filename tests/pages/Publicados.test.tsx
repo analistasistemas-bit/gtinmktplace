@@ -95,7 +95,7 @@ vi.mock('@/hooks/useResumoFinanceiro', () => ({
 
 // Expandir item carrega a família via react-query; sem QueryClient no teste, mockamos o hook.
 vi.mock('@/hooks/useFamilia', () => ({
-  useFamilia: () => useFamiliaMock(),
+  useFamilia: (...args: unknown[]) => useFamiliaMock(...args),
 }));
 
 // ADR-0151: kits vinculados existentes (botão "Criar kit" + lista sob o card do produto-base).
@@ -569,6 +569,23 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
       expect(screen.getByRole('button', { name: 'Criar kit' })).toBeEnabled();
+    });
+
+    // ADR-0185 D-3: o preview (e o familia_base_id) saem da família vigente, não da mais antiga.
+    it('carrega a família vigente para o preview do kit', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null, familiaIdVigente: 'f-nova' })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Criar kit' }));
+      expect(useFamiliaMock).toHaveBeenCalledWith('f-nova', true);
     });
 
     it('desabilitado sem o módulo Estoque', () => {

@@ -27,3 +27,16 @@ describe('dedupePublicados — catalogRetentavel pela família publicada mais no
     expect(linha.catalogRetentavel).toBe(true);
   });
 });
+
+// ADR-0185 D-3: Criar kit usa a família vigente (custo/peso/fotos atuais), não a mais antiga.
+describe('dedupePublicados — familiaIdVigente', () => {
+  it('aponta a família publicada mais nova; o representante segue a original', () => {
+    const [linha] = dedupePublicados([
+      base({ familiaId: 'antiga', publicadoEm: '2026-01-01' }),
+      base({ familiaId: 'nova', publicadoEm: '2026-06-01' }),
+      base({ familiaId: 'snapshot-update', publicadoEm: null }), // UPDATE ainda não publicado
+    ]);
+    expect(linha.familiaId).toBe('antiga');
+    expect(linha.familiaIdVigente).toBe('nova');
+  });
+});

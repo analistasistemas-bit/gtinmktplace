@@ -7,6 +7,16 @@
 - [x] Pergunta frequente reconstruída também de "Proteção UV/FPU", "Quantidade" e "Aplicação/Indicação/Uso" (caso Conjunto Sereia: ❓ sumia com 2 perguntas).
 - [x] "Estampa Sereia" (estampa nomeada) → `ESTAMPAS DISPONÍVEIS`, não `CORES`.
 
+## Revisão após cadastro de produto — EM PRODUÇÃO desde 2026-10-18
+
+- [x] Tela congelada no estado pré-IA ("em processamento", sem categoria/preço/viabilidade):
+  o cadastro navega direto para a Revisão com a família pendente e o evento do Realtime se perdia.
+  A Revisão agora polla família/lote a cada 4s enquanto processam (main `d8f0bf27`).
+- [x] Grade de 1 cor com capa não acusa mais "sem foto" por variação (emenda ADR-0182, main `c3a02c13`).
+- [x] Revisão Codex gpt-6.1-sol high nos dois diffs: sem achados.
+- [ ] Preditor categorizou o conjunto infantil UV `00000064` em `MLB39961` (Bebês › Moda Praia),
+  que o ADR-0182 registra como recusado; a `00000043` foi corrigida à mão para `MLB430391`.
+
 ## Título de produto em grade (ADR-0184) — EM PRODUÇÃO desde 2026-10-18 (main `fbb42c6e`)
 
 - [x] Peça + Público (gênero cadastrado) + Marca (só da fonte) + Característica + Material + cor única + Kit.
