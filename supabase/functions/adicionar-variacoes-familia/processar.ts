@@ -274,7 +274,9 @@ export function decidirRetry(
   if ((refNota.gravada ?? null) !== (refNota.corpo ?? null)) return { tipo: 'divergente' };
   const diverge = body.some((b, i) => {
     const gravada = intencao[i] as Record<string, unknown>;
-    return Object.entries(normalizarIntencao(b)).some(([k, valor]) => gravada[k] !== valor);
+    // gtin: intenção gravada antes do gtinOuNull pode ter o valor cru ('2') — normaliza os dois lados.
+    return Object.entries(normalizarIntencao(b)).some(([k, valor]) =>
+      (k === 'gtin' ? gtinOuNull(gravada[k] as string | null) : gravada[k]) !== valor);
   });
   if (diverge) return { tipo: 'divergente' };
   return { tipo: 'reaplicar', itens: intencao.map((it) => ({ codigo: it.codigo, qtd: it.estoqueInicial, custo: it.custo })) };
@@ -540,6 +542,7 @@ export function clonarVariacao(
   const estoque = ctx.estoqueCanonico ?? (row.estoque as number);
   return {
     ...clone,
+    gtin: gtinOuNull(row.gtin as string | null),
     familia_id: ctx.familiaId,
     user_id: ctx.userId,
     estoque,

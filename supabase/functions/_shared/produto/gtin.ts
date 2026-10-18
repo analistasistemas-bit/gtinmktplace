@@ -9,5 +9,5 @@ import { gtinValido } from '../nfe/regras.ts';
 export function gtinOuNull(gtin: string | null | undefined): string | null {
   const s = (gtin ?? '').trim();
   if (s === '') return null;
-  return /^3000\d*$/.test(s) || gtinValido(s) ? s : null;
+  return s.startsWith('3000') || gtinValido(s) ? s : null;
 }

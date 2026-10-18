@@ -12,6 +12,7 @@ import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atribu
 import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
+import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
 
 export interface KitSolicitado {
@@ -167,7 +168,7 @@ export function montarVariacaoKit(
     familia_id: ctx.familiaId,
     codigo: ctx.codigo,
     // null por padrão, NUNCA o da base (D-5).
-    gtin: kit.gtin,
+    gtin: gtinOuNull(kit.gtin),
     // trigger força; explícito por clareza (D-8).
     estoque: 0,
     estoque_anterior: 0,

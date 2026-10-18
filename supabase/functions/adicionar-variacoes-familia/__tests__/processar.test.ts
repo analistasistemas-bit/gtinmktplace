@@ -202,6 +202,12 @@ describe('clonarVariacao', () => {
     expect(v.excluida_da_publicacao).toBe(false);
   });
 
+  it('clone não carrega GTIN inválido legado; válido fica', () => {
+    const ctx = { familiaId: 'f', userId: 'u', estoqueCanonico: undefined };
+    expect(clonarVariacao({ codigo: '00000001', estoque: 1, gtin: '2' }, ctx).gtin).toBeNull();
+    expect(clonarVariacao({ codigo: '00000001', estoque: 1, gtin: '7891234567895' }, ctx).gtin).toBe('7891234567895');
+  });
+
   it('sem estoque canônico, usa o estoque clonado', () => {
     const v = clonarVariacao(
       { id: 'v1', criado_em: 'x', familia_id: 'fam-antiga', codigo: '00000001', estoque: 7 },
@@ -788,6 +794,10 @@ describe('decidirRetry (Codex #3, r2 #2, r3 #2)', () => {
   });
   it('variações persistidas a menos → incompleto', () => {
     expect(decidirRetry(intencao(), [corpo()], [])).toEqual({ tipo: 'incompleto' });
+  });
+  it('intenção gravada antes do fix com gtin cru "2" + reenvio idêntico → reaplicar (não 409)', () => {
+    const antiga = [{ codigo: '00000103', ...normalizarIntencao(corpo()), gtin: '2' }];
+    expect(decidirRetry(antiga, [{ ...corpo(), gtin: '2' }], ['00000103']).tipo).toBe('reaplicar');
   });
   it('comprimento diferente → divergente', () => {
     expect(decidirRetry(intencao(), [corpo(), corpo()], ['00000103'])).toEqual({ tipo: 'divergente' });

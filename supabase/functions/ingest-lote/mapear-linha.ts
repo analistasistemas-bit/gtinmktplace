@@ -2,6 +2,14 @@ import type { PlanilhaRow } from '../_shared/types.ts';
 import { lerOrigemCrua } from '../_shared/parser.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
 
+/** Célula numérica perde o zero à esquerda: UPC-A `012345678905` chega como 11 dígitos. Só esse
+ *  caso volta o zero — completar outros comprimentos faria ID de fornecedor passar por GTIN. */
+function gtinDaCelula(v: unknown): string | null {
+  if (!v) return null;
+  const s = String(v);
+  return typeof v === 'number' && /^\d{11}$/.test(s) ? `0${s}` : s;
+}
+
 /**
  * Converte uma linha crua da planilha (chaves = cabeçalhos) num `PlanilhaRow` tipado.
  * TODO campo lido da planilha PRECISA estar aqui — omitir um campo o dropa silenciosamente.
@@ -14,7 +22,7 @@ export function mapearLinha(r: Record<string, unknown>): PlanilhaRow {
     PAI: String(r.PAI ?? '0'),
     NOME: String(r.NOME ?? ''),
     UNIDADE: String(r.UNIDADE ?? ''),
-    GTIN: gtinOuNull(r.GTIN ? String(r.GTIN) : null),
+    GTIN: gtinOuNull(gtinDaCelula(r.GTIN)),
     CUSTO: Number(r.CUSTO ?? 0),
     PRECO: Number(r.PRECO ?? 0),
     ESTOQUE: Number(r.ESTOQUE ?? 0),

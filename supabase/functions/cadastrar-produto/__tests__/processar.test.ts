@@ -80,6 +80,10 @@ describe('variacoesDivergem', () => {
     expect(variacoesDivergem([enviada({ custo: 4.25 })], [gravada({ custo: '4.25' })])).toBe(false);
   });
 
+  it('gravada antes do fix com gtin cru "2" + reenvio idêntico não diverge (sem 409)', () => {
+    expect(variacoesDivergem([enviada({ gtin: '2' })], [gravada({ gtin: '2' })])).toBe(false);
+  });
+
   it('nome ou gtin alterado diverge', () => {
     expect(variacoesDivergem([enviada({ nome: 'Verde' })], [gravada()])).toBe(true);
     expect(variacoesDivergem([enviada({ gtin: '111' })], [gravada()])).toBe(true);

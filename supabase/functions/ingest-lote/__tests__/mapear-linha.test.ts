@@ -32,6 +32,10 @@ describe('mapearLinha', () => {
     expect(mapearLinha({ ...CRU, GTIN: '48251671' }).GTIN).toBeNull();
     expect(mapearLinha(CRU).GTIN).toBe('3000008412400');
     expect(mapearLinha({ ...CRU, GTIN: 7891234567895 }).GTIN).toBe('7891234567895');
+    // UPC-A numérico perde o zero no XLSX: 012345678905 chega como 12345678905.
+    expect(mapearLinha({ ...CRU, GTIN: 12345678905 }).GTIN).toBe('012345678905');
+    // ID de fornecedor de 9 dígitos não ganha zeros (lote #48).
+    expect(mapearLinha({ ...CRU, GTIN: 533100017 }).GTIN).toBeNull();
   });
 
   it('defaults seguros quando campos faltam/são nulos', () => {

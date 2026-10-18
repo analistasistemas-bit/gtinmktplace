@@ -239,7 +239,7 @@ export function variacoesDivergem(
   return enviadas.some((v, i) => {
     const g = gravadas[i];
     return (v.nome?.trim() || null) !== (g.nome ?? null)
-      || gtinOuNull(v.gtin) !== (g.gtin ?? null)
+      || gtinOuNull(v.gtin) !== gtinOuNull(g.gtin) // gravada antes do fix pode ter o valor cru
       // ADR-0166: MESMA normalização da gravação (`trim() || null`, montarLinhasProduto). Sem
       // esta linha, trocar só o tamanho entre duas tentativas com a mesma chave passaria pelo
       // guard, e `estoqueInicialDiverge` (que casa por índice) conferiria o estoque contra um SKU
