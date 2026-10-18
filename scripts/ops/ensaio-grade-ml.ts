@@ -51,7 +51,8 @@ if (!(expira - Date.now() > 5 * 60_000)) {
 }
 
 // 1) Chart real (pode criar chart + gravar cache).
-const chart = await garantirChart(admin, token, connectionId, categoriaId, genero, tamanhos, grade);
+const resolvido = await garantirChart(admin, token, connectionId, categoriaId, genero, tamanhos, grade);
+const chart = 'chartId' in resolvido ? resolvido : null;
 console.log(chart ? `chart: ${chart.chartId}` : 'chart: sem guia');
 
 // 2) 1 SKU plano, pelo mesmo montarPayloadItem do publicar-familia-up.
@@ -76,7 +77,7 @@ const variacao = {
   tamanho,
   ...(chart
     ? { sizeGridId: chart.chartId, sizeGridRowId: linhaChart!.rowId, sizeLabel: linhaChart!.sizeLabel }
-    : { tamanhoSemGuia: true }),
+    : { tamanhoSemGuia: 'semGuia' in resolvido ? resolvido.semGuia : null }),
 };
 // 'plano' força o item plano (family_name), como as categorias de vestuário em UP.
 const payload = montarPayloadItem(familia, [variacao], null, null, null, undefined, null, undefined, 'plano');
