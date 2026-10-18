@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarUserPrompt, SYSTEM } from '../copywriter-prompt';
+import { montarUserPrompt, SYSTEM, systemPara } from '../copywriter-prompt';
 import { ORDEM_LEITURA } from '../titulo-slots';
 
 const base = {
@@ -124,5 +124,19 @@ describe('bloco TÍTULO do SYSTEM (ADR-0099)', () => {
       const ultima = texto.split(/\s+/).pop()?.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '') ?? '';
       expect(proibidos).not.toContain(ultima);
     }
+  });
+});
+
+// Revisão Codex (18/10): o prompt de não-grade fica byte a byte igual; só a grade troca o bloco.
+describe('systemPara (emenda ADR-0184 palavras-chave)', () => {
+  const base = { nome_pai: 'X', descricao_detalhado: '', unidade: null };
+  const semBloco = (s: string) => s.replace(/TÍTULO EM GRADE[\s\S]*?(?=EXEMPLOS\n\nFonte: Barbante)/, '');
+  it('não-grade recebe o SYSTEM de sempre; grade recebe o bloco novo', () => {
+    const simples = systemPara({ ...base, variacoes: [{ codigo: '1', cor: 'Azul', nome: 'Azul', preco: 1 }] } as never);
+    expect(simples).toBe(SYSTEM);
+    const grade = systemPara({ ...base, variacoes: [{ codigo: '1', cor: 'Azul', nome: 'Azul', preco: 1, tamanho: 'M' }] } as never);
+    expect(grade).not.toBe(SYSTEM);
+    expect(grade).toContain('o NOME do tecido, sem percentual');
+    expect(semBloco(grade)).toBe(semBloco(SYSTEM));
   });
 });

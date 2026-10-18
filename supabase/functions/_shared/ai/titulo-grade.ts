@@ -57,7 +57,8 @@ function publicoPadrao(genero: string, produto: string): string {
   if (genero === 'meninos') return 'Infantil Menino';
   if (genero === 'meninas') return 'Infantil Menina';
   if (genero === 'masculino' || genero === 'feminino') {
-    const peca = tok(produto.split(/\s+/)[0] ?? '');
+    // Plural concorda pelo singular ("Camisetas" → feminina).
+    const peca = tok(produto.split(/\s+/)[0] ?? '').replace(/(?<=a)s$/, '');
     const fem = PECA_FEMININA_SEM_A.has(peca) || (peca.endsWith('a') && !PECA_MASCULINA_EM_A.has(peca));
     return genero === 'masculino' ? (fem ? 'Masculina' : 'Masculino') : (fem ? 'Feminina' : 'Feminino');
   }
@@ -102,7 +103,7 @@ const RE_PERCENTUAL = /^\d+(?:[.,]\d+)?%$/;
 /** Tecido sem composição (emenda 2026-10-18): "90% Algodão e 10% Elastano" → "Algodão Com
  *  Elastano"; "100% Algodão" → "Algodão". No máximo duas fibras; sem percentual fica como está. */
 function tecidoSemPercentual(valor: string): string {
-  const palavras = valor.split(/\s+/).filter(Boolean);
+  const palavras = separarPercentual(valor).split(/\s+/).filter(Boolean);
   if (!palavras.some((p) => RE_PERCENTUAL.test(p))) return valor;
   const fibras: string[][] = [];
   for (const p of palavras) {
@@ -126,7 +127,9 @@ function semTamanho(valor: string): string {
 /** Sequência de tokens da fonte sem as átonas de ligação — "com"/"sem"/"para" ficam, porque
  *  mudam o sentido ("Sem Bolso" não comprova "Com Bolso"). */
 const LIGACAO = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'no', 'na', 'a', 'o']);
-const seq = (s: string) => tokens(s).filter((t) => !LIGACAO.has(t));
+/** "100%algodão" → "100% algodão" (revisão Codex): percentual e fibra são palavras distintas. */
+const separarPercentual = (s: string) => s.replace(/(\d+(?:[.,]\d+)?%)(?=\p{L})/gu, '$1 ');
+const seq = (s: string) => tokens(separarPercentual(s)).filter((t) => !LIGACAO.has(t));
 
 /** Característica/uso: a EXPRESSÃO precisa aparecer contígua na fonte (não basta cada palavra). */
 function expressaoAncorada(valor: string, fonteSeq: string[]): string {
@@ -138,9 +141,14 @@ function expressaoAncorada(valor: string, fonteSeq: string[]): string {
   return '';
 }
 
+/** Ocorrência negada: logo depois de "sem", ou até 2 palavras depois de "não" ("não contém X"). */
+function negada(fonteSeq: string[], i: number): boolean {
+  return fonteSeq[i - 1] === 'sem' || fonteSeq[i - 1] === 'nao' || fonteSeq[i - 2] === 'nao';
+}
+
 /** Tecido: cada palavra na fonte e nunca só depois de "sem" (declaração positiva). */
 function tecidoAncorado(valor: string, fonteSeq: string[]): string {
-  const positivas = new Set(fonteSeq.filter((_, i) => fonteSeq[i - 1] !== 'sem'));
+  const positivas = new Set(fonteSeq.filter((_, i) => !negada(fonteSeq, i)));
   const ts = tokens(valor).filter((t) => !ATONAS.has(t));
   return ts.length > 0 && ts.every((t) => positivas.has(t)) ? valor : '';
 }
@@ -151,11 +159,16 @@ const SINONIMOS: Record<string, string[]> = {
   short: ['bermuda'], bermuda: ['short'], moletom: ['blusa de frio'], 'blusa de frio': ['moletom'],
   jaqueta: ['casaco'], casaco: ['jaqueta'],
 };
-function sinonimoValido(produto: string, sinonimo: string): string {
+function sinonimoValido(produto: string, sinonimo: string, fonte: string): string {
   const peca = tokens(produto).join(' ');
-  const alvo = tokens(sinonimo).join(' ');
+  const alvo = tokens(sinonimo);
   const pares = Object.entries(SINONIMOS).find(([p]) => peca === p || peca.startsWith(`${p} `))?.[1];
-  return pares?.includes(alvo) ? sinonimo : '';
+  if (!pares?.includes(alvo.join(' '))) return '';
+  // Revisão Codex: "Não é casaco" e "tecido moletom" citam a palavra sem nomear a peça.
+  const ts = tokens(separarPercentual(fonte));
+  const comoPeca = ts.some((_, i) => alvo.every((a, j) => ts[i + j] === a)
+    && !negada(ts, i) && !['tecido', 'em', 'de'].includes(ts[i - 1] ?? ''));
+  return comoPeca ? sinonimo : '';
 }
 
 /** Palavra repetida sai do slot posterior. `produto`, cor e kit nunca perdem palavra: entram
@@ -174,8 +187,13 @@ function absorverNoTecido(out: TituloSlots): void {
   for (const slot of ['caracteristica', 'caracteristica2'] as const) {
     const palavras = out[slot].split(/\s+/);
     if (tok(palavras[0] ?? '') !== tok(fibra)) continue;
-    out.material = [...palavras, ...out.material.split(/\s+/).slice(1)].join(' ');
-    out[slot] = '';
+    const ja = new Set(palavras.map(tok));
+    const resto = out.material.split(/\s+/).slice(1).filter((p) => !ja.has(tok(p)) || ATONAS.has(tok(p)));
+    const limpo = (ws: string[]) => ws.join(' ').replace(/(\s+(?:com|e))+$/i, '').replace(/^(?:com|e)$/i, '').trim();
+    // 1ª característica (incortável) fica com a fibra qualificada; o resto do tecido segue no
+    // material cortável — nem duplica, nem perde a característica, nem estoura (revisão Codex).
+    if (slot === 'caracteristica') out.material = limpo(resto);
+    else { out.material = limpo([...palavras, ...resto]); out.caracteristica2 = ''; }
     return;
   }
 }
@@ -224,7 +242,13 @@ export function aplicarRegrasGrade(slots: TituloSlots, fonte: DadosFonteTitulo):
   for (const slot of ['caracteristica', 'caracteristica2', 'aplicacao'] as const) {
     out[slot] = out[slot] ? expressaoAncorada(out[slot], fonteSeq) : '';
   }
-  out.sinonimo = out.sinonimo ? sinonimoValido(out.produto, out.sinonimo) : '';
+  out.sinonimo = out.sinonimo ? sinonimoValido(out.produto, out.sinonimo, `${fonte.nomePai} ${fonte.descricaoPai}`) : '';
+  // Revisão Codex: a peça não é passagem para qualificador inventado ("Camisa Social Slim Fit"
+  // com fonte "Camisa Algodão"). A 1ª palavra (a peça) fica sempre — zerar derrubaria a família.
+  const fonteTodos = new Set(tokens(separarPercentual(`${fonte.nomePai} ${fonte.descricaoPai}`)));
+  out.produto = out.produto.split(/\s+/)
+    .filter((p, i) => i === 0 || !tok(p) || ATONAS.has(tok(p)) || fonteTodos.has(tok(p)))
+    .join(' ');
   ({ produto: out.produto, publico: out.publico } = guardPublico(out, fonte));
 
   // Kit: aplicarGuardsTitulo já reduziu a contagem ancorada a "Nun"/"Npc" (N > 1).

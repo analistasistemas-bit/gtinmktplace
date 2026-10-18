@@ -122,11 +122,15 @@ Cor única real permanece protegida conforme ADR-0044. Multicor e cor indefinida
 
 A mudança vale para geração e regeneração de títulos de grade após a entrega. Não determina atualização em massa de anúncios ou descrições já existentes.
 
-**Decisões de implementação (Claude, registradas para revisão):** `produto` não passa pela
-ancoragem de expressão na grade, porque zerá-lo derruba a família (`TituloInviavelError`); o
-filtro de marketing que já existia continua valendo para ele. O bloco "TÍTULO EM GRADE" foi
-reescrito dentro do prompt compartilhado (ele já é condicionado a "vendido em GRADE"), em vez de
-um prompt de sistema separado só para grade. Característica que começa pela fibra principal do
-tecido ("Algodão Egípcio" × "Algodão Com Elastano") é absorvida pelo tecido.
+**Decisões de implementação (revisadas pelo Codex):**
+- `produto` na grade perde as palavras sem respaldo na fonte, mas a 1ª palavra (a peça) fica
+  sempre: zerá-la derrubaria a família (`TituloInviavelError`).
+- O `SYSTEM` de não-grade fica byte a byte igual; a grade usa `systemPara()`, que troca só o bloco
+  "TÍTULO EM GRADE".
+- Característica que começa pela fibra principal do tecido ("Algodão Egípcio" × "Algodão Com
+  Elastano") fica com a fibra qualificada e o resto do tecido segue no material cortável.
+- Negação: palavra logo depois de "sem" ou até 2 palavras depois de "não" não comprova tecido nem
+  sinônimo; sinônimo também não vale quando a fonte o usa como tecido ("tecido moletom").
+- Na cobertura do tipo da peça (ADR-0054), o sinônimo não conta na grade (é o 1º a ser cortado).
 
 Pesquisa e especificação completas: `docs/superpowers/specs/2026-10-18-titulo-grade-palavras-chave-design.md`.

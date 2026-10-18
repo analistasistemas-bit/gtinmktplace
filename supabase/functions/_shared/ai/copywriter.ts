@@ -1,7 +1,7 @@
 import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
-import { type InputCopy, SYSTEM, montarUserPrompt, validarTipoProdutoBusca } from './copywriter-prompt.ts';
+import { type InputCopy, montarUserPrompt, systemPara, validarTipoProdutoBusca } from './copywriter-prompt.ts';
 import { SLOTS_VAZIOS, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 
 export type { InputCopy };
@@ -116,7 +116,7 @@ async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy>
     {
       model: modelo,
       messages: [
-        { role: 'system', content: SYSTEM },
+        { role: 'system', content: systemPara(input) },
         { role: 'user', content: montarUserPrompt(input) },
       ],
       response_format: { type: 'json_schema', json_schema: SCHEMA_COPY },

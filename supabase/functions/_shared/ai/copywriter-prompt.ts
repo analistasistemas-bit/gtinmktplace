@@ -764,36 +764,26 @@ vazia é o resultado normal e esperado. Nunca inclua aqui adjetivo promocional p
 "Premium" não é um termo com risco, é um termo banido.
 
 TÍTULO EM GRADE (só quando o input disser "vendido em GRADE")
-Roupa/calçado em tamanhos. O título é feito das palavras que o comprador DIGITA na busca: peça,
-modelo/corte e tecido. O sistema monta: kit + produto + sinonimo + publico + caracteristica +
-caracteristica2 + material + aplicacao + cor + marca. Não tente encher os 60 caracteres: só dado
-da fonte (T6 vale).
-- produto: a peça no termo de busca ("Camisa", "Calça", "Vestido", "Calça Legging"), sem gênero.
-- sinonimo: OUTRO nome da MESMA peça, só se a fonte usar os dois: Short/Bermuda, Moletom/Blusa De
-  Frio, Jaqueta/Casaco. Senão "".
-- publico: deixe como o gênero do input; o sistema escreve a forma final.
-- caracteristica / caracteristica2: o que separa esta peça na busca, EXPRESSÃO copiada da fonte,
-  nesta prioridade: modelo/corte (Slim Fit, Wide Leg, Social, Básica, Oversized, Polo) →
-  construção/comprimento (Manga Curta, Gola Padre, Cintura Alta, Midi, Com Capuz) → segmento
-  (Plus Size) → estampa/tema. Uma expressão por campo. Nunca relação que a fonte não diz
-  ("Sem Bolso" não autoriza "Com Bolso").
-- material: o NOME do tecido, sem percentual: "90% Algodão e 10% Elastano" → "Algodão Com
-  Elastano"; "Algodão Egípcio com Elastano" → "Algodão Egípcio Com Elastano"; "Jeans", "Linho".
-  Tecido qualificado vai inteiro aqui, nunca repartido com caracteristica.
-- aplicacao: uso/estação só se a fonte declarar ("Academia", "Praia", "Trabalho"); senão "".
-- quantidade: contagem do PACOTE vendido (Kit 3). "Conjunto 2 Peças" não é kit.
-- NUNCA tamanho (P, M, G, GG, 2 anos) e NUNCA cor — o sistema decide a cor. modelo, medida e
-  compatibilidade ficam "" na grade.
+Roupa/calçado em tamanhos. O sistema monta: produto + publico + marca + caracteristica +
+caracteristica2 + material + kit. Aqui o T6 se inverte: USE o espaço até perto de 60 caracteres,
+mas SÓ com palavras da fonte — nunca invente para encher.
+- produto: a peça no termo que o comprador digita ("Camiseta", "Calça Legging", "Conjunto"),
+  nunca nome técnico de catálogo. Sem gênero aqui — ele vai em "publico".
+- publico: o gênero do input concordando com a peça: "Camiseta Masculina", "Short Masculino",
+  "Calça Feminina", "Conjunto Infantil". Infantil: Infantil, Menina ou Menino. "Plus Size" só se
+  estiver na fonte.
+- caracteristica / caracteristica2: o que DECIDE a compra, no máximo 2, palavras da fonte:
+  "Cintura Alta", "Dry Fit", "Proteção UV", "Com Bolso", "Oversized", "Estampa Floral".
+- material: só o material real da fonte ("Algodão", "Linho", "Suplex").
+- NUNCA tamanho (P, M, G, GG, 2 anos) e NUNCA cor — o sistema decide a cor. modelo, medida,
+  compatibilidade, aplicacao e sinonimo ficam "" na grade.
 - Proibido em qualquer campo: promoção, imperdível, barato, frete, grátis, original, garantido,
   garantia, milagroso, lindo, maravilhoso, perfeito, top (como adjetivo), premium, melhor, envio,
-  pagamento; e pontuação ! ? * ou emoji. Termo provável sem respaldo vai para termos_com_risco.
+  pagamento; e pontuação ! ? * ou emoji.
 
   Fonte: "Short Linho Mauricinho Masculino Bermuda Esporte Fino" · gênero masculino
-  produto="Short" sinonimo="Bermuda" publico="Masculino" caracteristica="Esporte Fino" material="Linho"
+  produto="Short Bermuda" publico="Masculino" caracteristica="Esporte Fino" material="Linho"
   → Short Bermuda Masculino Esporte Fino Linho
-  Fonte: "Camisa de Algodão Egípcio Premium com Elastano" + "Composição: 90% Algodão e 10% Elastano"
-  produto="Camisa" material="Algodão Egípcio Com Elastano" termos_com_risco=["Social", "Slim Fit"]
-  → Camisa Masculina Algodão Egípcio Com Elastano
 
 EXEMPLOS
 
@@ -901,6 +891,49 @@ TOM E ESTILO
 Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 ❓ 🎨 📦) e nos bullets (✔ • - ▪). Evite emojis decorativos no meio dos parágrafos.
 
 NUNCA escreva seção sobre envio, frete, prazo, transportadora ou cobertura de entrega. Prazo, modalidade, custo e cobertura são exibidos pelo próprio Mercado Livre na página, calculados por CEP — afirmá-los aqui é promessa que o vendedor não controla. Vale para "envio rápido", "pronta entrega", "todo o Brasil" e equivalentes, exatamente como já é proibido no título.`;
+
+// Emenda ADR-0184 (2026-10-18, palavras-chave): bloco de título só para grade. O SYSTEM acima
+// fica byte a byte igual para não-grade (revisão Codex); a grade troca só este bloco.
+const BLOCO_TITULO_GRADE = `TÍTULO EM GRADE (só quando o input disser "vendido em GRADE")
+Roupa/calçado em tamanhos. O título é feito das palavras que o comprador DIGITA na busca: peça,
+modelo/corte e tecido. O sistema monta: kit + produto + sinonimo + publico + caracteristica +
+caracteristica2 + material + aplicacao + cor + marca. Não tente encher os 60 caracteres: só dado
+da fonte (T6 vale).
+- produto: a peça no termo de busca ("Camisa", "Calça", "Vestido", "Calça Legging"), sem gênero.
+- sinonimo: OUTRO nome da MESMA peça, só se a fonte usar os dois: Short/Bermuda, Moletom/Blusa De
+  Frio, Jaqueta/Casaco. Senão "".
+- publico: deixe como o gênero do input; o sistema escreve a forma final.
+- caracteristica / caracteristica2: o que separa esta peça na busca, EXPRESSÃO copiada da fonte,
+  nesta prioridade: modelo/corte (Slim Fit, Wide Leg, Social, Básica, Oversized, Polo) →
+  construção/comprimento (Manga Curta, Gola Padre, Cintura Alta, Midi, Com Capuz) → segmento
+  (Plus Size) → estampa/tema. Uma expressão por campo. Nunca relação que a fonte não diz
+  ("Sem Bolso" não autoriza "Com Bolso").
+- material: o NOME do tecido, sem percentual: "90% Algodão e 10% Elastano" → "Algodão Com
+  Elastano"; "Algodão Egípcio com Elastano" → "Algodão Egípcio Com Elastano"; "Jeans", "Linho".
+  Tecido qualificado vai inteiro aqui, nunca repartido com caracteristica.
+- aplicacao: uso/estação só se a fonte declarar ("Academia", "Praia", "Trabalho"); senão "".
+- quantidade: contagem do PACOTE vendido (Kit 3). "Conjunto 2 Peças" não é kit.
+- NUNCA tamanho (P, M, G, GG, 2 anos) e NUNCA cor — o sistema decide a cor. modelo, medida e
+  compatibilidade ficam "" na grade.
+- Proibido em qualquer campo: promoção, imperdível, barato, frete, grátis, original, garantido,
+  garantia, milagroso, lindo, maravilhoso, perfeito, top (como adjetivo), premium, melhor, envio,
+  pagamento; e pontuação ! ? * ou emoji. Termo provável sem respaldo vai para termos_com_risco.
+
+  Fonte: "Short Linho Mauricinho Masculino Bermuda Esporte Fino" · gênero masculino
+  produto="Short" sinonimo="Bermuda" publico="Masculino" caracteristica="Esporte Fino" material="Linho"
+  → Short Bermuda Masculino Esporte Fino Linho
+  Fonte: "Camisa de Algodão Egípcio Premium com Elastano" + "Composição: 90% Algodão e 10% Elastano"
+  produto="Camisa" material="Algodão Egípcio Com Elastano" termos_com_risco=["Social", "Slim Fit"]
+  → Camisa Masculina Algodão Egípcio Com Elastano
+
+`;
+const SYSTEM_GRADE = SYSTEM.slice(0, SYSTEM.indexOf('TÍTULO EM GRADE (só quando'))
+  + BLOCO_TITULO_GRADE + SYSTEM.slice(SYSTEM.indexOf('EXEMPLOS\n\nFonte: Barbante'));
+
+/** Prompt de sistema da família: grade (mesmo detector de `montarUserPrompt`) ou o de sempre. */
+export function systemPara(input: InputCopy): string {
+  return tamanhosDaGradeCopy(input.variacoes) !== null ? SYSTEM_GRADE : SYSTEM;
+}
 
 export function montarUserPrompt(input: InputCopy): string {
   // Eixo de variação primeiro (ADR-0115): o sufixo do nome da variação é dado da PLANILHA e

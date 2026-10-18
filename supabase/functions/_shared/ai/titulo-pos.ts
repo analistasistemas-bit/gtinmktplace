@@ -102,7 +102,7 @@ export function diagnosticarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
     grade,
     // Emenda ADR-0184 (2026-10-18): só vestido/legging feminino podem perder o público, por último.
     publicoCortavel: grade && fonte.genero === 'feminino'
-      && /^(vestido|legging|calca legging)\b/.test(validados.produto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()),
+      && /^(vestido|leggings?|calca leggings?)\b/.test(validados.produto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()),
   });
 
   // O corte não reescreve slot nenhum — remove o slot inteiro. Por isso é comparado por

@@ -291,6 +291,55 @@ describe('palavras-chave (spec Codex)', () => {
   });
 });
 
+describe('achados da revisão Codex (palavras-chave)', () => {
+  const t = (s: Partial<TituloSlots>, f: Partial<typeof SHORT>) => titulo(s, { descricaoPai: '', cores: [], ...f });
+
+  it('tipo coberto pelo tecido não prefixa a peça (título continua viável)', () => {
+    expect(t({ produto: 'Blusa De Frio', material: 'Moletom', caracteristica: 'Com Fechamento Por Botões E Capuz' }, {
+      nomePai: 'Blusa De Frio Com Fechamento Por Botões E Capuz', descricaoPai: 'Tecido moletom.', genero: 'feminino',
+      tipoProdutoBusca: 'moletom',
+    })).toBe('Blusa De Frio Feminina Com Fechamento Por Botões E Capuz');
+  });
+
+  it('absorção do tecido não duplica e mantém a 1ª característica protegida', () => {
+    const f = { nomePai: 'Camisa Algodão Egípcio Com Elastano', genero: 'masculino' };
+    expect(t({ produto: 'Camisa', caracteristica: 'Algodão Com Elastano', material: 'Algodão Com Elastano' }, f))
+      .toBe('Camisa Masculina Algodão Com Elastano');
+    expect(t({ produto: 'Camisa', caracteristica: 'Algodão Egípcio', material: 'Algodão Com Elastano' }, { ...f, genero: 'meninos', cores: ['Azul Marinho'] }))
+      .toBe('Camisa Infantil Menino Algodão Egípcio Azul Marinho');
+  });
+
+  it('percentual colado à fibra', () => {
+    expect(t({ produto: 'Camiseta', material: '100%algodão' }, { nomePai: 'Camiseta 100%algodão', genero: 'masculino' }))
+      .toBe('Camiseta Masculina Algodão');
+    expect(t({ produto: 'Camiseta', material: 'Algodão' }, { nomePai: 'Camiseta 100%algodão', genero: 'masculino' }))
+      .toBe('Camiseta Masculina Algodão');
+  });
+
+  it('sinônimo negado ou citado como tecido não entra', () => {
+    expect(t({ produto: 'Jaqueta', sinonimo: 'Casaco' }, { nomePai: 'Jaqueta de Nylon', descricaoPai: 'Não é casaco.', genero: 'feminino' }))
+      .toBe('Jaqueta Feminina');
+    expect(t({ produto: 'Blusa De Frio', sinonimo: 'Moletom' }, { nomePai: 'Blusa De Frio em tecido moletom', genero: 'feminino' }))
+      .toBe('Blusa De Frio Feminina');
+  });
+
+  it('Leggings (plural) também libera o corte do público', () => {
+    expect(t({ produto: 'Leggings', caracteristica: 'Com Fechamento Por Botões De Madeira' }, {
+      nomePai: 'Leggings Feminina Com Fechamento Por Botões De Madeira Azul Marinho', genero: 'feminino', cores: ['Azul Marinho'],
+    })).toBe('Leggings Com Fechamento Por Botões De Madeira Azul Marinho');
+  });
+
+  it('tecido negado ("não contém") não entra', () => {
+    expect(t({ produto: 'Camisa', material: 'Algodão Com Elastano' }, { nomePai: 'Camisa Algodão', descricaoPai: 'Não contém elastano.', genero: 'masculino' }))
+      .toBe('Camisa Masculina');
+  });
+
+  it('peça não carrega qualificador inventado; a 1ª palavra fica sempre', () => {
+    expect(t({ produto: 'Camisa Social Slim Fit' }, { nomePai: 'Camisa Algodão', genero: 'masculino' })).toBe('Camisa Masculina');
+    expect(t({ produto: 'Camisetas' }, { nomePai: 'Camiseta', genero: 'masculino' })).toBe('Camisetas Masculina');
+  });
+});
+
 describe('não-grade inalterado', () => {
   it('slots novos zerados e fora do título', () => {
     const r = diagnosticarTitulo(slots({ produto: 'Linha', medida: '10000m', publico: 'Masculino', caracteristica: 'Forte' }), {
