@@ -89,6 +89,41 @@ export interface PublicadoItem {
   /** ADR-0088: produto em User Products (cada cor = um MLB próprio). O reajuste em massa (I5) manda
    *  a FAMÍLIA, que o servidor expande em todos os SKUs; a linha mostra um MLB só. `undefined` = Legacy. */
   userProducts?: boolean;
+  /** ADR-0088: MLBs de todos os SKUs da família User Products. A linha agrega status/estoque deles
+   *  (agregarStatusUP) — `mlItemId` é um SKU só, que o ML pausa sozinho quando zera. */
+  mlItemIdsUP?: string[];
+}
+
+/**
+ * Status/estoque de uma família User Products a partir dos N itens (1 por SKU). Ativo se QUALQUER
+ * SKU está ativo (o anúncio vende); estoque é a soma. Demais campos (preço, motivo) seguem do item
+ * principal — o preço já é rotulado "(1ª cor)" na tela.
+ */
+export function agregarStatusUP<S extends { status: StatusPublicado; estoque: number | null }>(
+  principal: S | undefined, filhos: S[],
+): S | undefined {
+  if (filhos.length === 0) return principal;
+  const base = principal ?? filhos[0];
+  const conhecidos = filhos.filter((f) => f.estoque != null);
+  return {
+    ...base,
+    status: filhos.some((f) => f.status === 'ativo') ? 'ativo' : base.status,
+    estoque: conhecidos.length ? conhecidos.reduce((s, f) => s + (f.estoque as number), 0) : null,
+  };
+}
+
+/** "Azul Claro (P, M, G) · Bege Cru (P, M)" — uma entrada por cor, na ordem em que aparecem. */
+export function resumirVariacoesPorCor(
+  variacoes: Array<{ cor: string; tamanho: string | null; codigo: string }>,
+): string {
+  const porCor = new Map<string, string[]>();
+  for (const v of variacoes) {
+    const chave = v.cor || v.codigo;
+    const tamanhos = porCor.get(chave) ?? [];
+    if (v.tamanho && !tamanhos.includes(v.tamanho)) tamanhos.push(v.tamanho);
+    porCor.set(chave, tamanhos);
+  }
+  return [...porCor].map(([cor, t]) => (t.length ? `${cor} (${t.join(', ')})` : cor)).join(' · ');
 }
 
 /**

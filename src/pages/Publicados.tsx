@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, resumirVariacoesPorCor } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
@@ -664,7 +664,7 @@ function LinhaTabela({
               {familia.variacoes.length > 1 && (
                 <div className="rounded-md border bg-background px-3 py-2 text-xs">
                   <span className="font-medium">Variações publicadas:</span>{' '}
-                  {familia.variacoes.map((v) => v.cor || v.codigo).join(' · ')}
+                  {resumirVariacoesPorCor(familia.variacoes)}
                 </div>
               )}
               {!ehKitVinculado && <KitsVinculados codigoPai={item.codigoPai} ativo={aberto} />}
@@ -1224,7 +1224,10 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
     const vendasPorItem = resumo.porItem;
     return publicados.map((item) => {
-      const s = statusMap.get(item.mlItemId);
+      const s = agregarStatusUP(
+        statusMap.get(item.mlItemId),
+        (item.mlItemIdsUP ?? []).flatMap((id) => statusMap.get(id) ?? []),
+      );
       const v = vendasPorItem[item.mlItemId];
       // Sem o mapa canônico assentado, as vendas do anúncio de catálogo ainda estão na chave do
       // MLB de catálogo: a linha do anúncio dono mostraria só a fatia própria e depois saltaria
