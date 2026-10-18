@@ -4,6 +4,7 @@ import {
   linhaTamanhos,
   montarUserPrompt,
   posProcessarDescricao,
+  removerPerguntasIncompletas,
   tamanhosDaGradeCopy,
 } from '../copywriter-prompt';
 
@@ -272,6 +273,25 @@ describe('caso real camisa 00000069 (emenda ADR-0183, 2026-10-18)', () => {
     const d = posProcessarDescricao(ia, 'Camisa', '', variacoesCamisa, 'masculino');
     expect(d.trim().endsWith(FECHO)).toBe(true);
     expect(d.split('\n').filter((l) => l.startsWith('▪')).length).toBeGreaterThanOrEqual(3);
+  });
+
+  // Revisão Codex do diff (18/10).
+  it('resposta na linha de baixo não é fronteira da ❓ (vale para não-grade também)', () => {
+    const faq = ['📌 ESPECIFICAÇÕES', '', '• Marca: X', '', '❓ PERGUNTAS SOBRE ESTE PRODUTO', '',
+      '▪ Qual a composição?', '100% Algodão.', '▪ Qual a marca?', 'X.', '▪ Qual o uso?', 'Diário.', '', FECHO].join('\n');
+    expect(removerPerguntasIncompletas(faq)).toBe(faq);
+  });
+
+  it('❓ da IA que já passa do mínimo também ganha a pergunta de público, antes da de tamanho', () => {
+    const ia = [...base, '❓ PERGUNTAS SOBRE ESTE PRODUTO', '', '▪ Qual a composição? 90% algodão.',
+      '▪ Qual a marca? Zaven.', '', ...cores, FECHO].join('\n');
+    const d = posProcessarDescricao(ia, 'Camisa', '', variacoesCamisa, 'masculino');
+    const perguntas = d.split('\n').filter((l) => l.startsWith('▪'));
+    expect(perguntas.slice(-2)).toEqual([
+      '▪ Para qual público é indicado? Masculino.',
+      '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.',
+    ]);
+    expect(posProcessarDescricao(d, 'Camisa', '', variacoesCamisa, 'masculino')).toBe(d);
   });
 
   it('sem gênero: comportamento anterior (sem pergunta de público)', () => {

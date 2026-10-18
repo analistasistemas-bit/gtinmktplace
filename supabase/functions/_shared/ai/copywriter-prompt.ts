@@ -175,13 +175,17 @@ export function removerPerguntasIncompletas(descricao: string): string {
     .map((h) => descricao.indexOf(h, ini))
     .filter((i) => i > -1);
   // Emenda ADR-0183 (2026-10-18, camisa 00000069): ❓ por último (depois de 🎨) não pode levar a
-  // frase final junto — a seção também termina na primeira linha de prosa (nem ▪ nem vazia).
+  // frase final junto — a seção também termina na primeira prosa DEPOIS DE LINHA VAZIA (nem ▪ nem
+  // vazia). Prosa colada no ▪ é resposta na linha de baixo, não fronteira (revisão Codex).
   const prosa = descricao.slice(ini).split('\n').slice(1)
-    .reduce<{ pos: number; achou: number }>((acc, l) => {
-      if (acc.achou === -1 && l.trim() !== '' && !l.trim().startsWith('▪')) acc.achou = acc.pos;
+    .reduce<{ pos: number; achou: number; anterior: string }>((acc, l) => {
+      if (acc.achou === -1 && l.trim() !== '' && !l.trim().startsWith('▪') && acc.anterior.trim() === '') {
+        acc.achou = acc.pos;
+      }
       acc.pos += l.length + 1;
+      acc.anterior = l;
       return acc;
-    }, { pos: descricao.indexOf('\n', ini) + 1, achou: -1 }).achou;
+    }, { pos: descricao.indexOf('\n', ini) + 1, achou: -1, anterior: '' }).achou;
   if (prosa > -1) posteriores.push(prosa);
   const fim = posteriores.length > 0 ? Math.min(...posteriores) : descricao.length;
 
@@ -490,18 +494,21 @@ function removerBulletsDeMedida(descricao: string): string {
     .join('\n');
 }
 
-/** Pergunta fixa no fim da lista de ❓, se a seção existir e ainda não a tiver. */
-function garantirPerguntaTamanho(descricao: string): string {
-  if (!descricao.includes(SECAO_PERGUNTAS) || descricao.includes(PERGUNTA_TAMANHO)) return descricao;
+/** Pergunta fixa no fim da lista de ❓ (antes da de tamanho, se já houver), se a seção existir e
+ *  ainda não a tiver. */
+function garantirPerguntaFixa(descricao: string, pergunta: string): string {
+  if (!descricao.includes(SECAO_PERGUNTAS) || descricao.includes(pergunta)) return descricao;
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => l.includes(SECAO_PERGUNTAS));
   let ultima = ini;
   for (let i = ini + 1; i < linhas.length && !ehCabecalho(linhas[i]); i++) {
+    if (linhas[i].trim() === PERGUNTA_TAMANHO) { ultima = i - 1; break; }
     if (linhas[i].trim().startsWith('▪')) ultima = i;
   }
-  linhas.splice(ultima + 1, 0, PERGUNTA_TAMANHO);
+  linhas.splice(ultima + 1, 0, pergunta);
   return linhas.join('\n');
 }
+const garantirPerguntaTamanho = (d: string) => garantirPerguntaFixa(d, PERGUNTA_TAMANHO);
 
 /** Guia logo após a lista de 📌 (ordem do infográfico: specs → guia → FAQ). Ancorar no fim da
  *  lista, e não no próximo cabeçalho, evita cair depois da frase final quando a ❓ foi recriada
@@ -530,6 +537,8 @@ function posProcessarGrade(descricao: string, tamanhos: string[], genero?: strin
   d = removerSecao(d, '📏', true);
   d = garantirPerguntaTamanho(removerBulletsDeMedida(d));
   d = garantirPerguntas(removerPerguntasIncompletas(d), [...perguntaPublico(genero), PERGUNTA_TAMANHO]);
+  // ❓ da IA que sobreviveu à poda também ganha a de público (revisão Codex).
+  for (const p of perguntaPublico(genero)) d = garantirPerguntaFixa(d, p);
   d = inserirGuiaTamanhos(garantirPerguntaTamanho(d), tamanhos);
   return formatarDescricao(garantirDisclaimerTonalidade(d));
 }
