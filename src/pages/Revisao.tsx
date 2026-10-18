@@ -128,8 +128,17 @@ export default function Revisao() {
   const { loteId } = useParams();
   const nav = useNavigate();
   useLoteRealtime(loteId);
-  const { data: familias = [], isLoading, error } = useFamilias(loteId);
-  const { data: lote } = useLote(loteId);
+  // Polling de fallback do realtime (mesma corrida de Progresso): o cadastro de produto
+  // entra aqui direto com a família 'pendente' — se o evento de conclusão se perde, a tela
+  // congela no estado pré-IA (sem categoria/preço, "em processamento") até o F5.
+  const { data: familias = [], isLoading, error } = useFamilias(loteId, {
+    refetchInterval: (q) =>
+      q.state.data?.some((f) => f.status === 'pendente' || f.status === 'processando') ? 4000 : false,
+  });
+  const { data: lote } = useLote(loteId, {
+    refetchInterval: (q) =>
+      q.state.data?.status === 'processando' || q.state.data?.status === 'importando' ? 4000 : false,
+  });
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
   const [busca, setBusca] = useState('');
   // Ligado por padrão: o operador foca nas cores com estoque; as zeradas (catálogo
