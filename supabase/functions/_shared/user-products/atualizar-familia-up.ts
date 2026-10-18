@@ -6,7 +6,7 @@
 // UPDATE UP é 100% GET-ao-vivo (não usa o cache de formato, ADR §"UPDATE permanece 100% GET"):
 // a detecção de UP é a existência das linhas filhas; o family_id/status vêm por GET.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import type { ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
+import type { AtributoItem, ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
@@ -19,6 +19,7 @@ import { decidirRetryTransitorio } from '../publicacao/retry.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
+import { forcarMarcaPropria, type MarcaOrg } from '../categoria/marca-org.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
@@ -63,6 +64,8 @@ export interface AtualizarFamiliaUPArgs {
   raiz: RaizUP;
   variacoes: VariacaoUP[];
   somenteEstoque: boolean;
+  /** ADR-0186 — org com marca própria: BRAND/MANUFACTURER = marca da org na cor nova e na reposição. */
+  marcaOrg?: MarcaOrg;
   /**
    * ADR-0160 (I10) — fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML; as cores já
    * publicadas ficam intocadas.
@@ -100,6 +103,11 @@ const num = (v: number | string | null | undefined): number | null =>
 
 export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<ResultadoAtualizarUP> {
   const { admin, conn, ctx, conexao, familia, raiz, variacoes, somenteEstoque } = args;
+  const marcaOrg: MarcaOrg = args.marcaOrg ?? { marcaPropria: false };
+  // ADR-0186: a herança do irmão (abaixo) daria o fornecedor de volta — a marca da org vence.
+  const atributosFamiliaMl = Array.isArray(familia.atributos_ml)
+    ? forcarMarcaPropria(familia.atributos_ml as AtributoItem[], marcaOrg)
+    : familia.atributos_ml;
   const executarSaga = args.executarSaga ?? atualizarComposicao;
   const now = args.now ?? (() => new Date().toISOString());
   const rootId = raiz.id;
@@ -276,7 +284,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const chart = v.tamanho ? await resolverChart() : null;
     const grid = chart && 'chartId' in chart ? chart : null;
     const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
-    const atributosMesclados = mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao());
+    const atributosMesclados = forcarMarcaPropria(mesclarAtributos(atributosFamiliaMl, await lerFichaDoIrmao()), marcaOrg);
     // SIZE* vão por SKU em montarPayloadItem; se a família também os tiver em atributos_ml
     // (IA/Revisão) ou herdar do irmão, duplicariam — mesma limpeza de publicar-familia-up.ts
     // (IDS_SUBSTITUIDOS). GENDER: mesma regra do CREATE (publicar-familia-up.ts) —
@@ -581,9 +589,9 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       // — senão o GENDER da IA e o SIZE* família-level iriam a TODOS os filhos (achado pré-merge).
       atributosFamilia: args.preservarPublicadas
         ? undefined
-        : temTamanho && Array.isArray(familia.atributos_ml)
-          ? comGeneroDaFamilia(familia.atributos_ml as Array<{ id?: string }>)
-          : familia.atributos_ml,
+        : temTamanho && Array.isArray(atributosFamiliaMl)
+          ? comGeneroDaFamilia(atributosFamiliaMl as Array<{ id?: string }>)
+          : atributosFamiliaMl,
     });
   } catch (e) {
     // Fix 1: exceção não tratada com a composição já iniciada — limpa a flag (best-effort, nunca

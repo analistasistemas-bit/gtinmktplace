@@ -9,6 +9,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
 
 // Seletor de categoria livre (ADR-0057, estende o escape hatch do ADR-0009/0022): o operador
 // escolhe qualquer categoria real do ML (busca em atributos-familia/buscar-categoria). Categoria
@@ -67,14 +68,16 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
 
   // Marca padrão por org (D-E7.3): fallback do BRAND/MANUFACTURER quando o produto não
   // traz marca própria. Default 'Avil' preservado dentro de montarAtributosML/Base.
-  const { data: orgRow } = await adminClient().from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
-  const marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
+  // ADR-0186: org com marca própria usa sempre a marca da org, nunca o fornecedor.
+  const marcaOrg = await lerMarcaOrg(adminClient(), orgId);
+  const marcaPadrao = marcaOrg.marcaPadrao;
+  const marca = marcaDoProduto(familia.fornecedor as string | null, marcaOrg);
 
   let atributosMl;
   let atributosFaltantes: string[];
   if (tipo !== 'outro') {
     // Categoria conhecida (linha/fita/botao/cola): caminho curado, sem chamada de rede.
-    atributosMl = montarAtributosML(tipo, familia.nome_pai, familia.fornecedor ?? undefined, familia.descricao_pai ?? undefined, marcaPadrao);
+    atributosMl = montarAtributosML(tipo, familia.nome_pai, marca, familia.descricao_pai ?? undefined, marcaPadrao);
     atributosFaltantes = [];
   } else {
     let token: string | null = null;
@@ -85,7 +88,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
     const r = await resolverAtributosGenericos(
       categoriaMlId,
-      { nome: familia.nome_pai, descricao: familia.descricao_pai ?? undefined, fornecedor: familia.fornecedor ?? undefined },
+      { nome: familia.nome_pai, descricao: familia.descricao_pai ?? undefined, fornecedor: marca },
       {
         lerSchema: (id) => {
           if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));

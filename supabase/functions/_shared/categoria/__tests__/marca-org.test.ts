@@ -38,6 +38,10 @@ describe('forcarMarcaPropria (ADR-0186)', () => {
     const attrs = [{ id: 'BRAND', value_name: 'BUFALO' }];
     expect(forcarMarcaPropria(attrs, avil)).toBe(attrs);
   });
+  it('mantém BRAND que já é a marca da org, com o value_id do ML (não desagrupa a família UP)', () => {
+    const attrs = [{ id: 'BRAND', value_name: 'zaven', value_id: '777' }];
+    expect(forcarMarcaPropria(attrs, zaven)).toEqual([{ id: 'BRAND', value_name: 'zaven', value_id: '777' }]);
+  });
   it('não adiciona BRAND ausente', () => {
     expect(forcarMarcaPropria([], zaven)).toEqual([]);
     expect(forcarMarcaPropria([{ id: 'MODEL', value_name: 'X' }], zaven)).toEqual([{ id: 'MODEL', value_name: 'X' }]);

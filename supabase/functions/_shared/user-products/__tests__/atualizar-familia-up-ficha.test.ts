@@ -364,3 +364,24 @@ describe('atualizarFamiliaUP — reposição não reenvia GENDER/SIZE* de atribu
     expect(puts).toEqual([{ available_quantity: 3 }]);
   });
 });
+
+describe('atualizarFamiliaUP — marca própria (ADR-0186)', () => {
+  const zaven = { marcaPadrao: 'Zaven', marcaPropria: true };
+
+  it('cor nova: irmão com marca do fornecedor → BRAND/MANUFACTURER saem com a marca da org', async () => {
+    await atualizarFamiliaUP(args({ marcaOrg: zaven }));
+    const attrs = atributosEnviados();
+    expect(attrs).toContainEqual({ id: 'BRAND', value_name: 'Zaven' });
+    expect(attrs).toContainEqual({ id: 'MANUFACTURER', value_name: 'Zaven' });
+    expect(attrs.find((a) => a.id === 'COMPOSITION')).toEqual({ id: 'COMPOSITION', value_id: '4904381' });
+  });
+
+  it('reposição: atributos da família entregues à saga já com a marca da org', async () => {
+    let recebidos: unknown;
+    await atualizarFamiliaUP(args({
+      marcaOrg: zaven,
+      executarSaga: async (_p, entrada) => { recebidos = entrada.atributosFamilia; return { tipo: 'sem_mudanca' }; },
+    }));
+    expect(recebidos).toEqual([{ id: 'BRAND', value_name: 'Zaven' }, { id: 'LENGTH', value_name: '10 m' }]);
+  });
+});

@@ -163,7 +163,7 @@ export interface AtualizacaoCanonica {
   capa2FotoId: string | null;
   capa3FotoId: string | null;
   categoriaId: string | null;
-  /** BRAND a sincronizar (do fornecedor). null → não envia (preserva o atual). */
+  /** BRAND a sincronizar (marcaDoProduto, ADR-0186). null → não envia (preserva o atual). */
   marca: string | null;
   dimensoes: DimensoesPacote | null;
   /**

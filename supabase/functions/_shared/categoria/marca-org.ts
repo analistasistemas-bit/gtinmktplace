@@ -28,10 +28,15 @@ export function marcaDoProduto(fornecedor: string | null | undefined, org: Marca
 }
 
 /** Impõe a marca da org sobre atributos preservados/copiados/mesclados (edição, kit, irmão UP).
- *  Só troca o que existe — não inventa BRAND onde a categoria não pede. */
-export function forcarMarcaPropria<T extends { id: string; value_name?: string | null; value_id?: string | null }>(
+ *  Só troca o que existe — não inventa BRAND onde a categoria não pede. Valor que já é a marca da
+ *  org fica como está, com o `value_id` do ML: trocá-lo por texto cru divergiria do irmão e
+ *  desagruparia a família UP (lote 54, ADR-0088). */
+export function forcarMarcaPropria<T extends { id?: string; value_name?: string | null; value_id?: string | null }>(
   attrs: T[], org: MarcaOrg,
 ): T[] {
   if (!org.marcaPropria) return attrs;
-  return attrs.map((a) => (IDS_MARCA.has(a.id) ? { id: a.id, value_name: org.marcaPadrao } as T : a));
+  const alvo = org.marcaPadrao!.toLowerCase();
+  return attrs.map((a) => (IDS_MARCA.has(a.id ?? '') && a.value_name?.trim().toLowerCase() !== alvo
+    ? { id: a.id, value_name: org.marcaPadrao } as T
+    : a));
 }

@@ -15,6 +15,7 @@ import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/sc
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { criarKitsVinculados, type CriarKitInput, type KitSolicitado } from './processar.ts';
+import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -145,11 +146,8 @@ Deno.serve(async (req) => {
   };
   const target = { type: 'familia', id: input.familiaBaseId };
 
-  let marcaPadrao: string | undefined;
-  if (categoriaOverride) {
-    const { data: orgRow } = await admin.from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
-    marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
-  }
+  // ADR-0186: sempre lida — com marca própria o kit não herda o fornecedor nem no caminho sem override.
+  const marcaOrg = await lerMarcaOrg(admin, orgId);
 
   const modeloTexto = categoriaOverride ? await resolverModeloTexto(admin, orgId) : undefined;
   const resultado = await criarKitsVinculados({
@@ -164,7 +162,7 @@ Deno.serve(async (req) => {
     lerSchema: lerSchemaAtributos,
     encadearPublicacao: (familiaIds) => encadearPublicacao(req.headers.get('Authorization')!, familiaIds),
     llm: (entradaIA, alvos) => desempatarAtributosLLM(entradaIA, alvos, modeloTexto),
-    marcaPadrao,
+    marcaOrg,
   }, input);
 
   if (!resultado.ok) {

@@ -33,6 +33,7 @@ import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { forcarMarcaPropria, lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -257,11 +258,12 @@ Deno.serve(async (req) => {
     let token: string | null = null;
     try { if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre'); token = await getValidAccessTokenConexao(conexao); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
 
-    const fornecedor = (claimed.fornecedor as string | null) ?? undefined;
     // Marca padrão por org (D-E7.3): fallback do BRAND/MANUFACTURER quando o produto não
-    // traz marca própria. Default 'Avil' preservado dentro de montarAtributosML/Base.
-    const { data: orgRow } = await admin.from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
-    const marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
+    // traz marca. Default 'Avil' preservado dentro de montarAtributosML/Base. ADR-0186: org com
+    // marca própria usa sempre a marca da org — o fornecedor (onde se compra) nunca vira marca.
+    const marcaOrg = await lerMarcaOrg(admin, orgId);
+    const marca = marcaDoProduto(claimed.fornecedor as string | null, marcaOrg);
+    const marcaPadrao = marcaOrg.marcaPadrao;
     // Acumula o custo de IA dos desempates (categoria + atributos) p/ somar ao custo_centavos da
     // família — antes eram descartados (só o custo do gerarCopy entrava em custo_centavos).
     let custoDesempateLLM = 0;
@@ -307,7 +309,7 @@ Deno.serve(async (req) => {
       // Tipo de aviamento conhecido (via regex OU categoria do preditor mapeada de volta ao
       // tipo): obrigatórios curados (BRAND, MODEL, RIBBON_TYPE…) — determinísticos, têm
       // prioridade e não dependem do schema/IA (que podem falhar e deixar atributos vazios).
-      atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined, marcaPadrao);
+      atributosMl = montarAtributosML(tipo, claimed.nome_pai, marca, claimed.descricao_pai ?? undefined, marcaPadrao);
       // Enriquece com os demais atributos da categoria p/ melhorar a nota de qualidade do anúncio:
       // closed-set opcionais (ex.: Formato da fita) + numéricos (ex.: Comprimento) via IA, validados
       // contra o schema (nunca inventa) e sem sobrescrever os curados. Resiliente: falha → só os curados.
@@ -328,7 +330,7 @@ Deno.serve(async (req) => {
       // (mesmo fluxo reusado pelo seletor manual de categoria livre, ADR-0057).
       const r = await resolverAtributosGenericos(
         categoriaMlId,
-        { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, fornecedor },
+        { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, fornecedor: marca },
         {
           lerSchema: (id) => {
             if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
@@ -341,6 +343,8 @@ Deno.serve(async (req) => {
       atributosMl = r.atributosMl;
       faltantes = r.faltantes;
     }
+    // ADR-0186: vale também para o ramo de atributos editados pelo operador (preservados acima).
+    atributosMl = forcarMarcaPropria(atributosMl, marcaOrg);
     // categoriaMlId null (origem 'manual') → faltantes fica [] aqui, mas o gate de publicação
     // bloqueia por categoria ausente até o operador escolhê-la na Revisão.
 

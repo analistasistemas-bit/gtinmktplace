@@ -30,6 +30,7 @@ import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
+import { lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -210,6 +211,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // Fail-closed: erro na query de roteamento NUNCA pode virar "não é UP" em silêncio (cairia no
     // Legacy sobre uma família UP e a corromperia). Lança → o catch retenta (mesmo fix de vinculacao.ts).
     if (raizErr) throw new Error(`roteamento UP (raiz): ${raizErr.message}`);
+    // ADR-0186 — marca própria da org: BRAND = marca da org nos dois caminhos (UP e Legacy).
+    const marcaOrg = await lerMarcaOrg(admin, familia.org_id as string);
 
     // Entrega a família à mini-saga de composição. Usada por DOIS caminhos: o atalho local (linhas
     // filhas já existem) e, depois da adoção, o caminho de família migrada pelo ML (ADR-0104).
@@ -217,7 +220,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
       const r = await atualizarUP({
         admin, conn, ctx, conexao, familia, raiz: raiz as never, variacoes: variacoes as never,
-        somenteEstoque: !!job.somenteEstoque, preservarPublicadas, tentativas,
+        somenteEstoque: !!job.somenteEstoque, preservarPublicadas, tentativas, marcaOrg,
       });
       if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
       await finalizarLote(job.lote_id);
@@ -288,7 +291,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // preservando os demais atributos. Sem fornecedor → não envia (não sobrescreve com "Avil").
     // ADR-0018: também sincroniza dimensões/peso (SELLER_PACKAGE_*) da variação representativa
     // (principal, ou 1ª) — inválido → omite (ML mantém o que tiver). Corrige frete pós-publicação.
-    const marca = (familia.fornecedor as string | null)?.trim() || null;
+    // ADR-0186: org com marca própria manda sempre a marca da org, mesmo sem fornecedor.
+    const marca = marcaDoProduto(familia.fornecedor as string | null, marcaOrg) ?? null;
     const repUpd = variacoes.find((v) => v.codigo === familia.variacao_principal_codigo) ?? variacoes[0];
     const dimensoesUpd = repUpd ? {
       altura_cm: repUpd.altura_cm != null ? Number(repUpd.altura_cm) : null,

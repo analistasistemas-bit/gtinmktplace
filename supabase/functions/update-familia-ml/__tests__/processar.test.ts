@@ -47,6 +47,7 @@ function fakeAdmin(over: {
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
   lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
   modulosHabilitados?: string[];
+  org?: { marca_padrao: string | null; marca_propria: boolean }; // ADR-0186
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
 } = {}) {
@@ -65,7 +66,7 @@ function fakeAdmin(over: {
       if (table === 'familias') return familia;
       if (table === 'variacoes') return variacoes;
       if (table === 'marketplace_connections') return conexao;
-      if (table === 'organizations') return { modulos_habilitados: modulosHabilitados };
+      if (table === 'organizations') return { modulos_habilitados: modulosHabilitados, ...(over.org ?? { marca_padrao: 'Avil', marca_propria: false }) };
       if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
       if (table === 'anuncios_externos') return raizUP;
       if (table === 'anuncios_externos_itens') return itensUP;
@@ -715,5 +716,35 @@ describe('processarAtualizacaoFamilia — barreira do reajuste de preço em mass
     expect(r).toEqual({ tipo: 'retry', mensagem: 'Falha ao conferir reajuste de preço em massa: timeout' });
     expect(fakeConnector.chamadas).toHaveLength(0);
     expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
+  });
+});
+
+describe('BRAND do UPDATE legado com marca própria (ADR-0186)', () => {
+  const marcaDoUpdate = () =>
+    (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { marca?: string | null }).marca;
+  const zaven = { marca_padrao: 'Zaven', marca_propria: true };
+
+  it('marca própria + fornecedor → envia a marca da org, nunca o fornecedor', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: 'STAR GLAMOUR' }, org: zaven });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(marcaDoUpdate()).toBe('Zaven');
+  });
+
+  it('marca própria sem fornecedor → ainda envia a marca da org', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: null }, org: zaven });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(marcaDoUpdate()).toBe('Zaven');
+  });
+
+  it('sem marca própria e sem fornecedor → não envia BRAND (comportamento atual)', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: null } });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(marcaDoUpdate()).toBeNull();
+  });
+
+  it('sem marca própria e com fornecedor → envia o fornecedor (Avil)', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: ' BUFALO ' } });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(marcaDoUpdate()).toBe('BUFALO');
   });
 });
