@@ -89,6 +89,9 @@ export interface PublicadoItem {
   /** Linha de partição >0 de produto dividido (ADR-0048): herda o `familiaId` da partição 0, então
    *  ações por família (ex.: retentar catálogo) agiriam no anúncio errado. */
   particaoSplit?: boolean;
+  /** ADR-0185: família publicada mais nova do grupo (a `familiaId` é a mais antiga, publicação
+   *  original). Ações que copiam dados do produto (Criar kit) usam esta. */
+  familiaIdVigente?: string;
   /** ADR-0088: produto em User Products (cada cor = um MLB próprio). O reajuste em massa (I5) manda
    *  a FAMÍLIA, que o servidor expande em todos os SKUs; a linha mostra um MLB só. `undefined` = Legacy. */
   userProducts?: boolean;
@@ -185,7 +188,7 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     const maisNova = [...grupo].filter((g) => g.publicadoEm)
       .sort((a, b) => b.publicadoEm!.localeCompare(a.publicadoEm!))[0] ?? rep;
     const catalogRetentavel = !!maisNova.catalogRetentavel;
-    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel });
+    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, familiaIdVigente: maisNova.familiaId });
   }
   return out;
 }

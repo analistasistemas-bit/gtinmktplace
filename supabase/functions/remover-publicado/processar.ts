@@ -50,6 +50,8 @@ export type ResultadoRemocao =
   | { tipo: 'kit_virtual_publicado'; kits: string[] }
   /** ADR-0168: sold_quantity > 0 em qualquer MLB do codigo_pai — zero mutação ML, zero delete local. */
   | { tipo: 'tem_movimentacao' }
+  /** ADR-0185: a cópia vigente do produto ainda está sendo processada/publicada — espera e repete. */
+  | { tipo: 'em_processamento' }
   | { tipo: 'preservada'; familiaId: string; loteId: string }
   | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
 
@@ -269,6 +271,16 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   }
 
   if (input.preservarFamilia) {
+    // ADR-0185: a RPC prepara a cópia mais nova com vínculo; se ela ainda está em processamento a
+    // RPC recusaria DEPOIS da pausa no ML — checar antes evita pausar à toa.
+    const { data: vigente, error: vigErr } = await admin.from('familias')
+      .select('status').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai)
+      .not('ml_item_id', 'is', null)
+      .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+    if (vigErr) throw new Error(`remover-publicado: consultar família vigente falhou: ${vigErr.message}`);
+    if (vigente && ['pendente', 'processando', 'publicando'].includes(vigente.status as string)) {
+      return { tipo: 'em_processamento' };
+    }
     // ADR-0088: republicar pausa todos os filhos UP no ML antes de cortar o vínculo local.
     if (filhos.length > 0) {
       if (!deps.ctx || !deps.conexao) throw new Error('Organização sem conexão com o Mercado Livre');
@@ -343,29 +355,25 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
         }
       }
     }
-    const { error: famErr } = await admin.from('familias').update({
-      ml_item_id: null,
-      ml_permalink: null,
-      publicado_em: null,
-      status: 'pronto',
-      erro_mensagem: null,
-      operacao: 'CREATE',
-      capa_ml_picture_id: null,
-      capa2_ml_picture_id: null,
-      capa3_ml_picture_id: null,
-    }).eq('id', alvo.id).eq('org_id', orgId);
-    if (famErr) throw new Error(`remover-publicado: preparar família para republicação falhou: ${famErr.message}`);
-    const { error: varErr } = await admin.from('variacoes').update({
-      ml_variation_id: null,
-      preco_publicado_ml: null,
-      ml_picture_id: null,
-    }).eq('familia_id', alvo.id);
-    if (varErr) throw new Error(`remover-publicado: limpar vínculos das variações falhou: ${varErr.message}`);
-    const { error: extErr } = await admin.from('anuncios_externos')
-      .delete().eq('org_id', alvo.org_id).eq('canal', canal).eq('codigo_pai', alvo.codigo_pai);
-    if (extErr) throw new Error(`remover-publicado: limpar anúncios externos falhou: ${extErr.message}`);
-    await admin.from('lotes').update({ status: 'revisao' }).eq('id', alvo.lote_id);
-    return { tipo: 'preservada', familiaId: alvo.id, loteId: alvo.lote_id };
+    // ADR-0185 D-2: uma transação só — escolhe a cópia vigente, apaga as anteriores do pai, zera o
+    // vínculo da vigente, apaga as raízes e devolve o lote à Revisão. Antes eram updates soltos só na
+    // família pedida (a mais antiga): as mais novas seguiam ligadas ao anúncio pausado.
+    const { data: prep, error: prepErr } = await admin.rpc('preparar_republicacao', {
+      p_org: alvo.org_id, p_canal: canal, p_codigo_pai: alvo.codigo_pai, p_familia_alvo: alvo.id,
+    });
+    if (prepErr) {
+      const motivo = /republicar:(\w+)/.exec(prepErr.message)?.[1];
+      if (motivo === 'nao_publicada') return { tipo: 'nao_publicada' };
+      if (motivo === 'nao_encontrada') return { tipo: 'nao_encontrada' };
+      if (motivo === 'em_processamento') return { tipo: 'em_processamento' };
+      throw new Error(`remover-publicado: preparar republicação falhou: ${prepErr.message}`);
+    }
+    const linha = (Array.isArray(prep) ? prep[0] : prep) as { familia_id: string; lote_id: string; lotes_afetados: string[] | null };
+    // Lotes que perderam a cópia antiga: reconta (ou remove se vazio), como o Remover.
+    for (const loteId of linha.lotes_afetados ?? []) {
+      if (loteId !== linha.lote_id) await recontarOuRemoverLote(admin, loteId, false);
+    }
+    return { tipo: 'preservada', familiaId: linha.familia_id, loteId: linha.lote_id };
   }
 
   // ADR-0168 D-1/D-2/D-5: Remover destrutivo sempre consulta o ML antes de qualquer delete local.

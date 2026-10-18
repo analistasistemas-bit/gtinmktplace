@@ -73,6 +73,15 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
     rpc: async (nome: string, args: unknown) => {
       rpcs.push({ nome, args, tabelasDeletadasAntes: deletes.map((d) => d.tabela) });
+      // ADR-0185: a preparação da republicação é a RPC transacional (testada em SQL, em
+      // supabase/tests/preparar_republicacao.sql). Aqui só o contrato: fila `rpc:<nome>` ou um
+      // padrão "a vigente é a família pedida, no lote-40".
+      if (nome === 'preparar_republicacao') {
+        const v = proximo(`rpc:${nome}`);
+        if (ehErro(v)) return { data: null, error: { message: v.__erro } };
+        const a = args as { p_familia_alvo: string };
+        return { data: Array.isArray(v) && v.length ? v : [{ familia_id: a.p_familia_alvo, lote_id: 'lote-40', lotes_afetados: [] }], error: null };
+      }
       return { data: 0, error: null };
     },
   };
@@ -123,7 +132,7 @@ function depsRemoverML(admin: unknown, ids: string[]) {
 
 describe('removerPublicado — família User Products (ADR-0088: mini-saga de remoção)', () => {
   it('modo republicar pausa filhos, preserva família/imagens e limpa somente vínculos ML', async () => {
-    const { admin, deletes, updates, removidos } = fakeAdmin({
+    const { admin, deletes, updates, removidos, rpcs } = fakeAdmin({
       familias: [
         { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '02854309', ml_item_id: 'MLB1', org_id: ORG },
         [],
@@ -142,28 +151,11 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     );
 
     expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
-    expect(deletes.map((d) => d.tabela)).toEqual(['anuncios_externos']);
-    expect(updates).toEqual(expect.arrayContaining([
-      {
-        tabela: 'familias',
-        payload: expect.objectContaining({
-          ml_item_id: null,
-          status: 'pronto',
-          operacao: 'CREATE',
-          capa_ml_picture_id: null,
-          capa2_ml_picture_id: null,
-          capa3_ml_picture_id: null,
-        }),
-      },
-      {
-        tabela: 'variacoes',
-        payload: expect.objectContaining({
-          ml_variation_id: null,
-          preco_publicado_ml: null,
-          ml_picture_id: null,
-        }),
-      },
-    ]));
+    // ADR-0185: o corte local inteiro é a RPC transacional — nada de update/delete solto aqui.
+    expect(rpcs.map((c) => c.nome)).toEqual(['preparar_republicacao']);
+    expect(rpcs[0].args).toEqual({ p_org: ORG, p_canal: CANAL, p_codigo_pai: '02854309', p_familia_alvo: 'fam-1' });
+    expect(deletes).toEqual([]);
+    expect(updates.filter((u) => u.tabela !== 'anuncios_externos_itens')).toEqual([]);
     expect(removidos).toEqual([]);
   });
 
@@ -559,7 +551,7 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
 
     // O SKU continua vivo: varrer aqui apagaria o histórico de um produto que só está
     // sendo republicado.
-    expect(rpcs).toEqual([]);
+    expect(rpcs.map((c) => c.nome)).toEqual(['preparar_republicacao']);
   });
 });
 
@@ -806,16 +798,14 @@ describe('removerPublicado — modo republicar pausa o anúncio raiz (família L
       if (opts?.method === 'PUT') { puts.push(String(opts.body)); return new Response('{}', { status: 200 }); }
       return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
     }));
-    const { admin, updates } = cenarioLegacy();
+    const { admin, rpcs } = cenarioLegacy();
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
     );
     expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
     expect(puts).toEqual([JSON.stringify({ status: 'paused' })]);
-    expect(updates).toEqual(expect.arrayContaining([
-      { tabela: 'familias', payload: expect.objectContaining({ ml_item_id: null, status: 'pronto' }) },
-    ]));
+    expect(rpcs.map((c) => c.nome)).toEqual(['preparar_republicacao']);
   });
 
   it('anúncio já pausado/closed → segue SEM PUT (pausar closed daria 400 e travaria a recuperação)', async () => {
@@ -896,7 +886,7 @@ describe('removerPublicado — republicar integração das portas reais de pausa
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
     );
     expect(r.tipo).toBe('preservada');
-    expect(deletes.map((d) => d.tabela)).toEqual(['anuncios_externos']);
+    expect(deletes).toEqual([]); // ADR-0185: o apagar das raízes é dentro da RPC
   });
 
   it('GET confirma item de OUTRO seller → remocao_pendente (republicar)', async () => {
@@ -1215,5 +1205,63 @@ describe('removerPublicado — produto dividido em vários anúncios (todas as p
     const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
     expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Combo'] });
     expect(deletes).toEqual([]);
+  });
+});
+
+// ADR-0185 D-2: republicar via RPC transacional.
+describe('removerPublicado — republicar pela família vigente (ADR-0185)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('cópia mais nova em processamento → em_processamento ANTES de pausar no ML', async () => {
+    const fetchFake = vi.fn(async () => new Response(JSON.stringify({ status: 'active' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchFake);
+    const { admin, rpcs, updates } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+        [], // emVoo
+        [], // kits vinculados
+        { status: 'processando' }, // vigente (mais nova com ml_item_id)
+      ],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB1' }]],
+      anuncios_externos_itens: [[]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'em_processamento' });
+    expect(fetchFake).not.toHaveBeenCalled();
+    expect(rpcs).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it('RPC recusa (2ª chamada, nada mais a preparar) → nao_publicada', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
+    const { admin } = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+      'rpc:preparar_republicacao': [ERRO('republicar:nao_publicada')],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'nao_publicada' });
+  });
+
+  it('devolve a família/lote VIGENTES da RPC (não a pedida)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
+    const { admin } = fakeAdmin({
+      familias: [{ id: 'fam-antiga', lote_id: 'lote-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+      'rpc:preparar_republicacao': [[{ familia_id: 'fam-nova', lote_id: 'lote-9', lotes_afetados: [] }]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-antiga', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-nova', loteId: 'lote-9' });
   });
 });
