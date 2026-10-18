@@ -151,7 +151,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   const { familiaId, orgId, canal } = input;
 
   const { data: alvo, error: alvoErr } = await admin.from('familias')
-    .select('id, lote_id, codigo_pai, ml_item_id, org_id, kit_multiplicador')
+    .select('id, lote_id, codigo_pai, ml_item_id, org_id, kit_multiplicador, status')
     .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
   if (alvoErr) throw new Error(`remover-publicado: consultar família falhou: ${alvoErr.message}`);
   if (!alvo) return { tipo: 'nao_encontrada' };
@@ -278,7 +278,10 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       .not('ml_item_id', 'is', null)
       .order('criado_em', { ascending: false }).limit(1).maybeSingle();
     if (vigErr) throw new Error(`remover-publicado: consultar família vigente falhou: ${vigErr.message}`);
-    if (vigente && ['pendente', 'processando', 'publicando'].includes(vigente.status as string)) {
+    // Sem cópia com vínculo (UP com saga interrompida) a RPC preserva a família pedida — o status
+    // que importa é o dela.
+    const statusVigente = (vigente as { status?: string } | null)?.status ?? (alvo.status as string | undefined);
+    if (statusVigente && ['pendente', 'processando', 'publicando'].includes(statusVigente)) {
       return { tipo: 'em_processamento' };
     }
     // ADR-0088: republicar pausa todos os filhos UP no ML antes de cortar o vínculo local.

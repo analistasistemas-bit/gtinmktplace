@@ -45,6 +45,8 @@ numa única transação, com `for update` nas famílias e nas raízes `anuncios_
   raízes e zerou os vínculos, então a 2ª nunca cria outro `CREATE`;
 - recusa `em_processamento` se a vigente estiver `pendente`/`processando`/`publicando` (transitório: o
   operador espera e repete);
+- **incorpora** à vigente cada SKU que só existe numa cópia anterior (UPDATE parcial: o `ingest-lote` não
+  clona os ausentes) — move a linha mais nova de cada SKU (`familia_id`), com preço/estoque/foto;
 - **apaga** as demais famílias do pai com `ml_item_id` (cópias de lotes anteriores e snapshots
   obsoletos) — mesmo corte que o Remover já faz ("Codex P2": várias linhas publicadas do mesmo pai). Mantê-las
   `publicado` sem vínculo criaria zumbis que os guards de kit (`STATUS_KIT_VIVO` e os triggers de
@@ -57,6 +59,11 @@ numa única transação, com `for update` nas famílias e nas raízes `anuncios_
 - apaga `anuncios_externos` do pai no canal; o lote da vigente vai para `revisao`;
 - devolve `familia_id`/`lote_id` da vigente e os lotes das famílias apagadas (a edge reconta/remove
   lote vazio com `recontarOuRemoverLote`, como no Remover).
+
+`recontarOuRemoverLote` (`_shared/lote/recontar.ts`) passou a lançar em erro de leitura — antes um erro
+virava "lote vazio" e apagava o lote com as famílias restantes (afetava também `excluir-lote`,
+`excluir-produto` e o Remover). A edge recusa `em_processamento` antes de pausar no ML, olhando a cópia
+vigente ou, no UP interrompido, a família pedida.
 
 Falha antes do commit não deixa nada pela metade; a pausa no ML é idempotente (GET pula item pausado).
 

@@ -49,6 +49,19 @@ begin
     raise exception 'republicar:em_processamento' using errcode = 'P0001';
   end if;
 
+  -- SKU que só existe numa cópia anterior (UPDATE parcial: o ingest não clona os ausentes) é parte
+  -- do produto: muda para a vigente a linha mais nova de cada um, com preço/estoque/foto, antes do
+  -- DELETE abaixo — senão o cascade levaria a variação e o saldo dela.
+  update variacoes v set familia_id = v_vigente
+   where v.id in (
+     select distinct on (v2.codigo) v2.id
+       from variacoes v2 join familias f on f.id = v2.familia_id
+      where f.org_id = p_org and f.codigo_pai = p_codigo_pai
+        and f.ml_item_id is not null and f.id <> v_vigente
+        and not exists (select 1 from variacoes v3 where v3.familia_id = v_vigente and v3.codigo = v2.codigo)
+      order by v2.codigo, f.criado_em desc, f.id desc
+   );
+
   -- Cópias anteriores do mesmo pai: apagadas (mesmo corte do Remover). Mantidas como `publicado`
   -- sem vínculo virariam zumbis contados como kit vivo pelos guards.
   select coalesce(array_agg(distinct f.lote_id), '{}') into v_lotes

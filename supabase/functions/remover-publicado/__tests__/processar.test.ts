@@ -1265,3 +1265,34 @@ describe('removerPublicado — republicar pela família vigente (ADR-0185)', () 
     expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-nova', loteId: 'lote-9' });
   });
 });
+
+describe('removerPublicado — precheck em_processamento no fallback UP (revisão Codex ADR-0185)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('UP com saga interrompida e família pedida processando → recusa sem pausar filhos', async () => {
+    const fetchFake = vi.fn(async () => new Response(JSON.stringify({ status: 'active' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchFake);
+    const pausar = vi.fn();
+    const { admin, rpcs } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: null, org_id: ORG, status: 'processando' },
+        [], // emVoo
+        [], // kits vinculados
+        null, // nenhuma cópia com ml_item_id → vale o status da pedida
+      ],
+      anuncios_externos: [
+        [{ anuncios_externos_itens: [{ item_externo_id: 'MLB1' }] }], // gate: filho vivo
+        [{ id: 'ext-1', mudando_composicao: false }],
+      ],
+      anuncios_externos_itens: [[{ sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' }]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO, removerComposicao: async () => { pausar(); return { tipo: 'pronto_para_deletar' }; } },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'em_processamento' });
+    expect(pausar).not.toHaveBeenCalled();
+    expect(fetchFake).not.toHaveBeenCalled();
+    expect(rpcs).toEqual([]);
+  });
+});

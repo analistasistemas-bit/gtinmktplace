@@ -26,7 +26,15 @@ values
    '09300100', 'Produto C', 'UPDATE', 'nacional', gen_random_uuid(), 'MLB-REP-1', 'http://x', null, 'pronto', now() - interval '1 day', 'pic');
 insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, preco, estoque, ml_variation_id, preco_publicado_ml, ml_picture_id)
 values ('93000000-0000-0000-0000-000000000303', '93000000-0000-0000-0000-000000000101', '93000000-0000-0000-0000-000000000001',
-        '09300101', 'Azul', 'Azul', 50, 3, '123', 49.9, 'pic-v');
+        '09300101', 'Azul', 'Azul', 50, 3, '123', 49.9, 'pic-v'),
+       -- UPDATE parcial: o SKU Rosa só existe nas cópias anteriores (A com estoque 0 — CREATE manual nasce zerado —, B com estoque 9; B é a mais nova).
+       ('93000000-0000-0000-0000-000000000301', '93000000-0000-0000-0000-000000000101', '93000000-0000-0000-0000-000000000001',
+        '09300102', 'Rosa', 'Rosa', 50, 0, '456', 49.9, 'pic-r'),
+       ('93000000-0000-0000-0000-000000000302', '93000000-0000-0000-0000-000000000101', '93000000-0000-0000-0000-000000000001',
+        '09300102', 'Rosa', 'Rosa', 55, 9, '456', 54.9, 'pic-r'),
+       -- Azul também na cópia antiga: a vigente já tem → não duplica.
+       ('93000000-0000-0000-0000-000000000302', '93000000-0000-0000-0000-000000000101', '93000000-0000-0000-0000-000000000001',
+        '09300101', 'Azul', 'Azul', 50, 1, '123', 49.9, 'pic-v');
 insert into public.anuncios_externos (user_id, org_id, canal, codigo_pai, item_externo_id)
 values ('93000000-0000-0000-0000-000000000101', '93000000-0000-0000-0000-000000000001', 'mercado_livre', '09300100', 'MLB-REP-1');
 
@@ -49,6 +57,12 @@ begin
   if exists (select 1 from public.variacoes where familia_id = '93000000-0000-0000-0000-000000000303'
              and (ml_variation_id is not null or preco_publicado_ml is not null or ml_picture_id is not null))
     then raise exception 'variações com vínculo'; end if;
+  -- SKU só das cópias anteriores foi para a vigente (a linha mais nova: B, estoque 9), sem duplicar o Azul.
+  if (select count(*) from public.variacoes where familia_id = '93000000-0000-0000-0000-000000000303') <> 2
+    then raise exception 'vigente deveria ter 2 SKUs'; end if;
+  if not exists (select 1 from public.variacoes where familia_id = '93000000-0000-0000-0000-000000000303'
+                 and codigo = '09300102' and estoque = 9 and preco = 55 and ml_variation_id is null)
+    then raise exception 'SKU Rosa não incorporado (ou não pela cópia mais nova)'; end if;
   if exists (select 1 from public.anuncios_externos where codigo_pai = '09300100' and org_id = '93000000-0000-0000-0000-000000000001')
     then raise exception 'anuncios_externos não apagado'; end if;
   if (select status from public.lotes where id = '93000000-0000-0000-0000-000000000203') <> 'revisao'

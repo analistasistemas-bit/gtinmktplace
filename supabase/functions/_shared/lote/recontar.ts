@@ -9,7 +9,9 @@ export async function recontarOuRemoverLote(
   loteId: string,
   setConcluido: boolean,
 ): Promise<boolean> {
-  const { data: rest } = await admin.from('familias').select('status').eq('lote_id', loteId);
+  const { data: rest, error } = await admin.from('familias').select('status').eq('lote_id', loteId);
+  // Erro de leitura NUNCA é "lote vazio": o DELETE do lote levaria as famílias junto (cascade).
+  if (error) throw new Error(`recontar lote ${loteId}: ${error.message}`);
   if (!rest || rest.length === 0) {
     await admin.from('lotes').delete().eq('id', loteId);
     return true;
