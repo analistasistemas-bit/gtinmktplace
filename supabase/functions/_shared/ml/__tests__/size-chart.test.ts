@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, DOMINIOS_SUPORTADOS, GENDER_VALUE, domainIdSemPrefixo,
+  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, DOMINIOS_CALCADO_SPECIFIC, DOMINIOS_QUADRIL, DOMINIOS_SEM_GUIA,
+  DOMINIOS_SUPORTADOS, DOMINIOS_VESTUARIO, GENDER_VALUE, domainIdSemPrefixo,
   dominioAceitaGrade, garantirChart, mensagemForaDoSuperset, mensagemNumeracaoNaoSuportada,
   montarLinhasChart, montarLinhasChartCalcado, nomeChart, parseLinhasCalcado, parseLinhasResposta,
   tabelaComprimentoPe,
@@ -14,6 +15,8 @@ vi.mock('../../categoria/schema.ts', async (orig) => ({
   ...(await orig<typeof import('../../categoria/schema.ts')>()),
   lerSchemaAtributos: vi.fn(),
 }));
+// Padrão: schema vazio (sem GENDER → checagem de gênero × categoria não bloqueia).
+beforeEach(() => { vi.mocked(lerSchemaAtributos).mockResolvedValue([]); });
 
 // Achado real (produção, 2026-09-19): a 1ª tentativa de publicação real ficou presa em retry
 // porque POST /catalog/charts recusou o nome com `invalid_chart_name` — a mensagem cita "máximo
@@ -512,7 +515,6 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(r).toEqual({ chartId: '8522331', linhaPorTamanho: new Map([['P', { rowId: '8522331:1', sizeLabel: 'P' }]]) });
     expect(f.posts).toHaveLength(0);
     expect(inserts).toHaveLength(0);
-    expect(lerSchemaAtributos).not.toHaveBeenCalled();
   });
 
   it('JACKETS_AND_COATS sem cache segue no peito (CHEST_CIRCUMFERENCE_FROM, regressão)', async () => {
@@ -558,6 +560,70 @@ describe('ADR-0182 — guia de quadril e domínio sem guia', () => {
     expect(f.posts).toHaveLength(0);
     expect(inserts).toHaveLength(0);
     expect(r).toMatchObject({ chartId: '8827145' });
+  });
+
+  // Emenda ADR-0182 (2026-10-18, roupas A–D): colunas medidas por POST /catalog/charts real.
+  it.each([
+    ['DRESSES', DOMINIOS_VESTUARIO], ['SWEATSHIRTS_AND_HOODIES', DOMINIOS_VESTUARIO], ['BLOUSES', DOMINIOS_VESTUARIO],
+    ['LEGGINGS', DOMINIOS_QUADRIL], ['SKIRTS', DOMINIOS_QUADRIL], ['UNDERPANTS', DOMINIOS_QUADRIL],
+    ['BOOTS_AND_BOOTIES', DOMINIOS_CALCADO_SPECIFIC], ['HEELS_AND_WEDGES', DOMINIOS_CALCADO_SPECIFIC],
+    ['SUITS', DOMINIOS_SEM_GUIA], ['JUMPSUITS_AND_OVERALLS', DOMINIOS_SEM_GUIA],
+  ] as const)('%s entra no grupo medido', (dominio, grupo) => {
+    expect(grupo.has(dominio)).toBe(true);
+    expect(DOMINIOS_SUPORTADOS.has(dominio)).toBe(true);
+  });
+
+  it('grade × domínio dos grupos novos: peito só Letras, quadril/sem guia em Letras/Calça/Infantil, calçado só Calçado', () => {
+    expect(dominioAceitaGrade('DRESSES', 'letras')).toBe(true);
+    expect(dominioAceitaGrade('DRESSES', 'infantil')).toBe(false);
+    expect(dominioAceitaGrade('LEGGINGS', 'calca')).toBe(true);
+    expect(dominioAceitaGrade('LEGGINGS', 'infantil')).toBe(true);
+    expect(dominioAceitaGrade('BOOTS_AND_BOOTIES', 'calcado')).toBe(true);
+    expect(dominioAceitaGrade('BOOTS_AND_BOOTIES', 'letras')).toBe(false);
+    expect(dominioAceitaGrade('SCHOOL_UNIFORMS', 'infantil')).toBe(true);
+    expect(dominioAceitaGrade('SUITS', 'calcado')).toBe(false);
+  });
+
+  it('domínios deliberadamente fora (bebê, "Outros", busto) seguem recusados', () => {
+    for (const d of ['BABY_SWIMWEAR', 'BABY_BODYSUITS', 'BABIES_FOOTWEAR', 'CLOTHING', 'SPORTSWEAR', 'BRAS', 'PAJAMAS']) {
+      expect(DOMINIOS_SUPORTADOS.has(d)).toBe(false);
+    }
+  });
+
+  it('SUITS (sem guia) → SIZE cru, sem chart', async () => {
+    const { admin, from } = adminFake();
+    fetchFake('SUITS');
+    expect(await garantirChart(admin, 'token', 'conexao-1', 'MLB108831', 'masculino', ['M'], 'letras')).toEqual({ semGuia: 'SIZE' });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('BOOTS_AND_BOOTIES feminino → chart SPECIFIC de calçado (BR_SIZE + FOOT_LENGTH)', async () => {
+    const { admin } = adminFake();
+    const f = fetchFake('BOOTS_AND_BOOTIES');
+    await garantirChart(admin, 'token', 'conexao-1', 'MLB1', 'feminino', ['37'], 'calcado');
+    expect(f.posts).toHaveLength(1);
+    expect(f.posts[0].body.rows[0].attributes.map((a) => a.id)).toEqual(['BR_SIZE', 'FOOT_LENGTH']);
+  });
+
+  // Codex (revisão do plano, 18/10): a grade valida gênero × grade, não gênero × domínio. O schema
+  // de GENDER da categoria restringe (cueca MLB108789 = Masculino/Meninos/Sem gênero[ infantil]).
+  it('gênero que a categoria não aceita lança antes do cache e de qualquer chart', async () => {
+    vi.mocked(lerSchemaAtributos).mockResolvedValue([
+      { id: 'GENDER', valores: [{ id: '339666', nome: 'Masculino' }, { id: '339667', nome: 'Meninos' }] },
+    ] as never);
+    const { admin, from } = adminFake();
+    const f = fetchFake('UNDERPANTS');
+    await expect(garantirChart(admin, 'token', 'conexao-1', 'MLB108789', 'feminino', ['M'], 'letras'))
+      .rejects.toThrow('Guia de tamanhos: a categoria MLB108789 não aceita o gênero Feminino (aceita: Masculino, Meninos).');
+    expect(from).not.toHaveBeenCalled();
+    expect(f.posts).toHaveLength(0);
+  });
+
+  it('schema sem GENDER (ou indisponível) não bloqueia — o ML segue como juiz final', async () => {
+    vi.mocked(lerSchemaAtributos).mockRejectedValue(new Error('rede'));
+    const { admin } = adminFake();
+    fetchFake('SUITS');
+    expect(await garantirChart(admin, 'token', 'conexao-1', 'MLB108831', 'feminino', ['M'], 'letras')).toEqual({ semGuia: 'SIZE' });
   });
 
   it('nomeChart normaliza o gênero infantil e mantém os nomes adultos', () => {

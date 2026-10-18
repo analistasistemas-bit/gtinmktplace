@@ -55,27 +55,49 @@ export function tabelaComprimentoPe(genero: Genero): Readonly<Record<string, num
 
 // Spike 051 §3/§7: domínios de vestuário com a coluna de medida confirmada
 // (CHEST_CIRCUMFERENCE_FROM) via POST /catalog/charts real. T_SHIRTS/SHIRTS: mesmo erro real
-// em 2026-10-18 (ADR-0182, emenda camiseta e camisa).
-export const DOMINIOS_VESTUARIO = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'T_SHIRTS', 'SHIRTS']);
+// em 2026-10-18 (ADR-0182, emenda camiseta e camisa). Demais: mesmo erro real em 2026-10-18
+// (ADR-0182, emenda roupas A–D).
+export const DOMINIOS_VESTUARIO = new Set([
+  'JACKETS_AND_COATS', 'SPORT_T_SHIRTS', 'T_SHIRTS', 'SHIRTS',
+  'DRESSES', 'SWEATSHIRTS_AND_HOODIES', 'BLOUSES', 'VESTS', 'SWEATERS_AND_CARDIGANS', 'NIGHTGOWNS',
+  'ROBES', 'SCHOOL_SMOCKS', 'FASHION_KIMONOS', 'PONCHOS',
+]);
 
 // Spike 051 §13: SNEAKERS tem chart STANDARD oficial do ML (não criamos, só buscamos e
 // referenciamos — sem risco de inventar medida). SANDALS_AND_CLOGS não tem STANDARD (testado,
 // `/catalog/charts/domains/search` não lista) — cria SPECIFIC com COMPRIMENTO_PE_CM.
 export const DOMINIOS_CALCADO_STANDARD = new Set(['SNEAKERS']);
-export const DOMINIOS_CALCADO_SPECIFIC = new Set(['SANDALS_AND_CLOGS']);
+// Emenda ADR-0182 (roupas A–D): os demais calçados exigem as mesmas colunas (BR_SIZE +
+// FOOT_LENGTH, erro real 2026-10-18) e entram como SPECIFIC — não dependem de STANDARD por gênero.
+export const DOMINIOS_CALCADO_SPECIFIC = new Set([
+  'SANDALS_AND_CLOGS', 'BOOTS_AND_BOOTIES', 'LOAFERS_AND_OXFORDS', 'HEELS_AND_WEDGES', 'FLATS',
+  'SLIPPERS', 'TACTICAL_BOOTS', 'DANCE_SNEAKERS_AND_SHOES', 'ESPADRILLES',
+]);
 
 // Spike 056 §3/§4 (ADR-0182 D4): SHORTS/PANTS não têm STANDARD; chart SPECIFIC exige
 // SIZE + FILTRABLE_SIZE + HIP_CIRCUMFERENCE_FROM (confirmado via POST /catalog/charts real).
-export const DOMINIOS_QUADRIL = new Set(['SHORTS', 'PANTS']);
+// Emenda ADR-0182 (roupas A–D): demais domínios com o mesmo erro real em 2026-10-18.
+export const DOMINIOS_QUADRIL = new Set([
+  'SHORTS', 'PANTS', 'SKIRTS', 'PANTIES', 'SPORT_SHORTS', 'LEGGINGS', 'SPORT_PANTS', 'WORK_PANTS',
+  'TACTICAL_PANTS', 'TUTUS', 'UNDERPANTS',
+]);
 // Spike 056 §3/§5 (ADR-0182 D7): CLOTHING_LOTS não tem guia ("Domain MLB-CLOTHING_LOTS not
 // active"); o item plano valida sem grid, com o tamanho em CLOTHING_LOT_SIZE.
 // Emenda ADR-0182 (2026-10-17): SWIMWEAR (Moda Praia, MLB430391) não tem SIZE_GRID_ID no schema;
 // /items/validate real passou com SIZE cru ("2"/"4"/"8"), GENDER Meninas e SWIMWEAR_TYPE
 // "Conjunto infantil". O mapa diz em qual atributo o tamanho do SKU vai.
 export type AtributoTamanhoSemGuia = 'CLOTHING_LOT_SIZE' | 'SIZE';
+// Emenda ADR-0182 (roupas A–D): domínios sem SIZE_GRID_ID no schema, validados com SIZE cru em
+// /items/validate real (2026-10-18). Bebê, "Outros" (CLOTHING/SPORTSWEAR) e BABY_SWIMWEAR ficam fora.
+const SEM_GUIA_SIZE = [
+  'SWIMWEAR', 'LINGERIE_SETS', 'SPORTSWEAR_SETS', 'WORK_SCRUBS', 'SUITS', 'JUMPSUITS_AND_OVERALLS',
+  'BODYSUITS_AND_CATSUITS', 'SPORT_BRAS', 'CORSETS', 'BABYDOLLS', 'BODY_SHAPERS', 'PANTYHOSE',
+  'CULINARY_UNIFORMS', 'WORK_COVERALLS_AND_OVERALLS', 'SCHOOL_UNIFORMS', 'DANCE_COSTUMES', 'WORK_JACKETS',
+  'DOMESTIC_WORKER_UNIFORMS', 'FIREFIGHTER_UNIFORMS',
+] as const;
 export const ATRIBUTO_TAMANHO_SEM_GUIA: Readonly<Record<string, AtributoTamanhoSemGuia>> = {
   CLOTHING_LOTS: 'CLOTHING_LOT_SIZE',
-  SWIMWEAR: 'SIZE',
+  ...Object.fromEntries(SEM_GUIA_SIZE.map((d) => [d, 'SIZE' as const])),
 };
 export const DOMINIOS_SEM_GUIA = new Set(Object.keys(ATRIBUTO_TAMANHO_SEM_GUIA));
 
@@ -299,6 +321,17 @@ export async function garantirChart(
   }
   if (!dominioAceitaGrade(domainId, grade)) {
     throw new Error(`Guia de tamanhos: grade ${grade} incompatível com o domínio ${domainId} — confira a categoria do produto.`);
+  }
+  // Gênero × categoria (revisão Codex 2026-10-18): a grade não sabe que cueca não aceita
+  // Feminino — o schema de GENDER da categoria sabe. Schema indisponível/sem GENDER não bloqueia
+  // (o ML segue como juiz final); nunca derruba publicação que já funciona pelo cache.
+  const generosCategoria = (await lerSchemaAtributos(token, categoriaId).catch(() => []))
+    ?.find((a) => a.id === 'GENDER')?.valores ?? [];
+  if (generosCategoria.length > 0 && !generosCategoria.some((v) => v.id === GENDER_VALUE[genero].id)) {
+    throw new Error(
+      `Guia de tamanhos: a categoria ${categoriaId} não aceita o gênero ${GENDER_VALUE[genero].nome} `
+      + `(aceita: ${generosCategoria.map((v) => v.nome).join(', ')}).`,
+    );
   }
   if (DOMINIOS_SEM_GUIA.has(domainId)) return { semGuia: ATRIBUTO_TAMANHO_SEM_GUIA[domainId] };
 
