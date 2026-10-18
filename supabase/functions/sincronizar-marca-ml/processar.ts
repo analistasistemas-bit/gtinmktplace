@@ -17,6 +17,8 @@ export interface DepsMarca {
     listarFilhos: (orgId: string, codigoPai: string) => Promise<{ sku: string; itemId: string }[]>;
     lerItem: (itemId: string) => Promise<ItemLido>;
     putAtributos: (itemId: string, attrs: AtributoMarca[]) => Promise<void>;
+    /** Grava o family_id vigente no vínculo local (`anuncios_externos_itens`) da família. */
+    gravarFamilyIdLocal: (orgId: string, codigoPai: string, familyId: string) => Promise<void>;
   };
 }
 
@@ -24,6 +26,8 @@ export interface ResultadoMarca {
   dryRun: boolean;
   corrigidos: string[];
   jaCertos: string[];
+  /** family_id único lido no ML no início da rodada (gravado no vínculo local, fora do dry_run). */
+  familyId?: string;
   parouEm?: { sku: string | null; motivo: string };
 }
 
@@ -64,7 +68,19 @@ export async function processarSincronizacaoMarca(
   if (familyIds.has(null) || familyIds.size !== 1) {
     return { status: 200, body: { ...r, parouEm: { sku: null, motivo: 'family_id ausente ou divergente antes de qualquer PUT' } } };
   }
-  const familyId = lidos[0].familyId;
+  const familyId = lidos[0].familyId!;
+  r.familyId = familyId;
+  // Trocar BRAND faz o ML reagrupar a família UP inteira num family_id NOVO, minutos depois do PUT
+  // (medido no 00000064, 18/10 — a releitura logo após o PUT ainda mostra o antigo). Toda rodada
+  // que lê os SKUs unificados grava o id vigente no vínculo local; rodar de novo depois da
+  // convergência fecha o ciclo. Sem isso, a próxima cor nova acusaria "família desagrupada".
+  if (!r.dryRun) {
+    try {
+      await deps.portas.gravarFamilyIdLocal(job.org_id, job.codigo_pai, familyId);
+    } catch (e) {
+      return { status: 500, body: { erro: `gravar family_id local falhou: ${(e as Error).message}` } };
+    }
+  }
 
   for (let i = 0; i < filhos.length; i++) {
     const { sku, itemId } = filhos[i];

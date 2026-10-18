@@ -21,6 +21,7 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
 } = {}) {
   const puts: Array<{ itemId: string; attrs: Array<{ id: string; value_name: string }> }> = [];
   let leituras = 0;
+  const familyIdsGravados: string[] = [];
   const deps: DepsMarca = {
     lerMarcaOrg: async () => org,
     portas: {
@@ -30,6 +31,7 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
         if (opts.falhaLeitura) throw Object.assign(new Error('rede'), { status: 503 });
         return structuredClone(itens[id]);
       },
+      gravarFamilyIdLocal: async (_orgId, _codigoPai, familyId) => { familyIdsGravados.push(familyId); },
       putAtributos: async (id, attrs) => {
         const erro = opts.falhaPut?.(id);
         if (erro) throw erro;
@@ -41,7 +43,7 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
       },
     },
   };
-  return { deps, puts, leituras: () => leituras };
+  return { deps, puts, familyIdsGravados, leituras: () => leituras };
 }
 
 describe('processarSincronizacaoMarca (ADR-0186)', () => {
@@ -62,7 +64,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     const r = await processarSincronizacaoMarca(f.deps, JOB);
     expect(r.status).toBe(200);
     expect(f.puts).toEqual(['A', 'B', 'C'].map((itemId) => ({ itemId, attrs: [{ id: 'BRAND', value_name: 'Zaven' }] })));
-    expect(r.body).toEqual({ dryRun: false, corrigidos: ['SKU1', 'SKU2', 'SKU3'], jaCertos: [] });
+    expect(r.body).toEqual({ dryRun: false, corrigidos: ['SKU1', 'SKU2', 'SKU3'], jaCertos: [], familyId: 'FAM-1' });
   });
 
   it('retry depois de falha parcial: pula o SKU já certo e corrige o que faltou', async () => {
@@ -146,6 +148,23 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'Zaven' }) });
     const r = await processarSincronizacaoMarca(f.deps, { ...JOB, dry_run: true });
     expect(f.puts).toHaveLength(0);
-    expect(r.body).toEqual({ dryRun: true, corrigidos: ['SKU1'], jaCertos: ['SKU2'] });
+    expect(r.body).toEqual({ dryRun: true, corrigidos: ['SKU1'], jaCertos: ['SKU2'], familyId: 'FAM-1' });
+    expect(f.familyIdsGravados).toEqual([]);
+  });
+
+  // Medido em produção (00000064, 18/10): trocar BRAND faz o ML reagrupar a família UP INTEIRA num
+  // family_id novo, minutos depois do PUT (a releitura imediata ainda mostra o antigo). O vínculo
+  // local precisa acompanhar, senão a próxima cor nova acusa "família desagrupada".
+  it('SKUs unificados num family_id → grava esse family_id no vínculo local (rodada de convergência)', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }), B: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }) });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.familyIdsGravados).toEqual(['FAM-NOVA']);
+    expect(r.body).toMatchObject({ jaCertos: ['SKU1', 'SKU2'], familyId: 'FAM-NOVA' });
+  });
+
+  it('family_id divergente entre SKUs → não grava nada no vínculo local', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }), B: item({ value_name: 'Zaven' }) });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.familyIdsGravados).toEqual([]);
   });
 });

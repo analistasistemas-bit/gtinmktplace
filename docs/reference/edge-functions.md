@@ -1287,7 +1287,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `marca_propria`, sem republicar. Lê todos os filhos antes; `family_id` ausente/divergente → nenhum
   PUT. Um PUT só de `attributes` por SKU, relê e para na 1ª divergência (marca, `family_id`, status) —
   200 com `parouEm`, sem retry. Erro de leitura antes de escrever = 500 (QStash retenta). Org sem
-  marca própria = 400. `dry_run` só lista o que corrigiria.
+  marca própria = 400. `dry_run` só lista o que corrigiria. Fora do `dry_run`, SKUs unificados num
+  `family_id` → grava esse id em `anuncios_externos_itens` (o ML reagrupa a família após trocar BRAND;
+  rodar de novo depois da convergência).
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
