@@ -69,6 +69,7 @@
 | subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
+| sincronizar-marca-ml | false | QStash worker (disparo manual) | sim (SKU já certo é pulado) |
 | atualizar-fiscal-familia | true | HTTP (frontend) | sim (upsert dos campos, `familiaId` idempotente) |
 | sugerir-ncm | true | HTTP (frontend) | sim (leitura/IA; nunca grava) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
@@ -1279,6 +1280,14 @@ Espelha o guard irmão `kit_vinculado_ativo` (ADR-0151 D-14); a trigger de banco
 mutação. **Pendência de verificação:** a query (`.eq('status', ...).in(...)`) só foi exercitada
 contra um fake em memória nos testes desta branch, que não filtra por `status` de verdade — falta
 um smoke test contra Postgres real antes do primeiro deploy.
+
+### Marca própria (ADR-0186)
+- **sincronizar-marca-ml** *(worker QStash, disparo manual `{ org_id, codigo_pai, dry_run? }`)* — corrige
+  BRAND (e MANUFACTURER, se o item já o tiver) dos SKUs User Products já publicados de org com
+  `marca_propria`, sem republicar. Lê todos os filhos antes; `family_id` ausente/divergente → nenhum
+  PUT. Um PUT só de `attributes` por SKU, relê e para na 1ª divergência (marca, `family_id`, status) —
+  200 com `parouEm`, sem retry. Erro de leitura antes de escrever = 500 (QStash retenta). Org sem
+  marca própria = 400. `dry_run` só lista o que corrigiria.
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
