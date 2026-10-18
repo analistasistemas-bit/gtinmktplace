@@ -193,3 +193,37 @@ Decisão: `T_SHIRTS` e `SHIRTS` entram em `DOMINIOS_VESTUARIO` (chart SPECIFIC p
 `CONTORNO_PEITO_CM`, mesmo caminho de `SPORT_T_SHIRTS`). Só na grade Letras; Infantil e Calça
 seguem recusando esses domínios (`dominioAceitaGrade`). `FOOTBALL_SHIRTS` e demais camisas
 esportivas não foram medidos e continuam fora.
+
+## Emenda (2026-10-18): roupas e calçados A–D
+
+Pedido do Diego: o PubliAI tem que publicar qualquer roupa. Auditoria da árvore `MLB1430`
+(145 folhas): só 10 domínios publicavam. Colunas medidas por `POST /catalog/charts` real com linha
+só de `SIZE` (conta Daludi Shop, 2026-10-18; 400 sem criar nada):
+
+- **A, peito** (`FILTRABLE_SIZE` + `CHEST_CIRCUMFERENCE_FROM`) → `DOMINIOS_VESTUARIO`.
+- **B, quadril** (`FILTRABLE_SIZE` + `HIP_CIRCUMFERENCE_FROM`) → `DOMINIOS_QUADRIL`.
+- **C, calçado** (`BR_SIZE` + `FOOT_LENGTH`) → `DOMINIOS_CALCADO_SPECIFIC`, todos SPECIFIC com
+  `COMPRIMENTO_PE_CM` (a mesma tabela da sandália); não dependem de STANDARD por gênero.
+- **D, sem `SIZE_GRID_ID`** no schema → `ATRIBUTO_TAMANHO_SEM_GUIA` = `SIZE` cru, como `SWIMWEAR`.
+
+Listas exatas: `_shared/ml/size-chart.ts`. Cada domínio passou por `scripts/ops/ensaio-grade-ml.ts`
+(chart real + `/items/validate` por tamanho, nas pontas de cada grade aceita); domínio reprovado
+ficou fora.
+
+**Gênero × categoria (revisão Codex).** A grade valida gênero × grade, não gênero × domínio (cueca
+não aceita Feminino). `garantirChart` lê o `GENDER` do schema da categoria e recusa, com mensagem,
+o gênero que ela não lista. Schema indisponível ou sem `GENDER` não bloqueia: o ML segue como juiz.
+
+**Fora, de propósito:** domínios de bebê (`BABY_*`, `BABIES_FOOTWEAR`; tamanhos de bebê não existem
+nas grades), `BABY_SWIMWEAR` (emenda 17/10), "Outros" (`CLOTHING`, `SPORTSWEAR`, genéricos), e
+`BRAS`/`PAJAMAS` (exigem `BUST_CIRCUMFERENCE_FROM`, sem tabela de busto). Peito infantil também não
+tem tabela: grade Infantil segue só em quadril e sem guia.
+
+**Ensaio (2026-10-18):** 93 casos + amostra masculina; 87 OK (A com P–GGG; C com 35/40/44 nos
+gêneros aceitos; D em Letras P/GGG, Calça 38/48 e Infantil 4/16). As 6 recusas são tamanhos que a
+categoria do ML não tem e falham antes de publicar, com mensagem: saia, calcinha e cueca sem a
+grade Calça; calcinha e cueca sem Infantil; legging sem 34.
+
+**Limites herdados:** GGG não existe na tabela de quadril (B em Letras vai até GG); calçado recusa
+pares (`33/34`) e feminino 45/46. Risco preexistente, não alterado aqui: no UPDATE/reposição UP o
+`GENDER` da família vai aos filhos sem passar por `garantirChart`.

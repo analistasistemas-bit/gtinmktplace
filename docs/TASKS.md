@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Roupas e calçados A–D publicáveis no ML (emenda ADR-0182) — 2026-10-18
+
+- [x] Auditoria `MLB1430` (145 folhas): só 10 domínios publicavam. Colunas medidas por `POST /catalog/charts` real.
+- [x] A peito (vestido, moletom, blusa, colete, suéter, camisola, roupão, jaleco, kimono, poncho), B quadril (saia, calcinha, cueca, legging, short/calça fitness, calça de trabalho/tática, tutu), C calçado SPECIFIC (bota, sapato social, scarpin, sapatilha, pantufa, alpargata, bota tática, dança), D sem guia com `SIZE` cru (terno, macacão, conjuntos fitness/lingerie, top, corset, baby doll, cinta, meia-calça, uniformes).
+- [x] `garantirChart` recusa gênero que o schema da categoria não aceita (cueca × Feminino).
+- [x] `ensaio-grade-ml.ts` valida todos os tamanhos e sai com erro em causa de tamanho/grade/gênero; 87/93 casos OK, 6 recusas claras de tamanho inexistente na categoria.
+- [ ] Busto (sutiã, pijama) e peito infantil — dependem de tabela de medidas do Diego.
+- [ ] Bebê (`BABY_*`), meias (`SOCKS`, sem guia ativa) — fora.
+
 ## Camiseta e camisa (T_SHIRTS, SHIRTS) na grade Letras (emenda ADR-0182) — 2026-10-18
 
 - [x] Bug PAI `00000069` (camisa Zaven, Letras): preditor só trouxe `T_SHIRTS`/`SHIRTS`, fora de `DOMINIOS_SUPORTADOS` → filtro da grade zerou os candidatos → "Categoria indefinida".

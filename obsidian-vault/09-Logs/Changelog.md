@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-18
 
+**Roupas e calçados A–D (emenda ADR-0182).** Pedido do Diego: publicar qualquer roupa. Auditoria da árvore de vestuário do ML mostrou só 10 tipos cobertos; entram vestido, moletom, blusa, colete, suéter, camisola, roupão, jaleco, kimono, poncho (peito), saia, calcinha, cueca, legging, short/calça fitness, calça de trabalho/tática, tutu (quadril), bota, sapato social, scarpin, sapatilha, pantufa, alpargata (calçado) e terno, macacão, conjuntos fitness/lingerie, top, corset, baby doll, cinta, meia-calça e uniformes (sem guia). Ensaio real: 87/93 casos OK; o resto recusa com mensagem tamanho que a categoria não tem. Fora: bebê, meias, sutiã/pijama (falta tabela de busto).
+
 **Camiseta e camisa na grade Letras (emenda ADR-0182).** Camisa masculina da Zaven (`00000069`) chegou na Revisão com "Categoria indefinida": o ML só sugeriu Camisetas e Regatas e Camisas, domínios que a guia de tamanhos ainda não cobria, e o filtro da grade descartou os dois. Medido na API real: exigem as mesmas colunas da camiseta esportiva (peito). Agora entram na guia de tamanhos e na escolha de categoria.
 
 **Tamanho GGG na grade Letras (emenda ADR-0182).** Cadastro em grade oferece P–GGG. No ML o GGG publica com guia de tamanhos: equivalência `XG`, 120 cm de peito, `SIZE` "GGG" livre (o ML não tem o valor; aceito em `POST /catalog/charts` real). Cache `ml_size_charts` que não cobre o tamanho pedido agora gera chart novo e é substituído, em vez de travar a publicação. Short/calça GGG segue fora. Revisado pelo Codex (2×, sem achados).

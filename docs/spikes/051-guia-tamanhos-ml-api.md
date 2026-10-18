@@ -253,6 +253,11 @@ listou as colunas obrigatórias antes de eu adivinhar nenhuma):
 
 **CONFIRMADO em 2026-10-18 para `T_SHIRTS` e `SHIRTS`** (mesmo método, conta Daludi Shop): as
 mesmas duas colunas, `FILTRABLE_SIZE` + `CHEST_CIRCUMFERENCE_FROM` (ADR-0182, emenda de 18/10).
+No mesmo dia (emenda "roupas A–D"): peito também em DRESSES, SWEATSHIRTS_AND_HOODIES, BLOUSES, VESTS,
+SWEATERS_AND_CARDIGANS, NIGHTGOWNS, ROBES, SCHOOL_SMOCKS, FASHION_KIMONOS, PONCHOS; quadril
+(`HIP_CIRCUMFERENCE_FROM`) em SKIRTS, PANTIES, SPORT_SHORTS, LEGGINGS, SPORT_PANTS, WORK_PANTS,
+TACTICAL_PANTS, TUTUS, UNDERPANTS; busto (`BUST_CIRCUMFERENCE_FROM`) em BRAS e PAJAMAS (+ quadril);
+calçados (main `BR_SIZE`) exigem `FOOT_LENGTH`. SOCKS e BABY_CLOTHING: "Domain not active".
 
 **NÃO CONFIRMADO:** se calça/vestido exigem colunas de medida diferentes (ex. `WAIST_
 CIRCUMFERENCE` em vez de `CHEST_CIRCUMFERENCE_FROM`) — plausível por analogia de domínio, mas não

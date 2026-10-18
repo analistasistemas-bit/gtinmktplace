@@ -55,59 +55,55 @@ const resolvido = await garantirChart(admin, token, connectionId, categoriaId, g
 const chart = 'chartId' in resolvido ? resolvido : null;
 console.log(chart ? `chart: ${chart.chartId}` : 'chart: sem guia');
 
-// 2) 1 SKU plano, pelo mesmo montarPayloadItem do publicar-familia-up.
-const tamanho = tamanhos[0];
-const linhaChart = chart?.linhaPorTamanho.get(tamanho);
-if (chart && !linhaChart) {
-  console.error(`chart ${chart.chartId} não cobre o tamanho ${tamanho}`);
-  Deno.exit(1);
-}
-const familia = {
-  titulo_ml: 'Ensaio PubliAI grade',
-  descricao_ml: null,
-  categoria_ml_id: categoriaId,
-  atributos_ml: [
-    { id: 'GENDER', value_id: GENDER_VALUE[genero].id },
-    { id: 'BRAND', value_name: 'Generica' },
-    { id: 'MODEL', value_name: 'Teste' },
-  ],
-};
-const variacao = {
-  codigo: 'ENSAIO-GRADE', cor: 'Azul', estoque: 1, preco_publicacao: 49.9, gtin: null, ml_picture_id: null,
-  tamanho,
-  ...(chart
-    ? { sizeGridId: chart.chartId, sizeGridRowId: linhaChart!.rowId, sizeLabel: linhaChart!.sizeLabel }
-    : { tamanhoSemGuia: 'semGuia' in resolvido ? resolvido.semGuia : null }),
-};
-// 'plano' força o item plano (family_name), como as categorias de vestuário em UP.
-const payload = montarPayloadItem(familia, [variacao], null, null, null, undefined, null, undefined, 'plano');
-// Foto de teste por URL (montarPayloadItem só conhece picture ids já enviados ao ML).
-(payload as { pictures: unknown }).pictures = [
-  { source: 'https://http2.mlstatic.com/D_NQ_NP_2X_000000-MLA00000000000_000000-F.jpg' },
-];
-console.log('atributos enviados:', JSON.stringify(payload.attributes));
-
-// 3) SOMENTE /items/validate.
-const alvo = 'https://api.mercadolibre.com/items/validate';
-if (!alvo.endsWith('/items/validate')) throw new Error('URL inesperada: só /items/validate é permitido');
-const resp = await fetch(alvo, {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify(payload),
-});
-const texto = await resp.text();
-console.log('HTTP', resp.status);
-if (resp.status === 204 || texto === '') {
-  console.log('ML: sem causas (validação ok)');
-} else {
-  try {
-    const j = JSON.parse(texto) as { message?: string; cause?: { type?: string; code?: string; message?: string }[] };
-    if (j.message) console.log('mensagem:', j.message);
-    for (const c of j.cause ?? []) console.log(`causa [${c.type}] ${c.code}: ${c.message}`);
-    if (!j.cause?.length) console.log(texto);
-  } catch {
-    console.log(texto);
+// 2+3) 1 SKU plano POR TAMANHO pedido (revisão Codex 2026-10-18: validar só o 1º escondia falhas),
+// pelo mesmo montarPayloadItem do publicar-familia-up, e SOMENTE /items/validate. Causa de erro
+// ligada a tamanho/grade/gênero reprova o ensaio (exit 1); ficha incompleta e foto fictícia não.
+const PROIBIDA = /size|grid|gender|fashion/i;
+let reprovado = false;
+for (const tamanho of tamanhos) {
+  const linhaChart = chart?.linhaPorTamanho.get(tamanho);
+  if (chart && !linhaChart) {
+    console.error(`REPROVADO ${tamanho}: chart ${chart.chartId} não cobre o tamanho`);
+    reprovado = true;
+    continue;
   }
+  const familia = {
+    titulo_ml: 'Ensaio PubliAI grade',
+    descricao_ml: null,
+    categoria_ml_id: categoriaId,
+    atributos_ml: [
+      { id: 'GENDER', value_id: GENDER_VALUE[genero].id },
+      { id: 'BRAND', value_name: 'Generica' },
+      { id: 'MODEL', value_name: 'Teste' },
+    ],
+  };
+  const variacao = {
+    codigo: 'ENSAIO-GRADE', cor: 'Azul', estoque: 1, preco_publicacao: 49.9, gtin: null, ml_picture_id: null,
+    tamanho,
+    ...(chart
+      ? { sizeGridId: chart.chartId, sizeGridRowId: linhaChart!.rowId, sizeLabel: linhaChart!.sizeLabel }
+      : { tamanhoSemGuia: 'semGuia' in resolvido ? resolvido.semGuia : null }),
+  };
+  // 'plano' força o item plano (family_name), como as categorias de vestuário em UP.
+  const payload = montarPayloadItem(familia, [variacao], null, null, null, undefined, null, undefined, 'plano');
+  // Foto de teste por URL (montarPayloadItem só conhece picture ids já enviados ao ML).
+  (payload as { pictures: unknown }).pictures = [
+    { source: 'https://http2.mlstatic.com/D_NQ_NP_2X_000000-MLA00000000000_000000-F.jpg' },
+  ];
+  const alvo = 'https://api.mercadolibre.com/items/validate';
+  if (!alvo.endsWith('/items/validate')) throw new Error('URL inesperada: só /items/validate é permitido');
+  const resp = await fetch(alvo, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const texto = await resp.text();
+  let causas: { type?: string; code?: string; message?: string }[] = [];
+  try { causas = (JSON.parse(texto) as { cause?: typeof causas }).cause ?? []; } catch { /* corpo vazio = ok */ }
+  const proibidas = causas.filter((c) => c.type === 'error' && PROIBIDA.test(`${c.code} ${c.message}`));
+  if (resp.status >= 500 || proibidas.length > 0) reprovado = true;
+  console.log(`${proibidas.length > 0 ? 'REPROVADO' : 'ok'} ${tamanho} HTTP ${resp.status}`
+    + proibidas.map((c) => `\n  causa [${c.type}] ${c.code}: ${c.message}`).join(''));
 }
 
 // 4) Linha do cache.
@@ -120,3 +116,4 @@ const { data: cache, error: cErr } = await admin.from('ml_size_charts')
 if (cErr) console.error('erro lendo ml_size_charts:', cErr.message);
 else if (!cache) console.log(`ml_size_charts: SEM LINHA para (${dominio}, ${genero}, ${grade})${chart ? ' — FALHA DE CACHE' : ' (esperado: sem guia)'}`);
 else console.log(`ml_size_charts: chart_id=${cache.chart_id} domínio=${cache.domain_id} gênero=${cache.genero} tamanhos=${Object.keys(cache.linhas as object).join(',')}`);
+if (reprovado) Deno.exit(1);
