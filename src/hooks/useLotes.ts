@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type Query } from '@tanstack/react-query';
 import { QK, fetchLotes, fetchLote, loteFromRow } from '@/lib/queries';
 import type { Lote } from '@/lib/tipos-dominio';
 import { useAuth } from './useAuth';
@@ -12,7 +12,10 @@ export function useLotes() {
   });
 }
 
-export function useLote(id: string | undefined) {
+export function useLote(
+  id: string | undefined,
+  options?: { refetchInterval?: number | false | ((query: Query<Lote | null, Error>) => number | false | undefined) }
+) {
   return useQuery<Lote | null>({
     queryKey: QK.lote(id ?? ''),
     queryFn: async () => {
@@ -20,5 +23,6 @@ export function useLote(id: string | undefined) {
       return row ? loteFromRow(row) : null;
     },
     enabled: !!id,
+    refetchInterval: options?.refetchInterval,
   });
 }

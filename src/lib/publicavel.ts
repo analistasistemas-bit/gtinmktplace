@@ -56,9 +56,17 @@ export function familiaExigeCor(familia: Familia): boolean {
 // 'outro' (herda da base) — `familiaProdutoSimples` não pega esse caso. A foto do kit vive só
 // na capa da família (variação nasce com `imagem_path=null`, bug MLB7585283770), então checar
 // `kitBaseCodigoPai` aqui evita o falso "sem foto" que travaria o kit na Revisão.
+// Grade de 1 cor em N tamanhos (ADR-0182): as variações só diferem no tamanho, então a capa vale
+// para todas — mesma galeria (`capa ?? propria`) em Legacy e UP. Bug PAI 00000064 (2026-10-18).
+function familiaGradeCorUnica(familia: Familia): boolean {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const cores = new Set(incluidas.map((v) => (v.cor ?? '').trim().toLowerCase()));
+  return familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && cores.size === 1 && !cores.has('');
+}
+
 export function familiaExigeFotoPorVariacao(familia: Familia): boolean {
   if (familia.kitBaseCodigoPai && !!familia.capaStoragePath) return false;
-  return !(familiaProdutoSimples(familia) && !!familia.capaStoragePath);
+  return !((familiaProdutoSimples(familia) || familiaGradeCorUnica(familia)) && !!familia.capaStoragePath);
 }
 
 // ADR-0078 F2: preços divergentes entre as cores incluídas. Não bloqueia mais — chaveia a UI
