@@ -189,12 +189,34 @@ describe('produto simples com capa não exige foto por variação', () => {
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
   });
 
-  test('2 variações com capa: cada cor segue exigindo foto própria', () => {
+  test('2 cores com capa: cada cor segue exigindo foto própria', () => {
     const f = simples({
-      variacoes: [mkVar({ codigo: '001', fotoPath: undefined }), mkVar({ codigo: '002', fotoPath: 'f2.jpg' })],
+      variacoes: [
+        mkVar({ codigo: '001', cor: 'Azul', fotoPath: undefined }),
+        mkVar({ codigo: '002', cor: 'Rosa', fotoPath: 'f2.jpg' }),
+      ],
     });
     expect(familiaExigeFotoPorVariacao(f)).toBe(true);
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
+  });
+
+  // Bug 2026-10-18 (PAI 00000064): grade de 1 cor em N tamanhos — a capa vale para todas as
+  // variações (mesma galeria por cor no ML), então "sem foto" era falso-positivo.
+  test('grade de 1 cor em N tamanhos, com capa: não exige foto por variação', () => {
+    const f = simples({
+      variacoes: ['4', '6', '8', '10'].map((t, i) =>
+        mkVar({ codigo: `00${i}`, cor: 'Estampa Sereia', tamanho: t, fotoPath: undefined })),
+    });
+    expect(familiaExigeFotoPorVariacao(f)).toBe(false);
+    expect(familiaPublicavel(f)).toEqual({ ok: true, motivos: [] });
+  });
+
+  test('grade de 1 cor sem capa: segue exigindo foto', () => {
+    const f = simples({
+      capaStoragePath: null,
+      variacoes: [mkVar({ codigo: '001', cor: 'Sereia', fotoPath: undefined }), mkVar({ codigo: '002', cor: 'Sereia', fotoPath: undefined })],
+    });
+    expect(familiaExigeFotoPorVariacao(f)).toBe(true);
   });
 
   test('UPDATE de 1 cor nova sem foto, com capa: segue exigindo foto (regra do UPDATE intocada)', () => {
