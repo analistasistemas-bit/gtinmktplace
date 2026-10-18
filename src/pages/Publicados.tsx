@@ -404,7 +404,7 @@ function LinhaTabela({
         <div className="absolute right-2 top-0">
           <SeloModo listingType={item.listingType} />
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex max-w-[8.5rem] flex-wrap items-center gap-1">
           <Button
             asChild
             variant="ghost"
