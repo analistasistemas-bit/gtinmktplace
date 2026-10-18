@@ -86,6 +86,9 @@ export interface PublicadoItem {
    *  trataria como novas e duplicaria variações num anúncio real. A edge function também recusa;
    *  aqui o botão simplesmente não aparece, para não oferecer o que vai ser negado. */
   produtoDividido?: boolean;
+  /** Linha de partição >0 de produto dividido (ADR-0048): herda o `familiaId` da partição 0, então
+   *  ações por família (ex.: retentar catálogo) agiriam no anúncio errado. */
+  particaoSplit?: boolean;
   /** ADR-0088: produto em User Products (cada cor = um MLB próprio). O reajuste em massa (I5) manda
    *  a FAMÍLIA, que o servidor expande em todos os SKUs; a linha mostra um MLB só. `undefined` = Legacy. */
   userProducts?: boolean;
@@ -178,7 +181,10 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     // União dos identificadores de todos os ciclos: o representante é o mais antigo, mas a busca
     // precisa achar o anúncio por qualquer código/GTIN de variação (inclusive de ciclos de UPDATE).
     const identificadores = [...new Set(grupo.flatMap((g) => g.identificadores ?? []))];
-    const catalogRetentavel = grupo.some((g) => g.catalogRetentavel);
+    // Mesmo critério da edge `retentar-catalogo`: a família publicada mais nova (variações vigentes).
+    const maisNova = [...grupo].filter((g) => g.publicadoEm)
+      .sort((a, b) => b.publicadoEm!.localeCompare(a.publicadoEm!))[0] ?? rep;
+    const catalogRetentavel = !!maisNova.catalogRetentavel;
     out.push({ ...rep, fornecedor, identificadores, catalogRetentavel });
   }
   return out;

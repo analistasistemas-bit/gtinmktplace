@@ -26,6 +26,8 @@ export interface PortasDisparo {
     algumaPublicando: boolean;
     /** O item é componente de algum kit virtual. */
     emKitVirtual: boolean;
+    /** Pai publicado em User Products (ADR-0088): itens técnicos não retirados na partição 0. */
+    userProducts: boolean;
   }>;
   /** Elegibilidade no ML. */
   validarElegibilidade(mlItemId: string): Promise<{ elegivel: boolean; causas: string[] }>;
@@ -81,6 +83,15 @@ export async function dispararMigracaoPxv(
   }
   if (!familia.mlItemId) {
     return { tipo: 'recusado', motivo: 'Este produto não está publicado no Mercado Livre.' };
+  }
+
+  // UP (ADR-0088) já é um anúncio por SKU, com preço próprio: não há o que migrar. Sem isto a
+  // recusa só viria depois de gastar a elegibilidade no ML, com uma mensagem enganosa.
+  if (ctx.userProducts) {
+    return {
+      tipo: 'recusado',
+      motivo: 'Este produto já está publicado com um anúncio por variação (User Products) — não há o que migrar.',
+    };
   }
 
   // Produto dividido em N anúncios (ADR-0048/0078). A RPC de adoção zera `ml_variation_id` de TODA

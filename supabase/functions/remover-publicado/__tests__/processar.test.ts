@@ -848,7 +848,7 @@ describe('removerPublicado — modo republicar pausa o anúncio raiz (família L
     await expect(removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
-    )).rejects.toThrow(/consultar anúncio no ML falhou/);
+    )).rejects.toThrow(/consultar anúncio MLB1 no ML falhou/);
     expect(updates).toEqual([]);
     expect(deletes).toEqual([]);
   });
@@ -1114,6 +1114,106 @@ describe('removerPublicado — ADR-0168 (Remover encerra no ML só sem venda)', 
     const { admin, deletes } = cenarioLegacy();
     await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
       .rejects.toThrow(/conexão com o Mercado Livre/);
+    expect(deletes).toEqual([]);
+  });
+});
+
+// Produto dividido Legacy (ADR-0048): `familias.ml_item_id` guarda só a partição 0; as demais
+// vivem em `anuncios_externos.item_externo_id`. Remover/Republicar enxergavam só a partição 0 —
+// a 1 ficava viva e órfã no ML, e a venda nela não bloqueava o Remover (ADR-0168 D-1).
+describe('removerPublicado — produto dividido em vários anúncios (todas as partições)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const RAIZES = [
+    { id: 'ext-0', mudando_composicao: false, item_externo_id: 'MLB1' },
+    { id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB2' },
+  ];
+  const cenarioRemover = () => fakeAdmin({
+    familias: [
+      { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [], [],
+      [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+      [],
+    ],
+    anuncios_externos: [RAIZES, [{ mudando_composicao: false }], [{ mudando_composicao: false }]],
+    anuncios_externos_itens: [[]],
+    lotes: [],
+  });
+
+  it('Remover: venda só na partição 1 → tem_movimentacao, nada encerrado nem apagado', async () => {
+    const puts: string[] = [];
+    const base = stubFetchML({ MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 4 } });
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT') puts.push(String(init.body));
+      return base(url, init);
+    }));
+    const { admin, deletes } = cenarioRemover();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'tem_movimentacao' });
+    expect(puts).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('Remover: sem venda → encerra as DUAS partições', async () => {
+    const encerrados: string[] = [];
+    const base = stubFetchML({ MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 0 } });
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT' && String(init.body).includes('"status":"closed"')) encerrados.push(url.match(/items\/(MLB[^/?]+)/)![1]);
+      return base(url, init);
+    }));
+    const { admin } = cenarioRemover();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(encerrados.sort()).toEqual(['MLB1', 'MLB2']);
+  });
+
+  it('Republicar: pausa as DUAS partições antes de cortar o vínculo', async () => {
+    const pausados: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: { method?: string; body?: string }) => {
+      if (opts?.method === 'PUT') { pausados.push(url.match(/items\/(MLB[^/?]+)/)![1]); return new Response('{}', { status: 200 }); }
+      return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
+    }));
+    const { admin } = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [RAIZES, [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
+    expect(pausados.sort()).toEqual(['MLB1', 'MLB2']);
+  });
+
+  it('Republicar: falha ao pausar a partição 1 → lança e NADA local é alterado', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: { method?: string }) => {
+      if (opts?.method === 'PUT') return new Response('{}', { status: url.includes('MLB2') ? 500 : 200 });
+      return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
+    }));
+    const { admin, updates, deletes } = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [RAIZES, [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+    });
+    await expect(removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    )).rejects.toThrow();
+    expect(updates).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('guard de Kit Virtual casa pelo MLB da partição 1 (componente sem codigo_pai)', async () => {
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: {}, MLB2: {} }));
+    const { admin, deletes } = fakeAdmin({
+      familias: [{ id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null }, [], []],
+      anuncios_externos: [RAIZES],
+      anuncios_externos_itens: [[]],
+      kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Combo' }]],
+      kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: null, item_externo_id: 'MLB2' }]],
+    });
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Combo'] });
     expect(deletes).toEqual([]);
   });
 });

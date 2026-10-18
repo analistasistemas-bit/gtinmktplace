@@ -76,7 +76,7 @@ import { useEncerrarKitVirtual } from '@/hooks/useEncerrarKitVirtual';
 import {
   carregarKitVirtualParaRefazer, prefillAposEncerrarKitVirtual, type KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
-import { useProfile } from '@/hooks/useProfile';
+import { useSupportStore } from '@/stores/support-store';
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
@@ -84,7 +84,7 @@ import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib
 import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
 import { Pagination } from '@/components/ui/pagination';
 import { motivoNaoSelecionavel, separarSelecao, type AcaoStatus } from '@/lib/operacoes';
-import { useAcompanharOperacao } from '@/hooks/useOperacoes';
+import { useAcompanharOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
 import { BarraSelecaoPublicados } from '@/components/operacoes/barra-selecao-publicados';
 import { PreviewStatus } from '@/components/operacoes/preview-status';
 import { DialogReajuste } from '@/components/operacoes/dialog-reajuste';
@@ -321,6 +321,8 @@ function LinhaTabela({
   const [pausarAberto, setPausarAberto] = useState(false);
   const [republicarAberto, setRepublicarAberto] = useState(false);
   const [removerAberto, setRemoverAberto] = useState(false);
+  // Suporte só-leitura: a edge recusa (403) qualquer escrita.
+  const somenteLeitura = useSupportStore((s) => s.context?.scope === 'read');
 
   return (
     <>
@@ -545,7 +547,9 @@ function LinhaTabela({
             </AlertDialog>
           )}
 
-          {item.catalogRetentavel && (
+          {/* Partição >0: o worker de catálogo só opera a partição 0 (TODO de opt-in por partição em
+              publicar-split-ml) — o clique retentaria o anúncio errado. */}
+          {item.catalogRetentavel && !item.particaoSplit && (
             <Button
               variant="ghost"
               size="sm"
@@ -611,7 +615,7 @@ function LinhaTabela({
                 aria-label="Remover"
                 title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                disabled={removendo || migracaoAtiva}
+                disabled={removendo || migracaoAtiva || somenteLeitura}
                 onClick={(e) => e.stopPropagation()}
               >
                 <Trash2 className="h-3 w-3" />
@@ -1006,7 +1010,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
   const { mutateAsync: migrarPrecoPorVariacaoMutAsync, isPending: migrando } = useMigrarPrecoPorVariacao();
   const { mutateAsync: refazerKitMutAsync, isPending: refazendoKit } = useEncerrarKitVirtual();
-  const { isAdmin } = useProfile();
+  // Mesmo predicado das edges (auth-org): em sessão de suporte vale o escopo `full`; fora dela, admin.
+  const isAdmin = usePodeExecutarOperacao();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const { data: modulos } = useModulosHabilitados();
   const temFiscal = !!modulos?.includes('fiscal');

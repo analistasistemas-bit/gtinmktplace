@@ -1192,6 +1192,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       // reajuste e o servidor expandiria SKUs UP não selecionados.
       userProducts: false,
       mlItemIdsUP: undefined, // idem: os SKUs UP são da partição 0, não desta linha
+      particaoSplit: true,
 
       publicadoEm: a.publicado_em ?? rep.publicadoEm,
       qtdVariacoes: qtdPorAnuncio.get(a.item_externo_id) ?? 0,

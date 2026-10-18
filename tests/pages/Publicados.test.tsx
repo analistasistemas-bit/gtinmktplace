@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Publicados from '@/pages/Publicados';
+import { useSupportStore } from '@/stores/support-store';
 import type { PublicadoItem } from '@/lib/publicados';
 import type { Familia } from '@/lib/tipos-dominio';
 import type { MovimentoEstoque } from '@/lib/movimentos-estoque';
@@ -489,6 +490,56 @@ describe('Publicados', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+  });
+
+  // Partição >0 de produto dividido herda o familiaId da partição 0: retentar ali agiria no anúncio errado.
+  it('partição de produto dividido: botão retentar catálogo ausente', () => {
+    usePublicadosMock.mockReturnValue({
+      data: [itemBase({ catalogRetentavel: true, particaoSplit: true })],
+      isLoading: false,
+      error: null,
+    });
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+  });
+
+  describe('permissões em sessão de suporte (mesmo predicado das edges)', () => {
+    const sessao = (scope: 'read' | 'full') => useSupportStore.setState({
+      context: { requestId: 'r1', orgId: 'org-1', orgName: 'Zaven', scope, expiresAt: '2099-01-01T00:00:00Z' },
+    });
+    afterEach(() => { useSupportStore.setState({ context: null }); });
+    const renderAtivo = () => {
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [{ ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 5, preco: 24.1 }] },
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+      usePublicadosMock.mockReturnValue({ data: [itemBase()], isLoading: false, error: null });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+    };
+
+    it('suporte full libera as ações de admin mesmo com is_admin=false no perfil', () => {
+      useProfileMock.mockReturnValue({ isAdmin: false });
+      sessao('full');
+      renderAtivo();
+      expect(screen.getByRole('button', { name: 'Pausar' })).toBeEnabled();
+    });
+
+    it('suporte read: Pausar e Remover desabilitados mesmo com is_admin=true', () => {
+      useProfileMock.mockReturnValue({ isAdmin: true });
+      sessao('read');
+      renderAtivo();
+      expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Remover' })).toBeDisabled();
+    });
   });
 
   // ADR-0151 D-2/D-10/D-12: gatilho "Criar kit" — desabilitado + tooltip, nunca escondido.

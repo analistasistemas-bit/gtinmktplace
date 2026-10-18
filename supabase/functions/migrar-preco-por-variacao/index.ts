@@ -58,13 +58,24 @@ Deno.serve(async (req) => {
         .select('id, org_id, codigo_pai, ml_item_id, status')
         .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
       if (!fam) {
-        return { familia: null, particoes: [], mlItemIdMaisNovo: null, algumaPublicando: false, emKitVirtual: false };
+        return { familia: null, particoes: [], mlItemIdMaisNovo: null, algumaPublicando: false, emKitVirtual: false, userProducts: false };
       }
       const codigoPai = fam.codigo_pai as string;
 
       const { data: parts } = await admin.from('anuncios_externos')
-        .select('particao, item_externo_id, migracao_pxv_status')
+        .select('id, particao, item_externo_id, migracao_pxv_status')
         .eq('org_id', orgId).eq('canal', CANAL).eq('codigo_pai', codigoPai);
+
+      // UP (ADR-0088): itens técnicos não retirados na raiz da partição 0. Erro aborta — virar
+      // "não é UP" em silêncio gastaria a elegibilidade no ML à toa.
+      const raiz0 = (parts ?? []).find((p) => p.particao === 0);
+      let userProducts = false;
+      if (raiz0) {
+        const { data: itensUp, error: itensUpErr } = await admin.from('anuncios_externos_itens')
+          .select('id').eq('anuncio_externo_id', raiz0.id as string).eq('retirado', false).limit(1);
+        if (itensUpErr) throw new Error(`migrar-preco-por-variacao: consultar itens UP falhou: ${itensUpErr.message}`);
+        userProducts = (itensUp ?? []).length > 0;
+      }
 
       // Todas as linhas de `familias` do pai: a mais nova é a que o ingest usaria, e o status de
       // qualquer uma em publicação impede migrar no meio de um envio.
@@ -91,6 +102,7 @@ Deno.serve(async (req) => {
         mlItemIdMaisNovo: (maisNovaComItem?.ml_item_id as string | null) ?? null,
         algumaPublicando: (irmas ?? []).some((f) => f.status === 'publicando'),
         emKitVirtual: (kit ?? []).length > 0,
+        userProducts,
       };
     },
 

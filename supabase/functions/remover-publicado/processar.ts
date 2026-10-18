@@ -58,8 +58,8 @@ interface SnapshotMLRemocao {
   item: ItemMLAtual | null;
 }
 
-function coletarIdsMLRemover(mlItemId: string | null, filhos: FilhoComp[]): string[] {
-  const ids = new Set<string>();
+function coletarIdsMLRemover(mlItemId: string | null, filhos: FilhoComp[], idsRaizes: string[]): string[] {
+  const ids = new Set<string>(idsRaizes);
   if (mlItemId) ids.add(mlItemId);
   for (const f of filhos) {
     if (f.itemExternoId) ids.add(f.itemExternoId);
@@ -215,9 +215,14 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // Legacy nunca toca o ML na remoção (ADR-0019), intocado. Detecta UP pela presença de linhas
   // em anuncios_externos_itens (mesmo sinal que update-familia-ml usa pro roteamento).
   const { data: externos, error: externosErr } = await admin.from('anuncios_externos')
-    .select('id, mudando_composicao').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai).eq('canal', canal);
+    .select('id, mudando_composicao, item_externo_id').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai).eq('canal', canal);
   if (externosErr) throw new Error(`remover-publicado: consultar anuncios_externos falhou: ${externosErr.message}`);
   const idsExternos = (externos ?? []).map((e: { id: string }) => e.id);
+  // Produto dividido (ADR-0048): `familias.ml_item_id` é só a partição 0 — as demais partições
+  // são anúncios vivos que só existem aqui. Remover/Republicar/guard de kit precisam de todos.
+  const idsRaizes = [...new Set((externos ?? [])
+    .map((e: { item_externo_id?: string | null }) => e.item_externo_id)
+    .filter((id): id is string => !!id))];
   // true ⇔ a mini-saga UP abaixo rodou sobre 1+ filhos (e só chegamos adiante se TODOS
   // confirmaram pausado). false ⇔ Legacy ou UP já esvaziada — ninguém pausou nada no ML.
   let filhosUPPausadosPelaSaga = false;
@@ -257,7 +262,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     admin, alvo.org_id as string, alvo.codigo_pai as string,
     // `ml_item_id` pode ser null aqui desde 2026-09-10 (UP com saga interrompida): só os filhos
     // provam a publicação. Filtra para não passar null adiante como se fosse id de item.
-    [alvo.ml_item_id as string | null, ...filhos.map((f) => f.itemExternoId)].filter((id): id is string => !!id),
+    [alvo.ml_item_id as string | null, ...idsRaizes, ...filhos.map((f) => f.itemExternoId)].filter((id): id is string => !!id),
   );
   if (kitsVirtuaisBloqueando.length > 0) {
     return { tipo: 'kit_virtual_publicado', kits: kitsVirtuaisBloqueando };
@@ -307,25 +312,35 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     // pausar (PUT em closed daria 400 e travaria justamente a recuperação de anúncio moderado);
     // 404/410 → item já sumiu, seguro seguir. Erro transiente (GET ou PUT) aborta ANTES de
     // qualquer mutação local — fail-closed, o operador clica de novo (idempotente).
+    // Partições de split (ADR-0048) são anúncios Legacy próprios: pausar todas, inclusive quando a
+    // partição 0 é UP e a saga acima já cuidou dos filhos dela.
+    const aPausar = new Set(idsRaizes);
     if (!filhosUPPausadosPelaSaga) {
       // Invariante implícita (revisão do Fable, 2026-09-10): chegar aqui sem `ml_item_id` só seria
       // possível se o gate lá em cima tivesse aceitado a família por um filho vivo e, 150 linhas
       // depois, `filhos` viesse vazia — os dois leem o MESMO canal e codigo_pai, então não pode.
       // Explícito porque o próximo passo pausaria `null` no ML como se fosse um id.
       if (!alvo.ml_item_id) throw new Error('remover-publicado: família sem ml_item_id e sem filhos UP — inconsistência');
+      aPausar.add(alvo.ml_item_id as string);
+    }
+    if (aPausar.size > 0) {
       if (!deps.ctx) throw new Error('Organização sem conexão com o Mercado Livre');
-      const token = await deps.ctx.getToken();
-      let statusItem: string | null = null;
-      let itemSumiu = false;
-      try {
-        statusItem = (await buscarItemML(token, alvo.ml_item_id)).status;
-      } catch (e) {
-        const st = (e as { status?: number } | null)?.status;
-        if (st === 404 || st === 410) itemSumiu = true;
-        else throw new Error(`remover-publicado: consultar anúncio no ML falhou: ${(e as Error).message}`);
-      }
-      if (!itemSumiu && statusItem === 'active') {
-        await atualizarStatusML(token, alvo.ml_item_id, 'paused');
+      // Todos os GET/PUT antes de qualquer mutação local: um erro no meio aborta com o vínculo
+      // intacto e o clique seguinte repete (PUT em item já pausado é pulado pelo GET).
+      for (const id of aPausar) {
+        const token = await deps.ctx.getToken();
+        let statusItem: string | null = null;
+        let itemSumiu = false;
+        try {
+          statusItem = (await buscarItemML(token, id)).status;
+        } catch (e) {
+          const st = (e as { status?: number } | null)?.status;
+          if (st === 404 || st === 410) itemSumiu = true;
+          else throw new Error(`remover-publicado: consultar anúncio ${id} no ML falhou: ${(e as Error).message}`);
+        }
+        if (!itemSumiu && statusItem === 'active') {
+          await atualizarStatusML(token, id, 'paused');
+        }
       }
     }
     const { error: famErr } = await admin.from('familias').update({
@@ -355,7 +370,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
 
   // ADR-0168 D-1/D-2/D-5: Remover destrutivo sempre consulta o ML antes de qualquer delete local.
   if (!deps.ctx) throw new Error('Organização sem conexão com o Mercado Livre');
-  const idsML = coletarIdsMLRemover(alvo.ml_item_id as string | null, filhos);
+  const idsML = coletarIdsMLRemover(alvo.ml_item_id as string | null, filhos, idsRaizes);
   const { temMovimentacao, snapshots } = await verificarVendasRemocaoML(deps.ctx.getToken, idsML);
   if (temMovimentacao) return { tipo: 'tem_movimentacao' };
   // Re-checagem ANTES do close/delete irreversível (nit Fable): composição pode ter começado

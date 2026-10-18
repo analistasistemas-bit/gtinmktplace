@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
 
-  const { data: familia, error: famErr } = await admin
+  let { data: familia, error: famErr } = await admin
     .from('familias')
     .select('id, ml_item_id, status, codigo_pai, org_id, kit_multiplicador')
     .eq('id', familiaId)
@@ -71,6 +71,19 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (famErr) return json({ erro: `Erro ao buscar família: ${famErr.message}` }, 500);
   if (!familia) return json({ erro: 'Família não encontrada.' }, 404);
+
+  // A linha de Publicados aponta para a família MAIS ANTIGA do pai (publicação original); depois de
+  // ciclos de UPDATE as variações vigentes são as da mais nova publicada — mesma ordem do
+  // `ingest-lote`. Retentar na antiga reprocessava catálogo de um snapshot vencido.
+  const { data: canonica, error: canErr } = await admin
+    .from('familias')
+    .select('id, ml_item_id, status, codigo_pai, org_id, kit_multiplicador')
+    .eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai).eq('status', 'publicado')
+    .not('ml_item_id', 'is', null)
+    .order('publicado_em', { ascending: false, nullsFirst: false })
+    .limit(1).maybeSingle();
+  if (canErr) return json({ erro: `Erro ao buscar família vigente: ${canErr.message}` }, 500);
+  if (canonica) familia = canonica;
 
   if (!familia.ml_item_id) {
     return json({ erro: 'Família sem anúncio publicado no Mercado Livre.' }, 409);
@@ -82,7 +95,7 @@ Deno.serve(async (req) => {
   const { data: variacoes, error: varErr } = await admin
     .from('variacoes')
     .select('catalog_status, catalog_listing_id, ml_variation_id')
-    .eq('familia_id', familiaId);
+    .eq('familia_id', familia.id);
   if (varErr) return json({ erro: `Erro ao buscar variações: ${varErr.message}` }, 500);
 
   let itensUp: Awaited<ReturnType<typeof carregarItensUpRetentaveis>> = [];
@@ -107,7 +120,7 @@ Deno.serve(async (req) => {
     // mexer nele forçaria redeploy de 24 funções em vez de 2.
     await qstashClient().publishJSON({
       url: `${Deno.env.get('SUPABASE_URL')!}/functions/v1/vincular-catalogo`,
-      body: { familia_id: familiaId, tentativa: 1, alertar: false } satisfies VincularCatalogoJob & { alertar: boolean },
+      body: { familia_id: familia.id, tentativa: 1, alertar: false } satisfies VincularCatalogoJob & { alertar: boolean },
       delay: 60,
       retries: 5,
     });

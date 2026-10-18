@@ -14,6 +14,7 @@ function fakeMundo(over: Partial<{
   mlItemIdMaisNovo: string | null;
   algumaPublicando: boolean;
   emKitVirtual: boolean;
+  userProducts: boolean;
   elegivel: boolean;
   causas: string[];
   snapshot: VariacaoSnapshot[];
@@ -34,6 +35,7 @@ function fakeMundo(over: Partial<{
       mlItemIdMaisNovo: over.mlItemIdMaisNovo === undefined ? 'MLB1' : over.mlItemIdMaisNovo,
       algumaPublicando: over.algumaPublicando ?? false,
       emKitVirtual: over.emKitVirtual ?? false,
+      userProducts: over.userProducts ?? false,
     }),
     validarElegibilidade: () => {
       chamadas.validou += 1;
@@ -139,6 +141,14 @@ describe('dispararMigracaoPxv — recusas antes de qualquer escrita no ML', () =
   it('família publicando agora → recusa', async () => {
     const w = fakeMundo({ algumaPublicando: true });
     expect((await dispararMigracaoPxv(w.portas, 'fam-1')).tipo).toBe('recusado');
+    semEscrita(w);
+  });
+
+  it('User Products → recusa antes de consultar o ML (já é um anúncio por SKU)', async () => {
+    const w = fakeMundo({ userProducts: true, particoes: [{ particao: 0, itemExternoId: null, migracaoStatus: null }] });
+    const r = await dispararMigracaoPxv(w.portas, 'fam-1');
+    expect((r as { motivo: string }).motivo).toMatch(/User Products/);
+    expect(w.chamadas.validou).toBe(0);
     semEscrita(w);
   });
 
