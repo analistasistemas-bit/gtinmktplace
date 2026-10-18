@@ -1,5 +1,6 @@
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { lerOrigemCrua } from '../_shared/parser.ts';
+import { gtinOuNull } from '../_shared/produto/gtin.ts';
 
 /**
  * Converte uma linha crua da planilha (chaves = cabeçalhos) num `PlanilhaRow` tipado.
@@ -13,7 +14,7 @@ export function mapearLinha(r: Record<string, unknown>): PlanilhaRow {
     PAI: String(r.PAI ?? '0'),
     NOME: String(r.NOME ?? ''),
     UNIDADE: String(r.UNIDADE ?? ''),
-    GTIN: r.GTIN ? String(r.GTIN) : null,
+    GTIN: gtinOuNull(r.GTIN ? String(r.GTIN) : null),
     CUSTO: Number(r.CUSTO ?? 0),
     PRECO: Number(r.PRECO ?? 0),
     ESTOQUE: Number(r.ESTOQUE ?? 0),

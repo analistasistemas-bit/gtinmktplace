@@ -4,6 +4,7 @@
 // reordenar duas linhas, ou excluir uma e adicionar outra, mantém a contagem.
 import { centavosExatos } from '../_shared/dinheiro.ts';
 import { gradeEfetivaDaEntrada } from '../_shared/produto/validar.ts';
+import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao, SugestaoDistribuicao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
 import {
@@ -238,7 +239,7 @@ export function variacoesDivergem(
   return enviadas.some((v, i) => {
     const g = gravadas[i];
     return (v.nome?.trim() || null) !== (g.nome ?? null)
-      || (v.gtin?.trim() || null) !== (g.gtin ?? null)
+      || gtinOuNull(v.gtin) !== (g.gtin ?? null)
       // ADR-0166: MESMA normalização da gravação (`trim() || null`, montarLinhasProduto). Sem
       // esta linha, trocar só o tamanho entre duas tentativas com a mesma chave passaria pelo
       // guard, e `estoqueInicialDiverge` (que casa por índice) conferiria o estoque contra um SKU

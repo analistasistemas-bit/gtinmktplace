@@ -212,6 +212,20 @@ describe('clonarVariacao', () => {
   });
 });
 
+describe('GTIN inválido grava vazio', () => {
+  it('montarVariacaoNova e normalizarIntencao descartam "1" e mantêm EAN válido', () => {
+    const base = {
+      codigo: '00000009', nome: 'Verde', gtin: '1', preco: 15, custo: 6,
+      estoqueInicial: 5, pesoGramas: null, alturaCm: null, larguraCm: null,
+      comprimentoCm: null, imagemPath: null,
+    };
+    const ctx = { familiaId: 'f', userId: 'u', orgId: 'o', precoPublicacao: 25 };
+    expect(montarVariacaoNova(base, ctx).gtin).toBeNull();
+    expect(normalizarIntencao(base).gtin).toBeNull();
+    expect(montarVariacaoNova({ ...base, gtin: '7891234567895' }, ctx).gtin).toBe('7891234567895');
+  });
+});
+
 describe('montarVariacaoNova', () => {
   it('nasce incluída, cor = nome, sem identidade ML, com o preço de publicação do contexto', () => {
     const v = montarVariacaoNova({

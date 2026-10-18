@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { parseNumeroPtBr } from '@/lib/formato';
+import { gtinInvalido } from '@/lib/gtin';
 import { cn } from '@/lib/utils';
 
 export interface LinhaVariacao {
@@ -33,7 +34,9 @@ export function novaLinha(): LinhaVariacao {
 export const parseNum = parseNumeroPtBr;
 
 export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | null {
-  if (campo === 'nome' || campo === 'gtin' || campo === 'tamanho') return null;
+  // Só aviso (não entra em CAMPOS_NUMERICOS, não bloqueia): o backend grava GTIN inválido como vazio.
+  if (campo === 'gtin') return gtinInvalido(valor) ? 'EAN inválido — será descartado (o ML recusa).' : null;
+  if (campo === 'nome' || campo === 'tamanho') return null;
   const n = parseNum(valor);
   if (Number.isNaN(n)) return 'Valor inválido.';
   if (campo === 'preco' && (n == null || n <= 0)) return 'Preço mínimo (líquido) é obrigatório e deve ser maior que zero.';

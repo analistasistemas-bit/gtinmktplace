@@ -27,6 +27,13 @@ describe('mapearLinha', () => {
     });
   });
 
+  it('GTIN inválido da planilha vira null (não chega à Revisão); 3000* fica', () => {
+    expect(mapearLinha({ ...CRU, GTIN: 1 }).GTIN).toBeNull();
+    expect(mapearLinha({ ...CRU, GTIN: '48251671' }).GTIN).toBeNull();
+    expect(mapearLinha(CRU).GTIN).toBe('3000008412400');
+    expect(mapearLinha({ ...CRU, GTIN: 7891234567895 }).GTIN).toBe('7891234567895');
+  });
+
   it('defaults seguros quando campos faltam/são nulos', () => {
     const r = mapearLinha({ CODIGO: 5 });
     expect(r.PAI).toBe('0');

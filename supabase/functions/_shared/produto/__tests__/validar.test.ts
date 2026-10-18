@@ -91,6 +91,13 @@ describe('montarLinhasProduto', () => {
     expect(familia.chave_cadastro).toBe('11111111-1111-1111-1111-111111111111');
   });
 
+  it('GTIN inválido (quantidade digitada na aba GTIN) grava vazio; válido fica', () => {
+    const p = { ...valido, variacoes: [{ ...valido.variacoes[0], gtin: '2' }, valido.variacoes[1]] };
+    const { variacoes } = montarLinhasProduto(p, ctx);
+    expect(variacoes[0].gtin).toBeNull();
+    expect(variacoes[1].gtin).toBe('7891234567901');
+  });
+
   it('grava a origem informada, nunca o default da coluna', () => {
     expect(montarLinhasProduto({ ...valido, origem: 'importado' }, ctx).familia.origem).toBe('importado');
     expect(montarLinhasProduto(valido, ctx).familia.origem).toBe('nacional');

@@ -9,6 +9,7 @@ import { REF_NOTA } from '../_shared/nfe/ref-nota.ts';
 import {
   classificarFamilia, gradeDaFamilia, numeracaoPublicavel, tamanhosDaGrade, tipoDaGradeTamanho,
 } from '../_shared/produto/tipos-produto-valores.ts';
+import { gtinOuNull } from '../_shared/produto/gtin.ts';
 
 type Admin = ReturnType<typeof adminClient>;
 
@@ -244,7 +245,7 @@ export function resolverFotoHerdada(
 /** Todo campo MATERIAL da submissão, normalizado (Codex r3 #2) — o retry compara TUDO, não uma amostra. */
 export function normalizarIntencao(v: VariacaoNovaEntrada) {
   return {
-    nome: v.nome.trim(), tamanho: v.tamanho?.trim() || null, gtin: v.gtin?.trim() || null,
+    nome: v.nome.trim(), tamanho: v.tamanho?.trim() || null, gtin: gtinOuNull(v.gtin),
     preco: v.preco, custo: v.custo ?? null, estoqueInicial: v.estoqueInicial,
     pesoGramas: v.pesoGramas ?? null, alturaCm: v.alturaCm ?? null,
     larguraCm: v.larguraCm ?? null, comprimentoCm: v.comprimentoCm ?? null,
@@ -572,7 +573,7 @@ export function montarVariacaoNova(
     org_id: ctx.orgId,
     codigo: v.codigo,
     nome: v.nome.trim(),
-    gtin: v.gtin,
+    gtin: gtinOuNull(v.gtin),
     preco: v.preco,
     custo: v.custo,
     // Estoque nasce ZERO: o saldo entra pelo ledger (registrar_entrada), caminho único de

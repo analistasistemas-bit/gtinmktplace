@@ -5,6 +5,7 @@ import {
   type Genero, type GradeTamanho, GENEROS_VALIDOS, generosDaGrade, gradeDaFamilia,
 } from './tipos-produto-valores.ts';
 import { REF_NOTA } from '../nfe/ref-nota.ts';
+import { gtinOuNull } from './gtin.ts';
 
 export interface VariacaoEntrada {
   nome?: string | null;
@@ -291,7 +292,7 @@ export function montarLinhasProduto(
       // se este caminho um dia virar upsert, null aqui apagaria uma cor já resolvida pela
       // Vision — melhor um lembrete visível do que um `cor` ausente que passa despercebido.
       ...(nome ? { cor: nome, cor_origem: 'manual' } : { cor: null }),
-      gtin: v.gtin?.trim() || null,
+      gtin: gtinOuNull(v.gtin),
       // ADR-0166: tamanho (roupa) / numeração (calçado). Mesma normalização de nome/gtin —
       // `trim() || null` — para nunca gravar string vazia, que viraria um valor de atributo
       // vazio no payload do ML.

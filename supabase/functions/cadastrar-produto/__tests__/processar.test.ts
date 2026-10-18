@@ -25,8 +25,8 @@ describe('sugestaoDiverge (retry, ADR-0181 emenda 2026-10-17)', () => {
   });
 });
 
-const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
-const enviada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
+const gravada = (over = {}) => ({ nome: 'Azul', gtin: '7891234567895', preco: 10.5, custo: 4.25, ...over });
+const enviada = (over = {}) => ({ nome: 'Azul', gtin: '7891234567895', preco: 10.5, custo: 4.25, ...over });
 
 describe('variacoesDivergem', () => {
   it('reenvio idêntico não diverge', () => {
