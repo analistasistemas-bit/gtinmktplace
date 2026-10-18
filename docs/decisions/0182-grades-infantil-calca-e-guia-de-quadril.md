@@ -133,6 +133,14 @@ montam a galeria de cada SKU a partir da capa (`ordenarFotosVariacao`, `capa ?? 
 CREATE + `tipoAviamento='outro'` + 1 cor entre as incluídas + capa. Com 2+ cores, sem capa, em
 UPDATE ou em aviamento, a exigência continua (main `c3a02c13`).
 
+*Emenda 2026-10-18 (categoria da grade).* Na mesma família, o `domain_discovery` real devolveu
+`[MLB39961 BABY_SWIMWEAR, MLB271219 CLOTHING_LOTS, MLB430391 SWIMWEAR]` e o topo ficou, embora a
+publicação da grade recuse `BABY_SWIMWEAR` (`garantirChart`). Família com `grade_tamanho` passa a
+filtrar os candidatos em `escolherEntreCandidatos` (`_shared/categoria/resolver.ts`) pelos mesmos
+critérios da publicação, `DOMINIOS_SUPORTADOS` e `dominioAceitaGrade`; o desempate por IA só vê os
+publicáveis e, sem nenhum, a categoria fica manual. Não é o veto por "mesmo domínio" rejeitado em
+17/10: a restrição é o que a publicação aceita. Grade inferida (sem `grade_tamanho`) não muda.
+
 ## Consequências
 
 - Nenhuma família ou anúncio existente é alterado ou reprocessado (jaquetas, camisetas, calçados,

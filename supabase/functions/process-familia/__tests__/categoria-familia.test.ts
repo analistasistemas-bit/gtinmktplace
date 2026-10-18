@@ -16,6 +16,11 @@ describe('inputCategoriaDaFamilia (claim → InputCategoria)', () => {
       nome: 'SHORT TACTEL 00000010', descricao: 'Short de tactel', genero: 'masculino', tipoProdutoBusca: 'short',
     });
   });
+  it('grade_tamanho válida chega ao resolver; valor desconhecido é ignorado', () => {
+    expect(inputCategoriaDaFamilia({ ...claim, grade_tamanho: 'infantil' }).grade).toBe('infantil');
+    expect(inputCategoriaDaFamilia({ ...claim, grade_tamanho: 'xpto' }).grade).toBeUndefined();
+    expect(inputCategoriaDaFamilia({ ...claim, grade_tamanho: null }).grade).toBeUndefined();
+  });
   it('descrição/gênero null → descrição ausente, gênero null', () => {
     const i = inputCategoriaDaFamilia({ nome_pai: 'X', descricao_pai: null, genero: null });
     expect(i.descricao).toBeUndefined();
