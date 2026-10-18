@@ -1187,6 +1187,8 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       // Partição de split é Legacy (vai por MLB); herdar `userProducts` do produto mandaria a família no
       // reajuste e o servidor expandiria SKUs UP não selecionados.
       userProducts: false,
+      mlItemIdsUP: undefined, // idem: os SKUs UP são da partição 0, não desta linha
+
       publicadoEm: a.publicado_em ?? rep.publicadoEm,
       qtdVariacoes: qtdPorAnuncio.get(a.item_externo_id) ?? 0,
       catalogRetentavel: catalogStatusRetentavelEmEspelho(

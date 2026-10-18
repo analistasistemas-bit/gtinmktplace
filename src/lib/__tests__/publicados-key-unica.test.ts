@@ -72,5 +72,8 @@ describe('fetchPublicados', () => {
     const itens = await fetchPublicados();
     expect(itens.find((i) => i.mlItemId === 'MLB1')?.userProducts).toBe(true);
     expect(itens.find((i) => i.mlItemId === 'MLB2')?.userProducts).toBe(false);
+    // Partição não agrega status/estoque dos SKUs UP da partição 0.
+    expect(itens.find((i) => i.mlItemId === 'MLB1')?.mlItemIdsUP).toEqual(['MLB9']);
+    expect(itens.find((i) => i.mlItemId === 'MLB2')?.mlItemIdsUP).toBeUndefined();
   });
 });

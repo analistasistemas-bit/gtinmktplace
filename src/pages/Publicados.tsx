@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, resumirVariacoesPorCor } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
@@ -1228,7 +1228,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         statusMap.get(item.mlItemId),
         (item.mlItemIdsUP ?? []).flatMap((id) => statusMap.get(id) ?? []),
       );
-      const v = vendasPorItem[item.mlItemId];
+      const v = vendasDoAnuncio(vendasPorItem, item.mlItemId, item.mlItemIdsUP);
       // Sem o mapa canônico assentado, as vendas do anúncio de catálogo ainda estão na chave do
       // MLB de catálogo: a linha do anúncio dono mostraria só a fatia própria e depois saltaria
       // (ex.: 45 → 82 unid). Segura em "—" até o mapa resolver — vale só para as colunas por

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agregarStatusUP, resumirVariacoesPorCor } from '../publicados';
+import { agregarStatusUP, resumirVariacoesPorCor, vendasDoAnuncio } from '../publicados';
 
 // Zaven 17/10: short UP com 32 itens (1 por SKU) aparecia "Pausado · estoque 0" porque a linha lia
 // só o item de familias.ml_item_id (um SKU zerado, pausado pelo ML), com o anúncio vendendo.
@@ -33,6 +33,22 @@ describe('agregarStatusUP', () => {
 
   it('estoque desconhecido em todos os filhos → null', () => {
     expect(agregarStatusUP(st('ativo', null), [st('ativo', null)])?.estoque).toBeNull();
+  });
+});
+
+// Status agregado sem vendas agregadas jogava a família UP em "Encalhados" (ativo + 0 vendas no
+// SKU principal) mesmo vendendo nos outros SKUs.
+describe('vendasDoAnuncio', () => {
+  const porItem = { MLB1: { unidades: 0, valor: 0 }, MLB2: { unidades: 3, valor: 120 }, MLB3: { unidades: 1, valor: 40 } };
+
+  it('UP: soma as vendas de todos os SKUs', () => {
+    expect(vendasDoAnuncio(porItem, 'MLB1', ['MLB1', 'MLB2', 'MLB3'])).toEqual({ unidades: 4, valor: 160 });
+  });
+
+  it('Legacy: vendas do próprio item; sem venda → undefined', () => {
+    expect(vendasDoAnuncio(porItem, 'MLB2', undefined)).toEqual({ unidades: 3, valor: 120 });
+    expect(vendasDoAnuncio(porItem, 'MLB9', undefined)).toBeUndefined();
+    expect(vendasDoAnuncio(porItem, 'MLB9', ['MLB8'])).toBeUndefined();
   });
 });
 

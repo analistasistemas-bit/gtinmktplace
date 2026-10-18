@@ -112,6 +112,17 @@ export function agregarStatusUP<S extends { status: StatusPublicado; estoque: nu
   };
 }
 
+/** Vendas da linha: UP soma todos os SKUs (par do status/estoque agregados — senão a família
+ *  "ativa" com 0 vendas no SKU principal caía em Encalhados); Legacy, o próprio item. */
+export function vendasDoAnuncio<V extends { unidades: number; valor: number }>(
+  porItem: Record<string, V>, mlItemId: string, mlItemIdsUP: string[] | undefined,
+): { unidades: number; valor: number } | undefined {
+  if (!mlItemIdsUP?.length) return porItem[mlItemId];
+  const vendas = mlItemIdsUP.flatMap((id) => porItem[id] ?? []);
+  if (vendas.length === 0) return undefined;
+  return vendas.reduce((a, v) => ({ unidades: a.unidades + v.unidades, valor: a.valor + v.valor }), { unidades: 0, valor: 0 });
+}
+
 /** "Azul Claro (P, M, G) · Bege Cru (P, M)" — uma entrada por cor, na ordem em que aparecem. */
 export function resumirVariacoesPorCor(
   variacoes: Array<{ cor: string; tamanho: string | null; codigo: string }>,
