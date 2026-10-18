@@ -90,6 +90,11 @@ escrito na hora pelo push e reconciliado a cada 6h pendurado no `monitorar-moder
 worker/schedule novo). Badge em Publicados: verde (pronto), vermelho (pendência com causa, clique
 abre o dialog de edição fiscal), sem badge para org sem o módulo.
 
+**1º uso real (Zaven, 2026-10-18):** `origin_type` precisa ir dentro de `tax_information` (corrigido,
+main `e67cfae4`). Push aceito, mas `GET /can_invoice/items` responde 403 (`PolicyAgent`) — badge
+segue vermelho. Hipótese: empresa ainda não credenciada na Sefaz para NF-e (emissor do ML recusa);
+reenviar o fiscal após o credenciamento. Detalhes no "A verificar #2" do [[ADR-0135]].
+
 ## Gates
 
 - **Publicação/UPDATE**: família sem `ncm`/`origem_nfe`/`tributacao_icms` (ou regime divergente,

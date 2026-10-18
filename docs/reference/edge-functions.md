@@ -1286,6 +1286,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   existir, se `origin_type` estiver vazio, se o regime da org não for `simples` (v1 só emite
   Simples Nacional, D-6) ou se `camposFiscaisFaltantes` achar pendência — nunca confia que o gate
   do publish/update já rodou, porque re-enqueue manual via QStash é operação de rotina aqui.
+  **Payload (medido 2026-10-18):** `origin_type` vai dentro de `tax_information` (o ML recusa com
+  400 se só estiver na raiz). `GET /can_invoice/items/{id}` pode responder 403 de `PolicyAgent` —
+  leitura nula não grava o semáforo; ver "A verificar #2" do ADR-0135.
 - **atualizar-fiscal-familia** *(HTTP, JWT do app)* — modo edição do D-9: grava os campos fiscais
   de uma família já cadastrada (`ncm`, `cest`, `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms`)
   e, quando a família já está publicada, enfileira `sincronizar-fiscal-ml` para o re-push. 403 sem

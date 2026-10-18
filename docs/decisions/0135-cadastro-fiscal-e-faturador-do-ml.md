@@ -267,6 +267,16 @@ Simples: o primeiro cliente de Lucro Presumido espera a V2.
    OAuth da org precisa ser refeita (operação conhecida, não mudança de design).
 2. **`fiscal_information` em conta de teste** — criar SKU fiscal, vincular a item, ler
    `can_invoice` antes/depois; confirmar que `csosn` só é aceito com conta Simples.
+   **Medido em conta real em 2026-10-18 (Zaven, 1º uso do módulo):** (a) o ML exige `origin_type`
+   **dentro** de `tax_information` (400 `10024 tax_information.origin_type is required` com o campo
+   só na raiz) — corrigido em `_shared/canais/fiscal-ml.ts` (main `e67cfae4`); com isso os 32 SKUs
+   foram aceitos com `csosn` 102 e `GET /items/fiscal_information/{sku}` devolve `can_invoice: true`.
+   (b) `GET /can_invoice/items/{id}` respondeu **403 `PA_UNAUTHORIZED_RESULT_FROM_POLICIES`** em
+   todos os itens, então o semáforo D-10 não grava (leitura nula não escreve, I7) e o badge segue
+   "Fiscal pendente". Hipótese principal: a empresa ainda não está credenciada na Sefaz para NF-e
+   (o emissor do ML recusa a configuração com "empresa não está habilitada") — nesse caso o
+   vermelho está correto. **A fonte do D-10 fica como está**; após o credenciamento, re-enfileirar
+   `sincronizar-fiscal-ml` e conferir se vira 200. Só se seguir 403 a fonte passa a ser emendada.
 3. **`measurement_unit`** — obter a lista de valores aceitos pelo ML e congelar o vocabulário do
    campo `unidade`.
 4. **Replicação em User Products** — a doc diz que dados fiscais replicam para itens irmãos;

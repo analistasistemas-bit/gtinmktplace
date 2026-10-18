@@ -11,6 +11,16 @@
 - [x] Deploy 2026-10-18 03:37 de `process-familia`, `regenerar-copy-familia`, `preview-kit-virtual`, `publicar-split-ml`, `update-familia-ml`, `reconciliar-convergencia-up`; fonte conferida por download.
 - [ ] Validar na 1ª família em grade processada ou regenerada.
 
+## Fiscal no 1º uso real + Publicados User Products — EM PRODUÇÃO desde 2026-10-18
+
+- [x] Push fiscal: `origin_type` dentro de `tax_information` (main `e67cfae4`; deploy
+  `sincronizar-fiscal-ml` + `monitorar-moderados`). Zaven: 32 SKUs aceitos.
+- [x] Publicados: status/estoque/vendas agregados dos SKUs UP; partição de split não herda;
+  "Variações publicadas" por cor com tamanhos (main `1429e1ff`). Revisão Grok: 2 achados corrigidos.
+- [ ] `GET /can_invoice/items` → 403 PolicyAgent: reenviar o fiscal da Zaven após o credenciamento
+  na Sefaz; se seguir 403, emendar a fonte do D-10 (ADR-0135, "A verificar #2").
+- [ ] KPIs do dashboard/cockpit contam o SKU UP zerado como anúncio pausado (mesma causa).
+
 ## Copy de produto em grade (ADR-0183) — EM PRODUÇÃO desde 2026-10-17 (main `b1433c81`)
 
 - [x] Template de grade:

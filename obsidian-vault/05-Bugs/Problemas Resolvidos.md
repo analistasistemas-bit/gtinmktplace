@@ -10,6 +10,15 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Publicados: produto User Products aparecia "Pausado · estoque 0" vendendo no ML
+  (2026-10-18, main `1429e1ff`)** — short da Zaven com 32 SKUs (1 MLB por SKU, ADR-0088). A linha
+  lia status/estoque só de `familias.ml_item_id`, um SKU zerado que o ML pausa sozinho. Agora agrega
+  os SKUs: ativo se qualquer um ativo, estoque e vendas somados (`agregarStatusUP`,
+  `vendasDoAnuncio`); partição de split não herda os SKUs. "Variações publicadas" passou a listar
+  uma vez por cor com os tamanhos. Pendente: KPIs do dashboard/cockpit ainda contam o SKU zerado.
+- **Push fiscal recusado pelo ML (2026-10-18, main `e67cfae4`)** — `origin_type` ia só na raiz de
+  `POST /items/fiscal_information`; o ML exige em `tax_information`. Ver [[Fiscal]].
+
 - **Landing page fora do ar (404) — `.vercelignore` com `*` apagou o repositório inteiro no deploy
   via Git (2026-09-15)** — `https://publiai.daludi.com.br` passou a responder **404 NOT_FOUND** da
   Vercel, com o deploy marcado **Ready**. O commit de conteúdo do mesmo dia (`72d5781a`,
