@@ -32,6 +32,7 @@ funções abaixo. Org arquivada sai da Central (salvo filtro "Incluir arquivadas
 agendadas.
 
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
+`marca_propria` (ADR-0186: true → BRAND/MANUFACTURER sempre = `marca_padrao`, fornecedor nunca vira marca; só a Zaven),
 `lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
 só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
