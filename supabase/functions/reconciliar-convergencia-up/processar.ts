@@ -11,6 +11,7 @@ import { atualizarFamiliaUP, type VariacaoUP } from '../_shared/user-products/at
 import {
   reconciliarConvergencia, type PortasConvergencia, type ClaimResultado, type ResultadoRaiz,
 } from '../_shared/user-products/reconciliar-convergencia.ts';
+import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 export const CANAL = 'mercado_livre';
 
@@ -104,6 +105,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         raiz: { id: claim.rootId, titulo: claim.titulo, criado_em: claim.criadoEm },
         variacoes, somenteEstoque: false, tentativas: claim.tentativas,
         skusDesejadosOverride: claim.skusEsperados, preservarPublicadas,
+        marcaOrg: await lerMarcaOrg(admin, claim.orgId), // ADR-0186
       });
       // Rede de segurança (revisão adversarial, 2ª rodada — achado real): se o crash original
       // aconteceu DEPOIS de todos os filhos já confirmados ativos mas ANTES do `limparComposicao`

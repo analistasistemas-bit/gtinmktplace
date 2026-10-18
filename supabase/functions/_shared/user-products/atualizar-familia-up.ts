@@ -64,8 +64,9 @@ export interface AtualizarFamiliaUPArgs {
   raiz: RaizUP;
   variacoes: VariacaoUP[];
   somenteEstoque: boolean;
-  /** ADR-0186 — org com marca própria: BRAND/MANUFACTURER = marca da org na cor nova e na reposição. */
-  marcaOrg?: MarcaOrg;
+  /** ADR-0186 — org com marca própria: BRAND/MANUFACTURER = marca da org na cor nova e na reposição.
+   *  Obrigatório: chamador que esquecer herdaria o fornecedor do irmão (reconciliação). */
+  marcaOrg: MarcaOrg;
   /**
    * ADR-0160 (I10) — fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML; as cores já
    * publicadas ficam intocadas.
@@ -103,6 +104,7 @@ const num = (v: number | string | null | undefined): number | null =>
 
 export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<ResultadoAtualizarUP> {
   const { admin, conn, ctx, conexao, familia, raiz, variacoes, somenteEstoque } = args;
+  // Tipo obrigatório barra chamador de produção (check:functions); o default só cobre fixture de teste.
   const marcaOrg: MarcaOrg = args.marcaOrg ?? { marcaPropria: false };
   // ADR-0186: a herança do irmão (abaixo) daria o fornecedor de volta — a marca da org vence.
   const atributosFamiliaMl = Array.isArray(familia.atributos_ml)
@@ -225,8 +227,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     }
     return fichaCrua;
   };
-  const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> =>
-    atributosDeFicha(await lerFichaCrua());
+  // ADR-0186: a marca da org é imposta na ficha CRUA, enquanto o nome ainda está lá — irmão que já
+  // tem a marca da org mantém o value_id (identidade da família); o que tem o fornecedor é trocado.
+  // A ficha crua em si segue intocada: é a referência do delta da reposição (ADR-0157).
+  const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> => {
+    const cru = await lerFichaCrua();
+    return atributosDeFicha(Array.isArray(cru) ? forcarMarcaPropria(cru as AtributoItem[], marcaOrg) : cru);
+  };
 
   const familiaInput = {
     titulo_ml: familyName, descricao_ml: familia.descricao_ml,
@@ -284,7 +291,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const chart = v.tamanho ? await resolverChart() : null;
     const grid = chart && 'chartId' in chart ? chart : null;
     const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
-    const atributosMesclados = forcarMarcaPropria(mesclarAtributos(atributosFamiliaMl, await lerFichaDoIrmao()), marcaOrg);
+    const atributosMesclados = mesclarAtributos(atributosFamiliaMl, await lerFichaDoIrmao());
     // SIZE* vão por SKU em montarPayloadItem; se a família também os tiver em atributos_ml
     // (IA/Revisão) ou herdar do irmão, duplicariam — mesma limpeza de publicar-familia-up.ts
     // (IDS_SUBSTITUIDOS). GENDER: mesma regra do CREATE (publicar-familia-up.ts) —

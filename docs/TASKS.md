@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Marca própria por organização — Zaven (ADR-0186) — 2026-10-18
+
+- [x] `organizations.marca_propria` (só Zaven) + data fix de BRAND/MANUFACTURER gravados; política `_shared/categoria/marca-org.ts` aplicada em montagem, UPDATE (UP e Legacy), split, kit, edição de atributo e herança do irmão UP.
+- [x] Worker `sincronizar-marca-ml` (QStash manual): PUT só de BRAND por SKU, para na 1ª divergência de marca/`family_id`/status; `dry_run`.
+- [ ] Rodar o worker nos 7 anúncios pausados da Zaven (`00000064` primeiro) — **nunca republicar** (imagens postas direto no ML).
+
 ## Título de grade orientado a palavras-chave (emenda ADR-0184) — 2026-10-18
 
 - [x] Pesquisa (JoomPulse, 1.166 títulos): zero títulos top com composição percentual; modelo/corte, sinônimo da peça, Kit no início e nome do tecido separam os mais vendidos.

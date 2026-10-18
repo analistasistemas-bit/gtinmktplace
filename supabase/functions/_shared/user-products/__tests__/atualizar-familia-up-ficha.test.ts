@@ -376,6 +376,15 @@ describe('atualizarFamiliaUP — marca própria (ADR-0186)', () => {
     expect(attrs.find((a) => a.id === 'COMPOSITION')).toEqual({ id: 'COMPOSITION', value_id: '4904381' });
   });
 
+  it('cor nova: irmão já com a marca da org normalizada (value_id) → herda o value_id, não texto cru', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
+      { id: 'BRAND', value_id: '777', value_name: 'Zaven' },
+      { id: 'COLOR', value_id: '52024', value_name: 'Azul-petróleo' },
+    ] }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(args({ marcaOrg: zaven }));
+    expect(atributosEnviados().find((a) => a.id === 'BRAND')).toEqual({ id: 'BRAND', value_id: '777' });
+  });
+
   it('reposição: atributos da família entregues à saga já com a marca da org', async () => {
     let recebidos: unknown;
     await atualizarFamiliaUP(args({
