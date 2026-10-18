@@ -1,6 +1,8 @@
 import { detectarTipoAviamento, type TipoAviamento } from './detectar.ts';
 import { categoriaParaTipo, rotuloParaTipo, tipoParaCategoria } from './atributos.ts';
 import type { CategoriaCandidata } from '../ml/domain-discovery.ts';
+import { DOMINIOS_SUPORTADOS, dominioAceitaGrade, domainIdSemPrefixo } from '../ml/size-chart.ts';
+import type { GradeTamanho } from '../produto/tipos-produto-valores.ts';
 
 // Resolução de categoria em camadas (ADR-0026 / E3). Primeira que vencer manda:
 // override → preditor (domain_discovery) → desempate LLM (ambíguo) → manual.
@@ -18,6 +20,9 @@ export interface InputCategoria {
   /** familias.genero (ADR-0166/0182). Só informa o público ao desempate LLM (ADR-0026 emenda
    * 2026-10-17); nunca veta candidato. */
   genero?: string | null;
+  /** familias.grade_tamanho (ADR-0182). Família em grade só aceita candidato cujo domínio a
+   * publicação da grade aceita — o resto falha alto em `garantirChart`. */
+  grade?: GradeTamanho | null;
 }
 
 export interface ResultadoCategoria {
@@ -128,6 +133,15 @@ export async function escolherEntreCandidatos(
   candidatos: CategoriaCandidata[],
   llm?: DepsResolver['llm'],
 ): Promise<ResultadoCategoria> {
+  // Bug PAI 00000064 (2026-10-18): o topo BABY_SWIMWEAR venceu o SWIMWEAR que estava na lista, e
+  // a publicação da grade recusa BABY_SWIMWEAR. Sem candidato publicável → manual (operador escolhe).
+  const grade = input.grade;
+  if (grade) {
+    candidatos = candidatos.filter((c) => {
+      const d = domainIdSemPrefixo(c.domainId);
+      return !!d && DOMINIOS_SUPORTADOS.has(d) && dominioAceitaGrade(d, grade);
+    });
+  }
   if (candidatos.length === 0) {
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }

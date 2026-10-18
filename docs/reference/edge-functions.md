@@ -369,7 +369,7 @@ mesmo por engano.
   Org sem o módulo: as 4 colunas são ignoradas — planilhas de hoje continuam válidas.
 
 ### Processamento / publicação
-- **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor *(2026-10-17, ADR-0026: o desempate de categoria por IA recebe o caminho completo de cada candidato — `GET /categories/{id}` `path_from_root`, cache Redis `catpath:<id>` 30 dias, orçamento ~3 s — e o gênero cadastrado `familias.genero`; o fallback de categoria do catálogo de concorrentes passa pelo mesmo desempate)*
+- **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor *(2026-10-17, ADR-0026: o desempate de categoria por IA recebe o caminho completo de cada candidato — `GET /categories/{id}` `path_from_root`, cache Redis `catpath:<id>` 30 dias, orçamento ~3 s — e o gênero cadastrado `familias.genero`; o fallback de categoria do catálogo de concorrentes passa pelo mesmo desempate; 2026-10-18, ADR-0182: família com `grade_tamanho` só aceita candidato cujo domínio a publicação da grade aceita — `DOMINIOS_SUPORTADOS` + `dominioAceitaGrade` — e, sem nenhum, a categoria fica manual)*
   (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
   atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão, **frete**
   grátis do vendedor e **imposto por origem**, ADR-0050/ADR-0055) e análise de mercado;

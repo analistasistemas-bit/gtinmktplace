@@ -236,3 +236,35 @@ describe('escolherEntreCandidatos (candidatos já buscados — fallback por cat�
     expect((await escolherEntreCandidatos({ nome: 'X' }, [])).origem).toBe('manual');
   });
 });
+
+// Bug 2026-10-18 (PAI 00000064, conjunto infantil UV): domain_discovery real devolveu
+// [BABY_SWIMWEAR, CLOTHING_LOTS, SWIMWEAR] e o topo ficou — mas a publicação da grade recusa
+// BABY_SWIMWEAR (garantirChart: domínio não confirmado). Família em grade só aceita candidato
+// cujo domínio a publicação da grade aceita (ADR-0182 D8.1); não é veto por "mesmo domínio".
+describe('escolherEntreCandidatos — família em grade', () => {
+  const praia: CategoriaCandidata[] = [
+    { domainId: 'MLB-BABY_SWIMWEAR', domainName: 'Moda praia para bebês', categoriaId: 'MLB39961', categoriaNome: 'Moda Praia' },
+    { domainId: 'MLB-CLOTHING_LOTS', domainName: 'Lotes de roupas', categoriaId: 'MLB271219', categoriaNome: 'Kits de Conjuntos de Roupa' },
+    { domainId: 'MLB-SWIMWEAR', domainName: 'Moda praia', categoriaId: 'MLB430391', categoriaNome: 'Moda Praia' },
+  ];
+  const input = { nome: 'Conjunto Infantil Proteção Solar UV Sereia', genero: 'meninas', grade: 'infantil' as const };
+
+  it('o desempate só vê os domínios que a grade publica', async () => {
+    let vistos: string[] = [];
+    const r = await escolherEntreCandidatos(input, praia, async (_i, c) => { vistos = c.map((x) => x.categoriaId); return 'MLB430391'; });
+    expect(vistos).toEqual(['MLB271219', 'MLB430391']);
+    expect(r).toMatchObject({ categoriaId: 'MLB430391', origem: 'ia' });
+  });
+  it('LLM devolve o domínio recusado → não aceita, cai no topo compatível', async () => {
+    const r = await escolherEntreCandidatos(input, praia, async () => 'MLB39961');
+    expect(r.categoriaId).toBe('MLB271219');
+  });
+  it('nenhum candidato compatível → manual (operador escolhe), nunca o que a publicação recusa', async () => {
+    const r = await escolherEntreCandidatos(input, [praia[0]], async () => undefined);
+    expect(r).toMatchObject({ categoriaId: null, origem: 'manual' });
+  });
+  it('sem grade: comportamento intocado (topo BABY_SWIMWEAR)', async () => {
+    const r = await escolherEntreCandidatos({ nome: input.nome }, praia);
+    expect(r.categoriaId).toBe('MLB39961');
+  });
+});

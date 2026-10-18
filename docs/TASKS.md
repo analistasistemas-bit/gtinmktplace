@@ -14,8 +14,9 @@
   A Revisão agora polla família/lote a cada 4s enquanto processam (main `d8f0bf27`).
 - [x] Grade de 1 cor com capa não acusa mais "sem foto" por variação (emenda ADR-0182, main `c3a02c13`).
 - [x] Revisão Codex gpt-6.1-sol high nos dois diffs: sem achados.
-- [ ] Preditor categorizou o conjunto infantil UV `00000064` em `MLB39961` (Bebês › Moda Praia),
-  que o ADR-0182 registra como recusado; a `00000043` foi corrigida à mão para `MLB430391`.
+- [x] Preditor categorizava o conjunto infantil UV `00000064` em `MLB39961` (Bebês › Moda Praia),
+  recusado na publicação da grade: família em grade agora só aceita candidato de domínio publicável
+  (emenda ADR-0182; deploy de `process-familia`).
 
 ## Título de produto em grade (ADR-0184) — EM PRODUÇÃO desde 2026-10-18 (main `fbb42c6e`)
 
