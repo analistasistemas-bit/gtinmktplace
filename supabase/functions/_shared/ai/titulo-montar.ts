@@ -1,5 +1,7 @@
 import { tituloCase } from './titulo-case.ts';
-import { ORDEM_CORTE, ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import {
+  ORDEM_CORTE, ORDEM_CORTE_GRADE, ORDEM_LEITURA, ORDEM_LEITURA_GRADE, type SlotTitulo, type TituloSlots,
+} from './titulo-slots.ts';
 
 export const TITULO_MAX = 60;
 
@@ -50,6 +52,8 @@ export interface ContextoCorte {
    * do dado, não sobre o tipo — amanhã pode ser tamanho ou espessura.
    */
   variacaoDiscrimina: boolean;
+  /** ADR-0184: ordem, corte e caixa próprios do título de roupa em grade. */
+  grade?: boolean;
 }
 
 /**
@@ -69,17 +73,20 @@ function slotsIncortaveis(ctx: ContextoCorte): Set<SlotTitulo> {
   // `produto` é a identidade e `medida` distingue SKUs (10m ≠ 100m; 1kg ≠ 500g) — é a razão de
   // existir do garantirMetragemTitulo, cujo histórico registra a IA descartando a metragem sob
   // o teto de 60. `variacao` entra só quando discrimina.
-  const base: SlotTitulo[] = ['produto', 'medida'];
+  // Grade (ADR-0184): Peça + Público + Marca + 1 diferencial ficam sempre; kit também.
+  const base: SlotTitulo[] = ctx.grade
+    ? ['produto', 'publico', 'marca', 'caracteristica', 'quantidade']
+    : ['produto', 'medida'];
   if (ctx.variacaoDiscrimina) base.push('variacao');
   return new Set(base);
 }
 
-function render(slots: TituloSlots, presentes: Set<SlotTitulo>): string {
+function render(slots: TituloSlots, presentes: Set<SlotTitulo>, grade = false): string {
   const partes: string[] = [];
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of grade ? ORDEM_LEITURA_GRADE : ORDEM_LEITURA) {
     const valor = slots[slot]?.trim();
     if (!valor || !presentes.has(slot)) continue;
-    partes.push(tituloCase(valor, partes.length === 0));
+    partes.push(tituloCase(valor, partes.length === 0, grade));
   }
   return partes.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
@@ -114,11 +121,15 @@ export function montarTituloDetalhado(slots: TituloSlots, ctx: ContextoCorte): T
 
   const protegidos = slotsIncortaveis(ctx);
   let atual: TituloSlots = { ...slots };
-  const presentes = new Set<SlotTitulo>(ORDEM_LEITURA.filter((s) => slots[s]?.trim()));
+  const grade = !!ctx.grade;
+  const presentes = new Set<SlotTitulo>(
+    (grade ? ORDEM_LEITURA_GRADE : ORDEM_LEITURA).filter((s) => slots[s]?.trim()),
+  );
+  const cabe = () => render(atual, presentes, grade).length <= TITULO_MAX;
 
-  const saida = (): TituloMontado => ({ titulo: render(atual, presentes), presentes: [...presentes] });
+  const saida = (): TituloMontado => ({ titulo: render(atual, presentes, grade), presentes: [...presentes] });
 
-  if (render(atual, presentes).length <= TITULO_MAX) return saida();
+  if (cabe()) return saida();
 
   // 1. Reduções — preservam a informação, só encurtam a forma.
   for (const [slot, reduzir] of Object.entries(REDUCOES) as Array<[SlotTitulo, (v: string) => string]>) {
@@ -126,18 +137,18 @@ export function montarTituloDetalhado(slots: TituloSlots, ctx: ContextoCorte): T
     const novo = reduzir(atual[slot]);
     if (!novo.trim()) continue; // redução que zera o slot é pior que não reduzir: o dado sumiria sem remoção e sem erro
     atual = { ...atual, [slot]: novo };
-    if (render(atual, presentes).length <= TITULO_MAX) return saida();
+    if (cabe()) return saida();
   }
 
   // 2. Remoção de slots inteiros, do menos prioritário ao mais. Nunca corta token.
-  for (const slot of ORDEM_CORTE) {
+  for (const slot of grade ? ORDEM_CORTE_GRADE : ORDEM_CORTE) {
     if (protegidos.has(slot) || !presentes.has(slot)) continue;
     presentes.delete(slot);
-    if (render(atual, presentes).length <= TITULO_MAX) return saida();
+    if (cabe()) return saida();
   }
 
   // 3. Só restaram incortáveis e ainda não cabe.
   const obrigatorios: Partial<TituloSlots> = {};
   for (const slot of protegidos) if (atual[slot]?.trim()) obrigatorios[slot] = atual[slot];
-  throw new TituloInviavelError(obrigatorios, render(atual, presentes).length);
+  throw new TituloInviavelError(obrigatorios, render(atual, presentes, grade).length);
 }

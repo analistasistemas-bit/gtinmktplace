@@ -34,6 +34,15 @@ livre. Ver [[IA]] (por que closed-set).
 Usado como camada 2 (fallback) da resolução de cor, quando o dicionário de texto não resolve.
 Ver [[Processamento IA]].
 
+## Título de grade (ADR-0184, 2026-10-18)
+
+O bloco `TÍTULO EM GRADE` do `SYSTEM` pede 3 slots novos: `publico`, `caracteristica` e
+`caracteristica2`. O guard `titulo-grade.ts` então valida o público pelo gênero cadastrado,
+ancora característica e material na fonte e remove os proibidos.
+
+Na grade, o T6 se inverte: o título usa o espaço até perto de 60 caracteres, mas só com palavras
+da fonte.
+
 ## Copy de grade (ADR-0183, 2026-10-17)
 
 Família em grade usa o bloco `PRODUTO EM GRADE` do `SYSTEM` (`_shared/ai/copywriter-prompt.ts`),

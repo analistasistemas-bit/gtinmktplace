@@ -8,7 +8,7 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
-import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
@@ -240,6 +240,7 @@ Deno.serve(async (req) => {
       descricao_detalhado: claimed.descricao_pai ?? '',
       unidade: (claimed.unidade as string | null) ?? null,
       variacoes: variacoesCopy,
+      genero: (claimed.genero as string | null) ?? null,
     }, modeloTexto);
 
     // 5b. Busca de concorrência (1x por família) — ADR-0014. Resiliente: erro → "nenhuma".
@@ -511,6 +512,9 @@ Deno.serve(async (req) => {
         tipoProdutoBusca: copy.tipo_produto_busca,
         cores: coresUnicas,
         fornecedor: claimed.fornecedor ?? null,
+        // ADR-0184: grade → título de roupa (Peça + Público + Marca + Característica + Material).
+        grade: tamanhosDaGradeCopy(variacoesCopy) !== null,
+        genero: (claimed.genero as string | null) ?? null,
       });
       tituloFinal = diagnostico.titulo;
       tituloDescartes = diagnostico.descartes;

@@ -14,6 +14,8 @@ const ATONAS = new Set([
 // Lista FECHADA. Não é catch-all: "Tex 29" é Title Case, não "TEX 29" — o documento do padrão
 // ML escreve assim, e sigla aberta transformaria qualquer palavra curta em caixa alta.
 const SIGLAS = new Set(['PVC', 'EVA', 'MDF', 'MDP', 'FPS', 'LED', 'ABS', 'PET', 'PP', 'PU']);
+// ADR-0184: siglas de roupa, só na grade — fora dela o título fica byte a byte igual.
+const SIGLAS_GRADE = new Set(['UV', 'FPU']);
 
 // Número colado à unidade: 100m, 6mm, 500g, 10un, 3,5cm, 2l. Unidade sempre minúscula.
 const RE_UNIDADE = /^(\d+(?:[.,]\d+)?)(m|mm|cm|g|kg|l|ml|un|pc)$/i;
@@ -26,7 +28,7 @@ function capitalizar(p: string): string {
   return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 
-function palavraCase(bruta: string, ehPrimeira: boolean): string {
+function palavraCase(bruta: string, ehPrimeira: boolean, grade = false): string {
   const p = bruta.trim();
   if (!p) return p;
 
@@ -35,11 +37,12 @@ function palavraCase(bruta: string, ehPrimeira: boolean): string {
 
   if (RE_PERCENTUAL.test(p)) return p;
   if (RE_NUMERACAO.test(p)) return p;
-  if (SIGLAS.has(p.toUpperCase())) return p.toUpperCase();
+  if (SIGLAS.has(p.toUpperCase()) || (grade && SIGLAS_GRADE.has(p.toUpperCase()))) return p.toUpperCase();
 
   const minuscula = p.toLowerCase();
   // Átona só perde a maiúscula quando NÃO abre o título — "De Luxo" no início continua "De".
-  if (!ehPrimeira && ATONAS.has(minuscula)) return minuscula;
+  // Na grade, toda palavra começa com maiúscula (regra do Diego, ADR-0184): "Com Bolso".
+  if (!grade && !ehPrimeira && ATONAS.has(minuscula)) return minuscula;
   return capitalizar(p);
 }
 
@@ -48,11 +51,11 @@ function palavraCase(bruta: string, ehPrimeira: boolean): string {
  * escapa da regra de átona — "Fita de Cetim para Forro" mantém "para" minúsculo mesmo sendo
  * a primeira palavra do slot `aplicacao`.
  */
-export function tituloCase(texto: string, ehPrimeiroSlot: boolean): string {
+export function tituloCase(texto: string, ehPrimeiroSlot: boolean, grade = false): string {
   return texto
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .map((p, i) => palavraCase(p, ehPrimeiroSlot && i === 0))
+    .map((p, i) => palavraCase(p, ehPrimeiroSlot && i === 0, grade))
     .join(' ');
 }

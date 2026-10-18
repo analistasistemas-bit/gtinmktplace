@@ -2,7 +2,7 @@ import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
 import { type InputCopy, SYSTEM, montarUserPrompt, validarTipoProdutoBusca } from './copywriter-prompt.ts';
-import { ORDEM_LEITURA, SLOTS_VAZIOS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { SLOTS_VAZIOS, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 
 export type { InputCopy };
 
@@ -22,10 +22,10 @@ export interface OutputCopy {
   custo_centavos: number;
 }
 
-// Dez chaves, todas obrigatórias, todas string. Gerado da ORDEM_LEITURA para que schema e tipo
-// nunca divirjam — acrescentar um slot lá o traz para cá automaticamente.
+// Treze chaves (ADR-0184), todas obrigatórias, todas string. Gerado de TODOS_SLOTS para que schema
+// e tipo nunca divirjam — acrescentar um slot lá o traz para cá automaticamente.
 const PROPRIEDADES_SLOTS = Object.fromEntries(
-  ORDEM_LEITURA.map((slot) => [slot, { type: 'string' }]),
+  TODOS_SLOTS.map((slot) => [slot, { type: 'string' }]),
 );
 
 export const SCHEMA_COPY = {
@@ -39,7 +39,7 @@ export const SCHEMA_COPY = {
       titulo_slots: {
         type: 'object',
         properties: PROPRIEDADES_SLOTS,
-        required: [...ORDEM_LEITURA],
+        required: [...TODOS_SLOTS],
         // Sem isto o modelo improvisa um slot `diferencial`/`beneficio` e a Causa C do ADR-0098
         // volta pela porta do schema.
         additionalProperties: false,
@@ -69,7 +69,7 @@ export const SCHEMA_COPY = {
  */
 export function coagirSlots(brutos: Partial<Record<SlotTitulo, unknown>> | undefined | null): TituloSlots {
   const out = { ...SLOTS_VAZIOS };
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of TODOS_SLOTS) {
     const v = brutos?.[slot];
     out[slot] = v == null ? '' : String(v);
   }

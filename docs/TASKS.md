@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título de produto em grade (ADR-0184) — branch `worktree-titulo-grade`
+
+- [x] Peça + Público (gênero cadastrado) + Marca (só da fonte) + Característica + Material + cor única + Kit.
+- [x] Corte: caracteristica2 → material. Proibidos por palavra; Title Case em toda palavra; UV/FPU; dedupe.
+- [x] Plano revisado pelo Codex gpt-6.1-sol em 2 rodadas (10 + 3 achados), todos incorporados.
+- [ ] Revisão do diff pelo Codex, merge e deploy das edges.
+- [ ] Validar na 1ª família em grade processada/regenerada.
+
 ## Copy de produto em grade (ADR-0183) — EM PRODUÇÃO desde 2026-10-17 (main `b1433c81`)
 
 - [x] Template de grade:

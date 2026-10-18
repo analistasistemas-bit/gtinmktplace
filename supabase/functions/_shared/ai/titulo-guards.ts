@@ -2,7 +2,7 @@ import {
   extrairContagem, extrairLargura, extrairMetragem, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
 } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
-import { ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { ORDEM_LEITURA, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export interface DadosFonteTitulo {
@@ -13,6 +13,10 @@ export interface DadosFonteTitulo {
   /** Cores REAIS da família (sem 'Outra' nem placeholder de cor não identificada). */
   cores: string[];
   fornecedor: string | null;
+  /** ADR-0184: família grade (toda variação incluída com tamanho) → título de roupa. */
+  grade?: boolean;
+  /** `familias.genero` (ADR-0182). Só usado na grade, para o slot `publico`. */
+  genero?: string | null;
 }
 
 function normalizar(s: string): string {
@@ -137,7 +141,7 @@ function canonicalizarUnidades(v: string): string {
 /** Passo 2 do pipeline: higieniza e canonicaliza o que a IA devolveu. */
 export function normalizarSlots(slots: TituloSlots): TituloSlots {
   const out = { ...slots };
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of TODOS_SLOTS) {
     let v = (out[slot] ?? '').trim().replace(/\s{2,}/g, ' ');
     // T2: separador e caractere decorativo nunca chegam ao título. A instrução no prompt não
     // basta — o formato antigo "proibia" adjetivo vazio e ele saía em 35% dos anúncios.

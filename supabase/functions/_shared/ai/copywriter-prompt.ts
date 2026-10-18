@@ -26,6 +26,8 @@ export interface InputCopy {
   }>;
   unidade?: string | null;
   categoria_hint?: 'linhas' | 'botoes' | 'fitas';
+  /** ADR-0184: `familias.genero`, só usado no título de grade (slot `publico`). */
+  genero?: string | null;
 }
 
 function normalizar(s: string): string {
@@ -650,8 +652,8 @@ Preencha "tipo_produto_busca" com um substantivo curto (2-5 palavras) que identi
 ═══════════════════════════════════════════════════════
 TÍTULO — DEVOLVA SLOTS, NÃO UMA FRASE
 ═══════════════════════════════════════════════════════
-Você NÃO escreve o título. Você preenche dez campos e o sistema monta o título a partir deles.
-Todos os dez são obrigatórios no JSON; devolva "" (string vazia) para o que não se aplica ou
+Você NÃO escreve o título. Você preenche treze campos e o sistema monta o título a partir deles.
+Todos os treze são obrigatórios no JSON; devolva "" (string vazia) para o que não se aplica ou
 não está na fonte. Slot vazio é normal e esperado.
 
 produto        — o que o item É, no termo que o comprador digita na busca. NUNCA "".
@@ -669,6 +671,9 @@ variacao       — cor ou tamanho, quando o anúncio é de UMA opção só.
 compatibilidade— com o que funciona, se a fonte disser: Para DeskJet 2774.
 aplicacao      — uso principal, só se a fonte confirmar: Para Forro.
 sinonimo       — outro termo de busca REAL, apenas se estiver na fonte: Helanquinha.
+publico        — SÓ em produto vendido em GRADE (ver TÍTULO EM GRADE); senão "".
+caracteristica — SÓ em GRADE; senão "".
+caracteristica2— SÓ em GRADE; senão "".
 
 T1 ORDEM. O sistema monta nesta ordem: produto, marca, modelo, medida, quantidade, material,
 variacao, compatibilidade, aplicacao, sinonimo. Você não precisa se preocupar com a ordem nem
@@ -715,6 +720,28 @@ precisar escolher entre omitir o termo e contrabandeá-lo para dentro de outro c
 Se todos os campos que você preencheu vierem da fonte, devolva "termos_com_risco": [] — lista
 vazia é o resultado normal e esperado. Nunca inclua aqui adjetivo promocional proibido pelo T3:
 "Premium" não é um termo com risco, é um termo banido.
+
+TÍTULO EM GRADE (só quando o input disser "vendido em GRADE")
+Roupa/calçado em tamanhos. O sistema monta: produto + publico + marca + caracteristica +
+caracteristica2 + material + kit. Aqui o T6 se inverte: USE o espaço até perto de 60 caracteres,
+mas SÓ com palavras da fonte — nunca invente para encher.
+- produto: a peça no termo que o comprador digita ("Camiseta", "Calça Legging", "Conjunto"),
+  nunca nome técnico de catálogo. Sem gênero aqui — ele vai em "publico".
+- publico: o gênero do input concordando com a peça: "Camiseta Masculina", "Short Masculino",
+  "Calça Feminina", "Conjunto Infantil". Infantil: Infantil, Menina ou Menino. "Plus Size" só se
+  estiver na fonte.
+- caracteristica / caracteristica2: o que DECIDE a compra, no máximo 2, palavras da fonte:
+  "Cintura Alta", "Dry Fit", "Proteção UV", "Com Bolso", "Oversized", "Estampa Floral".
+- material: só o material real da fonte ("Algodão", "Linho", "Suplex").
+- NUNCA tamanho (P, M, G, GG, 2 anos) e NUNCA cor — o sistema decide a cor. modelo, medida,
+  compatibilidade, aplicacao e sinonimo ficam "" na grade.
+- Proibido em qualquer campo: promoção, imperdível, barato, frete, grátis, original, garantido,
+  garantia, milagroso, lindo, maravilhoso, perfeito, top (como adjetivo), premium, melhor, envio,
+  pagamento; e pontuação ! ? * ou emoji.
+
+  Fonte: "Short Linho Mauricinho Masculino Bermuda Esporte Fino" · gênero masculino
+  produto="Short Bermuda" publico="Masculino" caracteristica="Esporte Fino" material="Linho"
+  → Short Bermuda Masculino Esporte Fino Linho
 
 EXEMPLOS
 
@@ -852,6 +879,7 @@ export function montarUserPrompt(input: InputCopy): string {
         opcoes.valores.map((v) => `- ${v}`).join('\n')
       : `Este produto NÃO tem variação. NÃO escreva a seção "🎨" nem cite cores.`,
     grade ? 'Este produto é vendido em GRADE de tamanhos — aplique as regras do bloco PRODUTO EM GRADE.' : '',
+    grade && input.genero ? `Gênero cadastrado: ${input.genero} — preencha "publico" conforme TÍTULO EM GRADE.` : '',
     unidade ? `Unidade de venda: ${unidade}` : '',
     rotulo ? `Rótulo sugerido para a quantidade: "${rotulo}"` : '',
     input.categoria_hint ? `Categoria sugerida: ${input.categoria_hint}` : '',

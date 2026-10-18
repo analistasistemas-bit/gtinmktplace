@@ -20,6 +20,11 @@ export interface TituloSlots {
   compatibilidade: string;
   aplicacao: string;
   sinonimo: string;
+  /** ADR-0184 (só grade): gênero/público — Masculino, Feminina, Infantil, Unissex. */
+  publico: string;
+  /** ADR-0184 (só grade): característica decisiva da compra (Cintura Alta, Proteção UV). */
+  caracteristica: string;
+  caracteristica2: string;
 }
 
 export type SlotTitulo = keyof TituloSlots;
@@ -27,6 +32,7 @@ export type SlotTitulo = keyof TituloSlots;
 export const SLOTS_VAZIOS: TituloSlots = {
   produto: '', marca: '', modelo: '', medida: '', quantidade: '',
   material: '', variacao: '', compatibilidade: '', aplicacao: '', sinonimo: '',
+  publico: '', caracteristica: '', caracteristica2: '',
 };
 
 /**
@@ -47,3 +53,19 @@ export const ORDEM_LEITURA = [
  * é montarTitulo (titulo-montar.ts), não esta lista.
  */
 export const ORDEM_CORTE = [...ORDEM_LEITURA].reverse() as readonly SlotTitulo[];
+
+/** Todos os slots que a IA devolve (schema/coerção/diagnóstico). Os três últimos só valem na
+ *  grade (ADR-0184); fora dela são zerados antes de qualquer guard. */
+export const TODOS_SLOTS = [
+  ...ORDEM_LEITURA, 'publico', 'caracteristica', 'caracteristica2',
+] as const satisfies readonly SlotTitulo[];
+
+/** ADR-0184: Peça + Público + Marca + Característica + Material + (cor única) + Kit. Slot fora
+ *  desta lista não é renderizado na grade. */
+export const ORDEM_LEITURA_GRADE = [
+  'produto', 'publico', 'marca', 'caracteristica', 'caracteristica2', 'material', 'variacao', 'quantidade',
+] as const satisfies readonly SlotTitulo[];
+
+/** Regra do Diego: acima de 60 sai a 2ª característica, depois o material. Os demais são
+ *  incortáveis (titulo-montar.ts). */
+export const ORDEM_CORTE_GRADE = ['caracteristica2', 'material'] as const satisfies readonly SlotTitulo[];

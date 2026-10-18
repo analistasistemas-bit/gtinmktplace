@@ -1,12 +1,13 @@
 import { aplicarGuardsTitulo, normalizarSlots, removerSlotsRedundantes, validarSlotsAncorados, type DadosFonteTitulo } from './titulo-guards.ts';
 import { montarTituloDetalhado } from './titulo-montar.ts';
-import { ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { aplicarRegrasGrade } from './titulo-grade.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export type { DadosFonteTitulo };
 
 /** Etapa do pipeline que alterou ou removeu o valor de um slot. */
-export type EtapaTitulo = 'normalizacao' | 'guards' | 'ancoragem' | 'redundancia' | 'corte';
+export type EtapaTitulo = 'normalizacao' | 'guards' | 'ancoragem' | 'redundancia' | 'grade' | 'corte';
 
 export interface DescarteTitulo {
   slot: SlotTitulo;
@@ -23,7 +24,7 @@ export interface TituloDiagnosticado {
 
 function diff(antes: TituloSlots, depois: TituloSlots, etapa: EtapaTitulo): DescarteTitulo[] {
   const out: DescarteTitulo[] = [];
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of TODOS_SLOTS) {
     const de = antes[slot] ?? '';
     const para = depois[slot] ?? '';
     if (de !== para) out.push({ slot, etapa, de, para });
@@ -70,15 +71,20 @@ export function posProcessarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
  * outro valor é reescrita, e distinguir os dois é justamente o que se quer medir.
  */
 export function diagnosticarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo): TituloDiagnosticado {
-  const slots = normalizarSlots(slotsIa);
+  // ADR-0184: os slots de roupa (publico/caracteristica*) só existem na grade. Fora dela são
+  // zerados ANTES de qualquer guard — o título não-grade fica byte a byte igual ao anterior.
+  const grade = !!fonte.grade;
+  const entrada = grade ? slotsIa : { ...slotsIa, publico: '', caracteristica: '', caracteristica2: '' };
+  const slots = normalizarSlots(entrada);
   const garantidos = aplicarGuardsTitulo(slots, fonte);
   const ancorados = validarSlotsAncorados(garantidos, fonte);
-  const validados = removerSlotsRedundantes(ancorados);
+  // Na grade, aplicarRegrasGrade substitui removerSlotsRedundantes (dedupe por palavra, ordem própria).
+  const validados = grade ? aplicarRegrasGrade(ancorados, fonte) : removerSlotsRedundantes(ancorados);
   const descartes = [
     ...diff(slotsIa, slots, 'normalizacao'),
     ...diff(slots, garantidos, 'guards'),
     ...diff(garantidos, ancorados, 'ancoragem'),
-    ...diff(ancorados, validados, 'redundancia'),
+    ...diff(ancorados, validados, grade ? 'grade' : 'redundancia'),
   ];
   // `variacao` discrimina quando a família é mono-cor: a planilha separou as cores em PAI
   // distintos, então a cor é o que diferencia esta família das irmãs (ADR-0044).
@@ -91,13 +97,15 @@ export function diagnosticarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
   // sobre tipo). Sem esta proteção o corte de 60 chars podia derrubá-la como qualquer slot comum.
   const semCorMasComVariacao = fonte.cores.length === 0 && !!validados.variacao.trim();
   const montado = montarTituloDetalhado(validados, {
-    variacaoDiscrimina: corDiscrimina || semCorMasComVariacao,
+    // Na grade, aplicarRegrasGrade só deixa em `variacao` a cor única que discrimina.
+    variacaoDiscrimina: grade ? !!validados.variacao.trim() : corDiscrimina || semCorMasComVariacao,
+    grade,
   });
 
   // O corte não reescreve slot nenhum — remove o slot inteiro. Por isso é comparado por
   // PRESENÇA, e não pelo diff de valores usado nas três etapas acima.
   const sobreviveu = new Set(montado.presentes);
-  for (const slot of ORDEM_LEITURA) {
+  for (const slot of TODOS_SLOTS) {
     const de = validados[slot]?.trim();
     if (de && !sobreviveu.has(slot)) descartes.push({ slot, etapa: 'corte', de, para: '' });
   }

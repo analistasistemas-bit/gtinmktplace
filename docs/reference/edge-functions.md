@@ -438,6 +438,21 @@ mesmo por engano.
   em slot incortável transformaria um título viável em `TituloInviavelError`. Existe porque a
   instrução equivalente no prompt foi medida e falhou — o modelo devolveu `produto="Tecido Oxford
   Liso"` com 23 caracteres sobrando.
+  **Título de grade (ADR-0184):**
+  - **Estrutura:** em família grade, o título segue Peça + Público + Marca + Característica + Material
+    + cor única + Kit.
+  - **Montagem:** `_shared/ai/titulo-grade.ts` (`aplicarRegrasGrade`) com os slots `publico`,
+    `caracteristica` e `caracteristica2`. `ORDEM_LEITURA_GRADE` define a ordem e o corte é
+    caracteristica2 → material.
+  - **Público:** vem de `familias.genero`, por lista fechada com fallback de concordância.
+  - **Regras de texto:**
+    - proibidos removidos por palavra;
+    - característica e material ancorados na fonte;
+    - toda palavra com maiúscula, UV/FPU em caixa alta;
+    - palavra repetida removida.
+  - **Marca:** só entra se estiver na fonte.
+  - **Fora da grade:** os slots novos são zerados e o título não muda.
+
   **Copy de grade (ADR-0183):** família grade (`classificarFamilia = 'grade'`, toda variação
   incluída com `tamanho`) segue um template próprio, derivado de `tamanhosDaGradeCopy`. O
   `process-familia` e o `regenerar-copy-familia` passam `tamanho` e `excluida_da_publicacao`.

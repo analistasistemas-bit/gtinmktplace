@@ -6,7 +6,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
-import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 
@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     // lugar de "Búfalo").
     // `variacoes.nome` alimenta o eixo de variação (ADR-0115). Sem ele a regeneração cairia no
     // caminho de cor e desfaria, em silêncio, a lista de estampas que a publicação original tinha.
-    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, nome, cor, preco, tamanho, excluida_da_publicacao)')
+    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, genero, variacoes(codigo, nome, cor, preco, tamanho, excluida_da_publicacao)')
     .eq('id', body.familia_id)
     .eq('org_id', context.orgId)
     .maybeSingle();
@@ -69,6 +69,7 @@ Deno.serve(async (req) => {
       descricao_detalhado: familia.descricao_pai ?? '',
       unidade: (familia.unidade as string | null) ?? null,
       variacoes,
+      genero: (familia.genero as string | null) ?? null,
     }, modeloTexto);
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
@@ -89,6 +90,8 @@ Deno.serve(async (req) => {
         tipoProdutoBusca: result.tipo_produto_busca,
         cores: coresUnicas,
         fornecedor: (familia.fornecedor as string | null) ?? null,
+        grade: tamanhosDaGradeCopy(variacoes) !== null,
+        genero: (familia.genero as string | null) ?? null,
       });
       tituloFinal = diagnostico.titulo;
       tituloDescartes = diagnostico.descartes;
