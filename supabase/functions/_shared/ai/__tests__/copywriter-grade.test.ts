@@ -217,8 +217,22 @@ describe('caso real Conjunto Sereia (2026-10-18)', () => {
     expect(r).toContain('▪ Qual a composição? 90% poliamida e 10% elastano.');
     expect(r).toContain('▪ Qual o fator de proteção UV? 30.');
     expect(r).toContain('▪ Quantas unidades acompanham? 1 unidade.');
-    expect(r).toContain('▪ Para qual uso é indicado? praia.');
+    expect(r).toContain('▪ Qual a aplicação? praia.');
     expect(r).toContain('Como escolher o tamanho?');
+  });
+
+  it('rótulo só vira pergunta quando o valor a responde (revisão Codex)', () => {
+    const specs = ['📌 ESPECIFICAÇÕES', '', '• Composição: Algodão', '• Proteção UV: Sim', '• Proteção: contra corrosão',
+      '• Quantidade: 10 metros', '• Marca: Lulu', '• Modelo: Praia'].join('\n');
+    const r = posProcessarDescricao(specs, 'Produto', '', [{ codigo: '1', cor: null, preco: 1 }]);
+    expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).not.toContain('fator de proteção');
+    expect(r).not.toContain('Quantas unidades');
+  });
+
+  it('"Estampa1" (colado ao número) continua ESTAMPAS', () => {
+    const v = ['Estampa1', 'Estampa2'].map((cor) => ({ codigo: cor, cor, nome: cor, preco: 1, tamanho: 'P' }));
+    expect(montarUserPrompt({ nome: 'Short', descricao_detalhado: 'x', variacoes: v })).toContain('"🎨 ESTAMPAS DISPONÍVEIS"');
   });
 
   it('"Estampa Sereia" (sem número) → ESTAMPAS DISPONÍVEIS', () => {

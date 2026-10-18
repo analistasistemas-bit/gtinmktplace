@@ -188,7 +188,8 @@ export function removerPerguntasIncompletas(descricao: string): string {
  * "Qual a marca?" e nada mais — é essa correspondência 1:1 que torna a geração determinística
  * legítima aqui, e não invenção.
  */
-const PERGUNTA_POR_ROTULO: Array<[RegExp, string]> = [
+// Terceiro elemento (opcional): o VALOR precisa casar para a pergunta ser respondida por ele.
+const PERGUNTA_POR_ROTULO: Array<[RegExp, string, RegExp?]> = [
   [/^composi[çc][ãa]o$/i, 'Qual a composição?'],
   [/^gramatura$/i, 'Qual a gramatura?'],
   [/^largura$/i, 'Qual a largura?'],
@@ -211,9 +212,12 @@ const PERGUNTA_POR_ROTULO: Array<[RegExp, string]> = [
   [/^capacidade$/i, 'Qual a capacidade?'],
   // 2026-10-18 (Conjunto Sereia, grade): rótulos de roupa que a IA escreve e não viravam pergunta —
   // a seção ficava em 2 (composição + fixa de tamanho) com quatro dados disponíveis.
-  [/^(prote[çc][ãa]o( (uv|solar))?|fp[su]|fator de prote[çc][ãa]o)$/i, 'Qual o fator de proteção UV?'],
-  [/^quantidade$/i, 'Quantas unidades acompanham?'],
-  [/^(aplica[çc][ãa]o|indica[çc][ãa]o|uso)$/i, 'Para qual uso é indicado?'],
+  // Só com número no valor: "Proteção UV: Sim" não responde "qual o fator".
+  [/^(prote[çc][ãa]o (uv|solar)|fp[su]|fator de prote[çc][ãa]o)$/i, 'Qual o fator de proteção UV?', /\d/],
+  // Só contagem: "Quantidade: 10 metros" não responde "quantas unidades".
+  [/^quantidade$/i, 'Quantas unidades acompanham?', /^\d+\s*(unidades?|un|pe[çc]as?|pc)\b/i],
+  [/^aplica[çc][ãa]o$/i, 'Qual a aplicação?'],
+  [/^(indica[çc][ãa]o|uso)$/i, 'Para qual uso é indicado?'],
 ];
 
 // "• Composição: 100% Poliéster" → rótulo e valor.
@@ -252,7 +256,7 @@ export function garantirPerguntas(
   for (const linha of descricao.slice(idxSecao, fim).split('\n')) {
     const m = linha.match(RE_BULLET_ESPECIFICACAO);
     if (!m) continue;
-    const par = PERGUNTA_POR_ROTULO.find(([re]) => re.test(m[1]));
+    const par = PERGUNTA_POR_ROTULO.find(([re, , valorRe]) => re.test(m[1]) && (!valorRe || valorRe.test(m[2])));
     if (!par || vistas.has(par[1])) continue;
     vistas.add(par[1]);
     // Ponto final só quando o valor não traz o seu — "145g/m²" fica "145g/m²." e "1,50 m." não
@@ -521,7 +525,7 @@ function eixoDaGrade(variacoes: InputCopy['variacoes']): { rotulo: string; valor
   )];
   if (cores.length === 0) return null;
   // Qualquer opção "Estampa …" (numerada ou nomeada, ex. "Estampa Sereia") é estampa.
-  const estampas = cores.every((c) => /^estampa\b/i.test(c.trim()));
+  const estampas = cores.every((c) => /^estampa(?![a-zà-ú])/i.test(c.trim()));
   return estampas
     ? { rotulo: ROTULO_ESTAMPA, valores: cores.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })) }
     : { rotulo: ROTULO_COR, valores: ordenarCoresAlfabetica(cores) };
