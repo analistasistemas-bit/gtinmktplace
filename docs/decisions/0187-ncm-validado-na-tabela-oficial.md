@@ -34,7 +34,8 @@ fiscal (`10029 Invalid ncm`) e 9 anúncios ficaram "Sem dados fiscais", percebid
      bater na FK com erro cru (`23503`). Todo caminho de escrita valida antes (inclui os fluxos de cópia
      `adicionar-variacoes-familia` e `criar-kit-vinculado`).
 9. **Atualização manual**, sem cron (a tabela muda poucas vezes por ano): `scripts/ncm/gerar-sql.ts`
-   baixa/compõe o JSON e emite SQL (modo `seed` para a migration, `atualizar` para upsert via Management
+   (`deno run --allow-read scripts/ncm/gerar-sql.ts --modo seed|atualizar --entrada <json>
+   [--atuais <codigos.txt>] [--confirmar-encerramentos=<n>]`) compõe o JSON baixado e emite SQL (modo `seed` para a migration, `atualizar` para upsert via Management
    API — DML, não DDL). Código vigente na tabela e **ausente do JSON nunca é encerrado sozinho**: o CLI
    lista os ausentes no stderr e só gera o encerramento com `--confirmar-encerramentos=<n>` igual à
    quantidade listada, depois de o operador conferir contra a resolução Gecex (um JSON parcial acima do

@@ -13,6 +13,7 @@ const soDigitos = (s: string) => s.replace(/\D/g, '')
 function limpar(descricao: string): string {
   return descricao
     .replace(/<[^>]*>/g, '')
+    .replace(/\*/g, '') // nota de rodapé do Siscomex: "(Fatos*)" -> "(Fatos)"
     .replace(/^\s*-+\s*/, '')
     .replace(/:\s*$/, '')
     .replace(/\s+/g, ' ')

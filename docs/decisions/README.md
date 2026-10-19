@@ -48,3 +48,4 @@ ADRs são numerados sequencialmente (0001, 0002, ...) e **nunca são renumerados
 ## Lista atual
 
 Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela completa dos ADRs vigentes.
+- [ADR-0187](0187-ncm-validado-na-tabela-oficial.md) — NCM validado na tabela oficial (Siscomex).

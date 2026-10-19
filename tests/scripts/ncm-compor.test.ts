@@ -7,6 +7,7 @@ import {
   validarCargaNcm,
   type NcmLinha,
 } from '../../scripts/ncm/compor'
+import { executarCli } from '../../scripts/ncm/gerar-sql'
 
 const no = (Codigo: string, Descricao: string, Data_Inicio = '01/04/2022', Data_Fim = '31/12/9999') => ({
   Codigo,
@@ -21,7 +22,7 @@ const json = {
     no('62', 'Vestuário e seus acessórios, de malha.'),
     no(
       '62.03',
-      'Ternos, conjuntos, calças, jardineiras, bermudas e <i>shorts</i> (calções) (exceto de banho), de uso masculino.',
+      'Ternos (Fatos*), conjuntos, calças, jardineiras, bermudas e <i>shorts</i> (calções) (exceto de banho), de uso masculino.',
     ),
     no('6203.4', '- Calças, jardineiras, bermudas e <i>shorts</i> (calções):'),
     no('6203.42.00', '-- De algodão'),
@@ -46,7 +47,8 @@ describe('comporTabelaNcm', () => {
 
   it('compõe a descrição pelos ancestrais, sem HTML nem travessões', () => {
     const d = linhas.find((l) => l.codigo === '62034900')!.descricao
-    expect(d.startsWith('Ternos, conjuntos, calças')).toBe(true)
+    expect(d.startsWith('Ternos (Fatos), conjuntos, calças')).toBe(true)
+    expect(d).not.toContain('*')
     expect(d).toContain('Calças, jardineiras, bermudas e shorts (calções)')
     expect(d).not.toMatch(/<i>|- |:/)
     expect(d.endsWith('De outras matérias têxteis')).toBe(true)
@@ -108,5 +110,35 @@ describe('ausentesParaEncerrar', () => {
   })
   it('nenhum ausente não exige confirmação', () => {
     expect(ausentesParaEncerrar(linhas.map((l) => l.codigo), linhas, null)).toEqual({ encerrar: [] })
+  })
+})
+
+describe('executarCli', () => {
+  const entrada = JSON.stringify({
+    Nomenclaturas: muitas(10001).map((l) => no(l.codigo.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1.$2.$3'), 'x')),
+  })
+  const arquivos: Record<string, string> = {
+    'e.json': entrada,
+    'a.txt': '10000000 75937727\n',
+  }
+  const ler = (p: string) => arquivos[p]
+  const base = ['--modo', 'atualizar', '--entrada', 'e.json', '--atuais', 'a.txt']
+
+  it('confirmação exata: exit 0, SQL no stdout, códigos encerrados no stderr', () => {
+    const r = executarCli([...base, '--confirmar-encerramentos=1'], ler)
+    expect(r.codigo).toBe(0)
+    expect(r.stderr).toContain('75937727')
+    expect(r.stdout).toContain("array['75937727']")
+  })
+  it('sem confirmação: exit 1, stdout vazio, código no stderr', () => {
+    const r = executarCli(base, ler)
+    expect(r.codigo).toBe(1)
+    expect(r.stdout).toBe('')
+    expect(r.stderr).toContain('75937727')
+  })
+  it('seed: exit 0 com inserts', () => {
+    const r = executarCli(['--modo', 'seed', '--entrada', 'e.json'], ler)
+    expect(r.codigo).toBe(0)
+    expect(r.stdout).toContain('insert into public.ncm_oficial')
   })
 })
