@@ -80,11 +80,11 @@ describe('sql', () => {
     const sql = sqlSeed([{ ...linha('11111111'), descricao: "d'água" }, ...muitas(1000)])
     expect(sql).toContain("'d''água'")
     expect(sql.match(/insert into public\.ncm_oficial/g)).toHaveLength(2)
+    expect(sql.match(/on conflict \(codigo\) do nothing;/g)).toHaveLength(2)
   })
   it('sqlAtualizacao sem encerrar não encerra nada', () => {
     const sql = sqlAtualizacao([linha('11111111')], [])
-    expect(sql.startsWith('begin;')).toBe(true)
-    expect(sql.trimEnd().endsWith('commit;')).toBe(true)
+    expect(sql).not.toMatch(/\b(begin|commit);/)
     expect(sql).toContain('on conflict (codigo) do update set')
     expect(sql).not.toContain('current_date - 1')
   })

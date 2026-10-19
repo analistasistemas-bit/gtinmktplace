@@ -85,14 +85,15 @@ export function sqlSeed(linhas: NcmLinha[]): string {
     lotes.push(
       `insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values\n` +
         linhas.slice(i, i + 1000).map(valores).join(',\n') +
-        ';',
+        '\non conflict (codigo) do nothing;',
     )
   }
   return lotes.join('\n')
 }
 
 export function sqlAtualizacao(linhas: NcmLinha[], encerrar: string[]): string {
-  const partes = ['begin;']
+  // Sem begin/commit: roda como migration (`db push` já é uma transação).
+  const partes: string[] = []
   for (let i = 0; i < linhas.length; i += 1000) {
     partes.push(
       `insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values\n` +
@@ -107,7 +108,6 @@ export function sqlAtualizacao(linhas: NcmLinha[], encerrar: string[]): string {
         `where codigo = any(array[${encerrar.map(q).join(', ')}]) and data_fim >= current_date;`,
     )
   }
-  partes.push('commit;')
   return partes.join('\n') + '\n'
 }
 

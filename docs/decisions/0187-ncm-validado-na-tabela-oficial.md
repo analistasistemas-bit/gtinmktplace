@@ -35,8 +35,8 @@ fiscal (`10029 Invalid ncm`) e 9 anúncios ficaram "Sem dados fiscais", percebid
      `adicionar-variacoes-familia` e `criar-kit-vinculado`).
 9. **Atualização manual**, sem cron (a tabela muda poucas vezes por ano): `scripts/ncm/gerar-sql.ts`
    (`deno run --allow-read scripts/ncm/gerar-sql.ts --modo seed|atualizar --entrada <json>
-   [--atuais <codigos.txt>] [--confirmar-encerramentos=<n>]`) compõe o JSON baixado e emite SQL (modo `seed` para a migration, `atualizar` para upsert via Management
-   API — DML, não DDL). Código vigente na tabela e **ausente do JSON nunca é encerrado sozinho**: o CLI
+   [--atuais <codigos.txt>] [--confirmar-encerramentos=<n>]`) compõe o JSON baixado e emite SQL (modo `seed` para a migration, `atualizar` para upsert, redirecionado ao arquivo de
+   `supabase migration new ncm_refresh_<AAAAMMDD>` e aplicado com `supabase db push`; Management API recusa o SQL com HTTP 413 a ~3,4 MB). Código vigente na tabela e **ausente do JSON nunca é encerrado sozinho**: o CLI
    lista os ausentes no stderr e só gera o encerramento com `--confirmar-encerramentos=<n>` igual à
    quantidade listada, depois de o operador conferir contra a resolução Gecex (um JSON parcial acima do
    mínimo de 10.000 códigos não pode extinguir um código válido).

@@ -1,7 +1,7 @@
 -- ADR-0187 Migration A (aditiva): tabela oficial de NCM (Siscomex) + carga inicial + ncm_consultar +
 -- `ncm_vigente` no resumo do Estoque. Sem FK aqui: a FK `NOT VALID` vem na Migration B.
 -- GLOBAL, sem org_id, de propósito: é a nomenclatura pública, igual para toda org. Escrita só
--- service_role (atualização via Management API); leitura autenticada (molde sonar_snapshots).
+-- service_role (atualização por nova migration: `supabase migration new ncm_refresh_<AAAAMMDD>` + `supabase db push`); leitura autenticada (molde sonar_snapshots).
 create table if not exists public.ncm_oficial (
   codigo text primary key check (codigo ~ '^[0-9]{8}$'),
   descricao text not null,             -- composta: capítulo › posição › ... › item (gerar-sql.ts)
@@ -1020,7 +1020,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('15122100', 'Óleos de girassol, de cártamo ou de algodão, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de algodão e respectivas frações › Óleo em bruto, mesmo desprovido de gossipol', '2022-04-01', '9999-12-31'),
 ('15122910', 'Óleos de girassol, de cártamo ou de algodão, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de algodão e respectivas frações › Outros › Refinado', '2022-04-01', '9999-12-31'),
 ('15122990', 'Óleos de girassol, de cártamo ou de algodão, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de algodão e respectivas frações › Outros › Outros', '2022-04-01', '9999-12-31'),
-('15131100', 'Óleos de coco (copra), de amêndoa de palma (palmiste) (coconote) ou de babaçu, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de coco (copra) e respectivas frações › Óleo em bruto', '2022-04-01', '9999-12-31');
+('15131100', 'Óleos de coco (copra), de amêndoa de palma (palmiste) (coconote) ou de babaçu, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de coco (copra) e respectivas frações › Óleo em bruto', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('15131900', 'Óleos de coco (copra), de amêndoa de palma (palmiste) (coconote) ou de babaçu, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleo de coco (copra) e respectivas frações › Outros', '2022-04-01', '9999-12-31'),
 ('15132111', 'Óleos de coco (copra), de amêndoa de palma (palmiste) (coconote) ou de babaçu, e respectivas frações, mesmo refinados, mas não quimicamente modificados. › Óleos de amêndoa de palma (palmiste) (coconote) ou de babaçu, e respectivas frações › Óleos em bruto › De amêndoa de palma (palmiste) (coconote) › De coco mbocaya (Acrocomia totai)', '2022-07-01', '9999-12-31'),
@@ -2021,7 +2022,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('29012200', 'Hidrocarbonetos acíclicos. › Não saturados › Propeno (propileno)', '2022-04-01', '9999-12-31'),
 ('29012300', 'Hidrocarbonetos acíclicos. › Não saturados › Buteno (butileno) e seus isômeros', '2022-04-01', '9999-12-31'),
 ('29012410', 'Hidrocarbonetos acíclicos. › Não saturados › Buta-1,3-dieno e isopreno › Buta-1,3-dieno', '2022-04-01', '9999-12-31'),
-('29012420', 'Hidrocarbonetos acíclicos. › Não saturados › Buta-1,3-dieno e isopreno › Isopreno', '2022-04-01', '9999-12-31');
+('29012420', 'Hidrocarbonetos acíclicos. › Não saturados › Buta-1,3-dieno e isopreno › Isopreno', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('29012900', 'Hidrocarbonetos acíclicos. › Não saturados › Outros', '2022-04-01', '9999-12-31'),
 ('29021100', 'Hidrocarbonetos cíclicos. › Ciclânicos, ciclênicos ou cicloterpênicos › Cicloexano', '2022-04-01', '9999-12-31'),
@@ -3022,7 +3024,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('29314912', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila)', '2022-04-01', '9999-12-31'),
 ('29314913', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Etidronato dissódico', '2022-04-01', '9999-12-31'),
 ('29314914', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Glifosato e seu sal de monoisopropilamina', '2022-04-01', '9999-12-31'),
-('29314915', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Glufosinato de amônio', '2022-04-01', '9999-12-31');
+('29314915', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Glufosinato de amônio', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('29314916', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Ácido fosfonometiliminodiacético; ácido aminotrimetilenofosfônico; difenilfosfonato(4,4''-bis((dimetoxifosfinil)metil)difenila); etidronato dissódico; glifosato e seu sal de monoisopropilamina; glufosinato de amônio; hidrogenofosfonato de bis(2-etilexilo) › Hidrogenofosfonato de bis(2-etilexilo)', '2022-04-01', '9999-12-31'),
 ('29314920', 'Outros compostos organo-inorgânicos. › Derivados organofosforados não halogenados › Outros › Hidrogênio alquil(de C1 a C3)fosfonitos de [O-2-(dialquil(de C1 a C3)amino)etila], seus ésteres de O-alquila (de até C10, incluindo os cicloalquila); sais alquilados ou protonados destes produtos', '2022-04-01', '9999-12-31'),
@@ -4023,7 +4026,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('30049076', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Que contenham produtos das posições 29.34, 29.35 e 29.38, mas que não contenham produtos dos itens 3004.90.1 a 3004.90.6 › Clortalidona; furosemida', '2022-04-01', '9999-12-31'),
 ('30049077', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Que contenham produtos das posições 29.34, 29.35 e 29.38, mas que não contenham produtos dos itens 3004.90.1 a 3004.90.6 › Cloridrato de tizanidina; cetoconazol; furazolidona', '2022-04-01', '9999-12-31'),
 ('30049078', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Que contenham produtos das posições 29.34, 29.35 e 29.38, mas que não contenham produtos dos itens 3004.90.1 a 3004.90.6 › Amprenavir; aprepitanto; delavirdina ou seu mesilato; efavirenz; emtricitabina; etopósido; everolimus; fosamprenavir cálcico; fosfato de fludarabina; gencitabina ou seu cloridrato; mesilato de dabrafenibe; raltitrexida; ritonavir; sirolimus; tacrolimus; temsirolimus; tenipósido; tipranavir', '2026-02-01', '9999-12-31'),
-('30049079', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Que contenham produtos das posições 29.34, 29.35 e 29.38, mas que não contenham produtos dos itens 3004.90.1 a 3004.90.6 › Outros', '2022-04-01', '9999-12-31');
+('30049079', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Que contenham produtos das posições 29.34, 29.35 e 29.38, mas que não contenham produtos dos itens 3004.90.1 a 3004.90.6 › Outros', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('30049091', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Outros › Extrato de pólen', '2022-04-01', '9999-12-31'),
 ('30049092', 'Medicamentos (exceto os produtos das posições 30.02, 30.05 ou 30.06) constituídos por produtos misturados ou não misturados, preparados para fins terapêuticos ou profiláticos, apresentados em doses (incluindo os destinados a serem administrados por via percutânea) ou acondicionados para venda a retalho. › Outros › Outros › Crisarobina; disofenol', '2022-04-01', '9999-12-31'),
@@ -5024,7 +5028,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('39235000', 'Artigos de transporte ou de embalagem, de plástico; rolhas, tampas, cápsulas e outros dispositivos para fechar recipientes, de plástico. › Rolhas, tampas, cápsulas e outros dispositivos para fechar recipientes', '2022-04-01', '9999-12-31'),
 ('39239010', 'Artigos de transporte ou de embalagem, de plástico; rolhas, tampas, cápsulas e outros dispositivos para fechar recipientes, de plástico. › Outros › Paletes simples, paletes-caixas e outros estrados para carga; taipais de paletes', '2022-09-01', '9999-12-31'),
 ('39239090', 'Artigos de transporte ou de embalagem, de plástico; rolhas, tampas, cápsulas e outros dispositivos para fechar recipientes, de plástico. › Outros › Outros', '2022-09-01', '9999-12-31'),
-('39241000', 'Serviços de mesa, artigos de cozinha, outros artigos de uso doméstico e artigos de higiene ou de toucador, de plástico. › Serviços de mesa e outros utensílios de mesa ou de cozinha', '2022-04-01', '9999-12-31');
+('39241000', 'Serviços de mesa, artigos de cozinha, outros artigos de uso doméstico e artigos de higiene ou de toucador, de plástico. › Serviços de mesa e outros utensílios de mesa ou de cozinha', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('39249000', 'Serviços de mesa, artigos de cozinha, outros artigos de uso doméstico e artigos de higiene ou de toucador, de plástico. › Outros', '2022-04-01', '9999-12-31'),
 ('39251000', 'Artigos para apetrechamento de construções, de plástico, não especificados nem compreendidos noutras posições. › Reservatórios, cisternas, cubas e recipientes análogos, de capacidade superior a 300 l', '2022-04-01', '9999-12-31'),
@@ -6025,7 +6030,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('55014000', 'Cabos de filamentos sintéticos. › De polipropileno', '2022-04-01', '9999-12-31'),
 ('55019000', 'Cabos de filamentos sintéticos. › Outros', '2022-04-01', '9999-12-31'),
 ('55021000', 'Cabos de filamentos artificiais. › De acetato de celulose', '2022-04-01', '9999-12-31'),
-('55029010', 'Cabos de filamentos artificiais. › Outros › De raiom viscose', '2022-04-01', '9999-12-31');
+('55029010', 'Cabos de filamentos artificiais. › Outros › De raiom viscose', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('55029090', 'Cabos de filamentos artificiais. › Outros › Outros', '2022-04-01', '9999-12-31'),
 ('55031100', 'Fibras sintéticas descontínuas, não cardadas, não penteadas nem transformadas de outro modo para fiação. › De náilon ou de outras poliamidas › De aramidas', '2022-04-01', '9999-12-31'),
@@ -7026,7 +7032,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('70200090', 'Outras obras de vidro. › Outras', '2022-04-01', '9999-12-31'),
 ('71011000', 'Pérolas naturais ou cultivadas, mesmo trabalhadas ou combinadas, mas não enfiadas, nem montadas, nem engastadas; pérolas naturais ou cultivadas, enfiadas temporariamente para facilidade de transporte. › Pérolas naturais', '2022-04-01', '9999-12-31'),
 ('71012100', 'Pérolas naturais ou cultivadas, mesmo trabalhadas ou combinadas, mas não enfiadas, nem montadas, nem engastadas; pérolas naturais ou cultivadas, enfiadas temporariamente para facilidade de transporte. › Pérolas cultivadas › Em bruto', '2022-04-01', '9999-12-31'),
-('71012200', 'Pérolas naturais ou cultivadas, mesmo trabalhadas ou combinadas, mas não enfiadas, nem montadas, nem engastadas; pérolas naturais ou cultivadas, enfiadas temporariamente para facilidade de transporte. › Pérolas cultivadas › Trabalhadas', '2022-04-01', '9999-12-31');
+('71012200', 'Pérolas naturais ou cultivadas, mesmo trabalhadas ou combinadas, mas não enfiadas, nem montadas, nem engastadas; pérolas naturais ou cultivadas, enfiadas temporariamente para facilidade de transporte. › Pérolas cultivadas › Trabalhadas', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('71021000', 'Diamantes, mesmo trabalhados, mas não montados nem engastados. › Não selecionados', '2022-04-01', '9999-12-31'),
 ('71022100', 'Diamantes, mesmo trabalhados, mas não montados nem engastados. › Industriais › Em bruto ou simplesmente serrados, clivados ou desbastados', '2022-04-01', '9999-12-31'),
@@ -8027,7 +8034,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('84171020', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Fornos para ustulação, fusão ou outros tratamentos térmicos de minérios ou de metais › Fornos industriais para tratamento térmico de metais', '2022-04-01', '9999-12-31'),
 ('84171090', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Fornos para ustulação, fusão ou outros tratamentos térmicos de minérios ou de metais › Outros', '2022-04-01', '9999-12-31'),
 ('84172000', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Fornos de padaria, pastelaria ou para a indústria de bolachas e biscoitos', '2022-04-01', '9999-12-31'),
-('84178010', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Outros › Fornos industriais para cerâmica', '2022-04-01', '9999-12-31');
+('84178010', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Outros › Fornos industriais para cerâmica', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('84178020', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Outros › Fornos industriais para fusão de vidro', '2022-04-01', '9999-12-31'),
 ('84178090', 'Fornos industriais ou de laboratório, incluindo os incineradores, não elétricos. › Outros › Outros', '2022-04-01', '9999-12-31'),
@@ -9028,7 +9036,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('85043111', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Para frequências inferiores ou iguais a 60 Hz › Transformadores de corrente', '2022-04-01', '9999-12-31'),
 ('85043119', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Para frequências inferiores ou iguais a 60 Hz › Outros', '2022-04-01', '9999-12-31'),
 ('85043191', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Outros › Transformador de saída horizontal (fly back), com tensão de saída superior a 18 kV e frequência de varredura horizontal igual ou superior a 32 kHz', '2022-04-01', '9999-12-31'),
-('85043192', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Outros › Transformadores de FI, de detecção, de relação, de linearidade ou de foco', '2022-04-01', '9999-12-31');
+('85043192', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Outros › Transformadores de FI, de detecção, de relação, de linearidade ou de foco', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('85043193', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Outros › Outros, de largura e comprimento não superior a 50 mm e altura não superior a 25 mm, próprios para montagem por inserção (PTH - Pin Through Hole) ou montagem em superfície (SMD - Surface Mounted Device)', '2024-04-01', '9999-12-31'),
 ('85043199', 'Transformadores elétricos, conversores elétricos estáticos (retificadores, por exemplo), bobinas de reatância e de autoindução. › Outros transformadores › De potência não superior a 1 kVA › Outros › Outros', '2022-04-01', '9999-12-31'),
@@ -10029,7 +10038,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('90185010', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos para oftalmologia › Microscópios binoculares, do tipo utilizado em cirurgia oftalmológica', '2022-04-01', '9999-12-31'),
 ('90185090', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos para oftalmologia › Outros', '2022-04-01', '9999-12-31'),
 ('90189010', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos › Para transfusão de sangue ou infusão intravenosa', '2022-04-01', '9999-12-31'),
-('90189021', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos › Bisturis › Elétricos', '2022-04-01', '9999-12-31');
+('90189021', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos › Bisturis › Elétricos', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('90189029', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos › Bisturis › Outros', '2022-04-01', '9999-12-31'),
 ('90189031', 'Instrumentos e aparelhos para medicina, cirurgia, odontologia e veterinária, incluindo os aparelhos para cintilografia e outros aparelhos eletromédicos, bem como os aparelhos para testes visuais. › Outros instrumentos e aparelhos › Litótomos e litotritores › Litotritores por onda de choque', '2022-04-01', '9999-12-31'),
@@ -10546,7 +10556,8 @@ insert into public.ncm_oficial (codigo, descricao, data_inicio, data_fim) values
 ('97053100', 'Coleções e peças de coleção que apresentem um interesse arqueológico, etnográfico, histórico, zoológico, botânico, mineralógico, anatômico, paleontológico ou numismático. › Coleções e peças de coleção que apresentem um interesse numismático › Com mais de 100 anos', '2022-04-01', '9999-12-31'),
 ('97053900', 'Coleções e peças de coleção que apresentem um interesse arqueológico, etnográfico, histórico, zoológico, botânico, mineralógico, anatômico, paleontológico ou numismático. › Coleções e peças de coleção que apresentem um interesse numismático › Outras', '2022-04-01', '9999-12-31'),
 ('97061000', 'Antiguidades com mais de 100 anos. › Com mais de 250 anos', '2022-04-01', '9999-12-31'),
-('97069000', 'Antiguidades com mais de 100 anos. › Outras', '2022-04-01', '9999-12-31');
+('97069000', 'Antiguidades com mais de 100 anos. › Outras', '2022-04-01', '9999-12-31')
+on conflict (codigo) do nothing;
 
 -- Vigência calculada na consulta (não gravada): resolução com data futura passa a valer no dia certo.
 -- Só devolve códigos existentes; ausente = não existe na tabela oficial.

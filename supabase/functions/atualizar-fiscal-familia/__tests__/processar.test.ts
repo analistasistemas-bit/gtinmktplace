@@ -57,7 +57,7 @@ function fakeAdmin(over: {
 }
 
 const FAMILIA_BASE = {
-  id: 'fam-1', org_id: 'org-1', nome_pai: 'AGULHA', unidade: 'UN', origem: 'nacional',
+  id: 'fam-1', org_id: 'org-1', codigo_pai: 'PAI-1', nome_pai: 'AGULHA', unidade: 'UN', origem: 'nacional',
   ml_item_id: 'MLB123', status: 'publicado',
 };
 
@@ -70,6 +70,14 @@ function deps(admin: DepsAtualizarFiscal['admin'], enfileirarPush?: DepsAtualiza
 }
 
 describe('processarAtualizacaoFiscal', () => {
+  it('grava o fiscal em TODAS as versões do produto (org_id + codigo_pai), não só na editada', async () => {
+    const { admin, writes } = fakeAdmin();
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r.tipo).toBe('ok');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].filters).toEqual({ org_id: 'org-1', codigo_pai: 'PAI-1' });
+  });
+
   it('família de outra org (ou inexistente) → nao_encontrada, filtrando por org_id', async () => {
     const { admin, writes, reads } = fakeAdmin({ familia: null });
     const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-x', fiscal: FISCAL_OK });

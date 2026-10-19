@@ -51,7 +51,7 @@ export async function processarAtualizacaoFiscal(
 ): Promise<ResultadoFiscal> {
   const { admin, orgId } = deps;
   const { data: familia, error: familiaErro } = await admin.from('familias')
-    .select('id, org_id, nome_pai, unidade, origem, ml_item_id, status')
+    .select('id, org_id, codigo_pai, nome_pai, unidade, origem, ml_item_id, status')
     .eq('id', entrada.familiaId).eq('org_id', orgId).maybeSingle();
   // Erro de leitura NUNCA vira decisão: sem isto, uma falha transitória do select cairia no
   // `!familia` abaixo e devolveria 404 "não encontrada" para uma família que existe.
@@ -100,6 +100,9 @@ export async function processarAtualizacaoFiscal(
     return { tipo: 'invalido', erros: ['descrição fiscal: até 120 caracteres'] };
   }
 
+  // Todas as versões do produto (org_id + codigo_pai): o Estoque edita a família mais nova, mas
+  // cópia (adicionar-variacoes-familia) e publicação leem a última PUBLICADA — gravar só a editada
+  // deixava a publicada com NCM inválido. Kits têm outro codigo_pai e não entram.
   const { error } = await admin.from('familias').update({
     ncm: f.ncm, cest: f.cest?.trim() || null, origem_nfe: f.origemNfe,
     fci: f.fci?.trim() || null, ex_tipi: f.exTipi?.trim() || null,
@@ -107,7 +110,7 @@ export async function processarAtualizacaoFiscal(
     ...(f.unidade !== undefined ? { unidade: unidadeEfetiva } : {}),
     ...(temDescricao ? { descricao_fiscal: descricaoFiscal } : {}),
     atualizado_em: new Date().toISOString(),
-  }).eq('id', familia.id);
+  }).eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai);
   if (error) return { tipo: 'falha', mensagem: error.message };
 
   // Enfileira por `status === 'publicado'`, não por `ml_item_id`: o enqueue serve tanto Legacy

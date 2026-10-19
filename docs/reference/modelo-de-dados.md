@@ -1518,8 +1518,9 @@ Migration B (FK `familias.ncm -> ncm_oficial(codigo)` `NOT VALID`) pendente em `
 (`--atuais`, um por linha) e rodar:
 `deno run --allow-read scripts/ncm/gerar-sql.ts --modo atualizar --entrada <json> --atuais <codigos.txt> [--confirmar-encerramentos=<n>]`.
 Código vigente ausente do JSON nunca é encerrado sozinho: o CLI lista os ausentes no stderr e só gera o encerramento com
-`--confirmar-encerramentos=<n>` igual à quantidade listada, após conferir contra a resolução Gecex. Aplicar o SQL via Management API
-como DML (não é DDL, não vira migration) e conferir a contagem impressa. `--modo seed` só para a carga inicial da migration.
+`--confirmar-encerramentos=<n>` igual à quantidade listada, após conferir contra a resolução Gecex. Aplicar: redirecionar o stdout para o arquivo criado por
+`supabase migration new ncm_refresh_<AAAAMMDD>`, revisar e rodar `supabase db push` (ADR-0043). NÃO usar Management API (HTTP 413 em ~3,4 MB).
+O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só para a carga inicial da migration.
 
 ---
 
