@@ -260,6 +260,20 @@ describe('DialogEstenderGrade — gate de Salvar', () => {
     expect(BOTAO_SALVAR()).toBeDisabled();
   });
 
+  // Trava de 2026-10-19: irmã sem medidas → nada herdado → "Salvar" trava e o motivo aparece.
+  it('irmã sem peso/medidas: trava e explica em texto visível', async () => {
+    familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: SKUS_UMA_COR.map((v) => ({
+      ...v, peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+    })) }]);
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    await user.click(screen.getByRole('checkbox', { name: 'G' }));
+    await user.type(await screen.findByLabelText('Estoque inicial de Preto · G'), '3');
+    expect(BOTAO_SALVAR()).toBeDisabled();
+    expect(screen.getByText(/Preencha peso e medidas da embalagem/)).toBeInTheDocument();
+  });
+
   it('trava enquanto uma cor NOVA sem foto herdável não recebeu foto própria', async () => {
     const user = userEvent.setup();
     renderDialog();

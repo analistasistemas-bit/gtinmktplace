@@ -126,10 +126,19 @@ function renderDialogControlado() {
   };
 }
 
+// Trava de 2026-10-19: peso e medidas da embalagem são obrigatórios no cadastro manual.
+async function preencherEmbalagem(user: ReturnType<typeof userEvent.setup>, n: number) {
+  await user.type(screen.getByLabelText(`Peso (g) da variação ${n}`), '250');
+  await user.type(screen.getByLabelText(`Altura (cm) da variação ${n}`), '4');
+  await user.type(screen.getByLabelText(`Largura (cm) da variação ${n}`), '20');
+  await user.type(screen.getByLabelText(`Comprimento (cm) da variação ${n}`), '30');
+}
+
 async function preencherEEnviar(user: ReturnType<typeof userEvent.setup>, nome: string) {
   await user.type(screen.getByLabelText('Nome'), nome);
   await user.click(screen.getByRole('radio', { name: 'Nacional' }));
   await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+  await preencherEmbalagem(user, 1);
   await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 }
 
@@ -149,6 +158,7 @@ describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     const precoInput = screen.getByLabelText('Preço mínimo (líquido) da variação 1');
     await user.type(precoInput, '10');
+    await preencherEmbalagem(user, 1);
 
     const botao = screen.getByRole('button', { name: 'Cadastrar' });
     await user.click(botao);
@@ -321,10 +331,25 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
 
     await user.type(screen.getByLabelText('Custo da variação 1'), 'abc');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+
+  it('sem peso e medidas da embalagem, "Cadastrar" fica travado', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await user.type(screen.getByLabelText('Peso (g) da variação 1'), '250');
+    await user.type(screen.getByLabelText('Altura (cm) da variação 1'), '4');
+    await user.type(screen.getByLabelText('Largura (cm) da variação 1'), '20');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Comprimento (cm) da variação 1'), '30');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
   it('remover a variação do meio preserva o arquivo de foto das outras (input não-controlado)', async () => {
@@ -386,6 +411,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     expect(await screen.findByText(/não foi enfileirado/)).toBeInTheDocument();
@@ -406,6 +432,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -434,6 +461,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -456,6 +484,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await user.keyboard('{Escape}');
@@ -496,6 +525,7 @@ describe('DialogCadastroProduto — etapa 2 não pede de novo foto já enviada (
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.upload(screen.getByLabelText('Foto da variação 1'), new File(['a'], 'azul.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
@@ -544,8 +574,11 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 2'), '10');
+    await preencherEmbalagem(user, 2);
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 3'), '10');
+    await preencherEmbalagem(user, 3);
 
     const capaFile = new File(['c'], 'capa.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Capa'), capaFile);
@@ -610,6 +643,7 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
 
     const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
@@ -644,7 +678,9 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 2'), '10');
+    await preencherEmbalagem(user, 2);
 
     // Capa presente neste cenário — precisa provar que a divergência de VARIAÇÃO não
     // arrasta a capa junto pro `if` de bloqueio (a capa casa por `familiaId`, não índice).
@@ -794,6 +830,7 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Fiscal');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
     expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
   }
@@ -880,6 +917,7 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto A');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
     expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
     expect(invoke).toHaveBeenNthCalledWith(1, 'sugerir-ncm', { body: { nome: 'Produto A', descricao: undefined } });
@@ -893,6 +931,7 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
 
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
     expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
 
@@ -924,6 +963,7 @@ describe('DialogCadastroProduto — sem eixo de grade, mesmo com tipo habilitado
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
+    await preencherEmbalagem(user, 1);
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
@@ -941,6 +981,7 @@ describe('DialogCadastroProduto — sem eixo de grade, mesmo com tipo habilitado
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
+    await preencherEmbalagem(user, 1);
 
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -986,6 +1027,7 @@ describe('DialogCadastroProduto — irParaRevisaoAoConcluir', () => {
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await preencherEmbalagem(user, 1);
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
   }
 
@@ -1077,6 +1119,8 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(screen.getByLabelText('Fornecedor')).toHaveValue('FORNECEDOR TESTE LTDA');
 
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+
+    await preencherEmbalagem(user, 1);
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
@@ -1108,6 +1152,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
 
     expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await preencherEmbalagem(user, 1);
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
 

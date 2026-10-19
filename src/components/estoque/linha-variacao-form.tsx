@@ -47,6 +47,12 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
     return 'Estoque inicial não pode ser negativo.';
   }
   if (campo === 'custo' && n != null && n <= 0) return 'Custo, quando informado, deve ser maior que zero.';
+  // Trava (Diego, 2026-10-19): sem peso/medidas da embalagem o ML estima o pacote e o frete sai
+  // errado (ADR-0018) — e não há tela para completar depois. Bloqueia no cadastro manual; a
+  // planilha continua no "publica + avisa" do ADR-0018.
+  if (LOGISTICA.some((c) => c.campo === campo) && (n == null || n <= 0)) {
+    return 'Obrigatório — o ML calcula o frete pela embalagem.';
+  }
   return null;
 }
 
@@ -98,6 +104,7 @@ export function LinhaVariacaoForm({
   const id = (campo: string) => `var-${linha.clientId}-${campo}`;
   const camposObrigatorios = new Set<keyof LinhaVariacao>([
     'preco',
+    ...LOGISTICA.map((c) => c.campo),
     ...(nomeObrigatorio ? (['nome'] as const) : []),
     ...(estoqueInicialObrigatorio ? (['estoqueInicial'] as const) : []),
   ]);

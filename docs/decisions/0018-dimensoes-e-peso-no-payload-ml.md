@@ -47,3 +47,9 @@ O piso de 1 cm fora calibrado só para matar o placeholder `0,10 cm`, mas era ce
 **Decisão (Diego, 2026-06-09):** baixar o piso por medida de **`≥ 1 cm` para `≥ 0,2 cm`** (peso mantido em `≥ 1 g`). O placeholder `0,10 cm` continua descartado (0,10 < 0,2); dimensões reais finas como `0,70 cm` passam a ser enviadas. Não depende de conhecer o valor exato do placeholder — só de um piso que ele não alcança. Pior caso (medida real entre 0,1–0,2 cm, improvável para uma embalagem) = ML estima, **sem regressão** ante o comportamento atual.
 
 Constante `PISO_MEDIDA_CM = 0.2` em `_shared/ml/pacote.ts` (`dimensoesValidas`); cobertura TDD nova em `pacote.test.ts` (0,70 cm válido, piso exato 0,2 cm válido, 0,15 cm inválido, placeholder 0,10 cm inválido). Reusado por CREATE e UPDATE sem outras mudanças. Redeploy de `publish-familia-ml` e `update-familia-ml` (mudança em `_shared`).
+
+## Adendo (2026-10-19) — Cadastro manual exige peso e medidas
+
+**Achado:** a família `00000140` (Short Bermuda, grade Preto P/M/G) foi cadastrada pelo diálogo de cadastro em grade sem peso/medidas — e nenhuma tela permite completar depois (o card do Estoque só exibe). Correção do dado feita por SQL a pedido do Diego (250 g, 4 × 20 × 30 cm).
+
+**Decisão (Diego, 2026-10-19):** no **cadastro manual** (Cadastrar produto, Cadastro em grade, Adicionar variação, Estender grade) peso, altura, largura e comprimento são **obrigatórios e > 0** — o botão trava, com `*` nos campos e, na grade, o motivo em texto visível. A regra vive em `erroCampo` (`src/components/estoque/linha-variacao-form.tsx`), compartilhada pelos quatro diálogos. A **planilha** não muda: segue o "publica + avisa" do §3/Alternativas (bloquear lá trava o lote inteiro).
