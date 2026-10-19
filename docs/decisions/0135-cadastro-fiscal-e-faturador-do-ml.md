@@ -198,7 +198,9 @@ causa citando o SKU; 404 = SKU nunca aceito pelo ML (ex.: NCM recusado) → pend
 leitura não grava (I7). Limite conhecido: o `can_invoice` do SKU não diz se ele está vinculado a um
 anúncio, e o vínculo não é legível pela API (as leituras dão 404/403; o `POST` de vínculo devolve 201
 a cada chamada). A cobertura do vínculo continua sendo o gate de SKU órfão + falha do `POST` de
-vínculo derrubando o semáforo; vínculo desfeito à mão no painel do ML não é detectado. Conferido na
+vínculo derrubando o semáforo — e a reconciliação **não limpa** recusa gravada pelo worker de push
+(causa `push…`): só um novo push, que refaz o vínculo, pode promovê-la a verde. Vínculo desfeito à
+mão no painel do ML não é detectado. Conferido na
 tela "Editor em massa de dados fiscais" do ML: SKUs com `can_invoice: true` aparecem vinculados; o
 SKU com NCM recusado aparece "Sem dados fiscais".
 

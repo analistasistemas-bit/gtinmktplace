@@ -19,6 +19,8 @@ interface FamiliaCanInvoice {
   id: string;
   codigo_pai: string;
   ml_item_id: string | null;
+  can_invoice: boolean | null;
+  can_invoice_causa: string | null;
 }
 
 export async function reconciliarCanInvoice(
@@ -37,7 +39,7 @@ export async function reconciliarCanInvoice(
   if (!((org?.modulos_habilitados ?? []) as string[]).includes('fiscal')) return 0;
 
   const { data: familias, error: familiasErr } = await admin.from('familias')
-    .select('id, codigo_pai, ml_item_id').eq('org_id', orgId)
+    .select('id, codigo_pai, ml_item_id, can_invoice, can_invoice_causa').eq('org_id', orgId)
     .not('ml_item_id', 'is', null).eq('status', 'publicado');
   // Erro de leitura NUNCA degrada pra lista vazia (lição do round 3 da Task 7) — propaga, quem
   // chama (monitorar-moderados/index.ts) já embrulha essa chamada em try/catch por conexão.
@@ -45,6 +47,10 @@ export async function reconciliarCanInvoice(
 
   let atualizadas = 0;
   for (const f of (familias ?? []) as FamiliaCanInvoice[]) {
+    // Review Codex (emenda D-10): o can_invoice por SKU não enxerga o vínculo SKU→anúncio. Recusa
+    // gravada pelo worker de push (causa "push…", ex.: vínculo 400) só é limpa por um novo push,
+    // que refaz o vínculo — senão a reconciliação a promoveria a verde com o vínculo recusado.
+    if (f.can_invoice === false && f.can_invoice_causa?.startsWith('push')) continue;
     const itensUP = await listarItensUP(admin, orgId, f.codigo_pai);
 
     // Fix round 1 (T8): SKU UP sem item resolvido é pendência, igual ao worker de push — nunca

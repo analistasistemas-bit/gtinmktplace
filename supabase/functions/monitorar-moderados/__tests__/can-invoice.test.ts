@@ -7,7 +7,10 @@ import { reconciliarCanInvoice } from '../can-invoice.ts';
 function fakeAdmin(opts: {
   modulos?: string[];
   orgErro?: string;
-  familias?: Array<{ id: string; codigo_pai: string; ml_item_id: string | null }>;
+  familias?: Array<{
+    id: string; codigo_pai: string; ml_item_id: string | null;
+    can_invoice?: boolean | null; can_invoice_causa?: string | null;
+  }>;
   familiasErro?: string;
 }) {
   const updates: Array<{ id: string; can_invoice: boolean; can_invoice_causa: string | null }> = [];
@@ -133,6 +136,20 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
     expect(updates[0]).toEqual({
       id: 'f1', can_invoice: false, can_invoice_causa: 'SKU(s) sem item vinculado no ML: S2',
     });
+  });
+
+  it('review Codex — recusa do push (ex.: vínculo recusado) não é limpa pela reconciliação, mesmo com SKU can_invoice=true', async () => {
+    const { admin, updates } = fakeAdmin({
+      familias: [{
+        id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1', can_invoice: false,
+        can_invoice_causa: 'push fiscal recusado: POST fiscal_information/items → 400: x',
+      }],
+    });
+    const ler = vi.fn(async () => ({ pronto: true, causa: null }));
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, vi.fn(async () => []), vi.fn(async () => ['S1']));
+    expect(n).toBe(0);
+    expect(ler).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
   });
 
   it('falha de leitura do ML (lerCanInvoice → null) NÃO regride o estado gravado', async () => {
