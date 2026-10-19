@@ -14,6 +14,7 @@ import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
+import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 import { forcarMarcaPropria, marcaDoProduto, type MarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 export interface KitSolicitado {
@@ -371,6 +372,18 @@ export async function criarKitsVinculados(
     const multsVivos = new Set(kitsVivos.map((k) => k.kit_multiplicador));
     if (kitsFaltando.some((k) => multsVivos.has(k.multiplicador))) {
       return { ok: false, motivo: 'kit_duplicado' };
+    }
+
+    // ADR-0187: o kit clona o NCM da base — não propaga código fora da tabela oficial. Depois do
+    // curto-circuito de idempotência (kitsFaltando vazio nunca chega aqui) e antes de reservar
+    // códigos/criar lote. Erro de leitura é falha (fail-closed), nunca "válido".
+    try {
+      const [invalido] = await ncmsInvalidos(admin, [base.ncm as string | null]);
+      if (invalido) {
+        return { ok: false, motivo: 'ncm_invalido', mensagem: `${mensagemNcm(invalido)} — corrija no botão Fiscal antes.` };
+      }
+    } catch (e) {
+      return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
     }
 
     // ── Atributos (força SALE_FORMAT=Kit por categoria, uma vez — schema é o mesmo p/ todos) ─

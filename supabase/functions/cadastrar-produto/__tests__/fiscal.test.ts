@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { montarLinhasProduto, validarProdutoNovo, type ProdutoEntrada } from '../../_shared/produto/validar.ts';
-import { validarFiscalDaEntrada, fiscalEfetivo } from '../processar.ts';
+import { validarFiscalDaEntrada, fiscalEfetivo, validarNcmDaEntrada } from '../processar.ts';
 
 const entrada: ProdutoEntrada = {
   nomePai: 'Produto X', origem: 'nacional', unidade: 'UN',
@@ -66,5 +66,42 @@ describe('fiscal no cadastro manual (ADR-0135)', () => {
     expect(v(`  ${'x'.repeat(120)}  `)).toEqual([]);
     expect(v('x'.repeat(121)).map((e) => e.campo)).toContain('fiscal.descricaoFiscal');
     expect(v(5).map((e) => e.campo)).toContain('fiscal.descricaoFiscal');
+  });
+});
+
+// ADR-0187 — NCM na tabela oficial (fronteira real: o rpc do fake admin).
+describe('validarNcmDaEntrada (ADR-0187)', () => {
+  const fakeAdmin = (modo: 'vigente' | 'vencido' | 'inexistente' | 'erro') => {
+    const chamadas: Array<{ fn: string; args: unknown }> = [];
+    const admin = {
+      rpc: async (fn: string, args: { p_codigos: string[] }) => {
+        chamadas.push({ fn, args });
+        if (modo === 'erro') return { data: null, error: { message: 'fora do ar' } };
+        if (modo === 'inexistente') return { data: [], error: null };
+        return { data: args.p_codigos.map((codigo) => ({ codigo, vigente: modo === 'vigente' })), error: null };
+      },
+    } as never;
+    return { admin, chamadas };
+  };
+  it('vencido → mensagem "não está mais vigente"', async () => {
+    const { admin } = fakeAdmin('vencido');
+    expect(await validarNcmDaEntrada(admin, entrada, true)).toEqual(['NCM 39269090 não está mais vigente']);
+  });
+  it('inexistente → mensagem "não existe na tabela oficial"', async () => {
+    const { admin } = fakeAdmin('inexistente');
+    expect(await validarNcmDaEntrada(admin, entrada, true)).toEqual(['NCM 39269090 não existe na tabela oficial']);
+  });
+  it('vigente → []', async () => {
+    const { admin } = fakeAdmin('vigente');
+    expect(await validarNcmDaEntrada(admin, entrada, true)).toEqual([]);
+  });
+  it('sem módulo → [] e nenhum rpc', async () => {
+    const { admin, chamadas } = fakeAdmin('inexistente');
+    expect(await validarNcmDaEntrada(admin, entrada, false)).toEqual([]);
+    expect(chamadas.length).toBe(0);
+  });
+  it('erro de leitura → lança (nunca "válido")', async () => {
+    const { admin } = fakeAdmin('erro');
+    await expect(validarNcmDaEntrada(admin, entrada, true)).rejects.toThrow();
   });
 });

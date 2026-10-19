@@ -27,6 +27,7 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   titulo_longo: 400,
   preco_invalido: 400,
   kit_duplicado: 400,
+  ncm_invalido: 400,
   base_nao_encontrada: 404,
   base_sem_variacao: 409,
   base_multivariacao: 409,

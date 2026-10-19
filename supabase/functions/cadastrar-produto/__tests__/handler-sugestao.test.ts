@@ -8,6 +8,8 @@ const f = vi.hoisted(() => ({
   db: {} as Record<string, Linha[]>,
   rpcs: [] as Array<{ nome: string; args: Linha }>,
   seq: 0,
+  fiscal: false,
+  ncm: 'vigente' as 'vigente' | 'inexistente' | 'erro',
 }));
 
 function builder(tabela: string) {
@@ -61,6 +63,11 @@ vi.mock('../../_shared/supabase.ts', () => ({
       f.rpcs.push({ nome, args });
       if (nome === 'proximo_codigo_produto') return { data: 12, error: null }; // PAI 10, SKUs 11 e 12
       if (nome === 'proximo_numero_lote') return { data: 1, error: null };
+      if (nome === 'ncm_consultar') {
+        if (f.ncm === 'erro') return { data: null, error: { message: 'fora do ar' } };
+        const cods = (args as { p_codigos: string[] }).p_codigos;
+        return { data: f.ncm === 'inexistente' ? [] : cods.map((codigo) => ({ codigo, vigente: true })), error: null };
+      }
       return { data: null, error: null };
     },
   }),
@@ -68,6 +75,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
 vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn() }));
 vi.mock('../../_shared/produto/modulo.ts', () => ({
   exigirModulo: vi.fn(async (_a: unknown, _o: string, m: string) => m === 'estoque'),
+  moduloHabilitadoStrict: vi.fn(async (_a: unknown, _o: string, m: string) => m === 'fiscal' && f.fiscal),
 }));
 vi.mock('../../_shared/produto/tipo-produto.ts', () => ({ tiposProdutoDaOrg: vi.fn().mockResolvedValue([]) }));
 vi.mock('../../_shared/produto/codigos.ts', async (orig) => ({
@@ -82,7 +90,7 @@ beforeAll(async () => {
   await import('../index.ts');
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
-beforeEach(() => { f.db = {}; f.rpcs = []; f.seq = 0; });
+beforeEach(() => { f.db = {}; f.rpcs = []; f.seq = 0; f.fiscal = false; f.ncm = 'vigente'; });
 
 const REF = `nfe:${'1'.repeat(44)}:2`;
 const corpo = (quantidades: number[], extra: Linha = {}) => ({
@@ -144,5 +152,40 @@ describe('cadastrar-produto — sugestão de distribuição da nota', () => {
     const r = await post(corpo([1, 0], { origemNota: undefined, refNota: undefined, fatorNota: undefined }));
     expect(r.status).toBe(400);
     expect(f.db.familias ?? []).toEqual([]);
+  });
+});
+
+// ADR-0187 — NCM na tabela oficial, na fronteira real do handler (nada é gravado/enfileirado).
+describe('cadastrar-produto — NCM na tabela oficial', () => {
+  const comFiscal = () => corpo([0, 0], {
+    origemNota: undefined, refNota: undefined, fatorNota: undefined, unidade: 'UN',
+    variacoes: [{ nome: 'Azul', preco: 50, custo: 14.5 }],
+    fiscal: { ncm: '75937727', origemNfe: 0, tributacaoIcms: '102' },
+  });
+
+  it('módulo fiscal + NCM inexistente → 400 com a copy; zero inserts, zero rpc de código, zero enqueue', async () => {
+    f.fiscal = true; f.ncm = 'inexistente';
+    const { enfileirarFamilia } = await import('../../_shared/queue.ts');
+    vi.mocked(enfileirarFamilia).mockClear();
+    const r = await post(comFiscal());
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(await r.json())).toContain('NCM 75937727 não existe na tabela oficial');
+    expect(f.db.familias ?? []).toEqual([]);
+    expect(f.db.lotes ?? []).toEqual([]);
+    expect(f.rpcs.some((c) => c.nome === 'proximo_codigo_produto')).toBe(false);
+    expect(enfileirarFamilia).not.toHaveBeenCalled();
+  });
+
+  it('erro de leitura da tabela de NCM → 500, nada gravado', async () => {
+    f.fiscal = true; f.ncm = 'erro';
+    const r = await post(comFiscal());
+    expect(r.status).toBe(500);
+    expect(f.db.familias ?? []).toEqual([]);
+  });
+
+  it('NCM vigente → segue para o cadastro (200)', async () => {
+    f.fiscal = true;
+    const r = await post(comFiscal());
+    expect(r.status).toBe(200);
   });
 });

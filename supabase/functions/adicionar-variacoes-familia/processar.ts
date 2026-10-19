@@ -10,6 +10,7 @@ import {
   classificarFamilia, gradeDaFamilia, numeracaoPublicavel, tamanhosDaGrade, tipoDaGradeTamanho,
 } from '../_shared/produto/tipos-produto-valores.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
+import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 
 type Admin = ReturnType<typeof adminClient>;
 
@@ -631,4 +632,19 @@ export function montarVariacaoNova(
     // comportamento desenhado do ADR-0078 F2, não regressão desta feature.
     atacado: null,
   };
+}
+
+/** ADR-0187: a família clonada precisa ter NCM existente e vigente — roda DEPOIS do curto-circuito
+ *  de idempotência e ANTES de reservar código/criar lote. `null` = pode seguir; senão a resposta
+ *  de erro (400 NCM inválido; 500 se a tabela não pôde ser lida — fail-closed). */
+export async function checarNcmDaFamilia(
+  admin: ReturnType<typeof adminClient>, ncm: string | null,
+): Promise<{ status: number; error: string } | null> {
+  try {
+    const [invalido] = await ncmsInvalidos(admin, [ncm]);
+    return invalido ? { status: 400, error: `${mensagemNcm(invalido)} — corrija no botão Fiscal antes.` } : null;
+  } catch (e) {
+    console.error('adicionar_variacoes_familia_ncm_falhou', { erro: String(e) });
+    return { status: 500, error: 'Não foi possível verificar o NCM. Tente novamente.' };
+  }
 }

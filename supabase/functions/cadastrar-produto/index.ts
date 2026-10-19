@@ -15,14 +15,14 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
-import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import {
   validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, type ProdutoEntrada, type SugestaoDistribuicao,
 } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
-  aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
+  aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, validarNcmDaEntrada, fiscalEfetivo,
   entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada, gradeOuGeneroDivergem, refNotaDiverge,
   sugestaoDiverge,
 } from './processar.ts';
@@ -47,7 +47,13 @@ Deno.serve(async (req) => {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
 
-  const moduloFiscal = await exigirModulo(admin, orgId, 'fiscal');
+  // ADR-0187: leitura que falha NÃO vira "sem módulo" (senão o gate de NCM seria pulado).
+  let moduloFiscal: boolean;
+  try { moduloFiscal = await moduloHabilitadoStrict(admin, orgId, 'fiscal'); }
+  catch (e) {
+    console.error('cadastrar-produto: leitura do módulo fiscal falhou:', e);
+    return json({ error: 'Não foi possível verificar o módulo fiscal. Tente novamente.' }, 500);
+  }
   // `?? 'simples'` nunca é alcançado numa org com o módulo ligado: `usuarios/index.ts` só deixa
   // `modulos_habilitados` incluir 'fiscal' depois de `pendenciasAtivacaoFiscal` passar, que por
   // sua vez recusa regime_tributario != 'simples' (v1 é só Simples Nacional, ADR-0135 D-6) e
@@ -96,6 +102,14 @@ Deno.serve(async (req) => {
   if (erros.length > 0) return json({ erros }, 400);
 
   const faltasFiscais = validarFiscalDaEntrada(produto, moduloFiscal, regimeOrg);
+  // ADR-0187: NCM na tabela oficial (só se o formato já passou — evita 2 mensagens para o mesmo NCM).
+  if (faltasFiscais.length === 0) {
+    try { faltasFiscais.push(...await validarNcmDaEntrada(admin, produto, moduloFiscal)); }
+    catch (e) {
+      console.error('cadastrar-produto: leitura da tabela de NCM falhou:', e);
+      return json({ error: 'Não foi possível verificar o NCM. Tente novamente.' }, 500);
+    }
+  }
   if (faltasFiscais.length > 0) {
     return json({ erros: faltasFiscais.map((mensagem) => ({ campo: 'fiscal', mensagem })) }, 400);
   }

@@ -7,6 +7,8 @@ import { gradeEfetivaDaEntrada } from '../_shared/produto/validar.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao, SugestaoDistribuicao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
+import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
   GRADES_DO_TIPO, gradeDaFamilia, tamanhosDaGrade, tamanhosValidosParaTipos, type GradeTamanho,
 } from '../_shared/produto/tipos-produto-valores.ts';
@@ -173,6 +175,15 @@ export function validarFiscalDaEntrada(
     unidade: p.unidade ?? null,
     origem: p.origem,
   }, regimeOrg);
+}
+
+/** ADR-0187: NCM da entrada precisa existir e estar vigente em `ncm_oficial`. Só com módulo fiscal
+ *  (sem módulo o fiscal é descartado antes). LANÇA em erro de leitura — o handler responde 500. */
+export async function validarNcmDaEntrada(
+  admin: SupabaseClient, p: ProdutoEntrada, moduloFiscalAtivo: boolean,
+): Promise<string[]> {
+  if (!moduloFiscalAtivo) return [];
+  return (await ncmsInvalidos(admin, [p.fiscal?.ncm])).map(mensagemNcm);
 }
 
 /** Uma linha de `variacoes` já gravada, como o `select` do handler devolve (colunas snake_case,

@@ -5,7 +5,10 @@ import { processarAtualizacaoFiscal, validarShapeEntrada, type DepsAtualizarFisc
 function fakeAdmin(over: {
   familia?: Record<string, unknown> | null; regime?: string;
   erros?: { familias?: string; empresa_fiscal?: string; update?: string };
+  // ncm_consultar: default = todo código vigente; 'vencido'/'inexistente'/'erro' forçam o caso.
+  ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
 } = {}) {
+  const rpcs: string[] = [];
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const reads: Array<{ table: string; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -43,7 +46,14 @@ function fakeAdmin(over: {
     };
     return api;
   }
-  return { admin: { from: chain } as never, writes, reads };
+  const rpc = async (fn: string, args: { p_codigos: string[] }) => {
+    rpcs.push(fn);
+    const modo = over.ncm ?? 'vigente';
+    if (modo === 'erro') return { data: null, error: { message: 'rpc fora do ar' } };
+    if (modo === 'inexistente') return { data: [], error: null };
+    return { data: args.p_codigos.map((codigo) => ({ codigo, vigente: modo === 'vigente' })), error: null };
+  };
+  return { admin: { from: chain, rpc } as never, writes, reads, rpcs };
 }
 
 const FAMILIA_BASE = {
@@ -121,6 +131,33 @@ describe('processarAtualizacaoFiscal', () => {
     const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
     expect(r).toEqual({ tipo: 'falha', mensagem: 'timeout' });
     expect(writes.length).toBe(0);
+  });
+
+  it('NCM fora da tabela oficial (ADR-0187) → invalido com a copy, zero update e zero enqueue', async () => {
+    const { admin, writes } = fakeAdmin({ ncm: 'inexistente' });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), {
+      familiaId: 'fam-1', fiscal: { ...FISCAL_OK, ncm: '75937727' },
+    });
+    expect(r).toEqual({ tipo: 'invalido', erros: ['NCM 75937727 não existe na tabela oficial'] });
+    expect(writes.length).toBe(0);
+    expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  it('NCM vencido → invalido "não está mais vigente", zero update', async () => {
+    const { admin, writes } = fakeAdmin({ ncm: 'vencido' });
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'invalido', erros: ['NCM 39269090 não está mais vigente'] });
+    expect(writes.length).toBe(0);
+  });
+
+  it('erro lendo ncm_consultar → falha (fail-closed), zero update e zero enqueue', async () => {
+    const { admin, writes } = fakeAdmin({ ncm: 'erro' });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r.tipo).toBe('falha');
+    expect(writes.length).toBe(0);
+    expect(enfileirarPush).not.toHaveBeenCalled();
   });
 
   it('erro no update → falha (não "invalido" com mensagem crua de banco)', async () => {

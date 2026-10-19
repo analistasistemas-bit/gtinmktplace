@@ -6,13 +6,11 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { openrouterClient } from '../_shared/ai/client.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { extrairSugestaoNcm, montarPromptNcm } from './prompt.ts';
+import { extrairSugestaoNcm, filtrarSugestaoNcm, montarPromptNcm, SEM_SUGESTAO } from './prompt.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
-
-const SEM_SUGESTAO = { ncm: null, justificativa: 'sugestão indisponível agora — preencha manualmente' };
 
 interface EntradaFamilia { familiaId: string }
 interface EntradaProduto { nome: string; descricao?: string; categoria?: string }
@@ -75,7 +73,7 @@ Deno.serve(async (req) => {
       { signal: AbortSignal.timeout(30_000) },
     );
     const raw = resp.choices[0]?.message?.content ?? '{}';
-    return json(extrairSugestaoNcm(raw));
+    return json(await filtrarSugestaoNcm(admin, extrairSugestaoNcm(raw)));
   } catch (e) {
     console.error('sugerir-ncm: OpenRouter falhou:', e);
     return json(SEM_SUGESTAO);

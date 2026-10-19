@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirErroPendente, decidirIncompleto,
+  aplicarEstoqueInicial, checarNcmDaFamilia, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirErroPendente, decidirIncompleto,
   decidirRetry, desfazerCriacao, ehNotaJaImportada, MSG_NOTA_JA_IMPORTADA, detectarUP, haAtualizacaoComErro, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
@@ -990,5 +990,45 @@ describe('decidirRetry — refNota', () => {
   it('sem refNota dos dois lados (intenção antiga) → reaplicar como sempre', () => {
     expect(decidirRetry(intencao(), [corpo()], ['00000103'])).toEqual(reaplicar);
     expect(decidirRetry(intencao(), [corpo()], ['00000103'], { gravada: undefined, corpo: undefined })).toEqual(reaplicar);
+  });
+});
+
+// ADR-0187 — fronteira real: o fake admin só aceita o rpc; qualquer `from` (insert em lotes/familias,
+// update, delete) estoura — provando que a checagem não escreve nada.
+describe('checarNcmDaFamilia (ADR-0187)', () => {
+  const fake = (rpc: () => unknown) => {
+    const chamadas: string[] = [];
+    const admin = {
+      rpc: async (fn: string) => { chamadas.push(fn); return rpc(); },
+      from: () => { throw new Error('não deve tocar tabela'); },
+    } as never;
+    return { admin, chamadas };
+  };
+  it('NCM inexistente → 400 com a copy + orientação, sem tocar tabela', async () => {
+    const { admin, chamadas } = fake(() => ({ data: [], error: null }));
+    expect(await checarNcmDaFamilia(admin, '75937727')).toEqual({
+      status: 400, error: 'NCM 75937727 não existe na tabela oficial — corrija no botão Fiscal antes.',
+    });
+    expect(chamadas).toEqual(['ncm_consultar']);
+  });
+  it('NCM vencido → 400 "não está mais vigente"', async () => {
+    const { admin } = fake(() => ({ data: [{ codigo: '75937727', vigente: false }], error: null }));
+    const r = await checarNcmDaFamilia(admin, '75937727');
+    expect(r?.status).toBe(400);
+    expect(r?.error).toContain('não está mais vigente');
+  });
+  it('NCM vigente → null (segue)', async () => {
+    const { admin } = fake(() => ({ data: [{ codigo: '62034900', vigente: true }], error: null }));
+    expect(await checarNcmDaFamilia(admin, '62034900')).toBeNull();
+  });
+  it('família sem NCM (null) → null, sem rpc', async () => {
+    const { admin, chamadas } = fake(() => ({ data: [], error: null }));
+    expect(await checarNcmDaFamilia(admin, null)).toBeNull();
+    expect(chamadas).toEqual([]);
+  });
+  it('erro de leitura → 500 (fail-closed)', async () => {
+    const { admin } = fake(() => ({ data: null, error: { message: 'fora do ar' } }));
+    const r = await checarNcmDaFamilia(admin, '62034900');
+    expect(r?.status).toBe(500);
   });
 });

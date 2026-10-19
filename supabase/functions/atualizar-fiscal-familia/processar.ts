@@ -1,6 +1,7 @@
 // ADR-0135 D-9 — edição fiscal de família existente (o "modo edição" que faltava).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { camposFiscaisFaltantes, UNIDADES_FISCAIS } from '../_shared/fiscal/validar.ts';
+import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 
 export interface EntradaFiscal {
   familiaId: string;
@@ -82,6 +83,15 @@ export async function processarAtualizacaoFiscal(
     unidade: unidadeEfetiva, origem: familia.origem,
   }, regime);
   if (erros.length) return { tipo: 'invalido', erros };
+
+  // ADR-0187: NCM precisa existir e estar vigente na tabela oficial. Falha de leitura é
+  // 'falha' (fail-closed), nunca "válido".
+  try {
+    const invalidos = await ncmsInvalidos(admin, [f.ncm]);
+    if (invalidos.length) return { tipo: 'invalido', erros: invalidos.map(mensagemNcm) };
+  } catch (e) {
+    return { tipo: 'falha', mensagem: (e as Error).message };
+  }
 
   // ADR-0181 D-5: chave ausente (cliente antigo) não mexe na coluna.
   const temDescricao = 'descricaoFiscal' in f;

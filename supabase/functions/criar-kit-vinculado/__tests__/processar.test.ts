@@ -264,7 +264,7 @@ function chain(table: string, state: {
       return { data: [], error: null };
     }
     if (table === 'lotes') {
-      if (rec.op === 'insert') return { data: { id: 'lote-1' }, error: null };
+      if (rec.op === 'insert') { state.inserts.lotes.push(rec.payload as Record<string, unknown>); return { data: { id: 'lote-1' }, error: null }; }
       return { data: null, error: null };
     }
     return { data: null, error: null };
@@ -284,6 +284,8 @@ function depsFake(opts: {
   llm?: (input: unknown, alvos: unknown) => Promise<Record<string, string>>;
   marcaOrg?: { marcaPadrao?: string; marcaPropria: boolean };
   atributosMlBase?: { id: string; value_id?: string; value_name?: string }[];
+  // ncm_consultar (ADR-0187): default vigente.
+  ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
@@ -317,7 +319,7 @@ function depsFake(opts: {
     familia_id: f.id, codigo: `8000000${f.kit_multiplicador}`,
   }));
 
-  const inserts = { familias: [] as Record<string, unknown>[], variacoes: [] as Record<string, unknown>[] };
+  const inserts = { familias: [] as Record<string, unknown>[], variacoes: [] as Record<string, unknown>[], lotes: [] as Record<string, unknown>[] };
   const enfileirados = { processFamilia: 0, publicarFamilias: 0, publicarFamiliasIds: [] as string[][] };
   const state = {
     baseFamilia, baseVariacoes, existentesFamilias, existentesVariacoes,
@@ -336,6 +338,12 @@ function depsFake(opts: {
         return { data: ultimo, error: null };
       }
       if (name === 'proximo_numero_lote') return { data: 1, error: null };
+      if (name === 'ncm_consultar') {
+        const modo = opts.ncm ?? 'vigente';
+        if (modo === 'erro') return { data: null, error: { message: 'rpc fora do ar' } };
+        if (modo === 'inexistente') return { data: [], error: null };
+        return { data: (args.p_codigos as string[]).map((codigo) => ({ codigo, vigente: modo === 'vigente' })), error: null };
+      }
       return { data: null, error: null };
     }),
   };
@@ -357,7 +365,7 @@ function depsFake(opts: {
     marcaOrg,
   };
 
-  return { deps, inserts, enfileirados };
+  return { deps, inserts, enfileirados, admin };
 }
 
 describe('criarKitsVinculados', () => {
@@ -429,6 +437,43 @@ describe('criarKitsVinculados', () => {
     });
     expect(r.ok).toEqual(false);
     expect(r.motivo).toEqual('base_multivariacao');
+  });
+
+  // ADR-0187: a base clonada precisa ter NCM existente e vigente na tabela oficial.
+  it('base com NCM inexistente → ncm_invalido, sem lote, sem família, sem reservar códigos', async () => {
+    const { deps, inserts, admin } = depsFake({ ncm: 'inexistente' });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(false);
+    expect(r.motivo).toEqual('ncm_invalido');
+    expect(r.mensagem).toEqual('NCM valor-ncm não existe na tabela oficial — corrija no botão Fiscal antes.');
+    expect(inserts.lotes).toEqual([]);
+    expect(inserts.familias).toEqual([]);
+    expect(inserts.variacoes).toEqual([]);
+    expect(admin.rpc).not.toHaveBeenCalledWith('proximo_codigo_produto', expect.anything());
+  });
+
+  it('base com NCM vencido → ncm_invalido "não está mais vigente"', async () => {
+    const { deps, inserts } = depsFake({ ncm: 'vencido' });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.motivo).toEqual('ncm_invalido');
+    expect(r.mensagem).toContain('não está mais vigente');
+    expect(inserts.lotes).toEqual([]);
+  });
+
+  it('erro lendo a tabela de NCM → falha_leitura (fail-closed), sem lote', async () => {
+    const { deps, inserts } = depsFake({ ncm: 'erro' });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(false);
+    expect(r.motivo).toEqual('falha_leitura');
+    expect(inserts.lotes).toEqual([]);
+    expect(inserts.familias).toEqual([]);
+  });
+
+  it('reenvio TOTAL (kits já existem) com NCM hoje inválido continua devolvendo o resultado normal', async () => {
+    const { deps, inserts } = depsFake({ ncm: 'inexistente', chavesJaUsadas: ['uuid-k2'] });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(true);
+    expect(inserts.lotes).toEqual([]);
   });
 
   it('base sem custo é recusada LOUD (custo alimenta markup, ADR-0055)', async () => {

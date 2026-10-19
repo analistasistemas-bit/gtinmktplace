@@ -17,7 +17,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirIncompleto, decidirRetry,
+  aplicarEstoqueInicial, checarNcmDaFamilia, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirIncompleto, decidirRetry,
   desfazerCriacao, haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   MSG_NOTA_JA_IMPORTADA, notaJaImportada,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
@@ -216,6 +216,12 @@ Deno.serve(async (req) => {
   if (familiaGrade && vivas.length + variacoesEntrada.length > 60) {
     return json({ error: 'Passaria do limite de 60 variações por produto.' }, 400);
   }
+
+  // ADR-0187: a família clonada não pode carregar NCM fora da tabela oficial. Depois do ramo
+  // `jaExistente` (retry de pedido já criado devolve o resultado normal) e antes de reservar
+  // código ou criar lote — recusa sem deixar órfão.
+  const erroNcm = await checarNcmDaFamilia(admin, (anterior.ncm as string | null) ?? null);
+  if (erroNcm) return json({ error: erroNcm.error }, erroNcm.status);
 
   // Os guards de banco (20260804113000) rejeitariam com erro cru — valida antes e explica.
   if (!CODIGO_8_DIGITOS.test(codigoPai) || (variacoesVivas ?? []).some((v) => !CODIGO_8_DIGITOS.test(v.codigo as string))) {
