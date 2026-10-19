@@ -123,6 +123,13 @@ pré-preenchido da nota (aparece já marcado inválido, operador corrige).
 
 ## Deploy
 
+**Revisado após a revisão do plano (Codex):** rollout aditivo em duas migrations — (A) tabela +
+carga + `ncm_consultar` + resumo do Estoque → edges → front → (B) FK `NOT VALID` por último, para
+nenhuma edge antiga bater na FK com erro cru. Os fluxos de cópia `adicionar-variacoes-familia` e
+`criar-kit-vinculado` também validam. Detalhe no plano.
+
+Texto original:
+
 Migration (`supabase db push`) → edges `atualizar-fiscal-familia`, `cadastrar-produto`,
 `ingest-lote`, `sugerir-ncm`, `publish-familia-ml`, `update-familia-ml`, `sincronizar-fiscal-ml`
 (e qualquer outra que importe `_shared/fiscal/gate.ts` ou o helper novo) → front. Ordem: migration
