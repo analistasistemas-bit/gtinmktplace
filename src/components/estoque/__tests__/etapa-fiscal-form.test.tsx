@@ -36,10 +36,33 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
     fireEvent.click(screen.getByRole('button', { name: /39269090/ }));
     expect(aplicar).toHaveBeenCalled();
   });
-  it('fiscalCompleto exige ncm 8 dígitos + origemNfe coerente + csosn', () => {
-    expect(fiscalCompleto(fiscalVazio(), 'nacional')).toBe(false);
-    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional')).toBe(true);
-    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '1', tributacaoIcms: '102' }, 'nacional')).toBe(false);
+  it('colar NCM com pontos (6203.49.00) normaliza para 62034900 (maxLength não trunca antes)', async () => {
+    const onMudar = vi.fn();
+    render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={onMudar}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('NCM'));
+    await user.paste('6203.49.00');
+    expect(onMudar).toHaveBeenLastCalledWith({ ncm: '62034900' });
+  });
+  it.each([
+    ['ok', { status: 'ok', descricao: 'Calças › De outras' }, '6203.49.00 — Calças › De outras'],
+    ['inexistente', { status: 'inexistente', descricao: null }, 'NCM 75937727 não existe na tabela oficial'],
+    ['vencido', { status: 'vencido', descricao: 'Velho' }, 'NCM 75937727 não está mais vigente'],
+    ['erro', { status: 'erro', descricao: null }, 'Não foi possível verificar o NCM'],
+  ] as const)('mostra o resultado da consulta oficial (%s)', (_n, ncmOficial, texto) => {
+    const ncm = ncmOficial.status === 'ok' ? '62034900' : '75937727';
+    render(<EtapaFiscalForm valor={{ ...fiscalVazio(), ncm }} origem="nacional" onMudar={vi.fn()}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} ncmOficial={ncmOficial} />);
+    expect(screen.getByText(texto)).toBeInTheDocument();
+  });
+  it('fiscalCompleto exige ncm 8 dígitos + origemNfe coerente + csosn + NCM oficial ok', () => {
+    expect(fiscalCompleto(fiscalVazio(), 'nacional', 'ok')).toBe(false);
+    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', 'ok')).toBe(true);
+    for (const st of ['incompleto', 'carregando', 'inexistente', 'vencido', 'erro'] as const) {
+      expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', st)).toBe(false);
+    }
+    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '1', tributacaoIcms: '102' }, 'nacional', 'ok')).toBe(false);
   });
 
   // F2, fix round 1: trocar de uma origem que exige FCI (3/5/8) para uma que não exige

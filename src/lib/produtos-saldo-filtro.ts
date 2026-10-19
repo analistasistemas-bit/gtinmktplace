@@ -46,6 +46,7 @@ export function produtoPublicado(p: ProdutoEstoqueResumo, canais: Map<string, st
 export function produtoFiscalPendente(p: ProdutoEstoqueResumo, regimeOrg: 'simples' | 'normal' | undefined): boolean {
   if (!regimeOrg) return false;
   if (p.canInvoice === false) return true;
+  if (p.ncmVigente === false) return true; // ADR-0187: NCM inexistente/vencido (SQL decide)
   return fiscalIncompleto({
     ncm: p.ncm, cest: p.cest, origemNfe: p.origemNfe, fci: p.fci,
     tributacaoIcms: p.tributacaoIcms, tributacaoIcmsRegime: p.tributacaoIcmsRegime,

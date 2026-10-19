@@ -6,15 +6,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { escolherNoSelect } from '@/test/select';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogFiscalProduto } from '../dialog-fiscal-produto';
 import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
+    rpc: vi.fn(),
     functions: { invoke: vi.fn() },
   },
 }));
+
+// ADR-0187: consulta oficial de NCM. Padrão: todo código existe e vigora, menos 75937727 (inexistente).
+function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
+  if (fn !== 'ncm_consultar') return Promise.resolve({ data: null, error: null });
+  return Promise.resolve({
+    data: args.p_codigos.filter((c) => c !== '75937727').map((c) => ({ codigo: c, descricao: 'Descrição oficial', vigente: true })),
+    error: null,
+  });
+}
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -45,6 +56,7 @@ function mockSugestaoNcm(ncm: string | null = null) {
 }
 
 beforeEach(() => {
+  (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
   mockFamilia();
   mockSugestaoNcm(null);
 });
@@ -55,15 +67,16 @@ afterEach(() => {
 });
 
 function renderDialog(props: Partial<Parameters<typeof DialogFiscalProduto>[0]> = {}) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <DialogFiscalProduto
+    <QueryClientProvider client={qc}><DialogFiscalProduto
       familiaId="fam-1"
       fila={['fam-1']}
       onFechar={props.onFechar ?? vi.fn()}
       onAvancar={props.onAvancar ?? vi.fn()}
       onSalvo={props.onSalvo ?? vi.fn()}
       {...props}
-    />,
+    /></QueryClientProvider>,
   );
 }
 
@@ -96,6 +109,29 @@ describe('DialogFiscalProduto — carrega valores existentes', () => {
   });
 });
 
+describe('DialogFiscalProduto — NCM na tabela oficial (ADR-0187)', () => {
+  it('NCM inexistente: mostra o erro e trava o Salvar', async () => {
+    mockFamilia({ ...FAMILIA_MOCK, ncm: '75937727' });
+    renderDialog();
+    expect(await screen.findByText('NCM 75937727 não existe na tabela oficial')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+  });
+
+  it('NCM existente: mostra NNNN.NN.NN — descrição e habilita o Salvar', async () => {
+    mockFamilia({ ...FAMILIA_MOCK, ncm: '62034900' });
+    renderDialog();
+    expect(await screen.findByText(/^6203\.49\.00 — /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled();
+  });
+
+  it('falha na consulta: avisa e mantém o Salvar travado (fail-closed)', async () => {
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({ data: null, error: { message: 'boom' } });
+    renderDialog();
+    expect(await screen.findByText('Não foi possível verificar o NCM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+  });
+});
+
 describe('DialogFiscalProduto — Salvar', () => {
   it('chama atualizar-fiscal-familia com o shape da Task 9 e fecha ao suceder', async () => {
     (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockImplementation((fn: string) => {
@@ -109,6 +145,7 @@ describe('DialogFiscalProduto — Salvar', () => {
     renderDialog({ onFechar, onSalvo });
 
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => expect(supabase.functions.invoke).toHaveBeenCalledWith(
@@ -143,6 +180,7 @@ describe('DialogFiscalProduto — Salvar', () => {
     renderDialog({ onFechar });
 
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Salvar' }));
 
     expect(await screen.findByText('ncm (8 dígitos)')).toBeInTheDocument();
@@ -198,10 +236,12 @@ describe('DialogFiscalProduto — troca de familiaId com fetch pendente (C2)', (
     await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
 
     rerender(
-      <DialogFiscalProduto
-        familiaId="fam-2" fila={['fam-1', 'fam-2']}
-        onFechar={vi.fn()} onAvancar={vi.fn()} onSalvo={vi.fn()}
-      />,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DialogFiscalProduto
+          familiaId="fam-2" fila={['fam-1', 'fam-2']}
+          onFechar={vi.fn()} onAvancar={vi.fn()} onSalvo={vi.fn()}
+        />
+      </QueryClientProvider>,
     );
 
     // Enquanto o fetch de fam-2 está pendente: nada do produto anterior sobra na tela, e

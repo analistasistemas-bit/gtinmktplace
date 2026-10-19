@@ -13,6 +13,15 @@ import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 import { supabase } from '@/lib/supabase';
 
+// ADR-0187: consulta oficial de NCM. Padrão: todo código existe e vigora, menos 75937727 (inexistente).
+function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
+  if (fn !== 'ncm_consultar') return Promise.resolve({ data: null, error: null });
+  return Promise.resolve({
+    data: args.p_codigos.filter((c) => c !== '75937727').map((c) => ({ codigo: c, descricao: 'Descrição oficial', vigente: true })),
+    error: null,
+  });
+}
+
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
 // Hoisted (não `vi.fn()` inline na factory) para o teste do lote de fotos poder inspecionar
 // COM QUE argumentos `uploadFotoProduto` foi chamado — é isso que prova o casamento posicional
@@ -37,6 +46,7 @@ vi.mock('@/lib/produtos-saldo', () => ({
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
+    rpc: vi.fn(),
     functions: { invoke: vi.fn() },
   },
 }));
@@ -811,6 +821,7 @@ it('DialogCadastroProduto sem o módulo fiscal nunca invoca sugerir-ncm', async 
 describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
   beforeEach(() => {
     modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
     (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { ncm: '39269090', justificativa: 'plástico reciclado' }, error: null,
     });
@@ -851,6 +862,23 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     expect(supabase.functions.invoke).toHaveBeenCalledTimes(1);
   });
 
+  it('NCM inexistente mostra o erro e trava o Cadastrar; NCM oficial mostra a descrição', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+    await escolherNoSelect(user, /Origem fiscal/i, '0');
+    await escolherNoSelect(user, 'CSOSN', '102');
+
+    await user.type(screen.getByLabelText('NCM'), '75937727');
+    expect(await screen.findByText('NCM 75937727 não existe na tabela oficial')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText('NCM'));
+    await user.type(screen.getByLabelText('NCM'), '62034900');
+    expect(await screen.findByText(/^6203\.49\.00 — /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
   it('Voltar retorna à etapa 1 sem perder os dados já digitados', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -875,7 +903,7 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     await user.type(screen.getByLabelText('NCM'), '39269090');
     await escolherNoSelect(user, /Origem fiscal/i, '0');
     await escolherNoSelect(user, 'CSOSN', '102');
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled());
 
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 

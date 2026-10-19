@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { formatarNomeProduto } from '@/lib/texto';
+import { useNcmOficial } from '@/hooks/useNcmOficial';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
@@ -44,6 +45,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
 }) {
   const [familia, setFamilia] = useState<FamiliaFiscalCarregada | null>(null);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+  const ncmOficial = useNcmOficial(fiscal.ncm);
   const [unidade, setUnidade] = useState('');
   const [sugestaoNcm, setSugestaoNcm] = useState<{ ncm: string; justificativa: string } | null>(null);
   const [carregandoSugestao, setCarregandoSugestao] = useState(false);
@@ -107,7 +109,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
 
   const precisaEscolherUnidade = !!familia && !unidadeValida(familia.unidade);
   const podeSalvar = !!familia
-    && fiscalCompleto(fiscal, familia.origem)
+    && fiscalCompleto(fiscal, familia.origem, ncmOficial.status)
     && (!precisaEscolherUnidade || !!unidade)
     && salvando === null;
 
@@ -178,6 +180,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
           <div className="flex min-w-0 flex-col gap-4">
             <EtapaFiscalForm
               valor={fiscal}
+              ncmOficial={ncmOficial}
               origem={familia.origem}
               onMudar={(patch) => setFiscal((prev) => ({ ...prev, ...patch }))}
               sugestaoNcm={sugestaoNcm}

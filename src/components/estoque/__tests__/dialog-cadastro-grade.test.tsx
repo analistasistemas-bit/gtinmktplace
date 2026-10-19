@@ -3,9 +3,19 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { ROTULO_GRADE, ROTULO_GENERO } from '@/lib/tamanhos';
 import { abrirSelect, escolherNoSelect as escolherNoSelectBase } from '@/test/select';
 import userEvent from '@testing-library/user-event';
+import { supabase } from '@/lib/supabase';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { DialogCadastroGrade } from '../dialog-cadastro-grade';
+
+// ADR-0187: consulta oficial de NCM. Padrão: todo código existe e vigora, menos 75937727 (inexistente).
+function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
+  if (fn !== 'ncm_consultar') return Promise.resolve({ data: null, error: null });
+  return Promise.resolve({
+    data: args.p_codigos.filter((c) => c !== '75937727').map((c) => ({ codigo: c, descricao: 'Descrição oficial', vigente: true })),
+    error: null,
+  });
+}
 
 const cadastrarProdutoMock = vi.fn();
 vi.mock('@/lib/produtos-saldo', () => ({
@@ -17,6 +27,7 @@ vi.mock('@/lib/produtos-saldo', () => ({
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
+    rpc: vi.fn(),
     functions: { invoke: vi.fn().mockResolvedValue({ data: null, error: null }) },
   },
 }));
@@ -543,8 +554,36 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
 // e `getByLabelText('Peso')` — rótulo puro, sem sufixo de unidade e sem "de <cor> · <tamanho>".
 // É a regra da Task 8 (`ROTULOS[campo].rotulo`): copiar o `aria-label` da linha aqui quebraria.
 describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
-  beforeEach(() => modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false }));
+  beforeEach(() => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    vi.mocked(supabase.rpc).mockImplementation(rpcNcmPadrao as never);
+  });
   afterEach(() => modulosMock.mockReturnValue({ data: [], isLoading: false }));
+
+  it('NCM inexistente mostra o erro e trava o Cadastrar; NCM oficial mostra a descrição', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
+    await preencherEmbalagem(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await escolherGrade(user, 'letras');
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    await escolherNoSelectBase(user, 'Origem fiscal (NF-e)', '0');
+    await escolherNoSelectBase(user, 'CSOSN', '102');
+
+    await user.type(screen.getByLabelText('NCM'), '75937727');
+    expect(await screen.findByText('NCM 75937727 não existe na tabela oficial')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText('NCM'));
+    await user.type(screen.getByLabelText('NCM'), '62034900');
+    expect(await screen.findByText(/^6203\.49\.00 — /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
 
   it('com o módulo fiscal, o passo fiscal existe e a numeração de etapas cresce', async () => {
     const user = userEvent.setup();
@@ -587,6 +626,7 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     // campo FCI obrigatório.
     await escolherNoSelectBase(user, 'Origem fiscal (NF-e)', '0');
     await escolherNoSelectBase(user, 'CSOSN', '102');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));

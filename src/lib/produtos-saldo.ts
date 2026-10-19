@@ -93,6 +93,8 @@ export interface ProdutoEstoqueResumo {
   tributacaoIcmsRegime?: string | null;
   /** Prontidão de emissão do ML (D-10) — `null` = ainda não verificado. */
   canInvoice?: boolean | null;
+  /** ADR-0187: null = sem NCM; false = preenchido mas inexistente/vencido; true = vigente (SQL decide). */
+  ncmVigente?: boolean | null;
 }
 
 export interface ProdutoComSaldo {
@@ -174,6 +176,7 @@ interface ProdutoResumoRpc {
   tributacao_icms: string | null;
   tributacao_icms_regime: string | null;
   can_invoice: boolean | null;
+  ncm_vigente?: boolean | null;
 }
 
 interface KpisRpc {
@@ -243,6 +246,7 @@ export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
       tributacaoIcms: p.tributacao_icms,
       tributacaoIcmsRegime: p.tributacao_icms_regime,
       canInvoice: p.can_invoice,
+      ncmVigente: p.ncm_vigente ?? null,
     })),
   };
 }

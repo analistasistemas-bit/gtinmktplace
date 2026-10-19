@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
+import type { NcmStatus } from '@/hooks/useNcmOficial';
 
 export interface FiscalForm {
   ncm: string;
@@ -31,8 +32,10 @@ const ORIGENS_COM_FCI = [3, 5, 8];
 
 /** Mesmas regras de `camposFiscaisFaltantes`, restritas aos campos deste form (unidade fica de
  *  fora — validada pela edge sobre o campo `unidade` da família, fora do escopo deste tipo). */
-export function fiscalCompleto(f: FiscalForm, origem: 'nacional' | 'importado' | null): boolean {
+export function fiscalCompleto(f: FiscalForm, origem: 'nacional' | 'importado' | null, ncmStatus: NcmStatus): boolean {
   if (!/^\d{8}$/.test(f.ncm)) return false;
+  // ADR-0187: NCM precisa existir e vigorar na tabela oficial (carregando/erro também travam).
+  if (ncmStatus !== 'ok') return false;
   if (!origem) return false;
   if (!f.origemNfe) return false;
   const origemNfe = Number(f.origemNfe);
@@ -87,9 +90,19 @@ function SeloNota() {
   );
 }
 
+function NcmOficialInfo({ ncm, status, descricao }: { ncm: string; status: NcmStatus; descricao: string | null }) {
+  if (status === 'ok') {
+    return <span className="text-xs text-muted-foreground">{`${ncm.slice(0, 4)}.${ncm.slice(4, 6)}.${ncm.slice(6)} — ${descricao}`}</span>;
+  }
+  const erro = status === 'inexistente' ? `NCM ${ncm} não existe na tabela oficial`
+    : status === 'vencido' ? `NCM ${ncm} não está mais vigente`
+    : status === 'erro' ? 'Não foi possível verificar o NCM' : null;
+  return erro ? <span className="text-xs text-destructive" role="alert">{erro}</span> : null;
+}
+
 export function EtapaFiscalForm({
   valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao, csosnPadrao,
-  sugestaoDaNota, conferido, onConferir,
+  sugestaoDaNota, conferido, onConferir, ncmOficial,
 }: {
   valor: FiscalForm;
   origem: 'nacional' | 'importado' | null;
@@ -105,6 +118,9 @@ export function EtapaFiscalForm({
   sugestaoDaNota?: boolean;
   conferido?: boolean;
   onConferir?: (v: boolean) => void;
+  /** ADR-0187: resultado de `useNcmOficial(valor.ncm)`, chamado pelo dialog (que também o passa
+   *  a `fiscalCompleto`). */
+  ncmOficial?: { status: NcmStatus; descricao: string | null };
 }) {
   const codigosOrigem = origem ? ORIGENS_NFE_POR_ORIGEM[origem] : [];
   const sugerirCsosn = !valor.tributacaoIcms && !!csosnPadrao
@@ -123,9 +139,11 @@ export function EtapaFiscalForm({
         <Input
           id="fiscal-ncm"
           value={valor.ncm}
-          maxLength={8}
+          // Sem maxLength: colar "6203.49.00" truncaria para 8 caracteres ANTES de soDigitos e
+          // perderia dígitos; soDigitos já limita a 8.
           onChange={(e) => onMudar({ ncm: soDigitos(e.target.value, 8) })}
         />
+        {ncmOficial && <NcmOficialInfo ncm={valor.ncm} {...ncmOficial} />}
         <span className="text-xs text-muted-foreground">
           8 dígitos — a Nomenclatura Comum do Mercosul do produto.
         </span>

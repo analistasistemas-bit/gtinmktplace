@@ -125,6 +125,17 @@ describe('filtrarProdutos — fiscal-pendente (ADR-0135 D-9)', () => {
     })).toHaveLength(0);
   });
 
+  it('ncmVigente === false (NCM inexistente/vencido) marca pendente mesmo com o resto completo', () => {
+    const vencido = produto({ ...FISCAL_OK, ncmVigente: false });
+    expect(filtrarProdutos([vencido], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(1);
+    // true e null (sem NCM é coberto pela regra de campos) não adicionam pendência.
+    expect(filtrarProdutos([produto({ ...FISCAL_OK, ncmVigente: true })], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(0);
+  });
+
   it('sem regimeOrg (ainda não carregou) não marca ninguém como pendente', () => {
     const semNcm = produto({ ...FISCAL_OK, ncm: null });
     expect(filtrarProdutos([semNcm], {
