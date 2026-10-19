@@ -454,7 +454,7 @@ function LinhaTabela({
                   <Split className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent processando={migrando} destrutivo rotuloProcessando="Migrando anúncio">
+              <AlertDialogContent processando={migrando} destrutivo rotuloProcessando="Migrando anúncio" onClick={(e) => e.stopPropagation()}>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Migrar para preço por variação?</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -607,7 +607,7 @@ function LinhaTabela({
                 <RotateCcw className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent processando={republicando} rotuloProcessando="Republicando anúncio">
+            <AlertDialogContent processando={republicando} rotuloProcessando="Republicando anúncio" onClick={(e) => e.stopPropagation()}>
               <AlertDialogHeader>
                 <AlertDialogTitle>Corrigir e republicar?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -651,7 +651,7 @@ function LinhaTabela({
                 <Trash2 className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent processando={removendo} destrutivo rotuloProcessando="Removendo anúncio">
+            <AlertDialogContent processando={removendo} destrutivo rotuloProcessando="Removendo anúncio" onClick={(e) => e.stopPropagation()}>
               <AlertDialogHeader>
                 <AlertDialogTitle>Remover do sistema?</AlertDialogTitle>
                 <AlertDialogDescription>

@@ -518,6 +518,7 @@ describe.each(casos)('$nome — segura aberto e dispara uma vez', ({ abrir, conf
     mockPendente(mutateAsync, false);
 
     const { rerender } = renderPublicados();
+    const linhas = screen.getAllByRole('row').length;
 
     await userEvent.click(screen.getByRole('button', { name: abrir }));
     await userEvent.click(screen.getByRole('button', { name: confirmar }));
@@ -534,5 +535,7 @@ describe.each(casos)('$nome — segura aberto e dispara uma vez', ({ abrir, conf
 
     concluir();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // Clique no modal (portal) não pode borbulhar até a linha e expandi-la.
+    expect(screen.getAllByRole('row')).toHaveLength(linhas);
   });
 });
