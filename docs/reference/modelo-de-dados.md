@@ -1511,7 +1511,7 @@ Tabela global (sem `org_id`) da nomenclatura Siscomex: `codigo` (8 dígitos, PK)
 `data_inicio`, `data_fim` (`31/12/9999` = sem fim), `atualizado_em`. RLS: só `select` para `authenticated`. Código extinto nunca é
 apagado (`data_fim = ontem`). Função `ncm_consultar(p_codigos text[])` -> `(codigo, descricao, vigente)`, vigência por
 `current_date between data_inicio and data_fim`. `produtos_estoque_resumo()` conta NCM inexistente/vencido em "Fiscal pendente".
-Migration B (FK `familias.ncm -> ncm_oficial(codigo)` `NOT VALID`) pendente em `supabase/migrations-pendentes/adr187_ncm_fk.sql`.
+Migration B: FK `familias_ncm_oficial_fk` (`familias.ncm -> ncm_oficial(codigo)`, `NOT VALID`) em `20261019201404_adr187_ncm_fk.sql`.
 
 **Refresh (manual, poucas vezes por ano):** baixar o JSON de
 `https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json`, exportar os códigos vigentes atuais

@@ -8,7 +8,7 @@
 - [x] Edges validam antes de gravar/enviar (`_shared/fiscal/ncm-oficial.ts`, `gate.ts`): `atualizar-fiscal-familia`, `cadastrar-produto`, `ingest-lote` (aborta o lote), `sugerir-ncm`, `adicionar-variacoes-familia`, `criar-kit-vinculado`, `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `sincronizar-fiscal-ml`.
 - [x] Front: form fiscal mostra a descrição oficial e trava Salvar com NCM inexistente/vencido.
 - [x] Refresh documentado em `docs/reference/modelo-de-dados.md` (`ncm_oficial`).
-- [ ] Rollout: migration A (`db push`) -> deploy das edges -> merge/front -> validação real -> Migration B (FK `NOT VALID`, hoje em `supabase/migrations-pendentes/adr187_ncm_fk.sql`).
+- [x] Rollout (19/10/2026): migration A (`db push`, 10.516 NCMs) -> deploy das 10 edges -> merge/front -> validação real (RPC autenticada) -> Migration B (FK `NOT VALID`, `20261019201404_adr187_ncm_fk.sql`).
 
 ## Marca própria por organização — Zaven (ADR-0186) — 2026-10-18
 
