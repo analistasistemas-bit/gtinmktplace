@@ -292,4 +292,22 @@ describe('dedupePublicados', () => {
     expect(out[0].familiaId).toBe('rep');
     expect(out[0].fornecedor).toBe('BUFALO');
   });
+
+  // A1 (auditoria fiscal 19/10): semáforo é do produto no ar, não da versão mais antiga.
+  describe('canInvoice agregado entre versões publicadas', () => {
+    const v = (publicadoEm: string | null, canInvoice: boolean | null) =>
+      base({ familiaId: String(publicadoEm) + canInvoice, publicadoEm, canInvoice });
+    it('rep antigo true + versão mais nova false → false', () => {
+      expect(dedupePublicados([v('2026-06-04T00:00:00Z', true), v('2026-06-16T00:00:00Z', false)])[0].canInvoice).toBe(false);
+    });
+    it('todas true → true', () => {
+      expect(dedupePublicados([v('2026-06-04T00:00:00Z', true), v('2026-06-16T00:00:00Z', true)])[0].canInvoice).toBe(true);
+    });
+    it('true + null → null', () => {
+      expect(dedupePublicados([v('2026-06-04T00:00:00Z', true), v('2026-06-16T00:00:00Z', null)])[0].canInvoice).toBeNull();
+    });
+    it('versão sem publicadoEm é ignorada', () => {
+      expect(dedupePublicados([v('2026-06-04T00:00:00Z', true), v(null, false)])[0].canInvoice).toBe(true);
+    });
+  });
 });

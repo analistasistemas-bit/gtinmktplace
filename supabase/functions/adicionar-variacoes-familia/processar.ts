@@ -492,10 +492,13 @@ export async function desfazerCriacao(
 //   herdar o valor antigo seria atribuir a ela um diagnóstico que nunca rodou.
 // - mudanca_estrutural: snapshot do diff de UM re-ingest específico da família antiga; a família
 //   nova recebe o próprio valor (ver index.ts) coerente com as variações desta submissão.
+// - can_invoice*/fiscal_sincronizado_em (A1, auditoria fiscal 19/10): prontidão fiscal é da
+//   família que foi ao ML; a nova nasce sem verificação (o push dela grava os próprios valores).
 export const STRIP_FAMILIA = [
   'id', 'criado_em', 'atualizado_em', 'lote_id', 'status', 'chave_cadastro',
   'qstash_message_id', 'erro_mensagem', 'editado_em', 'publicado_em',
   'titulo_descartes', 'mudanca_estrutural',
+  'can_invoice', 'can_invoice_causa', 'can_invoice_em', 'fiscal_sincronizado_em',
 ] as const;
 
 /** Clona a linha de familias (select('*')) removendo STRIP_FAMILIA e aplicando overrides. */

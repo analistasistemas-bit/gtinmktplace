@@ -200,7 +200,13 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     const maisNova = [...grupo].filter((g) => g.publicadoEm)
       .sort((a, b) => b.publicadoEm!.localeCompare(a.publicadoEm!))[0] ?? rep;
     const catalogRetentavel = !!maisNova.catalogRetentavel;
-    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, familiaIdVigente: maisNova.familiaId });
+    // A1 (auditoria fiscal 19/10): semáforo do produto = pior caso entre as versões no ar (o rep é
+    // a mais antiga e podia mostrar "pronto" com a versão nova pendente). Sem publicadas → rep.
+    const noAr = grupo.filter((g) => g.publicadoEm);
+    const canInvoice = noAr.length === 0 ? rep.canInvoice
+      : noAr.some((g) => g.canInvoice === false) ? false
+      : noAr.some((g) => g.canInvoice == null) ? null : true;
+    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, canInvoice, familiaIdVigente: maisNova.familiaId });
   }
   return out;
 }

@@ -174,6 +174,17 @@ describe('clonarFamilia', () => {
     expect(fam.genero).toBe('feminino');
   });
 
+  // A1 (auditoria fiscal 19/10): prontidão fiscal é da família que foi ao ML.
+  it('clone nasce sem as colunas de prontidão fiscal', () => {
+    const fam = clonarFamilia({
+      id: 'a', can_invoice: true, can_invoice_causa: 'x', can_invoice_em: 't', fiscal_sincronizado_em: 't', nome_pai: 'P',
+    }, { loteId: 'l1', userId: 'u1', chave: 'k1' });
+    for (const k of ['can_invoice', 'can_invoice_causa', 'can_invoice_em', 'fiscal_sincronizado_em']) {
+      expect(fam).not.toHaveProperty(k);
+    }
+    expect(fam.nome_pai).toBe('P');
+  });
+
   it('STRIP_FAMILIA cobre timestamps de processamento e diagnóstico do title pipeline', () => {
     expect(STRIP_FAMILIA).toEqual(expect.arrayContaining([
       'id', 'criado_em', 'atualizado_em', 'lote_id', 'status', 'chave_cadastro',
