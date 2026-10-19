@@ -112,6 +112,8 @@ describe('processarAtualizacaoFiscal', () => {
     expect(writes.length).toBe(1);
     expect(writes[0].payload.tributacao_icms_regime).toBe('simples');
     expect(writes[0].payload.ncm).toBe('39269090');
+    // C4: edição fiscal invalida o push anterior — o novo push (ou a recuperação) conclui de novo.
+    expect(writes[0].payload).toHaveProperty('fiscal_sincronizado_em', null);
     expect(enfileirarPush).toHaveBeenCalledWith('fam-1');
   });
 

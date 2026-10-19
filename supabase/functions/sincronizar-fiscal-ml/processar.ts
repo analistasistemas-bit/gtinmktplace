@@ -39,7 +39,7 @@ export async function processarSincronizacaoFiscal(
 ): Promise<{ status: number; body: unknown }> {
   const { admin } = deps;
   const { data: familia } = await admin.from('familias')
-    .select('id, org_id, codigo_pai, nome_pai, ml_item_id, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime, descricao_fiscal')
+    .select('id, org_id, codigo_pai, nome_pai, ml_item_id, atualizado_em, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime, descricao_fiscal')
     .eq('id', job.familia_id).single();
   if (!familia) return { status: 404, body: { erro: 'família não encontrada' } };
 
@@ -56,14 +56,22 @@ export async function processarSincronizacaoFiscal(
   if (empresaErr) return { status: 500, body: empresaErr.message };
   const agora = () => new Date().toISOString();
 
-  const recusar = async (causa: string): Promise<{ status: number; body: unknown }> => {
-    const { error } = await admin.from('familias').update({
-      can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora(),
-    }).eq('id', familia.id);
-    // Fix r1 (Task 6): recusa não gravada não pode responder 200 — o semáforo antigo (talvez
-    // verde) ficaria no ar. 500 → QStash retenta.
+  // C4 (auditoria fiscal 19/10): toda conclusão é UM update conferido — `fiscal_sincronizado_em`
+  // = tentativa concluída (ok ou recusa definitiva). Erro → 500 (QStash retenta); condicionado a
+  // `atualizado_em` lido: se a edição fiscal gravou no meio, 0 linhas → obsoleto (200, o novo
+  // push dela já está na fila) e não sobrescreve o `null` que ela deixou.
+  const concluir = async (patch: Record<string, unknown>): Promise<{ status: number; body: unknown } | null> => {
+    const { data, error } = await admin.from('familias')
+      .update({ ...patch, fiscal_sincronizado_em: agora() })
+      .eq('id', familia.id).eq('atualizado_em', familia.atualizado_em).select('id');
     if (error) return { status: 500, body: error.message };
-    return { status: 200, body: { erro: causa } };
+    if (!data?.length) return { status: 200, body: { obsoleto: true } };
+    return null;
+  };
+
+  const recusar = async (causa: string): Promise<{ status: number; body: unknown }> => {
+    const falha = await concluir({ can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora() });
+    return falha ?? { status: 200, body: { erro: causa } };
   };
 
   // Fix round 1/2: o gate (D-7) roda no publish/update, mas o worker é alvo de re-enqueue MANUAL
@@ -137,36 +145,25 @@ export async function processarSincronizacaoFiscal(
       return { status: 500, body: (e as Error).message };
     }
     // 4xx: definitivo — pendência visível no semáforo, sem retry (D-9 do ADR-0114, herdado).
-    await admin.from('familias').update({
-      can_invoice: false,
-      can_invoice_causa: `push fiscal recusado: ${(e as Error).message}`,
-      can_invoice_em: agora(),
-    }).eq('id', familia.id);
-    return { status: 200, body: { erro: (e as Error).message } };
+    const causa = `push fiscal recusado: ${(e as Error).message}`;
+    const falha = await concluir({ can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora() });
+    return falha ?? { status: 200, body: { erro: (e as Error).message } };
   }
 
   if (skusOrfaos.length > 0) {
-    const causa = `SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`;
-    await admin.from('familias').update({
-      can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora(),
-    }).eq('id', familia.id);
-    await admin.from('familias').update({ fiscal_sincronizado_em: agora() }).eq('id', familia.id);
-    return { status: 200, body: { erro: causa } };
+    return await recusar(`SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`);
   }
 
   // Semáforo (emenda D-10): AND do can_invoice de cada SKU da família — qualquer SKU não-pronto
-  // derruba a família, causa citando qual. Leitura falha (null) em QUALQUER SKU NÃO escreve nada —
-  // nunca regride um `true` já gravado por falha transitória (I7). (Task 8: lógica em
-  // _shared/fiscal/can-invoice.ts — reusada pela reconciliação de monitorar-moderados.)
+  // derruba a família, causa citando qual. Leitura falha (null) em QUALQUER SKU NÃO escreve o
+  // semáforo — nunca regride um `true` já gravado por falha transitória (I7); só conclui o push.
+  // (Task 8: lógica em _shared/fiscal/can-invoice.ts — reusada pela reconciliação.)
   const skus = variacoes.map((v) => v.codigo);
-  if (skus.length > 0) {
-    const resultado = await calcularSemaforoCanInvoice(token, skus, deps.portas.lerCanInvoice);
-    if (resultado) {
-      await admin.from('familias').update({
-        can_invoice: resultado.pronto, can_invoice_causa: resultado.causa, can_invoice_em: agora(),
-      }).eq('id', familia.id);
-    }
-  }
-  await admin.from('familias').update({ fiscal_sincronizado_em: agora() }).eq('id', familia.id);
-  return { status: 200, body: { ok: true } };
+  const resultado = skus.length > 0
+    ? await calcularSemaforoCanInvoice(token, skus, deps.portas.lerCanInvoice)
+    : null;
+  const falha = await concluir(resultado
+    ? { can_invoice: resultado.pronto, can_invoice_causa: resultado.causa, can_invoice_em: agora() }
+    : {});
+  return falha ?? { status: 200, body: { ok: true } };
 }

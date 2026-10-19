@@ -109,6 +109,8 @@ export async function processarAtualizacaoFiscal(
     tributacao_icms: f.tributacaoIcms, tributacao_icms_regime: regime,
     ...(f.unidade !== undefined ? { unidade: unidadeEfetiva } : {}),
     ...(temDescricao ? { descricao_fiscal: descricaoFiscal } : {}),
+    // C4 (auditoria fiscal 19/10): edição invalida o push anterior; o worker conclui de novo.
+    fiscal_sincronizado_em: null,
     atualizado_em: new Date().toISOString(),
   }).eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai);
   if (error) return { tipo: 'falha', mensagem: error.message };

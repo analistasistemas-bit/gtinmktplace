@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { processarSincronizacaoFiscal } from '../processar.ts';
 
 const familia = {
-  id: 'f1', org_id: 'o1', codigo_pai: 'CP1', nome_pai: 'X', ml_item_id: 'MLB1', unidade: 'UN',
+  id: 'f1', org_id: 'o1', codigo_pai: 'CP1', nome_pai: 'X', ml_item_id: 'MLB1', atualizado_em: 'A0', unidade: 'UN',
   origem: 'nacional', ncm: '39269090', cest: null, origem_nfe: 0, fci: null,
   ex_tipi: null, tributacao_icms: '102', tributacao_icms_regime: 'simples',
 };
@@ -21,11 +21,16 @@ function deps(opts: {
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
   /** Fix r1: o update de familias devolve erro do Supabase. */
   updateErro?: string;
+  /** C4: só o update cujo patch casa falha (erro do Supabase). */
+  updateErroQuando?: (patch: Record<string, unknown>) => boolean;
+  /** C4: o update condicionado a atualizado_em casa 0 linhas (edição fiscal no meio). */
+  updateZeroLinhas?: boolean;
 } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
   const empresaUsada = opts.empresaOverride === undefined ? EMPRESA_OK : opts.empresaOverride;
   const updates: Record<string, unknown>[] = [];
+  const filtros: Array<[string, unknown]> = [];
   const ncm = opts.ncm ?? 'vigente';
   const rpcs: string[] = [];
   const admin = {
@@ -50,10 +55,21 @@ function deps(opts: {
           },
         }),
       }),
-      update: (patch: Record<string, unknown>) => ({ eq: async () => {
-        if (opts.updateErro) return { error: { message: opts.updateErro } };
-        updates.push(patch); return { error: null };
-      } }),
+      update: (patch: Record<string, unknown>) => ({
+        eq: (c1: string, v1: unknown) => ({
+          eq: (c2: string, v2: unknown) => ({
+            select: async () => {
+              if (opts.updateErro || opts.updateErroQuando?.(patch)) {
+                return { data: null, error: { message: opts.updateErro ?? 'falhou' } };
+              }
+              filtros.push([c1, v1], [c2, v2]);
+              if (opts.updateZeroLinhas) return { data: [], error: null };
+              updates.push(patch);
+              return { data: [{ id: 'f1' }], error: null };
+            },
+          }),
+        }),
+      }),
     }),
   };
   return {
@@ -68,6 +84,7 @@ function deps(opts: {
       lerCanInvoice: vi.fn(async () => ({ pronto: true, causa: null })),
     },
     updates,
+    filtros,
     rpcs,
   };
 }
@@ -238,6 +255,81 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     const upd = d.updates.find((u) => u.can_invoice === false);
     expect(upd).toBeDefined();
     expect(String(upd?.can_invoice_causa)).toContain('V2');
+  });
+});
+
+describe('processarSincronizacaoFiscal — C4 (gravações conferidas, recuperação)', () => {
+  const e4xx = Object.assign(new Error('bad request'), { status: 400 });
+
+  it('ML 4xx e o update de can_invoice=false falha → 500', async () => {
+    const d = deps({ updateErroQuando: (p) => p.can_invoice === false });
+    (d.portas.empurrarFiscalSku as ReturnType<typeof vi.fn>).mockRejectedValue(e4xx);
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+  });
+
+  it('SKU órfão e o update falha → 500', async () => {
+    const d = deps({
+      itensUP: [{ sku: 'V1', item_externo_id: 'MLB-V1' }],
+      variacoesOverride: [
+        { codigo: 'V1', gtin: null, peso_gramas: 100, ml_variation_id: null },
+        { codigo: 'V2', gtin: null, peso_gramas: 100, ml_variation_id: null },
+      ],
+      updateErroQuando: (p) => p.can_invoice === false,
+    });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+  });
+
+  it('update do semáforo falha → 500', async () => {
+    const d = deps({ updateErroQuando: (p) => 'can_invoice' in p });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+  });
+
+  it('update de fiscal_sincronizado_em falha (leitura nula do semáforo) → 500', async () => {
+    const d = deps({ updateErroQuando: (p) => 'fiscal_sincronizado_em' in p });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+  });
+
+  it('recusa do gate grava fiscal_sincronizado_em no mesmo update de can_invoice', async () => {
+    const d = deps({ familiaOverride: { ncm: null } });
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0]).toMatchObject({ can_invoice: false });
+    expect(d.updates[0].fiscal_sincronizado_em).toBeTruthy();
+  });
+
+  it('ML 4xx grava fiscal_sincronizado_em junto com can_invoice=false', async () => {
+    const d = deps();
+    (d.portas.empurrarFiscalSku as ReturnType<typeof vi.fn>).mockRejectedValue(e4xx);
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0].fiscal_sincronizado_em).toBeTruthy();
+  });
+
+  it('ML 5xx → 500 e nenhum update com fiscal_sincronizado_em', async () => {
+    const d = deps();
+    (d.portas.empurrarFiscalSku as ReturnType<typeof vi.fn>).mockRejectedValue(Object.assign(new Error('gw'), { status: 502 }));
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.updates.some((u) => 'fiscal_sincronizado_em' in u)).toBe(false);
+  });
+
+  it('caminho feliz: um único update (semáforo + fiscal_sincronizado_em) condicionado a atualizado_em', async () => {
+    const d = deps();
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0]).toMatchObject({ can_invoice: true });
+    expect(d.updates[0].fiscal_sincronizado_em).toBeTruthy();
+    expect(d.filtros).toContainEqual(['atualizado_em', 'A0']);
+  });
+
+  it('corrida: edição fiscal no meio (0 linhas) → 200 obsoleto, sem retry', async () => {
+    const d = deps({ updateZeroLinhas: true });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r).toEqual({ status: 200, body: { obsoleto: true } });
   });
 });
 

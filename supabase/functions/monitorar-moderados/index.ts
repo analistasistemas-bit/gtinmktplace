@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { enfileirarSincronizacaoFiscal, verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, resolvidosConfirmadosDe, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
@@ -12,6 +12,7 @@ import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_sh
 import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { lerCanInvoice } from '../_shared/canais/fiscal-ml.ts';
 import { reconciliarCanInvoice } from './can-invoice.ts';
+import { reenfileirarPushFiscalPendente } from './push-fiscal-pendente.ts';
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -185,6 +186,13 @@ Deno.serve(async (req) => {
       if (n > 0) console.log(`can_invoice reconciliado: ${n} famílias (org ${cx.orgId})`);
     } catch (e) {
       console.warn('reconciliar can_invoice falhou:', e instanceof Error ? e.message : e);
+    }
+    // C4: push fiscal pendente (publicado sem conclusão) volta pra fila — try/catch próprio.
+    try {
+      const n = await reenfileirarPushFiscalPendente(admin, cx.orgId, (id) => enfileirarSincronizacaoFiscal(id));
+      if (n > 0) console.log(`push fiscal reenfileirado: ${n} famílias (org ${cx.orgId})`);
+    } catch (e) {
+      console.warn('reenfileirar push fiscal falhou:', e instanceof Error ? e.message : e);
     }
   }
 
