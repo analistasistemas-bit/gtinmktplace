@@ -15,8 +15,8 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
-import { exigirFiscalExplicito, resolverCamposFiscais } from './verificar-fiscal.ts';
-import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { exigirFiscalExplicito, exigirNcmVigente, resolverCamposFiscais } from './verificar-fiscal.ts';
+import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, excluidaNoUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
@@ -126,8 +126,12 @@ Deno.serve(async (req) => {
     // ORIGEM explícita em todo PAI (ADR-0107): falha antes de qualquer trabalho, nada é persistido.
     exigirOrigemExplicita(rowsRaw);
     // ADR-0135: NCM obrigatório SÓ quando a org emite nota — org sem o módulo segue intacta.
-    const moduloFiscal = await exigirModulo(admin, orgId, 'fiscal');
-    if (moduloFiscal) exigirFiscalExplicito(rowsRaw);
+    // Leitura do módulo falha → lança (lote 'erro'), nunca vira "sem módulo" (fail-closed, ADR-0187).
+    const moduloFiscal = await moduloHabilitadoStrict(admin, orgId, 'fiscal');
+    if (moduloFiscal) {
+      exigirFiscalExplicito(rowsRaw);
+      await exigirNcmVigente(admin, rowsRaw);
+    }
 
     const rows: PlanilhaRow[] = rowsRaw.map(mapearLinha);
 

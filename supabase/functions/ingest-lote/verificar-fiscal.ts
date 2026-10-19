@@ -1,6 +1,8 @@
 // ADR-0135 — NCM obrigatório na planilha SÓ para org com módulo fiscal (spec §5.2).
 // Mesmo contrato do ADR-0107: aborta o lote ANTES de persistir qualquer coisa.
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { normalizarCodigo } from '../_shared/parser.ts';
+import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 
 export function normalizarNcm(bruto: unknown): string {
   return String(bruto ?? '').replace(/\D/g, '');
@@ -86,4 +88,33 @@ export function exigirFiscalExplicito(rowsRaw: Record<string, unknown>[]): void 
       `reenvie; o dado fiscal não pode ser presumido (ADR-0135).`,
     );
   }
+}
+
+/**
+ * ADR-0187 — NCM do PAI precisa existir e estar vigente na tabela oficial. Roda DEPOIS de
+ * `exigirFiscalExplicito` (formato). Erro de leitura da tabela LANÇA: nunca vira "válido".
+ */
+export async function exigirNcmVigente(
+  admin: SupabaseClient, rowsRaw: Record<string, unknown>[],
+): Promise<void> {
+  const codPorNcm = new Map<string, string[]>();
+  const vistos = new Set<string>();
+  for (const r of rowsRaw) {
+    const paiCampo = String(r.PAI ?? '').trim();
+    if (paiCampo !== '0' && paiCampo !== '') continue;
+    const cod = normalizarCodigo(String(r.CODIGO ?? ''));
+    if (vistos.has(cod)) continue;
+    vistos.add(cod);
+    const ncm = normalizarNcm(r.NCM);
+    if (!/^\d{8}$/.test(ncm)) continue; // formato já reportado por exigirFiscalExplicito
+    codPorNcm.set(ncm, [...(codPorNcm.get(ncm) ?? []), cod]);
+  }
+  const invalidos = await ncmsInvalidos(admin, [...codPorNcm.keys()]);
+  if (invalidos.length === 0) return;
+  const problemas = invalidos.flatMap((i) =>
+    (codPorNcm.get(i.codigo) ?? []).map((cod) => `${cod} (${mensagemNcm(i)})`));
+  throw new Error(
+    `NCM fora da tabela oficial em ${problemas.length} produto(s) PAI: ${problemas.join(', ')}. ` +
+    'Corrija a planilha e reenvie (ADR-0187).',
+  );
 }

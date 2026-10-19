@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exigirFiscalExplicito, resolverCamposFiscais } from '../verificar-fiscal.ts';
+import { exigirFiscalExplicito, exigirNcmVigente, resolverCamposFiscais } from '../verificar-fiscal.ts';
 
 const pai = (extra: Record<string, unknown>) => ({ CODIGO: '00100', PAI: '0', ...extra });
 
@@ -88,5 +88,34 @@ describe('resolverCamposFiscais (re-ingest herda opcionais vazios — fix round 
   it('NCM nunca herda (obrigatório na própria planilha)', () => {
     const r = resolverCamposFiscais({ ...grupoVazio, ncm: '3926.90.90' }, anterior);
     expect(r.ncm).toBe('39269090');
+  });
+});
+
+describe('exigirNcmVigente (ADR-0187)', () => {
+  const fakeAdmin = (data: unknown, error: unknown = null) =>
+    ({ rpc: async () => ({ data, error }) }) as never;
+
+  it('PAI com NCM inexistente aborta citando o código e o motivo', async () => {
+    const admin = fakeAdmin([]);
+    await expect(exigirNcmVigente(admin, [{ CODIGO: '00000140', PAI: '0', NCM: '75937727' }]))
+      .rejects.toThrow(/1 produto\(s\) PAI.*00000140.*não existe na tabela oficial.*ADR-0187/s);
+  });
+  it('PAI com NCM vencido aborta com "não está mais vigente"', async () => {
+    const admin = fakeAdmin([{ codigo: '39269090', vigente: false }]);
+    await expect(exigirNcmVigente(admin, [pai({ NCM: '3926.90.90' })]))
+      .rejects.toThrow(/00100.*não está mais vigente/s);
+  });
+  it('linhas filhas são ignoradas (rpc nem é chamado)', async () => {
+    const admin = { rpc: () => { throw new Error('não deveria chamar'); } } as never;
+    await expect(exigirNcmVigente(admin, [{ CODIGO: '00101', PAI: '00100', NCM: '75937727' }]))
+      .resolves.toBeUndefined();
+  });
+  it('todos vigentes resolve', async () => {
+    const admin = fakeAdmin([{ codigo: '39269090', vigente: true }]);
+    await expect(exigirNcmVigente(admin, [pai({ NCM: '39269090' })])).resolves.toBeUndefined();
+  });
+  it('erro de leitura rejeita (nunca passa)', async () => {
+    const admin = fakeAdmin(null, { message: 'boom' });
+    await expect(exigirNcmVigente(admin, [pai({ NCM: '39269090' })])).rejects.toThrow(/boom/);
   });
 });
