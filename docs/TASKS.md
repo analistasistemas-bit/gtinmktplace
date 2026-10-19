@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## NCM validado na tabela oficial (ADR-0187) — 2026-10-19
+
+- [x] Tabela global `ncm_oficial` (10.516 códigos, Siscomex) + `ncm_consultar(text[])` (vigência por data em SQL) + resumo do Estoque (`produtos_estoque_resumo`) contando NCM inexistente/vencido como "Fiscal pendente".
+- [x] Edges validam antes de gravar/enviar (`_shared/fiscal/ncm-oficial.ts`, `gate.ts`): `atualizar-fiscal-familia`, `cadastrar-produto`, `ingest-lote` (aborta o lote), `sugerir-ncm`, `adicionar-variacoes-familia`, `criar-kit-vinculado`, `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `sincronizar-fiscal-ml`.
+- [x] Front: form fiscal mostra a descrição oficial e trava Salvar com NCM inexistente/vencido.
+- [x] Refresh documentado em `docs/reference/modelo-de-dados.md` (`ncm_oficial`).
+- [ ] Rollout: migration A (`db push`) -> deploy das edges -> merge/front -> validação real -> Migration B (FK `NOT VALID`, hoje em `supabase/migrations-pendentes/adr187_ncm_fk.sql`).
+
 ## Marca própria por organização — Zaven (ADR-0186) — 2026-10-18
 
 - [x] `organizations.marca_propria` (só Zaven) + data fix de BRAND/MANUFACTURER gravados; política `_shared/categoria/marca-org.ts` aplicada em montagem, UPDATE (UP e Legacy), split, kit, edição de atributo e herança do irmão UP.

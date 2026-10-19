@@ -1506,6 +1506,21 @@ organização** (`profiles.org_id = current_org_id()`, join por `storage.foldern
 INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration `20260527123422`
 + `20260705165828_e7_rls_org.sql`.*
 
+### `ncm_oficial` (ADR-0187)
+Tabela global (sem `org_id`) da nomenclatura Siscomex: `codigo` (8 dígitos, PK), `descricao` (composta pelos ancestrais),
+`data_inicio`, `data_fim` (`31/12/9999` = sem fim), `atualizado_em`. RLS: só `select` para `authenticated`. Código extinto nunca é
+apagado (`data_fim = ontem`). Função `ncm_consultar(p_codigos text[])` -> `(codigo, descricao, vigente)`, vigência por
+`current_date between data_inicio and data_fim`. `produtos_estoque_resumo()` conta NCM inexistente/vencido em "Fiscal pendente".
+Migration B (FK `familias.ncm -> ncm_oficial(codigo)` `NOT VALID`) pendente em `supabase/migrations-pendentes/adr187_ncm_fk.sql`.
+
+**Refresh (manual, poucas vezes por ano):** baixar o JSON de
+`https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json`, exportar os códigos vigentes atuais
+(`--atuais`, um por linha) e rodar:
+`deno run --allow-read scripts/ncm/gerar-sql.ts --modo atualizar --entrada <json> --atuais <codigos.txt> [--confirmar-encerramentos=<n>]`.
+Código vigente ausente do JSON nunca é encerrado sozinho: o CLI lista os ausentes no stderr e só gera o encerramento com
+`--confirmar-encerramentos=<n>` igual à quantidade listada, após conferir contra a resolução Gecex. Aplicar o SQL via Management API
+como DML (não é DDL, não vira migration) e conferir a contagem impressa. `--modo seed` só para a carga inicial da migration.
+
 ---
 
 ## Funções SQL (`security definer`)

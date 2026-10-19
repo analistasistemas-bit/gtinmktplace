@@ -1326,12 +1326,19 @@ um smoke test contra Postgres real antes do primeiro deploy.
   de uma família já cadastrada (`ncm`, `cest`, `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms`)
   e, quando a família já está publicada, enfileira `sincronizar-fiscal-ml` para o re-push. 403 sem
   módulo `fiscal`; 404 família não encontrada; upsert idempotente por `familiaId`. Alimenta o
-  dialog de edição em fila da tela `/estoque` (filtro "fiscal pendente" + "Salvar e próximo").
+  dialog de edição em fila da tela `/estoque` (filtro "fiscal pendente" + "Salvar e próximo"). ADR-0187: NCM
+  inexistente ou vencido em `ncm_oficial` é recusado antes do upsert (e antes do re-push fiscal).
 - **sugerir-ncm** *(HTTP, JWT do app)* — IA (OpenRouter, mesmo padrão `resolverModeloTexto`
   ADR-0074) sugere um NCM a partir de nome/descrição/categoria ML e devolve a sugestão marcada
   como tal; **nunca escreve no banco** — só `atualizar-fiscal-familia` grava, e só com confirmação
   ativa do operador (D-9). 403 sem módulo `fiscal`; sem sugestão viável devolve `{ncm: null,
-  justificativa: "..."}` em vez de inventar um código.
+  justificativa: "..."}` em vez de inventar um código. ADR-0187: a sugestão é conferida em `ncm_oficial`;
+  código inexistente/vencido vira `ncm: null`.
+- **NCM na tabela oficial (ADR-0187):** `_shared/fiscal/ncm-oficial.ts` (via RPC `ncm_consultar`) e
+  `gate.ts` travam NCM inexistente/vencido em `cadastrar-produto`, `ingest-lote` (aborta o lote,
+  inclusive UPDATE só de preço/estoque), `adicionar-variacoes-familia`, `criar-kit-vinculado`,
+  `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml` e `sincronizar-fiscal-ml`. Mudança em
+  `_shared/` -> redeployar todas essas edges.
 - **Nenhum schedule QStash novo neste ADR.** O semáforo `can_invoice` (D-10) é escrito por dois
   caminhos: na hora, pelo próprio `sincronizar-fiscal-ml` após o push; e a cada 6h, pendurado no
   cron já existente do `monitorar-moderados` (`reconciliarCanInvoice`,

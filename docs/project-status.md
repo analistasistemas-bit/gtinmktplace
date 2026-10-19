@@ -2,10 +2,11 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-10-16
+**Ultima atualizacao:** 2026-10-19
 
 ## Snapshot
 
+- **NCM validado na tabela oficial (ADR-0187), EM ROLLOUT (2026-10-19, branch `worktree-ncm-tabela-oficial`)** — `ncm_oficial` (10.516 códigos Siscomex) + `ncm_consultar`; form fiscal mostra a descrição e trava Salvar; edges, planilha (aborta o lote) e envio fiscal ao ML recusam NCM inexistente/vencido; Estoque "Fiscal pendente" inclui esses casos. Ordem: migration A -> edges -> front -> Migration B (FK `NOT VALID`).
 - **Entrada por nota de compra (XML), EM PRODUÇÃO (2026-10-16, main 4c2ca2a1, ADR-0181 Plano 1)** — importa NF-e de compra no `/estoque` (edges `importar-nota-compra`/`desfazer-nota-compra`, 4 tabelas + bucket `notas-compra`, migrations já em produção), distribuição na grade, custo de aquisição, desfazer/cancelar. Etapa Produtos da importação redesenhada e retomada por `refNota` em produção desde 2026-10-17 (emenda ADR-0181; edges `cadastrar-produto` v29 e `adicionar-variacoes-familia` v19). Plano 2a em produção; Plano 2b-1 (compras) em produção; Plano 2b-2 (inventário) em produção desde 2026-10-17.
 - **Pacote do contador, parte vendas (ADR-0181 Plano 2a) — EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1)** — card em `/estoque` baixa `pacote-AAAA-MM.zip` (XMLs fiscais do mês do ML + relatório xlsx e PDF, ordem crescente de data, aba/página Conferência). Edge nova `baixar-notas-venda` só repassa o zip; navegador valida, lê e monta. Sem gravar XML. "Vendas sem nota" pendente (depende do XML da primeira venda faturada). Ver `docs/TASKS.md`.
 - **Pacote do contador, parte compras (ADR-0181 Plano 2b-1) — EM PRODUÇÃO desde 2026-10-16 (main `ff67a7e6`; edge `baixar-notas-venda` v2)** — o mesmo `pacote-AAAA-MM.zip` passa a levar `relatorio-compras.xlsx`/`.pdf` (uma linha por item, com CSOSN/CST) e os XMLs das notas de compra importadas (competência = data de emissão; desfeitas/canceladas em pastas próprias, fora dos totais). Vendas indisponíveis (ML fora) viram pacote PARCIAL, exceto em sessão de suporte. Sem migration. Inventário (Plano 2b-2) na linha abaixo. Ver `docs/TASKS.md`.
