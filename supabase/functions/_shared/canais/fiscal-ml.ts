@@ -2,6 +2,8 @@
 // Payload conforme developers.mercadolivre.com.br/pt_br/envio-dos-dados-fiscais.
 // ⚠ Semântica de upsert (POST→409→PUT) e unidades de peso: "A verificar #2" do ADR —
 // validar em conta real antes de ligar para cliente.
+import { gtinValido } from '../nfe/regras.ts';
+
 const BASE = 'https://api.mercadolibre.com';
 
 function erroMl(op: string, status: number, corpo: string): Error & { status: number } {
@@ -41,7 +43,10 @@ export function montarFiscalInformation(
   if (familia.cest) tax.cest = familia.cest;
   if (familia.fci) tax.fci = familia.fci;
   if (familia.ex_tipi) tax.ex_tipi = familia.ex_tipi;
-  if (variacao.gtin) tax.ean = variacao.gtin;
+  // A5 (auditoria fiscal 19/10): EAN fiscal só com GTIN real — `3000…` é código interno e
+  // dígito verificador errado/comprimento inválido o ML recusaria. Valida o MESMO valor enviado.
+  const ean = variacao.gtin?.trim();
+  if (ean && !ean.startsWith('3000') && gtinValido(ean)) tax.ean = ean;
   return {
     sku: variacao.codigo,
     title: familia.descricao_fiscal?.trim() || familia.nome_pai,

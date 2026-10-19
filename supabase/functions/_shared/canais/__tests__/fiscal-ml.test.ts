@@ -19,7 +19,7 @@ describe('montarFiscalInformation (payload puro)', () => {
   it('converte peso de gramas para kg e omite cest/fci quando ausentes', () => {
     const p = montarFiscalInformation(
       { nome_pai: 'X', unidade: 'un', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },
-      { codigo: '00101', gtin: '789', peso_gramas: 200, ml_variation_id: null },
+      { codigo: '00101', gtin: '7891000315507', peso_gramas: 200, ml_variation_id: null },
       { origin_type: 'reseller' },
     );
     expect(p.gross_weight).toBe(0.2);
@@ -27,7 +27,19 @@ describe('montarFiscalInformation (payload puro)', () => {
     expect(p).not.toHaveProperty('cest');
     const tax = p.tax_information as Record<string, unknown>;
     expect(tax).not.toHaveProperty('fci');
-    expect(tax.ean).toBe('789');
+    expect(tax.ean).toBe('7891000315507');
+  });
+
+  // A5 (auditoria fiscal 19/10): código interno/GTIN inválido nunca vai como EAN fiscal.
+  it.each([
+    ['ABC7891000315507'], ['7891-000315507'], ['3000123'], ['7891234567890'], ['123'],
+  ])('gtin %s → sem ean', (gtin) => {
+    const p = montarFiscalInformation(
+      { nome_pai: 'X', unidade: 'UN', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },
+      { codigo: '00101', gtin, peso_gramas: 200, ml_variation_id: null },
+      { origin_type: 'reseller' },
+    );
+    expect(p.tax_information as Record<string, unknown>).not.toHaveProperty('ean');
   });
 
   it('inclui cest/fci quando presentes', () => {
