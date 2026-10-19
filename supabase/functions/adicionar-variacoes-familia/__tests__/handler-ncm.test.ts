@@ -74,7 +74,13 @@ beforeAll(async () => {
   await import('../index.ts');
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
-beforeEach(() => { f.jaExistente = null; f.ncm = 'inexistente'; f.escritas = []; f.rpcs = []; });
+// O enfileiramento da publicação é um `fetch` a publicar-familias (encadearPublicacao).
+let fetchSpy: ReturnType<typeof vi.fn>;
+beforeEach(() => {
+  f.jaExistente = null; f.ncm = 'inexistente'; f.escritas = []; f.rpcs = [];
+  fetchSpy = vi.fn(async () => new Response('{}'));
+  vi.stubGlobal('fetch', fetchSpy);
+});
 
 const corpo = {
   familia_id: 'fam-ant', chave: '11111111-1111-4111-8111-111111111111',
@@ -91,6 +97,7 @@ describe('adicionar-variacoes-familia — NCM na tabela oficial (handler)', () =
     expect((await r.json()).error).toBe('NCM 75937727 não existe na tabela oficial — corrija no botão Fiscal antes.');
     expect(f.escritas).toEqual([]);
     expect(f.rpcs).toEqual(['ncm_consultar']);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('erro lendo a tabela de NCM → 500, zero escritas', async () => {
@@ -98,6 +105,7 @@ describe('adicionar-variacoes-familia — NCM na tabela oficial (handler)', () =
     const r = await post();
     expect(r.status).toBe(500);
     expect(f.escritas).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('retry de pedido já criado (jaExistente) devolve o resultado normal sem consultar NCM', async () => {
@@ -107,5 +115,6 @@ describe('adicionar-variacoes-familia — NCM na tabela oficial (handler)', () =
     expect(await r.json()).toMatchObject({ jaExistia: true, familiaId: 'fam-nova', loteId: 'lote-1' });
     expect(f.rpcs).toEqual([]);
     expect(f.escritas).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
