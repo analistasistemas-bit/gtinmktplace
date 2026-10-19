@@ -211,21 +211,31 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // de identidade da cor nova (`atributosDeFicha`) e o diff de atributos da reposição (ADR-0157).
   // `undefined` = ainda não lida; `null` = leitura falhou ou não há irmão de quem ler.
   let fichaCrua: unknown | undefined;
+  // family_name do irmão como está NO ML: na criação o ML pode normalizá-lo (incidente 19/10/2026,
+  // MLB7845606234 — colapsou espaço duplo e tirou a cor: "…Mauricinho  Preto" → "…Mauricinho").
+  // A cor nova com o título cru da raiz abria family_id novo. Vem no mesmo GET da ficha.
+  let familyNameVivo: string | null = null;
   const lerFichaCrua = async (): Promise<unknown> => {
     if (fichaCrua !== undefined) return fichaCrua;
     const irmao = filhos.find((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id);
     if (!irmao) return (fichaCrua = null);
     try {
-      const url = `https://api.mercadolibre.com/items/${encodeURIComponent(String(irmao.item_externo_id))}?attributes=attributes`;
+      const url = `https://api.mercadolibre.com/items/${encodeURIComponent(String(irmao.item_externo_id))}?attributes=attributes,family_name`;
       const resp = await fetchLike(url, { headers: { Authorization: `Bearer ${await ctx.getToken()}` } });
       if (!resp.ok) throw new Error(`GET item irmão ${resp.status}`);
-      const j = await resp.json() as { attributes?: unknown };
+      const j = await resp.json() as { attributes?: unknown; family_name?: unknown };
       fichaCrua = j.attributes ?? null;
+      familyNameVivo = typeof j.family_name === 'string' && j.family_name ? j.family_name : null;
     } catch (e) {
       console.error('ficha_irmao_falhou', String(irmao.item_externo_id), String(e));
       fichaCrua = null;
     }
     return fichaCrua;
+  };
+  // Nome com que a cor nova é criada e buscada por SKU: o vivo do irmão; sem ele, o da raiz.
+  const familyNameDaCorNova = async (): Promise<string> => {
+    await lerFichaCrua();
+    return familyNameVivo ?? familyName;
   };
   // ADR-0186: a marca da org é imposta na ficha CRUA, enquanto o nome ainda está lá — irmão que já
   // tem a marca da org mantém o value_id (identidade da família); o que tem o fornecedor é trocado.
@@ -299,7 +309,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     // ou faltar (Codex #2). Sem tamanho, a herança fica exatamente como antes (INV-1).
     const atributos = v.tamanho ? comGeneroDaFamilia(atributosMesclados) : atributosMesclados;
     const payload = montarPayloadItem(
-      { ...familiaInput, atributos_ml: atributos } as never,
+      { ...familiaInput, titulo_ml: await familyNameDaCorNova(), atributos_ml: atributos } as never,
       [{
         codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao),
         gtin: v.gtin, ml_picture_id: picId, corValueId: resolverCorValueId(v.cor, valoresCor),
@@ -366,11 +376,11 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     }),
     marcarAtivo: (sku) => atualizarLinha(sku, { status: 'ativo', retirado: false }),
     marcarRetirado: (sku) => atualizarLinha(sku, { status: 'pausado', retirado: true }),
-    buscarPorSku: (sku) => ctx.getToken().then((accessToken) =>
+    buscarPorSku: async (sku) =>
       buscarItemPorSku(fetchLike, {
-        accessToken, sellerId: conexao.contaExternaId ?? '',
-        categoriaId: familia.categoria_ml_id ?? '', familyName, desdeMs,
-      }, sku)),
+        accessToken: await ctx.getToken(), sellerId: conexao.contaExternaId ?? '',
+        categoriaId: familia.categoria_ml_id ?? '', familyName: await familyNameDaCorNova(), desdeMs,
+      }, sku),
     criarPlano,
     async confirmar(itemExternoId): Promise<ConfirmacaoComp> {
       const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);

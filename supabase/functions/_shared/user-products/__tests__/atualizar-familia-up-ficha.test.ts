@@ -394,3 +394,40 @@ describe('atualizarFamiliaUP — marca própria (ADR-0186)', () => {
     expect(recebidos).toEqual([{ id: 'BRAND', value_name: 'Zaven' }, { id: 'LENGTH', value_name: '10 m' }]);
   });
 });
+
+// Incidente 19/10/2026 (MLB7845606234): o ML gravou o family_name normalizado na criação
+// ("…Mauricinho", sem espaço duplo nem a cor) e a cor nova foi com o título cru da raiz
+// ("…Mauricinho  Preto") → family_id novo → UPDATE bloqueado.
+describe('atualizarFamiliaUP — cor nova usa o family_name vivo do irmão', () => {
+  it('family_name do payload e da busca por SKU é o do irmão no ML, não o título local', async () => {
+    // Item já criado numa tentativa anterior (com o nome vivo): a busca por SKU precisa readotá-lo.
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/items/search')) {
+        return new Response(JSON.stringify({ results: ['MLB-X'], paging: { total: 1 } }), { status: 200 });
+      }
+      if (String(url).includes('/items/bulk')) {
+        return new Response(JSON.stringify([{ status_code: 200, body: {
+          id: 'MLB-X', category_id: '', family_name: 'Nome Vivo', seller_id: 'seller-1', date_created: new Date().toISOString(),
+        } }]), { status: 200 });
+      }
+      return new Response(JSON.stringify({ attributes: ATRIBUTOS_DO_IRMAO, family_name: 'Nome Vivo' }), { status: 200 });
+    }) as typeof fetch;
+    let achado: unknown;
+    await atualizarFamiliaUP(args({
+      raiz: { id: 'root-1', titulo: 'Nome  Local Preto', criado_em: null },
+      executarSaga: async (portas) => {
+        achado = await portas.buscarPorSku('NOVA');
+        await portas.criarPlano('NOVA');
+        return { tipo: 'sem_mudanca' };
+      },
+    }));
+    expect((criarItemSpy.mock.calls[0]![1] as { family_name?: string }).family_name).toBe('Nome Vivo');
+    expect(achado).toEqual({ tipo: 'um', itemExternoId: 'MLB-X' });
+  });
+
+  it('GET do irmão falhou → family_name cai para o título da raiz', async () => {
+    globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
+    await atualizarFamiliaUP(args());
+    expect((criarItemSpy.mock.calls[0]![1] as { family_name?: string }).family_name).toBe('T');
+  });
+});
