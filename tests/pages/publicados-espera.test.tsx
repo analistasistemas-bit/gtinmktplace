@@ -346,6 +346,7 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
     usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
 
     const { rerender } = renderPublicados();
+    const linhas = screen.getAllByRole('row').length;
 
     await userEvent.click(screen.getByRole('button', { name: 'Reativar' }));
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Reativar$/ }));
@@ -363,6 +364,8 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
 
     concluir();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // Clique no modal (portal) não pode borbulhar até a linha e expandi-la.
+    expect(screen.getAllByRole('row')).toHaveLength(linhas);
   });
 });
 

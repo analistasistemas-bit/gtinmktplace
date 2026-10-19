@@ -504,7 +504,7 @@ function LinhaTabela({
                   <Play className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent processando={pausando} rotuloProcessando="Reativando anúncio">
+              <AlertDialogContent processando={pausando} rotuloProcessando="Reativando anúncio" onClick={(e) => e.stopPropagation()}>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Reativar anúncio?</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -545,7 +545,7 @@ function LinhaTabela({
                   <Pause className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent processando={pausando} rotuloProcessando="Pausando anúncio">
+              <AlertDialogContent processando={pausando} rotuloProcessando="Pausando anúncio" onClick={(e) => e.stopPropagation()}>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Pausar anúncio?</AlertDialogTitle>
                   <AlertDialogDescription>
