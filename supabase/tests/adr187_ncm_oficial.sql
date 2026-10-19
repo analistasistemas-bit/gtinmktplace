@@ -5,9 +5,12 @@ begin;
 
 do $$
 declare n int;
+  -- 10516 = carga real. A Migration A inteira estoura o runner (HTTP 413); a versão reduzida usada nos
+  -- testes (só um lote do seed) declara a própria contagem via este setting, que nada mais grava.
+  esperado int := coalesce(nullif(current_setting('adr187.qtd_ncm_esperada', true), ''), '10516')::int;
 begin
   select count(*) into n from public.ncm_oficial;
-  if n <> 10516 then raise exception 'ncm_oficial tem % linhas, esperado 10516', n; end if;
+  if n <> esperado then raise exception 'ncm_oficial tem % linhas, esperado %', n, esperado; end if;
 end $$;
 
 -- Código fictício com vigência só daqui a 10 dias: existe, mas ainda não vale.
@@ -69,5 +72,20 @@ begin
   select count(*) into n from json_array_elements(public.produtos_estoque_resumo()->'produtos') x
   where x->>'ncm' is not null;
   if n = 0 then raise exception 'nenhum produto com NCM no resumo: o caso preenchido não foi exercitado'; end if;
+end $$;
+
+-- Migration B (FK NOT VALID): escrita nova em familias.ncm só com código da tabela oficial.
+-- Os updates abaixo ficam dentro desta transação desfeita: nada persiste.
+reset role;
+do $$
+declare v_id uuid := (select id from public.familias limit 1);
+begin
+  if v_id is null then raise exception 'nenhuma família para exercitar a FK'; end if;
+  begin
+    update public.familias set ncm = '75937727' where id = v_id;
+    raise exception 'FK ausente: familias aceitou NCM 75937727 fora da tabela oficial';
+  exception when foreign_key_violation then null;  -- 23503: esperado
+  end;
+  update public.familias set ncm = '62034900' where id = v_id;
 end $$;
 rollback;
