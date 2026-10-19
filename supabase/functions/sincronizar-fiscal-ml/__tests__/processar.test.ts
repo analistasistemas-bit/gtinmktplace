@@ -317,6 +317,23 @@ describe('processarSincronizacaoFiscal — C4 (gravações conferidas, recupera�
     expect(d.updates.some((u) => 'fiscal_sincronizado_em' in u)).toBe(false);
   });
 
+  it('I7: leitura nula do semáforo → patch só com fiscal_sincronizado_em (200)', async () => {
+    const d = deps();
+    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0].fiscal_sincronizado_em).toBeTruthy();
+    for (const k of ['can_invoice', 'can_invoice_causa', 'can_invoice_em']) expect(d.updates[0]).not.toHaveProperty(k);
+  });
+
+  it('I7: leitura nula do semáforo e o update falha → 500', async () => {
+    const d = deps({ updateErro: 'deadlock' });
+    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+  });
+
   it('caminho feliz: um único update (semáforo + fiscal_sincronizado_em) condicionado a atualizado_em', async () => {
     const d = deps();
     await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });

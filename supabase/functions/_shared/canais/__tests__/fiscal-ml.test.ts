@@ -32,7 +32,7 @@ describe('montarFiscalInformation (payload puro)', () => {
 
   // A5 (auditoria fiscal 19/10): código interno/GTIN inválido nunca vai como EAN fiscal.
   it.each([
-    ['ABC7891000315507'], ['7891-000315507'], ['3000123'], ['7891234567890'], ['123'],
+    ['ABC7891000315507'], ['7891-000315507'], ['3000123'], ['3000123456781'], ['7891234567890'], ['123'],
   ])('gtin %s → sem ean', (gtin) => {
     const p = montarFiscalInformation(
       { nome_pai: 'X', unidade: 'UN', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },

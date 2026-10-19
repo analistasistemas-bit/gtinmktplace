@@ -13,12 +13,16 @@ function fakeAdmin(opts: { modulos?: string[]; familias?: Fam[]; familiasErro?: 
           ({ data: { modulos_habilitados: opts.modulos ?? ['fiscal'] }, error: null }) }) }) };
       }
       lidas.push(t);
+      // Emula o PostgREST: sem .range() corta em 1000 linhas.
+      let faixa: [number, number] = [0, 999];
       const q: Record<string, unknown> = {
         eq: () => q,
         not: () => q,
+        order: () => q,
+        range: (a: number, b: number) => { faixa = [a, b]; return q; },
         then: (res: (v: unknown) => unknown) => Promise.resolve(opts.familiasErro
           ? { data: null, error: { message: opts.familiasErro } }
-          : { data: opts.familias ?? [], error: null }).then(res),
+          : { data: (opts.familias ?? []).slice(faixa[0], Math.min(faixa[1], faixa[0] + 999) + 1), error: null }).then(res),
       };
       return { select: () => q };
     },
@@ -58,5 +62,15 @@ describe('reenfileirarPushFiscalPendente (C4)', () => {
   it('erro lendo familias → rejeita', async () => {
     const { admin } = fakeAdmin({ familiasErro: 'boom' });
     await expect(reenfileirarPushFiscalPendente(admin, 'o1', vi.fn(), AGORA)).rejects.toThrow('boom');
+  });
+
+  it('pendente fora da 1ª página de 1000 linhas também é reenfileirado', async () => {
+    const ok = { publicado_em: '2026-10-19T11:00:00Z', fiscal_sincronizado_em: '2026-10-19T11:10:00Z' };
+    const familias: Fam[] = Array.from({ length: 1000 }, (_, i) => ({ id: `ok${i}`, ...ok }));
+    familias.push({ id: 'pendente', publicado_em: '2026-10-19T11:00:00Z', fiscal_sincronizado_em: null });
+    const { admin } = fakeAdmin({ familias });
+    const enq = vi.fn(async () => {});
+    expect(await reenfileirarPushFiscalPendente(admin, 'o1', enq, AGORA)).toBe(1);
+    expect(enq).toHaveBeenCalledWith('pendente');
   });
 });

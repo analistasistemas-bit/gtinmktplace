@@ -3,6 +3,7 @@
 // CONCLUÍDA (ok ou recusa definitiva); publicada depois disso (ou nunca concluída) = push pendente.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
+const PAGINA = 1000;
 const CARENCIA_MS = 30 * 60 * 1000; // push recém-enfileirado pela publicação ainda está na fila
 
 export async function reenfileirarPushFiscalPendente(
@@ -14,15 +15,20 @@ export async function reenfileirarPushFiscalPendente(
   if (orgErr) throw new Error(`reenfileirarPushFiscalPendente: organizations: ${orgErr.message}`);
   if (!((org?.modulos_habilitados ?? []) as string[]).includes('fiscal')) return 0;
 
-  const { data: familias, error } = await admin.from('familias')
-    .select('id, publicado_em, fiscal_sincronizado_em')
-    .eq('org_id', orgId).eq('status', 'publicado').not('ml_item_id', 'is', null);
-  if (error) throw new Error(`reenfileirarPushFiscalPendente: familias: ${error.message}`);
+  // PostgREST corta em 1000 linhas: pagina (ordem estável por id) até página incompleta.
+  const familias: Array<{ id: string; publicado_em: string | null; fiscal_sincronizado_em: string | null }> = [];
+  for (let off = 0; ; off += PAGINA) {
+    const { data, error } = await admin.from('familias')
+      .select('id, publicado_em, fiscal_sincronizado_em')
+      .eq('org_id', orgId).eq('status', 'publicado').not('ml_item_id', 'is', null)
+      .order('id').range(off, off + PAGINA - 1);
+    if (error) throw new Error(`reenfileirarPushFiscalPendente: familias: ${error.message}`);
+    familias.push(...(data ?? []));
+    if ((data ?? []).length < PAGINA) break;
+  }
 
   const limite = agora.getTime() - CARENCIA_MS;
-  const pendentes = ((familias ?? []) as Array<{
-    id: string; publicado_em: string | null; fiscal_sincronizado_em: string | null;
-  }>).filter((f) => {
+  const pendentes = familias.filter((f) => {
     if (!f.publicado_em) return false;
     const pub = new Date(f.publicado_em).getTime();
     if (pub > limite) return false;
