@@ -602,10 +602,10 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
                 <div className="grid gap-3 sm:grid-cols-3">
                   {campoHerdavel('preco', true)}
                   {campoHerdavel('custo')}
-                  {campoHerdavel('pesoGramas')}
-                  {campoHerdavel('alturaCm')}
-                  {campoHerdavel('larguraCm')}
-                  {campoHerdavel('comprimentoCm')}
+                  {campoHerdavel('pesoGramas', true)}
+                  {campoHerdavel('alturaCm', true)}
+                  {campoHerdavel('larguraCm', true)}
+                  {campoHerdavel('comprimentoCm', true)}
                 </div>
               </div>
 

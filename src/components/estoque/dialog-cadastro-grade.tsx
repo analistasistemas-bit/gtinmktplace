@@ -414,12 +414,18 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   // Duas causas, duas mensagens. Cabeçalho vazio = TODA a grade pendente: listar os 60 SKUs seria
   // o muro vermelho de volta, em forma de texto. Com o cabeçalho válido, o pendente é uma exceção
   // que o operador esvaziou na mão — aí nomear é exatamente a informação que falta.
-  const semPreco = resolvidas.filter((r) => !!erroCampo('preco', r.preco));
-  const motivoBloqueio = semPreco.length === 0
-    ? undefined
-    : semPreco.length === resolvidas.length
-      ? 'Preencha o preço mínimo (líquido) — obrigatório em toda a grade.'
-      : `Preencha o preço mínimo (líquido) em: ${semPreco.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${semPreco.length > 3 ? ` e mais ${semPreco.length - 3}` : ''}.`;
+  // Peso/medidas da embalagem entraram na mesma situação (trava de 2026-10-19).
+  const pendencia = (campos: readonly CampoHerdavel[], oQue: string) => {
+    const sem = resolvidas.filter((r) => campos.some((c) => !!erroCampo(c, r[c])));
+    if (sem.length === 0) return null;
+    return sem.length === resolvidas.length
+      ? `Preencha ${oQue} — obrigatório em toda a grade.`
+      : `Preencha ${oQue} em: ${sem.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${sem.length > 3 ? ` e mais ${sem.length - 3}` : ''}.`;
+  };
+  const motivoBloqueio = [
+    pendencia(['preco'], 'o preço mínimo (líquido)'),
+    pendencia(['pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'], 'peso e medidas da embalagem'),
+  ].filter(Boolean).join(' ') || undefined;
 
   async function submeter() {
     if (!origem || !genero || !grade) return;
@@ -675,10 +681,10 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 <div className="grid gap-3 sm:grid-cols-3">
                   {campoHerdavel('preco', true)}
                   {campoHerdavel('custo')}
-                  {campoHerdavel('pesoGramas')}
-                  {campoHerdavel('alturaCm')}
-                  {campoHerdavel('larguraCm')}
-                  {campoHerdavel('comprimentoCm')}
+                  {campoHerdavel('pesoGramas', true)}
+                  {campoHerdavel('alturaCm', true)}
+                  {campoHerdavel('larguraCm', true)}
+                  {campoHerdavel('comprimentoCm', true)}
                 </div>
               </div>
 
