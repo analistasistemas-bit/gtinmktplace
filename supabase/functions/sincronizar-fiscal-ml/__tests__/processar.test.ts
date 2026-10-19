@@ -73,6 +73,12 @@ function deps(opts: {
 }
 
 describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
+  it('C1 r1: job.split=true chega ao resolvedor de itens', async () => {
+    const d = deps();
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1', split: true });
+    expect(d.listarItensFiscais).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), true);
+  });
+
   it('caminho feliz: empurra cada SKU, vincula, lê can_invoice e persiste', async () => {
     const d = deps();
     const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });

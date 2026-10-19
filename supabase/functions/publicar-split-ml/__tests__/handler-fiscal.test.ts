@@ -11,8 +11,9 @@ const f = vi.hoisted(() => ({
   rpcs: [] as string[],
   variacoes: [] as Record<string, unknown>[],
   linhas: [] as Record<string, unknown>[],
+  espelhos: [] as Array<Array<{ codigo: string }>>,
   conn: {} as Record<string, (...a: unknown[]) => unknown>,
-  enfileirarFiscal: vi.fn(async (_id: string) => 'msg'),
+  enfileirarFiscal: vi.fn(async (_id: string, _opts?: { split?: boolean }) => 'msg'),
 }));
 
 const FAMILIA = {
@@ -50,7 +51,7 @@ vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => 
 vi.mock('../../_shared/queue.ts', () => ({
   verificarAssinatura: vi.fn(async () => true),
   enfileirarVinculacaoCatalogo: vi.fn(async () => { f.chamadasML.push('enfileirarVinculacaoCatalogo'); }),
-  enfileirarSincronizacaoFiscal: (id: string) => f.enfileirarFiscal(id),
+  enfileirarSincronizacaoFiscal: (id: string, opts?: { split?: boolean }) => f.enfileirarFiscal(id, opts),
 }));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
@@ -80,7 +81,9 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
     },
   }),
 }));
-vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: vi.fn(async () => {}) }));
+vi.mock('../../_shared/anuncios/espelhar.ts', () => ({
+  espelharAnuncioExterno: vi.fn(async (_a: unknown, _f: unknown, vars: Array<{ codigo: string }>) => { f.espelhos.push(vars); }),
+}));
 vi.mock('../../_shared/update/fluxo-add-variacao.ts', () => ({ ehFluxoAddVariacao: vi.fn(async () => false) }));
 
 let handler: (req: Request) => Promise<Response>;
@@ -91,7 +94,7 @@ beforeAll(async () => {
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
 beforeEach(() => {
-  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = []; f.conn = {};
+  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = []; f.conn = {}; f.espelhos = [];
   f.enfileirarFiscal = vi.fn(async () => 'msg');
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
@@ -194,7 +197,7 @@ describe('publicar-split-ml — push fiscal pós-publicação (C1)', () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ ok: true });
     expect(f.escritas.some((w) => w.tabela === 'familias' && w.payload.status === 'publicado')).toBe(true);
-    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1');
+    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1', { split: true });
   });
 
   it('falha ao enfileirar não desfaz a publicação', async () => {
@@ -224,7 +227,20 @@ describe('publicar-split-ml — push fiscal pós-publicação (C1)', () => {
     expect(r.status).toBe(200);
     const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
     expect(erro?.payload.erro_mensagem).toBe('ML recusou');
-    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1');
+    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1', { split: true });
+  });
+
+  it('C1 r1: cores novas B e C, conector devolve só B → erro, B espelhada ANTES do erro, push enfileirado', async () => {
+    f.ncm = 'vigente';
+    f.variacoes = [corP('A'), { ...corP('B'), ml_variation_id: null }, { ...corP('C'), ml_variation_id: null }];
+    f.linhas = [{ ...linhaP(0, 'MLB0', 'A') }];
+    f.conn.atualizarAnuncio = async () => ({ ok: true, valor: { variacoesExternas: { B: 'VAR-B' }, precoVivo: null } });
+    await post();
+    const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
+    expect(String(erro?.payload.erro_mensagem)).toMatch(/não vinculou as cores novas C/);
+    expect(f.espelhos).toHaveLength(1);
+    expect(f.espelhos[0].map((v) => v.codigo)).toContain('B');
+    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1', { split: true });
   });
 
   it('erro definitivo ANTES de qualquer partição, fiscal ativo → família erro, NÃO enfileira', async () => {

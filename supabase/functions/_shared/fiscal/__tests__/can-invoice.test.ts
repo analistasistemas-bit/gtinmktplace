@@ -169,6 +169,18 @@ describe('listarItensFiscais (C1)', () => {
     ]);
   });
 
+  it('split=true com só a linha da partição 0 (partição 1 falhou): C da p1 fica órfão, nunca no item da 0', async () => {
+    const { admin } = fakeAdminSplit({ linhas: [L(0, 'MLB0', ['A'])] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A', 'C'], 'MLB0', true)).toEqual([
+      { sku: 'A', item_externo_id: 'MLB0' }, { sku: 'C', item_externo_id: null },
+    ]);
+  });
+
+  it('split=true sem nenhuma linha → todos na raiz herdada', async () => {
+    const { admin } = fakeAdminSplit({ linhas: [] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A'], 'MLB0', true)).toEqual([{ sku: 'A', item_externo_id: 'MLB0' }]);
+  });
+
   it('só partição 0 (Legacy de 1 anúncio) → [] (fallback familias.ml_item_id)', async () => {
     const { admin } = fakeAdminSplit({ linhas: [L(0, 'MLB0', ['A'])] });
     expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A'], 'MLB0')).toEqual([]);

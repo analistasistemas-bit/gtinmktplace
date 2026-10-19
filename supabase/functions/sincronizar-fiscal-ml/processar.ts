@@ -20,7 +20,7 @@ export interface DepsFiscal {
   /** Fix round 2 (C1): itens por SKU — filhos User Products (ADR-0088) ou partições do split
    *  (C1, auditoria 19/10). [] = Legacy (1 item só). */
   listarItensFiscais: (
-    admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null,
+    admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null, split?: boolean,
   ) => Promise<ItemUP[]>;
   portas: {
     empurrarFiscalSku: (token: string, payload: Record<string, unknown>) => Promise<void>;
@@ -102,6 +102,7 @@ export async function processarSincronizacaoFiscal(
     // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
     itensUP = await deps.listarItensFiscais(
       admin, familia.org_id, familia.codigo_pai, variacoes.map((v) => v.codigo), familia.ml_item_id,
+      job.split === true,
     );
   } catch (e) {
     return { status: 500, body: (e as Error).message };

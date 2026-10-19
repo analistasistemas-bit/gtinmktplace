@@ -47,15 +47,18 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
-export interface SincronizarFiscalJob { familia_id: string }
+/** `split`: produto em N partições (ADR-0048) — o worker vincula cada SKU no item da sua partição. */
+export interface SincronizarFiscalJob { familia_id: string; split?: boolean }
 
 /** ADR-0135: push dos dados fiscais da família pro ML (worker sincronizar-fiscal-ml). */
-export async function enfileirarSincronizacaoFiscal(familiaId: string): Promise<string> {
+export async function enfileirarSincronizacaoFiscal(
+  familiaId: string, opts?: { split?: boolean },
+): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/sincronizar-fiscal-ml`;
   const { messageId } = await qstashClient().publishJSON({
     url: target,
-    body: { familia_id: familiaId } satisfies SincronizarFiscalJob,
+    body: { familia_id: familiaId, ...(opts?.split ? { split: true } : {}) } satisfies SincronizarFiscalJob,
     retries: 3,
   });
   return messageId;

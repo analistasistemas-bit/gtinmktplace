@@ -33,7 +33,7 @@ export async function listarItensUP(
  *  `familias.ml_item_id`). SKU sem partição: raiz herdada só em `familias.ml_item_id` (sem linha
  *  de partição 0) → `mlItemIdRaiz`; senão `null` (órfão → semáforo false com causa). */
 export async function listarItensFiscais(
-  admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null,
+  admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null, split = false,
 ): Promise<ItemFiscalUP[]> {
   const up = await listarItensUP(admin, orgId, codigoPai);
   if (up.length > 0) return up;
@@ -44,7 +44,9 @@ export async function listarItensFiscais(
   const linhas = (data ?? []) as Array<{
     particao: number; item_externo_id: string | null; variacoes_externas: Record<string, unknown> | null;
   }>;
-  if (!linhas.some((l) => l.particao > 0)) return [];
+  // `split` (job do split): partição 1 pode ter falhado e só existir a linha da 0 — sem a flag isso
+  // caía no fallback Legacy e vinculava os SKUs da partição 1 ao item da 0 (C1 r1).
+  if (!split && !linhas.some((l) => l.particao > 0)) return [];
   const temLinhaRaiz = linhas.some((l) => l.particao === 0);
   return skus.map((sku) => {
     const linha = linhas.find((l) => sku in (l.variacoes_externas ?? {}));

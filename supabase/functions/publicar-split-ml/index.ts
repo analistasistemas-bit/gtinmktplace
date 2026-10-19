@@ -271,6 +271,23 @@ Deno.serve(async (req) => {
       let itemIdP = itemExternoId;
       let permalinkP = linhaP?.permalink ?? null;
 
+      // Espelha a partição em anuncios_externos (fonte de verdade da ancoragem). Também chamada antes
+      // do erro de "cores novas sem vínculo": a cor já confirmada no ML precisa estar espelhada
+      // para o push fiscal do catch não tratá-la como órfã (C1 r1, review Codex).
+      const espelharParticao = async () => {
+        const { data: varsEspelho } = await admin.from('variacoes')
+          .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+          .eq('familia_id', job.familia_id).in('codigo', coresP.map((v) => v.codigo));
+        await espelharAnuncioExterno(admin, {
+          user_id: familia.user_id,
+          org_id: familia.org_id,
+          codigo_pai: familia.codigo_pai,
+          ml_item_id: itemIdP,
+          ml_permalink: permalinkP,
+          publicado_em: new Date().toISOString(),
+        }, varsEspelho ?? [], { particao: p, titulo: tituloP });
+      };
+
       if (!itemExternoId) {
         // CREATE da partição.
         const ordenadas = ordenarVariacoesPrincipal(coresP, familia.variacao_principal_codigo ?? null);
@@ -395,6 +412,7 @@ Deno.serve(async (req) => {
         }
         const novasSemVinculo = novas.filter((v) => !persistidas.has(v.codigo));
         if (novasSemVinculo.length > 0) {
+          await espelharParticao();
           const err = new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} na partição ${p} — confira no ML antes de republicar para não duplicar (400)`) as Error & { status?: number };
           err.status = 400;
           throw err;
@@ -453,18 +471,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Espelha a partição em anuncios_externos (fonte de verdade da ancoragem).
-      const { data: varsEspelho } = await admin.from('variacoes')
-        .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
-        .eq('familia_id', job.familia_id).in('codigo', coresP.map((v) => v.codigo));
-      await espelharAnuncioExterno(admin, {
-        user_id: familia.user_id,
-        org_id: familia.org_id,
-        codigo_pai: familia.codigo_pai,
-        ml_item_id: itemIdP,
-        ml_permalink: permalinkP,
-        publicado_em: new Date().toISOString(),
-      }, varsEspelho ?? [], { particao: p, titulo: tituloP });
+      await espelharParticao();
     }
 
     // Catálogo (ADR-0021): best-effort, deferido. TODO(ADR-0048): vincular-catalogo lê só
@@ -489,7 +496,7 @@ Deno.serve(async (req) => {
     // (SKU nascia sem dados fiscais no ML). Falha de enqueue NUNCA desfaz a publicação (§3 ADR-0135);
     // o worker vincula cada SKU no item da sua partição (listarItensFiscais).
     if (fiscalAtivo) {
-      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      try { await enfileirarSincronizacaoFiscal(job.familia_id, { split: true }); }
       catch (e) { console.error(`enfileirar push fiscal (split) falhou para familia ${job.familia_id}:`, e); }
     }
     await talvezFinalizarLote(admin, job.lote_id);
@@ -512,7 +519,7 @@ Deno.serve(async (req) => {
     }).eq('id', job.familia_id);
     // C1: erro definitivo DEPOIS de partição(ões) já no ar — o que subiu precisa do push fiscal.
     if (fiscalAtivo && particaoNoAr) {
-      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      try { await enfileirarSincronizacaoFiscal(job.familia_id, { split: true }); }
       catch (e) { console.error(`enfileirar push fiscal (split, erro parcial) falhou para familia ${job.familia_id}:`, e); }
     }
     // Esgotou os retries de foto (item.pictures.unavailable) ou o picture_id cacheado já morreu
