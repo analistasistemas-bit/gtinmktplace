@@ -21,6 +21,7 @@ import { particionarPorPreco } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
+import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
@@ -97,6 +98,10 @@ Deno.serve(async (req) => {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
     // Dentro do try (não logo após o check de 'publicando') para cair no catch de retry/erro.
     await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
+    // ADR-0135 D-7 + ADR-0187: mesmo gate fiscal do publish/update, antes de QUALQUER escrita no
+    // ML (esta rota não tinha gate). 400 = definitivo; erro de leitura (sem status) = retenta.
+    // `somenteEstoque` não passa por aqui (spec §5.1, igual ao update-familia-ml).
+    if (!job.somenteEstoque) await exigirFiscalCompletoSePreciso(admin, familia);
 
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);

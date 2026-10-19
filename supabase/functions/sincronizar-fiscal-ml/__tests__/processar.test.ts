@@ -17,12 +17,21 @@ function deps(opts: {
   variacoesOverride?: typeof variacoes;
   orgErro?: string;
   empresaErro?: string;
+  /** ADR-0187: retorno de ncm_consultar — default 'vigente'. */
+  ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
 } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
   const empresaUsada = opts.empresaOverride === undefined ? EMPRESA_OK : opts.empresaOverride;
   const updates: Record<string, unknown>[] = [];
+  const ncm = opts.ncm ?? 'vigente';
+  const rpcs: string[] = [];
   const admin = {
+    rpc: async (fn: string, args: { p_codigos: string[] }) => {
+      rpcs.push(fn);
+      if (ncm === 'erro') return { data: null, error: { message: 'fora do ar' } };
+      return { data: ncm === 'inexistente' ? [] : args.p_codigos.map((codigo) => ({ codigo, vigente: ncm === 'vigente' })), error: null };
+    },
     from: (t: string) => ({
       select: () => ({
         eq: (_c: string, _v: string) => ({
@@ -54,6 +63,7 @@ function deps(opts: {
       lerCanInvoice: vi.fn(async () => ({ pronto: true, causa: null })),
     },
     updates,
+    rpcs,
   };
 }
 
@@ -217,5 +227,53 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     const upd = d.updates.find((u) => u.can_invoice === false);
     expect(upd).toBeDefined();
     expect(String(upd?.can_invoice_causa)).toContain('V2');
+  });
+});
+
+describe('processarSincronizacaoFiscal — NCM na tabela oficial (ADR-0187)', () => {
+  const portasIntocadas = (d: ReturnType<typeof deps>) => {
+    expect(d.resolverConexao).not.toHaveBeenCalled();
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+    expect(d.portas.vincularSkuAnuncio).not.toHaveBeenCalled();
+    expect(d.portas.lerCanInvoice).not.toHaveBeenCalled();
+  };
+
+  it('NCM inexistente → 200, can_invoice=false com causa "push recusado:" (reconciliação não limpa), ML intocado', async () => {
+    const d = deps({ ncm: 'inexistente' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates).toHaveLength(1);
+    expect(d.updates[0]).toMatchObject({
+      can_invoice: false,
+      can_invoice_causa: 'push recusado: NCM 39269090 não existe na tabela oficial',
+    });
+    portasIntocadas(d);
+  });
+
+  it('NCM vencido → 200, causa com a copy de vencido', async () => {
+    const d = deps({ ncm: 'vencido' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates[0]?.can_invoice_causa).toBe('push recusado: NCM 39269090 não está mais vigente');
+    portasIntocadas(d);
+  });
+
+  it('erro lendo ncm_consultar → 500 sem tocar can_invoice nem o ML', async () => {
+    const d = deps({ ncm: 'erro' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.rpcs).toEqual(['ncm_consultar']);
+    expect(d.updates).toEqual([]);
+    portasIntocadas(d);
+  });
+
+  it('replay do mesmo job com NCM inexistente → mesmo resultado, um único update por execução', async () => {
+    const d = deps({ ncm: 'inexistente' });
+    const r1 = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    const r2 = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r2).toEqual(r1);
+    expect(d.updates).toHaveLength(2);
+    expect(d.updates[1].can_invoice_causa).toBe(d.updates[0].can_invoice_causa);
+    portasIntocadas(d);
   });
 });

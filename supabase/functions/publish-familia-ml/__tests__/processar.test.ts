@@ -25,6 +25,7 @@ function fakeAdmin(over: {
   gtinBase?: string;
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;
+  ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
@@ -74,9 +75,17 @@ function fakeAdmin(over: {
     };
     return api;
   }
-  const rpc = async (fn: string) => (fn === 'reajuste_ativo_produto' && over.reajusteErro
-    ? { data: null, error: { message: 'timeout' } }
-    : { data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null });
+  const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
+    // ADR-0187: ncm_consultar (gate fiscal) — default vigente p/ todo código pedido.
+    if (fn === 'ncm_consultar') {
+      const ncm = over.ncm ?? 'vigente';
+      if (ncm === 'erro') return { data: null, error: { message: 'fora do ar' } };
+      return { data: ncm === 'inexistente' ? [] : (args?.p_codigos ?? []).map((codigo) => ({ codigo, vigente: ncm === 'vigente' })), error: null };
+    }
+    return fn === 'reajuste_ativo_produto' && over.reajusteErro
+      ? { data: null, error: { message: 'timeout' } }
+      : { data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null };
+  };
   return { admin: { from: chain, rpc, storage: { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) } } as never, writes };
 }
 
@@ -513,5 +522,26 @@ describe('processarFamiliaML — barreira do reajuste de preço em massa (spec C
     const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
     expect(r).toEqual({ tipo: 'retry', mensagem: 'Falha ao conferir reajuste de preço em massa: timeout' });
     expect(fakeConnector.chamadas).toHaveLength(0);
+  });
+});
+
+describe('processarFamiliaML — NCM fora da tabela oficial (ADR-0187)', () => {
+  beforeEach(() => fakeConnector.reset());
+
+  it('NCM vencido (org com módulo fiscal) → erro definitivo com a copy, zero chamadas ao ML', async () => {
+    const { admin, writes } = fakeAdmin({ familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'], ncm: 'vencido' });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect((r as { mensagem: string }).mensagem).toMatch(/NCM 39269090 não está mais vigente/);
+    expect(fakeConnector.chamadas).toHaveLength(0);
+    expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(true);
+  });
+
+  it('erro lendo ncm_consultar → retry (transitório), zero chamadas ao ML, família não marcada erro', async () => {
+    const { admin, writes } = fakeAdmin({ familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'], ncm: 'erro' });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('retry');
+    expect(fakeConnector.chamadas).toHaveLength(0);
+    expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
   });
 });

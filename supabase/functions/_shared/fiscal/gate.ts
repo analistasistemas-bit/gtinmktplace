@@ -3,6 +3,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { moduloHabilitadoStrict } from '../produto/modulo.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from './validar.ts';
+import { mensagemNcm, ncmsInvalidos } from './ncm-oficial.ts';
 
 export interface FamiliaFiscalRow extends CamposFiscaisFamilia {
   id: string;
@@ -31,6 +32,17 @@ export async function exigirFiscalCompletoSePreciso(
     ) as Error & { status?: number };
     // Definitivo: sem isso decidirRetryPorErro trata status=undefined como retriável e o
     // QStash retenta até 10x uma falha que não muda sem ação humana (fix round 1).
+    e.status = 400;
+    throw e;
+  }
+
+  // ADR-0187: NCM preenchido precisa existir e estar vigente na tabela oficial. Erro de leitura
+  // (ncmsInvalidos lança sem `.status`) sobe como transitório — nunca vira "válido".
+  const [invalido] = await ncmsInvalidos(admin, [familia.ncm]);
+  if (invalido) {
+    const e = new Error(
+      `${mensagemNcm(invalido)} em "${familia.nome_pai}" — corrija no botão Fiscal antes de publicar (ADR-0187)`,
+    ) as Error & { status?: number };
     e.status = 400;
     throw e;
   }

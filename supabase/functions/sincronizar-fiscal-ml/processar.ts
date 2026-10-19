@@ -5,6 +5,7 @@ import {
   montarFiscalInformation, type FamiliaFiscalPush, type VariacaoFiscalPush,
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
+import { mensagemNcm, ncmsInvalidos, type NcmInvalido } from '../_shared/fiscal/ncm-oficial.ts';
 import {
   calcularSemaforoCanInvoice, skusOrfaosUP, type ItemFiscalUP,
 } from '../_shared/fiscal/can-invoice.ts';
@@ -70,6 +71,15 @@ export async function processarSincronizacaoFiscal(
   }
   const faltas = camposFiscaisFaltantes(familia as CamposFiscaisFamilia, 'simples');
   if (faltas.length) return await recusar(`push recusado: cadastro incompleto — ${faltas.join('; ')}`);
+  // ADR-0187: NCM fora da tabela oficial (inexistente/vencido) → recusa definitiva; causa começa
+  // com "push" para a reconciliação (monitorar-moderados) não limpar. Erro de leitura → 500.
+  let ncmInvalido: NcmInvalido | undefined;
+  try {
+    [ncmInvalido] = await ncmsInvalidos(admin, [familia.ncm]);
+  } catch (e) {
+    return { status: 500, body: (e as Error).message };
+  }
+  if (ncmInvalido) return await recusar(`push recusado: ${mensagemNcm(ncmInvalido)}`);
 
   const conexao = await deps.resolverConexao(admin, familia.org_id, 'mercado_livre');
   if (!conexao) return { status: 200, body: { erro: 'org sem conexão com o Mercado Livre' } };

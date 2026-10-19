@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { exigirFiscalCompletoSePreciso } from '../gate.ts';
 
-function adminFake(modulos: string[], regime: string | null) {
+// ADR-0187: ncm_consultar — 'vigente' (default), 'vencido', 'inexistente' (sem linha) ou 'erro'.
+type Ncm = 'vigente' | 'vencido' | 'inexistente' | 'erro';
+function rpcNcm(ncm: Ncm) {
+  return async (_fn: string, args: { p_codigos: string[] }) => ncm === 'erro'
+    ? { data: null, error: { message: 'fora do ar' } }
+    : { data: ncm === 'inexistente' ? [] : args.p_codigos.map((codigo) => ({ codigo, vigente: ncm === 'vigente' })), error: null };
+}
+
+function adminFake(modulos: string[], regime: string | null, ncm: Ncm = 'vigente') {
   return {
+    rpc: rpcNcm(ncm),
     from: (tabela: string) => ({
       select: () => ({
         eq: () => ({
@@ -59,5 +68,27 @@ describe('exigirFiscalCompletoSePreciso (ADR-0135 D-7)', () => {
   it('erro de LEITURA do módulo (organizations) lança — nunca vira "sem módulo" (fail-open)', async () => {
     await expect(exigirFiscalCompletoSePreciso(adminFakeErroOrganizations(), completa))
       .rejects.toThrow(/organizations/);
+  });
+
+  it('ADR-0187: NCM vencido → lança definitivo (status 400) com a copy e o nome da família', async () => {
+    const p = exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples', 'vencido'), completa);
+    await expect(p).rejects.toMatchObject({ status: 400 });
+    await expect(p).rejects.toThrow(/NCM 39269090 não está mais vigente.*"X"/);
+  });
+  it('ADR-0187: NCM inexistente → lança definitivo com a copy', async () => {
+    const p = exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples', 'inexistente'), completa);
+    await expect(p).rejects.toMatchObject({ status: 400 });
+    await expect(p).rejects.toThrow(/NCM 39269090 não existe na tabela oficial/);
+  });
+  it('ADR-0187: erro lendo ncm_consultar → lança SEM status (transitório, QStash retenta)', async () => {
+    const e = await exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples', 'erro'), completa)
+      .catch((x: unknown) => x as Error & { status?: number });
+    expect(e).toBeInstanceOf(Error);
+    expect((e as Error).message).toMatch(/ncm_consultar/);
+    expect((e as { status?: number }).status).toBeUndefined();
+  });
+  it('ADR-0187: org sem módulo fiscal não consulta o NCM', async () => {
+    await expect(exigirFiscalCompletoSePreciso(adminFake(['estoque'], null, 'erro'), completa))
+      .resolves.toBe(false);
   });
 });
