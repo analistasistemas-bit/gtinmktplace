@@ -7,7 +7,7 @@
 // anúncio entre updates. O cap de 99.999 de estoque é aplicado pelo conector ML (criar/atualizar).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
@@ -93,6 +93,10 @@ Deno.serve(async (req) => {
   let capaSubidaAgora = false;
   let capa2SubidaAgora = false;
   let capa3SubidaAgora = false;
+  // C1 (auditoria fiscal 19/10): módulo fiscal ativo (retorno do gate) e se alguma partição já foi
+  // criada/atualizada NESTE attempt — o push fiscal precisa sair também em erro parcial.
+  let fiscalAtivo = false;
+  let particaoNoAr = false;
 
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
@@ -116,7 +120,7 @@ Deno.serve(async (req) => {
     if (familia.ml_item_id) particoesNoAr.add(0);
     const semCriacao = !!job.somenteEstoque && (variacoes ?? []).every((v) =>
       ancoragem.has(v.codigo) && particoesNoAr.has(ancoragem.get(v.codigo)!));
-    if (!semCriacao) await exigirFiscalCompletoSePreciso(admin, familia);
+    if (!semCriacao) fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
 
     if (!variacoes || variacoes.length === 0) {
       const err = new Error('Sem cores incluídas para publicar') as Error & { status?: number };
@@ -342,6 +346,7 @@ Deno.serve(async (req) => {
             ml_item_id: ref.itemExternoId, ml_permalink: ref.permalink ?? null,
           }).eq('id', job.familia_id);
         }
+        particaoNoAr = true;
       } else {
         // UPDATE da partição já no ar: repõe estoque das casadas + cria as cores novas.
         const casadas = coresP.filter((v) => v.ml_variation_id);
@@ -379,6 +384,7 @@ Deno.serve(async (req) => {
           err.retentavel = semRevinculo ? false : e.retentavel;
           throw err;
         }
+        particaoNoAr = true;
         const persistidas = new Set<string>();
         for (const [codigo, variationId] of Object.entries(res.valor!.variacoesExternas)) {
           if (novas.some((v) => v.codigo === codigo)) {
@@ -479,6 +485,13 @@ Deno.serve(async (req) => {
     await admin.from('familias').update({
       status: 'publicado', publicado_em: new Date().toISOString(),
     }).eq('id', job.familia_id);
+    // C1 (auditoria 19/10): D-8 valia só no publish/update normal; o split nunca empurrava o fiscal
+    // (SKU nascia sem dados fiscais no ML). Falha de enqueue NUNCA desfaz a publicação (§3 ADR-0135);
+    // o worker vincula cada SKU no item da sua partição (listarItensFiscais).
+    if (fiscalAtivo) {
+      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      catch (e) { console.error(`enfileirar push fiscal (split) falhou para familia ${job.familia_id}:`, e); }
+    }
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ ok: true, particoes: grupos.size }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -497,6 +510,11 @@ Deno.serve(async (req) => {
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
     }).eq('id', job.familia_id);
+    // C1: erro definitivo DEPOIS de partição(ões) já no ar — o que subiu precisa do push fiscal.
+    if (fiscalAtivo && particaoNoAr) {
+      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      catch (e) { console.error(`enfileirar push fiscal (split, erro parcial) falhou para familia ${job.familia_id}:`, e); }
+    }
     // Esgotou os retries de foto (item.pictures.unavailable) ou o picture_id cacheado já morreu
     // no ML ("does not exist"): limpa os caches efêmeros subidos NESTE attempt p/ o próximo
     // Reenviar re-subir do zero, em vez de martelar o mesmo id morto (espelha update-familia-ml).

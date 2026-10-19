@@ -168,6 +168,6 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
       familias: [{ id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1' }],
     });
     const listarItensUP = vi.fn(async () => { throw new Error('timeout'); });
-    await expect(reconciliarCanInvoice(admin, 'o1', 'tok', vi.fn(), listarItensUP)).rejects.toThrow(/timeout/);
+    await expect(reconciliarCanInvoice(admin, 'o1', 'tok', vi.fn(), listarItensUP, vi.fn(async () => ['S1']))).rejects.toThrow(/timeout/);
   });
 });

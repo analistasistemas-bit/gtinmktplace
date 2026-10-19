@@ -6,7 +6,7 @@ import { verificarAssinatura, type SincronizarFiscalJob } from '../_shared/queue
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { empurrarFiscalSku, lerCanInvoice, vincularSkuAnuncio } from '../_shared/canais/fiscal-ml.ts';
-import { listarItensUP } from '../_shared/fiscal/can-invoice.ts';
+import { listarItensFiscais } from '../_shared/fiscal/can-invoice.ts';
 import { processarSincronizacaoFiscal } from './processar.ts';
 
 Deno.serve(async (req) => {
@@ -35,9 +35,9 @@ Deno.serve(async (req) => {
       if (error) throw new Error(`listarVariacoes: ${error.message}`);
       return data ?? [];
     },
-    // C1: filhos User Products (ADR-0088) — Task 8 extraiu pra _shared/fiscal/can-invoice.ts,
+    // C1: filhos User Products (ADR-0088) + partições do split — Task 8 extraiu pra _shared/fiscal/can-invoice.ts,
     // reusado também pela reconciliação de monitorar-moderados.
-    listarItensUP,
+    listarItensFiscais,
     portas: { empurrarFiscalSku, vincularSkuAnuncio, lerCanInvoice },
   }, job);
   return new Response(

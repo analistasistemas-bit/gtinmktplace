@@ -61,7 +61,7 @@ function deps(opts: {
     resolverConexao: vi.fn(async () => ({ id: 'cx1' })),
     getToken: vi.fn(async () => 'tok'),
     listarVariacoes: vi.fn(async () => opts.variacoesOverride ?? variacoes),
-    listarItensUP: vi.fn(async () => opts.itensUP ?? []),
+    listarItensFiscais: vi.fn(async () => opts.itensUP ?? []),
     portas: {
       empurrarFiscalSku: vi.fn(async () => {}),
       vincularSkuAnuncio: vi.fn(async () => {}),
@@ -189,9 +189,9 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
   });
 
-  it('fix round 3 (Q1): erro de leitura em listarItensUP — 500, nenhum update de can_invoice', async () => {
+  it('fix round 3 (Q1): erro de leitura em listarItensFiscais — 500, nenhum update de can_invoice', async () => {
     const d = deps();
-    (d.listarItensUP as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('listarItensUP (raízes): boom'));
+    (d.listarItensFiscais as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('listarItensFiscais (raízes): boom'));
     const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
     expect(r.status).toBe(500);
     expect(d.updates.some((u) => 'can_invoice' in u)).toBe(false);

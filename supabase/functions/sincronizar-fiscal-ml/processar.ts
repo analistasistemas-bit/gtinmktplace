@@ -17,8 +17,11 @@ export interface DepsFiscal {
   resolverConexao: (admin: SupabaseClient, orgId: string, canal: string) => Promise<{ id: string } | null>;
   getToken: (conexao: unknown) => Promise<string>;
   listarVariacoes: (admin: SupabaseClient, familiaId: string) => Promise<VariacaoFiscalPush[]>;
-  /** Fix round 2 (C1): filhos User Products da família (ADR-0088). [] = Legacy (1 item só). */
-  listarItensUP: (admin: SupabaseClient, orgId: string, codigoPai: string) => Promise<ItemUP[]>;
+  /** Fix round 2 (C1): itens por SKU — filhos User Products (ADR-0088) ou partições do split
+   *  (C1, auditoria 19/10). [] = Legacy (1 item só). */
+  listarItensFiscais: (
+    admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null,
+  ) => Promise<ItemUP[]>;
   portas: {
     empurrarFiscalSku: (token: string, payload: Record<string, unknown>) => Promise<void>;
     vincularSkuAnuncio: (token: string, v: { sku: string; item_id: string; variation_id?: string }) => Promise<void>;
@@ -97,7 +100,9 @@ export async function processarSincronizacaoFiscal(
     // C1: rota UP tem um item ML POR SKU (anuncios_externos_itens); familias.ml_item_id só guarda
     // o 1º item da partição 0 — usá-lo pra TODOS os SKUs afirmaria fiscal no item errado. Família
     // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
-    itensUP = await deps.listarItensUP(admin, familia.org_id, familia.codigo_pai);
+    itensUP = await deps.listarItensFiscais(
+      admin, familia.org_id, familia.codigo_pai, variacoes.map((v) => v.codigo), familia.ml_item_id,
+    );
   } catch (e) {
     return { status: 500, body: (e as Error).message };
   }

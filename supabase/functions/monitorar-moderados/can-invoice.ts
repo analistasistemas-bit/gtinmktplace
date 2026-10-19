@@ -9,7 +9,7 @@
 // pra não ter duas semânticas divergentes.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  calcularSemaforoCanInvoice, listarItensUP as listarItensUPReal,
+  calcularSemaforoCanInvoice, listarItensFiscais as listarItensFiscaisReal,
   listarSkusFamilia as listarSkusFamiliaReal, skusOrfaosUP, type LerCanInvoice,
 } from '../_shared/fiscal/can-invoice.ts';
 
@@ -27,7 +27,9 @@ export async function reconciliarCanInvoice(
   admin: SupabaseClient, orgId: string, token: string, ler: LerCanInvoice,
   // Injeção pro mesmo padrão de deps de sincronizar-fiscal-ml — default é a implementação real
   // (mesma query, mesma trava contra erro de leitura degradar em silêncio).
-  listarItensUP: (admin: SupabaseClient, orgId: string, codigoPai: string) => ReturnType<typeof listarItensUPReal> = listarItensUPReal,
+  listarItensFiscais: (
+    admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null,
+  ) => ReturnType<typeof listarItensFiscaisReal> = listarItensFiscaisReal,
   // Fix (achado do review final): MESMO universo de SKU órfão que o worker de push usa — os
   // códigos de `variacoes` da família, não os SKUs dos próprios itensUP (ver comentário em
   // _shared/fiscal/can-invoice.ts#listarSkusFamilia).
@@ -51,7 +53,6 @@ export async function reconciliarCanInvoice(
     // gravada pelo worker de push (causa "push…", ex.: vínculo 400) só é limpa por um novo push,
     // que refaz o vínculo — senão a reconciliação a promoveria a verde com o vínculo recusado.
     if (f.can_invoice === false && f.can_invoice_causa?.startsWith('push')) continue;
-    const itensUP = await listarItensUP(admin, orgId, f.codigo_pai);
 
     // Fix round 1 (T8): SKU UP sem item resolvido é pendência, igual ao worker de push — nunca
     // pode ficar de fora do AND em silêncio (a família reconciliaria como `true` com 1 SKU
@@ -62,6 +63,8 @@ export async function reconciliarCanInvoice(
     // anuncios_externos_itens; ela nunca aparecia como órfã. Emenda D-10: os mesmos SKUs são o que
     // o semáforo lê (fiscal_information por SKU), então a busca vale pra Legacy também.
     const skus = await listarSkusFamilia(admin, f.id);
+    // C1 (auditoria 19/10): split também resolve item por SKU (partição), não só UP.
+    const itensUP = await listarItensFiscais(admin, orgId, f.codigo_pai, skus, f.ml_item_id);
     const skusOrfaos = skusOrfaosUP(skus, itensUP);
     if (skusOrfaos.length > 0) {
       const { error } = await admin.from('familias').update({

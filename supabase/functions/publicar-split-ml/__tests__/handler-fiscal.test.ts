@@ -11,6 +11,8 @@ const f = vi.hoisted(() => ({
   rpcs: [] as string[],
   variacoes: [] as Record<string, unknown>[],
   linhas: [] as Record<string, unknown>[],
+  conn: {} as Record<string, (...a: unknown[]) => unknown>,
+  enfileirarFiscal: vi.fn(async (_id: string) => 'msg'),
 }));
 
 const FAMILIA = {
@@ -48,6 +50,7 @@ vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => 
 vi.mock('../../_shared/queue.ts', () => ({
   verificarAssinatura: vi.fn(async () => true),
   enfileirarVinculacaoCatalogo: vi.fn(async () => { f.chamadasML.push('enfileirarVinculacaoCatalogo'); }),
+  enfileirarSincronizacaoFiscal: (id: string) => f.enfileirarFiscal(id),
 }));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
@@ -70,9 +73,15 @@ vi.mock('../../_shared/lote/finalizar.ts', () => ({ talvezFinalizarLote: vi.fn(a
 // Qualquer método do conector conta como chamada ao ML.
 vi.mock('../../_shared/canais/registry.ts', () => ({
   getConnector: () => new Proxy({}, {
-    get: (_t, nome: string) => async () => { f.chamadasML.push(nome); throw new Error(`ML chamado: ${nome}`); },
+    get: (_t, nome: string) => async (...a: unknown[]) => {
+      f.chamadasML.push(nome);
+      if (f.conn[nome]) return f.conn[nome](...a);
+      throw new Error(`ML chamado: ${nome}`);
+    },
   }),
 }));
+vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: vi.fn(async () => {}) }));
+vi.mock('../../_shared/update/fluxo-add-variacao.ts', () => ({ ehFluxoAddVariacao: vi.fn(async () => false) }));
 
 let handler: (req: Request) => Promise<Response>;
 let fetchSpy: ReturnType<typeof vi.fn>;
@@ -82,7 +91,8 @@ beforeAll(async () => {
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
 beforeEach(() => {
-  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = [];
+  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = []; f.conn = {};
+  f.enfileirarFiscal = vi.fn(async () => 'msg');
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -107,7 +117,7 @@ function cenarioSomenteEstoque(comCorNova: boolean) {
 
 describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)', () => {
   it('NCM vencido → erro definitivo (200, família erro com a copy), zero chamadas ao ML', async () => {
-    const r = await post();
+    const r = await post()
     expect(r.status).toBe(200);
     const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
     expect(erro?.payload.erro_mensagem).toMatch(/NCM 39269090 não está mais vigente/);
@@ -117,7 +127,7 @@ describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)',
 
   it('erro lendo ncm_consultar → transitório (500), família não marcada erro, zero chamadas ao ML', async () => {
     f.ncm = 'erro';
-    const r = await post();
+    const r = await post()
     expect(r.status).toBe(500);
     expect(f.escritas).toEqual([]);
     expect(f.chamadasML).toEqual([]);
@@ -126,7 +136,7 @@ describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)',
 
   it('NCM vigente → gate passa (segue para as variações), sem chamar o ML até aí', async () => {
     f.ncm = 'vigente';
-    const r = await post();
+    const r = await post()
     expect(r.status).toBe(200);
     const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
     expect(erro?.payload.erro_mensagem).toBe('Sem cores incluídas para publicar');
@@ -157,5 +167,71 @@ describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)',
     const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
     expect(erro?.payload.erro_mensagem).toMatch(/NCM 39269090 não está mais vigente/);
     expect(f.chamadasML).toEqual([]);
+  });
+});
+
+// C1 (auditoria fiscal 19/10): o split enfileira o push fiscal (cada SKU vai pro item da partição).
+describe('publicar-split-ml — push fiscal pós-publicação (C1)', () => {
+  const corP = (codigo: string) => ({
+    id: `v-${codigo}`, codigo, cor: codigo, estoque: 1, preco_publicacao: 10, preco_publicado_ml: 10,
+    ml_picture_id: 'PIC', imagem_path: null, gtin: null, ml_variation_id: `VAR-${codigo}`,
+  });
+  const linhaP = (particao: number, item: string, codigo: string) => ({
+    particao, item_externo_id: item, permalink: null, titulo: 'T', atacado_status: null,
+    variacoes_externas: { [codigo]: { id: `VAR-${codigo}` } },
+  });
+  const atualizarOk = async () => ({ ok: true, valor: { variacoesExternas: {}, precoVivo: null } });
+  function cenario2Particoes() {
+    f.ncm = 'vigente';
+    f.variacoes = [corP('A'), corP('B')];
+    f.linhas = [linhaP(0, 'MLB0', 'A'), linhaP(1, 'MLB1', 'B')];
+  }
+
+  it('partição no ar, UPDATE sem cor nova → publicado e enfileira o push fiscal', async () => {
+    cenario2Particoes();
+    f.conn.atualizarAnuncio = atualizarOk;
+    const r = await post()
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true });
+    expect(f.escritas.some((w) => w.tabela === 'familias' && w.payload.status === 'publicado')).toBe(true);
+    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1');
+  });
+
+  it('falha ao enfileirar não desfaz a publicação', async () => {
+    cenario2Particoes();
+    f.conn.atualizarAnuncio = atualizarOk;
+    f.enfileirarFiscal = vi.fn(async () => { throw new Error('qstash fora'); });
+    const r = await post()
+    expect(await r.json()).toMatchObject({ ok: true });
+    expect(f.escritas.some((w) => w.tabela === 'familias' && w.payload.status === 'publicado')).toBe(true);
+  });
+
+  it('somenteEstoque com toda cor ancorada em partição no ar (sem gate) → NÃO enfileira', async () => {
+    cenario2Particoes();
+    f.conn.atualizarAnuncio = atualizarOk;
+    const r = await post({ somenteEstoque: true });
+    expect(await r.json()).toMatchObject({ ok: true });
+    expect(f.enfileirarFiscal).not.toHaveBeenCalled();
+  });
+
+  it('erro definitivo DEPOIS de uma partição atualizada, fiscal ativo → família erro E enfileira', async () => {
+    cenario2Particoes();
+    let n = 0;
+    f.conn.atualizarAnuncio = async () => (++n === 1
+      ? atualizarOk()
+      : { ok: false, erro: { status: 400, retentavel: false, mensagemOperador: 'ML recusou' } });
+    const r = await post()
+    expect(r.status).toBe(200);
+    const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
+    expect(erro?.payload.erro_mensagem).toBe('ML recusou');
+    expect(f.enfileirarFiscal).toHaveBeenCalledWith('fam-1');
+  });
+
+  it('erro definitivo ANTES de qualquer partição, fiscal ativo → família erro, NÃO enfileira', async () => {
+    cenario2Particoes();
+    f.conn.atualizarAnuncio = async () => ({ ok: false, erro: { status: 400, retentavel: false, mensagemOperador: 'ML recusou' } });
+    await post();
+    expect(f.escritas.some((w) => w.tabela === 'familias' && w.payload.status === 'erro')).toBe(true);
+    expect(f.enfileirarFiscal).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  calcularSemaforoCanInvoice, listarItensUP, listarSkusFamilia, skusOrfaosUP,
+  calcularSemaforoCanInvoice, listarItensFiscais, listarItensUP, listarSkusFamilia, skusOrfaosUP,
 } from '../can-invoice.ts';
 
 // Fake admin mínimo pra exercitar a query real de listarItensUP (Task 7 nunca testou
@@ -121,5 +121,67 @@ describe('skusOrfaosUP (fix round 1 — T8: gate compartilhado com o worker de p
   it('UP: todos resolvidos → []', () => {
     const itensUP = [{ sku: 'S1', item_externo_id: 'I1' }, { sku: 'S2', item_externo_id: 'I2' }];
     expect(skusOrfaosUP(['S1', 'S2'], itensUP)).toEqual([]);
+  });
+});
+
+// C1 (auditoria fiscal 19/10): fake encadeável — `select('id')` = raízes UP; demais = linhas do split.
+type Linha = { particao: number; item_externo_id: string | null; variacoes_externas: Record<string, unknown> };
+function fakeAdminSplit(opts: { linhas?: Linha[]; itensUP?: Array<{ sku: string; item_externo_id: string | null }>; erro?: string }) {
+  const lidas: string[] = [];
+  return {
+    lidas,
+    admin: {
+      from: (t: string) => {
+        lidas.push(t);
+        let cols = '';
+        const q: Record<string, unknown> = {
+          select: (c: string) => { cols = c; return q; }, eq: () => q, in: () => q,
+          then: (ok: (v: unknown) => unknown) => {
+            if (t === 'anuncios_externos_itens') return Promise.resolve({ data: opts.itensUP ?? [], error: null }).then(ok);
+            if (cols === 'id') return Promise.resolve({ data: opts.itensUP?.length ? [{ id: 'raiz1' }] : [], error: null }).then(ok);
+            if (opts.erro) return Promise.resolve({ data: null, error: { message: opts.erro } }).then(ok);
+            return Promise.resolve({ data: opts.linhas ?? [], error: null }).then(ok);
+          },
+        };
+        return q;
+      },
+    } as never,
+  };
+}
+
+describe('listarItensFiscais (C1)', () => {
+  const L = (particao: number, item: string, skus: string[]): Linha => ({
+    particao, item_externo_id: item, variacoes_externas: Object.fromEntries(skus.map((k) => [k, {}])),
+  });
+
+  it('split: cada SKU no item da sua partição; SKU sem partição → null (órfão)', async () => {
+    const { admin } = fakeAdminSplit({ linhas: [L(0, 'MLB0', ['A', 'B']), L(1, 'MLB1', ['C'])] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A', 'B', 'C', 'D'], 'MLB0')).toEqual([
+      { sku: 'A', item_externo_id: 'MLB0' }, { sku: 'B', item_externo_id: 'MLB0' },
+      { sku: 'C', item_externo_id: 'MLB1' }, { sku: 'D', item_externo_id: null },
+    ]);
+  });
+
+  it('split sem linha da partição 0: SKU sem partição herda a raiz de familias.ml_item_id', async () => {
+    const { admin } = fakeAdminSplit({ linhas: [L(1, 'MLB1', ['C'])] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A', 'C'], 'MLB0')).toEqual([
+      { sku: 'A', item_externo_id: 'MLB0' }, { sku: 'C', item_externo_id: 'MLB1' },
+    ]);
+  });
+
+  it('só partição 0 (Legacy de 1 anúncio) → [] (fallback familias.ml_item_id)', async () => {
+    const { admin } = fakeAdminSplit({ linhas: [L(0, 'MLB0', ['A'])] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['A'], 'MLB0')).toEqual([]);
+  });
+
+  it('com itens UP → devolve os UP sem consultar o split', async () => {
+    const { admin, lidas } = fakeAdminSplit({ itensUP: [{ sku: 'S1', item_externo_id: 'MLB9' }], linhas: [L(1, 'MLBX', ['S1'])] });
+    expect(await listarItensFiscais(admin, 'o1', 'CP1', ['S1'], 'MLB0')).toEqual([{ sku: 'S1', item_externo_id: 'MLB9' }]);
+    expect(lidas.filter((t) => t === 'anuncios_externos')).toHaveLength(1); // só a leitura das raízes UP
+  });
+
+  it('erro de leitura LANÇA listarItensFiscais', async () => {
+    const { admin } = fakeAdminSplit({ erro: 'timeout' });
+    await expect(listarItensFiscais(admin, 'o1', 'CP1', ['A'], null)).rejects.toThrow(/listarItensFiscais/);
   });
 });

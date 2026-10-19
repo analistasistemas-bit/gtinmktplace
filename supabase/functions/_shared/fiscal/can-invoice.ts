@@ -26,6 +26,35 @@ export async function listarItensUP(
   return itens ?? [];
 }
 
+/** C1 (auditoria fiscal 19/10): itens por SKU de um produto em SPLIT (ADR-0048) — N anúncios
+ *  Legacy (partições), cada um com seus SKUs em `variacoes_externas`. Antes só UP era coberto;
+ *  no split o worker usava `familias.ml_item_id` (partição 0) pra TODOS os SKUs.
+ *  UP não-vazio vence (intacto). Sem partição > 0 → `[]` (Legacy de 1 anúncio: fallback
+ *  `familias.ml_item_id`). SKU sem partição: raiz herdada só em `familias.ml_item_id` (sem linha
+ *  de partição 0) → `mlItemIdRaiz`; senão `null` (órfão → semáforo false com causa). */
+export async function listarItensFiscais(
+  admin: SupabaseClient, orgId: string, codigoPai: string, skus: string[], mlItemIdRaiz: string | null,
+): Promise<ItemFiscalUP[]> {
+  const up = await listarItensUP(admin, orgId, codigoPai);
+  if (up.length > 0) return up;
+  const { data, error } = await admin.from('anuncios_externos')
+    .select('particao, item_externo_id, variacoes_externas')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre');
+  if (error) throw new Error(`listarItensFiscais: ${error.message}`);
+  const linhas = (data ?? []) as Array<{
+    particao: number; item_externo_id: string | null; variacoes_externas: Record<string, unknown> | null;
+  }>;
+  if (!linhas.some((l) => l.particao > 0)) return [];
+  const temLinhaRaiz = linhas.some((l) => l.particao === 0);
+  return skus.map((sku) => {
+    const linha = linhas.find((l) => sku in (l.variacoes_externas ?? {}));
+    return {
+      sku,
+      item_externo_id: linha ? linha.item_externo_id : (temLinhaRaiz ? null : mlItemIdRaiz),
+    };
+  });
+}
+
 /** Códigos das variações (não excluídas da publicação) de uma família — o universo completo de
  *  SKUs que DEVERIAM ter item vinculado no ML. Fix (achado do review final): a reconciliação de
  *  monitorar-moderados chamava `skusOrfaosUP` com os SKUs dos PRÓPRIOS itensUP em vez dos SKUs
