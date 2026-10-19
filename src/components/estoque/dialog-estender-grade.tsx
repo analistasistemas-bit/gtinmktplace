@@ -422,6 +422,15 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
     && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => (estoqueFixo != null && c === 'estoqueInicial') || !erroCampo(c, r[c])))
     && (estoqueFixo != null || resolvidas.every((r) => estoqueValido(r.estoqueInicial)))
     && resolvidas.every((r) => r.foto != null || fotoHerdavel(r.cor, skus) != null);
+  // Trava de 2026-10-19: um override de medida esvaziado no drawer trava "Salvar" sem sinal na
+  // matriz — nomear o SKU (mesmo texto do cadastro em grade).
+  const semEmbalagem = resolvidas.filter((r) =>
+    (['pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const).some((c) => !!erroCampo(c, r[c])));
+  const motivoEmbalagem = semEmbalagem.length === 0
+    ? null
+    : semEmbalagem.length === resolvidas.length
+      ? 'Preencha peso e medidas da embalagem — obrigatório em toda a grade.'
+      : `Preencha peso e medidas da embalagem em: ${semEmbalagem.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${semEmbalagem.length > 3 ? ` e mais ${semEmbalagem.length - 3}` : ''}.`;
 
   async function salvar() {
     if (!produto || !familiaCanonica) return;
@@ -687,6 +696,10 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
                     semEstoqueInicial={estoqueFixo != null}
                   />
                 </div>
+              )}
+
+              {motivoEmbalagem && linhas.length > 0 && (
+                <span className="text-xs text-muted-foreground">{motivoEmbalagem}</span>
               )}
 
               <span className="text-xs text-muted-foreground">* obrigatório</span>
