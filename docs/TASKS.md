@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal C1–C3: push fiscal em split, somente-estoque e edição (emenda ADR-0135) — 2026-10-19
+
+- [x] Split enfileira push fiscal e vincula cada SKU no item da sua partição; UPDATE Legacy "somente estoque" com cor nova passa pelo gate e recebe push; edição fiscal reenvia todas as versões publicadas.
+
 ## NCM validado na tabela oficial (ADR-0187) — 2026-10-19
 
 - [x] Tabela global `ncm_oficial` (10.516 códigos, Siscomex) + `ncm_consultar(text[])` (vigência por data em SQL) + resumo do Estoque (`produtos_estoque_resumo`) contando NCM inexistente/vencido como "Fiscal pendente".

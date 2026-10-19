@@ -267,6 +267,21 @@ Simples: o primeiro cliente de Lucro Presumido espera a V2.
   como vinda da nota, gravada só com confirmação ativa item a item, nunca em lote. A trava de
   coerência fica. Desenho completo da V2 #2 em [ADR-0181](0181-entrada-por-nota-de-compra-e-pacote-do-contador.md).
 
+## Emenda — 2026-10-19: push fiscal nos caminhos esquecidos (auditoria Codex)
+
+Auditoria de código (19/10/2026) achou três caminhos em que um SKU ia ao ML sem dados fiscais.
+Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
+
+- **Split (ADR-0048):** `publicar-split-ml` enfileira `sincronizar-fiscal-ml` ao publicar (e
+  também no erro definitivo se alguma partição já foi ao ar). O worker vincula cada SKU no item da
+  **sua** partição (`anuncios_externos.variacoes_externas`, via `listarItensFiscais`), não mais
+  todos em `familias.ml_item_id`. A reconciliação usa o mesmo resolvedor.
+- **UPDATE Legacy em "somente estoque" com cor nova:** passa pelo gate D-7 e enfileira o push. Sem
+  cor nova segue dispensado (spec §5.1). Família migrada pelo ML para UP e ainda não adotada, com
+  fiscal incompleto, passa a dar erro pedindo o fiscal (custo aceito: o gate de publicação já exige).
+- **Edição fiscal (D-9):** reenfileira o push de **todas** as versões publicadas do produto
+  (`org_id + codigo_pai`), não só da versão aberta na tela.
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a
