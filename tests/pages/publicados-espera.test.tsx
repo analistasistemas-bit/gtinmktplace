@@ -333,6 +333,37 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
 
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
+
+  it('reativar também segura o modal aberto com a barra até o ML responder', async () => {
+    usePublicadosMock.mockReturnValue({ data: [itemBase({ status: 'pausado' })], isLoading: false, error: null, refetch: vi.fn() });
+    useStatusPublicadosMock.mockReturnValue({
+      data: { itens: [{ ml_item_id: 'MLB1', status: 'pausado', motivo: null, estoque: 87, preco: 24.1 }] },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    let concluir!: () => void;
+    const mutateAsync = vi.fn(() => new Promise<void>((res) => { concluir = () => res(); }));
+    usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
+
+    const { rerender } = renderPublicados();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reativar' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Reativar$/ }));
+    expect(mutateAsync).toHaveBeenCalledWith({ mlItemIds: ['MLB1'], status: 'ativo' });
+
+    usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: true, error: null });
+    rerender(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAccessibleName('Reativando anúncio');
+
+    concluir();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
 });
 
 // `pausandoId` é um único slot para TODAS as linhas (diferente de `removendoFoto` em

@@ -319,6 +319,7 @@ function LinhaTabela({
   // (em vez de fechar no clique e devolver o operador à tabela sem saber o que aconteceu).
   const [migrarAberto, setMigrarAberto] = useState(false);
   const [pausarAberto, setPausarAberto] = useState(false);
+  const [reativarAberto, setReativarAberto] = useState(false);
   const [republicarAberto, setRepublicarAberto] = useState(false);
   const [removerAberto, setRemoverAberto] = useState(false);
   // Suporte só-leitura: a edge recusa (403) qualquer escrita.
@@ -489,17 +490,46 @@ function LinhaTabela({
           )}
 
           {item.status === 'pausado' ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Reativar"
-              title={motivoDesabilitado ?? 'Reativar'}
-              className="h-7 px-2 text-xs"
-              disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}
-              onClick={(e) => { e.stopPropagation(); onPausarReativar(item, 'ativo'); }}
-            >
-              <Play className="h-3 w-3" />
-            </Button>
+            <AlertDialog open={reativarAberto} onOpenChange={setReativarAberto}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Reativar"
+                  title={motivoDesabilitado ?? 'Reativar'}
+                  className="h-7 px-2 text-xs"
+                  disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Play className="h-3 w-3" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent processando={pausando} rotuloProcessando="Reativando anúncio">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reativar anúncio?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    O anúncio volta a aparecer na busca e pode ser comprado no Mercado Livre.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={pausando}>Cancelar</AlertDialogCancel>
+                  {/* Mesmo contrato do Pausar: segura o modal com o sinal até o ML responder. */}
+                  <AlertDialogAction
+                    disabled={pausando}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try {
+                        await onPausarReativar(item, 'ativo');
+                      } finally {
+                        setReativarAberto(false);
+                      }
+                    }}
+                  >
+                    Reativar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           ) : (
             <AlertDialog open={pausarAberto} onOpenChange={setPausarAberto}>
               <AlertDialogTrigger asChild>
