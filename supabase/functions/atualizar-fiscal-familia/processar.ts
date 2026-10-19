@@ -113,14 +113,23 @@ export async function processarAtualizacaoFiscal(
   }).eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai);
   if (error) return { tipo: 'falha', mensagem: error.message };
 
-  // Enfileira por `status === 'publicado'`, não por `ml_item_id`: o enqueue serve tanto Legacy
-  // quanto UP (Task 7) e o worker resolve a rota sozinho. Famílias publicadas via UP marcam
-  // `status='publicado'` (publicar-familia-up.ts / atualizar-familia-up.ts) sem necessariamente
-  // preencher `familias.ml_item_id` — checar só esse campo perderia o push fiscal nesse caminho.
+  // C3 (auditoria fiscal 19/10): o UPDATE acima grava TODAS as versões do produto, então o push
+  // vale pra TODAS as publicadas — a editada (a mais nova) pode estar `pronto` enquanto a antiga,
+  // no ar, ficava sem push. Enfileira por `status === 'publicado'`, não por `ml_item_id`: serve
+  // Legacy e UP (o worker resolve a rota; UP marca `publicado` sem preencher `ml_item_id`).
+  // Falha de leitura/enqueue nunca desfaz a gravação: loga e devolve pushEnfileirado=false.
   let pushEnfileirado = false;
-  if (familia.status === 'publicado') {
-    try { await deps.enfileirarPush(familia.id); pushEnfileirado = true; }
-    catch (e) { console.error('push fiscal não enfileirado:', (e as Error).message); }
+  const { data: publicadas, error: publicadasErro } = await admin.from('familias').select('id')
+    .eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai).eq('status', 'publicado');
+  if (publicadasErro) {
+    console.error('versões publicadas não listadas (push fiscal não enfileirado):', publicadasErro.message);
+  } else if ((publicadas ?? []).length > 0) {
+    let todas = true;
+    for (const p of publicadas as Array<{ id: string }>) {
+      try { await deps.enfileirarPush(p.id); }
+      catch (e) { todas = false; console.error('push fiscal não enfileirado:', (e as Error).message); }
+    }
+    pushEnfileirado = todas;
   }
   return { tipo: 'ok', pushEnfileirado };
 }

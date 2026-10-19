@@ -4,7 +4,9 @@ import { processarAtualizacaoFiscal, validarShapeEntrada, type DepsAtualizarFisc
 // ── Fake admin: familias/empresa_fiscal (padrão igual ao de publish-familia-ml). ──
 function fakeAdmin(over: {
   familia?: Record<string, unknown> | null; regime?: string;
-  erros?: { familias?: string; empresa_fiscal?: string; update?: string };
+  erros?: { familias?: string; empresa_fiscal?: string; update?: string; publicadas?: string };
+  // C3: versões publicadas do produto (select de ids no then). Default = a própria família, se publicada.
+  publicadas?: string[];
   // ncm_consultar: default = todo código vigente; 'vencido'/'inexistente'/'erro' forçam o caso.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
 } = {}) {
@@ -14,6 +16,8 @@ function fakeAdmin(over: {
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
   const regime = over.regime ?? 'simples';
   const erros = over.erros ?? {};
+  const publicadas = over.publicadas
+    ?? (familia && (familia as { status?: string }).status === 'publicado' ? [(familia as { id: string }).id] : []);
   function chain(table: string) {
     const rec = { op: '', payload: {} as Record<string, unknown>, filters: {} as Record<string, unknown> };
     const ler = () => {
@@ -41,6 +45,10 @@ function fakeAdmin(over: {
           return Promise.resolve({ data: null, error: err }).then(resolve);
         }
         reads.push({ table, filters: rec.filters });
+        if (table === 'familias') {
+          const err = erros.publicadas ? { message: erros.publicadas } : null;
+          return Promise.resolve({ data: err ? null : publicadas.map((id) => ({ id })), error: err }).then(resolve);
+        }
         return Promise.resolve({ data: ler(), error: erroDeLeitura() }).then(resolve);
       },
     };
@@ -125,6 +133,49 @@ describe('processarAtualizacaoFiscal', () => {
     expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
     expect(writes.length).toBe(1);
     expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  // C3 (auditoria fiscal 19/10): a edição grava TODAS as versões; o push vale pra todas as publicadas.
+  it('versão editada pronto + versão antiga publicado → enfileira o id da antiga', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, status: 'pronto' }, publicadas: ['fam-antiga'] });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(enfileirarPush).toHaveBeenCalledTimes(1);
+    expect(enfileirarPush).toHaveBeenCalledWith('fam-antiga');
+  });
+
+  it('duas versões publicadas → enfileira as duas', async () => {
+    const { admin } = fakeAdmin({ publicadas: ['fam-a', 'fam-b'] });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(enfileirarPush.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['fam-a', 'fam-b']);
+  });
+
+  it('nenhuma versão publicada → não enfileira, pushEnfileirado=false', async () => {
+    const { admin } = fakeAdmin({ publicadas: [] });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  it('erro ao listar versões publicadas → ok com pushEnfileirado=false (UPDATE já gravou)', async () => {
+    const { admin, writes } = fakeAdmin({ erros: { publicadas: 'timeout' } });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(writes).toHaveLength(1);
+    expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  it('uma das N falha ao enfileirar → pushEnfileirado=false (tenta todas)', async () => {
+    const { admin } = fakeAdmin({ publicadas: ['fam-a', 'fam-b'] });
+    const enfileirarPush = vi.fn(async (id: string) => { if (id === 'fam-a') throw new Error('qstash'); return 'msg-1'; });
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(enfileirarPush).toHaveBeenCalledTimes(2);
   });
 
   it('erro lendo familias → falha, nunca 404 (leitura com erro não é decisão)', async () => {
