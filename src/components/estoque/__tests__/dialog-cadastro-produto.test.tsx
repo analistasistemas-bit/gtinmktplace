@@ -879,6 +879,26 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
+  it('falha na consulta do NCM: avisa e trava o Cadastrar; colar com pontos normaliza e valida', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+    await escolherNoSelect(user, /Origem fiscal/i, '0');
+    await escolherNoSelect(user, 'CSOSN', '102');
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({ data: null, error: { message: 'boom' } });
+    await user.type(screen.getByLabelText('NCM'), '62034900');
+    expect(await screen.findByText('Não foi possível verificar o NCM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
+    await user.clear(screen.getByLabelText('NCM'));
+    await user.click(screen.getByLabelText('NCM'));
+    await user.paste('6203.49.00');
+    expect(screen.getByLabelText('NCM')).toHaveValue('62034900');
+    expect(await screen.findByText(/^6203\.49\.00 — /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
   it('Voltar retorna à etapa 1 sem perder os dados já digitados', async () => {
     const user = userEvent.setup();
     renderDialog();

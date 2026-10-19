@@ -22,7 +22,8 @@ export function useNcmOficial(ncm: string): { status: NcmStatus; descricao: stri
   if (!completo) return { status: 'incompleto', descricao: null };
   // Erro de um refetch prevalece sobre dado antigo (fail-closed).
   if (q.isError) return { status: 'erro', descricao: null };
-  if (q.isPending) return { status: 'carregando', descricao: null };
+  // Reconsulta em andamento (inclusive com dado em cache): não confia na vigência antiga.
+  if (q.isPending || q.isFetching) return { status: 'carregando', descricao: null };
   if (!q.data) return { status: 'inexistente', descricao: null };
   return { status: q.data.vigente ? 'ok' : 'vencido', descricao: q.data.descricao };
 }

@@ -585,6 +585,26 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
+  it('falha na consulta do NCM: avisa e trava o Cadastrar', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: 'boom' } } as never);
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
+    await preencherEmbalagem(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await escolherGrade(user, 'letras');
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    await escolherNoSelectBase(user, 'Origem fiscal (NF-e)', '0');
+    await escolherNoSelectBase(user, 'CSOSN', '102');
+    await user.type(screen.getByLabelText('NCM'), '62034900');
+    expect(await screen.findByText('Não foi possível verificar o NCM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+
   it('com o módulo fiscal, o passo fiscal existe e a numeração de etapas cresce', async () => {
     const user = userEvent.setup();
     renderGrade();

@@ -56,4 +56,17 @@ describe('useNcmOficial (ADR-0187)', () => {
     await qc.refetchQueries({ queryKey: ['ncm-oficial', '62034900'] });
     await waitFor(() => expect(result.current.status).toBe('erro'));
   });
+
+  it('refetch em andamento com cache válido: carregando; depois reflete o novo resultado', async () => {
+    rpc.mockResolvedValueOnce({ data: [{ codigo: '62034900', descricao: 'Calças', vigente: true }], error: null });
+    const { qc, W } = wrapper();
+    const { result } = renderHook(() => useNcmOficial('62034900'), { wrapper: W });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    let liberar!: (v: unknown) => void;
+    rpc.mockReturnValueOnce(new Promise((r) => { liberar = r; }));
+    void qc.refetchQueries({ queryKey: ['ncm-oficial', '62034900'] });
+    await waitFor(() => expect(result.current.status).toBe('carregando'));
+    liberar({ data: [{ codigo: '62034900', descricao: 'Calças', vigente: false }], error: null });
+    await waitFor(() => expect(result.current.status).toBe('vencido'));
+  });
 });
