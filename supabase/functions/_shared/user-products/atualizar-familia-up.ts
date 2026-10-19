@@ -376,11 +376,19 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     }),
     marcarAtivo: (sku) => atualizarLinha(sku, { status: 'ativo', retirado: false }),
     marcarRetirado: (sku) => atualizarLinha(sku, { status: 'pausado', retirado: true }),
-    buscarPorSku: async (sku) =>
-      buscarItemPorSku(fetchLike, {
+    async buscarPorSku(sku) {
+      const crit = {
         accessToken: await ctx.getToken(), sellerId: conexao.contaExternaId ?? '',
-        categoriaId: familia.categoria_ml_id ?? '', familyName: await familyNameDaCorNova(), desdeMs,
-      }, sku),
+        categoriaId: familia.categoria_ml_id ?? '', desdeMs,
+      };
+      const vivo = await familyNameDaCorNova();
+      const r = await buscarItemPorSku(fetchLike, { ...crit, familyName: vivo }, sku);
+      // Revisão Codex: item criado por uma tentativa anterior com o título cru da raiz não casa
+      // com o nome vivo — sem esta segunda busca a saga faria outro POST (anúncio duplicado).
+      // Readotado, a confirmação de family_id trava como antes.
+      if (r.tipo !== 'nenhum' || vivo === familyName) return r;
+      return buscarItemPorSku(fetchLike, { ...crit, familyName }, sku);
+    },
     criarPlano,
     async confirmar(itemExternoId): Promise<ConfirmacaoComp> {
       const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);

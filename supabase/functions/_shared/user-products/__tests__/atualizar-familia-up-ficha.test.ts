@@ -425,6 +425,26 @@ describe('atualizarFamiliaUP — cor nova usa o family_name vivo do irmão', () 
     expect(achado).toEqual({ tipo: 'um', itemExternoId: 'MLB-X' });
   });
 
+  it('item de tentativa anterior criado com o título cru ainda é readotado (sem POST duplicado)', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/items/search')) {
+        return new Response(JSON.stringify({ results: ['MLB-ORFAO'], paging: { total: 1 } }), { status: 200 });
+      }
+      if (String(url).includes('/items/bulk')) {
+        return new Response(JSON.stringify([{ status_code: 200, body: {
+          id: 'MLB-ORFAO', category_id: '', family_name: 'Nome  Local Preto', seller_id: 'seller-1', date_created: new Date().toISOString(),
+        } }]), { status: 200 });
+      }
+      return new Response(JSON.stringify({ attributes: ATRIBUTOS_DO_IRMAO, family_name: 'Nome Vivo' }), { status: 200 });
+    }) as typeof fetch;
+    let achado: unknown;
+    await atualizarFamiliaUP(args({
+      raiz: { id: 'root-1', titulo: 'Nome  Local Preto', criado_em: null },
+      executarSaga: async (portas) => { achado = await portas.buscarPorSku('NOVA'); return { tipo: 'sem_mudanca' }; },
+    }));
+    expect(achado).toEqual({ tipo: 'um', itemExternoId: 'MLB-ORFAO' });
+  });
+
   it('GET do irmão falhou → family_name cai para o título da raiz', async () => {
     globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
     await atualizarFamiliaUP(args());
