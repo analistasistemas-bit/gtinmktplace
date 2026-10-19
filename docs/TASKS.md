@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal C4/A1/A5: recuperação do push, semáforo por produto, EAN real (emenda ADR-0135) — 2026-10-19
+
+- [x] Reconciliação reenfileira push fiscal pendente (`fiscal_sincronizado_em` nulo/anterior à publicação); worker confere gravações; Publicados agrega o semáforo entre versões; clone não herda prontidão; EAN fiscal só com GTIN válido.
+
 ## Fiscal C1–C3: push fiscal em split, somente-estoque e edição (emenda ADR-0135) — 2026-10-19
 
 - [x] Split enfileira push fiscal e vincula cada SKU no item da sua partição; UPDATE Legacy "somente estoque" com cor nova passa pelo gate e recebe push; edição fiscal reenvia todas as versões publicadas.

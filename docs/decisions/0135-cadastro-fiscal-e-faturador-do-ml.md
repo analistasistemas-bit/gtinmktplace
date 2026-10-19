@@ -282,6 +282,21 @@ Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
 - **Edição fiscal (D-9):** reenfileira o push de **todas** as versões publicadas do produto
   (`org_id + codigo_pai`), não só da versão aberta na tela.
 
+## Emenda — 2026-10-19: recuperação do push, semáforo por produto, EAN real (auditoria Codex)
+
+- **Push com recuperação (C4):** `familias.fiscal_sincronizado_em` passa a ser "última tentativa de
+  push **concluída**" (ok ou recusa definitiva; nunca em erro transitório). A edição fiscal o zera.
+  A reconciliação de 6/6h (`monitorar-moderados`) reenfileira o push de toda família publicada há
+  mais de 30 min cujo marcador é nulo ou anterior a `publicado_em` — falha de enqueue ou retries
+  esgotados deixam de perder o fiscal. O worker grava cada conclusão num único update condicionado
+  ao `atualizado_em` lido no início (execução obsoleta não apaga pendência nova) e responde 500
+  quando a gravação falha. Fora: split com partição no ar e família em `erro` (o catch do split já
+  enfileira; o Reenviar refaz).
+- **Semáforo por produto (A1):** Publicados agrega `can_invoice` das versões publicadas do anúncio
+  (algum falso → pendente; algum nulo → "—"); a versão criada por "adicionar variações" nasce sem
+  os campos de prontidão.
+- **EAN (A5):** `tax_information.ean` só vai com GTIN válido (GS1) e nunca com código interno `3000…`.
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a
