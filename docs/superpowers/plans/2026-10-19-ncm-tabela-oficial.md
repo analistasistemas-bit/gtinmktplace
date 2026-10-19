@@ -28,7 +28,7 @@
 2. Leitura falha (RPC/organizations) → nenhum caminho trata como válido ou "sem módulo" (owners: Tasks 3–7).
 3. Código com `data_inicio` futura → recusado hoje (owner: Task 2).
 4. UPDATE de planilha só de preço com PAI de NCM vencido → lote abortado citando o PAI (owner: Task 4).
-5. Refresh com JSON parcial/duplicado → recusado antes de gerar SQL; código ausente de JSON válido → `data_fim = ontem`, linha mantida (owner: Task 1).
+5. Refresh com JSON parcial/duplicado → recusado; código ausente do JSON só é encerrado (`data_fim = ontem`, linha mantida) com confirmação explícita da contagem (owner: Task 1).
 
 ---
 
@@ -40,15 +40,16 @@
 - Test: `tests/scripts/ncm-compor.test.ts`
 
 **Interfaces:**
-- Produces: `type NcmLinha = { codigo: string; descricao: string; dataInicio: string /* YYYY-MM-DD */; dataFim: string }`; `comporTabelaNcm(json: { Nomenclaturas: { Codigo: string; Descricao: string; Data_Inicio: string; Data_Fim: string }[] }): NcmLinha[]`; `validarCargaNcm(linhas: NcmLinha[]): string[]` (problemas: `< 10000` códigos, código duplicado, data inválida, `dataInicio > dataFim`); `sqlSeed(linhas): string` (INSERTs em lotes de 1000); `sqlAtualizacao(linhas): string` — um bloco `begin; … commit;` com upsert `on conflict (codigo) do update set descricao, data_inicio, data_fim, atualizado_em = now()` + `update public.ncm_oficial set data_fim = current_date - 1, atualizado_em = now() where codigo <> all(array[…]) and data_fim >= current_date`.
-- CLI: `npx tsx scripts/ncm/gerar-sql.ts --modo seed|atualizar --entrada <json>` — aborta (exit 1, problemas no stderr) se `validarCargaNcm` acusar algo; em `atualizar` imprime no stderr a contagem de novos/alterados/encerrados antes do SQL.
+- Produces: `type NcmLinha = { codigo: string; descricao: string; dataInicio: string /* YYYY-MM-DD */; dataFim: string }`; `comporTabelaNcm(json: { Nomenclaturas: { Codigo: string; Descricao: string; Data_Inicio: string; Data_Fim: string }[] }): NcmLinha[]`; `validarCargaNcm(linhas: NcmLinha[]): string[]` (problemas: `< 10000` códigos, código duplicado, data inválida, `dataInicio > dataFim`); `sqlSeed(linhas): string` (INSERTs em lotes de 1000); `sqlAtualizacao(linhas: NcmLinha[], encerrar: string[]): string` — um bloco `begin; … commit;` com upsert `on conflict (codigo) do update set descricao, data_inicio, data_fim, atualizado_em = now()` (a vigência normal vem do `Data_Fim` do próprio JSON) + **só se `encerrar` não for vazio**: `update public.ncm_oficial set data_fim = current_date - 1, atualizado_em = now() where codigo = any(array[<encerrar>]) and data_fim >= current_date`.
+- CLI: `npx tsx scripts/ncm/gerar-sql.ts --modo seed|atualizar --entrada <json> [--atuais <codigos.txt>] [--confirmar-encerramentos=<n>]` — aborta (exit 1) se `validarCargaNcm` acusar algo. Em `atualizar`, `--atuais` é a lista de códigos hoje vigentes na tabela (exportada antes via Management API); os ausentes do JSON são **listados no stderr** e **nunca** encerrados sozinhos: sem `--confirmar-encerramentos` igual à quantidade listada, o CLI aborta (achado Codex r2: JSON parcial com 10 515 de 10 516 passaria a contagem mínima e extinguiria um código válido). O operador confere os listados contra a resolução Gecex antes de confirmar.
 
 - [ ] **Step 1: Failing test** (fixture mínima: `62`, `62.03`, `6203.4`, `6203.42.00`, `6203.49.00`, `01`):
   - só 8 dígitos viram linha; `codigo` = `'62034900'`;
   - `descricao` de `62034900` começa pelo texto de `62.03`, contém `Calças, jardineiras, bermudas e shorts (calções)` (sem `<i>`, sem `- `/`-- `), termina em `De outras matérias têxteis`, separador ` › `;
   - `'31/12/9999'` → `'9999-12-31'`; `'01/04/2022'` → `'2022-04-01'`;
   - `validarCargaNcm`: lista com 9 999 linhas → acusa contagem; duplicado → acusa; data `'31/02/2026'` → acusa;
-  - `sqlSeed` escapa `'` → `''`; `sqlAtualizacao` começa com `begin;`, termina com `commit;`, contém o upsert e o `data_fim = current_date - 1` com os códigos da entrada.
+  - `sqlSeed` escapa `'` → `''`; `sqlAtualizacao(linhas, [])` começa com `begin;`, termina com `commit;`, contém o upsert e **não** contém `current_date - 1`; `sqlAtualizacao(linhas, ['11111111'])` contém o encerramento só de `11111111`;
+  - CLI (testar a função de decisão exportada `ausentesParaEncerrar(atuais: string[], linhas: NcmLinha[], confirmados: number | null): { encerrar: string[] } | { erro: string }`): JSON parcial acima de 10 000 códigos com 1 ausente e sem confirmação → `erro` citando o código; com `confirmados = 1` → `encerrar = [código]`; `confirmados = 2` → `erro`.
 - [ ] **Step 2:** `pnpm vitest run tests/scripts/ncm-compor.test.ts` → FAIL.
 - [ ] **Step 3:** Implementar (ancestrais por prefixo de dígitos: 4 = posição, depois 5, 6, 7; capítulo de 2 dígitos fora).
 - [ ] **Step 4:** PASS. Rodar o CLI no JSON real (baixar em `$CLAUDE_JOB_DIR/tmp`): 10 516 linhas, `75937727` ausente, `62034900` presente, nenhum problema.
@@ -107,11 +108,11 @@
 
 ### Task 6: Gate de publicação/update e envio fiscal (workers QStash)
 
-**Files:** Modify `supabase/functions/_shared/fiscal/gate.ts` (`exigirFiscalCompletoSePreciso(admin, familia)`, após `camposFiscaisFaltantes`); Modify `supabase/functions/sincronizar-fiscal-ml/processar.ts` (após `camposFiscaisFaltantes`, ~linha 70, usando `deps.admin`); Tests `_shared/fiscal/__tests__/gate.test.ts` (criar se não existir), `sincronizar-fiscal-ml/__tests__/processar.test.ts`, e o teste do worker `publish-familia-ml` que já cobre o gate (grep `exigirFiscalCompletoSePreciso` nos `__tests__`).
+**Files:** Modify `supabase/functions/_shared/fiscal/gate.ts` (`exigirFiscalCompletoSePreciso(admin, familia)`, após `camposFiscaisFaltantes`); Modify `supabase/functions/publicar-split-ml/index.ts` (achado Codex r2: a rota de split — `publicar-familias/index.ts:149` → este worker — cria/atualiza anúncios sem gate fiscal algum; chamar `exigirFiscalCompletoSePreciso(admin, familia)` junto de `exigirSemReajusteAtivo` ~linha 99, **antes** de qualquer escrita no ML, dentro do mesmo `try` que já trata erro definitivo×transitório; isso também fecha a lacuna pré-existente do D-7 nessa rota); Modify `supabase/functions/sincronizar-fiscal-ml/processar.ts` (após `camposFiscaisFaltantes`, ~linha 70, usando `deps.admin`); Tests `_shared/fiscal/__tests__/gate.test.ts` (criar se não existir), `sincronizar-fiscal-ml/__tests__/processar.test.ts`, e o teste do worker `publish-familia-ml` que já cobre o gate (grep `exigirFiscalCompletoSePreciso` nos `__tests__`).
 
 **Interfaces:** Consumes `ncmsInvalidos(admin, [familia.ncm])`, `mensagemNcm`.
 
-- [ ] **Step 1:** Testes: gate com NCM vencido → lança com `status = 400` e a copy no texto (definitivo: worker grava erro e responde 200, sem retry); rpc erro → lança **sem** `status` (transitório: worker responde 500 e o QStash retenta; família continua `publicando`); sincronizar com NCM inexistente → `can_invoice=false`, causa `push recusado: NCM … não existe na tabela oficial` (começa com `push` → reconciliação não limpa), portas ML nunca chamadas, 200; rpc erro → 500 sem tocar `can_invoice`; replay do mesmo job → mesmo resultado, sem update duplicado relevante.
+- [ ] **Step 1:** Testes: gate com NCM vencido → lança com `status = 400` e a copy no texto (definitivo: worker grava erro e responde 200, sem retry); rpc erro → lança **sem** `status` (transitório: worker responde 500 e o QStash retenta; família continua `publicando`); sincronizar com NCM inexistente → `can_invoice=false`, causa `push recusado: NCM … não existe na tabela oficial` (começa com `push` → reconciliação não limpa), portas ML nunca chamadas, 200; rpc erro → 500 sem tocar `can_invoice`; replay do mesmo job → mesmo resultado, sem update duplicado relevante; `publicar-split-ml` com família de NCM vencido → erro definitivo e **zero** chamadas ao ML (fake de fetch/canal sem nenhuma chamada), rpc erro → transitório, zero chamadas ao ML.
 - [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Step 5:** Commit.
 
 ### Task 7: Front — descrição no form, Salvar travado, filtro "Fiscal pendente"
@@ -143,7 +144,7 @@
 - [ ] **Rollout, nesta ordem:**
   1. Push da branch → CI verde.
   2. `supabase db push` **só da Migration A** (aditiva, inofensiva para o código atual — mover a Migration B para fora de `supabase/migrations/` até o passo 6, ou criá-la só então). Conferir `count(*) = 10516` e `ncm_consultar` respondendo.
-  3. Deploy de todas as edges alteradas/importadoras (grep importadores de `_shared/fiscal/gate.ts` e `_shared/fiscal/ncm-oficial.ts`; no mínimo `atualizar-fiscal-familia`, `cadastrar-produto`, `ingest-lote`, `sugerir-ncm`, `adicionar-variacoes-familia`, `criar-kit-vinculado`, `publish-familia-ml`, `update-familia-ml`, `sincronizar-fiscal-ml`), cada uma com o `verify_jwt` do `supabase/config.toml`; conferir versão.
+  3. Deploy de todas as edges alteradas/importadoras (grep importadores de `_shared/fiscal/gate.ts` e `_shared/fiscal/ncm-oficial.ts`; no mínimo `atualizar-fiscal-familia`, `cadastrar-produto`, `ingest-lote`, `sugerir-ncm`, `adicionar-variacoes-familia`, `criar-kit-vinculado`, `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `sincronizar-fiscal-ml`), cada uma com o `verify_jwt` do `supabase/config.toml`; conferir versão.
   4. Merge fast-forward na `main` → deploy do front no Render; conferir o hash do bundle novo servido.
   5. Validação real (playwright-cli, sessão isolada): form fiscal com `75937727` → erro + Salvar desabilitado; `62034200` → descrição; screenshot.
   6. Commit/merge da Migration B → `supabase db push` → `npm run db:check` → conferir a constraint em `pg_constraint`.
