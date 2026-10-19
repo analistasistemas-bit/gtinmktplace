@@ -3,7 +3,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
-import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { openrouterClient } from '../_shared/ai/client.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { extrairSugestaoNcm, filtrarSugestaoNcm, montarPromptNcm, SEM_SUGESTAO } from './prompt.ts';
@@ -35,7 +35,15 @@ Deno.serve(async (req) => {
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const admin = adminClient();
-  if (!(await exigirModulo(admin, orgId, 'fiscal'))) {
+  // ADR-0187: leitura que falha NÃO vira "módulo desabilitado" (403 enganoso). 500, como o
+  // erro de leitura da família logo abaixo: falha transitória, o operador retenta.
+  let moduloFiscal: boolean;
+  try { moduloFiscal = await moduloHabilitadoStrict(admin, orgId, 'fiscal'); }
+  catch (e) {
+    console.error('sugerir-ncm: leitura do módulo fiscal falhou:', e);
+    return json({ error: 'Falha ao verificar o módulo fiscal. Tente novamente.' }, 500);
+  }
+  if (!moduloFiscal) {
     return json({ error: 'Módulo fiscal não habilitado para esta organização.' }, 403);
   }
 
