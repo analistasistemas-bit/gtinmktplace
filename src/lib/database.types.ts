@@ -2136,6 +2136,30 @@ export type Database = {
           },
         ]
       }
+      ncm_oficial: {
+        Row: {
+          atualizado_em: string
+          codigo: string
+          data_fim: string
+          data_inicio: string
+          descricao: string
+        }
+        Insert: {
+          atualizado_em?: string
+          codigo: string
+          data_fim: string
+          data_inicio: string
+          descricao: string
+        }
+        Update: {
+          atualizado_em?: string
+          codigo?: string
+          data_fim?: string
+          data_inicio?: string
+          descricao?: string
+        }
+        Relationships: []
+      }
       notas_compra: {
         Row: {
           assinada: boolean
@@ -4200,6 +4224,14 @@ export type Database = {
         }[]
       }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
+      ncm_consultar: {
+        Args: { p_codigos: string[] }
+        Returns: {
+          codigo: string
+          descricao: string
+          vigente: boolean
+        }[]
+      }
       operacoes_massa_reivindicar: {
         Args: { p_ml_item: string; p_operacao: string; p_org: string }
         Returns: boolean
