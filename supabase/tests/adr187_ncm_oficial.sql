@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
--- ADR-0187 Migration A: tabela oficial de NCM + ncm_consultar + `ncm_vigente` no resumo do Estoque.
--- Nenhuma linha de domínio é tocada: só um código fictício em ncm_oficial (resolução futura).
+-- ADR-0187 Migrations A e B: tabela oficial de NCM + ncm_consultar + `ncm_vigente` no resumo do Estoque;
+-- FK NOT VALID de familias.ncm. Linhas reais de domínio não são escritas: só fixtures (um código fictício
+-- em ncm_oficial, um lote e uma família de teste), tudo dentro da transação desfeita.
 begin;
 
 do $$
@@ -75,12 +76,21 @@ begin
 end $$;
 
 -- Migration B (FK NOT VALID): escrita nova em familias.ncm só com código da tabela oficial.
--- Os updates abaixo ficam dentro desta transação desfeita: nada persiste.
+-- Exercitada numa família fixture (lote fixture próprio, sob um usuário/org reais): nenhuma linha
+-- real de familias/lotes é escrita, nem pelo trigger de contadores do lote.
 reset role;
 do $$
-declare v_id uuid := (select id from public.familias limit 1);
+declare v_user uuid; v_org uuid; v_lote uuid; v_id uuid;
 begin
-  if v_id is null then raise exception 'nenhuma família para exercitar a FK'; end if;
+  select p.id, p.org_id into v_user, v_org from public.profiles p
+  where p.is_active and p.org_id is not null limit 1;
+  if v_user is null then raise exception 'nenhum perfil ativo para a fixture'; end if;
+  insert into public.lotes (user_id, org_id, numero)
+  values (v_user, v_org, (select coalesce(max(numero), 0) + 1 from public.lotes))
+  returning id into v_lote;
+  insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao)
+  values (v_lote, v_user, v_org, 'TESTE-ADR187', 'Teste ADR-0187 FK', 'CREATE')
+  returning id into v_id;
   begin
     update public.familias set ncm = '75937727' where id = v_id;
     raise exception 'FK ausente: familias aceitou NCM 75937727 fora da tabela oficial';
