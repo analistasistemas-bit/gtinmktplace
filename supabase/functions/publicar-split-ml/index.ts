@@ -98,13 +98,26 @@ Deno.serve(async (req) => {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
     // Dentro do try (não logo após o check de 'publicando') para cair no catch de retry/erro.
     await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
-    // ADR-0135 D-7 + ADR-0187: mesmo gate fiscal do publish/update, antes de QUALQUER escrita no
-    // ML (esta rota não tinha gate). 400 = definitivo; erro de leitura (sem status) = retenta.
-    // `somenteEstoque` não passa por aqui (spec §5.1, igual ao update-familia-ml).
-    if (!job.somenteEstoque) await exigirFiscalCompletoSePreciso(admin, familia);
 
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
+    // Partições já no ar (fonte da ancoragem) — lidas aqui, antes das fotos, para o gate fiscal.
+    const { data: linhas } = await admin.from('anuncios_externos')
+      .select('particao, item_externo_id, permalink, titulo, variacoes_externas, atacado_status')
+      .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
+    const ancoragem = montarAncoragem(linhas ?? []);
+
+    // ADR-0135 D-7 + ADR-0187: mesmo gate fiscal do publish/update, antes de QUALQUER escrita no
+    // ML (esta rota não tinha gate). 400 = definitivo; erro de leitura (sem status) = retenta.
+    // Só pula em `somenteEstoque` SEM criação (spec §5.1): toda cor já ancorada numa partição.
+    // Cor nova abre partição (CREATE) mesmo em somenteEstoque, e partição ancorada ainda sem item
+    // no ML também cai no CREATE (mesma regra do `itemExternoId` do laço abaixo) — aí o gate roda.
+    const particoesNoAr = new Set((linhas ?? []).filter((l) => l.item_externo_id).map((l) => l.particao));
+    if (familia.ml_item_id) particoesNoAr.add(0);
+    const semCriacao = !!job.somenteEstoque && (variacoes ?? []).every((v) =>
+      ancoragem.has(v.codigo) && particoesNoAr.has(ancoragem.get(v.codigo)!));
+    if (!semCriacao) await exigirFiscalCompletoSePreciso(admin, familia);
+
     if (!variacoes || variacoes.length === 0) {
       const err = new Error('Sem cores incluídas para publicar') as Error & { status?: number };
       err.status = 400;
@@ -159,11 +172,7 @@ Deno.serve(async (req) => {
       variacoesComFoto.push({ ...v, ml_picture_id: picId });
     }
 
-    // Ancoragem (partições já no ar) + particionamento por PREÇO (ADR-0078 F2).
-    const { data: linhas } = await admin.from('anuncios_externos')
-      .select('particao, item_externo_id, permalink, titulo, variacoes_externas, atacado_status')
-      .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
-    const ancoragem = montarAncoragem(linhas ?? []);
+    // Ancoragem (lida acima) + particionamento por PREÇO (ADR-0078 F2).
     const divergente = precosDivergentes(variacoesComFoto);
 
     // Faixa VIVA por partição: preco_publicado_ml das ancoradas; faltando, GET ao vivo

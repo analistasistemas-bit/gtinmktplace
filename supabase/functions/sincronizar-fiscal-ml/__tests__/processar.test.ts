@@ -19,6 +19,8 @@ function deps(opts: {
   empresaErro?: string;
   /** ADR-0187: retorno de ncm_consultar — default 'vigente'. */
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
+  /** Fix r1: o update de familias devolve erro do Supabase. */
+  updateErro?: string;
 } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
@@ -48,7 +50,10 @@ function deps(opts: {
           },
         }),
       }),
-      update: (patch: Record<string, unknown>) => ({ eq: async () => { updates.push(patch); return { error: null }; } }),
+      update: (patch: Record<string, unknown>) => ({ eq: async () => {
+        if (opts.updateErro) return { error: { message: opts.updateErro } };
+        updates.push(patch); return { error: null };
+      } }),
     }),
   };
   return {
@@ -274,6 +279,13 @@ describe('processarSincronizacaoFiscal — NCM na tabela oficial (ADR-0187)', ()
     expect(r2).toEqual(r1);
     expect(d.updates).toHaveLength(2);
     expect(d.updates[1].can_invoice_causa).toBe(d.updates[0].can_invoice_causa);
+    portasIntocadas(d);
+  });
+
+  it('fix r1: NCM inválido mas gravar can_invoice=false falha → 500 (retenta), ML intocado', async () => {
+    const d = deps({ ncm: 'inexistente', updateErro: 'deadlock' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
     portasIntocadas(d);
   });
 });

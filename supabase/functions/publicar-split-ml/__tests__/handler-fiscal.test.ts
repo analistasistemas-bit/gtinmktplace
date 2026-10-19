@@ -8,6 +8,9 @@ const f = vi.hoisted(() => ({
   ncm: 'vencido' as 'vigente' | 'vencido' | 'erro',
   escritas: [] as Array<{ tabela: string; payload: Record<string, unknown> }>,
   chamadasML: [] as string[],
+  rpcs: [] as string[],
+  variacoes: [] as Record<string, unknown>[],
+  linhas: [] as Record<string, unknown>[],
 }));
 
 const FAMILIA = {
@@ -23,7 +26,8 @@ function builder(tabela: string) {
     if (tabela === 'familias') return FAMILIA;
     if (tabela === 'organizations') return { modulos_habilitados: ['fiscal'] };
     if (tabela === 'empresa_fiscal') return { regime_tributario: 'simples' };
-    if (tabela === 'variacoes') return []; // gate passou → cai em "Sem cores incluídas" (400)
+    if (tabela === 'variacoes') return f.variacoes; // vazio: gate passou → "Sem cores incluídas" (400)
+    if (tabela === 'anuncios_externos') return f.linhas;
     return null;
   };
   const resolver = () => {
@@ -49,6 +53,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
     from: (t: string) => builder(t),
     rpc: async (nome: string, args: { p_codigos?: string[] }) => {
+      f.rpcs.push(nome);
       if (nome !== 'ncm_consultar') return { data: null, error: null }; // reajuste_ativo_produto: nenhum
       if (f.ncm === 'erro') return { data: null, error: { message: 'fora do ar' } };
       return { data: (args.p_codigos ?? []).map((codigo) => ({ codigo, vigente: f.ncm === 'vigente' })), error: null };
@@ -77,14 +82,28 @@ beforeAll(async () => {
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
 beforeEach(() => {
-  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = [];
+  f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = [];
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
 
-const post = () => handler(new Request('http://localhost', {
-  method: 'POST', body: JSON.stringify({ familia_id: 'fam-1', lote_id: 'lote-1' }),
+const post = (extra: Record<string, unknown> = {}) => handler(new Request('http://localhost', {
+  method: 'POST', body: JSON.stringify({ familia_id: 'fam-1', lote_id: 'lote-1', ...extra }),
 }));
+
+// 100 cores já ancoradas na partição 0 (+ opcionalmente 1 nova, que exige partição nova).
+const cor = (i: number) => ({
+  id: `v${i}`, codigo: `C${i}`, cor: `Cor ${i}`, estoque: 1, preco_publicacao: 10, preco_publicado_ml: 10,
+  ml_picture_id: `PIC${i}`, imagem_path: null, gtin: null, ml_variation_id: i < 100 ? `VAR${i}` : null,
+});
+function cenarioSomenteEstoque(comCorNova: boolean) {
+  const ancoradas = Array.from({ length: 100 }, (_, i) => cor(i));
+  f.variacoes = comCorNova ? [...ancoradas, cor(100)] : ancoradas;
+  f.linhas = [{
+    particao: 0, item_externo_id: 'MLB-P0', permalink: null, titulo: 'T', atacado_status: null,
+    variacoes_externas: Object.fromEntries(ancoradas.map((v) => [v.codigo, { id: v.ml_variation_id }])),
+  }];
+}
 
 describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)', () => {
   it('NCM vencido → erro definitivo (200, família erro com a copy), zero chamadas ao ML', async () => {
@@ -111,6 +130,32 @@ describe('publicar-split-ml — gate fiscal / NCM na tabela oficial (ADR-0187)',
     expect(r.status).toBe(200);
     const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
     expect(erro?.payload.erro_mensagem).toBe('Sem cores incluídas para publicar');
+    expect(f.chamadasML).toEqual([]);
+  });
+
+  it('fix r1: somenteEstoque com cor nova (partição nova = CREATE) + NCM vencido → definitivo, zero chamadas ao ML', async () => {
+    cenarioSomenteEstoque(true);
+    const r = await post({ somenteEstoque: true });
+    expect(r.status).toBe(200);
+    const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
+    expect(erro?.payload.erro_mensagem).toMatch(/NCM 39269090 não está mais vigente/);
+    expect(f.chamadasML).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fix r1: somenteEstoque só com cores já ancoradas (nenhuma criação) → gate fiscal não roda', async () => {
+    cenarioSomenteEstoque(false);
+    await post({ somenteEstoque: true });
+    expect(f.rpcs).not.toContain('ncm_consultar');
+  });
+
+  it('fix r1: somenteEstoque com cores ancoradas numa partição SEM item no ML (criação pendente) → gate roda', async () => {
+    cenarioSomenteEstoque(false);
+    f.linhas[0].item_externo_id = null;
+    const r = await post({ somenteEstoque: true });
+    expect(r.status).toBe(200);
+    const erro = f.escritas.find((w) => w.tabela === 'familias' && w.payload.status === 'erro');
+    expect(erro?.payload.erro_mensagem).toMatch(/NCM 39269090 não está mais vigente/);
     expect(f.chamadasML).toEqual([]);
   });
 });

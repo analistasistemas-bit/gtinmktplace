@@ -54,9 +54,12 @@ export async function processarSincronizacaoFiscal(
   const agora = () => new Date().toISOString();
 
   const recusar = async (causa: string): Promise<{ status: number; body: unknown }> => {
-    await admin.from('familias').update({
+    const { error } = await admin.from('familias').update({
       can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora(),
     }).eq('id', familia.id);
+    // Fix r1 (Task 6): recusa não gravada não pode responder 200 — o semáforo antigo (talvez
+    // verde) ficaria no ar. 500 → QStash retenta.
+    if (error) return { status: 500, body: error.message };
     return { status: 200, body: { erro: causa } };
   };
 
