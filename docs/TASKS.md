@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal A6/A7: dados fiscais só pelo backend (emenda ADR-0135) — 2026-10-19
+
+- [x] Trigger `familias_proteger_fiscal` (membro não grava prontidão/fiscal nem faz INSERT direto) + `can_write_current_org()` nas policies de escrita de `empresa_fiscal`; teste `supabase/tests/adr135_protecao_fiscal.sql`.
+
 ## Fiscal C4/A1/A5: recuperação do push, semáforo por produto, EAN real (emenda ADR-0135) — 2026-10-19
 
 - [x] Reconciliação reenfileira push fiscal pendente (`fiscal_sincronizado_em` nulo/anterior à publicação); worker confere gravações; Publicados agrega o semáforo entre versões; clone não herda prontidão; EAN fiscal só com GTIN válido.

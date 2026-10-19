@@ -314,9 +314,13 @@ Grupos de colunas:
   `tributacao_icms_regime` registra qual regime gerou o valor, para detectar troca de regime sem
   adivinhar (org cuja `empresa_fiscal.regime_tributario` divirja falha LOUD nomeando a família).
   `can_invoice` (boolean, nullable) + `can_invoice_causa` + `can_invoice_em` são o semáforo lido de
-  `GET /can_invoice` do ML (D-10, nunca calculado localmente); `fiscal_sincronizado_em` é só
-  diagnóstico do último push. `unidade` (já existente) passa a vocabulário controlado no ML quando
-  o módulo fiscal está ativo. Ver seção [Fiscal](#fiscal-adr-0135) abaixo.
+  `fiscal_information/{sku}` do ML (emenda D-10, nunca calculado localmente);
+  `fiscal_sincronizado_em` = última tentativa de push **concluída** (nula/anterior a `publicado_em`
+  = push pendente, reenfileirado pela reconciliação). `unidade` (já existente) passa a vocabulário
+  controlado no ML quando o módulo fiscal está ativo. **Trigger `familias_proteger_fiscal`**
+  (A6, 19/10/2026): papel `authenticated`/`anon` não muda essas colunas nem `ncm`, `cest`,
+  `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms*`, `descricao_fiscal`, `unidade`, `origem`, e não
+  faz INSERT direto (42501) — só edge (`service_role`) ou RPC `security definer`. Ver seção [Fiscal](#fiscal-adr-0135) abaixo.
 - **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`,
   `titulo_descartes jsonb` (ADR-0116 — diagnóstico: lista de `{slot, etapa, de, para}` com o que
   cada etapa do pipeline de título alterou ou removeu; `para=""` é descarte, outro valor é

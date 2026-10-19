@@ -297,6 +297,16 @@ Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
   os campos de prontidão.
 - **EAN (A5):** `tax_information.ean` só vai com GTIN válido (GS1) e nunca com código interno `3000…`.
 
+## Emenda — 2026-10-19: dados fiscais só pelo backend (auditoria Codex A6/A7)
+
+- **A6:** trigger `familias_proteger_fiscal` recusa (42501) quando o papel `authenticated`/`anon`
+  muda prontidão (`can_invoice*`, `fiscal_sincronizado_em`) ou dado fiscal (`ncm`, `cest`,
+  `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms*`, `descricao_fiscal`, `unidade`, `origem`) e
+  qualquer INSERT direto em `familias`. Antes, um membro marcava `can_invoice=true` pelo PostgREST
+  (provado em transação desfeita). Edges e RPCs `security definer` seguem livres.
+- **A7:** policies de escrita de `empresa_fiscal` passam a exigir `can_write_current_org()` —
+  sessão de suporte somente leitura não grava mais o cadastro da empresa.
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a
