@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  calcularSemaforoCanInvoice, idsParaChecar, listarItensUP, listarSkusFamilia, skusOrfaosUP,
+  calcularSemaforoCanInvoice, listarItensUP, listarSkusFamilia, skusOrfaosUP,
 } from '../can-invoice.ts';
 
 // Fake admin mínimo pra exercitar a query real de listarItensUP (Task 7 nunca testou
@@ -81,45 +81,25 @@ describe('listarSkusFamilia', () => {
   });
 });
 
-describe('idsParaChecar', () => {
-  it('Legacy (sem itens UP): usa ml_item_id se houver', () => {
-    expect(idsParaChecar([], 'MLB1')).toEqual(['MLB1']);
-    expect(idsParaChecar([], null)).toEqual([]);
-  });
-
-  it('UP: ids distintos, descarta SKU órfão (item_externo_id null)', () => {
-    const itens = [
-      { sku: 'S1', item_externo_id: 'I1' }, { sku: 'S2', item_externo_id: 'I1' },
-      { sku: 'S3', item_externo_id: null },
-    ];
-    expect(idsParaChecar(itens, 'MLB-primeiro-item')).toEqual(['I1']);
-  });
-});
-
-describe('calcularSemaforoCanInvoice', () => {
-  it('[] de ids → null (nada a checar)', async () => {
-    expect(await calcularSemaforoCanInvoice('tok', [], async () => ({ pronto: true, causa: null }), false)).toBeNull();
+describe('calcularSemaforoCanInvoice (AND por SKU, emenda D-10)', () => {
+  it('[] de SKUs → null (nada a checar)', async () => {
+    expect(await calcularSemaforoCanInvoice('tok', [], async () => ({ pronto: true, causa: null }))).toBeNull();
   });
 
   it('todos prontos → pronto=true, causa=null', async () => {
-    const r = await calcularSemaforoCanInvoice('tok', ['I1', 'I2'], async () => ({ pronto: true, causa: null }), true);
+    const r = await calcularSemaforoCanInvoice('tok', ['S1', 'S2'], async () => ({ pronto: true, causa: null }));
     expect(r).toEqual({ pronto: true, causa: null });
   });
 
-  it('AND: 1 item não-pronto derruba tudo, causa cita o item quando citarItem=true', async () => {
-    const ler = async (_t: string, id: string) => ({ pronto: id === 'I1', causa: id === 'I1' ? null : 'motivo-ml' });
-    const r = await calcularSemaforoCanInvoice('tok', ['I1', 'I2'], ler, true);
-    expect(r).toEqual({ pronto: false, causa: 'item I2: motivo-ml' });
-  });
-
-  it('Legacy (citarItem=false): causa não leva prefixo', async () => {
-    const r = await calcularSemaforoCanInvoice('tok', ['I1'], async () => ({ pronto: false, causa: 'motivo-ml' }), false);
-    expect(r).toEqual({ pronto: false, causa: 'motivo-ml' });
+  it('AND: 1 SKU não-pronto derruba tudo, causa cita o SKU', async () => {
+    const ler = async (_t: string, sku: string) => ({ pronto: sku === 'S1', causa: sku === 'S1' ? null : 'motivo-ml' });
+    const r = await calcularSemaforoCanInvoice('tok', ['S1', 'S2'], ler);
+    expect(r).toEqual({ pronto: false, causa: 'SKU S2: motivo-ml' });
   });
 
   it('qualquer leitura falhando (null) → null, nunca regride estado gravado (I7)', async () => {
-    const ler = async (_t: string, id: string) => (id === 'I1' ? { pronto: true, causa: null } : null);
-    expect(await calcularSemaforoCanInvoice('tok', ['I1', 'I2'], ler, true)).toBeNull();
+    const ler = async (_t: string, sku: string) => (sku === 'S1' ? { pronto: true, causa: null } : null);
+    expect(await calcularSemaforoCanInvoice('tok', ['S1', 'S2'], ler)).toBeNull();
   });
 });
 

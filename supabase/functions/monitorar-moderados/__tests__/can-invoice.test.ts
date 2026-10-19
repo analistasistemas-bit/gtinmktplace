@@ -61,7 +61,7 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
     await expect(reconciliarCanInvoice(admin, 'o1', 'tok', vi.fn(), vi.fn())).rejects.toThrow(/timeout/);
   });
 
-  it('família Legacy (sem filhos UP): grava can_invoice por familias.ml_item_id', async () => {
+  it('família Legacy (sem filhos UP): grava can_invoice lendo os SKUs da família', async () => {
     const { admin, updates } = fakeAdmin({
       familias: [
         { id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1' },
@@ -69,15 +69,16 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
       ],
     });
     const listarItensUP = vi.fn(async () => []); // [] = Legacy, como sincronizar-fiscal-ml
-    const ler = vi.fn(async (_t: string, itemId: string) =>
-      ({ pronto: itemId === 'MLB1', causa: itemId === 'MLB1' ? null : '{"status":false}' }));
-    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP);
+    const listarSkusFamilia = vi.fn(async (_a: unknown, familiaId: string) => (familiaId === 'f1' ? ['S1'] : ['S2']));
+    const ler = vi.fn(async (_t: string, sku: string) =>
+      ({ pronto: sku === 'S1', causa: sku === 'S1' ? null : '{"can_invoice":false}' }));
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, listarSkusFamilia);
     expect(n).toBe(2);
     expect(updates.find((u) => u.id === 'f1')).toEqual({ id: 'f1', can_invoice: true, can_invoice_causa: null });
-    expect(updates.find((u) => u.id === 'f2')).toEqual({ id: 'f2', can_invoice: false, can_invoice_causa: '{"status":false}' });
+    expect(updates.find((u) => u.id === 'f2')).toEqual({ id: 'f2', can_invoice: false, can_invoice_causa: 'SKU S2: {"can_invoice":false}' });
   });
 
-  it('família User Products: lê can_invoice de CADA item por SKU, AND, causa cita o item', async () => {
+  it('família User Products: lê can_invoice de CADA SKU, AND, causa cita o SKU', async () => {
     const { admin, updates } = fakeAdmin({
       familias: [{ id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1' }], // ml_item_id = só o 1º item da partição 0
     });
@@ -86,13 +87,13 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
       { sku: 'S2', item_externo_id: 'MLB2' },
     ]);
     const listarSkusFamilia = vi.fn(async () => ['S1', 'S2']);
-    const ler = vi.fn(async (_t: string, itemId: string) =>
-      ({ pronto: itemId === 'MLB1', causa: itemId === 'MLB1' ? null : 'motivo-ml' }));
+    const ler = vi.fn(async (_t: string, sku: string) =>
+      ({ pronto: sku === 'S1', causa: sku === 'S1' ? null : 'motivo-ml' }));
     const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, listarSkusFamilia);
     expect(n).toBe(1);
-    expect(ler).toHaveBeenCalledWith('tok', 'MLB1');
-    expect(ler).toHaveBeenCalledWith('tok', 'MLB2');
-    expect(updates[0]).toEqual({ id: 'f1', can_invoice: false, can_invoice_causa: 'item MLB2: motivo-ml' });
+    expect(ler).toHaveBeenCalledWith('tok', 'S1');
+    expect(ler).toHaveBeenCalledWith('tok', 'S2');
+    expect(updates[0]).toEqual({ id: 'f1', can_invoice: false, can_invoice_causa: 'SKU S2: motivo-ml' });
   });
 
   it('fix round 1 — SKU órfão (item_externo_id null) na rota UP: can_invoice=false, causa cita o SKU, NUNCA true', async () => {
@@ -140,7 +141,7 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
     });
     const listarItensUP = vi.fn(async () => []);
     const ler = vi.fn(async () => null);
-    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP);
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, vi.fn(async () => ['S1']));
     expect(n).toBe(0);
     expect(updates).toHaveLength(0);
   });

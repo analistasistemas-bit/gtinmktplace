@@ -6,7 +6,7 @@ import {
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
 import {
-  calcularSemaforoCanInvoice, idsParaChecar, skusOrfaosUP, type ItemFiscalUP,
+  calcularSemaforoCanInvoice, skusOrfaosUP, type ItemFiscalUP,
 } from '../_shared/fiscal/can-invoice.ts';
 
 export type ItemUP = ItemFiscalUP;
@@ -21,7 +21,7 @@ export interface DepsFiscal {
   portas: {
     empurrarFiscalSku: (token: string, payload: Record<string, unknown>) => Promise<void>;
     vincularSkuAnuncio: (token: string, v: { sku: string; item_id: string; variation_id?: string }) => Promise<void>;
-    lerCanInvoice: (token: string, itemId: string) => Promise<{ pronto: boolean; causa: string | null } | null>;
+    lerCanInvoice: (token: string, sku: string) => Promise<{ pronto: boolean; causa: string | null } | null>;
   };
 }
 
@@ -135,14 +135,13 @@ export async function processarSincronizacaoFiscal(
     return { status: 200, body: { erro: causa } };
   }
 
-  // Semáforo: um item por SKU na rota UP (AND — qualquer item não-pronto derruba a família toda,
-  // causa citando qual item), um item só na Legacy. Leitura falha (null) em QUALQUER item NÃO
-  // escreve nada — nunca regride um `true` já gravado por causa de uma falha transitória de
-  // leitura (I7); só grava quando TODOS os itens responderam de verdade. (Task 8: lógica extraída
-  // pra _shared/fiscal/can-invoice.ts — reusada pela reconciliação de monitorar-moderados.)
-  const ids = idsParaChecar(itensUP, familia.ml_item_id);
-  if (ids.length > 0) {
-    const resultado = await calcularSemaforoCanInvoice(token, ids, deps.portas.lerCanInvoice, itensUP.length > 0);
+  // Semáforo (emenda D-10): AND do can_invoice de cada SKU da família — qualquer SKU não-pronto
+  // derruba a família, causa citando qual. Leitura falha (null) em QUALQUER SKU NÃO escreve nada —
+  // nunca regride um `true` já gravado por falha transitória (I7). (Task 8: lógica em
+  // _shared/fiscal/can-invoice.ts — reusada pela reconciliação de monitorar-moderados.)
+  const skus = variacoes.map((v) => v.codigo);
+  if (skus.length > 0) {
+    const resultado = await calcularSemaforoCanInvoice(token, skus, deps.portas.lerCanInvoice);
     if (resultado) {
       await admin.from('familias').update({
         can_invoice: resultado.pronto, can_invoice_causa: resultado.causa, can_invoice_em: agora(),

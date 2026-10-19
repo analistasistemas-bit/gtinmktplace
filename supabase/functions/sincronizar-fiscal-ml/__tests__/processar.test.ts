@@ -127,11 +127,12 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     expect(r.status).toBe(200);
     expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: 'V1', item_id: 'MLB-V1' });
     expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: 'V2', item_id: 'MLB-V2' });
-    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'MLB-V1');
-    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'MLB-V2');
+    // Emenda D-10: semáforo lido por SKU (fiscal_information), não por item.
+    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'V1');
+    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'V2');
   });
 
-  it('fix round 2 (C1): semáforo UP é AND entre itens — 1 não-pronto derruba a família, causa cita o item', async () => {
+  it('semáforo é AND entre SKUs — 1 não-pronto derruba a família, causa cita o SKU', async () => {
     const d = deps({
       itensUP: [{ sku: 'V1', item_externo_id: 'MLB-V1' }, { sku: 'V2', item_externo_id: 'MLB-V2' }],
       variacoesOverride: [
@@ -139,12 +140,12 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
         { codigo: 'V2', gtin: null, peso_gramas: 100, ml_variation_id: null },
       ],
     });
-    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockImplementation(async (_tok: string, itemId: string) =>
-      itemId === 'MLB-V2' ? { pronto: false, causa: 'faltando X' } : { pronto: true, causa: null });
+    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockImplementation(async (_tok: string, sku: string) =>
+      sku === 'V2' ? { pronto: false, causa: 'faltando X' } : { pronto: true, causa: null });
     await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
     const upd = d.updates.find((u) => u.can_invoice === false);
     expect(upd).toBeDefined();
-    expect(String(upd?.can_invoice_causa)).toContain('MLB-V2');
+    expect(String(upd?.can_invoice_causa)).toBe('SKU V2: faltando X');
   });
 
   it('fix round 2 (C2): regime normal — recusa definitiva (v1 só Simples), portas nunca chamadas', async () => {

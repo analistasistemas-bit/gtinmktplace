@@ -82,17 +82,21 @@ export async function vincularSkuAnuncio(
   throw erroMl('POST fiscal_information/items', resp.status, await resp.text());
 }
 
+/** Emenda D-10 (19/10/2026): `GET /can_invoice/items/{id}` dá 403 PolicyAgent pro app mesmo com o
+ *  emissor configurado (Zaven) — a prontidão passa a vir do `can_invoice` do SKU em
+ *  fiscal_information. 404 = SKU nunca aceito no ML (ex.: NCM recusado) → pendência, não falha. */
 export async function lerCanInvoice(
-  token: string, itemId: string,
+  token: string, sku: string,
 ): Promise<{ pronto: boolean; causa: string | null } | null> {
-  const resp = await fetch(`${BASE}/can_invoice/items/${itemId}`, {
+  const resp = await fetch(`${BASE}/items/fiscal_information/${encodeURIComponent(sku)}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (resp.status === 404) return { pronto: false, causa: 'SKU sem dados fiscais no ML' };
   if (!resp.ok) {
-    console.warn(`can_invoice ${resp.status} para ${itemId}`);
+    console.warn(`fiscal_information ${resp.status} para SKU ${sku}`);
     return null;
   }
-  const j = await resp.json() as { status?: boolean } & Record<string, unknown>;
-  const pronto = j.status === true;
+  const j = await resp.json() as { can_invoice?: boolean } & Record<string, unknown>;
+  const pronto = j.can_invoice === true;
   return { pronto, causa: pronto ? null : JSON.stringify(j).slice(0, 500) };
 }

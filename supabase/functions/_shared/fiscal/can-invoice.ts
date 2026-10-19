@@ -5,7 +5,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export interface ItemFiscalUP { sku: string; item_externo_id: string | null }
 
-export type LerCanInvoice = (token: string, itemId: string) =>
+export type LerCanInvoice = (token: string, sku: string) =>
   Promise<{ pronto: boolean; causa: string | null } | null>;
 
 /** Filhos User Products (ADR-0088) — partição 0, mesmo padrão de vincular-catalogo/vinculacao.ts.
@@ -42,20 +42,10 @@ export async function listarSkusFamilia(
   return (data ?? []).map((v: { codigo: string }) => v.codigo);
 }
 
-/** IDs distintos a checar pra uma família: rota UP usa os itens dos filhos já resolvidos (SKU
- *  órfão fica de fora do AND — é `skusOrfaosUP`, abaixo, quem decide o que fazer com ele; nunca
- *  chamar sem checar órfão antes, ou a família UP incompleta pode reconciliar como pronta);
- *  Legacy usa o único item de familias.ml_item_id. */
-export function idsParaChecar(itensUP: ItemFiscalUP[], mlItemId: string | null): string[] {
-  return itensUP.length > 0
-    ? Array.from(new Set(itensUP.map((i) => i.item_externo_id).filter((id): id is string => !!id)))
-    : (mlItemId ? [mlItemId] : []);
-}
-
 /** SKUs da rota UP sem item_externo_id resolvido (pendente/criacao_incerta no ML). Presença de
  *  QUALQUER um aqui é pendência — nunca pode ficar de fora do resultado em silêncio (Task 7 Q3:
- *  o AND de `idsParaChecar` só olha os itens resolvidos; sem este gate, 1 SKU pendente + resto
- *  pronto reconciliaria a família inteira como `true`). `[]` em Legacy (itensUP vazio) — lá não
+ *  o can_invoice por SKU não diz se o SKU está vinculado a um anúncio; sem este gate, 1 SKU sem
+ *  item + resto pronto reconciliaria a família inteira como `true`). `[]` em Legacy (itensUP vazio) — lá não
  *  existe o conceito de "SKU sem item", é sempre o único item de ml_item_id. */
 export function skusOrfaosUP(skus: string[], itensUP: ItemFiscalUP[]): string[] {
   if (itensUP.length === 0) return [];
@@ -63,20 +53,18 @@ export function skusOrfaosUP(skus: string[], itensUP: ItemFiscalUP[]): string[] 
   return skus.filter((sku) => !itemIdPorSku.get(sku));
 }
 
-/** AND do semáforo sobre 1+ itens ML. `citarItem` prefixa a causa com o item (rota UP, vários
- *  itens); em Legacy (1 item só) a causa fica igual à do ML, sem prefixo. Retorna `null` se
- *  QUALQUER leitura falhar (transitório) — nunca regride um estado já gravado por causa de 1
- *  item que falhou ao responder (Task 7, I7). */
+/** AND do semáforo sobre os SKUs da família (emenda D-10: leitura por SKU em fiscal_information);
+ *  a causa cita o SKU que derrubou. Retorna `null` se QUALQUER leitura falhar (transitório) —
+ *  nunca regride um estado já gravado por causa de 1 SKU que falhou ao responder (Task 7, I7).
+ *  Chamar só depois de `skusOrfaosUP`: o vínculo SKU→anúncio não é legível pela API. */
 export async function calcularSemaforoCanInvoice(
-  token: string, itemIds: string[], ler: LerCanInvoice, citarItem: boolean,
+  token: string, skus: string[], ler: LerCanInvoice,
 ): Promise<{ pronto: boolean; causa: string | null } | null> {
-  if (itemIds.length === 0) return null;
+  if (skus.length === 0) return null;
   const resultados = await Promise.all(
-    itemIds.map(async (itemId) => ({ itemId, r: await ler(token, itemId) })),
+    skus.map(async (sku) => ({ sku, r: await ler(token, sku) })),
   );
   if (!resultados.every(({ r }) => r != null)) return null;
   const falha = resultados.find(({ r }) => !r!.pronto);
-  const pronto = !falha;
-  const causa = falha ? (citarItem ? `item ${falha.itemId}: ${falha.r!.causa}` : falha.r!.causa) : null;
-  return { pronto, causa };
+  return { pronto: !falha, causa: falha ? `SKU ${falha.sku}: ${falha.r!.causa}` : null };
 }

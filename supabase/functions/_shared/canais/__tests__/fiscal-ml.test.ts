@@ -98,21 +98,33 @@ describe('vincularSkuAnuncio', () => {
   });
 });
 
-describe('lerCanInvoice', () => {
-  it('status true → pronto sem causa', async () => {
-    globalThis.fetch = fakeFetch([{ status: 200, body: { status: true } }]);
-    await expect(lerCanInvoice('tok', 'MLB1')).resolves.toEqual({ pronto: true, causa: null });
+describe('lerCanInvoice (por SKU, emenda D-10)', () => {
+  it('lê GET /items/fiscal_information/{sku}; can_invoice true → pronto sem causa', async () => {
+    let url = '';
+    globalThis.fetch = (async (u: string) => {
+      url = u;
+      return new Response(JSON.stringify({ sku: '00101', can_invoice: true }), { status: 200 });
+    }) as typeof fetch;
+    await expect(lerCanInvoice('tok', '00101')).resolves.toEqual({ pronto: true, causa: null });
+    expect(url).toBe('https://api.mercadolibre.com/items/fiscal_information/00101');
   });
 
-  it('status false → não pronto com causa preenchida', async () => {
-    globalThis.fetch = fakeFetch([{ status: 200, body: { status: false, reason: 'X' } }]);
-    const r = await lerCanInvoice('tok', 'MLB1');
+  it('can_invoice false → não pronto com causa preenchida', async () => {
+    globalThis.fetch = fakeFetch([{ status: 200, body: { can_invoice: false, errors: ['X'] } }]);
+    const r = await lerCanInvoice('tok', '00101');
     expect(r?.pronto).toBe(false);
-    expect(r?.causa).toContain('reason');
+    expect(r?.causa).toContain('errors');
   });
 
-  it('resposta não-ok devolve null (sem lançar)', async () => {
+  it('404 → SKU sem dados fiscais no ML é pendência definitiva, não falha de leitura', async () => {
+    globalThis.fetch = fakeFetch([{ status: 404 }]);
+    await expect(lerCanInvoice('tok', '00101')).resolves.toEqual({
+      pronto: false, causa: 'SKU sem dados fiscais no ML',
+    });
+  });
+
+  it('outra resposta não-ok devolve null (sem lançar)', async () => {
     globalThis.fetch = fakeFetch([{ status: 500 }]);
-    await expect(lerCanInvoice('tok', 'MLB1')).resolves.toBeNull();
+    await expect(lerCanInvoice('tok', '00101')).resolves.toBeNull();
   });
 });

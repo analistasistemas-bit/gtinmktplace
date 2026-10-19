@@ -25,7 +25,7 @@ devolução, já calcula IBS/CBS — e expõe **API de escrita** para os dados f
 |---|---|
 | Dados fiscais por SKU | `POST/PUT/PATCH/GET /items/fiscal_information[/{sku}]` |
 | Vínculo SKU → anúncio | `POST /items/fiscal_information/items` (`{sku, item_id, variation_id}`) |
-| Prontidão para emitir | `GET /can_invoice/items/{item_id}[/variations/{variation_id}]` |
+| Prontidão para emitir | `GET /can_invoice/items/{item_id}[/variations/{variation_id}]` — 403 para o app; substituído por `can_invoice` de `GET /items/fiscal_information/{sku}` (emenda D-10, 2026-10-19) |
 | IE por UF | `POST/PUT/DELETE /users/{id}/invoices/state_registry/{cnpj}/{uf}` |
 | Regras tributárias (Regime Normal) | `POST/GET/PUT /users/{id}/invoices/tax_rules[/{id}]` |
 | Nota emitida | `GET /users/{id}/invoices/orders/{order_id}` (chave, número, série, XML, DANFE) |
@@ -185,10 +185,22 @@ Hoje não existe edição de produto cadastrado — sem ela não há backfill. E
 
 ### D-10 — `can_invoice` é o semáforo, com reconciliação
 
-O estado "pronto para faturar" exibido é o **do ML** (`GET /can_invoice/items/{id}`), não o que o
+O estado "pronto para faturar" exibido é o **do ML** (`GET /can_invoice/items/{id}` — ver emenda abaixo), não o que o
 PubliAI acha que empurrou — o operador pode mexer no painel do ML por fora. O badge entra na tela
 de Publicados; a leitura entra na **reconciliação horária existente** (nenhum worker novo). Push
 fiscal roda via QStash com idempotência, como todo worker do projeto.
+
+**Emenda (2026-10-19) — fonte por SKU.** `GET /can_invoice/items/{id}` responde 403
+`PA_UNAUTHORIZED_RESULT_FROM_POLICIES` para o app em todos os itens, **mesmo com o emissor de NF-e
+da conta configurado** (Zaven, medido 19/10). O semáforo passa a ser o AND de `can_invoice` de
+`GET /items/fiscal_information/{sku}` sobre os SKUs da família (`variacoes` não excluídas), com a
+causa citando o SKU; 404 = SKU nunca aceito pelo ML (ex.: NCM recusado) → pendência; outra falha de
+leitura não grava (I7). Limite conhecido: o `can_invoice` do SKU não diz se ele está vinculado a um
+anúncio, e o vínculo não é legível pela API (as leituras dão 404/403; o `POST` de vínculo devolve 201
+a cada chamada). A cobertura do vínculo continua sendo o gate de SKU órfão + falha do `POST` de
+vínculo derrubando o semáforo; vínculo desfeito à mão no painel do ML não é detectado. Conferido na
+tela "Editor em massa de dados fiscais" do ML: SKUs com `can_invoice: true` aparecem vinculados; o
+SKU com NCM recusado aparece "Sem dados fiscais".
 
 **Anúncios externos/migrados sem família** (`user_products` adotados) não têm de onde herdar
 fiscal: aparecem explicitamente como "sem cadastro fiscal — vincular a produto", nunca somem em
@@ -277,6 +289,8 @@ Simples: o primeiro cliente de Lucro Presumido espera a V2.
    (o emissor do ML recusa a configuração com "empresa não está habilitada") — nesse caso o
    vermelho está correto. **A fonte do D-10 fica como está**; após o credenciamento, re-enfileirar
    `sincronizar-fiscal-ml` e conferir se vira 200. Só se seguir 403 a fonte passa a ser emendada.
+   **Resolvido em 2026-10-19:** emissor configurado e o 403 seguiu → hipótese do credenciamento
+   descartada; fonte emendada (ver emenda no D-10).
 3. **`measurement_unit`** — obter a lista de valores aceitos pelo ML e congelar o vocabulário do
    campo `unidade`.
 4. **Replicação em User Products** — a doc diz que dados fiscais replicam para itens irmãos;

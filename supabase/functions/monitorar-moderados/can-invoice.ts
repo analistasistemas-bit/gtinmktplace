@@ -3,14 +3,13 @@
 // apertado; o push fiscal atualiza o semáforo na hora (sincronizar-fiscal-ml), então 6h só
 // afeta mudança por fora do fluxo do app (ex.: alteração manual no ML).
 //
-// Correção ao brief original (herdado antes da Task 7 fechar o gate C1): família publicada via
-// User Products (ADR-0088) tem N itens ML, um por SKU/cor — `familias.ml_item_id` só guarda o 1º
-// item da partição 0. Ler só esse item faria o semáforo de UP ficar falso-verde pros N-1 outros.
-// Reusa a MESMA resolução Legacy/UP e o mesmo AND-com-citação de _shared/fiscal/can-invoice.ts
-// que sincronizar-fiscal-ml usa pro push, pra não ter duas semânticas divergentes.
+// Emenda D-10 (19/10/2026): o semáforo lê o can_invoice de CADA SKU da família em
+// fiscal_information (o /can_invoice/items dá 403 pro app). Reusa o mesmo gate de SKU órfão e o
+// mesmo AND-com-citação de _shared/fiscal/can-invoice.ts que sincronizar-fiscal-ml usa no push,
+// pra não ter duas semânticas divergentes.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  calcularSemaforoCanInvoice, idsParaChecar, listarItensUP as listarItensUPReal,
+  calcularSemaforoCanInvoice, listarItensUP as listarItensUPReal,
   listarSkusFamilia as listarSkusFamiliaReal, skusOrfaosUP, type LerCanInvoice,
 } from '../_shared/fiscal/can-invoice.ts';
 
@@ -54,11 +53,10 @@ export async function reconciliarCanInvoice(
     // short-circuit ANTES de ler can_invoice no ML, como o worker também faz.
     // Fix (review final): universo de SKU vem de `variacoes` da família — os SKUs dos PRÓPRIOS
     // itensUP (como antes) tornam invisível a variação sem NENHUMA linha em
-    // anuncios_externos_itens; ela nunca aparecia como órfã. Só busca em rota UP (itensUP não
-    // vazio) — em Legacy o conceito não existe e skusOrfaosUP já devolveria [] de qualquer jeito.
-    const skusOrfaos = itensUP.length > 0
-      ? skusOrfaosUP(await listarSkusFamilia(admin, f.id), itensUP)
-      : [];
+    // anuncios_externos_itens; ela nunca aparecia como órfã. Emenda D-10: os mesmos SKUs são o que
+    // o semáforo lê (fiscal_information por SKU), então a busca vale pra Legacy também.
+    const skus = await listarSkusFamilia(admin, f.id);
+    const skusOrfaos = skusOrfaosUP(skus, itensUP);
     if (skusOrfaos.length > 0) {
       const { error } = await admin.from('familias').update({
         can_invoice: false, can_invoice_causa: `SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`,
@@ -68,9 +66,7 @@ export async function reconciliarCanInvoice(
       continue;
     }
 
-    const ids = idsParaChecar(itensUP, f.ml_item_id);
-    if (ids.length === 0) continue;
-    const resultado = await calcularSemaforoCanInvoice(token, ids, ler, itensUP.length > 0);
+    const resultado = await calcularSemaforoCanInvoice(token, skus, ler);
     if (!resultado) continue; // falha de leitura do ML não regride o estado gravado (I7)
     const { error } = await admin.from('familias').update({
       can_invoice: resultado.pronto, can_invoice_causa: resultado.causa,
