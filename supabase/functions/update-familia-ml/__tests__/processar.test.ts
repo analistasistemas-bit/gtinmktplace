@@ -778,3 +778,29 @@ describe('processarAtualizacaoFamilia — NCM fora da tabela oficial (ADR-0187)'
     expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
   });
 });
+
+describe('processarAtualizacaoFamilia — somente estoque Legacy com cor nova (C2, auditoria fiscal 19/10)', () => {
+  const VAR_NOVA = { ...VAR_CASADA, codigo: 'V2', cor: 'Verde', ml_picture_id: 'PIC2', ml_variation_id: null };
+
+  it('cor nova + fiscal incompleto → erro do gate, ML não chamado', async () => {
+    const { admin } = fakeAdmin({ variacoes: [{ ...VAR_CASADA }, { ...VAR_NOVA }], modulosHabilitados: ['fiscal'] });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect((r as { mensagem: string }).mensagem).toMatch(/Cadastro fiscal incompleto/);
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio')).toHaveLength(0);
+  });
+
+  it('cor nova + fiscal completo → sucesso e enfileira o push fiscal', async () => {
+    const { admin } = fakeAdmin({ familia: FAMILIA_FISCAL_OK, variacoes: [{ ...VAR_CASADA }, { ...VAR_NOVA }], modulosHabilitados: ['fiscal'] });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).toHaveBeenCalledWith(JOB.familia_id);
+  });
+
+  it('sem cor nova (reposição pura) → gate não consultado e push NÃO enfileirado', async () => {
+    const { admin } = fakeAdmin({ variacoes: [{ ...VAR_CASADA }], modulosHabilitados: ['fiscal'] });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).not.toHaveBeenCalled();
+  });
+});

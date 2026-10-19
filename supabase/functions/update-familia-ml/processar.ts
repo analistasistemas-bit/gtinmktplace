@@ -247,6 +247,11 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
 
     const casadas = variacoes.filter((v) => v.ml_variation_id);
     const novas = variacoes.filter((v) => !v.ml_variation_id);
+    // C2 (auditoria fiscal 19/10): "somente estoque" sem cor nova segue sem gate (spec §5.1), mas
+    // cor nova CRIA variação no ML — mesmo gate do publish e push fiscal pós-UPDATE (:574).
+    if (job.somenteEstoque && novas.length > 0) {
+      fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
+    }
 
     const BUCKET = 'imagens';
     const TTL_SIGNED = 60 * 60 * 2;
