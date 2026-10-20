@@ -132,3 +132,12 @@ unidade (ADR-0151) e SKU do kit próprio (`00000012`). O resolvedor tenta GTIN a
 - **Emenda 2026-10-04 — uma oferta por anúncio.** Na Relâmpago o ML lista o mesmo anúncio duas vezes: uma
   oferta genérica com estoque e outra por horário. A leitura grava uma só: a oferta em que já participa;
   entre iguais, a de menor preço avaliado. O estoque vem da outra oferta quando falta.
+- **Emenda 2026-10-20 — preço promocional em Publicados.** A coluna "Preço atual" mostrava o `price`
+  do `GET /items` (preço cheio) mesmo com o anúncio em promoção. `status-publicados` passou a ler
+  `GET /items/{id}/sale_price` de **todo** anúncio ML não-kit (pool 10, timeout 5 s, em paralelo ao
+  lote): `amount` vira o preço atual e `regular_amount` > `amount` marca a promoção (preço "de"
+  riscado + badge "Em promoção"). A margem/análise da linha passa a usar o promocional; "Criar kit"
+  parte do preço "de". As tabelas desta Central **não** são fonte do preço: um item pode ter duas
+  promoções `started` ao mesmo tempo (Hairfly: DEAL R$ 21 e SMART R$ 19; o ML aplica R$ 19), e org
+  sem o módulo nunca seria coberta. Custo medido no spike 052: ~250 ms por item → ~3–4 s a mais na
+  1ª carga da Avil (aceito pelo Diego; a tela mostra a logo pulsando até o status chegar).

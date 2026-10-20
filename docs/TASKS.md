@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Preço promocional em Publicados (emenda ADR-0170) — 2026-10-20
+
+- [x] `status-publicados` lê `/sale_price` de todo anúncio ML (pool 10, timeout 5 s): preço promocional + `precoOriginal`.
+- [x] Publicados: preço promocional, preço "de" riscado, badge "Em promoção"; margem/análise no promocional; "Criar kit" no preço "de"; logo pulsando na 1ª carga.
+- [ ] Deploy de `status-publicados` + validação visual na Hairfly Cosmeticos.
+
 ## Mensagens pós-venda visíveis para a org inteira (emenda ADR-0067) — 2026-10-20
 
 - [x] RLS de `ml_mensagens` e RPCs do badge/dispensar por `org_id` (antes `user_id`: membro da Avil sem a conexão ML via a aba vazia).

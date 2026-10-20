@@ -1257,6 +1257,12 @@ produto.
   `{ foto_storage_path }`. Resposta `{ ok: true, picture_id }`. 400 `path_invalido`, 500
   `falha_url_assinada`, 502 `falha_upload_ml`.
 
+**Mudança em `status-publicados` (emenda ADR-0170, 2026-10-20):** todo anúncio ML não-kit ganha
+uma leitura de `GET /items/{id}/sale_price` (`_shared/ml/sale-price.ts`, `lerSalePriceML`, timeout
+5 s, pool de 10, em paralelo ao `GET /items` em lote). `amount` substitui o `preco`; quando
+`regular_amount` > `amount`, o item ganha `precoOriginal` (preço "de") — o front mostra preço
+promocional, preço "de" riscado e a badge "Em promoção". Falha de um item mantém o `price` do lote.
+
 **Mudança em `status-publicados` (D-14):** ganhou uma 4ª fonte de ids (`kits_virtuais` com
 `status='publicado'`) e a função foi extraída para `processar.ts`
 (`montarStatusPublicados`, deps injetadas, mesmo motivo dos outros `processar.ts` — testável sem
