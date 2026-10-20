@@ -306,7 +306,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         a.capaFotoId, a.capa2FotoId, a.capa3FotoId, a.categoriaId,
         semPreco ? precoVivo : undefined,
       ));
-      // BRAND (marca decidida por marcaDoProduto, ADR-0186) + dimensões/peso (SELLER_PACKAGE_*) + peso líquido do kit
+      // BRAND (marca decidida por marcaParaUpdate, ADR-0188) + dimensões/peso (SELLER_PACKAGE_*) + peso líquido do kit
       // vinculado (NET_WEIGHT, ADR-0151); só os passados — o ML mescla.
       const atributosItem = [
         ...(a.marca ? [{ id: 'BRAND', value_name: a.marca }] : []),

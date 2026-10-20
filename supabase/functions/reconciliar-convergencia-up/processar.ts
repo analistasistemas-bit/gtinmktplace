@@ -11,7 +11,6 @@ import { atualizarFamiliaUP, type VariacaoUP } from '../_shared/user-products/at
 import {
   reconciliarConvergencia, type PortasConvergencia, type ClaimResultado, type ResultadoRaiz,
 } from '../_shared/user-products/reconciliar-convergencia.ts';
-import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 export const CANAL = 'mercado_livre';
 
@@ -58,7 +57,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
       // Família EXATA do episódio (nunca inferida por recência, revisão adversarial) — a mesma
       // que o worker normal do UPDATE usaria se o operador clicasse "Reenviar" agora.
       const { data: familiaRow, error: famErr } = await admin.from('familias')
-        .select('id, org_id, codigo_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id')
+        .select('id, org_id, codigo_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id, marca')
         .eq('id', claim.familiaId as string).maybeSingle();
       if (famErr) throw new Error(`resolver família (${claim.familiaId}): ${famErr.message}`);
       if (!familiaRow) throw new Error(`família ${claim.familiaId} não encontrada (referenciada pela raiz mas já apagada?)`);
@@ -66,7 +65,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         id: string; org_id: string; codigo_pai: string; categoria_ml_id: string | null; descricao_ml: string | null;
         atributos_ml?: unknown; capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null;
         capa3_ml_picture_id: string | null; atacado?: unknown; atacado_status?: string | null;
-        genero?: string | null; grade_tamanho?: string | null; lote_id: string;
+        genero?: string | null; grade_tamanho?: string | null; lote_id: string; marca?: string | null;
       };
 
       const { data: variacoesRaw, error: varErr } = await admin.from('variacoes')
@@ -105,7 +104,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         raiz: { id: claim.rootId, titulo: claim.titulo, criado_em: claim.criadoEm },
         variacoes, somenteEstoque: false, tentativas: claim.tentativas,
         skusDesejadosOverride: claim.skusEsperados, preservarPublicadas,
-        marcaOrg: await lerMarcaOrg(admin, claim.orgId), // ADR-0186
+        marcaProduto: (familia.marca as string | null) ?? null, // ADR-0188
       });
       // Rede de segurança (revisão adversarial, 2ª rodada — achado real): se o crash original
       // aconteceu DEPOIS de todos os filhos já confirmados ativos mas ANTES do `limparComposicao`

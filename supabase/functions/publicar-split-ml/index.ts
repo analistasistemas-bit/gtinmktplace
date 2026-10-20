@@ -29,7 +29,7 @@ import { resolverConfigGrupo, agregarAtacadoStatus } from '../_shared/preco/conf
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem-revinculo.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
-import { lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
+import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -229,7 +229,7 @@ Deno.serve(async (req) => {
     for (const l of linhas ?? []) linhaPorParticao.set(l.particao, l);
 
     // ADR-0186: org com marca própria manda sempre a marca da org.
-    const marca = marcaDoProduto(familia.fornecedor as string | null, await lerMarcaOrg(admin, familia.org_id as string)) ?? null;
+    const marca = marcaParaUpdate(familia as { marca?: string | null; fornecedor?: string | null });
 
     // Status de atacado por partição (agregado vai a familias no fim). Em "somente estoque"
     // o PxQ vivo é preservado (F1) — nada é registrado nem sobrescrito.

@@ -15,7 +15,7 @@ import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
-import { forcarMarcaPropria, marcaDoProduto, type MarcaOrg } from '../_shared/categoria/marca-org.ts';
+import { forcarMarcaDoProduto, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 
 export interface KitSolicitado {
   multiplicador: number;
@@ -80,7 +80,8 @@ export interface CriarKitDeps {
   /** Só usado quando categoriaOverride cai numa categoria genérica (tipoParaCategoria === 'outro'). */
   llm?: (input: InputAtributos, alvos: AtributoAlvo[]) => Promise<Record<string, string>>;
   /** Marca da org (ADR-0186): fallback de BRAND/MANUFACTURER e, com marca própria, a marca imposta. */
-  marcaOrg: MarcaOrg;
+  /** Marca padrão da org (fallback da criação). ADR-0188: a marca do produto vem de `base.marca`. */
+  marcaPadrao?: string;
 }
 
 // O que NÃO se copia da base: identidade, lifecycle, rastros de execução e resultado.
@@ -413,7 +414,7 @@ export async function criarKitsVinculados(
     if (!input.categoriaOverride) {
       // Caminho intocado: mesma categoria/atributos da base, como hoje. tipo_aviamento/
       // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
-      atributosBase = forcarMarcaPropria((base.atributos_ml as AtributoML[] | null) ?? [], deps.marcaOrg);
+      atributosBase = forcarMarcaDoProduto((base.atributos_ml as AtributoML[] | null) ?? [], base.marca as string | null);
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
       tipoAviamentoKit = tipo;
@@ -426,8 +427,8 @@ export async function criarKitsVinculados(
       let faltantesSentinela: string[] | null = null;
       if (tipo !== 'outro') {
         atributosBase = montarAtributosML(
-          tipo, base.nome_pai as string, marcaDoProduto(base.fornecedor as string | null, deps.marcaOrg),
-          (base.descricao_pai as string | null) ?? undefined, deps.marcaOrg.marcaPadrao,
+          tipo, base.nome_pai as string, marcaParaCriacao(base as { marca?: string | null; fornecedor?: string | null }),
+          (base.descricao_pai as string | null) ?? undefined, deps.marcaPadrao,
         );
       } else {
         const llm = deps.llm ?? (() => Promise.resolve({} as Record<string, string>));
@@ -439,10 +440,10 @@ export async function criarKitsVinculados(
           {
             nome: base.nome_pai as string,
             descricao: (base.descricao_pai as string | null) ?? undefined,
-            fornecedor: marcaDoProduto(base.fornecedor as string | null, deps.marcaOrg),
+            fornecedor: marcaParaCriacao(base as { marca?: string | null; fornecedor?: string | null }),
           },
           { lerSchema: () => Promise.resolve(schema), llm },
-          deps.marcaOrg.marcaPadrao,
+          deps.marcaPadrao,
         );
         atributosBase = resolvido.atributosMl;
         if (resolvido.faltantes.includes(FALTANTE_ATRIBUTOS_NAO_VALIDADOS)) {
@@ -473,8 +474,8 @@ export async function criarKitsVinculados(
         });
       const idsPortaveis = new Set(portaveis.map((a) => a.id));
       // ADR-0186: o BRAND portado da base não pode trazer o fornecedor de volta.
-      atributosBase = forcarMarcaPropria(
-        [...atributosBase.filter((a) => !idsPortaveis.has(a.id)), ...portaveis], deps.marcaOrg,
+      atributosBase = forcarMarcaDoProduto(
+        [...atributosBase.filter((a) => !idsPortaveis.has(a.id)), ...portaveis], base.marca as string | null,
       );
       // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
       // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que

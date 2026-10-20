@@ -19,7 +19,7 @@ import { decidirRetryTransitorio } from '../publicacao/retry.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
-import { forcarMarcaPropria, type MarcaOrg } from '../categoria/marca-org.ts';
+import { forcarMarcaDoProduto } from '../categoria/marca-org.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
@@ -66,7 +66,7 @@ export interface AtualizarFamiliaUPArgs {
   somenteEstoque: boolean;
   /** ADR-0186 — org com marca própria: BRAND/MANUFACTURER = marca da org na cor nova e na reposição.
    *  Obrigatório: chamador que esquecer herdaria o fornecedor do irmão (reconciliação). */
-  marcaOrg: MarcaOrg;
+  marcaProduto: string | null;
   /**
    * ADR-0160 (I10) — fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML; as cores já
    * publicadas ficam intocadas.
@@ -105,10 +105,10 @@ const num = (v: number | string | null | undefined): number | null =>
 export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<ResultadoAtualizarUP> {
   const { admin, conn, ctx, conexao, familia, raiz, variacoes, somenteEstoque } = args;
   // Tipo obrigatório barra chamador de produção (check:functions); o default só cobre fixture de teste.
-  const marcaOrg: MarcaOrg = args.marcaOrg ?? { marcaPropria: false };
+  const marcaProduto = args.marcaProduto ?? null;
   // ADR-0186: a herança do irmão (abaixo) daria o fornecedor de volta — a marca da org vence.
   const atributosFamiliaMl = Array.isArray(familia.atributos_ml)
-    ? forcarMarcaPropria(familia.atributos_ml as AtributoItem[], marcaOrg)
+    ? forcarMarcaDoProduto(familia.atributos_ml as AtributoItem[], marcaProduto)
     : familia.atributos_ml;
   const executarSaga = args.executarSaga ?? atualizarComposicao;
   const now = args.now ?? (() => new Date().toISOString());
@@ -242,7 +242,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // A ficha crua em si segue intocada: é a referência do delta da reposição (ADR-0157).
   const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> => {
     const cru = await lerFichaCrua();
-    return atributosDeFicha(Array.isArray(cru) ? forcarMarcaPropria(cru as AtributoItem[], marcaOrg) : cru);
+    return atributosDeFicha(Array.isArray(cru) ? forcarMarcaDoProduto(cru as AtributoItem[], marcaProduto) : cru);
   };
 
   const familiaInput = {

@@ -515,7 +515,6 @@ export type Database = {
           erro_mensagem: string | null
           estrategia_motivo: string | null
           estrategia_preco:
-          marca: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi: string | null
@@ -530,6 +529,7 @@ export type Database = {
           kit_base_codigo_pai: string | null
           kit_multiplicador: number | null
           lote_id: string
+          marca: string | null
           ml_item_id: string | null
           ml_permalink: string | null
           mudanca_estrutural: Json | null
@@ -604,7 +604,6 @@ export type Database = {
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
           estrategia_preco?:
-          marca?: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi?: string | null
@@ -619,6 +618,7 @@ export type Database = {
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
           lote_id: string
+          marca?: string | null
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null
@@ -693,7 +693,6 @@ export type Database = {
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
           estrategia_preco?:
-          marca?: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi?: string | null
@@ -708,6 +707,7 @@ export type Database = {
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
           lote_id?: string
+          marca?: string | null
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null

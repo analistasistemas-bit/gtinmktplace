@@ -9,7 +9,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
+import { lerMarcaOrg, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 
 // Seletor de categoria livre (ADR-0057, estende o escape hatch do ADR-0009/0022): o operador
 // escolhe qualquer categoria real do ML (busca em atributos-familia/buscar-categoria). Categoria
@@ -56,7 +56,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   // operação; qualquer membro define a categoria. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, user_id, nome_pai, descricao_pai, fornecedor')
+    .select('id, user_id, nome_pai, descricao_pai, fornecedor, marca')
     .eq('id', body.familia_id)
     .maybeSingle();
 
@@ -71,7 +71,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   // ADR-0186: org com marca própria usa sempre a marca da org, nunca o fornecedor.
   const marcaOrg = await lerMarcaOrg(adminClient(), orgId);
   const marcaPadrao = marcaOrg.marcaPadrao;
-  const marca = marcaDoProduto(familia.fornecedor as string | null, marcaOrg);
+  const marca = marcaParaCriacao(familia as { marca?: string | null; fornecedor?: string | null });
 
   let atributosMl;
   let atributosFaltantes: string[];

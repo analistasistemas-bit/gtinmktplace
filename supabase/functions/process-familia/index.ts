@@ -33,7 +33,7 @@ import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { forcarMarcaPropria, lerMarcaOrg, marcaDoProduto } from '../_shared/categoria/marca-org.ts';
+import { forcarMarcaDoProduto, lerMarcaOrg, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero, grade_tamanho')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero, grade_tamanho')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -259,11 +259,10 @@ Deno.serve(async (req) => {
     try { if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre'); token = await getValidAccessTokenConexao(conexao); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
 
     // Marca padrão por org (D-E7.3): fallback do BRAND/MANUFACTURER quando o produto não
-    // traz marca. Default 'Avil' preservado dentro de montarAtributosML/Base. ADR-0186: org com
-    // marca própria usa sempre a marca da org — o fornecedor (onde se compra) nunca vira marca.
-    const marcaOrg = await lerMarcaOrg(admin, orgId);
-    const marca = marcaDoProduto(claimed.fornecedor as string | null, marcaOrg);
-    const marcaPadrao = marcaOrg.marcaPadrao;
+    // traz marca. Default 'Avil' preservado dentro de montarAtributosML/Base. ADR-0188: a marca do
+    // produto (`familias.marca`) vence o fornecedor — na org com marca própria ela já nasce preenchida.
+    const marca = marcaParaCriacao(claimed as { marca?: string | null; fornecedor?: string | null });
+    const marcaPadrao = (await lerMarcaOrg(admin, orgId)).marcaPadrao;
     // Acumula o custo de IA dos desempates (categoria + atributos) p/ somar ao custo_centavos da
     // família — antes eram descartados (só o custo do gerarCopy entrava em custo_centavos).
     let custoDesempateLLM = 0;
@@ -343,8 +342,8 @@ Deno.serve(async (req) => {
       atributosMl = r.atributosMl;
       faltantes = r.faltantes;
     }
-    // ADR-0186: vale também para o ramo de atributos editados pelo operador (preservados acima).
-    atributosMl = forcarMarcaPropria(atributosMl, marcaOrg);
+    // ADR-0188: a marca do produto vale também para o ramo de atributos editados pelo operador.
+    atributosMl = forcarMarcaDoProduto(atributosMl, claimed.marca as string | null);
     // categoriaMlId null (origem 'manual') → faltantes fica [] aqui, mas o gate de publicação
     // bloqueia por categoria ausente até o operador escolhê-la na Revisão.
 

@@ -282,7 +282,7 @@ function depsFake(opts: {
   statusPorChave?: Record<string, string>;
   schemaPorCategoria?: Record<string, unknown>;
   llm?: (input: unknown, alvos: unknown) => Promise<Record<string, string>>;
-  marcaOrg?: { marcaPadrao?: string; marcaPropria: boolean };
+  marcaBase?: string | null;
   atributosMlBase?: { id: string; value_id?: string; value_name?: string }[];
   // ncm_consultar (ADR-0187): default vigente.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
@@ -292,7 +292,7 @@ function depsFake(opts: {
     qtdVariacoes = 1, chavesJaUsadas = [], categoriaSemKit = false,
     statusPorChave = {}, schemaPorCategoria = {},
     llm = async () => ({}),
-    marcaOrg = { marcaPadrao: undefined, marcaPropria: false },
+    marcaBase = null,
     atributosMlBase = [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
   } = opts;
 
@@ -300,7 +300,7 @@ function depsFake(opts: {
     id: BASE_ID, org_id: 'org-1', user_id: 'user-1', codigo_pai: '00000010',
     categoria_ml_id: 'MLB123',
     atributos_ml: atributosMlBase,
-    kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId,
+    kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId, marca: marcaBase,
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
     id: `bv${i}`, familia_id: BASE_ID, org_id: 'org-1', user_id: 'user-1',
@@ -362,7 +362,6 @@ function depsFake(opts: {
       return true;
     },
     llm: llm as never,
-    marcaOrg,
   };
 
   return { deps, inserts, enfileirados, admin };
@@ -901,13 +900,12 @@ describe('mensagemFaltantes', () => {
   });
 });
 
-describe('marca própria no kit vinculado (ADR-0186)', () => {
-  const zaven = { marcaPadrao: 'Zaven', marcaPropria: true };
+describe('marca do produto no kit vinculado (ADR-0188)', () => {
   const baseComFornecedor = [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'BRAND', value_name: 'FEIRA' }];
 
-  it('sem categoriaOverride: BRAND copiado da base vira a marca da org', async () => {
+  it('sem categoriaOverride: BRAND copiado da base vira a marca do produto', async () => {
     const { deps, inserts } = depsFake({
-      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT }, atributosMlBase: baseComFornecedor, marcaOrg: zaven,
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT }, atributosMlBase: baseComFornecedor, marcaBase: 'Zaven',
     });
     const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
     expect(r.ok).toBe(true);
@@ -915,10 +913,10 @@ describe('marca própria no kit vinculado (ADR-0186)', () => {
     expect(atributos.find((a) => a.id === 'BRAND')?.value_name).toBe('Zaven');
   });
 
-  it('com categoriaOverride: BRAND portado da base também vira a marca da org', async () => {
+  it('com categoriaOverride: BRAND portado da base também vira a marca do produto', async () => {
     const { deps, inserts } = depsFake({
       schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT },
-      atributosMlBase: baseComFornecedor, marcaOrg: zaven,
+      atributosMlBase: baseComFornecedor, marcaBase: 'Zaven',
     });
     const r = await criarKitsVinculados(deps, {
       familiaBaseId: BASE_ID, kits: [kitPadrao(2)],

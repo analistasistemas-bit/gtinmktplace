@@ -1,50 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { lerMarcaOrg, marcaDoProduto, forcarMarcaPropria, type MarcaOrg } from '../marca-org';
-
-const zaven: MarcaOrg = { marcaPadrao: 'Zaven', marcaPropria: true };
-const avil: MarcaOrg = { marcaPadrao: 'Avil', marcaPropria: false };
+import { lerMarcaOrg, marcaParaCriacao, marcaParaUpdate, forcarMarcaDoProduto } from '../marca-org';
 
 // deno-lint-ignore no-explicit-any
 const adminCom = (resposta: { data?: unknown; error?: unknown }): any => ({
   from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => resposta }) }) }),
 });
 
-describe('marcaDoProduto (ADR-0186)', () => {
-  it('marca própria ignora o fornecedor', () => {
-    expect(marcaDoProduto('STAR GLAMOUR', zaven)).toBe('Zaven');
-    expect(marcaDoProduto(null, zaven)).toBe('Zaven');
+describe('marcaParaCriacao / marcaParaUpdate (ADR-0188)', () => {
+  it('marca do produto vence o fornecedor', () => {
+    expect(marcaParaCriacao({ marca: 'Lacoste', fornecedor: 'STAR' })).toBe('Lacoste');
+    expect(marcaParaUpdate({ marca: 'Zaven', fornecedor: 'X' })).toBe('Zaven');
   });
-  it('sem marca própria mantém a regra antiga (fornecedor aparado ou nada)', () => {
-    expect(marcaDoProduto(' BUFALO ', avil)).toBe('BUFALO');
-    expect(marcaDoProduto('  ', avil)).toBeUndefined();
-    expect(marcaDoProduto(undefined, avil)).toBeUndefined();
+  it('sem marca vale o fornecedor aparado (planilha, Avil)', () => {
+    expect(marcaParaCriacao({ marca: null, fornecedor: ' BUFALO ' })).toBe('BUFALO');
+    expect(marcaParaUpdate({ marca: '  ', fornecedor: 'BUFALO' })).toBe('BUFALO');
+  });
+  it('sem nada: criação deixa o montador decidir; UPDATE não envia BRAND (ADR-0016)', () => {
+    expect(marcaParaCriacao({})).toBeUndefined();
+    expect(marcaParaUpdate({ fornecedor: null })).toBeNull();
   });
 });
 
-describe('forcarMarcaPropria (ADR-0186)', () => {
-  it('troca BRAND/MANUFACTURER pela marca da org e descarta value_id', () => {
-    const attrs = [
-      { id: 'BRAND', value_name: 'FEIRA', value_id: '9' },
-      { id: 'COLOR', value_name: 'Azul' },
+describe('forcarMarcaDoProduto (ADR-0188)', () => {
+  it('troca BRAND/MANUFACTURER pela marca do produto e descarta value_id', () => {
+    expect(forcarMarcaDoProduto([
+      { id: 'BRAND', value_name: 'FEIRA', value_id: '9' }, { id: 'COLOR', value_name: 'Azul' },
       { id: 'MANUFACTURER', value_name: 'FEIRA' },
-    ];
-    expect(forcarMarcaPropria(attrs, zaven)).toEqual([
-      { id: 'BRAND', value_name: 'Zaven' },
-      { id: 'COLOR', value_name: 'Azul' },
+    ], 'Zaven')).toEqual([
+      { id: 'BRAND', value_name: 'Zaven' }, { id: 'COLOR', value_name: 'Azul' },
       { id: 'MANUFACTURER', value_name: 'Zaven' },
     ]);
   });
-  it('sem marca própria devolve o mesmo array', () => {
-    const attrs = [{ id: 'BRAND', value_name: 'BUFALO' }];
-    expect(forcarMarcaPropria(attrs, avil)).toBe(attrs);
-  });
-  it('mantém BRAND que já é a marca da org, com o value_id do ML (não desagrupa a família UP)', () => {
+  it('mantém o que já é a marca, com o value_id do ML', () => {
     const attrs = [{ id: 'BRAND', value_name: 'zaven', value_id: '777' }];
-    expect(forcarMarcaPropria(attrs, zaven)).toEqual([{ id: 'BRAND', value_name: 'zaven', value_id: '777' }]);
+    expect(forcarMarcaDoProduto(attrs, 'Zaven')).toEqual(attrs);
+  });
+  it('sem marca no produto devolve o mesmo array', () => {
+    const attrs = [{ id: 'BRAND', value_name: 'BUFALO' }];
+    expect(forcarMarcaDoProduto(attrs, null)).toBe(attrs);
+    expect(forcarMarcaDoProduto(attrs, '  ')).toBe(attrs);
   });
   it('não adiciona BRAND ausente', () => {
-    expect(forcarMarcaPropria([], zaven)).toEqual([]);
-    expect(forcarMarcaPropria([{ id: 'MODEL', value_name: 'X' }], zaven)).toEqual([{ id: 'MODEL', value_name: 'X' }]);
+    expect(forcarMarcaDoProduto([{ id: 'MODEL', value_name: 'X' }], 'Zaven')).toEqual([{ id: 'MODEL', value_name: 'X' }]);
   });
 });
 

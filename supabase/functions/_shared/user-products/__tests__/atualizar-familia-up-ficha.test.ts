@@ -365,11 +365,10 @@ describe('atualizarFamiliaUP — reposição não reenvia GENDER/SIZE* de atribu
   });
 });
 
-describe('atualizarFamiliaUP — marca própria (ADR-0186)', () => {
-  const zaven = { marcaPadrao: 'Zaven', marcaPropria: true };
+describe('atualizarFamiliaUP — marca do produto (ADR-0188)', () => {
 
   it('cor nova: irmão com marca do fornecedor → BRAND/MANUFACTURER saem com a marca da org', async () => {
-    await atualizarFamiliaUP(args({ marcaOrg: zaven }));
+    await atualizarFamiliaUP(args({ marcaProduto: 'Zaven' }));
     const attrs = atributosEnviados();
     expect(attrs).toContainEqual({ id: 'BRAND', value_name: 'Zaven' });
     expect(attrs).toContainEqual({ id: 'MANUFACTURER', value_name: 'Zaven' });
@@ -381,14 +380,14 @@ describe('atualizarFamiliaUP — marca própria (ADR-0186)', () => {
       { id: 'BRAND', value_id: '777', value_name: 'Zaven' },
       { id: 'COLOR', value_id: '52024', value_name: 'Azul-petróleo' },
     ] }), { status: 200 })) as typeof fetch;
-    await atualizarFamiliaUP(args({ marcaOrg: zaven }));
+    await atualizarFamiliaUP(args({ marcaProduto: 'Zaven' }));
     expect(atributosEnviados().find((a) => a.id === 'BRAND')).toEqual({ id: 'BRAND', value_id: '777' });
   });
 
   it('reposição: atributos da família entregues à saga já com a marca da org', async () => {
     let recebidos: unknown;
     await atualizarFamiliaUP(args({
-      marcaOrg: zaven,
+      marcaProduto: 'Zaven',
       executarSaga: async (_p, entrada) => { recebidos = entrada.atributosFamilia; return { tipo: 'sem_mudanca' }; },
     }));
     expect(recebidos).toEqual([{ id: 'BRAND', value_name: 'Zaven' }, { id: 'LENGTH', value_name: '10 m' }]);

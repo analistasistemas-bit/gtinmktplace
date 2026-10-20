@@ -218,14 +218,13 @@ describe('criarPortasConvergencia — resumirComposicao (preservarPublicadas, Co
   });
 });
 
-describe('resumirComposicao — marca própria (ADR-0186)', () => {
-  it('repassa a marca da org à saga UP (a retomada não pode herdar o fornecedor do irmão)', async () => {
+describe('resumirComposicao — marca do produto (ADR-0188)', () => {
+  it('repassa a marca do produto à saga UP (a retomada não pode herdar o fornecedor do irmão)', async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
     const { admin } = fakeAdmin({
-      familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], lotes: [LOTE_PLANILHA], marketplace_connections: [CONEXAO_OK],
-      organizations: [{ marca_padrao: 'Zaven', marca_propria: true }],
+      familias: [{ ...FAMILIA_OK, marca: 'Zaven' }], variacoes: [VARIACOES_OK], lotes: [LOTE_PLANILHA], marketplace_connections: [CONEXAO_OK],
     });
     await criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK);
-    expect(atualizarFamiliaUPMock.mock.calls[0][0].marcaOrg).toEqual({ marcaPadrao: 'Zaven', marcaPropria: true });
+    expect(atualizarFamiliaUPMock.mock.calls[0][0].marcaProduto).toBe('Zaven');
   });
 });

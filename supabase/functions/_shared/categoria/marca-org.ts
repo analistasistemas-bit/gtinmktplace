@@ -1,6 +1,6 @@
-// ADR-0186 — marca própria por organização. Org com `marca_propria` publica BRAND/MANUFACTURER
-// sempre com `marca_padrao`: o fornecedor da planilha é onde a mercadoria é comprada e o cliente
-// final não pode vê-lo (Zaven). Sem a flag, vale a regra de sempre (fornecedor = marca, Avil).
+// ADR-0186/0188 — marca de produto. A marca que vai ao ML fica gravada no produto (`familias.marca`):
+// o fornecedor é onde a mercadoria é comprada e, na org com marca própria (Zaven), o cliente final não
+// pode vê-lo. `marca_propria` da org só define o default do cadastro pelo Estoque (trigger no banco).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export interface MarcaOrg {
@@ -21,22 +21,29 @@ export async function lerMarcaOrg(admin: SupabaseClient, orgId: string): Promise
   return { marcaPadrao, marcaPropria };
 }
 
-/** A string "marca" que os montadores recebem (antes: o fornecedor cru). */
-export function marcaDoProduto(fornecedor: string | null | undefined, org: MarcaOrg): string | undefined {
-  if (org.marcaPropria) return org.marcaPadrao;
-  return fornecedor?.trim() || undefined;
+/** ADR-0188 — a marca do produto (`familias.marca`) vence o fornecedor. Planilha nasce sem marca. */
+export interface FamiliaMarca { marca?: string | null; fornecedor?: string | null }
+
+/** CREATE: marca → fornecedor; vazio = o montador aplica `marca_padrao`/'Avil' como sempre fez. */
+export function marcaParaCriacao(f: FamiliaMarca): string | undefined {
+  return f.marca?.trim() || f.fornecedor?.trim() || undefined;
 }
 
-/** Impõe a marca da org sobre atributos preservados/copiados/mesclados (edição, kit, irmão UP).
- *  Só troca o que existe — não inventa BRAND onde a categoria não pede. Valor que já é a marca da
- *  org fica como está, com o `value_id` do ML: trocá-lo por texto cru divergiria do irmão e
- *  desagruparia a família UP (lote 54, ADR-0088). */
-export function forcarMarcaPropria<T extends { id?: string; value_name?: string | null; value_id?: string | null }>(
-  attrs: T[], org: MarcaOrg,
+/** UPDATE/split: marca → fornecedor; null = não envia BRAND (preserva a do ML — ADR-0016). */
+export function marcaParaUpdate(f: FamiliaMarca): string | null {
+  return f.marca?.trim() || f.fornecedor?.trim() || null;
+}
+
+/** Impõe a marca do produto sobre atributos preservados/copiados/mesclados (edição, kit, irmão UP).
+ *  Só troca o que existe — não inventa BRAND onde a categoria não pede. Valor que já é a marca fica
+ *  como está, com o `value_id` do ML: trocá-lo por texto cru divergiria do irmão e desagruparia a
+ *  família UP (lote 54, ADR-0088). Sem marca no produto, nada é imposto. */
+export function forcarMarcaDoProduto<T extends { id?: string; value_name?: string | null; value_id?: string | null }>(
+  attrs: T[], marca: string | null | undefined,
 ): T[] {
-  if (!org.marcaPropria) return attrs;
-  const alvo = org.marcaPadrao!.toLowerCase();
-  return attrs.map((a) => (IDS_MARCA.has(a.id ?? '') && a.value_name?.trim().toLowerCase() !== alvo
-    ? { id: a.id, value_name: org.marcaPadrao } as T
+  const alvo = marca?.trim();
+  if (!alvo) return attrs;
+  return attrs.map((a) => (IDS_MARCA.has(a.id ?? '') && a.value_name?.trim().toLowerCase() !== alvo.toLowerCase()
+    ? { id: a.id, value_name: alvo } as T
     : a));
 }

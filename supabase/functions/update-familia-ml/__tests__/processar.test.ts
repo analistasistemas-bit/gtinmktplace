@@ -728,31 +728,30 @@ describe('processarAtualizacaoFamilia — barreira do reajuste de preço em mass
   });
 });
 
-describe('BRAND do UPDATE legado com marca própria (ADR-0186)', () => {
+describe('BRAND do UPDATE legado pela marca do produto (ADR-0188)', () => {
   const marcaDoUpdate = () =>
     (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { marca?: string | null }).marca;
-  const zaven = { marca_padrao: 'Zaven', marca_propria: true };
 
-  it('marca própria + fornecedor → envia a marca da org, nunca o fornecedor', async () => {
-    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: 'STAR GLAMOUR' }, org: zaven });
+  it('produto com marca + fornecedor → envia a marca do produto, nunca o fornecedor', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, marca: 'Lacoste', fornecedor: 'STAR GLAMOUR' } });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(marcaDoUpdate()).toBe('Lacoste');
+  });
+
+  it('produto com marca sem fornecedor → envia a marca', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, marca: 'Zaven', fornecedor: null } });
     await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(marcaDoUpdate()).toBe('Zaven');
   });
 
-  it('marca própria sem fornecedor → ainda envia a marca da org', async () => {
-    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: null }, org: zaven });
-    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
-    expect(marcaDoUpdate()).toBe('Zaven');
-  });
-
-  it('sem marca própria e sem fornecedor → não envia BRAND (comportamento atual)', async () => {
-    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: null } });
+  it('sem marca e sem fornecedor → não envia BRAND (Avil, ADR-0016)', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, marca: null, fornecedor: null } });
     await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(marcaDoUpdate()).toBeNull();
   });
 
-  it('sem marca própria e com fornecedor → envia o fornecedor (Avil)', async () => {
-    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, fornecedor: ' BUFALO ' } });
+  it('sem marca e com fornecedor → envia o fornecedor (planilha, Avil)', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, marca: null, fornecedor: ' BUFALO ' } });
     await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(marcaDoUpdate()).toBe('BUFALO');
   });

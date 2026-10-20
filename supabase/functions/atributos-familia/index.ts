@@ -8,7 +8,7 @@ import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { contextoFaltantes, faltantesEditaveis, validarValorAtributo, type ContextoFaltantes } from '../_shared/categoria/faltantes-editaveis.ts';
 import { buscarCategoriaPreditor, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
-import { forcarMarcaPropria, lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
+import { forcarMarcaDoProduto } from '../_shared/categoria/marca-org.ts';
 
 // Camada 2B (ADR-0052) + busca livre de categoria (ADR-0057). Fallback manual de atributos e
 // categoria na Revisão. RLS via userClient(jwt).
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
 
   // RLS garante que só famílias visíveis ao usuário são lidas/escritas.
   const { data: familia, error } = await sb.from('familias')
-    .select('id, categoria_ml_id, atributos_ml, user_id, concorrencia_categoria_id, genero')
+    .select('id, categoria_ml_id, atributos_ml, user_id, concorrencia_categoria_id, genero, marca')
     .eq('id', body.familia_id).maybeSingle();
   if (error || !familia) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
 
@@ -100,8 +100,8 @@ Deno.serve(async (req) => {
     const validado = validarValorAtributo(schema, body.atributo_id, body.valor);
     if (!validado) return new Response('Valor inválido para o atributo', { status: 422, headers: corsHeaders });
     // ADR-0186: na org com marca própria o operador não grava outra marca (o fornecedor voltaria).
-    const merged = forcarMarcaPropria([...atuais.filter((a) => a.id !== validado.id), validado],
-      await lerMarcaOrg(adminClient(), orgId));
+    const merged = forcarMarcaDoProduto([...atuais.filter((a) => a.id !== validado.id), validado],
+      familia.marca as string | null);
     const faltantes = atributosFaltantesGenerico(merged, schema);
     const { error: upErr } = await sb.from('familias')
       .update({ atributos_ml: merged, atributos_faltantes: faltantes, atributos_editados_pelo_operador: true })
