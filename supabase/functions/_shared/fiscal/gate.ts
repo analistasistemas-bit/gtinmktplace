@@ -3,6 +3,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { moduloHabilitadoStrict } from '../produto/modulo.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from './validar.ts';
+import { lerRegimeFiscalOrg } from './regime.ts';
 import { mensagemNcm, ncmsInvalidos } from './ncm-oficial.ts';
 
 export interface FamiliaFiscalRow extends CamposFiscaisFamilia {
@@ -20,9 +21,8 @@ export async function exigirFiscalCompletoSePreciso(
 ): Promise<boolean> {
   if (!(await moduloHabilitadoStrict(admin, familia.org_id, 'fiscal'))) return false;
 
-  const { data: empresa } = await admin.from('empresa_fiscal')
-    .select('regime_tributario').eq('org_id', familia.org_id).maybeSingle();
-  const regime = (empresa?.regime_tributario ?? 'simples') as 'simples' | 'normal';
+  // A3 (auditoria fiscal 19/10): sem `?? 'simples'` — erro retenta, ausência/normal é 400.
+  const regime = await lerRegimeFiscalOrg(admin, familia.org_id);
 
   const faltas = camposFiscaisFaltantes(familia, regime);
   if (faltas.length) {

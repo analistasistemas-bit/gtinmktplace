@@ -19,6 +19,7 @@ import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.
 import {
   validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, type ProdutoEntrada, type SugestaoDistribuicao,
 } from '../_shared/produto/validar.ts';
+import { lerRegimeFiscalOrg } from '../_shared/fiscal/regime.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
@@ -54,15 +55,15 @@ Deno.serve(async (req) => {
     console.error('cadastrar-produto: leitura do módulo fiscal falhou:', e);
     return json({ error: 'Não foi possível verificar o módulo fiscal. Tente novamente.' }, 500);
   }
-  // `?? 'simples'` nunca é alcançado numa org com o módulo ligado: `usuarios/index.ts` só deixa
-  // `modulos_habilitados` incluir 'fiscal' depois de `pendenciasAtivacaoFiscal` passar, que por
-  // sua vez recusa regime_tributario != 'simples' (v1 é só Simples Nacional, ADR-0135 D-6) e
-  // exige a linha de empresa_fiscal completa — não é um default fiscal, é o valor único possível.
+  // A3 (auditoria fiscal 19/10): regime nunca presumido — ausência/normal é 400, erro de leitura 500.
   let regimeOrg: 'simples' | 'normal' = 'simples';
   if (moduloFiscal) {
-    const { data: emp } = await admin.from('empresa_fiscal')
-      .select('regime_tributario').eq('org_id', orgId).maybeSingle();
-    regimeOrg = (emp?.regime_tributario ?? 'simples') as 'simples' | 'normal';
+    try { regimeOrg = await lerRegimeFiscalOrg(admin, orgId); }
+    catch (e) {
+      if ((e as { status?: number }).status === 400) return json({ error: (e as Error).message }, 400);
+      console.error('cadastrar-produto: leitura de empresa_fiscal falhou:', e);
+      return json({ error: 'Não foi possível verificar o cadastro fiscal. Tente novamente.' }, 500);
+    }
   }
 
   let produto: ProdutoEntrada;

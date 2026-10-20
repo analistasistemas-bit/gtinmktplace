@@ -90,7 +90,7 @@ beforeAll(async () => {
   await import('../index.ts');
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
 });
-beforeEach(() => { f.db = {}; f.rpcs = []; f.seq = 0; f.fiscal = false; f.ncm = 'vigente'; });
+beforeEach(() => { f.db = { empresa_fiscal: [{ org_id: 'org-1', regime_tributario: 'simples' }] }; f.rpcs = []; f.seq = 0; f.fiscal = false; f.ncm = 'vigente'; });
 
 const REF = `nfe:${'1'.repeat(44)}:2`;
 const corpo = (quantidades: number[], extra: Linha = {}) => ({
@@ -174,6 +174,22 @@ describe('cadastrar-produto — NCM na tabela oficial', () => {
     expect(f.db.lotes ?? []).toEqual([]);
     expect(f.rpcs.some((c) => c.nome === 'proximo_codigo_produto')).toBe(false);
     expect(enfileirarFamilia).not.toHaveBeenCalled();
+  });
+
+  it('A3: módulo fiscal sem empresa_fiscal → 400 nomeando o cadastro, nada gravado', async () => {
+    f.fiscal = true; f.db.empresa_fiscal = [];
+    const r = await post(comFiscal());
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(await r.json())).toContain('cadastro da empresa fiscal');
+    expect(f.db.familias ?? []).toEqual([]);
+  });
+
+  it('A3: módulo fiscal com regime normal → 400 (v1 só Simples), nada gravado', async () => {
+    f.fiscal = true; f.db.empresa_fiscal = [{ org_id: 'org-1', regime_tributario: 'normal' }];
+    const r = await post(comFiscal());
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(await r.json())).toContain('só Simples Nacional');
+    expect(f.db.familias ?? []).toEqual([]);
   });
 
   it('erro de leitura da tabela de NCM → 500, nada gravado', async () => {

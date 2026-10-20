@@ -24,6 +24,20 @@ function adminFake(modulos: string[], regime: string | null, ncm: Ncm = 'vigente
   } as never;
 }
 
+function adminFakeErroEmpresa() {
+  return {
+    from: (tabela: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => tabela === 'organizations'
+            ? { data: { modulos_habilitados: ['fiscal'] }, error: null }
+            : { data: null, error: { message: 'timeout' } },
+        }),
+      }),
+    }),
+  } as never;
+}
+
 function adminFakeErroOrganizations() {
   return {
     from: (tabela: string) => ({
@@ -57,9 +71,20 @@ describe('exigirFiscalCompletoSePreciso (ADR-0135 D-7)', () => {
     await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples'), { ...completa, ncm: null }))
       .rejects.toThrow(/ncm/);
   });
-  it('regime da família diverge do da org: lança pedindo recadastro', async () => {
-    await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'normal'), completa))
-      .rejects.toThrow(/recadastre/);
+  it('A3: erro lendo empresa_fiscal → lança SEM status (retenta), nunca vira "simples"', async () => {
+    const e = await exigirFiscalCompletoSePreciso(adminFakeErroEmpresa(), completa).catch((x) => x);
+    expect(e.message).toMatch(/empresa_fiscal: timeout/);
+    expect(e.status).toBeUndefined();
+  });
+  it('A3: módulo fiscal sem empresa_fiscal → 400 nomeando o cadastro da empresa', async () => {
+    const p = exigirFiscalCompletoSePreciso(adminFake(['fiscal'], null), completa);
+    await expect(p).rejects.toMatchObject({ status: 400 });
+    await expect(p).rejects.toThrow(/cadastro da empresa fiscal/);
+  });
+  it('A3: regime normal → 400 no gate, antes de qualquer escrita', async () => {
+    const p = exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'normal'), completa);
+    await expect(p).rejects.toMatchObject({ status: 400 });
+    await expect(p).rejects.toThrow(/só Simples Nacional/);
   });
   it('erro lançado é definitivo (status 400) — não pode ser retentado pelo QStash', async () => {
     await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples'), { ...completa, ncm: null }))

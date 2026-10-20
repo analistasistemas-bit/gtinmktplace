@@ -22,7 +22,7 @@ function fakeAdmin(over: {
     const rec = { op: '', payload: {} as Record<string, unknown>, filters: {} as Record<string, unknown> };
     const ler = () => {
       if (table === 'familias') return familia;
-      if (table === 'empresa_fiscal') return { regime_tributario: regime };
+      if (table === 'empresa_fiscal') return over.regime === 'ausente' ? null : { regime_tributario: regime };
       return null;
     };
     const erroDeLeitura = () => {
@@ -190,7 +190,23 @@ describe('processarAtualizacaoFiscal', () => {
   it('erro lendo empresa_fiscal → falha, nunca default de regime "simples" em silêncio', async () => {
     const { admin, writes } = fakeAdmin({ erros: { empresa_fiscal: 'timeout' } });
     const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'falha', mensagem: 'timeout' });
+    expect(r).toEqual({ tipo: 'falha', mensagem: 'empresa_fiscal: timeout' });
+    expect(writes.length).toBe(0);
+  });
+
+  it('A3: empresa_fiscal ausente → invalido nomeando o cadastro, zero update', async () => {
+    const { admin, writes } = fakeAdmin({ regime: 'ausente' });
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toMatchObject({ tipo: 'invalido' });
+    expect((r as { erros: string[] }).erros[0]).toMatch(/cadastro da empresa fiscal/);
+    expect(writes.length).toBe(0);
+  });
+
+  it('A3: regime normal → invalido (v1 só Simples), zero update', async () => {
+    const { admin, writes } = fakeAdmin({ regime: 'normal' });
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toMatchObject({ tipo: 'invalido' });
+    expect((r as { erros: string[] }).erros[0]).toMatch(/só Simples Nacional/);
     expect(writes.length).toBe(0);
   });
 

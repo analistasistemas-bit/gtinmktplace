@@ -1,6 +1,7 @@
 // ADR-0135 D-9 — edição fiscal de família existente (o "modo edição" que faltava).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { camposFiscaisFaltantes, UNIDADES_FISCAIS } from '../_shared/fiscal/validar.ts';
+import { lerRegimeFiscalOrg } from '../_shared/fiscal/regime.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 
 export interface EntradaFiscal {
@@ -58,12 +59,14 @@ export async function processarAtualizacaoFiscal(
   if (familiaErro) return { tipo: 'falha', mensagem: familiaErro.message };
   if (!familia) return { tipo: 'nao_encontrada' };
 
-  const { data: emp, error: empErro } = await admin.from('empresa_fiscal')
-    .select('regime_tributario').eq('org_id', orgId).maybeSingle();
-  // Mesma regra: um erro aqui NÃO pode virar "regime simples" por default — é o campo que
-  // decide CSOSN vs CST e entra gravado em `tributacao_icms_regime` (incidente ORIGEM/ADR-0055).
-  if (empErro) return { tipo: 'falha', mensagem: empErro.message };
-  const regime = (emp?.regime_tributario ?? 'simples') as 'simples' | 'normal';
+  // A3 (auditoria fiscal 19/10): regime nunca presumido (decide CSOSN vs CST e entra gravado em
+  // `tributacao_icms_regime`, incidente ORIGEM/ADR-0055). Erro de leitura = falha; ausência/normal = inválido.
+  let regime: 'simples';
+  try { regime = await lerRegimeFiscalOrg(admin, orgId); }
+  catch (e) {
+    if ((e as { status?: number }).status === 400) return { tipo: 'invalido', erros: [(e as Error).message] };
+    return { tipo: 'falha', mensagem: (e as Error).message };
+  }
 
   const f = entrada.fiscal;
 
