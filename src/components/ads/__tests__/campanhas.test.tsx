@@ -178,7 +178,7 @@ describe('AbaCampanhas', () => {
 
   it('carregando: esqueleto', () => {
     aba(dados({ isLoading: true, resposta: null, campanhas: null }));
-    expect(screen.getByLabelText('Carregando campanhas')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status', { name: 'Carregando campanhas' })).toBeInTheDocument();
   });
   it('erro: alerta com a mensagem e Tentar de novo', () => {
     const tentarDeNovo = vi.fn();

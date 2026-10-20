@@ -16,7 +16,7 @@ export function CarregandoMarca({ rotulo, mensagem, className }: { rotulo: strin
     return () => clearTimeout(t);
   }, []);
   return (
-    <div role="status" aria-live="polite" aria-busy="true" aria-label={rotulo}
+    <div role="status" aria-live="polite" aria-label={rotulo}
       className={cn('flex min-h-72 flex-col items-center justify-center gap-5 rounded-lg border border-dashed border-border p-10 text-center', className)}>
       <Logo className="carregando-marca__logo gap-3" symbolClassName="h-14 w-14" wordmarkClassName="text-2xl" />
       <div className="space-y-1">

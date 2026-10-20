@@ -6,7 +6,8 @@ describe('CarregandoMarca', () => {
   it('logo da marca com status acessível e a mensagem do que está sendo lido', () => {
     render(<CarregandoMarca rotulo="Carregando campanhas" mensagem="Lendo as campanhas no Mercado Livre…" />);
     const status = screen.getByRole('status', { name: 'Carregando campanhas' });
-    expect(status).toHaveAttribute('aria-busy', 'true');
+    // sem aria-busy: o leitor de tela pode adiar o anúncio do aviso de 6 s até busy=false, que nunca chega (Codex)
+    expect(status).not.toHaveAttribute('aria-busy');
     expect(screen.getByLabelText('PubliAI')).toBeInTheDocument();
     expect(screen.getByText('Lendo as campanhas no Mercado Livre…')).toBeInTheDocument();
     expect(screen.queryByText(/pode levar alguns segundos/)).not.toBeInTheDocument();
