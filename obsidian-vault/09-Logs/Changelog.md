@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-18
+atualizado: 2026-10-20
 ---
 
 # Changelog
@@ -8,6 +8,14 @@ atualizado: 2026-10-18
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-20
+
+**Auditoria fiscal fechada (emendas ADR-0135).** Diego pediu certeza de emitir NF pelo Faturador do ML. Dados: 130/130 SKUs Zaven com `can_invoice=true` e fiscal igual ao banco. Código (auditoria Codex astra): corrigidos em 5 entregas os caminhos que deixavam SKU sem fiscal (split, cor nova em somente-estoque, edição, kit virtual), a recuperação do push que se perdia, a escrita direta de `can_invoice` por membro (trigger), o regime presumido "simples", CSOSN/FCI sem domínio, EAN de código interno e o peso fora de `tax_information` (confirmado no ML: `gross_weight 0.300`). Main `c2cf1ef8`.
+
+## 2026-10-19
+
+**NCM validado na tabela oficial (ADR-0187).** O 00000140 da Zaven saiu com NCM `75937727` (inexistente, copiado da nota do fornecedor) e o ML recusou o fiscal. Tabela Siscomex (10.516 códigos) no banco, trava em todo escritor, FK `NOT VALID`. **Semáforo fiscal (emenda D-10):** `/can_invoice/items` dá 403 ao app; passou a ler `fiscal_information/{sku}`.
 
 ## 2026-10-18
 

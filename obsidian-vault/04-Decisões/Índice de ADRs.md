@@ -1,6 +1,6 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-09-26
+atualizado: 2026-10-20
 ---
 
 # Índice de ADRs
@@ -148,7 +148,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) — D-3 superseded pela 0141 |
 | 0133 | [Alertas do Pulse: severidade gravada e área dedicada](../../docs/decisions/0133-alertas-do-pulse-severidade-e-area-dedicada.md) |
 | 0134 | [Alerta de estoque zerado e de volta ao ar](../../docs/decisions/0134-alerta-de-estoque-zerado-e-volta-ao-ar.md) |
-| 0135 | [Cadastro fiscal e emissão via Faturador do Mercado Livre](../../docs/decisions/0135-cadastro-fiscal-e-faturador-do-ml.md) |
+| 0135 | [Cadastro fiscal e emissão via Faturador do Mercado Livre](../../docs/decisions/0135-cadastro-fiscal-e-faturador-do-ml.md) — **Emendas 2026-10-19/20 (auditoria Codex):** semáforo por SKU (D-10), push em split/somente-estoque/edição, recuperação do push, dados fiscais só pelo backend, regime nunca presumido, CSOSN/CST/FCI, kit virtual, peso em `tax_information`. |
 | 0136 | [Sonar por EAN: cobertura de fichas de catálogo e escopo declarado](../../docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md) |
 | 0137 | [Sonar: Disputa com caminho B (concentração por anúncio) quando o rótulo não cobre a amostra](../../docs/decisions/0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) |
 | 0138 | [Sonar: linguagem comercial do veredito e condição de entrada](../../docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) |
@@ -203,3 +203,4 @@ Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
 | 0183 | [Copy (título e descrição) de produto em grade](../../docs/decisions/0183-copy-de-produto-em-grade.md) — **Aceito (2026-10-17)**. Template enxuto, 📏 GUIA DE TAMANHOS determinístico sem medidas, pergunta fixa de tamanho. **Emenda 2026-10-18:** pergunta fixa de público (gênero) completa o mínimo de 3; poda do ❓ não leva a frase final. |
 | 0184 | [Título de produto em grade (roupa)](../../docs/decisions/0184-titulo-de-produto-em-grade.md) — **Aceito (2026-10-17)**. Peça + Público + Marca + Característica + Material + Kit, até 60. **Emendas 2026-10-18:** concordância do público sempre do código; título orientado a palavras-chave (Kit no início, sinônimo de dicionário, tecido sem percentual, marca cortável no fim). |
 | 0185 | [Republicar e Criar kit pela família vigente](../../docs/decisions/0185-republicar-e-kit-pela-familia-vigente.md) — **Aceito (2026-10-18) — em produção (main `2a26c2a7`)**. "Corrigir e republicar" vira a RPC transacional `preparar_republicacao`: a cópia mais nova do produto volta à Revisão, SKUs das cópias antigas incorporados, cópias antigas apagadas, 2ª chamada nunca cria outro CREATE. Criar kit usa a família publicada mais nova. Emenda ADR-0168. |
+| 0187 | [NCM validado na tabela oficial](../../docs/decisions/0187-ncm-validado-na-tabela-oficial.md) — **Aceito (2026-10-19) — em produção (main `147ac788`)**. Tabela `ncm_oficial` (Siscomex), `ncm_consultar`, trava NCM inexistente/vencido em todo escritor; FK `NOT VALID`; refresh por migration nova. |

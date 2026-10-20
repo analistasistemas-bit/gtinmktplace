@@ -1,6 +1,6 @@
 ---
 tags: [modulo, fiscal]
-atualizado: 2026-08-26
+atualizado: 2026-10-20
 ---
 
 # Fiscal
@@ -85,7 +85,7 @@ Worker `sincronizar-fiscal-ml` (QStash, idempotente — upsert POST→409→PUT 
 1. Na publicação (`publish-familia-ml` enfileira após criar o item).
 2. Na edição fiscal de família já publicada (`atualizar-fiscal-familia` reenfileira).
 
-`can_invoice` (`GET /can_invoice/items/{id}`) é o estado **do ML**, não uma dedução local —
+`can_invoice` (desde 19/10: `GET /items/fiscal_information/{sku}`, AND entre os SKUs — o `/can_invoice/items` dá 403 para o app) é o estado **do ML**, não uma dedução local —
 escrito na hora pelo push e reconciliado a cada 6h pendurado no `monitorar-moderados` (nenhum
 worker/schedule novo). Badge em Publicados: verde (pronto), vermelho (pendência com causa, clique
 abre o dialog de edição fiscal), sem badge para org sem o módulo.
@@ -94,6 +94,24 @@ abre o dialog de edição fiscal), sem badge para org sem o módulo.
 main `e67cfae4`). Push aceito, mas `GET /can_invoice/items` responde 403 (`PolicyAgent`) — badge
 segue vermelho. Hipótese: empresa ainda não credenciada na Sefaz para NF-e (emissor do ML recusa);
 reenviar o fiscal após o credenciamento. Detalhes no "A verificar #2" do [[ADR-0135]].
+
+## Auditoria fiscal 19–20/10/2026 (emendas no [[ADR-0135]])
+
+- **Push em todo caminho:** split (vínculo por partição), cor nova em "somente estoque", edição
+  fiscal (todas as versões publicadas), kit virtual (componentes têm de estar prontos).
+- **Recuperação:** `fiscal_sincronizado_em` = última tentativa concluída; a reconciliação de 6/6h
+  reenfileira produto publicado há >30 min com marcador nulo/anterior à publicação. Mudar regime ou
+  papel da empresa zera o marcador (trigger `empresa_fiscal_marcar_push_pendente`).
+- **Só o backend escreve:** trigger `familias_proteger_fiscal` barra o papel `authenticated` em
+  `can_invoice*`, campos fiscais, `unidade`, `origem` e INSERT direto; suporte read-only não grava
+  `empresa_fiscal`.
+- **Validação:** regime nunca presumido (`lerRegimeFiscalOrg`; Normal barrado antes do ML), CSOSN/CST
+  no domínio, FCI com formato e só origem 3/5/8, EAN só GTIN válido, `gross_weight` dentro de
+  `tax_information`.
+- **Tela:** Publicados agrega o semáforo entre versões e mostra a causa; dialog avisa envio não
+  enfileirado.
+- **1º uso real resolvido:** 130/130 SKUs Zaven `can_invoice=true` (20/10). Único problema de dado
+  foi o NCM inexistente `75937727` do 00000140 → [[ADR-0187]].
 
 ## Gates
 
