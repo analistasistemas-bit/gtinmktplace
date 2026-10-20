@@ -21,6 +21,55 @@
 - Revisão de diff: Codex `gpt-6.1-sol` high, read-only, `< /dev/null`.
 - Mudança em `_shared/` → redeploy de todas as edges importadoras + conferir versão.
 
+## Emenda — revisão Codex do plano (2026-10-20, vale por cima das tasks)
+
+**Task 1 (migration):**
+- **Default no banco (fecha a janela de rollout e o front antigo):** trigger `familias_marca_default` BEFORE INSERT:
+  `new.marca is null` e lote `origem='manual'` e org com `marca_propria` → `new.marca = marca_padrao`. O cadastro
+  só precisa mandar `marca` quando o usuário escolher outra.
+- **BRAND dentro de `atributos_ml` protegido:** `familias_proteger_marca` (SECURITY INVOKER + `current_user in
+  ('authenticated','anon')`, molde ADR-0135) recusa mudar `marca` **ou** os elementos BRAND/MANUFACTURER de
+  `atributos_ml`. Dentro da RPC SECURITY DEFINER `current_user` é o dono → passa.
+- **Versão da intenção:** `anuncios_externos.marca_sync_versao int not null default 0`; a RPC incrementa na raiz
+  `particao=0` e devolve `{publicado, versao}`.
+- **RPC fechada:** trava (`for update`) a raiz `particao=0` e as famílias; recusa `MARCA_OCUPADO` para
+  `pendente|processando|publicando` e `mudando_composicao`; `MARCA_INEXISTENTE` se não há família do pai na org;
+  status em **todas** as partições da raiz (mesmo `codigo_pai`); tudo numa transação (exception = rollback).
+- **Testes SQL obrigatórios:** cada estado bloqueado (3) + `mudando_composicao`; rollback integral após recusa (marca,
+  atributos, status iguais); múltiplos snapshots; família sem BRAND/`[]` intacta; pai inexistente; `authenticated`
+  sem EXECUTE na RPC; `authenticated` mudando `marca`, BRAND em `atributos_ml`, `organizations.marca_propria/
+  marca_padrao` → 42501; org B intocada; default do INSERT (Zaven manual sem marca → 'Zaven'; planilha → null;
+  Avil → null).
+
+**Task 3:** herança da planilha extraída para `supabase/functions/ingest-lote/marca-herdada.ts`
+(`herdarMarcaUpdate(ant: {marca, atributos_ml}): {marca, atributos_ml}`) com teste: anterior `{marca:'Lacoste',
+BRAND=Lacoste}` + planilha FORNECEDOR='STAR' → nova linha `marca:'Lacoste'` e BRAND=Lacoste.
+
+**Task 4:** inclui `src/components/estoque/dialog-cadastro-grade.tsx` (campo Marca, mesmo comportamento) e o
+contrato espelhado `src/lib/produto-entrada.ts`; testes de payload dos dois formulários.
+
+**Task 5 (worker):**
+- Job `{org_id, codigo_pai, versao, dry_run?, tentativa?}`. Antes de cada PUT e antes de gravar status/reagendar,
+  relê `marca_sync_versao`; se `!= job.versao` → para em silêncio (há job mais novo). `gravarStatus` é condicional
+  (`where marca_sync_versao = versao`).
+- **Convergindo ≠ erro:** todos os SKUs com a marca certa mas em 2 famílias → reagenda (não é `parouEm`).
+  Divergência inesperada (marca errada em 2 famílias, 3ª família, id nulo) → `erro`.
+- **Toda saída grava status:** erro transitório (leitura, gravar vínculo, sem conexão) → reagenda com orçamento
+  (máx. 5, delay 120 s); orçamento esgotado ou falha ao reagendar → `erro` com motivo. `dry_run` não grava status
+  nem reagenda.
+- Testes: duas execuções sucessivas (2ª com zero PUT, grava `ok`); job com versão antiga não faz PUT nem status;
+  convergindo → reagenda; transitório → reagenda; esgotado → `erro`; `dry_run` sem efeitos.
+
+**Task 6:** gate `isAdmin || support.scope==='full'` + `auditarOperacaoSuporte` (molde `atualizar-status-publicado`);
+enfileira com a `versao` devolvida. Testes: admin, membro (403), suporte read (403), suporte full (ok, auditado).
+
+**Task 7:** teste no harness `supabase/functions/usuarios/__tests__/` (molde `arquivar-org.test.ts`): não-super-admin
+→ 403; ligar sem nome → 400; sucesso grava e audita.
+
+**Task 9 (ordem de rollout):** `db push` → deploy de **todas** as edges (cadastro, consumidores, worker, edição,
+usuarios) a partir da branch → só então merge na `main` (Render publica o front). Validação de runtime inclui uma
+reimportação por planilha de produto com marca (Lacoste) conferindo `familias.marca`, BRAND e o payload do UPDATE.
+
 ## Review Focus
 
 1. Edição de marca enquanto o produto está `processando/publicando` → recusada com mensagem, nada gravado. (Task 1 SQL + Task 6)
