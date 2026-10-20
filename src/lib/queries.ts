@@ -1341,6 +1341,8 @@ export interface StatusPublicadoItem {
   motivo: string | null;
   estoque: number | null;
   preco: number | null;
+  /** Preço "de" quando o anúncio está em promoção — aí `preco` é o promocional (/sale_price). */
+  precoOriginal?: number;
   listingType?: 'classico' | 'premium' | null;
   /** Tag `catalog_forewarning` do ML — "prestes a ser pausado" por catálogo (Fase 3, 2026-08-13). */
   catalogForewarning?: boolean;

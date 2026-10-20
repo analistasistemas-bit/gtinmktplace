@@ -409,7 +409,7 @@ describe('Publicados — aba Operações', () => {
   it('abas aparecem enquanto a lista carrega (Operações continua alcançável)', () => {
     usePublicadosMock.mockReturnValue({ data: [], isLoading: true, error: null, refetch: vi.fn() });
     renderPagina();
-    expect(screen.getByText('Carregando publicados...')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Carregando' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Operações' })).toBeInTheDocument();
   });
 

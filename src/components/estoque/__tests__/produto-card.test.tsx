@@ -392,6 +392,22 @@ describe('ProdutoCard', () => {
     expect(screen.getAllByText(/local R\$\s?28,99/).length).toBe(4); // 2 linhas × (coluna + mobile)
   });
 
+  // Promoção: o status ao vivo devolve o preço de venda (/sale_price) — o Estoque mostra o que o
+  // comprador paga e o local fica como referência.
+  it('em promoção: mostra o preço promocional do anúncio', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      { ...mockVariacoes(1)[0]!, codigo: '00000005', preco: 29.9, mlItemId: 'MLB1' },
+    ]);
+    statusItens = [{ ml_item_id: 'MLB1', preco: 19, precoOriginal: 29.9 } as (typeof statusItens)[number]];
+
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => expect(screen.getAllByText(/R\$\s?19,00/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/local R\$\s?29,90/).length).toBeGreaterThan(0);
+  });
+
   // SKU sem anúncio (ou status ainda não carregado) mantém o preço local — nunca vazio.
   // ADR-0129 D-7: item novo do menu "⋮" — aparece SÓ com onAdicionarVariacao (a página só passa
   // a prop para admin), independente de onExcluir estar presente ou não.

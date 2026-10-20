@@ -41,6 +41,8 @@ export interface PublicadoItem {
   status?: StatusPublicado;
   estoque?: number | null;
   precoAtual?: number | null;
+  /** Preço "de" quando o anúncio está em promoção; `precoAtual` é então o promocional. */
+  precoOriginal?: number | null;
   motivo?: string | null;
   /** Modo do anúncio no ML (ao vivo): 'classico' (gold_special) / 'premium' (gold_pro). null se indisponível. */
   listingType?: 'classico' | 'premium' | null;

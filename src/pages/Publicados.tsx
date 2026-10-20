@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import {
   Table,
@@ -390,6 +391,12 @@ function LinhaTabela({
             <span title={item.precoPublicacaoMax > item.precoPublicacao ? 'Preço ao vivo da cor principal do anúncio' : undefined}>
               {fmtBRL(item.precoAtual)}
               {item.precoPublicacaoMax > item.precoPublicacao && <span className="ml-1 text-xs text-muted-foreground">(1ª cor)</span>}
+              {item.precoOriginal != null && (
+                <span className="mt-1 flex flex-col items-start gap-1">
+                  <span className="text-xs text-muted-foreground line-through">{fmtBRL(item.precoOriginal)}</span>
+                  <StatusPill tone="success">Em promoção</StatusPill>
+                </span>
+              )}
             </span>
           )
           : '—'}
@@ -1272,8 +1279,9 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
       familiaId: item.familiaIdVigente ?? item.familiaId,
       codigoPai: item.codigoPai,
       // Preço de venda real (o mesmo da coluna "Preço atual"/"Preço publicado"), não o mínimo
-      // líquido de `variacoes.preco` — ver baseParaKit.
-      precoAtual: item.precoAtual ?? item.precoPublicacao,
+      // líquido de `variacoes.preco` — ver baseParaKit. Em promoção, o preço "de": o kit não
+      // herda um desconto temporário do anúncio.
+      precoAtual: item.precoOriginal ?? item.precoAtual ?? item.precoPublicacao,
     });
 
   const { data: kitsExistentesRows } = useKitsDoProduto(kitAlvo?.codigoPai ?? '', !!kitAlvo);
@@ -1297,7 +1305,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         ? { unidadesVendidas: v?.unidades ?? null, valorVendido: v?.valor ?? null }
         : { unidadesVendidas: null, valorVendido: null };
       return s
-        ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
+        ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, precoOriginal: s.precoOriginal ?? null, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
   }, [publicados, statusData, resumo, canonicoPronto]);
@@ -1418,11 +1426,13 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     });
   };
 
-  if (loadingPublicados) {
+  // 1ª carga espera o status ao vivo: sem ele o "Preço atual" mostraria o cheio e depois saltaria
+  // para o promocional. Refetch ("Atualizar") mantém a tabela com o spinner do botão.
+  if (loadingPublicados || (!statusData && fetchingStatus)) {
     return (
       <div className="p-4 sm:p-6">
         {abas}
-        <div className="text-sm text-muted-foreground">Carregando publicados...</div>
+        <CarregandoMarca rotulo="Carregando" mensagem="Lendo preços e status no Mercado Livre…" />
       </div>
     );
   }

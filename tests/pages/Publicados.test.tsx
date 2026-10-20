@@ -122,6 +122,14 @@ vi.mock('@/lib/kit-virtual', async (importOriginal) => {
 
 // O diálogo real usa vários hooks/queries próprios, fora do escopo deste teste de página — um
 // stub que expõe `open`/`onOpenChange` basta para provar que o botão/ação certos o abrem.
+const dialogCriarKitBaseMock = vi.fn();
+vi.mock('@/components/kit/dialog-criar-kit', () => ({
+  DialogCriarKit: ({ base }: { base: { preco: number } }) => {
+    dialogCriarKitBaseMock(base);
+    return <div data-testid="dialog-criar-kit" />;
+  },
+}));
+
 vi.mock('@/components/kit-virtual/DialogCriarKitVirtual', () => ({
   DialogCriarKitVirtual: ({ open }: { open: boolean; onOpenChange: (v: boolean) => void }) =>
     open ? <div data-testid="dialog-criar-kit-virtual" /> : null,
@@ -394,6 +402,72 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('Premium')).toBeInTheDocument();
+  });
+
+  describe('preço promocional (/sale_price)', () => {
+    const comStatus = (s: Record<string, unknown>, isFetching = false) =>
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [{ ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 87, ...s }] },
+        isFetching,
+        refetch: vi.fn(),
+      });
+    const renderTela = () => render(<MemoryRouter><Publicados /></MemoryRouter>);
+
+    it('em promoção: preço promocional, preço "de" riscado e badge', () => {
+      comStatus({ preco: 19, precoOriginal: 29.9 });
+      renderTela();
+      expect(screen.getByText('R$ 19,00')).toBeInTheDocument();
+      expect(screen.getByText('R$ 29,90')).toHaveClass('line-through');
+      expect(screen.getByText('Em promoção')).toBeInTheDocument();
+    });
+
+    it('sem promoção: sem badge', () => {
+      comStatus({ preco: 24.1 });
+      renderTela();
+      expect(screen.queryByText('Em promoção')).not.toBeInTheDocument();
+    });
+
+    it('UP: precoOriginal do principal sobrevive à agregação dos filhos', () => {
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ mlItemIdsUP: ['MLB1', 'MLB2'] })], isLoading: false, error: null, refetch: vi.fn(),
+      });
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [
+          { ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 3, preco: 19, precoOriginal: 29.9 },
+          { ml_item_id: 'MLB2', status: 'ativo', motivo: null, estoque: 4, preco: 29.9 },
+        ] },
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+      renderTela();
+      expect(screen.getByText('Em promoção')).toBeInTheDocument();
+    });
+
+    it('primeira carga do status: logo pulsando no lugar da tabela', () => {
+      useStatusPublicadosMock.mockReturnValue({ data: undefined, isFetching: true, refetch: vi.fn() });
+      renderTela();
+      expect(screen.getByRole('status', { name: 'Carregando' })).toBeInTheDocument();
+      expect(screen.queryByRole('columnheader', { name: /Preço atual/ })).not.toBeInTheDocument();
+    });
+
+    it('refetch com dados: tabela continua visível', () => {
+      comStatus({ preco: 24.1 }, true);
+      renderTela();
+      expect(screen.getByRole('columnheader', { name: /Preço atual/ })).toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: 'Carregando' })).not.toBeInTheDocument();
+    });
+
+    it('Criar kit em promoção parte do preço sem promoção', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null })], isLoading: false, error: null, refetch: vi.fn(),
+      });
+      useFamiliaMock.mockReturnValue({ data: familiaCarregada(), isLoading: false, isError: false });
+      comStatus({ preco: 19, precoOriginal: 29.9 });
+      renderTela();
+      fireEvent.click(screen.getByRole('button', { name: 'Criar kit' }));
+      expect(dialogCriarKitBaseMock).toHaveBeenLastCalledWith(expect.objectContaining({ preco: 29.9 }));
+    });
   });
 
   it('expandir a linha abre a área de análise (aria-expanded)', () => {
