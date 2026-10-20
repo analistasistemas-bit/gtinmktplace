@@ -42,14 +42,14 @@ function Carregando() {
 /** Aba Campanhas: estado atual das campanhas no ML agrupado por família (emenda ADR-0179). */
 export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & AcoesFamilia) {
   const [filtro, setFiltro] = useState<Filtro>('todas');
-  const { resposta, campanhas, isLoading, isError, erro, atualizando, atualizar } = dados;
+  const { resposta, campanhas, isLoading, isError, erro, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
 
   if (isError) {
     return (
       <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
         <p>Não foi possível ler as campanhas no Mercado Livre.</p>
         {erro?.message && <p className="mt-1 text-xs text-danger/80">Detalhe: {erro.message}</p>}
-        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={() => void atualizar()}>Tentar de novo</Button>
+        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={tentarDeNovo}>Tentar de novo</Button>
       </div>
     );
   }
@@ -118,6 +118,12 @@ export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & Ac
             {atualizando && <Loader2 aria-hidden className="h-4 w-4 animate-spin" />}
             {atualizando ? 'Atualizando…' : 'Atualizar'}
           </Button>
+          {erroAtualizar && (
+            <span role="alert" className="inline-flex items-center gap-1.5 text-warning">
+              <AlertTriangle aria-hidden className="size-3.5 shrink-0" />
+              Não foi possível atualizar agora; os dados acima são da última leitura.
+            </span>
+          )}
         </div>
         <div className="space-y-1">
           <p>Estado atual das campanhas no Mercado Livre; gasto e resultado ficam em Desempenho.</p>

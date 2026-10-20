@@ -41,7 +41,8 @@ export function BlocoCampanha({ c, filtrando, verDesempenho, temDesempenho }: { 
   const [aberta, setAberta] = useState(ativa);
   const id = useId();
   const estrategia = rotuloEstrategia(c.estrategia);
-  const mostrar = aberta || filtrando;
+  // Ativa sempre mostra (campanha reativada no ML não pode ficar presa no estado recolhido de quando estava pausada).
+  const mostrar = ativa || aberta || filtrando;
   const acoes = { verDesempenho, temDesempenho };
   return (
     <section aria-labelledby={`${id}-t`} className={cn('space-y-3 rounded-lg border border-border bg-card p-4', !ativa && 'bg-muted/30')}>

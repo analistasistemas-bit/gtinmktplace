@@ -149,6 +149,12 @@ describe('BlocoCampanha', () => {
     expect(screen.getAllByText('Não calculada: campanha pausada').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Fora da projeção/)).not.toBeInTheDocument();
   });
+  it('campanha reativada (pausada → ativa) mostra o conteúdo sem precisar remontar', () => {
+    const { rerender } = pagina(<BlocoCampanha c={campanha({ status: 'paused', familias: [familia()] })} filtrando={false} />);
+    expect(screen.queryByRole('row', { name: /Camiseta/ })).not.toBeInTheDocument();
+    rerender(<MemoryRouter><BlocoCampanha c={campanha({ status: 'active', familias: [familia()] })} filtrando={false} /></MemoryRouter>);
+    expect(screen.getByRole('row', { name: /Camiseta/ })).toBeInTheDocument();
+  });
   it('grupo Fora do PubliAI só aparece quando há anúncios, sem equilíbrio', () => {
     const { unmount } = pagina(<BlocoCampanha c={campanha()} filtrando={false} />);
     expect(screen.queryByText('Fora do PubliAI')).not.toBeInTheDocument();
@@ -166,7 +172,7 @@ describe('AbaCampanhas', () => {
   const dados = (over: Partial<DadosCampanhas> = {}, campanhas: CampanhaVista[] | null = [campanha()]): DadosCampanhas => ({
     resposta: { ok: true, estado: 'ok', lidoEm: '2026-10-20T15:05:00Z', aliquotasConfirmadas: true, projecaoLimitada: false,
       publicadosPorFamilia: {}, campanhas: [], anuncios: [] },
-    campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), ...over,
+    campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(), ...over,
   });
   const aba = (d: DadosCampanhas) => pagina(<AbaCampanhas dados={d} />);
 
@@ -175,11 +181,16 @@ describe('AbaCampanhas', () => {
     expect(screen.getByLabelText('Carregando campanhas')).toHaveAttribute('aria-busy', 'true');
   });
   it('erro: alerta com a mensagem e Tentar de novo', () => {
-    const atualizar = vi.fn();
-    aba(dados({ isError: true, erro: new Error('Falhou no ML'), atualizar }));
+    const tentarDeNovo = vi.fn();
+    aba(dados({ isError: true, erro: new Error('Falhou no ML'), tentarDeNovo }));
     expect(screen.getByRole('alert')).toHaveTextContent('Falhou no ML');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    expect(atualizar).toHaveBeenCalled();
+    expect(tentarDeNovo).toHaveBeenCalled();
+  });
+  it('Atualizar que falhou: aviso discreto, dados da última leitura ficam', () => {
+    aba(dados({ erroAtualizar: new Error('rede') }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível atualizar agora; os dados acima são da última leitura.');
+    expect(screen.getByRole('row', { name: /Camiseta/ })).toBeInTheDocument();
   });
   it('sem_conexao: pede para conectar em Canais', () => {
     aba(dados({ resposta: { ok: true, estado: 'sem_conexao' }, campanhas: [] }));

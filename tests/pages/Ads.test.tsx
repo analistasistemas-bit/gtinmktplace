@@ -57,7 +57,7 @@ beforeEach(() => {
   hook.mockReset();
   hookCampanhas.mockReset();
   hookCampanhas.mockReturnValue({
-    resposta: null, campanhas: null, isLoading: true, isError: false, erro: null, atualizando: false, atualizar: vi.fn(),
+    resposta: null, campanhas: null, isLoading: true, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(),
   });
 });
 afterEach(() => vi.restoreAllMocks());
@@ -738,7 +738,7 @@ describe('Ads', () => {
     const dadosOk = (campanhas: unknown[] = []) => ({
       resposta: { ok: true, estado: 'ok', lidoEm: '2026-10-20T15:05:00Z', aliquotasConfirmadas: true, projecaoLimitada: false,
         publicadosPorFamilia: {}, campanhas: [], anuncios: [] },
-      campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(),
+      campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(),
     });
 
     it('renderiza as duas abas', () => {
