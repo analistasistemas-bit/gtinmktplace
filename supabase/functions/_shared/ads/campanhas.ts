@@ -143,7 +143,7 @@ export async function equilibrioDoMlb(
   const sem = (motivo: string): Equilibrio => ({ acosPct: null, motivo });
   const resolvidas = [];
   for (const c of coresDe(ml)) {
-    const r = resolverPack(cad, { item_id: ml.id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml.formato_kit);
+    const r = resolverPack(cad, { item_id: ml.id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml.formato_kit, ml.relacionados);
     if (typeof r === 'string') return sem(r);
     if (!r) return sem('sem_cadastro');
     // Decisão Codex B (2026-10-20): `r.kit` é o pacote efetivo; escalado a partir de um cadastro que não é kit

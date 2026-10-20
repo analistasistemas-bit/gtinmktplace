@@ -66,6 +66,7 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
       codigo: r.codigo,
       dim: dimOk ? { altura_cm: altura!, largura_cm: largura!, comprimento_cm: comprimento!, peso_gramas: peso! } : null,
       kit: Number(fam?.kit_multiplicador) >= 2 ? Number(fam!.kit_multiplicador) : 1,
+      ml_item_id: fam?.ml_item_id ?? null,
     };
     quando.set(val, instante(r.atualizado_em));
     c.porId.set(r.id, val);
@@ -143,15 +144,24 @@ function combinar(a: Lado, b: Lado, n: number): Lado | MotivoKit {
  * medidas e origem que o resolvido — senão é ambíguo e nada é chutado. Consequência aceita: custo da base
  * reajustado sem refletir no kit (ADR-0151 não propaga) deixa o kit ⚪ até o cadastro ser alinhado.
  * `formatoKit` (SALE_FORMAT=Kit) sem quantidade e sem cadastro de kit → ⚪.
+ *
+ * Emenda 2026-10-20: no anúncio **próprio** da variação (ml_item_id da família, item filho UP dela, a própria
+ * ml_variation_id, ou o par normal/catálogo — `relacionados` — de um desses) o custo cadastrado já é o do que o
+ * anúncio vende (a planilha traz o custo do pacote inteiro): cadastro sem kit próprio nunca escala ali.
  */
 export function resolverPack(
   c: Cadastro,
   q: { item_id: string; variation_id: number | null; sku: string | null; gtin: string | null },
   unidades: number | null,
   formatoKit = false,
+  relacionados: readonly string[] = [],
 ): CadastroVariacao | MotivoKit | null {
   const r = resolverCor(c, q);
   if (!r) return null;
+  const doCadastro = (id: string) => id === r.ml_item_id || c.porItemUp.get(id) === r.variacao_id;
+  const proprio = [q.item_id, ...relacionados].some(doCadastro)
+    || (q.variation_id != null && c.porVariacaoMl.get(String(q.variation_id)) === r);
+  if (proprio && r.kit === 1) return r;
   const casa = (m: Map<string, CadastroVariacao>, k: string | null) => (k ? m.get(normGtin(k.trim())) : undefined);
   const outros = [...new Set([casa(c.porCodigo, q.sku), casa(c.porGtin, q.gtin)])]
     .filter((o): o is CadastroVariacao => o != null && o !== r);

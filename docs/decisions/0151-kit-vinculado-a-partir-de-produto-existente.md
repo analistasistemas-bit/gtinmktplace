@@ -526,3 +526,23 @@ Reverter = reverter as migrations (`20260902233018_kit_vinculado_schema.sql`,
 `20260903002527_kit_vinculado_guards.sql`, `20260903030505_estoque_rpc_exclui_kit.sql`) e as
 edges/`_shared` tocadas por essas 10 tasks, ou revisar as decisões numa nova sessão de grilling
 antes de qualquer mudança incremental.
+
+## Emenda — anúncio próprio nunca escala o custo (2026-10-20)
+
+**Contexto:** a projeção de líquido da Central de Promoções (ADR-0170) e a aba Campanhas do `/ads` (emenda ADR-0179)
+usam `resolverPack` (`_shared/promocoes/cadastro.ts`), que leva a variação a `UNITS_PER_PACK` do anúncio. Na operação
+do Diego o custo da planilha é **sempre o do pacote inteiro da nota** (decisão dele, 20/10). Um produto que já é um
+pacote (ex.: Avil "Linha Renascença C/10 Novelos", custo R$ 64 do pacote; o ML informa `UNITS_PER_PACK=10`) tinha o
+custo multiplicado de novo (R$ 640 → margem −344 %); a Central mostrava esses produtos em vermelho falso. Medido: os
+4 casos da Avil eram o anúncio do próprio produto (`familias.ml_item_id`), nenhum era kit.
+
+**Decisão:** quando o anúncio é o **próprio** da variação resolvida — o `ml_item_id` da família dela, o item filho UP
+vinculado a ela, a própria `ml_variation_id`, ou o par normal/catálogo (`item_relations`) de um desses — e o cadastro
+não é kit próprio (`kit == 1`), o custo cadastrado já é o do que esse anúncio vende: **nunca escala**, qualquer que
+seja o `UNITS_PER_PACK`/`SALE_FORMAT`. A escala continua só para anúncio de **outro** produto casado pelo GTIN/SKU da
+unidade (o par de catálogo do kit — caso original deste ADR). O financeiro (`custo-vigente`) não muda: nunca escalou.
+
+**Alternativas descartadas:** campo "custo é do pacote" por produto (marcação manual, desnecessária com a regra da
+operação); reaproveitar `kit_multiplicador` (exige `kit_base_codigo_pai` e N em 2..6); heurística por preço (chute).
+**Risco aceito:** produto com custo da **unidade** cadastrado e anúncio próprio vendendo várias juntas sairia com
+custo subestimado — fora da regra da operação.

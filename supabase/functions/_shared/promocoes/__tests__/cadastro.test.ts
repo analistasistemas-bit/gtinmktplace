@@ -156,3 +156,40 @@ describe('resolverPack (kit — ADR-0151)', () => {
     expect(resolverPack(montarCadastro([], []), q({ gtin: '1' }), 2)).toBeNull();
   });
 });
+
+describe('resolverPack — anúncio próprio nunca escala (emenda ADR-0151, 2026-10-20)', () => {
+  // Caso real Avil MLB7245026988: "Linha C/10 Novelos", custo R$ 64,09 já é do PACOTE; o ML diz UNITS_PER_PACK=10.
+  const linha = v({ id: 'linha', codigo: '02436825', gtin: '3000024368251', custo: 64.0941, preco: 114,
+    familias: { ml_item_id: 'MLB7245026988', origem: 'nacional' } });
+  const q = (o: Partial<{ item_id: string; variation_id: number | null; sku: string | null; gtin: string | null }>) =>
+    ({ item_id: 'MLBX', variation_id: null, sku: null, gtin: null, ...o });
+
+  it('anúncio da própria família: custo do pacote como está, com qualquer UNITS_PER_PACK', () => {
+    const c = montarCadastro([linha], []);
+    for (const n of [10, 2, null]) {
+      expect(resolverPack(c, q({ item_id: 'MLB7245026988', gtin: '3000024368251' }), n)).toMatchObject({ variacao_id: 'linha', custo: 64.0941, kit: 1 });
+    }
+    // SALE_FORMAT=Kit no próprio anúncio também não vira ⚪
+    expect(resolverPack(c, q({ item_id: 'MLB7245026988' }), null, true)).toMatchObject({ variacao_id: 'linha', custo: 64.0941 });
+  });
+
+  it('item filho UP vinculado à variação e a própria ml_variation_id contam como anúncio próprio', () => {
+    const up = montarCadastro([{ ...linha, familias: { ml_item_id: null, origem: 'nacional' } }], [{ item_externo_id: 'MLB900', variacao_id: 'linha' }]);
+    expect(resolverPack(up, q({ item_id: 'MLB900' }), 10)).toMatchObject({ custo: 64.0941 });
+    const legacy = montarCadastro([{ ...linha, ml_variation_id: '555' }, v({ id: 'outra', ml_variation_id: '556' })], []);
+    expect(resolverPack(legacy, q({ item_id: 'MLB7245026988', variation_id: 555 }), 10)).toMatchObject({ variacao_id: 'linha', custo: 64.0941 });
+  });
+
+  it('par normal/catálogo (item_relations) de um anúncio próprio também não escala', () => {
+    const c = montarCadastro([linha], []);
+    expect(resolverPack(c, q({ item_id: 'MLBCAT', gtin: '3000024368251' }), 10, false, ['MLB7245026988']))
+      .toMatchObject({ custo: 64.0941 });
+  });
+
+  it('anúncio de OUTRO produto casado pelo GTIN da unidade continua escalando (caso original do ADR-0151)', () => {
+    const c = montarCadastro([linha], []);
+    expect(resolverPack(c, q({ item_id: 'MLBOUTRO', gtin: '3000024368251' }), 2)).toMatchObject({ custo: 128.19, kit: 2 });
+    // relacionado que não é desta variação não muda nada
+    expect(resolverPack(c, q({ item_id: 'MLBOUTRO', gtin: '3000024368251' }), 2, false, ['MLBQUALQUER'])).toMatchObject({ kit: 2 });
+  });
+});

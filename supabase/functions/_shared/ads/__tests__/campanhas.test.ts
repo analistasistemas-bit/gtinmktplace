@@ -152,13 +152,27 @@ describe('equilibrioDoMlb', () => {
       const r = await equilibrioDoMlb(itemML({ id: 'MLBX', gtin: '7891010027858', sku: '00000012', unidades: 2 }), 100, montarCadastro([base, kit], []), ALIQ, async () => TARIFA);
       expect(r.acosPct).toBeCloseTo(15.2);
     });
-    it('uma cor escalada invalida o MLB inteiro', async () => {
-      const unidade = v({ id: 'u', ml_variation_id: '1', familias: { ml_item_id: 'MLBM', origem: 'nacional' } });
-      const pack = v({ id: 'p', ml_variation_id: '2', familias: { ml_item_id: 'MLBM', origem: 'nacional' } });
-      const duas = itemML({ id: 'MLBM', variacoes: [
-        { variation_id: 1, cor: 'A', sku: null, gtin: null, unidades: 1 }, { variation_id: 2, cor: 'B', sku: null, gtin: null, unidades: 3 }] });
+    it('uma cor escalada (anúncio de outro produto, pelo GTIN) invalida o MLB inteiro', async () => {
+      const unidade = v({ id: 'u', gtin: '7890000000011', familias: { ml_item_id: 'MLBA', origem: 'nacional' } });
+      const pack = v({ id: 'p', gtin: '7890000000028', familias: { ml_item_id: 'MLBB', origem: 'nacional' } });
+      const duas = itemML({ id: 'MLBOUTRO', variacoes: [
+        { variation_id: 1, cor: 'A', sku: null, gtin: '7890000000011', unidades: 1 },
+        { variation_id: 2, cor: 'B', sku: null, gtin: '7890000000028', unidades: 3 }] });
       expect(await equilibrioDoMlb(duas, 100, montarCadastro([unidade, pack], []), ALIQ, async () => TARIFA))
         .toEqual({ acosPct: null, motivo: 'pacote_a_conferir' });
+    });
+    it('caso Avil: anúncio próprio de produto já cadastrado como pacote mostra a margem real (emenda ADR-0151)', async () => {
+      // Linha C/10: custo 64,09 do pacote, ML diz 10 unidades. Antes: ×10 → −344 %; agora o custo vale como está.
+      const linha = v({ id: 'l', custo: 64.0941, familias: { ml_item_id: 'MLB7245026988', origem: 'nacional' } });
+      const r = await equilibrioDoMlb(itemML({ id: 'MLB7245026988', unidades: 10 }), 154.55, montarCadastro([linha], []), ALIQ, async () => TARIFA);
+      // 154,55 − 18,546 (12 %) − 5 − 12,364 (8 %) = 118,64; (118,64 − 64,0941) ÷ 154,55 ≈ 35,3 %.
+      expect(r.motivo).toBeNull();
+      expect(r.acosPct!).toBeCloseTo(35.29, 1);
+    });
+    it('par de catálogo do anúncio próprio (item_relations) também não escala', async () => {
+      const linha = v({ id: 'l', custo: 64.0941, gtin: '3000024368251', familias: { ml_item_id: 'MLB7245026988', origem: 'nacional' } });
+      const cat = itemML({ id: 'MLBCAT', gtin: '3000024368251', unidades: 10, relacionados: ['MLB7245026988'] });
+      expect((await equilibrioDoMlb(cat, 154.55, montarCadastro([linha], []), ALIQ, async () => TARIFA)).acosPct!).toBeCloseTo(35.29, 1);
     });
     it('motivo kit_* propaga', async () => {
       const r = await equilibrioDoMlb(itemML({ id: 'MLBKIT', unidades: 1 }), 100, montarCadastro([base, kit], []), ALIQ, async () => TARIFA);

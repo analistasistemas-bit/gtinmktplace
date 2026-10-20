@@ -46,6 +46,8 @@ export interface CadastroVariacao {
   cor: string | null; codigo: string | null; dim: DimensoesPacote | null;
   /** Unidades que custo/piso/dim representam: familias.kit_multiplicador do kit próprio, senão 1. */
   kit: number;
+  /** Anúncio da família desta variação (familias.ml_item_id): o anúncio "próprio" (emenda ADR-0151, 2026-10-20). */
+  ml_item_id: string | null;
 }
 export interface ProjecaoCor {
   variation_id: number | null; cor: string | null; sku: string | null;

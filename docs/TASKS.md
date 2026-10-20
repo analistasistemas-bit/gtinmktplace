@@ -6,7 +6,7 @@
 - [x] Edge `ads-campanhas` (só GET, módulo `ads`, cache 10 min) com ACOS de equilíbrio pelo preço por MLB (pior cor, sem piso, tetos explícitos, pacote a conferir).
 - [x] `/ads` com abas Desempenho | Campanhas; régua "Margem para Ads", 3 alertas, MLBs expansíveis, Fora do PubliAI, link para Desempenho.
 - [x] Validação visual com dados reais (DSA pela edge implantada; Hairfly e Avil injetados): desktop, 360 px, claro e escuro.
-- [ ] Pendente (decisão própria + ADR): `resolverPack` escala custo de pacote já cadastrado como pacote (afeta também a Central de Promoções).
+- [x] Custo de pacote: anúncio próprio nunca escala o custo (emenda ADR-0151, 2026-10-20) — corrige a Central de Promoções e a aba Campanhas; financeiro intocado.
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 

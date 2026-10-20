@@ -121,3 +121,5 @@ custo pelo `UNITS_PER_PACK` a partir de um cadastro que não é kit próprio, o 
 — na Avil 4 de 6 alertas eram custo do pacote ×N (ex.: linha C/10 com custo do pacote ×10 → −344 %), e a Central de
 Promoções mostra hoje o mesmo custo inflado. A Central e o `resolverPack` não mudam aqui; a correção compartilhada
 (como representar a unidade comercial do custo) exige ADR próprio. Tetos finais: 200 MLBs, 300 cores, 600 tarifas.
+Com a emenda de 2026-10-20 ao ADR-0151 (anúncio próprio nunca escala o custo), os 4 casos da Avil voltam a ter número;
+`pacote_a_conferir` fica só para escala a partir de cadastro sem kit próprio em anúncio de outro produto.
