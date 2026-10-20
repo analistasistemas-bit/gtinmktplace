@@ -75,6 +75,10 @@ vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
   useTiposProdutoHabilitados: () => tiposProdutoMock(),
 }));
 
+// ADR-0188: marca própria da org — `marcaOrgMock` controla useMarcaOrg por teste (padrão: sem marca própria).
+const marcaOrgMock = vi.fn(() => ({ data: undefined as { marca_propria: boolean; marca_padrao: string | null } | undefined }));
+vi.mock('@/hooks/useMarcaOrg', () => ({ useMarcaOrg: () => marcaOrgMock() }));
+
 function renderDialogCom(
   props: Partial<{ onFechar: () => void; inicial: CadastroInicial; onCadastrado: () => void }> = {},
 ) {
@@ -1214,5 +1218,54 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     await user.click(screen.getByRole('checkbox', { name: 'Conferi NCM e origem' }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+});
+
+describe('DialogCadastroProduto — marca própria (ADR-0188)', () => {
+  afterEach(() => { cadastrarProdutoMock.mockClear(); marcaOrgMock.mockReturnValue({ data: undefined }); });
+
+  it('sem marca própria: não mostra o campo nem manda marca', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
+    const user = userEvent.setup();
+    renderDialog();
+    expect(screen.queryByLabelText(/^Marca/)).not.toBeInTheDocument();
+    await preencherEEnviar(user, 'Produto');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    expect(cadastrarProdutoMock.mock.calls[0][0]).not.toHaveProperty('marca');
+  });
+
+  it('com marca própria: campo pré-preenchido, editável, vai no payload', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: true, marca_padrao: 'Zaven' } });
+    const user = userEvent.setup();
+    renderDialog();
+    const campo = screen.getByLabelText(/^Marca/);
+    expect(campo).toHaveValue('Zaven');
+    await user.clear(campo);
+    await user.type(campo, ' Lacoste ');
+    await preencherEEnviar(user, 'Produto');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    expect(cadastrarProdutoMock.mock.calls[0][0].marca).toBe('Lacoste');
+  });
+
+  it('marca vazia bloqueia o Cadastrar e pede a marca', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: true, marca_padrao: 'Zaven' } });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.clear(screen.getByLabelText(/^Marca/));
+    await user.type(screen.getByLabelText('Nome'), 'Produto');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    expect(screen.getByText('Informe a marca.')).toBeInTheDocument();
+  });
+
+  it('fechar e reabrir devolve a marca da org', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: true, marca_padrao: 'Zaven' } });
+    const user = userEvent.setup();
+    const { fechar, reabrir } = renderDialogControlado();
+    await user.clear(screen.getByLabelText(/^Marca/));
+    await user.type(screen.getByLabelText(/^Marca/), 'Outra');
+    fechar();
+    reabrir();
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue('Zaven');
   });
 });

@@ -19,6 +19,18 @@ vi.mock('@/components/movimentos-estoque', () => ({
   MovimentosEstoque: () => <div>Movimentos de estoque</div>,
 }));
 
+// ADR-0188: marca por produto — hooks/lib mutáveis por teste.
+const marcaOrgMock = vi.fn(() => ({ data: undefined as { marca_propria: boolean; marca_padrao: string | null } | undefined }));
+vi.mock('@/hooks/useMarcaOrg', () => ({ useMarcaOrg: () => marcaOrgMock() }));
+let souAdmin = true;
+vi.mock('@/hooks/useProfile', () => ({ useProfile: () => ({ isAdmin: souAdmin }) }));
+const fetchMarcaProdutoMock = vi.fn();
+const atualizarMarcaFamiliaMock = vi.fn();
+vi.mock('@/lib/marca-produto', () => ({
+  fetchMarcaProduto: (...a: unknown[]) => fetchMarcaProdutoMock(...a),
+  atualizarMarcaFamilia: (...a: unknown[]) => atualizarMarcaFamiliaMock(...a),
+}));
+
 const fetchVariacoesProdutoMock = vi.fn<typeof produtosSaldo.fetchVariacoesProduto>();
 vi.mock('@/lib/produtos-saldo', async (orig) => ({
   ...(await orig<typeof import('@/lib/produtos-saldo')>()),
@@ -52,6 +64,10 @@ beforeEach(() => {
   fetchVariacoesProdutoMock.mockReset();
   fetchVariacoesProdutoMock.mockResolvedValue([]);
   statusItens = [];
+  marcaOrgMock.mockReturnValue({ data: undefined });
+  souAdmin = true;
+  fetchMarcaProdutoMock.mockReset().mockResolvedValue({ marca: null, status: null, erro: null });
+  atualizarMarcaFamiliaMock.mockReset().mockResolvedValue({ ok: true, publicado: true, status: 'pendente' });
 });
 
 const produtoMono: ProdutoEstoqueResumo = {
@@ -693,5 +709,71 @@ describe('ProdutoCard', () => {
       expect(screen.getByText(/Kit de 3 — 2 disponíveis/)).toBeInTheDocument();
       expect(screen.getByText(/Os kits não têm estoque próprio/)).toBeInTheDocument();
     });
+  });
+});
+
+describe('ProdutoCard — marca por produto (ADR-0188)', () => {
+  const publicado = { ...produto, mlItemId: 'MLB123' };
+  const ORG_MARCA = { data: { marca_propria: true, marca_padrao: 'Zaven' } };
+
+  async function abrirMenu() {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Mais ações para Protetor Solar/ }));
+    return user;
+  }
+
+  it('"Editar marca" só aparece com marca própria', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onExcluir={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await abrirMenu();
+    expect(screen.queryByRole('menuitem', { name: /Editar marca/ })).not.toBeInTheDocument();
+  });
+
+  it('com marca própria e admin: item "Editar marca" abre o diálogo', async () => {
+    marcaOrgMock.mockReturnValue(ORG_MARCA);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onExcluir={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const user = await abrirMenu();
+    await user.click(screen.getByRole('menuitem', { name: /Editar marca/ }));
+    expect(await screen.findByRole('dialog', { name: 'Editar marca' })).toBeInTheDocument();
+  });
+
+  it('não-admin não vê "Editar marca"', () => {
+    marcaOrgMock.mockReturnValue(ORG_MARCA);
+    souAdmin = false;
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /Mais ações/ })).not.toBeInTheDocument();
+  });
+
+  it('status pendente mostra "Enviando marca ao Mercado Livre…"', async () => {
+    marcaOrgMock.mockReturnValue(ORG_MARCA);
+    fetchMarcaProdutoMock.mockResolvedValue({ marca: 'Lacoste', status: 'pendente', erro: null });
+    renderCard(publicado);
+    expect(await screen.findByText('Enviando marca ao Mercado Livre…')).toBeInTheDocument();
+  });
+
+  it('status erro mostra a mensagem e "Reenviar" chama a edge com a marca atual', async () => {
+    marcaOrgMock.mockReturnValue(ORG_MARCA);
+    fetchMarcaProdutoMock.mockResolvedValue({ marca: 'Lacoste', status: 'erro', erro: 'ML recusou a marca' });
+    renderCard(publicado);
+    expect(await screen.findByText(/ML recusou a marca/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: /Reenviar marca/ }));
+    await waitFor(() => expect(atualizarMarcaFamiliaMock).toHaveBeenCalledWith('00000004', 'Lacoste'));
+  });
+
+  it('sem marca própria não consulta o estado da marca', () => {
+    renderCard(publicado);
+    expect(fetchMarcaProdutoMock).not.toHaveBeenCalled();
   });
 });

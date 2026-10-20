@@ -42,6 +42,8 @@ export function numOuNull(v: string): number | null {
 export function montarPayload(
   pai: {
     nomePai: string; descricaoPai: string; unidade: string; fornecedor: string;
+    /** ADR-0188: só a org com marca própria manda; ausente = a edge usa a marca da org. */
+    marca?: string;
     origem: 'nacional' | 'importado';
     genero: Genero | null;
     gradeTamanho?: GradeTamanho | null;
@@ -80,6 +82,7 @@ export function montarPayload(
     descricaoPai: pai.descricaoPai.trim() || null,
     unidade: pai.unidade.trim() || null,
     fornecedor: pai.fornecedor.trim() || null,
+    ...(pai.marca?.trim() ? { marca: pai.marca.trim() } : {}),
     origem: pai.origem,
     genero: pai.genero,
     ...(pai.gradeTamanho ? { gradeTamanho: pai.gradeTamanho } : {}),

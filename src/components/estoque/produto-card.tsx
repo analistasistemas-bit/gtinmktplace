@@ -3,9 +3,9 @@
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, ClipboardCheck, ExternalLink, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, ExternalLink, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Tag, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,10 @@ import {
 } from '@/lib/estoque-sync-ml';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
+import { useMarcaOrg } from '@/hooks/useMarcaOrg';
+import { useProfile } from '@/hooks/useProfile';
+import { DialogEditarMarca } from '@/components/estoque/dialog-editar-marca';
+import { atualizarMarcaFamilia, fetchMarcaProduto } from '@/lib/marca-produto';
 import { urlAnuncioML } from '@/lib/ml-status';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
@@ -176,10 +180,29 @@ export function ProdutoCard({
 }) {
   const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
+  const [editandoMarca, setEditandoMarca] = useState(false);
   const painelId = useId();
   const nomePai = formatarNomeProduto(produto.nomePai) || produto.nomePai;
   const { data: capaUrl } = useImageUrl(produto.capaStoragePath);
   const capa = capaUrl ?? urlFotoMl(produto.capaMlPictureId);
+
+  // ADR-0188: "Editar marca" só para admin (a edge recusa o resto) e só em org com marca própria.
+  const { isAdmin } = useProfile();
+  const { data: marcaOrg } = useMarcaOrg();
+  const marcaPropria = !!marcaOrg?.marca_propria;
+  const podeEditarMarca = marcaPropria && isAdmin;
+  // Estado da marca (família vigente + sync da raiz ML): só para quem tem anúncio ou abriu o diálogo.
+  const { data: marcaProduto } = useQuery({
+    queryKey: QK.marcaProduto(produto.codigoPai),
+    queryFn: () => fetchMarcaProduto(produto.codigoPai),
+    enabled: marcaPropria && (!!produto.mlItemId || editandoMarca),
+    staleTime: 30_000,
+    refetchInterval: (q) => (q.state.data?.status === 'pendente' ? 10_000 : false),
+  });
+  const reenviarMarca = useMutation({
+    mutationFn: () => atualizarMarcaFamilia(produto.codigoPai, marcaProduto?.marca ?? null),
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.marcaProduto(produto.codigoPai) }),
+  });
 
   const { data: variacoes, isLoading: variacoesLoading } = useQuery({
     queryKey: QK.variacoesEstoque(produto.codigoPai),
@@ -318,8 +341,28 @@ export function ProdutoCard({
                 {statusUpdate === 'atualizando' ? 'Atualizando…' : 'Erro na última atualização'}
               </div>
             )}
+            {marcaProduto?.status === 'pendente' && (
+              <div className="truncate text-xs leading-tight text-amber-600 dark:text-amber-500">
+                Enviando marca ao Mercado Livre…
+              </div>
+            )}
+            {marcaProduto?.status === 'erro' && (
+              <div className="truncate text-xs leading-tight text-destructive" title={marcaProduto.erro ?? undefined}>
+                Marca não enviada: {marcaProduto.erro ?? 'erro desconhecido'}
+              </div>
+            )}
           </div>
         </button>
+        {podeEditarMarca && marcaProduto?.status === 'erro' && (
+          <Button
+            variant="outline" size="sm" className="h-7 shrink-0 px-2"
+            aria-label={`Reenviar marca de ${nomePai}`}
+            disabled={reenviarMarca.isPending}
+            onClick={() => reenviarMarca.mutate()}
+          >
+            Reenviar
+          </Button>
+        )}
         {statusUpdate === 'erro' && loteRevisaoId && (
           <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
             <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
@@ -410,7 +453,7 @@ export function ProdutoCard({
               </a>
             </Button>
           )}
-          {(onExcluir || onAdicionarVariacao) && (
+          {(onExcluir || onAdicionarVariacao || podeEditarMarca) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -423,6 +466,12 @@ export function ProdutoCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                {podeEditarMarca && (
+                  <DropdownMenuItem onSelect={() => setEditandoMarca(true)}>
+                    <Tag className="mr-2 h-3.5 w-3.5" />
+                    Editar marca
+                  </DropdownMenuItem>
+                )}
                 {onAdicionarVariacao && (
                   <>
                     <DropdownMenuItem
@@ -461,6 +510,17 @@ export function ProdutoCard({
           )}
         </div>
       </div>
+
+      {podeEditarMarca && (
+        <DialogEditarMarca
+          open={editandoMarca}
+          onOpenChange={setEditandoMarca}
+          codigoPai={produto.codigoPai}
+          nomePai={nomePai}
+          marcaAtual={marcaProduto?.marca ?? null}
+          marcaOrg={marcaOrg?.marca_padrao ?? ''}
+        />
+      )}
 
       {aberto && (
         <div id={painelId} className="border-t px-3 py-3">

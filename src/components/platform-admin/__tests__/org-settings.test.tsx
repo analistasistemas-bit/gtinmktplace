@@ -86,4 +86,36 @@ describe('OrgSettings', () => {
     expect(screen.getByRole('combobox', { name: 'Tipo de pessoa' })).toBeInTheDocument();
     expect(document.querySelector('select')).not.toBeInTheDocument();
   });
+
+  it('marca própria: liga com nome e chama set_marca_org', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await screen.findByText('Marca própria');
+    await user.click(screen.getByRole('switch', { name: 'Usar marca própria' }));
+    await user.type(screen.getByLabelText('Nome da marca no Mercado Livre'), 'Zaven');
+    await user.click(screen.getByRole('button', { name: 'Salvar marca' }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('usuarios', {
+      body: { action: 'set_marca_org', org_id: 'org-a', marca_propria: true, marca_padrao: 'Zaven' },
+    }));
+  });
+
+  it('marca própria: ligado sem nome bloqueia sem chamar a edge', async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await screen.findByText('Marca própria');
+    await user.click(screen.getByRole('switch', { name: 'Usar marca própria' }));
+    await user.click(screen.getByRole('button', { name: 'Salvar marca' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe o nome da marca.');
+    expect(mocks.invoke.mock.calls.some(([, { body }]) => body.action === 'set_marca_org')).toBe(false);
+  });
+
+  it('marca própria: estado inicial vem de list_orgs', async () => {
+    mocks.invoke.mockImplementation(async (_fn: string, { body }: { body: Record<string, unknown> }) =>
+      body.action === 'list_orgs'
+        ? { data: { orgs: [{ ...org, marca_propria: true, marca_padrao: 'Zaven' }] }, error: null }
+        : { data: {}, error: null });
+    renderSettings();
+    expect(await screen.findByLabelText('Nome da marca no Mercado Livre')).toHaveValue('Zaven');
+    expect(screen.getByRole('switch', { name: 'Usar marca própria' })).toBeChecked();
+  });
 });

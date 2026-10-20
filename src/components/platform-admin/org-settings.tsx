@@ -4,8 +4,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { LISTA_CANAIS } from '@/lib/canais';
 import { MODULOS } from '@/lib/modulos';
 import { TIPOS_PRODUTO } from '@/lib/tipos-produto';
@@ -19,6 +21,8 @@ type OrgRow = {
   modulos_habilitados: string[];
   tipos_produto_habilitados: string[];
   tipo_pessoa: 'pf' | 'pj' | null;
+  marca_propria?: boolean;
+  marca_padrao?: string | null;
 };
 
 async function callUsuarios(body: Record<string, unknown>) {
@@ -48,6 +52,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
   const [modules, setModules] = useState<Set<string>>(new Set());
   const [productTypes, setProductTypes] = useState<Set<string>>(new Set());
   const [personType, setPersonType] = useState<'pf' | 'pj'>('pf');
+  const [marcaPropria, setMarcaPropria] = useState(false);
+  const [marcaPadrao, setMarcaPadrao] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [error, setError] = useState<{ key: string; message: string } | null>(null);
@@ -68,6 +74,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
     setModules(new Set(org.modulos_habilitados ?? []));
     setProductTypes(new Set(org.tipos_produto_habilitados ?? []));
     setPersonType(org.tipo_pessoa ?? 'pf');
+    setMarcaPropria(!!org.marca_propria);
+    setMarcaPadrao(org.marca_padrao ?? '');
   }, [org]);
 
   useEffect(() => () => { if (savedTimer.current) clearTimeout(savedTimer.current); }, []);
@@ -270,6 +278,52 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar tipo de produto
             </Button>
             {cardFooter('productTypes')}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Marca própria</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Produtos cadastrados pelo Estoque saem com esta marca. Planilha usa a coluna FORNECEDOR.
+          </p>
+          <div className="flex items-center gap-2 text-sm">
+            <Switch id="org-marca-propria" checked={marcaPropria} onCheckedChange={setMarcaPropria} />
+            <label htmlFor="org-marca-propria">Usar marca própria</label>
+          </div>
+          <div className="space-y-1 text-sm">
+            <label htmlFor="org-marca-padrao" className="font-medium">Nome da marca no Mercado Livre</label>
+            <Input
+              id="org-marca-padrao"
+              value={marcaPadrao}
+              disabled={!marcaPropria}
+              onChange={(e) => setMarcaPadrao(e.target.value)}
+            />
+          </div>
+          {error?.key === 'marca' && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => {
+                if (marcaPropria && !marcaPadrao.trim()) {
+                  setError({ key: 'marca', message: 'Informe o nome da marca.' });
+                  return;
+                }
+                void run(
+                  'marca',
+                  () => callUsuarios({
+                    action: 'set_marca_org', org_id: orgId, marca_propria: marcaPropria, marca_padrao: marcaPadrao.trim(),
+                  }),
+                  'Marca atualizada.',
+                );
+              }}
+              disabled={saving === 'marca'}
+            >
+              Salvar marca
+            </Button>
+            {cardFooter('marca')}
           </div>
         </CardContent>
       </Card>

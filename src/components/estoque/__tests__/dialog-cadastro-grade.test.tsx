@@ -43,6 +43,10 @@ vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
   useTiposProdutoHabilitados: () => tiposProdutoMock(),
 }));
 
+// ADR-0188: marca própria da org (padrão: sem marca própria).
+const marcaOrgMock = vi.fn(() => ({ data: undefined as { marca_propria: boolean; marca_padrao: string | null } | undefined }));
+vi.mock('@/hooks/useMarcaOrg', () => ({ useMarcaOrg: () => marcaOrgMock() }));
+
 function renderGrade(onFechar = () => {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -68,7 +72,7 @@ async function escolherGrade(user: ReturnType<typeof userEvent.setup>, grade: st
   await escolherNoSelect(user, /^Grade de tamanhos/i, grade);
 }
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); tiposProdutoMock.mockReturnValue({ data: ['roupa'] }); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); marcaOrgMock.mockReturnValue({ data: undefined }); tiposProdutoMock.mockReturnValue({ data: ['roupa'] }); });
 
 describe('DialogCadastroGrade — passo 0 (escolha do tipo)', () => {
   it('org com 1 tipo pula o passo 0 e já mostra o cabeçalho', () => {
@@ -1180,5 +1184,37 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     expect(cadastrarProdutoMock.mock.calls[0][0]).toMatchObject({ gradeTamanho: 'calcado', genero: 'masculino' });
+  });
+});
+
+describe('DialogCadastroGrade — marca própria (ADR-0188)', () => {
+  it('sem marca própria: sem campo Marca', () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
+    renderGrade();
+    expect(screen.queryByLabelText(/^Marca/)).not.toBeInTheDocument();
+  });
+
+  it('com marca própria: pré-preenchida, obrigatória e enviada no payload', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: true, marca_padrao: 'Zaven' } });
+    cadastrarProdutoMock.mockRejectedValue(new Error('falhou'));
+    const user = userEvent.setup();
+    renderGrade();
+    const campo = screen.getByLabelText(/^Marca/);
+    expect(campo).toHaveValue('Zaven');
+    await user.clear(campo);
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await preencherEmbalagem(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await escolherGrade(user, 'letras');
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    expect(screen.getByText('Informe a marca.')).toBeInTheDocument();
+    await user.type(campo, 'Lacoste');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalled());
+    expect(cadastrarProdutoMock.mock.calls[0][0].marca).toBe('Lacoste');
   });
 });

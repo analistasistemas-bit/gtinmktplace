@@ -27,6 +27,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useMarcaOrg } from '@/hooks/useMarcaOrg';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import {
@@ -131,6 +132,11 @@ export function DialogCadastroProduto({
   const [descricaoPai, setDescricaoPai] = useState('');
   const [unidade, setUnidade] = useState('UN');
   const [fornecedor, setFornecedor] = useState('');
+  // ADR-0188: marca só existe na org com marca própria; `null` = não editada → vale a da org.
+  const { data: marcaOrg } = useMarcaOrg();
+  const marcaPropria = !!marcaOrg?.marca_propria;
+  const [marcaEditada, setMarcaEditada] = useState<string | null>(null);
+  const marca = marcaEditada ?? marcaOrg?.marca_padrao ?? '';
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
@@ -156,7 +162,7 @@ export function DialogCadastroProduto({
 
   useEffect(() => {
     if (aberto) return;
-    setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
+    setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor(''); setMarcaEditada(null);
     setOrigem(null); setLinhas([novaLinha()]);
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setTentouSalvar(false);
@@ -173,6 +179,7 @@ export function DialogCadastroProduto({
     setNomePai(inicial.nomePai ?? '');
     setDescricaoPai(inicial.descricaoPai ?? '');
     setFornecedor(inicial.fornecedor ?? '');
+    setMarcaEditada(null);
     setUnidade(inicial.unidade ?? 'UN');
     setLinhas([{
       ...novaLinha(), ...inicial.variacao,
@@ -181,7 +188,7 @@ export function DialogCadastroProduto({
     setFiscal(fiscalDoInicial(inicial));
   }, [aberto, inicial]);
 
-  const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
+  const podeSalvar = !!nomePai.trim() && !!origem && (!marcaPropria || !!marca.trim()) && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
 
   // setTentouSalvar: por completude com a spec (§5.4, branch "b"). Na prática o botão só é
@@ -195,6 +202,7 @@ export function DialogCadastroProduto({
       montarPayload(
         {
           nomePai, descricaoPai, unidade, fornecedor, origem,
+          ...(marcaPropria ? { marca } : {}),
           // Revert do ADR-0166: esta tela não pergunta Gênero. O campo continua no payload (a
           // edge o aceita e o dialog de grade o preenche de verdade) — remover daqui a CHAVE, e
           // não só o valor, quebraria `dialog-cadastro-grade.tsx` sem nenhum teste acusar.
@@ -333,7 +341,17 @@ export function DialogCadastroProduto({
                 <label htmlFor="cad-fornecedor" className="text-sm font-medium">Fornecedor</label>
                 <Input id="cad-fornecedor" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
               </div>
-              <div className="flex flex-col gap-1.5">
+
+              {marcaPropria && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="flex items-baseline gap-1 text-sm font-medium">
+                    <label htmlFor="cad-marca">Marca</label>
+                    <span className="text-destructive" aria-hidden="true">*</span>
+                  </span>
+                  <Input id="cad-marca" value={marca} onChange={(e) => setMarcaEditada(e.target.value)} />
+                  {!marca.trim() && <span className="text-xs text-destructive">Informe a marca.</span>}
+                </div>
+              )}              <div className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Origem<span className="text-destructive"> *</span></span>
                 <div className="flex items-center gap-4 pt-1.5">
                   {(['nacional', 'importado'] as const).map((o) => (
