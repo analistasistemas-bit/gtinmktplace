@@ -320,6 +320,19 @@ Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
   segue opcional com formato — aplicabilidade CEST×NCM fica fora (exige tabela própria; não inferir
   enquadramento pelo NCM).
 
+## Emenda — 2026-10-20: kit virtual, reingest, peso e avisos (auditoria Codex A8/M1–M3)
+
+- **A8:** kit virtual (ADR-0154) gera pedidos dos componentes, cada um faturado com o próprio
+  fiscal `single` (contrato ML lido em 20/10; `type:'bundle'` é outro modelo, fora). Em org com
+  módulo fiscal, `criar-kit-virtual` recusa (`fiscal_componente`) componente fora do catálogo do
+  app, com cadastro fiscal incompleto ou com `can_invoice=false` — depois do atalho de replay
+  (kit já criado no ML não é refiscalizado). A Publicados mostra o semáforo agregado dos componentes.
+- **M1:** reingest herda `fci` (só se a origem final for 3/5/8) e `ex_tipi` da família anterior.
+- **M2:** `gross_weight` (kg) vai dentro de `tax_information`, como o contrato do ML exige (na raiz
+  era ignorado). `net_weight` não é enviado: não há peso líquido real (`peso_gramas` é de pacote).
+- **M3:** o dialog Fiscal avisa quando o envio ao ML não entrou na fila (a recuperação C4 reenvia
+  em até 6 h); a Publicados mostra a causa da pendência fiscal no badge.
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a

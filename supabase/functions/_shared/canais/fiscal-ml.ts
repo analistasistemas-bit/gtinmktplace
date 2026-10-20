@@ -1,7 +1,8 @@
 // ADR-0135 D-1 — porta de dados fiscais do canal ML (fiscal_information + can_invoice).
 // Payload conforme developers.mercadolivre.com.br/pt_br/envio-dos-dados-fiscais.
-// ⚠ Semântica de upsert (POST→409→PUT) e unidades de peso: "A verificar #2" do ADR —
-// validar em conta real antes de ligar para cliente.
+// ⚠ Semântica de upsert (POST→409→PUT): "A verificar #2" do ADR — validar em conta real.
+// Peso (contrato lido em 20/10/2026): `net_weight`/`gross_weight` em kg ficam DENTRO de
+// tax_information; só enviamos gross_weight (peso_gramas é peso de pacote, não há peso líquido real).
 import { gtinValido } from '../nfe/regras.ts';
 
 const BASE = 'https://api.mercadolibre.com';
@@ -40,6 +41,8 @@ export function montarFiscalInformation(
     // raiz foi aceito sem erro e fica por compatibilidade.
     origin_type: empresa.origin_type,
   };
+  // M2 (auditoria fiscal 19/10): gross_weight na raiz era ignorado/recusado pelo ML.
+  if (variacao.peso_gramas != null) tax.gross_weight = Number((variacao.peso_gramas / 1000).toFixed(3));
   if (familia.cest) tax.cest = familia.cest;
   if (familia.fci) tax.fci = familia.fci;
   if (familia.ex_tipi) tax.ex_tipi = familia.ex_tipi;
@@ -53,9 +56,6 @@ export function montarFiscalInformation(
     type: 'single',
     measurement_unit: (familia.unidade ?? 'UN').toUpperCase().trim(),
     origin_type: empresa.origin_type,
-    ...(variacao.peso_gramas != null
-      ? { gross_weight: Number((variacao.peso_gramas / 1000).toFixed(3)) }
-      : {}),
     tax_information: tax,
   };
 }

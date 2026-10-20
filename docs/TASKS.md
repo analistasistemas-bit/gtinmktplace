@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal A8/M1–M3: kit virtual, reingest, peso, avisos (emenda ADR-0135) — 2026-10-20
+
+- [x] Kit virtual exige componentes prontos para nota (e mostra o agregado); reingest preserva FCI/EX TIPI; `gross_weight` dentro de `tax_information`; aviso de envio não enfileirado e causa da pendência na tela.
+
 ## Fiscal A3/A4: regime nunca presumido; CSOSN/CST e FCI validados (emenda ADR-0135) — 2026-10-19
 
 - [x] `lerRegimeFiscalOrg` no gate/cadastro/edição (erro retenta; sem empresa ou regime Normal recusa); trigger `empresa_fiscal_marcar_push_pendente` reenvia o fiscal ao mudar regime/papel da empresa; domínio CSOSN/CST e FCI em `camposFiscaisFaltantes`.

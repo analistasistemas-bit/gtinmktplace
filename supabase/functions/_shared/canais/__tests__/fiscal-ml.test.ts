@@ -22,12 +22,24 @@ describe('montarFiscalInformation (payload puro)', () => {
       { codigo: '00101', gtin: '7891000315507', peso_gramas: 200, ml_variation_id: null },
       { origin_type: 'reseller' },
     );
-    expect(p.gross_weight).toBe(0.2);
+    // M2 (auditoria fiscal 19/10): peso bruto (kg) vive dentro de tax_information, nunca na raiz.
+    expect(p).not.toHaveProperty('gross_weight');
     expect(p.measurement_unit).toBe('UN');
     expect(p).not.toHaveProperty('cest');
     const tax = p.tax_information as Record<string, unknown>;
+    expect(tax.gross_weight).toBe(0.2);
     expect(tax).not.toHaveProperty('fci');
     expect(tax.ean).toBe('7891000315507');
+  });
+
+  it('sem peso_gramas não envia gross_weight em lugar nenhum (M2)', () => {
+    const p = montarFiscalInformation(
+      { nome_pai: 'X', unidade: 'un', ncm: '39269090', cest: null, origem_nfe: 0, fci: null, ex_tipi: null, tributacao_icms: '102', descricao_fiscal: null },
+      { codigo: '00101', gtin: null, peso_gramas: null, ml_variation_id: null },
+      { origin_type: 'reseller' },
+    );
+    expect(p).not.toHaveProperty('gross_weight');
+    expect(p.tax_information).not.toHaveProperty('gross_weight');
   });
 
   // A5 (auditoria fiscal 19/10): código interno/GTIN inválido nunca vai como EAN fiscal.
