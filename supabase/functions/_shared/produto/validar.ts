@@ -43,6 +43,8 @@ export interface ProdutoEntrada {
   descricaoPai?: string | null;
   unidade?: string | null;
   fornecedor?: string | null;
+  /** ADR-0188: marca que vai ao ML (só na org com marca própria). Ausente/vazia = a da org (trigger). */
+  marca?: string | null;
   origem: 'nacional' | 'importado';
   /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
    *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
@@ -230,8 +232,11 @@ export function montarLinhasProduto(
     loteId: string; userId: string; orgId: string;
     codigoPai: string; codigos: string[]; chaveCadastro: string;
     regimeOrg?: 'simples' | 'normal';
+    /** ADR-0188: org com marca própria — só nela o campo marca do cadastro vale. */
+    marcaPropria?: boolean;
   },
 ): { familia: Record<string, unknown>; variacoes: Array<Record<string, unknown>> } {
+  const marca = ctx.marcaPropria ? p.marca?.trim() : undefined;
   const familia = {
     lote_id: ctx.loteId,
     user_id: ctx.userId,
@@ -242,6 +247,8 @@ export function montarLinhasProduto(
     descricao_pai: p.descricaoPai?.trim() || null,
     unidade: p.unidade?.trim() || null,
     fornecedor: p.fornecedor?.trim() || null,
+    // ADR-0188: omitida sem escolha — o trigger familias_marca_default aplica a marca da org.
+    ...(marca ? { marca } : {}),
     // Sempre explícita: validarProdutoNovo já barrou valor ausente/inválido, então nunca
     // caímos no DEFAULT 'nacional' da coluna sem o operador ter dito.
     origem: p.origem,

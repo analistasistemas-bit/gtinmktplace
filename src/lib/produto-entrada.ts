@@ -46,6 +46,8 @@ export interface ProdutoEntrada {
   descricaoPai?: string | null;
   unidade?: string | null;
   fornecedor?: string | null;
+  /** ADR-0188: marca que vai ao ML (só na org com marca própria). Ausente/vazia = a da org (trigger). */
+  marca?: string | null;
   origem: 'nacional' | 'importado';
   /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
    *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */

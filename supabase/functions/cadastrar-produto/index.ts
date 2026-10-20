@@ -28,6 +28,7 @@ import {
   sugestaoDiverge,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
+import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -270,6 +271,7 @@ Deno.serve(async (req) => {
       codigos: gerados.codigos,
       chaveCadastro: produto.chaveCadastro,
       regimeOrg,
+      marcaPropria: (await lerMarcaOrg(admin, orgId)).marcaPropria, // ADR-0188
     });
 
     const { data: familiaCriada, error: famErr } = await admin.from('familias')

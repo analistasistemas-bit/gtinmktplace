@@ -81,6 +81,19 @@ describe('montarLinhasProduto', () => {
     chaveCadastro: '11111111-1111-1111-1111-111111111111',
   };
 
+  // ADR-0188: a marca escolhida no cadastro só vale na org com marca própria; sem ela a coluna é
+  // omitida e o trigger `familias_marca_default` decide (marca da org, ou null fora dela).
+  it('marca escolhida na org com marca própria vai para a família', () => {
+    expect(montarLinhasProduto({ ...valido, marca: ' Lacoste ' }, { ...ctx, marcaPropria: true }).familia.marca).toBe('Lacoste');
+  });
+  it('sem marca escolhida (ou só espaços, ou front antigo) a coluna é omitida — o banco aplica a da org', () => {
+    expect(montarLinhasProduto({ ...valido, marca: '  ' }, { ...ctx, marcaPropria: true }).familia).not.toHaveProperty('marca');
+    expect(montarLinhasProduto(valido, { ...ctx, marcaPropria: true }).familia).not.toHaveProperty('marca');
+  });
+  it('org sem marca própria ignora o campo marca', () => {
+    expect(montarLinhasProduto({ ...valido, marca: 'X' }, ctx).familia).not.toHaveProperty('marca');
+  });
+
   it('família nasce como CREATE e pendente', () => {
     const { familia } = montarLinhasProduto(valido, ctx);
     expect(familia.operacao).toBe('CREATE');
