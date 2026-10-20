@@ -1821,7 +1821,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
   no ML** (única exceção: refresh OAuth de token.ts). Cache de 10 min, só para `estado:'ok'`; falha do Redis não
   quebra a leitura. Orquestração pura em `_shared/ads/campanhas.ts` (`lerCampanhasAds`), com tetos em
   `LIMITES_CAMPANHAS` (páginas, cadastro, MLBs, cores, tarifas): estourou → `projecaoLimitada`, nunca truncamento
-  em silêncio. Estados sem dados (HTTP 200): `sem_conexao`, `sem_advertiser`, `sem_acesso`, `sem_permissao`. Spike 057.
+  em silêncio (200 MLBs, 300 cores, 600 tarifas, 40 páginas por recurso, cadastro ≤ 20.000 variações). Estados sem
+  dados (HTTP 200): `sem_conexao`, `sem_advertiser`, `sem_acesso`, `sem_permissao`. Spike 057.
+  O filtro `filters[campaign_id]` do ML não é confiável: anúncio de outra campanha é descartado. Pacote escalado a
+  partir de cadastro sem kit próprio → `pacote_a_conferir` (sem número). Medido na Avil (162 anúncios, 7 campanhas):
+  ~16 s locais com cache de tarifa quente, dominados por IO; v3 em produção (2026-10-20).
 
 ### Operações em massa (ADR-0174) — código pronto, deploy pendente
 - **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de

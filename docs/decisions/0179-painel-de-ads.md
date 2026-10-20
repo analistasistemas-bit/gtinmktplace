@@ -113,3 +113,11 @@ que o painel já mostra.
 ("Aprendendo") e tipo da campanha **não vêm na API** → saem da tela (fica nome, estado, estratégia, orçamento diário
 e ROAS objetivo). `hold` no Ads não é "parado": o alerta usa o status do **item** (`/items/bulk`, ADR-0177), e
 `hold` com irmão `active` no mesmo grupo (catálogo × comum) não alerta.
+
+**Produção e ajustes da aba Campanhas (2026-10-20):** edge `ads-campanhas` v3, front na main. Medido com dados reais
+(prova local só leitura, Hairfly e Avil): o filtro por campanha do ML devolveu 289 anúncios `idle` de outra campanha na
+Avil → descartados (485 → 162). **Pacote a conferir** (decisão do Codex, opção B): quando o `resolverPack` escala o
+custo pelo `UNITS_PER_PACK` a partir de um cadastro que não é kit próprio, o MLB fica sem número e sem alerta de margem
+— na Avil 4 de 6 alertas eram custo do pacote ×N (ex.: linha C/10 com custo do pacote ×10 → −344 %), e a Central de
+Promoções mostra hoje o mesmo custo inflado. A Central e o `resolverPack` não mudam aqui; a correção compartilhada
+(como representar a unidade comercial do custo) exige ADR próprio. Tetos finais: 200 MLBs, 300 cores, 600 tarifas.

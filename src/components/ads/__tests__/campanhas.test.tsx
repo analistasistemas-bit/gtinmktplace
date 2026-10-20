@@ -120,9 +120,9 @@ describe('BlocoCampanha', () => {
     expect(linha.getByText('Parcialmente patrocinada')).toHaveAttribute('data-tone', 'neutral');
     expect(linha.getByRole('link', { name: 'Camiseta' })).toHaveAttribute('href', '/faturamento/sku/familia/P1');
   });
-  it('sem anúncios publicados mostra Sem dado no patrocínio', () => {
+  it('sem anúncios publicados diz que não foi publicado pelo PubliAI', () => {
     pagina(<BlocoCampanha c={campanha({ familias: [familia({ publicados: 0, patrocinados: 0 })] })} filtrando={false} />);
-    expect(within(screen.getByRole('row', { name: /Camiseta/ })).getByText('Sem dado')).toBeInTheDocument();
+    expect(within(screen.getByRole('row', { name: /Camiseta/ })).getByText('Não publicado pelo PubliAI')).toBeInTheDocument();
   });
   it('detalhe lista os MLBs e oferece Ver desempenho só quando permitido', () => {
     const ver = vi.fn();

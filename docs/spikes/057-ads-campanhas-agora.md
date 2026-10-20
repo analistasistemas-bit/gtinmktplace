@@ -40,3 +40,10 @@ renovados nem impressos. Hairfly (1 campanha, criada hoje) e Avil (7 campanhas).
 - **Diagnóstico e tipo da campanha:** fora da tela (não estão na API); mostrar nome, estado, estratégia, orçamento
   diário e ROAS objetivo.
 - **ROAS objetivo × margem:** comparar `acos_target` direto com o ACOS de equilíbrio pelo preço.
+
+## Adendo (2026-10-20, prova com a fiação real)
+
+- O `filters[campaign_id]` **não é confiável**: na Avil, a busca de uma campanha pausada trouxe 289 anúncios `idle`
+  com o `campaign_id` 357912053 (fora de `active,paused`). A leitura descarta todo anúncio cujo `campaign_id` difere
+  da campanha pedida.
+- Tempo (local, IO): cadastro 11.717 variações ≈ 6 s; tarifas dominam com Redis distante; Hairfly 8,5 s a frio.

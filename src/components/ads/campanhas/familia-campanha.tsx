@@ -39,7 +39,7 @@ const Patrocinio = ({ f, campanha }: { f: FamiliaCampanha; campanha: CampanhaVis
   if (campanha.status !== 'active') return <span className="text-muted-foreground">Campanha pausada</span>;
   return (
     <span className="tabular-nums">
-      {f.publicados > 0 ? `${f.patrocinados} de ${f.publicados} ${f.publicados === 1 ? 'anúncio' : 'anúncios'}` : 'Sem dado'}
+      {f.publicados > 0 ? `${f.patrocinados} de ${f.publicados} ${f.publicados === 1 ? 'anúncio' : 'anúncios'}` : 'Não publicado pelo PubliAI'}
     </span>
   );
 };
