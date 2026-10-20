@@ -1,6 +1,6 @@
 // ADR-0135 — regras puras do cadastro fiscal (sem imports Deno: testável por vitest).
 // Parâmetro fiscal NUNCA defaulta em silêncio: tudo aqui falha nomeando o campo.
-// ORIGENS_NFE_POR_ORIGEM, UNIDADES_FISCAIS e validarCnpj têm espelho em src/lib/fiscal.ts
+// ORIGENS_NFE_POR_ORIGEM, UNIDADES_FISCAIS, CSOSN/CST/FCI e validarCnpj têm espelho em src/lib/fiscal.ts
 // (o front não compartilha módulo com o Deno). Manter os dois em sincronia.
 
 // D-5: dois campos de origem, sem derivação. A tabela é a da spec §2.3.
@@ -25,6 +25,14 @@ export const UNIDADES_FISCAIS = [
   'UN', 'PC', 'PAR', 'KIT', 'CX', 'PCT', 'RL', 'SC', 'KG', 'G', 'L', 'ML', 'M', 'CM', 'M2',
 ] as const;
 
+// A4 (auditoria fiscal 19/10): domínio de tributacao_icms por regime. CSOSN = Simples; CST = Normal.
+export const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'] as const;
+export const CST_ICMS_VALIDOS = [
+  '00', '02', '10', '15', '20', '30', '40', '41', '50', '51', '53', '60', '61', '70', '90',
+] as const;
+// FCI = UUID (Resolução CONFAZ/Senado 13/2012); só existe para origem_nfe 3, 5 e 8.
+export const FCI_REGEX = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
+
 export interface CamposFiscaisFamilia {
   ncm: string | null;
   cest: string | null;
@@ -48,8 +56,11 @@ export function camposFiscaisFaltantes(
   } else {
     const incoerencia = validarCoerenciaOrigem(f.origem, f.origem_nfe);
     if (incoerencia) faltas.push(incoerencia);
-    if ([3, 5, 8].includes(f.origem_nfe) && !f.fci?.trim()) {
+    const exigeFci = [3, 5, 8].includes(f.origem_nfe);
+    if (exigeFci && !f.fci?.trim()) {
       faltas.push('fci (obrigatório para origem_nfe 3, 5 ou 8)');
+    } else if (f.fci?.trim() && !exigeFci) {
+      faltas.push('fci só se aplica a origem_nfe 3, 5 ou 8 — apague o campo');
     }
   }
   if (!f.tributacao_icms?.trim()) {
@@ -59,10 +70,19 @@ export function camposFiscaisFaltantes(
       `tributacao_icms gravado sob regime "${f.tributacao_icms_regime ?? 'nenhum'}" mas a ` +
       `organização é "${regimeOrg}" — recadastre o campo (ADR-0135 D-4)`,
     );
+  } else if (regimeOrg === 'simples'
+    ? !(CSOSN_VALIDOS as readonly string[]).includes(f.tributacao_icms.trim())
+    : !(CST_ICMS_VALIDOS as readonly string[]).includes(f.tributacao_icms.trim())) {
+    faltas.push(regimeOrg === 'simples'
+      ? `csosn ${f.tributacao_icms} inválido (use: ${CSOSN_VALIDOS.join(', ')})`
+      : `cst de ICMS ${f.tributacao_icms} inválido (use: ${CST_ICMS_VALIDOS.join(', ')})`);
   }
   const unidade = f.unidade?.toUpperCase().trim() ?? '';
   if (!(UNIDADES_FISCAIS as readonly string[]).includes(unidade)) {
     faltas.push(`unidade fiscal (use uma de: ${UNIDADES_FISCAIS.join(', ')})`);
+  }
+  if (f.fci?.trim() && f.origem_nfe != null && [3, 5, 8].includes(f.origem_nfe) && !FCI_REGEX.test(f.fci.trim())) {
+    faltas.push('fci (formato XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX)');
   }
   if (f.cest && !/^\d{7}$/.test(f.cest)) faltas.push('cest (7 dígitos)');
   return faltas;

@@ -10,6 +10,13 @@ export const UNIDADES_FISCAIS = [
   'UN', 'PC', 'PAR', 'KIT', 'CX', 'PCT', 'RL', 'SC', 'KG', 'G', 'L', 'ML', 'M', 'CM', 'M2',
 ] as const;
 
+// A4 (auditoria fiscal 19/10): espelho de CSOSN_VALIDOS/CST_ICMS_VALIDOS/FCI_REGEX do validar.ts.
+export const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'] as const;
+export const CST_ICMS_VALIDOS = [
+  '00', '02', '10', '15', '20', '30', '40', '41', '50', '51', '53', '60', '61', '70', '90',
+] as const;
+export const FCI_REGEX = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
+
 export interface CamposFiscaisResumo {
   ncm: string | null | undefined;
   cest: string | null | undefined;
@@ -29,9 +36,13 @@ export function fiscalIncompleto(f: CamposFiscaisResumo, regimeOrg: 'simples' | 
   if (!f.ncm || !/^\d{8}$/.test(f.ncm)) return true;
   if (f.origemNfe == null) return true;
   if (!ORIGENS_NFE_POR_ORIGEM[f.origem].includes(f.origemNfe)) return true;
-  if ([3, 5, 8].includes(f.origemNfe) && !f.fci?.trim()) return true;
+  const exigeFci = [3, 5, 8].includes(f.origemNfe);
+  if (exigeFci && !f.fci?.trim()) return true;
+  if (f.fci?.trim() && (!exigeFci || !FCI_REGEX.test(f.fci.trim()))) return true;
   if (!f.tributacaoIcms?.trim()) return true;
   if (f.tributacaoIcmsRegime !== regimeOrg) return true;
+  const dominio: readonly string[] = regimeOrg === 'simples' ? CSOSN_VALIDOS : CST_ICMS_VALIDOS;
+  if (!dominio.includes(f.tributacaoIcms.trim())) return true;
   const unidade = f.unidade?.toUpperCase().trim() ?? '';
   if (!(UNIDADES_FISCAIS as readonly string[]).includes(unidade)) return true;
   if (f.cest && !/^\d{7}$/.test(f.cest)) return true;

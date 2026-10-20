@@ -2,6 +2,7 @@
 // Mesmo contrato do ADR-0107: aborta o lote ANTES de persistir qualquer coisa.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { normalizarCodigo } from '../_shared/parser.ts';
+import { CSOSN_VALIDOS } from '../_shared/fiscal/validar.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 
 export function normalizarNcm(bruto: unknown): string {
@@ -48,9 +49,6 @@ export function resolverCamposFiscais(g: GrupoFiscal, ant: FamiliaFiscalAnterior
   };
 }
 
-// Códigos de CSOSN listados no combo do cadastro manual (task-12-brief.md:64) — a planilha
-// não pode aceitar um código que a UI nem oferece.
-const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'];
 
 export function exigirFiscalExplicito(rowsRaw: Record<string, unknown>[]): void {
   const problemas: string[] = [];
@@ -77,7 +75,7 @@ export function exigirFiscalExplicito(rowsRaw: Record<string, unknown>[]): void 
       problemas.push(`${cod} (CEST = "${String(r.CEST).trim()}" — 7 dígitos)`);
     }
     const csosn = String(r.CSOSN ?? '').trim();
-    if (csosn !== '' && !CSOSN_VALIDOS.includes(csosn)) {
+    if (csosn !== '' && !(CSOSN_VALIDOS as readonly string[]).includes(csosn)) {
       problemas.push(`${cod} (CSOSN = "${csosn}" — use um dos códigos: ${CSOSN_VALIDOS.join(', ')})`);
     }
   }
