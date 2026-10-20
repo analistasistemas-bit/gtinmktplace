@@ -11,6 +11,12 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-20
 
+**Aba Campanhas no /ads (emenda ADR-0179).** A Hairfly tinha campanha ativa sem gasto e o `/ads` ficava vazio. Agora há abas Desempenho | Campanhas: campanhas ativas/pausadas por família, régua "Margem para Ads" (ACOS de equilíbrio pelo preço × ACOS-alvo), alertas de ROAS objetivo acima da margem, patrocinado parado e parcialmente patrocinado. Edge `ads-campanhas` (só GET, cache 10 min). Spike 057: o filtro `campaign_id` do ML não é confiável e `hold` no Ads não é parado. Main `33186857`.
+
+**Custo de pacote no anúncio próprio (emenda ADR-0151).** A Central de Promoções multiplicava pelo `UNITS_PER_PACK` o custo de produto já cadastrado como pacote (Linha C/10 da Avil: R$ 64 → R$ 640, margem −344 %). Regra da operação: o custo da planilha é sempre o do pacote da nota; no anúncio próprio nunca escala. Linha C/10 → 28,1 %. 5 edges redeployadas. Main `04fd140c`.
+
+**Carregamento do /ads com a marca.** O esqueleto escuro virou a logo PubliAI pulsando com a mensagem do que está sendo lido (aviso após 6 s). Main `044740de`.
+
 **Marca por produto (ADR-0188).** Diego quis definir a marca própria pela tela e, num produto da Zaven, usar a marca real (camisa Lacoste revendida original). A marca agora fica no produto (`familias.marca`): cadastro pelo Estoque nasce com a marca da org e aceita outra; "Editar marca" no card manda ao ML na hora (só PUT de BRAND, nunca republica); planilha segue o FORNECEDOR, mas a marca do produto vence no UPDATE. Validado no 00000064: Zaven → Lacoste → Zaven, status ok, o ML devolveu a família original.
 
 **Auditoria fiscal fechada (emendas ADR-0135).** Diego pediu certeza de emitir NF pelo Faturador do ML. Dados: 130/130 SKUs Zaven com `can_invoice=true` e fiscal igual ao banco. Código (auditoria Codex astra): corrigidos em 5 entregas os caminhos que deixavam SKU sem fiscal (split, cor nova em somente-estoque, edição, kit virtual), a recuperação do push que se perdia, a escrita direta de `can_invoice` por membro (trigger), o regime presumido "simples", CSOSN/FCI sem domínio, EAN de código interno e o peso fora de `tax_information` (confirmado no ML: `gross_weight 0.300`). Main `c2cf1ef8`.
