@@ -1,6 +1,6 @@
 # ADR-0186 — Marca própria por organização: o fornecedor nunca vira marca no canal
 
-- **Status:** aceito
+- **Status:** aceito — emendado pelo [ADR-0188](0188-marca-por-produto.md) (marca por produto)
 - **Data:** 2026-10-18
 - **Relaciona:** ADR-0016 (BRAND no UPDATE), ADR-0088 (UP, ficha do irmão), ADR-0135 (molde do worker de
   sincronização), ADR-0157 (delta de atributos no UPDATE UP), D-E7.3 (`marca_padrao` por org)
