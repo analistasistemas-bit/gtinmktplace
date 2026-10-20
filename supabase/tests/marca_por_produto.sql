@@ -131,6 +131,20 @@ begin
     if sqlerrm not like '%MARCA_OCUPADO%' then raise; end if;
   end;
 
+  -- 6b. Clone com marca explícita antiga (adicionar variação concorrente) → herda a vigente
+  insert into public.lotes
+  select (jsonb_populate_record(null::public.lotes, to_jsonb(l)
+    || jsonb_build_object('id', '88000000-0000-0000-0000-0000000000a2', 'origem', 'manual', 'numero', 999189, 'numero_org', null))).*
+  from public.lotes l where l.org_id = zaven limit 1;
+  insert into public.familias
+  select (jsonb_populate_record(null::public.familias, to_jsonb(f)
+    || jsonb_build_object('id', '88000000-0000-0000-0000-000000000005', 'chave_cadastro', gen_random_uuid(),
+         'marca', 'Velha', 'status', 'pronto', 'lote_id', '88000000-0000-0000-0000-0000000000a2'))).*
+  from public.familias f where f.org_id = zaven and f.codigo_pai = '00000064' order by f.criado_em desc limit 1;
+  if (select marca from public.familias where id = '88000000-0000-0000-0000-000000000005') is distinct from 'Lacoste' then
+    raise exception 'clone com marca antiga não herdou a vigente';
+  end if;
+
   -- 7. Lease
   select id into strict raiz from public.anuncios_externos
    where org_id = zaven and codigo_pai = '00000119' and canal = 'mercado_livre' and particao = 0;
@@ -176,6 +190,28 @@ begin
   begin
     perform public.adquirir_lease_marca(gen_random_uuid(), 10);
     raise exception 'authenticated executou adquirir_lease_marca';
+  exception when insufficient_privilege then null;
+  end;
+  -- fluxos legítimos via userClient: atributos com BRAND = marca do produto (definir categoria /
+  -- preencher atributo) e família sem marca (Avil-like) seguem editáveis.
+  update public.familias set atributos_ml = '[{"id":"BRAND","value_name":"Lacoste"},{"id":"MODEL","value_name":"Y"}]'::jsonb
+   where id = '88000000-0000-0000-0000-000000000001';
+  update public.familias set atributos_ml = '[{"id":"BRAND","value_name":"STAR"}]'::jsonb
+   where id = '88000000-0000-0000-0000-000000000003';
+  -- colunas do worker não são do cliente
+  begin
+    update public.anuncios_externos set marca_sync_versao = 99 where codigo_pai = '00000119';
+    raise exception 'authenticated mudou marca_sync_versao';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.anuncios_externos set marca_sync_lease_ate = 'infinity' where codigo_pai = '00000119';
+    raise exception 'authenticated mudou o lease';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.anuncios_externos set marca_sync_status = 'ok' where codigo_pai = '00000119';
+    raise exception 'authenticated mudou o status';
   exception when insufficient_privilege then null;
   end;
   -- coluna legítima continua editável pelo membro

@@ -22,6 +22,9 @@ function fake(itens: Record<string, ItemLido>, marca: string | null = 'Zaven', o
   leaseOcupado?: boolean;
   publicado?: boolean;
   falhaReagendar?: boolean;
+  falhaStatus?: boolean;
+  /** lerItem falha (503) só depois do 1º PUT. */
+  falhaReleitura?: boolean;
 } = {}) {
   const status: Array<{ status: StatusMarca; erro?: string; versao: number }> = [];
   const reagendados: Array<{ job: SincronizarMarcaJob; delay: number }> = [];
@@ -34,7 +37,10 @@ function fake(itens: Record<string, ItemLido>, marca: string | null = 'Zaven', o
     adquirirLease: async () => { if (opts.leaseOcupado) return false; lease.adquirido++; return true; },
     liberarLease: async () => { lease.liberado++; },
     versaoAtual: async () => opts.versaoNaRodada ?? opts.versao ?? 1,
-    gravarStatus: async (_r, versao, st, erro) => { status.push({ status: st, erro, versao }); },
+    gravarStatus: async (_r, versao, st, erro) => {
+      if (opts.falhaStatus) throw new Error('db fora');
+      status.push({ status: st, erro, versao });
+    },
     reagendar: async (job, delay) => {
       if (opts.falhaReagendar) throw new Error('qstash fora');
       reagendados.push({ job, delay });
@@ -44,6 +50,7 @@ function fake(itens: Record<string, ItemLido>, marca: string | null = 'Zaven', o
       lerItem: async (id) => {
         leituras++;
         if (opts.falhaLeitura) throw Object.assign(new Error('rede'), { status: 503 });
+        if (opts.falhaReleitura && puts.length > 0) throw Object.assign(new Error('HTTP 503'), { status: 503 });
         return structuredClone(itens[id]);
       },
       gravarFamilyIdLocal: async (_orgId, itemIds, familyId) => { familyIdsGravados.push({ familyId, itemIds }); },
@@ -336,7 +343,7 @@ describe('orquestração (ADR-0188)', () => {
   });
 
   it('parouEm (ML recusou) → status erro com o motivo', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaPut: () => new Error('item bloqueado') });
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaPut: () => Object.assign(new Error('item bloqueado'), { status: 400 }) });
     await processarSincronizacaoMarca(f.deps, JOB);
     expect(f.status.at(-1)).toMatchObject({ status: 'erro', erro: expect.stringContaining('item bloqueado') });
   });
@@ -347,5 +354,27 @@ describe('orquestração (ADR-0188)', () => {
     expect(f.lease.adquirido).toBe(0);
     expect(f.status).toHaveLength(0);
     expect(f.reagendados).toHaveLength(0);
+  });
+
+  it('falha ao gravar o status final → 500 (QStash retenta), não some em silêncio', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }) }, 'Zaven', { falhaStatus: true });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(r.status).toBe(500);
+  });
+
+  it('releitura 503 depois do PUT é transitória → reagenda, não vira erro definitivo', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaReleitura: true });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.reagendados).toHaveLength(1);
+    expect(f.status.at(-1)?.status).toBe('pendente');
+  });
+
+  it('ML recusa o PUT com 4xx → erro definitivo (não reagenda)', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', {
+      falhaPut: () => Object.assign(new Error('HTTP 400 bloqueado'), { status: 400 }),
+    });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.reagendados).toHaveLength(0);
+    expect(f.status.at(-1)?.status).toBe('erro');
   });
 });

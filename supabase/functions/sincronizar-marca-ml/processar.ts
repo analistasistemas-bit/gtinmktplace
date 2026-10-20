@@ -44,7 +44,8 @@ export interface ResultadoMarca {
   jaCertos: string[];
   /** family_id único lido no ML no início da rodada (gravado no vínculo local, fora do dry_run). */
   familyId?: string;
-  parouEm?: { sku: string | null; motivo: string };
+  /** `transitorio`: falha de rede/5xx/429 — reagenda em vez de virar erro definitivo. */
+  parouEm?: { sku: string | null; motivo: string; transitorio?: boolean };
   /** Todos os SKUs já com a marca, mas o ML ainda não juntou a família (transição esperada). */
   convergindo?: boolean;
   /** Uma edição mais nova chegou no meio da rodada: este job para sem escrever. */
@@ -52,6 +53,11 @@ export interface ResultadoMarca {
 }
 
 const IDS_MARCA = ['BRAND', 'MANUFACTURER'];
+
+const ehTransitorio = (e: unknown): boolean => {
+  const st = (e as { status?: number }).status;
+  return st == null || st === 429 || st >= 500;
+};
 
 /** Atributos de marca que precisam ir no PUT. Vazio = SKU já certo. BRAND ausente conta como
  *  divergente; MANUFACTURER só entra se o item já o tiver (não inventa atributo). */
@@ -141,13 +147,13 @@ export async function rodadaMarca(
     try {
       await deps.portas.putAtributos(itemId, attrs);
     } catch (e) {
-      return { status: 200, body: { ...r, parouEm: { sku, motivo: `ML recusou o PUT: ${(e as Error).message}` } } };
+      return { status: 200, body: { ...r, parouEm: { sku, motivo: `ML recusou o PUT: ${(e as Error).message}`, transitorio: ehTransitorio(e) } } };
     }
     let depois: ItemLido;
     try {
       depois = await deps.portas.lerItem(itemId);
     } catch (e) {
-      return { status: 200, body: { ...r, parouEm: { sku, motivo: `releitura falhou após o PUT: ${(e as Error).message}` } } };
+      return { status: 200, body: { ...r, parouEm: { sku, motivo: `releitura falhou após o PUT: ${(e as Error).message}`, transitorio: true } } };
     }
     const motivo = atributosACorrigir(depois, marca).length > 0 ? 'marca não ficou certa após o PUT'
       : familiaInesperada(antes.familyId, depois.familyId) ? `family_id inesperado (${antes.familyId} → ${depois.familyId})`
@@ -165,7 +171,7 @@ export async function rodadaMarca(
     try {
       finais = await Promise.all(filhos.map((f) => deps.portas.lerItem(f.itemId)));
     } catch (e) {
-      return { status: 200, body: { ...r, parouEm: { sku: null, motivo: `conferência após a rodada falhou: ${(e as Error).message}` } } };
+      return { status: 200, body: { ...r, parouEm: { sku: null, motivo: `conferência após a rodada falhou: ${(e as Error).message}`, transitorio: true } } };
     }
     const novas = new Set(finais.map((l) => l.familyId).filter((id) => id !== familiaAntiga));
     if (novas.has(null) || novas.size > 1) {
@@ -196,9 +202,11 @@ export async function processarSincronizacaoMarca(deps: DepsMarca, job: Sincroni
   if (versao !== estado.versao) return { status: 200, body: { ignorado: 'versão antiga' } };
   const dry = !!job.dry_run;
   const raiz = estado.raizId;
+  // Falha ao gravar o status propaga (→ 500, o QStash retenta; o job é idempotente): engolir aqui
+  // deixaria a UI em "pendente" para sempre.
   const fim = async (status: StatusMarca, erro?: string) => {
     if (dry) return;
-    try { await deps.gravarStatus(raiz, versao, status, erro); } catch (e) { console.error('gravarStatus marca falhou:', e); }
+    await deps.gravarStatus(raiz, versao, status, erro);
   };
   const proximo = async (motivoSeEsgotar: string) => {
     const tentativa = (job.tentativa ?? 0) + 1;
@@ -230,16 +238,21 @@ export async function processarSincronizacaoMarca(deps: DepsMarca, job: Sincroni
     await deps.liberarLease(raiz).catch((e) => console.error('liberarLease marca falhou:', e));
   }
 
-  const body = res.body;
-  if ('ignorado' in body) return res;
-  if ('erro' in body) {
-    if (res.status === 400) await fim('erro', MSG_LEGACY);
-    else await proximo(body.erro);
+  try {
+    const body = res.body;
+    if ('ignorado' in body) return res;
+    if ('erro' in body) {
+      if (res.status === 400) await fim('erro', MSG_LEGACY);
+      else await proximo(body.erro);
+      return res;
+    }
+    if (body.versaoNova) return res;
+    if (body.parouEm?.transitorio) { await proximo(body.parouEm.motivo); return res; }
+    if (body.parouEm) { await fim('erro', body.parouEm.motivo); return res; }
+    if (body.familyId && body.corrigidos.length === 0) { await fim('ok'); return res; }
+    await proximo(MSG_NAO_CONVERGIU);
     return res;
+  } catch (e) {
+    return { status: 500, body: { erro: `gravar status falhou: ${(e as Error).message}` } };
   }
-  if (body.versaoNova) return res;
-  if (body.parouEm) { await fim('erro', body.parouEm.motivo); return res; }
-  if (body.familyId && body.corrigidos.length === 0) { await fim('ok'); return res; }
-  await proximo(MSG_NAO_CONVERGIU);
-  return res;
 }

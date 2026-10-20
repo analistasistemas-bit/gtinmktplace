@@ -50,8 +50,16 @@ begin
   if current_user not in ('authenticated', 'anon') then
     return new;
   end if;
-  if new.marca is distinct from old.marca
-     or public.marca_dos_atributos(new.atributos_ml) is distinct from public.marca_dos_atributos(old.atributos_ml) then
+  if new.marca is distinct from old.marca then
+    raise exception 'familias: a marca só muda pelo "Editar marca" (ADR-0188)' using errcode = '42501';
+  end if;
+  -- Fluxos legítimos do app (definir categoria, preencher atributo) gravam atributos_ml pelo cliente do
+  -- usuário: BRAND/MANUFACTURER igual à marca do produto passa; diferente dela, não. Sem marca no produto
+  -- (planilha, Avil) a BRAND segue como antes.
+  if new.marca is not null
+     and public.marca_dos_atributos(new.atributos_ml) is distinct from public.marca_dos_atributos(old.atributos_ml)
+     and exists (select 1 from jsonb_array_elements(public.marca_dos_atributos(new.atributos_ml)) e
+                  where lower(btrim(coalesce(e->>'value_name', ''))) <> lower(btrim(new.marca))) then
     raise exception 'familias: a marca só muda pelo "Editar marca" (ADR-0188)' using errcode = '42501';
   end if;
   return new;
@@ -71,6 +79,21 @@ end $$;
 create trigger organizations_proteger_marca before update on public.organizations
   for each row execute function public.organizations_proteger_marca();
 
+-- Colunas do worker de marca: só backend (um membro não pode invalidar a versão nem prender o lease).
+create or replace function public.anuncios_externos_proteger_marca_sync()
+returns trigger language plpgsql security invoker set search_path = '' as $$
+begin
+  if current_user in ('authenticated', 'anon')
+     and (new.marca_sync_status, new.marca_sync_erro, new.marca_sync_em, new.marca_sync_versao, new.marca_sync_lease_ate)
+         is distinct from
+         (old.marca_sync_status, old.marca_sync_erro, old.marca_sync_em, old.marca_sync_versao, old.marca_sync_lease_ate) then
+    raise exception 'anuncios_externos: sincronização de marca só pelo backend (ADR-0188)' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+create trigger anuncios_externos_proteger_marca_sync before update on public.anuncios_externos
+  for each row execute function public.anuncios_externos_proteger_marca_sync();
+
 -- Default e herança no INSERT (fecha a janela de rollout e a corrida com a planilha):
 -- (a) já existe família do mesmo produto → herda a marca da mais recente, lida com FOR SHARE (espera uma
 --     edição em andamento), e impõe a BRAND; (b) senão, cadastro manual em org com marca própria → marca da org.
@@ -79,9 +102,7 @@ returns trigger language plpgsql security definer set search_path = '' as $$
 declare
   v_marca text;
 begin
-  if new.marca is not null then
-    return new;
-  end if;
+  -- Produto que já existe herda SEMPRE (mesmo que o clone traga uma marca lida antes de uma edição).
   select f.marca into v_marca from public.familias f
    where f.org_id = new.org_id and f.codigo_pai = new.codigo_pai and f.id <> new.id
    order by f.criado_em desc limit 1 for share;
@@ -90,6 +111,9 @@ begin
     if v_marca is not null then
       new.atributos_ml := public.atributos_com_marca(new.atributos_ml, v_marca);
     end if;
+    return new;
+  end if;
+  if new.marca is not null then
     return new;
   end if;
   if (select l.origem from public.lotes l where l.id = new.lote_id) = 'manual' then
