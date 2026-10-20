@@ -95,6 +95,8 @@
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Promoções (ADR-0170)** ||||
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
+| **Ads (ADR-0179, emenda 2026-10-20)** ||||
+| ads-campanhas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 10 min por org) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
@@ -1811,6 +1813,15 @@ um smoke test contra Postgres real antes do primeiro deploy.
     a conexão/token), a resposta é **500** — o fan-out publica com `retries: 1`, então o QStash
     tenta de novo ~12s depois (cobre um tropeço de rede). O caminho "Atualizar agora" (usuário
     logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
+
+### Ads — aba Campanhas (emenda ADR-0179, 2026-10-20)
+- **ads-campanhas** *(nova, `verify_jwt=true`; `requireUserOrg` read + módulo `ads`, `403` sem ele)* — campanhas e
+  anúncios patrocinados como estão agora, com o ACOS de equilíbrio pelo preço de cada MLB. Modo sob demanda:
+  body `{ fresco?: boolean }` (`fresco` ignora o cache Redis `ads:camp:v1:{org}` e o cache de tarifas). **Só `GET`
+  no ML** (única exceção: refresh OAuth de token.ts). Cache de 10 min, só para `estado:'ok'`; falha do Redis não
+  quebra a leitura. Orquestração pura em `_shared/ads/campanhas.ts` (`lerCampanhasAds`), com tetos em
+  `LIMITES_CAMPANHAS` (páginas, cadastro, MLBs, cores, tarifas): estourou → `projecaoLimitada`, nunca truncamento
+  em silêncio. Estados sem dados (HTTP 200): `sem_conexao`, `sem_advertiser`, `sem_acesso`, `sem_permissao`. Spike 057.
 
 ### Operações em massa (ADR-0174) — código pronto, deploy pendente
 - **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de
