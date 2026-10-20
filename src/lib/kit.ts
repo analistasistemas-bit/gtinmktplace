@@ -4,6 +4,7 @@
 import { supabase } from './supabase';
 import { corpoDoErroDaEdge } from './edge-erro';
 import type { KitVinculado } from './queries';
+import { corrigirRotuloQuantidade } from '../../supabase/functions/_shared/ai/unidade.ts';
 
 export const TAMANHOS_KIT = [2, 3, 4, 5, 6] as const;
 
@@ -109,7 +110,7 @@ function secaoOQueVoceRecebe(n: number, tituloBase: string): string {
 }
 
 export function descricaoDoKit(descricaoBase: string, n: number, tituloBase: string): string {
-  let desc = descricaoBase.trimEnd();
+  let desc = corrigirRotuloQuantidade(descricaoBase).trimEnd();
   const unidades = unidadesPt(n);
   const kitComUnidades = `Kit com ${unidades}.`;
   const titulo = tituloBase.trim();

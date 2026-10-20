@@ -376,6 +376,15 @@ describe('DialogCriarKitVirtual — refazerDe pré-preenche (ADR-0154 D-8)', () 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
   });
 
+  it('descrição herdada com rótulo Metragem para ml abre como Volume', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog({ ...refazerDeExemplo(), descricao: '• Metragem: 120ml' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByLabelText('Descrição do kit')).toHaveValue('• Volume: 120ml');
+  });
+
   // Defeito A da revisão final: o Refazer NÃO pode mandar o `listing_type_id` do kit antigo —
   // ele existe para TROCAR componente, e um componente novo de outro tipo faria o ML recusar
   // com o mesmo `listing_type_mismatch` de 2026-09-06. A edge deriva; o diálogo não opina.

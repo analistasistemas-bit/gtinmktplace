@@ -26,6 +26,7 @@ import {
   type ComponenteSelecionadoKitVirtual, type ComponenteCandidatoKitVirtual,
   type KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
+import { corrigirRotuloQuantidade } from '../../../supabase/functions/_shared/ai/unidade.ts';
 import { ListaComponentesKitVirtual } from '@/components/kit-virtual/lista-componentes-kit-virtual';
 import { PreviewKitVirtual } from '@/components/kit-virtual/preview-kit-virtual';
 
@@ -81,7 +82,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       setFotoMlPictureId(refazerDe.fotoMlPictureId);
       setDescontoPct(refazerDe.descontoPct);
       setTitulo(refazerDe.titulo);
-      setDescricao(refazerDe.descricao ?? '');
+      setDescricao(corrigirRotuloQuantidade(refazerDe.descricao ?? ''));
       setDescricaoGeradaPorIA(!!refazerDe.descricao);
       // Título reusado não pode ser sobrescrito pelo 1º preview automático (que reenvia o MESMO
       // template pra uma composição que ainda não mudou) — mesma trava de uma edição manual.

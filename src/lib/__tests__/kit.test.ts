@@ -70,6 +70,12 @@ describe('precoSugeridoDoKit', () => {
 });
 
 describe('descricaoDoKit', () => {
+  it('troca o rótulo Metragem por Volume herdado da base (ml)', () => {
+    const r = descricaoDoKit('📌 ESPECIFICAÇÕES\n\n• Metragem: 120ml\n\n🎯 INDICAÇÕES DE USO', 3, 'Água Micelar Gottin 120ml');
+    expect(r).toContain('• Volume: 120ml');
+    expect(r).not.toMatch(/Metragem/i);
+  });
+
   it('adapta FAQ e bullets estilo Ninho sem append solto no final', () => {
     const r = descricaoDoKit(DESCRICAO_NINHO, 2, TITULO_NINHO);
     expect(r).toContain('Qual a unidade de venda? Kit com 2 unidades.');

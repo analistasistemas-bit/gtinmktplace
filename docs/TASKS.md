@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20
+
+- [x] Causa: famílias com UNIDADE=UN não recebem rótulo sugerido e o gpt-4o-mini desobedece à regra do prompt ("Metragem: 120ml").
+- [x] Guard `corrigirRotuloQuantidade` em `_shared/ai/unidade.ts` (ml/l → Volume, g/kg → Peso), aplicado em `posProcessarDescricao`, `descricaoDoKit` e Refazer kit virtual.
+- [x] Fora do escopo: 2 famílias legadas já publicadas; corrigem com "Regenerar copy" + Atualizar.
+
 ## Preço promocional em Publicados (emenda ADR-0170) — 2026-10-20
 
 - [x] `status-publicados` lê `/sale_price` de todo anúncio ML (pool 10, timeout 5 s): preço promocional + `precoOriginal`.
@@ -323,7 +329,7 @@ Linha expandida de Faturamento › Vendas (também no Financeiro e no dossiê do
 - [x] Zona **Dinheiro**: cascata venda → comissão (Clássico/Premium) → frete → líquido após ML → imposto → custo → **Lucro** (R$) + **Margem s/ venda** (%) + markup, mesmos rótulos de Vendas SKU + liberação (`cascata-pedido.ts`).
 - [x] Pagamento, frete do comprador, cupom e tipo de anúncio lidos de `ml_vendas.raw` só ao expandir (`buscarDetalheMLDasVendas`, `useDetalheMLPedido`); a lista não carrega o `raw`.
 - [x] Validado com dados reais (pedido simples, pack de 4 pedidos, dossiê na gaveta, tema claro).
-- [ ] Fora do escopo (nível 3, exige ADR + `/shipments`): CEP, prazo de postagem, entrega prevista, dimensões do ML.
+- [x] Fora do escopo (nível 3, exige ADR + `/shipments`): CEP, prazo de postagem, entrega prevista, dimensões do ML.
 
 ## Arquivar organização (ADR-0175, 2026-10-01) — código pronto na branch `worktree-arquivar-org`
 
