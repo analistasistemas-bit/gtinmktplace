@@ -428,3 +428,12 @@ describe('regressão: descrição não perde a metragem com a unidade nova', () 
     expect(out).not.toContain('• Metragem');
   });
 });
+
+describe('posProcessarDescricao: rótulo Volume no lugar de Metragem (20/10)', () => {
+  it('troca • Metragem: 120ml por • Volume: 120ml e não reinjeta Metragem', () => {
+    const d = '📌 ESPECIFICAÇÕES\n\n• Marca: Göttin Laboratory\n• Metragem: 120ml\n\n🎯 INDICAÇÕES DE USO';
+    const r = posProcessarDescricao(d, 'Água Micelar Gottin 120ml', '');
+    expect(r).toContain('• Volume: 120ml');
+    expect(r).not.toMatch(/Metragem/i);
+  });
+});

@@ -1,6 +1,6 @@
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
-import { rotuloQuantidade } from './unidade.ts';
+import { corrigirRotuloQuantidade, rotuloQuantidade } from './unidade.ts';
 import { contemMetragem, extrairContagem, extrairLargura, extrairMetragem } from './titulo.ts';
 import {
   ROTULO_COR,
@@ -588,10 +588,12 @@ export function posProcessarDescricao(
   /** familias.genero — só a grade usa (pergunta de público em ❓). */
   genero?: string | null,
 ): string {
+  // Antes do desvio da grade: o rótulo Volume/Peso vale nos dois caminhos.
+  const corrigida = corrigirRotuloQuantidade(descricao);
   const tamanhos = tamanhosDaGradeCopy(variacoes);
-  if (tamanhos) return posProcessarGrade(descricao, tamanhos, genero);
+  if (tamanhos) return posProcessarGrade(corrigida, tamanhos, genero);
 
-  const podada = removerPerguntasIncompletas(descricao);
+  const podada = removerPerguntasIncompletas(corrigida);
   const ancorada = garantirMetragemDescricao(
     garantirLarguraDescricao(podada, nomePai, descricaoPai),
     nomePai,

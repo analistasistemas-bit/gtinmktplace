@@ -345,3 +345,15 @@ describe('atualizarSecaoTamanhos (UPDATE)', () => {
     expect(atualizarSecaoTamanhos(base, [])).toBe(base);
   });
 });
+
+describe('rótulo Volume na grade (20/10)', () => {
+  it('• Metragem: 500ml vira • Volume: 500ml também no caminho de grade', () => {
+    const d = [
+      '🧵 CONJUNTO', '', 'Texto.', '', '📌 ESPECIFICAÇÕES', '', '• Marca: Mauricinho', '• Metragem: 500ml',
+      '', 'Garanta o seu.',
+    ].join('\n');
+    const r = posProcessarDescricao(d, CONJUNTO, '', variacoesConjunto);
+    expect(r).toContain('• Volume: 500ml');
+    expect(r).not.toMatch(/Metragem/i);
+  });
+});

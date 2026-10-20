@@ -16,3 +16,20 @@ export function rotuloQuantidade(unidade: string | null): string | null {
   if (COMPRIMENTO.has(u)) return 'Metragem';
   return null;
 }
+
+// Incidente 20/10 (água micelar 00000003): a IA ignorou a REGRA CRÍTICA do prompt e escreveu
+// "• Metragem: 120ml". Guard determinístico: só o rótulo muda (valor intacto), só em bullet.
+// Fronteira Unicode (não \b: "500 grãos" casaria "g") e "/" recusa composta ("80 g/m²").
+const BULLET_METRAGEM = String.raw`^([ \t]*[•\-–][ \t]*)Metragem([ \t]*:[ \t]*)(?=\d+(?:[.,]\d+)?[ \t]*`;
+const FIM_UNIDADE = String.raw`(?![\p{L}\p{N}_/]))`;
+const METRAGEM_VOLUME = new RegExp(`${BULLET_METRAGEM}(?:litros|litro|ml|lt|l)${FIM_UNIDADE}`, 'gimu');
+const METRAGEM_MASSA = new RegExp(
+  `${BULLET_METRAGEM}(?:gramas|grama|kgs|kg|grs|gr|g)${FIM_UNIDADE}`,
+  'gimu',
+);
+
+export function corrigirRotuloQuantidade(descricao: string): string {
+  return descricao
+    .replace(METRAGEM_VOLUME, '$1Volume$2')
+    .replace(METRAGEM_MASSA, '$1Peso$2');
+}
