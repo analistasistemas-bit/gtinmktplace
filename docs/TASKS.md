@@ -4,7 +4,7 @@
 
 - [x] `status-publicados` lê `/sale_price` de todo anúncio ML (pool 10, timeout 5 s): preço promocional + `precoOriginal`.
 - [x] Publicados: preço promocional, preço "de" riscado, badge "Em promoção"; margem/análise no promocional; "Criar kit" no preço "de"; logo pulsando na 1ª carga.
-- [ ] Deploy de `status-publicados` + validação visual na Hairfly Cosmeticos.
+- [x] Deploy `status-publicados` v84 (fonte conferido por `functions download`) + validação em produção (DSA: Leite Ninho R$ 72,20 de R$ 76,00, badge e análise sobre o promocional; edge 2,3 s com 28 anúncios).
 
 ## Mensagens pós-venda visíveis para a org inteira (emenda ADR-0067) — 2026-10-20
 
