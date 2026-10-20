@@ -119,7 +119,9 @@ BRAND = `marca_padrao` sempre. Diego quer:
 - **Rollout (P2):** 1) migration (coluna, colunas de status, trigger, backfill `familias.marca='Zaven'` por
   `org_id` explícito, só lotes `origem='manual'` — conferido: todos); 2) backend — `cadastrar-produto` usa default da
   org quando o cliente não manda `marca` (compat com front antigo); 3) front.
-- **Planilha reimportando produto do Estoque:** ver pergunta pendente ao Diego.
+- **Planilha reimportando produto com marca (decisão do Diego, 20/10):** a **marca do produto vence**. O UPDATE
+  copia `familias.marca` e BRAND/MANUFACTURER de `atributos_ml` da família anterior; o FORNECEDOR da planilha não
+  altera a marca. Trocar a marca só pelo "Editar marca".
 
 ## Verificação
 
