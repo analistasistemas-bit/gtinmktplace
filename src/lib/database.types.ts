@@ -26,6 +26,11 @@ export type Database = {
           estado_desejado: string | null
           id: string
           item_externo_id: string | null
+          marca_sync_em: string | null
+          marca_sync_erro: string | null
+          marca_sync_lease_ate: string | null
+          marca_sync_status: string | null
+          marca_sync_versao: number
           metadados_canal: Json
           migracao_pxv_erro: string | null
           migracao_pxv_snapshot: Json | null
@@ -59,6 +64,11 @@ export type Database = {
           estado_desejado?: string | null
           id?: string
           item_externo_id?: string | null
+          marca_sync_em?: string | null
+          marca_sync_erro?: string | null
+          marca_sync_lease_ate?: string | null
+          marca_sync_status?: string | null
+          marca_sync_versao?: number
           metadados_canal?: Json
           migracao_pxv_erro?: string | null
           migracao_pxv_snapshot?: Json | null
@@ -92,6 +102,11 @@ export type Database = {
           estado_desejado?: string | null
           id?: string
           item_externo_id?: string | null
+          marca_sync_em?: string | null
+          marca_sync_erro?: string | null
+          marca_sync_lease_ate?: string | null
+          marca_sync_status?: string | null
+          marca_sync_versao?: number
           metadados_canal?: Json
           migracao_pxv_erro?: string | null
           migracao_pxv_snapshot?: Json | null
@@ -500,6 +515,7 @@ export type Database = {
           erro_mensagem: string | null
           estrategia_motivo: string | null
           estrategia_preco:
+          marca: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi: string | null
@@ -588,6 +604,7 @@ export type Database = {
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
           estrategia_preco?:
+          marca?: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi?: string | null
@@ -676,6 +693,7 @@ export type Database = {
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
           estrategia_preco?:
+          marca?: string | null
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
           ex_tipi?: string | null
@@ -2565,6 +2583,7 @@ export type Database = {
           is_test: boolean
           lote_seq: number
           marca_padrao: string | null
+          marca_propria: boolean
           modulos_habilitados: string[]
           nome: string
           produto_seq: number
@@ -2581,6 +2600,7 @@ export type Database = {
           is_test?: boolean
           lote_seq?: number
           marca_padrao?: string | null
+          marca_propria?: boolean
           modulos_habilitados?: string[]
           nome: string
           produto_seq?: number
@@ -2597,6 +2617,7 @@ export type Database = {
           is_test?: boolean
           lote_seq?: number
           marca_padrao?: string | null
+          marca_propria?: boolean
           modulos_habilitados?: string[]
           nome?: string
           produto_seq?: number
@@ -4223,6 +4244,7 @@ export type Database = {
           transactions_total: number
         }[]
       }
+      marca_da_org: { Args: never; Returns: Json }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
       ncm_consultar: {
         Args: { p_codigos: string[] }

@@ -32,7 +32,7 @@ funções abaixo. Org arquivada sai da Central (salvo filtro "Incluir arquivadas
 agendadas.
 
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
-`marca_propria` (ADR-0186: true → BRAND/MANUFACTURER sempre = `marca_padrao`, fornecedor nunca vira marca; só a Zaven),
+`marca_propria` (ADR-0186/0188: liga o campo Marca no cadastro pelo Estoque, default = `marca_padrao`; editável só pelo super-admin),
 `lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
 só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
@@ -278,6 +278,9 @@ edição. *Migration `20260527125643_familias_variacoes.sql` (ADR-0007/0008/0009
 Grupos de colunas:
 - **Identidade:** `lote_id` (FK→lotes, cascade), `user_id`, `org_id` (FK organizations,
   ADR-0027), `codigo_pai`, `nome_pai`, `descricao_pai`, `unidade`. Único: `(lote_id, codigo_pai)`.
+- **Marca (ADR-0188):** `marca` — BRAND/MANUFACTURER enviada ao ML (null = vale o fornecedor). Default/herança
+  no INSERT por trigger (`familias_marca_default`); só muda pelo backend (`familias_proteger_marca`, RPC
+  `gravar_marca_familia`).
 - **Idempotência do cadastro manual (ADR-0096):** `chave_cadastro uuid` (nullable — só o
   cadastro manual preenche; o caminho de planilha deixa null). Índice único parcial
   **`familias_org_chave_cadastro_key`** em `(org_id, chave_cadastro) where chave_cadastro is
@@ -410,6 +413,9 @@ herança desse executor após a migration.
 ### `anuncios_externos`
 Espelho multicanal normalizado. Identidade estável independente de lote/família.
 *Migrations `20260614152627_anuncios_externos.sql` (ADR-0025) + `20260705234110_e6_anuncios_externos_estado.sql` (ADR-0061).*
+
+**Sincronização de marca (ADR-0188):** `marca_sync_status` (`pendente|ok|erro`), `marca_sync_erro`, `marca_sync_em`,
+`marca_sync_versao` (raiz `particao=0`, incrementada a cada edição), `marca_sync_lease_ate` (lease do worker).
 
 `id`, `user_id`, `org_id` (FK organizations, ADR-0027), `canal` (`canal_externo`), `codigo_pai`,
 `item_externo_id`, `permalink`, **`status`** (`pendente|publicando|publicado|erro`, check-constraint;
