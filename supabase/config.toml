@@ -140,6 +140,9 @@ verify_jwt = true
 verify_jwt = true
 [functions.atualizar-status-publicado]
 verify_jwt = true
+# ADR-0188: "Editar marca" — browser com JWT do usuário (admin/suporte full).
+[functions.atualizar-marca-familia]
+verify_jwt = true
 # ADR-0161: disparo da migração "preço por variação". Chamado pelo browser com JWT do usuário e
 # gate admin dentro da função.
 [functions.migrar-preco-por-variacao]

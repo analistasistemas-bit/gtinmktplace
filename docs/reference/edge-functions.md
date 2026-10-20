@@ -69,7 +69,8 @@
 | subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
-| sincronizar-marca-ml | false | QStash worker (disparo manual) | sim (SKU já certo é pulado) |
+| sincronizar-marca-ml | false | QStash worker (enfileirado pelo Editar marca) | sim (versão + lease; SKU certo é pulado) |
+| atualizar-marca-familia | true | HTTP (JWT, admin ou suporte full) | sim (RPC transacional) |
 | atualizar-fiscal-familia | true | HTTP (frontend) | sim (upsert dos campos, `familiaId` idempotente) |
 | sugerir-ncm | true | HTTP (frontend) | sim (leitura/IA; nunca grava) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
@@ -1281,7 +1282,15 @@ mutação. **Pendência de verificação:** a query (`.eq('status', ...).in(...)
 contra um fake em memória nos testes desta branch, que não filtra por `status` de verdade — falta
 um smoke test contra Postgres real antes do primeiro deploy.
 
-### Marca própria (ADR-0186)
+### Marca própria / marca por produto (ADR-0186, ADR-0188)
+- **atualizar-marca-familia** *(HTTP, JWT — admin ou suporte `full`, auditado)* — "Editar marca" do card do
+  Estoque. `{ codigo_pai, marca | null }` (null = marca da org). RPC `gravar_marca_familia` trava raiz e famílias,
+  recusa produto em `pendente/processando/publicando` ou `mudando_composicao` (409), grava `familias.marca` +
+  BRAND/MANUFACTURER de `atributos_ml` em todas as linhas e incrementa `marca_sync_versao`. Publicado →
+  enfileira `sincronizar-marca-ml` com a versão; falha ao enfileirar → `marca_sync_status='erro'`.
+- **sincronizar-marca-ml** (ADR-0188): alvo = `familias.marca` da família vigente; job de versão antiga é
+  ignorado; lease por produto (`adquirir_lease_marca`, 300 s; ocupado → reagenda 30 s); status durável
+  `pendente/ok/erro` condicional à versão; reagenda (120 s, máx. 5) até a família UP convergir; Legacy → `erro`.
 - **sincronizar-marca-ml** *(worker QStash, disparo manual `{ org_id, codigo_pai, dry_run? }`)* — corrige
   BRAND (e MANUFACTURER, se o item já o tiver) dos SKUs User Products já publicados de org com
   `marca_propria`, sem republicar. Lê todos os filhos antes; aceita no máximo 1 `family_id` entre os SKUs
