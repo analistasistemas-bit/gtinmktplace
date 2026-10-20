@@ -1,12 +1,21 @@
 // ADR-0154: CREATE do Kit Virtual. Vitest (não Deno test) — é o runner que o CI e o
 // vitest.config.ts realmente executam.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
   criarKitVirtual, montarPayloadKitVirtual, validarKitVirtual, resolverListingTypeKit,
   type ComponenteKitVirtual, type CriarKitVirtualDeps, type CriarKitVirtualInput,
 } from '../processar.ts';
 import { criarKitVirtualML } from '../../_shared/ml/kit-virtual.ts';
+
+// A8: o gate fiscal usa módulo + gate compartilhados; por padrão o módulo fica desligado (comportamento intacto).
+const { moduloMock, gateMock } = vi.hoisted(() => ({ moduloMock: vi.fn(), gateMock: vi.fn() }));
+vi.mock('../../_shared/produto/modulo.ts', () => ({ moduloHabilitadoStrict: moduloMock }));
+vi.mock('../../_shared/fiscal/gate.ts', () => ({ exigirFiscalCompletoSePreciso: gateMock }));
+beforeEach(() => {
+  moduloMock.mockReset().mockResolvedValue(false);
+  gateMock.mockReset().mockResolvedValue(true);
+});
 
 const ORG = 'org-1';
 
@@ -603,5 +612,128 @@ describe('criarKitVirtual', () => {
 
     expect(r).toMatchObject({ ok: true, kitId: 'kit-sem-ts' });
     expect(st.kits[0].status).toEqual('publicado');
+  });
+});
+
+
+// ── A8 (auditoria fiscal 19/10): kit só com componentes fiscalmente prontos ───────────────────
+
+type FamiliaFake = { data: Record<string, unknown> | null; error: { message: string } | null };
+
+/** Admin que atende `familias` (leitura da família publicada do componente) e delega o resto. */
+function adminComFamilias(st: EstadoFake, familia: (codigoPai: string) => FamiliaFake): SupabaseClient {
+  const base = fakeAdmin(st);
+  return {
+    from: (tabela: string) => {
+      if (tabela !== 'familias') return base.from(tabela);
+      let pai = '';
+      const chain: Record<string, unknown> = {
+        select: () => chain,
+        eq: (col: string, val: unknown) => { if (col === 'codigo_pai') pai = String(val); return chain; },
+        order: () => chain,
+        limit: () => chain,
+        maybeSingle: () => Promise.resolve(familia(pai)),
+      };
+      return chain;
+    },
+  } as unknown as SupabaseClient;
+}
+
+const familiaOk = (over: Record<string, unknown> = {}): FamiliaFake => ({
+  data: { id: 'f1', org_id: ORG, nome_pai: 'Prod', can_invoice: true, can_invoice_causa: null, ...over }, error: null,
+});
+
+describe('criarKitVirtual — gate fiscal dos componentes (A8)', () => {
+  it('org com fiscal e componente SEM codigo_pai: recusa nomeando o componente, nada vai ao ML', async () => {
+    moduloMock.mockResolvedValue(true);
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(
+      deps(st, { admin: adminComFamilias(st, () => familiaOk()), criarKitML }),
+      inputPadrao({ componentes: [comp('MLBU1'), comp('MLBU2', { codigoPai: null })] }),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'fiscal_componente' });
+    expect((r as { mensagem?: string }).mensagem).toContain('MLBU2');
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.ops).not.toContain('componentes.insert');
+    expect(st.kits[0].status).toBe('erro'); // lease liberado
+  });
+
+  it('can_invoice=false: recusa citando a causa', async () => {
+    moduloMock.mockResolvedValue(true);
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(
+      deps(st, {
+        criarKitML,
+        admin: adminComFamilias(st, (pai) => pai === 'P-MLBU2'
+          ? familiaOk({ can_invoice: false, can_invoice_causa: 'NCM recusado pelo ML' }) : familiaOk()),
+      }),
+      inputPadrao(),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'fiscal_componente' });
+    expect((r as { mensagem?: string }).mensagem).toContain('P-MLBU2');
+    expect((r as { mensagem?: string }).mensagem).toContain('NCM recusado pelo ML');
+    expect(criarKitML).not.toHaveBeenCalled();
+  });
+
+  it('can_invoice=null (ainda não verificado) permite', async () => {
+    moduloMock.mockResolvedValue(true);
+    const st = novoEstado();
+    const r = await criarKitVirtual(
+      deps(st, { admin: adminComFamilias(st, () => familiaOk({ can_invoice: null })) }), inputPadrao(),
+    );
+    expect(r).toMatchObject({ ok: true });
+    expect(gateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('família publicada ausente: recusa', async () => {
+    moduloMock.mockResolvedValue(true);
+    const st = novoEstado();
+    const r = await criarKitVirtual(
+      deps(st, { admin: adminComFamilias(st, () => ({ data: null, error: null })) }), inputPadrao(),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'fiscal_componente' });
+  });
+
+  it('gate 400 (cadastro fiscal incompleto): recusa com a mensagem do gate', async () => {
+    moduloMock.mockResolvedValue(true);
+    gateMock.mockRejectedValue(Object.assign(new Error('Cadastro fiscal incompleto em "Prod"'), { status: 400 }));
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st, { admin: adminComFamilias(st, () => familiaOk()) }), inputPadrao());
+    expect(r).toMatchObject({ ok: false, motivo: 'fiscal_componente' });
+    expect((r as { mensagem?: string }).mensagem).toContain('Cadastro fiscal incompleto');
+  });
+
+  it('erro de leitura (módulo, família ou gate sem status): falha_leitura, nunca "ok"', async () => {
+    const st = novoEstado();
+    moduloMock.mockRejectedValue(new Error('boom'));
+    expect(await criarKitVirtual(deps(st), inputPadrao())).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+
+    moduloMock.mockResolvedValue(true);
+    const st2 = novoEstado();
+    const r2 = await criarKitVirtual(
+      deps(st2, { admin: adminComFamilias(st2, () => ({ data: null, error: { message: 'x' } })) }), inputPadrao(),
+    );
+    expect(r2).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+
+    gateMock.mockRejectedValue(new Error('transitório'));
+    const st3 = novoEstado();
+    const r3 = await criarKitVirtual(deps(st3, { admin: adminComFamilias(st3, () => familiaOk()) }), inputPadrao());
+    expect(r3).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+  });
+
+  it('replay de kit já criado no ML não fiscaliza', async () => {
+    moduloMock.mockResolvedValue(true);
+    const st = novoEstado([{ status: 'publicado', ml_item_id: 'MLB1' }]);
+    const r = await criarKitVirtual(deps(st), inputPadrao());
+    expect(r).toMatchObject({ ok: true, jaExistia: true });
+    expect(gateMock).not.toHaveBeenCalled();
+  });
+
+  it('org sem módulo fiscal: comportamento intacto (gate não roda)', async () => {
+    const st = novoEstado();
+    expect(await criarKitVirtual(deps(st), inputPadrao())).toMatchObject({ ok: true });
+    expect(gateMock).not.toHaveBeenCalled();
   });
 });

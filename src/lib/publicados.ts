@@ -58,6 +58,8 @@ export interface PublicadoItem {
   catalogRetentavel?: boolean;
   /** Prontidão de emissão do ML (ADR-0135 D-10) — `familias.can_invoice`. null = ainda não verificado. */
   canInvoice?: boolean | null;
+  /** M3/A8: causa da pendência (`familias.can_invoice_causa`); no kit virtual, a do 1º componente `false`. */
+  canInvoiceCausa?: string | null;
   /** ADR-0151: codigo_pai do produto-base, quando este anúncio É um kit vinculado. null = não é kit. */
   kitBaseCodigoPai?: string | null;
   /** ADR-0154: true quando esta linha é um Kit Virtual (produtos distintos agrupados pelo ML),
@@ -209,6 +211,25 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, canInvoice, familiaIdVigente: maisNova.familiaId });
   }
   return out;
+}
+
+/**
+ * A8 (auditoria fiscal 19/10): prontidão fiscal do kit virtual = pior caso dos produtos componentes
+ * (cada um fatura com o próprio fiscal). Sem produto no catálogo → `false` (não dá para provar).
+ * `produtos` vem já deduplicado, indexado por `codigoPai`.
+ */
+export function fiscalDoKitVirtual(
+  codigosPai: Array<string | null>,
+  produtos: Map<string, Pick<PublicadoItem, 'canInvoice' | 'canInvoiceCausa'>>,
+): { canInvoice: boolean | null; canInvoiceCausa: string | null } {
+  let algumNull = false;
+  for (const cod of codigosPai) {
+    const p = cod ? produtos.get(cod) : undefined;
+    if (!p) return { canInvoice: false, canInvoiceCausa: `componente fora do catálogo${cod ? ` (${cod})` : ''}` };
+    if (p.canInvoice === false) return { canInvoice: false, canInvoiceCausa: p.canInvoiceCausa ?? null };
+    if (p.canInvoice == null) algumNull = true;
+  }
+  return { canInvoice: algumNull || codigosPai.length === 0 ? null : true, canInvoiceCausa: null };
 }
 
 // Rótulo grosso do tipo interno (fallback quando não há categoria real do ML).

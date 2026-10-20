@@ -124,30 +124,40 @@ function BadgeStatus({ status, motivo }: { status: StatusPublicado; motivo?: str
   );
 }
 
+// Pill de prontidão fiscal compartilhada pelo produto (BadgeFiscal) e pelo Kit Virtual (A8).
+// `causa` (M3) explica a pendência no hover — antes o operador só via "Pendente".
+function PillFiscal({ canInvoice, causa }: { canInvoice: boolean | null | undefined; causa?: string | null }) {
+  if (canInvoice === true) return <StatusPill tone="success">OK</StatusPill>;
+  if (fiscalPendente({ canInvoice })) return <StatusPill tone="danger" title={causa ?? undefined}>Pendente</StatusPill>;
+  return <StatusPill tone="neutral" title="Prontidão ainda não verificada pelo ML.">Fiscal —</StatusPill>;
+}
+
 // Prontidão de emissão do ML (ADR-0135 D-10). Anúncio externo/migrado sem família (D-10:
 // "nunca some em silêncio") não tem de onde herdar cadastro fiscal — pill neutra explícita.
-function BadgeFiscal({ familiaId, canInvoice, onPreencher }: {
+function BadgeFiscal({ familiaId, canInvoice, causa, onPreencher }: {
   familiaId: string;
   canInvoice: boolean | null | undefined;
+  causa?: string | null;
   onPreencher: () => void;
 }) {
   if (!familiaId) {
     return <StatusPill tone="neutral">Sem cadastro fiscal — vincular a produto</StatusPill>;
   }
-  if (canInvoice === true) return <StatusPill tone="success">OK</StatusPill>;
   if (fiscalPendente({ canInvoice })) {
     return (
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onPreencher(); }}
         className="text-left"
-        title="O ML ainda não consegue emitir a nota deste anúncio — complete o cadastro fiscal."
+        title={causa
+          ? `O ML não consegue emitir a nota deste anúncio: ${causa}`
+          : 'O ML ainda não consegue emitir a nota deste anúncio — complete o cadastro fiscal.'}
       >
         <StatusPill tone="danger">Pendente</StatusPill>
       </button>
     );
   }
-  return <StatusPill tone="neutral" title="Prontidão ainda não verificada pelo ML.">Fiscal —</StatusPill>;
+  return <PillFiscal canInvoice={canInvoice} />;
 }
 
 // ============================================================================
@@ -398,6 +408,7 @@ function LinhaTabela({
           <BadgeFiscal
             familiaId={item.familiaId}
             canInvoice={item.canInvoice}
+            causa={item.canInvoiceCausa}
             onPreencher={() => onPreencherFiscal(item.familiaId)}
           />
         </TableCell>
@@ -879,7 +890,8 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
       </TableCell>
       {temFiscal && (
         <TableCell>
-          <span className="text-xs text-muted-foreground" title="Kit Virtual não tem cadastro fiscal próprio — cada componente mantém o seu.">—</span>
+          {/* A8: sem cadastro próprio — o semáforo é o pior caso dos componentes (cada um fatura o seu). */}
+          <PillFiscal canInvoice={item.canInvoice} causa={item.canInvoiceCausa} />
         </TableCell>
       )}
       <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>

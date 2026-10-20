@@ -17,6 +17,8 @@
 // humanizada e uma união discriminada `{ok:false}` — nunca uma exceção que suba pro HTTP.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { PayloadKitVirtual, RespostaKitML } from '../_shared/ml/kit-virtual.ts';
+import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
+import { exigirFiscalCompletoSePreciso, type FamiliaFiscalRow } from '../_shared/fiscal/gate.ts';
 
 export interface ComponenteKitVirtual {
   userProductId: string;
@@ -71,6 +73,7 @@ export type MotivoCriarKitVirtual =
   | 'falha_listing_type'
   | 'foto_obrigatoria'
   | 'falha_leitura'
+  | 'fiscal_componente'
   | 'em_andamento'
   | 'falha_criar_kit'
   | 'falha_componentes'
@@ -308,6 +311,57 @@ async function marcarErro(
   if (error) console.error('criar_kit_virtual_marcar_erro_falhou', { kitId, erro: error.message });
 }
 
+/**
+ * A8 (auditoria fiscal 19/10): num kit virtual cada componente fatura com o PRÓPRIO fiscal `single`,
+ * então org com módulo fiscal só publica kit cujos componentes estão prontos para nota. Devolve a
+ * mensagem de recusa (`fiscal_componente`), `null` (liberado) ou `erro` de leitura (`falha_leitura`).
+ * Componente fora do catálogo (sem `codigoPai`) não tem como provar o fiscal → recusa.
+ */
+async function recusaFiscalComponentes(
+  deps: CriarKitVirtualDeps, componentes: ComponenteKitVirtual[],
+): Promise<{ motivo: 'fiscal_componente' | 'falha_leitura'; mensagem: string } | null> {
+  const { admin, orgId } = deps;
+  try {
+    if (!(await moduloHabilitadoStrict(admin, orgId, 'fiscal'))) return null;
+    for (const c of componentes) {
+      if (!c.codigoPai) {
+        return {
+          motivo: 'fiscal_componente',
+          mensagem: `Componente ${c.userProductId} não tem cadastro no PubliAI — não dá para garantir a nota fiscal dele.`,
+        };
+      }
+      const { data: familia, error } = await admin.from('familias').select('*')
+        .eq('org_id', orgId).eq('codigo_pai', c.codigoPai).eq('status', 'publicado')
+        .order('publicado_em', { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+      if (error) return { motivo: 'falha_leitura', mensagem: error.message };
+      if (!familia) {
+        return {
+          motivo: 'fiscal_componente',
+          mensagem: `Componente ${c.codigoPai} não tem família publicada no PubliAI — não dá para garantir a nota fiscal dele.`,
+        };
+      }
+      try {
+        await exigirFiscalCompletoSePreciso(admin, familia as FamiliaFiscalRow);
+      } catch (e) {
+        if ((e as { status?: number }).status === 400) {
+          return { motivo: 'fiscal_componente', mensagem: e instanceof Error ? e.message : String(e) };
+        }
+        throw e;
+      }
+      const f = familia as { can_invoice: boolean | null; can_invoice_causa: string | null };
+      if (f.can_invoice === false) {
+        return {
+          motivo: 'fiscal_componente',
+          mensagem: `Componente ${c.codigoPai} não está pronto para nota fiscal: ${f.can_invoice_causa ?? 'motivo não informado'}`,
+        };
+      }
+    }
+    return null;
+  } catch (e) {
+    return { motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function criarKitVirtual(
   deps: CriarKitVirtualDeps, input: CriarKitVirtualInput,
 ): Promise<ResultadoCriarKitVirtual> {
@@ -376,6 +430,14 @@ export async function criarKitVirtual(
       mlPermalink: kit.ml_permalink,
       jaExistia: true,
     };
+  }
+
+  // ── 1b. Fiscal dos componentes (A8): DEPOIS do replay (kit já no ML não cria nada) e ANTES de
+  // qualquer escrita de componentes ou chamada de criação no ML. Libera o lease ao recusar.
+  const recusaFiscal = await recusaFiscalComponentes(deps, input.componentes);
+  if (recusaFiscal) {
+    await marcarErro(deps, kit.id, recusaFiscal.mensagem);
+    return { ok: false, motivo: recusaFiscal.motivo, mensagem: recusaFiscal.mensagem, kitId: kit.id };
   }
 
   // ── 2. Componentes ANTES do status='publicado' (ver cabeçalho) ────────────────────────

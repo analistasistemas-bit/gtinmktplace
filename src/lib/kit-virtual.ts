@@ -223,6 +223,7 @@ const MENSAGEM_MOTIVO_CRIAR_KIT_VIRTUAL: Record<string, string> = {
   desconto_invalido: 'Desconto inválido.',
   desconto_divergente: 'O desconto precisa ser igual para todos os componentes.',
   foto_obrigatoria: 'O kit precisa de uma foto própria antes de publicar.',
+  fiscal_componente: 'Um dos componentes não está pronto para nota fiscal — corrija o cadastro fiscal dele.',
 };
 
 export async function criarKitVirtualEdge(input: {
