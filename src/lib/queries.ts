@@ -43,6 +43,7 @@ export const QK = {
   canaisHabilitados: ['canais-habilitados'] as const,
   modulosHabilitados: ['modulos-habilitados'] as const,
   marcaOrg: (orgId: string | null) => ['marca-org', orgId] as const,
+  tipoPessoaOrg: (orgId: string | null) => ['tipo-pessoa-org', orgId] as const,
   marcaProduto: (orgId: string | null, codigoPai: string) => ['marca-produto', orgId, codigoPai] as const,
   tiposProdutoHabilitados: ['tipos-produto-habilitados'] as const,
   produtosEstoqueResumo: ['produtos-estoque-resumo'] as const,

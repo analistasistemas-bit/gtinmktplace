@@ -34,6 +34,10 @@ Deno.serve(async (req) => {
   if (!(await exigirModulo(admin, ctx.orgId, 'estoque'))) {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
+  // ADR-0181 D-13 (emenda 20/10): inventário mora no pacote do contador — só org PJ.
+  const { data: org, error: orgErr } = await admin.from('organizations').select('tipo_pessoa').eq('id', ctx.orgId).maybeSingle();
+  if (orgErr) return json({ error: 'Falha ao ler o cadastro da organização.' }, 502);
+  if (org?.tipo_pessoa !== 'pj') return json({ error: 'Inventário disponível só para pessoa jurídica.' }, 403);
 
   const alvo = {
     type: 'inventario',

@@ -26,6 +26,7 @@ import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
+import { useTipoPessoaOrg } from '@/hooks/useTipoPessoaOrg';
 import {
   filtrarProdutos, canaisEfetivos, produtoFiscalPendente, type FiltroEstoque, type OrdemEstoque,
 } from '@/lib/produtos-saldo-filtro';
@@ -53,6 +54,8 @@ export default function Estoque() {
   // ADR-0135 D-9 (fix round 1, I1): regime da org pro filtro fiscalPendente bater com o gate
   // real (`camposFiscaisFaltantes`); `undefined` enquanto a query não resolveu.
   const { data: empresaFiscal } = useEmpresaFiscal();
+  // ADR-0181 D-13 (emenda 20/10): pacote do contador só em org PJ — PF ou "não sei" esconde.
+  const { data: tipoPessoa } = useTipoPessoaOrg();
   const regimeOrg = empresaFiscal === undefined
     ? undefined
     : ((empresaFiscal?.regime_tributario ?? 'simples') as 'simples' | 'normal');
@@ -279,7 +282,7 @@ export default function Estoque() {
         skuInicial={alvoEntrada?.sku}
         codigoPaiInicial={alvoEntrada?.codigoPai}
       />
-      <CardPacoteContador />
+      {tipoPessoa === 'pj' && <CardPacoteContador />}
       <SecaoNotasCompra destacarChave={chaveDestacada} />
       <DialogImportarNota
         aberto={notaAberta}

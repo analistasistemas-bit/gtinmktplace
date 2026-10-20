@@ -28,6 +28,10 @@ Deno.serve(async (req) => {
 
   try {
     if (!(await exigirModulo(admin, ctx.orgId, 'estoque'))) return json({ error: 'Módulo de estoque não habilitado.' }, 403);
+    // ADR-0181 D-13 (emenda 20/10): pacote do contador só em org PJ.
+    const { data: org, error: orgErr } = await admin.from('organizations').select('tipo_pessoa').eq('id', ctx.orgId).maybeSingle();
+    if (orgErr) throw orgErr;
+    if (org?.tipo_pessoa !== 'pj') return json({ error: 'Pacote do contador disponível só para pessoa jurídica.' }, 403);
     const conexao = await resolverConexao(admin, ctx.orgId, 'mercado_livre');
     if (!conexao?.contaExternaId) return json({ error: 'Conecte a conta do Mercado Livre em Canais.' }, 409);
 

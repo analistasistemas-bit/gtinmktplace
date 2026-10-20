@@ -44,6 +44,12 @@ const tiposProdutoMock = vi.fn(() => ({ data: [] as string[] }));
 vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
   useTiposProdutoHabilitados: () => tiposProdutoMock(),
 }));
+// ADR-0181 D-13 (emenda 20/10): pacote do contador só em org PJ. Default PJ mantém o resto da
+// suíte como antes; os testes do pacote trocam o retorno.
+const tipoPessoaMock = vi.fn<() => { data: string | null | undefined }>(() => ({ data: 'pj' }));
+vi.mock('@/hooks/useTipoPessoaOrg', () => ({
+  useTipoPessoaOrg: () => tipoPessoaMock(),
+}));
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
 // ADR-0129 D-11: query de status por produto (badge no card) — sem mock, bateria na rede real
 // a cada render desta suíte. statusUpdatePorProduto continua o de verdade (função pura).
@@ -279,5 +285,29 @@ describe('Estoque — botão "Cadastrar com grade" (spec 2026-09-19 §1)', () =>
     renderEstoque();
     await user.click(screen.getByRole('button', { name: /Cadastrar com grade/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent(/grade/i);
+  });
+});
+
+describe('Estoque — pacote do contador por tipo de pessoa', () => {
+  afterEach(() => { tipoPessoaMock.mockReset(); tipoPessoaMock.mockReturnValue({ data: 'pj' }); });
+
+  it('org PJ vê o pacote do contador', async () => {
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.getByText('Pacote do contador')).toBeInTheDocument();
+  });
+
+  it('org PF não vê o pacote do contador', async () => {
+    tipoPessoaMock.mockReturnValue({ data: 'pf' });
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.queryByText('Pacote do contador')).not.toBeInTheDocument();
+  });
+
+  it('tipo de pessoa ainda desconhecido não mostra o pacote', async () => {
+    tipoPessoaMock.mockReturnValue({ data: undefined });
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.queryByText('Pacote do contador')).not.toBeInTheDocument();
   });
 });

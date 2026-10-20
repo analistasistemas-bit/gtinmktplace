@@ -156,7 +156,10 @@ A foto separa:
 A empresa **confirma a contagem física**; diferenças justificadas viram ajuste. SKU sem nenhuma nota
 importada aparece marcado "sem nota de compra", nunca com custo inventado.
 
-**D-13 — Pacote do contador, mensal, em `/estoque`.** É um zip com:
+**D-13 — Pacote do contador, mensal, em `/estoque`.** *(Emenda 2026-10-20, decisão do Diego: o card
+— pacote e "Inventário de hoje" — só aparece em org com `tipo_pessoa = 'pj'` (ADR-0135 D-2), não
+pelo módulo `fiscal`; PF ou tipo ainda desconhecido esconde. As edges `baixar-notas-venda` e
+`inventario` recusam com 403 fora de PJ.)* É um zip com:
 - **compras:** XMLs originais e planilha de entradas (data, fornecedor, CNPJ, número, chave, CFOP,
   NCM, CSOSN, quantidade e valores da nota);
 - **inventário:** D-12;
