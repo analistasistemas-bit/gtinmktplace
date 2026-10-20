@@ -22,6 +22,8 @@ interface FamiliaFiscalAnterior {
   tributacao_icms?: string | null;
   tributacao_icms_regime?: string | null;
   descricao_fiscal?: string | null;
+  fci?: string | null;
+  ex_tipi?: string | null;
 }
 
 /**
@@ -36,16 +38,21 @@ interface FamiliaFiscalAnterior {
  */
 export function resolverCamposFiscais(g: GrupoFiscal, ant: FamiliaFiscalAnterior | undefined) {
   const cestPlanilha = g.cest ? g.cest.replace(/\D/g, '') : '';
+  const origemFinal = g.origem_nfe ?? ant?.origem_nfe ?? null;
   return {
     // `|| null` em vez do `''` cru: célula só com espaço passa a validação (trim vazio =
     // "ausente") mas chegaria aqui truthy e violaria o CHECK de formato da coluna.
     ncm: normalizarNcm(g.ncm) || null,
     cest: cestPlanilha || ant?.cest || null,
-    origem_nfe: g.origem_nfe ?? ant?.origem_nfe ?? null,
+    origem_nfe: origemFinal,
     tributacao_icms: g.tributacao_icms ?? ant?.tributacao_icms ?? null,
     tributacao_icms_regime: g.tributacao_icms ? 'simples' : ant?.tributacao_icms_regime ?? null,
     // ADR-0181 D-5: a planilha não tem coluna de descrição fiscal — sempre herda no UPDATE.
     descricao_fiscal: ant?.descricao_fiscal ?? null,
+    // M1 (auditoria fiscal 19/10): a planilha não tem FCI/EX TIPI — herdam, senão o reingest apagava
+    // dado curado. FCI só vale com origem 3/5/8 (A4): origem final outra não herda.
+    fci: origemFinal != null && [3, 5, 8].includes(origemFinal) ? ant?.fci ?? null : null,
+    ex_tipi: ant?.ex_tipi ?? null,
   };
 }
 

@@ -77,6 +77,18 @@ describe('resolverCamposFiscais (re-ingest herda opcionais vazios — fix round 
     expect(r.tributacao_icms_regime).toBeNull();
   });
 
+  // M1 (auditoria fiscal 19/10): FCI/EX TIPI não têm coluna na planilha — herdam; FCI só com origem 3/5/8.
+  it('FCI e EX TIPI herdam; origem final fora de 3/5/8 zera o FCI', () => {
+    const ant = { ...anterior, origem_nfe: 3, fci: 'A3F1D0A2-16CB-4DF1-816E-F062A515035B', ex_tipi: '01' };
+    const r = resolverCamposFiscais(grupoVazio, ant);
+    expect(r.fci).toBe(ant.fci);
+    expect(r.ex_tipi).toBe('01');
+    const r0 = resolverCamposFiscais({ ...grupoVazio, origem_nfe: 0 }, ant);
+    expect(r0.fci).toBeNull();
+    expect(r0.ex_tipi).toBe('01');
+    expect(resolverCamposFiscais(grupoVazio, undefined).fci).toBeNull();
+  });
+
   // R6-I1 (ADR-0181): a planilha não tem coluna de descrição fiscal — o UPDATE sempre herda.
   // Sem isto, o próximo push fiscal mandaria o nome_pai como `title` ao Faturador.
   it('descricao_fiscal herda da família anterior no UPDATE', () => {
