@@ -320,6 +320,12 @@ describe('lerCampanhasAds', () => {
     }
   });
 
+  it('anúncio de outra campanha na busca filtrada é descartado (filtro do ML não confiável, spike 057)', async () => {
+    const d = deps(comAnuncios({ 7500229: [anuncio({ item_id: 'MLB1' }), anuncio({ item_id: 'MLB2', campaign_id: 357912053, status: 'idle' })] }));
+    const r = await lerCampanhasAds(d, 'T');
+    expect(r.estado === 'ok' && r.anuncios.map((a) => a.mlb)).toEqual(['MLB1']);
+  });
+
   it('página vazia antes do total → erro, nunca lista incompleta como sucesso', async () => {
     const d = deps((path) => {
       if (path.includes('filters[campaign_id]')) {

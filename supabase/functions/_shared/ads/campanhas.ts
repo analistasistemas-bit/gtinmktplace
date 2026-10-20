@@ -27,7 +27,7 @@ export type RespostaCampanhas =
       publicadosPorFamilia: Record<string, string[]> | null; campanhas: CampanhaAds[]; anuncios: AnuncioPatrocinado[] };
 
 /** Tetos de trabalho por leitura (plano 2026-10-20, revisão Codex): nada é truncado em silêncio. */
-export const LIMITES_CAMPANHAS = { paginas: 40, cadastro: 20_000, mlbs: 100, cores: 150, tarifas: 300 };
+export const LIMITES_CAMPANHAS = { paginas: 40, cadastro: 20_000, mlbs: 200, cores: 300, tarifas: 600 };
 export class LimiteTarifa extends Error {}
 
 export interface RespostaGet { status: number; corpo: unknown }
@@ -209,6 +209,17 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
   const advId = parseAdvertiser(adv.corpo);
   if (advId == null) return { ok: true, estado: 'sem_advertiser' };
 
+  // Leituras do banco em paralelo com o ML (medido na Avil: o IO em série dominava). O `.catch` vazio só evita
+  // rejeição não tratada se o ML falhar antes; cada promessa é aguardada (e o erro sobe) mais abaixo.
+  const aliqP = deps.lerAliquotas();
+  const contP = deps.contarCadastro();
+  const cadP = Promise.all([aliqP, contP]).then(([a, n]) => (a && n <= LIMITES_CAMPANHAS.cadastro ? deps.carregarCadastro() : null));
+  const pubP = deps.lerPublicados().then((x): Record<string, string[]> | null => x, (e) => {
+    console.warn('[ads-campanhas] publicados indisponíveis', { erro: e instanceof Error ? e.message : String(e) });
+    return null;
+  });
+  for (const pr of [aliqP, contP, cadP]) pr.catch(() => {});
+
   const ate = deps.hoje, desde = diaMenos(ate, 7);
   // Um contador por recurso: as páginas de campanhas não comem o teto dos anúncios.
   const paginas = { campanhas: 0, anuncios: 0 };
@@ -230,50 +241,45 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
   const campanhas = await paginar((o) => urlCampanhas(advId, desde, ate, o),
     (c) => { const p = parseCampanhas(c); return p && { total: p.total, itens: p.campanhas }; }, 'campaigns/search', 'campanhas');
   campanhas.sort((a, b) => (a.status === b.status ? a.nome.localeCompare(b.nome) : a.status === 'active' ? -1 : 1));
+  const porCampanha = await emParalelo(campanhas, 4, (c) => paginar((o) => urlAnunciosCampanha(advId, c.id, desde, ate, o),
+    (x) => { const p = parseAnunciosPatrocinados(x); return p && { total: p.total, itens: p.anuncios }; }, 'ads/search', 'anuncios'));
   const bases: AnuncioBase[] = [];
-  for (const c of campanhas) {
+  campanhas.forEach((c, i) => {
     const vistos = new Set<string>();
-    for (const a of await paginar((o) => urlAnunciosCampanha(advId, c.id, desde, ate, o),
-      (x) => { const p = parseAnunciosPatrocinados(x); return p && { total: p.total, itens: p.anuncios }; }, 'ads/search', 'anuncios')) {
-      if (!vistos.has(a.mlb)) { vistos.add(a.mlb); bases.push(a); }
-    }
-  }
+    // O filtro por campanha do ML não é confiável: na Avil a busca de uma campanha pausada trouxe 289 anúncios
+    // `idle` de outra campanha, fora de active/paused (spike 057). Só fica o que é da campanha pedida.
+    for (const a of porCampanha[i]) if (a.campanhaId === c.id && !vistos.has(a.mlb)) { vistos.add(a.mlb); bases.push(a); }
+  });
 
   // Status do item agora: bloco com erro → itens desconhecidos (nunca "parado").
   const mlbs = [...new Set(bases.map((a) => a.mlb))];
   const itens = new Map<string, ItemAgora>();
-  for (let i = 0; i < mlbs.length; i += 20) {
-    const bloco = mlbs.slice(i, i + 20);
+  const blocos = Array.from({ length: Math.ceil(mlbs.length / 20) }, (_, i) => mlbs.slice(i * 20, i * 20 + 20));
+  await emParalelo(blocos, 4, async (bloco) => {
     try {
       const r = await deps.get(caminhoMultiget(bloco, CAMPOS_ITEM_AGORA), {});
       if (r.status >= 200 && r.status < 300) for (const [k, v] of parseItensBulk(r.corpo, bloco)) itens.set(k, v);
     } catch (e) {
       console.warn('[ads-campanhas] items/bulk indisponível', { erro: e instanceof Error ? e.message : String(e) });
     }
-  }
-
-  let publicadosPorFamilia: Record<string, string[]> | null;
-  try {
-    publicadosPorFamilia = await deps.lerPublicados();
-  } catch (e) {
-    console.warn('[ads-campanhas] publicados indisponíveis', { erro: e instanceof Error ? e.message : String(e) });
-    publicadosPorFamilia = null;
-  }
+  });
+  const publicadosPorFamilia = await pubP;
 
   const ativas = new Set(campanhas.filter((c) => c.status === 'active').map((c) => c.id));
   const doAtivo = [...new Set(bases.filter((a) => ativas.has(a.campanhaId)).map((a) => a.mlb))];
   const equilibrio = new Map<string, Equilibrio>();
   const FORA: Equilibrio = { acosPct: null, motivo: 'fora_da_projecao' };
   let projecaoLimitada = false;
-  const aliq = await deps.lerAliquotas();
+  const aliq = await aliqP;
+  const cadastroNoTeto = (await contP) <= LIMITES_CAMPANHAS.cadastro;
   if (!aliq) {
     for (const m of doAtivo) equilibrio.set(m, { acosPct: null, motivo: 'sem_aliquota' });
-  } else if (doAtivo.length && (await deps.contarCadastro()) > LIMITES_CAMPANHAS.cadastro) {
+  } else if (doAtivo.length && !cadastroNoTeto) {
     projecaoLimitada = true;
   } else if (doAtivo.length) {
     const candidatos = doAtivo.slice(0, LIMITES_CAMPANHAS.mlbs);
     if (candidatos.length < doAtivo.length) projecaoLimitada = true;
-    const [ml, cad] = await Promise.all([deps.buscarItensML(candidatos), deps.carregarCadastro()]);
+    const [ml, cad] = await Promise.all([deps.buscarItensML(candidatos), cadP.then((c) => c!)]);
     // Orçamento de cores decidido antes, em ordem: o MLB que não cabe inteiro corta ele e os seguintes.
     let restante = LIMITES_CAMPANHAS.cores, cortou = false;
     const selecionados: { mlb: string; ml: ItemML }[] = [];
@@ -291,7 +297,7 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
       if (++consultas > LIMITES_CAMPANHAS.tarifas) return Promise.reject(new LimiteTarifa());
       return deps.tarifaEm(q);
     };
-    await emParalelo(selecionados, 4, async ({ mlb, ml: it }) => {
+    await emParalelo(selecionados, 8, async ({ mlb, ml: it }) => {
       try {
         equilibrio.set(mlb, await equilibrioDoMlb(it, itens.get(mlb)?.preco ?? null, cad, aliq, tarifaLimitada));
       } catch (e) {
