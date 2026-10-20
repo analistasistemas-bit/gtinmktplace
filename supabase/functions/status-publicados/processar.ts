@@ -128,24 +128,31 @@ export async function montarStatusPublicados(
       continue;
     }
     const conn = deps.getConnector(canal);
-    const ctx = { getToken: () => deps.getValidAccessTokenConexao(conexao) };
+    // Um pedido de token por canal: lerStatus, /sale_price e kits rodam em paralelo e, chamando
+    // separado, disputariam a renovação (uma esperava o lock e falhava — promoção sumia).
+    let token: Promise<string> | undefined;
+    const ctx = { getToken: () => (token ??= deps.getValidAccessTokenConexao(conexao)) };
     // O `price` do GET /items em lote é o preço cheio; o que o comprador paga (promoção) só vem
     // do /sale_price, por item — roda em paralelo ao lote. Kit fica de fora: enriquecerKits já
     // lê o /sale_price dele. ponytail: varre todos os anúncios a cada leitura (~4 s na Avil com
     // pool 10; o Estoque repete a cada 15 s enquanto aguarda o ML) — filtrar/cachear se pesar.
     const idsSalePrice = canal === 'mercado_livre' ? ids.filter((id) => !kitPorMlItemId.has(id)) : [];
+    let statusFalhou = false; // lerStatus caiu → resposta descartada; o pool para de disparar.
     const lerSalePrices = async () => {
       if (idsSalePrice.length === 0) return [];
       try {
         const token = await ctx.getToken();
-        return await pool(10, idsSalePrice, (id) => deps.lerSalePrice(token, id));
+        return await pool(10, idsSalePrice, (id) => statusFalhou ? Promise.resolve(null) : deps.lerSalePrice(token, id));
       } catch (e) {
         console.warn('status_publicados_sale_price_falhou', { orgId, erro: String(e) });
         return [];
       }
     };
     try {
-      const [statusPorId, salePrices] = await Promise.all([conn.lerStatus(ctx, ids), lerSalePrices()]);
+      const [statusPorId, salePrices] = await Promise.all([
+        conn.lerStatus(ctx, ids).catch((e) => { statusFalhou = true; throw e; }),
+        lerSalePrices(),
+      ]);
       const salePricePorId = new Map(idsSalePrice.map((id, i) => [id, salePrices[i] ?? null]));
       for (const id of ids) {
         const item: ItemStatusPublicados = { ml_item_id: id, canal, ...statusPorId[id] };

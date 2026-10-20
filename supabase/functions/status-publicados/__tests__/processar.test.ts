@@ -235,5 +235,37 @@ describe('montarStatusPublicados', () => {
       }), ORG);
       expect(fn).not.toHaveBeenCalled();
     });
+
+    it('um único pedido de token por canal (lerStatus e /sale_price não disputam a renovação)', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB1' });
+      const getToken = vi.fn(async () => 'token-fake');
+      const conn = {
+        ...fakeConnector,
+        lerStatus: async (ctx: { getToken: () => Promise<string> }, ids: string[]) => {
+          await ctx.getToken();
+          return fakeConnector.lerStatus(ctx as never, ids);
+        },
+      };
+      await montarStatusPublicados(comSalePrice(db, salePrice({ MLB1: { preco: 19, precoRegular: 29.9 } }), {
+        getValidAccessTokenConexao: getToken as unknown as DepsStatusPublicados['getValidAccessTokenConexao'],
+        getConnector: (() => conn) as unknown as DepsStatusPublicados['getConnector'],
+      }), ORG);
+      expect(getToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('lerStatus falhou: o pool para de disparar /sale_price', async () => {
+      const db = dbVazio();
+      for (let i = 0; i < 25; i++) db.familias.push({ org_id: ORG, ml_item_id: `MLB${i}` });
+      const fn = vi.fn(async () => { await new Promise((r) => setTimeout(r, 0)); return null; });
+      const conn = { ...fakeConnector, lerStatus: async () => { throw new Error('ML 500'); } };
+      const r = await montarStatusPublicados(deps(db, {
+        lerSalePrice: fn as unknown as DepsStatusPublicados['lerSalePrice'],
+        getConnector: (() => conn) as unknown as DepsStatusPublicados['getConnector'],
+      }), ORG);
+      await new Promise((res) => setTimeout(res, 20));
+      expect(r.semCredencialML).toBe(true);
+      expect(fn.mock.calls.length).toBeLessThanOrEqual(10);
+    });
   });
 });
