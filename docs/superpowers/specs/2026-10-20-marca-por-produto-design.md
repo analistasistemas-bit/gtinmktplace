@@ -93,6 +93,34 @@ BRAND = `marca_padrao` sempre. Diego quer:
 7. **Cadastro — campo Marca** em `dialog-cadastro-produto.tsx`, junto do Fornecedor, só em org com marca própria;
    pré-preenchido; obrigatório não vazio. Vale também quando aberto pela Viabilidade e pela nota.
 
+## Emenda após revisão do Codex (2026-10-20)
+
+- **Concorrência (P1):** `atualizar-marca-familia` grava via RPC que trava (`for update`) todas as linhas do
+  `codigo_pai` na org e **recusa** se alguma estiver em `pendente/processando/publicando` ou se a raiz UP estiver com
+  `mudando_composicao`. O worker de sincronização lê `familias.marca` do banco a cada execução (última gravação vence).
+- **Convergência do `family_id` (P1):** rodada com `corrigidos > 0` se reagenda (QStash, delay ~2 min, `tentativa+1`,
+  máx. 5) até ver a família unificada e gravar o id; esgotou → status `erro` com motivo.
+- **Status durável (P1):** colunas na raiz `anuncios_externos`: `marca_sync_status` (`pendente|ok|erro`),
+  `marca_sync_erro`, `marca_sync_em`. A edge grava `pendente` na mesma transação; falha ao enfileirar → `erro`. O card
+  mostra o status e "Reenviar". "Publicado" = existe raiz `anuncios_externos` do `codigo_pai` (vínculo externo), não
+  o status do snapshot.
+- **Permissões no banco (P1):** trigger recusa mudança de `familias.marca` e de `organizations.marca_propria/
+  marca_padrao` fora do `service_role` (molde da proteção fiscal ADR-0135). Edges validam admin/super-admin e a org.
+- **Avil / UPDATE (P2):** duas regras. CREATE: `marca → fornecedor → marca_padrao → 'Avil'`. UPDATE/split:
+  `marca → fornecedor → (não envia BRAND)` — preserva o contrato do ADR-0016.
+- **Projeções (P2):** incluir `marca` nos selects de `process-familia`, `definir-categoria-familia`,
+  `atributos-familia`, `reconciliar-convergencia-up`, `update-familia-ml`, `publicar-split-ml`, `ingest-lote` (UPDATE
+  copia `marca`). Clones de kit/adicionar variação já copiam colunas por exclusão — conferir que `marca` passa.
+  Regenerar copy não mexe em BRAND (fornecedor segue só para o título).
+- **Legacy (P2):** fora do escopo. Zaven é 100% UP. Raiz sem filhos UP → `marca_sync_status='erro'` com "anúncio
+  Legacy: marca vai no próximo Atualizar".
+- **Configuração (P2):** `list_orgs` devolve `marca_propria/marca_padrao`; `set_marca_org` entra em `platformAction`;
+  o cadastro lê a marca da org efetiva (org atual do usuário).
+- **Rollout (P2):** 1) migration (coluna, colunas de status, trigger, backfill `familias.marca='Zaven'` por
+  `org_id` explícito, só lotes `origem='manual'` — conferido: todos); 2) backend — `cadastrar-produto` usa default da
+  org quando o cliente não manda `marca` (compat com front antigo); 3) front.
+- **Planilha reimportando produto do Estoque:** ver pergunta pendente ao Diego.
+
 ## Verificação
 
 - Testes de unidade da regra (marca do produto > fornecedor > padrão), do `forcarMarcaDoProduto`, do
