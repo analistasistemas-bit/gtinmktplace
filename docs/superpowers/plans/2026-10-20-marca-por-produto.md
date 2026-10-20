@@ -41,7 +41,7 @@
   marca_padrao` → 42501; org B intocada; default do INSERT (Zaven manual sem marca → 'Zaven'; planilha → null;
   Avil → null).
 
-**Task 3:** herança da planilha extraída para `supabase/functions/ingest-lote/marca-herdada.ts`
+**Task 3 (substituído pela Emenda 2 — herança no trigger):** ~~herança da planilha extraída para~~ `supabase/functions/ingest-lote/marca-herdada.ts`
 (`herdarMarcaUpdate(ant: {marca, atributos_ml}): {marca, atributos_ml}`) com teste: anterior `{marca:'Lacoste',
 BRAND=Lacoste}` + planilha FORNECEDOR='STAR' → nova linha `marca:'Lacoste'` e BRAND=Lacoste.
 
@@ -69,6 +69,20 @@ enfileira com a `versao` devolvida. Testes: admin, membro (403), suporte read (4
 **Task 9 (ordem de rollout):** `db push` → deploy de **todas** as edges (cadastro, consumidores, worker, edição,
 usuarios) a partir da branch → só então merge na `main` (Render publica o front). Validação de runtime inclui uma
 reimportação por planilha de produto com marca (Lacoste) conferindo `familias.marca`, BRAND e o payload do UPDATE.
+
+## Emenda 2 — 2ª rodada Codex (concorrência)
+
+- **Serialização por produto (Task 1 + 5):** coluna `anuncios_externos.marca_sync_lease_ate timestamptz`; RPCs
+  `adquirir_lease_marca(p_raiz uuid, p_ttl_s int) returns boolean` (UPDATE atômico `where lease is null or lease <
+  now()`) e `liberar_lease_marca(p_raiz uuid)`, só `service_role`. O worker adquire antes de qualquer leitura/PUT
+  (TTL 300 s > timeout da edge); sem lease → reagenda (30 s, não conta tentativa) e sai; libera em `finally`.
+  Teste: duas execuções intercaladas (fake) — a 2ª não faz PUT enquanto a 1ª segura o lease.
+- **Herança da planilha no banco (Task 1, substitui o helper da Task 3):** o trigger BEFORE INSERT
+  `familias_marca_default` passa a: (a) se já existe família do mesmo (org, `codigo_pai`) → copia `marca` da mais
+  recente lida com `for share` (espera edição em andamento) e, com marca não nula, reescreve BRAND/MANUFACTURER de
+  `new.atributos_ml` para ela; (b) senão, lote `manual` + org com marca própria → `marca_padrao`. Teste SQL: família
+  anterior `marca='Lacoste'` + INSERT de snapshot com `atributos_ml` BRAND=STAR → linha nova `marca='Lacoste'`,
+  BRAND=Lacoste. A edição que chega depois encontra a linha `pendente` → `MARCA_OCUPADO`.
 
 ## Review Focus
 
