@@ -146,6 +146,12 @@ export async function equilibrioDoMlb(
     const r = resolverPack(cad, { item_id: ml.id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml.formato_kit);
     if (typeof r === 'string') return sem(r);
     if (!r) return sem('sem_cadastro');
+    // Decisão Codex B (2026-10-20): `r.kit` é o pacote efetivo; escalado a partir de um cadastro que não é kit
+    // próprio, nada prova que o custo era unitário (Avil: custo do pacote ×10 → −344 %). Nesta tela não sai número;
+    // a Central de Promoções e o resolverPack seguem como estão (correção compartilhada exige ADR próprio).
+    const fonte = cad.porId.get(r.variacao_id);
+    if (!fonte) return sem('sem_cadastro');
+    if (r.kit > 1 && fonte.kit === 1) return sem('pacote_a_conferir');
     if (r.custo == null || r.custo <= 0) return sem('sem_custo');
     if (r.origem == null) return sem('sem_origem');
     if (r.dim == null) return sem('sem_dimensao');

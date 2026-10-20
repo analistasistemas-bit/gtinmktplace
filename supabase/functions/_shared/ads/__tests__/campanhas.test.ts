@@ -140,9 +140,25 @@ describe('equilibrioDoMlb', () => {
       const r = await equilibrioDoMlb(itemML({ id: 'MLBKIT', unidades: 2 }), 100, montarCadastro([base, kit], []), ALIQ, async () => TARIFA);
       expect(r.acosPct).toBeCloseTo(15.2); // (75 − 59,8) ÷ 100
     });
-    it('pack pelo GTIN da unidade com UNITS_PER_PACK=2: custo escalado a 59,80', async () => {
-      const r = await equilibrioDoMlb(itemML({ id: 'MLBX', gtin: '7891010027858', unidades: 2 }), 100, montarCadastro([base], []), ALIQ, async () => TARIFA);
+    it('base escalada pelo UNITS_PER_PACK (cadastro sem kit próprio): pacote a conferir, sem número (decisão Codex B)', async () => {
+      // Caso real Avil: custo do PACOTE cadastrado e o ML diz 10 unidades → resolverPack ×10 → −344 %. Kit==1 não prova
+      // que o custo é unitário: nesta tela nunca sai número possivelmente inflado.
+      const tarifa = vi.fn(async () => TARIFA);
+      const r = await equilibrioDoMlb(itemML({ id: 'MLBX', gtin: '7891010027858', unidades: 2 }), 100, montarCadastro([base], []), ALIQ, tarifa);
+      expect(r).toEqual({ acosPct: null, motivo: 'pacote_a_conferir' });
+      expect(tarifa).not.toHaveBeenCalled();
+    });
+    it('combinar escolhendo o kit próprio compatível (GTIN da base + SKU do kit) continua permitido', async () => {
+      const r = await equilibrioDoMlb(itemML({ id: 'MLBX', gtin: '7891010027858', sku: '00000012', unidades: 2 }), 100, montarCadastro([base, kit], []), ALIQ, async () => TARIFA);
       expect(r.acosPct).toBeCloseTo(15.2);
+    });
+    it('uma cor escalada invalida o MLB inteiro', async () => {
+      const unidade = v({ id: 'u', ml_variation_id: '1', familias: { ml_item_id: 'MLBM', origem: 'nacional' } });
+      const pack = v({ id: 'p', ml_variation_id: '2', familias: { ml_item_id: 'MLBM', origem: 'nacional' } });
+      const duas = itemML({ id: 'MLBM', variacoes: [
+        { variation_id: 1, cor: 'A', sku: null, gtin: null, unidades: 1 }, { variation_id: 2, cor: 'B', sku: null, gtin: null, unidades: 3 }] });
+      expect(await equilibrioDoMlb(duas, 100, montarCadastro([unidade, pack], []), ALIQ, async () => TARIFA))
+        .toEqual({ acosPct: null, motivo: 'pacote_a_conferir' });
     });
     it('motivo kit_* propaga', async () => {
       const r = await equilibrioDoMlb(itemML({ id: 'MLBKIT', unidades: 1 }), 100, montarCadastro([base, kit], []), ALIQ, async () => TARIFA);

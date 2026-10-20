@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Megaphone } from 'lucide-react';
+import { AlertTriangle, Info, Loader2, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -31,7 +31,7 @@ const PASSA: Record<Filtro, (f: CampanhaVista['familias'][number], c: CampanhaVi
 
 function Carregando() {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4" aria-busy="true" aria-label="Carregando campanhas">
+    <div role="status" className="space-y-3 rounded-lg border border-border bg-card p-4" aria-busy="true" aria-label="Carregando campanhas">
       <Skeleton className="h-6 w-56" />
       <Skeleton className="h-4 w-80 max-w-full" />
       <Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" />
@@ -47,7 +47,8 @@ export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & Ac
   if (isError) {
     return (
       <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-        <p>{erro?.message || 'Não foi possível carregar as campanhas.'}</p>
+        <p>Não foi possível ler as campanhas no Mercado Livre.</p>
+        {erro?.message && <p className="mt-1 text-xs text-danger/80">Detalhe: {erro.message}</p>}
         <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={() => void atualizar()}>Tentar de novo</Button>
       </div>
     );
@@ -81,17 +82,19 @@ export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & Ac
   return (
     <div className="space-y-6">
       {!resposta.aliquotasConfirmadas && (
-        <p role="status" className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          Confirme as alíquotas de imposto em <Link to="/configuracoes" className="font-medium underline underline-offset-2">Configurações</Link> para ver a margem.
+        <p role="status" className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+          <span>Confirme as alíquotas de imposto em <Link to="/configuracoes" className="font-medium underline underline-offset-2">Configurações</Link> para ver a margem.</span>
         </p>
       )}
       {resposta.projecaoLimitada && (
-        <p role="status" className="rounded-lg border border-info/30 bg-info/10 p-3 text-sm text-info">
+        <p role="status" className="flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2 text-sm">
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
           Alguns anúncios ficaram fora da projeção de margem nesta leitura.
         </p>
       )}
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-        <KpiCard size="compact" label="Todas" infoKey="Todas::Campanhas" value={todas.length}
+        <KpiCard size="compact" label="Famílias" infoKey="Todas::Campanhas" value={todas.length}
           ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className={CARD_FILTRO} />
         <KpiCard size="compact" label="Em alerta" infoKey="Em alerta::Campanhas" value={emAlerta} tom="warning"
           ativo={filtro === 'alerta'} onClick={() => alternar('alerta')} desabilitado={emAlerta === 0} className={CARD_FILTRO} />

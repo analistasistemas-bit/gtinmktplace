@@ -255,7 +255,7 @@ export default function Ads() {
   }
 
   const contagemAlerta = (
-    <StatusPill tone="warning">
+    <StatusPill tone="warning" title={emAlerta === 1 ? '1 família em alerta' : `${emAlerta} famílias em alerta`}>
       <span aria-hidden>{emAlerta}</span>
       <span className="sr-only">{emAlerta === 1 ? '1 família em alerta' : `${emAlerta} famílias em alerta`}</span>
     </StatusPill>

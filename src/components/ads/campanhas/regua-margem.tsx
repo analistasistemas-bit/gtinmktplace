@@ -7,18 +7,25 @@ interface Props {
   acosAlvo: number | null;
   /** Tom vem do alerta de domínio `roas_acima_margem`, nunca calculado aqui. */
   acima: boolean;
+  /** Fim da escala, comum a todas as famílias da campanha: a largura compara as famílias entre si. */
+  escalaMax?: number;
   className?: string;
 }
 
-/** Margem para Ads: o texto carrega o sentido, a régua é decorativa. Escala 0..max(equilíbrio, alvo)×1,2 (teto 100). */
-export function ReguaMargem({ equilibrioPct, motivo, acosAlvo, acima, className }: Props) {
+/** Margem para Ads: o texto carrega o sentido, a régua é decorativa. Escala comum da campanha (escalaMax) ou max(equilíbrio, alvo)×1,2; teto 100. */
+export function ReguaMargem({ equilibrioPct, motivo, acosAlvo, acima, escalaMax, className }: Props) {
   if (equilibrioPct == null) {
     return <span className={cn('block text-sm text-muted-foreground', className)}>{motivoLegivel(motivo)}</span>;
   }
   if (equilibrioPct <= 0) {
-    return <span className={cn('block text-sm font-medium text-danger', className)}>Sem espaço para Ads</span>;
+    // O vermelho forte fica na pílula do alerta; aqui só o texto, com o alvo para comparar.
+    return (
+      <span className={cn('block text-sm tabular-nums', className)}>
+        Sem espaço para Ads{acosAlvo != null ? ` · alvo ${fmtPontos(acosAlvo)}` : ''}
+      </span>
+    );
   }
-  const escala = Math.min(100, Math.max(equilibrioPct, acosAlvo ?? 0) * 1.2);
+  const escala = Math.min(100, escalaMax ?? Math.max(equilibrioPct, acosAlvo ?? 0) * 1.2);
   const largura = Math.min(100, (equilibrioPct / escala) * 100);
   const marcador = acosAlvo != null && acosAlvo > 0 ? Math.min(100, (acosAlvo / escala) * 100) : null;
   // Trunca para baixo: 19,996 % contra alvo 20 % nunca pode aparecer como "20 % · alvo 20 %".

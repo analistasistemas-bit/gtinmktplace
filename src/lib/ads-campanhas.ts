@@ -24,7 +24,8 @@ export const ROTULO_ALERTA: Record<AlertaCampanha, string> = {
 };
 
 export const ROTULO_MOTIVO: Record<string, string> = {
-  sem_cadastro: 'Sem cadastro no PubliAI',
+  sem_cadastro: 'Variação não encontrada no cadastro',
+  pacote_a_conferir: 'Pacote a conferir no cadastro',
   sem_custo: 'Sem custo cadastrado',
   sem_origem: 'Sem origem (nacional/importado)',
   sem_dimensao: 'Sem medidas do pacote',

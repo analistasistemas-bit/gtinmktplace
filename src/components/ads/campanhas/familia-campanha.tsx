@@ -55,9 +55,11 @@ function Alertas({ f }: { f: FamiliaCampanha }) {
 
 function Regua({ f, campanha }: { f: FamiliaCampanha; campanha: CampanhaVista }) {
   if (campanha.status !== 'active') return <span className="block text-sm text-muted-foreground">Não calculada: campanha pausada</span>;
+  // Escala comum da campanha: maior equilíbrio positivo ou o alvo, +10 %.
+  const topo = Math.max(campanha.acosObjetivo ?? 0, ...campanha.familias.map(x => x.equilibrioPct ?? 0));
   return (
     <ReguaMargem equilibrioPct={f.equilibrioPct} motivo={f.motivoEquilibrio} acosAlvo={campanha.acosObjetivo}
-      acima={f.alertas.includes('roas_acima_margem')} />
+      acima={f.alertas.includes('roas_acima_margem')} escalaMax={topo > 0 ? topo * 1.1 : undefined} />
   );
 }
 

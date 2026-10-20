@@ -40,7 +40,7 @@ describe('ReguaMargem', () => {
   });
   it('equilíbrio <= 0: sem espaço, sem barra', () => {
     render(<ReguaMargem equilibrioPct={0} motivo={null} acosAlvo={20} acima={false} />);
-    expect(screen.getByText('Sem espaço para Ads')).toHaveClass('text-danger');
+    expect(screen.getByText('Sem espaço para Ads · alvo 20%')).not.toHaveClass('text-danger');
     expect(screen.queryByTestId('regua-preenchimento')).not.toBeInTheDocument();
   });
   it('sem referência: motivo legível, sem barra', () => {

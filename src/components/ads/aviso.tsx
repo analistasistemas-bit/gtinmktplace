@@ -13,7 +13,7 @@ export const AVISO: Partial<Record<string, string>> = {
 /** Estado sem números: explicação e, quando houver, a única ação que resolve. */
 export function Aviso({ texto, acao }: { texto: string; acao?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+    <div role="status" className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
       <p>{texto}</p>
       {acao && <div className="mt-3">{acao}</div>}
     </div>
