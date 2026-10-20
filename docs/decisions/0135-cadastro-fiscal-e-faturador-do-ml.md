@@ -307,6 +307,19 @@ Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
 - **A7:** policies de escrita de `empresa_fiscal` passam a exigir `can_write_current_org()` —
   sessão de suporte somente leitura não grava mais o cadastro da empresa.
 
+## Emenda — 2026-10-19: regime nunca presumido; CSOSN/CST e FCI validados (auditoria Codex A3/A4)
+
+- **A3:** `lerRegimeFiscalOrg` (`_shared/fiscal/regime.ts`) substitui o `?? 'simples'` do gate, do
+  cadastro e da edição fiscal: erro de leitura retenta, `empresa_fiscal` ausente e regime ≠ Simples
+  recusam nomeando a causa — o gate barra regime Normal antes de escrever no ML (antes só o worker
+  recusava, depois de publicar). Mudar `regime_tributario`/`origin_type` em `empresa_fiscal` marca o
+  push pendente nas famílias publicadas (trigger `empresa_fiscal_marcar_push_pendente`, que também
+  avança `atualizado_em` para invalidar push em voo); a recuperação C4 reenvia.
+- **A4:** `camposFiscaisFaltantes` valida o domínio do regime (CSOSN 101–900 no Simples; CST de ICMS
+  no Normal) e a FCI (formato `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`, só em origem 3/5/8). CEST
+  segue opcional com formato — aplicabilidade CEST×NCM fica fora (exige tabela própria; não inferir
+  enquadramento pelo NCM).
+
 ## A verificar antes de codar
 
 1. **Conversão CPF→CNPJ preservando a conta** — **verificado em 2026-08-25**: o fluxo oficial é a

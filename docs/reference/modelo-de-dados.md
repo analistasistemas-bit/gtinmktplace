@@ -320,7 +320,9 @@ Grupos de colunas:
   controlado no ML quando o módulo fiscal está ativo. **Trigger `familias_proteger_fiscal`**
   (A6, 19/10/2026): papel `authenticated`/`anon` não muda essas colunas nem `ncm`, `cest`,
   `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms*`, `descricao_fiscal`, `unidade`, `origem`, e não
-  faz INSERT direto (42501) — só edge (`service_role`) ou RPC `security definer`. Ver seção [Fiscal](#fiscal-adr-0135) abaixo.
+  faz INSERT direto (42501) — só edge (`service_role`) ou RPC `security definer`.
+  Mudança de `empresa_fiscal.regime_tributario`/`origin_type` zera `fiscal_sincronizado_em` (e
+  avança `atualizado_em`) das famílias publicadas da org — trigger `empresa_fiscal_marcar_push_pendente` (A3). Ver seção [Fiscal](#fiscal-adr-0135) abaixo.
 - **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`,
   `titulo_descartes jsonb` (ADR-0116 — diagnóstico: lista de `{slot, etapa, de, para}` com o que
   cada etapa do pipeline de título alterou ou removeu; `para=""` é descarte, outro valor é

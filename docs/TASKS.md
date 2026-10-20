@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fiscal A3/A4: regime nunca presumido; CSOSN/CST e FCI validados (emenda ADR-0135) — 2026-10-19
+
+- [x] `lerRegimeFiscalOrg` no gate/cadastro/edição (erro retenta; sem empresa ou regime Normal recusa); trigger `empresa_fiscal_marcar_push_pendente` reenvia o fiscal ao mudar regime/papel da empresa; domínio CSOSN/CST e FCI em `camposFiscaisFaltantes`.
+
 ## Fiscal A6/A7: dados fiscais só pelo backend (emenda ADR-0135) — 2026-10-19
 
 - [x] Trigger `familias_proteger_fiscal` (membro não grava prontidão/fiscal nem faz INSERT direto) + `can_write_current_org()` nas policies de escrita de `empresa_fiscal`; teste `supabase/tests/adr135_protecao_fiscal.sql`.
