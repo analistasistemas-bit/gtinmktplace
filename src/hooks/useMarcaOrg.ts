@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { QK } from '@/lib/queries';
+import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 
 export type MarcaOrg = { marca_propria: boolean; marca_padrao: string | null };
 
 /** ADR-0188: a org usa marca própria no ML? `marca_padrao` é o nome pré-preenchido no cadastro. */
 export function useMarcaOrg() {
+  const orgId = useOrgEfetivaId();
   return useQuery<MarcaOrg>({
-    queryKey: QK.marcaOrg,
+    queryKey: QK.marcaOrg(orgId),
+    enabled: !!orgId,
     staleTime: 5 * 60_000,
     retry: false,
     queryFn: async () => {

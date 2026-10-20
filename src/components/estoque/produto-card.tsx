@@ -26,6 +26,7 @@ import {
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useMarcaOrg } from '@/hooks/useMarcaOrg';
+import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 import { useProfile } from '@/hooks/useProfile';
 import { DialogEditarMarca } from '@/components/estoque/dialog-editar-marca';
 import { atualizarMarcaFamilia, fetchMarcaProduto } from '@/lib/marca-produto';
@@ -192,16 +193,17 @@ export function ProdutoCard({
   const marcaPropria = !!marcaOrg?.marca_propria;
   const podeEditarMarca = marcaPropria && isAdmin;
   // Estado da marca (família vigente + sync da raiz ML): só para quem tem anúncio ou abriu o diálogo.
-  const { data: marcaProduto } = useQuery({
-    queryKey: QK.marcaProduto(produto.codigoPai),
+  const orgId = useOrgEfetivaId();
+  const { data: marcaProduto, isLoading: marcaCarregando, error: marcaErro } = useQuery({
+    queryKey: QK.marcaProduto(orgId, produto.codigoPai),
     queryFn: () => fetchMarcaProduto(produto.codigoPai),
-    enabled: marcaPropria && (!!produto.mlItemId || editandoMarca),
+    enabled: !!orgId && marcaPropria && (!!produto.mlItemId || editandoMarca),
     staleTime: 30_000,
     refetchInterval: (q) => (q.state.data?.status === 'pendente' ? 10_000 : false),
   });
   const reenviarMarca = useMutation({
     mutationFn: () => atualizarMarcaFamilia(produto.codigoPai, marcaProduto?.marca ?? null),
-    onSettled: () => qc.invalidateQueries({ queryKey: QK.marcaProduto(produto.codigoPai) }),
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.marcaProduto(orgId, produto.codigoPai) }),
   });
 
   const { data: variacoes, isLoading: variacoesLoading } = useQuery({
@@ -519,6 +521,8 @@ export function ProdutoCard({
           nomePai={nomePai}
           marcaAtual={marcaProduto?.marca ?? null}
           marcaOrg={marcaOrg?.marca_padrao ?? ''}
+          carregando={marcaCarregando}
+          erroLeitura={marcaErro ? 'Não foi possível ler a marca atual do produto.' : null}
         />
       )}
 

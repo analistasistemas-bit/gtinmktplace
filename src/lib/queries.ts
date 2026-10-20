@@ -42,8 +42,8 @@ export const QK = {
   conexoes: ['conexoes'] as const,
   canaisHabilitados: ['canais-habilitados'] as const,
   modulosHabilitados: ['modulos-habilitados'] as const,
-  marcaOrg: ['marca-org'] as const,
-  marcaProduto: (codigoPai: string) => ['marca-produto', codigoPai] as const,
+  marcaOrg: (orgId: string | null) => ['marca-org', orgId] as const,
+  marcaProduto: (orgId: string | null, codigoPai: string) => ['marca-produto', orgId, codigoPai] as const,
   tiposProdutoHabilitados: ['tipos-produto-habilitados'] as const,
   produtosEstoqueResumo: ['produtos-estoque-resumo'] as const,
   // ADR-0129 D-11/D-8: status de atualização por produto (badge no card + pré-check "em voo").

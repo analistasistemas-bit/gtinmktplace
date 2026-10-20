@@ -21,6 +21,7 @@ vi.mock('@/components/movimentos-estoque', () => ({
 
 // ADR-0188: marca por produto — hooks/lib mutáveis por teste.
 const marcaOrgMock = vi.fn(() => ({ data: undefined as { marca_propria: boolean; marca_padrao: string | null } | undefined }));
+vi.mock('@/hooks/useOrgEfetivaId', () => ({ useOrgEfetivaId: () => 'org-teste' }));
 vi.mock('@/hooks/useMarcaOrg', () => ({ useMarcaOrg: () => marcaOrgMock() }));
 let souAdmin = true;
 vi.mock('@/hooks/useProfile', () => ({ useProfile: () => ({ isAdmin: souAdmin }) }));
