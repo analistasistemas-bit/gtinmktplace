@@ -6,6 +6,8 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerPrecoKitML, lerEstoqueKitML } from '../_shared/ml/kit-virtual.ts';
+import { lerSalePriceML } from '../_shared/ml/sale-price.ts';
+import { pool } from '../_shared/concorrencia/pool.ts';
 import type { StatusCanal } from '../_shared/canais/contrato.ts';
 
 export interface DepsStatusPublicados {
@@ -15,6 +17,7 @@ export interface DepsStatusPublicados {
   getValidAccessTokenConexao: typeof getValidAccessTokenConexao;
   lerPrecoKit: typeof lerPrecoKitML;
   lerEstoqueKit: typeof lerEstoqueKitML;
+  lerSalePrice: typeof lerSalePriceML;
 }
 
 export interface ItemStatusPublicados extends Partial<StatusCanal> {
@@ -24,6 +27,9 @@ export interface ItemStatusPublicados extends Partial<StatusCanal> {
    *  oferecer Pausar/Reativar (fora da v1, a doc do ML não lista `status` como editável em kit). */
   kitVirtual?: true;
   kitId?: string;
+  /** Preço "de" (`regular_amount` do /sale_price) quando o anúncio está em promoção; aí `preco`
+   *  é o promocional. Ausente = sem promoção. */
+  precoOriginal?: number;
 }
 
 export interface RespostaStatusPublicados {
@@ -123,9 +129,33 @@ export async function montarStatusPublicados(
     }
     const conn = deps.getConnector(canal);
     const ctx = { getToken: () => deps.getValidAccessTokenConexao(conexao) };
+    // O `price` do GET /items em lote é o preço cheio; o que o comprador paga (promoção) só vem
+    // do /sale_price, por item — roda em paralelo ao lote. Kit fica de fora: enriquecerKits já
+    // lê o /sale_price dele. ponytail: varre todos os anúncios a cada leitura (~4 s na Avil com
+    // pool 10; o Estoque repete a cada 15 s enquanto aguarda o ML) — filtrar/cachear se pesar.
+    const idsSalePrice = canal === 'mercado_livre' ? ids.filter((id) => !kitPorMlItemId.has(id)) : [];
+    const lerSalePrices = async () => {
+      if (idsSalePrice.length === 0) return [];
+      try {
+        const token = await ctx.getToken();
+        return await pool(10, idsSalePrice, (id) => deps.lerSalePrice(token, id));
+      } catch (e) {
+        console.warn('status_publicados_sale_price_falhou', { orgId, erro: String(e) });
+        return [];
+      }
+    };
     try {
-      const statusPorId = await conn.lerStatus(ctx, ids);
-      for (const id of ids) itens.push({ ml_item_id: id, canal, ...statusPorId[id] });
+      const [statusPorId, salePrices] = await Promise.all([conn.lerStatus(ctx, ids), lerSalePrices()]);
+      const salePricePorId = new Map(idsSalePrice.map((id, i) => [id, salePrices[i] ?? null]));
+      for (const id of ids) {
+        const item: ItemStatusPublicados = { ml_item_id: id, canal, ...statusPorId[id] };
+        const venda = salePricePorId.get(id);
+        if (venda) {
+          item.preco = venda.preco;
+          if (venda.precoRegular != null && venda.precoRegular > venda.preco) item.precoOriginal = venda.precoRegular;
+        }
+        itens.push(item);
+      }
     } catch {
       if (canal === 'mercado_livre') semCredencialML = true;
       continue;

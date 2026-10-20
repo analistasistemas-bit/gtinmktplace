@@ -58,6 +58,7 @@ function deps(db: DB, over: Partial<DepsStatusPublicados> = {}): DepsStatusPubli
     getValidAccessTokenConexao: (async () => 'token-fake') as unknown as DepsStatusPublicados['getValidAccessTokenConexao'],
     lerPrecoKit: vi.fn(async () => null) as unknown as DepsStatusPublicados['lerPrecoKit'],
     lerEstoqueKit: vi.fn(async () => null) as unknown as DepsStatusPublicados['lerEstoqueKit'],
+    lerSalePrice: vi.fn(async () => null) as unknown as DepsStatusPublicados['lerSalePrice'],
     ...over,
   };
 }
@@ -176,5 +177,63 @@ describe('montarStatusPublicados', () => {
     expect(resultado.itens).toEqual([]);
     expect(d.lerPrecoKit).not.toHaveBeenCalled();
     expect(d.lerEstoqueKit).not.toHaveBeenCalled();
+  });
+
+  describe('preço de venda (/sale_price)', () => {
+    type Obs = { preco: number; precoRegular: number | null } | null;
+    const salePrice = (por: Record<string, Obs>) => vi.fn(async (_t: string, id: string) =>
+      por[id] ? { ...por[id]!, moeda: 'BRL' } : null);
+    const comSalePrice = (db: DB, fn: ReturnType<typeof salePrice>, over: Partial<DepsStatusPublicados> = {}) =>
+      deps(db, { lerSalePrice: fn as unknown as DepsStatusPublicados['lerSalePrice'], ...over });
+
+    it('em promoção: preco = amount e precoOriginal = regular_amount', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB-PROMO' });
+      const r = await montarStatusPublicados(comSalePrice(db, salePrice({ 'MLB-PROMO': { preco: 19, precoRegular: 29.9 } })), ORG);
+      expect(porId(r.itens, 'MLB-PROMO')).toMatchObject({ preco: 19, precoOriginal: 29.9 });
+    });
+
+    it('sem promoção: preco = amount, sem precoOriginal', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB-SEM' });
+      const r = await montarStatusPublicados(comSalePrice(db, salePrice({ 'MLB-SEM': { preco: 9.5, precoRegular: null } })), ORG);
+      expect(porId(r.itens, 'MLB-SEM')!.preco).toBe(9.5);
+      expect(porId(r.itens, 'MLB-SEM')).not.toHaveProperty('precoOriginal');
+    });
+
+    it('regular_amount não maior que amount: sem precoOriginal', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB-IGUAL' });
+      const r = await montarStatusPublicados(comSalePrice(db, salePrice({ 'MLB-IGUAL': { preco: 9.9, precoRegular: 9.9 } })), ORG);
+      expect(porId(r.itens, 'MLB-IGUAL')).not.toHaveProperty('precoOriginal');
+    });
+
+    it('falha de um item não derruba os outros', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB-A' }, { org_id: ORG, ml_item_id: 'MLB-B' });
+      const r = await montarStatusPublicados(comSalePrice(db, salePrice({ 'MLB-A': null, 'MLB-B': { preco: 19, precoRegular: 29.9 } })), ORG);
+      expect(porId(r.itens, 'MLB-A')!.preco).toBe(9.9); // do /items (fakeConnector)
+      expect(porId(r.itens, 'MLB-A')).not.toHaveProperty('precoOriginal');
+      expect(porId(r.itens, 'MLB-B')).toMatchObject({ preco: 19, precoOriginal: 29.9 });
+    });
+
+    it('kit não passa pelo /sale_price comum', async () => {
+      const db = dbVazio();
+      db.kits.push({ id: 'kit-1', org_id: ORG, ml_item_id: 'MLBKIT1', ml_user_product_id: null, status: 'publicado' });
+      const fn = salePrice({ MLBKIT1: { preco: 1, precoRegular: 2 } });
+      const r = await montarStatusPublicados(comSalePrice(db, fn), ORG);
+      expect(fn).not.toHaveBeenCalledWith('token-fake', 'MLBKIT1');
+      expect(porId(r.itens, 'MLBKIT1')).not.toHaveProperty('precoOriginal');
+    });
+
+    it('sem conexão ML: nenhuma chamada', async () => {
+      const db = dbVazio();
+      db.familias.push({ org_id: ORG, ml_item_id: 'MLB1' });
+      const fn = salePrice({});
+      await montarStatusPublicados(comSalePrice(db, fn, {
+        resolverConexao: (async () => null) as unknown as DepsStatusPublicados['resolverConexao'],
+      }), ORG);
+      expect(fn).not.toHaveBeenCalled();
+    });
   });
 });

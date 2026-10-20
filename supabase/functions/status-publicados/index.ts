@@ -5,6 +5,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { lerPrecoKitML, lerEstoqueKitML } from '../_shared/ml/kit-virtual.ts';
+import { lerSalePriceML } from '../_shared/ml/sale-price.ts';
 import { montarStatusPublicados } from './processar.ts';
 
 Deno.serve(async (req) => {
@@ -23,6 +24,7 @@ Deno.serve(async (req) => {
     getValidAccessTokenConexao,
     lerPrecoKit: lerPrecoKitML,
     lerEstoqueKit: lerEstoqueKitML,
+    lerSalePrice: lerSalePriceML,
   }, orgId);
 
   return new Response(JSON.stringify(resultado), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
