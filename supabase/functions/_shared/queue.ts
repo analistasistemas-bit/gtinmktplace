@@ -310,3 +310,19 @@ export async function verificarAssinatura(req: Request, body: string): Promise<b
     return false;
   }
 }
+
+/** ADR-0188: sincroniza a marca do produto no ML (worker sincronizar-marca-ml). Job idempotente
+ *  (versão + lease), então retry do QStash é seguro; `delaySeconds` > 0 nos reagendamentos. */
+export interface SincronizarMarcaJobFila {
+  org_id: string; codigo_pai: string; versao?: number; tentativa?: number; dry_run?: boolean;
+}
+export async function enfileirarSincronizacaoMarca(job: SincronizarMarcaJobFila, delaySeconds = 0): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const { messageId } = await qstashClient().publishJSON({
+    url: `${url}/functions/v1/sincronizar-marca-ml`,
+    body: job satisfies SincronizarMarcaJobFila,
+    ...(delaySeconds > 0 ? { delay: delaySeconds } : {}),
+    retries: 3,
+  });
+  return messageId;
+}

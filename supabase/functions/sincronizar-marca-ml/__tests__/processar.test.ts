@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { processarSincronizacaoMarca, type DepsMarca, type ItemLido } from '../processar';
-import type { MarcaOrg } from '../../_shared/categoria/marca-org';
+import { processarSincronizacaoMarca, type DepsMarca, type ItemLido, type SincronizarMarcaJob, type StatusMarca } from '../processar';
 
 const JOB = { org_id: 'org-z', codigo_pai: '00000064' };
-const ZAVEN: MarcaOrg = { marcaPadrao: 'Zaven', marcaPropria: true };
 
 function item(brand: { value_name: string; value_id?: string | null } | null, over: Partial<ItemLido> = {}): ItemLido {
   return {
@@ -14,16 +12,33 @@ function item(brand: { value_name: string; value_id?: string | null } | null, ov
 }
 
 /** ML em memória: cada PUT grava os atributos; `aposPut` permite simular efeito colateral. */
-function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
+function fake(itens: Record<string, ItemLido>, marca: string | null = 'Zaven', opts: {
   aposPut?: (id: string, atual: ItemLido) => ItemLido;
   falhaPut?: (id: string) => Error | null;
   falhaLeitura?: boolean;
+  versao?: number;
+  /** versão vista no meio da rodada (simula edição nova). */
+  versaoNaRodada?: number;
+  leaseOcupado?: boolean;
+  publicado?: boolean;
+  falhaReagendar?: boolean;
 } = {}) {
+  const status: Array<{ status: StatusMarca; erro?: string; versao: number }> = [];
+  const reagendados: Array<{ job: SincronizarMarcaJob; delay: number }> = [];
+  const lease = { adquirido: 0, liberado: 0 };
   const puts: Array<{ itemId: string; attrs: Array<{ id: string; value_name: string }> }> = [];
   let leituras = 0;
   const familyIdsGravados: Array<{ familyId: string; itemIds: string[] }> = [];
   const deps: DepsMarca = {
-    lerMarcaOrg: async () => org,
+    lerEstado: async () => (opts.publicado === false ? null : { raizId: 'R', versao: opts.versao ?? 1, marca }),
+    adquirirLease: async () => { if (opts.leaseOcupado) return false; lease.adquirido++; return true; },
+    liberarLease: async () => { lease.liberado++; },
+    versaoAtual: async () => opts.versaoNaRodada ?? opts.versao ?? 1,
+    gravarStatus: async (_r, versao, st, erro) => { status.push({ status: st, erro, versao }); },
+    reagendar: async (job, delay) => {
+      if (opts.falhaReagendar) throw new Error('qstash fora');
+      reagendados.push({ job, delay });
+    },
     portas: {
       listarFilhos: async () => Object.keys(itens).map((id, i) => ({ sku: `SKU${i + 1}`, itemId: id })),
       lerItem: async (id) => {
@@ -43,15 +58,16 @@ function fake(itens: Record<string, ItemLido>, org: MarcaOrg = ZAVEN, opts: {
       },
     },
   };
-  return { deps, puts, familyIdsGravados, leituras: () => leituras };
+  return { deps, puts, familyIdsGravados, status, reagendados, lease, leituras: () => leituras };
 }
 
 describe('processarSincronizacaoMarca (ADR-0186)', () => {
-  it('org sem marca própria → 400 e nada é lido do ML', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }) }, { marcaPadrao: 'Avil', marcaPropria: false });
+  it('produto sem marca → 400, status erro e nada é lido do ML', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, null);
     const r = await processarSincronizacaoMarca(f.deps, JOB);
     expect(r.status).toBe(400);
     expect(f.leituras()).toBe(0);
+    expect(f.status).toEqual([{ status: 'erro', erro: 'Produto sem marca definida.', versao: 1 }]);
   });
 
   it('família sem filhos → 400', async () => {
@@ -88,7 +104,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   });
 
   it('status mudou depois do PUT (paused → active) → para', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       aposPut: (_id, atual) => ({ ...atual, status: 'active' }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
@@ -97,7 +113,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   });
 
   it('family_id null na releitura → para', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       aposPut: (_id, atual) => ({ ...atual, familyId: null }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
@@ -119,7 +135,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   });
 
   it('ML recusa o PUT → para com a mensagem do ML, 200 (não retenta sozinho)', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       falhaPut: () => Object.assign(new Error('item paused não pode ser editado'), { status: 400 }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
@@ -128,7 +144,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   });
 
   it('erro de leitura antes de qualquer PUT → 500 (QStash retenta)', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }) }, ZAVEN, { falhaLeitura: true });
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaLeitura: true });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
     expect(r.status).toBe(500);
     expect(f.puts).toHaveLength(0);
@@ -163,7 +179,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   // ~15 s depois — DURANTE a rodada. A divisão é a transição esperada: 1 família antiga (fornecedor)
   // e 1 nova (marca da org). Qualquer terceira família, ou id ausente, continua parando tudo.
   it('reagrupamento durante a rodada: SKU corrigido que aparece numa família nova não para a rodada', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-NOVA' }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
@@ -174,7 +190,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
 
   it('segunda família nova diferente da primeira → para', async () => {
     let n = 0;
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       aposPut: (_id, atual) => ({ ...atual, familyId: `FAM-NOVA-${++n}` }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
@@ -186,7 +202,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
     const f = fake({
       A: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }),
       B: item({ value_name: 'FEIRA' }),
-    }, ZAVEN, { aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-NOVA' }) });
+    }, 'Zaven', { aposPut: (_id, atual) => ({ ...atual, familyId: 'FAM-NOVA' }) });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
     expect(f.puts.map((p) => p.itemId)).toEqual(['B']);
     expect(r.body).toMatchObject({ corrigidos: ['SKU2'], jaCertos: ['SKU1'] });
@@ -211,7 +227,7 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
 
   it('ao fim da rodada, SKUs corrigidos espalhados em duas famílias novas → parouEm (cenário do Codex)', async () => {
     const itens = { A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }), C: item({ value_name: 'FEIRA' }) };
-    const f = fake(itens, ZAVEN, {
+    const f = fake(itens, 'Zaven', {
       aposPut: (id, atual) => {
         if (id === 'B') { itens.A = { ...itens.A, familyId: 'N1' }; return { ...atual, familyId: 'N2' }; }
         return atual;
@@ -222,10 +238,114 @@ describe('processarSincronizacaoMarca (ADR-0186)', () => {
   });
 
   it('ao fim da rodada, todos numa única família nova → sem parouEm', async () => {
-    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, ZAVEN, {
+    const f = fake({ A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) }, 'Zaven', {
       aposPut: (_id, atual) => ({ ...atual, familyId: 'N1' }),
     });
     const r = await processarSincronizacaoMarca(f.deps, JOB);
     expect(r.body).not.toHaveProperty('parouEm');
+  });
+
+});
+
+describe('orquestração (ADR-0188)', () => {
+  it('usa a marca do produto (Lacoste) e não a da org', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }) }, 'Lacoste');
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.puts).toEqual([{ itemId: 'A', attrs: [{ id: 'BRAND', value_name: 'Lacoste' }] }]);
+  });
+
+  it('corrigiu SKUs → reagenda a rodada de convergência (tentativa 1, 120 s) e status pendente', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) });
+    await processarSincronizacaoMarca(f.deps, { ...JOB, versao: 1 });
+    expect(f.reagendados).toEqual([{ job: { ...JOB, versao: 1, tentativa: 1 }, delay: 120 }]);
+    expect(f.status.at(-1)?.status).toBe('pendente');
+  });
+
+  it('duas execuções: a 2ª não faz PUT, grava o family_id e fecha com status ok', async () => {
+    const itens = { A: item({ value_name: 'FEIRA' }), B: item({ value_name: 'FEIRA' }) };
+    const f = fake(itens, 'Zaven', { aposPut: (_id, a) => ({ ...a, familyId: 'FAM-NOVA' }) });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    const putsDa1a = f.puts.length;
+    await processarSincronizacaoMarca(f.deps, f.reagendados[0].job);
+    expect(f.puts.length).toBe(putsDa1a);
+    expect(f.familyIdsGravados.at(-1)?.familyId).toBe('FAM-NOVA');
+    expect(f.status.at(-1)?.status).toBe('ok');
+  });
+
+  it('todos certos mas em duas famílias (convergindo) → reagenda, não é erro', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }), B: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }) });
+    const r = await processarSincronizacaoMarca(f.deps, JOB);
+    expect(r.body).toMatchObject({ convergindo: true });
+    expect(f.reagendados).toHaveLength(1);
+    expect(f.status.at(-1)?.status).toBe('pendente');
+  });
+
+  it('esgotou as 5 tentativas convergindo → status erro, sem reagendar', async () => {
+    const f = fake({ A: item({ value_name: 'Zaven' }), B: item({ value_name: 'Zaven' }, { familyId: 'FAM-NOVA' }) });
+    await processarSincronizacaoMarca(f.deps, { ...JOB, tentativa: 5 });
+    expect(f.reagendados).toHaveLength(0);
+    expect(f.status.at(-1)).toMatchObject({ status: 'erro', erro: expect.stringContaining('não convergiu') });
+  });
+
+  it('erro transitório de leitura → reagenda (não fica pendente eterno)', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaLeitura: true });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.reagendados).toHaveLength(1);
+    expect(f.puts).toHaveLength(0);
+  });
+
+  it('falha ao reagendar → status erro', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaReagendar: true });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.status.at(-1)).toMatchObject({ status: 'erro', erro: expect.stringContaining('reagendar') });
+  });
+
+  it('job de versão antiga → não lê o ML, não faz PUT nem grava status', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { versao: 2 });
+    const r = await processarSincronizacaoMarca(f.deps, { ...JOB, versao: 1 });
+    expect(r.body).toEqual({ ignorado: 'versão antiga' });
+    expect(f.leituras()).toBe(0);
+    expect(f.status).toHaveLength(0);
+  });
+
+  it('edição nova no meio da rodada → para antes do PUT e não grava status', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { versao: 1, versaoNaRodada: 2 });
+    const r = await processarSincronizacaoMarca(f.deps, { ...JOB, versao: 1 });
+    expect(f.puts).toHaveLength(0);
+    expect(r.body).toMatchObject({ versaoNova: true });
+    expect(f.status).toHaveLength(0);
+  });
+
+  it('lease ocupado (outra execução intercalada) → nenhum PUT, reagenda em 30 s sem contar tentativa', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { leaseOcupado: true });
+    await processarSincronizacaoMarca(f.deps, { ...JOB, versao: 1 });
+    expect(f.puts).toHaveLength(0);
+    expect(f.reagendados).toEqual([{ job: { ...JOB, versao: 1 }, delay: 30 }]);
+  });
+
+  it('lease é liberado mesmo quando a rodada falha', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaPut: () => new Error('x') });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.lease).toEqual({ adquirido: 1, liberado: 1 });
+  });
+
+  it('anúncio sem SKUs UP (Legacy) → status erro com orientação', async () => {
+    const f = fake({});
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.status.at(-1)).toMatchObject({ status: 'erro', erro: expect.stringContaining('Legacy') });
+  });
+
+  it('parouEm (ML recusou) → status erro com o motivo', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) }, 'Zaven', { falhaPut: () => new Error('item bloqueado') });
+    await processarSincronizacaoMarca(f.deps, JOB);
+    expect(f.status.at(-1)).toMatchObject({ status: 'erro', erro: expect.stringContaining('item bloqueado') });
+  });
+
+  it('dry_run → sem lease, sem status, sem reagendar', async () => {
+    const f = fake({ A: item({ value_name: 'FEIRA' }) });
+    await processarSincronizacaoMarca(f.deps, { ...JOB, dry_run: true });
+    expect(f.lease.adquirido).toBe(0);
+    expect(f.status).toHaveLength(0);
+    expect(f.reagendados).toHaveLength(0);
   });
 });
