@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -28,6 +28,15 @@ interface PropsFamilia {
   liberado: boolean;
   conta: ContaPainel | null;
   historicoDesde: string | null;
+  /** Família que chegou pelo "Ver desempenho" da aba Campanhas: nasce aberta e rola até a tela. */
+  foco?: boolean;
+}
+
+/** Rola até o elemento uma vez, quando a família é o foco (`scrollIntoView` ausente no jsdom). */
+function useRolarAoFoco<T extends HTMLElement>(foco?: boolean) {
+  const ref = useRef<T>(null);
+  useEffect(() => { if (foco) ref.current?.scrollIntoView?.({ block: 'center' }); }, [foco]);
+  return ref;
 }
 
 function NomeFamilia({ f }: { f: FamiliaPainel }) {
@@ -122,13 +131,14 @@ function BotaoDetalhes({ f, aberto, controla, onClick, compacto }: {
   );
 }
 
-function LinhaFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
-  const [aberto, setAberto] = useState(false);
+function LinhaFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamilia) {
+  const [aberto, setAberto] = useState(!!foco);
   const id = useId();
+  const ref = useRolarAoFoco<HTMLDivElement>(foco);
   return (
     <>
       <TableRow>
-        <TableCell className={CELULA}><NomeFamilia f={f} /></TableCell>
+        <TableCell className={CELULA}><div ref={ref}><NomeFamilia f={f} /></div></TableCell>
         <TableCell className={NUM}>{fmtBRL(f.custo)}</TableCell>
         <TableCell className={NUM}><UsoMargem f={f} liberado={liberado} /></TableCell>
         <TableCell className={NUM}><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></TableCell>
@@ -147,11 +157,12 @@ function LinhaFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
   );
 }
 
-function CartaoFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
-  const [aberto, setAberto] = useState(false);
+function CartaoFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamilia) {
+  const [aberto, setAberto] = useState(!!foco);
   const id = useId();
+  const ref = useRolarAoFoco<HTMLLIElement>(foco);
   return (
-    <li className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3">
+    <li ref={ref} className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3">
       <div className="min-w-0"><NomeFamilia f={f} /></div>
       <dl className="space-y-2 text-sm">
         <div className="flex items-baseline justify-between gap-3">
@@ -183,7 +194,9 @@ const CARD_FILTRO = 'sm:min-w-36 max-sm:[&_button]:p-[15px] max-sm:[&_button]:-m
 
 /** Ranking por gasto (ordem do domínio) com os filtros por semáforo; filtro e expansões são locais e a página
  *  reinicia tudo pela `key` quando a seleção ou a janela mudam. */
-export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds; historicoDesde: string | null }) {
+export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
+  painel: PainelAds; historicoDesde: string | null; focoCodigoPai?: string | null;
+}) {
   const [filtro, setFiltro] = useState<FiltroFamiliasAds>('todas');
   const { conta, familias, semaforoLiberado: liberado } = painel;
   const contagem = contarFamiliasAds(familias, liberado);
@@ -216,7 +229,7 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
     </div>
   );
 
-  const props = (f: FamiliaPainel) => ({ f, liberado, conta, historicoDesde });
+  const props = (f: FamiliaPainel) => ({ f, liberado, conta, historicoDesde, foco: f.codigoPai === focoCodigoPai });
   const conteudoRanking = visiveis.length === 0 ? (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
       <p>Nenhuma família neste filtro no período.</p>

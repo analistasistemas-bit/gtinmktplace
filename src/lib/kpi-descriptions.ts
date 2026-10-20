@@ -154,6 +154,13 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Famílias cujo ACOS direto está dentro da referência pela margem observada no período.',
   'Sem referência::Ads':
     'Famílias sem semáforo disponível. Inclui todas as famílias enquanto o semáforo estiver em validação.',
+  // ── Ads: filtros da aba Campanhas ──
+  'Todas::Campanhas':
+    'Famílias com anúncios patrocinados nas campanhas ativas e pausadas (uma família conta em cada campanha onde aparece).',
+  'Em alerta::Campanhas':
+    'Famílias de campanhas ativas com ROAS objetivo acima da margem, patrocinado parado ou parcialmente patrocinada.',
+  'Sem referência::Campanhas':
+    'Famílias sem margem para Ads calculada: falta custo, origem, medidas, preço ou outro dado do cadastro.',
   'Ads sobre a margem::Ads':
     'Quanto da margem o Ads está usando. Ex.: "Ads 9,2% de 25,6% possíveis" = de cada R$ 100 vendidos, o Ads custou '
     + 'R$ 9,20 (ACOS direto: gasto ÷ vendas diretas do anúncio) e o lucro antes do Ads era R$ 25,60 (equilíbrio). '

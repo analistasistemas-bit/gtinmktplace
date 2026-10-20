@@ -7,6 +7,8 @@ import { PERIODO_PADRAO_ADS } from '@/lib/ads-painel-dados';
 
 const hook = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/useAdsPainel', () => ({ useAdsPainel: hook }));
+const hookCampanhas = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/useAdsCampanhas', () => ({ useAdsCampanhas: hookCampanhas }));
 import Ads from '@/pages/Ads';
 
 const metr = { cliques: 0, impressoes: 0 };
@@ -28,7 +30,10 @@ const PAINEL: PainelAds = {
 const montar = (
   painel: PainelAds | null = PAINEL,
   extra: Partial<RetornoAdsPainel> = {},
+  // Os testes de Desempenho fixam a aba; os da aba inicial passam null (nenhuma escolha guardada).
+  abaGuardada: 'desempenho' | 'campanhas' | null = 'desempenho',
 ) => {
+  try { if (abaGuardada) localStorage.setItem('ads-aba', abaGuardada); } catch { /* storage bloqueado no teste */ }
   const retorno: RetornoAdsPainel = {
     painel,
     janela: { desde: '2026-09-04', ate: '2026-10-03' },
@@ -50,6 +55,10 @@ beforeEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
   hook.mockReset();
+  hookCampanhas.mockReset();
+  hookCampanhas.mockReturnValue({
+    resposta: null, campanhas: null, isLoading: true, isError: false, erro: null, atualizando: false, atualizar: vi.fn(),
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -723,5 +732,101 @@ describe('Ads', () => {
     fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
     const linha = screen.getAllByText('Markup antes de Ads')[0].closest('div')!;
     expect(within(linha).getByText('+80%')).toBeInTheDocument();
+  });
+
+  describe('abas Desempenho | Campanhas', () => {
+    const dadosOk = (campanhas: unknown[] = []) => ({
+      resposta: { ok: true, estado: 'ok', lidoEm: '2026-10-20T15:05:00Z', aliquotasConfirmadas: true, projecaoLimitada: false,
+        publicadosPorFamilia: {}, campanhas: [], anuncios: [] },
+      campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(),
+    });
+
+    it('renderiza as duas abas', () => {
+      montar();
+      expect(screen.getByRole('tab', { name: 'Desempenho' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toBeInTheDocument();
+    });
+
+    it('painel ok sem escolha guardada abre em Desempenho e só busca campanhas na outra aba', () => {
+      montar(PAINEL, {}, null);
+      expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+      expect(hookCampanhas).toHaveBeenLastCalledWith(false);
+    });
+
+    it('sem_ads sem escolha guardada abre em Campanhas e busca', () => {
+      montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] }, {}, null);
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+      expect(hookCampanhas).toHaveBeenLastCalledWith(true);
+    });
+
+    it.each(['sem_coleta', 'coletando'] as const)('%s abre em Campanhas', estado => {
+      montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] }, {}, null);
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('aguardando_mes abre em Campanhas', () => {
+      montar(null, { situacaoPeriodo: 'aguardando_mes' }, null);
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('com o painel ainda carregando não decide nem pisca', () => {
+      montar(null, { situacaoPeriodo: 'carregando', isLoading: true }, null);
+      expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    });
+
+    it('a escolha guardada vence a regra do estado', () => {
+      montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] }, {}, 'desempenho');
+      expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('trocar de aba guarda a escolha em ads-aba', () => {
+      montar();
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /Campanhas/ }));
+      expect(localStorage.getItem('ads-aba')).toBe('campanhas');
+    });
+
+    it('seletor de período só aparece em Desempenho', () => {
+      montar(PAINEL, {}, 'campanhas');
+      expect(screen.queryByRole('group', { name: 'Período' })).not.toBeInTheDocument();
+      fireEvent.mouseDown(screen.getByRole('tab', { name: 'Desempenho' }));
+      expect(screen.getByRole('group', { name: 'Período' })).toBeInTheDocument();
+    });
+
+    it('sem_ads oferece Ver campanhas, que troca de aba', () => {
+      montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] });
+      fireEvent.click(screen.getByRole('button', { name: 'Ver campanhas' }));
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('selo da aba com o número de famílias em alerta', () => {
+      hookCampanhas.mockReturnValue(dadosOk([
+        { id: 1, familias: [{ alertas: ['roas_acima_margem'] }, { alertas: [] }, { alertas: ['patrocinado_parado'] }] },
+      ]));
+      montar();
+      expect(screen.getByText('2 famílias em alerta')).toBeInTheDocument();
+    });
+
+    it('Ver desempenho de uma família abre o detalhe dela no ranking', () => {
+      const fam = { codigoPai: 'A', nome: 'Fam A', anuncios: [], equilibrioPct: 25, motivoEquilibrio: null,
+        patrocinados: 1, publicados: 1, alertas: [] };
+      hookCampanhas.mockReturnValue(dadosOk([{ id: 1, nome: 'Camp', status: 'active', estrategia: null,
+        roasObjetivo: null, acosObjetivo: null, orcamentoDiario: null, familias: [fam], foraDoPubliai: [], totalAlertas: 0 }]));
+      montar(PAINEL, {}, 'campanhas');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ver anúncios de Fam A' })[0]);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ver desempenho' })[0]);
+      expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+      expect(within(screen.getAllByRole('row', { name: /Fam A/ })[0]).getByRole('button', { name: 'Ver detalhes de Fam A' }))
+        .toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('família sem linha no painel não tem o link Ver desempenho', () => {
+      const fam = { codigoPai: 'Z', nome: 'Fam Z', anuncios: [], equilibrioPct: 25, motivoEquilibrio: null,
+        patrocinados: 1, publicados: 1, alertas: [] };
+      hookCampanhas.mockReturnValue(dadosOk([{ id: 1, nome: 'Camp', status: 'active', estrategia: null,
+        roasObjetivo: null, acosObjetivo: null, orcamentoDiario: null, familias: [fam], foraDoPubliai: [], totalAlertas: 0 }]));
+      montar(PAINEL, {}, 'campanhas');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ver anúncios de Fam Z' })[0]);
+      expect(screen.queryByRole('button', { name: 'Ver desempenho' })).not.toBeInTheDocument();
+    });
   });
 });

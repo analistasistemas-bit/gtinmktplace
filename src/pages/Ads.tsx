@@ -1,16 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarClock, Megaphone } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatusPill } from '@/components/ui/status-pill';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdsPainel } from '@/hooks/useAdsPainel';
+import { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
 import { PERIODO_PADRAO_ADS, type DiasAds, type PeriodoAds } from '@/lib/ads-painel-dados';
-import type { EstadoPainel } from '@/lib/ads-painel';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
 import { GastosAssociados } from '@/components/ads/gastos-associados';
+import { Aviso, AVISO } from '@/components/ads/aviso';
+import { AbaCampanhas } from '@/components/ads/campanhas/aba-campanhas';
+import { contarFamiliasEmAlerta } from '@/components/ads/campanhas/formato-campanha';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
 const PRESETS: {
@@ -48,23 +53,18 @@ const dataDia = (dia: string) =>
 
 const BOTAO_ACAO = 'h-11 sm:h-8';
 
-// Mesmos textos do dossiê (src/components/sku-dossie/ads-dossie.tsx).
-const AVISO: Partial<Record<EstadoPainel, string>> = {
-  sem_coleta: 'A coleta de Ads começa após a ativação. Os valores aparecem aqui a partir do dia seguinte.',
-  sem_permissao: 'O Mercado Livre recusou a leitura de Publicidade: sem permissão de Publicidade ou conexão recusada. Reconecte a conta em Canais; se continuar, confira a permissão “Publicidade” do aplicativo.',
-  sem_advertiser: 'Esta conta não tem anunciante de Product Ads no Mercado Livre. Quem ativa é o vendedor, em Meu perfil → Publicidade.',
-  sem_acesso: 'A conexão com o Mercado Livre foi recusada. Reconecte a conta em Canais.',
-  coletando: 'Coletando os dados de Ads da conta…',
-};
+type Aba = 'desempenho' | 'campanhas';
+const CHAVE_ABA = 'ads-aba';
+// Desempenho sem dado para mostrar (ou campanha recém-criada): a aba útil é Campanhas.
+const ESTADOS_SEM_DADO: readonly string[] = ['sem_ads', 'aguardando_mes', 'sem_coleta', 'coletando'];
 
-/** Estado sem números: explicação e, quando houver, a única ação que resolve. */
-function Aviso({ texto, acao }: { texto: string; acao?: ReactNode }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-      <p>{texto}</p>
-      {acao && <div className="mt-3">{acao}</div>}
-    </div>
-  );
+function abaSalva(): Aba | null {
+  try {
+    const v = localStorage.getItem(CHAVE_ABA);
+    return v === 'desempenho' || v === 'campanhas' ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Ads() {
@@ -79,8 +79,37 @@ export default function Ads() {
     refetch,
   } = useAdsPainel(periodo);
 
+  const [escolha, setEscolha] = useState<Aba | null>(abaSalva);
+  const [automatica, setAutomatica] = useState<Aba | null>(null);
+  const [foco, setFoco] = useState<string | null>(null);
+
+  // Sem escolha guardada, a aba é decidida uma única vez, quando o estado do painel já é conhecido (sem piscar).
+  const estadoPainel = situacaoPeriodo === 'aguardando_mes' ? 'aguardando_mes' : painel?.estado ?? (isError ? 'erro' : null);
+  if (escolha === null && automatica === null && estadoPainel !== null) {
+    setAutomatica(ESTADOS_SEM_DADO.includes(estadoPainel) ? 'campanhas' : 'desempenho');
+  }
+  const aba: Aba | null = escolha ?? automatica;
+  const campanhasDados = useAdsCampanhas(aba === 'campanhas');
+  const emAlerta = contarFamiliasEmAlerta(campanhasDados.campanhas);
+
+  const trocarAba = (proxima: Aba) => {
+    setEscolha(proxima);
+
+    try {
+      localStorage.setItem(CHAVE_ABA, proxima);
+    } catch {
+      // A escolha continua válida nesta visita.
+    }
+  };
+  const codigosComDesempenho = new Set((painel?.familias ?? []).map(f => f.codigoPai));
+  const verDesempenho = (codigoPai: string) => {
+    setFoco(codigoPai);
+    trocarAba('desempenho');
+  };
+
   const escolherPeriodo = (proximo: PeriodoAds) => {
     setPeriodo(proximo);
+    setFoco(null);
 
     try {
       localStorage.setItem(
@@ -184,11 +213,18 @@ export default function Ads() {
         icon={Megaphone}
         title="Nenhum gasto de Ads no período"
         description="Quando houver despesa nos anúncios, o resultado aparece aqui."
-        action={atual !== '90' && (
-          <Button variant="outline" size="sm" className={BOTAO_ACAO}
-            onClick={() => escolherPeriodo({ tipo: 'preset', dias: 90 })}>
-            Ver últimos 90 dias
-          </Button>
+        action={(
+          <div className="flex flex-wrap justify-center gap-2">
+            {atual !== '90' && (
+              <Button variant="outline" size="sm" className={BOTAO_ACAO}
+                onClick={() => escolherPeriodo({ tipo: 'preset', dias: 90 })}>
+                Ver últimos 90 dias
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className={BOTAO_ACAO} onClick={() => trocarAba('campanhas')}>
+              Ver campanhas
+            </Button>
+          </div>
         )}
       />
     );
@@ -212,31 +248,60 @@ export default function Ads() {
             </section>
           )}
         {/* A key reinicia filtro e detalhes ao trocar seleção ou janela; refetch da mesma janela não muda a key. */}
-        <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}`} painel={painel} historicoDesde={historicoDesde} />
+        <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}`} painel={painel} historicoDesde={historicoDesde} focoCodigoPai={foco} />
         <GastosAssociados painel={painel} />
       </>
     );
   }
+
+  const contagemAlerta = (
+    <StatusPill tone="warning">
+      <span aria-hidden>{emAlerta}</span>
+      <span className="sr-only">{emAlerta === 1 ? '1 família em alerta' : `${emAlerta} famílias em alerta`}</span>
+    </StatusPill>
+  );
+  const desempenho = (
+    <div className="space-y-6">
+      {corpo}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>Despesa informada pela API de Ads do Mercado Livre.</p>
+        {!temResumo && <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>}
+        <p>
+          {historicoDesde
+            ? `Vendas desde ${dataBRT(historicoDesde)}, quando a organização começou a vender pelo PubliAI.`
+            : 'Vendas desde a entrada da organização no PubliAI.'}
+        </p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-[1440px] p-4 sm:p-6">
       <PageHeader
         title="Ads"
         subtitle="Quanto o Ads custa e o que sobra depois dele."
-        actions={acoesPeriodo}
+        actions={aba === 'desempenho' ? acoesPeriodo : undefined}
       />
-      <div className="space-y-6">
-        {corpo}
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p>Despesa informada pela API de Ads do Mercado Livre.</p>
-          {!temResumo && <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>}
-          <p>
-            {historicoDesde
-              ? `Vendas desde ${dataBRT(historicoDesde)}, quando a organização começou a vender pelo PubliAI.`
-              : 'Vendas desde a entrada da organização no PubliAI.'}
-          </p>
+      {aba === null ? (
+        <div className="space-y-6" aria-busy="true" aria-label="Carregando">
+          <Skeleton className="h-48" />
         </div>
-      </div>
+      ) : (
+        <Tabs value={aba} onValueChange={v => trocarAba(v as Aba)} className="gap-6">
+          <TabsList className="group-data-horizontal/tabs:h-auto">
+            <TabsTrigger value="desempenho" className="h-11 px-3 sm:h-8">Desempenho</TabsTrigger>
+            <TabsTrigger value="campanhas" className="h-11 px-3 sm:h-8">
+              Campanhas
+              {emAlerta > 0 && contagemAlerta}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="desempenho">{desempenho}</TabsContent>
+          <TabsContent value="campanhas">
+            <AbaCampanhas dados={campanhasDados} verDesempenho={verDesempenho}
+              temDesempenho={codigo => codigosComDesempenho.has(codigo)} />
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }
