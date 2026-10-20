@@ -113,7 +113,7 @@ export function parseItensBulk(json: unknown, ids: readonly string[]): Map<strin
   for (const e of env) {
     if (!obj(e) || e.code !== 200 || !obj(e.body)) continue;
     const b = e.body;
-    if (typeof b.id !== 'string' || typeof b.status !== 'string') continue;
+    if (typeof b.id !== 'string' || typeof b.status !== 'string' || b.status === '') continue;
     const estoque = numOuNull(b.available_quantity);
     m.set(b.id, {
       status: b.status,
@@ -163,9 +163,10 @@ export async function equilibrioDoMlb(
       return sem('erro_tarifa');
     }
     const aliquota = r.origem === 'importado' ? aliq.importado : aliq.nacional;
-    menor = Math.min(menor, (liquidoNoPreco(preco, t, aliquota) - r.custo) / preco);
+    menor = Math.min(menor, ((liquidoNoPreco(preco, t, aliquota) - r.custo) * 100) / preco);
   }
-  return { acosPct: Math.round(menor * 10_000) / 100, motivo: null };
+  // Sem arredondar: 19,996 % virando 20 % esconderia o alerta contra um ACOS-alvo de 20 % (arredonda a tela).
+  return { acosPct: menor, motivo: null };
 }
 
 /** Pai (`anuncios_externos`) + filhos UP (`anuncios_externos_itens`) → MLBs publicados por código pai, sem repetir. */
@@ -209,27 +210,31 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
   if (advId == null) return { ok: true, estado: 'sem_advertiser' };
 
   const ate = deps.hoje, desde = diaMenos(ate, 7);
-  let paginas = 0;
-  const paginar = async <T>(url: (offset: number) => string, parse: (c: unknown) => { total: number; itens: T[] } | null, oque: string) => {
+  // Um contador por recurso: as páginas de campanhas não comem o teto dos anúncios.
+  const paginas = { campanhas: 0, anuncios: 0 };
+  const paginar = async <T>(url: (offset: number) => string, parse: (c: unknown) => { total: number; itens: T[] } | null,
+    oque: string, conta: keyof typeof paginas) => {
     const out: T[] = [];
     for (let offset = 0; ; offset += LIMITE_PAGINA) {
-      if (++paginas > LIMITES_CAMPANHAS.paginas) throw new Error(`teto de ${LIMITES_CAMPANHAS.paginas} páginas em ${oque}`);
+      if (++paginas[conta] > LIMITES_CAMPANHAS.paginas) throw new Error(`teto de ${LIMITES_CAMPANHAS.paginas} páginas em ${oque}`);
       const r = await deps.get(url(offset), HEADERS_ADS);
       exigir(r, oque);
       const p = parse(r.corpo);
       if (!p) throw new Error(`${oque}: resposta inválida`);
       out.push(...p.itens);
-      if (p.itens.length === 0 || offset + LIMITE_PAGINA >= p.total) return out;
+      if (out.length >= p.total) return out;
+      // Página vazia antes do total: lista incompleta nunca sai como sucesso.
+      if (p.itens.length === 0) throw new Error(`${oque}: página vazia antes do total (${out.length} de ${p.total})`);
     }
   };
   const campanhas = await paginar((o) => urlCampanhas(advId, desde, ate, o),
-    (c) => { const p = parseCampanhas(c); return p && { total: p.total, itens: p.campanhas }; }, 'campaigns/search');
+    (c) => { const p = parseCampanhas(c); return p && { total: p.total, itens: p.campanhas }; }, 'campaigns/search', 'campanhas');
   campanhas.sort((a, b) => (a.status === b.status ? a.nome.localeCompare(b.nome) : a.status === 'active' ? -1 : 1));
   const bases: AnuncioBase[] = [];
   for (const c of campanhas) {
     const vistos = new Set<string>();
     for (const a of await paginar((o) => urlAnunciosCampanha(advId, c.id, desde, ate, o),
-      (x) => { const p = parseAnunciosPatrocinados(x); return p && { total: p.total, itens: p.anuncios }; }, 'ads/search')) {
+      (x) => { const p = parseAnunciosPatrocinados(x); return p && { total: p.total, itens: p.anuncios }; }, 'ads/search', 'anuncios')) {
       if (!vistos.has(a.mlb)) { vistos.add(a.mlb); bases.push(a); }
     }
   }
@@ -239,8 +244,12 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
   const itens = new Map<string, ItemAgora>();
   for (let i = 0; i < mlbs.length; i += 20) {
     const bloco = mlbs.slice(i, i + 20);
-    const r = await deps.get(caminhoMultiget(bloco, CAMPOS_ITEM_AGORA), {});
-    if (r.status >= 200 && r.status < 300) for (const [k, v] of parseItensBulk(r.corpo, bloco)) itens.set(k, v);
+    try {
+      const r = await deps.get(caminhoMultiget(bloco, CAMPOS_ITEM_AGORA), {});
+      if (r.status >= 200 && r.status < 300) for (const [k, v] of parseItensBulk(r.corpo, bloco)) itens.set(k, v);
+    } catch (e) {
+      console.warn('[ads-campanhas] items/bulk indisponível', { erro: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   let publicadosPorFamilia: Record<string, string[]> | null;
@@ -269,10 +278,11 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
     let restante = LIMITES_CAMPANHAS.cores, cortou = false;
     const selecionados: { mlb: string; ml: ItemML }[] = [];
     for (const m of candidatos) {
+      if (cortou) continue;
       const it = ml.get(m);
       if (!it) { equilibrio.set(m, { acosPct: null, motivo: 'erro_item' }); continue; }
       const n = coresDe(it).length;
-      if (cortou || n > restante) { cortou = true; projecaoLimitada = true; continue; }
+      if (n > restante) { cortou = true; projecaoLimitada = true; continue; }
       restante -= n;
       selecionados.push({ mlb: m, ml: it });
     }

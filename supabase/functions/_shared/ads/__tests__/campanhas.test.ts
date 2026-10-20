@@ -71,6 +71,7 @@ describe('parseItensBulk', () => {
     ], ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
     expect([...m.entries()]).toEqual([['MLB1', { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 30 }]]);
     expect(parseItensBulk({ erro: 1 }, ['MLB1']).size).toBe(0);
+    expect(parseItensBulk([{ status_code: 200, body: { id: 'MLB1', status: '' } }], ['MLB1']).size).toBe(0);
   });
 });
 
@@ -79,6 +80,12 @@ describe('equilibrioDoMlb', () => {
     // 50 − 6 (comissão) − 5 (frete) − 4 (8 % imposto) = 35; (35 − 10) ÷ 50 = 50 %.
     const r = await equilibrioDoMlb(itemML(), 50, montarCadastro([v({ id: 'a' })], []), ALIQ, async () => TARIFA);
     expect(r).toEqual({ acosPct: 50, motivo: null });
+  });
+  it('sem arredondar: 19,996 % não vira 20 % (o alerta contra ACOS-alvo 20 % precisa disparar)', async () => {
+    const c = montarCadastro([v({ id: 'a', custo: 55.01 })], []);
+    const r = await equilibrioDoMlb(itemML(), 100.01, c, ALIQ, async () => TARIFA);
+    expect(r.acosPct!).toBeLessThan(20);
+    expect(r.acosPct!).toBeCloseTo(19.996, 3);
   });
   it('importado usa a alíquota de importado', async () => {
     const c = montarCadastro([v({ id: 'a', familias: { ml_item_id: 'MLB1', origem: 'importado' } })], []);
@@ -311,6 +318,51 @@ describe('lerCampanhasAds', () => {
     } finally {
       (LIMITES_CAMPANHAS as { tarifas: number }).tarifas = orig;
     }
+  });
+
+  it('página vazia antes do total → erro, nunca lista incompleta como sucesso', async () => {
+    const d = deps((path) => {
+      if (path.includes('filters[campaign_id]')) {
+        const off = Number(path.match(/offset=(\d+)/)![1]);
+        return pagina(off === 0 ? Array.from({ length: 50 }, (_, i) => anuncio({ item_id: `MLB${100 + i}` })) : [], 100);
+      }
+      return comAnuncios({})(path);
+    });
+    await expect(lerCampanhasAds(d, 'T')).rejects.toThrow(/página vazia/);
+  });
+
+  it('as páginas de campanhas não comem o teto dos anúncios', async () => {
+    const n = LIMITES_CAMPANHAS.paginas * 50;
+    const ads = Array.from({ length: n }, (_, i) => anuncio({ item_id: `MLB${10_000 + i}` }));
+    const d = deps((path) => {
+      if (path.includes('filters[campaign_id]')) {
+        const off = Number(path.match(/offset=(\d+)/)![1]);
+        return pagina(ads.slice(off, off + 50), n);
+      }
+      return comAnuncios({})(path);
+    });
+    const r = await lerCampanhasAds(d, 'T');
+    expect(r.estado === 'ok' && r.anuncios).toHaveLength(n);
+  });
+
+  it('falha de rede num bloco do bulk: itens desconhecidos, leitura segue', async () => {
+    const d = deps((path) => {
+      if (path.startsWith('/items/bulk')) throw new Error('fetch failed');
+      return comAnuncios({ 7500229: [anuncio({ item_id: 'MLB1' })] })(path);
+    });
+    const r = await lerCampanhasAds(d, 'T');
+    expect(r).toMatchObject({ estado: 'ok', anuncios: [{ item: null }] });
+  });
+
+  it('depois do corte de cores, MLB sem metadados também fica fora da projeção (não erro_item)', async () => {
+    const n = LIMITES_CAMPANHAS.cores;
+    const cores = (k: number) => Array.from({ length: k }, (_, i) => ({ variation_id: i + 1, cor: `C${i}`, sku: null, gtin: null }));
+    const d = deps(comAnuncios({ 7500229: [anuncio({ item_id: 'MLB1' }), anuncio({ item_id: 'MLB2' })] }), {
+      buscarItensML: async () => new Map([['MLB1', itemML({ id: 'MLB1', variacoes: cores(n + 1) })]]),
+    });
+    const r = await lerCampanhasAds(d, 'T');
+    if (r.estado !== 'ok') throw new Error('estado');
+    expect(r.anuncios.map((a) => a.equilibrio.motivo)).toEqual(['fora_da_projecao', 'fora_da_projecao']);
   });
 
   it('erro ao ler publicados → null (o front não alerta parcial)', async () => {
