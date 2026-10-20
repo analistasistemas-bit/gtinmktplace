@@ -43,5 +43,5 @@ Deno.serve(async (req) => {
   if (resultado.tipo === 'invalido') {
     return json({ erros: resultado.erros.map((mensagem) => ({ campo: 'fiscal', mensagem })) }, 400);
   }
-  return json({ ok: true, pushEnfileirado: resultado.pushEnfileirado });
+  return json({ ok: true, pushEnfileirado: resultado.pushEnfileirado, versoesPublicadas: resultado.versoesPublicadas });
 });

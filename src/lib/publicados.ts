@@ -208,7 +208,11 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     const canInvoice = noAr.length === 0 ? rep.canInvoice
       : noAr.some((g) => g.canInvoice === false) ? false
       : noAr.some((g) => g.canInvoice == null) ? null : true;
-    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, canInvoice, familiaIdVigente: maisNova.familiaId });
+    // M3: a causa exibida é a da versão `false` que pôs o semáforo em Pendente (null se não pendente).
+    const canInvoiceCausa = canInvoice === false
+      ? noAr.find((g) => g.canInvoice === false)?.canInvoiceCausa ?? rep.canInvoiceCausa ?? null
+      : null;
+    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel, canInvoice, canInvoiceCausa, familiaIdVigente: maisNova.familiaId });
   }
   return out;
 }

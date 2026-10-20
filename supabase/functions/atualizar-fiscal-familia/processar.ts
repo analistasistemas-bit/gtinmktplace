@@ -27,7 +27,8 @@ export type ResultadoFiscal =
   | { tipo: 'nao_encontrada' }
   | { tipo: 'invalido'; erros: string[] }
   | { tipo: 'falha'; mensagem: string }
-  | { tipo: 'ok'; pushEnfileirado: boolean };
+  /** `versoesPublicadas`: null = leitura das versões publicadas falhou (M3). */
+  | { tipo: 'ok'; pushEnfileirado: boolean; versoesPublicadas: number | null };
 
 // Fronteira de confiança (index.ts): shape mínimo antes de tocar `entrada.fiscal.*` — sem isto
 // um body sem `fiscal` explode em TypeError cru (sem CORS/JSON) e um body sem `familiaId` vira
@@ -124,11 +125,15 @@ export async function processarAtualizacaoFiscal(
   // Legacy e UP (o worker resolve a rota; UP marca `publicado` sem preencher `ml_item_id`).
   // Falha de leitura/enqueue nunca desfaz a gravação: loga e devolve pushEnfileirado=false.
   let pushEnfileirado = false;
+  let versoesPublicadas: number | null = null;
   const { data: publicadas, error: publicadasErro } = await admin.from('familias').select('id')
     .eq('org_id', orgId).eq('codigo_pai', familia.codigo_pai).eq('status', 'publicado');
   if (publicadasErro) {
     console.error('versões publicadas não listadas (push fiscal não enfileirado):', publicadasErro.message);
-  } else if ((publicadas ?? []).length > 0) {
+  } else {
+    versoesPublicadas = (publicadas ?? []).length;
+  }
+  if (versoesPublicadas) {
     let todas = true;
     for (const p of publicadas as Array<{ id: string }>) {
       try { await deps.enfileirarPush(p.id); }
@@ -136,5 +141,5 @@ export async function processarAtualizacaoFiscal(
     }
     pushEnfileirado = todas;
   }
-  return { tipo: 'ok', pushEnfileirado };
+  return { tipo: 'ok', pushEnfileirado, versoesPublicadas };
 }

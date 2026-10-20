@@ -117,7 +117,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
   async function salvar(): Promise<boolean> {
     if (!familiaId) return false;
     setErros([]);
-    const { error } = await supabase.functions.invoke('atualizar-fiscal-familia', {
+    const { data, error } = await supabase.functions.invoke('atualizar-fiscal-familia', {
       body: {
         familiaId,
         fiscal: {
@@ -139,6 +139,12 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
       return false;
     }
     toast.success('✓ Fiscal salvo');
+    // M3 (auditoria fiscal 19/10): gravou mas o push não entrou na fila. Só avisa se há versão
+    // publicada (ou a contagem é desconhecida: null) — sem versão no ar não há nada a enviar.
+    const r = data as { pushEnfileirado?: boolean; versoesPublicadas?: number | null } | null;
+    if (r?.pushEnfileirado === false && (r.versoesPublicadas === null || (r.versoesPublicadas ?? 0) > 0)) {
+      toast.warning('Fiscal salvo, mas o envio ao Mercado Livre não entrou na fila — ele será reenviado automaticamente em até 6 h.');
+    }
     onSalvo();
     return true;
   }

@@ -29,8 +29,13 @@ function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
+const toastWarning = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { success: (...a: unknown[]) => toastSuccess(...a), error: (...a: unknown[]) => toastError(...a) },
+  toast: {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    error: (...a: unknown[]) => toastError(...a),
+    warning: (...a: unknown[]) => toastWarning(...a),
+  },
 }));
 
 const FAMILIA_MOCK = {
@@ -160,6 +165,35 @@ describe('DialogFiscalProduto — Salvar', () => {
     expect(toastSuccess).toHaveBeenCalledWith('✓ Fiscal salvo');
     expect(onSalvo).toHaveBeenCalled();
     expect(onFechar).toHaveBeenCalled();
+  });
+
+  // M3 (auditoria fiscal 19/10): push não enfileirado com versão publicada (ou contagem desconhecida)
+  // não pode passar como sucesso limpo — o operador precisa saber que o ML ainda não recebeu.
+  it.each([
+    ['versão publicada', 1, true],
+    ['leitura das versões falhou', null, true],
+    ['sem versão publicada', 0, false],
+  ])('pushEnfileirado=false com %s → aviso: %s', async (_nome, versoesPublicadas, avisa) => {
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockImplementation((fn: string) => {
+      if (fn === 'sugerir-ncm') return Promise.resolve({ data: { ncm: null, justificativa: '' }, error: null });
+      if (fn === 'atualizar-fiscal-familia') {
+        return Promise.resolve({ data: { ok: true, pushEnfileirado: false, versoesPublicadas }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('✓ Fiscal salvo'));
+    if (avisa) {
+      expect(toastWarning).toHaveBeenCalledWith(
+        'Fiscal salvo, mas o envio ao Mercado Livre não entrou na fila — ele será reenviado automaticamente em até 6 h.',
+      );
+    } else {
+      expect(toastWarning).not.toHaveBeenCalled();
+    }
   });
 
   it('erro 400 da edge renderiza as mensagens de erro', async () => {

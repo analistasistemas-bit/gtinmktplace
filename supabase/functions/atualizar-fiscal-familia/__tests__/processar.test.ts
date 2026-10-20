@@ -108,7 +108,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin, writes } = fakeAdmin({ regime: 'simples' });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(writes.length).toBe(1);
     expect(writes[0].payload.tributacao_icms_regime).toBe('simples');
     expect(writes[0].payload.ncm).toBe('39269090');
@@ -124,7 +124,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, ml_item_id: null, status: 'publicado' } });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(enfileirarPush).toHaveBeenCalledWith('fam-1');
   });
 
@@ -132,7 +132,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin, writes } = fakeAdmin({ familia: { ...FAMILIA_BASE, status: 'pronto', ml_item_id: null } });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: false });
     expect(writes.length).toBe(1);
     expect(enfileirarPush).not.toHaveBeenCalled();
   });
@@ -142,7 +142,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, status: 'pronto' }, publicadas: ['fam-antiga'] });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(enfileirarPush).toHaveBeenCalledTimes(1);
     expect(enfileirarPush).toHaveBeenCalledWith('fam-antiga');
   });
@@ -151,15 +151,30 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin } = fakeAdmin({ publicadas: ['fam-a', 'fam-b'] });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(enfileirarPush.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['fam-a', 'fam-b']);
+  });
+
+  // M3 (auditoria fiscal 19/10): a tela só avisa "não entrou na fila" quando há versão publicada
+  // (ou a contagem é desconhecida: null = leitura das versões falhou).
+  it('devolve versoesPublicadas: N com publicadas, 0 sem, null quando a leitura falha', async () => {
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const dois = await processarAtualizacaoFiscal(
+      deps(fakeAdmin({ publicadas: ['fam-a', 'fam-b'] }).admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(dois).toEqual({ tipo: 'ok', pushEnfileirado: true, versoesPublicadas: 2 });
+    const zero = await processarAtualizacaoFiscal(
+      deps(fakeAdmin({ publicadas: [] }).admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(zero).toEqual({ tipo: 'ok', pushEnfileirado: false, versoesPublicadas: 0 });
+    const erro = await processarAtualizacaoFiscal(
+      deps(fakeAdmin({ erros: { publicadas: 'timeout' } }).admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(erro).toEqual({ tipo: 'ok', pushEnfileirado: false, versoesPublicadas: null });
   });
 
   it('nenhuma versão publicada → não enfileira, pushEnfileirado=false', async () => {
     const { admin } = fakeAdmin({ publicadas: [] });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: false });
     expect(enfileirarPush).not.toHaveBeenCalled();
   });
 
@@ -167,7 +182,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin, writes } = fakeAdmin({ erros: { publicadas: 'timeout' } });
     const enfileirarPush = vi.fn(async () => 'msg-1');
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: false });
     expect(writes).toHaveLength(1);
     expect(enfileirarPush).not.toHaveBeenCalled();
   });
@@ -176,7 +191,7 @@ describe('processarAtualizacaoFiscal', () => {
     const { admin } = fakeAdmin({ publicadas: ['fam-a', 'fam-b'] });
     const enfileirarPush = vi.fn(async (id: string) => { if (id === 'fam-a') throw new Error('qstash'); return 'msg-1'; });
     const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: false });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: false });
     expect(enfileirarPush).toHaveBeenCalledTimes(2);
   });
 
@@ -261,7 +276,7 @@ describe('processarAtualizacaoFiscal — unidade opcional (fix da fila travada)'
     const r = await processarAtualizacaoFiscal(deps(admin), {
       familiaId: 'fam-1', fiscal: { ...FISCAL_OK, unidade: 'UN' },
     });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(writes.length).toBe(1);
     expect(writes[0].payload.unidade).toBe('UN');
   });
@@ -278,7 +293,7 @@ describe('processarAtualizacaoFiscal — unidade opcional (fix da fila travada)'
   it('família já com unidade válida, `unidade` ausente no payload → não grava unidade (comportamento intacto)', async () => {
     const { admin, writes } = fakeAdmin(); // FAMILIA_BASE.unidade = 'UN'
     const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
-    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(r).toMatchObject({ tipo: 'ok', pushEnfileirado: true });
     expect(writes[0].payload.unidade).toBeUndefined();
   });
 });
