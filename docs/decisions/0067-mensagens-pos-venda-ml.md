@@ -114,3 +114,12 @@ Vendas dispara — então mensagens pós-venda entram junto com o histórico, me
    registrar aba em `Faturamento.tsx`. Reusar "Sugerir resposta (IA)" e `enviarMensagemPedido`.
 6. Notificação Telegram. Atualizar `docs/reference/edge-functions.md` e obsidian-vault.
 7. (Fase 2) `backfill-mensagens`.
+
+## Emenda 2026-10-20 — mensagens são da organização
+
+A RLS de leitura e as RPCs `contar_conversas_aguardando`/`marcar_mensagens_lidas` filtravam por
+`user_id = auth.uid()`, mas o sync grava `user_id` = dono da conexão ML (`criado_por`). Na Avil, só o
+dono via as conversas; outro membro via a aba Mensagens vazia e o badge zerado — embora
+`responder-mensagem` (org-scoped) já o deixasse responder. Passam a filtrar por
+`org_id = current_org_id()`, como `ml_perguntas` e `ml_vendas` (que já cobre a sessão de suporte).
+Migration `20261020180033_mensagens_escopo_org.sql`; teste `supabase/tests/mensagens_escopo_org.sql`.

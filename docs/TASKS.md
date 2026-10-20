@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## Mensagens pós-venda visíveis para a org inteira (emenda ADR-0067) — 2026-10-20
+
+- [x] RLS de `ml_mensagens` e RPCs do badge/dispensar por `org_id` (antes `user_id`: membro da Avil sem a conexão ML via a aba vazia).
+
 ## Aba Campanhas do /ads (emenda ADR-0179) — 2026-10-20
 
 - [x] Grilling + spike 057 (`ads/search` por campanha; `hold` ≠ parado; diagnóstico fora da API).

@@ -64,8 +64,8 @@ function CardConversa({ c }: { c: Conversa }) {
   async function dispensar() {
     setDispensando(true);
     try {
-      // 0 linhas = a RPC não alcançou o pack (ela filtra por user_id; a sessão de suporte enxerga
-      // a conversa por org_id). Sem isso o toast diria "dispensada" para um no-op.
+      // 0 linhas = nada recebido e não lido nesse pack (já dispensado/respondido por outro membro da
+      // org). Sem isso o toast diria "dispensada" para um no-op.
       const n = await dispensarConversa(c.pack_id);
       if (n === 0) toast.info('Nenhuma mensagem para dispensar nesta conversa.');
       else toast.success('Conversa dispensada.');

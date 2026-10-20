@@ -10,6 +10,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Mensagens pós-venda invisíveis para membro da org (2026-10-20)** — Samuel (Avil) via
+  Faturamento → Mensagens vazio e sem badge; Diego via a conversa. **Raiz:** RLS de `ml_mensagens`
+  e as RPCs `contar_conversas_aguardando`/`marcar_mensagens_lidas` filtravam `user_id = auth.uid()`,
+  e o sync grava `user_id` = dono da conexão ML — as 182 linhas da Avil eram do Diego. Perguntas e
+  Vendas já eram por `org_id`. **Fix:** tudo por `org_id = current_org_id()` (emenda ADR-0067).
+  Mesmo padrão de [[Escopo user_id legado]].
+
 - **Publicados: produto User Products aparecia "Pausado · estoque 0" vendendo no ML
   (2026-10-18, main `1429e1ff`)** — short da Zaven com 32 SKUs (1 MLB por SKU, ADR-0088). A linha
   lia status/estoque só de `familias.ml_item_id`, um SKU zerado que o ML pausa sozinho. Agora agrega

@@ -913,7 +913,9 @@ processar (reabre o dedup para a próxima mensagem) em vez de só marcar `proces
 Mensagens pós-venda comprador↔vendedor. *Migration `20260711120000_faturamento_mensagens.sql`
 (ADR-0067).* `pack_id`, `order_id`, `message_id` (**único com `user_id`**, alvo do upsert
 idempotente), `direcao` (`recebida`/`enviada`), `texto`, `item_titulo`, `data_ml`, `lida`,
-`atualizado_em`, `raw jsonb`. Grants: só `select` para `authenticated` (RLS por `user_id`);
+`atualizado_em`, `raw jsonb`. Grants: só `select` para `authenticated` (RLS por `org_id = current_org_id()`
+desde a emenda de 2026-10-20 ao ADR-0067 — antes era por `user_id` e escondia as conversas dos membros
+que não são donos da conexão ML);
 `anon` sem nenhum privilégio (a migration original dava `grant all` por engano — revogado no
 plan 037, mesmo precedente de `ml_perguntas`). Escrita real só pelo worker (`service_role`,
 bypassa RLS).
@@ -1556,8 +1558,8 @@ O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só 
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
 | `canais_habilitados_da_org()` | `security definer`, `search_path=''`: retorna `organizations.canais_habilitados` da própria org (evita abrir SELECT direto em `organizations`) |
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
-| `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack como lidas (limpa o badge da conversa) |
-| `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida`, `order_status <> 'cancelled'` e ainda `not lida` — badge do menu, sem baixar a tabela inteira (plan 036). `lida` passa a `true` ao responder ou ao dispensar a conversa (`marcar_mensagens_lidas`), tirando-a do badge mesmo sem resposta enviada — caminho para packs bloqueados pelo ML (ex.: mediação, 403 `blocked_by_mediation`) |
+| `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack da org como lidas (limpa o badge da conversa; também é o "Dispensar") |
+| `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` da org do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida`, `order_status <> 'cancelled'` e ainda `not lida` — badge do menu, sem baixar a tabela inteira (plan 036). `lida` passa a `true` ao responder ou ao dispensar a conversa (`marcar_mensagens_lidas`), tirando-a do badge mesmo sem resposta enviada — caminho para packs bloqueados pelo ML (ex.: mediação, 403 `blocked_by_mediation`) |
 | `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` | ADR-0088: claim atômico de uma raiz travada em `mudando_composicao=true` — reserva service_role-only |
 | `reconciliar_backfill_up_candidatas(p_org_id)` | ADR-0088: lista candidatas ao backfill UP server-side (sem truncar por paginação) — service_role-only |
 | `reconciliar_backfill_up_upsert(...)` | ADR-0088: upsert atômico raiz+filho do backfill UP numa única transação — service_role-only |
