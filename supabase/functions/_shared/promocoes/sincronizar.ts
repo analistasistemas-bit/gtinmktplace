@@ -71,7 +71,7 @@ async function projetarCor(
   c: { variation_id: number | null; cor: string | null; sku: string | null; gtin: string | null; unidades: number | null },
   cad: Cadastro, aliq: Aliquotas, preco: number | null, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>,
 ): Promise<ProjecaoCor> {
-  const achado = resolverPack(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml?.formato_kit ?? false, ml?.relacionados ?? []);
+  const achado = resolverPack(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml?.formato_kit ?? false, [...(ml?.relacionados ?? []), ...(ml?.relacoesVariacao ?? [])]);
   const r = typeof achado === 'string' ? null : achado;
   const base: ProjecaoCor = {
     variation_id: c.variation_id, cor: c.cor ?? r?.cor ?? null, sku: c.sku,

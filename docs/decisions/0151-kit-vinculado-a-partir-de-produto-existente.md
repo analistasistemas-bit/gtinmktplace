@@ -539,7 +539,8 @@ custo multiplicado de novo (R$ 640 → margem −344 %); a Central mostrava esse
 **Decisão:** quando o anúncio é o **próprio** da variação resolvida — o `ml_item_id` da família dela, o item filho UP
 vinculado a ela, a própria `ml_variation_id`, ou o par normal/catálogo (`item_relations`) de um desses — e o cadastro
 não é kit próprio (`kit == 1`), o custo cadastrado já é o do que esse anúncio vende: **nunca escala**, qualquer que
-seja o `UNITS_PER_PACK`/`SALE_FORMAT`. A escala continua só para anúncio de **outro** produto casado pelo GTIN/SKU da
+seja o `UNITS_PER_PACK`/`SALE_FORMAT` — mas pacote sem medidas segue `kit_sem_dimensao` (o frete sairia do pacote
+padrão; adendo do ADR-0170). O par de catálogo Legacy (relação COM `variation_id`) conta só se for a variação exata. A escala continua só para anúncio de **outro** produto casado pelo GTIN/SKU da
 unidade (o par de catálogo do kit — caso original deste ADR). O financeiro (`custo-vigente`) não muda: nunca escalou.
 
 **Alternativas descartadas:** campo "custo é do pacote" por produto (marcação manual, desnecessária com a regra da

@@ -154,14 +154,18 @@ export function resolverPack(
   q: { item_id: string; variation_id: number | null; sku: string | null; gtin: string | null },
   unidades: number | null,
   formatoKit = false,
-  relacionados: readonly string[] = [],
+  relacionados: readonly (string | { id: string; variation_id: number })[] = [],
 ): CadastroVariacao | MotivoKit | null {
   const r = resolverCor(c, q);
   if (!r) return null;
-  const doCadastro = (id: string) => id === r.ml_item_id || c.porItemUp.get(id) === r.variacao_id;
+  // Par por variação (Legacy): o relacionado tem que ser o anúncio da família E a variação exata deste cadastro.
+  const doCadastro = (x: string | { id: string; variation_id: number }) => typeof x === 'string'
+    ? x === r.ml_item_id || c.porItemUp.get(x) === r.variacao_id
+    : x.id === r.ml_item_id && c.porVariacaoMl.get(String(x.variation_id)) === r;
   const proprio = [q.item_id, ...relacionados].some(doCadastro)
     || (q.variation_id != null && c.porVariacaoMl.get(String(q.variation_id)) === r);
-  if (proprio && r.kit === 1) return r;
+  // Não escala, mas pacote sem medidas segue recusado: o frete sairia do pacote padrão (adendo ADR-0170).
+  if (proprio && r.kit === 1) return ((unidades ?? 1) > 1 || formatoKit) && !r.dim ? 'kit_sem_dimensao' : r;
   const casa = (m: Map<string, CadastroVariacao>, k: string | null) => (k ? m.get(normGtin(k.trim())) : undefined);
   const outros = [...new Set([casa(c.porCodigo, q.sku), casa(c.porGtin, q.gtin)])]
     .filter((o): o is CadastroVariacao => o != null && o !== r);

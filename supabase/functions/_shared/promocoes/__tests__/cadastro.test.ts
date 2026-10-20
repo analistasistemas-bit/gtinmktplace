@@ -186,6 +186,25 @@ describe('resolverPack — anúncio próprio nunca escala (emenda ADR-0151, 2026
       .toMatchObject({ custo: 64.0941 });
   });
 
+  it('anúncio próprio de pacote sem medidas segue recusado (kit_sem_dimensao), sem escalar (Codex P1)', () => {
+    const semDim = montarCadastro([{ ...linha, altura_cm: null }], []);
+    expect(resolverPack(semDim, q({ item_id: 'MLB7245026988' }), 10)).toBe('kit_sem_dimensao');
+    expect(resolverPack(semDim, q({ item_id: 'MLB7245026988' }), null, true)).toBe('kit_sem_dimensao');
+    // anúncio de uma unidade sem medidas: como sempre (o resto da cadeia decide)
+    expect(resolverPack(semDim, q({ item_id: 'MLB7245026988' }), 1)).toMatchObject({ variacao_id: 'linha' });
+  });
+
+  it('catálogo Legacy da própria variação (relação COM variation_id) não escala; variação de outra cor não conta (Codex P2)', () => {
+    const azul = { ...linha, ml_variation_id: '555', familias: { ml_item_id: 'MLBBASE', origem: 'nacional' as const } };
+    const verde = v({ id: 'verde', gtin: '3000000000099', ml_variation_id: '556', custo: 10, familias: { ml_item_id: 'MLBBASE', origem: 'nacional' } });
+    const c = montarCadastro([azul, verde], []);
+    expect(resolverPack(c, q({ item_id: 'MLBCAT', gtin: '3000024368251' }), 10, false, [{ id: 'MLBBASE', variation_id: 555 }]))
+      .toMatchObject({ variacao_id: 'linha', custo: 64.0941 });
+    // a relação aponta a outra cor: não é o anúncio próprio desta variação → escala como antes
+    expect(resolverPack(c, q({ item_id: 'MLBCAT', gtin: '3000024368251' }), 10, false, [{ id: 'MLBBASE', variation_id: 556 }]))
+      .toMatchObject({ kit: 10 });
+  });
+
   it('anúncio de OUTRO produto casado pelo GTIN da unidade continua escalando (caso original do ADR-0151)', () => {
     const c = montarCadastro([linha], []);
     expect(resolverPack(c, q({ item_id: 'MLBOUTRO', gtin: '3000024368251' }), 2)).toMatchObject({ custo: 128.19, kit: 2 });

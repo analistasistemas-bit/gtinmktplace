@@ -82,6 +82,9 @@ export function normalizarItemML(raw: Obj): ItemML {
     // Relação por variação (Legacy) não é o par do User Product: o catálogo cobre uma variação só.
     relacionados: lista(raw.item_relations).filter((r) => r.variation_id == null).map((r) => str(r.id))
       .filter((x): x is string => x != null),
+    relacoesVariacao: lista(raw.item_relations)
+      .map((r) => ({ id: str(r.id), variation_id: Number(r.variation_id) }))
+      .filter((r): r is { id: string; variation_id: number } => r.id != null && Number.isSafeInteger(r.variation_id) && r.variation_id > 0),
   };
 }
 

@@ -40,6 +40,8 @@ export interface ItemML {
   catalogo: boolean;
   /** item_relations sem variation_id: o par normal/catálogo do mesmo User Product (ADR-0174, emenda 2026-10-05). */
   relacionados: string[];
+  /** item_relations COM variation_id (catálogo Legacy de uma variação): só para reconhecer o anúncio próprio. */
+  relacoesVariacao?: { id: string; variation_id: number }[];
 }
 export interface CadastroVariacao {
   variacao_id: string; custo: number | null; piso: number | null; origem: Origem;

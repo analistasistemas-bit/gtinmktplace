@@ -60,8 +60,9 @@ describe('normalizadores', () => {
       item_relations: [{ id: 'MLB5322348511', variation_id: null, stock_relation: 1 }] });
     expect(cat).toMatchObject({ catalogo: true, relacionados: ['MLB5322348511'] });
     const legacy = normalizarItemML({ id: 'MLB1', item_relations: [{ id: 'MLB2', variation_id: 123 }] });
-    expect(legacy).toMatchObject({ catalogo: false, relacionados: [] });
-    expect(normalizarItemML({ id: 'MLB3' })).toMatchObject({ catalogo: false, relacionados: [] });
+    expect(legacy).toMatchObject({ catalogo: false, relacionados: [], relacoesVariacao: [{ id: 'MLB2', variation_id: 123 }] });
+    expect(cat.relacoesVariacao).toEqual([]);
+    expect(normalizarItemML({ id: 'MLB3' })).toMatchObject({ catalogo: false, relacionados: [], relacoesVariacao: [] });
   });
 });
 
