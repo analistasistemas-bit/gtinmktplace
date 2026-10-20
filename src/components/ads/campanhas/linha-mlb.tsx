@@ -43,9 +43,9 @@ export function LinhaMlb({ a, equilibrio = true }: { a: AnuncioPatrocinado; equi
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           <span className="inline-flex items-center gap-1 text-muted-foreground">No Ads <StatusPill tone={ads.tom}>{ads.txt}</StatusPill></span>
-          {it.tom === 'muted'
-            ? <span className="text-muted-foreground">{it.txt}</span>
-            : <StatusPill tone={it.tom}>{it.txt}</StatusPill>}
+          <span className="inline-flex items-center gap-1 text-muted-foreground">No ML {it.tom === 'muted'
+            ? <span>{it.txt}</span>
+            : <StatusPill tone={it.tom}>{it.txt}</StatusPill>}</span>
           {a.item?.estoque != null && <span className="tabular-nums text-muted-foreground">Estoque {a.item.estoque}</span>}
           {a.item?.preco != null && <span className="tabular-nums">{fmtBRL(a.item.preco)}</span>}
           {equilibrio && (

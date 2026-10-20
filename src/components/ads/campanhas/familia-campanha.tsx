@@ -34,11 +34,15 @@ function NomeFamilia({ f }: { f: FamiliaCampanha }) {
   );
 }
 
-const Patrocinio = ({ f }: { f: FamiliaCampanha }) => (
-  <span className="tabular-nums">
-    {f.publicados > 0 ? `${f.patrocinados} de ${f.publicados} anúncios` : 'Sem dado'}
-  </span>
-);
+// Patrocínio e margem só valem para campanha ativa (o equilíbrio de pausada não é projetado).
+const Patrocinio = ({ f, campanha }: { f: FamiliaCampanha; campanha: CampanhaVista }) => {
+  if (campanha.status !== 'active') return <span className="text-muted-foreground">Campanha pausada</span>;
+  return (
+    <span className="tabular-nums">
+      {f.publicados > 0 ? `${f.patrocinados} de ${f.publicados} ${f.publicados === 1 ? 'anúncio' : 'anúncios'}` : 'Sem dado'}
+    </span>
+  );
+};
 
 function Alertas({ f }: { f: FamiliaCampanha }) {
   if (!f.alertas.length) return <span className="text-muted-foreground">Sem alertas</span>;
@@ -50,6 +54,7 @@ function Alertas({ f }: { f: FamiliaCampanha }) {
 }
 
 function Regua({ f, campanha }: { f: FamiliaCampanha; campanha: CampanhaVista }) {
+  if (campanha.status !== 'active') return <span className="block text-sm text-muted-foreground">Não calculada: campanha pausada</span>;
   return (
     <ReguaMargem equilibrioPct={f.equilibrioPct} motivo={f.motivoEquilibrio} acosAlvo={campanha.acosObjetivo}
       acima={f.alertas.includes('roas_acima_margem')} />
@@ -91,7 +96,7 @@ export function LinhaFamilia({ f, campanha, verDesempenho, temDesempenho }: Prop
     <>
       <TableRow>
         <TableCell className={CELULA}><NomeFamilia f={f} /></TableCell>
-        <TableCell className={CELULA}><Patrocinio f={f} /></TableCell>
+        <TableCell className={CELULA}><Patrocinio f={f} campanha={campanha} /></TableCell>
         <TableCell className={CELULA}><Regua f={f} campanha={campanha} /></TableCell>
         <TableCell className={CELULA}><Alertas f={f} /></TableCell>
         <TableCell className={`${CELULA} text-right`}>
@@ -118,7 +123,7 @@ export function CartaoFamilia({ f, campanha, verDesempenho, temDesempenho }: Pro
       <Regua f={f} campanha={campanha} />
       {f.alertas.length > 0 && <Alertas f={f} />}
       <p className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="text-muted-foreground">Patrocínio</span><Patrocinio f={f} />
+        <span className="text-muted-foreground">Patrocínio</span><Patrocinio f={f} campanha={campanha} />
       </p>
       <BotaoDetalhes f={f} aberto={aberto} controla={id} onClick={() => setAberto(v => !v)} />
       {aberto && (

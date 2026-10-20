@@ -22,10 +22,11 @@ const lidoAs = (iso: string) =>
   new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
     .format(new Date(iso));
 
-const PASSA: Record<Filtro, (f: CampanhaVista['familias'][number]) => boolean> = {
+// "Sem referência" só em campanha ativa: a margem de pausada não é calculada por definição.
+const PASSA: Record<Filtro, (f: CampanhaVista['familias'][number], c: CampanhaVista) => boolean> = {
   todas: () => true,
   alerta: f => f.alertas.length > 0,
-  sem_referencia: f => f.equilibrioPct == null,
+  sem_referencia: (f, c) => c.status === 'active' && f.equilibrioPct == null,
 };
 
 function Carregando() {
@@ -68,13 +69,13 @@ export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & Ac
     );
   }
 
-  const todas = campanhas.flatMap(c => c.familias);
-  const emAlerta = todas.filter(PASSA.alerta).length;
-  const semRef = todas.filter(PASSA.sem_referencia).length;
+  const todas = campanhas.flatMap(c => c.familias.map(f => ({ f, c })));
+  const emAlerta = todas.filter(({ f, c }) => PASSA.alerta(f, c)).length;
+  const semRef = todas.filter(({ f, c }) => PASSA.sem_referencia(f, c)).length;
   const alternar = (alvo: Filtro) => setFiltro(atual => (atual === alvo ? 'todas' : alvo));
   const filtrando = filtro !== 'todas';
   const visiveis = campanhas
-    .map(c => ({ ...c, familias: c.familias.filter(PASSA[filtro]) }))
+    .map(c => ({ ...c, familias: c.familias.filter(f => PASSA[filtro](f, c)) }))
     .filter(c => !filtrando || c.familias.length > 0);
 
   return (

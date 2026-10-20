@@ -28,8 +28,9 @@ function Meta({ c }: { c: CampanhaVista }) {
   const n = c.familias.reduce((s, f) => s + f.anuncios.length, 0) + c.foraDoPubliai.length;
   partes.push(<span key="n">{n} {n === 1 ? 'anúncio patrocinado' : 'anúncios patrocinados'}</span>);
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
-      {partes.map((p, i) => <span key={i} className="inline-flex items-center gap-2">{i > 0 && <span aria-hidden>·</span>}{p}</span>)}
+    <p className="flex flex-col gap-y-1 text-sm text-muted-foreground tabular-nums sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2">
+      {/* No mobile cada parte vai numa linha, sem o separador pendurado no começo. */}
+      {partes.map((p, i) => <span key={i} className="inline-flex items-center gap-2">{i > 0 && <span aria-hidden className="hidden sm:inline">·</span>}{p}</span>)}
     </p>
   );
 }

@@ -144,6 +144,10 @@ describe('BlocoCampanha', () => {
     expect(screen.queryByLabelText('Alertas')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Expandir Campanha Verão' }));
     expect(screen.getByRole('row', { name: /Camiseta/ })).toBeInTheDocument();
+    // Pausada: sem "0 de N" nem "Fora da projeção" (a margem não é calculada por definição).
+    expect(screen.getAllByText('Campanha pausada').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Não calculada: campanha pausada').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Fora da projeção/)).not.toBeInTheDocument();
   });
   it('grupo Fora do PubliAI só aparece quando há anúncios, sem equilíbrio', () => {
     const { unmount } = pagina(<BlocoCampanha c={campanha()} filtrando={false} />);
