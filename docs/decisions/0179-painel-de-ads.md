@@ -85,3 +85,28 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 - **Emenda ao ADR-0172:** `fora_dos_grupos` deixa de bloquear o Lucro após Ads (vira aviso do % do período).
 - **Pendente (Task 8, Diego):** ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de
   piloto e ≥ 1 decisão registrada. Só então o épico fecha; até lá o status é "em piloto".
+
+## Emenda — aba Campanhas (2026-10-20, grilling com o Diego)
+
+**Contexto:** org com Ads ativo e sem gasto (Hairfly: campanha automática, 5 anúncios, R$ 10/dia, ROAS objetivo 5x)
+vê o `/ads` vazio, porque o painel nasce do gasto. O Diego quer ver campanhas e produtos sem ir ao ML, sem repetir o
+que o painel já mostra.
+
+**Decisão:**
+1. O `/ads` ganha duas abas: **Desempenho** (o painel atual, por período) e **Campanhas** (estado **atual** da
+   configuração). Sem gasto no período, abre em Campanhas. Mesmo módulo `ads`, sem item novo no menu.
+2. Campanhas nunca mostra gasto, ROAS/ACOS realizado nem resultado — só configuração (estado, diagnóstico, orçamento,
+   ROAS objetivo) e se ela cabe na margem; cada família tem link para a sua linha em Desempenho.
+3. **Leitura sob demanda** no ML ao abrir a aba (edge só GET, cache curto por org, botão Atualizar). Sem tabela,
+   migration ou cron; sem histórico de configuração. Isto **não reabre** a alternativa "unidade campanha" descartada
+   acima: lá o problema era histórico por campanha; aqui é só o agora.
+4. Linha = **família**, expandindo para os MLBs patrocinados (status no Ads, estoque, preço); MLB sem família →
+   linha "Fora do PubliAI".
+5. Margem = **ACOS de equilíbrio pelo preço** (glossário), reaproveitando a projeção da Central de Promoções
+   (ADR-0170) com o preço vivo; pior variação por MLB; nunca default de custo, origem ou comissão (ADR-0055).
+6. Alertas da v1: ROAS objetivo acima da margem; patrocinado parado (pausado, sem estoque, inativo ou status no Ads
+   ≠ ativo); família parcialmente patrocinada. **v2:** família candidata fora da campanha (exige projetar todas as
+   publicadas — medir o custo de chamadas antes). **Fora:** orçamento ÷ margem.
+
+**Pendente antes do plano:** spike curto — existe busca de anúncios no nível do anunciante (uma paginação) ou é
+uma chamada por grupo (~135 na Avil)? Campos de campanha disponíveis (estratégia, ROAS objetivo, diagnóstico).
