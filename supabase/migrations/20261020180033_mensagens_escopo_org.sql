@@ -4,6 +4,9 @@
 -- via; o colega via a aba vazia e o badge zerado, embora `responder-mensagem` já o deixasse
 -- responder — ela é org-scoped). `current_org_id()` já resolve a sessão de suporte, então o
 -- ramo especial de suporte da policy anterior fica coberto.
+-- Linha sem org sumiria da nova policy: o worker sempre grava org_id (0 nulos em 2026-10-20) — trava.
+alter table public.ml_mensagens alter column org_id set not null;
+
 drop policy if exists "ml_mensagens: select own or support org" on public.ml_mensagens;
 create policy "ml_mensagens: select org" on public.ml_mensagens
   for select to authenticated using (org_id = (select public.current_org_id()));
