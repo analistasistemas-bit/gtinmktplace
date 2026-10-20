@@ -5,6 +5,7 @@ import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
 import { sanearTiposProduto } from './tipos-produto.ts';
 import { executarArquivamento } from './arquivar-org.ts';
+import { executarMarcaOrg } from './marca-org.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
   if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
-  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipos_produto_org', 'set_tipo_pessoa_org', 'delete_org', 'archive_org', 'unarchive_org'].includes(action);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipos_produto_org', 'set_tipo_pessoa_org', 'set_marca_org', 'delete_org', 'archive_org', 'unarchive_org'].includes(action);
   if (!(me.is_super_admin && !me.org_id && platformAction)) {
     if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
   }
@@ -141,7 +142,7 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const [{ data: orgs }, { data: profiles }] = await Promise.all([
-        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, tipos_produto_habilitados, is_test, tipo_pessoa, arquivada_em').order('criado_em'),
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, tipos_produto_habilitados, is_test, tipo_pessoa, arquivada_em, marca_propria, marca_padrao').order('criado_em'),
         db.from('profiles').select('org_id'),
       ]);
       const counts = new Map<string, number>();
@@ -151,6 +152,7 @@ Deno.serve(async (req) => {
           canais_habilitados: o.canais_habilitados, modulos_habilitados: o.modulos_habilitados ?? [],
           tipos_produto_habilitados: o.tipos_produto_habilitados ?? [],
           is_test: o.is_test, membros: counts.get(o.id) ?? 0, tipo_pessoa: o.tipo_pessoa, arquivada_em: o.arquivada_em ?? null,
+          marca_propria: o.marca_propria === true, marca_padrao: o.marca_padrao ?? null,
       }));
       return json({ orgs: result });
     }
@@ -321,6 +323,22 @@ Deno.serve(async (req) => {
       const resultAuditError = await auditPlatformAction(alvo, action, 'failure', { reason: 'sequential_delete_is_not_atomic' });
       if (resultAuditError) return auditWriteError('failure', resultAuditError);
       return json({ error: 'Exclusão desabilitada: o fluxo atual não garante remoção atômica sem apagar parcialmente a organização.' }, 409);
+    }
+    case 'set_marca_org': {
+      // ADR-0188: marca própria e nome da marca no ML.
+      const r = await executarMarcaOrg({
+        ehSuperAdmin: me.is_super_admin === true,
+        orgAlvo: String(body.org_id ?? ''),
+        marcaPropria: body.marca_propria,
+        marcaPadrao: body.marca_padrao,
+        atualizar: async (id, patch) => {
+          const { error } = await db.from('organizations')
+            .update({ ...patch, atualizado_em: new Date().toISOString() }).eq('id', id);
+          return error ? error.message : null;
+        },
+        auditar: (orgId, result, details) => auditPlatformAction(orgId, action, result, details),
+      });
+      return json(r.body, r.status);
     }
     case 'archive_org':
     case 'unarchive_org': {
