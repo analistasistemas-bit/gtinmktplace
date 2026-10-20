@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-20
 
+**Marca por produto (ADR-0188).** Diego quis definir a marca própria pela tela e, num produto da Zaven, usar a marca real (camisa Lacoste revendida original). A marca agora fica no produto (`familias.marca`): cadastro pelo Estoque nasce com a marca da org e aceita outra; "Editar marca" no card manda ao ML na hora (só PUT de BRAND, nunca republica); planilha segue o FORNECEDOR, mas a marca do produto vence no UPDATE. Validado no 00000064: Zaven → Lacoste → Zaven, status ok, o ML devolveu a família original.
+
 **Auditoria fiscal fechada (emendas ADR-0135).** Diego pediu certeza de emitir NF pelo Faturador do ML. Dados: 130/130 SKUs Zaven com `can_invoice=true` e fiscal igual ao banco. Código (auditoria Codex astra): corrigidos em 5 entregas os caminhos que deixavam SKU sem fiscal (split, cor nova em somente-estoque, edição, kit virtual), a recuperação do push que se perdia, a escrita direta de `can_invoice` por membro (trigger), o regime presumido "simples", CSOSN/FCI sem domínio, EAN de código interno e o peso fora de `tax_information` (confirmado no ML: `gross_weight 0.300`). Main `c2cf1ef8`.
 
 ## 2026-10-19
@@ -18,6 +20,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 **NCM validado na tabela oficial (ADR-0187).** O 00000140 da Zaven saiu com NCM `75937727` (inexistente, copiado da nota do fornecedor) e o ML recusou o fiscal. Tabela Siscomex (10.516 códigos) no banco, trava em todo escritor, FK `NOT VALID`. **Semáforo fiscal (emenda D-10):** `/can_invoice/items` dá 403 ao app; passou a ler `fiscal_information/{sku}`.
 
 ## 2026-10-18
+
+**Marca própria da Zaven (ADR-0186).** Anúncio da Zaven mostrava "Marca: STAR GLAMOUR" — o fornecedor onde a mercadoria é comprada. Org com marca própria passa a publicar BRAND = marca da org; os 7 anúncios pausados (109 SKUs) foram corrigidos pelo worker `sincronizar-marca-ml`, só PUT de BRAND, sem republicar (imagens postas direto no ML). Medido: o ML move os SKUs para um `family_id` novo em segundos após trocar a BRAND.
 
 **Título de roupa em grade orientado a palavras-chave (emenda ADR-0184).** Diego reprovou composição no título ("Camisa Masculina 90% Algodão 10% Elastano"). Pesquisa nos mais vendidos do ML mostrou que ninguém usa percentual; o que vende é peça + gênero + modelo/corte + nome do tecido, com sinônimo da peça e "Kit N" no começo. Regra nova definida pelo Codex (delegação do Diego): tecido sem percentual, sinônimo só de dicionário e da fonte, característica copiada da fonte como expressão, marca no fim e cortável. A camisa vira "Camisa Masculina Algodão Egípcio Com Elastano".
 

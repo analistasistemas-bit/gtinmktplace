@@ -7,7 +7,7 @@
 - [x] `familias.marca` (default da org no cadastro do Estoque e herança no UPDATE por trigger; a marca do produto vence a planilha); proteção contra escrita direta; backfill Zaven.
 - [x] "Editar marca" no card do Estoque (admin/suporte full) → envio imediato ao ML (`sincronizar-marca-ml`: versão, lease, status `pendente/ok/erro`, reagenda até a família UP convergir). Nunca republica.
 - [x] Marca própria e nome configuráveis na Central de Organizações (super-admin).
-- [ ] Validação de runtime com um produto real (Lacoste → Zaven) escolhido pelo Diego.
+- [x] Validação de runtime no 00000064 (4 SKUs): Zaven → Lacoste → Zaven, status `ok` nas duas, ML devolveu a família original, sem republicar (20/10).
 
 ## Fiscal A8/M1–M3: kit virtual, reingest, peso, avisos (emenda ADR-0135) — 2026-10-20
 
