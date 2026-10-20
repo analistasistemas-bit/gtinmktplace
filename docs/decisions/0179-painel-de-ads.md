@@ -95,7 +95,7 @@ que o painel já mostra.
 **Decisão:**
 1. O `/ads` ganha duas abas: **Desempenho** (o painel atual, por período) e **Campanhas** (estado **atual** da
    configuração). Sem gasto no período, abre em Campanhas. Mesmo módulo `ads`, sem item novo no menu.
-2. Campanhas nunca mostra gasto, ROAS/ACOS realizado nem resultado — só configuração (estado, diagnóstico, orçamento,
+2. Campanhas nunca mostra gasto, ROAS/ACOS realizado nem resultado — só configuração (estado, estratégia, orçamento,
    ROAS objetivo) e se ela cabe na margem; cada família tem link para a sua linha em Desempenho.
 3. **Leitura sob demanda** no ML ao abrir a aba (edge só GET, cache curto por org, botão Atualizar). Sem tabela,
    migration ou cron; sem histórico de configuração. Isto **não reabre** a alternativa "unidade campanha" descartada
@@ -108,5 +108,8 @@ que o painel já mostra.
    ≠ ativo); família parcialmente patrocinada. **v2:** família candidata fora da campanha (exige projetar todas as
    publicadas — medir o custo de chamadas antes). **Fora:** orçamento ÷ margem.
 
-**Pendente antes do plano:** spike curto — existe busca de anúncios no nível do anunciante (uma paginação) ou é
-uma chamada por grupo (~135 na Avil)? Campos de campanha disponíveis (estratégia, ROAS objetivo, diagnóstico).
+**Spike 057 (2026-10-20, [docs/spikes/057-ads-campanhas-agora.md](../spikes/057-ads-campanhas-agora.md)):**
+`ads/search` no nível do anunciante, filtrado por campanha ativa/pausada, dispensa a chamada por grupo. Diagnóstico
+("Aprendendo") e tipo da campanha **não vêm na API** → saem da tela (fica nome, estado, estratégia, orçamento diário
+e ROAS objetivo). `hold` no Ads não é "parado": o alerta usa o status do **item** (`/items/bulk`, ADR-0177), e
+`hold` com irmão `active` no mesmo grupo (catálogo × comum) não alerta.
