@@ -4,7 +4,7 @@ import { AlertTriangle, Info, Loader2, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import type { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
 import type { CampanhaVista } from '@/lib/ads-campanhas';
 import { Aviso, AVISO } from '@/components/ads/aviso';
@@ -30,13 +30,7 @@ const PASSA: Record<Filtro, (f: CampanhaVista['familias'][number], c: CampanhaVi
 };
 
 function Carregando() {
-  return (
-    <div role="status" className="space-y-3 rounded-lg border border-border bg-card p-4" aria-busy="true" aria-label="Carregando campanhas">
-      <Skeleton className="h-6 w-56" />
-      <Skeleton className="h-4 w-80 max-w-full" />
-      <Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" />
-    </div>
-  );
+  return <CarregandoMarca rotulo="Carregando campanhas" mensagem="Lendo as campanhas no Mercado Livre…" />;
 }
 
 /** Aba Campanhas: estado atual das campanhas no ML agrupado por família (emenda ADR-0179). */

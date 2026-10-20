@@ -4,7 +4,7 @@ import { CalendarClock, Megaphone } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdsPainel } from '@/hooks/useAdsPainel';
@@ -193,14 +193,7 @@ export default function Ads() {
       />
     );
   } else if (!painel) {
-    corpo = (
-      <div className="space-y-6" aria-busy="true" aria-label="Carregando">
-        <Skeleton className="h-48" />
-        <div className="space-y-2">
-          <Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" />
-        </div>
-      </div>
-    );
+    corpo = <CarregandoMarca rotulo="Carregando" mensagem="Calculando o gasto e o resultado do período…" />;
   } else if (painel.estado === 'sem_coleta' || painel.estado === 'coletando') {
     corpo = <Aviso texto={AVISO[painel.estado]!} acao={verificar} />;
   } else if (painel.estado === 'sem_permissao' || painel.estado === 'sem_acesso') {
@@ -283,9 +276,7 @@ export default function Ads() {
         actions={aba === 'desempenho' ? acoesPeriodo : undefined}
       />
       {aba === null ? (
-        <div className="space-y-6" aria-busy="true" aria-label="Carregando">
-          <Skeleton className="h-48" />
-        </div>
+        <CarregandoMarca rotulo="Carregando" mensagem="Abrindo o Ads…" />
       ) : (
         <Tabs value={aba} onValueChange={v => trocarAba(v as Aba)} className="gap-6">
           <TabsList className="group-data-horizontal/tabs:h-auto">
