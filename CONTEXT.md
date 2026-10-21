@@ -76,3 +76,11 @@ _Evitar_: histórico, como se fosse sinônimo.
 **Acompanhamento de anúncio próprio**:
 Registro diário dos números de um anúncio próprio escolhido pela organização, para ver a evolução e comparar mudanças. Não é base de mercado.
 _Evitar_: monitorar concorrente, snapshot de mercado.
+
+**Vínculo de produto**:
+Associação guardada pela organização entre um produto de catálogo do Mercado Livre e um SKU do seu próprio catálogo, usada para trazer o custo real à análise de anúncios de concorrente. É dado da organização, não base de mercado.
+_Evitar_: match, de-para.
+
+**Minha margem**:
+Lucro que a organização teria vendendo o produto analisado a um preço informado, com custo real do SKU vinculado, imposto por origem, comissão do tipo de anúncio e frete calculado para a conta da organização.
+_Evitar_: margem do concorrente, recebe do vendedor.
