@@ -329,7 +329,7 @@ Linha expandida de Faturamento › Vendas (também no Financeiro e no dossiê do
 - [x] Zona **Dinheiro**: cascata venda → comissão (Clássico/Premium) → frete → líquido após ML → imposto → custo → **Lucro** (R$) + **Margem s/ venda** (%) + markup, mesmos rótulos de Vendas SKU + liberação (`cascata-pedido.ts`).
 - [x] Pagamento, frete do comprador, cupom e tipo de anúncio lidos de `ml_vendas.raw` só ao expandir (`buscarDetalheMLDasVendas`, `useDetalheMLPedido`); a lista não carrega o `raw`.
 - [x] Validado com dados reais (pedido simples, pack de 4 pedidos, dossiê na gaveta, tema claro).
-- [x] Fora do escopo (nível 3, exige ADR + `/shipments`): CEP, prazo de postagem, entrega prevista, dimensões do ML.
+- [ ] Fora do escopo (nível 3, exige ADR + `/shipments`): CEP, prazo de postagem, entrega prevista, dimensões do ML.
 
 ## Arquivar organização (ADR-0175, 2026-10-01) — código pronto na branch `worktree-arquivar-org`
 
