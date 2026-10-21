@@ -46,3 +46,33 @@ Período em que determinadas condições negociadas se aplicam à organização.
 **Markup do cliente no período**:
 Retorno sobre o custo dos produtos nas vendas com custo considerado: (receita líquida após impostos − custo dos produtos) ÷ custo dos produtos, expresso em percentual. Deve ser acompanhado da cobertura de custos; sem custo disponível, o indicador é indisponível.
 _Evitar_: margem sobre receita como sinônimo de markup.
+
+## Extensão do navegador
+
+**Extensão PubliAI**:
+Ferramenta do navegador, exclusiva para usuários com conta PubliAI, que mostra análise sobre anúncios e buscas do Mercado Livre enquanto o operador navega. Usa a organização do usuário (ou a da sessão de suporte ativa, no caso da equipe Daludi).
+_Evitar_: plugin, Avant/Pulse como sinônimo.
+
+**Anúncio próprio**:
+Anúncio publicado por uma conta de marketplace conectada à organização. Na extensão, recebe atalho para o PubliAI em vez de análise duplicada.
+_Evitar_: meu produto, item da loja.
+
+**Anúncio de concorrente**:
+Anúncio de qualquer vendedor que não seja conta conectada à organização. Seus números vêm só do que a página exibe ou de estimativa.
+_Evitar_: anúncio de terceiro como termo de tela.
+
+**Dado observado**:
+Valor exibido pelo próprio Mercado Livre na página aberta ou devolvido pela API oficial à conta da organização.
+_Evitar_: dado real, dado oficial quando for estimativa.
+
+**Estimativa**:
+Valor calculado pelo PubliAI a partir de dados observados, sempre apresentado com esse rótulo e com a fonte.
+_Evitar_: venda, visita ou vencedor sem qualificação.
+
+**Base de mercado**:
+Acervo acumulado de dados de anúncios de concorrentes coletados por coleta ampla ou pela navegação de usuários. A extensão não cria nem alimenta base de mercado.
+_Evitar_: histórico, como se fosse sinônimo.
+
+**Acompanhamento de anúncio próprio**:
+Registro diário dos números de um anúncio próprio escolhido pela organização, para ver a evolução e comparar mudanças. Não é base de mercado.
+_Evitar_: monitorar concorrente, snapshot de mercado.
