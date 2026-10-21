@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-20
+atualizado: 2026-10-21
 ---
 
 # Changelog
@@ -10,6 +10,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
 ## 2026-10-20
+
+**"Metragem: 120ml" na descrição virou Volume/Peso.** Ao criar o kit da Água Micelar Gottin, a descrição herdada da base dizia "Metragem: 120ml". Com UNIDADE=UN a IA rotulava ml como metragem, apesar da regra do prompt. O novo guard determinístico `corrigirRotuloQuantidade` troca o rótulo para Volume (ml/l) ou Peso (g/kg) em toda descrição da IA, no Criar kit vinculado e no Refazer kit virtual; metragem real fica intacta. 6 edges redeployadas. Main `89577af0`. As 2 famílias legadas se corrigem com "Regenerar copy" + Atualizar.
 
 **Aba Campanhas no /ads (emenda ADR-0179).** A Hairfly tinha campanha ativa sem gasto e o `/ads` ficava vazio. Agora há abas Desempenho | Campanhas: campanhas ativas/pausadas por família, régua "Margem para Ads" (ACOS de equilíbrio pelo preço × ACOS-alvo), alertas de ROAS objetivo acima da margem, patrocinado parado e parcialmente patrocinado. Edge `ads-campanhas` (só GET, cache 10 min). Spike 057: o filtro `campaign_id` do ML não é confiável e `hold` no Ads não é parado. Main `33186857`.
 

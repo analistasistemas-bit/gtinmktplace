@@ -486,6 +486,12 @@ mesmo por engano.
   entre nome_pai e descricao_pai do mesmo produto (achado: franjas com "5MM" no nome mas "5 CM DE
   LARGURA" na descrição). Metragem emitida na descrição é canônica (`50m`, nunca `50MT`) desde
   ADR-0099 — a mesma mudança de unidade do título, não declarada originalmente nesse ADR.
+  `corrigirRotuloQuantidade` (`_shared/ai/unidade.ts`, 2026-10-20) roda no topo de
+  `posProcessarDescricao`, antes do desvio da grade. Ele troca o rótulo do bullet `• Metragem:` por
+  `Volume` quando o valor é ml/l e por `Peso` quando é g/kg. Motivo: com `UNIDADE=UN` não há rótulo
+  sugerido e a IA desobedecia à regra do prompt (água micelar `00000003`: "Metragem: 120ml").
+  Metragem real (`50m`) fica intacta. O front aplica o mesmo guard em `descricaoDoKit` e no
+  "Refazer" do kit virtual.
   **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
   persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.
