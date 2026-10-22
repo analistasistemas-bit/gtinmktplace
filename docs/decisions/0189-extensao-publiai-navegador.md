@@ -212,3 +212,10 @@ validada na de validação, com o mesmo gate.
 - Ação `extensao_usage` na `platform-admin` (super-admin) e aba "Extensão" no detalhe da organização: análises do mês por
   tipo de página e por pessoa, dias com uso, vínculos de produto (total da org) e erros de leitura agrupados (motivo
   legível com o código técnico ao lado). Lê só as tabelas da v1; nada de concorrente (D-1).
+
+## Emenda 2026-10-22 — erros de leitura que não são quebra de layout (D-19)
+
+- `estado_nao_encontrado` só prova ausência do estado naquela leitura. O content script relê uma vez (load + 1,5 s) antes
+  de registrar e ignora as páginas de bloqueio/verificação observadas (`/captcha/`, `/gz/account-verification`).
+- Bloqueio servido na própria URL do anúncio ainda não tem marcador comprovado: continua registrado como estado não
+  encontrado até haver exemplo real; aí entra um motivo próprio (extensão + regex da edge juntos).

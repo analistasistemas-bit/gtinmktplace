@@ -51,8 +51,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Task 25 — encerramento da Fatia 4: aba "Extensão" na Central (ação `extensao_usage` da `platform-admin`, v16) com
   análises por tipo e por pessoa, vínculos e erros de leitura legíveis; "Extensão de navegador" saiu do "Não fazer" do
   `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` (arquivo local, não versionado). UI/UX aprovado (10/10).
-- [ ] Investigar os erros de leitura reais vistos na Central (22/10, DSA): 13× `estado_nao_encontrado` em página de
-  anúncio (último MLB7765568724) e 2× `campo_ausente:ml_item_id` em catálogo (último MLB15976572).
+- [x] Erros de leitura reais vistos na Central (22/10, DSA): 13× `estado_nao_encontrado` em anúncio às 14h44 (suspeita:
+  bloqueio do antibot do ML no mesmo horário, inconclusivo; não reclassificados) e 2× `campo_ausente:ml_item_id` em catálogo
+  às 11h16 (antes da correção do parser /p/). Correção: antes de registrar `estado_nao_encontrado` o content script relê
+  uma vez após o load + 1,5 s e não conta `/captcha/` nem `/gz/account-verification` como quebra de layout (consultor
+  Codex Astra). Motivo próprio para bloqueio fica para quando houver detector comprovado.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

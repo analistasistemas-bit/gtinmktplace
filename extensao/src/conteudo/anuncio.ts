@@ -3,6 +3,7 @@
 import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import { avaliarQualidade } from '../compartilhado/qualidade';
 import { ehPaginaCatalogo, lerAnuncio } from '../leitura/pdp';
+import { esperarPaginaEstavel, lerComReleitura } from './leitura-estavel';
 import { destacarMiniaturas } from './miniaturas';
 import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo, tomDoSelo, type TomDoSelo } from './selo';
 
@@ -95,7 +96,9 @@ function inserir(selo: HTMLElement): boolean {
 
 async function rodar() {
   if (document.getElementById('publiai-selo')) return; // segunda execução na mesma página
-  const lido = lerAnuncio(document);
+  const lido = await lerComReleitura(() => lerAnuncio(document), () => esperarPaginaEstavel(), () => location.pathname);
+  if (!lido) return; // página de bloqueio/verificação do ML: não é quebra de layout
+  if (document.getElementById('publiai-selo')) return; // outra execução terminou durante a espera
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
   const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, qualidade } = lido.dados;
