@@ -95,10 +95,12 @@ function inserir(selo: HTMLElement): boolean {
 }
 
 async function rodar() {
-  if (document.getElementById('publiai-selo')) return; // segunda execução na mesma página
-  const lido = await lerComReleitura(() => lerAnuncio(document), () => esperarPaginaEstavel(), () => location.pathname);
-  if (!lido) return; // página de bloqueio/verificação do ML: não é quebra de layout
-  if (document.getElementById('publiai-selo')) return; // outra execução terminou durante a espera
+  // Uma execução por documento: o mundo isolado do content script é o mesmo entre injeções na mesma página.
+  const g = globalThis as { __publiaiAnuncio?: boolean };
+  if (g.__publiaiAnuncio || document.getElementById('publiai-selo')) return;
+  g.__publiaiAnuncio = true;
+  const lido = await lerComReleitura(() => lerAnuncio(document), () => esperarPaginaEstavel(), () => location.pathname + location.search);
+  if (!lido) return; // bloqueio/verificação do ML, navegação ou espera inconclusiva: não é quebra de layout
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
   const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, qualidade } = lido.dados;
