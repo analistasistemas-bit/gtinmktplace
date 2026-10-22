@@ -37,11 +37,22 @@ function origemPermitida(origin: string | undefined): boolean {
   return matches.some((m) => new URL(m.replace(/\*$/, '')).origin === origin);
 }
 
+// Fila única: toda leitura-decisão-escrita da chave `sessao` e do alarme roda em série, senão a limpeza
+// da sessão A apaga (ou cancela o alarme de) uma sessão B que chegou no meio. Dentro da fila só se chamam
+// as versões internas (lerSessao/validar/limpar/agendar) — chamar uma exportada daqui travaria a fila.
+// ponytail: fila só em memória; SW morto entre operações a perde (cada operação é curta, nada a retomar).
+let fila: Promise<unknown> = Promise.resolve();
+function naFila<T>(op: () => Promise<T>): Promise<T> {
+  const r = fila.then(op);
+  fila = r.catch(() => {});
+  return r;
+}
+
 export async function receberMensagemExterna(msg: unknown, sender: chrome.runtime.MessageSender): Promise<{ ok: boolean }> {
   if (!origemPermitida(sender.origin)) return { ok: false };
   const m = msg as Partial<Sessao> & { tipo?: unknown } | null;
   if (m?.tipo === 'publiai:desconectar') {
-    await limparSessao();
+    await naFila(() => limpar());
     return { ok: true };
   }
   if (
@@ -52,61 +63,83 @@ export async function receberMensagemExterna(msg: unknown, sender: chrome.runtim
     typeof m.orgNome === 'string' &&
     typeof m.identidade === 'string' && IDENTIDADE.test(m.identidade)
   ) {
-    const anterior = (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
-    const mantida = proximaIdentidade(anterior?.identidade ?? null, m.identidade);
-    // Sessão nova primeiro: chamada em voo da identidade antiga já se vê descartada (api.ts).
-    const sessao: Sessao = { accessToken: m.accessToken, expiresAt: m.expiresAt, orgNome: m.orgNome, identidade: mantida ?? m.identidade };
-    await chrome.storage.session.set({ [CHAVE]: sessao });
-    if (mantida === null) await limparEstadosDasAbas();
-    await agendarExpiracao(sessao.expiresAt);
-    return { ok: true };
+    const { accessToken, expiresAt, orgNome, identidade } = m;
+    return naFila(async () => {
+      const anterior = await lerSessao();
+      const mantida = proximaIdentidade(anterior?.identidade ?? null, identidade);
+      // Sessão nova primeiro: chamada em voo da identidade antiga já se vê descartada (api.ts).
+      const sessao: Sessao = { accessToken, expiresAt, orgNome, identidade: mantida ?? identidade };
+      await chrome.storage.session.set({ [CHAVE]: sessao });
+      if (mantida === null) await limparEstadosDasAbas();
+      await agendar(sessao.expiresAt);
+      return { ok: true };
+    });
   }
   return { ok: false };
 }
 
 const ALARME = 'sessao-expira';
 
+async function lerSessao(): Promise<Sessao | undefined> {
+  return (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
+}
+
+/** Mesmo limite do alarme e da invalidação: restam ≤ 30 s → vencida (igualdade incluída). */
+const vencida = (expiresAt: number) => expiresAt * 1000 - Date.now() <= MARGEM_MS;
+
 /** Expiração passiva (sem interação): o SW acorda no fim da validade e apaga sessão, análises e selos.
- *  Já vencida ao chegar → limpa na hora. */
-async function agendarExpiracao(expiresAt: number): Promise<void> {
-  const quando = expiresAt * 1000 - MARGEM_MS;
-  if (quando <= Date.now()) {
-    await obterSessaoValida();
+ *  Já vencida ao chegar → limpa na hora. Só dentro da fila. */
+async function agendar(expiresAt: number): Promise<void> {
+  if (vencida(expiresAt)) {
+    await validar();
     return;
   }
-  await chrome.alarms.create(ALARME, { when: quando });
+  await chrome.alarms.create(ALARME, { when: expiresAt * 1000 - MARGEM_MS });
 }
 
-/** `chrome.alarms.onAlarm` (registrado no topo do sw.ts). */
+/** `chrome.alarms.onAlarm` (registrado no topo do sw.ts). Disparo adiantado com sessão válida → reagenda
+ *  (alarme sem período dispara uma vez só). */
 export async function aoAlarme(a: chrome.alarms.Alarm): Promise<void> {
-  if (a.name === ALARME) await obterSessaoValida();
+  if (a.name !== ALARME) return;
+  await naFila(async () => {
+    const s = await validar();
+    if (s) await agendar(s.expiresAt);
+  });
 }
 
-/** null se não há sessão ou faltam < 30 s para expirar. Não renova. Expirada: apaga a sessão e, com ela,
- *  as análises das abas (limparSessao) — sem sessão válida nada financeiro fica visível. Ausente já foi limpa
- *  quando saiu (todo caminho de saída passa por limparSessao). */
-export async function obterSessaoValida(): Promise<{ accessToken: string; identidade: string } | null> {
-  const s = (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
+/** Só dentro da fila. Vencida → limpa e devolve null. */
+async function validar(): Promise<Sessao | null> {
+  const s = await lerSessao();
   if (!s) return null;
-  if (s.expiresAt * 1000 - Date.now() < MARGEM_MS) {
-    await limparSessao(s.accessToken);
+  if (vencida(s.expiresAt)) {
+    await limpar();
     return null;
   }
-  return { accessToken: s.accessToken, identidade: s.identidade };
+  return s;
+}
+
+/** null se não há sessão ou faltam ≤ 30 s para expirar. Não renova. Expirada: apaga a sessão e, com ela,
+ *  as análises das abas — sem sessão válida nada financeiro fica visível. Ausente já foi limpa
+ *  quando saiu (todo caminho de saída passa por limpar). */
+export async function obterSessaoValida(): Promise<{ accessToken: string; identidade: string } | null> {
+  const s = await naFila(validar);
+  return s && { accessToken: s.accessToken, identidade: s.identidade };
 }
 
 /** Identidade da sessão guardada agora (ou null), para descartar resposta pedida por outra. */
 export async function identidadeAtual(): Promise<string | null> {
-  return ((await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined)?.identidade ?? null;
+  return (await lerSessao())?.identidade ?? null;
 }
 
 /** Com `seAinda`, só apaga se a sessão guardada ainda é a desse token (o app pode ter
  *  empurrado outra enquanto a chamada que deu 401 estava em voo). */
-export async function limparSessao(seAinda?: string): Promise<void> {
-  if (seAinda !== undefined) {
-    const s = (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
-    if (s?.accessToken !== seAinda) return;
-  }
+export function limparSessao(seAinda?: string): Promise<void> {
+  return naFila(() => limpar(seAinda));
+}
+
+/** Só dentro da fila: conferência, remoção, cancelamento do alarme e limpeza das abas na mesma seção. */
+async function limpar(seAinda?: string): Promise<void> {
+  if (seAinda !== undefined && (await lerSessao())?.accessToken !== seAinda) return;
   await chrome.storage.session.remove(CHAVE);
   await chrome.alarms.clear(ALARME);
   await limparEstadosDasAbas();
