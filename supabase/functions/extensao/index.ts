@@ -4,6 +4,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -15,7 +16,7 @@ import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
-  acessoDaAcao, chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
+  chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
   type Pedido, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
@@ -134,7 +135,49 @@ async function buscarSku(admin: SupabaseClient, orgId: string, termo: string) {
   return { itens };
 }
 
-async function executar(p: Pedido, admin: SupabaseClient, orgId: string, userId: string): Promise<unknown> {
+type Contexto = Awaited<ReturnType<typeof requireUserOrg>>;
+type PedidoVinculo = Extract<Pedido, { acao: 'salvar_vinculo' | 'remover_vinculo' }>;
+
+/** Escrita de vínculo. Em sessão de suporte: só escopo `full`, e toda tentativa vai para
+ *  `support_audit_events` (ação, chave + variação, resultado) — ADR-0092. */
+async function escreverVinculo(p: PedidoVinculo, admin: SupabaseClient, ctx: Contexto): Promise<unknown> {
+  const { orgId, userId } = ctx;
+  const alvo = (variacaoId: string | null) => ({
+    type: `extensao_vinculo:${p.acao === 'salvar_vinculo' ? 'salvar' : 'remover'}`,
+    id: `${p.chave.tipo}:${p.chave.valor}${variacaoId ? `:${variacaoId}` : ''}`,
+  });
+  let variacaoId = p.acao === 'salvar_vinculo' ? p.variacaoId : null;
+  if (ctx.support && ctx.support.scope !== 'full') {
+    await auditarOperacaoSuporte(admin, ctx, alvo(variacaoId), 'denied');
+    throw new ErroExtensao('interno', 403); // mesmo 403 de antes (suporte só leitura tentando escrever)
+  }
+  try {
+    if (p.acao === 'salvar_vinculo') {
+      const { data, error } = await admin.from('variacoes').select('id').eq('id', p.variacaoId).eq('org_id', orgId).maybeSingle();
+      falhou('salvar_vinculo', error);
+      if (!data) throw new ErroExtensao('payload_invalido', 400); // variação de outra org (ou inexistente)
+      const { error: e2 } = await admin.from('extensao_vinculos').upsert(
+        { org_id: orgId, chave_tipo: p.chave.tipo, chave: p.chave.valor, variacao_id: p.variacaoId, criado_por: userId },
+        { onConflict: 'org_id,chave_tipo,chave' },
+      );
+      falhou('salvar_vinculo', e2);
+    } else {
+      const { data, error } = await admin.from('extensao_vinculos').delete()
+        .eq('org_id', orgId).eq('chave_tipo', p.chave.tipo).eq('chave', p.chave.valor).select('variacao_id');
+      falhou('remover_vinculo', error);
+      variacaoId = (data as { variacao_id: string }[] | null)?.[0]?.variacao_id ?? null;
+    }
+  } catch (e) {
+    await auditarOperacaoSuporte(admin, ctx, alvo(variacaoId), 'failed')
+      .catch((a) => console.error(`extensao: ${(a as Error).message}`)); // o erro da escrita é o que importa
+    throw e;
+  }
+  await auditarOperacaoSuporte(admin, ctx, alvo(variacaoId), 'succeeded');
+  return { ok: true };
+}
+
+async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promise<unknown> {
+  const { orgId, userId } = ctx;
   switch (p.acao) {
     case 'analisar_anuncio': {
       if (await redisIncrComTTL(chaveLimite(userId, new Date()), 120) > LIMITE_ANALISES_MIN) throw new ErroExtensao('limite', 429);
@@ -145,23 +188,9 @@ async function executar(p: Pedido, admin: SupabaseClient, orgId: string, userId:
     }
     case 'buscar_sku':
       return buscarSku(admin, orgId, p.termo);
-    case 'salvar_vinculo': {
-      const { data, error } = await admin.from('variacoes').select('id').eq('id', p.variacaoId).eq('org_id', orgId).maybeSingle();
-      falhou('salvar_vinculo', error);
-      if (!data) throw new ErroExtensao('payload_invalido', 400); // variação de outra org (ou inexistente)
-      const { error: e2 } = await admin.from('extensao_vinculos').upsert(
-        { org_id: orgId, chave_tipo: p.chave.tipo, chave: p.chave.valor, variacao_id: p.variacaoId, criado_por: userId },
-        { onConflict: 'org_id,chave_tipo,chave' },
-      );
-      falhou('salvar_vinculo', e2);
-      return { ok: true };
-    }
-    case 'remover_vinculo': {
-      const { error } = await admin.from('extensao_vinculos').delete()
-        .eq('org_id', orgId).eq('chave_tipo', p.chave.tipo).eq('chave', p.chave.valor);
-      falhou('remover_vinculo', error);
-      return { ok: true };
-    }
+    case 'salvar_vinculo':
+    case 'remover_vinculo':
+      return escreverVinculo(p, admin, ctx);
     case 'erro_leitura': {
       // Acima de 20/h por usuário o registro é descartado em silêncio (telemetria, não análise).
       if (await redisIncrComTTL(chaveLimiteErro(userId, new Date()), 3600) > LIMITE_ERROS_HORA) return { ok: true };
@@ -181,14 +210,15 @@ Deno.serve(async (req) => {
   try {
     let body: unknown = null;
     try { body = await req.json(); } catch { /* validado após a autenticação */ }
-    const acao = (body as { acao?: unknown } | null)?.acao;
-    // Sessão primeiro: payload ruim não pode mascarar sessão expirada.
-    const { userId, orgId } = await requireUserOrg(req, { access: acessoDaAcao(acao) });
+    // Sessão primeiro: payload ruim não pode mascarar sessão expirada. Sempre `read` aqui: o escopo de
+    // escrita do suporte é checado em escreverVinculo, onde a negação pode ser auditada.
+    const ctx = await requireUserOrg(req);
+    const { orgId } = ctx;
     const admin = adminClient();
     if (!(await exigirModulo(admin, orgId, 'extensao'))) throw new ErroExtensao('modulo_desligado', 403);
     const pedido = validarPedido(body);
     if (!pedido) throw new ErroExtensao('payload_invalido', 400);
-    return json(await executar(pedido, admin, orgId, userId));
+    return json(await executar(pedido, admin, ctx));
   } catch (e) {
     const { status, corpo } = normalizarErro(e);
     if (status === 500) console.error(`extensao: ${(e as Error)?.message ?? e}`);

@@ -33,11 +33,6 @@ function chave(v: unknown): ChaveVinculo | null {
   return { tipo: c.tipo, valor: c.valor };
 }
 
-/** Escrita (vínculo) exige escopo `full` em sessão de suporte. */
-export function acessoDaAcao(acao: unknown): 'read' | 'write' {
-  return acao === 'salvar_vinculo' || acao === 'remover_vinculo' ? 'write' : 'read';
-}
-
 /** Pedido validado, ou null (→ `payload_invalido`). */
 export function validarPedido(body: unknown): Pedido | null {
   const b = body as Record<string, unknown> | null;

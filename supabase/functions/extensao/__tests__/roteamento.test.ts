@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  acessoDaAcao, chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
+  chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
   unidadesDoProduto, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
@@ -68,15 +68,6 @@ describe('validarPedido', () => {
     expect(validarPedido({ ...ok, versao: '1.0' })).toBeNull();
     expect(validarPedido({ ...ok, mlItemId: 'qualquer' })).toBeNull();
     expect(validarPedido({ ...ok, tipoPagina: 'outra' })).toBeNull();
-  });
-});
-
-describe('acessoDaAcao', () => {
-  it('vínculo é escrita; o resto é leitura', () => {
-    expect(acessoDaAcao('salvar_vinculo')).toBe('write');
-    expect(acessoDaAcao('remover_vinculo')).toBe('write');
-    expect(acessoDaAcao('analisar_anuncio')).toBe('read');
-    expect(acessoDaAcao(undefined)).toBe('read');
   });
 });
 
