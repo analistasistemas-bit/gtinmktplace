@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eanDaAba, esquecerAba, esquecerEstado, registrarEanDaAba } from '../abas';
+import { eanDaAba, esquecerAba, esquecerEstado, geracaoDaAba, registrarEanDaAba, registrarEstado } from '../abas';
 import { aoAtualizarAba, rotearMensagem } from '../roteador';
 import { receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
@@ -47,9 +47,9 @@ describe('publiai:chamar', () => {
   it('analisar_anuncio do content script leva o EAN da própria aba, ignorando o enviado', async () => {
     await registrarEanDaAba(7, '7899941205918');
     await registrarEanDaAba(8, '96385074');
-    await chamar({ acao: 'analisar_anuncio', eanDaBusca: '96385074' }, CONTEUDO);
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1', eanDaBusca: '96385074' }, CONTEUDO);
     expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ eanDaBusca: '7899941205918' });
-    await chamar({ acao: 'analisar_anuncio', eanDaBusca: '96385074' }, { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab });
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1', eanDaBusca: '96385074' }, { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab });
     expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca).toBeNull();
   });
 
@@ -91,6 +91,31 @@ describe('EAN por aba', () => {
     await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, CONTEUDO); // aba 7
     expect(await eanDaAba(8)).toBe('96385074');
     expect(rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, PAINEL)).toBeUndefined();
+  });
+
+  it('EAN vale só para o 1º anúncio aberto depois da busca: A usa → B sem EAN → volta a A usa', async () => {
+    const eanEnviado = () => JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca;
+    await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO);
+    await aoAtualizarAba(7, { status: 'loading' }); // lista → ficha A
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
+    expect(eanEnviado()).toBe('7899941205918');
+    await aoAtualizarAba(7, { status: 'loading' }); // A → B (recomendado, sem nova busca)
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB2' }, CONTEUDO);
+    expect(eanEnviado()).toBeNull();
+    await aoAtualizarAba(7, { status: 'loading' }); // volta / refresh de A
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
+    expect(eanEnviado()).toBe('7899941205918');
+  });
+
+  it('nova busca troca o EAN e solta o vínculo com o anúncio anterior', async () => {
+    const eanEnviado = () => JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca;
+    await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO);
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
+    await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '96385074' }, CONTEUDO);
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB2' }, CONTEUDO);
+    expect(eanEnviado()).toBe('96385074');
+    await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
+    expect(eanEnviado()).toBeNull();
   });
 
   it('esquecerAba (usado no tabs.onRemoved) limpa a aba', async () => {
@@ -169,6 +194,23 @@ describe('estado da aba (painel)', () => {
     await aoAtualizarAba(7, { status: 'loading' });
     expect(await estado(7)).toBeNull();
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+  });
+
+  it('navegação só com url (pushState, sem status loading) também esquece o estado', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    await aoAtualizarAba(7, { url: 'https://produto.mercadolivre.com.br/MLB-2' });
+    expect(await estado(7)).toBeNull();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+  });
+
+  it('estado gravado com geração antiga é descartado na leitura (escrita atrasada não ressuscita o anúncio)', async () => {
+    await aoAtualizarAba(7, { status: 'loading' });
+    const atual = await geracaoDaAba(7);
+    await registrarEstado(7, { geracao: 'geracao-velha', entrada: { mlItemId: 'MLB0' }, resposta: { ok: true } });
+    expect(await estado(7)).toBeNull();
+    await registrarEstado(7, { geracao: atual, entrada: { mlItemId: 'MLB1' }, resposta: { ok: true } });
+    expect(await estado(7)).toEqual({ entrada: { mlItemId: 'MLB1' }, resposta: { ok: true } });
   });
 
   it('análise do content script em voo → aba navega (loading) → resposta atrasada não regrava o anúncio anterior', async () => {

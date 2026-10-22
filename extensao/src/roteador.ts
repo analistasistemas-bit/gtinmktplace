@@ -2,7 +2,7 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
-import { eanDaAba, esquecerAba, estadoDaAba, geracaoDaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
+import { eanDaAba, eanParaAnuncio, esquecerAba, estadoDaAba, geracaoDaAba, lerAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -11,22 +11,21 @@ const ehObjeto = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Estado do painel é melhor esforço: falha de storage não derruba a análise (nem o selo).
- *  Só grava se a aba não navegou desde `geracao` (capturada antes da chamada à edge).
- *  ponytail: confere-e-grava não é atômico; janela de microssegundos entre dois awaits de storage. */
+ *  Grava com a `geracao` capturada antes da chamada à edge; se a aba navegou nesse meio, a leitura descarta. */
 async function guardarEstado(tabId: number, geracao: string | null, entrada: object, resposta: unknown): Promise<void> {
   try {
-    if ((await geracaoDaAba(tabId)) !== geracao) return;
-    await registrarEstado(tabId, { entrada, resposta });
+    await registrarEstado(tabId, { geracao, entrada, resposta });
   } catch {
     return;
   }
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
 }
 
-/** `tabs.onUpdated`: a aba começou a carregar outra página → o painel não pode seguir mostrando o anúncio anterior.
- *  `status` vem sem a permissão `tabs`. */
-export async function aoAtualizarAba(tabId: number, info: { status?: string }): Promise<void> {
-  if (info.status !== 'loading') return;
+/** `tabs.onUpdated`: a aba foi para outra página → o painel não pode seguir mostrando o anúncio anterior.
+ *  `status` vem sem a permissão `tabs`; `url` vem para abas do ML (host permission) e cobre o pushState,
+ *  que não dispara `loading` nem roda o content script de novo. */
+export async function aoAtualizarAba(tabId: number, info: { status?: string; url?: string }): Promise<void> {
+  if (info.status !== 'loading' && !info.url) return;
   await novaPaginaNaAba(tabId).catch(() => {});
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
 }
@@ -58,7 +57,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // Painel refaz a análise da aba ao preço da página (após vínculo / "Tentar de novo") e atualiza o estado guardado.
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       const id = msg.tabId;
-      return Promise.all([estadoDaAba(id), geracaoDaAba(id)]).then(async ([e, geracao]) => {
+      return lerAba(id).then(async ({ estado: e, geracao }) => {
         const entrada = (e as { entrada?: Record<string, unknown> } | null)?.entrada;
         if (!entrada) return null;
         const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada });
@@ -74,7 +73,8 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       }
       // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
       if (!pagina && corpo.acao === 'analisar_anuncio') {
-        return Promise.all([eanDaAba(tabId!), geracaoDaAba(tabId!)]).then(async ([eanDaBusca, geracao]) => {
+        const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
+        return Promise.all([ean, geracaoDaAba(tabId!)]).then(async ([eanDaBusca, geracao]) => {
           const resposta = await chamarExtensao({ ...corpo, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           const { mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
