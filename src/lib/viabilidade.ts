@@ -47,6 +47,11 @@ const PRECO_MIN_ACIMA_ABISMO = 12.55; // ADR-0023
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 function arredondar5Cima(n: number): number { return Math.ceil(n * 20) / 20; }
 
+/** Imposto por origem (ADR-0055) no preço, em centavos — o mesmo que a tela da Viabilidade desconta. */
+export function impostoNoPreco(preco: number, aliquotaPct: number): number {
+  return round2(preco * aliquotaPct / 100);
+}
+
 /** Líquido se você igualar o menor preço do mercado: menor − comissão total − imposto (ADR-0055) − frete do vendedor. */
 export function liquidoNoMercado(menor: number | null, saleFeeAmount: number, imposto = 0, frete = 0): number | null {
   if (menor == null) return null;

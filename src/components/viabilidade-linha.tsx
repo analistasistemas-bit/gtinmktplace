@@ -12,7 +12,7 @@ import {
   DialogCadastroProduto, type CadastroInicial,
 } from '@/components/estoque/dialog-cadastro-produto';
 import {
-  liquidoNoMercado, etiquetaParaMinimo, semaforoTipo, analisarComDimensoes,
+  liquidoNoMercado, etiquetaParaMinimo, semaforoTipo, analisarComDimensoes, impostoNoPreco,
   type ItemAnalisado, type ComissaoTipo, type DimensoesPacote,
 } from '@/lib/viabilidade';
 import type { Semaforo } from '@/lib/semaforo';
@@ -24,13 +24,11 @@ const ROTULO: Record<Semaforo, string> = {
   verde: 'Viável', amarelo: 'Apertado', vermelho: 'Inviável', indisponivel: '—',
 };
 
-function round2(n: number): number { return Math.round(n * 100) / 100; }
-
 function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct, frete }: {
   titulo: string; c: ComissaoTipo; menor: number;
   minimo: number | null; custo: number | null; aliquotaPct: number; frete: number;
 }) {
-  const imposto = round2(menor * aliquotaPct / 100);
+  const imposto = impostoNoPreco(menor, aliquotaPct);
   const liquido = liquidoNoMercado(menor, c.saleFeeAmount, imposto, frete);
   const etiqueta = etiquetaParaMinimo(minimo, c.percentual, aliquotaPct, frete);
   const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo, imposto, frete);
@@ -216,7 +214,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel, mlConectado }: {
   let semaforo: Semaforo = 'indisponivel';
   let liquido: number | null = null;
   if (menorRelevante != null && classico != null && frete != null) {
-    const impostoResumo = round2(menorRelevante * aliquotaPct / 100);
+    const impostoResumo = impostoNoPreco(menorRelevante, aliquotaPct);
     semaforo = semaforoTipo(menorRelevante, classico.saleFeeAmount, minimo, custo, impostoResumo, frete);
     liquido = liquidoNoMercado(menorRelevante, classico.saleFeeAmount, impostoResumo, frete);
   }
