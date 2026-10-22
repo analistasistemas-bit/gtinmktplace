@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { custoDoPacote, resolverVinculo, type DepsVinculo, type VariacaoCusto } from '../vinculo.ts';
+import { resolverVinculo, type DepsVinculo, type VariacaoCusto } from '../vinculo.ts';
 
 function v(over: Partial<VariacaoCusto> = {}): VariacaoCusto {
-  return { variacaoId: 'v1', codigo: '001', custo: 10, origem: 'nacional', unidades: 1, dimensoes: null, ...over };
+  return { variacaoId: 'v1', codigo: '001', custo: 10, origem: 'nacional', unidades: 1, codigoPai: '9001', dimensoes: null, ...over };
 }
 
 function deps(over: Partial<{ cat: VariacaoCusto[]; gtin: VariacaoCusto[]; manual: (c: { tipo: string; valor: string }) => VariacaoCusto | null }> = {}) {
@@ -111,32 +111,5 @@ describe('resolverVinculo', () => {
     expect(d.porCatalogo).toHaveBeenCalledTimes(1);
     expect(d.porGtin).toHaveBeenCalledTimes(1);
     expect(d.porVinculoManual).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('custoDoPacote', () => {
-  it('custo 10, unidades 1, pack 2 → 20', () => {
-    expect(custoDoPacote(v(), 2)).toEqual({ estado: 'ok', valor: 20 });
-  });
-  it('kit de 2, pack 2 → 10', () => {
-    expect(custoDoPacote(v({ unidades: 2 }), 2)).toEqual({ estado: 'ok', valor: 10 });
-  });
-  it('kit de 2, pack 3 → composição diferente', () => {
-    expect(custoDoPacote(v({ unidades: 2 }), 3)).toEqual({ estado: 'indisponivel', motivo: 'composição diferente' });
-  });
-  it('custo null → custo não cadastrado', () => {
-    expect(custoDoPacote(v({ custo: null }), 1)).toEqual({ estado: 'indisponivel', motivo: 'custo não cadastrado' });
-  });
-  it('custo 10.1, pack 3 → 30.3 (sem resíduo de float)', () => {
-    expect(custoDoPacote(v({ custo: 10.1 }), 3)).toEqual({ estado: 'ok', valor: 30.3 });
-  });
-  it.each([0, -2, 0.5])('unidades da variação %s → inválidas', (u) => {
-    expect(custoDoPacote(v({ unidades: u }), 2)).toEqual({ estado: 'indisponivel', motivo: 'unidades da variação inválidas' });
-  });
-  it('custo NaN → custo inválido', () => {
-    expect(custoDoPacote(v({ custo: NaN }), 1)).toEqual({ estado: 'indisponivel', motivo: 'custo inválido' });
-  });
-  it.each([0, -1, 1.5, NaN])('pack %s → unidades por pacote inválidas', (n) => {
-    expect(custoDoPacote(v(), n)).toEqual({ estado: 'indisponivel', motivo: 'unidades por pacote inválidas' });
   });
 });

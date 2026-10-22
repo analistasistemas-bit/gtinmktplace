@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularMinhaMargem } from '../margem.ts';
+import { calcularMinhaMargem, custoDoPacote, fatorDoPacote } from '../margem.ts';
 import type { Disponivel, EntradaMargem, MargemTipo } from '../tipos.ts';
 
 function entrada(over: Partial<EntradaMargem> = {}): EntradaMargem {
@@ -108,5 +108,27 @@ describe('calcularMinhaMargem', () => {
       },
     }));
     expect(ok(r.classico).avisos).toEqual(['estimado (pacote padrão)']);
+  });
+});
+
+describe('composição do pacote (D-8: nunca presumida)', () => {
+  it('fator = unidades do anúncio ÷ unidades do SKU, só inteiro ≥ 1', () => {
+    expect(fatorDoPacote(3, 1)).toBe(3);
+    expect(fatorDoPacote(4, 2)).toBe(2);
+    expect(fatorDoPacote(24, 24)).toBe(1); // caixa de 24 contra anúncio de 24 → 1 caixa (Codex #3)
+    expect(fatorDoPacote(3, 2)).toBeNull();
+    expect(fatorDoPacote(1, 24)).toBeNull();
+  });
+  it.each([[null, 1], [1, null], [0, 1], [1.5, 1], [NaN, 1], [2, 0], [2, -1]])('lado desconhecido/inválido (%s ÷ %s) → null', (a, s) => {
+    expect(fatorDoPacote(a, s)).toBeNull();
+  });
+  it('custo do pacote = custo do SKU × fator, em centavos', () => {
+    expect(custoDoPacote(10, 1)).toEqual({ estado: 'ok', valor: 10 });
+    expect(custoDoPacote(10.1, 3)).toEqual({ estado: 'ok', valor: 30.3 });
+  });
+  it('fator desconhecido → composição não confirmada; custo ausente/inválido → motivo próprio', () => {
+    expect(custoDoPacote(10, null)).toEqual({ estado: 'indisponivel', motivo: 'composição não confirmada' });
+    expect(custoDoPacote(null, 1)).toEqual({ estado: 'indisponivel', motivo: 'custo não cadastrado' });
+    expect(custoDoPacote(NaN, 1)).toEqual({ estado: 'indisponivel', motivo: 'custo inválido' });
   });
 });

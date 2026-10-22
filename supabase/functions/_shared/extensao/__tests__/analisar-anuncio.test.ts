@@ -5,7 +5,7 @@ import type { VariacaoCusto } from '../vinculo.ts';
 const DIM = { altura_cm: 10, largura_cm: 10, comprimento_cm: 10, peso_gramas: 500 };
 
 function v(over: Partial<VariacaoCusto> = {}): VariacaoCusto {
-  return { variacaoId: 'v1', codigo: '001', custo: 10, origem: 'nacional', unidades: 1, dimensoes: DIM, ...over };
+  return { variacaoId: 'v1', codigo: '001', custo: 10, origem: 'nacional', unidades: 1, codigoPai: '9001', dimensoes: DIM, ...over };
 }
 
 function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): DepsAnuncio {
@@ -19,6 +19,7 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
       ({ estado: 'ok' as const, valor: { percentual: tipo === 'gold_pro' ? 16 : 11, fixa: 0 } })),
     frete: vi.fn(async () => ({ estado: 'ok' as const, valor: 20 })),
     unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 1 })),
+    dimensoesDoPacote: vi.fn(async () => null),
     ...over,
   };
 }
@@ -31,7 +32,7 @@ describe('analisarAnuncio', () => {
     const r = await analisarAnuncio('org', { ...ent, sellerId: '222' }, d);
     expect(r.proprio).toBe(true);
     expect(r.margem).toBeNull();
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, custoPacote: null });
     expect(r.parametros.frete).toEqual({ estado: 'indisponivel', motivo: 'anúncio próprio' });
     expect(d.comissao).not.toHaveBeenCalled();
     expect(d.frete).not.toHaveBeenCalled();
@@ -65,35 +66,91 @@ describe('analisarAnuncio', () => {
     expect(c.estado === 'ok' && c.valor.imposto).toBe(5);
   });
 
-  it('sem variação: custoPacote null, origem null, alíquota pede origem, sem lucro', async () => {
+  it('sem variação: custoPacote null, origem null, alíquota pede origem, frete do pacote padrão rotulado', async () => {
     const d = deps();
     const r = await analisarAnuncio('org', ent, d);
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, custoPacote: null });
     expect(r.margem!.classico).toEqual({ estado: 'indisponivel', motivo: 'Informe a origem do produto' });
     expect(r.parametros.classico.estado).toBe('ok');
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', null);
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20, aviso: 'estimado (pacote padrão)' });
   });
 
-  it('frete recebe as dimensões da variação vinculada; unidades do pacote multiplicam o custo', async () => {
-    const d = deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 3 })) });
+  // Vínculo por EAN (não por catálogo): a composição precisa ser provada pelas unidades dos dois lados.
+  const porEan = (sku: Partial<VariacaoCusto>, unidadesAnuncio: Awaited<ReturnType<DepsAnuncio['unidadesPorPacote']>>, over: Partial<DepsAnuncio> = {}) =>
+    deps({ porGtin: vi.fn(async () => [v(sku)]), unidadesPorPacote: vi.fn(async () => unidadesAnuncio), ...over });
+  const entEan: EntradaAnuncio = { ...ent, eanDaBusca: '7899941205918' };
+
+  it('casado pelo catálogo: mesmo produto → fator 1 e frete com as dimensões do SKU, sem aviso', async () => {
+    const d = deps({ cat: [v({ unidades: null })], unidadesPorPacote: vi.fn(async () => ({ estado: 'indisponivel' as const, motivo: 'quantidade por anúncio não confirmada' })) });
     const r = await analisarAnuncio('org', ent, d);
+    expect(r.custo).toMatchObject({ fonte: 'catalogo', fator: 1, custoPacote: { estado: 'ok', valor: 10 } });
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', DIM);
-    expect(d.unidadesPorPacote).toHaveBeenCalledWith('MLB123');
-    expect(r.custo.unidadesPorPacote).toBe(3);
-    expect(r.custo.custoPacote).toEqual({ estado: 'ok', valor: 30 });
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20 });
   });
 
-  it('unidades por pacote indisponíveis → custoPacote indisponível com o motivo (nunca pacote de 1)', async () => {
-    const motivo = 'unidades por pacote indisponíveis';
-    const r = await analisarAnuncio('org', ent, deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => ({ estado: 'indisponivel' as const, motivo })) }));
-    expect(r.custo.custoPacote).toEqual({ estado: 'indisponivel', motivo });
-    expect(r.custo.unidadesPorPacote).toBeNull();
+  it('Codex #3: SKU caixa de 24 (UNITS_PER_PACK 24, sem kit) × anúncio de 24 → 1 caixa, R$ 10 (não R$ 240)', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: 24 }, { estado: 'ok', valor: 24 }));
+    expect(r.custo).toMatchObject({ fonte: 'ean_da_busca', unidadesPorPacote: 24, unidadesSku: 24, custoSku: 10, fator: 1, custoPacote: { estado: 'ok', valor: 10 } });
+  });
+
+  it('pacote de 3 de um SKU unitário → custo × 3', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: 1 }, { estado: 'ok', valor: 3 }));
+    expect(r.custo).toMatchObject({ fator: 3, custoPacote: { estado: 'ok', valor: 30 } });
+  });
+
+  it('kit vinculado de 2 (UNITS_PER_PACK 2) × anúncio de 3 → composição não confirmada', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: 2 }, { estado: 'ok', valor: 3 }));
+    expect(r.custo).toMatchObject({ fator: null, custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' } });
+  });
+
+  it('SKU sem UNITS_PER_PACK confirmado → composição não confirmada (nunca 1)', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: null }, { estado: 'ok', valor: 1 }));
+    expect(r.custo).toMatchObject({ fator: null, unidadesSku: null, custoSku: 10, custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' } });
     const c = r.margem!.classico;
-    expect(c.estado === 'ok' && [c.valor.custo, c.valor.lucro, c.valor.avisos]).toEqual([null, null, [motivo]]);
+    expect(c.estado === 'ok' && [c.valor.custo, c.valor.lucro]).toEqual([null, null]);
+  });
+
+  it('Codex #4: anúncio fora de catálogo → quantidade por anúncio não confirmada, sem lucro (painel pede ao operador)', async () => {
+    const motivo = 'quantidade por anúncio não confirmada';
+    const r = await analisarAnuncio('org', { ...entEan, catalogProductId: null }, porEan({ unidades: 1 }, { estado: 'indisponivel', motivo }));
+    expect(r.custo).toMatchObject({ unidadesPorPacote: null, unidadesSku: 1, custoSku: 10, fator: null, custoPacote: { estado: 'indisponivel', motivo } });
+    const c = r.margem!.classico;
+    expect(c.estado === 'ok' && [c.valor.custo, c.valor.lucro, c.valor.avisos]).toEqual([null, null, ['estimado (pacote padrão)', motivo]]);
+  });
+
+  it('Codex #5: pacote de 3 sem kit vinculado de 3 → frete do pacote padrão rotulado "estimado", nunca as dimensões de 1 SKU', async () => {
+    const d = porEan({ unidades: 1 }, { estado: 'ok', valor: 3 });
+    const r = await analisarAnuncio('org', entEan, d);
+    expect(d.dimensoesDoPacote).toHaveBeenCalledWith('org', '9001', 3);
+    expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', null);
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20, aviso: 'estimado (pacote padrão)' });
+  });
+
+  it('pacote de 3 com kit vinculado de 3 da família → frete com as dimensões próprias do kit, sem aviso', async () => {
+    const KIT = { altura_cm: 12, largura_cm: 12, comprimento_cm: 30, peso_gramas: 1500 };
+    const d = porEan({ unidades: 1 }, { estado: 'ok', valor: 3 }, { dimensoesDoPacote: vi.fn(async () => KIT) });
+    const r = await analisarAnuncio('org', entEan, d);
+    expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', KIT);
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20 });
+  });
+
+  it('fator 1 com SKU sem dimensões → pacote padrão rotulado', async () => {
+    const d = porEan({ unidades: 1, dimensoes: null }, { estado: 'ok', valor: 1 });
+    const r = await analisarAnuncio('org', entEan, d);
+    expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', null);
+    expect(r.parametros.frete).toMatchObject({ aviso: 'estimado (pacote padrão)' });
+  });
+
+  it('composição desconhecida → frete do pacote padrão rotulado; dimensoesDoPacote nem é consultado', async () => {
+    const d = porEan({ unidades: null }, { estado: 'ok', valor: 3 });
+    const r = await analisarAnuncio('org', entEan, d);
+    expect(d.dimensoesDoPacote).not.toHaveBeenCalled();
+    expect(r.parametros.frete).toMatchObject({ aviso: 'estimado (pacote padrão)' });
   });
 
   it('unidadesPorPacote que lança → indisponível, a análise segue', async () => {
-    const r = await analisarAnuncio('org', ent, deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => { throw new Error('boom'); }) }));
+    const r = await analisarAnuncio('org', entEan, porEan({}, { estado: 'ok', valor: 1 }, { unidadesPorPacote: vi.fn(async () => { throw new Error('boom'); }) }));
     expect(r.custo.custoPacote).toEqual({ estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' });
   });
 

@@ -117,23 +117,38 @@ export function comissaoDaListingPrice(lp: ListingPriceML, preco: number): Dispo
     : { estado: 'ok', valor: c.valor };
 }
 
-/** UNITS_PER_PACK de /products/{id} (corpo do mlGet; null = HTTP/timeout). Sem o atributo → ok 1;
- *  corpo null ou valor que não é inteiro ≥ 1 → indisponível (nunca presumir 1). */
-export function unidadesDoProduto(produto: unknown): Disponivel<number> {
-  const IND = { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' } as const;
-  if (produto == null || typeof produto !== 'object') return IND;
-  const attrs = (produto as { attributes?: unknown }).attributes;
+/** UNITS_PER_PACK numa lista de atributos do ML: undefined = ausente; null = ilegível (não inteiro ≥ 1). */
+function lerUnitsPerPack(attrs: unknown): number | null | undefined {
   type Attr = { id?: string; value_name?: string | null; value_struct?: { number?: unknown } | null };
   const a = Array.isArray(attrs) ? (attrs as Attr[]).find((x) => x?.id === 'UNITS_PER_PACK') : undefined;
-  if (!a) return { estado: 'ok', valor: 1 };
+  if (!a) return undefined;
   const bruto = a.value_struct?.number ?? a.value_name;
   const v = bruto == null || bruto === '' ? NaN : Number(bruto);
-  return Number.isInteger(v) && v >= 1 ? { estado: 'ok', valor: v } : IND;
+  return Number.isInteger(v) && v >= 1 ? v : null;
+}
+
+export const QTD_NAO_CONFIRMADA = 'quantidade por anúncio não confirmada';
+
+/** UNITS_PER_PACK de /products/{id} (corpo do mlGet; null = HTTP/timeout). Nunca presume 1 (D-8):
+ *  sem o atributo → "quantidade por anúncio não confirmada"; corpo null ou valor ilegível → indisponível. */
+export function unidadesDoProduto(produto: unknown): Disponivel<number> {
+  if (produto == null || typeof produto !== 'object') return { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' };
+  const v = lerUnitsPerPack((produto as { attributes?: unknown }).attributes);
+  if (v === undefined) return { estado: 'indisponivel', motivo: QTD_NAO_CONFIRMADA };
+  return v === null ? { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' } : { estado: 'ok', valor: v };
 }
 
 /** Colunas lidas de `variacoes` (+ família) para montar o custo do vínculo. */
 export const SELECT_VARIACAO =
-  'id, codigo, nome, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(origem, kit_multiplicador, nome_pai)';
+  'id, codigo, nome, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(origem, kit_multiplicador, nome_pai, codigo_pai, atributos_ml)';
+
+interface FamiliaLinha {
+  origem: string | null;
+  kit_multiplicador: number | null;
+  nome_pai: string | null;
+  codigo_pai?: string | null;
+  atributos_ml?: unknown;
+}
 
 export interface LinhaVariacao {
   id: string;
@@ -145,9 +160,7 @@ export interface LinhaVariacao {
   largura_cm: number | string | null;
   comprimento_cm: number | string | null;
   atualizado_em: string;
-  familias: { origem: string | null; kit_multiplicador: number | null; nome_pai: string | null }
-    | { origem: string | null; kit_multiplicador: number | null; nome_pai: string | null }[]
-    | null;
+  familias: FamiliaLinha | FamiliaLinha[] | null;
 }
 
 const familia = (l: LinhaVariacao) => (Array.isArray(l.familias) ? l.familias[0] : l.familias) ?? null;
@@ -170,18 +183,35 @@ export function deduplicarPorCodigo(linhas: LinhaVariacao[]): LinhaVariacao[] {
   return [...m.values()];
 }
 
+/** Unidades comerciais do SKU = UNITS_PER_PACK que ele declara no próprio anúncio (familias.atributos_ml), nunca
+ *  presumidas (D-8). Kit vinculado grava ali o multiplicador (aplicarKitNosAtributos): se divergir de
+ *  kit_multiplicador, a equivalência não está comprovada → null. Ausente/ilegível → null. */
+export function unidadesDoSku(f: FamiliaLinha | null): number | null {
+  const n = lerUnitsPerPack(f?.atributos_ml);
+  if (n == null) return null;
+  if (f?.kit_multiplicador != null && Number(f.kit_multiplicador) !== n) return null;
+  return n;
+}
+
+/** Linha de variação → dimensões válidas do pacote, ou null. */
+export function dimensoesDaLinha(l: Pick<LinhaVariacao, 'altura_cm' | 'largura_cm' | 'comprimento_cm' | 'peso_gramas'>) {
+  const dim = { altura_cm: num(l.altura_cm), largura_cm: num(l.largura_cm), comprimento_cm: num(l.comprimento_cm), peso_gramas: num(l.peso_gramas) };
+  return dimensoesValidas(dim) ? dim : null;
+}
+
 /** Linha → VariacaoCusto; família sem origem válida → origem null (conta na ambiguidade; nunca presumida). */
 export function variacaoCusto(l: LinhaVariacao): VariacaoCusto {
-  const o = familia(l)?.origem;
+  const f = familia(l);
+  const o = f?.origem;
   const origem = o === 'nacional' || o === 'importado' ? o : null;
-  const dim = { altura_cm: num(l.altura_cm), largura_cm: num(l.largura_cm), comprimento_cm: num(l.comprimento_cm), peso_gramas: num(l.peso_gramas) };
   return {
     variacaoId: l.id,
     codigo: l.codigo,
     custo: custoDe(l),
     origem,
-    unidades: unidadesDe(l),
-    dimensoes: dimensoesValidas(dim) ? dim : null,
+    unidades: unidadesDoSku(f),
+    codigoPai: f?.codigo_pai ?? null,
+    dimensoes: dimensoesDaLinha(l),
   };
 }
 

@@ -1,9 +1,7 @@
 // Vínculo anúncio do ML → variação da organização (ADR-0189 D-8). Lógica pura com deps
 // injetadas; a edge implementa as consultas. Sem imports de runtime além de folhas relativas.
 import type { DimensoesPacote } from '../ml/pacote.ts';
-import { round2 } from '../dinheiro.ts';
 import { gtinOuNull } from '../produto/gtin.ts';
-import type { Disponivel } from './tipos.ts';
 
 export type FonteCusto = 'catalogo' | 'ean_da_busca' | 'vinculo_manual' | 'nenhuma';
 
@@ -13,8 +11,10 @@ export interface VariacaoCusto {
   custo: number | null;
   /** null = família sem origem cadastrada: a margem fica indisponível, nunca presumida. */
   origem: 'nacional' | 'importado' | null;
-  /** familias.kit_multiplicador ?? 1 */
-  unidades: number;
+  /** UNITS_PER_PACK declarado no anúncio do próprio SKU (familias.atributos_ml); null = composição não confirmada. */
+  unidades: number | null;
+  /** familias.codigo_pai: acha o kit vinculado desta família (dimensões próprias do pacote). */
+  codigoPai: string | null;
   dimensoes: DimensoesPacote | null;
 }
 
@@ -47,19 +47,4 @@ export async function resolverVinculo(
   const m = await deps.porVinculoManual(orgId, { tipo: 'item', valor: e.mlItemId });
   if (m) return { fonte: 'vinculo_manual', variacao: m };
   return { fonte: 'nenhuma', variacao: null };
-}
-
-/** custo × (UNITS_PER_PACK ÷ unidades da variação); divisão não inteira → composição diferente. */
-export function custoDoPacote(v: VariacaoCusto, unidadesPorPacote: number): Disponivel<number> {
-  if (!Number.isInteger(unidadesPorPacote) || unidadesPorPacote < 1) {
-    return { estado: 'indisponivel', motivo: 'unidades por pacote inválidas' };
-  }
-  if (!Number.isInteger(v.unidades) || v.unidades < 1) {
-    return { estado: 'indisponivel', motivo: 'unidades da variação inválidas' };
-  }
-  if (v.custo == null) return { estado: 'indisponivel', motivo: 'custo não cadastrado' };
-  if (!Number.isFinite(v.custo)) return { estado: 'indisponivel', motivo: 'custo inválido' };
-  const fator = unidadesPorPacote / v.unidades;
-  if (!Number.isInteger(fator)) return { estado: 'indisponivel', motivo: 'composição diferente' };
-  return { estado: 'ok', valor: round2(v.custo * fator) };
 }

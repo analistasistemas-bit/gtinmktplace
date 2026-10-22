@@ -17,7 +17,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  type Pedido, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
+  type Pedido, QTD_NAO_CONFIRMADA, SELECT_VARIACAO, dimensoesDaLinha, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -108,12 +108,26 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       });
     },
     unidadesPorPacote: async (cpid) => {
-      if (!cpid) return { estado: 'ok', valor: 1 };
+      // Fora de catálogo a quantidade não é confirmável no servidor (D-8): o painel pede ao operador.
+      if (!cpid) return { estado: 'indisponivel', motivo: QTD_NAO_CONFIRMADA };
       const t = await tokenML().catch(() => null);
       if (!t) return { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' };
-      // v2: o formato antigo (número cru, gravado até para falha) não é relido.
-      return emCache<Disponivel<number>>(`ext:upp:v2:${cpid}`, (v) => v.estado === 'ok', async () =>
+      // v3: a v2 gravou "ok 1" para produto sem o atributo (presunção); não é relida.
+      return emCache<Disponivel<number>>(`ext:upp:v3:${cpid}`, (v) => v.estado === 'ok', async () =>
         unidadesDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
+    },
+    dimensoesDoPacote: async (org, codigoPai, fator) => {
+      // Kit vinculado de `fator` SKUs desta família: dimensões próprias da embalagem (criar-kit-vinculado).
+      const { data, error } = await admin.from('variacoes')
+        .select('peso_gramas, altura_cm, largura_cm, comprimento_cm, familias!inner(kit_base_codigo_pai, kit_multiplicador)')
+        .eq('org_id', org).eq('familias.kit_base_codigo_pai', codigoPai).eq('familias.kit_multiplicador', fator)
+        .order('atualizado_em', { ascending: false }).limit(5);
+      falhou('dimensoesDoPacote', error);
+      for (const l of (data ?? []) as Parameters<typeof dimensoesDaLinha>[0][]) {
+        const d = dimensoesDaLinha(l);
+        if (d) return d;
+      }
+      return null;
     },
   };
 }

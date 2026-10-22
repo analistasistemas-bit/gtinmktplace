@@ -23,6 +23,7 @@ vi.mock('../../_shared/ml/http.ts', () => ({ mlGet: vi.fn() }));
 vi.mock('../../_shared/redis/client.ts', () => ({ redisGet: vi.fn(), redisSet: vi.fn(), redisIncrComTTL: vi.fn(async () => 1) }));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
+    rpc: async () => ({ error: null }),
     from: (tabela: string) => {
       let op = 'select';
       let valor: unknown;
@@ -126,5 +127,13 @@ describe('extensao — auditoria de suporte nas escritas de vínculo', () => {
     const r = await post({ acao: 'buscar_sku', termo: 'abc' });
     expect(r.status).toBe(200);
     expect(auditorias()).toEqual([]);
+  });
+});
+
+describe('extensao — quantidade por anúncio (D-8)', () => {
+  it('anúncio fora de catálogo: unidades não confirmadas (null), nunca 1', async () => {
+    const r = await post({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: null });
+    expect(r.status).toBe(200);
+    expect((await r.json()).custo).toMatchObject({ unidadesPorPacote: null });
   });
 });

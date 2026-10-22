@@ -2,7 +2,7 @@
 // análise; confirma no servidor 1,5 s depois que o operador para de editar o preço (D-18).
 import { useEffect, useRef, useState } from 'react';
 import type { Disponivel, MargemTipo } from '../../../supabase/functions/_shared/extensao/tipos.ts';
-import { calcularMinhaMargem } from '../compartilhado/margem';
+import { calcularMinhaMargem, custoDoPacote, fatorDoPacote } from '../compartilhado/margem';
 import { brl, mensagemDeErro, pct, ROTULO_FONTE, type EntradaAnuncio, type Resposta, type RespostaAnuncio } from './formato';
 
 const ESPERA_CONFIRMAR_MS = 1500;
@@ -26,6 +26,7 @@ function numero(txt: string): number | null {
 export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
+  const [unidadesTxt, setUnidadesTxt] = useState('');
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -55,6 +56,12 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const custoN = numero(custoTxt);
   const custoDigitado = custoN !== null && custoN >= 0 ? custoN : null;
   const origemEfetiva: Origem | null = semVinculo ? origem : custo.origem;
+  // Quantidade do anúncio não confirmada pelo catálogo (D-8): o operador informa; sem padrão.
+  const pedeUnidades = !semVinculo && custo.fator === null && custo.unidadesPorPacote === null;
+  const unidadesN = numero(unidadesTxt);
+  const unidadesDigitadas = unidadesN !== null && Number.isInteger(unidadesN) && unidadesN >= 1 ? unidadesN : null;
+  const fator = pedeUnidades && unidadesDigitadas !== null ? fatorDoPacote(unidadesDigitadas, custo.unidadesSku) : custo.fator;
+  const custoPacote = pedeUnidades && unidadesDigitadas !== null ? custoDoPacote(custo.custoSku, fator) : custo.custoPacote;
 
   let pendencia: string | null = null;
   if (preco === null) pendencia = 'Informe um preço válido.';
@@ -73,7 +80,7 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
     margem = calcularMinhaMargem({
       preco,
       aliquotaPct,
-      custoPacote: semVinculo ? { estado: 'ok', valor: custoDigitado! } : custo.custoPacote,
+      custoPacote: semVinculo ? { estado: 'ok', valor: custoDigitado! } : custoPacote,
       classico: { comissao: parametros.classico, frete: parametros.frete },
       premium: { comissao: parametros.premium, frete: parametros.frete },
     });
@@ -111,10 +118,16 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
       ) : (
         <div className="custo">
           <p>{`Custo do SKU ${custo.codigo ?? '—'} · ${ROTULO_FONTE[custo.fonte] ?? custo.fonte}`}</p>
+          {pedeUnidades && (
+            <label className="campo">
+              Unidades por anúncio
+              <input type="number" inputMode="numeric" min="1" step="1" value={unidadesTxt} onChange={(e) => setUnidadesTxt(e.target.value)} />
+            </label>
+          )}
           <p className="nota">
-            {custo.custoPacote?.estado === 'ok'
-              ? `Custo do pacote: ${brl(custo.custoPacote.valor)}${(custo.unidadesPorPacote ?? 1) > 1 ? ` (${custo.unidadesPorPacote} unidades)` : ''}`
-              : `Custo do pacote indisponível: ${custo.custoPacote?.motivo ?? 'sem custo'}`}
+            {custoPacote?.estado === 'ok'
+              ? `Custo do pacote: ${brl(custoPacote.valor)}${fator !== null && fator > 1 ? ` (${fator} × custo do SKU)` : ''}`
+              : `Custo do pacote indisponível: ${custoPacote?.motivo ?? 'sem custo'}`}
           </p>
         </div>
       )}

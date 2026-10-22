@@ -34,3 +34,22 @@ function calcularTipo(e: EntradaMargem, t: EntradaMargemTipo): Disponivel<Margem
 export function calcularMinhaMargem(e: EntradaMargem): MinhaMargem {
   return { preco: e.preco, classico: calcularTipo(e, e.classico), premium: calcularTipo(e, e.premium) };
 }
+
+export const COMPOSICAO_NAO_CONFIRMADA = 'composição não confirmada';
+
+/** Quantos SKUs cabem no anúncio: unidades do anúncio ÷ unidades do SKU (D-8). Só inteiro ≥ 1 é fator;
+ *  qualquer lado desconhecido ou divisão não inteira → null (composição não confirmada, nunca presumida). */
+export function fatorDoPacote(unidadesAnuncio: number | null, unidadesSku: number | null): number | null {
+  const ok = (n: number | null): n is number => n !== null && Number.isInteger(n) && n >= 1;
+  if (!ok(unidadesAnuncio) || !ok(unidadesSku)) return null;
+  const f = unidadesAnuncio / unidadesSku;
+  return Number.isInteger(f) ? f : null;
+}
+
+/** Custo do pacote = custo do SKU × fator. Mesmo cálculo na edge e no painel. */
+export function custoDoPacote(custoSku: number | null, fator: number | null): Disponivel<number> {
+  if (custoSku == null) return { estado: 'indisponivel', motivo: 'custo não cadastrado' };
+  if (!Number.isFinite(custoSku)) return { estado: 'indisponivel', motivo: 'custo inválido' };
+  if (fator === null) return { estado: 'indisponivel', motivo: COMPOSICAO_NAO_CONFIRMADA };
+  return { estado: 'ok', valor: round2(custoSku * fator) };
+}

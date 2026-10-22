@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  unidadesDoProduto, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
+  dimensoesDaLinha, unidadesDoProduto, unidadesDoSku, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -132,9 +132,10 @@ describe('unidadesDoProduto', () => {
     expect(unidadesDoProduto(upp({ value_name: '3' }))).toEqual({ estado: 'ok', valor: 3 });
     expect(unidadesDoProduto(upp({ value_struct: { number: 12, unit: '' }, value_name: '1' }))).toEqual({ estado: 'ok', valor: 12 });
   });
-  it('produto sem o atributo → ok 1', () => {
-    expect(unidadesDoProduto({ attributes: [] })).toEqual({ estado: 'ok', valor: 1 });
-    expect(unidadesDoProduto({ attributes: [{ id: 'BRAND', value_name: 'X' }] })).toEqual({ estado: 'ok', valor: 1 });
+  it('produto sem o atributo → quantidade por anúncio não confirmada (nunca 1)', () => {
+    const NC = { estado: 'indisponivel', motivo: 'quantidade por anúncio não confirmada' };
+    expect(unidadesDoProduto({ attributes: [] })).toEqual(NC);
+    expect(unidadesDoProduto({ attributes: [{ id: 'BRAND', value_name: 'X' }] })).toEqual(NC);
   });
   it('corpo null (HTTP/timeout) ou atributo ilegível → indisponível, nunca 1', () => {
     expect(unidadesDoProduto(null)).toEqual(IND);
@@ -148,24 +149,53 @@ describe('unidadesDoProduto', () => {
 function linha(over: Partial<LinhaVariacao> = {}): LinhaVariacao {
   return {
     id: 'v1', codigo: '001', nome: 'Linha 1', custo: '10.5', peso_gramas: 300, altura_cm: 10, largura_cm: 5, comprimento_cm: 20,
-    atualizado_em: '2026-10-01T00:00:00Z', familias: { origem: 'importado', kit_multiplicador: null, nome_pai: 'Pai' }, ...over,
+    atualizado_em: '2026-10-01T00:00:00Z',
+    familias: { origem: 'importado', kit_multiplicador: null, nome_pai: 'Pai', codigo_pai: '9001', atributos_ml: [{ id: 'UNITS_PER_PACK', value_name: '1' }] }, ...over,
   };
 }
 
 describe('variacaoCusto', () => {
   it('mapeia custo, origem da família, unidades e dimensões', () => {
     expect(variacaoCusto(linha())).toEqual({
-      variacaoId: 'v1', codigo: '001', custo: 10.5, origem: 'importado', unidades: 1,
+      variacaoId: 'v1', codigo: '001', custo: 10.5, origem: 'importado', unidades: 1, codigoPai: '9001',
       dimensoes: { altura_cm: 10, largura_cm: 5, comprimento_cm: 20, peso_gramas: 300 },
     });
   });
-  it('dimensão incompleta → null; kit_multiplicador vira unidades; custo 0 → null', () => {
-    const v = variacaoCusto(linha({ altura_cm: null, custo: 0, familias: [{ origem: 'nacional', kit_multiplicador: 2, nome_pai: null }] }));
-    expect(v).toMatchObject({ dimensoes: null, unidades: 2, custo: null, origem: 'nacional' });
+  it('dimensão incompleta → null; custo 0 → null; família em array', () => {
+    const v = variacaoCusto(linha({ altura_cm: null, custo: 0, familias: [{ origem: 'nacional', kit_multiplicador: null, nome_pai: null }] }));
+    expect(v).toMatchObject({ dimensoes: null, unidades: null, custo: null, origem: 'nacional', codigoPai: null });
   });
   it('família sem origem válida → origem null (nunca presumida), variação mantida', () => {
     expect(variacaoCusto(linha({ familias: { origem: null, kit_multiplicador: null, nome_pai: null } }))).toMatchObject({ variacaoId: 'v1', origem: null });
     expect(variacaoCusto(linha({ familias: { origem: 'NACIONAL ', kit_multiplicador: null, nome_pai: null } })).origem).toBeNull();
+  });
+});
+
+describe('unidadesDoSku (composição comercial confirmada do SKU)', () => {
+  const fam = (atributos_ml: unknown, kit_multiplicador: number | null = null) => ({ origem: 'nacional', kit_multiplicador, nome_pai: null, atributos_ml });
+  const upp = (v: unknown) => [{ id: 'BRAND', value_name: 'X' }, { id: 'UNITS_PER_PACK', value_name: v }];
+  it('UNITS_PER_PACK do próprio anúncio do SKU (caixa de 24, sem kit → 24)', () => {
+    expect(unidadesDoSku(fam(upp('24')))).toBe(24);
+    expect(unidadesDoSku(fam([{ id: 'UNITS_PER_PACK', value_struct: { number: 6 }, value_name: '1' }]))).toBe(6);
+  });
+  it('sem o atributo, ilegível ou família ausente → null (não confirmado; nunca kit_multiplicador ?? 1)', () => {
+    expect(unidadesDoSku(fam([]))).toBeNull();
+    expect(unidadesDoSku(fam(null))).toBeNull();
+    expect(unidadesDoSku(fam(upp('2.5')))).toBeNull();
+    expect(unidadesDoSku(fam(upp('0')))).toBeNull();
+    expect(unidadesDoSku(null)).toBeNull();
+  });
+  it('kit vinculado: UNITS_PER_PACK = kit_multiplicador comprova; divergente → null', () => {
+    expect(unidadesDoSku(fam(upp('3'), 3))).toBe(3);
+    expect(unidadesDoSku(fam(upp('24'), 3))).toBeNull();
+    expect(unidadesDoSku(fam([], 3))).toBeNull();
+  });
+});
+
+describe('dimensoesDaLinha', () => {
+  it('completas → objeto; incompleta → null', () => {
+    expect(dimensoesDaLinha({ altura_cm: '10', largura_cm: 5, comprimento_cm: 20, peso_gramas: 300 })).toEqual({ altura_cm: 10, largura_cm: 5, comprimento_cm: 20, peso_gramas: 300 });
+    expect(dimensoesDaLinha({ altura_cm: null, largura_cm: 5, comprimento_cm: 20, peso_gramas: 300 })).toBeNull();
   });
 });
 
