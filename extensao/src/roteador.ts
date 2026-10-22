@@ -33,6 +33,10 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (!pagina && !(tabId !== undefined && ACOES_CONTENT_SCRIPT.has(corpo.acao))) {
         return Promise.resolve({ ok: false, erro: 'payload_invalido' });
       }
+      // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
+      if (!pagina && corpo.acao === 'analisar_anuncio') {
+        return eanDaAba(tabId!).then((eanDaBusca) => chamarExtensao({ ...corpo, eanDaBusca }));
+      }
       return chamarExtensao(corpo);
     }
     case 'publiai:abrir-painel':

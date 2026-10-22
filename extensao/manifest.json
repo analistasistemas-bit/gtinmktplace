@@ -7,6 +7,14 @@
   "host_permissions": ["https://*.mercadolivre.com.br/*"],
   "background": { "service_worker": "sw.js", "type": "module" },
   "side_panel": { "default_path": "src/painel/index.html" },
-  "action": { "default_title": "PubliAI" },
+  "content_scripts": [
+    {
+      "matches": ["https://produto.mercadolivre.com.br/*", "https://www.mercadolivre.com.br/*/p/*", "https://www.mercadolivre.com.br/up/*"],
+      "js": ["anuncio.js"],
+      "run_at": "document_idle"
+    },
+    { "matches": ["https://lista.mercadolivre.com.br/*"], "js": ["busca-ean.js"], "run_at": "document_idle" }
+  ],
+  "action":{ "default_title": "PubliAI" },
   "externally_connectable": { "matches": ["https://app.publiai.daludi.com.br/*"] }
 }

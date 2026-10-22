@@ -44,6 +44,15 @@ describe('publiai:chamar', () => {
     expect(fetchFalso).not.toHaveBeenCalled();
   });
 
+  it('analisar_anuncio do content script leva o EAN da própria aba, ignorando o enviado', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await registrarEanDaAba(8, '96385074');
+    await chamar({ acao: 'analisar_anuncio', eanDaBusca: '96385074' }, CONTEUDO);
+    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ eanDaBusca: '7899941205918' });
+    await chamar({ acao: 'analisar_anuncio', eanDaBusca: '96385074' }, { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab });
+    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca).toBeNull();
+  });
+
   it('remetente sem aba e fora da extensão não chama nada', async () => {
     const semAba: Sender = { id: 'ext-publiai', url: 'https://evil.com/' };
     expect(await chamar({ acao: 'analisar_anuncio' }, semAba)).toEqual({ ok: false, erro: 'payload_invalido' });
