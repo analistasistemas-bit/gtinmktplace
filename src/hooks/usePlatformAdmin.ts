@@ -7,6 +7,7 @@ import {
   type BillingStatement,
   type CommercialTerms,
   type CommercialTermsInput,
+  type ExtensaoUsage,
   type Month,
   type OrgSummary,
   type Page,
@@ -84,6 +85,8 @@ export const platformAdminKeys = {
       page: params.page,
       page_size: params.page_size,
     })),
+  extensaoUsage: (userId: UserId, orgId: string, month: Month) =>
+    key(userId, 'extensao_usage', orgId, month, {}),
   audit: (userId: UserId, params: PlatformAuditParams) =>
     key(userId, 'audit', params.org_id, params.month, filters({
       category: params.category,
@@ -160,6 +163,17 @@ export function usePlatformPulseUsage(params: PlatformPulseUsageParams) {
     queryKey: platformAdminKeys.pulseUsage(userId, params),
     queryFn: () => callPlatformAdmin('pulse_usage', { ...params }),
     enabled: Boolean(userId && params.org_id && params.month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+/** Uso e erros de leitura da Extensão PubliAI no mês (ADR-0189, Task 25). */
+export function usePlatformExtensaoUsage(orgId: string, month: Month) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<ExtensaoUsage>({
+    queryKey: platformAdminKeys.extensaoUsage(userId, orgId, month),
+    queryFn: () => callPlatformAdmin('extensao_usage', { org_id: orgId, month }),
+    enabled: Boolean(userId && orgId && month),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BarChart3, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, Puzzle, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrgAudit } from '@/components/platform-admin/org-audit';
 import { OrgBilling } from '@/components/platform-admin/org-billing';
 import { OrgPulse } from '@/components/platform-admin/org-pulse';
+import { OrgExtensao } from '@/components/platform-admin/org-extensao';
 import { OrgResults } from '@/components/platform-admin/org-results';
 import { OrgSettings } from '@/components/platform-admin/org-settings';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
@@ -20,7 +21,7 @@ import { usePlatformOrganization, usePlatformPreview } from '@/hooks/usePlatform
 import { cancelSupport, listSupportRequests } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
 
-const tabs = ['resultados', 'pulse', 'cobranca', 'auditoria', 'configuracoes'] as const;
+const tabs = ['resultados', 'pulse', 'extensao', 'cobranca', 'auditoria', 'configuracoes'] as const;
 type Tab = typeof tabs[number];
 
 function currentMonth(now = new Date()): string {
@@ -240,6 +241,7 @@ export default function OrganizacaoDetalhe() {
         <TabsList aria-label="Seções da organização">
           <TabsTrigger value="resultados"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
           <TabsTrigger value="pulse"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
+          <TabsTrigger value="extensao"><Puzzle className="h-4 w-4" />Extensão</TabsTrigger>
           <TabsTrigger value="cobranca">
             <Receipt className="h-4 w-4" />Cobrança
             {blockerCount !== null && blockerCount > 0 && (
@@ -253,6 +255,7 @@ export default function OrganizacaoDetalhe() {
         </TabsList>
         <TabsContent value="resultados" className="pt-4"><OrgResults organization={organization} /></TabsContent>
         <TabsContent value="pulse" className="pt-4"><OrgPulse orgId={orgId} month={month} /></TabsContent>
+        <TabsContent value="extensao" className="pt-4"><OrgExtensao orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="cobranca" className="pt-4"><OrgBilling orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="auditoria" className="pt-4"><OrgAudit orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="configuracoes" className="pt-4"><OrgSettings orgId={orgId} /></TabsContent>

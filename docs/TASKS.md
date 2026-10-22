@@ -48,6 +48,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   páginas; sua participação (posição por preço e preço para ganhar), vencedor com origem, resumo, ofertas (5 + ver todas,
   ordenação Preço/Reputação/Medalha), barras por UF e medalha com cobertura de perfis; "Simular minha margem a R$ X" leva
   o preço do vencedor à Minha margem. UI/UX aprovado (Codex Sol, 10/10, 3 rodadas).
+- [x] Task 25 — encerramento da Fatia 4: aba "Extensão" na Central (ação `extensao_usage` da `platform-admin`, v16) com
+  análises por tipo e por pessoa, vínculos e erros de leitura legíveis; "Extensão de navegador" saiu do "Não fazer" do
+  `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` (arquivo local, não versionado). UI/UX aprovado (10/10).
+- [ ] Investigar os erros de leitura reais vistos na Central (22/10, DSA): 13× `estado_nao_encontrado` em página de
+  anúncio (último MLB7765568724) e 2× `campo_ausente:ml_item_id` em catálogo (último MLB15976572).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

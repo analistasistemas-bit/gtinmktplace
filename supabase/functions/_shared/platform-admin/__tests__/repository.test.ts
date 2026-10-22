@@ -247,6 +247,37 @@ describe('createPlatformAdminRepository', () => {
     expect(usage).toMatchObject({ total: 4, client_units: 2, client_cents: 240, daludi_searches: 1, failures: 1, reopens: 1 });
   });
 
+  it('extensaoUsage: soma o mês por tipo e por pessoa, conta vínculos e lista os erros (ADR-0189, Task 25)', async () => {
+    const db = fakeDb({
+      extensao_uso_diario: { rows: [
+        { org_id: 'org-a', user_id: 'u1', dia: '2026-10-21', tipo_pagina: 'anuncio', analises: 5 },
+        { org_id: 'org-a', user_id: 'u1', dia: '2026-10-22', tipo_pagina: 'catalogo', analises: 2 },
+        { org_id: 'org-a', user_id: 'u2', dia: '2026-10-22', tipo_pagina: 'anuncio', analises: 1 },
+        { org_id: 'org-a', user_id: 'u2', dia: '2026-09-30', tipo_pagina: 'anuncio', analises: 9 },
+        { org_id: 'org-b', user_id: 'u9', dia: '2026-10-22', tipo_pagina: 'anuncio', analises: 50 },
+      ] },
+      extensao_erros_leitura: { rows: [
+        { org_id: 'org-a', dia: '2026-10-21', tipo_pagina: 'anuncio', versao_extensao: '0.1.0', motivo: 'campo_ausente:preco', ocorrencias: 2, ultimo_ml_item_id: 'MLB1' },
+        { org_id: 'org-a', dia: '2026-10-22', tipo_pagina: 'catalogo', versao_extensao: '0.1.0', motivo: 'estado_nao_encontrado', ocorrencias: 1, ultimo_ml_item_id: null },
+      ] },
+      extensao_vinculos: { rows: [{ id: 'v1', org_id: 'org-a' }, { id: 'v2', org_id: 'org-a' }, { id: 'v3', org_id: 'org-b' }] },
+      profiles: { rows: [{ id: 'u1', nome: 'Diego' }] },
+    });
+    const r = await createPlatformAdminRepository(db as never).extensaoUsage('actor', 'org-a', '2026-10');
+    expect(r).toMatchObject({ analises: 8, por_tipo: { anuncio: 6, busca: 0, catalogo: 2 }, pessoas_ativas: 2, dias_com_uso: 2, vinculos: 2, erros_total: 3, primeiro_uso: '2026-09-30' });
+    expect(r.pessoas).toEqual([
+      { actor_id: 'u1', actor_name: 'Diego', analises: 7, ultimo_dia: '2026-10-22' },
+      { actor_id: 'u2', actor_name: null, analises: 1, ultimo_dia: '2026-10-22' },
+    ]);
+    expect(r.erros.map((e) => [e.dia, e.motivo, e.ocorrencias])).toEqual([['2026-10-22', 'estado_nao_encontrado', 1], ['2026-10-21', 'campo_ausente:preco', 2]]);
+  });
+
+  it('extensaoUsage: mês sem uso e contagem de vínculos indisponível', async () => {
+    const db = fakeDb({ extensao_uso_diario: {}, extensao_erros_leitura: {}, extensao_vinculos: { error: 'falhou' } });
+    const r = await createPlatformAdminRepository(db as never).extensaoUsage('actor', 'org-a', '2026-10');
+    expect(r).toEqual({ analises: 0, por_tipo: { anuncio: 0, busca: 0, catalogo: 0 }, pessoas_ativas: 0, dias_com_uso: 0, vinculos: null, pessoas: [], erros: [], erros_total: 0, primeiro_uso: null });
+  });
+
   it('resolves actor names for the page in one read and keeps them null when profiles fails', async () => {
     const searches = [
       { id: 's1', org_id: 'org-a', actor_id: 'actor-1', created_at: '2026-08-04T12:00:00-03:00', normalized_query: 'a', query_type: 'termo', origin: 'cliente', state: 'completed', result_id: null, intent_key: 'k1' },

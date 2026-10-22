@@ -206,3 +206,9 @@ validada na de validação, com o mesmo gate.
   margem a R$ X" aplica o preço no simulador existente (prop `precoSugerido`, só por clique).
 - Reputação sempre em texto além da cor; seleção do controle segmentado com sublinhado primário; no tema escuro
   `--shadow-xs` é sombra transparente válida (com `none`, listas de `box-shadow` são descartadas pelo navegador).
+
+## Emenda 2026-10-22 — uso e erros na Central (D-19, Task 25)
+
+- Ação `extensao_usage` na `platform-admin` (super-admin) e aba "Extensão" no detalhe da organização: análises do mês por
+  tipo de página e por pessoa, dias com uso, vínculos de produto (total da org) e erros de leitura agrupados (motivo
+  legível com o código técnico ao lado). Lê só as tabelas da v1; nada de concorrente (D-1).

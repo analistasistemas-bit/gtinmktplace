@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','audit'] as const;
+  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
@@ -70,6 +70,7 @@ describe('createPlatformAdminHandler', () => {
     ['statement', 'statement', { org_id: ORG, statement_id: STATEMENT }, [ACTOR, ORG, STATEMENT]],
     ['reconcile_revenue', 'reconcile', { org_id: ORG, sale_id: STATEMENT, source_updated_at: '2026-08-02T12:00:00Z', refunded_product_cents: 0, reason: 'evidência' }, [ACTOR, { org_id: ORG, sale_id: STATEMENT, source_updated_at: '2026-08-02T12:00:00Z', refunded_product_cents: 0, reason: 'evidência' }]],
     ['pulse_usage', 'pulseUsage', { org_id: ORG, month: '2026-08', page: 1, page_size: 20 }, [ACTOR, ORG, '2026-08', 1, 20]],
+    ['extensao_usage', 'extensaoUsage', { org_id: ORG, month: '2026-10' }, [ACTOR, ORG, '2026-10']],
     ['audit', 'audit', { org_id: ORG, month: '2026-08', category: 'billing', actor_id: ACTOR, result: 'success', page: 1, page_size: 20 }, [ACTOR, ORG, '2026-08', { category: 'billing', actor_id: ACTOR, result: 'success' }, 1, 20]],
   ])('dispatches %s with validated arguments', async (action, method, input, args) => {
     const { handler, repository } = harness();

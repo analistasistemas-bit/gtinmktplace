@@ -2,7 +2,7 @@ import { validateTerms } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
+const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit']);
 // deno-lint-ignore no-explicit-any
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
@@ -26,7 +26,7 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
     try {
       const { userId } = await deps.authenticate(req); const body = await req.json().catch(() => { throw new TypeError('JSON inválido'); }) as Record<string, unknown>;
       const action = requiredString(body.action, 'action'); if (!ACTIONS.has(action)) throw new TypeError('action inválida');
-      const orgActions = new Set(['organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
+      const orgActions = new Set(['organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit']);
       const orgId = orgActions.has(action) ? uuid(body.org_id, 'org_id') : null;
       if (orgId && action !== 'organization' && !(await deps.repository.organizationExists(orgId))) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
       let result: unknown;
@@ -49,6 +49,7 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
         case 'statement': result = await deps.repository.statement(userId, orgId, uuid(body.statement_id, 'statement_id')); break;
         case 'reconcile_revenue': result = await deps.repository.reconcile(userId, { org_id: orgId, sale_id: uuid(body.sale_id, 'sale_id'), source_updated_at: requiredString(body.source_updated_at, 'source_updated_at'), refunded_product_cents: body.refunded_product_cents, reason: requiredString(body.reason, 'reason') }); break;
         case 'pulse_usage': result = await deps.repository.pulseUsage(userId, orgId, month(body.month), page(body.page), pageSize(body.page_size)); break;
+        case 'extensao_usage': result = await deps.repository.extensaoUsage(userId, orgId, month(body.month)); break;
         case 'audit': result = await deps.repository.audit(userId, orgId, month(body.month), { category: typeof body.category === 'string' ? body.category : undefined, actor_id: body.actor_id === undefined ? undefined : uuid(body.actor_id, 'actor_id'), result: typeof body.result === 'string' ? body.result : undefined }, page(body.page), pageSize(body.page_size)); break;
       }
       return json(result, 200, headers);

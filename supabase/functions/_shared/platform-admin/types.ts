@@ -190,3 +190,21 @@ export type PulseUsage = Page<PulseUsageRow> & {
   measured_cost_cents: Cents | null;
   tracked_since: string | null;
 };
+
+/** Uso da Extensão PubliAI por organização e mês (ADR-0189 D-19, Task 25): contagem diária e erros de leitura. */
+export type ExtensaoUsoPessoa = { actor_id: string; actor_name: string | null; analises: number; ultimo_dia: string };
+export type ExtensaoErroLeitura = {
+  dia: string; tipo_pagina: string; versao: string; motivo: string; ocorrencias: number; ultimo_ml_item_id: string | null;
+};
+export type ExtensaoUsage = {
+  analises: number;
+  por_tipo: { anuncio: number; busca: number; catalogo: number };
+  pessoas_ativas: number;
+  dias_com_uso: number;
+  /** Vínculos manuais de produto da org (total, não do mês); null = contagem indisponível. */
+  vinculos: number | null;
+  pessoas: ExtensaoUsoPessoa[];
+  erros: ExtensaoErroLeitura[];
+  erros_total: number;
+  primeiro_uso: string | null;
+};

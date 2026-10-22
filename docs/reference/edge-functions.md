@@ -130,6 +130,7 @@ o cliente `service_role` apenas para chamar repositórios/RPCs escopados pela or
 a central não cria uma sessão de suporte. Ações: `wallet` (carteira paginada com totais agregados,
 em 1 chamada — substitui as antigas `overview`/`list`), `organization`, `metrics`, `terms`,
 `save_terms`, `preview`, `close`, `statements`, `statement`, `reconcile_revenue`, `pulse_usage`,
+`extensao_usage` (ADR-0189 Task 25: análises do mês por tipo de página e por pessoa, dias com uso, vínculos de produto da org e erros de leitura agrupados, de `extensao_uso_diario`/`extensao_erros_leitura`/`extensao_vinculos`; aba "Extensão" no detalhe da organização),
 `audit`. `close` sem condição comercial vigente devolve `422` com `code: 'commercial_terms_required'`
 (ADR-0158 §1). Cada organização de `wallet`/`organization` traz `next_terms_starts_on`: o início da
 próxima vigência (`AAAA-MM-01`) quando o mês pedido não tem condição vigente mas já existe contrato

@@ -1,5 +1,5 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
-import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
+import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -28,6 +28,8 @@ type SearchRow = {
 };
 type DeliveryRow = { id: string; search_id: string; units: number; total_cents: number; reason: string | null };
 type DeliveryTotals = { units: number; total_cents: number };
+type ExtensaoUsoRow = { user_id: string; dia: string; tipo_pagina: string; analises: number };
+type ExtensaoErroRow = { dia: string; tipo_pagina: string; versao_extensao: string; motivo: string; ocorrencias: number; ultimo_ml_item_id: string | null };
 type PlatformAuditRow = {
   id: string; org_id: string; actor_id: string | null; occurred_at: string; category: string;
   action: string; result: string; target: string | null; reason: string | null; details: Record<string, unknown> | null;
@@ -204,6 +206,41 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         fillActorNames(rows),
       ]); fail(first.error);
       return { rows, total: count ?? 0, page, page_size: pageSize, client_units: allDeliveries.reduce((sum, row) => sum + Number(row.units), 0), client_cents: allDeliveries.reduce((sum, row) => sum + Number(row.total_cents), 0), daludi_searches: daludi ?? 0, failures: failures ?? 0, reopens: reopens ?? 0, measured_cost_cents: null, tracked_since: ((first.data as { created_at: string }[] | null)?.[0]?.created_at ?? null) };
+    },
+    async extensaoUsage(_actorId: string, orgId: string, month: string): Promise<ExtensaoUsage> {
+      // `dia` é date no fuso de São Paulo (extensao_registrar_uso): recorta pelo primeiro dia do mês e do seguinte.
+      const inicio = monthDate(month); const fim = monthBounds(month)[1].slice(0, 10);
+      const [uso, erros, vinculos, primeiro] = await Promise.all([
+        allRows<ExtensaoUsoRow>((a, b) => db.from('extensao_uso_diario').select('user_id,dia,tipo_pagina,analises').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim).range(a, b)),
+        allRows<ExtensaoErroRow>((a, b) => db.from('extensao_erros_leitura').select('dia,tipo_pagina,versao_extensao,motivo,ocorrencias,ultimo_ml_item_id').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim).range(a, b)),
+        exactCount(db.from('extensao_vinculos').select('id', { count: 'exact', head: true }).eq('org_id', orgId)),
+        db.from('extensao_uso_diario').select('dia').eq('org_id', orgId).order('dia', { ascending: true }).limit(1),
+      ]); fail(primeiro.error);
+      const porTipo = { anuncio: 0, busca: 0, catalogo: 0 };
+      const porPessoa = new Map<string, ExtensaoUsoPessoa>();
+      for (const row of uso) {
+        const n = Number(row.analises) || 0;
+        if (row.tipo_pagina === 'anuncio' || row.tipo_pagina === 'busca' || row.tipo_pagina === 'catalogo') porTipo[row.tipo_pagina] += n;
+        const atual = porPessoa.get(row.user_id) ?? { actor_id: row.user_id, actor_name: null, analises: 0, ultimo_dia: row.dia };
+        atual.analises += n; if (row.dia > atual.ultimo_dia) atual.ultimo_dia = row.dia;
+        porPessoa.set(row.user_id, atual);
+      }
+      const pessoas = [...porPessoa.values()].sort((a, b) => b.analises - a.analises || b.ultimo_dia.localeCompare(a.ultimo_dia));
+      await fillActorNames(pessoas);
+      const linhasErro: ExtensaoErroLeitura[] = erros
+        .map((row) => ({ dia: row.dia, tipo_pagina: row.tipo_pagina, versao: row.versao_extensao, motivo: row.motivo, ocorrencias: Number(row.ocorrencias) || 0, ultimo_ml_item_id: row.ultimo_ml_item_id }))
+        .sort((a, b) => b.dia.localeCompare(a.dia) || b.ocorrencias - a.ocorrencias);
+      return {
+        analises: porTipo.anuncio + porTipo.busca + porTipo.catalogo,
+        por_tipo: porTipo,
+        pessoas_ativas: pessoas.length,
+        dias_com_uso: new Set(uso.map((row) => row.dia)).size,
+        vinculos,
+        pessoas,
+        erros: linhasErro,
+        erros_total: linhasErro.reduce((s, row) => s + row.ocorrencias, 0),
+        primeiro_uso: ((primeiro.data ?? []) as { dia: string }[])[0]?.dia ?? null,
+      };
     },
     async audit(_actorId: string, orgId: string, month: string, filters: { category?: string; actor_id?: string; result?: string }, page: number, pageSize: number): Promise<Page<AuditRow>> {
       const [start, end] = monthBounds(month);
