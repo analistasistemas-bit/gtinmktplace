@@ -4,36 +4,38 @@
 
 **Goal:** Extensão Chrome (MV3, painel lateral) que, para contas PubliAI com o módulo ligado, mostra **minha margem** e dados observados/estimativas rotuladas sobre anúncios do Mercado Livre, sem base de mercado própria.
 
-**Architecture:** A extensão lê a página do ML (initialState/DOM) e envia o mínimo para uma Edge Function `extensao` do PubliAI, autenticada com a sessão Supabase do usuário; o servidor checa módulo/organização, usa o token ML da organização **só em leituras**, calcula a margem com as peças financeiras existentes e devolve o resultado pronto. Na página do ML só há selos; a análise abre no side panel.
+**Architecture:** A extensão lê a página do ML (initialState/DOM) e envia o mínimo para uma Edge Function `extensao` do PubliAI, autenticada com o access token Supabase que o app web empurra para a extensão; o servidor checa módulo/organização, usa o token ML da organização **só em leituras**, calcula a margem com as peças financeiras existentes e devolve resultado e parâmetros. Na página do ML só há selos; a análise abre no side panel.
 
-**Tech Stack:** Chrome MV3 (`sidePanel`, `storage`, `externally_connectable`), TypeScript + React + Vite (build próprio da extensão em `extensao/`), Supabase Edge Functions (Deno), Postgres com RLS, Upstash Redis, vitest.
+**Tech Stack:** Chrome MV3 (`sidePanel`, `storage`, `externally_connectable`), TypeScript + React + Vite (pacote `extensao/` no workspace pnpm), Supabase Edge Functions (Deno), Postgres com RLS, Upstash Redis, vitest.
 
 **Spec:** `docs/decisions/0189-extensao-publiai-navegador.md` (ADR-0189) + glossário `CONTEXT.md` § Extensão do navegador.
 
 ## Global Constraints
 
-- Sem base de mercado: nada de anúncio de concorrente é gravado no servidor, exceto o **vínculo de produto** da organização (catálogo ML → variação) e o **registro de erro de leitura** (ID do anúncio + tipo de página + versão). (D-1, D-19)
-- Endpoints ML permitidos no servidor: `/sites/MLB/listing_prices`, shipping options do vendedor (via `buscarFreteVendedorComProveniencia`), `/users/{id}`, `/products/{id}`, `/products/{id}/items`, `/trends/MLB/{cat}`, `/highlights/MLB/category/{id}`, e leituras de **itens da própria organização**. Nunca `/items/{id}` de concorrente nem `/sites/MLB/search`. Nunca Sonar/Apify. (D-1, D-2, contexto 3)
-- Token ML nunca sai do servidor. (D-17)
+- Sem base de mercado: nada de anúncio de concorrente é gravado no servidor, exceto o **vínculo de produto** da organização e o **erro de leitura** deduplicado (ID do anúncio, tipo de página, versão, motivo). (D-1, D-19)
+- Endpoints ML permitidos no servidor: `/sites/MLB/listing_prices`, frete do vendedor (via `buscarFreteVendedorComProveniencia`), `/users/{id}`, `/products/{id}`, `/products/{id}/items`, `/trends/MLB/{cat}`, `/highlights/MLB/category/{id}`, e leituras de itens da **própria** organização. Nunca `/items/{id}` de concorrente nem `/sites/MLB/search`. Nunca Sonar/Apify. (D-1, D-2)
+- Token ML nunca sai do servidor. A extensão guarda só o **access token** Supabase recebido do app; **nunca** guarda nem usa refresh token. (D-4, D-17)
 - Módulo `extensao` em `organizations.modulos_habilitados`, desligado por padrão, checado no servidor com `exigirModulo`. (D-18)
-- Limite técnico: **30 análises por minuto por usuário**; acima disso, HTTP 429 com mensagem "Muitas análises em sequência. Aguarde um minuto." (D-18)
-- Ausência nunca vira zero: comissão, frete ou alíquota indisponíveis → o tipo de anúncio correspondente sai como `indisponivel` com o motivo. Alíquota exige `configuracoes.aliquotas_confirmadas_em` preenchido (ADR-0086). (D-7)
-- Imposto por origem: `importado` → `aliquota_importado_pct ?? 16`; senão `aliquota_nacional_pct ?? 8` (mesma regra de `process-familia/index.ts:360`). (D-7)
-- Custo da margem = `variacoes.custo × unidades_por_pacote` (padrão 1). (D-8)
-- Permissões do manifest: `sidePanel`, `storage`; `host_permissions` só `https://*.mercadolivre.com.br/*`; `externally_connectable.matches` só `https://publiai.daludi.com.br/*` e `https://ean2marketplace-frontend.onrender.com/*`. Proibido `<all_urls>`, `webRequest`, `declarativeNetRequest`, iframe de página de concorrente, patch de `fetch`/XHR. (D-14)
-- Telemetria: nenhuma biblioteca de terceiros (PostHog, Amplitude, Sentry). (D-19)
-- Textos de UI em pt-BR com acentuação; rótulos fixos: "Minha margem", "Estimativa", "Observado", "Abrir no PubliAI", "Custo do SKU {codigo} · {fonte}". (D-6, D-8, D-9)
+- Limite técnico: **30 análises por minuto por usuário**, HTTP 429 `{ erro: 'limite' }` com a mensagem "Muitas análises em sequência. Aguarde um minuto."; a simulação de preço é recalculada no painel e só confirma no servidor 1,5 s após o operador parar de editar. (D-18)
+- Contrato de erro da edge: `{ erro: 'sessao_expirada' | 'sessao_suporte_expirada' | 'modulo_desligado' | 'limite' | 'payload_invalido' | 'interno' }`. (D-18)
+- Ausência nunca vira zero: comissão, frete ou alíquota indisponíveis → tipo `indisponivel` com motivo. Alíquota exige `configuracoes.aliquotas_confirmadas_em`. Frete sem dimensões da variação → `ok` com aviso "estimado (pacote padrão)". (D-7)
+- Arredondamento: cada componente (comissão, imposto, frete) com `round2`; `recebe = preço − Σ componentes`; usar `sale_fee_amount` do ML quando o preço é o consultado. (D-7)
+- Imposto por origem: `importado` → `aliquota_importado_pct ?? 16`; `nacional` → `aliquota_nacional_pct ?? 8` (regra de `process-familia/index.ts:360`). Origem vem da família vinculada ou é escolhida pelo operador no custo digitado — **sem padrão**. (D-7, D-8)
+- Custo do pacote = `variacoes.custo × (UNITS_PER_PACK ÷ (origem_kit_multiplicador ?? 1))`; divisão não inteira → `indisponivel: composição diferente`. (D-8)
+- Manifest: permissões `sidePanel`, `storage`; `host_permissions` só `https://*.mercadolivre.com.br/*`; `externally_connectable.matches` só `https://app.publiai.daludi.com.br/*` (+ `http://localhost:5173/*` no build de desenvolvimento). Proibido `<all_urls>`, `webRequest`, `declarativeNetRequest`, iframe de página de concorrente, patch de `fetch`/XHR. Carregar sempre de `extensao/dist`. (D-14)
+- Telemetria: nenhuma biblioteca de terceiros. (D-19)
+- Textos em pt-BR com acentuação; rótulos: "Minha margem", "Estimativa", "Observado", "Abrir no PubliAI", "Custo do SKU {codigo} · {fonte}". (D-6, D-8, D-9)
 - Dropdowns no PubliAI web: `src/components/ui/select.tsx`. (CLAUDE.md)
 - Migrations só por `supabase migration new` + `supabase db push`; validar com `npm run db:check`. (ADR-0043)
-- Validação antes de reportar pronto: `pnpm test -- <escopo>`, `pnpm lint` nos alterados, `pnpm build`, e `pnpm --dir extensao build` quando tocar a extensão.
+- Validação antes de reportar pronto: `pnpm test -- <escopo>`, `pnpm --dir extensao test` quando tocar a extensão, `pnpm lint` nos alterados, `pnpm build`, `pnpm --dir extensao build`.
 
 ## Review Focus
 
-- **Anúncio sem `catalog_product_id`, sem EAN na sessão e sem vínculo manual** — o painel deve abrir com o campo "custo" e calcular ao digitar, não erro. (Task 4 e Task 9)
-- **Comissão ou frete indisponível no ML para um dos tipos** — Clássico calculado e Premium "indisponível: comissão não informada pelo ML", nunca lucro inflado por zero. (Task 2)
-- **Organização com alíquotas não confirmadas** — margem indisponível com "Confirme as alíquotas de imposto em Configurações", nunca 8%/16% em silêncio. (Task 5)
-- **Anúncio próprio** (seller da página = `conta_externa_id` de conexão da org) — resposta `proprio: true` e atalho, sem cálculo de concorrente. (Task 5)
-- **Sessão Supabase expirada/revogada na extensão** — 401 vira estado "Abra o PubliAI e conecte de novo", sem loop de requisições. (Task 7)
+- **Anúncio sem `catalog_product_id`, sem EAN na sessão e sem vínculo manual** — painel abre com "Custo" + escolha de origem e calcula ao preencher os dois. (Tasks 4 e 10)
+- **Comissão ou frete indisponível para um dos tipos** — o outro tipo calcula; o indisponível mostra o motivo. (Task 2)
+- **Alíquotas não confirmadas** — margem indisponível com "Confirme as alíquotas de imposto em Configurações". (Task 5)
+- **Anúncio próprio** — `proprio: true`, atalho, sem cálculo. (Task 5)
+- **Access token expirado e app fechado** — estado "Abra o PubliAI", nenhuma requisição em loop. (Task 7)
 
 ---
 
@@ -41,26 +43,21 @@
 
 ```
 supabase/functions/_shared/extensao/
-  margem.ts                 # calcularMinhaMargem (puro)
-  vinculo.ts                # resolverVinculo (puro, deps injetadas)
-  analisar-anuncio.ts       # analisarAnuncio (orquestração com deps injetadas)
-  tipos.ts                  # contratos de entrada/saída compartilhados
-  __tests__/margem.test.ts, vinculo.test.ts, analisar-anuncio.test.ts
-supabase/functions/extensao/index.ts      # handler HTTP fino (roteia por `acao`)
-supabase/migrations/<ts>_extensao_v1.sql  # extensao_vinculos, extensao_uso_diario, extensao_erros_leitura
-extensao/                                 # a extensão (build Vite próprio)
-  manifest.json
-  vite.config.ts, package.json, tsconfig.json
-  src/sw.ts                               # service worker: sessão, side panel, mensagens
-  src/sessao.ts                           # guarda/renova sessão Supabase (chrome.storage.local)
-  src/api.ts                              # cliente da Edge Function `extensao`
-  src/leitura/pdp.ts                      # parser puro da página do anúncio
-  src/leitura/__tests__/pdp.test.ts + __fixtures__/
-  src/conteudo/anuncio.ts                 # content script: lê PDP, injeta selo
-  src/painel/                             # side panel React (index.html, App.tsx, blocos)
-src/lib/modulos.ts                        # + 'extensao'
-src/pages/... (Configurações → Extensão) # conectar/desconectar + link de instalação
-supabase/functions/usuarios/index.ts      # MODULOS_VALIDOS + 'extensao'
+  tipos.ts, margem.ts, vinculo.ts, analisar-anuncio.ts, erros.ts
+  __tests__/margem.test.ts, vinculo.test.ts, analisar-anuncio.test.ts, erros.test.ts
+supabase/functions/extensao/index.ts            # handler HTTP fino (roteia por `acao`)
+supabase/migrations/<ts>_extensao_v1.sql
+extensao/                                       # pacote do workspace (build Vite)
+  manifest.json, package.json, vite.config.ts, vitest.config.ts, tsconfig.json
+  src/sw.ts, src/sessao.ts, src/api.ts
+  src/compartilhado/margem.ts                   # alias de build para _shared/extensao/margem.ts
+  src/leitura/pdp.ts (+ __tests__, __fixtures__ sintéticas)
+  src/conteudo/anuncio.ts, src/conteudo/busca-ean.ts
+  src/painel/ (index.html, main.tsx, App.tsx, MinhaMargem.tsx, VinculoProduto.tsx)
+src/lib/modulos.ts, src/lib/extensao-ponte.ts
+src/components/configuracoes/extensao-navegador.tsx
+supabase/functions/usuarios/index.ts            # MODULOS_VALIDOS
+pnpm-workspace.yaml, .github/workflows/ci.yml
 ```
 
 ---
@@ -69,253 +66,223 @@ supabase/functions/usuarios/index.ts      # MODULOS_VALIDOS + 'extensao'
 
 ### Task 1: Módulo `extensao`
 
-**Files:**
-- Modify: `src/lib/modulos.ts` (union `ModuloId` e array `MODULOS`)
-- Modify: `supabase/functions/usuarios/index.ts` (`MODULOS_VALIDOS`)
-- Test: `src/lib/__tests__/modulos.test.ts` (criar ou estender)
+**Files:** Modify `src/lib/modulos.ts`, `supabase/functions/usuarios/index.ts`; Test `src/lib/__tests__/modulos.test.ts`.
 
-**Interfaces:**
-- Produces: `ModuloId` inclui `'extensao'`; rótulo exibido na Central de controle: "Extensão do navegador".
+**Interfaces:** Produces `ModuloId` com `'extensao'`, rótulo "Extensão do navegador".
 
-- [ ] **Step 1: Teste falhando** — `it('lista o módulo extensao com rótulo', () => expect(MODULOS.find(m => m.id === 'extensao')?.rotulo).toBe('Extensão do navegador'))` (ajustar o nome do campo de rótulo ao que `MODULOS` já usa).
+- [ ] **Step 1:** Teste falhando: `MODULOS` contém `{ id: 'extensao' }` com rótulo "Extensão do navegador" (usar o nome do campo de rótulo existente).
 - [ ] **Step 2:** `pnpm test -- src/lib/__tests__/modulos.test.ts` → FAIL.
-- [ ] **Step 3:** Acrescentar `'extensao'` em `ModuloId`, `MODULOS` e `MODULOS_VALIDOS` (o menu do app não ganha item: a extensão não tem tela própria no menu além de Configurações).
-- [ ] **Step 4:** Teste → PASS; `pnpm build` → OK.
+- [ ] **Step 3:** Acrescentar `'extensao'` em `ModuloId`, `MODULOS` e `MODULOS_VALIDOS` (sem item de menu).
+- [ ] **Step 4:** PASS; `pnpm build` OK.
 - [ ] **Step 5:** Commit `feat(extensao): módulo extensao por organização (ADR-0189 D-18)`.
 
 ### Task 2: Função pura `calcularMinhaMargem`
 
-**Files:**
-- Create: `supabase/functions/_shared/extensao/tipos.ts`, `supabase/functions/_shared/extensao/margem.ts`
-- Test: `supabase/functions/_shared/extensao/__tests__/margem.test.ts`
+**Files:** Create `supabase/functions/_shared/extensao/tipos.ts`, `margem.ts`; Test `__tests__/margem.test.ts`.
 
 **Interfaces:**
-- Consumes: `liquidoClassico(preco, comissao, frete, aliquotaPct)` (`_shared/preco/liquido.ts`), `round2` (`_shared/dinheiro.ts`).
+- Consumes: `round2` (`_shared/dinheiro.ts:2`).
 - Produces (`tipos.ts`):
   ```ts
-  type Disponivel<T> = { estado: 'ok'; valor: T } | { estado: 'indisponivel'; motivo: string };
-  interface EntradaMargemTipo { comissao: Disponivel<{ percentual: number; fixa: number }>; frete: Disponivel<number>; }
-  interface EntradaMargem { preco: number; aliquotaPct: Disponivel<number>; custoUnitario: number | null; unidadesPorPacote: number; classico: EntradaMargemTipo; premium: EntradaMargemTipo; }
-  interface MargemTipo { comissao: number; imposto: number; frete: number; custoTotal: number | null; recebe: number; lucro: number | null; margemPct: number | null; }
-  interface MinhaMargem { preco: number; classico: Disponivel<MargemTipo>; premium: Disponivel<MargemTipo>; }
+  type Disponivel<T> = { estado: 'ok'; valor: T; aviso?: string } | { estado: 'indisponivel'; motivo: string };
+  interface ComissaoML { percentual: number; fixa: number; saleFeeAmount?: number; precoConsultado?: number }
+  interface EntradaMargemTipo { comissao: Disponivel<ComissaoML>; frete: Disponivel<number> }
+  interface EntradaMargem { preco: number; aliquotaPct: Disponivel<number>; custoPacote: Disponivel<number> | null; classico: EntradaMargemTipo; premium: EntradaMargemTipo }
+  interface MargemTipo { comissao: number; imposto: number; frete: number; custo: number | null; recebe: number; lucro: number | null; margemPct: number | null; avisos: string[] }
+  interface MinhaMargem { preco: number; classico: Disponivel<MargemTipo>; premium: Disponivel<MargemTipo> }
   ```
-  `calcularMinhaMargem(e: EntradaMargem): MinhaMargem` em `margem.ts`.
+  `calcularMinhaMargem(e: EntradaMargem): MinhaMargem`. Comissão = `saleFeeAmount` quando `precoConsultado === preco`, senão `round2(preco × percentual/100 + fixa)`; imposto = `round2(preco × aliquota/100)`; `recebe = round2(preco − comissão − imposto − frete)`; `lucro = recebe − custo`; `margemPct = round2(lucro/preco × 100)`. `custoPacote: null` → `custo/lucro/margemPct` null; `custoPacote` indisponível → idem + motivo em `avisos`.
 
-- [ ] **Step 1: Testes falhando** (valores do caso real validado no Chrome em 2026-10-21, preço R$ 213,19):
-  ```ts
-  it('Clássico 12%, frete 25,45, imposto 7%, custo 80 → recebe 147,24, lucro 67,24', ...)
-  // comissao {percentual:12,fixa:0}, frete 25.45, aliquota 7, custoUnitario 80, unidades 1
-  // expect classico.valor: { comissao: 25.58, imposto: 14.92, frete: 25.45, recebe: 147.24, custoTotal: 80, lucro: 67.24, margemPct: 31.54 }
-  it('Premium 17% no mesmo cenário → recebe 136,58', ...)
-  it('custoUnitario null → recebe calculado, lucro e margemPct null', ...)
-  it('unidadesPorPacote 2 → custoTotal = 2 × custoUnitario', ...)
-  it('comissão indisponível no Premium → premium indisponivel com o motivo, clássico ok', ...)
-  it('aliquota indisponivel → ambos indisponivel com o motivo da alíquota', ...)
-  it('recebe igual a liquidoClassico(preco, comissao, frete, aliquota) arredondado em 2 casas', ...)
-  ```
-  `margemPct` = `lucro / preco × 100`, arredondado em 2 casas.
+- [ ] **Step 1: Testes falhando** (caso validado no Chrome em 2026-10-21, preço R$ 213,19):
+  - Clássico `{percentual:12,fixa:0}`, frete 25,45, alíquota 7, custo 80 → `{ comissao: 25.58, imposto: 14.92, frete: 25.45, recebe: 147.24, custo: 80, lucro: 67.24, margemPct: 31.54 }`.
+  - Premium 17% no mesmo cenário → `comissao: 36.24, recebe: 136.58`.
+  - `saleFeeAmount: 25.58, precoConsultado: 213.19` é usado; com `preco` 199 o percentual é usado (`comissao: 23.88`).
+  - `custoPacote: null` → `recebe` calculado, `lucro`/`margemPct` null.
+  - Comissão do Premium indisponível → `premium` indisponível com o motivo; `classico` ok.
+  - Alíquota indisponível → ambos indisponíveis com o motivo da alíquota.
+  - Frete `ok` com aviso "estimado (pacote padrão)" → aviso aparece em `avisos`.
 - [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/extensao/__tests__/margem.test.ts` → FAIL.
-- [ ] **Step 3:** Implementar `calcularMinhaMargem` com `liquidoClassico` para `recebe` (aplicado a cada tipo com sua comissão) e `round2` só na saída. Arquivo sem import `jsr:`/`npm:` (testável no vitest).
-- [ ] **Step 4:** Testes → PASS.
+- [ ] **Step 3:** Implementar (arquivo sem import `jsr:`/`npm:`).
+- [ ] **Step 4:** PASS.
 - [ ] **Step 5:** Commit `feat(extensao): calcularMinhaMargem pura (ADR-0189 D-7)`.
 
 ### Task 3: Migration `extensao_v1`
 
-**Files:**
-- Create: `supabase/migrations/<timestamp>_extensao_v1.sql` (via `supabase migration new extensao_v1`)
-- Modify: `src/lib/database.types.ts` (tabelas novas consumidas pelo front: só `extensao_vinculos`)
+**Files:** Create `supabase/migrations/<ts>_extensao_v1.sql` (via `supabase migration new extensao_v1`).
 
-**Interfaces:**
-- Produces:
-  - `extensao_vinculos(id uuid pk, org_id uuid not null → organizations, catalog_product_id text not null, variacao_id uuid not null → variacoes on delete cascade, criado_por uuid → auth.users, criado_em timestamptz default now(), atualizado_em timestamptz)`, `unique (org_id, catalog_product_id)`.
-  - `extensao_uso_diario(org_id uuid, user_id uuid, dia date, tipo_pagina text check in ('anuncio','busca','catalogo'), analises int not null default 0, primary key (org_id, user_id, dia, tipo_pagina))`.
-  - `extensao_erros_leitura(id bigint generated always as identity pk, org_id uuid not null, user_id uuid, tipo_pagina text, ml_item_id text, versao_extensao text, detalhe text, criado_em timestamptz default now())`.
-  - RLS ligada nas três; `select` para `authenticated` com `org_id = (select public.current_org_id())`; escrita só por `service_role` (Edge). Grants explícitos como `20260816125057_pulse_v1.sql`. Trigger `moddatetime` em `extensao_vinculos.atualizado_em`.
+**Interfaces — produz:**
+- `extensao_vinculos(id uuid pk default gen_random_uuid(), org_id uuid not null → organizations, chave_tipo text not null check (chave_tipo in ('catalogo','item')), chave text not null, variacao_id uuid not null → variacoes on delete cascade, criado_por uuid → auth.users, criado_em timestamptz default now(), atualizado_em timestamptz)`, `unique (org_id, chave_tipo, chave)`, trigger `moddatetime`.
+- `extensao_uso_diario(org_id uuid, user_id uuid, dia date, tipo_pagina text check in ('anuncio','busca','catalogo'), analises int not null default 0, primary key (org_id, user_id, dia, tipo_pagina))` + RPC `extensao_registrar_uso(p_org_id uuid, p_user_id uuid, p_tipo text)` (`insert … on conflict do update set analises = analises + 1`), `security definer`, execute só `service_role`.
+- `extensao_erros_leitura(org_id uuid, dia date, tipo_pagina text, versao_extensao text, motivo text, ultimo_ml_item_id text, ocorrencias int not null default 1, atualizado_em timestamptz default now(), primary key (org_id, dia, tipo_pagina, versao_extensao, motivo))` + RPC `extensao_registrar_erro(...)` (incrementa `ocorrencias`, atualiza `ultimo_ml_item_id`), execute só `service_role`.
+- RLS ligada nas três; `select` para `authenticated` com `org_id = (select public.current_org_id())`; escrita só via `service_role`. Grants explícitos como `20260816125057_pulse_v1.sql`.
 
-- [ ] **Step 1:** `supabase migration new extensao_v1` e escrever o SQL acima.
+- [ ] **Step 1:** Escrever o SQL.
 - [ ] **Step 2:** `npm run db:check` → OK.
-- [ ] **Step 3:** Teste SQL sem Docker conforme `scripts/teste-sql-desfeito.py` (aplicar em transação desfeita e conferir: insert como service_role ok; select de outra org retorna 0 linhas).
-- [ ] **Step 4:** Atualizar `database.types.ts` para `extensao_vinculos`.
-- [ ] **Step 5:** Commit `feat(extensao): tabelas de vínculo, uso e erro de leitura (ADR-0189 D-8/D-19)`. (`supabase db push` só no deploy da fatia, com o Diego.)
+- [ ] **Step 3:** `python3 scripts/teste-sql-desfeito.py` com o SQL + asserções: insert via service_role ok; select com `current_org_id()` de outra org → 0 linhas; duas chamadas de `extensao_registrar_uso` → `analises = 2`; duas de `extensao_registrar_erro` com mesma chave → `ocorrencias = 2`.
+- [ ] **Step 4:** Commit `feat(extensao): tabelas de vínculo, uso e erro de leitura (ADR-0189 D-8/D-19)`. (`supabase db push` só no deploy da fatia, com o Diego; `database.types.ts` não muda — o front não consome essas tabelas.)
 
 ### Task 4: Resolver vínculo de produto
 
-**Files:**
-- Create: `supabase/functions/_shared/extensao/vinculo.ts`
-- Test: `supabase/functions/_shared/extensao/__tests__/vinculo.test.ts`
+**Files:** Create `supabase/functions/_shared/extensao/vinculo.ts`; Test `__tests__/vinculo.test.ts`.
 
 **Interfaces:**
-- Produces:
-  ```ts
-  type FonteCusto = 'catalogo' | 'ean_da_busca' | 'vinculo_manual' | 'nenhuma';
-  interface VariacaoCusto { variacaoId: string; codigo: string; custo: number | null; origem: 'nacional' | 'importado'; }
-  interface DepsVinculo {
-    porCatalogo(orgId: string, catalogProductId: string): Promise<VariacaoCusto | null>; // variacoes.catalog_product_id
-    porGtin(orgId: string, gtin: string): Promise<VariacaoCusto | null>;                  // variacoes.gtin (normalizado por _shared/produto/gtin.ts)
-    porVinculoManual(orgId: string, catalogProductId: string): Promise<VariacaoCusto | null>; // extensao_vinculos
-  }
-  resolverVinculo(orgId: string, e: { catalogProductId: string | null; eanDaBusca: string | null }, deps: DepsVinculo): Promise<{ fonte: FonteCusto; variacao: VariacaoCusto | null }>
-  ```
-- [ ] **Step 1: Testes falhando:** ordem catálogo → EAN → manual → nenhuma (cada um só consultado se o anterior falhar); `catalogProductId` null pula catálogo e manual; EAN inválido (checksum) é ignorado; mais de uma variação para o mesmo GTIN → `fonte:'nenhuma'` (ambíguo nunca escolhe sozinho).
-- [ ] **Step 2:** rodar → FAIL. **Step 3:** implementar. **Step 4:** PASS.
-- [ ] **Step 5:** Commit `feat(extensao): resolverVinculo na ordem da ADR-0189 D-8`.
+```ts
+type FonteCusto = 'catalogo' | 'ean_da_busca' | 'vinculo_manual' | 'nenhuma';
+interface VariacaoCusto { variacaoId: string; codigo: string; custo: number | null; origem: 'nacional' | 'importado'; unidades: number; dimensoes: DimensoesPacote | null }
+interface DepsVinculo {
+  porCatalogo(orgId: string, catalogProductId: string): Promise<VariacaoCusto[]>;   // variacoes.catalog_product_id
+  porGtin(orgId: string, gtin: string): Promise<VariacaoCusto[]>;                    // variacoes.gtin normalizado (_shared/produto/gtin.ts)
+  porVinculoManual(orgId: string, chave: { tipo: 'catalogo' | 'item'; valor: string }): Promise<VariacaoCusto | null>;
+}
+resolverVinculo(orgId: string, e: { catalogProductId: string | null; mlItemId: string; eanDaBusca: string | null }, deps: DepsVinculo): Promise<{ fonte: FonteCusto; variacao: VariacaoCusto | null }>
+custoDoPacote(v: VariacaoCusto, unidadesPorPacote: number): Disponivel<number>
+```
+`unidades = origem_kit_multiplicador ?? 1`; `dimensoes` no formato `DimensoesPacote` de `_shared/ml/frete.ts`.
+
+- [ ] **Step 1: Testes falhando:** ordem catálogo → EAN → manual (catálogo, depois item) → nenhuma, cada etapa só consultada se a anterior falhar; >1 variação no catálogo ou no GTIN → pula a etapa (ambíguo não escolhe); EAN com dígito inválido ignorado; `custoDoPacote` com custo 10, unidades 1, pack 2 → 20; variação kit de 2 e pack 2 → 10; variação kit de 2 e pack 3 → indisponível "composição diferente"; custo null → indisponível "custo não cadastrado".
+- [ ] **Step 2–4:** FAIL → implementar → PASS.
+- [ ] **Step 5:** Commit `feat(extensao): resolverVinculo e custo do pacote (ADR-0189 D-8)`.
 
 ### Task 5: Orquestração `analisarAnuncio`
 
-**Files:**
-- Create: `supabase/functions/_shared/extensao/analisar-anuncio.ts`
-- Test: `supabase/functions/_shared/extensao/__tests__/analisar-anuncio.test.ts`
+**Files:** Create `supabase/functions/_shared/extensao/analisar-anuncio.ts`; Test `__tests__/analisar-anuncio.test.ts`.
 
 **Interfaces:**
-- Consumes: `calcularMinhaMargem` (Task 2), `resolverVinculo` (Task 4).
-- Produces:
-  ```ts
-  interface EntradaAnuncio { mlItemId: string; sellerId: string; catalogProductId: string | null; categoriaId: string; preco: number; eanDaBusca: string | null; precoSimulado?: number; }
-  interface DepsAnuncio extends DepsVinculo {
-    contasDaOrg(orgId: string): Promise<string[]>;                       // marketplace_connections.conta_externa_id (ML)
-    aliquotas(orgId: string): Promise<{ confirmada: boolean; nacional: number | null; importado: number | null }>;
-    comissao(preco: number, categoriaId: string, tipo: 'gold_special' | 'gold_pro'): Promise<Disponivel<{ percentual: number; fixa: number }>>;
-    frete(preco: number, categoriaId: string): Promise<Disponivel<number>>; // para a conta da org
-    unidadesPorPacote(catalogProductId: string | null): Promise<number>;   // /products/{id} UNITS_PER_PACK, padrão 1
-  }
-  interface RespostaAnuncio { proprio: boolean; margem: MinhaMargem | null; custo: { fonte: FonteCusto; codigo: string | null; custoUnitario: number | null; unidadesPorPacote: number }; }
-  analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<RespostaAnuncio>
-  ```
-- [ ] **Step 1: Testes falhando:** `sellerId` ∈ `contasDaOrg` → `{ proprio: true, margem: null }` sem chamar comissão/frete; alíquota não confirmada → ambos os tipos `indisponivel` com "Confirme as alíquotas de imposto em Configurações"; origem `importado` usa `importado ?? 16`; `precoSimulado` substitui `preco` em comissão, frete e margem; sem variação → `custoUnitario: null` e margem com `lucro: null`.
+```ts
+interface EntradaAnuncio { mlItemId: string; sellerId: string; catalogProductId: string | null; categoriaId: string; preco: number; eanDaBusca: string | null }
+interface DepsAnuncio extends DepsVinculo {
+  contaDaOrg(orgId: string): Promise<string | null>;                       // resolverConexao(...).contaExternaId
+  aliquotas(orgId: string): Promise<{ confirmada: boolean; nacional: number | null; importado: number | null }>;
+  comissao(preco: number, categoriaId: string, tipo: 'gold_special' | 'gold_pro'): Promise<Disponivel<ComissaoML>>;
+  frete(preco: number, categoriaId: string, dim: DimensoesPacote | null): Promise<Disponivel<number>>; // 'partial' → ok + aviso
+  unidadesPorPacote(catalogProductId: string | null): Promise<number>;    // /products/{id} UNITS_PER_PACK, padrão 1
+}
+interface RespostaAnuncio {
+  proprio: boolean;
+  margem: MinhaMargem | null;
+  custo: { fonte: FonteCusto; codigo: string | null; origem: 'nacional' | 'importado' | null; unidadesPorPacote: number; custoPacote: Disponivel<number> | null };
+  parametros: { aliquotas: { nacional: number | null; importado: number | null; confirmada: boolean }; classico: Disponivel<ComissaoML>; premium: Disponivel<ComissaoML>; frete: Disponivel<number> } // para simular no painel
+}
+analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<RespostaAnuncio>
+```
+- [ ] **Step 1: Testes falhando:** `sellerId === contaDaOrg` → `proprio: true`, `margem: null`, sem chamar comissão/frete; alíquota não confirmada → ambos indisponíveis com "Confirme as alíquotas de imposto em Configurações"; família `importado` usa `importado ?? 16`; sem variação → `custoPacote: null`, `origem: null` e margem sem lucro; frete recebe as dimensões da variação vinculada.
 - [ ] **Step 2–4:** FAIL → implementar → PASS.
 - [ ] **Step 5:** Commit `feat(extensao): analisarAnuncio (ADR-0189 D-5/D-7)`.
 
 ### Task 6: Edge Function `extensao`
 
-**Files:**
-- Create: `supabase/functions/extensao/index.ts`
-- Modify: `supabase/config.toml` (`[functions.extensao]`, `verify_jwt = true`)
-- Test: `supabase/functions/extensao/__tests__/roteamento.test.ts` (lógica de roteamento e validação de payload extraída para função pura no mesmo diretório)
+**Files:** Create `supabase/functions/extensao/index.ts`, `supabase/functions/_shared/extensao/erros.ts`; Modify `supabase/config.toml` (`[functions.extensao]`, `verify_jwt = true`); Test `__tests__/erros.test.ts`, `supabase/functions/extensao/__tests__/roteamento.test.ts`.
 
 **Interfaces:**
 - Consumes: `requireUserOrg` (`_shared/auth.ts:36`), `exigirModulo` (`_shared/produto/modulo.ts:8`), `resolverConexao` (`_shared/canais/conexao.ts:22`), `getValidAccessTokenConexao` (`_shared/ml/token.ts:104`), `buscarListingPrice` + `comissaoDeComProveniencia`, `buscarFreteVendedorComProveniencia` (`mlUserId = conexao.contaExternaId`), `mlGet`, `redisIncrComTTL`, `redisGet/redisSet`, `analisarAnuncio`.
 - Produces — `POST /functions/v1/extensao`, corpo `{ acao, ... }`:
-  - `analisar_anuncio` + `EntradaAnuncio` → `RespostaAnuncio`
-  - `buscar_sku` + `{ termo: string }` → `{ itens: { variacaoId, codigo, nome, custo }[] }` (máx. 10; nome/código/GTIN da org)
-  - `salvar_vinculo` + `{ catalogProductId, variacaoId }` → `{ ok: true }` (`requireUserOrg` com `access:'write'`)
-  - `remover_vinculo` + `{ catalogProductId }` → `{ ok: true }`
-  - `erro_leitura` + `{ tipoPagina, mlItemId, versao, detalhe }` → `{ ok: true }`
-  - Erros: 401 sem sessão, 403 `{ erro: 'modulo_desligado' }`, 429 `{ erro: 'limite' }`, 400 payload inválido.
-- [ ] **Step 1: Testes falhando** para `validarPedido(corpo)` (acao desconhecida → 400; `analisar_anuncio` sem `mlItemId`/`preco` numérico → 400) e `chaveLimite(userId, agora)` (`ext:rl:{userId}:{AAAAMMDDHHmm}`).
+  - `analisar_anuncio` + `EntradaAnuncio` → `RespostaAnuncio` (conta no limite; chama `extensao_registrar_uso`)
+  - `buscar_sku` + `{ termo }` → `{ itens: { variacaoId, codigo, nome, custo, origem }[] }` (máx. 10)
+  - `salvar_vinculo` + `{ chave: { tipo, valor }, variacaoId }` → `{ ok: true }` (`access: 'write'`)
+  - `remover_vinculo` + `{ chave }` → `{ ok: true }` (`access: 'write'`)
+  - `erro_leitura` + `{ tipoPagina, mlItemId, versao, motivo }` → `{ ok: true }` (chama `extensao_registrar_erro`; limite próprio de 20/h por usuário)
+  - `normalizarErro(e: unknown): { status: number; corpo: { erro: CodigoErro } }` mapeia a `Response` lançada por `requireUserOrg` (401 → `sessao_expirada`; 403 de sessão de suporte → `sessao_suporte_expirada`) e o 403 do módulo → `modulo_desligado`.
+- [ ] **Step 1: Testes falhando:** `validarPedido` (ação desconhecida/campos ausentes → `payload_invalido`); `chaveLimite(userId, agora)` → `ext:rl:{userId}:{AAAAMMDDHHmm}`; `normalizarErro` para os 4 casos.
 - [ ] **Step 2–4:** FAIL → implementar handler fino + funções puras → PASS.
-- [ ] **Step 5:** Cache Redis de comissão por `ext:lp:{categoria}:{tipo}:{preco}` e de frete por `ext:fr:{orgId}:{categoria}:{preco}`, TTL 6 h. Uso: `upsert` em `extensao_uso_diario` incrementando `analises` em `analisar_anuncio`.
-- [ ] **Step 6:** `pnpm test -- supabase/functions/extensao` + `pnpm build` → OK. Commit `feat(extensao): edge extensao (ADR-0189 D-17/D-18/D-19)`.
+- [ ] **Step 5:** Cache Redis TTL 6 h: comissão `ext:lp:{categoria}:{tipo}:{preco}`, frete `ext:fr:{orgId}:{categoria}:{preco}:{dims|padrao}`, unidades `ext:upp:{catalogProductId}`.
+- [ ] **Step 6:** `pnpm test -- supabase/functions` + `pnpm build`. Commit `feat(extensao): edge extensao (ADR-0189 D-17/D-18/D-19)`.
 
-### Task 7: Esqueleto da extensão + sessão
+### Task 7: Pacote `extensao/` + sessão + spike do side panel
 
-**Files:**
-- Create: `extensao/manifest.json`, `extensao/package.json`, `extensao/vite.config.ts`, `extensao/tsconfig.json`, `extensao/src/sw.ts`, `extensao/src/sessao.ts`, `extensao/src/api.ts`
-- Test: `extensao/src/__tests__/sessao.test.ts`, `extensao/src/__tests__/api.test.ts`
-- Modify: `pnpm-workspace.yaml` (incluir `extensao`), `.github/workflows/*` só se o CI precisar rodar `pnpm --dir extensao build`
+**Files:** Create `extensao/manifest.json`, `package.json` (scripts `build`, `test`), `vite.config.ts` (entradas: `sw`, `conteudo/anuncio`, `conteudo/busca-ean`, `painel/index.html`; alias `@margem` → `../supabase/functions/_shared/extensao/margem.ts`), `vitest.config.ts`, `tsconfig.json`, `src/sw.ts`, `src/sessao.ts`, `src/api.ts`; Modify `pnpm-workspace.yaml` (`packages: ['extensao']`), `pnpm-lock.yaml`, `.github/workflows/ci.yml` (job `lint-build`: `pnpm --dir extensao test` e `pnpm --dir extensao build`); Test `extensao/src/__tests__/sessao.test.ts`, `api.test.ts`.
 
 **Interfaces:**
-- Produces:
-  - Mensagem externa aceita do PubliAI (`chrome.runtime.onMessageExternal`, origem validada contra `externally_connectable`): `{ tipo: 'publiai:conectar', accessToken, refreshToken, expiresAt, orgNome }` e `{ tipo: 'publiai:desconectar' }`.
-  - `obterSessaoValida(): Promise<{ accessToken: string } | null>` (renova com `refreshToken` via `@supabase/supabase-js` `auth.refreshSession` quando faltar < 5 min; falha de renovação → limpa e devolve null).
-  - `chamarExtensao<T>(corpo: object): Promise<{ ok: true; dados: T } | { ok: false; status: number; erro: string }>`; 401 → limpa sessão.
-  - `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
-- [ ] **Step 1: Testes falhando:** mensagem de origem não autorizada é ignorada; `desconectar` apaga `chrome.storage.local`; renovação falha → `null`; 401 limpa sessão; 403 `modulo_desligado` repassado.
-- [ ] **Step 2–4:** FAIL → implementar (chrome API mockada no vitest) → PASS; `pnpm --dir extensao build` gera `extensao/dist` carregável.
-- [ ] **Step 5:** Commit `feat(extensao): esqueleto MV3 com sessão conectada pelo PubliAI (ADR-0189 D-4/D-14)`.
+- Mensagem externa (`onMessageExternal`, origem conferida contra a lista do manifest): `{ tipo: 'publiai:sessao', accessToken: string, expiresAt: number, orgNome: string }` e `{ tipo: 'publiai:desconectar' }`.
+- `obterSessaoValida(): Promise<{ accessToken: string } | null>` — devolve null se faltam < 30 s para `expiresAt`; **não renova**.
+- `chamarExtensao<T>(corpo: object): Promise<{ ok: true; dados: T } | { ok: false; erro: CodigoErro | 'sem_sessao' }>`; `sessao_expirada` limpa a sessão.
+- Mapa EAN por aba no **service worker** (`chrome.storage.session`, só no SW): `registrarEanDaAba(tabId, ean)` / `eanDaAba(tabId)`, alimentado por mensagem do content script (`sender.tab.id`).
+- `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
+- [ ] **Step 1: Testes falhando:** origem não autorizada ignorada; `desconectar` apaga a sessão; token a 20 s do fim → `null`; `sessao_expirada` limpa; nenhuma chamada ao endpoint de token do Supabase existe no pacote (teste de import).
+- [ ] **Step 2–4:** FAIL → implementar (chrome API mockada) → PASS; `pnpm --dir extensao build` gera `extensao/dist` carregável em `chrome://extensions`.
+- [ ] **Step 5 (spike):** em Chrome real, clique num elemento injetado → mensagem ao SW → `chrome.sidePanel.open({ tabId })`. Registrar no plano se funciona; se não, o selo só destaca e o painel abre pelo ícone da extensão (fallback já configurado).
+- [ ] **Step 6:** Commit `feat(extensao): pacote MV3 com sessão recebida do PubliAI (ADR-0189 D-4/D-14)`.
 
 ### Task 8: Parser da página do anúncio
 
-**Files:**
-- Create: `extensao/src/leitura/pdp.ts`, `extensao/src/leitura/__fixtures__/pdp-MLB4641624520.json`, `extensao/src/leitura/__fixtures__/pdp-catalogo-MLB44224164.json`
-- Test: `extensao/src/leitura/__tests__/pdp.test.ts`
+**Files:** Create `extensao/src/leitura/pdp.ts`, `extensao/src/leitura/__fixtures__/pdp-sintetico.json`, `pdp-catalogo-sintetico.json`; Test `extensao/src/leitura/__tests__/pdp.test.ts`.
 
-**Interfaces:**
-- Produces: `lerAnuncio(doc: Document): { ok: true; dados: Omit<EntradaAnuncio, 'eanDaBusca' | 'precoSimulado'> & { vendidosTexto: string | null; titulo: string } } | { ok: false; motivo: string }` — lê `__NORDIC_RENDERING_CTX__` (`_n.ctx.r` → `appProps.pageProps.initialState`); fallback `__PRELOADED_STATE__`.
-- [ ] **Step 1:** Capturar as fixtures das duas páginas reais (mesmos anúncios validados em 2026-10-21) reduzindo o `initialState` aos campos usados; documentar a data da captura no topo do teste.
-- [ ] **Step 2: Testes falhando:** MLB4641624520 → `{ mlItemId: 'MLB4641624520', sellerId: '209471703', catalogProductId: 'MLB27944195', categoriaId: 'MLB122102', preco: 213.19, vendidosTexto: '+1000 vendidos' }`; catálogo MLB44224164 → `catalogProductId: 'MLB44224164'`; HTML sem estado → `{ ok:false, motivo:'estado_nao_encontrado' }`.
-- [ ] **Step 3–4:** implementar → PASS.
+**Interfaces:** `lerAnuncio(doc: Document): { ok: true; dados: EntradaAnuncio-sem-eanDaBusca & { vendidosTexto: string | null; titulo: string } } | { ok: false; motivo: 'estado_nao_encontrado' | 'campo_ausente:<nome>' }` — lê `__NORDIC_RENDERING_CTX__` (`_n.ctx.r` → `appProps.pageProps.initialState`); fallback `__PRELOADED_STATE__`.
+
+- [ ] **Step 1:** Fixtures **sintéticas** (repo público): mesma estrutura dos anúncios observados em 2026-10-21, com IDs e valores fictícios (`MLB1000000001`, seller `100001`, catálogo `MLB2000000001`, categoria `MLB122102`, preço 199.9, "+1000 vendidos").
+- [ ] **Step 2: Testes falhando:** extrai esses valores; catálogo sintético → `catalogProductId: 'MLB2000000001'`; HTML sem estado → `estado_nao_encontrado`; sem preço → `campo_ausente:preco`.
+- [ ] **Step 3–4:** implementar → PASS. Conferência manual (não commitada) contra as páginas reais MLB4641624520 e MLB44224164.
 - [ ] **Step 5:** Commit `feat(extensao): parser da página do anúncio`.
 
-### Task 9: Content script do anúncio + selo + EAN da busca
+### Task 9: Content scripts do anúncio e da busca por EAN
 
-**Files:**
-- Create: `extensao/src/conteudo/anuncio.ts`, `extensao/src/conteudo/busca-ean.ts`
-- Modify: `extensao/manifest.json` (`content_scripts` para `https://produto.mercadolivre.com.br/*`, `https://www.mercadolivre.com.br/*/p/*`, `https://www.mercadolivre.com.br/up/*`, `https://lista.mercadolivre.com.br/*`)
-- Test: `extensao/src/conteudo/__tests__/busca-ean.test.ts`
+**Files:** Create `extensao/src/conteudo/anuncio.ts`, `busca-ean.ts`; Modify `extensao/manifest.json` (`content_scripts` para `https://produto.mercadolivre.com.br/*`, `https://www.mercadolivre.com.br/*/p/*`, `https://www.mercadolivre.com.br/up/*`, `https://lista.mercadolivre.com.br/*`); Test `extensao/src/conteudo/__tests__/busca-ean.test.ts`, `selo.test.ts`.
 
 **Interfaces:**
-- Produces:
-  - `eanDaUrlDeBusca(url: string): string | null` — 8, 12, 13 ou 14 dígitos com dígito verificador válido no primeiro segmento do path de `lista.mercadolivre.com.br`; guardado em `chrome.storage.session` por aba ao navegar da busca para o anúncio.
-  - Selo "Minha margem R$ X (Clássico)" junto ao preço; clique pede ao SW para abrir o side panel da aba. Falha de leitura → `erro_leitura` + nenhum selo.
-- [ ] **Step 1: Testes falhando** para `eanDaUrlDeBusca` (`'https://lista.mercadolivre.com.br/7899941205918'` → `'7899941205918'`; termo textual → null; 13 dígitos com checksum inválido → null).
+- `eanDaUrlDeBusca(url: string): string | null` — 8, 12, 13 ou 14 dígitos com dígito verificador válido no primeiro segmento do path de `lista.mercadolivre.com.br`; enviado ao SW (`registrarEanDaAba`).
+- `textoDoSelo(r: RespostaAnuncio): string` — "Minha margem R$ {lucro} ({margemPct}%)" com lucro; "Recebe R$ {recebe} · informe o custo" sem custo; "Anúncio seu · abrir no PubliAI" se próprio; nada se indisponível.
+- Falha do parser → `erro_leitura` (uma vez por página) e nenhum selo.
+- [ ] **Step 1: Testes falhando:** `'https://lista.mercadolivre.com.br/7899941205918'` → `'7899941205918'`; termo textual → null; checksum inválido → null; os três textos do selo.
 - [ ] **Step 2–4:** FAIL → implementar → PASS.
-- [ ] **Step 5:** Commit `feat(extensao): content script do anúncio com selo e EAN da busca`.
+- [ ] **Step 5:** Commit `feat(extensao): content scripts do anúncio e EAN da busca`.
 
-### Task 10: Side panel — bloco Minha margem e vínculo
+### Task 10: Side panel — minha margem e vínculo
 
-**Files:**
-- Create: `extensao/src/painel/index.html`, `extensao/src/painel/main.tsx`, `extensao/src/painel/App.tsx`, `extensao/src/painel/MinhaMargem.tsx`, `extensao/src/painel/VinculoProduto.tsx`
-- Test: `extensao/src/painel/__tests__/MinhaMargem.test.tsx`, `extensao/src/painel/__tests__/App.test.tsx`
+**Files:** Create `extensao/src/painel/index.html`, `main.tsx`, `App.tsx`, `MinhaMargem.tsx`, `VinculoProduto.tsx`; Test `extensao/src/painel/__tests__/MinhaMargem.test.tsx`, `App.test.tsx`.
 
-**Interfaces:**
-- Consumes: `chamarExtensao` (Task 7), `RespostaAnuncio` (Task 5), dados do content script via `chrome.runtime` (Task 9).
-- Produces — estados da tela: `sem_sessao` ("Abra o PubliAI e conecte a extensão"), `modulo_desligado` ("A extensão não está habilitada para sua empresa"), `proprio` (atalho "Abrir no PubliAI"), `analise` (Clássico e Premium lado a lado com comissão, imposto, frete, custo, recebe, lucro e %; preço editável com debounce de 400 ms; linha "Custo do SKU {codigo} · {fonte}" ou campo "Custo" quando `fonte:'nenhuma'`; botão "Este produto é meu SKU…" → busca e salva vínculo), `limite` (mensagem do 429).
-- [ ] **Step 1: Testes falhando:** renderiza "indisponível: {motivo}" no tipo indisponível; custo digitado recalcula no cliente com `calcularMinhaMargem` reaproveitado (copiar `margem.ts` para `extensao/src/compartilhado/` via build alias, sem duplicar código); fonte `catalogo` exibe "Custo do SKU 00123 · casado pelo catálogo".
+**Interfaces:** consome `chamarExtensao`, `RespostaAnuncio` e `calcularMinhaMargem` via alias `@margem`. Estados: `sem_sessao` ("Abra o PubliAI e conecte a extensão"), `modulo_desligado` ("A extensão não está habilitada para sua empresa"), `sessao_suporte_expirada`, `proprio` ("Abrir no PubliAI"), `analise`, `limite`.
+- Preço editável: recálculo local imediato com `parametros` (comissão por percentual + fixa; frete e alíquotas recebidos); confirmação no servidor 1,5 s após parar de editar.
+- Custo: linha "Custo do SKU {codigo} · {fonte}" com a conta do pacote; sem vínculo, campos "Custo" e "Origem" (Nacional/Importado, sem padrão) — só calcula com os dois preenchidos; botão "Este produto é meu SKU…" → `buscar_sku` → `salvar_vinculo`.
+- [ ] **Step 1: Testes falhando:** tipo indisponível mostra o motivo; custo digitado sem origem não calcula e pede a origem; com origem importado usa a alíquota importado; fonte `catalogo` exibe "Custo do SKU 00123 · casado pelo catálogo"; editar o preço não chama o servidor antes de 1,5 s.
 - [ ] **Step 2–4:** FAIL → implementar → PASS.
-- [ ] **Step 5:** Commit `feat(extensao): side panel com minha margem e vínculo de produto (ADR-0189 D-6/D-7/D-8/D-16)`.
+- [ ] **Step 5:** Commit `feat(extensao): side panel com minha margem e vínculo (ADR-0189 D-6/D-7/D-8/D-16)`.
 
 ### Task 11: PubliAI web — conectar a extensão
 
-**Files:**
-- Create: `src/components/configuracoes/extensao-navegador.tsx`, `src/lib/extensao-ponte.ts`
-- Modify: página de Configurações (aba/seção nova, visível só com módulo `extensao`), fluxo de logout (`publiai:desconectar`)
-- Test: `src/lib/__tests__/extensao-ponte.test.ts`, `src/components/configuracoes/__tests__/extensao-navegador.test.tsx`
+**Files:** Create `src/lib/extensao-ponte.ts`, `src/components/configuracoes/extensao-navegador.tsx`; Modify Configurações (seção visível só com módulo `extensao`) e o ponto onde o app assina `supabase.auth.onAuthStateChange`; Test `src/lib/__tests__/extensao-ponte.test.ts`, `src/components/configuracoes/__tests__/extensao-navegador.test.tsx`.
 
-**Interfaces:**
-- Produces: `conectarExtensao(extensionId: string, sessao: Session): Promise<'ok' | 'nao_instalada'>` e `desconectarExtensao(extensionId)`; `EXTENSAO_ID` em `VITE_EXTENSAO_ID`. Tela: link "Instalar extensão" (URL da Web Store em `VITE_EXTENSAO_URL`), botão "Conectar extensão", estado conectado/não instalada.
-- [ ] **Step 1: Testes falhando:** sem `chrome.runtime` → `'nao_instalada'`; logout chama `desconectarExtensao`; seção oculta sem o módulo.
+**Interfaces:** `enviarSessaoParaExtensao(session: Session | null): Promise<'ok' | 'nao_instalada' | 'desconectada'>` — com sessão envia `publiai:sessao` (access token + `expires_at` + nome da org); sem sessão envia `publiai:desconectar`. Chamado em `SIGNED_IN`, `TOKEN_REFRESHED`, `SIGNED_OUT` e no botão "Conectar extensão". `VITE_EXTENSAO_ID`, `VITE_EXTENSAO_URL`.
+- [ ] **Step 1: Testes falhando:** sem `chrome.runtime` → `'nao_instalada'`; `TOKEN_REFRESHED` reenvia; `SIGNED_OUT` desconecta; seção oculta sem módulo; **nenhum refresh token é enviado** (assert no payload).
 - [ ] **Step 2–4:** FAIL → implementar → PASS; `pnpm build`.
-- [ ] **Step 5:** Commit `feat(extensao): conectar extensão a partir do PubliAI (ADR-0189 D-4)`.
+- [ ] **Step 5:** Commit `feat(extensao): PubliAI empurra a sessão para a extensão (ADR-0189 D-4)`.
 
 ### Task 12: Publicação da fatia 1 e documentação
 
-**Files:**
-- Create: `docs/how-to/usar-a-extensao.md`, `extensao/PRIVACIDADE.md`, `scripts/empacotar-extensao.sh`
-- Modify: `docs/reference/edge-functions.md`, `docs/reference/modelo-de-dados.md`, `docs/TASKS.md`, `docs/project-status.md`
+**Files:** Create `docs/how-to/usar-a-extensao.md`, `extensao/PRIVACIDADE.md`, `scripts/empacotar-extensao.sh`; Modify `docs/reference/edge-functions.md`, `docs/reference/modelo-de-dados.md`, `docs/TASKS.md`, `docs/project-status.md`.
 
-- [ ] **Step 1:** `scripts/empacotar-extensao.sh` gera `extensao/publiai-extensao-<versao>.zip` a partir de `extensao/dist`.
-- [ ] **Step 2:** Política de privacidade (o que lê, o que envia, o que registra — D-19) e texto da loja.
-- [ ] **Step 3:** Docs de referência e how-to; TASKS atualizado.
-- [ ] **Step 4:** Deploy com o Diego: `supabase db push`, `supabase functions deploy extensao`, versão ativa conferida; ligar o módulo na DSA; submeter à Web Store como **não listada** (ação do Diego na conta de desenvolvedor).
-- [ ] **Step 5:** Commit `docs(extensao): how-to, privacidade e referências da fatia 1`.
+- [ ] **Step 1:** `scripts/empacotar-extensao.sh` zipa `extensao/dist` em `extensao/publiai-extensao-<versao>.zip` (zip no `.gitignore`).
+- [ ] **Step 2:** Política de privacidade (lê, envia, registra — D-19) e texto da loja.
+- [ ] **Step 3:** Docs de referência e how-to; TASKS.
+- [ ] **Step 4:** Deploy com o Diego: `supabase db push`, `supabase functions deploy extensao`, versão ativa conferida; módulo ligado na DSA; submissão à Web Store como **não listada** (ação do Diego).
+- [ ] **Step 5:** Revisão do diff da fatia pelo **Grok 4.7 xhigh**; corrigir achados; merge.
+- [ ] **Step 6:** Commit `docs(extensao): how-to, privacidade e referências da fatia 1`.
 
 ---
 
 ## Fatia 2 — Quanto vende + qualidade + vendedor + radar + mídia (tarefas)
 
-- **Task 13 — Validação da estimativa:** script `scripts/validar-estimativa-vendas.ts` que, para anúncios próprios ativos, compara a estimativa (faixa pública + avaliações + idade + tipo, constantes do relatório Avant: ×15 avaliações; +15% < 6 meses; −25% > 12 meses; +15% Premium; consolidado 0,6/0,4) com as vendas reais (Vendas SKU). Saída: erro mediano e por faixa. **Gate:** ≤ 30% → exibir; acima → ajustar constantes ou exibir só observado (decisão registrada na ADR como errata).
-- **Task 14 — `estimarVendas` pura** em `extensao/src/compartilhado/estimativa.ts` (constantes vindas da Task 13) + testes com os casos reais (piso 1000, 905 dias, Clássico → valores esperados medidos na Task 13).
-- **Task 15 — Bloco "Quanto vende"** no painel: linha Observado (faixa, criado em, ≥ X/mês = piso ÷ meses) e linha Estimativa (rótulo + método em tooltip), conforme gate.
-- **Task 16 — Vendedor:** `acao: 'vendedor'` na edge → `/users/{id}` (nickname, `level_id`, `power_seller_status`, `transactions.total`, cidade/UF), cache 24 h; bloco no painel.
-- **Task 17 — Qualidade do anúncio:** regras locais puras (sem Clips, < 5 fotos, descrição < 500 ou ausente, "Sem garantia", estoque < 50, fotos com qualquer dimensão < 1200) + destaque das miniaturas; semáforo de idade (≤ 180 verde, 181–365 amarelo, > 365 vermelho).
-- **Task 18 — Radar do Pulse:** `acao: 'radar'` → leitura de `pulse_produtos`/ofertas/alertas da org por `catalog_product_id` (só com módulo `pulse`); botão "Adicionar ao radar" chama a lógica de `pulse-adicionar`. Nenhuma escrita além do que `pulse-adicionar` já faz.
-- **Task 19 — Baixar mídia:** zip local das fotos/vídeos lidos do estado da página (sem servidor).
+- **Task 13 — Validação da estimativa:** `scripts/validar-estimativa-vendas.ts` compara, para anúncios próprios ativos, a estimativa (faixa pública + avaliações + idade + tipo; constantes do relatório Avant: ×15 avaliações, +15% < 6 meses, −25% > 12 meses, +15% Premium, consolidado 0,6/0,4) com vendas reais (`ml_vendas_itens.ml_item_id/quantity`). Saída: erro mediano e por faixa. **Gate:** ≤ 30% → exibir; acima → ajustar constantes ou só observado (errata na ADR).
+- **Task 14 — `estimarVendas` pura** em `extensao/src/compartilhado/estimativa.ts` com as constantes da Task 13 + testes.
+- **Task 15 — Bloco "Quanto vende":** Observado (faixa, criado em, ≥ X/mês = piso ÷ meses) + Estimativa (rótulo + método), conforme gate.
+- **Task 16 — Vendedor:** `acao: 'vendedor'` → `/users/{id}` (nickname, `level_id`, `power_seller_status`, `transactions.total`, cidade/UF), cache 24 h.
+- **Task 17 — Qualidade do anúncio:** regras locais puras (sem Clips, < 5 fotos, descrição < 500 ou ausente, "Sem garantia" exato, estoque < 50, foto com qualquer dimensão < 1200 e dimensão desconhecida não conta) + destaque das miniaturas; semáforo de idade (≤ 180 verde, 181–365 amarelo, > 365 vermelho).
+- **Task 18 — Radar do Pulse:** `acao: 'radar'` lê `pulse_produtos`/ofertas/alertas da org por `catalog_product_id` (só com módulo `pulse`); "Adicionar ao radar" reaproveita a lógica de `pulse-adicionar`.
+- **Task 19 — Baixar mídia:** zip local de fotos/vídeos do estado da página.
 
 ## Fatia 3 — Busca (tarefas)
 
-- **Task 20 — Parser de busca:** lê os polycards do `initialState` (`item_id`, preço, `metadata.tracks.sold_quantity`, avaliações, Full/frete grátis, tipo, oficial, `metadata.product_id`).
-- **Task 21 — Margem em lote:** `acao: 'analisar_busca'` com até 50 itens; agrupa por categoria/preço para reaproveitar cache de comissão/frete; custo resolvido uma vez por `catalog_product_id`/EAN da busca.
-- **Task 22 — Selos nos cards + resumo lateral** (vendidos da página, menor/maior preço, medalhas, Full, catálogo × fora, oficiais, patrocinados, com oferta) com filtros clicáveis e ordenação por vendidos, preço e minha margem.
+- **Task 20 — Parser de busca:** polycards do `initialState` (`item_id`, preço, `metadata.tracks.sold_quantity`, avaliações, Full/frete grátis, tipo, oficial, `metadata.product_id`).
+- **Task 21 — Margem em lote:** `acao: 'analisar_busca'` com até 50 itens, agrupando por (categoria, preço, tipo) para o cache; chamadas ao ML em **lotes de 5** com backoff em 429 (precedente `analisar-viabilidade/index.ts:26`); conta 1 no limite por busca.
+- **Task 22 — Selos nos cards + resumo lateral** (vendidos da página, menor/maior preço, medalhas, Full, catálogo × fora, oficiais, patrocinados, com oferta), filtros clicáveis e ordenação por vendidos, preço e minha margem.
 
 ## Fatia 4 — Catálogo (tarefas)
 
-- **Task 23 — `acao: 'catalogo'`:** `/products/{id}` + `/products/{id}/items` + `/users` em lote (cache), sem inferir vencedor; vencedor só do campo que o ML informa.
-- **Task 24 — Painel do catálogo:** minha margem ao preço do vencedor, vendas do catálogo (faixa), posição e preço para ganhar quando a org participa (mesma leitura do Pulse), lista de vendedores ordenável, gráficos por UF e medalha.
-- **Task 25 — Encerramento da v1:** critérios de sucesso instrumentados (consulta de `extensao_uso_diario` e `extensao_erros_leitura` para a Central), atualização de `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` (remover "Extensão de navegador" do Não fazer).
+- **Task 23 — `acao: 'catalogo'`:** `/products/{id}` + `/products/{id}/items` + `/users` em lotes de 5 com cache; vencedor só do campo informado pelo ML.
+- **Task 24 — Painel do catálogo:** minha margem ao preço do vencedor, vendas do catálogo (faixa), posição e preço para ganhar quando a org participa, lista de vendedores ordenável, gráficos por UF e medalha.
+- **Task 25 — Encerramento da v1:** consultas de uso e erros para a Central; atualizar `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` no checkout principal (fora do git) removendo "Extensão de navegador" do Não fazer.
 
 ---
 
 ## Revisões
 
-- Este plano e a ADR-0189: **Codex `gpt-6.1-sol` high, read-only**, antes da aprovação.
-- Ao fim de cada fatia: diff da branch revisado pelo **Grok 4.7 xhigh** (`cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null`) antes do merge.
+- ADR-0189 e este plano: Kimi K3 Max em 2026-10-21 (REVISE, 21 achados — incorporados; ver ADR § Processo de revisão). **Codex `gpt-6.1-sol` high** agendado para 2026-10-22 00:55 como segunda revisão.
+- Ao fim de cada fatia: diff revisado pelo **Grok 4.7 xhigh** (`cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null`) antes do merge.
