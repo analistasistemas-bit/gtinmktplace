@@ -25,7 +25,12 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Validar a estimativa de vendas (Task 13): REPROVADA (mediana 90,9% com os patamares reais do ML) →
   desligada, errata na ADR. `scripts/validar-estimativa-vendas.ts` para remedir.
 - [x] code-review-fable5 v13 (segurança): 83/100, selo em shadow root fechada e build de produção sem localhost.
-- [ ] Publicar na Chrome Web Store (não listada) e configurar `VITE_EXTENSAO_ID`/`VITE_EXTENSAO_URL` no frontend.
+- [x] Chrome Web Store: item `kclmlfceoamdkagokbmhglbgdbdcjgep` enviado para revisão em 22/10 (não listado, publicação
+  automática ao aprovar); política de privacidade em `publiai.daludi.com.br/privacidade-extensao/`; conta de editor
+  declarada como negociante (DALUDI), verificação pendente.
+- [x] Render `ean2marketplace-frontend`: `VITE_EXTENSAO_ID`/`VITE_EXTENSAO_URL` configurados e deploy live (22/10).
+- [ ] Após a aprovação do Google: testar a conexão pelo app de produção, instalar pela loja, remover a versão
+  carregada da pasta e a worktree `.claude/worktrees/extensao-chrome-design`.
 - [ ] Fatia 2 restante: vendedor, qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 16–19).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 

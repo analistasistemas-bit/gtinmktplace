@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-27
+atualizado: 2026-10-22
 ---
 
 # Sprint Atual
@@ -14,6 +14,11 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **Fase de melhorias (roadmap local `docs/Roadmap/`, não versionado).** Ordem combinada com o Diego:
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
+>
+> **🟢 Extensão PubliAI para Chrome ([[0189-extensao-publiai-navegador|ADR-0189]]) — em produção desde 2026-10-22** (main
+> `a2753b44`, edge `extensao`, módulo só na DSA). Painel lateral no ML com minha margem, vínculo de SKU e "Quanto vende ·
+> Observado"; estimativa de vendas reprovada e desligada. Chrome Web Store: item `kclmlfceoamdkagokbmhglbgdbdcjgep` em
+> revisão (não listado), política em `publiai.daludi.com.br/privacidade-extensao/`, `VITE_EXTENSAO_ID` já no Render.
 >
 > **🟡 I2 Painel de Ads ([[0179-painel-de-ads|ADR-0179]]) — em piloto (2026-10-05).** Migration `20261005013741_ads_painel`, `coletar-ads-ml` v12 e `usuarios` v45 em produção; front (`/ads`, módulo `ads` desligado) entra com o merge da branch `worktree-i2-painel-ads`. Falta a Task 8 (Diego: ligar na Avil, total ≤ 1 % do Mercado Ads, 2 semanas, ≥ 1 decisão). Ver `docs/TASKS.md`. **20/10:** aba Campanhas no ar (emenda ADR-0179, edge `ads-campanhas`).
 >

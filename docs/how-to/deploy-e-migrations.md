@@ -162,6 +162,21 @@ rede — cortar antes deixa o precache pela metade e o app não abre.
 
 ---
 
+## Extensão PubliAI na Chrome Web Store (ADR-0189)
+
+- **Item:** `kclmlfceoamdkagokbmhglbgdbdcjgep`, conta de editor `analistasistemas@gmail.com` (declarada negociante,
+  DALUDI), visibilidade **não listada**, publicação automática após a revisão. O ID da versão carregada da pasta
+  (`extensao/dist`) é outro; o app de produção só conversa com o ID da loja.
+- **Pacote:** `pnpm --dir extensao build` (produção — o `checar-dist` reprova `localhost` em
+  `externally_connectable`) e zipar o **conteúdo** de `extensao/dist`. Nova versão: subir `version` em
+  `extensao/manifest.json`, gerar o zip e enviar em *Pacote* no painel do desenvolvedor.
+- **Política de privacidade:** `https://publiai.daludi.com.br/privacidade-extensao/`
+  (`docs/brand/landing/privacidade-extensao/index.html`, publicada pela Vercel no push da `main`). Mudou o que a
+  extensão coleta ou para onde envia → atualizar a página **e** a aba *Privacidade* do painel antes de enviar.
+- **Frontend (Render, `ean2marketplace-frontend`):** `VITE_EXTENSAO_ID` (ID do item) e `VITE_EXTENSAO_URL`
+  (`https://chromewebstore.google.com/detail/<ID>`). São variáveis de build do Vite: alterar exige novo deploy.
+  Vazias → a seção "Extensão do navegador" diz que não está disponível e a ponte não envia nada.
+
 ## Deploy da landing page (Vercel)
 
 A landing de marketing (`docs/brand/landing/`) **não faz parte do build do app**. Ela é um site
