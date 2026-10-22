@@ -37,19 +37,21 @@ export function calcularMinhaMargem(e: EntradaMargem): MinhaMargem {
 
 export const COMPOSICAO_NAO_CONFIRMADA = 'composição não confirmada';
 
-/** Quantos SKUs cabem no anúncio: unidades do anúncio ÷ unidades do SKU (D-8). Só inteiro ≥ 1 é fator;
- *  qualquer lado desconhecido ou divisão não inteira → null (composição não confirmada, nunca presumida). */
-export function fatorDoPacote(unidadesAnuncio: number | null, unidadesSku: number | null): number | null {
+export const COMPOSICAO_DIFERENTE = 'composição diferente';
+
+/** Quantos SKUs cabem no anúncio: unidades do anúncio ÷ unidades do SKU (D-8), só inteiro ≥ 1.
+ *  Lado desconhecido/inválido → composição não confirmada (nunca presumida); divisão não inteira → composição diferente. */
+export function fatorDoPacote(unidadesAnuncio: number | null, unidadesSku: number | null): Disponivel<number> {
   const ok = (n: number | null): n is number => n !== null && Number.isInteger(n) && n >= 1;
-  if (!ok(unidadesAnuncio) || !ok(unidadesSku)) return null;
+  if (!ok(unidadesAnuncio) || !ok(unidadesSku)) return { estado: 'indisponivel', motivo: COMPOSICAO_NAO_CONFIRMADA };
   const f = unidadesAnuncio / unidadesSku;
-  return Number.isInteger(f) ? f : null;
+  return Number.isInteger(f) ? { estado: 'ok', valor: f } : { estado: 'indisponivel', motivo: COMPOSICAO_DIFERENTE };
 }
 
 /** Custo do pacote = custo do SKU × fator. Mesmo cálculo na edge e no painel. */
-export function custoDoPacote(custoSku: number | null, fator: number | null): Disponivel<number> {
+export function custoDoPacote(custoSku: number | null, fator: Disponivel<number>): Disponivel<number> {
   if (custoSku == null) return { estado: 'indisponivel', motivo: 'custo não cadastrado' };
   if (!Number.isFinite(custoSku)) return { estado: 'indisponivel', motivo: 'custo inválido' };
-  if (fator === null) return { estado: 'indisponivel', motivo: COMPOSICAO_NAO_CONFIRMADA };
-  return { estado: 'ok', valor: round2(custoSku * fator) };
+  if (fator.estado === 'indisponivel') return fator;
+  return { estado: 'ok', valor: round2(custoSku * fator.valor) };
 }

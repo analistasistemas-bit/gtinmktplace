@@ -32,7 +32,7 @@ describe('analisarAnuncio', () => {
     const r = await analisarAnuncio('org', { ...ent, sellerId: '222' }, d);
     expect(r.proprio).toBe(true);
     expect(r.margem).toBeNull();
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
     expect(r.parametros.frete).toEqual({ estado: 'indisponivel', motivo: 'anúncio próprio' });
     expect(d.comissao).not.toHaveBeenCalled();
     expect(d.frete).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('analisarAnuncio', () => {
   it('sem variação: custoPacote null, origem null, alíquota pede origem, frete do pacote padrão rotulado', async () => {
     const d = deps();
     const r = await analisarAnuncio('org', ent, d);
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
     expect(r.margem!.classico).toEqual({ estado: 'indisponivel', motivo: 'Informe a origem do produto' });
     expect(r.parametros.classico.estado).toBe('ok');
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', null);
@@ -84,7 +84,7 @@ describe('analisarAnuncio', () => {
   it('casado pelo catálogo: mesmo produto → fator 1 e frete com as dimensões do SKU, sem aviso', async () => {
     const d = deps({ cat: [v({ unidades: null })], unidadesPorPacote: vi.fn(async () => ({ estado: 'indisponivel' as const, motivo: 'quantidade por anúncio não confirmada' })) });
     const r = await analisarAnuncio('org', ent, d);
-    expect(r.custo).toMatchObject({ fonte: 'catalogo', fator: 1, custoPacote: { estado: 'ok', valor: 10 } });
+    expect(r.custo).toMatchObject({ fonte: 'catalogo', fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 10 } });
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', DIM);
     expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20 });
   });
@@ -99,9 +99,19 @@ describe('analisarAnuncio', () => {
     expect(r.custo).toMatchObject({ fator: 3, custoPacote: { estado: 'ok', valor: 30 } });
   });
 
-  it('kit vinculado de 2 (UNITS_PER_PACK 2) × anúncio de 3 → composição não confirmada', async () => {
+  it('kit vinculado de 2 (UNITS_PER_PACK 2) × anúncio de 3 → composição diferente (razão não inteira)', async () => {
     const r = await analisarAnuncio('org', entEan, porEan({ unidades: 2 }, { estado: 'ok', valor: 3 }));
-    expect(r.custo).toMatchObject({ fator: null, custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' } });
+    expect(r.custo).toMatchObject({ fator: null, faltaUnidades: null, custoPacote: { estado: 'indisponivel', motivo: 'composição diferente' } });
+  });
+
+  it('só as unidades do SKU desconhecidas → faltaUnidades "sku", com o custo unitário do SKU', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: null }, { estado: 'ok', valor: 3 }));
+    expect(r.custo).toMatchObject({ unidadesPorPacote: 3, unidadesSku: null, custoSku: 10, fator: null, faltaUnidades: 'sku', custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' } });
+  });
+
+  it('os dois lados desconhecidos → faltaUnidades "ambos"', async () => {
+    const r = await analisarAnuncio('org', { ...entEan, catalogProductId: null }, porEan({ unidades: null }, { estado: 'indisponivel', motivo: 'quantidade por anúncio não confirmada' }));
+    expect(r.custo).toMatchObject({ unidadesPorPacote: null, unidadesSku: null, custoSku: 10, faltaUnidades: 'ambos', custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' } });
   });
 
   it('SKU sem UNITS_PER_PACK confirmado → composição não confirmada (nunca 1)', async () => {
@@ -114,7 +124,7 @@ describe('analisarAnuncio', () => {
   it('Codex #4: anúncio fora de catálogo → quantidade por anúncio não confirmada, sem lucro (painel pede ao operador)', async () => {
     const motivo = 'quantidade por anúncio não confirmada';
     const r = await analisarAnuncio('org', { ...entEan, catalogProductId: null }, porEan({ unidades: 1 }, { estado: 'indisponivel', motivo }));
-    expect(r.custo).toMatchObject({ unidadesPorPacote: null, unidadesSku: 1, custoSku: 10, fator: null, custoPacote: { estado: 'indisponivel', motivo } });
+    expect(r.custo).toMatchObject({ unidadesPorPacote: null, unidadesSku: 1, custoSku: 10, fator: null, faltaUnidades: 'anuncio', custoPacote: { estado: 'indisponivel', motivo } });
     const c = r.margem!.classico;
     expect(c.estado === 'ok' && [c.valor.custo, c.valor.lucro, c.valor.avisos]).toEqual([null, null, ['estimado (pacote padrão)', motivo]]);
   });

@@ -112,23 +112,29 @@ describe('calcularMinhaMargem', () => {
 });
 
 describe('composição do pacote (D-8: nunca presumida)', () => {
+  const ok = (valor: number) => ({ estado: 'ok' as const, valor });
+  const NC = { estado: 'indisponivel', motivo: 'composição não confirmada' } as const;
+  const DIF = { estado: 'indisponivel', motivo: 'composição diferente' } as const;
   it('fator = unidades do anúncio ÷ unidades do SKU, só inteiro ≥ 1', () => {
-    expect(fatorDoPacote(3, 1)).toBe(3);
-    expect(fatorDoPacote(4, 2)).toBe(2);
-    expect(fatorDoPacote(24, 24)).toBe(1); // caixa de 24 contra anúncio de 24 → 1 caixa (Codex #3)
-    expect(fatorDoPacote(3, 2)).toBeNull();
-    expect(fatorDoPacote(1, 24)).toBeNull();
+    expect(fatorDoPacote(3, 1)).toEqual(ok(3));
+    expect(fatorDoPacote(4, 2)).toEqual(ok(2));
+    expect(fatorDoPacote(24, 24)).toEqual(ok(1)); // caixa de 24 contra anúncio de 24 → 1 caixa (Codex #3)
   });
-  it.each([[null, 1], [1, null], [0, 1], [1.5, 1], [NaN, 1], [2, 0], [2, -1]])('lado desconhecido/inválido (%s ÷ %s) → null', (a, s) => {
-    expect(fatorDoPacote(a, s)).toBeNull();
+  it('divisão não inteira → composição diferente', () => {
+    expect(fatorDoPacote(3, 2)).toEqual(DIF);
+    expect(fatorDoPacote(1, 24)).toEqual(DIF);
+  });
+  it.each([[null, 1], [1, null], [null, null], [0, 1], [1.5, 1], [NaN, 1], [2, 0], [2, -1]])('lado desconhecido/inválido (%s ÷ %s) → composição não confirmada', (a, s) => {
+    expect(fatorDoPacote(a, s)).toEqual(NC);
   });
   it('custo do pacote = custo do SKU × fator, em centavos', () => {
-    expect(custoDoPacote(10, 1)).toEqual({ estado: 'ok', valor: 10 });
-    expect(custoDoPacote(10.1, 3)).toEqual({ estado: 'ok', valor: 30.3 });
+    expect(custoDoPacote(10, ok(1))).toEqual(ok(10));
+    expect(custoDoPacote(10.1, ok(3))).toEqual(ok(30.3));
   });
-  it('fator desconhecido → composição não confirmada; custo ausente/inválido → motivo próprio', () => {
-    expect(custoDoPacote(10, null)).toEqual({ estado: 'indisponivel', motivo: 'composição não confirmada' });
-    expect(custoDoPacote(null, 1)).toEqual({ estado: 'indisponivel', motivo: 'custo não cadastrado' });
-    expect(custoDoPacote(NaN, 1)).toEqual({ estado: 'indisponivel', motivo: 'custo inválido' });
+  it('fator indisponível passa o motivo; custo ausente/inválido → motivo próprio', () => {
+    expect(custoDoPacote(10, NC)).toEqual(NC);
+    expect(custoDoPacote(10, DIF)).toEqual(DIF);
+    expect(custoDoPacote(null, ok(1))).toEqual({ estado: 'indisponivel', motivo: 'custo não cadastrado' });
+    expect(custoDoPacote(NaN, ok(1))).toEqual({ estado: 'indisponivel', motivo: 'custo inválido' });
   });
 });

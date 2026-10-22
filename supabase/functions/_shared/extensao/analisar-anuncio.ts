@@ -39,8 +39,10 @@ export interface RespostaAnuncio {
     /** UNITS_PER_PACK do próprio SKU; null = não confirmado. */
     unidadesSku: number | null;
     custoSku: number | null;
-    /** SKUs por anúncio; null = composição não confirmada. */
+    /** SKUs por anúncio; null = composição não confirmada ou diferente. */
     fator: number | null;
+    /** Lado cujas unidades não estão confirmadas (o painel pede ao operador, sem padrão); null = nenhum. */
+    faltaUnidades: 'anuncio' | 'sku' | 'ambos' | null;
     custoPacote: Disponivel<number> | null;
   };
   /** Para o painel simular outro preço/custo sem nova ida ao ML. */
@@ -68,7 +70,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     return {
       proprio: true,
       margem: null,
-      custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, custoPacote: null },
+      custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
       parametros: { aliquotas: { nacional: null, importado: null, confirmada: false }, classico: proprio, premium: proprio, frete: proprio },
     };
   }
@@ -80,7 +82,13 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
   ]);
   const unidadesAnuncio = unidades.estado === 'ok' ? unidades.valor : null;
   // Mesmo produto do catálogo = mesma composição: fator 1 por identidade, sem depender de UNITS_PER_PACK.
-  const fator = !variacao ? null : fonte === 'catalogo' ? 1 : fatorDoPacote(unidadesAnuncio, variacao.unidades);
+  const composicao: Disponivel<number> | null = !variacao ? null
+    : fonte === 'catalogo' ? { estado: 'ok', valor: 1 } : fatorDoPacote(unidadesAnuncio, variacao.unidades);
+  const fator = composicao?.estado === 'ok' ? composicao.valor : null;
+  const semAnuncio = unidadesAnuncio === null;
+  const semSku = variacao?.unidades == null;
+  const faltaUnidades = !variacao || fonte === 'catalogo' ? null
+    : semAnuncio && semSku ? 'ambos' : semAnuncio ? 'anuncio' : semSku ? 'sku' : null;
   const dims = await dimensoesDoFrete(orgId, variacao, fator, deps);
   const [classico, premium, freteML] = await Promise.all([
     semExcecao(() => deps.comissao(e.preco, e.categoriaId, 'gold_special')),
@@ -103,9 +111,9 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
   }
 
   // Composição nunca presumida (D-8): quantidade do anúncio desconhecida → o motivo dela (o painel pede ao operador).
-  const custoPacote = !variacao ? null
-    : fator === null && unidades.estado === 'indisponivel' && variacao.custo != null ? unidades
-    : custoDoPacote(variacao.custo, fator);
+  const custoPacote = !variacao || !composicao ? null
+    : faltaUnidades === 'anuncio' && unidades.estado === 'indisponivel' && variacao.custo != null ? unidades
+    : custoDoPacote(variacao.custo, composicao);
   const margem = calcularMinhaMargem({
     preco: e.preco,
     aliquotaPct,
@@ -119,7 +127,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     margem,
     custo: {
       fonte, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,
-      unidadesPorPacote: unidadesAnuncio, unidadesSku: variacao?.unidades ?? null, custoSku: variacao?.custo ?? null, fator, custoPacote,
+      unidadesPorPacote: unidadesAnuncio, unidadesSku: variacao?.unidades ?? null, custoSku: variacao?.custo ?? null, fator, faltaUnidades, custoPacote,
     },
     parametros: { aliquotas, classico, premium, frete },
   };

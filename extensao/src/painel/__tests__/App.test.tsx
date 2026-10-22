@@ -11,7 +11,7 @@ const INDISP = { estado: 'indisponivel', motivo: 'x' } as const;
 const DADOS: RespostaAnuncio = {
   proprio: false,
   margem: { preco: 100, classico: INDISP, premium: INDISP },
-  custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, custoPacote: null },
+  custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
   parametros: { aliquotas: { nacional: 8, importado: 16, confirmada: true }, classico: INDISP, premium: INDISP, frete: INDISP },
 };
 const estado = (resposta: EstadoAba['resposta']): EstadoAba => ({ entrada: ENTRADA, resposta });
@@ -65,7 +65,7 @@ describe('Painel', () => {
     expect(chamar).toHaveBeenCalledWith({ acao: 'salvar_vinculo', chave: { tipo: 'catalogo', valor: 'MLB77' }, variacaoId: 'u-1' });
     expect(reanalisarAba).toHaveBeenCalledTimes(1);
     // O SW grava e avisa; o App entrega o estado novo da aba.
-    const vinculado = { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } };
+    const vinculado = { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok' as const, valor: 30 } } };
     rerender(<Painel estado={estado({ ok: true, dados: vinculado })} {...props} />);
     screen.getByText('Custo do SKU 00123 · vínculo manual');
   });
@@ -73,7 +73,7 @@ describe('Painel', () => {
   it('vínculo manual: "Trocar SKU" remove o vínculo (catálogo e item) e reanalisa', async () => {
     const chamar = vi.fn(async () => ({ ok: true, dados: { ok: true } }));
     const reanalisarAba = vi.fn(async () => null);
-    const vinculado = { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: null, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } };
+    const vinculado = { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: null, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok' as const, valor: 30 } } };
     render(<Painel estado={estado({ ok: true, dados: vinculado })} chamar={chamar as never} reanalisarAba={reanalisarAba} />);
     expect(screen.queryByRole('button', { name: 'Este produto é meu SKU…' })).toBeNull();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Trocar SKU' })); });
@@ -83,7 +83,7 @@ describe('Painel', () => {
   });
 
   it('sem "Trocar SKU" quando o custo veio do catálogo', () => {
-    const cat = { ...DADOS, custo: { fonte: 'catalogo' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } };
+    const cat = { ...DADOS, custo: { fonte: 'catalogo' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok' as const, valor: 30 } } };
     render(<Painel estado={estado({ ok: true, dados: cat })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Trocar SKU' })).toBeNull();
   });

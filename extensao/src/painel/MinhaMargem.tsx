@@ -27,6 +27,7 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
   const [unidadesTxt, setUnidadesTxt] = useState('');
+  const [unidadesSkuTxt, setUnidadesSkuTxt] = useState('');
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -56,12 +57,19 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const custoN = numero(custoTxt);
   const custoDigitado = custoN !== null && custoN >= 0 ? custoN : null;
   const origemEfetiva: Origem | null = semVinculo ? origem : custo.origem;
-  // Quantidade do anúncio não confirmada pelo catálogo (D-8): o operador informa; sem padrão.
-  const pedeUnidades = !semVinculo && custo.fator === null && custo.unidadesPorPacote === null;
-  const unidadesN = numero(unidadesTxt);
-  const unidadesDigitadas = unidadesN !== null && Number.isInteger(unidadesN) && unidadesN >= 1 ? unidadesN : null;
-  const fator = pedeUnidades && unidadesDigitadas !== null ? fatorDoPacote(unidadesDigitadas, custo.unidadesSku) : custo.fator;
-  const custoPacote = pedeUnidades && unidadesDigitadas !== null ? custoDoPacote(custo.custoSku, fator) : custo.custoPacote;
+  // Unidades não confirmadas (D-8): o operador informa o lado que falta (anúncio e/ou SKU); sem padrão.
+  const falta = semVinculo ? null : custo.faltaUnidades;
+  const pedeAnuncio = falta === 'anuncio' || falta === 'ambos';
+  const pedeSku = falta === 'sku' || falta === 'ambos';
+  const inteiro = (txt: string) => { const n = numero(txt); return n !== null && Number.isInteger(n) && n >= 1 ? n : null; };
+  const anuncioDigitado = pedeAnuncio ? inteiro(unidadesTxt) : null;
+  const skuDigitado = pedeSku ? inteiro(unidadesSkuTxt) : null;
+  const recalcula = anuncioDigitado !== null || skuDigitado !== null;
+  const composicao = recalcula
+    ? fatorDoPacote(pedeAnuncio ? anuncioDigitado : custo.unidadesPorPacote, pedeSku ? skuDigitado : custo.unidadesSku)
+    : null;
+  const fator = composicao ? (composicao.estado === 'ok' ? composicao.valor : null) : custo.fator;
+  const custoPacote = composicao ? custoDoPacote(custo.custoSku, composicao) : custo.custoPacote;
 
   let pendencia: string | null = null;
   if (preco === null) pendencia = 'Informe um preço válido.';
@@ -121,10 +129,16 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
       ) : (
         <div className="custo">
           <p>{`Custo do SKU ${custo.codigo ?? '—'} · ${ROTULO_FONTE[custo.fonte] ?? custo.fonte}`}</p>
-          {pedeUnidades && (
+          {pedeAnuncio && (
             <label className="campo">
               Unidades por anúncio
               <input type="number" inputMode="numeric" min="1" step="1" value={unidadesTxt} onChange={(e) => setUnidadesTxt(e.target.value)} />
+            </label>
+          )}
+          {pedeSku && (
+            <label className="campo">
+              Unidades no SKU
+              <input type="number" inputMode="numeric" min="1" step="1" value={unidadesSkuTxt} onChange={(e) => setUnidadesSkuTxt(e.target.value)} />
             </label>
           )}
           <p className="nota">
