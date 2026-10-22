@@ -196,9 +196,9 @@ analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<Re
 **Files:** Create `extensao/manifest.json`, `package.json` (scripts `build`, `test`), `vite.config.ts` (build Vite da página do painel e do `sw`; alias `@margem` → `../supabase/functions/_shared/extensao/margem.ts`), `scripts/build-conteudo.mjs` (content scripts em **bundles IIFE separados**, um por entrada, pois content scripts MV3 não carregam módulos) e `scripts/checar-dist`, `vitest.config.ts`, `tsconfig.json`, `src/sw.ts`, `src/sessao.ts`, `src/api.ts`; Modify `pnpm-workspace.yaml` (`packages: ['extensao']`), `pnpm-lock.yaml`, `.github/workflows/ci.yml` (job `lint-build`: `pnpm --dir extensao test` e `pnpm --dir extensao build`); Test `extensao/src/__tests__/sessao.test.ts`, `api.test.ts`.
 
 **Interfaces:**
-- Mensagem externa (`onMessageExternal`, origem conferida contra a lista do manifest): `{ tipo: 'publiai:sessao', accessToken: string, expiresAt: number, orgNome: string }` e `{ tipo: 'publiai:desconectar' }`.
-- `obterSessaoValida(): Promise<{ accessToken: string } | null>` — devolve null se faltam < 30 s para `expiresAt`; **não renova**.
-- `chamarExtensao<T>(corpo: object): Promise<{ ok: true; dados: T } | { ok: false; erro: CodigoErro | 'sem_sessao' }>`; `sessao_expirada` limpa a sessão.
+- Mensagem externa (`onMessageExternal`, origem conferida contra a lista do manifest): `{ tipo: 'publiai:sessao', accessToken: string, expiresAt: number, orgNome: string, identidade: string }` — `identidade` **obrigatória** (`usuário:organização:suporte`, sem segredo; org vazia = perfil carregando); sem ela ou malformada a mensagem é recusada — e `{ tipo: 'publiai:desconectar' }`. Identidade diferente da guardada (usuário, org conhecida ou suporte) limpa estado e EAN de todas as abas.
+- `obterSessaoValida(): Promise<{ accessToken: string; identidade: string } | null>` — devolve null se faltam < 30 s para `expiresAt`; **não renova**; sessão vencida é apagada junto com as análises das abas e o selo sai da página (`publiai:sessao-mudou`).
+- `chamarExtensao<T>(corpo: object): Promise<{ ok: true; dados: T } | { ok: false; erro: CodigoErro | 'sem_sessao' }>`; `sessao_expirada` limpa a sessão e as abas; `sessao_suporte_expirada` limpa as abas; resposta pedida por outra identidade volta `sem_sessao`.
 - Mapa EAN por aba no **service worker** (`chrome.storage.session`, só no SW): `registrarEanDaAba(tabId, ean)` / `eanDaAba(tabId)`, alimentado por mensagem do content script (`sender.tab.id`).
 - `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`.
 - [ ] **Step 1: Testes falhando:** origem não autorizada ignorada; `desconectar` apaga a sessão; token a 20 s do fim → `null`; `sessao_expirada` limpa; nenhuma chamada ao endpoint de token do Supabase existe no pacote (teste de import).
@@ -244,8 +244,8 @@ analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<Re
 
 **Files:** Create `src/lib/extensao-ponte.ts`, `src/components/configuracoes/extensao-navegador.tsx`; Modify Configurações (seção visível só com módulo `extensao`) e o ponto onde o app assina `supabase.auth.onAuthStateChange`; Test `src/lib/__tests__/extensao-ponte.test.ts`, `src/components/configuracoes/__tests__/extensao-navegador.test.tsx`.
 
-**Interfaces:** `enviarSessaoParaExtensao(session: Session | null): Promise<'ok' | 'nao_instalada' | 'desconectada'>` — com sessão envia `publiai:sessao` (access token + `expires_at` + nome da org); sem sessão envia `publiai:desconectar`. Chamado em `SIGNED_IN`, `TOKEN_REFRESHED`, `SIGNED_OUT` e no botão "Conectar extensão". `VITE_EXTENSAO_ID`, `VITE_EXTENSAO_URL`.
-- [ ] **Step 1: Testes falhando:** sem `chrome.runtime` → `'nao_instalada'`; `TOKEN_REFRESHED` reenvia; `SIGNED_OUT` desconecta; seção oculta sem módulo; **nenhum refresh token é enviado** (assert no payload).
+**Interfaces:** `enviarSessaoParaExtensao(session: Session | null): Promise<'ok' | 'nao_instalada' | 'desconectada'>` — com sessão envia `publiai:sessao` (access token + `expires_at` + nome da org + **`identidade` = `identidadeExtensao(session)`**: `${user.id}:${effectiveOrgId() ?? ''}:${suporte.requestId ?? ''}`); sem sessão envia `publiai:desconectar`. O `auth-store` assina **`useAuthStore` e `useSupportStore`** e reenvia sempre que o token **ou** a identidade mudam (login, renovação, logout, perfil carregado, **início/fim de suporte**), além do botão "Conectar extensão". `VITE_EXTENSAO_ID`, `VITE_EXTENSAO_URL`.
+- [ ] **Step 1: Testes falhando:** sem `chrome.runtime` → `'nao_instalada'`; token novo reenvia; mesmo token e mesma identidade não; `SIGNED_OUT` desconecta; perfil carregado e início/fim de suporte reenviam com a nova identidade; seção oculta sem módulo; **nenhum refresh token é enviado** (assert no payload).
 - [ ] **Step 2–4:** FAIL → implementar → PASS; `pnpm build`.
 - [ ] **Step 5:** Commit `feat(extensao): PubliAI empurra a sessão para a extensão (ADR-0189 D-4)`.
 
@@ -254,7 +254,7 @@ analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<Re
 **Files:** Test `supabase/functions/extensao/__tests__/index.test.ts`, `supabase/functions/_shared/extensao/__tests__/paridade-financeira.test.ts`.
 
 - [ ] **Step 1:** Testes do handler HTTP com dependências controladas: módulo desligado, sessão expirada, 429 efetivo no 31º pedido do minuto, resposta sem nenhum campo de token ML, auditoria de suporte nas escritas.
-- [ ] **Step 2:** Fixture financeira comum (preço, categoria, origem, kit, comissão/frete ausentes, arredondamento) comparando `calcularMinhaMargem` com o cálculo de Viabilidade/Pulse (`analisar-item-viabilidade.ts`, `pulse-margem.ts`): diferença ≤ R$ 0,05, incluindo fallbacks antigos.
+- [ ] **Step 2:** Fixture financeira comum (preço, categoria, origem, kit, arredondamento) comparando `calcularMinhaMargem` com as **funções reais exportadas** (sem reimplementar): Viabilidade = `analisarItemViabilidade` + `impostoNoPreco`/`liquidoNoMercado` + `calcularMarkup`; Pulse = `margemEstimada`. Diferença ≤ R$ 0,05 em todos os casos. Sem `sale_fee_amount` a Viabilidade desconta comissão 0 (bug conhecido, correção separada): `it.fails` com referência, e a extensão conferida no valor correto. Comissão e/ou frete ausentes → extensão "indisponível" (nunca número) e Pulse null.
 - [ ] **Step 3:** Commit `test(extensao): fronteira HTTP e paridade financeira (ADR-0189)`.
 
 ---
@@ -268,10 +268,10 @@ analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<Re
 - [ ] **Step 3:** Docs de referência e how-to; TASKS.
 - [ ] **Step 4:** Commit `docs(extensao): how-to, privacidade e referências da fatia 1`.
 - [ ] **Step 5:** Revisão do diff da fatia pelo **Grok 4.7 xhigh**; corrigir achados; validação (`pnpm test`, `pnpm lint`, `pnpm build`, `pnpm --dir extensao test/build`) e CI verde.
-- [ ] **Step 6:** Merge; **depois** deploy com o Diego: `supabase db push` (+ `npm run db:check`), `supabase functions deploy extensao`, versão ativa conferida; smoke test (conta de teste, anúncio real, módulo desligado → `modulo_desligado`).
+- [ ] **Step 6:** Merge; **depois** deploy com o Diego: `supabase db push` (+ `npm run db:check`), `supabase functions deploy extensao`, versão ativa conferida; **app web com a ponte nova (`identidade` obrigatória) publicado e conferido no bundle em produção** — gate: a extensão recusa `publiai:sessao` sem identidade, então nenhum pacote da extensão é distribuído antes disso; smoke test (conta de teste, anúncio real, módulo desligado → `modulo_desligado`; **início e fim de sessão de suporte** → painel e selo limpos e nova identidade recebida; logout → selo some).
 - [ ] **Step 7:** Só então ativação: módulo ligado na DSA e submissão à Web Store como **não listada** (ação do Diego).
 
-> Ordem obrigatória em toda fatia: revisão → correções → validação/CI → deploy → smoke test → ativação/distribuição.
+> Ordem obrigatória em toda fatia: revisão → correções → validação/CI → deploy (edge + **app web com a ponte compatível**) → smoke test (inclui início/fim de suporte) → ativação/distribuição da extensão.
 
 ---
 
