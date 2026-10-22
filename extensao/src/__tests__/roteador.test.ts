@@ -421,6 +421,22 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect((await lerAba(7)).estado).toEqual({ entrada: {}, resposta: 1 });
   });
 
+  it('Codex: sessão vence com a análise em voo e o alarme atrasado → sem_sessao, nada gravado, selo retirado', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      fetchFalso.mockImplementation(async () => {
+        vi.setSystemTime(Date.now() + 2 * 3600_000); // token de 1 h venceu; alarme não disparou
+        return new Response('{"custo":"da org A"}', { status: 200 });
+      });
+      vi.mocked(chrome.tabs.sendMessage).mockClear();
+      expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+      expect((await lerAba(7)).estado).toBeNull();
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('Grok ALTO (d): sem troca, a análise segue gravada e respondida', async () => {
     fetchFalso.mockImplementation(async () => new Response('{"custo":"da org A 2"}', { status: 200 }));
     expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { custo: 'da org A 2' } });

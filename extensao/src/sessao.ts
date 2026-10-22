@@ -52,7 +52,8 @@ function naFila<T>(op: () => Promise<T>): Promise<T> {
  *  Gravar estado/responder análise aqui dentro: troca de identidade, logout ou expiração no meio não deixam
  *  passar a resposta pedida pela sessão anterior. `fn` não pode chamar nada enfileirado. */
 export function seAindaIdentidade<T>(identidade: string | null, fn: () => Promise<T>): Promise<T | null> {
-  return naFila(async () => ((await lerSessao())?.identidade ?? null) === identidade ? fn() : null);
+  // validar(): sessão vencida (alarme atrasado) é limpa aqui mesmo e conta como "sem sessão".
+  return naFila(async () => ((await validar())?.identidade ?? null) === identidade ? fn() : null);
 }
 
 /** limparEstadosDasAbas fora da sessão (ex.: suporte acabou), em série com o resto. */
