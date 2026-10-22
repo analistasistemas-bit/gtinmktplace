@@ -49,7 +49,13 @@ export function App() {
     };
   }, []);
 
-  if (estado === undefined) return <p className="nota">Carregando…</p>;
+  if (estado === undefined) {
+    return (
+      <div className="esqueleto" role="status" aria-label="Carregando a análise">
+        <span /><span /><span />
+      </div>
+    );
+  }
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
   const reanalisarAba: Reanalisar = () =>
     chrome.runtime.sendMessage({ tipo: 'publiai:reanalisar-aba', tabId }).catch(() => ({ ok: false, erro: 'interno' }));
@@ -62,7 +68,14 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
   const [confirmado, setConfirmado] = useState<{ base: EstadoAba['resposta']; dados: RespostaAnuncio } | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  if (!estado) return <p className="nota">Abra um anúncio do Mercado Livre para ver sua margem.</p>;
+  if (!estado) {
+    return (
+      <div className="cartao chamada">
+        <h2>Nenhum anúncio nesta aba</h2>
+        <p>Abra um anúncio do Mercado Livre para ver sua margem. Ela também aparece ao lado do preço, na própria página.</p>
+      </div>
+    );
+  }
   const { entrada } = estado;
   const resposta: Resposta<RespostaAnuncio> =
     confirmado?.base === estado.resposta ? { ok: true, dados: confirmado.dados } : estado.resposta;
@@ -76,28 +89,44 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
     setOcupado(false);
   };
 
-  const anuncio = <p className="nota">{`Anúncio ${entrada.mlItemId}`}</p>;
+  const anuncio = (tipo: string) => (
+    <div className="anuncio">
+      <span className="rotulo">{tipo}</span>
+      <span className="mono nota">{`Anúncio ${entrada.mlItemId}`}</span>
+    </div>
+  );
   if (!resposta.ok) {
+    const semConexao = resposta.erro === 'sem_sessao' || resposta.erro === 'sessao_expirada';
     return (
-      <div className="bloco">
-        {anuncio}
-        <p className="aviso">{mensagemDeErro(resposta.erro)}</p>
-        <button type="button" className="secundario" disabled={ocupado} onClick={reanalisar}>Tentar de novo</button>
-      </div>
+      <>
+        {anuncio('Mercado Livre')}
+        <div className="cartao chamada" role="alert">
+          <h2>{semConexao ? 'Extensão desconectada' : 'Não deu para calcular'}</h2>
+          <p>{mensagemDeErro(resposta.erro)}</p>
+          {semConexao ? (
+            <a className="botao" href={URL_APP} target="_blank" rel="noopener noreferrer">Abrir o PubliAI</a>
+          ) : (
+            <button type="button" className="secundario" disabled={ocupado} onClick={reanalisar}>Tentar de novo</button>
+          )}
+        </div>
+      </>
     );
   }
   if (resposta.dados.proprio) {
     return (
-      <div className="bloco">
-        {anuncio}
-        <p>Este anúncio é da sua empresa.</p>
-        <a className="botao" href={URL_APP} target="_blank" rel="noopener noreferrer">Abrir no PubliAI</a>
-      </div>
+      <>
+        {anuncio('Seu anúncio')}
+        <div className="cartao chamada">
+          <h2>Este anúncio é da sua empresa</h2>
+          <p>Vendas, margem e estoque dele ficam no PubliAI.</p>
+          <a className="botao" href={URL_APP} target="_blank" rel="noopener noreferrer">Abrir no PubliAI</a>
+        </div>
+      </>
     );
   }
   return (
     <>
-      {anuncio}
+      {anuncio('Concorrente')}
       <MinhaMargem
         entrada={entrada}
         dados={resposta.dados}

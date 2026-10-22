@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RespostaAnuncio } from '../../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import type { MargemTipo } from '../../../../supabase/functions/_shared/extensao/tipos.ts';
-import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo } from '../selo';
+import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo, tomDoSelo } from '../selo';
 
 const tipo = (o: Partial<MargemTipo>): MargemTipo => ({ comissao: 0, imposto: 0, frete: 0, custo: null, recebe: 0, lucro: null, margemPct: null, avisos: [], ...o });
 const resp = (margem: RespostaAnuncio['margem'], proprio = false): RespostaAnuncio =>
@@ -20,9 +20,22 @@ describe('textoDoSelo', () => {
   it('anúncio próprio', () => {
     expect(textoDoSelo(resp(null, true))).toBe('Anúncio seu · abrir no PubliAI');
   });
-  it('Clássico indisponível ou margem nula → sem selo', () => {
-    expect(textoDoSelo(comClassico(null))).toBe('');
-    expect(textoDoSelo(resp(null))).toBe('');
+  it('Clássico indisponível ou margem nula → convite neutro (o painel mostra o que falta)', () => {
+    expect(textoDoSelo(comClassico(null))).toBe('Calcular minha margem');
+    expect(textoDoSelo(resp(null))).toBe('Calcular minha margem');
+    expect(tomDoSelo(comClassico(null))).toBe('neutro');
+  });
+});
+
+describe('tomDoSelo (cor do selo)', () => {
+  it('lucro positivo, zero e negativo', () => {
+    expect(tomDoSelo(comClassico(tipo({ lucro: 10, margemPct: 5 })))).toBe('lucro');
+    expect(tomDoSelo(comClassico(tipo({ lucro: 0, margemPct: 0 })))).toBe('lucro');
+    expect(tomDoSelo(comClassico(tipo({ lucro: -3.2, margemPct: -2 })))).toBe('prejuizo');
+  });
+  it('sem custo → neutro; próprio → proprio', () => {
+    expect(tomDoSelo(comClassico(tipo({ recebe: 50 })))).toBe('neutro');
+    expect(tomDoSelo(resp(null, true))).toBe('proprio');
   });
 });
 

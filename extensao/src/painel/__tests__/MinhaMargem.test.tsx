@@ -41,26 +41,26 @@ describe('MinhaMargem', () => {
 
   it('custo digitado sem origem não calcula e pede a origem', () => {
     montar(resposta());
-    fireEvent.change(screen.getByLabelText('Custo do pacote (R$)'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
     screen.getByText(/Escolha a origem/);
     expect(screen.queryByRole('region', { name: 'Clássico' })).toBeNull();
   });
 
   it('com origem importado usa a alíquota importado', () => {
     montar(resposta());
-    fireEvent.change(screen.getByLabelText('Custo do pacote (R$)'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
     fireEvent.click(screen.getByLabelText('Importado'));
     // 100 − 10 (comissão) − 12 (imposto 12%) − 20 (frete) = 58; lucro 58 − 30 = 28
     const c = tipo('Clássico');
     c.getByText('R$ 12,00');
     c.getByText('R$ 58,00');
-    c.getByText('R$ 28,00');
+    expect(c.getAllByText('R$ 28,00')).toHaveLength(2); // lucro no destaque e no fim do extrato
     c.getByText('28,00%');
   });
 
   it('custo digitado 0 é inválido (igual à edge: custo > 0) e não calcula', () => {
     montar(resposta());
-    fireEvent.change(screen.getByLabelText('Custo do pacote (R$)'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '0' } });
     fireEvent.click(screen.getByLabelText('Nacional'));
     screen.getByText('Informe o custo do pacote para calcular.');
     expect(screen.queryByRole('region', { name: 'Clássico' })).toBeNull();
@@ -70,7 +70,7 @@ describe('MinhaMargem', () => {
     const r = resposta();
     r.parametros.aliquotas = { nacional: null, importado: null, confirmada: false };
     montar(r);
-    fireEvent.change(screen.getByLabelText('Custo do pacote (R$)'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
     fireEvent.click(screen.getByLabelText('Nacional'));
     expect(tipo('Clássico').getAllByText(/Confirme as alíquotas de imposto em Configurações/).length).toBeGreaterThan(0);
   });
@@ -81,7 +81,7 @@ describe('MinhaMargem', () => {
     }));
     screen.getByText('Custo do SKU 00123 · casado pelo catálogo');
     screen.getByText('Custo do pacote: R$ 60,00 (2 × custo do SKU)');
-    expect(screen.queryByLabelText('Custo do pacote (R$)')).toBeNull();
+    expect(screen.queryByLabelText('Custo do pacote')).toBeNull();
   });
 
   it('composição não confirmada: custo indisponível com o motivo, sem lucro, sem pedir unidades (o anúncio já tem)', () => {
@@ -117,7 +117,7 @@ describe('MinhaMargem', () => {
       expect((screen.getByLabelText('Unidades por anúncio') as HTMLInputElement).value).toBe('');
       expect(screen.queryByLabelText('Unidades no SKU')).toBeNull();
       screen.getByText(`Custo do pacote indisponível: ${motivo}`);
-      expect(tipo('Clássico').getAllByText('—').length).toBe(3); // custo, lucro, margem
+      expect(tipo('Clássico').getAllByText('—').length).toBe(4); // destaque: lucro e margem; extrato: custo e lucro
     });
 
     it('preenchido recalcula localmente: 3 unidades × SKU unitário de R$ 10 = R$ 30', () => {
@@ -126,7 +126,7 @@ describe('MinhaMargem', () => {
       fireEvent.change(screen.getByLabelText('Unidades por anúncio'), { target: { value: '3' } });
       screen.getByText('Custo do pacote: R$ 30,00 (3 × custo do SKU)');
       // 100 − 10 (comissão) − 4 (imposto) − 20 (frete) = 66; lucro 66 − 30 = 36
-      tipo('Clássico').getByText('R$ 36,00');
+      expect(tipo('Clássico').getAllByText('R$ 36,00')).toHaveLength(2); // destaque e extrato
       expect(analisar).not.toHaveBeenCalled();
     });
 
@@ -158,7 +158,7 @@ describe('MinhaMargem', () => {
       rerender(<MinhaMargem entrada={ENTRADA} dados={skuB} analisar={vi.fn()} onDados={() => {}} />);
       expect((screen.getByLabelText('Unidades no SKU') as HTMLInputElement).value).toBe('');
       screen.getByText('Custo do pacote indisponível: composição não confirmada');
-      expect(tipo('Clássico').getAllByText('—').length).toBe(3); // custo, lucro, margem
+      expect(tipo('Clássico').getAllByText('—').length).toBe(4); // destaque: lucro e margem; extrato: custo e lucro
     });
 
     it('os dois desconhecidos: pede os dois campos; só um preenchido não basta', () => {
@@ -174,7 +174,7 @@ describe('MinhaMargem', () => {
     montar(resposta({
       custo: { fonte: 'vinculo_manual', variacaoId: 'vA', codigo: '00123', origem: null, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
     }));
-    expect(screen.queryByLabelText('Custo do pacote (R$)')).toBeNull();
+    expect(screen.queryByLabelText('Custo do pacote')).toBeNull();
     expect(screen.queryByText(/Informe o custo/)).toBeNull();
     tipo('Clássico').getByText(/SKU sem origem cadastrada/);
     tipo('Premium').getByText(/SKU sem origem cadastrada/);
@@ -186,7 +186,7 @@ describe('MinhaMargem', () => {
     montar(resposta({
       custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
     }), analisar);
-    fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '200' } });
     tipo('Clássico').getByText('R$ 152,00'); // local: 200 − 20 (10%) − 8 (4%) − 20 (frete)
     expect(screen.getAllByText('Estimativa')).toHaveLength(2);
     act(() => { vi.advanceTimersByTime(1499); });
@@ -200,7 +200,7 @@ describe('MinhaMargem', () => {
     vi.useFakeTimers();
     const analisar = vi.fn();
     montar(resposta(), analisar);
-    fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '' } });
     act(() => { vi.advanceTimersByTime(3000); });
     expect(analisar).not.toHaveBeenCalled();
     screen.getByText('Informe um preço válido.');
@@ -228,7 +228,7 @@ describe('MinhaMargem', () => {
       vi.useFakeTimers();
       render(<Harness analisar={async (p) => ({ ok: true, dados: doServidor(p) })} />);
       expect(estimativas()).toHaveLength(0);
-      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '200' } });
       expect(estimativas()).toHaveLength(2); // Clássico e Premium
       expect(comissao()).toBe('R$ 20,00'); // local, com a faixa antiga (10%)
       screen.getByText(/comissão e o frete/);
@@ -240,7 +240,7 @@ describe('MinhaMargem', () => {
     it('confirmação que falha mantém o rótulo', async () => {
       vi.useFakeTimers();
       render(<Harness analisar={async () => ({ ok: false, erro: 'interno' })} />);
-      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '200' } });
       await confirmar();
       screen.getByRole('alert');
       expect(estimativas()).toHaveLength(2);
@@ -251,9 +251,9 @@ describe('MinhaMargem', () => {
       const pendentes = new Map<number, (r: Resposta<RespostaAnuncio>) => void>();
       const analisar = (p: number) => new Promise<Resposta<RespostaAnuncio>>((ok) => { pendentes.set(p, ok); });
       render(<Harness analisar={analisar} />);
-      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '120' } });
+      fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '120' } });
       await confirmar();
-      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '200' } });
       await confirmar();
       await act(async () => { pendentes.get(200)!({ ok: true, dados: doServidor(200) }); });
       await act(async () => { pendentes.get(120)!({ ok: true, dados: doServidor(120) }); });

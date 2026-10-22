@@ -70,7 +70,7 @@ export function VinculoProduto({ entrada, fonte, chamar, onVinculado }: Props) {
 
   if (fonte === 'vinculo_manual') {
     return (
-      <div className="bloco">
+      <div className="vinculo">
         <button type="button" className="secundario" disabled={ocupado} onClick={trocar}>Trocar SKU</button>
         {erro && <p className="erro" role="alert">{erro}</p>}
       </div>
@@ -78,28 +78,32 @@ export function VinculoProduto({ entrada, fonte, chamar, onVinculado }: Props) {
   }
   if (!aberto) {
     return (
-      <button type="button" className="secundario" aria-expanded={false} onClick={() => setAberto(true)}>
+      <button type="button" className="link" aria-expanded={false} onClick={() => setAberto(true)}>
         Este produto é meu SKU…
       </button>
     );
   }
   return (
-    <div className="bloco">
+    <div className="cartao chamada vinculo">
+      <h2>Qual SKU seu é este produto?</h2>
       <form className="busca" onSubmit={buscar}>
         <label className="campo">
           Código, nome ou EAN
-          <input type="search" value={termo} maxLength={60} onChange={(e) => setTermo(e.target.value)} />
+          <span className="entrada">
+            <input type="search" value={termo} maxLength={60} autoFocus onChange={(e) => setTermo(e.target.value)} />
+          </span>
         </label>
         <button type="submit" disabled={ocupado}>Buscar</button>
       </form>
       {erro && <p className="erro" role="alert">{erro}</p>}
-      {itens?.length === 0 && <p className="aviso">Nenhum SKU encontrado.</p>}
+      {itens?.length === 0 && <p className="nota">Nenhum SKU encontrado. Tente o código, parte do nome ou o EAN.</p>}
       {itens && itens.length > 0 && (
         <ul className="resultados">
           {itens.map((i) => (
             <li key={i.variacaoId}>
               <button type="button" disabled={ocupado} onClick={() => vincular(i)}>
-                {`${i.codigo} · ${i.nome} · ${i.custo === null ? 'sem custo' : brl(i.custo)}`}
+                <span>{`${i.codigo} · ${i.nome}`}</span>
+                <span className="nota">{i.custo === null ? 'sem custo' : brl(i.custo)}</span>
               </button>
             </li>
           ))}

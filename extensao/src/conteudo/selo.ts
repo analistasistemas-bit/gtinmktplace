@@ -4,14 +4,25 @@ import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extens
 const num = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const brl = (n: number) => `R$ ${num(n)}`;
 
-/** '' = sem selo. */
+/** Sempre há selo: sem margem calculável (falta custo/origem, comissão indisponível) ele convida a abrir o painel,
+ *  onde a pendência aparece. */
 export function textoDoSelo(r: RespostaAnuncio): string {
   if (r.proprio) return 'Anúncio seu · abrir no PubliAI';
   const c = r.margem?.classico;
-  if (c?.estado !== 'ok') return '';
+  if (c?.estado !== 'ok') return 'Calcular minha margem';
   const { lucro, margemPct, recebe } = c.valor;
   if (lucro !== null && margemPct !== null) return `Minha margem ${brl(lucro)} (${num(margemPct)}%)`;
   return `Recebe ${brl(recebe)} · informe o custo`;
+}
+
+export type TomDoSelo = 'lucro' | 'prejuizo' | 'neutro' | 'proprio' | 'conectar';
+
+/** Cor do selo: segue o lucro do Clássico (o mesmo número do texto). */
+export function tomDoSelo(r: RespostaAnuncio): TomDoSelo {
+  if (r.proprio) return 'proprio';
+  const c = r.margem?.classico;
+  if (c?.estado !== 'ok' || c.valor.lucro === null) return 'neutro';
+  return c.valor.lucro < 0 ? 'prejuizo' : 'lucro';
 }
 
 let mudancasDeSessao = 0;

@@ -1,6 +1,6 @@
 // "Minha margem" no painel (ADR-0189 D-7/D-8). Recalcula localmente com os `parametros` da última
 // análise; confirma no servidor 1,5 s depois que o operador para de editar o preço (D-18).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Disponivel, MargemTipo } from '../../../supabase/functions/_shared/extensao/tipos.ts';
 import { calcularMinhaMargem, custoDoPacote, fatorDoPacote } from '../compartilhado/margem';
 import { brl, mensagemDeErro, pct, ROTULO_FONTE, type EntradaAnuncio, type Resposta, type RespostaAnuncio } from './formato';
@@ -31,6 +31,8 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const base = useId();
+  const ids = { preco: `${base}-preco`, custo: `${base}-custo`, unidades: `${base}-unidades`, unidadesSku: `${base}-unidades-sku` };
   const seq = useRef(0);
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -104,47 +106,59 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const estimativa = preco !== null && preco !== precoConfirmado;
 
   return (
-    <section className="bloco">
-      <h2>Minha margem</h2>
-      <label className="campo">
-        Preço (R$)
-        <input type="number" inputMode="decimal" min="0" step="0.01" value={precoTxt} onChange={(e) => editarPreco(e.target.value)} />
-      </label>
+    <section className="campos" aria-label="Minha margem">
+      <h2 className="visualmente-oculto">Minha margem</h2>
+      <div className="campo">
+        <label htmlFor={ids.preco}>Preço de venda</label>
+        <span className="entrada">
+          <span className="prefixo" aria-hidden="true">R$</span>
+          <input id={ids.preco} type="number" inputMode="decimal" min="0" step="0.01" value={precoTxt} onChange={(e) => editarPreco(e.target.value)} />
+        </span>
+      </div>
       {estimativa && (
         <p className="nota">Estimativa: a comissão e o frete são do preço consultado e podem mudar de faixa neste preço até a confirmação no Mercado Livre.</p>
       )}
       {erro && <p className="erro" role="alert">{erro}</p>}
 
       {semVinculo ? (
-        <div className="custo">
-          <label className="campo">
-            Custo do pacote (R$)
-            <input type="number" inputMode="decimal" min="0" step="0.01" value={custoTxt} onChange={(e) => setCustoTxt(e.target.value)} />
-          </label>
-          <fieldset className="origem">
+        <>
+          <div className="campo">
+            <label htmlFor={ids.custo}>Custo do pacote</label>
+            <span className="entrada">
+              <span className="prefixo" aria-hidden="true">R$</span>
+              <input id={ids.custo} type="number" inputMode="decimal" min="0" step="0.01" value={custoTxt} onChange={(e) => setCustoTxt(e.target.value)} />
+            </span>
+          </div>
+          <fieldset className="segmentado">
             <legend>Origem</legend>
-            {(['nacional', 'importado'] as const).map((o) => (
-              <label key={o}>
-                <input type="radio" name="origem" value={o} checked={origem === o} onChange={() => setOrigem(o)} />
-                {o === 'nacional' ? 'Nacional' : 'Importado'}
-              </label>
-            ))}
+            <div className="opcoes">
+              {(['nacional', 'importado'] as const).map((o) => (
+                <label key={o}>
+                  <input type="radio" name="origem" value={o} checked={origem === o} onChange={() => setOrigem(o)} />
+                  {o === 'nacional' ? 'Nacional' : 'Importado'}
+                </label>
+              ))}
+            </div>
           </fieldset>
-        </div>
+        </>
       ) : (
-        <div className="custo">
-          <p>{`Custo do SKU ${custo.codigo ?? '—'} · ${ROTULO_FONTE[custo.fonte] ?? custo.fonte}`}</p>
+        <div className="fonte-custo">
+          <p className="linha">{`Custo do SKU ${custo.codigo ?? '—'} · ${ROTULO_FONTE[custo.fonte] ?? custo.fonte}`}</p>
           {pedeAnuncio && (
-            <label className="campo">
-              Unidades por anúncio
-              <input type="number" inputMode="numeric" min="1" step="1" value={unidadesTxt} onChange={(e) => setUnidadesTxt(e.target.value)} />
-            </label>
+            <div className="campo">
+              <label htmlFor={ids.unidades}>Unidades por anúncio</label>
+              <span className="entrada">
+                <input id={ids.unidades} type="number" inputMode="numeric" min="1" step="1" value={unidadesTxt} onChange={(e) => setUnidadesTxt(e.target.value)} />
+              </span>
+            </div>
           )}
           {pedeSku && (
-            <label className="campo">
-              Unidades no SKU
-              <input type="number" inputMode="numeric" min="1" step="1" value={unidadesSkuTxt} onChange={(e) => setUnidadesSkuTxt(e.target.value)} />
-            </label>
+            <div className="campo">
+              <label htmlFor={ids.unidadesSku}>Unidades no SKU</label>
+              <span className="entrada">
+                <input id={ids.unidadesSku} type="number" inputMode="numeric" min="1" step="1" value={unidadesSkuTxt} onChange={(e) => setUnidadesSkuTxt(e.target.value)} />
+              </span>
+            </div>
           )}
           <p className="nota">
             {custoPacote?.estado === 'ok'
@@ -154,41 +168,58 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
         </div>
       )}
 
-      {pendencia && <p className="aviso">{pendencia}</p>}
+      {pendencia && <p className="pendencia">{pendencia}</p>}
       {margem && (
         <div className="tipos">
-          <Tipo nome="Clássico" r={margem.classico} estimativa={estimativa} />
-          <Tipo nome="Premium" r={margem.premium} estimativa={estimativa} />
+          <Tipo nome="Clássico" r={margem.classico} preco={preco!} estimativa={estimativa} aberto />
+          <Tipo nome="Premium" r={margem.premium} preco={preco!} estimativa={estimativa} />
         </div>
       )}
     </section>
   );
 }
 
-function Tipo({ nome, r, estimativa }: { nome: string; r: Disponivel<MargemTipo>; estimativa: boolean }) {
+const sinal = (n: number | null) => (n === null ? '' : n < 0 ? 'negativo' : 'positivo');
+
+function Tipo({ nome, r, preco, estimativa, aberto = false }: { nome: string; r: Disponivel<MargemTipo>; preco: number; estimativa: boolean; aberto?: boolean }) {
   const id = `tipo-${nome}`;
+  if (r.estado === 'indisponivel') {
+    return (
+      <section className="cartao tipo" aria-labelledby={id}>
+        <details open>
+          <summary>
+            <h3 id={id}>{nome}</h3>
+            <span className="lucro">—</span>
+          </summary>
+        </details>
+        <p className="indisponivel">Indisponível: {r.motivo}</p>
+      </section>
+    );
+  }
+  const v = r.valor;
   return (
-    <section className="tipo" aria-labelledby={id}>
-      <h3 id={id}>{nome}</h3>
-      {estimativa && <p className="aviso">Estimativa</p>}
-      {r.estado === 'indisponivel' ? (
-        <p className="aviso">Indisponível: {r.motivo}</p>
-      ) : (
-        <>
-          <dl>
-            <dt>Comissão</dt><dd>{brl(r.valor.comissao)}</dd>
-            <dt>Imposto</dt><dd>{brl(r.valor.imposto)}</dd>
-            <dt>Frete</dt><dd>{brl(r.valor.frete)}</dd>
-            <dt>Recebe</dt><dd>{brl(r.valor.recebe)}</dd>
-            <dt>Custo</dt><dd>{r.valor.custo === null ? '—' : brl(r.valor.custo)}</dd>
-            <dt>Lucro</dt><dd>{r.valor.lucro === null ? '—' : brl(r.valor.lucro)}</dd>
-            <dt>Margem</dt><dd>{r.valor.margemPct === null ? '—' : pct(r.valor.margemPct)}</dd>
-          </dl>
-          {r.valor.avisos.length > 0 && (
-            <ul className="avisos">{r.valor.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
-          )}
-        </>
-      )}
+    <section className="cartao tipo" aria-labelledby={id}>
+      <details open={aberto}>
+        <summary>
+          <h3 id={id}>{nome}</h3>
+          <span className={`lucro ${sinal(v.lucro)}`}>{v.lucro === null ? '—' : brl(v.lucro)}</span>
+          <span className={`margem ${sinal(v.margemPct)}`}>{v.margemPct === null ? '—' : pct(v.margemPct)}</span>
+          {estimativa && <span className="estimativa">Estimativa</span>}
+          <span className="abrir" aria-hidden="true"><span className="fechado">Ver a conta</span><span className="aberto">Esconder a conta</span></span>
+        </summary>
+        <dl className="extrato">
+          <span className="op" aria-hidden="true" /><dt>Preço</dt><dd>{brl(preco)}</dd>
+          <span className="op" aria-hidden="true">−</span><dt>Comissão</dt><dd>{brl(v.comissao)}</dd>
+          <span className="op" aria-hidden="true">−</span><dt>Imposto</dt><dd>{brl(v.imposto)}</dd>
+          <span className="op" aria-hidden="true">−</span><dt>Frete</dt><dd>{brl(v.frete)}</dd>
+          <span className="op total" aria-hidden="true">=</span><dt className="total">Recebe</dt><dd className="total">{brl(v.recebe)}</dd>
+          <span className="op" aria-hidden="true">−</span><dt>Custo</dt><dd>{v.custo === null ? '—' : brl(v.custo)}</dd>
+          <span className="op total" aria-hidden="true">=</span><dt className="total">Lucro</dt><dd className="total">{v.lucro === null ? '—' : brl(v.lucro)}</dd>
+        </dl>
+        {v.avisos.length > 0 && (
+          <ul className="avisos">{v.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
+        )}
+      </details>
     </section>
   );
 }

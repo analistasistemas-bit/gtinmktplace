@@ -42,7 +42,7 @@ describe('Painel', () => {
     vi.useFakeTimers();
     const chamar = vi.fn(async () => ({ ok: true, dados: DADOS }));
     render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={chamar as never} reanalisarAba={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '150' } });
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '150' } });
     await act(async () => { vi.advanceTimersByTime(1500); });
     expect(chamar).toHaveBeenCalledWith({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...ENTRADA, preco: 150 });
     vi.useRealTimers();
@@ -123,8 +123,8 @@ describe('App', () => {
       runtime: { sendMessage, onMessage: { addListener: (f: typeof ouvinte) => { ouvinte = f; }, removeListener: vi.fn() } },
     });
     await act(async () => { render(<App />); });
-    const preco = () => (screen.getByLabelText('Preço (R$)') as HTMLInputElement).value;
-    fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '150' } });
+    const preco = () => (screen.getByLabelText('Preço de venda') as HTMLInputElement).value;
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '150' } });
 
     atual = { entrada: ENTRADA, resposta: { ok: true, dados: DADOS } }; // nova análise, mesmo anúncio
     await act(async () => { ouvinte!({ tipo: 'publiai:estado-atualizado', tabId: 7 }); });
