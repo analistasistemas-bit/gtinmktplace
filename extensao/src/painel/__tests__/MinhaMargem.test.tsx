@@ -55,7 +55,7 @@ describe('MinhaMargem', () => {
     c.getByText('R$ 12,00');
     c.getByText('R$ 58,00');
     c.getByText('R$ 28,00');
-    c.getByText('28,0%');
+    c.getByText('28,00%');
   });
 
   it('custo digitado 0 é inválido (igual à edge: custo > 0) e não calcula', () => {

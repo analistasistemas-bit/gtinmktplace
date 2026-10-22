@@ -16,7 +16,7 @@ export interface EstadoAba {
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 /** `R$ 147,24` (espaço comum no lugar do não separável do Intl). */
 export const brl = (n: number) => BRL.format(n).replace(/\s/g, ' ');
-export const pct = (n: number) => `${n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}%`;
+export const pct = (n: number) => `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
 export function mensagemDeErro(erro: string): string {
   switch (erro) {
