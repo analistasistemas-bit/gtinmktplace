@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
       const alvo = String(body.org_id ?? '');
       if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
       // Mesmos ids do registry do frontend (src/lib/modulos.ts) — manter em sincronia.
-      const MODULOS_VALIDOS = ['estoque', 'pulse', 'fiscal', 'promocoes', 'ads'];
+      const MODULOS_VALIDOS = ['estoque', 'pulse', 'fiscal', 'promocoes', 'ads', 'extensao'];
       const modulos = Array.isArray(body.modulos)
         ? (body.modulos as string[]).filter((m) => MODULOS_VALIDOS.includes(m))
         : [];

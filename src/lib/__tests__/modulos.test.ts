@@ -8,6 +8,11 @@ describe('MODULOS', () => {
       if (m.menu != null) expect(MENU_KEYS).toContain(m.menu);
     }
   });
+  it('módulo extensao existe, sem menu', () => {
+    const m = MODULOS.find((x) => x.id === 'extensao');
+    expect(m?.nome).toBe('Extensão do navegador');
+    expect(m?.menu).toBeUndefined();
+  });
   it('ids são únicos', () => {
     expect(new Set(MODULOS.map((m) => m.id)).size).toBe(MODULOS.length);
   });

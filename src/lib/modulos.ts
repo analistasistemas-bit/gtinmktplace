@@ -6,7 +6,7 @@
 // são as edges `cadastrar-produto` e `entrada-estoque`, que recusam org sem o módulo com 403.
 import type { MenuKey } from './menus';
 
-export type ModuloId = 'estoque' | 'pulse' | 'fiscal' | 'promocoes' | 'ads';
+export type ModuloId = 'estoque' | 'pulse' | 'fiscal' | 'promocoes' | 'ads' | 'extensao';
 
 export interface Modulo {
   id: ModuloId;
@@ -45,6 +45,11 @@ export const MODULOS: Modulo[] = [
     nome: 'Ads',
     descricao: 'Painel de Product Ads com o resultado depois da despesa e o ACOS de equilíbrio de cada família (ADR-0179).',
     menu: 'ads',
+  },
+  {
+    id: 'extensao',
+    nome: 'Extensão do navegador',
+    descricao: 'Extensão PubliAI para Chrome: Minha margem em páginas do Mercado Livre (ADR-0189).',
   },
 ];
 
