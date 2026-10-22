@@ -39,7 +39,8 @@
   <h2>Dados que a extensão usa</h2>
   <ul>
     <li><strong>Token de acesso do PubliAI.</strong> É enviado pelo próprio PubliAI quando você está logado. Fica só na memória da sessão do navegador e é apagado quando expira, quando você sai do PubliAI ou quando o navegador é fechado. A extensão nunca recebe nem guarda a sua senha.</li>
-    <li><strong>Dados públicos do anúncio aberto no Mercado Livre</strong> (identificador, preço, categoria, vendedor e faixa de vendas). São usados para calcular a margem com os dados da sua empresa no PubliAI e para mostrar a data de criação e o ritmo de vendas observados.</li>
+    <li><strong>Dados públicos do anúncio aberto no Mercado Livre</strong> (identificador, preço, categoria, vendedor e faixa de vendas). São usados para calcular a margem com os dados da sua empresa no PubliAI e para mostrar o ritmo de vendas observado.</li>
+    <li><strong>Leitura em segundo plano do anúncio aberto.</strong> Para obter a data de criação e a faixa de vendas daquele anúncio, a extensão abre em segundo plano a página dele no Mercado Livre usando a sua sessão do Mercado Livre neste navegador (cookies do próprio site). Só essas duas informações são lidas; elas ficam na memória da sessão do navegador e não são enviadas ao PubliAI. A extensão não lê nem guarda os seus cookies e não faz essa leitura em anúncios que você não abriu.</li>
   </ul>
 
   <h2>O que é gravado nos servidores do PubliAI</h2>
@@ -53,9 +54,15 @@
   <ul>
     <li>Não registra as páginas que você visita, as suas buscas nem nenhum dado de fora do Mercado Livre.</li>
     <li>Não lê anúncios que você não abriu.</li>
-    <li>Não vende nem compartilha dados com terceiros e não usa ferramentas de rastreamento ou publicidade de terceiros.</li>
+    <li>Não vende dados e não usa ferramentas de rastreamento ou publicidade de terceiros.</li>
     <li>Não usa os dados para outra finalidade além de mostrar a análise do anúncio a você.</li>
   </ul>
+
+  <h2>Com quem os dados são compartilhados</h2>
+  <p>Os dados enviados pela extensão vão apenas aos servidores do PubliAI, que funcionam em provedores de infraestrutura contratados pela DALUDI: <strong>Supabase</strong> (banco de dados e funções do servidor) e <strong>Upstash</strong> (cache temporário de cálculos e limite de uso). Esses provedores processam os dados só para executar o serviço, e eles não são compartilhados com mais ninguém.</p>
+
+  <h2>Uso limitado</h2>
+  <p>O uso das informações recebidas pela extensão segue a Política de Dados do Usuário da Chrome Web Store, incluindo os requisitos de Uso Limitado: os dados são usados só para oferecer e melhorar a finalidade única da extensão, não são transferidos a terceiros fora dos casos permitidos, não são usados para publicidade e não são lidos por pessoas, salvo com o seu consentimento, por segurança, para cumprir a lei ou de forma agregada e anônima para manter o serviço.</p>
 
   <h2>Permissões do navegador</h2>
   <ul>
