@@ -209,10 +209,13 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     },
     async extensaoUsage(_actorId: string, orgId: string, month: string): Promise<ExtensaoUsage> {
       // `dia` é date no fuso de São Paulo (extensao_registrar_uso): recorta pelo primeiro dia do mês e do seguinte.
+      // Ordem pela chave primária: allRows pagina de 1000 em 1000 e precisa de ordem estável.
       const inicio = monthDate(month); const fim = monthBounds(month)[1].slice(0, 10);
       const [uso, erros, vinculos, primeiro] = await Promise.all([
-        allRows<ExtensaoUsoRow>((a, b) => db.from('extensao_uso_diario').select('user_id,dia,tipo_pagina,analises').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim).range(a, b)),
-        allRows<ExtensaoErroRow>((a, b) => db.from('extensao_erros_leitura').select('dia,tipo_pagina,versao_extensao,motivo,ocorrencias,ultimo_ml_item_id').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim).range(a, b)),
+        allRows<ExtensaoUsoRow>((a, b) => db.from('extensao_uso_diario').select('user_id,dia,tipo_pagina,analises').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim)
+          .order('dia', { ascending: true }).order('user_id', { ascending: true }).order('tipo_pagina', { ascending: true }).range(a, b)),
+        allRows<ExtensaoErroRow>((a, b) => db.from('extensao_erros_leitura').select('dia,tipo_pagina,versao_extensao,motivo,ocorrencias,ultimo_ml_item_id').eq('org_id', orgId).gte('dia', inicio).lt('dia', fim)
+          .order('dia', { ascending: true }).order('tipo_pagina', { ascending: true }).order('versao_extensao', { ascending: true }).order('motivo', { ascending: true }).range(a, b)),
         exactCount(db.from('extensao_vinculos').select('id', { count: 'exact', head: true }).eq('org_id', orgId)),
         db.from('extensao_uso_diario').select('dia').eq('org_id', orgId).order('dia', { ascending: true }).limit(1),
       ]); fail(primeiro.error);

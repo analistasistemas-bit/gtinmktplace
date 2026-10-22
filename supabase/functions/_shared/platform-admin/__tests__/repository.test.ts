@@ -255,10 +255,13 @@ describe('createPlatformAdminRepository', () => {
         { org_id: 'org-a', user_id: 'u2', dia: '2026-10-22', tipo_pagina: 'anuncio', analises: 1 },
         { org_id: 'org-a', user_id: 'u2', dia: '2026-09-30', tipo_pagina: 'anuncio', analises: 9 },
         { org_id: 'org-b', user_id: 'u9', dia: '2026-10-22', tipo_pagina: 'anuncio', analises: 50 },
+        { org_id: 'org-b', user_id: 'u9', dia: '2026-08-01', tipo_pagina: 'anuncio', analises: 1 },
       ] },
       extensao_erros_leitura: { rows: [
         { org_id: 'org-a', dia: '2026-10-21', tipo_pagina: 'anuncio', versao_extensao: '0.1.0', motivo: 'campo_ausente:preco', ocorrencias: 2, ultimo_ml_item_id: 'MLB1' },
         { org_id: 'org-a', dia: '2026-10-22', tipo_pagina: 'catalogo', versao_extensao: '0.1.0', motivo: 'estado_nao_encontrado', ocorrencias: 1, ultimo_ml_item_id: null },
+        { org_id: 'org-b', dia: '2026-10-22', tipo_pagina: 'anuncio', versao_extensao: '0.1.0', motivo: 'campo_ausente:preco', ocorrencias: 40, ultimo_ml_item_id: 'MLB-OUTRA-ORG' },
+        { org_id: 'org-a', dia: '2026-09-30', tipo_pagina: 'anuncio', versao_extensao: '0.1.0', motivo: 'campo_ausente:preco', ocorrencias: 7, ultimo_ml_item_id: 'MLB-MES-ANTERIOR' },
       ] },
       extensao_vinculos: { rows: [{ id: 'v1', org_id: 'org-a' }, { id: 'v2', org_id: 'org-a' }, { id: 'v3', org_id: 'org-b' }] },
       profiles: { rows: [{ id: 'u1', nome: 'Diego' }] },
@@ -270,6 +273,7 @@ describe('createPlatformAdminRepository', () => {
       { actor_id: 'u2', actor_name: null, analises: 1, ultimo_dia: '2026-10-22' },
     ]);
     expect(r.erros.map((e) => [e.dia, e.motivo, e.ocorrencias])).toEqual([['2026-10-22', 'estado_nao_encontrado', 1], ['2026-10-21', 'campo_ausente:preco', 2]]);
+    expect(JSON.stringify(r)).not.toMatch(/OUTRA-ORG|MES-ANTERIOR/);
   });
 
   it('extensaoUsage: mês sem uso e contagem de vínculos indisponível', async () => {
