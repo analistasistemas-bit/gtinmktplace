@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EntradaAnuncio, RespostaAnuncio } from '../formato';
+import type { EntradaAnuncio, Resposta, RespostaAnuncio } from '../formato';
 import { MinhaMargem } from '../MinhaMargem';
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -142,7 +143,7 @@ describe('MinhaMargem', () => {
     }), analisar);
     fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
     tipo('Clássico').getByText('R$ 152,00'); // local: 200 − 20 (10%) − 8 (4%) − 20 (frete)
-    screen.getByText(/frete pode mudar/);
+    expect(screen.getAllByText('Estimativa')).toHaveLength(2);
     act(() => { vi.advanceTimersByTime(1499); });
     expect(analisar).not.toHaveBeenCalled();
     await act(async () => { vi.advanceTimersByTime(1); });
@@ -159,5 +160,60 @@ describe('MinhaMargem', () => {
     expect(analisar).not.toHaveBeenCalled();
     screen.getByText('Informe um preço válido.');
     expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  describe('Codex #11: resultado inteiro é "Estimativa" enquanto o preço difere do confirmado', () => {
+    const VINC = { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, custoPacote: { estado: 'ok', valor: 30 } } as const;
+    /** Resposta do servidor ao preço `p` (a comissão muda de faixa acima de 150). */
+    const doServidor = (p: number) => {
+      const r = resposta({ custo: { ...VINC } });
+      r.margem = { preco: p, classico: { estado: 'indisponivel', motivo: 'x' }, premium: { estado: 'indisponivel', motivo: 'x' } };
+      r.parametros.classico = { estado: 'ok', valor: { percentual: p > 150 ? 13 : 10, fixa: 0 } };
+      return r;
+    };
+    function Harness({ analisar }: { analisar: (p: number) => Promise<Resposta<RespostaAnuncio>> }) {
+      const [dados, setDados] = useState(doServidor(100));
+      return <MinhaMargem entrada={ENTRADA} dados={dados} analisar={analisar} onDados={setDados} />;
+    }
+    const estimativas = () => screen.queryAllByText('Estimativa');
+    const comissao = () => tipo('Clássico').getByText('Comissão').nextElementSibling!.textContent;
+    const confirmar = async (ms = 1500) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
+
+    it('preço confirmado: sem rótulo; editado: os dois tipos rotulados (comissão e frete); confirmado em outra faixa: comissão nova, sem rótulo', async () => {
+      vi.useFakeTimers();
+      render(<Harness analisar={async (p) => ({ ok: true, dados: doServidor(p) })} />);
+      expect(estimativas()).toHaveLength(0);
+      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      expect(estimativas()).toHaveLength(2); // Clássico e Premium
+      expect(comissao()).toBe('R$ 20,00'); // local, com a faixa antiga (10%)
+      screen.getByText(/comissão e o frete/);
+      await confirmar();
+      expect(estimativas()).toHaveLength(0);
+      expect(comissao()).toBe('R$ 26,00'); // 13% confirmado pelo servidor
+    });
+
+    it('confirmação que falha mantém o rótulo', async () => {
+      vi.useFakeTimers();
+      render(<Harness analisar={async () => ({ ok: false, erro: 'interno' })} />);
+      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      await confirmar();
+      screen.getByRole('alert');
+      expect(estimativas()).toHaveLength(2);
+    });
+
+    it('resposta fora de ordem é ignorada: vale a do último preço', async () => {
+      vi.useFakeTimers();
+      const pendentes = new Map<number, (r: Resposta<RespostaAnuncio>) => void>();
+      const analisar = (p: number) => new Promise<Resposta<RespostaAnuncio>>((ok) => { pendentes.set(p, ok); });
+      render(<Harness analisar={analisar} />);
+      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '120' } });
+      await confirmar();
+      fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
+      await confirmar();
+      await act(async () => { pendentes.get(200)!({ ok: true, dados: doServidor(200) }); });
+      await act(async () => { pendentes.get(120)!({ ok: true, dados: doServidor(120) }); });
+      expect(estimativas()).toHaveLength(0);
+      expect(comissao()).toBe('R$ 26,00');
+    });
   });
 });

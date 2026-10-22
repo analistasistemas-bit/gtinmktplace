@@ -86,6 +86,9 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
     });
   }
   const precoConfirmado = dados.margem?.preco ?? entrada.preco;
+  // Comissão (faixa) e frete vêm da última consulta confirmada: a outro preço, o resultado inteiro é estimativa
+  // até o servidor confirmar — e continua sendo se a confirmação falhar (dados não mudam).
+  const estimativa = preco !== null && preco !== precoConfirmado;
 
   return (
     <section className="bloco">
@@ -94,8 +97,8 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
         Preço (R$)
         <input type="number" inputMode="decimal" min="0" step="0.01" value={precoTxt} onChange={(e) => editarPreco(e.target.value)} />
       </label>
-      {preco !== null && preco !== precoConfirmado && (
-        <p className="nota">Simulação: o frete pode mudar após a confirmação (faixas de frete grátis do Mercado Livre).</p>
+      {estimativa && (
+        <p className="nota">Estimativa: a comissão e o frete são do preço consultado e podem mudar de faixa neste preço até a confirmação no Mercado Livre.</p>
       )}
       {erro && <p className="erro" role="alert">{erro}</p>}
 
@@ -135,19 +138,20 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
       {pendencia && <p className="aviso">{pendencia}</p>}
       {margem && (
         <div className="tipos">
-          <Tipo nome="Clássico" r={margem.classico} />
-          <Tipo nome="Premium" r={margem.premium} />
+          <Tipo nome="Clássico" r={margem.classico} estimativa={estimativa} />
+          <Tipo nome="Premium" r={margem.premium} estimativa={estimativa} />
         </div>
       )}
     </section>
   );
 }
 
-function Tipo({ nome, r }: { nome: string; r: Disponivel<MargemTipo> }) {
+function Tipo({ nome, r, estimativa }: { nome: string; r: Disponivel<MargemTipo>; estimativa: boolean }) {
   const id = `tipo-${nome}`;
   return (
     <section className="tipo" aria-labelledby={id}>
       <h3 id={id}>{nome}</h3>
+      {estimativa && <p className="aviso">Estimativa</p>}
       {r.estado === 'indisponivel' ? (
         <p className="aviso">Indisponível: {r.motivo}</p>
       ) : (
