@@ -29,7 +29,8 @@ export async function receberMensagemExterna(msg: unknown, sender: chrome.runtim
   if (
     m?.tipo === 'publiai:sessao' &&
     typeof m.accessToken === 'string' && m.accessToken !== '' &&
-    typeof m.expiresAt === 'number' && Number.isFinite(m.expiresAt) &&
+    // > 1e11 = milissegundos por engano (segundos só passam disso no ano 5138).
+    typeof m.expiresAt === 'number' && Number.isFinite(m.expiresAt) && m.expiresAt <= 1e11 &&
     typeof m.orgNome === 'string'
   ) {
     const sessao: Sessao = { accessToken: m.accessToken, expiresAt: m.expiresAt, orgNome: m.orgNome };

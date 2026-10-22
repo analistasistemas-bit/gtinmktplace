@@ -5,8 +5,11 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
   const dados: Record<string, unknown> = {};
   const chromeFalso = {
     runtime: {
+      id: 'ext-publiai',
       getManifest: () => ({ externally_connectable: { matches } }),
+      getURL: (p: string) => `chrome-extension://ext-publiai/${p}`,
     },
+    sidePanel: { open: vi.fn(async () => {}) },
     storage: {
       session: {
         get: vi.fn(async (k: string) => (k in dados ? { [k]: dados[k] } : {})),

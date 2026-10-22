@@ -42,6 +42,7 @@ describe('receberMensagemExterna', () => {
   it('payload malformado é ignorado', async () => {
     expect(await receberMensagemExterna({ ...sessao(), accessToken: '' }, APP)).toEqual({ ok: false });
     expect(await receberMensagemExterna({ ...sessao(), expiresAt: '123' }, APP)).toEqual({ ok: false });
+    expect(await receberMensagemExterna({ ...sessao(), expiresAt: Date.now() + 3_600_000 }, APP)).toEqual({ ok: false }); // ms por engano
     expect(await receberMensagemExterna(null, APP)).toEqual({ ok: false });
     expect(await obterSessaoValida()).toBeNull();
   });
