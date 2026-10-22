@@ -136,7 +136,6 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
           catalogoCriadoEm={resposta.dados.catalogoCriadoEm}
         />
       )}
-      {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} />}
       <MinhaMargem
         entrada={entrada}
         dados={resposta.dados}
@@ -146,6 +145,8 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
       {(resposta.dados.custo.fonte === 'nenhuma' || resposta.dados.custo.fonte === 'vinculo_manual') && (
         <VinculoProduto entrada={entrada} fonte={resposta.dados.custo.fonte} chamar={chamar} onVinculado={reanalisar} />
       )}
+      {/* Contexto, depois da tarefa principal (margem + vínculo, D-6). */}
+      {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} />}
     </>
   );
 }

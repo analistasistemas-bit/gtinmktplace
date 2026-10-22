@@ -90,6 +90,14 @@ describe('Painel', () => {
     expect(screen.queryByRole('button', { name: 'Trocar SKU' })).toBeNull();
   });
 
+  it('vendedor vem depois da margem e do vínculo (topo = tarefa principal, D-6)', () => {
+    const vendedor = { nickname: 'LOJA X', nivel: '5_green', medalha: null, vendas: 10, periodo: null, uf: 'SP' };
+    render(<Painel estado={estado({ ok: true, dados: { ...DADOS, vendedor } })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
+    const titulo = screen.getByRole('heading', { name: 'Vendedor' });
+    const sku = screen.getByText('Este produto é meu SKU…');
+    expect(sku.compareDocumentPosition(titulo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('mostra qual anúncio está sendo analisado', () => {
     render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     screen.getByText('Anúncio MLB1');

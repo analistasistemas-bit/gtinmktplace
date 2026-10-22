@@ -6,7 +6,7 @@ const REPUTACAO: Record<string, { texto: string; cor: string }> = {
   '5_green': { texto: 'Verde', cor: 'verde' },
   '4_light_green': { texto: 'Verde-claro', cor: 'verde' },
   '3_yellow': { texto: 'Amarela', cor: 'amarelo' },
-  '2_orange': { texto: 'Laranja', cor: 'vermelho' },
+  '2_orange': { texto: 'Laranja', cor: 'amarelo' },
   '1_red': { texto: 'Vermelha', cor: 'vermelho' },
 };
 
@@ -20,12 +20,12 @@ export function Vendedor({ vendedor: v }: { vendedor: VendedorML }) {
   const rep = v.nivel ? REPUTACAO[v.nivel] : undefined;
   const medalha = v.medalha ? MEDALHA[v.medalha] : undefined;
   return (
-    <section className="cartao quanto-vende" aria-labelledby="vd-titulo">
+    <section className="cartao quanto-vende vendedor" aria-labelledby="vd-titulo">
       <div className="qv-cabeca">
         <h2 id="vd-titulo">Vendedor</h2>
         {v.uf && <span className="observado">{v.uf}</span>}
       </div>
-      <p className="vd-nome">{v.nickname ?? '—'}</p>
+      {v.nickname && <p className="vd-nome">{v.nickname}</p>}
       <dl className="qv-numeros">
         <div>
           <dt>Reputação</dt>
