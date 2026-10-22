@@ -26,6 +26,23 @@ export async function estadoDaAba(tabId: number): Promise<unknown> {
   return (await chrome.storage.session.get(chaveEstado(tabId)))[chaveEstado(tabId)] ?? null;
 }
 
+// Geração da página na aba: muda a cada navegação. Resposta que chega depois de uma navegação não grava
+// o anúncio anterior. Em storage.session (sobrevive ao SW reiniciar); ausente = nenhuma navegação vista ainda.
+const chaveGeracao = (tabId: number) => `geracao:${tabId}`;
+
+export async function geracaoDaAba(tabId: number): Promise<string | null> {
+  const v = (await chrome.storage.session.get(chaveGeracao(tabId)))[chaveGeracao(tabId)];
+  return typeof v === 'string' ? v : null;
+}
+
+/** A aba começou a carregar outra página: nova geração primeiro, depois some o estado. */
+export async function novaPaginaNaAba(tabId: number): Promise<void> {
+  await chrome.storage.session.set({ [chaveGeracao(tabId)]: crypto.randomUUID() });
+  await chrome.storage.session.remove(chaveEstado(tabId));
+}
+
+/** Aba fechada. */
 export async function esquecerEstado(tabId: number): Promise<void> {
   await chrome.storage.session.remove(chaveEstado(tabId));
+  await chrome.storage.session.remove(chaveGeracao(tabId));
 }

@@ -171,6 +171,19 @@ describe('estado da aba (painel)', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });
 
+  it('análise do content script em voo → aba navega (loading) → resposta atrasada não regrava o anúncio anterior', async () => {
+    fetchFalso.mockImplementation(async () => {
+      await aoAtualizarAba(7, { status: 'loading' });
+      return new Response('{"ok":1}', { status: 200 });
+    });
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { ok: 1 } }); // o selo ainda recebe
+    expect(await estado(7)).toBeNull();
+    // A página nova analisa normalmente (geração capturada depois do loading).
+    fetchFalso.mockImplementation(async () => new Response('{"ok":2}', { status: 200 }));
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ resposta: { ok: true, dados: { ok: 2 } } });
+  });
+
   it('reanalisar-aba não regrava se a aba navegou durante a chamada', async () => {
     await chamar(ANUNCIO, CONTEUDO);
     fetchFalso.mockImplementation(async () => {
