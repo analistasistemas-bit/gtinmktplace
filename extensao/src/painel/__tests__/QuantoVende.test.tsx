@@ -20,19 +20,36 @@ describe('QuantoVende (observado)', () => {
     screen.getByText('+1.000');
   });
 
+  it('catálogo com faixa igual à do anúncio: agregado e ritmo do catálogo continuam (achado Codex)', () => {
+    render(<QuantoVende observado={{ vendidosTexto: '+1000 vendidos', vendidosAnuncio: '+1000 vendidos', criadoEm: '2026-04-25T12:00:00Z' }}
+      catalogo catalogoCriadoEm="2020-07-30T21:40:56Z" agora={AGORA} />);
+    screen.getByText('Catálogo, todos os vendedores');
+    screen.getByText('desde 07/2020');
+  });
+
   it('faixa da página igual à do anúncio → não repete', () => {
     render(<QuantoVende observado={{ vendidosTexto: '+25 vendidos', vendidosAnuncio: '+25 vendidos', criadoEm: '2026-04-25T12:00:00Z' }} catalogo={false} agora={AGORA} />);
     expect(screen.getAllByText('+25').length).toBe(1);
     expect(screen.queryByText(/todos os/)).toBeNull();
   });
 
-  it('sem os dados do anúncio: só a faixa da página, rotulada, e o motivo — sem ritmo', () => {
-    render(<QuantoVende observado={{ vendidosTexto: '+1000 vendidos', vendidosAnuncio: null, criadoEm: null }} catalogo agora={AGORA} />);
+  it('sem os dados do anúncio e sem data do catálogo: só a faixa da página, rotulada, e o motivo — sem ritmo', () => {
+    render(<QuantoVende observado={{ vendidosTexto: '+1000 vendidos', vendidosAnuncio: null, criadoEm: null, motivo: 'HTTP 500' }} catalogo agora={AGORA} />);
     screen.getByText('Catálogo, todos os vendedores');
     screen.getByText('+1.000');
     expect(screen.queryByText('Este anúncio')).toBeNull();
     expect(screen.queryByText(/≥/)).toBeNull();
-    screen.getByText(/Vendas e idade deste anúncio indisponíveis/);
+    screen.getByText('Vendas e idade deste anúncio indisponíveis (HTTP 500).');
+  });
+
+  it('catálogo com data: ritmo do catálogo (faixa ÷ idade do catálogo); captcha explicado sem jargão', () => {
+    render(<QuantoVende observado={{ vendidosTexto: '+1000 vendidos', vendidosAnuncio: null, criadoEm: null, motivo: 'página sem a data (79 KB → www.mercadolivre.com.br/captcha/wal…)' }}
+      catalogo catalogoCriadoEm="2020-07-30T21:40:56Z" agora={AGORA} />);
+    screen.getByText('Catálogo, todos os vendedores');
+    screen.getByText('desde 07/2020');
+    screen.getByText('≥ 13/mês');
+    screen.getByText('≥ 0,4/dia');
+    screen.getByText('Vendas e idade deste anúncio: o Mercado Livre não libera essa leitura para a extensão.');
   });
 
   it('estado antigo (sem vendidosAnuncio) e nada observado → não renderiza', () => {

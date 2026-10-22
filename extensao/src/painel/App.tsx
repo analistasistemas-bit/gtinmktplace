@@ -129,7 +129,11 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
     <>
       {anuncio('Concorrente')}
       {estado.observado && (
-        <QuantoVende observado={estado.observado} catalogo={(entrada as { tipoPagina?: string }).tipoPagina === 'catalogo'} />
+        <QuantoVende
+          observado={estado.observado}
+          catalogo={(entrada as { tipoPagina?: string }).tipoPagina === 'catalogo'}
+          catalogoCriadoEm={resposta.dados.catalogoCriadoEm}
+        />
       )}
       <MinhaMargem
         entrada={entrada}

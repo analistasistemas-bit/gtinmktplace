@@ -6,7 +6,7 @@ import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo, tomDoSelo } from '../sel
 
 const tipo = (o: Partial<MargemTipo>): MargemTipo => ({ comissao: 0, imposto: 0, frete: 0, custo: null, recebe: 0, lucro: null, margemPct: null, avisos: [], ...o });
 const resp = (margem: RespostaAnuncio['margem'], proprio = false): RespostaAnuncio =>
-  ({ proprio, margem, custo: {} as RespostaAnuncio['custo'], parametros: {} as RespostaAnuncio['parametros'] });
+  ({ proprio, catalogoCriadoEm: null, margem, custo: {} as RespostaAnuncio['custo'], parametros: {} as RespostaAnuncio['parametros'] });
 const comClassico = (c: MargemTipo | null) =>
   resp({ preco: 100, classico: c ? { estado: 'ok', valor: c } : { estado: 'indisponivel', motivo: 'x' }, premium: { estado: 'indisponivel', motivo: 'x' } });
 

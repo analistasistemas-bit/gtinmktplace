@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  basesDeKit, chaveFrete, dimensoesDaLinha, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
+  basesDeKit, chaveFrete, dimensoesDaLinha, dataDoProduto, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -122,6 +122,15 @@ describe('comissaoDaListingPrice', () => {
   it('sem sale_fee_details (com ou sem sale_fee_amount) → indisponível', () => {
     expect(comissaoDaListingPrice({ sale_fee_amount: 18.24 }, 100).estado).toBe('indisponivel');
     expect(comissaoDaListingPrice({ sale_fee_amount: null as unknown as number }, 100).estado).toBe('indisponivel');
+  });
+});
+
+describe('dataDoProduto', () => {
+  it('date_created ISO de /products/{id}; ausente, inválida ou corpo nulo → null', () => {
+    expect(dataDoProduto({ date_created: '2020-07-30T21:40:56Z' })).toBe('2020-07-30T21:40:56Z');
+    expect(dataDoProduto({ date_created: 'ontem' })).toBeNull();
+    expect(dataDoProduto({})).toBeNull();
+    expect(dataDoProduto(null)).toBeNull();
   });
 });
 

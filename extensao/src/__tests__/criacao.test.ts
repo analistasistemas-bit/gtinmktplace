@@ -27,4 +27,22 @@ describe('dataCriacaoDoAnuncio', () => {
     fetchFalso.mockResolvedValueOnce(new Response('<html>outra coisa</html>', { status: 200 }));
     expect((await observadoDoAnuncio('MLB8')).motivo).toMatch(/^página sem a data/);
   });
+
+  it('captcha do ML: para de buscar pelo resto da sessão (não insiste contra o antibot)', async () => {
+    const captcha = new Response('<html>captcha</html>', { status: 200 });
+    Object.defineProperty(captcha, 'redirected', { value: true });
+    Object.defineProperty(captcha, 'url', { value: 'https://www.mercadolivre.com.br/captcha/wall?x=1' });
+    fetchFalso.mockResolvedValueOnce(captcha);
+    expect((await observadoDoAnuncio('MLB9')).motivo).toMatch(/captcha/);
+    expect((await observadoDoAnuncio('MLB10')).motivo).toMatch(/captcha/);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it('captcha com corpo que nunca termina: bloqueia antes de ler (achado Codex)', async () => {
+    const r = { ok: true, status: 200, redirected: true, url: 'https://www.mercadolivre.com.br/captcha/wall', text: () => Promise.reject(new DOMException('t', 'TimeoutError')) };
+    fetchFalso.mockResolvedValueOnce(r);
+    expect((await observadoDoAnuncio('MLB11')).motivo).toMatch(/captcha/);
+    expect((await observadoDoAnuncio('MLB12')).motivo).toMatch(/captcha/);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
 });

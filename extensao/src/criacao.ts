@@ -8,6 +8,9 @@ import { startTimeDoHtml, vendidosDoHtml } from './compartilhado/quanto-vende';
 export interface ObservadoDoAnuncio { criadoEm: string | null; vendidosAnuncio: string | null; motivo?: string }
 
 const chave = (mlItemId: string) => `anuncio-vip:${mlItemId}`;
+// Captcha do ML (antibot barra a requisição da extensão): nenhuma nova busca nesta sessão do navegador.
+const BLOQUEADO = 'anuncio-vip:bloqueado';
+const MOTIVO_CAPTCHA = 'captcha do Mercado Livre';
 const VAZIO: ObservadoDoAnuncio = { criadoEm: null, vendidosAnuncio: null };
 
 // Busca em voo por item: análises simultâneas do mesmo anúncio dividem o mesmo GET.
@@ -24,14 +27,21 @@ export function observadoDoAnuncio(mlItemId: string): Promise<ObservadoDoAnuncio
 }
 
 async function buscar(mlItemId: string): Promise<ObservadoDoAnuncio> {
-  const guardado = (await chrome.storage.session.get(chave(mlItemId)).catch(() => ({})) as Record<string, unknown>)[chave(mlItemId)];
+  const sess = (await chrome.storage.session.get([chave(mlItemId), BLOQUEADO]).catch(() => ({}))) as Record<string, unknown>;
+  const guardado = sess[chave(mlItemId)];
   if (guardado && typeof guardado === 'object') return { ...VAZIO, ...(guardado as Partial<ObservadoDoAnuncio>) };
-  let obs: ObservadoDoAnuncio = VAZIO;
+  if (sess[BLOQUEADO]) return { ...VAZIO, motivo: MOTIVO_CAPTCHA };
+  let obs: ObservadoDoAnuncio;
   try {
     const r = await fetch(`https://produto.mercadolivre.com.br/${mlItemId.replace('MLB', 'MLB-')}`, {
       credentials: 'include',
       signal: AbortSignal.timeout(5000),
     });
+    // Antes de ler o corpo: timeout na leitura não pode impedir o bloqueio (achado Codex).
+    if (r.redirected && new URL(r.url).pathname.startsWith('/captcha')) {
+      await chrome.storage.session.set({ [BLOQUEADO]: true }).catch(() => {});
+      return { ...VAZIO, motivo: MOTIVO_CAPTCHA };
+    }
     const html = r.ok ? await r.text() : '';
     obs = { criadoEm: startTimeDoHtml(html, mlItemId), vendidosAnuncio: vendidosDoHtml(html, mlItemId) };
     if (!obs.criadoEm) {

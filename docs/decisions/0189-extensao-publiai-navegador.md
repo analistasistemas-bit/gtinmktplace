@@ -131,6 +131,15 @@ usuário (deslogado não traz), e o valor bate com a publicação (MLB4982690837
   interceptação de `fetch`/XHR e qualquer requisição a anúncio que o usuário não abriu. Captcha ou falha →
   data indisponível, sem nova tentativa automática.
 
+- **Captcha (medido em 2026-10-22, validação no Chrome do Diego):** o antibot do ML redireciona a requisição da
+  extensão a `produto.mercadolivre.com.br` para `/captcha/wall`, enquanto a mesma requisição feita de uma aba
+  passa; nenhuma página do `www` traz a data. Contornar é proibido (D-14): no primeiro captcha a extensão para de
+  buscar o HTML do anúncio pelo resto da sessão do navegador e o painel diz que o ML não libera essa leitura.
+- **Ritmo do catálogo (decisão do Diego, 2026-10-22):** em `/p/`, faixa da página (todos os vendedores) ÷ idade do
+  produto de catálogo, com `date_created` de `/products/{id}` (endpoint já permitido em D-1), devolvido pela edge
+  em `catalogoCriadoEm` e cacheado. Ex.: "+1.000 desde 07/2020 → ≥ 13/mês, ≥ 0,4/dia". Fora de catálogo, sem a
+  leitura do anúncio, fica só a faixa.
+
 ## Errata 2026-10-22 — estimativa de vendas reprovada (D-9, Task 13)
 
 **Patamares da faixa pública (medidos em 2026-10-22):** total exato dos anúncios próprios × texto da página: 5–24 →

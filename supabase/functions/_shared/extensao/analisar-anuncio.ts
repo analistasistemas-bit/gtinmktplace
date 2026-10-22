@@ -25,10 +25,14 @@ export interface DepsAnuncio extends DepsVinculo {
   unidadesPorPacote(catalogProductId: string | null): Promise<Disponivel<number>>;
   /** Dimensões próprias do kit vinculado da família `codigoPai` com `fator` SKUs; null se não há. */
   dimensoesDoPacote(orgId: string, codigoPai: string, fator: number): Promise<DimensoesPacote | null>;
+  /** `date_created` de /products/{id} (ritmo do catálogo no painel, D-9); null = indisponível. */
+  catalogoCriadoEm(catalogProductId: string): Promise<string | null>;
 }
 
 export interface RespostaAnuncio {
   proprio: boolean;
+  /** Criação do produto de catálogo (faixa da página /p/ ÷ idade dele = ritmo do catálogo); null fora de catálogo. */
+  catalogoCriadoEm: string | null;
   margem: MinhaMargem | null;
   custo: {
     fonte: FonteCusto;
@@ -71,16 +75,18 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     const proprio = { estado: 'indisponivel', motivo: 'anúncio próprio' } as const;
     return {
       proprio: true,
+      catalogoCriadoEm: null,
       margem: null,
       custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
       parametros: { aliquotas: { nacional: null, importado: null, confirmada: false }, classico: proprio, premium: proprio, frete: proprio },
     };
   }
 
-  const [{ fonte, variacao }, aliquotas, unidades] = await Promise.all([
+  const [{ fonte, variacao }, aliquotas, unidades, catalogoCriadoEm] = await Promise.all([
     resolverVinculo(orgId, e, deps),
     deps.aliquotas(orgId),
     deps.unidadesPorPacote(e.catalogProductId).catch((): Disponivel<number> => UPP_INDISPONIVEL),
+    e.catalogProductId ? deps.catalogoCriadoEm(e.catalogProductId).catch(() => null) : null,
   ]);
   const unidadesAnuncio = unidades.estado === 'ok' ? unidades.valor : null;
   // Mesmo produto do catálogo = mesma composição: fator 1 por identidade, sem depender de UNITS_PER_PACK.
@@ -128,6 +134,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
 
   return {
     proprio: false,
+    catalogoCriadoEm,
     margem,
     custo: {
       fonte, variacaoId: variacao?.variacaoId ?? null, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,

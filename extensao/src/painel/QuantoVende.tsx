@@ -8,11 +8,18 @@ export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: str
 const num = (n: number) => n.toLocaleString('pt-BR');
 const faixa = (piso: number, texto: string) => (/^\+/.test(texto.trim()) ? `+${num(piso)}` : num(piso));
 
-export function QuantoVende({ observado, catalogo, agora }: { observado: Observado; catalogo: boolean; agora?: Date }) {
+const bloqueado = (motivo?: string) => !!motivo && /captcha/i.test(motivo);
+
+export function QuantoVende({ observado, catalogo, catalogoCriadoEm, agora }: {
+  observado: Observado; catalogo: boolean; catalogoCriadoEm?: string | null; agora?: Date;
+}) {
   const a = quantoVende({ vendidosTexto: observado.vendidosAnuncio ?? null, criadoEm: observado.criadoEm }, agora);
+  // Ritmo do catálogo: faixa da página /p/ (todos os vendedores) ÷ idade do produto de catálogo (/products, D-9).
+  const c = catalogo && catalogoCriadoEm ? quantoVende({ vendidosTexto: observado.vendidosTexto, criadoEm: catalogoCriadoEm }, agora) : null;
   const temAnuncio = a.piso !== null || a.dias !== null;
   const pisoPagina = pisoDosVendidos(observado.vendidosTexto);
-  const paginaAParte = pisoPagina !== null && observado.vendidosTexto?.trim() !== observado.vendidosAnuncio?.trim();
+  // Catálogo é outra entidade (todos os vendedores): sempre à parte; fora dele, só se a faixa difere da do anúncio.
+  const paginaAParte = pisoPagina !== null && (catalogo || observado.vendidosTexto?.trim() !== observado.vendidosAnuncio?.trim());
   if (!temAnuncio && pisoPagina === null) return null;
   return (
     <section className="cartao quanto-vende" aria-labelledby="qv-titulo">
@@ -54,13 +61,27 @@ export function QuantoVende({ observado, catalogo, agora }: { observado: Observa
       )}
       {paginaAParte && (
         <div className="qv-agregado">
-          <span>{catalogo ? 'Catálogo, todos os vendedores' : 'Somando os anúncios deste produto'}</span>
-          <span className="mono">{faixa(pisoPagina, observado.vendidosTexto!)}</span>
+          <div className="qv-agregado-linha">
+            <span>{catalogo ? 'Catálogo, todos os vendedores' : 'Somando os anúncios deste produto'}</span>
+            <span className="mono">{faixa(pisoPagina, observado.vendidosTexto!)}</span>
+          </div>
+          {c?.dias != null && (
+            <div className="qv-agregado-linha mono">
+              <span>{`desde ${new Date(c.criadoEm!).toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' })}`}</span>
+              {c.minimoPorMes !== null && <span>{`≥ ${num(c.minimoPorMes)}/mês`}</span>}
+              {c.minimoPorDia !== null && <span>{`≥ ${num(c.minimoPorDia)}/dia`}</span>}
+            </div>
+          )}
         </div>
       )}
-      {!temAnuncio && <p className="nota">Vendas e idade deste anúncio indisponíveis. Entre no Mercado Livre neste navegador para vê-las.</p>}
-      {a.dias === null && observado.motivo && <p className="nota">{`Leitura da página do anúncio: ${observado.motivo}.`}</p>}
-      {a.minimoPorMes !== null && <p className="nota">Mínimo: piso da faixa dividido pela idade do anúncio.</p>}
+      {!temAnuncio && (
+        <p className="nota">
+          {bloqueado(observado.motivo)
+            ? 'Vendas e idade deste anúncio: o Mercado Livre não libera essa leitura para a extensão.'
+            : `Vendas e idade deste anúncio indisponíveis${observado.motivo ? ` (${observado.motivo})` : ''}.`}
+        </p>
+      )}
+      {(a.minimoPorMes !== null || c?.minimoPorMes != null) && <p className="nota">Mínimo: piso da faixa dividido pela idade.</p>}
     </section>
   );
 }

@@ -136,6 +136,12 @@ function lerUnitsPerPack(attrs: unknown): number | null | undefined {
 
 export const QTD_NAO_CONFIRMADA = 'quantidade por anúncio não confirmada';
 
+/** `date_created` de /products/{id} (corpo do mlGet; null = HTTP/timeout), só se for data válida. */
+export function dataDoProduto(produto: unknown): string | null {
+  const d = (produto as { date_created?: unknown } | null)?.date_created;
+  return typeof d === 'string' && Number.isFinite(new Date(d).getTime()) ? d : null;
+}
+
 /** UNITS_PER_PACK de /products/{id} (corpo do mlGet; null = HTTP/timeout). Nunca presume 1 (D-8):
  *  sem o atributo → "quantidade por anúncio não confirmada"; corpo null ou valor ilegível → indisponível. */
 export function unidadesDoProduto(produto: unknown): Disponivel<number> {

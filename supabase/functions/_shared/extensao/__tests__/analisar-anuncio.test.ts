@@ -20,6 +20,7 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
     frete: vi.fn(async () => ({ estado: 'ok' as const, valor: 20 })),
     unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 1 })),
     dimensoesDoPacote: vi.fn(async () => null),
+    catalogoCriadoEm: vi.fn(async () => '2020-07-30T21:40:56Z'),
     ...over,
   };
 }
@@ -27,6 +28,21 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
 const ent: EntradaAnuncio = { mlItemId: 'MLB999', sellerId: '222', catalogProductId: 'MLB123', categoriaId: 'MLB1', preco: 100, eanDaBusca: null };
 
 describe('analisarAnuncio', () => {
+  it('data de criação do catálogo vai na resposta (ritmo do catálogo, ADR-0189 D-9); sem catálogo nem consulta', async () => {
+    const d = deps();
+    expect((await analisarAnuncio('org', ent, d)).catalogoCriadoEm).toBe('2020-07-30T21:40:56Z');
+    expect(d.catalogoCriadoEm).toHaveBeenCalledWith('MLB123');
+    const sem = deps();
+    expect((await analisarAnuncio('org', { ...ent, catalogProductId: null }, sem)).catalogoCriadoEm).toBeNull();
+    expect(sem.catalogoCriadoEm).not.toHaveBeenCalled();
+  });
+
+  it('falha ao ler a data do catálogo não derruba a análise', async () => {
+    const r = await analisarAnuncio('org', ent, deps({ catalogoCriadoEm: vi.fn(async () => { throw new Error('ml'); }) }));
+    expect(r.catalogoCriadoEm).toBeNull();
+    expect(r.margem).not.toBeNull();
+  });
+
   it('anúncio próprio: proprio true, margem null, sem consultar comissão/frete/vínculo', async () => {
     const d = deps({ contaDaOrg: vi.fn(async () => '222') });
     const r = await analisarAnuncio('org', { ...ent, sellerId: '222' }, d);
@@ -38,6 +54,8 @@ describe('analisarAnuncio', () => {
     expect(d.frete).not.toHaveBeenCalled();
     expect(d.unidadesPorPacote).not.toHaveBeenCalled();
     expect(d.porCatalogo).not.toHaveBeenCalled();
+    expect(d.catalogoCriadoEm).not.toHaveBeenCalled();
+    expect(r.catalogoCriadoEm).toBeNull();
   });
 
   it('alíquota não confirmada: clássico e premium indisponíveis', async () => {

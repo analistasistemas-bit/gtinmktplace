@@ -17,7 +17,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
+  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -123,6 +123,13 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
         unidadesDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
     },
     dimensoesDoPacote: (org, codigoPai, fator) => dimensoesDoKitVivo(admin, org, codigoPai, fator),
+    catalogoCriadoEm: async (cpid) => {
+      const t = await tokenML().catch(() => null);
+      if (!t) return null;
+      // Data do produto não muda: cacheia só a lida; null (falha) tenta na próxima análise.
+      return emCache<string | null>(`ext:catcriado:v1:${cpid}`, (v) => v !== null, async () =>
+        dataDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
+    },
   };
 }
 
