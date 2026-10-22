@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eanDaAba, esquecerAba, registrarEanDaAba } from '../abas';
+import { eanDaAba, esquecerAba, esquecerEstado, registrarEanDaAba } from '../abas';
 import { rotearMensagem } from '../roteador';
 import { receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
@@ -110,5 +110,45 @@ describe('publiai:abrir-painel', () => {
   it('abre o painel da aba do content script, de forma síncrona', () => {
     expect(rotearMensagem({ tipo: 'publiai:abrir-painel' }, CONTEUDO)).toBeUndefined();
     expect(chrome.sidePanel.open).toHaveBeenCalledWith({ tabId: 7 });
+  });
+});
+
+describe('estado da aba (painel)', () => {
+  const ANUNCIO = { acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100 };
+  const estado = (tabId: unknown, sender: Sender = PAINEL) => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId }, sender);
+
+  it('guarda {entrada, resposta} da análise do content script e avisa o painel', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estado(7)).toEqual({
+      entrada: { mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
+      resposta: { ok: true, dados: { ok: 1 } },
+    });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+  });
+
+  it('erro também é guardado (o painel mostra sem_sessao/modulo_desligado)', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"erro":"modulo_desligado"}', { status: 403 }));
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ resposta: { ok: false, erro: 'modulo_desligado' } });
+  });
+
+  it('análise vinda do painel não sobrescreve o estado da aba', async () => {
+    await chamar({ ...ANUNCIO, preco: 150 }, PAINEL);
+    expect(await estado(7)).toBeNull();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('só páginas da extensão leem; tabId numérico; esquecerEstado limpa', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(estado(7, CONTEUDO)).toBeUndefined();
+    expect(estado('7')).toBeUndefined();
+    await esquecerEstado(7);
+    expect(await estado(7)).toBeNull();
+  });
+
+  it('painel fechado (sendMessage rejeita) não derruba a análise', async () => {
+    vi.mocked(chrome.runtime.sendMessage).mockRejectedValueOnce(new Error('Receiving end does not exist'));
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { ok: 1 } });
   });
 });

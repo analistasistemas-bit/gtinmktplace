@@ -1,6 +1,6 @@
 // Service worker da Extensão PubliAI (ADR-0189 D-4/D-14). Único contexto que toca
 // chrome.storage.session; content scripts e painel falam com ele por mensagem.
-import { esquecerAba } from './abas';
+import { esquecerAba, esquecerEstado } from './abas';
 import { rotearMensagem } from './roteador';
 import { receberMensagemExterna } from './sessao';
 
@@ -19,4 +19,4 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
   return true;
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => { esquecerAba(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { esquecerAba(tabId); esquecerEstado(tabId); });

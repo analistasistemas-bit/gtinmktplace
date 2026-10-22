@@ -8,6 +8,7 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
       id: 'ext-publiai',
       getManifest: () => ({ externally_connectable: { matches } }),
       getURL: (p: string) => `chrome-extension://ext-publiai/${p}`,
+      sendMessage: vi.fn(async (_msg: unknown) => undefined),
     },
     sidePanel: { open: vi.fn(async () => {}) },
     storage: {

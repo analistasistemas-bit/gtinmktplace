@@ -2,7 +2,7 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
-import { eanDaAba, esquecerAba, registrarEanDaAba } from './abas';
+import { eanDaAba, esquecerAba, estadoDaAba, registrarEanDaAba, registrarEstado } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -30,6 +30,9 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:ean-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       return eanDaAba(msg.tabId);
+    case 'publiai:estado-da-aba':
+      if (!pagina || typeof msg.tabId !== 'number') return undefined;
+      return estadoDaAba(msg.tabId);
     case 'publiai:chamar': {
       const corpo = msg.corpo;
       if (!ehObjeto(corpo) || typeof corpo.acao !== 'string') return Promise.resolve({ ok: false, erro: 'payload_invalido' });
@@ -38,7 +41,14 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       }
       // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
       if (!pagina && corpo.acao === 'analisar_anuncio') {
-        return eanDaAba(tabId!).then((eanDaBusca) => chamarExtensao({ ...corpo, eanDaBusca }));
+        return eanDaAba(tabId!).then(async (eanDaBusca) => {
+          const resposta = await chamarExtensao({ ...corpo, eanDaBusca });
+          // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
+          const { mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
+          await registrarEstado(tabId!, { entrada: { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta });
+          chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
+          return resposta;
+        });
       }
       return chamarExtensao(corpo);
     }
