@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de privacidade — Extensão PubliAI</title>
+<meta name="description" content="Como a Extensão PubliAI para Chrome trata os dados de quem a usa.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<style>
+  @font-face { font-family: 'Geist'; src: url('../assets/fonts/geist-latin.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+  :root { --bg:#08090E; --card:#161923; --fg:#F1F1F5; --muted:#8E90A2; --indigo:#5C5CEB; --violet:#9152E3; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.65 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 56px 20px 80px; }
+  a { color: #A9A6F5; }
+  .marca { display: inline-flex; align-items: center; gap: 10px; color: var(--fg); text-decoration: none; font-weight: 600; font-size: 18px; }
+  .marca svg { width: 28px; height: 28px; }
+  h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 32px 0 8px; }
+  .data { color: var(--muted); font-size: 14px; margin: 0 0 32px; }
+  h2 { font-size: 19px; margin: 36px 0 10px; }
+  p, li { color: #D6D6DE; }
+  ul { padding-left: 22px; }
+  li + li { margin-top: 6px; }
+  .cartao { background: var(--card); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 18px 20px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="marca" href="/">
+    <svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5C5CEB"/><stop offset="1" stop-color="#9152E3"/></linearGradient></defs><g stroke="url(#g)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21H31"/><path d="M11 32H34"/><path d="M17 43H31"/><path d="M37 16 L53 32 L37 48"/></g><g fill="url(#g)"><circle cx="7" cy="21" r="3"/><circle cx="4" cy="32" r="3"/><circle cx="7" cy="43" r="3"/></g></svg>
+    PubliAI
+  </a>
+
+  <h1>Política de privacidade da Extensão PubliAI para Chrome</h1>
+  <p class="data">Atualizada em 22 de outubro de 2026</p>
+
+  <p>A Extensão PubliAI é oferecida pela DALUDI aos clientes do PubliAI. Ela mostra, nas páginas do Mercado Livre, a margem de lucro de um anúncio calculada com os dados da empresa do usuário no PubliAI. Esta página explica quais dados a extensão usa e o que é feito com eles.</p>
+
+  <h2>Dados que a extensão usa</h2>
+  <ul>
+    <li><strong>Token de acesso do PubliAI.</strong> É enviado pelo próprio PubliAI quando você está logado. Fica só na memória da sessão do navegador e é apagado quando expira, quando você sai do PubliAI ou quando o navegador é fechado. A extensão nunca recebe nem guarda a sua senha.</li>
+    <li><strong>Dados públicos do anúncio aberto no Mercado Livre</strong> (identificador, preço, categoria, vendedor e faixa de vendas). São usados para calcular a margem com os dados da sua empresa no PubliAI e para mostrar a data de criação e o ritmo de vendas observados.</li>
+  </ul>
+
+  <h2>O que é gravado nos servidores do PubliAI</h2>
+  <ul>
+    <li>O vínculo entre um anúncio e um produto da sua empresa, quando você o cria.</li>
+    <li>A contagem diária de análises por usuário e registros de falha de leitura da página (identificador do anúncio, tipo de página, versão da extensão e motivo), para manter a extensão funcionando.</li>
+  </ul>
+  <p>Esses registros ficam vinculados à sua organização no PubliAI e só são acessíveis a ela, sob as mesmas regras de acesso do PubliAI.</p>
+
+  <h2>O que a extensão não faz</h2>
+  <ul>
+    <li>Não registra as páginas que você visita, as suas buscas nem nenhum dado de fora do Mercado Livre.</li>
+    <li>Não lê anúncios que você não abriu.</li>
+    <li>Não vende nem compartilha dados com terceiros e não usa ferramentas de rastreamento ou publicidade de terceiros.</li>
+    <li>Não usa os dados para outra finalidade além de mostrar a análise do anúncio a você.</li>
+  </ul>
+
+  <h2>Permissões do navegador</h2>
+  <ul>
+    <li><strong>Painel lateral:</strong> exibe a análise, apenas nas abas do Mercado Livre.</li>
+    <li><strong>Armazenamento:</strong> guarda na memória da sessão o token e a última análise de cada aba.</li>
+    <li><strong>Alarmes:</strong> apaga a sessão automaticamente quando o token expira.</li>
+    <li><strong>Acesso a mercadolivre.com.br:</strong> ler o anúncio aberto e mostrar o selo de margem junto ao preço.</li>
+  </ul>
+
+  <div class="cartao">
+    <strong>Contato</strong><br>
+    Dúvidas ou pedidos sobre os seus dados: <a href="mailto:sac@daludi.com.br">sac@daludi.com.br</a>
+  </div>
+</main>
+</body>
+</html>
