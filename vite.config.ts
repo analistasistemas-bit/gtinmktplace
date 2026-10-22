@@ -23,4 +23,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Só o app: sem isso o scan de deps varre extensao/src/painel/index.html (alias @margem é do build da extensão).
+  optimizeDeps: { entries: ['index.html'] },
 });
