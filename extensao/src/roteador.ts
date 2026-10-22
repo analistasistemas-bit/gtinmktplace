@@ -3,7 +3,7 @@
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
-import { eanDaAba, eanParaAnuncio, esquecerAba, estadoDaAba, lerAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
+import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -22,11 +22,16 @@ async function guardarEstado(tabId: number, geracao: string | null, sessao: numb
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
 }
 
-/** `tabs.onUpdated`: a aba foi para outra página → o painel não pode seguir mostrando o anúncio anterior.
- *  `status` vem sem a permissão `tabs`; `url` vem para abas do ML (host permission) e cobre o pushState,
- *  que não dispara `loading` nem roda o content script de novo. */
+/** `tabs.onUpdated`: a aba foi para outro anúncio → o painel não pode seguir mostrando o anterior.
+ *  `url` vem para abas do ML (host permission) e cobre o pushState; mesmo anúncio com outra URL (variação,
+ *  hash, redirecionamento para /up/) mantém o painel. `loading` sem `url` (recarga ou saída do ML) limpa e
+ *  esquece o anúncio da aba. */
 export async function aoAtualizarAba(tabId: number, info: { status?: string; url?: string }): Promise<void> {
-  if (info.status !== 'loading' && !info.url) return;
+  if (info.url) {
+    if (await mesmoAnuncioNaAba(tabId, info.url).catch(() => false)) return;
+  } else if (info.status === 'loading') {
+    await esquecerAnuncioDaAba(tabId).catch(() => {});
+  } else return;
   await novaPaginaNaAba(tabId).catch(() => {});
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
 }

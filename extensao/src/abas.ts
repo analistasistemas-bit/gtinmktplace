@@ -68,10 +68,36 @@ export async function novaPaginaNaAba(tabId: number): Promise<void> {
   await chrome.storage.session.remove(chaveEstado(tabId));
 }
 
+/** Anúncio que a URL mostra: item do `pdp_filters` (redirecionamento /up/ e /p/ com item escolhido), MLB-123 do
+ *  caminho, catálogo /p/ ou user product /up/. null = página sem anúncio (lista, home). Query e hash fora. */
+export function anuncioDaUrl(url: string): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  const filtro = u.searchParams.get('pdp_filters')?.match(/item_id:(MLB\d+)/)?.[1];
+  if (filtro) return filtro;
+  const p = u.pathname;
+  return p.match(/\/p\/(MLB\d+)/)?.[1] ?? p.match(/\/up\/(MLBU\d+)/)?.[1] ?? p.match(/MLB-?(\d+)/)?.[0].replace('-', '') ?? null;
+}
+
+const chaveAnuncio = (tabId: number) => `anuncio:${tabId}`;
+
+/** A aba mudou de URL: true se ainda é o mesmo anúncio já visto nela (painel continua). Guarda o novo. */
+export async function mesmoAnuncioNaAba(tabId: number, url: string): Promise<boolean> {
+  const novo = anuncioDaUrl(url);
+  const antes = (await chrome.storage.session.get(chaveAnuncio(tabId)))[chaveAnuncio(tabId)] ?? null;
+  await chrome.storage.session.set({ [chaveAnuncio(tabId)]: novo });
+  return novo !== null && novo === antes;
+}
+
+export async function esquecerAnuncioDaAba(tabId: number): Promise<void> {
+  await chrome.storage.session.remove(chaveAnuncio(tabId));
+}
+
 /** Aba fechada. */
 export async function esquecerEstado(tabId: number): Promise<void> {
   await chrome.storage.session.remove(chaveEstado(tabId));
   await chrome.storage.session.remove(chaveGeracao(tabId));
+  await chrome.storage.session.remove(chaveAnuncio(tabId));
 }
 
 /** Troca de identidade / desconexão / sessão expirada: nenhuma aba guarda análise nem EAN da sessão anterior.

@@ -210,6 +210,43 @@ describe('estado da aba (painel)', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });
 
+  describe('mesma página de anúncio com outra URL (variação, hash, redirecionamento) mantém o painel', () => {
+    const A = 'https://produto.mercadolivre.com.br/MLB-1-garrafa-_JM';
+    const mantem = async (url: string) => {
+      await aoAtualizarAba(7, { status: 'loading', url: A });
+      await chamar(ANUNCIO, CONTEUDO);
+      vi.mocked(chrome.runtime.sendMessage).mockClear();
+      await aoAtualizarAba(7, { url });
+      expect(await estado(7)).not.toBeNull();
+      expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    };
+    it('troca de variação (query) no mesmo MLB', () => mantem(`${A}?variation=123`));
+    it('só o hash', () => mantem(`${A}#polycard_client=search`));
+    it('redirecionamento para /up/ com pdp_filters do mesmo item', () =>
+      mantem('https://www.mercadolivre.com.br/garrafa/up/MLBU99?pdp_filters=item_id:MLB1'));
+    it('pdp_filters codificado (item_id%3A)', () =>
+      mantem('https://www.mercadolivre.com.br/garrafa/up/MLBU99?pdp_filters=item_id%3AMLB1'));
+
+    const limpa = async (url: string) => {
+      await aoAtualizarAba(7, { status: 'loading', url: A });
+      await chamar(ANUNCIO, CONTEUDO);
+      await aoAtualizarAba(7, { url });
+      expect(await estado(7)).toBeNull();
+    };
+    it('outro MLB → limpa', () => limpa('https://produto.mercadolivre.com.br/MLB-2-outro-_JM'));
+    it('catálogo com outro vencedor → limpa', () => limpa('https://www.mercadolivre.com.br/x/p/MLB5?pdp_filters=item_id:MLB7'));
+    it('página sem anúncio (lista) → limpa', () => limpa('https://lista.mercadolivre.com.br/garrafa'));
+    it('recarga ou saída do ML (loading sem url) → limpa e esquece a chave', async () => {
+      await aoAtualizarAba(7, { status: 'loading', url: A });
+      await chamar(ANUNCIO, CONTEUDO);
+      await aoAtualizarAba(7, { status: 'loading' });
+      expect(await estado(7)).toBeNull();
+      await chamar(ANUNCIO, CONTEUDO);
+      await aoAtualizarAba(7, { url: A }); // voltou: chave esquecida → trata como página nova
+      expect(await estado(7)).toBeNull();
+    });
+  });
+
   it('estado gravado com geração antiga é descartado na leitura (escrita atrasada não ressuscita o anúncio)', async () => {
     await aoAtualizarAba(7, { status: 'loading' });
     const { geracao: atual, sessao } = await lerAba(7);
