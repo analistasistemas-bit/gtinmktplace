@@ -94,6 +94,11 @@ describe('analisarAnuncio', () => {
     expect(r.custo).toMatchObject({ fonte: 'ean_da_busca', unidadesPorPacote: 24, unidadesSku: 24, custoSku: 10, fator: 1, custoPacote: { estado: 'ok', valor: 10 } });
   });
 
+  it('Codex #3 (rodada 2): kit de 3 caixas de 24 (72 unidades, custo R$ 30) × anúncio de 72 → fator 1, R$ 30 (não R$ 720)', async () => {
+    const r = await analisarAnuncio('org', entEan, porEan({ unidades: 72, custo: 30 }, { estado: 'ok', valor: 72 }));
+    expect(r.custo).toMatchObject({ unidadesSku: 72, fator: 1, custoPacote: { estado: 'ok', valor: 30 } });
+  });
+
   it('pacote de 3 de um SKU unitário → custo × 3', async () => {
     const r = await analisarAnuncio('org', entEan, porEan({ unidades: 1 }, { estado: 'ok', valor: 3 }));
     expect(r.custo).toMatchObject({ fator: 3, custoPacote: { estado: 'ok', valor: 30 } });

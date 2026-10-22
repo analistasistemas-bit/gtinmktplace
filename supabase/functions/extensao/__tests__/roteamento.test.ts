@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  dimensoesDaLinha, unidadesDoProduto, unidadesDoSku, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
+  basesDeKit, dimensoesDaLinha, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -185,10 +185,31 @@ describe('unidadesDoSku (composição comercial confirmada do SKU)', () => {
     expect(unidadesDoSku(fam(upp('0')))).toBeNull();
     expect(unidadesDoSku(null)).toBeNull();
   });
-  it('kit vinculado: UNITS_PER_PACK = kit_multiplicador comprova; divergente → null', () => {
-    expect(unidadesDoSku(fam(upp('3'), 3))).toBe(3);
-    expect(unidadesDoSku(fam(upp('24'), 3))).toBeNull();
-    expect(unidadesDoSku(fam([], 3))).toBeNull();
+  const kit = (m: number, base: string | null = '9001') => ({ ...fam(upp(String(m)), m), kit_base_codigo_pai: base });
+  it('kit vinculado: kit_multiplicador × UNITS_PER_PACK da base (kit de 3 caixas de 24 → 72)', () => {
+    expect(unidadesDoSku(kit(3), new Map([['9001', 24]]))).toBe(72);
+    expect(unidadesDoSku(kit(3), new Map([['9001', 1]]))).toBe(3);
+  });
+  it('kit vinculado: UPP do kit = multiplicador sozinho não prova nada; base desconhecida/ausente → null', () => {
+    expect(unidadesDoSku(kit(3))).toBeNull();
+    expect(unidadesDoSku(kit(3), new Map([['9001', null]]))).toBeNull();
+    expect(unidadesDoSku(kit(3, null), new Map([['9001', 24]]))).toBeNull();
+  });
+});
+
+describe('bases de kit', () => {
+  const l = (f: object) => ({ id: 'x', codigo: '1', nome: null, custo: 1, peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null, atualizado_em: '', familias: { origem: null, kit_multiplicador: null, nome_pai: null, ...f } });
+  it('basesDeKit: só linhas de kit, sem repetir', () => {
+    expect(basesDeKit([l({}), l({ kit_multiplicador: 3, kit_base_codigo_pai: '9001' }), l({ kit_multiplicador: 2, kit_base_codigo_pai: '9001' })])).toEqual(['9001']);
+  });
+  it('uppDasBases: lotes da mesma base que concordam → valor; divergem ou não declaram → null', () => {
+    const upp = (v: string) => [{ id: 'UNITS_PER_PACK', value_name: v }];
+    const m = uppDasBases([
+      { codigo_pai: 'A', atributos_ml: upp('24') }, { codigo_pai: 'A', atributos_ml: upp('24') },
+      { codigo_pai: 'B', atributos_ml: upp('24') }, { codigo_pai: 'B', atributos_ml: upp('12') },
+      { codigo_pai: 'C', atributos_ml: [] },
+    ]);
+    expect([m.get('A'), m.get('B'), m.get('C'), m.get('D')]).toEqual([24, null, null, undefined]);
   });
 });
 

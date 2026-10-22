@@ -17,7 +17,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  type Pedido, QTD_NAO_CONFIRMADA, SELECT_VARIACAO, dimensoesDaLinha, unidadesDoProduto, validarPedido, variacoesDasLinhas,
+  basesDeKit, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dimensoesDaLinha, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -53,7 +53,14 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
   const variacoes = async (q: PromiseLike<{ data: unknown; error: { message: string } | null }>, onde: string) => {
     const { data, error } = await q;
     falhou(onde, error);
-    return variacoesDasLinhas((data ?? []) as LinhaVariacao[]);
+    const linhas = (data ?? []) as LinhaVariacao[];
+    // Kit vinculado: as unidades dependem do UNITS_PER_PACK da família-base (D-8).
+    const bases = basesDeKit(linhas);
+    if (bases.length === 0) return variacoesDasLinhas(linhas);
+    const { data: fam, error: e2 } = await admin.from('familias').select('codigo_pai, atributos_ml')
+      .eq('org_id', orgId).in('codigo_pai', bases);
+    falhou(`${onde}:base`, e2);
+    return variacoesDasLinhas(linhas, uppDasBases((fam ?? []) as { codigo_pai: string; atributos_ml: unknown }[]));
   };
 
   return {

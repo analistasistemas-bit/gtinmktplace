@@ -140,13 +140,14 @@ export function unidadesDoProduto(produto: unknown): Disponivel<number> {
 
 /** Colunas lidas de `variacoes` (+ família) para montar o custo do vínculo. */
 export const SELECT_VARIACAO =
-  'id, codigo, nome, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(origem, kit_multiplicador, nome_pai, codigo_pai, atributos_ml)';
+  'id, codigo, nome, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(origem, kit_multiplicador, kit_base_codigo_pai, nome_pai, codigo_pai, atributos_ml)';
 
 interface FamiliaLinha {
   origem: string | null;
   kit_multiplicador: number | null;
   nome_pai: string | null;
   codigo_pai?: string | null;
+  kit_base_codigo_pai?: string | null;
   atributos_ml?: unknown;
 }
 
@@ -183,14 +184,41 @@ export function deduplicarPorCodigo(linhas: LinhaVariacao[]): LinhaVariacao[] {
   return [...m.values()];
 }
 
-/** Unidades comerciais do SKU = UNITS_PER_PACK que ele declara no próprio anúncio (familias.atributos_ml), nunca
- *  presumidas (D-8). Kit vinculado grava ali o multiplicador (aplicarKitNosAtributos): se divergir de
- *  kit_multiplicador, a equivalência não está comprovada → null. Ausente/ilegível → null. */
-export function unidadesDoSku(f: FamiliaLinha | null): number | null {
-  const n = lerUnitsPerPack(f?.atributos_ml);
-  if (n == null) return null;
-  if (f?.kit_multiplicador != null && Number(f.kit_multiplicador) !== n) return null;
-  return n;
+/** UNITS_PER_PACK da família-base, por codigo_pai. Linhas da mesma base (lotes/UPDATE) que divergem ou não
+ *  declaram → null (não confirmado). */
+export type UppDasBases = Map<string, number | null>;
+
+/** Bases de kit vinculado citadas pelas linhas (para buscar o UNITS_PER_PACK delas). */
+export function basesDeKit(linhas: LinhaVariacao[]): string[] {
+  const s = new Set<string>();
+  for (const l of linhas) {
+    const f = familia(l);
+    if (f?.kit_multiplicador != null && f.kit_base_codigo_pai) s.add(f.kit_base_codigo_pai);
+  }
+  return [...s];
+}
+
+export function uppDasBases(familiasBase: { codigo_pai: string; atributos_ml: unknown }[]): UppDasBases {
+  const m: UppDasBases = new Map();
+  for (const b of familiasBase) {
+    const n = lerUnitsPerPack(b.atributos_ml) ?? null;
+    m.set(b.codigo_pai, m.has(b.codigo_pai) && m.get(b.codigo_pai) !== n ? null : n);
+  }
+  return m;
+}
+
+/** Unidades comerciais do SKU, nunca presumidas (D-8):
+ *  - SKU comum: UNITS_PER_PACK que ele declara no próprio anúncio (familias.atributos_ml);
+ *  - kit vinculado: kit_multiplicador × UNITS_PER_PACK da família-base. O UPP gravado no kit é o próprio
+ *    multiplicador (aplicarKitNosAtributos) e não prova a unidade-base (kit de 3 caixas de 24 = 72).
+ *  Ausente/ilegível/base desconhecida → null (o painel pede "Unidades no SKU"). */
+export function unidadesDoSku(f: FamiliaLinha | null, bases: UppDasBases = new Map()): number | null {
+  if (f?.kit_multiplicador != null) {
+    const m = Number(f.kit_multiplicador);
+    const base = f.kit_base_codigo_pai ? bases.get(f.kit_base_codigo_pai) ?? null : null;
+    return base !== null && Number.isInteger(m) && m >= 1 ? m * base : null;
+  }
+  return lerUnitsPerPack(f?.atributos_ml) ?? null;
 }
 
 /** Linha de variação → dimensões válidas do pacote, ou null. */
@@ -200,7 +228,7 @@ export function dimensoesDaLinha(l: Pick<LinhaVariacao, 'altura_cm' | 'largura_c
 }
 
 /** Linha → VariacaoCusto; família sem origem válida → origem null (conta na ambiguidade; nunca presumida). */
-export function variacaoCusto(l: LinhaVariacao): VariacaoCusto {
+export function variacaoCusto(l: LinhaVariacao, bases: UppDasBases = new Map()): VariacaoCusto {
   const f = familia(l);
   const o = f?.origem;
   const origem = o === 'nacional' || o === 'importado' ? o : null;
@@ -209,14 +237,14 @@ export function variacaoCusto(l: LinhaVariacao): VariacaoCusto {
     codigo: l.codigo,
     custo: custoDe(l),
     origem,
-    unidades: unidadesDoSku(f),
+    unidades: unidadesDoSku(f, bases),
     codigoPai: f?.codigo_pai ?? null,
     dimensoes: dimensoesDaLinha(l),
   };
 }
 
-export const variacoesDasLinhas = (linhas: LinhaVariacao[]) =>
-  deduplicarPorCodigo(linhas).map(variacaoCusto);
+export const variacoesDasLinhas = (linhas: LinhaVariacao[], bases: UppDasBases = new Map()) =>
+  deduplicarPorCodigo(linhas).map((l) => variacaoCusto(l, bases));
 
 /** Item da busca de SKU para o painel. */
 export function itemBusca(l: LinhaVariacao) {
