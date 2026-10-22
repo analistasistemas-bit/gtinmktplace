@@ -1,5 +1,14 @@
-// Fronteira HTTP da edge `extensao`: auditoria das escritas de vínculo em sessão de suporte (ADR-0092/0189).
+// Fronteira HTTP da edge `extensao` (ADR-0092/0189 D-18): sessão, módulo, limite, payload, vínculo,
+// erro de leitura e sigilo do token ML — handler real com dependências controladas.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireUserOrg } from '../../_shared/auth.ts';
+import { exigirModulo } from '../../_shared/produto/modulo.ts';
+import { resolverConexao } from '../../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../../_shared/ml/token.ts';
+import { buscarListingPrice } from '../../_shared/ml/listing-prices.ts';
+import { buscarFreteVendedorComProveniencia } from '../../_shared/ml/frete.ts';
+import { mlGet } from '../../_shared/ml/http.ts';
+import { redisIncrComTTL } from '../../_shared/redis/client.ts';
 
 type Contexto = { userId: string; orgId: string; isAdmin: boolean; support: null | { requestId: string; scope: 'read' | 'full' } };
 
@@ -10,6 +19,10 @@ const f = vi.hoisted(() => ({
   /** variação existe na org? (salvar_vinculo) */
   variacaoExiste: true,
   falharEscrita: false,
+  /** mensagem de erro de qualquer leitura do banco (null = sem erro) */
+  erroDb: null as string | null,
+  rpcs: [] as { fn: string; args: unknown }[],
+  froms: [] as string[],
 }));
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
@@ -17,14 +30,15 @@ vi.mock('../../_shared/auth.ts', () => ({ requireUserOrg: vi.fn(async () => f.co
 vi.mock('../../_shared/produto/modulo.ts', () => ({ exigirModulo: vi.fn(async () => true) }));
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexao: vi.fn(async () => null) }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn() }));
-vi.mock('../../_shared/ml/listing-prices.ts', () => ({ buscarListingPrice: vi.fn(), comissaoDeComProveniencia: vi.fn() }));
+vi.mock('../../_shared/ml/listing-prices.ts', async (orig) => ({ ...(await orig<object>()), buscarListingPrice: vi.fn() }));
 vi.mock('../../_shared/ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: vi.fn() }));
 vi.mock('../../_shared/ml/http.ts', () => ({ mlGet: vi.fn() }));
 vi.mock('../../_shared/redis/client.ts', () => ({ redisGet: vi.fn(), redisSet: vi.fn(), redisIncrComTTL: vi.fn(async () => 1) }));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
-    rpc: async () => ({ error: null }),
+    rpc: async (fn: string, args: unknown) => { f.rpcs.push({ fn, args }); return { error: null }; },
     from: (tabela: string) => {
+      f.froms.push(tabela);
       let op = 'select';
       let valor: unknown;
       const q = {
@@ -37,7 +51,8 @@ vi.mock('../../_shared/supabase.ts', () => ({
         upsert: (v: unknown) => { op = 'upsert'; valor = v; return q; },
         insert: (v: unknown) => { op = 'insert'; valor = v; f.ops.push({ tabela, op, valor }); return Promise.resolve({ error: null }); },
         delete: () => { op = 'delete'; return q; },
-        maybeSingle: () => Promise.resolve({ data: f.variacaoExiste ? { id: 'v' } : null, error: null }),
+        maybeSingle: () => Promise.resolve(f.erroDb ? { data: null, error: { message: f.erroDb } }
+          : { data: f.variacaoExiste ? { id: 'v' } : null, error: null }),
         then: (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) => {
           f.ops.push({ tabela, op, valor });
           const error = f.falharEscrita ? { message: 'boom' } : null;
@@ -70,6 +85,14 @@ beforeEach(() => {
   f.ops.length = 0;
   f.variacaoExiste = true;
   f.falharEscrita = false;
+  f.erroDb = null;
+  f.rpcs.length = 0;
+  f.froms.length = 0;
+  vi.clearAllMocks();
+  vi.mocked(requireUserOrg).mockImplementation(async () => f.contexto);
+  vi.mocked(exigirModulo).mockResolvedValue(true);
+  vi.mocked(resolverConexao).mockResolvedValue(null);
+  vi.mocked(redisIncrComTTL).mockResolvedValue(1);
   f.contexto = { userId: 'user-1', orgId: 'org-1', isAdmin: false, support: null };
 });
 
@@ -135,5 +158,155 @@ describe('extensao — quantidade por anúncio (D-8)', () => {
     const r = await post({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: null });
     expect(r.status).toBe(200);
     expect((await r.json()).custo).toMatchObject({ unidadesPorPacote: null });
+  });
+});
+
+const ANALISAR = { acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: 'MLB42', categoriaId: 'MLB5', preco: 100, eanDaBusca: null };
+const chamouMLouDb = () =>
+  vi.mocked(resolverConexao).mock.calls.length + vi.mocked(getValidAccessTokenConexao).mock.calls.length
+  + vi.mocked(buscarListingPrice).mock.calls.length + vi.mocked(mlGet).mock.calls.length + f.froms.length + f.rpcs.length;
+
+describe('extensao — sessão e módulo antes de qualquer ML/banco', () => {
+  it('sessão expirada (401 do auth) → 401 sessao_expirada', async () => {
+    vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 401 }));
+    const r = await post(ANALISAR);
+    expect(r.status).toBe(401);
+    expect(await r.json()).toEqual({ erro: 'sessao_expirada' });
+    expect(exigirModulo).not.toHaveBeenCalled();
+    expect(chamouMLouDb()).toBe(0);
+  });
+
+  it('sessão de suporte expirada (403 + x-motivo) → 403 sessao_suporte_expirada', async () => {
+    vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 403, headers: { 'x-motivo': 'sessao_suporte' } }));
+    const r = await post(ANALISAR);
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ erro: 'sessao_suporte_expirada' });
+    expect(chamouMLouDb()).toBe(0);
+  });
+
+  it('payload inválido não mascara sessão expirada', async () => {
+    vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 401 }));
+    const r = await handler(new Request('http://x', { method: 'POST', body: 'não é json' }));
+    expect(r.status).toBe(401);
+  });
+
+  it('módulo desligado → 403 modulo_desligado, sem ML nem banco', async () => {
+    vi.mocked(exigirModulo).mockResolvedValue(false);
+    const r = await post(ANALISAR);
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ erro: 'modulo_desligado' });
+    expect(exigirModulo).toHaveBeenCalledWith(expect.anything(), 'org-1', 'extensao');
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
+    expect(chamouMLouDb()).toBe(0);
+  });
+
+  it.each([
+    ['corpo não-JSON', 'xx'],
+    ['ação desconhecida', JSON.stringify({ acao: 'publicar' })],
+    ['preço zero', JSON.stringify({ ...ANALISAR, preco: 0 })],
+    ['variacaoId não-UUID', JSON.stringify({ ...SALVAR, variacaoId: '1' })],
+  ])('payload_invalido: %s → 400, sem ML nem banco', async (_, body) => {
+    const r = await handler(new Request('http://x', { method: 'POST', body }));
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ erro: 'payload_invalido' });
+    expect(chamouMLouDb()).toBe(0);
+  });
+});
+
+describe('extensao — limite de 30 análises/min (D-18)', () => {
+  it('31º pedido do minuto → 429 com a mensagem exata, sem análise', async () => {
+    const contagem = new Map<string, number>();
+    vi.mocked(redisIncrComTTL).mockImplementation(async (k) => { contagem.set(k, (contagem.get(k) ?? 0) + 1); return contagem.get(k)!; });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-22T12:00:10Z'));
+    try {
+      for (let i = 1; i <= 30; i++) expect((await post(ANALISAR)).status).toBe(200);
+      const chamadas = vi.mocked(resolverConexao).mock.calls.length;
+      const r = await post(ANALISAR);
+      expect(r.status).toBe(429);
+      expect(await r.json()).toEqual({ erro: 'limite', mensagem: 'Muitas análises em sequência. Aguarde um minuto.' });
+      expect(vi.mocked(resolverConexao).mock.calls.length).toBe(chamadas);
+      expect(vi.mocked(redisIncrComTTL).mock.calls.at(-1)).toEqual(['ext:rl:user-1:202610221200', 120]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('o limite é por análise: buscar_sku não consome a janela', async () => {
+    await post({ acao: 'buscar_sku', termo: 'abc' });
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
+  });
+});
+
+describe('extensao — salvar_vinculo', () => {
+  it('variação de outra org → 400 payload_invalido, sem upsert (usuário comum)', async () => {
+    f.variacaoExiste = false;
+    const r = await post(SALVAR);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ erro: 'payload_invalido' });
+    expect(escritas().map((o) => o.op)).not.toContain('upsert');
+  });
+});
+
+describe('extensao — erro_leitura', () => {
+  const ERRO = { acao: 'erro_leitura', tipoPagina: 'anuncio', mlItemId: 'MLB9', versao: '0.1.0', motivo: 'campo_ausente:preco' };
+
+  it('registra via RPC (dedupe no banco) só com ID, tipo, versão e motivo', async () => {
+    const r = await post(ERRO);
+    expect(r.status).toBe(200);
+    expect(f.rpcs).toEqual([{ fn: 'extensao_registrar_erro', args: { p_org_id: 'org-1', p_tipo: 'anuncio', p_versao: '0.1.0', p_motivo: 'campo_ausente:preco', p_ml_item_id: 'MLB9' } }]);
+    expect(vi.mocked(redisIncrComTTL).mock.calls[0][0]).toMatch(/^ext:rl-erro:user-1:\d{10}$/);
+    expect(vi.mocked(redisIncrComTTL).mock.calls[0][1]).toBe(3600);
+  });
+
+  it('acima de 20/h: 200 ok em silêncio, sem gravar', async () => {
+    vi.mocked(redisIncrComTTL).mockResolvedValue(21);
+    const r = await post(ERRO);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true });
+    expect(f.rpcs).toEqual([]);
+  });
+
+  it('motivo fora do formato → payload_invalido (texto livre não é gravado)', async () => {
+    const r = await post({ ...ERRO, motivo: 'título do concorrente' });
+    expect(r.status).toBe(400);
+    expect(f.rpcs).toEqual([]);
+  });
+});
+
+describe('extensao — token ML e chave de serviço nunca saem do servidor', () => {
+  const TOKEN = 'APP_USR-SENTINELA-TOKEN-ML';
+  const SERVICE = 'SENTINELA-SERVICE-ROLE-KEY';
+
+  beforeEach(() => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555, accessToken: TOKEN, refreshToken: `${TOKEN}-refresh` } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue(TOKEN);
+    vi.mocked(buscarListingPrice).mockResolvedValue({ sale_fee_amount: 12, sale_fee_details: { percentage_fee: 12, fixed_fee: 0 } });
+    vi.mocked(buscarFreteVendedorComProveniencia).mockResolvedValue({ valor: 20, proveniencia: 'official' } as never);
+    vi.mocked(mlGet).mockResolvedValue({ id: 'MLB42', attributes: [{ id: 'UNITS_PER_PACK', value_name: '1' }], token: TOKEN });
+  });
+
+  it('análise com sucesso usa o token só nas chamadas ao ML', async () => {
+    const r = await post(ANALISAR);
+    expect(r.status).toBe(200);
+    const corpo = await r.text();
+    expect(buscarListingPrice).toHaveBeenCalledWith(TOKEN, 100, 'MLB5', 'gold_special');
+    expect(corpo).not.toContain('SENTINELA');
+    expect(JSON.parse(corpo).parametros.classico).toMatchObject({ estado: 'ok' });
+  });
+
+  it.each([
+    ['ML lança com o token na mensagem', () => { vi.mocked(buscarListingPrice).mockRejectedValue(new Error(`401 Bearer ${TOKEN}`)); }],
+    ['token lança com a chave de serviço', () => { vi.mocked(getValidAccessTokenConexao).mockRejectedValue(new Error(`${SERVICE} ${TOKEN}`)); }],
+    ['banco falha com a chave de serviço', () => { f.erroDb = `JWT ${SERVICE} inválido`; }],
+    ['auth lança Error com a chave', () => { vi.mocked(requireUserOrg).mockRejectedValue(new Error(SERVICE)); }],
+  ])('%s → corpo sem sentinela', async (_, preparar) => {
+    preparar();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await post(ANALISAR);
+    spy.mockRestore();
+    const corpo = await r.text();
+    expect(corpo).not.toContain('SENTINELA');
+    if (r.status !== 200) expect(JSON.parse(corpo)).toEqual({ erro: 'interno' });
   });
 });
