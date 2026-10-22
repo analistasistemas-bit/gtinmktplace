@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eanDaAba, esquecerAba, esquecerEstado, lerAba, registrarEanDaAba, registrarEstado } from '../abas';
-import { aoAtualizarAba, rotearMensagem } from '../roteador';
+import { aoAtualizarAba, complementosPendentes, rotearMensagem } from '../roteador';
 import { aoAlarme, receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
 
@@ -24,7 +24,8 @@ beforeEach(async () => {
     { origin: 'https://app.publiai.daludi.com.br' },
   );
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+// Espera a busca da data em segundo plano: sem isso ela pode rodar depois de o `chrome` falso sair (CI).
+afterEach(async () => { await complementosPendentes(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 const chamar = (corpo: unknown, sender: Sender) => rotearMensagem({ tipo: 'publiai:chamar', corpo }, sender);
 

@@ -37,6 +37,10 @@ export async function aoAtualizarAba(tabId: number, info: { status?: string; url
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
 }
 
+// Complementos em segundo plano (data/faixa do anúncio). Exposto para os testes esperarem antes de desmontar o `chrome`.
+const pendentes = new Set<Promise<void>>();
+export const complementosPendentes = () => Promise.allSettled([...pendentes]);
+
 /** Faixa e data do anúncio (ADR-0189 emenda 2026-10-22) gravadas no `observado` da aba depois da análise. */
 async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, mlItemId: string): Promise<void> {
   const { criadoEm, vendidosAnuncio, motivo } = await observadoDoAnuncio(mlItemId);
@@ -119,7 +123,10 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
             return resposta;
           });
           // A data não segura o selo: chega depois e só entra se a aba ainda é a mesma página e sessão.
-          if (typeof mlItemId === 'string') void completarCriacao(tabId!, geracao, sessao, identidade, mlItemId);
+          if (typeof mlItemId === 'string') {
+            const p: Promise<void> = completarCriacao(tabId!, geracao, sessao, identidade, mlItemId).finally(() => pendentes.delete(p));
+            pendentes.add(p);
+          }
           return r;
         });
       }
