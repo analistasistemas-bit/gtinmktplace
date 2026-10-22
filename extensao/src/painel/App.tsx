@@ -18,7 +18,6 @@ type Reanalisar = () => Promise<Resposta<RespostaAnuncio> | null>;
 export function App() {
   // undefined = carregando; null = aba sem análise.
   const [estado, setEstado] = useState<EstadoAba | null | undefined>(undefined);
-  const [versao, setVersao] = useState(0);
   const [tabId, setTabId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -27,7 +26,6 @@ export function App() {
       const e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-da-aba', tabId }).catch(() => null)) as EstadoAba | null;
       if (tabId !== abaAtual) return; // trocou de aba no meio
       setEstado(e ?? null);
-      setVersao((v) => v + 1);
     };
     // Sem a permissão `tabs`: o id da aba ativa vem mesmo assim.
     const lerAbaAtiva = async () => {
@@ -55,30 +53,34 @@ export function App() {
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
   const reanalisarAba: Reanalisar = () =>
     chrome.runtime.sendMessage({ tipo: 'publiai:reanalisar-aba', tabId }).catch(() => ({ ok: false, erro: 'interno' }));
-  return <Painel key={versao} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
+  // Remonta (zera preço/custo digitados) só quando muda o anúncio; mesmo anúncio mantém a simulação.
+  return <Painel key={estado?.entrada.mlItemId ?? 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
 }
 
 export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | null; chamar: Chamar; reanalisarAba: Reanalisar }) {
-  const [resposta, setResposta] = useState(estado?.resposta);
-  const [versao, setVersao] = useState(0);
+  // Preço confirmado no servidor vale só enquanto o estado da aba for o mesmo de quando foi pedido.
+  const [confirmado, setConfirmado] = useState<{ base: EstadoAba['resposta']; dados: RespostaAnuncio } | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  if (!estado || !resposta) return <p className="nota">Abra um anúncio do Mercado Livre para ver sua margem.</p>;
+  if (!estado) return <p className="nota">Abra um anúncio do Mercado Livre para ver sua margem.</p>;
   const { entrada } = estado;
+  const resposta: Resposta<RespostaAnuncio> =
+    confirmado?.base === estado.resposta ? { ok: true, dados: confirmado.dados } : estado.resposta;
 
   const analisar = (preco: number) =>
     chamar<RespostaAnuncio>({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada, preco });
+  // O SW grava e avisa (estado-atualizado); o App recarrega o estado.
   const reanalisar = async () => {
     setOcupado(true);
-    const r = await reanalisarAba();
-    if (r) setResposta(r);
-    setVersao((v) => v + 1); // volta o simulador ao preço da página
+    await reanalisarAba();
     setOcupado(false);
   };
 
+  const anuncio = <p className="nota">{`Anúncio ${entrada.mlItemId}`}</p>;
   if (!resposta.ok) {
     return (
       <div className="bloco">
+        {anuncio}
         <p className="aviso">{mensagemDeErro(resposta.erro)}</p>
         <button type="button" className="secundario" disabled={ocupado} onClick={reanalisar}>Tentar de novo</button>
       </div>
@@ -87,6 +89,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
   if (resposta.dados.proprio) {
     return (
       <div className="bloco">
+        {anuncio}
         <p>Este anúncio é da sua empresa.</p>
         <a className="botao" href={URL_APP} target="_blank" rel="noopener noreferrer">Abrir no PubliAI</a>
       </div>
@@ -94,12 +97,12 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
   }
   return (
     <>
+      {anuncio}
       <MinhaMargem
-        key={versao}
         entrada={entrada}
         dados={resposta.dados}
         analisar={analisar}
-        onDados={(dados) => setResposta({ ok: true, dados })}
+        onDados={(dados) => setConfirmado({ base: estado.resposta, dados })}
       />
       {resposta.dados.custo.fonte === 'nenhuma' && (
         <VinculoProduto entrada={entrada} chamar={chamar} onVinculado={reanalisar} />

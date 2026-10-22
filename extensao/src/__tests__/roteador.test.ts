@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eanDaAba, esquecerAba, esquecerEstado, registrarEanDaAba } from '../abas';
-import { rotearMensagem } from '../roteador';
+import { aoAtualizarAba, rotearMensagem } from '../roteador';
 import { receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
 
@@ -158,6 +158,27 @@ describe('estado da aba (painel)', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
     expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 8 }, PAINEL)).toBeNull();
     expect(rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, CONTEUDO)).toBeUndefined();
+  });
+
+  it('aba começou a carregar outra página (tabs.onUpdated loading) → esquece o estado e avisa o painel', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    await aoAtualizarAba(7, { status: 'complete' });
+    expect(await estado(7)).not.toBeNull();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    await aoAtualizarAba(7, { status: 'loading' });
+    expect(await estado(7)).toBeNull();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+  });
+
+  it('reanalisar-aba não regrava se a aba navegou durante a chamada', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    fetchFalso.mockImplementation(async () => {
+      await aoAtualizarAba(7, { status: 'loading' });
+      return new Response('{"novo":1}', { status: 200 });
+    });
+    await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL);
+    expect(await estado(7)).toBeNull();
   });
 
   it('falha ao guardar o estado não derruba a análise', async () => {

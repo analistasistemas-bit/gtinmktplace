@@ -24,7 +24,7 @@ function numero(txt: string): number | null {
 }
 
 export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
-  const [precoTxt, setPrecoTxt] = useState(String(dados.margem?.preco ?? entrada.preco));
+  const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
