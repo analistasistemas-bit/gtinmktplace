@@ -77,6 +77,18 @@ describe('resolverVinculo', () => {
     expect(d.porGtin).not.toHaveBeenCalled();
   });
 
+  it('EAN interno 3000* é aceito (régua de gtinOuNull)', async () => {
+    const d = deps();
+    await resolverVinculo('org', { ...ent, eanDaBusca: '3000123' }, d);
+    expect(d.porGtin).toHaveBeenCalledWith('org', '3000123');
+  });
+
+  it.each(['', '   '])('EAN vazio %j não consulta porGtin', async (ean) => {
+    const d = deps();
+    await resolverVinculo('org', { ...ent, eanDaBusca: ean }, d);
+    expect(d.porGtin).not.toHaveBeenCalled();
+  });
+
   it('EAN nulo não consulta porGtin', async () => {
     const d = deps();
     await resolverVinculo('org', { ...ent, eanDaBusca: null }, d);
@@ -104,6 +116,15 @@ describe('custoDoPacote', () => {
   });
   it('custo null → custo não cadastrado', () => {
     expect(custoDoPacote(v({ custo: null }), 1)).toEqual({ estado: 'indisponivel', motivo: 'custo não cadastrado' });
+  });
+  it('custo 10.1, pack 3 → 30.3 (sem resíduo de float)', () => {
+    expect(custoDoPacote(v({ custo: 10.1 }), 3)).toEqual({ estado: 'ok', valor: 30.3 });
+  });
+  it.each([0, -2, 0.5])('unidades da variação %s → inválidas', (u) => {
+    expect(custoDoPacote(v({ unidades: u }), 2)).toEqual({ estado: 'indisponivel', motivo: 'unidades da variação inválidas' });
+  });
+  it('custo NaN → custo inválido', () => {
+    expect(custoDoPacote(v({ custo: NaN }), 1)).toEqual({ estado: 'indisponivel', motivo: 'custo inválido' });
   });
   it.each([0, -1, 1.5, NaN])('pack %s → unidades por pacote inválidas', (n) => {
     expect(custoDoPacote(v(), n)).toEqual({ estado: 'indisponivel', motivo: 'unidades por pacote inválidas' });

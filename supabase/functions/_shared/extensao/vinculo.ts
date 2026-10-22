@@ -1,6 +1,7 @@
 // Vínculo anúncio do ML → variação da organização (ADR-0189 D-8). Lógica pura com deps
 // injetadas; a edge implementa as consultas. Sem imports de runtime além de folhas relativas.
 import type { DimensoesPacote } from '../ml/pacote.ts';
+import { round2 } from '../dinheiro.ts';
 import { gtinOuNull } from '../produto/gtin.ts';
 import type { Disponivel } from './tipos.ts';
 
@@ -11,7 +12,7 @@ export interface VariacaoCusto {
   codigo: string;
   custo: number | null;
   origem: 'nacional' | 'importado';
-  /** origem_kit_multiplicador ?? 1 */
+  /** familias.kit_multiplicador ?? 1 */
   unidades: number;
   dimensoes: DimensoesPacote | null;
 }
@@ -52,8 +53,12 @@ export function custoDoPacote(v: VariacaoCusto, unidadesPorPacote: number): Disp
   if (!Number.isInteger(unidadesPorPacote) || unidadesPorPacote < 1) {
     return { estado: 'indisponivel', motivo: 'unidades por pacote inválidas' };
   }
+  if (!Number.isInteger(v.unidades) || v.unidades < 1) {
+    return { estado: 'indisponivel', motivo: 'unidades da variação inválidas' };
+  }
   if (v.custo == null) return { estado: 'indisponivel', motivo: 'custo não cadastrado' };
+  if (!Number.isFinite(v.custo)) return { estado: 'indisponivel', motivo: 'custo inválido' };
   const fator = unidadesPorPacote / v.unidades;
   if (!Number.isInteger(fator)) return { estado: 'indisponivel', motivo: 'composição diferente' };
-  return { estado: 'ok', valor: v.custo * fator };
+  return { estado: 'ok', valor: round2(v.custo * fator) };
 }
