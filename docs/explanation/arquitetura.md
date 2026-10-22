@@ -326,6 +326,16 @@ recusam org sem o módulo com **403** — é ali que está a fronteira de segura
   e seguindo pelo fluxo normal — IA, Revisão, publicação. `origem` e foto nunca são
   pré-preenchidas. Ver `docs/spikes/037-cadastrar-a-partir-da-viabilidade.md`.
 
+### Extensão PubliAI para Chrome (ADR-0189)
+
+Extensão MV3 (`extensao/`, pacote do workspace pnpm) com side panel nas abas do ML. O app web é o
+único dono do refresh token Supabase e empurra à extensão só o access token e a identidade
+(`externally_connectable`, só `app.publiai.daludi.com.br`). Fluxo: extensão → edge `extensao`
+(`verify_jwt`, módulo `extensao`, org do usuário ou da sessão de suporte) → banco (vínculos, uso,
+erros de leitura; RLS por org) e API do ML. O token ML da org fica só no servidor e só em leituras;
+a leitura da página do anúncio (um GET de HTML) é feita no navegador pelo service worker e nada
+dela é gravado. Módulo ligado só na org DSA.
+
 ### Calculadora Mercado Livre (ADR-0126)
 
 A segunda modalidade de `/viabilidade` simula Clássico e Premium sem persistir dados nem alterar

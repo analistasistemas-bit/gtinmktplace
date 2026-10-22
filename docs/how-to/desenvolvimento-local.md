@@ -116,6 +116,24 @@ Dois detalhes que separam estes comandos do `pnpm build` cru:
 > `pnpm test` pode sair com código 1 se faltar `.env.test` (dummy). Confira o exit code, não só
 > as asserções.
 
+## Extensão Chrome (ADR-0189)
+
+A extensão (`extensao/`) é um pacote do workspace pnpm (o `pnpm install` da raiz já o cobre).
+
+```bash
+pnpm --dir extensao test        # vitest
+pnpm --dir extensao build       # produção (checar-dist reprova localhost)
+pnpm --dir extensao build:dev   # desenvolvimento (aceita http://localhost:5173/*)
+```
+
+No Chrome: `chrome://extensions` → modo desenvolvedor → **Carregar sem compactação** → sempre a
+pasta `extensao/dist`. Para a ponte com o app local, copie o ID da extensão e suba o app com
+`VITE_EXTENSAO_ID=<id> pnpm dev` (porta 5173; só o build `build:dev` aceita essa origem). As
+variáveis web `VITE_EXTENSAO_ID` e `VITE_EXTENSAO_URL` vazias fazem a seção "Extensão do navegador"
+em Configurações avisar que não está disponível, e a ponte não envia nada. O módulo `extensao` precisa
+estar ligado na org do usuário. `scripts/validar-estimativa-vendas.ts` (Deno, só GET) mede a
+estimativa de vendas contra vendas reais.
+
 ## Backend local (opcional)
 
 Para rodar Postgres + Edge Functions na máquina:

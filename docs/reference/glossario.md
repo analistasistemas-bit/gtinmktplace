@@ -245,6 +245,17 @@
 | **Permissão de menu** | Conjunto de menus que um usuário **não-admin** pode ver e acessar (`profiles.allowed_menus`, array de chaves de menu). Trava em dois níveis: esconde no sidebar e bloqueia a rota. Não é trava de backend (ver ADR-0047). |
 | **Chave de menu** | Identificador estável de um item de navegação (`dashboard`, `lotes`, `revisao`, `publicados`, `faturamento`, `financeiro`, `viabilidade`, `configuracoes`). `usuarios` é um menu extra exclusivo de admin, não atribuível. `organizacoes` é exclusivo de super-admin. |
 
+## Extensão do navegador (ADR-0189)
+
+| Termo | Definição |
+|---|---|
+| **Extensão PubliAI** | Extensão Chrome (MV3, side panel) para usuários com conta PubliAI: mostra análise de anúncios do Mercado Livre enquanto o operador navega. Usa a organização do usuário (ou a da sessão de suporte ativa). Módulo `extensao` em `organizations.modulos_habilitados` (só a DSA). Não cria nem alimenta base de mercado. Código em `extensao/`; servidor na edge `extensao`. |
+| **Selo** | Marca pequena que a extensão põe junto ao preço na página do anúncio do ML (shadow root fechada); abre o painel lateral. A análise completa fica no painel, não na página. |
+| **Vínculo de produto (manual)** | Associação guardada pela organização entre um produto do ML (catálogo ou MLB) e um SKU próprio (`extensao_vinculos`), para trazer o custo real à **minha margem** num anúncio de concorrente. Dado da organização, não base de mercado. |
+| **Minha margem** | Lucro que a organização teria vendendo o produto a um preço informado, com custo real do SKU vinculado, imposto por origem, comissão (Clássico/Premium) e frete da conta da organização. |
+| **Quanto vende · Observado** | Bloco do painel só com dado observado: faixa pública do anúncio, "criado há" (semáforo pela idade) e mínimo por mês e por dia (piso da faixa ÷ idade). A estimativa de vendas foi reprovada na validação (mediana 90,9% > 30%) e está desligada. |
+| **Ritmo do catálogo** | Em página de catálogo (`/p/`): faixa de todos os vendedores ÷ idade do produto de catálogo (`date_created` de `/products/{id}`, `catalogoCriadoEm`). Ex.: "+1.000 desde 07/2020 → ≥ 13/mês, ≥ 0,4/dia". Rotulado como piso, nunca como venda do anúncio. |
+
 ## Pulse (inteligência de mercado)
 
 | Termo | Definição |

@@ -1,6 +1,6 @@
 # PubliAI — Tasks
 
-## Extensão PubliAI (navegador) — desenho em andamento — 2026-10-21
+## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
 Recomeço do zero após engenharia reversa do Avant Pro e da JoomPulse (REA + validação no Chrome;
 relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em `CONTEXT.md`
@@ -16,10 +16,17 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   (× `UNITS_PER_PACK`); vendas = observado + estimativa rotulada; vencedor de catálogo só quando o
   ML informa; Acompanhamento de anúncio próprio vai para o PubliAI web (épico seguinte);
   distribuição Chrome Web Store não listada; uma extensão só.
-- [ ] Concluir o grilling e escrever a ADR da Extensão PubliAI (revoga o "Não fazer" do roadmap
-  2026-09-21 para extensão).
-- [ ] Validar a fórmula de vendas estimadas (estilo Avant) contra vendas reais dos anúncios próprios
-  antes de exibi-la.
+- [x] ADR-0189 + plano `docs/superpowers/plans/2026-10-21-extensao-publiai.md` (revoga o "Não fazer" de 2026-09-21).
+- [x] Fatia 1: edge `extensao` (v2), migration `extensao_v1`, módulo `extensao` (só DSA), ponte web em Configurações,
+  painel lateral só nas abas do ML (minha margem Clássico/Premium, vínculo manual de SKU), selo junto ao preço.
+  Validado por Diego no Chrome (blocos A–E) em 22/10.
+- [x] Quanto vende · Observado (emenda ADR-0189 D-9/D-14): faixa e criado há do anúncio (HTML de
+  produto.mercadolivre, para no captcha do antibot), ritmo do catálogo (faixa ÷ `date_created` de `/products`).
+- [x] Validar a estimativa de vendas (Task 13): REPROVADA (mediana 90,9% com os patamares reais do ML) →
+  desligada, errata na ADR. `scripts/validar-estimativa-vendas.ts` para remedir.
+- [x] code-review-fable5 v13 (segurança): 83/100, selo em shadow root fechada e build de produção sem localhost.
+- [ ] Publicar na Chrome Web Store (não listada) e configurar `VITE_EXTENSAO_ID`/`VITE_EXTENSAO_URL` no frontend.
+- [ ] Fatia 2 restante: vendedor, qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 16–19).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

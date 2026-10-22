@@ -1588,6 +1588,26 @@ O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só 
 - `canal_externo` só tem `mercado_livre` — ganha valor novo quando entrar o 2º canal.
 
 
+## Extensão PubliAI (ADR-0189)
+
+Migration `20261022003449_extensao_v1` (em produção). Escrita só pela edge `extensao` (`service_role`, `org_id` explícito); RLS: `select` da própria org (`org_id = current_org_id()`), `anon` sem privilégio, `authenticated` só `SELECT`. Nada de anúncio de concorrente é gravado além destas tabelas.
+
+### `extensao_vinculos`
+Vínculo manual produto do ML → SKU. `id`, `org_id`, `chave_tipo` (`catalogo|item`), `chave` (id do catálogo ou MLB), `variacao_id` (FK `variacoes`, cascade), `criado_por`, `criado_em`, `atualizado_em`. `unique (org_id, chave_tipo, chave)`; índice em `variacao_id`.
+
+### `extensao_uso_diario`
+Contador de análises. PK `(org_id, user_id, dia, tipo_pagina)` (`anuncio|busca|catalogo`), `analises`. Dia em `America/Sao_Paulo`.
+
+### `extensao_erros_leitura`
+Falhas de leitura de página, deduplicadas. PK `(org_id, dia, tipo_pagina, versao_extensao, motivo)`, `ocorrencias`, `ultimo_ml_item_id`, `atualizado_em`.
+
+| RPC | Função |
+|---|---|
+| `extensao_registrar_uso(p_org_id, p_user_id, p_tipo)` | Incrementa `extensao_uso_diario` do dia (upsert). |
+| `extensao_registrar_erro(p_org_id, p_tipo, p_versao, p_motivo, p_ml_item_id)` | Upsert em `extensao_erros_leitura`: soma `ocorrencias` e guarda o último MLB. |
+
+Ambas `security definer`; `execute` revogado de `public`/`anon`/`authenticated`, concedido só a `service_role`.
+
 ## `mercado_serie_vendedores(bigint[])` — leitura de mercado (ADR-0144)
 
 Função `SECURITY DEFINER` que devolve `(seller_id, dia, transactions_total)` de `pulse_vendedores`
