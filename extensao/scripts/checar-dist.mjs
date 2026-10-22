@@ -19,6 +19,12 @@ const erros = [];
 })(dist);
 
 if (!statSync(path.join(dist, 'manifest.json'), { throwIfNoEntry: false })) erros.push('manifest.json ausente');
+// Content scripts MV3 não são módulos: precisam existir e não ter import/export.
+for (const f of ['anuncio.js', 'busca-ean.js']) {
+  const p = path.join(dist, f);
+  if (!statSync(p, { throwIfNoEntry: false })) { erros.push(`${f} ausente`); continue; }
+  if (/(^|[;}\n])\s*(import\s*[\w{*"']|export\s*[\w{*])/.test(readFileSync(p, 'utf8'))) erros.push(`${f} contém import/export`);
+}
 if (erros.length) {
   console.error('[checar-dist] reprovado:\n' + erros.join('\n'));
   process.exit(1);

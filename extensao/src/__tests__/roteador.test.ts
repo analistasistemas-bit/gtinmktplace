@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registrarEanDaAba } from '../abas';
+import { eanDaAba, esquecerAba, registrarEanDaAba } from '../abas';
 import { rotearMensagem } from '../roteador';
 import { receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
@@ -76,6 +76,27 @@ describe('EAN por aba', () => {
     expect(await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO)).toEqual({ ok: true });
     expect(rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: 'abc' }, CONTEUDO)).toBeUndefined();
     expect(await rotearMensagem({ tipo: 'publiai:ean-da-aba', tabId: 7 }, PAINEL)).toBe('7899941205918');
+  });
+
+  it('busca com termo textual (ean null) limpa a aba; anúncio seguinte vai com eanDaBusca null', async () => {
+    await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO);
+    expect(await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, CONTEUDO)).toEqual({ ok: true });
+    expect(await rotearMensagem({ tipo: 'publiai:ean-da-aba', tabId: 7 }, PAINEL)).toBeNull();
+    await chamar({ acao: 'analisar_anuncio' }, CONTEUDO);
+    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca).toBeNull();
+  });
+
+  it('limpar só afeta a aba do remetente; sem aba é ignorado', async () => {
+    await registrarEanDaAba(8, '96385074');
+    await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, CONTEUDO); // aba 7
+    expect(await eanDaAba(8)).toBe('96385074');
+    expect(rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, PAINEL)).toBeUndefined();
+  });
+
+  it('esquecerAba (usado no tabs.onRemoved) limpa a aba', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await esquecerAba(7);
+    expect(await eanDaAba(7)).toBeNull();
   });
 
   it('ean-da-aba só para páginas da extensão e com tabId numérico', async () => {

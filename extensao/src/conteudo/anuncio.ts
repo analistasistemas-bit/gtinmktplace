@@ -6,8 +6,15 @@ import { textoDoSelo } from './selo';
 
 type Resp = { ok: true; dados: RespostaAnuncio } | { ok: false; erro: string };
 
-const chamar = (corpo: object): Promise<Resp> =>
-  chrome.runtime.sendMessage({ tipo: 'publiai:chamar', corpo }).catch(() => ({ ok: false, erro: 'interno' }));
+const FALHA: Resp = { ok: false, erro: 'interno' };
+// Síncrono pode lançar "Extension context invalidated" após recarregar a extensão: silencioso.
+const chamar = async (corpo: object): Promise<Resp> => {
+  try {
+    return (await chrome.runtime.sendMessage({ tipo: 'publiai:chamar', corpo })) ?? FALHA;
+  } catch {
+    return FALHA;
+  }
+};
 
 // O servidor só aceita motivos em minúsculas (campo_ausente:ml_item_id).
 const normalizarMotivo = (m: string) => m.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -33,7 +40,13 @@ function criarSelo(texto: string, aviso = false): HTMLElement {
   b.style.cssText =
     `display:inline-block;margin:8px 0;padding:4px 10px;border:1px solid ${aviso ? '#9ca3af' : '#0f766e'};border-radius:999px;` +
     `background:${aviso ? '#f3f4f6' : '#ecfdf5'};color:${aviso ? '#374151' : '#065f46'};font:600 13px/1.4 system-ui,sans-serif;cursor:pointer`;
-  b.addEventListener('click', () => { void chrome.runtime.sendMessage({ tipo: 'publiai:abrir-painel' }); });
+  b.addEventListener('click', () => {
+    try {
+      void chrome.runtime.sendMessage({ tipo: 'publiai:abrir-painel' }).catch(() => {});
+    } catch {
+      // contexto invalidado: silencioso
+    }
+  });
   return b;
 }
 
@@ -49,6 +62,7 @@ function inserir(selo: HTMLElement): boolean {
 }
 
 async function rodar() {
+  if (document.getElementById('publiai-selo')) return; // segunda execução na mesma página
   const lido = lerAnuncio(document);
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);

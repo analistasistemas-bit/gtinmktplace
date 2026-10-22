@@ -2,7 +2,7 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
-import { eanDaAba, registrarEanDaAba } from './abas';
+import { eanDaAba, esquecerAba, registrarEanDaAba } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -22,7 +22,10 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
 
   switch (msg.tipo) {
     case 'publiai:ean-da-busca':
-      if (tabId === undefined || typeof msg.ean !== 'string' || !/^\d{8,14}$/.test(msg.ean)) return undefined;
+      if (tabId === undefined) return undefined;
+      // null = a busca atual não é um EAN: esquece o da aba (evita casar anúncio com o SKU de outra busca).
+      if (msg.ean === null) return esquecerAba(tabId).then(() => ({ ok: true }));
+      if (typeof msg.ean !== 'string' || !/^\d{8,14}$/.test(msg.ean)) return undefined;
       return registrarEanDaAba(tabId, msg.ean).then(() => ({ ok: true }));
     case 'publiai:ean-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;

@@ -1,5 +1,9 @@
-// Content script da busca (lista.mercadolivre.com.br): só registra o EAN digitado, por aba.
+// Content script da busca (lista.mercadolivre.com.br): registra o EAN digitado, por aba.
+// Sempre envia o resultado, inclusive null, para o SW esquecer um EAN de busca anterior.
 import { eanDaUrlDeBusca } from './ean';
 
-const ean = eanDaUrlDeBusca(location.href);
-if (ean) chrome.runtime.sendMessage({ tipo: 'publiai:ean-da-busca', ean }).catch(() => {});
+try {
+  chrome.runtime.sendMessage({ tipo: 'publiai:ean-da-busca', ean: eanDaUrlDeBusca(location.href) }).catch(() => {});
+} catch {
+  // Extension context invalidated (extensão recarregada): silencioso.
+}
