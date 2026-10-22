@@ -64,7 +64,8 @@ export function App() {
   const reanalisarAba: Reanalisar = () =>
     chrome.runtime.sendMessage({ tipo: 'publiai:reanalisar-aba', tabId }).catch(() => ({ ok: false, erro: 'interno' }));
   // Remonta (zera preço/custo digitados) só quando muda o anúncio; mesmo anúncio mantém a simulação.
-  return <Painel key={estado?.entrada.mlItemId ?? 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
+  // Tipo de página entra na chave: em /p/ o item é o da buy box, o mesmo id do anúncio dele (o simulador recomeça).
+  return <Painel key={estado ? `${estado.entrada.mlItemId}:${(estado.entrada as { tipoPagina?: string }).tipoPagina ?? ''}` : 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
 }
 
 export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | null; chamar: Chamar; reanalisarAba: Reanalisar }) {
@@ -153,6 +154,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
       {/* Contexto, depois da tarefa principal (margem + vínculo, D-6). */}
       {entrada.catalogProductId && (
         <Catalogo
+          key={`${entrada.catalogProductId}:${(entrada as { tipoPagina?: string }).tipoPagina}:${entrada.mlItemId}`}
           entrada={{ tipoPagina: (entrada as { tipoPagina?: string }).tipoPagina, mlItemId: entrada.mlItemId, catalogProductId: entrada.catalogProductId }}
           chamar={chamar}
           onSimular={(valor) => setSimular((s) => ({ valor, seq: (s?.seq ?? 0) + 1 }))}

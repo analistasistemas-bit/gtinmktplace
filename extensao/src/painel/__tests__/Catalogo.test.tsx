@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Catalogo } from '../Catalogo';
 import type { RespostaCatalogo } from '../../../../supabase/functions/_shared/extensao/catalogo.ts';
@@ -134,12 +135,53 @@ describe('Catalogo (Task 24)', () => {
     await screen.findByText('Conecte o Mercado Livre à organização');
     cleanup();
     render(<Catalogo entrada={entradaP} chamar={ok({ ...base, participacao: { estado: 'nao_participa' } }) as never} onSimular={vi.fn()} />);
-    await screen.findByText('Sua empresa não tem oferta neste catálogo.');
+    await screen.findByText('Nenhuma oferta ativa da sua empresa neste catálogo.');
     cleanup();
     const falha = vi.fn().mockResolvedValueOnce({ ok: false, erro: 'interno' }).mockResolvedValueOnce({ ok: true, dados: { estado: 'ok', valor: base } });
     render(<Catalogo entrada={entradaP} chamar={(falha) as never} onSimular={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect(falha).toHaveBeenCalledTimes(2));
     await screen.findByText('Sua oferta');
+  });
+
+  it('StrictMode (dev): não fica preso em "Carregando"', async () => {
+    render(<StrictMode><Catalogo entrada={entradaP} chamar={ok() as never} onSimular={vi.fn()} /></StrictMode>);
+    await screen.findByText('Sua oferta');
+  });
+
+  it('resposta atrasada de um pedido anterior não sobrescreve a do último', async () => {
+    let soltar!: (v: unknown) => void;
+    const lento = new Promise((r) => { soltar = r; });
+    const chamar = vi.fn()
+      .mockReturnValueOnce(lento) // 1º pedido (StrictMode monta o efeito duas vezes)
+      .mockResolvedValueOnce({ ok: true, dados: { estado: 'ok', valor: base } });
+    render(<StrictMode><Catalogo entrada={entradaP} chamar={chamar as never} onSimular={vi.fn()} /></StrictMode>);
+    await screen.findByText('Sua oferta');
+    await act(async () => { soltar({ ok: true, dados: { estado: 'ok', valor: { ...base, participacao: { estado: 'nao_participa' } } } }); });
+    expect(chamar).toHaveBeenCalledTimes(2);
+    screen.getByText('Sua oferta');
+    expect(screen.queryByText('Nenhuma oferta ativa da sua empresa neste catálogo.')).toBeNull();
+  });
+
+  it('limite de análises: mensagem do limite e tentar de novo', async () => {
+    render(<Catalogo entrada={entradaP} chamar={vi.fn(async () => ({ ok: false, erro: 'limite' })) as never} onSimular={vi.fn()} />);
+    await screen.findByText('Muitas análises em sequência. Aguarde um minuto.');
+    screen.getByRole('button', { name: 'Tentar de novo' });
+  });
+
+  it('parcial sem total informado; não localizada; /p/ sem botão Simular', async () => {
+    const parcial = { ...base, leitura: { carregadas: 6, total: null, completa: false }, participacao: { estado: 'nao_localizada' as const } };
+    render(<Catalogo entrada={entradaP} chamar={ok(parcial) as never} onSimular={vi.fn()} />);
+    await screen.findByText('Parcial: 6 carregadas');
+    screen.getByText('Sua oferta não foi localizada nesta leitura parcial.');
+    expect(screen.queryByRole('button', { name: /Simular minha margem/ })).toBeNull();
+  });
+
+  it('vencedor sem perfil e contagens por oferta rotuladas', async () => {
+    const semPerfil = { ...base, vencedor: { itemId: 'MLB3', sellerId: 3, preco: 371, origem: 'api' as const } };
+    render(<Catalogo entrada={entradaP} chamar={ok(semPerfil) as never} onSimular={vi.fn()} />);
+    await screen.findByText('Vendedor 3 · perfil não carregado', { selector: '.ct-vencedor-nome' });
+    screen.getByText('Ofertas Full');
+    screen.getByText('Ofertas oficiais');
   });
 });

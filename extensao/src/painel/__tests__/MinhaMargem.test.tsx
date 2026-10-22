@@ -273,4 +273,17 @@ describe('MinhaMargem', () => {
       expect(comissao()).toBe('R$ 26,00');
     });
   });
+
+  it('precoSugerido (Simular do catálogo): aplica o preço, confirma no servidor e não repete com o mesmo seq', async () => {
+    vi.useFakeTimers();
+    const analisar = vi.fn(async () => ({ ok: true as const, dados: resposta() }));
+    const { rerender } = render(<MinhaMargem entrada={ENTRADA} dados={resposta()} analisar={analisar} onDados={() => {}} precoSugerido={{ valor: 310.62, seq: 1 }} />);
+    expect((screen.getByLabelText(/Preço de venda/) as HTMLInputElement).value).toBe('310.62');
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(analisar).toHaveBeenCalledWith(310.62);
+    rerender(<MinhaMargem entrada={ENTRADA} dados={resposta()} analisar={analisar} onDados={() => {}} precoSugerido={{ valor: 310.62, seq: 1 }} />);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(analisar).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
 });

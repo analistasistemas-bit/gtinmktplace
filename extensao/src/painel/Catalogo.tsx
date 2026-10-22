@@ -63,14 +63,17 @@ export function Catalogo({ entrada, chamar, onSimular }: {
   const [ordem, setOrdem] = useState<Ordem>('preco');
   const [todas, setTodas] = useState(false);
   const nomeOrdem = useId();
-  const ativo = useRef(true);
-  useEffect(() => () => { ativo.current = false; }, []);
+  // Só a última requisição vale (StrictMode monta o efeito duas vezes; clique repetido; desmonte com carga no ar).
+  // Troca de catálogo/página/item remonta o bloco pela `key` no App.
+  const seq = useRef(0);
+  useEffect(() => () => { seq.current++; }, []);
 
   const carregar = useCallback(async () => {
+    const n = ++seq.current;
     setEstado({ tipo: 'carregando' });
     // Item da página só em /p/: lá o evento da página é a buy box; em item/up o item aberto não é o vencedor.
     const r = await chamar<Disponivel<RespostaCatalogo>>({ acao: 'catalogo', catalogProductId: entrada.catalogProductId, itemDaPagina: naP ? entrada.mlItemId : null });
-    if (!ativo.current) return;
+    if (n !== seq.current) return;
     if (!r.ok) setEstado({ tipo: 'erro', mensagem: r.erro === 'limite' ? mensagemDeErro('limite') : 'Não foi possível carregar o catálogo.' });
     else if (r.dados.estado === 'indisponivel') setEstado({ tipo: 'indisponivel', motivo: r.dados.motivo });
     else setEstado({ tipo: 'ok', dados: r.dados.valor });
@@ -119,7 +122,8 @@ export function Catalogo({ entrada, chamar, onSimular }: {
 
   const d = estado.dados;
   const parcial = !d.leitura.completa;
-  const selo = parcial ? `Parcial: ${num(d.leitura.carregadas)} de ${num(d.leitura.total ?? d.leitura.carregadas)}` : `${num(d.leitura.carregadas)} ofertas`;
+  const selo = !parcial ? `${num(d.leitura.carregadas)} ofertas`
+    : d.leitura.total !== null ? `Parcial: ${num(d.leitura.carregadas)} de ${num(d.leitura.total)}` : `Parcial: ${num(d.leitura.carregadas)} carregadas`;
   const ordenadas = ordenar(d.ofertas, ordem);
   const visiveis = todas ? ordenadas : ordenadas.slice(0, LINHAS);
   const p = d.participacao;
@@ -161,7 +165,8 @@ export function Catalogo({ entrada, chamar, onSimular }: {
           )}
         </div>
       )}
-      {p.estado === 'nao_participa' && <p className="nota">Sua empresa não tem oferta neste catálogo.</p>}
+      {/* Anúncio pausado sai da ficha: o dado prova ausência de oferta ATIVA, não de anúncio. */}
+      {p.estado === 'nao_participa' && <p className="nota">Nenhuma oferta ativa da sua empresa neste catálogo.</p>}
       {p.estado === 'nao_localizada' && <p className="nota">Sua oferta não foi localizada nesta leitura parcial.</p>}
 
       <div className="ct-vencedor">
@@ -169,7 +174,9 @@ export function Catalogo({ entrada, chamar, onSimular }: {
         {d.vencedor ? (
           <>
             <div className="ct-linha">
-              <span className="ct-vencedor-nome">{vencedor?.vendedor?.nickname ?? `Vendedor ${d.vencedor.sellerId ?? ''}`.trim()}</span>
+              <span className="ct-vencedor-nome">
+                {vencedor?.vendedor?.nickname ?? (d.vencedor.sellerId !== null ? `Vendedor ${d.vencedor.sellerId} · perfil não carregado` : 'Vendedor não identificado')}
+              </span>
               <span className="mono ct-forte">{brl(d.vencedor.preco)}</span>
             </div>
             <span className="nota">{d.vencedor.origem === 'api' ? 'Informado pelo Mercado Livre' : 'Buy box desta página'}</span>
@@ -185,12 +192,15 @@ export function Catalogo({ entrada, chamar, onSimular }: {
       <div className="ct-resumo">
         <dl className="qv-numeros ct-resumo-numeros">
           <div><dt>Vendedores</dt><dd className="mono">{num(d.resumo.vendedores)}</dd></div>
-          <div><dt>Full</dt><dd className="mono">{num(d.resumo.full)}</dd></div>
-          <div><dt>Lojas oficiais</dt><dd className="mono">{num(d.resumo.lojasOficiais)}</dd></div>
+          {/* Contados por oferta (um vendedor pode ter várias), diferente de "Vendedores". */}
+          <div><dt>Ofertas Full</dt><dd className="mono">{num(d.resumo.full)}</dd></div>
+          <div><dt>Ofertas oficiais</dt><dd className="mono">{num(d.resumo.lojasOficiais)}</dd></div>
         </dl>
         <div className="ct-linha">
           <span className="ct-rotulo">Faixa de preço</span>
-          <span className="mono ct-forte">{d.resumo.menorPreco === null ? 'Indisponível em leitura parcial' : `${brl(d.resumo.menorPreco)} a ${brl(d.resumo.maiorPreco!)}`}</span>
+          <span className="mono ct-forte">
+            {d.resumo.menorPreco !== null ? `${brl(d.resumo.menorPreco)} a ${brl(d.resumo.maiorPreco!)}` : parcial ? 'Indisponível em leitura parcial' : 'Sem ofertas'}
+          </span>
         </div>
       </div>
 
@@ -208,6 +218,7 @@ export function Catalogo({ entrada, chamar, onSimular }: {
             </div>
           </div>
         </div>
+        {d.ofertas.length === 0 && <p className="nota">Nenhuma oferta ativa neste catálogo.</p>}
         <ul className="ct-lista" aria-label="Ofertas do catálogo">
           {visiveis.map((o) => (
             <li key={o.itemId} className={o.propria ? 'propria' : undefined}>
