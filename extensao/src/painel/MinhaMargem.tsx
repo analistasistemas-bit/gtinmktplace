@@ -216,10 +216,11 @@ function Tipo({ nome, r, preco, estimativa, aberto = false }: { nome: string; r:
           <span className="op" aria-hidden="true">−</span><dt>Custo</dt><dd>{v.custo === null ? '—' : brl(v.custo)}</dd>
           <span className="op total" aria-hidden="true">=</span><dt className="total">Lucro</dt><dd className="total">{v.lucro === null ? '—' : brl(v.lucro)}</dd>
         </dl>
-        {v.avisos.length > 0 && (
-          <ul className="avisos">{v.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
-        )}
       </details>
+      {/* Ressalvas fora do recolhível: o lucro do resumo nunca aparece sem elas. */}
+      {v.avisos.length > 0 && (
+        <ul className="avisos">{v.avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
+      )}
     </section>
   );
 }

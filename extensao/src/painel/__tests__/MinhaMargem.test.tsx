@@ -39,6 +39,16 @@ describe('MinhaMargem', () => {
     tipo('Premium').getByText('R$ 15,00'); // comissão 15% de 100
   });
 
+  it('Codex: ressalva (frete estimado) fica visível com o cartão recolhido, fora do detalhamento', () => {
+    const r = resposta();
+    r.parametros.frete = { estado: 'ok', valor: 20, aviso: 'estimado (pacote padrão)' } as typeof r.parametros.frete;
+    montar(r);
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
+    fireEvent.click(screen.getByLabelText('Nacional'));
+    const aviso = tipo('Premium').getByText(/estimado \(pacote padrão\)/);
+    expect(aviso.closest('details')).toBeNull();
+  });
+
   it('custo digitado sem origem não calcula e pede a origem', () => {
     montar(resposta());
     fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });

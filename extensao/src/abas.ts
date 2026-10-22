@@ -68,15 +68,15 @@ export async function novaPaginaNaAba(tabId: number): Promise<void> {
   await chrome.storage.session.remove(chaveEstado(tabId));
 }
 
-/** Anúncio que a URL mostra: item do `pdp_filters` (redirecionamento /up/ e /p/ com item escolhido), MLB-123 do
- *  caminho, catálogo /p/ ou user product /up/. null = página sem anúncio (lista, home). Query e hash fora. */
+/** Item que a URL comprova: `produto.mercadolivre.com.br/MLB-123…` ou página /p/ ou /up/ de www com
+ *  `pdp_filters=item_id:MLB…`. Catálogo/UP sem item explícito (o vencedor pode mudar), busca e demais páginas
+ *  → null: a aba nunca mantém análise de um item que a URL não prova. */
 export function anuncioDaUrl(url: string): string | null {
   let u: URL;
   try { u = new URL(url); } catch { return null; }
-  const filtro = u.searchParams.get('pdp_filters')?.match(/item_id:(MLB\d+)/)?.[1];
-  if (filtro) return filtro;
-  const p = u.pathname;
-  return p.match(/\/p\/(MLB\d+)/)?.[1] ?? p.match(/\/up\/(MLBU\d+)/)?.[1] ?? p.match(/MLB-?(\d+)/)?.[0].replace('-', '') ?? null;
+  if (u.hostname === 'produto.mercadolivre.com.br') return u.pathname.match(/^\/MLB-?(\d+)/)?.[0].slice(1).replace('-', '') ?? null;
+  if (u.hostname !== 'www.mercadolivre.com.br' || !/\/(p\/MLB|up\/MLBU)\d+/.test(u.pathname)) return null;
+  return u.searchParams.get('pdp_filters')?.match(/(?:^|,)item_id:(MLB\d+)(?:,|$)/)?.[1] ?? null;
 }
 
 const chaveAnuncio = (tabId: number) => `anuncio:${tabId}`;

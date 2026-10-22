@@ -236,6 +236,16 @@ describe('estado da aba (painel)', () => {
     it('outro MLB → limpa', () => limpa('https://produto.mercadolivre.com.br/MLB-2-outro-_JM'));
     it('catálogo com outro vencedor → limpa', () => limpa('https://www.mercadolivre.com.br/x/p/MLB5?pdp_filters=item_id:MLB7'));
     it('página sem anúncio (lista) → limpa', () => limpa('https://lista.mercadolivre.com.br/garrafa'));
+    it('Codex: busca com MLB- na URL não é o mesmo anúncio → limpa', () => limpa('https://lista.mercadolivre.com.br/MLB-1'));
+    it('Codex: busca com pdp_filters do mesmo item não é anúncio → limpa', () =>
+      limpa('https://lista.mercadolivre.com.br/garrafa?pdp_filters=item_id:MLB1'));
+    it('Codex: catálogo sem item explícito (vencedor pode ter mudado) → limpa, mesmo repetindo a URL', async () => {
+      const C = 'https://www.mercadolivre.com.br/garrafa/p/MLB777';
+      await aoAtualizarAba(7, { status: 'loading', url: C });
+      await chamar(ANUNCIO, CONTEUDO);
+      await aoAtualizarAba(7, { url: `${C}#reviews` });
+      expect(await estado(7)).toBeNull();
+    });
     it('recarga ou saída do ML (loading sem url) → limpa e esquece a chave', async () => {
       await aoAtualizarAba(7, { status: 'loading', url: A });
       await chamar(ANUNCIO, CONTEUDO);
