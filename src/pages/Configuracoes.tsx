@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { cn } from '@/lib/utils';
 import { SECOES, type Secao } from '@/components/configuracoes/secoes';
 import { usePermissoesConfig } from '@/components/configuracoes/permissoes';
@@ -31,13 +32,16 @@ function ConfiguracoesLayout() {
   const { pathname } = useLocation();
   const { podeVerMembros, podeVerCanais, podeVerConfig, profileLoading } = usePermissoesConfig();
   const { data: aliquotas } = useAliquotas();
+  // Só lê o cache que o MenuGuard já carregou (ver useModulosHabilitados).
+  const { data: modulos } = useModulosHabilitados({ retryOnMount: false });
 
   // O marcador de "alíquotas não confirmadas" vive na sub-nav, então a query mora aqui, no
   // pai: dentro da seção Fiscal ela só rodaria quando a seção estivesse montada. Mesma
   // queryKey da seção, então o react-query dedupe — uma requisição só.
   const fiscalPendente = aliquotas != null && !aliquotas.confirmada;
 
-  const visiveis = SECOES.filter((s) => (s.somenteMembros ? podeVerMembros : s.somenteCanais ? podeVerCanais : podeVerConfig));
+  const visiveis = SECOES.filter((s) => (s.somenteMembros ? podeVerMembros : s.somenteCanais ? podeVerCanais : podeVerConfig)
+    && (!s.modulo || !!modulos?.includes(s.modulo)));
   const slug = pathname.replace(/^\/configuracoes\/?/, '').split('/')[0];
   const secao = visiveis.find((s) => s.slug === slug);
 

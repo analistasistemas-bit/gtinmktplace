@@ -3,6 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query-client';
 import { useSupportStore } from '@/stores/support-store';
+import { enviarSessaoParaExtensao } from '@/lib/extensao-ponte';
 
 export interface Profile {
   id: string;
@@ -50,7 +51,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } else {
       set({ profile: null, profileLoading: false });
     }
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
+      // ADR-0189 D-4: a extensão recebe só o access token; o refresh fica aqui.
+      if (event === 'SIGNED_OUT') void enviarSessaoParaExtensao(null);
+      else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        void enviarSessaoParaExtensao(session);
+      }
       const previousUserId = get().user?.id ?? null;
       const user = session?.user ?? null;
       if (!user) {

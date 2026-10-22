@@ -30,6 +30,13 @@ vi.mock('@/components/configuracoes/secao-notificacoes', () => ({ SecaoNotificac
 vi.mock('@/pages/Usuarios', () => ({ default: () => <div>conteudo-membros</div> }));
 vi.mock('@/pages/Canais', () => ({ default: () => <div>conteudo-canais</div> }));
 
+vi.mock('@/components/configuracoes/extensao-navegador', () => ({ ExtensaoNavegador: () => <div>conteudo-extensao</div> }));
+
+const modulos = { atual: [] as string[] };
+vi.mock('@/hooks/useModulosHabilitados', () => ({
+  useModulosHabilitados: () => ({ data: modulos.atual }),
+}));
+
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16, confirmada: false } }),
 }));
@@ -70,6 +77,22 @@ beforeEach(() => {
     org_id: 'org-1', is_super_admin: false,
   };
   perfil.suporte = null;
+  modulos.atual = [];
+});
+
+describe('Configurações — seção Extensão do navegador (ADR-0189)', () => {
+  it('sem o módulo extensao, a seção não existe nem por deep-link', () => {
+    montar('/configuracoes/extensao');
+    expect(screen.queryByText('conteudo-extensao')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /extensão do navegador/i })).not.toBeInTheDocument();
+  });
+
+  it('com o módulo extensao, aparece na sub-nav e abre por deep-link', () => {
+    modulos.atual = ['extensao'];
+    montar('/configuracoes/extensao');
+    expect(screen.getByText('conteudo-extensao')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /extensão do navegador/i })).toBeInTheDocument();
+  });
 });
 
 describe('Configurações — guard de OAuth', () => {

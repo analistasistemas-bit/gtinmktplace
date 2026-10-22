@@ -1,5 +1,7 @@
 import { lazy, type ComponentType } from 'react';
-import { Boxes, Bell, Building2, Cpu, Plug, Settings2, Users } from 'lucide-react';
+import { Boxes, Bell, Building2, Cpu, Plug, Puzzle, Settings2, Users } from 'lucide-react';
+import type { ModuloId } from '@/lib/modulos';
+import { ExtensaoNavegador } from './extensao-navegador';
 import { SecaoGeral } from './secao-geral';
 import { SecaoPrecos } from './secao-precos';
 import { SecaoFiscal } from './secao-fiscal';
@@ -25,6 +27,8 @@ export interface Secao {
    *  do antigo menu Canais); as demais exigem 'configuracoes' — leitura liberada na org. */
   somenteMembros?: true;
   somenteCanais?: true;
+  /** Só aparece com este módulo habilitado na org. */
+  modulo?: ModuloId;
   /** Tabela (não formulário): usa a largura cheia do painel. */
   larguraCheia?: true;
   Componente: ComponentType;
@@ -74,6 +78,14 @@ export const SECOES: Secao[] = [
     descricao: 'Modelo que gera o conteúdo dos anúncios.',
     icone: Cpu,
     Componente: SecaoIA,
+  },
+  {
+    slug: 'extensao',
+    titulo: 'Extensão do navegador',
+    descricao: 'Minha margem nas páginas do Mercado Livre.',
+    icone: Puzzle,
+    modulo: 'extensao',
+    Componente: ExtensaoNavegador,
   },
   {
     slug: 'membros',
