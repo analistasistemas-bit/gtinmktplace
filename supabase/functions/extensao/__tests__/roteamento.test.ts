@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  acessoDaAcao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
+  acessoDaAcao, chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
   unidadesDoProduto, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
@@ -106,6 +106,13 @@ describe('formasGtin', () => {
 describe('escaparLike', () => {
   it('escapa curingas', () => {
     expect(escaparLike('50%_off\\x')).toBe('50\\%\\_off\\\\x');
+  });
+});
+
+describe('chaveComissao', () => {
+  it('leva a conta ML: duas contas não dividem a mesma entrada de cache', () => {
+    expect(chaveComissao('111', 'MLB1', 'gold_pro', 59.9)).toBe('ext:lp:111:MLB1:gold_pro:59.9');
+    expect(chaveComissao('222', 'MLB1', 'gold_pro', 59.9)).not.toBe(chaveComissao('111', 'MLB1', 'gold_pro', 59.9));
   });
 });
 

@@ -95,6 +95,10 @@ export const chaveLimite = (userId: string, agora: Date) => `ext:rl:${userId}:${
 /** Janela fixa de 1 h (20 erros de leitura/h por usuário). */
 export const chaveLimiteErro = (userId: string, agora: Date) => `ext:rl-erro:${userId}:${utc(agora, false)}`;
 
+/** Cache de listing_prices por conta ML: a consulta leva o token da org (tarifa pode ser da conta). */
+export const chaveComissao = (conta: string, categoriaId: string, tipo: string, preco: number) =>
+  `ext:lp:${conta}:${categoriaId}:${tipo}:${preco}`;
+
 /** Formas equivalentes de um GTIN (zeros à esquerda até 14): o 14 dígitos `0789…` casa com o `789…` gravado. */
 export function formasGtin(gtin: string): string[] {
   const nucleo = gtin.replace(/^0+/, '');

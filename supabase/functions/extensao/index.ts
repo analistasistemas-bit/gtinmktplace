@@ -15,7 +15,7 @@ import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
-  acessoDaAcao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
+  acessoDaAcao, chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
   type Pedido, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
@@ -89,9 +89,9 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       return r[0] ?? null;
     },
     comissao: async (preco, categoriaId, tipo) => {
-      const t = await tokenML();
-      if (!t) return SEM_CONEXAO;
-      return emCache<Disponivel<ComissaoML>>(`ext:lp:${categoriaId}:${tipo}:${preco}`, (v) => v.estado === 'ok', async () => {
+      const [t, c] = await Promise.all([tokenML(), conexao]);
+      if (!t || c?.contaExternaId == null) return SEM_CONEXAO;
+      return emCache<Disponivel<ComissaoML>>(chaveComissao(String(c.contaExternaId), categoriaId, tipo, preco), (v) => v.estado === 'ok', async () => {
         return comissaoDaListingPrice(await buscarListingPrice(t, preco, categoriaId, tipo), preco);
       });
     },
