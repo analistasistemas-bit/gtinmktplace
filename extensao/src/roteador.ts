@@ -10,6 +10,12 @@ const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
 const ehObjeto = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Estado do painel é melhor esforço: falha de storage não derruba a análise (nem o selo). */
+async function guardarEstado(tabId: number, entrada: object, resposta: unknown): Promise<void> {
+  await registrarEstado(tabId, { entrada, resposta }).catch(() => {});
+  chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
+}
+
 function ehPaginaDaExtensao(sender: chrome.runtime.MessageSender): boolean {
   return !sender.tab && !!sender.url?.startsWith(chrome.runtime.getURL(''));
 }
@@ -33,6 +39,18 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:estado-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       return estadoDaAba(msg.tabId);
+    case 'publiai:reanalisar-aba': {
+      // Painel refaz a análise da aba ao preço da página (após vínculo / "Tentar de novo") e atualiza o estado guardado.
+      if (!pagina || typeof msg.tabId !== 'number') return undefined;
+      const id = msg.tabId;
+      return estadoDaAba(id).then(async (e) => {
+        const entrada = (e as { entrada?: Record<string, unknown> } | null)?.entrada;
+        if (!entrada) return null;
+        const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada });
+        await guardarEstado(id, entrada, resposta);
+        return resposta;
+      });
+    }
     case 'publiai:chamar': {
       const corpo = msg.corpo;
       if (!ehObjeto(corpo) || typeof corpo.acao !== 'string') return Promise.resolve({ ok: false, erro: 'payload_invalido' });
@@ -45,8 +63,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
           const resposta = await chamarExtensao({ ...corpo, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           const { mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
-          await registrarEstado(tabId!, { entrada: { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta });
-          chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
+          await guardarEstado(tabId!, { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta);
           return resposta;
         });
       }

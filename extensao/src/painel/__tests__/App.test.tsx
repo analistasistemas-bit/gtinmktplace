@@ -18,7 +18,7 @@ const estado = (resposta: EstadoAba['resposta']): EstadoAba => ({ entrada: ENTRA
 
 describe('Painel', () => {
   it('sem análise na aba', () => {
-    render(<Painel estado={null} chamar={vi.fn()} />);
+    render(<Painel estado={null} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     screen.getByText(/Abra um anúncio do Mercado Livre/);
   });
 
@@ -28,12 +28,12 @@ describe('Painel', () => {
     ['limite', 'Muitas análises em sequência. Aguarde um minuto.'],
     ['sessao_suporte_expirada', /sessão de suporte expirou/],
   ] as const)('erro %s', (erro, texto) => {
-    render(<Painel estado={estado({ ok: false, erro })} chamar={vi.fn()} />);
+    render(<Painel estado={estado({ ok: false, erro })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     screen.getByText(texto);
   });
 
   it('anúncio próprio: só "Abrir no PubliAI"', () => {
-    render(<Painel estado={estado({ ok: true, dados: { ...DADOS, proprio: true } })} chamar={vi.fn()} />);
+    render(<Painel estado={estado({ ok: true, dados: { ...DADOS, proprio: true } })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Abrir no PubliAI' }).getAttribute('href')).toBe('https://app.publiai.daludi.com.br/');
     expect(screen.queryByText('Minha margem')).toBeNull();
   });
@@ -41,7 +41,7 @@ describe('Painel', () => {
   it('confirmação de preço manda a entrada da aba com o preço editado', async () => {
     vi.useFakeTimers();
     const chamar = vi.fn(async () => ({ ok: true, dados: DADOS }));
-    render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={chamar as never} />);
+    render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={chamar as never} reanalisarAba={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '150' } });
     await act(async () => { vi.advanceTimersByTime(1500); });
     expect(chamar).toHaveBeenCalledWith({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...ENTRADA, preco: 150 });
@@ -53,16 +53,19 @@ describe('Painel', () => {
       if (corpo.acao === 'buscar_sku') {
         return { ok: true, dados: { itens: [{ variacaoId: 'u-1', codigo: '00123', nome: 'Camisa', custo: 30, origem: 'nacional' }] } };
       }
-      if (corpo.acao === 'salvar_vinculo') return { ok: true, dados: { ok: true } };
-      return { ok: true, dados: { ...DADOS, custo: { fonte: 'vinculo_manual', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, custoPacote: { estado: 'ok', valor: 30 } } } };
+      return { ok: true, dados: { ok: true } };
     });
-    render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={chamar as never} />);
+    const reanalisarAba = vi.fn(async () => ({
+      ok: true as const,
+      dados: { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } },
+    }));
+    render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={chamar as never} reanalisarAba={reanalisarAba} />);
     fireEvent.click(screen.getByRole('button', { name: 'Este produto é meu SKU…' }));
     fireEvent.change(screen.getByLabelText('Código, nome ou EAN'), { target: { value: '00123' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buscar' })); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /00123 · Camisa/ })); });
     expect(chamar).toHaveBeenCalledWith({ acao: 'salvar_vinculo', chave: { tipo: 'catalogo', valor: 'MLB77' }, variacaoId: 'u-1' });
-    expect(chamar).toHaveBeenLastCalledWith({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...ENTRADA });
+    expect(reanalisarAba).toHaveBeenCalledTimes(1);
     screen.getByText('Custo do SKU 00123 · vínculo manual');
   });
 });

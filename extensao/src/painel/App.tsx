@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
 import { VinculoProduto } from './VinculoProduto';
-import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type RespostaAnuncio } from './formato';
+import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type Resposta, type RespostaAnuncio } from './formato';
 
 const chamarViaSw: Chamar = async (corpo) => {
   try {
@@ -13,10 +13,13 @@ const chamarViaSw: Chamar = async (corpo) => {
   }
 };
 
+type Reanalisar = () => Promise<Resposta<RespostaAnuncio> | null>;
+
 export function App() {
   // undefined = carregando; null = aba sem análise.
   const [estado, setEstado] = useState<EstadoAba | null | undefined>(undefined);
   const [versao, setVersao] = useState(0);
+  const [tabId, setTabId] = useState<number | null>(null);
 
   useEffect(() => {
     let abaAtual: number | null = null;
@@ -30,6 +33,7 @@ export function App() {
     const lerAbaAtiva = async () => {
       const [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
       abaAtual = aba?.id ?? null;
+      setTabId(abaAtual);
       if (abaAtual === null) setEstado(null);
       else await carregar(abaAtual);
     };
@@ -48,10 +52,13 @@ export function App() {
   }, []);
 
   if (estado === undefined) return <p className="nota">Carregando…</p>;
-  return <Painel key={versao} estado={estado} chamar={chamarViaSw} />;
+  // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
+  const reanalisarAba: Reanalisar = () =>
+    chrome.runtime.sendMessage({ tipo: 'publiai:reanalisar-aba', tabId }).catch(() => ({ ok: false, erro: 'interno' }));
+  return <Painel key={versao} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
 }
 
-export function Painel({ estado, chamar }: { estado: EstadoAba | null; chamar: Chamar }) {
+export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | null; chamar: Chamar; reanalisarAba: Reanalisar }) {
   const [resposta, setResposta] = useState(estado?.resposta);
   const [versao, setVersao] = useState(0);
   const [ocupado, setOcupado] = useState(false);
@@ -63,7 +70,8 @@ export function Painel({ estado, chamar }: { estado: EstadoAba | null; chamar: C
     chamar<RespostaAnuncio>({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada, preco });
   const reanalisar = async () => {
     setOcupado(true);
-    setResposta(await analisar(entrada.preco));
+    const r = await reanalisarAba();
+    if (r) setResposta(r);
     setVersao((v) => v + 1); // volta o simulador ao preço da página
     setOcupado(false);
   };

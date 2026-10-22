@@ -147,6 +147,24 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toBeNull();
   });
 
+  it('reanalisar-aba refaz a análise com a entrada guardada e atualiza o estado', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await chamar(ANUNCIO, CONTEUDO);
+    fetchFalso.mockImplementation(async () => new Response('{"novo":1}', { status: 200 }));
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: true, dados: { novo: 1 } });
+    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', preco: 100, eanDaBusca: '7899941205918' });
+    expect(await estado(7)).toMatchObject({ resposta: { ok: true, dados: { novo: 1 } } });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 8 }, PAINEL)).toBeNull();
+    expect(rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, CONTEUDO)).toBeUndefined();
+  });
+
+  it('falha ao guardar o estado não derruba a análise', async () => {
+    vi.mocked(chrome.storage.session.set).mockRejectedValueOnce(new Error('quota'));
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { ok: 1 } });
+  });
+
   it('painel fechado (sendMessage rejeita) não derruba a análise', async () => {
     vi.mocked(chrome.runtime.sendMessage).mockRejectedValueOnce(new Error('Receiving end does not exist'));
     expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { ok: 1 } });
