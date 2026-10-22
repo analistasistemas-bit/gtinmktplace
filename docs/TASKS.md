@@ -56,6 +56,9 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   às 11h16 (antes da correção do parser /p/). Correção: antes de registrar `estado_nao_encontrado` o content script relê
   uma vez após o load + 1,5 s e não conta `/captcha/` nem `/gz/account-verification` como quebra de layout (consultor
   Codex Astra). Motivo próprio para bloqueio fica para quando houver detector comprovado.
+- [x] Task 20 — parser da busca (`extensao/src/leitura/busca.ts`): DOM dos `.poly-card` (o estado da busca usa serializador
+  próprio do ML, não JSON); item pelo `wid` do link do título, catálogo pelo `/p/`, patrocinado pelo fragmento; nada lido de
+  elementos injetados por outras extensões (Avantpro). Medido ao vivo: 68 cards → 54 itens únicos, 39 com catálogo.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

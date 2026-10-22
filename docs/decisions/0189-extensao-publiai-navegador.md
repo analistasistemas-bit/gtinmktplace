@@ -219,3 +219,15 @@ validada na de validação, com o mesmo gate.
   de registrar e ignora as páginas de bloqueio/verificação observadas (`/captcha/`, `/gz/account-verification`).
 - Bloqueio servido na própria URL do anúncio ainda não tem marcador comprovado: continua registrado como estado não
   encontrado até haver exemplo real; aí entra um motivo próprio (extensão + regex da edge juntos).
+
+## Emenda 2026-10-22 — leitura da busca (D-11, Task 20)
+
+- O estado da página de busca não é JSON (serializador do ML com `u`/`@ref`): a fonte é o DOM dos `.poly-card`, como o Avant.
+  Item = `wid` do fragmento do link do título (também no patrocinado, que passa por `click1` com `pdp_filters`);
+  catálogo = caminho `/p/MLB…`; `/up/MLBU…` = produto do vendedor; patrocinado = `is_advertising=true`.
+- Nada é lido dentro de subárvores injetadas por outras extensões (o Avantpro injeta `.avantpro-product-container` nos
+  cards). Selo ausente = desconhecido, nunca "não tem". Mesmo item patrocinado e orgânico = uma entrada (completa o
+  catálogo pelo orgânico).
+- Categoria (comissão/frete) só da oferta exata em `/products/{catálogo}/items`; fora de catálogo, margem indisponível.
+- Os cards montam depois do `document_idle`: a leitura da busca precisa esperar os cards (e observar os que entram no
+  scroll, sem analisar sozinha: "Analisar novos resultados"). Consultor: Codex Astra, 22/10.
