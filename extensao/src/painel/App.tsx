@@ -2,6 +2,7 @@
 // script fez na aba ativa (guardada no SW) e simula preço/custo a partir dela.
 import { useEffect, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
+import { QuantoVende } from './QuantoVende';
 import { VinculoProduto } from './VinculoProduto';
 import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type Resposta, type RespostaAnuncio } from './formato';
 
@@ -127,6 +128,9 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
   return (
     <>
       {anuncio('Concorrente')}
+      {estado.observado && (
+        <QuantoVende observado={estado.observado} catalogo={(entrada as { tipoPagina?: string }).tipoPagina === 'catalogo'} />
+      )}
       <MinhaMargem
         entrada={entrada}
         dados={resposta.dados}

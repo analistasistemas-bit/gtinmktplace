@@ -244,3 +244,19 @@ button:disabled { opacity: 0.55; cursor: default; }
   .tipo .lucro { font-size: 19px; }
   .anuncio { flex-direction: column; gap: 2px; }
 }
+
+/* Quanto vende (observado) */
+.quanto-vende { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.qv-cabeca { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qv-cabeca h2 { font-size: 13px; font-weight: 500; color: var(--muted-foreground); }
+.observado {
+  padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--secondary); color: var(--muted-foreground);
+}
+.qv-numeros { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; }
+.qv-numeros dt { font-size: 12px; color: var(--muted-foreground); }
+.qv-numeros dd { margin: 2px 0 0; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
+.ponto { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.ponto.verde { background: var(--success); }
+.ponto.amarelo { background: var(--warning); }
+.ponto.vermelho { background: var(--destructive); }

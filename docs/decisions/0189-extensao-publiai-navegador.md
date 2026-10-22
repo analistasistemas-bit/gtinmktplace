@@ -110,3 +110,20 @@ Criar a **Extensão PubliAI**: uma extensão de navegador, exclusiva de contas P
   no cliente e contrato de erro (D-18), dedupe de erros e incremento atômico (D-19). Recusado: "a
   ADR-0142 não cita extensão" — cita (alternativa 5); a referência foi completada com a ADR-0119.
 - **Revisão Codex 2026-10-22** (`gpt-6.1-sol` high, com o código): REVISE, 17 achados; Diego mandou corrigir tudo antes do merge. Mudou: identidade da sessão e limpeza de estado (D-4/D-16, #1); auditoria de escritas de vínculo em suporte (D-18, #2); composição do pacote nunca presumida, com unidades do anúncio só de `/products/{id}`, do SKU em `familias.atributos_ml` e catálogo = fator 1 (D-8, #3/#4); frete oficial só com fator 1 (D-7, #5); orçamento por item único na análise em lote (D-18, #6); exceção explícita de "Adicionar ao radar" (D-2/D-10, #9); categoria dos cards (D-11, #10); resultado simulado rotulado "Estimativa" (D-7, #11); cache com conta ML (D-18, #13); período de `transactions.total` (D-10, #16). Só no plano: ordem revisão → deploy → ativação (#7), critérios de validação da estimativa (#8), build real da Task 7 (#12), validação SQL × `db:check` (#14), testes de handler e paridade financeira (#15), origem de `DimensoesPacote` (#17).
+
+## Emenda 2026-10-22 — data de criação do anúncio (D-9, D-14)
+
+A página do anúncio (`/p/`, `/up/`) não expõe a data de criação, e `/items/{id}` de terceiro é 403 com o
+token da organização. Engenharia reversa: o Avant lê `gtm_event.startTime` do HTML de
+`https://produto.mercadolivre.com.br/MLB-{id}` buscado em segundo plano com a sessão do usuário; a JoomPulse
+usa o próprio dataset (vetado por D-1). Medido em 2026-10-22: esse HTML traz `startTime` só com o cookie do
+usuário (deslogado não traz), e o valor bate com a publicação (MLB4982690837: `startTime` 13:30:56.845Z ×
+`familias.publicado_em` 13:30:57.392).
+
+- **D-9:** "criado em", idade (semáforo de D-10) e o mínimo por mês vêm desse `startTime`. Sem ele, a linha
+  observada mostra só a faixa, sem idade e sem mínimo por mês (nunca data estimada ou presumida).
+- **D-14:** permitido **um GET** por anúncio analisado, feito pelo service worker (host permission do ML),
+  ao `produto.mercadolivre.com.br/MLB-{id}` do anúncio que o usuário abriu: só lê o `startTime`, com timeout
+  e cache por sessão do navegador; nada é gravado no servidor nem enviado a ele. Continua proibido iframe,
+  interceptação de `fetch`/XHR e qualquer requisição a anúncio que o usuário não abriu. Captcha ou falha →
+  data indisponível, sem nova tentativa automática.

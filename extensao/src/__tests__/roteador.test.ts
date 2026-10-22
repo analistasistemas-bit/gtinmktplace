@@ -9,6 +9,8 @@ const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai
 const CONTEUDO: Sender = { id: 'ext-publiai', tab: { id: 7 } as chrome.tabs.Tab, url: 'https://produto.mercadolivre.com.br/MLB-1' };
 const OUTRA_EXT: Sender = { id: 'outra', url: 'chrome-extension://outra/x.html' };
 const fetchFalso = vi.fn();
+// Última chamada à edge (o GET do HTML do anúncio para a data de criação roda em paralelo/depois).
+const ultimaEdge = () => fetchFalso.mock.calls.filter(([u]) => !String(u).startsWith('https://produto.')).at(-1)!;
 
 beforeEach(async () => {
   instalarChromeFalso();
@@ -48,9 +50,9 @@ describe('publiai:chamar', () => {
     await registrarEanDaAba(7, '7899941205918');
     await registrarEanDaAba(8, '96385074');
     await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1', eanDaBusca: '96385074' }, CONTEUDO);
-    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ eanDaBusca: '7899941205918' });
+    expect(JSON.parse(ultimaEdge()[1].body)).toMatchObject({ eanDaBusca: '7899941205918' });
     await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1', eanDaBusca: '96385074' }, { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab });
-    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca).toBeNull();
+    expect(JSON.parse(ultimaEdge()[1].body).eanDaBusca).toBeNull();
   });
 
   it('remetente sem aba e fora da extensão não chama nada', async () => {
@@ -83,7 +85,7 @@ describe('EAN por aba', () => {
     expect(await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: null }, CONTEUDO)).toEqual({ ok: true });
     expect(await rotearMensagem({ tipo: 'publiai:ean-da-aba', tabId: 7 }, PAINEL)).toBeNull();
     await chamar({ acao: 'analisar_anuncio' }, CONTEUDO);
-    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca).toBeNull();
+    expect(JSON.parse(ultimaEdge()[1].body).eanDaBusca).toBeNull();
   });
 
   it('limpar só afeta a aba do remetente; sem aba é ignorado', async () => {
@@ -94,7 +96,7 @@ describe('EAN por aba', () => {
   });
 
   it('EAN vale só para o 1º anúncio aberto depois da busca: A usa → B sem EAN → volta a A usa', async () => {
-    const eanEnviado = () => JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca;
+    const eanEnviado = () => JSON.parse(ultimaEdge()[1].body).eanDaBusca;
     await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO);
     await aoAtualizarAba(7, { status: 'loading' }); // lista → ficha A
     await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
@@ -108,7 +110,7 @@ describe('EAN por aba', () => {
   });
 
   it('nova busca troca o EAN e solta o vínculo com o anúncio anterior', async () => {
-    const eanEnviado = () => JSON.parse(fetchFalso.mock.calls.at(-1)![1].body).eanDaBusca;
+    const eanEnviado = () => JSON.parse(ultimaEdge()[1].body).eanDaBusca;
     await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '7899941205918' }, CONTEUDO);
     await chamar({ acao: 'analisar_anuncio', mlItemId: 'MLB1' }, CONTEUDO);
     await rotearMensagem({ tipo: 'publiai:ean-da-busca', ean: '96385074' }, CONTEUDO);
@@ -148,8 +150,48 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toEqual({
       entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
+      observado: { vendidosTexto: null, criadoEm: null },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+  });
+
+  it('observado (faixa + data de criação do gtm_event) fica no estado e não vai à edge (ADR-0189 D-9)', async () => {
+    fetchFalso.mockImplementation(async (url: string) => url.startsWith('https://produto.mercadolivre.com.br/')
+      ? new Response('x"gtm_event":{"pageId":"VIP","itemId":"MLB1","startTime":"2026-08-02T13:30:56.845Z"}x', { status: 200 })
+      : new Response('{"ok":1}', { status: 200 }));
+    await chamar({ ...ANUNCIO, vendidosTexto: '+1000 vendidos' }, CONTEUDO);
+    await vi.waitFor(async () => expect(await estado(7)).toMatchObject({ observado: { vendidosTexto: '+1000 vendidos', criadoEm: '2026-08-02T13:30:56.845Z' } }));
+    expect(fetchFalso).toHaveBeenCalledWith('https://produto.mercadolivre.com.br/MLB-1', expect.objectContaining({ credentials: 'include' }));
+    const corpoEdge = fetchFalso.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.body).find((b) => typeof b === 'string');
+    expect(corpoEdge).not.toContain('vendidos');
+    // Cache por item: segunda análise não busca de novo (nem depois de falha).
+    fetchFalso.mockClear();
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(fetchFalso.mock.calls.some(([u]) => String(u).startsWith('https://produto.'))).toBe(false);
+  });
+
+  it('Codex: HTML lento não segura a resposta (selo); a data entra no estado depois', async () => {
+    let soltar!: (r: Response) => void;
+    fetchFalso.mockImplementation(async (url: string) => url.startsWith('https://produto.')
+      ? new Promise<Response>((r) => { soltar = r; })
+      : new Response('{"ok":1}', { status: 200 }));
+    const r = await chamar({ ...ANUNCIO, mlItemId: 'MLB8' }, CONTEUDO);
+    expect(r).toEqual({ ok: true, dados: { ok: 1 } });
+    expect(await estado(7)).toMatchObject({ observado: { criadoEm: null } });
+    soltar(new Response('"gtm_event":{"itemId":"MLB8","startTime":"2026-01-01T00:00:00Z"}', { status: 200 }));
+    await vi.waitFor(async () => expect(await estado(7)).toMatchObject({ observado: { criadoEm: '2026-01-01T00:00:00Z' } }));
+  });
+
+  it('Codex: data que chega depois de a aba navegar não ressuscita o anúncio anterior', async () => {
+    let soltar!: (r: Response) => void;
+    fetchFalso.mockImplementation(async (url: string) => url.startsWith('https://produto.')
+      ? new Promise<Response>((r) => { soltar = r; })
+      : new Response('{"ok":1}', { status: 200 }));
+    await chamar({ ...ANUNCIO, mlItemId: 'MLB9' }, CONTEUDO);
+    await aoAtualizarAba(7, { status: 'loading' });
+    soltar(new Response('"gtm_event":{"itemId":"MLB9","startTime":"2026-01-01T00:00:00Z"}', { status: 200 }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await estado(7)).toBeNull();
   });
 
   it('erro também é guardado (o painel mostra sem_sessao/modulo_desligado)', async () => {
@@ -178,7 +220,7 @@ describe('estado da aba (painel)', () => {
     fetchFalso.mockImplementation(async () => new Response('{"novo":1}', { status: 200 }));
     vi.mocked(chrome.runtime.sendMessage).mockClear();
     expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: true, dados: { novo: 1 } });
-    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', preco: 100, eanDaBusca: '7899941205918' });
+    expect(JSON.parse(ultimaEdge()[1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', preco: 100, eanDaBusca: '7899941205918' });
     expect(await estado(7)).toMatchObject({ resposta: { ok: true, dados: { novo: 1 } } });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
     expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 8 }, PAINEL)).toBeNull();
@@ -188,7 +230,7 @@ describe('estado da aba (painel)', () => {
   it('análise de catálogo guarda tipoPagina e a reanálise do painel o reenvia', async () => {
     await chamar({ ...ANUNCIO, tipoPagina: 'catalogo' }, CONTEUDO);
     await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL);
-    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'catalogo' });
+    expect(JSON.parse(ultimaEdge()[1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'catalogo' });
   });
 
   it('aba começou a carregar outra página (tabs.onUpdated loading) → esquece o estado e avisa o painel', async () => {

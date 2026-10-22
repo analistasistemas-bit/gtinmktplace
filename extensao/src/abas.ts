@@ -43,21 +43,22 @@ const chaveGeracao = (tabId: number) => `geracao:${tabId}`;
 const GERACAO_SESSAO = 'geracao-sessao';
 const ABAS_ML = 'https://*.mercadolivre.com.br/*'; // = host_permissions do manifest
 
-interface EstadoGuardado { geracao: string | null; sessao: number; entrada: object; resposta: unknown }
+// observado: o que a página mostra e a edge não recebe (faixa de vendidos, data de criação) — ADR-0189 D-9.
+interface EstadoGuardado { geracao: string | null; sessao: number; entrada: object; resposta: unknown; observado?: object }
 
 export async function registrarEstado(tabId: number, estado: EstadoGuardado): Promise<void> {
   await chrome.storage.session.set({ [chaveEstado(tabId)]: estado });
 }
 
 /** Geração atual e o estado dela, numa leitura só. Geração ausente = nenhuma navegação vista ainda. */
-export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown } | null }> {
+export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown; observado?: object } | null }> {
   const r = await chrome.storage.session.get([chaveEstado(tabId), chaveGeracao(tabId), GERACAO_SESSAO]);
   const g = r[chaveGeracao(tabId)];
   const geracao = typeof g === 'string' ? g : null;
   const sessao = typeof r[GERACAO_SESSAO] === 'number' ? (r[GERACAO_SESSAO] as number) : 0;
   const e = r[chaveEstado(tabId)] as EstadoGuardado | undefined;
   const valido = e && (e.geracao ?? null) === geracao && e.sessao === sessao;
-  return { geracao, sessao, estado: valido ? { entrada: e.entrada, resposta: e.resposta } : null };
+  return { geracao, sessao, estado: valido ? { entrada: e.entrada, resposta: e.resposta, observado: e.observado } : null };
 }
 
 export const estadoDaAba = async (tabId: number) => (await lerAba(tabId)).estado;
