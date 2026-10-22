@@ -151,7 +151,7 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toEqual({
       entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
-      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null },
+      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null, lojaOficial: null },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });
@@ -169,6 +169,18 @@ describe('estado da aba (painel)', () => {
     fetchFalso.mockClear();
     await chamar(ANUNCIO, CONTEUDO);
     expect(fetchFalso.mock.calls.some(([u]) => String(u).startsWith('https://produto.'))).toBe(false);
+  });
+
+  it('loja oficial fica no estado (painel) e não vai à edge; forma inválida vira null', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"ok":1}', { status: 200 }));
+    await chamar({ ...ANUNCIO, lojaOficial: { nome: 'Tramontina' } }, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ observado: { lojaOficial: { nome: 'Tramontina' } } });
+    const corpos = fetchFalso.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.body).filter((b) => typeof b === 'string');
+    expect(corpos.join()).not.toContain('Tramontina');
+    await chamar({ ...ANUNCIO, lojaOficial: { nome: 42 } }, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ observado: { lojaOficial: null } });
+    await chamar({ ...ANUNCIO, lojaOficial: { nome: null } }, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ observado: { lojaOficial: { nome: null } } });
   });
 
   it('Codex: HTML lento não segura a resposta (selo); a data entra no estado depois', async () => {

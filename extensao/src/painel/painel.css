@@ -250,6 +250,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .qv-cabeca { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .qv-cabeca h2 { font-size: 13px; font-weight: 500; color: var(--muted-foreground); }
 .vd-nome { margin: 4px 0 8px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.vd-loja { margin: -4px 0 8px; font-size: 12px; font-weight: 500; color: var(--success); }
 /* Rótulo do período pode quebrar em 2 linhas: valores alinhados pela base. */
 .vendedor .qv-numeros > div { display: flex; flex-direction: column; }
 .vendedor .qv-numeros dd { margin-top: auto; }

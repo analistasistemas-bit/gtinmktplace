@@ -33,4 +33,22 @@ describe('Vendedor (ADR-0189 D-10)', () => {
     expect(screen.queryByText(/MercadoLíder/)).toBeNull();
     screen.getByText('Sem reputação');
   });
+
+  it('loja oficial: mostra o selo com o nome da loja quando difere do apelido', () => {
+    render(<Vendedor vendedor={{ ...base, nickname: 'TRAMONTINA-OFICIAL' }} lojaOficial={{ nome: 'Tramontina' }} />);
+    screen.getByText('Loja oficial Tramontina');
+  });
+
+  it('loja oficial com nome igual ao apelido ou sem nome: só "Loja oficial"', () => {
+    render(<Vendedor vendedor={{ ...base, nickname: 'BOING' }} lojaOficial={{ nome: 'Boing' }} />);
+    screen.getByText('Loja oficial');
+    cleanup();
+    render(<Vendedor vendedor={base} lojaOficial={{ nome: null }} />);
+    screen.getByText('Loja oficial');
+  });
+
+  it('sem prova de loja oficial: nada aparece', () => {
+    render(<Vendedor vendedor={base} />);
+    expect(screen.queryByText(/Loja oficial/)).toBeNull();
+  });
 });

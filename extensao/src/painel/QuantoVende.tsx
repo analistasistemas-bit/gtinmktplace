@@ -3,7 +3,7 @@
 // à parte, sem ritmo. Sem estimativa: reprovada na Task 13 (errata ADR-0189).
 import { pisoDosVendidos, quantoVende } from '../compartilhado/quanto-vende';
 
-export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string }
+export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null }
 
 const num = (n: number) => n.toLocaleString('pt-BR');
 const faixa = (piso: number, texto: string) => (/^\+/.test(texto.trim()) ? `+${num(piso)}` : num(piso));

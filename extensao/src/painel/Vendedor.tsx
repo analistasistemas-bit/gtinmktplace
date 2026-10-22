@@ -16,7 +16,9 @@ const MEDALHA: Record<string, string> = {
   silver: 'MercadoLíder',
 };
 
-export function Vendedor({ vendedor: v }: { vendedor: VendedorML }) {
+export function Vendedor({ vendedor: v, lojaOficial }: { vendedor: VendedorML; lojaOficial?: { nome: string | null } | null }) {
+  // Loja oficial vem da página do anúncio (pdp.ts, caminhos medidos); nome só quando acrescenta algo ao apelido.
+  const nomeLoja = lojaOficial?.nome && lojaOficial.nome.toLowerCase() !== v.nickname?.toLowerCase() ? lojaOficial.nome : null;
   const rep = v.nivel ? REPUTACAO[v.nivel] : undefined;
   const medalha = v.medalha ? MEDALHA[v.medalha] : undefined;
   return (
@@ -26,6 +28,7 @@ export function Vendedor({ vendedor: v }: { vendedor: VendedorML }) {
         {v.uf && <span className="observado">{v.uf}</span>}
       </div>
       {v.nickname && <p className="vd-nome">{v.nickname}</p>}
+      {lojaOficial && <p className="vd-loja">{nomeLoja ? `Loja oficial ${nomeLoja}` : 'Loja oficial'}</p>}
       <dl className="qv-numeros">
         <div>
           <dt>Reputação</dt>

@@ -33,8 +33,8 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   carregada da pasta e a worktree `.claude/worktrees/extensao-chrome-design`.
 - [x] Task 16 — Vendedor: `analisar_anuncio` devolve `vendedor` (`/users`, cache 24 h); bloco no painel com reputação,
   medalha, UF e vendas (`"historic"` do ML vira rótulo neutro, ADR-0142).
-- [ ] Loja oficial no bloco Vendedor (D-10): medir antes qual campo do ML a indica; pista: o estado da página do
-  anúncio traz `store_type` ("normal" num vendedor comum, 22/10) — falta ver o valor numa loja oficial. Sem prova, não exibe.
+- [x] Loja oficial no bloco Vendedor (D-10): `official_store_id` da página do anúncio, do mesmo vendedor (medido em
+  Tramontina /p/, BOING /up/ e vendedor comum; emenda na ADR-0189). Fica no navegador, não vai à edge. Aprovado em UI/UX.
 - [x] Bloco Vendedor validado com dados reais (edge v4 × página do ML: MercadoLíder Gold, 5_green, +10 mil vendas) e
   aprovado em UI/UX (Codex, 2ª rodada): fica no fim do painel, depois da margem e do vínculo (D-6).
 - [ ] Fatia 2 restante: qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 17–19).

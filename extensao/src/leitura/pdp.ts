@@ -15,8 +15,16 @@ import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensa
 //  components.header.reviews…catalog_product_id. Preço do evento só se o item_id dele é o do anúncio.
 //  Nenhum desses campos usa busca global (um recomendado com id válido casaria o SKU errado).
 //  vendidos: chave `subtitle_label.text`; título: <h1>, og:title ou chave `title`.
+//  loja oficial (medido em 2026-10-22: Tramontina /p/, BOING /up/, vendedor comum sem o campo): official_store_id > 0
+//  no evento da página (track ou components.track) cujo seller_id é o do anúncio, ou em components.seller_summary.seller
+//  com o mesmo id (dali vem o nome). store_type não serve (vale "ESHOP" em vendedor comum).
 
-export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & { vendidosTexto: string | null; titulo: string };
+export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & {
+  vendidosTexto: string | null;
+  titulo: string;
+  /** Vendedor é loja oficial do ML (nome só quando o seller_summary do mesmo vendedor o traz); null = não comprovado. */
+  lojaOficial: { nome: string | null } | null;
+};
 export type ResultadoLeitura = { ok: true; dados: DadosAnuncio } | { ok: false; motivo: string };
 
 type Obj = Record<string, unknown>;
@@ -109,6 +117,17 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
   if (!(preco > 0) && get(evComp, 'item_id') === mlItemId) preco = valor(get(evComp, 'price'));
   if (!(preco > 0)) return { ok: false, motivo: 'campo_ausente:preco' };
 
+  // Loja oficial: só dos objetos do próprio vendedor (nunca de recomendados/outras ofertas).
+  const mesmoVendedor = (o: unknown) => o !== undefined && String(get(o, 'seller_id') ?? get(o, 'id')) === String(sellerId);
+  const temLoja = (o: unknown) => { const n = numero(get(o, 'official_store_id')); return Number.isSafeInteger(n) && n > 0; };
+  const resumo = get(comps, 'seller_summary', 'seller');
+  const resumoOk = mesmoVendedor(resumo) && temLoja(resumo);
+  const eventoOk = [get(estado, 'track', 'melidata_event', 'event_data'), evComp].some((e) => mesmoVendedor(e) && temLoja(e));
+  const nomeLoja = get(resumo, 'name');
+  const lojaOficial = resumoOk || eventoOk
+    ? { nome: resumoOk && typeof nomeLoja === 'string' && nomeLoja.trim() ? nomeLoja.trim() : null }
+    : null;
+
   const sub = buscar(estado, 'subtitle_label', ehObj) as Obj | undefined;
   const vendidosTexto = typeof sub?.text === 'string' ? (sub.text.match(/\+?[\d.,]+\s*(?:mil\s+)?vendidos?/i)?.[0] ?? null) : null;
   const titulo =
@@ -127,6 +146,7 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
       preco,
       vendidosTexto,
       titulo,
+      lojaOficial,
     },
   };
 }

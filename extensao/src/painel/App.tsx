@@ -146,7 +146,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
         <VinculoProduto entrada={entrada} fonte={resposta.dados.custo.fonte} chamar={chamar} onVinculado={reanalisar} />
       )}
       {/* Contexto, depois da tarefa principal (margem + vínculo, D-6). */}
-      {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} />}
+      {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} lojaOficial={estado.observado?.lojaOficial} />}
     </>
   );
 }

@@ -158,3 +158,14 @@ Decisão (regra de D-9): **a estimativa fica desligada**; o painel mostra só a 
 há, mínimo por mês). `estimarVendas` (`extensao/src/compartilhado/estimativa.ts`) fica só para o script, que pode
 ser rodado de novo quando houver mais contas/faixas; qualquer recalibração usa a amostra de ajuste e é
 validada na de validação, com o mesmo gate.
+
+## Emenda 2026-10-22 — vendedor e loja oficial (D-10, Task 16)
+
+- **Vendedor:** vem na resposta de `analisar_anuncio` (`/users/{id}` pelo `buscarPerfilVendedor`, cache de 24 h), não numa
+  ação separada. O ML devolve `transactions.period = "historic"` para o que é janela móvel de ~365 dias (ADR-0142):
+  o painel só mostra período informado em dias; fora disso, rótulo neutro "Vendas".
+- **Loja oficial:** `/users` exige token e não foi medido para isso; a fonte é a página do anúncio, lida pelo content
+  script e mantida no navegador (não vai à edge, D-1). Prova = `official_store_id` inteiro positivo no evento da página
+  do mesmo `seller_id`, ou em `components.seller_summary.seller` com o mesmo id (de onde vem o nome). Medido em
+  Tramontina (`/p/`), BOING (`/up/`) e num vendedor comum (sem o campo). `store_type` foi descartado: vale `ESHOP` em
+  vendedor comum. Sem prova, o painel não exibe.

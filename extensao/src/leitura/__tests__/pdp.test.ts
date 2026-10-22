@@ -24,7 +24,7 @@ describe('lerAnuncio', () => {
   it('extrai os campos do estado do Nordic', () => {
     expect(lerAnuncio(doc(nordic(fx('pdp-sintetico.json'))))).toEqual({
       ok: true,
-      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste' },
+      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste', lojaOficial: null },
     });
   });
   it('catálogo sintético traz catalogProductId', () => {
@@ -106,7 +106,7 @@ describe('lerAnuncio', () => {
     it('extrai os campos; o id MLBU (user product) não vira item', () => {
       expect(up()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste' },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null },
       });
       expect(up((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
     });
@@ -121,6 +121,31 @@ describe('lerAnuncio', () => {
         delete is.components.carousel_up_web.carousel_config.product_id;
       });
       expect(so.ok && so.dados.catalogProductId).toBe('MLB2234567890'); // header.reviews
+    });
+    it('loja oficial (medido em 22/10: Tramontina /p/, BOING /up/): official_store_id do evento do vendedor + nome do seller_summary', () => {
+      const r = up((is) => {
+        is.components.track.melidata_event.event_data.official_store_id = 80808;
+        is.components.seller_summary = { seller: { id: 123456, official_store_id: 80808, name: 'BOING' }, store_type: 'OFFICIAL_STORE' };
+      });
+      expect(r.ok && r.dados.lojaOficial).toEqual({ nome: 'BOING' });
+      // Só o seller_summary do próprio vendedor também prova.
+      const s = up((is) => { is.components.seller_summary = { seller: { id: 123456, official_store_id: 80808, name: 'BOING' } }; });
+      expect(s.ok && s.dados.lojaOficial).toEqual({ nome: 'BOING' });
+      // Evento prova, mas sem nome confiável.
+      const e = up((is) => { is.components.track.melidata_event.event_data.official_store_id = '80808'; });
+      expect(e.ok && e.dados.lojaOficial).toEqual({ nome: null });
+    });
+    it('loja oficial: seller_summary de outro vendedor, id inválido ou isca fora dos caminhos não contam', () => {
+      const outro = up((is) => { is.components.seller_summary = { seller: { id: 999, official_store_id: 1, name: 'OUTRA' } }; });
+      expect(outro.ok && outro.dados.lojaOficial).toBeNull();
+      const zero = up((is) => { is.components.track.melidata_event.event_data.official_store_id = 0; });
+      expect(zero.ok && zero.dados.lojaOficial).toBeNull();
+      for (const ruim of ['Infinity', 1.5, -3, '', 'abc']) {
+        const r = up((is) => { is.components.track.melidata_event.event_data.official_store_id = ruim; });
+        expect(r.ok && r.dados.lojaOficial).toBeNull();
+      }
+      const isca = up((is) => { is.components.others_products = { products: [{ action: { track: { melidata_event: { event_data: { official_store_id: 4611 } } } } }] }; });
+      expect(isca.ok && isca.dados.lojaOficial).toBeNull();
     });
     it('preço: componente price; sem ele, o do evento só se o item_id é o do anúncio', () => {
       const p = up((is) => { is.components.price.action.track.melidata_event.event_data.price = 120; });
@@ -145,7 +170,7 @@ describe('lerAnuncio', () => {
     it('item = o do evento da página (vencedor), nunca o id de catálogo; alternative_buying_options ignorado', () => {
       expect(cat()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste' },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null },
       });
     });
     it('sem item no evento: em /p/ o id do estado (catálogo) não vira item', () => {

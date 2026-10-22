@@ -12,6 +12,13 @@ const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
 const ehObjeto = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Loja oficial lida pelo content script: só `{ nome: string curta | null }`; qualquer outra forma vira null. */
+const lojaOficialValida = (v: unknown): { nome: string | null } | null => {
+  if (!ehObjeto(v)) return null;
+  const nome = typeof v.nome === 'string' && v.nome.trim() && v.nome.length <= 80 ? v.nome.trim() : null;
+  return v.nome == null || nome !== null ? { nome } : null;
+};
+
 /** Estado do painel é melhor esforço: falha de storage não derruba a análise (nem o selo).
  *  Grava com as gerações (página e sessão) capturadas antes da chamada à edge; se mudaram, a leitura descarta. */
 async function guardarEstado(tabId: number, geracao: string | null, sessao: number, entrada: object, resposta: unknown, observado?: object): Promise<void> {
@@ -111,13 +118,16 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
         return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
-          const { vendidosTexto, ...paraEdge } = corpo;
+          const { vendidosTexto, lojaOficial, ...paraEdge } = corpo;
           const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
           const { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
           // vendidosTexto = faixa da página aberta (agregada em /p/ e /up/); a do anúncio chega com a data.
-          const observado = { vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, vendidosAnuncio: null, criadoEm: null };
+          const observado = {
+            vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, vendidosAnuncio: null, criadoEm: null,
+            lojaOficial: lojaOficialValida(lojaOficial),
+          };
           const r = await naMesmaIdentidade(identidade, async () => {
             await guardarEstado(tabId!, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);
             return resposta;

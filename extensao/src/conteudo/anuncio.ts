@@ -96,10 +96,10 @@ async function rodar() {
   const lido = lerAnuncio(document);
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
-  const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto } = lido.dados;
+  const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial } = lido.dados;
   // eanDaBusca: o SW preenche com o EAN da própria aba (content script não lê storage.session).
-  // vendidosTexto fica no SW para o painel (não vai à edge).
-  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto }));
+  // vendidosTexto e lojaOficial ficam no SW para o painel (não vão à edge).
+  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial }));
   if (!r) return; // sessão mudou durante a análise: nada de selo da sessão anterior
 
   let selo: HTMLElement | null = null;
