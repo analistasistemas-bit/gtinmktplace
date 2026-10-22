@@ -11,8 +11,8 @@ export type Chamar = <T>(corpo: object) => Promise<Resposta<T>>;
 export interface EstadoAba {
   entrada: EntradaAnuncio;
   resposta: Resposta<RespostaAnuncio>;
-  /** Faixa de vendidos e data de criação lidas no navegador (não vão à edge). Ausente em estado antigo. */
-  observado?: { vendidosTexto: string | null; criadoEm: string | null };
+  /** Faixas (página e anúncio) e data de criação lidas no navegador (não vão à edge). Ausente em estado antigo. */
+  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null };
 }
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

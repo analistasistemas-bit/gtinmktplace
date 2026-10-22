@@ -1,42 +1,65 @@
-// Bloco "Quanto vende · Observado" (ADR-0189 D-6/D-9 + emenda 2026-10-22): faixa pública, idade (semáforo de
-// D-10) e mínimo por mês. Sem estimativa aqui — ela só entra depois de validada (Task 13).
-import { quantoVende } from '../compartilhado/quanto-vende';
+// Bloco "Quanto vende · Observado" (ADR-0189 D-6/D-9 + emenda 2026-10-22). Ritmo só com faixa e data do MESMO
+// anúncio (HTML produto.mercadolivre); a faixa de /p/ (catálogo) e /up/ (produto do vendedor) é agregada e aparece
+// à parte, sem ritmo. Sem estimativa: reprovada na Task 13 (errata ADR-0189).
+import { pisoDosVendidos, quantoVende } from '../compartilhado/quanto-vende';
 
-export interface Observado { vendidosTexto: string | null; criadoEm: string | null }
+export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null }
 
 const num = (n: number) => n.toLocaleString('pt-BR');
+const faixa = (piso: number, texto: string) => (/^\+/.test(texto.trim()) ? `+${num(piso)}` : num(piso));
 
 export function QuantoVende({ observado, catalogo, agora }: { observado: Observado; catalogo: boolean; agora?: Date }) {
-  const q = quantoVende({ ...observado, catalogo }, agora);
-  if (q.piso === null && q.dias === null) return null;
+  const a = quantoVende({ vendidosTexto: observado.vendidosAnuncio ?? null, criadoEm: observado.criadoEm }, agora);
+  const temAnuncio = a.piso !== null || a.dias !== null;
+  const pisoPagina = pisoDosVendidos(observado.vendidosTexto);
+  const paginaAParte = pisoPagina !== null && observado.vendidosTexto?.trim() !== observado.vendidosAnuncio?.trim();
+  if (!temAnuncio && pisoPagina === null) return null;
   return (
     <section className="cartao quanto-vende" aria-labelledby="qv-titulo">
       <div className="qv-cabeca">
         <h2 id="qv-titulo">Quanto vende</h2>
         <span className="observado">Observado</span>
       </div>
-      <dl className="qv-numeros">
-        <div>
-          <dt>Vendidos</dt>
-          <dd className="mono">{q.piso === null ? '—' : `+${num(q.piso)}`}</dd>
+      {temAnuncio && (
+        <>
+          <h3 className="qv-sub">Este anúncio</h3>
+          <dl className="qv-numeros">
+            <div>
+              <dt>Vendidos</dt>
+              <dd className="mono">{a.piso === null ? '—' : faixa(a.piso, observado.vendidosAnuncio!)}</dd>
+            </div>
+            {a.dias !== null && (
+              <div>
+                <dt>Criado há</dt>
+                <dd className="mono">
+                  <span className={`ponto ${a.semaforo}`} title={`Criado em ${new Date(a.criadoEm!).toLocaleDateString('pt-BR')}`} />
+                  {`${num(a.dias)} dias`}
+                </dd>
+              </div>
+            )}
+            {a.minimoPorMes !== null && (
+              <div>
+                <dt>Por mês</dt>
+                <dd className="mono">{`≥ ${num(a.minimoPorMes)}`}</dd>
+              </div>
+            )}
+            {a.minimoPorDia !== null && (
+              <div>
+                <dt>Por dia</dt>
+                <dd className="mono">{`≥ ${num(a.minimoPorDia)}`}</dd>
+              </div>
+            )}
+          </dl>
+        </>
+      )}
+      {paginaAParte && (
+        <div className="qv-agregado">
+          <span>{catalogo ? 'Catálogo, todos os vendedores' : 'Somando os anúncios deste produto'}</span>
+          <span className="mono">{faixa(pisoPagina, observado.vendidosTexto!)}</span>
         </div>
-        {q.dias !== null && (
-          <div>
-            <dt>Criado há</dt>
-            <dd className="mono">
-              <span className={`ponto ${q.semaforo}`} title={`Criado em ${new Date(q.criadoEm!).toLocaleDateString('pt-BR')}`} />
-              {`${num(q.dias)} dias`}
-            </dd>
-          </div>
-        )}
-        {q.minimoPorMes !== null && (
-          <div>
-            <dt>Mínimo</dt>
-            <dd className="mono">{`≥ ${num(q.minimoPorMes)}/mês`}</dd>
-          </div>
-        )}
-      </dl>
-      {q.dias === null && <p className="nota">Data de criação indisponível. Entre no Mercado Livre neste navegador para vê-la.</p>}
+      )}
+      {!temAnuncio && <p className="nota">Vendas e idade deste anúncio indisponíveis. Entre no Mercado Livre neste navegador para vê-las.</p>}
+      {a.minimoPorMes !== null && <p className="nota">Mínimo: piso da faixa dividido pela idade do anúncio.</p>}
     </section>
   );
 }

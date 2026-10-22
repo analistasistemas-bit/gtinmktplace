@@ -120,8 +120,11 @@ usa o próprio dataset (vetado por D-1). Medido em 2026-10-22: esse HTML traz `s
 usuário (deslogado não traz), e o valor bate com a publicação (MLB4982690837: `startTime` 13:30:56.845Z ×
 `familias.publicado_em` 13:30:57.392).
 
-- **D-9:** "criado em", idade (semáforo de D-10) e o mínimo por mês vêm desse `startTime`. Sem ele, a linha
-  observada mostra só a faixa, sem idade e sem mínimo por mês (nunca data estimada ou presumida).
+- **D-9:** "criado em", idade (semáforo de D-10) e o mínimo por mês/dia vêm desse `startTime`, e a faixa usada no
+  ritmo vem do mesmo HTML (`subtitle_label`, faixa **do anúncio**). A faixa das páginas `/p/` (catálogo, todos os
+  vendedores) e `/up/` (soma dos anúncios do produto do vendedor) é agregada — medido: anúncio com 45 vendas mostra
+  "+50" no `/up/` e "+25" no HTML do anúncio; concorrente com "+1.000" no catálogo tem "2 vendidos" no anúncio — e
+  aparece à parte, sem ritmo. Sem os dados do anúncio, só a faixa da página, rotulada (nunca data ou ritmo presumidos).
 - **D-14:** permitido **um GET** por anúncio analisado, feito pelo service worker (host permission do ML),
   ao `produto.mercadolivre.com.br/MLB-{id}` do anúncio que o usuário abriu: só lê o `startTime`, com timeout
   e cache por sessão do navegador; nada é gravado no servidor nem enviado a ele. Continua proibido iframe,

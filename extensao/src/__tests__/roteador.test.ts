@@ -150,17 +150,17 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toEqual({
       entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
-      observado: { vendidosTexto: null, criadoEm: null },
+      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });
 
   it('observado (faixa + data de criação do gtm_event) fica no estado e não vai à edge (ADR-0189 D-9)', async () => {
     fetchFalso.mockImplementation(async (url: string) => url.startsWith('https://produto.mercadolivre.com.br/')
-      ? new Response('x"gtm_event":{"pageId":"VIP","itemId":"MLB1","startTime":"2026-08-02T13:30:56.845Z"}x', { status: 200 })
+      ? new Response('x"subtitle_label":{"text":"Novo | 2 vendidos"} "gtm_event":{"pageId":"VIP","itemId":"MLB1","startTime":"2026-08-02T13:30:56.845Z"}x', { status: 200 })
       : new Response('{"ok":1}', { status: 200 }));
     await chamar({ ...ANUNCIO, vendidosTexto: '+1000 vendidos' }, CONTEUDO);
-    await vi.waitFor(async () => expect(await estado(7)).toMatchObject({ observado: { vendidosTexto: '+1000 vendidos', criadoEm: '2026-08-02T13:30:56.845Z' } }));
+    await vi.waitFor(async () => expect(await estado(7)).toMatchObject({ observado: { vendidosTexto: '+1000 vendidos', vendidosAnuncio: '2 vendidos', criadoEm: '2026-08-02T13:30:56.845Z' } }));
     expect(fetchFalso).toHaveBeenCalledWith('https://produto.mercadolivre.com.br/MLB-1', expect.objectContaining({ credentials: 'include' }));
     const corpoEdge = fetchFalso.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.body).find((b) => typeof b === 'string');
     expect(corpoEdge).not.toContain('vendidos');

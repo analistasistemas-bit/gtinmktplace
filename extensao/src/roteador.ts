@@ -2,7 +2,7 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
-import { dataCriacaoDoAnuncio } from './criacao';
+import { observadoDoAnuncio } from './criacao';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
 import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 
@@ -37,15 +37,15 @@ export async function aoAtualizarAba(tabId: number, info: { status?: string; url
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
 }
 
-/** Data de criação (ADR-0189 emenda 2026-10-22) gravada no `observado` da aba depois da análise. */
+/** Faixa e data do anúncio (ADR-0189 emenda 2026-10-22) gravadas no `observado` da aba depois da análise. */
 async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, mlItemId: string): Promise<void> {
-  const criadoEm = await dataCriacaoDoAnuncio(mlItemId);
-  if (!criadoEm) return;
+  const { criadoEm, vendidosAnuncio } = await observadoDoAnuncio(mlItemId);
+  if (!criadoEm && !vendidosAnuncio) return;
   await seAindaIdentidade(identidade, async () => {
     const atual = await lerAba(tabId);
     const e = atual.estado as { entrada: { mlItemId?: unknown }; resposta: unknown; observado?: object } | null;
     if (!e || atual.geracao !== geracao || atual.sessao !== sessao || e.entrada.mlItemId !== mlItemId) return;
-    await guardarEstado(tabId, geracao, sessao, e.entrada, e.resposta, { ...e.observado, criadoEm });
+    await guardarEstado(tabId, geracao, sessao, e.entrada, e.resposta, { ...e.observado, criadoEm, vendidosAnuncio });
   }).catch(() => {});
 }
 
@@ -107,13 +107,14 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (!pagina && corpo.acao === 'analisar_anuncio') {
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
         return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
-          // vendidosTexto e a data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
+          // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
           const { vendidosTexto, ...paraEdge } = corpo;
           const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
           const { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
-          const observado = { vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, criadoEm: null };
+          // vendidosTexto = faixa da página aberta (agregada em /p/ e /up/); a do anúncio chega com a data.
+          const observado = { vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, vendidosAnuncio: null, criadoEm: null };
           const r = await naMesmaIdentidade(identidade, async () => {
             await guardarEstado(tabId!, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);
             return resposta;

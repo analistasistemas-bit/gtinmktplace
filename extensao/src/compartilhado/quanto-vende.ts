@@ -1,5 +1,6 @@
-// "Quanto vende" observado (ADR-0189 D-9 + emenda 2026-10-22): faixa pública da página e data de criação
-// do `gtm_event.startTime` do anúncio. Sem data → só a faixa; nada é estimado nem presumido aqui.
+// "Quanto vende" observado (ADR-0189 D-9 + emenda 2026-10-22). Faixa e data vêm do HTML de
+// produto.mercadolivre.com.br/MLB-{id}, que é do anúncio; a faixa de /p/ e /up/ é agregada (catálogo / produto do
+// vendedor) e não serve para ritmo. Sem data → só a faixa; nada é estimado nem presumido aqui.
 
 export type Semaforo = 'verde' | 'amarelo' | 'vermelho';
 
@@ -9,6 +10,7 @@ export interface QuantoVende {
   dias: number | null;
   semaforo: Semaforo | null;
   minimoPorMes: number | null;
+  minimoPorDia: number | null;
 }
 
 const DIA = 86_400_000;
@@ -41,16 +43,24 @@ export function startTimeDoHtml(html: string, mlItemId: string): string | null {
   return ev.match(/"startTime":"([^"]+)"/)?.[1] ?? null;
 }
 
+/** "N vendidos" do subtitle do HTML do anúncio (o mesmo de `startTimeDoHtml`), só se o HTML é do item pedido. */
+export function vendidosDoHtml(html: string, mlItemId: string): string | null {
+  if (!html.includes(`"itemId":"${mlItemId}"`)) return null;
+  const sub = html.match(/"subtitle_label":\{[^}]*?"text":"([^"]*)"/)?.[1];
+  return sub?.match(/\+?\d[\d.,]*\s*(?:mil\s*)?vendidos?/i)?.[0] ?? null;
+}
+
+/** Ritmo do anúncio: `vendidosTexto` e `criadoEm` precisam ser do MESMO anúncio. */
 export function quantoVende(
-  { vendidosTexto, criadoEm, catalogo }: { vendidosTexto: string | null; criadoEm: string | null; catalogo: boolean },
+  { vendidosTexto, criadoEm }: { vendidosTexto: string | null; criadoEm: string | null },
   agora = new Date(),
 ): QuantoVende {
   const piso = pisoDosVendidos(vendidosTexto);
   const t = criadoEm ? new Date(criadoEm).getTime() : NaN;
-  if (!Number.isFinite(t) || t > agora.getTime()) return { piso, criadoEm: null, dias: null, semaforo: null, minimoPorMes: null };
+  if (!Number.isFinite(t) || t > agora.getTime()) return { piso, criadoEm: null, dias: null, semaforo: null, minimoPorMes: null, minimoPorDia: null };
   const dias = Math.floor((agora.getTime() - t) / DIA);
   const semaforo: Semaforo = dias <= 180 ? 'verde' : dias <= 365 ? 'amarelo' : 'vermelho';
-  // Catálogo: a faixa pode ser do produto e a data é do anúncio vencedor — a divisão misturaria os dois.
-  const minimoPorMes = piso === null || catalogo ? null : Math.floor(piso / Math.max(dias / MES_DIAS, 1));
-  return { piso, criadoEm, dias, semaforo, minimoPorMes };
+  const minimoPorMes = piso === null ? null : Math.floor(piso / Math.max(dias / MES_DIAS, 1));
+  const minimoPorDia = piso === null ? null : Math.floor((piso / Math.max(dias, 1)) * 10) / 10;
+  return { piso, criadoEm, dias, semaforo, minimoPorMes, minimoPorDia };
 }
