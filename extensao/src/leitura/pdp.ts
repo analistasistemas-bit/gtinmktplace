@@ -3,8 +3,13 @@ import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensa
 // Caminhos usados (observados em 2026-10-21), todos tolerantes à variação por componente:
 //  script#__NORDIC_RENDERING_CTX__ -> texto `_n.ctx.r = {...};_n.ctx.r.assets` -> appProps.pageProps.initialState
 //  fallback: script#__PRELOADED_STATE__ (JSON, com ou sem `initialState`)
-//  ids: initialState.{item_id|id}, depois track.melidata_event.event_data.{item_id,seller_id,category_id,catalog_product_id,price},
-//       depois busca recursiva limitada (profundidade 12) pela mesma chave.
+//  item: initialState.id, depois track.melidata_event.event_data.item_id
+//  vendedor: event_data.seller_id, depois content_right[id=seller_data].viewport_track…seller_id
+//  categoria: carousel_config.category_id de head[]/content_right[], depois event_data.category_id
+//  catálogo: 1º MLB\d+ entre event_data.catalog_product_id, short_description[] com
+//            reviews.action.track.melidata_event.event_data.catalog_product_id e head[id=carousel_up_web].carousel_config.product_id
+//  preço: short_description[id=price].action.track.melidata_event.event_data.price
+//  Nenhum desses campos usa busca global (um recomendado com id válido casaria o SKU errado).
 //  vendidos: chave `subtitle_label.text`; título: <h1>, og:title ou chave `title`.
 
 export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & { vendidosTexto: string | null; titulo: string };
@@ -39,15 +44,6 @@ const numero = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string
 const get = (o: unknown, ...caminho: string[]): unknown => caminho.reduce<unknown>((a, k) => (ehObj(a) ? a[k] : undefined), o);
 const lista = (v: unknown): Obj[] => (Array.isArray(v) ? v.filter(ehObj) : []);
 
-function coletar(raiz: unknown, ok: (k: string, v: unknown) => boolean, prof = 14, out: unknown[] = []): unknown[] {
-  if (prof < 0 || typeof raiz !== 'object' || raiz === null) return out;
-  for (const [k, v] of Object.entries(raiz)) {
-    if (ok(k, v)) out.push(v);
-    coletar(v, ok, prof - 1, out);
-  }
-  return out;
-}
-
 function buscar(raiz: unknown, chave: string, ok: (v: unknown) => boolean, prof = 12): unknown {
   if (prof < 0 || typeof raiz !== 'object' || raiz === null) return undefined;
   if (!Array.isArray(raiz) && ok((raiz as Obj)[chave])) return (raiz as Obj)[chave];
@@ -80,11 +76,13 @@ export function lerAnuncio(doc: Document): ResultadoLeitura {
     .find(ehMlb);
   if (!categoriaId) return { ok: false, motivo: 'campo_ausente:categoriaId' };
 
-  // Valores divergem entre componentes ("not_apply", "", "none"): primeiro MLB\d+ entre catalog_product_id e
-  // carousel_config.product_id (este medido na página real em 2026-10-21 = id de catálogo), senão null.
+  // Catálogo só nos caminhos medidos na página real (2026-10-21); valores como "not_apply"/""/"none" → próximo, senão null.
+  const reviews = lista(get(comps, 'short_description'))
+    .map((c) => get(c, 'reviews', 'action', 'track', 'melidata_event', 'event_data', 'catalog_product_id'))
+    .find((v) => v !== undefined);
+  const carrossel = lista(get(comps, 'head')).find((c) => c.id === 'carousel_up_web');
   const catalogProductId =
-    (coletar(estado, (k, v) => k === 'catalog_product_id' && ehMlb(v))[0] ??
-      coletar(estado, (k, v) => k === 'carousel_config' && ehObj(v) && ehMlb(v.product_id)).map((c) => (c as Obj).product_id)[0]) as string | undefined ?? null;
+    ([get(ev, 'catalog_product_id'), reviews, get(carrossel, 'carousel_config', 'product_id')].find(ehMlb) as string | undefined) ?? null;
 
   // preço: só componente id 'price' de short_description[] -> action.track.melidata_event.event_data.price (número ou {value|amount})
   const compPreco = lista(get(comps, 'short_description')).find((c) => c.id === 'price');

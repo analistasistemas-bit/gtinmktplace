@@ -1,9 +1,10 @@
 {"appProps":{"pageProps":{"initialState":{
  "id":"MLB1000000001",
- "track":{"melidata_event":{"event_data":{"item_id":"MLB1000000001","seller_id":100001,"category_id":"MLB122102","catalog_product_id":"MLB2000000001"}}},
+ "track":{"melidata_event":{"event_data":{"item_id":"MLB1000000001","seller_id":100001,"category_id":"MLB122102"}}},
  "components":{
-  "head":[{"carousel_config":{"category_id":"MLB122102","product_id":"MLB2000000001"}}],
+  "head":[{"id":"carousel_up_web","carousel_config":{"category_id":"MLB122102","product_id":"MLB2000000001"}}],
   "short_description":[
+   {"id":"reviews_capability_v3","reviews":{"action":{"track":{"melidata_event":{"event_data":{"catalog_product_id":"MLB2000000001"}}}}}},
    {"id":"subtitle","subtitle_label":{"text":"Novo  |  +1000 vendidos"}},
    {"id":"title","title":"Produto Sintético de Teste"},
    {"id":"price","action":{"track":{"melidata_event":{"event_data":{"price":199.9}}}}}],
