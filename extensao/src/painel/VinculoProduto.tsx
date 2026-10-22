@@ -90,7 +90,7 @@ export function VinculoProduto({ entrada, fonte, chamar, onVinculado }: Props) {
         <label className="campo">
           Código, nome ou EAN
           <span className="entrada">
-            <input type="search" value={termo} maxLength={60} autoFocus onChange={(e) => setTermo(e.target.value)} />
+            <input type="search" value={termo} maxLength={60} onChange={(e) => setTermo(e.target.value)} />
           </span>
         </label>
         <button type="submit" disabled={ocupado}>Buscar</button>
