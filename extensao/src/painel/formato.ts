@@ -12,7 +12,7 @@ export interface EstadoAba {
   entrada: EntradaAnuncio;
   resposta: Resposta<RespostaAnuncio>;
   /** Faixas (página e anúncio) e data de criação lidas no navegador (não vão à edge). Ausente em estado antigo. */
-  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null };
+  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string };
 }
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

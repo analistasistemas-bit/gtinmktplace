@@ -4,7 +4,8 @@
 // storage.session, inclusive a falha: nunca tenta de novo sozinho.
 import { startTimeDoHtml, vendidosDoHtml } from './compartilhado/quanto-vende';
 
-export interface ObservadoDoAnuncio { criadoEm: string | null; vendidosAnuncio: string | null }
+/** motivo: por que faltou dado (aparece no painel; sem dado de terceiro, só o diagnóstico da leitura). */
+export interface ObservadoDoAnuncio { criadoEm: string | null; vendidosAnuncio: string | null; motivo?: string }
 
 const chave = (mlItemId: string) => `anuncio-vip:${mlItemId}`;
 const VAZIO: ObservadoDoAnuncio = { criadoEm: null, vendidosAnuncio: null };
@@ -25,18 +26,20 @@ export function observadoDoAnuncio(mlItemId: string): Promise<ObservadoDoAnuncio
 async function buscar(mlItemId: string): Promise<ObservadoDoAnuncio> {
   const guardado = (await chrome.storage.session.get(chave(mlItemId)).catch(() => ({})) as Record<string, unknown>)[chave(mlItemId)];
   if (guardado && typeof guardado === 'object') return { ...VAZIO, ...(guardado as Partial<ObservadoDoAnuncio>) };
-  let obs = VAZIO;
+  let obs: ObservadoDoAnuncio = VAZIO;
   try {
     const r = await fetch(`https://produto.mercadolivre.com.br/${mlItemId.replace('MLB', 'MLB-')}`, {
       credentials: 'include',
       signal: AbortSignal.timeout(5000),
     });
-    if (r.ok) {
-      const html = await r.text();
-      obs = { criadoEm: startTimeDoHtml(html, mlItemId), vendidosAnuncio: vendidosDoHtml(html, mlItemId) };
+    const html = r.ok ? await r.text() : '';
+    obs = { criadoEm: startTimeDoHtml(html, mlItemId), vendidosAnuncio: vendidosDoHtml(html, mlItemId) };
+    if (!obs.criadoEm) {
+      const destino = r.redirected ? ` → ${new URL(r.url).hostname}${new URL(r.url).pathname.slice(0, 12)}…` : '';
+      obs.motivo = !r.ok ? `HTTP ${r.status}${destino}` : `página sem a data (${Math.round(html.length / 1000)} KB${destino})`;
     }
-  } catch {
-    // timeout, rede, captcha: indisponível
+  } catch (e) {
+    obs = { ...VAZIO, motivo: e instanceof DOMException && e.name === 'TimeoutError' ? 'tempo esgotado' : 'falha de rede' };
   }
   await chrome.storage.session.set({ [chave(mlItemId)]: obs }).catch(() => {});
   return obs;

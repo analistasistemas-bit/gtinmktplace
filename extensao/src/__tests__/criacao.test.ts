@@ -16,8 +16,15 @@ describe('dataCriacaoDoAnuncio', () => {
 
   it('falha (rede) → null, guardada: não tenta de novo', async () => {
     fetchFalso.mockRejectedValue(new Error('rede'));
-    expect(await observadoDoAnuncio('MLB6')).toEqual({ criadoEm: null, vendidosAnuncio: null });
-    expect(await observadoDoAnuncio('MLB6')).toEqual({ criadoEm: null, vendidosAnuncio: null });
+    expect(await observadoDoAnuncio('MLB6')).toEqual({ criadoEm: null, vendidosAnuncio: null, motivo: 'falha de rede' });
+    expect(await observadoDoAnuncio('MLB6')).toEqual({ criadoEm: null, vendidosAnuncio: null, motivo: 'falha de rede' });
     expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it('HTTP de erro ou página sem a data → motivo para o painel', async () => {
+    fetchFalso.mockResolvedValueOnce(new Response('x', { status: 403 }));
+    expect((await observadoDoAnuncio('MLB7')).motivo).toBe('HTTP 403');
+    fetchFalso.mockResolvedValueOnce(new Response('<html>outra coisa</html>', { status: 200 }));
+    expect((await observadoDoAnuncio('MLB8')).motivo).toMatch(/^página sem a data/);
   });
 });

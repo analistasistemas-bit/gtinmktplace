@@ -39,13 +39,12 @@ export async function aoAtualizarAba(tabId: number, info: { status?: string; url
 
 /** Faixa e data do anúncio (ADR-0189 emenda 2026-10-22) gravadas no `observado` da aba depois da análise. */
 async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, mlItemId: string): Promise<void> {
-  const { criadoEm, vendidosAnuncio } = await observadoDoAnuncio(mlItemId);
-  if (!criadoEm && !vendidosAnuncio) return;
+  const { criadoEm, vendidosAnuncio, motivo } = await observadoDoAnuncio(mlItemId);
   await seAindaIdentidade(identidade, async () => {
     const atual = await lerAba(tabId);
     const e = atual.estado as { entrada: { mlItemId?: unknown }; resposta: unknown; observado?: object } | null;
     if (!e || atual.geracao !== geracao || atual.sessao !== sessao || e.entrada.mlItemId !== mlItemId) return;
-    await guardarEstado(tabId, geracao, sessao, e.entrada, e.resposta, { ...e.observado, criadoEm, vendidosAnuncio });
+    await guardarEstado(tabId, geracao, sessao, e.entrada, e.resposta, { ...e.observado, criadoEm, vendidosAnuncio, motivo });
   }).catch(() => {});
 }
 

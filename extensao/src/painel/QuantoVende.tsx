@@ -3,7 +3,7 @@
 // à parte, sem ritmo. Sem estimativa: reprovada na Task 13 (errata ADR-0189).
 import { pisoDosVendidos, quantoVende } from '../compartilhado/quanto-vende';
 
-export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null }
+export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string }
 
 const num = (n: number) => n.toLocaleString('pt-BR');
 const faixa = (piso: number, texto: string) => (/^\+/.test(texto.trim()) ? `+${num(piso)}` : num(piso));
@@ -59,6 +59,7 @@ export function QuantoVende({ observado, catalogo, agora }: { observado: Observa
         </div>
       )}
       {!temAnuncio && <p className="nota">Vendas e idade deste anúncio indisponíveis. Entre no Mercado Livre neste navegador para vê-las.</p>}
+      {a.dias === null && observado.motivo && <p className="nota">{`Leitura da página do anúncio: ${observado.motivo}.`}</p>}
       {a.minimoPorMes !== null && <p className="nota">Mínimo: piso da faixa dividido pela idade do anúncio.</p>}
     </section>
   );
