@@ -1,5 +1,27 @@
 # PubliAI — Tasks
 
+## Extensão PubliAI (navegador) — desenho em andamento — 2026-10-21
+
+Recomeço do zero após engenharia reversa do Avant Pro e da JoomPulse (REA + validação no Chrome;
+relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em `CONTEXT.md`
+(seção "Extensão do navegador").
+
+- [x] Remover a viabilidade antiga `extensao-ml/` (ADR-0118 revogado), o botão "Resolver todos no
+  ML" e o `useExtensaoCatalogo`; card "Catálogo em risco" segue com o link por anúncio.
+- [x] Decisões do grilling (14): sem base de mercado; lê o radar do Pulse da org sem enviar dados de
+  concorrentes nem disparar Sonar/Apify; só contas PubliAI; conexão a partir do PubliAI (sem senha
+  na extensão); v1 só em anúncio, busca/mais vendidos e catálogo; topo = minha margem + quanto vende;
+  margem com preço editável, Clássico × Premium, frete da conta da org, custo real e imposto por
+  origem; vínculo de produto catálogo → EAN da busca → vínculo manual guardado → custo digitado
+  (× `UNITS_PER_PACK`); vendas = observado + estimativa rotulada; vencedor de catálogo só quando o
+  ML informa; Acompanhamento de anúncio próprio vai para o PubliAI web (épico seguinte);
+  distribuição Chrome Web Store não listada; uma extensão só.
+- [ ] Concluir o grilling e escrever a ADR da Extensão PubliAI (revoga o "Não fazer" do roadmap
+  2026-09-21 para extensão).
+- [ ] Validar a fórmula de vendas estimadas (estilo Avant) contra vendas reais dos anúncios próprios
+  antes de exibi-la.
+- [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
+
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20
 
 - [x] Causa: famílias com UNIDADE=UN não recebem rótulo sugerido e o gpt-4o-mini desobedece à regra do prompt ("Metragem: 120ml").
@@ -3235,6 +3257,8 @@ Revisão integral do módulo (33 arquivos), relatório em
   pela API** para esses: busca textual e por categoria devolvem 403, anúncio de terceiro 403.
   A extensão (base `extensao-ml/`, ADR-0118) lê a página na sessão logada e alcança qualquer
   anúncio — resolve cobertura **e** vendas por anúncio de uma vez.
+  **Atualização 2026-10-21:** `extensao-ml/` removida do repo. A nova Extensão PubliAI (seção no
+  topo deste arquivo) **não** é coletora para o Pulse: só lê o radar da org.
 - [ ] Pulse: alternativa barata se a extensão demorar — tela de tendência por categoria com
   `/highlights/MLB/category/{cat}` e `/trends/MLB/{cat}` (únicos endpoints vivos sem catálogo).
   Responde "o que vende neste nicho", não "quem é meu concorrente e a que preço".
@@ -3362,10 +3386,10 @@ Plano: `docs/superpowers/plans/2026-08-12-catalogo-em-risco-plan.md`
   em risco local, só o sinalizado pelo ML aparece.
 - [x] **Runbook do operador:** `docs/runbooks/catalogo-anuncios-a-pausar.md` — como agir nas
   próximas vezes que o ML sinalizar anúncios.
-- [ ] **Exercitar a extensão pelo painel.** As chamadas foram validadas direto na página; o fluxo de
-  clique do operador ainda não foi percorrido ponta a ponta.
-- [ ] **Item plano** (16 anúncios, `ml_variation_id = ml_item_id`) usa outro fluxo no ML — fora do
-  lote da extensão.
+- [x] ~~**Exercitar a extensão pelo painel.**~~ **Cancelado em 2026-10-21 (Diego):** a extensão
+  `extensao-ml/` era só viabilidade e foi removida, com o botão "Resolver todos no ML" e o
+  `useExtensaoCatalogo`. O card mantém o link "Resolver no ML" por anúncio; ADR-0118 revogado.
+- [ ] **Item plano** (16 anúncios, `ml_variation_id = ml_item_id`) usa outro fluxo no ML.
 
 ## Estoque — variação órfã no ML vendia sem baixar — 2026-08-13
 

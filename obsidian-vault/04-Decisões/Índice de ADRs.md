@@ -131,7 +131,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0116 | [Visibilidade do que o pipeline de título descarta](../../docs/decisions/0116-visibilidade-dos-descartes-do-titulo.md) |
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
 | 0117 | [Menu Financeiro controla liberação e saque; compra não é venda](../../docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md) |
-| 0118 | [Resolução em massa do "Não encontro minha variação" por extensão de navegador](../../docs/decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md) |
+| 0118 | [Resolução em massa do "Não encontro minha variação" por extensão de navegador](../../docs/decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md) — **revogado 2026-10-21** (extensão removida) |
 | 0119 | [Pulse: inteligência de mercado dirigida, server-side e sem crawl massivo](../../docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md) |
 | 0120 | [Pulse Sonar: garimpo de sortimento por termo, só API oficial](../../docs/decisions/0120-pulse-sonar-garimpo-por-termo.md) |
 | 0121 | [Cancelamento de pedido tratado também pela reconciliação](../../docs/decisions/0121-cancelamento-tratado-tambem-pela-reconciliacao.md) |

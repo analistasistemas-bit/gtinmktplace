@@ -1,6 +1,7 @@
 # ADR-0118 — Resolução em massa do "Não encontro minha variação" por extensão de navegador
 
-**Status:** Aceito — validado em produção nos 3 anúncios sinalizados (2026-08-13), branch `worktree-catalogo-fase3`
+**Status:** **Revogado em 2026-10-21** — a extensão `extensao-ml/` era uma viabilidade e não chegou a uso rotineiro; foi removida do repositório, junto com o botão "Resolver todos no ML" e o detector `useExtensaoCatalogo` do card "Catálogo em risco" (que mantém o link "Resolver no ML" por anúncio). A extensão de navegador do PubliAI recomeça do zero em ADR própria (Extensão PubliAI, desenho em 2026-10-21). Histórico original abaixo.
+**Status original:** Aceito — validado em produção nos 3 anúncios sinalizados (2026-08-13), branch `worktree-catalogo-fase3`
 **Data:** 2026-08-13
 **Relacionados:** ADR-0021 (opt-in de catálogo), ADR-0036 (alerta de no-match), ADR-0088 (User Products), spec `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md`
 

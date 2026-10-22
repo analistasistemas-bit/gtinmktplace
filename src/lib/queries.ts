@@ -1067,14 +1067,12 @@ export function publicadoFromRow(
  * tela mostraria 2.234 variações nunca publicadas (default 'pendente' da coluna).
  */
 export async function fetchCatalogoEmRisco(): Promise<FamiliaRiscoRow[]> {
-  // `!inner` + status inclui 'vinculado' de propósito (Fase 3): deixa passar famílias
-  // só-vinculado, que o agregador descarta como risco mas usa para agregar `vinculos`.
   const { data, error } = await supabase
     .from('familias')
-    .select('id, ml_item_id, titulo_ml, nome_pai, variacoes!inner(catalog_status, ml_variation_id, catalog_product_id)')
+    .select('id, ml_item_id, titulo_ml, nome_pai, variacoes!inner(catalog_status, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .not('variacoes.ml_variation_id', 'is', null)
-    .in('variacoes.catalog_status', [...STATUS_RISCO, 'vinculado']);
+    .in('variacoes.catalog_status', [...STATUS_RISCO]);
   if (error) throw error;
   return (data ?? []) as FamiliaRiscoRow[];
 }

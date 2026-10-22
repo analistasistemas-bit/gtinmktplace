@@ -4,6 +4,8 @@
 **Data:** 2026-08-16
 **Relacionados:** ADR-0055 (markup/imposto por origem), ADR-0086 (config org-scoped), ADR-0118 (extensão `extensao-ml/`), ADR-0021 (catálogo)
 
+> **Nota (2026-10-21):** a base `extensao-ml/` citada aqui (ADR-0118) foi **retirada do repositório**. A extensão de navegador recomeça do zero como **Extensão PubliAI** (ADR própria, em desenho), **sem** papel de coletora de DOM para o Pulse: ela só **lê** o radar do Pulse da org e não envia dados de concorrentes ao servidor (decisão do Diego, 2026-10-21).
+
 ## Problema
 
 O operador decide preço, entrada em nicho e reação à concorrência às cegas: a API privada do ML

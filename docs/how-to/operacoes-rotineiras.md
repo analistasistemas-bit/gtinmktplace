@@ -276,8 +276,8 @@ Procedimento do operador — como resolver quando o ML avisa que vai pausar anú
 associação ao catálogo: [../runbooks/catalogo-anuncios-a-pausar.md](../runbooks/catalogo-anuncios-a-pausar.md).
 
 Resumo: o card "Catálogo em risco" em Publicados lista só os anúncios que o ML sinalizou (tag
-`catalog_forewarning`); resolver pela extensão (`extensao-ml/`, com dry-run antes do envio) ou à mão
-pelo link do card. Contrato e travas em [ADR-0118](../decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md).
+`catalog_forewarning`); resolver à mão pelo link "Resolver no ML" de cada anúncio do card (a extensão
+`extensao-ml/` foi retirada em 2026-10-21). Contrato e travas em [ADR-0118](../decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md).
 
 ## Catálogo em risco: backfill das famílias congeladas em `pendente`
 

@@ -393,6 +393,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
 > **✅ Viabilidade — mercado relevante e tabela de frete EM PRODUÇÃO (2026-08-20/22).** Mercado relevante integrado (edge `buscar-mercado-relevante`); tabela compacta de frete Mercado Envios movida para fim da página; tolera payload sem observado durante skew de deploy.
 
+> **🗑️ 2026-10-21:** a extensão `extensao-ml/` do ADR-0118 foi removida (era viabilidade; ADR revogado). A Extensão PubliAI recomeça do zero — ver `docs/TASKS.md`.
+>
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
 > segundos**, e os **9 vínculos que competiam foram preservados** (`ALREADY_OPTED_IN`); o resto

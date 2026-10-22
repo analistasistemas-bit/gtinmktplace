@@ -4,6 +4,8 @@
 **Data:** 2026-08-17
 **Relacionados:** ADR-0119 (Pulse v1 + erratas), ADR-0055 (imposto por origem), ADR-0086 (módulos por org), ADR-0118 (extensão)
 
+> **Nota (2026-10-21):** a base `extensao-ml/` citada aqui (ADR-0118) foi **retirada do repositório**. A extensão de navegador recomeça do zero como **Extensão PubliAI** (ADR própria, em desenho), **sem** papel de coletora de DOM para o Pulse: ela só **lê** o radar do Pulse da org e não envia dados de concorrentes ao servidor (decisão do Diego, 2026-10-21).
+
 ## Problema
 
 O operador decide **o que cadastrar** às cegas: o PubliAI só analisa produtos que já entraram por
