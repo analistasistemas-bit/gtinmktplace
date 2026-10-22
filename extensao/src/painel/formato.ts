@@ -2,6 +2,7 @@
 import type { EntradaAnuncio, RespostaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import { MENSAGEM_LIMITE } from '../../../supabase/functions/_shared/extensao/erros.ts';
 import type { RespostaExtensao } from '../api';
+import type { DadosQualidade } from '../compartilhado/qualidade';
 
 export type { EntradaAnuncio, RespostaAnuncio };
 export type Resposta<T> = RespostaExtensao<T>;
@@ -12,7 +13,7 @@ export interface EstadoAba {
   entrada: EntradaAnuncio;
   resposta: Resposta<RespostaAnuncio>;
   /** Faixas (página e anúncio) e data de criação lidas no navegador (não vão à edge). Ausente em estado antigo. */
-  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null };
+  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null; qualidade?: DadosQualidade | null };
 }
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

@@ -21,10 +21,23 @@ const com = (f: (is: any) => void) => {
 };
 
 describe('lerAnuncio', () => {
+  it('qualidade na página de item (listas + fixed.gallery, medido em 22/10)', () => {
+    const j = JSON.parse(fx('pdp-sintetico.json'));
+    const c = j.appProps.pageProps.initialState.components;
+    c.fixed = { gallery: { pictures: [{ id: '670304-MLB9', width: 521, height: 749 }, { id: 'b', width: 1200, height: 1200 }, { id: 'c' }], clips: { shorts: [{ id: 's1' }] }, videos: [] } };
+    c.content_left = [{ id: 'description', content: 'x'.repeat(415) }];
+    c.short_description.push({ id: 'available_quantity', quantity_selector: { available_quantity: 16 } });
+    const r = lerAnuncio(doc(nordic(JSON.stringify(j))));
+    expect(r.ok && r.dados.qualidade).toEqual({
+      fotos: [{ id: '670304-MLB9', largura: 521, altura: 749 }, { id: 'b', largura: 1200, altura: 1200 }, { id: 'c', largura: null, altura: null }],
+      clips: 1, descricao: 415, garantia: null, disponivel: 16,
+    });
+  });
+
   it('extrai os campos do estado do Nordic', () => {
     expect(lerAnuncio(doc(nordic(fx('pdp-sintetico.json'))))).toEqual({
       ok: true,
-      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste', lojaOficial: null },
+      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
     });
   });
   it('catálogo sintético traz catalogProductId', () => {
@@ -106,7 +119,7 @@ describe('lerAnuncio', () => {
     it('extrai os campos; o id MLBU (user product) não vira item', () => {
       expect(up()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
       });
       expect(up((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
     });
@@ -121,6 +134,17 @@ describe('lerAnuncio', () => {
         delete is.components.carousel_up_web.carousel_config.product_id;
       });
       expect(so.ok && so.dados.catalogProductId).toBe('MLB2234567890'); // header.reviews
+    });
+    it('qualidade no layout indexado (/p/ e /up/): gallery sem clips = 0, garantia em buy_benefits', () => {
+      const r = up((is) => {
+        Object.assign(is.components, {
+          gallery: { pictures: [{ id: 'p1', width: 1200, height: 573 }] },
+          description: { id: 'description', content: '' },
+          available_quantity: { id: 'available_quantity', quantity_selector: { available_quantity: 100 } },
+          buy_benefits: { id: 'buy_benefits', benefits: [{ text: '{action} Você tem 30 dias.' }, { text: '90 dias de garantia de fábrica.' }] },
+        });
+      });
+      expect(r.ok && r.dados.qualidade).toEqual({ fotos: [{ id: 'p1', largura: 1200, altura: 573 }], clips: 0, descricao: 0, garantia: '90 dias de garantia de fábrica.', disponivel: 100 });
     });
     it('loja oficial (medido em 22/10: Tramontina /p/, BOING /up/): official_store_id do evento do vendedor + nome do seller_summary', () => {
       const r = up((is) => {
@@ -170,7 +194,7 @@ describe('lerAnuncio', () => {
     it('item = o do evento da página (vencedor), nunca o id de catálogo; alternative_buying_options ignorado', () => {
       expect(cat()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
       });
     });
     it('sem item no evento: em /p/ o id do estado (catálogo) não vira item', () => {

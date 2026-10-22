@@ -37,7 +37,10 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   Tramontina /p/, BOING /up/ e vendedor comum; emenda na ADR-0189). Fica no navegador, não vai à edge. Aprovado em UI/UX.
 - [x] Bloco Vendedor validado com dados reais (edge v4 × página do ML: MercadoLíder Gold, 5_green, +10 mil vendas) e
   aprovado em UI/UX (Codex, 2ª rodada): fica no fim do painel, depois da margem e do vínculo (D-6).
-- [ ] Fatia 2 restante: qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 17–19).
+- [x] Task 17 — Qualidade do anúncio: checklist de 6 itens (fotos, resolução, Clips, descrição, garantia, disponibilidade
+  exibida) com ok/atenção/não informado, lido da página e mantido no navegador; miniaturas abaixo de 1.200 px marcadas na
+  galeria do ML. Regras do Avant ("Sem garantia" só exato; dimensão desconhecida não conta). UI/UX aprovado (10/10).
+- [ ] Fatia 2 restante: radar do Pulse, baixar mídia (Tasks 18–19).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

@@ -169,3 +169,14 @@ validada na de validação, com o mesmo gate.
   do mesmo `seller_id`, ou em `components.seller_summary.seller` com o mesmo id (de onde vem o nome). Medido em
   Tramontina (`/p/`), BOING (`/up/`) e num vendedor comum (sem o campo). `store_type` foi descartado: vale `ESHOP` em
   vendedor comum. Sem prova, o painel não exibe.
+
+## Emenda 2026-10-22 — qualidade do anúncio (D-10, Task 17)
+
+- Fonte: a página do anúncio (galeria `fixed.gallery`/`gallery`, `description`, `available_quantity`, `buy_benefits`),
+  medida em página de item e de catálogo; fica no navegador (D-1). Checklist com três estados: ok, atenção e não informado
+  (desconhecido nunca vira ok). Consultor: Codex Astra, 22/10.
+- "Sem garantia" só com o texto exato (como o Avant; ponto final aceito); garantia não exibida = "Não informada".
+- Estoque: usa a **disponibilidade exibida** pelo seletor de quantidade como indício, nunca como estoque real.
+- Miniaturas com algum lado abaixo de 1.200 px ganham `outline` âmbar (tom de atenção) na galeria do ML, casadas pelo id
+  da foto; sem casamento seguro, ficam só no painel. Ordem do painel: Quanto vende → Minha margem → vínculo → Qualidade →
+  Vendedor.

@@ -269,3 +269,29 @@ button:disabled { opacity: 0.55; cursor: default; }
 .qv-agregado { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); }
 .qv-agregado-linha { display: flex; justify-content: space-between; gap: 8px; }
 .qv-agregado .mono { color: var(--foreground); font-weight: 600; }
+
+/* Qualidade do anúncio (Task 17): checklist em linhas de extrato; o ícone só reforça o texto.
+   Misturas em oklab: em oklch o branco (matiz 0) puxa os tons para o vermelho. */
+.ql-resumo {
+  padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--secondary); color: var(--muted-foreground);
+}
+.ql-resumo.atencao { background: color-mix(in oklab, var(--warning) 16%, var(--card)); color: color-mix(in oklab, var(--warning) 62%, var(--foreground)); }
+.ql-resumo.ok { background: color-mix(in oklab, var(--success) 14%, var(--card)); color: color-mix(in oklab, var(--success) 70%, var(--foreground)); }
+.ql-lista { list-style: none; margin: 0; padding: 0; }
+.ql-lista li + li { border-top: 1px solid var(--border); }
+.ql-linha { display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 13px; }
+.ql-icone { width: 16px; height: 16px; flex: none; padding: 2px; border-radius: 50%; }
+li[data-estado='ok'] .ql-icone { color: var(--success); background: color-mix(in oklab, var(--success) 14%, var(--card)); }
+li[data-estado='atencao'] .ql-icone { color: color-mix(in oklab, var(--warning) 80%, var(--foreground)); background: color-mix(in oklab, var(--warning) 18%, var(--card)); }
+li[data-estado='nao_informado'] .ql-icone { color: var(--muted-foreground); background: var(--secondary); }
+.ql-rotulo { color: var(--muted-foreground); }
+.ql-valor { margin-left: auto; text-align: right; font-weight: 600; color: var(--foreground); }
+li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted-foreground); }
+.ql-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 0 10px 24px; }
+.ql-chips-rotulo { font-size: 11px; color: var(--muted-foreground); margin-right: 2px; }
+.ql-chip {
+  min-width: 22px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; text-align: center;
+  border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border)); color: var(--foreground);
+}
+.ql-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

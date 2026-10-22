@@ -151,7 +151,7 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toEqual({
       entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
-      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null, lojaOficial: null },
+      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null, lojaOficial: null, qualidade: null },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });

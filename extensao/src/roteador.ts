@@ -5,6 +5,7 @@ import { chamarExtensao } from './api';
 import { observadoDoAnuncio } from './criacao';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
 import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
+import { normalizarQualidade } from './compartilhado/qualidade';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -118,7 +119,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
         return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
-          const { vendidosTexto, lojaOficial, ...paraEdge } = corpo;
+          const { vendidosTexto, lojaOficial, qualidade, ...paraEdge } = corpo;
           const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
@@ -127,6 +128,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
           const observado = {
             vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, vendidosAnuncio: null, criadoEm: null,
             lojaOficial: lojaOficialValida(lojaOficial),
+            qualidade: normalizarQualidade(qualidade),
           };
           const r = await naMesmaIdentidade(identidade, async () => {
             await guardarEstado(tabId!, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);

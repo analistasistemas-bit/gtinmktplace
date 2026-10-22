@@ -1,4 +1,5 @@
 import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
+import type { DadosQualidade } from '../compartilhado/qualidade';
 
 // Caminhos usados (observados em 2026-10-21), todos tolerantes à variação por componente:
 //  script#__NORDIC_RENDERING_CTX__ -> texto `_n.ctx.r = {...};_n.ctx.r.assets` -> appProps.pageProps.initialState
@@ -18,12 +19,18 @@ import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensa
 //  loja oficial (medido em 2026-10-22: Tramontina /p/, BOING /up/, vendedor comum sem o campo): official_store_id > 0
 //  no evento da página (track ou components.track) cujo seller_id é o do anúncio, ou em components.seller_summary.seller
 //  com o mesmo id (dali vem o nome). store_type não serve (vale "ESHOP" em vendedor comum).
+//  qualidade (medido em 2026-10-22, item e /p/): galeria em components.fixed.gallery (item) ou components.gallery
+//  (indexado) {pictures[{id,width,height}], clips.shorts[]}; descrição em description.content (content_left[] no
+//  item); disponibilidade em available_quantity.quantity_selector.available_quantity; garantia em
+//  buy_benefits.benefits[].text (só existe quando o ML exibe).
 
 export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & {
   vendidosTexto: string | null;
   titulo: string;
   /** Vendedor é loja oficial do ML (nome só quando o seller_summary do mesmo vendedor o traz); null = não comprovado. */
   lojaOficial: { nome: string | null } | null;
+  /** Dados brutos da Qualidade do anúncio (Task 17); campos null = não lidos na página. */
+  qualidade: DadosQualidade;
 };
 export type ResultadoLeitura = { ok: true; dados: DadosAnuncio } | { ok: false; motivo: string };
 
@@ -128,6 +135,25 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
     ? { nome: resumoOk && typeof nomeLoja === 'string' && nomeLoja.trim() ? nomeLoja.trim() : null }
     : null;
 
+  // Qualidade: só os componentes medidos (galeria/descrição/disponibilidade/benefícios do próprio anúncio).
+  const galeria = get(comps, 'fixed', 'gallery') ?? get(comps, 'gallery');
+  const dim = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const fotos = Array.isArray(get(galeria, 'pictures'))
+    ? lista(get(galeria, 'pictures')).filter((f) => typeof f.id === 'string').map((f) => ({ id: f.id as string, largura: dim(f.width), altura: dim(f.height) }))
+    : null;
+  const shorts = get(galeria, 'clips', 'shorts');
+  const descricaoTexto = get(porId('description', 'content_left'), 'content');
+  const disp = get(porId('available_quantity', 'short_description'), 'quantity_selector', 'available_quantity');
+  const garantia = lista(get(porId('buy_benefits', 'short_description', 'content_right'), 'benefits'))
+    .map((b) => b.text).find((t): t is string => typeof t === 'string' && /garantia/i.test(t)) ?? null;
+  const qualidade: DadosQualidade = {
+    fotos,
+    clips: galeria === undefined ? null : Array.isArray(shorts) ? shorts.length : 0,
+    descricao: typeof descricaoTexto === 'string' ? descricaoTexto.trim().length : null,
+    garantia,
+    disponivel: typeof disp === 'number' && Number.isInteger(disp) && disp >= 0 ? disp : null,
+  };
+
   const sub = buscar(estado, 'subtitle_label', ehObj) as Obj | undefined;
   const vendidosTexto = typeof sub?.text === 'string' ? (sub.text.match(/\+?[\d.,]+\s*(?:mil\s+)?vendidos?/i)?.[0] ?? null) : null;
   const titulo =
@@ -147,6 +173,7 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
       vendidosTexto,
       titulo,
       lojaOficial,
+      qualidade,
     },
   };
 }
