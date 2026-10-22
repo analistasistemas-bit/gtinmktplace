@@ -8,7 +8,7 @@ import { instalarChromeFalso } from './chrome-falso';
 const APP = { origin: 'https://app.publiai.daludi.com.br' } as chrome.runtime.MessageSender;
 const agoraSeg = () => Math.floor(Date.now() / 1000);
 const sessao = (expiresAt = agoraSeg() + 3600) => ({
-  tipo: 'publiai:sessao', accessToken: 'tok-abc', expiresAt, orgNome: 'Avil',
+  tipo: 'publiai:sessao', accessToken: 'tok-abc', expiresAt, orgNome: 'Avil', identidade: 'u1:org1:',
 });
 
 let dados: Record<string, unknown>;
@@ -16,9 +16,9 @@ beforeEach(() => { dados = instalarChromeFalso(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('receberMensagemExterna', () => {
-  it('guarda só accessToken, expiresAt e orgNome vindos do app', async () => {
+  it('guarda só accessToken, expiresAt, orgNome e identidade vindos do app', async () => {
     expect(await receberMensagemExterna({ ...sessao(), refreshToken: 'nunca' }, APP)).toEqual({ ok: true });
-    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc' });
+    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc', identidade: 'u1:org1:' });
     expect(JSON.stringify(dados)).not.toContain('nunca');
   });
 
@@ -62,7 +62,7 @@ describe('obterSessaoValida', () => {
 
   it('token a 60 s do fim ainda vale', async () => {
     await receberMensagemExterna(sessao(agoraSeg() + 60), APP);
-    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc' });
+    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc', identidade: 'u1:org1:' });
   });
 });
 

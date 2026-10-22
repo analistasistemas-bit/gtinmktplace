@@ -68,3 +68,22 @@ export async function esquecerEstado(tabId: number): Promise<void> {
   await chrome.storage.session.remove(chaveEstado(tabId));
   await chrome.storage.session.remove(chaveGeracao(tabId));
 }
+
+/** Troca de identidade / desconexão / sessão expirada: nenhuma aba guarda análise nem EAN da sessão anterior.
+ *  Nova geração em toda aba com estado (escrita em voo com a geração antiga é descartada na leitura) e o
+ *  painel é avisado para reler. */
+export async function limparEstadosDasAbas(): Promise<void> {
+  const tudo = await chrome.storage.session.get(null);
+  const abas = new Set<number>();
+  const remover: string[] = [];
+  for (const k of Object.keys(tudo)) {
+    const [prefixo, id] = k.split(':');
+    if (prefixo === 'ean') remover.push(k);
+    if (prefixo === 'estado' || prefixo === 'geracao') abas.add(Number(id));
+  }
+  if (remover.length) await chrome.storage.session.remove(remover);
+  for (const tabId of abas) {
+    await novaPaginaNaAba(tabId);
+    chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
+  }
+}

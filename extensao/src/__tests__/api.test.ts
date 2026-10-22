@@ -8,7 +8,7 @@ const fetchFalso = vi.fn();
 
 async function conectar() {
   await receberMensagemExterna(
-    { tipo: 'publiai:sessao', accessToken: 'tok-abc', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil' },
+    { tipo: 'publiai:sessao', accessToken: 'tok-abc', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
     APP,
   );
 }
@@ -59,13 +59,13 @@ describe('chamarExtensao', () => {
     await conectar();
     fetchFalso.mockImplementation(async () => {
       await receberMensagemExterna(
-        { tipo: 'publiai:sessao', accessToken: 'tok-novo', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil' },
+        { tipo: 'publiai:sessao', accessToken: 'tok-novo', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
         APP,
       );
       return resposta(401, { code: 401, message: 'Invalid JWT' });
     });
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sessao_expirada' });
-    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-novo' });
+    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-novo', identidade: 'u1:org1:' });
   });
 
   it('erros do contrato passam; a sessão fica', async () => {
@@ -74,7 +74,7 @@ describe('chamarExtensao', () => {
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'limite' });
     fetchFalso.mockResolvedValue(resposta(403, { erro: 'modulo_desligado' }));
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'modulo_desligado' });
-    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc' });
+    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-abc', identidade: 'u1:org1:' });
   });
 
   it('corpo fora do contrato, não-JSON ou falha de rede → interno', async () => {

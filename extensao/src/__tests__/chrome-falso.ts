@@ -13,10 +13,10 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
     sidePanel: { open: vi.fn(async () => {}) },
     storage: {
       session: {
-        get: vi.fn(async (k: string | string[]) =>
-          Object.fromEntries((Array.isArray(k) ? k : [k]).filter((c) => c in dados).map((c) => [c, dados[c]]))),
+        get: vi.fn(async (k: string | string[] | null) =>
+          Object.fromEntries((k === null ? Object.keys(dados) : Array.isArray(k) ? k : [k]).filter((c) => c in dados).map((c) => [c, dados[c]]))),
         set: vi.fn(async (o: Record<string, unknown>) => { Object.assign(dados, o); }),
-        remove: vi.fn(async (k: string) => { delete dados[k]; }),
+        remove: vi.fn(async (k: string | string[]) => { for (const c of Array.isArray(k) ? k : [k]) delete dados[c]; }),
       },
     },
   };

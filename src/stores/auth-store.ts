@@ -3,7 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query-client';
 import { useSupportStore } from '@/stores/support-store';
-import { enviarSessaoParaExtensao } from '@/lib/extensao-ponte';
+import { enviarSessaoParaExtensao, identidadeExtensao } from '@/lib/extensao-ponte';
 
 export interface Profile {
   id: string;
@@ -35,6 +35,19 @@ interface AuthState {
 
 let profileRequestGeneration = 0;
 
+// ADR-0189 D-4: a extensão recebe o access token (o refresh fica aqui) e a identidade usuário:org:suporte.
+// Reenvia quando um dos dois muda — login/renovação/logout mudam o token; perfil carregado e início/fim de
+// suporte mudam a org sem evento de auth. undefined = nada enviado ainda.
+let enviadoParaExtensao: string | null | undefined;
+let observandoExtensao = false;
+function sincronizarExtensao() {
+  const session = useAuthStore.getState().session;
+  const chave = session ? `${session.access_token}|${identidadeExtensao(session)}` : null;
+  if (chave === enviadoParaExtensao) return;
+  enviadoParaExtensao = chave;
+  void enviarSessaoParaExtensao(session);
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
@@ -51,12 +64,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } else {
       set({ profile: null, profileLoading: false });
     }
-    supabase.auth.onAuthStateChange((event, session) => {
-      // ADR-0189 D-4: a extensão recebe só o access token; o refresh fica aqui.
-      if (event === 'SIGNED_OUT') void enviarSessaoParaExtensao(null);
-      else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        void enviarSessaoParaExtensao(session);
-      }
+    if (!observandoExtensao) {
+      observandoExtensao = true;
+      useAuthStore.subscribe(sincronizarExtensao);
+      useSupportStore.subscribe(sincronizarExtensao);
+    }
+    sincronizarExtensao();
+    supabase.auth.onAuthStateChange((_event, session) => {
       const previousUserId = get().user?.id ?? null;
       const user = session?.user ?? null;
       if (!user) {

@@ -18,7 +18,7 @@ beforeEach(async () => {
   fetchFalso.mockReset();
   fetchFalso.mockImplementation(async () => new Response('{"ok":1}', { status: 200 }));
   await receberMensagemExterna(
-    { tipo: 'publiai:sessao', accessToken: 'tok', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil' },
+    { tipo: 'publiai:sessao', accessToken: 'tok', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
     { origin: 'https://app.publiai.daludi.com.br' },
   );
 });
@@ -244,5 +244,91 @@ describe('estado da aba (painel)', () => {
   it('painel fechado (sendMessage rejeita) não derruba a análise', async () => {
     vi.mocked(chrome.runtime.sendMessage).mockRejectedValueOnce(new Error('Receiving end does not exist'));
     expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { ok: 1 } });
+  });
+});
+
+describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca aparece para outra)', () => {
+  const APP = { origin: 'https://app.publiai.daludi.com.br' } as Sender;
+  const ANUNCIO = { acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100 };
+  const conectar = (identidade: unknown, accessToken = `tok-${identidade}`) => receberMensagemExterna(
+    { tipo: 'publiai:sessao', accessToken, expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: '', identidade }, APP,
+  );
+  const estado = () => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 7 }, PAINEL);
+  const ean = () => rotearMensagem({ tipo: 'publiai:ean-da-aba', tabId: 7 }, PAINEL);
+
+  beforeEach(async () => {
+    await conectar('uA:orgA:');
+    fetchFalso.mockImplementation(async () => new Response('{"custo":"da org A"}', { status: 200 }));
+    await registrarEanDaAba(7, '7899941205918');
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estado()).not.toBeNull();
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+  });
+
+  it('A → logout → B na mesma aba do ML: nada de A (estado, EAN) e o painel é avisado', async () => {
+    await receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP);
+    expect(await estado()).toBeNull();
+    expect(await ean()).toBeNull();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+    await conectar('uB:orgB:');
+    expect(await estado()).toBeNull();
+    expect(await ean()).toBeNull();
+  });
+
+  it('troca direta A → B (sem logout) limpa tudo', async () => {
+    await conectar('uB:orgB:');
+    expect(await estado()).toBeNull();
+    expect(await ean()).toBeNull();
+  });
+
+  it('início/fim de suporte (mesmo usuário, outro contexto) limpa tudo', async () => {
+    await conectar('uA:orgS:req1');
+    expect(await estado()).toBeNull();
+  });
+
+  it('renovação do token na mesma identidade mantém a análise', async () => {
+    await conectar('uA:orgA:', 'tok-renovado');
+    expect(await estado()).toMatchObject({ resposta: { ok: true, dados: { custo: 'da org A' } } });
+  });
+
+  it('org vazia (perfil carregando no app) não limpa nem apaga a org conhecida: A → vazio → outra org limpa', async () => {
+    await conectar('uA::');
+    expect(await estado()).not.toBeNull();
+    await conectar('uA:orgX:');
+    expect(await estado()).toBeNull();
+  });
+
+  it('sessão expirada (401) limpa as abas', async () => {
+    fetchFalso.mockImplementation(async () => new Response('', { status: 401 }));
+    await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL);
+    expect(await estado()).toBeNull();
+  });
+
+  it('sessão de suporte expirada limpa as abas (o token segue)', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"erro":"sessao_suporte_expirada"}', { status: 403 }));
+    await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL);
+    expect(await estado()).toBeNull();
+  });
+
+  it('análise em voo de A responde depois da troca para B: descartada (sem_sessao) e não volta para a aba', async () => {
+    fetchFalso.mockImplementation(async () => {
+      await conectar('uB:orgB:');
+      return new Response('{"custo":"da org A, atrasado"}', { status: 200 });
+    });
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(JSON.stringify((await estado()) ?? null)).not.toContain('org A');
+    // Confirmação de preço do painel em voo também é descartada.
+    fetchFalso.mockImplementation(async () => {
+      await conectar('uC:orgC:');
+      return new Response('{"custo":"da org B, atrasado"}', { status: 200 });
+    });
+    expect(await chamar({ ...ANUNCIO, preco: 150 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+  });
+
+  it('identidade malformada é recusada (e não limpa nada)', async () => {
+    for (const identidade of ['', ':orgA:', 'uA:orgA', 'uA:org A:', 1, undefined]) {
+      expect(await conectar(identidade)).toEqual({ ok: false });
+    }
+    expect(await estado()).not.toBeNull();
   });
 });

@@ -1,8 +1,10 @@
 import type { Session } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const suporte = vi.hoisted(() => ({ context: null as null | { requestId: string; orgId: string; orgName: string }, orgPerfil: 'org-1' as string | null }));
 vi.mock('@/stores/support-store', () => ({
-  useSupportStore: { getState: () => ({ context: null }) },
+  useSupportStore: { getState: () => ({ context: suporte.context }) },
+  effectiveOrgId: () => suporte.context?.orgId ?? suporte.orgPerfil,
 }));
 
 import { enviarSessaoParaExtensao } from '../extensao-ponte';
@@ -30,6 +32,8 @@ function instalarChrome() {
 }
 
 beforeEach(() => {
+  suporte.context = null;
+  suporte.orgPerfil = 'org-1';
   sendMessage.mockClear();
   lastError = undefined;
   vi.stubEnv('VITE_EXTENSAO_ID', 'ext-id');
@@ -57,8 +61,18 @@ describe('enviarSessaoParaExtensao', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const [id, msg] = sendMessage.mock.calls[0];
     expect(id).toBe('ext-id');
-    expect(msg).toEqual({ tipo: 'publiai:sessao', accessToken: 'access-abc', expiresAt: 1_800_000_000, orgNome: '' });
+    expect(msg).toEqual({ tipo: 'publiai:sessao', accessToken: 'access-abc', expiresAt: 1_800_000_000, orgNome: '', identidade: 'u1:org-1:' });
     expect(JSON.stringify(msg)).not.toContain('refresh');
+  });
+
+  it('identidade = usuário:org:suporte; perfil carregando → org vazia; suporte → org e pedido do suporte', async () => {
+    instalarChrome();
+    suporte.orgPerfil = null;
+    await enviarSessaoParaExtensao(sessao);
+    expect(sendMessage.mock.calls[0][1]).toMatchObject({ identidade: 'u1::' });
+    suporte.context = { requestId: 'req-9', orgId: 'org-s', orgName: 'Avil' };
+    await enviarSessaoParaExtensao(sessao);
+    expect(sendMessage.mock.calls[1][1]).toMatchObject({ identidade: 'u1:org-s:req-9', orgNome: 'Avil' });
   });
 
   it('sem sessão envia publiai:desconectar', async () => {

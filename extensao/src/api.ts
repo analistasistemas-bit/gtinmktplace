@@ -1,6 +1,7 @@
 // Cliente da edge `extensao` (ADR-0189 D-17/D-18). fetch puro: sem supabase-js, sem refresh.
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
-import { limparSessao, obterSessaoValida } from './sessao';
+import { limparEstadosDasAbas } from './abas';
+import { identidadeAtual, limparSessao, obterSessaoValida } from './sessao';
 
 const CODIGOS: Record<CodigoErro, true> = {
   sessao_expirada: true,
@@ -38,10 +39,14 @@ export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao
     return { ok: false, erro: 'sessao_expirada' };
   }
   const json: unknown = await r.json().catch(() => null);
+  // Resposta pedida por outra identidade (logout/troca de conta/suporte durante a chamada) não chega a ninguém.
+  if ((await identidadeAtual()) !== sessao.identidade) return { ok: false, erro: 'sem_sessao' };
   if (r.ok) return { ok: true, dados: json as T };
 
   const codigo = (json as { erro?: unknown } | null)?.erro;
   const erro = typeof codigo === 'string' && Object.hasOwn(CODIGOS, codigo) ? (codigo as CodigoErro) : 'interno';
   if (erro === 'sessao_expirada') await limparSessao(sessao.accessToken);
+  // Suporte acabou: o token segue válido, mas o que foi analisado na org do suporte sai das abas.
+  if (erro === 'sessao_suporte_expirada') await limparEstadosDasAbas();
   return { ok: false, erro };
 }
