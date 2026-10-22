@@ -55,6 +55,19 @@ describe('chamarExtensao', () => {
     expect(await obterSessaoValida()).toBeNull();
   });
 
+  it('401 de um token antigo não apaga a sessão nova empurrada durante a chamada', async () => {
+    await conectar();
+    fetchFalso.mockImplementation(async () => {
+      await receberMensagemExterna(
+        { tipo: 'publiai:sessao', accessToken: 'tok-novo', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil' },
+        APP,
+      );
+      return resposta(401, { code: 401, message: 'Invalid JWT' });
+    });
+    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sessao_expirada' });
+    expect(await obterSessaoValida()).toEqual({ accessToken: 'tok-novo' });
+  });
+
   it('erros do contrato passam; a sessão fica', async () => {
     await conectar();
     fetchFalso.mockResolvedValue(resposta(429, { erro: 'limite', mensagem: 'Muitas análises em sequência. Aguarde um minuto.' }));

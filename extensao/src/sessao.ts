@@ -46,6 +46,12 @@ export async function obterSessaoValida(): Promise<{ accessToken: string } | nul
   return { accessToken: s.accessToken };
 }
 
-export async function limparSessao(): Promise<void> {
+/** Com `seAinda`, só apaga se a sessão guardada ainda é a desse token (o app pode ter
+ *  empurrado outra enquanto a chamada que deu 401 estava em voo). */
+export async function limparSessao(seAinda?: string): Promise<void> {
+  if (seAinda !== undefined) {
+    const s = (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
+    if (s?.accessToken !== seAinda) return;
+  }
   await chrome.storage.session.remove(CHAVE);
 }

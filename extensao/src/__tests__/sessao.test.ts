@@ -85,8 +85,7 @@ describe('sem refresh token no pacote', () => {
         else arquivos.push(p);
       }
     };
-    andar(raiz);
-    andar(path.resolve(raiz, '../../supabase/functions/_shared/extensao'));
+    andar(raiz); // o que vem de _shared e entra no bundle é coberto pelo scripts/checar-dist.mjs
     expect(arquivos.length).toBeGreaterThan(3);
     for (const a of arquivos) {
       const t = readFileSync(a, 'utf8');

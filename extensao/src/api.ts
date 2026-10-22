@@ -34,7 +34,7 @@ export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao
 
   // Qualquer 401 — inclusive o do gateway (verify_jwt), cujo corpo não segue o contrato.
   if (r.status === 401) {
-    await limparSessao();
+    await limparSessao(sessao.accessToken);
     return { ok: false, erro: 'sessao_expirada' };
   }
   const json: unknown = await r.json().catch(() => null);
@@ -42,6 +42,6 @@ export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao
 
   const codigo = (json as { erro?: unknown } | null)?.erro;
   const erro = typeof codigo === 'string' && Object.hasOwn(CODIGOS, codigo) ? (codigo as CodigoErro) : 'interno';
-  if (erro === 'sessao_expirada') await limparSessao();
+  if (erro === 'sessao_expirada') await limparSessao(sessao.accessToken);
   return { ok: false, erro };
 }
