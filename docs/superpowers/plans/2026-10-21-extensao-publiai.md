@@ -21,7 +21,7 @@
 - Ausência nunca vira zero: comissão, frete ou alíquota indisponíveis → tipo `indisponivel` com motivo. Alíquota exige `configuracoes.aliquotas_confirmadas_em`. Frete sem dimensões da variação → `ok` com aviso "estimado (pacote padrão)". (D-7)
 - Arredondamento: cada componente (comissão, imposto, frete) com `round2`; `recebe = preço − Σ componentes`; usar `sale_fee_amount` do ML quando o preço é o consultado. (D-7)
 - Imposto por origem: `importado` → `aliquota_importado_pct ?? 16`; `nacional` → `aliquota_nacional_pct ?? 8` (regra de `process-familia/index.ts:360`). Origem vem da família vinculada ou é escolhida pelo operador no custo digitado — **sem padrão**. (D-7, D-8)
-- Custo do pacote = `variacoes.custo × (UNITS_PER_PACK ÷ (origem_kit_multiplicador ?? 1))`; divisão não inteira → `indisponivel: composição diferente`. (D-8)
+- Custo do pacote = `variacoes.custo × (UNITS_PER_PACK ÷ (familias.kit_multiplicador ?? 1))`; divisão não inteira → `indisponivel: composição diferente`. (D-8)
 - Manifest: permissões `sidePanel`, `storage`; `host_permissions` só `https://*.mercadolivre.com.br/*`; `externally_connectable.matches` só `https://app.publiai.daludi.com.br/*` (+ `http://localhost:5173/*` no build de desenvolvimento). Proibido `<all_urls>`, `webRequest`, `declarativeNetRequest`, iframe de página de concorrente, patch de `fetch`/XHR. Carregar sempre de `extensao/dist`. (D-14)
 - Telemetria: nenhuma biblioteca de terceiros. (D-19)
 - Textos em pt-BR com acentuação; rótulos: "Minha margem", "Estimativa", "Observado", "Abrir no PubliAI", "Custo do SKU {codigo} · {fonte}". (D-6, D-8, D-9)
@@ -137,7 +137,7 @@ interface DepsVinculo {
 resolverVinculo(orgId: string, e: { catalogProductId: string | null; mlItemId: string; eanDaBusca: string | null }, deps: DepsVinculo): Promise<{ fonte: FonteCusto; variacao: VariacaoCusto | null }>
 custoDoPacote(v: VariacaoCusto, unidadesPorPacote: number): Disponivel<number>
 ```
-`unidades = origem_kit_multiplicador ?? 1`; `dimensoes` no formato `DimensoesPacote` de `_shared/ml/frete.ts`.
+`unidades = familias.kit_multiplicador ?? 1`; `dimensoes` no formato `DimensoesPacote` de `_shared/ml/frete.ts`.
 
 - [ ] **Step 1: Testes falhando:** ordem catálogo → EAN → manual (catálogo, depois item) → nenhuma, cada etapa só consultada se a anterior falhar; >1 variação no catálogo ou no GTIN → pula a etapa (ambíguo não escolhe); EAN com dígito inválido ignorado; `custoDoPacote` com custo 10, unidades 1, pack 2 → 20; variação kit de 2 e pack 2 → 10; variação kit de 2 e pack 3 → indisponível "composição diferente"; custo null → indisponível "custo não cadastrado".
 - [ ] **Step 2–4:** FAIL → implementar → PASS.
