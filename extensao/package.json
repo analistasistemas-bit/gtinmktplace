@@ -1,0 +1,18 @@
+{
+  "name": "publiai-extensao",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p . && vite build && node scripts/checar-dist.mjs",
+    "build:dev": "tsc -p . && vite build --mode development && node scripts/checar-dist.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.4",
+    "@types/node": "^22.10.5",
+    "typescript": "~5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^3.2.4"
+  }
+}

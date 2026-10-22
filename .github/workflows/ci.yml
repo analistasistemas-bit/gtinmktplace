@@ -54,6 +54,10 @@ jobs:
       # Roda antes do build: falha em 1s e o diagnóstico não fica soterrado pelo log do Vite.
       - run: pnpm docs:links
       - run: pnpm build
+      # Extensão Chrome (ADR-0189): pacote próprio do workspace; o build reprova `_` no dist e
+      # qualquer referência ao endpoint de token do Supabase (scripts/checar-dist.mjs).
+      - run: pnpm --dir extensao test
+      - run: pnpm --dir extensao build
 
   test:
     runs-on: ubuntu-latest
