@@ -47,6 +47,16 @@ describe('calcularMinhaMargem', () => {
     expect(ok(calcularMinhaMargem({ ...e2, preco: 199 }).classico).comissao).toBe(23.88);
   });
 
+  it('saleFeeAmount null/NaN no preço consultado → percentual, nunca comissão zero', () => {
+    const frete = { estado: 'ok' as const, valor: 25.45 };
+    for (const saleFeeAmount of [null, NaN, undefined]) {
+      const e = entrada({
+        classico: { comissao: { estado: 'ok', valor: { percentual: 12, fixa: 0, saleFeeAmount: saleFeeAmount as unknown as number, precoConsultado: 213.19 } }, frete },
+      });
+      expect(ok(calcularMinhaMargem(e).classico).comissao).toBe(25.58);
+    }
+  });
+
   it('custoPacote null → recebe calculado, custo/lucro/margemPct null', () => {
     const c = ok(calcularMinhaMargem(entrada({ custoPacote: null })).classico);
     expect(c.recebe).toBe(147.24);

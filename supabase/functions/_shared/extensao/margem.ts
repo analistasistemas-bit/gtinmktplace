@@ -9,7 +9,8 @@ function calcularTipo(e: EntradaMargem, t: EntradaMargemTipo): Disponivel<Margem
   if (t.frete.estado === 'indisponivel') return t.frete;
 
   const c = t.comissao.valor;
-  const comissao = c.saleFeeAmount !== undefined && c.precoConsultado === preco
+  // Valor pronto do ML só se for número de verdade: null/NaN cairia em round2 → comissão zero.
+  const comissao = typeof c.saleFeeAmount === 'number' && Number.isFinite(c.saleFeeAmount) && c.precoConsultado === preco
     ? round2(c.saleFeeAmount)
     : round2(preco * c.percentual / 100 + c.fixa);
   const imposto = round2(preco * aliquotaPct.valor / 100);

@@ -1,6 +1,9 @@
 // Lógica pura da edge `extensao` (ADR-0189 D-17/D-18/D-19): validação do pedido, chaves de
 // limite, formas de GTIN e mapeamento das linhas do banco. Sem `jsr:` — testável no vitest.
 import type { EntradaAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
+import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
+import { comissaoDeComProveniencia } from '../_shared/ml/listing-prices.ts';
+import type { ListingPriceML } from '../_shared/ml/tarifa.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
 import { dimensoesValidas } from '../_shared/ml/pacote.ts';
 
@@ -103,6 +106,17 @@ export function formasGtin(gtin: string): string[] {
 
 /** Escapa curingas de LIKE (`%`, `_`, `\`) para busca literal. */
 export const escaparLike = (t: string) => t.replace(/[\\%_]/g, '\\$&');
+
+/** listing_prices → comissão. Sem `sale_fee_details` válido: indisponível. `sale_fee_amount` só entra se for
+ *  número finito (null viraria comissão zero); ausente, a margem calcula pelo percentual + fixa. */
+export function comissaoDaListingPrice(lp: ListingPriceML, preco: number): Disponivel<ComissaoML> {
+  const c = comissaoDeComProveniencia(lp);
+  if (c.proveniencia !== 'official') return { estado: 'indisponivel', motivo: c.motivo ?? 'comissão não detalhada pelo Mercado Livre' };
+  const fee = lp?.sale_fee_amount;
+  return typeof fee === 'number' && Number.isFinite(fee)
+    ? { estado: 'ok', valor: { ...c.valor, saleFeeAmount: fee, precoConsultado: preco } }
+    : { estado: 'ok', valor: c.valor };
+}
 
 /** UNITS_PER_PACK de /products/{id}; inteiro ≥ 1, senão 1. */
 export function unidadesDoProduto(produto: unknown): number {

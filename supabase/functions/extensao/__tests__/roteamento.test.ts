@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  acessoDaAcao, chaveLimite, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
+  acessoDaAcao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
   unidadesDoProduto, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
@@ -106,6 +106,24 @@ describe('formasGtin', () => {
 describe('escaparLike', () => {
   it('escapa curingas', () => {
     expect(escaparLike('50%_off\\x')).toBe('50\\%\\_off\\\\x');
+  });
+});
+
+describe('comissaoDaListingPrice', () => {
+  const det = { percentage_fee: 12, fixed_fee: 6.25 };
+  it('valor pronto do ML vai junto do preço consultado', () => {
+    expect(comissaoDaListingPrice({ sale_fee_amount: 18.24, sale_fee_details: det }, 100)).toEqual({
+      estado: 'ok', valor: { percentual: 12, fixa: 6.25, saleFeeAmount: 18.24, precoConsultado: 100 },
+    });
+  });
+  it('sale_fee_amount null → sem saleFeeAmount (margem usa percentual + fixa)', () => {
+    const r = comissaoDaListingPrice({ sale_fee_amount: null as unknown as number, sale_fee_details: det }, 100);
+    expect(r).toEqual({ estado: 'ok', valor: { percentual: 12, fixa: 6.25 } });
+    expect(r.estado === 'ok' && 'saleFeeAmount' in r.valor).toBe(false);
+  });
+  it('sem sale_fee_details (com ou sem sale_fee_amount) → indisponível', () => {
+    expect(comissaoDaListingPrice({ sale_fee_amount: 18.24 }, 100).estado).toBe('indisponivel');
+    expect(comissaoDaListingPrice({ sale_fee_amount: null as unknown as number }, 100).estado).toBe('indisponivel');
   });
 });
 

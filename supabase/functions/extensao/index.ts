@@ -7,7 +7,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { buscarListingPrice, comissaoDeComProveniencia } from '../_shared/ml/listing-prices.ts';
+import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
@@ -15,7 +15,7 @@ import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
-  acessoDaAcao, chaveLimite, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
+  acessoDaAcao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
   type Pedido, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
@@ -92,10 +92,7 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       const t = await tokenML();
       if (!t) return SEM_CONEXAO;
       return emCache<Disponivel<ComissaoML>>(`ext:lp:${categoriaId}:${tipo}:${preco}`, (v) => v.estado === 'ok', async () => {
-        const lp = await buscarListingPrice(t, preco, categoriaId, tipo);
-        const c = comissaoDeComProveniencia(lp);
-        if (c.proveniencia !== 'official') return { estado: 'indisponivel', motivo: c.motivo ?? 'comissão não detalhada pelo Mercado Livre' };
-        return { estado: 'ok', valor: { ...c.valor, saleFeeAmount: lp.sale_fee_amount, precoConsultado: preco } };
+        return comissaoDaListingPrice(await buscarListingPrice(t, preco, categoriaId, tipo), preco);
       });
     },
     frete: async (preco, categoriaId, dim) => {
