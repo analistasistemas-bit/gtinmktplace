@@ -2,7 +2,7 @@
 // Roda uma vez em document_idle (a PDP do ML é renderizada no servidor).
 import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import { lerAnuncio } from '../leitura/pdp';
-import { textoDoSelo } from './selo';
+import { aoMensagemDoSw, textoDoSelo } from './selo';
 
 type Resp = { ok: true; dados: RespostaAnuncio } | { ok: false; erro: string };
 
@@ -81,4 +81,5 @@ async function rodar() {
   if (selo && !inserir(selo)) erroLeitura('campo_ausente:selo', id);
 }
 
+chrome.runtime.onMessage.addListener((msg) => { aoMensagemDoSw(msg); });
 void rodar();

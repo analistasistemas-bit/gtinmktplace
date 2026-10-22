@@ -13,3 +13,8 @@ export function textoDoSelo(r: RespostaAnuncio): string {
   if (lucro !== null && margemPct !== null) return `Minha margem ${brl(lucro)} (${num(margemPct)}%)`;
   return `Recebe ${brl(recebe)} · informe o custo`;
 }
+
+/** Mensagem do SW: a sessão mudou (logout, troca de conta, expiração) → o selo com a margem da sessão anterior sai. */
+export function aoMensagemDoSw(msg: unknown, doc: Document = document): void {
+  if ((msg as { tipo?: unknown } | null)?.tipo === 'publiai:sessao-mudou') doc.getElementById('publiai-selo')?.remove();
+}

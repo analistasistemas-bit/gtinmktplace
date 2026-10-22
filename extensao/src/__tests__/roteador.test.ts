@@ -265,11 +265,12 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     vi.mocked(chrome.runtime.sendMessage).mockClear();
   });
 
-  it('A → logout → B na mesma aba do ML: nada de A (estado, EAN) e o painel é avisado', async () => {
+  it('A → logout → B na mesma aba do ML: nada de A (estado, EAN), painel avisado e selo retirado', async () => {
     await receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP);
     expect(await estado()).toBeNull();
     expect(await ean()).toBeNull();
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
     await conectar('uB:orgB:');
     expect(await estado()).toBeNull();
     expect(await ean()).toBeNull();
@@ -295,6 +296,29 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     await conectar('uA::');
     expect(await estado()).not.toBeNull();
     await conectar('uA:orgX:');
+    expect(await estado()).toBeNull();
+  });
+
+  it('sessão vencida sem nenhuma chamada: o painel que pede o estado não recebe a análise e o selo sai', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 2 * 3600_000); // token de 1 h já venceu
+    try {
+      expect(await estado()).toBeNull();
+      expect(await ean()).toBeNull();
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sessão vencida descoberta numa chamada: limpa antes de responder sem_sessao', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    try {
+      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(await estado()).toBeNull();
   });
 

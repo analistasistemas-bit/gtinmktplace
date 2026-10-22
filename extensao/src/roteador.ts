@@ -2,6 +2,7 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
+import { obterSessaoValida } from './sessao';
 import { eanDaAba, eanParaAnuncio, esquecerAba, estadoDaAba, geracaoDaAba, lerAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
@@ -50,9 +51,12 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:ean-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       return eanDaAba(msg.tabId);
-    case 'publiai:estado-da-aba':
+    case 'publiai:estado-da-aba': {
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
-      return estadoDaAba(msg.tabId);
+      const id = msg.tabId;
+      // Confere a sessão antes: expirada, ela e as análises somem (o painel aberto depois não vê dado velho).
+      return obterSessaoValida().then(() => estadoDaAba(id));
+    }
     case 'publiai:reanalisar-aba': {
       // Painel refaz a análise da aba ao preço da página (após vínculo / "Tentar de novo") e atualiza o estado guardado.
       if (!pagina || typeof msg.tabId !== 'number') return undefined;

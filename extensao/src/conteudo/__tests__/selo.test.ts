@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { RespostaAnuncio } from '../../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import type { MargemTipo } from '../../../../supabase/functions/_shared/extensao/tipos.ts';
-import { textoDoSelo } from '../selo';
+import { aoMensagemDoSw, textoDoSelo } from '../selo';
 
 const tipo = (o: Partial<MargemTipo>): MargemTipo => ({ comissao: 0, imposto: 0, frete: 0, custo: null, recebe: 0, lucro: null, margemPct: null, avisos: [], ...o });
 const resp = (margem: RespostaAnuncio['margem'], proprio = false): RespostaAnuncio =>
@@ -22,5 +23,25 @@ describe('textoDoSelo', () => {
   it('Clássico indisponível ou margem nula → sem selo', () => {
     expect(textoDoSelo(comClassico(null))).toBe('');
     expect(textoDoSelo(resp(null))).toBe('');
+  });
+});
+
+describe('aoMensagemDoSw (selo some quando a sessão muda)', () => {
+  const doc = () => {
+    const d = document.implementation.createHTMLDocument('ml');
+    const b = d.createElement('button');
+    b.id = 'publiai-selo';
+    d.body.append(b);
+    return d;
+  };
+  it('publiai:sessao-mudou remove o selo', () => {
+    const d = doc();
+    aoMensagemDoSw({ tipo: 'publiai:sessao-mudou' }, d);
+    expect(d.getElementById('publiai-selo')).toBeNull();
+  });
+  it('outras mensagens não mexem no selo', () => {
+    const d = doc();
+    for (const m of [null, 'x', { tipo: 'publiai:estado-atualizado' }]) aoMensagemDoSw(m, d);
+    expect(d.getElementById('publiai-selo')).not.toBeNull();
   });
 });

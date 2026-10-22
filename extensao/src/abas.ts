@@ -70,8 +70,8 @@ export async function esquecerEstado(tabId: number): Promise<void> {
 }
 
 /** Troca de identidade / desconexão / sessão expirada: nenhuma aba guarda análise nem EAN da sessão anterior.
- *  Nova geração em toda aba com estado (escrita em voo com a geração antiga é descartada na leitura) e o
- *  painel é avisado para reler. */
+ *  Nova geração em toda aba com estado (escrita em voo com a geração antiga é descartada na leitura); o
+ *  painel é avisado para reler e o content script da aba tira o selo. */
 export async function limparEstadosDasAbas(): Promise<void> {
   const tudo = await chrome.storage.session.get(null);
   const abas = new Set<number>();
@@ -85,5 +85,7 @@ export async function limparEstadosDasAbas(): Promise<void> {
   for (const tabId of abas) {
     await novaPaginaNaAba(tabId);
     chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
+    // O selo na página do ML também sai (content script da aba; aba fechada/sem script → ignora).
+    chrome.tabs.sendMessage(tabId, { tipo: 'publiai:sessao-mudou' }).catch(() => {});
   }
 }

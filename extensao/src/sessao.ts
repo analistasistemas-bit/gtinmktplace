@@ -63,10 +63,16 @@ export async function receberMensagemExterna(msg: unknown, sender: chrome.runtim
   return { ok: false };
 }
 
-/** null se não há sessão ou faltam < 30 s para expirar. Não renova. */
+/** null se não há sessão ou faltam < 30 s para expirar. Não renova. Expirada: apaga a sessão e, com ela,
+ *  as análises das abas (limparSessao) — sem sessão válida nada financeiro fica visível. Ausente já foi limpa
+ *  quando saiu (todo caminho de saída passa por limparSessao). */
 export async function obterSessaoValida(): Promise<{ accessToken: string; identidade: string } | null> {
   const s = (await chrome.storage.session.get(CHAVE))[CHAVE] as Sessao | undefined;
-  if (!s || s.expiresAt * 1000 - Date.now() < MARGEM_MS) return null;
+  if (!s) return null;
+  if (s.expiresAt * 1000 - Date.now() < MARGEM_MS) {
+    await limparSessao(s.accessToken);
+    return null;
+  }
   return { accessToken: s.accessToken, identidade: s.identidade };
 }
 
