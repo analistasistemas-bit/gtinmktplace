@@ -14,7 +14,7 @@ import { mlGet } from '../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { extrairNossaOferta } from '../_shared/pulse/parse.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
-import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
+import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
@@ -181,10 +181,7 @@ async function catalogo(admin: SupabaseClient, orgId: string, cpid: string, item
     // Falha de leitura das ofertas não vira "ninguém vende" (mesma trava do Pulse).
     if (itens === null) return { estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' };
     const resultados = ((itens as { results?: unknown[] }).results ?? []) as { seller_id?: unknown; price?: unknown }[];
-    const v = (produto as { buy_box_winner?: { seller_id?: unknown } } | null)?.buy_box_winner;
-    const daPagina = itemDaPagina ? resultados.find((r) => (r as { item_id?: unknown }).item_id === itemDaPagina) : undefined;
-    const sellerVencedor = typeof v?.seller_id === 'number' ? v.seller_id : typeof daPagina?.seller_id === 'number' ? daPagina.seller_id : null;
-    const ids = perfisPrioritarios(resultados, { sellerId: sellerVencedor }, Number(conta), MAX_PERFIS_CATALOGO);
+    const ids = perfisPrioritarios(resultados, vencedorDoCatalogo(produto, itens, itemDaPagina), Number(conta), MAX_PERFIS_CATALOGO);
     const nossa = extrairNossaOferta(itens, Number(conta));
     const [perfis, ptw] = await Promise.all([
       pool(5, ids, async (id) => [id, await buscarPerfilVendedor(token, id).then((p) => (p ? vendedorDoPerfil(p) : null)).catch(() => null)] as const),

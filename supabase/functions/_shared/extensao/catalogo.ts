@@ -19,7 +19,8 @@ export interface OfertaCatalogo {
 }
 
 export type Participacao =
-  | { estado: 'participa'; itemId: string; preco: number; posicao: number; empatada: boolean; ptw: PrecoParaGanhar | null }
+  /** posicao null = ficha lida pela metade (as ofertas mais baratas podem estar fora da página lida). */
+  | { estado: 'participa'; itemId: string; preco: number; posicao: number | null; empatada: boolean; ptw: PrecoParaGanhar | null }
   | { estado: 'nao_participa' }
   /** Ficha lida pela metade e a nossa oferta não veio: não dá para afirmar que não participa. */
   | { estado: 'nao_localizada' }
@@ -33,6 +34,7 @@ export interface RespostaCatalogo {
   leitura: { carregadas: number; total: number | null; completa: boolean };
   resumo: {
     vendedores: number;
+    /** null em leitura parcial: extremos da página lida não são os do catálogo. */
     menorPreco: number | null;
     maiorPreco: number | null;
     full: number;
@@ -83,10 +85,15 @@ export function perfisPrioritarios(itens: ItemBruto[], vencedor: { sellerId: num
   return [...new Set(ordem)].slice(0, limite);
 }
 
-function vencedorDoProduto(produto: unknown): RespostaCatalogo['vencedor'] {
+/** Vencedor só pelo que o ML informa: `buy_box_winner` válido da API ou, sem ele, o item da buy box da página `/p/`
+ *  (só se estiver entre as ofertas). Única regra, usada também para escolher o perfil a consultar. */
+export function vencedorDoCatalogo(produto: unknown, itens: unknown, itemDaPagina: string | null | undefined): RespostaCatalogo['vencedor'] {
   const v = (produto as { buy_box_winner?: { item_id?: unknown; price?: unknown; seller_id?: unknown } | null } | null)?.buy_box_winner;
-  if (typeof v?.item_id !== 'string' || typeof v.price !== 'number' || !(v.price > 0)) return null;
-  return { itemId: v.item_id, sellerId: typeof v.seller_id === 'number' ? v.seller_id : null, preco: v.price, origem: 'api' };
+  if (typeof v?.item_id === 'string' && typeof v.price === 'number' && v.price > 0) {
+    return { itemId: v.item_id, sellerId: typeof v.seller_id === 'number' ? v.seller_id : null, preco: v.price, origem: 'api' };
+  }
+  const p = itemDaPagina ? parseOfertasProduto(itens).find((o) => o.item_id === itemDaPagina) : undefined;
+  return p ? { itemId: p.item_id, sellerId: p.seller_id, preco: p.preco, origem: 'pagina' } : null;
 }
 
 export function montarCatalogo(e: {
@@ -101,9 +108,7 @@ export function montarCatalogo(e: {
   itemDaPagina?: string | null;
 }): RespostaCatalogo {
   const ofertasBrutas = parseOfertasProduto(e.itens);
-  const daPagina = e.itemDaPagina ? ofertasBrutas.find((o) => o.item_id === e.itemDaPagina) : undefined;
-  const vencedor = vencedorDoProduto(e.produto)
-    ?? (daPagina ? { itemId: daPagina.item_id, sellerId: daPagina.seller_id, preco: daPagina.preco, origem: 'pagina' as const } : null);
+  const vencedor = vencedorDoCatalogo(e.produto, e.itens, e.itemDaPagina);
   const conta = e.contaOrg != null && /^\d+$/.test(e.contaOrg) ? Number(e.contaOrg) : null;
   const ofertas: OfertaCatalogo[] = ofertasBrutas
     .map((o) => ({
@@ -142,7 +147,8 @@ export function montarCatalogo(e: {
   if (conta === null) participacao = { estado: 'sem_conexao' };
   else if (nossa) {
     participacao = {
-      estado: 'participa', itemId: nossa.itemId, preco: nossa.preco, ...posicaoPorPreco(precos, nossa.preco),
+      estado: 'participa', itemId: nossa.itemId, preco: nossa.preco,
+      ...(leitura.completa ? posicaoPorPreco(precos, nossa.preco) : { posicao: null, empatada: false }),
       ptw: e.ptw,
     };
   } else participacao = leitura.completa ? { estado: 'nao_participa' } : { estado: 'nao_localizada' };
@@ -154,8 +160,8 @@ export function montarCatalogo(e: {
     leitura,
     resumo: {
       vendedores: porVendedor.size,
-      menorPreco: precos.length ? Math.min(...precos) : null,
-      maiorPreco: precos.length ? Math.max(...precos) : null,
+      menorPreco: leitura.completa && precos.length ? Math.min(...precos) : null,
+      maiorPreco: leitura.completa && precos.length ? Math.max(...precos) : null,
       full: ofertas.filter((o) => o.full).length,
       freteGratis: ofertas.filter((o) => o.freteGratis).length,
       lojasOficiais: ofertas.filter((o) => o.lojaOficial).length,

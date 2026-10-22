@@ -191,6 +191,7 @@ validada na de validação, com o mesmo gate.
   Tramontina, enquanto a página mostrava a buy box.
 - **Posição** por preço (1 + ofertas mais baratas; empate divide), rotulada assim, nunca como posição na buy box.
 - Até 20 perfis `/users` por chamada (cache de 24 h por vendedor); os demais aparecem como "perfil não carregado", e UF
-  e medalha desconhecidas como "não informado". Ficha com mais de 100 ofertas = leitura parcial explícita; nossa oferta
-  ausente nela = "não localizada". Anúncio pausado sai da ficha (medido: DSA em MLB24526166 → "não participa").
+  e medalha desconhecidas como "não informado". Ficha com mais de 100 ofertas = leitura parcial explícita: posição e
+  menor/maior preço ficam indisponíveis (a página lida pode não ter as mais baratas; revisão Grok), e nossa oferta ausente
+  nela = "não localizada". Anúncio pausado sai da ficha (medido: DSA em MLB24526166 → "não participa").
 - Cache de 60 s por org + conta ML + catálogo; 1 análise do limite de 30/min por chamada. Consultor: Codex Astra, 22/10.

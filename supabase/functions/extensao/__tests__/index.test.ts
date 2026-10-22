@@ -361,6 +361,22 @@ describe('extensao — catalogo (Task 23)', () => {
     expect(f.rpcs).toContainEqual({ fn: 'extensao_registrar_uso', args: { p_org_id: 'org-1', p_user_id: 'user-1', p_tipo: 'catalogo' } });
   });
 
+  it('buy_box_winner inválido + item da página: o perfil consultado é o do vendedor da página', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue(TOKEN);
+    vi.mocked(buscarPerfilVendedor).mockResolvedValue(null);
+    vi.mocked(mlGet).mockImplementation(async (url: string) => {
+      if (url.endsWith('/products/MLB32466350')) return { buy_box_winner: { item_id: 'MLB2', price: 0, seller_id: 7 } };
+      if (url.includes('/products/MLB32466350/items')) {
+        return { paging: { total: 2 }, results: [{ item_id: 'MLB2', seller_id: 7, price: 90 }, { item_id: 'MLB3', seller_id: 8, price: 99 }] };
+      }
+      return null;
+    });
+    const j = await (await post({ ...CAT, itemDaPagina: 'MLB3' })).json();
+    expect(j.valor.vencedor).toEqual({ itemId: 'MLB3', sellerId: 8, preco: 99, origem: 'pagina' });
+    expect(vi.mocked(buscarPerfilVendedor).mock.calls.map((c) => c[1])).toEqual([8, 7]);
+  });
+
   it('falha ao ler as ofertas: indisponível (nunca "ninguém vende")', async () => {
     vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
     vi.mocked(getValidAccessTokenConexao).mockResolvedValue(TOKEN);

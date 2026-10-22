@@ -81,6 +81,13 @@ describe('montarCatalogo (ADR-0189 D-12, Task 23)', () => {
     expect(r.participacao).toEqual({ estado: 'nao_localizada' });
   });
 
+  it('ficha parcial com a nossa oferta lida: posição e menor/maior preço indisponíveis (não presumidos)', () => {
+    const parcial = { ...itens, paging: { total: 140 } };
+    const r = montarCatalogo({ produto, itens: parcial, contaOrg: '9', perfis, ptw: null, coletadoEm: AGORA });
+    expect(r.participacao).toMatchObject({ estado: 'participa', itemId: 'C', posicao: null, empatada: false });
+    expect([r.resumo.menorPreco, r.resumo.maiorPreco]).toEqual([null, null]);
+  });
+
   it('preço para ganhar da nossa oferta entra na participação', () => {
     const ptw = parsePrecoParaGanhar({ status: 'competing', price_to_win: 18.5, current_price: 20 });
     const r = montarCatalogo({ produto, itens, contaOrg: '9', perfis, ptw, coletadoEm: AGORA });
