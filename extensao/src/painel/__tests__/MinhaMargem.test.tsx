@@ -13,7 +13,7 @@ function resposta(over: Partial<RespostaAnuncio> = {}): RespostaAnuncio {
   return {
     proprio: false,
     margem: { preco: 100, classico: { estado: 'indisponivel', motivo: 'x' }, premium: { estado: 'indisponivel', motivo: 'x' } },
-    custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
+    custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
     parametros: {
       aliquotas: { nacional: 4, importado: 12, confirmada: true },
       classico: { estado: 'ok', valor: { percentual: 10, fixa: 0 } },
@@ -31,7 +31,7 @@ const tipo = (nome: string) => within(screen.getByRole('region', { name: nome })
 describe('MinhaMargem', () => {
   it('tipo indisponível mostra o motivo', () => {
     const r = resposta({
-      custo: { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
+      custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
     });
     r.parametros.classico = { estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' };
     montar(r);
@@ -69,7 +69,7 @@ describe('MinhaMargem', () => {
 
   it('fonte catalogo exibe "Custo do SKU 00123 · casado pelo catálogo"', () => {
     montar(resposta({
-      custo: { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 2, unidadesSku: 1, custoSku: 30, fator: 2, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 60 } },
+      custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 2, unidadesSku: 1, custoSku: 30, fator: 2, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 60 } },
     }));
     screen.getByText('Custo do SKU 00123 · casado pelo catálogo');
     screen.getByText('Custo do pacote: R$ 60,00 (2 × custo do SKU)');
@@ -79,7 +79,7 @@ describe('MinhaMargem', () => {
   it('composição não confirmada: custo indisponível com o motivo, sem lucro, sem pedir unidades (o anúncio já tem)', () => {
     const motivo = 'composição não confirmada';
     montar(resposta({
-      custo: { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 2, unidadesSku: null, custoSku: 30, fator: null, faltaUnidades: null, custoPacote: { estado: 'indisponivel', motivo } },
+      custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 2, unidadesSku: null, custoSku: 30, fator: null, faltaUnidades: null, custoPacote: { estado: 'indisponivel', motivo } },
     }));
     screen.getByText(`Custo do pacote indisponível: ${motivo}`);
     tipo('Clássico').getByText(motivo); // aviso; lucro '—'
@@ -91,14 +91,14 @@ describe('MinhaMargem', () => {
     const motivo = 'quantidade por anúncio não confirmada';
     const semQtd = (unidadesSku: number | null = 1) => resposta({
       custo: {
-        fonte: 'ean_da_busca', codigo: '00123', origem: 'nacional', unidadesPorPacote: null, unidadesSku, custoSku: 10, fator: null,
+        fonte: 'ean_da_busca', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: null, unidadesSku, custoSku: 10, fator: null,
         faltaUnidades: unidadesSku === null ? 'ambos' : 'anuncio',
         custoPacote: { estado: 'indisponivel', motivo: unidadesSku === null ? 'composição não confirmada' : motivo },
       },
     });
     const soSku = (unidadesPorPacote: number) => resposta({
       custo: {
-        fonte: 'vinculo_manual', codigo: '00123', origem: 'nacional', unidadesPorPacote, unidadesSku: null, custoSku: 10, fator: null,
+        fonte: 'vinculo_manual', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote, unidadesSku: null, custoSku: 10, fator: null,
         faltaUnidades: 'sku', custoPacote: { estado: 'indisponivel', motivo: 'composição não confirmada' },
       },
     });
@@ -141,6 +141,18 @@ describe('MinhaMargem', () => {
       screen.getByText('Custo do pacote indisponível: composição diferente');
     });
 
+    it('NEW-A: unidades confirmadas para o SKU A não valem para o SKU B vinculado depois no mesmo anúncio', () => {
+      const skuB = soSku(6);
+      skuB.custo = { ...skuB.custo, variacaoId: 'vB', codigo: '00456' };
+      const { rerender } = montar(soSku(6));
+      digitar('Unidades no SKU', '2');
+      screen.getByText('Custo do pacote: R$ 30,00 (3 × custo do SKU)');
+      rerender(<MinhaMargem entrada={ENTRADA} dados={skuB} analisar={vi.fn()} onDados={() => {}} />);
+      expect((screen.getByLabelText('Unidades no SKU') as HTMLInputElement).value).toBe('');
+      screen.getByText('Custo do pacote indisponível: composição não confirmada');
+      expect(tipo('Clássico').getAllByText('—').length).toBe(3); // custo, lucro, margem
+    });
+
     it('os dois desconhecidos: pede os dois campos; só um preenchido não basta', () => {
       montar(semQtd(null));
       digitar('Unidades por anúncio', '24');
@@ -152,7 +164,7 @@ describe('MinhaMargem', () => {
 
   it('SKU vinculado sem origem: "SKU sem origem cadastrada", não pede custo', () => {
     montar(resposta({
-      custo: { fonte: 'vinculo_manual', codigo: '00123', origem: null, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
+      custo: { fonte: 'vinculo_manual', variacaoId: 'vA', codigo: '00123', origem: null, unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
     }));
     expect(screen.queryByLabelText('Custo do pacote (R$)')).toBeNull();
     expect(screen.queryByText(/Informe o custo/)).toBeNull();
@@ -164,7 +176,7 @@ describe('MinhaMargem', () => {
     vi.useFakeTimers();
     const analisar = vi.fn(async () => ({ ok: true as const, dados: resposta() }));
     montar(resposta({
-      custo: { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
+      custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
     }), analisar);
     fireEvent.change(screen.getByLabelText('Preço (R$)'), { target: { value: '200' } });
     tipo('Clássico').getByText('R$ 152,00'); // local: 200 − 20 (10%) − 8 (4%) − 20 (frete)
@@ -188,7 +200,7 @@ describe('MinhaMargem', () => {
   });
 
   describe('Codex #11: resultado inteiro é "Estimativa" enquanto o preço difere do confirmado', () => {
-    const VINC = { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } } as const;
+    const VINC = { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } } as const;
     /** Resposta do servidor ao preço `p` (a comissão muda de faixa acima de 150). */
     const doServidor = (p: number) => {
       const r = resposta({ custo: { ...VINC } });

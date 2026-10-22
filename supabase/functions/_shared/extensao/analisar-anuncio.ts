@@ -32,6 +32,8 @@ export interface RespostaAnuncio {
   margem: MinhaMargem | null;
   custo: {
     fonte: FonteCusto;
+    /** Variação vinculada (null sem vínculo): o painel prende a confirmação de unidades a ela. */
+    variacaoId: string | null;
     codigo: string | null;
     origem: 'nacional' | 'importado' | null;
     /** Unidades do anúncio (UNITS_PER_PACK do catálogo); null = não confirmadas — o painel pede ao operador. */
@@ -70,7 +72,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     return {
       proprio: true,
       margem: null,
-      custo: { fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
+      custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
       parametros: { aliquotas: { nacional: null, importado: null, confirmada: false }, classico: proprio, premium: proprio, frete: proprio },
     };
   }
@@ -128,7 +130,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     proprio: false,
     margem,
     custo: {
-      fonte, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,
+      fonte, variacaoId: variacao?.variacaoId ?? null, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,
       unidadesPorPacote: unidadesAnuncio, unidadesSku: variacao?.unidades ?? null, custoSku: variacao?.custo ?? null, fator, faltaUnidades, custoPacote,
     },
     parametros: { aliquotas, classico, premium, frete },

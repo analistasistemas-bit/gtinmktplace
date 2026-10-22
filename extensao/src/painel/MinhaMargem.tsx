@@ -26,8 +26,8 @@ function numero(txt: string): number | null {
 export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
-  const [unidadesTxt, setUnidadesTxt] = useState('');
-  const [unidadesSkuTxt, setUnidadesSkuTxt] = useState('');
+  // Unidades confirmadas pelo operador valem só para o SKU em que foram digitadas (troca de vínculo → vazias).
+  const [unidades, setUnidades] = useState({ sku: dados.custo.variacaoId, anuncio: '', noSku: '' });
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -57,6 +57,11 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const custoN = numero(custoTxt);
   const custoDigitado = custoN !== null && custoN >= 0 ? custoN : null;
   const origemEfetiva: Origem | null = semVinculo ? origem : custo.origem;
+  const daquiSku = unidades.sku === custo.variacaoId ? unidades : { sku: custo.variacaoId, anuncio: '', noSku: '' };
+  const unidadesTxt = daquiSku.anuncio;
+  const unidadesSkuTxt = daquiSku.noSku;
+  const setUnidadesTxt = (anuncio: string) => setUnidades({ ...daquiSku, anuncio });
+  const setUnidadesSkuTxt = (noSku: string) => setUnidades({ ...daquiSku, noSku });
   // Unidades não confirmadas (D-8): o operador informa o lado que falta (anúncio e/ou SKU); sem padrão.
   const falta = semVinculo ? null : custo.faltaUnidades;
   const pedeAnuncio = falta === 'anuncio' || falta === 'ambos';

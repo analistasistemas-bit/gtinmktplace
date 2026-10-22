@@ -32,7 +32,7 @@ describe('analisarAnuncio', () => {
     const r = await analisarAnuncio('org', { ...ent, sellerId: '222' }, d);
     expect(r.proprio).toBe(true);
     expect(r.margem).toBeNull();
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
     expect(r.parametros.frete).toEqual({ estado: 'indisponivel', motivo: 'anúncio próprio' });
     expect(d.comissao).not.toHaveBeenCalled();
     expect(d.frete).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('analisarAnuncio', () => {
   it('sem variação: custoPacote null, origem null, alíquota pede origem, frete do pacote padrão rotulado', async () => {
     const d = deps();
     const r = await analisarAnuncio('org', ent, d);
-    expect(r.custo).toEqual({ fonte: 'nenhuma', codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
+    expect(r.custo).toEqual({ fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null });
     expect(r.margem!.classico).toEqual({ estado: 'indisponivel', motivo: 'Informe a origem do produto' });
     expect(r.parametros.classico.estado).toBe('ok');
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', null);
