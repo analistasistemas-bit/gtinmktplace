@@ -11,7 +11,7 @@ describe('estimarVendas (modelo do Avant, index.js@1232824)', () => {
 
   it('Premium ×1,15 (recortado na faixa)', () => {
     expect(estimarVendas({ piso: 1000, avaliacoes: 100, criadoEm: dias(180), premium: true }, AGORA)).toBe(2777);
-    expect(estimarVendas({ piso: 5, avaliacoes: 0, criadoEm: null, premium: true }, AGORA)).toBe(8);
+    expect(estimarVendas({ piso: 5, avaliacoes: 0, criadoEm: null, premium: true }, AGORA)).toBe(17); // faixa 5–24: centro 15 ×1,15
   });
 
   it('sem idade nem avaliações → centro da faixa', () => {
@@ -20,19 +20,22 @@ describe('estimarVendas (modelo do Avant, index.js@1232824)', () => {
   });
 
   it('mais de 12 meses: −25% (limitado ao piso)', () => {
-    expect(estimarVendas({ piso: 100, avaliacoes: 0, criadoEm: dias(400), premium: false }, AGORA)).toBe(113);
+    expect(estimarVendas({ piso: 100, avaliacoes: 0, criadoEm: dias(400), premium: false }, AGORA)).toBe(225); // 100–499: 300 −25%
     expect(estimarVendas({ piso: 1000, avaliacoes: 1, criadoEm: dias(400), premium: false }, AGORA)).toBe(1500);
   });
 
   it('1–4 é exato; patamar fora da lista → null', () => {
     expect(estimarVendas({ piso: 3, avaliacoes: 10, criadoEm: dias(10), premium: true }, AGORA)).toBe(3);
     expect(estimarVendas({ piso: 30, avaliacoes: 0, criadoEm: null, premium: false }, AGORA)).toBeNull();
+    expect(estimarVendas({ piso: 20, avaliacoes: 0, criadoEm: null, premium: false }, AGORA)).toBeNull(); // +20 não existe no ML
     expect(estimarVendas({ piso: null, avaliacoes: 0, criadoEm: null, premium: false }, AGORA)).toBeNull();
   });
 });
 
 describe('faixaDoTotal (o que a página mostra para um total exato)', () => {
-  it.each([[3, 3], [7, 5], [1234, 1000], [4999, 1000], [5000, 5000], [600000, 250000]])('%i → %i', (total, piso) => {
+  // Medido em 22/10/2026 nos anúncios próprios (total exato × texto da página): 5–24 → +5, 25–49 → +25, 50–99 → +50,
+  // 100–499 → +100, 670 → +500; buscas mostram +1000, +5mil, +10mil, +50mil, +100mil, +250mil, +500mil, +750mil.
+  it.each([[3, 3], [7, 5], [24, 5], [25, 25], [62, 50], [274, 100], [670, 500], [1234, 1000], [5000, 5000], [30000, 10000], [600000, 500000], [800000, 750000]])('%i → %i', (total, piso) => {
     expect(faixaDoTotal(total)).toBe(piso);
   });
   it('zero → null', () => expect(faixaDoTotal(0)).toBeNull());

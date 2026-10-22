@@ -130,11 +130,17 @@ usuário (deslogado não traz), e o valor bate com a publicação (MLB4982690837
 
 ## Errata 2026-10-22 — estimativa de vendas reprovada (D-9, Task 13)
 
-`scripts/validar-estimativa-vendas.ts`, com os critérios fixados no plano antes de medir: na amostra de
-validação (n = 102 anúncios ativos próprios com ≥ 5 vendas, 4 contas), o modelo do Avant teve **erro mediano de
-40,9%** (P75 68,4%), acima do gate de 30%, e pior que as referências ingênuas (centro da faixa 20,0%, piso
-23,1%). Viés sistemático para cima (86 de 102 acima do real, razão mediana 1,41): as vendas reais ficam perto
-do piso da faixa. A amostra é dominada por uma conta (90 de 102) e por faixas pequenas (+5 a +50).
+**Patamares da faixa pública (medidos em 2026-10-22):** total exato dos anúncios próprios × texto da página: 5–24 →
+"+5", 25–49 → "+25", 50–99 → "+50", 100–499 → "+100", 500–999 → "+500"; buscas mostram ainda +1000, +5mil,
++10mil, +50mil, +100mil, +250mil, +500mil e +750mil. A lista do Avant (10/20/200/20mil, sem 25/750mil) não é a do
+ML — com ela o Avant nem estima "+25". Em página de catálogo (`/p/`) a faixa é do **produto**, não do anúncio
+(MLB6976955534: 10 vendidos no anúncio, página "+25").
+
+`scripts/validar-estimativa-vendas.ts`, critérios fixados no plano antes de medir, modelo do Avant com os
+patamares reais: na amostra de validação (n = 102 anúncios ativos próprios com ≥ 5 vendas, 4 contas) o **erro
+mediano foi 90,9%** (P75 200%), muito acima do gate de 30% e pior que as referências ingênuas (centro da faixa
+50,0%, piso 37,5%). A faixa "+5" cobre 5 a 24 vendas e domina a amostra (78 de 102); a amostra também é dominada
+por uma conta (90 de 102). Com a lista do Avant a mediana fora 40,9% — ainda reprovada.
 
 Decisão (regra de D-9): **a estimativa fica desligada**; o painel mostra só a linha observada (faixa, criado
 há, mínimo por mês). `estimarVendas` (`extensao/src/compartilhado/estimativa.ts`) fica só para o script, que pode

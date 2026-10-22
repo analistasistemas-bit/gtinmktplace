@@ -80,7 +80,8 @@ const quantil = (v: number[], q: number) => {
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const centroDaFaixa = (piso: number) => (piso <= 4 ? piso : Math.round((piso + (faixaProximo(piso) - 1)) / 2));
 function faixaProximo(piso: number): number {
-  const p = [1, 5, 10, 20, 50, 100, 200, 500, 1000, 5000, 10000, 20000, 50000, 100000, 250000, 500000];
+  // Patamares do ML medidos em 22/10/2026 (mesma lista de estimativa.ts); último sem teto → centro = piso.
+  const p = [1, 5, 25, 50, 100, 500, 1000, 5000, 10000, 50000, 100000, 250000, 500000, 750000];
   return p[p.indexOf(piso) + 1] ?? piso + 1;
 }
 
