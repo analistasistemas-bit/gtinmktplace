@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
 import { QuantoVende } from './QuantoVende';
+import { Vendedor } from './Vendedor';
 import { VinculoProduto } from './VinculoProduto';
 import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type Resposta, type RespostaAnuncio } from './formato';
 
@@ -135,6 +136,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
           catalogoCriadoEm={resposta.dados.catalogoCriadoEm}
         />
       )}
+      {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} />}
       <MinhaMargem
         entrada={entrada}
         dados={resposta.dados}

@@ -11,13 +11,14 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import { mlGet } from '../_shared/ml/http.ts';
+import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas,
+  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -129,6 +130,15 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       // Data do produto não muda: cacheia só a lida; null (falha) tenta na próxima análise.
       return emCache<string | null>(`ext:catcriado:v1:${cpid}`, (v) => v !== null, async () =>
         dataDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
+    },
+    vendedor: async (sellerId) => {
+      const id = Number(sellerId);
+      if (!Number.isSafeInteger(id) || id <= 0) return null;
+      const t = await tokenML().catch(() => null);
+      if (!t) return null;
+      // Cache de 24 h por vendedor dentro de buscarPerfilVendedor (compartilhado com Pulse/Viabilidade).
+      const perfil = await buscarPerfilVendedor(t, id);
+      return perfil ? vendedorDoPerfil(perfil) : null;
     },
   };
 }

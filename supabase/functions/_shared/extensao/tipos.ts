@@ -42,3 +42,16 @@ export interface MinhaMargem {
   classico: Disponivel<MargemTipo>;
   premium: Disponivel<MargemTipo>;
 }
+
+/** Vendedor da página (/users, D-10). `vendas` = transactions.total, janela móvel de ~365 dias (ADR-0142):
+ *  `periodo` só quando o ML informa em dias; "historic"/ausente → null (rótulo neutro, nunca "total histórico"). */
+export interface VendedorML {
+  nickname: string | null;
+  /** level_id do ML (ex.: 5_green). */
+  nivel: string | null;
+  /** power_seller_status do ML (silver/gold/platinum). */
+  medalha: string | null;
+  vendas: number;
+  periodo: string | null;
+  uf: string | null;
+}

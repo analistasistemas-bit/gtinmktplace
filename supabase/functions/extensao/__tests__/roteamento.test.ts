@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  basesDeKit, chaveFrete, dimensoesDaLinha, dataDoProduto, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
+  basesDeKit, chaveFrete, dimensoesDaLinha, dataDoProduto, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, vendedorDoPerfil, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -315,5 +315,21 @@ describe('dimensoesDoKitVivo (NEW-B: kit vivo e canônico)', () => {
     expect(await dimensoesDoKitVivo(banco({ familias: [fam('e', '9200', 'erro', '2026-10-01')], variacoes: [varia('e', 33)] }), 'o', '9001', 3)).toBeNull();
     expect(await dimensoesDoKitVivo(banco({ familias: [fam('a', '9100', 'publicado', '2026-09-01', 2)], variacoes: [varia('a', 22)] }), 'o', '9001', 3)).toBeNull();
     expect(await dimensoesDoKitVivo(banco({ familias: [fam('a', '9100', 'publicado', '2026-09-01')], variacoes: [{ org_id: 'o', familia_id: 'a', altura_cm: null }] }), 'o', '9001', 3)).toBeNull();
+  });
+});
+
+describe('vendedorDoPerfil (ADR-0189 D-10)', () => {
+  const perfil = (period: string | null) => ({
+    seller_id: 222, nickname: 'LOJA X', nivel: '5_green', power_seller: 'gold', transactions_total: 1200, uf: 'SP',
+    detalhe: { transactions: { period, total: 1200, completed: 1100, canceled: 100, ratings: { positive: 0.9, neutral: 0.05, negative: 0.05 } }, metrics: {} },
+  });
+
+  it('mapeia o perfil e mostra o período em dias que o ML informa', () => {
+    expect(vendedorDoPerfil(perfil('365 days'))).toEqual({ nickname: 'LOJA X', nivel: '5_green', medalha: 'gold', vendas: 1200, periodo: 'últimos 365 dias', uf: 'SP' });
+  });
+
+  it('"historic" nunca vira total histórico (é janela móvel de ~365 dias, ADR-0142): rótulo neutro', () => {
+    expect(vendedorDoPerfil(perfil('historic')).periodo).toBeNull();
+    expect(vendedorDoPerfil(perfil(null)).periodo).toBeNull();
   });
 });

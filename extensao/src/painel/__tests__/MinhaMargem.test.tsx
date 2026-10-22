@@ -13,6 +13,7 @@ function resposta(over: Partial<RespostaAnuncio> = {}): RespostaAnuncio {
   return {
     proprio: false,
     catalogoCriadoEm: null,
+    vendedor: null,
     margem: { preco: 100, classico: { estado: 'indisponivel', motivo: 'x' }, premium: { estado: 'indisponivel', motivo: 'x' } },
     custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
     parametros: {

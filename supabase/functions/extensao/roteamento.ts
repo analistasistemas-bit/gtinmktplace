@@ -1,7 +1,8 @@
 // Lógica pura da edge `extensao` (ADR-0189 D-17/D-18/D-19): validação do pedido, chaves de
 // limite, formas de GTIN e mapeamento das linhas do banco. `jsr:` só como tipo — testável no vitest.
 import type { EntradaAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
-import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
+import type { ComissaoML, Disponivel, VendedorML } from '../_shared/extensao/tipos.ts';
+import type { PerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { comissaoDeComProveniencia } from '../_shared/ml/listing-prices.ts';
 import type { ListingPriceML } from '../_shared/ml/tarifa.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
@@ -140,6 +141,16 @@ export const QTD_NAO_CONFIRMADA = 'quantidade por anúncio não confirmada';
 export function dataDoProduto(produto: unknown): string | null {
   const d = (produto as { date_created?: unknown } | null)?.date_created;
   return typeof d === 'string' && Number.isFinite(new Date(d).getTime()) ? d : null;
+}
+
+/** Perfil de /users → vendedor do painel. Período só em dias ("365 days"); o ML manda "historic" para o que é
+ *  janela móvel de ~365 dias (ADR-0142, errata) → null, o painel usa rótulo neutro. */
+export function vendedorDoPerfil(p: PerfilVendedor): VendedorML {
+  const dias = /^(\d{1,4})\s*days?$/i.exec(p.detalhe.transactions.period?.trim() ?? '')?.[1];
+  return {
+    nickname: p.nickname, nivel: p.nivel, medalha: p.power_seller, vendas: p.transactions_total,
+    periodo: dias ? `últimos ${dias} dias` : null, uf: p.uf,
+  };
 }
 
 /** UNITS_PER_PACK de /products/{id} (corpo do mlGet; null = HTTP/timeout). Nunca presume 1 (D-8):

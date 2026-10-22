@@ -21,9 +21,12 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
     unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 1 })),
     dimensoesDoPacote: vi.fn(async () => null),
     catalogoCriadoEm: vi.fn(async () => '2020-07-30T21:40:56Z'),
+    vendedor: vi.fn(async () => VEND),
     ...over,
   };
 }
+
+const VEND = { nickname: 'LOJA X', nivel: '5_green', medalha: 'platinum', vendas: 1200, periodo: null, uf: 'SP' };
 
 const ent: EntradaAnuncio = { mlItemId: 'MLB999', sellerId: '222', catalogProductId: 'MLB123', categoriaId: 'MLB1', preco: 100, eanDaBusca: null };
 
@@ -43,6 +46,15 @@ describe('analisarAnuncio', () => {
     expect(r.margem).not.toBeNull();
   });
 
+  it('vendedor da página vai na resposta (D-10); falha na leitura vira null sem derrubar a análise', async () => {
+    const d = deps();
+    expect((await analisarAnuncio('org', ent, d)).vendedor).toEqual(VEND);
+    expect(d.vendedor).toHaveBeenCalledWith('222');
+    const r = await analisarAnuncio('org', ent, deps({ vendedor: vi.fn(async () => { throw new Error('ml'); }) }));
+    expect(r.vendedor).toBeNull();
+    expect(r.margem).not.toBeNull();
+  });
+
   it('anúncio próprio: proprio true, margem null, sem consultar comissão/frete/vínculo', async () => {
     const d = deps({ contaDaOrg: vi.fn(async () => '222') });
     const r = await analisarAnuncio('org', { ...ent, sellerId: '222' }, d);
@@ -56,6 +68,8 @@ describe('analisarAnuncio', () => {
     expect(d.porCatalogo).not.toHaveBeenCalled();
     expect(d.catalogoCriadoEm).not.toHaveBeenCalled();
     expect(r.catalogoCriadoEm).toBeNull();
+    expect(d.vendedor).not.toHaveBeenCalled();
+    expect(r.vendedor).toBeNull();
   });
 
   it('alíquota não confirmada: clássico e premium indisponíveis', async () => {

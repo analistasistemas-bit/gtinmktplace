@@ -2,7 +2,7 @@
 // Lógica pura com deps injetadas; a edge implementa as consultas ao banco e ao ML.
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { calcularMinhaMargem, custoDoPacote, fatorDoPacote } from './margem.ts';
-import type { ComissaoML, Disponivel, MinhaMargem } from './tipos.ts';
+import type { ComissaoML, Disponivel, MinhaMargem, VendedorML } from './tipos.ts';
 import { resolverVinculo, type DepsVinculo, type FonteCusto, type VariacaoCusto } from './vinculo.ts';
 
 export interface EntradaAnuncio {
@@ -27,12 +27,16 @@ export interface DepsAnuncio extends DepsVinculo {
   dimensoesDoPacote(orgId: string, codigoPai: string, fator: number): Promise<DimensoesPacote | null>;
   /** `date_created` de /products/{id} (ritmo do catálogo no painel, D-9); null = indisponível. */
   catalogoCriadoEm(catalogProductId: string): Promise<string | null>;
+  /** Perfil público do vendedor da página (/users, D-10); null = indisponível. */
+  vendedor(sellerId: string): Promise<VendedorML | null>;
 }
 
 export interface RespostaAnuncio {
   proprio: boolean;
   /** Criação do produto de catálogo (faixa da página /p/ ÷ idade dele = ritmo do catálogo); null fora de catálogo. */
   catalogoCriadoEm: string | null;
+  /** Vendedor da página; null no anúncio próprio ou se o ML não respondeu. */
+  vendedor: VendedorML | null;
   margem: MinhaMargem | null;
   custo: {
     fonte: FonteCusto;
@@ -76,17 +80,19 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     return {
       proprio: true,
       catalogoCriadoEm: null,
+      vendedor: null,
       margem: null,
       custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
       parametros: { aliquotas: { nacional: null, importado: null, confirmada: false }, classico: proprio, premium: proprio, frete: proprio },
     };
   }
 
-  const [{ fonte, variacao }, aliquotas, unidades, catalogoCriadoEm] = await Promise.all([
+  const [{ fonte, variacao }, aliquotas, unidades, catalogoCriadoEm, vendedor] = await Promise.all([
     resolverVinculo(orgId, e, deps),
     deps.aliquotas(orgId),
     deps.unidadesPorPacote(e.catalogProductId).catch((): Disponivel<number> => UPP_INDISPONIVEL),
     e.catalogProductId ? deps.catalogoCriadoEm(e.catalogProductId).catch(() => null) : null,
+    deps.vendedor(e.sellerId).catch(() => null),
   ]);
   const unidadesAnuncio = unidades.estado === 'ok' ? unidades.valor : null;
   // Mesmo produto do catálogo = mesma composição: fator 1 por identidade, sem depender de UNITS_PER_PACK.
@@ -135,6 +141,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
   return {
     proprio: false,
     catalogoCriadoEm,
+    vendedor,
     margem,
     custo: {
       fonte, variacaoId: variacao?.variacaoId ?? null, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,
