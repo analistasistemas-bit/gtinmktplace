@@ -95,8 +95,10 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     semExcecao(() => deps.comissao(e.preco, e.categoriaId, 'gold_pro')),
     semExcecao(() => deps.frete(e.preco, e.categoriaId, dims)),
   ]);
-  // Sem a embalagem confirmada do que o anúncio entrega, o frete é do pacote padrão: rotulado.
-  const frete: Disponivel<number> = dims === null && freteML.estado === 'ok' ? { ...freteML, aviso: FRETE_ESTIMADO } : freteML;
+  // Oficial só com fator 1 (o anúncio entrega exatamente o SKU analisado) e as dimensões desse SKU; qualquer
+  // outro caso — inclusive kit de N com dimensões próprias — é estimativa rotulada (D-7).
+  const oficial = fator === 1 && dims !== null;
+  const frete: Disponivel<number> = !oficial && freteML.estado === 'ok' ? { ...freteML, aviso: FRETE_ESTIMADO } : freteML;
 
   // Origem nunca presumida (D-8): sem variação, o painel recalcula com a escolha do operador.
   let aliquotaPct: Disponivel<number>;
@@ -134,7 +136,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
 }
 
 /** Embalagem do que o anúncio entrega: 1 SKU → dimensões do SKU; N SKUs → dimensões próprias do kit vinculado
- *  de N, se houver; composição desconhecida → null (pacote padrão, frete estimado). */
+ *  vivo de N, se houver (melhora a estimativa, que segue rotulada); composição desconhecida → null (pacote padrão). */
 async function dimensoesDoFrete(orgId: string, v: VariacaoCusto | null, fator: number | null, deps: DepsAnuncio): Promise<DimensoesPacote | null> {
   if (!v || fator === null) return null;
   if (fator === 1) return v.dimensoes;

@@ -1,11 +1,13 @@
 // Lógica pura da edge `extensao` (ADR-0189 D-17/D-18/D-19): validação do pedido, chaves de
-// limite, formas de GTIN e mapeamento das linhas do banco. Sem `jsr:` — testável no vitest.
+// limite, formas de GTIN e mapeamento das linhas do banco. `jsr:` só como tipo — testável no vitest.
 import type { EntradaAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { comissaoDeComProveniencia } from '../_shared/ml/listing-prices.ts';
 import type { ListingPriceML } from '../_shared/ml/tarifa.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
-import { dimensoesValidas } from '../_shared/ml/pacote.ts';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
+import { listarKitsVivos } from '../_shared/estoque/kit.ts';
 
 export type TipoPagina = 'anuncio' | 'busca' | 'catalogo';
 export interface ChaveVinculo { tipo: 'catalogo' | 'item'; valor: string }
@@ -89,6 +91,11 @@ function utc(agora: Date, comMinuto: boolean): string {
 export const chaveLimite = (userId: string, agora: Date) => `ext:rl:${userId}:${utc(agora, true)}`;
 /** Janela fixa de 1 h (20 erros de leitura/h por usuário). */
 export const chaveLimiteErro = (userId: string, agora: Date) => `ext:rl-erro:${userId}:${utc(agora, false)}`;
+
+/** Cache de frete por conta ML (o frete é cotado para o vendedor conectado; reconectar outra conta na mesma
+ *  org não reaproveita o valor da anterior) + org. */
+export const chaveFrete = (conta: string, orgId: string, categoriaId: string, preco: number, dim: DimensoesPacote | null) =>
+  `ext:fr:${conta}:${orgId}:${categoriaId}:${preco}:${dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm},${dim.peso_gramas}` : 'padrao'}`;
 
 /** Cache de listing_prices por conta ML: a consulta leva o token da org (tarifa pode ser da conta). */
 export const chaveComissao = (conta: string, categoriaId: string, tipo: string, preco: number) =>
@@ -256,4 +263,19 @@ export function itemBusca(l: LinhaVariacao) {
     custo: custoDe(l),
     origem: o === 'nacional' || o === 'importado' ? o : null,
   };
+}
+
+/** Dimensões próprias do kit vinculado VIVO e canônico de `fator` SKUs da base (resolvedor único de kit,
+ *  `listarKitsVivos`: exclui erro, uma família por codigo_pai, a mais recente). Mais de um kit vivo com esse
+ *  multiplicador, nenhum, ou variação ambígua → null (frete segue no pacote padrão). */
+export async function dimensoesDoKitVivo(
+  admin: SupabaseClient, orgId: string, codigoPaiBase: string, fator: number,
+): Promise<DimensoesPacote | null> {
+  const kits = (await listarKitsVivos(admin, orgId, codigoPaiBase)).filter((k) => k.kit_multiplicador === fator);
+  if (kits.length !== 1) return null;
+  const { data, error } = await admin.from('variacoes')
+    .select('peso_gramas, altura_cm, largura_cm, comprimento_cm').eq('org_id', orgId).eq('familia_id', kits[0].id);
+  if (error) throw new Error(`dimensoesDoKitVivo: ${error.message}`);
+  const linhas = (data ?? []) as Parameters<typeof dimensoesDaLinha>[0][];
+  return linhas.length === 1 ? dimensoesDaLinha(linhas[0]) : null;
 }

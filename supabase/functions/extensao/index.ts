@@ -17,7 +17,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dimensoesDaLinha, unidadesDoProduto, validarPedido, variacoesDasLinhas,
+  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -106,8 +106,7 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
     frete: async (preco, categoriaId, dim) => {
       const [t, c] = await Promise.all([tokenML(), conexao]);
       if (!t || !c?.contaExternaId) return SEM_CONEXAO;
-      const dims = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm},${dim.peso_gramas}` : 'padrao';
-      return emCache<Disponivel<number>>(`ext:fr:${orgId}:${categoriaId}:${preco}:${dims}`, (v) => v.estado === 'ok', async () => {
+      return emCache<Disponivel<number>>(chaveFrete(String(c.contaExternaId), orgId, categoriaId, preco, dim), (v) => v.estado === 'ok', async () => {
         const f = await buscarFreteVendedorComProveniencia(t, String(c.contaExternaId), preco, categoriaId, dim);
         if (f.proveniencia === 'official') return { estado: 'ok', valor: f.valor };
         if (f.proveniencia === 'partial') return { estado: 'ok', valor: f.valor, aviso: 'estimado (pacote padrão)' };
@@ -123,19 +122,7 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       return emCache<Disponivel<number>>(`ext:upp:v3:${cpid}`, (v) => v.estado === 'ok', async () =>
         unidadesDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
     },
-    dimensoesDoPacote: async (org, codigoPai, fator) => {
-      // Kit vinculado de `fator` SKUs desta família: dimensões próprias da embalagem (criar-kit-vinculado).
-      const { data, error } = await admin.from('variacoes')
-        .select('peso_gramas, altura_cm, largura_cm, comprimento_cm, familias!inner(kit_base_codigo_pai, kit_multiplicador)')
-        .eq('org_id', org).eq('familias.kit_base_codigo_pai', codigoPai).eq('familias.kit_multiplicador', fator)
-        .order('atualizado_em', { ascending: false }).limit(5);
-      falhou('dimensoesDoPacote', error);
-      for (const l of (data ?? []) as Parameters<typeof dimensoesDaLinha>[0][]) {
-        const d = dimensoesDaLinha(l);
-        if (d) return d;
-      }
-      return null;
-    },
+    dimensoesDoPacote: (org, codigoPai, fator) => dimensoesDoKitVivo(admin, org, codigoPai, fator),
   };
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  basesDeKit, dimensoesDaLinha, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
+  basesDeKit, chaveFrete, dimensoesDaLinha, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -243,5 +243,68 @@ describe('deduplicarPorCodigo', () => {
 describe('itemBusca', () => {
   it('nome cai para o da família quando a variação não tem', () => {
     expect(itemBusca(linha({ nome: null }))).toEqual({ variacaoId: 'v1', codigo: '001', nome: 'Pai', custo: 10.5, origem: 'importado' });
+  });
+});
+
+describe('chaveFrete (#13: por conta ML)', () => {
+  const D = { altura_cm: 10, largura_cm: 5, comprimento_cm: 20, peso_gramas: 300 };
+  it('inclui conta, org, categoria, preço e embalagem', () => {
+    expect(chaveFrete('111', 'org-1', 'MLB5', 99.9, D)).toBe('ext:fr:111:org-1:MLB5:99.9:10x5x20,300');
+    expect(chaveFrete('111', 'org-1', 'MLB5', 99.9, null)).toBe('ext:fr:111:org-1:MLB5:99.9:padrao');
+  });
+  it('outra conta ML na mesma org → outra chave', () => {
+    expect(chaveFrete('111', 'org-1', 'MLB5', 10, null)).not.toBe(chaveFrete('222', 'org-1', 'MLB5', 10, null));
+  });
+});
+
+describe('dimensoesDoKitVivo (NEW-B: kit vivo e canônico)', () => {
+  type Linha = Record<string, unknown>;
+  /** Banco em memória com o pedaço do PostgREST usado: eq / in / not is null / order. */
+  function banco(tabelas: Record<string, Linha[]>) {
+    return {
+      from(t: string) {
+        let linhas = [...(tabelas[t] ?? [])];
+        const q = {
+          select: () => q,
+          eq: (c: string, v: unknown) => { linhas = linhas.filter((l) => l[c] === v); return q; },
+          in: (c: string, vs: unknown[]) => { linhas = linhas.filter((l) => vs.includes(l[c])); return q; },
+          not: (c: string) => { linhas = linhas.filter((l) => l[c] != null); return q; },
+          order: (c: string, o: { ascending: boolean }) => {
+            linhas.sort((a, b) => (String(a[c]) < String(b[c]) ? -1 : 1) * (o.ascending ? 1 : -1)); return q;
+          },
+          then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: linhas, error: null }).then(ok),
+        };
+        return q;
+      },
+    } as never;
+  }
+  const fam = (id: string, codigo_pai: string, status: string, criado_em: string, kit_multiplicador = 3) =>
+    ({ id, org_id: 'o', codigo_pai, kit_base_codigo_pai: '9001', kit_multiplicador, status, criado_em });
+  const varia = (familia_id: string, altura_cm: number) =>
+    ({ org_id: 'o', familia_id, altura_cm, largura_cm: 10, comprimento_cm: 10, peso_gramas: 900 });
+
+  it('kit antigo (lote anterior) e kit em erro coexistindo com o vigente → dimensões do vigente', async () => {
+    const admin = banco({
+      familias: [
+        fam('velho', '9100', 'publicado', '2026-01-01'), fam('atual', '9100', 'publicado', '2026-09-01'),
+        fam('erro', '9200', 'erro', '2026-10-01'),
+      ],
+      variacoes: [varia('velho', 11), varia('atual', 22), varia('erro', 33)],
+    });
+    expect(await dimensoesDoKitVivo(admin, 'o', '9001', 3)).toMatchObject({ altura_cm: 22 });
+  });
+
+  it('dois kits vivos distintos com o mesmo multiplicador → null (ambíguo)', async () => {
+    const admin = banco({
+      familias: [fam('a', '9100', 'publicado', '2026-09-01'), fam('b', '9300', 'pronto', '2026-09-02')],
+      variacoes: [varia('a', 22), varia('b', 44)],
+    });
+    expect(await dimensoesDoKitVivo(admin, 'o', '9001', 3)).toBeNull();
+  });
+
+  it('só kit em erro, outro multiplicador ou variação sem dimensões → null', async () => {
+    expect(await dimensoesDoKitVivo(banco({ familias: [fam('e', '9200', 'erro', '2026-10-01')], variacoes: [varia('e', 33)] }), 'o', '9001', 3)).toBeNull();
+    expect(await dimensoesDoKitVivo(banco({ familias: [fam('a', '9100', 'publicado', '2026-09-01', 2)], variacoes: [varia('a', 22)] }), 'o', '9001', 3)).toBeNull();
+    expect(await dimensoesDoKitVivo(banco({ familias: [fam('a', '9100', 'publicado', '2026-09-01')], variacoes: [{ org_id: 'o', familia_id: 'a', altura_cm: null }] }), 'o', '9001', 3)).toBeNull();
   });
 });

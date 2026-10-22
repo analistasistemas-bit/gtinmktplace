@@ -142,11 +142,18 @@ describe('analisarAnuncio', () => {
     expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20, aviso: 'estimado (pacote padrão)' });
   });
 
-  it('pacote de 3 com kit vinculado de 3 da família → frete com as dimensões próprias do kit, sem aviso', async () => {
+  it('pacote de 3 com kit vinculado de 3 da família → cota com as dimensões do kit, mas segue "estimado" (fator ≠ 1)', async () => {
     const KIT = { altura_cm: 12, largura_cm: 12, comprimento_cm: 30, peso_gramas: 1500 };
     const d = porEan({ unidades: 1 }, { estado: 'ok', valor: 3 }, { dimensoesDoPacote: vi.fn(async () => KIT) });
     const r = await analisarAnuncio('org', entEan, d);
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', KIT);
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20, aviso: 'estimado (pacote padrão)' });
+  });
+
+  it('fator 1 com dimensões do SKU → oficial, sem aviso (único caso sem rótulo)', async () => {
+    const d = porEan({ unidades: 1 }, { estado: 'ok', valor: 1 });
+    const r = await analisarAnuncio('org', entEan, d);
+    expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', DIM);
     expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20 });
   });
 
