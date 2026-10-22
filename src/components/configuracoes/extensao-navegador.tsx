@@ -46,14 +46,16 @@ export function ExtensaoNavegador() {
       {id && (
         <SettingsRow
           titulo="Conexão"
-          descricao="A conexão se renova sozinha enquanto o PubliAI estiver aberto. Se a extensão pedir, clique em Conectar."
+          descricao="A conexão se renova sozinha enquanto o PubliAI estiver aberto. Só reconecte se a extensão pedir."
           estado={status && (
             <StatusPill tone={status === 'ok' ? 'success' : 'neutral'}>
               {status === 'ok' ? 'Conectada' : 'Não instalada'}
             </StatusPill>
           )}
         >
-          <Button size="sm" disabled={enviando} onClick={() => void conectar()}>Conectar extensão</Button>
+          {status === 'ok'
+            ? <Button size="sm" variant="outline" disabled={enviando} onClick={() => void conectar()}>Reconectar</Button>
+            : <Button size="sm" disabled={enviando} onClick={() => void conectar()}>Conectar extensão</Button>}
         </SettingsRow>
       )}
     </SettingsGroup>

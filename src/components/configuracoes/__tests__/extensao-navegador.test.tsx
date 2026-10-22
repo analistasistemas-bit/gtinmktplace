@@ -43,11 +43,19 @@ describe('ExtensaoNavegador', () => {
     expect(await screen.findByText('Não instalada')).toBeInTheDocument();
   });
 
-  it('"Conectar extensão" envia a sessão atual', async () => {
+  it('já conectada → botão "Reconectar" (não "Conectar") e ele reenvia a sessão atual', async () => {
     render(<ExtensaoNavegador />);
     await screen.findByText('Conectada');
+    expect(screen.queryByRole('button', { name: /conectar extensão/i })).not.toBeInTheDocument();
     h.enviar.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /conectar extensão/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^reconectar$/i }));
     await waitFor(() => expect(h.enviar).toHaveBeenCalledWith(h.sessao));
+  });
+
+  it('não instalada → "Conectar extensão"', async () => {
+    h.enviar.mockResolvedValue('nao_instalada');
+    render(<ExtensaoNavegador />);
+    await screen.findByText('Não instalada');
+    expect(screen.getByRole('button', { name: /conectar extensão/i })).toBeInTheDocument();
   });
 });

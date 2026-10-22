@@ -10,7 +10,7 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
       getURL: (p: string) => `chrome-extension://ext-publiai/${p}`,
       sendMessage: vi.fn(async (_msg: unknown) => undefined),
     },
-    sidePanel: { open: vi.fn(async () => {}) },
+    sidePanel: { open: vi.fn(async () => {}), setOptions: vi.fn(async (_o: chrome.sidePanel.PanelOptions) => {}) },
     alarms: {
       create: vi.fn(async (_nome: string, _info: { when: number }) => {}),
       clear: vi.fn(async (_nome: string) => true),
@@ -19,6 +19,7 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
     tabs: {
       sendMessage: vi.fn(async (_tabId: number, _msg: unknown) => undefined),
       query: vi.fn(async (_q: unknown): Promise<chrome.tabs.Tab[]> => []),
+      get: vi.fn(async (id: number): Promise<chrome.tabs.Tab> => ({ id }) as chrome.tabs.Tab),
     },
     storage: {
       session: {

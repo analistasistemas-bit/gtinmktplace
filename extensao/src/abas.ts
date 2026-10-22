@@ -124,3 +124,27 @@ export async function limparEstadosDasAbas(): Promise<void> {
     chrome.tabs.sendMessage(tabId, { tipo: 'publiai:sessao-mudou' }).catch(() => {});
   }
 }
+
+// Painel lateral só nas abas do ML (ADR-0189): fora delas o Chrome o esconde ao trocar de aba e o devolve ao voltar.
+// `tab.url` só vem para hosts da host permission — sem url = fora do ML.
+const PAINEL = 'src/painel/index.html'; // = side_panel.default_path do manifest
+
+const ehAbaMl = (url: string | undefined) => {
+  try { return !!url && new URL(url).hostname.endsWith('.mercadolivre.com.br'); } catch { return false; }
+};
+
+export async function ajustarPainelDaAba(tabId: number, url: string | undefined): Promise<void> {
+  await chrome.sidePanel.setOptions(ehAbaMl(url) ? { tabId, path: PAINEL, enabled: true } : { tabId, enabled: false });
+}
+
+/** Boot do SW: desligado por padrão (abas novas fora do ML) e ligado nas abas do ML já abertas. */
+export async function painelSoNoMl(): Promise<void> {
+  await chrome.sidePanel.setOptions({ enabled: false });
+  for (const t of await chrome.tabs.query({ url: ABAS_ML }).catch(() => [])) {
+    if (t.id === undefined) continue;
+    // URL relida na hora (o snapshot pode ter saído do ML); sem await entre ler e aplicar, um onUpdated
+    // posterior sempre aplica depois e vence.
+    const atual = await chrome.tabs.get(t.id).catch(() => null);
+    if (atual) await ajustarPainelDaAba(t.id, atual.url);
+  }
+}
