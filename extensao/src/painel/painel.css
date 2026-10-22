@@ -29,7 +29,9 @@
     color-scheme: dark;
     --background: oklch(0.14 0.012 277);
     --foreground: oklch(0.96 0.005 277);
-    --card: oklch(0.205 0.014 277);
+    --card: oklch(0.265 0.016 277);
+    --link: oklch(0.72 0.15 277); /* texto roxo de 12–13px sobre o cartão escuro: 6:1 (o --primary daria 4,35:1) */
+    --botao: oklch(0.55 0.20 277); /* botão no escuro: o roxo do tema claro mantém branco acima de 4,5:1 */
     --primary: oklch(0.64 0.18 277);
     --secondary: oklch(0.26 0.015 277);
     --muted: oklch(0.255 0.012 277);
@@ -39,7 +41,7 @@
     --destructive: oklch(0.68 0.19 25);
     --success: oklch(0.70 0.15 150);
     --warning: oklch(0.80 0.15 75);
-    --border: oklch(1 0 0 / 0.12);
+    --border: oklch(1 0 0 / 0.20);
     --input: oklch(1 0 0 / 0.14);
     --ring: oklch(0.64 0.18 277);
     --shadow-xs: none;
@@ -68,7 +70,6 @@ button, input { font: inherit; color: inherit; }
 }
 .topo svg { width: 20px; height: 20px; flex: none; }
 .topo h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.topo .contexto { margin-left: auto; font-size: 12px; color: var(--muted-foreground); }
 
 #raiz { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 
@@ -114,7 +115,7 @@ button, input { font: inherit; color: inherit; }
   border-radius: calc(var(--radius) * 0.8);
   transition: border-color 150ms var(--ease-enter), box-shadow 150ms var(--ease-enter);
 }
-.entrada:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px oklch(0.55 0.20 277 / 0.18); }
+.entrada:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent); }
 .entrada .prefixo { color: var(--muted-foreground); font-size: 13px; }
 .entrada input {
   flex: 1; min-width: 0; height: 100%;
@@ -153,7 +154,7 @@ button, input { font: inherit; color: inherit; }
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 36px; padding: 0 14px;
   border: 1px solid transparent; border-radius: calc(var(--radius) * 0.8);
-  background: var(--primary); color: var(--primary-foreground);
+  background: var(--botao, var(--primary)); color: var(--primary-foreground);
   font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer;
   transition: filter 150ms var(--ease-enter), background-color 150ms var(--ease-enter);
 }
@@ -161,15 +162,16 @@ button, input { font: inherit; color: inherit; }
 button.secundario { background: transparent; color: var(--foreground); border-color: var(--border); }
 button.secundario:hover { background: var(--secondary); filter: none; }
 button.link {
-  height: auto; padding: 0; background: none; border: 0;
-  color: var(--primary); font-weight: 500; align-self: flex-start;
+  height: auto; min-height: 32px; padding: 0 4px; margin-left: -4px; background: none; border: 0;
+  color: var(--link, var(--primary)); font-weight: 500; align-self: flex-start;
 }
 button.link:hover { text-decoration: underline; filter: none; }
 button:disabled { opacity: 0.55; cursor: default; }
 
 /* Resultado por tipo de anúncio */
 .tipos { display: flex; flex-direction: column; gap: 10px; }
-.tipo { overflow: hidden; }
+.tipo { overflow: clip; }
+.tipo summary:focus-visible { outline-offset: -2px; border-radius: var(--radius); }
 .tipo details > summary {
   list-style: none; cursor: pointer;
   display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px;
@@ -181,17 +183,17 @@ button:disabled { opacity: 0.55; cursor: default; }
   grid-column: 1; font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
+.tipo + .tipo .lucro { font-size: 15px; font-weight: 500; letter-spacing: 0; }
 .tipo .lucro.positivo { color: var(--success); }
+.tipo + .tipo .lucro.positivo { color: var(--foreground); }
 .tipo .lucro.negativo { color: var(--destructive); }
 .tipo .margem {
   grid-column: 2; grid-row: 1 / span 2;
-  padding: 4px 10px; border-radius: 999px;
   font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
-  background: var(--secondary);
 }
-.tipo .margem.positivo { color: var(--success); background: color-mix(in oklch, var(--success) 12%, transparent); }
-.tipo .margem.negativo { color: var(--destructive); background: color-mix(in oklch, var(--destructive) 12%, transparent); }
-.tipo .abrir { grid-column: 1 / -1; font-size: 12px; color: var(--primary); }
+.tipo .margem.positivo { color: var(--success); }
+.tipo .margem.negativo { color: var(--destructive); }
+.tipo .abrir { grid-column: 1 / -1; font-size: 12px; color: var(--link, var(--primary)); }
 .tipo details[open] .abrir .fechado, .tipo details:not([open]) .abrir .aberto { display: none; }
 .tipo .estimativa {
   justify-self: start; padding: 1px 8px; border-radius: 999px;
@@ -235,3 +237,10 @@ button:disabled { opacity: 0.55; cursor: default; }
 @keyframes entrar { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 .visualmente-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Painel estreito (≤ 340px) */
+@media (max-width: 340px) {
+  #raiz { padding: 12px; }
+  .tipo .lucro { font-size: 19px; }
+  .anuncio { flex-direction: column; gap: 2px; }
+}
