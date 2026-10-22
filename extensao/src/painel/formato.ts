@@ -44,3 +44,12 @@ export const ROTULO_FONTE: Record<string, string> = {
 };
 
 export const URL_APP = import.meta.env.VITE_PUBLIAI_APP_URL || 'https://app.publiai.daludi.com.br/';
+
+/** Termômetro de reputação do ML (level_id) → texto e cor do ponto (Vendedor e Catálogo). */
+export const REPUTACAO: Record<string, { texto: string; cor: string }> = {
+  '5_green': { texto: 'Verde', cor: 'verde' },
+  '4_light_green': { texto: 'Verde-claro', cor: 'verde' },
+  '3_yellow': { texto: 'Amarela', cor: 'amarelo' },
+  '2_orange': { texto: 'Laranja', cor: 'amarelo' },
+  '1_red': { texto: 'Vermelha', cor: 'vermelho' },
+};

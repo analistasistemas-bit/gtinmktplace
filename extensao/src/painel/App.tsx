@@ -2,6 +2,7 @@
 // script fez na aba ativa (guardada no SW) e simula preço/custo a partir dela.
 import { useEffect, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
+import { Catalogo } from './Catalogo';
 import { Qualidade } from './Qualidade';
 import { QuantoVende } from './QuantoVende';
 import { Vendedor } from './Vendedor';
@@ -70,6 +71,8 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
   // Preço confirmado no servidor vale só enquanto o estado da aba for o mesmo de quando foi pedido.
   const [confirmado, setConfirmado] = useState<{ base: EstadoAba['resposta']; dados: RespostaAnuncio } | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // "Simular minha margem a R$ X" do bloco Catálogo: seq muda a cada clique (mesmo preço de novo também simula).
+  const [simular, setSimular] = useState<{ valor: number; seq: number } | null>(null);
 
   if (!estado) {
     return (
@@ -142,11 +145,19 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
         dados={resposta.dados}
         analisar={analisar}
         onDados={(dados) => setConfirmado({ base: estado.resposta, dados })}
+        precoSugerido={simular}
       />
       {(resposta.dados.custo.fonte === 'nenhuma' || resposta.dados.custo.fonte === 'vinculo_manual') && (
         <VinculoProduto entrada={entrada} fonte={resposta.dados.custo.fonte} chamar={chamar} onVinculado={reanalisar} />
       )}
       {/* Contexto, depois da tarefa principal (margem + vínculo, D-6). */}
+      {entrada.catalogProductId && (
+        <Catalogo
+          entrada={{ tipoPagina: (entrada as { tipoPagina?: string }).tipoPagina, mlItemId: entrada.mlItemId, catalogProductId: entrada.catalogProductId }}
+          chamar={chamar}
+          onSimular={(valor) => setSimular((s) => ({ valor, seq: (s?.seq ?? 0) + 1 }))}
+        />
+      )}
       {estado.observado?.qualidade && <Qualidade dados={estado.observado.qualidade} />}
       {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} lojaOficial={estado.observado?.lojaOficial} />}
     </>

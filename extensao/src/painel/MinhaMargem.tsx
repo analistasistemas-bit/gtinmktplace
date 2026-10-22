@@ -14,6 +14,8 @@ interface Props {
   /** Nova análise do mesmo anúncio a outro preço. */
   analisar: (preco: number) => Promise<Resposta<RespostaAnuncio>>;
   onDados: (dados: RespostaAnuncio) => void;
+  /** Preço vindo de fora (ex.: vencedor do catálogo), aplicado só quando `seq` muda (clique do operador). */
+  precoSugerido?: { valor: number; seq: number } | null;
 }
 
 /** Texto do input → número, ou null quando vazio/inválido (nunca NaN na tela). */
@@ -23,7 +25,7 @@ function numero(txt: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
+export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
   // Unidades confirmadas pelo operador valem só para o SKU em que foram digitadas (troca de vínculo → vazias).
@@ -35,6 +37,15 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const ids = { preco: `${base}-preco`, custo: `${base}-custo`, unidades: `${base}-unidades`, unidadesSku: `${base}-unidades-sku` };
   const seq = useRef(0);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // Mesmo caminho da digitação (recalcula local e confirma no servidor) e foco no campo para o operador ver o efeito.
+  useEffect(() => {
+    if (!precoSugerido) return;
+    editarPreco(String(precoSugerido.valor));
+    const campo = document.getElementById(ids.preco);
+    campo?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    campo?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [precoSugerido?.seq]);
 
   const precoN = numero(precoTxt);
   const preco = precoN !== null && precoN > 0 ? precoN : null;

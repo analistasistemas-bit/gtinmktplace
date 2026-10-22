@@ -1,14 +1,8 @@
 // Bloco "Vendedor" (ADR-0189 D-10): perfil público de /users. `vendas` é transactions.total, janela móvel de
 // ~365 dias (ADR-0142): só mostra período quando o ML o informa em dias; senão rótulo neutro.
 import type { VendedorML } from '../../../supabase/functions/_shared/extensao/tipos.ts';
+import { REPUTACAO } from './formato';
 
-const REPUTACAO: Record<string, { texto: string; cor: string }> = {
-  '5_green': { texto: 'Verde', cor: 'verde' },
-  '4_light_green': { texto: 'Verde-claro', cor: 'verde' },
-  '3_yellow': { texto: 'Amarela', cor: 'amarelo' },
-  '2_orange': { texto: 'Laranja', cor: 'amarelo' },
-  '1_red': { texto: 'Vermelha', cor: 'vermelho' },
-};
 
 const MEDALHA: Record<string, string> = {
   platinum: 'MercadoLíder Platinum',

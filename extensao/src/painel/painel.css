@@ -44,7 +44,7 @@
     --border: oklch(1 0 0 / 0.20);
     --input: oklch(1 0 0 / 0.14);
     --ring: oklch(0.64 0.18 277);
-    --shadow-xs: none;
+    --shadow-xs: 0 0 0 transparent; /* não `none`: dentro de uma lista de box-shadow invalidaria a declaração inteira */
   }
 }
 
@@ -138,7 +138,8 @@ button, input { font: inherit; color: inherit; }
   font-size: 13px; font-weight: 500; color: var(--muted-foreground);
 }
 .segmentado input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.segmentado label:has(input:checked) { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-xs); }
+/* Selecionado: além do fundo, sublinhado primário (≥ 3:1 nos dois temas; o fundo sozinho some no escuro). */
+.segmentado label:has(input:checked) { background: var(--card); color: var(--foreground); font-weight: 600; box-shadow: var(--shadow-xs), inset 0 -2px 0 var(--primary); }
 .segmentado label:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 1px; }
 
 /* Origem do custo */
@@ -295,3 +296,48 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
   border: 1px solid color-mix(in oklab, var(--warning) 40%, var(--border)); color: var(--foreground);
 }
 .ql-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Catálogo (Task 24): participação no topo, vencedor, resumo, ofertas e distribuição. Mesmas linhas de extrato. */
+.catalogo { gap: 14px; }
+.ct-linha { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }
+.ct-rotulo { color: var(--muted-foreground); }
+.ct-forte { font-weight: 600; color: var(--foreground); white-space: nowrap; }
+.ct-participacao {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  border-radius: calc(var(--radius) * 0.8); background: color-mix(in oklab, var(--primary) 7%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--primary) 22%, var(--border));
+}
+.ct-ptw { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+.ct-ptw.winning, .ct-ptw.sharing_first_place { color: color-mix(in oklab, var(--success) 75%, var(--foreground)); }
+.ct-ptw.competing { color: color-mix(in oklab, var(--warning) 62%, var(--foreground)); }
+.ct-ptw.listed { color: var(--muted-foreground); font-weight: 500; }
+.ct-vencedor { display: flex; flex-direction: column; gap: 4px; }
+.ct-vencedor-nome { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.ct-resumo { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ct-resumo-numeros { grid-template-columns: repeat(3, 1fr); }
+.ct-ofertas { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ct-ofertas-cabeca { display: flex; flex-direction: column; gap: 8px; }
+.ct-ordem .opcoes { grid-template-columns: repeat(3, 1fr); }
+.ct-ordem label { height: 28px; font-size: 12px; }
+.ct-lista { list-style: none; margin: 0; padding: 0; }
+.ct-lista li { display: flex; flex-direction: column; gap: 3px; padding: 8px 0; }
+.ct-lista li + li { border-top: 1px solid var(--border); }
+.ct-lista li.propria { margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 6px; background: color-mix(in oklab, var(--primary) 7%, var(--card)); }
+.ct-oferta-topo { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }
+.ct-nome { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.ct-rep { display: inline-flex; align-items: center; gap: 4px; }
+.ct-nome.desconhecido { color: var(--muted-foreground); font-weight: 400; }
+.ct-oferta-detalhe { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--muted-foreground); }
+.ct-tag { padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); font-weight: 500; }
+.ct-tag.sua { border-color: color-mix(in oklab, var(--primary) 45%, var(--border)); color: var(--link, var(--primary)); }
+.ct-tag.vencedora { border-color: color-mix(in oklab, var(--success) 45%, var(--border)); color: color-mix(in oklab, var(--success) 75%, var(--foreground)); }
+.ct-distribuicao { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ct-barras { display: flex; flex-direction: column; gap: 6px; }
+.ct-barras ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.ct-barras li { display: grid; grid-template-columns: 96px 1fr 28px; align-items: center; gap: 8px; font-size: 12px; }
+.ct-barra-rotulo { color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-barra-trilho { height: 6px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.ct-barra-trilho span { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--primary) 70%, var(--card)); }
+.ct-barras li.neutro .ct-barra-trilho span { background: color-mix(in oklab, var(--muted-foreground) 45%, var(--card)); }
+.ct-barra-n { text-align: right; font-weight: 600; }
+.ct-esqueleto span:nth-child(2), .ct-esqueleto span:nth-child(3) { height: 44px; }

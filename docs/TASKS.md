@@ -44,6 +44,10 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Task 23 — ação `catalogo` na edge (v5+): ofertas, vencedor só informado pelo ML (API ou buy box da página `/p/`),
   perfis, resumo e participação com posição por preço e preço para ganhar real (`/items/{id}/price_to_win`). Validado com
   dados reais (Tramontina 47 ofertas; DSA participando em MLB59324619 e MLB53180253, "competing" R$ 63,17 e R$ 18,11).
+- [x] Task 24 — painel do catálogo: automático em `/p/` (com o item da buy box), botão "Ver ofertas do catálogo" nas demais
+  páginas; sua participação (posição por preço e preço para ganhar), vencedor com origem, resumo, ofertas (5 + ver todas,
+  ordenação Preço/Reputação/Medalha), barras por UF e medalha com cobertura de perfis; "Simular minha margem a R$ X" leva
+  o preço do vencedor à Minha margem. UI/UX aprovado (Codex Sol, 10/10, 3 rodadas).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

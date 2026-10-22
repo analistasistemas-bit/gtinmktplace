@@ -195,3 +195,14 @@ validada na de validação, com o mesmo gate.
   menor/maior preço ficam indisponíveis (a página lida pode não ter as mais baratas; revisão Grok), e nossa oferta ausente
   nela = "não localizada". Anúncio pausado sai da ficha (medido: DSA em MLB24526166 → "não participa").
 - Cache de 60 s por org + conta ML + catálogo; 1 análise do limite de 30/min por chamada. Consultor: Codex Astra, 22/10.
+
+## Emenda 2026-10-22 — painel do catálogo (D-12, Task 24)
+
+- Carga automática só em `/p/` (o item da página é a buy box e vai como `itemDaPagina`); em página de item ou `/up/`,
+  botão "Ver ofertas do catálogo" e sem `itemDaPagina` (o item aberto não é o vencedor). Consultor: Codex Astra, 22/10.
+- Ordem do painel: Quanto vende → Minha margem → vínculo → Catálogo → Qualidade → Vendedor. Dentro do bloco:
+  participação → vencedor → resumo → ofertas → distribuição.
+- "Minha margem ao preço do vencedor": em `/p/` a margem já está no preço da buy box; nas demais páginas, "Simular minha
+  margem a R$ X" aplica o preço no simulador existente (prop `precoSugerido`, só por clique).
+- Reputação sempre em texto além da cor; seleção do controle segmentado com sublinhado primário; no tema escuro
+  `--shadow-xs` é sombra transparente válida (com `none`, listas de `box-shadow` são descartadas pelo navegador).
