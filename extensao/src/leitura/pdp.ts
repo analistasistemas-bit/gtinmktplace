@@ -13,27 +13,39 @@ export type ResultadoLeitura = { ok: true; dados: DadosAnuncio } | { ok: false; 
 type Obj = Record<string, unknown>;
 const ehObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function lerJson(doc: Document): Obj | null {
+function parse(t: string | null | undefined): Obj | null {
   try {
-    const nordic = doc.getElementById('__NORDIC_RENDERING_CTX__')?.textContent;
-    if (nordic) {
-      const ini = nordic.indexOf('_n.ctx.r =');
-      const fim = nordic.indexOf(';_n.ctx.r.assets');
-      if (ini >= 0 && fim > ini) {
-        const r = JSON.parse(nordic.slice(ini + '_n.ctx.r ='.length, fim)) as Obj;
-        const s = (r.appProps as Obj | undefined)?.pageProps as Obj | undefined;
-        if (ehObj(s?.initialState)) return s.initialState;
-      }
-    }
-    const pre = doc.getElementById('__PRELOADED_STATE__')?.textContent;
-    if (pre) {
-      const r = JSON.parse(pre) as Obj;
-      return ehObj(r.initialState) ? r.initialState : r;
-    }
+    return t ? (JSON.parse(t) as Obj) : null;
   } catch {
-    /* JSON inválido = estado não encontrado */
+    return null; // JSON inválido
   }
-  return null;
+}
+
+function lerJson(doc: Document): Obj | null {
+  const nordic = doc.getElementById('__NORDIC_RENDERING_CTX__')?.textContent;
+  const ini = nordic?.indexOf('_n.ctx.r =') ?? -1;
+  const fim = nordic ? nordic.indexOf(';_n.ctx.r.assets', ini) : -1;
+  if (nordic && ini >= 0 && fim > ini) {
+    const r = parse(nordic.slice(ini + '_n.ctx.r ='.length, fim));
+    const s = (r?.appProps as Obj | undefined)?.pageProps as Obj | undefined;
+    if (ehObj(s?.initialState)) return s.initialState;
+  }
+  const r = parse(doc.getElementById('__PRELOADED_STATE__')?.textContent);
+  return r && (ehObj(r.initialState) ? r.initialState : r);
+}
+
+const ehMlb = (v: unknown) => typeof v === 'string' && /^MLB\d+$/.test(v);
+const numero = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN);
+const get = (o: unknown, ...caminho: string[]): unknown => caminho.reduce<unknown>((a, k) => (ehObj(a) ? a[k] : undefined), o);
+const lista = (v: unknown): Obj[] => (Array.isArray(v) ? v.filter(ehObj) : []);
+
+function coletar(raiz: unknown, ok: (k: string, v: unknown) => boolean, prof = 14, out: unknown[] = []): unknown[] {
+  if (prof < 0 || typeof raiz !== 'object' || raiz === null) return out;
+  for (const [k, v] of Object.entries(raiz)) {
+    if (ok(k, v)) out.push(v);
+    coletar(v, ok, prof - 1, out);
+  }
+  return out;
 }
 
 function buscar(raiz: unknown, chave: string, ok: (v: unknown) => boolean, prof = 12): unknown {
@@ -46,57 +58,38 @@ function buscar(raiz: unknown, chave: string, ok: (v: unknown) => boolean, prof 
   return undefined;
 }
 
-const ehMlb = (v: unknown) => typeof v === 'string' && /^MLB\d+$/.test(v);
-
-function coletar(raiz: unknown, ok: (k: string, v: unknown) => boolean, prof = 14, out: unknown[] = []): unknown[] {
-  if (prof < 0 || typeof raiz !== 'object' || raiz === null) return out;
-  for (const [k, v] of Object.entries(raiz)) {
-    if (ok(k, v)) out.push(v);
-    coletar(v, ok, prof - 1, out);
-  }
-  return out;
-}
-
-const texto = (v: unknown) => (typeof v === 'string' && v !== '') || typeof v === 'number';
-const numero = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN);
-
 export function lerAnuncio(doc: Document): ResultadoLeitura {
   const estado = lerJson(doc);
   if (!estado) return { ok: false, motivo: 'estado_nao_encontrado' };
 
-  const evento = ((estado.track as Obj | undefined)?.melidata_event as Obj | undefined)?.event_data;
-  const campo = (chaves: string[], ok: (v: unknown) => boolean = texto): unknown => {
-    for (const fonte of [estado, evento]) {
-      for (const k of chaves) if (ehObj(fonte) && ok(fonte[k])) return fonte[k];
-    }
-    for (const k of chaves) {
-      const v = buscar(estado, k, ok);
-      if (v !== undefined) return v;
-    }
-    return undefined;
-  };
+  // Só caminhos medidos (2026-10-21); sem busca global para id/vendedor/categoria/preço (valor financeiro: falha em vez de adivinhar).
+  const ev = get(estado, 'track', 'melidata_event', 'event_data');
+  const comps = get(estado, 'components');
+  const primeiro = <T>(...c: T[]) => c.find((v) => v !== undefined && v !== null && v !== '');
 
-  const mlItemId = campo(['item_id', 'id'], (v) => typeof v === 'string' && /^MLB\d+$/.test(v));
-  if (mlItemId === undefined) return { ok: false, motivo: 'campo_ausente:mlItemId' };
-  const sellerId = campo(['seller_id']);
+  const mlItemId = [estado.id, get(ev, 'item_id')].find(ehMlb);
+  if (!mlItemId) return { ok: false, motivo: 'campo_ausente:mlItemId' };
+
+  const sellerData = lista(get(comps, 'content_right')).find((c) => c.id === 'seller_data');
+  const sellerId = primeiro(get(ev, 'seller_id'), get(sellerData, 'viewport_track', 'melidata_event', 'event_data', 'seller_id'));
   if (sellerId === undefined) return { ok: false, motivo: 'campo_ausente:sellerId' };
-  const categoriaId = campo(['category_id'], ehMlb);
-  if (categoriaId === undefined) return { ok: false, motivo: 'campo_ausente:categoriaId' };
 
-  // Valores divergem entre componentes ("not_apply", "", "none"): primeiro que casar MLB\d+, senão null.
+  const categoriaId = [...lista(get(comps, 'head')), ...lista(get(comps, 'content_right'))]
+    .map((c) => get(c, 'carousel_config', 'category_id'))
+    .concat(get(ev, 'category_id'))
+    .find(ehMlb);
+  if (!categoriaId) return { ok: false, motivo: 'campo_ausente:categoriaId' };
+
+  // Valores divergem entre componentes ("not_apply", "", "none"): primeiro MLB\d+ entre catalog_product_id e
+  // carousel_config.product_id (este medido na página real em 2026-10-21 = id de catálogo), senão null.
   const catalogProductId =
-    (coletar(estado, (k, v) => (k === 'catalog_product_id' || (k === 'product_id' && /^MLB\d+$/.test(String(v)))) && ehMlb(v))[0] as string | undefined) ?? null;
+    (coletar(estado, (k, v) => k === 'catalog_product_id' && ehMlb(v))[0] ??
+      coletar(estado, (k, v) => k === 'carousel_config' && ehObj(v) && ehMlb(v.product_id)).map((c) => (c as Obj).product_id)[0]) as string | undefined ?? null;
 
-  // preço: componente id 'price' (short_description[]) -> action.track.melidata_event.event_data.price
-  const comps = (estado.components as Obj | undefined)?.short_description;
-  const compPreco = Array.isArray(comps) ? comps.find((c) => ehObj(c) && c.id === 'price') : undefined;
-  const precoComp = numero(buscar(compPreco, 'price', (v) => numero(v) > 0));
-  // preço: número direto ou objeto { value | amount }
-  let preco = precoComp > 0 ? precoComp : numero(campo(['price'], (v) => numero(v) > 0));
-  if (!(preco > 0)) {
-    const o = campo(['price'], (v) => ehObj(v) && (numero(v.value) > 0 || numero(v.amount) > 0)) as Obj | undefined;
-    preco = o ? (numero(o.value) > 0 ? numero(o.value) : numero(o.amount)) : NaN;
-  }
+  // preço: só componente id 'price' de short_description[] -> action.track.melidata_event.event_data.price (número ou {value|amount})
+  const compPreco = lista(get(comps, 'short_description')).find((c) => c.id === 'price');
+  const p = get(compPreco, 'action', 'track', 'melidata_event', 'event_data', 'price');
+  const preco = ehObj(p) ? (numero(p.value) > 0 ? numero(p.value) : numero(p.amount)) : numero(p);
   if (!(preco > 0)) return { ok: false, motivo: 'campo_ausente:preco' };
 
   const sub = buscar(estado, 'subtitle_label', ehObj) as Obj | undefined;
