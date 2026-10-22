@@ -183,6 +183,15 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toMatchObject({ observado: { lojaOficial: { nome: null } } });
   });
 
+  it('qualidade fica no estado (painel) e não vai à edge (D-1)', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"ok":1}', { status: 200 }));
+    const qualidade = { fotos: [{ id: '670304-MLB90067766444_082025', largura: 521, altura: 749 }], clips: 1, descricao: 415, garantia: 'Sem garantia', disponivel: 16 };
+    await chamar({ ...ANUNCIO, qualidade }, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ observado: { qualidade } });
+    const corpos = fetchFalso.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.body).filter((b) => typeof b === 'string').join();
+    for (const vazado of ['670304', 'Sem garantia', 'descricao', 'disponivel', 'qualidade']) expect(corpos).not.toContain(vazado);
+  });
+
   it('Codex: HTML lento não segura a resposta (selo); a data entra no estado depois', async () => {
     let soltar!: (r: Response) => void;
     fetchFalso.mockImplementation(async (url: string) => url.startsWith('https://produto.')

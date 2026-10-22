@@ -1,5 +1,6 @@
 // Texto do selo ao lado do preço (ADR-0189 D-6/D-9). Usa o resultado Clássico.
 import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
+import { limparMiniaturas } from './miniaturas';
 
 const num = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const brl = (n: number) => `R$ ${num(n)}`;
@@ -27,11 +28,13 @@ export function tomDoSelo(r: RespostaAnuncio): TomDoSelo {
 
 let mudancasDeSessao = 0;
 
-/** Mensagem do SW: a sessão mudou (logout, troca de conta, expiração) → o selo com a margem da sessão anterior sai. */
+/** Mensagem do SW: a sessão mudou (logout, troca de conta, expiração) → o selo com a margem da sessão anterior e as
+ *  marcas nas miniaturas saem. */
 export function aoMensagemDoSw(msg: unknown, doc: Document = document): void {
   if ((msg as { tipo?: unknown } | null)?.tipo !== 'publiai:sessao-mudou') return;
   mudancasDeSessao++;
   doc.getElementById('publiai-selo')?.remove();
+  limparMiniaturas(doc);
 }
 
 /** null se a sessão mudou enquanto `p` estava em voo: a resposta é da sessão anterior e não vira selo. */
