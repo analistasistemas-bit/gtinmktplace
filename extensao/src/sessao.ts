@@ -58,9 +58,28 @@ export async function receberMensagemExterna(msg: unknown, sender: chrome.runtim
     const sessao: Sessao = { accessToken: m.accessToken, expiresAt: m.expiresAt, orgNome: m.orgNome, identidade: mantida ?? m.identidade };
     await chrome.storage.session.set({ [CHAVE]: sessao });
     if (mantida === null) await limparEstadosDasAbas();
+    await agendarExpiracao(sessao.expiresAt);
     return { ok: true };
   }
   return { ok: false };
+}
+
+const ALARME = 'sessao-expira';
+
+/** Expiração passiva (sem interação): o SW acorda no fim da validade e apaga sessão, análises e selos.
+ *  Já vencida ao chegar → limpa na hora. */
+async function agendarExpiracao(expiresAt: number): Promise<void> {
+  const quando = expiresAt * 1000 - MARGEM_MS;
+  if (quando <= Date.now()) {
+    await obterSessaoValida();
+    return;
+  }
+  await chrome.alarms.create(ALARME, { when: quando });
+}
+
+/** `chrome.alarms.onAlarm` (registrado no topo do sw.ts). */
+export async function aoAlarme(a: chrome.alarms.Alarm): Promise<void> {
+  if (a.name === ALARME) await obterSessaoValida();
 }
 
 /** null se não há sessão ou faltam < 30 s para expirar. Não renova. Expirada: apaga a sessão e, com ela,
@@ -89,5 +108,6 @@ export async function limparSessao(seAinda?: string): Promise<void> {
     if (s?.accessToken !== seAinda) return;
   }
   await chrome.storage.session.remove(CHAVE);
+  await chrome.alarms.clear(ALARME);
   await limparEstadosDasAbas();
 }

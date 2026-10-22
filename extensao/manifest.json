@@ -3,7 +3,7 @@
   "name": "PubliAI",
   "version": "0.1.0",
   "description": "Minha margem nos anúncios do Mercado Livre, com os dados da sua empresa no PubliAI.",
-  "permissions": ["sidePanel", "storage"],
+  "permissions": ["sidePanel", "storage", "alarms"],
   "host_permissions": ["https://*.mercadolivre.com.br/*"],
   "background": { "service_worker": "sw.js", "type": "module" },
   "side_panel": { "default_path": "src/painel/index.html" },

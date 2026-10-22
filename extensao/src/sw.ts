@@ -2,7 +2,12 @@
 // chrome.storage.session; content scripts e painel falam com ele por mensagem.
 import { esquecerAba, esquecerEstado } from './abas';
 import { aoAtualizarAba, rotearMensagem } from './roteador';
-import { receberMensagemExterna } from './sessao';
+import { aoAlarme, obterSessaoValida, receberMensagemExterna } from './sessao';
+
+// Expiração passiva da sessão (ADR-0189 D-4): listener no topo sobrevive à suspensão do MV3; no boot,
+// confere a sessão (alarme perdido com o navegador fechado/SW suspenso).
+chrome.alarms.onAlarm.addListener((a) => { void aoAlarme(a); });
+void obterSessaoValida();
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 

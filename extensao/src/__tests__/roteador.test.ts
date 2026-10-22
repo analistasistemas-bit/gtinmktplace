@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eanDaAba, esquecerAba, esquecerEstado, geracaoDaAba, registrarEanDaAba, registrarEstado } from '../abas';
 import { aoAtualizarAba, rotearMensagem } from '../roteador';
-import { receberMensagemExterna } from '../sessao';
+import { aoAlarme, receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
 
 type Sender = chrome.runtime.MessageSender;
@@ -297,6 +297,41 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect(await estado()).not.toBeNull();
     await conectar('uA:orgX:');
     expect(await estado()).toBeNull();
+  });
+
+  it('expiração passiva (chrome.alarms): sessão de 120 s, relógio +180 s, alarme dispara SEM pedir estado → tudo apagado', async () => {
+    const curta = Math.floor(Date.now() / 1000) + 120;
+    await receberMensagemExterna({ tipo: 'publiai:sessao', accessToken: 'tok-curto', expiresAt: curta, orgNome: '', identidade: 'uA:orgA:' }, APP);
+    expect(chrome.alarms.create).toHaveBeenLastCalledWith('sessao-expira', { when: curta * 1000 - 30_000 });
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 180_000);
+    try {
+      await aoAlarme({ name: 'sessao-expira' } as chrome.alarms.Alarm);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
+    expect(chrome.alarms.clear).toHaveBeenCalledWith('sessao-expira');
+    expect(await ean()).toBeNull();
+    expect(await estado()).toBeNull();
+    expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+  });
+
+  it('alarme de outro nome ou sessão ainda válida não apaga nada', async () => {
+    await aoAlarme({ name: 'outro' } as chrome.alarms.Alarm);
+    await aoAlarme({ name: 'sessao-expira' } as chrome.alarms.Alarm); // token de 1 h ainda vale
+    expect(await estado()).not.toBeNull();
+  });
+
+  it('desconectar limpa o alarme; sessão nova reagenda', async () => {
+    await receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP);
+    expect(chrome.alarms.clear).toHaveBeenCalledWith('sessao-expira');
+    vi.mocked(chrome.alarms.create).mockClear();
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    await receberMensagemExterna({ tipo: 'publiai:sessao', accessToken: 't2', expiresAt: exp, orgNome: '', identidade: 'uB:orgB:' }, APP);
+    expect(chrome.alarms.create).toHaveBeenCalledWith('sessao-expira', { when: exp * 1000 - 30_000 });
   });
 
   it('sessão vencida sem nenhuma chamada: o painel que pede o estado não recebe a análise e o selo sai', async () => {

@@ -6,7 +6,7 @@
 
 **Architecture:** A extensão lê a página do ML (initialState/DOM) e envia o mínimo para uma Edge Function `extensao` do PubliAI, autenticada com o access token Supabase que o app web empurra para a extensão; o servidor checa módulo/organização, usa o token ML da organização **só em leituras**, calcula a margem com as peças financeiras existentes e devolve resultado e parâmetros. Na página do ML só há selos; a análise abre no side panel.
 
-**Tech Stack:** Chrome MV3 (`sidePanel`, `storage`, `externally_connectable`), TypeScript + React + Vite (pacote `extensao/` no workspace pnpm), Supabase Edge Functions (Deno), Postgres com RLS, Upstash Redis, vitest.
+**Tech Stack:** Chrome MV3 (`sidePanel`, `storage`, `alarms`, `externally_connectable`), TypeScript + React + Vite (pacote `extensao/` no workspace pnpm), Supabase Edge Functions (Deno), Postgres com RLS, Upstash Redis, vitest.
 
 **Spec:** `docs/decisions/0189-extensao-publiai-navegador.md` (ADR-0189) + glossário `CONTEXT.md` § Extensão do navegador.
 
@@ -25,7 +25,7 @@
 - Exceção ao "sem dado ao Pulse": "Adicionar ao radar" é ação manual do usuário que envia só o identificador de catálogo ao `pulse-adicionar`; exige módulo Pulse, escrita e auditoria de suporte. Escritas de vínculo em sessão de suporte são auditadas (`auditarOperacaoSuporte`). (D-2, D-10, D-18)
 - Cache de comissão e frete inclui a conta ML da organização; unidades por pacote só cacheiam valor confirmado. (D-18)
 - `transactions.total` do vendedor é janela móvel de ~365 dias: exibir o período informado pelo ML ou rótulo neutro; nunca "total histórico". (D-10)
-- Manifest: permissões `sidePanel`, `storage`; `host_permissions` só `https://*.mercadolivre.com.br/*`; `externally_connectable.matches` só `https://app.publiai.daludi.com.br/*` (+ `http://localhost:5173/*` no build de desenvolvimento). Proibido `<all_urls>`, `webRequest`, `declarativeNetRequest`, iframe de página de concorrente, patch de `fetch`/XHR. Carregar sempre de `extensao/dist`. (D-14)
+- Manifest: permissões `sidePanel`, `storage`, `alarms` (expiração passiva da sessão, D-4); `host_permissions` só `https://*.mercadolivre.com.br/*`; `externally_connectable.matches` só `https://app.publiai.daludi.com.br/*` (+ `http://localhost:5173/*` no build de desenvolvimento). Proibido `<all_urls>`, `webRequest`, `declarativeNetRequest`, iframe de página de concorrente, patch de `fetch`/XHR. Carregar sempre de `extensao/dist`. (D-14)
 - Telemetria: nenhuma biblioteca de terceiros. (D-19)
 - Textos em pt-BR com acentuação; rótulos: "Minha margem", "Estimativa", "Observado", "Abrir no PubliAI", "Custo do SKU {codigo} · {fonte}". (D-6, D-8, D-9)
 - Dropdowns no PubliAI web: `src/components/ui/select.tsx`. (CLAUDE.md)

@@ -11,6 +11,11 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
       sendMessage: vi.fn(async (_msg: unknown) => undefined),
     },
     sidePanel: { open: vi.fn(async () => {}) },
+    alarms: {
+      create: vi.fn(async (_nome: string, _info: { when: number }) => {}),
+      clear: vi.fn(async (_nome: string) => true),
+      onAlarm: { addListener: vi.fn() },
+    },
     tabs: { sendMessage: vi.fn(async (_tabId: number, _msg: unknown) => undefined) },
     storage: {
       session: {
