@@ -1,12 +1,14 @@
 // Content script do anúncio: lê a página, pede a análise ao SW e mostra o selo ao lado do preço (ADR-0189).
 // Roda uma vez em document_idle (a PDP do ML é renderizada no servidor).
 import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
-import { lerAnuncio } from '../leitura/pdp';
+import { ehPaginaCatalogo, lerAnuncio } from '../leitura/pdp';
 import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo } from './selo';
 
 type Resp = { ok: true; dados: RespostaAnuncio } | { ok: false; erro: string };
 
 const FALHA: Resp = { ok: false, erro: 'interno' };
+// Só o registro de uso/erro na edge distingue; a análise é a mesma (vencedor da buy box em /p/).
+const tipoPagina = ehPaginaCatalogo(location.pathname) ? 'catalogo' : 'anuncio';
 // Síncrono pode lançar "Extension context invalidated" após recarregar a extensão: silencioso.
 const chamar = async (corpo: object): Promise<Resp> => {
   try {
@@ -25,7 +27,7 @@ function erroLeitura(motivo: string, mlItemId: string | null) {
   erroEnviado = true;
   void chamar({
     acao: 'erro_leitura',
-    tipoPagina: 'anuncio',
+    tipoPagina,
     mlItemId,
     versao: chrome.runtime.getManifest().version,
     motivo: normalizarMotivo(motivo),
@@ -68,7 +70,7 @@ async function rodar() {
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
   const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco } = lido.dados;
   // eanDaBusca: o SW preenche com o EAN da própria aba (content script não lê storage.session).
-  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: id, sellerId, catalogProductId, categoriaId, preco }));
+  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco }));
   if (!r) return; // sessão mudou durante a análise: nada de selo da sessão anterior
 
   let selo: HTMLElement | null = null;

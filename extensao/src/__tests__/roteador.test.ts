@@ -146,7 +146,7 @@ describe('estado da aba (painel)', () => {
     await registrarEanDaAba(7, '7899941205918');
     await chamar(ANUNCIO, CONTEUDO);
     expect(await estado(7)).toEqual({
-      entrada: { mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
+      entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
@@ -183,6 +183,12 @@ describe('estado da aba (painel)', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
     expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 8 }, PAINEL)).toBeNull();
     expect(rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, CONTEUDO)).toBeUndefined();
+  });
+
+  it('análise de catálogo guarda tipoPagina e a reanálise do painel o reenvia', async () => {
+    await chamar({ ...ANUNCIO, tipoPagina: 'catalogo' }, CONTEUDO);
+    await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL);
+    expect(JSON.parse(fetchFalso.mock.calls.at(-1)![1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'catalogo' });
   });
 
   it('aba começou a carregar outra página (tabs.onUpdated loading) → esquece o estado e avisa o painel', async () => {

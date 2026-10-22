@@ -91,9 +91,10 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           const resposta = await chamarExtensao({ ...corpo, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
-          const { mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
+          // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
+          const { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
           return naMesmaIdentidade(identidade, async () => {
-            await guardarEstado(tabId!, geracao, sessao, { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta);
+            await guardarEstado(tabId!, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta);
             return resposta;
           });
         });

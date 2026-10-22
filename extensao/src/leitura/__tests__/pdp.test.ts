@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { lerAnuncio } from '../pdp.ts';
+import { ehPaginaCatalogo, lerAnuncio } from '../pdp.ts';
 
 const fx = (n: string) => readFileSync(new URL(`../__fixtures__/${n}`, import.meta.url), 'utf8').trim();
 
@@ -97,6 +97,77 @@ describe('lerAnuncio', () => {
     });
     expect(r.ok && [r.dados.sellerId, r.dados.preco]).toEqual(['100001', 150.5]);
   });
+  describe('página /up/ (layout medido em 2026-10-22: components indexado por id, Nordic sem espaços)', () => {
+    const up = (f: (is: any) => void = () => {}) => {
+      const j = JSON.parse(fx('pdp-up-sintetico.json'));
+      f(j.appProps.pageProps.initialState);
+      return lerAnuncio(doc({ __NORDIC_RENDERING_CTX__: `var _n={};_n.ctx={};_n.ctx.r=${JSON.stringify(j)};_n.ctx.r.assets={};` }));
+    };
+    it('extrai os campos; o id MLBU (user product) não vira item', () => {
+      expect(up()).toEqual({
+        ok: true,
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste' },
+      });
+      expect(up((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
+    });
+    it('vendedor, categoria e catálogo pelos componentes quando o evento não traz', () => {
+      const r = up((is) => {
+        const ev = is.components.track.melidata_event.event_data;
+        delete ev.seller_id; delete ev.category_id; delete ev.catalog_product_id;
+      });
+      expect(r.ok && [r.dados.sellerId, r.dados.categoriaId, r.dados.catalogProductId]).toEqual(['123456', 'MLB1000001', 'MLB2234567890']);
+      const so = up((is) => {
+        delete is.components.track.melidata_event.event_data.catalog_product_id;
+        delete is.components.carousel_up_web.carousel_config.product_id;
+      });
+      expect(so.ok && so.dados.catalogProductId).toBe('MLB2234567890'); // header.reviews
+    });
+    it('preço: componente price; sem ele, o do evento só se o item_id é o do anúncio', () => {
+      const p = up((is) => { is.components.price.action.track.melidata_event.event_data.price = 120; });
+      expect(p.ok && p.dados.preco).toBe(120);
+      const ev = up((is) => { delete is.components.price; });
+      expect(ev.ok && ev.dados.preco).toBe(118.9);
+      // evento de topo de outro item: o preço do components.track não vale para ele
+      expect(up((is) => {
+        delete is.components.price;
+        is.track = { melidata_event: { event_data: { item_id: 'MLB9999999999', seller_id: 1, category_id: 'MLB1000001' } } };
+      })).toEqual({ ok: false, motivo: 'campo_ausente:preco' });
+    });
+  });
+
+  describe('página de catálogo /p/ (layout medido em 2026-10-22)', () => {
+    const P = '/produto-sintetico/p/MLB2234567890';
+    const cat = (f: (is: any) => void = () => {}, caminho = P) => {
+      const j = JSON.parse(fx('pdp-catalogo-up-sintetico.json'));
+      f(j.appProps.pageProps.initialState);
+      return lerAnuncio(doc({ __NORDIC_RENDERING_CTX__: `_n.ctx.r=${JSON.stringify(j)};_n.ctx.r.assets={};` }), caminho);
+    };
+    it('item = o do evento da página (vencedor), nunca o id de catálogo; alternative_buying_options ignorado', () => {
+      expect(cat()).toEqual({
+        ok: true,
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste' },
+      });
+    });
+    it('sem item no evento: em /p/ o id do estado (catálogo) não vira item', () => {
+      expect(cat((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
+      // fora de /p/, id igual ao catálogo lido também não vira item
+      expect(cat((is) => { delete is.components.track.melidata_event.event_data.item_id; }, '/x/up/MLBU1')).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
+    });
+    it('preço do componente price de outro item é recusado (e o do evento também, se o item difere)', () => {
+      expect(cat((is) => {
+        is.components.price.action.track.melidata_event.event_data.item_id = 'MLB5555555555';
+        is.components.track.melidata_event.event_data.price = undefined;
+      })).toEqual({ ok: false, motivo: 'campo_ausente:preco' });
+      const r = cat((is) => { is.components.price.action.track.melidata_event.event_data.item_id = 'MLB5555555555'; });
+      expect(r.ok && r.dados.preco).toBe(118.9); // cai no preço do evento do próprio item
+    });
+    it('ehPaginaCatalogo', () => {
+      expect(ehPaginaCatalogo(P)).toBe(true);
+      expect(ehPaginaCatalogo('/x/up/MLBU1')).toBe(false);
+      expect(ehPaginaCatalogo('/MLB-1234-x')).toBe(false);
+    });
+  });
+
   it('sem estado', () => {
     expect(lerAnuncio(doc({}))).toEqual({ ok: false, motivo: 'estado_nao_encontrado' });
     expect(lerAnuncio(doc({ __NORDIC_RENDERING_CTX__: 'lixo' }))).toEqual({ ok: false, motivo: 'estado_nao_encontrado' });

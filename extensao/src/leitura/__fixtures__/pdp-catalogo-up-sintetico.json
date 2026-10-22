@@ -1,0 +1,8 @@
+{"appProps":{"pageProps":{"initialState":{
+ "id":"MLB2234567890",
+ "track":{},
+ "components":{
+  "track":{"melidata_event":{"event_data":{"item_id":"MLB1234567890","seller_id":123456,"price":118.9,"category_id":"MLB1000001","catalog_product_id":"MLB2234567890",
+   "alternative_buying_options":[{"item_id":"MLB5555555555","seller_id":555555,"price":99.9}]}}},
+  "header":{"reviews":{"action":{"track":{"melidata_event":{"event_data":{"catalog_product_id":"MLB2234567890","item_id":"MLB1234567890"}}}}}},
+  "price":{"id":"price","action":{"track":{"melidata_event":{"event_data":{"item_id":"MLB1234567890","price":118.9}}}}}}}}}}

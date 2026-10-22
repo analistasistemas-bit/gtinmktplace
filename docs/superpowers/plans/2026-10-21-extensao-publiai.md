@@ -219,7 +219,7 @@ analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: DepsAnuncio): Promise<Re
 
 ### Task 9: Content scripts do anúncio e da busca por EAN
 
-**Files:** Create `extensao/src/conteudo/anuncio.ts`, `busca-ean.ts`; Modify `extensao/manifest.json` (`content_scripts` para `https://produto.mercadolivre.com.br/*`, `https://www.mercadolivre.com.br/*/p/*`, `https://www.mercadolivre.com.br/up/*`, `https://lista.mercadolivre.com.br/*`); Test `extensao/src/conteudo/__tests__/busca-ean.test.ts`, `selo.test.ts`.
+**Files:** Create `extensao/src/conteudo/anuncio.ts`, `busca-ean.ts`; Modify `extensao/manifest.json` (`content_scripts` para `https://produto.mercadolivre.com.br/*`, `https://www.mercadolivre.com.br/*/p/*`, `https://www.mercadolivre.com.br/up/*`, `https://www.mercadolivre.com.br/*/up/*`, `https://lista.mercadolivre.com.br/*`); Test `extensao/src/conteudo/__tests__/busca-ean.test.ts`, `selo.test.ts`.
 
 **Interfaces:**
 - `eanDaUrlDeBusca(url: string): string | null` — 8, 12, 13 ou 14 dígitos com dígito verificador válido no primeiro segmento do path de `lista.mercadolivre.com.br`; enviado ao SW (`registrarEanDaAba`).

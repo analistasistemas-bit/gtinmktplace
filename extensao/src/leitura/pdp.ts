@@ -9,6 +9,10 @@ import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensa
 //  catálogo: 1º MLB\d+ entre event_data.catalog_product_id, short_description[] com
 //            reviews.action.track.melidata_event.event_data.catalog_product_id e head[id=carousel_up_web].carousel_config.product_id
 //  preço: short_description[id=price].action.track.melidata_event.event_data.price
+// Layout /up/ (medido em 2026-10-22): `_n.ctx.r={` sem espaços; initialState.id = MLBU… (user product, não item);
+//  components é objeto indexado por id: components.track.melidata_event.event_data (item/vendedor/categoria/
+//  catálogo/preço), components.price, components.seller_data, components.carousel_up_web e
+//  components.header.reviews…catalog_product_id. Preço do evento só se o item_id dele é o do anúncio.
 //  Nenhum desses campos usa busca global (um recomendado com id válido casaria o SKU errado).
 //  vendidos: chave `subtitle_label.text`; título: <h1>, og:title ou chave `title`.
 
@@ -28,10 +32,11 @@ function parse(t: string | null | undefined): Obj | null {
 
 function lerJson(doc: Document): Obj | null {
   const nordic = doc.getElementById('__NORDIC_RENDERING_CTX__')?.textContent;
-  const ini = nordic?.indexOf('_n.ctx.r =') ?? -1;
-  const fim = nordic ? nordic.indexOf(';_n.ctx.r.assets', ini) : -1;
+  const m = nordic ? /_n\.ctx\.r\s*=\s*/.exec(nordic) : null;
+  const ini = m ? m.index + m[0].length : -1;
+  const fim = nordic && m ? nordic.indexOf(';_n.ctx.r.assets', ini) : -1;
   if (nordic && ini >= 0 && fim > ini) {
-    const r = parse(nordic.slice(ini + '_n.ctx.r ='.length, fim));
+    const r = parse(nordic.slice(ini, fim));
     const s = (r?.appProps as Obj | undefined)?.pageProps as Obj | undefined;
     if (ehObj(s?.initialState)) return s.initialState;
   }
@@ -54,40 +59,54 @@ function buscar(raiz: unknown, chave: string, ok: (v: unknown) => boolean, prof 
   return undefined;
 }
 
-export function lerAnuncio(doc: Document): ResultadoLeitura {
+/** Página de catálogo (`/<slug>/p/MLB…`): o id da página é o catálogo, não um item. */
+export const ehPaginaCatalogo = (caminho: string) => /\/p\/MLB\d+/.test(caminho);
+
+export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''): ResultadoLeitura {
   const estado = lerJson(doc);
   if (!estado) return { ok: false, motivo: 'estado_nao_encontrado' };
 
   // Só caminhos medidos (2026-10-21); sem busca global para id/vendedor/categoria/preço (valor financeiro: falha em vez de adivinhar).
-  const ev = get(estado, 'track', 'melidata_event', 'event_data');
   const comps = get(estado, 'components');
+  const evComp = get(comps, 'track', 'melidata_event', 'event_data');
+  const ev = get(estado, 'track', 'melidata_event', 'event_data') ?? evComp;
+  // Componente pelo id: nas listas antigas (head[]/short_description[]/content_right[]) ou no objeto indexado (/up/).
+  const porId = (id: string, ...listas: string[]): Obj | undefined => {
+    const c = listas.flatMap((l) => lista(get(comps, l))).find((x) => x.id === id) ?? get(comps, id);
+    return ehObj(c) ? c : undefined;
+  };
   const primeiro = <T>(...c: T[]) => c.find((v) => v !== undefined && v !== null && v !== '');
 
-  const mlItemId = [estado.id, get(ev, 'item_id')].find(ehMlb);
+  // Catálogo só nos caminhos medidos na página real (2026-10-21); valores como "not_apply"/""/"none" → próximo, senão null.
+  const reviews = lista(get(comps, 'short_description'))
+    .map((c) => get(c, 'reviews', 'action', 'track', 'melidata_event', 'event_data', 'catalog_product_id'))
+    .find((v) => v !== undefined) ?? get(comps, 'header', 'reviews', 'action', 'track', 'melidata_event', 'event_data', 'catalog_product_id');
+  const carrossel = porId('carousel_up_web', 'head');
+  const catalogProductId =
+    ([get(ev, 'catalog_product_id'), reviews, get(carrossel, 'carousel_config', 'product_id')].find(ehMlb) as string | undefined) ?? null;
+
+  // Item = o do evento da página (no catálogo, o vencedor da buy box). `estado.id` só como reserva: em /p/ ele é o
+  // catálogo, em /up/ é MLBU (user product) — nunca item. alternative_buying_options (outras ofertas) nunca é lido.
+  const mlItemId = [get(ev, 'item_id'), ehPaginaCatalogo(caminho) || estado.id === catalogProductId ? undefined : estado.id].find(ehMlb);
   if (!mlItemId) return { ok: false, motivo: 'campo_ausente:mlItemId' };
 
-  const sellerData = lista(get(comps, 'content_right')).find((c) => c.id === 'seller_data');
+  const sellerData = porId('seller_data', 'content_right');
   const sellerId = primeiro(get(ev, 'seller_id'), get(sellerData, 'viewport_track', 'melidata_event', 'event_data', 'seller_id'));
   if (sellerId === undefined) return { ok: false, motivo: 'campo_ausente:sellerId' };
 
-  const categoriaId = [...lista(get(comps, 'head')), ...lista(get(comps, 'content_right'))]
+  const categoriaId = [...lista(get(comps, 'head')), ...lista(get(comps, 'content_right')), get(comps, 'carousel_up_web')]
     .map((c) => get(c, 'carousel_config', 'category_id'))
     .concat(get(ev, 'category_id'))
     .find(ehMlb);
   if (!categoriaId) return { ok: false, motivo: 'campo_ausente:categoriaId' };
 
-  // Catálogo só nos caminhos medidos na página real (2026-10-21); valores como "not_apply"/""/"none" → próximo, senão null.
-  const reviews = lista(get(comps, 'short_description'))
-    .map((c) => get(c, 'reviews', 'action', 'track', 'melidata_event', 'event_data', 'catalog_product_id'))
-    .find((v) => v !== undefined);
-  const carrossel = lista(get(comps, 'head')).find((c) => c.id === 'carousel_up_web');
-  const catalogProductId =
-    ([get(ev, 'catalog_product_id'), reviews, get(carrossel, 'carousel_config', 'product_id')].find(ehMlb) as string | undefined) ?? null;
-
-  // preço: só componente id 'price' de short_description[] -> action.track.melidata_event.event_data.price (número ou {value|amount})
-  const compPreco = lista(get(comps, 'short_description')).find((c) => c.id === 'price');
-  const p = get(compPreco, 'action', 'track', 'melidata_event', 'event_data', 'price');
-  const preco = ehObj(p) ? (numero(p.value) > 0 ? numero(p.value) : numero(p.amount)) : numero(p);
+  // preço: componente id 'price' (short_description[] ou objeto) -> action.track.melidata_event.event_data.price
+  // (número ou {value|amount}); sem ele, o do evento de components.track só se o item_id dele é o do anúncio.
+  const valor = (p: unknown) => (ehObj(p) ? (numero(p.value) > 0 ? numero(p.value) : numero(p.amount)) : numero(p));
+  const evPreco = get(porId('price', 'short_description'), 'action', 'track', 'melidata_event', 'event_data');
+  const itemDoPreco = get(evPreco, 'item_id');
+  let preco = itemDoPreco === undefined || itemDoPreco === mlItemId ? valor(get(evPreco, 'price')) : NaN; // preço de outro item: recusa
+  if (!(preco > 0) && get(evComp, 'item_id') === mlItemId) preco = valor(get(evComp, 'price'));
   if (!(preco > 0)) return { ok: false, motivo: 'campo_ausente:preco' };
 
   const sub = buscar(estado, 'subtitle_label', ehObj) as Obj | undefined;

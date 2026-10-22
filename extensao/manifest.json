@@ -9,7 +9,7 @@
   "side_panel": { "default_path": "src/painel/index.html" },
   "content_scripts": [
     {
-      "matches": ["https://produto.mercadolivre.com.br/*", "https://www.mercadolivre.com.br/*/p/*", "https://www.mercadolivre.com.br/up/*"],
+      "matches": ["https://produto.mercadolivre.com.br/*", "https://www.mercadolivre.com.br/*/p/*", "https://www.mercadolivre.com.br/up/*", "https://www.mercadolivre.com.br/*/up/*"],
       "js": ["anuncio.js"],
       "run_at": "document_idle"
     },
