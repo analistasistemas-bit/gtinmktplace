@@ -15,7 +15,7 @@ import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
-  acessoDaAcao, chaveLimite, chaveLimiteErro, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
+  acessoDaAcao, chaveLimite, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
   type Pedido, SELECT_VARIACAO, unidadesDoProduto, validarPedido, variacoesDasLinhas,
 } from './roteamento.ts';
 
@@ -68,11 +68,13 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       return { confirmada: data?.aliquotas_confirmadas_em != null, nacional: n(data?.aliquota_nacional_pct), importado: n(data?.aliquota_importado_pct) };
     },
     porCatalogo: (org, cpid) => variacoes(
-      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).eq('catalog_product_id', cpid).limit(50),
+      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).eq('catalog_product_id', cpid)
+        .order('atualizado_em', { ascending: false }).limit(50),
       'porCatalogo',
     ),
     porGtin: (org, gtin) => variacoes(
-      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).in('gtin', formasGtin(gtin)).limit(50),
+      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).in('gtin', formasGtin(gtin))
+        .order('atualizado_em', { ascending: false }).limit(50),
       'porGtin',
     ),
     porVinculoManual: async (org, chave) => {
@@ -127,7 +129,8 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
 
 async function buscarSku(admin: SupabaseClient, orgId: string, termo: string) {
   const like = `%${escaparLike(termo)}%`;
-  const base = () => admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', orgId).limit(10);
+  const base = () => admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', orgId)
+    .order('atualizado_em', { ascending: false }).limit(50);
   // Consultas separadas: o termo nunca entra numa expressão `.or()` do PostgREST.
   const consultas = [base().ilike('codigo', like), base().ilike('nome', like)];
   if (/^\d{8,14}$/.test(termo)) consultas.push(base().in('gtin', formasGtin(termo)));
@@ -136,14 +139,8 @@ async function buscarSku(admin: SupabaseClient, orgId: string, termo: string) {
     falhou('buscar_sku', error);
     linhas.push(...((data ?? []) as LinhaVariacao[]));
   }
-  const vistos = new Set<string>();
-  const itens = [];
-  for (const l of linhas.sort((a, b) => (a.atualizado_em < b.atualizado_em ? 1 : -1))) {
-    if (vistos.has(l.codigo)) continue;
-    vistos.add(l.codigo);
-    itens.push(itemBusca(l));
-    if (itens.length === 10) break;
-  }
+  const itens = deduplicarPorCodigo(linhas)
+    .sort((a, b) => (a.atualizado_em < b.atualizado_em ? 1 : -1)).slice(0, 10).map(itemBusca);
   return { itens };
 }
 
