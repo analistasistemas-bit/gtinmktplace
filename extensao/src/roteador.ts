@@ -2,8 +2,8 @@
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
 import { chamarExtensao } from './api';
-import { obterSessaoValida } from './sessao';
-import { eanDaAba, eanParaAnuncio, esquecerAba, estadoDaAba, geracaoDaAba, lerAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
+import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
+import { eanDaAba, eanParaAnuncio, esquecerAba, estadoDaAba, lerAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -12,10 +12,10 @@ const ehObjeto = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Estado do painel é melhor esforço: falha de storage não derruba a análise (nem o selo).
- *  Grava com a `geracao` capturada antes da chamada à edge; se a aba navegou nesse meio, a leitura descarta. */
-async function guardarEstado(tabId: number, geracao: string | null, entrada: object, resposta: unknown): Promise<void> {
+ *  Grava com as gerações (página e sessão) capturadas antes da chamada à edge; se mudaram, a leitura descarta. */
+async function guardarEstado(tabId: number, geracao: string | null, sessao: number, entrada: object, resposta: unknown): Promise<void> {
   try {
-    await registrarEstado(tabId, { geracao, entrada, resposta });
+    await registrarEstado(tabId, { geracao, sessao, entrada, resposta });
   } catch {
     return;
   }
@@ -29,6 +29,14 @@ export async function aoAtualizarAba(tabId: number, info: { status?: string; url
   if (info.status !== 'loading' && !info.url) return;
   await novaPaginaNaAba(tabId).catch(() => {});
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
+}
+
+const SEM_SESSAO = { ok: false, erro: 'sem_sessao' } as const;
+
+/** Resposta (e gravação) só se a identidade de quando a chamada começou ainda é a da sessão — conferido na
+ *  fila da sessão, logo antes de gravar/responder. Trocou no meio → sem_sessao, nada gravado. */
+async function naMesmaIdentidade(identidade: string | null, fn: () => Promise<unknown>): Promise<unknown> {
+  return (await seAindaIdentidade(identidade, fn)) ?? SEM_SESSAO;
 }
 
 function ehPaginaDaExtensao(sender: chrome.runtime.MessageSender): boolean {
@@ -61,12 +69,14 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // Painel refaz a análise da aba ao preço da página (após vínculo / "Tentar de novo") e atualiza o estado guardado.
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       const id = msg.tabId;
-      return lerAba(id).then(async ({ estado: e, geracao }) => {
+      return Promise.all([lerAba(id), identidadeAtual()]).then(async ([{ estado: e, geracao, sessao }, identidade]) => {
         const entrada = (e as { entrada?: Record<string, unknown> } | null)?.entrada;
         if (!entrada) return null;
         const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada });
-        await guardarEstado(id, geracao, entrada, resposta); // não regrava se a aba navegou durante a chamada
-        return resposta;
+        return naMesmaIdentidade(identidade, async () => {
+          await guardarEstado(id, geracao, sessao, entrada, resposta); // não regrava se a aba navegou durante a chamada
+          return resposta;
+        });
       });
     }
     case 'publiai:chamar': {
@@ -78,15 +88,20 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
       if (!pagina && corpo.acao === 'analisar_anuncio') {
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
-        return Promise.all([ean, geracaoDaAba(tabId!)]).then(async ([eanDaBusca, geracao]) => {
+        return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           const resposta = await chamarExtensao({ ...corpo, eanDaBusca });
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           const { mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
-          await guardarEstado(tabId!, geracao, { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta);
-          return resposta;
+          return naMesmaIdentidade(identidade, async () => {
+            await guardarEstado(tabId!, geracao, sessao, { mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta);
+            return resposta;
+          });
         });
       }
-      return chamarExtensao(corpo);
+      return identidadeAtual().then(async (identidade) => {
+        const resposta = await chamarExtensao(corpo);
+        return naMesmaIdentidade(identidade, async () => resposta);
+      });
     }
     case 'publiai:abrir-painel':
       if (tabId !== undefined) chrome.sidePanel.open({ tabId }).catch(() => {});

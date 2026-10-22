@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RespostaAnuncio } from '../../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
 import type { MargemTipo } from '../../../../supabase/functions/_shared/extensao/tipos.ts';
-import { aoMensagemDoSw, textoDoSelo } from '../selo';
+import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo } from '../selo';
 
 const tipo = (o: Partial<MargemTipo>): MargemTipo => ({ comissao: 0, imposto: 0, frete: 0, custo: null, recebe: 0, lucro: null, margemPct: null, avisos: [], ...o });
 const resp = (margem: RespostaAnuncio['margem'], proprio = false): RespostaAnuncio =>
@@ -43,5 +43,18 @@ describe('aoMensagemDoSw (selo some quando a sessão muda)', () => {
     const d = doc();
     for (const m of [null, 'x', { tipo: 'publiai:estado-atualizado' }]) aoMensagemDoSw(m, d);
     expect(d.getElementById('publiai-selo')).not.toBeNull();
+  });
+});
+
+describe('comSessaoEstavel (análise em voo quando a sessão muda não cria selo)', () => {
+  it('sessao-mudou durante o await → null', async () => {
+    let soltar!: (v: string) => void;
+    const r = comSessaoEstavel(new Promise<string>((res) => { soltar = res; }));
+    aoMensagemDoSw({ tipo: 'publiai:sessao-mudou' }, document.implementation.createHTMLDocument('ml'));
+    soltar('margem da org A');
+    expect(await r).toBeNull();
+  });
+  it('sem mudança → devolve a resposta', async () => {
+    expect(await comSessaoEstavel(Promise.resolve('ok'))).toBe('ok');
   });
 });

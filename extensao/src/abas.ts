@@ -38,24 +38,29 @@ export async function esquecerAba(tabId: number): Promise<void> {
 // começou, num único `set`; na leitura, estado de outra geração é descartado (resposta atrasada não volta).
 const chaveEstado = (tabId: number) => `estado:${tabId}`;
 const chaveGeracao = (tabId: number) => `geracao:${tabId}`;
+// Geração global da sessão: sobe a cada limparEstadosDasAbas. Estado de outra geração (inclusive sem ela)
+// é descartado — cobre aba que nunca teve chave (1ª análise com a extensão recém-carregada).
+const GERACAO_SESSAO = 'geracao-sessao';
+const ABAS_ML = 'https://*.mercadolivre.com.br/*'; // = host_permissions do manifest
 
-interface EstadoGuardado { geracao: string | null; entrada: object; resposta: unknown }
+interface EstadoGuardado { geracao: string | null; sessao: number; entrada: object; resposta: unknown }
 
 export async function registrarEstado(tabId: number, estado: EstadoGuardado): Promise<void> {
   await chrome.storage.session.set({ [chaveEstado(tabId)]: estado });
 }
 
 /** Geração atual e o estado dela, numa leitura só. Geração ausente = nenhuma navegação vista ainda. */
-export async function lerAba(tabId: number): Promise<{ geracao: string | null; estado: { entrada: object; resposta: unknown } | null }> {
-  const r = await chrome.storage.session.get([chaveEstado(tabId), chaveGeracao(tabId)]);
+export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown } | null }> {
+  const r = await chrome.storage.session.get([chaveEstado(tabId), chaveGeracao(tabId), GERACAO_SESSAO]);
   const g = r[chaveGeracao(tabId)];
   const geracao = typeof g === 'string' ? g : null;
+  const sessao = typeof r[GERACAO_SESSAO] === 'number' ? (r[GERACAO_SESSAO] as number) : 0;
   const e = r[chaveEstado(tabId)] as EstadoGuardado | undefined;
-  return { geracao, estado: e && (e.geracao ?? null) === geracao ? { entrada: e.entrada, resposta: e.resposta } : null };
+  const valido = e && (e.geracao ?? null) === geracao && e.sessao === sessao;
+  return { geracao, sessao, estado: valido ? { entrada: e.entrada, resposta: e.resposta } : null };
 }
 
 export const estadoDaAba = async (tabId: number) => (await lerAba(tabId)).estado;
-export const geracaoDaAba = async (tabId: number) => (await lerAba(tabId)).geracao;
 
 /** A aba foi para outra página: nova geração primeiro, depois some o estado. */
 export async function novaPaginaNaAba(tabId: number): Promise<void> {
@@ -70,11 +75,15 @@ export async function esquecerEstado(tabId: number): Promise<void> {
 }
 
 /** Troca de identidade / desconexão / sessão expirada: nenhuma aba guarda análise nem EAN da sessão anterior.
- *  Nova geração em toda aba com estado (escrita em voo com a geração antiga é descartada na leitura); o
- *  painel é avisado para reler e o content script da aba tira o selo. */
+ *  Sobe a geração global (escrita em voo com a anterior é descartada na leitura) e, em toda aba do ML
+ *  (com chave ou não), nova geração de página; o painel é avisado para reler e o content script tira o selo.
+ *  Só roda na fila da sessão (sessao.ts). */
 export async function limparEstadosDasAbas(): Promise<void> {
   const tudo = await chrome.storage.session.get(null);
+  const atual = typeof tudo[GERACAO_SESSAO] === 'number' ? (tudo[GERACAO_SESSAO] as number) : 0;
+  await chrome.storage.session.set({ [GERACAO_SESSAO]: atual + 1 });
   const abas = new Set<number>();
+  for (const t of await chrome.tabs.query({ url: ABAS_ML }).catch(() => [])) if (t.id !== undefined) abas.add(t.id);
   const remover: string[] = [];
   for (const k of Object.keys(tudo)) {
     const [prefixo, id] = k.split(':');

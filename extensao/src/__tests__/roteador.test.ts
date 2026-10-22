@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eanDaAba, esquecerAba, esquecerEstado, geracaoDaAba, registrarEanDaAba, registrarEstado } from '../abas';
+import { eanDaAba, esquecerAba, esquecerEstado, lerAba, registrarEanDaAba, registrarEstado } from '../abas';
 import { aoAtualizarAba, rotearMensagem } from '../roteador';
 import { aoAlarme, receberMensagemExterna } from '../sessao';
 import { instalarChromeFalso } from './chrome-falso';
@@ -206,10 +206,10 @@ describe('estado da aba (painel)', () => {
 
   it('estado gravado com geração antiga é descartado na leitura (escrita atrasada não ressuscita o anúncio)', async () => {
     await aoAtualizarAba(7, { status: 'loading' });
-    const atual = await geracaoDaAba(7);
-    await registrarEstado(7, { geracao: 'geracao-velha', entrada: { mlItemId: 'MLB0' }, resposta: { ok: true } });
+    const { geracao: atual, sessao } = await lerAba(7);
+    await registrarEstado(7, { geracao: 'geracao-velha', sessao, entrada: { mlItemId: 'MLB0' }, resposta: { ok: true } });
     expect(await estado(7)).toBeNull();
-    await registrarEstado(7, { geracao: atual, entrada: { mlItemId: 'MLB1' }, resposta: { ok: true } });
+    await registrarEstado(7, { geracao: atual, sessao, entrada: { mlItemId: 'MLB1' }, resposta: { ok: true } });
     expect(await estado(7)).toEqual({ entrada: { mlItemId: 'MLB1' }, resposta: { ok: true } });
   });
 
@@ -382,6 +382,49 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
       return new Response('{"custo":"da org B, atrasado"}', { status: 200 });
     });
     expect(await chamar({ ...ANUNCIO, preco: 150 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+  });
+
+  // Troca de identidade logo depois da checagem do api.ts (identidadeAtual) e antes de gravar/responder.
+  const trocarDepoisDaChecagem = (troca: () => Promise<unknown>) => {
+    const get = chrome.storage.session.get;
+    let armado = false;
+    chrome.storage.session.get = vi.fn(async (k: string | string[] | null) => {
+      const v = await get(k);
+      if (armado && k === 'sessao') { armado = false; await troca(); }
+      return v;
+    }) as never;
+    fetchFalso.mockImplementation(async () => { armado = true; return new Response('{"custo":"da org A"}', { status: 200 }); });
+  };
+
+  it('Grok ALTO (a): troca A → B entre a checagem e a gravação → sem_sessao, nada gravado, painel sem A', async () => {
+    trocarDepoisDaChecagem(() => conectar('uB:orgB:'));
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await estado()).toBeNull();
+  });
+
+  it('Grok ALTO (b): 1ª análise numa aba sem chave prévia + logout no meio → painel vazio e a aba é avisada', async () => {
+    vi.mocked(chrome.tabs.query).mockImplementation((async () => [{ id: 9 }]) as never);
+    const aba9: Sender = { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab };
+    trocarDepoisDaChecagem(() => receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP));
+    expect(await chamar(ANUNCIO, aba9)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 9 }, PAINEL)).toBeNull();
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(9, { tipo: 'publiai:sessao-mudou' });
+  });
+
+  it('Grok ALTO (c): estado com geração de sessão antiga ou ausente é descartado por lerAba', async () => {
+    const { geracao, sessao } = await lerAba(7);
+    await registrarEstado(7, { geracao, sessao: sessao - 1, entrada: {}, resposta: 1 });
+    expect((await lerAba(7)).estado).toBeNull();
+    await registrarEstado(7, { geracao, entrada: {}, resposta: 1 } as never);
+    expect((await lerAba(7)).estado).toBeNull();
+    await registrarEstado(7, { geracao, sessao, entrada: {}, resposta: 1 });
+    expect((await lerAba(7)).estado).toEqual({ entrada: {}, resposta: 1 });
+  });
+
+  it('Grok ALTO (d): sem troca, a análise segue gravada e respondida', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"custo":"da org A 2"}', { status: 200 }));
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { custo: 'da org A 2' } });
+    expect(await estado()).toMatchObject({ resposta: { ok: true, dados: { custo: 'da org A 2' } } });
   });
 
   it('identidade malformada é recusada (e não limpa nada)', async () => {

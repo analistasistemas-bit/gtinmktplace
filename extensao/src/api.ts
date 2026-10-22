@@ -1,7 +1,6 @@
 // Cliente da edge `extensao` (ADR-0189 D-17/D-18). fetch puro: sem supabase-js, sem refresh.
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
-import { limparEstadosDasAbas } from './abas';
-import { identidadeAtual, limparSessao, obterSessaoValida } from './sessao';
+import { identidadeAtual, limparAbasNaFila, limparSessao, obterSessaoValida } from './sessao';
 
 const CODIGOS: Record<CodigoErro, true> = {
   sessao_expirada: true,
@@ -47,6 +46,6 @@ export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao
   const erro = typeof codigo === 'string' && Object.hasOwn(CODIGOS, codigo) ? (codigo as CodigoErro) : 'interno';
   if (erro === 'sessao_expirada') await limparSessao(sessao.accessToken);
   // Suporte acabou: o token segue válido, mas o que foi analisado na org do suporte sai das abas.
-  if (erro === 'sessao_suporte_expirada') await limparEstadosDasAbas();
+  if (erro === 'sessao_suporte_expirada') await limparAbasNaFila();
   return { ok: false, erro };
 }

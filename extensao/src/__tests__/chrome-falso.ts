@@ -16,7 +16,10 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
       clear: vi.fn(async (_nome: string) => true),
       onAlarm: { addListener: vi.fn() },
     },
-    tabs: { sendMessage: vi.fn(async (_tabId: number, _msg: unknown) => undefined) },
+    tabs: {
+      sendMessage: vi.fn(async (_tabId: number, _msg: unknown) => undefined),
+      query: vi.fn(async (_q: unknown): Promise<chrome.tabs.Tab[]> => []),
+    },
     storage: {
       session: {
         get: vi.fn(async (k: string | string[] | null) =>

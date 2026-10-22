@@ -14,7 +14,18 @@ export function textoDoSelo(r: RespostaAnuncio): string {
   return `Recebe ${brl(recebe)} · informe o custo`;
 }
 
+let mudancasDeSessao = 0;
+
 /** Mensagem do SW: a sessão mudou (logout, troca de conta, expiração) → o selo com a margem da sessão anterior sai. */
 export function aoMensagemDoSw(msg: unknown, doc: Document = document): void {
-  if ((msg as { tipo?: unknown } | null)?.tipo === 'publiai:sessao-mudou') doc.getElementById('publiai-selo')?.remove();
+  if ((msg as { tipo?: unknown } | null)?.tipo !== 'publiai:sessao-mudou') return;
+  mudancasDeSessao++;
+  doc.getElementById('publiai-selo')?.remove();
+}
+
+/** null se a sessão mudou enquanto `p` estava em voo: a resposta é da sessão anterior e não vira selo. */
+export async function comSessaoEstavel<T>(p: Promise<T>): Promise<T | null> {
+  const antes = mudancasDeSessao;
+  const r = await p;
+  return mudancasDeSessao === antes ? r : null;
 }

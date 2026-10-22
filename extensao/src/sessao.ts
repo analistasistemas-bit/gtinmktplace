@@ -48,6 +48,16 @@ function naFila<T>(op: () => Promise<T>): Promise<T> {
   return r;
 }
 
+/** Roda `fn` na fila só se a sessão guardada ainda é da `identidade` (null = sem sessão); senão devolve null.
+ *  Gravar estado/responder análise aqui dentro: troca de identidade, logout ou expiração no meio não deixam
+ *  passar a resposta pedida pela sessão anterior. `fn` não pode chamar nada enfileirado. */
+export function seAindaIdentidade<T>(identidade: string | null, fn: () => Promise<T>): Promise<T | null> {
+  return naFila(async () => ((await lerSessao())?.identidade ?? null) === identidade ? fn() : null);
+}
+
+/** limparEstadosDasAbas fora da sessão (ex.: suporte acabou), em série com o resto. */
+export const limparAbasNaFila = () => naFila(limparEstadosDasAbas);
+
 export async function receberMensagemExterna(msg: unknown, sender: chrome.runtime.MessageSender): Promise<{ ok: boolean }> {
   if (!origemPermitida(sender.origin)) return { ok: false };
   const m = msg as Partial<Sessao> & { tipo?: unknown } | null;
