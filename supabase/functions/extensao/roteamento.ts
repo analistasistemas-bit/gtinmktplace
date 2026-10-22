@@ -175,10 +175,10 @@ export function deduplicarPorCodigo(linhas: LinhaVariacao[]): LinhaVariacao[] {
   return [...m.values()];
 }
 
-/** Linha → VariacaoCusto; null se a família não tem origem válida. */
-export function variacaoCusto(l: LinhaVariacao): VariacaoCusto | null {
-  const origem = familia(l)?.origem;
-  if (origem !== 'nacional' && origem !== 'importado') return null;
+/** Linha → VariacaoCusto; família sem origem válida → origem null (conta na ambiguidade; nunca presumida). */
+export function variacaoCusto(l: LinhaVariacao): VariacaoCusto {
+  const o = familia(l)?.origem;
+  const origem = o === 'nacional' || o === 'importado' ? o : null;
   const dim = { altura_cm: num(l.altura_cm), largura_cm: num(l.largura_cm), comprimento_cm: num(l.comprimento_cm), peso_gramas: num(l.peso_gramas) };
   return {
     variacaoId: l.id,
@@ -191,7 +191,7 @@ export function variacaoCusto(l: LinhaVariacao): VariacaoCusto | null {
 }
 
 export const variacoesDasLinhas = (linhas: LinhaVariacao[]) =>
-  deduplicarPorCodigo(linhas).map(variacaoCusto).filter((v): v is VariacaoCusto => v != null);
+  deduplicarPorCodigo(linhas).map(variacaoCusto);
 
 /** Item da busca de SKU para o painel. */
 export function itemBusca(l: LinhaVariacao) {

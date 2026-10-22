@@ -11,7 +11,8 @@ export interface VariacaoCusto {
   variacaoId: string;
   codigo: string;
   custo: number | null;
-  origem: 'nacional' | 'importado';
+  /** null = família sem origem cadastrada: a margem fica indisponível, nunca presumida. */
+  origem: 'nacional' | 'importado' | null;
   /** familias.kit_multiplicador ?? 1 */
   unidades: number;
   dimensoes: DimensoesPacote | null;

@@ -68,7 +68,7 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
     const aliquotaPct: Disponivel<number> = !aliquotas.confirmada
       ? { estado: 'indisponivel', motivo: 'Confirme as alíquotas de imposto em Configurações' }
       : origemEfetiva === null
-        ? { estado: 'indisponivel', motivo: 'Informe a origem do produto' }
+        ? { estado: 'indisponivel', motivo: semVinculo ? 'Informe a origem do produto' : 'SKU sem origem cadastrada' }
         : { estado: 'ok', valor: origemEfetiva === 'importado' ? aliquotas.importado ?? 16 : aliquotas.nacional ?? 8 };
     margem = calcularMinhaMargem({
       preco,

@@ -70,6 +70,24 @@ describe('Painel', () => {
     screen.getByText('Custo do SKU 00123 · vínculo manual');
   });
 
+  it('vínculo manual: "Trocar SKU" remove o vínculo (catálogo e item) e reanalisa', async () => {
+    const chamar = vi.fn(async () => ({ ok: true, dados: { ok: true } }));
+    const reanalisarAba = vi.fn(async () => null);
+    const vinculado = { ...DADOS, custo: { fonte: 'vinculo_manual' as const, codigo: '00123', origem: null, unidadesPorPacote: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } };
+    render(<Painel estado={estado({ ok: true, dados: vinculado })} chamar={chamar as never} reanalisarAba={reanalisarAba} />);
+    expect(screen.queryByRole('button', { name: 'Este produto é meu SKU…' })).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Trocar SKU' })); });
+    expect(chamar).toHaveBeenCalledWith({ acao: 'remover_vinculo', chave: { tipo: 'catalogo', valor: 'MLB77' } });
+    expect(chamar).toHaveBeenCalledWith({ acao: 'remover_vinculo', chave: { tipo: 'item', valor: 'MLB1' } });
+    expect(reanalisarAba).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem "Trocar SKU" quando o custo veio do catálogo', () => {
+    const cat = { ...DADOS, custo: { fonte: 'catalogo' as const, codigo: '00123', origem: 'nacional' as const, unidadesPorPacote: 1, custoPacote: { estado: 'ok' as const, valor: 30 } } };
+    render(<Painel estado={estado({ ok: true, dados: cat })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Trocar SKU' })).toBeNull();
+  });
+
   it('mostra qual anúncio está sendo analisado', () => {
     render(<Painel estado={estado({ ok: true, dados: DADOS })} chamar={vi.fn()} reanalisarAba={vi.fn()} />);
     screen.getByText('Anúncio MLB1');

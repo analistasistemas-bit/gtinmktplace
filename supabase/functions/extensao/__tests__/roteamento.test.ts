@@ -172,8 +172,9 @@ describe('variacaoCusto', () => {
     const v = variacaoCusto(linha({ altura_cm: null, custo: 0, familias: [{ origem: 'nacional', kit_multiplicador: 2, nome_pai: null }] }));
     expect(v).toMatchObject({ dimensoes: null, unidades: 2, custo: null, origem: 'nacional' });
   });
-  it('família sem origem válida → null (origem nunca presumida)', () => {
-    expect(variacaoCusto(linha({ familias: { origem: null, kit_multiplicador: null, nome_pai: null } }))).toBeNull();
+  it('família sem origem válida → origem null (nunca presumida), variação mantida', () => {
+    expect(variacaoCusto(linha({ familias: { origem: null, kit_multiplicador: null, nome_pai: null } }))).toMatchObject({ variacaoId: 'v1', origem: null });
+    expect(variacaoCusto(linha({ familias: { origem: 'NACIONAL ', kit_multiplicador: null, nome_pai: null } })).origem).toBeNull();
   });
 });
 
@@ -183,6 +184,10 @@ describe('deduplicarPorCodigo', () => {
     const nova = linha({ id: 'b', atualizado_em: '2026-09-01T00:00:00Z' });
     const semCusto = linha({ id: 'c', custo: null, atualizado_em: '2026-10-01T00:00:00Z' });
     expect(deduplicarPorCodigo([velha, semCusto, nova]).map((l) => l.id)).toEqual(['b']);
+  });
+  it('SKU sem origem conta na ambiguidade: dois códigos, um sem origem → 2', () => {
+    const semOrigem = linha({ id: 'b', codigo: '002', familias: { origem: null, kit_multiplicador: null, nome_pai: null } });
+    expect(variacoesDasLinhas([linha({ id: 'a' }), semOrigem]).map((v) => [v.variacaoId, v.origem])).toEqual([['a', 'importado'], ['b', null]]);
   });
   it('códigos diferentes continuam ambíguos (2)', () => {
     expect(variacoesDasLinhas([linha({ id: 'a' }), linha({ id: 'b', codigo: '002' })])).toHaveLength(2);

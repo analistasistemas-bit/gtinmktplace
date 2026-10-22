@@ -35,6 +35,16 @@ describe('resolverVinculo', () => {
     expect(d.porVinculoManual).not.toHaveBeenCalled();
   });
 
+  it('catálogo com um SKU sem origem: vincula e devolve origem null (não presume)', async () => {
+    const r = await resolverVinculo('org', ent, deps({ cat: [v({ origem: null })] }));
+    expect(r).toEqual({ fonte: 'catalogo', variacao: v({ origem: null }) });
+  });
+
+  it('catálogo ambíguo com um SKU sem origem (>1) pula para o EAN', async () => {
+    const d = deps({ cat: [v(), v({ variacaoId: 'v2', codigo: '002', origem: null })], gtin: [v({ variacaoId: 'g' })] });
+    expect((await resolverVinculo('org', ent, d)).fonte).toBe('ean_da_busca');
+  });
+
   it('catálogo ambíguo (>1) pula para o EAN', async () => {
     const d = deps({ cat: [v(), v({ variacaoId: 'v2' })], gtin: [v({ variacaoId: 'g' })] });
     const r = await resolverVinculo('org', ent, d);

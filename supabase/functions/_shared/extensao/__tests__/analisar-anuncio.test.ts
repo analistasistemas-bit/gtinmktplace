@@ -97,6 +97,15 @@ describe('analisarAnuncio', () => {
     expect(r.custo.custoPacote).toEqual({ estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' });
   });
 
+  it('SKU vinculado sem origem: margem indisponível "SKU sem origem cadastrada" (origem não presumida)', async () => {
+    const d = deps({ cat: [], porVinculoManual: vi.fn(async (_o: string, c: { tipo: string }) => (c.tipo === 'item' ? v({ origem: null }) : null)) });
+    const r = await analisarAnuncio('org', ent, d);
+    const motivo = 'SKU sem origem cadastrada';
+    expect(r.custo).toMatchObject({ fonte: 'vinculo_manual', codigo: '001', origem: null, custoPacote: { estado: 'ok', valor: 10 } });
+    expect(r.margem!.classico).toEqual({ estado: 'indisponivel', motivo });
+    expect(r.margem!.premium).toEqual({ estado: 'indisponivel', motivo });
+  });
+
   it('dep do ML que lança vira indisponível, nunca zero', async () => {
     const d = deps({
       cat: [v()],

@@ -82,6 +82,8 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     aliquotaPct = { estado: 'indisponivel', motivo: 'Confirme as alíquotas de imposto em Configurações' };
   } else if (!variacao) {
     aliquotaPct = { estado: 'indisponivel', motivo: 'Informe a origem do produto' };
+  } else if (variacao.origem === null) {
+    aliquotaPct = { estado: 'indisponivel', motivo: 'SKU sem origem cadastrada' };
   } else {
     aliquotaPct = { estado: 'ok', valor: variacao.origem === 'importado' ? aliquotas.importado ?? 16 : aliquotas.nacional ?? 8 };
   }

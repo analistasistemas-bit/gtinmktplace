@@ -85,6 +85,16 @@ describe('MinhaMargem', () => {
     expect(tipo('Clássico').getAllByText('—').length).toBeGreaterThan(0);
   });
 
+  it('SKU vinculado sem origem: "SKU sem origem cadastrada", não pede custo', () => {
+    montar(resposta({
+      custo: { fonte: 'vinculo_manual', codigo: '00123', origem: null, unidadesPorPacote: 1, custoPacote: { estado: 'ok', valor: 30 } },
+    }));
+    expect(screen.queryByLabelText('Custo do pacote (R$)')).toBeNull();
+    expect(screen.queryByText(/Informe o custo/)).toBeNull();
+    tipo('Clássico').getByText(/SKU sem origem cadastrada/);
+    tipo('Premium').getByText(/SKU sem origem cadastrada/);
+  });
+
   it('editar o preço recalcula na hora e só chama o servidor após 1,5 s', async () => {
     vi.useFakeTimers();
     const analisar = vi.fn(async () => ({ ok: true as const, dados: resposta() }));

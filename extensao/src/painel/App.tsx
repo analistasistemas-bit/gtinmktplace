@@ -104,8 +104,8 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
         analisar={analisar}
         onDados={(dados) => setConfirmado({ base: estado.resposta, dados })}
       />
-      {resposta.dados.custo.fonte === 'nenhuma' && (
-        <VinculoProduto entrada={entrada} chamar={chamar} onVinculado={reanalisar} />
+      {(resposta.dados.custo.fonte === 'nenhuma' || resposta.dados.custo.fonte === 'vinculo_manual') && (
+        <VinculoProduto entrada={entrada} fonte={resposta.dados.custo.fonte} chamar={chamar} onVinculado={reanalisar} />
       )}
     </>
   );
