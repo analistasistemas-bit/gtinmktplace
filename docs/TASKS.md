@@ -31,7 +31,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Render `ean2marketplace-frontend`: `VITE_EXTENSAO_ID`/`VITE_EXTENSAO_URL` configurados e deploy live (22/10).
 - [ ] Após a aprovação do Google: testar a conexão pelo app de produção, instalar pela loja, remover a versão
   carregada da pasta e a worktree `.claude/worktrees/extensao-chrome-design`.
-- [ ] Fatia 2 restante: vendedor, qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 16–19).
+- [x] Task 16 — Vendedor: `analisar_anuncio` devolve `vendedor` (`/users`, cache 24 h); bloco no painel com reputação,
+  medalha, UF e vendas (`"historic"` do ML vira rótulo neutro, ADR-0142).
+- [ ] Loja oficial no bloco Vendedor (D-10): medir antes qual campo do ML a indica (página ou `tags` de `/users`);
+  sem prova, não exibe.
+- [ ] Fatia 2 restante: qualidade do anúncio, radar do Pulse, baixar mídia (Tasks 17–19).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

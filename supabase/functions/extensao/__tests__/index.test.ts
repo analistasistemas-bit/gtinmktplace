@@ -8,6 +8,7 @@ import { getValidAccessTokenConexao } from '../../_shared/ml/token.ts';
 import { buscarListingPrice } from '../../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../../_shared/ml/frete.ts';
 import { mlGet } from '../../_shared/ml/http.ts';
+import { buscarPerfilVendedor } from '../../_shared/ml/perfil-vendedor.ts';
 import { redisIncrComTTL } from '../../_shared/redis/client.ts';
 
 type Contexto = { userId: string; orgId: string; isAdmin: boolean; support: null | { requestId: string; scope: 'read' | 'full' } };
@@ -33,6 +34,7 @@ vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(
 vi.mock('../../_shared/ml/listing-prices.ts', async (orig) => ({ ...(await orig<object>()), buscarListingPrice: vi.fn() }));
 vi.mock('../../_shared/ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: vi.fn() }));
 vi.mock('../../_shared/ml/http.ts', () => ({ mlGet: vi.fn() }));
+vi.mock('../../_shared/ml/perfil-vendedor.ts', () => ({ buscarPerfilVendedor: vi.fn(async () => null) }));
 vi.mock('../../_shared/redis/client.ts', () => ({ redisGet: vi.fn(), redisSet: vi.fn(), redisIncrComTTL: vi.fn(async () => 1) }));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
@@ -284,6 +286,10 @@ describe('extensao — token ML e chave de serviço nunca saem do servidor', () 
     vi.mocked(buscarListingPrice).mockResolvedValue({ sale_fee_amount: 12, sale_fee_details: { percentage_fee: 12, fixed_fee: 0 } });
     vi.mocked(buscarFreteVendedorComProveniencia).mockResolvedValue({ valor: 20, proveniencia: 'official' } as never);
     vi.mocked(mlGet).mockResolvedValue({ id: 'MLB42', attributes: [{ id: 'UNITS_PER_PACK', value_name: '1' }], token: TOKEN });
+    vi.mocked(buscarPerfilVendedor).mockResolvedValue({
+      seller_id: 9, nickname: 'LOJA X', nivel: '5_green', power_seller: 'gold', transactions_total: 50, uf: 'SP',
+      detalhe: { transactions: { period: 'historic', total: 50, completed: null, canceled: null, ratings: { positive: null, neutral: null, negative: null } }, metrics: {} },
+    });
   });
 
   it('análise com sucesso usa o token só nas chamadas ao ML', async () => {
@@ -293,6 +299,8 @@ describe('extensao — token ML e chave de serviço nunca saem do servidor', () 
     expect(buscarListingPrice).toHaveBeenCalledWith(TOKEN, 100, 'MLB5', 'gold_special');
     expect(corpo).not.toContain('SENTINELA');
     expect(JSON.parse(corpo).parametros.classico).toMatchObject({ estado: 'ok' });
+    expect(buscarPerfilVendedor).toHaveBeenCalledWith(TOKEN, 9);
+    expect(JSON.parse(corpo).vendedor).toEqual({ nickname: 'LOJA X', nivel: '5_green', medalha: 'gold', vendas: 50, periodo: null, uf: 'SP' });
   });
 
   it.each([
