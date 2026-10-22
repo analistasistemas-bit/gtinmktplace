@@ -18,7 +18,13 @@ const erros = [];
   }
 })(dist);
 
-if (!statSync(path.join(dist, 'manifest.json'), { throwIfNoEntry: false })) erros.push('manifest.json ausente');
+const manifestPath = path.join(dist, 'manifest.json');
+if (!statSync(manifestPath, { throwIfNoEntry: false })) erros.push('manifest.json ausente');
+// Build de produção nunca aceita sessão de localhost (só o de desenvolvimento, que recebe "development").
+else if (process.argv[2] !== 'development'
+  && (JSON.parse(readFileSync(manifestPath, 'utf8')).externally_connectable?.matches ?? []).some((m) => m.includes('localhost'))) {
+  erros.push('manifest de produção com localhost em externally_connectable');
+}
 // Content scripts MV3 não são módulos: precisam existir e não ter import/export.
 for (const f of ['anuncio.js', 'busca-ean.js']) {
   const p = path.join(dist, f);

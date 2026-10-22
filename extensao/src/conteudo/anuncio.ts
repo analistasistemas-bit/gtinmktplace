@@ -52,7 +52,8 @@ function criarSelo(texto: string, tom: TomDoSelo): HTMLElement {
   const host = document.createElement('div');
   host.id = 'publiai-selo';
   host.style.cssText = 'display:block;margin:10px 0 4px';
-  const raiz = host.attachShadow({ mode: 'open' });
+  // Fechado: scripts da página do ML não leem a margem pelo shadowRoot (dado financeiro da org).
+  const raiz = host.attachShadow({ mode: 'closed' });
   const c = CORES[tom];
   raiz.innerHTML =
     `<style>

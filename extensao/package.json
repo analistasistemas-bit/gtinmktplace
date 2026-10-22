@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p . && vite build && node scripts/build-conteudo.mjs && node scripts/checar-dist.mjs",
-    "build:dev": "tsc -p . && vite build --mode development && node scripts/build-conteudo.mjs development && node scripts/checar-dist.mjs",
+    "build:dev": "tsc -p . && vite build --mode development && node scripts/build-conteudo.mjs development && node scripts/checar-dist.mjs development",
     "test": "vitest run"
   },
   "devDependencies": {
