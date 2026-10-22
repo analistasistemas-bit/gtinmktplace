@@ -127,3 +127,16 @@ usuário (deslogado não traz), e o valor bate com a publicação (MLB4982690837
   e cache por sessão do navegador; nada é gravado no servidor nem enviado a ele. Continua proibido iframe,
   interceptação de `fetch`/XHR e qualquer requisição a anúncio que o usuário não abriu. Captcha ou falha →
   data indisponível, sem nova tentativa automática.
+
+## Errata 2026-10-22 — estimativa de vendas reprovada (D-9, Task 13)
+
+`scripts/validar-estimativa-vendas.ts`, com os critérios fixados no plano antes de medir: na amostra de
+validação (n = 102 anúncios ativos próprios com ≥ 5 vendas, 4 contas), o modelo do Avant teve **erro mediano de
+40,9%** (P75 68,4%), acima do gate de 30%, e pior que as referências ingênuas (centro da faixa 20,0%, piso
+23,1%). Viés sistemático para cima (86 de 102 acima do real, razão mediana 1,41): as vendas reais ficam perto
+do piso da faixa. A amostra é dominada por uma conta (90 de 102) e por faixas pequenas (+5 a +50).
+
+Decisão (regra de D-9): **a estimativa fica desligada**; o painel mostra só a linha observada (faixa, criado
+há, mínimo por mês). `estimarVendas` (`extensao/src/compartilhado/estimativa.ts`) fica só para o script, que pode
+ser rodado de novo quando houver mais contas/faixas; qualquer recalibração usa a amostra de ajuste e é
+validada na de validação, com o mesmo gate.
