@@ -55,7 +55,7 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
   const { custo, parametros } = dados;
   const semVinculo = custo.fonte === 'nenhuma';
   const custoN = numero(custoTxt);
-  const custoDigitado = custoN !== null && custoN >= 0 ? custoN : null;
+  const custoDigitado = custoN !== null && custoN > 0 ? custoN : null; // 0 = não cadastrado, igual à edge (custoDe)
   const origemEfetiva: Origem | null = semVinculo ? origem : custo.origem;
   const daquiSku = unidades.sku === custo.variacaoId ? unidades : { sku: custo.variacaoId, anuncio: '', noSku: '' };
   const unidadesTxt = daquiSku.anuncio;

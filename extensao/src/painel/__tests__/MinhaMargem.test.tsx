@@ -58,6 +58,14 @@ describe('MinhaMargem', () => {
     c.getByText('28,0%');
   });
 
+  it('custo digitado 0 é inválido (igual à edge: custo > 0) e não calcula', () => {
+    montar(resposta());
+    fireEvent.change(screen.getByLabelText('Custo do pacote (R$)'), { target: { value: '0' } });
+    fireEvent.click(screen.getByLabelText('Nacional'));
+    screen.getByText('Informe o custo do pacote para calcular.');
+    expect(screen.queryByRole('region', { name: 'Clássico' })).toBeNull();
+  });
+
   it('alíquotas não confirmadas: pede a confirmação, nunca zero', () => {
     const r = resposta();
     r.parametros.aliquotas = { nacional: null, importado: null, confirmada: false };
