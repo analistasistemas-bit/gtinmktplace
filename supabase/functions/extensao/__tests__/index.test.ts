@@ -318,3 +318,53 @@ describe('extensao — token ML e chave de serviço nunca saem do servidor', () 
     if (r.status !== 200) expect(JSON.parse(corpo)).toEqual({ erro: 'interno' });
   });
 });
+
+describe('extensao — catalogo (Task 23)', () => {
+  const CAT = { acao: 'catalogo', catalogProductId: 'MLB32466350' };
+  const TOKEN = 'APP_USR-SENTINELA-CATALOGO';
+
+  it('sem conexão ML: indisponível, ainda debita o limite', async () => {
+    const r = await post(CAT);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' });
+    expect(vi.mocked(redisIncrComTTL).mock.calls[0][0]).toMatch(/^ext:rl:user-1:/);
+  });
+
+  it('acima de 30/min: 429 limite, sem ir ao ML', async () => {
+    vi.mocked(redisIncrComTTL).mockResolvedValue(31);
+    const r = await post(CAT);
+    expect(r.status).toBe(429);
+    expect(mlGet).not.toHaveBeenCalled();
+  });
+
+  it('com conexão: vencedor do ML, nossa oferta, price-to-win e token fora da resposta', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555, accessToken: TOKEN } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue(TOKEN);
+    vi.mocked(buscarPerfilVendedor).mockResolvedValue(null);
+    vi.mocked(mlGet).mockImplementation(async (url: string) => {
+      if (url.endsWith('/products/MLB32466350')) return { buy_box_winner: { item_id: 'MLB2', price: 90, seller_id: 7 } };
+      if (url.includes('/products/MLB32466350/items')) {
+        return { paging: { total: 2 }, results: [{ item_id: 'MLB2', seller_id: 7, price: 90 }, { item_id: 'MLB9', seller_id: 555, price: 95 }] };
+      }
+      if (url.includes('/items/MLB9/price_to_win')) return { status: 'competing', price_to_win: 89.9, current_price: 95 };
+      return null;
+    });
+    const r = await post(CAT);
+    const corpo = await r.text();
+    expect(r.status).toBe(200);
+    expect(corpo).not.toContain('SENTINELA');
+    const j = JSON.parse(corpo);
+    expect(j.estado).toBe('ok');
+    expect(j.valor.vencedor).toEqual({ itemId: 'MLB2', sellerId: 7, preco: 90, origem: 'api' });
+    expect(j.valor.participacao).toMatchObject({ estado: 'participa', itemId: 'MLB9', posicao: 2, ptw: { status: 'competing', precoParaGanhar: 89.9 } });
+    expect(buscarPerfilVendedor).toHaveBeenCalledWith(TOKEN, 555);
+    expect(f.rpcs).toContainEqual({ fn: 'extensao_registrar_uso', args: { p_org_id: 'org-1', p_user_id: 'user-1', p_tipo: 'catalogo' } });
+  });
+
+  it('falha ao ler as ofertas: indisponível (nunca "ninguém vende")', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue(TOKEN);
+    vi.mocked(mlGet).mockResolvedValue(null);
+    expect(await (await post(CAT)).json()).toEqual({ estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
+  });
+});

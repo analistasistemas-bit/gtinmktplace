@@ -180,3 +180,17 @@ validada na de validação, com o mesmo gate.
 - Miniaturas com algum lado abaixo de 1.200 px ganham `outline` âmbar (tom de atenção) na galeria do ML, casadas pelo id
   da foto; sem casamento seguro, ficam só no painel. Ordem do painel: Quanto vende → Minha margem → vínculo → Qualidade →
   Vendedor.
+
+## Emenda 2026-10-22 — catálogo na edge (D-12, Task 23)
+
+- **Preço para ganhar** = `/items/{nossa oferta}/price_to_win?version=v2` (status `winning`, `sharing_first_place`,
+  `competing`, `listed`; só anúncio próprio). Não usar a referência de preço de `/suggestions/items/{id}/details`
+  (ADR-0119, Errata 3): mede outra coisa. Status fora do vocabulário documentado → descartado.
+- **Vencedor:** `buy_box_winner` de `/products/{id}`; sem ele, o item da buy box da página `/p/` (o evento da página),
+  só se estiver entre as ofertas. Origem marcada (`api`/`pagina`). Medido: a API veio sem `buy_box_winner` na
+  Tramontina, enquanto a página mostrava a buy box.
+- **Posição** por preço (1 + ofertas mais baratas; empate divide), rotulada assim, nunca como posição na buy box.
+- Até 20 perfis `/users` por chamada (cache de 24 h por vendedor); os demais aparecem como "perfil não carregado", e UF
+  e medalha desconhecidas como "não informado". Ficha com mais de 100 ofertas = leitura parcial explícita; nossa oferta
+  ausente nela = "não localizada". Anúncio pausado sai da ficha (medido: DSA em MLB24526166 → "não participa").
+- Cache de 60 s por org + conta ML + catálogo; 1 análise do limite de 30/min por chamada. Consultor: Codex Astra, 22/10.

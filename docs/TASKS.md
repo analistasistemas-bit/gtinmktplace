@@ -41,6 +41,9 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   exibida) com ok/atenção/não informado, lido da página e mantido no navegador; miniaturas abaixo de 1.200 px marcadas na
   galeria do ML. Regras do Avant ("Sem garantia" só exato; dimensão desconhecida não conta). UI/UX aprovado (10/10).
 - [ ] Fatia 2 restante: radar do Pulse, baixar mídia (Tasks 18–19).
+- [x] Task 23 — ação `catalogo` na edge (v5+): ofertas, vencedor só informado pelo ML (API ou buy box da página `/p/`),
+  perfis, resumo e participação com posição por preço e preço para ganhar real (`/items/{id}/price_to_win`). Validado com
+  dados reais (Tramontina 47 ofertas; DSA participando em MLB59324619 e MLB53180253, "competing" R$ 63,17 e R$ 18,11).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

@@ -18,7 +18,8 @@ export type Pedido =
   | { acao: 'buscar_sku'; termo: string }
   | { acao: 'salvar_vinculo'; chave: ChaveVinculo; variacaoId: string }
   | { acao: 'remover_vinculo'; chave: ChaveVinculo }
-  | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string };
+  | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
+  | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null };
 
 const MLB = /^MLB\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,6 +78,10 @@ export function validarPedido(body: unknown): Pedido | null {
       if (mlItemId != null && !mlb(mlItemId)) return null;
       return { acao: 'erro_leitura', tipoPagina: b.tipoPagina, versao, motivo, mlItemId: (mlItemId as string | null | undefined) ?? null };
     }
+    case 'catalogo': {
+      if (!mlb(b.catalogProductId) || (b.itemDaPagina != null && !mlb(b.itemDaPagina))) return null;
+      return { acao: 'catalogo', catalogProductId: b.catalogProductId, itemDaPagina: (b.itemDaPagina as string | null | undefined) ?? null };
+    }
     default:
       return null;
   }
@@ -97,6 +102,10 @@ export const chaveLimiteErro = (userId: string, agora: Date) => `ext:rl-erro:${u
  *  org não reaproveita o valor da anterior) + org. */
 export const chaveFrete = (conta: string, orgId: string, categoriaId: string, preco: number, dim: DimensoesPacote | null) =>
   `ext:fr:${conta}:${orgId}:${categoriaId}:${preco}:${dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm},${dim.peso_gramas}` : 'padrao'}`;
+
+/** Cache do painel de catálogo (60 s): por org e conta ML, porque "Sua" e a participação dependem da conta. */
+export const chaveCatalogo = (orgId: string, conta: string, cpid: string, itemDaPagina: string | null) =>
+  `ext:catalogo:v1:${orgId}:${conta}:${cpid}:${itemDaPagina ?? '-'}`;
 
 /** Cache de listing_prices por conta ML: a consulta leva o token da org (tarifa pode ser da conta). */
 export const chaveComissao = (conta: string, categoriaId: string, tipo: string, preco: number) =>

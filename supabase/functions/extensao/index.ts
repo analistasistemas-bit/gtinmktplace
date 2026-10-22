@@ -12,32 +12,39 @@ import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
+import { extrairNossaOferta } from '../_shared/pulse/parse.ts';
+import { pool } from '../_shared/concorrencia/pool.ts';
+import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil,
+  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
 const LIMITE_ANALISES_MIN = 30;
 const LIMITE_ERROS_HORA = 20;
 const SEM_CONEXAO = { estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' } as const;
+const TTL_CATALOGO_S = 60;
+// ponytail: teto vale também para perfis já em cache; contar só os que faltam exige mexer em perfil-vendedor (_shared).
+const MAX_PERFIS_CATALOGO = 20;
+const ML_API = 'https://api.mercadolibre.com';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
 /** Cache é otimização: erro de Redis nunca derruba a análise; só valor `ok` é gravado. */
-async function emCache<T>(chave: string, guardar: (v: T) => boolean, calcular: () => Promise<T>): Promise<T> {
+async function emCache<T>(chave: string, guardar: (v: T) => boolean, calcular: () => Promise<T>, ttl = TTL_CACHE_S): Promise<T> {
   try {
     const hit = await redisGet(chave);
     if (hit) return JSON.parse(hit) as T;
   } catch { /* segue sem cache */ }
   const v = await calcular();
-  if (guardar(v)) { try { await redisSet(chave, JSON.stringify(v), TTL_CACHE_S); } catch { /* idem */ } }
+  if (guardar(v)) { try { await redisSet(chave, JSON.stringify(v), ttl); } catch { /* idem */ } }
   return v;
 }
 
@@ -160,6 +167,37 @@ async function buscarSku(admin: SupabaseClient, orgId: string, termo: string) {
   return { itens };
 }
 
+/** Painel do catálogo (D-12, Task 23): ofertas + vencedor informado pelo ML + perfis + nossa participação. */
+async function catalogo(admin: SupabaseClient, orgId: string, cpid: string, itemDaPagina: string | null): Promise<Disponivel<RespostaCatalogo>> {
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  if (!conexao?.contaExternaId) return SEM_CONEXAO;
+  const token = await getValidAccessTokenConexao(conexao);
+  const conta = String(conexao.contaExternaId);
+  return emCache<Disponivel<RespostaCatalogo>>(chaveCatalogo(orgId, conta, cpid, itemDaPagina), (v) => v.estado === 'ok', async () => {
+    const [produto, itens] = await Promise.all([
+      mlGet(`${ML_API}/products/${cpid}`, token),
+      mlGet(`${ML_API}/products/${cpid}/items?limit=100`, token),
+    ]);
+    // Falha de leitura das ofertas não vira "ninguém vende" (mesma trava do Pulse).
+    if (itens === null) return { estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' };
+    const resultados = ((itens as { results?: unknown[] }).results ?? []) as { seller_id?: unknown; price?: unknown }[];
+    const v = (produto as { buy_box_winner?: { seller_id?: unknown } } | null)?.buy_box_winner;
+    const daPagina = itemDaPagina ? resultados.find((r) => (r as { item_id?: unknown }).item_id === itemDaPagina) : undefined;
+    const sellerVencedor = typeof v?.seller_id === 'number' ? v.seller_id : typeof daPagina?.seller_id === 'number' ? daPagina.seller_id : null;
+    const ids = perfisPrioritarios(resultados, { sellerId: sellerVencedor }, Number(conta), MAX_PERFIS_CATALOGO);
+    const nossa = extrairNossaOferta(itens, Number(conta));
+    const [perfis, ptw] = await Promise.all([
+      pool(5, ids, async (id) => [id, await buscarPerfilVendedor(token, id).then((p) => (p ? vendedorDoPerfil(p) : null)).catch(() => null)] as const),
+      // Disputa da buy box do nosso anúncio (não a referência de /suggestions, ADR-0119 Errata 3).
+      nossa ? mlGet(`${ML_API}/items/${nossa.item_id}/price_to_win?version=v2`, token).then(parsePrecoParaGanhar).catch(() => null) : null,
+    ]);
+    return {
+      estado: 'ok',
+      valor: montarCatalogo({ produto, itens, contaOrg: conta, perfis: new Map(perfis), ptw, coletadoEm: new Date().toISOString(), itemDaPagina }),
+    };
+  }, TTL_CATALOGO_S);
+}
+
 type Contexto = Awaited<ReturnType<typeof requireUserOrg>>;
 type PedidoVinculo = Extract<Pedido, { acao: 'salvar_vinculo' | 'remover_vinculo' }>;
 
@@ -216,6 +254,14 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promis
     case 'salvar_vinculo':
     case 'remover_vinculo':
       return escreverVinculo(p, admin, ctx);
+    case 'catalogo': {
+      // Uma análise por chamada (inclusive cache), mesmo limite de 30/min (D-18).
+      if (await redisIncrComTTL(chaveLimite(userId, new Date()), 120) > LIMITE_ANALISES_MIN) throw new ErroExtensao('limite', 429);
+      const r = await catalogo(admin, orgId, p.catalogProductId, p.itemDaPagina);
+      const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'catalogo' });
+      if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
+      return r;
+    }
     case 'erro_leitura': {
       // Acima de 20/h por usuário o registro é descartado em silêncio (telemetria, não análise).
       if (await redisIncrComTTL(chaveLimiteErro(userId, new Date()), 3600) > LIMITE_ERROS_HORA) return { ok: true };

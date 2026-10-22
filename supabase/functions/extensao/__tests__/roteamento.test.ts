@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chaveComissao, chaveLimite, chaveLimiteErro, comissaoDaListingPrice, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca,
-  basesDeKit, chaveFrete, dimensoesDaLinha, dataDoProduto, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, vendedorDoPerfil, type LinhaVariacao,
+  basesDeKit, chaveFrete, dimensoesDaLinha, dataDoProduto, dimensoesDoKitVivo, unidadesDoProduto, unidadesDoSku, uppDasBases, validarPedido, variacaoCusto, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo, type LinhaVariacao,
 } from '../roteamento.ts';
 
 const anuncio = {
@@ -331,5 +331,18 @@ describe('vendedorDoPerfil (ADR-0189 D-10)', () => {
   it('"historic" nunca vira total histórico (é janela móvel de ~365 dias, ADR-0142): rótulo neutro', () => {
     expect(vendedorDoPerfil(perfil('historic')).periodo).toBeNull();
     expect(vendedorDoPerfil(perfil(null)).periodo).toBeNull();
+  });
+});
+
+describe('catalogo (Task 23)', () => {
+  it('valida o id do catálogo', () => {
+    expect(validarPedido({ acao: 'catalogo', catalogProductId: 'MLB32466350' })).toEqual({ acao: 'catalogo', catalogProductId: 'MLB32466350', itemDaPagina: null });
+    expect(validarPedido({ acao: 'catalogo', catalogProductId: 'MLB1', itemDaPagina: 'MLB2' })).toMatchObject({ itemDaPagina: 'MLB2' });
+    expect(validarPedido({ acao: 'catalogo', catalogProductId: 'MLB1', itemDaPagina: 'x' })).toBeNull();
+    expect(validarPedido({ acao: 'catalogo', catalogProductId: '../MLB1' })).toBeNull();
+    expect(validarPedido({ acao: 'catalogo' })).toBeNull();
+  });
+  it('chave de cache isola org e conta ML', () => {
+    expect(chaveCatalogo('org-1', '555', 'MLB1', null)).toBe('ext:catalogo:v1:org-1:555:MLB1:-');
   });
 });
