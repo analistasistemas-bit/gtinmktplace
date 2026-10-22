@@ -122,11 +122,18 @@ export function comissaoDaListingPrice(lp: ListingPriceML, preco: number): Dispo
     : { estado: 'ok', valor: c.valor };
 }
 
-/** UNITS_PER_PACK de /products/{id}; inteiro ≥ 1, senão 1. */
-export function unidadesDoProduto(produto: unknown): number {
-  const attrs = (produto as { attributes?: Array<{ id?: string; value_name?: string | null }> } | null)?.attributes;
-  const v = Number(attrs?.find((a) => a.id === 'UNITS_PER_PACK')?.value_name);
-  return Number.isInteger(v) && v >= 1 ? v : 1;
+/** UNITS_PER_PACK de /products/{id} (corpo do mlGet; null = HTTP/timeout). Sem o atributo → ok 1;
+ *  corpo null ou valor que não é inteiro ≥ 1 → indisponível (nunca presumir 1). */
+export function unidadesDoProduto(produto: unknown): Disponivel<number> {
+  const IND = { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' } as const;
+  if (produto == null || typeof produto !== 'object') return IND;
+  const attrs = (produto as { attributes?: unknown }).attributes;
+  type Attr = { id?: string; value_name?: string | null; value_struct?: { number?: unknown } | null };
+  const a = Array.isArray(attrs) ? (attrs as Attr[]).find((x) => x?.id === 'UNITS_PER_PACK') : undefined;
+  if (!a) return { estado: 'ok', valor: 1 };
+  const bruto = a.value_struct?.number ?? a.value_name;
+  const v = bruto == null || bruto === '' ? NaN : Number(bruto);
+  return Number.isInteger(v) && v >= 1 ? { estado: 'ok', valor: v } : IND;
 }
 
 /** Colunas lidas de `variacoes` (+ família) para montar o custo do vínculo. */

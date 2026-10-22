@@ -75,6 +75,16 @@ describe('MinhaMargem', () => {
     expect(screen.queryByLabelText('Custo do pacote (R$)')).toBeNull();
   });
 
+  it('unidades por pacote indisponíveis: custo indisponível com o motivo, sem lucro', () => {
+    const motivo = 'unidades por pacote indisponíveis';
+    montar(resposta({
+      custo: { fonte: 'catalogo', codigo: '00123', origem: 'nacional', unidadesPorPacote: null, custoPacote: { estado: 'indisponivel', motivo } },
+    }));
+    screen.getByText(`Custo do pacote indisponível: ${motivo}`);
+    tipo('Clássico').getByText(motivo); // aviso; lucro '—'
+    expect(tipo('Clássico').getAllByText('—').length).toBeGreaterThan(0);
+  });
+
   it('editar o preço recalcula na hora e só chama o servidor após 1,5 s', async () => {
     vi.useFakeTimers();
     const analisar = vi.fn(async () => ({ ok: true as const, dados: resposta() }));

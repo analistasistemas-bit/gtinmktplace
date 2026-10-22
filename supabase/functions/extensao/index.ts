@@ -107,19 +107,12 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       });
     },
     unidadesPorPacote: async (cpid) => {
-      if (!cpid) return 1;
-      // Falha de token aqui não derruba a análise: comissão/frete já saem indisponíveis.
+      if (!cpid) return { estado: 'ok', valor: 1 };
       const t = await tokenML().catch(() => null);
-      if (!t) return 1;
-      const chave = `ext:upp:${cpid}`;
-      try {
-        const hit = await redisGet(chave);
-        if (hit) return Number(hit);
-      } catch { /* segue sem cache */ }
-      const produto = await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t);
-      const n = unidadesDoProduto(produto);
-      if (produto != null) { try { await redisSet(chave, String(n), TTL_CACHE_S); } catch { /* idem */ } }
-      return n;
+      if (!t) return { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' };
+      // v2: o formato antigo (número cru, gravado até para falha) não é relido.
+      return emCache<Disponivel<number>>(`ext:upp:v2:${cpid}`, (v) => v.estado === 'ok', async () =>
+        unidadesDoProduto(await mlGet(`https://api.mercadolibre.com/products/${cpid}`, t)));
     },
   };
 }

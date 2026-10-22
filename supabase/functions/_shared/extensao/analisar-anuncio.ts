@@ -21,8 +21,8 @@ export interface DepsAnuncio extends DepsVinculo {
   comissao(preco: number, categoriaId: string, tipo: 'gold_special' | 'gold_pro'): Promise<Disponivel<ComissaoML>>;
   /** 'partial' do ML → ok + aviso. */
   frete(preco: number, categoriaId: string, dim: DimensoesPacote | null): Promise<Disponivel<number>>;
-  /** UNITS_PER_PACK de /products/{id}; padrão 1. */
-  unidadesPorPacote(catalogProductId: string | null): Promise<number>;
+  /** UNITS_PER_PACK de /products/{id}: sem catálogo ou sem o atributo → ok 1; falha de leitura → indisponível. */
+  unidadesPorPacote(catalogProductId: string | null): Promise<Disponivel<number>>;
 }
 
 export interface RespostaAnuncio {
@@ -32,7 +32,8 @@ export interface RespostaAnuncio {
     fonte: FonteCusto;
     codigo: string | null;
     origem: 'nacional' | 'importado' | null;
-    unidadesPorPacote: number;
+    /** null = unidades por pacote indisponíveis (o motivo está em custoPacote). */
+    unidadesPorPacote: number | null;
     custoPacote: Disponivel<number> | null;
   };
   /** Para o painel simular outro preço/custo sem nova ida ao ML. */
@@ -45,6 +46,7 @@ export interface RespostaAnuncio {
 }
 
 const FALHA_ML = { estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' } as const;
+const UPP_INDISPONIVEL = { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' } as const;
 
 /** Exceção de dep do ML nunca vira zero (D-7). */
 function semExcecao<T>(f: () => Promise<Disponivel<T>>): Promise<Disponivel<T>> {
@@ -66,7 +68,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
   const [{ fonte, variacao }, aliquotas, unidades] = await Promise.all([
     resolverVinculo(orgId, e, deps),
     deps.aliquotas(orgId),
-    deps.unidadesPorPacote(e.catalogProductId),
+    deps.unidadesPorPacote(e.catalogProductId).catch((): Disponivel<number> => UPP_INDISPONIVEL),
   ]);
   const [classico, premium, frete] = await Promise.all([
     semExcecao(() => deps.comissao(e.preco, e.categoriaId, 'gold_special')),
@@ -84,7 +86,8 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     aliquotaPct = { estado: 'ok', valor: variacao.origem === 'importado' ? aliquotas.importado ?? 16 : aliquotas.nacional ?? 8 };
   }
 
-  const custoPacote = variacao ? custoDoPacote(variacao, unidades) : null;
+  // Pacote ilegível nunca vira 1 (custo de 1/N do pacote inflaria o lucro).
+  const custoPacote = !variacao ? null : unidades.estado === 'ok' ? custoDoPacote(variacao, unidades.valor) : unidades;
   const margem = calcularMinhaMargem({
     preco: e.preco,
     aliquotaPct,
@@ -96,7 +99,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
   return {
     proprio: false,
     margem,
-    custo: { fonte, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null, unidadesPorPacote: unidades, custoPacote },
+    custo: { fonte, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null, unidadesPorPacote: unidades.estado === 'ok' ? unidades.valor : null, custoPacote },
     parametros: { aliquotas, classico, premium, frete },
   };
 }

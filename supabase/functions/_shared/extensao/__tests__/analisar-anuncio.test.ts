@@ -18,7 +18,7 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
     comissao: vi.fn(async (_p: number, _c: string, tipo: 'gold_special' | 'gold_pro') =>
       ({ estado: 'ok' as const, valor: { percentual: tipo === 'gold_pro' ? 16 : 11, fixa: 0 } })),
     frete: vi.fn(async () => ({ estado: 'ok' as const, valor: 20 })),
-    unidadesPorPacote: vi.fn(async () => 1),
+    unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 1 })),
     ...over,
   };
 }
@@ -75,12 +75,26 @@ describe('analisarAnuncio', () => {
   });
 
   it('frete recebe as dimensões da variação vinculada; unidades do pacote multiplicam o custo', async () => {
-    const d = deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => 3) });
+    const d = deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => ({ estado: 'ok' as const, valor: 3 })) });
     const r = await analisarAnuncio('org', ent, d);
     expect(d.frete).toHaveBeenCalledWith(100, 'MLB1', DIM);
     expect(d.unidadesPorPacote).toHaveBeenCalledWith('MLB123');
     expect(r.custo.unidadesPorPacote).toBe(3);
     expect(r.custo.custoPacote).toEqual({ estado: 'ok', valor: 30 });
+  });
+
+  it('unidades por pacote indisponíveis → custoPacote indisponível com o motivo (nunca pacote de 1)', async () => {
+    const motivo = 'unidades por pacote indisponíveis';
+    const r = await analisarAnuncio('org', ent, deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => ({ estado: 'indisponivel' as const, motivo })) }));
+    expect(r.custo.custoPacote).toEqual({ estado: 'indisponivel', motivo });
+    expect(r.custo.unidadesPorPacote).toBeNull();
+    const c = r.margem!.classico;
+    expect(c.estado === 'ok' && [c.valor.custo, c.valor.lucro, c.valor.avisos]).toEqual([null, null, [motivo]]);
+  });
+
+  it('unidadesPorPacote que lança → indisponível, a análise segue', async () => {
+    const r = await analisarAnuncio('org', ent, deps({ cat: [v()], unidadesPorPacote: vi.fn(async () => { throw new Error('boom'); }) }));
+    expect(r.custo.custoPacote).toEqual({ estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' });
   });
 
   it('dep do ML que lança vira indisponível, nunca zero', async () => {

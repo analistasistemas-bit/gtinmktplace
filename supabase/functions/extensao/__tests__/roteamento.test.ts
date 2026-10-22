@@ -135,14 +135,22 @@ describe('comissaoDaListingPrice', () => {
 });
 
 describe('unidadesDoProduto', () => {
-  it('lê UNITS_PER_PACK inteiro ≥ 1', () => {
-    expect(unidadesDoProduto({ attributes: [{ id: 'UNITS_PER_PACK', value_name: '3' }] })).toBe(3);
+  const upp = (a: object) => ({ attributes: [{ id: 'UNITS_PER_PACK', ...a }] });
+  const IND = { estado: 'indisponivel', motivo: 'unidades por pacote indisponíveis' };
+  it('lê UNITS_PER_PACK inteiro ≥ 1, value_struct.number antes de value_name', () => {
+    expect(unidadesDoProduto(upp({ value_name: '3' }))).toEqual({ estado: 'ok', valor: 3 });
+    expect(unidadesDoProduto(upp({ value_struct: { number: 12, unit: '' }, value_name: '1' }))).toEqual({ estado: 'ok', valor: 12 });
   });
-  it('ausente, inválido ou fracionário → 1', () => {
-    expect(unidadesDoProduto(null)).toBe(1);
-    expect(unidadesDoProduto({ attributes: [] })).toBe(1);
-    expect(unidadesDoProduto({ attributes: [{ id: 'UNITS_PER_PACK', value_name: '2.5' }] })).toBe(1);
-    expect(unidadesDoProduto({ attributes: [{ id: 'UNITS_PER_PACK', value_name: '0' }] })).toBe(1);
+  it('produto sem o atributo → ok 1', () => {
+    expect(unidadesDoProduto({ attributes: [] })).toEqual({ estado: 'ok', valor: 1 });
+    expect(unidadesDoProduto({ attributes: [{ id: 'BRAND', value_name: 'X' }] })).toEqual({ estado: 'ok', valor: 1 });
+  });
+  it('corpo null (HTTP/timeout) ou atributo ilegível → indisponível, nunca 1', () => {
+    expect(unidadesDoProduto(null)).toEqual(IND);
+    expect(unidadesDoProduto(upp({ value_name: '2.5' }))).toEqual(IND);
+    expect(unidadesDoProduto(upp({ value_name: '0' }))).toEqual(IND);
+    expect(unidadesDoProduto(upp({ value_name: null }))).toEqual(IND);
+    expect(unidadesDoProduto(upp({ value_name: 'doze' }))).toEqual(IND);
   });
 });
 

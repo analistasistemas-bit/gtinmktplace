@@ -113,7 +113,7 @@ export function MinhaMargem({ entrada, dados, analisar, onDados }: Props) {
           <p>{`Custo do SKU ${custo.codigo ?? '—'} · ${ROTULO_FONTE[custo.fonte] ?? custo.fonte}`}</p>
           <p className="nota">
             {custo.custoPacote?.estado === 'ok'
-              ? `Custo do pacote: ${brl(custo.custoPacote.valor)}${custo.unidadesPorPacote > 1 ? ` (${custo.unidadesPorPacote} unidades)` : ''}`
+              ? `Custo do pacote: ${brl(custo.custoPacote.valor)}${(custo.unidadesPorPacote ?? 1) > 1 ? ` (${custo.unidadesPorPacote} unidades)` : ''}`
               : `Custo do pacote indisponível: ${custo.custoPacote?.motivo ?? 'sem custo'}`}
           </p>
         </div>
