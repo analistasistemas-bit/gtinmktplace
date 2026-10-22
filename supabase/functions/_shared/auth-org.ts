@@ -18,6 +18,9 @@ export interface SupportSessionRow {
 
 export type SupportAccess = 'read' | 'write';
 
+/** Mensagem de `resolverAcessoOrg` quando falta sessão de suporte válida (ADR-0189 D-18). */
+export const ERRO_SESSAO_SUPORTE = 'sessão de suporte ausente ou expirada';
+
 export function resolverOrgDoPerfil(p: PerfilOrgRow): { orgId: string; isAdmin: boolean } {
   if (!p.is_active || !p.org_id) throw new Error('perfil inativo ou sem organização');
   return { orgId: p.org_id, isAdmin: p.is_admin };
@@ -35,7 +38,7 @@ export function resolverAcessoOrg(
     return { orgId, isAdmin, support: null };
   }
   if (!sessao || sessao.status !== 'active' || !sessao.expires_at || new Date(sessao.expires_at) <= now) {
-    throw new Error('sessão de suporte ausente ou expirada');
+    throw new Error(ERRO_SESSAO_SUPORTE);
   }
   if (access === 'write' && sessao.scope !== 'full') throw new Error('escopo full é necessário para escrita');
   return { orgId: sessao.org_id, isAdmin: false, support: { requestId: sessao.id, scope: sessao.scope } };

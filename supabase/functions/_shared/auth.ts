@@ -1,5 +1,5 @@
 import { adminClient } from './supabase.ts';
-import { resolverAcessoOrg, resolverOrgDoPerfil, type PerfilOrgRow, type SupportAccess, type SupportSessionRow } from './auth-org.ts';
+import { ERRO_SESSAO_SUPORTE, resolverAcessoOrg, resolverOrgDoPerfil, type PerfilOrgRow, type SupportAccess, type SupportSessionRow } from './auth-org.ts';
 
 export { resolverOrgDoPerfil, type PerfilOrgRow };
 
@@ -53,8 +53,11 @@ export async function requireUserOrg(
   }
   let resolved: ReturnType<typeof resolverAcessoOrg>;
   try { resolved = resolverAcessoOrg(data as PerfilOrgRow, session, access); }
-  catch {
-    throw new Response(JSON.stringify({ error: 'perfil inativo ou sem organização' }), { status: 403 });
+  catch (e) {
+    // Header só p/ a edge `extensao` distinguir sessão de suporte expirada (ADR-0189 D-18);
+    // corpo inalterado para os demais chamadores.
+    const headers = (e as Error).message === ERRO_SESSAO_SUPORTE ? { 'x-motivo': 'sessao_suporte' } : undefined;
+    throw new Response(JSON.stringify({ error: 'perfil inativo ou sem organização' }), { status: 403, headers });
   }
   return { userId: user.id, ...resolved };
 }
