@@ -263,3 +263,15 @@ validada na de validação, com o mesmo gate.
   solicitado", nunca "salvo".
 - Limites: 20 fotos, 15 s e 10 MiB por foto (bytes contados na leitura), 100 MiB por ZIP; resposta precisa ser JPEG;
   falha de uma foto não aborta o ZIP e é listada pela posição. Aviso fixo: usar só imagens com autorização de reuso.
+
+## Emenda 2026-10-22 — radar do Pulse no painel (D-2/D-10, Task 18)
+
+- `radar` só lê o que o Pulse já coletou para a org (adminClient com `org_id` explícito em toda consulta); nada da
+  página vai ao Pulse. "Menor preço observado" é o menor das ofertas ativas da última coleta e fica separado do "menor
+  preço relevante" usado nos alertas do Pulse. Sem coleta, contagem e preço ficam nulos (nunca zero).
+- **Errata do plano:** os campos `ptw_*` de `pulse_produtos` não são "preço para ganhar". São a referência de preço do
+  ML (`/suggestions/items/{nosso item}`), gravada pelo coletor só para produto com anúncio nosso publicado (medido:
+  `with_benchmark_high`/`no_benchmark_lowest`, alguns de 31/08). O painel mostra "Preço sugerido pelo ML em dd/mm" só
+  quando `ptw_aplicavel`, sempre com a data.
+- `adicionar_radar` reaproveita o núcleo do `pulse-adicionar` (`_shared/pulse/adicionar.ts`): mesma idempotência e
+  sem disparar coleta; o cron do Pulse coleta. Consultor: Codex Astra.

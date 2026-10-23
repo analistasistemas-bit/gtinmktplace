@@ -297,6 +297,27 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 }
 .ql-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+/* Radar do Pulse (Task 18): mesmas linhas de extrato do Catálogo; status em pílula, alertas como lista curta. */
+.rd-status { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.rd-status.ativo { background: color-mix(in oklab, var(--primary) 12%, var(--card)); color: var(--link, var(--primary)); }
+.rd-status.pausado { background: var(--secondary); color: var(--muted-foreground); }
+.rd-fora, .rd-confirma { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rd-confirma { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; width: 100%; box-sizing: border-box; }
+.rd-acoes { display: flex; align-items: center; gap: 12px; }
+.rd-aviso { font-size: 13px; color: color-mix(in oklab, var(--warning) 70%, var(--foreground)); }
+.rd-ok { font-size: 13px; font-weight: 600; color: color-mix(in oklab, var(--success) 75%, var(--foreground)); }
+.rd-erro { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.rd-coleta { text-align: right; }
+.rd-alertas ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.rd-alertas li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0 6px 10px; font-size: 13px; border-left: 2px solid var(--border); }
+.rd-alertas li + li { margin-top: 2px; }
+.rd-alertas li.acao { border-left-color: var(--warning); }
+.rd-alertas li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.rd-quando { flex: none; font-size: 11px; color: var(--muted-foreground); }
+.rd-abrir { align-self: flex-start; font-size: 13px; font-weight: 500; color: var(--link, var(--primary)); text-decoration: none; }
+.rd-abrir:hover { text-decoration: underline; }
+.rd-abrir:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
+
 /* Baixar fotos (Task 19): rodapé do cartão de qualidade, separado da lista; ação secundária, não compete com os itens. */
 .bf { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .bf-botao { width: 100%; justify-content: space-between; }

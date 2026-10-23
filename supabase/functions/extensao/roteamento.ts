@@ -20,7 +20,8 @@ export type Pedido =
   | { acao: 'remover_vinculo'; chave: ChaveVinculo }
   | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
   | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null }
-  | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[] };
+  | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[] }
+  | { acao: 'radar' | 'adicionar_radar'; catalogProductId: string };
 
 /** Card da busca enviado pelo content script (Task 21). */
 export interface ItemBusca { itemId: string; catalogProductId: string | null; preco: number }
@@ -87,6 +88,9 @@ export function validarPedido(body: unknown): Pedido | null {
       if (!mlb(b.catalogProductId) || (b.itemDaPagina != null && !mlb(b.itemDaPagina))) return null;
       return { acao: 'catalogo', catalogProductId: b.catalogProductId, itemDaPagina: (b.itemDaPagina as string | null | undefined) ?? null };
     }
+    case 'radar':
+    case 'adicionar_radar':
+      return mlb(b.catalogProductId) ? { acao: b.acao, catalogProductId: b.catalogProductId } : null;
     case 'analisar_busca': {
       const { itens, eanDaBusca } = b;
       if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ITENS_BUSCA) return null;

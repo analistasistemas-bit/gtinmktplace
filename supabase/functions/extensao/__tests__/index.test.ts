@@ -384,3 +384,58 @@ describe('extensao — catalogo (Task 23)', () => {
     expect(await (await post(CAT)).json()).toEqual({ estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
   });
 });
+
+describe('extensao — radar do Pulse (Task 18)', () => {
+  const RADAR = { acao: 'radar', catalogProductId: 'MLB32466350' };
+  const ADD = { acao: 'adicionar_radar', catalogProductId: 'MLB32466350' };
+  const comConexao = () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ id: 'c1' } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok');
+  };
+  const pulseDesligado = () => vi.mocked(exigirModulo).mockImplementation(async (_a, _o, m) => m !== 'pulse');
+
+  it('radar com módulo Pulse desligado: só {modulo:false}, sem ler as tabelas do Pulse', async () => {
+    pulseDesligado();
+    expect(await (await post(RADAR)).json()).toEqual({ modulo: false });
+    expect(f.froms.filter((t) => t.startsWith('pulse_'))).toEqual([]);
+  });
+
+  it('adicionar com Pulse desligado: 403 modulo_desligado, sem ML', async () => {
+    pulseDesligado();
+    comConexao();
+    expect((await post(ADD)).status).toBe(403);
+    expect(mlGet).not.toHaveBeenCalled();
+  });
+
+  it('suporte só leitura: adicionar negado e auditado denied, sem ML nem escrita', async () => {
+    f.contexto = suporte('read');
+    comConexao();
+    expect((await post(ADD)).status).toBe(403);
+    expect(auditorias()).toMatchObject([{ target_type: 'extensao_radar:adicionar', target_id: 'MLB32466350', result: 'denied' }]);
+    expect(mlGet).not.toHaveBeenCalled();
+  });
+
+  it('suporte full: já no radar → ok jaExistia, auditado succeeded', async () => {
+    f.contexto = suporte('full');
+    comConexao();
+    vi.mocked(mlGet).mockResolvedValue({ name: 'Fone' });
+    expect(await (await post(ADD)).json()).toEqual({ estado: 'ok', jaExistia: true });
+    expect(auditorias()).toMatchObject([{ target_type: 'extensao_radar:adicionar', result: 'succeeded' }]);
+  });
+
+  it('ficha inexistente no ML: estado próprio, auditado failed, nada gravado', async () => {
+    f.contexto = suporte('full');
+    comConexao();
+    vi.mocked(mlGet).mockResolvedValue(null);
+    expect(await (await post(ADD)).json()).toEqual({ estado: 'ficha_inexistente' });
+    expect(auditorias()).toMatchObject([{ result: 'failed' }]);
+    expect(f.ops.filter((o) => o.tabela === 'pulse_produtos')).toEqual([]);
+  });
+
+  it('acima de 10 por hora: 429 sem ML', async () => {
+    comConexao();
+    vi.mocked(redisIncrComTTL).mockResolvedValue(11);
+    expect((await post(ADD)).status).toBe(429);
+    expect(mlGet).not.toHaveBeenCalled();
+  });
+});

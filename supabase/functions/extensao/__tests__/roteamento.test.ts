@@ -364,3 +364,12 @@ describe('analisar_busca (Task 21)', () => {
     expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: '3000123', itens: [item('MLB1')] })).toMatchObject({ eanDaBusca: '3000123' });
   });
 });
+
+describe('validarPedido — radar (Task 18)', () => {
+  it('radar e adicionar_radar só com id de catálogo válido', () => {
+    expect(validarPedido({ acao: 'radar', catalogProductId: 'MLB32466350' })).toEqual({ acao: 'radar', catalogProductId: 'MLB32466350' });
+    expect(validarPedido({ acao: 'adicionar_radar', catalogProductId: 'MLB32466350', preco: 10 })).toEqual({ acao: 'adicionar_radar', catalogProductId: 'MLB32466350' });
+    expect(validarPedido({ acao: 'adicionar_radar', catalogProductId: 'https://x/p/MLB1' })).toBeNull();
+    expect(validarPedido({ acao: 'radar' })).toBeNull();
+  });
+});

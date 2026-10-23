@@ -9,6 +9,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { resolverEntrada } from '../_shared/pulse/entrada.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { adicionarAoRadar } from '../_shared/pulse/adicionar.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -39,7 +40,7 @@ Deno.serve(async (req) => {
   const token = await getValidAccessTokenConexao(conexao);
 
   const resolvida = resolverEntrada(entrada);
-  let catalogProductId: string | null;
+  let catalogProductId: string | null = null;
   if (resolvida.tipo === 'cpid') {
     catalogProductId = resolvida.valor;
   } else if (resolvida.tipo === 'gtin') {
@@ -50,53 +51,16 @@ Deno.serve(async (req) => {
     const results = (busca as { results?: Array<{ id?: string }> } | null)?.results;
     catalogProductId = results?.[0]?.id ?? null;
     if (!catalogProductId) return json({ erro: 'GTIN sem produto de catálogo no ML' }, 404);
-  } else {
+  }
+  if (!catalogProductId) {
     return json({ erro: 'Informe o link de catálogo (…/p/MLBxxxx) ou um GTIN. Anúncio avulso de terceiro não é acessível pela API do ML.' }, 400);
   }
 
-  const produto = await mlGet(`${API}/products/${catalogProductId}`, token);
-  // Ficha inexistente (link `/p/MLB999…` digitado errado) criava uma linha morta no radar: o
-  // coletor devolve null para sempre e a tela fica em "Ainda sem a primeira coleta" eternamente.
-  if (produto === null) {
-    return json({ erro: 'Ficha de catálogo não encontrada no Mercado Livre. Confira o link ou o GTIN.' }, 404);
+  const r = await adicionarAoRadar(admin, orgId, catalogProductId, token, resolvida.tipo === 'gtin' ? resolvida.valor ?? null : null);
+  if (!r.ok) {
+    return r.motivo === 'ficha_inexistente'
+      ? json({ erro: 'Ficha de catálogo não encontrada no Mercado Livre. Confira o link ou o GTIN.' }, 404)
+      : json({ erro: r.mensagem }, 400);
   }
-  const titulo = (produto as { name?: string } | null)?.name ?? null;
-
-  // Já está no radar? Reaproveita a linha em vez de sobrescrevê-la. O upsert incondicional
-  // rebaixava `origem` de 'auto' para 'manual' e forçava `status: 'ativo'` — e as consequências
-  // são silenciosas: o tier quente pula produto manual, a referência de preço do ML congela, o
-  // arquivamento automático não o alcança e a tela passa a dizer "você não vende este produto"
-  // sobre produto que o operador vende. O `origem` voltaria sozinho no próximo tier completo
-  // (`sincronizarRadar` reenvia 'auto'), mas o `status` não volta nunca: `sincronizarRadar` omite
-  // `status` de propósito, para preservar o pausar/reativar do operador.
-  const { data: existente } = await admin.from('pulse_produtos')
-    .select('id, status').eq('org_id', orgId).eq('catalog_product_id', catalogProductId).maybeSingle();
-  if (existente) {
-    // Exceção deliberada: readicionar uma ficha arquivada é um pedido explícito de trazê-la de
-    // volta. Só o `status` muda — `origem` continua o que era.
-    if (existente.status === 'arquivado') {
-      await admin.from('pulse_produtos').update({ status: 'ativo' }).eq('id', existente.id);
-    }
-    return json({ produto_id: existente.id, ja_existia: true });
-  }
-
-  // GTIN: o que o operador digitou, ou o da nossa variação vinculada a essa ficha (a ficha do ML
-  // não expõe EAN nos atributos — verificado).
-  let gtin: string | null = resolvida.tipo === 'gtin' ? resolvida.valor : null;
-  if (!gtin) {
-    const { data: v } = await admin.from('variacoes')
-      .select('gtin').eq('org_id', orgId).eq('catalog_product_id', catalogProductId)
-      .not('gtin', 'is', null).limit(1).maybeSingle();
-    gtin = (v?.gtin as string | undefined) ?? null;
-  }
-
-  const { data, error } = await admin.from('pulse_produtos')
-    .upsert(
-      { org_id: orgId, catalog_product_id: catalogProductId, titulo, gtin, origem: 'manual', status: 'ativo' },
-      { onConflict: 'org_id,catalog_product_id' },
-    )
-    .select('id').single();
-  if (error) return json({ erro: error.message }, 400);
-
-  return json({ produto_id: data.id });
+  return json(r.jaExistia ? { produto_id: r.produtoId, ja_existia: true } : { produto_id: r.produtoId });
 });

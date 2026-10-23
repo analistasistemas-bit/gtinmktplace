@@ -71,6 +71,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   `01.jpg`… na ordem da galeria, ZIP sem compressão (fflate), sem permissão nova (mlstatic com CORS `*`, Blob + `<a download>`).
   Clips fora (HLS e casados por algoritmo, podem ser de outro criador). Validado com as 7 fotos do anúncio JBL
   MLB5327551864: `unzip -t` sem erros e dimensões iguais às da galeria. UI/UX Codex Sol 10/10.
+- [x] Task 18 — bloco "Radar do Pulse" no anúncio (só com módulo Pulse): status, última coleta, ofertas ativas e menor
+  preço observado, seu preço, referência de preço do ML com a data, até 3 alertas não lidos e "Abrir no Pulse"; fora do
+  radar, "Adicionar ao radar" com confirmação (envia só o id de catálogo; suporte full + auditoria; 10/h). Núcleo do
+  `pulse-adicionar` extraído para `_shared/pulse/adicionar.ts` (contrato da edge mantido). Validado com as linhas reais do
+  radar da DSA (MLB17875987: 89 ofertas, alertas reais). UI/UX Codex Sol 10/10.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

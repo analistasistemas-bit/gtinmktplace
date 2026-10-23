@@ -16,6 +16,8 @@ import { extrairNossaOferta, leituraCompletaDaFicha } from '../_shared/pulse/par
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { analisarBusca } from '../_shared/extensao/busca.ts';
+import { montarRadar, type LinhaAlertaPulse, type LinhaProdutoPulse, type RespostaRadar } from '../_shared/extensao/radar.ts';
+import { adicionarAoRadar } from '../_shared/pulse/adicionar.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
@@ -35,6 +37,7 @@ const TTL_OFERTAS_S = 10 * 60;
 // ponytail: teto vale também para perfis já em cache; contar só os que faltam exige mexer em perfil-vendedor (_shared).
 const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
+const LIMITE_RADAR_HORA = 10; // adicionar ao radar: cada um custa GET /products e trabalho futuro do coletor
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -301,6 +304,58 @@ async function escreverVinculo(p: PedidoVinculo, admin: SupabaseClient, ctx: Con
   return { ok: true };
 }
 
+/** Radar do Pulse (D-2): só leitura do que o Pulse já coletou para a org. adminClient ignora RLS → org em toda consulta.
+ *  ponytail: sem cota de análise (só banco, 3 consultas); limite próprio se virar abuso. */
+async function radar(admin: SupabaseClient, orgId: string, catalogProductId: string): Promise<RespostaRadar> {
+  if (!(await exigirModulo(admin, orgId, 'pulse'))) return { modulo: false };
+  const { data: produto, error } = await admin.from('pulse_produtos')
+    .select('id, status, ultimo_snapshot_em, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_atualizado_em, meu_item_id, meu_preco')
+    .eq('org_id', orgId).eq('catalog_product_id', catalogProductId).maybeSingle();
+  falhou('radar', error);
+  if (!produto || (produto.status !== 'ativo' && produto.status !== 'pausado')) return montarRadar(null, [], []);
+  const [ofertas, alertas] = await Promise.all([
+    admin.from('pulse_ofertas_atual').select('preco').eq('org_id', orgId).eq('produto_id', produto.id).eq('ativo', true),
+    admin.from('pulse_alertas').select('tipo, payload, severidade, criado_em')
+      .eq('org_id', orgId).eq('produto_id', produto.id).eq('lido', false)
+      .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(3),
+  ]);
+  falhou('radar ofertas', ofertas.error);
+  falhou('radar alertas', alertas.error);
+  const precos = ((ofertas.data ?? []) as { preco: unknown }[]).map((o) => Number(o.preco)).filter((n) => Number.isFinite(n) && n > 0);
+  return montarRadar(produto as LinhaProdutoPulse, precos, (alertas.data ?? []) as LinhaAlertaPulse[]);
+}
+
+/** "Adicionar ao radar" (exceção D-10): ação manual; vai ao Pulse só o id de catálogo. Módulo Pulse + escrita;
+ *  em sessão de suporte só escopo `full`, com auditoria (ADR-0092). Não dispara coleta: o cron do Pulse coleta. */
+async function adicionarRadar(admin: SupabaseClient, ctx: Contexto, catalogProductId: string): Promise<unknown> {
+  const { orgId, userId } = ctx;
+  const alvo = { type: 'extensao_radar:adicionar', id: catalogProductId };
+  if (ctx.support && ctx.support.scope !== 'full') {
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'denied');
+    throw new ErroExtensao('interno', 403);
+  }
+  if (!(await exigirModulo(admin, orgId, 'pulse'))) throw new ErroExtensao('modulo_desligado', 403);
+  if (await redisIncrComTTL(`ext:radar:add:${userId}:${new Date().toISOString().slice(0, 13)}`, 3600) > LIMITE_RADAR_HORA) {
+    throw new ErroExtensao('limite', 429);
+  }
+  let r: Awaited<ReturnType<typeof adicionarAoRadar>>;
+  try {
+    const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+    if (!conexao) return SEM_CONEXAO;
+    r = await adicionarAoRadar(admin, orgId, catalogProductId, await getValidAccessTokenConexao(conexao), null);
+    if (!r.ok && r.motivo === 'erro') throw new Error(`adicionar_radar: ${r.mensagem}`);
+  } catch (e) {
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed').catch((a) => console.error(`extensao: ${(a as Error).message}`));
+    throw e;
+  }
+  if (!r.ok) {
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed');
+    return { estado: 'ficha_inexistente' };
+  }
+  await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+  return { estado: 'ok', jaExistia: r.jaExistia };
+}
+
 async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promise<unknown> {
   const { orgId, userId } = ctx;
   switch (p.acao) {
@@ -326,6 +381,10 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promis
     }
     case 'analisar_busca':
       return buscaAnalisada(admin, ctx, p);
+    case 'radar':
+      return radar(admin, orgId, p.catalogProductId);
+    case 'adicionar_radar':
+      return adicionarRadar(admin, ctx, p.catalogProductId);
     case 'erro_leitura': {
       // Acima de 20/h por usuário o registro é descartado em silêncio (telemetria, não análise).
       if (await redisIncrComTTL(chaveLimiteErro(userId, new Date()), 3600) > LIMITE_ERROS_HORA) return { ok: true };

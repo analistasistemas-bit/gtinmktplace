@@ -6,6 +6,7 @@ import { Busca } from './Busca';
 import { Catalogo } from './Catalogo';
 import type { EstadoBusca } from '../busca-sw';
 import { Qualidade } from './Qualidade';
+import { Radar } from './Radar';
 import { QuantoVende } from './QuantoVende';
 import { Vendedor } from './Vendedor';
 import { VinculoProduto } from './VinculoProduto';
@@ -175,6 +176,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
           onSimular={(valor) => setSimular((s) => ({ valor, seq: (s?.seq ?? 0) + 1 }))}
         />
       )}
+      {entrada.catalogProductId && <Radar key={entrada.catalogProductId} catalogProductId={entrada.catalogProductId} chamar={chamar} />}
       {estado.observado?.qualidade && <Qualidade dados={estado.observado.qualidade} mlItemId={estado.entrada.mlItemId} />}
       {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} lojaOficial={estado.observado?.lojaOficial} />}
     </>
