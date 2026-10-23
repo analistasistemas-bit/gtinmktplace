@@ -71,6 +71,54 @@ describe('lerBusca (Task 20)', () => {
     expect(r[0]).toMatchObject({ itemId: 'MLB4053374163', catalogProductId: 'MLB32466350', patrocinado: true, posicao: 1, selos: ['MAIS VENDIDO'] });
   });
 
+  it('Grok: texto injetado DENTRO de nós do ML não contamina nota, vendidos, preço, selo nem vendedor', () => {
+    const inj = '<span class="avantpro-product-container">1.2 | +99mil vendidos FALSO OUTRO 1 99</span>';
+    document.body.innerHTML = `<ol><li><div class="poly-card">
+      <div class="poly-component__poly-label">${inj}MAIS VENDIDO</div>
+      <a class="poly-component__title" href="${P}">Panelas</a>
+      <span class="poly-component__seller">TRAMONTINA${inj}</span>
+      <div class="poly-component__review-compacted">${inj}4.9 | +10mil vendidos</div>
+      <div class="poly-price__current"><span class="andes-money-amount__fraction">${inj}301</span><span class="andes-money-amount__cents">30</span></div>
+      <span class="polylabel-label">Frete grátis${inj}</span>
+    </div></li></ol>`;
+    const [c] = lerBusca(document);
+    expect(c).toMatchObject({ nota: 4.9, vendidosTexto: '+10mil vendidos', preco: 301.3, vendedor: 'TRAMONTINA', selos: ['MAIS VENDIDO'], freteGratis: true });
+  });
+
+  it('Grok: "N vendidos" sem nota não vira nota', () => {
+    for (const review of ['4 vendidos', '1 vendido', '+4 vendidos', '10 vendidos']) {
+      const [c] = lerBusca(pagina(card({ href: P, titulo: 'X', frac: '10', review })));
+      expect(c.nota).toBeNull();
+      expect(c.vendidosTexto).not.toBeNull();
+    }
+  });
+
+  it('Grok: catálogo só de link www/produto; catálogos diferentes para o mesmo item → desconhecido', () => {
+    const padComP = 'https://click1.mercadolivre.com.br/x/p/MLB999999999?pdp_filters=item_id%3AMLB4053374163#is_advertising=true&position=1';
+    const r = lerBusca(pagina(card({ href: padComP, titulo: 'a', frac: '1', ad: true }) + card({ href: P, titulo: 'a', frac: '1' })));
+    expect(r[0].catalogProductId).toBe('MLB32466350');
+    const outroP = 'https://www.mercadolivre.com.br/y/p/MLB77777777#wid=MLB4053374163&position=9';
+    expect(lerBusca(pagina(card({ href: P, titulo: 'a', frac: '1' }) + card({ href: outroP, titulo: 'a', frac: '1' })))[0].catalogProductId).toBeNull();
+  });
+
+  it('Grok: card aninhado não empresta preço nem Full ao card de fora', () => {
+    document.body.innerHTML = `<ol><li><div class="poly-card">
+      <a class="poly-component__title" href="${P}">Fora</a>
+      <div class="poly-card"><a class="poly-component__title" href="${UP}">Dentro</a>
+        <div class="poly-price__current"><span class="andes-money-amount__fraction">1</span></div>
+        <svg aria-label="Enviado pelo FULL"></svg></div>
+    </div></li></ol>`;
+    const fora = lerBusca(document).find((c) => c.titulo === 'Fora')!;
+    expect([fora.preco, fora.full]).toEqual([null, null]);
+  });
+
+  it('Grok: pdp_filters em lista, wid vazio cai no pdp_filters; ids curtos de catálogo/up são descartados', () => {
+    const lista = 'https://click1.mercadolivre.com.br/mclics/clicks/external/MLB/count?pdp_filters=item_id%3AMLB4053374163%2Cofficial_store%3A1#wid=&is_advertising=true';
+    expect(lerBusca(pagina(card({ href: lista, titulo: 'a', frac: '1' })))[0].itemId).toBe('MLB4053374163');
+    const curto = 'https://www.mercadolivre.com.br/x/p/MLB1#wid=MLB4053374163';
+    expect(lerBusca(pagina(card({ href: curto, titulo: 'a', frac: '1' })))[0].catalogProductId).toBeNull();
+  });
+
   it('preço ilegível vira null (nunca zero)', () => {
     const [c] = lerBusca(pagina(card({ href: P, titulo: 'X', frac: 'abc' })));
     expect(c.preco).toBeNull();
