@@ -15,10 +15,12 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
-> **🟢 Extensão PubliAI para Chrome ([[0189-extensao-publiai-navegador|ADR-0189]]) — em produção desde 2026-10-22** (main
-> `a2753b44`, edge `extensao`, módulo só na DSA). Painel lateral no ML com minha margem, vínculo de SKU e "Quanto vende ·
-> Observado"; estimativa de vendas reprovada e desligada. Chrome Web Store: item `kclmlfceoamdkagokbmhglbgdbdcjgep` em
-> revisão (não listado), política em `publiai.daludi.com.br/privacidade-extensao/`, `VITE_EXTENSAO_ID` já no Render.
+> **🟢 Extensão PubliAI para Chrome ([[0189-extensao-publiai-navegador|ADR-0189]]) — 4 fatias entregues (2026-10-23)**
+> (main `c92822a4`; edges `extensao` v12 e `pulse-adicionar` v18; módulo só na DSA). Painel lateral no ML: minha margem
+> e vínculo de SKU, "Quanto vende · Observado", qualidade do anúncio com "Baixar fotos (ZIP)", vendedor, catálogo, busca
+> (filtros/ordenação no painel e selo de margem nos cards) e radar do Pulse (só leitura + "Adicionar ao radar"). Uso e
+> erros na aba "Extensão" da Central. Estimativa de vendas reprovada e desligada. **Chrome Web Store: 0.2.0 publicada**
+> (item `kclmlfceoamdkagokbmhglbgdbdcjgep`, não listado), instalada e validada no anúncio real em 23/10.
 >
 > **🟡 I2 Painel de Ads ([[0179-painel-de-ads|ADR-0179]]) — em piloto (2026-10-05).** Migration `20261005013741_ads_painel`, `coletar-ads-ml` v12 e `usuarios` v45 em produção; front (`/ads`, módulo `ads` desligado) entra com o merge da branch `worktree-i2-painel-ads`. Falta a Task 8 (Diego: ligar na Avil, total ≤ 1 % do Mercado Ads, 2 semanas, ≥ 1 decisão). Ver `docs/TASKS.md`. **20/10:** aba Campanhas no ar (emenda ADR-0179, edge `ads-campanhas`).
 >

@@ -1,6 +1,6 @@
 # ADR-0189 — Extensão PubliAI no navegador: análise no Mercado Livre sem base de mercado própria
 
-**Status:** Proposto — design fechado em entrevista (grill-with-docs, 2026-10-21); revisado pelo Codex em 2026-10-22; aguardando aprovação do Diego
+**Status:** Aceito — em produção (main `c92822a4`; versão 0.2.0 publicada na Chrome Web Store em 2026-10-23). Design fechado em entrevista (grill-with-docs, 2026-10-21), revisado pelo Codex em 2026-10-22 e implementado com aprovação do Diego (merges de 22 e 23/10)
 **Data:** 2026-10-21
 **Decisores:** Diego
 **Revoga:** o item "Extensão de navegador" da lista **Não fazer** de `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` (2026-09-21) e o "sem extensão Chrome no v1" da [ADR-0119](0119-pulse-inteligencia-de-mercado-dirigida.md) **apenas** no papel de interface de análise. A recusa da extensão como **coletora** continua (ADR-0119 v2 descartado; [ADR-0142](0142-vendas-mensais-por-vendedor.md), alternativa 5).
