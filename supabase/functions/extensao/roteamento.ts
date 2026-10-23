@@ -19,7 +19,12 @@ export type Pedido =
   | { acao: 'salvar_vinculo'; chave: ChaveVinculo; variacaoId: string }
   | { acao: 'remover_vinculo'; chave: ChaveVinculo }
   | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
-  | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null };
+  | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null }
+  | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[] };
+
+/** Card da busca enviado pelo content script (Task 21). */
+export interface ItemBusca { itemId: string; catalogProductId: string | null; preco: number }
+export const MAX_ITENS_BUSCA = 50;
 
 const MLB = /^MLB\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,6 +86,21 @@ export function validarPedido(body: unknown): Pedido | null {
     case 'catalogo': {
       if (!mlb(b.catalogProductId) || (b.itemDaPagina != null && !mlb(b.itemDaPagina))) return null;
       return { acao: 'catalogo', catalogProductId: b.catalogProductId, itemDaPagina: (b.itemDaPagina as string | null | undefined) ?? null };
+    }
+    case 'analisar_busca': {
+      const { itens, eanDaBusca } = b;
+      if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ITENS_BUSCA) return null;
+      if (eanDaBusca != null && !(typeof eanDaBusca === 'string' && /^\d{8,14}$/.test(eanDaBusca))) return null;
+      const vistos = new Set<string>();
+      const lidos: ItemBusca[] = [];
+      for (const i of itens as Record<string, unknown>[]) {
+        if (!i || typeof i !== 'object' || !mlb(i.itemId) || (i.catalogProductId != null && !mlb(i.catalogProductId))) return null;
+        if (typeof i.preco !== 'number' || !Number.isFinite(i.preco) || i.preco <= 0) return null;
+        if (vistos.has(i.itemId)) continue; // dedupe preservando a ordem da busca
+        vistos.add(i.itemId);
+        lidos.push({ itemId: i.itemId, catalogProductId: (i.catalogProductId as string | null | undefined) ?? null, preco: i.preco });
+      }
+      return { acao: 'analisar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: lidos };
     }
     default:
       return null;

@@ -15,6 +15,8 @@ import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { extrairNossaOferta } from '../_shared/pulse/parse.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
+import { analisarBusca } from '../_shared/extensao/busca.ts';
+import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
 import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
@@ -29,6 +31,7 @@ const LIMITE_ANALISES_MIN = 30;
 const LIMITE_ERROS_HORA = 20;
 const SEM_CONEXAO = { estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' } as const;
 const TTL_CATALOGO_S = 60;
+const TTL_OFERTAS_S = 10 * 60;
 // ponytail: teto vale também para perfis já em cache; contar só os que faltam exige mexer em perfil-vendedor (_shared).
 const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
@@ -195,6 +198,61 @@ async function catalogo(admin: SupabaseClient, orgId: string, cpid: string, item
   }, TTL_CATALOGO_S);
 }
 
+/** Busca (D-11/D-18, Task 21): casa os cards no banco; só os casados vão ao ML e consomem o limite. */
+async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userId: string }, p: Extract<Pedido, { acao: 'analisar_busca' }>) {
+  const { orgId, userId } = ctx;
+  const deps = criarDeps(admin, orgId);
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  const token = conexao ? await getValidAccessTokenConexao(conexao).catch(() => null) : null;
+  const linhasPara = async (q: PromiseLike<{ data: unknown; error: { message: string } | null }>, onde: string) => {
+    const { data, error } = await q;
+    falhou(onde, error);
+    return (data ?? []) as LinhaVariacao[];
+  };
+  return analisarBusca(orgId, p, {
+    porCatalogos: async (org, cpids) => {
+      const linhas = await linhasPara(admin.from('variacoes').select(`${SELECT_VARIACAO}, catalog_product_id`).eq('org_id', org).in('catalog_product_id', cpids)
+        .order('atualizado_em', { ascending: false }).limit(500), 'porCatalogos');
+      const grupos = new Map<string, LinhaVariacao[]>();
+      for (const l of linhas) {
+        const cpid = (l as unknown as { catalog_product_id?: string }).catalog_product_id;
+        if (cpid) grupos.set(cpid, [...(grupos.get(cpid) ?? []), l]);
+      }
+      return new Map([...grupos].map(([c, ls]) => [c, variacoesDasLinhas(ls)]));
+    },
+    porGtin: (org, gtin) => deps.porGtin(org, gtin),
+    vinculosManuais: async (org, chaves) => {
+      if (!chaves.length) return new Map<string, VariacaoCusto>();
+      const { data, error } = await admin.from('extensao_vinculos').select('chave_tipo, chave, variacao_id')
+        .eq('org_id', org).in('chave', [...new Set(chaves.map((c) => c.valor))]);
+      falhou('vinculosManuais', error);
+      const vinculos = ((data ?? []) as { chave_tipo: string; chave: string; variacao_id: string }[])
+        .filter((v) => chaves.some((c) => c.tipo === v.chave_tipo && c.valor === v.chave));
+      if (!vinculos.length) return new Map<string, VariacaoCusto>();
+      const linhas = await linhasPara(admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org)
+        .in('id', [...new Set(vinculos.map((v) => v.variacao_id))]), 'vinculosManuais:variacoes');
+      const porId = new Map(variacoesDasLinhas(linhas).map((v) => [v.variacaoId, v]));
+      return new Map(vinculos.flatMap((v) => (porId.has(v.variacao_id) ? [[`${v.chave_tipo}:${v.chave}`, porId.get(v.variacao_id)!] as const] : [])));
+    },
+    ofertasDoCatalogo: async (cpid) => {
+      if (!token) return null;
+      // Só item_id e categoria (a categoria vem da oferta exata do card); falha não é cacheada.
+      return emCache<{ results: { item_id: unknown; category_id: unknown }[] } | null>(`ext:ofertas:v1:${cpid}`, (v) => v !== null, async () => {
+        const j = await mlGet(`${ML_API}/products/${cpid}/items?limit=100`, token) as { results?: { item_id?: unknown; category_id?: unknown }[] } | null;
+        return Array.isArray(j?.results) ? { results: j.results.map((r) => ({ item_id: r?.item_id, category_id: r?.category_id })) } : null;
+      }, TTL_OFERTAS_S);
+    },
+    reservar: async () => {
+      if (await redisIncrComTTL(chaveLimite(userId, new Date()), 120) > LIMITE_ANALISES_MIN) return false;
+      const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
+      if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
+      return true;
+    },
+    // Card da busca: sem vendedor nem data de catálogo (só a margem ao preço do card).
+    analisar: (e) => analisarAnuncio(orgId, e, { ...deps, vendedor: async () => null, catalogoCriadoEm: async () => null }),
+  });
+}
+
 type Contexto = Awaited<ReturnType<typeof requireUserOrg>>;
 type PedidoVinculo = Extract<Pedido, { acao: 'salvar_vinculo' | 'remover_vinculo' }>;
 
@@ -259,6 +317,8 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promis
       if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       return r;
     }
+    case 'analisar_busca':
+      return buscaAnalisada(admin, ctx, p);
     case 'erro_leitura': {
       // Acima de 20/h por usuário o registro é descartado em silêncio (telemetria, não análise).
       if (await redisIncrComTTL(chaveLimiteErro(userId, new Date()), 3600) > LIMITE_ERROS_HORA) return { ok: true };

@@ -59,6 +59,9 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Task 20 — parser da busca (`extensao/src/leitura/busca.ts`): DOM dos `.poly-card` (o estado da busca usa serializador
   próprio do ML, não JSON); item pelo `wid` do link do título, catálogo pelo `/p/`, patrocinado pelo fragmento; nada lido de
   elementos injetados por outras extensões (Avantpro). Medido ao vivo: 68 cards → 54 itens únicos, 39 com catálogo.
+- [x] Task 21 — `analisar_busca` na edge (v9): casamento em lote no banco; só os cards casados vão ao ML e consomem o
+  limite; categoria só da oferta exata. Validado com dados reais: SKU 00000081 da DSA casado pelo catálogo MLB53180253,
+  Clássico lucro R$ 2,24 (11,21%) a R$ 19,99; cards sem vínculo sem chamada ao ML.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

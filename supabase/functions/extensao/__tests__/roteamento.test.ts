@@ -346,3 +346,19 @@ describe('catalogo (Task 23)', () => {
     expect(chaveCatalogo('org-1', '555', 'MLB1', null)).toBe('ext:catalogo:v1:org-1:555:MLB1:-');
   });
 });
+
+describe('analisar_busca (Task 21)', () => {
+  const item = (itemId: string, extra: Record<string, unknown> = {}) => ({ itemId, catalogProductId: 'MLB100', preco: 10, ...extra });
+  it('valida itens, dedupe preservando a ordem, EAN opcional', () => {
+    expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: '7891234567895', itens: [item('MLB1'), item('MLB2'), item('MLB1')] }))
+      .toEqual({ acao: 'analisar_busca', eanDaBusca: '7891234567895', itens: [item('MLB1'), item('MLB2')] });
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1', { catalogProductId: null })] })).toMatchObject({ eanDaBusca: null });
+  });
+  it('recusa vazio, mais de 50, preço inválido, id inválido e EAN fora do formato', () => {
+    expect(validarPedido({ acao: 'analisar_busca', itens: [] })).toBeNull();
+    expect(validarPedido({ acao: 'analisar_busca', itens: Array.from({ length: 51 }, (_, i) => item(`MLB${i + 1}`)) })).toBeNull();
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1', { preco: 0 })] })).toBeNull();
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('X1')] })).toBeNull();
+    expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: 'abc', itens: [item('MLB1')] })).toBeNull();
+  });
+});

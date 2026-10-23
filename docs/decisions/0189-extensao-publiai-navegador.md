@@ -231,3 +231,13 @@ validada na de validação, com o mesmo gate.
 - Categoria (comissão/frete) só da oferta exata em `/products/{catálogo}/items`; fora de catálogo, margem indisponível.
 - Os cards montam depois do `document_idle`: a leitura da busca precisa esperar os cards (e observar os que entram no
   scroll, sem analisar sozinha: "Analisar novos resultados"). Consultor: Codex Astra, 22/10.
+
+## Emenda 2026-10-22 — análise da busca (D-11/D-18, Task 21)
+
+- `analisar_busca` recebe até 50 cards e casa todos com os SKUs da org no banco, na prioridade do vínculo (catálogo → EAN da
+  busca → vínculo manual de catálogo e de item). Card sem vínculo não vai ao ML nem consome o limite; ausência de vínculo
+  não prova que o produto não é da empresa (o painel oferece "Vincular ao meu SKU").
+- O limite de 30 análises/min passa a contar **por card casado analisado**, reservado na ordem da busca antes de ir ao ML;
+  o excedente volta `limite` (resolve o conflito "50 por busca × 30/min" sem estourar a cota). Consultor: Codex Astra.
+- Categoria só da oferta exata em `/products/{catálogo}/items`; card casado sem catálogo (ex.: vínculo manual por item em
+  patrocinado) = "sem categoria", margem indisponível. Sem cache da resposta inteira (vínculo, custo e cota mudam).
