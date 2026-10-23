@@ -571,6 +571,10 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
 describe('busca no SW (Task 22)', () => {
   const BUSCA: Sender = { id: 'ext-publiai', tab: { id: 7, url: 'https://lista.mercadolivre.com.br/panela' } as chrome.tabs.Tab, url: 'https://lista.mercadolivre.com.br/panela' };
   const card = (itemId: string, o: Record<string, unknown> = {}) => ({ itemId, catalogProductId: 'MLB100', preco: 10, titulo: itemId, selos: [], patrocinado: false, ...o });
+  const URL_EAN = 'https://lista.mercadolivre.com.br/7899941205918_NoIndex_True';
+  const BUSCA_EAN: Sender = { ...BUSCA, tab: { id: 7, url: URL_EAN } as chrome.tabs.Tab, url: URL_EAN };
+  const analisesNaEdge = () => fetchFalso.mock.calls.filter(([, init]) => String((init as { body?: unknown })?.body ?? '').includes('analisar_busca'));
+  const respostaEdge = (itens: object[]) => new Response(JSON.stringify({ itens, limiteAtingido: false }), { status: 200 });
   const estado = () => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 7 }, PAINEL) as Promise<{ observado: { cards: { itemId: string }[] }; resposta: { resultados: Record<string, { estado: string }> } } | null>;
 
   it('content script registra os cards da própria aba (validados); os do scroll somam', async () => {
@@ -579,9 +583,9 @@ describe('busca no SW (Task 22)', () => {
     expect((await estado())!.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000001', 'MLB1000002', 'MLB1000003']);
   });
 
-  it('painel analisa os pendentes (até 50) com o EAN da aba e o content script recebe os resultados', async () => {
-    await registrarEanDaAba(7, '7899941205918');
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), card('MLB1000002', { preco: null })], ocorrencias: 2 }, BUSCA);
+  it('painel analisa os pendentes (até 50) com o EAN da URL da busca e o content script recebe os resultados', async () => {
+    await registrarEanDaAba(7, '96385074'); // EAN de outra busca da mesma aba: não vale
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), card('MLB1000002', { preco: null })], ocorrencias: 2 }, BUSCA_EAN);
     fetchFalso.mockImplementation(async () => new Response(JSON.stringify({ itens: [{ itemId: 'MLB1000001', estado: 'sem_vinculo' }], limiteAtingido: false }), { status: 200 }));
     const r = await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
     expect(r).toMatchObject({ ok: true });
@@ -595,6 +599,59 @@ describe('busca no SW (Task 22)', () => {
     expect(rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, BUSCA)).toBeUndefined();
     expect(rotearMensagem({ tipo: 'publiai:destacar-card', tabId: 7, itemId: 'MLB1000001' }, BUSCA)).toBeUndefined();
     expect(rotearMensagem({ tipo: 'publiai:busca-cards', cards: [] }, PAINEL)).toBeUndefined();
+  });
+
+  it('Grok: busca textual na mesma aba não herda o EAN guardado de busca anterior', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_vinculo' }]));
+    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    expect(JSON.parse(ultimaEdge()[1].body).eanDaBusca).toBeNull();
+  });
+
+  it('Grok: cards do scroll durante a análise não apagam o resultado que chega', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    fetchFalso.mockImplementation(async () => {
+      await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000002')], ocorrencias: 2 }, BUSCA);
+      return respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_vinculo' }]);
+    });
+    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000003')], ocorrencias: 3 }, BUSCA);
+    const e = (await estado())!;
+    expect(e.resposta.resultados.MLB1000001.estado).toBe('sem_vinculo');
+    expect(e.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000001', 'MLB1000002', 'MLB1000003']);
+  });
+
+  it('Grok: duas análises sobrepostas mandam o card à edge uma vez só (cota debitada uma vez)', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'ok' }]));
+    await Promise.all([
+      rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL),
+      rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL),
+    ]);
+    expect(analisesNaEdge()).toHaveLength(1);
+  });
+
+  it('Grok: card reenviado com preço novo perde o resultado e volta a pendente', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001', { preco: null })], ocorrencias: 1 }, BUSCA);
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_categoria' }]));
+    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001', { preco: 12, catalogProductId: 'MLB2000000' })], ocorrencias: 1 }, BUSCA);
+    expect((await estado())!.resposta.resultados.MLB1000001).toBeUndefined();
+    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    expect(JSON.parse(ultimaEdge()[1].body).itens).toMatchObject([{ itemId: 'MLB1000001', catalogProductId: 'MLB2000000', preco: 12 }]);
+  });
+
+  it('Grok: só o hash mudou na busca → mantém cards; outra URL de busca → começa do zero', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    await aoAtualizarAba(7, { url: 'https://lista.mercadolivre.com.br/panela#D[A:panela]' });
+    expect((await estado())!.observado.cards).toHaveLength(1);
+    await aoAtualizarAba(7, { url: 'https://lista.mercadolivre.com.br/frigideira' });
+    expect(await estado()).toBeNull();
+    const OUTRA: Sender = { ...BUSCA, tab: { id: 7, url: 'https://lista.mercadolivre.com.br/frigideira' } as chrome.tabs.Tab };
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000002')], ocorrencias: 1 }, OUTRA);
+    expect((await estado())!.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000002']);
   });
 
   it('cards de página que não é a busca do ML são ignorados', async () => {

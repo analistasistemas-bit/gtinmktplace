@@ -37,6 +37,7 @@ export function App() {
     const lerAbaAtiva = async () => {
       const [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
       abaAtual = aba?.id ?? null;
+      setEstado(undefined); // até o estado desta aba chegar, nada da anterior (com o tabId novo) aparece
       setTabId(abaAtual);
       if (abaAtual === null) setEstado(null);
       else await carregar(abaAtual);

@@ -6,7 +6,7 @@ import { observadoDoAnuncio } from './criacao';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
 import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 import { normalizarQualidade } from './compartilhado/qualidade';
-import { analisarBuscaDaAba, destacarCard, registrarCardsDaBusca } from './busca-sw';
+import { analisarBuscaDaAba, destacarCard, ehBusca, registrarCardsDaBusca } from './busca-sw';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -39,6 +39,9 @@ async function guardarEstado(tabId: number, geracao: string | null, sessao: numb
 export async function aoAtualizarAba(tabId: number, info: { status?: string; url?: string }): Promise<void> {
   if (info.url) {
     if (await mesmoAnuncioNaAba(tabId, info.url).catch(() => false)) return;
+    // Busca: só o hash mudou (mesma URL) → mesma página, mantém cards e margens.
+    const e = await estadoDaAba(tabId).catch(() => null);
+    if (ehBusca(e) && e.entrada.url === info.url.split('#')[0]) return;
   } else if (info.status === 'loading') {
     await esquecerAnuncioDaAba(tabId).catch(() => {});
   } else return;

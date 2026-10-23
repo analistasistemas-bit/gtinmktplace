@@ -9,7 +9,7 @@ import { seloDaBusca } from './selo-busca';
 const ESPERA_MS = 800;
 const LIMITE_ESPERA_MS = 15_000;
 const HOST = 'publiai-selo-busca';
-let enviados = new Set<string>();
+let enviados = new Map<string, string>(); // itemId → assinatura do que já foi enviado
 let resultados: Record<string, ResultadoCard> = {};
 
 const enviar = (msg: object) => {
@@ -21,11 +21,13 @@ let urlAtual = location.href.split('#')[0];
 function lerEEnviar(): void {
   // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
   const url = location.href.split('#')[0];
-  if (url !== urlAtual) { urlAtual = url; enviados = new Set(); resultados = {}; }
-  const cards = lerBusca(document);
-  const novos = cards.filter((c) => !enviados.has(c.itemId));
+  if (url !== urlAtual) { urlAtual = url; enviados = new Map(); limparSelos(); }
+  // Reenvia também o card que completou preço, catálogo ou vendidos depois da 1ª leitura.
+  const assinatura = (c: { preco: number | null; catalogProductId: string | null; vendidosTexto: string | null }) =>
+    `${c.preco}|${c.catalogProductId}|${c.vendidosTexto}`;
+  const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
-  for (const c of novos) enviados.add(c.itemId);
+  for (const c of novos) enviados.set(c.itemId, assinatura(c));
   enviar({ tipo: 'publiai:busca-cards', cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length });
 }
 
@@ -68,14 +70,23 @@ function limparSelos(): void {
   for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
 }
 
+let destaque: { card: HTMLElement; outline: string; offset: string; timer: ReturnType<typeof setTimeout> } | null = null;
+function tirarDestaque(): void {
+  if (!destaque) return;
+  clearTimeout(destaque.timer);
+  destaque.card.style.outline = destaque.outline;
+  destaque.card.style.outlineOffset = destaque.offset;
+  destaque = null;
+}
+
 function destacar(itemId: string): void {
   const card = cardsDoItem(document, itemId)[0] as HTMLElement | undefined;
   if (!card) return;
+  tirarDestaque(); // clique seguido: o timer do anterior não apaga o novo
   card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  const antes = { outline: card.style.outline, offset: card.style.outlineOffset };
+  destaque = { card, outline: card.style.outline, offset: card.style.outlineOffset, timer: setTimeout(tirarDestaque, 2000) };
   card.style.outline = '3px solid oklch(0.55 0.20 277)';
   card.style.outlineOffset = '2px';
-  setTimeout(() => { card.style.outline = antes.outline; card.style.outlineOffset = antes.offset; }, 2000);
 }
 
 chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown }) => {
@@ -86,7 +97,7 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     destacar(msg.itemId);
   } else if (msg?.tipo === 'publiai:sessao-mudou') {
     limparSelos();
-    enviados = new Set(); // nova sessão: o SW zerou o estado; os cards voltam a ser enviados
+    enviados = new Map(); // nova sessão: o SW zerou o estado; os cards voltam a ser enviados
     lerEEnviar();
   }
 });
@@ -101,6 +112,6 @@ new MutationObserver((mudancas) => {
 }).observe(document.body, { childList: true, subtree: true });
 const inicio = Date.now();
 (function esperarCards() {
-  if (document.querySelector('.poly-card')) { lerEEnviar(); return; }
+  if (document.querySelector('.poly-card')) { agendar(); return; } // mesma espera do observer: card ainda montando
   if (Date.now() - inicio < LIMITE_ESPERA_MS) setTimeout(esperarCards, 500);
 })();
