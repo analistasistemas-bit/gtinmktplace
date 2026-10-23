@@ -110,7 +110,8 @@ export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
   return [
     `💰 Nova venda${comprador}${v.total != null ? ` — ${fmtBRL(v.total, v.moeda)}` : ''}`,
     itens,
-    `Pedido ${v.order_id}`,
+    // Número exibido = o do ML (pack quando houver), igual ao da tela de vendas do ML.
+    `Pedido ${v.pack_id ?? v.order_id}`,
     urlVendaML(v.pack_id ?? v.order_id),
   ].filter(Boolean).join('\n');
 }
@@ -160,6 +161,7 @@ export function montarMensagemNovaMensagem(m: NovaMensagemAlerta): string {
 export interface NovaDevolucaoAlerta {
   claim_id: number;
   order_id: number | null;
+  pack_id?: number | null;
   tipo: string;
   motivo: string | null;
   valor: number | null;
@@ -184,7 +186,8 @@ function urlDevolucaoML(tipo: string, claimId: number): string {
 
 export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   const valor = d.valor != null ? ` (${fmtBRL(d.valor, d.moeda)})` : '';
-  const pedido = d.order_id ? ` do pedido ${d.order_id}` : '';
+  const numero = d.pack_id ?? d.order_id;
+  const pedido = numero ? ` do pedido ${numero}` : '';
   const motivo = d.motivo ? ` — ${d.motivo}` : '';
   return [
     `↩️ Nova ${d.tipo === 'return' ? 'devolução' : 'reclamação'}${pedido}${valor}${motivo}`,

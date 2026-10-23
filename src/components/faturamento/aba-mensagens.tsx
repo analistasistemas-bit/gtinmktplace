@@ -81,7 +81,7 @@ function CardConversa({ c }: { c: Conversa }) {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
-            <span className="truncate">{formatarNomeProduto(c.item_titulo) || (c.order_id ? `Pedido ${c.order_id}` : c.pack_id)}</span>
+            <span className="truncate">{formatarNomeProduto(c.item_titulo) || `Pedido ${c.pack_id}`}</span>
             <a
               href={urlConversa}
               target="_blank"

@@ -76,6 +76,13 @@ describe('DetalhePedidoItens', () => {
     expect(screen.getByText('2 pedidos')).toBeInTheDocument();
   });
 
+  // Regressão: pack de 1 pedido mostrava o order_id, mas o ML exibe o pack_id (= chave).
+  it('pack de um pedido mostra o número do pack, igual ao ML', () => {
+    renderDetalhe(pedido({ chave: '2000015659382505', isPack: false, orderIds: [2000019122247830] }));
+    expect(screen.getByText('2000015659382505')).toBeInTheDocument();
+    expect(screen.queryByText('2000019122247830')).not.toBeInTheDocument();
+  });
+
   it('rastreio não aparece mais', () => {
     renderDetalhe(pedido({ rastreio: 'BR123456789' }));
     expect(screen.queryByText(/rastreio/i)).not.toBeInTheDocument();

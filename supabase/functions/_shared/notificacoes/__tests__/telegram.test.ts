@@ -56,6 +56,12 @@ describe('montarMensagemNovaVenda (link ML)', () => {
     expect(msg).toContain('https://www.mercadolivre.com.br/vendas/456/detalhe');
     expect(msg).not.toContain('/vendas/pacote/');
   });
+  // Regressão: o texto mostrava o order_id e o ML exibe o pack (#2000015659382505 × 2000019122247830).
+  it('número do pedido é o pack_id quando há (o mesmo que o ML exibe)', () => {
+    const msg = montarMensagemNovaVenda({ ...base, order_id: 123, pack_id: 456 });
+    expect(msg).toContain('Pedido 456');
+    expect(msg).not.toContain('Pedido 123');
+  });
 });
 
 describe('montarMensagemNovaPergunta (link ML)', () => {
@@ -67,6 +73,10 @@ describe('montarMensagemNovaPergunta (link ML)', () => {
 });
 
 describe('montarMensagemNovaDevolucao (link ML)', () => {
+  it('número do pedido é o pack_id quando há', () => {
+    const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, pack_id: 2, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL' });
+    expect(msg).toContain('do pedido 2');
+  });
   it('linka a reclamação específica quando tipo != returns', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL' });
     expect(msg).toContain('https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/789');

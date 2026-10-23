@@ -61,7 +61,8 @@ function ZonaPedido({ p, ml }: { p: Pedido; ml: ReturnType<typeof useDetalheMLPe
   // `chave` já é `pack_id ?? order_id`, e a rota aceita os dois (ver `urlVendaML`). A rota antiga
   // `/vendas/pacote/…` foi descontinuada pelo ML e devolvia 301 para a lista de vendas.
   const urlVenda = urlVendaML(p.chave);
-  const numero = p.isPack ? p.chave : String(p.orderIds[0]);
+  // Mesmo número que o ML mostra (pack_id ?? order_id), mesmo em pack de 1 pedido.
+  const numero = p.chave;
   const local = [p.cidade, p.uf].filter(Boolean).join('/');
   const envio = [labelLogisticaEnvio(p.shipping_logistic), p.shipping_status ? labelStatusEnvio(p.shipping_status, p.shipping_substatus).label : null]
     .filter(Boolean).join(' · ');
