@@ -6,7 +6,7 @@ import path from 'node:path';
 const raiz = path.resolve(import.meta.dirname, '..');
 const mode = process.argv[2] ?? 'production';
 
-for (const nome of ['anuncio', 'busca-ean']) {
+for (const nome of ['anuncio', 'busca-ean', 'busca']) {
   await build({
     root: raiz,
     mode,

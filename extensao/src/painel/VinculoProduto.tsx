@@ -13,14 +13,17 @@ interface ItemSku {
 }
 
 interface Props {
-  entrada: EntradaAnuncio;
+  /** Só a identidade do anúncio (também usado nos cards da busca). */
+  entrada: Pick<EntradaAnuncio, 'mlItemId' | 'catalogProductId'>;
   fonte: FonteCusto;
   chamar: Chamar;
   onVinculado: () => void;
+  /** Abre direto no formulário (a lista da busca já teve o clique de "Vincular"). */
+  abertoInicial?: boolean;
 }
 
-export function VinculoProduto({ entrada, fonte, chamar, onVinculado }: Props) {
-  const [aberto, setAberto] = useState(false);
+export function VinculoProduto({ entrada, fonte, chamar, onVinculado, abertoInicial = false }: Props) {
+  const [aberto, setAberto] = useState(abertoInicial);
   const [termo, setTermo] = useState('');
   const [itens, setItens] = useState<ItemSku[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);

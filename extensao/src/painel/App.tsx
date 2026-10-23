@@ -2,7 +2,9 @@
 // script fez na aba ativa (guardada no SW) e simula preço/custo a partir dela.
 import { useEffect, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
+import { Busca } from './Busca';
 import { Catalogo } from './Catalogo';
+import type { EstadoBusca } from '../busca-sw';
 import { Qualidade } from './Qualidade';
 import { QuantoVende } from './QuantoVende';
 import { Vendedor } from './Vendedor';
@@ -58,6 +60,18 @@ export function App() {
       <div className="esqueleto" role="status" aria-label="Carregando a análise">
         <span /><span /><span />
       </div>
+    );
+  }
+  // Aba numa busca do ML: resumo, filtros e lista no painel (Task 22).
+  if (estado && (estado.entrada as { tipoPagina?: string }).tipoPagina === 'busca') {
+    return (
+      <Busca
+        key={`${tabId}:${(estado.entrada as { url?: string }).url ?? ''}`}
+        estado={estado as unknown as EstadoBusca}
+        chamar={chamarViaSw}
+        analisar={(forcar) => chrome.runtime.sendMessage({ tipo: 'publiai:analisar-busca', tabId, forcar }).catch(() => ({ ok: false, erro: 'interno' }))}
+        destacar={(itemId) => { chrome.runtime.sendMessage({ tipo: 'publiai:destacar-card', tabId, itemId }).catch(() => {}); }}
+      />
     );
   }
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.

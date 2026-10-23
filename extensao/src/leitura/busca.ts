@@ -124,3 +124,44 @@ export function lerBusca(doc: Document): CardBusca[] {
   for (const id of conflito) porItem.get(id)!.catalogProductId = null;
   return [...porItem.values()];
 }
+
+const textoCurto = (v: unknown, max: number) => (typeof v === 'string' && v.length <= max ? v : null);
+const verdadeiro = (v: unknown): true | null => (v === true ? true : null);
+
+/** Cards recebidos pelo SW (vêm da página, dado não confiável): forma validada, no máximo 120, sem repetir item. */
+export function normalizarCards(v: unknown): CardBusca[] {
+  if (!Array.isArray(v)) return [];
+  const vistos = new Set<string>();
+  const out: CardBusca[] = [];
+  for (const c of v.slice(0, 120) as Record<string, unknown>[]) {
+    if (!c || typeof c !== 'object' || typeof c.itemId !== 'string' || !MLB.test(c.itemId) || vistos.has(c.itemId)) continue;
+    vistos.add(c.itemId);
+    const num = (x: unknown, max: number) => (typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= max ? x : null);
+    out.push({
+      itemId: c.itemId,
+      catalogProductId: typeof c.catalogProductId === 'string' && MLB.test(c.catalogProductId) ? c.catalogProductId : null,
+      userProductId: typeof c.userProductId === 'string' && MLBU.test(c.userProductId) ? c.userProductId : null,
+      posicao: num(c.posicao, 10000),
+      titulo: textoCurto(c.titulo, 300) ?? '',
+      preco: num(c.preco, 1e9),
+      vendedor: textoCurto(c.vendedor, 120),
+      nota: num(c.nota, 5),
+      vendidosTexto: textoCurto(c.vendidosTexto, 40),
+      freteGratis: verdadeiro(c.freteGratis),
+      full: verdadeiro(c.full),
+      lojaOficial: verdadeiro(c.lojaOficial),
+      patrocinado: c.patrocinado === true,
+      selos: Array.isArray(c.selos) ? c.selos.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(0, 5) : [],
+    });
+  }
+  return out;
+}
+
+/** Cards da página (elementos) de um item, para o selo e o destaque; mesma identidade do lerBusca. */
+export function cardsDoItem(doc: Document, itemId: string): Element[] {
+  return [...doc.querySelectorAll('.poly-card')].filter((card) => {
+    if (card.closest(INJETADO)) return false;
+    const titulo = doMl(card, 'a.poly-component__title')[0];
+    return !!titulo && lerLink(titulo.getAttribute('href') ?? '')?.itemId === itemId;
+  });
+}

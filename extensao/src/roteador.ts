@@ -6,6 +6,7 @@ import { observadoDoAnuncio } from './criacao';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
 import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
 import { normalizarQualidade } from './compartilhado/qualidade';
+import { analisarBuscaDaAba, destacarCard, registrarCardsDaBusca } from './busca-sw';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -85,6 +86,18 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (msg.ean === null) return esquecerAba(tabId).then(() => ({ ok: true }));
       if (typeof msg.ean !== 'string' || !/^\d{8,14}$/.test(msg.ean)) return undefined;
       return registrarEanDaAba(tabId, msg.ean).then(() => ({ ok: true }));
+    case 'publiai:busca-cards':
+      // Content script da busca: cards lidos na própria aba (nunca de outra).
+      if (tabId === undefined || pagina) return undefined;
+      return registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url);
+    case 'publiai:analisar-busca':
+      if (!pagina || typeof msg.tabId !== 'number') return undefined;
+      return analisarBuscaDaAba(msg.tabId, Array.isArray(msg.forcar)
+        ? msg.forcar.filter((i): i is string => typeof i === 'string' && /^MLB\d{6,20}$/.test(i)).slice(0, 50)
+        : []);
+    case 'publiai:destacar-card':
+      if (!pagina || typeof msg.tabId !== 'number' || typeof msg.itemId !== 'string' || !/^MLB\d{6,20}$/.test(msg.itemId)) return undefined;
+      return destacarCard(msg.tabId, msg.itemId);
     case 'publiai:ean-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       return eanDaAba(msg.tabId);

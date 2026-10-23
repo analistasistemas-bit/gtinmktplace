@@ -62,6 +62,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Task 21 — `analisar_busca` na edge (v9): casamento em lote no banco; só os cards casados vão ao ML e consomem o
   limite; categoria só da oferta exata. Validado com dados reais: SKU 00000081 da DSA casado pelo catálogo MLB53180253,
   Clássico lucro R$ 2,24 (11,21%) a R$ 19,99; cards sem vínculo sem chamada ao ML.
+- [x] Task 22 — visão "Busca" no painel e selo nos cards: resumo (produtos únicos × cards, seus produtos com cobertura
+  dos verificados, faixa de preço, soma dos mínimos de vendidos), filtros e ordenação só no painel (o DOM do ML não é
+  reordenado; clicar no título destaca o card), "Vincular" direto da lista, análise automática ao abrir e "Analisar novos
+  resultados" para o que chega no scroll. Selo "Simulação Clássico X%" em shadow DOM só no card casado. Validado na busca
+  real "sabonete líquido melu" (68 cards → 65 produtos; SKU 00000081 casado, Clássico 10,9% a R$ 19,90). UI/UX Codex Sol 10/10.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

@@ -567,3 +567,38 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect(await estado()).not.toBeNull();
   });
 });
+
+describe('busca no SW (Task 22)', () => {
+  const BUSCA: Sender = { id: 'ext-publiai', tab: { id: 7, url: 'https://lista.mercadolivre.com.br/panela' } as chrome.tabs.Tab, url: 'https://lista.mercadolivre.com.br/panela' };
+  const card = (itemId: string, o: Record<string, unknown> = {}) => ({ itemId, catalogProductId: 'MLB100', preco: 10, titulo: itemId, selos: [], patrocinado: false, ...o });
+  const estado = () => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 7 }, PAINEL) as Promise<{ observado: { cards: { itemId: string }[] }; resposta: { resultados: Record<string, { estado: string }> } } | null>;
+
+  it('content script registra os cards da própria aba (validados); os do scroll somam', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), { itemId: 'X' }, card('MLB1000002')], ocorrencias: 3 }, BUSCA);
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000003')], ocorrencias: 4 }, BUSCA);
+    expect((await estado())!.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000001', 'MLB1000002', 'MLB1000003']);
+  });
+
+  it('painel analisa os pendentes (até 50) com o EAN da aba e o content script recebe os resultados', async () => {
+    await registrarEanDaAba(7, '7899941205918');
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), card('MLB1000002', { preco: null })], ocorrencias: 2 }, BUSCA);
+    fetchFalso.mockImplementation(async () => new Response(JSON.stringify({ itens: [{ itemId: 'MLB1000001', estado: 'sem_vinculo' }], limiteAtingido: false }), { status: 200 }));
+    const r = await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    expect(r).toMatchObject({ ok: true });
+    const corpo = JSON.parse(ultimaEdge()[1].body);
+    expect(corpo).toMatchObject({ acao: 'analisar_busca', eanDaBusca: '7899941205918', itens: [{ itemId: 'MLB1000001', preco: 10 }] });
+    expect((await estado())!.resposta.resultados.MLB1000001.estado).toBe('sem_vinculo');
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, expect.objectContaining({ tipo: 'publiai:busca-resultados' }));
+  });
+
+  it('só o painel pede análise e destaque; content script não analisa a busca', async () => {
+    expect(rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, BUSCA)).toBeUndefined();
+    expect(rotearMensagem({ tipo: 'publiai:destacar-card', tabId: 7, itemId: 'MLB1000001' }, BUSCA)).toBeUndefined();
+    expect(rotearMensagem({ tipo: 'publiai:busca-cards', cards: [] }, PAINEL)).toBeUndefined();
+  });
+
+  it('cards de página que não é a busca do ML são ignorados', async () => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')] }, { ...BUSCA, tab: { id: 7, url: 'https://evil.com/' } as chrome.tabs.Tab, url: 'https://evil.com/' });
+    expect(await estado()).toBeNull();
+  });
+});

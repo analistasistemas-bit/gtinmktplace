@@ -241,3 +241,14 @@ validada na de validação, com o mesmo gate.
   o excedente volta `limite` (resolve o conflito "50 por busca × 30/min" sem estourar a cota). Consultor: Codex Astra.
 - Categoria só da oferta exata em `/products/{catálogo}/items`; card casado sem catálogo (ex.: vínculo manual por item em
   patrocinado) = "sem categoria", margem indisponível. Sem cache da resposta inteira (vínculo, custo e cota mudam).
+
+## Emenda 2026-10-22 — busca no painel e selo nos cards (D-11, Task 22)
+
+- O content script da busca (`conteudo/busca.ts`) envia os cards novos ao SW (debounce de 800 ms no MutationObserver,
+  ignorando as mutações dos próprios selos); o SW guarda por aba/sessão e só analisa quando o painel pede (análise
+  automática ao abrir o painel; o scroll acumula pendentes para "Analisar novos resultados"). Nunca há análise sem o painel aberto.
+- Filtros e ordenação existem só no painel: o DOM do ML não é reordenado nem escondido (evita conflito com o antibot e
+  com outras extensões). O clique no título rola e destaca o card na página.
+- O selo no card mostra só a margem simulada no Clássico ao preço do card ("Simulação Clássico X%"); Premium fica no
+  painel. Card sem vínculo não recebe selo. A cada resultado os selos são refeitos do zero (resultado que deixou de ter
+  selo perde o antigo).
