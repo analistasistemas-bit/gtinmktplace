@@ -226,8 +226,8 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
       const porId = new Map(variacoesDasLinhas(linhas).map((v) => [v.variacaoId, v]));
       return new Map(vinculos.flatMap((v) => (porId.has(v.variacao_id) ? [[`${v.chave_tipo}:${v.chave}`, porId.get(v.variacao_id)!] as const] : [])));
     },
-    ofertasDoCatalogo: async (cpid) => {
-      if (!token) return null;
+    ofertasDoCatalogo: (cpid) => {
+      if (!token) return Promise.resolve(null);
       // Só item_id e categoria (a categoria vem da oferta exata do card); falha não é cacheada.
       // Ficha com mais de 100 ofertas (paging.total > results) não é cacheada: a oferta do card pode estar fora da página.
       return emCache<{ results: { item_id: unknown; category_id: unknown }[]; completa: boolean } | null>(`ext:ofertas:v2:${cpid}`, (v) => v !== null && v.completa, async () => {
@@ -248,12 +248,14 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
     // tem fator 1 por identidade, então não busca UNITS_PER_PACK.
     analisar: (e, c) => analisarAnuncio(orgId, e, {
       ...deps,
-      porCatalogo: async () => (c.fonte === 'catalogo' && c.variacao ? [c.variacao] : []),
-      porGtin: async () => (c.fonte === 'ean_da_busca' && c.variacao ? [c.variacao] : []),
-      porVinculoManual: async () => (c.fonte === 'vinculo_manual' ? c.variacao : null),
-      unidadesPorPacote: c.fonte === 'catalogo' ? async () => ({ estado: 'indisponivel', motivo: QTD_NAO_CONFIRMADA }) : deps.unidadesPorPacote,
-      vendedor: async () => null,
-      catalogoCriadoEm: async () => null,
+      porCatalogo: () => Promise.resolve(c.fonte === 'catalogo' && c.variacao ? [c.variacao] : []),
+      porGtin: () => Promise.resolve(c.fonte === 'ean_da_busca' && c.variacao ? [c.variacao] : []),
+      porVinculoManual: () => Promise.resolve(c.fonte === 'vinculo_manual' ? c.variacao : null),
+      unidadesPorPacote: c.fonte === 'catalogo'
+        ? () => Promise.resolve({ estado: 'indisponivel' as const, motivo: QTD_NAO_CONFIRMADA })
+        : deps.unidadesPorPacote,
+      vendedor: () => Promise.resolve(null),
+      catalogoCriadoEm: () => Promise.resolve(null),
     }),
   });
 }
