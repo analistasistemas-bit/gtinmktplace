@@ -30,17 +30,19 @@ describe('ExtensaoNavegador', () => {
     expect(h.enviar).not.toHaveBeenCalled();
   });
 
-  it('mostra o link de instalação e "Conectada" quando a extensão responde', async () => {
+  it('extensão responde → "Conectada" e a instalação vira "Instalada", sem botão de instalar', async () => {
     render(<ExtensaoNavegador />);
-    expect(screen.getByRole('link', { name: /instalar extensão/i }))
-      .toHaveAttribute('href', 'https://chromewebstore.google.com/detail/publiai/ext-id');
     expect(await screen.findByText('Conectada')).toBeInTheDocument();
+    expect(screen.getByText('Instalada')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /instalar extensão/i })).not.toBeInTheDocument();
   });
 
-  it('extensão ausente → "Não instalada"', async () => {
+  it('extensão ausente → "Não instalada" e o link de instalação da Chrome Web Store', async () => {
     h.enviar.mockResolvedValue('nao_instalada');
     render(<ExtensaoNavegador />);
     expect(await screen.findByText('Não instalada')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /instalar extensão/i }))
+      .toHaveAttribute('href', 'https://chromewebstore.google.com/detail/publiai/ext-id');
   });
 
   it('já conectada → botão "Reconectar" (não "Conectar") e ele reenvia a sessão atual', async () => {

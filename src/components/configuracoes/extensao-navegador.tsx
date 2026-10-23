@@ -36,7 +36,13 @@ export function ExtensaoNavegador() {
       titulo="Extensão PubliAI para Chrome"
       descricao="Mostra a sua margem nas páginas do Mercado Livre. Conecta com a sua sessão do PubliAI — sem senha na extensão."
     >
-      {url && (
+      {/* Respondeu à conexão = está instalada neste Chrome: sem botão de instalar. */}
+      {url && status === 'ok' && (
+        <SettingsRow titulo="Instalação" descricao="Instalada neste Chrome." estado={<StatusPill tone="success">Instalada</StatusPill>}>
+          {null}
+        </SettingsRow>
+      )}
+      {url && status !== 'ok' && (
         <SettingsRow titulo="Instalação" descricao="Instale pela Chrome Web Store e volte aqui para conectar.">
           <Button asChild variant="outline" size="sm">
             <a href={url} target="_blank" rel="noopener noreferrer">Instalar extensão</a>
