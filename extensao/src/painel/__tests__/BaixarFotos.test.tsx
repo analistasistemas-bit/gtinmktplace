@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { BaixarFotos } from '../BaixarFotos';
 
-const jpeg = () => { const b = new Uint8Array(16); b.set([0xff, 0xd8, 0xff]); return b; };
+const jpeg = () => { const b = new Uint8Array(256); b.set([0xff, 0xd8, 0xff]); b.set([0xff, 0xd9], 254); return b; };
 const ids = ['100001-MLA115537568801_082026', '100002-MLA115537568802_082026', '100003-MLA115537568803_082026'];
 const salvos: string[] = [];
 
@@ -49,4 +49,37 @@ it('foco acompanha a troca de estado: Baixar → Cancelar → Salvar o ZIP de no
   await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar' })));
   liberar();
   await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Salvar o ZIP de novo' })));
+});
+
+it('Grok: foco que saiu do bloco não é puxado de volta na conclusão', async () => {
+  let liberar: () => void = () => {};
+  const segura = new Promise<void>((r) => { liberar = r; });
+  vi.stubGlobal('fetch', vi.fn(async () => { await segura; return new Response(jpeg()); }));
+  render(<><button type="button">fora</button><BaixarFotos mlItemId="MLB1" ids={ids.slice(0, 1)} clips={0} /></>);
+  fireEvent.click(screen.getByRole('button', { name: /Baixar fotos/ }));
+  await screen.findByRole('button', { name: 'Cancelar' });
+  const fora = screen.getByRole('button', { name: 'fora' });
+  fora.focus();
+  liberar();
+  await screen.findByRole('button', { name: 'Salvar o ZIP de novo' });
+  expect(document.activeElement).toBe(fora);
+});
+
+it('Cancelar volta ao botão sem pedir download; desmontar revoga o ZIP gerado', async () => {
+  let liberar: () => void = () => {};
+  const segura = new Promise<void>((r) => { liberar = r; });
+  vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+    await Promise.race([segura, new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(init.signal!.reason)))]);
+    return new Response(jpeg());
+  }));
+  const { unmount } = render(<BaixarFotos mlItemId="MLB1" ids={ids.slice(0, 1)} clips={0} />);
+  fireEvent.click(screen.getByRole('button', { name: /Baixar fotos/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+  await screen.findByRole('button', { name: /Baixar fotos/ });
+  expect(salvos).toEqual([]);
+  liberar();
+  fireEvent.click(screen.getByRole('button', { name: /Baixar fotos/ }));
+  await screen.findByText(/Download solicitado/);
+  unmount();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:zip');
 });

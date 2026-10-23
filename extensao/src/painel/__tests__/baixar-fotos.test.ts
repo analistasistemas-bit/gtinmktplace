@@ -2,7 +2,7 @@ import { unzipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_BYTES_FOTO, MAX_FOTOS, montarZipDeFotos, urlDaFoto } from '../baixar-fotos';
 
-const jpeg = (n = 32) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff, 0xe0]); return b; };
+const jpeg = (n = 256) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff, 0xe0]); b.set([0xff, 0xd9], n - 2); return b; };
 const id = (i: number) => `${100000 + i}-MLA11553756880${i % 10}_082026`;
 const sinal = () => new AbortController().signal;
 
@@ -26,6 +26,25 @@ describe('baixar fotos em ZIP (Task 19)', () => {
     const buscar = vi.fn(async () => new Response(jpeg()));
     const r = await montarZipDeFotos(Array.from({ length: MAX_FOTOS + 3 }, (_, i) => id(i)), { sinal: sinal(), buscar: buscar as never });
     expect(r).toMatchObject({ incluidas: MAX_FOTOS, alemDoLimite: 3, alemDoTamanho: 0 });
+  });
+
+  it('Grok: estourar o teto total do ZIP corta esta e as seguintes (não vira falha de rede)', async () => {
+    const buscar = vi.fn(async () => new Response(jpeg(400)));
+    const r = await montarZipDeFotos([id(1), id(2), id(3), id(4)], { sinal: sinal(), buscar: buscar as never, tetoTotal: 1000 });
+    expect(r).toMatchObject({ incluidas: 2, falhas: [], alemDoTamanho: 2 });
+    expect(buscar).toHaveBeenCalledTimes(3);
+  });
+
+  it('Grok: JPEG truncado (sem EOI) ou redirecionado para fora do mlstatic não entra', async () => {
+    const truncado = jpeg(); truncado.fill(0, 200);
+    const buscar = vi.fn(async (url: string) => {
+      if (url.includes(id(1))) return new Response(truncado);
+      const r = new Response(jpeg());
+      Object.defineProperty(r, 'url', { value: 'https://evil.example/x.jpg' });
+      return r;
+    });
+    const r = await montarZipDeFotos([id(1), id(2)], { sinal: sinal(), buscar: buscar as never });
+    expect(r).toMatchObject({ zip: null, falhas: [1, 2] });
   });
 
   it('cancelar interrompe o download inteiro', async () => {

@@ -24,15 +24,22 @@ export function BaixarFotos({ mlItemId, ids, clips }: { mlItemId: string; ids: s
   const cancelar = useRef<AbortController | null>(null);
   const urlAtual = useRef<string | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
-  // Foco no bloco: o controle focado some na troca de estado; o foco segue para o controle principal do estado novo.
-  // Saiu do bloco (foco em outro lugar da página) → a conclusão assíncrona não o puxa de volta.
+  const montado = useRef(true);
+  // Foco: o controle focado some na troca de estado; o foco segue para o controle principal do estado novo, mas só se
+  // estava no bloco no momento da troca (foco em outro lugar, inclusive na página do ML, não é puxado de volta).
   const focoNoBloco = useRef(false);
+  const mudar = (e: Estado) => {
+    if (!montado.current) return;
+    focoNoBloco.current = document.hasFocus() && !!raiz.current?.contains(document.activeElement);
+    setEstado(e);
+  };
   useEffect(() => {
     if (focoNoBloco.current) raiz.current?.querySelector<HTMLElement>('[data-foco]')?.focus();
   }, [estado.fase]);
 
   // Fechar o painel ou trocar de anúncio (remonta): para o download e solta o blob.
   useEffect(() => () => {
+    montado.current = false;
     cancelar.current?.abort();
     if (urlAtual.current) URL.revokeObjectURL(urlAtual.current);
   }, []);
@@ -42,30 +49,27 @@ export function BaixarFotos({ mlItemId, ids, clips }: { mlItemId: string; ids: s
     const controle = new AbortController();
     cancelar.current = controle;
     const item = mlItemId, fotos = [...ids]; // o do clique, mesmo que o painel mude depois
-    setEstado({ fase: 'baixando', feitas: 0, total: Math.min(fotos.length, MAX_FOTOS) });
+    mudar({ fase: 'baixando', feitas: 0, total: Math.min(fotos.length, MAX_FOTOS) });
     try {
-      const r = await montarZipDeFotos(fotos, { sinal: controle.signal, aoProgresso: (feitas, total) => setEstado({ fase: 'baixando', feitas, total }) });
-      if (!r.zip) { setEstado({ fase: 'vazio', r }); return; }
+      const r = await montarZipDeFotos(fotos, { sinal: controle.signal, aoProgresso: (feitas, total) => { if (montado.current) setEstado({ fase: 'baixando', feitas, total }); } });
+      if (!r.zip) { mudar({ fase: 'vazio', r }); return; }
+      if (!montado.current) return;
       if (urlAtual.current) URL.revokeObjectURL(urlAtual.current);
       const url = URL.createObjectURL(new Blob([r.zip as BlobPart], { type: 'application/zip' }));
       urlAtual.current = url;
       const nome = `PubliAI-${item}-fotos.zip`;
-      setEstado({ fase: 'pronto', url, nome, r });
+      mudar({ fase: 'pronto', url, nome, r });
       salvar(url, nome);
     } catch {
-      if (!controle.signal.aborted) setEstado({ fase: 'vazio', r: { zip: null, incluidas: 0, falhas: [], alemDoLimite: 0, alemDoTamanho: 0 } });
-      else setEstado({ fase: 'parado' });
+      if (!controle.signal.aborted) mudar({ fase: 'vazio', r: { zip: null, incluidas: 0, falhas: [], alemDoLimite: 0, alemDoTamanho: 0 } });
+      else mudar({ fase: 'parado' });
     } finally {
       cancelar.current = null;
     }
   };
 
   return (
-    <div
-      className="bf" aria-live="polite" ref={raiz}
-      onFocus={() => { focoNoBloco.current = true; }}
-      onBlur={(e) => { if (e.relatedTarget && !raiz.current?.contains(e.relatedTarget as Node)) focoNoBloco.current = false; }}
-    >
+    <div className="bf" aria-live="polite" ref={raiz}>
       {estado.fase === 'parado' && (
         <button type="button" className="secundario bf-botao" data-foco onClick={() => void baixar()}>
           Baixar fotos (ZIP)<span className="bf-qtd mono">{`${Math.min(ids.length, MAX_FOTOS)} ${ids.length === 1 ? 'foto' : 'fotos'}`}</span>
