@@ -2,6 +2,8 @@
 // pública, avaliações × 15, ajuste por idade, Premium × 1,15, sempre recortado na faixa. Única mudança: os patamares
 // são os do ML medidos em 22/10/2026 (o Avant usa 10/20/200/20mil, que a página não mostra, e não tem 25/750mil).
 // Só é exibida se a validação contra vendas reais (Task 13, scripts/validar-estimativa-vendas.ts) passar no gate.
+// Reprovada (errata ADR-0189): fica só para o script. O painel usa estimarVendasCalibrada (emenda de 23/10).
+import { pisoDosVendidos } from './quanto-vende.ts'; // .ts: o script de validação roda no Deno
 
 const PATAMARES = [1, 5, 25, 50, 100, 500, 1000, 5000, 10000, 50000, 100000, 250000, 500000, 750000];
 const EXATO_ATE = 4;
@@ -14,6 +16,22 @@ export function faixaDoTotal(total: number): number | null {
   if (!Number.isFinite(total) || total < 1) return null;
   if (total <= EXATO_ATE) return Math.floor(total);
   return PATAMARES.filter((p) => p <= total).at(-1) ?? null;
+}
+
+/** Faixas validadas em 23/10/2026 (emenda ADR-0189): fator = mediana de vendido real ÷ piso na amostra de ajuste;
+ *  erro = mediana na de validação com este fator e Math.round. Faixa fora daqui não é estimada. */
+export const FAIXAS_CALIBRADAS: Record<number, { fator: number; erroMedianoPct: number }> = {
+  25: { fator: 1.3, erroMedianoPct: 10 },
+  50: { fator: 1.38, erroMedianoPct: 10.3 },
+};
+
+/** Total acumulado estimado a partir da faixa DO ANÚNCIO ("+25 vendidos"); contagem exata ou faixa não validada → null. */
+export function estimarVendasCalibrada(vendidosTexto: string | null): { piso: number; fator: number; estimativa: number; erroMedianoPct: number } | null {
+  if (!vendidosTexto?.trim().startsWith('+')) return null;
+  const piso = pisoDosVendidos(vendidosTexto);
+  const c = piso === null ? undefined : FAIXAS_CALIBRADAS[piso];
+  if (!c || piso === null) return null;
+  return { piso, fator: c.fator, estimativa: Math.round(piso * c.fator), erroMedianoPct: c.erroMedianoPct };
 }
 
 export function estimarVendas(

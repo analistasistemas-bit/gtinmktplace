@@ -159,6 +159,38 @@ há, mínimo por mês). `estimarVendas` (`extensao/src/compartilhado/estimativa.
 ser rodado de novo quando houver mais contas/faixas; qualquer recalibração usa a amostra de ajuste e é
 validada na de validação, com o mesmo gate.
 
+## Emenda 2026-10-23 — estimativa recalibrada, só nas faixas validadas (D-9)
+
+Remedição em 23/10 (`scripts/validar-estimativa-vendas.ts`, todas as contas ML conectadas: 183 anúncios ativos próprios
+com ≥ 5 vendas, 164 da Avil): o modelo do Avant reprova de novo (mediana 90,9%, n = 106 na validação). Recalibração
+permitida pela errata — ajustada **só** na amostra de ajuste, medida na de validação, mesmo gate de 30%:
+**estimativa = `Math.round`(piso da faixa × fator mediano (vendido real ÷ piso) daquela faixa)**. Mediana geral na
+validação: 25,0%. Validação cruzada (fatores ajustados na validação, medidos no ajuste) como evidência complementar.
+
+| Faixa | Fator | Estimativa | Erro mediano (validação) | Cruzada (invertida) | n ajuste | n validação |
+|---|---|---|---|---|---|---|
+| +5 | 2,00 | — | 42,9% (reprova sozinha) | — | 57 | 79 |
+| +25 | 1,30 | 33 | 10,0% | 15,2% (n = 14) | 14 | 13 |
+| +50 | 1,38 | 69 | 10,3% | 4,3% (n = 1) | 1 | 10 |
+| +100 | 1,70 | 170 | 15,5% | 31,2% (n = 3) | 3 | 4 |
+| +500 em diante | — | — | sem amostra | — | — | 0 |
+
+**Exceção ao gate (decisão do Diego, 23/10):** o conjunto exibido (+25 e +50) tem n = 23 na validação, abaixo do mínimo de
+30 da Task 13 (mediana 10,0%); fica ligado por exceção, sustentado pela validação cruzada. **+100 fica de fora**
+(reprova na invertida, n = 3–4, e a amostra vai só de 104 a 209 numa faixa até 499); +5 e acima seguem só com a linha
+observada. A estimativa:
+
+- usa apenas a faixa **do anúncio** (`vendidosAnuncio`, HTML de `produto.mercadolivre`), nunca a agregada de `/p/` ou `/up/`
+  (a calibração é por anúncio); faixa sem "+" (contagem exata) não é estimada;
+- é o total acumulado (o que foi medido: `sold_quantity`), sem ritmo derivado;
+- aparece num bloco próprio "Total estimado" com o rótulo "Estimativa" (o selo "Observado" do cartão continua valendo
+  para as demais linhas), a conta (faixa × fator), "amostra limitada" e o erro mediano medido da faixa.
+
+**Limites conhecidos:** amostra dominada por uma conta (Avil, 164 de 183) — o fator reflete o perfil dela; o fator de
++50 saiu de 1 anúncio (a validação dele tem 10). Remedir com `scripts/validar-estimativa-vendas.ts`, que agora mede
+também a função entregue (fatores publicados em `FAIXAS_CALIBRADAS`, `extensao/src/compartilhado/estimativa.ts`) por
+faixa e mostra a deriva dos fatores; faixa com mediana > 30% na remedição sai da tabela. Consultor: Codex Sol (plano, 23/10).
+
 ## Emenda 2026-10-22 — vendedor e loja oficial (D-10, Task 16)
 
 - **Vendedor:** vem na resposta de `analisar_anuncio` (`/users/{id}` pelo `buscarPerfilVendedor`, cache de 24 h), não numa

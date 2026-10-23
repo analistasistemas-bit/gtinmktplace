@@ -1,6 +1,7 @@
 // Bloco "Quanto vende · Observado" (ADR-0189 D-6/D-9 + emenda 2026-10-22). Ritmo só com faixa e data do MESMO
 // anúncio (HTML produto.mercadolivre); a faixa de /p/ (catálogo) e /up/ (produto do vendedor) é agregada e aparece
-// à parte, sem ritmo. Sem estimativa: reprovada na Task 13 (errata ADR-0189).
+// à parte, sem ritmo. Estimativa: só a recalibrada, nas faixas validadas e pela faixa DO anúncio (emenda de 23/10).
+import { estimarVendasCalibrada } from '../compartilhado/estimativa';
 import { pisoDosVendidos, quantoVende } from '../compartilhado/quanto-vende';
 import type { DadosQualidade } from '../compartilhado/qualidade';
 
@@ -18,6 +19,7 @@ export function QuantoVende({ observado, catalogo, catalogoCriadoEm, agora }: {
   // Ritmo do catálogo: faixa da página /p/ (todos os vendedores) ÷ idade do produto de catálogo (/products, D-9).
   const c = catalogo && catalogoCriadoEm ? quantoVende({ vendidosTexto: observado.vendidosTexto, criadoEm: catalogoCriadoEm }, agora) : null;
   const temAnuncio = a.piso !== null || a.dias !== null;
+  const est = estimarVendasCalibrada(observado.vendidosAnuncio ?? null);
   const pisoPagina = pisoDosVendidos(observado.vendidosTexto);
   // Catálogo é outra entidade (todos os vendedores): sempre à parte; fora dele, só se a faixa difere da do anúncio.
   const paginaAParte = pisoPagina !== null && (catalogo || observado.vendidosTexto?.trim() !== observado.vendidosAnuncio?.trim());
@@ -58,6 +60,17 @@ export function QuantoVende({ observado, catalogo, catalogoCriadoEm, agora }: {
               </div>
             )}
           </dl>
+          {est && (
+            <div className="qv-agregado qv-estimativa">
+              <div className="qv-agregado-linha">
+                <span>Total estimado <span className="estimativa">Estimativa</span></span>
+                <span className="mono">{`≈ ${num(est.estimativa)}`}</span>
+              </div>
+              <p className="nota">
+                {`Faixa +${num(est.piso)} × ${est.fator.toLocaleString('pt-BR')}, calibrada em vendas reais de anúncios próprios (amostra limitada; erro mediano medido ${est.erroMedianoPct.toLocaleString('pt-BR')}%).`}
+              </p>
+            </div>
+          )}
         </>
       )}
       {paginaAParte && (

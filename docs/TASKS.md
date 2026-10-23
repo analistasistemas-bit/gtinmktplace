@@ -76,6 +76,11 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   radar, "Adicionar ao radar" com confirmação (envia só o id de catálogo; suporte full + auditoria; 10/h). Núcleo do
   `pulse-adicionar` extraído para `_shared/pulse/adicionar.ts` (contrato da edge mantido). Validado com as linhas reais do
   radar da DSA (MLB17875987: 89 ofertas, alertas reais). UI/UX Codex Sol 10/10.
+- [x] Estimativa de vendas recalibrada (emenda ADR-0189 de 23/10, versão 0.2.1): remedição com todas as contas (183
+  anúncios; Avant reprova de novo, 90,9%); `piso × fator` ajustado na amostra de ajuste, exibido só em +25 (≈ 33, erro
+  10,0%) e +50 (≈ 69, 10,3%) pela faixa do anúncio, rotulado "Estimativa"; +5 e +100 em diante fora. Exceção ao n ≥ 30
+  (n = 23) aprovada pelo Diego com validação cruzada. Script mede a função entregue por faixa.
+- [ ] Publicar a 0.2.1 na Chrome Web Store (zip de `extensao/dist`).
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20

@@ -9,7 +9,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { getValidAccessTokenConexao } from '../supabase/functions/_shared/ml/token.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../supabase/functions/_shared/ml/multiget.ts';
-import { estimarVendas, faixaDoTotal } from '../extensao/src/compartilhado/estimativa.ts';
+import { estimarVendas, estimarVendasCalibrada, FAIXAS_CALIBRADAS, faixaDoTotal } from '../extensao/src/compartilhado/estimativa.ts';
 
 const API = 'https://api.mercadolibre.com';
 const saida = Deno.args[0];
@@ -104,6 +104,25 @@ relatorio('VALIDAÇÃO (gate)', validacao);
 relatorio('ajuste (reservada, não decide)', linhas.filter((l) => l.amostra === 'ajuste'));
 const med = quantil(validacao.map((l) => erro(l.est, l.real)), 0.5);
 console.log(`\nGATE: ${validacao.length < 30 ? 'INCONCLUSIVO (n<30) → estimativa desligada' : med <= 0.3 ? `PASSA (mediana ${pct(med)} ≤ 30%)` : `REPROVA (mediana ${pct(med)} > 30%) → estimativa desligada`}`);
+
+// Emenda 23/10: a função entregue (fatores fixos publicados, Math.round) medida na validação, por faixa e no conjunto.
+// Faixa sai da tabela se a mediana passar de 30%; conjunto com n < 30 fica INCONCLUSIVO (exceção da emenda, n = 23).
+console.log('\n## RECALIBRADA (fatores publicados em estimativa.ts) na validação');
+const calibradas = validacao.flatMap((l) => {
+  const c = estimarVendasCalibrada(`+${l.piso} vendidos`);
+  return c ? [{ piso: l.piso, e: erro(c.estimativa, l.real) }] : [];
+});
+for (const piso of Object.keys(FAIXAS_CALIBRADAS).map(Number)) {
+  const g = calibradas.filter((c) => c.piso === piso).map((c) => c.e);
+  console.log(`  faixa +${piso}: n=${g.length} ${g.length ? `mediana ${pct(quantil(g, 0.5))} → ${quantil(g, 0.5) <= 0.3 ? 'mantém' : 'SAI DA TABELA'}` : 'sem amostra → INCONCLUSIVO'}`);
+}
+const medCal = quantil(calibradas.map((c) => c.e), 0.5);
+console.log(`  conjunto: n=${calibradas.length} ${calibradas.length < 30 ? `INCONCLUSIVO (mediana ${pct(medCal)}, n<30; exibida por exceção da emenda de 23/10)` : medCal <= 0.3 ? `PASSA (mediana ${pct(medCal)})` : `REPROVA (mediana ${pct(medCal)})`}`);
+// Fatores que a amostra de ajuste de hoje daria (deriva em relação aos publicados).
+for (const piso of Object.keys(FAIXAS_CALIBRADAS).map(Number)) {
+  const r = linhas.filter((l) => l.amostra === 'ajuste' && l.piso === piso).map((l) => l.real / piso);
+  console.log(`  fator do ajuste hoje +${piso}: ${r.length ? quantil(r, 0.5).toFixed(2) : '—'} (publicado ${FAIXAS_CALIBRADAS[piso].fator}, n=${r.length})`);
+}
 
 if (saida) {
   const cab = 'conta,id,amostra,real,piso,avaliacoes,dias,premium,estimativa,erro';

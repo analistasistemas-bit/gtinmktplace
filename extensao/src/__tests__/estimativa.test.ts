@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimarVendas, faixaDoTotal } from '../compartilhado/estimativa';
+import { estimarVendas, estimarVendasCalibrada, faixaDoTotal } from '../compartilhado/estimativa';
 
 const AGORA = new Date('2026-10-22T12:00:00Z');
 const dias = (n: number) => new Date(AGORA.getTime() - n * 86_400_000).toISOString();
@@ -39,4 +39,20 @@ describe('faixaDoTotal (o que a página mostra para um total exato)', () => {
     expect(faixaDoTotal(total)).toBe(piso);
   });
   it('zero → null', () => expect(faixaDoTotal(0)).toBeNull());
+});
+
+describe('estimarVendasCalibrada (emenda ADR-0189 de 23/10: só faixas validadas)', () => {
+  it('+25 → 25 × 1,30 = 33 (Math.round); +50 → 50 × 1,38 = 69', () => {
+    expect(estimarVendasCalibrada('+25 vendidos')).toEqual({ piso: 25, fator: 1.3, estimativa: 33, erroMedianoPct: 10 });
+    expect(estimarVendasCalibrada('+50 vendidos')?.estimativa).toBe(69);
+  });
+
+  it('faixas fora da validação (+5, +100, +1000, +5 mil) → null', () => {
+    for (const t of ['+5 vendidos', '+100 vendidos', '+1000 vendidos', '+5 mil vendidos']) expect(estimarVendasCalibrada(t)).toBeNull();
+  });
+
+  it('contagem exata (sem "+") e texto ausente → null', () => {
+    expect(estimarVendasCalibrada('25 vendidos')).toBeNull();
+    expect(estimarVendasCalibrada(null)).toBeNull();
+  });
 });

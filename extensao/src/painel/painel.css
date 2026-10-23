@@ -196,7 +196,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 .tipo .margem.negativo { color: var(--destructive); }
 .tipo .abrir { grid-column: 1 / -1; font-size: 12px; color: var(--link, var(--primary)); }
 .tipo details[open] .abrir .fechado, .tipo details:not([open]) .abrir .aberto { display: none; }
-.tipo .estimativa {
+.tipo .estimativa, .qv-estimativa .estimativa {
   justify-self: start; padding: 1px 8px; border-radius: 999px;
   background: color-mix(in oklch, var(--warning) 14%, transparent); color: var(--warning);
   font-size: 11px; font-weight: 600;

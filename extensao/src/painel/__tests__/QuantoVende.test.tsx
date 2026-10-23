@@ -52,6 +52,22 @@ describe('QuantoVende (observado)', () => {
     screen.getByText('Vendas e idade deste anúncio: o Mercado Livre não libera essa leitura para a extensão.');
   });
 
+  it('faixa do anúncio +25: total estimado rotulado, com a conta e o erro medido', () => {
+    render(<QuantoVende observado={{ vendidosTexto: '+500 vendidos', vendidosAnuncio: '+25 vendidos', criadoEm: '2026-04-25T12:00:00Z' }} catalogo agora={AGORA} />);
+    screen.getByText('Total estimado');
+    screen.getByText('≈ 33');
+    screen.getByText('Estimativa');
+    screen.getByText(/Faixa \+25 × 1,3, calibrada em vendas reais de anúncios próprios \(amostra limitada; erro mediano medido 10%\)/);
+  });
+
+  it('estima só pela faixa do anúncio: agregado +50 com anúncio +5 não estima; faixa +100 não estima', () => {
+    render(<QuantoVende observado={{ vendidosTexto: '+50 vendidos', vendidosAnuncio: '+5 vendidos', criadoEm: null }} catalogo agora={AGORA} />);
+    expect(screen.queryByText('Total estimado')).toBeNull();
+    cleanup();
+    render(<QuantoVende observado={{ vendidosTexto: null, vendidosAnuncio: '+100 vendidos', criadoEm: null }} catalogo={false} agora={AGORA} />);
+    expect(screen.queryByText('Total estimado')).toBeNull();
+  });
+
   it('estado antigo (sem vendidosAnuncio) e nada observado → não renderiza', () => {
     const { container } = render(<QuantoVende observado={{ vendidosTexto: null, criadoEm: null }} catalogo={false} agora={AGORA} />);
     expect(container.innerHTML).toBe('');
