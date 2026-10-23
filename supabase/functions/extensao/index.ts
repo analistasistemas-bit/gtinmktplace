@@ -12,7 +12,7 @@ import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
-import { extrairNossaOferta } from '../_shared/pulse/parse.ts';
+import { extrairNossaOferta, leituraCompletaDaFicha } from '../_shared/pulse/parse.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { analisarBusca } from '../_shared/extensao/busca.ts';
@@ -210,16 +210,8 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
     return (data ?? []) as LinhaVariacao[];
   };
   return analisarBusca(orgId, p, {
-    porCatalogos: async (org, cpids) => {
-      const linhas = await linhasPara(admin.from('variacoes').select(`${SELECT_VARIACAO}, catalog_product_id`).eq('org_id', org).in('catalog_product_id', cpids)
-        .order('atualizado_em', { ascending: false }).limit(500), 'porCatalogos');
-      const grupos = new Map<string, LinhaVariacao[]>();
-      for (const l of linhas) {
-        const cpid = (l as unknown as { catalog_product_id?: string }).catalog_product_id;
-        if (cpid) grupos.set(cpid, [...(grupos.get(cpid) ?? []), l]);
-      }
-      return new Map([...grupos].map(([c, ls]) => [c, variacoesDasLinhas(ls)]));
-    },
+    // Por catálogo, com o mesmo teto do anúncio (50 linhas por id): um SKU com muitos lotes não esconde outro catálogo.
+    porCatalogos: async (org, cpids) => new Map(await Promise.all(cpids.map(async (c) => [c, await deps.porCatalogo(org, c)] as const))),
     porGtin: (org, gtin) => deps.porGtin(org, gtin),
     vinculosManuais: async (org, chaves) => {
       if (!chaves.length) return new Map<string, VariacaoCusto>();
@@ -237,9 +229,12 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
     ofertasDoCatalogo: async (cpid) => {
       if (!token) return null;
       // Só item_id e categoria (a categoria vem da oferta exata do card); falha não é cacheada.
-      return emCache<{ results: { item_id: unknown; category_id: unknown }[] } | null>(`ext:ofertas:v1:${cpid}`, (v) => v !== null, async () => {
-        const j = await mlGet(`${ML_API}/products/${cpid}/items?limit=100`, token) as { results?: { item_id?: unknown; category_id?: unknown }[] } | null;
-        return Array.isArray(j?.results) ? { results: j.results.map((r) => ({ item_id: r?.item_id, category_id: r?.category_id })) } : null;
+      // Ficha com mais de 100 ofertas (paging.total > results) não é cacheada: a oferta do card pode estar fora da página.
+      return emCache<{ results: { item_id: unknown; category_id: unknown }[]; completa: boolean } | null>(`ext:ofertas:v2:${cpid}`, (v) => v !== null && v.completa, async () => {
+        const j = await mlGet(`${ML_API}/products/${cpid}/items?limit=100`, token);
+        if (!Array.isArray((j as { results?: unknown } | null)?.results)) return null;
+        const results = ((j as { results: { item_id?: unknown; category_id?: unknown }[] }).results).map((r) => ({ item_id: r?.item_id, category_id: r?.category_id }));
+        return { results, completa: leituraCompletaDaFicha(j) };
       }, TTL_OFERTAS_S);
     },
     reservar: async () => {
@@ -249,7 +244,17 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
       return true;
     },
     // Card da busca: sem vendedor nem data de catálogo (só a margem ao preço do card).
-    analisar: (e) => analisarAnuncio(orgId, e, { ...deps, vendedor: async () => null, catalogoCriadoEm: async () => null }),
+    // Exatamente o SKU do casamento (o rótulo do card e a margem não podem vir de SKUs diferentes); casado por catálogo
+    // tem fator 1 por identidade, então não busca UNITS_PER_PACK.
+    analisar: (e, c) => analisarAnuncio(orgId, e, {
+      ...deps,
+      porCatalogo: async () => (c.fonte === 'catalogo' && c.variacao ? [c.variacao] : []),
+      porGtin: async () => (c.fonte === 'ean_da_busca' && c.variacao ? [c.variacao] : []),
+      porVinculoManual: async () => (c.fonte === 'vinculo_manual' ? c.variacao : null),
+      unidadesPorPacote: c.fonte === 'catalogo' ? async () => ({ estado: 'indisponivel', motivo: QTD_NAO_CONFIRMADA }) : deps.unidadesPorPacote,
+      vendedor: async () => null,
+      catalogoCriadoEm: async () => null,
+    }),
   });
 }
 

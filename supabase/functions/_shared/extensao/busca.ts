@@ -60,8 +60,8 @@ export interface DepsBusca extends DepsCasamento {
   ofertasDoCatalogo(cpid: string): Promise<unknown | null>;
   /** Debita 1 do limite de análises; false = esgotado (D-18). */
   reservar(): Promise<boolean>;
-  /** Análise de um card casado ao preço do card (comissão, frete, margem). */
-  analisar(e: EntradaAnuncio): Promise<RespostaAnuncio>;
+  /** Análise de um card casado ao preço do card, com EXATAMENTE o SKU do casamento (rótulo e margem iguais). */
+  analisar(e: EntradaAnuncio, casamento: Casamento): Promise<RespostaAnuncio>;
 }
 
 type Base = { itemId: string };
@@ -73,41 +73,47 @@ export type ResultadoCard =
 
 const LOTE = 5;
 
-/** Casa todos os cards (banco), busca categoria só dos casados, reserva a cota na ordem da busca e analisa em lotes de 5. */
+async function emLotes<T>(itens: T[], fazer: (t: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < itens.length; i += LOTE) await Promise.all(itens.slice(i, i + LOTE).map(fazer));
+}
+
+/** Casa todos os cards (banco, sem ML). Só os casados COM catálogo reservam a cota, na ordem da busca; depois disso
+ *  (e só então) leem as ofertas do catálogo e são analisados, em lotes de 5. */
 export async function analisarBusca(
   orgId: string,
   pedido: { eanDaBusca: string | null; itens: { itemId: string; catalogProductId: string | null; preco: number }[] },
   deps: DepsBusca,
 ): Promise<{ itens: ResultadoCard[]; limiteAtingido: boolean }> {
   const casamentos = await casarCards(orgId, pedido.itens, pedido.eanDaBusca, deps);
-  const casados = pedido.itens.filter((i) => casamentos.get(i.itemId)?.variacao);
-  // Uma leitura de ofertas por catálogo (vários cards podem ser do mesmo).
-  const cpids = [...new Set(casados.map((i) => i.catalogProductId).filter((c): c is string => !!c))];
-  const ofertas = new Map(await Promise.all(cpids.map(async (c) => [c, await deps.ofertasDoCatalogo(c).catch(() => null)] as const)));
-
   const resultado = new Map<string, ResultadoCard>();
-  const aAnalisar: { item: (typeof pedido.itens)[number]; categoriaId: string; fonte: FonteCusto; codigo: string }[] = [];
+  const reservados: { item: (typeof pedido.itens)[number]; casamento: Casamento; codigo: string }[] = [];
   let limiteAtingido = false;
   for (const item of pedido.itens) {
     const c = casamentos.get(item.itemId);
     if (!c?.variacao) { resultado.set(item.itemId, { itemId: item.itemId, estado: 'sem_vinculo' }); continue; }
     const base = { itemId: item.itemId, fonte: c.fonte, codigo: c.variacao.codigo };
-    const categoriaId = item.catalogProductId ? categoriaDaOferta(ofertas.get(item.catalogProductId), item.itemId) : null;
-    if (!categoriaId) { resultado.set(item.itemId, { ...base, estado: 'sem_categoria' }); continue; }
+    // Sem catálogo não há como achar a categoria da oferta: não gasta cota nem ML.
+    if (!item.catalogProductId) { resultado.set(item.itemId, { ...base, estado: 'sem_categoria' }); continue; }
     if (limiteAtingido || !(await deps.reservar())) { limiteAtingido = true; resultado.set(item.itemId, { ...base, estado: 'limite' }); continue; }
-    aAnalisar.push({ item, categoriaId, fonte: c.fonte, codigo: c.variacao.codigo });
+    reservados.push({ item, casamento: c, codigo: c.variacao.codigo });
   }
-  for (let i = 0; i < aAnalisar.length; i += LOTE) {
-    await Promise.all(aAnalisar.slice(i, i + LOTE).map(async ({ item, categoriaId, fonte, codigo }) => {
-      try {
-        const r = await deps.analisar({
-          mlItemId: item.itemId, sellerId: '', catalogProductId: item.catalogProductId, categoriaId, preco: item.preco, eanDaBusca: pedido.eanDaBusca,
-        });
-        resultado.set(item.itemId, { itemId: item.itemId, estado: 'ok', fonte, codigo, margem: r.margem, custo: r.custo });
-      } catch {
-        resultado.set(item.itemId, { itemId: item.itemId, estado: 'indisponivel', fonte, codigo, motivo: 'falha ao consultar o Mercado Livre' });
-      }
-    }));
-  }
+  // Uma leitura de ofertas por catálogo (vários cards podem ser do mesmo), só dos reservados.
+  const ofertas = new Map<string, unknown | null>();
+  await emLotes([...new Set(reservados.map((r) => r.item.catalogProductId!))], async (cpid) => {
+    ofertas.set(cpid, await deps.ofertasDoCatalogo(cpid).catch(() => null));
+  });
+  await emLotes(reservados, async ({ item, casamento, codigo }) => {
+    const base = { itemId: item.itemId, fonte: casamento.fonte, codigo };
+    const categoriaId = categoriaDaOferta(ofertas.get(item.catalogProductId!), item.itemId);
+    if (!categoriaId) { resultado.set(item.itemId, { ...base, estado: 'sem_categoria' }); return; }
+    try {
+      const r = await deps.analisar({
+        mlItemId: item.itemId, sellerId: '', catalogProductId: item.catalogProductId, categoriaId, preco: item.preco, eanDaBusca: pedido.eanDaBusca,
+      }, casamento);
+      resultado.set(item.itemId, { ...base, estado: 'ok', margem: r.margem, custo: r.custo });
+    } catch {
+      resultado.set(item.itemId, { ...base, estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
+    }
+  });
   return { itens: pedido.itens.map((i) => resultado.get(i.itemId)!), limiteAtingido };
 }

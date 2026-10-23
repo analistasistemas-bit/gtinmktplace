@@ -90,7 +90,7 @@ export function validarPedido(body: unknown): Pedido | null {
     case 'analisar_busca': {
       const { itens, eanDaBusca } = b;
       if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ITENS_BUSCA) return null;
-      if (eanDaBusca != null && !(typeof eanDaBusca === 'string' && /^\d{8,14}$/.test(eanDaBusca))) return null;
+      if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null; // mesmo critério do analisar_anuncio (gtinOuNull decide)
       const vistos = new Set<string>();
       const lidos: ItemBusca[] = [];
       for (const i of itens as Record<string, unknown>[]) {

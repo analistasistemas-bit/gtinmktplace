@@ -37,6 +37,12 @@ describe('casarCards (Task 21): mesma prioridade do resolverVinculo, em lote e s
     expect(r.get('MLB7')).toEqual({ fonte: 'nenhuma', variacao: null });
   });
 
+  it('Grok: EAN com mais de uma variação é ambíguo e não casa (igual ao resolverVinculo)', async () => {
+    const r = await casarCards('org', [{ itemId: 'MLB7', catalogProductId: null }], '7891234567895',
+      deps({ porGtin: vi.fn(async () => [v('x'), v('y')]), vinculosManuais: vi.fn(async () => new Map()) }));
+    expect(r.get('MLB7')).toEqual({ fonte: 'nenhuma', variacao: null });
+  });
+
   it('EAN inválido não consulta; consultas de vínculo manual pedem todas as chaves de uma vez', async () => {
     const d = deps();
     await casarCards('org', [{ itemId: 'MLB9', catalogProductId: 'MLB300' }], '123', d);
@@ -79,7 +85,7 @@ describe('analisarBusca (Task 21)', () => {
     expect(r.itens.map((i) => [i.itemId, i.estado])).toEqual([['MLB1', 'ok'], ['MLB7', 'sem_vinculo'], ['MLB9', 'sem_categoria']]);
     expect(d.reservar).toHaveBeenCalledTimes(1);
     expect(d.ofertasDoCatalogo).toHaveBeenCalledTimes(1);
-    expect(d.analisar).toHaveBeenCalledWith(expect.objectContaining({ mlItemId: 'MLB1', categoriaId: 'MLB5', preco: 100, catalogProductId: 'MLB100' }));
+    expect(d.analisar).toHaveBeenCalledWith(expect.objectContaining({ mlItemId: 'MLB1', categoriaId: 'MLB5', preco: 100, catalogProductId: 'MLB100' }), expect.anything());
     expect(r.itens[0]).toMatchObject({ estado: 'ok', fonte: 'catalogo', codigo: 'cat', margem });
   });
 
@@ -100,7 +106,20 @@ describe('analisarBusca (Task 21)', () => {
     const d = depsBusca({ ofertasDoCatalogo: vi.fn(async () => null) });
     const r = await analisarBusca('org', { eanDaBusca: null, itens: [itens[0]] }, d);
     expect(r.itens[0].estado).toBe('sem_categoria');
-    expect(d.reservar).not.toHaveBeenCalled();
+    expect(d.analisar).not.toHaveBeenCalled();
+  });
+
+  it('Grok: cota esgotada já de saída: nenhuma leitura de ofertas no ML', async () => {
+    const d = depsBusca({ reservar: vi.fn(async () => false) });
+    const r = await analisarBusca('org', { eanDaBusca: null, itens: [itens[0]] }, d);
+    expect(r.itens[0].estado).toBe('limite');
+    expect(d.ofertasDoCatalogo).not.toHaveBeenCalled();
+  });
+
+  it('Grok: a análise recebe exatamente o casamento do card (rótulo e margem do mesmo SKU)', async () => {
+    const d = depsBusca();
+    await analisarBusca('org', { eanDaBusca: null, itens: [itens[0]] }, d);
+    expect(d.analisar).toHaveBeenCalledWith(expect.anything(), { fonte: 'catalogo', variacao: v('cat') });
   });
 
   it('falha na análise de um item não derruba os outros', async () => {

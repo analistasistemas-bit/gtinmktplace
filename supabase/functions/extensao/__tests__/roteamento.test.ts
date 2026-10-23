@@ -359,6 +359,8 @@ describe('analisar_busca (Task 21)', () => {
     expect(validarPedido({ acao: 'analisar_busca', itens: Array.from({ length: 51 }, (_, i) => item(`MLB${i + 1}`)) })).toBeNull();
     expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1', { preco: 0 })] })).toBeNull();
     expect(validarPedido({ acao: 'analisar_busca', itens: [item('X1')] })).toBeNull();
-    expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: 'abc', itens: [item('MLB1')] })).toBeNull();
+    expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: 'x'.repeat(21), itens: [item('MLB1')] })).toBeNull();
+    // Mesmo critério do analisar_anuncio: o código interno passa e o gtinOuNull decide depois.
+    expect(validarPedido({ acao: 'analisar_busca', eanDaBusca: '3000123', itens: [item('MLB1')] })).toMatchObject({ eanDaBusca: '3000123' });
   });
 });
