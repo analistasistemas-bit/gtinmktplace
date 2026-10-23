@@ -17,7 +17,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { analisarBusca } from '../_shared/extensao/busca.ts';
 import { montarRadar, type LinhaAlertaPulse, type LinhaProdutoPulse, type RespostaRadar } from '../_shared/extensao/radar.ts';
-import { adicionarAoRadar } from '../_shared/pulse/adicionar.ts';
+import { adicionarAoRadar, MENSAGEM_ML_INDISPONIVEL } from '../_shared/pulse/adicionar.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
 import { redisGet, redisIncrComTTL, redisSet } from '../_shared/redis/client.ts';
 import { analisarAnuncio, type DepsAnuncio } from '../_shared/extensao/analisar-anuncio.ts';
@@ -326,33 +326,42 @@ async function radar(admin: SupabaseClient, orgId: string, catalogProductId: str
 }
 
 /** "Adicionar ao radar" (exceção D-10): ação manual; vai ao Pulse só o id de catálogo. Módulo Pulse + escrita;
- *  em sessão de suporte só escopo `full`, com auditoria (ADR-0092). Não dispara coleta: o cron do Pulse coleta. */
+ *  em sessão de suporte só escopo `full`, e TODA tentativa vai para a auditoria (ADR-0092). Não dispara coleta. */
 async function adicionarRadar(admin: SupabaseClient, ctx: Contexto, catalogProductId: string): Promise<unknown> {
   const { orgId, userId } = ctx;
   const alvo = { type: 'extensao_radar:adicionar', id: catalogProductId };
+  let auditado = false;
+  const auditar = async (resultado: 'denied' | 'failed' | 'succeeded') => { auditado = true; await auditarOperacaoSuporte(admin, ctx, alvo, resultado); };
   if (ctx.support && ctx.support.scope !== 'full') {
-    await auditarOperacaoSuporte(admin, ctx, alvo, 'denied');
+    await auditar('denied');
     throw new ErroExtensao('interno', 403);
-  }
-  if (!(await exigirModulo(admin, orgId, 'pulse'))) throw new ErroExtensao('modulo_desligado', 403);
-  if (await redisIncrComTTL(`ext:radar:add:${userId}:${new Date().toISOString().slice(0, 13)}`, 3600) > LIMITE_RADAR_HORA) {
-    throw new ErroExtensao('limite', 429);
   }
   let r: Awaited<ReturnType<typeof adicionarAoRadar>>;
   try {
+    if (!(await exigirModulo(admin, orgId, 'pulse'))) {
+      await auditar('denied');
+      throw new ErroExtensao('modulo_desligado', 403);
+    }
     const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
-    if (!conexao) return SEM_CONEXAO;
+    if (!conexao) { await auditar('failed'); return SEM_CONEXAO; }
+    // Cota só depois da conexão: clique sem ML conectado não queima a hora.
+    if (await redisIncrComTTL(`ext:radar:add:${userId}:${new Date().toISOString().slice(0, 13)}`, 3600) > LIMITE_RADAR_HORA) {
+      await auditar('failed');
+      return { estado: 'limite', maximoPorHora: LIMITE_RADAR_HORA };
+    }
     r = await adicionarAoRadar(admin, orgId, catalogProductId, await getValidAccessTokenConexao(conexao), null);
-    if (!r.ok && r.motivo === 'erro') throw new Error(`adicionar_radar: ${r.mensagem}`);
   } catch (e) {
-    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed').catch((a) => console.error(`extensao: ${(a as Error).message}`));
+    if (!auditado) await auditar('failed').catch((a) => console.error(`extensao: ${(a as Error).message}`));
     throw e;
   }
   if (!r.ok) {
-    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed');
-    return { estado: 'ficha_inexistente' };
+    await auditar('failed');
+    if (r.motivo === 'ficha_inexistente') return { estado: 'ficha_inexistente' };
+    // Erro de banco não vai cru à extensão: fica no log; o painel recebe texto de produto.
+    if (r.mensagem !== MENSAGEM_ML_INDISPONIVEL) console.error(`extensao: adicionar_radar: ${r.mensagem}`);
+    return { estado: 'indisponivel', motivo: r.mensagem === MENSAGEM_ML_INDISPONIVEL ? r.mensagem : 'Não foi possível adicionar agora. Tente de novo.' };
   }
-  await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+  await auditar('succeeded');
   return { estado: 'ok', jaExistia: r.jaExistia };
 }
 

@@ -392,6 +392,8 @@ describe('extensao — radar do Pulse (Task 18)', () => {
     vi.mocked(resolverConexao).mockResolvedValue({ id: 'c1' } as never);
     vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok');
   };
+  const fetchMl = vi.fn(async () => new Response(JSON.stringify({ name: 'Fone' }), { status: 200 }));
+  beforeEach(() => { fetchMl.mockClear(); fetchMl.mockImplementation(async () => new Response(JSON.stringify({ name: 'Fone' }), { status: 200 })); vi.stubGlobal('fetch', fetchMl); });
   const pulseDesligado = () => vi.mocked(exigirModulo).mockImplementation(async (_a, _o, m) => m !== 'pulse');
 
   it('radar com módulo Pulse desligado: só {modulo:false}, sem ler as tabelas do Pulse', async () => {
@@ -400,11 +402,20 @@ describe('extensao — radar do Pulse (Task 18)', () => {
     expect(f.froms.filter((t) => t.startsWith('pulse_'))).toEqual([]);
   });
 
-  it('adicionar com Pulse desligado: 403 modulo_desligado, sem ML', async () => {
+  it('adicionar com Pulse desligado: 403 modulo_desligado, sem ML; em suporte full, auditado denied', async () => {
     pulseDesligado();
     comConexao();
+    f.contexto = suporte('full');
     expect((await post(ADD)).status).toBe(403);
-    expect(mlGet).not.toHaveBeenCalled();
+    expect(fetchMl).not.toHaveBeenCalled();
+    expect(auditorias()).toMatchObject([{ target_type: 'extensao_radar:adicionar', result: 'denied' }]);
+  });
+
+  it('Grok: sem conexão ML → indisponível, auditado failed, sem gastar a cota', async () => {
+    f.contexto = suporte('full');
+    expect(await (await post(ADD)).json()).toEqual({ estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' });
+    expect(auditorias()).toMatchObject([{ result: 'failed' }]);
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
   });
 
   it('suporte só leitura: adicionar negado e auditado denied, sem ML nem escrita', async () => {
@@ -412,13 +423,12 @@ describe('extensao — radar do Pulse (Task 18)', () => {
     comConexao();
     expect((await post(ADD)).status).toBe(403);
     expect(auditorias()).toMatchObject([{ target_type: 'extensao_radar:adicionar', target_id: 'MLB32466350', result: 'denied' }]);
-    expect(mlGet).not.toHaveBeenCalled();
+    expect(fetchMl).not.toHaveBeenCalled();
   });
 
   it('suporte full: já no radar → ok jaExistia, auditado succeeded', async () => {
     f.contexto = suporte('full');
     comConexao();
-    vi.mocked(mlGet).mockResolvedValue({ name: 'Fone' });
     expect(await (await post(ADD)).json()).toEqual({ estado: 'ok', jaExistia: true });
     expect(auditorias()).toMatchObject([{ target_type: 'extensao_radar:adicionar', result: 'succeeded' }]);
   });
@@ -426,16 +436,18 @@ describe('extensao — radar do Pulse (Task 18)', () => {
   it('ficha inexistente no ML: estado próprio, auditado failed, nada gravado', async () => {
     f.contexto = suporte('full');
     comConexao();
-    vi.mocked(mlGet).mockResolvedValue(null);
+    fetchMl.mockImplementation(async () => new Response('{}', { status: 404 }));
     expect(await (await post(ADD)).json()).toEqual({ estado: 'ficha_inexistente' });
     expect(auditorias()).toMatchObject([{ result: 'failed' }]);
     expect(f.ops.filter((o) => o.tabela === 'pulse_produtos')).toEqual([]);
   });
 
-  it('acima de 10 por hora: 429 sem ML', async () => {
+  it('acima de 10 por hora: estado limite com o teto, auditado failed, sem ML', async () => {
+    f.contexto = suporte('full');
     comConexao();
     vi.mocked(redisIncrComTTL).mockResolvedValue(11);
-    expect((await post(ADD)).status).toBe(429);
-    expect(mlGet).not.toHaveBeenCalled();
+    expect(await (await post(ADD)).json()).toEqual({ estado: 'limite', maximoPorHora: 10 });
+    expect(auditorias()).toMatchObject([{ result: 'failed' }]);
+    expect(fetchMl).not.toHaveBeenCalled();
   });
 });

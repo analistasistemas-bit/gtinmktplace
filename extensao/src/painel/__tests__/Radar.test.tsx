@@ -71,3 +71,22 @@ it('foco e status: abrir → Adicionar; cancelar → Adicionar ao radar; sucesso
   await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Abrir no Pulse' })));
   expect(screen.getByRole('status').textContent).toBe('Adicionado ao radar.');
 });
+
+it('pausado: selo e aviso de coletas paradas', async () => {
+  render(<Radar catalogProductId="MLB1" chamar={vi.fn(async () => ok({ ...noRadar, status: 'pausado' })) as never} />);
+  await screen.findByText('Pausado');
+  screen.getByText(/sem coletas novas até reativar/);
+});
+
+it('Grok: limite e falha ao adicionar com texto do radar (não "analisar este anúncio")', async () => {
+  let resposta: unknown = ok({ estado: 'limite', maximoPorHora: 10 });
+  const chamar = vi.fn(async (c: { acao: string }) => (c.acao === 'adicionar_radar' ? resposta : ok({ modulo: true, noRadar: false })));
+  render(<Radar catalogProductId="MLB1" chamar={chamar as never} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Adicionar ao radar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
+  await screen.findByText('No máximo 10 inclusões no radar por hora. Tente de novo mais tarde.', { selector: '.rd-aviso' });
+  resposta = { ok: false, erro: 'interno' };
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar ao radar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
+  await screen.findByText('Não foi possível adicionar agora. Tente de novo.', { selector: '.rd-aviso' });
+});

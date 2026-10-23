@@ -14,6 +14,13 @@ const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-
 const dia = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 const preco = (n: number | null) => (n === null ? '' : ` ${brlJunto(n)}`);
 
+// Sessão/vínculo da extensão usam a mensagem geral; o resto ganha texto do radar (não "analisar este anúncio").
+function mensagemRadar(erro: string, adicionando: boolean): string {
+  if (erro === 'modulo_desligado') return adicionando ? 'O módulo Pulse não está habilitado para sua empresa.' : mensagemDeErro(erro);
+  if (['sem_sessao', 'sessao_expirada', 'sessao_suporte_expirada'].includes(erro)) return mensagemDeErro(erro);
+  return adicionando ? 'Não foi possível adicionar agora. Tente de novo.' : 'Não foi possível consultar o radar agora.';
+}
+
 const brlJunto = (n: number) => brl(n).replace(' ', '\u00a0'); // "R$" não fica sozinho no fim da linha
 
 function textoAlerta(a: AlertaRadar): string {
@@ -48,7 +55,7 @@ export function Radar({ catalogProductId, chamar }: { catalogProductId: string; 
     const minha = ++seq.current;
     const r = await chamar<RespostaRadar>({ acao: 'radar', catalogProductId });
     if (minha !== seq.current) return;
-    if (!r?.ok) { const mensagem = mensagemDeErro(r?.erro ?? 'interno'); setAnuncio(mensagem); setEstado({ tipo: 'erro', mensagem }); return; }
+    if (!r?.ok) { const mensagem = mensagemRadar(r?.erro ?? 'interno', false); setAnuncio(mensagem); setEstado({ tipo: 'erro', mensagem }); return; }
     const d = r.dados;
     if (!d?.modulo) setEstado({ tipo: 'oculto' }); // resposta fora do contrato: bônus some, não quebra o painel
     else if (!d.noRadar) setEstado({ tipo: 'fora', confirmando: false, enviando: false, aviso });
@@ -61,10 +68,12 @@ export function Radar({ catalogProductId, chamar }: { catalogProductId: string; 
   const adicionar = async () => {
     agir();
     setEstado({ tipo: 'fora', confirmando: true, enviando: true, aviso: null });
-    const r = await chamar<{ estado: string; jaExistia?: boolean; motivo?: string }>({ acao: 'adicionar_radar', catalogProductId });
-    if (!r?.ok) { avisar(mensagemDeErro(r?.erro ?? 'interno')); return; }
+    const r = await chamar<{ estado: string; jaExistia?: boolean; motivo?: string; maximoPorHora?: number }>({ acao: 'adicionar_radar', catalogProductId });
+    if (!r?.ok) { avisar(mensagemRadar(r?.erro ?? 'interno', true)); return; }
     if (r.dados.estado === 'ok') { void carregar(r.dados.jaExistia ? 'Este catálogo já estava no radar.' : 'Adicionado ao radar.'); return; }
-    avisar(r.dados.estado === 'ficha_inexistente' ? 'O Mercado Livre não encontrou esta ficha de catálogo.' : r.dados.motivo ?? 'Não foi possível adicionar agora.');
+    avisar(r.dados.estado === 'ficha_inexistente' ? 'O Mercado Livre não encontrou esta ficha de catálogo.'
+      : r.dados.estado === 'limite' ? `No máximo ${r.dados.maximoPorHora ?? 10} inclusões no radar por hora. Tente de novo mais tarde.`
+        : r.dados.motivo ?? 'Não foi possível adicionar agora. Tente de novo.');
   };
 
   if (estado.tipo === 'oculto') return null;
