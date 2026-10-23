@@ -297,6 +297,18 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 }
 .ql-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+/* Baixar fotos (Task 19): rodapé do cartão de qualidade, separado da lista; ação secundária, não compete com os itens. */
+.bf { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.bf-botao { width: 100%; justify-content: space-between; }
+.bf-qtd { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.bf-progresso { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bf-barra { grid-column: 1 / -1; height: 4px; border-radius: 999px; background: var(--secondary); overflow: hidden; }
+.bf-barra > span { display: block; height: 100%; background: var(--primary); transition: width 200ms ease-out; }
+.bf-resultado { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 13px; }
+.bf-ok { font-weight: 600; color: color-mix(in oklab, var(--success) 75%, var(--foreground)); }
+.bf-aviso { font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .bf-barra > span { transition: none; } }
+
 /* Catálogo (Task 24): participação no topo, vencedor, resumo, ofertas e distribuição. Mesmas linhas de extrato. */
 .catalogo { gap: 14px; }
 .ct-linha { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }

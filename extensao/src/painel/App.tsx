@@ -175,7 +175,7 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
           onSimular={(valor) => setSimular((s) => ({ valor, seq: (s?.seq ?? 0) + 1 }))}
         />
       )}
-      {estado.observado?.qualidade && <Qualidade dados={estado.observado.qualidade} />}
+      {estado.observado?.qualidade && <Qualidade dados={estado.observado.qualidade} mlItemId={estado.entrada.mlItemId} />}
       {resposta.dados.vendedor && <Vendedor vendedor={resposta.dados.vendedor} lojaOficial={estado.observado?.lojaOficial} />}
     </>
   );

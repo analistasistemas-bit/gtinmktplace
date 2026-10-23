@@ -1,6 +1,9 @@
 // Qualidade do anúncio (ADR-0189 D-10, Task 17): regras locais puras sobre o que a página mostra.
 // Mesmos limiares do Avant (relatório de RE); desconhecido nunca vira "ok" (consultor, 22/10).
 
+/** Id de foto do ML (`610380-MLA115537568804_082026`): só ele vira URL ou seletor. */
+export const ID_FOTO = /^\d{3,}-ML[A-Z]\d+_\d{6}$/;
+
 export interface FotoAnuncio { id: string; largura: number | null; altura: number | null }
 
 /** Lido da página (pdp.ts). null = não lido/ausente na página. */

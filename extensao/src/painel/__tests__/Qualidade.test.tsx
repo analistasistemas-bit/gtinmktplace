@@ -14,7 +14,7 @@ const barroco: DadosQualidade = {
 
 describe('Qualidade do anúncio (Task 17)', () => {
   it('cabeçalho com a contagem e linhas com o valor medido', () => {
-    render(<Qualidade dados={barroco} />);
+    render(<Qualidade dados={barroco} mlItemId="MLB1" />);
     screen.getByRole('heading', { name: 'Qualidade do anúncio' });
     screen.getByText('3 a melhorar');
     const linha = (r: string) => screen.getByText(r).closest('li')!;
@@ -28,26 +28,26 @@ describe('Qualidade do anúncio (Task 17)', () => {
   });
 
   it('chips com a posição das fotos abaixo de 1200 px', () => {
-    const { container } = render(<Qualidade dados={barroco} />);
+    const { container } = render(<Qualidade dados={barroco} mlItemId="MLB1" />);
     expect([...container.querySelectorAll('.ql-chip')].map((c) => c.textContent)).toEqual(['Foto 1', 'Foto 2', 'Foto 3', 'Foto 5', 'Foto 6']);
   });
 
   it('estado é lido sem depender da cor (texto para leitor de tela)', () => {
-    render(<Qualidade dados={barroco} />);
+    render(<Qualidade dados={barroco} mlItemId="MLB1" />);
     expect(screen.getAllByText('Atenção:').length).toBe(3);
   });
 
   it('"Tudo certo" só com os seis ok; sem alerta mas com item não informado: "Sem alertas"', () => {
     const ok = { fotos: [1, 2, 3, 4, 5].map((n) => f(`f${n}`, 1200, 1200)), clips: 2, descricao: 900, garantia: '12 meses de garantia de fábrica.', disponivel: 80 };
-    render(<Qualidade dados={ok} />);
+    render(<Qualidade dados={ok} mlItemId="MLB1" />);
     screen.getByText('Tudo certo');
     cleanup();
-    render(<Qualidade dados={{ ...ok, garantia: null }} />);
+    render(<Qualidade dados={{ ...ok, garantia: null }} mlItemId="MLB1" />);
     screen.getByText('Sem alertas');
   });
 
   it('nada lido na página: o bloco não aparece', () => {
-    const { container } = render(<Qualidade dados={{ fotos: null, clips: null, descricao: null, garantia: null, disponivel: null }} />);
+    const { container } = render(<Qualidade dados={{ fotos: null, clips: null, descricao: null, garantia: null, disponivel: null }} mlItemId="MLB1" />);
     expect(container.innerHTML).toBe('');
   });
 });

@@ -252,3 +252,14 @@ validada na de validação, com o mesmo gate.
 - O selo no card mostra só a margem simulada no Clássico ao preço do card ("Simulação Clássico X%"); Premium fica no
   painel. Card sem vínculo não recebe selo. A cada resultado os selos são refeitos do zero (resultado que deixou de ter
   selo perde o antigo).
+
+## Emenda 2026-10-22 — baixar mídia vira "Baixar fotos (ZIP)" (D-10, Task 19)
+
+- Só fotos, na resolução original (`https://http2.mlstatic.com/D_{id}-F.jpg`, medido: `-O` entrega 500 px). **Clips
+  ficam fora:** são playlists HLS (`.m3u8`) e o ML os casa por algoritmo (`clip_strategy` `BRAND_MATCH`), então podem
+  ser de outro criador e não do vendedor. Consultor: Codex Astra.
+- Tudo no painel, sem permissão nova: o mlstatic responde `access-control-allow-origin: *` e o arquivo sai por Blob +
+  `<a download>` (sem `chrome.downloads`, que dispararia novo aviso de permissão na Web Store). O painel diz "Download
+  solicitado", nunca "salvo".
+- Limites: 20 fotos, 15 s e 10 MiB por foto (bytes contados na leitura), 100 MiB por ZIP; resposta precisa ser JPEG;
+  falha de uma foto não aborta o ZIP e é listada pela posição. Aviso fixo: usar só imagens com autorização de reuso.

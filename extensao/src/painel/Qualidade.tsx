@@ -1,6 +1,7 @@
 // Bloco "Qualidade do anúncio" (ADR-0189 D-10, Task 17): checklist do que a página mostra, no formato de
 // extrato (rótulo à esquerda, valor medido à direita). Desconhecido aparece como "não informado", nunca ok.
 import { avaliarQualidade, type DadosQualidade, type EstadoItem } from '../compartilhado/qualidade';
+import { BaixarFotos } from './BaixarFotos';
 
 const MAX_CHIPS = 8;
 const ROTULO_ESTADO: Record<EstadoItem, string> = { ok: 'OK:', atencao: 'Atenção:', nao_informado: 'Não informado:' };
@@ -16,7 +17,7 @@ function Icone({ estado }: { estado: EstadoItem }) {
   );
 }
 
-export function Qualidade({ dados }: { dados: DadosQualidade }) {
+export function Qualidade({ dados, mlItemId }: { dados: DadosQualidade; mlItemId: string }) {
   const q = avaliarQualidade(dados);
   if (q.itens.every((i) => i.estado === 'nao_informado')) return null;
   const tudoOk = q.itens.every((i) => i.estado === 'ok');
@@ -48,6 +49,7 @@ export function Qualidade({ dados }: { dados: DadosQualidade }) {
           </li>
         ))}
       </ul>
+      {dados.fotos && dados.fotos.length > 0 && <BaixarFotos mlItemId={mlItemId} ids={dados.fotos.map((f) => f.id)} clips={dados.clips} />}
     </section>
   );
 }

@@ -2,11 +2,11 @@
 // Casa a miniatura pelo id da foto como trecho delimitado da URL (medido em 22/10: `.ui-pdp-gallery__thumbnail img`,
 // src `…/D_Q_NP_<id>-R.webp`); id fora do formato ou sem casamento → não marca (o painel lista as posições).
 // Só `outline` (não muda o layout nem o tooltip do ML) e reversível: sai quando a sessão muda.
+import { ID_FOTO } from '../compartilhado/qualidade';
+
 const MARCA = 'data-publiai-foto-fraca';
 // = --warning do tema claro (painel.css): mesma "atenção" do cartão Qualidade; a página do ML é clara.
 const ATENCAO = 'oklch(0.53 0.16 75)';
-// Formato do id de foto do ML (ex.: 670304-MLB90067766444_082025, 923809-MLA95696729330_102025).
-const ID_FOTO = /^\d{3,}-ML[A-Z]\d+_\d{6}$/;
 const originais = new WeakMap<HTMLElement, { outline: string; outlineOffset: string }>();
 
 export function destacarMiniaturas(doc: Document, ids: string[]): number {
