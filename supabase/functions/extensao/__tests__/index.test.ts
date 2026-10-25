@@ -24,6 +24,9 @@ const f = vi.hoisted(() => ({
   erroDb: null as string | null,
   rpcs: [] as { fn: string; args: unknown }[],
   froms: [] as string[],
+  /** linha devolvida por maybeSingle por tabela (sobrepõe o padrão de variação) */
+  linhas: {} as Record<string, unknown>,
+  eqs: [] as [string, string, unknown][],
 }));
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
@@ -45,7 +48,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
       let valor: unknown;
       const q = {
         select: () => q,
-        eq: () => q,
+        eq: (col: string, v: unknown) => { f.eqs.push([tabela, col, v]); return q; },
         order: () => q,
         limit: () => q,
         ilike: () => q,
@@ -54,6 +57,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
         insert: (v: unknown) => { op = 'insert'; valor = v; f.ops.push({ tabela, op, valor }); return Promise.resolve({ error: null }); },
         delete: () => { op = 'delete'; return q; },
         maybeSingle: () => Promise.resolve(f.erroDb ? { data: null, error: { message: f.erroDb } }
+          : tabela in f.linhas ? { data: f.linhas[tabela], error: null }
           : { data: f.variacaoExiste ? { id: 'v' } : null, error: null }),
         then: (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) => {
           f.ops.push({ tabela, op, valor });
@@ -90,6 +94,8 @@ beforeEach(() => {
   f.erroDb = null;
   f.rpcs.length = 0;
   f.froms.length = 0;
+  f.linhas = {};
+  f.eqs.length = 0;
   vi.clearAllMocks();
   vi.mocked(requireUserOrg).mockImplementation(async () => f.contexto);
   vi.mocked(exigirModulo).mockResolvedValue(true);
@@ -449,5 +455,80 @@ describe('extensao — radar do Pulse (Task 18)', () => {
     expect(await (await post(ADD)).json()).toEqual({ estado: 'limite', maximoPorHora: 10 });
     expect(auditorias()).toMatchObject([{ result: 'failed' }]);
     expect(fetchMl).not.toHaveBeenCalled();
+  });
+});
+
+describe('extensao — protocolo 2 (identidade, sessao, sem_acesso)', () => {
+  const P2 = { protocolo: 2 };
+  it('protocolo 2: sucesso vem em { identidade, dados }', async () => {
+    const r = await post({ acao: 'buscar_sku', termo: 'abc', ...P2 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ identidade: 'user-1:org-1:', dados: { itens: [] } });
+    f.contexto = suporte('read');
+    expect(await (await post({ acao: 'buscar_sku', termo: 'abc', ...P2 })).json())
+      .toEqual({ identidade: 'admin-1:org-1:req-1', dados: { itens: [] } });
+  });
+
+  it('sem protocolo: corpo idêntico ao atual (sem envelope)', async () => {
+    const legado = await (await post(ANALISAR)).json();
+    expect(legado).not.toHaveProperty('identidade');
+    expect(legado).not.toHaveProperty('dados');
+    const p2 = await (await post({ ...ANALISAR, ...P2, identidadeEsperada: 'user-1:org-1:' })).json();
+    expect(p2.identidade).toBe('user-1:org-1:');
+    expect(p2.dados).toEqual(legado);
+  });
+
+  it('identidadeEsperada divergente → 409 identidade_mudou e nada executado', async () => {
+    f.contexto = suporte('full');
+    const r = await post({ ...REMOVER, ...P2, identidadeEsperada: 'admin-1:org-2:req-1' });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ erro: 'identidade_mudou', identidade: 'admin-1:org-1:req-1' });
+    expect(escritas()).toEqual([]);
+    expect(auditorias()).toEqual([]);
+    expect(exigirModulo).not.toHaveBeenCalled();
+  });
+
+  it('identidadeEsperada fora do formato → 400 payload_invalido com identidade', async () => {
+    const r = await post({ ...REMOVER, ...P2, identidadeEsperada: 'x y' });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ erro: 'payload_invalido', identidade: 'user-1:org-1:' });
+    expect(escritas()).toEqual([]);
+  });
+
+  it('sessao: nome/email de profiles e orgNome da org efetiva; sem cota nem registro de uso', async () => {
+    f.linhas = { profiles: { nome: 'Diego', email: 'd@x.com' }, organizations: { nome: 'Avil' } };
+    f.contexto = suporte('read');
+    const r = await post({ acao: 'sessao', ...P2, identidadeEsperada: 'admin-1:org-1:req-1' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ identidade: 'admin-1:org-1:req-1', dados: { nome: 'Diego', email: 'd@x.com', orgNome: 'Avil' } });
+    expect(f.eqs).toEqual(expect.arrayContaining([['profiles', 'id', 'admin-1'], ['organizations', 'id', 'org-1']]));
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
+    expect(f.rpcs).toEqual([]);
+  });
+
+  it('sessao sem linhas → nulls', async () => {
+    f.linhas = { profiles: null, organizations: null };
+    const j = await (await post({ acao: 'sessao', ...P2 })).json();
+    expect(j).toEqual({ identidade: 'user-1:org-1:', dados: { nome: null, email: null, orgNome: null } });
+  });
+
+  it('módulo desligado com protocolo 2 → { erro: modulo_desligado, identidade }', async () => {
+    vi.mocked(exigirModulo).mockResolvedValue(false);
+    const r = await post({ ...ANALISAR, ...P2 });
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ erro: 'modulo_desligado', identidade: 'user-1:org-1:' });
+  });
+
+  it('403 do requireUserOrg sem marca → sem_acesso (protocolo 2, sem identidade); legado continua interno', async () => {
+    vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 403 }));
+    const r = await post({ ...ANALISAR, ...P2 });
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ erro: 'sem_acesso' });
+    expect(await (await post(ANALISAR)).json()).toEqual({ erro: 'interno' });
+  });
+
+  it('401 com protocolo 2: corpo atual, sem identidade', async () => {
+    vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 401 }));
+    expect(await (await post({ ...ANALISAR, ...P2 })).json()).toEqual({ erro: 'sessao_expirada' });
   });
 });

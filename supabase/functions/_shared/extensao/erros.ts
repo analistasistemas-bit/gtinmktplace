@@ -6,6 +6,8 @@ export type CodigoErro =
   | 'modulo_desligado'
   | 'limite'
   | 'payload_invalido'
+  | 'identidade_mudou'
+  | 'sem_acesso'
   | 'interno';
 
 export interface CorpoErro {
@@ -22,8 +24,9 @@ export class ErroExtensao extends Error {
   }
 }
 
-/** Mapeia qualquer exceção para status + `{ erro }`. Nunca vaza mensagem/stack/token. */
-export function normalizarErro(e: unknown): { status: number; corpo: CorpoErro } {
+/** Mapeia qualquer exceção para status + `{ erro }`. Nunca vaza mensagem/stack/token.
+ *  `protocolo` 2 (extensão 0.3.0+): 403 sem marca vira `sem_acesso`; sem ele, contrato da 0.2.x intacto. */
+export function normalizarErro(e: unknown, protocolo?: number): { status: number; corpo: CorpoErro } {
   if (e instanceof ErroExtensao) {
     const corpo: CorpoErro = { erro: e.codigo };
     if (e.codigo === 'limite') corpo.mensagem = MENSAGEM_LIMITE;
@@ -36,7 +39,7 @@ export function normalizarErro(e: unknown): { status: number; corpo: CorpoErro }
       return { status: 403, corpo: { erro: 'sessao_suporte_expirada' } };
     }
     // Perfil inativo/sem org ou suporte só-leitura tentando escrever: sem código próprio no contrato.
-    if (e.status === 403) return { status: 403, corpo: { erro: 'interno' } };
+    if (e.status === 403) return { status: 403, corpo: { erro: protocolo === 2 ? 'sem_acesso' : 'interno' } };
   }
   return { status: 500, corpo: { erro: 'interno' } };
 }

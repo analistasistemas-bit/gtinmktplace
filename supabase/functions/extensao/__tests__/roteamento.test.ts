@@ -17,6 +17,12 @@ describe('validarPedido', () => {
     expect(validarPedido('x')).toBeNull();
   });
 
+  it('sessao é válida e protocolo/identidadeEsperada não atrapalham nenhuma ação', () => {
+    expect(validarPedido({ acao: 'sessao' })).toEqual({ acao: 'sessao' });
+    expect(validarPedido({ acao: 'sessao', protocolo: 2, identidadeEsperada: 'u:o:' })).toEqual({ acao: 'sessao' });
+    expect(validarPedido({ ...anuncio, protocolo: 2, identidadeEsperada: 'u:o:' })).toMatchObject({ acao: 'analisar_anuncio' });
+  });
+
   it('analisar_anuncio válido devolve a EntradaAnuncio', () => {
     expect(validarPedido(anuncio)).toEqual({
       acao: 'analisar_anuncio', tipoPagina: 'anuncio',

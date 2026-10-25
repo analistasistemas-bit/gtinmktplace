@@ -37,6 +37,7 @@ const TTL_OFERTAS_S = 10 * 60;
 // ponytail: teto vale também para perfis já em cache; contar só os que faltam exige mexer em perfil-vendedor (_shared).
 const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
+const IDENTIDADE = /^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/;
 const LIMITE_RADAR_HORA = 10; // adicionar ao radar: cada um custa GET /products e trabalho futuro do coletor
 
 function json(body: unknown, status = 200): Response {
@@ -394,6 +395,16 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promis
       return radar(admin, orgId, p.catalogProductId);
     case 'adicionar_radar':
       return adicionarRadar(admin, ctx, p.catalogProductId);
+    case 'sessao': {
+      // D-19: não é análise — sem cota nem registro de uso. Org efetiva (inclui a do suporte).
+      const [perfil, org] = await Promise.all([
+        admin.from('profiles').select('nome, email').eq('id', userId).maybeSingle(),
+        admin.from('organizations').select('nome').eq('id', orgId).maybeSingle(),
+      ]);
+      falhou('sessao:profiles', perfil.error);
+      falhou('sessao:organizations', org.error);
+      return { nome: perfil.data?.nome ?? null, email: perfil.data?.email ?? null, orgNome: org.data?.nome ?? null };
+    }
     case 'erro_leitura': {
       // Acima de 20/h por usuário o registro é descartado em silêncio (telemetria, não análise).
       if (await redisIncrComTTL(chaveLimiteErro(userId, new Date()), 3600) > LIMITE_ERROS_HORA) return { ok: true };
@@ -410,21 +421,34 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
+  // Protocolo 2 (extensão 0.3.0+, emenda 2026-10-24): envelope `{ identidade, dados }` / `{ erro, identidade }`.
+  // Sem `protocolo`, respostas byte a byte iguais às da 0.2.x.
+  let protocolo: number | undefined;
+  let identidade: string | null = null;
   try {
     let body: unknown = null;
     try { body = await req.json(); } catch { /* validado após a autenticação */ }
+    const b = body as { protocolo?: unknown; identidadeEsperada?: unknown } | null;
+    if (b && typeof b === 'object' && b.protocolo === 2) protocolo = 2;
     // Sessão primeiro: payload ruim não pode mascarar sessão expirada. Sempre `read` aqui: o escopo de
     // escrita do suporte é checado em escreverVinculo, onde a negação pode ser auditada.
     const ctx = await requireUserOrg(req);
     const { orgId } = ctx;
+    identidade = `${ctx.userId}:${orgId}:${ctx.support?.requestId ?? ''}`;
+    // Identidade esperada antes de qualquer operação (inclusive escritas): divergiu → nada é executado.
+    if (protocolo === 2 && b!.identidadeEsperada != null) {
+      if (typeof b!.identidadeEsperada !== 'string' || !IDENTIDADE.test(b!.identidadeEsperada)) throw new ErroExtensao('payload_invalido', 400);
+      if (b!.identidadeEsperada !== identidade) throw new ErroExtensao('identidade_mudou', 409);
+    }
     const admin = adminClient();
     if (!(await exigirModulo(admin, orgId, 'extensao'))) throw new ErroExtensao('modulo_desligado', 403);
     const pedido = validarPedido(body);
     if (!pedido) throw new ErroExtensao('payload_invalido', 400);
-    return json(await executar(pedido, admin, ctx));
+    const dados = await executar(pedido, admin, ctx);
+    return json(protocolo === 2 ? { identidade, dados } : dados);
   } catch (e) {
-    const { status, corpo } = normalizarErro(e);
+    const { status, corpo } = normalizarErro(e, protocolo);
     if (status === 500) console.error(`extensao: ${(e as Error)?.message ?? e}`);
-    return json(corpo, status);
+    return json(protocolo === 2 && identidade ? { ...corpo, identidade } : corpo, status);
   }
 });

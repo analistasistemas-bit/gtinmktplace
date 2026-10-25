@@ -8,6 +8,8 @@ const CODIGOS: Record<CodigoErro, true> = {
   modulo_desligado: true,
   limite: true,
   payload_invalido: true,
+  identidade_mudou: true,
+  sem_acesso: true,
   interno: true,
 };
 
