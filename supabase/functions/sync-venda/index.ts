@@ -18,6 +18,7 @@ import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
 import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { registrarCarrinho } from '../_shared/notificacoes/gerencial/carrinho-io.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 import { linhaVendaAcimaSaldo, linhaDesyncMl } from '../_shared/notificacoes/estoque-kit.ts';
 import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
@@ -143,6 +144,11 @@ Deno.serve(async (req) => {
       );
     }
   }
+
+  // ADR-0190 D-4: notificação gerencial por carrinho. Gate em `pedido pago` (não `novaPaga`, que é
+  // one-shot): a PK de notificacao_carrinho dá a idempotência e o retry após persistir continua
+  // funcionando. Best-effort — registrarCarrinho nunca lança.
+  if (pedido.status === 'paid' && orgId) await registrarCarrinho(admin, token, orgId, pedido);
 
   // E6b (ADR-0094): baixa de estoque. A venda é SAGRADA — nenhuma falha aqui pode
   // derrubar o sync.
