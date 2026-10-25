@@ -268,6 +268,18 @@ describe('contarAtencao — prejuízos nomeados', () => {
     ]);
   });
 
+  it('código vazio/espaços = sem código (cai no título ou em "sem identificação")', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: '', titulo: 'Com título', lucro: -4 }),
+      vermelho({ orderId: 2, codigo: '  ', titulo: null, lucro: -2 }),
+      vermelho({ orderId: 3, codigo: null, titulo: '   ', lucro: -1 }),
+    ], new Map());
+    expect(r.prejuizos).toEqual([
+      { codigo: null, titulo: 'Com título', valor: -4, vendas: 1 },
+      { codigo: null, titulo: null, valor: -3, vendas: 2 },
+    ]);
+  });
+
   it('empate de valor: codigo asc (null por último), depois titulo asc', () => {
     const r = contarAtencao([
       vermelho({ orderId: 1, codigo: null, titulo: 'A', lucro: -2 }),

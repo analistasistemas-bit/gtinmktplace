@@ -202,11 +202,11 @@ export function contarAtencao(
     if (s === 'vermelho') {
       prejuizo++;
       // Espaços de chave separados: código, título e "sem identificação" nunca colidem.
-      const temTitulo = it.titulo != null && it.titulo !== '';
-      const chave = it.codigo != null ? `c:${it.codigo}` : temTitulo ? `t:${it.titulo}` : 's:';
-      const acc = porChave.get(chave) ?? {
-        codigo: it.codigo, titulo: it.codigo == null && !temTitulo ? null : it.titulo, valor: 0, pedidos: new Set<number>(),
-      };
+      // Vazio/só espaços = ausente.
+      const codigo = it.codigo?.trim() || null;
+      const titulo = it.titulo?.trim() || null;
+      const chave = codigo != null ? `c:${codigo}` : titulo != null ? `t:${titulo}` : 's:';
+      const acc = porChave.get(chave) ?? { codigo, titulo, valor: 0, pedidos: new Set<number>() };
       acc.valor += it.lucro;
       acc.pedidos.add(it.orderId);
       porChave.set(chave, acc);
