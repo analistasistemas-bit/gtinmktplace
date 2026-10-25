@@ -41,13 +41,14 @@ const chaveGeracao = (tabId: number) => `geracao:${tabId}`;
 // Geração global da sessão: sobe a cada limparEstadosDasAbas. Estado de outra geração (inclusive sem ela)
 // é descartado — cobre aba que nunca teve chave (1ª análise com a extensão recém-carregada).
 const GERACAO_SESSAO = 'geracao-sessao';
-const ABAS_ML = 'https://*.mercadolivre.com.br/*'; // = host_permissions do manifest
+export const ABAS_ML = 'https://*.mercadolivre.com.br/*'; // = host_permissions do manifest
 
 // observado: o que a página mostra e a edge não recebe (faixa de vendidos, data de criação) — ADR-0189 D-9.
-interface EstadoGuardado { geracao: string | null; sessao: number; entrada: object; resposta: unknown; observado?: object }
+// gravadoEm (ms): análise de anúncio com mais de 10 min é refeita antes de chegar ao painel (roteador).
+interface EstadoGuardado { geracao: string | null; sessao: number; entrada: object; resposta: unknown; observado?: object; gravadoEm: number }
 
-export async function registrarEstado(tabId: number, estado: EstadoGuardado): Promise<void> {
-  await chrome.storage.session.set({ [chaveEstado(tabId)]: estado });
+export async function registrarEstado(tabId: number, estado: Omit<EstadoGuardado, 'gravadoEm'>): Promise<void> {
+  await chrome.storage.session.set({ [chaveEstado(tabId)]: { ...estado, gravadoEm: Date.now() } });
 }
 
 // Época da sessão, só em memória do SW: decide se um pedido em voo ainda vale. Sobe de forma SÍNCRONA (antes de
@@ -55,7 +56,8 @@ export async function registrarEstado(tabId: number, estado: EstadoGuardado): Pr
 // identidade, limpeza das abas (suporte, pausa, refresh recusado). Quem pede captura a época sincronamente e a
 // confere sincronamente antes de usar. SW single-thread; reinício do SW mata as chamadas em voo, então memória basta.
 // Fica aqui (abas.ts) por ser a base do grafo: credenciais.ts e sessao.ts importam daqui sem ciclo.
-let epoca = 0;
+// Semente aleatória por vida do SW: painel/menu com a geração de um SW anterior nunca coincide com a do SW reiniciado.
+let epoca = Math.floor(Math.random() * 2 ** 31);
 export const epocaAtual = (): number => epoca;
 export const novaEpoca = (): void => { epoca++; };
 
@@ -67,14 +69,18 @@ export async function geracaoAtual(): Promise<number> {
 }
 
 /** Geração atual e o estado dela, numa leitura só. Geração ausente = nenhuma navegação vista ainda. */
-export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown; observado?: object } | null }> {
+export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown; observado?: object } | null; gravadoEm: number }> {
   const r = await chrome.storage.session.get([chaveEstado(tabId), chaveGeracao(tabId), GERACAO_SESSAO]);
   const g = r[chaveGeracao(tabId)];
   const geracao = typeof g === 'string' ? g : null;
   const sessao = typeof r[GERACAO_SESSAO] === 'number' ? (r[GERACAO_SESSAO] as number) : 0;
   const e = r[chaveEstado(tabId)] as EstadoGuardado | undefined;
   const valido = e && (e.geracao ?? null) === geracao && e.sessao === sessao;
-  return { geracao, sessao, estado: valido ? { entrada: e.entrada, resposta: e.resposta, observado: e.observado } : null };
+  return {
+    geracao, sessao,
+    estado: valido ? { entrada: e.entrada, resposta: e.resposta, observado: e.observado } : null,
+    gravadoEm: valido && typeof e.gravadoEm === 'number' ? e.gravadoEm : 0, // sem a marca (antes da 0.3.0) = velho
+  };
 }
 
 export const estadoDaAba = async (tabId: number) => (await lerAba(tabId)).estado;
@@ -141,6 +147,23 @@ export async function limparEstadosDasAbas(): Promise<void> {
     // O selo na página do ML também sai (content script da aba; aba fechada/sem script → ignora).
     chrome.tabs.sendMessage(tabId, { tipo: 'publiai:sessao-mudou' }).catch(() => {});
   }
+  await transmitirConta();
+}
+
+/** Mensagem do SW para o painel e todas as abas do ML (fechado/sem content script → ignora). */
+export async function transmitir(msg: object): Promise<void> {
+  chrome.runtime.sendMessage(msg).catch(() => {});
+  for (const t of await chrome.tabs.query({ url: ABAS_ML }).catch(() => [])) {
+    if (t.id !== undefined) chrome.tabs.sendMessage(t.id, msg).catch(() => {});
+  }
+}
+
+/** Conta mudou (login, saída, troca de identidade — e toda limpeza: fim de suporte, pausa, sessão legada):
+ *  menu, selos e painel releem `publiai:estado-extensao` e descartam o que tinham da geração anterior.
+ *  Chaves de credenciais.ts ('credenciais') e preferencias.ts ('ativa') lidas direto: importar de lá faria ciclo. */
+export async function transmitirConta(): Promise<void> {
+  const r = await chrome.storage.local.get(['credenciais', 'ativa']);
+  await transmitir({ tipo: 'publiai:conta-mudou', logado: r.credenciais !== undefined, ativa: r.ativa !== false, geracao: epocaAtual() });
 }
 
 // Painel lateral só nas abas do ML (ADR-0189): fora delas o Chrome o esconde ao trocar de aba e o devolve ao voltar.

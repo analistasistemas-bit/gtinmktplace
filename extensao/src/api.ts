@@ -26,9 +26,10 @@ type Contexto = Sessao & { epoca: number };
 const falha = (erro: Falha['erro']): Falha => ({ ok: false, erro });
 const texto = (v: unknown) => (typeof v === 'string' ? v : null);
 
-/** Época capturada (síncrona) antes do token e conferida depois: o token é da sessão dessa época. */
-async function contexto(): Promise<Contexto | Falha> {
-  const epoca = epocaAtual();
+/** Época capturada (síncrona) antes do token e conferida depois: o token é da sessão dessa época. `epoca` dada =
+ *  a de quando o pedido chegou ao SW (roteador): se já mudou, nada sai. */
+async function contexto(epoca = epocaAtual()): Promise<Contexto | Falha> {
+  if (epoca !== epocaAtual()) return falha('sem_sessao');
   const s: TokenValido = await obterSessaoValida();
   // transitorio = falha de rede/429/5xx ao renovar: credenciais mantidas, a próxima chamada tenta de novo.
   if ('erro' in s) return falha(s.erro === 'transitorio' ? 'interno' : 'sem_sessao');
@@ -102,14 +103,15 @@ export async function atualizarSessao(): Promise<boolean> {
   return !('erro' in c) && (await consultarSessao(c)).ok;
 }
 
-export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao<T>> {
-  let c = await contexto();
+/** `epoca`: a de quando o pedido chegou (mensagem do painel/menu/content script). Padrão: agora. */
+export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual()): Promise<RespostaExtensao<T>> {
+  let c = await contexto(epoca);
   if ('erro' in c) return c;
   if (c.identidade === null) {
     // Recém-logado: descobre a identidade antes, para a ação sair já com a esperada.
     const r = await consultarSessao(c);
     if (!r.ok) return r;
-    c = await contexto();
+    c = await contexto(epoca);
     if ('erro' in c) return c;
     if (c.identidade === null) return falha('sem_sessao');
   }

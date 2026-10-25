@@ -1,7 +1,7 @@
 // Busca no service worker (ADR-0189 D-11, Task 22): o content script manda os cards lidos; o painel pede a análise.
 // O estado fica na mesma chave da aba (geração por página e por sessão): resposta atrasada de outra busca não volta.
 import { chamarExtensao } from './api';
-import { lerAba, registrarEstado } from './abas';
+import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
 import { identidadeAtual, seAindaIdentidade } from './sessao';
@@ -66,11 +66,12 @@ export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorr
 
 /** Painel → analisa os cards ainda sem resultado (ou que ficaram no limite), até 50, na ordem da busca.
  *  `forcar` = itens que o painel quer reanalisar mesmo com resultado (ex.: logo depois de vincular ao SKU). */
-export function analisarBuscaDaAba(tabId: number, forcar: string[] = []): Promise<unknown> {
-  return naFila(analises, tabId, () => analisar(tabId, forcar));
+export function analisarBuscaDaAba(tabId: number, forcar: string[] = [], epoca = epocaAtual()): Promise<unknown> {
+  return naFila(analises, tabId, () => analisar(tabId, forcar, epoca));
 }
 
-async function analisar(tabId: number, forcar: string[]): Promise<unknown> {
+/** `epoca` = a de quando o painel pediu: sessão/pausa mudou enquanto esperava na fila → a edge não é chamada. */
+async function analisar(tabId: number, forcar: string[], epoca: number): Promise<unknown> {
   const identidade = await identidadeAtual();
   const { geracao, sessao, estado } = await lerAba(tabId);
   if (!ehBusca(estado)) return { ok: false, erro: 'payload_invalido' };
@@ -84,7 +85,7 @@ async function analisar(tabId: number, forcar: string[]): Promise<unknown> {
     // EAN da própria busca analisada (o guardado na aba pode ser de outra busca da mesma aba)
     eanDaBusca: eanDaUrlDeBusca(estado.entrada.url),
     itens: pendentes.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId, preco: c.preco })),
-  });
+  }, epoca);
   if (!resposta.ok) return resposta;
   const enviados = new Map(pendentes.map((c) => [c.itemId, c]));
   return (await seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {

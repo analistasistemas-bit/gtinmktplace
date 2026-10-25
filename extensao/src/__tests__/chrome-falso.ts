@@ -18,7 +18,7 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
   const chromeFalso = {
     runtime: {
       id: 'ext-publiai',
-      getManifest: () => ({ externally_connectable: { matches } }),
+      getManifest: () => ({ version: '0.3.0', externally_connectable: { matches } }),
       getURL: (p: string) => `chrome-extension://ext-publiai/${p}`,
       sendMessage: vi.fn(async (_msg: unknown) => undefined),
       onMessage: ouvinte(),
@@ -36,6 +36,7 @@ export function instalarChromeFalso(matches = ['https://app.publiai.daludi.com.b
     },
     tabs: {
       sendMessage: vi.fn(async (_tabId: number, _msg: unknown) => undefined),
+      create: vi.fn(async (_o: { url: string }) => ({}) as chrome.tabs.Tab),
       query: vi.fn(async (_q: unknown): Promise<chrome.tabs.Tab[]> => []),
       get: vi.fn(async (id: number): Promise<chrome.tabs.Tab> => ({ id }) as chrome.tabs.Tab),
       onUpdated: ouvinte(),

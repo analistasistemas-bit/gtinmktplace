@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eanDaAba, esquecerAba, esquecerEstado, lerAba, registrarEanDaAba, registrarEstado } from '../abas';
-import { aoAtualizarAba, complementosPendentes, rotearMensagem } from '../roteador';
+import { eanDaAba, epocaAtual, esquecerAba, esquecerEstado, lerAba, registrarEanDaAba, registrarEstado } from '../abas';
+import { aoAtualizarAba, complementosPendentes, rotearMensagem as rotearBruto } from '../roteador';
 import { sair } from '../credenciais';
 import { definirIdentidade } from '../sessao';
 import { instalarChromeFalso, local, logar } from './chrome-falso';
+import { URL_APP } from '../painel/formato';
 
 type Sender = chrome.runtime.MessageSender;
 const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai/src/painel/index.html' };
 const CONTEUDO: Sender = { id: 'ext-publiai', tab: { id: 7 } as chrome.tabs.Tab, url: 'https://produto.mercadolivre.com.br/MLB-1' };
 const OUTRA_EXT: Sender = { id: 'outra', url: 'chrome-extension://outra/x.html' };
+// Painel em dia: manda a geração (época do SW) da última resposta — aqui, a viva. Testes de geração antiga usam rotearBruto.
+const rotearMensagem = (msg: unknown, s: Sender) =>
+  rotearBruto(s === PAINEL && typeof msg === 'object' && msg !== null && !('geracao' in msg) ? { geracao: epocaAtual(), ...msg } : msg, s);
 const fetchFalso = vi.fn();
 // Última chamada à edge (o GET do HTML do anúncio para a data de criação roda em paralelo/depois).
 const ultimaEdge = () => fetchFalso.mock.calls.filter(([u]) => !String(u).startsWith('https://produto.')).at(-1)!;
@@ -17,7 +21,7 @@ const ultimaEdge = () => fetchFalso.mock.calls.filter(([u]) => !String(u).starts
 // se ela divergir; esse caminho é testado em api.test.ts).
 async function edgeProtocolo2(u: string, init?: RequestInit): Promise<Response> {
   const r: Response = await fetchFalso(u, init);
-  if (!String(u).endsWith('/functions/v1/extensao') || r.status !== 200) return r;
+  if (!String(u).endsWith('/functions/v1/extensao') || r.status !== 200 || JSON.parse(String(init?.body)).acao === 'sessao') return r;
   const texto = await r.text();
   const identidade = JSON.parse(String(init?.body)).identidadeEsperada;
   try {
@@ -44,7 +48,7 @@ const chamar = (corpo: unknown, sender: Sender) => rotearMensagem({ tipo: 'publi
 describe('publiai:chamar', () => {
   it('painel tem o conjunto completo de ações', async () => {
     for (const acao of ['analisar_anuncio', 'buscar_sku', 'salvar_vinculo', 'remover_vinculo', 'erro_leitura']) {
-      expect(await chamar({ acao }, PAINEL)).toEqual({ ok: true, dados: { ok: 1 } });
+      expect(await chamar({ acao }, PAINEL)).toEqual({ ok: true, dados: { ok: 1 }, geracao: epocaAtual() });
     }
     expect(fetchFalso).toHaveBeenCalledTimes(5);
   });
@@ -253,7 +257,7 @@ describe('estado da aba (painel)', () => {
     await chamar(ANUNCIO, CONTEUDO);
     fetchFalso.mockImplementation(async () => new Response('{"novo":1}', { status: 200 }));
     vi.mocked(chrome.runtime.sendMessage).mockClear();
-    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: true, dados: { novo: 1 } });
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: true, dados: { novo: 1 }, geracao: epocaAtual() });
     expect(JSON.parse(ultimaEdge()[1].body)).toMatchObject({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', preco: 100, eanDaBusca: '7899941205918' });
     expect(await estado(7)).toMatchObject({ resposta: { ok: true, dados: { novo: 1 } } });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
@@ -434,7 +438,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
         ? new Response(JSON.stringify({ access_token: 'acc-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'uA' } }), { status: 200 })
         : new Response('{"custo":"da org A"}', { status: 200 }));
       expect(await estado()).not.toBeNull();
-      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: true, dados: { custo: 'da org A' } });
+      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: true, dados: { custo: 'da org A' }, geracao: epocaAtual() });
       expect(ultimaEdge()[1].headers).toMatchObject({ Authorization: 'Bearer acc-novo' });
     } finally {
       vi.useRealTimers();
@@ -454,12 +458,12 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     }
   });
 
-  it('access vencido e refresh recusado, descoberto numa chamada: limpa antes de responder sem_sessao', async () => {
+  it('access vencido e refresh recusado, descoberto numa chamada: limpa antes de responder (painel: geracao_antiga, a sessão acabou durante o comando)', async () => {
     refreshRecusado();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 2 * 3600_000);
     try {
-      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: false, erro: 'geracao_antiga', geracao: epocaAtual() });
     } finally {
       vi.useRealTimers();
     }
@@ -490,7 +494,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
       await conectar('uC:orgC:');
       return new Response('{"custo":"da org B, atrasado"}', { status: 200 });
     });
-    expect(await chamar({ ...ANUNCIO, preco: 150 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await chamar({ ...ANUNCIO, preco: 150 }, PAINEL)).toEqual({ ok: false, erro: 'geracao_antiga', geracao: epocaAtual() });
   });
 
   // Troca de identidade com a resposta da edge já recebida, enquanto o corpo é lido (fix round 3: o api.ts não lê
@@ -630,5 +634,226 @@ describe('busca no SW (Task 22)', () => {
   it('cards de página que não é a busca do ML são ignorados', async () => {
     await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')] }, { ...BUSCA, tab: { id: 7, url: 'https://evil.com/' } as chrome.tabs.Tab, url: 'https://evil.com/' });
     expect(await estado()).toBeNull();
+  });
+});
+
+describe('conta, chave ativa e geração (Task 5)', () => {
+  const PERFIL = { nome: null, email: null, orgNome: null };
+  const ANUNCIO = { acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100 };
+  const acoesNaEdge = () => fetchFalso.mock.calls
+    .filter(([u]) => String(u).endsWith('/functions/v1/extensao'))
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)).acao);
+  const estadoAba = () => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 7 }, PAINEL);
+  const sessaoNaEdge = (identidade: string, dados: object) => fetchFalso.mockImplementation(async (_u: string, init?: RequestInit) =>
+    JSON.parse(String(init?.body ?? '{}')).acao === 'sessao'
+      ? new Response(JSON.stringify({ identidade, dados }), { status: 200 })
+      : new Response('{"ok":1}', { status: 200 }));
+  const ANTIGA = { ok: false, erro: 'geracao_antiga' };
+  // Troca de org disparada dentro da leitura da chave `ativa` (o comando já passou pela conferência da geração).
+  const trocarOrgAoLerAtiva = () => {
+    const original = vi.mocked(chrome.storage.local.get).getMockImplementation()!;
+    const armado = { sim: true };
+    vi.mocked(chrome.storage.local.get).mockImplementation(async (k) => {
+      if (armado.sim && k === 'ativa') { armado.sim = false; await definirIdentidade('u1:org2:', PERFIL); }
+      return (original as (k: unknown) => Promise<Record<string, unknown>>)(k);
+    });
+    return armado;
+  };
+
+  it('comando com geração antiga (ex.: remover_vinculo pedido antes da troca de org) é recusado sem chamar a edge', async () => {
+    const g = epocaAtual();
+    await definirIdentidade('u1:org2:', PERFIL); // troca de org: época nova
+    expect(epocaAtual()).not.toBe(g);
+    fetchFalso.mockClear();
+    expect(await rotearBruto({ tipo: 'publiai:chamar', corpo: { acao: 'remover_vinculo', vinculoId: 'v1' }, geracao: g }, PAINEL))
+      .toEqual({ ...ANTIGA, geracao: epocaAtual() });
+    for (const msg of [{ tipo: 'publiai:reanalisar-aba', tabId: 7 }, { tipo: 'publiai:analisar-busca', tabId: 7 }, { tipo: 'publiai:definir-ativa', ativa: false }, { tipo: 'publiai:sair' }]) {
+      expect(await rotearBruto({ ...msg, geracao: g }, PAINEL)).toEqual({ ...ANTIGA, geracao: epocaAtual() });
+    }
+    for (const msg of [{ tipo: 'publiai:definir-ativa', ativa: false }, { tipo: 'publiai:sair' }]) {
+      expect(await rotearBruto({ ...msg, geracao: g }, CONTEUDO)).toEqual({ ...ANTIGA, geracao: epocaAtual() });
+    }
+    // Sem geração (ou de outro tipo) = antiga: fail closed.
+    expect(await rotearBruto({ tipo: 'publiai:chamar', corpo: { acao: 'buscar_sku' } }, PAINEL)).toMatchObject(ANTIGA);
+    expect(await rotearBruto({ tipo: 'publiai:sair', geracao: String(epocaAtual()) }, CONTEUDO)).toMatchObject(ANTIGA);
+    expect(fetchFalso).not.toHaveBeenCalled();
+    expect(local.credenciais).toBeDefined();
+    expect(local.ativa).toBeUndefined();
+  });
+
+  it('troca de org durante a leitura da chave ativa: o comando (geração certa na chegada) não chega à edge', async () => {
+    const armado = trocarOrgAoLerAtiva();
+    fetchFalso.mockClear();
+    expect(await rotearMensagem({ tipo: 'publiai:chamar', corpo: { acao: 'remover_vinculo', vinculoId: 'v1' } }, PAINEL)).toMatchObject(ANTIGA);
+    expect(armado.sim).toBe(false);
+    expect(acoesNaEdge()).toEqual([]);
+  });
+
+  it('troca de org durante a leitura da chave ativa: análise do content script e reanálise também não chegam à edge', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    let armado = trocarOrgAoLerAtiva();
+    fetchFalso.mockClear();
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(armado.sim).toBe(false);
+    expect(acoesNaEdge()).toEqual([]);
+    logar({ identidade: 'u1:org1:' });
+    await chamar(ANUNCIO, CONTEUDO);
+    armado = trocarOrgAoLerAtiva();
+    fetchFalso.mockClear();
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toMatchObject(ANTIGA);
+    expect(armado.sim).toBe(false);
+    expect(acoesNaEdge()).toEqual([]);
+  });
+
+  it('estado-extensao do painel chama sessao e, com identidade nova, limpa abas e transmite conta-mudou', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([{ id: 7 }] as never);
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estadoAba()).not.toBeNull();
+    sessaoNaEdge('u1:org2:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Org 2' });
+    fetchFalso.mockClear();
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    const r = await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, PAINEL);
+    expect(r).toEqual({ ativa: true, logado: true, perfil: { nome: 'Diego', orgNome: 'Org 2' }, versao: '0.3.0', geracao: epocaAtual() });
+    expect(acoesNaEdge()).toEqual(['sessao']);
+    expect(await estadoAba()).toBeNull();
+    const conta = { tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: epocaAtual() };
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(conta);
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, conta);
+  });
+
+  it('estado-extensao sem abrindo (selos lendo a chave) não vai à edge; menu do cabeçalho com abrindo vai', async () => {
+    fetchFalso.mockClear();
+    expect(await rotearBruto({ tipo: 'publiai:estado-extensao' }, CONTEUDO))
+      .toEqual({ ativa: true, logado: true, perfil: { nome: 'Diego', orgNome: 'Avil' }, versao: '0.3.0', geracao: epocaAtual() });
+    expect(fetchFalso).not.toHaveBeenCalled();
+    sessaoNaEdge('u1:org1:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Avil' });
+    const antes = epocaAtual();
+    await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, CONTEUDO);
+    expect(acoesNaEdge()).toEqual(['sessao']);
+    expect(epocaAtual()).toBe(antes); // mesma identidade: nada limpo
+  });
+
+  it('estado-extensao sem login → logado:false, perfil:null (sem rede)', async () => {
+    delete local.credenciais;
+    local.ativa = false;
+    fetchFalso.mockClear();
+    for (const s of [PAINEL, CONTEUDO]) {
+      expect(await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, s))
+        .toEqual({ ativa: false, logado: false, perfil: null, versao: '0.3.0', geracao: epocaAtual() });
+    }
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it('estado-extensao: sem_acesso na abertura desloga localmente', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"erro":"sem_acesso"}', { status: 403 }));
+    expect(await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, PAINEL)).toMatchObject({ logado: false, perfil: null });
+    expect(local.credenciais).toBeUndefined();
+  });
+
+  it('estado da aba com mais de 10 min é reanalisado antes de chegar ao painel', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    const regravar = async (muda: (v: Record<string, unknown>) => Record<string, unknown>) => {
+      const v = (await chrome.storage.session.get('estado:7'))['estado:7'] as Record<string, unknown>;
+      await chrome.storage.session.set({ 'estado:7': muda(v) });
+    };
+    fetchFalso.mockImplementation(async () => new Response('{"novo":1}', { status: 200 }));
+    fetchFalso.mockClear();
+    expect(await estadoAba()).toMatchObject({ resposta: { ok: true, dados: { ok: 1 } } }); // fresco: sem reanálise
+    expect(acoesNaEdge()).toEqual([]);
+    await regravar((v) => ({ ...v, gravadoEm: Date.now() - 11 * 60_000 }));
+    expect(await estadoAba()).toMatchObject({ resposta: { ok: true, dados: { novo: 1 } }, entrada: { mlItemId: 'MLB1' } });
+    expect(acoesNaEdge()).toEqual(['analisar_anuncio']);
+    // Sem gravadoEm (estado de antes da 0.3.0) = velho.
+    await regravar(({ gravadoEm: _g, ...v }) => ({ ...v, resposta: { ok: true, dados: { ok: 1 } } }));
+    expect(await estadoAba()).toMatchObject({ resposta: { ok: true, dados: { novo: 1 } } });
+    expect(acoesNaEdge()).toEqual(['analisar_anuncio', 'analisar_anuncio']);
+    // Desligada: o velho não chega ao painel nem vai à edge.
+    await regravar((v) => ({ ...v, gravadoEm: 0 }));
+    local.ativa = false;
+    fetchFalso.mockClear();
+    expect(await estadoAba()).toBeNull();
+    expect(acoesNaEdge()).toEqual([]);
+  });
+
+  it('estado de busca não é reanalisado pela idade', async () => {
+    const BUSCA: Sender = { id: 'ext-publiai', tab: { id: 7, url: 'https://lista.mercadolivre.com.br/panela' } as chrome.tabs.Tab, url: 'https://lista.mercadolivre.com.br/panela' };
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [{ itemId: 'MLB1000001', catalogProductId: null, preco: 10, titulo: 'x', selos: [], patrocinado: false }], ocorrencias: 1 }, BUSCA);
+    const v = (await chrome.storage.session.get('estado:7'))['estado:7'] as Record<string, unknown>;
+    await chrome.storage.session.set({ 'estado:7': { ...v, gravadoEm: 0 } });
+    fetchFalso.mockClear();
+    expect(await estadoAba()).toMatchObject({ entrada: { tipoPagina: 'busca' } });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it('entrar recusado quando o remetente é content script', async () => {
+    delete local.credenciais;
+    fetchFalso.mockClear();
+    expect(rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 'segredo-123' }, CONTEUDO)).toBeUndefined();
+    expect(rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 'segredo-123' }, OUTRA_EXT)).toBeUndefined();
+    expect(rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 1 }, PAINEL)).toBeUndefined();
+    expect(fetchFalso).not.toHaveBeenCalled();
+    expect(local.credenciais).toBeUndefined();
+  });
+
+  it('entrar do painel: loga, busca o perfil, devolve o estado completo e a senha não fica em lugar nenhum', async () => {
+    delete local.credenciais;
+    fetchFalso.mockImplementation(async (u: string) => String(u).includes('/auth/v1/token')
+      ? new Response(JSON.stringify({ access_token: 'tok-n', refresh_token: 'ref-n', expires_in: 3600, user: { id: 'u9' } }), { status: 200 })
+      : new Response(JSON.stringify({ identidade: 'u9:org9:', dados: { nome: 'Ana', email: 'a@x.com', orgNome: 'Org 9' } }), { status: 200 }));
+    const r = await rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 'segredo-123' }, PAINEL);
+    expect(r).toEqual({ ok: true, ativa: true, logado: true, perfil: { nome: 'Ana', orgNome: 'Org 9' }, versao: '0.3.0', geracao: epocaAtual() });
+    expect(acoesNaEdge()).toEqual(['sessao']);
+    expect(JSON.stringify(local)).not.toContain('segredo-123');
+    expect(JSON.stringify(await chrome.storage.session.get(null))).not.toContain('segredo-123');
+    expect(JSON.stringify(vi.mocked(chrome.runtime.sendMessage).mock.calls)).not.toContain('segredo-123');
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: epocaAtual() });
+  });
+
+  it('entrar com senha errada → credenciais_invalidas, segue deslogado', async () => {
+    delete local.credenciais;
+    fetchFalso.mockImplementation(async () => new Response('{"error":"invalid_grant"}', { status: 400 }));
+    expect(await rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 'errada' }, PAINEL))
+      .toMatchObject({ ok: false, erro: 'credenciais_invalidas', logado: false, perfil: null });
+  });
+
+  it('desligada → chamar, reanalisar e analisar-busca não tocam a edge', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    local.ativa = false;
+    fetchFalso.mockClear();
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'inativa' });
+    expect(await chamar({ acao: 'erro_leitura' }, CONTEUDO)).toEqual({ ok: false, erro: 'inativa' });
+    expect(await chamar({ acao: 'buscar_sku' }, PAINEL)).toEqual({ ok: false, erro: 'inativa', geracao: epocaAtual() });
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: false, erro: 'inativa', geracao: epocaAtual() });
+    expect(await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL)).toEqual({ ok: false, erro: 'inativa', geracao: epocaAtual() });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it('deslogado → sem_sessao sem tocar a edge', async () => {
+    delete local.credenciais;
+    fetchFalso.mockClear();
+    expect(await chamar({ acao: 'buscar_sku' }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao', geracao: epocaAtual() });
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(acoesNaEdge()).toEqual([]); // (o HTML do anúncio, para a data, não é a edge)
+  });
+
+  it('menu do cabeçalho: definir-ativa, sair e abrir-app (com a geração atual)', async () => {
+    const g = epocaAtual();
+    const r = await rotearBruto({ tipo: 'publiai:definir-ativa', ativa: false, geracao: g }, CONTEUDO);
+    expect(local.ativa).toBe(false);
+    expect(epocaAtual()).not.toBe(g); // pausa abre época nova
+    expect(r).toEqual({ ok: true, ativa: false, logado: true, perfil: { nome: 'Diego', orgNome: 'Avil' }, versao: '0.3.0', geracao: epocaAtual() });
+    expect(rotearBruto({ tipo: 'publiai:definir-ativa', ativa: 'sim', geracao: epocaAtual() }, CONTEUDO)).toBeUndefined();
+    expect(await rotearBruto({ tipo: 'publiai:definir-ativa', ativa: true, geracao: epocaAtual() }, PAINEL)).toMatchObject({ ok: true, ativa: true });
+    expect(local.ativa).toBe(true);
+    expect(await rotearBruto({ tipo: 'publiai:sair', geracao: epocaAtual() }, CONTEUDO)).toMatchObject({ ok: true, logado: false, perfil: null });
+    expect(local.credenciais).toBeUndefined();
+    // Deslogado: a chave não existe.
+    expect(await rotearBruto({ tipo: 'publiai:definir-ativa', ativa: false, geracao: epocaAtual() }, PAINEL))
+      .toEqual({ ok: false, erro: 'sem_sessao', geracao: epocaAtual() });
+    expect(local.ativa).toBe(true);
+    expect(rotearBruto({ tipo: 'publiai:abrir-app' }, CONTEUDO)).toBeUndefined();
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: URL_APP });
+    expect(rotearBruto({ tipo: 'publiai:abrir-app' }, PAINEL)).toBeUndefined();
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
   });
 });

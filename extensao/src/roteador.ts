@@ -1,10 +1,13 @@
 // Roteamento das mensagens internas do SW (ADR-0189). Separado do sw.ts para ser testável.
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
-import { chamarExtensao } from './api';
+import { atualizarSessao, chamarExtensao } from './api';
 import { observadoDoAnuncio } from './criacao';
+import { entrar, estaLogado, lerCredenciais, sair } from './credenciais';
+import { definirAtiva, estaAtiva } from './preferencias';
 import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao';
-import { eanDaAba, eanParaAnuncio, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado } from './abas';
+import { eanDaAba, eanParaAnuncio, epocaAtual, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado, transmitirConta } from './abas';
+import { URL_APP } from './painel/formato';
 import { normalizarQualidade } from './compartilhado/qualidade';
 import { analisarBuscaDaAba, destacarCard, ehBusca, registrarCardsDaBusca } from './busca-sw';
 
@@ -76,6 +79,62 @@ function ehPaginaDaExtensao(sender: chrome.runtime.MessageSender): boolean {
   return !sender.tab && !!sender.url?.startsWith(chrome.runtime.getURL(''));
 }
 
+// Geração (R9) = época do SW em memória (abas.ts). Comando do painel/menu leva a geração da última resposta/aviso que
+// recebeu; diferente da atual (ou ausente) → recusado antes de qualquer coisa. Toda resposta a eles leva a geração.
+const geracaoEmDia = (msg: Record<string, unknown>) => typeof msg.geracao === 'number' && msg.geracao === epocaAtual();
+const ANTIGA = () => Promise.resolve({ ok: false, erro: 'geracao_antiga', geracao: epocaAtual() });
+const INATIVA = { ok: false, erro: 'inativa' } as const;
+
+/** Comando da época `e`: desligada → inativa; época mudou durante `fn` → geracao_antiga (resultado descartado);
+ *  senão o resultado com a geração. */
+async function comando(e: number, fn: () => Promise<unknown>): Promise<unknown> {
+  if (!(await estaAtiva())) return { ...INATIVA, geracao: epocaAtual() };
+  const r = await fn();
+  if (e !== epocaAtual()) return { ok: false, erro: 'geracao_antiga', geracao: epocaAtual() };
+  return ehObjeto(r) ? { ...r, geracao: e } : r;
+}
+
+/** Ativa, logado, perfil (só nome e org: content scripts também leem), versão e a geração lidos juntos: evento de
+ *  sessão no meio da leitura (a época sobe antes de o estado mudar) → relê. */
+async function estadoExtensao() {
+  for (;;) {
+    const e = epocaAtual();
+    const [ativa, c] = await Promise.all([estaAtiva(), lerCredenciais()]);
+    if (e !== epocaAtual()) continue;
+    const perfil = c?.perfil ? { nome: c.perfil.nome, orgNome: c.perfil.orgNome } : null;
+    return { ativa, logado: c !== undefined, perfil, versao: chrome.runtime.getManifest().version, geracao: e };
+  }
+}
+
+const DEZ_MIN = 10 * 60_000;
+
+/** Refaz a análise do anúncio da aba com a entrada guardada (painel após vínculo / "Tentar de novo" / estado velho). */
+async function reanalisar(id: number, e: number): Promise<unknown> {
+  const [{ estado, geracao, sessao }, identidade] = await Promise.all([lerAba(id), identidadeAtual()]);
+  const entrada = (estado as { entrada?: Record<string, unknown> } | null)?.entrada;
+  if (!entrada) return null;
+  const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada }, e);
+  return naMesmaIdentidade(identidade, async () => {
+    await guardarEstado(id, geracao, sessao, entrada, resposta, estado?.observado); // não regrava se a aba navegou durante a chamada
+    return resposta;
+  });
+}
+
+/** Estado da aba para o painel. Anúncio gravado há mais de 10 min é reanalisado antes (dado exibido vence); se não
+ *  der (desligada, gravação falhou), o velho não chega ao painel. */
+async function estadoParaPainel(id: number, e: number): Promise<unknown> {
+  await obterSessaoValida(); // refresh recusado: sessão e análises somem antes da leitura
+  const fresco = async () => {
+    const { estado, gravadoEm } = await lerAba(id);
+    return !estado || ehBusca(estado) || Date.now() - gravadoEm <= DEZ_MIN ? estado : undefined;
+  };
+  const antes = await fresco();
+  if (antes !== undefined) return antes;
+  if (!(await estaAtiva())) return null;
+  await reanalisar(id, e);
+  return (await fresco()) ?? null;
+}
+
 /** undefined = sem resposta assíncrona. Síncrono até o `sidePanel.open` (exige o gesto do usuário). */
 export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSender): Promise<unknown> | undefined {
   if (sender.id !== chrome.runtime.id || !ehObjeto(msg)) return undefined;
@@ -93,50 +152,53 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // Content script da busca: cards lidos na própria aba (nunca de outra).
       if (tabId === undefined || pagina) return undefined;
       return registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url);
-    case 'publiai:analisar-busca':
+    case 'publiai:analisar-busca': {
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
-      return analisarBuscaDaAba(msg.tabId, Array.isArray(msg.forcar)
+      if (!geracaoEmDia(msg)) return ANTIGA();
+      const id = msg.tabId, e = epocaAtual();
+      const forcar = Array.isArray(msg.forcar)
         ? msg.forcar.filter((i): i is string => typeof i === 'string' && /^MLB\d{6,20}$/.test(i)).slice(0, 50)
-        : []);
+        : [];
+      return comando(e, () => analisarBuscaDaAba(id, forcar, e));
+    }
     case 'publiai:destacar-card':
       if (!pagina || typeof msg.tabId !== 'number' || typeof msg.itemId !== 'string' || !/^MLB\d{6,20}$/.test(msg.itemId)) return undefined;
       return destacarCard(msg.tabId, msg.itemId);
     case 'publiai:ean-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       return eanDaAba(msg.tabId);
-    case 'publiai:estado-da-aba': {
+    case 'publiai:estado-da-aba':
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
-      const id = msg.tabId;
-      // Confere a sessão antes: refresh recusado, ela e as análises somem (o painel aberto depois não vê dado velho).
-      return obterSessaoValida().then(() => estadoDaAba(id));
-    }
+      return estadoParaPainel(msg.tabId, epocaAtual());
     case 'publiai:reanalisar-aba': {
       // Painel refaz a análise da aba ao preço da página (após vínculo / "Tentar de novo") e atualiza o estado guardado.
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
-      const id = msg.tabId;
-      return Promise.all([lerAba(id), identidadeAtual()]).then(async ([{ estado: e, geracao, sessao }, identidade]) => {
-        const entrada = (e as { entrada?: Record<string, unknown> } | null)?.entrada;
-        if (!entrada) return null;
-        const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada });
-        return naMesmaIdentidade(identidade, async () => {
-          await guardarEstado(id, geracao, sessao, entrada, resposta, e?.observado); // não regrava se a aba navegou durante a chamada
-          return resposta;
-        });
-      });
+      if (!geracaoEmDia(msg)) return ANTIGA();
+      const id = msg.tabId, e = epocaAtual();
+      return comando(e, () => reanalisar(id, e));
     }
     case 'publiai:chamar': {
       const corpo = msg.corpo;
+      if (pagina && !geracaoEmDia(msg)) return ANTIGA();
+      const e = epocaAtual(); // capturada na chegada: a edge só é chamada se ainda for a desta época
       if (!ehObjeto(corpo) || typeof corpo.acao !== 'string') return Promise.resolve({ ok: false, erro: 'payload_invalido' });
       if (!pagina && !(tabId !== undefined && ACOES_CONTENT_SCRIPT.has(corpo.acao))) {
         return Promise.resolve({ ok: false, erro: 'payload_invalido' });
       }
       // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
-      if (!pagina && corpo.acao === 'analisar_anuncio') {
+      if (pagina) return comando(e, () => identidadeAtual().then(async (identidade) => {
+        const resposta = await chamarExtensao(corpo, e);
+        return naMesmaIdentidade(identidade, async () => resposta);
+      }));
+      // Content script (análise automática): sem geração na mensagem, mas a época da chegada vale igual.
+      const ativa = estaAtiva();
+      if (corpo.acao === 'analisar_anuncio') {
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
-        return Promise.all([ean, lerAba(tabId!), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
+        return Promise.all([ativa, ean, lerAba(tabId!), identidadeAtual()]).then(async ([ligada, eanDaBusca, { geracao, sessao }, identidade]) => {
+          if (!ligada) return INATIVA;
           // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
           const { vendidosTexto, lojaOficial, qualidade, ...paraEdge } = corpo;
-          const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca });
+          const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca }, e);
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
           const { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco } = corpo;
@@ -158,14 +220,49 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
           return r;
         });
       }
-      return identidadeAtual().then(async (identidade) => {
-        const resposta = await chamarExtensao(corpo);
+      return Promise.all([ativa, identidadeAtual()]).then(async ([ligada, identidade]) => {
+        if (!ligada) return INATIVA;
+        const resposta = await chamarExtensao(corpo, e);
         return naMesmaIdentidade(identidade, async () => resposta);
       });
     }
     case 'publiai:abrir-painel':
       if (tabId !== undefined) chrome.sidePanel.open({ tabId }).catch(() => {});
       return undefined;
+    case 'publiai:abrir-app':
+      // Menu do cabeçalho: "Abrir o PubliAI" em nova aba.
+      if (tabId !== undefined) chrome.tabs.create({ url: URL_APP }).catch(() => {});
+      return undefined;
+    case 'publiai:estado-extensao':
+      // Qualquer contexto da extensão. `abrindo` (painel/menu a cada abertura): confere a sessão na edge antes —
+      // identidade nova limpa as abas e transmite conta-mudou; sem_acesso/sessão expirada desloga.
+      return (msg.abrindo === true ? atualizarSessao().catch(() => false) : Promise.resolve()).then(estadoExtensao);
+    case 'publiai:entrar': {
+      // Só o painel (página da extensão): a senha nunca é digitada na página do ML. Não é gravada nem registrada.
+      if (!pagina || typeof msg.email !== 'string' || typeof msg.senha !== 'string') return undefined;
+      return entrar(msg.email, msg.senha).then(async (r) => {
+        if (!r.ok) return { ...r, ...(await estadoExtensao()) };
+        await atualizarSessao().catch(() => false);
+        // Perfil inativo/sem org: a sessao desloga (sem_acesso). Rede na sessao: segue logado sem perfil.
+        if (!(await estaLogado())) return { ok: false, erro: 'sem_acesso', ...(await estadoExtensao()) };
+        await transmitirConta(); // o aviso do login saiu antes do perfil
+        return { ok: true, ...(await estadoExtensao()) };
+      });
+    }
+    case 'publiai:sair':
+      if (!pagina && tabId === undefined) return undefined;
+      if (!geracaoEmDia(msg)) return ANTIGA();
+      return sair().then(async () => ({ ok: true, ...(await estadoExtensao()) }));
+    case 'publiai:definir-ativa': {
+      if ((!pagina && tabId === undefined) || typeof msg.ativa !== 'boolean') return undefined;
+      if (!geracaoEmDia(msg)) return ANTIGA();
+      const ativa = msg.ativa;
+      return estaLogado().then(async (logado) => {
+        if (!logado) return { ok: false, erro: 'sem_sessao', geracao: epocaAtual() }; // a chave só existe logado
+        await definirAtiva(ativa);
+        return { ok: true, ...(await estadoExtensao()) };
+      });
+    }
   }
   return undefined;
 }
