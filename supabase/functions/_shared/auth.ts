@@ -1,7 +1,19 @@
 import { adminClient } from './supabase.ts';
+import { corsHeaders } from './cors.ts';
 import { ERRO_SESSAO_SUPORTE, resolverAcessoOrg, resolverOrgDoPerfil, type PerfilOrgRow, type SupportAccess, type SupportSessionRow } from './auth-org.ts';
 
 export { resolverOrgDoPerfil, type PerfilOrgRow };
+
+// Respostas lançadas aqui são devolvidas cruas pelas edges: sem CORS o browser bloqueia o erro e o
+// supabase-js mostra "Failed to send a request to the Edge Function" em vez da mensagem real.
+function erro(mensagem: string, status: number, extra?: Record<string, string>): Response {
+  return new Response(JSON.stringify({ error: mensagem }), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', ...extra },
+  });
+}
+
+const SESSAO_EXPIRADA = 'Sessão expirada. Recarregue a página e entre de novo.';
 
 export interface AuthedUser {
   id: string;
@@ -11,12 +23,12 @@ export interface AuthedUser {
 export async function requireUser(req: Request): Promise<AuthedUser> {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
-    throw new Response('Missing bearer token', { status: 401 });
+    throw erro(SESSAO_EXPIRADA, 401);
   }
   const token = authHeader.slice('Bearer '.length);
   const { data, error } = await adminClient().auth.getUser(token);
   if (error || !data.user) {
-    throw new Response('Invalid token', { status: 401 });
+    throw erro(SESSAO_EXPIRADA, 401);
   }
   return { id: data.user.id, email: data.user.email ?? null };
 }
@@ -27,7 +39,7 @@ export async function requireAdmin(req: Request): Promise<AuthedUser> {
   const user = await requireUser(req);
   const { data } = await adminClient().from('profiles').select('is_admin').eq('id', user.id).maybeSingle();
   if (!data?.is_admin) {
-    throw new Response('Somente administradores podem executar esta ação', { status: 403 });
+    throw erro('Somente administradores podem executar esta ação', 403);
   }
   return user;
 }
@@ -42,7 +54,7 @@ export async function requireUserOrg(
   const db = adminClient();
   const { data, error } = await db
     .from('profiles').select('org_id, is_active, is_admin, is_super_admin').eq('id', user.id).single();
-  if (error || !data) throw new Response(JSON.stringify({ error: 'perfil não encontrado' }), { status: 403 });
+  if (error || !data) throw erro('perfil não encontrado', 403);
   let session: SupportSessionRow | null = null;
   if (data.is_super_admin) {
     const { data: active } = await db.from('support_requests')
@@ -57,7 +69,7 @@ export async function requireUserOrg(
     // Header só p/ a edge `extensao` distinguir sessão de suporte expirada (ADR-0189 D-18);
     // corpo inalterado para os demais chamadores.
     const headers = (e as Error).message === ERRO_SESSAO_SUPORTE ? { 'x-motivo': 'sessao_suporte' } : undefined;
-    throw new Response(JSON.stringify({ error: 'perfil inativo ou sem organização' }), { status: 403, headers });
+    throw erro('perfil inativo ou sem organização', 403, headers);
   }
   return { userId: user.id, ...resolved };
 }
