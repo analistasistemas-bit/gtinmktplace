@@ -4,6 +4,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
+import { blocos } from '../notificacoes/telegram.ts';
 import type { Contagem, ProjecaoCor } from './tipos.ts';
 
 const JANELA_PRAZO_MS = 48 * 3_600_000;
@@ -41,23 +42,25 @@ const brl = (n: number | null | undefined) =>
   n == null ? '—' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export function montarMensagemPromocoes(s: Selecao): string {
-  const partes: string[] = [];
-  if (s.prejuizo.length) {
-    partes.push(`🔴 Promoções: ${s.prejuizo.length} anúncio(s) participando com líquido abaixo do custo`);
-    for (const { promo, item } of s.prejuizo.slice(0, MAX_LISTADOS)) {
+  const prejuizo = s.prejuizo.length ? [
+    [`🔴 Promoções: ${s.prejuizo.length} anúncio(s) participando com líquido abaixo do custo`],
+    ...s.prejuizo.slice(0, MAX_LISTADOS).map(({ promo, item }) => {
       const pior = item.projecao.filter((p) => p.liquido != null && p.custo != null && p.liquido < p.custo)
         .sort((a, b) => (a.liquido! - a.custo!) - (b.liquido! - b.custo!))[0];
-      partes.push(`• ${item.titulo ?? item.ml_item_id} (${item.ml_item_id}) em ${promo.nome ?? promo.promocao_id}: ` +
-        `preço ${brl(item.preco_avaliado)}, líquido ${brl(pior?.liquido)}, custo ${brl(pior?.custo)}`);
-    }
-    if (s.prejuizo.length > MAX_LISTADOS) partes.push(`e mais ${s.prejuizo.length - MAX_LISTADOS}.`);
-  }
-  for (const { promo, verdes } of s.prazo) {
-    const prazo = new Date(promo.prazo_adesao!).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    partes.push(`⏰ ${promo.nome ?? promo.promocao_id}: adesão até ${prazo}, ${verdes} anúncio(s) convidado(s) com líquido acima do mínimo.`);
-  }
-  partes.push('Veja em Promoções no PubliAI.');
-  return partes.join('\n');
+      return [
+        `• ${item.titulo ?? item.ml_item_id} (${item.ml_item_id})`,
+        `Promoção: ${promo.nome ?? promo.promocao_id}`,
+        `Preço ${brl(item.preco_avaliado)} · líquido ${brl(pior?.liquido)} · custo ${brl(pior?.custo)}`,
+      ];
+    }),
+    [s.prejuizo.length > MAX_LISTADOS && `e mais ${s.prejuizo.length - MAX_LISTADOS}.`],
+  ] : [];
+  const prazos = s.prazo.map(({ promo, verdes }) => [
+    `⏰ ${promo.nome ?? promo.promocao_id}`,
+    `Adesão até ${new Date(promo.prazo_adesao!).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
+    `${verdes} anúncio(s) convidado(s) com líquido acima do mínimo`,
+  ]);
+  return blocos(...prejuizo, ...prazos, ['Veja em Promoções no PubliAI.']);
 }
 
 export async function avisarPromocoes(agoraMs: number, deps: DepsAlertas): Promise<number> {

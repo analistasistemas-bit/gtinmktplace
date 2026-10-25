@@ -110,11 +110,11 @@ export async function tratarPedidoCancelado(
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
     }
-    const situacaoEnvio = st === null ? 'não deu para consultar o envio' : `envio: ${LABEL_ENVIO[st] ?? st}`;
+    const situacaoEnvio = st === null ? 'Envio: não deu para consultar' : `Envio: ${LABEL_ENVIO[st] ?? st}`;
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
-      `📦 Pedido ${p.orderId} cancelado (${situacaoEnvio}). Não dá para confirmar que a mercadoria `
-      + 'não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
+      `📦 Pedido ${p.orderId} cancelado\n\n${situacaoEnvio}\n`
+      + 'Não dá para confirmar que a mercadoria não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
       + 'Confira o que voltou e dê entrada manual em Estoque.',
     );
     return 'avisado';

@@ -51,7 +51,7 @@ describe('montarMensagemCatalogoNoMatch', () => {
       cores: ['Preto'],
       motivo: 'sem_variation_id',
     });
-    expect(msg).toContain('não tem identificador de variação');
+    expect(msg).toContain('sem identificador de variação');
     expect(msg).not.toContain('múltiplas tentativas');
   });
 
@@ -72,7 +72,8 @@ describe('montarMensagemCatalogoNoMatch', () => {
       ml_item_id: 'MLB5322386919', titulo: 'Kit Cauterização Tanox 300ml', cores: ['Vermelho'],
       motivo: 'elegibilidade_esgotada', semVariacao: true,
     });
-    expect(msg).toContain('o anúncio "Kit Cauterização Tanox 300ml" teve elegibilidade esgotada');
+    expect(msg).toContain('Anúncio: "Kit Cauterização Tanox 300ml"');
+    expect(msg).toContain('Motivo: elegibilidade esgotada');
     expect(msg).not.toContain('Vermelho');
     expect(msg.toLowerCase()).not.toContain('variação');
     expect(msg).toContain('https://www.mercadolivre.com.br/produzir/catalogo/MLB5322386919');

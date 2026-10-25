@@ -211,7 +211,8 @@ Deno.serve(async (req) => {
     },
 
     notificar: async (texto) => {
-      try { await notificarCategoria(admin, orgId, 'integracao', texto); }
+      // Título só no texto enviado: o `motivo` gravado em migracao_pxv_erro continua cru.
+      try { await notificarCategoria(admin, orgId, 'integracao', `🔀 Migração para preço por variação\n\n${texto}`); }
       catch (e) { console.error('notificar migração pxv falhou:', (e as Error).message); }
     },
   };

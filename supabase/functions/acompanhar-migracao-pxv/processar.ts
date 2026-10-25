@@ -146,11 +146,11 @@ export async function acompanharMigracaoPxv(
   await portas.concluir();
 
   const skus = [...casamento.itemPorSku.keys()];
-  let texto = `Migração para preço por variação concluída: ${skus.length} cores agora são anúncios `
+  let texto = `✅ Concluída: ${skus.length} cores agora são anúncios `
     + 'separados no Mercado Livre, cada uma com preço próprio.';
   if (suspeitos.length > 0) {
-    texto += ` Atenção: o estoque de ${suspeitos.map((s) => s.sku).join(', ')} não foi enviado porque `
-      + 'o saldo do app está maior que o do anúncio novo — pode haver venda ainda não registrada. '
+    texto += `\n\n⚠️ Estoque não enviado: ${suspeitos.map((s) => s.sku).join(', ')}\n`
+      + 'O saldo do app está maior que o do anúncio novo — pode haver venda ainda não registrada. '
       + 'Confira os pedidos antes de repor.';
   }
   await portas.notificar(texto);

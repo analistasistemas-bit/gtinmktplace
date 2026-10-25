@@ -156,7 +156,8 @@ export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: s
 }
 
 export const TEXTO_AJUDA = [
-  'Comandos do PubliAI:',
+  '🤖 Comandos do PubliAI',
+  '',
   '/hoje — vendas e lucro de hoje',
   '/ontem — vendas e lucro de ontem',
   '/mes — vendas e lucro do mês',

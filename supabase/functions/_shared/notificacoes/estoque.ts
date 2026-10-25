@@ -1,5 +1,6 @@
 // Alertas de estoque (ADR-0134): o saldo chegou a zero no canal e o anúncio saiu do ar, ou a
 // reposição o trouxe de volta. Texto puro — quem descobre a transição é o `sincronizar-estoque`.
+import { blocos } from './telegram.ts';
 
 export interface VariacaoZerada {
   codigo: string;
@@ -25,16 +26,15 @@ function rotulo(v: VariacaoZerada): string {
 
 export function montarMensagemEstoqueZerado(a: EstoqueZeradoAlerta): string {
   const nome = a.produto?.trim() || a.codigoPai;
-  const linhas = a.zeradas.map((v) => `• ${rotulo(v)}`);
   const cabecalho = a.produtoInteiroZerado
-    ? `📦 Estoque zerado: ${nome} — anúncio pausado no Mercado Livre.`
+    ? `📦 Estoque zerado: ${nome}`
     : a.zeradas.length === 1
-    ? `📦 Estoque zerado numa variação de ${nome} — o anúncio segue no ar sem ela.`
-    : `📦 Estoque zerado em ${a.zeradas.length} variações de ${nome} — o anúncio segue no ar sem elas.`;
-  const rodape = a.produtoInteiroZerado
-    ? 'Repor o estoque reativa o anúncio automaticamente.'
-    : null;
-  return [cabecalho, ...linhas, rodape, a.permalink].filter(Boolean).join('\n');
+    ? `📦 Estoque zerado numa variação de ${nome}`
+    : `📦 Estoque zerado em ${a.zeradas.length} variações de ${nome}`;
+  const situacao = a.produtoInteiroZerado
+    ? ['Anúncio pausado no Mercado Livre.', 'Repor o estoque reativa o anúncio automaticamente.']
+    : [`O anúncio segue no ar sem ${a.zeradas.length === 1 ? 'ela' : 'elas'}.`];
+  return blocos([cabecalho], a.zeradas.map((v) => `• ${rotulo(v)}`), situacao, [a.permalink]);
 }
 
 export interface VoltaAoArAlerta {
@@ -45,8 +45,9 @@ export interface VoltaAoArAlerta {
 
 export function montarMensagemVoltaAoAr(a: VoltaAoArAlerta): string {
   const nome = a.produto?.trim() || a.codigoPai;
-  return [
-    `▶️ ${nome} voltou ao ar no Mercado Livre — estoque reposto, anúncio reativado.`,
-    a.permalink,
-  ].filter(Boolean).join('\n');
+  return blocos(
+    [`▶️ Voltou ao ar: ${nome}`],
+    ['Estoque reposto, anúncio reativado no Mercado Livre.'],
+    [a.permalink],
+  );
 }

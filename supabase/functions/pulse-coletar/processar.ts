@@ -426,12 +426,12 @@ export function textoNotificacaoAlertas(
 ): string {
   if (acao === 0) {
     return naoClassificavel
-      ? `Pulse: ${total} atualização(ões) de mercado. A conta do Mercado Livre desta organização `
+      ? `📈 Pulse: ${total} atualização(ões) de mercado\n\nA conta do Mercado Livre desta organização `
         + 'não está configurada, então nenhum alerta pôde ser avaliado como decisão de preço.'
-      : `Pulse: ${total} atualização(ões) de mercado, nenhuma exige decisão.`;
+      : `📈 Pulse: ${total} atualização(ões) de mercado\n\nNenhuma exige decisão.`;
   }
-  const sufixo = pendentesAcao > acao ? ` (${pendentesAcao} aguardando no total)` : '';
-  return `Pulse: ${acao} alerta(s) exigem decisão de preço${sufixo} — abra a aba Alertas do Pulse.`;
+  const aguardando = pendentesAcao > acao ? `\n${pendentesAcao} aguardando no total` : '';
+  return `🔔 Pulse: ${acao} alerta(s) exigem decisão de preço${aguardando}\n\nAbra a aba Alertas do Pulse.`;
 }
 
 /** Passo 1 (auth + classificação). Extração mecânica — SEM tratamento de auth permanente aqui: o

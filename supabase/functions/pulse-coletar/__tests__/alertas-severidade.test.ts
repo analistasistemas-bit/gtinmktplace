@@ -204,17 +204,17 @@ describe('gravarAlertasRelevantes: severidade (ADR-0133)', () => {
 describe('textoNotificacaoAlertas (ADR-0133 D-10)', () => {
   it('não promete decisão quando o lote é 100% informativo', () => {
     expect(textoNotificacaoAlertas({ total: 4, acao: 0, pendentesAcao: 0 }))
-      .toBe('Pulse: 4 atualização(ões) de mercado, nenhuma exige decisão.');
+      .toBe('📈 Pulse: 4 atualização(ões) de mercado\n\nNenhuma exige decisão.');
   });
 
   it('anuncia só os alertas de ação e aponta a aba', () => {
     expect(textoNotificacaoAlertas({ total: 9, acao: 2, pendentesAcao: 2 }))
-      .toBe('Pulse: 2 alerta(s) exigem decisão de preço — abra a aba Alertas do Pulse.');
+      .toBe('🔔 Pulse: 2 alerta(s) exigem decisão de preço\n\nAbra a aba Alertas do Pulse.');
   });
 
   it('acrescenta o acumulado só quando há ação pendente além da desta execução', () => {
     expect(textoNotificacaoAlertas({ total: 9, acao: 2, pendentesAcao: 7 }))
-      .toBe('Pulse: 2 alerta(s) exigem decisão de preço (7 aguardando no total) — abra a aba Alertas do Pulse.');
+      .toBe('🔔 Pulse: 2 alerta(s) exigem decisão de preço\n7 aguardando no total\n\nAbra a aba Alertas do Pulse.');
   });
 
   it('não afirma ausência de decisão quando a org não pôde ser classificada', () => {
@@ -223,7 +223,7 @@ describe('textoNotificacaoAlertas (ADR-0133 D-10)', () => {
     // decisão. O texto padrão afirmaria "nenhuma exige decisão" sem ter como saber.
     expect(textoNotificacaoAlertas({ total: 4, acao: 0, pendentesAcao: 0, naoClassificavel: true }))
       .toBe(
-        'Pulse: 4 atualização(ões) de mercado. A conta do Mercado Livre desta organização não está '
+        '📈 Pulse: 4 atualização(ões) de mercado\n\nA conta do Mercado Livre desta organização não está '
         + 'configurada, então nenhum alerta pôde ser avaliado como decisão de preço.',
       );
   });

@@ -30,12 +30,13 @@ describe('montarMensagemLiberacao', () => {
   it('contém o total formatado e a contagem no plural', () => {
     const msg = montarMensagemLiberacao(364.46, 3, 'BRL');
     expect(msg).toContain('R$ 364,46');
-    expect(msg).toContain('3 vendas');
+    expect(msg).toContain('Vendas: 3');
   });
   it('usa singular quando n=1', () => {
     const msg = montarMensagemLiberacao(100, 1, 'BRL');
-    expect(msg).toContain('1 venda');
-    expect(msg).not.toContain('1 vendas');
+    expect(msg).toContain('Vendas: 1');
+    expect(msg).toContain('dessa venda');
+    expect(msg).not.toContain('dessas vendas');
   });
 });
 
@@ -49,7 +50,8 @@ describe('montarMensagemNovaVenda (link ML)', () => {
   // `/vendas/{id}/detalhe` aceita pack ou order. Com pack, linkar o pack abre o pacote inteiro.
   it('total null (cupom não confirmado no MP) sai sem valor', () => {
     const msg = montarMensagemNovaVenda({ ...base, order_id: 123, total: null });
-    expect(msg.split('\n')[0]).toBe('💰 Nova venda de Maria');
+    expect(msg.split('\n')[0]).toBe('💰 Nova venda');
+    expect(msg).toContain('Comprador: Maria');
   });
   it('linka o pack pela rota de venda quando há pack_id', () => {
     const msg = montarMensagemNovaVenda({ ...base, order_id: 123, pack_id: 456 });
@@ -75,7 +77,7 @@ describe('montarMensagemNovaPergunta (link ML)', () => {
 describe('montarMensagemNovaDevolucao (link ML)', () => {
   it('número do pedido é o pack_id quando há', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, pack_id: 2, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL' });
-    expect(msg).toContain('do pedido 2');
+    expect(msg).toContain('Pedido: 2');
   });
   it('linka a reclamação específica quando tipo != returns', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL' });

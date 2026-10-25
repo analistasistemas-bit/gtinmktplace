@@ -412,7 +412,7 @@ describe('alerta de estoque (ADR-0134)', () => {
     expect(enviados).toHaveLength(1);
     expect(enviados[0].categoria).toBe('estoque');
     expect(enviados[0].texto).toContain('Sabonete Nivea 200ml');
-    expect(enviados[0].texto).toContain('anúncio pausado no Mercado Livre');
+    expect(enviados[0].texto).toContain('Anúncio pausado no Mercado Livre');
   });
 
   it('só uma variação zerada não anuncia pausa — o anúncio segue vendendo as outras', async () => {
@@ -453,7 +453,7 @@ describe('alerta de estoque (ADR-0134)', () => {
     const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()]);
     await processarSincronizacao(deps(db, { notificar }), { ...JOB, canal_origem: 'fake' });
     expect(enviados).toHaveLength(1);
-    expect(enviados[0].texto).toContain('anúncio pausado no Mercado Livre');
+    expect(enviados[0].texto).toContain('Anúncio pausado no Mercado Livre');
   });
 
   it('reativou num canal e outro ficou retentável: o aviso de volta ao ar não se perde', async () => {
@@ -472,7 +472,7 @@ describe('alerta de estoque (ADR-0134)', () => {
     const r = await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
     expect(r.status).toBe(500);
     expect(enviados).toHaveLength(1);
-    expect(enviados[0].texto).toContain('voltou ao ar');
+    expect(enviados[0].texto).toContain('Voltou ao ar');
   });
 
   it('user products: reativação de N itens filhos avisa a volta ao ar UMA vez', async () => {
@@ -513,7 +513,7 @@ describe('alerta de estoque (ADR-0134)', () => {
     const db = produto([{ codigo: 'A1', estoque: 5 }], []);
     await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
     expect(enviados).toHaveLength(1);
-    expect(enviados[0].texto).toContain('voltou ao ar');
+    expect(enviados[0].texto).toContain('Voltou ao ar');
   });
 
   it('anúncio que já estava ativo não avisa volta ao ar', async () => {

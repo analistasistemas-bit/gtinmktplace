@@ -14,7 +14,7 @@ describe('montarMensagemEstoqueZerado', () => {
       zeradas: [{ codigo: '00000029', nome: null, cor: null }],
       produtoInteiroZerado: true,
     });
-    expect(m).toContain('anúncio pausado no Mercado Livre');
+    expect(m).toContain('Anúncio pausado no Mercado Livre');
     expect(m).toContain('Repor o estoque reativa');
     expect(m).toContain(base.permalink);
   });
@@ -52,14 +52,15 @@ describe('montarMensagemEstoqueZerado', () => {
     });
     expect(m).toContain('00000028');
     expect(m.endsWith('\n')).toBe(false);
-    expect(m).not.toContain('\n\n');
+    expect(m).not.toContain('\n\n\n');
+    expect(m.split('\n\n').every((b) => b.trim() !== '')).toBe(true);
   });
 });
 
 describe('montarMensagemVoltaAoAr', () => {
   it('confirma a reativação e leva ao anúncio', () => {
     const m = montarMensagemVoltaAoAr(base);
-    expect(m).toContain('voltou ao ar');
+    expect(m).toContain('Voltou ao ar');
     expect(m).toContain(base.produto);
     expect(m).toContain(base.permalink);
   });

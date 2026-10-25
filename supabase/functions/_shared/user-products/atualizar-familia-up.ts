@@ -452,7 +452,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       .select('sku, item_externo_id, retirado, status').eq('anuncio_externo_id', rootId);
     if (finaisErr) {
       console.error(`efeitosPosComposicao: itens finais falhou (${rootId}):`, finaisErr.message);
-      await alertarFalhaLoud(`Família ${familia.codigo_pai}: consulta dos itens ativos falhou após mudança de composição — descrição/atacado NÃO sincronizados nesta rodada (${finaisErr.message}).`);
+      await alertarFalhaLoud(`⚠️ Família ${familia.codigo_pai}: descrição/atacado NÃO sincronizados nesta rodada\n\nA consulta dos itens ativos falhou após mudança de composição.\nErro: ${finaisErr.message}`);
       return;
     }
     const finais = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
@@ -531,7 +531,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         .update({ descricao_status: ok ? null : 'erro', descricao_erro: ok ? null : partes.join('; ') })
         .eq('id', familia.id);
       if (!ok) {
-        await alertarFalhaLoud(`Descrição da família ${familia.codigo_pai}: ${partes.join('; ')}. A lista de cores publicada pode estar desatualizada.`);
+        await alertarFalhaLoud(`⚠️ Descrição da família ${familia.codigo_pai}\n\n${partes.map((p) => `• ${p}`).join('\n')}\n\nA lista de cores publicada pode estar desatualizada.`);
       }
       // Revisão (Codex, 3ª rodada): a própria gravação do estado durável falhando em silêncio
       // reintroduziria o problema um nível abaixo. Diferente do resto de efeitosPosComposicao
