@@ -13,6 +13,7 @@ function fakeAdmin(cfg: Cfg, profiles: Array<{ id?: string; telegram_chat_id: st
   const admin: any = {
     inseridos,
     eqProfiles,
+    ranges: [] as Array<[number, number]>,
     from: (tabela: string) => {
       if (tabela === 'configuracoes') {
         const chain: any = {
@@ -27,13 +28,17 @@ function fakeAdmin(cfg: Cfg, profiles: Array<{ id?: string; telegram_chat_id: st
           insert: async (rows: any[]) => { inseridos.push(...rows); return { error: null }; },
         };
       }
+      let faixa: [number, number] | null = null;
       const chain: any = {
         select: () => chain,
         eq: (col: string, val: unknown) => { eqProfiles.push([col, val]); return chain; },
         contains: () => chain,
         not: () => chain,
         limit: () => chain,
-        then: (resolve: any) => Promise.resolve({ data: profiles, error: null }).then(resolve),
+        order: () => chain,
+        range: (de: number, ate: number) => { faixa = [de, ate]; admin.ranges.push(faixa); return chain; },
+        then: (resolve: any) =>
+          Promise.resolve({ data: faixa ? profiles.slice(faixa[0], faixa[1] + 1) : profiles, error: null }).then(resolve),
       };
       return chain;
     },
@@ -59,6 +64,14 @@ describe('lerDestinatarios', () => {
       { telegram_chat_id: '111' }, { telegram_chat_id: '  ' }, { telegram_chat_id: '222' }, { telegram_chat_id: null },
     ]);
     expect(await lerDestinatarios(admin, 'org', 'vendas')).toEqual({ token: 'tok', chatIds: ['111', '222'] });
+  });
+
+  it('pagina a leitura de assinantes (>1000 linhas em 2 páginas)', async () => {
+    const muitos = Array.from({ length: 1500 }, (_, i) => ({ telegram_chat_id: String(i + 1) }));
+    const admin = fakeAdmin(ATIVO, muitos);
+    const { chatIds } = await lerDestinatarios(admin, 'org', 'vendas');
+    expect(chatIds).toHaveLength(1500);
+    expect(admin.ranges).toEqual([[0, 999], [1000, 1999]]);
   });
 });
 

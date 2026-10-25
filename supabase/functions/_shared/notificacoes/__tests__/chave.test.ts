@@ -15,9 +15,11 @@ function fakeAdmin(opts: {
   upsertError?: { message: string } | null;
 }) {
   const upsertCalls: Array<{ rows: unknown[]; options: unknown }> = [];
+  const reservas = new Set<string>(); // ml_notificacoes_enviadas persistente entre chamadas
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin: any = {
     upsertCalls,
+    opts,
     from: (tabela: string) => {
       if (tabela === 'configuracoes') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,7 +29,7 @@ function fakeAdmin(opts: {
       if (tabela === 'profiles') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const chain: any = {
-          select: () => chain, eq: () => chain, contains: () => chain,
+          select: () => chain, eq: () => chain, contains: () => chain, order: () => chain, range: () => chain,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           then: (resolve: any) => Promise.resolve({ data: opts.profiles, error: opts.profilesError ?? null }).then(resolve),
         };
@@ -38,6 +40,16 @@ function fakeAdmin(opts: {
           upsert: (rows: unknown[], options: unknown) => {
             upsertCalls.push({ rows, options });
             return { select: async () => ({ data: opts.upsertData ?? null, error: opts.upsertError ?? null }) };
+          },
+        };
+      }
+      if (tabela === 'ml_notificacoes_enviadas') {
+        return {
+          upsert: (row: { entidade: string; chave: string }) => {
+            const k = `${row.entidade}|${row.chave}`;
+            const nova = !reservas.has(k);
+            reservas.add(k);
+            return { select: async () => ({ data: nova ? [{ chave: row.chave }] : [], error: null }) };
           },
         };
       }
@@ -86,6 +98,20 @@ describe('notificarCategoria com chave', () => {
 
     expect(n).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('ADR-0190: mesma chave, profile novo com o mesmo chat → in-app sim, Telegram de novo não', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true } as unknown as Response);
+    const admin = fakeAdmin({ cfg: ATIVO, profiles: [{ id: 'u1', telegram_chat_id: '123' }], upsertData: [{ user_id: 'u1' }] });
+    expect(await notificarCategoria(admin, 'org1', 'vendas_gerencial', 'oi', { chave: 'k1' })).toBe(1);
+
+    admin.opts.profiles = [{ id: 'u1', telegram_chat_id: '123' }, { id: 'u2', telegram_chat_id: '123' }];
+    admin.opts.upsertData = [{ user_id: 'u2' }];
+    expect(await notificarCategoria(admin, 'org1', 'vendas_gerencial', 'oi', { chave: 'k1' })).toBe(0);
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    // in-app continua por profile: o upsert tenta os dois, ON CONFLICT só cria a linha do u2.
+    expect((admin.upsertCalls[1].rows as Array<{ user_id: string }>).map((r) => r.user_id)).toEqual(['u1', 'u2']);
   });
 
   it('lerAssinantes com error → rejeita', async () => {

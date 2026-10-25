@@ -1,6 +1,8 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ehSoAdmin, type CategoriaNotificacao } from './categorias.ts';
 import { chatPrivado } from './destinatario.ts';
+import { paginarTudo } from '../pagina.ts';
+import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { enviarTelegram } from './telegram.ts';
 
 export interface ConfigTelegram { token: string | null; chatId: string | null; ativo: boolean }
@@ -51,18 +53,20 @@ export async function temAssinanteGerencial(
 async function lerAssinantes(
   admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao,
 ): Promise<Assinante[]> {
-  const { data } = await queryAssinantes(admin, orgId, categoria);
-  return (data ?? []) as Assinante[];
+  try {
+    return await lerAssinantesEstrito(admin, orgId, categoria);
+  } catch {
+    return [];
+  }
 }
 
 /** Mesma leitura, ESTRITA (ADR-0173): `error` do select lança. Só o caminho com `chave` usa —
- * ali um erro engolido limparia a pendência do worker sem notificar ninguém. */
-async function lerAssinantesEstrito(
+ * ali um erro engolido limparia a pendência do worker sem notificar ninguém.
+ * Paginada e ordenada por id (ADR-0190: nenhuma leitura de lista sem `range`). */
+function lerAssinantesEstrito(
   admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao,
 ): Promise<Assinante[]> {
-  const { data, error } = await queryAssinantes(admin, orgId, categoria);
-  if (error) throw new Error(`ler assinantes: ${error.message}`);
-  return (data ?? []) as Assinante[];
+  return paginarTudo<Assinante>((de, ate) => queryAssinantes(admin, orgId, categoria).order('id').range(de, ate));
 }
 
 /** Destinatários Telegram de uma categoria: assinantes ativos com chat_id preenchido.
@@ -140,6 +144,9 @@ async function notificarCategoriaComChave(
   if (!cfg.ativo || !cfg.token) return 0;
   let enviados = 0;
   for (const chatId of chatsTelegram(categoria, assinantes.filter((a) => idsNovos.has(a.id)))) {
+    // Reserva persistente por (chave, chat): outro profile com o mesmo chat que assinar entre duas
+    // tentativas da mesma chave ganha a linha in-app, mas o chat não recebe o Telegram de novo.
+    if (!await reservarNotificacao(admin, orgId, null, 'telegram_chave', `${chave}:${chatId}`)) continue;
     if (await enviarTelegram(cfg.token, chatId, texto)) enviados += 1;
   }
   return enviados;
