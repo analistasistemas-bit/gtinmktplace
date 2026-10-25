@@ -17,7 +17,10 @@ export function encurtar(titulo: string, max = 40): string {
   return `${t.slice(0, corte > 0 ? corte : max)}…`;
 }
 
-const pct1 = (frac: number): string => (frac * 100).toFixed(1).replace('.', ',');
+const pct1 = (frac: number): string => {
+  const t = Math.abs(frac * 100).toFixed(1).replace('.', ',');
+  return `${frac < 0 && Number(t.replace(',', '.')) > 0 ? '−' : ''}${t}`;
+};
 
 export function linhaCrescimento(mes: number, anterior: number, rotuloAnterior: string): string {
   if (!(anterior > 0)) return 'sem base de comparação';

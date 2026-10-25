@@ -50,6 +50,11 @@ describe('montarMensagemCarrinho', () => {
       ...rodape,
     ].join('\n'));
   });
+  it('percentuais negativos usam o sinal tipográfico', () => {
+    const c = { ...carrinho, lucro: -19.95, margemSobreVenda: -0.04, markup: -0.075 };
+    const m = montarMensagemCarrinho(c, k, 2000000001, estado);
+    expect(m).toContain('Lucro −R$ 19,95 · Margem s/ venda −4,0% · Markup −7,5%');
+  });
   it('sem custo', () => {
     const c = { ...carrinho, lucro: null, motivo: 'sem_custo' as const, margemSobreVenda: null, markup: null, semCusto: ['Máscara X'] };
     expect(montarMensagemCarrinho(c, k, 2000000001, estado)).toBe([
