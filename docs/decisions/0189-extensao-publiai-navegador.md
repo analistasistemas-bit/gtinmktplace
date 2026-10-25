@@ -318,16 +318,16 @@ do ML). Entra na versão 0.3.0.
   sessão Supabase independente; o app deixa de ser fonte de sessão. Verificado em produção: sem sessão única nem timebox
   (`auth.sessions`: mesmo usuário com sessões simultâneas Windows/Android; uma criada em 03/07 renovada até 23/10;
   nenhuma com `not_after`), então a sessão da extensão não derruba a do app.
-  - Credenciais só no SW, em `chrome.storage.local` com `setAccessLevel('TRUSTED_CONTEXTS')` antes de gravar qualquer
-    token; senha nunca persistida. Risco residual: quem tem acesso ao perfil/disco do Chrome lê o refresh token.
+  - Credenciais só no SW, em `chrome.storage.local`; no boot do SW, antes de gravar tokens, chama
+    `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`; senha nunca persistida. Risco residual: quem tem acesso ao perfil/disco do Chrome lê o refresh token.
   - Renovação sob demanda (access vence em <= 30 s), só no SW, numa fila única; par gravado num único `set` e relido na
     fila. Rede, 429 e 5xx preservam credenciais; só erro definitivo do Supabase desloga (sem loop).
   - **Sair** = `POST /auth/v1/logout?scope=local`; limpeza local imediata, sem esperar a rede. O logout do app também
     passa a `scope` local e não avisa a extensão (independência nos dois sentidos).
   - **Geração** persistida (sobe em login, logout, troca de identidade e pausa); **toda mensagem de comando** e toda
     requisição levam a geração de quando começou, e resposta/gravação/mensagem com geração antiga é descartada.
-- **D-14.** `externally_connectable` fica só para `publiai:ping` (responde `{ versao, protocolo }`; alimenta "Instalada"
-  em Configurações). `publiai:sessao` e `publiai:desconectar` deixam de valer na 0.3.0; o app só empurra sessão a
+- **D-14.** `externally_connectable` fica só para `publiai:ping` (enviado pelo app; a extensão responde
+  `{ versao, protocolo }`; alimenta "Instalada" em Configurações). `publiai:sessao` e `publiai:desconectar` deixam de valer na 0.3.0; o app só empurra sessão a
   extensões sem protocolo >= 2 (0.2.x). Nenhuma permissão nova. `checar-dist` passa a permitir uso de auth apenas no
   `sw.js`. Ícone injetado em `www`, `lista` e `produto.mercadolivre.com.br` (exceto `/checkout`, `/gz/`, `/jms/`,
   `/captcha/`).
@@ -341,12 +341,17 @@ do ML). Entra na versão 0.3.0.
   (`usuário:org:suporte`). Toda chamada leva `identidadeEsperada`; se a efetiva divergir, a edge responde
   `identidade_mudou` **sem executar nada** (inclusive `salvar_vinculo`, `remover_vinculo`, `adicionar_radar`) e o SW
   limpa as abas e sobe a geração. Novo código `sem_acesso` (perfil inativo ou sem organização). Respostas ganham
-  `identidade` quando a autenticação passou; sem identidade, o SW trata como deslogado. Campos só acrescentados
-  (compatível com 0.2.1). Exige deploy da edge. Protocolo 2 = a extensão que não depende de sessão empurrada pelo app.
+  `identidade` quando a autenticação passou; sem identidade, o SW trata como deslogado. Exige deploy da edge.
+  **Protocolo 2:** a extensão 0.3.0 envia `protocolo: 2` (e `identidadeEsperada`) no corpo. Com protocolo 2, o sucesso
+  vem como `{ identidade, dados }` e o erro após autenticação como `{ erro, identidade }`. Sem `protocolo`, a edge
+  responde exatamente como hoje (0.2.1 intacta).
 - **D-19.** A ação `sessao` não conta como análise: não consome a cota de 30/min nem registra uso.
 - **Migração.** (a) deploy da edge compatível com 0.2.1 e 0.3.0; (b) extensão 0.3.0 ignora a sessão empurrada pelo app
-  (não a revoga) e pede login; (c) app responde ao ping e só empurra sessão a 0.2.x. Antes da Web Store, atualizar a
+  (não a revoga) e pede login; (c) o app envia `publiai:ping` e a extensão responde `{ versao, protocolo }`; o app só empurra sessão a
+  extensão que não responde protocolo >= 2 (0.2.x). Antes da Web Store, atualizar a
   política de privacidade da extensão e as declarações do item.
+- **Revisão do design (Codex gpt-6.1-sol high, 24/10): REVISE, 10 achados, todos incorporados** (ver "Requisitos da
+  revisão Codex" no spec).
 - **Revisão do plano (Codex gpt-6.1-sol high, 24/10): REVISE, 9 achados, todos incorporados:** logout do app passa a
   `scope` local; `checar-dist` permite auth só no `sw.js`; geração em toda mensagem de comando; e os demais itens de
   credenciais isoladas, renovação com dono único, identidade esperada antes da operação, contrato da edge, religar sem
