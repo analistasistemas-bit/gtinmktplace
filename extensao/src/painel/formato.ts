@@ -8,6 +8,16 @@ export type { EntradaAnuncio, RespostaAnuncio };
 export type Resposta<T> = RespostaExtensao<T>;
 /** Chamada à edge via SW (`publiai:chamar`). */
 export type Chamar = <T>(corpo: object) => Promise<Resposta<T>>;
+/** Estado da extensão (SW `publiai:estado-extensao`); `geracao` acompanha todo comando do painel. */
+export interface EstadoExt {
+  ativa: boolean;
+  logado: boolean;
+  perfil: { nome: string | null; orgNome: string | null } | null;
+  versao: string;
+  geracao: number;
+}
+/** Resposta de comando que devolve o estado novo (`entrar`, `sair`, `definir-ativa`). */
+export type RespostaEstado = { ok: boolean; erro?: string } & Partial<EstadoExt>;
 /** Última análise do content script na aba (SW `publiai:estado-da-aba`). */
 export interface EstadoAba {
   entrada: EntradaAnuncio;
@@ -28,6 +38,16 @@ export function mensagemDeErro(erro: string): string {
       return 'Abra o PubliAI e conecte a extensão';
     case 'modulo_desligado':
       return 'A extensão não está habilitada para sua empresa';
+    case 'credenciais_invalidas':
+      return 'E-mail ou senha incorretos.';
+    case 'rede':
+      return 'Sem conexão. Tente de novo.';
+    case 'sem_acesso':
+      return 'Seu usuário está inativo ou sem empresa no PubliAI.';
+    case 'identidade_mudou':
+      return 'A conta mudou. Confira os dados e tente de novo.';
+    case 'inativa':
+      return 'A extensão está desativada. Ative para analisar.';
     case 'sessao_suporte_expirada':
       return 'A sessão de suporte expirou. Abra o PubliAI e inicie uma nova sessão.';
     case 'limite':

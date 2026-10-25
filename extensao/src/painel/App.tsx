@@ -1,6 +1,6 @@
 // Painel lateral da Extensão PubliAI (ADR-0189 D-6/D-16). Mostra a última análise que o content
 // script fez na aba ativa (guardada no SW) e simula preço/custo a partir dela.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MinhaMargem } from './MinhaMargem';
 import { Busca } from './Busca';
 import { Catalogo } from './Catalogo';
@@ -10,19 +10,96 @@ import { Radar } from './Radar';
 import { QuantoVende } from './QuantoVende';
 import { Vendedor } from './Vendedor';
 import { VinculoProduto } from './VinculoProduto';
-import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type Resposta, type RespostaAnuncio } from './formato';
-
-const chamarViaSw: Chamar = async (corpo) => {
-  try {
-    return (await chrome.runtime.sendMessage({ tipo: 'publiai:chamar', corpo })) ?? { ok: false, erro: 'interno' };
-  } catch {
-    return { ok: false, erro: 'interno' };
-  }
-};
+import { Conta } from './Conta';
+import { Entrar } from './Entrar';
+import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type EstadoExt, type Resposta, type RespostaAnuncio } from './formato';
 
 type Reanalisar = () => Promise<Resposta<RespostaAnuncio> | null>;
 
+// Todo comando do painel leva a geração do SW (R9). Resposta de outra geração = estado velho: descartar e reler.
+async function comando(geracao: number, msg: object, aoDescartar: () => void): Promise<{ ok?: boolean; erro?: string; geracao?: unknown }> {
+  let r: { ok?: boolean; erro?: string; geracao?: unknown } | null | undefined;
+  try {
+    r = (await chrome.runtime.sendMessage({ ...msg, geracao })) as typeof r;
+  } catch {
+    return { ok: false, erro: 'interno' };
+  }
+  if (r?.erro === 'geracao_antiga' || (typeof r?.geracao === 'number' && r.geracao !== geracao)) aoDescartar();
+  return r ?? { ok: false, erro: 'interno' };
+}
+
+/** Lê o estado da extensão e o mantém atualizado pelos avisos do SW. `undefined` = carregando, `null` = SW não respondeu. */
+function useEstadoExt() {
+  const [ext, setExt] = useState<EstadoExt | null | undefined>(undefined);
+  const seq = useRef(0);
+  const reler = useCallback(async (abrindo = false) => {
+    const minha = ++seq.current;
+    let e: EstadoExt | undefined;
+    try {
+      e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao', ...(abrindo ? { abrindo: true } : {}) })) as EstadoExt | undefined;
+    } catch {
+      e = undefined;
+    }
+    if (minha !== seq.current) return; // chegou uma leitura mais nova
+    setExt(e && typeof e.geracao === 'number' ? e : null);
+  }, []);
+  const aplicar = useCallback((e: EstadoExt) => { seq.current++; setExt(e); }, []);
+  useEffect(() => {
+    const aoAviso = (m: unknown) => {
+      const t = (m as { tipo?: unknown } | null)?.tipo;
+      if (t === 'publiai:conta-mudou' || t === 'publiai:ativacao') void reler();
+    };
+    chrome.runtime.onMessage.addListener(aoAviso);
+    void reler(true);
+    return () => chrome.runtime.onMessage.removeListener(aoAviso);
+  }, [reler]);
+  return { ext, reler, aplicar };
+}
+
 export function App() {
+  const { ext, reler, aplicar } = useEstadoExt();
+  if (ext === undefined) {
+    return <div className="esqueleto" role="status" aria-label="Carregando"><span /><span /><span /></div>;
+  }
+  if (ext === null) {
+    return (
+      <div className="cartao chamada" role="alert">
+        <h2>Sem resposta da extensão</h2>
+        <p>Feche e abra o painel, ou tente de novo.</p>
+        <button type="button" className="secundario" onClick={() => void reler(true)}>Tentar de novo</button>
+      </div>
+    );
+  }
+  if (!ext.logado) return <Entrar onEstado={aplicar} />;
+  const conta = <Conta estado={ext} onEstado={aplicar} onRefazer={() => void reler()} />;
+  if (!ext.ativa) {
+    const ativar = async () => {
+      const r = await comando(ext.geracao, { tipo: 'publiai:definir-ativa', ativa: true }, () => void reler());
+      if (r.ok && typeof (r as Partial<EstadoExt>).logado === 'boolean') aplicar(r as unknown as EstadoExt);
+      else void reler();
+    };
+    return (
+      <>
+        <div className="cartao chamada">
+          <h2>Extensão desativada</h2>
+          <p>Selos e análises pausados</p>
+          <button type="button" onClick={ativar}>Ativar</button>
+        </div>
+        {conta}
+      </>
+    );
+  }
+  // A geração na chave remonta tudo (simulações, chamadas em voo) quando o SW troca de conta ou pausa.
+  return (
+    <>
+      <Logado key={ext.geracao} geracao={ext.geracao} aoDescartar={() => void reler()} />
+      {conta}
+    </>
+  );
+}
+
+function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => void }) {
+  const chamarViaSw: Chamar = (corpo) => comando(geracao, { tipo: 'publiai:chamar', corpo }, aoDescartar) as never;
   // undefined = carregando; null = aba sem análise.
   const [estado, setEstado] = useState<EstadoAba | null | undefined>(undefined);
   const [tabId, setTabId] = useState<number | null>(null);
@@ -71,14 +148,13 @@ export function App() {
         key={`${tabId}:${(estado.entrada as { url?: string }).url ?? ''}`}
         estado={estado as unknown as EstadoBusca}
         chamar={chamarViaSw}
-        analisar={(forcar) => chrome.runtime.sendMessage({ tipo: 'publiai:analisar-busca', tabId, forcar }).catch(() => ({ ok: false, erro: 'interno' }))}
+        analisar={(forcar) => comando(geracao, { tipo: 'publiai:analisar-busca', tabId, forcar }, aoDescartar) as never}
         destacar={(itemId) => { chrome.runtime.sendMessage({ tipo: 'publiai:destacar-card', tabId, itemId }).catch(() => {}); }}
       />
     );
   }
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
-  const reanalisarAba: Reanalisar = () =>
-    chrome.runtime.sendMessage({ tipo: 'publiai:reanalisar-aba', tabId }).catch(() => ({ ok: false, erro: 'interno' }));
+  const reanalisarAba: Reanalisar = () => comando(geracao, { tipo: 'publiai:reanalisar-aba', tabId }, aoDescartar) as never;
   // Remonta (zera preço/custo digitados) só quando muda o anúncio; mesmo anúncio mantém a simulação.
   // Tipo de página entra na chave: em /p/ o item é o da buy box, o mesmo id do anúncio dele (o simulador recomeça).
   return <Painel key={estado ? `${estado.entrada.mlItemId}:${(estado.entrada as { tipoPagina?: string }).tipoPagina ?? ''}` : 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
