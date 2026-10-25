@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eanDaAba, esquecerAba, esquecerEstado, lerAba, registrarEanDaAba, registrarEstado } from '../abas';
 import { aoAtualizarAba, complementosPendentes, rotearMensagem } from '../roteador';
-import { aoAlarme, receberMensagemExterna } from '../sessao';
-import { instalarChromeFalso } from './chrome-falso';
+import { sair } from '../credenciais';
+import { definirIdentidade } from '../sessao';
+import { instalarChromeFalso, local, logar } from './chrome-falso';
 
 type Sender = chrome.runtime.MessageSender;
 const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai/src/painel/index.html' };
@@ -19,10 +20,7 @@ beforeEach(async () => {
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-publica');
   fetchFalso.mockReset();
   fetchFalso.mockImplementation(async () => new Response('{"ok":1}', { status: 200 }));
-  await receberMensagemExterna(
-    { tipo: 'publiai:sessao', accessToken: 'tok', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
-    { origin: 'https://app.publiai.daludi.com.br' },
-  );
+  logar();
 });
 // Espera a busca da data em segundo plano: sem isso ela pode rodar depois de o `chrome` falso sair (CI).
 afterEach(async () => { await complementosPendentes(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -365,11 +363,16 @@ describe('estado da aba (painel)', () => {
 });
 
 describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca aparece para outra)', () => {
-  const APP = { origin: 'https://app.publiai.daludi.com.br' } as Sender;
+  const PERFIL = { nome: null, email: null, orgNome: null };
   const ANUNCIO = { acao: 'analisar_anuncio', tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100 };
-  const conectar = (identidade: unknown, accessToken = `tok-${identidade}`) => receberMensagemExterna(
-    { tipo: 'publiai:sessao', accessToken, expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: '', identidade }, APP,
-  );
+  // Credenciais do usuário da identidade (como depois de entrar) + resposta da ação `sessao`.
+  const conectar = async (identidade: string, accessToken = `tok-${identidade}`) => {
+    logar({ accessToken, userId: identidade.split(':')[0], identidade: (local.credenciais as { identidade?: string } | undefined)?.identidade ?? null });
+    return definirIdentidade(identidade, PERFIL);
+  };
+  const refreshRecusado = () => fetchFalso.mockImplementation(async (u: string) => String(u).includes('/auth/v1/token')
+    ? new Response('{"error_code":"refresh_token_not_found"}', { status: 400 })
+    : new Response('{"custo":"da org A"}', { status: 200 }));
   const estado = () => rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 7 }, PAINEL);
   const ean = () => rotearMensagem({ tipo: 'publiai:ean-da-aba', tabId: 7 }, PAINEL);
 
@@ -383,7 +386,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
   });
 
   it('A → logout → B na mesma aba do ML: nada de A (estado, EAN), painel avisado e selo retirado', async () => {
-    await receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP);
+    await sair();
     expect(await estado()).toBeNull();
     expect(await ean()).toBeNull();
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
@@ -409,49 +412,23 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect(await estado()).toMatchObject({ resposta: { ok: true, dados: { custo: 'da org A' } } });
   });
 
-  it('org vazia (perfil carregando no app) não limpa nem apaga a org conhecida: A → vazio → outra org limpa', async () => {
-    await conectar('uA::');
-    expect(await estado()).not.toBeNull();
-    await conectar('uA:orgX:');
-    expect(await estado()).toBeNull();
-  });
-
-  it('expiração passiva (chrome.alarms): sessão de 120 s, relógio +180 s, alarme dispara SEM pedir estado → tudo apagado', async () => {
-    const curta = Math.floor(Date.now() / 1000) + 120;
-    await receberMensagemExterna({ tipo: 'publiai:sessao', accessToken: 'tok-curto', expiresAt: curta, orgNome: '', identidade: 'uA:orgA:' }, APP);
-    expect(chrome.alarms.create).toHaveBeenLastCalledWith('sessao-expira', { when: curta * 1000 - 30_000 });
-    vi.mocked(chrome.runtime.sendMessage).mockClear();
+  it('access vencido com refresh válido (Chrome reaberto): renova e a análise continua', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.now() + 180_000);
+    vi.setSystemTime(Date.now() + 2 * 3600_000); // access de 1 h já venceu
     try {
-      await aoAlarme({ name: 'sessao-expira' } as chrome.alarms.Alarm);
+      fetchFalso.mockImplementation(async (u: string) => String(u).includes('/auth/v1/token')
+        ? new Response(JSON.stringify({ access_token: 'acc-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'uA' } }), { status: 200 })
+        : new Response('{"custo":"da org A"}', { status: 200 }));
+      expect(await estado()).not.toBeNull();
+      expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: true, dados: { custo: 'da org A' } });
+      expect(ultimaEdge()[1].headers).toMatchObject({ Authorization: 'Bearer acc-novo' });
     } finally {
       vi.useRealTimers();
     }
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
-    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
-    expect(chrome.alarms.clear).toHaveBeenCalledWith('sessao-expira');
-    expect(await ean()).toBeNull();
-    expect(await estado()).toBeNull();
-    expect(await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
   });
 
-  it('alarme de outro nome ou sessão ainda válida não apaga nada', async () => {
-    await aoAlarme({ name: 'outro' } as chrome.alarms.Alarm);
-    await aoAlarme({ name: 'sessao-expira' } as chrome.alarms.Alarm); // token de 1 h ainda vale
-    expect(await estado()).not.toBeNull();
-  });
-
-  it('desconectar limpa o alarme; sessão nova reagenda', async () => {
-    await receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP);
-    expect(chrome.alarms.clear).toHaveBeenCalledWith('sessao-expira');
-    vi.mocked(chrome.alarms.create).mockClear();
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    await receberMensagemExterna({ tipo: 'publiai:sessao', accessToken: 't2', expiresAt: exp, orgNome: '', identidade: 'uB:orgB:' }, APP);
-    expect(chrome.alarms.create).toHaveBeenCalledWith('sessao-expira', { when: exp * 1000 - 30_000 });
-  });
-
-  it('sessão vencida sem nenhuma chamada: o painel que pede o estado não recebe a análise e o selo sai', async () => {
+  it('access vencido e refresh recusado, sem nenhuma chamada: o painel que pede o estado não recebe a análise e o selo sai', async () => {
+    refreshRecusado();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 2 * 3600_000); // token de 1 h já venceu
     try {
@@ -463,7 +440,8 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     }
   });
 
-  it('sessão vencida descoberta numa chamada: limpa antes de responder sem_sessao', async () => {
+  it('access vencido e refresh recusado, descoberto numa chamada: limpa antes de responder sem_sessao', async () => {
+    refreshRecusado();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 2 * 3600_000);
     try {
@@ -503,11 +481,11 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
 
   // Troca de identidade logo depois da checagem do api.ts (identidadeAtual) e antes de gravar/responder.
   const trocarDepoisDaChecagem = (troca: () => Promise<unknown>) => {
-    const get = chrome.storage.session.get;
+    const get = chrome.storage.local.get;
     let armado = false;
-    chrome.storage.session.get = vi.fn(async (k: string | string[] | null) => {
+    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
       const v = await get(k);
-      if (armado && k === 'sessao') { armado = false; await troca(); }
+      if (armado && k === 'credenciais') { armado = false; await troca(); }
       return v;
     }) as never;
     fetchFalso.mockImplementation(async () => { armado = true; return new Response('{"custo":"da org A"}', { status: 200 }); });
@@ -522,7 +500,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
   it('Grok ALTO (b): 1ª análise numa aba sem chave prévia + logout no meio → painel vazio e a aba é avisada', async () => {
     vi.mocked(chrome.tabs.query).mockImplementation((async () => [{ id: 9 }]) as never);
     const aba9: Sender = { ...CONTEUDO, tab: { id: 9 } as chrome.tabs.Tab };
-    trocarDepoisDaChecagem(() => receberMensagemExterna({ tipo: 'publiai:desconectar' }, APP));
+    trocarDepoisDaChecagem(() => sair());
     expect(await chamar(ANUNCIO, aba9)).toEqual({ ok: false, erro: 'sem_sessao' });
     expect(await rotearMensagem({ tipo: 'publiai:estado-da-aba', tabId: 9 }, PAINEL)).toBeNull();
     expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(9, { tipo: 'publiai:sessao-mudou' });
@@ -538,22 +516,6 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect((await lerAba(7)).estado).toEqual({ entrada: {}, resposta: 1 });
   });
 
-  it('Codex: sessão vence com a análise em voo e o alarme atrasado → sem_sessao, nada gravado, selo retirado', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    try {
-      fetchFalso.mockImplementation(async () => {
-        vi.setSystemTime(Date.now() + 2 * 3600_000); // token de 1 h venceu; alarme não disparou
-        return new Response('{"custo":"da org A"}', { status: 200 });
-      });
-      vi.mocked(chrome.tabs.sendMessage).mockClear();
-      expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
-      expect((await lerAba(7)).estado).toBeNull();
-      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { tipo: 'publiai:sessao-mudou' });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('Grok ALTO (d): sem troca, a análise segue gravada e respondida', async () => {
     fetchFalso.mockImplementation(async () => new Response('{"custo":"da org A 2"}', { status: 200 }));
     expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: true, dados: { custo: 'da org A 2' } });
@@ -562,7 +524,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
 
   it('identidade malformada é recusada (e não limpa nada)', async () => {
     for (const identidade of ['', ':orgA:', 'uA:orgA', 'uA:org A:', 1, undefined]) {
-      expect(await conectar(identidade)).toEqual({ ok: false });
+      expect(await definirIdentidade(identidade as never, PERFIL)).toBe(false);
     }
     expect(await estado()).not.toBeNull();
   });

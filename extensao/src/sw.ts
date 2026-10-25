@@ -1,18 +1,21 @@
-// Service worker da Extensão PubliAI (ADR-0189 D-4/D-14). Único contexto que toca
-// chrome.storage.session; content scripts e painel falam com ele por mensagem.
+// Service worker da Extensão PubliAI (ADR-0189 D-4/D-14, emenda 2026-10-24). Único contexto que toca
+// chrome.storage.session e as credenciais (storage.local); content scripts e painel falam com ele por mensagem.
+import { protegerCredenciais } from './credenciais';
 import { ajustarPainelDaAba, esquecerAba, esquecerEstado, painelSoNoMl } from './abas';
 import { aoAtualizarAba, rotearMensagem } from './roteador';
-import { aoAlarme, obterSessaoValida, receberMensagemExterna } from './sessao';
+import { apagarSessaoLegada, receberMensagemExterna } from './sessao';
 
-// Expiração passiva da sessão (ADR-0189 D-4): listener no topo sobrevive à suspensão do MV3; no boot,
-// confere a sessão (alarme perdido com o navegador fechado/SW suspenso).
-chrome.alarms.onAlarm.addListener((a) => { void aoAlarme(a); });
-void obterSessaoValida();
+// Antes de tudo: storage.local só para contextos confiáveis (por padrão, content scripts leem). Toda gravação de
+// token também chama protegerCredenciais antes e não grava se falhar.
+protegerCredenciais().catch(() => {});
+// Sessão empurrada pelo app na 0.2.x: apagada, nunca vira credencial nem é revogada. Sem alarme de expiração:
+// a sessão própria dura até "Sair" (ou refresh recusado), renovada sob demanda.
+void apagarSessaoLegada().catch(() => {});
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 void painelSoNoMl().catch(() => {});
 
-// Sessão empurrada pelo PubliAI web; a origem é conferida dentro de receberMensagemExterna.
+// 0.3.0: mensagens do app web não trazem mais sessão (ignoradas em receberMensagemExterna).
 chrome.runtime.onMessageExternal.addListener((msg, sender, responder) => {
   receberMensagemExterna(msg, sender).then(responder, () => responder({ ok: false }));
   return true;

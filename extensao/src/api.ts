@@ -1,4 +1,4 @@
-// Cliente da edge `extensao` (ADR-0189 D-17/D-18). fetch puro: sem supabase-js, sem refresh.
+// Cliente da edge `extensao` (ADR-0189 D-17/D-18). fetch puro: sem supabase-js; a renovação é de credenciais.ts.
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
 import { identidadeAtual, limparAbasNaFila, limparSessao, obterSessaoValida } from './sessao';
 
@@ -17,7 +17,8 @@ export type RespostaExtensao<T> = { ok: true; dados: T } | { ok: false; erro: Co
 
 export async function chamarExtensao<T>(corpo: object): Promise<RespostaExtensao<T>> {
   const sessao = await obterSessaoValida();
-  if (!sessao) return { ok: false, erro: 'sem_sessao' };
+  // transitorio = falha de rede/429/5xx ao renovar: credenciais mantidas, a próxima chamada tenta de novo.
+  if ('erro' in sessao) return { ok: false, erro: sessao.erro === 'transitorio' ? 'interno' : 'sem_sessao' };
 
   let r: Response;
   try {

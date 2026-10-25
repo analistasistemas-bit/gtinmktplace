@@ -107,7 +107,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:estado-da-aba': {
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       const id = msg.tabId;
-      // Confere a sessão antes: expirada, ela e as análises somem (o painel aberto depois não vê dado velho).
+      // Confere a sessão antes: refresh recusado, ela e as análises somem (o painel aberto depois não vê dado velho).
       return obterSessaoValida().then(() => estadoDaAba(id));
     }
     case 'publiai:reanalisar-aba': {

@@ -1,17 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chamarExtensao } from '../api';
-import { obterSessaoValida, receberMensagemExterna } from '../sessao';
-import { instalarChromeFalso } from './chrome-falso';
+import { obterSessaoValida } from '../sessao';
+import { instalarChromeFalso, logar } from './chrome-falso';
 
-const APP = { origin: 'https://app.publiai.daludi.com.br' } as chrome.runtime.MessageSender;
 const fetchFalso = vi.fn();
 
-async function conectar() {
-  await receberMensagemExterna(
-    { tipo: 'publiai:sessao', accessToken: 'tok-abc', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
-    APP,
-  );
-}
+const conectar = async () => logar({ accessToken: 'tok-abc' });
 const resposta = (status: number, corpo: unknown) =>
   new Response(typeof corpo === 'string' ? corpo : JSON.stringify(corpo), { status });
 
@@ -30,6 +24,14 @@ describe('chamarExtensao', () => {
     expect(fetchFalso).not.toHaveBeenCalled();
   });
 
+  it('renovação com falha transitória → interno, sem chamar a edge e sem perder a sessão', async () => {
+    logar({ accessToken: 'tok-abc', expiresAt: Math.floor(Date.now() / 1000) + 10 });
+    fetchFalso.mockResolvedValue(resposta(503, 'indisponível'));
+    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'interno' });
+    expect(fetchFalso.mock.calls.map(([u]) => String(u))).toEqual(['https://proj.supabase.co/auth/v1/token?grant_type=refresh_token']);
+    expect(await chrome.storage.local.get('credenciais')).toHaveProperty('credenciais');
+  });
+
   it('POST na edge com Bearer + apikey', async () => {
     await conectar();
     fetchFalso.mockResolvedValue(resposta(200, { proprio: false }));
@@ -45,23 +47,20 @@ describe('chamarExtensao', () => {
     await conectar();
     fetchFalso.mockResolvedValue(resposta(401, { erro: 'sessao_expirada' }));
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sessao_expirada' });
-    expect(await obterSessaoValida()).toBeNull();
+    expect(await obterSessaoValida()).toEqual({ erro: 'sem_sessao' });
   });
 
   it('401 do gateway (corpo fora do contrato) também é sessao_expirada', async () => {
     await conectar();
     fetchFalso.mockResolvedValue(resposta(401, { code: 401, message: 'Invalid JWT' }));
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sessao_expirada' });
-    expect(await obterSessaoValida()).toBeNull();
+    expect(await obterSessaoValida()).toEqual({ erro: 'sem_sessao' });
   });
 
   it('401 de um token antigo não apaga a sessão nova empurrada durante a chamada', async () => {
     await conectar();
     fetchFalso.mockImplementation(async () => {
-      await receberMensagemExterna(
-        { tipo: 'publiai:sessao', accessToken: 'tok-novo', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' },
-        APP,
-      );
+      logar({ accessToken: 'tok-novo' }); // renovação gravou outro par enquanto a chamada estava em voo
       return resposta(401, { code: 401, message: 'Invalid JWT' });
     });
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sessao_expirada' });
