@@ -86,6 +86,7 @@ async function worker(d: Deps, botId: number, updateId: number): Promise<Respons
   const pk: Pk = { botId, updateId };
   let token: string | null = null;
   let chatId: string | null = null;
+  let enviado = false;
   try {
     const bot = await lerBot(admin, row.org_id);
     if (bot.botId !== Number(row.bot_id) || !bot.ativo || !bot.token) {
@@ -111,12 +112,18 @@ async function worker(d: Deps, botId: number, updateId: number): Promise<Respons
       await devolver(admin, pk, leaseId, 'envio falhou');
       return json({ ok: false, erro: 'envio falhou' }, 500);
     }
+    enviado = true;
     await concluir(admin, pk, leaseId, 'respondido');
     log({ botId, updateId, org: row.org_id, resultado: 'respondido' });
     return json({ ok: true, resultado: 'respondido' });
   } catch (e) {
     const erro = (e as Error).message;
     log({ botId, updateId, org: row.org_id, erro });
+    if (enviado) {
+      // Resposta já saiu: devolver faria o retry mandar de novo. Fica `processando`; só a varredura
+      // (lease vencido) reprocessaria — at-least-once inerente, raro (concluir falhou após o envio).
+      return json({ ok: true, resultado: 'respondido', aviso: `concluir: ${erro}` });
+    }
     try {
       // Última tentativa: avisa o chat (texto fixo, sem dado) antes de encerrar como falhou.
       if (row.tentativas >= MAX_TENTATIVAS && token && chatId && await confirmarPosse(admin, pk, leaseId, d.agora())) {

@@ -24,7 +24,7 @@ import { tratar } from '../handler.ts';
 import { secretDaOrg } from '../../_shared/notificacoes/gerencial/bot.ts';
 import { fakeInboxAdmin } from '../../_shared/notificacoes/gerencial/__tests__/fake-inbox.ts';
 import {
-  TEXTO_AJUDA, TEXTO_SEM_ACESSO, TEXTO_SO_PRIVADO, TEXTO_VOLUME,
+  TEXTO_AJUDA, TEXTO_ERRO, TEXTO_SEM_ACESSO, TEXTO_SO_PRIVADO, TEXTO_VOLUME,
 } from '../../_shared/notificacoes/gerencial/mensagens.ts';
 import { ContextoIndisponivel, VolumeAcimaDoLimite } from '../../_shared/platform-admin/metrics-repository.ts';
 
@@ -227,6 +227,27 @@ describe('worker', () => {
     expect((await job(admin2, { bot_id: BOT, update_id: 1 })).status).toBe(500);
     expect(admin2.linhas[0].status).toBe('recebido');
     expect(m.enviarTelegram).not.toHaveBeenCalled();
+  });
+});
+
+describe('worker — falhas nas bordas', () => {
+  const tabelas = (over = {}) => ({ configuracoes: [cfg()], profiles: [perfilAdmin], telegram_updates: [linha(update(), over)] });
+
+  it('erro na 5ª tentativa → avisa TEXTO_ERRO e encerra falhou', async () => {
+    m.consultarHoje.mockRejectedValue(new ContextoIndisponivel('catálogo'));
+    const admin = fakeInboxAdmin(tabelas({ tentativas: 4 }));
+    expect((await job(admin, { bot_id: BOT, update_id: 1 })).status).toBe(500);
+    expect(m.enviarTelegram).toHaveBeenCalledWith('tok', '42', TEXTO_ERRO);
+    expect(admin.linhas[0].status).toBe('falhou');
+  });
+
+  it('concluir falha depois do envio → não devolve nem reenvia', async () => {
+    const admin = fakeInboxAdmin(tabelas({ tentativas: 4 }));
+    admin.falhar.add('rpc:telegram_update_concluir');
+    expect((await job(admin, { bot_id: BOT, update_id: 1 })).status).toBe(200);
+    expect(m.enviarTelegram).toHaveBeenCalledOnce();
+    expect(m.enviarTelegram).not.toHaveBeenCalledWith('tok', '42', TEXTO_ERRO);
+    expect(admin.linhas[0].status).toBe('processando');
   });
 });
 
