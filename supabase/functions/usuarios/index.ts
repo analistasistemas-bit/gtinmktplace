@@ -6,6 +6,7 @@ import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
 import { sanearTiposProduto } from './tipos-produto.ts';
 import { executarArquivamento } from './arquivar-org.ts';
 import { executarMarcaOrg } from './marca-org.ts';
+import { registrarWebhookTelegram } from '../_shared/notificacoes/gerencial/registrar-webhook.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
@@ -340,6 +341,32 @@ Deno.serve(async (req) => {
           return error ? error.message : null;
         },
         auditar: (orgId, result, details) => auditPlatformAction(orgId, action, result, details),
+      });
+      return json(r.body, r.status);
+    }
+    case 'registrar_webhook_telegram': {
+      // ADR-0190 D-8: admin da org liga os comandos do bot (webhook + lista de comandos).
+      const r = await registrarWebhookTelegram({
+        orgId,
+        chave: Deno.env.get('TELEGRAM_WEBHOOK_KEY'),
+        supabaseUrl: Deno.env.get('SUPABASE_URL') ?? '',
+        lerToken: async () => {
+          const { data, error } = await db.from('configuracoes').select('telegram_bot_token').eq('org_id', orgId).maybeSingle();
+          if (error) throw new Error(error.message);
+          return (data?.telegram_bot_token as string | null) || null;
+        },
+        outraOrgComBot: async (botId) => {
+          const { data, error } = await db.from('configuracoes').select('org_id')
+            .eq('telegram_bot_id', botId).neq('org_id', orgId).limit(1);
+          if (error) throw new Error(error.message);
+          return (data ?? []).length > 0;
+        },
+        gravarBotId: async (botId) => {
+          const { data, error } = await db.from('configuracoes').update({ telegram_bot_id: botId })
+            .eq('org_id', orgId).select('org_id');
+          if (error) return { code: error.code, message: error.message };
+          return data?.length ? null : { message: 'configuração do Telegram não encontrada' };
+        },
       });
       return json(r.body, r.status);
     }

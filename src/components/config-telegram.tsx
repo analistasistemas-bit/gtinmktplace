@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Save, Send, RefreshCw } from 'lucide-react';
+import { ChevronRight, Save, Send, RefreshCw, Bot } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { supabase } from '@/lib/supabase';
 import {
   useTelegramConfig, useSalvarTelegramConfig,
   useEnviarTesteTelegram, useVerificarModeradosAgora,
@@ -16,6 +17,18 @@ function mensagemErro(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (typeof e === 'object' && e !== null && 'message' in e) return String((e as { message?: unknown }).message);
   return String(e);
+}
+
+/** ADR-0190 D-8: liga o webhook do bot (comandos /hoje, /ontem, /mes, /top, /ajuda). O corpo de erro
+ * da edge (ex.: 409 bot de outra org) vem em `error.context` — mesmo tratamento do callUsuarios. */
+async function ativarComandosBot(): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('usuarios', { body: { action: 'registrar_webhook_telegram' } });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    const payload = context && typeof context.json === 'function' ? await context.json().catch(() => null) : null;
+    throw new Error(typeof payload?.error === 'string' ? payload.error : error.message);
+  }
+  if (data?.error) throw new Error(data.error);
 }
 
 /**
@@ -38,6 +51,8 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
   const [chatId, setChatId] = useState('');
   const [botToken, setBotToken] = useState('');
   const [ativo, setAtivo] = useState(false);
+  const [tokenAlterado, setTokenAlterado] = useState(false);
+  const [ativando, setAtivando] = useState(false);
 
   useEffect(() => {
     if (cfg) {
@@ -53,7 +68,8 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
       ativo: patch.ativo ?? ativo,
       botToken: patch.botToken,
     }, {
-      onSuccess: () => { if (patch.botToken) setBotToken(''); },
+      // Trocar o token zera o bot_id no banco (o webhook antigo deixa de valer): pede reativar.
+      onSuccess: () => { if (patch.botToken) { setBotToken(''); setTokenAlterado(true); } },
       onError: (e) => toast.error('Falha ao salvar', { description: mensagemErro(e) }),
     });
   };
@@ -73,6 +89,19 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
       ),
       onError: (e) => toast.error('Falha ao verificar', { description: mensagemErro(e) }),
     });
+
+  const handleAtivarComandos = async () => {
+    setAtivando(true);
+    try {
+      await ativarComandosBot();
+      setTokenAlterado(false);
+      toast.success('Comandos ativados. Mande /ajuda para o bot.');
+    } catch (e) {
+      toast.error('Não ativou os comandos', { description: mensagemErro(e) });
+    } finally {
+      setAtivando(false);
+    }
+  };
 
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';
   const temAlteracoes = chatId !== (cfg?.chatId ?? '') || Boolean(botToken.trim());
@@ -145,6 +174,17 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
           </Button>
           {salvar.isSuccess && !salvar.isPending && <span className="text-xs text-success">✓ Salvo</span>}
         </div>
+        {podeEditar && (cfg?.temToken || tokenAlterado) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleAtivarComandos} disabled={ativando}>
+              <Bot className="mr-1.5 h-3.5 w-3.5" />
+              {ativando ? 'Ativando…' : 'Ativar comandos no bot'}
+            </Button>
+            {tokenAlterado
+              ? <span className="text-xs text-warning">Token alterado: ative os comandos de novo.</span>
+              : <span className="text-xs text-muted-foreground">Admins consultam /hoje, /ontem, /mes e /top em conversa privada com o bot.</span>}
+          </div>
+        )}
       </div>
 
       <details className="group/details mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">

@@ -172,6 +172,9 @@ verify_jwt = false
 # ADR-0190 D-6: resumo diário às 08:00 BRT (schedule + job por org) — QStash.
 [functions.resumo-diario]
 verify_jwt = false
+# ADR-0190 D-8: bot de comandos (webhook do Telegram com secret próprio + worker/varredura QStash).
+[functions.telegram-bot]
+verify_jwt = false
 [functions.backfill-faturamento]
 verify_jwt = false
 [functions.reconciliar-faturamento]
