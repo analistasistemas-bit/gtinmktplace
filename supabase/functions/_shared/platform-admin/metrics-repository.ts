@@ -619,7 +619,7 @@ export async function lerVendasDoCarrinho(
     const q = db.from('ml_vendas').select(COLUNAS_VENDAS_GERENCIAL).eq('org_id', orgId);
     return (chave.packId != null ? q.eq('pack_id', chave.packId) : q.eq('order_id', chave.orderId))
       .order('order_id', { ascending: true }).order('id', { ascending: true });
-  });
+  }, { maxLinhas: LIMITE_VENDAS_POR_EXECUCAO });
   if (result.error) throw new Error(result.error.message);
   return normalizeSales(result.rows, orgId);
 }

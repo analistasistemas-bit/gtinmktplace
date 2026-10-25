@@ -63,7 +63,11 @@ export function resultadoPorItem(vendas: Venda[], ctx: ContextoCalculo): Resulta
     itensFlat.forEach(({ it, faturavel }, i) => {
       if (faturavel && (idxMaior < 0 || valorDoItem(it) > valorDoItem(itensFlat[idxMaior].it))) idxMaior = i;
     });
-    if (idxMaior >= 0 && valorItensFaturaveis > 0) {
+    // diverge de pedidos-faturamento.ts:190 (de propósito): lá, com a base dos itens zerada (cupom do
+    // vendedor = valor dos itens) as fatias ficam 0, mas o pedido segue com o líquido inteiro
+    // (frete/comissão ainda devidos) e a cascata desconta. Sem a trava `valorItensFaturaveis > 0`,
+    // o resíduo (= líquido inteiro) cai no 1º item faturável e o Σ dos itens bate com a cascata.
+    if (idxMaior >= 0) {
       liqItens[idxMaior] = round2(liqItens[idxMaior] + liquido - liqItens.reduce((s, x) => s + x, 0));
     }
 
@@ -132,6 +136,8 @@ export interface LucroPeriodo {
   motivo: 'aliquota_nao_confirmada' | null;
   pctVendaComLucro: number;
   vendaSemCusto: number;
+  /** Venda faturável de itens com custo mas sem alíquota resolvida (fora do lucro por imposto). */
+  vendaSemImposto: number;
   vendaCustoEstimado: number;
   pedidosFreteNaoLido: number;
   markup: number | null;
@@ -150,6 +156,7 @@ export function lucroDoPeriodo(itens: ResultadoItem[], configOk: boolean): Lucro
     motivo: configOk ? null : 'aliquota_nao_confirmada',
     pctVendaComLucro: vendaTotal > 0 ? soma(comLucro, (it) => it.venda) / vendaTotal : 0,
     vendaSemCusto: soma(fat.filter((it) => it.custo == null), (it) => it.venda),
+    vendaSemImposto: soma(fat.filter((it) => it.custo != null && !it.impostoOk), (it) => it.venda),
     vendaCustoEstimado: soma(fat.filter((it) => it.custo != null && it.custoEstimado), (it) => it.venda),
     pedidosFreteNaoLido: new Set(fat.filter((it) => it.freteNaoLido).map((it) => it.packChave)).size,
     markup: configOk && custo > 0 ? lucro / custo : null,

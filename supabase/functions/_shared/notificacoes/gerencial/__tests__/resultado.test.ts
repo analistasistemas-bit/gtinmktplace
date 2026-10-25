@@ -111,6 +111,15 @@ describe('paridade com cascataDoPedido (Lucro do pedido da tela)', () => {
   });
 });
 
+describe('base dos itens zerada (cupom do vendedor = valor dos itens)', () => {
+  it('preserva o líquido do pedido como a cascata: venda 100, cupom 100, frete 10, custo 20 → −30', () => {
+    const v = venda({ total_amount: 100, cupom_vendedor: 100, sale_fee_total: 0, frete_vendedor: 10, liquido: -10,
+      itens: [item({ unit_price: 100, cupom_vendedor: 100, custo_congelado: 20 })] });
+    expect(margemDaTela([v])).toBe(-30);
+    expect(lucroGerencial([v]).lucro).toBe(-30);
+  });
+});
+
 describe('motivos sem lucro', () => {
   it('frete nulo com shipping_id → frete_nao_lido', () => {
     const v = venda({ shipping_id: 77, frete_vendedor: null, itens: [item({ custo_congelado: 20 })] });
@@ -158,6 +167,18 @@ describe('lucroDoPeriodo', () => {
     expect(r.lucro).toBe(48);
     expect(r.markup).toBe(0.8);
     expect(r.motivo).toBeNull();
+    expect(r.vendaSemImposto).toBe(0);
+  });
+
+  it('vendaSemImposto: item com custo e sem alíquota resolvida explica a cobertura', () => {
+    const r = lucroDoPeriodo([
+      ri({ orderId: 1, packChave: '1', venda: 30, impostoOk: false, imposto: 0, lucro: null }),
+      ri({ orderId: 2, packChave: '2', venda: 20, custo: null, impostoOk: false, imposto: 0, lucro: null }),
+      ri({ orderId: 3, packChave: '3', venda: 50, liquido: 40, imposto: 4, custo: 20, lucro: 16 }),
+    ], true);
+    expect(r.vendaSemImposto).toBe(30);
+    expect(r.vendaSemCusto).toBe(20);
+    expect(r.pctVendaComLucro).toBe(0.5);
   });
 });
 
@@ -245,6 +266,13 @@ describe('leituras', () => {
     const db = fakeDb();
     await lerVendasDoCarrinho(db as unknown as MetricsDb, 'org-a', { packId: null, orderId: 11 });
     expect(db.calls).toEqual(expect.arrayContaining([{ table: 'ml_vendas', op: 'eq', args: ['order_id', 11] }]));
+  });
+
+  it('lerVendasDoCarrinho para no teto de linhas', async () => {
+    const rows = Array.from({ length: 5001 }, (_, n) => ({ id: `s${n}`, org_id: 'org-a', itens: [], custos: [] }));
+    const db = fakeDb({ rows });
+    await expect(lerVendasDoCarrinho(db as unknown as MetricsDb, 'org-a', { packId: 900, orderId: 11 }))
+      .rejects.toThrow(VolumeAcimaDoLimite);
   });
 
   it('carregarContexto lança ContextoIndisponivel se a RPC de catálogo falha', async () => {
