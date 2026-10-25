@@ -26,7 +26,8 @@ import { TEXTO_DISPONIVEL, type DadosQualidade } from '../compartilhado/qualidad
 // Auditoria × Avant (medido em 2026-10-25, /p/ MLB32466350, item MLB4053374163; mesmos ids no layout de item):
 //  tipo em event_data.listing_type_id (gold_pro/gold_special); Pix em event_data.benefits.coupons[] com source "pix",
 //  status "applied", base_price.value (= preço lido) e partial_price.value; texto "(+50 disponíveis)" em
-//  available_quantity.picker.description. Tudo do evento cujo item_id é o do anúncio.
+//  available_quantity.picker.description. Tudo do evento cujo item_id é o do anúncio (o texto: components.track do
+//  anúncio, ou sem ele, e nenhum item_id de outro anúncio no componente).
 
 export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & {
   vendidosTexto: string | null;
@@ -155,6 +156,10 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
   const disp = get(dispComp, 'quantity_selector', 'available_quantity');
   const dispTxt = get(dispComp, 'picker', 'description');
   const disponivelTexto = typeof dispTxt === 'string' ? dispTxt.replace(/[()]/g, '').trim() : '';
+  // Texto só no contexto do próprio item (mesma regra do Pix/tipo): os componentes indexados são do item do
+  // components.track, e nenhum item_id dentro do componente pode ser de outro anúncio.
+  const contextoDoItem = (evComp === undefined || get(evComp, 'item_id') === mlItemId)
+    && buscar(dispComp, 'item_id', (v) => ehMlb(v) && v !== mlItemId) === undefined;
   const garantia = lista(get(porId('buy_benefits', 'short_description', 'content_right'), 'benefits'))
     .map((b) => b.text).find((t): t is string => typeof t === 'string' && /garantia/i.test(t)) ?? null;
   const qualidade: DadosQualidade = {
@@ -163,7 +168,7 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
     descricao: typeof descricaoTexto === 'string' ? descricaoTexto.trim().length : null,
     garantia,
     disponivel: typeof disp === 'number' && Number.isInteger(disp) && disp >= 0 ? disp : null,
-    disponivelTexto: TEXTO_DISPONIVEL.test(disponivelTexto) ? disponivelTexto : null,
+    disponivelTexto: TEXTO_DISPONIVEL.test(disponivelTexto) && contextoDoItem ? disponivelTexto : null,
   };
 
   // Tipo e Pix: só do evento do próprio item (mesma regra do preço); nada presumido.

@@ -221,6 +221,14 @@ describe('lerAnuncio', () => {
         const x = montar(f);
         expect(x.ok && [x.dados.tipoAnuncio, x.dados.precoPix]).toEqual([null, null]);
       }
+      // Componentes indexados de outro item (evento de components.track é de outro anúncio): texto recusado.
+      const outro = montar(nulos[1][1]);
+      expect(outro.ok && outro.dados.qualidade.disponivelTexto).toBeNull();
+      // item_id de outro anúncio dentro do próprio componente também recusa.
+      const noComp = montar((_ev, is) => { is.components.available_quantity.quantity_selector.track = { item_id: 'MLB5555555555' }; });
+      expect(noComp.ok && noComp.dados.qualidade.disponivelTexto).toBeNull();
+      const mesmo = montar((_ev, is) => { is.components.available_quantity.quantity_selector.track = { item_id: 'MLB1234567890' }; });
+      expect(mesmo.ok && mesmo.dados.qualidade.disponivelTexto).toBe('+50 disponíveis');
       const semPix: ((c: any) => void)[] = [
         (c) => { c.status = 'pending'; },
         (c) => { c.source = 'coupon'; },
