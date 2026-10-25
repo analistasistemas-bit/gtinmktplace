@@ -278,6 +278,42 @@ describe('sair/entrar durante a chamada', () => {
     expect(chamadasEdge().filter(([, i]) => i.headers.Authorization === 'Bearer tok-abc')).toEqual([]);
   });
 
+  // Fix round 2: troca durante a leitura da identidade guardada (o valor lido é o de antes da troca).
+  const trocarDuranteLeituraDaIdentidade = (quando: () => boolean) => {
+    const getLocal = chrome.storage.local.get;
+    const r = { armado: true };
+    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
+      const v = await getLocal(k);
+      if (r.armado && quando()) {
+        r.armado = false;
+        await sairEntrar();
+        await definirIdentidade('u1:org1:', PERFIL2); // sessão nova com a mesma identidade
+      }
+      return v;
+    }) as never;
+    return r;
+  };
+
+  it('troca durante a leitura da identidade antes do POST: nada sai com o token antigo', async () => {
+    await conectar();
+    auth(() => envelope({ ok: 1 }));
+    let leituras = 0;
+    // 1ª leitura = token (tokenValido); 2ª = identidade guardada na conferência antes do POST.
+    const r = trocarDuranteLeituraDaIdentidade(() => ++leituras === 2);
+    expect(await chamarExtensao({ acao: 'salvar_vinculo' })).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(r.armado).toBe(false);
+    expect(chamadasEdge().filter(([, i]) => i.headers.Authorization === 'Bearer tok-abc')).toEqual([]);
+  });
+
+  it('troca durante a leitura da identidade depois da resposta: dado da sessão antiga não é entregue', async () => {
+    await conectar();
+    let respondeu = false;
+    auth(() => { respondeu = true; return envelope({ custo: 'antigo' }); });
+    const r = trocarDuranteLeituraDaIdentidade(() => respondeu);
+    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(r.armado).toBe(false);
+  });
+
   it('troca entre a checagem da resposta da sessao e a gravação: identidade/perfil antigos não vão para as credenciais novas', async () => {
     logar({ accessToken: 'tok-abc', identidade: null, perfil: null });
     let respondeu = false;

@@ -107,8 +107,10 @@ export async function entrar(email: string, senha: string): Promise<{ ok: true }
   if (!par) return REDE;
   return naFila(async () => {
     // Sair apertado durante o login (gen mudou) ou login mais novo vencem: esta resposta não loga.
-    if (!(await gravarSe(gen, { ...par, identidade: null, perfil: null }, () => tentativa === tentativaLogin))) return REDE;
-    geracao++; // sessão nova invalida login/renovação capturados antes dela
+    // A geração sobe na mesma passada síncrona da conferência, antes do set: ninguém vê as credenciais novas com a
+    // geração antiga (sessão nova invalida login/renovação/pedidos capturados antes dela).
+    const subir = () => tentativa === tentativaLogin && ++geracao > 0;
+    if (!(await gravarSe(gen, { ...par, identidade: null, perfil: null }, subir))) return REDE;
     await limparEstadosDasAbas(); // login sobe a geração da sessão
     return { ok: true };
   });

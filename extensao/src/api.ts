@@ -2,7 +2,8 @@
 // a renovação é de credenciais.ts. Toda chamada leva a identidade esperada; resposta de outra identidade ou de
 // outra geração da sessão nunca chega a quem pediu (dado financeiro de outra org).
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
-import { sair, type Perfil, type TokenValido } from './credenciais';
+import { geracaoAtual } from './abas';
+import { geracaoCredenciais, sair, type Perfil, type TokenValido } from './credenciais';
 import {
   definirIdentidade, identidadeAtual, limparAbasNaFila, limparSessao, marcaAtual, mesmaMarca, obterSessaoValida, type Marca,
 } from './sessao';
@@ -38,12 +39,17 @@ async function contexto(): Promise<Contexto | Falha> {
   return { ...s, marca };
 }
 
-/** Pedido ainda é da sessão atual (mesmas gerações e identidade guardada). */
-const aindaVale = async (c: Contexto) => mesmaMarca(c.marca, await marcaAtual()) && (await identidadeAtual()) === c.identidade;
+/** Leituras assíncronas da conferência (identidade guardada e GERACAO_SESSAO). */
+const lerEstado = async () => ({ identidade: await identidadeAtual(), sessao: await geracaoAtual() });
+/** Conferência final, SÍNCRONA: a geração das credenciais (sobe sem await em sair/entrar) é lida por último, e quem
+ *  chama usa o resultado sem nenhum await no meio (fetch disparado / dado devolvido no mesmo passo). */
+const vale = (c: Contexto, e: { identidade: string | null; sessao: number }) =>
+  e.identidade === c.identidade && e.sessao === c.marca.sessao && geracaoCredenciais() === c.marca.credenciais;
 
 /** POST na edge no protocolo 2. Sucesso devolve o envelope ainda não conferido contra a identidade. */
 async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
-  if (!(await aindaVale(c))) return falha('sem_sessao'); // nada sai com o token de uma sessão que já acabou
+  const antes = await lerEstado();
+  if (!vale(c, antes)) return falha('sem_sessao'); // nada sai com o token de uma sessão que já acabou
   let r: Response;
   try {
     r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extensao`, {
@@ -68,7 +74,8 @@ async function postar(c: Contexto, corpo: object, identidadeEsperada: string | n
   const json = (await r.json().catch(() => null)) as { identidade?: unknown; dados?: unknown; erro?: unknown } | null;
   // Pedida em outra sessão (sair/entrar, troca de identidade, fim de suporte): não chega a ninguém.
   // ponytail: 'sem_sessao' em vez de um código novo — quem pediu já está numa geração que descarta o resultado.
-  if (!(await aindaVale(c))) return falha('sem_sessao');
+  const depois = await lerEstado();
+  if (!vale(c, depois)) return falha('sem_sessao');
   if (r.ok) {
     return json && typeof json.identidade === 'string' && 'dados' in json
       ? { ok: true, identidade: json.identidade, dados: json.dados }
