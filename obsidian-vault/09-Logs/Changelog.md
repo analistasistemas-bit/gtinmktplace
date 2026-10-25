@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-25
 
+- Resumo diário inteligente, fase 1: seção 📦 Estoque acabando (campeões de lucro 30d com cobertura < 7 dias
+  ou zerados com venda recente) e prejuízo nomeado no ⚠️ Atenção; falha da seção não derruba o resumo. ADR-0190, emenda.
 - Telegram em blocos para celular em todas as mensagens (gerenciais e demais) + divisão acima de 4096
   sem cortar conteúdo (main `3f43e4f6`, `04b1def1`; 20 edges). ADR-0190, emenda.
 - "✓ Comandos ativos" em Configurações › Notificações: `telegram_config_status()` ganha
