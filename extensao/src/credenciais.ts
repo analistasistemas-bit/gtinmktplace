@@ -28,6 +28,8 @@ export function naFila<T>(op: () => Promise<T>): Promise<T> {
 // abas.ts: aquela sobe também em troca de identidade/suporte, e descartar um par já rotacionado deslogaria.
 // Só memória: o que estava em voo morre junto com o SW.
 let geracao = 0;
+// Tentativa de login mais recente: só ela pode gravar (cliques repetidos em "Entrar" com respostas fora de ordem).
+let tentativaLogin = 0;
 
 /** Boot do SW e antes de toda gravação de token. Rejeição propaga: sem a restrição, nada é gravado. */
 // async: API ausente (Chrome antigo) vira rejeição em vez de exceção síncrona no topo do sw.ts (mataria os listeners).
@@ -89,6 +91,7 @@ const transitorio = (status: number) => status === 408 || status === 429 || stat
 export async function entrar(email: string, senha: string): Promise<{ ok: true } | { ok: false; erro: 'credenciais_invalidas' | 'rede' }> {
   const REDE = { ok: false, erro: 'rede' } as const;
   const gen = geracao;
+  const tentativa = ++tentativaLogin;
   let r: Response;
   try {
     r = await auth('/auth/v1/token?grant_type=password', { email, password: senha });
@@ -100,8 +103,9 @@ export async function entrar(email: string, senha: string): Promise<{ ok: true }
   const par = await parDaResposta(r);
   if (!par) return REDE;
   return naFila(async () => {
-    // Sair apertado durante o login (gen mudou) vence: a resposta não loga.
-    if (!(await gravarSe(gen, { ...par, identidade: null, perfil: null }))) return REDE;
+    // Sair apertado durante o login (gen mudou) ou login mais novo vencem: esta resposta não loga.
+    if (tentativa !== tentativaLogin || !(await gravarSe(gen, { ...par, identidade: null, perfil: null }))) return REDE;
+    geracao++; // sessão nova invalida login/renovação capturados antes dela
     await limparEstadosDasAbas(); // login sobe a geração da sessão
     return { ok: true };
   });
@@ -121,10 +125,11 @@ export type TokenValido = { accessToken: string; identidade: string | null } | {
  *  a próxima chamada nem vai à rede. */
 export function tokenValido(): Promise<TokenValido> {
   return naFila(async (): Promise<TokenValido> => {
-    const g = await lerCredenciais();
-    if (!g) return { erro: 'sem_sessao' };
-    if (g.expiresAt * 1000 - Date.now() > MARGEM_MS) return { accessToken: g.accessToken, identidade: g.identidade };
+    // Geração capturada ANTES da leitura: sair concluído durante ela não deixa regravar (nem devolver) o par lido.
     const gen = geracao;
+    const g = await lerCredenciais();
+    if (!g || gen !== geracao) return { erro: 'sem_sessao' };
+    if (g.expiresAt * 1000 - Date.now() > MARGEM_MS) return { accessToken: g.accessToken, identidade: g.identidade };
     let r: Response;
     try {
       r = await auth('/auth/v1/token?grant_type=refresh_token', { refresh_token: g.refreshToken });

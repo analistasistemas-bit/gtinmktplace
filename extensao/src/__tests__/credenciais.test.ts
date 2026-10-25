@@ -169,6 +169,73 @@ describe('tokenValido', () => {
   });
 });
 
+describe('corridas (fix round 1)', () => {
+  /** Suspende a próxima leitura de storage.local até `soltar()`; devolve o valor lido antes da suspensão. */
+  function suspenderLeitura() {
+    const get = chrome.storage.local.get;
+    const r: { soltar?: () => void } = {};
+    let armado = true;
+    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
+      const v = await get(k);
+      if (armado) { armado = false; await new Promise<void>((ok) => { r.soltar = ok; }); }
+      return v;
+    }) as never;
+    return r;
+  }
+
+  it('sair conclui durante a leitura da renovação → refresh não regrava o par lido', async () => {
+    logar({ expiresAt: agoraSeg() + 20 });
+    fetchFalso.mockImplementation(async (u: string) => String(u).includes('logout') ? new Response(null, { status: 204 }) : par());
+    const leitura = suspenderLeitura();
+    const renovacao = tokenValido();
+    await vi.waitFor(() => expect(leitura.soltar).toBeDefined());
+    await sair();
+    leitura.soltar!();
+    expect(await renovacao).toEqual({ erro: 'sem_sessao' });
+    expect(refreshes()).toHaveLength(0);
+    expect(await estaLogado()).toBe(false);
+  });
+
+  it('sair conclui durante a leitura com access ainda válido → não devolve o token lido', async () => {
+    logar();
+    fetchFalso.mockResolvedValue(new Response(null, { status: 204 }));
+    const leitura = suspenderLeitura();
+    const consulta = tokenValido();
+    await vi.waitFor(() => expect(leitura.soltar).toBeDefined());
+    await sair();
+    leitura.soltar!();
+    expect(await consulta).toEqual({ erro: 'sem_sessao' });
+  });
+
+  it('dois logins com respostas invertidas: o antigo é descartado e o usuário final é o do mais novo', async () => {
+    const soltar: Record<string, (r: Response) => void> = {};
+    fetchFalso.mockImplementation((_u: string, init: { body: string }) =>
+      new Promise<Response>((ok) => { soltar[JSON.parse(init.body).email] = ok; }));
+    const a = entrar('a@x.com', 's');
+    const b = entrar('b@x.com', 's');
+    await vi.waitFor(() => expect(Object.keys(soltar)).toHaveLength(2));
+    soltar['b@x.com'](new Response(JSON.stringify({ access_token: 'acc-B', refresh_token: 'ref-B', expires_in: 3600, user: { id: 'uB' } }), { status: 200 }));
+    expect(await b).toEqual({ ok: true });
+    soltar['a@x.com'](new Response(JSON.stringify({ access_token: 'acc-A', refresh_token: 'ref-A', expires_in: 3600, user: { id: 'uA' } }), { status: 200 }));
+    expect((await a).ok).toBe(false);
+    expect(local.credenciais).toMatchObject({ accessToken: 'acc-B', userId: 'uB' });
+  });
+
+  it('dois logins, o antigo responde primeiro: também descartado; vale o mais novo', async () => {
+    const soltar: Record<string, (r: Response) => void> = {};
+    fetchFalso.mockImplementation((_u: string, init: { body: string }) =>
+      new Promise<Response>((ok) => { soltar[JSON.parse(init.body).email] = ok; }));
+    const a = entrar('a@x.com', 's');
+    const b = entrar('b@x.com', 's');
+    await vi.waitFor(() => expect(Object.keys(soltar)).toHaveLength(2));
+    soltar['a@x.com'](new Response(JSON.stringify({ access_token: 'acc-A', refresh_token: 'ref-A', expires_in: 3600, user: { id: 'uA' } }), { status: 200 }));
+    expect((await a).ok).toBe(false);
+    soltar['b@x.com'](new Response(JSON.stringify({ access_token: 'acc-B', refresh_token: 'ref-B', expires_in: 3600, user: { id: 'uB' } }), { status: 200 }));
+    expect(await b).toEqual({ ok: true });
+    expect(local.credenciais).toMatchObject({ accessToken: 'acc-B', userId: 'uB' });
+  });
+});
+
 describe('sair', () => {
   it('limpa storage e abas antes do logout responder; logout é scope=local com o access atual', async () => {
     logar();
