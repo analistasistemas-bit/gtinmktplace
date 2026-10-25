@@ -10,6 +10,17 @@
 
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
+**0.3.0 — login próprio, "Extensão ativa" e ícone no cabeçalho (emenda ADR-0189 de 2026-10-24) — implementada na branch, deploy e envio pendentes:**
+- [x] Edge `extensao` com protocolo 2 (identidade `userId:orgId:suporte`, `identidade_mudou`, `sem_acesso`) e ação `sessao`.
+- [x] Sessão própria no SW (`storage.local` `TRUSTED_CONTEXTS`, renovação serializada, "Sair" = logout `scope=local`), geração/época
+  descartando respostas antigas, chave "Extensão ativa", painel com Entrar/Conta, ícone e menu no cabeçalho do ML
+  (`header a.nav-cart`), app com logout `scope` local e ping de protocolo em Configurações. Permissão `alarms` removida.
+- [x] Política de privacidade atualizada (login, sessão no navegador, preferência local); `manifest` 0.3.0.
+- [ ] Prova real em produção (login → `sessao` → logout local → JWT recusado; sessão do app segue), validação no Chrome
+  (gesto do menu, zoom 150%, reinserção do ícone).
+- [ ] Com OK do Diego: deploy da edge `extensao` → merge (Render) → zip de `extensao/dist` → declarações de privacidade na
+  Web Store → envio da 0.3.0.
+
 Recomeço do zero após engenharia reversa do Avant Pro e da JoomPulse (REA + validação no Chrome;
 relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em `CONTEXT.md`
 (seção "Extensão do navegador").

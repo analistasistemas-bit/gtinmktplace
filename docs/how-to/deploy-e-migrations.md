@@ -176,6 +176,12 @@ rede — cortar antes deixa o precache pela metade e o app não abre.
 - **Frontend (Render, `ean2marketplace-frontend`):** `VITE_EXTENSAO_ID` (ID do item) e `VITE_EXTENSAO_URL`
   (`https://chromewebstore.google.com/detail/<ID>`). São variáveis de build do Vite: alterar exige novo deploy.
   Vazias → a seção "Extensão do navegador" diz que não está disponível e a ponte não envia nada.
+- **Ordem da 0.3.0 (login próprio, protocolo 2):** (1) `supabase functions deploy extensao` e conferir a versão ativa
+  (a 0.2.x segue funcionando: sem `protocolo` o corpo da resposta é o antigo); (2) merge na `main` (Render publica o app,
+  que passa a só dar ping nas extensões com protocolo >= 2); (3) `pnpm --dir extensao build`, zip do conteúdo de
+  `extensao/dist` e envio da 0.3.0. **Antes de enviar**, atualizar na Web Store a aba *Privacidade* (e-mail/senha digitados
+  só no painel, sessão guardada no navegador até "Sair", dados financeiros exibidos ao usuário logado, preferência local;
+  permissão `alarms` removida) para casar com `/privacidade-extensao/`.
 
 ## Deploy da landing page (Vercel)
 

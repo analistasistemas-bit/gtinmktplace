@@ -53,6 +53,14 @@ _Evitar_: margem sobre receita como sinônimo de markup.
 Ferramenta do navegador, exclusiva para usuários com conta PubliAI, que mostra análise sobre anúncios e buscas do Mercado Livre enquanto o operador navega. Usa a organização do usuário (ou a da sessão de suporte ativa, no caso da equipe Daludi).
 _Evitar_: plugin, Avant/Pulse como sinônimo.
 
+**Sessão da extensão**:
+Login (e-mail e senha do PubliAI) feito no painel da Extensão PubliAI, que cria uma sessão própria, independente da do app web. Os tokens ficam só no service worker (`chrome.storage.local`, acesso restrito a contextos confiáveis) até o usuário clicar em "Sair"; a senha nunca é guardada. Sair na extensão não encerra a sessão do app, e vice-versa.
+_Evitar_: conectar a extensão pelo app, token do app.
+
+**Extensão ativa**:
+Chave liga/desliga da Extensão PubliAI, guardada só no navegador e disponível logado. Desligada, a extensão não analisa, não desenha selos nem chama a edge; o ícone no cabeçalho do ML continua para religar.
+_Evitar_: pausar a extensão, desinstalar.
+
 **Anúncio próprio**:
 Anúncio publicado por uma conta de marketplace conectada à organização. Na extensão, recebe atalho para o PubliAI em vez de análise duplicada.
 _Evitar_: meu produto, item da loja.
