@@ -19,6 +19,7 @@ beforeEach(() => {
   escrever('manifest.json', JSON.stringify({ externally_connectable: { matches: ['https://app.publiai.daludi.com.br/*'] } }));
   escrever('anuncio.js', '(()=>{})();');
   escrever('busca-ean.js', '(()=>{})();');
+  escrever('cabecalho.js', '(()=>{})();');
   escrever('sw.js', AUTH);
 });
 afterEach(() => rmSync(dist, { recursive: true, force: true }));

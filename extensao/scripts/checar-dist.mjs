@@ -28,7 +28,7 @@ else if (process.argv[2] !== 'development'
   erros.push('manifest de produção com localhost em externally_connectable');
 }
 // Content scripts MV3 não são módulos: precisam existir e não ter import/export.
-for (const f of ['anuncio.js', 'busca-ean.js']) {
+for (const f of ['anuncio.js', 'busca-ean.js', 'cabecalho.js']) {
   const p = path.join(dist, f);
   if (!statSync(p, { throwIfNoEntry: false })) { erros.push(`${f} ausente`); continue; }
   if (/(^|[;}\n])\s*(import\s*[\w{*"']|export\s*[\w{*])/.test(readFileSync(p, 'utf8'))) erros.push(`${f} contém import/export`);
