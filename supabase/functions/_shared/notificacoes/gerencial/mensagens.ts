@@ -66,6 +66,7 @@ const linhaCobertura = (l: LucroPeriodo): string | null => {
 };
 
 export interface DadosResumo {
+  /** `YYYY-MM-DD` (diaBrt); impresso como `dd/mm`. */
   dia: string; ontem: Kpis; lucroOntem: LucroPeriodo; mes: Kpis; anterior: Kpis;
   rotuloMes: string; rotuloAnterior: string;
   top: { titulo: string; lucro: number }[];
@@ -94,7 +95,7 @@ export function montarResumoDiario(d: DadosResumo): string {
     p.prazo > 0 ? `${p.prazo} ${p.prazo === 1 ? 'oportunidade' : 'oportunidades'} com adesão vencendo` : null,
   ]) : '';
   return [
-    `📊 Ontem (${d.dia})`,
+    `📊 Ontem (${d.dia.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$2/$1')})`,
     linhaKpis(d.ontem),
     linhaLucro(d.lucroOntem),
     `${d.rotuloMes}: ${linhaKpis(d.mes)} · ${linhaCrescimento(d.mes.faturamento, d.anterior.faturamento, d.rotuloAnterior)}`,
@@ -121,9 +122,11 @@ export function montarMes(k: KpisPeriodo, l: LucroPeriodo): string {
   ].filter(Boolean).join('\n');
 }
 
-export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: string): string {
+export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: string, cobertura: LucroPeriodo): string {
+  if (cobertura.motivo === 'aliquota_nao_confirmada') return `🏆 Top lucro — ${rotuloMes}\n${linhaLucro(cobertura)}`;
   if (!top.length) return `Sem lucro calculado em ${rotuloMes} até agora.`;
-  return [`🏆 Top lucro — ${rotuloMes}`, ...top.map((t, i) => `${i + 1}. ${t.titulo} — ${brl(t.lucro)}`)].join('\n');
+  return [`🏆 Top lucro — ${rotuloMes}`, ...top.map((t, i) => `${i + 1}. ${t.titulo} — ${brl(t.lucro)}`), linhaCobertura(cobertura)]
+    .filter(Boolean).join('\n');
 }
 
 export const TEXTO_AJUDA = [

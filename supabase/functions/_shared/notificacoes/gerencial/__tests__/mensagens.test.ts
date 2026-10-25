@@ -74,7 +74,15 @@ describe('montarMensagemCarrinho', () => {
       .toBe(`${L1} (composição do carrinho não confirmada)`);
   });
   it('nunca traz o comprador', () => {
-    expect(montarMensagemCarrinho(carrinho, k, 2000000001, estado)).not.toContain(COMPRADOR);
+    const comComprador = <T extends object>(o: T): T => ({ ...o, comprador_nome: COMPRADOR });
+    const saidas = [
+      montarMensagemCarrinho(comComprador(carrinho), comComprador(k), 2000000001, estado),
+      montarResumoDiario(comComprador(resumo)),
+      montarHoje(comComprador(k), comComprador(lucro)),
+      montarMes(comComprador(k), comComprador(lucro)),
+      montarTop(resumo.top.map(comComprador), 'Outubro', comComprador(lucro)),
+    ];
+    for (const t of saidas) expect(t).not.toContain(COMPRADOR);
   });
 });
 
@@ -83,7 +91,7 @@ const lucro: LucroPeriodo = {
   vendaCustoEstimado: 40, pedidosFreteNaoLido: 2, markup: 0.34,
 };
 const resumo: DadosResumo = {
-  dia: '23/10', ontem: { faturamento: 4870, pedidos: 31, ticket: 157.1 }, lucroOntem: lucro,
+  dia: '2026-10-23', ontem: { faturamento: 4870, pedidos: 31, ticket: 157.1 }, lucroOntem: lucro,
   mes: k.mes, anterior: k.anterior, rotuloMes: 'Outubro', rotuloAnterior: '1–23/set',
   top: [{ titulo: 'Shampoo X', lucro: 210 }, { titulo: 'Máscara Y', lucro: 150 }, { titulo: 'Kit Z', lucro: 90 }],
   atencao: { abaixoMinimo: 3, prejuizo: 1, semCusto: 2 },
@@ -152,10 +160,13 @@ describe('hoje / mes / top / textos fixos', () => {
     ].join('\n'));
   });
   it('top', () => {
-    expect(montarTop(resumo.top, 'Outubro')).toBe([
+    expect(montarTop(resumo.top, 'Outubro', lucro)).toBe([
       '🏆 Top lucro — Outubro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
+      'Custo: 96% das vendas com lucro calculado · R$ 180,00 sem custo · R$ 40,00 com custo estimado · 2 pedidos sem frete lido',
     ].join('\n'));
-    expect(montarTop([], 'Outubro')).toBe('Sem lucro calculado em Outubro até agora.');
+    expect(montarTop([], 'Outubro', lucro)).toBe('Sem lucro calculado em Outubro até agora.');
+    expect(montarTop(resumo.top, 'Outubro', { ...lucro, lucro: null, motivo: 'aliquota_nao_confirmada' }))
+      .toBe('🏆 Top lucro — Outubro\nLucro: — (alíquotas de imposto não confirmadas)');
   });
   it('textos', () => {
     expect(TEXTO_AJUDA.split('\n')).toEqual(expect.arrayContaining([
