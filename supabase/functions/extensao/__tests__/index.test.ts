@@ -469,13 +469,44 @@ describe('extensao — protocolo 2 (identidade, sessao, sem_acesso)', () => {
       .toEqual({ identidade: 'admin-1:org-1:req-1', dados: { itens: [] } });
   });
 
-  it('sem protocolo: corpo idêntico ao atual (sem envelope)', async () => {
-    const legado = await (await post(ANALISAR)).json();
-    expect(legado).not.toHaveProperty('identidade');
-    expect(legado).not.toHaveProperty('dados');
-    const p2 = await (await post({ ...ANALISAR, ...P2, identidadeEsperada: 'user-1:org-1:' })).json();
-    expect(p2.identidade).toBe('user-1:org-1:');
-    expect(p2.dados).toEqual(legado);
+  // Referência FIXA: snapshots gerados rodando este mesmo teste contra o handler de a08ae74a (antes do protocolo 2).
+  it('sem protocolo: status e corpo idênticos aos da versão anterior (sucesso e erros)', async () => {
+    const bruto = async (r: Promise<Response>) => { const x = await r; return { status: x.status, corpo: await x.text() }; };
+    // identidadeEsperada sem protocolo é ignorada, como na 0.2.1.
+    expect(await bruto(post({ ...ANALISAR, identidadeEsperada: 'outra:org:' }))).toMatchInlineSnapshot(`
+      {
+        "corpo": "{"proprio":false,"catalogoCriadoEm":null,"vendedor":null,"margem":{"preco":100,"classico":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"},"premium":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"}},"custo":{"fonte":"nenhuma","variacaoId":null,"codigo":null,"origem":null,"unidadesPorPacote":null,"unidadesSku":null,"custoSku":null,"fator":null,"faltaUnidades":null,"custoPacote":null},"parametros":{"aliquotas":{"confirmada":false,"nacional":null,"importado":null},"classico":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"premium":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"frete":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"}}}",
+        "status": 200,
+      }
+    `);
+    expect(await bruto(post({ ...ANALISAR, preco: 0 }))).toMatchInlineSnapshot(`
+      {
+        "corpo": "{"erro":"payload_invalido"}",
+        "status": 400,
+      }
+    `);
+    vi.mocked(requireUserOrg).mockRejectedValueOnce(new Response('{}', { status: 403 }));
+    expect(await bruto(post(ANALISAR))).toMatchInlineSnapshot(`
+      {
+        "corpo": "{"erro":"interno"}",
+        "status": 403,
+      }
+    `);
+    vi.mocked(exigirModulo).mockResolvedValue(false);
+    expect(await bruto(post(ANALISAR))).toMatchInlineSnapshot(`
+      {
+        "corpo": "{"erro":"modulo_desligado"}",
+        "status": 403,
+      }
+    `);
+  });
+
+  it.each([['null', null], ['número', 1], ['vazio', '']])('protocolo 2 com identidadeEsperada %s → 400 payload_invalido, nada executado', async (_, v) => {
+    const r = await post({ ...REMOVER, ...P2, identidadeEsperada: v });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ erro: 'payload_invalido', identidade: 'user-1:org-1:' });
+    expect(escritas()).toEqual([]);
+    expect(exigirModulo).not.toHaveBeenCalled();
   });
 
   it('identidadeEsperada divergente → 409 identidade_mudou e nada executado', async () => {

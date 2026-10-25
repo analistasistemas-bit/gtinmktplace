@@ -436,7 +436,8 @@ Deno.serve(async (req) => {
     const { orgId } = ctx;
     identidade = `${ctx.userId}:${orgId}:${ctx.support?.requestId ?? ''}`;
     // Identidade esperada antes de qualquer operação (inclusive escritas): divergiu → nada é executado.
-    if (protocolo === 2 && b!.identidadeEsperada != null) {
+    // Só a ausência da chave é aceita; presente (inclusive null) tem de casar o formato.
+    if (protocolo === 2 && 'identidadeEsperada' in b!) {
       if (typeof b!.identidadeEsperada !== 'string' || !IDENTIDADE.test(b!.identidadeEsperada)) throw new ErroExtensao('payload_invalido', 400);
       if (b!.identidadeEsperada !== identidade) throw new ErroExtensao('identidade_mudou', 409);
     }
