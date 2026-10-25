@@ -39,14 +39,15 @@ export async function lerCredenciais(): Promise<Guardado | undefined> {
   return (await chrome.storage.local.get(CHAVE))[CHAVE] as Guardado | undefined;
 }
 
-/** Grava `g` se a geração ainda é `gen`. false = outra geração (saiu/entrou no meio) ou sem proteção do storage. */
-async function gravarSe(gen: number, g: Guardado): Promise<boolean> {
+/** Grava `g` se a geração ainda é `gen` (e `aindaVale()`, conferido junto). false = outra geração (saiu/entrou no
+ *  meio), condição extra falsa ou sem proteção do storage. */
+async function gravarSe(gen: number, g: Guardado, aindaVale = () => true): Promise<boolean> {
   try {
     await protegerCredenciais();
   } catch {
     return false;
   }
-  if (gen !== geracao) return false;
+  if (gen !== geracao || !aindaVale()) return false; // última conferência: sem await até o set
   await chrome.storage.local.set({ [CHAVE]: g }); // set invocado sem await depois da checagem
   return true;
 }
@@ -104,7 +105,7 @@ export async function entrar(email: string, senha: string): Promise<{ ok: true }
   if (!par) return REDE;
   return naFila(async () => {
     // Sair apertado durante o login (gen mudou) ou login mais novo vencem: esta resposta não loga.
-    if (tentativa !== tentativaLogin || !(await gravarSe(gen, { ...par, identidade: null, perfil: null }))) return REDE;
+    if (!(await gravarSe(gen, { ...par, identidade: null, perfil: null }, () => tentativa === tentativaLogin))) return REDE;
     geracao++; // sessão nova invalida login/renovação capturados antes dela
     await limparEstadosDasAbas(); // login sobe a geração da sessão
     return { ok: true };

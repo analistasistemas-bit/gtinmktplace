@@ -221,6 +221,23 @@ describe('corridas (fix round 1)', () => {
     expect(local.credenciais).toMatchObject({ accessToken: 'acc-B', userId: 'uB' });
   });
 
+  it('login B começa enquanto A espera o setAccessLevel antes de gravar: vale B, A descartado', async () => {
+    fetchFalso.mockImplementation(async (_u: string, init: { body: string }) => {
+      const u = JSON.parse(init.body).email === 'a@x.com' ? 'uA' : 'uB';
+      return new Response(JSON.stringify({ access_token: `acc-${u}`, refresh_token: `ref-${u}`, expires_in: 3600, user: { id: u } }), { status: 200 });
+    });
+    let soltarProtecao!: () => void;
+    vi.mocked(chrome.storage.local.setAccessLevel).mockImplementationOnce(() => new Promise<void>((ok) => { soltarProtecao = ok; }));
+    const a = entrar('a@x.com', 's');
+    await vi.waitFor(() => expect(soltarProtecao).toBeDefined()); // A respondeu e espera a proteção
+    const b = entrar('b@x.com', 's');
+    await vi.waitFor(() => expect(fetchFalso).toHaveBeenCalledTimes(2)); // B começou durante a espera de A
+    soltarProtecao();
+    expect((await a).ok).toBe(false);
+    expect(await b).toEqual({ ok: true });
+    expect(local.credenciais).toMatchObject({ accessToken: 'acc-uB', userId: 'uB' });
+  });
+
   it('dois logins, o antigo responde primeiro: também descartado; vale o mais novo', async () => {
     const soltar: Record<string, (r: Response) => void> = {};
     fetchFalso.mockImplementation((_u: string, init: { body: string }) =>
