@@ -98,7 +98,7 @@ const fmtBRL = (n: number, moeda: string) =>
  * 15/09/2026, com id real e inventado), então o alerta de venda com pack caía na lista.
  * Espelha `urlVendaML` de `src/lib/ml-status.ts` — duplicado de propósito: runtimes separados.
  */
-function urlVendaML(packOuOrderId: number): string {
+export function urlVendaML(packOuOrderId: number): string {
   return `https://www.mercadolivre.com.br/vendas/${packOuOrderId}/detalhe`;
 }
 
