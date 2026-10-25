@@ -94,6 +94,9 @@ describe('paridade com cascataDoPedido (Lucro do pedido da tela)', () => {
     const tela = margemDaTela(vendas);
     const gerencial = lucroGerencial(vendas).lucro;
     expect(gerencial).toBe(tela);
+    // Base da Margem s/ venda: Σ valorDoItem (gerencial) = brutoFaturavel (tela).
+    const pedido = agruparPorPedido(vendas, montarCustoResolver(ctx.maps))[0];
+    expect(lucroGerencial(vendas).venda).toBe(cascataDoPedido(pedido).venda);
   });
 
   it('as fixtures (a), (c) e (d) têm lucro calculado (paridade não é null == null)', () => {

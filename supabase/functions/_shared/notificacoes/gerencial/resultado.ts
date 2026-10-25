@@ -106,8 +106,8 @@ const nomeItem = (it: ResultadoItem) => it.titulo ?? it.codigo ?? '';
 /** Lucro do carrinho = Σ lucro dos itens faturáveis; vazio com motivo se algum item não fecha. */
 export function resultadoCarrinho(itens: ResultadoItem[], configOk: boolean): ResultadoCarrinho {
   const fat = itens.filter((it) => it.faturavel);
-  // ponytail: `venda` = Σ valorDoItem; a tela usa Σ (total_amount − cupom). Iguais quando o total
-  // da order é a soma dos itens (sempre no ML hoje).
+  // `venda` = Σ valorDoItem; a tela (cascata-pedido.ts) usa brutoFaturavel = Σ (total_amount − cupom).
+  // Iguais quando total_amount − cupom da order = Σ valorDoItem dos itens dela (paridade testada).
   const venda = round2(fat.reduce((s, it) => s + it.venda, 0));
   const motivo: MotivoSemLucro | null = !configOk || fat.some((it) => !it.impostoOk) ? 'aliquota_nao_confirmada'
     : fat.some((it) => it.freteNaoLido) ? 'frete_nao_lido'
