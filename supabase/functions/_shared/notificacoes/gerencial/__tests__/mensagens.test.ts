@@ -119,7 +119,8 @@ const resumo: DadosResumo = {
   dia: '2026-10-23', ontem: { faturamento: 4870, pedidos: 31, ticket: 157.1 }, lucroOntem: lucro,
   mes: k.mes, anterior: k.anterior, rotuloMes: 'Outubro', rotuloAnterior: '1–23/set',
   top: [{ titulo: 'Shampoo X', lucro: 210 }, { titulo: 'Máscara Y', lucro: 150 }, { titulo: 'Kit Z', lucro: 90 }],
-  atencao: { abaixoMinimo: 3, prejuizo: 1, semCusto: 2 },
+  atencao: { abaixoMinimo: 3, prejuizo: 1, semCusto: 2, prejuizos: [] },
+  estoque: null,
   devolucoes: { estornado: 120, prazoProximo: 2 },
   promocoes: { prejuizo: 2, prazo: 1 },
   freteSubiu: ['Produto A', 'Produto B'],
@@ -152,7 +153,7 @@ describe('montarResumoDiario', () => {
   });
   it('linhas somem quando vazias', () => {
     const r = montarResumoDiario({
-      ...resumo, top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0 },
+      ...resumo, top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] },
       devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [],
       lucroOntem: { ...lucro, vendaSemCusto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0 },
     });

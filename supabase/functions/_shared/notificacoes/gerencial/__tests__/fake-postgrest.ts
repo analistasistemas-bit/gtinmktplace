@@ -1,6 +1,7 @@
 // Fake mínimo do PostgREST em memória para os testes do resumo (ADR-0190): eq/in/gte/lt/is/
 // contains/or, range, count+head, maybeSingle e o `!inner` de `ml_promocoes` (filtro
-// `ml_promocoes.<col>` aplicado à promoção da mesma org). Registra cada consulta executada.
+// `ml_promocoes.<col>` aplicado à promoção da mesma org) e o `familias!inner` de `variacoes`
+// (join por familia_id, filtro `familias.<col>`). Registra cada consulta executada.
 type Linha = Record<string, any>;
 export interface Consulta { tabela: string; select: string; filtros: string[]; range?: [number, number]; head?: boolean }
 
@@ -39,7 +40,9 @@ export function fakeAdmin(tabelas: Record<string, Linha[]>) {
       const q: Consulta = { tabela, select: '', filtros: [] };
       const preds: Array<(r: Linha) => boolean> = [];
       // valor da coluna; `ml_promocoes.x` lê da promoção da mesma org (inner join)
+      // `familias.x` lê da família da variação (embed `familias!inner`, join por familia_id)
       const col = (r: Linha, k: string) => {
+        if (k.startsWith('familias.')) return (tabelas.familias ?? []).find((f) => f.id === r.familia_id)?.[k.slice('familias.'.length)];
         if (!k.startsWith('ml_promocoes.')) return r[k];
         const p = (tabelas.ml_promocoes ?? []).find((x) => x.org_id === r.org_id && x.promocao_id === r.promocao_id);
         return p?.[k.slice('ml_promocoes.'.length)];
@@ -49,6 +52,12 @@ export function fakeAdmin(tabelas: Record<string, Linha[]>) {
         let linhas = (tabelas[tabela] ?? []).filter((r) => preds.every((p) => p(r)));
         if (q.select.includes('ml_promocoes!inner')) {
           linhas = linhas.filter((r) => (tabelas.ml_promocoes ?? []).some((p) => p.org_id === r.org_id && p.promocao_id === r.promocao_id));
+        }
+        if (q.select.includes('familias!inner')) {
+          linhas = linhas.flatMap((r) => {
+            const f = (tabelas.familias ?? []).find((x) => x.id === r.familia_id);
+            return f ? [{ ...r, familias: f }] : [];
+          });
         }
         if (q.head) return { data: null, count: linhas.length, error: null };
         return { data: q.range ? linhas.slice(q.range[0], q.range[1] + 1) : linhas, error: null };
@@ -65,7 +74,7 @@ export function fakeAdmin(tabelas: Record<string, Linha[]>) {
           return c;
         },
         or: (s: string) => { q.filtros.push('or'); const fs = dividir(s).map(termo); preds.push((r) => fs.some((f) => f(r))); return c; },
-        order: () => c,
+        order: () => c, // ordenação não simulada: quem consome decide a canônica em memória
         range: (a: number, b: number) => { q.range = [a, b]; return c; },
         maybeSingle: async () => { const r = run(); return { data: (r.data ?? [])[0] ?? null, error: null }; },
         then: (res: any, rej: any) => Promise.resolve(run()).then(res, rej),

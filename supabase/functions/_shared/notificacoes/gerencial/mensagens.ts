@@ -1,5 +1,6 @@
 // Textos das mensagens gerenciais do Telegram (ADR-0190). Só formatação — sem acesso a banco.
 // Texto puro (sem parse_mode); dinheiro `R$ 1.234,56`; nunca traz nome de comprador.
+import type { ItemEstoque } from './estoque-acabando.ts';
 import type { Kpis } from './kpis.ts';
 import type { LucroPeriodo, ResultadoCarrinho } from './resultado.ts';
 import { urlVendaML } from '../telegram.ts';
@@ -102,7 +103,9 @@ export interface DadosResumo {
   dia: string; ontem: Kpis; lucroOntem: LucroPeriodo; mes: Kpis; anterior: Kpis;
   rotuloMes: string; rotuloAnterior: string;
   top: { titulo: string; lucro: number }[];
-  atencao: { abaixoMinimo: number; prejuizo: number; semCusto: number };
+  atencao: { abaixoMinimo: number; prejuizo: number; semCusto: number; prejuizos: { nome: string; valor: number; vendas: number }[] };
+  /** null = seção indisponível (falha de leitura/catálogo). */
+  estoque: ItemEstoque[] | null;
   devolucoes: { estornado: number; prazoProximo: number };
   promocoes: { prejuizo: number; prazo: number } | null;
   freteSubiu: string[];

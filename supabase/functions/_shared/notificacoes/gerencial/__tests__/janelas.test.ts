@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { diaBrt, horaBrt, janelaDia, janelasMesCorrente, janelasMesFechado } from '../janelas.ts';
+import { diaBrt, horaBrt, janela30Dias, janelaDia, janelasMesCorrente, janelasMesFechado } from '../janelas.ts';
 import { janelaAnterior, MES_ATUAL, resolverJanela } from '../../../../../../src/lib/metricas';
 
 afterEach(() => vi.useRealTimers());
@@ -33,6 +33,13 @@ describe('janelas BRT', () => {
     expect(diaBrt(new Date('2026-10-25T03:01:00Z'))).toBe('2026-10-25');
     expect(horaBrt(new Date('2026-10-24T17:05:00Z'))).toBe('14:05');
     expect(janelaDia('2026-10-23')).toEqual({ desde: '2026-10-23T00:00:00-03:00', ate: '2026-10-24T00:00:00-03:00' });
+  });
+
+  it('janela de 30 dias: início BRT de dia − 29 até o fim do dia', () => {
+    const j = janela30Dias('2026-10-24');
+    expect(Date.parse(j.desde)).toBe(Date.parse('2026-09-25T03:00:00Z'));
+    expect(Date.parse(j.ate)).toBe(Date.parse('2026-10-25T03:00:00Z'));
+    expect(Date.parse(janela30Dias('2027-01-10').desde)).toBe(Date.parse('2026-12-12T03:00:00Z'));
   });
 
   it('paridade com a tela', () => {

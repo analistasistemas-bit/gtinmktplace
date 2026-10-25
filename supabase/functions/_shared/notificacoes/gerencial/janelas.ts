@@ -27,6 +27,12 @@ export function janelaDia(dia: string): JanelaIso {
   return { desde: inicioDia(dia), ate: inicioDia(ymd(utc(a, m - 1, d + 1))) };
 }
 
+/** 30 dias terminando em `dia`: início BRT de `dia − 29` até o fim de `dia` (mesmo critério de `janelaDia`). */
+export function janela30Dias(dia: string): JanelaIso {
+  const [a, m, d] = dia.split('-').map(Number);
+  return { desde: inicioDia(ymd(utc(a, m - 1, d - 29))), ate: janelaDia(dia).ate };
+}
+
 // Mês anterior de `dia`: dia 1 até o fim do dia correspondente (clamp no último dia do mês anterior).
 function janelaMesAnterior(a: number, m: number, d: number): { janela: JanelaIso; rotulo: string } {
   const ultimo = utc(a, m, 0).getUTCDate(); // último dia do mês anterior (m é 0-based do mês corrente)

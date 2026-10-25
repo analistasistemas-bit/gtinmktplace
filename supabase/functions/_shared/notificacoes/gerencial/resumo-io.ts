@@ -7,9 +7,11 @@ import { enfileirarEmBlocos } from '../../enfileirar-em-blocos.ts';
 import { notificarCategoria } from '../config.ts';
 import { exigirModulo } from '../../produto/modulo.ts';
 import { selecionarAlertas, type PromoAlerta } from '../../promocoes/alertas.ts';
-import { carregarContexto, lerPaginas, lerVendasJanela, type MetricsDb } from '../../platform-admin/metrics-repository.ts';
+import { carregarContexto, lerPaginas, lerVendasJanela, VolumeAcimaDoLimite, type MetricsDb } from '../../platform-admin/metrics-repository.ts';
 import { abertasComPrazoAte, estornadoNoPeriodo, lerDevolucoesDoResumo } from './devolucoes.ts';
-import { diaBrt, horaBrt, janelaDia, janelasMesFechado } from './janelas.ts';
+import { diaBrt, horaBrt, janela30Dias, janelaDia, janelasMesFechado } from './janelas.ts';
+import { selecionarEstoqueAcabando, type CatalogoEstoque, type ItemEstoque } from './estoque-acabando.ts';
+import { nomeSku } from './nome-sku.ts';
 import { lerKpis } from './kpis.ts';
 import { montarResumoDiario, type DadosResumo } from './mensagens.ts';
 import { contarAtencao, lucroDoPeriodo, resultadoPorItem, topPorLucro } from './resultado.ts';
@@ -19,6 +21,7 @@ const LOTE = 200;
 const MAX_FRETE = 5;
 const PRAZO_DEVOLUCAO_MS = 48 * 3_600_000;
 const DIA_MS = 86_400_000;
+const LOTE_CATALOGO = 50;
 
 async function paginas(build: () => unknown, rotulo: string): Promise<Record<string, unknown>[]> {
   const { rows, error } = await lerPaginas(build as () => Consulta);
@@ -72,6 +75,50 @@ async function lerPisos(admin: SupabaseClient, orgId: string, codigos: string[])
   return piso;
 }
 
+/** Catálogo de estoque por código. Canônica = família mais nova (`criado_em desc, id desc`), como
+ *  `vendas_sku_catalogo`; `nome` = nome da variação ou, sem ele, o da família. Erro de leitura → lança. */
+export async function lerCatalogoEstoque(
+  admin: SupabaseClient, orgId: string, codigos: string[],
+): Promise<Map<string, CatalogoEstoque>> {
+  type Linha = {
+    codigo: string; nome: string | null; estoque: number | null;
+    familias: { nome_pai: string | null; kit_multiplicador: number | null; criado_em: string; id: string };
+  };
+  const catalogo = new Map<string, CatalogoEstoque>();
+  const canonica = new Map<string, Linha['familias']>();
+  for (let i = 0; i < codigos.length; i += LOTE_CATALOGO) {
+    const { data, error } = await admin.from('variacoes')
+      .select('codigo, nome, estoque, familias!inner(nome_pai, kit_multiplicador, criado_em, id)')
+      .eq('org_id', orgId).eq('familias.org_id', orgId).in('codigo', codigos.slice(i, i + LOTE_CATALOGO));
+    if (error) throw new Error(`catálogo de estoque: ${error.message}`);
+    for (const r of (data ?? []) as unknown as Linha[]) {
+      const f = r.familias, atual = canonica.get(r.codigo);
+      // ponytail: a ordenação do PostgREST não vale para embed 1:1; escolhe a mais nova em memória
+      if (atual && (atual.criado_em > f.criado_em || (atual.criado_em === f.criado_em && atual.id > f.id))) continue;
+      canonica.set(r.codigo, f);
+      catalogo.set(r.codigo, {
+        codigo: r.codigo, estoque: r.estoque == null ? null : Number(r.estoque), ehKit: f.kit_multiplicador != null,
+        nome: r.nome ?? f.nome_pai, nomeFamilia: f.nome_pai,
+      });
+    }
+  }
+  return catalogo;
+}
+
+/** Itens e datas das vendas dos 30 dias; qualquer falha (inclusive volume acima do teto) → null. */
+async function ler30Dias(db: MetricsDb, orgId: string, dia: string) {
+  const j30 = janela30Dias(dia);
+  try {
+    const [vendas, ctx] = await Promise.all([lerVendasJanela(db, orgId, j30), carregarContexto(db, orgId, j30.desde)]);
+    const dataPorOrder = new Map<number, string>();
+    for (const v of vendas) if (v.date_closed) dataPorOrder.set(Number(v.order_id), v.date_closed);
+    return { itens: resultadoPorItem(vendas, ctx), dataPorOrder, fim: j30.ate };
+  } catch (e) {
+    console.error('resumo_estoque_indisponivel', e instanceof VolumeAcimaDoLimite ? 'volume' : 'leitura', e);
+    return null;
+  }
+}
+
 /** Títulos (distintos, até 5) das vendas cujo alerta `frete_subiu` saiu no dia. */
 async function lerFreteSubiu(admin: SupabaseClient, orgId: string, dia: string): Promise<string[]> {
   const j = janelaDia(dia);
@@ -102,17 +149,43 @@ export async function montarDadosResumo(admin: SupabaseClient, orgId: string, di
     lerDevolucoesDoResumo(admin, orgId, ontem), lerFreteSubiu(admin, orgId, dia),
     exigirModulo(admin, orgId, 'promocoes'),
   ]);
+  const dados30 = ler30Dias(db, orgId, dia);
   const itens = resultadoPorItem(vendas, ctx);
   const codigos = [...new Set(itens.map((it) => it.codigo).filter((c): c is string => !!c))];
   const [pisos, promocoes] = await Promise.all([
     lerPisos(admin, orgId, codigos),
     comPromocoes ? contarPromocoesDoResumo(admin, orgId, agora.getTime()) : null,
   ]);
+  const atencao = contarAtencao(itens, pisos);
+  const j30 = await dados30;
+  // Um lote só de catálogo (estoque + nomes do prejuízo); falha → estoque null e nomes caem no título/código.
+  let catalogo: Map<string, CatalogoEstoque> | null = null;
+  try {
+    const cods = new Set([...(j30?.itens ?? []).map((it) => it.codigo), ...atencao.prejuizos.map((p) => p.codigo)]);
+    catalogo = await lerCatalogoEstoque(admin, orgId, [...cods].filter((c): c is string => !!c));
+  } catch (e) {
+    console.error('resumo_estoque_indisponivel', 'catalogo', e);
+  }
+  let estoque: ItemEstoque[] | null = null;
+  if (j30 && catalogo) {
+    try {
+      estoque = selecionarEstoqueAcabando(j30.itens, j30.dataPorOrder, catalogo, j30.fim);
+    } catch (e) {
+      console.error('resumo_estoque_indisponivel', 'selecao', e);
+    }
+  }
+  const prejuizos = atencao.prejuizos.map((p) => {
+    const cat = p.codigo != null ? catalogo?.get(p.codigo) : undefined;
+    const nome = cat ? nomeSku({ codigo: cat.codigo, titulo: cat.nome, nomeFamilia: cat.nomeFamilia })
+      : p.titulo ?? p.codigo ?? 'item sem código';
+    return { nome, valor: p.valor, vendas: p.vendas };
+  });
   return {
     dia, ontem: kOntem, lucroOntem: lucroDoPeriodo(itens, ctx.configOk), mes: kMes, anterior: kAnterior,
     rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior,
     top: topPorLucro(itens, 3),
-    atencao: contarAtencao(itens, pisos),
+    atencao: { abaixoMinimo: atencao.abaixoMinimo, prejuizo: atencao.prejuizo, semCusto: atencao.semCusto, prejuizos },
+    estoque,
     devolucoes: {
       estornado: estornadoNoPeriodo(devs, ontem),
       prazoProximo: abertasComPrazoAte(devs, new Date(agora.getTime() + PRAZO_DEVOLUCAO_MS).toISOString()),
