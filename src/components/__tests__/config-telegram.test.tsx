@@ -105,14 +105,31 @@ describe('ConfigTelegram', () => {
     expect(screen.getByText('Token alterado: ative os comandos de novo.')).toBeInTheDocument();
   });
 
-  it('token trocado com bot vinculado: o indicador some até reativar', async () => {
+  it('token trocado com bot vinculado: servidor desvincula, indicador some e pede reativar', async () => {
     telegramConfig.comandosAtivos = true;
-    salvarMutate.mockImplementation((_v: unknown, opts: { onSuccess?: () => void }) => opts.onSuccess?.());
+    // O trigger zera o bot_id quando o token muda; o refetch do salvar traz comandosAtivos=false.
+    salvarMutate.mockImplementation((_v: unknown, opts: { onSuccess?: () => void }) => {
+      telegramConfig.comandosAtivos = false;
+      opts.onSuccess?.();
+    });
     const user = userEvent.setup();
     render(<ConfigTelegram />);
     await user.type(screen.getByLabelText(/bot token/i), 'token-novo');
     await user.click(screen.getByRole('button', { name: /salvar configurações/i }));
     expect(screen.queryByText('Comandos ativos')).toBeNull();
+    expect(screen.getByText('Token alterado: ative os comandos de novo.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /ativar comandos no bot/i })).toBeInTheDocument();
+  });
+
+  it('salvar o mesmo token: o servidor mantém o vínculo e o indicador continua', async () => {
+    telegramConfig.comandosAtivos = true;
+    salvarMutate.mockImplementation((_v: unknown, opts: { onSuccess?: () => void }) => opts.onSuccess?.());
+    const user = userEvent.setup();
+    render(<ConfigTelegram />);
+    await user.type(screen.getByLabelText(/bot token/i), 'token-igual');
+    await user.click(screen.getByRole('button', { name: /salvar configurações/i }));
+    expect(screen.getByText('Comandos ativos')).toBeInTheDocument();
+    expect(screen.queryByText('Token alterado: ative os comandos de novo.')).toBeNull();
+    expect(screen.getByRole('button', { name: /^reativar$/i })).toBeInTheDocument();
   });
 });

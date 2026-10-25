@@ -106,8 +106,9 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
     }
   };
 
-  // Token trocado nesta tela zera o vínculo no banco; até o refetch, já trata como inativo.
-  const comandosAtivos = Boolean(cfg?.comandosAtivos) && !tokenAlterado;
+  // Fonte da verdade = servidor: o trigger só zera o vínculo quando o token MUDA (salvar o mesmo
+  // token mantém os comandos ativos), e salvar já relê o status.
+  const comandosAtivos = Boolean(cfg?.comandosAtivos);
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';
   const temAlteracoes = chatId !== (cfg?.chatId ?? '') || Boolean(botToken.trim());
 
@@ -191,7 +192,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
               <Bot className="mr-1.5 h-3.5 w-3.5" />
               {ativando ? 'Ativando…' : comandosAtivos ? 'Reativar' : 'Ativar comandos no bot'}
             </Button>
-            {tokenAlterado
+            {tokenAlterado && !comandosAtivos
               ? <span className="text-xs text-warning">Token alterado: ative os comandos de novo.</span>
               : <span className="text-xs text-muted-foreground">Admins consultam /hoje, /ontem, /mes e /top em conversa privada com o bot.</span>}
           </div>
