@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  brl, linhaCrescimento, montarHoje, montarMensagemCarrinho, montarMes, montarResumoDiario, montarTop,
+  brl, encurtar, linhaCrescimento, montarHoje, montarMensagemCarrinho, montarMes, montarResumoDiario, montarTop,
   TEXTO_AJUDA, TEXTO_ERRO, TEXTO_SEM_ACESSO, TEXTO_SO_PRIVADO, TEXTO_VOLUME,
   type DadosResumo, type KpisPeriodo,
 } from '../mensagens.ts';
@@ -192,5 +192,25 @@ describe('hoje / mes / top / textos fixos', () => {
     ]));
     expect(TEXTO_VOLUME).toBe('O volume do mês passou do limite do bot. Veja os números no PubliAI.');
     for (const t of [TEXTO_SEM_ACESSO, TEXTO_SO_PRIVADO, TEXTO_ERRO]) expect(t.length).toBeGreaterThan(5);
+  });
+});
+
+const LONGO = 'Protetor Solar Facial Eucerin Pigment Control Fps 60 50ml';
+describe('encurtar / títulos nas mensagens', () => {
+  it('corta no último espaço antes do limite e põe reticências', () => {
+    expect(encurtar(LONGO)).toBe('Protetor Solar Facial Eucerin Pigment…');
+    expect(encurtar('  Curto  ')).toBe('Curto');
+    expect(encurtar('X'.repeat(50))).toBe(`${'X'.repeat(40)}…`);
+  });
+  it('aplica em top, /top, atenção e frete subiu', () => {
+    const e = 'Protetor Solar Facial Eucerin Pigment…';
+    const top = [{ titulo: LONGO, lucro: 35.27 }];
+    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🏆 Top lucro: ${e} (R$ 35,27)`);
+    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🚚 Frete subiu: ${e}`);
+    expect(montarTop(top, 'Outubro', lucro)).toContain(`1. ${e} — R$ 35,27`);
+    const c = { ...carrinho, prejuizos: [{ titulo: LONGO, valor: -4.1 }], semCusto: [LONGO] };
+    const m = montarMensagemCarrinho(c, k, 2000000001, { parcial: null, composicaoIncerta: false });
+    expect(m).toContain(`⚠️ ${e}: prejuízo de R$ 4,10`);
+    expect(m).toContain(`⚠️ ${e}: sem custo cadastrado`);
   });
 });

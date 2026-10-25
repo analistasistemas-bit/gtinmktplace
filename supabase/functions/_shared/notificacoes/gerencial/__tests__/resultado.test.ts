@@ -182,6 +182,20 @@ describe('lucroDoPeriodo', () => {
   });
 });
 
+describe('topPorLucro só com lucro positivo', () => {
+  const it_ = (titulo: string, lucro: number) => ({ titulo, codigo: titulo, lucro } as unknown as ResultadoItem);
+  it('exclui grupo com lucro negativo ou zero', () => {
+    const itens = [it_('A', 35.27), it_('B', 4.18), it_('C', -6.28), it_('D', 0)];
+    expect(topPorLucro(itens, 5).map((t) => t.titulo)).toEqual(['A', 'B']);
+  });
+  it('agrupa antes de filtrar', () => {
+    expect(topPorLucro([it_('A', 10), it_('A', -4), it_('B', -1)], 5)).toEqual([{ titulo: 'A', lucro: 6 }]);
+  });
+  it('tudo negativo → vazio', () => {
+    expect(topPorLucro([it_('A', -1), it_('B', -2)], 5)).toEqual([]);
+  });
+});
+
 describe('imposto indisponível por item', () => {
   // A casa no catálogo (origem nacional); B tem custo congelado mas não está no catálogo → sem origem.
   const v = venda({ uf: 'SP', liquido: 80, itens: [

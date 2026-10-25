@@ -9,6 +9,14 @@ export const brl = (n: number): string => {
   return `${n < 0 && Number(`${int}.${dec}`) > 0 ? '−' : ''}R$ ${int.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${dec}`;
 };
 
+/** Título curto para o Telegram: corta no último espaço antes de `max` (ou seco) e põe `…`. */
+export function encurtar(titulo: string, max = 40): string {
+  const t = titulo.trim();
+  if (t.length <= max) return t;
+  const corte = t.lastIndexOf(' ', max);
+  return `${t.slice(0, corte > 0 ? corte : max)}…`;
+}
+
 const pct1 = (frac: number): string => (frac * 100).toFixed(1).replace('.', ',');
 
 export function linhaCrescimento(mes: number, anterior: number, rotuloAnterior: string): string {
@@ -44,9 +52,9 @@ export function montarMensagemCarrinho(
   return [
     `💼 Venda ${brl(c.venda)} — ${c.itens} ${c.itens === 1 ? 'item' : 'itens'}${sufixo}`,
     lucro,
-    ...c.semCusto.map((t) => `⚠️ ${t}: sem custo cadastrado`),
+    ...c.semCusto.map((t) => `⚠️ ${encurtar(t)}: sem custo cadastrado`),
     // Prejuízo por item usa o mesmo líquido pessimista: some quando o carrinho está incompleto.
-    ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${p.titulo}: prejuízo de ${brl(Math.abs(p.valor))}`),
+    ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${encurtar(p.titulo)}: prejuízo de ${brl(Math.abs(p.valor))}`),
     `Hoje: ${linhaKpis(k.hoje)}`,
     linhaMes(k),
     `Pedido ${chaveNumerica}`,
@@ -104,11 +112,11 @@ export function montarResumoDiario(d: DadosResumo): string {
     linhaLucro(d.lucroOntem),
     `${d.rotuloMes}: ${linhaKpis(d.mes)} · ${linhaCrescimento(d.mes.faturamento, d.anterior.faturamento, d.rotuloAnterior)}`,
     linhaCobertura(d.lucroOntem),
-    d.top.length ? `🏆 Top lucro: ${d.top.map((t) => `${t.titulo} (${brl(t.lucro)})`).join(', ')}` : null,
+    d.top.length ? `🏆 Top lucro: ${d.top.map((t) => `${encurtar(t.titulo)} (${brl(t.lucro)})`).join(', ')}` : null,
     atencao && `⚠️ ${atencao}`,
     devolucoes && `↩️ Devoluções: ${devolucoes}`,
     promocoes && `🏷️ Promoções: ${promocoes}`,
-    d.freteSubiu.length ? `🚚 Frete subiu: ${d.freteSubiu.join(', ')}` : null,
+    d.freteSubiu.length ? `🚚 Frete subiu: ${d.freteSubiu.map((t) => encurtar(t)).join(', ')}` : null,
     `Dados apurados até ${d.apuradoAte}`,
   ].filter((l): l is string => !!l).join('\n');
 }
@@ -129,7 +137,7 @@ export function montarMes(k: KpisPeriodo, l: LucroPeriodo): string {
 export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: string, cobertura: LucroPeriodo): string {
   if (cobertura.motivo === 'aliquota_nao_confirmada') return `🏆 Top lucro — ${rotuloMes}\n${linhaLucro(cobertura)}`;
   if (!top.length) return `Sem lucro calculado em ${rotuloMes} até agora.`;
-  return [`🏆 Top lucro — ${rotuloMes}`, ...top.map((t, i) => `${i + 1}. ${t.titulo} — ${brl(t.lucro)}`), linhaCobertura(cobertura)]
+  return [`🏆 Top lucro — ${rotuloMes}`, ...top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`), linhaCobertura(cobertura)]
     .filter(Boolean).join('\n');
 }
 

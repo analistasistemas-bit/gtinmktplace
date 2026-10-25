@@ -163,7 +163,7 @@ export function lucroDoPeriodo(itens: ResultadoItem[], configOk: boolean): Lucro
   };
 }
 
-/** Top N produtos por lucro (só itens com lucro calculável), agrupados por código (ou título). */
+/** Top N produtos por lucro (só itens com lucro calculável; grupo com lucro ≤ 0 fica de fora), agrupados por código (ou título). */
 export function topPorLucro(itens: ResultadoItem[], n: number): { titulo: string; lucro: number }[] {
   const porChave = new Map<string, { titulo: string; lucro: number }>();
   for (const it of itens) {
@@ -175,6 +175,7 @@ export function topPorLucro(itens: ResultadoItem[], n: number): { titulo: string
   }
   return [...porChave.values()]
     .map((t) => ({ titulo: t.titulo, lucro: round2(t.lucro) }))
+    .filter((t) => t.lucro > 0)
     .sort((a, b) => b.lucro - a.lucro)
     .slice(0, n);
 }
