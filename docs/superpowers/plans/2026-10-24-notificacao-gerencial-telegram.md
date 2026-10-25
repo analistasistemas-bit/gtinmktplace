@@ -12,7 +12,7 @@
 
 **Tech Stack:** Supabase Edge Functions (Deno), Postgres/PostgREST, QStash (`_shared/queue.ts`), Telegram Bot API, React + Vitest.
 
-**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisões do Codex `gpt-6.1-sol` high (2026-10-24: rodada 1 com 20 achados, rodada 2 com 7 novos + 8 parciais, rodada 3 com 4 médios) incorporadas nesta versão.
+**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisões do Codex `gpt-6.1-sol` high (2026-10-24: rodada 1 com 20 achados, rodada 2 com 7 novos + 8 parciais, rodada 3 com 4 médios) incorporadas nesta versão. **Rodada 4: VERDICT: APPROVED** (2026-10-24).
 
 ## Global Constraints
 
