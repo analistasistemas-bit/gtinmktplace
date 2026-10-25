@@ -72,7 +72,7 @@ erDiagram
 | `upsert_ml_credentials(...)` | Grava credenciais no Vault |
 | `get_ml_tokens(user_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `is_admin()` / `current_org_id()` | Helpers de RLS/RBAC — ver [[Segurança]] |
-| `telegram_config_status()` | Retorna status sem expor o token |
+| `telegram_config_status()` | Retorna status (inclui `comandos_ativos`) sem expor o token |
 | `baixar_estoque` / `estornar_estoque` / `registrar_entrada` / `ajustar_estoque` | Únicas escritas permitidas em `variacoes.estoque` — pertencem ao role `estoque_rpc_executor` (ver [[Estoque]]) |
 | `adotar_familia_migrada_up` | Adoção atômica de anúncios dissolvidos/migrados para User Products pelo ML (ADR-0104/0105) |
 

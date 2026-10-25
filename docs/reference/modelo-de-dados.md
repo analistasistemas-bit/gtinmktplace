@@ -1193,7 +1193,8 @@ Settings por **organização** desde o E7 (era por usuário). *Migrations `20260
 (ADR-0059) + `20260705174455_e7_config_org.sql` (ADR-0027).*
 `user_id` (PK, legado), `org_id` (FK organizations, `NOT NULL`, **único** — 1 configuração por
 org), `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
-nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`;
+nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`
+(e `comandos_ativos boolean` = `telegram_bot_id` não nulo, ADR-0190 D-8);
 até a migration `20260822131053_revoke_telegram_bot_token_select.sql` o grant table-wide de
 SELECT em `authenticated` (`20260725224000_support_access.sql`) tornava a RLS por linha
 irrelevante para esta coluna — qualquer membro da org lia o token em texto puro via PostgREST
@@ -1564,7 +1565,7 @@ O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só 
 | `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
 | `canais_habilitados_da_org()` | `security definer`, `search_path=''`: retorna `organizations.canais_habilitados` da própria org (evita abrir SELECT direto em `organizations`) |
-| `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
+| `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token, comandos_ativos)` sem expor o token nem o id do bot (`comandos_ativos` desde `20261025152230`, ADR-0190 D-8) |
 | `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack da org como lidas (limpa o badge da conversa; também é o "Dispensar") |
 | `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` da org do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida`, `order_status <> 'cancelled'` e ainda `not lida` — badge do menu, sem baixar a tabela inteira (plan 036). `lida` passa a `true` ao responder ou ao dispensar a conversa (`marcar_mensagens_lidas`), tirando-a do badge mesmo sem resposta enviada — caminho para packs bloqueados pelo ML (ex.: mediação, 403 `blocked_by_mediation`) |
 | `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` | ADR-0088: claim atômico de uma raiz travada em `mudando_composicao=true` — reserva service_role-only |

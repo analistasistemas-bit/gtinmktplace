@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-21
+atualizado: 2026-10-25
 ---
 
 # Changelog
@@ -8,6 +8,14 @@ atualizado: 2026-10-21
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-25
+
+- Telegram em blocos para celular em todas as mensagens (gerenciais e demais) + divisão acima de 4096
+  sem cortar conteúdo (main `3f43e4f6`, `04b1def1`; 20 edges). ADR-0190, emenda.
+- "✓ Comandos ativos" em Configurações › Notificações: `telegram_config_status()` ganha
+  `comandos_ativos` (main `de884da6`, migration `20261025152230`). Hairfly Cosmeticos com comandos
+  ativos; a org "Hairflay" usa o mesmo token e não deve ser ativada.
 
 ## 2026-10-20
 
