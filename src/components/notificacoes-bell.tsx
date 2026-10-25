@@ -88,7 +88,8 @@ export function NotificacoesBell() {
                 <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {CATEGORIA_LABEL[n.categoria] ?? n.categoria}
                 </span>
-                <span className="w-full min-w-0 break-words text-sm leading-snug">{linkify(n.texto)}</span>
+                {/* pre-line: as mensagens vêm em blocos (título, linha em branco, uma informação por linha). */}
+                <span className="w-full min-w-0 whitespace-pre-line break-words text-sm leading-snug">{linkify(n.texto)}</span>
                 <span className="text-[10px] text-muted-foreground">{formatarQuando(n.criada_em)}</span>
               </DropdownMenuItem>
             ))}
