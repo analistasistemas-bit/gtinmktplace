@@ -100,7 +100,10 @@ Deno.serve(async (req) => {
     }
     case 'update_notificacoes': {
       // Destinatário Telegram: chat_id (numérico, opcional) + categorias assinadas. Só na MESMA org.
-      const san = sanitizarDestinatario(body);
+      // Categoria gerencial (ADR-0190) só para alvo admin — lê is_admin do alvo antes de sanitizar.
+      const { data: alvo } = await db.from('profiles').select('is_admin')
+        .eq('id', body.id).eq('org_id', orgId).maybeSingle();
+      const san = sanitizarDestinatario(body, { isAdmin: alvo?.is_admin === true });
       if (!san.ok) return json({ error: san.erro }, 400);
       const { error } = await db.from('profiles')
         .update({ telegram_chat_id: san.chatId, telegram_categorias: san.categorias, updated_at: new Date().toISOString() })

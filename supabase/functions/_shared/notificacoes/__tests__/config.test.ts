@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { lerDestinatarios, notificarCategoria } from '../config.ts';
-import { sanitizarDestinatario } from '../destinatario.ts';
+import { lerDestinatarios, notificarCategoria, temAssinanteGerencial } from '../config.ts';
+import { chatPrivado, sanitizarDestinatario } from '../destinatario.ts';
 
 type Cfg = { telegram_bot_token: string | null; telegram_chat_id: string | null; telegram_ativo: boolean } | null;
 
@@ -9,8 +9,10 @@ type Cfg = { telegram_bot_token: string | null; telegram_chat_id: string | null;
 // linhas gravadas em `admin.inseridos` para os testes inspecionarem.
 function fakeAdmin(cfg: Cfg, profiles: Array<{ id?: string; telegram_chat_id: string | null }>) {
   const inseridos: any[] = [];
+  const eqProfiles: Array<[string, unknown]> = [];
   const admin: any = {
     inseridos,
+    eqProfiles,
     from: (tabela: string) => {
       if (tabela === 'configuracoes') {
         const chain: any = {
@@ -27,9 +29,10 @@ function fakeAdmin(cfg: Cfg, profiles: Array<{ id?: string; telegram_chat_id: st
       }
       const chain: any = {
         select: () => chain,
-        eq: () => chain,
+        eq: (col: string, val: unknown) => { eqProfiles.push([col, val]); return chain; },
         contains: () => chain,
         not: () => chain,
+        limit: () => chain,
         then: (resolve: any) => Promise.resolve({ data: profiles, error: null }).then(resolve),
       };
       return chain;
@@ -84,6 +87,29 @@ describe('sanitizarDestinatario', () => {
     expect(sanitizarDestinatario({ telegram_chat_id: '1' }))
       .toEqual({ ok: true, chatId: '1', categorias: [] });
   });
+
+  it('ADR-0190: não-admin não assina categoria gerencial', () => {
+    expect(sanitizarDestinatario({ telegram_chat_id: '123', telegram_categorias: ['resumo_diario'] }, { isAdmin: false }))
+      .toEqual({ ok: false, erro: 'Notificações gerenciais são só para admin.' });
+  });
+
+  it('ADR-0190: admin com chat de grupo não assina categoria gerencial', () => {
+    expect(sanitizarDestinatario({ telegram_chat_id: '-100555', telegram_categorias: ['vendas_gerencial'] }, { isAdmin: true }))
+      .toEqual({ ok: false, erro: 'Notificações gerenciais exigem conversa privada com o bot (chat_id positivo).' });
+  });
+
+  it('ADR-0190: admin sem chat assina categoria gerencial (recebe só in-app)', () => {
+    expect(sanitizarDestinatario({ telegram_chat_id: '', telegram_categorias: ['vendas_gerencial'] }, { isAdmin: true }))
+      .toEqual({ ok: true, chatId: null, categorias: ['vendas_gerencial'] });
+  });
+});
+
+describe('chatPrivado', () => {
+  it('só inteiro positivo', () => {
+    expect(chatPrivado('123')).toBe(true);
+    expect(chatPrivado('-1')).toBe(false);
+    expect(chatPrivado(null)).toBe(false);
+  });
 });
 
 describe('notificarCategoria', () => {
@@ -129,5 +155,46 @@ describe('notificarCategoria', () => {
     const admin = fakeAdmin(ATIVO, []);
     await notificarCategoria(admin, 'org1', 'vendas', 'oi');
     expect(admin.inseridos).toEqual([]);
+  });
+
+  it('ADR-0190: vendas_gerencial filtra admin, manda Telegram 1× ao chat privado e grava in-app p/ os 3', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true } as any);
+    const admin = fakeAdmin(ATIVO, [
+      { id: 'u1', telegram_chat_id: '123' }, { id: 'u2', telegram_chat_id: '123' }, { id: 'u3', telegram_chat_id: '-100555' },
+    ]);
+    expect(await notificarCategoria(admin, 'org1', 'vendas_gerencial', 'oi')).toBe(1);
+    expect(admin.eqProfiles).toContainEqual(['is_admin', true]);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((vi.mocked(fetch).mock.calls[0][1] as any).body).chat_id).toBe('123');
+    expect(admin.inseridos.map((r: any) => r.user_id)).toEqual(['u1', 'u2', 'u3']);
+  });
+
+  it('regressão: vendas não filtra admin, envia a grupo e mantém chats duplicados', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true } as any);
+    const admin = fakeAdmin(ATIVO, [
+      { id: 'u1', telegram_chat_id: '123' }, { id: 'u2', telegram_chat_id: '123' }, { id: 'u3', telegram_chat_id: '-100555' },
+    ]);
+    expect(await notificarCategoria(admin, 'org1', 'vendas', 'oi')).toBe(3);
+    expect(admin.eqProfiles.some(([c]: [string]) => c === 'is_admin')).toBe(false);
+    const chats = vi.mocked(fetch).mock.calls.map((c) => JSON.parse((c[1] as any).body).chat_id);
+    expect(chats).toEqual(['123', '123', '-100555']);
+  });
+
+  it('ADR-0190: lerDestinatarios gerencial deduplica e descarta grupo', async () => {
+    const admin = fakeAdmin(ATIVO, [{ telegram_chat_id: '123' }, { telegram_chat_id: '123' }, { telegram_chat_id: '-100555' }]);
+    expect(await lerDestinatarios(admin, 'org', 'resumo_diario')).toEqual({ token: 'tok', chatIds: ['123'] });
+    expect(admin.eqProfiles).toContainEqual(['is_admin', true]);
+  });
+});
+
+describe('temAssinanteGerencial', () => {
+  it('true com admin ativo assinante, mesmo sem chat (in-app)', async () => {
+    const admin = fakeAdmin(ATIVO, [{ id: 'u1', telegram_chat_id: null }]);
+    expect(await temAssinanteGerencial(admin, 'org', 'resumo_diario')).toBe(true);
+    expect(admin.eqProfiles).toEqual(expect.arrayContaining([['org_id', 'org'], ['is_active', true], ['is_admin', true]]));
+  });
+
+  it('false sem assinante', async () => {
+    expect(await temAssinanteGerencial(fakeAdmin(ATIVO, []), 'org', 'vendas_gerencial')).toBe(false);
   });
 });

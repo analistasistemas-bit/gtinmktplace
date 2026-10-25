@@ -12,6 +12,14 @@ export const CATEGORIAS_NOTIFICACAO = [
   'integracao',
   'pulse',
   'estoque',
+  'vendas_gerencial',
+  'resumo_diario',
 ] as const;
 
 export type CategoriaNotificacao = (typeof CATEGORIAS_NOTIFICACAO)[number];
+
+/** Categorias gerenciais (ADR-0190): só profile admin assina e o Telegram só vai a chat privado
+ * (chat_id positivo) — lucro e faturamento não podem cair em grupo. In-app vale para todo admin assinante. */
+export const CATEGORIAS_SO_ADMIN = ['vendas_gerencial', 'resumo_diario'] as const satisfies readonly CategoriaNotificacao[];
+
+export const ehSoAdmin = (categoria: string): boolean => (CATEGORIAS_SO_ADMIN as readonly string[]).includes(categoria);

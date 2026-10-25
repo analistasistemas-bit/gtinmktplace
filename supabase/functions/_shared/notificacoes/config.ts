@@ -1,5 +1,6 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import type { CategoriaNotificacao } from './categorias.ts';
+import { ehSoAdmin, type CategoriaNotificacao } from './categorias.ts';
+import { chatPrivado } from './destinatario.ts';
 import { enviarTelegram } from './telegram.ts';
 
 export interface ConfigTelegram { token: string | null; chatId: string | null; ativo: boolean }
@@ -19,11 +20,29 @@ export async function lerConfigTelegram(admin: SupabaseClient, orgId: string): P
 interface Assinante { id: string; telegram_chat_id: string | null }
 
 function queryAssinantes(admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao) {
-  return admin.from('profiles')
+  const q = admin.from('profiles')
     .select('id, telegram_chat_id')
     .eq('org_id', orgId)
-    .eq('is_active', true)
+    .eq('is_active', true);
+  return (ehSoAdmin(categoria) ? q.eq('is_admin', true) : q)
     .contains('telegram_categorias', [categoria]);
+}
+
+/** chat_ids que recebem por Telegram. Categoria gerencial (ADR-0190): só chat privado, sem repetir
+ * (dois profiles com o mesmo chat recebem uma vez). As demais seguem como sempre. */
+function chatsTelegram(categoria: CategoriaNotificacao, assinantes: Assinante[]): string[] {
+  const chatIds = assinantes.map((a) => a.telegram_chat_id?.trim()).filter((c): c is string => !!c);
+  return ehSoAdmin(categoria) ? [...new Set(chatIds.filter(chatPrivado))] : chatIds;
+}
+
+/** Há profile ativo, admin e assinante da categoria gerencial na org (ADR-0190)? Vale in-app, então
+ * não exige chat. Estrita: `error` lança — falso por erro calaria a notificação sem rastro. */
+export async function temAssinanteGerencial(
+  admin: SupabaseClient, orgId: string, categoria: 'vendas_gerencial' | 'resumo_diario',
+): Promise<boolean> {
+  const { data, error } = await queryAssinantes(admin, orgId, categoria).limit(1);
+  if (error) throw new Error(`ler assinantes: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 /** Profiles ativos da org que assinam `categoria` (ADR-0068) — base tanto do envio Telegram
@@ -55,10 +74,7 @@ export async function lerDestinatarios(
   const cfg = await lerConfigTelegram(admin, orgId);
   if (!cfg.ativo || !cfg.token) return { token: null, chatIds: [] };
   const assinantes = await lerAssinantes(admin, orgId, categoria);
-  const chatIds = assinantes
-    .map((a) => a.telegram_chat_id?.trim())
-    .filter((c): c is string => !!c);
-  return { token: cfg.token, chatIds };
+  return { token: cfg.token, chatIds: chatsTelegram(categoria, assinantes) };
 }
 
 /** Grava a notificação in-app (ADR-0085) para todo assinante da categoria, independente de ter
@@ -96,9 +112,8 @@ export async function notificarCategoria(
 
   const cfg = await lerConfigTelegram(admin, orgId);
   if (!cfg.ativo || !cfg.token) return 0;
-  const chatIds = assinantes.map((a) => a.telegram_chat_id?.trim()).filter((c): c is string => !!c);
   let enviados = 0;
-  for (const chatId of chatIds) {
+  for (const chatId of chatsTelegram(categoria, assinantes)) {
     if (await enviarTelegram(cfg.token, chatId, texto)) enviados += 1;
   }
   return enviados;
@@ -124,10 +139,7 @@ async function notificarCategoriaComChave(
   const cfg = await lerConfigTelegram(admin, orgId);
   if (!cfg.ativo || !cfg.token) return 0;
   let enviados = 0;
-  for (const a of assinantes) {
-    if (!idsNovos.has(a.id)) continue;
-    const chatId = a.telegram_chat_id?.trim();
-    if (!chatId) continue;
+  for (const chatId of chatsTelegram(categoria, assinantes.filter((a) => idsNovos.has(a.id)))) {
     if (await enviarTelegram(cfg.token, chatId, texto)) enviados += 1;
   }
   return enviados;
