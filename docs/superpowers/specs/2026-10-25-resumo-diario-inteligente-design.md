@@ -87,8 +87,12 @@ nunca divergir da tela.
 1. **Ritmo da base não soma venda de kit** — igual a `unidadesPorCodigo` da tela (conta só o próprio
    código). Limitação conhecida nas duas pontas: base vendida também via kit tem cobertura otimista.
    Corrigir depois, nas duas ao mesmo tempo.
-2. **Lucro 30d do ranking = o da tela** (`agregarPorSku`: desconta devolução real; SKU sem lucro
-   calculado fica fora do ranking, como `-Infinity` na tela).
+2. **Lucro 30d do ranking = o lucro do resumo** (`resultadoPorItem`, o mesmo do Telegram), não o da
+   tela Vendas SKU. Exceção de paridade **documentada** (revisão Codex do plano): a edge deixa sem lucro
+   item com frete não lido ou alíquota não resolvida e rateia cupom integral de outro jeito; a tela não
+   desconta estorno do lucro (devolução só entra na taxa). Como o lucro 30d **não aparece** na mensagem
+   — só escolhe os 20 campeões —, a divergência pode mudar quem entra no top 20 na margem, nunca um
+   número exibido. Estoque, ritmo e cobertura seguem com paridade. SKU sem lucro calculado fica fora.
 3. **Kit vinculado sai antes do ranking** (não ocupa vaga do top 20; não tem cobertura própria).
 4. **Janela**: 30 dias terminando no fim de ontem em BRT (`janelaDia`), por `date_closed`; "3 dias
    distintos" contados em BRT.
