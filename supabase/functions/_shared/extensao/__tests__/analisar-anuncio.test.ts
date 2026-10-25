@@ -22,6 +22,7 @@ function deps(over: Partial<DepsAnuncio> & { cat?: VariacaoCusto[] } = {}): Deps
     dimensoesDoPacote: vi.fn(async () => null),
     catalogoCriadoEm: vi.fn(async () => '2020-07-30T21:40:56Z'),
     vendedor: vi.fn(async () => VEND),
+    freteDaOferta: vi.fn(async () => ({ estado: 'ok' as const, valor: 32.45 })),
     ...over,
   };
 }
@@ -70,6 +71,21 @@ describe('analisarAnuncio', () => {
     expect(r.catalogoCriadoEm).toBeNull();
     expect(d.vendedor).not.toHaveBeenCalled();
     expect(r.vendedor).toBeNull();
+    expect(d.freteDaOferta).not.toHaveBeenCalled();
+    expect(r.freteOferta).toBeNull();
+  });
+
+  it('frete cotado da oferta (auditoria × Avant): informação à parte, nunca entra na margem; falha → indisponível', async () => {
+    const d = deps({ cat: [v()] });
+    const r = await analisarAnuncio('org', ent, d);
+    expect(d.freteDaOferta).toHaveBeenCalledWith('MLB999');
+    expect(r.freteOferta).toEqual({ estado: 'ok', valor: 32.45 });
+    expect(r.parametros.frete).toEqual({ estado: 'ok', valor: 20 });
+    const falha = await analisarAnuncio('org', ent, deps({ cat: [v()], freteDaOferta: vi.fn(async () => { throw new Error('ml'); }) }));
+    expect(falha.freteOferta).toEqual({ estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
+    // Margem idêntica com ou sem a cotação da oferta.
+    expect(falha.margem).toEqual(r.margem);
+    expect(falha.parametros).toEqual(r.parametros);
   });
 
   it('alíquota não confirmada: clássico e premium indisponíveis', async () => {

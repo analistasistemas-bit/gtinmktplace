@@ -174,6 +174,18 @@ function lerUnitsPerPack(attrs: unknown): number | null | undefined {
 export const QTD_NAO_CONFIRMADA = 'quantidade por anúncio não confirmada';
 
 /** `date_created` de /products/{id} (corpo do mlGet; null = HTTP/timeout), só se for data válida. */
+/** CEP de referência da cotação do frete da oferta (São Paulo, Av. Paulista), igual ao exibido no painel. */
+export const CEP_FRETE_OFERTA = '01310100';
+
+/** /items/{id}/shipping_options → list_cost da opção "recommended" (senão a primeira); falha ou valor
+ *  ausente/não numérico → indisponível, nunca zero (D-7). Medido em 25/10: 200 p/ item de terceiro. */
+export function freteDaRespostaShipping(r: unknown): Disponivel<number> {
+  const opcoes = (r as { options?: unknown } | null)?.options;
+  const lista = Array.isArray(opcoes) ? (opcoes as { display?: unknown; list_cost?: unknown }[]) : [];
+  const v = (lista.find((o) => o?.display === 'recommended') ?? lista[0])?.list_cost;
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? { estado: 'ok', valor: v } : { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
+}
+
 export function dataDoProduto(produto: unknown): string | null {
   const d = (produto as { date_created?: unknown } | null)?.date_created;
   return typeof d === 'string' && Number.isFinite(new Date(d).getTime()) ? d : null;

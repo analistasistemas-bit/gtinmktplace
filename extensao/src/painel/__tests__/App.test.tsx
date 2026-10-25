@@ -12,6 +12,7 @@ const DADOS: RespostaAnuncio = {
   proprio: false,
   catalogoCriadoEm: null,
   vendedor: null,
+  freteOferta: null,
   margem: { preco: 100, classico: INDISP, premium: INDISP },
   custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
   parametros: { aliquotas: { nacional: 8, importado: 16, confirmada: true }, classico: INDISP, premium: INDISP, frete: INDISP },

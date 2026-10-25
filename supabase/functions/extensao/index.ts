@@ -25,7 +25,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, chaveFrete, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo,
+  basesDeKit, CEP_FRETE_OFERTA, chaveFrete, freteDaRespostaShipping, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -153,6 +153,14 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       // Cache de 24 h por vendedor dentro de buscarPerfilVendedor (compartilhado com Pulse/Viabilidade).
       const perfil = await buscarPerfilVendedor(t, id);
       return perfil ? vendedorDoPerfil(perfil) : null;
+    },
+    freteDaOferta: async (mlItemId) => {
+      // Cotação do ML para a oferta da página (auditoria × Avant): só informação no painel, fora da margem.
+      if (!/^MLB\d+$/.test(mlItemId)) return { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
+      const t = await tokenML().catch(() => null);
+      if (!t) return SEM_CONEXAO;
+      return emCache<Disponivel<number>>(`ext:frof:v1:${mlItemId}:${CEP_FRETE_OFERTA}`, (v) => v.estado === 'ok', async () =>
+        freteDaRespostaShipping(await mlGet(`${ML_API}/items/${mlItemId}/shipping_options?zip_code=${CEP_FRETE_OFERTA}`, t)));
     },
   };
 }
