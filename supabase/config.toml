@@ -169,6 +169,9 @@ verify_jwt = false
 # ADR-0190 D-4: notificação gerencial por carrinho (job agendado + varredura) — QStash.
 [functions.notificar-carrinho]
 verify_jwt = false
+# ADR-0190 D-6: resumo diário às 08:00 BRT (schedule + job por org) — QStash.
+[functions.resumo-diario]
+verify_jwt = false
 [functions.backfill-faturamento]
 verify_jwt = false
 [functions.reconciliar-faturamento]
