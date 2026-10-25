@@ -30,14 +30,14 @@ describe('lerAnuncio', () => {
     const r = lerAnuncio(doc(nordic(JSON.stringify(j))));
     expect(r.ok && r.dados.qualidade).toEqual({
       fotos: [{ id: '670304-MLB9', largura: 521, altura: 749 }, { id: 'b', largura: 1200, altura: 1200 }, { id: 'c', largura: null, altura: null }],
-      clips: 1, descricao: 415, garantia: null, disponivel: 16,
+      clips: 1, descricao: 415, garantia: null, disponivel: 16, disponivelTexto: null,
     });
   });
 
   it('extrai os campos do estado do Nordic', () => {
     expect(lerAnuncio(doc(nordic(fx('pdp-sintetico.json'))))).toEqual({
       ok: true,
-      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
+      dados: { mlItemId: 'MLB1000000001', sellerId: '100001', catalogProductId: null, categoriaId: 'MLB122102', preco: 199.9, vendidosTexto: '+1000 vendidos', titulo: 'Produto Sintético de Teste', lojaOficial: null, tipoAnuncio: null, precoPix: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null, disponivelTexto: null } },
     });
   });
   it('catálogo sintético traz catalogProductId', () => {
@@ -119,7 +119,7 @@ describe('lerAnuncio', () => {
     it('extrai os campos; o id MLBU (user product) não vira item', () => {
       expect(up()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, tipoAnuncio: null, precoPix: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null, disponivelTexto: null } },
       });
       expect(up((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });
     });
@@ -144,7 +144,7 @@ describe('lerAnuncio', () => {
           buy_benefits: { id: 'buy_benefits', benefits: [{ text: '{action} Você tem 30 dias.' }, { text: '90 dias de garantia de fábrica.' }] },
         });
       });
-      expect(r.ok && r.dados.qualidade).toEqual({ fotos: [{ id: 'p1', largura: 1200, altura: 573 }], clips: 0, descricao: 0, garantia: '90 dias de garantia de fábrica.', disponivel: 100 });
+      expect(r.ok && r.dados.qualidade).toEqual({ fotos: [{ id: 'p1', largura: 1200, altura: 573 }], clips: 0, descricao: 0, garantia: '90 dias de garantia de fábrica.', disponivel: 100, disponivelTexto: null });
     });
     it('loja oficial (medido em 22/10: Tramontina /p/, BOING /up/): official_store_id do evento do vendedor + nome do seller_summary', () => {
       const r = up((is) => {
@@ -194,8 +194,53 @@ describe('lerAnuncio', () => {
     it('item = o do evento da página (vencedor), nunca o id de catálogo; alternative_buying_options ignorado', () => {
       expect(cat()).toEqual({
         ok: true,
-        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null } },
+        dados: { mlItemId: 'MLB1234567890', sellerId: '123456', catalogProductId: 'MLB2234567890', categoriaId: 'MLB1000001', preco: 118.9, vendidosTexto: null, titulo: 'Produto Sintético de Teste', lojaOficial: null, tipoAnuncio: null, precoPix: null, qualidade: { fotos: null, clips: null, descricao: null, garantia: null, disponivel: null, disponivelTexto: null } },
       });
+    });
+    it('auditoria × Avant (medido em 25/10, MLB4053374163): tipo, preço no Pix e "+50 disponíveis" do próprio item', () => {
+      const pix = { source: 'pix', status: 'applied', resolution: 'price_decrement', label: 'Desconto no Pix', funders: [],
+        base_price: { value: 118.9 }, partial_price: { value: 115.33 }, discount: { mode: 'fixed', value: 3.57 } };
+      const montar = (f: (ev: any, is: any) => void = () => {}) => cat((is) => {
+        const ev = is.components.track.melidata_event.event_data;
+        ev.listing_type_id = 'gold_pro';
+        ev.benefits = { discounted_product_price: { value: 118.9 }, final_price: { value: 115.33 }, coupons: [structuredClone(pix)] };
+        is.components.available_quantity = { id: 'available_quantity', picker: { description: '(+50 disponíveis)' }, quantity_selector: { available_quantity: 100 } };
+        f(ev, is);
+      });
+      const r = montar();
+      expect(r.ok && [r.dados.tipoAnuncio, r.dados.precoPix, r.dados.qualidade.disponivel, r.dados.qualidade.disponivelTexto])
+        .toEqual(['gold_pro', 115.33, 100, '+50 disponíveis']);
+      const gs = montar((ev) => { ev.listing_type_id = 'gold_special'; });
+      expect(gs.ok && gs.dados.tipoAnuncio).toBe('gold_special');
+      // Nada presumido: outro tipo, outro item, cupom não aplicado/não Pix, base diferente do preço lido, pix ≥ preço.
+      const nulos: [string, (ev: any, is: any) => void][] = [
+        ['free', (ev) => { ev.listing_type_id = 'free'; ev.benefits = undefined; }],
+        ['outro item', (_ev, is) => { is.track = { melidata_event: { event_data: { item_id: 'MLB1234567890', seller_id: 123456, category_id: 'MLB1000001' } } }; is.components.track.melidata_event.event_data.item_id = 'MLB5555555555'; }],
+      ];
+      for (const [, f] of nulos) {
+        const x = montar(f);
+        expect(x.ok && [x.dados.tipoAnuncio, x.dados.precoPix]).toEqual([null, null]);
+      }
+      const semPix: ((c: any) => void)[] = [
+        (c) => { c.status = 'pending'; },
+        (c) => { c.source = 'coupon'; },
+        (c) => { c.base_price.value = 120; },
+        (c) => { c.partial_price.value = 118.9; },
+        (c) => { c.partial_price.value = 0; },
+        (c) => { c.partial_price = undefined; },
+      ];
+      for (const f of semPix) {
+        const x = montar((ev) => f(ev.benefits.coupons[0]));
+        expect(x.ok && x.dados.precoPix).toBeNull();
+        expect(x.ok && x.dados.tipoAnuncio).toBe('gold_pro');
+      }
+      for (const d of ['Último disponível!', 'Estoque disponível', '', 50]) {
+        const x = montar((_ev, is) => { is.components.available_quantity.picker.description = d; });
+        expect(x.ok && x.dados.qualidade.disponivelTexto).toBeNull();
+        expect(x.ok && x.dados.qualidade.disponivel).toBe(100);
+      }
+      const mil = montar((_ev, is) => { is.components.available_quantity.picker.description = '(1.000 disponíveis)'; });
+      expect(mil.ok && mil.dados.qualidade.disponivelTexto).toBe('1.000 disponíveis');
     });
     it('sem item no evento: em /p/ o id do estado (catálogo) não vira item', () => {
       expect(cat((is) => { delete is.components.track.melidata_event.event_data.item_id; })).toEqual({ ok: false, motivo: 'campo_ausente:mlItemId' });

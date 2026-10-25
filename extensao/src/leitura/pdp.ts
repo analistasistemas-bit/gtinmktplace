@@ -1,5 +1,5 @@
 import type { EntradaAnuncio } from '../../../supabase/functions/_shared/extensao/analisar-anuncio.ts';
-import type { DadosQualidade } from '../compartilhado/qualidade';
+import { TEXTO_DISPONIVEL, type DadosQualidade } from '../compartilhado/qualidade';
 
 // Caminhos usados (observados em 2026-10-21), todos tolerantes à variação por componente:
 //  script#__NORDIC_RENDERING_CTX__ -> texto `_n.ctx.r = {...};_n.ctx.r.assets` -> appProps.pageProps.initialState
@@ -23,12 +23,20 @@ import type { DadosQualidade } from '../compartilhado/qualidade';
 //  (indexado) {pictures[{id,width,height}], clips.shorts[]}; descrição em description.content (content_left[] no
 //  item); disponibilidade em available_quantity.quantity_selector.available_quantity; garantia em
 //  buy_benefits.benefits[].text (só existe quando o ML exibe).
+// Auditoria × Avant (medido em 2026-10-25, /p/ MLB32466350, item MLB4053374163; mesmos ids no layout de item):
+//  tipo em event_data.listing_type_id (gold_pro/gold_special); Pix em event_data.benefits.coupons[] com source "pix",
+//  status "applied", base_price.value (= preço lido) e partial_price.value; texto "(+50 disponíveis)" em
+//  available_quantity.picker.description. Tudo do evento cujo item_id é o do anúncio.
 
 export type DadosAnuncio = Omit<EntradaAnuncio, 'eanDaBusca'> & {
   vendidosTexto: string | null;
   titulo: string;
   /** Vendedor é loja oficial do ML (nome só quando o seller_summary do mesmo vendedor o traz); null = não comprovado. */
   lojaOficial: { nome: string | null } | null;
+  /** listing_type_id do evento do próprio item; outro valor ou ausente = null. */
+  tipoAnuncio: 'gold_pro' | 'gold_special' | null;
+  /** Preço no Pix exibido pelo ML (cupom aplicado sobre o preço lido); null = não exibido. */
+  precoPix: number | null;
   /** Dados brutos da Qualidade do anúncio (Task 17); campos null = não lidos na página. */
   qualidade: DadosQualidade;
 };
@@ -143,7 +151,10 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
     : null;
   const shorts = get(galeria, 'clips', 'shorts');
   const descricaoTexto = get(porId('description', 'content_left'), 'content');
-  const disp = get(porId('available_quantity', 'short_description'), 'quantity_selector', 'available_quantity');
+  const dispComp = porId('available_quantity', 'short_description');
+  const disp = get(dispComp, 'quantity_selector', 'available_quantity');
+  const dispTxt = get(dispComp, 'picker', 'description');
+  const disponivelTexto = typeof dispTxt === 'string' ? dispTxt.replace(/[()]/g, '').trim() : '';
   const garantia = lista(get(porId('buy_benefits', 'short_description', 'content_right'), 'benefits'))
     .map((b) => b.text).find((t): t is string => typeof t === 'string' && /garantia/i.test(t)) ?? null;
   const qualidade: DadosQualidade = {
@@ -152,7 +163,16 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
     descricao: typeof descricaoTexto === 'string' ? descricaoTexto.trim().length : null,
     garantia,
     disponivel: typeof disp === 'number' && Number.isInteger(disp) && disp >= 0 ? disp : null,
+    disponivelTexto: TEXTO_DISPONIVEL.test(disponivelTexto) ? disponivelTexto : null,
   };
+
+  // Tipo e Pix: só do evento do próprio item (mesma regra do preço); nada presumido.
+  const evItem = [get(estado, 'track', 'melidata_event', 'event_data'), evComp].find((e) => get(e, 'item_id') === mlItemId);
+  const tipo = get(evItem, 'listing_type_id');
+  const tipoAnuncio = tipo === 'gold_pro' || tipo === 'gold_special' ? tipo : null;
+  const cupomPix = lista(get(evItem, 'benefits', 'coupons')).find((c) => c.source === 'pix' && c.status === 'applied');
+  const pix = numero(get(cupomPix, 'partial_price', 'value'));
+  const precoPix = cupomPix && numero(get(cupomPix, 'base_price', 'value')) === preco && pix > 0 && pix < preco ? pix : null;
 
   const sub = buscar(estado, 'subtitle_label', ehObj) as Obj | undefined;
   const vendidosTexto = typeof sub?.text === 'string' ? (sub.text.match(/\+?[\d.,]+\s*(?:mil\s+)?vendidos?/i)?.[0] ?? null) : null;
@@ -173,6 +193,8 @@ export function lerAnuncio(doc: Document, caminho = doc.location?.pathname ?? ''
       vendidosTexto,
       titulo,
       lojaOficial,
+      tipoAnuncio,
+      precoPix,
       qualidade,
     },
   };

@@ -17,7 +17,12 @@ export interface DadosQualidade {
   garantia: string | null;
   /** Disponibilidade exibida pelo seletor de quantidade (indício, não estoque real). */
   disponivel: number | null;
+  /** Texto do ML ao lado do seletor ("+50 disponíveis"); null = não exibido. Ausente em estado antigo. */
+  disponivelTexto: string | null;
 }
+
+/** Texto de disponibilidade aceito ("+50 disponíveis", "1.000 disponíveis"). */
+export const TEXTO_DISPONIVEL = /^\+?\d[\d.]*\s+disponíve/i;
 
 export type EstadoItem = 'ok' | 'atencao' | 'nao_informado';
 export interface ItemQualidade { chave: string; rotulo: string; estado: EstadoItem; valor: string }
@@ -54,7 +59,8 @@ export function avaliarQualidade(d: DadosQualidade): Qualidade {
         ? { chave: 'garantia', rotulo: 'Garantia', estado: 'atencao', valor: 'Sem garantia' }
         : { chave: 'garantia', rotulo: 'Garantia', estado: 'ok', valor: d.garantia.trim().replace(/\.$/, '') },
     d.disponivel == null ? NAO_INFORMADO('disponivel', 'Disponível')
-      : { chave: 'disponivel', rotulo: 'Disponível', estado: d.disponivel < MIN_DISPONIVEL ? 'atencao' : 'ok', valor: num(d.disponivel) },
+      // Valor exibido = o do ML ("+50") quando a página mostra; o estado segue o número do seletor.
+      : { chave: 'disponivel', rotulo: 'Disponível', estado: d.disponivel < MIN_DISPONIVEL ? 'atencao' : 'ok', valor: d.disponivelTexto?.match(/^\+?\d[\d.]*/)?.[0] ?? num(d.disponivel) },
   ];
   return { itens, atencao: itens.filter((i) => i.estado === 'atencao').length, fotosFracas };
 }
@@ -79,5 +85,6 @@ export function normalizarQualidade(v: unknown): DadosQualidade | null {
     descricao: inteiroOuNulo(o.descricao, 100000),
     garantia: typeof o.garantia === 'string' && o.garantia.length <= 160 ? o.garantia : null,
     disponivel: inteiroOuNulo(o.disponivel, 10000000),
+    disponivelTexto: typeof o.disponivelTexto === 'string' && o.disponivelTexto.length <= 40 && TEXTO_DISPONIVEL.test(o.disponivelTexto) ? o.disponivelTexto : null,
   };
 }

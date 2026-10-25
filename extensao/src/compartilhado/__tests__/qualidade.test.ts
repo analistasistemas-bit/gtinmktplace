@@ -8,6 +8,7 @@ const bom: DadosQualidade = {
   descricao: 800,
   garantia: '90 dias de garantia de fábrica.',
   disponivel: 120,
+  disponivelTexto: null,
 };
 const item = (d: DadosQualidade, chave: string) => avaliarQualidade(d).itens.find((i) => i.chave === chave)!;
 
@@ -52,7 +53,23 @@ describe('avaliarQualidade (ADR-0189 D-10, Task 17)', () => {
     expect(normalizarQualidade(bom)).toEqual(bom);
     expect(normalizarQualidade(null)).toBeNull();
     expect(normalizarQualidade({ fotos: [{ id: 1 }, { id: 'ok', largura: -1, altura: 1.5 }], clips: 'x', descricao: 1e9, garantia: 7, disponivel: 3 }))
-      .toEqual({ fotos: [{ id: 'ok', largura: null, altura: null }], clips: null, descricao: null, garantia: null, disponivel: 3 });
+      .toEqual({ fotos: [{ id: 'ok', largura: null, altura: null }], clips: null, descricao: null, garantia: null, disponivel: 3, disponivelTexto: null });
+  });
+
+  it('disponível: mostra o texto do ML ("+50") quando há; o estado segue o número (auditoria × Avant, 25/10)', () => {
+    expect(item({ ...bom, disponivel: 100, disponivelTexto: '+50 disponíveis' }, 'disponivel')).toMatchObject({ estado: 'ok', valor: '+50' });
+    expect(item({ ...bom, disponivel: 16, disponivelTexto: '+50 disponíveis' }, 'disponivel')).toMatchObject({ estado: 'atencao', valor: '+50' });
+    expect(item({ ...bom, disponivel: null, disponivelTexto: '+50 disponíveis' }, 'disponivel').estado).toBe('nao_informado');
+    // Estado antigo (sem o campo) segue com o número.
+    const { disponivelTexto: _, ...antigo } = bom;
+    expect(item(antigo as DadosQualidade, 'disponivel').valor).toBe('120');
+  });
+
+  it('normalizarQualidade: disponivelTexto só string curta no formato "+N disponíveis"', () => {
+    expect(normalizarQualidade({ ...bom, disponivelTexto: '+50 disponíveis' })!.disponivelTexto).toBe('+50 disponíveis');
+    for (const ruim of ['x'.repeat(41), `+5${'0'.repeat(30)} disponíveis`, 'Último disponível', 50, null]) {
+      expect(normalizarQualidade({ ...bom, disponivelTexto: ruim })!.disponivelTexto).toBeNull();
+    }
   });
 
   it('galeria não lida: fotos, resolução e Clips não informados (nunca ok)', () => {

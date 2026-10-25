@@ -9,7 +9,7 @@ const f = (id: string, l: number | null, a: number | null) => ({ id, largura: l,
 // Barroco Multicolor (medido em 22/10): 6 fotos, 5 abaixo de 1200, 1 Clip, 415 caracteres, sem garantia exibida, 16 disponíveis.
 const barroco: DadosQualidade = {
   fotos: [f('a', 521, 749), f('b', 1020, 807), f('c', 700, 1050), f('d', 1200, 1200), f('e', 700, 933), f('g', 700, 1050)],
-  clips: 1, descricao: 415, garantia: null, disponivel: 16,
+  clips: 1, descricao: 415, garantia: null, disponivel: 16, disponivelTexto: null,
 };
 
 describe('Qualidade do anúncio (Task 17)', () => {
@@ -38,16 +38,17 @@ describe('Qualidade do anúncio (Task 17)', () => {
   });
 
   it('"Tudo certo" só com os seis ok; sem alerta mas com item não informado: "Sem alertas"', () => {
-    const ok = { fotos: [1, 2, 3, 4, 5].map((n) => f(`f${n}`, 1200, 1200)), clips: 2, descricao: 900, garantia: '12 meses de garantia de fábrica.', disponivel: 80 };
+    const ok = { fotos: [1, 2, 3, 4, 5].map((n) => f(`f${n}`, 1200, 1200)), clips: 2, descricao: 900, garantia: '12 meses de garantia de fábrica.', disponivel: 80, disponivelTexto: '+50 disponíveis' };
     render(<Qualidade dados={ok} mlItemId="MLB1" />);
     screen.getByText('Tudo certo');
+    screen.getByText('+50'); // texto do ML na linha Disponível (auditoria × Avant)
     cleanup();
     render(<Qualidade dados={{ ...ok, garantia: null }} mlItemId="MLB1" />);
     screen.getByText('Sem alertas');
   });
 
   it('nada lido na página: o bloco não aparece', () => {
-    const { container } = render(<Qualidade dados={{ fotos: null, clips: null, descricao: null, garantia: null, disponivel: null }} mlItemId="MLB1" />);
+    const { container } = render(<Qualidade dados={{ fotos: null, clips: null, descricao: null, garantia: null, disponivel: null, disponivelTexto: null }} mlItemId="MLB1" />);
     expect(container.innerHTML).toBe('');
   });
 });
