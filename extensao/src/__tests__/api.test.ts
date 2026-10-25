@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { geracaoAtual } from '../abas';
 import { atualizarSessao, chamarExtensao } from '../api';
-import { identidadeAtual, obterSessaoValida, perfilAtual } from '../sessao';
-import { instalarChromeFalso, logar } from './chrome-falso';
+import { entrar, sair } from '../credenciais';
+import { definirIdentidade, identidadeAtual, obterSessaoValida, perfilAtual } from '../sessao';
+import { instalarChromeFalso, local, logar } from './chrome-falso';
 
 const fetchFalso = vi.fn();
 
@@ -235,5 +236,62 @@ describe('atualizarSessao', () => {
     });
     expect(await atualizarSessao()).toBe(false);
     expect(await identidadeAtual()).toBeNull();
+  });
+});
+
+// Fix round 1 (Codex): sair()/entrar() reais com o mesmo usuário no meio da chamada.
+describe('sair/entrar durante a chamada', () => {
+  const EDGE = '/functions/v1/extensao';
+  const chamadasEdge = () => fetchFalso.mock.calls.filter(([u]) => String(u).endsWith(EDGE));
+  // Auth real (credenciais.ts) com fetch controlado: logout ok; login devolve outro par do mesmo usuário.
+  const auth = (edge: () => Response) => fetchFalso.mockImplementation(async (u: string) => {
+    if (String(u).includes('/auth/v1/logout')) return new Response(null, { status: 204 });
+    if (String(u).includes('grant_type=password')) {
+      return resposta(200, { access_token: 'tok-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'u1' } });
+    }
+    return edge();
+  });
+  const sairEntrar = async () => {
+    await sair();
+    expect(await entrar('d@x.com', 'senha')).toEqual({ ok: true });
+  };
+
+  it('troca depois de obter o token: a ação não sai com o token antigo nem entrega o resultado', async () => {
+    await conectar();
+    auth(() => envelope({ ok: 1 }));
+    // Arma a troca na 1ª leitura da geração da sessão feita DEPOIS de o token ser lido.
+    const getLocal = chrome.storage.local.get;
+    const getSessao = chrome.storage.session.get;
+    let tokenLido = false;
+    let armado = true;
+    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => { tokenLido = true; return getLocal(k); }) as never;
+    chrome.storage.session.get = vi.fn(async (k: string | string[] | null) => {
+      if (armado && tokenLido && k === 'geracao-sessao') {
+        armado = false;
+        await sairEntrar();
+        await definirIdentidade('u1:org1:', PERFIL2); // nova sessão já com a mesma identidade
+      }
+      return getSessao(k);
+    }) as never;
+    expect(await chamarExtensao({ acao: 'salvar_vinculo' })).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(armado).toBe(false);
+    expect(chamadasEdge().filter(([, i]) => i.headers.Authorization === 'Bearer tok-abc')).toEqual([]);
+  });
+
+  it('troca entre a checagem da resposta da sessao e a gravação: identidade/perfil antigos não vão para as credenciais novas', async () => {
+    logar({ accessToken: 'tok-abc', identidade: null, perfil: null });
+    let respondeu = false;
+    auth(() => { respondeu = true; return envelope(PERFIL2, 'u1:org1:'); });
+    // Arma a troca na 1ª leitura das credenciais depois da resposta da edge (checagem final de postar).
+    const getLocal = chrome.storage.local.get;
+    let armado = true;
+    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
+      const v = await getLocal(k);
+      if (armado && respondeu) { armado = false; await sairEntrar(); }
+      return v;
+    }) as never;
+    expect(await atualizarSessao()).toBe(false);
+    expect(armado).toBe(false);
+    expect(local.credenciais).toMatchObject({ accessToken: 'tok-novo', identidade: null, perfil: null });
   });
 });

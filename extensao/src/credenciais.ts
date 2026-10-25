@@ -28,6 +28,8 @@ export function naFila<T>(op: () => Promise<T>): Promise<T> {
 // abas.ts: aquela sobe também em troca de identidade/suporte, e descartar um par já rotacionado deslogaria.
 // Só memória: o que estava em voo morre junto com o SW.
 let geracao = 0;
+/** Leitura síncrona: quem leva a geração até uma gravação na fila a confere em `regravarNaFila`. */
+export const geracaoCredenciais = () => geracao;
 // Tentativa de login mais recente: só ela pode gravar (cliques repetidos em "Entrar" com respostas fora de ordem).
 let tentativaLogin = 0;
 
@@ -53,9 +55,9 @@ async function gravarSe(gen: number, g: Guardado, aindaVale = () => true): Promi
 }
 
 /** Só na fila: regrava as credenciais guardadas com `muda` (null = não grava). Devolve as anteriores se gravou.
- *  Saída no meio (`sair` roda fora da fila) vence: nada é regravado. */
-export async function regravarNaFila(muda: (g: Guardado) => Guardado | null): Promise<Guardado | null> {
-  const gen = geracao;
+ *  Saída no meio (`sair` roda fora da fila) vence: nada é regravado. `gen` = geração de quando o pedido começou
+ *  (padrão: agora); sair/entrar desde então → nada é regravado. */
+export async function regravarNaFila(muda: (g: Guardado) => Guardado | null, gen = geracao): Promise<Guardado | null> {
   const g = await lerCredenciais();
   const novo = g && muda(g);
   return novo && (await gravarSe(gen, novo)) ? g! : null;

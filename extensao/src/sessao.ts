@@ -3,8 +3,17 @@
 // A identidade `usuário:org:suporte` (sem segredo) vem da ação `sessao` da edge via definirIdentidade: análises
 // guardadas por aba valem só para ela — troca de identidade, saída ou refresh recusado apagam tudo
 // (dado financeiro de outra org).
-import { limparEstadosDasAbas } from './abas';
-import { apagarCredenciais, lerCredenciais, naFila, regravarNaFila, tokenValido, type Perfil, type TokenValido } from './credenciais';
+import { geracaoAtual, limparEstadosDasAbas } from './abas';
+import { apagarCredenciais, geracaoCredenciais, lerCredenciais, naFila, regravarNaFila, tokenValido, type Perfil, type TokenValido } from './credenciais';
+
+/** Contexto de um pedido: geração das credenciais (sobe em login/saída, síncrona) + geração da sessão
+ *  (GERACAO_SESSAO: login, saída, troca de identidade, fim de suporte). Lida ANTES do token. */
+export interface Marca { credenciais: number; sessao: number }
+export async function marcaAtual(): Promise<Marca> {
+  const credenciais = geracaoCredenciais();
+  return { credenciais, sessao: await geracaoAtual() };
+}
+export const mesmaMarca = (a: Marca, b: Marca) => a.credenciais === b.credenciais && a.sessao === b.sessao;
 
 // usuário obrigatório; org vazia = perfil ainda carregando; suporte vazio = fora de suporte.
 const IDENTIDADE = /^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/;
@@ -50,11 +59,14 @@ export async function perfilAtual(): Promise<Perfil | null> {
 
 /** Grava identidade e perfil da ação `sessao`. Ignorada (false) sem credenciais, com identidade malformada ou de
  *  outro usuário (resposta pedida antes de sair/entrar com outra conta). Identidade conhecida que muda limpa as abas. */
-export function definirIdentidade(identidade: string, perfil: Perfil): Promise<boolean> {
+export function definirIdentidade(identidade: string, perfil: Perfil, marca?: Marca): Promise<boolean> {
   return naFila(async () => {
+    // Pedido de outra geração (sair/entrar, troca, fim de suporte desde a marca): não grava. Na fila, a geração da
+    // sessão só muda junto com a das credenciais (sair), que regravarNaFila confere sem await até o set.
+    if (marca && (await geracaoAtual()) !== marca.sessao) return false;
     const valida = typeof identidade === 'string' && IDENTIDADE.test(identidade);
     // Identidade nova primeiro: chamada em voo da antiga já se vê descartada.
-    const antes = await regravarNaFila((g) => valida && identidade.split(':')[0] === g.userId ? { ...g, identidade, perfil } : null);
+    const antes = await regravarNaFila((g) => valida && identidade.split(':')[0] === g.userId ? { ...g, identidade, perfil } : null, marca?.credenciais);
     if (!antes) return false;
     if (antes.identidade !== null && antes.identidade !== identidade) await limparEstadosDasAbas();
     return true;
