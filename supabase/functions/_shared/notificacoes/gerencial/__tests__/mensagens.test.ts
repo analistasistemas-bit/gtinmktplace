@@ -240,3 +240,46 @@ describe('encurtar / títulos nas mensagens', () => {
     expect(m).toContain(`⚠️ ${e}: sem custo cadastrado`);
   });
 });
+
+describe('resumo: estoque acabando e prejuízo nomeado', () => {
+  const it4 = [
+    { codigo: 'A', nome: 'Shampoo X', estoque: 0, porDia: 3, cobertura: 0, zerado: true, lucro30: 900 },
+    { codigo: 'B', nome: 'Máscara Y', estoque: 8, porDia: 2.25, cobertura: 3, zerado: false, lucro30: 700 },
+    { codigo: 'C', nome: 'Touca Z', estoque: 1, porDia: 0.5, cobertura: 1, zerado: false, lucro30: 500 },
+    { codigo: 'D', nome: 'Pente W', estoque: 5, porDia: 1, cobertura: 5, zerado: false, lucro30: 400 },
+  ];
+  const prej = [
+    { nome: 'Item A', valor: -40.5, vendas: 3 }, { nome: 'Item B', valor: -20, vendas: 1 },
+    { nome: 'Item C', valor: -10, vendas: 2 }, { nome: 'Item D', valor: -4.1, vendas: 1 },
+  ];
+  const base = { ...resumo, atencao: { abaixoMinimo: 3, prejuizo: 4, semCusto: 2, prejuizos: prej } };
+
+  it('bloco 📦 com 3 itens + e mais, entre o mês e o top', () => {
+    const r = montarResumoDiario({ ...base, estoque: it4 });
+    expect(r).toContain([
+      '📦 Estoque acabando',
+      '• Shampoo X — zerado (vendia 3/dia)',
+      '• Máscara Y — 8 un. · 2,3/dia · 3 dias',
+      '• Touca Z — 1 un. · 0,5/dia · 1 dia',
+      '• e mais 1',
+    ].join('\n'));
+    const pos = ['📆 Outubro', '📦 Estoque', '🏆 Top', '⚠️ Atenção'].map((s) => r.indexOf(s));
+    expect(pos.every((x) => x >= 0) && [...pos].sort((a, b) => a - b).join() === pos.join()).toBe(true);
+  });
+  it('estoque null ou vazio → sem seção', () => {
+    expect(montarResumoDiario({ ...base, estoque: null })).not.toContain('📦');
+    expect(montarResumoDiario({ ...base, estoque: [] })).not.toContain('📦');
+  });
+  it('prejuízo nomeado: 3 linhas + e mais N com prejuízo; outras contagens seguem', () => {
+    expect(montarResumoDiario(base)).toContain([
+      '⚠️ Atenção', '• 3 abaixo do mínimo',
+      '• Prejuízo: Item A — −R$ 40,50 (3 vendas)',
+      '• Prejuízo: Item B — −R$ 20,00 (1 venda)',
+      '• Prejuízo: Item C — −R$ 10,00 (2 vendas)',
+      '• e mais 1 com prejuízo', '• 2 sem custo',
+    ].join('\n'));
+  });
+  it('prejuizos vazio com contagem > 0 → linha contada antiga', () => {
+    expect(montarResumoDiario({ ...base, atencao: { ...base.atencao, prejuizos: [] } })).toContain('• 4 com prejuízo');
+  });
+});

@@ -114,19 +114,35 @@ export interface DadosResumo {
 
 const itens = (xs: (string | null)[]): string[] => xs.filter((x): x is string => !!x).map((x) => `• ${x}`);
 
+const MAX_LINHAS = 3;
+/** Até 3 linhas + `• e mais N{sufixo}`. */
+const limitar = (linhas: string[], sufixo = ''): string[] =>
+  linhas.length > MAX_LINHAS ? [...linhas.slice(0, MAX_LINHAS), `• e mais ${linhas.length - MAX_LINHAS}${sufixo}`] : linhas;
+
+/** 1 casa decimal em pt-BR, sem `,0`. */
+const porDiaTxt = (n: number): string => `${Number(n.toFixed(1))}`.replace('.', ',');
+
+const linhaEstoque = (e: ItemEstoque): string =>
+  e.zerado ? `• ${encurtar(e.nome)} — zerado (vendia ${porDiaTxt(e.porDia)}/dia)`
+    : `• ${encurtar(e.nome)} — ${e.estoque} un. · ${porDiaTxt(e.porDia)}/dia · ${e.cobertura} ${e.cobertura === 1 ? 'dia' : 'dias'}`;
+
 export function montarResumoDiario(d: DadosResumo): string {
   const { atencao: a, devolucoes: dv, promocoes: p } = d;
+  const prejuizos = a.prejuizos.map((x) =>
+    `• Prejuízo: ${encurtar(x.nome)} — ${brl(x.valor)} (${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'})`);
   const k: KpisPeriodo = { hoje: d.ontem, mes: d.mes, anterior: d.anterior, rotuloMes: d.rotuloMes, rotuloAnterior: d.rotuloAnterior };
   return blocos(
     [`📊 Ontem · ${d.dia.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$2/$1')}`],
     [...linhasKpis(d.ontem), ...linhasLucro(d.lucroOntem)],
     blocoPeriodo(`📆 ${d.rotuloMes}`, d.mes, linhaVariacao(k)),
+    secao('📦 Estoque acabando', limitar((d.estoque ?? []).map(linhaEstoque))),
     secao('🏆 Top lucro', d.top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`)),
-    secao('⚠️ Atenção', itens([
-      a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null,
-      a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null,
-      a.semCusto > 0 ? `${a.semCusto} sem custo` : null,
-    ])),
+    secao('⚠️ Atenção', [
+      ...itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null]),
+      // Sem lista nomeada (não deveria ocorrer) cai na contagem.
+      ...(prejuizos.length ? limitar(prejuizos, ' com prejuízo') : itens([a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null])),
+      ...itens([a.semCusto > 0 ? `${a.semCusto} sem custo` : null]),
+    ]),
     secao('↩️ Devoluções', itens([
       dv.estornado > 0 ? `${brl(dv.estornado)} estornados` : null,
       dv.prazoProximo > 0 ? `${dv.prazoProximo} ${dv.prazoProximo === 1 ? 'reclamação' : 'reclamações'} com prazo em até 48 h` : null,
