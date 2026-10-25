@@ -169,9 +169,9 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `monitorar-moderados` | `0 */6 * * *` | *(sem body)* | 3 |
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
-| `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: (a preencher no deploy) |
-| `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 3 — scheduleId: (a preencher no deploy) |
-| `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 3 — scheduleId: (a preencher no deploy) |
+| `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 1 — scheduleId: `scd_5BZmTcwbjRDRUsmaiUL28CDs27dg` |
+| `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
+| `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
@@ -2086,7 +2086,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Acesso / usuários
 
-- **notificar-carrinho / resumo-diario / telegram-bot** (ADR-0190, código pronto, deploy pendente) — notificação gerencial por carrinho, resumo diário das 08:00 BRT e comandos de leitura do bot (`/hoje /ontem /mes /top /ajuda`), todos `verify_jwt=false`. Lógica em `_shared/notificacoes/gerencial/`; importam `_shared/notificacoes/config.ts`/`categorias.ts`, então mudança ali exige redeploy das três. Secret `TELEGRAM_WEBHOOK_KEY` (só edge). **`sync-venda`** passou a chamar `registrarCarrinho` (best-effort) após pedido `paid`. **`usuarios`** ganhou a action `registrar_webhook_telegram` (admin da org: `getMe` → `telegram_bot_id`, `setWebhook` com secret HMAC, lista de comandos).
+- **notificar-carrinho / resumo-diario / telegram-bot** (ADR-0190, em produção desde 2026-10-25) — notificação gerencial por carrinho, resumo diário das 08:00 BRT e comandos de leitura do bot (`/hoje /ontem /mes /top /ajuda`), todos `verify_jwt=false`. Lógica em `_shared/notificacoes/gerencial/`; importam `_shared/notificacoes/config.ts`/`categorias.ts`, então mudança ali exige redeploy das três. Secret `TELEGRAM_WEBHOOK_KEY` (só edge). **`sync-venda`** passou a chamar `registrarCarrinho` (best-effort) após pedido `paid`. **`usuarios`** ganhou a action `registrar_webhook_telegram` (admin da org: `getMe` → `telegram_bot_id`, `setWebhook` com secret HMAC, lista de comandos).
 - **usuarios** — gestão de usuários por **admin**, escopada à organização do chamador (ADR-0047 +
   ADR-0027). `verify_jwt=true`; valida que o chamador é admin ativo com `org_id`
   (`requireUser` + `profiles`) e usa `service_role`. Ações: `invite` (`auth.admin.inviteUserByEmail`

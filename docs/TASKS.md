@@ -1,11 +1,12 @@
 # PubliAI — Tasks
 
-## Notificação gerencial de venda, resumo diário e comandos Telegram (ADR-0190) — código pronto, deploy pendente — 2026-10-25
+## Notificação gerencial de venda, resumo diário e comandos Telegram (ADR-0190) — em produção (main `15e9c496`) — 2026-10-25
 
 - [x] Tasks 1-9 implementadas e revisadas na branch `worktree-notificacao-gerencial-grilling` (categorias `vendas_gerencial`/`resumo_diario`, `vendas_kpis_janela`, `notificacao_carrinho` + sweeper, edges `notificar-carrinho`, `resumo-diario`, `telegram-bot`, ação `registrar_webhook_telegram`, UI de usuários). Preflight completo verde (768 arquivos / 8987 testes).
 - [x] Docs: emenda de implementação no ADR-0190, glossário (11 categorias), `edge-functions.md`, `modelo-de-dados.md`.
-- [ ] Deploy: secret `TELEGRAM_WEBHOOK_KEY`, `db push` (4 migrations `20261025013718`..`20261025030321`), edges (`notificar-carrinho`, `resumo-diario`, `telegram-bot`, `usuarios`, `sync-venda` + as que importam `_shared/notificacoes/`), schedules QStash (`0 11 * * *` resumo; `*/5` carrinho e bot com `{"varrer":true}`).
-- [ ] Validação real na DSA (comandos, resumo manual, 1 GET real de `/packs`, `CPUTime` < 1.000 ms) e conferência do diretor da Hairfly (admin com chat privado); depois ADR para Aceito com o SHA do merge.
+- [x] Deploy: secret `TELEGRAM_WEBHOOK_KEY`, `db push` (4 migrations `20261025013718`..`20261025030321`), edges (`notificar-carrinho`, `resumo-diario`, `telegram-bot`, `usuarios`, `sync-venda` + as que importam `_shared/notificacoes/`), schedules QStash (`0 11 * * *` resumo; `*/5` carrinho e bot com `{"varrer":true}`).
+- [x] Validação real na DSA: assinatura pela tela, trava server-side para não-admin (400), webhook registrado (5 comandos), `/ajuda /hoje /mes /top /ontem` respondidos na 1ª tentativa, secret errado → 401, resumos de 22, 23 e 24/10 gerados e conferidos contra Faturamento (mês R$ 15.383,25 · 184 pedidos · ticket R$ 83,60). Diretor da Hairfly já é admin com chat privado (falta só assinar). ADR → Aceito.
+- [ ] Pendências: carrinho real na próxima venda paga da DSA (conferir mensagem e `notificacao_carrinho.status = enviado`); GET real de `/packs` (formato); `CPUTime` pelo painel antes de ligar para a Avil (endpoint de analytics respondeu 410).
 
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 

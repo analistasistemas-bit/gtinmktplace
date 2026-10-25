@@ -15,7 +15,7 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
-> **🟡 Notificação gerencial + resumo diário + bot Telegram ([[0190-notificacao-gerencial-de-venda-e-comandos-telegram|ADR-0190]]) — código pronto (2026-10-25).**
+> **🟡 Notificação gerencial + resumo diário + bot Telegram ([[0190-notificacao-gerencial-de-venda-e-comandos-telegram|ADR-0190]]) — em produção desde 2026-10-25 (main `15e9c496`).**
 > Falta deploy (secret, 4 migrations, edges `notificar-carrinho`/`resumo-diario`/`telegram-bot`, schedules QStash) e validação real na DSA; só admin, chat privado.
 >
 > **🟢 Extensão PubliAI para Chrome ([[0189-extensao-publiai-navegador|ADR-0189]]) — 4 fatias entregues (2026-10-23)**

@@ -1,6 +1,6 @@
 # ADR-0190 — Notificação gerencial de venda, resumo diário e comandos no Telegram
 
-**Status:** Proposto — design fechado em entrevista (grill-with-docs, 2026-10-24), consultoria do Codex `gpt-6.1-sol` high incorporada com aprovação do Diego (2026-10-24); falta plano de implementação + revisão do plano
+**Status:** Aceito — em produção desde 2026-10-25 (main `15e9c496`; migrations aplicadas, 23 edges implantadas, schedules ativos, validado na DSA). design fechado em entrevista (grill-with-docs, 2026-10-24), consultoria do Codex `gpt-6.1-sol` high incorporada com aprovação do Diego (2026-10-24); falta plano de implementação + revisão do plano
 **Data:** 2026-10-24
 **Decisores:** Diego
 **Origem:** pedido do diretor de uma organização cliente (Hairfly, 2026-10-24): "a notificação deveria vir com o valor total da venda, não o do produto"; KPIs (acumulado do período, % de crescimento, ticket médio); "não preciso ficar entrando na ferramenta pra saber se preciso mexer em estratégia"; comando `/resumo`.
@@ -89,4 +89,4 @@ O que a implementação decidiu além do texto acima. Migrations `20261025013718
 - **D-6, desvio**: o resumo diário **não** usa `_shared/rodada` (fan-out com cursor do ADR-0173). A edge, chamada pelo schedule sem body, publica um job por org no QStash; cada job lê vendas paginadas (`lerPaginas`) com teto de **5.000 vendas por execução** (`LIMITE_VENDAS_POR_EXECUCAO`; acima disso responde `VolumeAcimaDoLimite` em vez de truncar). Volume medido hoje fica abaixo do teto; a chave por dia evita duplicata em retry.
 - **D-7, in-app**: a notificação in-app das duas categorias vale para todo admin assinante, mesmo sem `chat_id` ou com Telegram da org inativo; o chat privado é exigência só do canal Telegram. `usuarios` recusa assinar as categorias a não-admin.
 - **Constraints**: `notificacoes_categoria_check` e `profiles_telegram_categorias_validas` passam a aceitar `vendas_gerencial` e `resumo_diario` (11 categorias).
-- **Deploy**: o status segue "Proposto" até o deploy (secret, `db push`, edges, schedules `0 11 * * *`, `*/5` do carrinho e `*/5` do bot) e o merge.
+- **Deploy (2026-10-25)**: merge fast-forward na main (`8d63592d`, depois `4d007a8f` e `15e9c496` com ajustes de texto vistos em dado real: top só com lucro positivo, títulos encurtados em 40 caracteres, sinal `−` nos percentuais); secret `TELEGRAM_WEBHOOK_KEY`; `db push` das 4 migrations; 23 edges implantadas; schedules `resumo-diario` `0 11 * * *`, varreduras `*/5` do carrinho e do bot (`Upstash-Retries: 1`). Pré-merge do Codex achou `registrarCarrinho` antes da baixa de estoque com `/packs` sem timeout (risco de sobrevenda) — corrigido antes do merge (`8d63592d`).
