@@ -1,12 +1,15 @@
 import type { MetricsWarning, OrgMetrics } from './types.ts';
 import { calcularResumo, type ResumoVendas } from './sales-summary.ts';
-import { montarAliquotaResolver, montarCustoResolver, montarMapasCusto, montarPesoResolver } from './sales-costs.ts';
+import {
+  montarAliquotaResolver, montarCustoResolver, montarMapasCusto, montarPesoResolver, type MapasCusto,
+} from './sales-costs.ts';
 import { comCustoCongelado, type CustoCongeladoRow, type Venda, type VendaItem } from './sales-types.ts';
+import type { JanelaIso } from '../notificacoes/gerencial/janelas.ts';
 
 type DbError = { message: string } | null;
 type Page = { data: Record<string, unknown>[] | null; error: DbError };
 type Query = {
-  select(columns: string): Query;
+  select(columns: string, options?: { count?: 'exact'; head?: boolean }): Query;
   eq(column: string, value: unknown): Query;
   in(column: string, values: unknown[]): Query;
   gte(column: string, value: unknown): Query;
@@ -42,6 +45,12 @@ const CACHE_COLUMNS = 'org_id,month,gross_cents,orders,ticket_cents,markup,cost_
 const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
   + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, '
   + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price, cupom_vendedor), '
+  + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
+/** ADR-0190: `SALES_COLUMNS` + `titulo` do item — a notificação gerencial nomeia o produto (prejuízo,
+ *  sem custo, top). Lista separada para não engordar a leitura da carteira, que não usa o título. */
+const COLUNAS_VENDAS_GERENCIAL = 'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
+  + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, '
+  + 'itens:ml_vendas_itens(ml_item_id, variation_id, titulo, codigo, ean, quantity, unit_price, cupom_vendedor), '
   + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 
 function addMonths(month: string, delta: number): string {
@@ -79,13 +88,27 @@ function monthKey(value: unknown): string {
   return String(value).slice(0, 7);
 }
 
-async function readPages(build: () => Query): Promise<{ rows: Record<string, unknown>[]; error: DbError }> {
+/** Teto de vendas lidas por execução do gerencial (ADR-0190): acima disso a edge para em vez de
+ *  estourar CPU/memória com um número parcial. */
+export const LIMITE_VENDAS_POR_EXECUCAO = 5000;
+export class VolumeAcimaDoLimite extends Error {}
+/** Catálogo de custo ou config tributária ilegível: o gerencial não segue com custo/imposto parciais. */
+export class ContextoIndisponivel extends Error {}
+
+/** Paginação ordenada por `range`. `maxLinhas` (opcional): lança `VolumeAcimaDoLimite` ao acumular a
+ *  linha `maxLinhas + 1`. Sem opções, lê tudo (comportamento original). */
+async function readPages(
+  build: () => Query, opcoes?: { maxLinhas?: number },
+): Promise<{ rows: Record<string, unknown>[]; error: DbError }> {
   const rows: Record<string, unknown>[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const page = await build().range(from, from + PAGE_SIZE - 1);
     if (page.error) return { rows: [], error: page.error };
     const values = page.data ?? [];
     rows.push(...values);
+    if (opcoes?.maxLinhas != null && rows.length > opcoes.maxLinhas) {
+      throw new VolumeAcimaDoLimite(`mais de ${opcoes.maxLinhas} linhas`);
+    }
     if (values.length < PAGE_SIZE) return { rows, error: null };
   }
 }
@@ -134,10 +157,10 @@ function rangeSales(sales: Venda[], start: string, end: string): Venda[] {
   });
 }
 
-type Rates = { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null };
+export type Rates = { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null };
 
 function summarize(
-  sales: Venda[], maps: ReturnType<typeof montarMapasCusto> | undefined, rates: Rates | null,
+  sales: Venda[], maps: MapasCusto | undefined, rates: Rates | null,
   now: Date, costsAvailable: boolean, configAvailable: boolean,
 ): ResumoVendas {
   const summary = calcularResumo(
@@ -192,6 +215,14 @@ type MonthComputed = {
   costsAvailable: boolean; catalogErrorMessage: string | null;
 };
 
+/** Linhas planas de `platform_org_cost_catalog` → mapas de custo/peso/origem. */
+function mapasDoCatalogo(catalogRows: Record<string, unknown>[], orgId: string): MapasCusto {
+  return montarMapasCusto(
+    catalogRows.filter((row) => sameOrg(row, orgId))
+      .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
+  );
+}
+
 /** Núcleo único de cálculo de um mês (ou fração de mês, via `end`): busca as vendas de
  *  `[startOf(month), end)`, o catálogo de custo (`p_since = startOf(month)` — ver prova em
  *  `platform_org_cost_catalog`: o `IN` do catálogo é por chave, não por linha, então restringir a
@@ -210,10 +241,7 @@ async function computeMonth(
   const catalogResult = await db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(month) });
   const catalogRows = Array.isArray(catalogResult.data) ? catalogResult.data as Record<string, unknown>[] : null;
   const costsAvailable = !catalogResult.error && catalogRows != null;
-  const maps = catalogRows == null || catalogResult.error ? undefined : montarMapasCusto(
-    catalogRows.filter((row) => sameOrg(row, orgId))
-      .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
-  );
+  const maps = catalogRows == null || catalogResult.error ? undefined : mapasDoCatalogo(catalogRows, orgId);
 
   const summary = summarize(sales, maps, configState.rates, now, costsAvailable, configState.configAvailable);
   const updated = sales.map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
@@ -533,4 +561,65 @@ export async function readOrgMetrics(
     series: seriesMonths.map((value, index) => ({ month: value, gross_cents: seriesResolved[index].gross_cents, markup: seriesResolved[index].markup })),
     warnings,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// ADR-0190: núcleo exportado para a notificação gerencial (mesmos helpers de `computeMonth`).
+// ---------------------------------------------------------------------------------------------
+export { readPages as lerPaginas };
+
+export interface ContextoCalculo { maps: MapasCusto | undefined; rates: Rates | null; custosOk: boolean; configOk: boolean }
+
+/** Config tributária + catálogo de custo (`p_since = desde`). Diferente de `computeMonth`, LANÇA
+ *  `ContextoIndisponivel` se qualquer leitura falhar: o gerencial nunca segue com custo/imposto
+ *  parciais. Config apenas não confirmada não é falha: volta `configOk: false`. */
+export async function carregarContexto(db: MetricsDb, orgId: string, desde: string): Promise<ContextoCalculo> {
+  const [configState, catalogResult] = await Promise.all([
+    loadConfigState(db, orgId),
+    db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: desde }),
+  ]);
+  if (configState.configErrored) throw new ContextoIndisponivel(`config tributária: ${configState.errorMessage}`);
+  if (catalogResult.error) throw new ContextoIndisponivel(`catálogo de custo: ${catalogResult.error.message}`);
+  if (!Array.isArray(catalogResult.data)) throw new ContextoIndisponivel('catálogo em formato inesperado');
+  return {
+    maps: mapasDoCatalogo(catalogResult.data as Record<string, unknown>[], orgId),
+    rates: configState.rates, custosOk: true, configOk: configState.configAvailable,
+  };
+}
+
+/** Vendas com `date_closed ∈ [desde, ate)`. Conta antes (`head`) e recusa acima do teto sem paginar;
+ *  a leitura também para no teto (inserções entre o count e as páginas). */
+export async function lerVendasJanela(db: MetricsDb, orgId: string, j: JanelaIso): Promise<Venda[]> {
+  const contagem = await (db.from('ml_vendas').select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId).gte('date_closed', j.desde).lt('date_closed', j.ate) as unknown as PromiseLike<
+      { count: number | null; error: DbError }>);
+  if (contagem.error) throw new Error(contagem.error.message);
+  if ((contagem.count ?? 0) > LIMITE_VENDAS_POR_EXECUCAO) {
+    throw new VolumeAcimaDoLimite(`${contagem.count} vendas na janela (teto ${LIMITE_VENDAS_POR_EXECUCAO})`);
+  }
+  const result = await readPages(() => db.from('ml_vendas').select(COLUNAS_VENDAS_GERENCIAL)
+    .eq('org_id', orgId).gte('date_closed', j.desde).lt('date_closed', j.ate)
+    .order('date_closed', { ascending: true }).order('id', { ascending: true }),
+  { maxLinhas: LIMITE_VENDAS_POR_EXECUCAO });
+  if (result.error) throw new Error(result.error.message);
+  return normalizeSales(result.rows, orgId);
+}
+
+/** `summarize` exportado (paridade dos KPIs de período com a tela/carteira). */
+export function resumirVendas(vendas: Venda[], ctx: ContextoCalculo, agora: Date): ResumoVendas {
+  return summarize(vendas, ctx.maps, ctx.rates, agora, ctx.custosOk, ctx.configOk);
+}
+
+/** Todas as orders do carrinho (`pack_id`, ou a própria order sem pack), sem janela de data: um
+ *  pack pode atravessar a meia-noite. */
+export async function lerVendasDoCarrinho(
+  db: MetricsDb, orgId: string, chave: { packId: number | null; orderId: number },
+): Promise<Venda[]> {
+  const result = await readPages(() => {
+    const q = db.from('ml_vendas').select(COLUNAS_VENDAS_GERENCIAL).eq('org_id', orgId);
+    return (chave.packId != null ? q.eq('pack_id', chave.packId) : q.eq('order_id', chave.orderId))
+      .order('order_id', { ascending: true }).order('id', { ascending: true });
+  });
+  if (result.error) throw new Error(result.error.message);
+  return normalizeSales(result.rows, orgId);
 }
