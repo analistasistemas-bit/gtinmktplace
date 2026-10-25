@@ -470,12 +470,13 @@ describe('extensao — protocolo 2 (identidade, sessao, sem_acesso)', () => {
   });
 
   // Referência FIXA: snapshots gerados rodando este mesmo teste contra o handler de a08ae74a (antes do protocolo 2).
+  // 2026-10-25 (0.3.1): único acréscimo é o campo aditivo `freteOferta` (auditoria × Avant); clientes antigos o ignoram.
   it('sem protocolo: status e corpo idênticos aos da versão anterior (sucesso e erros)', async () => {
     const bruto = async (r: Promise<Response>) => { const x = await r; return { status: x.status, corpo: await x.text() }; };
     // identidadeEsperada sem protocolo é ignorada, como na 0.2.1.
     expect(await bruto(post({ ...ANALISAR, identidadeEsperada: 'outra:org:' }))).toMatchInlineSnapshot(`
       {
-        "corpo": "{"proprio":false,"catalogoCriadoEm":null,"vendedor":null,"margem":{"preco":100,"classico":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"},"premium":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"}},"custo":{"fonte":"nenhuma","variacaoId":null,"codigo":null,"origem":null,"unidadesPorPacote":null,"unidadesSku":null,"custoSku":null,"fator":null,"faltaUnidades":null,"custoPacote":null},"parametros":{"aliquotas":{"confirmada":false,"nacional":null,"importado":null},"classico":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"premium":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"frete":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"}}}",
+        "corpo": "{"proprio":false,"catalogoCriadoEm":null,"vendedor":null,"freteOferta":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"margem":{"preco":100,"classico":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"},"premium":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"}},"custo":{"fonte":"nenhuma","variacaoId":null,"codigo":null,"origem":null,"unidadesPorPacote":null,"unidadesSku":null,"custoSku":null,"fator":null,"faltaUnidades":null,"custoPacote":null},"parametros":{"aliquotas":{"confirmada":false,"nacional":null,"importado":null},"classico":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"premium":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"frete":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"}}}",
         "status": 200,
       }
     `);
