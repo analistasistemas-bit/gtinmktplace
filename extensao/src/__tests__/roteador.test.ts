@@ -561,6 +561,16 @@ describe('busca no SW (Task 22)', () => {
     expect((await estado())!.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000001', 'MLB1000002', 'MLB1000003']);
   });
 
+  it('cards da busca não são gravados com a extensão desligada ou deslogada', async () => {
+    await chrome.storage.local.set({ ativa: false });
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    await chrome.storage.local.set({ ativa: true });
+    expect(await estado()).toBeNull();
+    await sair();
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
+    expect(await estado()).toBeNull();
+  });
+
   it('painel analisa os pendentes (até 50) com o EAN da URL da busca e o content script recebe os resultados', async () => {
     await registrarEanDaAba(7, '96385074'); // EAN de outra busca da mesma aba: não vale
     await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), card('MLB1000002', { preco: null })], ocorrencias: 2 }, BUSCA_EAN);

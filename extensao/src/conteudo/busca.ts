@@ -11,8 +11,10 @@ const LIMITE_ESPERA_MS = 15_000;
 const HOST = 'publiai-selo-busca';
 let enviados = new Map<string, string>(); // itemId → assinatura do que já foi enviado
 let resultados: Record<string, ResultadoCard> = {};
-// Chave "Extensão ativa" e login: desligada ou deslogado, nada é enviado nem desenhado. Vale ligada até o SW dizer o contrário.
-let ligada = true;
+// Chave "Extensão ativa" e login: desligada ou deslogado, nada é enviado nem desenhado. Fail-closed: só liga com o SW dizendo
+// ativa e logado (resposta do boot ou aviso). Aviso que chega antes da resposta do boot vence a resposta.
+let ligada = false;
+let estadoRecebido = false;
 
 const enviar = (msg: object) => {
   try { chrome.runtime.sendMessage(msg).catch(() => {}); } catch { /* contexto invalidado (extensão recarregada) */ }
@@ -70,6 +72,7 @@ function aplicarSelos(): void {
 }
 
 function limparSelos(): void {
+  tirarDestaque();
   resultados = {};
   for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
 }
@@ -95,6 +98,7 @@ function destacar(itemId: string): void {
 
 chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
+    estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
     limparSelos();
     enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (a análise só sai quando o painel pedir)
@@ -125,11 +129,13 @@ const inicio = Date.now();
   if (Date.now() - inicio < LIMITE_ESPERA_MS) setTimeout(esperarCards, 500);
 })();
 
-// Estado inicial da chave (sem rede no SW). Resposta ausente/inválida mantém o padrão ligado.
+// Estado inicial da chave (sem rede no SW). Falha ou resposta que não diz ativa e logado: continua desligada.
 void (async () => {
   try {
     const e = await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao' });
-    if (e && (e.ativa === false || e.logado === false)) { ligada = false; limparSelos(); }
+    if (estadoRecebido) return;
+    ligada = e?.ativa === true && e?.logado === true;
+    if (ligada) agendar();
   } catch {
     // contexto invalidado: silencioso
   }

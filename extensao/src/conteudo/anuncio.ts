@@ -83,19 +83,21 @@ function inserir(selo: HTMLElement): boolean {
 
 // Geração local: cada rodar()/pausar() invalida a execução anterior (reentrante; resposta velha nunca vira selo).
 let geracaoLocal = 0;
-const removerSelo = () => document.getElementById('publiai-selo')?.remove();
+const removerSelo = () => {
+  document.getElementById('publiai-selo')?.remove();
+  limparMiniaturas(document);
+};
 
 /** Chave desligada ou conta saiu: tira selo e contornos e descarta a análise em voo. */
 export function pausar(): void {
   geracaoLocal++;
   removerSelo();
-  limparMiniaturas(document);
 }
 
 export async function rodar(): Promise<void> {
   const minha = ++geracaoLocal;
   const vale = () => minha === geracaoLocal;
-  removerSelo(); // religar não duplica
+  removerSelo(); // religar não duplica selo nem contorno
   const lido = await lerComReleitura(() => lerAnuncio(document), () => esperarPaginaEstavel(), () => location.pathname + location.search);
   if (!vale()) return;
   if (!lido) return; // bloqueio/verificação do ML, navegação ou espera inconclusiva: não é quebra de layout
@@ -126,7 +128,8 @@ chrome.runtime.onMessage.addListener((msg: Aviso) => {
 void (async () => {
   try {
     const e = await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao' });
-    if (e?.ativa === true && e?.logado === true) await rodar();
+    // Só se nenhum aviso (rodar/pausar) já definiu o estado enquanto a resposta vinha.
+    if (geracaoLocal === 0 && e?.ativa === true && e?.logado === true) await rodar();
   } catch {
     // contexto invalidado: silencioso
   }

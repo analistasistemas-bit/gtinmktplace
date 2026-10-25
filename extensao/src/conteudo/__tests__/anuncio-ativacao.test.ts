@@ -89,6 +89,53 @@ describe('anúncio obedece à chave ativa', () => {
     await mod.rodar();
     expect(selos()).toBe(1);
   });
+  it('guarda própria: pausar() direto com análise em voo descarta a resposta (sem passar por aoMensagemDoSw)', async () => {
+    segurar = true;
+    await carregar();
+    mod.pausar();
+    soltar(OK);
+    await folga();
+    expect(selos()).toBe(0);
+  });
+  it('guarda própria: rodar() concorrente — só a última vale, um selo', async () => {
+    segurar = true;
+    await carregar(); // análise 1 em voo (boot)
+    const soltar1 = soltar;
+    const p2 = mod.rodar();
+    await folga();
+    const soltar2 = soltar; // análise 2 em voo
+    soltar2(OK);
+    await p2;
+    soltar1(OK); // resposta velha chega depois
+    await folga();
+    expect(selos()).toBe(1);
+  });
+  it('corrida: pausa chega antes da resposta atrasada do boot (ligada) → boot não roda', async () => {
+    let responder!: (v: unknown) => void;
+    enviar.mockImplementationOnce(() => new Promise((r) => { responder = r; }));
+    await carregar();
+    aviso('publiai:ativacao', false);
+    responder({ ativa: true, logado: true });
+    await folga();
+    expect(analises).not.toHaveBeenCalled();
+    expect(selos()).toBe(0);
+  });
+  it('corrida: ativação chega antes do boot → uma análise só', async () => {
+    let responder!: (v: unknown) => void;
+    enviar.mockImplementationOnce(() => new Promise((r) => { responder = r; }));
+    await carregar();
+    aviso('publiai:ativacao', true);
+    responder({ ativa: true, logado: true });
+    await folga();
+    expect(analises).toHaveBeenCalledTimes(1);
+    expect(selos()).toBe(1);
+  });
+  it('rodar() limpa contornos antigos antes de recolocar', async () => {
+    await carregar();
+    document.body.insertAdjacentHTML('beforeend', '<div data-publiai-foto-fraca="x"></div>');
+    await mod.rodar();
+    expect(document.querySelector('[data-publiai-foto-fraca]')).toBeNull();
+  });
   it('conta-mudou deslogado → remove o selo', async () => {
     await carregar();
     aviso('publiai:conta-mudou', true, false);

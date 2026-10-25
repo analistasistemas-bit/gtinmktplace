@@ -2,7 +2,7 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 
 let ouvinte: (m: unknown) => void = () => {};
-const enviar = vi.fn(async (_m: unknown) => {});
+const enviar = vi.fn(async (m: { tipo?: string }) => (m.tipo === 'publiai:estado-extensao' ? { ativa: true, logado: true } : undefined));
 const cardsEnviados = () => enviar.mock.calls.flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null }[] }).cards ?? []);
 
 beforeAll(async () => {

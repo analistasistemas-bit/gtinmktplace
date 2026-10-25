@@ -164,7 +164,9 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:busca-cards':
       // Content script da busca: cards lidos na própria aba (nunca de outra).
       if (tabId === undefined || pagina) return undefined;
-      return registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url);
+      // Desligada ou deslogada: nada é gravado (sem cota nem edge).
+      return impedimento(epocaAtual()).then((erro) =>
+        erro ? undefined : registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url));
     case 'publiai:analisar-busca': {
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       if (!geracaoEmDia(msg)) return ANTIGA();
