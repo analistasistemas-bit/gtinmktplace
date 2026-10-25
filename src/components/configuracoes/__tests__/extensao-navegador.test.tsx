@@ -72,4 +72,24 @@ describe('ExtensaoNavegador', () => {
     expect(screen.queryByRole('button', { name: /reconectar|conectar extensão/i })).not.toBeInTheDocument();
     expect(h.enviar).not.toHaveBeenCalled();
   });
+
+  it('instalar a 0.3.0 depois de abrir: clicar "Conectar extensão" mostra Instalada + Conta, sem enviar sessão', async () => {
+    h.ping.mockResolvedValueOnce(null);
+    h.enviar.mockResolvedValue('nao_instalada');
+    render(<ExtensaoNavegador />);
+    await screen.findByText('Não instalada');
+    h.enviar.mockClear();
+    h.ping.mockResolvedValue({ versao: '0.3.0', protocolo: 2 });
+    fireEvent.click(screen.getByRole('button', { name: /conectar extensão/i }));
+    expect(await screen.findByText('Instalada neste Chrome (versão 0.3.0).')).toBeInTheDocument();
+    expect(screen.getByText('Entre pela extensão, no ícone do PubliAI no Mercado Livre, com o seu e-mail e senha.')).toBeInTheDocument();
+    expect(screen.queryByText(/sem senha na extensão/)).not.toBeInTheDocument();
+    expect(h.enviar).not.toHaveBeenCalled();
+  });
+
+  it('mount legado (0.2.x/ausente) faz um único ping', async () => {
+    render(<ExtensaoNavegador />);
+    await screen.findByText('Conectada');
+    expect(h.ping).toHaveBeenCalledTimes(1);
+  });
 });

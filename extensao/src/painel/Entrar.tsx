@@ -1,6 +1,6 @@
 // Tela de login do painel (ADR-0189): mesmo e-mail e senha do app. A senha só viaja em `publiai:entrar`
 // e é apagada do campo assim que o SW responde.
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { mensagemDeErro, type EstadoExt, type RespostaEstado } from './formato';
 
 const ERROS_DE_LOGIN = ['credenciais_invalidas', 'rede', 'sem_acesso', 'modulo_desligado'];
@@ -10,6 +10,8 @@ export function Entrar({ onEstado, onEmVoo }: { onEstado: (e: EstadoExt) => void
   const [senha, setSenha] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const campoEmail = useRef<HTMLInputElement>(null);
+  useEffect(() => { campoEmail.current?.focus(); }, []);
 
   const enviar = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -40,7 +42,7 @@ export function Entrar({ onEstado, onEmVoo }: { onEstado: (e: EstadoExt) => void
         <label className="campo">
           E-mail
           <span className="entrada">
-            <input type="email" autoComplete="username" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input type="email" ref={campoEmail} autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
           </span>
         </label>
         <label className="campo">

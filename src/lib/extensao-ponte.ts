@@ -1,8 +1,9 @@
 import type { Session } from '@supabase/supabase-js';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 
-// Ponte app web → extensão PubliAI (ADR-0189 D-4). O app é o ÚNICO dono do refresh token:
-// empurra só o access token e a validade. `chrome.runtime.sendMessage` só existe na página
+// Ponte app web → extensão PubliAI (ADR-0189 D-4). Protocolo ≥ 2 (0.3+): a extensão tem sessão própria e a
+// ponte só faz ping (versão/protocolo). Legado 0.2.x: o app é o dono do refresh token e empurra só o access
+// token e a validade. `chrome.runtime.sendMessage` só existe na página
 // quando há extensão com `externally_connectable` casando esta origem.
 
 export type ResultadoPonte = 'ok' | 'nao_instalada' | 'desconectada';

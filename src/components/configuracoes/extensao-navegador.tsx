@@ -16,19 +16,15 @@ export function ExtensaoNavegador() {
 
   const conectar = useCallback(async () => {
     setEnviando(true);
-    setStatus(await enviarSessaoParaExtensao(session));
+    // Protocolo ≥ 2 só informa (login é na extensão); 0.2.x/ausente testa empurrando a sessão atual (idempotente).
+    const p = await pingExtensao();
+    if (p && p.protocolo >= 2) setVersao(p.versao);
+    else setStatus(await enviarSessaoParaExtensao(session));
     setEnviando(false);
   }, [session]);
 
-  // Ao abrir a seção: protocolo ≥ 2 só informa; 0.2.x/ausente testa empurrando a sessão atual (idempotente).
-  useEffect(() => {
-    if (!id) return;
-    void pingExtensao().then((p) => {
-      if (p && p.protocolo >= 2) setVersao(p.versao);
-      else void conectar();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem; o auth-store já reenvia a cada renovação
-  }, [id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem; o auth-store já reenvia a cada renovação
+  useEffect(() => { if (id) void conectar(); }, [id]);
 
   if (!id && !url) {
     return (
@@ -41,7 +37,9 @@ export function ExtensaoNavegador() {
   return (
     <SettingsGroup
       titulo="Extensão PubliAI para Chrome"
-      descricao="Mostra a sua margem nas páginas do Mercado Livre. Conecta com a sua sessão do PubliAI — sem senha na extensão."
+      descricao={versao
+        ? 'Mostra a sua margem nas páginas do Mercado Livre.'
+        : 'Mostra a sua margem nas páginas do Mercado Livre. Conecta com a sua sessão do PubliAI — sem senha na extensão.'}
     >
       {/* Respondeu à conexão = está instalada neste Chrome: sem botão de instalar. */}
       {versao && (
