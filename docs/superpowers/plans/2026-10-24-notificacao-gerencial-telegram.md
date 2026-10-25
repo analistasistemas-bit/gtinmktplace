@@ -12,7 +12,7 @@
 
 **Tech Stack:** Supabase Edge Functions (Deno), Postgres/PostgREST, QStash (`_shared/queue.ts`), Telegram Bot API, React + Vitest.
 
-**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisão do Codex `gpt-6.1-sol` high (2026-10-24, 20 achados) incorporada nesta versão.
+**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisões do Codex `gpt-6.1-sol` high (2026-10-24: rodada 1 com 20 achados, rodada 2 com 7 novos + 8 parciais) incorporadas nesta versão.
 
 ## Global Constraints
 
@@ -35,13 +35,20 @@
 - **Edges.** As chamadas por QStash/Telegram usam `verify_jwt = false`.
 - **Migrations.** Só `supabase migration new` + `db push`; `npm run db:check`.
 - **Tabelas novas.** RLS ligada sem policies (só service role): são estado interno, não domínio exibido.
-- **Leituras.** Toda leitura de lista usa paginação ordenada (`readPages` de `metrics-repository.ts`) ou agregação SQL. Nenhuma leitura sem `range` acima de 1.000 linhas.
+- **Leituras.** Toda leitura de lista usa paginação ordenada (`lerPaginas`, exportado na Task 3) ou agregação SQL. Nenhuma leitura sem `range` acima de 1.000 linhas, e nenhum helper existente que trunque (`.limit`) sem paginar.
 - **CPU.** Medir `CPUTime` (metadata dos logs da edge), não duração. Alvo < 1.000 ms por execução.
 - **Segredos.** `TELEGRAM_WEBHOOK_KEY` só em secret de edge.
 
 ## Desvio deliberado do ADR
 
-- **D-6 "lotes retomáveis (ADR-0173)":** o `resumo-diario` faz fan-out por org via QStash sem `_shared/rodada`. O trabalho por execução é limitado (1 org, 1 dia, 1 mês lido em páginas). O retry é estável porque `dia` vai na mensagem. A idempotência vem de `notificarCategoria(..., { chave })`. A CPU é medida na Task 10, e se passar de 1.000 ms o caminho é migrar para `rodada`.
+- **D-6 "lotes retomáveis (ADR-0173)":** o `resumo-diario` faz fan-out por org via QStash sem `_shared/rodada`. O ADR-0173 nasceu de workers com chamadas ao ML; aqui só há leitura de banco, com **teto explícito por execução**.
+  - **Vendas:** `lerVendasJanela` aceita no máximo `LIMITE_VENDAS_POR_EXECUCAO = 5000` linhas e lança `VolumeAcimaDoLimite` acima disso. Medido em 2026-10-24: a maior org (Avil) teve 1.849 vendas em 30 dias, com pico de 103 vendas num dia.
+  - **Resumo:** lê vendas de **1 dia**; o mês vem da RPC (Task 4).
+  - **Devoluções:** só as abertas + as fechadas no dia, nunca o histórico.
+  - **Comandos `/mes` e `/top`:** leem o mês até o teto; acima dele, respondem `TEXTO_VOLUME`.
+  - **Retry:** é estável porque `dia` vai na mensagem; a idempotência vem de `notificarCategoria(..., { chave })`.
+  - **CPU:** `CPUTime` é medido na Task 10.
+- **Esclarecimento do D-7 (já no ADR):** o chat privado vale para o Telegram; o in-app das categorias gerenciais vale para todo admin assinante.
 
 ## Review Focus
 
@@ -132,12 +139,19 @@
 - Em `metrics-repository.ts`:
   - `export type Rates`;
   - `export interface ContextoCalculo { maps: MapasCusto | undefined; rates: Rates | null; custosOk: boolean; configOk: boolean }`;
-  - `export async function carregarContexto(db: MetricsDb, orgId: string, desde: string): Promise<ContextoCalculo>`. Usa `loadConfigState` + RPC `platform_org_cost_catalog` (`p_since: desde`), como `computeMonth`;
-  - `export async function lerVendasJanela(db: MetricsDb, orgId: string, j: JanelaIso): Promise<Venda[]>`. Usa `readPages` + `SALES_COLUMNS` + `normalizeSales` em `date_closed ∈ [desde, ate)`;
+  - `export async function carregarContexto(db: MetricsDb, orgId: string, desde: string): Promise<ContextoCalculo>`. Usa `loadConfigState` + RPC `platform_org_cost_catalog` (`p_since: desde`), como `computeMonth`. Se a RPC de catálogo **ou** a leitura de config falhar, **lança** (`ContextoIndisponivel`). Assim o gerencial nunca segue com custo/imposto parciais por erro de leitura. `computeMonth` mantém o comportamento atual: ele não chama este wrapper, só os mesmos helpers.
+  - `export const lerPaginas = readPages` (o paginador hoje privado, `metrics-repository.ts:82`).
+  - `export const LIMITE_VENDAS_POR_EXECUCAO = 5000` e `export class VolumeAcimaDoLimite extends Error {}`.
+  - `export async function lerVendasJanela(db: MetricsDb, orgId: string, j: JanelaIso): Promise<Venda[]>`. Usa `readPages` + `SALES_COLUMNS` + `normalizeSales` em `date_closed ∈ [desde, ate)`. Primeiro faz um `count: 'exact', head: true` com os mesmos filtros; se o resultado passar de `LIMITE_VENDAS_POR_EXECUCAO`, lança `VolumeAcimaDoLimite` **sem** paginar.
+  - `export function resumirVendas(vendas: Venda[], ctx: ContextoCalculo, agora: Date): ResumoVendas`. É o `summarize` atual, exportado; serve à paridade da Task 4.
   - `export async function lerVendasDoCarrinho(db: MetricsDb, orgId: string, chave: { packId: number | null; orderId: number }): Promise<Venda[]>`. Lê por `pack_id = packId`, ou `order_id = orderId` sem pack, **sem janela de data**.
 - Em `resultado.ts`:
   - `export type MotivoSemLucro = 'sem_custo' | 'frete_nao_lido' | 'aliquota_nao_confirmada'`.
-  - `export interface ResultadoItem { orderId: number; packChave: string; codigo: string | null; titulo: string | null; quantidade: number; venda: number; liquido: number; imposto: number; custo: number | null; custoEstimado: boolean; faturavel: boolean; freteNaoLido: boolean }`.
+  - `export interface ResultadoItem { orderId: number; packChave: string; codigo: string | null; titulo: string | null; quantidade: number; venda: number; liquido: number; imposto: number; impostoOk: boolean; custo: number | null; custoEstimado: boolean; faturavel: boolean; freteNaoLido: boolean; lucro: number | null }`.
+    - `impostoOk` = `ctx.configOk` e o `AliquotaResolver` devolveu número, **não** `null`, para o item. Hoje `impostoDoItem` transforma `null` em imposto 0 (`sales-summary.ts:128`); a porta chama o resolver antes e marca o item.
+    - `lucro` = `liquido − imposto − custo` só quando `faturavel && impostoOk && custo != null && !freteNaoLido`; caso contrário `null`.
+    - Neste ponto o gerencial é **mais estrito que a tela**, de propósito: a tela mostra imposto 0. Os testes de paridade usam fixtures com alíquota resolvida.
+    - Todo consumidor abaixo (carrinho, prejuízos, top, atenção, lucro do período) lê **só** `item.lucro`, nunca recalcula.
   - `export function resultadoPorItem(vendas: Venda[], ctx: ContextoCalculo): ResultadoItem[]`. **Porta fiel** de `agruparPorPedido` (`src/lib/pedidos-faturamento.ts:133`):
     - mesmo `ratearLiquidoPorFrete`, com fallback `rateio.get(v.id)?.liquido ?? v.liquido ?? 0` como o `liquidoMembro` da tela (grupo de 1 membro e grupo sem frete não entram no mapa);
     - mesma fatia de líquido por `valorDoItem` entre os faturáveis, com o resíduo de centavos no maior item;
@@ -168,6 +182,12 @@
   - **Prejuízo mascarado:** order de 2 itens, um com lucro +10 e outro com −4,10 → `prejuizos [{ valor: -4.1 }]`, embora o pedido some +5,90.
   - `lucroDoPeriodo` com 1 item sem custo de venda 50 e 1 item com custo de venda 150 → `pctVendaComLucro 0.75`, `vendaSemCusto 50`.
   - `lerVendasDoCarrinho` com fake db: a query usa `.eq('pack_id', X)` e **não** aplica filtro de `date_closed`.
+  - **Imposto indisponível por item:** alíquota resolvida para A e `null` para B (origem desconhecida no catálogo):
+    - `B.impostoOk false`, `B.lucro null`;
+    - `resultadoCarrinho` → `motivo 'aliquota_nao_confirmada'`;
+    - `topPorLucro` não lista B e `contarAtencao` não conta B como prejuízo nem como abaixo do mínimo.
+  - `carregarContexto` com a RPC de catálogo devolvendo `error` → `rejects.toThrow(ContextoIndisponivel)`.
+  - `lerVendasJanela` com `count 5001` → `rejects.toThrow(VolumeAcimaDoLimite)`, sem chamar `range`.
 - [ ] **Step 2: Run** `pnpm test -- supabase/functions/_shared/notificacoes/gerencial supabase/functions/_shared/platform-admin`. Expected: FAIL nos novos e PASS nos antigos.
 - [ ] **Step 3: Implement** reaproveitando `ratearLiquidoPorFrete`, `valorDoItem`, `impostoDoItem`, `brutoDaVenda`, `ehFaturavel`, `montar*Resolver`. Nenhuma conta nova fora da porta.
 - [ ] **Step 4: Run.** Expected: PASS, inclusive `metrics-parity.test.ts`.
@@ -185,14 +205,18 @@
   - vendas com `date_closed ∈ [p_desde, p_ate)`;
   - faturável = `status in ('paid','partially_refunded','refunded')`;
   - faturamento = Σ `total_amount − coalesce(cupom_vendedor, 0)` dos faturáveis;
-  - pedidos = número de `coalesce(pack_id, order_id)` distintos, contando o carrinho pelo status da venda representante, exatamente como `calcularResumo` (`sales-summary.ts:154-296`) — o implementador lê essa regra e a reproduz em SQL;
+  - pedidos = `count(distinct coalesce(pack_id, order_id))` **sobre as vendas faturáveis**: o carrinho conta se **qualquer** membro é faturável. É a regra de `calcularResumo` (`sales-summary.ts:182-186`) e da tela (`src/lib/pedidos-faturamento.ts:254`), não a da "venda representante";
   - ticket = faturamento ÷ pedidos (0 se não houver pedidos).
 - `export interface Kpis { faturamento: number; pedidos: number; ticket: number }`.
 - `export async function lerKpis(admin: SupabaseClient, orgId: string, j: JanelaIso): Promise<Kpis>`. Lança em erro (nunca zera em silêncio).
 
 - [ ] **Step 1: Failing test** (`kpis.test.ts`, fake client): `lerKpis` chama `rpc('vendas_kpis_janela', { p_org, p_desde, p_ate })` e converte números. Erro → `rejects.toThrow`.
 - [ ] **Step 2: Run** e ver FAIL. **Implement** a migration + `kpis.ts`. Rodar `npm run db:check`.
-- [ ] **Step 3: Teste SQL desfeito.** Inserir em transação 3 vendas de uma org fictícia: pack de 2 pagas + 1 cancelada. Assert `faturamento`, `pedidos = 1` e `ticket`, depois `raise 'TESTE_OK'`.
+- [ ] **Step 3: Teste SQL desfeito.** Inserir em transação, numa org fictícia:
+  - (a) pack de 2 pagas + 1 cancelada;
+  - (b) pack cuja **order de menor `order_id` está cancelada** e a outra está paga com R$ 50.
+
+  Assert (b) → `pedidos` conta 1 e o ticket do conjunto inclui os R$ 50. Assert `faturamento`, `pedidos = 2` e `ticket` do todo, depois `raise 'TESTE_OK'`.
 - [ ] **Step 4: Paridade com dado real.** É read-only, e o resultado vai no commit/PR. Para DSA e Avil, outubro até agora: `vendas_kpis_janela` × `resumirVendas(lerVendasJanela(...))` (`bruto`, `pedidos`, `ticket`), com divergência 0 ao centavo. Divergência → corrigir a RPC, nunca o motor.
 - [ ] **Step 5: Commit** `feat(notificacoes): RPC de KPIs por janela com paridade da central (ADR-0190 D-2)`.
 
@@ -210,7 +234,7 @@
 - `export function montarHoje(k: KpisPeriodo, l: LucroPeriodo): string`.
 - `export function montarMes(k: KpisPeriodo, l: LucroPeriodo): string`.
 - `export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: string): string`.
-- `export const TEXTO_AJUDA`, `TEXTO_SEM_ACESSO`, `TEXTO_SO_PRIVADO`, `TEXTO_ERRO`.
+- `export const TEXTO_AJUDA`, `TEXTO_SEM_ACESSO`, `TEXTO_SO_PRIVADO`, `TEXTO_ERRO`, `TEXTO_VOLUME` (`O volume do mês passou do limite do bot. Veja os números no PubliAI.`).
 
 - [ ] **Step 1: Failing tests** com strings exatas. Carrinho com `lucro 54.82`, venda 189,80, 2 itens; KPIs hoje 2340/14/167,14, mês 41200/260/158,46, anterior 36700:
 ```
@@ -289,13 +313,20 @@ Dados apurados até 08:00
   - `processarCarrinho`:
     - linha `enviado` → `'ignorado'`;
     - `enviar` → `update status='enviado' where status='aguardando'` **antes** do `notificarCategoria`. Se o update afeta 0 linhas → `'ignorado'`. É a garantia "no máximo uma".
-  - `varrerCarrinhos` seleciona `status='aguardando' and primeiro_em < agora − 60 s`, paginado e ordenado, até 50 por execução.
+  - `varrerCarrinhos(admin, agora, depois?: { orgId: string; chave: string })`:
+    - seleciona `status='aguardando' and atualizado_em < agora − 90 s`, ordenado por `(org_id, chave)` após o cursor, até 200;
+    - para cada linha, **só publica** o job individual `{ orgId, chave }` com `deduplicationId 'carrinho-<org>-<chave>-<tentativas>'`, sem calcular nada na varredura;
+    - com 200 linhas, publica a si mesma `{ varrer: true, depois: <última> }`;
+    - retorna quantos jobs publicou.
+  - `processarCarrinho` com `esperadas null` e `tentativas ≥ 1` tenta `/packs` de novo no worker. O token é obtido como `sync-venda/index.ts` faz (`getValidAccessTokenConexao` + `mapearConexao` da conexão ML da org). Sucesso → grava `esperadas`. Falha → segue `null` sem lançar.
 - [ ] **Step 3: Run** os dois arquivos de teste. Expected: FAIL.
 - [ ] **Step 4: Implement.**
   - **`sync-venda`:** chamar `registrarCarrinho` sempre que `pedido.status === 'paid'`, **não** só em `novaPaga`. A idempotência vem da PK e o retry após persistir continua funcionando.
   - **Edge `notificar-carrinho`:** depois de `verificarAssinatura`:
     - body `{ orgId, chave }` → `processarCarrinho`;
-    - body `{ varrer: true }` → `varrerCarrinhos`, que chama `processarCarrinho` em cada linha.
+    - body `{ varrer: true, depois? }` → `varrerCarrinhos`, que só publica.
+
+    Erro de leitura (`ContextoIndisponivel` ou erro de banco) **antes** do `update status='enviado'` → 500, para o QStash tentar de novo; a linha continua `aguardando`.
 
     Em `aguardar`, ela republica com `tentativas + 1` e atualiza a linha.
   - **`processarCarrinho`, ao enviar:**
@@ -318,9 +349,18 @@ Dados apurados até 08:00
 - `export interface DevolucaoComEstorno { type: string; status: string; return_status_money: string | null; aberto_em: string | null; fechado_em: string | null; acoes_pendentes: { action: string; due_date: string | null; mandatory: boolean }[] | null; valor_estornado: number }`.
 - `export function estornadoNoPeriodo(devs: DevolucaoComEstorno[], j: JanelaIso): number`. Mesmo critério e valor de `devolucoesConcluidasNoPeriodo` (`src/lib/devolucoes.ts:103`), com limite exclusivo.
 - `export function abertasComPrazoAte(devs: DevolucaoComEstorno[], limiteIso: string): number`. Critério de `devolucoesAbertas` + algum `due_date <= limite`.
-- `export async function lerDevolucoes(admin, orgId): Promise<DevolucaoComEstorno[]>`. Lê `ml_devolucoes` por `org_id`, paginado. `valor_estornado` vem de `ml_vendas.estorno` por `order_id` e `org_id`, como `src/lib/devolucoes.ts:43-55`. Erro lança.
+- `export async function lerDevolucoesDoResumo(admin, orgId, ontem: JanelaIso): Promise<DevolucaoComEstorno[]>`. Duas leituras **limitadas** por `org_id`, ambas com `lerPaginas`:
+  - `status = 'opened'`, para o prazo;
+  - `coalesce(fechado_em, aberto_em) ∈ ontem`, para o estornado.
+
+  Nunca lê o histórico inteiro. `valor_estornado` vem de `ml_vendas.estorno` por `order_id` e `org_id`, como `src/lib/devolucoes.ts:43-55`, em lotes de 200 `order_id`. Erro lança.
+- `export async function contarPromocoesDoResumo(admin, orgId, agoraMs): Promise<{ prejuizo: number; prazo: number }>`.
+  - **Sem** os leitores de `depsAlertas`: `lerPromocoes` não pagina e `lerParticipandoNoPrejuizo` tem `.limit(500)` (`alertas.ts:85-95`).
+  - `prejuizo` vem de uma consulta com os **mesmos filtros** de `lerParticipandoNoPrejuizo`, mas em `count: 'exact', head: true`.
+  - `prazo` vem das promoções lidas com `lerPaginas` e passadas a `selecionarAlertas(promos, [], agoraMs).prazo.length`.
+  - O implementador copia os filtros das linhas 85-100, sem alterar `depsAlertas`.
 - `export async function montarDadosResumo(admin, orgId, dia: string, agora: Date): Promise<DadosResumo>`.
-- `export async function orgsDoResumo(admin): Promise<string[]>`. Orgs com `configuracoes.telegram_ativo` e `temAssinanteGerencial(…, 'resumo_diario')`. Paginado.
+- `export async function orgsDoResumo(admin): Promise<string[]>`. São as orgs com algum profile ativo, admin, assinante de `resumo_diario`. **Não** exige `telegram_ativo`, porque o in-app vale mesmo com o Telegram desligado (D-7). Paginado.
 
 - [ ] **Step 1: Failing tests:**
   - **Paridade de devoluções:**
@@ -328,7 +368,12 @@ Dados apurados até 08:00
     - mesma fixture em `devolucoesConcluidasNoPeriodo(devs, desde, ateInclusivo)` com `ateInclusivo = ate − 1 ms`, que dá o mesmo valor;
     - import do front com seis `../`.
   - `abertasComPrazoAte` com `due_date` +24 h e +72 h, limite +48 h → `1`.
-  - `lerDevolucoes` com fake de 1.200 devoluções → 2 páginas lidas e `valor_estornado` vindo de `ml_vendas`.
+  - `lerDevolucoesDoResumo`:
+    - faz exatamente 2 consultas filtradas, nenhuma sem filtro de status ou de data;
+    - com 1.200 abertas, lê 2 páginas;
+    - `valor_estornado` vem de `ml_vendas`.
+  - `contarPromocoesDoResumo` com 700 itens no prejuízo → `prejuizo 700` (não 500).
+  - `orgsDoResumo` inclui uma org com `telegram_ativo false` cujo admin assina `resumo_diario`.
   - `montarDadosResumo` (fake):
     - sem módulo `promocoes` → `promocoes: null`;
     - `freteSubiu` sai de `ml_notificacoes_enviadas` (`entidade 'frete_subiu'`, `enviado_em ∈ janelaDia(dia)`) → `ml_vendas.order_id = chave::bigint` → títulos distintos, no máximo 5;
@@ -341,7 +386,8 @@ Dados apurados até 08:00
     - KPIs com `lerKpis` (ontem, mes, anterior);
     - itens de ontem: `carregarContexto` + `lerVendasJanela(ontem)` → `resultadoPorItem`, que alimenta `lucroDoPeriodo`, `topPorLucro(…, 3)` e `contarAtencao`;
     - piso: `variacoes.preco` dos códigos vendidos ontem, por `org_id`, em lotes de 200 códigos;
-    - promoções: `exigirModulo(admin, orgId, 'promocoes')`, depois `depsAlertas`, depois `selecionarAlertas`;
+    - promoções: `exigirModulo(admin, orgId, 'promocoes')` → `contarPromocoesDoResumo`;
+    - devoluções: `lerDevolucoesDoResumo` → `estornadoNoPeriodo` + `abertasComPrazoAte(+48 h)`;
     - `apuradoAte = horaBrt(agora)`.
   - **Edge:**
     - disparo → `orgsDoResumo`, depois publica com `deduplicationId 'resumo-diario-<org>-<dia>'`;
@@ -353,57 +399,81 @@ Dados apurados até 08:00
 
 **Files:**
 - Create: migration `telegram_bot_inbox`
-- Create: `supabase/functions/_shared/notificacoes/gerencial/bot.ts` (pura), `.../consultas.ts`
-- Create: `supabase/functions/telegram-bot/index.ts` (webhook + worker)
+- Create: `supabase/functions/_shared/notificacoes/gerencial/bot.ts` (pura), `.../consultas.ts`, `.../inbox.ts` (I/O da inbox)
+- Create: `supabase/functions/telegram-bot/index.ts` (webhook + worker + varredura)
 - Modify: `supabase/functions/usuarios/index.ts` (action `registrar_webhook_telegram`), `supabase/config.toml`, `src/components/config-telegram.tsx`
-- Test: `.../__tests__/bot.test.ts`, `.../__tests__/consultas.test.ts`, `src/components/__tests__/config-telegram.test.tsx`
+- Test: `.../__tests__/bot.test.ts`, `.../__tests__/inbox.test.ts`, `.../__tests__/consultas.test.ts`, `src/components/__tests__/config-telegram.test.tsx`
 
 **Interfaces — Produces:**
 - **Migration:**
-  - `alter table configuracoes add column telegram_bot_id bigint` + `unique (telegram_bot_id)` (um bot só pode pertencer a uma org);
-  - tabela `public.telegram_updates`, com `bot_id bigint not null`, `update_id bigint not null`, `org_id uuid not null references organizations on delete cascade`, `payload jsonb not null`, `status text not null default 'recebido' check (status in ('recebido','respondido','falhou'))`, `recebido_em timestamptz not null default now()`, `processado_em timestamptz`, `erro text`;
-  - `primary key (bot_id, update_id)`;
-  - RLS ligada, sem policies.
+  - `alter table configuracoes add column telegram_bot_id bigint` + `unique (telegram_bot_id)`;
+  - trigger `before update of telegram_bot_token on configuracoes`: quando o token muda, faz `telegram_bot_id := null`. Trocar o token **invalida** o webhook antigo, porque o secret depende do `bot_id` (abaixo), e exige reativar;
+  - tabela `public.telegram_updates`:
+    - colunas: `bot_id bigint not null`, `update_id bigint not null`, `org_id uuid not null references organizations on delete cascade`, `payload jsonb not null`, `status text not null default 'recebido' check (status in ('recebido','processando','respondido','falhou'))`, `tentativas int not null default 0`, `lease_ate timestamptz`, `publicado_em timestamptz`, `recebido_em timestamptz not null default now()`, `processado_em timestamptz`, `erro text`;
+    - `primary key (bot_id, update_id)`;
+    - índice `(status, recebido_em)`;
+    - RLS ligada, sem policies.
 - **`bot.ts`:**
-  - `secretDaOrg(chave: string, orgId: string): Promise<string>` (hex de HMAC-SHA256);
-  - `secretValido(chave, orgId, recebido: string | null): Promise<boolean>` (tempo constante);
+  - `secretDaOrg(chave: string, orgId: string, botId: number): Promise<string>`, hex de HMAC-SHA256 de `` `${orgId}:${botId}` ``;
+  - `secretValido(chave, orgId, botId, recebido: string | null): Promise<boolean>` (tempo constante);
   - `type Comando = 'hoje' | 'ontem' | 'mes' | 'top' | 'ajuda' | null`;
-  - `interpretarComando(texto?: string): Comando`, que aceita `/cmd@Bot` sem diferenciar maiúsculas;
+  - `interpretarComando(texto?: string): Comando`;
   - `type Acesso = 'ok' | 'grupo' | 'sem_acesso'`;
-  - `avaliarAcesso(chat: { id: number; type: string }, profiles: { is_admin: boolean; is_active: boolean }[]): Acesso`. Retorna `'grupo'` se `type !== 'private'`; `'ok'` se algum profile é ativo e admin; caso contrário `'sem_acesso'`.
-- **`consultas.ts`** (estruturadas, D-9):
-  - `consultarHoje(admin, orgId, agora): Promise<{ k: KpisPeriodo; l: LucroPeriodo }>`;
+  - `avaliarAcesso(chat: { id: number; type: string }, profiles: { is_admin: boolean; is_active: boolean }[]): Acesso`.
+- **`inbox.ts`:**
+  - `receberUpdate(admin, orgId: string, botId: number, update: { update_id: number }): Promise<'nova' | 'pendente' | 'concluida'>`. Faz insert `on conflict do nothing`. Na duplicata, lê o status: `recebido`/`processando` → `'pendente'`, `respondido`/`falhou` → `'concluida'`.
+  - `publicarUpdate(botId, updateId): Promise<void>`. Publica no QStash com `deduplicationId 'tg-<bot>-<update>-<tentativas>'` e grava `publicado_em`. Lança em falha.
+  - `reivindicar(admin, botId, updateId, agora): Promise<Row | null>`. É um único `update … set status='processando', lease_ate = agora + 60 s, tentativas = tentativas + 1 where pk and (status = 'recebido' or (status = 'processando' and lease_ate < agora)) returning *`. 0 linhas → `null` (outra execução tem a posse).
+  - `concluir(admin, pk, status: 'respondido' | 'falhou', erro?: string)`.
+  - `devolver(admin, pk, erro: string)`. Volta para `status='recebido'`, `lease_ate=null`; com `tentativas >= 5` vira `falhou`.
+  - `varrerInbox(admin, agora, depois?)`. Seleciona `status='recebido' and coalesce(publicado_em, recebido_em) < agora − 90 s` **ou** `status='processando' and lease_ate < agora`, ordenado, até 200. **Só republica**; com 200 linhas, continua com cursor, como `varrerCarrinhos`.
+- **`consultas.ts`** (estruturadas, D-9). Toda consulta retorna `{ periodo: JanelaIso; fuso: 'America/Sao_Paulo'; apuradoEm: string /* ISO */; …dados }`:
+  - `consultarHoje(admin, orgId, agora): Promise<{ periodo; fuso; apuradoEm; k: KpisPeriodo; l: LucroPeriodo }>`;
   - `consultarMes(admin, orgId, agora)`, com o mesmo formato;
-  - `consultarTop(admin, orgId, agora, n = 5): Promise<{ top: …; rotuloMes: string }>`;
-  - `consultarOntem(admin, orgId, agora): Promise<DadosResumo>` (= `montarDadosResumo`).
+  - `consultarTop(admin, orgId, agora, n = 5): Promise<{ periodo; fuso; apuradoEm; top: { titulo: string; lucro: number }[]; cobertura: LucroPeriodo; rotuloMes: string }>`;
+  - `consultarOntem(admin, orgId, agora): Promise<{ periodo; fuso; apuradoEm; dados: DadosResumo }>`.
 
-  Os comandos formatam com `mensagens.ts`; a IA da fase 2 usa os objetos.
+  `VolumeAcimaDoLimite` se propaga, e o worker responde `TEXTO_VOLUME`. Os comandos formatam com `mensagens.ts`; a IA da fase 2 usa os objetos.
 
 - [ ] **Step 1: Failing tests:**
-  - `bot.ts`:
-    - o secret da `org-a` é válido para `org-a`, inválido para `org-b` e para `null`;
+  - **`bot.ts`:**
+    - o secret de `(org-a, bot 1)` é válido só para `(org-a, bot 1)`: inválido para `(org-b, 1)`, para `(org-a, 2)` e para `null`;
     - `interpretarComando('/TOP@PubliAIBot') === 'top'`, `('oi') === null`;
     - `avaliarAcesso`: grupo → `'grupo'`; `[]` → `'sem_acesso'`; `[{ admin false }]` → `'sem_acesso'`; `[{ admin false }, { admin true, active true }]` → `'ok'`.
-  - **Webhook** (handler com deps injetadas):
+  - **Webhook** (handler com deps injetadas; o `botId` vem de `configuracoes.telegram_bot_id` da org da URL):
+    - `telegram_bot_id` nulo ou `telegram_ativo false` → 200 sem gravar (bot desvinculado ou desativado);
     - secret inválido → 401 sem gravar;
-    - válido → `insert` em `telegram_updates`, que publica QStash `{ bot_id, update_id }`, e só então 200;
-    - insert duplicado (PK) → 200 sem publicar;
-    - **falha de insert ou de publish → 500**, para o Telegram reenviar;
-    - o `bot_id` vem de `configuracoes.telegram_bot_id` da org (e não de dado do update), e o `org_id` gravado é o da URL validada pelo secret.
-  - **Worker:**
-    - lê a linha `recebido`;
-    - revalida o acesso pelos profiles com `org_id` + `telegram_chat_id = chat.id`;
-    - responde com `enviarTelegram` e marca `respondido`;
-    - exceção → `status 'falhou'`, `erro` gravado, resposta `TEXTO_ERRO` best-effort e 200 (sem loop de retry do QStash por erro de dado).
-  - `registrar_webhook_telegram`:
-    - faz `getMe` → grava `telegram_bot_id`. Se o bot já estiver em outra org → 409 `Este bot já está ligado a outra organização.`;
-    - `setWebhook` com `{ url: <SUPABASE_URL>/functions/v1/telegram-bot?org=<orgId>, secret_token, allowed_updates: ['message'], drop_pending_updates: false }`;
-    - depois `setMyCommands` com os 5 comandos.
-  - `config-telegram.test.tsx`: com token salvo e `podeEditar`, o botão "Ativar comandos no bot" chama `supabase.functions.invoke('usuarios', { body: { action: 'registrar_webhook_telegram' } })`. Com `podeEditar false`, o botão não aparece.
+    - `'nova'` → `publicarUpdate` → 200;
+    - **`'pendente'` → `publicarUpdate` de novo → 200.** Isso recupera o caso "insert ok, publish falhou, Telegram reenviou";
+    - `'concluida'` → 200 sem publicar;
+    - falha de insert ou de publish → **500** (o Telegram reenvia).
+  - **Worker** (`{ bot_id, update_id }` assinado pelo QStash):
+    - `reivindicar` `null` → 200 sem enviar (posse de outra execução); duas execuções concorrentes do mesmo update → `enviarTelegram` 1×;
+    - revalida no momento do processamento: `configuracoes.telegram_bot_id === row.bot_id` e `telegram_ativo`. Se não → `concluir('falhou', 'bot desvinculado')` sem responder;
+    - acesso pelos profiles com `org_id` + `telegram_chat_id = String(chat.id)`;
+    - `enviarTelegram` → `true` → `concluir('respondido')`;
+    - **`enviarTelegram` → `false` → `devolver(…, 'envio falhou')` + 500** (o QStash repete). Na 5ª tentativa vira `falhou`;
+    - erro de banco ou `ContextoIndisponivel` → `devolver` + 500;
+    - comando desconhecido, sem acesso, grupo ou `VolumeAcimaDoLimite` são respostas **normais** (texto fixo), não erros.
+  - **Varredura:** linha `recebido` com `publicado_em` há 5 min e linha `processando` com lease vencido → as duas republicadas; linha `respondido` → ignorada.
+  - **`registrar_webhook_telegram`:**
+    - `getMe` → `bot_id`; se outra org já tem o mesmo `telegram_bot_id` → 409 `Este bot já está ligado a outra organização.`;
+    - grava `telegram_bot_id`;
+    - `setWebhook` com `{ url: <SUPABASE_URL>/functions/v1/telegram-bot?org=<orgId>, secret_token: secretDaOrg(key, orgId, botId), allowed_updates: ['message'], drop_pending_updates: false }`;
+    - `setMyCommands` com os 5 comandos.
+  - **`consultas.test.ts`:** cada consulta retorna `periodo`, `fuso` e `apuradoEm`, e `consultarTop` propaga `VolumeAcimaDoLimite`.
+  - **`config-telegram.test.tsx`:**
+    - com token salvo e `podeEditar`, o botão "Ativar comandos no bot" chama `supabase.functions.invoke('usuarios', { body: { action: 'registrar_webhook_telegram' } })`;
+    - com `podeEditar false`, o botão não aparece;
+    - depois de trocar o token, o texto `Token alterado: ative os comandos de novo.` aparece.
 - [ ] **Step 2: Run.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
-  - Uma edge só, roteando por assinatura: QStash → worker; header do Telegram → webhook.
-  - `TELEGRAM_WEBHOOK_KEY` vem de `Deno.env`; ausente → 500 com log.
+  - Uma edge só, roteando:
+    - assinatura QStash + `{ bot_id, update_id }` → worker;
+    - assinatura QStash + `{ varrer: true }` → varredura;
+    - header `X-Telegram-Bot-Api-Secret-Token` → webhook;
+    - qualquer outra coisa → 401.
+  - `TELEGRAM_WEBHOOK_KEY` ausente → 500 com log.
   - Front: `Button` existente + toast `Comandos ativados. Mande /ajuda para o bot.`
 - [ ] **Step 4: Run** + `pnpm preflight:static`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(notificacoes): comandos do bot com inbox durável, só admin em chat privado (ADR-0190 D-8/D-9)`.
@@ -443,6 +513,7 @@ Dados apurados até 08:00
 - [ ] **Step 4: Schedules no QStash.**
   - `0 11 * * *` → `resumo-diario` (body vazio);
   - `*/5 * * * *` → `notificar-carrinho` com `{ "varrer": true }`.
+  - `*/5 * * * *` → `telegram-bot` com `{ "varrer": true }`.
 
   Confirmar os dois na listagem.
 - [ ] **Step 5: Validação na DSA.**

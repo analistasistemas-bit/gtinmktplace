@@ -44,7 +44,7 @@ Lucro, Margem s/ venda e Markup do pedido já existem (`cascataDoPedido`, Fatura
 - **na assinatura**: a edge `usuarios` recusa essas categorias para não-admin ou chat de grupo;
 - **no envio**: a leitura de destinatários dessas categorias filtra `is_admin` (hoje `queryAssinantes` não filtra), incluindo o registro in-app.
 
-Rebaixar de admin desliga, na prática, o recebimento das duas categorias. O bot nunca mostra lucro a quem não é admin.
+O chat privado é exigência **do canal Telegram**: a notificação in-app dessas categorias vale para todo admin assinante, mesmo sem `chat_id` ou com Telegram da org inativo. Rebaixar de admin desliga, na prática, o recebimento das duas categorias. O bot nunca mostra lucro a quem não é admin.
 
 **D-8. Comandos de leitura: o bot passa a receber.** Uma edge nova recebe os updates do bot de cada org (`setWebhook` com `secret_token`, conferido no header `X-Telegram-Bot-Api-Secret-Token`; `verify_jwt=false`):
 - o secret identifica **bot → org antes** de resolver a pessoa;
