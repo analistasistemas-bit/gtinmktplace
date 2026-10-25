@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Save, Send, RefreshCw, Bot } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { ChevronRight, Save, Send, RefreshCw, Bot, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
   semCard?: boolean; podeEditar?: boolean;
 } = {}) {
   const { data: cfg } = useTelegramConfig();
+  const qc = useQueryClient();
   const salvar = useSalvarTelegramConfig();
   const teste = useEnviarTesteTelegram();
   const verificar = useVerificarModeradosAgora();
@@ -95,6 +97,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
     try {
       await ativarComandosBot();
       setTokenAlterado(false);
+      await qc.invalidateQueries({ queryKey: ['configuracoes', 'telegram'] });
       toast.success('Comandos ativados. Mande /ajuda para o bot.');
     } catch (e) {
       toast.error('Não ativou os comandos', { description: mensagemErro(e) });
@@ -103,6 +106,8 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
     }
   };
 
+  // Token trocado nesta tela zera o vínculo no banco; até o refetch, já trata como inativo.
+  const comandosAtivos = Boolean(cfg?.comandosAtivos) && !tokenAlterado;
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';
   const temAlteracoes = chatId !== (cfg?.chatId ?? '') || Boolean(botToken.trim());
 
@@ -176,9 +181,15 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
         </div>
         {podeEditar && (cfg?.temToken || tokenAlterado) && (
           <div className="flex flex-wrap items-center gap-2">
+            {comandosAtivos && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Comandos ativos
+              </span>
+            )}
             <Button variant="outline" size="sm" onClick={handleAtivarComandos} disabled={ativando}>
               <Bot className="mr-1.5 h-3.5 w-3.5" />
-              {ativando ? 'Ativando…' : 'Ativar comandos no bot'}
+              {ativando ? 'Ativando…' : comandosAtivos ? 'Reativar' : 'Ativar comandos no bot'}
             </Button>
             {tokenAlterado
               ? <span className="text-xs text-warning">Token alterado: ative os comandos de novo.</span>

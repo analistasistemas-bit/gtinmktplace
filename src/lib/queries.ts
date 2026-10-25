@@ -896,6 +896,8 @@ export interface TelegramConfig {
   chatId: string;
   ativo: boolean;
   temToken: boolean;
+  /** Bot vinculado à org (webhook registrado por "Ativar comandos no bot", ADR-0190 D-8). */
+  comandosAtivos: boolean;
 }
 
 /** Lê o status via RPC (não devolve o token ao navegador). */
@@ -907,6 +909,7 @@ export async function fetchTelegramConfig(): Promise<TelegramConfig> {
     chatId: row?.chat_id ?? '',
     ativo: Boolean(row?.ativo),
     temToken: Boolean(row?.tem_token),
+    comandosAtivos: Boolean(row?.comandos_ativos),
   };
 }
 

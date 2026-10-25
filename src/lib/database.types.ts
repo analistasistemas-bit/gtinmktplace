@@ -4582,6 +4582,7 @@ export type Database = {
         Returns: {
           ativo: boolean
           chat_id: string
+          comandos_ativos: boolean
           tem_token: boolean
         }[]
       }
