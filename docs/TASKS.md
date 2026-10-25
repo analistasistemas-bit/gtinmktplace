@@ -13,16 +13,18 @@
 
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
-**0.3.0 — login próprio, "Extensão ativa" e ícone no cabeçalho (emenda ADR-0189 de 2026-10-24) — implementada na branch, deploy e envio pendentes:**
+**0.3.0 — login próprio, "Extensão ativa" e ícone no cabeçalho (emenda ADR-0189 de 2026-10-24) — EM PRODUÇÃO 25/10 (main 7721bb3b, edge v16, Web Store 0.3.0):**
 - [x] Edge `extensao` com protocolo 2 (identidade `userId:orgId:suporte`, `identidade_mudou`, `sem_acesso`) e ação `sessao`.
 - [x] Sessão própria no SW (`storage.local` `TRUSTED_CONTEXTS`, renovação serializada, "Sair" = logout `scope=local`), geração/época
   descartando respostas antigas, chave "Extensão ativa", painel com Entrar/Conta, ícone e menu no cabeçalho do ML
   (`header a.nav-cart`), app com logout `scope` local e ping de protocolo em Configurações. Permissão `alarms` removida.
 - [x] Política de privacidade atualizada (login, sessão no navegador, preferência local); `manifest` 0.3.0.
-- [ ] Prova real em produção (login → `sessao` → logout local → JWT recusado; sessão do app segue), validação no Chrome
-  (gesto do menu, zoom 150%, reinserção do ícone).
-- [ ] Com OK do Diego: deploy da edge `extensao` → merge (Render) → zip de `extensao/dist` → declarações de privacidade na
-  Web Store → envio da 0.3.0.
+- [x] Prova real em produção 8/8 (login → `sessao` → logout local → JWT recusado; sessão do app segue), validação no
+  Chrome (gesto do menu, zoom 150%, reinserção do ícone, convivência com o Avant).
+- [x] Deploy da edge `extensao` (v16) → merge (main 7721bb3b, Render live) → zip de `extensao/dist` → declarações de
+  privacidade na Web Store (storage local até Sair, identificação pessoal + autenticação) → 0.3.0 publicada em 25/10.
+  Validada no Chrome do Diego em páginas reais do ML: ícone/menu "Versão 0.3.0", selo "Minha margem R$ 2,17 (10,90%)",
+  chave desliga/religa sem recarregar, busca com "Simulação Clássico 10,5%".
 
 Recomeço do zero após engenharia reversa do Avant Pro e da JoomPulse (REA + validação no Chrome;
 relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em `CONTEXT.md`
@@ -102,7 +104,7 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   anúncios; Avant reprova de novo, 90,9%); `piso × fator` ajustado na amostra de ajuste, exibido só em +25 (≈ 33, erro
   10,0%) e +50 (≈ 69, 10,3%) pela faixa do anúncio, rotulado "Estimativa"; +5 e +100 em diante fora. Exceção ao n ≥ 30
   (n = 23) aprovada pelo Diego com validação cruzada. Script mede a função entregue por faixa.
-- [ ] Publicar a 0.2.1 na Chrome Web Store (zip de `extensao/dist`).
+- [x] Publicar a 0.2.1 na Chrome Web Store (zip de `extensao/dist`) — publicada em 23/10.
 - [ ] Épico seguinte: Acompanhamento de anúncio próprio (monitor + antes/depois) no PubliAI web.
 
 ## Rótulo Volume/Peso no lugar de Metragem na descrição — 2026-10-20
