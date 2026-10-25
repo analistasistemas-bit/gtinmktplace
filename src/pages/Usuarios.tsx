@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnviarTesteTelegram } from '@/hooks/useConfiguracoes';
 import { MENU_KEYS, type MenuKey } from '@/lib/menus';
-import { CATEGORIAS_NOTIFICACAO, CATEGORIA_LABEL, CATEGORIA_DESCRICAO, type CategoriaNotificacao } from '@/lib/notificacoes-categorias';
+import { CATEGORIAS_NOTIFICACAO, CATEGORIAS_SO_ADMIN, CATEGORIA_LABEL, CATEGORIA_DESCRICAO, type CategoriaNotificacao } from '@/lib/notificacoes-categorias';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -290,9 +290,18 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
     setCats((prev) => (on ? [...prev, key] : prev.filter((k) => k !== key)));
   }
 
-  const todasMarcadas = cats.length === CATEGORIAS_NOTIFICACAO.length;
+  // Gerenciais: só admin e só chat privado (positivo) — o backend também recusa (ADR-0190).
+  function motivoBloqueio(key: string): string | null {
+    if (!(CATEGORIAS_SO_ADMIN as readonly string[]).includes(key)) return null;
+    if (!user?.is_admin) return 'Só para admin.';
+    if (chatId.trim().startsWith('-')) return 'Exige conversa privada com o bot.';
+    return null;
+  }
+  const liberadas = CATEGORIAS_NOTIFICACAO.filter((k) => !motivoBloqueio(k));
+  const marcadas = cats.filter((k) => !motivoBloqueio(k));
+  const todasMarcadas = marcadas.length === liberadas.length;
   function toggleTodas(on: boolean) {
-    setCats(on ? [...CATEGORIAS_NOTIFICACAO] : []);
+    setCats(on ? [...liberadas] : []);
   }
 
   function handleTeste() {
@@ -308,7 +317,7 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
     if (!user) return;
     setSalvando(true);
     const ok = await onSubmit(
-      { action: 'update_notificacoes', id: user.id, telegram_chat_id: chatId.trim(), telegram_categorias: cats },
+      { action: 'update_notificacoes', id: user.id, telegram_chat_id: chatId.trim(), telegram_categorias: marcadas },
       'Notificações atualizadas',
     );
     setSalvando(false);
@@ -349,15 +358,24 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
               <span className="font-medium">Marcar todas</span>
             </label>
             <div className="flex flex-col gap-2">
-              {CATEGORIAS_NOTIFICACAO.map((key) => (
-                <label key={key} htmlFor={`notif-cat-${key}`} className="flex items-start gap-2 text-sm">
-                  <Checkbox id={`notif-cat-${key}`} checked={cats.includes(key)} onCheckedChange={(c) => toggle(key, c === true)} />
-                  <span>
-                    <span className="font-medium">{CATEGORIA_LABEL[key]}</span>
-                    <span className="block text-xs text-muted-foreground">{CATEGORIA_DESCRICAO[key]}</span>
-                  </span>
-                </label>
-              ))}
+              {CATEGORIAS_NOTIFICACAO.map((key) => {
+                const bloqueio = motivoBloqueio(key);
+                return (
+                  <label key={key} htmlFor={`notif-cat-${key}`} className="flex items-start gap-2 text-sm">
+                    <Checkbox
+                      id={`notif-cat-${key}`}
+                      checked={!bloqueio && cats.includes(key)}
+                      disabled={!!bloqueio}
+                      onCheckedChange={(c) => toggle(key, c === true)}
+                    />
+                    <span>
+                      <span className="font-medium">{CATEGORIA_LABEL[key]}</span>
+                      <span className="block text-xs text-muted-foreground">{CATEGORIA_DESCRICAO[key]}</span>
+                      {bloqueio && <span className="block text-xs text-amber-600 dark:text-amber-500">{bloqueio}</span>}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
           {semChat && (
