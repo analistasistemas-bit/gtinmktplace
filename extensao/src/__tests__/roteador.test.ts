@@ -828,6 +828,21 @@ describe('conta, chave ativa e geração (Task 5)', () => {
     expect(fetchFalso).not.toHaveBeenCalled();
   });
 
+  it('pausa com requisição em andamento: resposta descartada (painel) e não vira estado da aba (content script)', async () => {
+    const pausarEmVoo = () => fetchFalso.mockImplementationOnce(async () => {
+      await rotearBruto({ tipo: 'publiai:definir-ativa', ativa: false, geracao: epocaAtual() }, PAINEL);
+      return new Response('{"custo":"da época anterior"}', { status: 200 });
+    });
+    pausarEmVoo();
+    const r = await chamar({ acao: 'buscar_sku', termo: 'x' }, PAINEL);
+    expect(r).toEqual({ ok: false, erro: 'geracao_antiga', geracao: epocaAtual() });
+    expect(local.ativa).toBe(false);
+    local.ativa = true; // religa e pausa de novo com a análise automática em voo
+    pausarEmVoo();
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await estadoAba()).toBeNull();
+  });
+
   it('deslogado → sem_sessao sem tocar a edge', async () => {
     delete local.credenciais;
     fetchFalso.mockClear();
