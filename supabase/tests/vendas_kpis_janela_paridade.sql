@@ -6,8 +6,9 @@
 -- cache defasado é pulado com NOTICE. Qualquer divergência ao centavo aborta. Avil e DSA
 -- (slugs 'avil' e 'diego-souza') têm de estar entre as comparadas.
 --
--- Ticket: a RPC não devolve; `lerKpis` faz round2(faturamento / pedidos) em float (Math.round).
--- Aqui a mesma conta em float8: floor(x * 100 + 0.5) = Math.round(x * 100) (ECMAScript).
+-- Ticket: tolerância de R$ 0,01 (ADR-0190 D-2). A RPC arredonda em decimal exato half-up; o motor
+-- (`calcularResumo`) faz round2 em float, cujo resultado no meio-centavo depende de artefato de float e
+-- da ordem da soma (1,13 ÷ 2: motor 0,56, RPC 0,57). Faturamento e pedidos são exatos.
 -- Faturamento: a RPC soma round(valor, 2) em numeric e o motor soma round2 em float; os dois só
 -- concordam se valor/cupom têm até 2 casas — guarda abaixo prova isso para a tabela inteira.
 begin;
@@ -17,9 +18,9 @@ declare
   r json;
   fat numeric;
   ped int;
-  ticket_cents bigint;
   comparados int := 0;
   pulados int := 0;
+  ticket_1c int := 0;
   por_org jsonb := '{}';
   casas_extras int;
 begin
@@ -54,17 +55,18 @@ begin
     r := public.vendas_kpis_janela(c.org_id, c.desde, c.ate);
     fat := (r->>'faturamento')::numeric;
     ped := (r->>'pedidos')::int;
-    ticket_cents := case when ped > 0 then floor((fat::float8 / ped) * 100 + 0.5)::bigint else 0 end;
-    if round(fat * 100) <> c.gross_cents or ped <> c.orders or ticket_cents <> c.ticket_cents then
-      raise exception 'divergência % mês %: rpc % (ticket_cents %) × cache gross_cents=% orders=% ticket_cents=%',
-        c.slug, c.month, r, ticket_cents, c.gross_cents, c.orders, c.ticket_cents;
+    if round(fat * 100) <> c.gross_cents or ped <> c.orders
+       or abs(round((r->>'ticket')::numeric * 100) - c.ticket_cents) > 1 then
+      raise exception 'divergência % mês %: rpc % × cache gross_cents=% orders=% ticket_cents=%',
+        c.slug, c.month, r, c.gross_cents, c.orders, c.ticket_cents;
     end if;
+    if round((r->>'ticket')::numeric * 100) <> c.ticket_cents then ticket_1c := ticket_1c + 1; end if;
     comparados := comparados + 1;
     por_org := jsonb_set(por_org, array[c.slug], to_jsonb(coalesce((por_org->>c.slug)::int, 0) + 1));
   end loop;
   if not (por_org ? 'avil') or not (por_org ? 'diego-souza') then
     raise exception 'Avil e DSA têm de estar entre as comparadas: % (pulados=%)', por_org, pulados;
   end if;
-  raise notice 'paridade meses em cache: comparados=% pulados=% por org=%', comparados, pulados, por_org;
+  raise notice 'paridade meses em cache: comparados=% pulados=% ticket_dif_1c=% por org=%', comparados, pulados, ticket_1c, por_org;
 end $$;
 rollback;
