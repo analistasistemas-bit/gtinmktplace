@@ -161,8 +161,8 @@ describe('processarJobResumo (roteamento)', () => {
     expect(m.notificarCategoria).toHaveBeenCalledTimes(1);
     const [, org, categoria, texto, opcoes] = m.notificarCategoria.mock.calls[0];
     expect([org, categoria, opcoes]).toEqual([ORG, 'resumo_diario', { chave: 'resumo_diario:2026-10-23' }]);
-    expect(texto).toMatch(/^📊 Ontem \(23\/10\)/);
-    expect(texto).toContain('Dados apurados até 08:00');
+    expect(texto).toMatch(/^📊 Ontem · 23\/10/);
+    expect(texto).toContain('Apurado às 08:00');
     expect(m.batchJSON).not.toHaveBeenCalled();
   });
 });

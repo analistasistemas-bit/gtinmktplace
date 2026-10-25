@@ -30,9 +30,22 @@ export function linhaCrescimento(mes: number, anterior: number, rotuloAnterior: 
 
 export interface KpisPeriodo { hoje: Kpis; mes: Kpis; anterior: Kpis; rotuloMes: string; rotuloAnterior: string }
 
-const linhaKpis = (x: Kpis): string => `${brl(x.faturamento)} · ${x.pedidos} pedidos · ticket ${brl(x.ticket)}`;
-const linhaMes = (k: KpisPeriodo): string =>
-  `${k.rotuloMes}: ${linhaKpis(k.mes)} · ${linhaCrescimento(k.mes.faturamento, k.anterior.faturamento, k.rotuloAnterior)}`;
+type Linha = string | null | false | undefined;
+/** Layout para celular: uma informação por linha, blocos separados por linha em branco; bloco vazio some. */
+const blocos = (...bs: Linha[][]): string =>
+  bs.map((b) => b.filter((l): l is string => !!l)).filter((b) => b.length).map((b) => b.join('\n')).join('\n\n');
+
+const linhasKpis = (x: Kpis): string[] =>
+  [`💰 Faturamento: ${brl(x.faturamento)}`, `🧾 Pedidos: ${x.pedidos}`, `🎟️ Ticket médio: ${brl(x.ticket)}`];
+
+const linhaVariacao = (k: KpisPeriodo): string => {
+  const t = linhaCrescimento(k.mes.faturamento, k.anterior.faturamento, k.rotuloAnterior);
+  return k.anterior.faturamento > 0 ? `${k.mes.faturamento < k.anterior.faturamento ? '📉' : '📈'} ${t}` : t;
+};
+
+/** Período resumido (contexto): faturamento e pedidos numa linha curta, ticket na seguinte. */
+const blocoPeriodo = (titulo: string, x: Kpis, variacao?: string): string[] =>
+  [titulo, `${brl(x.faturamento)} · ${x.pedidos} pedidos`, `Ticket médio: ${brl(x.ticket)}`, ...(variacao ? [variacao] : [])];
 
 export function montarMensagemCarrinho(
   c: ResultadoCarrinho, k: KpisPeriodo, chaveNumerica: number,
@@ -40,45 +53,49 @@ export function montarMensagemCarrinho(
 ): string {
   const sufixo = estado.parcial ? ` (parcial: ${estado.parcial.recebidos} de ${estado.parcial.total} itens)`
     : estado.composicaoIncerta ? ' (composição do carrinho não confirmada)' : '';
-  let lucro: string;
+  let lucro: string[];
   // Carrinho incompleto: o líquido gravado já descontou o frete do envio inteiro → lucro pessimista.
   if (estado.parcial || estado.composicaoIncerta) {
-    lucro = 'Lucro: — (carrinho incompleto)';
+    lucro = ['💵 Lucro: — (carrinho incompleto)'];
   } else if (c.lucro != null) {
-    const margem = c.margemSobreVenda != null ? ` · Margem s/ venda ${pct1(c.margemSobreVenda)}%` : '';
-    const markup = c.markup != null ? ` · Markup ${pct1(c.markup)}%` : '';
-    lucro = `Lucro ${brl(c.lucro)}${margem}${markup}`;
+    lucro = [
+      `💵 Lucro: ${brl(c.lucro)}`,
+      ...(c.margemSobreVenda != null ? [`📊 Margem s/ venda: ${pct1(c.margemSobreVenda)}%`] : []),
+      ...(c.markup != null ? [`📈 Markup: ${pct1(c.markup)}%`] : []),
+    ];
   } else {
-    lucro = `Lucro: — (${c.motivo === 'sem_custo' ? `sem custo em ${c.semCusto.length} ${c.semCusto.length === 1 ? 'item' : 'itens'}`
-      : c.motivo === 'frete_nao_lido' ? 'frete não lido no ML' : 'alíquotas de imposto não confirmadas'})`;
+    lucro = [`💵 Lucro: — (${c.motivo === 'sem_custo' ? `sem custo em ${c.semCusto.length} ${c.semCusto.length === 1 ? 'item' : 'itens'}`
+      : c.motivo === 'frete_nao_lido' ? 'frete não lido no ML' : 'alíquotas de imposto não confirmadas'})`];
   }
-  return [
-    `💼 Venda ${brl(c.venda)} — ${c.itens} ${c.itens === 1 ? 'item' : 'itens'}${sufixo}`,
-    lucro,
-    ...c.semCusto.map((t) => `⚠️ ${encurtar(t)}: sem custo cadastrado`),
-    // Prejuízo por item usa o mesmo líquido pessimista: some quando o carrinho está incompleto.
-    ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${encurtar(p.titulo)}: prejuízo de ${brl(Math.abs(p.valor))}`),
-    `Hoje: ${linhaKpis(k.hoje)}`,
-    linhaMes(k),
-    `Pedido ${chaveNumerica}`,
-    urlVendaML(chaveNumerica),
-  ].join('\n');
+  return blocos(
+    [`💼 Venda ${brl(c.venda)} — ${c.itens} ${c.itens === 1 ? 'item' : 'itens'}${sufixo}`, ...lucro],
+    [
+      ...c.semCusto.map((t) => `⚠️ ${encurtar(t)}: sem custo cadastrado`),
+      // Prejuízo por item usa o mesmo líquido pessimista: some quando o carrinho está incompleto.
+      ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${encurtar(p.titulo)}: prejuízo de ${brl(Math.abs(p.valor))}`),
+    ],
+    blocoPeriodo('📅 Hoje', k.hoje),
+    blocoPeriodo(`📆 ${k.rotuloMes}`, k.mes, linhaVariacao(k)),
+    [`🔗 Pedido ${chaveNumerica}`, urlVendaML(chaveNumerica)],
+  );
 }
 
-const linhaLucro = (l: LucroPeriodo): string | null =>
-  l.motivo === 'aliquota_nao_confirmada' ? 'Lucro: — (alíquotas de imposto não confirmadas)'
-    : l.lucro != null ? `Lucro ${brl(l.lucro)}${l.markup != null ? ` · Markup ${pct1(l.markup)}%` : ''}` : null;
+const linhasLucro = (l: LucroPeriodo): string[] =>
+  l.motivo === 'aliquota_nao_confirmada' ? ['💵 Lucro: — (alíquotas de imposto não confirmadas)']
+    : l.lucro != null ? [`💵 Lucro: ${brl(l.lucro)}`, ...(l.markup != null ? [`📈 Markup: ${pct1(l.markup)}%`] : [])] : [];
 
-const linhaCobertura = (l: LucroPeriodo): string | null => {
+const linhasCobertura = (l: LucroPeriodo): string[] => {
   const partes = [
     l.vendaSemCusto > 0 ? `${brl(l.vendaSemCusto)} sem custo` : '',
     l.vendaCustoEstimado > 0 ? `${brl(l.vendaCustoEstimado)} com custo estimado` : '',
     l.vendaSemImposto > 0 ? `${brl(l.vendaSemImposto)} sem alíquota de imposto` : '',
     l.pedidosFreteNaoLido > 0 ? `${l.pedidosFreteNaoLido} ${l.pedidosFreteNaoLido === 1 ? 'pedido' : 'pedidos'} sem frete lido` : '',
   ].filter(Boolean);
-  if (l.pctVendaComLucro <= 0 && !partes.length) return null;
-  return [`Custo: ${Math.round(l.pctVendaComLucro * 100)}% das vendas com lucro calculado`, ...partes].join(' · ');
+  if (l.pctVendaComLucro <= 0 && !partes.length) return [];
+  return [`Lucro calculado em ${Math.round(l.pctVendaComLucro * 100)}% das vendas`, ...partes.map((p) => `• ${p}`)];
 };
+
+const secao = (titulo: string, itens: string[]): string[] => (itens.length ? [titulo, ...itens] : []);
 
 export interface DadosResumo {
   /** `YYYY-MM-DD` (diaBrt); impresso como `dd/mm`. */
@@ -92,56 +109,50 @@ export interface DadosResumo {
   apuradoAte: string;
 }
 
-const unidas = (xs: (string | null)[]): string => xs.filter(Boolean).join(' · ');
+const itens = (xs: (string | null)[]): string[] => xs.filter((x): x is string => !!x).map((x) => `• ${x}`);
 
 export function montarResumoDiario(d: DadosResumo): string {
   const { atencao: a, devolucoes: dv, promocoes: p } = d;
-  const atencao = unidas([
-    a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null,
-    a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null,
-    a.semCusto > 0 ? `${a.semCusto} sem custo` : null,
-  ]);
-  const devolucoes = unidas([
-    dv.estornado > 0 ? `${brl(dv.estornado)} estornados` : null,
-    dv.prazoProximo > 0 ? `${dv.prazoProximo} ${dv.prazoProximo === 1 ? 'reclamação' : 'reclamações'} com prazo em até 48 h` : null,
-  ]);
-  const promocoes = p ? unidas([
-    p.prejuizo > 0 ? `${p.prejuizo} com prejuízo` : null,
-    p.prazo > 0 ? `${p.prazo} ${p.prazo === 1 ? 'oportunidade' : 'oportunidades'} com adesão vencendo` : null,
-  ]) : '';
-  return [
-    `📊 Ontem (${d.dia.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$2/$1')})`,
-    linhaKpis(d.ontem),
-    linhaLucro(d.lucroOntem),
-    `${d.rotuloMes}: ${linhaKpis(d.mes)} · ${linhaCrescimento(d.mes.faturamento, d.anterior.faturamento, d.rotuloAnterior)}`,
-    linhaCobertura(d.lucroOntem),
-    d.top.length ? `🏆 Top lucro: ${d.top.map((t) => `${encurtar(t.titulo)} (${brl(t.lucro)})`).join(', ')}` : null,
-    atencao && `⚠️ ${atencao}`,
-    devolucoes && `↩️ Devoluções: ${devolucoes}`,
-    promocoes && `🏷️ Promoções: ${promocoes}`,
-    d.freteSubiu.length ? `🚚 Frete subiu: ${d.freteSubiu.map((t) => encurtar(t)).join(', ')}` : null,
-    `Dados apurados até ${d.apuradoAte}`,
-  ].filter((l): l is string => !!l).join('\n');
+  const k: KpisPeriodo = { hoje: d.ontem, mes: d.mes, anterior: d.anterior, rotuloMes: d.rotuloMes, rotuloAnterior: d.rotuloAnterior };
+  return blocos(
+    [`📊 Ontem · ${d.dia.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$2/$1')}`],
+    [...linhasKpis(d.ontem), ...linhasLucro(d.lucroOntem)],
+    blocoPeriodo(`📆 ${d.rotuloMes}`, d.mes, linhaVariacao(k)),
+    secao('🏆 Top lucro', d.top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`)),
+    secao('⚠️ Atenção', itens([
+      a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null,
+      a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null,
+      a.semCusto > 0 ? `${a.semCusto} sem custo` : null,
+    ])),
+    secao('↩️ Devoluções', itens([
+      dv.estornado > 0 ? `${brl(dv.estornado)} estornados` : null,
+      dv.prazoProximo > 0 ? `${dv.prazoProximo} ${dv.prazoProximo === 1 ? 'reclamação' : 'reclamações'} com prazo em até 48 h` : null,
+    ])),
+    secao('🏷️ Promoções', p ? itens([
+      p.prejuizo > 0 ? `${p.prejuizo} com prejuízo` : null,
+      p.prazo > 0 ? `${p.prazo} ${p.prazo === 1 ? 'oportunidade' : 'oportunidades'} com adesão vencendo` : null,
+    ]) : []),
+    secao('🚚 Frete subiu', itens(d.freteSubiu.map((t) => encurtar(t)))),
+    [...linhasCobertura(d.lucroOntem), `Apurado às ${d.apuradoAte}`],
+  );
 }
 
 export function montarHoje(k: KpisPeriodo, l: LucroPeriodo): string {
-  return ['📅 Hoje', linhaKpis(k.hoje), linhaLucro(l), linhaCobertura(l)].filter(Boolean).join('\n');
+  return blocos(['📅 Hoje'], [...linhasKpis(k.hoje), ...linhasLucro(l)], linhasCobertura(l));
 }
 
 export function montarMes(k: KpisPeriodo, l: LucroPeriodo): string {
-  return [
-    `📅 ${k.rotuloMes}`,
-    `${linhaKpis(k.mes)} · ${linhaCrescimento(k.mes.faturamento, k.anterior.faturamento, k.rotuloAnterior)}`,
-    linhaLucro(l),
-    linhaCobertura(l),
-  ].filter(Boolean).join('\n');
+  return blocos([`📆 ${k.rotuloMes}`], [...linhasKpis(k.mes), linhaVariacao(k), ...linhasLucro(l)], linhasCobertura(l));
 }
 
 export function montarTop(top: { titulo: string; lucro: number }[], rotuloMes: string, cobertura: LucroPeriodo): string {
-  if (cobertura.motivo === 'aliquota_nao_confirmada') return `🏆 Top lucro — ${rotuloMes}\n${linhaLucro(cobertura)}`;
+  if (cobertura.motivo === 'aliquota_nao_confirmada') return blocos([`🏆 Top lucro — ${rotuloMes}`], linhasLucro(cobertura));
   if (!top.length) return `Sem lucro calculado em ${rotuloMes} até agora.`;
-  return [`🏆 Top lucro — ${rotuloMes}`, ...top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`), linhaCobertura(cobertura)]
-    .filter(Boolean).join('\n');
+  return blocos(
+    [`🏆 Top lucro — ${rotuloMes}`],
+    top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`),
+    linhasCobertura(cobertura),
+  );
 }
 
 export const TEXTO_AJUDA = [

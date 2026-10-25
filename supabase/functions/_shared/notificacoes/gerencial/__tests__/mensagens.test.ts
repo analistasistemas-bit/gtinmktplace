@@ -21,9 +21,12 @@ const carrinho: ResultadoCarrinho = {
 };
 const L1 = '💼 Venda R$ 189,80 — 2 itens';
 const rodape = [
-  'Hoje: R$ 2.340,00 · 14 pedidos · ticket R$ 167,14',
-  'Outubro: R$ 41.200,00 · 260 pedidos · ticket R$ 158,46 · +12,3% vs 1–24/set',
-  'Pedido 2000000001',
+  '',
+  '📅 Hoje', 'R$ 2.340,00 · 14 pedidos', 'Ticket médio: R$ 167,14',
+  '',
+  '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–24/set',
+  '',
+  '🔗 Pedido 2000000001',
   urlVendaML(2000000001),
 ];
 
@@ -46,27 +49,27 @@ describe('montarMensagemCarrinho', () => {
     const markup = (carrinho.markup! * 100).toFixed(1).replace('.', ',');
     expect(montarMensagemCarrinho(carrinho, k, 2000000001, estado)).toBe([
       L1,
-      `Lucro R$ 54,82 · Margem s/ venda 28,9% · Markup ${markup}%`,
+      '💵 Lucro: R$ 54,82', '📊 Margem s/ venda: 28,9%', `📈 Markup: ${markup}%`,
       ...rodape,
     ].join('\n'));
   });
   it('percentuais negativos usam o sinal tipográfico', () => {
     const c = { ...carrinho, lucro: -19.95, margemSobreVenda: -0.04, markup: -0.075 };
     const m = montarMensagemCarrinho(c, k, 2000000001, estado);
-    expect(m).toContain('Lucro −R$ 19,95 · Margem s/ venda −4,0% · Markup −7,5%');
+    expect(m).toContain('💵 Lucro: −R$ 19,95\n📊 Margem s/ venda: −4,0%\n📈 Markup: −7,5%');
   });
   it('sem custo', () => {
     const c = { ...carrinho, lucro: null, motivo: 'sem_custo' as const, margemSobreVenda: null, markup: null, semCusto: ['Máscara X'] };
     expect(montarMensagemCarrinho(c, k, 2000000001, estado)).toBe([
-      L1, 'Lucro: — (sem custo em 1 item)', '⚠️ Máscara X: sem custo cadastrado', ...rodape,
+      L1, '💵 Lucro: — (sem custo em 1 item)', '', '⚠️ Máscara X: sem custo cadastrado', ...rodape,
     ].join('\n'));
   });
   it('frete e alíquota', () => {
     const base = { ...carrinho, lucro: null, margemSobreVenda: null, markup: null };
     expect(montarMensagemCarrinho({ ...base, motivo: 'frete_nao_lido' }, k, 2000000001, estado))
-      .toContain('\nLucro: — (frete não lido no ML)\n');
+      .toContain('\n💵 Lucro: — (frete não lido no ML)\n');
     expect(montarMensagemCarrinho({ ...base, motivo: 'aliquota_nao_confirmada' }, k, 2000000001, estado))
-      .toContain('\nLucro: — (alíquotas de imposto não confirmadas)\n');
+      .toContain('\n💵 Lucro: — (alíquotas de imposto não confirmadas)\n');
   });
   it('prejuízo', () => {
     const c = { ...carrinho, prejuizos: [{ titulo: 'Máscara X', valor: -4.1 }] };
@@ -82,7 +85,7 @@ describe('montarMensagemCarrinho', () => {
     const semCusto = { ...carrinho, lucro: null, margemSobreVenda: null, markup: null, motivo: 'sem_custo' as const };
     for (const c of [carrinho, semCusto]) {
       for (const e of [{ parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false }, { parcial: null, composicaoIncerta: true }]) {
-        expect(montarMensagemCarrinho(c, k, 2000000001, e).split('\n')[1]).toBe('Lucro: — (carrinho incompleto)');
+        expect(montarMensagemCarrinho(c, k, 2000000001, e).split('\n')[1]).toBe('💵 Lucro: — (carrinho incompleto)');
       }
     }
   });
@@ -90,7 +93,7 @@ describe('montarMensagemCarrinho', () => {
     const c = { ...carrinho, prejuizos: [{ titulo: 'Máscara X', valor: -4.1 }], semCusto: ['Touca Y'] };
     for (const e of [{ parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false }, { parcial: null, composicaoIncerta: true }]) {
       const m = montarMensagemCarrinho(c, k, 2000000001, e);
-      expect(m).toContain('Lucro: — (carrinho incompleto)');
+      expect(m).toContain('💵 Lucro: — (carrinho incompleto)');
       expect(m).toContain('⚠️ Touca Y: sem custo cadastrado');
       expect(m).not.toContain('prejuízo de');
     }
@@ -126,17 +129,25 @@ const resumo: DadosResumo = {
 describe('montarResumoDiario', () => {
   it('completo', () => {
     expect(montarResumoDiario(resumo)).toBe([
-      '📊 Ontem (23/10)',
-      'R$ 4.870,00 · 31 pedidos · ticket R$ 157,10',
-      'Lucro R$ 1.020,00 · Markup 34,0%',
-      'Outubro: R$ 41.200,00 · 260 pedidos · ticket R$ 158,46 · +12,3% vs 1–23/set',
-      'Custo: 96% das vendas com lucro calculado · R$ 180,00 sem custo · R$ 40,00 com custo estimado · 2 pedidos sem frete lido',
-      '🏆 Top lucro: Shampoo X (R$ 210,00), Máscara Y (R$ 150,00), Kit Z (R$ 90,00)',
-      '⚠️ 3 abaixo do mínimo · 1 com prejuízo · 2 sem custo',
-      '↩️ Devoluções: R$ 120,00 estornados · 2 reclamações com prazo em até 48 h',
-      '🏷️ Promoções: 2 com prejuízo · 1 oportunidade com adesão vencendo',
-      '🚚 Frete subiu: Produto A, Produto B',
-      'Dados apurados até 08:00',
+      '📊 Ontem · 23/10',
+      '',
+      '💰 Faturamento: R$ 4.870,00', '🧾 Pedidos: 31', '🎟️ Ticket médio: R$ 157,10',
+      '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+      '',
+      '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–23/set',
+      '',
+      '🏆 Top lucro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
+      '',
+      '⚠️ Atenção', '• 3 abaixo do mínimo', '• 1 com prejuízo', '• 2 sem custo',
+      '',
+      '↩️ Devoluções', '• R$ 120,00 estornados', '• 2 reclamações com prazo em até 48 h',
+      '',
+      '🏷️ Promoções', '• 2 com prejuízo', '• 1 oportunidade com adesão vencendo',
+      '',
+      '🚚 Frete subiu', '• Produto A', '• Produto B',
+      '',
+      'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
+      'Apurado às 08:00',
     ].join('\n'));
   });
   it('linhas somem quando vazias', () => {
@@ -146,21 +157,24 @@ describe('montarResumoDiario', () => {
       lucroOntem: { ...lucro, vendaSemCusto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0 },
     });
     expect(r).toBe([
-      '📊 Ontem (23/10)',
-      'R$ 4.870,00 · 31 pedidos · ticket R$ 157,10',
-      'Lucro R$ 1.020,00 · Markup 34,0%',
-      'Outubro: R$ 41.200,00 · 260 pedidos · ticket R$ 158,46 · +12,3% vs 1–23/set',
-      'Custo: 96% das vendas com lucro calculado',
-      'Dados apurados até 08:00',
+      '📊 Ontem · 23/10',
+      '',
+      '💰 Faturamento: R$ 4.870,00', '🧾 Pedidos: 31', '🎟️ Ticket médio: R$ 157,10',
+      '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+      '',
+      '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–23/set',
+      '',
+      'Lucro calculado em 96% das vendas',
+      'Apurado às 08:00',
     ].join('\n'));
   });
   it('alíquota não confirmada', () => {
-    expect(montarResumoDiario({ ...resumo, lucroOntem: { ...lucro, lucro: null, motivo: 'aliquota_nao_confirmada', markup: null } }).split('\n')[2])
-      .toBe('Lucro: — (alíquotas de imposto não confirmadas)');
+    expect(montarResumoDiario({ ...resumo, lucroOntem: { ...lucro, lucro: null, motivo: 'aliquota_nao_confirmada', markup: null } }).split('\n')[5])
+      .toBe('💵 Lucro: — (alíquotas de imposto não confirmadas)');
   });
   it('venda sem alíquota na cobertura, entre custo estimado e frete', () => {
     const r = montarResumoDiario({ ...resumo, lucroOntem: { ...lucro, vendaSemImposto: 75 } });
-    expect(r).toContain('R$ 40,00 com custo estimado · R$ 75,00 sem alíquota de imposto · 2 pedidos sem frete lido');
+    expect(r).toContain('• R$ 40,00 com custo estimado\n• R$ 75,00 sem alíquota de imposto\n• 2 pedidos sem frete lido');
   });
 });
 
@@ -168,27 +182,33 @@ describe('hoje / mes / top / textos fixos', () => {
   it('hoje', () => {
     expect(montarHoje(k, lucro)).toBe([
       '📅 Hoje',
-      'R$ 2.340,00 · 14 pedidos · ticket R$ 167,14',
-      'Lucro R$ 1.020,00 · Markup 34,0%',
-      'Custo: 96% das vendas com lucro calculado · R$ 180,00 sem custo · R$ 40,00 com custo estimado · 2 pedidos sem frete lido',
+      '',
+      '💰 Faturamento: R$ 2.340,00', '🧾 Pedidos: 14', '🎟️ Ticket médio: R$ 167,14',
+      '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+      '',
+      'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
     ].join('\n'));
   });
   it('mes', () => {
     expect(montarMes(k, lucro)).toBe([
-      '📅 Outubro',
-      'R$ 41.200,00 · 260 pedidos · ticket R$ 158,46 · +12,3% vs 1–24/set',
-      'Lucro R$ 1.020,00 · Markup 34,0%',
-      'Custo: 96% das vendas com lucro calculado · R$ 180,00 sem custo · R$ 40,00 com custo estimado · 2 pedidos sem frete lido',
+      '📆 Outubro',
+      '',
+      '💰 Faturamento: R$ 41.200,00', '🧾 Pedidos: 260', '🎟️ Ticket médio: R$ 158,46',
+      '📈 +12,3% vs 1–24/set',
+      '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+      '',
+      'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
     ].join('\n'));
   });
   it('top', () => {
     expect(montarTop(resumo.top, 'Outubro', lucro)).toBe([
-      '🏆 Top lucro — Outubro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
-      'Custo: 96% das vendas com lucro calculado · R$ 180,00 sem custo · R$ 40,00 com custo estimado · 2 pedidos sem frete lido',
+      '🏆 Top lucro — Outubro', '', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
+      '',
+      'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
     ].join('\n'));
     expect(montarTop([], 'Outubro', lucro)).toBe('Sem lucro calculado em Outubro até agora.');
     expect(montarTop(resumo.top, 'Outubro', { ...lucro, lucro: null, motivo: 'aliquota_nao_confirmada' }))
-      .toBe('🏆 Top lucro — Outubro\nLucro: — (alíquotas de imposto não confirmadas)');
+      .toBe('🏆 Top lucro — Outubro\n\n💵 Lucro: — (alíquotas de imposto não confirmadas)');
   });
   it('textos', () => {
     expect(TEXTO_AJUDA.split('\n')).toEqual(expect.arrayContaining([
@@ -210,8 +230,8 @@ describe('encurtar / títulos nas mensagens', () => {
   it('aplica em top, /top, atenção e frete subiu', () => {
     const e = 'Protetor Solar Facial Eucerin Pigment…';
     const top = [{ titulo: LONGO, lucro: 35.27 }];
-    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🏆 Top lucro: ${e} (R$ 35,27)`);
-    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🚚 Frete subiu: ${e}`);
+    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🏆 Top lucro\n1. ${e} — R$ 35,27`);
+    expect(montarResumoDiario({ ...resumo, top, freteSubiu: [LONGO] })).toContain(`🚚 Frete subiu\n• ${e}`);
     expect(montarTop(top, 'Outubro', lucro)).toContain(`1. ${e} — R$ 35,27`);
     const c = { ...carrinho, prejuizos: [{ titulo: LONGO, valor: -4.1 }], semCusto: [LONGO] };
     const m = montarMensagemCarrinho(c, k, 2000000001, { parcial: null, composicaoIncerta: false });
