@@ -222,6 +222,62 @@ describe('contarAtencao — prejuízos nomeados', () => {
     expect(r.prejuizos.map((p) => p.codigo)).toEqual(['B', 'A']);
   });
 
+  it('mesmo SKU em pedidos diferentes soma e conta 2 vendas', () => {
+    const r = contarAtencao([vermelho({ orderId: 1, lucro: -3 }), vermelho({ orderId: 2, lucro: -4 })], new Map());
+    expect(r.prejuizos).toEqual([{ codigo: 'SKU1', titulo: 'Produto 1', valor: -7, vendas: 2 }]);
+  });
+
+  it('mesmo SKU no mesmo pedido conta 1 venda', () => {
+    const r = contarAtencao([vermelho({ orderId: 5, lucro: -3 }), vermelho({ orderId: 5, lucro: -4 })], new Map());
+    expect(r.prejuizos).toEqual([{ codigo: 'SKU1', titulo: 'Produto 1', valor: -7, vendas: 1 }]);
+  });
+
+  it('arredonda a soma (round2)', () => {
+    const r = contarAtencao([vermelho({ orderId: 1, lucro: -1.005 }), vermelho({ orderId: 2, lucro: -2.004 })], new Map());
+    expect(r.prejuizos[0].valor).toBe(-3.01);
+  });
+
+  it('não faturável e sem custo ficam fora', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, faturavel: false }),
+      vermelho({ orderId: 2, custo: null, lucro: null }),
+    ], new Map());
+    expect(r.prejuizos).toEqual([]);
+  });
+
+  it('código "X" e título "X" sem código não colidem', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: 'X', titulo: 'Outro', lucro: -2 }),
+      vermelho({ orderId: 2, codigo: null, titulo: 'X', lucro: -3 }),
+    ], new Map());
+    expect(r.prejuizos).toEqual([
+      { codigo: null, titulo: 'X', valor: -3, vendas: 1 },
+      { codigo: 'X', titulo: 'Outro', valor: -2, vendas: 1 },
+    ]);
+  });
+
+  it('sem código e sem título (ou título vazio) = grupo "sem identificação"', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: null, titulo: null, lucro: -1 }),
+      vermelho({ orderId: 2, codigo: null, titulo: '', lucro: -2 }),
+      vermelho({ orderId: 3, codigo: null, titulo: 'Real', lucro: -5 }),
+    ], new Map());
+    expect(r.prejuizos).toEqual([
+      { codigo: null, titulo: 'Real', valor: -5, vendas: 1 },
+      { codigo: null, titulo: null, valor: -3, vendas: 2 },
+    ]);
+  });
+
+  it('empate de valor: codigo asc (null por último), depois titulo asc', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: null, titulo: 'A', lucro: -2 }),
+      vermelho({ orderId: 2, codigo: 'B', titulo: 'z', lucro: -2 }),
+      vermelho({ orderId: 3, codigo: 'A', titulo: 'y', lucro: -2 }),
+      vermelho({ orderId: 4, codigo: null, titulo: 'C', lucro: -2 }),
+    ], new Map());
+    expect(r.prejuizos.map((p) => `${p.codigo}/${p.titulo}`)).toEqual(['A/y', 'B/z', 'null/A', 'null/C']);
+  });
+
   it('contagem prejuizo inalterada', () => {
     const r = contarAtencao([vermelho({ orderId: 1 }), vermelho({ orderId: 2 }), verde({ orderId: 3 })], new Map());
     expect(r.prejuizo).toBe(2);

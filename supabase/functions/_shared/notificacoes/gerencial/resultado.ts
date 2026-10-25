@@ -180,6 +180,10 @@ export function topPorLucro(itens: ResultadoItem[], n: number): { titulo: string
     .slice(0, n);
 }
 
+/** Ordem asc com null por último (desempate determinístico). */
+const cmpNulo = (a: string | null, b: string | null) =>
+  a === b ? 0 : a == null ? 1 : b == null ? -1 : a < b ? -1 : 1;
+
 export interface PrejuizoSku { codigo: string | null; titulo: string | null; valor: number; vendas: number }
 
 /** Itens que pedem atenção: abaixo do piso, prejuízo (semáforo ADR-0020 por unidade) e sem custo. `prejuizos` nomeia os vermelhos por SKU (ou título). */
@@ -197,8 +201,12 @@ export function contarAtencao(
     const s = calcularSemaforo((it.liquido - it.imposto) / it.quantidade, piso, it.custo / it.quantidade);
     if (s === 'vermelho') {
       prejuizo++;
-      const chave = it.codigo ?? it.titulo ?? '';
-      const acc = porChave.get(chave) ?? { codigo: it.codigo, titulo: it.titulo, valor: 0, pedidos: new Set<number>() };
+      // Espaços de chave separados: código, título e "sem identificação" nunca colidem.
+      const temTitulo = it.titulo != null && it.titulo !== '';
+      const chave = it.codigo != null ? `c:${it.codigo}` : temTitulo ? `t:${it.titulo}` : 's:';
+      const acc = porChave.get(chave) ?? {
+        codigo: it.codigo, titulo: it.codigo == null && !temTitulo ? null : it.titulo, valor: 0, pedidos: new Set<number>(),
+      };
       acc.valor += it.lucro;
       acc.pedidos.add(it.orderId);
       porChave.set(chave, acc);
@@ -206,6 +214,6 @@ export function contarAtencao(
   }
   const prejuizos = [...porChave.values()]
     .map((p) => ({ codigo: p.codigo, titulo: p.titulo, valor: round2(p.valor), vendas: p.pedidos.size }))
-    .sort((a, b) => a.valor - b.valor);
+    .sort((a, b) => a.valor - b.valor || cmpNulo(a.codigo, b.codigo) || cmpNulo(a.titulo, b.titulo));
   return { abaixoMinimo, prejuizo, semCusto, prejuizos };
 }
