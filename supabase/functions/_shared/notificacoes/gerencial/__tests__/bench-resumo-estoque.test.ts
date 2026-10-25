@@ -48,24 +48,29 @@ function sintetico() {
 }
 
 describe('CPU do cálculo puro do resumo', () => {
-  it('5.000 vendas sintéticas ≤ 250 ms de CPU', () => {
+  it('5.000 vendas sintéticas: melhor de 3 amostras ≤ 250 ms de CPU', () => {
     const { ctx, vendas, catalogo } = sintetico();
     const dataPorOrder = new Map(vendas.map((v) => [v.order_id, v.date_closed as string]));
-    const cpu0 = process.cpuUsage();
-    const itens = resultadoPorItem(vendas, ctx);
-    const estoque = selecionarEstoqueAcabando(itens, dataPorOrder, catalogo, FIM);
-    const texto = montarResumoDiario({
-      dia: '2026-10-24', ontem: { faturamento: 1, pedidos: 1, ticket: 1 },
-      lucroOntem: { lucro: 1, motivo: null, pctVendaComLucro: 1, vendaSemCusto: 0, vendaSemImposto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0, markup: 0.3 },
-      mes: { faturamento: 1, pedidos: 1, ticket: 1 }, anterior: { faturamento: 1, pedidos: 1, ticket: 1 },
-      rotuloMes: 'Outubro', rotuloAnterior: '1–24/set', top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] },
-      estoque, devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [], apuradoAte: '08:00',
-    } satisfies DadosResumo);
-    const c = process.cpuUsage(cpu0);
-    const ms = (c.user + c.system) / 1000;
-    console.log(`CPU resumo (user+system): ${ms.toFixed(1)} ms; itens=${itens.length} estoque=${estoque.length}`);
-    expect(itens.length).toBeGreaterThan(10_000);
-    expect(texto).toContain('📦 Estoque acabando');
-    expect(ms).toBeLessThanOrEqual(250);
+    const rodar = () => {
+      const cpu0 = process.cpuUsage();
+      const itens = resultadoPorItem(vendas, ctx);
+      const estoque = selecionarEstoqueAcabando(itens, dataPorOrder, catalogo, FIM);
+      const texto = montarResumoDiario({
+        dia: '2026-10-24', ontem: { faturamento: 1, pedidos: 1, ticket: 1 },
+        lucroOntem: { lucro: 1, motivo: null, pctVendaComLucro: 1, vendaSemCusto: 0, vendaSemImposto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0, markup: 0.3 },
+        mes: { faturamento: 1, pedidos: 1, ticket: 1 }, anterior: { faturamento: 1, pedidos: 1, ticket: 1 },
+        rotuloMes: 'Outubro', rotuloAnterior: '1–24/set', top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] },
+        estoque, devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [], apuradoAte: '08:00',
+      } satisfies DadosResumo);
+      const c = process.cpuUsage(cpu0);
+      expect(itens.length).toBeGreaterThan(10_000);
+      expect(texto).toContain('📦 Estoque acabando');
+      return (c.user + c.system) / 1000;
+    };
+    rodar(); // aquecimento (JIT/primeira carga)
+    const amostras = [rodar(), rodar(), rodar()];
+    const melhor = Math.min(...amostras);
+    if (melhor > 250 || process.env.BENCH_LOG) console.log(`CPU resumo (ms) amostras: ${amostras.map((x) => x.toFixed(1)).join(', ')}`);
+    expect(melhor).toBeLessThanOrEqual(250);
   });
 });

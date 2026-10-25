@@ -177,8 +177,13 @@ export async function montarDadosResumo(admin: SupabaseClient, orgId: string, di
   }
   const prejuizos = atencao.prejuizos.map((p) => {
     const cat = p.codigo != null ? catalogo?.get(p.codigo) : undefined;
-    const nome = cat ? nomeSku({ codigo: cat.codigo, titulo: cat.nome, nomeFamilia: cat.nomeFamilia })
-      : p.titulo ?? p.codigo ?? 'item sem código';
+    let nome: string | null = null;
+    if (cat) {
+      try { nome = nomeSku({ codigo: cat.codigo, titulo: cat.nome, nomeFamilia: cat.nomeFamilia }); } catch (e) {
+        console.error('resumo_secao_falhou', 'nome_prejuizo', e);
+      }
+    }
+    nome ??= p.titulo ?? p.codigo ?? 'item sem código';
     return { nome, valor: p.valor, vendas: p.vendas };
   });
   return {

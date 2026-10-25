@@ -128,18 +128,23 @@ const linhaEstoque = (e: ItemEstoque): string =>
 
 export function montarResumoDiario(d: DadosResumo): string {
   const { atencao: a, devolucoes: dv, promocoes: p } = d;
-  const prejuizos = a.prejuizos.map((x) =>
-    `• Prejuízo: ${encurtar(x.nome)} — ${brl(x.valor)} (${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'})`);
+  // Seção nova que falhar sai sem a seção (estoque) ou com a linha contada antiga (prejuízo); o resumo nunca deixa de sair.
+  const isolar = <T>(secao: string, fallback: T, f: () => T): T => {
+    try { return f(); } catch (e) { console.error('resumo_secao_falhou', secao, e); return fallback; }
+  };
+  const prejuizos = isolar('prejuizos', [] as string[], () => limitar(a.prejuizos.map((x) =>
+    `• Prejuízo: ${encurtar(x.nome)} — ${brl(x.valor)} (${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'})`), ' com prejuízo'));
+  const blocoEstoque = isolar('estoque', [] as string[], () => secao('📦 Estoque acabando', limitar((d.estoque ?? []).map(linhaEstoque))));
   const k: KpisPeriodo = { hoje: d.ontem, mes: d.mes, anterior: d.anterior, rotuloMes: d.rotuloMes, rotuloAnterior: d.rotuloAnterior };
   return blocos(
     [`📊 Ontem · ${d.dia.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$2/$1')}`],
     [...linhasKpis(d.ontem), ...linhasLucro(d.lucroOntem)],
     blocoPeriodo(`📆 ${d.rotuloMes}`, d.mes, linhaVariacao(k)),
-    secao('📦 Estoque acabando', limitar((d.estoque ?? []).map(linhaEstoque))),
+    blocoEstoque,
     secao('🏆 Top lucro', d.top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`)),
     secao('⚠️ Atenção', [
       // Sem lista nomeada (não deveria ocorrer) cai na contagem.
-      ...(prejuizos.length ? limitar(prejuizos, ' com prejuízo') : itens([a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null])),
+      ...(prejuizos.length ? prejuizos : itens([a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null])),
       ...itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null]),
       ...itens([a.semCusto > 0 ? `${a.semCusto} sem custo` : null]),
     ]),

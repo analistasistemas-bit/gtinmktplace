@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   carregarContexto: vi.fn(),
   lerVendasJanela: vi.fn(),
   resultadoPorItem: vi.fn(),
+  nomeSkuFalha: false,
 }));
 
 vi.mock('../../../queue.ts', () => ({ qstashClient: () => ({ batchJSON: m.batchJSON }) }));
@@ -16,6 +17,10 @@ vi.mock('../../../platform-admin/metrics-repository.ts', async (orig) => ({
   ...(await orig<object>()), carregarContexto: m.carregarContexto, lerVendasJanela: m.lerVendasJanela,
 }));
 
+vi.mock('../nome-sku.ts', async (orig) => {
+  const o = await orig<typeof import('../nome-sku.ts')>();
+  return { ...o, nomeSku: (...a: Parameters<typeof o.nomeSku>) => { if (m.nomeSkuFalha) throw new Error('boom'); return o.nomeSku(...a); } };
+});
 vi.mock('../resultado.ts', async (orig) => ({ ...(await orig<object>()), resultadoPorItem: m.resultadoPorItem }));
 
 import { VolumeAcimaDoLimite } from '../../../platform-admin/metrics-repository.ts';
@@ -255,6 +260,15 @@ describe('estoque acabando e nomes do prejuízo (fase 1)', () => {
     const d = await montarDadosResumo(fakeAdmin(base()), ORG, dia, AGORA);
     const nomes = Object.fromEntries(d.atencao.prejuizos.map((p) => [p.nome, p.vendas]));
     expect(Object.keys(nomes).sort()).toEqual(['Camisa · Azul', 'Só título', 'Z', 'item sem código'].sort());
+  });
+
+  it('nomeSku lança com catálogo lido → resolve e o nome cai para o título', async () => {
+    prepara([prejuizo({ codigo: 'A', titulo: 'Título ML' })], []);
+    m.nomeSkuFalha = true;
+    try {
+      const d = await montarDadosResumo(fakeAdmin(base()), ORG, dia, AGORA);
+      expect(d.atencao.prejuizos.map((p) => p.nome)).toEqual(['Título ML']);
+    } finally { m.nomeSkuFalha = false; }
   });
 
   it('kit (kit_multiplicador) e estoque nulo ficam fora', async () => {

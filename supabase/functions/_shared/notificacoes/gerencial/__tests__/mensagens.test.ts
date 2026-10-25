@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   brl, encurtar, linhaCrescimento, montarHoje, montarMensagemCarrinho, montarMes, montarResumoDiario, montarTop,
   TEXTO_AJUDA, TEXTO_ERRO, TEXTO_SEM_ACESSO, TEXTO_SO_PRIVADO, TEXTO_VOLUME,
@@ -298,6 +298,21 @@ describe('resumo: estoque acabando e prejuízo nomeado', () => {
   it('prejuizos vazio com contagem > 0 → linha contada antes de abaixo do mínimo', () => {
     expect(montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, prejuizos: [] } }))
       .toContain('⚠️ Atenção\n• 4 com prejuízo\n• 3 abaixo do mínimo\n• 2 sem custo');
+  });
+  const bomba = <T extends object>(o: T): T => Object.defineProperty({ ...o }, 'nome', { get() { throw new Error('boom'); } });
+  it('formatação do estoque lança → resumo sai sem 📦, resto idêntico', () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(montarResumoDiario({ ...base, estoque: [bomba(it4[0])] })).toBe(esperado([]));
+    expect(erro).toHaveBeenCalledWith('resumo_secao_falhou', 'estoque', expect.any(Error));
+    erro.mockRestore();
+  });
+  it('formatação das linhas de prejuízo lança → ⚠️ com `• N com prejuízo` e resto igual', () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, prejuizos: [bomba(prej[0])] } });
+    expect(r).toBe(montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, prejuizos: [] } }));
+    expect(r).toContain('⚠️ Atenção\n• 4 com prejuízo\n• 3 abaixo do mínimo\n• 2 sem custo');
+    expect(erro).toHaveBeenCalledWith('resumo_secao_falhou', 'prejuizos', expect.any(Error));
+    erro.mockRestore();
   });
   it('item não zerado com cobertura null → sem o trecho de dias', () => {
     const r = montarResumoDiario({ ...base, estoque: [{ ...it4[1], cobertura: null }] });
