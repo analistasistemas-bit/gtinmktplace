@@ -139,7 +139,7 @@ describe('montarResumoDiario', () => {
       '',
       '🏆 Top lucro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
       '',
-      '⚠️ Atenção', '• 3 abaixo do mínimo', '• 1 com prejuízo', '• 2 sem custo',
+      '⚠️ Atenção', '• 1 com prejuízo', '• 3 abaixo do mínimo', '• 2 sem custo',
       '',
       '↩️ Devoluções', '• R$ 120,00 estornados', '• 2 reclamações com prazo em até 48 h',
       '',
@@ -252,34 +252,55 @@ describe('resumo: estoque acabando e prejuízo nomeado', () => {
     { nome: 'Item A', valor: -40.5, vendas: 3 }, { nome: 'Item B', valor: -20, vendas: 1 },
     { nome: 'Item C', valor: -10, vendas: 2 }, { nome: 'Item D', valor: -4.1, vendas: 1 },
   ];
-  const base = { ...resumo, atencao: { abaixoMinimo: 3, prejuizo: 4, semCusto: 2, prejuizos: prej } };
+  const base: DadosResumo = { ...resumo, atencao: { abaixoMinimo: 3, prejuizo: 4, semCusto: 2, prejuizos: prej } };
+  const esperado = (blocoEstoque: string[]) => [
+    '📊 Ontem · 23/10',
+    '',
+    '💰 Faturamento: R$ 4.870,00', '🧾 Pedidos: 31', '🎟️ Ticket médio: R$ 157,10',
+    '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+    '',
+    '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–23/set',
+    '',
+    ...blocoEstoque,
+    '🏆 Top lucro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
+    '',
+    '⚠️ Atenção',
+    '• Prejuízo: Item A — −R$ 40,50 (3 vendas)',
+    '• Prejuízo: Item B — −R$ 20,00 (1 venda)',
+    '• Prejuízo: Item C — −R$ 10,00 (2 vendas)',
+    '• e mais 1 com prejuízo',
+    '• 3 abaixo do mínimo',
+    '• 2 sem custo',
+    '',
+    '↩️ Devoluções', '• R$ 120,00 estornados', '• 2 reclamações com prazo em até 48 h',
+    '',
+    '🏷️ Promoções', '• 2 com prejuízo', '• 1 oportunidade com adesão vencendo',
+    '',
+    '🚚 Frete subiu', '• Produto A', '• Produto B',
+    '',
+    'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
+    'Apurado às 08:00',
+  ].join('\n');
 
-  it('bloco 📦 com 3 itens + e mais, entre o mês e o top', () => {
-    const r = montarResumoDiario({ ...base, estoque: it4 });
-    expect(r).toContain([
+  it('resumo completo: ordem dos blocos, ordem interna do ⚠️, singulares e e mais N', () => {
+    expect(montarResumoDiario({ ...base, estoque: it4 })).toBe(esperado([
       '📦 Estoque acabando',
       '• Shampoo X — zerado (vendia 3/dia)',
       '• Máscara Y — 8 un. · 2,3/dia · 3 dias',
       '• Touca Z — 1 un. · 0,5/dia · 1 dia',
       '• e mais 1',
-    ].join('\n'));
-    const pos = ['📆 Outubro', '📦 Estoque', '🏆 Top', '⚠️ Atenção'].map((s) => r.indexOf(s));
-    expect(pos.every((x) => x >= 0) && [...pos].sort((a, b) => a - b).join() === pos.join()).toBe(true);
+      '',
+    ]));
   });
-  it('estoque null ou vazio → sem seção', () => {
-    expect(montarResumoDiario({ ...base, estoque: null })).not.toContain('📦');
-    expect(montarResumoDiario({ ...base, estoque: [] })).not.toContain('📦');
+  it('estoque null → mesmo texto sem o bloco 📦', () => {
+    expect(montarResumoDiario({ ...base, estoque: null })).toBe(esperado([]));
   });
-  it('prejuízo nomeado: 3 linhas + e mais N com prejuízo; outras contagens seguem', () => {
-    expect(montarResumoDiario(base)).toContain([
-      '⚠️ Atenção', '• 3 abaixo do mínimo',
-      '• Prejuízo: Item A — −R$ 40,50 (3 vendas)',
-      '• Prejuízo: Item B — −R$ 20,00 (1 venda)',
-      '• Prejuízo: Item C — −R$ 10,00 (2 vendas)',
-      '• e mais 1 com prejuízo', '• 2 sem custo',
-    ].join('\n'));
+  it('prejuizos vazio com contagem > 0 → linha contada antes de abaixo do mínimo', () => {
+    expect(montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, prejuizos: [] } }))
+      .toContain('⚠️ Atenção\n• 4 com prejuízo\n• 3 abaixo do mínimo\n• 2 sem custo');
   });
-  it('prejuizos vazio com contagem > 0 → linha contada antiga', () => {
-    expect(montarResumoDiario({ ...base, atencao: { ...base.atencao, prejuizos: [] } })).toContain('• 4 com prejuízo');
+  it('item não zerado com cobertura null → sem o trecho de dias', () => {
+    const r = montarResumoDiario({ ...base, estoque: [{ ...it4[1], cobertura: null }] });
+    expect(r).toContain('📦 Estoque acabando\n• Máscara Y — 8 un. · 2,3/dia\n\n🏆');
   });
 });

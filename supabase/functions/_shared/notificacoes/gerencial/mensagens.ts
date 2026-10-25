@@ -124,7 +124,7 @@ const porDiaTxt = (n: number): string => `${Number(n.toFixed(1))}`.replace('.', 
 
 const linhaEstoque = (e: ItemEstoque): string =>
   e.zerado ? `• ${encurtar(e.nome)} — zerado (vendia ${porDiaTxt(e.porDia)}/dia)`
-    : `• ${encurtar(e.nome)} — ${e.estoque} un. · ${porDiaTxt(e.porDia)}/dia · ${e.cobertura} ${e.cobertura === 1 ? 'dia' : 'dias'}`;
+    : `• ${encurtar(e.nome)} — ${e.estoque} un. · ${porDiaTxt(e.porDia)}/dia${e.cobertura == null ? '' : ` · ${e.cobertura} ${e.cobertura === 1 ? 'dia' : 'dias'}`}`;
 
 export function montarResumoDiario(d: DadosResumo): string {
   const { atencao: a, devolucoes: dv, promocoes: p } = d;
@@ -138,9 +138,9 @@ export function montarResumoDiario(d: DadosResumo): string {
     secao('📦 Estoque acabando', limitar((d.estoque ?? []).map(linhaEstoque))),
     secao('🏆 Top lucro', d.top.map((t, i) => `${i + 1}. ${encurtar(t.titulo)} — ${brl(t.lucro)}`)),
     secao('⚠️ Atenção', [
-      ...itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null]),
       // Sem lista nomeada (não deveria ocorrer) cai na contagem.
       ...(prejuizos.length ? limitar(prejuizos, ' com prejuízo') : itens([a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null])),
+      ...itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null]),
       ...itens([a.semCusto > 0 ? `${a.semCusto} sem custo` : null]),
     ]),
     secao('↩️ Devoluções', itens([
