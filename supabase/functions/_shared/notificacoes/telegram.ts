@@ -223,7 +223,7 @@ export function montarMensagemConexaoBloqueada(orgId: string, motivo: string): s
 export const LIMITE_TELEGRAM = 4096;
 
 /** Texto acima do limite vira várias mensagens, sem cortar conteúdo: quebra entre blocos (linha em
- * branco), depois entre linhas e, só para uma linha gigante, no meio dela (sem partir emoji). */
+ * branco), depois entre linhas e, só para uma linha gigante, no meio dela (sem partir grafema). */
 export function dividirTexto(texto: string, max = LIMITE_TELEGRAM): string[] {
   if (texto.length <= max) return [texto];
   for (const sep of ['\n\n', '\n']) {
@@ -240,13 +240,14 @@ export function dividirTexto(texto: string, max = LIMITE_TELEGRAM): string[] {
     if (atual != null) saida.push(atual);
     return saida.filter((x) => x.trim()).flatMap((x) => dividirTexto(x, max));
   }
+  // Corte por grafema: não separa emoji composto (👩‍💻, 👍🏽, 🇧🇷) nem par substituto.
   const saida: string[] = [];
-  for (let i = 0; i < texto.length;) {
-    let fim = Math.min(i + max, texto.length);
-    if (fim < texto.length && /[\uD800-\uDBFF]/.test(texto[fim - 1])) fim--;
-    saida.push(texto.slice(i, fim));
-    i = fim;
+  let atual = '';
+  for (const { segment } of new Intl.Segmenter('pt-BR', { granularity: 'grapheme' }).segment(texto)) {
+    if (atual && atual.length + segment.length > max) { saida.push(atual); atual = ''; }
+    atual += segment;
   }
+  if (atual) saida.push(atual);
   return saida;
 }
 

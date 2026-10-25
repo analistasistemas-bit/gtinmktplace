@@ -33,6 +33,14 @@ describe('dividirTexto (limite de 4096 do sendMessage)', () => {
     expect(partes[0].length).toBe(LIMITE_TELEGRAM - 1);
     expect(partes[1].startsWith('📦')).toBe(true);
   });
+
+  it.each(['👩‍💻', '👍🏽', '🇧🇷'])('linha gigante não separa o emoji composto %s', (emoji) => {
+    const texto = 'a'.repeat(LIMITE_TELEGRAM - 2) + emoji + 'b';
+    const partes = dividirTexto(texto);
+    expect(partes.join('')).toBe(texto);
+    for (const p of partes) expect(p.length).toBeLessThanOrEqual(LIMITE_TELEGRAM);
+    expect(partes[1].startsWith(emoji)).toBe(true);
+  });
 });
 
 describe('enviarTelegram com texto longo', () => {
