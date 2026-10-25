@@ -24,19 +24,19 @@ declare
   r json;
   o constant uuid := '96000000-0000-0000-0000-000000000001';
 begin
-  -- (b) sozinho: 1 pedido, ticket = R$ 50 da order paga.
+  -- (b) sozinho: 1 pedido com os R$ 50 da order paga (ticket = 50, calculado em kpis.ts).
   r := public.vendas_kpis_janela(o, '2026-09-02 00:00-03', '2026-09-03 00:00-03');
-  if (r->>'pedidos')::int <> 1 or (r->>'faturamento')::numeric <> 50 or (r->>'ticket')::numeric <> 50 then
+  if (r->>'pedidos')::int <> 1 or (r->>'faturamento')::numeric <> 50 or (r::jsonb) ? 'ticket' then
     raise exception 'pack (b) errado: %', r;
   end if;
-  -- Todo: 100 + 50 + 50 = 200; 2 pedidos; ticket 100.
+  -- Todo: 100 + 50 + 50 = 200; 2 pedidos (ticket 100 em kpis.ts).
   r := public.vendas_kpis_janela(o, '2026-09-01 00:00-03', '2026-09-03 00:00-03');
-  if (r->>'pedidos')::int <> 2 or (r->>'faturamento')::numeric <> 200 or (r->>'ticket')::numeric <> 100 then
+  if (r->>'pedidos')::int <> 2 or (r->>'faturamento')::numeric <> 200 then
     raise exception 'todo errado: %', r;
   end if;
   -- Janela vazia: zeros, sem divisão por zero.
   r := public.vendas_kpis_janela(o, '2026-08-01 00:00-03', '2026-08-02 00:00-03');
-  if (r->>'pedidos')::int <> 0 or (r->>'faturamento')::numeric <> 0 or (r->>'ticket')::numeric <> 0 then
+  if (r->>'pedidos')::int <> 0 or (r->>'faturamento')::numeric <> 0 then
     raise exception 'janela vazia errada: %', r;
   end if;
   -- Grants: só service_role executa.

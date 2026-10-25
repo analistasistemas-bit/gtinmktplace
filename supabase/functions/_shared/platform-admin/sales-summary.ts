@@ -4,7 +4,7 @@
 import type { Venda, VendaItem } from './sales-types.ts';
 import { canonizarItem, type MapaCanonico } from './sales-canonical.ts';
 
-const round2 = (value: number): number => Math.round(value * 100) / 100;
+export const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 /**
  * Status que contam como venda faturável (entram no bruto/líquido/unidades/pedidos), espelhando o
