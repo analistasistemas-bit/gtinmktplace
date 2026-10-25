@@ -104,7 +104,18 @@ describe('buscarOrdersDoPack', () => {
   it('lê orders[].id de GET /packs/{id}', async () => {
     fetchMock.mockResolvedValue(packOk([11, 12]));
     await expect(buscarOrdersDoPack('tok', 9000)).resolves.toEqual([11, 12]);
-    expect(fetchMock).toHaveBeenCalledWith('https://api.mercadolibre.com/packs/9000', { headers: { Authorization: 'Bearer tok' } });
+    expect(fetchMock).toHaveBeenCalledWith('https://api.mercadolibre.com/packs/9000', { headers: { Authorization: 'Bearer tok' }, signal: expect.any(AbortSignal) });
+  });
+  it('fetch pendurado → aborta no timeout e devolve null', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockImplementation((_u: string, init: { signal: AbortSignal }) => new Promise((_res, rej) => {
+        init.signal.addEventListener('abort', () => rej(init.signal.reason));
+      }));
+      const p = buscarOrdersDoPack('tok', 9000);
+      await vi.advanceTimersByTimeAsync(5001);
+      await expect(p).resolves.toBeNull();
+    } finally { vi.useRealTimers(); }
   });
   it('HTTP de erro, formato inesperado ou falha de rede → null', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) });

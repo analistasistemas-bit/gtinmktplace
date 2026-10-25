@@ -145,11 +145,6 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ADR-0190 D-4: notificação gerencial por carrinho. Gate em `pedido pago` (não `novaPaga`, que é
-  // one-shot): a PK de notificacao_carrinho dá a idempotência e o retry após persistir continua
-  // funcionando. Best-effort — registrarCarrinho nunca lança.
-  if (pedido.status === 'paid' && orgId) await registrarCarrinho(admin, token, orgId, pedido);
-
   // E6b (ADR-0094): baixa de estoque. A venda é SAGRADA — nenhuma falha aqui pode
   // derrubar o sync.
   //
@@ -240,6 +235,11 @@ Deno.serve(async (req) => {
       console.error('baixa_estoque_falhou', e);
     }
   }
+
+  // ADR-0190 D-4 (depois da baixa de estoque: o GET /packs não pode atrasar a venda sagrada): notificação gerencial por carrinho. Gate em `pedido pago` (não `novaPaga`, que é
+  // one-shot): a PK de notificacao_carrinho dá a idempotência e o retry após persistir continua
+  // funcionando. Best-effort — registrarCarrinho nunca lança.
+  if (pedido.status === 'paid' && orgId) await registrarCarrinho(admin, token, orgId, pedido);
 
   // Cancelado ANTES do despacho: a mercadoria nunca saiu, então repõe (D-7). A decisão mora em
   // `_shared/estoque/cancelamento.ts` porque a reconciliação horária também precisa dela — este

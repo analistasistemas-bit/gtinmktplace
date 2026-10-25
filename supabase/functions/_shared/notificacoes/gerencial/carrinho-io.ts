@@ -37,7 +37,7 @@ const job = (orgId: string, chave: string, tentativas: number, delay?: number) =
 /** `GET /packs/{id}` → ids das orders do carrinho. Erro ou formato inesperado → null (nunca lança). */
 export async function buscarOrdersDoPack(token: string, packId: number): Promise<number[] | null> {
   try {
-    const resp = await fetch(`${API}/packs/${packId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const resp = await fetch(`${API}/packs/${packId}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     const corpo = await resp.json() as { orders?: unknown };
     if (!Array.isArray(corpo?.orders) || corpo.orders.length === 0) return null;
