@@ -11,6 +11,8 @@ const LIMITE_ESPERA_MS = 15_000;
 const HOST = 'publiai-selo-busca';
 let enviados = new Map<string, string>(); // itemId → assinatura do que já foi enviado
 let resultados: Record<string, ResultadoCard> = {};
+// Chave "Extensão ativa" e login: desligada ou deslogado, nada é enviado nem desenhado. Vale ligada até o SW dizer o contrário.
+let ligada = true;
 
 const enviar = (msg: object) => {
   try { chrome.runtime.sendMessage(msg).catch(() => {}); } catch { /* contexto invalidado (extensão recarregada) */ }
@@ -19,6 +21,7 @@ const enviar = (msg: object) => {
 let urlAtual = location.href.split('#')[0];
 
 function lerEEnviar(): void {
+  if (!ligada) return;
   // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
   const url = location.href.split('#')[0];
   if (url !== urlAtual) { urlAtual = url; enviados = new Map(); limparSelos(); }
@@ -54,6 +57,7 @@ function criarSelo(texto: string, titulo: string, tom: keyof typeof CORES): HTML
 
 /** Selo nos cards casados (idempotente: refaz do zero, então resultado que deixou de ter selo perde o antigo). */
 function aplicarSelos(): void {
+  if (!ligada) return;
   for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
   for (const [itemId, r] of Object.entries(resultados)) {
     const s = seloDaBusca(r);
@@ -89,13 +93,18 @@ function destacar(itemId: string): void {
   card.style.outlineOffset = '2px';
 }
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown }) => {
-  if (msg?.tipo === 'publiai:busca-resultados' && msg.resultados && typeof msg.resultados === 'object') {
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown }) => {
+  if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
+    ligada = msg.ativa === true && msg.logado === true;
+    limparSelos();
+    enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (a análise só sai quando o painel pedir)
+    lerEEnviar();
+  } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && msg.resultados && typeof msg.resultados === 'object') {
     resultados = msg.resultados as Record<string, ResultadoCard>;
     aplicarSelos();
-  } else if (msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
+  } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);
-  } else if (msg?.tipo === 'publiai:sessao-mudou') {
+  } else if (ligada && msg?.tipo === 'publiai:sessao-mudou') {
     limparSelos();
     enviados = new Map(); // nova sessão: o SW zerou o estado; os cards voltam a ser enviados
     lerEEnviar();
@@ -114,4 +123,14 @@ const inicio = Date.now();
 (function esperarCards() {
   if (document.querySelector('.poly-card')) { agendar(); return; } // mesma espera do observer: card ainda montando
   if (Date.now() - inicio < LIMITE_ESPERA_MS) setTimeout(esperarCards, 500);
+})();
+
+// Estado inicial da chave (sem rede no SW). Resposta ausente/inválida mantém o padrão ligado.
+void (async () => {
+  try {
+    const e = await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao' });
+    if (e && (e.ativa === false || e.logado === false)) { ligada = false; limparSelos(); }
+  } catch {
+    // contexto invalidado: silencioso
+  }
 })();

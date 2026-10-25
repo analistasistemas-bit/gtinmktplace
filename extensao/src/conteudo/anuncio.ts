@@ -4,7 +4,7 @@ import type { RespostaAnuncio } from '../../../supabase/functions/_shared/extens
 import { avaliarQualidade } from '../compartilhado/qualidade';
 import { ehPaginaCatalogo, lerAnuncio } from '../leitura/pdp';
 import { esperarPaginaEstavel, lerComReleitura } from './leitura-estavel';
-import { destacarMiniaturas } from './miniaturas';
+import { destacarMiniaturas, limparMiniaturas } from './miniaturas';
 import { CORES, MARCA } from './aparencia';
 import { aoMensagemDoSw, comSessaoEstavel, textoDoSelo, tomDoSelo, type TomDoSelo } from './selo';
 
@@ -81,12 +81,23 @@ function inserir(selo: HTMLElement): boolean {
   return true;
 }
 
-async function rodar() {
-  // Uma execução por documento: o mundo isolado do content script é o mesmo entre injeções na mesma página.
-  const g = globalThis as { __publiaiAnuncio?: boolean };
-  if (g.__publiaiAnuncio || document.getElementById('publiai-selo')) return;
-  g.__publiaiAnuncio = true;
+// Geração local: cada rodar()/pausar() invalida a execução anterior (reentrante; resposta velha nunca vira selo).
+let geracaoLocal = 0;
+const removerSelo = () => document.getElementById('publiai-selo')?.remove();
+
+/** Chave desligada ou conta saiu: tira selo e contornos e descarta a análise em voo. */
+export function pausar(): void {
+  geracaoLocal++;
+  removerSelo();
+  limparMiniaturas(document);
+}
+
+export async function rodar(): Promise<void> {
+  const minha = ++geracaoLocal;
+  const vale = () => minha === geracaoLocal;
+  removerSelo(); // religar não duplica
   const lido = await lerComReleitura(() => lerAnuncio(document), () => esperarPaginaEstavel(), () => location.pathname + location.search);
+  if (!vale()) return;
   if (!lido) return; // bloqueio/verificação do ML, navegação ou espera inconclusiva: não é quebra de layout
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
@@ -94,20 +105,29 @@ async function rodar() {
   // eanDaBusca: o SW preenche com o EAN da própria aba (content script não lê storage.session).
   // vendidosTexto, lojaOficial e qualidade ficam no SW para o painel (não vão à edge).
   const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, qualidade }));
-  if (!r) return; // sessão mudou durante a análise: nada de selo da sessão anterior
-
-  let selo: HTMLElement | null = null;
-  if (r.ok) {
-    // Só com a extensão ativa para a org (análise ok): marca as miniaturas fracas na galeria.
-    destacarMiniaturas(document, avaliarQualidade(qualidade).fotosFracas.map((f) => f.id));
-    const texto = textoDoSelo(r.dados);
-    if (texto) selo = criarSelo(texto, tomDoSelo(r.dados));
-  } else if (r.erro === 'sem_sessao' || r.erro === 'sessao_expirada') {
-    selo = criarSelo('PubliAI · conecte a extensão', 'conectar');
-  }
-  // modulo_desligado, limite e demais erros: sem selo.
-  if (selo && !inserir(selo)) erroLeitura('campo_ausente:selo', id);
+  if (!r || !vale()) return; // sessão/chave mudou durante a análise: nada de selo da anterior
+  // Só com análise ok há selo: inativa, sem_sessao, modulo_desligado, limite e demais erros ficam sem selo.
+  if (!r.ok) return;
+  // Só com a extensão ativa para a org (análise ok): marca as miniaturas fracas na galeria.
+  destacarMiniaturas(document, avaliarQualidade(qualidade).fotosFracas.map((f) => f.id));
+  const texto = textoDoSelo(r.dados);
+  if (texto && !inserir(criarSelo(texto, tomDoSelo(r.dados)))) erroLeitura('campo_ausente:selo', id);
 }
 
-chrome.runtime.onMessage.addListener((msg) => { aoMensagemDoSw(msg); });
-void rodar();
+type Aviso = { tipo?: unknown; ativa?: unknown; logado?: unknown };
+chrome.runtime.onMessage.addListener((msg: Aviso) => {
+  aoMensagemDoSw(msg);
+  if (msg?.tipo !== 'publiai:ativacao' && msg?.tipo !== 'publiai:conta-mudou') return;
+  if (msg.ativa === true && msg.logado === true) void rodar();
+  else pausar();
+});
+
+// Boot: só analisa com a chave ligada e logado (o selo "conecte a extensão" não existe mais).
+void (async () => {
+  try {
+    const e = await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao' });
+    if (e?.ativa === true && e?.logado === true) await rodar();
+  } catch {
+    // contexto invalidado: silencioso
+  }
+})();

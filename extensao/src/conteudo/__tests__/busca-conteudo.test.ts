@@ -28,3 +28,16 @@ it('selo some do card quando o resultado deixa de autorizar (ok → sem vínculo
   ouvinte({ tipo: 'publiai:busca-resultados', resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });
+
+it('ativacao false remove selos dos cards; true reenvia os cards sem analisar sozinha', () => {
+  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
+  ouvinte({ tipo: 'publiai:busca-resultados', resultados: { MLB5321956667: ok } });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
+  ouvinte({ tipo: 'publiai:ativacao', ativa: false, logado: true, geracao: 2 });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  const antes = cardsEnviados().length;
+  ouvinte({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 3 });
+  expect(cardsEnviados().length).toBe(antes + 1);
+  expect(enviar.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:analisar-busca')).toBe(false);
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+});

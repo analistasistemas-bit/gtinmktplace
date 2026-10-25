@@ -16,7 +16,7 @@ export function textoDoSelo(r: RespostaAnuncio): string {
   return `Recebe ${brl(recebe)} · informe o custo`;
 }
 
-export type TomDoSelo = 'lucro' | 'prejuizo' | 'neutro' | 'proprio' | 'conectar';
+export type TomDoSelo = 'lucro' | 'prejuizo' | 'neutro' | 'proprio';
 
 /** Cor do selo: segue o lucro do Clássico (o mesmo número do texto). */
 export function tomDoSelo(r: RespostaAnuncio): TomDoSelo {
@@ -28,10 +28,11 @@ export function tomDoSelo(r: RespostaAnuncio): TomDoSelo {
 
 let mudancasDeSessao = 0;
 
-/** Mensagem do SW: a sessão mudou (logout, troca de conta, expiração) → o selo com a margem da sessão anterior e as
+/** Mensagem do SW: a sessão ou a chave ativa mudou (logout, troca de conta, expiração, pausa) → o selo com a margem da sessão anterior e as
  *  marcas nas miniaturas saem. */
 export function aoMensagemDoSw(msg: unknown, doc: Document = document): void {
-  if ((msg as { tipo?: unknown } | null)?.tipo !== 'publiai:sessao-mudou') return;
+  const tipo = (msg as { tipo?: unknown } | null)?.tipo;
+  if (tipo !== 'publiai:sessao-mudou' && tipo !== 'publiai:ativacao' && tipo !== 'publiai:conta-mudou') return;
   mudancasDeSessao++;
   doc.getElementById('publiai-selo')?.remove();
   limparMiniaturas(doc);

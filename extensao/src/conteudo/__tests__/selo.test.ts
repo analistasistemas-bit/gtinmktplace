@@ -52,6 +52,13 @@ describe('aoMensagemDoSw (selo some quando a sessão muda)', () => {
     aoMensagemDoSw({ tipo: 'publiai:sessao-mudou' }, d);
     expect(d.getElementById('publiai-selo')).toBeNull();
   });
+  it('ativacao e conta-mudou removem o selo', () => {
+    for (const tipo of ['publiai:ativacao', 'publiai:conta-mudou']) {
+      const d = doc();
+      aoMensagemDoSw({ tipo }, d);
+      expect(d.getElementById('publiai-selo')).toBeNull();
+    }
+  });
   it('outras mensagens não mexem no selo', () => {
     const d = doc();
     for (const m of [null, 'x', { tipo: 'publiai:estado-atualizado' }]) aoMensagemDoSw(m, d);

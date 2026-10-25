@@ -7,7 +7,6 @@ export const CORES: Record<TomDoSelo, { fundo: string; borda: string; texto: str
   prejuizo: { fundo: 'oklch(0.97 0.025 25)', borda: 'oklch(0.87 0.07 25)', texto: 'oklch(0.50 0.20 25)' },
   neutro: { fundo: 'oklch(0.97 0.006 277)', borda: 'oklch(0.89 0.008 277)', texto: 'oklch(0.36 0.02 277)' },
   proprio: { fundo: 'oklch(0.96 0.03 277)', borda: 'oklch(0.86 0.07 277)', texto: 'oklch(0.45 0.19 277)' },
-  conectar: { fundo: 'oklch(0.97 0.006 277)', borda: 'oklch(0.89 0.008 277)', texto: 'oklch(0.36 0.02 277)' },
 };
 export const MARCA =
   '<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><defs><linearGradient id="m" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">' +
