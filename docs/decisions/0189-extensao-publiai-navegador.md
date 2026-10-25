@@ -1,6 +1,6 @@
 # ADR-0189 — Extensão PubliAI no navegador: análise no Mercado Livre sem base de mercado própria
 
-**Status:** Aceito — em produção (main `c92822a4`; versão 0.2.0 publicada na Chrome Web Store em 2026-10-23). Design fechado em entrevista (grill-with-docs, 2026-10-21), revisado pelo Codex em 2026-10-22 e implementado com aprovação do Diego (merges de 22 e 23/10)
+**Status:** Aceito — em produção (main `c92822a4`; versão 0.2.0 publicada na Chrome Web Store em 2026-10-23). Design fechado em entrevista (grill-with-docs, 2026-10-21), revisado pelo Codex em 2026-10-22 e implementado com aprovação do Diego (merges de 22 e 23/10). Emenda 2026-10-24 (login próprio, 0.3.0) aceita, a implementar
 **Data:** 2026-10-21
 **Decisores:** Diego
 **Revoga:** o item "Extensão de navegador" da lista **Não fazer** de `docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md` (2026-09-21) e o "sem extensão Chrome no v1" da [ADR-0119](0119-pulse-inteligencia-de-mercado-dirigida.md) **apenas** no papel de interface de análise. A recusa da extensão como **coletora** continua (ADR-0119 v2 descartado; [ADR-0142](0142-vendas-mensais-por-vendedor.md), alternativa 5).
@@ -307,3 +307,47 @@ faixa e mostra a deriva dos fatores; faixa com mediana > 30% na remedição sai 
   quando `ptw_aplicavel`, sempre com a data.
 - `adicionar_radar` reaproveita o núcleo do `pulse-adicionar` (`_shared/pulse/adicionar.ts`): mesma idempotência e
   sem disparar coleta; o cron do Pulse coleta. Consultor: Codex Astra.
+
+## Emenda 2026-10-24 — login próprio, ligar/desligar e ícone no cabeçalho (D-4, D-14, D-16, D-18, D-19)
+
+Design: `docs/superpowers/specs/2026-10-24-extensao-login-e-cabecalho-design.md`. Decisão do Diego: usar a extensão sem o
+PubliAI web aberto, como o Avant Pro (entrar uma vez, ficar logado até "Sair", chave ligar/desligar, ícone no cabeçalho
+do ML). Entra na versão 0.3.0.
+
+- **D-4 (sessão própria).** O login (e-mail e senha do app, único método existente) acontece na extensão e cria uma
+  sessão Supabase independente; o app deixa de ser fonte de sessão. Verificado em produção: sem sessão única nem timebox
+  (`auth.sessions`: mesmo usuário com sessões simultâneas Windows/Android; uma criada em 03/07 renovada até 23/10;
+  nenhuma com `not_after`), então a sessão da extensão não derruba a do app.
+  - Credenciais só no SW, em `chrome.storage.local` com `setAccessLevel('TRUSTED_CONTEXTS')` antes de gravar qualquer
+    token; senha nunca persistida. Risco residual: quem tem acesso ao perfil/disco do Chrome lê o refresh token.
+  - Renovação sob demanda (access vence em <= 30 s), só no SW, numa fila única; par gravado num único `set` e relido na
+    fila. Rede, 429 e 5xx preservam credenciais; só erro definitivo do Supabase desloga (sem loop).
+  - **Sair** = `POST /auth/v1/logout?scope=local`; limpeza local imediata, sem esperar a rede. O logout do app também
+    passa a `scope` local e não avisa a extensão (independência nos dois sentidos).
+  - **Geração** persistida (sobe em login, logout, troca de identidade e pausa); **toda mensagem de comando** e toda
+    requisição levam a geração de quando começou, e resposta/gravação/mensagem com geração antiga é descartada.
+- **D-14.** `externally_connectable` fica só para `publiai:ping` (responde `{ versao, protocolo }`; alimenta "Instalada"
+  em Configurações). `publiai:sessao` e `publiai:desconectar` deixam de valer na 0.3.0; o app só empurra sessão a
+  extensões sem protocolo >= 2 (0.2.x). Nenhuma permissão nova. `checar-dist` passa a permitir uso de auth apenas no
+  `sw.js`. Ícone injetado em `www`, `lista` e `produto.mercadolivre.com.br` (exceto `/checkout`, `/gz/`, `/jms/`,
+  `/captcha/`).
+- **D-16 (ícone/menu no cabeçalho).** Shadow DOM fechado ao lado do carrinho, inserção idempotente, observer limitado e
+  desligado após inserir, teclado e foco acessíveis. Logado: nome/organização, chave "Extensão ativa", "Abrir painel de
+  análise", "Abrir o PubliAI", "Sair". Deslogado: "Entrar" abre o painel lateral (senha nunca digitada na página do ML).
+  Desativada: ícone cinza, selos e contornos removidos, sem análise. **Sem dado financeiro no menu** (shadow fechado não
+  protege de outras extensões). Sem encaixe seguro, não insere; login, chave e sair seguem pelo painel (degradação).
+  A preferência "ativa" chega aos content scripts por mensagem do SW; religar sem recarregar a página.
+- **D-18 (erros).** Ação nova `sessao` na edge `extensao` devolve nome, e-mail, organização e `identidade`
+  (`usuário:org:suporte`). Toda chamada leva `identidadeEsperada`; se a efetiva divergir, a edge responde
+  `identidade_mudou` **sem executar nada** (inclusive `salvar_vinculo`, `remover_vinculo`, `adicionar_radar`) e o SW
+  limpa as abas e sobe a geração. Novo código `sem_acesso` (perfil inativo ou sem organização). Respostas ganham
+  `identidade` quando a autenticação passou; sem identidade, o SW trata como deslogado. Campos só acrescentados
+  (compatível com 0.2.1). Exige deploy da edge. Protocolo 2 = a extensão que não depende de sessão empurrada pelo app.
+- **D-19.** A ação `sessao` não conta como análise: não consome a cota de 30/min nem registra uso.
+- **Migração.** (a) deploy da edge compatível com 0.2.1 e 0.3.0; (b) extensão 0.3.0 ignora a sessão empurrada pelo app
+  (não a revoga) e pede login; (c) app responde ao ping e só empurra sessão a 0.2.x. Antes da Web Store, atualizar a
+  política de privacidade da extensão e as declarações do item.
+- **Revisão do plano (Codex gpt-6.1-sol high, 24/10): REVISE, 9 achados, todos incorporados:** logout do app passa a
+  `scope` local; `checar-dist` permite auth só no `sw.js`; geração em toda mensagem de comando; e os demais itens de
+  credenciais isoladas, renovação com dono único, identidade esperada antes da operação, contrato da edge, religar sem
+  recarregar e cabeçalho com degradação.
