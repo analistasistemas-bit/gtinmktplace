@@ -64,7 +64,12 @@ function fakeAdmin(linhas: Linha[]) {
         eq: (k: string, v: unknown) => { filtros.push((r) => r[k] === v); return c; },
         is: (k: string, v: unknown) => { st.is.push([k, v]); filtros.push((r) => (v === null ? r[k] == null : r[k] === v)); return c; },
         lt: (k: string, v: string) => { filtros.push((r) => r[k] < v); return c; },
-        or: (s: string) => { st.or = s; return c; },
+        or: (s: string) => {
+          st.or = s;
+          const [, o, o2, ch] = s.match(/^org_id\.gt\.([^,]+),and\(org_id\.eq\.([^,]+),chave\.gt\.([^)]+)\)$/)!;
+          filtros.push((r) => r.org_id > o || (r.org_id === o2 && r.chave > ch));
+          return c;
+        },
         order: () => c,
         range: (a: number, b: number) => { st.range = [a, b]; return c; },
         upsert: (row: Linha, opts: unknown) => { st.op = 'upsert'; st.row = row; st.opts = opts; return c; },
@@ -129,6 +134,19 @@ describe('registrarCarrinho', () => {
     }));
   });
 
+  it.each([
+    ['pago agora', 0, 20],
+    ['registrado aos 599 s', 599, 1],
+    ['registrado aos 700 s', 700, 0],
+    ['pago há 30 min (atraso tolerado até 2 h)', 1800, 0],
+  ])('delay inicial = clamp(600 − decorrido, 0, 20): %s', async (_n, decorridoS, delay) => {
+    fetchMock.mockResolvedValue(packOk([1, 2]));
+    const admin = fakeAdmin([]);
+    await registrarCarrinho(admin, 'tok', ORG, pedido({ date_closed: new Date(Date.now() - decorridoS * 1000).toISOString() }));
+    expect(admin.linhas).toHaveLength(1);
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({ delay, deduplicationId: `carrinho-${ORG}-9000-0` }));
+  });
+
   it('pedido sem pack: esperadas = [order], sem /packs', async () => {
     const admin = fakeAdmin([]);
     await registrarCarrinho(admin, 'tok', ORG, pedido({ id: 77, pack_id: null }));
@@ -163,8 +181,8 @@ describe('registrarCarrinho', () => {
     await registrarCarrinho(admin, 'tok', ORG, pedido());
     m.temAssinanteGerencial.mockRejectedValueOnce(new Error('db'));
     await expect(registrarCarrinho(admin, 'tok', ORG, pedido())).resolves.toBeUndefined();
-    // re-sync de pedido antigo (webhook de envio): o teto de 600 s já passou
-    await registrarCarrinho(admin, 'tok', ORG, pedido({ date_closed: new Date(Date.now() - 601_000).toISOString() }));
+    // histórico (reconciliação de 72 h): pago há 3 h → não registra
+    await registrarCarrinho(admin, 'tok', ORG, pedido({ date_closed: new Date(Date.now() - 3 * 3600_000).toISOString() }));
     expect(admin.ops).toEqual([]);
     expect(m.publishJSON).not.toHaveBeenCalled();
   });
@@ -305,16 +323,32 @@ describe('varrerCarrinhos', () => {
     expect(m.lerVendasDoCarrinho).not.toHaveBeenCalled();
   });
 
-  it('lote cheio (200): publica a si mesma com o cursor; com cursor, filtra depois dele', async () => {
-    const linhas = Array.from({ length: 201 }, (_, i) => linha({ chave: String(1000 + i), atualizado_em: velho }));
+  it('lote cheio (200): publica a si mesma com o cursor; a continuação pega só o restante, cruzando org', async () => {
+    const linhas = [
+      ...Array.from({ length: 150 }, (_, i) => linha({ chave: String(1000 + i), atualizado_em: velho })),
+      ...Array.from({ length: 60 }, (_, i) => linha({ org_id: 'org-2', chave: String(1000 + i), atualizado_em: velho })),
+    ];
     const admin = fakeAdmin(linhas);
     expect(await varrerCarrinhos(admin, AGORA)).toBe(200);
-    expect(m.batchJSON.mock.calls.flatMap((c) => c[0])).toHaveLength(200); // em blocos (enfileirarEmBlocos)
     expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://proj.supabase.co/functions/v1/notificar-carrinho',
-      body: { varrer: true, depois: { orgId: ORG, chave: '1199' } },
+      body: { varrer: true, depois: { orgId: 'org-2', chave: '1049' } },
     }));
-    await varrerCarrinhos(admin, AGORA, { orgId: ORG, chave: '1199' });
-    expect(admin.ops[1].or).toBe(`org_id.gt.${ORG},and(org_id.eq.${ORG},chave.gt.1199)`);
+    m.batchJSON.mockClear();
+    m.publishJSON.mockClear();
+    expect(await varrerCarrinhos(admin, AGORA, { orgId: 'org-2', chave: '1049' })).toBe(10);
+    expect(admin.ops[1].or).toBe('org_id.gt.org-2,and(org_id.eq.org-2,chave.gt.1049)');
+    expect(m.batchJSON.mock.calls.flatMap((c) => c[0]).map((j: any) => `${j.body.orgId}/${j.body.chave}`))
+      .toEqual(Array.from({ length: 10 }, (_, i) => `org-2/${1050 + i}`));
+    expect(m.publishJSON).not.toHaveBeenCalled();
+  });
+
+  it('cursor no meio da 1ª org: continua nela e passa para a próxima', async () => {
+    const admin = fakeAdmin([
+      linha({ chave: '1', atualizado_em: velho }), linha({ chave: '2', atualizado_em: velho }),
+      linha({ org_id: 'org-2', chave: '0', atualizado_em: velho }),
+    ]);
+    expect(await varrerCarrinhos(admin, AGORA, { orgId: ORG, chave: '1' })).toBe(2);
+    expect(m.batchJSON.mock.calls[0][0].map((j: any) => `${j.body.orgId}/${j.body.chave}`)).toEqual([`${ORG}/2`, 'org-2/0']);
   });
 });

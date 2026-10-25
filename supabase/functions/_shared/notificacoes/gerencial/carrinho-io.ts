@@ -20,6 +20,8 @@ import { resultadoCarrinho, resultadoPorItem } from './resultado.ts';
 const TABELA = 'notificacao_carrinho';
 const API = 'https://api.mercadolibre.com';
 const DELAY_INICIAL_SEG = 20;
+/** Atraso máximo entre o pagamento e o 1º sync para ainda registrar o carrinho (ver registrarCarrinho). */
+const ATRASO_MAXIMO_S = 7200;
 const LOTE_VARREDURA = 200;
 const PARADA_MS = 90_000;
 
@@ -27,7 +29,7 @@ const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/notificar-
 const dedup = (orgId: string, chave: string, tentativas: number) => `carrinho-${orgId}-${chave}-${tentativas}`;
 const job = (orgId: string, chave: string, tentativas: number, delay?: number) => ({
   url: urlWorker(), body: { orgId, chave }, retries: 3, deduplicationId: dedup(orgId, chave, tentativas),
-  ...(delay ? { delay } : {}),
+  ...(delay !== undefined ? { delay } : {}),
 });
 
 /** `GET /packs/{id}` → ids das orders do carrinho. Erro ou formato inesperado → null (nunca lança). */
@@ -59,10 +61,13 @@ export async function registrarCarrinho(
 ): Promise<void> {
   if (pedido.status !== 'paid') return;
   try {
-    // Re-sync de pedido antigo (webhook de envio, reconciliação): o teto absoluto já passou e a
-    // mensagem não sai mais — sem isto, todo pedido anterior ao deploy viraria notificação.
+    // Corte de histórico: a reconciliação ressincroniza 72 h de pedidos pagos (e webhooks de envio
+    // reprocessam pedidos antigos); sem corte, cada carrinho antigo viraria mensagem gerencial quando
+    // a org assina. Pago há > 2 h → histórico, não registra. Entre 600 s e 2 h (indisponibilidade
+    // temporária) → registra e, com o prazo já vencido, o 1º job sai com delay 0 e envia o que houver.
     const pagoEm = Date.parse(pedido.date_closed ?? '') || Date.now();
-    if (Date.now() - pagoEm >= PRAZO_CARRINHO_SEG * 1000) return;
+    const decorridoS = (Date.now() - pagoEm) / 1000;
+    if (decorridoS > ATRASO_MAXIMO_S) return;
     if (!await temAssinanteGerencial(admin, orgId, 'vendas_gerencial')) return;
 
     const orderId = Number(pedido.id);
@@ -89,7 +94,9 @@ export async function registrarCarrinho(
       .select('chave');
     if (errUpsert) throw new Error(`registrar carrinho: ${errUpsert.message}`);
     if (!novas?.length) return; // outra execução registrou e publicou
-    await qstashClient().publishJSON(job(orgId, chave, 0, DELAY_INICIAL_SEG));
+    // Teto absoluto: o 1º job nunca passa de primeiro_em + 600 s.
+    const delay = Math.max(0, Math.min(DELAY_INICIAL_SEG, Math.ceil(PRAZO_CARRINHO_SEG - decorridoS)));
+    await qstashClient().publishJSON(job(orgId, chave, 0, delay));
   } catch (e) {
     console.error(`registrarCarrinho(org=${orgId}, order=${pedido.id}): ${(e as Error).message}`);
   }
