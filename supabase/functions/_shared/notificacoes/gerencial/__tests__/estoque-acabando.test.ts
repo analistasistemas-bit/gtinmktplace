@@ -56,8 +56,13 @@ describe('estoque acabando', () => {
     const cfgs = Array.from({ length: 25 }, (_, i) => ({ codigo: `S${String(i).padStart(2, '0')}`, estoque: 1, un: 30, lucro: 100 + i }));
     const r = sel(cfgs).map((x) => x.codigo);
     expect(r).toHaveLength(20);
-    expect(r).not.toContain('S00');
-    expect(r).toContain('S05');
+    expect([...r].sort()).toEqual(Array.from({ length: 20 }, (_, i) => `S${String(i + 5).padStart(2, '0')}`));
+  });
+
+  it('top 20 vale antes do disparo: 21º com cobertura 1 não entra se os 20 não alertam', () => {
+    const cfgs: Cfg[] = Array.from({ length: 20 }, (_, i) => ({ codigo: `S${String(i).padStart(2, '0')}`, estoque: 1000, un: 30, lucro: 500 + i }));
+    cfgs.push({ codigo: 'X', estoque: 1, un: 30, lucro: 10 });
+    expect(sel(cfgs)).toEqual([]);
   });
 
   it('kit sai antes do ranking', () => {
@@ -73,6 +78,15 @@ describe('estoque acabando', () => {
     const mesmoDia = [1, 2, 3].map((k) => iso(fimMs - D - k * 60_000));
     expect(sel([{ codigo: 'A', estoque: 1, un: 30, datas: mesmoDia }])).toHaveLength(0);
     expect(sel([{ codigo: 'A', estoque: 1, un: 30, dias: [1, 2, 3] }])).toHaveLength(1);
+  });
+
+  it('dias distintos contam em BRT, não em UTC', () => {
+    // 3 datas UTC, só 2 dias BRT (22 e 23)
+    const doisBrt = ['2026-10-22T23:30:00Z', '2026-10-23T01:00:00Z', '2026-10-24T01:00:00Z'];
+    expect(sel([{ codigo: 'A', estoque: 1, un: 30, datas: doisBrt }])).toHaveLength(0);
+    // controle: 3 dias BRT (22, 23, 24)
+    const tresBrt = ['2026-10-22T23:30:00Z', '2026-10-23T04:00:00Z', '2026-10-24T04:00:00Z'];
+    expect(sel([{ codigo: 'A', estoque: 1, un: 30, datas: tresBrt }])).toHaveLength(1);
   });
 
   it('dispara só abaixo de 7 dias', () => {
@@ -108,10 +122,36 @@ describe('estoque acabando', () => {
 
   it('fora: sem lucro calculado, sem catálogo, estoque nulo', () => {
     expect(sel([
-      { codigo: 'A', estoque: 1, lucro: null },
-      { codigo: 'B', estoque: 1, semCatalogo: true },
-      { codigo: 'C', estoque: null },
+      { codigo: 'A', estoque: 1, un: 30, lucro: null },
+      { codigo: 'B', estoque: 1, un: 30, semCatalogo: true },
+      { codigo: 'C', estoque: null, un: 30 },
     ])).toHaveLength(0);
+    // controle: mesmo SKU com lucro calculado entra
+    expect(sel([{ codigo: 'A', estoque: 1, un: 30, lucro: 10 }]).map((x) => x.codigo)).toEqual(['A']);
+  });
+
+  it('empate de cobertura desempata por lucro30 desc, depois código', () => {
+    const r = sel([
+      { codigo: 'B', estoque: 2, un: 30, lucro: 100 },
+      { codigo: 'A', estoque: 2, un: 30, lucro: 100 },
+      { codigo: 'C', estoque: 2, un: 30, lucro: 200 },
+    ]);
+    expect(r.map((x) => x.codigo)).toEqual(['C', 'A', 'B']);
+  });
+
+  it('item não faturável não conta unidades nem lucro; lucro nulo misto soma só o calculado', () => {
+    const m = monta([{ codigo: 'A', estoque: 1, un: 30, lucro: 10 }]);
+    const base = m.itens[0];
+    const extra = (orderId: number, p: Partial<ResultadoItem>) => {
+      m.datas.set(orderId, m.datas.get(base.orderId)!);
+      m.itens.push({ ...base, orderId, ...p });
+    };
+    extra(9001, { faturavel: false, quantidade: 1000, lucro: 5000 });
+    extra(9002, { quantidade: 0, lucro: null });
+    const r = selecionarEstoqueAcabando(m.itens, m.datas, m.catalogo, FIM);
+    expect(r).toHaveLength(1);
+    expect(r[0].porDia).toBe(1);
+    expect(r[0].lucro30).toBeCloseTo(10);
   });
 
   it('ordem: zerados primeiro (por lucro), depois menor cobertura', () => {
