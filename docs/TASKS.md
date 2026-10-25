@@ -54,8 +54,8 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
   automática ao aprovar); política de privacidade em `publiai.daludi.com.br/privacidade-extensao/`; conta de editor
   declarada como negociante (DALUDI), verificação pendente.
 - [x] Render `ean2marketplace-frontend`: `VITE_EXTENSAO_ID`/`VITE_EXTENSAO_URL` configurados e deploy live (22/10).
-- [ ] Após a aprovação do Google: testar a conexão pelo app de produção, instalar pela loja, remover a versão
-  carregada da pasta e a worktree `.claude/worktrees/extensao-chrome-design`.
+- [x] Após a aprovação do Google: testar a conexão pelo app de produção, instalar pela loja, remover a versão
+  carregada da pasta e a worktree `.claude/worktrees/extensao-chrome-design` — instalada pela loja em 23/10; pasta removida em 25/10.
 - [x] Task 16 — Vendedor: `analisar_anuncio` devolve `vendedor` (`/users`, cache 24 h); bloco no painel com reputação,
   medalha, UF e vendas (`"historic"` do ML vira rótulo neutro, ADR-0142).
 - [x] Loja oficial no bloco Vendedor (D-10): `official_store_id` da página do anúncio, do mesmo vendedor (medido em
@@ -65,7 +65,7 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 - [x] Task 17 — Qualidade do anúncio: checklist de 6 itens (fotos, resolução, Clips, descrição, garantia, disponibilidade
   exibida) com ok/atenção/não informado, lido da página e mantido no navegador; miniaturas abaixo de 1.200 px marcadas na
   galeria do ML. Regras do Avant ("Sem garantia" só exato; dimensão desconhecida não conta). UI/UX aprovado (10/10).
-- [ ] Fatia 2 restante: radar do Pulse, baixar mídia (Tasks 18–19).
+- [x] Fatia 2 restante: radar do Pulse, baixar mídia (Tasks 18–19) — entregues (ver Tasks 18 e 19 abaixo).
 - [x] Task 23 — ação `catalogo` na edge (v5+): ofertas, vencedor só informado pelo ML (API ou buy box da página `/p/`),
   perfis, resumo e participação com posição por preço e preço para ganhar real (`/items/{id}/price_to_win`). Validado com
   dados reais (Tramontina 47 ofertas; DSA participando em MLB59324619 e MLB53180253, "competing" R$ 63,17 e R$ 18,11).
