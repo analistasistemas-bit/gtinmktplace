@@ -87,11 +87,12 @@ export async function lerCatalogoEstoque(
   const catalogo = new Map<string, CatalogoEstoque>();
   const canonica = new Map<string, Linha['familias']>();
   for (let i = 0; i < codigos.length; i += LOTE_CATALOGO) {
-    const { data, error } = await admin.from('variacoes')
+    // paginado por `id` (único): reimportações podem passar de 1.000 linhas por lote (max_rows)
+    const data = await paginas(() => admin.from('variacoes')
       .select('codigo, nome, estoque, familias!inner(nome_pai, kit_multiplicador, criado_em, id)')
-      .eq('org_id', orgId).eq('familias.org_id', orgId).in('codigo', codigos.slice(i, i + LOTE_CATALOGO));
-    if (error) throw new Error(`catálogo de estoque: ${error.message}`);
-    for (const r of (data ?? []) as unknown as Linha[]) {
+      .eq('org_id', orgId).eq('familias.org_id', orgId).in('codigo', codigos.slice(i, i + LOTE_CATALOGO))
+      .order('id', { ascending: true }), 'catálogo de estoque');
+    for (const r of data as unknown as Linha[]) {
       const f = r.familias, atual = canonica.get(r.codigo);
       // ponytail: a ordenação do PostgREST não vale para embed 1:1; escolhe a mais nova em memória
       if (atual && (atual.criado_em > f.criado_em || (atual.criado_em === f.criado_em && atual.id > f.id))) continue;

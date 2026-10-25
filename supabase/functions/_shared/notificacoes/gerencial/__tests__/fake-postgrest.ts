@@ -3,7 +3,7 @@
 // `ml_promocoes.<col>` aplicado à promoção da mesma org) e o `familias!inner` de `variacoes`
 // (join por familia_id, filtro `familias.<col>`). Registra cada consulta executada.
 type Linha = Record<string, any>;
-export interface Consulta { tabela: string; select: string; filtros: string[]; range?: [number, number]; head?: boolean }
+export interface Consulta { tabela: string; select: string; filtros: string[]; in?: unknown[]; range?: [number, number]; head?: boolean }
 
 const instante = (v: unknown) => Date.parse(String(v));
 
@@ -60,12 +60,13 @@ export function fakeAdmin(tabelas: Record<string, Linha[]>) {
           });
         }
         if (q.head) return { data: null, count: linhas.length, error: null };
-        return { data: q.range ? linhas.slice(q.range[0], q.range[1] + 1) : linhas, error: null };
+        // sem `range`, o PostgREST corta em max_rows (1000)
+        return { data: q.range ? linhas.slice(q.range[0], q.range[1] + 1) : linhas.slice(0, 1000), error: null };
       };
       const c: any = {
         select: (s: string, o?: { head?: boolean }) => { q.select = s; q.head = o?.head; return c; },
         eq: (k: string, v: unknown) => { q.filtros.push(`eq:${k}`); preds.push((r) => col(r, k) === v); return c; },
-        in: (k: string, vs: unknown[]) => { q.filtros.push(`in:${k}`); preds.push((r) => vs.includes(col(r, k))); return c; },
+        in: (k: string, vs: unknown[]) => { q.filtros.push(`in:${k}`); q.in = vs; preds.push((r) => vs.includes(col(r, k))); return c; },
         gte: (k: string, v: unknown) => { q.filtros.push(`gte:${k}`); preds.push((r) => instante(r[k]) >= instante(v)); return c; },
         lt: (k: string, v: unknown) => { q.filtros.push(`lt:${k}`); preds.push((r) => instante(r[k]) < instante(v)); return c; },
         contains: (k: string, vs: unknown[]) => {

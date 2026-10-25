@@ -287,6 +287,27 @@ describe('lerCatalogoEstoque', () => {
     expect(cat.get('Y')?.nomeFamilia).toBe('Fam d');
   });
 
+  it('lote com mais de uma página: canônica na 2ª página é encontrada', async () => {
+    const familias = [fam('velha', ORG, '2026-01-01T00:00:00Z'), fam('nova', ORG, '2026-06-01T00:00:00Z')];
+    // 1.000 variações da família velha (1ª página inteira) + a da família nova só na 2ª página
+    const variacoes = [
+      ...Array.from({ length: 1000 }, (_, i) => vari('X', 'velha', ORG, { id: `v${String(i).padStart(5, '0')}` })),
+      vari('X', 'nova', ORG, { id: 'v99999', estoque: 7 }),
+    ];
+    const cat = await lerCatalogoEstoque(fakeAdmin({ familias, variacoes }), ORG, ['X']);
+    expect(cat.get('X')).toMatchObject({ nomeFamilia: 'Fam nova', estoque: 7 });
+  });
+
+  it('variação de outra org ligada a família LOCAL não aparece (filtro de variacoes.org_id)', async () => {
+    const admin = fakeAdmin({
+      familias: [fam('a', ORG, '2026-01-01T00:00:00Z')],
+      variacoes: [vari('X', 'a', 'org-b', { estoque: 99 }), vari('Y', 'a')],
+    });
+    const cat = await lerCatalogoEstoque(admin, ORG, ['X', 'Y']);
+    expect(cat.has('X')).toBe(false);
+    expect(cat.has('Y')).toBe(true);
+  });
+
   it('mesmo código em outra org não vaza (variação nem família)', async () => {
     const admin = fakeAdmin({
       familias: [fam('a', ORG, '2026-01-01T00:00:00Z'), fam('z', 'org-b', '2026-09-01T00:00:00Z'), fam('w', 'org-b', '2026-09-01T00:00:00Z')],
@@ -305,7 +326,9 @@ describe('lerCatalogoEstoque', () => {
     const cat = await lerCatalogoEstoque(admin, ORG, codigos);
     expect(cat.get('K')).toMatchObject({ estoque: null, ehKit: true });
     expect(cat.get('N')).toMatchObject({ estoque: 4, ehKit: false });
-    expect(admin.consultas.filter((c: any) => c.tabela === 'variacoes')).toHaveLength(3);
+    const lotes = admin.consultas.filter((c: any) => c.tabela === 'variacoes');
+    expect(lotes.map((c: any) => c.in.length)).toEqual([50, 50, 2]);
+    expect(lotes.flatMap((c: any) => c.in).sort()).toEqual([...codigos].sort());
 
     const falha: any = new Proxy({}, { get: (_, k) => (k === 'then' ? (r: any) => r({ data: null, error: { message: 'boom' } }) : () => falha) });
     await expect(lerCatalogoEstoque({ from: () => falha } as any, ORG, ['K'])).rejects.toThrow('boom');
