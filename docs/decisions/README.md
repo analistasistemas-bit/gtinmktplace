@@ -49,3 +49,4 @@ ADRs são numerados sequencialmente (0001, 0002, ...) e **nunca são renumerados
 
 Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela completa dos ADRs vigentes.
 - [ADR-0187](0187-ncm-validado-na-tabela-oficial.md) — NCM validado na tabela oficial (Siscomex).
+- [ADR-0190](0190-notificacao-gerencial-de-venda-e-comandos-telegram.md) — Notificação gerencial de venda, resumo diário e comandos no Telegram (proposto).

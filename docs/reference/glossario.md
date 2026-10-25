@@ -224,6 +224,11 @@
 | **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações). Um **bot por organização** (`configuracoes.telegram_bot_token` + `telegram_ativo` como interruptor-mestre); os destinos são por pessoa (ADR-0035, ADR-0068). |
 | **Destinatário de notificação** | Um `profile` da org com `telegram_chat_id` preenchido que recebe as **categorias** assinadas em `profiles.telegram_categorias`. Gerenciado só por admin, na tela Usuários (edge `usuarios`, action `update_notificacoes`). Sem `chat_id` ou fora do interruptor-mestre da org → não recebe. ADR-0068. |
 | **Categoria de notificação** | Eixo de assinatura das notificações Telegram. Cinco fixas: `vendas`, `perguntas`, `pos_venda`, `financeiro`, `moderacao` (esta agrupa anúncio moderado + catálogo sem match). Fonte canônica em `_shared/notificacoes/categorias.ts`, espelhada no front. ADR-0068. |
+| **Carrinho** | O que o comprador pagou de uma vez no ML: todas as orders ligadas pelo mesmo `pack_id` (pedido sem `pack_id` = carrinho de 1 item). É a "venda" na visão do dono do negócio; o pedido (order) é a visão de quem separa. _Evitar_: pack, venda (sem qualificar). Grilling 2026-10-24. |
+| **Notificação operacional de venda** | Aviso por **pedido**, com produto, quantidade e EAN, para quem separa e despacha. Categoria `vendas`. Grilling 2026-10-24. |
+| **Notificação gerencial de venda** | Aviso por **carrinho**, com o total pago e o resultado (Lucro, Margem s/ venda, Markup), para quem decide estratégia. Independente da operacional: a mesma pessoa pode assinar uma, outra ou as duas. Só para **admin** da org (mostra lucro). Traz também o acumulado de **hoje** e do **mês corrente**, com as mesmas regras do Faturamento › Vendas. Grilling 2026-10-24. |
+| **Resumo diário** | Mensagem única às 8h com o **dia anterior fechado** (faturamento, pedidos, ticket médio, lucro, markup, acumulado do mês, top produtos por lucro e vendas que pedem atenção). Categoria própria, assinável sem a notificação gerencial por venda. Só para **admin**. Grilling 2026-10-24. |
+| **Crescimento do mês** | Faturamento do mês corrente até agora comparado com o **mesmo intervalo** do mês anterior (dia 1 até o mesmo dia), nunca com o mês anterior inteiro. _Evitar_: "vs mês passado" sem dizer o intervalo. Grilling 2026-10-24. |
 
 ## Acesso e usuários
 
