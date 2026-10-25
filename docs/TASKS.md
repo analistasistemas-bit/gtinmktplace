@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## Boas-vindas automática ao comprador removida (emenda ADR-0067) — 2026-10-25
+
+- [x] **Causa dos ~50% de `log_error_count` na `sync-venda`** — todo erro era `[mensagem-ml] … 403 blocked_by_conversation_initiated_by_seller_limited`: o ML recusa mensagem iniciada pelo vendedor em 100% das vendas (desde ≥ 30/07). Venda, estoque e notificações não eram afetados. Chamada e `enviarMensagemPedido` removidos; reply do operador intacto. Deploy: `sync-venda`, `responder-mensagem`, `sync-mensagem`, `backfill-faturamento`.
+
 ## Notificação gerencial de venda, resumo diário e comandos Telegram (ADR-0190) — em produção (main `15e9c496`) — 2026-10-25
 
 - [x] Tasks 1-9 implementadas e revisadas na branch `worktree-notificacao-gerencial-grilling` (categorias `vendas_gerencial`/`resumo_diario`, `vendas_kpis_janela`, `notificacao_carrinho` + sweeper, edges `notificar-carrinho`, `resumo-diario`, `telegram-bot`, ação `registrar_webhook_telegram`, UI de usuários). Preflight completo verde (768 arquivos / 8987 testes).

@@ -138,8 +138,7 @@ export async function upsertMensagensEstrito(
   return { novasRecebidas };
 }
 
-/** Envia mensagem ao comprador e LANÇA em erro (reply interativo precisa avisar o operador —
- *  diferente de `enviarMensagemPedido`, que engole erro no fluxo fire-and-forget de boas-vindas). */
+/** Envia mensagem ao comprador e LANÇA em erro (reply interativo precisa avisar o operador). */
 export async function responderMensagemPedido(
   token: string, packId: string | number, sellerId: string | number, buyerId: string | number, texto: string,
 ): Promise<void> {

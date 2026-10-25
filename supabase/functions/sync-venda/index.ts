@@ -21,7 +21,6 @@ import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { registrarCarrinho } from '../_shared/notificacoes/gerencial/carrinho-io.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 import { linhaVendaAcimaSaldo, linhaDesyncMl } from '../_shared/notificacoes/estoque-kit.ts';
-import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
@@ -131,18 +130,6 @@ Deno.serve(async (req) => {
       total: totalNovaVenda(pedido, itens, liquidoPorPayment !== null),
       moeda: pedido.currency_id ?? 'BRL',
     }));
-
-    // Mensagem automática ao comprador via ML (best-effort). O POST do ML exige o `to.user_id`.
-    if (conexao?.contaExternaId && pedido.buyer?.id != null) {
-      const packId = pedido.pack_id ?? pedido.id;
-      await enviarMensagemPedido(
-        token,
-        packId,
-        conexao.contaExternaId,
-        String(pedido.buyer.id),
-        'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
-      );
-    }
   }
 
   // E6b (ADR-0094): baixa de estoque. A venda é SAGRADA — nenhuma falha aqui pode

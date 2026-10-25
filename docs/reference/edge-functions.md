@@ -1414,8 +1414,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   dono). `upsertPergunta` recebe o token e resolve o nome via `GET /users/{id}`
   (`buscarNickname`, cache por invocação); `preservarComprador` é a rede defensiva para um payload
   sem `from` não apagar o comprador já gravado. O ML devolve o apelido anonimizado (`OLCA4176283`),
-  não o nome civil — pergunta não tem pedido associado. `sync-venda` também
-  envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
+  não o nome civil — pergunta não tem pedido associado. A mensagem automática de boas-vindas ao
+  comprador foi **removida** em 25/10/2026 (emenda ADR-0067): o ML recusava 100% com 403.
   **Baixa de estoque (ADR-0094, Bloco A):** sempre que `pedido.status === 'paid'` (nunca o gancho
   one-shot `novaPaga` — a idempotência vem do ledger, então o retry do QStash retoma uma baixa que
   falhou no meio), chama `registrarBaixaVenda` (`_shared/estoque/baixa.ts`), que roda a RPC

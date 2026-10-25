@@ -123,3 +123,17 @@ dono via as conversas; outro membro via a aba Mensagens vazia e o badge zerado �
 `responder-mensagem` (org-scoped) já o deixasse responder. Passam a filtrar por
 `org_id = current_org_id()`, como `ml_perguntas` e `ml_vendas` (que já cobre a sessão de suporte).
 Migration `20261020180033_mensagens_escopo_org.sql`; teste `supabase/tests/mensagens_escopo_org.sql`.
+
+## Emenda 2026-10-25 — boas-vindas automática removida
+
+A mensagem de boas-vindas enviada pelo `sync-venda` na primeira transição para `paid` nunca chegava
+ao comprador: o ML respondia `403 blocked_by_conversation_initiated_by_seller_limited` em 100% dos
+envios (medido de 30/07 — limite de retenção dos logs — a 25/10; 66 de 66 reservas `venda_paga` em
+24h, 4 orgs). Cada recusa virava `console.error` e respondia por ~50% do `log_error_count` da
+função, tornando o indicador inútil como alarme. O envio também ia ao `pack_id` com dedupe por
+`order_id` (pack com N pedidos → N mensagens) e não tratava rejeição do `fetch`.
+
+Decisão: remover a chamada e o helper `enviarMensagemPedido`. `enviarMsgML` continua, usado só pelo
+reply do operador (`responderMensagemPedido`), que responde dentro de conversa já aberta pelo
+comprador. Mensagem iniciada pelo vendedor, se voltar a ser desejada, exige ADR próprio com o fluxo
+que o ML permite.
