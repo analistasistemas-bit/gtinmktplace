@@ -25,7 +25,7 @@ import type { ComissaoML, Disponivel } from '../_shared/extensao/tipos.ts';
 import { ErroExtensao, normalizarErro } from '../_shared/extensao/erros.ts';
 import {
   chaveComissao, chaveLimite, comissaoDaListingPrice, chaveLimiteErro, deduplicarPorCodigo, escaparLike, formasGtin, itemBusca, type LinhaVariacao,
-  basesDeKit, CEP_FRETE_OFERTA, chaveFrete, freteDaRespostaShipping, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo,
+  basesDeKit, CEP_FRETE_OFERTA, chaveFrete, chaveFreteOferta, freteDaRespostaShipping, dimensoesDoKitVivo, type Pedido, QTD_NAO_CONFIRMADA, uppDasBases, SELECT_VARIACAO, dataDoProduto, unidadesDoProduto, validarPedido, variacoesDasLinhas, vendedorDoPerfil, chaveCatalogo,
 } from './roteamento.ts';
 
 const TTL_CACHE_S = 6 * 3600;
@@ -38,6 +38,7 @@ const TTL_OFERTAS_S = 10 * 60;
 const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
 const IDENTIDADE = /^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/;
+const TIMEOUT_FRETE_OFERTA_MS = 2500; // complementar: não pode segurar a análise (nem o selo)
 const LIMITE_RADAR_HORA = 10; // adicionar ao radar: cada um custa GET /products e trabalho futuro do coletor
 
 function json(body: unknown, status = 200): Response {
@@ -59,7 +60,18 @@ function falhou(onde: string, e: { message: string } | null) {
   if (e) throw new Error(`${onde}: ${e.message}`);
 }
 
-function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
+/** GET do frete da oferta: uma tentativa só (nem em 429), 2,5 s no total; falha = null. Não usa o mlGet (15 s + retry). */
+async function getFreteOferta(url: string, token: string): Promise<unknown | null> {
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_FRETE_OFERTA_MS) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `cotarFreteOferta`: só para cliente com protocolo 2 no anúncio; sem ele a dep não existe (resposta legada intacta). */
+function criarDeps(admin: SupabaseClient, orgId: string, cotarFreteOferta = false): DepsAnuncio {
   const conexao = resolverConexao(admin, orgId, 'mercado_livre');
   let token: Promise<string | null> | null = null;
   // Token pedido uma vez por requisição e só quando alguma dep precisa do ML.
@@ -154,14 +166,16 @@ function criarDeps(admin: SupabaseClient, orgId: string): DepsAnuncio {
       const perfil = await buscarPerfilVendedor(t, id);
       return perfil ? vendedorDoPerfil(perfil) : null;
     },
-    freteDaOferta: async (mlItemId) => {
-      // Cotação do ML para a oferta da página (auditoria × Avant): só informação no painel, fora da margem.
-      if (!/^MLB\d+$/.test(mlItemId)) return { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
-      const t = await tokenML().catch(() => null);
-      if (!t) return SEM_CONEXAO;
-      return emCache<Disponivel<number>>(`ext:frof:v1:${mlItemId}:${CEP_FRETE_OFERTA}`, (v) => v.estado === 'ok', async () =>
-        freteDaRespostaShipping(await mlGet(`${ML_API}/items/${mlItemId}/shipping_options?zip_code=${CEP_FRETE_OFERTA}`, t)));
-    },
+    ...(cotarFreteOferta ? {
+      freteDaOferta: async (mlItemId: string): Promise<Disponivel<number>> => {
+        // Cotação do ML para a oferta da página (auditoria × Avant): só informação no painel, fora da margem.
+        if (!/^MLB\d+$/.test(mlItemId)) return { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
+        const [t, c] = await Promise.all([tokenML().catch(() => null), conexao]);
+        if (!t || c?.contaExternaId == null) return SEM_CONEXAO;
+        return emCache<Disponivel<number>>(chaveFreteOferta(String(c.contaExternaId), orgId, mlItemId), (v) => v.estado === 'ok', async () =>
+          freteDaRespostaShipping(await getFreteOferta(`${ML_API}/items/${mlItemId}/shipping_options?zip_code=${CEP_FRETE_OFERTA}`, t)));
+      },
+    } : {}),
   };
 }
 
@@ -374,12 +388,13 @@ async function adicionarRadar(admin: SupabaseClient, ctx: Contexto, catalogProdu
   return { estado: 'ok', jaExistia: r.jaExistia };
 }
 
-async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto): Promise<unknown> {
+async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protocolo?: number): Promise<unknown> {
   const { orgId, userId } = ctx;
   switch (p.acao) {
     case 'analisar_anuncio': {
       if (await redisIncrComTTL(chaveLimite(userId, new Date()), 120) > LIMITE_ANALISES_MIN) throw new ErroExtensao('limite', 429);
-      const r = await analisarAnuncio(orgId, p.entrada, criarDeps(admin, orgId));
+      // Frete da oferta só com protocolo 2: o corpo de cliente legado segue byte a byte o da 0.2.x.
+      const r = await analisarAnuncio(orgId, p.entrada, criarDeps(admin, orgId, protocolo === 2));
       const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: p.tipoPagina });
       if (error) console.warn(`extensao_registrar_uso: ${error.message}`); // contagem não derruba a análise
       return r;
@@ -453,7 +468,7 @@ Deno.serve(async (req) => {
     if (!(await exigirModulo(admin, orgId, 'extensao'))) throw new ErroExtensao('modulo_desligado', 403);
     const pedido = validarPedido(body);
     if (!pedido) throw new ErroExtensao('payload_invalido', 400);
-    const dados = await executar(pedido, admin, ctx);
+    const dados = await executar(pedido, admin, ctx, protocolo);
     return json(protocolo === 2 ? { identidade, dados } : dados);
   } catch (e) {
     const { status, corpo } = normalizarErro(e, protocolo);

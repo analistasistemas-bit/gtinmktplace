@@ -29,8 +29,9 @@ export interface DepsAnuncio extends DepsVinculo {
   catalogoCriadoEm(catalogProductId: string): Promise<string | null>;
   /** Perfil público do vendedor da página (/users, D-10); null = indisponível. */
   vendedor(sellerId: string): Promise<VendedorML | null>;
-  /** Frete cotado pelo ML para a oferta da página (CEP de referência); só informação, nunca entra na margem. */
-  freteDaOferta(mlItemId: string): Promise<Disponivel<number>>;
+  /** Frete cotado pelo ML para a oferta da página (CEP de referência); só informação, nunca entra na margem.
+   *  Ausente (cliente sem protocolo 2, busca) = sem cotação e sem o campo na resposta. */
+  freteDaOferta?(mlItemId: string): Promise<Disponivel<number>>;
 }
 
 export interface RespostaAnuncio {
@@ -39,8 +40,8 @@ export interface RespostaAnuncio {
   catalogoCriadoEm: string | null;
   /** Vendedor da página; null no anúncio próprio ou se o ML não respondeu. */
   vendedor: VendedorML | null;
-  /** Frete cotado da oferta da página (auditoria × Avant); null no anúncio próprio. Não entra na margem. */
-  freteOferta: Disponivel<number> | null;
+  /** Frete cotado da oferta da página (auditoria × Avant); null no anúncio próprio; ausente sem a dep. Não entra na margem. */
+  freteOferta?: Disponivel<number> | null;
   margem: MinhaMargem | null;
   custo: {
     fonte: FonteCusto;
@@ -85,7 +86,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
       proprio: true,
       catalogoCriadoEm: null,
       vendedor: null,
-      freteOferta: null,
+      ...(deps.freteDaOferta ? { freteOferta: null } : {}),
       margem: null,
       custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: null, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
       parametros: { aliquotas: { nacional: null, importado: null, confirmada: false }, classico: proprio, premium: proprio, frete: proprio },
@@ -113,7 +114,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     semExcecao(() => deps.comissao(e.preco, e.categoriaId, 'gold_special')),
     semExcecao(() => deps.comissao(e.preco, e.categoriaId, 'gold_pro')),
     semExcecao(() => deps.frete(e.preco, e.categoriaId, dims)),
-    semExcecao(() => deps.freteDaOferta(e.mlItemId)),
+    deps.freteDaOferta ? semExcecao(() => deps.freteDaOferta!(e.mlItemId)) : null,
   ]);
   // Oficial só com fator 1 (o anúncio entrega exatamente o SKU analisado) e as dimensões desse SKU; qualquer
   // outro caso — inclusive kit de N com dimensões próprias — é estimativa rotulada (D-7).
@@ -148,7 +149,7 @@ export async function analisarAnuncio(orgId: string, e: EntradaAnuncio, deps: De
     proprio: false,
     catalogoCriadoEm,
     vendedor,
-    freteOferta,
+    ...(freteOferta ? { freteOferta } : {}),
     margem,
     custo: {
       fonte, variacaoId: variacao?.variacaoId ?? null, codigo: variacao?.codigo ?? null, origem: variacao?.origem ?? null,

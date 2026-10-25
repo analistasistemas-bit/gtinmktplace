@@ -9,7 +9,7 @@ import { buscarListingPrice } from '../../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../../_shared/ml/frete.ts';
 import { mlGet } from '../../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../../_shared/ml/perfil-vendedor.ts';
-import { redisIncrComTTL } from '../../_shared/redis/client.ts';
+import { redisIncrComTTL, redisSet } from '../../_shared/redis/client.ts';
 
 type Contexto = { userId: string; orgId: string; isAdmin: boolean; support: null | { requestId: string; scope: 'read' | 'full' } };
 
@@ -27,6 +27,8 @@ const f = vi.hoisted(() => ({
   /** linha devolvida por maybeSingle por tabela (sobrepõe o padrão de variação) */
   linhas: {} as Record<string, unknown>,
   eqs: [] as [string, string, unknown][],
+  /** linhas devolvidas por consultas em lista (await da query) por tabela */
+  dados: {} as Record<string, unknown[]>,
 }));
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
@@ -62,7 +64,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
         then: (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) => {
           f.ops.push({ tabela, op, valor });
           const error = f.falharEscrita ? { message: 'boom' } : null;
-          const data = op === 'delete' ? [{ variacao_id: '0b7c6a2e-3c1d-4b5a-9f00-000000000002' }] : null;
+          const data = op === 'delete' ? [{ variacao_id: '0b7c6a2e-3c1d-4b5a-9f00-000000000002' }] : f.dados[tabela] ?? null;
           return Promise.resolve({ data, error }).then(ok, ko);
         },
       };
@@ -96,6 +98,7 @@ beforeEach(() => {
   f.froms.length = 0;
   f.linhas = {};
   f.eqs.length = 0;
+  f.dados = {};
   vi.clearAllMocks();
   vi.mocked(requireUserOrg).mockImplementation(async () => f.contexto);
   vi.mocked(exigirModulo).mockResolvedValue(true);
@@ -470,13 +473,12 @@ describe('extensao — protocolo 2 (identidade, sessao, sem_acesso)', () => {
   });
 
   // Referência FIXA: snapshots gerados rodando este mesmo teste contra o handler de a08ae74a (antes do protocolo 2).
-  // 2026-10-25 (0.3.1): único acréscimo é o campo aditivo `freteOferta` (auditoria × Avant); clientes antigos o ignoram.
   it('sem protocolo: status e corpo idênticos aos da versão anterior (sucesso e erros)', async () => {
     const bruto = async (r: Promise<Response>) => { const x = await r; return { status: x.status, corpo: await x.text() }; };
     // identidadeEsperada sem protocolo é ignorada, como na 0.2.1.
     expect(await bruto(post({ ...ANALISAR, identidadeEsperada: 'outra:org:' }))).toMatchInlineSnapshot(`
       {
-        "corpo": "{"proprio":false,"catalogoCriadoEm":null,"vendedor":null,"freteOferta":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"margem":{"preco":100,"classico":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"},"premium":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"}},"custo":{"fonte":"nenhuma","variacaoId":null,"codigo":null,"origem":null,"unidadesPorPacote":null,"unidadesSku":null,"custoSku":null,"fator":null,"faltaUnidades":null,"custoPacote":null},"parametros":{"aliquotas":{"confirmada":false,"nacional":null,"importado":null},"classico":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"premium":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"frete":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"}}}",
+        "corpo": "{"proprio":false,"catalogoCriadoEm":null,"vendedor":null,"margem":{"preco":100,"classico":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"},"premium":{"estado":"indisponivel","motivo":"Confirme as alíquotas de imposto em Configurações"}},"custo":{"fonte":"nenhuma","variacaoId":null,"codigo":null,"origem":null,"unidadesPorPacote":null,"unidadesSku":null,"custoSku":null,"fator":null,"faltaUnidades":null,"custoPacote":null},"parametros":{"aliquotas":{"confirmada":false,"nacional":null,"importado":null},"classico":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"premium":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"},"frete":{"estado":"indisponivel","motivo":"Conecte o Mercado Livre à organização"}}}",
         "status": 200,
       }
     `);
@@ -562,5 +564,67 @@ describe('extensao — protocolo 2 (identidade, sessao, sem_acesso)', () => {
   it('401 com protocolo 2: corpo atual, sem identidade', async () => {
     vi.mocked(requireUserOrg).mockRejectedValue(new Response('{}', { status: 401 }));
     expect(await (await post({ ...ANALISAR, ...P2 })).json()).toEqual({ erro: 'sessao_expirada' });
+  });
+});
+
+describe('extensao — frete cotado da oferta (auditoria × Avant, 0.3.1)', () => {
+  const P2 = { protocolo: 2 };
+  const fetchMl = vi.fn();
+  const chamadasShipping = () => fetchMl.mock.calls.filter(([u]) => String(u).includes('/shipping_options'));
+  beforeEach(() => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok');
+    vi.mocked(buscarListingPrice).mockResolvedValue({ sale_fee_amount: 12, sale_fee_details: { percentage_fee: 12, fixed_fee: 0 } });
+    vi.mocked(buscarFreteVendedorComProveniencia).mockResolvedValue({ valor: 20, proveniencia: 'official' } as never);
+    vi.mocked(mlGet).mockResolvedValue(null);
+    fetchMl.mockReset();
+    fetchMl.mockImplementation(async () => new Response(JSON.stringify({ options: [{ list_cost: 32.45, display: 'recommended' }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMl);
+  });
+
+  it('cliente legado (sem protocolo): sem cotação e sem o campo freteOferta', async () => {
+    const corpo = await (await post(ANALISAR)).json();
+    expect(corpo).not.toHaveProperty('freteOferta');
+    expect(chamadasShipping()).toHaveLength(0);
+    expect(corpo.parametros.frete).toMatchObject({ estado: 'ok', valor: 20 });
+  });
+
+  it('protocolo 2: cota com o token, CEP de referência, 2,5 s sem retry; cache por conta + org + item', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const r = await (await post({ ...ANALISAR, ...P2 })).json();
+    expect(r.dados.freteOferta).toEqual({ estado: 'ok', valor: 32.45 });
+    expect(r.dados.parametros.frete).toMatchObject({ estado: 'ok', valor: 20 }); // margem segue o frete da conta
+    expect(chamadasShipping()).toHaveLength(1);
+    const [url, init] = chamadasShipping()[0] as [string, RequestInit];
+    expect(url).toBe('https://api.mercadolibre.com/items/MLB1/shipping_options?zip_code=01310100');
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer tok');
+    expect(timeout).toHaveBeenCalledWith(2500);
+    expect(vi.mocked(redisSet).mock.calls.map(([k]) => k)).toContain('ext:frof:v2:555:org-1:MLB1:01310100');
+    timeout.mockRestore();
+  });
+
+  it('429 ou falha de rede: uma tentativa só, indisponível (nunca zero)', async () => {
+    fetchMl.mockImplementation(async () => new Response('{}', { status: 429 }));
+    const r = await (await post({ ...ANALISAR, ...P2 })).json();
+    expect(r.dados.freteOferta).toEqual({ estado: 'indisponivel', motivo: 'frete da oferta indisponível' });
+    expect(chamadasShipping()).toHaveLength(1);
+    fetchMl.mockReset();
+    fetchMl.mockRejectedValue(new DOMException('timeout', 'TimeoutError'));
+    const t = await (await post({ ...ANALISAR, ...P2 })).json();
+    expect(t.dados.freteOferta).toEqual({ estado: 'indisponivel', motivo: 'frete da oferta indisponível' });
+    expect(fetchMl).toHaveBeenCalledTimes(1);
+  });
+
+  it('busca (analisar_busca): analisa os cards sem cotar o frete da oferta', async () => {
+    f.dados.variacoes = [{
+      id: 'v1', codigo: '001', nome: 'X', custo: 10, peso_gramas: 500, altura_cm: 10, largura_cm: 10, comprimento_cm: 10, atualizado_em: '2026-10-01',
+      familias: { origem: 'nacional', kit_multiplicador: null, nome_pai: null, codigo_pai: 'P1', atributos_ml: null },
+    }];
+    vi.mocked(mlGet).mockResolvedValue({ results: [{ item_id: 'MLB1', category_id: 'MLB5' }], paging: { total: 1 } });
+    const r = await (await post({ acao: 'analisar_busca', eanDaBusca: null, itens: [{ itemId: 'MLB1', catalogProductId: 'MLB42', preco: 100 }], ...P2 })).json();
+    expect(r.dados.itens[0]).toMatchObject({ itemId: 'MLB1', estado: 'ok' });
+    expect(buscarListingPrice).toHaveBeenCalled();
+    expect(chamadasShipping()).toHaveLength(0);
+    expect(vi.mocked(mlGet).mock.calls.some(([u]) => String(u).includes('/shipping_options'))).toBe(false);
   });
 });

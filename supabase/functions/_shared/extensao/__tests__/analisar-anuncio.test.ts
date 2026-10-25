@@ -88,6 +88,15 @@ describe('analisarAnuncio', () => {
     expect(falha.parametros).toEqual(r.parametros);
   });
 
+  it('sem a dep freteDaOferta (cliente legado, busca): sem cotação e sem o campo, inclusive no anúncio próprio', async () => {
+    const { freteDaOferta: _, ...semDep } = deps({ cat: [v()] });
+    const r = await analisarAnuncio('org', ent, semDep);
+    expect(r).not.toHaveProperty('freteOferta');
+    expect(r.margem).not.toBeNull();
+    const { freteDaOferta: __, ...proprioSemDep } = deps({ contaDaOrg: vi.fn(async () => '222') });
+    expect(await analisarAnuncio('org', { ...ent, sellerId: '222' }, proprioSemDep)).not.toHaveProperty('freteOferta');
+  });
+
   it('alíquota não confirmada: clássico e premium indisponíveis', async () => {
     const d = deps({ cat: [v()], aliquotas: vi.fn(async () => ({ confirmada: false, nacional: 8, importado: 16 })) });
     const r = await analisarAnuncio('org', ent, d);

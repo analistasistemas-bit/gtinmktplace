@@ -179,6 +179,9 @@ export const CEP_FRETE_OFERTA = '01310100';
 
 /** /items/{id}/shipping_options → list_cost da opção "recommended" (senão a primeira); falha ou valor
  *  ausente/não numérico → indisponível, nunca zero (D-7). Medido em 25/10: 200 p/ item de terceiro. */
+/** Cache do frete da oferta por conta ML + org + item (D-18: consultas com a credencial da conta). */
+export const chaveFreteOferta = (conta: string, orgId: string, mlItemId: string) => `ext:frof:v2:${conta}:${orgId}:${mlItemId}:${CEP_FRETE_OFERTA}`;
+
 export function freteDaRespostaShipping(r: unknown): Disponivel<number> {
   const opcoes = (r as { options?: unknown } | null)?.options;
   const lista = Array.isArray(opcoes) ? (opcoes as { display?: unknown; list_cost?: unknown }[]) : [];
