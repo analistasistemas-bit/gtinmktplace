@@ -90,7 +90,7 @@ beforeEach(() => {
   vi.stubGlobal('Deno', { env: { get: () => 'https://proj.supabase.co' } });
   m.temAssinanteGerencial.mockResolvedValue(true);
   m.publishJSON.mockResolvedValue({ messageId: 'm1' });
-  m.batchJSON.mockResolvedValue([]);
+  m.batchJSON.mockImplementation(async (msgs: unknown[]) => msgs.map(() => ({ messageId: 'x' })));
   m.notificarCategoria.mockImplementation(async () => { m.log.push('notificar'); return 1; });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -309,6 +309,7 @@ describe('varrerCarrinhos', () => {
     const linhas = Array.from({ length: 201 }, (_, i) => linha({ chave: String(1000 + i), atualizado_em: velho }));
     const admin = fakeAdmin(linhas);
     expect(await varrerCarrinhos(admin, AGORA)).toBe(200);
+    expect(m.batchJSON.mock.calls.flatMap((c) => c[0])).toHaveLength(200); // em blocos (enfileirarEmBlocos)
     expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://proj.supabase.co/functions/v1/notificar-carrinho',
       body: { varrer: true, depois: { orgId: ORG, chave: '1199' } },

@@ -4,6 +4,7 @@
 // `status aguardando → enviado` e só quem afetou a linha notifica.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { qstashClient } from '../../queue.ts';
+import { enfileirarEmBlocos } from '../../enfileirar-em-blocos.ts';
 import { notificarCategoria, temAssinanteGerencial } from '../config.ts';
 import { carregarContexto, lerVendasDoCarrinho, type MetricsDb } from '../../platform-admin/metrics-repository.ts';
 import { ehFaturavel } from '../../platform-admin/sales-summary.ts';
@@ -191,7 +192,7 @@ export async function varrerCarrinhos(
   if (error) throw new Error(`varrer carrinhos: ${error.message}`);
   const linhas = (data ?? []) as Array<{ org_id: string; chave: string; tentativas: number }>;
   if (linhas.length === 0) return 0;
-  await qstashClient().batchJSON(linhas.map((l) => job(l.org_id, l.chave, l.tentativas)));
+  await enfileirarEmBlocos(linhas, (l) => job(l.org_id, l.chave, l.tentativas), (msgs) => qstashClient().batchJSON(msgs));
   if (linhas.length === LOTE_VARREDURA) {
     const ultima = linhas[linhas.length - 1];
     await qstashClient().publishJSON({
