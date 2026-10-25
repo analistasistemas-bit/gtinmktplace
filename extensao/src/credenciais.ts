@@ -90,6 +90,20 @@ async function parDaResposta(r: Response): Promise<Credenciais | null> {
 
 const transitorio = (status: number) => status === 408 || status === 429 || status >= 500;
 
+type Renovacao = { ok: boolean; status: number; par: Credenciais | null };
+// Renovação em voo (fora da fila: só `sair` lê, para revogar com o access dela sem gastar o refresh de novo).
+let renovacaoEmVoo: { refresh: string; p: Promise<Renovacao> } | null = null;
+
+/** POST do refresh_token grant, com o corpo já lido (Response só se lê uma vez: tokenValido e sair compartilham). */
+function renovar(refresh: string): Promise<Renovacao> {
+  const p = auth('/auth/v1/token?grant_type=refresh_token', { refresh_token: refresh })
+    .then(async (r) => ({ ok: r.ok, status: r.status, par: r.ok ? await parDaResposta(r) : null }));
+  const voo = { refresh, p };
+  renovacaoEmVoo = voo;
+  p.finally(() => { if (renovacaoEmVoo === voo) renovacaoEmVoo = null; }).catch(() => {});
+  return p;
+}
+
 export async function entrar(email: string, senha: string): Promise<{ ok: true } | { ok: false; erro: 'credenciais_invalidas' | 'rede' }> {
   const REDE = { ok: false, erro: 'rede' } as const;
   const gen = geracao;
@@ -140,9 +154,9 @@ export function tokenValido(): Promise<TokenValido> {
     const g = await lerCredenciais();
     if (!g || gen !== geracao) return { erro: 'sem_sessao' };
     if (g.expiresAt * 1000 - Date.now() > MARGEM_MS) return { accessToken: g.accessToken, identidade: g.identidade };
-    let r: Response;
+    let r: Renovacao;
     try {
-      r = await auth('/auth/v1/token?grant_type=refresh_token', { refresh_token: g.refreshToken });
+      r = await renovar(g.refreshToken);
     } catch {
       return { erro: 'transitorio' };
     }
@@ -152,7 +166,7 @@ export function tokenValido(): Promise<TokenValido> {
       await apagarCredenciais();
       return { erro: 'sem_sessao' };
     }
-    const par = await parDaResposta(r);
+    const par = r.par;
     if (!par) return { erro: 'transitorio' };
     if (!(await gravarSe(gen, { ...g, ...par }))) return gen === geracao ? { erro: 'transitorio' } : { erro: 'sem_sessao' };
     return { accessToken: par.accessToken, identidade: g.identidade };
@@ -160,13 +174,26 @@ export function tokenValido(): Promise<TokenValido> {
 }
 
 /** Fora da fila: não espera renovação em voo (que, ao terminar, vê a geração nova e não grava). Limpeza local
- *  imediata; o logout `scope=local` (só esta sessão) é disparado sem aguardar — offline, sai só localmente. */
+ *  imediata; a revogação (logout `scope=local`, só esta sessão) segue em segundo plano — offline, sai só localmente. */
 export async function sair(): Promise<void> {
   geracao++; // antes de qualquer await
   novaEpoca();
+  const voo = renovacaoEmVoo; // síncrono: a renovação pode terminar (e soltar o handle) durante a leitura abaixo
   const g = await lerCredenciais();
   await apagarCredenciais();
-  if (g) auth('/auth/v1/logout?scope=local', undefined, g.accessToken).catch(() => {});
+  if (g) revogar(g, voo).catch(() => {});
+}
+
+/** O Auth recusa logout com JWT vencido (e o refresh seguiria válido no servidor): access vencendo → renova antes,
+ *  aproveitando a renovação em voo do mesmo refresh. Nunca grava nada; refresh recusado = sessão já inválida. */
+async function revogar(g: Credenciais, voo: typeof renovacaoEmVoo): Promise<void> {
+  let access = g.accessToken;
+  if (g.expiresAt * 1000 - Date.now() <= MARGEM_MS) {
+    const r = await (voo?.refresh === g.refreshToken ? voo.p : renovar(g.refreshToken));
+    if (!r.par) return;
+    access = r.par.accessToken;
+  }
+  await auth('/auth/v1/logout?scope=local', undefined, access);
 }
 
 export async function estaLogado(): Promise<boolean> {

@@ -322,13 +322,16 @@ do ML). Entra na versão 0.3.0.
     `chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })`; senha nunca persistida. Risco residual: quem tem acesso ao perfil/disco do Chrome lê o refresh token.
   - Renovação sob demanda (access vence em <= 30 s), só no SW, numa fila única; par gravado num único `set` e relido na
     fila. Rede, 429 e 5xx preservam credenciais; só erro definitivo do Supabase desloga (sem loop).
-  - **Sair** = `POST /auth/v1/logout?scope=local`; limpeza local imediata, sem esperar a rede. O logout do app também
+  - **Sair** = `POST /auth/v1/logout?scope=local`; limpeza local imediata, sem esperar a rede. Access vencido: a
+    revogação, em segundo plano, renova antes (o Auth recusa logout com JWT vencido) e nunca regrava credenciais. O logout do app também
     passa a `scope` local e não avisa a extensão (independência nos dois sentidos).
   - **Geração** persistida (sobe em login, logout, troca de identidade e pausa); **toda mensagem de comando** e toda
     requisição levam a geração de quando começou, e resposta/gravação/mensagem com geração antiga é descartada.
 - **D-14.** `externally_connectable` fica só para `publiai:ping` (enviado pelo app; a extensão responde
   `{ versao, protocolo }`; alimenta "Instalada" em Configurações). `publiai:sessao` e `publiai:desconectar` deixam de valer na 0.3.0; o app só empurra sessão a
-  extensões sem protocolo >= 2 (0.2.x). Nenhuma permissão nova. `checar-dist` passa a permitir uso de auth apenas no
+  extensões sem protocolo >= 2 (0.2.x). Nenhuma permissão nova; a permissão `alarms` foi **removida** na 0.3.0 (permissões
+  finais: `sidePanel` e `storage`) — o alarme de fim de validade da D-4 original deixou de existir, a extensão renova a
+  própria sessão. `checar-dist` passa a permitir uso de auth apenas no
   `sw.js`. Ícone injetado em `www`, `lista` e `produto.mercadolivre.com.br` (exceto `/checkout`, `/gz/`, `/jms/`,
   `/captcha/`).
 - **D-16 (ícone/menu no cabeçalho).** Shadow DOM fechado ao lado do carrinho, inserção idempotente, observer limitado e

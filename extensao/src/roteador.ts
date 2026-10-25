@@ -1,7 +1,7 @@
 // Roteamento das mensagens internas do SW (ADR-0189). Separado do sw.ts para ser testável.
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
-import { atualizarSessao, chamarExtensao } from './api';
+import { atualizarSessao, chamarExtensao, consultarSessaoAtual } from './api';
 import { observadoDoAnuncio } from './criacao';
 import { entrar, estaLogado, lerCredenciais, sair } from './credenciais';
 import { definirAtiva, estaAtiva } from './preferencias';
@@ -259,8 +259,11 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (!pagina || typeof msg.email !== 'string' || typeof msg.senha !== 'string') return undefined;
       return entrar(msg.email, msg.senha).then(async (r) => {
         if (!r.ok) return { ...r, ...(await estadoExtensao()) };
-        await atualizarSessao().catch(() => false);
-        // Perfil inativo/sem org: a sessao desloga (sem_acesso). Rede na sessao: segue logado sem perfil.
+        const s = await consultarSessaoAtual().catch(() => ({ ok: false, erro: 'interno' }) as const);
+        // Módulo desligado ou perfil inativo/sem org: não entra (a sessao já desloga no sem_acesso). Rede/limite na
+        // sessao: segue logado sem perfil.
+        if (!s.ok && s.erro === 'modulo_desligado') await sair();
+        if (!s.ok && (s.erro === 'modulo_desligado' || s.erro === 'sem_acesso')) return { ok: false, erro: s.erro, ...(await estadoExtensao()) };
         if (!(await estaLogado())) return { ok: false, erro: 'sem_acesso', ...(await estadoExtensao()) };
         await transmitirConta(); // o aviso do login saiu antes do perfil
         return { ok: true, ...(await estadoExtensao()) };

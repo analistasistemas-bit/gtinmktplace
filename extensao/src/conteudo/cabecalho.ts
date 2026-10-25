@@ -133,8 +133,9 @@ export function iniciar(doc: Document, modo: ShadowRootMode = 'closed', prazoBus
     });
   }
 
-  // Busca do encaixe: só até inserir ou até o prazo (sem encaixe, desiste sem erro). Depois de inserir, só os ancestrais diretos
-  // do carrinho (childList, sem subtree): o ML trocando o cabeçalho tira o host do DOM e a busca recomeça uma vez.
+  // Busca do encaixe: só até inserir ou até o prazo (sem encaixe, desiste sem erro). Depois de inserir, cada ancestral do host
+  // até o `header` e o pai dele (childList, sem subtree): o ML trocando qualquer nível do cabeçalho tira o host do DOM e a
+  // busca recomeça uma vez.
   const busca = new MutationObserver(() => tentar());
   const ancestrais = new MutationObserver(() => { if (!host?.isConnected) tentar(); });
   let prazo: ReturnType<typeof setTimeout> | undefined;
@@ -155,7 +156,8 @@ export function iniciar(doc: Document, modo: ShadowRootMode = 'closed', prazoBus
     host = h;
     if (!ligados.has(h)) { ligar(h); ligados.add(h); }
     ancestrais.disconnect();
-    for (const n of [h.parentElement, h.closest('header'), h.closest('header')?.parentElement]) if (n) ancestrais.observe(n, { childList: true });
+    const fim = h.closest('header')?.parentElement; // sem header: até a raiz
+    for (let n = h.parentElement; n; n = n === fim ? null : n.parentElement) ancestrais.observe(n, { childList: true });
     if (estado) aplicar(estado);
     void ler(false);
   }

@@ -274,6 +274,36 @@ describe('App', () => {
     expect(document.body.innerHTML).toBe(antes);
   });
 
+  it('final: aviso da geração 2 com a releitura PENDENTE → conteúdo velho some na hora; resposta da geração 1 não aparece', async () => {
+    let ext: EstadoExt | Promise<EstadoExt> = EXT;
+    let soltarReleitura!: (e: EstadoExt) => void;
+    let resolverSku!: (v: unknown) => void;
+    const { avisar } = await montar(() => ext as EstadoExt, (m) => {
+      if (m.tipo === 'publiai:chamar' && (m as { corpo?: { acao?: string } }).corpo?.acao === 'buscar_sku') return new Promise((r) => { resolverSku = r; });
+      return { ok: true, dados: {}, geracao: 1 };
+    });
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '150' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Este produto é meu SKU…' })); });
+    fireEvent.change(screen.getByLabelText('Código, nome ou EAN'), { target: { value: '00123' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buscar' })); });
+    ext = new Promise<EstadoExt>((r) => { soltarReleitura = r; }); // o SW ainda não respondeu a releitura
+    await avisar({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: 2 });
+    expect(screen.queryByLabelText('Preço de venda')).toBeNull(); // invalidado antes da releitura
+    await act(async () => { resolverSku({ ok: true, dados: { itens: [{ variacaoId: 'u-1', codigo: '00123', nome: 'Camisa', custo: 30, origem: 'nacional' }] }, geracao: 1 }); });
+    expect(screen.queryByText(/00123 · Camisa/)).toBeNull();
+    expect(screen.queryByLabelText('Preço de venda')).toBeNull();
+    await act(async () => { soltarReleitura({ ...EXT, geracao: 2 }); });
+    expect((screen.getByLabelText('Preço de venda') as HTMLInputElement).value).toBe('100');
+    expect(screen.queryByText(/00123 · Camisa/)).toBeNull();
+  });
+
+  it('final: ativacao da MESMA geração não desmonta o conteúdo', async () => {
+    const { avisar } = await montar(() => EXT);
+    fireEvent.change(screen.getByLabelText('Preço de venda'), { target: { value: '150' } });
+    await avisar({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 1 });
+    expect((screen.getByLabelText('Preço de venda') as HTMLInputElement).value).toBe('150');
+  });
+
   it('fix 4: desmontar com tabs.query pendente não pede estado-da-aba', async () => {
     let liberar!: (v: unknown) => void;
     const sendMessage = vi.fn(async (m: { tipo: string }) => (m.tipo === 'publiai:estado-extensao' ? EXT : null));

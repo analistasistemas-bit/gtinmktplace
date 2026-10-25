@@ -821,6 +821,18 @@ describe('conta, chave ativa e geração (Task 5)', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: epocaAtual() });
   });
 
+  it.each(['modulo_desligado', 'sem_acesso'] as const)('entrar com a sessao da edge recusando (%s) → erro propagado e deslogado localmente', async (erro) => {
+    delete local.credenciais;
+    fetchFalso.mockImplementation(async (u: string) => String(u).includes('/auth/v1/token')
+      ? new Response(JSON.stringify({ access_token: 'tok-n', refresh_token: 'ref-n', expires_in: 3600, user: { id: 'u9' } }), { status: 200 })
+      : String(u).includes('/auth/v1/logout') ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ erro }), { status: 403 }));
+    const r = await rotearBruto({ tipo: 'publiai:entrar', email: 'a@x.com', senha: 'segredo-123' }, PAINEL);
+    expect(r).toMatchObject({ ok: false, erro, logado: false, perfil: null });
+    expect(local.credenciais).toBeUndefined();
+    await vi.waitFor(() => expect(fetchFalso.mock.calls.some(([u]) => String(u).includes('/auth/v1/logout'))).toBe(true));
+  });
+
   it('entrar com senha errada → credenciais_invalidas, segue deslogado', async () => {
     delete local.credenciais;
     fetchFalso.mockImplementation(async () => new Response('{"error":"invalid_grant"}', { status: 400 }));

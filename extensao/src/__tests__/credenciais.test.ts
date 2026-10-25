@@ -10,6 +10,8 @@ const par = (access = 'acc-novo', refresh = 'ref-novo') => new Response(JSON.str
 const erroAuth = (status: number, code: string) => new Response(JSON.stringify({ code: status, error_code: code, msg: code }), { status });
 const urls = () => fetchFalso.mock.calls.map(([u]) => String(u));
 const refreshes = () => urls().filter((u) => u.endsWith('/auth/v1/token?grant_type=refresh_token'));
+const LOGOUT = 'https://proj.supabase.co/auth/v1/logout?scope=local';
+const bearerDoLogout = () => fetchFalso.mock.calls.find(([u]) => String(u) === LOGOUT)?.[1].headers.Authorization;
 
 let sessao: Record<string, unknown>;
 beforeEach(() => {
@@ -192,7 +194,9 @@ describe('corridas (fix round 1)', () => {
     await sair();
     leitura.soltar!();
     expect(await renovacao).toEqual({ erro: 'sem_sessao' });
-    expect(refreshes()).toHaveLength(0);
+    // O único refresh é o da revogação do sair (access vencendo); a renovação interrompida não chega à rede nem regrava.
+    await vi.waitFor(() => expect(urls()).toContain(LOGOUT));
+    expect(refreshes()).toHaveLength(1);
     expect(await estaLogado()).toBe(false);
   });
 
@@ -287,6 +291,44 @@ describe('sair', () => {
     soltar(par());
     expect(await renovacao).toEqual({ erro: 'sem_sessao' });
     expect(local.credenciais).toBeUndefined();
+    expect(await estaLogado()).toBe(false);
+    // A revogação aproveita o access da renovação em voo: um único refresh, logout com o access novo.
+    await vi.waitFor(() => expect(urls()).toContain(LOGOUT));
+    expect(refreshes()).toHaveLength(1);
+    expect(bearerDoLogout()).toBe('Bearer acc-novo');
+    expect(local.credenciais).toBeUndefined();
+  });
+
+  it('access vencido: renova com o refresh e revoga (scope=local) com o access NOVO; nada é regravado', async () => {
+    logar({ expiresAt: agoraSeg() - 60 });
+    fetchFalso.mockImplementation(async (u: string) => String(u).includes('logout') ? new Response(null, { status: 204 }) : par('acc-revoga'));
+    await sair();
+    expect(local.credenciais).toBeUndefined(); // limpeza local antes da rede
+    await vi.waitFor(() => expect(urls()).toContain(LOGOUT));
+    expect(refreshes()).toHaveLength(1);
+    expect(JSON.parse(fetchFalso.mock.calls[0][1].body)).toEqual({ refresh_token: 'ref' });
+    expect(bearerDoLogout()).toBe('Bearer acc-revoga');
+    expect(local.credenciais).toBeUndefined();
+    expect(await estaLogado()).toBe(false);
+  });
+
+  it('access vencido e offline: sai localmente, sem erro e sem logout', async () => {
+    logar({ expiresAt: agoraSeg() - 60 });
+    fetchFalso.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(sair()).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(refreshes()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(urls()).not.toContain(LOGOUT);
+    expect(await estaLogado()).toBe(false);
+  });
+
+  it('access vencido e refresh já recusado: não manda logout com o JWT vencido', async () => {
+    logar({ expiresAt: agoraSeg() - 60 });
+    fetchFalso.mockImplementation(async (u: string) => String(u).includes('logout') ? new Response(null, { status: 204 }) : erroAuth(400, 'refresh_token_not_found'));
+    await sair();
+    await vi.waitFor(() => expect(refreshes()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(urls()).not.toContain(LOGOUT);
     expect(await estaLogado()).toBe(false);
   });
 });

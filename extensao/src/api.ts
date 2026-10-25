@@ -97,10 +97,15 @@ async function consultarSessao(c: Contexto): Promise<{ ok: true } | Falha> {
   return (await definirIdentidade(r.identidade, perfil, c.epoca)) ? { ok: true } : falha('sem_sessao');
 }
 
-/** Busca identidade e perfil na edge e grava. true = logado com identidade conhecida. */
-export async function atualizarSessao(): Promise<boolean> {
+/** Busca identidade e perfil na edge e grava; devolve o motivo da falha (login: modulo_desligado/sem_acesso). */
+export async function consultarSessaoAtual(): Promise<{ ok: true } | Falha> {
   const c = await contexto();
-  return !('erro' in c) && (await consultarSessao(c)).ok;
+  return 'erro' in c ? c : consultarSessao(c);
+}
+
+/** true = logado com identidade conhecida. */
+export async function atualizarSessao(): Promise<boolean> {
+  return (await consultarSessaoAtual()).ok;
 }
 
 /** `epoca`: a de quando o pedido chegou (mensagem do painel/menu/content script). Padrão: agora. */

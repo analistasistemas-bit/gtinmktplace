@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-10-22
+**Ultima atualizacao:** 2026-10-25
 
 ## Snapshot
 

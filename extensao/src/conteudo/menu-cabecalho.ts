@@ -14,7 +14,7 @@ export const CSS = `
   button.icone svg{width:20px;height:20px}
   :host([data-estado="desativado"]) button.icone svg{filter:grayscale(1);opacity:.55}
   .ponto{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;border:2px solid #fff}
-  .verde{background:#1f9d55}.laranja{background:#f08a24}.cinza{background:#9a9aa6}.neutro{background:#d4d4de}
+  .verde{background:#1f9d55}.laranja{background:#f08a24}.cinza{background:#6e6e7a;box-shadow:0 0 0 1px #4a4a55}.neutro{background:#d4d4de}
   [role=menu]{position:absolute;right:0;top:40px;z-index:2147483000;width:268px;padding:6px 0;background:#fff;border-radius:12px;box-shadow:0 8px 28px rgba(20,18,50,.22),0 0 0 1px rgba(0,0,0,.08);text-align:left}
   [role=menu][hidden]{display:none}
   .topo{padding:10px 16px 12px;border-bottom:1px solid #ececf2}
@@ -28,8 +28,9 @@ export const CSS = `
   .principal:focus-visible{outline:2px solid #1c1b2a;outline-offset:2px}
   .chave{position:relative;width:34px;height:20px;border-radius:10px;background:#c9c9d4;flex:none}
   .chave::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .12s}
-  [aria-checked=true] .chave{background:#1f9d55}
+  [aria-checked=true] .chave{background:oklch(0.55 0.20 277)}
   [aria-checked=true] .chave::after{left:16px}
+  .simbolo{margin-left:8px;flex:none}
   .rodape{padding:8px 16px 4px;border-top:1px solid #ececf2;color:#8a8998;font-size:12px}
   .sep{height:1px;background:#ececf2;margin:4px 0}
 `;
@@ -64,7 +65,8 @@ export function preencherMenu(menu: HTMLElement, e: EstadoExt | null, doc: Docum
       h('button', { class: 'linha', role: 'menuitemcheckbox', type: 'button', 'aria-checked': String(e.ativa), 'data-acao': 'chave' }, 'Extensão ativa', h('span', { class: 'chave' })),
     );
     if (modo === 'ativo') {
-      nodes.push(linha('painel', 'Abrir painel de análise', {}, '›'), linha('app', 'Abrir o PubliAI', {}, '↗'));
+      const simbolo = (c: string) => h('span', { class: 'simbolo', 'aria-hidden': 'true' }, c);
+      nodes.push(linha('painel', 'Abrir painel de análise', {}, simbolo('›')), linha('app', 'Abrir o PubliAI', {}, simbolo('↗')));
     } else {
       nodes.push(h('div', { class: 'mudo' }, 'Selos e análises pausados'));
     }

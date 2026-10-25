@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { iniciar, inserirIcone, localizarEncaixe } from '../cabecalho';
+import { CSS } from '../menu-cabecalho';
 
 const FIXTURE = readFileSync(resolve(process.cwd(), 'src/conteudo/__fixtures__/cabecalho-ml.html'), 'utf8');
 
@@ -92,6 +93,19 @@ describe('encaixe', () => {
     await tick();
     await tick();
     expect(document.querySelectorAll('#publiai-cabecalho')).toHaveLength(1);
+  });
+
+  it('ML troca só um wrapper intermediário (.nav-header-plus-menu-wrapper) → reinsere uma vez', async () => {
+    await montar(LOGADO);
+    const velho = document.querySelector('.nav-header-plus-menu-wrapper')!;
+    const molde = document.createElement('template');
+    molde.innerHTML = FIXTURE; // wrapper novo vindo do markup (sem o nosso host dentro)
+    velho.replaceWith(molde.content.querySelector('.nav-header-plus-menu-wrapper')!);
+    expect(host()).toBeNull();
+    await tick();
+    await tick();
+    expect(document.querySelectorAll('#publiai-cabecalho')).toHaveLength(1);
+    expect(document.querySelector('#nav-cart')!.nextElementSibling).toBe(host());
   });
 });
 
@@ -206,6 +220,19 @@ describe('menu', () => {
     expect(t).toContain('Sair');
     expect(t).toContain('Versão 0.3.0');
     expect(t).not.toMatch(/R\$|margem|lucro/i);
+  });
+  it('acabamento: símbolos separados do texto e aria-hidden; chave roxa do painel; ponto cinza visível', async () => {
+    await montar(LOGADO);
+    await abrir();
+    for (const [texto, simbolo] of [['Abrir painel de análise', '›'], ['Abrir o PubliAI', '↗']]) {
+      const s = item(texto).querySelector('span[aria-hidden="true"]')!;
+      expect(s.textContent).toBe(simbolo);
+      expect(s.classList.contains('simbolo')).toBe(true);
+    }
+    expect(CSS).toMatch(/\.simbolo\{[^}]*margin-left:\s*8px/);
+    expect(CSS).toMatch(/\[aria-checked=true\] \.chave\{background:oklch\(0\.55 0\.20 277\)\}/);
+    expect(CSS).toMatch(/\.cinza\{background:#6e6e7a;box-shadow:0 0 0 1px #4a4a55\}/);
+    expect(CSS).toMatch(/\.ponto\{[^}]*width:10px;height:10px/);
   });
   it('deslogado: só Entrar no PubliAI + Entrar', async () => {
     await montar(DESLOGADO);

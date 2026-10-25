@@ -15,15 +15,19 @@ import { Entrar } from './Entrar';
 import { mensagemDeErro, URL_APP, type Chamar, type EstadoAba, type EstadoExt, type Resposta, type RespostaAnuncio } from './formato';
 
 type Reanalisar = () => Promise<Resposta<RespostaAnuncio> | null>;
+/** Geração que o painel mostra agora (null = invalidada, releitura em curso). */
+type Vigente = () => number | null;
 
 // Todo comando do painel leva a geração do SW (R9). Resposta de outra geração = estado velho: descartar e reler.
-async function comando(geracao: number, msg: object, aoDescartar: () => void): Promise<{ ok?: boolean; erro?: string; geracao?: unknown }> {
+// Painel já em outra geração (aviso chegou com o pedido em voo): a resposta não chega a nenhum componente.
+async function comando(geracao: number, msg: object, aoDescartar: () => void, vigente: Vigente): Promise<{ ok?: boolean; erro?: string; geracao?: unknown }> {
   let r: { ok?: boolean; erro?: string; geracao?: unknown } | null | undefined;
   try {
     r = (await chrome.runtime.sendMessage({ ...msg, geracao })) as typeof r;
   } catch {
     return { ok: false, erro: 'interno' };
   }
+  if (vigente() !== geracao) return { ok: false, erro: 'geracao_antiga' };
   if (r?.erro === 'geracao_antiga' || (typeof r?.geracao === 'number' && r.geracao !== geracao)) aoDescartar();
   return r ?? { ok: false, erro: 'interno' };
 }
@@ -32,6 +36,8 @@ async function comando(geracao: number, msg: object, aoDescartar: () => void): P
 function useEstadoExt() {
   const [ext, setExt] = useState<EstadoExt | null | undefined>(undefined);
   const seq = useRef(0);
+  const vigente = useRef<number | null>(null);
+  const mostrar = useCallback((e: EstadoExt | null | undefined) => { vigente.current = e?.geracao ?? null; setExt(e); }, []);
   const suspenso = useRef(false); // login em voo: os avisos do SW (logado antes de validar) não valem
   const reler = useCallback(async (abrindo = false) => {
     const minha = ++seq.current;
@@ -42,24 +48,28 @@ function useEstadoExt() {
       e = undefined;
     }
     if (minha !== seq.current) return; // chegou uma leitura mais nova
-    setExt(e && typeof e.geracao === 'number' ? e : null);
-  }, []);
-  const aplicar = useCallback((e: EstadoExt) => { seq.current++; setExt(e); }, []);
+    mostrar(e && typeof e.geracao === 'number' ? e : null);
+  }, [mostrar]);
+  const aplicar = useCallback((e: EstadoExt) => { seq.current++; mostrar(e); }, [mostrar]);
   const suspender = useCallback((sim: boolean) => { suspenso.current = sim; seq.current++; }, []);
   useEffect(() => {
     const aoAviso = (m: unknown) => {
-      const t = (m as { tipo?: unknown } | null)?.tipo;
-      if (!suspenso.current && (t === 'publiai:conta-mudou' || t === 'publiai:ativacao')) void reler();
+      const { tipo: t, geracao } = (m as { tipo?: unknown; geracao?: unknown } | null) ?? {};
+      if (suspenso.current || (t !== 'publiai:conta-mudou' && t !== 'publiai:ativacao')) return;
+      // Geração nova: o conteúdo da anterior sai já (carregando), sem esperar a releitura.
+      if (typeof geracao === 'number' && geracao !== vigente.current) mostrar(undefined);
+      void reler();
     };
     chrome.runtime.onMessage.addListener(aoAviso);
     void reler(true);
     return () => chrome.runtime.onMessage.removeListener(aoAviso);
-  }, [reler]);
-  return { ext, reler, aplicar, suspender };
+  }, [reler, mostrar]);
+  const geracaoVigente = useCallback(() => vigente.current, []);
+  return { ext, reler, aplicar, suspender, geracaoVigente };
 }
 
 export function App() {
-  const { ext, reler, aplicar, suspender } = useEstadoExt();
+  const { ext, reler, aplicar, suspender, geracaoVigente } = useEstadoExt();
   if (ext === undefined) {
     return <div className="esqueleto" role="status" aria-label="Carregando"><span /><span /><span /></div>;
   }
@@ -76,7 +86,7 @@ export function App() {
   const conta = <Conta estado={ext} onEstado={aplicar} onRefazer={() => void reler()} />;
   if (!ext.ativa) {
     const ativar = async () => {
-      const r = await comando(ext.geracao, { tipo: 'publiai:definir-ativa', ativa: true }, () => void reler());
+      const r = await comando(ext.geracao, { tipo: 'publiai:definir-ativa', ativa: true }, () => void reler(), geracaoVigente);
       if (r.ok && typeof (r as Partial<EstadoExt>).logado === 'boolean') aplicar(r as unknown as EstadoExt);
       else void reler();
     };
@@ -94,14 +104,14 @@ export function App() {
   // A geração na chave remonta tudo (simulações, chamadas em voo) quando o SW troca de conta ou pausa.
   return (
     <>
-      <Logado key={ext.geracao} geracao={ext.geracao} aoDescartar={() => void reler()} />
+      <Logado key={ext.geracao} geracao={ext.geracao} aoDescartar={() => void reler()} vigente={geracaoVigente} />
       {conta}
     </>
   );
 }
 
-function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => void }) {
-  const chamarViaSw: Chamar = (corpo) => comando(geracao, { tipo: 'publiai:chamar', corpo }, aoDescartar) as never;
+function Logado({ geracao, aoDescartar, vigente }: { geracao: number; aoDescartar: () => void; vigente: Vigente }) {
+  const chamarViaSw: Chamar = (corpo) => comando(geracao, { tipo: 'publiai:chamar', corpo }, aoDescartar, vigente) as never;
   // undefined = carregando; null = aba sem análise.
   const [estado, setEstado] = useState<EstadoAba | null | undefined>(undefined);
   const [tabId, setTabId] = useState<number | null>(null);
@@ -111,7 +121,7 @@ function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => 
     let cancelado = false;
     const carregar = async (tabId: number) => {
       const e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-da-aba', tabId }).catch(() => null)) as EstadoAba | null;
-      if (tabId !== abaAtual) return; // trocou de aba no meio
+      if (tabId !== abaAtual || vigente() !== geracao) return; // trocou de aba (ou de geração) no meio
       setEstado(e ?? null);
     };
     // Sem a permissão `tabs`: o id da aba ativa vem mesmo assim.
@@ -154,13 +164,13 @@ function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => 
         key={`${tabId}:${(estado.entrada as { url?: string }).url ?? ''}`}
         estado={estado as unknown as EstadoBusca}
         chamar={chamarViaSw}
-        analisar={(forcar) => comando(geracao, { tipo: 'publiai:analisar-busca', tabId, forcar }, aoDescartar) as never}
+        analisar={(forcar) => comando(geracao, { tipo: 'publiai:analisar-busca', tabId, forcar }, aoDescartar, vigente) as never}
         destacar={(itemId) => { chrome.runtime.sendMessage({ tipo: 'publiai:destacar-card', tabId, itemId }).catch(() => {}); }}
       />
     );
   }
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
-  const reanalisarAba: Reanalisar = () => comando(geracao, { tipo: 'publiai:reanalisar-aba', tabId }, aoDescartar) as never;
+  const reanalisarAba: Reanalisar = () => comando(geracao, { tipo: 'publiai:reanalisar-aba', tabId }, aoDescartar, vigente) as never;
   // Remonta (zera preço/custo digitados) só quando muda o anúncio; mesmo anúncio mantém a simulação.
   // Tipo de página entra na chave: em /p/ o item é o da buy box, o mesmo id do anúncio dele (o simulador recomeça).
   return <Painel key={estado ? `${estado.entrada.mlItemId}:${(estado.entrada as { tipoPagina?: string }).tipoPagina ?? ''}` : 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
