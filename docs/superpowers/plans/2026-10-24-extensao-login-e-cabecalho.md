@@ -84,15 +84,16 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
     `extensao_vinculos.delete` não chamado para `remover_vinculo`).
   - `sessao: devolve nome/email de profiles e orgNome de organizations da org efetiva; não incrementa a cota nem chama extensao_registrar_uso`.
   - `módulo desligado com protocolo 2 → { erro: 'modulo_desligado', identidade }`.
-  - Em `erros.test.ts`: `403 de requireUserOrg sem x-motivo → sem_acesso`.
-- [ ] **Step 2:** `cd supabase/functions && deno test --allow-all extensao/ _shared/extensao/` → FAIL nos novos.
+  - Em `erros.test.ts`: `403 de requireUserOrg sem x-motivo → sem_acesso só com protocolo 2; sem protocolo continua interno`
+    (`normalizarErro(e, protocolo)`; corpo legado intacto).
+- [ ] **Step 2:** `pnpm test -- supabase/functions/extensao supabase/functions/_shared/extensao` (Vitest pela raiz; as suítes da edge usam Vitest) → FAIL nos novos.
 - [ ] **Step 3: Implementar.** Ordem no handler: `requireUserOrg` → montar identidade → se `protocolo === 2` e
   `identidadeEsperada` presente e diferente → `ErroExtensao('identidade_mudou', 409)` → módulo → `validarPedido` → executar.
   Envelope aplicado no `json(...)` final e no `catch` (só quando a identidade já é conhecida e `protocolo === 2`). `sessao`
   lê `profiles(nome, email)` por `userId` e `organizations(nome)` por `orgId` com o adminClient, sem cota.
   `validarPedido` aceita `sessao` e ignora `protocolo`/`identidadeEsperada` (validados à parte: `identidadeEsperada` casa
   `/^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/`, senão `payload_invalido`).
-- [ ] **Step 4:** testes passam; `deno lint --config supabase/functions/deno.json supabase/functions/extensao supabase/functions/_shared/extensao`.
+- [ ] **Step 4:** testes passam (mesmo comando do Step 2); `deno lint --config supabase/functions/deno.json supabase/functions/extensao supabase/functions/_shared/extensao`.
 - [ ] **Step 5: Commit** — `feat(extensao-edge): protocolo 2 com identidade, ação sessao e sem_acesso`.
 
 ### Task 3: Credenciais próprias no SW (login, renovação, sair)
@@ -100,15 +101,22 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
 **Files:**
 - Create: `extensao/src/credenciais.ts`
 - Modify: `extensao/src/sessao.ts` (passa a ler de `credenciais.ts`; remove o caminho `publiai:sessao`/`publiai:desconectar` como fonte)
-- Modify: `extensao/src/sw.ts` (boot: `setAccessLevel` antes de tudo)
-- Test: `extensao/src/__tests__/credenciais.test.ts`, ajustar `extensao/src/__tests__/sessao.test.ts`, `extensao/src/__tests__/chrome-falso.ts` (storage.local + setAccessLevel)
+- Modify: `extensao/src/sw.ts` (boot: `setAccessLevel` antes de tudo; remove o alarme que apagava a sessão no fim do access token)
+- Modify: `extensao/scripts/checar-dist.mjs` (hoje proíbe `refresh_token` e `/auth/v1/token` em todo o dist: passa a
+  permitir só em `sw.js` e continua proibindo em `painel.js`, chunks e bundles de content script)
+- Test: `extensao/src/__tests__/credenciais.test.ts`, ajustar `extensao/src/__tests__/sessao.test.ts`, `api.test.ts` e
+  `roteador.test.ts` (fixtures que hoje montam sessão via `publiai:sessao` passam a usar `entrar`/credenciais falsas),
+  `extensao/src/__tests__/chrome-falso.ts` (storage.local + setAccessLevel)
 
 **Interfaces:**
 - Produces:
   - `interface Credenciais { accessToken: string; refreshToken: string; expiresAt: number /* s */; userId: string }`
   - `entrar(email: string, senha: string): Promise<{ ok: true } | { ok: false; erro: 'credenciais_invalidas' | 'rede' }>`
-  - `tokenValido(): Promise<{ accessToken: string } | null>` — renova se faltam ≤ 30 s; null = deslogado.
-  - `sair(): Promise<void>` — limpeza local imediata + logout `scope=local` sem aguardar.
+  - `tokenValido(): Promise<{ accessToken: string } | { erro: 'sem_sessao' } | { erro: 'transitorio' }>` — renova se
+    faltam ≤ 30 s; `sem_sessao` = deslogado de fato; `transitorio` = rede/429/5xx (credenciais mantidas; `api.ts` devolve `interno`).
+  - `sair(): Promise<void>` — **fora da fila**: sobe a geração de credenciais, apaga as chaves e limpa as abas na hora,
+    depois dispara o logout `scope=local` sem aguardar. Renovação em voo que termina depois compara a geração de
+    credenciais e **não grava** o par novo.
   - `estaLogado(): Promise<boolean>`
   - `sessao.ts` mantém `obterSessaoValida()`, `identidadeAtual()`, `seAindaIdentidade()`, `limparSessao()` com a mesma
     assinatura; a identidade passa a vir de `definirIdentidade(identidade, perfil)` (chamada pela Task 4 após `sessao`).
@@ -121,6 +129,11 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
   - `refresh com rede/429/5xx → mantém credenciais e devolve null só nesta chamada; próxima tenta de novo`.
   - `refresh 400 (refresh_token_not_found / already_used) → deslogado (storage limpo)`.
   - `sair limpa storage e abas antes do fetch de logout resolver; fetch usa ?scope=local`.
+  - `sair durante uma renovação em voo → a resposta da renovação não restaura credenciais` (corrida).
+  - `reinício do Chrome com access vencido e refresh válido → tokenValido renova e continua logado` (nenhum alarme apaga a sessão).
+  - `renovação interrompida (SW morre após o servidor rotacionar, par novo não gravado) → próxima chamada recebe 400 do
+    refresh antigo → sem_sessao, sem loop` (fetch falso).
+  - `transitorio não apaga nada e não sobe a geração`.
   - `sw boot chama setAccessLevel TRUSTED_CONTEXTS antes de qualquer set` (ordem das chamadas no chrome falso).
   - `sessão legada da 0.2.1 (chave 'sessao' em storage.session, token do app) é apagada no boot e nunca vira credencial
     nem é revogada` (nenhum fetch de logout para ela).
@@ -129,7 +142,8 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
   e `?grant_type=refresh_token` (`{ refresh_token }`), header `apikey: VITE_SUPABASE_ANON_KEY`. Toda leitura-decisão-escrita
   na fila `naFila` existente de `sessao.ts` (exportar uma versão interna se preciso). `sair()` chama
   `limparEstadosDasAbas()` (que sobe a geração) e remove as chaves antes do fetch.
-- [ ] **Step 4:** `npx vitest run` (extensão inteira) → PASS.
+- [ ] **Step 4:** `npx vitest run` (extensão inteira) → PASS; `pnpm build` em `extensao/` → `[checar-dist] ok`, e um teste
+  de `checar-dist` (ou execução com `/auth/v1/token` injetado em `painel.js`) reprova o bundle errado.
 - [ ] **Step 5: Commit** — `feat(extensao): sessão própria no service worker (login, renovação serializada, sair local)`.
 
 ### Task 4: Cliente da edge no protocolo 2
@@ -165,8 +179,16 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
   - `estaAtiva(): Promise<boolean>` (padrão `true`), `definirAtiva(ativa: boolean): Promise<void>` — grava em
     `storage.local`, chama `limparEstadosDasAbas()` ao desligar, e transmite `{ tipo: 'publiai:ativacao', ativa, logado }`
     a todas as abas do ML (`chrome.tabs.query({ url: 'https://*.mercadolivre.com.br/*' })`) e ao painel.
+  - `abas.ts` exporta `geracaoAtual(): Promise<number>` (lê `GERACAO_SESSAO`). Toda mensagem de comando vinda do painel
+    ou do cabeçalho (`publiai:chamar`, `reanalisar-aba`, `analisar-busca`, `definir-ativa`, `sair`) leva `geracao`; o SW
+    recusa com `{ ok:false, erro:'geracao_antiga' }` **antes** de operar se divergir, e toda resposta leva a `geracao`
+    atual. Painel e menu remontam (estado React descartado) quando recebem geração nova.
+  - Login, logout e troca de identidade transmitem `{ tipo: 'publiai:conta-mudou', logado, ativa, geracao }` às abas do
+    ML e ao painel (ícone, selos e painel atualizam sem recarregar).
   - Mensagens novas no roteador:
-    - qualquer remetente da extensão: `publiai:estado-extensao` → `{ ativa, logado, perfil: { nome, orgNome } | null, versao }`.
+    - qualquer remetente da extensão: `publiai:estado-extensao` → `{ ativa, logado, perfil: { nome, orgNome } | null, versao, geracao }`.
+      Vindo do painel ou do menu (cada abertura), chama `atualizarSessao()` antes de responder: identidade mudou → limpa
+      e transmite `conta-mudou`; `sem_acesso`/`sessao_expirada` → desloga localmente.
     - só páginas da extensão (painel): `publiai:entrar { email, senha }` → resultado de `entrar` + `atualizarSessao`;
       `publiai:sair`; `publiai:definir-ativa { ativa }`.
     - content script do cabeçalho: `publiai:definir-ativa`, `publiai:sair`, `publiai:abrir-painel` (já existe), `publiai:abrir-app`
@@ -175,7 +197,9 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
     ou `sem_sessao` sem chamar a edge.
   - `EstadoGuardado` (abas.ts) ganha `gravadoEm: number` (ms); `publiai:estado-da-aba` com estado de anúncio gravado há
     mais de 10 min reanalisa (mesmo caminho de `publiai:reanalisar-aba`) antes de devolver.
-- [ ] **Step 1: Testes que falham:** `estado da aba com mais de 10 min é reanalisado antes de chegar ao painel`;
+- [ ] **Step 1: Testes que falham:** `comando com geração antiga (ex.: remover_vinculo pedido antes da troca de org) é
+  recusado sem chamar a edge`; `estado-extensao do painel chama sessao e, com identidade nova, limpa abas e transmite conta-mudou`;
+  `estado da aba com mais de 10 min é reanalisado antes de chegar ao painel`;
   `entrar recusado quando o remetente é content script`; `desligada → chamar não toca a
   edge`; `definirAtiva(false) limpa abas e transmite a todas as abas do ML`; `estado-extensao sem login → logado:false, perfil:null`.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar. **Step 4:** PASS. **Step 5: Commit** — `feat(extensao): chave ativa e mensagens de conta no SW`.
@@ -213,8 +237,10 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
 - Copy fixa: título "Entrar no PubliAI", subtítulo "Use o mesmo e-mail e senha do app", campos "E-mail"/"Senha", botão
   "Entrar"; erro `credenciais_invalidas` → "E-mail ou senha incorretos."; `rede` → "Sem conexão. Tente de novo.";
   `sem_acesso` → "Seu usuário está inativo ou sem empresa no PubliAI."; `modulo_desligado` → texto atual.
-- [ ] **Step 1: Testes que falham:** `Entrar envia publiai:entrar e limpa o campo senha após a resposta`; `senha nunca vai
-  para storage/props globais` (campo `type=password`, `autocomplete=current-password`); `Conta: desligar envia definir-ativa false`;
+- [ ] **Step 1: Testes que falham:** `Entrar envia publiai:entrar e limpa o campo senha após a resposta`; `a senha não
+  aparece em nenhuma gravação de chrome.storage (local/session) nem em mensagem além de publiai:entrar` (espiões no chrome
+  falso registram toda gravação/mensagem e o teste procura a string da senha); `painel com geração nova descarta a
+  simulação/estado em voo`; `Conta: desligar envia definir-ativa false`;
   `App deslogado mostra Entrar; desativada mostra Ativar`.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar. **Step 4:** PASS. **Step 5: Commit** — `feat(extensao): painel com entrar, conta e chave ativa`.
 
@@ -248,7 +274,8 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
 ### Task 9: App web — ponte com ping e Configurações
 
 **Files:**
-- Modify: `src/lib/extensao-ponte.ts`, `src/stores/auth-store.ts`, `src/components/configuracoes/extensao-navegador.tsx`
+- Modify: `src/lib/auth.ts` (`signOut({ scope: 'local' })`: hoje é global e sair do app revogaria a sessão da extensão),
+  `src/lib/extensao-ponte.ts`, `src/stores/auth-store.ts`, `src/components/configuracoes/extensao-navegador.tsx`
 - Modify (extensão): `extensao/src/sessao.ts` (`receberMensagemExterna`: `publiai:ping` → `{ ok:true, versao, protocolo: 2 }`;
   `publiai:sessao`/`publiai:desconectar` → `{ ok:false }`)
 - Test: `src/lib/__tests__/extensao-ponte.test.ts`, `src/components/configuracoes/__tests__/extensao-navegador.test.tsx`,
@@ -259,7 +286,9 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
   quando o ping responde sem `protocolo` ou `protocolo < 2` (0.2.x).
 - Copy em Configurações (protocolo ≥ 2): linha "Instalação · Instalada neste Chrome (versão X)" e linha "Conta" com
   "Entre pela extensão, no ícone do PubliAI no Mercado Livre, com o seu e-mail e senha." (sem botão Reconectar).
-- [ ] **Step 1: Testes que falham:** `protocolo 2 → não envia sessão nem desconectar`; `0.2.x (sem protocolo) → comportamento atual`;
+- [ ] **Step 1: Testes que falham:** `logout do app chama signOut com scope local`; `protocolo 2 → não envia sessão nem
+  desconectar`; `0.2.1 real: ping responde { ok:false } (sem versão) → trata como legado e mantém o envio de sessão/desconectar`;
+  `0.2.x (sem protocolo) → comportamento atual`;
   `Configurações com protocolo 2 mostra Instalada + texto de login pela extensão`; extensão: `ping responde versão e protocolo`,
   `publiai:sessao ignorado`.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar. **Step 4:** `pnpm test -- extensao` na raiz + `npx vitest run` em `extensao/` → PASS.
@@ -272,6 +301,11 @@ revisão Codex"). Contexto: `docs/decisions/0189-extensao-publiai-navegador.md`.
   persistida no navegador, dados financeiros exibidos; nada de senha guardada), `docs/TASKS.md`, `docs/project-status.md`,
   `docs/how-to/deploy-e-migrations.md` (ordem: edge → app → extensão), `CONTEXT.md` (verbetes "Sessão da extensão", "Extensão ativa")
 - [ ] **Step 1:** atualizar arquivos; `pnpm preflight:static` na raiz → exit 0; `deno lint --config supabase/functions/deno.json`.
+- [ ] **Step 1b: Prova real (depois do deploy da edge, antes da submissão):** script descartável fora do repo com uma
+  conta de teste: login por senha → chamada `sessao` ok → logout `scope=local` → a mesma chamada com o JWT anterior é
+  recusada (401) → a sessão do app da mesma conta, criada antes, continua renovando. Validar no Chrome (sessão isolada,
+  `playwright-cli` com a extensão carregada do `dist`): gesto de abrir o painel pelo menu, zoom 150%, reinserção do ícone
+  após navegação sem recarga, e o pacote final (`matches` e verificador).
 - [ ] **Step 2: Commit** — `chore(extensao): 0.3.0, política de privacidade e docs`.
 - [ ] **Step 3 (pós-revisão, com OK do Diego):** deploy `supabase functions deploy extensao` (conferir versão ativa) →
   merge na main (Render publica o app) → `pnpm build` em `extensao/` e zip de `dist` → Diego atualiza declarações de
