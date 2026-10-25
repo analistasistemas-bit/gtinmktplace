@@ -30,7 +30,8 @@ export function naFila<T>(op: () => Promise<T>): Promise<T> {
 let geracao = 0;
 
 /** Boot do SW e antes de toda gravação de token. Rejeição propaga: sem a restrição, nada é gravado. */
-export const protegerCredenciais = () => chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+// async: API ausente (Chrome antigo) vira rejeição em vez de exceção síncrona no topo do sw.ts (mataria os listeners).
+export const protegerCredenciais = async () => { await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }); };
 
 export async function lerCredenciais(): Promise<Guardado | undefined> {
   return (await chrome.storage.local.get(CHAVE))[CHAVE] as Guardado | undefined;
