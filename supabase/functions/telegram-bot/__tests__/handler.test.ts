@@ -241,13 +241,31 @@ describe('worker — falhas nas bordas', () => {
     expect(admin.linhas[0].status).toBe('falhou');
   });
 
-  it('concluir falha depois do envio → não devolve nem reenvia', async () => {
+  it('concluir falha depois do envio → não devolve; grava respondido direto e nova execução não reenvia', async () => {
     const admin = fakeInboxAdmin(tabelas({ tentativas: 4 }));
     admin.falhar.add('rpc:telegram_update_concluir');
     expect((await job(admin, { bot_id: BOT, update_id: 1 })).status).toBe(200);
     expect(m.enviarTelegram).toHaveBeenCalledOnce();
     expect(m.enviarTelegram).not.toHaveBeenCalledWith('tok', '42', TEXTO_ERRO);
-    expect(admin.linhas[0].status).toBe('processando');
+    expect(admin.linhas[0].status).toBe('respondido');
+    // Lease vencido + varredura/retry: sem a marca, a linha seria reivindicada e o comando reenviado.
+    agora = new Date(T0.getTime() + 61_000);
+    expect((await job(admin, { bot_id: BOT, update_id: 1 })).status).toBe(200);
+    expect(m.enviarTelegram).toHaveBeenCalledOnce();
+  });
+
+  it('concluir falha uma vez depois do envio → repete e conclui respondido', async () => {
+    const admin = fakeInboxAdmin(tabelas());
+    const rpcOriginal = admin.rpc.getMockImplementation();
+    let falhou = false;
+    admin.rpc.mockImplementation(async (fn: string, args: any) => {
+      if (fn === 'telegram_update_concluir' && !falhou) { falhou = true; return { data: null, error: { message: 'timeout' } }; }
+      return rpcOriginal(fn, args);
+    });
+    expect((await job(admin, { bot_id: BOT, update_id: 1 })).status).toBe(200);
+    expect(m.enviarTelegram).toHaveBeenCalledOnce();
+    expect(admin.linhas[0].status).toBe('respondido');
+    expect(admin.linhas[0].erro).toBeNull();
   });
 });
 

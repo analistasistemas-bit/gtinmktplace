@@ -120,8 +120,17 @@ async function worker(d: Deps, botId: number, updateId: number): Promise<Respons
     const erro = (e as Error).message;
     log({ botId, updateId, org: row.org_id, erro });
     if (enviado) {
-      // Resposta já saiu: devolver faria o retry mandar de novo. Fica `processando`; só a varredura
-      // (lease vencido) reprocessaria — at-least-once inerente, raro (concluir falhou após o envio).
+      // Resposta já saiu: devolver faria o retry mandar de novo. Repete o concluir; se falhar de novo,
+      // grava `respondido` direto na tabela (mesmo CAS por lease) para a varredura não republicar.
+      // Se até isso falhar, fica `processando` e o lease vencido reenvia (at-least-once residual).
+      try {
+        await concluir(admin, pk, leaseId, 'respondido');
+      } catch (e2) {
+        const { error: e3 } = await admin.from('telegram_updates')
+          .update({ status: 'respondido', erro: 'concluir falhou; resposta enviada', processado_em: new Date().toISOString(), lease_id: null, lease_ate: null })
+          .eq('bot_id', botId).eq('update_id', updateId).eq('lease_id', leaseId).eq('status', 'processando');
+        log({ botId, updateId, erro: `concluir 2×: ${(e2 as Error).message}${e3 ? `; marcar respondido: ${e3.message}` : ''}` });
+      }
       return json({ ok: true, resultado: 'respondido', aviso: `concluir: ${erro}` });
     }
     try {

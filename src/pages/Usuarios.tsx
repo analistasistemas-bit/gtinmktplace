@@ -324,7 +324,8 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
     if (ok) onClose();
   }
 
-  const semChat = !chatId.trim() && cats.length > 0;
+  // In-app vale sem chat para as gerenciais (D-7): só avisa se houver categoria que depende do Telegram.
+  const semChat = !chatId.trim() && marcadas.some((k) => !(CATEGORIAS_SO_ADMIN as readonly string[]).includes(k));
 
   return (
     <Dialog open={!!user} onOpenChange={(o) => { if (!o) onClose(); }}>

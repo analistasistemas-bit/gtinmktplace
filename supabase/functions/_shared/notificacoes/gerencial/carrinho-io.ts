@@ -1,7 +1,9 @@
 // Notificação gerencial por carrinho (ADR-0190 D-2/D-4): estado durável em `notificacao_carrinho`
 // + jobs QStash agendados para a edge `notificar-carrinho` + varredura de linhas paradas.
 // "No máximo uma" mensagem por carrinho: o worker faz TODAS as leituras, depois o update condicional
-// `status aguardando → enviado` e só quem afetou a linha notifica.
+// `status aguardando → enviado` e só quem afetou a linha notifica — pelo caminho com chave
+// (`vendas_gerencial:{chave}`, idempotente por usuário e por chat). Se notificar lançar, a linha volta
+// a `aguardando` e o erro sobe (500 → retry do QStash; a chave impede envio duplo).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { qstashClient } from '../../queue.ts';
 import { enfileirarEmBlocos } from '../../enfileirar-em-blocos.ts';
@@ -182,7 +184,15 @@ export async function processarCarrinho(
     .select('chave');
   if (errClaim) throw new Error(`marcar carrinho enviado: ${errClaim.message}`);
   if (!claim?.length) return 'ignorado';
-  await notificarCategoria(admin, orgId, 'vendas_gerencial', texto);
+  try {
+    await notificarCategoria(admin, orgId, 'vendas_gerencial', texto, { chave: `vendas_gerencial:${chave}` });
+  } catch (e) {
+    const { error: errVolta } = await admin.from(TABELA)
+      .update({ status: 'aguardando', atualizado_em: agora.toISOString() })
+      .eq('org_id', orgId).eq('chave', chave).eq('status', 'enviado');
+    if (errVolta) console.error(`carrinho ${orgId}/${chave}: reverter claim: ${errVolta.message}`);
+    throw e;
+  }
   return 'enviado';
 }
 

@@ -70,7 +70,16 @@ describe('Usuarios', () => {
   it('admin com chat de grupo: desabilitadas com "Exige conversa privada com o bot."', async () => {
     await abrirNotificacoes({ is_admin: true, telegram_chat_id: '-100555' });
     expect(await screen.findByRole('checkbox', { name: /Vendas \(gerencial\)/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Resumo diário/ })).toBeDisabled();
     expect(screen.getAllByText('Exige conversa privada com o bot.')).toHaveLength(2);
+  });
+
+  it('sem Chat ID: avisa só se houver categoria não gerencial (in-app vale sem chat)', async () => {
+    await abrirNotificacoes({ is_admin: true, telegram_chat_id: null, telegram_categorias: ['vendas_gerencial', 'resumo_diario'] });
+    await screen.findByRole('checkbox', { name: /Vendas \(gerencial\)/ });
+    expect(screen.queryByText(/não vai receber/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Vendas\s*Nova venda paga/ }));
+    expect(screen.getByText(/não vai receber/)).toBeInTheDocument();
   });
 
   it('admin com chat privado: gerenciais habilitadas', async () => {

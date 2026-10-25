@@ -232,7 +232,7 @@ describe('processarCarrinho', () => {
       { hoje: KPI, mes: KPI, anterior: KPI, rotuloMes: 'Outubro', rotuloAnterior: '1–24/set' },
       9000, { parcial: null, composicaoIncerta: false },
     );
-    expect(m.notificarCategoria).toHaveBeenCalledWith(admin, ORG, 'vendas_gerencial', 'TEXTO');
+    expect(m.notificarCategoria).toHaveBeenCalledWith(admin, ORG, 'vendas_gerencial', 'TEXTO', { chave: 'vendas_gerencial:9000' });
     expect(admin.linhas[0].status).toBe('enviado');
   });
 
@@ -243,6 +243,20 @@ describe('processarCarrinho', () => {
     m.lerKpis.mockImplementation(async () => { admin.linhas[0].status = 'enviado'; return KPI; });
     expect(await processarCarrinho(admin, ORG, '9000', mais(20))).toBe('ignorado');
     expect(m.notificarCategoria).not.toHaveBeenCalled();
+  });
+
+  it('notificar lança (leitura de assinantes) → linha volta a aguardando e lança; o retry envia uma vez', async () => {
+    prepararEnvio();
+    m.lerVendasDoCarrinho.mockResolvedValue([venda(1), venda(2)]);
+    m.notificarCategoria.mockRejectedValueOnce(new Error('ler assinantes: timeout'));
+    const admin = fakeAdmin([linha()]);
+    await expect(processarCarrinho(admin, ORG, '9000', mais(20))).rejects.toThrow('ler assinantes');
+    expect(admin.linhas[0].status).toBe('aguardando');
+    expect(await processarCarrinho(admin, ORG, '9000', mais(25))).toBe('enviado');
+    expect(admin.linhas[0].status).toBe('enviado');
+    expect(await processarCarrinho(admin, ORG, '9000', mais(30))).toBe('ignorado');
+    expect(m.notificarCategoria).toHaveBeenCalledTimes(2);
+    expect(m.notificarCategoria).toHaveBeenLastCalledWith(admin, ORG, 'vendas_gerencial', 'TEXTO', { chave: 'vendas_gerencial:9000' });
   });
 
   it('erro de leitura antes do claim lança e a linha continua aguardando', async () => {

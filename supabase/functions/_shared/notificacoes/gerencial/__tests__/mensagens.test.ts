@@ -73,6 +73,14 @@ describe('montarMensagemCarrinho', () => {
     expect(montarMensagemCarrinho(carrinho, k, 2000000001, { parcial: null, composicaoIncerta: true }).split('\n')[0])
       .toBe(`${L1} (composição do carrinho não confirmada)`);
   });
+  it('parcial ou composição incerta: lucro vira "carrinho incompleto" (o líquido já descontou o frete do envio inteiro)', () => {
+    const semCusto = { ...carrinho, lucro: null, margemSobreVenda: null, markup: null, motivo: 'sem_custo' as const };
+    for (const c of [carrinho, semCusto]) {
+      for (const e of [{ parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false }, { parcial: null, composicaoIncerta: true }]) {
+        expect(montarMensagemCarrinho(c, k, 2000000001, e).split('\n')[1]).toBe('Lucro: — (carrinho incompleto)');
+      }
+    }
+  });
   it('nunca traz o comprador', () => {
     const comComprador = <T extends object>(o: T): T => ({ ...o, comprador_nome: COMPRADOR });
     const saidas = [

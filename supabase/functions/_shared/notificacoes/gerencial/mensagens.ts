@@ -30,7 +30,10 @@ export function montarMensagemCarrinho(
   const sufixo = estado.parcial ? ` (parcial: ${estado.parcial.recebidos} de ${estado.parcial.total} itens)`
     : estado.composicaoIncerta ? ' (composição do carrinho não confirmada)' : '';
   let lucro: string;
-  if (c.lucro != null) {
+  // Carrinho incompleto: o líquido gravado já descontou o frete do envio inteiro → lucro pessimista.
+  if (estado.parcial || estado.composicaoIncerta) {
+    lucro = 'Lucro: — (carrinho incompleto)';
+  } else if (c.lucro != null) {
     const margem = c.margemSobreVenda != null ? ` · Margem s/ venda ${pct1(c.margemSobreVenda)}%` : '';
     const markup = c.markup != null ? ` · Markup ${pct1(c.markup)}%` : '';
     lucro = `Lucro ${brl(c.lucro)}${margem}${markup}`;
