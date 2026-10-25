@@ -12,7 +12,7 @@
 
 **Tech Stack:** Supabase Edge Functions (Deno), Postgres/PostgREST, QStash (`_shared/queue.ts`), Telegram Bot API, React + Vitest.
 
-**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisões do Codex `gpt-6.1-sol` high (2026-10-24: rodada 1 com 20 achados, rodada 2 com 7 novos + 8 parciais) incorporadas nesta versão.
+**Spec:** `docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md` (+ `docs/reference/glossario.md`: Carrinho, Notificação gerencial de venda, Resumo diário, Crescimento do mês, Lucro (do pedido), Margem s/ venda, Markup). Revisões do Codex `gpt-6.1-sol` high (2026-10-24: rodada 1 com 20 achados, rodada 2 com 7 novos + 8 parciais, rodada 3 com 4 médios) incorporadas nesta versão.
 
 ## Global Constraints
 
@@ -140,9 +140,9 @@
   - `export type Rates`;
   - `export interface ContextoCalculo { maps: MapasCusto | undefined; rates: Rates | null; custosOk: boolean; configOk: boolean }`;
   - `export async function carregarContexto(db: MetricsDb, orgId: string, desde: string): Promise<ContextoCalculo>`. Usa `loadConfigState` + RPC `platform_org_cost_catalog` (`p_since: desde`), como `computeMonth`. Se a RPC de catálogo **ou** a leitura de config falhar, **lança** (`ContextoIndisponivel`). Assim o gerencial nunca segue com custo/imposto parciais por erro de leitura. `computeMonth` mantém o comportamento atual: ele não chama este wrapper, só os mesmos helpers.
-  - `export const lerPaginas = readPages` (o paginador hoje privado, `metrics-repository.ts:82`).
+  - `export async function lerPaginas(build, opcoes?: { maxLinhas?: number })`. É o `readPages` (`metrics-repository.ts:82`) exportado com teto opcional: ao acumular a linha `maxLinhas + 1`, lança `VolumeAcimaDoLimite`. Sem `opcoes`, o comportamento é idêntico ao atual (os chamadores existentes não mudam).
   - `export const LIMITE_VENDAS_POR_EXECUCAO = 5000` e `export class VolumeAcimaDoLimite extends Error {}`.
-  - `export async function lerVendasJanela(db: MetricsDb, orgId: string, j: JanelaIso): Promise<Venda[]>`. Usa `readPages` + `SALES_COLUMNS` + `normalizeSales` em `date_closed ∈ [desde, ate)`. Primeiro faz um `count: 'exact', head: true` com os mesmos filtros; se o resultado passar de `LIMITE_VENDAS_POR_EXECUCAO`, lança `VolumeAcimaDoLimite` **sem** paginar.
+  - `export async function lerVendasJanela(db: MetricsDb, orgId: string, j: JanelaIso): Promise<Venda[]>`. Usa `readPages` + `SALES_COLUMNS` + `normalizeSales` em `date_closed ∈ [desde, ate)`. Primeiro faz um `count: 'exact', head: true` com os mesmos filtros; se o resultado passar de `LIMITE_VENDAS_POR_EXECUCAO`, lança `VolumeAcimaDoLimite` **sem** paginar. A leitura efetiva usa `lerPaginas(…, { maxLinhas: LIMITE_VENDAS_POR_EXECUCAO })`, então inserções entre o count e as páginas também param no teto.
   - `export function resumirVendas(vendas: Venda[], ctx: ContextoCalculo, agora: Date): ResumoVendas`. É o `summarize` atual, exportado; serve à paridade da Task 4.
   - `export async function lerVendasDoCarrinho(db: MetricsDb, orgId: string, chave: { packId: number | null; orderId: number }): Promise<Venda[]>`. Lê por `pack_id = packId`, ou `order_id = orderId` sem pack, **sem janela de data**.
 - Em `resultado.ts`:
@@ -188,6 +188,8 @@
     - `topPorLucro` não lista B e `contarAtencao` não conta B como prejuízo nem como abaixo do mínimo.
   - `carregarContexto` com a RPC de catálogo devolvendo `error` → `rejects.toThrow(ContextoIndisponivel)`.
   - `lerVendasJanela` com `count 5001` → `rejects.toThrow(VolumeAcimaDoLimite)`, sem chamar `range`.
+  - `lerVendasJanela` com `count 4990` e páginas que somam 5.001 linhas → `rejects.toThrow(VolumeAcimaDoLimite)`.
+  - `lerPaginas` sem opções lê 2.500 linhas normalmente (regressão).
 - [ ] **Step 2: Run** `pnpm test -- supabase/functions/_shared/notificacoes/gerencial supabase/functions/_shared/platform-admin`. Expected: FAIL nos novos e PASS nos antigos.
 - [ ] **Step 3: Implement** reaproveitando `ratearLiquidoPorFrete`, `valorDoItem`, `impostoDoItem`, `brutoDaVenda`, `ehFaturavel`, `montar*Resolver`. Nenhuma conta nova fora da porta.
 - [ ] **Step 4: Run.** Expected: PASS, inclusive `metrics-parity.test.ts`.
@@ -356,7 +358,7 @@ Dados apurados até 08:00
   Nunca lê o histórico inteiro. `valor_estornado` vem de `ml_vendas.estorno` por `order_id` e `org_id`, como `src/lib/devolucoes.ts:43-55`, em lotes de 200 `order_id`. Erro lança.
 - `export async function contarPromocoesDoResumo(admin, orgId, agoraMs): Promise<{ prejuizo: number; prazo: number }>`.
   - **Sem** os leitores de `depsAlertas`: `lerPromocoes` não pagina e `lerParticipandoNoPrejuizo` tem `.limit(500)` (`alertas.ts:85-95`).
-  - `prejuizo` vem de uma consulta com os **mesmos filtros** de `lerParticipandoNoPrejuizo`, mas em `count: 'exact', head: true`.
+  - `prejuizo` vem de uma consulta com os **mesmos filtros** de `lerParticipandoNoPrejuizo`, em `count: 'exact', head: true`, **restrita** a itens cuja promoção (mesma org) passa nos filtros de `lerPromocoes`, por join/`!inner` em `ml_promocoes`. Isso reproduz o `porId.get` de `selecionarAlertas` (`alertas.ts:27`): promoção encerrada por `encerrarAusentes` (`promocoes/deps.ts:105`) não conta.
   - `prazo` vem das promoções lidas com `lerPaginas` e passadas a `selecionarAlertas(promos, [], agoraMs).prazo.length`.
   - O implementador copia os filtros das linhas 85-100, sem alterar `depsAlertas`.
 - `export async function montarDadosResumo(admin, orgId, dia: string, agora: Date): Promise<DadosResumo>`.
@@ -372,7 +374,7 @@ Dados apurados até 08:00
     - faz exatamente 2 consultas filtradas, nenhuma sem filtro de status ou de data;
     - com 1.200 abertas, lê 2 páginas;
     - `valor_estornado` vem de `ml_vendas`.
-  - `contarPromocoesDoResumo` com 700 itens no prejuízo → `prejuizo 700` (não 500).
+  - `contarPromocoesDoResumo` com 700 itens no prejuízo → `prejuizo 700` (não 500). Item vermelho de promoção **encerrada** → não conta (mesma resposta de `selecionarAlertas` real).
   - `orgsDoResumo` inclui uma org com `telegram_ativo false` cujo admin assina `resumo_diario`.
   - `montarDadosResumo` (fake):
     - sem módulo `promocoes` → `promocoes: null`;
@@ -407,9 +409,13 @@ Dados apurados até 08:00
 **Interfaces — Produces:**
 - **Migration:**
   - `alter table configuracoes add column telegram_bot_id bigint` + `unique (telegram_bot_id)`;
-  - trigger `before update of telegram_bot_token on configuracoes`: quando o token muda, faz `telegram_bot_id := null`. Trocar o token **invalida** o webhook antigo, porque o secret depende do `bot_id` (abaixo), e exige reativar;
+  - trigger `before insert or update on configuracoes`:
+    - (a) se `new.telegram_bot_id is distinct from old.telegram_bot_id` (ou não nulo no insert) e `auth.role() <> 'service_role'` → `raise exception 'telegram_bot_id só é gravado pelo servidor'`. Hoje há UPDATE concedido à tabela inteira (`20260725224000_support_access.sql:306`), então só o trigger protege a coluna (padrão do trigger que bloqueia escrita fiscal direta);
+    - (b) **depois** da checagem, se o token mudou, faz `new.telegram_bot_id := null`. Trocar o token invalida o webhook antigo, porque o secret depende do `bot_id`, e exige reativar.
+
+    Teste SQL desfeito: como `authenticated`, `update configuracoes set telegram_bot_id = 123` → erro; trocar o token → `telegram_bot_id` nulo; como `service_role`, gravar o id → ok; `raise 'TESTE_OK'`;
   - tabela `public.telegram_updates`:
-    - colunas: `bot_id bigint not null`, `update_id bigint not null`, `org_id uuid not null references organizations on delete cascade`, `payload jsonb not null`, `status text not null default 'recebido' check (status in ('recebido','processando','respondido','falhou'))`, `tentativas int not null default 0`, `lease_ate timestamptz`, `publicado_em timestamptz`, `recebido_em timestamptz not null default now()`, `processado_em timestamptz`, `erro text`;
+    - colunas: `bot_id bigint not null`, `update_id bigint not null`, `org_id uuid not null references organizations on delete cascade`, `payload jsonb not null`, `status text not null default 'recebido' check (status in ('recebido','processando','respondido','falhou'))`, `tentativas int not null default 0`, `lease_ate timestamptz`, `lease_id uuid`, `publicado_em timestamptz`, `recebido_em timestamptz not null default now()`, `processado_em timestamptz`, `erro text`;
     - `primary key (bot_id, update_id)`;
     - índice `(status, recebido_em)`;
     - RLS ligada, sem policies.
@@ -423,9 +429,10 @@ Dados apurados até 08:00
 - **`inbox.ts`:**
   - `receberUpdate(admin, orgId: string, botId: number, update: { update_id: number }): Promise<'nova' | 'pendente' | 'concluida'>`. Faz insert `on conflict do nothing`. Na duplicata, lê o status: `recebido`/`processando` → `'pendente'`, `respondido`/`falhou` → `'concluida'`.
   - `publicarUpdate(botId, updateId): Promise<void>`. Publica no QStash com `deduplicationId 'tg-<bot>-<update>-<tentativas>'` e grava `publicado_em`. Lança em falha.
-  - `reivindicar(admin, botId, updateId, agora): Promise<Row | null>`. É um único `update … set status='processando', lease_ate = agora + 60 s, tentativas = tentativas + 1 where pk and (status = 'recebido' or (status = 'processando' and lease_ate < agora)) returning *`. 0 linhas → `null` (outra execução tem a posse).
-  - `concluir(admin, pk, status: 'respondido' | 'falhou', erro?: string)`.
-  - `devolver(admin, pk, erro: string)`. Volta para `status='recebido'`, `lease_ate=null`; com `tentativas >= 5` vira `falhou`.
+  - `reivindicar(admin, botId, updateId, agora): Promise<{ row: Row; leaseId: string } | null>`. É um único `update … set status='processando', lease_id = gen_random_uuid(), lease_ate = agora + 60 s, tentativas = tentativas + 1 where pk and (status = 'recebido' or (status = 'processando' and lease_ate < agora)) returning *`. 0 linhas → `null` (outra execução tem a posse). Padrão de `lease_id` de `20260927205804_worker_rodadas.sql:133`.
+  - `confirmarPosse(admin, pk, leaseId, agora): Promise<boolean>`. Faz `update set lease_ate = agora + 60 s where pk and lease_id = leaseId and status = 'processando' and lease_ate >= agora`. 0 linhas → `false`. O worker chama **imediatamente antes** de `enviarTelegram` e, se receber `false`, aborta sem enviar.
+  - `concluir(admin, pk, leaseId, status: 'respondido' | 'falhou', erro?: string): Promise<boolean>`. Grava com CAS `where lease_id = leaseId and status = 'processando'`.
+  - `devolver(admin, pk, leaseId, erro: string): Promise<boolean>`. Mesmo CAS; volta para `status='recebido'` com `lease_id=null, lease_ate=null` e, com `tentativas >= 5`, vira `falhou`. Execução vencida (CAS com 0 linhas) não altera o trabalho de outra.
   - `varrerInbox(admin, agora, depois?)`. Seleciona `status='recebido' and coalesce(publicado_em, recebido_em) < agora − 90 s` **ou** `status='processando' and lease_ate < agora`, ordenado, até 200. **Só republica**; com 200 linhas, continua com cursor, como `varrerCarrinhos`.
 - **`consultas.ts`** (estruturadas, D-9). Toda consulta retorna `{ periodo: JanelaIso; fuso: 'America/Sao_Paulo'; apuradoEm: string /* ISO */; …dados }`:
   - `consultarHoje(admin, orgId, agora): Promise<{ periodo; fuso; apuradoEm; k: KpisPeriodo; l: LucroPeriodo }>`;
@@ -449,6 +456,11 @@ Dados apurados até 08:00
     - falha de insert ou de publish → **500** (o Telegram reenvia).
   - **Worker** (`{ bot_id, update_id }` assinado pelo QStash):
     - `reivindicar` `null` → 200 sem enviar (posse de outra execução); duas execuções concorrentes do mesmo update → `enviarTelegram` 1×;
+    - **execução vencida:**
+      - A reivindica e o lease vence; B reivindica (`leaseId` novo).
+      - `confirmarPosse(A)` → `false`, e A não envia.
+      - `concluir(A)` e `devolver(A)` → `false`, sem alterar a linha de B.
+      - B conclui normalmente;
     - revalida no momento do processamento: `configuracoes.telegram_bot_id === row.bot_id` e `telegram_ativo`. Se não → `concluir('falhou', 'bot desvinculado')` sem responder;
     - acesso pelos profiles com `org_id` + `telegram_chat_id = String(chat.id)`;
     - `enviarTelegram` → `true` → `concluir('respondido')`;
