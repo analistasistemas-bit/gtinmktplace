@@ -57,9 +57,9 @@ const pendentes = new Set<Promise<void>>();
 export const complementosPendentes = () => Promise.allSettled([...pendentes]);
 
 /** Faixa e data do anúncio (ADR-0189 emenda 2026-10-22) gravadas no `observado` da aba depois da análise. */
-async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, mlItemId: string): Promise<void> {
+async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, epoca: number, mlItemId: string): Promise<void> {
   const { criadoEm, vendidosAnuncio, motivo } = await observadoDoAnuncio(mlItemId);
-  await seAindaIdentidade(identidade, async () => {
+  await naMesmaSessao(identidade, epoca, async () => {
     const atual = await lerAba(tabId);
     const e = atual.estado as { entrada: { mlItemId?: unknown }; resposta: unknown; observado?: object } | null;
     if (!e || atual.geracao !== geracao || atual.sessao !== sessao || e.entrada.mlItemId !== mlItemId) return;
@@ -69,10 +69,14 @@ async function completarCriacao(tabId: number, geracao: string | null, sessao: n
 
 const SEM_SESSAO = { ok: false, erro: 'sem_sessao' } as const;
 
-/** Resposta (e gravação) só se a identidade de quando a chamada começou ainda é a da sessão — conferido na
- *  fila da sessão, logo antes de gravar/responder. Trocou no meio → sem_sessao, nada gravado. */
-async function naMesmaIdentidade(identidade: string | null, fn: () => Promise<unknown>): Promise<unknown> {
-  return (await seAindaIdentidade(identidade, fn)) ?? SEM_SESSAO;
+/** Roda `fn` (gravar/responder) só se a identidade e a época de quando o pedido chegou ainda valem — conferido na fila
+ *  da sessão, logo antes. Pausa, saída, troca de identidade ou fim de suporte no meio → null, nada gravado. */
+function naMesmaSessao<T>(identidade: string | null, epoca: number, fn: () => Promise<T>): Promise<T | null> {
+  return seAindaIdentidade(identidade, async () => (epoca === epocaAtual() ? fn() : null));
+}
+
+async function naMesmaIdentidade(identidade: string | null, epoca: number, fn: () => Promise<unknown>): Promise<unknown> {
+  return (await naMesmaSessao(identidade, epoca, fn)) ?? SEM_SESSAO;
 }
 
 function ehPaginaDaExtensao(sender: chrome.runtime.MessageSender): boolean {
@@ -83,12 +87,19 @@ function ehPaginaDaExtensao(sender: chrome.runtime.MessageSender): boolean {
 // recebeu; diferente da atual (ou ausente) → recusado antes de qualquer coisa. Toda resposta a eles leva a geração.
 const geracaoEmDia = (msg: Record<string, unknown>) => typeof msg.geracao === 'number' && msg.geracao === epocaAtual();
 const ANTIGA = () => Promise.resolve({ ok: false, erro: 'geracao_antiga', geracao: epocaAtual() });
-const INATIVA = { ok: false, erro: 'inativa' } as const;
 
-/** Comando da época `e`: desligada → inativa; época mudou durante `fn` → geracao_antiga (resultado descartado);
- *  senão o resultado com a geração. */
+/** Antes de qualquer efeito (EAN, estado, edge, ML): época da chegada ainda vale, ligada e logada. null = pode seguir. */
+async function impedimento(e: number): Promise<'geracao_antiga' | 'inativa' | 'sem_sessao' | null> {
+  const [ativa, logado] = await Promise.all([estaAtiva(), estaLogado()]);
+  if (e !== epocaAtual()) return 'geracao_antiga';
+  return !ativa ? 'inativa' : !logado ? 'sem_sessao' : null;
+}
+
+/** Comando da época `e`: impedido → erro com a geração; época mudou durante `fn` → geracao_antiga (resultado
+ *  descartado); senão o resultado com a geração. */
 async function comando(e: number, fn: () => Promise<unknown>): Promise<unknown> {
-  if (!(await estaAtiva())) return { ...INATIVA, geracao: epocaAtual() };
+  const erro = await impedimento(e);
+  if (erro) return { ok: false, erro, geracao: epocaAtual() };
   const r = await fn();
   if (e !== epocaAtual()) return { ok: false, erro: 'geracao_antiga', geracao: epocaAtual() };
   return ehObjeto(r) ? { ...r, geracao: e } : r;
@@ -114,24 +125,26 @@ async function reanalisar(id: number, e: number): Promise<unknown> {
   const entrada = (estado as { entrada?: Record<string, unknown> } | null)?.entrada;
   if (!entrada) return null;
   const resposta = await chamarExtensao({ acao: 'analisar_anuncio', tipoPagina: 'anuncio', ...entrada }, e);
-  return naMesmaIdentidade(identidade, async () => {
+  return naMesmaIdentidade(identidade, e, async () => {
     await guardarEstado(id, geracao, sessao, entrada, resposta, estado?.observado); // não regrava se a aba navegou durante a chamada
     return resposta;
   });
 }
 
-/** Estado da aba para o painel. Anúncio gravado há mais de 10 min é reanalisado antes (dado exibido vence); se não
- *  der (desligada, gravação falhou), o velho não chega ao painel. */
+/** Estado da aba para o painel. Desligada → null. Anúncio gravado há mais de 10 min é reanalisado antes (dado exibido
+ *  vence); se não der (época mudou, gravação falhou), o velho não chega ao painel. */
 async function estadoParaPainel(id: number, e: number): Promise<unknown> {
   await obterSessaoValida(); // refresh recusado: sessão e análises somem antes da leitura
+  if (!(await estaAtiva())) return null;
   const fresco = async () => {
     const { estado, gravadoEm } = await lerAba(id);
     return !estado || ehBusca(estado) || Date.now() - gravadoEm <= DEZ_MIN ? estado : undefined;
   };
   const antes = await fresco();
   if (antes !== undefined) return antes;
-  if (!(await estaAtiva())) return null;
+  if (await impedimento(e)) return null;
   await reanalisar(id, e);
+  if (e !== epocaAtual()) return null;
   return (await fresco()) ?? null;
 }
 
@@ -188,14 +201,20 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // O EAN da busca é sempre o da aba do remetente: content script não escolhe (nem lê) a aba alheia.
       if (pagina) return comando(e, () => identidadeAtual().then(async (identidade) => {
         const resposta = await chamarExtensao(corpo, e);
-        return naMesmaIdentidade(identidade, async () => resposta);
+        return naMesmaIdentidade(identidade, e, async () => resposta);
       }));
-      // Content script (análise automática): sem geração na mensagem, mas a época da chegada vale igual.
-      const ativa = estaAtiva();
-      if (corpo.acao === 'analisar_anuncio') {
-        const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tabId!, corpo.mlItemId) : Promise.resolve(null);
-        return Promise.all([ativa, ean, lerAba(tabId!), identidadeAtual()]).then(async ([ligada, eanDaBusca, { geracao, sessao }, identidade]) => {
-          if (!ligada) return INATIVA;
+      // Content script (análise automática): sem geração na mensagem, mas a época da chegada vale igual. Pausada,
+      // deslogada ou época nova → nada acontece (EAN não é consumido, estado não é gravado, ML não é consultado).
+      const tab = tabId!;
+      return impedimento(e).then(async (erro) => {
+        if (erro) return { ok: false, erro: erro === 'geracao_antiga' ? 'sem_sessao' : erro };
+        if (corpo.acao !== 'analisar_anuncio') {
+          const identidade = await identidadeAtual();
+          const resposta = await chamarExtensao(corpo, e);
+          return naMesmaIdentidade(identidade, e, async () => resposta);
+        }
+        const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tab, corpo.mlItemId) : Promise.resolve(null);
+        return Promise.all([ean, lerAba(tab), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
           const { vendidosTexto, lojaOficial, qualidade, ...paraEdge } = corpo;
           const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca }, e);
@@ -208,22 +227,17 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
             lojaOficial: lojaOficialValida(lojaOficial),
             qualidade: normalizarQualidade(qualidade),
           };
-          const r = await naMesmaIdentidade(identidade, async () => {
-            await guardarEstado(tabId!, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);
+          const r = await naMesmaIdentidade(identidade, e, async () => {
+            await guardarEstado(tab, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);
             return resposta;
           });
-          // A data não segura o selo: chega depois e só entra se a aba ainda é a mesma página e sessão.
-          if (typeof mlItemId === 'string') {
-            const p: Promise<void> = completarCriacao(tabId!, geracao, sessao, identidade, mlItemId).finally(() => pendentes.delete(p));
+          // A data não segura o selo: chega depois e só entra se a aba ainda é a mesma página e sessão (e a época).
+          if (typeof mlItemId === 'string' && e === epocaAtual()) {
+            const p: Promise<void> = completarCriacao(tab, geracao, sessao, identidade, e, mlItemId).finally(() => pendentes.delete(p));
             pendentes.add(p);
           }
           return r;
         });
-      }
-      return Promise.all([ativa, identidadeAtual()]).then(async ([ligada, identidade]) => {
-        if (!ligada) return INATIVA;
-        const resposta = await chamarExtensao(corpo, e);
-        return naMesmaIdentidade(identidade, async () => resposta);
       });
     }
     case 'publiai:abrir-painel':
@@ -236,7 +250,8 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:estado-extensao':
       // Qualquer contexto da extensão. `abrindo` (painel/menu a cada abertura): confere a sessão na edge antes —
       // identidade nova limpa as abas e transmite conta-mudou; sem_acesso/sessão expirada desloga.
-      return (msg.abrindo === true ? atualizarSessao().catch(() => false) : Promise.resolve()).then(estadoExtensao);
+      // Painel: confere por padrão (abrindo:false pula); content script (menu do cabeçalho): só com abrindo:true.
+      return ((pagina ? msg.abrindo !== false : msg.abrindo === true) ? atualizarSessao().catch(() => false) : Promise.resolve()).then(estadoExtensao);
     case 'publiai:entrar': {
       // Só o painel (página da extensão): a senha nunca é digitada na página do ML. Não é gravada nem registrada.
       if (!pagina || typeof msg.email !== 'string' || typeof msg.senha !== 'string') return undefined;
@@ -256,8 +271,9 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
     case 'publiai:definir-ativa': {
       if ((!pagina && tabId === undefined) || typeof msg.ativa !== 'boolean') return undefined;
       if (!geracaoEmDia(msg)) return ANTIGA();
-      const ativa = msg.ativa;
+      const ativa = msg.ativa, e = epocaAtual();
       return estaLogado().then(async (logado) => {
+        if (e !== epocaAtual()) return ANTIGA(); // sair/troca de conta durante a conferência
         if (!logado) return { ok: false, erro: 'sem_sessao', geracao: epocaAtual() }; // a chave só existe logado
         await definirAtiva(ativa);
         return { ok: true, ...(await estadoExtensao()) };

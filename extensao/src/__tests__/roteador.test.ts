@@ -522,6 +522,7 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
   });
 
   it('Grok ALTO (c): estado com geração de sessão antiga ou ausente é descartado por lerAba', async () => {
+    await complementosPendentes(); // a data do beforeEach regravaria o estado válido depois
     const { geracao, sessao } = await lerAba(7);
     await registrarEstado(7, { geracao, sessao: sessao - 1, entrada: {}, resposta: 1 });
     expect((await lerAba(7)).estado).toBeNull();
@@ -752,6 +753,7 @@ describe('conta, chave ativa e geração (Task 5)', () => {
 
   it('estado da aba com mais de 10 min é reanalisado antes de chegar ao painel', async () => {
     await chamar(ANUNCIO, CONTEUDO);
+    await complementosPendentes(); // a data em segundo plano regravaria a resposta antiga
     const regravar = async (muda: (v: Record<string, unknown>) => Record<string, unknown>) => {
       const v = (await chrome.storage.session.get('estado:7'))['estado:7'] as Record<string, unknown>;
       await chrome.storage.session.set({ 'estado:7': muda(v) });
@@ -841,6 +843,72 @@ describe('conta, chave ativa e geração (Task 5)', () => {
     pausarEmVoo();
     expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
     expect(await estadoAba()).toBeNull();
+  });
+
+  it('fix 1: deslogado → reanalisar-aba e analisar-busca respondem sem_sessao sem rede', async () => {
+    delete local.credenciais;
+    fetchFalso.mockClear();
+    expect(await rotearMensagem({ tipo: 'publiai:reanalisar-aba', tabId: 7 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao', geracao: epocaAtual() });
+    expect(await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao', geracao: epocaAtual() });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it('fix 1: pausada ou deslogada, a análise do content script não consome o EAN, não grava estado nem vai ao ML', async () => {
+    const eanGuardado = async () => (await chrome.storage.session.get('ean:7'))['ean:7'];
+    await registrarEanDaAba(7, '7899941205918');
+    local.ativa = false;
+    fetchFalso.mockClear();
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'inativa' });
+    expect(await eanGuardado()).toEqual({ ean: '7899941205918', mlItemId: null });
+    local.ativa = true;
+    delete local.credenciais;
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await eanGuardado()).toEqual({ ean: '7899941205918', mlItemId: null });
+    await complementosPendentes();
+    expect(fetchFalso).not.toHaveBeenCalled();
+    expect(await estadoAba()).toBeNull();
+  });
+
+  it('fix 2: pausa em voo não grava estado nem dispara a data do anúncio (GET ao ML)', async () => {
+    fetchFalso.mockImplementationOnce(async () => {
+      await rotearBruto({ tipo: 'publiai:definir-ativa', ativa: false, geracao: epocaAtual() }, PAINEL);
+      return new Response('{"custo":"da época anterior"}', { status: 200 });
+    });
+    vi.mocked(chrome.runtime.sendMessage).mockClear();
+    expect(await chamar(ANUNCIO, CONTEUDO)).toEqual({ ok: false, erro: 'sem_sessao' });
+    await complementosPendentes();
+    expect(fetchFalso.mock.calls.some(([u]) => String(u).startsWith('https://produto.'))).toBe(false);
+    local.ativa = true;
+    expect(await estadoAba()).toBeNull();
+  });
+
+  it('fix 2: desligada, o painel não recebe estado da aba (nem fresco)', async () => {
+    await chamar(ANUNCIO, CONTEUDO);
+    expect(await estadoAba()).not.toBeNull();
+    local.ativa = false;
+    expect(await estadoAba()).toBeNull();
+  });
+
+  it('fix 3: estado-extensao do painel confere a sessão por padrão (abrindo:false pula); do CS só com abrindo', async () => {
+    sessaoNaEdge('u1:org1:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Avil' });
+    fetchFalso.mockClear();
+    await rotearBruto({ tipo: 'publiai:estado-extensao' }, PAINEL);
+    expect(acoesNaEdge()).toEqual(['sessao']);
+    await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: false }, PAINEL);
+    await rotearBruto({ tipo: 'publiai:estado-extensao' }, CONTEUDO);
+    expect(acoesNaEdge()).toEqual(['sessao']);
+  });
+
+  it('fix 4: troca de sessão durante a conferência do login em definir-ativa → geracao_antiga, chave intacta', async () => {
+    const original = vi.mocked(chrome.storage.local.get).getMockImplementation()!;
+    let armado = true;
+    vi.mocked(chrome.storage.local.get).mockImplementation(async (k) => {
+      if (armado && k === 'credenciais') { armado = false; await definirIdentidade('u1:org2:', PERFIL); }
+      return (original as (k: unknown) => Promise<Record<string, unknown>>)(k);
+    });
+    expect(await rotearMensagem({ tipo: 'publiai:definir-ativa', ativa: false }, PAINEL)).toEqual({ ...ANTIGA, geracao: epocaAtual() });
+    expect(armado).toBe(false);
+    expect(local.ativa).toBeUndefined();
   });
 
   it('deslogado → sem_sessao sem tocar a edge', async () => {
