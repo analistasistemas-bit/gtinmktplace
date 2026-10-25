@@ -2,7 +2,7 @@
 // Credenciais Supabase (access + refresh) em chrome.storage.local restrito a TRUSTED_CONTEXTS (content scripts
 // não leem); a senha só trafega painel → SW → Supabase e nunca é gravada. Só o SW renova, na fila única.
 // Risco residual aceito: quem tem acesso ao perfil/disco do Chrome lê o refresh token.
-import { limparEstadosDasAbas } from './abas';
+import { limparEstadosDasAbas, novaEpoca } from './abas';
 
 export interface Credenciais { accessToken: string; refreshToken: string; /** segundos */ expiresAt: number; userId: string }
 export interface Perfil { nome: string | null; email: string | null; orgNome: string | null }
@@ -28,8 +28,6 @@ export function naFila<T>(op: () => Promise<T>): Promise<T> {
 // abas.ts: aquela sobe também em troca de identidade/suporte, e descartar um par já rotacionado deslogaria.
 // Só memória: o que estava em voo morre junto com o SW.
 let geracao = 0;
-/** Leitura síncrona: quem leva a geração até uma gravação na fila a confere em `regravarNaFila`. */
-export const geracaoCredenciais = () => geracao;
 // Tentativa de login mais recente: só ela pode gravar (cliques repetidos em "Entrar" com respostas fora de ordem).
 let tentativaLogin = 0;
 
@@ -55,12 +53,13 @@ async function gravarSe(gen: number, g: Guardado, aindaVale = () => true): Promi
 }
 
 /** Só na fila: regrava as credenciais guardadas com `muda` (null = não grava). Devolve as anteriores se gravou.
- *  Saída no meio (`sair` roda fora da fila) vence: nada é regravado. `gen` = geração de quando o pedido começou
- *  (padrão: agora); sair/entrar desde então → nada é regravado. */
-export async function regravarNaFila(muda: (g: Guardado) => Guardado | null, gen = geracao): Promise<Guardado | null> {
+ *  Saída no meio (`sair` roda fora da fila) vence: nada é regravado. `aindaVale` é conferido junto, sem await até o
+ *  set (ex.: a época de quando o pedido começou). */
+export async function regravarNaFila(muda: (g: Guardado) => Guardado | null, aindaVale = () => true): Promise<Guardado | null> {
+  const gen = geracao;
   const g = await lerCredenciais();
   const novo = g && muda(g);
-  return novo && (await gravarSe(gen, novo)) ? g! : null;
+  return novo && (await gravarSe(gen, novo, aindaVale)) ? g! : null;
 }
 
 function auth(caminho: string, corpo?: object, token?: string): Promise<Response> {
@@ -109,7 +108,12 @@ export async function entrar(email: string, senha: string): Promise<{ ok: true }
     // Sair apertado durante o login (gen mudou) ou login mais novo vencem: esta resposta não loga.
     // A geração sobe na mesma passada síncrona da conferência, antes do set: ninguém vê as credenciais novas com a
     // geração antiga (sessão nova invalida login/renovação/pedidos capturados antes dela).
-    const subir = () => tentativa === tentativaLogin && ++geracao > 0;
+    const subir = () => {
+      if (tentativa !== tentativaLogin) return false;
+      geracao++;
+      novaEpoca();
+      return true;
+    };
     if (!(await gravarSe(gen, { ...par, identidade: null, perfil: null }, subir))) return REDE;
     await limparEstadosDasAbas(); // login sobe a geração da sessão
     return { ok: true };
@@ -119,6 +123,7 @@ export async function entrar(email: string, senha: string): Promise<{ ok: true }
 /** Apaga as credenciais e as análises das abas. Na fila, salvo em `sair`. */
 export async function apagarCredenciais(): Promise<void> {
   geracao++;
+  novaEpoca();
   await chrome.storage.local.remove(CHAVE);
   await limparEstadosDasAbas();
 }
@@ -158,6 +163,7 @@ export function tokenValido(): Promise<TokenValido> {
  *  imediata; o logout `scope=local` (só esta sessão) é disparado sem aguardar — offline, sai só localmente. */
 export async function sair(): Promise<void> {
   geracao++; // antes de qualquer await
+  novaEpoca();
   const g = await lerCredenciais();
   await apagarCredenciais();
   if (g) auth('/auth/v1/logout?scope=local', undefined, g.accessToken).catch(() => {});

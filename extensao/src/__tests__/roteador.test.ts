@@ -493,16 +493,13 @@ describe('identidade da sessão (ADR-0189: dado financeiro de uma org nunca apar
     expect(await chamar({ ...ANUNCIO, preco: 150 }, PAINEL)).toEqual({ ok: false, erro: 'sem_sessao' });
   });
 
-  // Troca de identidade logo depois da checagem do api.ts (identidadeAtual) e antes de gravar/responder.
+  // Troca de identidade com a resposta da edge já recebida, enquanto o corpo é lido (fix round 3: o api.ts não lê
+  // mais o storage depois da resposta — confere a época em memória —, então a janela é a leitura do corpo).
   const trocarDepoisDaChecagem = (troca: () => Promise<unknown>) => {
-    const get = chrome.storage.local.get;
-    let armado = false;
-    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
-      const v = await get(k);
-      if (armado && k === 'credenciais') { armado = false; await troca(); }
-      return v;
-    }) as never;
-    fetchFalso.mockImplementation(async () => { armado = true; return new Response('{"custo":"da org A"}', { status: 200 }); });
+    fetchFalso.mockImplementation(async () => ({
+      ok: true, status: 200,
+      text: async () => { await troca(); return '{"custo":"da org A"}'; },
+    }));
   };
 
   it('Grok ALTO (a): troca A → B entre a checagem e a gravação → sem_sessao, nada gravado, painel sem A', async () => {

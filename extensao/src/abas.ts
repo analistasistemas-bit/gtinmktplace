@@ -50,6 +50,15 @@ export async function registrarEstado(tabId: number, estado: EstadoGuardado): Pr
   await chrome.storage.session.set({ [chaveEstado(tabId)]: estado });
 }
 
+// Época da sessão, só em memória do SW: decide se um pedido em voo ainda vale. Sobe de forma SÍNCRONA (antes de
+// qualquer await, antes de o novo estado ficar visível) em todo evento que muda a sessão: sair, entrar, troca de
+// identidade, limpeza das abas (suporte, pausa, refresh recusado). Quem pede captura a época sincronamente e a
+// confere sincronamente antes de usar. SW single-thread; reinício do SW mata as chamadas em voo, então memória basta.
+// Fica aqui (abas.ts) por ser a base do grafo: credenciais.ts e sessao.ts importam daqui sem ciclo.
+let epoca = 0;
+export const epocaAtual = (): number => epoca;
+export const novaEpoca = (): void => { epoca++; };
+
 /** Geração global da sessão (sobe em login, saída, troca de identidade e fim de suporte). Quem pede algo lê antes
  *  e depois: mudou no meio → a resposta é de outra sessão e é descartada. */
 export async function geracaoAtual(): Promise<number> {
@@ -113,6 +122,7 @@ export async function esquecerEstado(tabId: number): Promise<void> {
  *  (com chave ou não), nova geração de página; o painel é avisado para reler e o content script tira o selo.
  *  Só roda na fila da sessão (sessao.ts). */
 export async function limparEstadosDasAbas(): Promise<void> {
+  novaEpoca(); // antes do 1º await
   const tudo = await chrome.storage.session.get(null);
   const atual = typeof tudo[GERACAO_SESSAO] === 'number' ? (tudo[GERACAO_SESSAO] as number) : 0;
   await chrome.storage.session.set({ [GERACAO_SESSAO]: atual + 1 });

@@ -2,11 +2,9 @@
 // a renovação é de credenciais.ts. Toda chamada leva a identidade esperada; resposta de outra identidade ou de
 // outra geração da sessão nunca chega a quem pediu (dado financeiro de outra org).
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
-import { geracaoAtual } from './abas';
-import { geracaoCredenciais, sair, type Perfil, type TokenValido } from './credenciais';
-import {
-  definirIdentidade, identidadeAtual, limparAbasNaFila, limparSessao, marcaAtual, mesmaMarca, obterSessaoValida, type Marca,
-} from './sessao';
+import { epocaAtual } from './abas';
+import { sair, type Perfil, type TokenValido } from './credenciais';
+import { definirIdentidade, limparAbasNaFila, limparSessao, obterSessaoValida } from './sessao';
 
 const CODIGOS: Record<CodigoErro, true> = {
   sessao_expirada: true,
@@ -22,34 +20,28 @@ const CODIGOS: Record<CodigoErro, true> = {
 type Falha = { ok: false; erro: CodigoErro | 'sem_sessao' };
 export type RespostaExtensao<T> = { ok: true; dados: T } | Falha;
 type Sessao = { accessToken: string; identidade: string | null };
-/** Token, identidade e a marca (gerações) de quando o pedido começou — capturados juntos. */
-type Contexto = Sessao & { marca: Marca };
+/** Token e identidade da época em que o pedido começou (abas.ts: epocaAtual). */
+type Contexto = Sessao & { epoca: number };
 
 const falha = (erro: Falha['erro']): Falha => ({ ok: false, erro });
 const texto = (v: unknown) => (typeof v === 'string' ? v : null);
 
-/** Marca primeiro, depois o token, depois a marca de novo: sair/entrar em qualquer ponto antes do POST é visto
- *  aqui ou na conferência final de `postar` (a marca nunca é a da sessão nova com o token da antiga). */
+/** Época capturada (síncrona) antes do token e conferida depois: o token é da sessão dessa época. */
 async function contexto(): Promise<Contexto | Falha> {
-  const marca = await marcaAtual();
+  const epoca = epocaAtual();
   const s: TokenValido = await obterSessaoValida();
   // transitorio = falha de rede/429/5xx ao renovar: credenciais mantidas, a próxima chamada tenta de novo.
   if ('erro' in s) return falha(s.erro === 'transitorio' ? 'interno' : 'sem_sessao');
-  if (!mesmaMarca(marca, await marcaAtual())) return falha('sem_sessao');
-  return { ...s, marca };
+  if (epoca !== epocaAtual()) return falha('sem_sessao');
+  return { ...s, epoca };
 }
 
-/** Leituras assíncronas da conferência (identidade guardada e GERACAO_SESSAO). */
-const lerEstado = async () => ({ identidade: await identidadeAtual(), sessao: await geracaoAtual() });
-/** Conferência final, SÍNCRONA: a geração das credenciais (sobe sem await em sair/entrar) é lida por último, e quem
- *  chama usa o resultado sem nenhum await no meio (fetch disparado / dado devolvido no mesmo passo). */
-const vale = (c: Contexto, e: { identidade: string | null; sessao: number }) =>
-  e.identidade === c.identidade && e.sessao === c.marca.sessao && geracaoCredenciais() === c.marca.credenciais;
+/** Conferência SÍNCRONA, usada sem nenhum await até o uso (fetch disparado / resposta aceita no mesmo passo). */
+const vale = (c: Contexto) => c.epoca === epocaAtual();
 
 /** POST na edge no protocolo 2. Sucesso devolve o envelope ainda não conferido contra a identidade. */
 async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
-  const antes = await lerEstado();
-  if (!vale(c, antes)) return falha('sem_sessao'); // nada sai com o token de uma sessão que já acabou
+  if (!vale(c)) return falha('sem_sessao'); // nada sai com o token de uma sessão que já acabou
   let r: Response;
   try {
     r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extensao`, {
@@ -74,8 +66,7 @@ async function postar(c: Contexto, corpo: object, identidadeEsperada: string | n
   const json = (await r.json().catch(() => null)) as { identidade?: unknown; dados?: unknown; erro?: unknown } | null;
   // Pedida em outra sessão (sair/entrar, troca de identidade, fim de suporte): não chega a ninguém.
   // ponytail: 'sem_sessao' em vez de um código novo — quem pediu já está numa geração que descarta o resultado.
-  const depois = await lerEstado();
-  if (!vale(c, depois)) return falha('sem_sessao');
+  if (!vale(c)) return falha('sem_sessao');
   if (r.ok) {
     return json && typeof json.identidade === 'string' && 'dados' in json
       ? { ok: true, identidade: json.identidade, dados: json.dados }
@@ -86,12 +77,12 @@ async function postar(c: Contexto, corpo: object, identidadeEsperada: string | n
   const erro = typeof codigo === 'string' && Object.hasOwn(CODIGOS, codigo) ? (codigo as CodigoErro) : 'interno';
   if (erro === 'sessao_expirada') await limparSessao(c.accessToken);
   // Suporte acabou: o token segue válido, mas o que foi analisado na org do suporte sai das abas.
-  // ponytail: limpeza sem marca — limpar a mais só invalida estado (seguro); nunca grava dado.
+  // ponytail: limpeza sem conferir a época — limpar a mais só invalida estado (seguro); nunca grava dado.
   if (erro === 'sessao_suporte_expirada') await limparAbasNaFila();
   return falha(erro);
 }
 
-/** Ação `sessao` (sem identidade esperada: é ela que descobre a identidade) → definirIdentidade com a marca do
+/** Ação `sessao` (sem identidade esperada: é ela que descobre a identidade) → definirIdentidade com a época do
  *  pedido (sair/entrar desde então → não grava), que limpa as abas se uma identidade conhecida mudou.
  *  Perfil inativo/sem org (`sem_acesso`) → sai. */
 async function consultarSessao(c: Contexto): Promise<{ ok: true } | Falha> {
@@ -102,7 +93,7 @@ async function consultarSessao(c: Contexto): Promise<{ ok: true } | Falha> {
   }
   const d = r.dados as Record<string, unknown> | null;
   const perfil: Perfil = { nome: texto(d?.nome), email: texto(d?.email), orgNome: texto(d?.orgNome) };
-  return (await definirIdentidade(r.identidade, perfil, c.marca)) ? { ok: true } : falha('sem_sessao');
+  return (await definirIdentidade(r.identidade, perfil, c.epoca)) ? { ok: true } : falha('sem_sessao');
 }
 
 /** Busca identidade e perfil na edge e grava. true = logado com identidade conhecida. */

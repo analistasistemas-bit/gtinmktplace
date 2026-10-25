@@ -13,10 +13,9 @@ const resposta = (status: number, corpo: unknown) =>
 const envelope = (dados: unknown, identidade = 'u1:org1:') => resposta(200, { identidade, dados });
 const PERFIL2 = { nome: 'Diego', email: 'd@x.com', orgNome: 'Outra' };
 const corpoDe = (i: number) => JSON.parse(fetchFalso.mock.calls[i][1].body);
-let sessao: Record<string, unknown>;
 
 beforeEach(() => {
-  sessao = instalarChromeFalso();
+  instalarChromeFalso();
   vi.stubGlobal('fetch', fetchFalso);
   vi.stubEnv('VITE_SUPABASE_URL', 'https://proj.supabase.co');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-publica');
@@ -116,15 +115,6 @@ describe('chamarExtensao', () => {
     fetchFalso.mockResolvedValueOnce(resposta(403, { erro: 'modulo_desligado', identidade: 'u1:org2:' }));
     expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'modulo_desligado' });
     expect(fetchFalso).toHaveBeenCalledTimes(1);
-  });
-
-  it('resposta que chega depois de sair/entrar (geração mudou) é descartada', async () => {
-    await conectar();
-    fetchFalso.mockImplementation(async () => {
-      sessao['geracao-sessao'] = ((sessao['geracao-sessao'] as number | undefined) ?? 0) + 1; // sair+entrar, mesma conta/org
-      return envelope({ custo: 'antigo' });
-    });
-    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
   });
 
   it('401 → deslogado (sair local) e erro sessao_expirada', async () => {
@@ -227,107 +217,129 @@ describe('atualizarSessao', () => {
     expect(await atualizarSessao()).toBe(false);
     expect(await identidadeAtual()).toBe('u1:org1:');
   });
-
-  it('resposta de sessao depois de sair/entrar é descartada', async () => {
-    logar({ identidade: null, perfil: null });
-    fetchFalso.mockImplementation(async () => {
-      sessao['geracao-sessao'] = ((sessao['geracao-sessao'] as number | undefined) ?? 0) + 1;
-      return envelope(PERFIL2, 'u1:org2:');
-    });
-    expect(await atualizarSessao()).toBe(false);
-    expect(await identidadeAtual()).toBeNull();
-  });
 });
 
-// Fix round 1 (Codex): sair()/entrar() reais com o mesmo usuário no meio da chamada.
-describe('sair/entrar durante a chamada', () => {
+// Fix rounds 1–3 (Codex): sair()/entrar() reais e troca de org no meio da chamada. A decisão é a época em memória
+// (abas.ts: epocaAtual), que sobe síncrona em sair, entrar, troca de identidade e limpeza das abas.
+describe('sair/entrar e troca de org durante a chamada', () => {
   const EDGE = '/functions/v1/extensao';
-  const chamadasEdge = () => fetchFalso.mock.calls.filter(([u]) => String(u).endsWith(EDGE));
+  const comTokAntigo = () => fetchFalso.mock.calls.filter(([u, i]) => String(u).endsWith(EDGE) && i.headers.Authorization === 'Bearer tok-abc');
   // Auth real (credenciais.ts) com fetch controlado: logout ok; login devolve outro par do mesmo usuário.
-  const auth = (edge: () => Response) => fetchFalso.mockImplementation(async (u: string) => {
+  const auth = (edge: () => unknown) => fetchFalso.mockImplementation(async (u: string) => {
     if (String(u).includes('/auth/v1/logout')) return new Response(null, { status: 204 });
     if (String(u).includes('grant_type=password')) {
       return resposta(200, { access_token: 'tok-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'u1' } });
     }
     return edge();
   });
-  const sairEntrar = async () => {
-    await sair();
-    expect(await entrar('d@x.com', 'senha')).toEqual({ ok: true });
+  const entrarDeNovo = async () => { expect(await entrar('d@x.com', 'senha')).toEqual({ ok: true }); };
+  const TROCAS: Record<string, () => Promise<unknown>> = {
+    // sessão nova com a MESMA identidade: só a época distingue
+    'sair/entrar (mesma identidade)': async () => { await sair(); await entrarDeNovo(); await definirIdentidade('u1:org1:', PERFIL2); },
+    'troca de org': () => definirIdentidade('u1:org2:', PERFIL2),
   };
 
-  it('troca depois de obter o token: a ação não sai com o token antigo nem entrega o resultado', async () => {
-    await conectar();
-    auth(() => envelope({ ok: 1 }));
-    // Arma a troca na 1ª leitura da geração da sessão feita DEPOIS de o token ser lido.
-    const getLocal = chrome.storage.local.get;
-    const getSessao = chrome.storage.session.get;
-    let tokenLido = false;
-    let armado = true;
-    chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => { tokenLido = true; return getLocal(k); }) as never;
-    chrome.storage.session.get = vi.fn(async (k: string | string[] | null) => {
-      if (armado && tokenLido && k === 'geracao-sessao') {
-        armado = false;
-        await sairEntrar();
-        await definirIdentidade('u1:org1:', PERFIL2); // nova sessão já com a mesma identidade
-      }
-      return getSessao(k);
-    }) as never;
-    expect(await chamarExtensao({ acao: 'salvar_vinculo' })).toEqual({ ok: false, erro: 'sem_sessao' });
-    expect(armado).toBe(false);
-    expect(chamadasEdge().filter(([, i]) => i.headers.Authorization === 'Bearer tok-abc')).toEqual([]);
+  describe.each(Object.keys(TROCAS))('%s', (nome) => {
+    const troca = TROCAS[nome];
+
+    it('com a ação em voo → resposta descartada', async () => {
+      await conectar();
+      auth(async () => { await troca(); return envelope({ custo: 'org1' }); });
+      expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
+    });
+
+    it('enquanto o corpo da resposta é lido → descartada', async () => {
+      await conectar();
+      auth(() => ({ ok: true, status: 200, json: async () => { await troca(); return { identidade: 'u1:org1:', dados: { custo: 'org1' } }; } }));
+      expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
+    });
   });
 
-  // Fix round 2: troca durante a leitura da identidade guardada (o valor lido é o de antes da troca).
-  const trocarDuranteLeituraDaIdentidade = (quando: () => boolean) => {
+  it('troca de org: época sobe antes de a identidade nova ficar visível (resposta aceita entre o set e a limpeza)', async () => {
+    await conectar();
+    const set = chrome.storage.local.set;
+    let liberar!: () => void;
+    const gravouOrg2 = new Promise<void>((ok) => { liberar = ok; });
+    chrome.storage.local.set = vi.fn(async (o: Record<string, unknown>) => {
+      await set(o);
+      if ((o.credenciais as { identidade?: string } | undefined)?.identidade === 'u1:org2:') {
+        liberar();
+        await new Promise((ok) => setTimeout(ok, 0)); // definirIdentidade fica parada depois do set
+      }
+    }) as never;
+    auth(async () => {
+      void definirIdentidade('u1:org2:', PERFIL2);
+      await gravouOrg2;
+      return envelope({ custo: 'org1' });
+    });
+    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
+  });
+
+  it('sair/entrar durante a leitura do token: nada sai com o token antigo', async () => {
+    await conectar();
+    auth(() => envelope({ ok: 1 }));
     const getLocal = chrome.storage.local.get;
-    const r = { armado: true };
+    let pendente: Promise<unknown> | undefined;
     chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
-      const v = await getLocal(k);
-      if (r.armado && quando()) {
-        r.armado = false;
-        await sairEntrar();
-        await definirIdentidade('u1:org1:', PERFIL2); // sessão nova com a mesma identidade
+      const v = await getLocal(k); // credenciais de antes da troca
+      if (!pendente) {
+        // Dentro da fila (tokenValido): sair roda fora dela; o login entra na fila depois.
+        pendente = (async () => { await sair(); await entrarDeNovo(); await definirIdentidade('u1:org1:', PERFIL2); })();
       }
       return v;
     }) as never;
-    return r;
-  };
-
-  it('troca durante a leitura da identidade antes do POST: nada sai com o token antigo', async () => {
-    await conectar();
-    auth(() => envelope({ ok: 1 }));
-    let leituras = 0;
-    // 1ª leitura = token (tokenValido); 2ª = identidade guardada na conferência antes do POST.
-    const r = trocarDuranteLeituraDaIdentidade(() => ++leituras === 2);
     expect(await chamarExtensao({ acao: 'salvar_vinculo' })).toEqual({ ok: false, erro: 'sem_sessao' });
-    expect(r.armado).toBe(false);
-    expect(chamadasEdge().filter(([, i]) => i.headers.Authorization === 'Bearer tok-abc')).toEqual([]);
+    await pendente;
+    expect(comTokAntigo()).toEqual([]);
   });
 
-  it('troca durante a leitura da identidade depois da resposta: dado da sessão antiga não é entregue', async () => {
+  // RED no código do fix round 2 (2ª leitura = GERACAO_SESSAO): org trocada com a leitura em andamento.
+  it.each([1, 2, 3])('troca de org durante a %iª leitura de storage depois da resposta: dado da org anterior nunca sai como ok', async (n) => {
     await conectar();
     let respondeu = false;
-    auth(() => { respondeu = true; return envelope({ custo: 'antigo' }); });
-    const r = trocarDuranteLeituraDaIdentidade(() => respondeu);
-    expect(await chamarExtensao({ acao: 'x' })).toEqual({ ok: false, erro: 'sem_sessao' });
-    expect(r.armado).toBe(false);
+    let leituras = 0;
+    let terminou = false;
+    fetchFalso.mockImplementation(async () => { respondeu = true; return envelope({ custo: 'org1' }); });
+    const r = { armado: true };
+    for (const area of [chrome.storage.local, chrome.storage.session]) {
+      const get = area.get;
+      area.get = vi.fn(async (k: string | string[] | null) => {
+        const v = await get(k); // valor de antes da troca
+        if (r.armado && respondeu && !terminou && ++leituras === n) {
+          r.armado = false;
+          expect(await definirIdentidade('u1:org2:', PERFIL2)).toBe(true);
+        }
+        return v;
+      }) as never;
+    }
+    const res = await chamarExtensao({ acao: 'x' });
+    terminou = true;
+    const identidadeNoRetorno = (local.credenciais as { identidade: string }).identidade;
+    if (res.ok) expect(identidadeNoRetorno).toBe('u1:org1:');
+    else expect(res).toEqual({ ok: false, erro: 'sem_sessao' });
   });
 
-  it('troca entre a checagem da resposta da sessao e a gravação: identidade/perfil antigos não vão para as credenciais novas', async () => {
+  it('atualizarSessao: sair/entrar com a sessao em voo → false; credenciais novas sem identidade', async () => {
+    logar({ accessToken: 'tok-abc', identidade: null, perfil: null });
+    auth(async () => { await sair(); await entrarDeNovo(); return envelope(PERFIL2, 'u1:org1:'); });
+    expect(await atualizarSessao()).toBe(false);
+    expect(local.credenciais).toMatchObject({ accessToken: 'tok-novo', identidade: null, perfil: null });
+  });
+
+  it('atualizarSessao: saída entre a aceitação da resposta e a gravação → identidade/perfil antigos não vão para as credenciais novas', async () => {
     logar({ accessToken: 'tok-abc', identidade: null, perfil: null });
     let respondeu = false;
     auth(() => { respondeu = true; return envelope(PERFIL2, 'u1:org1:'); });
-    // Arma a troca na 1ª leitura das credenciais depois da resposta da edge (checagem final de postar).
+    // 1ª leitura das credenciais depois da resposta = a de definirIdentidade (na fila): sair (fora da fila) ali.
     const getLocal = chrome.storage.local.get;
-    let armado = true;
+    let pendente: Promise<unknown> | undefined;
     chrome.storage.local.get = vi.fn(async (k: string | string[] | null) => {
       const v = await getLocal(k);
-      if (armado && respondeu) { armado = false; await sairEntrar(); }
+      if (respondeu && !pendente) pendente = (async () => { await sair(); await entrarDeNovo(); })();
       return v;
     }) as never;
     expect(await atualizarSessao()).toBe(false);
-    expect(armado).toBe(false);
+    await pendente;
     expect(local.credenciais).toMatchObject({ accessToken: 'tok-novo', identidade: null, perfil: null });
   });
 });
