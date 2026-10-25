@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PubliAI",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Minha margem nos anúncios do Mercado Livre, com os dados da sua empresa no PubliAI.",
   "permissions": ["sidePanel", "storage"],
   "host_permissions": ["https://*.mercadolivre.com.br/*"],

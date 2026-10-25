@@ -18,6 +18,11 @@
 
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
+**0.3.1 — auditoria × Avant (emenda ADR-0189 de 2026-10-25) — na branch `worktree-extensao-auditoria-avant`:**
+- [x] Painel: preço no Pix com "simular", rótulo "tipo deste anúncio", "+50 disponíveis" na Qualidade e frete cotado da
+  oferta (CEP 01310-100, informação fora da margem); `manifest` 0.3.1.
+- [ ] Revisão → deploy da edge `extensao` (`freteDaOferta`) → merge → zip de `extensao/dist` → Web Store.
+
 **0.3.0 — login próprio, "Extensão ativa" e ícone no cabeçalho (emenda ADR-0189 de 2026-10-24) — EM PRODUÇÃO 25/10 (main 7721bb3b, edge v16, Web Store 0.3.0):**
 - [x] Edge `extensao` com protocolo 2 (identidade `userId:orgId:suporte`, `identidade_mudou`, `sem_acesso`) e ação `sessao`.
 - [x] Sessão própria no SW (`storage.local` `TRUSTED_CONTEXTS`, renovação serializada, "Sair" = logout `scope=local`), geração/época

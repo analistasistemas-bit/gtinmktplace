@@ -359,3 +359,29 @@ do ML). Entra na versão 0.3.0.
   `scope` local; `checar-dist` permite auth só no `sw.js`; geração em toda mensagem de comando; e os demais itens de
   credenciais isoladas, renovação com dono único, identidade esperada antes da operação, contrato da edge, religar sem
   recarregar e cabeçalho com degradação.
+
+## Emenda 2026-10-25 — Auditoria × Avant (D-7, D-10; versão 0.3.1)
+
+A auditoria (Codex) comparou o painel com o Avant no anúncio `MLB4053374163` (catálogo `MLB32466350`, `/p/`). Nenhum
+cálculo estava errado; faltavam quatro informações de apresentação. Entram na 0.3.1 sem mudar a margem: ela segue sobre
+o preço lido (`event_data.price`), com o frete da conta da organização, imposto por origem e o custo de sempre.
+
+1. **Preço no Pix** (D-7). Prova na página: `components.track.melidata_event.event_data.benefits.coupons[]` com
+   `source: "pix"`, `status: "applied"`, `base_price.value` 320,51 (= preço lido) e `partial_price.value` 310,89
+   (`price_decrement.discount_percentage` 3). Vale só no evento do próprio item (`item_id` = anúncio) e com
+   `0 < pix < preço`; fica no navegador. O painel mostra "No Pix: R$ 310,89 (−3%) · simular" abaixo do preço; o botão
+   só simula, pelo mesmo caminho da edição de preço.
+2. **Tipo deste anúncio** (D-10). `event_data.listing_type_id` do mesmo evento (`gold_pro` = Premium, `gold_special` =
+   Clássico; outro valor = nada). Rótulo no cartão do tipo; fica no navegador.
+3. **"+50 disponíveis"** (D-10, qualidade). `available_quantity.picker.description` ("(+50 disponíveis)") vira o valor
+   da linha Disponível ("+50"); o estado ok/atenção segue o número `quantity_selector.available_quantity` (100). Texto
+   só no formato `+N disponíveis`, até 40 caracteres.
+4. **Frete cotado da oferta** (informação, fora da margem). Edge: `GET /items/{id}/shipping_options?zip_code=01310100`
+   com o token da conexão (medido em 25/10: HTTP 200 para item de terceiro, `list_cost` 32,45 em todas as opções);
+   `list_cost` da opção `recommended` (senão a primeira), cache de 6 h por item. Falha ou valor ausente → indisponível,
+   nunca zero, e não aparece; `null` no anúncio próprio. Painel: "Frete cotado deste anúncio: R$ 32,45 (CEP 01310-100)"
+   abaixo da linha Frete.
+
+**Não entra:** visitas e conversão (o Avant obtém de backend próprio; o ML devolve 403 ao nosso token); faturamento e
+"ritmo atual" (dependem de visitas ou de vendas por período que não temos); idade do anúncio em `/p/` (a data do item
+vencedor não está na página de catálogo; segue a emenda de 22/10, data só do HTML do próprio anúncio).
