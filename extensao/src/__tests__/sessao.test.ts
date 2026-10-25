@@ -19,6 +19,10 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('receberMensagemExterna (0.3.0: o app deixou de ser fonte de sessão)', () => {
+  it('publiai:ping responde versão e protocolo 2', async () => {
+    expect(await receberMensagemExterna({ tipo: 'publiai:ping' }, APP)).toEqual({ ok: true, versao: chrome.runtime.getManifest().version, protocolo: 2 });
+  });
+
   it('publiai:sessao é ignorado: nada gravado, nada revogado', async () => {
     const msg = { tipo: 'publiai:sessao', accessToken: 'tok-do-app', expiresAt: Math.floor(Date.now() / 1000) + 3600, orgNome: 'Avil', identidade: 'u1:org1:' };
     expect(await receberMensagemExterna(msg, APP)).toEqual({ ok: false });

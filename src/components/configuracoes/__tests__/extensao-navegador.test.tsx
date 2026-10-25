@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   enviar: vi.fn(async (): Promise<'ok' | 'nao_instalada' | 'desconectada'> => 'ok'),
+  ping: vi.fn(async (): Promise<{ versao: string; protocolo: number } | null> => null),
   sessao: { access_token: 'a' } as unknown,
 }));
-vi.mock('@/lib/extensao-ponte', () => ({ enviarSessaoParaExtensao: h.enviar }));
+vi.mock('@/lib/extensao-ponte', () => ({ enviarSessaoParaExtensao: h.enviar, pingExtensao: h.ping }));
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: (sel: (s: unknown) => unknown) => sel({ session: h.sessao }),
 }));
@@ -15,6 +16,8 @@ import { ExtensaoNavegador } from '../extensao-navegador';
 beforeEach(() => {
   h.enviar.mockReset();
   h.enviar.mockResolvedValue('ok');
+  h.ping.mockReset();
+  h.ping.mockResolvedValue(null);
   vi.stubEnv('VITE_EXTENSAO_ID', 'ext-id');
   vi.stubEnv('VITE_EXTENSAO_URL', 'https://chromewebstore.google.com/detail/publiai/ext-id');
 });
@@ -59,5 +62,14 @@ describe('ExtensaoNavegador', () => {
     render(<ExtensaoNavegador />);
     await screen.findByText('Não instalada');
     expect(screen.getByRole('button', { name: /conectar extensão/i })).toBeInTheDocument();
+  });
+
+  it('protocolo 2 → "Instalada neste Chrome (versão X)" + login pela extensão, sem Reconectar nem envio de sessão', async () => {
+    h.ping.mockResolvedValue({ versao: '0.3.0', protocolo: 2 });
+    render(<ExtensaoNavegador />);
+    expect(await screen.findByText('Instalada neste Chrome (versão 0.3.0).')).toBeInTheDocument();
+    expect(screen.getByText('Entre pela extensão, no ícone do PubliAI no Mercado Livre, com o seu e-mail e senha.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reconectar|conectar extensão/i })).not.toBeInTheDocument();
+    expect(h.enviar).not.toHaveBeenCalled();
   });
 });

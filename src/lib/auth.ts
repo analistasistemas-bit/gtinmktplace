@@ -11,7 +11,8 @@ export async function signOut() {
   // As URLs assinadas guardadas valem 7 dias (ADR-0081) e são bearer token: sem isso, quem
   // usasse a máquina depois do logout abriria as fotos até elas vencerem.
   limparUrlsImagem();
-  const { error } = await supabase.auth.signOut();
+  // scope local: o global revogaria também a sessão própria da extensão (mesmo usuário).
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) throw error;
 }
 

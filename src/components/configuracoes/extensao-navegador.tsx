@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
-import { enviarSessaoParaExtensao, type ResultadoPonte } from '@/lib/extensao-ponte';
+import { enviarSessaoParaExtensao, pingExtensao, type ResultadoPonte } from '@/lib/extensao-ponte';
 import { useAuthStore } from '@/stores/auth-store';
 import { SettingsGroup, SettingsRow } from './settings-row';
 
@@ -12,6 +12,7 @@ export function ExtensaoNavegador() {
   const url = import.meta.env.VITE_EXTENSAO_URL as string | undefined;
   const [status, setStatus] = useState<ResultadoPonte | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [versao, setVersao] = useState<string | null>(null); // protocolo ≥ 2: login próprio na extensão
 
   const conectar = useCallback(async () => {
     setEnviando(true);
@@ -19,9 +20,15 @@ export function ExtensaoNavegador() {
     setEnviando(false);
   }, [session]);
 
-  // Ao abrir a seção, testa a conexão empurrando a sessão atual (idempotente na extensão).
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem; o auth-store já reenvia a cada renovação
-  useEffect(() => { if (id) void conectar(); }, [id]);
+  // Ao abrir a seção: protocolo ≥ 2 só informa; 0.2.x/ausente testa empurrando a sessão atual (idempotente).
+  useEffect(() => {
+    if (!id) return;
+    void pingExtensao().then((p) => {
+      if (p && p.protocolo >= 2) setVersao(p.versao);
+      else void conectar();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem; o auth-store já reenvia a cada renovação
+  }, [id]);
 
   if (!id && !url) {
     return (
@@ -37,19 +44,29 @@ export function ExtensaoNavegador() {
       descricao="Mostra a sua margem nas páginas do Mercado Livre. Conecta com a sua sessão do PubliAI — sem senha na extensão."
     >
       {/* Respondeu à conexão = está instalada neste Chrome: sem botão de instalar. */}
-      {url && status === 'ok' && (
+      {versao && (
+        <>
+          <SettingsRow titulo="Instalação" descricao={`Instalada neste Chrome (versão ${versao}).`} estado={<StatusPill tone="success">Instalada</StatusPill>}>
+            {null}
+          </SettingsRow>
+          <SettingsRow titulo="Conta" descricao="Entre pela extensão, no ícone do PubliAI no Mercado Livre, com o seu e-mail e senha.">
+            {null}
+          </SettingsRow>
+        </>
+      )}
+      {!versao && url && status === 'ok' && (
         <SettingsRow titulo="Instalação" descricao="Instalada neste Chrome." estado={<StatusPill tone="success">Instalada</StatusPill>}>
           {null}
         </SettingsRow>
       )}
-      {url && status !== 'ok' && (
+      {!versao && url && status !== 'ok' && (
         <SettingsRow titulo="Instalação" descricao="Instale pela Chrome Web Store e volte aqui para conectar.">
           <Button asChild variant="outline" size="sm">
             <a href={url} target="_blank" rel="noopener noreferrer">Instalar extensão</a>
           </Button>
         </SettingsRow>
       )}
-      {id && (
+      {!versao && id && (
         <SettingsRow
           titulo="Conexão"
           descricao="A conexão se renova sozinha enquanto o PubliAI estiver aberto. Só reconecte se a extensão pedir."

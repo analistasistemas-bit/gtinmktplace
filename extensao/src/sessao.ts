@@ -12,7 +12,14 @@ const CHAVE_LEGADA = 'sessao';
 
 /** 0.3.0: `publiai:sessao`/`publiai:desconectar` do app são ignorados — o token do app nunca vira sessão
  *  própria nem é revogado (é do app). */
-export async function receberMensagemExterna(_msg: unknown, _sender: chrome.runtime.MessageSender): Promise<{ ok: false }> {
+export async function receberMensagemExterna(
+  msg: unknown,
+  _sender: chrome.runtime.MessageSender,
+): Promise<{ ok: false } | { ok: true; versao: string; protocolo: 2 }> {
+  // Só o ping responde (o app descobre versão/protocolo); a origem já é restrita pelo externally_connectable.
+  if ((msg as { tipo?: unknown } | null)?.tipo === 'publiai:ping') {
+    return { ok: true, versao: chrome.runtime.getManifest().version, protocolo: 2 };
+  }
   return { ok: false };
 }
 
