@@ -45,7 +45,8 @@ export function montarMensagemCarrinho(
     `💼 Venda ${brl(c.venda)} — ${c.itens} ${c.itens === 1 ? 'item' : 'itens'}${sufixo}`,
     lucro,
     ...c.semCusto.map((t) => `⚠️ ${t}: sem custo cadastrado`),
-    ...c.prejuizos.map((p) => `⚠️ ${p.titulo}: prejuízo de ${brl(Math.abs(p.valor))}`),
+    // Prejuízo por item usa o mesmo líquido pessimista: some quando o carrinho está incompleto.
+    ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${p.titulo}: prejuízo de ${brl(Math.abs(p.valor))}`),
     `Hoje: ${linhaKpis(k.hoje)}`,
     linhaMes(k),
     `Pedido ${chaveNumerica}`,

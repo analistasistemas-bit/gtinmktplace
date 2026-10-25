@@ -81,6 +81,15 @@ describe('montarMensagemCarrinho', () => {
       }
     }
   });
+  it('carrinho incompleto não lista prejuízo por item, mas mantém sem custo', () => {
+    const c = { ...carrinho, prejuizos: [{ titulo: 'Máscara X', valor: -4.1 }], semCusto: ['Touca Y'] };
+    for (const e of [{ parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false }, { parcial: null, composicaoIncerta: true }]) {
+      const m = montarMensagemCarrinho(c, k, 2000000001, e);
+      expect(m).toContain('Lucro: — (carrinho incompleto)');
+      expect(m).toContain('⚠️ Touca Y: sem custo cadastrado');
+      expect(m).not.toContain('prejuízo de');
+    }
+  });
   it('nunca traz o comprador', () => {
     const comComprador = <T extends object>(o: T): T => ({ ...o, comprador_nome: COMPRADOR });
     const saidas = [

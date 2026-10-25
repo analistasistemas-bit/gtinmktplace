@@ -127,7 +127,7 @@ async function worker(d: Deps, botId: number, updateId: number): Promise<Respons
         await concluir(admin, pk, leaseId, 'respondido');
       } catch (e2) {
         const { error: e3 } = await admin.from('telegram_updates')
-          .update({ status: 'respondido', erro: 'concluir falhou; resposta enviada', processado_em: new Date().toISOString(), lease_id: null, lease_ate: null })
+          .update({ status: 'respondido', erro: 'concluir falhou; resposta enviada', processado_em: d.agora().toISOString(), lease_id: null, lease_ate: null })
           .eq('bot_id', botId).eq('update_id', updateId).eq('lease_id', leaseId).eq('status', 'processando');
         log({ botId, updateId, erro: `concluir 2×: ${(e2 as Error).message}${e3 ? `; marcar respondido: ${e3.message}` : ''}` });
       }
