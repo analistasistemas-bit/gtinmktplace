@@ -5,7 +5,7 @@ import { estimarVendasCalibrada } from '../compartilhado/estimativa';
 import { pisoDosVendidos, quantoVende } from '../compartilhado/quanto-vende';
 import type { DadosQualidade } from '../compartilhado/qualidade';
 
-export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null; qualidade?: DadosQualidade | null }
+export interface Observado { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null; qualidade?: DadosQualidade | null; tipoAnuncio?: 'gold_pro' | 'gold_special' | null; precoPix?: number | null }
 
 const num = (n: number) => n.toLocaleString('pt-BR');
 const faixa = (piso: number, texto: string) => (/^\+/.test(texto.trim()) ? `+${num(piso)}` : num(piso));

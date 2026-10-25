@@ -24,6 +24,11 @@ const lojaOficialValida = (v: unknown): { nome: string | null } | null => {
   return v.nome == null || nome !== null ? { nome } : null;
 };
 
+/** Tipo e Pix lidos da página (auditoria × Avant): só os dois tipos pagos; Pix só 0 < pix < preço lido. */
+const tipoAnuncioValido = (v: unknown) => (v === 'gold_pro' || v === 'gold_special' ? v : null);
+const precoPixValido = (v: unknown, preco: unknown) =>
+  typeof v === 'number' && typeof preco === 'number' && Number.isFinite(v) && v > 0 && v < preco ? v : null;
+
 /** Estado do painel é melhor esforço: falha de storage não derruba a análise (nem o selo).
  *  Grava com as gerações (página e sessão) capturadas antes da chamada à edge; se mudaram, a leitura descarta. */
 async function guardarEstado(tabId: number, geracao: string | null, sessao: number, entrada: object, resposta: unknown, observado?: object): Promise<void> {
@@ -218,7 +223,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         const ean = typeof corpo.mlItemId === 'string' ? eanParaAnuncio(tab, corpo.mlItemId) : Promise.resolve(null);
         return Promise.all([ean, lerAba(tab), identidadeAtual()]).then(async ([eanDaBusca, { geracao, sessao }, identidade]) => {
           // Faixas e data de criação ficam só no navegador (painel): a edge não recebe (ADR-0189 D-1/D-9).
-          const { vendidosTexto, lojaOficial, qualidade, ...paraEdge } = corpo;
+          const { vendidosTexto, lojaOficial, qualidade, tipoAnuncio, precoPix, ...paraEdge } = corpo;
           const resposta = await chamarExtensao({ ...paraEdge, eanDaBusca }, e);
           // Guarda também o erro: é por ele que o painel sabe de sem_sessao/modulo_desligado/limite.
           // tipoPagina vai junto: reanálise e confirmação de preço do painel espalham a entrada guardada.
@@ -228,6 +233,8 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
             vendidosTexto: typeof vendidosTexto === 'string' ? vendidosTexto : null, vendidosAnuncio: null, criadoEm: null,
             lojaOficial: lojaOficialValida(lojaOficial),
             qualidade: normalizarQualidade(qualidade),
+            tipoAnuncio: tipoAnuncioValido(tipoAnuncio),
+            precoPix: precoPixValido(precoPix, corpo.preco),
           };
           const r = await naMesmaIdentidade(identidade, e, async () => {
             await guardarEstado(tab, geracao, sessao, { tipoPagina, mlItemId, sellerId, catalogProductId, categoriaId, preco, eanDaBusca }, resposta, observado);

@@ -167,7 +167,7 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toEqual({
       entrada: { tipoPagina: 'anuncio', mlItemId: 'MLB1', sellerId: '9', catalogProductId: null, categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' },
       resposta: { ok: true, dados: { ok: 1 } },
-      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null, lojaOficial: null, qualidade: null },
+      observado: { vendidosTexto: null, vendidosAnuncio: null, criadoEm: null, lojaOficial: null, qualidade: null, tipoAnuncio: null, precoPix: null },
     });
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:estado-atualizado', tabId: 7 });
   });
@@ -197,6 +197,20 @@ describe('estado da aba (painel)', () => {
     expect(await estado(7)).toMatchObject({ observado: { lojaOficial: null } });
     await chamar({ ...ANUNCIO, lojaOficial: { nome: null } }, CONTEUDO);
     expect(await estado(7)).toMatchObject({ observado: { lojaOficial: { nome: null } } });
+  });
+
+  it('tipo do anúncio e preço no Pix ficam no estado (painel), não vão à edge e são validados (auditoria × Avant)', async () => {
+    fetchFalso.mockImplementation(async () => new Response('{"ok":1}', { status: 200 }));
+    await chamar({ ...ANUNCIO, tipoAnuncio: 'gold_pro', precoPix: 97 }, CONTEUDO);
+    expect(await estado(7)).toMatchObject({ entrada: { preco: 100 }, observado: { tipoAnuncio: 'gold_pro', precoPix: 97 } });
+    expect((await estado(7) as { entrada: object }).entrada).not.toHaveProperty('precoPix');
+    const corpos = fetchFalso.mock.calls.map(([, init]) => (init as RequestInit | undefined)?.body).filter((b) => typeof b === 'string').join();
+    for (const vazado of ['tipoAnuncio', 'gold_pro', 'precoPix']) expect(corpos).not.toContain(vazado);
+    for (const [tipoAnuncio, precoPix] of [['free', 100], ['gold_special', 0], [42, 101], [null, '97'], [undefined, Infinity]]) {
+      await chamar({ ...ANUNCIO, tipoAnuncio, precoPix }, CONTEUDO);
+      const o = (await estado(7) as { observado: { tipoAnuncio: unknown; precoPix: unknown } }).observado;
+      expect([o.tipoAnuncio, o.precoPix]).toEqual([tipoAnuncio === 'gold_special' ? 'gold_special' : null, null]);
+    }
   });
 
   it('qualidade fica no estado (painel) e não vai à edge (D-1)', async () => {

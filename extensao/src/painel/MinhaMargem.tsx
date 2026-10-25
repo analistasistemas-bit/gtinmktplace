@@ -16,6 +16,10 @@ interface Props {
   onDados: (dados: RespostaAnuncio) => void;
   /** Preço vindo de fora (ex.: vencedor do catálogo), aplicado só quando `seq` muda (clique do operador). */
   precoSugerido?: { valor: number; seq: number } | null;
+  /** Preço no Pix exibido pela página (só simulação). */
+  precoPix?: number | null;
+  /** Tipo do anúncio lido na página: marca o cartão correspondente. */
+  tipoAnuncio?: 'gold_pro' | 'gold_special' | null;
 }
 
 /** Texto do input → número, ou null quando vazio/inválido (nunca NaN na tela). */
@@ -25,7 +29,7 @@ function numero(txt: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }: Props) {
+export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido, precoPix, tipoAnuncio }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
   const [custoTxt, setCustoTxt] = useState('');
   // Unidades confirmadas pelo operador valem só para o SKU em que foram digitadas (troca de vínculo → vazias).
@@ -115,6 +119,9 @@ export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }
   // Comissão (faixa) e frete vêm da última consulta confirmada: a outro preço, o resultado inteiro é estimativa
   // até o servidor confirmar — e continua sendo se a confirmação falhar (dados não mudam).
   const estimativa = preco !== null && preco !== precoConfirmado;
+  // Pix: % sobre o preço lido (não o digitado). Edge antiga não manda freteOferta (undefined).
+  const pix = precoPix != null && precoPix > 0 && precoPix < entrada.preco ? precoPix : null;
+  const freteOferta = dados.freteOferta?.estado === 'ok' ? dados.freteOferta.valor : null;
 
   return (
     <section className="campos" aria-label="Minha margem">
@@ -125,6 +132,11 @@ export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }
           <span className="prefixo" aria-hidden="true">R$</span>
           <input id={ids.preco} type="number" inputMode="decimal" min="0" step="0.01" value={precoTxt} onChange={(e) => editarPreco(e.target.value)} />
         </span>
+        {pix !== null && (
+          <button type="button" className="link pix" onClick={() => editarPreco(String(pix))}>
+            {`No Pix: ${brl(pix)} (−${Math.round((1 - pix / entrada.preco) * 100)}%) · simular`}
+          </button>
+        )}
       </div>
       {estimativa && (
         <p className="nota">Estimativa: a comissão e o frete são do preço consultado e podem mudar de faixa neste preço até a confirmação no Mercado Livre.</p>
@@ -182,8 +194,8 @@ export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }
       {pendencia && <p className="pendencia">{pendencia}</p>}
       {margem && (
         <div className="tipos">
-          <Tipo nome="Clássico" r={margem.classico} preco={preco!} estimativa={estimativa} aberto />
-          <Tipo nome="Premium" r={margem.premium} preco={preco!} estimativa={estimativa} />
+          <Tipo nome="Clássico" r={margem.classico} preco={preco!} estimativa={estimativa} desteAnuncio={tipoAnuncio === 'gold_special'} freteOferta={freteOferta} aberto />
+          <Tipo nome="Premium" r={margem.premium} preco={preco!} estimativa={estimativa} desteAnuncio={tipoAnuncio === 'gold_pro'} freteOferta={freteOferta} />
         </div>
       )}
     </section>
@@ -192,14 +204,16 @@ export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido }
 
 const sinal = (n: number | null) => (n === null ? '' : n < 0 ? 'negativo' : 'positivo');
 
-function Tipo({ nome, r, preco, estimativa, aberto = false }: { nome: string; r: Disponivel<MargemTipo>; preco: number; estimativa: boolean; aberto?: boolean }) {
+function Tipo({ nome, r, preco, estimativa, desteAnuncio, freteOferta, aberto = false }: { nome: string; r: Disponivel<MargemTipo>; preco: number; estimativa: boolean; desteAnuncio: boolean; freteOferta: number | null; aberto?: boolean }) {
   const id = `tipo-${nome}`;
+  const tag = desteAnuncio && <span className="ct-tag tipo-deste">tipo deste anúncio</span>;
   if (r.estado === 'indisponivel') {
     return (
       <section className="cartao tipo" aria-labelledby={id}>
         <details open>
           <summary>
             <h3 id={id}>{nome}</h3>
+            {tag}
             <span className="lucro">—</span>
           </summary>
         </details>
@@ -213,6 +227,7 @@ function Tipo({ nome, r, preco, estimativa, aberto = false }: { nome: string; r:
       <details open={aberto}>
         <summary>
           <h3 id={id}>{nome}</h3>
+          {tag}
           <span className={`lucro ${sinal(v.lucro)}`}>{v.lucro === null ? '—' : brl(v.lucro)}</span>
           <span className={`margem ${sinal(v.margemPct)}`}>{v.margemPct === null ? '—' : pct(v.margemPct)}</span>
           {estimativa && <span className="estimativa">Estimativa</span>}
@@ -223,6 +238,8 @@ function Tipo({ nome, r, preco, estimativa, aberto = false }: { nome: string; r:
           <span className="op" aria-hidden="true">−</span><dt>Comissão</dt><dd>{brl(v.comissao)}</dd>
           <span className="op" aria-hidden="true">−</span><dt>Imposto</dt><dd>{brl(v.imposto)}</dd>
           <span className="op" aria-hidden="true">−</span><dt>Frete</dt><dd>{brl(v.frete)}</dd>
+          {/* Informação: o frete da conta segue sendo o da margem (auditoria × Avant). */}
+          {freteOferta !== null && <dd className="frete-oferta">{`Frete cotado deste anúncio: ${brl(freteOferta)} (CEP 01310-100)`}</dd>}
           <span className="op total" aria-hidden="true">=</span><dt className="total">Recebe</dt><dd className="total">{brl(v.recebe)}</dd>
           <span className="op" aria-hidden="true">−</span><dt>Custo</dt><dd>{v.custo === null ? '—' : brl(v.custo)}</dd>
           <span className="op total" aria-hidden="true">=</span><dt className="total">Lucro</dt><dd className="total">{v.lucro === null ? '—' : brl(v.lucro)}</dd>

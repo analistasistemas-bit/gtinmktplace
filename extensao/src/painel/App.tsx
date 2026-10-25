@@ -255,6 +255,8 @@ export function Painel({ estado, chamar, reanalisarAba }: { estado: EstadoAba | 
         analisar={analisar}
         onDados={(dados) => setConfirmado({ base: estado.resposta, dados })}
         precoSugerido={simular}
+        precoPix={estado.observado?.precoPix}
+        tipoAnuncio={estado.observado?.tipoAnuncio}
       />
       {(resposta.dados.custo.fonte === 'nenhuma' || resposta.dados.custo.fonte === 'vinculo_manual') && (
         <VinculoProduto entrada={entrada} fonte={resposta.dados.custo.fonte} chamar={chamar} onVinculado={reanalisar} />

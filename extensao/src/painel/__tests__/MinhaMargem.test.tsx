@@ -14,6 +14,7 @@ function resposta(over: Partial<RespostaAnuncio> = {}): RespostaAnuncio {
     proprio: false,
     catalogoCriadoEm: null,
     vendedor: null,
+    freteOferta: null,
     margem: { preco: 100, classico: { estado: 'indisponivel', motivo: 'x' }, premium: { estado: 'indisponivel', motivo: 'x' } },
     custo: { fonte: 'nenhuma', variacaoId: null, codigo: null, origem: null, unidadesPorPacote: 1, unidadesSku: null, custoSku: null, fator: null, faltaUnidades: null, custoPacote: null },
     parametros: {
@@ -285,5 +286,52 @@ describe('MinhaMargem', () => {
     await vi.advanceTimersByTimeAsync(1600);
     expect(analisar).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+  describe('auditoria × Avant (25/10): Pix, tipo deste anúncio e frete cotado da oferta', () => {
+    const comCusto = () => resposta({
+      custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },
+    });
+
+    it('Pix: botão simula o preço no Pix pelo mesmo caminho da edição (só simulação)', async () => {
+      vi.useFakeTimers();
+      const analisar = vi.fn(async () => ({ ok: true as const, dados: comCusto() }));
+      render(<MinhaMargem entrada={{ ...ENTRADA, preco: 320.51 }} dados={comCusto()} analisar={analisar} onDados={() => {}} precoPix={310.89} />);
+      fireEvent.click(screen.getByRole('button', { name: 'No Pix: R$ 310,89 (−3%) · simular' }));
+      expect((screen.getByLabelText(/Preço de venda/) as HTMLInputElement).value).toBe('310.89');
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(analisar).toHaveBeenCalledWith(310.89);
+    });
+
+    it('sem Pix (ou Pix inválido) não há botão', () => {
+      const { rerender } = render(<MinhaMargem entrada={ENTRADA} dados={comCusto()} analisar={vi.fn()} onDados={() => {}} />);
+      expect(screen.queryByRole('button', { name: /No Pix/ })).toBeNull();
+      rerender(<MinhaMargem entrada={ENTRADA} dados={comCusto()} analisar={vi.fn()} onDados={() => {}} precoPix={100} />);
+      expect(screen.queryByRole('button', { name: /No Pix/ })).toBeNull();
+    });
+
+    it('rótulo "tipo deste anúncio" só no cartão do tipo lido (Premium = gold_pro, Clássico = gold_special)', () => {
+      const { rerender } = render(<MinhaMargem entrada={ENTRADA} dados={comCusto()} analisar={vi.fn()} onDados={() => {}} tipoAnuncio="gold_pro" />);
+      tipo('Premium').getByText('tipo deste anúncio');
+      expect(tipo('Clássico').queryByText('tipo deste anúncio')).toBeNull();
+      rerender(<MinhaMargem entrada={ENTRADA} dados={comCusto()} analisar={vi.fn()} onDados={() => {}} tipoAnuncio="gold_special" />);
+      tipo('Clássico').getByText('tipo deste anúncio');
+      expect(tipo('Premium').queryByText('tipo deste anúncio')).toBeNull();
+      rerender(<MinhaMargem entrada={ENTRADA} dados={comCusto()} analisar={vi.fn()} onDados={() => {}} tipoAnuncio={null} />);
+      expect(screen.queryByText('tipo deste anúncio')).toBeNull();
+    });
+
+    it('frete cotado da oferta: informação abaixo da linha Frete, não entra na conta; ausente/indisponível não aparece', () => {
+      const r = comCusto();
+      const comOferta = { ...r, freteOferta: { estado: 'ok' as const, valor: 32.45 } };
+      const { rerender } = montar(comOferta);
+      const nota = tipo('Clássico').getByText('Frete cotado deste anúncio: R$ 32,45 (CEP 01310-100)');
+      expect(nota.closest('dl')).not.toBeNull();
+      tipo('Clássico').getByText('R$ 20,00'); // frete da margem segue o da conta da org
+      rerender(<MinhaMargem entrada={ENTRADA} dados={{ ...r, freteOferta: { estado: 'indisponivel', motivo: 'x' } }} analisar={vi.fn()} onDados={() => {}} />);
+      expect(screen.queryByText(/Frete cotado deste anúncio/)).toBeNull();
+      const { freteOferta: _, ...antiga } = r; // edge antiga: sem o campo
+      rerender(<MinhaMargem entrada={ENTRADA} dados={antiga as RespostaAnuncio} analisar={vi.fn()} onDados={() => {}} />);
+      expect(screen.queryByText(/Frete cotado deste anúncio/)).toBeNull();
+    });
   });
 });

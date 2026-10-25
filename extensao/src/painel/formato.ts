@@ -23,7 +23,7 @@ export interface EstadoAba {
   entrada: EntradaAnuncio;
   resposta: Resposta<RespostaAnuncio>;
   /** Faixas (página e anúncio) e data de criação lidas no navegador (não vão à edge). Ausente em estado antigo. */
-  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null; qualidade?: DadosQualidade | null };
+  observado?: { vendidosTexto: string | null; vendidosAnuncio?: string | null; criadoEm: string | null; motivo?: string; lojaOficial?: { nome: string | null } | null; qualidade?: DadosQualidade | null; tipoAnuncio?: 'gold_pro' | 'gold_special' | null; precoPix?: number | null };
 }
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

@@ -103,10 +103,10 @@ export async function rodar(): Promise<void> {
   if (!lido) return; // bloqueio/verificação do ML, navegação ou espera inconclusiva: não é quebra de layout
   const mlItemId = location.pathname.match(/MLB-?\d+/)?.[0].replace('-', '') ?? null;
   if (!lido.ok) return erroLeitura(lido.motivo, mlItemId);
-  const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, qualidade } = lido.dados;
+  const { mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, tipoAnuncio, precoPix, qualidade } = lido.dados;
   // eanDaBusca: o SW preenche com o EAN da própria aba (content script não lê storage.session).
-  // vendidosTexto, lojaOficial e qualidade ficam no SW para o painel (não vão à edge).
-  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, qualidade }));
+  // vendidosTexto, lojaOficial, tipoAnuncio, precoPix e qualidade ficam no SW para o painel (não vão à edge).
+  const r = await comSessaoEstavel(chamar({ acao: 'analisar_anuncio', tipoPagina, mlItemId: id, sellerId, catalogProductId, categoriaId, preco, vendidosTexto, lojaOficial, tipoAnuncio, precoPix, qualidade }));
   if (!r || !vale()) return; // sessão/chave mudou durante a análise: nada de selo da anterior
   // Só com análise ok há selo: inativa, sem_sessao, modulo_desligado, limite e demais erros ficam sem selo.
   if (!r.ok) return;
