@@ -32,11 +32,12 @@ async function comando(geracao: number, msg: object, aoDescartar: () => void): P
 function useEstadoExt() {
   const [ext, setExt] = useState<EstadoExt | null | undefined>(undefined);
   const seq = useRef(0);
+  const suspenso = useRef(false); // login em voo: os avisos do SW (logado antes de validar) não valem
   const reler = useCallback(async (abrindo = false) => {
     const minha = ++seq.current;
     let e: EstadoExt | undefined;
     try {
-      e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao', ...(abrindo ? { abrindo: true } : {}) })) as EstadoExt | undefined;
+      e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-extensao', abrindo })) as EstadoExt | undefined;
     } catch {
       e = undefined;
     }
@@ -44,20 +45,21 @@ function useEstadoExt() {
     setExt(e && typeof e.geracao === 'number' ? e : null);
   }, []);
   const aplicar = useCallback((e: EstadoExt) => { seq.current++; setExt(e); }, []);
+  const suspender = useCallback((sim: boolean) => { suspenso.current = sim; seq.current++; }, []);
   useEffect(() => {
     const aoAviso = (m: unknown) => {
       const t = (m as { tipo?: unknown } | null)?.tipo;
-      if (t === 'publiai:conta-mudou' || t === 'publiai:ativacao') void reler();
+      if (!suspenso.current && (t === 'publiai:conta-mudou' || t === 'publiai:ativacao')) void reler();
     };
     chrome.runtime.onMessage.addListener(aoAviso);
     void reler(true);
     return () => chrome.runtime.onMessage.removeListener(aoAviso);
   }, [reler]);
-  return { ext, reler, aplicar };
+  return { ext, reler, aplicar, suspender };
 }
 
 export function App() {
-  const { ext, reler, aplicar } = useEstadoExt();
+  const { ext, reler, aplicar, suspender } = useEstadoExt();
   if (ext === undefined) {
     return <div className="esqueleto" role="status" aria-label="Carregando"><span /><span /><span /></div>;
   }
@@ -70,7 +72,7 @@ export function App() {
       </div>
     );
   }
-  if (!ext.logado) return <Entrar onEstado={aplicar} />;
+  if (!ext.logado) return <Entrar onEstado={aplicar} onEmVoo={suspender} />;
   const conta = <Conta estado={ext} onEstado={aplicar} onRefazer={() => void reler()} />;
   if (!ext.ativa) {
     const ativar = async () => {
@@ -106,6 +108,7 @@ function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => 
 
   useEffect(() => {
     let abaAtual: number | null = null;
+    let cancelado = false;
     const carregar = async (tabId: number) => {
       const e = (await chrome.runtime.sendMessage({ tipo: 'publiai:estado-da-aba', tabId }).catch(() => null)) as EstadoAba | null;
       if (tabId !== abaAtual) return; // trocou de aba no meio
@@ -114,6 +117,7 @@ function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => 
     // Sem a permissão `tabs`: o id da aba ativa vem mesmo assim.
     const lerAbaAtiva = async () => {
       const [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (cancelado) return;
       abaAtual = aba?.id ?? null;
       setEstado(undefined); // até o estado desta aba chegar, nada da anterior (com o tabId novo) aparece
       setTabId(abaAtual);
@@ -129,6 +133,8 @@ function Logado({ geracao, aoDescartar }: { geracao: number; aoDescartar: () => 
     chrome.tabs.onActivated.addListener(aoAtivar);
     void lerAbaAtiva();
     return () => {
+      cancelado = true;
+      abaAtual = null;
       chrome.runtime.onMessage.removeListener(aoMensagem);
       chrome.tabs.onActivated.removeListener(aoAtivar);
     };

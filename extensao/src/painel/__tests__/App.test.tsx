@@ -227,4 +227,64 @@ describe('App', () => {
     await avisar({ tipo: 'publiai:conta-mudou', logado: false, ativa: true, geracao: 2 });
     screen.getByRole('heading', { name: 'Entrar no PubliAI' });
   });
+
+  it('fix 1: aviso logado:true durante o login em voo não desmonta Entrar; sem_acesso fica visível', async () => {
+    let ext: EstadoExt = { ...EXT, logado: false, perfil: null };
+    let resolver!: (v: unknown) => void;
+    const { avisar } = await montar(() => ext, (m) => (m.tipo === 'publiai:entrar' ? new Promise((r) => { resolver = r; }) : undefined));
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'ana@x.com' } });
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'segredo' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })); });
+    ext = { ...EXT, geracao: 2 }; // o SW gravou as credenciais e avisa antes de validar a sessão
+    await avisar({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: 2 });
+    expect(screen.queryByLabelText('Preço de venda')).toBeNull();
+    await act(async () => {
+      ext = { ...EXT, logado: false, perfil: null, geracao: 3 };
+      resolver({ ok: false, erro: 'sem_acesso', ...ext });
+    });
+    expect(screen.getByRole('alert').textContent).toBe('Seu usuário está inativo ou sem empresa no PubliAI.');
+    expect((screen.getByLabelText('E-mail') as HTMLInputElement).value).toBe('ana@x.com');
+  });
+
+  it('fix 2: estado-extensao sempre leva o campo abrindo (true ao abrir, false nos avisos)', async () => {
+    const { sendMessage, avisar } = await montar(() => EXT);
+    await avisar({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 1 });
+    const leituras = sendMessage.mock.calls.map(([m]) => m as { tipo: string; abrindo?: boolean }).filter((m) => m.tipo === 'publiai:estado-extensao');
+    expect(leituras).toEqual([
+      { tipo: 'publiai:estado-extensao', abrindo: true },
+      { tipo: 'publiai:estado-extensao', abrindo: false },
+    ]);
+  });
+
+  it('fix 3: resposta pendente da geração 1 resolvida após a troca não mexe no DOM da geração 2', async () => {
+    let ext = EXT;
+    let resolver!: (v: unknown) => void;
+    const { avisar } = await montar(() => ext, (m) => {
+      if (m.tipo === 'publiai:chamar' && (m as { corpo?: { acao?: string } }).corpo?.acao === 'buscar_sku') return new Promise((r) => { resolver = r; });
+      return { ok: true, dados: {}, geracao: 2 };
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Este produto é meu SKU…' })); });
+    fireEvent.change(screen.getByLabelText('Código, nome ou EAN'), { target: { value: '00123' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buscar' })); });
+    ext = { ...EXT, geracao: 2 };
+    await avisar({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: 2 });
+    const antes = document.body.innerHTML;
+    await act(async () => { resolver({ ok: true, dados: { itens: [{ variacaoId: 'u-1', codigo: '00123', nome: 'Camisa', custo: 30, origem: 'nacional' }] }, geracao: 1 }); });
+    expect(screen.queryByText(/00123 · Camisa/)).toBeNull();
+    expect(document.body.innerHTML).toBe(antes);
+  });
+
+  it('fix 4: desmontar com tabs.query pendente não pede estado-da-aba', async () => {
+    let liberar!: (v: unknown) => void;
+    const sendMessage = vi.fn(async (m: { tipo: string }) => (m.tipo === 'publiai:estado-extensao' ? EXT : null));
+    vi.stubGlobal('chrome', {
+      tabs: { query: vi.fn(() => new Promise((r) => { liberar = r; })), onActivated: { addListener: vi.fn(), removeListener: vi.fn() } },
+      runtime: { sendMessage, onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
+    });
+    const { unmount } = render(<App />);
+    await act(async () => {});
+    unmount();
+    await act(async () => { liberar([{ id: 7 }]); });
+    expect(sendMessage.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:estado-da-aba')).toBe(false);
+  });
 });

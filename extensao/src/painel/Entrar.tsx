@@ -5,7 +5,7 @@ import { mensagemDeErro, type EstadoExt, type RespostaEstado } from './formato';
 
 const ERROS_DE_LOGIN = ['credenciais_invalidas', 'rede', 'sem_acesso', 'modulo_desligado'];
 
-export function Entrar({ onEstado }: { onEstado: (e: EstadoExt) => void }) {
+export function Entrar({ onEstado, onEmVoo }: { onEstado: (e: EstadoExt) => void; onEmVoo?: (sim: boolean) => void }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -15,6 +15,7 @@ export function Entrar({ onEstado }: { onEstado: (e: EstadoExt) => void }) {
     ev.preventDefault();
     if (enviando) return;
     setEnviando(true);
+    onEmVoo?.(true);
     setErro(null);
     let r: RespostaEstado | undefined;
     try {
@@ -24,6 +25,7 @@ export function Entrar({ onEstado }: { onEstado: (e: EstadoExt) => void }) {
     }
     setSenha('');
     setEnviando(false);
+    onEmVoo?.(false);
     if (r?.ok && typeof r.geracao === 'number') onEstado(r as EstadoExt);
     else setErro(r?.erro && ERROS_DE_LOGIN.includes(r.erro) ? mensagemDeErro(r.erro) : 'Não foi possível entrar. Tente de novo.');
   };
