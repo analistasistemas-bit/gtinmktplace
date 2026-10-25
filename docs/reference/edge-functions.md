@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 73 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 76 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -87,6 +87,10 @@
 | **Monitoramento / alertas** ||||
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
+| **Notificação gerencial e bot (ADR-0190)** ||||
+| notificar-carrinho | false | QStash worker (job `{orgId, chave}`) + schedule `*/5` com `{"varrer":true}` | sim (linha `notificacao_carrinho` + reserva por chave/chat; no máximo 1 mensagem por carrinho) |
+| resumo-diario | false | QStash schedule `0 11 * * *` (sem body) → 1 job `{orgId, dia}` por org | sim (chave por dia) |
+| telegram-bot | false | webhook do Telegram (header `X-Telegram-Bot-Api-Secret-Token`) + QStash worker + schedule `*/5` com `{"varrer":true}` | sim (PK `bot_id, update_id`; lease de 60 s) |
 | **Pulse (ADR-0119)** ||||
 | pulse-coletar | false | HTTP (JWT manual) ou QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_PULSE` (ADR-0173, ativo em produção desde 28/09) | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC; posse + CAS do cursor no modo fan-out) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
@@ -165,6 +169,9 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `monitorar-moderados` | `0 */6 * * *` | *(sem body)* | 3 |
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
+| `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: (a preencher no deploy) |
+| `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 3 — scheduleId: (a preencher no deploy) |
+| `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 3 — scheduleId: (a preencher no deploy) |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
@@ -2079,6 +2086,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Acesso / usuários
 
+- **notificar-carrinho / resumo-diario / telegram-bot** (ADR-0190, código pronto, deploy pendente) — notificação gerencial por carrinho, resumo diário das 08:00 BRT e comandos de leitura do bot (`/hoje /ontem /mes /top /ajuda`), todos `verify_jwt=false`. Lógica em `_shared/notificacoes/gerencial/`; importam `_shared/notificacoes/config.ts`/`categorias.ts`, então mudança ali exige redeploy das três. Secret `TELEGRAM_WEBHOOK_KEY` (só edge). **`sync-venda`** passou a chamar `registrarCarrinho` (best-effort) após pedido `paid`. **`usuarios`** ganhou a action `registrar_webhook_telegram` (admin da org: `getMe` → `telegram_bot_id`, `setWebhook` com secret HMAC, lista de comandos).
 - **usuarios** — gestão de usuários por **admin**, escopada à organização do chamador (ADR-0047 +
   ADR-0027). `verify_jwt=true`; valida que o chamador é admin ativo com `org_id`
   (`requireUser` + `profiles`) e usa `service_role`. Ações: `invite` (`auth.admin.inviteUserByEmail`

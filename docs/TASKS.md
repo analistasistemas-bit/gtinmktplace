@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Notificação gerencial de venda, resumo diário e comandos Telegram (ADR-0190) — código pronto, deploy pendente — 2026-10-25
+
+- [x] Tasks 1-9 implementadas e revisadas na branch `worktree-notificacao-gerencial-grilling` (categorias `vendas_gerencial`/`resumo_diario`, `vendas_kpis_janela`, `notificacao_carrinho` + sweeper, edges `notificar-carrinho`, `resumo-diario`, `telegram-bot`, ação `registrar_webhook_telegram`, UI de usuários). Preflight completo verde (768 arquivos / 8987 testes).
+- [x] Docs: emenda de implementação no ADR-0190, glossário (11 categorias), `edge-functions.md`, `modelo-de-dados.md`.
+- [ ] Deploy: secret `TELEGRAM_WEBHOOK_KEY`, `db push` (4 migrations `20261025013718`..`20261025030321`), edges (`notificar-carrinho`, `resumo-diario`, `telegram-bot`, `usuarios`, `sync-venda` + as que importam `_shared/notificacoes/`), schedules QStash (`0 11 * * *` resumo; `*/5` carrinho e bot com `{"varrer":true}`).
+- [ ] Validação real na DSA (comandos, resumo manual, 1 GET real de `/packs`, `CPUTime` < 1.000 ms) e conferência do diretor da Hairfly (admin com chat privado); depois ADR para Aceito com o SHA do merge.
+
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
 Recomeço do zero após engenharia reversa do Avant Pro e da JoomPulse (REA + validação no Chrome;

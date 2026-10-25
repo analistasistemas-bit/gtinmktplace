@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-10-22
+atualizado: 2026-10-25
 ---
 
 # Sprint Atual
@@ -14,6 +14,9 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **Fase de melhorias (roadmap local `docs/Roadmap/`, não versionado).** Ordem combinada com o Diego:
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
+>
+> **🟡 Notificação gerencial + resumo diário + bot Telegram ([[0190-notificacao-gerencial-de-venda-e-comandos-telegram|ADR-0190]]) — código pronto (2026-10-25).**
+> Falta deploy (secret, 4 migrations, edges `notificar-carrinho`/`resumo-diario`/`telegram-bot`, schedules QStash) e validação real na DSA; só admin, chat privado.
 >
 > **🟢 Extensão PubliAI para Chrome ([[0189-extensao-publiai-navegador|ADR-0189]]) — 4 fatias entregues (2026-10-23)**
 > (main `c92822a4`; edges `extensao` v12 e `pulse-adicionar` v18; módulo só na DSA). Painel lateral no ML: minha margem

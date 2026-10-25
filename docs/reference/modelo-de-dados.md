@@ -176,7 +176,7 @@ FK `ON DELETE SET NULL`); FK `org_id` é `ON DELETE CASCADE`. Guarda: alíquotas
 (`aliquota_nacional_pct`/`aliquota_importado_pct`, default 8/16), `aliquotas_confirmadas_em` (flag do
 LOUD — sem ela o `process-familia` bloqueia a publicação em vez de aplicar 8/16 em silêncio, ADR-0055
 refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_concorrencia_pct`,
-`ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`. `desconto_pct` ficou órfã (ADR-0162 —
+`ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`. `telegram_bot_id bigint unique` (ADR-0190): id do bot, gravado só pelo servidor (trigger `configuracoes_proteger_bot_id` barra cliente e zera o id ao trocar `telegram_bot_token`). `desconto_pct` ficou órfã (ADR-0162 —
 desconto visual descartado).
 RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre por `org_id`.
 
@@ -1174,12 +1174,18 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 Notificação in-app, espelho do alerta Telegram. *Migration `20260721094323_notificacoes_in_app.sql`
 (ADR-0085).* `user_id`, `org_id` (NOT NULL), `categoria` (mesmo enum textual de
 `profiles.telegram_categorias` — `vendas`, `perguntas`, `pos_venda`, `financeiro`, `moderacao`,
-`mensagens`, `integracao`, `pulse`, `estoque`), `texto` (mesma string formatada enviada ao Telegram, já com o
+`mensagens`, `integracao`, `pulse`, `estoque`, `vendas_gerencial`, `resumo_diario` — ADR-0190), `texto` (mesma string formatada enviada ao Telegram, já com o
 link quando houver), `lida`, `criada_em`. Gravada pelo mesmo ponto único que dispara o Telegram
 (`notificarCategoria`, `_shared/notificacoes/config.ts`) — todo assinante de uma categoria recebe,
 com ou sem Telegram configurado. RLS `select own`; escrita só do worker (`service_role`, bypassa
 RLS), mesmo padrão de `ml_mensagens`. RPC `marcar_notificacoes_lidas(p_ids uuid[] default null)`
 marca todas (default) ou um subconjunto, só do próprio usuário.
+
+### `notificacao_carrinho` (ADR-0190 D-4)
+Estado durável da notificação gerencial por carrinho. PK `(org_id, chave)` (`chave` = pack ou order); `pack_id`, `order_id`, `esperadas bigint[]` (orders do pack; nulo = composição não confirmada), `primeiro_em`, `status` (`aguardando`/`enviado`/`descartado`), `tentativas`, `atualizado_em`. Índice `(status, primeiro_em)` para a varredura `*/5`. RLS ligada sem policies (só `service_role`). Migration `20261025022826`.
+
+### `telegram_updates` (ADR-0190 D-8/D-9)
+Inbox durável dos updates do bot. PK `(bot_id, update_id)` (deduplicação), `org_id`, `payload jsonb`, `status` (`recebido`/`processando`/`respondido`/`falhou`), `tentativas`, `lease_id`, `lease_ate`, `publicado_em`, `recebido_em`, `processado_em`, `erro`. RLS sem policies. Migration `20261025030321`. RPCs `security definer`, só `service_role`: `telegram_update_reivindicar` (lease 60 s), `telegram_update_confirmar_posse`, `telegram_update_concluir`, `telegram_update_devolver` (volta a `recebido`; `falhou` após 5 tentativas) e `telegram_updates_parados` (varredura paginada por `(bot_id, update_id)`).
 
 ### `configuracoes`
 Settings por **organização** desde o E7 (era por usuário). *Migrations `20260606120614` +
@@ -1545,6 +1551,7 @@ O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só 
 | `update_lote_counters()` | Trigger: recalcula contadores de `lotes` + transição de status |
 | `current_org_id()` | **Pivô da RLS por org** (ADR-0027): `org_id` do chamador ativo (`is_active`) |
 | `vitrine_resumo(p_inicio, p_fim)` | Vitrine (ADR-0176): `jsonb` da org do chamador (`current_org_id()`) com visitas, pedidos, receita e pares (ok/total) por MLB (período e anterior), por semana e por dia da semana; conversão, rótulos e frases ("Onde agir") são calculados no front (`src/lib/vitrine.ts`). Kit virtual conta 1 pedido por `pack_id` (o ML emite 1 order por componente) e o título vem de `kits_virtuais` (migration `20261002225552_vitrine_kit_pedido`). **v3** (`20261003232750_vitrine_identificacao`): título = primeiro não-nulo entre `ml_trafego_item.titulo` → cadastro (Legacy, UP, kit, catálogo, família) → vendas; campos novos por item `variacao` (`ml_trafego_item` → cor da venda mais recente) e `permalink` (`ml_trafego_item` → `anuncios_externos`/`_itens`; catálogo UP não usa `aei.permalink`). `stable`, só `authenticated`; recusa período nulo/invertido/> 182 dias. Lê `ml_item_visitas_dia`, `ml_vendas(_itens)`, `ml_trafego_item`, `ml_ads_grupo(_item)`, `kits_virtuais` |
+| `vendas_kpis_janela(p_org, p_desde, p_ate)` | ADR-0190 D-2: `json` `{faturamento, pedidos, ticket}` de `ml_vendas` em `date_closed ∈ [desde, ate)` (status `paid`/`partially_refunded`/`refunded`; faturamento = total − cupom do vendedor; ticket half-up). Somente `service_role` |
 | `is_super_admin()` | O chamador tem `profiles.is_super_admin` |
 | `start_support_session(request_id, requester_id, now)` | Inicia uma sessão aprovada ou renova atomicamente nos 15 minutos finais; somente `service_role` |
 | `cleanup_support_audit_events()` | Remove auditoria com mais de um ano sem `legal_hold`; chamada pelo cron diário |
