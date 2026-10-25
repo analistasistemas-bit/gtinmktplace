@@ -196,6 +196,38 @@ describe('topPorLucro só com lucro positivo', () => {
   });
 });
 
+describe('contarAtencao — prejuízos nomeados', () => {
+  const vermelho = (patch: Partial<ResultadoItem> = {}) =>
+    ri({ liquido: 40, imposto: 4, custo: 40, lucro: -4.1, ...patch });
+  const verde = (patch: Partial<ResultadoItem> = {}) => ri({ lucro: 10, ...patch });
+
+  it('agrega por SKU somando só as vendas vermelhas', () => {
+    const r = contarAtencao([vermelho({ orderId: 1 }), verde({ orderId: 2 })], new Map());
+    expect(r.prejuizos).toEqual([{ codigo: 'SKU1', titulo: 'Produto 1', valor: -4.1, vendas: 1 }]);
+  });
+
+  it('sem código agrega pelo título', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: null, titulo: 'Sem SKU', lucro: -2 }),
+      vermelho({ orderId: 2, codigo: null, titulo: 'Sem SKU', lucro: -3 }),
+    ], new Map());
+    expect(r.prejuizos).toEqual([{ codigo: null, titulo: 'Sem SKU', valor: -5, vendas: 2 }]);
+  });
+
+  it('ordena pelo maior prejuízo', () => {
+    const r = contarAtencao([
+      vermelho({ orderId: 1, codigo: 'A', lucro: -1 }),
+      vermelho({ orderId: 2, codigo: 'B', lucro: -9 }),
+    ], new Map());
+    expect(r.prejuizos.map((p) => p.codigo)).toEqual(['B', 'A']);
+  });
+
+  it('contagem prejuizo inalterada', () => {
+    const r = contarAtencao([vermelho({ orderId: 1 }), vermelho({ orderId: 2 }), verde({ orderId: 3 })], new Map());
+    expect(r.prejuizo).toBe(2);
+  });
+});
+
 describe('imposto indisponível por item', () => {
   // A casa no catálogo (origem nacional); B tem custo congelado mas não está no catálogo → sem origem.
   const v = venda({ uf: 'SP', liquido: 80, itens: [

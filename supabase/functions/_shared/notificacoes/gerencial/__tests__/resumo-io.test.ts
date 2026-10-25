@@ -121,7 +121,7 @@ describe('montarDadosResumo', () => {
     expect(d.dia).toBe(dia);
     expect(d.apuradoAte).toBe(horaBrt(AGORA));
     expect(d.devolucoes).toEqual({ estornado: 0, prazoProximo: 0 });
-    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0 });
+    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] });
 
     const jm = janelasMesFechado(dia);
     expect(m.lerKpis).toHaveBeenCalledWith(admin, ORG, janelaDia(dia));

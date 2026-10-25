@@ -180,11 +180,14 @@ export function topPorLucro(itens: ResultadoItem[], n: number): { titulo: string
     .slice(0, n);
 }
 
-/** Itens que pedem atenção: abaixo do piso, prejuízo (semáforo ADR-0020 por unidade) e sem custo. */
+export interface PrejuizoSku { codigo: string | null; titulo: string | null; valor: number; vendas: number }
+
+/** Itens que pedem atenção: abaixo do piso, prejuízo (semáforo ADR-0020 por unidade) e sem custo. `prejuizos` nomeia os vermelhos por SKU (ou título). */
 export function contarAtencao(
   itens: ResultadoItem[], pisoPorCodigo: Map<string, number>,
-): { abaixoMinimo: number; prejuizo: number; semCusto: number } {
+): { abaixoMinimo: number; prejuizo: number; semCusto: number; prejuizos: PrejuizoSku[] } {
   let abaixoMinimo = 0, prejuizo = 0, semCusto = 0;
+  const porChave = new Map<string, { codigo: string | null; titulo: string | null; valor: number; pedidos: Set<number> }>();
   for (const it of itens) {
     if (!it.faturavel) continue;
     if (it.custo == null) { semCusto++; continue; }
@@ -192,8 +195,17 @@ export function contarAtencao(
     // ponytail: sem piso cadastrado, piso 0 — só o prejuízo conta (liquido ≥ 0 nunca é "abaixo").
     const piso = (it.codigo != null ? pisoPorCodigo.get(it.codigo) : undefined) ?? 0;
     const s = calcularSemaforo((it.liquido - it.imposto) / it.quantidade, piso, it.custo / it.quantidade);
-    if (s === 'vermelho') prejuizo++;
-    else if (s === 'amarelo') abaixoMinimo++;
+    if (s === 'vermelho') {
+      prejuizo++;
+      const chave = it.codigo ?? it.titulo ?? '';
+      const acc = porChave.get(chave) ?? { codigo: it.codigo, titulo: it.titulo, valor: 0, pedidos: new Set<number>() };
+      acc.valor += it.lucro;
+      acc.pedidos.add(it.orderId);
+      porChave.set(chave, acc);
+    } else if (s === 'amarelo') abaixoMinimo++;
   }
-  return { abaixoMinimo, prejuizo, semCusto };
+  const prejuizos = [...porChave.values()]
+    .map((p) => ({ codigo: p.codigo, titulo: p.titulo, valor: round2(p.valor), vendas: p.pedidos.size }))
+    .sort((a, b) => a.valor - b.valor);
+  return { abaixoMinimo, prejuizo, semCusto, prejuizos };
 }
