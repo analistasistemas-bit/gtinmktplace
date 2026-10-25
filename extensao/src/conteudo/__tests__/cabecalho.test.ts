@@ -26,6 +26,7 @@ const item = (texto: string) => [...raiz().querySelectorAll<HTMLElement>('[role^
 const abrir = async () => { icone().click(); await tick(); };
 const montar = async (e: Est) => {
   estado = e;
+  parar();
   document.body.innerHTML = FIXTURE;
   parar = iniciar(document, 'open');
   await tick();
@@ -91,6 +92,65 @@ describe('encaixe', () => {
     await tick();
     await tick();
     expect(document.querySelectorAll('#publiai-cabecalho')).toHaveLength(1);
+  });
+});
+
+describe('observação do encaixe (fix round 1)', () => {
+  const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  it('sem encaixe → desiste após o prazo, sem erro', async () => {
+    estado = LOGADO;
+    document.body.innerHTML = '<main>sem cabeçalho</main>';
+    parar = iniciar(document, 'open', 30);
+    await espera(80);
+    document.body.innerHTML = FIXTURE;
+    await espera(20);
+    expect(host()).toBeNull();
+  });
+  it('sem encaixe dentro do prazo → insere quando o cabeçalho aparece', async () => {
+    estado = LOGADO;
+    document.body.innerHTML = '<main>sem cabeçalho</main>';
+    parar = iniciar(document, 'open', 500);
+    document.body.innerHTML = FIXTURE;
+    await espera(20);
+    expect(host()).not.toBeNull();
+  });
+  it('inserido → mutações fora do cabeçalho não chamam a busca', async () => {
+    await montar(LOGADO);
+    const busca = vi.spyOn(document, 'querySelector');
+    const main = document.createElement('main');
+    document.body.append(main);
+    await tick();
+    for (let i = 0; i < 5; i++) main.append(document.createElement('div'));
+    await tick();
+    expect(busca).not.toHaveBeenCalled();
+    busca.mockRestore();
+  });
+  it('página de bloqueio não observa nem insere', async () => {
+    history.pushState({}, '', '/gz/account-verification');
+    estado = LOGADO;
+    parar = iniciar(document, 'open', 500);
+    const busca = vi.spyOn(document, 'querySelector');
+    document.body.innerHTML = FIXTURE;
+    await tick();
+    expect(host()).toBeNull();
+    expect(busca).not.toHaveBeenCalled();
+    busca.mockRestore();
+  });
+  it('ícone criado por inserirIcone antes do iniciar também é ligado', async () => {
+    estado = LOGADO;
+    document.body.innerHTML = FIXTURE;
+    inserirIcone(document, 'open');
+    parar = iniciar(document, 'open');
+    await tick();
+    await abrir();
+    expect(icone().getAttribute('aria-expanded')).toBe('true');
+    expect(host()!.dataset.estado).toBe('ativo');
+  });
+  it('antes da 1ª resposta do SW o menu diz Verificando… e o ponto é neutro', () => {
+    document.body.innerHTML = FIXTURE;
+    inserirIcone(document, 'open');
+    expect(menu().textContent).toContain('Verificando');
+    expect(raiz().querySelector('.ponto')!.className).toContain('neutro');
   });
 });
 

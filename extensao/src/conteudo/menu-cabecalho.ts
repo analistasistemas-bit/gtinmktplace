@@ -14,7 +14,7 @@ export const CSS = `
   button.icone svg{width:20px;height:20px}
   :host([data-estado="desativado"]) button.icone svg{filter:grayscale(1);opacity:.55}
   .ponto{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;border:2px solid #fff}
-  .verde{background:#1f9d55}.laranja{background:#f08a24}.cinza{background:#9a9aa6}
+  .verde{background:#1f9d55}.laranja{background:#f08a24}.cinza{background:#9a9aa6}.neutro{background:#d4d4de}
   [role=menu]{position:absolute;right:0;top:40px;z-index:2147483000;width:268px;padding:6px 0;background:#fff;border-radius:12px;box-shadow:0 8px 28px rgba(20,18,50,.22),0 0 0 1px rgba(0,0,0,.08);text-align:left}
   [role=menu][hidden]{display:none}
   .topo{padding:10px 16px 12px;border-bottom:1px solid #ececf2}

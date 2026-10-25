@@ -19,8 +19,10 @@ const SEM_CABECALHO = /^\/(checkout|gz|jms|captcha)(\/|$)/;
 type Partes = { icone: HTMLButtonElement; ponto: HTMLElement; menu: HTMLElement };
 const PARTES = new WeakMap<HTMLElement, Partes>(); // o shadow root é fechado: só este módulo alcança as partes
 
+const paginaSemCabecalho = (doc: Document) => SEM_CABECALHO.test(doc.location?.pathname ?? '');
+
 export function localizarEncaixe(doc: Document): Element | null {
-  if (SEM_CABECALHO.test(doc.location?.pathname ?? '')) return null;
+  if (paginaSemCabecalho(doc)) return null;
   return doc.querySelector(SELETOR_CARRINHO);
 }
 
@@ -49,6 +51,8 @@ export function inserirIcone(doc: Document, modo: ShadowRootMode = 'closed'): HT
   menu.setAttribute('role', 'menu');
   menu.setAttribute('aria-label', 'PubliAI');
   menu.hidden = true;
+  ponto.className = 'ponto neutro'; // até a 1ª resposta do SW
+  preencherMenu(menu, null, doc);
   raiz.append(estilo, icone, menu);
   PARTES.set(host, { icone, ponto, menu });
   cart.after(host);
@@ -60,11 +64,12 @@ const ehEstado = (r: unknown): r is EstadoExt =>
   typeof r === 'object' && r !== null && typeof (r as EstadoExt).logado === 'boolean' && typeof (r as EstadoExt).ativa === 'boolean';
 
 /** Liga o ícone ao SW e mantém a inserção quando o ML reconstrói o cabeçalho. Devolve `parar`. */
-export function iniciar(doc: Document, modo: ShadowRootMode = 'closed'): () => void {
+export function iniciar(doc: Document, modo: ShadowRootMode = 'closed', prazoBuscaMs = 15000): () => void {
   let vivo = true;
   let estado: EstadoExt | null = null;
   let seq = 0;
   let host: HTMLElement | null = null;
+  const ligados = new WeakSet<HTMLElement>();
 
   // Erros de contexto invalidado (extensão recarregada) ficam silenciosos.
   const enviar = async (msg: object): Promise<unknown> => {
@@ -128,26 +133,32 @@ export function iniciar(doc: Document, modo: ShadowRootMode = 'closed'): () => v
     });
   }
 
+  // Busca do encaixe: só até inserir ou até o prazo (sem encaixe, desiste sem erro). Depois de inserir, só os ancestrais diretos
+  // do carrinho (childList, sem subtree): o ML trocando o cabeçalho tira o host do DOM e a busca recomeça uma vez.
+  const busca = new MutationObserver(() => tentar());
+  const ancestrais = new MutationObserver(() => { if (!host?.isConnected) tentar(); });
+  let prazo: ReturnType<typeof setTimeout> | undefined;
+  const pararBusca = () => { busca.disconnect(); clearTimeout(prazo); };
+
   function tentar() {
-    if (!vivo || host?.isConnected) return;
-    const antes = doc.getElementById(ID);
+    if (!vivo || host?.isConnected || paginaSemCabecalho(doc)) return;
     const h = inserirIcone(doc, modo);
-    if (!h) return;
+    if (!h) {
+      if (!prazo) {
+        busca.observe(doc.documentElement, { childList: true, subtree: true });
+        prazo = setTimeout(pararBusca, prazoBuscaMs);
+      }
+      return;
+    }
+    pararBusca();
+    prazo = undefined;
     host = h;
-    if (h !== antes) ligar(h);
+    if (!ligados.has(h)) { ligar(h); ligados.add(h); }
+    ancestrais.disconnect();
+    for (const n of [h.parentElement, h.closest('header'), h.closest('header')?.parentElement]) if (n) ancestrais.observe(n, { childList: true });
     if (estado) aplicar(estado);
     void ler(false);
   }
-
-  // ponytail: observer permanente, mas o gatilho é O(1) (host ainda conectado?) e coalescido num timeout por rajada.
-  // Troca por observar só o pai do carrinho se o ML ficar barulhento.
-  let agendado = false;
-  const observer = new MutationObserver(() => {
-    if (agendado || host?.isConnected) return;
-    agendado = true;
-    setTimeout(() => { agendado = false; tentar(); }, 0);
-  });
-  observer.observe(doc.documentElement, { childList: true, subtree: true });
 
   const aoTeclar = (ev: KeyboardEvent) => {
     const p = partes();
@@ -157,7 +168,7 @@ export function iniciar(doc: Document, modo: ShadowRootMode = 'closed'): () => v
     const p = partes();
     if (p && !p.menu.hidden && host && !ev.composedPath().includes(host)) fechar();
   };
-  const aoNavegar = () => tentar();
+  const aoNavegar = () => { prazo = undefined; tentar(); };
   doc.addEventListener('keydown', aoTeclar);
   doc.addEventListener('click', aoClicar);
   doc.defaultView?.addEventListener('popstate', aoNavegar);
@@ -169,7 +180,8 @@ export function iniciar(doc: Document, modo: ShadowRootMode = 'closed'): () => v
 
   return () => {
     vivo = false;
-    observer.disconnect();
+    pararBusca();
+    ancestrais.disconnect();
     doc.removeEventListener('keydown', aoTeclar);
     doc.removeEventListener('click', aoClicar);
     doc.defaultView?.removeEventListener('popstate', aoNavegar);
