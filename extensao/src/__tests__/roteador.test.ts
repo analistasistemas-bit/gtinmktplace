@@ -13,9 +13,23 @@ const fetchFalso = vi.fn();
 // Última chamada à edge (o GET do HTML do anúncio para a data de criação roda em paralelo/depois).
 const ultimaEdge = () => fetchFalso.mock.calls.filter(([u]) => !String(u).startsWith('https://produto.')).at(-1)!;
 
+// Edge no protocolo 2: o 200 de fetchFalso volta no envelope com a identidade esperada (a edge real recusa com 409
+// se ela divergir; esse caminho é testado em api.test.ts).
+async function edgeProtocolo2(u: string, init?: RequestInit): Promise<Response> {
+  const r: Response = await fetchFalso(u, init);
+  if (!String(u).endsWith('/functions/v1/extensao') || r.status !== 200) return r;
+  const texto = await r.text();
+  const identidade = JSON.parse(String(init?.body)).identidadeEsperada;
+  try {
+    return new Response(JSON.stringify({ identidade, dados: JSON.parse(texto) }), { status: 200 });
+  } catch {
+    return new Response(texto, { status: 200 });
+  }
+}
+
 beforeEach(async () => {
   instalarChromeFalso();
-  vi.stubGlobal('fetch', fetchFalso);
+  vi.stubGlobal('fetch', edgeProtocolo2);
   vi.stubEnv('VITE_SUPABASE_URL', 'https://proj.supabase.co');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-publica');
   fetchFalso.mockReset();

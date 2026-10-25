@@ -50,6 +50,13 @@ export async function registrarEstado(tabId: number, estado: EstadoGuardado): Pr
   await chrome.storage.session.set({ [chaveEstado(tabId)]: estado });
 }
 
+/** Geração global da sessão (sobe em login, saída, troca de identidade e fim de suporte). Quem pede algo lê antes
+ *  e depois: mudou no meio → a resposta é de outra sessão e é descartada. */
+export async function geracaoAtual(): Promise<number> {
+  const v = (await chrome.storage.session.get(GERACAO_SESSAO))[GERACAO_SESSAO];
+  return typeof v === 'number' ? v : 0;
+}
+
 /** Geração atual e o estado dela, numa leitura só. Geração ausente = nenhuma navegação vista ainda. */
 export async function lerAba(tabId: number): Promise<{ geracao: string | null; sessao: number; estado: { entrada: object; resposta: unknown; observado?: object } | null }> {
   const r = await chrome.storage.session.get([chaveEstado(tabId), chaveGeracao(tabId), GERACAO_SESSAO]);
