@@ -2,9 +2,10 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App, Painel } from '../App';
+import { limparSimulacoes } from '../MinhaMargem';
 import type { EntradaAnuncio, EstadoAba, EstadoExt, RespostaAnuncio } from '../formato';
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); limparSimulacoes(); });
 
 const ENTRADA: EntradaAnuncio = { mlItemId: 'MLB1', sellerId: '9', catalogProductId: 'MLB77', categoriaId: 'MLB5', preco: 100, eanDaBusca: '7899941205918' };
 const INDISP = { estado: 'indisponivel', motivo: 'x' } as const;
@@ -203,6 +204,17 @@ describe('App', () => {
     ext = { ...EXT, geracao: 2 }; // troca de conta/pausa no SW
     await avisar({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: 2 });
     expect((screen.getByLabelText('Preço de venda') as HTMLInputElement).value).toBe('100');
+  });
+
+  it('troca de conta/org (geração nova) descarta custo e origem digitados: não vazam para outra org', async () => {
+    let ext = EXT;
+    const { avisar } = await montar(() => ext);
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
+    fireEvent.click(screen.getByLabelText('Nacional'));
+    ext = { ...EXT, geracao: 2, perfil: { nome: 'Ana', orgNome: 'Loja Y' } };
+    await avisar({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: 2 });
+    expect((screen.getByLabelText('Custo do pacote') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Nacional') as HTMLInputElement).checked).toBe(false);
   });
 
   it('geracao_antiga numa chamada: relê o estado e remonta', async () => {

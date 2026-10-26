@@ -1,7 +1,7 @@
 // Painel lateral da Extensão PubliAI (ADR-0189 D-6/D-16). Mostra a última análise que o content
 // script fez na aba ativa (guardada no SW) e simula preço/custo a partir dela.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MinhaMargem } from './MinhaMargem';
+import { limparSimulacoes, MinhaMargem } from './MinhaMargem';
 import { Busca } from './Busca';
 import { Catalogo } from './Catalogo';
 import type { EstadoBusca } from '../busca-sw';
@@ -115,6 +115,8 @@ function Logado({ geracao, aoDescartar, vigente }: { geracao: number; aoDescarta
   // undefined = carregando; null = aba sem análise.
   const [estado, setEstado] = useState<EstadoAba | null | undefined>(undefined);
   const [tabId, setTabId] = useState<number | null>(null);
+  // Logado remonta a cada geração (troca de conta/org, logout): a simulação digitada não atravessa sessões.
+  useEffect(() => limparSimulacoes, []);
 
   useEffect(() => {
     let abaAtual: number | null = null;

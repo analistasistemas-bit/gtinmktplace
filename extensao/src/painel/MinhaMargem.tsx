@@ -27,7 +27,7 @@ interface Props {
 // ponytail: em memória — fechar o painel zera; chrome.storage.session se precisar sobreviver a isso.
 interface Simulacao { custoTxt: string; origem: Origem | null; unidades: { sku: string | null; anuncio: string; noSku: string } }
 const simulacoes = new Map<string, Simulacao>();
-/** Só para testes. */
+/** Fim da sessão do painel (logout, troca de conta/org): custo digitado numa org não vale em outra. */
 export const limparSimulacoes = () => simulacoes.clear();
 
 /** Texto do input → número, ou null quando vazio/inválido (nunca NaN na tela). */
@@ -44,7 +44,11 @@ export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido, 
   // Unidades confirmadas pelo operador valem só para o SKU em que foram digitadas (troca de vínculo → vazias).
   const [unidades, setUnidades] = useState(salvo?.unidades ?? { sku: dados.custo.variacaoId, anuncio: '', noSku: '' });
   const [origem, setOrigem] = useState<Origem | null>(salvo?.origem ?? null);
-  useEffect(() => { simulacoes.set(entrada.mlItemId, { custoTxt, origem, unidades }); }, [entrada.mlItemId, custoTxt, origem, unidades]);
+  useEffect(() => {
+    const vazio = custoTxt === '' && origem === null && unidades.anuncio === '' && unidades.noSku === '';
+    if (vazio) simulacoes.delete(entrada.mlItemId);
+    else simulacoes.set(entrada.mlItemId, { custoTxt, origem, unidades });
+  }, [entrada.mlItemId, custoTxt, origem, unidades]);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const base = useId();
