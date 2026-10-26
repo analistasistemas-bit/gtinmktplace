@@ -3,9 +3,9 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EntradaAnuncio, Resposta, RespostaAnuncio } from '../formato';
-import { MinhaMargem } from '../MinhaMargem';
+import { limparSimulacoes, MinhaMargem } from '../MinhaMargem';
 
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); limparSimulacoes(); });
 
 const ENTRADA: EntradaAnuncio = { mlItemId: 'MLB1', sellerId: '9', catalogProductId: 'MLB77', categoriaId: 'MLB5', preco: 100, eanDaBusca: null };
 
@@ -32,6 +32,28 @@ const montar = (dados: RespostaAnuncio, analisar = vi.fn()) =>
 const tipo = (nome: string) => within(screen.getByRole('region', { name: nome }));
 
 describe('MinhaMargem', () => {
+  it('trocar de aba e voltar (desmonta e remonta) mantém custo e origem digitados do mesmo anúncio', () => {
+    const r = resposta();
+    const { unmount } = montar(r);
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '38.31' } });
+    fireEvent.click(screen.getByLabelText('Importado'));
+    unmount(); // o App mostra o esqueleto/outro anúncio ao trocar de aba
+    montar(r);
+    expect((screen.getByLabelText('Custo do pacote') as HTMLInputElement).value).toBe('38.31');
+    expect((screen.getByLabelText('Importado') as HTMLInputElement).checked).toBe(true);
+    tipo('Clássico'); // voltou calculando, sem pedir de novo
+  });
+
+  it('outro anúncio começa vazio (a simulação é por anúncio)', () => {
+    const { unmount } = montar(resposta());
+    fireEvent.change(screen.getByLabelText('Custo do pacote'), { target: { value: '30' } });
+    fireEvent.click(screen.getByLabelText('Nacional'));
+    unmount();
+    render(<MinhaMargem entrada={{ ...ENTRADA, mlItemId: 'MLB2' }} dados={resposta()} analisar={vi.fn()} onDados={() => {}} />);
+    expect((screen.getByLabelText('Custo do pacote') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Nacional') as HTMLInputElement).checked).toBe(false);
+  });
+
   it('tipo indisponível mostra o motivo', () => {
     const r = resposta({
       custo: { fonte: 'catalogo', variacaoId: 'vA', codigo: '00123', origem: 'nacional', unidadesPorPacote: 1, unidadesSku: 1, custoSku: 30, fator: 1, faltaUnidades: null, custoPacote: { estado: 'ok', valor: 30 } },

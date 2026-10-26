@@ -171,7 +171,7 @@ function Logado({ geracao, aoDescartar, vigente }: { geracao: number; aoDescarta
   }
   // O SW refaz a análise da aba e guarda o resultado: trocar de aba e voltar não traz o estado velho.
   const reanalisarAba: Reanalisar = () => comando(geracao, { tipo: 'publiai:reanalisar-aba', tabId }, aoDescartar, vigente) as never;
-  // Remonta (zera preço/custo digitados) só quando muda o anúncio; mesmo anúncio mantém a simulação.
+  // Remonta só quando muda o anúncio (o preço volta ao da página); custo, origem e unidades voltam do cache por anúncio do MinhaMargem.
   // Tipo de página entra na chave: em /p/ o item é o da buy box, o mesmo id do anúncio dele (o simulador recomeça).
   return <Painel key={estado ? `${estado.entrada.mlItemId}:${(estado.entrada as { tipoPagina?: string }).tipoPagina ?? ''}` : 'vazio'} estado={estado} chamar={chamarViaSw} reanalisarAba={reanalisarAba} />;
 }

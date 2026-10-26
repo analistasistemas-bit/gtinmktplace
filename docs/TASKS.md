@@ -20,6 +20,11 @@
 
 ## Extensão PubliAI (navegador) — Fatia 1 + Quanto vende entregues — 2026-10-22
 
+**0.3.2 — correção (2026-10-26):**
+- [x] Painel: custo, origem e unidades digitados na "Minha margem" sumiam ao trocar de aba e voltar (o painel é um só
+  para todas as abas e desmonta o simulador). Agora ficam guardados por anúncio enquanto o painel estiver aberto; o
+  preço volta ao da página. `manifest` 0.3.2 (inclui a 0.3.1). Zip `~/Desktop/IA/publiai-extensao-0.3.2.zip` → Web Store.
+
 **0.3.1 — auditoria × Avant (emenda ADR-0189 de 2026-10-25) — na branch `worktree-extensao-auditoria-avant`:**
 - [x] Painel: preço no Pix com "simular", rótulo "tipo deste anúncio", "+50 disponíveis" na Qualidade e frete cotado da
   oferta (CEP 01310-100, informação fora da margem); `manifest` 0.3.1.

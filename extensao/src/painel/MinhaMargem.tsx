@@ -22,6 +22,14 @@ interface Props {
   tipoAnuncio?: 'gold_pro' | 'gold_special' | null;
 }
 
+// O painel é um só para todas as abas: trocar de aba desmonta este componente e o estado digitado sumia.
+// Custo, origem e unidades ficam guardados por anúncio enquanto o painel estiver aberto; o preço volta ao da página.
+// ponytail: em memória — fechar o painel zera; chrome.storage.session se precisar sobreviver a isso.
+interface Simulacao { custoTxt: string; origem: Origem | null; unidades: { sku: string | null; anuncio: string; noSku: string } }
+const simulacoes = new Map<string, Simulacao>();
+/** Só para testes. */
+export const limparSimulacoes = () => simulacoes.clear();
+
 /** Texto do input → número, ou null quando vazio/inválido (nunca NaN na tela). */
 function numero(txt: string): number | null {
   if (txt.trim() === '') return null;
@@ -31,10 +39,12 @@ function numero(txt: string): number | null {
 
 export function MinhaMargem({ entrada, dados, analisar, onDados, precoSugerido, precoPix, tipoAnuncio }: Props) {
   const [precoTxt, setPrecoTxt] = useState(String(entrada.preco));
-  const [custoTxt, setCustoTxt] = useState('');
+  const salvo = simulacoes.get(entrada.mlItemId);
+  const [custoTxt, setCustoTxt] = useState(salvo?.custoTxt ?? '');
   // Unidades confirmadas pelo operador valem só para o SKU em que foram digitadas (troca de vínculo → vazias).
-  const [unidades, setUnidades] = useState({ sku: dados.custo.variacaoId, anuncio: '', noSku: '' });
-  const [origem, setOrigem] = useState<Origem | null>(null);
+  const [unidades, setUnidades] = useState(salvo?.unidades ?? { sku: dados.custo.variacaoId, anuncio: '', noSku: '' });
+  const [origem, setOrigem] = useState<Origem | null>(salvo?.origem ?? null);
+  useEffect(() => { simulacoes.set(entrada.mlItemId, { custoTxt, origem, unidades }); }, [entrada.mlItemId, custoTxt, origem, unidades]);
   const [erro, setErro] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const base = useId();
