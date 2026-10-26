@@ -17,11 +17,6 @@ export function diaBrt(instante: Date): string {
   return ymd(new Date(instante.getTime() - BRT_MS));
 }
 
-/** `HH:MM` do instante em BRT. */
-export function horaBrt(instante: Date): string {
-  return new Date(instante.getTime() - BRT_MS).toISOString().slice(11, 16);
-}
-
 export function janelaDia(dia: string): JanelaIso {
   const [a, m, d] = dia.split('-').map(Number);
   return { desde: inicioDia(dia), ate: inicioDia(ymd(utc(a, m - 1, d + 1))) };

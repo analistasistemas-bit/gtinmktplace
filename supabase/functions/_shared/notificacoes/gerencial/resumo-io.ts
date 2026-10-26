@@ -9,12 +9,12 @@ import { exigirModulo } from '../../produto/modulo.ts';
 import { selecionarAlertas, type PromoAlerta } from '../../promocoes/alertas.ts';
 import { carregarContexto, lerPaginas, lerVendasJanela, VolumeAcimaDoLimite, type MetricsDb } from '../../platform-admin/metrics-repository.ts';
 import { abertasComPrazoAte, estornadoNoPeriodo, lerDevolucoesDoResumo } from './devolucoes.ts';
-import { diaBrt, horaBrt, janela30Dias, janelaDia, janelasMesFechado } from './janelas.ts';
+import { diaBrt, janela30Dias, janelaDia, janelasMesFechado } from './janelas.ts';
 import { selecionarEstoqueAcabando, type CatalogoEstoque, type ItemEstoque } from './estoque-acabando.ts';
 import { nomeSku } from './nome-sku.ts';
 import { lerKpis } from './kpis.ts';
 import { montarResumoDiario, type DadosResumo } from './mensagens.ts';
-import { contarAtencao, lucroDoPeriodo, resultadoPorItem, topPorLucro } from './resultado.ts';
+import { contarAtencao, lucroDoPeriodo, resultadoPorItem, topPorLucro, type PrejuizoSku } from './resultado.ts';
 
 type Consulta = ReturnType<MetricsDb['from']>;
 const LOTE = 200;
@@ -159,10 +159,10 @@ export async function montarDadosResumo(admin: SupabaseClient, orgId: string, di
   ]);
   const atencao = contarAtencao(itens, pisos);
   const j30 = await dados30;
-  // Um lote só de catálogo (estoque + nomes do prejuízo); falha → estoque null e nomes caem no título/código.
+  // Um lote só de catálogo (estoque + nomes do prejuízo e do abaixo do mínimo); falha → estoque null e nomes caem no título/código.
   let catalogo: Map<string, CatalogoEstoque> | null = null;
   try {
-    const cods = new Set([...(j30?.itens ?? []).map((it) => it.codigo), ...atencao.prejuizos.map((p) => p.codigo)]);
+    const cods = new Set([...(j30?.itens ?? []).map((it) => it.codigo), ...atencao.prejuizos.map((p) => p.codigo), ...atencao.abaixos.map((p) => p.codigo)]);
     catalogo = await lerCatalogoEstoque(admin, orgId, [...cods].filter((c): c is string => !!c));
   } catch (e) {
     console.error('resumo_estoque_indisponivel', 'catalogo', e);
@@ -175,22 +175,24 @@ export async function montarDadosResumo(admin: SupabaseClient, orgId: string, di
       console.error('resumo_estoque_indisponivel', 'selecao', e);
     }
   }
-  const prejuizos = atencao.prejuizos.map((p) => {
+  const nomear = (p: PrejuizoSku) => {
     const cat = p.codigo != null ? catalogo?.get(p.codigo) : undefined;
     let nome: string | null = null;
     if (cat) {
       try { nome = nomeSku({ codigo: cat.codigo, titulo: cat.nome, nomeFamilia: cat.nomeFamilia }); } catch (e) {
-        console.error('resumo_secao_falhou', 'nome_prejuizo', e);
+        console.error('resumo_secao_falhou', 'nome_atencao', e);
       }
     }
     nome ??= p.titulo ?? p.codigo ?? 'item sem código';
     return { nome, valor: p.valor, vendas: p.vendas };
-  });
+  };
+  const prejuizos = atencao.prejuizos.map(nomear);
+  const abaixos = atencao.abaixos.map(nomear);
   return {
     dia, ontem: kOntem, lucroOntem: lucroDoPeriodo(itens, ctx.configOk), mes: kMes, anterior: kAnterior,
     rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior,
     top: topPorLucro(itens, 3),
-    atencao: { abaixoMinimo: atencao.abaixoMinimo, prejuizo: atencao.prejuizo, semCusto: atencao.semCusto, prejuizos },
+    atencao: { abaixoMinimo: atencao.abaixoMinimo, prejuizo: atencao.prejuizo, semCusto: atencao.semCusto, prejuizos, abaixos },
     estoque,
     devolucoes: {
       estornado: estornadoNoPeriodo(devs, ontem),
@@ -198,7 +200,6 @@ export async function montarDadosResumo(admin: SupabaseClient, orgId: string, di
     },
     promocoes,
     freteSubiu,
-    apuradoAte: horaBrt(agora),
   };
 }
 

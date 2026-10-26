@@ -103,13 +103,16 @@ export interface DadosResumo {
   dia: string; ontem: Kpis; lucroOntem: LucroPeriodo; mes: Kpis; anterior: Kpis;
   rotuloMes: string; rotuloAnterior: string;
   top: { titulo: string; lucro: number }[];
-  atencao: { abaixoMinimo: number; prejuizo: number; semCusto: number; prejuizos: { nome: string; valor: number; vendas: number }[] };
+  atencao: {
+    abaixoMinimo: number; prejuizo: number; semCusto: number;
+    prejuizos: { nome: string; valor: number; vendas: number }[];
+    abaixos: { nome: string; valor: number; vendas: number }[];
+  };
   /** null = seção indisponível (falha de leitura/catálogo). */
   estoque: ItemEstoque[] | null;
   devolucoes: { estornado: number; prazoProximo: number };
   promocoes: { prejuizo: number; prazo: number } | null;
   freteSubiu: string[];
-  apuradoAte: string;
 }
 
 const itens = (xs: (string | null)[]): string[] => xs.filter((x): x is string => !!x).map((x) => `• ${x}`);
@@ -134,6 +137,8 @@ export function montarResumoDiario(d: DadosResumo): string {
   };
   const prejuizos = isolar('prejuizos', [] as string[], () => limitar(a.prejuizos.map((x) =>
     `• Prejuízo: ${encurtar(x.nome)} — ${brl(x.valor)} (${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'})`), ' com prejuízo'));
+  const abaixos = isolar('abaixos', [] as string[], () => limitar(a.abaixos.map((x) =>
+    `• Abaixo do mínimo: ${encurtar(x.nome)} (${x.vendas} ${x.vendas === 1 ? 'venda' : 'vendas'})`), ' abaixo do mínimo'));
   const blocoEstoque = isolar('estoque', [] as string[], () => secao('📦 Estoque acabando', limitar((d.estoque ?? []).map(linhaEstoque))));
   const k: KpisPeriodo = { hoje: d.ontem, mes: d.mes, anterior: d.anterior, rotuloMes: d.rotuloMes, rotuloAnterior: d.rotuloAnterior };
   return blocos(
@@ -145,7 +150,7 @@ export function montarResumoDiario(d: DadosResumo): string {
     secao('⚠️ Atenção', [
       // Sem lista nomeada (não deveria ocorrer) cai na contagem.
       ...(prejuizos.length ? prejuizos : itens([a.prejuizo > 0 ? `${a.prejuizo} com prejuízo` : null])),
-      ...itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null]),
+      ...(abaixos.length ? abaixos : itens([a.abaixoMinimo > 0 ? `${a.abaixoMinimo} abaixo do mínimo` : null])),
       ...itens([a.semCusto > 0 ? `${a.semCusto} sem custo` : null]),
     ]),
     secao('↩️ Devoluções', itens([
@@ -157,7 +162,6 @@ export function montarResumoDiario(d: DadosResumo): string {
       p.prazo > 0 ? `${p.prazo} ${p.prazo === 1 ? 'oportunidade' : 'oportunidades'} com adesão vencendo` : null,
     ]) : []),
     secao('🚚 Frete subiu', itens(d.freteSubiu.map((t) => encurtar(t)))),
-    [...linhasCobertura(d.lucroOntem), `Apurado às ${d.apuradoAte}`],
   );
 }
 

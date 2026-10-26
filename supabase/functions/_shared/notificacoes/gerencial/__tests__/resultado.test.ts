@@ -196,6 +196,27 @@ describe('topPorLucro só com lucro positivo', () => {
   });
 });
 
+describe('contarAtencao — abaixo do mínimo nomeado', () => {
+  // líquido 54 ≥ custo 40 mas < piso 100 → amarelo
+  const amarelo = (patch: Partial<ResultadoItem> = {}) => ri({ liquido: 60, imposto: 6, custo: 40, lucro: 14, ...patch });
+  const pisos = new Map([['SKU1', 100], ['SKU2', 100]]);
+
+  it('agrega por SKU com nº de vendas e mantém a contagem', () => {
+    const r = contarAtencao([amarelo({ orderId: 1 }), amarelo({ orderId: 2 }), amarelo({ orderId: 3, codigo: 'SKU2', titulo: 'Produto 2', lucro: 2 })], pisos);
+    expect(r.abaixoMinimo).toBe(3);
+    expect(r.abaixos).toEqual([
+      { codigo: 'SKU2', titulo: 'Produto 2', valor: 2, vendas: 1 },
+      { codigo: 'SKU1', titulo: 'Produto 1', valor: 28, vendas: 2 },
+    ]);
+  });
+
+  it('vermelho e verde não entram em abaixos', () => {
+    // piso 0: o verde não vira amarelo
+    const r = contarAtencao([ri({ liquido: 40, imposto: 4, custo: 40, lucro: -4.1 }), ri({ lucro: 10 })], new Map());
+    expect(r.abaixos).toEqual([]);
+  });
+});
+
 describe('contarAtencao — prejuízos nomeados', () => {
   const vermelho = (patch: Partial<ResultadoItem> = {}) =>
     ri({ liquido: 40, imposto: 4, custo: 40, lucro: -4.1, ...patch });

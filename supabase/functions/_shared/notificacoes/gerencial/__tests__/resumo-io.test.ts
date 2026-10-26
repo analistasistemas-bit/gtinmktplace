@@ -26,7 +26,7 @@ vi.mock('../resultado.ts', async (orig) => ({ ...(await orig<object>()), resulta
 import { VolumeAcimaDoLimite } from '../../../platform-admin/metrics-repository.ts';
 import { contarPromocoesDoResumo, lerCatalogoEstoque, montarDadosResumo, orgsDoResumo, processarJobResumo } from '../resumo-io.ts';
 import { selecionarAlertas } from '../../../promocoes/alertas.ts';
-import { horaBrt, janela30Dias, janelaDia, janelasMesFechado } from '../janelas.ts';
+import { janela30Dias, janelaDia, janelasMesFechado } from '../janelas.ts';
 import { fakeAdmin } from './fake-postgrest.ts';
 
 const ORG = 'org-a';
@@ -129,9 +129,8 @@ describe('montarDadosResumo', () => {
     expect(d.lucroOntem.lucro).toBeNull();
     expect(d.lucroOntem.motivo).toBe('aliquota_nao_confirmada');
     expect(d.dia).toBe(dia);
-    expect(d.apuradoAte).toBe(horaBrt(AGORA));
     expect(d.devolucoes).toEqual({ estornado: 0, prazoProximo: 0 });
-    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] });
+    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [], abaixos: [] });
 
     const jm = janelasMesFechado(dia);
     expect(m.lerKpis).toHaveBeenCalledWith(admin, ORG, janelaDia(dia));
@@ -211,7 +210,7 @@ describe('estoque acabando e nomes do prejuízo (fase 1)', () => {
     const d = await montarDadosResumo(fakeAdmin(base()), ORG, dia, AGORA);
     expect(d.estoque).toBeNull();
     expect(d.ontem).toEqual(kpis);
-    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] });
+    expect(d.atencao).toEqual({ abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [], abaixos: [] });
     expect(erro).toHaveBeenCalledWith('resumo_estoque_indisponivel', 'leitura', expect.any(Error));
     erro.mockRestore();
   });
@@ -260,6 +259,15 @@ describe('estoque acabando e nomes do prejuízo (fase 1)', () => {
     const d = await montarDadosResumo(fakeAdmin(base()), ORG, dia, AGORA);
     const nomes = Object.fromEntries(d.atencao.prejuizos.map((p) => [p.nome, p.vendas]));
     expect(Object.keys(nomes).sort()).toEqual(['Camisa · Azul', 'Só título', 'Z', 'item sem código'].sort());
+  });
+
+  it('abaixo do mínimo: nome pelo catálogo (nomeSku); sem catálogo → título', async () => {
+    const amarelo = (extra = {}) => item({ liquido: 60, imposto: 6, custo: 40, lucro: 14, ...extra });
+    prepara([amarelo({ orderId: 21, codigo: 'A', titulo: 'Título ML' }), amarelo({ orderId: 22, codigo: 'W', titulo: 'Só título' })], []);
+    const admin = fakeAdmin(base({ variacoes: [vari('A', 'f1', { preco: 100 }), vari('W', 'inexistente', { preco: 100 })] }));
+    const d = await montarDadosResumo(admin, ORG, dia, AGORA);
+    expect(d.atencao.abaixoMinimo).toBe(2);
+    expect(d.atencao.abaixos.map((p) => p.nome).sort()).toEqual(['Camisa · Azul', 'Só título']);
   });
 
   it('nomeSku lança com catálogo lido → resolve e o nome cai para o título', async () => {
@@ -371,7 +379,6 @@ describe('processarJobResumo (roteamento)', () => {
     const [, org, categoria, texto, opcoes] = m.notificarCategoria.mock.calls[0];
     expect([org, categoria, opcoes]).toEqual([ORG, 'resumo_diario', { chave: 'resumo_diario:2026-10-23' }]);
     expect(texto).toMatch(/^📊 Ontem · 23\/10/);
-    expect(texto).toContain('Apurado às 08:00');
     expect(m.batchJSON).not.toHaveBeenCalled();
   });
 });

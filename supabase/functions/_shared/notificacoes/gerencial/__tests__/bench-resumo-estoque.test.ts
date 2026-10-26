@@ -59,8 +59,8 @@ describe('CPU do cálculo puro do resumo', () => {
         dia: '2026-10-24', ontem: { faturamento: 1, pedidos: 1, ticket: 1 },
         lucroOntem: { lucro: 1, motivo: null, pctVendaComLucro: 1, vendaSemCusto: 0, vendaSemImposto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0, markup: 0.3 },
         mes: { faturamento: 1, pedidos: 1, ticket: 1 }, anterior: { faturamento: 1, pedidos: 1, ticket: 1 },
-        rotuloMes: 'Outubro', rotuloAnterior: '1–24/set', top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] },
-        estoque, devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [], apuradoAte: '08:00',
+        rotuloMes: 'Outubro', rotuloAnterior: '1–24/set', top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [], abaixos: [] },
+        estoque, devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [],
       } satisfies DadosResumo);
       const c = process.cpuUsage(cpu0);
       expect(itens.length).toBeGreaterThan(10_000);

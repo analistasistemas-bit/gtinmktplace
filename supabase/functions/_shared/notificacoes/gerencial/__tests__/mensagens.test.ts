@@ -119,12 +119,11 @@ const resumo: DadosResumo = {
   dia: '2026-10-23', ontem: { faturamento: 4870, pedidos: 31, ticket: 157.1 }, lucroOntem: lucro,
   mes: k.mes, anterior: k.anterior, rotuloMes: 'Outubro', rotuloAnterior: '1–23/set',
   top: [{ titulo: 'Shampoo X', lucro: 210 }, { titulo: 'Máscara Y', lucro: 150 }, { titulo: 'Kit Z', lucro: 90 }],
-  atencao: { abaixoMinimo: 3, prejuizo: 1, semCusto: 2, prejuizos: [] },
+  atencao: { abaixoMinimo: 3, prejuizo: 1, semCusto: 2, prejuizos: [], abaixos: [] },
   estoque: null,
   devolucoes: { estornado: 120, prazoProximo: 2 },
   promocoes: { prejuizo: 2, prazo: 1 },
   freteSubiu: ['Produto A', 'Produto B'],
-  apuradoAte: '08:00',
 };
 
 describe('montarResumoDiario', () => {
@@ -146,14 +145,11 @@ describe('montarResumoDiario', () => {
       '🏷️ Promoções', '• 2 com prejuízo', '• 1 oportunidade com adesão vencendo',
       '',
       '🚚 Frete subiu', '• Produto A', '• Produto B',
-      '',
-      'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
-      'Apurado às 08:00',
     ].join('\n'));
   });
   it('linhas somem quando vazias', () => {
     const r = montarResumoDiario({
-      ...resumo, top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [] },
+      ...resumo, top: [], atencao: { abaixoMinimo: 0, prejuizo: 0, semCusto: 0, prejuizos: [], abaixos: [] },
       devolucoes: { estornado: 0, prazoProximo: 0 }, promocoes: null, freteSubiu: [],
       lucroOntem: { ...lucro, vendaSemCusto: 0, vendaCustoEstimado: 0, pedidosFreteNaoLido: 0 },
     });
@@ -164,9 +160,6 @@ describe('montarResumoDiario', () => {
       '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
       '',
       '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–23/set',
-      '',
-      'Lucro calculado em 96% das vendas',
-      'Apurado às 08:00',
     ].join('\n'));
   });
   it('alíquota não confirmada', () => {
@@ -174,7 +167,7 @@ describe('montarResumoDiario', () => {
       .toBe('💵 Lucro: — (alíquotas de imposto não confirmadas)');
   });
   it('venda sem alíquota na cobertura, entre custo estimado e frete', () => {
-    const r = montarResumoDiario({ ...resumo, lucroOntem: { ...lucro, vendaSemImposto: 75 } });
+    const r = montarHoje(k, { ...lucro, vendaSemImposto: 75 });
     expect(r).toContain('• R$ 40,00 com custo estimado\n• R$ 75,00 sem alíquota de imposto\n• 2 pedidos sem frete lido');
   });
 });
@@ -252,7 +245,7 @@ describe('resumo: estoque acabando e prejuízo nomeado', () => {
     { nome: 'Item A', valor: -40.5, vendas: 3 }, { nome: 'Item B', valor: -20, vendas: 1 },
     { nome: 'Item C', valor: -10, vendas: 2 }, { nome: 'Item D', valor: -4.1, vendas: 1 },
   ];
-  const base: DadosResumo = { ...resumo, atencao: { abaixoMinimo: 3, prejuizo: 4, semCusto: 2, prejuizos: prej } };
+  const base: DadosResumo = { ...resumo, atencao: { abaixoMinimo: 3, prejuizo: 4, semCusto: 2, prejuizos: prej, abaixos: [] } };
   const esperado = (blocoEstoque: string[]) => [
     '📊 Ontem · 23/10',
     '',
@@ -277,9 +270,6 @@ describe('resumo: estoque acabando e prejuízo nomeado', () => {
     '🏷️ Promoções', '• 2 com prejuízo', '• 1 oportunidade com adesão vencendo',
     '',
     '🚚 Frete subiu', '• Produto A', '• Produto B',
-    '',
-    'Lucro calculado em 96% das vendas', '• R$ 180,00 sem custo', '• R$ 40,00 com custo estimado', '• 2 pedidos sem frete lido',
-    'Apurado às 08:00',
   ].join('\n');
 
   it('resumo completo: ordem dos blocos, ordem interna do ⚠️, singulares e e mais N', () => {
@@ -312,6 +302,53 @@ describe('resumo: estoque acabando e prejuízo nomeado', () => {
     expect(r).toBe(montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, prejuizos: [] } }));
     expect(r).toContain('⚠️ Atenção\n• 4 com prejuízo\n• 3 abaixo do mínimo\n• 2 sem custo');
     expect(erro).toHaveBeenCalledWith('resumo_secao_falhou', 'prejuizos', expect.any(Error));
+    erro.mockRestore();
+  });
+  const abx = [
+    { nome: 'Abaixo A', valor: -3, vendas: 2 }, { nome: 'Abaixo B', valor: -2, vendas: 1 },
+    { nome: 'Abaixo C', valor: -1, vendas: 4 }, { nome: 'Abaixo D', valor: 0.5, vendas: 1 },
+  ];
+  it('abaixos nomeados: 3 linhas + e mais N, prejuízo → abaixo → sem custo, sem rodapé', () => {
+    const r = montarResumoDiario({
+      ...resumo, atencao: { abaixoMinimo: 4, prejuizo: 2, semCusto: 2, prejuizos: prej.slice(0, 2), abaixos: abx },
+    });
+    expect(r).toBe([
+      '📊 Ontem · 23/10',
+      '',
+      '💰 Faturamento: R$ 4.870,00', '🧾 Pedidos: 31', '🎟️ Ticket médio: R$ 157,10',
+      '💵 Lucro: R$ 1.020,00', '📈 Markup: 34,0%',
+      '',
+      '📆 Outubro', 'R$ 41.200,00 · 260 pedidos', 'Ticket médio: R$ 158,46', '📈 +12,3% vs 1–23/set',
+      '',
+      '🏆 Top lucro', '1. Shampoo X — R$ 210,00', '2. Máscara Y — R$ 150,00', '3. Kit Z — R$ 90,00',
+      '',
+      '⚠️ Atenção',
+      '• Prejuízo: Item A — −R$ 40,50 (3 vendas)',
+      '• Prejuízo: Item B — −R$ 20,00 (1 venda)',
+      '• Abaixo do mínimo: Abaixo A (2 vendas)',
+      '• Abaixo do mínimo: Abaixo B (1 venda)',
+      '• Abaixo do mínimo: Abaixo C (4 vendas)',
+      '• e mais 1 abaixo do mínimo',
+      '• 2 sem custo',
+      '',
+      '↩️ Devoluções', '• R$ 120,00 estornados', '• 2 reclamações com prazo em até 48 h',
+      '',
+      '🏷️ Promoções', '• 2 com prejuízo', '• 1 oportunidade com adesão vencendo',
+      '',
+      '🚚 Frete subiu', '• Produto A', '• Produto B',
+    ].join('\n'));
+  });
+  it('abaixos vazio com contagem 2 → `• 2 abaixo do mínimo`', () => {
+    expect(montarResumoDiario({ ...base, estoque: null, atencao: { ...base.atencao, abaixoMinimo: 2, abaixos: [] } }))
+      .toContain('• 2 abaixo do mínimo\n• 2 sem custo');
+  });
+  it('formatação dos abaixos lança → linha contada, resto idêntico', () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const at = { ...base.atencao, abaixoMinimo: 2 };
+    const r = montarResumoDiario({ ...base, estoque: null, atencao: { ...at, abaixos: [bomba(abx[0])] } });
+    expect(r).toBe(montarResumoDiario({ ...base, estoque: null, atencao: { ...at, abaixos: [] } }));
+    expect(r).toContain('• e mais 1 com prejuízo\n• 2 abaixo do mínimo\n• 2 sem custo');
+    expect(erro).toHaveBeenCalledWith('resumo_secao_falhou', 'abaixos', expect.any(Error));
     erro.mockRestore();
   });
   it('item não zerado com cobertura null → sem o trecho de dias', () => {
