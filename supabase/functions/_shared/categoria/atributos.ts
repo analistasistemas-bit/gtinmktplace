@@ -231,8 +231,20 @@ export function preencherUnitsPerPack(
   const extraido = extrairUnitsPerPack(nome, descricao);
   const n = extraido ?? 1;
   const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
-  if (extraido == null || extraido <= 1) return comUnits;
+  // Emenda ADR-0071 (2026-10-27): sem contagem, a IA ainda pode ter marcado "Kit" ("Shampoo +
+  // condicionador") — o ML recusa Kit com 1 unidade. Assumindo 1, o formato tem que ser Unidade.
+  if (extraido == null || extraido <= 1) return desfazerKitSemContagem(schema, comUnits);
   return forcarSaleFormatKit(schema, comUnits);
+}
+
+/** SALE_FORMAT "Kit" → "Unidade" (value_id do schema). Só troca se já estava Kit. */
+function desfazerKitSemContagem(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
+  const valores = schema.find((a) => a.id === 'SALE_FORMAT')?.valores ?? [];
+  const kit = valores.find((v) => normalizar(v.nome) === 'kit');
+  const unidade = valores.find((v) => normalizar(v.nome) === 'unidade');
+  const atual = atributos.find((a) => a.id === 'SALE_FORMAT');
+  if (!kit || !unidade || atual?.value_id !== kit.id) return atributos;
+  return [...atributos.filter((a) => a.id !== 'SALE_FORMAT'), { id: 'SALE_FORMAT', value_id: unidade.id }];
 }
 
 /**

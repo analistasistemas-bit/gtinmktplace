@@ -41,6 +41,22 @@ gate de `UNITS_PER_PACK`).
   ficha do ML — continua tratando `UNITS_PER_PACK>1`/`SALE_FORMAT≠Unidade` como sinal de kit
   divergente do nosso produto avulso.
 
+## Emenda (2026-10-27): Kit sem contagem vira Unidade
+
+**Incidente.** Hairfly, "Shampoo + condicionador Tanox Trat Sete Óleos 2000ml" (MLB1265): a IA
+marcou `SALE_FORMAT=Kit` e `IS_KIT=Sim` ("+" = dois produtos), mas o texto não traz contagem, então
+`preencherUnitsPerPack` assumiu 1. O ML recusou: `item.attribute.invalid_sale_units — "Quantidade de
+embalagens": Insira um valor diferente de "1" porque você preencheu "Kit"`. É o inverso do caso
+acima, que esta ADR não cobria.
+
+**Decisão (Diego escolheu entre pedir a contagem ao operador e forçar Unidade).** Sem contagem real
+(> 1) no nome/descrição, `SALE_FORMAT=Kit` é trocado por "Unidade" (value_id do schema). Só troca
+se já estava Kit; `IS_KIT` não é tocado. Nunca bloqueia a Revisão; o custo aceito é um kit de 2
+frascos publicar como "Unidade".
+
+**Prova (dry-run `POST /items/validate`, payload real, 27/10):** Kit+Sim+1 → `invalid_sale_units`;
+Unidade+Sim+1, Unidade+Não+1 e Kit+Sim+2 → só o warning de frete `lost_me1_by_user` (normal).
+
 ## Como reverter
 
 Remover a chamada a `forcarSaleFormatKit` dentro de `preencherUnitsPerPack`.

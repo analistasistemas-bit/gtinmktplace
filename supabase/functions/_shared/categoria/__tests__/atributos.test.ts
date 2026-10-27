@@ -251,6 +251,17 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     ]);
   });
 
+  // Emenda ADR-0071 (2026-10-27): "Shampoo + condicionador" → IA marcou Kit, sem contagem no texto
+  // → ML recusou "Kit" com "Quantidade de unidades" = 1 (lote Hairfly).
+  it('IA marcou Kit mas não há contagem: vira Unidade (ML recusa Kit com 1)', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
+    const out = preencherUnitsPerPack(schemaComSaleFormat, base, 'Shampoo + condicionador Tanox Trat Sete Óleos 2000ml');
+    expect(out).toEqual([
+      { id: 'UNITS_PER_PACK', value_name: '1' },
+      { id: 'SALE_FORMAT', value_id: '2135872' },
+    ]);
+  });
+
   it('quantidade extraída = 1 explícito não força Kit', () => {
     const out = preencherUnitsPerPack(schemaComSaleFormat, [], 'ALFINETE 1 unidade');
     expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '1' }]);
