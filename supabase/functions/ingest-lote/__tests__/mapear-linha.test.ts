@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapearLinha } from '../mapear-linha.ts';
+import { mapearLinha, normalizarCabecalhos } from '../mapear-linha.ts';
 import { exigirOrigemExplicita } from '../verificar-origem.ts';
 import { agruparPorPai } from '../../_shared/parser.ts';
 
@@ -66,6 +66,14 @@ describe('mapearLinha', () => {
       ['00102857', ['102857']], ['00139220', ['139220']],
     ]);
     expect(anomalias.familias_sem_filho).toEqual([]);
+  });
+
+  // Lote Hairfly 26/10: cabeçalho " PESO_GRAMAS" passava no validarColunas (trim) e o peso ia a 0.
+  it('normalizarCabecalhos: espaço/minúscula no cabeçalho não zera o campo', () => {
+    const { PESO_GRAMAS: _p, ALTURA_CM: _a, ...resto } = CRU;
+    const r = mapearLinha(normalizarCabecalhos({ ...resto, ' PESO_GRAMAS': 1957, 'Altura_cm ': 26.8 }));
+    expect(r.PESO_GRAMAS).toBe(1957);
+    expect(r.ALTURA_CM).toBe(26.8);
   });
 
   it('carrega os 4 campos fiscais (ADR-0135)', () => {

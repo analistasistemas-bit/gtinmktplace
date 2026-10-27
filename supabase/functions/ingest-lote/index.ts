@@ -13,7 +13,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
-import { mapearLinha } from './mapear-linha.ts';
+import { mapearLinha, normalizarCabecalhos } from './mapear-linha.ts';
 import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
 import { exigirFiscalExplicito, exigirNcmVigente, resolverCamposFiscais } from './verificar-fiscal.ts';
 import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
@@ -119,7 +119,8 @@ Deno.serve(async (req) => {
     const buffer = new Uint8Array(await blob.arrayBuffer());
     const wb = XLSX.read(buffer, { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rowsRaw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
+    const rowsRaw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null })
+      .map(normalizarCabecalhos);
     if (rowsRaw.length === 0) throw new Error('Planilha vazia');
 
     validarColunas(Object.keys(rowsRaw[0]));

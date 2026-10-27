@@ -10,6 +10,12 @@ function gtinDaCelula(v: unknown): string | null {
   return typeof v === 'number' && /^\d{11}$/.test(s) ? `0${s}` : s;
 }
 
+/** Chaves da linha crua sem espaço nas pontas e em maiúsculas, como o `validarColunas` já aceita.
+ *  Sem isto, `" PESO_GRAMAS"` passava na validação e o peso ia a 0 (lote Hairfly, 26/10/2026). */
+export function normalizarCabecalhos(r: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim().toUpperCase(), v]));
+}
+
 /**
  * Converte uma linha crua da planilha (chaves = cabeçalhos) num `PlanilhaRow` tipado.
  * TODO campo lido da planilha PRECISA estar aqui — omitir um campo o dropa silenciosamente.

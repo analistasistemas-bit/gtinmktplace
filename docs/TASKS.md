@@ -4,6 +4,7 @@
 
 - [x] Hairfly manda planilha só de produtos únicos (`PAI` vazio): o ingest descartava tudo em `familias_sem_filho`, porque `mapearLinha` convertia vazio em `'0'`. Agora `PAI` vazio + sem filhos = família de 1 SKU (a própria linha); `PAI = 0` sem filhos continua descartado. Medido: os 8 descartes de produção eram agrupadores "(P)" da Avil com `PAI = 0`, então nada muda para ela.
 - [x] Testes (parser, `mapearLinha`, cadeia da planilha Hairfly) + plano aprovado pelo Codex. Deploy: `ingest-lote`.
+- [x] Peso 0 no 1º lote da Hairfly: cabeçalho `" PESO_GRAMAS"` passava no `validarColunas` (que faz trim) e o `mapearLinha` lia a chave exata → 0 sem aviso. O ingest normaliza as chaves (`normalizarCabecalhos`: trim + maiúsculas) logo após a leitura, valendo para todas as colunas e verificações.
 
 ## Boas-vindas automática ao comprador removida (emenda ADR-0067) — 2026-10-25
 
