@@ -554,6 +554,12 @@ export async function criarKitsVinculados(
         // mesmo com a categoria nova exigindo algo não resolvido (bloqueante da revisão Fable).
         familiaObj.tipo_aviamento = tipoAviamentoKit;
         familiaObj.atributos_faltantes = faltantesKit;
+      } else {
+        // Sem troca de categoria o kit herda os faltantes da base; "quantidade" (Kit sem contagem,
+        // emenda 2 ADR-0071) não vale aqui — o N do kit acabou de preenchê-la (revisão Codex).
+        const nomeUnits = schema.find((s) => s.id === 'UNITS_PER_PACK')?.nome;
+        const herdados = familiaObj.atributos_faltantes;
+        if (Array.isArray(herdados)) familiaObj.atributos_faltantes = herdados.filter((f) => f !== nomeUnits);
       }
       const { data: familiaCriada, error: famErr } = await admin.from('familias')
         .insert(familiaObj).select('id').single();

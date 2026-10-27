@@ -102,6 +102,11 @@ Deno.serve(async (req) => {
     // ADR-0186: na org com marca própria o operador não grava outra marca (o fornecedor voltaria).
     const merged = forcarMarcaDoProduto([...atuais.filter((a) => a.id !== validado.id), validado],
       familia.marca as string | null);
+    // Kit com 1 unidade o ML recusa (emenda 2 ADR-0071): avisa na hora em vez de gravar e seguir travado.
+    const formatoKit = faltanteKitSemContagem(schema, merged.filter((a) => a.id !== 'UNITS_PER_PACK')).length > 0;
+    if (validado.id === 'UNITS_PER_PACK' && formatoKit && !(Number(validado.value_name) > 1)) {
+      return new Response('Formato "Kit" precisa de 2 ou mais unidades.', { status: 422, headers: corsHeaders });
+    }
     // Mesma regra do process-familia: salvar outro atributo não pode apagar a trava "Kit sem quantidade".
     const faltantes = [...new Set([
       ...atributosFaltantesGenerico(merged, schema),

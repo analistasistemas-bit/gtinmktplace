@@ -250,7 +250,9 @@ function ehSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): boo
  */
 export function faltanteKitSemContagem(schema: AtributoSchema[], atributos: AtributoML[]): string[] {
   const units = schema.find((a) => a.id === 'UNITS_PER_PACK');
-  const tem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
+  // Kit com 1 é o que o ML recusa (invalid_sale_units): só conta como informado de 2 para cima.
+  const qtd = Number(atributos.find((a) => a.id === 'UNITS_PER_PACK')?.value_name);
+  const tem = Number.isFinite(qtd) && qtd > 1;
   return units && !tem && ehSaleFormatKit(schema, atributos) ? [units.nome] : [];
 }
 

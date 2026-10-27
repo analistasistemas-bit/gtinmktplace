@@ -17,16 +17,22 @@ const CANAL = 'mercado_livre';
 // Cores das cores (itens) UP sem ficha equivalente, para o alerta no-match (ADR-0036). Re-lê o
 // catalog_status persistido pela vinculação e mapeia sku→cor a partir dos filhos já carregados.
 const NO_MATCH = new Set(['ficha_divergente', 'sem_produto', 'nao_elegivel', 'pendente']);
-async function coresNoMatchUP(admin: ReturnType<typeof adminClient>, familia: { org_id: string; codigo_pai: string }, filhos: FilhoCatalogoUP[]): Promise<string[]> {
+async function coresNoMatchUP(
+  admin: ReturnType<typeof adminClient>, familia: { org_id: string; codigo_pai: string }, filhos: FilhoCatalogoUP[],
+  // Itens do alerta de catálogo automático: a orientação do no-match ("Publicar no catálogo") não
+  // serve para eles (revisão Codex — família mista).
+  excluirItens: Set<string> = new Set(),
+): Promise<string[]> {
   const { data: raizes } = await admin.from('anuncios_externos')
     .select('id').eq('org_id', familia.org_id).eq('codigo_pai', familia.codigo_pai).eq('canal', CANAL);
   const rootIds = (raizes ?? []).map((r: { id: string }) => r.id);
   if (rootIds.length === 0) return [];
   const { data: itens } = await admin.from('anuncios_externos_itens')
-    .select('sku, catalog_status').in('anuncio_externo_id', rootIds).eq('retirado', false);
+    .select('sku, catalog_status, item_externo_id').in('anuncio_externo_id', rootIds).eq('retirado', false);
   const corPorSku = new Map(filhos.map((f) => [f.sku, f.cor]));
   return [...new Set((itens ?? [])
-    .filter((i: { catalog_status: string | null }) => i.catalog_status != null && NO_MATCH.has(i.catalog_status))
+    .filter((i: { catalog_status: string | null; item_externo_id: string | null }) =>
+      i.catalog_status != null && NO_MATCH.has(i.catalog_status) && !excluirItens.has(i.item_externo_id ?? ''))
     .map((i: { sku: string }) => corPorSku.get(i.sku))
     .filter((c): c is string => !!c))];
 }
@@ -132,7 +138,8 @@ Deno.serve(async (req) => {
         .filter((c): c is string => !!c))];
       semVariacao = anuncioSemVariacao({ tipo: 'legacy', mlItemId: familia.ml_item_id, variacoes: varsEspelho ?? [] });
     } else {
-      cores = await coresNoMatchUP(admin, familia, vinc.filhos);
+      cores = await coresNoMatchUP(admin, familia, vinc.filhos,
+        new Set((resumo.auto_divergentes ?? []).map((a) => a.item)));
       semVariacao = anuncioSemVariacao({ tipo: 'up', mlItemId: familia.ml_item_id, qtdItensUP: vinc.filhos.length });
     }
 

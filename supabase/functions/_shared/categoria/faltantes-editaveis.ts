@@ -59,6 +59,8 @@ export function faltantesEditaveis(
   // Emenda ADR-0071 (2ª): Kit sem quantidade trava o gate mesmo onde UNITS_PER_PACK é opcional no
   // schema — o editor tem de oferecer o campo, senão a família fica presa sem como corrigir.
   const kitSemQtd = faltanteKitSemContagem(schema, atributos).length > 0;
+  // Kit com quantidade 1 gravada continua travado: o campo precisa voltar mesmo "presente".
+  if (kitSemQtd) presentes.delete('UNITS_PER_PACK');
   return schema
     .filter((a) =>
       (a.required || a.conditionalRequired || (kitSemQtd && a.id === 'UNITS_PER_PACK')) &&

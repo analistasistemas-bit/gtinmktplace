@@ -261,6 +261,13 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     expect(faltanteKitSemContagem(schemaComSaleFormat, out)).toEqual(['Unidades por kit']);
   });
 
+  // Revisão Codex: Kit com 1 é exatamente o que o ML recusa (invalid_sale_units) — continua faltando.
+  it('faltanteKitSemContagem: Kit com quantidade 1 continua faltando', () => {
+    expect(faltanteKitSemContagem(schemaComSaleFormat, [
+      { id: 'SALE_FORMAT', value_id: '2135873' }, { id: 'UNITS_PER_PACK', value_name: '1' },
+    ])).toEqual(['Unidades por kit']);
+  });
+
   it('faltanteKitSemContagem: nada quando não é Kit ou já tem quantidade', () => {
     expect(faltanteKitSemContagem(schemaComSaleFormat, [{ id: 'SALE_FORMAT', value_id: '2135872' }])).toEqual([]);
     expect(faltanteKitSemContagem(schemaComSaleFormat, [

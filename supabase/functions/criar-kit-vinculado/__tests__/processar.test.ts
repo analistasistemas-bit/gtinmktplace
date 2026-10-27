@@ -284,6 +284,7 @@ function depsFake(opts: {
   llm?: (input: unknown, alvos: unknown) => Promise<Record<string, string>>;
   marcaBase?: string | null;
   atributosMlBase?: { id: string; value_id?: string; value_name?: string }[];
+  faltantesBase?: string[];
   // ncm_consultar (ADR-0187): default vigente.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
 } = {}) {
@@ -301,6 +302,7 @@ function depsFake(opts: {
     categoria_ml_id: 'MLB123',
     atributos_ml: atributosMlBase,
     kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId, marca: marcaBase,
+    ...(opts.faltantesBase ? { atributos_faltantes: opts.faltantesBase } : {}),
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
     id: `bv${i}`, familia_id: BASE_ID, org_id: 'org-1', user_id: 'user-1',
@@ -368,6 +370,17 @@ function depsFake(opts: {
 }
 
 describe('criarKitsVinculados', () => {
+  // Emenda 2 ADR-0071 (revisão Codex): base "Kit sem quantidade" tem o faltante; o kit tem N.
+  it('kit não herda "quantidade faltando" da base (o N preenche)', async () => {
+    const { deps, inserts } = depsFake({
+      atributosMlBase: [{ id: 'SALE_FORMAT', value_id: 'V-KIT' }],
+      faltantesBase: ['Unidades por kit', 'Outro obrigatório'],
+    });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].atributos_faltantes).toEqual(['Outro obrigatório']);
+  });
+
   it('kit deriva custo e peso multiplicados por N', async () => {
     const { deps, inserts } = depsFake({ custo: 12.5, peso_gramas: 200 });
     const r = await criarKitsVinculados(deps, {

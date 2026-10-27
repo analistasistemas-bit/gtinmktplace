@@ -27,6 +27,10 @@ describe('faltantesEditaveis — Kit sem quantidade', () => {
     const campos = faltantesEditaveis(S, [{ id: 'SALE_FORMAT', value_id: 'k' }]);
     expect(campos.map((c) => [c.id, c.tipo])).toEqual([['UNITS_PER_PACK', 'numero']]);
   });
+  it('Kit com quantidade 1 gravada: o campo continua sendo oferecido (senão a trava ficaria sem campo)', () => {
+    const campos = faltantesEditaveis(S, [{ id: 'SALE_FORMAT', value_id: 'k' }, { id: 'UNITS_PER_PACK', value_name: '1' }]);
+    expect(campos.map((c) => c.id)).toEqual(['UNITS_PER_PACK']);
+  });
   it('formato Unidade: quantidade opcional não aparece', () => {
     expect(faltantesEditaveis(S, [{ id: 'SALE_FORMAT', value_id: 'u' }])).toEqual([]);
   });
