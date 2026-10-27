@@ -404,7 +404,12 @@ Deno.serve(async (req) => {
         // gate "sem preço de publicação" trava — inclusive o preço velho de um reprocessamento.
         const { error: limpaErr } = await admin.from('variacoes').update({ preco_publicacao: null })
           .eq('familia_id', job.familia_id).eq('preco_editado_pelo_operador', false);
-        if (limpaErr) console.error('limpar preco_publicacao falhou:', limpaErr.message);
+        if (limpaErr) {
+          // Sem a limpeza confirmada, 'erro' deixaria o preço velho publicável (revisão Codex):
+          // volta à fila ('pendente' não publica) e pede retry ao QStash, como a leitura de alíquota.
+          await admin.from('familias').update({ status: 'pendente' }).eq('id', job.familia_id);
+          return new Response(`Limpar preço sem comissão (transitório): ${limpaErr.message}`, { status: 500, headers: corsHeaders });
+        }
         const err = new Error(
           'Comissão do Mercado Livre indisponível — o preço não foi calculado para não vender abaixo do seu mínimo. Reprocesse a família.',
         ) as Error & { status?: number; retentavel?: boolean };
