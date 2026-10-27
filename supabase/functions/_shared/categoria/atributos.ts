@@ -229,6 +229,15 @@ export function preencherUnitsPerPack(
   const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
   if (!exposto || jaTem) return atributos;
   const extraido = extrairUnitsPerPack(nome, descricao);
+  // Emenda 3 ADR-0071 (2026-10-27): a IA marcou Kit num creme único de 80g. "Kit" só vale com prova
+  // no texto; sem prova vira Unidade (e "É kit" Não) antes de qualquer regra de quantidade.
+  if (ehSaleFormatKit(schema, atributos) && !temProvaDeKit(nome, descricao, extraido)) {
+    atributos = desfazerKitSemProva(schema, atributos);
+  }
+  // Diego (27/10): shampoo + condicionador é SEMPRE kit, mesmo que a IA diga Unidade ou nada.
+  if (ehShampooECondicionador(nome, descricao) && !ehSaleFormatKit(schema, atributos)) {
+    atributos = marcarComoKit(schema, atributos);
+  }
   // Emenda ADR-0071 (2026-10-27, 2ª): a IA marcou "Kit" ("Shampoo + condicionador") e o texto não diz
   // quantos. Nem 1 (o ML recusa Kit com 1) nem Unidade (divergiu do catálogo, que dizia Kit/2): a
   // quantidade fica faltando e o operador informa na Revisão (`faltanteKitSemContagem`).
@@ -236,6 +245,41 @@ export function preencherUnitsPerPack(
   const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(extraido ?? 1) }];
   if (extraido == null || extraido <= 1) return comUnits;
   return forcarSaleFormatKit(schema, comUnits);
+}
+
+/** Prova de kit no texto: quantidade > 1 escrita, a palavra "kit", um "+" entre produtos ou
+ *  shampoo e condicionador juntos. */
+function temProvaDeKit(nome: string, descricao: string | undefined, extraido: number | null): boolean {
+  if (extraido != null && extraido > 1) return true;
+  const texto = normalizar(`${nome} ${descricao ?? ''}`);
+  return /\bkit\b/.test(texto) || texto.includes('+') || ehShampooECondicionador(nome, descricao);
+}
+
+/** "Shampoo e/+ Condicionador" (em qualquer ordem) no nome ou na descrição. */
+function ehShampooECondicionador(nome: string, descricao: string | undefined): boolean {
+  const texto = normalizar(`${nome} ${descricao ?? ''}`);
+  return /\bshampoo\s*(?:e|\+|&)\s*condicionador\b|\bcondicionador\s*(?:e|\+|&)\s*shampoo\b/.test(texto);
+}
+
+/** SALE_FORMAT → Kit e IS_KIT → Sim (value_ids do schema). Sem o valor no schema, não mexe. */
+function marcarComoKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
+  const sim = schema.find((a) => a.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
+  const comIsKit = sim ? atributos.map((a) => (a.id === 'IS_KIT' ? { id: 'IS_KIT', value_id: sim } : a)) : atributos;
+  return forcarSaleFormatKit(schema, comIsKit);
+}
+
+/** SALE_FORMAT Kit → Unidade e IS_KIT Sim → Não (value_ids do schema). Sem o valor no schema, não mexe. */
+function desfazerKitSemProva(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
+  const valor = (id: string, nome: string) =>
+    schema.find((a) => a.id === id)?.valores.find((v) => normalizar(v.nome) === nome)?.id;
+  const unidade = valor('SALE_FORMAT', 'unidade');
+  const sim = valor('IS_KIT', 'sim');
+  const nao = valor('IS_KIT', 'nao');
+  return atributos.map((a) => {
+    if (a.id === 'SALE_FORMAT' && unidade) return { id: 'SALE_FORMAT', value_id: unidade };
+    if (a.id === 'IS_KIT' && nao && a.value_id === sim) return { id: 'IS_KIT', value_id: nao };
+    return a;
+  });
 }
 
 function ehSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): boolean {
@@ -325,7 +369,11 @@ export function aplicarKitNosAtributos(
     e.status = 400;
     throw e;
   }
-  const semUpp = comKit.filter((a) => a.id !== 'UNITS_PER_PACK');
+  // Kit vinculado é kit por definição: "É kit" volta a Sim mesmo se a base saiu como Não pela trava
+  // de prova no texto (emenda 3 ADR-0071, revisão Codex). Só troca valor que já existe.
+  const sim = schema.find((s) => s.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
+  const comIsKit = sim ? comKit.map((a) => (a.id === 'IS_KIT' ? { id: 'IS_KIT', value_id: sim } : a)) : comKit;
+  const semUpp = comIsKit.filter((a) => a.id !== 'UNITS_PER_PACK');
   const comUpp = [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(n) }];
   const tinhaNetWeight = comUpp.some((a) => a.id === 'NET_WEIGHT');
   if (pesoBaseGramas == null || !tinhaNetWeight) return comUpp;

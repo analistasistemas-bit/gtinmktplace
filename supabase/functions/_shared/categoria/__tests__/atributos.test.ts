@@ -268,6 +268,73 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     ])).toEqual(['Unidades por kit']);
   });
 
+  // Emenda 3 ADR-0071 (lote Hairfly 27/10): a IA marcou Kit + "É kit: Sim" num creme único de 80g.
+  const schemaComIsKit: AtributoSchema[] = [
+    ...schemaComSaleFormat,
+    {
+      id: 'IS_KIT', nome: 'É kit', required: false, conditionalRequired: false, valueType: 'boolean',
+      valores: [{ id: '242084', nome: 'Não' }, { id: '242085', nome: 'Sim' }], allowedUnits: [], tags: [],
+    },
+  ];
+
+  it('Kit da IA sem prova no texto → Unidade, "É kit" Não e quantidade 1 (nada faltando)', () => {
+    const base = [{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }];
+    const out = preencherUnitsPerPack(schemaComIsKit, base, 'Creme Alisante Hair Fly Mel e Lanolina 80g',
+      'O Creme Alisante Hair Fly com Mel foi desenvolvido especialmente para quem precisa de um alisamento suave.');
+    expect(out).toEqual([
+      { id: 'IS_KIT', value_id: '242084' },
+      { id: 'SALE_FORMAT', value_id: '2135872' },
+      { id: 'UNITS_PER_PACK', value_name: '1' },
+    ]);
+    expect(faltanteKitSemContagem(schemaComIsKit, out)).toEqual([]);
+  });
+
+  it('palavra "kit" no texto é prova: mantém Kit e pede a quantidade', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
+    const out = preencherUnitsPerPack(schemaComIsKit, base, 'Kit Tratamento Tanox Trat');
+    expect(out).toEqual([{ id: 'SALE_FORMAT', value_id: '2135873' }]);
+  });
+
+  // Pedido do Diego (27/10): "Shampoo e Condicionador" é kit, mesmo sem "+" ou a palavra "kit".
+  it('"Shampoo e Condicionador" (e a ordem inversa) é prova de kit: mantém Kit e pede a quantidade', () => {
+    const base = [{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }];
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Shampoo e Condicionador NUTRE MUITO MAIS 2000ml')).toEqual(base);
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Condicionador e Shampoo Hidrata 1L')).toEqual(base);
+  });
+
+  // Revisão Codex: base sem prova de kit + kit vinculado → "É kit" tem de voltar a Sim junto com Kit/N.
+  it('kit vinculado: aplicarKitNosAtributos grava "É kit" Sim mesmo se a base saiu como Não', () => {
+    const base = [{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }];
+    const semProva = preencherUnitsPerPack(schemaComIsKit, base, 'Creme Alisante Hair Fly 80g');
+    expect(aplicarKitNosAtributos(schemaComIsKit, semProva, 3)).toEqual([
+      { id: 'IS_KIT', value_id: '242085' },
+      { id: 'SALE_FORMAT', value_id: '2135873' },
+      { id: 'UNITS_PER_PACK', value_name: '3' },
+    ]);
+  });
+
+  it('IA marcou Unidade num produto comum: não mexe em "É kit"', () => {
+    const base = [{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135872' }];
+    const out = preencherUnitsPerPack(schemaComIsKit, base, 'Máscara Nutrição Profunda Tanox 1000g');
+    expect(out).toEqual([...base, { id: 'UNITS_PER_PACK', value_name: '1' }]);
+  });
+
+  // Pedido do Diego (27/10): shampoo + condicionador é SEMPRE kit, mesmo que a IA diga Unidade ou nada.
+  it('"Shampoo e Condicionador" com a IA em Unidade ou sem formato → Kit, "É kit" Sim e quantidade faltando', () => {
+    const unidade = [{ id: 'IS_KIT', value_id: '242084' }, { id: 'SALE_FORMAT', value_id: '2135872' }];
+    const out = preencherUnitsPerPack(schemaComIsKit, unidade, 'Shampoo e Condicionador NUTRE MUITO MAIS 2000ml');
+    expect(out).toEqual([{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+    expect(faltanteKitSemContagem(schemaComIsKit, out)).toEqual(['Unidades por kit']);
+
+    const semFormato = preencherUnitsPerPack(schemaComIsKit, [{ id: 'IS_KIT', value_id: '242085' }], 'Shampoo + condicionador Tanox 2L');
+    expect(semFormato).toEqual([{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+  });
+
+  it('"Shampoo e Condicionador" com quantidade no texto → Kit com essa quantidade', () => {
+    const out = preencherUnitsPerPack(schemaComIsKit, [], 'Shampoo e Condicionador CACHOS 2 unidades 1L');
+    expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '2' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+  });
+
   it('faltanteKitSemContagem: nada quando não é Kit ou já tem quantidade', () => {
     expect(faltanteKitSemContagem(schemaComSaleFormat, [{ id: 'SALE_FORMAT', value_id: '2135872' }])).toEqual([]);
     expect(faltanteKitSemContagem(schemaComSaleFormat, [

@@ -81,6 +81,23 @@ estado ficou `sem_produto`. O próprio catálogo provou que "Shampoo + condicion
 `variacoes`, não `anuncios_externos_itens` — o aviso desta emenda chega por Telegram e fica gravado no
 item, não no card.
 
+## Emenda 3 (2026-10-27): "Kit" só com prova no texto; shampoo + condicionador é sempre kit
+
+**Incidente.** Lote Hairfly de 27/10: a IA de atributos marcou `SALE_FORMAT=Kit` e `IS_KIT=Sim` para
+"Creme Alisante Hair Fly Mel e Lanolina 80g" (produto único, descrição sem "kit") e a emenda 2 travou a
+Revisão pedindo "Quantidade de pacotes" sem motivo.
+
+**Decisão (Diego, 27/10).** Em `preencherUnitsPerPack`, antes das regras de quantidade:
+1. "Kit" da IA só vale com **prova no texto** (nome ou descrição): quantidade > 1 escrita, a palavra
+   "kit", um "+" entre produtos ou "shampoo e/+ condicionador" (qualquer ordem). Sem prova →
+   `SALE_FORMAT` Unidade e `IS_KIT` Não.
+2. **Shampoo + condicionador é sempre kit**, mesmo que a IA diga Unidade ou nada: `SALE_FORMAT` Kit e
+   `IS_KIT` Sim; com quantidade no texto vira Kit + N, sem quantidade a Revisão pede (emenda 2).
+3. Kit vinculado (ADR-0151): `aplicarKitNosAtributos` grava também `IS_KIT` Sim, para não herdar o "Não"
+   da trava quando a base não tem prova de kit no texto (revisão Codex).
+
+Não retroativo: famílias já processadas só mudam com Reprocessar.
+
 ## Como reverter
 
 Remover a chamada a `forcarSaleFormatKit` dentro de `preencherUnitsPerPack`.
