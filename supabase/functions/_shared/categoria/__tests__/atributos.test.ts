@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack, preencherNomeObrigatorio, aplicarKitNosAtributos } from '../atributos';
+import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack, preencherNomeObrigatorio, aplicarKitNosAtributos, faltanteKitSemContagem } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
@@ -251,25 +251,33 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     ]);
   });
 
-  // Emenda ADR-0071 (2026-10-27): "Shampoo + condicionador" → IA marcou Kit, sem contagem no texto
-  // → ML recusou "Kit" com "Quantidade de unidades" = 1 (lote Hairfly).
-  it('IA marcou Kit mas não há contagem: vira Unidade (ML recusa Kit com 1)', () => {
+  // Emenda ADR-0071 (2026-10-27, 2ª): "Shampoo + condicionador" → IA marcou Kit sem contagem no texto.
+  // Unidade/1 (1ª versão da emenda) divergiu do catálogo do ML (Kit/2) → a quantidade fica FALTANDO
+  // para o operador informar na Revisão; o Kit é mantido.
+  it('IA marcou Kit mas não há contagem: mantém Kit e deixa a quantidade faltando', () => {
     const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
     const out = preencherUnitsPerPack(schemaComSaleFormat, base, 'Shampoo + condicionador Tanox Trat Sete Óleos 2000ml');
-    expect(out).toEqual([
-      { id: 'UNITS_PER_PACK', value_name: '1' },
-      { id: 'SALE_FORMAT', value_id: '2135872' },
-    ]);
+    expect(out).toEqual([{ id: 'SALE_FORMAT', value_id: '2135873' }]);
+    expect(faltanteKitSemContagem(schemaComSaleFormat, out)).toEqual(['Unidades por kit']);
   });
 
-  // Revisão Codex: kit vinculado na troca de categoria (definir-categoria-familia) reaplica N.
-  it('kit vinculado: Unidade da emenda é desfeita pela contagem real (aplicarKitNosAtributos)', () => {
+  it('faltanteKitSemContagem: nada quando não é Kit ou já tem quantidade', () => {
+    expect(faltanteKitSemContagem(schemaComSaleFormat, [{ id: 'SALE_FORMAT', value_id: '2135872' }])).toEqual([]);
+    expect(faltanteKitSemContagem(schemaComSaleFormat, [
+      { id: 'SALE_FORMAT', value_id: '2135873' }, { id: 'UNITS_PER_PACK', value_name: '2' },
+    ])).toEqual([]);
+  });
+
+  // Kit vinculado (ADR-0151): a quantidade vem do kit_multiplicador, não do operador.
+  it('kit vinculado: aplicarKitNosAtributos preenche a quantidade que a regra deixou faltando', () => {
     const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
     const semContagem = preencherUnitsPerPack(schemaComSaleFormat, base, 'Kit Shampoo Tanox');
-    expect(aplicarKitNosAtributos(schemaComSaleFormat, semContagem, 3)).toEqual([
+    const comKit = aplicarKitNosAtributos(schemaComSaleFormat, semContagem, 3);
+    expect(comKit).toEqual([
       { id: 'SALE_FORMAT', value_id: '2135873' },
       { id: 'UNITS_PER_PACK', value_name: '3' },
     ]);
+    expect(faltanteKitSemContagem(schemaComSaleFormat, comKit)).toEqual([]);
   });
 
   it('quantidade extraída = 1 explícito não força Kit', () => {

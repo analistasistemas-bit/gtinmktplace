@@ -5,7 +5,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
-import { atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { atributosFaltantesGenerico, faltanteKitSemContagem, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { contextoFaltantes, faltantesEditaveis, validarValorAtributo, type ContextoFaltantes } from '../_shared/categoria/faltantes-editaveis.ts';
 import { buscarCategoriaPreditor, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
 import { forcarMarcaDoProduto } from '../_shared/categoria/marca-org.ts';
@@ -102,7 +102,11 @@ Deno.serve(async (req) => {
     // ADR-0186: na org com marca própria o operador não grava outra marca (o fornecedor voltaria).
     const merged = forcarMarcaDoProduto([...atuais.filter((a) => a.id !== validado.id), validado],
       familia.marca as string | null);
-    const faltantes = atributosFaltantesGenerico(merged, schema);
+    // Mesma regra do process-familia: salvar outro atributo não pode apagar a trava "Kit sem quantidade".
+    const faltantes = [...new Set([
+      ...atributosFaltantesGenerico(merged, schema),
+      ...faltanteKitSemContagem(schema, merged),
+    ])];
     const { error: upErr } = await sb.from('familias')
       .update({ atributos_ml: merged, atributos_faltantes: faltantes, atributos_editados_pelo_operador: true })
       .eq('id', familia.id);

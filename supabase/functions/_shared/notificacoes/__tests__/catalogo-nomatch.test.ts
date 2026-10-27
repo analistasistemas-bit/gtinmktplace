@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { montarMensagemCatalogoNoMatch } from '../telegram';
+import { montarMensagemCatalogoNoMatch, montarMensagemCatalogoAutoDivergente } from '../telegram';
+
+describe('montarMensagemCatalogoAutoDivergente (lote Hairfly 27/10)', () => {
+  it('diz o que a ficha e o anúncio dizem e manda corrigir pelo PubliAI, não "publicar no catálogo"', () => {
+    const msg = montarMensagemCatalogoAutoDivergente({
+      titulo: 'Kit Shampoo e Condicionador Tanox Trat Pós Química',
+      itens: [{ item: 'MLB5468058963', catalogo: 'MLB2066191442', ficha: 'Kit, 2 unidades', anuncio: 'Unidade, 1 unidade' }],
+    });
+    expect(msg).toContain('Kit Shampoo e Condicionador Tanox Trat Pós Química');
+    expect(msg).toContain('MLB5468058963');
+    expect(msg).toContain('MLB2066191442');
+    expect(msg).toContain('Kit, 2 unidades');
+    expect(msg).toContain('Unidade, 1 unidade');
+    expect(msg).toContain('Corrigir e republicar');
+    expect(msg).not.toContain('Publicar no catálogo');
+  });
+});
 
 describe('montarMensagemCatalogoNoMatch', () => {
   it('inclui título, a cor afetada, o passo manual e o link da página de catálogo', () => {

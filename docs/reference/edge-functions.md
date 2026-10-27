@@ -398,8 +398,11 @@ mesmo por engano.
   "comissão indisponível — reprocesse" com `preco_publicacao` limpo (o gate "sem preço" trava). Frete
   continua resiliente (ADR-0050). **Cor da foto em categoria sem `COLOR` (emenda ADR-0044):** cor só do
   Vision vira `'Outra'` (persistida) e sai do título, da seção de cores e de "na cor X" na descrição —
-  no passo 3 se a categoria já é conhecida, no passo 6 no CREATE. **Kit sem contagem (emenda
-  ADR-0071):** `SALE_FORMAT=Kit` sem contagem real vira Unidade (`preencherUnitsPerPack`).
+  no passo 3 se a categoria já é conhecida, no passo 6 no CREATE. **Kit sem contagem (emenda 2
+  ADR-0071):** `SALE_FORMAT=Kit` sem contagem real deixa `UNITS_PER_PACK` faltando
+  (`faltanteKitSemContagem`) — a Revisão pede a quantidade ao operador (`atributos-familia` mantém a
+  trava ao salvar). **vincular-catalogo (UP):** item que o ML criou já como anúncio de catálogo tem a
+  ficha lida por id e comparada (`fichaEquivalente`); divergente → `ficha_divergente` + Telegram próprio.
   Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
   válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
   vendedores distinto, produto representativo = mais barato. Negative caching por GTIN

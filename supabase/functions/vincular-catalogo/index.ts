@@ -5,7 +5,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizarTentativaCatalogo } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
-import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
+import { montarMensagemCatalogoNoMatch, montarMensagemCatalogoAutoDivergente } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { rodarVinculacaoCatalogo, guardKitVinculado, anuncioSemVariacao, type FilhoCatalogoUP } from './vinculacao.ts';
 
@@ -153,6 +153,17 @@ Deno.serve(async (req) => {
           }));
       } catch (e) {
         console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);
+      }
+    }
+
+    // Catálogo automático divergente (lote Hairfly, 27/10): alerta próprio — a ação é corrigir o
+    // anúncio, não o opt-in. Fica de fora do `deveAlertar` acima para não misturar as duas mensagens.
+    if (resumo.auto_divergentes?.length && !silencioso) {
+      try {
+        await notificarCategoria(admin, familia.org_id, 'moderacao',
+          montarMensagemCatalogoAutoDivergente({ titulo: familia.nome_pai ?? null, itens: resumo.auto_divergentes }));
+      } catch (e) {
+        console.error(`alerta catálogo automático falhou para ${familia.ml_item_id}:`, (e as Error).message);
       }
     }
 

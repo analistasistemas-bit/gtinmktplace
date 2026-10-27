@@ -217,3 +217,74 @@ describe('vincularItensCatalogoUP — vinculação por item (não por variação
     expect(writes.find((x) => x.id === 'item-1' && x.values.catalog_status === 'erro')).toBeTruthy();
   });
 });
+
+// Lote Hairfly 27/10: o ML criou o item JÁ como anúncio de catálogo (ficha `flex` que a busca por GTIN
+// não acha) com Kit/2, e o nosso anúncio dizia Unidade/1 — página "indisponível", nenhum aviso nosso.
+describe('vincularItensCatalogoUP — catálogo automático do ML', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubAuto(opts: { item?: unknown; itemStatus?: number; produto?: unknown; produtoStatus?: number }) {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      calls.push(url);
+      const r = (json: unknown, status = 200) => new Response(JSON.stringify(json), { status });
+      if (url.includes('/items/MLB-ITEM-1?include_attributes=all')) return r(opts.item ?? {}, opts.itemStatus ?? 200);
+      if (url.includes('/products/MLB2066191442')) return r(opts.produto ?? {}, opts.produtoStatus ?? 200);
+      return r({});
+    }));
+    return calls;
+  }
+  const ITEM_AUTO = {
+    catalog_listing: true, catalog_product_id: 'MLB2066191442', domain_id: 'MLB-HAIR',
+    attributes: [{ id: 'SALE_FORMAT', value_name: 'Unidade' }, { id: 'UNITS_PER_PACK', value_name: '1' }],
+  };
+  const PRODUTO_KIT2 = {
+    id: 'MLB2066191442', domain_id: 'MLB-HAIR',
+    attributes: [{ id: 'SALE_FORMAT', value_name: 'Kit' }, { id: 'UNITS_PER_PACK', value_name: '2' }],
+  };
+
+  it('ficha Kit/2 × anúncio Unidade/1 → ficha_divergente + auto_divergentes com o comparativo', async () => {
+    const calls = stubAuto({ item: ITEM_AUTO, produto: PRODUTO_KIT2 });
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.auto_divergentes).toEqual([{
+      item: 'MLB-ITEM-1', catalogo: 'MLB2066191442', ficha: 'Kit, 2 unidades', anuncio: 'Unidade, 1 unidade',
+    }]);
+    const w = writes.find((x) => x.id === 'item-1');
+    expect(w?.values.catalog_status).toBe('ficha_divergente');
+    expect(w?.values.catalog_product_id).toBe('MLB2066191442');
+    expect(calls.some((u) => u.includes('/catalog_listing_eligibility'))).toBe(false);
+  });
+
+  it('ficha igual ao anúncio → vinculado (o próprio item é o anúncio de catálogo)', async () => {
+    stubAuto({
+      item: { ...ITEM_AUTO, attributes: [{ id: 'SALE_FORMAT', value_name: 'Kit' }, { id: 'UNITS_PER_PACK', value_name: '2' }] },
+      produto: PRODUTO_KIT2,
+    });
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.vinculado).toBe(1);
+    expect(resumo.auto_divergentes ?? []).toEqual([]);
+    expect(writes.find((x) => x.id === 'item-1')?.values).toMatchObject({
+      catalog_status: 'vinculado', catalog_product_id: 'MLB2066191442', catalog_listing_id: 'MLB-ITEM-1',
+    });
+  });
+
+  it('falha ao ler o produto (429) → não compara (nada de falso divergente), segue o fluxo antigo', async () => {
+    const calls = stubAuto({ item: ITEM_AUTO, produtoStatus: 429 });
+    const { admin } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.auto_divergentes ?? []).toEqual([]);
+    expect(resumo.ficha_divergente).toBe(0);
+    expect(calls.some((u) => u.includes('/catalog_listing_eligibility'))).toBe(true);
+  });
+
+  it('falha ao ler o item (500) → segue o fluxo antigo', async () => {
+    const calls = stubAuto({ itemStatus: 500 });
+    const { admin } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.auto_divergentes ?? []).toEqual([]);
+    expect(calls.some((u) => u.includes('/catalog_listing_eligibility'))).toBe(true);
+  });
+});

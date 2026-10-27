@@ -109,8 +109,8 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   }
 
   // Kit vinculado (ADR-0151): a contagem real é o kit_multiplicador, não a regex do título. Sem
-  // reaplicá-la, a emenda do ADR-0071 trocaria "Kit" sem contagem por "Unidade/1" — publicável,
-  // mas vendendo N unidades ao preço de 1 (revisão Codex). Categoria sem "Kit" → 400 da função.
+  // reaplicá-la, "Kit" sem contagem no texto ficaria sem quantidade (emenda ADR-0071) — e um kit
+  // nunca deve sair com outra quantidade que não N. Categoria sem "Kit" → 400 da função.
   const n = Number(familia.kit_multiplicador ?? 1);
   if (n > 1) {
     const tok = await obterToken();
@@ -118,7 +118,11 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       return new Response('Sem conexão com o Mercado Livre para validar o formato Kit desta categoria.', { status: 503, headers: corsHeaders });
     }
     try {
-      atributosMl = aplicarKitNosAtributos(await lerSchemaAtributos(tok, categoriaMlId), atributosMl, n);
+      const schemaKit = await lerSchemaAtributos(tok, categoriaMlId);
+      atributosMl = aplicarKitNosAtributos(schemaKit, atributosMl, n);
+      // N preencheu a quantidade: o faltante "Kit sem quantidade" do resolver deixa de valer.
+      const nomeUnits = schemaKit.find((s) => s.id === 'UNITS_PER_PACK')?.nome;
+      atributosFaltantes = atributosFaltantes.filter((f) => f !== nomeUnits);
     } catch (e) {
       return new Response((e as Error).message, { status: (e as { status?: number }).status ?? 500, headers: corsHeaders });
     }

@@ -17,6 +17,21 @@ const SCHEMA: AtributoSchema[] = [
   A({ id: 'MATERIAL', nome: 'Material', required: true, valueType: 'string', valores: [{ id: '1', nome: 'Alpaca' }, { id: '2', nome: 'Ouro' }] }),
 ];
 
+// Emenda ADR-0071 (2ª, revisão Codex): Kit sem quantidade precisa de campo mesmo com UNITS_PER_PACK opcional.
+describe('faltantesEditaveis — Kit sem quantidade', () => {
+  const S: AtributoSchema[] = [
+    A({ id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list', valores: [{ id: 'u', nome: 'Unidade' }, { id: 'k', nome: 'Kit' }] }),
+    A({ id: 'UNITS_PER_PACK', nome: 'Quantidade de unidades', valueType: 'number' }), // opcional no schema
+  ];
+  it('oferece a quantidade (número) quando o formato é Kit e ela falta', () => {
+    const campos = faltantesEditaveis(S, [{ id: 'SALE_FORMAT', value_id: 'k' }]);
+    expect(campos.map((c) => [c.id, c.tipo])).toEqual([['UNITS_PER_PACK', 'numero']]);
+  });
+  it('formato Unidade: quantidade opcional não aparece', () => {
+    expect(faltantesEditaveis(S, [{ id: 'SALE_FORMAT', value_id: 'u' }])).toEqual([]);
+  });
+});
+
 describe('faltantesEditaveis', () => {
   it('lista obrigatórios não preenchidos com tipo/valores; ignora COLOR/read-only/opcional', () => {
     const campos = faltantesEditaveis(SCHEMA, [{ id: 'BRAND', value_name: 'Avil' }]);

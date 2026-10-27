@@ -2,6 +2,7 @@ import type { AtributoSchema } from './schema.ts';
 import {
   montarAtributosBase,
   atributosFaltantesGenerico,
+  faltanteKitSemContagem,
   preencherUnitsPerPack,
   preencherNomeObrigatorio,
   FALTANTE_ATRIBUTOS_NAO_VALIDADOS,
@@ -46,7 +47,10 @@ export async function resolverAtributosGenericos(
     );
     atributosMl = preencherUnitsPerPack(schema, atributosMl, input.nome, input.descricao);
     atributosMl = preencherNomeObrigatorio(schema, atributosMl, input.nome);
-    const faltantes = atributosFaltantesGenerico(atributosMl, schema);
+    const faltantes = [...new Set([
+      ...atributosFaltantesGenerico(atributosMl, schema),
+      ...faltanteKitSemContagem(schema, atributosMl),
+    ])];
     return { atributosMl, faltantes };
   } catch (e) {
     console.error('resolverAtributosGenericos falhou:', e);

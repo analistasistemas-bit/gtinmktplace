@@ -48,6 +48,28 @@ export interface CatalogoNoMatchAlerta {
 // (ex.: GTIN só existe em ficha de kit). Se ela ficar sem associação, o ML pausa o anúncio inteiro
 // depois. A ação "Não encontro minha variação" é só na UI do ML (não há endpoint OAuth), então o
 // sistema avisa o operador p/ resolver manualmente ANTES da pausa.
+// O ML ligou sozinho o anúncio a uma ficha de catálogo que diverge dele (lote Hairfly, 27/10: ficha
+// Kit/2 × anúncio Unidade/1 → página "indisponível"). Não há opt-in a fazer: o anúncio é que precisa
+// dizer o mesmo que a ficha, pelo fluxo do app (nunca escrita direta no ML).
+export function montarMensagemCatalogoAutoDivergente(a: {
+  titulo: string | null;
+  itens: Array<{ item: string; catalogo: string; ficha: string; anuncio: string }>;
+}): string {
+  return blocos(
+    ['⚠️ Catálogo: anúncio ligado a uma ficha diferente'],
+    [`Anúncio: "${a.titulo ?? a.itens[0]?.item}"`],
+    ...a.itens.map((i) => [
+      `${i.item} → ficha ${i.catalogo}`,
+      `Ficha do catálogo: ${i.ficha}`,
+      `Seu anúncio: ${i.anuncio}`,
+    ]),
+    [
+      'O Mercado Livre ligou o anúncio a esta ficha sozinho. Enquanto os dois não baterem, o anúncio pode aparecer como indisponível.',
+      'Para corrigir: no PubliAI, "Corrigir e republicar" e ajuste formato/quantidade na Revisão.',
+    ],
+  );
+}
+
 export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): string {
   const nome = item.titulo ?? item.ml_item_id;
   const url = `https://www.mercadolivre.com.br/produzir/catalogo/${item.ml_item_id}`;

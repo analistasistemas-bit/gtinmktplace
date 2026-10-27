@@ -489,7 +489,9 @@ export async function criarKitsVinculados(
       // próprio erro dedicado (categoria_sem_kit) se a categoria não oferecer o valor. Sem esta
       // exclusão, uma categoria como "Leite Infantil" (SALE_FORMAT ligado a UNITS_PER_PACK)
       // bloquearia a criação do kit por um faltante que o passo seguinte já resolveria.
-      const schemaParaFaltantes = schema.filter((s) => s.id !== 'SALE_FORMAT');
+      // UNITS_PER_PACK pelo mesmo motivo: aplicarKitNosAtributos grava o N real; a emenda do ADR-0071
+      // (2026-10-27) deixa a quantidade faltando quando a base é "Kit" sem contagem no texto.
+      const schemaParaFaltantes = schema.filter((s) => s.id !== 'SALE_FORMAT' && s.id !== 'UNITS_PER_PACK');
       faltantesKit = faltantesSentinela
         ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schemaParaFaltantes));
       // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,

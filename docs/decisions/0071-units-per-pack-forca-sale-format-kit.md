@@ -57,6 +57,30 @@ frascos publicar como "Unidade".
 **Prova (dry-run `POST /items/validate`, payload real, 27/10):** Kit+Sim+1 → `invalid_sale_units`;
 Unidade+Sim+1, Unidade+Não+1 e Kit+Sim+2 → só o warning de frete `lost_me1_by_user` (normal).
 
+## Emenda 2 (2026-10-27, mesmo dia): Kit sem contagem pede a quantidade ao operador
+
+**Por que a emenda 1 caiu.** O "Pós Química" publicou como Unidade/1 e o ML, **na criação**, ligou o
+item pelo GTIN a uma ficha de catálogo `flex` (MLB2066191442, Kit/2) que `/products/search` não acha.
+O item nasceu `catalog_listing: true`, sem anúncio tradicional, com a página "indisponível", e o nosso
+estado ficou `sem_produto`. O próprio catálogo provou que "Shampoo + condicionador" é Kit de 2.
+
+**Decisão (Diego, 27/10).**
+1. Kit sem contagem real no texto: **não** assume 1 nem troca para Unidade — `UNITS_PER_PACK` fica
+   **faltando** (`faltanteKitSemContagem`) e a Revisão trava até o operador informar. Vale no resolver
+   genérico, no ramo de aviamento do `process-familia` e no salvar do `atributos-familia`; o editor
+   oferece o campo mesmo quando a categoria o marca como opcional. Kit vinculado (ADR-0151) não trava:
+   o N real preenche (`criar-kit-vinculado` tira o atributo dos faltantes; `definir-categoria-familia`
+   remove o faltante depois de aplicar N).
+2. **Alerta pós-publicação** (`vincular-catalogo`, User Products): se o ML criou o item já como anúncio
+   de catálogo, a ficha é lida por id e comparada com a trava anti-kit (`fichaEquivalente`). Divergente →
+   `catalog_status='ficha_divergente'` com o comparativo e Telegram próprio ("Corrigir e republicar").
+   Leitura que falha → fluxo antigo, nunca falso divergente. Prova com o anúncio real: Pós Química →
+   divergente (Kit 2 × Unidade 1); Neutralizante de catálogo → equivalente.
+
+**Limitações.** Legacy fica de fora (só UP). O card de risco de catálogo da tela Publicados lê
+`variacoes`, não `anuncios_externos_itens` — o aviso desta emenda chega por Telegram e fica gravado no
+item, não no card.
+
 ## Como reverter
 
 Remover a chamada a `forcarSaleFormatKit` dentro de `preencherUnitsPerPack`.

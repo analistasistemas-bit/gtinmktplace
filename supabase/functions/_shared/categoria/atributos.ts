@@ -229,22 +229,29 @@ export function preencherUnitsPerPack(
   const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
   if (!exposto || jaTem) return atributos;
   const extraido = extrairUnitsPerPack(nome, descricao);
-  const n = extraido ?? 1;
-  const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
-  // Emenda ADR-0071 (2026-10-27): sem contagem, a IA ainda pode ter marcado "Kit" ("Shampoo +
-  // condicionador") — o ML recusa Kit com 1 unidade. Assumindo 1, o formato tem que ser Unidade.
-  if (extraido == null || extraido <= 1) return desfazerKitSemContagem(schema, comUnits);
+  // Emenda ADR-0071 (2026-10-27, 2ª): a IA marcou "Kit" ("Shampoo + condicionador") e o texto não diz
+  // quantos. Nem 1 (o ML recusa Kit com 1) nem Unidade (divergiu do catálogo, que dizia Kit/2): a
+  // quantidade fica faltando e o operador informa na Revisão (`faltanteKitSemContagem`).
+  if ((extraido == null || extraido <= 1) && ehSaleFormatKit(schema, atributos)) return atributos;
+  const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(extraido ?? 1) }];
+  if (extraido == null || extraido <= 1) return comUnits;
   return forcarSaleFormatKit(schema, comUnits);
 }
 
-/** SALE_FORMAT "Kit" → "Unidade" (value_id do schema). Só troca se já estava Kit. */
-function desfazerKitSemContagem(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
-  const valores = schema.find((a) => a.id === 'SALE_FORMAT')?.valores ?? [];
-  const kit = valores.find((v) => normalizar(v.nome) === 'kit');
-  const unidade = valores.find((v) => normalizar(v.nome) === 'unidade');
-  const atual = atributos.find((a) => a.id === 'SALE_FORMAT');
-  if (!kit || !unidade || atual?.value_id !== kit.id) return atributos;
-  return [...atributos.filter((a) => a.id !== 'SALE_FORMAT'), { id: 'SALE_FORMAT', value_id: unidade.id }];
+function ehSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): boolean {
+  const kit = schema.find((a) => a.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === 'kit');
+  return !!kit && atributos.find((a) => a.id === 'SALE_FORMAT')?.value_id === kit.id;
+}
+
+/**
+ * Nome do UNITS_PER_PACK (como o schema o chama) quando o formato é Kit e a quantidade não foi
+ * informada. Explícito porque nem toda categoria marca o atributo como required/conditional — sem
+ * isto o gate deixaria publicar um Kit que o ML recusa (`invalid_sale_units`).
+ */
+export function faltanteKitSemContagem(schema: AtributoSchema[], atributos: AtributoML[]): string[] {
+  const units = schema.find((a) => a.id === 'UNITS_PER_PACK');
+  const tem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
+  return units && !tem && ehSaleFormatKit(schema, atributos) ? [units.nome] : [];
 }
 
 /**

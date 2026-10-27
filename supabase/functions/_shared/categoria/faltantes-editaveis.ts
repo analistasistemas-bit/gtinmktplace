@@ -1,5 +1,5 @@
 import type { AtributoSchema } from './schema.ts';
-import { TAGS_NAO_FALTANTE, type AtributoML } from './atributos.ts';
+import { TAGS_NAO_FALTANTE, faltanteKitSemContagem, type AtributoML } from './atributos.ts';
 import { classificarFamilia } from '../produto/tipos-produto-valores.ts';
 
 // COLOR/GTIN/EMPTY_GTIN_REASON são resolvidos por variação/publicação; não editáveis aqui.
@@ -56,9 +56,12 @@ export function faltantesEditaveis(
   const presentes = new Set(atributos.filter((a) => a.value_name || a.value_id).map((a) => a.id));
   if (contexto.temGrade) presentes.add('SIZE');
   if (contexto.temGenero) presentes.add('GENDER');
+  // Emenda ADR-0071 (2ª): Kit sem quantidade trava o gate mesmo onde UNITS_PER_PACK é opcional no
+  // schema — o editor tem de oferecer o campo, senão a família fica presa sem como corrigir.
+  const kitSemQtd = faltanteKitSemContagem(schema, atributos).length > 0;
   return schema
     .filter((a) =>
-      (a.required || a.conditionalRequired) &&
+      (a.required || a.conditionalRequired || (kitSemQtd && a.id === 'UNITS_PER_PACK')) &&
       !IGNORAR.has(a.id) &&
       !presentes.has(a.id) &&
       !a.tags.some((t) => TAGS_EXCLUIR.has(t)),

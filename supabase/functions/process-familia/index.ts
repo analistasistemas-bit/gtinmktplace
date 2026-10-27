@@ -22,7 +22,7 @@ import { preSubirFotosFamilia } from '../_shared/anuncios/pre-subir-fotos.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, buscarComissaoParaPreco, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, faltanteKitSemContagem, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
 import { inputCategoriaDaFamilia, categoriaPorCatalogo } from './categoria-familia.ts';
@@ -345,6 +345,8 @@ Deno.serve(async (req) => {
           );
           atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
           atributosMl = preencherNomeObrigatorio(schema, atributosMl, claimed.nome_pai);
+          // Emenda ADR-0071 (2ª): Kit sem quantidade trava na Revisão até o operador informar.
+          faltantes = faltanteKitSemContagem(schema, atributosMl);
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
       }
     } else if (categoriaMlId) {

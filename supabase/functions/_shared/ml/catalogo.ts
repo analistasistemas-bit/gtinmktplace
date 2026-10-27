@@ -339,7 +339,37 @@ export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string |
 
 /** Lê o comprimento (LENGTH) do NOSSO item publicado — base de comparação da trava de metragem. */
 export async function buscarEsperadoDoItem(token: string, itemId: string): Promise<EsperadoProduto> {
+  return parseEsperadoItem(await mlGet(`${API}/items/${itemId}?include_attributes=all`, token));
+}
+
+/**
+ * Item que o PRÓPRIO ML criou como anúncio de catálogo (sem opt-in nosso): `catalog_listing` e
+ * `catalog_product_id` já vêm no item. Caso real (lote Hairfly, 27/10): ficha `flex` que
+ * /products/search não acha. Uma leitura só (item + atributos). Falha de leitura ou item que não
+ * é de catálogo → null, e o chamador segue o fluxo antigo — nunca compara com dado faltando.
+ */
+export async function lerCatalogoAutomatico(
+  token: string, itemId: string,
+): Promise<{ cpid: string; esperado: EsperadoProduto } | null> {
   const json = await mlGet(`${API}/items/${itemId}?include_attributes=all`, token);
+  const item = json as { catalog_listing?: boolean; catalog_product_id?: string | null } | null;
+  if (item?.catalog_listing !== true || !item.catalog_product_id) return null;
+  return { cpid: item.catalog_product_id, esperado: parseEsperadoItem(json) };
+}
+
+/** Ficha de catálogo pelo id (`/products/{id}`), no mesmo formato da busca. null se a leitura falhar. */
+export async function buscarProdutoCatalogoPorId(token: string, cpid: string): Promise<AtributosFicha | null> {
+  const json = await mlGet(`${API}/products/${encodeURIComponent(cpid)}`, token);
+  return json && (json as { id?: string }).id ? parseProdutoCatalogoBusca({ results: [json] }) : null;
+}
+
+/** "Kit, 2 unidades" / "Unidade, 1 unidade" — o que a ficha e o anúncio dizem, para o alerta. */
+export function descreverFormato(saleFormat: string | null | undefined, unidades: number | null | undefined): string {
+  const n = unidades ?? 1;
+  return `${saleFormat ?? 'Unidade'}, ${n} ${n === 1 ? 'unidade' : 'unidades'}`;
+}
+
+function parseEsperadoItem(json: unknown): EsperadoProduto {
   const item = json as { domain_id?: string; attributes?: Array<{ id?: string; value_name?: string }> } | null;
   const attrs = item?.attributes;
   const attr = (id: string) => attrs?.find((a) => a?.id === id)?.value_name ?? null;
@@ -448,7 +478,12 @@ export interface VarCatalogoRow {
 export interface ResumoCatalogo {
   vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number; ficha_divergente: number;
   sem_variation_id: number; // estrutural: não é um novo catalog_status; a linha segue como nao_elegivel
+  /** Itens que o ML ligou sozinho a uma ficha que diverge do anúncio (só UP). Fora de
+   *  `ficha_divergente` de propósito: o alerta e a ação são outros (corrigir o anúncio, não opt-in). */
+  auto_divergentes?: AutoDivergente[];
 }
+
+export interface AutoDivergente { item: string; catalogo: string; ficha: string; anuncio: string }
 
 /**
  * Decide se deve alertar o operador sobre variações sem ficha de catálogo equivalente (ADR-0036).
@@ -649,6 +684,28 @@ export async function vincularItensCatalogoUP(
       // reagenda. Nada a persistir ainda (revisão v2, achado MÉDIA — a mensagem antiga de alerta
       // falava em "identificador de variação", que não existe nesse modelo).
       if (!f.item_externo_id) { resumo.pendente++; continue; }
+
+      // O ML pode criar o item JÁ como anúncio de catálogo, ligado a uma ficha que a busca por GTIN
+      // não acha (lote Hairfly, 27/10: ficha `flex` Kit/2 × anúncio Unidade/1, página "indisponível").
+      // Compara com a trava anti-kit de sempre; qualquer leitura que falhe cai no fluxo antigo.
+      const auto = await lerCatalogoAutomatico(token, f.item_externo_id).catch(() => null);
+      const fichaAuto = auto ? await buscarProdutoCatalogoPorId(token, auto.cpid).catch(() => null) : null;
+      if (auto && fichaAuto) {
+        const eq = fichaEquivalente(fichaAuto, auto.esperado);
+        if (eq.ok) {
+          await setItem(f.id, { catalog_status: 'vinculado', catalog_product_id: auto.cpid, catalog_listing_id: f.item_externo_id, catalog_erro: null });
+          resumo.vinculado++;
+        } else {
+          const ficha = descreverFormato(fichaAuto.saleFormat, fichaAuto.unitsPerPack);
+          const anuncio = descreverFormato(auto.esperado.saleFormat, auto.esperado.unitsPerPack);
+          await setItem(f.id, {
+            catalog_status: 'ficha_divergente', catalog_product_id: auto.cpid,
+            catalog_erro: `catálogo automático do ML: a ficha diz ${ficha}, o anúncio diz ${anuncio}`.slice(0, 300),
+          });
+          (resumo.auto_divergentes ??= []).push({ item: f.item_externo_id, catalogo: auto.cpid, ficha, anuncio });
+        }
+        continue;
+      }
 
       // Falha de LEITURA não é estado do item (spec 2026-08-12 §1.2, análogo UP): conta como
       // pendente (retentável pelo backoff) sem persistir 'erro' — "não perguntei" ≠ recusa do ML.
