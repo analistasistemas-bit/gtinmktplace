@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaAceitaCor, removerCorDoSlot, removerCorDosSlots, removerSecaoCores } from '../sem-atributo';
+import { categoriaAceitaCor, removerCorDoSlot, removerCorDosSlots, removerCoresDaSecao } from '../sem-atributo';
 import { posProcessarDescricao } from '../../ai/copywriter-prompt';
 import type { AtributoSchema } from '../../categoria/schema';
 
@@ -34,6 +34,14 @@ describe('removerCorDoSlot', () => {
   it('não corta parte de palavra', () => {
     expect(removerCorDoSlot('Pretoria', ['Preto'])).toBe('Pretoria');
   });
+
+  // Revisão Codex: separar só por espaço deixava a cor colada em pontuação.
+  it('cor colada em pontuação também sai, sem sobrar pontuação pendurada', () => {
+    expect(removerCorDoSlot('(Preto)', ['Preto'])).toBe('');
+    expect(removerCorDoSlot('Preto, 2000ml', ['Preto'])).toBe('2000ml');
+    expect(removerCorDoSlot('Preto/Branco', ['Preto'])).toBe('Branco');
+    expect(removerCorDoSlot('Grande (Preto)', ['Preto'])).toBe('Grande');
+  });
 });
 
 describe('removerCorDosSlots', () => {
@@ -49,29 +57,42 @@ describe('removerCorDosSlots', () => {
   });
 });
 
-describe('removerSecaoCores', () => {
-  it('tira a seção de cores e a ressalva de tonalidade, mantendo o resto', () => {
-    const desc = [
-      '📌 ESPECIFICAÇÕES', '', '• Volume: 2000ml', '',
-      '🎨 CORES DISPONÍVEIS', '', '- Preto', '',
-      'A tonalidade pode variar conforme a tela do dispositivo.', '',
-      '📦 O QUE VOCÊ RECEBE', '', '• 1 unidade',
-    ].join('\n');
-    const out = removerSecaoCores(desc);
+describe('removerCoresDaSecao', () => {
+  const desc = (itens: string[]) => [
+    '📌 ESPECIFICAÇÕES', '', '• Volume: 2000ml', '',
+    '🎨 CORES DISPONÍVEIS', '', ...itens, '',
+    'A tonalidade pode variar conforme a tela do dispositivo.', '',
+    '📦 O QUE VOCÊ RECEBE', '', '• 1 unidade',
+  ].join('\n');
+
+  it('única cor descartada: some a seção inteira (com a ressalva), o resto fica', () => {
+    const out = removerCoresDaSecao(desc(['- Preto']), ['Preto']);
     expect(out).not.toMatch(/CORES DISPON|Preto|tonalidade/);
     expect(out).toContain('• Volume: 2000ml');
     expect(out).toContain('📦 O QUE VOCÊ RECEBE');
   });
 
-  // Revisão Codex: posProcessarDescricao sozinho mantinha a seção com cor 'Outra'.
+  // Revisão Codex: atualizarSecaoCores só reconhecia itens com "-".
+  it('item com outro marcador (• / ✔) também sai', () => {
+    expect(removerCoresDaSecao(desc(['• Preto']), ['Preto'])).not.toMatch(/Preto|CORES DISPON/);
+    expect(removerCoresDaSecao(desc(['✔ Preto']), ['Preto'])).not.toMatch(/Preto|CORES DISPON/);
+  });
+
+  // Revisão Codex: família com cor da foto + cor legítima perdia a lista toda.
+  it('preserva as cores que não foram descartadas', () => {
+    const out = removerCoresDaSecao(desc(['- Azul', '- Preto']), ['Preto']);
+    expect(out).toContain('🎨 CORES DISPONÍVEIS');
+    expect(out).toContain('- Azul');
+    expect(out).not.toContain('Preto');
+  });
+
   it('cadeia real: seção que a IA escreveu com a cor da foto some depois do pós-processamento', () => {
-    const desc = '📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml\n\n🎨 CORES DISPONÍVEIS\n\n- Preto\n\n📦 O QUE VOCÊ RECEBE\n\n• 1 unidade';
     const vars = [{ codigo: '00139220', cor: 'Outra', preco: 36.02, nome: 'SHAMPOO' }];
-    const out = posProcessarDescricao(removerSecaoCores(desc), 'SHAMPOO', '', vars);
+    const out = posProcessarDescricao(removerCoresDaSecao(desc(['- Preto']), ['Preto']), 'SHAMPOO', '', vars);
     expect(out).not.toMatch(/CORES DISPON|Preto|tonalidade/);
   });
 
   it('sem seção de cores devolve o texto intacto', () => {
-    expect(removerSecaoCores('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml')).toBe('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml');
+    expect(removerCoresDaSecao('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml', ['Preto'])).toBe('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml');
   });
 });

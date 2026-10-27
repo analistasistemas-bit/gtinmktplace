@@ -10,7 +10,7 @@ import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-po
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
 import { ehCorIndefinida, COR_VISION_INDEFINIDA } from '../_shared/cor/indefinida.ts';
-import { categoriaAceitaCor, removerCorDosSlots, removerSecaoCores } from '../_shared/cor/sem-atributo.ts';
+import { categoriaAceitaCor, removerCorDosSlots, removerCoresDaSecao } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -197,10 +197,16 @@ Deno.serve(async (req) => {
     // da copy e do UPDATE parcial; no CREATE a categoria só sai no passo 5c (ver passo 6).
     const corDaFoto = (v: { cor: string | null; cor_origem: string | null }) =>
       v.cor_origem === 'vision' && !ehCorIndefinida(v.cor);
+    // Categoria cujo schema foi de fato lido: o passo 6 só pula a checagem dela, não a de uma
+    // categoria cuja leitura falhou aqui (token/rede) e pode dar certo depois.
+    let categoriaChecada: string | null = null;
     const descartaCorDaFoto = async (categoriaId: string | null): Promise<boolean> => {
       if (!categoriaId || !conexao) return false;
       const tok = await getValidAccessTokenConexao(conexao).catch(() => null);
-      return !!tok && !categoriaAceitaCor(await lerSchemaAtributos(tok, categoriaId).catch(() => []));
+      if (!tok) return false;
+      const schema = await lerSchemaAtributos(tok, categoriaId).catch(() => []);
+      if (schema.length) categoriaChecada = categoriaId;
+      return !categoriaAceitaCor(schema);
     };
     const resolvidas = resolvidasBrutas.some(corDaFoto) && await descartaCorDaFoto(claimed.categoria_ml_id)
       ? resolvidasBrutas.map((v) => (corDaFoto(v) ? { ...v, cor: COR_VISION_INDEFINIDA } : v))
@@ -217,7 +223,9 @@ Deno.serve(async (req) => {
           .update({ cor: v.cor, cor_origem: v.cor_origem })
           .eq('id', v.id)
       );
-    await Promise.all(updatesVar);
+    // Erro de escrita não pode passar calado: a cor 'Outra' não persistida voltaria na regeneração.
+    const falhaCor = (await Promise.all(updatesVar)).find((r) => r.error);
+    if (falhaCor?.error) throw new Error(`Persistir cores: ${falhaCor.error.message}`);
 
     // UPDATE parcial: a família herdou título/descrição/categoria/concorrência do anúncio
     // anterior; aqui só precisávamos resolver a cor das cores novas (feito nos passos 3-4).
@@ -519,7 +527,7 @@ Deno.serve(async (req) => {
     // Emenda ADR-0044 (2026-10-27), CREATE: a categoria acabou de sair, mas a copy já foi escrita
     // vendo a cor da foto. Persiste indefinida (regenerar/UPDATE não a trazem de volta) e tira a
     // cor dos slots e da seção de cores que a IA escreveu.
-    const descartadas = categoriaMlId !== claimed.categoria_ml_id && resolvidas.some(corDaFoto)
+    const descartadas = categoriaMlId !== categoriaChecada && resolvidas.some(corDaFoto)
       && await descartaCorDaFoto(categoriaMlId)
       ? resolvidas.filter(corDaFoto)
       : [];
@@ -534,7 +542,9 @@ Deno.serve(async (req) => {
       ? removerCorDosSlots(copy.titulo_slots, descartadas.map((v) => v.cor as string),
         `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
       : copy.titulo_slots;
-    const descricaoBase = descartadas.length ? removerSecaoCores(copy.descricao) : copy.descricao;
+    const descricaoBase = descartadas.length
+      ? removerCoresDaSecao(copy.descricao, descartadas.map((v) => v.cor as string))
+      : copy.descricao;
     const coresUnicas = [...new Set(variacoesFinais.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
     // A família falha de propósito (nunca truncar nem fundir produtos), mas o operador precisa
