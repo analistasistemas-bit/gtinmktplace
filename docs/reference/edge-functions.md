@@ -344,7 +344,11 @@ mesmo por engano.
 ### Ingest de planilha
 - **ingest-lote** — valida colunas, agrupa variações por PAI, casa fotos, detecta CREATE vs
   UPDATE, cria `familias`+`variacoes` e enfileira as pendentes (`enfileirarFamilia`). Edge
-  cases em ADR-0013. Grava `familias.origem` a partir da coluna `ORIGEM` da linha PAI, que é
+  cases em ADR-0013. **Produto único (ADR-0191):** linha com `PAI` vazio e sem filhos vira família
+  de 1 SKU (a própria linha); `PAI = 0` sem filhos segue descartado. **Cabeçalho:** as chaves da
+  linha crua são normalizadas (`normalizarCabecalhos`: trim + maiúsculas) logo após a leitura — antes
+  `" PESO_GRAMAS"` passava na validação e gravava peso 0; duas colunas que viram a mesma chave
+  abortam o lote. Grava `familias.origem` a partir da coluna `ORIGEM` da linha PAI, que é
   **obrigatória e explícita** (ADR-0107): a coluna está em `COLUNAS_OBRIGATORIAS` e
   `exigirOrigemExplicita` aborta o lote se qualquer PAI vier vazio ou com valor fora de
   `NACIONAL`/`IMPORTADO`, listando todos os códigos de uma vez — o default silencioso em
@@ -389,7 +393,14 @@ mesmo por engano.
   marca `pronto`/`erro`. **LOUD do imposto (ADR-0086):** cedo, se a org não confirmou as alíquotas
   (`configuracoes.aliquotas_confirmadas_em` null) a família vira `erro` "confirme as alíquotas" — nunca
   precifica com 8/16 em silêncio (vale p/ CREATE e UPDATE); erro transitório de config volta a
-  `pendente` (retry). Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
+  `pendente` (retry). **Comissão LOUD (emenda ADR-0020, 2026-10-27):** no ramo próprio a comissão vem
+  de `buscarComissaoParaPreco` (retry de 429/5xx, só comissão oficial); esgotou → família `erro`
+  "comissão indisponível — reprocesse" com `preco_publicacao` limpo (o gate "sem preço" trava). Frete
+  continua resiliente (ADR-0050). **Cor da foto em categoria sem `COLOR` (emenda ADR-0044):** cor só do
+  Vision vira `'Outra'` (persistida) e sai do título, da seção de cores e de "na cor X" na descrição —
+  no passo 3 se a categoria já é conhecida, no passo 6 no CREATE. **Kit sem contagem (emenda
+  ADR-0071):** `SALE_FORMAT=Kit` sem contagem real vira Unidade (`preencherUnitsPerPack`).
+  Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
   válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
   vendedores distinto, produto representativo = mais barato. Negative caching por GTIN
   (tombstone 6h) elimina buscas inúteis a cada reprocess. Com o toggle
@@ -753,7 +764,9 @@ mesmo por engano.
   ADR-0057): `{familia_id, categoria_ml_id, categoria_nome}` (substitui o contrato antigo de 4
   tipos fixos, ADR-0009/0022). Categoria conhecida (linha/fita/botao/cola/cursor, ADR-0083) → caminho curado
   (`montarAtributosML`); categoria livre/genérica → `resolverAtributosGenericos` (mesmo fluxo
-  schema+IA do process-familia, reusado). Depois da IA, dois preenchimentos determinísticos fecham
+  schema+IA do process-familia, reusado). Kit vinculado (`kit_multiplicador > 1`, ADR-0151) reaplica
+  `aplicarKitNosAtributos` com N depois de reconstruir os atributos (2026-10-27) — senão a emenda do
+  ADR-0071 o trocaria por Unidade/1. Depois da IA, dois preenchimentos determinísticos fecham
   obrigatórios que ela não cobre: `preencherUnitsPerPack` (kit) e `preencherNomeObrigatorio`
   (`NAME` = nome do produto quando a categoria o exige — adendo ADR-0052, lote #11).
 - **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os
