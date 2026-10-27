@@ -88,11 +88,14 @@ item, não no card.
 Revisão pedindo "Quantidade de pacotes" sem motivo.
 
 **Decisão (Diego, 27/10).** Em `preencherUnitsPerPack`, antes das regras de quantidade:
-1. "Kit" da IA só vale com **prova no texto** (nome ou descrição): quantidade > 1 escrita, a palavra
-   "kit", um "+" entre produtos ou "shampoo e/+ condicionador" (qualquer ordem). Sem prova →
+1. "Kit" da IA só vale com **prova no texto**: quantidade > 1 escrita ou a palavra "kit" (nome ou
+   descrição); " + " entre palavras ou "shampoo" e "condicionador" **só no nome** — na descrição são
+   modo de uso ("após o shampoo e condicionador") ou fórmula ("vitaminas A+E"). Sem prova →
    `SALE_FORMAT` Unidade e `IS_KIT` Não.
-2. **Shampoo + condicionador é sempre kit**, mesmo que a IA diga Unidade ou nada: `SALE_FORMAT` Kit e
-   `IS_KIT` Sim; com quantidade no texto vira Kit + N, sem quantidade a Revisão pede (emenda 2).
+2. **Shampoo + condicionador é sempre kit** (as duas palavras no nome, qualquer ordem, o que houver no
+   meio): `SALE_FORMAT` Kit e `IS_KIT` Sim, mesmo que a IA diga Unidade, nada ou "É kit: Não"; com
+   quantidade no texto vira Kit + N, sem quantidade a Revisão pede (emenda 2). Em categoria sem
+   `SALE_FORMAT`, "É kit = Sim" conta como Kit para pedir a quantidade.
 3. Kit vinculado (ADR-0151): `aplicarKitNosAtributos` grava também `IS_KIT` Sim, para não herdar o "Não"
    da trava quando a base não tem prova de kit no texto (revisão Codex).
 

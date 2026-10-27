@@ -330,9 +330,47 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     expect(semFormato).toEqual([{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
   });
 
+  // Revisão Codex do diff (5 casos).
+  it('"Shampoo Nutre 1L e Condicionador Nutre 1L" (palavras no meio) continua sendo kit', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Shampoo Nutre 1L e Condicionador Nutre 1L'))
+      .toEqual([{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+  });
+
+  it('"shampoo e condicionador" só na descrição (modo de uso) não vira kit', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135872' }];
+    const out = preencherUnitsPerPack(schemaComIsKit, base, 'Máscara Capilar 500g', 'Aplique após o shampoo e condicionador.');
+    expect(out).toEqual([...base, { id: 'UNITS_PER_PACK', value_name: '1' }]);
+  });
+
+  it('"+" fora do nome ou colado ("A+E") não é prova de kit', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }];
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Creme Hidratante 200g', 'Fórmula com vitaminas A+E.'))
+      .toEqual([{ id: 'SALE_FORMAT', value_id: '2135872' }, { id: 'UNITS_PER_PACK', value_name: '1' }]);
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Creme Vitaminas A+E 200g'))
+      .toEqual([{ id: 'SALE_FORMAT', value_id: '2135872' }, { id: 'UNITS_PER_PACK', value_name: '1' }]);
+  });
+
+  it('shampoo e condicionador com Kit mas "É kit" Não → "É kit" vira Sim', () => {
+    const base = [{ id: 'IS_KIT', value_id: '242084' }, { id: 'SALE_FORMAT', value_id: '2135873' }];
+    expect(preencherUnitsPerPack(schemaComIsKit, base, 'Shampoo e Condicionador Tanox 2L'))
+      .toEqual([{ id: 'IS_KIT', value_id: '242085' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+  });
+
+  it('categoria sem "Formato de venda": shampoo e condicionador deixa a quantidade faltando', () => {
+    const semSaleFormat = schemaComIsKit.filter((a) => a.id !== 'SALE_FORMAT');
+    const out = preencherUnitsPerPack(semSaleFormat, [{ id: 'IS_KIT', value_id: '242084' }], 'Shampoo e Condicionador NUTRE 2000ml');
+    expect(out).toEqual([{ id: 'IS_KIT', value_id: '242085' }]);
+    expect(faltanteKitSemContagem(semSaleFormat, out)).toEqual(['Unidades por kit']);
+  });
+
   it('"Shampoo e Condicionador" com quantidade no texto → Kit com essa quantidade', () => {
     const out = preencherUnitsPerPack(schemaComIsKit, [], 'Shampoo e Condicionador CACHOS 2 unidades 1L');
-    expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '2' }, { id: 'SALE_FORMAT', value_id: '2135873' }]);
+    expect(out).toEqual([
+      { id: 'IS_KIT', value_id: '242085' },
+      { id: 'UNITS_PER_PACK', value_name: '2' },
+      { id: 'SALE_FORMAT', value_id: '2135873' },
+    ]);
   });
 
   it('faltanteKitSemContagem: nada quando não é Kit ou já tem quantidade', () => {

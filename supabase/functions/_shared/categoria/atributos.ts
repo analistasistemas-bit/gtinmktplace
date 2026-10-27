@@ -229,43 +229,52 @@ export function preencherUnitsPerPack(
   const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
   if (!exposto || jaTem) return atributos;
   const extraido = extrairUnitsPerPack(nome, descricao);
-  // Emenda 3 ADR-0071 (2026-10-27): a IA marcou Kit num creme único de 80g. "Kit" só vale com prova
-  // no texto; sem prova vira Unidade (e "É kit" Não) antes de qualquer regra de quantidade.
-  if (ehSaleFormatKit(schema, atributos) && !temProvaDeKit(nome, descricao, extraido)) {
+  // Diego (27/10): shampoo + condicionador é SEMPRE kit (formato e "É kit"), mesmo que a IA diga
+  // Unidade ou nada. Fora disso (emenda 3 ADR-0071): "Kit" da IA só vale com prova no texto — a IA
+  // marcou Kit num creme único de 80g; sem prova vira Unidade (e "É kit" Não).
+  if (ehShampooECondicionador(nome)) {
+    atributos = marcarComoKit(schema, atributos);
+  } else if (ehKit(schema, atributos) && !temProvaDeKit(nome, descricao, extraido)) {
     atributos = desfazerKitSemProva(schema, atributos);
   }
-  // Diego (27/10): shampoo + condicionador é SEMPRE kit, mesmo que a IA diga Unidade ou nada.
-  if (ehShampooECondicionador(nome, descricao) && !ehSaleFormatKit(schema, atributos)) {
-    atributos = marcarComoKit(schema, atributos);
-  }
-  // Emenda ADR-0071 (2026-10-27, 2ª): a IA marcou "Kit" ("Shampoo + condicionador") e o texto não diz
-  // quantos. Nem 1 (o ML recusa Kit com 1) nem Unidade (divergiu do catálogo, que dizia Kit/2): a
-  // quantidade fica faltando e o operador informa na Revisão (`faltanteKitSemContagem`).
-  if ((extraido == null || extraido <= 1) && ehSaleFormatKit(schema, atributos)) return atributos;
+  // Emenda ADR-0071 (2026-10-27, 2ª): Kit sem quantidade no texto. Nem 1 (o ML recusa Kit com 1) nem
+  // Unidade (divergiu do catálogo, que dizia Kit/2): fica faltando e o operador informa na Revisão.
+  if ((extraido == null || extraido <= 1) && ehKit(schema, atributos)) return atributos;
   const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(extraido ?? 1) }];
   if (extraido == null || extraido <= 1) return comUnits;
   return forcarSaleFormatKit(schema, comUnits);
 }
 
-/** Prova de kit no texto: quantidade > 1 escrita, a palavra "kit", um "+" entre produtos ou
- *  shampoo e condicionador juntos. */
+/** Prova de kit: quantidade > 1 escrita ou "kit" (nome/descrição); " + " entre palavras ou shampoo e
+ *  condicionador só no NOME — na descrição são modo de uso ("após o shampoo e condicionador") ou
+ *  fórmula ("vitaminas A+E"), não composição (revisão Codex). */
 function temProvaDeKit(nome: string, descricao: string | undefined, extraido: number | null): boolean {
   if (extraido != null && extraido > 1) return true;
-  const texto = normalizar(`${nome} ${descricao ?? ''}`);
-  return /\bkit\b/.test(texto) || texto.includes('+') || ehShampooECondicionador(nome, descricao);
+  if (/\bkit\b/.test(normalizar(`${nome} ${descricao ?? ''}`))) return true;
+  return /\s\+\s/.test(nome) || ehShampooECondicionador(nome);
 }
 
-/** "Shampoo e/+ Condicionador" (em qualquer ordem) no nome ou na descrição. */
-function ehShampooECondicionador(nome: string, descricao: string | undefined): boolean {
-  const texto = normalizar(`${nome} ${descricao ?? ''}`);
-  return /\bshampoo\s*(?:e|\+|&)\s*condicionador\b|\bcondicionador\s*(?:e|\+|&)\s*shampoo\b/.test(texto);
+/** "shampoo" e "condicionador" no nome, em qualquer ordem e com o que houver no meio
+ *  ("Shampoo Nutre 1L e Condicionador Nutre 1L"). */
+function ehShampooECondicionador(nome: string): boolean {
+  const texto = normalizar(nome);
+  return /\bshampoo\b/.test(texto) && /\bcondicionador\b/.test(texto);
 }
 
-/** SALE_FORMAT → Kit e IS_KIT → Sim (value_ids do schema). Sem o valor no schema, não mexe. */
+/** SALE_FORMAT → Kit e IS_KIT → Sim (value_ids do schema; acrescenta IS_KIT se a categoria o expõe). */
 function marcarComoKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
   const sim = schema.find((a) => a.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
-  const comIsKit = sim ? atributos.map((a) => (a.id === 'IS_KIT' ? { id: 'IS_KIT', value_id: sim } : a)) : atributos;
+  const comIsKit = sim
+    ? [{ id: 'IS_KIT', value_id: sim }, ...atributos.filter((a) => a.id !== 'IS_KIT')]
+    : atributos;
   return forcarSaleFormatKit(schema, comIsKit);
+}
+
+/** É kit: SALE_FORMAT=Kit; em categoria sem SALE_FORMAT, "É kit" = Sim (revisão Codex). */
+function ehKit(schema: AtributoSchema[], atributos: AtributoML[]): boolean {
+  if (schema.some((a) => a.id === 'SALE_FORMAT')) return ehSaleFormatKit(schema, atributos);
+  const sim = schema.find((a) => a.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
+  return !!sim && atributos.find((a) => a.id === 'IS_KIT')?.value_id === sim;
 }
 
 /** SALE_FORMAT Kit → Unidade e IS_KIT Sim → Não (value_ids do schema). Sem o valor no schema, não mexe. */
@@ -297,7 +306,7 @@ export function faltanteKitSemContagem(schema: AtributoSchema[], atributos: Atri
   // Kit com 1 é o que o ML recusa (invalid_sale_units): só conta como informado de 2 para cima.
   const qtd = Number(atributos.find((a) => a.id === 'UNITS_PER_PACK')?.value_name);
   const tem = Number.isFinite(qtd) && qtd > 1;
-  return units && !tem && ehSaleFormatKit(schema, atributos) ? [units.nome] : [];
+  return units && !tem && ehKit(schema, atributos) ? [units.nome] : [];
 }
 
 /**
