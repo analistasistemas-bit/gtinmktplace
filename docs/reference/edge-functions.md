@@ -401,7 +401,10 @@ mesmo por engano.
   no passo 3 se a categoria já é conhecida, no passo 6 no CREATE. **Kit sem contagem (emenda 2
   ADR-0071):** `SALE_FORMAT=Kit` sem contagem real deixa `UNITS_PER_PACK` faltando
   (`faltanteKitSemContagem`) — a Revisão pede a quantidade ao operador (`atributos-familia` mantém a
-  trava ao salvar). **vincular-catalogo (UP):** item que o ML criou já como anúncio de catálogo tem a
+  trava ao salvar). **Prova de kit (emenda 3 ADR-0071):** antes disso, `preencherUnitsPerPack` só aceita
+  o "Kit" da IA com prova no texto (quantidade > 1 ou "kit"; " + " ou shampoo e condicionador só no
+  nome) — sem prova vira Unidade e "É kit" Não; shampoo e condicionador no nome é sempre Kit + "É kit"
+  Sim; `aplicarKitNosAtributos` grava "É kit" Sim no kit vinculado. **vincular-catalogo (UP):** item que o ML criou já como anúncio de catálogo tem a
   ficha lida por id e comparada (`fichaEquivalente`); divergente → `ficha_divergente` + Telegram próprio.
   Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
   válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
