@@ -85,8 +85,10 @@ export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
 
   const grupos: FamiliaAgrupada[] = [];
   for (const [codigo, pai] of pais.entries()) {
-    const variacoes = filhos.get(codigo) ?? [];
-    // 3. PAI sem nenhum filho → descarta a família.
+    // ADR-0191: PAI vazio sem filhos = produto único — a própria linha é o SKU.
+    const produtoUnico = !filhos.has(codigo) && String(pai.PAI).trim() === '';
+    const variacoes = produtoUnico ? [pai] : filhos.get(codigo) ?? [];
+    // 3. PAI '0' sem nenhum filho → descarta a família.
     if (variacoes.length === 0) {
       familias_sem_filho.push(codigo);
       continue;

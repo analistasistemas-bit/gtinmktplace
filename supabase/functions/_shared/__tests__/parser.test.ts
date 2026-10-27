@@ -88,6 +88,42 @@ describe('agruparPorPai', () => {
     expect(anomalias.familias_sem_filho).toEqual(['00000200']);
   });
 
+  // ADR-0191: produto único — PAI vazio sem filhos vira família com a própria linha como SKU.
+  it('PAI vazio sem filho: produto único com 1 variação (a própria linha)', () => {
+    const rows = [
+      row({ CODIGO: '102873', PAI: '', NOME: 'SHAMPOO', GTIN: '7898497187693', PRECO: 55.19 }),
+    ];
+    const { grupos, anomalias } = agruparPorPai(rows);
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].codigo_pai).toBe('00102873');
+    expect(grupos[0].variacoes).toHaveLength(1);
+    expect(grupos[0].variacoes[0]).toBe(rows[0]);
+    expect(anomalias.familias_sem_filho).toEqual([]);
+  });
+
+  it('PAI vazio com filhos: continua agrupador (a linha pai não vira variação)', () => {
+    const rows = [
+      row({ CODIGO: '100', PAI: '' }),
+      row({ CODIGO: '101', PAI: '100' }),
+    ];
+    const { grupos } = agruparPorPai(rows);
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].variacoes.map((v) => v.CODIGO)).toEqual(['101']);
+  });
+
+  it('PAI 0 sem filho continua descartado mesmo com produto único no lote', () => {
+    const rows = [
+      row({ CODIGO: '200', PAI: '0' }),
+      row({ CODIGO: '300', PAI: '' }),
+    ];
+    const { grupos, anomalias } = agruparPorPai(rows);
+
+    expect(grupos.map((g) => g.codigo_pai)).toEqual(['00000300']);
+    expect(anomalias.familias_sem_filho).toEqual(['00000200']);
+  });
+
   it('popula fornecedor a partir da linha PAI', () => {
     const rows = [
       row({ CODIGO: '100', PAI: '0', NOME: 'LINHA', FORNECEDOR: 'LINHAS SETTA LTDA' }),

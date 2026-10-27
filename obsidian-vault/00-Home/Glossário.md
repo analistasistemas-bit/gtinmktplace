@@ -15,7 +15,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 | **Lote** | Um upload de planilha + imagens. Inicia o pipeline que cria famílias e variações. Ver [[Upload Planilha]]. |
 | **Família** | Um PAI = um produto único que vira **1 anúncio** com N variações. Tabela `familias`. Ver [[Produtos]]. |
 | **Variação** | Um SKU/cor dentro da família = **1 variação** do anúncio. Tabela `variacoes`. |
-| **PAI** | Coluna da planilha que agrupa variações. `PAI = 0` marca o agrupador, nunca um item vendável. |
+| **PAI** | Coluna da planilha que agrupa variações. `PAI = 0` marca o agrupador, nunca um item vendável. `PAI` vazio sem filhos = produto único de 1 SKU (ADR-0191). |
 | **CODIGO** | Identificador do item na planilha. Da família = `codigo_pai`; da variação = `codigo`. |
 | **GTIN / EAN** | Código de barras. Usado para vínculo de catálogo no ML e atribuição de vendas. |
 | **Aviamento** | Categoria de produto do MVP: linha, botão, fita, cola, cursor, outro (`tipo_aviamento`). |

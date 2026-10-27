@@ -19,7 +19,8 @@ function gtinDaCelula(v: unknown): string | null {
 export function mapearLinha(r: Record<string, unknown>): PlanilhaRow {
   return {
     CODIGO: String(r.CODIGO ?? ''),
-    PAI: String(r.PAI ?? '0'),
+    // ADR-0191: vazio ≠ '0' — PAI vazio sem filhos é produto único; '0' é agrupador.
+    PAI: String(r.PAI ?? '').trim(),
     NOME: String(r.NOME ?? ''),
     UNIDADE: String(r.UNIDADE ?? ''),
     GTIN: gtinOuNull(gtinDaCelula(r.GTIN)),

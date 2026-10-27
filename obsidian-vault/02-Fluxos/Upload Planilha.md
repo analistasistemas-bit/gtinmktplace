@@ -26,7 +26,7 @@ Primeira etapa do [[Fluxo Completo]]. Edge function `ingest-lote`
 flowchart LR
     P[Planilha XLSX] --> V[Valida colunas]
     V --> D["Dedup por CODIGO<br/>1ª ocorrência prevalece"]
-    D --> AG["Agrupa por PAI<br/>PAI=0 = agrupador, nunca vendável"]
+    D --> AG["Agrupa por PAI<br/>PAI=0 = agrupador, nunca vendável<br/>PAI vazio sem filhos = produto único (ADR-0191)"]
     AG --> OR["Filho órfão?<br/>PAI referenciado não existe → descarta"]
     OR --> PS["PAI sem filho?<br/>descarta a família inteira"]
     PS --> CF["Casa fotos<br/>ver Upload Fotos"]

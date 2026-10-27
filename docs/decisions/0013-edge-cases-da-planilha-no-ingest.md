@@ -107,3 +107,5 @@ ficar vazio após o descarte, e persiste `anomalias` na coluna nova `lotes.anoma
 (TDD em `tests/lib/anomalias.test.ts`) + `Lote.anomalias` no adapter + faixa âmbar de
 descartados no `Progresso.tsx`. **Deploy do `ingest-lote` via MCP pendente** (necessário para
 o efeito em produção). 173 testes verdes.
+
+> **Emenda (ADR-0191, 2026-10-26):** o item 3 vale só para `PAI = 0`. Linha com `PAI` **vazio** e sem filhos é produto único e vira família de 1 variação (a própria linha).

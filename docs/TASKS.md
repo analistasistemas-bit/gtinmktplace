@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Produto único na planilha: `PAI` vazio sem filhos (ADR-0191) — 2026-10-26
+
+- [x] Hairfly manda planilha só de produtos únicos (`PAI` vazio): o ingest descartava tudo em `familias_sem_filho`, porque `mapearLinha` convertia vazio em `'0'`. Agora `PAI` vazio + sem filhos = família de 1 SKU (a própria linha); `PAI = 0` sem filhos continua descartado. Medido: os 8 descartes de produção eram agrupadores "(P)" da Avil com `PAI = 0`, então nada muda para ela.
+- [x] Testes (parser, `mapearLinha`, cadeia da planilha Hairfly) + plano aprovado pelo Codex. Deploy: `ingest-lote`.
+
 ## Boas-vindas automática ao comprador removida (emenda ADR-0067) — 2026-10-25
 
 - [x] **Causa dos ~50% de `log_error_count` na `sync-venda`** — todo erro era `[mensagem-ml] … 403 blocked_by_conversation_initiated_by_seller_limited`: o ML recusa mensagem iniciada pelo vendedor em 100% das vendas (desde ≥ 30/07). Venda, estoque e notificações não eram afetados. Chamada e `enviarMensagemPedido` removidos; reply do operador intacto. Deploy: `sync-venda`, `responder-mensagem`, `sync-mensagem`, `backfill-faturamento`.

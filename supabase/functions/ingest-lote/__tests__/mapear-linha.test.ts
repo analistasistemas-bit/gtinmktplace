@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { mapearLinha } from '../mapear-linha.ts';
+import { exigirOrigemExplicita } from '../verificar-origem.ts';
+import { agruparPorPai } from '../../_shared/parser.ts';
 
 const CRU = {
   CODIGO: '2841240', PAI: '0', NOME: 'FITAS DE VELUDO 25MM CORES', UNIDADE: 'PC',
@@ -40,10 +42,30 @@ describe('mapearLinha', () => {
 
   it('defaults seguros quando campos faltam/são nulos', () => {
     const r = mapearLinha({ CODIGO: 5 });
-    expect(r.PAI).toBe('0');
     expect(r.GTIN).toBeNull();
     expect(r.CUSTO).toBe(0);
     expect(r.CODIGO).toBe('5');
+  });
+
+  // ADR-0191: vazio ≠ 0 — vazio sem filhos é produto único, 0 é agrupador.
+  it('PAI vazio/ausente fica vazio; PAI 0 numérico vira "0"', () => {
+    expect(mapearLinha({ CODIGO: 5 }).PAI).toBe('');
+    expect(mapearLinha({ ...CRU, PAI: null }).PAI).toBe('');
+    expect(mapearLinha({ ...CRU, PAI: '  ' }).PAI).toBe('');
+    expect(mapearLinha({ ...CRU, PAI: 0 }).PAI).toBe('0');
+  });
+
+  it('planilha Hairfly (só produtos únicos, PAI vazio) → um grupo por linha, ORIGEM aceita', () => {
+    const rowsRaw = ['102873', '102865', '102857', '139220'].map((c) => ({
+      ...CRU, CODIGO: c, PAI: null, ORIGEM: 'NACIONAL',
+    }));
+    expect(() => exigirOrigemExplicita(rowsRaw)).not.toThrow();
+    const { grupos, anomalias } = agruparPorPai(rowsRaw.map(mapearLinha));
+    expect(grupos.map((g) => [g.codigo_pai, g.variacoes.map((v) => v.CODIGO)])).toEqual([
+      ['00102873', ['102873']], ['00102865', ['102865']],
+      ['00102857', ['102857']], ['00139220', ['139220']],
+    ]);
+    expect(anomalias.familias_sem_filho).toEqual([]);
   });
 
   it('carrega os 4 campos fiscais (ADR-0135)', () => {
