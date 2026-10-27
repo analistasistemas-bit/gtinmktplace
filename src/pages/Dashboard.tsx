@@ -44,7 +44,7 @@ import { montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from 
 
 type Trend = 'up' | 'down' | 'neutral';
 function deltaCom(atual: number, anterior: number, rotulo: string): { texto: string; trend: Trend } {
-  if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
+  if (anterior === 0) return { texto: atual > 0 ? `${rotulo}: zero` : '—', trend: atual > 0 ? 'up' : 'neutral' };
   const p = ((atual - anterior) / Math.abs(anterior)) * 100;
   const trend: Trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
   return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% ${rotulo}`, trend };

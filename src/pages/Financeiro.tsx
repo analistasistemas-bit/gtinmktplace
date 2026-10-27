@@ -26,7 +26,7 @@ export default function Financeiro() {
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
 
   const delta = (atual: number, anterior: number): { texto: string; trend: 'up' | 'down' | 'neutral' } => {
-    if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
+    if (anterior === 0) return { texto: atual > 0 ? `${rotuloAnterior(periodo)}: zero` : '—', trend: atual > 0 ? 'up' : 'neutral' };
     const p = ((atual - anterior) / Math.abs(anterior)) * 100;
     const trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
     return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% ${rotuloAnterior(periodo)}`, trend };
