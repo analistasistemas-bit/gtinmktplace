@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient, adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
-import { montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
+import { aplicarKitNosAtributos, montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
@@ -56,7 +56,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   // operação; qualquer membro define a categoria. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, user_id, nome_pai, descricao_pai, fornecedor, marca')
+    .select('id, user_id, nome_pai, descricao_pai, fornecedor, marca, kit_multiplicador')
     .eq('id', body.familia_id)
     .maybeSingle();
 
@@ -73,6 +73,17 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   const marcaPadrao = marcaOrg.marcaPadrao;
   const marca = marcaParaCriacao(familia as { marca?: string | null; fornecedor?: string | null });
 
+  let token: string | null = null;
+  const obterToken = async (): Promise<string | null> => {
+    if (token) return token;
+    try {
+      const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
+      if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      token = await getValidAccessTokenConexao(conexao);
+    } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
+    return token;
+  };
+
   let atributosMl;
   let atributosFaltantes: string[];
   if (tipo !== 'outro') {
@@ -80,12 +91,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     atributosMl = montarAtributosML(tipo, familia.nome_pai, marca, familia.descricao_pai ?? undefined, marcaPadrao);
     atributosFaltantes = [];
   } else {
-    let token: string | null = null;
-    try {
-      const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
-      if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
-      token = await getValidAccessTokenConexao(conexao);
-    } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
+    await obterToken();
     const r = await resolverAtributosGenericos(
       categoriaMlId,
       { nome: familia.nome_pai, descricao: familia.descricao_pai ?? undefined, fornecedor: marca },
@@ -100,6 +106,22 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     );
     atributosMl = r.atributosMl;
     atributosFaltantes = r.faltantes;
+  }
+
+  // Kit vinculado (ADR-0151): a contagem real é o kit_multiplicador, não a regex do título. Sem
+  // reaplicá-la, a emenda do ADR-0071 trocaria "Kit" sem contagem por "Unidade/1" — publicável,
+  // mas vendendo N unidades ao preço de 1 (revisão Codex). Categoria sem "Kit" → 400 da função.
+  const n = Number(familia.kit_multiplicador ?? 1);
+  if (n > 1) {
+    const tok = await obterToken();
+    if (!tok) {
+      return new Response('Sem conexão com o Mercado Livre para validar o formato Kit desta categoria.', { status: 503, headers: corsHeaders });
+    }
+    try {
+      atributosMl = aplicarKitNosAtributos(await lerSchemaAtributos(tok, categoriaMlId), atributosMl, n);
+    } catch (e) {
+      return new Response((e as Error).message, { status: (e as { status?: number }).status ?? 500, headers: corsHeaders });
+    }
   }
 
   const { error: upErr } = await sb
