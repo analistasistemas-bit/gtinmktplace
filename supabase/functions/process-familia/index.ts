@@ -10,7 +10,7 @@ import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-po
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
 import { ehCorIndefinida, COR_VISION_INDEFINIDA } from '../_shared/cor/indefinida.ts';
-import { categoriaAceitaCor, removerCorDosSlots, removerCoresDaSecao } from '../_shared/cor/sem-atributo.ts';
+import { categoriaAceitaCor, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -20,7 +20,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { preSubirFotosFamilia } from '../_shared/anuncios/pre-subir-fotos.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
-import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
+import { buscarListingPrice, buscarComissaoParaPreco, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
@@ -392,11 +392,28 @@ Deno.serve(async (req) => {
     let frete = 0;
     let precoAncoraLider: number | null = null;
     if (!competitivo && categoriaMlId && token) {
+      // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
+      // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
+      // Emenda ADR-0020 (2026-10-27): sem comissão oficial a família falha — antes caía no piso em
+      // silêncio (429 do ML no lote Hairfly saiu a R$ 55,20 com as irmãs a R$ 78,00).
       try {
-        // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
-        // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
-        const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
-        comissao = comissaoDe(lp);
+        comissao = await buscarComissaoParaPreco(token, PRECO_REF_COMISSAO, categoriaMlId);
+      } catch (e) {
+        console.error('comissão p/ gross-up falhou:', e);
+        // 'erro' é re-publicável (retry de publicação), então só a falha não bloqueia: sem preço, o
+        // gate "sem preço de publicação" trava — inclusive o preço velho de um reprocessamento.
+        const { error: limpaErr } = await admin.from('variacoes').update({ preco_publicacao: null })
+          .eq('familia_id', job.familia_id).eq('preco_editado_pelo_operador', false);
+        if (limpaErr) console.error('limpar preco_publicacao falhou:', limpaErr.message);
+        const err = new Error(
+          'Comissão do Mercado Livre indisponível — o preço não foi calculado para não vender abaixo do seu mínimo. Reprocesse a família.',
+        ) as Error & { status?: number; retentavel?: boolean };
+        err.status = 422;
+        err.retentavel = false;
+        throw err;
+      }
+      const com = comissao;
+      try {
         // Frete grátis que o vendedor absorve também entra no gross-up: o líquido tem que
         // cobrir o piso depois de comissão E frete (ADR-0020). Avaliado no preço de 1ª passada
         // (só comissão) — que já cai na faixa de frete grátis, dando o list_cost representativo.
@@ -410,12 +427,12 @@ Deno.serve(async (req) => {
             comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
             peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
           };
-          const precoPrimeiraPassada = grossUp(precoMinFamilia, comissao.percentual, comissao.fixa, 0, aliquotaPct);
+          const precoPrimeiraPassada = grossUp(precoMinFamilia, com.percentual, com.fixa, 0, aliquotaPct);
           frete = await buscarFreteVendedor(token, conexao.contaExternaId, precoPrimeiraPassada, categoriaMlId, dimRep);
         }
       } catch (e) {
-        // Resiliente: sem comissão o gross-up cai no piso; o semáforo mostra "indisponível".
-        console.error('comissão/frete p/ gross-up falhou:', e);
+        // Resiliente (ADR-0050): falha de frete → frete 0, gross-up só com comissão.
+        console.error('frete p/ gross-up falhou:', e);
       }
     }
 
@@ -543,7 +560,8 @@ Deno.serve(async (req) => {
         `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
       : copy.titulo_slots;
     const descricaoBase = descartadas.length
-      ? removerCoresDaSecao(copy.descricao, descartadas.map((v) => v.cor as string))
+      ? removerCorDaDescricao(copy.descricao, descartadas.map((v) => v.cor as string),
+        `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
       : copy.descricao;
     const coresUnicas = [...new Set(variacoesFinais.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.

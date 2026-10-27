@@ -111,3 +111,8 @@ em UPDATE (todos já ignoram cor indefinida).
 - Schema não lido (sem token, erro, lista vazia) → comportamento anterior. Nunca derruba cor
   por falta de informação.
 - Não retroativo: anúncios publicados só mudam se o operador regenerar/atualizar pelo app.
+
+**Complemento (2026-10-27, mesmo dia):** no CREATE a IA escreveu a cor também em prosa ("1 unidade …
+Hair Fly **na cor Preto**" em 📦 O QUE VOCÊ RECEBE). Além da seção de cores, saem da descrição as
+menções "na/da/de/em cor X", "cor: X" e "(X)" da cor descartada. Cor solta no meio de uma frase
+não é tocada — removê-la quebraria a frase, e o padrão observado é sempre "cor X".

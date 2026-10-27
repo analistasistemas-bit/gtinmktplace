@@ -30,12 +30,17 @@ export function removerCorDoSlot(texto: string, cores: string[]): string {
 }
 
 /** Tira as cores de todos os slots do título; cor escrita na fonte (nome/descrição) fica. */
-export function removerCorDosSlots<T extends object>(slots: T, cores: string[], fonte: string): T {
+/** Cores que NÃO aparecem (palavra inteira) no nome/descrição da planilha. */
+function semRespaldo(cores: string[], fonte: string): string[] {
   const fonteNorm = ` ${palavras(semAcento(fonte)).join(' ')} `;
-  const semRespaldo = cores.filter((c) => !fonteNorm.includes(` ${palavras(semAcento(c)).join(' ')} `));
-  if (!semRespaldo.length) return slots;
+  return cores.filter((c) => !fonteNorm.includes(` ${palavras(semAcento(c)).join(' ')} `));
+}
+
+export function removerCorDosSlots<T extends object>(slots: T, cores: string[], fonte: string): T {
+  const alvo = semRespaldo(cores, fonte);
+  if (!alvo.length) return slots;
   return Object.fromEntries(
-    Object.entries(slots).map(([k, v]) => [k, typeof v === 'string' ? removerCorDoSlot(v, semRespaldo) : v]),
+    Object.entries(slots).map(([k, v]) => [k, typeof v === 'string' ? removerCorDoSlot(v, alvo) : v]),
   ) as T;
 }
 
@@ -44,12 +49,35 @@ const ehItem = (l: string) => /^\s*[-•✔▪*]\s+/.test(l);
 // ✔ também é emoji: sem excluir itens, "✔ Preto" passava por cabeçalho da próxima seção.
 const ehCabecalho = (l: string) => !ehItem(l) && /^\p{Extended_Pictographic}/u.test(l.trim());
 
+const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Tira a cor descartada da descrição: itens da seção "🎨 CORES DISPONÍVEIS" e, na prosa, as
+ * menções "na/da/de/em cor X", "cor: X" e "(X)". Cor solta numa frase não é tocada (quebraria a
+ * frase; o padrão da IA é sempre "cor X"). Bullet que fica vazio sai junto.
+ */
+export function removerCorDaDescricao(descricao: string, cores: string[], fonte: string): string {
+  // Cor escrita na planilha não foi inventada: a prosa que a cita fica (revisão Codex).
+  const alvo = semRespaldo(cores, fonte);
+  let texto = removerItensDaSecao(descricao, alvo);
+  for (const cor of alvo) {
+    const c = palavras(cor).map(escapar).join('\\s+');
+    if (!c) continue;
+    const fim = '(?![\\p{L}\\p{N}])';
+    texto = texto
+      .replace(new RegExp(`[,;]?\\s*(?<![\\p{L}])(?:(?:n[ao]s?|d[ao]s?|de|em)\\s+)?cor(?:es)?\\s*:?\\s*${c}${fim}`, 'giu'), '')
+      .replace(new RegExp(`\\s*\\(\\s*${c}\\s*\\)`, 'giu'), '');
+  }
+  return texto.split('\n').filter((l) => !/^\s*[-•✔▪*]\s*$/.test(l)).join('\n')
+    .replace(/[ \t]+([.,;:])/g, '$1').replace(/\n{3,}/g, '\n\n');
+}
+
 /**
  * Tira da seção "🎨 CORES DISPONÍVEIS" os itens das cores descartadas (qualquer marcador). Sem
  * nenhum item restante, remove a seção inteira até o próximo cabeçalho (inclui a ressalva de
  * tonalidade, que só existe por causa da lista).
  */
-export function removerCoresDaSecao(descricao: string, cores: string[]): string {
+function removerItensDaSecao(descricao: string, cores: string[]): string {
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => RE_SECAO_CORES.test(l));
   if (ini === -1) return descricao;

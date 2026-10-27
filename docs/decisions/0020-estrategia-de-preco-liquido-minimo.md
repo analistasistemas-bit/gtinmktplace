@@ -58,3 +58,23 @@ cor (estado registrado na ADR-0050).
 
 Restaurar `_shared/preco/calcular.ts` (ADR-0008) e reverter `process-familia` ao uso de
 `calcularEstrategiaPreco`. O semáforo é aditivo (front) e pode ser removido isoladamente.
+
+## Emenda (2026-10-27): comissão que falha não cai mais no piso em silêncio
+
+**Incidente.** Lote da Hairfly de 27/10: 4 famílias processadas em paralelo; uma tomou
+`listing_prices 429 local_rate_limited` e saiu a **R$ 55,20 = o próprio piso**, enquanto as irmãs de
+mesmo custo e peso saíram a R$ 78,00. O "semáforo indisponível" previsto acima só aparece com o card
+expandido; na lista da Revisão o preço parecia normal e "Avisos" ficou em 0 (ele só conta preço
+>20% abaixo da planilha, e o piso é igual à planilha). Publicado assim, o vendedor pagaria comissão,
+frete e imposto do próprio bolso. Além disso, `comissaoDe` converte resposta sem `sale_fee_details`
+em **0%** de comissão — outro preço baixo sem erro nenhum.
+
+**Decisão.** No ramo próprio, com categoria e token do ML presentes:
+- a comissão é lida por `buscarComissaoParaPreco`, que retenta **só** 429/5xx (espera 1 s e 3 s) e
+  aceita **só** comissão oficial (`sale_fee_details` completo);
+- esgotadas as tentativas, a família vai para **`erro`** com mensagem acionável ("comissão
+  indisponível — preço não calculado; reprocesse"), no mesmo padrão das alíquotas não confirmadas.
+  Nenhum preço é sugerido.
+
+Continua como antes: org sem conexão com o ML ou categoria indefinida (piso + semáforo), ramo
+competitivo e re-âncora (ADR-0065), e frete (ADR-0050, resiliente por decisão).

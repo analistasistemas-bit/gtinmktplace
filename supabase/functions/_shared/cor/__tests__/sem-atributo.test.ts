@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaAceitaCor, removerCorDoSlot, removerCorDosSlots, removerCoresDaSecao } from '../sem-atributo';
+import { categoriaAceitaCor, removerCorDoSlot, removerCorDosSlots, removerCorDaDescricao } from '../sem-atributo';
 import { posProcessarDescricao } from '../../ai/copywriter-prompt';
 import type { AtributoSchema } from '../../categoria/schema';
 
@@ -57,7 +57,7 @@ describe('removerCorDosSlots', () => {
   });
 });
 
-describe('removerCoresDaSecao', () => {
+describe('removerCorDaDescricao', () => {
   const desc = (itens: string[]) => [
     '📌 ESPECIFICAÇÕES', '', '• Volume: 2000ml', '',
     '🎨 CORES DISPONÍVEIS', '', ...itens, '',
@@ -66,7 +66,7 @@ describe('removerCoresDaSecao', () => {
   ].join('\n');
 
   it('única cor descartada: some a seção inteira (com a ressalva), o resto fica', () => {
-    const out = removerCoresDaSecao(desc(['- Preto']), ['Preto']);
+    const out = removerCorDaDescricao(desc(['- Preto']), ['Preto'], '');
     expect(out).not.toMatch(/CORES DISPON|Preto|tonalidade/);
     expect(out).toContain('• Volume: 2000ml');
     expect(out).toContain('📦 O QUE VOCÊ RECEBE');
@@ -74,13 +74,13 @@ describe('removerCoresDaSecao', () => {
 
   // Revisão Codex: atualizarSecaoCores só reconhecia itens com "-".
   it('item com outro marcador (• / ✔) também sai', () => {
-    expect(removerCoresDaSecao(desc(['• Preto']), ['Preto'])).not.toMatch(/Preto|CORES DISPON/);
-    expect(removerCoresDaSecao(desc(['✔ Preto']), ['Preto'])).not.toMatch(/Preto|CORES DISPON/);
+    expect(removerCorDaDescricao(desc(['• Preto']), ['Preto'], '')).not.toMatch(/Preto|CORES DISPON/);
+    expect(removerCorDaDescricao(desc(['✔ Preto']), ['Preto'], '')).not.toMatch(/Preto|CORES DISPON/);
   });
 
   // Revisão Codex: família com cor da foto + cor legítima perdia a lista toda.
   it('preserva as cores que não foram descartadas', () => {
-    const out = removerCoresDaSecao(desc(['- Azul', '- Preto']), ['Preto']);
+    const out = removerCorDaDescricao(desc(['- Azul', '- Preto']), ['Preto'], '');
     expect(out).toContain('🎨 CORES DISPONÍVEIS');
     expect(out).toContain('- Azul');
     expect(out).not.toContain('Preto');
@@ -88,11 +88,32 @@ describe('removerCoresDaSecao', () => {
 
   it('cadeia real: seção que a IA escreveu com a cor da foto some depois do pós-processamento', () => {
     const vars = [{ codigo: '00139220', cor: 'Outra', preco: 36.02, nome: 'SHAMPOO' }];
-    const out = posProcessarDescricao(removerCoresDaSecao(desc(['- Preto']), ['Preto']), 'SHAMPOO', '', vars);
+    const out = posProcessarDescricao(removerCorDaDescricao(desc(['- Preto']), ['Preto'], ''), 'SHAMPOO', '', vars);
     expect(out).not.toMatch(/CORES DISPON|Preto|tonalidade/);
   });
 
+  // Lote Hairfly 27/10: a IA escreveu a cor também em prosa, fora da seção.
+  it('tira "na cor X" / "cor: X" / "(X)" da prosa', () => {
+    const real = '• 1 unidade com 2000ml do Shampoo e Condicionador Hidrata Muito Mais Hair Fly na cor Preto';
+    expect(removerCorDaDescricao(real, ['Preto'], ''))
+      .toBe('• 1 unidade com 2000ml do Shampoo e Condicionador Hidrata Muito Mais Hair Fly');
+    expect(removerCorDaDescricao('• Cor: Preto\n• Volume: 2l', ['Preto'], '')).toBe('• Volume: 2l');
+    expect(removerCorDaDescricao('Frasco de 2l, cor preto, com válvula.', ['Preto'], '')).toBe('Frasco de 2l, com válvula.');
+    expect(removerCorDaDescricao('Shampoo (Preto) de 2l.', ['Preto'], '')).toBe('Shampoo de 2l.');
+  });
+
+  it('não mexe em "cor" sem a cor descartada nem em outra cor', () => {
+    const t = 'Protege a cor de cabelos tingidos e realça cores vibrantes. Tampa azul.';
+    expect(removerCorDaDescricao(t, ['Preto'], '')).toBe(t);
+  });
+
+  // Revisão Codex: "Mantém a cor Preto Natural" virava "Mantém a Natural".
+  it('cor escrita na planilha fica na prosa', () => {
+    const t = 'Mantém a cor Preto Natural dos cabelos.';
+    expect(removerCorDaDescricao(t, ['Preto'], 'Tonalizante Preto Natural 1L')).toBe(t);
+  });
+
   it('sem seção de cores devolve o texto intacto', () => {
-    expect(removerCoresDaSecao('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml', ['Preto'])).toBe('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml');
+    expect(removerCorDaDescricao('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml', ['Preto'], '')).toBe('📌 ESPECIFICAÇÕES\n\n• Volume: 2000ml');
   });
 });
