@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Cor da foto em categoria sem cor (emenda ADR-0044) — 2026-10-27
+
+- [x] Hairfly: shampoo saiu "… 2000ml **Preto**" + "🎨 CORES DISPONÍVEIS – Preto" (cor da embalagem lida pelo Vision); 3 anúncios já publicados assim (Preto/Marrom/Vermelho), todos em categoria sem `COLOR`. Agora, em categoria do ML sem `COLOR`/`MAIN_COLOR`, cor `cor_origem = vision` vira `'Outra'` (persistida): no passo 3 quando a categoria já é conhecida (UPDATE/reprocesso) e no passo 6 no CREATE (tira a cor de todos os slots, salvo se estiver no nome/descrição, e a seção de cores da descrição). Avil intacta: as categorias dela com cor do Vision têm `COLOR`.
+- [ ] Hairfly: os 3 anúncios publicados com cor inventada (MLB5322348511, MLB5322386969, MLB5322386919) não são retroativos — corrigir pelo app se o Diego quiser.
+
 ## Produto único na planilha: `PAI` vazio sem filhos (ADR-0191) — 2026-10-26
 
 - [x] Hairfly manda planilha só de produtos únicos (`PAI` vazio): o ingest descartava tudo em `familias_sem_filho`, porque `mapearLinha` convertia vazio em `'0'`. Agora `PAI` vazio + sem filhos = família de 1 SKU (a própria linha); `PAI = 0` sem filhos continua descartado. Medido: os 8 descartes de produção eram agrupadores "(P)" da Avil com `PAI = 0`, então nada muda para ela.

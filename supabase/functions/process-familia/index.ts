@@ -9,7 +9,8 @@ import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
-import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
+import { ehCorIndefinida, COR_VISION_INDEFINIDA } from '../_shared/cor/indefinida.ts';
+import { categoriaAceitaCor, removerCorDosSlots, removerSecaoCores } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -149,7 +150,7 @@ Deno.serve(async (req) => {
     }
 
     // 3. Resolver cor de cada variação (pool máx 5 paralelas)
-    const resolvidas = await pool(POOL_VISION, variacoes ?? [], async (v: Variacao) => {
+    const resolvidasBrutas = await pool(POOL_VISION, variacoes ?? [], async (v: Variacao) => {
       if (v.cor) return v;
 
       // Camada 0 — código + nome literal da cor quando o NOME tem "{número} {cor}".
@@ -190,6 +191,20 @@ Deno.serve(async (req) => {
         return v;
       }
     });
+
+    // Emenda ADR-0044 (2026-10-27): categoria sem COLOR → a cor que só o Vision achou é da
+    // embalagem e vira indefinida. Categoria já conhecida (UPDATE/reprocesso): resolve aqui, antes
+    // da copy e do UPDATE parcial; no CREATE a categoria só sai no passo 5c (ver passo 6).
+    const corDaFoto = (v: { cor: string | null; cor_origem: string | null }) =>
+      v.cor_origem === 'vision' && !ehCorIndefinida(v.cor);
+    const descartaCorDaFoto = async (categoriaId: string | null): Promise<boolean> => {
+      if (!categoriaId || !conexao) return false;
+      const tok = await getValidAccessTokenConexao(conexao).catch(() => null);
+      return !!tok && !categoriaAceitaCor(await lerSchemaAtributos(tok, categoriaId).catch(() => []));
+    };
+    const resolvidas = resolvidasBrutas.some(corDaFoto) && await descartaCorDaFoto(claimed.categoria_ml_id)
+      ? resolvidasBrutas.map((v) => (corDaFoto(v) ? { ...v, cor: COR_VISION_INDEFINIDA } : v))
+      : resolvidasBrutas;
 
     // 4. Persistir cores (UPDATE em batch — só as que mudaram)
     const updatesVar = resolvidas
@@ -501,7 +516,26 @@ Deno.serve(async (req) => {
     // diferem só na cor (PAI separado) não podem ter título idêntico.
     // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
     // filtra aqui na origem, defesa em profundidade além da trava interna do guard.
-    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
+    // Emenda ADR-0044 (2026-10-27), CREATE: a categoria acabou de sair, mas a copy já foi escrita
+    // vendo a cor da foto. Persiste indefinida (regenerar/UPDATE não a trazem de volta) e tira a
+    // cor dos slots e da seção de cores que a IA escreveu.
+    const descartadas = categoriaMlId !== claimed.categoria_ml_id && resolvidas.some(corDaFoto)
+      && await descartaCorDaFoto(categoriaMlId)
+      ? resolvidas.filter(corDaFoto)
+      : [];
+    if (descartadas.length) {
+      const { error: corErr } = await admin.from('variacoes')
+        .update({ cor: COR_VISION_INDEFINIDA }).in('id', descartadas.map((v) => v.id));
+      if (corErr) throw new Error(`Cor sem atributo: ${corErr.message}`);
+    }
+    const semCor = new Set(descartadas.map((v) => v.codigo));
+    const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: COR_VISION_INDEFINIDA } : v));
+    const slotsTitulo = descartadas.length
+      ? removerCorDosSlots(copy.titulo_slots, descartadas.map((v) => v.cor as string),
+        `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
+      : copy.titulo_slots;
+    const descricaoBase = descartadas.length ? removerSecaoCores(copy.descricao) : copy.descricao;
+    const coresUnicas = [...new Set(variacoesFinais.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
     // A família falha de propósito (nunca truncar nem fundir produtos), mas o operador precisa
     // saber O QUE encurtar na planilha — daí nomear os slots em vez de deixar subir cru.
@@ -509,14 +543,14 @@ Deno.serve(async (req) => {
     // ADR-0116 — o que o pipeline alterou/descartou. Diagnóstico puro: só é persistido.
     let tituloDescartes: DescarteTitulo[] = [];
     try {
-      const diagnostico = diagnosticarTitulo(copy.titulo_slots, {
+      const diagnostico = diagnosticarTitulo(slotsTitulo, {
         nomePai: claimed.nome_pai,
         descricaoPai: claimed.descricao_pai ?? '',
         tipoProdutoBusca: copy.tipo_produto_busca,
         cores: coresUnicas,
         fornecedor: claimed.fornecedor ?? null,
         // ADR-0184: grade → título de roupa (Peça + Público + Marca + Característica + Material).
-        grade: tamanhosDaGradeCopy(variacoesCopy) !== null,
+        grade: tamanhosDaGradeCopy(variacoesFinais) !== null,
         genero: (claimed.genero as string | null) ?? null,
       });
       tituloFinal = diagnostico.titulo;
@@ -537,7 +571,7 @@ Deno.serve(async (req) => {
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: tituloFinal,
       titulo_descartes: tituloDescartes,
-      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesCopy, claimed.genero as string | null),
+      descricao_ml: posProcessarDescricao(descricaoBase, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesFinais, claimed.genero as string | null),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos + custoDesempateLLM,

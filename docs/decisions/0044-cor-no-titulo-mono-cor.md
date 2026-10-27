@@ -84,3 +84,30 @@ continua valendo para melhorias futuras de cor-no-título; não é uma mudança 
 Deploy: `update-familia-ml` (filtro + `atualizarSecaoCores`), `publish-familia-ml`/
 `publicar-anuncio` (recompilam `_shared/ml/criar-item.ts` e `_shared/ml/atualizar-item.ts`, sem
 mudança funcional para eles).
+
+## Emenda (2026-10-27): cor da foto em categoria sem cor não é cor do produto
+
+**Contexto.** Hairfly (cosméticos): a 4ª família do lote de 26/10 saiu como "Shampoo e Condicionador
+Hair Fly 2000ml **Preto**", e a descrição listou "🎨 CORES DISPONÍVEIS – Preto". Ninguém escreveu
+"Preto": nome e descrição não têm cor, o dicionário não achou nada e o Vision classificou a cor
+predominante da **embalagem**. A regra de cor única deste ADR então cravou a cor no título. Já há 3
+anúncios publicados da Hairfly assim ("Máscara … Preto", "Creme Alisante … Marrom", "Kit
+Cauterização … Vermelho"), todos em categorias do ML **sem** atributo `COLOR`
+(MLB1265 Shampoos e Condicionadores, MLB32130 Tratamentos com o Cabelo).
+
+Medição (27/10): das 15 categorias com cor vinda do Vision, as da Avil (fitas, fios, zíperes,
+rendas, lãs, tecidos, tesouras…) **têm** `COLOR`, e ali o Vision acerta a cor real do produto
+("CURSOR N.5 BCO" → Branco). Fora a Hairfly, só 1 família Avil (lápis de alfaiate, já publicado,
+sem irmã do mesmo nome) cai em categoria sem `COLOR`.
+
+**Decisão.** No `process-familia`, depois de resolver a categoria: se o schema da categoria foi
+lido e **não tem** `COLOR` nem `MAIN_COLOR`, a cor de variação com `cor_origem = 'vision'` vira
+indefinida (`'Outra'`) e é persistida assim. Com isso ela sai do título (slot `variacao` e
+injeção de cor única), da seção de cores da descrição, e não volta em regeneração de copy nem
+em UPDATE (todos já ignoram cor indefinida).
+
+- Cor do nome/descrição (`descricao`) e cor manual não mudam: estão na fonte, não foram inventadas.
+- Categoria com `COLOR` não muda (Avil intacta).
+- Schema não lido (sem token, erro, lista vazia) → comportamento anterior. Nunca derruba cor
+  por falta de informação.
+- Não retroativo: anúncios publicados só mudam se o operador regenerar/atualizar pelo app.

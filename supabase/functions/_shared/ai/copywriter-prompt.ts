@@ -343,7 +343,7 @@ export function garantirConteudoEmbalagem(
 // Fato sobre a exibição, não sobre o produto: nenhuma tela reproduz cor com fidelidade. Texto
 // FIXO e determinístico, por isso não é invenção — e é a classe de observação que mais evita
 // devolução em família com variação visual.
-const DISCLAIMER_TONALIDADE =
+export const DISCLAIMER_TONALIDADE =
   'A tonalidade pode variar conforme a tela do dispositivo.';
 
 /**
