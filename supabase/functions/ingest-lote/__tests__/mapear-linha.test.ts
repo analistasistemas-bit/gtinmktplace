@@ -76,6 +76,11 @@ describe('mapearLinha', () => {
     expect(r.ALTURA_CM).toBe(26.8);
   });
 
+  it('normalizarCabecalhos: colunas que colidem após normalizar abortam (nunca sobrescreve em silêncio)', () => {
+    expect(() => normalizarCabecalhos({ ORIGEM: 'IMPORTADO', ' origem ': 'NACIONAL' }))
+      .toThrow(/"ORIGEM" e " origem "/);
+  });
+
   it('carrega os 4 campos fiscais (ADR-0135)', () => {
     const r = mapearLinha({ ...CRU, NCM: '39269090', CEST: '0102300', ORIGEM_NFE: '1', CSOSN: '102' });
     expect(r.NCM).toBe('39269090');

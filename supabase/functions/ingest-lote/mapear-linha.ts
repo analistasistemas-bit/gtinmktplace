@@ -13,7 +13,18 @@ function gtinDaCelula(v: unknown): string | null {
 /** Chaves da linha crua sem espaço nas pontas e em maiúsculas, como o `validarColunas` já aceita.
  *  Sem isto, `" PESO_GRAMAS"` passava na validação e o peso ia a 0 (lote Hairfly, 26/10/2026). */
 export function normalizarCabecalhos(r: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim().toUpperCase(), v]));
+  const out: Record<string, unknown> = {};
+  const original: Record<string, string> = {};
+  for (const [k, v] of Object.entries(r)) {
+    const chave = k.trim().toUpperCase();
+    // Duas colunas viram a mesma: sobrescrever trocaria preço/ORIGEM em silêncio — aborta o lote.
+    if (chave in out) {
+      throw new Error(`Colunas repetidas na planilha: "${original[chave]}" e "${k}". Deixe só uma e reenvie.`);
+    }
+    out[chave] = v;
+    original[chave] = k;
+  }
+  return out;
 }
 
 /**
