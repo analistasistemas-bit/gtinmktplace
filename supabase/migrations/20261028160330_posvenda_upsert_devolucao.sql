@@ -27,7 +27,7 @@ begin
     'insert into public.ml_devolucoes as t (%1$s)
        select %1$s from jsonb_populate_record(null::public.ml_devolucoes, $1)
      on conflict (user_id, claim_id) do update set %2$s
-       where t.lido_em is null or excluded.lido_em is null or excluded.lido_em >= t.lido_em
+       where t.lido_em is null or excluded.lido_em >= t.lido_em
      returning to_jsonb(t.*)', cols, coalesce(sets, 'user_id = excluded.user_id'))
   into r using linha;
 

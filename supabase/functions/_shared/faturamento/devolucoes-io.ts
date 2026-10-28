@@ -69,8 +69,10 @@ export async function buscarReturn(token: string, claimId: string): Promise<Retu
 async function lerJson(url: string, token: string): Promise<{ status: number; body: unknown } | null> {
   try {
     const resp = await fetch(url, AUTH(token));
-    const body = await resp.json().catch(() => null);
-    return { status: resp.status, body };
+    // 2xx com corpo ilegível é leitura FALHA (null), nunca "lido e vazio". Só o corpo de erro
+    // (404 "review not found") pode faltar.
+    if (resp.ok) return { status: resp.status, body: await resp.json() };
+    return { status: resp.status, body: await resp.json().catch(() => null) };
   } catch { return null; }
 }
 
@@ -93,26 +95,36 @@ export async function buscarExtrasClaim(token: string, claimId: string, returnId
     for (const k of CAMPOS_DETALHE) if (b[k] !== undefined) d[k] = b[k] as never;
     detalhe = { ok: true, valor: d };
   }
-  const reputacao: ExtrasClaim['reputacao'] = rep && ok200(rep)
-    ? { ok: true, valor: ((rep.body as Record<string, unknown> | null)?.affects_reputation as string | undefined) ?? null }
+  const reputacao: ExtrasClaim['reputacao'] = rep && ok200(rep) && rep.body && typeof rep.body === 'object'
+    ? { ok: true, valor: ((rep.body as Record<string, unknown>).affects_reputation as string | undefined) ?? null }
     : { ok: false };
   let revisoes: ExtrasClaim['revisoes'] = { ok: false };
   if (returnId == null) revisoes = { ok: true, valor: [] };
-  else if (rev && ok200(rev)) revisoes = { ok: true, valor: normalizarRevisoes(rev.body) };
+  else if (rev && ok200(rev) && Array.isArray((rev.body as { reviews?: unknown } | null)?.reviews)) {
+    revisoes = { ok: true, valor: normalizarRevisoes(rev.body) };
+  }
   else if (rev?.status === 404 && /review.*not found|not found.*review/i.test(JSON.stringify(rev.body ?? ''))) {
     revisoes = { ok: true, valor: 'sem_review' };
   }
   return { detalhe, reputacao, revisoes };
 }
 
-/** Return + extras de um claim, com `lidoEm` capturado ANTES dos GETs (versão do snapshot). Sem
- *  return lido, as revisões (que dependem do id) também ficam não lidas. */
+/** Return + extras de um claim. Sem return lido, as revisões (que dependem do id) também ficam
+ *  não lidas. A versão (`lidoEm`) é capturada pelo CHAMADOR antes de ler o claim. */
 export async function lerReturnEExtras(token: string, claimId: string) {
-  const lidoEm = new Date().toISOString();
   const ret = await buscarReturnLeitura(token, claimId);
   const extras = await buscarExtrasClaim(token, claimId, ret.ok ? ret.valor?.id ?? null : null);
   if (!ret.ok) extras.revisoes = { ok: false };
-  return { ret, extras, lidoEm };
+  return { ret, extras };
+}
+
+/** Snapshot completo: `lidoEm` capturado ANTES de qualquer GET (inclusive o do claim), senão uma
+ *  resposta lenta e antiga receberia versão posterior e sobrescreveria estado novo. Lança
+ *  MLApiError se o claim não puder ser lido. */
+export async function lerClaimCompleto(token: string, claimId: string) {
+  const lidoEm = new Date().toISOString();
+  const claim = await buscarClaim(token, claimId);
+  return { claim, lidoEm, ...(await lerReturnEExtras(token, claimId)) };
 }
 
 /** Varre /post-purchase/v1/claims/search do vendedor. Para o backfill. */
@@ -221,8 +233,7 @@ export async function enriquecerPendentes(
   for (const lote of chunk(ids, 5)) {
     await Promise.all(lote.map(async (id) => {
       try {
-        const claim = await buscarClaim(token, String(id));
-        const { ret, extras, lidoEm } = await lerReturnEExtras(token, String(id));
+        const { claim, ret, extras, lidoEm } = await lerClaimCompleto(token, String(id));
         await upsertDevolucao(admin, conexao.criadoPor, org, claim, ret, conexao.contaExternaId, extras, lidoEm);
         n++;
       } catch (e) {

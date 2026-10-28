@@ -9,7 +9,7 @@ import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, reconciliarLiberacoes } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
-import { buscarClaimsSeller, lerReturnEExtras, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
@@ -135,12 +135,13 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
       if (claimsPendentes.length < claims.length) {
         console.log(`reconciliar: claims org ${orgId} — ${claimsPendentes.length}/${claims.length} precisam de reprocesso`);
       }
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, orgId);
       for (const lote of chunk(claimsPendentes, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
-            const { ret, extras, lidoEm } = await lerReturnEExtras(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId, extras, lidoEm);
+            // Claim relido aqui (versão capturada antes): o da listagem pode ter minutos de idade.
+            const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
+            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, atual, ret, cx.contaExternaId, extras, lidoEm);
             if (ignorado || row.order_id == null) return;
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
@@ -179,7 +180,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
     const { userId, orgId, token } = e;
     try {
       const pedidos = await buscarPedidosPeriodo(token, intervalo);
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, orgId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
         carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),
@@ -344,13 +345,14 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     },
 
     async processarClaims(token, cx, userId, org, claims) {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, org);
       let n = 0;
       for (const lote of chunk(claims, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
-            const { ret, extras, lidoEm } = await lerReturnEExtras(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, org, claim, ret, cx.contaExternaId, extras, lidoEm);
+            // Claim relido aqui (versão capturada antes): o da listagem pode ter minutos de idade.
+            const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
+            const { row, ignorado } = await upsertDevolucao(admin, userId, org, atual, ret, cx.contaExternaId, extras, lidoEm);
             if (ignorado || row.order_id == null) { n++; return; }
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
@@ -428,7 +430,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     agora: () => new Date().toISOString(),
 
     async processarPedidos(token, cx, userId, org, pedidos) {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, org);
       const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
       const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {

@@ -28,10 +28,16 @@ begin
     raise exception 'duplicou linha';
   end if;
 
-  -- sem lido_em (chamada antiga) -> aplica e preserva lido_em
+  -- snapshot SEM versao nao sobrescreve linha versionada
   r := public.upsert_ml_devolucao(jsonb_build_object('user_id', u, 'org_id', o, 'claim_id', 990000001, 'status', 'legado'));
-  if r->>'status' <> 'legado' then raise exception 'chamada sem lido_em nao aplicou: %', r; end if;
+  if r->>'status' <> 'closed' then raise exception 'snapshot sem versao sobrescreveu linha versionada: %', r; end if;
   if r->>'lido_em' is null then raise exception 'lido_em foi apagado'; end if;
+
+  -- linha ainda sem versao (legada) aceita snapshot versionado
+  insert into public.ml_devolucoes (user_id, org_id, claim_id, status) values (u, o, 990000002, 'velho');
+  r := public.upsert_ml_devolucao(jsonb_build_object('user_id', u, 'org_id', o, 'claim_id', 990000002,
+        'status', 'novo', 'lido_em', '2026-10-28T12:00:00Z'));
+  if r->>'status' <> 'novo' then raise exception 'linha sem versao nao aceitou snapshot versionado: %', r; end if;
 
   -- so service_role executa
   if has_function_privilege('anon', 'public.upsert_ml_devolucao(jsonb)', 'execute')

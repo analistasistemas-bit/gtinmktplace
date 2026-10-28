@@ -3,7 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
+import { resolverConexao, resolverConexaoPorId, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarClaim, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import {
@@ -46,9 +46,12 @@ Deno.serve(async (req) => {
   const admin = adminClient();
   // Com org_id (ml-webhook já resolveu) usa a conexão da org, validando connection_id se vier;
   // resolverOrgPorUserId falha quando o mesmo criador tem conexões em duas orgs.
-  const orgId = job.org_id ?? await resolverOrgPorUserId(admin, job.user_id);
-  let conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
-  if (conexao && job.connection_id && conexao.id !== job.connection_id) conexao = null;
+  // connection_id resolve direto pela conexão (org derivada, validada contra org_id se vier).
+  let conexao = job.connection_id
+    ? await resolverConexaoPorId(admin, job.connection_id, job.org_id)
+    : null;
+  const orgId = conexao?.orgId ?? job.org_id ?? (job.connection_id ? null : await resolverOrgPorUserId(admin, job.user_id));
+  if (!conexao && !job.connection_id && orgId) conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   if (!conexao) return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders });
 
   let token: string;
@@ -58,6 +61,8 @@ Deno.serve(async (req) => {
     return await tratarFalha(admin, conexao, orgId, e);
   }
 
+  // Versão do snapshot: ANTES do GET do claim (uma resposta lenta e antiga não pode ganhar versão nova).
+  const lidoEm = new Date().toISOString();
   let claim;
   try {
     claim = await buscarClaim(token, job.claim_id);
@@ -69,7 +74,7 @@ Deno.serve(async (req) => {
   }
   // Leituras que falham não viram MLApiError ("sem return ainda" é estado de negócio, não token
   // morto): a coluna não lida simplesmente não é regravada.
-  const { ret, extras, lidoEm } = await lerReturnEExtras(token, job.claim_id);
+  const { ret, extras } = await lerReturnEExtras(token, job.claim_id);
 
   const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
 

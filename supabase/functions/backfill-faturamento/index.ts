@@ -24,7 +24,7 @@ import {
   buscarMensagensPack, upsertMensagens, listarPacksDeVendas,
   buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito,
 } from '../_shared/faturamento/mensagens-io.ts';
-import { buscarClaimsSeller, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { registrarPendencias } from '../_shared/faturamento/pendencias.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -93,7 +93,7 @@ const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true
 // (__tests__/manual.test.ts). Produção usa sempre estas, as MESMAS (não estritas) de antes do ADR-0173.
 const IO_PADRAO = {
   getValidAccessTokenConexao, buscarPerguntasSeller, buscarTituloItem, upsertPergunta, buscarClaimsSeller,
-  lerReturnEExtras, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
+  lerClaimCompleto, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
   buscarFreteVendedor, buscarShipment, upsertVenda, listarPacksDeVendas, buscarMensagensPack, upsertMensagens,
 };
 type IoConexao = typeof IO_PADRAO;
@@ -161,8 +161,8 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
     for (const lote of chunk(claims, PARALELAS)) {
       await Promise.all(lote.map(async (claim) => {
         try {
-          const { ret, extras, lidoEm } = await io.lerReturnEExtras(token, String(claim.id));
-          await io.upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId, extras, lidoEm);
+          const { claim: atual, ret, extras, lidoEm } = await io.lerClaimCompleto(token, String(claim.id));
+          await io.upsertDevolucao(admin, userId, orgId, atual, ret, cx.contaExternaId, extras, lidoEm);
         } catch (e) {
           console.warn(`backfill: claim ${claim?.id} de ${userId} falhou: ${(e as Error).message}`);
         }
@@ -179,7 +179,7 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
     console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
     return LEITURA_FALHOU;
   }
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await io.carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await io.carregarCatalogo(admin, userId, orgId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
     io.carregarLiquidoMP(token, Number(cx.contaExternaId)),
     io.carregarGtinsFallback(token, pedidos, idsPubliai),
@@ -276,7 +276,7 @@ function depsBackfillReal(admin: ReturnType<typeof adminClient>, orgId: string):
     pedidosDaJanela: (token, janela) => buscarPedidosPeriodoEstrito(token, janela),
 
     async processarPedidos(token, cx, userId, pedidos) {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId, cx.orgId);
       const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
       const ok: string[] = [];
       const falhas: string[] = [];

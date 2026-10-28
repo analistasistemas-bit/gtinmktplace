@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
     );
   }
 
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId, orgId);
   const shippingId = pedido.shipping?.id ?? null;
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
