@@ -28,6 +28,13 @@
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
+    --color-wa-fundo: var(--wa-fundo);
+    --color-wa-enviada: var(--wa-enviada);
+    --color-wa-recebida: var(--wa-recebida);
+    --color-wa-texto: var(--wa-texto);
+    --color-wa-meta: var(--wa-meta);
+    --color-wa-meta-enviada: var(--wa-meta-enviada);
+    --color-wa-envio: var(--wa-envio);
     --color-success-foreground: var(--success-foreground);
     --color-warning: var(--warning);
     --color-warning-foreground: var(--warning-foreground);
@@ -121,6 +128,15 @@
     --sidebar-accent-foreground: oklch(0.35 0.10 300);
     --sidebar-border: oklch(0.91 0.006 277);
     --sidebar-ring: oklch(0.55 0.20 277);
+    /* Chat da aba Mensagens no idioma do WhatsApp (pedido do operador, 28/10). */
+    --wa-fundo: #efeae2;
+    --wa-enviada: #d9fdd3;
+    --wa-recebida: #ffffff;
+    --wa-texto: #111b21;
+    --wa-meta: #667781;
+    --wa-meta-enviada: #667781;
+    --wa-envio: #00a884;
+    --wa-ponto: rgb(0 0 0 / 0.05);
 }
 
 .dark {
@@ -168,6 +184,14 @@
     --sidebar-accent-foreground: oklch(0.96 0.01 300);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.64 0.18 277);
+    --wa-fundo: #0b141a;
+    --wa-enviada: #005c4b;
+    --wa-recebida: #202c33;
+    --wa-texto: #e9edef;
+    --wa-meta: #8696a0;
+    --wa-meta-enviada: rgb(255 255 255 / 0.6);
+    --wa-envio: #00a884;
+    --wa-ponto: rgb(255 255 255 / 0.035);
 }
 
 @layer base {
@@ -242,4 +266,24 @@
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0.01ms !important; transition-duration: 0.01ms !important; }
   /* Sem animação, mostra um trilho preenchido estático para indicar atividade. */
   .track-indeterminate::after { animation: none; inline-size: 100%; opacity: 0.6; }
+}
+/* Chat estilo WhatsApp (aba Mensagens). Fundo: pontilhado discreto no lugar do papel de parede. */
+@layer components {
+  .wa-fundo {
+    background-color: var(--wa-fundo);
+    background-image: radial-gradient(var(--wa-ponto) 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+  /* Cauda: triângulo no canto superior do 1º balão de cada sequência. */
+  .wa-cauda-recebida::before,
+  .wa-cauda-enviada::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 8px;
+    height: 13px;
+    background: inherit;
+  }
+  .wa-cauda-recebida::before { left: -8px; clip-path: polygon(100% 0, 0 0, 100% 100%); }
+  .wa-cauda-enviada::before { right: -8px; clip-path: polygon(0 0, 100% 0, 0 100%); }
 }

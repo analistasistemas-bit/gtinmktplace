@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
 import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
-import { fmtDataCurta, urlVendaML } from '@/lib/ml-status';
+import { urlVendaML } from '@/lib/ml-status';
+import { linhasDoChat, nomeComprador } from '@/lib/mensagens-chat';
 import { formatarNomeProduto } from '@/lib/texto';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +13,13 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { toast } from 'sonner';
+
+const fmtHora = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+/** Até 2 iniciais do nome (só letras), para o avatar. */
+const iniciais = (nome: string) =>
+  nome.split(' ').filter((p) => /^\p{L}/u.test(p)).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 
 function CardConversa({ c }: { c: Conversa }) {
   const qc = useQueryClient();
@@ -23,7 +31,12 @@ function CardConversa({ c }: { c: Conversa }) {
 
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
-  const cliente = c.comprador_nome?.trim() || c.comprador_nick?.trim() || 'Comprador';
+  const cliente = nomeComprador(c.comprador_nome, c.comprador_nick);
+  const rolagem = useRef<HTMLDivElement>(null);
+  // Abre no fim da conversa e acompanha mensagem nova, como no WhatsApp.
+  useLayoutEffect(() => {
+    if (rolagem.current) rolagem.current.scrollTop = rolagem.current.scrollHeight;
+  }, [c.mensagens.length]);
   // Pelo pack: a rota aceita os dois ids e o pack abre o pacote inteiro. Em pedido solo o sync já
   // grava o próprio order_id como pack_id, então esta linha cobre os dois casos.
   const urlConversa = urlVendaML(c.pack_id);
@@ -77,10 +90,14 @@ function CardConversa({ c }: { c: Conversa }) {
   }
 
   return (
-    <div className={cn('rounded-lg border bg-card p-4', c.aguardando && 'border-warning/40')}>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs text-muted-foreground">
+    <div className={cn('overflow-hidden rounded-lg border bg-card', c.aguardando && 'border-warning/40')}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5">
+        <div aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+          {iniciais(cliente)}
+        </div>
+        <div className="min-w-0 flex-1 basis-40">
+          <div className="truncate text-sm font-medium">{cliente}</div>
+          <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <span className="truncate">{formatarNomeProduto(c.item_titulo) || `Pedido ${c.pack_id}`}</span>
             <a
               href={urlConversa}
@@ -88,68 +105,96 @@ function CardConversa({ c }: { c: Conversa }) {
               rel="noreferrer"
               aria-label="Abrir conversa no Mercado Livre"
               title="Abrir a conversa na página da venda no Mercado Livre"
-              className="ml-1 inline-block text-info hover:underline"
+              className="shrink-0 text-info hover:underline"
             >
               <ExternalLink className="h-3 w-3" />
             </a>
-            <span> · {fmtDataCurta(c.ultima)}</span>
           </div>
         </div>
-        {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill> : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {c.aguardando && !cancelada && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={dispensar}
+              disabled={dispensando}
+              title="Tira a conversa de Aguardando; volta se o comprador escrever de novo."
+            >
+              <Check className="mr-1.5 h-4 w-4" />
+              {dispensando ? 'Dispensando…' : 'Dispensar'}
+            </Button>
+          )}
+          {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill> : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
+        </div>
       </div>
 
-      <div className="mb-3 space-y-2">
-        {c.mensagens.map((m) => (
-          <div key={m.id} className={cn('flex', m.direcao === 'enviada' ? 'justify-end' : 'justify-start')}>
+      <div ref={rolagem} role="log" aria-label={`Conversa com ${cliente}`} className="wa-fundo max-h-[28rem] overflow-y-auto px-4 py-3 sm:px-[6%]">
+        {linhasDoChat(c.mensagens).map((l) => l.tipo === 'dia' ? (
+          <div key={`dia-${l.chave}`} className="my-3 flex justify-center first:mt-0">
+            <span className="rounded-md bg-wa-recebida px-3 py-1 text-xs text-wa-meta shadow-sm">{l.rotulo}</span>
+          </div>
+        ) : (
+          <div key={l.m.id} className={cn('flex', l.m.direcao === 'enviada' ? 'justify-end' : 'justify-start', l.cauda ? 'mt-2' : 'mt-0.5')}>
             <div className={cn(
-              'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-              m.direcao === 'enviada' ? 'bg-primary/10 text-foreground' : 'bg-muted/50 text-foreground',
+              'relative max-w-[85%] rounded-lg px-2.5 pb-1.5 pt-1.5 text-sm text-wa-texto shadow-sm sm:max-w-[65%]',
+              l.m.direcao === 'enviada' ? 'bg-wa-enviada' : 'bg-wa-recebida',
+              l.cauda && (l.m.direcao === 'enviada' ? 'wa-cauda-enviada rounded-tr-none' : 'wa-cauda-recebida rounded-tl-none'),
             )}>
-              <p className="whitespace-pre-wrap">{m.texto}</p>
-              <div className="mt-1 text-[10px] text-muted-foreground">
-                {m.direcao === 'enviada' ? 'Você' : cliente} · {fmtDataCurta(m.data_ml)}
-              </div>
+              <p className="whitespace-pre-wrap break-words">
+                {l.m.texto.trimEnd()}
+                <span
+                  className={cn('relative top-1.5 float-right ml-3 text-[11px] leading-none tabular-nums', l.m.direcao === 'enviada' ? 'text-wa-meta-enviada' : 'text-wa-meta')}
+                  title={l.m.data_ml ? new Date(l.m.data_ml).toLocaleString('pt-BR') : undefined}
+                >
+                  {fmtHora(l.m.data_ml)}
+                </span>
+              </p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="space-y-2">
-        <Textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          placeholder="Escreva ao comprador ou use a sugestão da IA…"
-          rows={2}
-          maxLength={350}
-          disabled={cancelada}
-        />
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={sugerir} disabled={cancelada || sugerindo || !ultimaRecebida}>
-              <Sparkles className={cn('mr-1.5 h-4 w-4', sugerindo && 'animate-pulse')} />
-              {sugerindo ? 'Gerando…' : 'Sugerir resposta (IA)'}
-            </Button>
-            {c.aguardando && !cancelada && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={dispensar}
-                disabled={dispensando}
-                title="Tira a conversa de Aguardando; volta se o comprador escrever de novo."
-              >
-                <Check className="mr-1.5 h-4 w-4" />
-                {dispensando ? 'Dispensando…' : 'Dispensar'}
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">{texto.length}/350</span>
-            <Button size="sm" onClick={responder} disabled={cancelada || enviando || !texto.trim()}>
-              <Send className="mr-1.5 h-4 w-4" />
-              {enviando ? 'Enviando…' : 'Responder'}
-            </Button>
-          </div>
+      <div className="flex items-end gap-2 border-t px-3 py-2.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 rounded-full"
+          onClick={sugerir}
+          disabled={cancelada || sugerindo || !ultimaRecebida}
+          aria-label="Sugerir resposta (IA)"
+          title="Sugerir resposta (IA)"
+        >
+          <Sparkles className={cn('h-5 w-5', sugerindo && 'animate-pulse')} />
+        </Button>
+        <div className="relative min-w-0 flex-1">
+          <Textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter envia, Shift+Enter quebra linha, como no WhatsApp.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void responder(); }
+            }}
+            placeholder={sugerindo ? 'Gerando sugestão…' : 'Escreva ao comprador…'}
+            aria-label="Mensagem ao comprador"
+            rows={1}
+            maxLength={350}
+            disabled={cancelada}
+            className={cn('max-h-32 min-h-10 resize-none rounded-3xl border-0 bg-muted px-4 py-2.5 dark:bg-muted', texto.length > 0 && 'pr-16')}
+          />
+          {texto.length > 0 && (
+            <span className="pointer-events-none absolute bottom-2.5 right-4 text-[10px] tabular-nums text-muted-foreground">{texto.length}/350</span>
+          )}
         </div>
+        <Button
+          size="icon"
+          className="h-10 w-10 shrink-0 rounded-full bg-wa-envio text-white hover:bg-wa-envio/90"
+          onClick={responder}
+          disabled={cancelada || enviando || !texto.trim()}
+          aria-label="Responder"
+          title={enviando ? 'Enviando…' : 'Responder (Enter)'}
+        >
+          <Send className={cn('h-4 w-4', enviando && 'animate-pulse')} />
+        </Button>
       </div>
     </div>
   );
