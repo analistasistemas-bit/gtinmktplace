@@ -78,6 +78,10 @@
 | sync-venda | false | QStash worker | sim (upsert) |
 | sync-pergunta | false | QStash worker | sim (upsert) |
 | sync-mensagem | false | QStash worker | sim (upsert) |
+| posvenda-detalhe | true | frontend (JWT, ADR-0192) | sim (só leitura no ML) |
+| posvenda-acao | true | frontend (JWT, ADR-0192) | sim (operacao_id + trava por recurso em ml_posvenda_acoes) |
+| posvenda-anexo | true | frontend (JWT, ADR-0192) | não (upload; sem efeito até a ação) |
+| marcar-mensagens-lidas-ml | true | frontend (JWT, ADR-0192) | sim (lida_ml_em monotônico) |
 | sync-devolucao | false | QStash worker | sim (upsert) |
 | responder-pergunta | true | HTTP (frontend) | não |
 | responder-mensagem | true | HTTP (frontend) | não |

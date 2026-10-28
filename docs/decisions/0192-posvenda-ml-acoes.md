@@ -1,6 +1,6 @@
 # ADR-0192 — Pós-venda do Mercado Livre: ações de escrita (revisão, reclamação, mensagem)
 
-**Status:** Proposto
+**Status:** Aceito (em produção desde 2026-10-28)
 **Data:** 2026-10-28
 **Decisores:** Diego
 **Relacionados:** ADR-0037 (devoluções/claims), ADR-0060 (ação restrita a admin), ADR-0067 (mensagens pós-venda)
