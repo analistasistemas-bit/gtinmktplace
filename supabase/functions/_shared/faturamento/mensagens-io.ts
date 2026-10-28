@@ -1,6 +1,6 @@
 // IO de mensagens pós-venda (ADR-0067): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { extrairMensagens, mapearMensagem, packDaMensagem, packsNaoLidos, type MensagemML } from './mensagem-mapper.ts';
+import { extrairMensagens, leiturasPorData, mapearMensagem, packDaMensagem, packsNaoLidos, type MensagemML } from './mensagem-mapper.ts';
 import { enviarMsgML } from '../ml/mensagem.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -54,9 +54,9 @@ export async function buscarPacksNaoLidos(token: string): Promise<string[]> {
 
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
 export async function buscarMensagensPack(
-  token: string, packId: string | number, sellerId: string | number,
+  token: string, packId: string | number, sellerId: string | number, marcarLida = false,
 ): Promise<MensagemML[]> {
-  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`;
+  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLida}`;
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     if (!resp.ok) return [];
@@ -68,9 +68,9 @@ export async function buscarMensagensPack(
  *  outro não-2xx (429/5xx) ou erro de rede → lança — o worker precisa distinguir "não há nada"
  *  de "a leitura falhou", que hoje voltam ambos como []. */
 export async function buscarMensagensPackEstrito(
-  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch, marcarLida = false,
 ): Promise<MensagemML[]> {
-  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`;
+  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLida}`;
   const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
   if (resp.status === 403 || resp.status === 404) return [];
   if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
@@ -104,6 +104,20 @@ function montarLinhasMensagens(
   }).filter((r) => r.message_id);
 }
 
+/** `lida_ml_em = coalesce(lida_ml_em, message_date.read)`: monotônico — só preenche, nunca apaga
+ *  nem regride (um snapshot antigo com read=null não desfaz a leitura). Fora do upsert de propósito:
+ *  o upsert não escreve essa coluna. Devolve a mensagem do erro, se houver. */
+async function aplicarLidaMlEm(
+  admin: SupabaseClient, userId: string, msgs: MensagemML[],
+): Promise<string | null> {
+  for (const [read, ids] of leiturasPorData(msgs)) {
+    const { error } = await admin.from('ml_mensagens').update({ lida_ml_em: read })
+      .eq('user_id', userId).in('message_id', ids).is('lida_ml_em', null);
+    if (error) return error.message;
+  }
+  return null;
+}
+
 /** Upsert idempotente das mensagens de um pack. Retorna nº de novas RECEBIDAS (para alerta). */
 export async function upsertMensagens(
   admin: SupabaseClient,
@@ -127,6 +141,7 @@ export async function upsertMensagens(
   // 2ª passada: upsert de verdade (sem ignoreDuplicates) para as existentes continuarem
   // recebendo raw/atualizado_em/item_titulo atualizados — a 1ª não escreve nada nelas.
   await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
+  await aplicarLidaMlEm(admin, userId, msgs);
 
   return { novasRecebidas };
 }
@@ -153,6 +168,8 @@ export async function upsertMensagensEstrito(
 
   const { error: erroAtualiza } = await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
   if (erroAtualiza) throw new Error(`upsert ml_mensagens (atualização): ${erroAtualiza.message}`);
+  const erroLida = await aplicarLidaMlEm(admin, userId, msgs);
+  if (erroLida) throw new Error(`update ml_mensagens (lida_ml_em): ${erroLida}`);
 
   return { novasRecebidas };
 }

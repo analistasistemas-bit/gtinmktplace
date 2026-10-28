@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { mapearMensagem, extrairMensagens, packDaMensagem, packsNaoLidos } from '../mensagem-mapper';
+import { mapearMensagem, extrairMensagens, packDaMensagem, packsNaoLidos, leiturasPorData } from '../mensagem-mapper';
+
+describe('leiturasPorData', () => {
+  it('agrupa os ids por data de leitura e ignora mensagens sem read (nunca grava null)', () => {
+    const r = leiturasPorData([
+      { id: 'a', message_date: { read: '2026-10-28T10:00:00Z' } },
+      { id: 'b', message_date: { read: '2026-10-28T10:00:00Z' } },
+      { id: 'c', message_date: { read: '2026-10-28T11:00:00Z' } },
+      { id: 'd', message_date: { read: null } },
+      { id: 'e' },
+      { message_date: { read: '2026-10-28T12:00:00Z' } },
+    ]);
+    expect([...r.entries()]).toEqual([
+      ['2026-10-28T10:00:00Z', ['a', 'b']],
+      ['2026-10-28T11:00:00Z', ['c']],
+    ]);
+  });
+});
 
 // Respostas reais (28/10/2026) de GET /messages/{id}?tag=post_sale e GET /messages/unread?role=seller&tag=post_sale.
 describe('packDaMensagem', () => {

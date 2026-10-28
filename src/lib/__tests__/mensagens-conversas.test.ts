@@ -45,6 +45,7 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
   // permitir que o teste do caso `data_ml: null` passe null de propósito.
   data_ml: 'data_ml' in over ? (over.data_ml as string | null) : '2026-07-10T10:00:00Z',
   lida: over.lida ?? false,
+  lida_ml_em: over.lida_ml_em ?? null,
 });
 
 describe('buscarConversas', () => {

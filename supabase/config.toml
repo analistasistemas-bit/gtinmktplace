@@ -190,6 +190,8 @@ verify_jwt = false
 verify_jwt = true
 [functions.responder-mensagem]
 verify_jwt = true
+[functions.marcar-mensagens-lidas-ml]
+verify_jwt = true
 [functions.posvenda-detalhe]
 verify_jwt = true
 [functions.posvenda-acao]

@@ -55,6 +55,20 @@ export function packsNaoLidos(resp: unknown): string[] {
     .filter((p): p is string => !!p);
 }
 
+/** Ids agrupados pela data de leitura (`message_date.read`) — só as que vieram com read preenchido.
+ *  Base do `lida_ml_em` monotônico: nunca se grava null. */
+export function leiturasPorData(msgs: MensagemML[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const m of msgs) {
+    const read = m.message_date?.read;
+    if (!read || m.id == null) continue;
+    const ids = out.get(read) ?? [];
+    ids.push(String(m.id));
+    out.set(read, ids);
+  }
+  return out;
+}
+
 /** Extrai o array de mensagens da resposta do pack (defensivo a mudanças de shape). */
 export function extrairMensagens(resp: unknown): MensagemML[] {
   const arr = (resp as { messages?: unknown })?.messages;

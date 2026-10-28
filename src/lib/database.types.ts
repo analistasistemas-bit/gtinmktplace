@@ -1459,6 +1459,7 @@ export type Database = {
           item_id: string | null
           item_titulo: string | null
           lida: boolean
+          lida_ml_em: string | null
           message_id: string
           order_id: string | null
           order_status: string | null
@@ -1478,6 +1479,7 @@ export type Database = {
           item_id?: string | null
           item_titulo?: string | null
           lida?: boolean
+          lida_ml_em?: string | null
           message_id: string
           order_id?: string | null
           order_status?: string | null
@@ -1497,6 +1499,7 @@ export type Database = {
           item_id?: string | null
           item_titulo?: string | null
           lida?: boolean
+          lida_ml_em?: string | null
           message_id?: string
           order_id?: string | null
           order_status?: string | null
@@ -4146,6 +4149,17 @@ export type Database = {
       }
       contar_conversas_aguardando: { Args: never; Returns: number }
       current_org_id: { Args: never; Returns: string }
+      resumo_mensagens_posvenda: {
+        Args: never
+        Returns: {
+          a_caminho: number
+          a_preparar: number
+          entregues: number
+          nao_lidas_total: number
+          respondidas: number
+          sem_responder: number
+        }[]
+      }
       current_support_scope: {
         Args: never
         Returns: Database["public"]["Enums"]["support_scope"]

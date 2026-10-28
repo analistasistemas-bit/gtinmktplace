@@ -2,8 +2,12 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useListaMensagens } from '@/hooks/useMensagens';
-import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
+import { useListaMensagens, useResumoMensagens } from '@/hooks/useMensagens';
+import {
+  responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, marcarMensagensLidasML, type Conversa,
+} from '@/lib/mensagens';
+import { baldeDaConversa, resumirConversas, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
+import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
 import { urlVendaML } from '@/lib/ml-status';
 import { linhasDoChat, nomeComprador } from '@/lib/mensagens-chat';
 import { formatarNomeProduto } from '@/lib/texto';
@@ -28,7 +32,11 @@ function CardConversa({ c }: { c: Conversa }) {
   const [enviando, setEnviando] = useState(false);
   const [canceladaLocal, setCanceladaLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
+  const [aberto, setAberto] = useState(false);
+  // Último conjunto de mensagens que marcamos como lidas no ML nesta sessão: reabrir sem novidade não chama a edge.
+  const ultimoMarcado = useRef('');
 
+  const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   const cliente = nomeComprador(c.comprador_nome, c.comprador_nick);
@@ -39,11 +47,28 @@ function CardConversa({ c }: { c: Conversa }) {
   // estava no fim: quem rolou para ler o histórico não é puxado de volta.
   useLayoutEffect(() => {
     const el = rolagem.current;
-    if (!el) return;
+    if (!el) { alturaAnterior.current = null; return; } // recolhido: ao abrir, volta ao fim
     const antes = alturaAnterior.current;
     if (antes == null || el.scrollTop + el.clientHeight >= antes - 48) el.scrollTop = el.scrollHeight;
     alturaAnterior.current = el.scrollHeight;
-  }, [c.mensagens.length]);
+  }, [c.mensagens.length, aberto]);
+
+  async function alternar() {
+    const abrindo = !aberto;
+    setAberto(abrindo);
+    if (!abrindo) return;
+    // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado (mensagem nova).
+    const chave = [...c.idsNaoLidosML].sort().join(',');
+    if (!chave || chave === ultimoMarcado.current) return;
+    ultimoMarcado.current = chave;
+    try {
+      await marcarMensagensLidasML(c.pack_id);
+      await qc.invalidateQueries({ queryKey: ['mensagens'] });
+    } catch (e) {
+      ultimoMarcado.current = ''; // não marcou: a próxima abertura tenta de novo
+      toast.error(`Não foi possível marcar como lida no Mercado Livre: ${(e as Error).message}`);
+    }
+  }
   // Pelo pack: a rota aceita os dois ids e o pack abre o pacote inteiro. Em pedido solo o sync já
   // grava o próprio order_id como pack_id, então esta linha cobre os dois casos.
   const urlConversa = urlVendaML(c.pack_id);
@@ -99,12 +124,18 @@ function CardConversa({ c }: { c: Conversa }) {
 
   return (
     <div className={cn('overflow-hidden rounded-lg border bg-card', c.aguardando && 'border-warning/40')}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5">
-        <div aria-hidden className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+      <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5', aberto && 'border-b')}>
+        <div aria-hidden className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
           {iniciais(cliente)}
+          {c.idsNaoLidosML.length > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-info ring-2 ring-card" />}
         </div>
         <div className="min-w-0 flex-1 basis-40">
-          <div className="truncate text-sm font-medium">{cliente}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {rotuloVenda(c.shipping_status)}
+            {ultimaMsg?.data_ml && ` · ${ultimaMsg.direcao === 'recebida' ? 'Mensagem recebida' : 'Mensagem enviada'} ${tempoRelativo(ultimaMsg.data_ml, new Date())}`}
+            {c.idsNaoLidosML.length > 0 && <span className="sr-only"> (não lida)</span>}
+          </div>
+          <div className={cn('truncate text-sm', c.idsNaoLidosML.length > 0 ? 'font-semibold' : 'font-medium')}>{cliente}</div>
           <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <span className="truncate">{formatarNomeProduto(c.item_titulo) || `Pedido ${c.pack_id}`}</span>
             <a
@@ -133,9 +164,13 @@ function CardConversa({ c }: { c: Conversa }) {
             </Button>
           )}
           {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill> : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
+          <Button variant={aberto ? 'ghost' : 'outline'} size="sm" onClick={alternar} aria-expanded={aberto}>
+            {aberto ? 'Recolher' : 'Conferir mensagem'}
+          </Button>
         </div>
       </div>
 
+      {aberto && <>
       <div ref={rolagem} role="log" aria-label={`Conversa com ${cliente}`} className="wa-fundo max-h-[28rem] overflow-y-auto px-4 py-3 sm:px-[6%]">
         {linhasDoChat(c.mensagens).map((l) => l.tipo === 'dia' ? (
           <div key={`dia-${l.chave}`} className="my-3 flex justify-center first:mt-0">
@@ -205,6 +240,7 @@ function CardConversa({ c }: { c: Conversa }) {
           <Send className={cn('h-4 w-4', enviando && 'animate-pulse')} />
         </Button>
       </div>
+      </>}
     </div>
   );
 }
@@ -216,9 +252,55 @@ const ABAS_STATUS: { valor: FiltroStatusMensagem; rotulo: string }[] = [
   { valor: 'todas', rotulo: 'Todas' },
 ];
 
+function CardsResumo({ resumo, ativo, onEscolher }: {
+  resumo: ResumoMensagens; ativo: Balde | null; onEscolher: (b: Balde | null) => void;
+}) {
+  const grupos: { titulo: string; total: number | null; itens: { balde: Balde; rotulo: string; n: number }[] }[] = [
+    { titulo: 'Não lidas', total: resumo.naoLidas.total, itens: [
+      { balde: 'aPreparar', rotulo: 'A preparar', n: resumo.naoLidas.aPreparar },
+      { balde: 'aCaminho', rotulo: 'A caminho', n: resumo.naoLidas.aCaminho },
+      { balde: 'entregues', rotulo: 'Entregues', n: resumo.naoLidas.entregues },
+    ] },
+    { titulo: 'Lidas', total: null, itens: [
+      { balde: 'semResponder', rotulo: 'Sem responder', n: resumo.lidas.semResponder },
+      { balde: 'respondidas', rotulo: 'Respondidas', n: resumo.lidas.respondidas },
+    ] },
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {grupos.map((g) => (
+        <section key={g.titulo} aria-label={g.titulo} className="rounded-lg border bg-card p-3">
+          <h3 className="mb-2 text-sm font-medium">{g.titulo}{g.total != null && <span className="ml-1.5 text-muted-foreground tabular-nums">{g.total}</span>}</h3>
+          <div className="flex flex-wrap gap-2">
+            {g.itens.map((i) => (
+              <button
+                key={i.balde}
+                type="button"
+                aria-pressed={ativo === i.balde}
+                onClick={() => onEscolher(ativo === i.balde ? null : i.balde)}
+                className={cn(
+                  'flex items-baseline gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted',
+                  ativo === i.balde && 'border-primary bg-muted',
+                )}
+              >
+                <span className="font-semibold tabular-nums">{i.n}</span>
+                <span className="text-muted-foreground">{i.rotulo}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function AbaMensagens() {
   const { data: conversas, isFetching } = useListaMensagens();
+  const { data: resumoBanco } = useResumoMensagens();
   const lista = conversas ?? [];
+  // Números do banco (todas as mensagens); enquanto a RPC não responde, cai no cálculo local.
+  const resumo = resumoBanco ?? resumirConversas(lista);
+  const [balde, setBalde] = useState<Balde | null>(null);
 
   const [pagina, setPagina] = useState(1);
   const [tamanho, setTamanho] = useState(20);
@@ -235,7 +317,9 @@ export function AbaMensagens() {
 
   // Paginado no cliente: conversa é um agrupamento por pack_id feito aqui, não uma linha de
   // tabela — paginar isso no banco exigiria uma view/RPC nova (fora de escopo, ver spec D-2).
-  const filtradas = statusFiltro === 'aguardando' ? lista.filter((c) => c.aguardando) : lista;
+  // Card de resumo escolhido manda sobre a aba; sem ele vale a aba.
+  const filtradas = balde ? lista.filter((c) => baldeDaConversa(c) === balde)
+    : statusFiltro === 'aguardando' ? lista.filter((c) => c.aguardando) : lista;
   const total = filtradas.length;
   const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
   // Responder a última conversa "aguardando" de uma página tira ela da lista filtrada e a
@@ -247,11 +331,18 @@ export function AbaMensagens() {
 
   function mudarAba(v: string) {
     setStatusFiltro(v as FiltroStatusMensagem);
+    setBalde(null);
+    setPagina(1);
+  }
+
+  function escolherBalde(b: Balde | null) {
+    setBalde(b);
     setPagina(1);
   }
 
   return (
     <div className="space-y-3">
+      <CardsResumo resumo={resumo} ativo={balde} onEscolher={escolherBalde} />
       <Tabs value={statusFiltro} onValueChange={mudarAba}>
         <TabsList>
           {ABAS_STATUS.map((a) => (
@@ -265,7 +356,7 @@ export function AbaMensagens() {
       ) : itens.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           <MessagesSquare className="h-6 w-6" />
-          {statusFiltro === 'aguardando' ? 'Nenhuma conversa aguardando resposta.' : 'Nenhuma conversa nesta página.'}
+          {balde ? 'Nenhuma conversa carregada neste filtro.' : statusFiltro === 'aguardando' ? 'Nenhuma conversa aguardando resposta.' : 'Nenhuma conversa nesta página.'}
         </div>
       ) : (
         <div className="space-y-3">

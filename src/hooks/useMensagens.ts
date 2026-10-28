@@ -1,6 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { buscarConversas, type Conversa } from '@/lib/mensagens';
+import { buscarConversas, buscarResumoMensagens, type Conversa } from '@/lib/mensagens';
+import type { ResumoMensagens } from '@/lib/mensagens-resumo';
+
+/** Contadores dos cards (RPC no banco: vale para todas as mensagens, não só a lista baixada). */
+export function useResumoMensagens() {
+  return useQuery<ResumoMensagens>({
+    queryKey: ['mensagens', 'resumo'],
+    queryFn: buscarResumoMensagens,
+    staleTime: 60_000,
+  });
+}
 
 /** Conversas de pós-venda (aguardando resposta no topo). */
 export function useListaMensagens() {
