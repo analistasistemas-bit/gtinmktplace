@@ -214,12 +214,34 @@ export function mlAceitaAinda(acao: AcaoPosvenda, d: DetalheReclamacao): boolean
   return ehRevisao(acao) && d.revisoes.some((r) => r.seller_status === 'pending');
 }
 
+export const MSG_ACAO_NAO_LIBERADA = 'Esta ação não está liberada pelo Mercado Livre agora. Recarregue a reclamação.';
+export const MSG_REVISAO_FEITA = 'A revisão desta devolução já foi feita no Mercado Livre.';
+export const MSG_REVISAO_NAO_LIBERADA = 'O ML ainda não liberou a revisão. Tente de novo mais tarde.';
+
+/** Regra ÚNICA de elegibilidade da revisão (espelhada em src/lib/posvenda-fila.ts; teste de paridade lá).
+ *  Mesma precedência de `revisaoPendente`: com revisões lidas, só `pending` conta (revisão terminal vence
+ *  ação residual em `available_actions`); e o POST ainda exige a ação liberada pelo ML. null = elegível. */
+export function motivoRevisaoIndisponivel(
+  acao: 'revisar_ok' | 'revisar_falha', d: { acoes: string[]; revisoes: Array<{ seller_status: string | null }> },
+): string | null {
+  const liberada = ACAO_ML[acao].some((a) => d.acoes.includes(a));
+  if (d.revisoes.length) {
+    if (!d.revisoes.some((r) => r.seller_status === 'pending')) return MSG_REVISAO_FEITA;
+    return liberada ? null : MSG_REVISAO_NAO_LIBERADA;
+  }
+  return liberada ? null : MSG_ACAO_NAO_LIBERADA;
+}
+
 /** null = pode enviar; string = motivo da recusa (nenhum POST acontece). */
 export function validarAcao(acao: AcaoPosvenda, body: CorpoAcao, d: DetalheReclamacao): string | null {
+  if (acao === 'revisar_ok' || acao === 'revisar_falha') {
+    const m = motivoRevisaoIndisponivel(acao, d);
+    if (m) return m;
+  }
   const liberada = acao === 'responder'
     ? d.acoes.includes(`send_message_to_${destinatarioResposta(d.acoes, d.stage)}`)
     : ACAO_ML[acao].some((a) => d.acoes.includes(a));
-  if (!liberada) return 'Esta ação não está liberada pelo Mercado Livre agora. Recarregue a reclamação.';
+  if (!liberada) return MSG_ACAO_NAO_LIBERADA;
 
   if (acao === 'revisar_falha') {
     const itens = body.revisoes ?? [];

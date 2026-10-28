@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { buscarDetalheReclamacao, type AcaoPosvenda, type DetalheReclamacao } from '@/lib/posvenda';
-import { acaoLiberada, travada, type ProdutoPedido } from '@/lib/posvenda-fila';
+import { acaoLiberada, motivoRevisaoIndisponivel, travada, type ProdutoPedido } from '@/lib/posvenda-fila';
 import { QK_POSVENDA, useProdutosPedidos } from '@/hooks/usePosvenda';
 import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import type { Travas } from './lista-reclamacoes';
@@ -84,7 +84,10 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
     const as = Array.isArray(a) ? a : [a];
     if (travas === null) return 'Conferindo ações em andamento…';
     if (as.some(bloqueada)) return MSG_TRAVA;
-    if (!as.some((x) => acaoLiberada(x, d))) return MSG_NAO_LIBERADA;
+    if (!as.some((x) => acaoLiberada(x, d))) {
+      const rev = as.find((x): x is 'revisar_ok' | 'revisar_falha' => x === 'revisar_ok' || x === 'revisar_falha');
+      return (rev && motivoRevisaoIndisponivel(rev, d)) || MSG_NAO_LIBERADA;
+    }
     return undefined;
   };
   const off = (a: AcaoPosvenda | AcaoPosvenda[]) => motivoOff(a) !== undefined;

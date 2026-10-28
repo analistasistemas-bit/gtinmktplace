@@ -53,7 +53,9 @@ describe('acaoLiberada / travada', () => {
     expect(acaoLiberada('reembolsar', { acoes: ['refund'], revisoes: [] })).toBe(true);
     expect(acaoLiberada('reembolsar', { acoes: [], revisoes: [] })).toBe(false);
     expect(acaoLiberada('responder', { acoes: ['send_message_to_mediator'], revisoes: [] })).toBe(true);
-    expect(acaoLiberada('revisar_ok', { acoes: [], revisoes: [{ seller_status: 'pending' }] })).toBe(true);
+    expect(acaoLiberada('revisar_ok', { acoes: ['return_review_ok'], revisoes: [{ seller_status: 'pending' }] })).toBe(true);
+    expect(acaoLiberada('revisar_ok', { acoes: [], revisoes: [{ seller_status: 'pending' }] })).toBe(false);
+    expect(acaoLiberada('revisar_ok', { acoes: ['return_review_ok'], revisoes: [{ seller_status: 'success' }] })).toBe(false);
     expect(acaoLiberada('revisar_ok', { acoes: [], revisoes: [{ seller_status: 'success' }] })).toBe(false);
   });
   it('trava por recurso: revisão por return_id, mensagem por claim, resto por resolução', () => {

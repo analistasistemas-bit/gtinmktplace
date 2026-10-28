@@ -3,6 +3,8 @@ import {
   ACAO_ML, chaveRecurso, destinatarioResposta, efeitoConfirmado, mlAceitaAinda, montarRequisicao, validarAcao,
   type AcaoPosvenda, type DetalheReclamacao, type MensagemHistorico, type Resolucao,
 } from '../posvenda';
+// Paridade com o espelho do front (o front não importa de supabase/functions; o teste importa dos dois).
+import { acaoLiberada, motivoRevisaoIndisponivel } from '../../../../../src/lib/posvenda-fila';
 
 const POST = '2026-10-28T12:00:00.000Z';
 const DEPOIS_DO_POST = '2026-10-28T12:00:05.000Z';
@@ -69,6 +71,16 @@ describe('validarAcao', () => {
   it('ação não liberada pelo ML → recusa', () => {
     expect(validarAcao('reembolsar', {}, det({ acoes: ['open_dispute'] }))).toMatch(/não está liberada/);
     expect(validarAcao('revisar_ok', {}, revisao)).toBeNull();
+  });
+  it('revisão terminal bloqueia mesmo com ação residual; pending sem ação = ML ainda não liberou', () => {
+    for (const st of ['success', 'failed', 'claimed', '']) {
+      const d = det({ acoes: ['return_review_ok', 'return_review_fail'], motivos_falha_revisao: MOTIVOS, revisoes: [{ order_id: 500, seller_status: st }] });
+      expect(validarAcao('revisar_ok', {}, d)).toMatch(/já foi feita/);
+    }
+    const semAcao = det({ acoes: [], revisoes: [{ order_id: 500, seller_status: 'pending' }] });
+    expect(validarAcao('revisar_ok', {}, semAcao)).toMatch(/ainda não liberou a revisão/);
+    // Sem revisões lidas ('sem_review'): vale a ação, como em revisaoPendente.
+    expect(validarAcao('revisar_ok', {}, det({ acoes: ['return_review_ok'] }))).toBeNull();
   });
   it('SRF5 sem foto ok; SRF2 sem foto recusa; texto obrigatório; motivo desconhecido recusa', () => {
     expect(validarAcao('revisar_falha', { revisoes: [{ motivo_id: 'SRF5', texto: 'faltou', anexos: [] }] }, revisao)).toBeNull();
@@ -193,5 +205,27 @@ describe('efeitoConfirmado', () => {
     expect(efeitoConfirmado('autorizar_devolucao', det({ return_id: 77 }), det({ return_id: 77 }), tent({}))).toBe('nao');
     expect(efeitoConfirmado('abrir_disputa', det({ stage: 'claim' }), det({ stage: 'dispute' }), tent({}))).toBe('confirmado');
     expect(efeitoConfirmado('abrir_disputa', det({ stage: 'claim' }), det({ stage: 'claim' }), tent({}))).toBe('nao');
+  });
+});
+
+describe('elegibilidade de revisão: front × backend', () => {
+  it('elegibilidade de revisão: front e backend dão a MESMA resposta nas mesmas fixtures', () => {
+    const fixtures = [
+      ...['success', 'failed', 'claimed', ''].map((s) => ({ acoes: ['return_review_ok', 'return_review_fail'], revisoes: [{ order_id: 500, seller_status: s }] })),
+      { acoes: [], revisoes: [{ order_id: 500, seller_status: 'pending' }] },
+      { acoes: ['return_review_ok', 'return_review_fail'], revisoes: [{ order_id: 500, seller_status: 'pending' }] },
+      { acoes: ['return_review_ok'], revisoes: [{ order_id: 500, seller_status: 'success' }, { order_id: 501, seller_status: 'pending' }] },
+      { acoes: ['return_review_ok'], revisoes: [] },
+      { acoes: [], revisoes: [] },
+    ];
+    for (const f of fixtures) {
+      for (const a of ['revisar_ok', 'revisar_falha'] as const) {
+        const back = validarAcao(a, a === 'revisar_falha' ? { revisoes: [{ motivo_id: 'SRF5', texto: 'x', anexos: [] }] } : {}, det({ ...f, motivos_falha_revisao: MOTIVOS }));
+        expect(motivoRevisaoIndisponivel(a, f)).toBe(back);
+        expect(acaoLiberada(a, f)).toBe(back === null);
+      }
+    }
+    expect(motivoRevisaoIndisponivel('revisar_ok', fixtures[0])).toMatch(/já foi feita/);
+    expect(motivoRevisaoIndisponivel('revisar_ok', fixtures[4])).toMatch(/ainda não liberou a revisão/);
   });
 });

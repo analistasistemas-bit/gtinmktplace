@@ -36,8 +36,8 @@ export function subAbaDe(d: Pick<ItemFila, 'type' | 'return_id'>): 'reclamacoes'
   return d.type === 'returns' && d.return_id != null ? 'devolucoes' : 'reclamacoes';
 }
 
-// Espelho de `ACAO_ML`/`chaveRecurso`/`mlAceitaAinda` em supabase/functions/_shared/faturamento/posvenda.ts
-// (o front não importa de supabase/functions): manter os dois iguais.
+// Espelho de `ACAO_ML`/`chaveRecurso`/`motivoRevisaoIndisponivel` em supabase/functions/_shared/faturamento/posvenda.ts
+// (o front não importa de supabase/functions): manter os dois iguais — teste de paridade em posvenda-fila.test.ts.
 export const ACAO_ML: Record<AcaoPosvenda, string[]> = {
   revisar_ok: ['return_review_ok'],
   revisar_falha: ['return_review_fail'],
@@ -48,14 +48,25 @@ export const ACAO_ML: Record<AcaoPosvenda, string[]> = {
   abrir_disputa: ['open_dispute'],
 };
 
-const ehRevisao = (a: AcaoPosvenda) => a === 'revisar_ok' || a === 'revisar_falha';
+const ehRevisao = (a: AcaoPosvenda): a is 'revisar_ok' | 'revisar_falha' => a === 'revisar_ok' || a === 'revisar_falha';
 
-/** O ML libera a ação agora? (`available_actions`; revisão também com algum pedido `pending`). */
-export function acaoLiberada(
-  acao: AcaoPosvenda, d: { acoes: string[]; revisoes: Array<{ seller_status: string | null }> },
-): boolean {
-  if (ACAO_ML[acao].some((a) => d.acoes.includes(a))) return true;
-  return ehRevisao(acao) && d.revisoes.some((r) => r.seller_status === 'pending');
+type Elegivel = { acoes: string[]; revisoes: Array<{ seller_status: string | null }> };
+
+/** Mesma regra do backend: revisão terminal bloqueia mesmo com ação residual; `pending` sem a ação do ML
+ *  = ainda não liberada; sem revisões lidas vale a ação. null = elegível. */
+export function motivoRevisaoIndisponivel(acao: 'revisar_ok' | 'revisar_falha', d: Elegivel): string | null {
+  const liberada = ACAO_ML[acao].some((a) => d.acoes.includes(a));
+  if (d.revisoes.length) {
+    if (!d.revisoes.some((r) => r.seller_status === 'pending')) return 'A revisão desta devolução já foi feita no Mercado Livre.';
+    return liberada ? null : 'O ML ainda não liberou a revisão. Tente de novo mais tarde.';
+  }
+  return liberada ? null : 'Esta ação não está liberada pelo Mercado Livre agora. Recarregue a reclamação.';
+}
+
+/** O ML libera a ação agora? (`available_actions`; revisão pela regra de `motivoRevisaoIndisponivel`). */
+export function acaoLiberada(acao: AcaoPosvenda, d: Elegivel): boolean {
+  if (ehRevisao(acao)) return motivoRevisaoIndisponivel(acao, d) === null;
+  return ACAO_ML[acao].some((a) => d.acoes.includes(a));
 }
 
 export function chaveRecurso(acao: AcaoPosvenda, claimId: number | string, returnId: number | string | null): string {
