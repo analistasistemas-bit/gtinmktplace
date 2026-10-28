@@ -8,6 +8,10 @@ begin
   if has_table_privilege('authenticated','public.ml_posvenda_acoes','DELETE') then raise exception 'authenticated com DELETE'; end if;
   if not has_table_privilege('authenticated','public.ml_posvenda_acoes','SELECT') then raise exception 'authenticated sem SELECT'; end if;
   if has_table_privilege('anon','public.ml_posvenda_acoes','SELECT') then raise exception 'anon com SELECT'; end if;
+  if exists (select 1 from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+              where c.conrelid = 'public.ml_posvenda_acoes'::regclass and c.contype = 'f' and a.attname = 'user_id') then
+    raise exception 'FK em ml_posvenda_acoes.user_id (R6: não pode existir)';
+  end if;
   if (select count(*) from pg_indexes where tablename='ml_posvenda_acoes'
         and indexname in ('ml_posvenda_acoes_operacao_uniq','ml_posvenda_acoes_trava_uniq')) <> 2 then
     raise exception 'índices únicos ausentes';

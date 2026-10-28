@@ -26,7 +26,7 @@ end $$;
 create table if not exists public.ml_posvenda_acoes (
   id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null references public.organizations(id) on delete cascade,
-  user_id       uuid not null references auth.users(id) on delete cascade,  -- quem clicou
+  user_id       uuid not null,  -- quem clicou; sem FK de propósito: excluir usuário não pode apagar tentativa em aberto (soltaria a trava)
   operacao_id   uuid not null,
   claim_id      bigint not null,
   return_id     bigint,
