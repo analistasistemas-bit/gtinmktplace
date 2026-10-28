@@ -10,7 +10,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush, type AlvoPush } from '../_shared/estoque/alvos.ts';
-import { listarKitsVivos, saldoDoKit } from '../_shared/estoque/kit.ts';
+import { listarKitsVivos, resolverOrigemEstoque, saldoDoKit } from '../_shared/estoque/kit.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -72,6 +72,64 @@ async function reativarSePausado(
   if (r.erro?.retentavel) return 'retentavel';
   console.error('estoque_reativar_definitivo', canal, itemExternoId, r.erro);
   return 'ok';
+}
+
+/**
+ * ADR-0111 estendido ao Kit Virtual (emenda 2026-10-28 do ADR-0154). O ML pausa o kit quando um
+ * componente zera e NÃO o reativa quando o componente volta (MLB5433591725 ficou pausado com 100
+ * em estoque) — e o kit nunca é alvo de push, então a reativação do componente não o alcança.
+ *
+ * O kit continua fora do push de estoque (o ML calcula o saldo dele): aqui só se escreve status,
+ * e só se TODOS os componentes têm saldo local para pelo menos 1 kit — reativar com um componente
+ * zerado seria publicar o que não dá para vender. Componente que é kit vinculado (ADR-0151) tem o
+ * saldo derivado da base, por isso passa por `resolverOrigemEstoque`; origem não resolvida = não
+ * reativa (o operador ainda pode reativar no ML).
+ */
+async function reativarKitsVirtuais(
+  admin: SupabaseClient, orgId: string, conn: ChannelConnector, ctx: ContextoCanal,
+  itensRepostos: string[],
+): Promise<{ retentavel: boolean; reativados: Origem[] }> {
+  const out = { retentavel: false, reativados: [] as Origem[] };
+  if (itensRepostos.length === 0) return out;
+
+  const { data: tocados } = await admin.from('kits_virtuais_componentes')
+    .select('kit_id').eq('org_id', orgId).in('item_externo_id', itensRepostos);
+  const kitIds = [...new Set((tocados ?? []).map((c) => c.kit_id as string))];
+  if (kitIds.length === 0) return out;
+
+  const { data: kits } = await admin.from('kits_virtuais')
+    .select('id, ml_item_id, titulo, ml_permalink')
+    .eq('org_id', orgId).eq('status', 'publicado').in('id', kitIds);
+  const { data: comps } = await admin.from('kits_virtuais_componentes')
+    .select('kit_id, codigo, quantidade').eq('org_id', orgId).in('kit_id', kitIds);
+
+  for (const kit of kits ?? []) {
+    if (!kit.ml_item_id) continue;
+    let todosComSaldo = true;
+    for (const c of (comps ?? []).filter((x) => x.kit_id === kit.id)) {
+      const origem = await resolverOrigemEstoque(admin, orgId, c.codigo as string);
+      if (origem.erro) { todosComSaldo = false; break; }
+      const { data: linhas } = await admin.from('variacoes')
+        .select('codigo, estoque').eq('org_id', orgId).in('codigo', [origem.codigoCanonico]);
+      const estoques = (linhas ?? []).filter((v) => v.codigo === origem.codigoCanonico)
+        .map((v) => (v.estoque as number) ?? 0);
+      // ponytail: menor saldo se o código repetir entre famílias — conservador, não reativa a mais.
+      const saldo = estoques.length > 0 ? saldoDoKit(Math.min(...estoques), origem.multiplicador) : 0;
+      if (saldo < ((c.quantidade as number) ?? 1)) { todosComSaldo = false; break; }
+    }
+    if (!todosComSaldo) continue;
+
+    const r = await reativarSePausado(conn, ctx, 'mercado_livre', kit.ml_item_id as string);
+    if (r === 'retentavel') out.retentavel = true;
+    if (r === 'reativado') {
+      out.reativados.push({
+        codigoPai: kit.ml_item_id as string,
+        produto: (kit.titulo as string | null) ?? null,
+        permalink: (kit.ml_permalink as string | null) ?? null,
+      });
+    }
+  }
+  return out;
 }
 
 interface ContextoAlerta {
@@ -315,6 +373,8 @@ export async function processarSincronizacao(
   // MESMA família reativando no mesmo run geram 1 entrada só, ADR-0088).
   const reativados = new Map<string, Origem>();
   const tokenPorCanal = new Map<string, () => Promise<string>>();
+  // Itens do ML que receberam saldo > 0 com sucesso — candidatos a destravar um Kit Virtual.
+  const repostosMl: string[] = [];
 
   for (const alvo of alvos) {
     // try/catch por ALVO: resolverConexao, getConnector e atualizarEstoque podem
@@ -352,12 +412,28 @@ export async function processarSincronizacao(
         // sobre a FAMÍLIA (base ou kit) que reativou, então sai uma vez por família, depois do
         // laço — não uma vez por alvo, e sempre com o contexto de quem de fato reativou.
         if (reativacao === 'reativado') reativados.set(alvo.origem.codigoPai, alvo.origem);
+        if (alvo.canal === 'mercado_livre') repostosMl.push(alvo.itemExternoId);
       }
     } catch (e) {
       // Exceção inesperada é tratada como RETENTÁVEL: melhor o QStash tentar de novo
       // (push absoluto é idempotente) do que perder a propagação em silêncio.
       console.error('estoque_push_excecao', alvo.canal, alvo.itemExternoId, String(e));
       retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}`);
+    }
+  }
+
+  // Kit Virtual: só o ML tem, e o token do canal já foi resolvido no laço acima.
+  const tokenMl = tokenPorCanal.get('mercado_livre');
+  if (job.reativar && tokenMl && repostosMl.length > 0) {
+    try {
+      const k = await reativarKitsVirtuais(
+        admin, org_id, deps.getConnector('mercado_livre'), { getToken: tokenMl }, repostosMl,
+      );
+      if (k.retentavel) retentaveis.push('mercado_livre:kits_virtuais:status');
+      for (const o of k.reativados) reativados.set(`kit:${o.codigoPai}`, o);
+    } catch (e) {
+      console.error('estoque_reativar_kit_excecao', String(e));
+      retentaveis.push('mercado_livre:kits_virtuais:status');
     }
   }
 

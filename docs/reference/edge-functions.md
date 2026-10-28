@@ -931,6 +931,9 @@ mesmo por engano.
   planos user products (ADR-0088). Token por canal via `fabricarTokenPadrao` (hoje só ML; Shopee
   entra no E5). Falha de um canal nunca afeta outro (try/catch por alvo); exceção inesperada é
   tratada como retentável — devolve 500 para o QStash re-tentar (push absoluto é idempotente).
+  **Kit Virtual (2026-10-28, emenda ADR-0154):** em push de reposição (`reativar`), item ML que
+  recebeu saldo > 0 reativa o Kit Virtual `publicado` do qual é componente, se todos os componentes
+  têm saldo (`reativarKitsVirtuais`). Só status; o kit segue fora do push de quantidade.
   **`skus` no job (2026-09-03):** restringe o push a uma lista de SKUs em vez do produto inteiro.
   Só o fluxo "Adicionar variação" usa — `lerPushPendente` marca `skuRestrito` quando o movimento
   tem `referencia_externa` `addvar:<familia>:<codigo>`, e `despacharPushPendente` inclui isso na

@@ -21,6 +21,9 @@ interface DB {
   itensUP: Array<Record<string, unknown>>;
   /** ADR-0134: transições >0 → 0 candidatas a alerta. */
   movimentos?: MovimentoFake[];
+  /** ADR-0154 + emenda 2026-10-28: Kit Virtual e componentes, filtrados de verdade. */
+  kits?: Array<Record<string, unknown>>;
+  kitComps?: Array<Record<string, unknown>>;
 }
 
 /** Fake mínimo do SupabaseClient: só os padrões de query que processarSincronizacao usa.
@@ -44,6 +47,10 @@ function fakeAdmin(db: DB) {
       if (tabela === 'variacoes') return { data: db.variacoes, error: null };
       if (tabela === 'anuncios_externos') return { data: db.anuncios, error: null };
       if (tabela === 'anuncios_externos_itens') return { data: db.itensUP, error: null };
+      if (tabela === 'kits_virtuais' || tabela === 'kits_virtuais_componentes') {
+        const linhas = (tabela === 'kits_virtuais' ? db.kits : db.kitComps) ?? [];
+        return { data: linhas.filter((r) => filtros.every((f) => f(r))), error: null };
+      }
       if (tabela === 'estoque_movimentos') {
         const alvo = movimentosFiltrados();
         if (valoresUpdate) for (const r of alvo) Object.assign(r, valoresUpdate);
@@ -521,5 +528,63 @@ describe('alerta de estoque (ADR-0134)', () => {
     const db = produto([{ codigo: 'A1', estoque: 5 }], []);
     await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
     expect(enviados).toEqual([]);
+  });
+});
+
+// ─── ADR-0111 estendido ao Kit Virtual (ADR-0154, emenda 2026-10-28) ──────────
+// O ML pausa o kit quando um componente zera e NÃO o reativa quando o componente volta
+// (MLB5433591725, 2026-10-28). A reposição do componente tem que reativar o kit.
+describe('reativação de Kit Virtual na reposição', () => {
+  beforeEach(() => fakeConnector.reset());
+
+  const enviados: string[] = [];
+  const notificar = (async (_a: unknown, _o: string, _c: string, texto: string) => {
+    enviados.push(texto);
+    return 1;
+  }) as unknown as NonNullable<DepsSincronizacao['notificar']>;
+  beforeEach(() => { enviados.length = 0; });
+
+  const comKit = (estoqueOutro: number): DB => ({
+    familia: { id: 'f1' },
+    variacoes: [{ codigo: 'A1', estoque: 7 }, { codigo: 'B1', estoque: estoqueOutro }],
+    anuncios: [{ id: 'x', canal: 'mercado_livre', item_externo_id: 'MLB-A', variacoes_externas: { A1: {} } }],
+    itensUP: [],
+    kits: [
+      { id: 'k1', org_id: 'org-1', ml_item_id: 'MLB-KIT', titulo: 'Kit A + B', ml_permalink: 'https://ml/KIT', status: 'publicado' },
+      { id: 'k2', org_id: 'org-1', ml_item_id: 'MLB-KIT-VELHO', titulo: 'Kit encerrado', ml_permalink: null, status: 'encerrado' },
+    ],
+    kitComps: [
+      { kit_id: 'k1', org_id: 'org-1', item_externo_id: 'MLB-A', codigo: 'A1', quantidade: 1 },
+      { kit_id: 'k1', org_id: 'org-1', item_externo_id: 'MLB-B', codigo: 'B1', quantidade: 1 },
+      { kit_id: 'k2', org_id: 'org-1', item_externo_id: 'MLB-A', codigo: 'A1', quantidade: 1 },
+    ],
+  });
+  const kitReativado = () => fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarStatus')
+    .map((c) => c.args as { itemExternoId: string; status: string })
+    .filter((c) => c.itemExternoId.startsWith('MLB-KIT'));
+
+  it('componente reposto e todos com saldo → reativa o kit pausado e avisa', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const r = await processarSincronizacao(deps(comKit(3), { notificar }), { ...JOB, reativar: true });
+    expect(r.status).toBe(200);
+    expect(kitReativado()).toEqual([{ itemExternoId: 'MLB-KIT', status: 'ativo' }]);
+    expect(enviados.some((t) => t.includes('Kit A + B'))).toBe(true);
+  });
+
+  it('outro componente sem saldo → kit fica pausado', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    await processarSincronizacao(deps(comKit(0)), { ...JOB, reativar: true });
+    expect(kitReativado()).toEqual([]);
+  });
+
+  it('push sem a flag (reconciliação) → não toca no kit', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    await processarSincronizacao(deps(comKit(3)), JOB);
+    expect(kitReativado()).toEqual([]);
+  });
+
+  it('kit já ativo → nenhum PUT de status', async () => {
+    await processarSincronizacao(deps(comKit(3)), { ...JOB, reativar: true });
+    expect(kitReativado()).toEqual([]);
   });
 });

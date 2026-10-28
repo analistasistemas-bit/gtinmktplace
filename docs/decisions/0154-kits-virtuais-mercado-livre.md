@@ -294,3 +294,24 @@ caracteres.
 Reverter a migration (duas tabelas, a coluna `ml_vendas.kit_item_id`, o trigger) e remover as Edge
 Functions novas. Nenhuma família, anúncio ou venda existente é alterada por esta feature — o kit
 vive em estrutura própria e os componentes são lidos, nunca escritos.
+
+## Emenda 2026-10-28 — reposição de componente reativa o kit pausado
+
+**Incidente.** O `MLB5433591725` (Hair Fly Alisante + Neutralizante) ficou `paused`, com
+`sub_status` vazio e 100 em estoque. Uma venda zerou o Neutralizante às 14:12. Na reposição, o
+`sincronizar-estoque` reativou o anúncio do componente (ADR-0111), mas o kit nunca é alvo de push,
+então ficou pausado. O ML **não** reativa o kit sozinho quando o componente volta.
+
+**Contrato medido** (com o OK do Diego, nesse kit): `PUT /items/{kit} {"status":"active"}` → 200,
+kit `active`. A ressalva da §14 sobre `status` em kit fica respondida para reativar. O botão
+Pausar/Reativar na tela continua fora.
+
+**Decisão.** O ADR-0111 passa a valer para o Kit Virtual. Num push de reposição (`reativar`), cada
+item do ML que recebeu saldo > 0 com sucesso localiza os kits `publicado` dos quais ele é
+componente. O kit é reativado (lê o status e só sai de `pausado`) **somente se todos os
+componentes** tiverem saldo local ≥ `quantidade`. Componente que é kit vinculado usa o saldo
+derivado da base (`resolverOrigemEstoque`); origem não resolvida = não reativa.
+
+O kit **continua fora do push de estoque**: só o status é escrito, nunca `quantity`. O
+acoplamento novo é só este, e vive em `sincronizar-estoque/processar.ts`
+(`reativarKitsVirtuais`).

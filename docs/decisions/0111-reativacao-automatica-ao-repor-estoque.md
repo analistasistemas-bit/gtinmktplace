@@ -67,3 +67,8 @@ alcança o ML (`canal_origem` exclui o canal que originou o movimento), então o
 - **Reativar em qualquer push:** a reconciliação diária re-empurra saldo de produtos com movimento
   recente. Um anúncio pausado à mão voltaria ao ar sem reposição nenhuma — mais do que foi pedido.
 - **Botão "repor e reativar" na tela:** mantém o passo manual que a decisão existe para eliminar.
+
+## Emenda 2026-10-28 — Kit Virtual
+
+A reposição de um componente também reativa o Kit Virtual pausado (ADR-0154), desde que todos os
+componentes tenham saldo. Ver a emenda de 2026-10-28 no ADR-0154.
