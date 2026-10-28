@@ -37,9 +37,11 @@ interface Props {
   /** Formulário da ação; fica desabilitado depois do 1º envio (o corpo não pode mudar sob o mesmo operacao_id). */
   children?: ReactNode;
   onConcluido?: () => void;
+  /** Toda resposta com estado (inclusive pendente/desconhecido): o pai relê fila e tentativas ativas. */
+  onEstado?: () => void;
 }
 
-function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkML, children, onConcluido, onFechar }: Omit<Props, 'open' | 'onOpenChange'> & { onFechar: () => void }) {
+function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkML, children, onConcluido, onEstado, onFechar }: Omit<Props, 'open' | 'onOpenChange'> & { onFechar: () => void }) {
   // Gerado ao ABRIR (este componente só monta com o diálogo aberto) e reusado em qualquer repetição/conferência.
   const [operacaoId] = useState<string>(() => crypto.randomUUID());
   const [fase, setFase] = useState<Fase>({ t: 'form' });
@@ -53,6 +55,7 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
   const aplicar = (r: ResultadoAcaoPosvenda) => {
     setAviso(null);
     setFase({ t: 'resultado', estado: r.estado, pendente: r.pendenteConfirmacao, sincronizacao: r.sincronizacaoPendente });
+    onEstado?.();
     if (r.estado === 'confirmada') onConcluido?.();
   };
 
@@ -73,6 +76,7 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
       const pend = ehAcaoPendente(e);
       if (pend) {
         operacaoVerificar.current = pend.operacao_id;
+        onEstado?.();
         setFase({ t: 'resultado', estado: pend.estado, pendente: true, sincronizacao: false });
         return;
       }

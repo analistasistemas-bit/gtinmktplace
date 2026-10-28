@@ -40,7 +40,7 @@ function Reembolso({ d, claimId, open, onOpenChange, onConcluido, linkML }: {
   const parcial = escolha !== 'total';
   return (
     <DialogoConfirmarAcao
-      open={open} onOpenChange={onOpenChange} claimId={claimId} onConcluido={onConcluido} linkML={linkML}
+      open={open} onOpenChange={onOpenChange} claimId={claimId} onConcluido={onConcluido} onEstado={onConcluido} linkML={linkML}
       titulo="Reembolsar comprador" rotuloEnviar="Reembolsar"
       corpo={parcial ? { acao: 'reembolso_parcial', percentual: Number(escolha) } : { acao: 'reembolsar' }}
       podeEnviar={escolha !== ''}
@@ -161,7 +161,7 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
       <p className="text-xs text-muted-foreground">Botões apagados: o ML não libera a ação agora. Nada vai ao ML sem a sua confirmação.</p>
 
       {dialogo === 'responder' && (
-        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML}
+        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onEstado={concluido}
           titulo="Enviar mensagem" rotuloEnviar="Enviar mensagem" podeEnviar
           corpo={{ acao: 'responder', texto: texto.trim(), anexos: anexos.map((a) => a.id) }}
           onConcluido={() => { setTexto(''); setAnexos([]); concluido(); }}
@@ -171,17 +171,17 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
       )}
       {dialogo === 'reembolsar' && <Reembolso d={d} claimId={claimId} open onOpenChange={() => setDialogo(null)} onConcluido={concluido} linkML={linkML} />}
       {dialogo === 'disputa' && (
-        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onConcluido={concluido}
+        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onConcluido={concluido} onEstado={concluido}
           titulo="Pedir mediação do ML" rotuloEnviar="Pedir mediação" podeEnviar corpo={{ acao: 'abrir_disputa' }}
           efeito="Isto abre uma disputa e o Mercado Livre passa a mediar a reclamação." />
       )}
       {dialogo === 'autorizar' && (
-        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onConcluido={concluido}
+        <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onConcluido={concluido} onEstado={concluido}
           titulo="Autorizar devolução" rotuloEnviar="Autorizar" podeEnviar corpo={{ acao: 'autorizar_devolucao' }}
           efeito="Isto autoriza o comprador a devolver o produto no Mercado Livre." />
       )}
       {dialogo === 'revisar' && (
-        <DialogoRevisarDevolucao detalhe={d} open onOpenChange={() => setDialogo(null)} onConcluido={concluido}
+        <DialogoRevisarDevolucao detalhe={d} open onOpenChange={() => setDialogo(null)} onConcluido={concluido} onEstado={concluido}
           info={montarInfoRevisao(item, d.afeta_reputacao, produto)} />
       )}
     </div>

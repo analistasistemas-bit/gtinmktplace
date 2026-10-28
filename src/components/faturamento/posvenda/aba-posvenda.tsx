@@ -23,7 +23,8 @@ export function AbaPosvenda({ sub, onSub }: { sub: SubAba; onSub: (s: SubAba) =>
   const fila = useFilaPosvenda();
   const travasQ = useTentativasAtivas();
   // Sem conhecer as travas não dá para liberar ação nenhuma: carregando/erro => null (tudo indisponível).
-  const travas = travasQ.data ?? null;
+  // Releitura com erro => desconhecidas, mesmo que o cache ainda tenha dados antigos.
+  const travas = travasQ.isError ? null : travasQ.data ?? null;
   const naoLidas = useResumoMensagens().data?.naoLidas.total ?? 0;
   const [historico, setHistorico] = useState(false);
 

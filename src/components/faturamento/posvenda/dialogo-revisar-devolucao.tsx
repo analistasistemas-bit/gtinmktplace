@@ -122,8 +122,8 @@ function BlocoFalha({ claimId, motivos, valor, onPatch, onSubindo, idBase }: {
   );
 }
 
-export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onConcluido }: {
-  detalhe: DetalheReclamacao; info: InfoRevisao; open: boolean; onOpenChange: (v: boolean) => void; onConcluido?: () => void;
+export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onConcluido, onEstado }: {
+  detalhe: DetalheReclamacao; info: InfoRevisao; open: boolean; onOpenChange: (v: boolean) => void; onConcluido?: () => void; onEstado?: () => void;
 }) {
   const claimId = String(detalhe.claim_id);
   const carrinho = detalhe.pedidos_devolucao.length > 1;
@@ -164,7 +164,7 @@ export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onC
 
   return (
     <DialogoConfirmarAcao
-      open={open} onOpenChange={onOpenChange} claimId={claimId} corpo={corpo} onConcluido={onConcluido}
+      open={open} onOpenChange={onOpenChange} claimId={claimId} corpo={corpo} onConcluido={onConcluido} onEstado={onEstado}
       titulo="Revisar devolução" linkML={info.linkML}
       podeEnviar={caminho === 'ok' || (completo && subindo === 0)}
       rotuloEnviar={caminho === 'ok' ? 'Confirmar no ML' : 'Enviar ao ML'}

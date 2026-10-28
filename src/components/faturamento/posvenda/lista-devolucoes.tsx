@@ -3,20 +3,22 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buscarDetalheReclamacao } from '@/lib/posvenda';
-import type { ProdutoPedido } from '@/lib/posvenda-fila';
 import type { Devolucao } from '@/lib/devolucoes';
-import { QK_POSVENDA } from '@/hooks/usePosvenda';
+import { QK_POSVENDA, useProdutosPedidos } from '@/hooks/usePosvenda';
 import { ListaFila, type Travas } from './lista-reclamacoes';
 import { MSG_TRAVA, PainelReclamacao } from './detalhe-reclamacao';
 import { DialogoRevisarDevolucao, montarInfoRevisao } from './dialogo-revisar-devolucao';
 
 /** Relê a reclamação no ML e só então abre o diálogo (o formulário usa os motivos/pedidos atuais). */
-function RevisarDoCard({ d, produto, onFechar }: { d: Devolucao; produto?: ProdutoPedido; onFechar: () => void }) {
+function RevisarDoCard({ d, onFechar }: { d: Devolucao; onFechar: () => void }) {
   const qc = useQueryClient();
+  // Produto atual do pedido (não o do clique): se carregar depois, o diálogo atualiza.
+  const produto = useProdutosPedidos([d.order_id]).get(d.order_id ?? -1);
   const q = useQuery({
     queryKey: [...QK_POSVENDA, 'detalhe', d.claim_id], staleTime: 0, gcTime: 0,
     queryFn: () => buscarDetalheReclamacao(String(d.claim_id)),
   });
+  const atualizar = () => { void qc.invalidateQueries({ queryKey: QK_POSVENDA }); void qc.invalidateQueries({ queryKey: ['devolucoes'] }); };
   if (!q.data) {
     return (
       <div className="fixed inset-x-4 bottom-4 z-50 flex items-center justify-between gap-3 rounded-lg border bg-popover p-3 text-sm shadow-lg sm:left-auto sm:w-80">
@@ -29,7 +31,7 @@ function RevisarDoCard({ d, produto, onFechar }: { d: Devolucao; produto?: Produ
   return (
     <DialogoRevisarDevolucao
       detalhe={q.data} open onOpenChange={(v) => { if (!v) onFechar(); }}
-      onConcluido={() => { void qc.invalidateQueries({ queryKey: QK_POSVENDA }); void qc.invalidateQueries({ queryKey: ['devolucoes'] }); }}
+      onConcluido={atualizar} onEstado={atualizar}
       info={montarInfoRevisao(d, q.data.afeta_reputacao, produto)}
     />
   );
@@ -37,14 +39,14 @@ function RevisarDoCard({ d, produto, onFechar }: { d: Devolucao; produto?: Produ
 
 export function ListaDevolucoes({ itens, travas }: { itens: Devolucao[]; travas: Travas }) {
   const [detalhe, setDetalhe] = useState<Devolucao | null>(null);
-  const [revisando, setRevisando] = useState<{ d: Devolucao; produto?: ProdutoPedido } | null>(null);
+  const [revisando, setRevisando] = useState<Devolucao | null>(null);
   return (
     <>
       <ListaFila itens={itens} travas={travas} vazio="Nenhuma devolução em andamento."
-        renderAcao={(d, travado, produto) => d.revisao_pendente
-          ? <Button size="sm" disabled={travado} title={travado ? (travas === null ? 'Conferindo ações em andamento…' : MSG_TRAVA) : undefined} onClick={() => setRevisando({ d, produto })}>Revisar</Button>
+        renderAcao={(d, travado) => d.revisao_pendente
+          ? <Button size="sm" disabled={travado} title={travado ? (travas === null ? 'Conferindo ações em andamento…' : MSG_TRAVA) : undefined} onClick={() => setRevisando(d)}>Revisar</Button>
           : <Button size="sm" variant="outline" onClick={() => setDetalhe(d)}>Ver detalhe</Button>} />
-      {revisando && <RevisarDoCard d={revisando.d} produto={revisando.produto} onFechar={() => setRevisando(null)} />}
+      {revisando && <RevisarDoCard d={revisando} onFechar={() => setRevisando(null)} />}
       <PainelReclamacao item={detalhe} travas={travas} onOpenChange={(v) => { if (!v) setDetalhe(null); }} />
     </>
   );
