@@ -49,4 +49,10 @@ describe('classificarDedupWebhook', () => {
   it('duplicado real (0 linhas) de messages: checar-messages (decisão temporal fica com deveReenfileirarMensagens)', () => {
     expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'messages')).toBe('checar-messages');
   });
+
+  it('messages com action `read` em conflito (a linha do `created` já foi processada): enfileirar — senão a leitura se perde', () => {
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'messages', ['read'])).toBe('enfileirar');
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'messages', ['created'])).toBe('checar-messages');
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'orders_v2', ['read'])).toBe('ignorar');
+  });
 });

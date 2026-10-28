@@ -25,13 +25,16 @@ const REPROCESSA_NO_DUPLICADO = new Set(['questions', 'claims']);
 // duplicado é 0 linhas retornadas, sem erro no Postgres. Qualquer erro do upsert (RLS/timeout/
 // pool) NÃO é duplicado — o evento é novo e não pode ser engolido. Duplicado real: `messages`
 // precisa da checagem temporal, `questions`/`claims` reenfileiram sempre, o resto (vendas/envios,
-// com backstop de 72h) ignora.
+// com backstop de 72h) ignora. `messages` com action `read`: a linha de dedup da mensagem já existe
+// (do `created`, possivelmente processada) e o reconciliar só olha packs ainda não lidos no ML — sem
+// reenfileirar aqui a leitura nunca chegaria. O worker é idempotente (lida_ml_em é monotônico).
 export function classificarDedupWebhook(
   resultado: { erro: { code?: string } | null; inseriu: boolean },
   topic: string,
+  actions: string[] = [],
 ): AcaoDedupWebhook {
   if (resultado.erro) return 'enfileirar'; // erro no upsert: não engole.
   if (resultado.inseriu) return 'enfileirar'; // linha nova: evento novo.
-  if (topic === 'messages') return 'checar-messages';
+  if (topic === 'messages') return actions.includes('read') ? 'enfileirar' : 'checar-messages';
   return REPROCESSA_NO_DUPLICADO.has(topic) ? 'enfileirar' : 'ignorar';
 }

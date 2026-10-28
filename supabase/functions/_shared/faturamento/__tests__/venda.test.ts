@@ -175,6 +175,7 @@ describe('parseWebhookNotification', () => {
       resource: '/orders/2000003508419013',
       resourceId: '2000003508419013',
       mlUserId: 123456,
+      actions: [],
     });
   });
   it('null quando faltam campos obrigatórios', () => {
@@ -233,8 +234,16 @@ describe('parseWebhookNotification', () => {
     });
     expect(ev).toEqual({
       topic: 'messages', resource: '3f6da1e35ac84f70a24af7360d24c7bc',
-      resourceId: '3f6da1e35ac84f70a24af7360d24c7bc', mlUserId: 123456789,
+      resourceId: '3f6da1e35ac84f70a24af7360d24c7bc', mlUserId: 123456789, actions: ['created'],
     });
+  });
+
+  it('messages: preserva `actions` (o `read` posterior da mesma mensagem precisa ser distinguível)', () => {
+    const ev = parseWebhookNotification({
+      resource: '3f6da1e35ac84f70a24af7360d24c7bc', user_id: 1, topic: 'messages', actions: ['read', 42],
+    });
+    expect(ev?.actions).toEqual(['read']);
+    expect(ev?.resource).toBe('3f6da1e35ac84f70a24af7360d24c7bc');
   });
 
   it('hash sem barra só vale para messages', () => {
@@ -245,6 +254,7 @@ describe('parseWebhookNotification', () => {
     for (const resource of ['post-purchase/v1/claims/5108684499', '/post-purchase/v1/claims/5108684499']) {
       expect(parseWebhookNotification({ topic: 'post_purchase', user_id: 1, resource, actions: ['claims_actions'] })).toEqual({
         topic: 'claims', resource: '/post-purchase/v1/claims/5108684499', resourceId: '5108684499', mlUserId: 1,
+        actions: ['claims_actions'],
       });
     }
   });

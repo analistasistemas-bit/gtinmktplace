@@ -13,6 +13,8 @@ export interface WebhookEvento {
   resourceId: string;
   /** id do vendedor no ML (numérico). Usado para resolver o user_id local. */
   mlUserId: number;
+  /** `actions` da notificação (ex.: `messages` → `created` | `read`). [] quando ausente. */
+  actions: string[];
 }
 
 /** Extrai o último segmento numérico de um resource (`/orders/123` → `123`). null se ausente. */
@@ -51,14 +53,15 @@ export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   let resource = typeof p.resource === 'string' ? p.resource : null;
   const mlUserId = typeof p.user_id === 'number' ? p.user_id : Number(p.user_id);
   if (!topic || !resource || !Number.isFinite(mlUserId)) return null;
+  const actions = Array.isArray(p.actions) ? p.actions.filter((a): a is string => typeof a === 'string') : [];
   // `messages` traz só o id da mensagem (hash), não um path — o worker resolve o pack.
-  if (topic === 'messages' && ID_MENSAGEM.test(resource)) return { topic, resource, resourceId: resource, mlUserId };
+  if (topic === 'messages' && ID_MENSAGEM.test(resource)) return { topic, resource, resourceId: resource, mlUserId, actions };
   // A doc do post_purchase mostra o resource com e sem a barra inicial.
   if (!resource.startsWith('/')) resource = `/${resource}`;
   if (resource.length > MAX_RESOURCE_LEN || !RESOURCE_VALIDO.test(resource)) return null;
   const resourceId = extrairIdDoResource(resource);
   if (!resourceId) return null;
-  return { topic, resource, resourceId, mlUserId };
+  return { topic, resource, resourceId, mlUserId, actions };
 }
 
 /**

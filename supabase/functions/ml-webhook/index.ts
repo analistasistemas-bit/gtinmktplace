@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
       onConflict: 'topic,resource', ignoreDuplicates: true,
     }).select('id');
   const inseriu = (dupData?.length ?? 0) > 0;
-  const acaoDedup = classificarDedupWebhook({ erro: dupErr, inseriu }, ev.topic);
+  const acaoDedup = classificarDedupWebhook({ erro: dupErr, inseriu }, ev.topic, ev.actions);
   if (acaoDedup === 'ignorar') return ok(); // duplicado real de topic ≠ messages.
   if (acaoDedup === 'checar-messages') {
     const { data: existente } = await admin.from('ml_webhook_eventos')
