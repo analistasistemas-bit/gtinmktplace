@@ -26,17 +26,33 @@ describe('autorDoPapel', () => {
 });
 
 describe('montarHistorico', () => {
-  it('ordena por data, mapeia autor/destinatário/anexos/moderação', () => {
+  it('ordena por data, mapeia autor/destinatário/anexos (id + nome)/moderação', () => {
     const h = montarHistorico([
       { sender_role: 'mediator', receiver_role: 'respondent', message: 'ML', date_created: '2026-10-02T10:00:00Z', attachments: [], status: 'available', message_moderation: { status: 'clean' } },
-      { sender_role: 'complainant', receiver_role: 'respondent', message: 'oi', date_created: '2026-10-01T10:00:00Z', attachments: [{ filename: 'a_x.jpg', original_filename: 'foto.jpg' }], message_moderation: { status: 'rejected' } },
-    ], 'respondent');
+      { sender_role: 'complainant', receiver_role: 'respondent', message: 'oi', date_created: '2026-10-01T10:00:00Z', attachments: [{ filename: 'a_x.jpg', original_filename: 'foto.jpg' }, { filename: 'b.pdf' }], message_moderation: { status: 'rejected' } },
+    ], null, 'respondent');
     expect(h.map((m) => m.autor)).toEqual(['comprador', 'ml']);
-    expect(h[0]).toMatchObject({ destinatario: 'vendedor', anexos: ['foto.jpg'], moderacao: 'rejected', status: null });
+    expect(h[0].anexos).toEqual([{ id: 'a_x.jpg', nome: 'foto.jpg' }, { id: 'b.pdf', nome: 'b.pdf' }]);
+    expect(h[0]).toMatchObject({ destinatario: 'vendedor', moderacao: 'rejected', status: null });
     expect(h[1]).toMatchObject({ texto: 'ML', status: 'available', moderacao: 'clean' });
   });
-  it('resposta inválida → []', () => {
-    expect(montarHistorico(null, 'respondent')).toEqual([]);
+  it('moderacao vem de message_moderation.status, status de message.status', () => {
+    const [m] = montarHistorico([{ sender_role: 'complainant', message: 'x', date_created: '2026-10-01T00:00:00Z', message_moderation: { status: 'clean' } }], null, 'respondent');
+    expect(m.status).toBeNull();
+    expect(m.moderacao).toBe('clean');
+  });
+  it('intercala mudanças de status (autor ml) em ordem cronológica', () => {
+    const h = montarHistorico(
+      [{ sender_role: 'complainant', message: 'oi', date_created: '2026-10-02T00:00:00Z' }],
+      [{ stage: 'claim', status: 'opened', date: '2026-10-01T00:00:00Z' }, { stage: 'dispute', status: 'opened', date: '2026-10-03T00:00:00Z' }],
+      'respondent');
+    expect(h.map((m) => m.autor)).toEqual(['ml', 'comprador', 'ml']);
+    expect(h[0].texto).toBe('Status da reclamação: claim / opened');
+    expect(h[2]).toMatchObject({ texto: 'Status da reclamação: dispute / opened', anexos: [], status: 'opened' });
+  });
+  it('status-history em envelope ou lixo não quebra', () => {
+    expect(montarHistorico([], { history: [{ status: 'closed', date_created: '2026-10-01T00:00:00Z' }] }, 'r')).toHaveLength(1);
+    expect(montarHistorico(null, 'lixo', 'respondent')).toEqual([]);
   });
 });
 

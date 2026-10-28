@@ -21,13 +21,15 @@ export interface DetalheReclamacao {
   custo_devolucao: number | null;
   historico: Array<{
     data: string; autor: 'comprador' | 'vendedor' | 'ml'; destinatario: 'comprador' | 'vendedor' | 'ml' | null;
-    texto: string; anexos: string[]; status: string | null; moderacao: string | null;
+    texto: string; anexos: Array<{ id: string; nome: string }>; status: string | null; moderacao: string | null;
   }>;
   acoes: string[];
   revisoes: Array<{ order_id: number; seller_status: string | null }>;
   pedidos_devolucao: number[];
   motivos_falha_revisao: Array<{ id: string; texto: string; exige_foto: boolean; aplica: string[] }>;
   reembolso_parcial: { ofertas: Array<{ percentual: number; valor: number }>; minimo: number | null } | null;
+  /** Leituras informativas que falharam (o campo correspondente vem null/vazio). */
+  incompleto: string[];
 }
 
 /** Estado da reclamação relido do ML agora (nunca do cache local). */

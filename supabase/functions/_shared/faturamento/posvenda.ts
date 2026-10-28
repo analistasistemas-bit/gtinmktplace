@@ -8,7 +8,8 @@ export interface MensagemHistorico {
   autor: Autor;
   destinatario: Autor | null;
   texto: string;
-  anexos: string[];
+  /** `id` = filename do ML (identificador); `nome` = nome de exibição. */
+  anexos: Array<{ id: string; nome: string }>;
   status: string | null;
   moderacao: string | null;
 }
@@ -43,6 +44,8 @@ export interface DetalheReclamacao {
   pedidos_devolucao: number[];
   motivos_falha_revisao: MotivoRevisao[];
   reembolso_parcial: ReembolsoParcial | null;
+  /** Leituras só informativas que falharam (campo correspondente vem null/vazio). */
+  incompleto: string[];
 }
 
 type Obj = Record<string, unknown>;
@@ -60,18 +63,29 @@ export function autorDoPapel(role: string | null | undefined, papelDaConta: stri
   return 'comprador';
 }
 
-/** GET claims/{id}/messages → histórico cronológico. */
-export function montarHistorico(resp: unknown, papelDaConta: string | null | undefined): MensagemHistorico[] {
-  if (!Array.isArray(resp)) return [];
+/** Lista de eventos: array direto ou envelope com um array dentro. */
+function listaDe(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v;
+  const o = obj(v);
+  const interno = o && Object.values(o).find(Array.isArray);
+  return (interno as unknown[] | undefined) ?? [];
+}
+
+/** claims/{id}/messages + claims/{id}/status-history → linha do tempo cronológica.
+ *  status-history é tratado defensivamente (formato não medido): `{stage,status,date|date_created}`. */
+export function montarHistorico(
+  mensagens: unknown, statusHistory: unknown, papelDaConta: string | null | undefined,
+): MensagemHistorico[] {
   const out: MensagemHistorico[] = [];
-  for (const raw of resp) {
+  for (const raw of Array.isArray(mensagens) ? mensagens : []) {
     const m = obj(raw);
     if (!m) continue;
     const data = str(m.date_created) ?? str(m.message_date);
     if (!data) continue;
-    const anexos = (Array.isArray(m.attachments) ? m.attachments : [])
-      .map((a) => str(obj(a)?.original_filename) ?? str(obj(a)?.filename))
-      .filter((x): x is string => x != null);
+    const anexos = (Array.isArray(m.attachments) ? m.attachments : []).flatMap((a) => {
+      const id = str(obj(a)?.filename) ?? str(obj(a)?.original_filename);
+      return id ? [{ id, nome: str(obj(a)?.original_filename) ?? id }] : [];
+    });
     const dest = str(m.receiver_role);
     out.push({
       data,
@@ -81,6 +95,18 @@ export function montarHistorico(resp: unknown, papelDaConta: string | null | und
       anexos,
       status: str(m.status),
       moderacao: str(obj(m.message_moderation)?.status),
+    });
+  }
+  for (const raw of listaDe(statusHistory)) {
+    const e = obj(raw);
+    const data = str(e?.date) ?? str(e?.date_created) ?? str(e?.last_updated);
+    const status = str(e?.status);
+    const stage = str(e?.stage);
+    if (!e || !data || !(status || stage)) continue;
+    out.push({
+      data, autor: 'ml', destinatario: null,
+      texto: `Status da reclamação: ${[stage, status].filter(Boolean).join(' / ')}`,
+      anexos: [], status, moderacao: null,
     });
   }
   return out.sort((a, b) => Date.parse(a.data) - Date.parse(b.data));
