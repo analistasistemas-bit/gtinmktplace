@@ -1,4 +1,4 @@
-import { postEdge } from './edge';
+import { postEdge, type ErroEdge } from './edge';
 
 /** Espelho de `DetalheReclamacao` em supabase/functions/_shared/faturamento/posvenda.ts. */
 export interface DetalheReclamacao {
@@ -65,6 +65,14 @@ export interface ResultadoAcaoPosvenda {
  *  `cancelada`, `reconectar`, `moderacao`. */
 export function executarAcaoPosvenda(body: BodyAcaoPosvenda): Promise<ResultadoAcaoPosvenda> {
   return postEdge<ResultadoAcaoPosvenda>('posvenda-acao', body);
+}
+
+/** 409 de trava: a tentativa em aberto no item (para a UI oferecer "Conferir" com esse operacao_id). */
+export function ehAcaoPendente(e: unknown): { operacao_id: string; acao: AcaoPosvenda; estado: EstadoAcaoPosvenda } | null {
+  const p = (e as ErroEdge | null)?.pendente as Record<string, unknown> | null | undefined;
+  if (!(e instanceof Error) || !p || typeof p !== 'object') return null;
+  if (typeof p.operacao_id !== 'string' || typeof p.acao !== 'string' || typeof p.estado !== 'string') return null;
+  return { operacao_id: p.operacao_id, acao: p.acao as AcaoPosvenda, estado: p.estado as EstadoAcaoPosvenda };
 }
 
 /** Só relê o ML para a tentativa já registrada; nunca envia de novo. */

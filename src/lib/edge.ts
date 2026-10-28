@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 
-/** POST autenticado (JWT da sessão) numa Edge Function; erro `{ ok:false, erro, codigo? }` vira Error. */
+/** Erro de `postEdge`: `codigo` e `pendente` (409 de trava do posvenda-acao) vêm do corpo da edge. */
+export type ErroEdge = Error & { codigo?: string; pendente?: unknown };
+
+/** POST autenticado (JWT da sessão) numa Edge Function; erro `{ ok:false, erro, codigo?, pendente? }` vira ErroEdge. */
 export async function postEdge<T>(fn: string, body: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
@@ -11,8 +14,9 @@ export async function postEdge<T>(fn: string, body: unknown): Promise<T> {
   });
   const json = await resp.json().catch(() => null);
   if (!resp.ok || json?.ok === false) {
-    const err = new Error(json?.erro ?? `Falha (${resp.status})`);
-    if (json?.codigo) (err as Error & { codigo?: string }).codigo = json.codigo;
+    const err: ErroEdge = new Error(json?.erro ?? `Falha (${resp.status})`);
+    if (json?.codigo) err.codigo = json.codigo;
+    if (json?.pendente) err.pendente = json.pendente;
     throw err;
   }
   if (json == null) throw new Error('Resposta inválida do servidor');
