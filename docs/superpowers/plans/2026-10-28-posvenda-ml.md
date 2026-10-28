@@ -9,7 +9,7 @@
 **Tech Stack:** React 19 + Tailwind v4 + TanStack Query + vitest; Supabase Edge Functions (Deno) + Postgres (migrations via CLI, ADR-0043); API post-purchase do ML.
 
 **Spec:** `docs/superpowers/specs/2026-10-28-posvenda-ml-design.md`
-**Revisões do plano:** Codex gpt-6.1-sol high — rodadas 1 (12), 2 (11) e 3 (9 achados) incorporadas.
+**Revisões do plano:** Codex gpt-6.1-sol high — rodadas 1 (12), 2 (11), 3 (9) e 4 (6 achados) incorporadas.
 
 ## Global Constraints
 
@@ -44,6 +44,7 @@
 - `ml_posvenda_acoes`: `id uuid pk`, `org_id uuid not null`, `user_id uuid not null`, `operacao_id uuid not null`, `claim_id bigint not null`, `return_id bigint`, `recurso text not null`, `acao text not null`, `payload jsonb not null`, `payload_hash text not null`, `antes jsonb` (snapshot relido antes do POST), `estado text not null check (estado in ('reservada','enviada','confirmada','recusada','desconhecido','inconclusiva','cancelada'))`, `post_em timestamptz` (gravado **antes** do fetch), `http_status int` (status do POST, null se não houve resposta), `resposta_ml jsonb`, `sync_pendente boolean not null default false`, `erro text`, `criado_em`, `atualizado_em`.
 - Índices: `unique (org_id, operacao_id)`; **parcial único** `(org_id, recurso) where estado in ('reservada','enviada','desconhecido')`.
 - RLS `select` membro da org; sem insert/update para `authenticated`.
+- `ml_mensagens` + `lida_ml_em timestamptz` — recibo de leitura no ML, **monotônico** (só sai de null; nunca volta): escrito por `update ... set lida_ml_em = coalesce(lida_ml_em, $1)`, nunca pelo upsert de `raw`.
 
 - [ ] **Step 1:** `git fetch`; confirmar 0192 livre (senão o próximo).
 - [ ] **Step 2:** ADR: decisão (colunas, máquina de estados abaixo, regra de nunca reenviar, enriquecimento, detalhe ao vivo, fotos sem storage, fora da v1), permissão, dono × executor, custo (≈3 GETs a mais por claim processado).
@@ -85,9 +86,10 @@
 - `buscarExtrasClaim(token, claimId, returnId): Promise<ExtrasClaim>` — `/detail`, `/affects-reputation`, `v1/returns/{returnId}/reviews` (sem return → `revisoes {ok:true, valor:[]}`).
 - `upsertDevolucao(admin, userId, orgId, claim, ret: Leitura<ReturnML|null>|ReturnML|null, contaExternaId, extras?)` — grava `linhaParaUpsert(...)` (nunca sobrescreve com null o que falhou de ler); **lança** em erro do Supabase; devolve a linha lida do banco. Sem `extras` (chamada antiga), não toca nas colunas novas.
 - `carregarDevolucoesLocais` seleciona `revisao_pendente, enriquecido_em`.
-- Job do `sync-devolucao` aceita `{ user_id, claim_id, org_id?, connection_id? }`; com `org_id`/`connection_id` usa a conexão informada (validando `org_id`) em vez de `resolverOrgPorUserId` (que falha se o mesmo criador tem conexões em duas orgs). O webhook segue mandando só `user_id`.
+- Job do `sync-devolucao` aceita `{ user_id, claim_id, org_id?, connection_id? }`; com `org_id`/`connection_id` usa a conexão informada (validando `org_id`) em vez de `resolverOrgPorUserId` (que falha se o mesmo criador tem conexões em duas orgs). O `ml-webhook` passa a enviar `org_id` (já resolvido por `resolverIdentidade`) nos jobs de `claims` — `ml-webhook` entra nesta task e no deploy.
 
-- [ ] **Step 1:** implementar e passar `extras` nos 4 callers.
+- Enriquecimento das linhas antigas: `export async function enriquecerPendentes(admin, token, org, conexao, limite = 20): Promise<number>` — lê de `ml_devolucoes` da org `where enriquecido_em is null order by claim_id` (paginado pelo `claim_id`, sem depender de `buscarClaimsSeller`, que corta em 2.000 por status), busca cada claim por id e faz o upsert. Vira a etapa `enriquecer` do `reconciliar-faturamento` (cursor = último `claim_id`), antes de `mensagens`.
+- [ ] **Step 1:** implementar e passar `extras` nos 4 callers; etapa `enriquecer` com teste no `passo.test.ts` (paginação por `claim_id`; linha com falha de leitura continua `null` e é retentada na próxima rodada sem travar as demais).
 - [ ] **Step 2:** `pnpm lint:functions && pnpm check:functions`; `pnpm vitest run supabase/functions` verde. Commit.
 
 ### Task 4: Edge `posvenda-detalhe`
@@ -134,7 +136,7 @@
     - `responder`: `depois.historico` tem entrada do vendedor com o mesmo texto e `data >= post_em`, ausente em `antes`;
     - `revisar_ok`: pedidos `pending` em `antes` e `success` em `depois` → `confirmado` **só com `http_status` 2xx**; sem 2xx (timeout) → `inconclusivo` (`success` também é "não revisou a tempo");
     - `revisar_falha`: `pending` → `claimed` ou `failed` nos pedidos revisados → `confirmado` (só o vendedor produz `claimed`); sem 2xx e `success` → `inconclusivo`;
-    - `reembolsar`: resolução de reembolso nova em `depois.resolucoes` (ausente em `antes`), ou `resolucao_final.motivo` de reembolso com `data >= post_em`;
+    - `reembolsar`: em `depois.resolucoes`, resolução do papel **do vendedor/conta** (`respondent`) com `tipo='refund'`, `status` aceito/aplicado e `criada_em >= post_em`, ausente em `antes`; **ou** `status='closed'` com `resolucao_final.motivo` de reembolso e `data >= post_em`. Resolução `refund` do **comprador** (`complainant`, `pending`) é desejo dele → `nao`;
     - `reembolso_parcial`: resolução parcial nova cujo percentual em `detalhes` = o pedido (outro percentual → `nao`);
     - `autorizar_devolucao`: `return_id` passou a existir;
     - `abrir_disputa`: `stage` `claim` → `dispute`.
@@ -142,16 +144,16 @@
   1. Já existe linha com o `operacao_id` → **não executa nada**: se `estado` ∈ {`enviada`,`desconhecido`,`reservada`} e `verificar`, faz só o passo 6; senão devolve a linha como está. `payload_hash` diferente para o mesmo `operacao_id` → 409.
   2. Insert `reservada` (conflito no índice parcial → 409 "Outra ação está em andamento ou aguardando confirmação neste item"; mostra a ação pendente).
   3. Releitura (`posvenda-detalhe` interno) → grava `antes`. Leitura falhou ou `validarAcao` recusou → `cancelada` (libera; nenhum POST aconteceu) + erro.
-  4. `update set post_em = now()` (marca o ponto sem volta) → fetch com timeout 20 s.
+  4. `update set post_em = now() where id = $id and estado = 'reservada' and post_em is null returning id` — **sem linha retornada, não faz o fetch** (a reserva foi cancelada). Só então fetch com timeout 20 s.
   5. 2xx → `enviada`; 4xx → `recusada` (libera; mensagem do ML; 403 = reconectar); timeout/5xx/rede → `desconhecido`.
   6. Releitura → `efeitoConfirmado`: `confirmado` → `update set estado='confirmada', sync_pendente=true` (mesma escrita); senão mantém. Grava `http_status`/`resposta_ml` no passo 5.
   7. Se `sync_pendente`: re-sync estrito com o **dono** (`upsertDevolucao` com extras) + enfileira `sync-devolucao` com `org_id`/`connection_id`; só após os dois darem certo, `sync_pendente=false`. Repetição do mesmo `operacao_id` (passo 1) com `sync_pendente=true` refaz **só** este passo, nunca o POST.
   Responde `{ ok, estado, pendenteConfirmacao, sincronizacaoPendente: sync_pendente, devolucao }`.
-- **Recuperação durável (sem reenviar):** o `reconciliar-faturamento` horário ganha o passo `posvendaPendentes` para a org: (a) `reservada` sem `post_em` há > 2 min → `cancelada`; (b) `reservada` com `post_em`, `enviada` e `desconhecido` → releitura + `efeitoConfirmado`: `confirmado` → `confirmada` + `sync_pendente`; `inconclusivo` → `inconclusiva`; `nao` → só libera (`inconclusiva`) **se o ML não aceita mais a ação** (fora de `available_actions` e, para revisão, nenhum pedido `pending`), senão mantém travada; (c) `sync_pendente=true` → refaz o passo 7. **`claim.status='closed'` sozinho nunca libera.** UI de `inconclusiva`: "O ML não confirmou se foi a sua ação; confira no Mercado Livre."
+- **Recuperação durável (sem reenviar):** o `reconciliar-faturamento` horário ganha o passo `posvendaPendentes` para a org: (a) `update set estado='cancelada' where id=$id and estado='reservada' and post_em is null and criado_em < now() - interval '2 minutes'` (atômico; perde para o passo 4 se ele marcou antes); (b) `reservada` com `post_em`, `enviada` e `desconhecido` → releitura + `efeitoConfirmado`: `confirmado` → `confirmada` + `sync_pendente`; `inconclusivo` ou `nao` → vira `inconclusiva` (libera) **somente se o ML não aceita mais a ação** (fora de `available_actions` e, para revisão, nenhum pedido `pending`); senão mantém o estado atual e a trava; (c) `sync_pendente=true` → refaz o passo 7. **`claim.status='closed'` sozinho nunca libera.** UI de `inconclusiva`: "O ML não confirmou se foi a sua ação; confira no Mercado Livre."
 
-- [ ] **Step 1: testes puros** — `validarAcao` (ação não liberada; SRF5 sem foto ok; SRF2 sem foto recusa; carrinho com `order_id` fora da devolução recusa), `montarRequisicao` (7 ações + carrinho com 2 pedidos), `destinatarioResposta` (claim → complainant; dispute → mediator), `chaveRecurso` (`revisar_ok`/`revisar_falha` do mesmo return → mesma chave), `efeitoConfirmado` (resposta publicada com a ação ainda liberada → `confirmado`; `pending → success` com 2xx → `confirmado`; `pending → success` após timeout → `inconclusivo` (Review Focus 3); oferta parcial observada com percentual diferente → `nao`; mudança externa de stage → `nao` para `reembolsar`).
+- [ ] **Step 1: testes puros** — `validarAcao` (ação não liberada; SRF5 sem foto ok; SRF2 sem foto recusa; carrinho com `order_id` fora da devolução recusa), `montarRequisicao` (7 ações + carrinho com 2 pedidos), `destinatarioResposta` (claim → complainant; dispute → mediator), `chaveRecurso` (`revisar_ok`/`revisar_falha` do mesmo return → mesma chave), `efeitoConfirmado` (resposta publicada com a ação ainda liberada → `confirmado`; `pending → success` com 2xx → `confirmado`; `pending → success` após timeout → `inconclusivo` (Review Focus 3); oferta parcial observada com percentual diferente → `nao`; mudança externa de stage → `nao` para `reembolsar`; `refund` pendente do comprador criado após o POST → `nao`).
 - [ ] **Step 2:** FAIL → implementar → PASS.
-- [ ] **Step 3: teste do fluxo** — a edge chama `executarAcao(deps, body)` (orquestrador em `_shared/faturamento/posvenda-fluxo.ts`, deps injetadas: banco e fetch). Teste vitest com banco em memória que impõe as mesmas unicidades/condicionais e fetch controlado: duas execuções simultâneas → **1 POST**; timeout após o POST e duas "Conferir" → 0 POSTs novos; interrupção após `confirmada` → repetir refaz só o sync; claim `closed` com revisão `pending` após timeout → continua travado.
+- [ ] **Step 3: teste do fluxo** — a edge chama `executarAcao(deps, body)` (orquestrador em `_shared/faturamento/posvenda-fluxo.ts`, deps injetadas: banco e fetch). Teste vitest com banco em memória que impõe as mesmas unicidades/condicionais e fetch controlado: duas execuções simultâneas → **1 POST**; timeout após o POST e duas "Conferir" → 0 POSTs novos; interrupção após `confirmada` → repetir refaz só o sync; claim `closed` com revisão `pending` após timeout → continua travado; `inconclusivo` com a ação ainda liberada → continua travado; intercalação **reconciliador seleciona reserva antiga → passo 4 marca `post_em` → reconciliador tenta cancelar** → cancelamento não acontece e há 1 POST.
 - [ ] **Step 4: teste SQL** (`scripts/teste-sql-desfeito.py`, uma transação): mesmo `(org_id, recurso)` ativo → 23505; mesmo `operacao_id` → 23505; após `estado='recusada'` novo insert passa. (Concorrência real fica coberta pelo teste do fluxo + índice único.)
 - [ ] **Step 5:** edge + passo `posvendaPendentes` no reconciliar + `executarAcaoPosvenda`/`verificarAcaoPosvenda` no front; `pnpm check:functions`; Commit.
 
@@ -172,14 +174,14 @@
 **Files:** Create `supabase/functions/marcar-mensagens-lidas-ml/index.ts` (`verify_jwt = true`); Modify `_shared/faturamento/mensagens-io.ts`, `src/lib/mensagens.ts`, `src/components/faturamento/aba-mensagens.tsx`; Create `src/lib/mensagens-resumo.ts` + teste
 
 **Interfaces:**
-- `ml_mensagens.lida` **segue significando dispensada/tratada localmente**; leitura no ML = `raw->'message_date'->>'read'`.
+- `ml_mensagens.lida` **segue significando dispensada/tratada localmente**; leitura no ML = `lida_ml_em` (Task 1). Todo escritor de mensagens (`upsertMensagens*`, sync, backfill, reconciliar) depois do upsert faz `update set lida_ml_em = coalesce(lida_ml_em, <message_date.read>)` para as que vieram com `read` preenchido — nunca grava null.
 - `buscarMensagensPack(token, pack, seller, marcarLida = false)`.
 - Edge `{ pack_id }`: GET `mark_as_read=true`, upsert estrito com o dono; não toca em `lida`.
-- `Conversa` + `shipping_status` (de `ml_vendas`, org) e `idsNaoLidosML: string[]` (recebidas com `read` nulo).
+- `Conversa` + `shipping_status` (de `ml_vendas`, org) e `idsNaoLidosML: string[]` (recebidas com `lida_ml_em` nulo).
 - `resumirConversas(conversas)` → `{ naoLidas: { aPreparar, aCaminho, entregues, total }, lidas: { semResponder, respondidas } }` (a preparar `pending|handling|ready_to_ship`; a caminho `shipped`; entregues `delivered`).
 - UI: card recolhido igual ao ML ("Venda para preparar · Mensagem recebida há 13 horas · [Conferir mensagem]"); expandir chama a edge **quando `idsNaoLidosML` não é vazio e difere do último conjunto marcado nesta sessão**.
 
-- [ ] **Step 1:** testes: `resumirConversas` (um por balde); componente: abrir → marca 1×; reabrir sem novidade → não chama; chega mensagem nova (novo id) e reabre → chama de novo; abrir não tira de "Sem responder"; Dispensar tira.
+- [ ] **Step 1:** teste SQL (`scripts/teste-sql-desfeito.py`): `lida_ml_em` preenchido + upsert de snapshot antigo com `read=null` + o `coalesce` → continua preenchido. Testes: `resumirConversas` (um por balde); componente: abrir → marca 1×; reabrir sem novidade → não chama; chega mensagem nova (novo id) e reabre → chama de novo; abrir não tira de "Sem responder"; Dispensar tira.
 - [ ] **Step 2:** FAIL → implementar → PASS. Commit.
 
 ### Task 8: Aba Pós-venda
@@ -188,6 +190,7 @@
 
 **Interfaces:**
 - `classificar(d, agora)`: `revisao_pendente` → urgente (mesmo `closed`); `opened` e (`vez_de='vendedor'` ou ação `mandatory` da conta) → urgente; `opened` restante → andamento; resto → concluída. `ordenarFila(ds, agora)`: vencidas, `prazo` asc, sem prazo no fim; `agora` injetado.
+- Dados: `buscarFilaPosvenda()` em `src/lib/posvenda.ts` lê **só** `ml_devolucoes where status='opened' or revisao_pendente` (conjunto pequeno, paginado com `.range()` até esgotar) — a fila nunca depende do histórico, que segue em `buscarDevolucoes`.
 - Sub-abas: Reclamações = `mediations`, `cancel_purchase`, `returns` sem `return_id`; Devoluções = `returns` com `return_id` + "Histórico" (= `AbaDevolucoes` atual intacta); Mensagens = Task 7.
 - Itens com tentativa ativa em `ml_posvenda_acoes` mostram "Ação enviada ao ML · aguardando confirmação" e travam os botões daquele recurso.
 - `dialogo-revisar-devolucao`: mockup aprovado; motivo + **mensagem obrigatória** + fotos (obrigatórias só com `exige_foto`); carrinho (`pedidos_devolucao.length > 1`): revisar o pacote inteiro ou pedido a pedido, cada um com motivo próprio (motivos filtrados por `aplica`).
@@ -200,8 +203,8 @@
 ### Task 9: Revisão, deploy na ordem certa, enriquecimento, validação, merge
 
 - [ ] **Step 1:** revisão do diff da branch pelo Codex (gpt-6.1-sol, high, read-only); corrigir (rodada única); CI verde.
-- [ ] **Step 2 — backend antes do front:** migration aplicada (conferir); grep das funções que importam `_shared/faturamento/{devolucao,devolucoes-io,mensagens-io,posvenda,reconciliar-filtros}.ts` e deploy de **todas** + as 4 novas; `functions list` com versão e `verify_jwt` = `config.toml`.
-- [ ] **Step 3 — enriquecimento:** rodar o `reconciliar-faturamento` (ou o backfill) até `select count(*) from ml_devolucoes where enriquecido_em is null and org_id in (orgs com ML)` chegar a 0 (ou só restarem falhas registradas); conferir 5600661190 (`vez_de='comprador'`, `detalhe->>'title'='Devolução em preparação'`) e listar as `revisao_pendente = true`.
+- [ ] **Step 2 — backend antes do front:** migration aplicada (conferir); grep das funções que importam `_shared/faturamento/{devolucao,devolucoes-io,mensagens-io,posvenda,reconciliar-filtros}.ts` e deploy de **todas** (inclui `ml-webhook`) + as 4 novas; `functions list` com versão e `verify_jwt` = `config.toml`.
+- [ ] **Step 3 — enriquecimento:** deixar a etapa `enriquecer` do `reconciliar-faturamento` rodar (ou disparar a rodada manualmente) até `select count(*) from ml_devolucoes where enriquecido_em is null and org_id in (orgs com ML)` chegar a 0 (ou só restarem falhas registradas); conferir 5600661190 (`vez_de='comprador'`, `detalhe->>'title'='Devolução em preparação'`) e listar as `revisao_pendente = true`.
 - [ ] **Step 4:** só então merge fast-forward na `main` (Render publica o front); conferir o bundle novo servido.
 - [ ] **Step 5:** validação visual com dados reais (Playwright; claro/escuro/390px).
 - [ ] **Step 6:** com o Diego, primeira ação real pela UI (responder numa reclamação aberta); conferir `estado='confirmada'` e o ML.
