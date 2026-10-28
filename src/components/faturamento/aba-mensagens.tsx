@@ -25,14 +25,15 @@ const fmtHora = (iso: string | null) =>
 const iniciais = (nome: string) =>
   nome.split(' ').filter((p) => /^\p{L}/u.test(p)).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 
-function CardConversa({ c, marcados }: { c: Conversa; marcados: Map<string, string> }) {
+function CardConversa({ c, marcados, aberto, onAberto }: {
+  c: Conversa; marcados: Map<string, string>; aberto: boolean; onAberto: (v: boolean) => void;
+}) {
   const qc = useQueryClient();
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [canceladaLocal, setCanceladaLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
-  const [aberto, setAberto] = useState(false);
   const marcandoRef = useRef(false);
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
@@ -54,7 +55,7 @@ function CardConversa({ c, marcados }: { c: Conversa; marcados: Map<string, stri
 
   async function alternar() {
     const abrindo = !aberto;
-    setAberto(abrindo);
+    onAberto(abrindo);
     if (!abrindo) return;
     // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado COM SUCESSO
     // neste pack (mapa no AbaMensagens: sobrevive a paginar/filtrar, que desmontam o card).
@@ -115,6 +116,7 @@ function CardConversa({ c, marcados }: { c: Conversa; marcados: Map<string, stri
       const n = await dispensarConversa(c.pack_id);
       if (n === 0) toast.info('Nenhuma mensagem para dispensar nesta conversa.');
       else toast.success('Conversa dispensada.');
+      onAberto(false); // solta a conversa fixada: sai do filtro como antes
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
       await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
     } catch (e) {
@@ -309,6 +311,14 @@ export function AbaMensagens() {
   const lista = conversas ?? [];
   const marcados = useRef(new Map<string, string>());
   const [balde, setBalde] = useState<Balde | null>(null);
+  // Conversas expandidas ficam fixadas na lista filtrada: marcar como lida (ou responder) reclassifica a
+  // conversa no refetch, e ela sumiria enquanto a pessoa lê. Sai ao recolher ou ao trocar de filtro.
+  const [abertos, setAbertos] = useState<ReadonlySet<string>>(new Set());
+  const marcarAberto = (pack: string, v: boolean) => setAbertos((s) => {
+    const n = new Set(s);
+    if (v) n.add(pack); else n.delete(pack);
+    return n;
+  });
 
   const [pagina, setPagina] = useState(1);
   const [tamanho, setTamanho] = useState(20);
@@ -326,8 +336,9 @@ export function AbaMensagens() {
   // Paginado no cliente: conversa é um agrupamento por pack_id feito aqui, não uma linha de
   // tabela — paginar isso no banco exigiria uma view/RPC nova (fora de escopo, ver spec D-2).
   // Card de resumo escolhido manda sobre a aba; sem ele vale a aba.
-  const filtradas = balde ? lista.filter((c) => baldeDaConversa(c) === balde)
-    : statusFiltro === 'aguardando' ? lista.filter((c) => c.aguardando) : lista;
+  const casa = (c: Conversa) => abertos.has(c.pack_id)
+    || (balde ? baldeDaConversa(c) === balde : statusFiltro !== 'aguardando' || c.aguardando);
+  const filtradas = lista.filter(casa);
   const total = filtradas.length;
   const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
   // Responder a última conversa "aguardando" de uma página tira ela da lista filtrada e a
@@ -340,11 +351,13 @@ export function AbaMensagens() {
   function mudarAba(v: string) {
     setStatusFiltro(v as FiltroStatusMensagem);
     setBalde(null);
+    setAbertos(new Set());
     setPagina(1);
   }
 
   function escolherBalde(b: Balde | null) {
     setBalde(b);
+    setAbertos(new Set());
     setPagina(1);
   }
 
@@ -368,7 +381,7 @@ export function AbaMensagens() {
         </div>
       ) : (
         <div className="space-y-3">
-          {itens.map((c) => <CardConversa key={c.pack_id} c={c} marcados={marcados.current} />)}
+          {itens.map((c) => <CardConversa key={c.pack_id} c={c} marcados={marcados.current} aberto={abertos.has(c.pack_id)} onAberto={(v) => marcarAberto(c.pack_id, v)} />)}
         </div>
       )}
 
