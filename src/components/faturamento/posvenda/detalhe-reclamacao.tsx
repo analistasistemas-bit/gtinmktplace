@@ -7,13 +7,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { buscarDetalheReclamacao, type AcaoPosvenda, type DetalheReclamacao } from '@/lib/posvenda';
-import { acaoLiberada, travada, type TentativaAtiva } from '@/lib/posvenda-fila';
-import { QK_POSVENDA } from '@/hooks/usePosvenda';
+import { acaoLiberada, travada, type ProdutoPedido } from '@/lib/posvenda-fila';
+import { QK_POSVENDA, useProdutosPedidos } from '@/hooks/usePosvenda';
+import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
+import type { Travas } from './lista-reclamacoes';
 import type { Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
 import { urlVendaML } from '@/lib/ml-status';
 import { DialogoConfirmarAcao } from './dialogo-confirmar-acao';
-import { DialogoRevisarDevolucao, Fotos, type Anexo } from './dialogo-revisar-devolucao';
+import { DialogoRevisarDevolucao, Fotos, montarInfoRevisao, type Anexo } from './dialogo-revisar-devolucao';
 
 export const fmtDataHora = (iso: string | null | undefined) => {
   const d = iso ? new Date(iso) : null;
@@ -28,54 +30,65 @@ const MSG_NAO_LIBERADA = 'Não liberado pelo ML nesta reclamação';
 type Dialogo = null | 'responder' | 'reembolsar' | 'disputa' | 'autorizar' | 'revisar';
 
 function Reembolso({ d, claimId, open, onOpenChange, onConcluido, linkML }: {
-  d: DetalheReclamacao; claimId: string; open: boolean; onOpenChange: (v: boolean) => void; onConcluido: () => void; linkML: string;
+  d: DetalheReclamacao; claimId: string; open: boolean; onOpenChange: (v: boolean) => void; onConcluido: () => void; linkML?: string;
 }) {
+  // Cada opção só vale se o ML a libera (`refund` = total; `allow_partial_refund` = parcial com ofertas).
+  const totalOk = acaoLiberada('reembolsar', d);
+  const parcialOk = acaoLiberada('reembolso_parcial', d);
   const ofertas = d.reembolso_parcial?.ofertas ?? [];
-  const [escolha, setEscolha] = useState('total');
+  const [escolha, setEscolha] = useState(totalOk ? 'total' : parcialOk && ofertas[0] ? String(ofertas[0].percentual) : '');
   const parcial = escolha !== 'total';
   return (
     <DialogoConfirmarAcao
       open={open} onOpenChange={onOpenChange} claimId={claimId} onConcluido={onConcluido} linkML={linkML}
       titulo="Reembolsar comprador" rotuloEnviar="Reembolsar"
       corpo={parcial ? { acao: 'reembolso_parcial', percentual: Number(escolha) } : { acao: 'reembolsar' }}
-      podeEnviar
+      podeEnviar={escolha !== ''}
       efeito={parcial ? `Isto oferece ao comprador um reembolso de ${escolha}% no Mercado Livre.` : 'Isto devolve o valor total ao comprador no Mercado Livre.'}
     >
       <RadioGroup value={escolha} onValueChange={setEscolha}>
-        <label htmlFor="rb-total" className="flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm has-data-checked:border-primary">
-          <RadioGroupItem id="rb-total" value="total" />Reembolso total
+        <label htmlFor="rb-total" className="flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm has-data-checked:border-primary has-disabled:opacity-50">
+          <RadioGroupItem id="rb-total" value="total" disabled={!totalOk} />Reembolso total
         </label>
         {ofertas.map((o) => (
           <label key={o.percentual} htmlFor={`rb-${o.percentual}`} className="flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm has-data-checked:border-primary">
-            <RadioGroupItem id={`rb-${o.percentual}`} value={String(o.percentual)} />
+            <RadioGroupItem id={`rb-${o.percentual}`} value={String(o.percentual)} disabled={!parcialOk} />
             Reembolso parcial de {o.percentual}% ({fmtBRL(o.valor)})
           </label>
         ))}
+        {!ofertas.length && (
+          <label htmlFor="rb-parcial-off" className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm opacity-50">
+            <RadioGroupItem id="rb-parcial-off" value="parcial" disabled />Reembolso parcial de {'—'} (não liberado pelo ML)
+          </label>
+        )}
       </RadioGroup>
     </DialogoConfirmarAcao>
   );
 }
 
-function Conteudo({ d, item, tentativas, onFechar }: {
-  d: DetalheReclamacao; item: Devolucao; tentativas: TentativaAtiva[]; onFechar: () => void;
+function Conteudo({ d, item, travas, produto, onFechar }: {
+  d: DetalheReclamacao; item: Devolucao; travas: Travas; produto?: ProdutoPedido; onFechar: () => void;
 }) {
   const qc = useQueryClient();
   const claimId = String(d.claim_id);
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [texto, setTexto] = useState('');
   const [anexos, setAnexos] = useState<Anexo[]>([]);
+  const [subindo, setSubindo] = useState(0);
   const linkML = item.order_id ? urlVendaML(item.pack_id ?? item.order_id) : undefined;
   const concluido = () => { void qc.invalidateQueries({ queryKey: QK_POSVENDA }); void qc.invalidateQueries({ queryKey: ['devolucoes'] }); };
 
-  const bloqueada = (a: AcaoPosvenda) => travada(tentativas, a, d.claim_id, d.return_id);
+  // travas === null: ainda não sabemos o que está em andamento => nada liberado.
+  const bloqueada = (a: AcaoPosvenda) => travas === null || travada(travas, a, d.claim_id, d.return_id);
   const motivoOff = (a: AcaoPosvenda | AcaoPosvenda[]): string | undefined => {
     const as = Array.isArray(a) ? a : [a];
+    if (travas === null) return 'Conferindo ações em andamento…';
     if (as.some(bloqueada)) return MSG_TRAVA;
     if (!as.some((x) => acaoLiberada(x, d))) return MSG_NAO_LIBERADA;
     return undefined;
   };
   const off = (a: AcaoPosvenda | AcaoPosvenda[]) => motivoOff(a) !== undefined;
-  const algumaAtiva = tentativas.some((t) => t.claim_id === d.claim_id);
+  const algumaAtiva = (travas ?? []).some((t) => t.claim_id === d.claim_id);
 
   const e = d.estado;
   const linhas: Array<[string, string]> = [
@@ -88,6 +101,15 @@ function Conteudo({ d, item, tentativas, onFechar }: {
 
   return (
     <div className="space-y-4 overflow-y-auto px-4 pb-6">
+      <div className="flex items-center gap-3 rounded-lg border bg-card p-3">
+        <ThumbProduto path={produto?.fotoPath ?? null} titulo={produto?.titulo ?? null} size={48} />
+        <div className="min-w-0 text-sm">
+          <div className="truncate font-medium">{produto?.titulo ?? 'Produto do pedido'}</div>
+          <div className="text-xs text-muted-foreground">
+            Pedido #{item.order_id ?? '—'}{produto && ` · ${produto.quantidade} un · ${fmtBRL(produto.valor)}`}
+          </div>
+        </div>
+      </div>
       {algumaAtiva && (
         <div role="status" className="rounded-lg bg-info/10 p-2.5 text-xs text-info">{MSG_TRAVA}</div>
       )}
@@ -100,6 +122,7 @@ function Conteudo({ d, item, tentativas, onFechar }: {
       <section className="space-y-2 rounded-lg border bg-card p-3">
         <div className="text-sm font-semibold">{e.titulo ?? 'Situação'}</div>
         {e.descricao && <p className="text-xs text-muted-foreground">{e.descricao}</p>}
+        {e.problema && <p className="text-xs"><span className="text-muted-foreground">Problema: </span>{e.problema}</p>}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           {linhas.map(([k, v]) => (<div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd>{v}</dd></div>))}
         </dl>
@@ -124,11 +147,11 @@ function Conteudo({ d, item, tentativas, onFechar }: {
         <label htmlFor="pv-resposta" className="text-sm font-semibold">Responder</label>
         <Textarea id="pv-resposta" value={texto} onChange={(ev) => setTexto(ev.target.value)} maxLength={2000} disabled={off('responder')}
           placeholder="Escreva dentro da reclamação… (pode anexar foto ou PDF)" className="min-h-20" />
-        <Fotos claimId={claimId} idBase="pv-anexo" destino="mensagem" obrigatoria={false} anexos={anexos} onChange={setAnexos} />
+        <Fotos claimId={claimId} idBase="pv-anexo" destino="mensagem" obrigatoria={false} anexos={anexos} onChange={(fn) => setAnexos(fn)} onSubindo={(dl) => setSubindo((n) => n + dl)} />
       </section>
 
       <div className="flex flex-wrap gap-2">
-        <Button disabled={off('responder') || !texto.trim()} title={motivoOff('responder')} onClick={() => setDialogo('responder')}>Responder</Button>
+        <Button disabled={off('responder') || !texto.trim() || subindo > 0} title={motivoOff('responder')} onClick={() => setDialogo('responder')}>Responder</Button>
         <Button variant="outline" disabled={off(['reembolsar', 'reembolso_parcial'])} title={motivoOff(['reembolsar', 'reembolso_parcial'])} onClick={() => setDialogo('reembolsar')}>Reembolsar…</Button>
         <Button variant="outline" disabled={off(['revisar_ok', 'revisar_falha'])} title={motivoOff(['revisar_ok', 'revisar_falha'])} onClick={() => setDialogo('revisar')}>Revisar devolução</Button>
         <Button variant="outline" disabled={off('autorizar_devolucao')} title={motivoOff('autorizar_devolucao')} onClick={() => setDialogo('autorizar')}>Autorizar devolução</Button>
@@ -146,7 +169,7 @@ function Conteudo({ d, item, tentativas, onFechar }: {
           <p className="whitespace-pre-wrap rounded-lg bg-muted p-2.5 text-sm">{texto.trim()}</p>
         </DialogoConfirmarAcao>
       )}
-      {dialogo === 'reembolsar' && <Reembolso d={d} claimId={claimId} open onOpenChange={() => setDialogo(null)} onConcluido={concluido} linkML={linkML ?? ''} />}
+      {dialogo === 'reembolsar' && <Reembolso d={d} claimId={claimId} open onOpenChange={() => setDialogo(null)} onConcluido={concluido} linkML={linkML} />}
       {dialogo === 'disputa' && (
         <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onConcluido={concluido}
           titulo="Pedir mediação do ML" rotuloEnviar="Pedir mediação" podeEnviar corpo={{ acao: 'abrir_disputa' }}
@@ -159,16 +182,17 @@ function Conteudo({ d, item, tentativas, onFechar }: {
       )}
       {dialogo === 'revisar' && (
         <DialogoRevisarDevolucao detalhe={d} open onOpenChange={() => setDialogo(null)} onConcluido={concluido}
-          info={{ titulo: `Pedido #${item.order_id ?? '—'}`, linkML, linhas: [['Motivo', item.reason_texto ?? '—'], ['Rastreio', item.rastreio ?? '—'], ['Reputação', d.afeta_reputacao ?? '—']] }} />
+          info={montarInfoRevisao(item, d.afeta_reputacao, produto)} />
       )}
     </div>
   );
 }
 
-export function PainelReclamacao({ item, tentativas, onOpenChange }: {
-  item: Devolucao | null; tentativas: TentativaAtiva[]; onOpenChange: (v: boolean) => void;
+export function PainelReclamacao({ item, travas, onOpenChange }: {
+  item: Devolucao | null; travas: Travas; onOpenChange: (v: boolean) => void;
 }) {
   const claim = item?.claim_id;
+  const produto = useProdutosPedidos([item?.order_id]).get(item?.order_id ?? -1);
   // Sempre relido do ML ao abrir (nunca do cache local).
   const q = useQuery({
     queryKey: [...QK_POSVENDA, 'detalhe', claim], enabled: claim != null, staleTime: 0, gcTime: 0,
@@ -189,7 +213,7 @@ export function PainelReclamacao({ item, tentativas, onOpenChange }: {
         {q.isError && (
           <div className="space-y-2 px-4 text-sm"><p className="text-destructive">{(q.error as Error).message}</p><Button variant="outline" onClick={() => void q.refetch()}>Tentar de novo</Button></div>
         )}
-        {q.data && item && <Conteudo d={q.data} item={item} tentativas={tentativas} onFechar={() => onOpenChange(false)} />}
+        {q.data && item && <Conteudo d={q.data} item={item} travas={travas} produto={produto} onFechar={() => onOpenChange(false)} />}
       </SheetContent>
     </Sheet>
   );

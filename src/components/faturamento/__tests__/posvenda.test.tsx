@@ -21,8 +21,11 @@ vi.mock('@/lib/posvenda', async (importOriginal) => {
     verificarAcaoPosvenda: (...a: unknown[]) => verificarMock(...a),
     enviarAnexoPosvenda: (...a: unknown[]) => anexoMock(...a),
     buscarDetalheReclamacao: (...a: unknown[]) => detalheMock(...a),
+    buscarProdutosPedidos: async () => new Map(),
   };
 });
+vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => ({ data: undefined }) }));
+vi.mock('@/hooks/useAnuncioCanonico', () => ({ useAnuncioCanonico: () => ({ data: undefined }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 const detalhe = (p: Partial<DetalheReclamacao> = {}): DetalheReclamacao => ({
@@ -136,13 +139,13 @@ function comQuery(ui: React.ReactElement) {
 
 describe('tentativa ativa trava o recurso', () => {
   it('card com tentativa em aberto mostra o aviso e desabilita "Revisar"', () => {
-    comQuery(<ListaDevolucoes itens={[dev()]} tentativas={[{ recurso: 'return:77', claim_id: 555, estado: 'enviada' }]} />);
+    comQuery(<ListaDevolucoes itens={[dev()]} travas={[{ operacao_id: 'op1', return_id: 77, acao: 'revisar_ok', recurso: 'return:77', claim_id: 555, estado: 'enviada' }]} />);
     expect(screen.getByText('Ação enviada ao ML · aguardando confirmação')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Revisar' })).toBeDisabled();
   });
 
   it('sem tentativa, "Revisar" está habilitado', () => {
-    comQuery(<ListaDevolucoes itens={[dev()]} tentativas={[]} />);
+    comQuery(<ListaDevolucoes itens={[dev()]} travas={[]} />);
     expect(screen.getByRole('button', { name: 'Revisar' })).toBeEnabled();
   });
 
@@ -150,7 +153,7 @@ describe('tentativa ativa trava o recurso', () => {
     detalheMock.mockResolvedValue(detalhe({ acoes: ['refund', 'open_dispute', 'send_message_to_complainant'], revisoes: [] }));
     comQuery(
       <PainelReclamacao item={dev({ revisao_pendente: false })} onOpenChange={() => {}}
-        tentativas={[{ recurso: 'claim:555:resolucao', claim_id: 555, estado: 'desconhecido' }]} />,
+        travas={[{ operacao_id: 'op2', return_id: 77, acao: 'reembolsar', recurso: 'claim:555:resolucao', claim_id: 555, estado: 'desconhecido' }]} />,
     );
     await screen.findByText('Devolução em preparação');
     // reembolso e disputa dividem o recurso "resolução": travados; autorizar não é liberado pelo ML

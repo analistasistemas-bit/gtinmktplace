@@ -1,10 +1,14 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { enviarAnexoPosvenda, type BodyAcaoPosvenda, type DetalheReclamacao } from '@/lib/posvenda';
+import { labelDinheiro, labelRetorno, type ProdutoPedido } from '@/lib/posvenda-fila';
+import type { Devolucao } from '@/lib/devolucoes';
+import { urlVendaML } from '@/lib/ml-status';
+import { fmtBRL } from '@/lib/formato';
 import { DialogoConfirmarAcao } from './dialogo-confirmar-acao';
 
 export type Anexo = { id: string; nome: string };
@@ -18,29 +22,52 @@ export interface InfoRevisao {
   linkML?: string;
 }
 
+/** Tudo que o vendedor precisa ver antes de decidir (spec): produto, pedido, motivo, situação do
+ *  retorno, status do reembolso, rastreio e reputação. A API não traz uma data de chegada separada:
+ *  a situação do retorno ("Entregue") é o que existe. */
+export function montarInfoRevisao(item: Devolucao, afetaReputacao: string | null, produto?: ProdutoPedido): InfoRevisao {
+  return {
+    titulo: produto ? `${produto.titulo} · ${produto.quantidade} un · ${fmtBRL(produto.valor)}` : `Pedido #${item.order_id ?? '—'}`,
+    linkML: item.order_id ? urlVendaML(item.pack_id ?? item.order_id) : undefined,
+    linhas: [
+      ['Pedido', `#${item.order_id ?? '—'}`],
+      ['Motivo', item.reason_texto ?? '—'],
+      ['Situação do retorno', labelRetorno(item.return_status)],
+      ['Reembolso', labelDinheiro(item.return_status_money)],
+      ['Rastreio', item.rastreio ?? '—'],
+      ['Reputação', afetaReputacao ?? item.afeta_reputacao ?? '—'],
+    ],
+  };
+}
+
 type Motivo = DetalheReclamacao['motivos_falha_revisao'][number];
 
 /** Anexos da ação: revisão → JPG/PNG; mensagem → JPG/PNG/PDF; até 5 MB cada. */
-export function Fotos({ claimId, anexos, onChange, obrigatoria, idBase, destino = 'revisao' }: {
-  claimId: string; anexos: Anexo[]; onChange: (a: Anexo[]) => void; obrigatoria: boolean; idBase: string;
+export function Fotos({ claimId, anexos, onChange, onSubindo, obrigatoria, idBase, destino = 'revisao' }: {
+  claimId: string; anexos: Anexo[];
+  /** Atualização funcional: o upload termina depois, e não pode sobrescrever o que foi digitado nesse meio-tempo. */
+  onChange: (fn: (atual: Anexo[]) => Anexo[]) => void;
+  /** +1 ao começar e -1 ao terminar cada upload (o pai bloqueia o envio enquanto houver upload). */
+  onSubindo: (delta: 1 | -1) => void;
+  obrigatoria: boolean; idBase: string;
   destino?: 'revisao' | 'mensagem';
 }) {
   const tipos = destino === 'mensagem' ? ['image/jpeg', 'image/png', 'application/pdf'] : ['image/jpeg', 'image/png'];
   const [subindo, setSubindo] = useState(0);
-  const lista = useRef(anexos);
-  lista.current = anexos;
   const escolher = async (files: FileList | null) => {
     for (const f of Array.from(files ?? [])) {
       if (!tipos.includes(f.type)) { toast.error(destino === 'mensagem' ? 'Use JPG, PNG ou PDF.' : 'Use fotos JPG ou PNG.'); continue; }
       if (f.size > MAX_BYTES) { toast.error('Cada foto pode ter até 5 MB.'); continue; }
       setSubindo((n) => n + 1);
+      onSubindo(1);
       try {
         const id = await enviarAnexoPosvenda(claimId, destino, f);
-        onChange([...lista.current, { id, nome: f.name }]);
+        onChange((atual) => [...atual, { id, nome: f.name }]);
       } catch (e) {
         toast.error((e as Error).message);
       } finally {
         setSubindo((n) => n - 1);
+        onSubindo(-1);
       }
     }
   };
@@ -51,7 +78,7 @@ export function Fotos({ claimId, anexos, onChange, obrigatoria, idBase, destino 
         {anexos.map((a) => (
           <span key={a.id} className="inline-flex max-w-40 items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs">
             <span className="truncate">{a.nome}</span>
-            <button type="button" aria-label={`Remover ${a.nome}`} onClick={() => onChange(anexos.filter((x) => x.id !== a.id))}><X className="h-3 w-3" /></button>
+            <button type="button" aria-label={`Remover ${a.nome}`} onClick={() => onChange((atual) => atual.filter((x) => x.id !== a.id))}><X className="h-3 w-3" /></button>
           </span>
         ))}
         <Button asChild variant="outline" size="sm">
@@ -68,14 +95,15 @@ export function Fotos({ claimId, anexos, onChange, obrigatoria, idBase, destino 
   );
 }
 
-function BlocoFalha({ claimId, motivos, valor, onChange, idBase }: {
-  claimId: string; motivos: Motivo[]; valor: Entrada; onChange: (e: Entrada) => void; idBase: string;
+function BlocoFalha({ claimId, motivos, valor, onPatch, onSubindo, idBase }: {
+  claimId: string; motivos: Motivo[]; valor: Entrada; onPatch: (fn: (e: Entrada) => Entrada) => void;
+  onSubindo: (d: 1 | -1) => void; idBase: string;
 }) {
   const m = motivos.find((x) => x.id === valor.motivo);
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium">Qual o problema?</div>
-      <RadioGroup value={valor.motivo} onValueChange={(v) => onChange({ ...valor, motivo: v })}>
+      <RadioGroup value={valor.motivo} onValueChange={(v) => onPatch((e) => ({ ...e, motivo: v }))}>
         {motivos.map((mo) => (
           <label key={mo.id} htmlFor={`${idBase}-${mo.id}`}
             className="flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm has-data-checked:border-primary">
@@ -85,10 +113,10 @@ function BlocoFalha({ claimId, motivos, valor, onChange, idBase }: {
         ))}
       </RadioGroup>
       <Fotos claimId={claimId} idBase={`${idBase}-foto`} obrigatoria={!!m?.exige_foto}
-        anexos={valor.anexos} onChange={(anexos) => onChange({ ...valor, anexos })} />
+        anexos={valor.anexos} onSubindo={onSubindo} onChange={(fn) => onPatch((e) => ({ ...e, anexos: fn(e.anexos) }))} />
       <div className="space-y-1">
         <label htmlFor={`${idBase}-texto`} className="text-sm font-medium">Descreva o problema (obrigatório)</label>
-        <Textarea id={`${idBase}-texto`} value={valor.texto} onChange={(e) => onChange({ ...valor, texto: e.target.value })} className="min-h-16" />
+        <Textarea id={`${idBase}-texto`} value={valor.texto} onChange={(ev) => { const texto = ev.target.value; onPatch((e) => ({ ...e, texto })); }} className="min-h-16" />
       </div>
     </div>
   );
@@ -106,7 +134,9 @@ export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onC
   const [modo, setModo] = useState<'pacote' | 'pedido'>('pacote');
   const [entradas, setEntradas] = useState<Record<string, Entrada>>({});
   const entrada = (k: string) => entradas[k] ?? VAZIA;
-  const set = (k: string) => (e: Entrada) => setEntradas((s) => ({ ...s, [k]: e }));
+  const patch = (k: string) => (fn: (e: Entrada) => Entrada) => setEntradas((s) => ({ ...s, [k]: fn(s[k] ?? VAZIA) }));
+  const [subindo, setSubindo] = useState(0);
+  const onSubindo = (d: 1 | -1) => setSubindo((n) => n + d);
 
   // Motivos por escopo (`aplica`): pacote inteiro × pedido; sem carrinho, o motivo de pedido vale pelo pacote.
   const motivosPacote = detalhe.motivos_falha_revisao.filter((m) => m.aplica.includes('package') || (!carrinho && m.aplica.includes('order')));
@@ -136,7 +166,7 @@ export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onC
     <DialogoConfirmarAcao
       open={open} onOpenChange={onOpenChange} claimId={claimId} corpo={corpo} onConcluido={onConcluido}
       titulo="Revisar devolução" linkML={info.linkML}
-      podeEnviar={caminho === 'ok' || completo}
+      podeEnviar={caminho === 'ok' || (completo && subindo === 0)}
       rotuloEnviar={caminho === 'ok' ? 'Confirmar no ML' : 'Enviar ao ML'}
       efeito={caminho === 'ok'
         ? 'Isto confirma no Mercado Livre que o produto voltou em ordem.'
@@ -170,7 +200,7 @@ export function DialogoRevisarDevolucao({ detalhe, info, open, onOpenChange, onC
           {blocos.map((b) => (
             <div key={b.chave} className="space-y-2 rounded-lg border p-3">
               {b.titulo && <div className="text-sm font-semibold">{b.titulo}</div>}
-              <BlocoFalha claimId={claimId} motivos={b.motivos} valor={entrada(b.chave)} onChange={set(b.chave)} idBase={`rv-${b.chave}`} />
+              <BlocoFalha claimId={claimId} motivos={b.motivos} valor={entrada(b.chave)} onPatch={patch(b.chave)} onSubindo={onSubindo} idBase={`rv-${b.chave}`} />
             </div>
           ))}
         </>

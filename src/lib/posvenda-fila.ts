@@ -73,3 +73,46 @@ export function travada(
   const r = chaveRecurso(acao, claimId, returnId);
   return ativas.some((t) => t.recurso === r);
 }
+
+// ---- Filtros dos contadores (Urgentes / Em andamento e sub-itens) ----
+export type FiltroFila = 'urgente' | 'andamento' | 'revisar' | 'sua_vez' | 'a_caminho' | 'vez_comprador';
+
+export function filtroCasa(f: FiltroFila, d: ItemFila & { return_status?: string | null }): boolean {
+  const c = classificar(d);
+  switch (f) {
+    case 'urgente': return c === 'urgente';
+    case 'andamento': return c === 'andamento';
+    case 'revisar': return !!d.revisao_pendente;
+    case 'sua_vez': return c === 'urgente' && !d.revisao_pendente;
+    case 'a_caminho': return c === 'andamento' && d.return_status === 'shipped';
+    case 'vez_comprador': return c === 'andamento' && d.vez_de === 'comprador';
+  }
+}
+
+// ---- Rótulos do retorno (para o vendedor decidir) ----
+const RETORNO: Record<string, string> = {
+  pending: 'Aguardando envio', ready_to_ship: 'Pronto para postar', shipped: 'A caminho', delivered: 'Entregue',
+  cancelled: 'Cancelado', expired: 'Expirado', failed: 'Falhou', not_delivered: 'Não entregue', label_generated: 'Etiqueta gerada',
+};
+const DINHEIRO: Record<string, string> = { refunded: 'Reembolsado', retained: 'Retido', onhold: 'Em espera' };
+export const labelRetorno = (s: string | null | undefined) => (s ? RETORNO[s] ?? s : '—');
+export const labelDinheiro = (s: string | null | undefined) => (s ? DINHEIRO[s] ?? s : '—');
+
+// ---- Produto do pedido (ml_vendas_itens) ----
+export type ItemPedido = {
+  id: string; ml_item_id: string | null; variation_id: number | null; titulo: string | null;
+  codigo: string | null; ean: string | null; quantity: number; unit_price: number;
+};
+export type ProdutoPedido = { titulo: string; quantidade: number; valor: number; fotoPath: string | null };
+
+/** Resume os itens do pedido: título do 1º (+N itens), unidades, valor e foto do 1º com foto. */
+export function resumirPedido(itens: ItemPedido[], foto: (i: ItemPedido) => string | null): ProdutoPedido | null {
+  if (!itens.length) return null;
+  const nome = itens[0].titulo ?? 'Produto';
+  return {
+    titulo: itens.length > 1 ? `${nome} +${itens.length - 1} ${itens.length - 1 === 1 ? 'item' : 'itens'}` : nome,
+    quantidade: itens.reduce((s, i) => s + i.quantity, 0),
+    valor: itens.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+    fotoPath: itens.map(foto).find((p): p is string => !!p) ?? null,
+  };
+}

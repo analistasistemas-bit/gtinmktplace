@@ -1,7 +1,7 @@
 import { postEdge, type ErroEdge } from './edge';
 import { supabase } from './supabase';
 import { COLUNAS_DEVOLUCAO, type Devolucao } from './devolucoes';
-import type { TentativaAtiva } from './posvenda-fila';
+import type { ItemPedido, TentativaAtiva } from './posvenda-fila';
 
 /** Espelho de `DetalheReclamacao` em supabase/functions/_shared/faturamento/posvenda.ts. */
 export interface DetalheReclamacao {
@@ -130,4 +130,23 @@ export async function buscarTentativasAtivas(): Promise<TentativaAtivaPosvenda[]
     .in('estado', ['reservada', 'enviada', 'desconhecido']);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as TentativaAtivaPosvenda[];
+}
+
+const LOTE_PEDIDOS = 80;
+
+/** Itens dos pedidos (order_id -> ml_vendas -> ml_vendas_itens): produto, quantidade e valor dos cards. */
+export async function buscarProdutosPedidos(orderIds: number[]): Promise<Map<number, { itens: ItemPedido[] }>> {
+  const out = new Map<number, { itens: ItemPedido[] }>();
+  const ids = [...new Set(orderIds)];
+  for (let i = 0; i < ids.length; i += LOTE_PEDIDOS) {
+    const { data, error } = await supabase
+      .from('ml_vendas')
+      .select('order_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, ean, quantity, unit_price)')
+      .in('order_id', ids.slice(i, i + LOTE_PEDIDOS));
+    if (error) throw new Error(error.message);
+    for (const v of (data ?? []) as unknown as Array<{ order_id: number; itens: ItemPedido[] | null }>) {
+      out.set(Number(v.order_id), { itens: v.itens ?? [] });
+    }
+  }
+  return out;
 }

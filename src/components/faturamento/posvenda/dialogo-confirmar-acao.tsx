@@ -46,6 +46,8 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
   const [aviso, setAviso] = useState<string | null>(null);
   const [tentou, setTentou] = useState(false);
   const ocupado = useRef(false);
+  // Corpo congelado no 1º envio: repetir com o mesmo operacao_id manda exatamente o mesmo conteúdo.
+  const corpoCongelado = useRef<CorpoEnvio | null>(null);
   const operacaoVerificar = useRef(operacaoId); // vira a da tentativa em aberto num 409
 
   const aplicar = (r: ResultadoAcaoPosvenda) => {
@@ -65,7 +67,8 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
     setAviso(null);
     setFase({ t: 'enviando' });
     try {
-      aplicar(await executarAcaoPosvenda({ operacao_id: operacaoId, claim_id: claimId, ...corpo }));
+      corpoCongelado.current ??= corpo;
+      aplicar(await executarAcaoPosvenda({ operacao_id: operacaoId, claim_id: claimId, ...corpoCongelado.current }));
     } catch (e) {
       const pend = ehAcaoPendente(e);
       if (pend) {
