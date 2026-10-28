@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-25
+atualizado: 2026-10-28
 ---
 
 # Changelog
@@ -8,6 +8,12 @@ atualizado: 2026-10-25
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-28
+
+- **Kit Virtual reativado na reposição** (emenda ADR-0154/0111, main `0e0eb102`): o ML pausa o kit
+  quando um componente zera e não o reativa quando ele volta. `sincronizar-estoque` agora reativa o
+  kit `publicado` em push de reposição, se todos os componentes têm saldo. Caso real: MLB5433591725.
 
 ## 2026-10-25
 

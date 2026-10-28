@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Reposição de componente reativa Kit Virtual pausado (emenda ADR-0154/0111) — 2026-10-28
+
+- [x] Hairfly MLB5433591725 (Alisante + Neutralizante) ficou `paused` com 100 em estoque: venda zerou o Neutralizante, a reposição reativou o componente (ADR-0111), mas o kit nunca é alvo de push e o ML não o reativa sozinho. Kit reativado por `PUT status=active` (OK do Diego) — contrato provado (200).
+- [x] `sincronizar-estoque` (`reativarKitsVirtuais`): em push de reposição, item ML com saldo > 0 reativa o kit `publicado` do qual é componente, se todos os componentes têm saldo (família canônica; kit vinculado via `resolverOrigemEstoque`). Só status; kit segue fora do push de quantidade. 5 testes novos; achados do Codex corrigidos. main `0e0eb102`, deploy `sincronizar-estoque` v63.
+
 ## Cor da foto em categoria sem cor (emenda ADR-0044) — 2026-10-27
 
 - [x] Hairfly: shampoo saiu "… 2000ml **Preto**" + "🎨 CORES DISPONÍVEIS – Preto" (cor da embalagem lida pelo Vision); 3 anúncios já publicados assim (Preto/Marrom/Vermelho), todos em categoria sem `COLOR`. Agora, em categoria do ML sem `COLOR`/`MAIN_COLOR`, cor `cor_origem = vision` vira `'Outra'` (persistida): no passo 3 quando a categoria já é conhecida (UPDATE/reprocesso) e no passo 6 no CREATE (tira a cor de todos os slots, salvo se estiver no nome/descrição, e a seção de cores da descrição). Avil intacta: as categorias dela com cor do Vision têm `COLOR`.
