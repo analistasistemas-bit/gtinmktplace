@@ -64,13 +64,28 @@ export async function buscarMensagensPack(
   } catch { return []; }
 }
 
+export const ERRO_RECONECTAR_ML = 'Reconecte a conta do Mercado Livre em Configurações → Conexões (falta permissão de escrita)';
+
+/** Lê o pack MARCANDO como lido no ML (único uso de mark_as_read=true). 404 (pack sem mensagens) → [];
+ *  403 → erro de reconexão; qualquer outro não-2xx ou falha de rede → lança. */
+export async function lerPackMarcandoLido(
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+): Promise<MensagemML[]> {
+  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=true`;
+  const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+  if (resp.status === 404) return [];
+  if (resp.status === 403) throw new Error(ERRO_RECONECTAR_ML);
+  if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  return extrairMensagens(await resp.json());
+}
+
 /** Mesma leitura, ESTRITA (ADR-0173): 403/404 (pack sem mensagens/sem permissão) → []; qualquer
  *  outro não-2xx (429/5xx) ou erro de rede → lança — o worker precisa distinguir "não há nada"
  *  de "a leitura falhou", que hoje voltam ambos como []. */
 export async function buscarMensagensPackEstrito(
-  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch, marcarLida = false,
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
 ): Promise<MensagemML[]> {
-  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLida}`;
+  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`;
   const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
   if (resp.status === 403 || resp.status === 404) return [];
   if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
@@ -141,7 +156,8 @@ export async function upsertMensagens(
   // 2ª passada: upsert de verdade (sem ignoreDuplicates) para as existentes continuarem
   // recebendo raw/atualizado_em/item_titulo atualizados — a 1ª não escreve nada nelas.
   await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
-  await aplicarLidaMlEm(admin, userId, msgs);
+  const erroLida = await aplicarLidaMlEm(admin, userId, msgs);
+  if (erroLida) console.error(`[mensagens-io] lida_ml_em não gravado (org ${orgId}, pack ${packId}): ${erroLida}`);
 
   return { novasRecebidas };
 }

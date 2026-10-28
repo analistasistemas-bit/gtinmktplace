@@ -8,7 +8,8 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
 import {
-  buscarMensagensPackEstrito,
+  lerPackMarcandoLido,
+  ERRO_RECONECTAR_ML,
   resolverMetaPack,
   upsertMensagensEstrito,
 } from '../_shared/faturamento/mensagens-io.ts';
@@ -48,13 +49,14 @@ Deno.serve(async (req) => {
   catch { return erro('Conta ML não conectada.', 400); }
 
   try {
-    const msgs = await buscarMensagensPackEstrito(token, packId, sellerId, fetch, true);
+    const msgs = await lerPackMarcandoLido(token, packId, sellerId);
     if (msgs.length) {
       const meta = await resolverMetaPack(admin, dono, packId);
       await upsertMensagensEstrito(admin, dono, orgId, packId, meta, sellerId, msgs);
     }
   } catch (e) {
-    return erro((e as Error).message, 502);
+    const msg = (e as Error).message;
+    return erro(msg, msg === ERRO_RECONECTAR_ML ? 403 : 502);
   }
   return resposta({ ok: true });
 });

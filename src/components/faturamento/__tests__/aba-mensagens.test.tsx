@@ -63,10 +63,12 @@ let CONVERSAS = [
 
 vi.mock('@/hooks/useMensagens', () => ({
   useListaMensagens: () => ({ data: CONVERSAS, isFetching: false }),
-  useResumoMensagens: () => ({ data: RESUMO }),
+  useResumoMensagens: () => ({ data: RESUMO_ATUAL, isError: RESUMO_ERRO }),
 }));
 
 // Números vindos do banco (RPC) — propositalmente diferentes do que a lista mockada daria.
+let RESUMO_ERRO = false;
+let RESUMO_ATUAL: typeof RESUMO | undefined;
 const RESUMO = {
   naoLidas: { aPreparar: 40, aCaminho: 7, entregues: 3, total: 50 },
   lidas: { semResponder: 120, respondidas: 900 },
@@ -90,6 +92,8 @@ function renderAba(queryClient = new QueryClient({ defaultOptions: { queries: { 
 describe('AbaMensagens', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    RESUMO_ATUAL = RESUMO;
+    RESUMO_ERRO = false;
   });
   it('abre na aba Aguardando; a conversa cancelada (não aguardando) fica fora até trocar para Todas', async () => {
     renderAba();
@@ -278,6 +282,18 @@ describe('AbaMensagens', () => {
       expect(marcarLidasMock).toHaveBeenCalledTimes(2);
     });
 
+    it('paginar/filtrar desmonta o card, mas reabrir sem novidade não chama de novo', async () => {
+      CONVERSAS = comNaoLida(['m2']);
+      renderAba();
+      await abrir(card2());
+      expect(marcarLidasMock).toHaveBeenCalledTimes(1);
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Página 2' }));
+      await userEvent.click(screen.getByRole('tab', { name: 'Aguardando' }));
+      await abrir(card2());
+      expect(marcarLidasMock).toHaveBeenCalledTimes(1);
+    });
+
     it('sem não lidas no ML, abrir não chama a edge', async () => {
       renderAba();
       await abrir(card2());
@@ -305,6 +321,26 @@ describe('AbaMensagens', () => {
       expect(dispensarConversaMock).toHaveBeenCalledWith('pack-2');
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
     });
+  });
+
+  it('RPC em carregamento: placeholder, nunca a contagem do array limitado', () => {
+    RESUMO_ATUAL = undefined;
+    renderAba();
+    const lidas = screen.getByRole('region', { name: 'Lidas' });
+    expect(within(lidas).getByRole('button', { name: /Respondidas/ })).toHaveTextContent('—');
+    expect(within(lidas).getByRole('button', { name: /Sem responder/ })).not.toHaveTextContent('12');
+  });
+
+  it('RPC com erro: avisa; mantém o último resumo marcado como desatualizado', () => {
+    RESUMO_ERRO = true;
+    RESUMO_ATUAL = undefined;
+    const { unmount } = renderAba();
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar os contadores.');
+    unmount();
+    RESUMO_ATUAL = RESUMO;
+    renderAba();
+    expect(screen.getByRole('alert')).toHaveTextContent('desatualizados');
+    expect(screen.getByRole('button', { name: /Respondidas/ })).toHaveTextContent('900');
   });
 
   it('cards de resumo mostram os números do banco e filtram a lista ao clicar', async () => {

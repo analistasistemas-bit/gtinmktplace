@@ -6,7 +6,7 @@ import { useListaMensagens, useResumoMensagens } from '@/hooks/useMensagens';
 import {
   responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, marcarMensagensLidasML, type Conversa,
 } from '@/lib/mensagens';
-import { baldeDaConversa, resumirConversas, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
+import { baldeDaConversa, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
 import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
 import { urlVendaML } from '@/lib/ml-status';
 import { linhasDoChat, nomeComprador } from '@/lib/mensagens-chat';
@@ -25,7 +25,7 @@ const fmtHora = (iso: string | null) =>
 const iniciais = (nome: string) =>
   nome.split(' ').filter((p) => /^\p{L}/u.test(p)).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
 
-function CardConversa({ c }: { c: Conversa }) {
+function CardConversa({ c, marcados }: { c: Conversa; marcados: Map<string, string> }) {
   const qc = useQueryClient();
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
@@ -33,8 +33,7 @@ function CardConversa({ c }: { c: Conversa }) {
   const [canceladaLocal, setCanceladaLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
   const [aberto, setAberto] = useState(false);
-  // Último conjunto de mensagens que marcamos como lidas no ML nesta sessão: reabrir sem novidade não chama a edge.
-  const ultimoMarcado = useRef('');
+  const marcandoRef = useRef(false);
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
@@ -57,17 +56,18 @@ function CardConversa({ c }: { c: Conversa }) {
     const abrindo = !aberto;
     setAberto(abrindo);
     if (!abrindo) return;
-    // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado (mensagem nova).
+    // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado COM SUCESSO
+    // neste pack (mapa no AbaMensagens: sobrevive a paginar/filtrar, que desmontam o card).
     const chave = [...c.idsNaoLidosML].sort().join(',');
-    if (!chave || chave === ultimoMarcado.current) return;
-    ultimoMarcado.current = chave;
+    if (!chave || chave === marcados.get(c.pack_id) || marcandoRef.current) return;
+    marcandoRef.current = true;
     try {
       await marcarMensagensLidasML(c.pack_id);
+      marcados.set(c.pack_id, chave);
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
     } catch (e) {
-      ultimoMarcado.current = ''; // não marcou: a próxima abertura tenta de novo
       toast.error(`Não foi possível marcar como lida no Mercado Livre: ${(e as Error).message}`);
-    }
+    } finally { marcandoRef.current = false; }
   }
   // Pelo pack: a rota aceita os dois ids e o pack abre o pacote inteiro. Em pedido solo o sync já
   // grava o próprio order_id como pack_id, então esta linha cobre os dois casos.
@@ -252,25 +252,32 @@ const ABAS_STATUS: { valor: FiltroStatusMensagem; rotulo: string }[] = [
   { valor: 'todas', rotulo: 'Todas' },
 ];
 
-function CardsResumo({ resumo, ativo, onEscolher }: {
-  resumo: ResumoMensagens; ativo: Balde | null; onEscolher: (b: Balde | null) => void;
+function CardsResumo({ resumo, erro, ativo, onEscolher }: {
+  resumo: ResumoMensagens | undefined; erro: boolean; ativo: Balde | null; onEscolher: (b: Balde | null) => void;
 }) {
-  const grupos: { titulo: string; total: number | null; itens: { balde: Balde; rotulo: string; n: number }[] }[] = [
-    { titulo: 'Não lidas', total: resumo.naoLidas.total, itens: [
-      { balde: 'aPreparar', rotulo: 'A preparar', n: resumo.naoLidas.aPreparar },
-      { balde: 'aCaminho', rotulo: 'A caminho', n: resumo.naoLidas.aCaminho },
-      { balde: 'entregues', rotulo: 'Entregues', n: resumo.naoLidas.entregues },
+  const n = (v: number | undefined) => v ?? '—'; // carregando ou erro sem dado anterior
+  const grupos: { titulo: string; total: number | null | undefined; itens: { balde: Balde; rotulo: string; n: number | undefined }[] }[] = [
+    { titulo: 'Não lidas', total: resumo?.naoLidas.total, itens: [
+      { balde: 'aPreparar', rotulo: 'A preparar', n: resumo?.naoLidas.aPreparar },
+      { balde: 'aCaminho', rotulo: 'A caminho', n: resumo?.naoLidas.aCaminho },
+      { balde: 'entregues', rotulo: 'Entregues', n: resumo?.naoLidas.entregues },
     ] },
     { titulo: 'Lidas', total: null, itens: [
-      { balde: 'semResponder', rotulo: 'Sem responder', n: resumo.lidas.semResponder },
-      { balde: 'respondidas', rotulo: 'Respondidas', n: resumo.lidas.respondidas },
+      { balde: 'semResponder', rotulo: 'Sem responder', n: resumo?.lidas.semResponder },
+      { balde: 'respondidas', rotulo: 'Respondidas', n: resumo?.lidas.respondidas },
     ] },
   ];
   return (
+    <div className="space-y-2">
+    {erro && (
+      <p role="alert" className="text-xs text-destructive">
+        {resumo ? 'Não foi possível atualizar os contadores; os números abaixo podem estar desatualizados.' : 'Não foi possível carregar os contadores.'}
+      </p>
+    )}
     <div className="grid gap-3 sm:grid-cols-2">
       {grupos.map((g) => (
         <section key={g.titulo} aria-label={g.titulo} className="rounded-lg border bg-card p-3">
-          <h3 className="mb-2 text-sm font-medium">{g.titulo}{g.total != null && <span className="ml-1.5 text-muted-foreground tabular-nums">{g.total}</span>}</h3>
+          <h3 className="mb-2 text-sm font-medium">{g.titulo}{g.total !== null && <span className="ml-1.5 text-muted-foreground tabular-nums">{n(g.total)}</span>}</h3>
           <div className="flex flex-wrap gap-2">
             {g.itens.map((i) => (
               <button
@@ -283,7 +290,7 @@ function CardsResumo({ resumo, ativo, onEscolher }: {
                   ativo === i.balde && 'border-primary bg-muted',
                 )}
               >
-                <span className="font-semibold tabular-nums">{i.n}</span>
+                <span className="font-semibold tabular-nums">{n(i.n)}</span>
                 <span className="text-muted-foreground">{i.rotulo}</span>
               </button>
             ))}
@@ -291,15 +298,16 @@ function CardsResumo({ resumo, ativo, onEscolher }: {
         </section>
       ))}
     </div>
+    </div>
   );
 }
 
 export function AbaMensagens() {
   const { data: conversas, isFetching } = useListaMensagens();
-  const { data: resumoBanco } = useResumoMensagens();
+  // Contadores só do banco (todas as mensagens): nunca a contagem do array limitado.
+  const { data: resumo, isError: resumoErro } = useResumoMensagens();
   const lista = conversas ?? [];
-  // Números do banco (todas as mensagens); enquanto a RPC não responde, cai no cálculo local.
-  const resumo = resumoBanco ?? resumirConversas(lista);
+  const marcados = useRef(new Map<string, string>());
   const [balde, setBalde] = useState<Balde | null>(null);
 
   const [pagina, setPagina] = useState(1);
@@ -342,7 +350,7 @@ export function AbaMensagens() {
 
   return (
     <div className="space-y-3">
-      <CardsResumo resumo={resumo} ativo={balde} onEscolher={escolherBalde} />
+      <CardsResumo resumo={resumo} erro={resumoErro} ativo={balde} onEscolher={escolherBalde} />
       <Tabs value={statusFiltro} onValueChange={mudarAba}>
         <TabsList>
           {ABAS_STATUS.map((a) => (
@@ -360,7 +368,7 @@ export function AbaMensagens() {
         </div>
       ) : (
         <div className="space-y-3">
-          {itens.map((c) => <CardConversa key={c.pack_id} c={c} />)}
+          {itens.map((c) => <CardConversa key={c.pack_id} c={c} marcados={marcados.current} />)}
         </div>
       )}
 
