@@ -64,10 +64,12 @@ export function depsAcaoReal(admin: SupabaseClient, ctx: CtxAcao): DepsAcao {
       return data?.length === 1 ? linha(data[0]) : null;
     },
 
-    async abertas() {
-      const { data, error } = await admin.from(T).select('*').eq('org_id', ctx.orgId)
-        .or('estado.in.(reservada,enviada,desconhecido),sync_pendente.eq.true')
-        .order('criado_em', { ascending: true }).limit(50);
+    async abertas(depoisDe, limite) {
+      // Keyset por id (uuid): a página seguinte começa depois da última, mesmo se esta seguir travada.
+      let q = admin.from(T).select('*').eq('org_id', ctx.orgId)
+        .or('estado.in.(reservada,enviada,desconhecido),sync_pendente.eq.true');
+      if (depoisDe) q = q.gt('id', depoisDe);
+      const { data, error } = await q.order('id', { ascending: true }).limit(limite);
       if (error) throw falhou('abertas', error);
       return (data ?? []).map(linha);
     },

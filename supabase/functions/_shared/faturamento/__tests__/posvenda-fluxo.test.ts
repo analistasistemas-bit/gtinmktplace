@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  executarAcao, recuperarPendentes, ESTADOS_ATIVOS, MSG_RECONECTAR, MSG_TRAVA,
+  executarAcao, recuperarComOrcamento, recuperarPendentes, ESTADOS_ATIVOS, MSG_RECONECTAR, MSG_TRAVA,
   type DepsAcao, type Entrada, type NovaTentativa, type Onde, type Tentativa,
 } from '../posvenda-fluxo';
 import type { DetalheReclamacao } from '../posvenda';
@@ -60,7 +60,7 @@ function cenario() {
       if ([...linhas.values()].some((x) => x.operacao_id === n.operacao_id)) return 'conflito_operacao';
       if ([...linhas.values()].some((x) => x.recurso === n.recurso && ativa(x))) return 'conflito_recurso';
       const t: Tentativa = {
-        ...n, id: `t${++seq}`, estado: 'reservada', antes: null, post_em: null, http_status: null, resposta_ml: null,
+        ...n, id: `t${String(++seq).padStart(4, '0')}`, estado: 'reservada', antes: null, post_em: null, http_status: null, resposta_ml: null,
         sync_pendente: false, erro: null, criado_em: new Date(relogio).toISOString(),
       };
       linhas.set(t.id, t);
@@ -83,8 +83,10 @@ function cenario() {
       linhas.set(id, novo);
       return copia(novo);
     },
-    async abertas() {
-      const r = [...linhas.values()].filter((x) => ativa(x) || x.sync_pendente).map(copia);
+    async abertas(depoisDe, limite) {
+      // Mesmo contrato do real: keyset por id, `limite` por página.
+      const r = [...linhas.values()].filter((x) => (ativa(x) || x.sync_pendente) && x.id > depoisDe)
+        .sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, limite).map(copia);
       if (ctl.aoListarAbertas) await ctl.aoListarAbertas();
       return r;
     },
@@ -192,13 +194,17 @@ describe('executarAcao — concorrência e incerteza', () => {
     const g = adiado();
     c.ctl.gatePost = g.p;
     c.ctl.efeito = reembolsou('2026-10-28T12:00:01.000Z');
+    // Quem ganha a reserva depende do agendamento (hash assíncrono): o teste não presume a ordem.
     const a = executarAcao(c.deps, c.entrada(OP1));
-    const b = executarAcao(c.deps, c.entrada(OP2, { acao: 'abrir_disputa' }));
-    const rb = await b;
+    const b = executarAcao(c.deps, c.entrada(OP2));
+    await ate(() => c.ml.posts.length > 0);
+    await new Promise((r) => setTimeout(r, 5));
     g.liberar();
-    const ra = await a;
-    expect(ra.estado).toBe('confirmada');
-    expect(rb).toMatchObject({ ok: false, http: 409, erro: MSG_TRAVA, pendente: { acao: 'reembolsar', operacao_id: OP1 } });
+    const rs = await Promise.all([a, b]);
+    const ganhou = rs.find((r) => r.ok)!;
+    const perdeu = rs.find((r) => !r.ok)!;
+    expect(ganhou.estado).toBe('confirmada');
+    expect(perdeu).toMatchObject({ http: 409, erro: MSG_TRAVA, pendente: { acao: 'reembolsar', operacao_id: ganhou.operacao_id } });
     expect(c.ml.posts).toHaveLength(1);
   });
 
@@ -209,10 +215,11 @@ describe('executarAcao — concorrência e incerteza', () => {
     c.ctl.efeito = reembolsou('2026-10-28T12:00:01.000Z');
     const a = executarAcao(c.deps, c.entrada(OP1));
     const b = executarAcao(c.deps, c.entrada(OP1));
-    const rb = await b;
+    await ate(() => c.ml.posts.length > 0);
+    await new Promise((r) => setTimeout(r, 5));
     g.liberar();
-    await a;
-    expect(rb.ok).toBe(true);
+    const rs = await Promise.all([a, b]);
+    expect(rs.every((r) => r.ok)).toBe(true);
     expect(c.ml.posts).toHaveLength(1);
   });
 
@@ -374,14 +381,92 @@ describe('recuperarPendentes (reconciliar horário)', () => {
   });
 });
 
+/** 50 tentativas travadas (refund segue liberado) + 1 reserva órfã antiga (OP3, a 51ª por id). */
+async function cinquentaTravadasEUmaOrfa(c: ReturnType<typeof cenario>) {
+  for (let i = 1; i <= 50; i++) {
+    const t = await c.deps.inserir({
+      org_id: ORG, user_id: 'u', operacao_id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      claim_id: 1000 + i, return_id: null, recurso: `claim:${1000 + i}:resolucao`, acao: 'reembolsar', payload: {}, payload_hash: 'h',
+    });
+    if (typeof t === 'string') throw new Error(t);
+    await c.deps.atualizar(t.id, { estado: 'reservada' }, { estado: 'desconhecido', post_em: c.deps.agora(), antes: det() });
+  }
+  const orfa = await c.deps.inserir({
+    org_id: ORG, user_id: 'u', operacao_id: OP3, claim_id: 2000, return_id: null,
+    recurso: 'claim:2000:resolucao', acao: 'reembolsar', payload: {}, payload_hash: 'h',
+  });
+  if (typeof orfa === 'string') throw new Error(orfa);
+  c.avancar(10 * 60_000);
+}
+
+describe('recuperarComOrcamento (caminho legado do reconciliar)', () => {
+  it('percorre todas as páginas enquanto houver tempo', async () => {
+    const c = cenario();
+    await cinquentaTravadasEUmaOrfa(c);
+    await recuperarComOrcamento(c.deps, () => true);
+    expect(c.linha(OP3).estado).toBe('cancelada');
+    expect(c.ml.posts).toHaveLength(0);
+  });
+  it('para entre páginas quando o orçamento acaba', async () => {
+    const c = cenario();
+    await cinquentaTravadasEUmaOrfa(c);
+    let paginas = 0;
+    await recuperarComOrcamento(c.deps, () => paginas++ < 1);
+    expect(c.linha(OP3).estado).toBe('reservada');
+  });
+});
+
+describe('recuperarPendentes — paginação', () => {
+  it('51 tentativas: as 50 primeiras seguem travadas e a 51ª é processada na página seguinte', async () => {
+    const c = cenario();
+    const antes = det();
+    for (let i = 1; i <= 50; i++) {
+      const t = await c.deps.inserir({
+        org_id: ORG, user_id: 'u', operacao_id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+        claim_id: 1000 + i, return_id: null, recurso: `claim:${1000 + i}:resolucao`, acao: 'reembolsar', payload: {}, payload_hash: 'h',
+      });
+      if (typeof t === 'string') throw new Error(t);
+      await c.deps.atualizar(t.id, { estado: 'reservada' }, { estado: 'desconhecido', post_em: c.deps.agora(), antes });
+    }
+    const orfa = await c.deps.inserir({
+      org_id: ORG, user_id: 'u', operacao_id: OP3, claim_id: 2000, return_id: null,
+      recurso: 'claim:2000:resolucao', acao: 'reembolsar', payload: {}, payload_hash: 'h',
+    });
+    if (typeof orfa === 'string') throw new Error(orfa);
+    c.avancar(10 * 60_000); // refund segue liberado no ML: as 50 ficam travadas
+    const p1 = await recuperarPendentes(c.deps, '');
+    expect(p1.ultimo).toBe('t0050');
+    expect(c.linha(OP3).estado).toBe('reservada');
+    const p2 = await recuperarPendentes(c.deps, p1.ultimo!);
+    expect(p2.ultimo).toBeNull();
+    expect(c.linha(OP3).estado).toBe('cancelada');
+    expect([...c.linhas.values()].filter((t) => t.estado === 'desconhecido')).toHaveLength(50);
+    expect(c.ml.posts).toHaveLength(0);
+  });
+});
+
 describe('responder', () => {
-  it('moderação rejeitada → mantém a trava e avisa', async () => {
+  it('moderação rejeitada → recusada (prova de não entrega, libera a trava) com o aviso (R9)', async () => {
     const c = cenario();
     c.ml.detalhe = det({ acoes: ['send_message_to_complainant'] });
     c.ctl.efeito = (d) => ({ ...d, historico: [{ data: '2026-10-28T12:00:01.000Z', autor: 'vendedor', destinatario: 'comprador', texto: 'Olá', anexos: [], status: 'available', moderacao: 'rejected' }] });
     const r = await executarAcao(c.deps, c.entrada(OP1, { acao: 'responder', texto: 'Olá' }));
-    expect(r).toMatchObject({ ok: false, estado: 'enviada', pendenteConfirmacao: true });
+    expect(r).toMatchObject({ ok: false, estado: 'recusada', pendenteConfirmacao: false, codigo: 'moderacao' });
     expect(r.erro).toBe('O ML bloqueou a mensagem na moderação');
     expect(c.ml.posts[0].corpo).toEqual({ receiver_role: 'complainant', message: 'Olá', attachments: [] });
+    // Trava liberada: nova resposta corrigida pode ir.
+    c.ctl.efeito = null;
+    const r2 = await executarAcao(c.deps, c.entrada(OP2, { acao: 'responder', texto: 'Olá de novo' }));
+    expect(r2.estado).toBe('enviada');
+    expect(c.ml.posts).toHaveLength(2);
+  });
+
+  it('moderação pendente → continua travado (inconclusivo)', async () => {
+    const c = cenario();
+    c.ml.detalhe = det({ acoes: ['send_message_to_complainant'] });
+    c.ctl.efeito = (d) => ({ ...d, historico: [{ data: '2026-10-28T12:00:01.000Z', autor: 'vendedor', destinatario: 'comprador', texto: 'Olá', anexos: [], status: 'available', moderacao: 'pending' }] });
+    const r = await executarAcao(c.deps, c.entrada(OP1, { acao: 'responder', texto: 'Olá' }));
+    expect(r).toMatchObject({ ok: true, estado: 'enviada', pendenteConfirmacao: true });
+    expect((await executarAcao(c.deps, c.entrada(OP2, { acao: 'responder', texto: 'x' }))).http).toBe(409);
   });
 });

@@ -12,7 +12,7 @@ import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPergun
 import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
-import { recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
+import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
@@ -170,6 +170,21 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
         }));
       }
     } catch { /* segue */ }
+  }
+
+  // Pós-venda (ADR-0192): mesma recuperação durável do fan-out (nunca reenvia POST), por org, sob o
+  // orçamento. Antes de Vendas pelo mesmo motivo do passo 1.
+  for (const e of estados) {
+    if (restante() < 15_000) { pulou.push(`${e.orgId}:posvenda`); continue; }
+    const { cx, userId, orgId, token } = e;
+    if (!cx.contaExternaId) continue;
+    try {
+      await recuperarComOrcamento(depsAcaoReal(admin, {
+        orgId, connectionId: cx.id, contaExternaId: cx.contaExternaId, dono: userId, token,
+      }), () => restante() >= 15_000);
+    } catch (err) {
+      console.warn(`reconciliar: pós-venda da org ${orgId} falhou: ${(err as Error).message}`);
+    }
   }
 
   // Passo 2 (TODAS as orgs): Vendas (72h) — o item mais caro, agora por último.
@@ -426,15 +441,15 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
 
     // ADR-0192: confirma/libera ações de pós-venda em aberto e refaz o sync pendente. Nunca reenvia
     // POST; nunca lança (como enriquecer/mensagens, não prende a org nesta etapa).
-    async posvendaPendentes(token, cx, userId, org) {
-      if (!cx.contaExternaId) return 0;
+    async posvendaPendentes(token, cx, userId, org, depoisDe) {
+      if (!cx.contaExternaId) return { n: 0, ultimo: null };
       try {
         return await recuperarPendentes(depsAcaoReal(admin, {
           orgId: org, connectionId: cx.id, contaExternaId: cx.contaExternaId, dono: userId, token,
-        }));
+        }), depoisDe);
       } catch (e) {
         console.warn(`reconciliar: pós-venda da org ${org} falhou: ${(e as Error).message}`);
-        return 0;
+        return { n: 0, ultimo: null };
       }
     },
 

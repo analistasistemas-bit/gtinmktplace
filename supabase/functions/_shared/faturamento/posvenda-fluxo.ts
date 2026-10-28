@@ -19,6 +19,7 @@ export const MSG_TRAVA = 'Outra ação está em andamento ou aguardando confirma
 export const MSG_RECONECTAR = 'Reconecte a conta do Mercado Livre em Configurações → Conexões (falta permissão de escrita)';
 export const MSG_MODERACAO = 'O ML bloqueou a mensagem na moderação';
 const RESERVA_EXPIRA_MS = 2 * 60_000;
+export const LOTE_POSVENDA = 50;
 
 /** Linha de `ml_posvenda_acoes`. */
 export interface Tentativa {
@@ -42,8 +43,8 @@ export interface DepsAcao {
   ativaDoRecurso(recurso: string): Promise<Tentativa | null>;
   /** Update condicional; null = 0 linhas (outra execução ganhou). */
   atualizar(id: string, onde: Onde, set: Partial<Tentativa>): Promise<Tentativa | null>;
-  /** Linhas da org em estado ativo ou com `sync_pendente`. */
-  abertas(): Promise<Tentativa[]>;
+  /** Linhas da org em estado ativo ou com `sync_pendente`, com `id > depoisDe`, por `id` crescente. */
+  abertas(depoisDe: string, limite: number): Promise<Tentativa[]>;
   /** Releitura completa do ML (`lerDetalheReclamacao`); lança se não leu o necessário à decisão. */
   lerDetalhe(claimId: number): Promise<DetalheReclamacao>;
   /** POST com timeout. `status: null` = timeout/rede (não se sabe se o ML recebeu). */
@@ -236,9 +237,10 @@ async function conferir(deps: DepsAcao, t: Tentativa): Promise<{ t: Tentativa; d
     const c = await deps.atualizar(t.id, { estado: t.estado }, { estado: 'confirmada', sync_pendente: true, erro: null });
     return { t: c ?? await reler(deps, t), d, ef };
   }
-  // Mensagem bloqueada: avisa, mas a trava fica (send_message segue liberado; libera pelo reconciliar).
-  if (ef === 'nao' && t.acao === 'responder' && t.erro !== MSG_MODERACAO) {
-    const c = await deps.atualizar(t.id, { estado: t.estado }, { erro: MSG_MODERACAO });
+  // R9: moderação `rejected` = prova de não entrega → recusada (libera; reenviar não duplica).
+  // (`nao` em `responder` só sai de moderação rejeitada; pendente é `inconclusivo` e trava.)
+  if (ef === 'nao' && t.acao === 'responder') {
+    const c = await deps.atualizar(t.id, { estado: t.estado }, { estado: 'recusada', erro: MSG_MODERACAO });
     return { t: c ?? await reler(deps, t), d, ef };
   }
   return { t, d, ef };
@@ -257,12 +259,14 @@ async function finalizar(deps: DepsAcao, t: Tentativa): Promise<Resultado> {
   }
 }
 
-/** Recuperação durável do reconciliar horário (nunca reenvia). Nunca lança; devolve quantas linhas mudou. */
-export async function recuperarPendentes(deps: DepsAcao): Promise<number> {
+/** Recuperação durável do reconciliar horário (nunca reenvia), uma página por chamada (keyset por id).
+ *  `ultimo` = cursor da próxima página; null = acabou. Lança só se a listagem falhar. */
+export async function recuperarPendentes(deps: DepsAcao, depoisDe = ''): Promise<{ n: number; ultimo: string | null }> {
   const limite = new Date(Date.parse(deps.agora()) - RESERVA_EXPIRA_MS).toISOString();
   const velha = (iso: string) => Date.parse(iso) < Date.parse(limite);
   let n = 0;
-  for (const t of await deps.abertas()) {
+  const pagina = await deps.abertas(depoisDe, LOTE_POSVENDA);
+  for (const t of pagina) {
     try {
       if (t.sync_pendente) {
         if (!(await finalizar(deps, t)).sincronizacaoPendente) n++;
@@ -284,5 +288,18 @@ export async function recuperarPendentes(deps: DepsAcao): Promise<number> {
       console.warn(`posvenda: recuperar tentativa ${t.id} falhou: ${(err as Error).message}`);
     }
   }
-  return n;
+  return { n, ultimo: pagina.length === LOTE_POSVENDA ? pagina[pagina.length - 1].id : null };
+}
+
+/** Todas as páginas de `recuperarPendentes` enquanto `temTempo()` (caminho legado do reconciliar,
+ *  que roda tudo numa requisição sob orçamento). Devolve o total de linhas que mudaram. */
+export async function recuperarComOrcamento(deps: DepsAcao, temTempo: () => boolean): Promise<number> {
+  let total = 0;
+  let cursor: string | null = '';
+  while (cursor != null && temTempo()) {
+    const r: { n: number; ultimo: string | null } = await recuperarPendentes(deps, cursor);
+    total += r.n;
+    cursor = r.ultimo;
+  }
+  return total;
 }

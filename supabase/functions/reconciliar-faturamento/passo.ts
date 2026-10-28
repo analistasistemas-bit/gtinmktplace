@@ -32,9 +32,9 @@ export interface DepsReconciliar {
   packsNaoLidos(token: string): Promise<string[]>;
   /** Sync de cada pack (mensagens + upsert). Nunca lança por pack. */
   processarPacksMensagens(token: string, cx: ConexaoCanal, userId: string, orgId: string, packs: string[]): Promise<number>;
-  /** Recuperação durável das ações de pós-venda da org (`recuperarPendentes`, ADR-0192): nunca
-   *  reenvia POST. Nunca lança (não pode segurar vendas/liberações). Devolve linhas que mudaram. */
-  posvendaPendentes(token: string, cx: ConexaoCanal, userId: string, orgId: string): Promise<number>;
+  /** Uma página da recuperação durável das ações de pós-venda (`recuperarPendentes`, ADR-0192), id > depoisDe:
+   *  nunca reenvia POST. Nunca lança (não pode segurar vendas/liberações). `ultimo` null = acabou. */
+  posvendaPendentes(token: string, cx: ConexaoCanal, userId: string, orgId: string, depoisDe: string): Promise<{ n: number; ultimo: string | null }>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;
   pedidoPorId(token: string, id: string): Promise<PedidoML>;
   pendencias(depoisDe: string, limite: number): Promise<string[]>;
@@ -151,8 +151,10 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
     }
 
     if (c.etapa === 'posvenda') {
-      const n = await deps.posvendaPendentes(token, cx, userId, orgId);
-      return { proximo: ir('vendas'), acumulado: n ? somar(acumulado, 'posvenda', n) : acumulado };
+      // Cursor = último id da página: tentativas que seguem travadas não prendem as seguintes.
+      const r = await deps.posvendaPendentes(token, cx, userId, orgId, c.pos);
+      const acc = r.n ? somar(acumulado, 'posvenda', r.n) : acumulado;
+      return { proximo: r.ultimo == null ? ir('vendas') : ir('posvenda', r.ultimo), acumulado: acc };
     }
 
     if (c.etapa === 'vendas') {

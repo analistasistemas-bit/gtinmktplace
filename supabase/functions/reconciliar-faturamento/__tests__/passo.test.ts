@@ -42,7 +42,11 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
       const ids = Array.from({ length: 23 }, (_, i) => 201 + i).filter((id) => id > depoisDe).slice(0, limite);
       return { n: ids.length, ultimo: ids.length ? ids[ids.length - 1] : null };
     }),
-    posvendaPendentes: vi.fn(async () => 2),
+    // 51 tentativas abertas (ids a01..a51), páginas de 50 por id como o real.
+    posvendaPendentes: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, depoisDe: string) => {
+      const ids = Array.from({ length: 51 }, (_, i) => `a${String(i + 1).padStart(2, '0')}`).filter((id) => id > depoisDe).slice(0, 50);
+      return { n: ids.length, ultimo: ids.length === 50 ? ids[ids.length - 1] : null };
+    }),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -159,13 +163,16 @@ describe('passoReconciliar', () => {
     expect(deps.processarPacksMensagens).toHaveBeenCalledTimes(3);
   });
 
-  it('3c. posvenda: recupera as ações pendentes da org (uma chamada), soma e segue para vendas|', async () => {
+  it('3c. posvenda: 51 tentativas → página de 50 com cursor pelo último id, depois a 51ª, depois vendas|', async () => {
     const deps = criarDeps();
-    const r = await rodar(deps, 'posvenda|', { claims: 2 });
-    expect(deps.posvendaPendentes).toHaveBeenCalledWith('tok', CX, 'user-1', 'org-1');
-    expect(r.proximo).toBe('vendas|');
-    expect(r.acumulado).toEqual({ claims: 2, posvenda: 2 });
-    const zero = criarDeps({ posvendaPendentes: vi.fn(async () => 0) });
+    const r1 = await rodar(deps, 'posvenda|', { claims: 2 });
+    expect(deps.posvendaPendentes).toHaveBeenLastCalledWith('tok', CX, 'user-1', 'org-1', '');
+    expect(r1.proximo).toBe('posvenda|a50');
+    const r2 = await rodar(deps, r1.proximo, r1.acumulado);
+    expect(deps.posvendaPendentes).toHaveBeenLastCalledWith('tok', CX, 'user-1', 'org-1', 'a50');
+    expect(r2.proximo).toBe('vendas|');
+    expect(r2.acumulado).toEqual({ claims: 2, posvenda: 51 });
+    const zero = criarDeps({ posvendaPendentes: vi.fn(async () => ({ n: 0, ultimo: null })) });
     expect((await rodar(zero, 'posvenda|')).acumulado).toEqual({});
   });
 
