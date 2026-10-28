@@ -92,29 +92,37 @@ async function reativarKitsVirtuais(
   const out = { retentavel: false, reativados: [] as Origem[] };
   if (itensRepostos.length === 0) return out;
 
-  const { data: tocados } = await admin.from('kits_virtuais_componentes')
+  // Erro de leitura LANÇA: quem chama trata como retentável. Engolir o erro deixaria a composição
+  // vazia e o kit seria reativado sem nenhum componente conferido.
+  const { data: tocados, error: e1 } = await admin.from('kits_virtuais_componentes')
     .select('kit_id').eq('org_id', orgId).in('item_externo_id', itensRepostos);
+  if (e1) throw new Error(`kits_virtuais_componentes: ${e1.message}`);
   const kitIds = [...new Set((tocados ?? []).map((c) => c.kit_id as string))];
   if (kitIds.length === 0) return out;
 
-  const { data: kits } = await admin.from('kits_virtuais')
+  const { data: kits, error: e2 } = await admin.from('kits_virtuais')
     .select('id, ml_item_id, titulo, ml_permalink')
     .eq('org_id', orgId).eq('status', 'publicado').in('id', kitIds);
-  const { data: comps } = await admin.from('kits_virtuais_componentes')
+  if (e2) throw new Error(`kits_virtuais: ${e2.message}`);
+  const { data: comps, error: e3 } = await admin.from('kits_virtuais_componentes')
     .select('kit_id, codigo, quantidade').eq('org_id', orgId).in('kit_id', kitIds);
+  if (e3) throw new Error(`kits_virtuais_componentes: ${e3.message}`);
 
   for (const kit of kits ?? []) {
-    if (!kit.ml_item_id) continue;
+    const componentes = (comps ?? []).filter((x) => x.kit_id === kit.id);
+    if (!kit.ml_item_id || componentes.length === 0) continue;
     let todosComSaldo = true;
-    for (const c of (comps ?? []).filter((x) => x.kit_id === kit.id)) {
+    for (const c of componentes) {
       const origem = await resolverOrigemEstoque(admin, orgId, c.codigo as string);
       if (origem.erro) { todosComSaldo = false; break; }
-      const { data: linhas } = await admin.from('variacoes')
-        .select('codigo, estoque').eq('org_id', orgId).in('codigo', [origem.codigoCanonico]);
-      const estoques = (linhas ?? []).filter((v) => v.codigo === origem.codigoCanonico)
-        .map((v) => (v.estoque as number) ?? 0);
-      // ponytail: menor saldo se o código repetir entre famílias — conservador, não reativa a mais.
-      const saldo = estoques.length > 0 ? saldoDoKit(Math.min(...estoques), origem.multiplicador) : 0;
+      // Família canônica, mesma âncora do ledger (`order by f.criado_em desc limit 1`, ver kit.ts).
+      const { data: canon, error: e4 } = await admin.from('variacoes')
+        .select('estoque, familias!inner(criado_em)')
+        .eq('org_id', orgId).eq('codigo', origem.codigoCanonico)
+        .order('criado_em', { referencedTable: 'familias', ascending: false })
+        .limit(1).maybeSingle();
+      if (e4) throw new Error(`variacoes ${origem.codigoCanonico}: ${e4.message}`);
+      const saldo = saldoDoKit((canon?.estoque as number) ?? 0, origem.multiplicador);
       if (saldo < ((c.quantidade as number) ?? 1)) { todosComSaldo = false; break; }
     }
     if (!todosComSaldo) continue;

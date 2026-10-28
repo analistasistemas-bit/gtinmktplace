@@ -24,6 +24,8 @@ interface DB {
   /** ADR-0154 + emenda 2026-10-28: Kit Virtual e componentes, filtrados de verdade. */
   kits?: Array<Record<string, unknown>>;
   kitComps?: Array<Record<string, unknown>>;
+  /** Simula erro do PostgREST na leitura dos componentes. */
+  falharKitComps?: boolean;
 }
 
 /** Fake mínimo do SupabaseClient: só os padrões de query que processarSincronizacao usa.
@@ -37,6 +39,8 @@ function fakeAdmin(db: DB) {
     // `.not()` só existe na query de `listarKitsVivos` (kit.ts) — nenhum teste aqui define
     // família de kit, então essa busca sempre devolve lista vazia (nenhum kit vinculado).
     let buscandoKits = false;
+    let colunas = '';
+    let codigoEq: unknown;
 
     function movimentosFiltrados(): MovimentoFake[] {
       return (db.movimentos ?? []).filter((r) => filtros.every((f) => f(r)));
@@ -44,9 +48,16 @@ function fakeAdmin(db: DB) {
     function ler(): { data: unknown; error: null } {
       if (tabela === 'familias' && buscandoKits) return { data: [], error: null };
       if (tabela === 'familias') return { data: db.familia, error: null };
+      // Leitura canônica por código (`familias!inner` + maybeSingle): a linha daquele código.
+      if (tabela === 'variacoes' && colunas.includes('familias!inner')) {
+        return { data: db.variacoes.find((v) => v.codigo === codigoEq) ?? null, error: null };
+      }
       if (tabela === 'variacoes') return { data: db.variacoes, error: null };
       if (tabela === 'anuncios_externos') return { data: db.anuncios, error: null };
       if (tabela === 'anuncios_externos_itens') return { data: db.itensUP, error: null };
+      if (tabela === 'kits_virtuais_componentes' && db.falharKitComps) {
+        return { data: null, error: { message: 'boom' } } as never;
+      }
       if (tabela === 'kits_virtuais' || tabela === 'kits_virtuais_componentes') {
         const linhas = (tabela === 'kits_virtuais' ? db.kits : db.kitComps) ?? [];
         return { data: linhas.filter((r) => filtros.every((f) => f(r))), error: null };
@@ -60,10 +71,13 @@ function fakeAdmin(db: DB) {
     }
     // deno-lint-ignore no-explicit-any
     const api: any = {
-      select: () => api,
+      select: (c?: string) => { colunas = c ?? ''; return api; },
       update: (v: Record<string, unknown>) => { valoresUpdate = v; return api; },
-      // deno-lint-ignore no-explicit-any
-      eq: (c: string, v: unknown) => { filtros.push((r: any) => r[c] === v); return api; },
+      eq: (c: string, v: unknown) => {
+        if (c === 'codigo') codigoEq = v;
+        // deno-lint-ignore no-explicit-any
+        filtros.push((r: any) => r[c] === v); return api;
+      },
       // deno-lint-ignore no-explicit-any
       gt: (c: string, v: number) => { filtros.push((r: any) => r[c] > v); return api; },
       // deno-lint-ignore no-explicit-any
@@ -580,6 +594,15 @@ describe('reativação de Kit Virtual na reposição', () => {
   it('push sem a flag (reconciliação) → não toca no kit', async () => {
     fakeConnector.statusVivo = 'pausado';
     await processarSincronizacao(deps(comKit(3)), JOB);
+    expect(kitReativado()).toEqual([]);
+  });
+
+  it('erro ao ler componentes → 500 (QStash re-tenta) e nenhum PUT no kit', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const r = await processarSincronizacao(
+      deps({ ...comKit(3), falharKitComps: true }), { ...JOB, reativar: true },
+    );
+    expect(r.status).toBe(500);
     expect(kitReativado()).toEqual([]);
   });
 
