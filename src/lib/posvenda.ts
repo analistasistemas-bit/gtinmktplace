@@ -80,6 +80,16 @@ export function verificarAcaoPosvenda(operacaoId: string, claimId: string): Prom
   return postEdge<ResultadoAcaoPosvenda>('posvenda-acao', { operacao_id: operacaoId, claim_id: claimId, verificar: true });
 }
 
+/** Sobe a foto/PDF para o ML e devolve o identificador do anexo (referenciado depois na ação). */
+export async function enviarAnexoPosvenda(claimId: string, destino: 'revisao' | 'mensagem', file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('claim_id', claimId);
+  fd.append('destino', destino);
+  fd.append('file', file);
+  const r = await postEdge<{ ok: true; nome: string }>('posvenda-anexo', fd);
+  return r.nome;
+}
+
 /** Estado da reclamação relido do ML agora (nunca do cache local). */
 export async function buscarDetalheReclamacao(claimId: string): Promise<DetalheReclamacao> {
   const r = await postEdge<{ ok: true; detalhe: DetalheReclamacao }>('posvenda-detalhe', { claim_id: claimId });

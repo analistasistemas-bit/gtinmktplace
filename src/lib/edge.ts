@@ -3,14 +3,16 @@ import { supabase } from './supabase';
 /** Erro de `postEdge`: `codigo` e `pendente` (409 de trava do posvenda-acao) vêm do corpo da edge. */
 export type ErroEdge = Error & { codigo?: string; pendente?: unknown };
 
-/** POST autenticado (JWT da sessão) numa Edge Function; erro `{ ok:false, erro, codigo?, pendente? }` vira ErroEdge. */
+/** POST autenticado (JWT da sessão) numa Edge Function; erro `{ ok:false, erro, codigo?, pendente? }` vira ErroEdge.
+ *  `body` FormData vai como multipart (sem Content-Type: o navegador põe o boundary). */
 export async function postEdge<T>(fn: string, body: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
+  const multipart = body instanceof FormData;
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify(body),
+    headers: { ...(multipart ? {} : { 'Content-Type': 'application/json' }), Authorization: `Bearer ${session.access_token}` },
+    body: multipart ? body : JSON.stringify(body),
   });
   const json = await resp.json().catch(() => null);
   if (!resp.ok || json?.ok === false) {

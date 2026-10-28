@@ -194,6 +194,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.posvenda-acao]
 verify_jwt = true
+[functions.posvenda-anexo]
+verify_jwt = true
 [functions.sugerir-resposta-pergunta]
 verify_jwt = true
 [functions.usuarios]

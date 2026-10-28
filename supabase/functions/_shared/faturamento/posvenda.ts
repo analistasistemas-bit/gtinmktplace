@@ -338,3 +338,27 @@ export function efeitoConfirmado(
   if (acao === 'autorizar_devolucao') return antes.return_id == null && depois.return_id != null ? 'confirmado' : 'nao';
   return antes.stage === 'claim' && depois.stage === 'dispute' ? 'confirmado' : 'nao';
 }
+
+// --- Anexos (Task 6) ---
+export type DestinoAnexo = 'revisao' | 'mensagem';
+const TIPOS_ANEXO: Record<DestinoAnexo, string[]> = {
+  revisao: ['image/jpeg', 'image/png'],
+  mensagem: ['image/jpeg', 'image/png', 'application/pdf'],
+};
+export const MAX_BYTES_ANEXO = 5 * 1024 * 1024;
+
+/** Valida tipo e tamanho no servidor antes de chamar o ML. null = ok. */
+export function validarArquivoAnexo(tipo: string, bytes: number, destino: DestinoAnexo): string | null {
+  if (!TIPOS_ANEXO[destino].includes(tipo)) {
+    return destino === 'revisao' ? 'Formato não aceito: use JPG ou PNG.' : 'Formato não aceito: use JPG, PNG ou PDF.';
+  }
+  if (bytes <= 0) return 'Arquivo vazio.';
+  if (bytes > MAX_BYTES_ANEXO) return 'Arquivo acima de 5 MB.';
+  return null;
+}
+
+/** Identificador do anexo na resposta do ML (`file_name` na revisão, `filename` na mensagem). */
+export function nomeDoAnexo(resp: unknown, destino: DestinoAnexo): string | null {
+  const v = (resp as Record<string, unknown> | null)?.[destino === 'revisao' ? 'file_name' : 'filename'];
+  return typeof v === 'string' && v ? v : null;
+}
