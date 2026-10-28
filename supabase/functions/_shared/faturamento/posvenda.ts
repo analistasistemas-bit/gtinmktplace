@@ -167,3 +167,174 @@ export function mapearResolucoes(resp: unknown): Resolucao[] {
   }
   return out;
 }
+
+// ─── Ações de escrita no ML (Task 5, ADR-0192) ───────────────────────────────────────────────
+
+export type AcaoPosvenda =
+  | 'revisar_ok' | 'revisar_falha' | 'responder' | 'reembolsar' | 'reembolso_parcial'
+  | 'autorizar_devolucao' | 'abrir_disputa';
+
+/** Ação do PubliAI → nomes de `available_actions` do player da conta que a liberam. */
+export const ACAO_ML: Record<AcaoPosvenda, string[]> = {
+  revisar_ok: ['return_review_ok'],
+  revisar_falha: ['return_review_fail'],
+  responder: ['send_message_to_complainant', 'send_message_to_mediator'],
+  reembolsar: ['refund'],
+  reembolso_parcial: ['allow_partial_refund'],
+  autorizar_devolucao: ['allow_return', 'allow_return_label'],
+  abrir_disputa: ['open_dispute'],
+};
+
+export const ehAcaoPosvenda = (v: unknown): v is AcaoPosvenda => typeof v === 'string' && Object.hasOwn(ACAO_ML, v);
+
+export interface RevisaoFalhaItem { order_id?: number; motivo_id: string; texto: string; anexos: string[] }
+/** Parte do body que define o que vai ao ML (o payload gravado e hasheado). */
+export interface CorpoAcao { texto?: string; percentual?: number; revisoes?: RevisaoFalhaItem[]; anexos?: string[] }
+
+const ehRevisao = (acao: AcaoPosvenda) => acao === 'revisar_ok' || acao === 'revisar_falha';
+
+/** Em disputa (ou quando só o mediador pode receber) a resposta vai ao ML; senão, ao comprador. */
+export function destinatarioResposta(acoes: string[], stage: string | null): 'complainant' | 'mediator' {
+  if (stage === 'dispute') return 'mediator';
+  if (acoes.includes('send_message_to_mediator') && !acoes.includes('send_message_to_complainant')) return 'mediator';
+  return 'complainant';
+}
+
+/** Recurso da trava: revisões do mesmo return, resoluções do mesmo claim e mensagens do claim. */
+export function chaveRecurso(acao: AcaoPosvenda, claimId: number | string, returnId: number | string | null): string {
+  if (ehRevisao(acao)) return `return:${returnId}`;
+  if (acao === 'responder') return `claim:${claimId}:msg`;
+  return `claim:${claimId}:resolucao`;
+}
+
+/** O ML ainda aceita a ação? (liberada em `available_actions` ou, para revisão, algum pedido `pending`).
+ *  `status='closed'` sozinho nunca conta: revisão segue aberta com o claim fechado. */
+export function mlAceitaAinda(acao: AcaoPosvenda, d: DetalheReclamacao): boolean {
+  if (ACAO_ML[acao].some((a) => d.acoes.includes(a))) return true;
+  return ehRevisao(acao) && d.revisoes.some((r) => r.seller_status === 'pending');
+}
+
+/** null = pode enviar; string = motivo da recusa (nenhum POST acontece). */
+export function validarAcao(acao: AcaoPosvenda, body: CorpoAcao, d: DetalheReclamacao): string | null {
+  const liberada = acao === 'responder'
+    ? d.acoes.includes(`send_message_to_${destinatarioResposta(d.acoes, d.stage)}`)
+    : ACAO_ML[acao].some((a) => d.acoes.includes(a));
+  if (!liberada) return 'Esta ação não está liberada pelo Mercado Livre agora. Recarregue a reclamação.';
+
+  if (acao === 'revisar_falha') {
+    const itens = body.revisoes ?? [];
+    if (!itens.length) return 'Escolha ao menos um motivo.';
+    const carrinho = d.pedidos_devolucao.length > 1;
+    for (const r of itens) {
+      const m = d.motivos_falha_revisao.find((x) => x.id === r.motivo_id);
+      if (!m) return 'Motivo de revisão inválido. Recarregue a reclamação.';
+      if (r.order_id != null) {
+        if (!d.pedidos_devolucao.includes(r.order_id) || !m.aplica.includes('order')) {
+          return 'Motivo ou pedido inválido para esta devolução.';
+        }
+      } else if (!(m.aplica.includes('package') || (!carrinho && m.aplica.includes('order')))) {
+        return 'Este motivo não vale para o pacote inteiro; escolha o pedido.';
+      }
+      if (!r.texto?.trim()) return 'Escreva a descrição do problema.';
+      if (m.exige_foto && !(r.anexos?.length)) return `O motivo "${m.texto}" exige ao menos uma foto.`;
+    }
+  }
+  if (acao === 'responder') {
+    const n = body.texto?.trim().length ?? 0;
+    if (n < 1 || n > 2000) return 'A mensagem precisa ter de 1 a 2000 caracteres.';
+  }
+  if (acao === 'reembolso_parcial') {
+    const ofertas = d.reembolso_parcial?.ofertas.map((o) => o.percentual) ?? [];
+    if (body.percentual == null || !ofertas.includes(body.percentual)) return 'Percentual de reembolso não oferecido pelo ML.';
+  }
+  return null;
+}
+
+/** Path (a partir de api.mercadolibre.com) e corpo do POST. */
+export function montarRequisicao(
+  acao: AcaoPosvenda, claimId: number | string, returnId: number | string | null, body: CorpoAcao,
+  receiverRole: 'complainant' | 'mediator',
+): { path: string; corpo: unknown } {
+  const v1 = '/post-purchase/v1';
+  const claim = `${v1}/claims/${claimId}`;
+  switch (acao) {
+    case 'revisar_ok': return { path: `${v1}/returns/${returnId}/return-review`, corpo: {} };
+    case 'revisar_falha': return {
+      path: `${v1}/returns/${returnId}/return-review`,
+      corpo: (body.revisoes ?? []).map((r) => ({
+        reason: r.motivo_id, message: r.texto, attachments: r.anexos, ...(r.order_id ? { order_id: r.order_id } : {}),
+      })),
+    };
+    case 'responder': return {
+      path: `${claim}/actions/send-message`,
+      corpo: { receiver_role: receiverRole, message: (body.texto ?? '').trim(), attachments: body.anexos ?? [] },
+    };
+    case 'reembolsar': return { path: `${claim}/expected-resolutions/refund`, corpo: {} };
+    case 'reembolso_parcial': return { path: `${claim}/expected-resolutions/partial-refund`, corpo: { percentage: body.percentual } };
+    case 'autorizar_devolucao': return { path: `${claim}/expected-resolutions/allow-return`, corpo: {} };
+    case 'abrir_disputa': return { path: `${claim}/actions/open-dispute`, corpo: {} };
+  }
+}
+
+export type Efeito = 'confirmado' | 'nao' | 'inconclusivo';
+export interface TentativaEfeito { payload: CorpoAcao; post_em: string; http_status: number | null }
+
+const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
+const RESOLUCAO_ACEITA = new Set(['accepted', 'applied']);
+const mesmaResolucao = (a: Resolucao, b: Resolucao) => a.papel === b.papel && a.tipo === b.tipo && a.criada_em === b.criada_em;
+
+/** Evidência POSITIVA e específica de que o efeito da NOSSA tentativa está no ML.
+ *  Ausência de evidência nunca é confirmação; quem decide liberar a trava é `mlAceitaAinda`. */
+export function efeitoConfirmado(
+  acao: AcaoPosvenda, antes: DetalheReclamacao, depois: DetalheReclamacao, t: TentativaEfeito,
+): Efeito {
+  const post = ms(t.post_em);
+  const ok2xx = t.http_status != null && t.http_status >= 200 && t.http_status < 300;
+  const novas = depois.resolucoes.filter((r) => ms(r.criada_em) >= post && !antes.resolucoes.some((a) => mesmaResolucao(a, r)));
+
+  if (acao === 'responder') {
+    const dest = destinatarioResposta(antes.acoes, antes.stage) === 'mediator' ? 'ml' : 'comprador';
+    const texto = (t.payload.texto ?? '').trim();
+    const anexos = [...(t.payload.anexos ?? [])].sort().join('|');
+    const casa = (m: MensagemHistorico) => m.autor === 'vendedor' && m.destinatario === dest && m.texto.trim() === texto
+      && m.anexos.map((a) => a.id).sort().join('|') === anexos && ms(m.data) >= post;
+    const nAntes = antes.historico.filter(casa).length;
+    const achadas = depois.historico.filter(casa);
+    if (achadas.length <= nAntes) return 'inconclusivo';
+    const nova = achadas[achadas.length - 1];
+    if (nova.moderacao === 'clean') return 'confirmado';
+    if (nova.moderacao === 'rejected') return 'nao';
+    return 'inconclusivo';
+  }
+  if (ehRevisao(acao)) {
+    const pendentesAntes = antes.revisoes.filter((r) => r.seller_status === 'pending').map((r) => r.order_id);
+    const itens = t.payload.revisoes ?? [];
+    const alvo = acao === 'revisar_falha' && itens.length && itens.every((r) => r.order_id != null)
+      ? itens.map((r) => r.order_id!).filter((o) => pendentesAntes.includes(o))
+      : pendentesAntes;
+    if (!alvo.length) return 'nao';
+    const st = alvo.map((o) => depois.revisoes.find((r) => r.order_id === o)?.seller_status ?? null);
+    // `success` também é "não revisou a tempo": só vale como OK com 2xx da nossa tentativa.
+    if (st.every((s) => s === 'success')) {
+      if (!ok2xx) return 'inconclusivo';
+      return acao === 'revisar_ok' ? 'confirmado' : 'nao';
+    }
+    // `claimed`/`failed` só o vendedor produz.
+    if (acao === 'revisar_falha' && st.every((s) => s === 'claimed' || s === 'failed')) return 'confirmado';
+    return 'nao';
+  }
+  if (acao === 'reembolsar') {
+    if (novas.some((r) => r.papel === 'respondent' && r.tipo === 'refund' && RESOLUCAO_ACEITA.has(r.status))) return 'confirmado';
+    const f = depois.resolucao_final;
+    const motivo = f?.motivo ?? '';
+    if (depois.status === 'closed' && /refund/i.test(motivo) && !/partial/i.test(motivo) && ms(f?.data) >= post) return 'confirmado';
+    return 'nao';
+  }
+  if (acao === 'reembolso_parcial') {
+    const ofertas = novas.filter((r) => r.papel === 'respondent' && r.tipo === 'partial_refund');
+    const pct = (r: Resolucao) => Number(r.detalhes.find((x) => x.chave === 'percentage')?.valor);
+    return ofertas.some((r) => pct(r) === t.payload.percentual) ? 'confirmado' : 'nao';
+  }
+  if (acao === 'autorizar_devolucao') return antes.return_id == null && depois.return_id != null ? 'confirmado' : 'nao';
+  return antes.stage === 'claim' && depois.stage === 'dispute' ? 'confirmado' : 'nao';
+}
