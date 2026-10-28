@@ -24,7 +24,7 @@ import {
   buscarMensagensPack, upsertMensagens, listarPacksDeVendas,
   buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito,
 } from '../_shared/faturamento/mensagens-io.ts';
-import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaimsSeller, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { registrarPendencias } from '../_shared/faturamento/pendencias.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -93,7 +93,7 @@ const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true
 // (__tests__/manual.test.ts). Produção usa sempre estas, as MESMAS (não estritas) de antes do ADR-0173.
 const IO_PADRAO = {
   getValidAccessTokenConexao, buscarPerguntasSeller, buscarTituloItem, upsertPergunta, buscarClaimsSeller,
-  buscarReturn, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
+  lerReturnEExtras, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
   buscarFreteVendedor, buscarShipment, upsertVenda, listarPacksDeVendas, buscarMensagensPack, upsertMensagens,
 };
 type IoConexao = typeof IO_PADRAO;
@@ -161,8 +161,8 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
     for (const lote of chunk(claims, PARALELAS)) {
       await Promise.all(lote.map(async (claim) => {
         try {
-          const ret = await io.buscarReturn(token, String(claim.id));
-          await io.upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
+          const { ret, extras, lidoEm } = await io.lerReturnEExtras(token, String(claim.id));
+          await io.upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId, extras, lidoEm);
         } catch (e) {
           console.warn(`backfill: claim ${claim?.id} de ${userId} falhou: ${(e as Error).message}`);
         }

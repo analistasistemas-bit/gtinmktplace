@@ -4,7 +4,7 @@ import type { ConexaoCanal } from '../../_shared/canais/conexao.ts';
 import type { PedidoML } from '../../_shared/faturamento/venda.ts';
 import type { ClaimML } from '../../_shared/faturamento/devolucao.ts';
 import { LOTE_PENDENCIAS } from '../../_shared/faturamento/pendencias.ts';
-import { LOTE_CLAIMS, LOTE_MENSAGENS, LOTE_PEDIDOS, desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
+import { LOTE_CLAIMS, LOTE_ENRIQUECER, LOTE_MENSAGENS, LOTE_PEDIDOS, desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
 
 const PARAMS: ParamsReconciliar = { desde: '2026-09-24T12:00:00.000Z', ate: '2026-09-27T12:00:00.000Z', hojeBRT: '2026-09-27' };
 const CX: ConexaoCanal = { id: 'cx-1', orgId: 'org-1', canal: 'mercado_livre', contaExternaId: '999', expiresAt: null };
@@ -37,6 +37,11 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
       ({ ok: ps.map((p) => String(p.id)), falhas: [] as string[], mpFalhou: [] as string[] })),
     packsNaoLidos: vi.fn(async () => embaralhar(Array.from({ length: 23 }, (_, i) => String(9000 + i + 1)))),
     processarPacksMensagens: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: string[]) => ps.length),
+    // 23 linhas antigas sem enriquecimento (claim_id 201..223), paginadas por claim_id como o real.
+    enriquecer: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, depoisDe: number, limite: number) => {
+      const ids = Array.from({ length: 23 }, (_, i) => 201 + i).filter((id) => id > depoisDe).slice(0, limite);
+      return { n: ids.length, ultimo: ids.length ? ids[ids.length - 1] : null };
+    }),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -105,8 +110,32 @@ describe('passoReconciliar', () => {
     expect(r3.acumulado.claims).toBe(23);
 
     const r4 = await rodar(deps, r3.proximo, r3.acumulado);
-    expect(r4.proximo).toBe('mensagens|');
+    expect(r4.proximo).toBe('enriquecer|');
     expect(deps.processarClaims).toHaveBeenCalledTimes(3);
+  });
+
+  it('3a. enriquecer: 23 linhas → 20/3 paginadas pelo último claim_id, depois mensagens|', async () => {
+    expect(LOTE_ENRIQUECER).toBe(20);
+    const deps = criarDeps();
+    const r1 = await rodar(deps, 'enriquecer|', { claims: 2 });
+    expect(deps.enriquecer).toHaveBeenLastCalledWith('tok', CX, 'user-1', 'org-1', 0, 20);
+    expect(r1.proximo).toBe('enriquecer|220');
+    const r2 = await rodar(deps, r1.proximo, r1.acumulado);
+    expect(deps.enriquecer).toHaveBeenLastCalledWith('tok', CX, 'user-1', 'org-1', 220, 20);
+    expect(r2.proximo).toBe('enriquecer|223');
+    const r3 = await rodar(deps, r2.proximo, r2.acumulado);
+    expect(r3.proximo).toBe('mensagens|');
+    expect(r3.acumulado).toEqual({ claims: 2, enriquecidos: 23 });
+  });
+
+  it('3a2. enriquecer: lote com falha de leitura (n < lote) avança o cursor mesmo assim, sem travar', async () => {
+    const deps = criarDeps({ enriquecer: vi.fn(async (_t, _cx, _u, _o, depoisDe: number) =>
+      depoisDe === 0 ? { n: 19, ultimo: 220 } : { n: 0, ultimo: null }) });
+    const r1 = await rodar(deps, 'enriquecer|');
+    expect(r1.proximo).toBe('enriquecer|220');
+    expect(r1.acumulado.enriquecidos).toBe(19);
+    const r2 = await rodar(deps, r1.proximo, r1.acumulado);
+    expect(r2.proximo).toBe('mensagens|');
   });
 
   it('3b. mensagens: 23 packs não lidos → 10/10/3 por id numérico com cursor, depois vendas|', async () => {
@@ -165,7 +194,7 @@ describe('passoReconciliar', () => {
 
   it('6. token em toda etapa; SemAcessoRodada propaga de qualquer uma', async () => {
     const deps = criarDeps();
-    const cursores = [null, 'perguntas|', 'claims|', 'mensagens|', 'vendas|', 'liberacoes|'];
+    const cursores = [null, 'perguntas|', 'claims|', 'enriquecer|', 'mensagens|', 'vendas|', 'liberacoes|'];
     for (const c of cursores) await rodar(deps, c);
     expect(deps.token).toHaveBeenCalledTimes(cursores.length);
 
@@ -190,6 +219,7 @@ describe('passoReconciliar', () => {
     await expect(rodar(criarDeps(), 'vendas|abc')).rejects.toThrow();
     await expect(rodar(criarDeps(), 'claims|abc')).rejects.toThrow();
     await expect(rodar(criarDeps(), 'mensagens|abc')).rejects.toThrow();
+    await expect(rodar(criarDeps(), 'enriquecer|abc')).rejects.toThrow();
   });
 
   describe('8. pendências', () => {

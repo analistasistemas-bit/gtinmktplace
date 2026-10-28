@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
     const target = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${rota.fn}`;
     await qstashClient().publishJSON({
       url: target,
-      body: { user_id: userId, [campo]: idJob },
+      body: { user_id: userId, [campo]: idJob, ...(ev.topic === 'claims' ? { org_id: orgId } : {}) },
       retries: 3,
     });
   } catch (e) {

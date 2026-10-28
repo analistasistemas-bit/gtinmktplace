@@ -9,7 +9,7 @@ import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, reconciliarLiberacoes } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
-import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLocais } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaimsSeller, lerReturnEExtras, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
@@ -139,8 +139,8 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
       for (const lote of chunk(claimsPendentes, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
-            const ret = await buscarReturn(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
+            const { ret, extras, lidoEm } = await lerReturnEExtras(token, String(claim.id));
+            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId, extras, lidoEm);
             if (ignorado || row.order_id == null) return;
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
@@ -349,8 +349,8 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
       for (const lote of chunk(claims, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
-            const ret = await buscarReturn(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, org, claim, ret, cx.contaExternaId);
+            const { ret, extras, lidoEm } = await lerReturnEExtras(token, String(claim.id));
+            const { row, ignorado } = await upsertDevolucao(admin, userId, org, claim, ret, cx.contaExternaId, extras, lidoEm);
             if (ignorado || row.order_id == null) { n++; return; }
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
@@ -378,6 +378,17 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         }));
       }
       return n;
+    },
+
+    // Linhas antigas sem enriquecimento. Nunca lança por claim (enriquecerPendentes); erro de leitura
+    // das linhas só loga — como claims, não prende a org nesta etapa.
+    async enriquecer(token, cx, userId, org, depoisDe, limite) {
+      try {
+        return await enriquecerPendentes(admin, token, org, { ...cx, criadoPor: userId }, depoisDe, limite);
+      } catch (e) {
+        console.warn(`reconciliar: enriquecer da org ${org} falhou: ${(e as Error).message}`);
+        return { n: 0, ultimo: null };
+      }
     },
 
     async packsNaoLidos(token) {

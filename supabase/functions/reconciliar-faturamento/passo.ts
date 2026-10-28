@@ -1,5 +1,5 @@
 // ADR-0173: um lote do reconciliar agendado por org, retomável pelo cursor:
-// pendencias → perguntas → claims → mensagens (não lidas) → vendas (72h) → liberacoes (120 d do MP) → fim.
+// pendencias → perguntas → claims → enriquecer (linhas antigas) → mensagens (não lidas) → vendas (72h) → liberacoes (120 d do MP) → fim.
 // Puro — só `import type` e módulos puros —, testável por vitest. Fiação real em index.ts.
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -10,6 +10,7 @@ import { gravarCursor, lerCursor, type Acumulado, type Passo, type ResultadoPass
 
 export interface ParamsReconciliar extends Record<string, unknown> { desde: string; ate: string; hojeBRT: string }
 export const LOTE_CLAIMS = 10;     // cada claim custa ~8 requisições (return + devolução + pedido + venda inteira)
+export const LOTE_ENRIQUECER = 20; // 4 GETs por claim (claim, return, detail/reputação/revisões em paralelo)
 export const LOTE_MENSAGENS = 10; // cada pack custa 1 GET de mensagens (timeout 15 s)
 export const LOTE_PEDIDOS = 25;
 const PARALELAS = 5;               // mesmo grau do laço legado
@@ -24,6 +25,9 @@ export interface DepsReconciliar {
   claimsPendentes(token: string, userId: string, contaExternaId: string | null): Promise<ClaimML[]>;
   /** Nunca lança por claim. */
   processarClaims(token: string, cx: ConexaoCanal, userId: string, orgId: string, claims: ClaimML[]): Promise<number>;
+  /** Enriquece até `limite` linhas de ml_devolucoes sem `enriquecido_em` com claim_id > depoisDe.
+   *  `ultimo` = último claim_id do lote (cursor; null = acabou). Nunca lança por claim. */
+  enriquecer(token: string, cx: ConexaoCanal, userId: string, orgId: string, depoisDe: number, limite: number): Promise<{ n: number; ultimo: number | null }>;
   /** GET /messages/unread: packs com mensagem não lida — rede de segurança do webhook `messages`. */
   packsNaoLidos(token: string): Promise<string[]>;
   /** Sync de cada pack (mensagens + upsert). Nunca lança por pack. */
@@ -121,9 +125,15 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
         .filter((cl) => Number(cl.id) > desde)
         .sort((a, b) => Number(a.id) - Number(b.id))
         .slice(0, LOTE_CLAIMS);
-      if (lote.length === 0) return { proximo: ir('mensagens'), acumulado };
+      if (lote.length === 0) return { proximo: ir('enriquecer'), acumulado };
       const n = await deps.processarClaims(token, cx, userId, orgId, lote);
       return { proximo: ir('claims', String(lote[lote.length - 1].id)), acumulado: somar(acumulado, 'claims', n) };
+    }
+
+    if (c.etapa === 'enriquecer') {
+      const r = await deps.enriquecer(token, cx, userId, orgId, posNumerica('enriquecer', c.pos), LOTE_ENRIQUECER);
+      if (r.ultimo == null) return { proximo: ir('mensagens'), acumulado };
+      return { proximo: ir('enriquecer', String(r.ultimo)), acumulado: somar(acumulado, 'enriquecidos', r.n) };
     }
 
     if (c.etapa === 'mensagens') {

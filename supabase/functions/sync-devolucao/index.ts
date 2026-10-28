@@ -4,7 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { buscarClaim, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaim, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
@@ -16,7 +16,7 @@ import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
-interface Job { user_id?: string; claim_id?: string }
+interface Job { user_id?: string; claim_id?: string; org_id?: string; connection_id?: string }
 
 /** Mesmo padrão de sync-venda/sync-pergunta (ADR-0069). */
 async function tratarFalha(
@@ -44,8 +44,11 @@ Deno.serve(async (req) => {
   if (!job.user_id || !job.claim_id) return new Response('user_id/claim_id obrigatórios', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
-  const orgId = await resolverOrgPorUserId(admin, job.user_id);
-  const conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
+  // Com org_id (ml-webhook já resolveu) usa a conexão da org, validando connection_id se vier;
+  // resolverOrgPorUserId falha quando o mesmo criador tem conexões em duas orgs.
+  const orgId = job.org_id ?? await resolverOrgPorUserId(admin, job.user_id);
+  let conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
+  if (conexao && job.connection_id && conexao.id !== job.connection_id) conexao = null;
   if (!conexao) return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders });
 
   let token: string;
@@ -64,11 +67,11 @@ Deno.serve(async (req) => {
     }
     return await tratarFalha(admin, conexao, orgId, e);
   }
-  // buscarReturn continua devolvendo null em erro/ausência (não convertido para MLApiError —
-  // "sem return ainda" é estado de negócio válido, não indica token morto).
-  const ret = await buscarReturn(token, job.claim_id);
+  // Leituras que falham não viram MLApiError ("sem return ainda" é estado de negócio, não token
+  // morto): a coluna não lida simplesmente não é regravada.
+  const { ret, extras, lidoEm } = await lerReturnEExtras(token, job.claim_id);
 
-  const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId);
+  const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
 
   if (nova && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
     // O claim só traz o order_id; o número que o ML exibe é o pack (quando há), lido da venda.
@@ -95,7 +98,7 @@ Deno.serve(async (req) => {
   if (row.order_id != null && !ignorado) {
     try {
       const pedido = await buscarPedido(token, String(row.order_id));
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, job.user_id);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, job.user_id, orgId);
       const shippingId = pedido.shipping?.id ?? null;
       const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
         buscarFreteVendedor(token, shippingId),

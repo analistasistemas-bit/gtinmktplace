@@ -37,7 +37,7 @@ function criarIo() {
     buscarTituloItem: vi.fn(async () => 'Título'),
     upsertPergunta: vi.fn(async () => undefined),
     buscarClaimsSeller: vi.fn(async () => [{ id: 'c1' }]),
-    buscarReturn: vi.fn(async () => ({ id: 'r1' })),
+    lerReturnEExtras: vi.fn(async () => ({ ret: { ok: true, valor: { id: 'r1' } }, extras: 'ex', lidoEm: 'T' })),
     upsertDevolucao: vi.fn(async () => undefined),
     buscarPedidosPeriodo: vi.fn(async () => [{ id: 1, shipping: { id: 55 } }, { id: 2 }]),
     carregarCatalogo: vi.fn(async () => CATALOGO),
@@ -64,7 +64,7 @@ describe('processarConexao (caminho manual/legado) — caracterização', () => 
     expect(io.buscarPerguntasSeller).toHaveBeenCalledWith('tok');
     expect(io.upsertPergunta).toHaveBeenCalledWith(admin, 'user-1', 'org-1', { id: 'q1', item_id: 'MLB1' }, 'Título', 'tok');
     expect(io.buscarClaimsSeller).toHaveBeenCalledWith('tok');
-    expect(io.upsertDevolucao).toHaveBeenCalledWith(admin, 'user-1', 'org-1', { id: 'c1' }, { id: 'r1' }, '999');
+    expect(io.upsertDevolucao).toHaveBeenCalledWith(admin, 'user-1', 'org-1', { id: 'c1' }, { ok: true, valor: { id: 'r1' } }, '999', 'ex', 'T');
     expect(io.buscarPedidosPeriodo).toHaveBeenCalledWith('tok', INTERVALO);
     expect(io.carregarCatalogo).toHaveBeenCalledWith(admin, 'user-1');
     // Varredura de 120 dias (default de carregarLiquidoMP), não a leitura por pedido.
@@ -95,14 +95,14 @@ describe('processarConexao (caminho manual/legado) — caracterização', () => 
     expect(io.carregarLiquidoMP).toHaveBeenCalledWith('tok', 999);
   });
 
-  it('claim em que a conta é COMPRADORA não chega a buscarReturn nem upsertDevolucao', async () => {
+  it('claim em que a conta é COMPRADORA não chega a lerReturnEExtras nem upsertDevolucao', async () => {
     const io = criarIo();
     const compra = { id: 'c2', players: [{ type: 'buyer', user_id: 999 }, { type: 'seller', user_id: 555 }] };
     io.buscarClaimsSeller.mockResolvedValue([{ id: 'c1' }, compra] as never);
     // deno-lint-ignore no-explicit-any
     await processarConexao({} as any, CX, INTERVALO, false, io as any);
-    expect(io.buscarReturn).toHaveBeenCalledTimes(1);
-    expect(io.buscarReturn).toHaveBeenCalledWith('tok', 'c1');
+    expect(io.lerReturnEExtras).toHaveBeenCalledTimes(1);
+    expect(io.lerReturnEExtras).toHaveBeenCalledWith('tok', 'c1');
     expect(io.upsertDevolucao).toHaveBeenCalledTimes(1);
   });
 

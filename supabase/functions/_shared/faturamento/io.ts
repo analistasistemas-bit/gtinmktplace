@@ -67,8 +67,10 @@ async function paginarTudo<T>(
  * `is_publiai = false` e SEM código, então 12 unidades venderam sem baixar estoque.
  * Só cai de volta para o `user_id` quando não há conexão para resolver a org.
  */
-export async function carregarCatalogo(admin: SupabaseClient, userId: string): Promise<Catalogo> {
-  const orgId = await resolverOrgPorUserId(admin, userId);
+export async function carregarCatalogo(admin: SupabaseClient, userId: string, orgConhecida?: string | null): Promise<Catalogo> {
+  // `orgConhecida` (já resolvida pelo chamador) evita `resolverOrgPorUserId`, que falha quando o
+  // mesmo criador tem conexões em duas orgs.
+  const orgId = orgConhecida ?? await resolverOrgPorUserId(admin, userId);
   // Coluna+valor em variável, e não um helper genérico envolvendo o builder: o genérico faz o
   // supabase-js estourar a inferência (`TS2589: type instantiation excessively deep`).
   const colEscopo = orgId ? 'org_id' : 'user_id';
@@ -205,13 +207,14 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
  * vive por isolate e serviria catálogo velho — família publicada agora não apareceria enquanto o
  * isolate estivesse quente. Guarda a Promise, não o valor, para deduplicar chamadas concorrentes.
  */
-export function memoCatalogo(admin: SupabaseClient): (userId: string) => Promise<Catalogo> {
+export function memoCatalogo(admin: SupabaseClient): (userId: string, orgId?: string | null) => Promise<Catalogo> {
   const cache = new Map<string, Promise<Catalogo>>();
-  return (userId: string) => {
-    let pendente = cache.get(userId);
+  return (userId: string, orgId?: string | null) => {
+    const chave = `${orgId ?? ''}:${userId}`;
+    let pendente = cache.get(chave);
     if (!pendente) {
-      pendente = carregarCatalogo(admin, userId);
-      cache.set(userId, pendente);
+      pendente = carregarCatalogo(admin, userId, orgId);
+      cache.set(chave, pendente);
     }
     return pendente;
   };
