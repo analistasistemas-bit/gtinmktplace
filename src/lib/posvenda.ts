@@ -1,4 +1,7 @@
 import { postEdge, type ErroEdge } from './edge';
+import { supabase } from './supabase';
+import { COLUNAS_DEVOLUCAO, type Devolucao } from './devolucoes';
+import type { TentativaAtiva } from './posvenda-fila';
 
 /** Espelho de `DetalheReclamacao` em supabase/functions/_shared/faturamento/posvenda.ts. */
 export interface DetalheReclamacao {
@@ -94,4 +97,37 @@ export async function enviarAnexoPosvenda(claimId: string, destino: 'revisao' | 
 export async function buscarDetalheReclamacao(claimId: string): Promise<DetalheReclamacao> {
   const r = await postEdge<{ ok: true; detalhe: DetalheReclamacao }>('posvenda-detalhe', { claim_id: claimId });
   return r.detalhe;
+}
+
+const PAGINA = 1000;
+
+/** Fila do pós-venda: só o que está aberto ou com revisão pendente (conjunto pequeno), paginado até
+ *  esgotar. Nunca depende do histórico (buscarDevolucoes). */
+export async function buscarFilaPosvenda(): Promise<Devolucao[]> {
+  const out: Devolucao[] = [];
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await supabase
+      .from('ml_devolucoes')
+      .select(COLUNAS_DEVOLUCAO)
+      .or('status.eq.opened,revisao_pendente.eq.true')
+      .order('claim_id', { ascending: true })
+      .range(de, de + PAGINA - 1);
+    if (error) throw new Error(error.message);
+    const lote = (data ?? []) as unknown as Devolucao[];
+    out.push(...lote);
+    if (lote.length < PAGINA) return out;
+  }
+}
+
+export type TentativaAtivaPosvenda = TentativaAtiva & { operacao_id: string; acao: AcaoPosvenda; return_id: number | null };
+
+/** Tentativas que seguram a trava do recurso (RLS: membros da org). */
+export async function buscarTentativasAtivas(): Promise<TentativaAtivaPosvenda[]> {
+  // Tabela nova (ADR-0192) ainda fora dos tipos gerados do banco.
+  const { data, error } = await (supabase as unknown as { from: (t: string) => ReturnType<typeof supabase.from> })
+    .from('ml_posvenda_acoes')
+    .select('operacao_id, claim_id, return_id, recurso, acao, estado')
+    .in('estado', ['reservada', 'enviada', 'desconhecido']);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as TentativaAtivaPosvenda[];
 }

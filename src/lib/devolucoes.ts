@@ -26,17 +26,33 @@ export interface Devolucao {
   /** Valor já reembolsado via Mercado Pago (ml_vendas.estorno, ADR-0038) — `valor_em_jogo` vem
    *  sempre null da API de claims do ML, que não traz nenhum campo monetário. */
   valor_estornado?: number | null;
+  /** Pós-venda (ADR-0192): detalhe lido do ML + estado para a fila. Nulos até o enriquecimento. */
+  return_id?: number | null;
+  detalhe?: { title?: string | null; description?: string | null; problem?: string | null; due_date?: string | null; action_responsible?: string | null } | null;
+  prazo?: string | null;
+  vez_de?: 'vendedor' | 'comprador' | 'ml' | null;
+  revisao_pendente?: boolean;
+  revisao_status?: string | null;
+  afeta_reputacao?: string | null;
+  rastreio?: string | null;
+  pedidos_devolucao?: number[] | null;
+  enriquecido_em?: string | null;
+  lido_em?: string | null;
 }
+
+/** Colunas lidas de `ml_devolucoes` (histórico e fila do pós-venda). */
+// string larga (não literal): os tipos gerados do banco ainda não têm as colunas do ADR-0192.
+export const COLUNAS_DEVOLUCAO: string = 'id, claim_id, order_id, stage, status, type, reason_id, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em, fechado_em, return_id, detalhe, prazo, vez_de, revisao_pendente, revisao_status, afeta_reputacao, rastreio, pedidos_devolucao, enriquecido_em, lido_em';
 
 /** Lê as devoluções/claims (mais recentes primeiro). RLS por user. */
 export async function buscarDevolucoes(): Promise<Devolucao[]> {
   const { data, error } = await supabase
     .from('ml_devolucoes')
-    .select('id, claim_id, order_id, stage, status, type, reason_id, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em, fechado_em')
+    .select(COLUNAS_DEVOLUCAO)
     .order('aberto_em', { ascending: false });
   if (error) throw new Error(error.message);
 
-  const devolucoes = (data ?? []) as Devolucao[];
+  const devolucoes = (data ?? []) as unknown as Devolucao[];
   const orderIds = devolucoes.map(d => d.order_id).filter((id): id is number => id != null);
 
   if (orderIds.length > 0) {
