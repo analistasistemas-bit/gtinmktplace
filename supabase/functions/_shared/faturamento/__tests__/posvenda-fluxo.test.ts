@@ -44,6 +44,8 @@ function cenario() {
     aoChegarNoPost: null as null | (() => void),
     aoListarAbertas: null as null | (() => Promise<void>),
     falharSync: 0,
+    /** Cada releitura do ML "custa" este tempo no relógio fake (orçamento). */
+    custoLeituraMs: 0,
     syncs: 0,
     enfileirados: 0,
   };
@@ -61,7 +63,7 @@ function cenario() {
       if ([...linhas.values()].some((x) => x.recurso === n.recurso && ativa(x))) return 'conflito_recurso';
       const t: Tentativa = {
         ...n, id: `t${String(++seq).padStart(4, '0')}`, estado: 'reservada', antes: null, post_em: null, http_status: null, resposta_ml: null,
-        sync_pendente: false, erro: null, criado_em: new Date(relogio).toISOString(),
+        sync_pendente: false, erro: null, criado_em: new Date(relogio).toISOString(), atualizado_em: new Date(relogio).toISOString(),
       };
       linhas.set(t.id, t);
       return copia(t);
@@ -76,23 +78,25 @@ function cenario() {
       if (onde.postEmNulo && t.post_em != null) return null;
       if (onde.syncPendente && !t.sync_pendente) return null;
       if (onde.criadoAntesDe && !(Date.parse(t.criado_em) < Date.parse(onde.criadoAntesDe))) return null;
-      const novo = { ...t, ...copia(set) };
+      const novo = { ...t, ...copia(set), atualizado_em: new Date(relogio).toISOString() };
       if (ativa(novo) && [...linhas.values()].some((x) => x.id !== id && x.recurso === novo.recurso && ativa(x))) {
         throw new Error('23505 ml_posvenda_acoes_trava_uniq');
       }
       linhas.set(id, novo);
       return copia(novo);
     },
-    async abertas(depoisDe, limite) {
-      // Mesmo contrato do real: keyset por id, `limite` por página.
-      const r = [...linhas.values()].filter((x) => (ativa(x) || x.sync_pendente) && x.id > depoisDe)
-        .sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, limite).map(copia);
+    async abertas({ limite, depoisId, giro }) {
+      // Mesmo contrato do real: keyset por id (fan-out) ou fila por atualizado_em, id (legado).
+      const chave = (x: Tentativa) => (giro ? `${x.atualizado_em}|${x.id}` : x.id);
+      const r = [...linhas.values()].filter((x) => (ativa(x) || x.sync_pendente) && (giro || x.id > (depoisId ?? '')))
+        .sort((a, b) => (chave(a) < chave(b) ? -1 : 1)).slice(0, limite).map(copia);
       if (ctl.aoListarAbertas) await ctl.aoListarAbertas();
       return r;
     },
     async lerDetalhe() {
       if (ctl.gateLeitura) { const g = ctl.gateLeitura; ctl.gateLeitura = null; await g; }
       ml.leituras++;
+      relogio += ctl.custoLeituraMs;
       if (ml.falharLeitura) throw new Error('Não foi possível ler a reclamação no Mercado Livre.');
       return copia(ml.detalhe);
     },
@@ -399,20 +403,43 @@ async function cinquentaTravadasEUmaOrfa(c: ReturnType<typeof cenario>) {
   c.avancar(10 * 60_000);
 }
 
-describe('recuperarComOrcamento (caminho legado do reconciliar)', () => {
-  it('percorre todas as páginas enquanto houver tempo', async () => {
+describe('recuperarComOrcamento (caminho legado do reconciliar, R11)', () => {
+  it('fila gira entre rodadas: orçamento de 50 itens, 2 rodadas → a 51ª é processada na 2ª', async () => {
     const c = cenario();
     await cinquentaTravadasEUmaOrfa(c);
-    await recuperarComOrcamento(c.deps, () => true);
+    const orcamento = () => { let i = 0; return () => i++ < 50; };
+    await recuperarComOrcamento(c.deps, orcamento());
+    expect(c.linha(OP3).estado).toBe('reservada');
+    c.avancar(60_000);
+    await recuperarComOrcamento(c.deps, orcamento());
     expect(c.linha(OP3).estado).toBe('cancelada');
+    expect([...c.linhas.values()].filter((t) => t.estado === 'desconhecido')).toHaveLength(50);
     expect(c.ml.posts).toHaveLength(0);
   });
-  it('para entre páginas quando o orçamento acaba', async () => {
+  it('orçamento acaba no meio da página → para antes de exceder (relógio fake)', async () => {
     const c = cenario();
     await cinquentaTravadasEUmaOrfa(c);
-    let paginas = 0;
-    await recuperarComOrcamento(c.deps, () => paginas++ < 1);
-    expect(c.linha(OP3).estado).toBe('reservada');
+    c.ctl.custoLeituraMs = 3_000;
+    const inicio = Date.parse(c.deps.agora());
+    await recuperarComOrcamento(c.deps, () => Date.parse(c.deps.agora()) - inicio < 10_000);
+    expect(c.ml.leituras).toBe(4); // 0 s, 3 s, 6 s, 9 s; aos 12 s para
+  });
+});
+
+describe('recuperarPendentes — orçamento por item (fan-out)', () => {
+  it('para no meio da página e devolve o cursor do último processado', async () => {
+    const c = cenario();
+    await cinquentaTravadasEUmaOrfa(c);
+    c.ctl.custoLeituraMs = 3_000;
+    const inicio = Date.parse(c.deps.agora());
+    const r = await recuperarPendentes(c.deps, '', () => Date.parse(c.deps.agora()) - inicio < 10_000);
+    expect(c.ml.leituras).toBe(4);
+    expect(r.ultimo).toBe('t0004');
+    c.ctl.custoLeituraMs = 0;
+    const r2 = await recuperarPendentes(c.deps, r.ultimo!);
+    expect(c.ml.leituras).toBe(4 + 46);
+    expect(r2.ultimo).toBeNull();
+    expect(c.linha(OP3).estado).toBe('cancelada');
   });
 });
 

@@ -39,6 +39,8 @@ const PARALELAS = 5;
 // criação do schedule em 2026-06-22 terminava em WORKER_RESOURCE_LIMIT/IDLE_TIMEOUT aos ~150s,
 // derrubando perguntas/devoluções — que rodavam por último — em TODA execução, não só picos).
 const ORCAMENTO_MS = 120_000;
+// Teto da etapa posvenda por mensagem do fan-out (sob o limite de 150 s da edge).
+const ORCAMENTO_POSVENDA_MS = 60_000;
 
 type ConexaoComDono = ConexaoCanal & { criadoPor: string };
 interface Estado { cx: ConexaoComDono; userId: string; orgId: string; token: string }
@@ -444,9 +446,11 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     async posvendaPendentes(token, cx, userId, org, depoisDe) {
       if (!cx.contaExternaId) return { n: 0, ultimo: null };
       try {
+        // Orçamento por item (cada um relê o ML): estourou, devolve o cursor e a próxima mensagem segue.
+        const fim = Date.now() + ORCAMENTO_POSVENDA_MS;
         return await recuperarPendentes(depsAcaoReal(admin, {
           orgId: org, connectionId: cx.id, contaExternaId: cx.contaExternaId, dono: userId, token,
-        }), depoisDe);
+        }), depoisDe, () => Date.now() < fim);
       } catch (e) {
         console.warn(`reconciliar: pós-venda da org ${org} falhou: ${(e as Error).message}`);
         return { n: 0, ultimo: null };

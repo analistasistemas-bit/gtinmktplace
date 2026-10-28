@@ -27,7 +27,7 @@ export interface Tentativa {
   claim_id: number; return_id: number | null; recurso: string; acao: AcaoPosvenda;
   payload: CorpoAcao; payload_hash: string; antes: DetalheReclamacao | null; estado: EstadoAcao;
   post_em: string | null; http_status: number | null; resposta_ml: unknown; sync_pendente: boolean;
-  erro: string | null; criado_em: string;
+  erro: string | null; criado_em: string; atualizado_em: string;
 }
 export type NovaTentativa = Pick<Tentativa, 'org_id' | 'user_id' | 'operacao_id' | 'claim_id' | 'return_id' | 'recurso' | 'acao' | 'payload' | 'payload_hash'>;
 
@@ -43,8 +43,9 @@ export interface DepsAcao {
   ativaDoRecurso(recurso: string): Promise<Tentativa | null>;
   /** Update condicional; null = 0 linhas (outra execução ganhou). */
   atualizar(id: string, onde: Onde, set: Partial<Tentativa>): Promise<Tentativa | null>;
-  /** Linhas da org em estado ativo ou com `sync_pendente`, com `id > depoisDe`, por `id` crescente. */
-  abertas(depoisDe: string, limite: number): Promise<Tentativa[]>;
+  /** Linhas da org em estado ativo ou com `sync_pendente`. Fan-out: `id > depoisId` por id crescente.
+   *  `giro` (legado): por `atualizado_em, id` crescentes — quem foi relido vai para o fim da fila. */
+  abertas(q: { limite: number; depoisId?: string; giro?: boolean }): Promise<Tentativa[]>;
   /** Releitura completa do ML (`lerDetalheReclamacao`); lança se não leu o necessário à decisão. */
   lerDetalhe(claimId: number): Promise<DetalheReclamacao>;
   /** POST com timeout. `status: null` = timeout/rede (não se sabe se o ML recebeu). */
@@ -259,47 +260,59 @@ async function finalizar(deps: DepsAcao, t: Tentativa): Promise<Resultado> {
   }
 }
 
-/** Recuperação durável do reconciliar horário (nunca reenvia), uma página por chamada (keyset por id).
- *  `ultimo` = cursor da próxima página; null = acabou. Lança só se a listagem falhar. */
-export async function recuperarPendentes(deps: DepsAcao, depoisDe = ''): Promise<{ n: number; ultimo: string | null }> {
-  const limite = new Date(Date.parse(deps.agora()) - RESERVA_EXPIRA_MS).toISOString();
+/** Uma tentativa em aberto (nunca reenvia). true = mudou de estado/sync. Lança só em erro de banco. */
+async function recuperarUma(deps: DepsAcao, t: Tentativa, limite: string): Promise<boolean> {
   const velha = (iso: string) => Date.parse(iso) < Date.parse(limite);
+  if (t.sync_pendente) return !(await finalizar(deps, t)).sincronizacaoPendente;
+  // (a) reserva que nunca chegou ao POST. Condicional em post_em null: perde para o passo 4.
+  if (t.estado === 'reservada' && t.post_em == null) {
+    return velha(t.criado_em) && !!await deps.atualizar(t.id, { estado: 'reservada', postEmNulo: true, criadoAntesDe: limite },
+      { estado: 'cancelada', erro: 'Reserva expirada antes do envio ao Mercado Livre.' });
+  }
+  // (b) houve (ou pode ter havido) POST. Recente = a edge pode estar no meio dele.
+  if (!t.post_em || !velha(t.post_em)) return false;
+  const { t: atual, d, ef } = await conferir(deps, t);
+  if (atual.estado === 'confirmada') { await finalizar(deps, atual); return true; }
+  if (atual.estado !== t.estado) return true; // ex.: responder → recusada (R9)
+  return !!(d && ef && !mlAceitaAinda(t.acao, d)
+    && await deps.atualizar(t.id, { estado: atual.estado }, { estado: 'inconclusiva' }));
+}
+
+/** Processa `linhas` checando o orçamento ANTES de cada item. Item sem mudança é "tocado"
+ *  (atualizado_em) para girar a fila do legado. Devolve quantas mudaram e o último processado. */
+async function recuperarLinhas(deps: DepsAcao, linhas: Tentativa[], temTempo: () => boolean) {
+  const limite = new Date(Date.parse(deps.agora()) - RESERVA_EXPIRA_MS).toISOString();
   let n = 0;
-  const pagina = await deps.abertas(depoisDe, LOTE_POSVENDA);
-  for (const t of pagina) {
+  let ultimo: string | null = null;
+  for (const t of linhas) {
+    if (!temTempo()) return { n, ultimo, completo: false };
     try {
-      if (t.sync_pendente) {
-        if (!(await finalizar(deps, t)).sincronizacaoPendente) n++;
-        continue;
-      }
-      // (a) reserva que nunca chegou ao POST. Condicional em post_em null: perde para o passo 4.
-      if (t.estado === 'reservada' && t.post_em == null) {
-        if (velha(t.criado_em) && await deps.atualizar(t.id, { estado: 'reservada', postEmNulo: true, criadoAntesDe: limite },
-          { estado: 'cancelada', erro: 'Reserva expirada antes do envio ao Mercado Livre.' })) n++;
-        continue;
-      }
-      // (b) houve (ou pode ter havido) POST. Recente = a edge pode estar no meio dele.
-      if (!t.post_em || !velha(t.post_em)) continue;
-      const { t: atual, d, ef } = await conferir(deps, t);
-      if (atual.estado === 'confirmada') { await finalizar(deps, atual); n++; continue; }
-      if (d && ef && !mlAceitaAinda(t.acao, d)
-        && await deps.atualizar(t.id, { estado: atual.estado }, { estado: 'inconclusiva' })) n++;
+      if (await recuperarUma(deps, t, limite)) n++;
+      else await deps.atualizar(t.id, { estado: t.estado }, {}); // só atualizado_em (perde a corrida sem dano)
     } catch (err) {
       console.warn(`posvenda: recuperar tentativa ${t.id} falhou: ${(err as Error).message}`);
     }
+    ultimo = t.id;
   }
-  return { n, ultimo: pagina.length === LOTE_POSVENDA ? pagina[pagina.length - 1].id : null };
+  return { n, ultimo, completo: true };
 }
 
-/** Todas as páginas de `recuperarPendentes` enquanto `temTempo()` (caminho legado do reconciliar,
- *  que roda tudo numa requisição sob orçamento). Devolve o total de linhas que mudaram. */
+/** Fan-out: uma página por chamada (keyset por id), orçamento por item. `ultimo` = cursor da próxima
+ *  chamada (página cheia ou orçamento esgotado); null = acabou. Lança só se a listagem falhar. */
+export async function recuperarPendentes(
+  deps: DepsAcao, depoisDe = '', temTempo: () => boolean = () => true,
+): Promise<{ n: number; ultimo: string | null }> {
+  const pagina = await deps.abertas({ limite: LOTE_POSVENDA, depoisId: depoisDe });
+  const r = await recuperarLinhas(deps, pagina, temTempo);
+  if (!r.completo) return { n: r.n, ultimo: r.ultimo ?? depoisDe };
+  return { n: r.n, ultimo: pagina.length === LOTE_POSVENDA ? r.ultimo : null };
+}
+
+/** Legado (uma requisição para todas as orgs, sem cursor persistido): uma página da fila por
+ *  `atualizado_em`, orçamento por item. Como todo item relido é tocado, a rodada seguinte começa
+ *  pelos que ficaram de fora — a fila gira sozinha. Devolve quantas linhas mudaram.
+ *  ponytail: 1 página (50) por org por rodada; mais páginas exigiriam marcar os já vistos na rodada. */
 export async function recuperarComOrcamento(deps: DepsAcao, temTempo: () => boolean): Promise<number> {
-  let total = 0;
-  let cursor: string | null = '';
-  while (cursor != null && temTempo()) {
-    const r: { n: number; ultimo: string | null } = await recuperarPendentes(deps, cursor);
-    total += r.n;
-    cursor = r.ultimo;
-  }
-  return total;
+  if (!temTempo()) return 0;
+  return (await recuperarLinhas(deps, await deps.abertas({ limite: LOTE_POSVENDA, giro: true }), temTempo)).n;
 }
