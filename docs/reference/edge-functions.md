@@ -1410,8 +1410,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   backfill/reconciliação/`sync-devolucao` não chamam o monitor.
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
-  (claims) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado
-  (ADR-0037). Para `messages`, extrai o `pack_id` do resource (`/messages/packs/{pack}/...`),
+  (claims, que o ML manda como `post_purchase`) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado
+  (ADR-0037). **Desde 28/10 (emenda ADR-0067):** o ML manda em `messages` só o id da mensagem; o
+  webhook enfileira `{ message_id }` e o `sync-mensagem` resolve o pack em `GET /messages/{id}`. O
+  `reconciliar-faturamento` tem a etapa `mensagens` (`GET /messages/unread`) como rede. Formato antigo: para `messages`, extrai o `pack_id` do resource (`/messages/packs/{pack}/...`),
   não o último segmento (que é o seller) — ADR-0067. O resource de `messages` é o mesmo para toda
   mensagem da conversa (dedup por conversa, não por mensagem): `sync-mensagem` apaga a linha de
   dedup ao terminar de processar, reabrindo para o próximo evento; se a conversa travar (linha

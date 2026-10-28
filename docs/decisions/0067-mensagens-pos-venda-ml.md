@@ -137,3 +137,26 @@ Decisão: remover a chamada e o helper `enviarMensagemPedido`. `enviarMsgML` con
 reply do operador (`responderMensagemPedido`), que responde dentro de conversa já aberta pelo
 comprador. Mensagem iniciada pelo vendedor, se voltar a ser desejada, exige ADR próprio com o fluxo
 que o ML permite.
+
+## Emenda 2026-10-28 — o webhook nunca entregou mensagem nem reclamação
+
+`ml_webhook_eventos` não tinha **nenhuma** linha `messages` ou `claims` na história, com os dois
+tópicos assinados no DevCenter. Causa (doc oficial "Receba notificações"):
+
+- `messages` chega com `resource` = **id da mensagem** (`3f6da1e35ac84f70a24af7360d24c7bc`), sem
+  barra nem `/packs/` — o parser exigia path e descartava em silêncio (ACK 200).
+- Reclamação chega com `topic: post_purchase` (actions `claims`/`claims_actions`) e `resource`
+  `post-purchase/v1/claims/{id}`, às vezes sem a barra — a `ROTA` só conhecia `claims`.
+
+Efeito: mensagens só entravam pelo backfill diário (06:30), que lê as 200 vendas mais recentes —
+conversa de venda mais antiga nunca atualizava (Avil, 28/10: 1 de 3 não lidas no app).
+
+Decisão:
+- Parser: id de mensagem (`ID_MENSAGEM`, hex 16–64) aceito só em `messages`; `post_purchase` vira
+  `claims` com resource normalizado com barra. O webhook enfileira `{ message_id }`; `sync-mensagem`
+  resolve o pack em `GET /messages/{id}` (`message_resources[name=packs]`) e marca `processado_em`
+  na linha de dedup (resource agora é único por mensagem). O formato `/messages/packs/...` segue
+  aceito. O worker usa as leituras/escritas estritas: falha lança e o QStash retenta.
+- Rede de segurança: etapa `mensagens` no `reconciliar-faturamento` horário (entre `claims` e
+  `vendas`), lendo `GET /messages/unread?role=seller&tag=post_sale` e sincronizando esses packs em
+  lotes de 10 com cursor. Substitui a dependência do backfill para conversas não lidas.
