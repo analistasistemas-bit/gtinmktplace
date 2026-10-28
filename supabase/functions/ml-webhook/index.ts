@@ -93,15 +93,22 @@ Deno.serve(async (req) => {
     console.error('ml-webhook: erro não-duplicado ao gravar dedup, prossegue p/ enfileirar:', dupErr.message ?? dupErr.code);
   }
 
-  // `messages`: o id do job é o pack, não o último segmento do resource (que é o seller).
-  const idJob = ev.topic === 'messages' ? extrairPackIdDeMensagem(ev.resource) : ev.resourceId;
-  if (!idJob) return ok(); // resource sem pack: ack e ignora.
+  // `messages`: o ML manda o id da mensagem (o worker resolve o pack); o formato antigo
+  // `/messages/packs/{pack}/sellers/{seller}` segue aceito, com o pack como id do job.
+  let campo = rota.campo;
+  let idJob: string | null = ev.resourceId;
+  if (ev.topic === 'messages') {
+    const pack = extrairPackIdDeMensagem(ev.resource);
+    if (pack) idJob = pack;
+    else campo = 'message_id';
+  }
+  if (!idJob) return ok(); // resource sem id: ack e ignora.
 
   try {
     const target = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${rota.fn}`;
     await qstashClient().publishJSON({
       url: target,
-      body: { user_id: userId, [rota.campo]: idJob },
+      body: { user_id: userId, [campo]: idJob },
       retries: 3,
     });
   } catch (e) {

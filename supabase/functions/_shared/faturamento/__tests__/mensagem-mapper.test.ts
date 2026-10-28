@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { mapearMensagem, extrairMensagens } from '../mensagem-mapper';
+import { mapearMensagem, extrairMensagens, packDaMensagem, packsNaoLidos } from '../mensagem-mapper';
+
+// Respostas reais (28/10/2026) de GET /messages/{id}?tag=post_sale e GET /messages/unread?role=seller&tag=post_sale.
+describe('packDaMensagem', () => {
+  it('lê o pack em message_resources', () => {
+    expect(packDaMensagem({
+      paging: null, messages: [{ id: '01a17f6aa54b790fa3e5b92d0090ae72',
+        message_resources: [{ id: '2000015733308379', name: 'packs' }, { id: '1003820507', name: 'sellers' }] }],
+    })).toBe('2000015733308379');
+  });
+  it('null sem pack', () => {
+    expect(packDaMensagem({ messages: [{ message_resources: [{ id: '1', name: 'sellers' }] }] })).toBeNull();
+    expect(packDaMensagem({})).toBeNull();
+    expect(packDaMensagem(null)).toBeNull();
+  });
+});
+
+describe('packsNaoLidos', () => {
+  it('extrai os packs de results[].resource', () => {
+    expect(packsNaoLidos({ user_id: 1003820507, total: 7, results: [
+      { resource: '/packs/2000019042257902/sellers/1003820507', count: 1 },
+      { resource: '/packs/2000015733308379/sellers/1003820507', count: 5 },
+      { resource: '/outra/coisa', count: 1 },
+    ] })).toEqual(['2000019042257902', '2000015733308379']);
+  });
+  it('[] em shape inesperado', () => {
+    expect(packsNaoLidos({})).toEqual([]);
+    expect(packsNaoLidos(null)).toEqual([]);
+  });
+});
 
 // Amostra baseada no shape de GET /messages/packs/{pack}/sellers/{seller} do ML.
 const doComprador = {

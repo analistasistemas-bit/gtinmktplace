@@ -224,6 +224,30 @@ describe('parseWebhookNotification', () => {
       expect(parseWebhookNotification({ topic: 'orders_v2', user_id: 1, resource })).not.toBeNull();
     }
   });
+
+  // Payloads da doc oficial (developers.mercadolivre.com.br/pt_br/produto-receba-notificacoes):
+  // `messages` traz só o id da mensagem; reclamação chega como `post_purchase`, com ou sem a barra.
+  it('messages: aceita o id da mensagem (hash sem barra) como resource e resourceId', () => {
+    const ev = parseWebhookNotification({
+      resource: '3f6da1e35ac84f70a24af7360d24c7bc', user_id: 123456789, topic: 'messages', actions: ['created'],
+    });
+    expect(ev).toEqual({
+      topic: 'messages', resource: '3f6da1e35ac84f70a24af7360d24c7bc',
+      resourceId: '3f6da1e35ac84f70a24af7360d24c7bc', mlUserId: 123456789,
+    });
+  });
+
+  it('hash sem barra só vale para messages', () => {
+    expect(parseWebhookNotification({ topic: 'orders_v2', user_id: 1, resource: '3f6da1e35ac84f70a24af7360d24c7bc' })).toBeNull();
+  });
+
+  it('post_purchase vira claims, com resource normalizado com barra', () => {
+    for (const resource of ['post-purchase/v1/claims/5108684499', '/post-purchase/v1/claims/5108684499']) {
+      expect(parseWebhookNotification({ topic: 'post_purchase', user_id: 1, resource, actions: ['claims_actions'] })).toEqual({
+        topic: 'claims', resource: '/post-purchase/v1/claims/5108684499', resourceId: '5108684499', mlUserId: 1,
+      });
+    }
+  });
 });
 
 describe('calcularLiquido', () => {

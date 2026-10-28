@@ -40,6 +40,21 @@ export function mapearMensagem(m: MensagemML, sellerId: string | number): Mensag
   };
 }
 
+/** Pack de uma mensagem, pela resposta de GET /messages/{id}: `message_resources[name=packs].id`. */
+export function packDaMensagem(resp: unknown): string | null {
+  const m = extrairMensagens(resp)[0] as { message_resources?: Array<{ id?: unknown; name?: unknown }> } | undefined;
+  const pack = m?.message_resources?.find((r) => r?.name === 'packs')?.id;
+  return pack != null && /^\d+$/.test(String(pack)) ? String(pack) : null;
+}
+
+/** Packs com mensagem não lida, pela resposta de GET /messages/unread?role=seller&tag=post_sale. */
+export function packsNaoLidos(resp: unknown): string[] {
+  const res = (resp as { results?: unknown })?.results;
+  if (!Array.isArray(res)) return [];
+  return res.map((r) => String((r as { resource?: unknown })?.resource ?? '').match(/^\/packs\/(\d+)\//)?.[1])
+    .filter((p): p is string => !!p);
+}
+
 /** Extrai o array de mensagens da resposta do pack (defensivo a mudanças de shape). */
 export function extrairMensagens(resp: unknown): MensagemML[] {
   const arr = (resp as { messages?: unknown })?.messages;

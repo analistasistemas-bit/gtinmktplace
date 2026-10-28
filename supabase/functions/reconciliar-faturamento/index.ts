@@ -11,6 +11,7 @@ import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback, ma
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLocais } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
+import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { perguntaPrecisaUpsert, claimPrecisaProcessar, claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
@@ -373,6 +374,33 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             n++;
           } catch (e) {
             console.warn(`reconciliar: claim ${claim?.id} da org ${org} falhou: ${(e as Error).message}`);
+          }
+        }));
+      }
+      return n;
+    },
+
+    async mensagensNaoLidas(token, cx, userId, org) {
+      if (!cx.contaExternaId) return 0;
+      let packs: string[];
+      try {
+        packs = await buscarPacksNaoLidos(token);
+      } catch (e) {
+        console.warn(`reconciliar: mensagens não lidas da org ${org} falharam: ${(e as Error).message}`);
+        return 0;
+      }
+      let n = 0;
+      for (const lote of chunk(packs, PARALELAS)) {
+        await Promise.all(lote.map(async (packId) => {
+          try {
+            const msgs = await buscarMensagensPackEstrito(token, packId, cx.contaExternaId!);
+            if (msgs.length) {
+              const meta = await resolverMetaPack(admin, userId, packId);
+              await upsertMensagensEstrito(admin, userId, org, packId, meta, cx.contaExternaId!, msgs);
+            }
+            n++;
+          } catch (e) {
+            console.warn(`reconciliar: mensagens do pack ${packId} da org ${org} falharam: ${(e as Error).message}`);
           }
         }));
       }

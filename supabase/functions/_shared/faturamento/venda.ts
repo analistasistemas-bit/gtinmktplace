@@ -39,15 +39,22 @@ export const MAX_RESOURCE_LEN = 256;
  *  espaço, byte de controle e qualquer coisa que não seja path — o valor vai para uma coluna
  *  indexada de um endpoint público, e falha de INSERT por valor malformado abria o fail-open. */
 const RESOURCE_VALIDO = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\/?$/;
+/** Id de mensagem do ML no `resource` do topic `messages` (ex.: `3f6da1e35ac84f70a24af7360d24c7bc`). */
+export const ID_MENSAGEM = /^[0-9a-f]{16,64}$/i;
 
 /** Normaliza a notificação do ML. null quando faltam campos obrigatórios. */
 export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as Record<string, unknown>;
-  const topic = typeof p.topic === 'string' ? p.topic : null;
-  const resource = typeof p.resource === 'string' ? p.resource : null;
+  // Reclamação chega como `post_purchase` (actions claims/claims_actions); a rota é a de `claims`.
+  const topic = p.topic === 'post_purchase' ? 'claims' : typeof p.topic === 'string' ? p.topic : null;
+  let resource = typeof p.resource === 'string' ? p.resource : null;
   const mlUserId = typeof p.user_id === 'number' ? p.user_id : Number(p.user_id);
   if (!topic || !resource || !Number.isFinite(mlUserId)) return null;
+  // `messages` traz só o id da mensagem (hash), não um path — o worker resolve o pack.
+  if (topic === 'messages' && ID_MENSAGEM.test(resource)) return { topic, resource, resourceId: resource, mlUserId };
+  // A doc do post_purchase mostra o resource com e sem a barra inicial.
+  if (!resource.startsWith('/')) resource = `/${resource}`;
   if (resource.length > MAX_RESOURCE_LEN || !RESOURCE_VALIDO.test(resource)) return null;
   const resourceId = extrairIdDoResource(resource);
   if (!resourceId) return null;

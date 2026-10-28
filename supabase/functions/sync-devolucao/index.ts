@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
   }
 
   await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })
-    .eq('topic', 'claims').eq('resource', `/claims/${job.claim_id}`);
+    .eq('topic', 'claims').like('resource', `%/claims/${job.claim_id}`); // `/claims/{id}` ou `/post-purchase/v1/claims/{id}`.
 
   // Sucesso: registra liveness (reseta alerta de auth se a conexão tinha caído antes).
   await registrarSyncOk(admin, conexao.id);

@@ -35,6 +35,7 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
     agora: vi.fn(() => INICIO),
     processarPedidos: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: PedidoML[]) =>
       ({ ok: ps.map((p) => String(p.id)), falhas: [] as string[], mpFalhou: [] as string[] })),
+    mensagensNaoLidas: vi.fn(async () => 3),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -81,7 +82,7 @@ describe('passoReconciliar', () => {
     expect(semDono.token).not.toHaveBeenCalled();
   });
 
-  it('3. 23 claims pendentes → 10/10/3 por id numérico, depois vendas|; processarClaims recebe objetos', async () => {
+  it('3. 23 claims pendentes → 10/10/3 por id numérico, depois mensagens|; processarClaims recebe objetos', async () => {
     expect(LOTE_CLAIMS).toBe(10);
     const deps = criarDeps();
     const lote = () => (deps.processarClaims.mock.calls.at(-1)![4] as ClaimML[]);
@@ -103,8 +104,16 @@ describe('passoReconciliar', () => {
     expect(r3.acumulado.claims).toBe(23);
 
     const r4 = await rodar(deps, r3.proximo, r3.acumulado);
-    expect(r4.proximo).toBe('vendas|');
+    expect(r4.proximo).toBe('mensagens|');
     expect(deps.processarClaims).toHaveBeenCalledTimes(3);
+  });
+
+  it('3b. mensagens: sincroniza os packs não lidos (rede do webhook) e segue para vendas|', async () => {
+    const deps = criarDeps();
+    const r = await rodar(deps, 'mensagens|', { claims: 2 });
+    expect(deps.mensagensNaoLidas).toHaveBeenCalledWith('tok', CX, 'user-1', 'org-1');
+    expect(r.proximo).toBe('vendas|');
+    expect(r.acumulado).toEqual({ claims: 2, mensagens: 3 });
   });
 
   it('4. vendas com 60 pedidos → 25/25/10, depois liberacoes|', async () => {
@@ -143,7 +152,7 @@ describe('passoReconciliar', () => {
 
   it('6. token em toda etapa; SemAcessoRodada propaga de qualquer uma', async () => {
     const deps = criarDeps();
-    const cursores = [null, 'perguntas|', 'claims|', 'vendas|', 'liberacoes|'];
+    const cursores = [null, 'perguntas|', 'claims|', 'mensagens|', 'vendas|', 'liberacoes|'];
     for (const c of cursores) await rodar(deps, c);
     expect(deps.token).toHaveBeenCalledTimes(cursores.length);
 

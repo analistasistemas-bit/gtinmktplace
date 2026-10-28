@@ -1,5 +1,5 @@
 // ADR-0173: um lote do reconciliar agendado por org, retomável pelo cursor:
-// pendencias → perguntas → claims → vendas (72h) → liberacoes (120 d do MP) → fim.
+// pendencias → perguntas → claims → mensagens (não lidas) → vendas (72h) → liberacoes (120 d do MP) → fim.
 // Puro — só `import type` e módulos puros —, testável por vitest. Fiação real em index.ts.
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -23,6 +23,8 @@ export interface DepsReconciliar {
   claimsPendentes(token: string, userId: string, contaExternaId: string | null): Promise<ClaimML[]>;
   /** Nunca lança por claim. */
   processarClaims(token: string, cx: ConexaoCanal, userId: string, orgId: string, claims: ClaimML[]): Promise<number>;
+  /** GET /messages/unread + sync de cada pack: rede de segurança do webhook `messages`. Nunca lança por pack. */
+  mensagensNaoLidas(token: string, cx: ConexaoCanal, userId: string, orgId: string): Promise<number>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;
   pedidoPorId(token: string, id: string): Promise<PedidoML>;
   pendencias(depoisDe: string, limite: number): Promise<string[]>;
@@ -116,9 +118,14 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
         .filter((cl) => Number(cl.id) > desde)
         .sort((a, b) => Number(a.id) - Number(b.id))
         .slice(0, LOTE_CLAIMS);
-      if (lote.length === 0) return { proximo: ir('vendas'), acumulado };
+      if (lote.length === 0) return { proximo: ir('mensagens'), acumulado };
       const n = await deps.processarClaims(token, cx, userId, orgId, lote);
       return { proximo: ir('claims', String(lote[lote.length - 1].id)), acumulado: somar(acumulado, 'claims', n) };
+    }
+
+    if (c.etapa === 'mensagens') {
+      const n = await deps.mensagensNaoLidas(token, cx, userId, orgId);
+      return { proximo: ir('vendas'), acumulado: somar(acumulado, 'mensagens', n) };
     }
 
     if (c.etapa === 'vendas') {

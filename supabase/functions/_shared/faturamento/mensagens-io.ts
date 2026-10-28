@@ -1,6 +1,6 @@
 // IO de mensagens pós-venda (ADR-0067): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { extrairMensagens, mapearMensagem, type MensagemML } from './mensagem-mapper.ts';
+import { extrairMensagens, mapearMensagem, packDaMensagem, packsNaoLidos, type MensagemML } from './mensagem-mapper.ts';
 import { enviarMsgML } from '../ml/mensagem.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -31,6 +31,25 @@ export function mensagemErroEnvioML(status: number, corpo: string): string {
     return ERRO_EM_MEDIACAO;
   }
   return `ML /messages ${status}: ${corpo.slice(0, 200)}`;
+}
+
+/** Pack de uma mensagem (GET /messages/{id}). Webhook `messages` só traz o id. Lança em não-2xx
+ *  para o QStash retentar — sem o pack não há o que sincronizar. */
+export async function buscarPackDaMensagem(token: string, messageId: string): Promise<string | null> {
+  const resp = await fetch(`${API}/messages/${encodeURIComponent(messageId)}?tag=post_sale&mark_as_read=false`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000),
+  });
+  if (!resp.ok) throw new Error(`ML /messages/${messageId} ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  return packDaMensagem(await resp.json());
+}
+
+/** Packs com mensagem não lida do vendedor (GET /messages/unread). Lança em não-2xx. */
+export async function buscarPacksNaoLidos(token: string): Promise<string[]> {
+  const resp = await fetch(`${API}/messages/unread?role=seller&tag=post_sale`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000),
+  });
+  if (!resp.ok) throw new Error(`ML /messages/unread ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  return packsNaoLidos(await resp.json());
 }
 
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
