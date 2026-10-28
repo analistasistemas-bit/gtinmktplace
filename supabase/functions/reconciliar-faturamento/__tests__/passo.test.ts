@@ -4,7 +4,7 @@ import type { ConexaoCanal } from '../../_shared/canais/conexao.ts';
 import type { PedidoML } from '../../_shared/faturamento/venda.ts';
 import type { ClaimML } from '../../_shared/faturamento/devolucao.ts';
 import { LOTE_PENDENCIAS } from '../../_shared/faturamento/pendencias.ts';
-import { LOTE_CLAIMS, LOTE_PEDIDOS, desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
+import { LOTE_CLAIMS, LOTE_MENSAGENS, LOTE_PEDIDOS, desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
 
 const PARAMS: ParamsReconciliar = { desde: '2026-09-24T12:00:00.000Z', ate: '2026-09-27T12:00:00.000Z', hojeBRT: '2026-09-27' };
 const CX: ConexaoCanal = { id: 'cx-1', orgId: 'org-1', canal: 'mercado_livre', contaExternaId: '999', expiresAt: null };
@@ -35,7 +35,8 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
     agora: vi.fn(() => INICIO),
     processarPedidos: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: PedidoML[]) =>
       ({ ok: ps.map((p) => String(p.id)), falhas: [] as string[], mpFalhou: [] as string[] })),
-    mensagensNaoLidas: vi.fn(async () => 3),
+    packsNaoLidos: vi.fn(async () => embaralhar(Array.from({ length: 23 }, (_, i) => String(9000 + i + 1)))),
+    processarPacksMensagens: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: string[]) => ps.length),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -108,12 +109,24 @@ describe('passoReconciliar', () => {
     expect(deps.processarClaims).toHaveBeenCalledTimes(3);
   });
 
-  it('3b. mensagens: sincroniza os packs não lidos (rede do webhook) e segue para vendas|', async () => {
+  it('3b. mensagens: 23 packs não lidos → 10/10/3 por id numérico com cursor, depois vendas|', async () => {
+    expect(LOTE_MENSAGENS).toBe(10);
     const deps = criarDeps();
-    const r = await rodar(deps, 'mensagens|', { claims: 2 });
-    expect(deps.mensagensNaoLidas).toHaveBeenCalledWith('tok', CX, 'user-1', 'org-1');
-    expect(r.proximo).toBe('vendas|');
-    expect(r.acumulado).toEqual({ claims: 2, mensagens: 3 });
+    const lote = () => deps.processarPacksMensagens.mock.calls.at(-1)![4] as string[];
+    const r1 = await rodar(deps, 'mensagens|', { claims: 2 });
+    expect(deps.packsNaoLidos).toHaveBeenCalledWith('tok');
+    expect(deps.processarPacksMensagens.mock.calls[0].slice(0, 4)).toEqual(['tok', CX, 'user-1', 'org-1']);
+    expect(lote()).toEqual(Array.from({ length: 10 }, (_, i) => String(9000 + i + 1)));
+    expect(r1.proximo).toBe('mensagens|9010');
+    const r2 = await rodar(deps, r1.proximo, r1.acumulado);
+    expect(r2.proximo).toBe('mensagens|9020');
+    const r3 = await rodar(deps, r2.proximo, r2.acumulado);
+    expect(lote()).toEqual(['9021', '9022', '9023']);
+    expect(r3.proximo).toBe('mensagens|9023');
+    const r4 = await rodar(deps, r3.proximo, r3.acumulado);
+    expect(r4.proximo).toBe('vendas|');
+    expect(r4.acumulado).toEqual({ claims: 2, mensagens: 23 });
+    expect(deps.processarPacksMensagens).toHaveBeenCalledTimes(3);
   });
 
   it('4. vendas com 60 pedidos → 25/25/10, depois liberacoes|', async () => {
@@ -176,6 +189,7 @@ describe('passoReconciliar', () => {
     await expect(rodar(criarDeps(), 'xyz|')).rejects.toThrow();
     await expect(rodar(criarDeps(), 'vendas|abc')).rejects.toThrow();
     await expect(rodar(criarDeps(), 'claims|abc')).rejects.toThrow();
+    await expect(rodar(criarDeps(), 'mensagens|abc')).rejects.toThrow();
   });
 
   describe('8. pendências', () => {

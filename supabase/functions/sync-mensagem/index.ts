@@ -7,7 +7,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
-import { buscarMensagensPack, buscarPackDaMensagem, upsertMensagens, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
+import { buscarMensagensPackEstrito, buscarPackDaMensagem, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { mapearMensagem } from '../_shared/faturamento/mensagem-mapper.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaMensagem } from '../_shared/notificacoes/telegram.ts';
@@ -45,8 +45,10 @@ Deno.serve(async (req) => {
   // Metadados do pedido para exibir junto da conversa. Best-effort.
   const meta = await resolverMetaPack(admin, job.user_id, packId);
 
-  const msgs = await buscarMensagensPack(token, packId, sellerId);
-  const { novasRecebidas } = await upsertMensagens(admin, job.user_id, orgId, packId, meta, sellerId, msgs);
+  // Estritos: 429/5xx/erro de banco lançam → 500 → o QStash retenta, e o dedup NÃO é marcado
+  // processado abaixo (senão a repetição do aviso pelo ML seria descartada com a mensagem fora).
+  const msgs = await buscarMensagensPackEstrito(token, packId, sellerId);
+  const { novasRecebidas } = await upsertMensagensEstrito(admin, job.user_id, orgId, packId, meta, sellerId, msgs);
 
   if (novasRecebidas > 0 && orgId) {
     // Última mensagem recebida (mais recente) para o alerta.

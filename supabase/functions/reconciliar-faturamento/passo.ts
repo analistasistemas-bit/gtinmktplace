@@ -10,6 +10,7 @@ import { gravarCursor, lerCursor, type Acumulado, type Passo, type ResultadoPass
 
 export interface ParamsReconciliar extends Record<string, unknown> { desde: string; ate: string; hojeBRT: string }
 export const LOTE_CLAIMS = 10;     // cada claim custa ~8 requisições (return + devolução + pedido + venda inteira)
+export const LOTE_MENSAGENS = 10; // cada pack custa 1 GET de mensagens (timeout 15 s)
 export const LOTE_PEDIDOS = 25;
 const PARALELAS = 5;               // mesmo grau do laço legado
 
@@ -23,8 +24,10 @@ export interface DepsReconciliar {
   claimsPendentes(token: string, userId: string, contaExternaId: string | null): Promise<ClaimML[]>;
   /** Nunca lança por claim. */
   processarClaims(token: string, cx: ConexaoCanal, userId: string, orgId: string, claims: ClaimML[]): Promise<number>;
-  /** GET /messages/unread + sync de cada pack: rede de segurança do webhook `messages`. Nunca lança por pack. */
-  mensagensNaoLidas(token: string, cx: ConexaoCanal, userId: string, orgId: string): Promise<number>;
+  /** GET /messages/unread: packs com mensagem não lida — rede de segurança do webhook `messages`. */
+  packsNaoLidos(token: string): Promise<string[]>;
+  /** Sync de cada pack (mensagens + upsert). Nunca lança por pack. */
+  processarPacksMensagens(token: string, cx: ConexaoCanal, userId: string, orgId: string, packs: string[]): Promise<number>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;
   pedidoPorId(token: string, id: string): Promise<PedidoML>;
   pendencias(depoisDe: string, limite: number): Promise<string[]>;
@@ -124,8 +127,14 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
     }
 
     if (c.etapa === 'mensagens') {
-      const n = await deps.mensagensNaoLidas(token, cx, userId, orgId);
-      return { proximo: ir('vendas'), acumulado: somar(acumulado, 'mensagens', n) };
+      const desde = posNumerica('mensagens', c.pos);
+      const lote = (await deps.packsNaoLidos(token))
+        .filter((p) => Number(p) > desde)
+        .sort((a, b) => Number(a) - Number(b))
+        .slice(0, LOTE_MENSAGENS);
+      if (lote.length === 0) return { proximo: ir('vendas'), acumulado };
+      const n = await deps.processarPacksMensagens(token, cx, userId, orgId, lote);
+      return { proximo: ir('mensagens', lote[lote.length - 1]), acumulado: somar(acumulado, 'mensagens', n) };
     }
 
     if (c.etapa === 'vendas') {

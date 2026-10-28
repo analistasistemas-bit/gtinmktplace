@@ -380,15 +380,17 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
       return n;
     },
 
-    async mensagensNaoLidas(token, cx, userId, org) {
-      if (!cx.contaExternaId) return 0;
-      let packs: string[];
+    async packsNaoLidos(token) {
       try {
-        packs = await buscarPacksNaoLidos(token);
+        return await buscarPacksNaoLidos(token);
       } catch (e) {
-        console.warn(`reconciliar: mensagens não lidas da org ${org} falharam: ${(e as Error).message}`);
-        return 0;
+        console.warn(`reconciliar: mensagens não lidas da org ${orgId} falharam: ${(e as Error).message}`);
+        return [];
       }
+    },
+
+    async processarPacksMensagens(token, cx, userId, org, packs) {
+      if (!cx.contaExternaId) return 0;
       let n = 0;
       for (const lote of chunk(packs, PARALELAS)) {
         await Promise.all(lote.map(async (packId) => {
