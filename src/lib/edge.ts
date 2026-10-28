@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 /** Erro de `postEdge`: `codigo` e `pendente` (409 de trava do posvenda-acao) vêm do corpo da edge. */
-export type ErroEdge = Error & { codigo?: string; pendente?: unknown };
+export type ErroEdge = Error & { codigo?: string; pendente?: unknown; estado?: string };
 
 /** POST autenticado (JWT da sessão) numa Edge Function; erro `{ ok:false, erro, codigo?, pendente? }` vira ErroEdge.
  *  `body` FormData vai como multipart (sem Content-Type: o navegador põe o boundary). */
@@ -19,6 +19,7 @@ export async function postEdge<T>(fn: string, body: unknown): Promise<T> {
     const err: ErroEdge = new Error(json?.erro ?? `Falha (${resp.status})`);
     if (json?.codigo) err.codigo = json.codigo;
     if (json?.pendente) err.pendente = json.pendente;
+    if (typeof json?.estado === 'string') err.estado = json.estado;
     throw err;
   }
   if (json == null) throw new Error('Resposta inválida do servidor');

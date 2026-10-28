@@ -78,6 +78,13 @@ export function ehAcaoPendente(e: unknown): { operacao_id: string; acao: AcaoPos
   return { operacao_id: p.operacao_id, acao: p.acao as AcaoPosvenda, estado: p.estado as EstadoAcaoPosvenda };
 }
 
+/** Erro da edge que traz um estado TERMINAL da tentativa (ex.: "Conferir" → 422 recusada por moderação).
+ *  A UI aplica esse estado em vez de tratar como falha de leitura. null = erro sem estado terminal. */
+export function estadoTerminalDoErro(e: unknown): 'recusada' | 'cancelada' | 'inconclusiva' | null {
+  const s = (e as ErroEdge | null)?.estado;
+  return s === 'recusada' || s === 'cancelada' || s === 'inconclusiva' ? s : null;
+}
+
 /** Só relê o ML para a tentativa já registrada; nunca envia de novo. */
 export function verificarAcaoPosvenda(operacaoId: string, claimId: string): Promise<ResultadoAcaoPosvenda> {
   return postEdge<ResultadoAcaoPosvenda>('posvenda-acao', { operacao_id: operacaoId, claim_id: claimId, verificar: true });

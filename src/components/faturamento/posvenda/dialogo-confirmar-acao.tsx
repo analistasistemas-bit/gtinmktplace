@@ -5,7 +5,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
-  ehAcaoPendente, executarAcaoPosvenda, verificarAcaoPosvenda,
+  ehAcaoPendente, estadoTerminalDoErro, executarAcaoPosvenda, verificarAcaoPosvenda,
   type BodyAcaoPosvenda, type EstadoAcaoPosvenda, type ResultadoAcaoPosvenda,
 } from '@/lib/posvenda';
 import type { ErroEdge } from '@/lib/edge';
@@ -80,6 +80,7 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
         setFase({ t: 'resultado', estado: pend.estado, pendente: true, sincronizacao: false });
         return;
       }
+      if (estadoTerminalDoErro(e)) onEstado?.(); // a tentativa mudou no servidor: o pai relê fila/tentativas
       const codigo = (e as ErroEdge).codigo;
       const msg = codigo === 'reconectar' ? MSG_RECONECTAR : (e as Error).message;
       // Sem `codigo` = falha de rede/servidor: repetir com o MESMO operacao_id é seguro (idempotente).
@@ -91,6 +92,12 @@ function Corpo({ titulo, efeito, claimId, corpo, podeEnviar, rotuloEnviar, linkM
     try {
       aplicar(await verificarAcaoPosvenda(operacaoVerificar.current, claimId));
     } catch (e) {
+      // Estado terminal (ex.: recusada pela moderação): aplica, para a releitura e avisa o pai.
+      const terminal = estadoTerminalDoErro(e);
+      if (terminal) {
+        setFase({ t: 'resultado', estado: terminal, pendente: false, sincronizacao: false });
+        onEstado?.();
+      }
       setAviso((e as Error).message);
     }
   });

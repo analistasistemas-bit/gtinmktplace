@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogoRevisarDevolucao } from '../posvenda/dialogo-revisar-devolucao';
 import { ListaDevolucoes } from '../posvenda/lista-devolucoes';
 import { PainelReclamacao } from '../posvenda/detalhe-reclamacao';
+import { DialogoConfirmarAcao } from '../posvenda/dialogo-confirmar-acao';
 import type { DetalheReclamacao } from '@/lib/posvenda';
 import type { Devolucao } from '@/lib/devolucoes';
 
@@ -124,6 +125,43 @@ describe('DialogoRevisarDevolucao', () => {
     await waitFor(() => expect(verificarMock).toHaveBeenCalledTimes(1));
     expect(verificarMock.mock.calls[0][0]).toBe(executarMock.mock.calls[0][0].operacao_id);
     expect(executarMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DialogoConfirmarAcao: "Conferir" recebe recusada', () => {
+  it('aplica o estado terminal com a mensagem, para a releitura e avisa o pai (invalida fila/tentativas)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const onEstado = vi.fn();
+      executarMock.mockResolvedValue({
+        ok: true, estado: 'enviada', operacao_id: 'x', pendenteConfirmacao: true, sincronizacaoPendente: false, devolucao: null,
+      });
+      verificarMock.mockRejectedValue(Object.assign(new Error('Mensagem barrada pela moderação do ML.'), { codigo: 'moderacao', estado: 'recusada' }));
+      render(
+        <DialogoConfirmarAcao open onOpenChange={() => {}} titulo="Responder" efeito="Envia." claimId="555"
+          corpo={{ acao: 'responder', texto: 'oi' }} podeEnviar onEstado={onEstado} />,
+      );
+      await user.click(screen.getByRole('button', { name: 'Enviar ao ML' }));
+      await user.click(await screen.findByRole('button', { name: 'Conferir agora' }));
+      expect(await screen.findByText('O Mercado Livre recusou a ação.')).toBeInTheDocument();
+      expect(screen.getByText('Mensagem barrada pela moderação do ML.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Conferir agora' })).not.toBeInTheDocument();
+      expect(onEstado).toHaveBeenCalledTimes(2); // após o envio e após a recusa
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(verificarMock).toHaveBeenCalledTimes(1); // sem nova releitura
+    } finally { vi.useRealTimers(); }
+  });
+  it('envio recusado (422 com estado) também avisa o pai', async () => {
+    const onEstado = vi.fn();
+    executarMock.mockRejectedValue(Object.assign(new Error('O ML recusou.'), { codigo: 'recusada', estado: 'recusada' }));
+    render(
+      <DialogoConfirmarAcao open onOpenChange={() => {}} titulo="Reembolsar" efeito="Devolve." claimId="555"
+        corpo={{ acao: 'reembolsar' }} podeEnviar onEstado={onEstado} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar ao ML' }));
+    expect(await screen.findByText('O ML recusou.')).toBeInTheDocument();
+    expect(onEstado).toHaveBeenCalledTimes(1);
   });
 });
 
