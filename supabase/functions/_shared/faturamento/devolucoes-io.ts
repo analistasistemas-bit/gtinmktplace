@@ -115,7 +115,7 @@ export async function carregarDevolucoesLocais(
   const mapa = new Map<number, DevolucaoLocal>();
   for (const lote of chunk(claimIds, 200)) {
     const { data } = await admin.from('ml_devolucoes')
-      .select('claim_id, status, stage, aberto_em, fechado_em, return_status_money')
+      .select('claim_id, status, stage, aberto_em, fechado_em, return_status_money, revisao_pendente, enriquecido_em')
       .eq('user_id', userId).in('claim_id', lote);
     for (const r of data ?? []) mapa.set(Number(r.claim_id), r as unknown as DevolucaoLocal);
   }

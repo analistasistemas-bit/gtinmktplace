@@ -59,6 +59,8 @@ export interface DevolucaoLocal {
   aberto_em: string | null;
   fechado_em: string | null;
   return_status_money: string | null;
+  revisao_pendente: boolean | null;
+  enriquecido_em: string | null;
 }
 
 /** Estados em que o dinheiro do return já parou de se mexer. */
@@ -80,6 +82,9 @@ export function claimPrecisaProcessar(
   gracaDias: number = GRACA_CLAIM_DIAS,
 ): boolean {
   if (!local) return true; // claim novo
+  // Revisão aguardando o vendedor, ou linha legada nunca enriquecida (pós-venda): reprocessa
+  // mesmo que o claim esteja fechado há meses.
+  if (local.revisao_pendente || local.enriquecido_em == null) return true;
   const status = claim.status ?? null;
   if (status !== local.status) return true;
   if ((claim.stage ?? null) !== local.stage) return true;

@@ -67,7 +67,18 @@ const diasAtras = (d: number) => new Date(AGORA - d * 24 * 60 * 60 * 1000).toISO
 const FECHADO_ANTIGO: DevolucaoLocal = {
   status: 'closed', stage: 'claim', aberto_em: diasAtras(60),
   fechado_em: diasAtras(30), return_status_money: 'refunded',
+  revisao_pendente: false, enriquecido_em: diasAtras(1),
 };
+
+describe('claimPrecisaProcessar — pós-venda', () => {
+  const c = { status: 'closed', stage: 'claim' };
+  it('linha legada closed há 60 dias sem enriquecido_em → processa', () => {
+    expect(claimPrecisaProcessar(c, { ...FECHADO_ANTIGO, enriquecido_em: null }, AGORA)).toBe(true);
+  });
+  it('revisao_pendente → processa mesmo fechado antigo', () => {
+    expect(claimPrecisaProcessar(c, { ...FECHADO_ANTIGO, revisao_pendente: true }, AGORA)).toBe(true);
+  });
+});
 
 describe('claimPrecisaProcessar', () => {
   const claim = (over: Partial<{ status: string | null; stage: string | null }> = {}) =>
