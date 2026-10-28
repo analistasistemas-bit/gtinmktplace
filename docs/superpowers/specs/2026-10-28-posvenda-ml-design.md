@@ -118,6 +118,11 @@ O que já existe e não muda de natureza:
 - **Confirmação:** toda ação de escrita abre uma confirmação dizendo o que acontece no ML e que
   não dá para desfazer; depois de enviar, a tela **relê** a reclamação/devolução no ML e só
   então mostra o novo estado (sem otimismo na UI).
+- **Comprovação de envio fora da v1** (decidido na revisão do plano): a "evidência" da API
+  (`actions/evidences`, `add_shipping_evidence`) é comprovação de despacho por conta própria
+  (transportadora, data, rastreio). Nos últimos 90 dias, 100% das vendas foram Mercado Envios
+  (5.882 `xd_drop_off`, 26 `drop_off`), então não há uso. Fotos continuam na revisão de
+  devolução e nas mensagens da reclamação.
 - **Urgentes × Em andamento:** *Urgente* = a vez é do vendedor (`detail.action_responsible`
   do lado do vendedor, ou alguma `available_action` obrigatória), ordenado pelo `due_date` mais
   próximo; vencido no topo, sem prazo no fim. *Em andamento* = vez do comprador ou do ML.
