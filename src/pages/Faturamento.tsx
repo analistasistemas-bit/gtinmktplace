@@ -1,4 +1,4 @@
-import { Boxes, Receipt, RotateCcw, MessageCircleQuestion, MessagesSquare, MapPin, PackageOpen } from 'lucide-react';
+import { Boxes, Receipt, LifeBuoy, MessageCircleQuestion, MapPin, PackageOpen } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -9,31 +9,40 @@ import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { infoCanal } from '@/lib/canais';
 import { AbaVendas } from '@/components/faturamento/aba-vendas';
 import { AbaVendasSku } from '@/components/faturamento/aba-vendas-sku';
-import { AbaDevolucoes } from '@/components/faturamento/aba-devolucoes';
 import { AbaPerguntas } from '@/components/faturamento/aba-perguntas';
-import { AbaMensagens } from '@/components/faturamento/aba-mensagens';
+import { AbaPosvenda, SUB_ABAS, type SubAba } from '@/components/faturamento/posvenda/aba-posvenda';
 import { AbaGeografia } from '@/components/faturamento/aba-geografia';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
-import { useMensagensAguardando } from '@/hooks/useMensagens';
+import { usePosvendaBadge } from '@/hooks/usePosvenda';
 
-const ABAS = ['vendas', 'sku', 'devolucoes', 'perguntas', 'mensagens', 'geografia'] as const;
+const ABAS = ['vendas', 'sku', 'posvenda', 'perguntas', 'geografia'] as const;
 type Aba = (typeof ABAS)[number];
 
 export default function Faturamento() {
   const { count: naoRespondidas } = usePerguntasNaoRespondidas();
-  const { count: mensagensAguardando } = useMensagensAguardando();
+  const badgePosvenda = usePosvendaBadge();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
-  // Devoluções/Perguntas/Mensagens/Geografia são dados do ML; outro canal → vazio acionável.
+  // Pós-venda/Perguntas/Geografia são dados do ML; outro canal → vazio acionável.
   const canalSemDados = canalAtivo !== 'todos' && canalAtivo !== 'mercado_livre';
 
   // Aba ativa vive na URL (?aba=devolucoes) para permitir deep-link direto (ex.: a partir do
   // "Precisa de atenção" do Dashboard ou do sino de notificações), em vez de sempre cair em Vendas.
   const [searchParams, setSearchParams] = useSearchParams();
   const abaParam = searchParams.get('aba');
-  const aba: Aba = (ABAS as readonly string[]).includes(abaParam ?? '') ? (abaParam as Aba) : 'vendas';
+  // Links antigos (?aba=devolucoes / ?aba=mensagens: Dashboard, cockpit, sino) caem no Pós-venda.
+  const legado = abaParam === 'devolucoes' || abaParam === 'mensagens' ? abaParam : null;
+  const aba: Aba = legado ? 'posvenda' : (ABAS as readonly string[]).includes(abaParam ?? '') ? (abaParam as Aba) : 'vendas';
+  const subParam = legado ?? searchParams.get('sub');
+  const sub: SubAba = (SUB_ABAS as readonly string[]).includes(subParam ?? '') ? (subParam as SubAba) : 'reclamacoes';
   const setAba = (v: string) => setSearchParams((prev) => {
     const p = new URLSearchParams(prev);
+    p.delete('sub');
     if (v === 'vendas') p.delete('aba'); else p.set('aba', v);
+    return p;
+  }, { replace: true });
+  const setSub = (v: SubAba) => setSearchParams((prev) => {
+    const p = new URLSearchParams(prev);
+    p.set('aba', 'posvenda'); p.set('sub', v);
     return p;
   }, { replace: true });
 
@@ -41,7 +50,7 @@ export default function Faturamento() {
     <div className="p-4 sm:p-6">
       <PageHeader
         title="Faturamento"
-        subtitle="Vendas pedido a pedido, devoluções, perguntas e mensagens — num lugar só."
+        subtitle="Vendas pedido a pedido, pós-venda, perguntas — num lugar só."
       />
       <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-4" />
       {canalSemDados ? (
@@ -56,7 +65,14 @@ export default function Faturamento() {
           <TabsList>
             <TabsTrigger value="vendas"><Receipt className="h-4 w-4" />Vendas</TabsTrigger>
             <TabsTrigger value="sku"><Boxes className="h-4 w-4" />Vendas SKU</TabsTrigger>
-            <TabsTrigger value="devolucoes"><RotateCcw className="h-4 w-4" />Devoluções</TabsTrigger>
+            <TabsTrigger value="posvenda">
+              <LifeBuoy className="h-4 w-4" />Pós-venda
+              {badgePosvenda > 0 && (
+                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                  {badgePosvenda}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="perguntas">
               <MessageCircleQuestion className="h-4 w-4" />Perguntas
               {naoRespondidas > 0 && (
@@ -65,21 +81,12 @@ export default function Faturamento() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="mensagens">
-              <MessagesSquare className="h-4 w-4" />Mensagens
-              {mensagensAguardando > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                  {mensagensAguardando}
-                </span>
-              )}
-            </TabsTrigger>
             <TabsTrigger value="geografia"><MapPin className="h-4 w-4" />Geografia</TabsTrigger>
           </TabsList>
           <TabsContent value="vendas" className="mt-4"><AbaVendas /></TabsContent>
           <TabsContent value="sku" className="mt-4"><AbaVendasSku /></TabsContent>
-          <TabsContent value="devolucoes" className="mt-4"><AbaDevolucoes /></TabsContent>
+          <TabsContent value="posvenda" className="mt-4"><AbaPosvenda sub={sub} onSub={setSub} /></TabsContent>
           <TabsContent value="perguntas" className="mt-4"><AbaPerguntas /></TabsContent>
-          <TabsContent value="mensagens" className="mt-4"><AbaMensagens /></TabsContent>
           <TabsContent value="geografia" className="mt-4"><AbaGeografia /></TabsContent>
         </Tabs>
       )}
