@@ -42,6 +42,7 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
       const ids = Array.from({ length: 23 }, (_, i) => 201 + i).filter((id) => id > depoisDe).slice(0, limite);
       return { n: ids.length, ultimo: ids.length ? ids[ids.length - 1] : null };
     }),
+    posvendaPendentes: vi.fn(async () => 2),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -138,7 +139,7 @@ describe('passoReconciliar', () => {
     expect(r2.proximo).toBe('mensagens|');
   });
 
-  it('3b. mensagens: 23 packs não lidos → 10/10/3 por id numérico com cursor, depois vendas|', async () => {
+  it('3b. mensagens: 23 packs não lidos → 10/10/3 por id numérico com cursor, depois posvenda|', async () => {
     expect(LOTE_MENSAGENS).toBe(10);
     const deps = criarDeps();
     const lote = () => deps.processarPacksMensagens.mock.calls.at(-1)![4] as string[];
@@ -153,9 +154,19 @@ describe('passoReconciliar', () => {
     expect(lote()).toEqual(['9021', '9022', '9023']);
     expect(r3.proximo).toBe('mensagens|9023');
     const r4 = await rodar(deps, r3.proximo, r3.acumulado);
-    expect(r4.proximo).toBe('vendas|');
+    expect(r4.proximo).toBe('posvenda|');
     expect(r4.acumulado).toEqual({ claims: 2, mensagens: 23 });
     expect(deps.processarPacksMensagens).toHaveBeenCalledTimes(3);
+  });
+
+  it('3c. posvenda: recupera as ações pendentes da org (uma chamada), soma e segue para vendas|', async () => {
+    const deps = criarDeps();
+    const r = await rodar(deps, 'posvenda|', { claims: 2 });
+    expect(deps.posvendaPendentes).toHaveBeenCalledWith('tok', CX, 'user-1', 'org-1');
+    expect(r.proximo).toBe('vendas|');
+    expect(r.acumulado).toEqual({ claims: 2, posvenda: 2 });
+    const zero = criarDeps({ posvendaPendentes: vi.fn(async () => 0) });
+    expect((await rodar(zero, 'posvenda|')).acumulado).toEqual({});
   });
 
   it('4. vendas com 60 pedidos → 25/25/10, depois liberacoes|', async () => {
@@ -194,7 +205,7 @@ describe('passoReconciliar', () => {
 
   it('6. token em toda etapa; SemAcessoRodada propaga de qualquer uma', async () => {
     const deps = criarDeps();
-    const cursores = [null, 'perguntas|', 'claims|', 'enriquecer|', 'mensagens|', 'vendas|', 'liberacoes|'];
+    const cursores = [null, 'perguntas|', 'claims|', 'enriquecer|', 'mensagens|', 'posvenda|', 'vendas|', 'liberacoes|'];
     for (const c of cursores) await rodar(deps, c);
     expect(deps.token).toHaveBeenCalledTimes(cursores.length);
 

@@ -1,5 +1,5 @@
 // ADR-0173: um lote do reconciliar agendado por org, retomável pelo cursor:
-// pendencias → perguntas → claims → enriquecer (linhas antigas) → mensagens (não lidas) → vendas (72h) → liberacoes (120 d do MP) → fim.
+// pendencias → perguntas → claims → enriquecer (linhas antigas) → mensagens (não lidas) → posvenda (ações pendentes) → vendas (72h) → liberacoes (120 d do MP) → fim.
 // Puro — só `import type` e módulos puros —, testável por vitest. Fiação real em index.ts.
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -32,6 +32,9 @@ export interface DepsReconciliar {
   packsNaoLidos(token: string): Promise<string[]>;
   /** Sync de cada pack (mensagens + upsert). Nunca lança por pack. */
   processarPacksMensagens(token: string, cx: ConexaoCanal, userId: string, orgId: string, packs: string[]): Promise<number>;
+  /** Recuperação durável das ações de pós-venda da org (`recuperarPendentes`, ADR-0192): nunca
+   *  reenvia POST. Nunca lança (não pode segurar vendas/liberações). Devolve linhas que mudaram. */
+  posvendaPendentes(token: string, cx: ConexaoCanal, userId: string, orgId: string): Promise<number>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;
   pedidoPorId(token: string, id: string): Promise<PedidoML>;
   pendencias(depoisDe: string, limite: number): Promise<string[]>;
@@ -142,9 +145,14 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
         .filter((p) => Number(p) > desde)
         .sort((a, b) => Number(a) - Number(b))
         .slice(0, LOTE_MENSAGENS);
-      if (lote.length === 0) return { proximo: ir('vendas'), acumulado };
+      if (lote.length === 0) return { proximo: ir('posvenda'), acumulado };
       const n = await deps.processarPacksMensagens(token, cx, userId, orgId, lote);
       return { proximo: ir('mensagens', lote[lote.length - 1]), acumulado: somar(acumulado, 'mensagens', n) };
+    }
+
+    if (c.etapa === 'posvenda') {
+      const n = await deps.posvendaPendentes(token, cx, userId, orgId);
+      return { proximo: ir('vendas'), acumulado: n ? somar(acumulado, 'posvenda', n) : acumulado };
     }
 
     if (c.etapa === 'vendas') {
