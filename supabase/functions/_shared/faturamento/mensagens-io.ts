@@ -66,14 +66,17 @@ export async function buscarMensagensPack(
 
 export const ERRO_RECONECTAR_ML = 'Reconecte a conta do Mercado Livre em Configurações → Conexões (falta permissão de escrita)';
 
-/** Lê o pack MARCANDO como lido no ML (único uso de mark_as_read=true). 404 (pack sem mensagens) → [];
+// R17: 404 do ML ao ler o pack pode ser temporário (doc "mensagens-pendentes" manda retentar).
+export const ERRO_PACK_INDISPONIVEL = 'O Mercado Livre ainda não liberou esta conversa (404). Abra de novo em instantes.';
+
+/** Lê o pack MARCANDO como lido no ML (único uso de mark_as_read=true). 404 → lança (retentável, R17);
  *  403 → erro de reconexão; qualquer outro não-2xx ou falha de rede → lança. */
 export async function lerPackMarcandoLido(
   token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
 ): Promise<MensagemML[]> {
   const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=true`;
   const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
-  if (resp.status === 404) return [];
+  if (resp.status === 404) throw new Error(ERRO_PACK_INDISPONIVEL);
   if (resp.status === 403) throw new Error(ERRO_RECONECTAR_ML);
   if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   return extrairMensagens(await resp.json());
