@@ -9,7 +9,7 @@
 **Tech Stack:** React 19 + Tailwind v4 + TanStack Query + vitest; Supabase Edge Functions (Deno) + Postgres (migrations via CLI, ADR-0043); API post-purchase do ML.
 
 **Spec:** `docs/superpowers/specs/2026-10-28-posvenda-ml-design.md`
-**Revisões do plano:** Codex gpt-6.1-sol high — rodadas 1 (12), 2 (11), 3 (9) e 4 (6 achados) incorporadas.
+**Revisões do plano:** Codex gpt-6.1-sol high — rodadas 1 (12), 2 (11), 3 (9), 4 (6) e 5 (8 achados) incorporadas.
 
 ## Global Constraints
 
@@ -40,10 +40,10 @@
 **Files:** Create `docs/decisions/0192-posvenda-ml-acoes.md`; Modify `docs/decisions/README.md`; Create `supabase/migrations/<ts>_posvenda_ml.sql` (`supabase migration new posvenda_ml`)
 
 **Interfaces — produces:**
-- `ml_devolucoes` + `return_id bigint`, `detalhe jsonb` (`{title, description, problem, due_date, action_responsible}`), `prazo timestamptz`, `vez_de text check (vez_de in ('vendedor','comprador','ml'))`, `revisao_pendente boolean not null default false`, `revisao_status text` (último `seller_status` lido), `afeta_reputacao text`, `rastreio text`, `pedidos_devolucao jsonb` (order_ids da devolução, para carrinho), `enriquecido_em timestamptz` (null = falta enriquecer).
+- `ml_devolucoes` + `return_id bigint`, `detalhe jsonb` (`{title, description, problem, due_date, action_responsible}`), `prazo timestamptz`, `vez_de text check (vez_de in ('vendedor','comprador','ml'))`, `revisao_pendente boolean not null default false`, `revisao_status text` (último `seller_status` lido), `afeta_reputacao text`, `rastreio text`, `pedidos_devolucao jsonb` (order_ids da devolução, para carrinho), `enriquecido_em timestamptz` (null = falta enriquecer), `lido_em timestamptz` (versão do snapshot, Task 3).
 - `ml_posvenda_acoes`: `id uuid pk`, `org_id uuid not null`, `user_id uuid not null`, `operacao_id uuid not null`, `claim_id bigint not null`, `return_id bigint`, `recurso text not null`, `acao text not null`, `payload jsonb not null`, `payload_hash text not null`, `antes jsonb` (snapshot relido antes do POST), `estado text not null check (estado in ('reservada','enviada','confirmada','recusada','desconhecido','inconclusiva','cancelada'))`, `post_em timestamptz` (gravado **antes** do fetch), `http_status int` (status do POST, null se não houve resposta), `resposta_ml jsonb`, `sync_pendente boolean not null default false`, `erro text`, `criado_em`, `atualizado_em`.
 - Índices: `unique (org_id, operacao_id)`; **parcial único** `(org_id, recurso) where estado in ('reservada','enviada','desconhecido')`.
-- RLS `select` membro da org; sem insert/update para `authenticated`.
+- RLS `select` membro da org; `revoke all on ml_posvenda_acoes from anon, authenticated; grant select on ml_posvenda_acoes to authenticated;` (default privileges do projeto concedem TRUNCATE, que RLS não cobre — precedente `20260924184220_central_promocoes.sql:58`). Teste: `has_table_privilege('authenticated','ml_posvenda_acoes','TRUNCATE')` = false.
 - `ml_mensagens` + `lida_ml_em timestamptz` — recibo de leitura no ML, **monotônico** (só sai de null; nunca volta): escrito por `update ... set lida_ml_em = coalesce(lida_ml_em, $1)`, nunca pelo upsert de `raw`.
 
 - [ ] **Step 1:** `git fetch`; confirmar 0192 livre (senão o próximo).
@@ -63,7 +63,7 @@
 - `export function playerDaConta(claim: ClaimML, contaExternaId: string): ClaimML['players'][number] | null`
 - `export function acoesDaConta(claim, contaExternaId): AcaoPendente[]` (substitui o agrupamento de todos os players em `acoes_pendentes`).
 - `export function vezDe(responsavel, papelDaConta: string|null): 'vendedor'|'comprador'|'ml'|null` — igual ao papel da conta → vendedor; `mediator|internal` → ml; outro → comprador.
-- `export function revisaoPendente(acoes: AcaoPendente[], revisoes: RevisaoML[]): boolean` — `return_review_ok|return_review_fail` nas ações **ou** algum `seller_status === 'pending'`. (`null`, `''`, `success`, `failed`, `claimed` → não pendente.)
+- `export function revisaoPendente(acoes: AcaoPendente[], revisoes: Leitura<RevisaoML[]|'sem_review'>): boolean` — **revisões lidas com sucesso têm precedência**: algum `pending` → true; todas terminais (`success|failed|claimed|''`) → false mesmo com `return_review_*` residual nas ações (o ML mantém ações em claims fechados, ver `src/lib/devolucoes.ts`); `'sem_review'` (404 *return review not found*) ou leitura falha → decide pelas ações.
 - `export function colunasLidas(claim, ret: Leitura<ReturnML|null>, extras: ExtrasClaim, contaExternaId): Partial<DevolucaoRow>` — devolve **só** as colunas cujas leituras deram `ok`; `enriquecido_em` só quando as três leituras de `extras` e o return deram `ok`.
 - `export function linhaParaUpsert(base: DevolucaoRow, lidas: Partial<DevolucaoRow>, retOk: boolean): Partial<DevolucaoRow>` — parte de `base`, remove as colunas que dependem do return quando `!retOk` e sobrepõe `lidas`.
 - `claimPrecisaProcessar`: `true` também se `local.revisao_pendente` ou `local.enriquecido_em == null`.
@@ -72,7 +72,7 @@
   - 5600661190 real (`action_responsible='complainant'`, conta = respondent) → `vez_de 'comprador'`, `prazo '2026-11-03T22:08:00.000-04:00'`, 3 ações da conta.
   - claim de shipment em que a conta é `receiver` → ações do player `receiver`.
   - `normalizarRevisoes` com o envelope completo da doc (carrinho com 2 `resource_id`, um com 2 `resource_reviews` sendo um `pending`) e com o real de 169980422 (`seller_status:'success'`).
-  - `revisoes [{order_id:1, seller_status:'pending'}]`, claim `closed`, sem ações → `revisao_pendente true`; `null`/`''`/`success` → `false`.
+  - `revisoes [{order_id:1, seller_status:'pending'}]`, claim `closed`, sem ações → `revisao_pendente true`; `null`/`''`/`success` → `false`; `success` **com** `return_review_ok` residual nas ações → `false`; `'sem_review'` com `return_review_ok` → `true`.
   - `linhaParaUpsert(mapearDevolucao(...), colunasLidas(...), retOk)` com `ret: {ok:false}` → objeto final **sem** `return_status`, `return_status_money`, `return_id`, `rastreio`; com `reputacao: {ok:false}` → sem `afeta_reputacao` e sem `enriquecido_em` (Review Focus 5). Testar o objeto final, não só `colunasLidas`.
   - `claimPrecisaProcessar` para linha legada `closed` há 60 dias com `enriquecido_em: null` → `true` (Review Focus 4).
 - [ ] **Step 2:** FAIL → implementar → PASS (demais testes do diretório inalterados). Commit.
@@ -83,10 +83,11 @@
 
 **Interfaces:**
 - `buscarReturnLeitura(token, claimId): Promise<Leitura<ReturnML|null>>` — 404 → `{ok:true, valor:null}`; outro erro → `{ok:false}`; `buscarReturn` antigo continua para quem não precisa.
-- `buscarExtrasClaim(token, claimId, returnId): Promise<ExtrasClaim>` — `/detail`, `/affects-reputation`, `v1/returns/{returnId}/reviews` (sem return → `revisoes {ok:true, valor:[]}`).
+- `buscarExtrasClaim(token, claimId, returnId): Promise<ExtrasClaim>` — `/detail`, `/affects-reputation`, `v1/returns/{returnId}/reviews` (sem return → `{ok:true, valor:[]}`; 404 *return review not found* → `{ok:true, valor:'sem_review'}`; outro erro → `{ok:false}`).
 - `upsertDevolucao(admin, userId, orgId, claim, ret: Leitura<ReturnML|null>|ReturnML|null, contaExternaId, extras?)` — grava `linhaParaUpsert(...)` (nunca sobrescreve com null o que falhou de ler); **lança** em erro do Supabase; devolve a linha lida do banco. Sem `extras` (chamada antiga), não toca nas colunas novas.
 - `carregarDevolucoesLocais` seleciona `revisao_pendente, enriquecido_em`.
-- Job do `sync-devolucao` aceita `{ user_id, claim_id, org_id?, connection_id? }`; com `org_id`/`connection_id` usa a conexão informada (validando `org_id`) em vez de `resolverOrgPorUserId` (que falha se o mesmo criador tem conexões em duas orgs). O `ml-webhook` passa a enviar `org_id` (já resolvido por `resolverIdentidade`) nos jobs de `claims` — `ml-webhook` entra nesta task e no deploy.
+- **Snapshot antigo não sobrescreve novo:** coluna `ml_devolucoes.lido_em timestamptz` (instante da leitura no ML, capturado **antes** dos GETs). O upsert vira RPC `upsert_ml_devolucao(linha jsonb)` que só aplica se `excluded.lido_em >= ml_devolucoes.lido_em` (ou a linha não existe). Teste SQL: gravar lido_em T2, depois tentar T1 < T2 → linha inalterada.
+- Job do `sync-devolucao` aceita `{ user_id, claim_id, org_id?, connection_id? }`; com `org_id`/`connection_id` usa a conexão informada (validando `org_id`) em vez de `resolverOrgPorUserId` (que falha se o mesmo criador tem conexões em duas orgs). O `carregarCatalogo` do `sync-devolucao` passa a receber a org já resolvida (assinatura `carregarCatalogo(admin, userId, orgId?)`; com `orgId`, não chama `resolverOrgPorUserId`) e `memoCatalogo` usa `orgId:userId` como chave. O `ml-webhook` passa a enviar `org_id` (já resolvido por `resolverIdentidade`) nos jobs de `claims` — `ml-webhook` entra nesta task e no deploy.
 
 - Enriquecimento das linhas antigas: `export async function enriquecerPendentes(admin, token, org, conexao, limite = 20): Promise<number>` — lê de `ml_devolucoes` da org `where enriquecido_em is null order by claim_id` (paginado pelo `claim_id`, sem depender de `buscarClaimsSeller`, que corta em 2.000 por status), busca cada claim por id e faz o upsert. Vira a etapa `enriquecer` do `reconciliar-faturamento` (cursor = último `claim_id`), antes de `mensagens`.
 - [ ] **Step 1:** implementar e passar `extras` nos 4 callers; etapa `enriquecer` com teste no `passo.test.ts` (paginação por `claim_id`; linha com falha de leitura continua `null` e é retentada na próxima rodada sem travar as demais).
@@ -106,7 +107,7 @@
     resolucoes: Array<{ papel: string; tipo: string; status: string; detalhes: Array<{ chave: string; valor: string }>; criada_em: string; atualizada_em: string }>;  // expected-resolutions completo (percentual da oferta parcial fica em detalhes)
     resolucao_final: { motivo: string|null; data: string|null } | null;   // claim.resolution
     afeta_reputacao: string|null; custo_devolucao: number|null;
-    historico: Array<{ data: string; autor: 'comprador'|'vendedor'|'ml'; texto: string; anexos: string[] }>;
+    historico: Array<{ data: string; autor: 'comprador'|'vendedor'|'ml'; destinatario: string|null; texto: string; anexos: string[]; status: string|null; moderacao: string|null }>;  // status/moderação = message_moderation.status
     acoes: string[];                                  // da conta, relidas agora
     revisoes: Array<{ order_id: number; seller_status: string|null }>;
     pedidos_devolucao: number[];                      // carrinho = length > 1
@@ -133,7 +134,7 @@
   - `validarAcao(acao, body, d: DetalheReclamacao)`: ação ∈ `ACAO_ML[acao]` ∩ `d.acoes`; `revisar_falha`: cada item com `motivo_id` ∈ motivos e escopo ok (revisão **por pedido**: `order_id` ∈ `d.pedidos_devolucao` e motivo com `aplica` ⊇ `order`; revisão **do pacote**: sem `order_id` e motivo com `aplica` ⊇ `package` — no não-carrinho, `aplica:['order']` vale sem `order_id`), `texto` obrigatório, anexo obrigatório se `exige_foto`; `responder`: 1..2000 caracteres; `reembolso_parcial`: `percentual` ∈ ofertas.
   - `montarRequisicao(acao, claimId, returnId, body, receiverRole)` → `{ path, corpo }`: revisão OK `{}`; revisão com falha `revisoes.map(r => ({ reason: r.motivo_id, message: r.texto, attachments: r.anexos, ...(r.order_id ? { order_id: r.order_id } : {}) }))` em `/returns/{returnId}/return-review`; `send-message` `{ receiver_role, message, attachments }`; `refund`/`allow-return`/`open-dispute` `{}`; `partial-refund` `{ percentage }`.
   - `efeitoConfirmado(acao, antes, depois, tentativa: { payload; post_em: string; http_status: number|null }): 'confirmado'|'nao'|'inconclusivo'` — **evidência positiva específica**:
-    - `responder`: `depois.historico` tem entrada do vendedor com o mesmo texto e `data >= post_em`, ausente em `antes`;
+    - `responder`: entrada nova do vendedor com o mesmo texto, mesmo destinatário, mesmos anexos e `data >= post_em`: `moderacao` `clean` → `confirmado`; moderação pendente → `inconclusivo` (mantém trava/"em moderação"); rejeitada → `nao` com a mensagem "O ML bloqueou a mensagem na moderação";
     - `revisar_ok`: pedidos `pending` em `antes` e `success` em `depois` → `confirmado` **só com `http_status` 2xx**; sem 2xx (timeout) → `inconclusivo` (`success` também é "não revisou a tempo");
     - `revisar_falha`: `pending` → `claimed` ou `failed` nos pedidos revisados → `confirmado` (só o vendedor produz `claimed`); sem 2xx e `success` → `inconclusivo`;
     - `reembolsar`: em `depois.resolucoes`, resolução do papel **do vendedor/conta** (`respondent`) com `tipo='refund'`, `status` aceito/aplicado e `criada_em >= post_em`, ausente em `antes`; **ou** `status='closed'` com `resolucao_final.motivo` de reembolso e `data >= post_em`. Resolução `refund` do **comprador** (`complainant`, `pending`) é desejo dele → `nao`;
@@ -181,7 +182,9 @@
 - `resumirConversas(conversas)` → `{ naoLidas: { aPreparar, aCaminho, entregues, total }, lidas: { semResponder, respondidas } }` (a preparar `pending|handling|ready_to_ship`; a caminho `shipped`; entregues `delivered`).
 - UI: card recolhido igual ao ML ("Venda para preparar · Mensagem recebida há 13 horas · [Conferir mensagem]"); expandir chama a edge **quando `idsNaoLidosML` não é vazio e difere do último conjunto marcado nesta sessão**.
 
-- [ ] **Step 1:** teste SQL (`scripts/teste-sql-desfeito.py`): `lida_ml_em` preenchido + upsert de snapshot antigo com `read=null` + o `coalesce` → continua preenchido. Testes: `resumirConversas` (um por balde); componente: abrir → marca 1×; reabrir sem novidade → não chama; chega mensagem nova (novo id) e reabre → chama de novo; abrir não tira de "Sem responder"; Dispensar tira.
+- Migration da Task 1 também faz o preenchimento inicial: `update ml_mensagens set lida_ml_em = (raw->'message_date'->>'read')::timestamptz where lida_ml_em is null and raw->'message_date'->>'read' is not null`.
+- Contadores no banco, não no array limitado: RPC `resumo_mensagens_posvenda()` (org da sessão) agrega **por pack sobre todas as mensagens** e devolve os 5 números; `buscarConversas()` segue limitada só para a lista. `resumirConversas` fica como função pura usada pelos testes e pelo filtro local.
+- [ ] **Step 1:** teste SQL (`scripts/teste-sql-desfeito.py`): RPC conta um pack pendente cujas mensagens estão fora das 1.000 mais recentes; `lida_ml_em` preenchido + upsert de snapshot antigo com `read=null` + o `coalesce` → continua preenchido. Testes: `resumirConversas` (um por balde); componente: abrir → marca 1×; reabrir sem novidade → não chama; chega mensagem nova (novo id) e reabre → chama de novo; abrir não tira de "Sem responder"; Dispensar tira.
 - [ ] **Step 2:** FAIL → implementar → PASS. Commit.
 
 ### Task 8: Aba Pós-venda
