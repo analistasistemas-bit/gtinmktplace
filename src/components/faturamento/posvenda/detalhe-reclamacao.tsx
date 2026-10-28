@@ -13,6 +13,7 @@ import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import type { Travas } from './lista-reclamacoes';
 import type { Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
+import { partesNegrito, rotuloEtapa, rotuloQuer, rotuloReputacao, textoHistorico } from '@/lib/posvenda-rotulos';
 import { urlVendaML } from '@/lib/ml-status';
 import { DialogoConfirmarAcao } from './dialogo-confirmar-acao';
 import { DialogoRevisarDevolucao, Fotos, montarInfoRevisao, type Anexo } from './dialogo-revisar-devolucao';
@@ -96,9 +97,9 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
   const e = d.estado;
   const linhas: Array<[string, string]> = [
     ['Motivo', item.reason_texto ?? item.reason_id ?? '—'],
-    ['Comprador quer', d.comprador_quer ?? '—'],
-    ['Etapa', d.stage ?? '—'],
-    ['Reputação', d.afeta_reputacao ?? '—'],
+    ['Comprador quer', rotuloQuer(d.comprador_quer)],
+    ['Etapa', rotuloEtapa(d.stage)],
+    ['Reputação', rotuloReputacao(d.afeta_reputacao)],
     ['Custo da devolução', d.custo_devolucao != null ? `${fmtBRL(d.custo_devolucao)} para você` : '—'],
   ];
 
@@ -137,7 +138,9 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
         {[...d.historico].reverse().map((m, i) => (
           <div key={i} className="rounded-lg border bg-card p-2.5 text-xs">
             <div className="mb-0.5 text-muted-foreground">{fmtDataHora(m.data)} · {AUTOR[m.autor] ?? m.autor}</div>
-            <div className="whitespace-pre-wrap">{m.texto}</div>
+            <div className="whitespace-pre-wrap">
+              {partesNegrito(textoHistorico(m.texto)).map((p, j) => (p.b ? <strong key={j}>{p.t}</strong> : <span key={j}>{p.t}</span>))}
+            </div>
             {m.anexos.length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">{m.anexos.map((a) => (<span key={a.id} className="inline-flex items-center gap-1 text-muted-foreground"><Paperclip className="h-3 w-3" />{a.nome}</span>))}</div>
             )}

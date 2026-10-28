@@ -9,6 +9,7 @@ import { labelDinheiro, labelRetorno, type ProdutoPedido } from '@/lib/posvenda-
 import type { Devolucao } from '@/lib/devolucoes';
 import { urlVendaML } from '@/lib/ml-status';
 import { fmtBRL } from '@/lib/formato';
+import { rotuloReputacao } from '@/lib/posvenda-rotulos';
 import { DialogoConfirmarAcao } from './dialogo-confirmar-acao';
 
 export type Anexo = { id: string; nome: string };
@@ -35,7 +36,7 @@ export function montarInfoRevisao(item: Devolucao, afetaReputacao: string | null
       ['Situação do retorno', labelRetorno(item.return_status)],
       ['Reembolso', labelDinheiro(item.return_status_money)],
       ['Rastreio', item.rastreio ?? '—'],
-      ['Reputação', afetaReputacao ?? item.afeta_reputacao ?? '—'],
+      ['Reputação', rotuloReputacao(afetaReputacao ?? item.afeta_reputacao)],
     ],
   };
 }

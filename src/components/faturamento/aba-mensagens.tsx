@@ -152,7 +152,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
             </a>
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
           {c.aguardando && !cancelada && (
             <Button
               variant="ghost"
