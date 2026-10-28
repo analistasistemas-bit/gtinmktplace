@@ -84,7 +84,7 @@ describe('AbaMensagens', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
 
-    expect(screen.getByText(/MARIA_01/)).toBeInTheDocument();
+    expect(screen.getByText('MARIA_01')).toBeInTheDocument();
     const card = screen.getByText('Pedido cancelado').closest('div.rounded-lg') as HTMLElement;
     expect(within(card).getByRole('link', { name: 'Abrir conversa no Mercado Livre' }))
       .toHaveAttribute('href', 'https://www.mercadolivre.com.br/vendas/pack-1/detalhe');
@@ -199,5 +199,26 @@ describe('AbaMensagens', () => {
 
     expect(toast.info).toHaveBeenCalledWith('Nenhuma mensagem para dispensar nesta conversa.');
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('Enter envia uma vez só, mesmo apertado de novo com o envio pendente; Shift+Enter não envia', async () => {
+    let concluir!: () => void;
+    responderMensagemMock.mockImplementationOnce(() => new Promise<void>((r) => { concluir = r; }));
+    renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    const textarea = within(card).getByPlaceholderText(/escreva ao comprador/i);
+
+    await userEvent.type(textarea, 'Oi{Shift>}{Enter}{/Shift}tudo bem');
+    expect(responderMensagemMock).not.toHaveBeenCalled();
+    await userEvent.type(textarea, '{Enter}{Enter}');
+    expect(responderMensagemMock).toHaveBeenCalledTimes(1);
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Oi\ntudo bem');
+    concluir();
+  });
+
+  it('cada balão diz ao leitor de tela quem escreveu', () => {
+    renderAba();
+    const log = screen.getByRole('log', { name: 'Conversa com NICK_2' });
+    expect(within(log).getByText('NICK_2:')).toHaveClass('sr-only');
   });
 });

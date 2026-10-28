@@ -43,6 +43,7 @@ export function linhasDoChat<M extends MsgChat>(mensagens: M[], agora: Date = ne
 export function nomeComprador(nome: string | null, nick: string | null): string {
   const n = nome?.trim().replace(/\s+/g, ' ') ?? '';
   const metade = n.length % 2 === 1 ? n.slice(0, (n.length - 1) / 2) : '';
-  if (metade && n === `${metade} ${metade}`) return metade;
+  // Só com 2+ palavras por metade: "Li Li" é nome de gente, não razão social duplicada.
+  if (metade.includes(' ') && n === `${metade} ${metade}`) return metade;
   return n || nick?.trim() || 'Comprador';
 }

@@ -43,6 +43,9 @@ describe('nomeComprador', () => {
     expect(nomeComprador('43 037 949 SILVANA NUNES DOS S 43 037 949 SILVANA NUNES DOS S', null))
       .toBe('43 037 949 SILVANA NUNES DOS S');
   });
+  it('nome curto repetido de verdade fica como está ("Li Li")', () => {
+    expect(nomeComprador('Li Li', null)).toBe('Li Li');
+  });
   it('nome normal, fallback para o apelido e para "Comprador"', () => {
     expect(nomeComprador('Maria Rosenilda', 'MARIA01')).toBe('Maria Rosenilda');
     expect(nomeComprador('  ', 'MARIA01')).toBe('MARIA01');

@@ -32,10 +32,17 @@ function CardConversa({ c }: { c: Conversa }) {
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   const cliente = nomeComprador(c.comprador_nome, c.comprador_nick);
+  const enviandoRef = useRef(false);
   const rolagem = useRef<HTMLDivElement>(null);
-  // Abre no fim da conversa e acompanha mensagem nova, como no WhatsApp.
+  const alturaAnterior = useRef<number | null>(null);
+  // Abre no fim da conversa e acompanha mensagem nova, como no WhatsApp, mas só se a pessoa já
+  // estava no fim: quem rolou para ler o histórico não é puxado de volta.
   useLayoutEffect(() => {
-    if (rolagem.current) rolagem.current.scrollTop = rolagem.current.scrollHeight;
+    const el = rolagem.current;
+    if (!el) return;
+    const antes = alturaAnterior.current;
+    if (antes == null || el.scrollTop + el.clientHeight >= antes - 48) el.scrollTop = el.scrollHeight;
+    alturaAnterior.current = el.scrollHeight;
   }, [c.mensagens.length]);
   // Pelo pack: a rota aceita os dois ids e o pack abre o pacote inteiro. Em pedido solo o sync já
   // grava o próprio order_id como pack_id, então esta linha cobre os dois casos.
@@ -54,7 +61,8 @@ function CardConversa({ c }: { c: Conversa }) {
 
   async function responder() {
     const t = texto.trim();
-    if (!t) return;
+    if (!t || enviandoRef.current) return;
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       await responderMensagem(c.pack_id, t);
@@ -71,7 +79,7 @@ function CardConversa({ c }: { c: Conversa }) {
       } else {
         toast.error(`Falha ao enviar: ${(e as Error).message}`);
       }
-    } finally { setEnviando(false); }
+    } finally { enviandoRef.current = false; setEnviando(false); }
   }
 
   async function dispensar() {
@@ -141,6 +149,7 @@ function CardConversa({ c }: { c: Conversa }) {
               l.cauda && (l.m.direcao === 'enviada' ? 'wa-cauda-enviada rounded-tr-none' : 'wa-cauda-recebida rounded-tl-none'),
             )}>
               <p className="whitespace-pre-wrap break-words">
+                <span className="sr-only">{l.m.direcao === 'enviada' ? 'Você:' : `${cliente}:`} </span>
                 {l.m.texto.trimEnd()}
                 <span
                   className={cn('relative top-1.5 float-right ml-3 text-[11px] leading-none tabular-nums', l.m.direcao === 'enviada' ? 'text-wa-meta-enviada' : 'text-wa-meta')}

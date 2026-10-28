@@ -134,7 +134,7 @@
     --wa-recebida: #ffffff;
     --wa-texto: #111b21;
     --wa-meta: #667781;
-    --wa-meta-enviada: #667781;
+    --wa-meta-enviada: #55636d; /* 5,58:1 sobre #d9fdd3 */
     --wa-envio: #00a884;
     --wa-ponto: rgb(0 0 0 / 0.05);
 }
@@ -189,7 +189,7 @@
     --wa-recebida: #202c33;
     --wa-texto: #e9edef;
     --wa-meta: #8696a0;
-    --wa-meta-enviada: rgb(255 255 255 / 0.6);
+    --wa-meta-enviada: #c2dbd5; /* 5,47:1 sobre #005c4b */
     --wa-envio: #00a884;
     --wa-ponto: rgb(255 255 255 / 0.035);
 }
