@@ -130,8 +130,7 @@ export type TentativaAtivaPosvenda = TentativaAtiva & { operacao_id: string; aca
 
 /** Tentativas que seguram a trava do recurso (RLS: membros da org). */
 export async function buscarTentativasAtivas(): Promise<TentativaAtivaPosvenda[]> {
-  // Tabela nova (ADR-0192) ainda fora dos tipos gerados do banco.
-  const { data, error } = await (supabase as unknown as { from: (t: string) => ReturnType<typeof supabase.from> })
+  const { data, error } = await supabase
     .from('ml_posvenda_acoes')
     .select('operacao_id, claim_id, return_id, recurso, acao, estado')
     .in('estado', ['reservada', 'enviada', 'desconhecido']);

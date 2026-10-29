@@ -125,7 +125,7 @@ export function marcarMensagensLidasML(pack_id: string): Promise<{ ok: true }> {
 export async function buscarResumoMensagens(): Promise<ResumoMensagens> {
   const { data, error } = await supabase.rpc('resumo_mensagens_posvenda');
   if (error) throw new Error(error.message);
-  const linha = (Array.isArray(data) ? data[0] : data) as Parameters<typeof resumoDaRpc>[0] | null;
+  const linha = Array.isArray(data) ? data[0] : data;
   return resumoDaRpc(linha ?? { nao_lidas_total: 0, a_preparar: 0, a_caminho: 0, entregues: 0, sem_responder: 0, respondidas: 0 });
 }
 
