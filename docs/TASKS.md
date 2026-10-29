@@ -12,10 +12,10 @@
 - [x] 3 migrations (`20261028154949_posvenda_ml`, `20261028160330_posvenda_upsert_devolucao`, `20261028172646_posvenda_resumo_mensagens`) e 4 edges novas.
 - [x] Enriquecimento das devoluções antigas pela etapa `enriquecer` do reconciliar.
 - [ ] Primeira ação real pela UI (responder uma reclamação aberta) e conferir `ml_posvenda_acoes.estado='confirmada'` — nenhuma ação de escrita executada no ML ainda.
-- [ ] Enriquecimento: 45 reclamações antigas (2022–2024, fechadas) nunca enriquecem — o ML responde 401 "This functionality is not available for Claims 1.0" ou 403 "User does not have access to claim"; hoje são retentadas a cada hora (~135 GETs/h). Marcar esses dois erros permanentes em claim fechado como "não enriquecível" (gravar `enriquecido_em`). 2 linhas da org 383636a4 sem conexão ML nunca são tentadas.
-- [ ] sync-mensagem ao reprocessar o evento `read` lê só a 1ª página do pack (Ruling R18) — paginar `buscarMensagensPackEstrito`.
-- [ ] Revogar `anon` (e PUBLIC) de `resumo_mensagens_posvenda` (SECURITY DEFINER; anon recebe zeros hoje).
-- [ ] Regenerar `src/lib/database.types.ts` (editado à mão para `lida_ml_em` e a RPC).
+- [x] Enriquecimento: 45 reclamações antigas (2022–2024, fechadas) nunca enriquecem — o ML responde 401 "This functionality is not available for Claims 1.0" ou 403 "User does not have access to claim"; hoje são retentadas a cada hora (~135 GETs/h). Marcar esses dois erros permanentes em claim fechado como "não enriquecível" (gravar `enriquecido_em`). 2 linhas da org 383636a4 sem conexão ML nunca são tentadas. — **Resolvido 29/10 (main `e6bcee06`, `sync-devolucao` v77 / `reconciliar-faturamento` v103):** claim `closed` com 401 "Claims 1.0" ou 403 "does not have access to claim" grava `enriquecido_em` e sai da fila; aberto ou erro transitório segue retentando.
+- [x] sync-mensagem ao reprocessar o evento `read` lê só a 1ª página do pack (Ruling R18) — paginar `buscarMensagensPackEstrito`. — **Resolvido 29/10 (main `e6bcee06`):** `paginarPack` compartilhado percorre o pack inteiro (dedupe por id, erro em página sem avanço ou incompleta com total válido, teto de 100 páginas).
+- [x] Revogar `anon` (e PUBLIC) de `resumo_mensagens_posvenda` (SECURITY DEFINER; anon recebe zeros hoje). — **Resolvido 29/10:** migration `20261029123501_posvenda_resumo_grants.sql` aplicada (anon sem execute, authenticated com).
+- [x] Regenerar `src/lib/database.types.ts` (editado à mão para `lida_ml_em` e a RPC). — **Resolvido 29/10:** regenerado do banco e casts de `ml_posvenda_acoes`/RPC removidos.
 - [ ] Textos de confirmação de reembolso (`accepted`/`applied`) nunca observados no ML real — se divergirem e não houver outra prova (reembolso integral também confirma por claim fechado com resolução de reembolso posterior ao POST), a ação fica travada (lado seguro).
 
 ## Reposição de componente reativa Kit Virtual pausado (emenda ADR-0154/0111) — 2026-10-28
