@@ -12,9 +12,12 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
 
 - Menu Faturamento com Vendas, Devoluções, Perguntas (com IA) e Mensagens.
 - Webhooks ML recebidos por `ml-webhook` para `orders_v2`, `questions`, `claims` e `shipments`.
-- **Pós-venda deixou de ser só leitura** (2026-10-28, [[Índice de ADRs]] ADR-0192): Devoluções e
-  Mensagens agora têm ações de escrita no ML (revisar devolução, responder reclamação, mensagem com
-  anexo) com confirmação e trava anti-duplicação, e a leitura da mensagem é sincronizada com o ML.
+- **Pós-venda deixou de ser só leitura** (2026-10-28, [[Índice de ADRs]] ADR-0192): aba Pós-venda
+  (Reclamações, Devoluções, Mensagens). Reclamações e devoluções têm ações de escrita no ML
+  (revisar devolução, responder dentro da reclamação com anexo, reembolsar, autorizar devolução,
+  pedir mediação) com confirmação e trava anti-duplicação (`ml_posvenda_acoes`). O chat de
+  Mensagens por pack segue respondendo só texto por `responder-mensagem`, sem essa trava; abrir a
+  conversa marca a leitura também no ML.
   O webhook antigo de `messages`/`claims` nunca entregou nada — corrigido na emenda de 28/10 ao
   ADR-0067 (`messages` chega com id da mensagem; reclamação chega como `post_purchase`).
   Ver `docs/decisions/0192-posvenda-ml-acoes.md`.

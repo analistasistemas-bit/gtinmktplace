@@ -16,7 +16,7 @@
 - [ ] sync-mensagem ao reprocessar o evento `read` lê só a 1ª página do pack (Ruling R18) — paginar `buscarMensagensPackEstrito`.
 - [ ] Revogar `anon` (e PUBLIC) de `resumo_mensagens_posvenda` (SECURITY DEFINER; anon recebe zeros hoje).
 - [ ] Regenerar `src/lib/database.types.ts` (editado à mão para `lida_ml_em` e a RPC).
-- [ ] Textos de confirmação de reembolso (`accepted`/`applied`) nunca observados no ML real — se divergirem, a ação fica travada (lado seguro).
+- [ ] Textos de confirmação de reembolso (`accepted`/`applied`) nunca observados no ML real — se divergirem e não houver outra prova (reembolso integral também confirma por claim fechado com resolução de reembolso posterior ao POST), a ação fica travada (lado seguro).
 
 ## Reposição de componente reativa Kit Virtual pausado (emenda ADR-0154/0111) — 2026-10-28
 

@@ -903,7 +903,7 @@ ML para a UI e para o enriquecimento:
 - `prazo timestamptz` — prazo da próxima ação.
 - `vez_de text` — de quem é a vez (`vendedor`/`comprador`/`ml`; check `ml_devolucoes_vez_de_check`).
 - `revisao_pendente boolean` (default `false`) e `revisao_status text` — estado da revisão em
-  `v1/returns/{id}/reviews` (`revisao_status` = último `seller_status` lido). O estado de revisão
+  `v1/returns/{id}/reviews` (`revisao_status` = `pending` se algum pedido estiver `pending`; senão o último `seller_status` lido). O estado de revisão
   **não** vive no claim, por isso o card "Revisar" depende destas colunas.
 - `afeta_reputacao text`, `rastreio text`, `pedidos_devolucao jsonb` (order_ids da devolução, para carrinho).
 - `enriquecido_em timestamptz` — `null` = falta enriquecer (etapa `enriquecer` do reconciliar).
