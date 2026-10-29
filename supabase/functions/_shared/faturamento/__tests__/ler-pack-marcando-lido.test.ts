@@ -45,6 +45,9 @@ describe('lerPackMarcandoLido: paginação (paging.total)', () => {
     expect(urls).toHaveLength(3);
     for (const u of urls) expect(u).toContain('mark_as_read=true');
   });
+  it('página vazia antes do total → lança (não reporta sucesso parcial)', async () => {
+    await expect(lerPackMarcandoLido('t', 1, 2, paginado(30, 10, 15))).rejects.toThrow(/paginação incompleta: 15 de 30/);
+  });
   it('total ausente: 25 mensagens em páginas de 10 → 25 em 3 GETs', async () => {
     const f = semTotal(25);
     expect(await lerPackMarcandoLido('t', 1, 2, f)).toHaveLength(25);

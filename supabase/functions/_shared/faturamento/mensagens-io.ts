@@ -92,7 +92,13 @@ async function paginarPack(
     // `total` ausente/inválido (null vira NaN aqui) não prova fim: segue pelas outras condições.
     const bruto = (json as { paging?: { total?: unknown } })?.paging?.total;
     const total = typeof bruto === 'number' ? bruto : NaN;
-    if ((Number.isFinite(total) && total >= 0 && vistas.size >= total) || msgs.length < LIMITE) return [...vistas.values()];
+    const totalValido = Number.isFinite(total) && total >= 0;
+    if (totalValido && vistas.size >= total) return [...vistas.values()];
+    if (msgs.length < LIMITE) {
+      // Página curta/vazia só é o fim quando não há total para contradizê-la.
+      if (!totalValido) return [...vistas.values()];
+      throw new Error(`ML /messages/packs: paginação incompleta: ${vistas.size} de ${total}`);
+    }
     if (vistas.size === antes) throw new Error('ML /messages/packs: paginação sem avanço');
   }
   throw new Error('ML /messages/packs: páginas demais no pack');
