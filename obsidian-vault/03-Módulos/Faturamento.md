@@ -12,6 +12,12 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
 
 - Menu Faturamento com Vendas, Devoluções, Perguntas (com IA) e Mensagens.
 - Webhooks ML recebidos por `ml-webhook` para `orders_v2`, `questions`, `claims` e `shipments`.
+- **Pós-venda deixou de ser só leitura** (2026-10-28, [[Índice de ADRs]] ADR-0192): Devoluções e
+  Mensagens agora têm ações de escrita no ML (revisar devolução, responder reclamação, mensagem com
+  anexo) com confirmação e trava anti-duplicação, e a leitura da mensagem é sincronizada com o ML.
+  O webhook antigo de `messages`/`claims` nunca entregou nada — corrigido na emenda de 28/10 ao
+  ADR-0067 (`messages` chega com id da mensagem; reclamação chega como `post_purchase`).
+  Ver `docs/decisions/0192-posvenda-ml-acoes.md`.
 - Reconciliação por `reconciliar-faturamento` em schedule QStash horário (inclui estornos de
   devoluções de até 30 dias).
 - `upsertDevolucao` resolve `order_id` via `shipping_id` em devoluções do tipo `shipment`.

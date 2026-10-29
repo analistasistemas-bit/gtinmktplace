@@ -896,6 +896,21 @@ nenhum campo monetário. O valor exibido na UI (aba Devoluções, Dashboard) é 
 (reembolso já confirmado via Mercado Pago, ADR-0038), lido no client por `buscarDevolucoes`
 (`src/lib/devolucoes.ts`), não a coluna `valor_em_jogo`.
 
+**Colunas de pós-venda (ADR-0192, migration `20261028154949_posvenda_ml.sql`)** — detalhe lido do
+ML para a UI e para o enriquecimento:
+- `return_id bigint` — id da devolução em `v2/claims/{id}/returns`.
+- `detalhe jsonb` — `{title, description, problem, due_date, action_responsible}` do `detail` do claim.
+- `prazo timestamptz` — prazo da próxima ação.
+- `vez_de text` — de quem é a vez (`vendedor`/`comprador`/`ml`; check `ml_devolucoes_vez_de_check`).
+- `revisao_pendente boolean` (default `false`) e `revisao_status text` — estado da revisão em
+  `v1/returns/{id}/reviews` (`revisao_status` = último `seller_status` lido). O estado de revisão
+  **não** vive no claim, por isso o card "Revisar" depende destas colunas.
+- `afeta_reputacao text`, `rastreio text`, `pedidos_devolucao jsonb` (order_ids da devolução, para carrinho).
+- `enriquecido_em timestamptz` — `null` = falta enriquecer (etapa `enriquecer` do reconciliar).
+- `lido_em timestamptz` — **versão do snapshot**: a RPC `upsert_ml_devolucao` só sobrescreve se o
+  `lido_em` novo for `>=` o gravado (webhook e reconciliar correm em paralelo). Leitura que falha
+  não apaga coluna já preenchida.
+
 ### `ml_perguntas`
 Perguntas de compradores. *Migration `20260622193354_faturamento_perguntas.sql` (ADR-0037).*
 `question_id` (único com user), `item_id`, `item_titulo`, `texto`, `criada_em`,
@@ -919,6 +934,30 @@ que não são donos da conexão ML);
 `anon` sem nenhum privilégio (a migration original dava `grant all` por engano — revogado no
 plan 037, mesmo precedente de `ml_perguntas`). Escrita real só pelo worker (`service_role`,
 bypassa RLS).
+
+**`lida_ml_em timestamptz`** (ADR-0192, migration `20261028154949_posvenda_ml.sql`) — recibo de
+leitura **no ML**. Monotônico: só sai de `null`, gravado por `coalesce(lida_ml_em, $1)` e nunca pelo
+upsert de `raw`. Backfill inicial de `raw->'message_date'->>'read'`. **Distinto de `lida`**, que
+continua sendo "dispensada/tratada localmente" (badge do menu, Dispensar). O contador "não lidas"
+da aba usa `lida_ml_em`; "sem responder" usa `lida`.
+
+### `ml_posvenda_acoes`
+Auditoria e trava das escritas de pós-venda no ML (revisar devolução, responder reclamação,
+mensagem). *Migration `20261028154949_posvenda_ml.sql` (ADR-0192).* Uma linha por tentativa.
+Colunas: `id`, `org_id` (FK `organizations`, cascade), `user_id` (quem clicou — **sem FK de
+propósito**: excluir usuário não pode apagar tentativa em aberto, o que soltaria a trava),
+`operacao_id` (idempotência de clique), `claim_id`, `return_id`, `recurso`, `acao`, `payload`,
+`payload_hash`, `antes` (snapshot relido antes do POST), `estado`, `post_em` (gravado **antes** do
+fetch), `http_status` (null se não houve resposta), `resposta_ml`, `sync_pendente`, `erro`,
+`criado_em`, `atualizado_em`.
+- **Estados** (check): `reservada`, `enviada`, `confirmada`, `recusada`, `desconhecido`,
+  `inconclusiva`, `cancelada`. Em aberto = `reservada|enviada|desconhecido` (travam o recurso).
+- **Índices únicos:** `ml_posvenda_acoes_operacao_uniq (org_id, operacao_id)` e o parcial
+  `ml_posvenda_acoes_trava_uniq (org_id, recurso) where estado in ('reservada','enviada','desconhecido')`
+  — no máximo uma tentativa em aberto por `recurso`. Mais `ml_posvenda_acoes_claim_idx (org_id, claim_id, criado_em desc)`.
+- **RLS/grants:** RLS ligada; policy `select` por `org_id = current_org_id()`; `revoke all` de
+  `anon, authenticated` e `grant select` só para `authenticated` (default privileges dão TRUNCATE,
+  que RLS não cobre). Escrita só por `service_role` (edges).
 
 ---
 
@@ -1568,6 +1607,8 @@ O export `--atuais` pode ser lido por SELECT somente leitura. `--modo seed` só 
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token, comandos_ativos)` sem expor o token nem o id do bot (`comandos_ativos` desde `20261025152230`, ADR-0190 D-8) |
 | `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack da org como lidas (limpa o badge da conversa; também é o "Dispensar") |
 | `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` da org do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida`, `order_status <> 'cancelled'` e ainda `not lida` — badge do menu, sem baixar a tabela inteira (plan 036). `lida` passa a `true` ao responder ou ao dispensar a conversa (`marcar_mensagens_lidas`), tirando-a do badge mesmo sem resposta enviada — caminho para packs bloqueados pelo ML (ex.: mediação, 403 `blocked_by_mediation`) |
+| `upsert_ml_devolucao(linha jsonb)` → `jsonb` | ADR-0192 (migration `20261028160330`): upsert de `ml_devolucoes` com guarda de versão — conflito `(user_id, claim_id)` só atualiza se `lido_em` for nulo ou `excluded.lido_em >= t.lido_em`, então snapshot mais velho nunca sobrescreve um mais novo (webhook × reconciliar). Grava só as chaves presentes em `linha`; devolve a linha que ficou. `SECURITY INVOKER`, execute só `service_role` |
+| `resumo_mensagens_posvenda()` → `(nao_lidas_total, a_preparar, a_caminho, entregues, sem_responder, respondidas)` | ADR-0192 (migration `20261028172646`): contadores dos cards da aba Mensagens, agregados **por pack** sobre **todas** as mensagens da org da sessão (`current_org_id()`; o front só baixa as 1000 mais recentes). Não lidas = recebida sem `lida_ml_em`, por situação de envio (`ml_vendas.shipping_status`); packs `cancelled` ficam fora. `security definer`, `stable`, `search_path=public` |
 | `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` | ADR-0088: claim atômico de uma raiz travada em `mudando_composicao=true` — reserva service_role-only |
 | `reconciliar_backfill_up_candidatas(p_org_id)` | ADR-0088: lista candidatas ao backfill UP server-side (sem truncar por paginação) — service_role-only |
 | `reconciliar_backfill_up_upsert(...)` | ADR-0088: upsert atômico raiz+filho do backfill UP numa única transação — service_role-only |

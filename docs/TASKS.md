@@ -1,5 +1,23 @@
 # PubliAI — Tasks
 
+## Pós-venda do ML no PubliAI (ADR-0192) — 2026-10-28
+
+- [x] Webhook `messages`/`post_purchase` corrigido (emenda de 28/10 ao ADR-0067): o webhook nunca havia entregue mensagem nem reclamação.
+- [x] Visual de WhatsApp nas mensagens.
+- [x] Aba Pós-venda com 3 sub-abas.
+- [x] Revisar devolução com fotos (upload via edge `posvenda-anexo`, JPG/PNG até 5 MB).
+- [x] Ações nas reclamações com confirmação (`posvenda-acao`; detalhe ao vivo em `posvenda-detalhe`).
+- [x] Trava anti-duplicação: `ml_posvenda_acoes` com índice parcial por `recurso`; nunca reenvia POST sozinho.
+- [x] Mensagens com lida sincronizada no ML (`lida_ml_em`, edge `marcar-mensagens-lidas-ml`, RPC `resumo_mensagens_posvenda`).
+- [x] 3 migrations (`20261028154949_posvenda_ml`, `20261028160330_posvenda_upsert_devolucao`, `20261028172646_posvenda_resumo_mensagens`) e 4 edges novas.
+- [x] Enriquecimento das devoluções antigas pela etapa `enriquecer` do reconciliar.
+- [ ] Primeira ação real pela UI (responder uma reclamação aberta) e conferir `ml_posvenda_acoes.estado='confirmada'` — nenhuma ação de escrita executada no ML ainda.
+- [ ] Enriquecimento: 45 reclamações antigas (2022–2024, fechadas) nunca enriquecem — o ML responde 401 "This functionality is not available for Claims 1.0" ou 403 "User does not have access to claim"; hoje são retentadas a cada hora (~135 GETs/h). Marcar esses dois erros permanentes em claim fechado como "não enriquecível" (gravar `enriquecido_em`). 2 linhas da org 383636a4 sem conexão ML nunca são tentadas.
+- [ ] sync-mensagem ao reprocessar o evento `read` lê só a 1ª página do pack (Ruling R18) — paginar `buscarMensagensPackEstrito`.
+- [ ] Revogar `anon` (e PUBLIC) de `resumo_mensagens_posvenda` (SECURITY DEFINER; anon recebe zeros hoje).
+- [ ] Regenerar `src/lib/database.types.ts` (editado à mão para `lida_ml_em` e a RPC).
+- [ ] Textos de confirmação de reembolso (`accepted`/`applied`) nunca observados no ML real — se divergirem, a ação fica travada (lado seguro).
+
 ## Reposição de componente reativa Kit Virtual pausado (emenda ADR-0154/0111) — 2026-10-28
 
 - [x] Hairfly MLB5433591725 (Alisante + Neutralizante) ficou `paused` com 100 em estoque: venda zerou o Neutralizante, a reposição reativou o componente (ADR-0111), mas o kit nunca é alvo de push e o ML não o reativa sozinho. Kit reativado por `PUT status=active` (OK do Diego) — contrato provado (200).
