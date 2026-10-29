@@ -77,20 +77,23 @@ async function paginarPack(
   token: string, packId: string | number, sellerId: string | number, marcarLido: boolean, f: typeof fetch, vazioSeSemAcesso: boolean,
 ): Promise<MensagemML[]> {
   const LIMITE = 10; // ponytail: página padrão do ML; o offset avança pelo que a página trouxe.
-  const out: MensagemML[] = [];
+  const vistas = new Map<string, MensagemML>(); // dedupe por id: página repetida não conta como cobertura
   for (let pag = 0; pag < 100; pag++) {
-    const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLido}&limit=${LIMITE}&offset=${out.length}`;
+    const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLido}&limit=${LIMITE}&offset=${vistas.size}`;
     const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
-    if (vazioSeSemAcesso && !out.length && (resp.status === 403 || resp.status === 404)) return [];
+    if (vazioSeSemAcesso && !vistas.size && (resp.status === 403 || resp.status === 404)) return [];
     if (resp.status === 404) throw new Error(ERRO_PACK_INDISPONIVEL);
     if (resp.status === 403) throw new Error(ERRO_RECONECTAR_ML);
     if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
     const json = await resp.json();
     const msgs = extrairMensagens(json);
-    out.push(...msgs);
-    const total = Number((json as { paging?: { total?: unknown } })?.paging?.total);
-    if (!Number.isFinite(total) || out.length >= total) return out;
-    if (!msgs.length) throw new Error(`ML /messages/packs: página vazia antes do total (${out.length}/${total})`);
+    const antes = vistas.size;
+    for (const m of msgs) { const k = m.id != null ? String(m.id) : JSON.stringify(m); if (!vistas.has(k)) vistas.set(k, m); }
+    // `total` ausente/inválido (null vira NaN aqui) não prova fim: segue pelas outras condições.
+    const bruto = (json as { paging?: { total?: unknown } })?.paging?.total;
+    const total = typeof bruto === 'number' ? bruto : NaN;
+    if ((Number.isFinite(total) && total >= 0 && vistas.size >= total) || msgs.length < LIMITE) return [...vistas.values()];
+    if (vistas.size === antes) throw new Error('ML /messages/packs: paginação sem avanço');
   }
   throw new Error('ML /messages/packs: páginas demais no pack');
 }

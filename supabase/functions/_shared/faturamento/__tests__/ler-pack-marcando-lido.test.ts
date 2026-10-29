@@ -21,6 +21,13 @@ describe('lerPackMarcandoLido', () => {
   });
 });
 
+// Fake sem `paging.total` (ausente ou null): `total` é o tamanho real do pack.
+const semTotal = (total: number, paging?: null) => vi.fn(async (url: string) => {
+  const offset = Number(new URL(url).searchParams.get('offset') ?? 0);
+  const messages = Array.from({ length: Math.max(0, Math.min(total, offset + 10) - offset) }, (_, i) => ({ id: `m${offset + i}` }));
+  return new Response(JSON.stringify(paging === null ? { paging: { total: null }, messages } : { messages }), { status: 200 });
+}) as unknown as typeof fetch;
+
 describe('lerPackMarcandoLido: paginação (paging.total)', () => {
   // Fake do ML: `total` mensagens, `porPagina` por página, responde pelo offset da URL.
   const paginado = (total: number, porPagina = 10, cortaEm = Infinity) => vi.fn(async (url: string) => {
@@ -38,8 +45,19 @@ describe('lerPackMarcandoLido: paginação (paging.total)', () => {
     expect(urls).toHaveLength(3);
     for (const u of urls) expect(u).toContain('mark_as_read=true');
   });
-  it('página vazia antes do total → lança (não reporta sucesso parcial)', async () => {
-    await expect(lerPackMarcandoLido('t', 1, 2, paginado(30, 10, 15))).rejects.toThrow(/página/);
+  it('total ausente: 25 mensagens em páginas de 10 → 25 em 3 GETs', async () => {
+    const f = semTotal(25);
+    expect(await lerPackMarcandoLido('t', 1, 2, f)).toHaveLength(25);
+    expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
+  });
+  it('total=null com 3 páginas → 25', async () => {
+    expect(await lerPackMarcandoLido('t', 1, 2, semTotal(25, null))).toHaveLength(25);
+  });
+  it('servidor repetindo a 1ª página com total=25 → lança (paginação sem avanço)', async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({
+      paging: { total: 25 }, messages: Array.from({ length: 10 }, (_, i) => ({ id: `m${i}` })),
+    }), { status: 200 })) as unknown as typeof fetch;
+    await expect(lerPackMarcandoLido('t', 1, 2, f)).rejects.toThrow(/sem avanço/);
   });
 });
 
@@ -65,6 +83,11 @@ describe('buscarMensagensPackEstrito: paginação', () => {
       ? new Response(JSON.stringify({ paging: { total: 25 }, messages: Array.from({ length: 10 }, (_, i) => ({ id: `m${i}` })) }), { status: 200 })
       : new Response('x', { status: 500 }))) as unknown as typeof fetch;
     await expect(buscarMensagensPackEstrito('t', 1, 2, f)).rejects.toThrow('ML /messages/packs 500');
+  });
+  it('total ausente com 25 mensagens → 25 em 3 GETs (variante estrita)', async () => {
+    const f = semTotal(25);
+    expect(await buscarMensagensPackEstrito('t', 1, 2, f)).toHaveLength(25);
+    expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
   });
   it('404 na 1ª página → []', async () => {
     expect(await buscarMensagensPackEstrito('t', 1, 2, resp(404))).toEqual([]);
