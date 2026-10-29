@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ERRO_PACK_INDISPONIVEL, ERRO_RECONECTAR_ML, lerPackMarcandoLido } from '../mensagens-io';
+import { ERRO_PACK_INDISPONIVEL, ERRO_RECONECTAR_ML, buscarMensagensPackEstrito, lerPackMarcandoLido } from '../mensagens-io';
 
 const resp = (status: number, corpo: unknown = {}) =>
   vi.fn(async () => new Response(JSON.stringify(corpo), { status })) as unknown as typeof fetch;
@@ -40,5 +40,33 @@ describe('lerPackMarcandoLido: paginação (paging.total)', () => {
   });
   it('página vazia antes do total → lança (não reporta sucesso parcial)', async () => {
     await expect(lerPackMarcandoLido('t', 1, 2, paginado(30, 10, 15))).rejects.toThrow(/página/);
+  });
+});
+
+describe('buscarMensagensPackEstrito: paginação', () => {
+  const paginado = (total: number, porPagina = 10) => vi.fn(async (url: string) => {
+    const offset = Number(new URL(url).searchParams.get('offset') ?? 0);
+    const fim = Math.min(total, offset + porPagina);
+    const messages = Array.from({ length: Math.max(0, fim - offset) }, (_, i) => ({ id: `m${offset + i}` }));
+    return new Response(JSON.stringify({ paging: { total, offset, limit: porPagina }, messages }), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  it('total=25, 10 por página → 25 mensagens em 3 GETs, mark_as_read=false', async () => {
+    const f = paginado(25);
+    const msgs = await buscarMensagensPackEstrito('t', 1, 2, f);
+    expect(msgs).toHaveLength(25);
+    const urls = (f as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as string);
+    expect(urls).toHaveLength(3);
+    for (const u of urls) expect(u).toContain('mark_as_read=false');
+  });
+  it('falha na 2ª página lança (nunca sucesso parcial)', async () => {
+    let n = 0;
+    const f = vi.fn(async () => (++n === 1
+      ? new Response(JSON.stringify({ paging: { total: 25 }, messages: Array.from({ length: 10 }, (_, i) => ({ id: `m${i}` })) }), { status: 200 })
+      : new Response('x', { status: 500 }))) as unknown as typeof fetch;
+    await expect(buscarMensagensPackEstrito('t', 1, 2, f)).rejects.toThrow('ML /messages/packs 500');
+  });
+  it('404 na 1ª página → []', async () => {
+    expect(await buscarMensagensPackEstrito('t', 1, 2, resp(404))).toEqual([]);
   });
 });

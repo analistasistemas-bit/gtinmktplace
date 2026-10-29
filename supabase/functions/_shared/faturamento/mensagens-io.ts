@@ -69,18 +69,19 @@ export const ERRO_RECONECTAR_ML = 'Reconecte a conta do Mercado Livre em Configu
 // R17: 404 do ML ao ler o pack pode ser temporário (doc "mensagens-pendentes" manda retentar).
 export const ERRO_PACK_INDISPONIVEL = 'O Mercado Livre ainda não liberou esta conversa (404). Abra de novo em instantes.';
 
-/** Lê o pack MARCANDO como lido no ML (único uso de mark_as_read=true). 404 → lança (retentável, R17);
- *  403 → erro de reconexão; qualquer outro não-2xx ou falha de rede → lança.
- *  Pagina por limit/offset até `paging.total` e só devolve com TODAS as páginas lidas (o chamador só
- *  persiste/reporta sucesso depois); página vazia antes do total lança em vez de sucesso parcial. */
-export async function lerPackMarcandoLido(
-  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+/** Pagina o pack por limit/offset até `paging.total` e só devolve com TODAS as páginas lidas;
+ *  página vazia antes do total lança em vez de sucesso parcial. 404 → lança (retentável, R17);
+ *  403 → erro de reconexão; outro não-2xx/falha de rede → lança. `vazioSeSemAcesso`: 403/404 na
+ *  1ª página → [] (variante estrita ADR-0173). */
+async function paginarPack(
+  token: string, packId: string | number, sellerId: string | number, marcarLido: boolean, f: typeof fetch, vazioSeSemAcesso: boolean,
 ): Promise<MensagemML[]> {
   const LIMITE = 10; // ponytail: página padrão do ML; o offset avança pelo que a página trouxe.
   const out: MensagemML[] = [];
   for (let pag = 0; pag < 100; pag++) {
-    const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=true&limit=${LIMITE}&offset=${out.length}`;
+    const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLido}&limit=${LIMITE}&offset=${out.length}`;
     const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    if (vazioSeSemAcesso && !out.length && (resp.status === 403 || resp.status === 404)) return [];
     if (resp.status === 404) throw new Error(ERRO_PACK_INDISPONIVEL);
     if (resp.status === 403) throw new Error(ERRO_RECONECTAR_ML);
     if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
@@ -94,18 +95,17 @@ export async function lerPackMarcandoLido(
   throw new Error('ML /messages/packs: páginas demais no pack');
 }
 
-/** Mesma leitura, ESTRITA (ADR-0173): 403/404 (pack sem mensagens/sem permissão) → []; qualquer
- *  outro não-2xx (429/5xx) ou erro de rede → lança — o worker precisa distinguir "não há nada"
- *  de "a leitura falhou", que hoje voltam ambos como []. */
-export async function buscarMensagensPackEstrito(
+/** Lê o pack MARCANDO como lido no ML (único uso de mark_as_read=true). */
+export const lerPackMarcandoLido = (
   token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
-): Promise<MensagemML[]> {
-  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`;
-  const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
-  if (resp.status === 403 || resp.status === 404) return [];
-  if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-  return extrairMensagens(await resp.json());
-}
+): Promise<MensagemML[]> => paginarPack(token, packId, sellerId, true, f, false);
+
+/** Mesma leitura, ESTRITA (ADR-0173), sem marcar como lida: 403/404 (pack sem mensagens/sem
+ *  permissão) → []; qualquer outro não-2xx (429/5xx), página falha ou erro de rede → lança — o
+ *  worker precisa distinguir "não há nada" de "a leitura falhou". */
+export const buscarMensagensPackEstrito = (
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+): Promise<MensagemML[]> => paginarPack(token, packId, sellerId, false, f, true);
 
 function montarLinhasMensagens(
   userId: string, orgId: string | null, packId: string | number, meta: MetaPack, sellerId: string | number, msgs: MensagemML[],
