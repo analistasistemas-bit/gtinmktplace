@@ -42,7 +42,8 @@ function lerReturn(data: unknown): ReturnML | null {
     : (r.resource_type === 'order' ? [numOuNull(r.resource_id)] : []);
   const pedidos = lista.filter((n): n is number => n != null);
   return {
-    id: numOuNull(r.id),
+    // low_cost sem envio físico vem com id 0: não há return → null (sem /returns/0/reviews).
+    id: (numOuNull(r.id) ?? 0) > 0 ? numOuNull(r.id) : null,
     tracking: typeof envio?.tracking_number === 'string' ? envio.tracking_number : null,
     pedidos: pedidos.length ? pedidos : undefined,
     status: (r.status as string | undefined) ?? null,
@@ -83,10 +84,10 @@ async function lerJson(url: string, token: string): Promise<{ status: number; bo
   } catch { return null; }
 }
 
-/** Recusa permanente do ML (não adianta retentar): 401 "Claims 1.0" ou 403 "sem acesso ao claim". */
+/** Recusa permanente do ML (não adianta retentar): 401 "Claims 1.0"/"not authorized to obtain claim" ou 403 "sem acesso ao claim". */
 export function recusaPermanente(status: number, body: unknown): boolean {
   const txt = JSON.stringify(body ?? '');
-  return (status === 401 && /Claims 1\.0/i.test(txt)) || (status === 403 && /does not have access to claim/i.test(txt));
+  return (status === 401 && /Claims 1\.0|not authorized to obtain claim/i.test(txt)) || (status === 403 && /does not have access to claim/i.test(txt));
 }
 
 const CAMPOS_DETALHE = ['title', 'description', 'problem', 'due_date', 'action_responsible'] as const;

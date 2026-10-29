@@ -52,6 +52,25 @@ describe('erros permanentes do ML em claim antigo (Claims 1.0 / sem acesso)', ()
   it('closed + 500: continua pendente', async () => {
     expect((await rodar('closed', [500, {}], [500, {}], [500, {}])).enriquecido_em).toBeUndefined();
   });
+  const E401B = { code: 401, error: 'unauthorized_request_error', message: 'You are not authorized to obtain claim 5557947710', cause: null };
+  it('closed + 401 "not authorized to obtain claim" em returns: enriquecido', async () => {
+    expect((await rodar('closed', [200, { title: 'x' }], [200, { affects_reputation: 'no' }], [401, E401B])).enriquecido_em).toBeTruthy();
+  });
+  it('opened + mesmo 401: continua pendente', async () => {
+    expect((await rodar('opened', [200, { title: 'x' }], [200, { affects_reputation: 'no' }], [401, E401B])).enriquecido_em).toBeUndefined();
+  });
+  it('closed + 401 invalid_token em returns: continua pendente', async () => {
+    expect((await rodar('closed', [200, { title: 'x' }], [200, { affects_reputation: 'no' }], [401, { message: 'invalid_token' }])).enriquecido_em).toBeUndefined();
+  });
+  it('low_cost com id 0: enriquecido, return_id null, status mantido, sem chamar /returns/0/reviews', async () => {
+    const l = await rodar('closed', [200, { title: 'x' }], [200, { affects_reputation: 'no' }],
+      [200, { id: 0, status: 'closed', status_money: 'refunded', subtype: 'low_cost', related_entities: null, shipments: null }]);
+    expect(l.enriquecido_em).toBeTruthy();
+    expect(l.return_id).toBeNull();
+    expect(l.return_status).toBe('closed');
+    expect(l.return_status_money).toBe('refunded');
+    expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes('/returns/0/'))).toBe(false);
+  });
   it('closed + 401 que não é Claims 1.0: continua pendente', async () => {
     expect((await rodar('closed', [401, { message: 'invalid token' }], [403, E403], [403, E403])).enriquecido_em).toBeUndefined();
   });
