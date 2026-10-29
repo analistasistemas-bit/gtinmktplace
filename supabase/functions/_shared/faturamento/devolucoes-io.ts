@@ -15,7 +15,10 @@ const API = 'https://api.mercadolibre.com';
  * classificarErroML). */
 export async function buscarClaim(token: string, claimId: string): Promise<ClaimML> {
   const resp = await fetch(`${API}/post-purchase/v1/claims/${claimId}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!resp.ok) throw new MLApiError(resp.status, `ML /claims/${claimId} ${resp.status}`);
+  if (!resp.ok) {
+    const corpo = (await resp.text().catch(() => '')).slice(0, 200); // classificador de recusa permanente lê isto
+    throw new MLApiError(resp.status, `ML /claims/${claimId} ${resp.status} ${corpo}`.trim());
+  }
   return await resp.json() as ClaimML;
 }
 
@@ -237,11 +240,12 @@ export async function enriquecerPendentes(
   admin: SupabaseClient, token: string, org: string, conexao: ConexaoCanal & { criadoPor: string },
   depoisDe = 0, limite = 20,
 ): Promise<{ n: number; ultimo: number | null }> {
-  const { data, error } = await admin.from('ml_devolucoes').select('claim_id')
+  const { data, error } = await admin.from('ml_devolucoes').select('claim_id, status')
     .eq('org_id', org).is('enriquecido_em', null).gt('claim_id', depoisDe)
     .order('claim_id', { ascending: true }).limit(limite);
   if (error) throw new Error(`enriquecerPendentes: ${error.message}`);
   const ids = (data ?? []).map((r) => Number(r.claim_id));
+  const encerrados = new Set((data ?? []).filter((r) => r.status === 'closed').map((r) => Number(r.claim_id)));
   let n = 0;
   for (const lote of chunk(ids, 5)) {
     await Promise.all(lote.map(async (id) => {
@@ -250,6 +254,12 @@ export async function enriquecerPendentes(
         await upsertDevolucao(admin, conexao.criadoPor, org, claim, ret, conexao.contaExternaId, extras, lidoEm);
         n++;
       } catch (e) {
+        // 403 permanente no GET principal de claim já encerrado: só marca como enriquecido (nada a ler).
+        if (e instanceof MLApiError && encerrados.has(id) && recusaPermanente(e.status ?? 0, e.message)) {
+          const { error: erroUp } = await admin.from('ml_devolucoes').update({ enriquecido_em: new Date().toISOString() })
+            .eq('org_id', org).eq('claim_id', id);
+          if (!erroUp) { n++; return; }
+        }
         console.warn(`enriquecer: claim ${id} da org ${org} falhou: ${(e as Error).message}`);
       }
     }));

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enriquecerPendentes } from '../devolucoes-io';
 
 const resp = (status: number, body: unknown) => ({
-  ok: status >= 200 && status < 300, status, json: async () => body,
+  ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body),
 }) as never;
 
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); });
@@ -54,5 +54,51 @@ describe('erros permanentes do ML em claim antigo (Claims 1.0 / sem acesso)', ()
   });
   it('closed + 401 que não é Claims 1.0: continua pendente', async () => {
     expect((await rodar('closed', [401, { message: 'invalid token' }], [403, E403], [403, E403])).enriquecido_em).toBeUndefined();
+  });
+});
+
+describe('enriquecerPendentes: 403 permanente no GET principal do claim', () => {
+  const E403 = { code: 403, error: 'forbidden_error', message: 'User does not have access to claim' };
+  const cx = { id: 'c', orgId: 'o', canal: 'mercado_livre', contaExternaId: '999', expiresAt: null, criadoPor: 'u' };
+  const rodar = async (statusLocal: string, status: number, body: unknown) => {
+    const updates: any[] = [];
+    const b: any = {};
+    for (const m of ['select', 'is', 'order', 'limit', 'gt']) b[m] = () => b;
+    b.eq = (c: string, v: unknown) => { b.filtros.push([c, v]); return b; };
+    b.filtros = [] as unknown[];
+    b.then = (ok: (v: unknown) => unknown) => ok({ data: [{ claim_id: 5, status: statusLocal }], error: null });
+    const admin: any = {
+      updates, rpc: vi.fn(async () => ({ data: {}, error: null })),
+      from: () => ({
+        ...b,
+        update: (v: unknown) => { const u: any = { v, filtros: [] }; updates.push(u); const c: any = { eq: (k: string, x: unknown) => { u.filtros.push([k, x]); return c; }, then: (ok: (r: unknown) => unknown) => ok({ error: null }) }; return c; },
+      }),
+    };
+    vi.mocked(fetch).mockImplementation(async () => resp(status, body));
+    const r = await enriquecerPendentes(admin, 't', 'o', cx, 0, 20);
+    return { admin, r };
+  };
+
+  it('closed + 403 permanente: grava só enriquecido_em (org+claim) e conta como processada', async () => {
+    const { admin, r } = await rodar('closed', 403, E403);
+    expect(r.n).toBe(1);
+    expect(admin.updates).toHaveLength(1);
+    expect(Object.keys(admin.updates[0].v)).toEqual(['enriquecido_em']);
+    expect(admin.updates[0].filtros).toEqual([['org_id', 'o'], ['claim_id', 5]]);
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+  it('opened + 403: continua pendente', async () => {
+    const { admin, r } = await rodar('opened', 403, E403);
+    expect(r.n).toBe(0);
+    expect(admin.updates).toHaveLength(0);
+  });
+  it('closed + 500: continua pendente', async () => {
+    const { admin, r } = await rodar('closed', 500, {});
+    expect(r.n).toBe(0);
+    expect(admin.updates).toHaveLength(0);
+  });
+  it('closed + 403 com outra mensagem / 401 de token: continua pendente', async () => {
+    expect((await rodar('closed', 403, { message: 'other' })).admin.updates).toHaveLength(0);
+    expect((await rodar('closed', 401, { message: 'invalid token' })).admin.updates).toHaveLength(0);
   });
 });
