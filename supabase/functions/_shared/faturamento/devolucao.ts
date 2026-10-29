@@ -150,7 +150,9 @@ export function vezDe(
 }
 
 /** Leitura que pode falhar: distingue "lido e vazio" de "não consegui ler". */
-export type Leitura<T> = { ok: true; valor: T } | { ok: false };
+export type Leitura<T> = { ok: true; valor: T } | { ok: false; permanente?: true };
+/** Lida (`ok`) ou recusa PERMANENTE do ML em claim encerrado (recurso inexistente p/ a conta). */
+const concluida = (l: Leitura<unknown>) => l.ok || l.permanente === true;
 
 export interface RevisaoML { order_id: number; seller_status: string | null }
 
@@ -235,7 +237,7 @@ export function colunasLidas(
     o.revisao_status = rv === 'sem_review' ? null
       : rv.some((r) => r.seller_status === 'pending') ? 'pending' : (rv[rv.length - 1]?.seller_status ?? null);
   }
-  if (ret.ok && extras.detalhe.ok && extras.reputacao.ok && extras.revisoes.ok) o.enriquecido_em = agoraIso;
+  if ([ret, extras.detalhe, extras.reputacao, extras.revisoes].every(concluida)) o.enriquecido_em = agoraIso;
   return o;
 }
 

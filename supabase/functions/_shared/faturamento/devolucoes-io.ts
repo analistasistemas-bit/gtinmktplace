@@ -51,11 +51,15 @@ function lerReturn(data: unknown): ReturnML | null {
 /** GET v2/claims/{id}/returns. 404 = claim sem devolução (lido, `valor: null`); qualquer outra
  *  falha = `ok:false` (não apaga o que já foi gravado). NÃO vira MLApiError: "sem return ainda" é
  *  estado de negócio comum, não erro de liveness. */
-export async function buscarReturnLeitura(token: string, claimId: string): Promise<Leitura<ReturnML | null>> {
+export async function buscarReturnLeitura(token: string, claimId: string, encerrado = false): Promise<Leitura<ReturnML | null>> {
   try {
     const resp = await fetch(`${API}/post-purchase/v2/claims/${claimId}/returns`, AUTH(token));
     if (resp.status === 404) return { ok: true, valor: null };
-    if (!resp.ok) return { ok: false };
+    if (!resp.ok) {
+      // Só claim encerrado: recusa permanente = conclusão sem dado (não apaga o já gravado).
+      if (encerrado && recusaPermanente(resp.status, await resp.json().catch(() => null))) return { ok: false, permanente: true };
+      return { ok: false };
+    }
     return { ok: true, valor: lerReturn(await resp.json()) };
   } catch { return { ok: false }; }
 }
@@ -76,10 +80,18 @@ async function lerJson(url: string, token: string): Promise<{ status: number; bo
   } catch { return null; }
 }
 
+/** Recusa permanente do ML (não adianta retentar): 401 "Claims 1.0" ou 403 "sem acesso ao claim". */
+export function recusaPermanente(status: number, body: unknown): boolean {
+  const txt = JSON.stringify(body ?? '');
+  return (status === 401 && /Claims 1\.0/i.test(txt)) || (status === 403 && /does not have access to claim/i.test(txt));
+}
+
 const CAMPOS_DETALHE = ['title', 'description', 'problem', 'due_date', 'action_responsible'] as const;
 
 /** `/detail`, `/affects-reputation` e as revisões do return. Cada leitura falha sozinha. */
-export async function buscarExtrasClaim(token: string, claimId: string, returnId: number | null | undefined): Promise<ExtrasClaim> {
+export async function buscarExtrasClaim(
+  token: string, claimId: string, returnId: number | null | undefined, encerrado = false,
+): Promise<ExtrasClaim> {
   const base = `${API}/post-purchase/v1`;
   const [det, rep, rev] = await Promise.all([
     lerJson(`${base}/claims/${claimId}/detail`, token),
@@ -88,7 +100,8 @@ export async function buscarExtrasClaim(token: string, claimId: string, returnId
   ]);
   const ok200 = (r: { status: number } | null) => r != null && r.status >= 200 && r.status < 300;
 
-  let detalhe: ExtrasClaim['detalhe'] = { ok: false };
+  const perm = (r: { status: number; body: unknown } | null) => encerrado && r != null && recusaPermanente(r.status, r.body);
+  let detalhe: ExtrasClaim['detalhe'] = perm(det) ? { ok: false, permanente: true } : { ok: false };
   if (det && ok200(det) && det.body && typeof det.body === 'object') {
     const b = det.body as Record<string, unknown>;
     const d: DetalheClaimML = {};
@@ -97,7 +110,7 @@ export async function buscarExtrasClaim(token: string, claimId: string, returnId
   }
   const reputacao: ExtrasClaim['reputacao'] = rep && ok200(rep) && rep.body && typeof rep.body === 'object'
     ? { ok: true, valor: ((rep.body as Record<string, unknown>).affects_reputation as string | undefined) ?? null }
-    : { ok: false };
+    : perm(rep) ? { ok: false, permanente: true } : { ok: false };
   let revisoes: ExtrasClaim['revisoes'] = { ok: false };
   if (returnId == null) revisoes = { ok: true, valor: [] };
   else if (rev && ok200(rev) && Array.isArray((rev.body as { reviews?: unknown } | null)?.reviews)) {
@@ -111,10 +124,10 @@ export async function buscarExtrasClaim(token: string, claimId: string, returnId
 
 /** Return + extras de um claim. Sem return lido, as revisões (que dependem do id) também ficam
  *  não lidas. A versão (`lidoEm`) é capturada pelo CHAMADOR antes de ler o claim. */
-export async function lerReturnEExtras(token: string, claimId: string) {
-  const ret = await buscarReturnLeitura(token, claimId);
-  const extras = await buscarExtrasClaim(token, claimId, ret.ok ? ret.valor?.id ?? null : null);
-  if (!ret.ok) extras.revisoes = { ok: false };
+export async function lerReturnEExtras(token: string, claimId: string, encerrado = false) {
+  const ret = await buscarReturnLeitura(token, claimId, encerrado);
+  const extras = await buscarExtrasClaim(token, claimId, ret.ok ? ret.valor?.id ?? null : null, encerrado);
+  if (!ret.ok) extras.revisoes = ret.permanente ? { ok: false, permanente: true } : { ok: false };
   return { ret, extras };
 }
 
@@ -124,7 +137,7 @@ export async function lerReturnEExtras(token: string, claimId: string) {
 export async function lerClaimCompleto(token: string, claimId: string) {
   const lidoEm = new Date().toISOString();
   const claim = await buscarClaim(token, claimId);
-  return { claim, lidoEm, ...(await lerReturnEExtras(token, claimId)) };
+  return { claim, lidoEm, ...(await lerReturnEExtras(token, claimId, claim.status === 'closed')) };
 }
 
 /** Varre /post-purchase/v1/claims/search do vendedor. Para o backfill. */

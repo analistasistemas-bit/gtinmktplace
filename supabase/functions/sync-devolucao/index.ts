@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
   }
   // Leituras que falham não viram MLApiError ("sem return ainda" é estado de negócio, não token
   // morto): a coluna não lida simplesmente não é regravada.
-  const { ret, extras } = await lerReturnEExtras(token, job.claim_id);
+  const { ret, extras } = await lerReturnEExtras(token, job.claim_id, claim.status === 'closed');
 
   const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
 
