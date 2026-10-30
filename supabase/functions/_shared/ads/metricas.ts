@@ -112,3 +112,35 @@ export function parseMetricasResumo(corpo: unknown): Partial<Record<MetricaBruta
   }
   return saida;
 }
+
+const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DIA_MS = 86_400_000;
+
+/**
+ * Série diária E2/E4 (`results[].date` + métricas no próprio dia). Cada dia da janela aparece uma vez:
+ * dia repetido, fora da janela, malformado ou com `cost` inválido invalida a série; lacuna mantém os dias
+ * lidos com completo=false. Nunca preenche dia faltante com zero.
+ */
+export function parseSerieMetricas(
+  corpo: unknown,
+  janela: JanelaAdsMetricas,
+): { serie: DiaAdsMetricas[]; completo: boolean } {
+  const invalida = () => ({ serie: [] as DiaAdsMetricas[], completo: false });
+  const ehObj = typeof corpo === 'object' && corpo !== null && !Array.isArray(corpo);
+  const results = ehObj ? (corpo as Record<string, unknown>).results : null;
+  if (!Array.isArray(results)) return invalida();
+  const porDia = new Map<string, DiaAdsMetricas>();
+  for (const r of results) {
+    if (typeof r !== 'object' || r === null || Array.isArray(r)) return invalida();
+    const date = (r as Record<string, unknown>).date;
+    if (typeof date !== 'string') return invalida();
+    const dia = date.slice(0, 10);
+    if (!DIA_RE.test(dia) || dia < janela.desde || dia > janela.ate || porDia.has(dia)) return invalida();
+    const metricas = parseMetricasResumo(r);
+    if (metricas.cost?.motivo !== null) return invalida();
+    porDia.set(dia, { dia, metricas });
+  }
+  const dias = Math.round((Date.parse(`${janela.ate}T00:00:00Z`) - Date.parse(`${janela.desde}T00:00:00Z`)) / DIA_MS) + 1;
+  const serie = [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+  return { serie, completo: serie.length === dias };
+}

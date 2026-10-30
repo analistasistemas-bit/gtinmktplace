@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EscopoAdsMetricas, PedidoAdsMetricas } from '../metricas.ts';
-import { CAMPOS_METRICA_ADS, ESCALA_METRICA_ADS, parseMetricasResumo } from '../metricas.ts';
+import { CAMPOS_METRICA_ADS, ESCALA_METRICA_ADS, parseMetricasResumo, parseSerieMetricas } from '../metricas.ts';
 
 describe('parseMetricasResumo', () => {
   it('campo ausente é null com motivo nao_retornada', () => {
@@ -63,5 +63,60 @@ describe('contrato de pedido', () => {
     const invalido: EscopoAdsMetricas = 'outro';
     expect(escopos).toContain(pedido.escopo);
     expect(invalido).toBe('outro');
+  });
+});
+
+describe('serie diária', () => {
+  const janela = { desde: '2026-10-01', ate: '2026-10-03' };
+  const dia = (date: unknown, extra: Record<string, unknown> = { cost: 1 }) => ({ date, ...extra });
+  const corpo = (...results: unknown[]) => ({ results });
+
+  it('serie íntegra: um dia por data, ordenada, completo=true', () => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-03'), dia('2026-10-01'), dia('2026-10-02')), janela);
+    expect(r.completo).toBe(true);
+    expect(r.serie.map((d) => d.dia)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03']);
+    expect(r.serie[0].metricas.cost).toEqual({ valor: 1, motivo: null });
+  });
+
+  it('serie com zero explícito continua válida', () => {
+    const r = parseSerieMetricas(
+      corpo(dia('2026-10-01', { cost: 0, clicks: 0 }), dia('2026-10-02'), dia('2026-10-03')), janela);
+    expect(r.completo).toBe(true);
+    expect(r.serie[0].metricas.clicks).toEqual({ valor: 0, motivo: null });
+  });
+
+  it('serie com lacuna: completo=false, sem preencher com zero', () => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-01'), dia('2026-10-03')), janela);
+    expect(r.completo).toBe(false);
+    expect(r.serie.map((d) => d.dia)).toEqual(['2026-10-01', '2026-10-03']);
+  });
+
+  it('serie com duplicata invalida a série', () => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-01'), dia('2026-10-01'), dia('2026-10-02'), dia('2026-10-03')), janela);
+    expect(r).toEqual({ serie: [], completo: false });
+  });
+
+  it('serie com data fora da janela invalida a série', () => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-01'), dia('2026-10-02'), dia('2026-10-03'), dia('2026-10-04')), janela);
+    expect(r).toEqual({ serie: [], completo: false });
+  });
+
+  it.each([
+    ['cost ausente', { clicks: 1 }],
+    ['cost inválido', { cost: '1' }],
+    ['cost NaN', { cost: Number.NaN }],
+  ])('serie com %s invalida a série', (_n, extra) => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-01', extra), dia('2026-10-02'), dia('2026-10-03')), janela);
+    expect(r).toEqual({ serie: [], completo: false });
+  });
+
+  it.each([
+    ['sem results', {}],
+    ['results não é array', { results: {} }],
+    ['corpo nulo', null],
+    ['data não string', corpo(dia(20261001), dia('2026-10-02'), dia('2026-10-03'))],
+    ['data malformada', corpo(dia('01/10/2026'))],
+  ])('serie com envelope inválido (%s) → vazia e incompleta', (_n, c) => {
+    expect(parseSerieMetricas(c, janela)).toEqual({ serie: [], completo: false });
   });
 });
