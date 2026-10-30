@@ -173,7 +173,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Despesa de Ads informada pela API do Mercado Livre no período, só dos grupos de Ads exclusivos desta família.',
   'Resultado após Ads::Ads':
     'Lucro antes de Ads (vendas da família no período, já sem comissão, frete, imposto e custo) menos o Gasto. '
-    + 'Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
+    + 'Só entram itens com custo; com custo parcial, o resultado também é parcial. Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
     + 'Ads não cobre o período ou há gasto compartilhado com outras famílias.',
 };
 
