@@ -46,4 +46,18 @@ describe('FaixaKpis', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar todos os indicadores' }));
     expect(ocultos()).toHaveLength(0);
   });
+
+  it('receita aparece mesmo com vendas indisponíveis', () => {
+    render(<FaixaKpis atual={base({ vendas: v(null, 'nao_retornada') })} anterior={null} comparacao="desligada" />);
+    const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
+    expect(tile.textContent).toContain('Indisponível');
+    expect(tile.textContent).toMatch(/R\$\s850,50 em receita/);
+  });
+
+  it('receita indisponível mostra o motivo', () => {
+    render(<FaixaKpis atual={base({ receita: v(null, 'fora_da_retencao') })} anterior={null} comparacao="desligada" />);
+    const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
+    expect(tile.textContent).toContain('Receita indisponível');
+    expect(tile.textContent).toContain('fora da retenção');
+  });
 });

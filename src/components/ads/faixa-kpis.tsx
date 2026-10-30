@@ -95,21 +95,25 @@ export function FaixaKpis({
           const receita = k.chave === 'vendas' ? atual.receita : null;
           const indisponivel = valor.valor === null;
 
+          const apoio = receita && (
+            <div className="mt-0.5 text-xs font-normal tracking-normal text-muted-foreground">
+              {receita.valor === null
+                ? `Receita indisponível: ${MOTIVOS[receita.motivo ?? 'nao_retornada']}`
+                : `${moeda(receita.valor)} em receita`}
+            </div>
+          );
           const corpo = indisponivel ? (
             <>
               <span className="text-muted-foreground">Indisponível</span>
               <p className="mt-1 text-xs font-normal leading-snug tracking-normal text-muted-foreground">
                 {MOTIVOS[valor.motivo ?? 'nao_retornada']}
               </p>
+              {apoio}
             </>
           ) : (
             <>
               {k.formato(valor.valor!)}
-              {receita && (
-                <div className="mt-0.5 text-xs font-normal tracking-normal text-muted-foreground">
-                  {receita.valor === null ? 'Receita indisponível' : `${moeda(receita.valor)} em receita`}
-                </div>
-              )}
+              {apoio}
               {cmp && (
                 <div className="flex flex-wrap items-center gap-x-1.5">
                   <Delta {...cmp} />
