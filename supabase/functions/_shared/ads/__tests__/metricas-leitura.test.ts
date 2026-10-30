@@ -3,6 +3,10 @@ import { lerCampanhasComparadas, lerCampanhasPeriodo, lerEscopoCampanha, lerEsco
 
 const ATUAL = { desde: '2026-09-30', ate: '2026-10-29' };
 const ANT = { desde: '2026-08-31', ate: '2026-09-29' };
+const leitura = (r: Awaited<ReturnType<typeof lerEscopoCampanha>>) => {
+  if ('recusa' in r) throw new Error(`recusada: ${r.recusa.motivo}`);
+  return r;
+};
 const camp = (id: number, cost: number, status = 'active') => ({ id, name: `C${id}`, status, metrics: { cost } });
 
 // Servidor fake: páginas de 2 linhas; guarda as URLs pedidas.
@@ -169,40 +173,44 @@ describe('escopos conta e campanha', () => {
   });
 
   it('campanha: detalhe usa E3 (resumo com competitividade) e E4 (série)', async () => {
-    const s = servidor();
-    const r = await lerEscopoCampanha(s.deps, 9, J, null);
+    const s = servidor({ camps: [camp(9, 1)] });
+    const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, null));
     expect(r.atual.resumo.impression_share?.valor).toBe(0.5);
     expect(r.atual.serie).toHaveLength(3);
     expect(r.atual.completo).toBe(true);
-    expect(s.urls.some((u) => u.includes('/advertisers/'))).toBe(false);
+    // o E1 do anunciante só serve à prova de pertencimento; nenhuma série de conta (E2) é lida
+    expect(s.urls.some((u) => u.includes('/advertisers/') && u.includes('DAILY'))).toBe(false);
   });
 
   it('campanha: E3 inválido deixa o bloco incompleto; falha na anterior isola', async () => {
-    const ruim = await lerEscopoCampanha({ buscar: async () => null, agora: () => 'T' }, 9, J, null);
+    const base = servidor({ camps: [camp(9, 1)] });
+    const e3Nulo = async (url: string) => (url.includes('/advertisers/') ? base.deps.buscar(url) : null);
+    const ruim = leitura(await lerEscopoCampanha({ buscar: e3Nulo, agora: () => 'T' }, 7, 9, J, null));
     expect(ruim.atual.completo).toBe(false);
-    const s = servidor({ falhaEm: [JA.desde] });
-    const r = await lerEscopoCampanha(s.deps, 9, J, JA);
+    const s = servidor({ camps: [camp(9, 1)], falhaEm: [JA.desde] });
+    const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, JA));
     expect(r.atual.completo).toBe(true);
     expect(r.comparacao.estado).toBe('indisponivel');
   });
 
   it('escopos: atual falha e anterior válida => comparação indisponível (conta e campanha)', async () => {
-    const s = servidor({ falhaEm: [J.desde] });
+    const s = servidor({ camps: [camp(9, 1)], falhaEm: [J.desde] });
     const c = await lerEscopoConta(s.deps, 7, J, JA);
     expect(c.atual.completo).toBe(false);
     expect(c.comparacao.estado).toBe('indisponivel');
     expect(c.comparacao.motivo).toBeTruthy();
-    const k = await lerEscopoCampanha(s.deps, 9, J, JA);
+    // atual sem E1 legível, mas o anterior completo prova o pertencimento
+    const k = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, JA));
     expect(k.atual.completo).toBe(false);
     expect(k.comparacao.estado).toBe('indisponivel');
   });
 
   it('escopos: resumo sem cost válido não é completo', async () => {
     // campanha: E3 {metrics:{}} com E4 completo
-    const base = servidor();
+    const base = servidor({ camps: [camp(9, 1)] });
     const semCost = async (url: string) =>
       /product_ads\/campaigns\/\d+\?/.test(url) && !url.includes('DAILY') ? { metrics: {} } : base.deps.buscar(url);
-    const k = await lerEscopoCampanha({ buscar: semCost, agora: () => 'T' }, 9, J, null);
+    const k = leitura(await lerEscopoCampanha({ buscar: semCost, agora: () => 'T' }, 7, 9, J, null));
     expect(k.atual.completo).toBe(false);
     // conta: metrics_summary.cost inválido cai no fallback Σ E2 (1 página)
     const invalido = async (url: string) => {
@@ -212,5 +220,48 @@ describe('escopos conta e campanha', () => {
     const c = await lerEscopoConta({ buscar: invalido, agora: () => 'T' }, 7, J, null);
     expect(c.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
     expect(c.atual.completo).toBe(true);
+  });
+
+  describe('pertencimento da campanha ao anunciante', () => {
+    const detalhe = (urls: string[]) => urls.filter((u) => /product_ads\/campaigns\/\d+\?/.test(u));
+
+    it('pertencimento: campanha fora da listagem do anunciante não provoca chamada de detalhe', async () => {
+      const s = servidor({ camps: [camp(1, 1), camp(2, 2), camp(3, 3)] });
+      const r = await lerEscopoCampanha(s.deps, 7, 9, J, JA);
+      expect(r).toEqual({ recusa: { estado: 'sem_acesso', motivo: expect.any(String) } });
+      expect(detalhe(s.urls)).toEqual([]);
+      // provou nas duas janelas, todas as páginas, antes de recusar
+      expect(s.urls.filter((u) => u.includes('/advertisers/')).length).toBe(4);
+    });
+
+    it('pertencimento: campanha histórica (deleted) na listagem autoriza o detalhe', async () => {
+      const s = servidor({ camps: [camp(1, 1), camp(2, 2), camp(9, 3, 'deleted')] });
+      const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, null));
+      expect(r.atual.completo).toBe(true);
+      expect(detalhe(s.urls).length).toBe(2);
+      expect(s.urls[0]).toContain('filters[status]=active,paused,deleted,error');
+    });
+
+    it('pertencimento: listagem incompleta falha fechada mesmo com o id na página lida', async () => {
+      const base = servidor({ camps: [camp(9, 1), camp(2, 2), camp(3, 3)] });
+      const urls: string[] = [];
+      const buscar = async (url: string) => {
+        urls.push(url);
+        return url.includes('offset=2') ? null : base.deps.buscar(url);
+      };
+      const r = await lerEscopoCampanha({ buscar, agora: () => 'T' }, 7, 9, J, null);
+      expect('recusa' in r && r.recusa.estado).toBe('sem_acesso');
+      expect('recusa' in r && r.recusa.motivo).toMatch(/incompleta/);
+      expect(detalhe(urls)).toEqual([]);
+    });
+
+    it('pertencimento: id inválido é recusado sem nenhuma chamada', async () => {
+      for (const id of [0, -9, 1.5, Number.NaN, '9' as unknown as number]) {
+        const s = servidor({ camps: [camp(9, 1)] });
+        const r = await lerEscopoCampanha(s.deps, 7, id, J, null);
+        expect('recusa' in r && r.recusa.estado).toBe('sem_acesso');
+        expect(s.urls).toEqual([]);
+      }
+    });
   });
 });

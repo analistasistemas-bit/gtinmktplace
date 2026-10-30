@@ -1,5 +1,5 @@
 // Leitura paginada de campanhas por período (E1, plano ads-redesign §5.4). `buscar` é injetado: devolve o corpo
-// JSON ou null em falha. Sem cache, orçamento ou autorização (camadas acima). Nunca lança.
+// JSON ou null em falha. Sem cache ou orçamento (camadas acima); o escopo campanha prova o pertencimento. Nunca lança.
 import {
   CAMPOS_METRICA_ADS, parseMetricasResumo, parseSerieMetricas, urlCampanhaDetalhe, urlCampanhaSerie, urlContaResumo,
   urlContaSerie,
@@ -185,7 +185,45 @@ export const lerEscopoConta = (
   deps: DepsLeituraAds, advertiserId: number, atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
 ) => lerComparado((j) => lerBlocoConta(deps, advertiserId, j), atual, anterior);
 
-/** Escopo campanha: E3 (resumo + competitividade) + E4 (série diária). Autorização é da camada acima. */
-export const lerEscopoCampanha = (
-  deps: DepsLeituraAds, campanhaId: number, atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
-) => lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+/**
+ * Recusa do escopo campanha (plano §5.2): nenhuma chamada E3/E4 foi feita. Usa o estado `sem_acesso` do contrato
+ * (RespostaAdsMetricas) tanto para campanha alheia quanto para pertencimento não provado (falha fechada).
+ */
+export interface RecusaCampanhaAds {
+  recusa: { estado: 'sem_acesso'; motivo: string };
+}
+
+/**
+ * Prova de pertencimento: o ID precisa constar numa listagem E1 COMPLETA do próprio anunciante (status históricos,
+ * todas as páginas) numa das janelas pedidas. Listagem incompleta nunca autoriza, mesmo com o ID na página lida.
+ */
+async function provarPertencimento(
+  deps: DepsLeituraAds, adv: number, id: number, janelas: JanelaAdsMetricas[],
+): Promise<string | null> {
+  let incompleta = false;
+  for (const j of janelas) {
+    const l = await lerCampanhasPeriodo(deps, adv, j);
+    if (!l.completo) { incompleta = true; continue; }
+    if (l.campanhas.some((c) => c.id === id)) return null;
+  }
+  return incompleta
+    ? 'Listagem de campanhas do anunciante incompleta; pertencimento não comprovado.'
+    : 'Campanha não pertence ao anunciante.';
+}
+
+/**
+ * Escopo campanha: E3 (resumo + competitividade) + E4 (série diária), só depois de provar que `campanhaId`
+ * pertence ao anunciante resolvido (o ID na URL não é autorização, plano §5.2).
+ */
+export async function lerEscopoCampanha(
+  deps: DepsLeituraAds, advertiserId: number, campanhaId: number,
+  atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
+): Promise<LeituraEscopoAds | RecusaCampanhaAds> {
+  if (typeof campanhaId !== 'number' || !Number.isInteger(campanhaId) || campanhaId <= 0) {
+    return { recusa: { estado: 'sem_acesso', motivo: 'Identificador de campanha inválido.' } };
+  }
+  // ponytail: E1 relido aqui; aceitar a listagem já feita pelo chamador quando a rota tiver uma em mãos.
+  const motivo = await provarPertencimento(deps, advertiserId, campanhaId, anterior ? [atual, anterior] : [atual]);
+  if (motivo) return { recusa: { estado: 'sem_acesso', motivo } };
+  return lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+}
