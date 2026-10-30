@@ -11,9 +11,10 @@ contas. Total: 18 + 18 (script, Avil e Hairfly) + 16 (sondas, só Avil) = 52 GET
 **Contas:** Avil (gasto alto: R$ 3.213,15 atual / R$ 4.173,95 anterior; 10 campanhas; 603 anúncios no Ads) e
 Hairfly (gasto baixo: R$ 119,34 atual / R$ 0,00 anterior — campanha criada em 20/10; 2 campanhas; 45 anúncios).
 
-Rotas (prefixo `/marketplace/advertising/MLB/advertisers/{adv}/product_ads`, `api-version: 2`):
-E1 `campaigns/search` + `metrics_summary=true` · E2 `campaigns/search` + `aggregation_type=DAILY` ·
-E3 `campaigns/{id}` · E4 `campaigns/{id}?aggregation_type=DAILY` · E5 `ads/search?metrics=…`.
+Rotas (`api-version: 2`). Prefixo A = `/marketplace/advertising/MLB/advertisers/{adv}/product_ads`:
+E1 `A/campaigns/search` + `metrics_summary=true` · E2 `A/campaigns/search` + `aggregation_type=DAILY` ·
+E5 `A/ads/search?metrics=…`. Prefixo B = `/marketplace/advertising/MLB/product_ads` (sem advertiser):
+E3 `B/campaigns/{id}` · E4 `B/campaigns/{id}?aggregation_type=DAILY`.
 
 ## Respostas
 
@@ -32,8 +33,9 @@ aditivas.**
 `prints`, `clicks`, `direct_amount`, `indirect_amount`, `*_items_quantity` e `*_units_quantity` também coincidem.
 **E3 × Σ E4 (campanha):** `cost` 1500,62 (Avil) e 109,67 (Hairfly) idênticos; `total_amount` 27.459,13 e 1559,94
 idênticos. Valores em reais com 2 casas (`cost: float`), não em centavos inteiros — converter na borda.
-Razões (`acos`, `roas`, `cpc`, `ctr`, `cvr`, `sov`) vêm prontas no resumo e **não** se somam: recalcular a partir
-das aditivas. Cada dia de E2/E4 traz uma linha por data, 30 datas distintas, **sem duplicar o resumo** (o resumo
+Razões (`acos`, `roas`, `cpc`, `ctr`, `cvr`, `sov`) vêm prontas no resumo e **não** se somam. Recalcular só as de
+fórmula definida (ROAS, ACOS, CTR, CPC) a partir das aditivas; `cvr` e `sov` são agregados nativos do ML, usados como
+vêm e indisponíveis quando ausentes (nunca presumir numerador/denominador nem recalcular). Cada dia de E2/E4 traz uma linha por data, 30 datas distintas, **sem duplicar o resumo** (o resumo
 só existe em E1, no topo, fora de `results`).
 
 **Armadilha medida — `metrics_summary` é do que veio na página.** Com `limit=1` o resumo da Avil foi R$ 1.500,62
@@ -66,7 +68,7 @@ entrega.
 
 **(e) Retenção real: 91 dias.** `date_from = hoje − 91` (2026-07-31, até ontem = 91 dias inclusivos) → 200 e dados
 (Avil E1: R$ 7.137,89 só da 1ª campanha, com `limit=1`; E2 de 91 linhas: R$ 11.712,53 de conta). `hoje − 92`
-→ **400** em E1 e em E2, nas duas contas; `hoje − 100` → 400. `hoje − 90` → 200. Atual de 30 dias + anterior de 30 dias
+→ **400** em E1 (Avil e Hairfly) e em E2 (testado só na Avil); `hoje − 100` → 400 em E1 (Avil e Hairfly). `hoje − 90` → 200. Atual de 30 dias + anterior de 30 dias
 cabe (a anterior começa em hoje − 60); a anterior só é consultável se começar em hoje − 91 ou depois. Para períodos maiores que 91 dias a fonte tem de ser o histórico persistido no PubliAI. (As linhas
 de retenção do script usam `limit=1` sem filtro de status e por isso imprimem `summary` de 1 linha, às vezes 0,0 —
 usar só o HTTP dessas linhas.)
