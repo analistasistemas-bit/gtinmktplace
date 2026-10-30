@@ -13,7 +13,7 @@ import { metricas, somarAcumuladores } from '@/lib/vendas-sku';
 export interface RetornoAdsPainel {
   painel: PainelAds | null;
   janela: JanelaDiasAds | null;
-  situacaoPeriodo: 'carregando' | 'pronto' | 'aguardando_mes';
+  situacaoPeriodo: 'carregando' | 'pronto' | 'aguardando_mes' | 'invalido';
   historicoDesde: string | null;
   ultimoOkEm: string | null;
   isLoading: boolean;

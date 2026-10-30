@@ -19,7 +19,7 @@ export function periodoAds(dias: DiasAds, agora: Date, ultimoOkEm: string | null
 
 export type PeriodoAds = Extract<
   Periodo,
-  { tipo: 'preset' } | { tipo: 'mes_atual' }
+  { tipo: 'preset' } | { tipo: 'mes_atual' } | { tipo: 'range' }
 >;
 
 export type JanelaDiasAds = {
@@ -27,8 +27,11 @@ export type JanelaDiasAds = {
   ate: string;
 };
 
+export type MotivoPeriodoInvalidoAds = 'data_invalida' | 'ordem' | 'futuro' | 'fora_da_retencao';
+
 export type ResolucaoPeriodoAds =
   | { tipo: 'pronto'; janela: JanelaDiasAds }
+  | { tipo: 'invalido'; janela: null; motivo: MotivoPeriodoInvalidoAds }
   | {
       tipo: 'aguardando_mes';
       janela: null;
@@ -48,6 +51,7 @@ export function resolverPeriodoAds(
   agora: Date,
   ultimoOkEm: string | null,
 ): ResolucaoPeriodoAds {
+  if (periodo.tipo === 'range') return resolverPeriodoAdsBRT(periodo, agora); // personalizado não depende da coleta
   if (periodo.tipo === 'preset') {
     return {
       tipo: 'pronto',
@@ -71,6 +75,54 @@ export function resolverPeriodoAds(
     tipo: 'pronto',
     janela: { desde: inicioMes, ate: fimDisponivel },
   };
+}
+
+/** Retenção medida do Mercado Ads (spike 058): date_from = hoje BRT − 91 retorna 200; hoje − 92 retorna 400. */
+export const RETENCAO_ADS_DIAS = 91;
+
+const diaReal = (d: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && somarDias(d, 0) === d;
+
+/** Fluxo novo (redesenho do /ads): dias completos até ONTEM em BRT, sem recuo por coleta atrasada.
+ *  `range` é validado (datas reais, ordem, ≤ ontem, dentro da retenção) e nunca vira outra janela. */
+export function resolverPeriodoAdsBRT(periodo: PeriodoAds, agora: Date): ResolucaoPeriodoAds {
+  const hoje = diaBRT(agora.getTime());
+  const ontem = somarDias(hoje, -1);
+
+  if (periodo.tipo === 'preset') {
+    return { tipo: 'pronto', janela: { desde: somarDias(ontem, -(periodo.dias - 1)), ate: ontem } };
+  }
+  if (periodo.tipo === 'mes_atual') {
+    const inicioMes = `${hoje.slice(0, 7)}-01`;
+    if (ontem < inicioMes) return { tipo: 'aguardando_mes', janela: null, inicioMes, fimDisponivel: ontem };
+    return { tipo: 'pronto', janela: { desde: inicioMes, ate: ontem } };
+  }
+
+  const { desde, ate } = periodo;
+  if (!diaReal(desde) || !diaReal(ate)) return { tipo: 'invalido', janela: null, motivo: 'data_invalida' };
+  if (desde > ate) return { tipo: 'invalido', janela: null, motivo: 'ordem' };
+  if (ate > ontem) return { tipo: 'invalido', janela: null, motivo: 'futuro' };
+  if (desde < somarDias(hoje, -RETENCAO_ADS_DIAS)) return { tipo: 'invalido', janela: null, motivo: 'fora_da_retencao' };
+  return { tipo: 'pronto', janela: { desde, ate } };
+}
+
+/** Mesmo nº de dias completos imediatamente antes do início, sem dia compartilhado. */
+export function janelaAnteriorAds(janela: JanelaDiasAds): JanelaDiasAds {
+  const dias = Math.round((Date.parse(`${janela.ate}T12:00:00Z`) - Date.parse(`${janela.desde}T12:00:00Z`)) / 86_400_000) + 1;
+  return { desde: somarDias(janela.desde, -dias), ate: somarDias(janela.desde, -1) };
+}
+
+export type ComparacaoAds =
+  | { tipo: 'pronta'; janela: JanelaDiasAds }
+  | { tipo: 'indisponivel'; motivo: 'fora_da_retencao' };
+
+/** Janela anterior só existe inteira dentro da retenção; senão é indisponível (nunca truncada). */
+export function comparacaoAds(janela: JanelaDiasAds, agora: Date): ComparacaoAds {
+  const anterior = janelaAnteriorAds(janela);
+  if (anterior.desde < somarDias(diaBRT(agora.getTime()), -RETENCAO_ADS_DIAS)) {
+    return { tipo: 'indisponivel', motivo: 'fora_da_retencao' };
+  }
+  return { tipo: 'pronta', janela: anterior };
 }
 
 /** Dias BRT → janela ISO com offset fixo (Brasil sem horário de verão desde 2019): não depende do fuso do navegador. */
