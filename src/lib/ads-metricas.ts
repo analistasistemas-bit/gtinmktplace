@@ -53,3 +53,54 @@ export function indicadoresAds(
     conversao: campo(resumo, 'cvr'),
   };
 }
+
+// Comparação entre períodos (plano §4.7): a direção da seta é separada do tom. Só o `sentido` do indicador
+// (ROAS/conversão ↑ bom, ACOS ↓ bom) e uma comparação NÃO provisória podem colorir; o resto é neutro.
+export type UnidadeAds = 'moeda' | 'quantidade' | 'razao' | 'percentual';
+export type SentidoAds = 'maior_melhor' | 'menor_melhor' | 'neutro';
+export interface ComparacaoAds {
+  texto: string;
+  direcao: 'up' | 'down' | 'neutral';
+  tom: 'success' | 'danger' | 'neutral';
+}
+
+const SEM_COMPARACAO: ComparacaoAds = { texto: 'Sem comparação', direcao: 'neutral', tom: 'neutral' };
+const SEM_BASE: ComparacaoAds = { texto: 'Sem base de comparação', direcao: 'neutral', tom: 'neutral' };
+
+const fmt = (n: number, casas: number) =>
+  Math.abs(n).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+
+export function compararIndicadorAds(
+  atual: ValorAds,
+  anterior: ValorAds,
+  unidade: UnidadeAds,
+  provisoria: boolean,
+  sentido: SentidoAds = 'neutro',
+): ComparacaoAds {
+  const a = atual.valor;
+  const b = anterior.valor;
+  if (a === null || b === null) return SEM_COMPARACAO;
+
+  let delta: number; // já na escala exibida (p.p., % ou R$)
+  let texto: (sinal: string) => string;
+  if (unidade === 'percentual') {
+    delta = Math.round((a - b) * 1000) / 10;
+    texto = (s) => `${s}${fmt(delta, 1)} p.p.`;
+  } else if (b < 0 && unidade === 'moeda') {
+    delta = Math.round((a - b) * 100) / 100;
+    texto = (s) => `${s}R$ ${fmt(delta, 2)}`;
+  } else if (b <= 0) {
+    return SEM_BASE;
+  } else {
+    delta = Math.round(((a - b) / b) * 100);
+    texto = (s) => `${s}${fmt(delta, 0)}%`;
+  }
+
+  const direcao = delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral';
+  const sinal = delta > 0 ? '+' : delta < 0 ? '-' : '';
+  let tom: ComparacaoAds['tom'] = 'neutral';
+  if (!provisoria && direcao !== 'neutral' && sentido !== 'neutro') {
+    tom = (direcao === 'up') === (sentido === 'maior_melhor') ? 'success' : 'danger';
+  }
+  return { texto: texto(sinal), direcao, tom };
+}
