@@ -44,48 +44,20 @@ export const PERIODO_PADRAO_ADS: PeriodoAds = {
   tipo: 'mes_atual',
 };
 
-/** Mês atual = mês civil BRT até o último dia coletado (`fimDiasAds`). Antes do 1º dia coletado do mês,
- *  `aguardando_mes` — nunca intervalo invertido nem mês anterior. Presets delegam a `periodoAds`. */
-export function resolverPeriodoAds(
-  periodo: PeriodoAds,
-  agora: Date,
-  ultimoOkEm: string | null,
-): ResolucaoPeriodoAds {
-  if (periodo.tipo === 'range') return resolverPeriodoAdsBRT(periodo, agora); // personalizado não depende da coleta
-  if (periodo.tipo === 'preset') {
-    return {
-      tipo: 'pronto',
-      janela: periodoAds(periodo.dias, agora, ultimoOkEm),
-    };
-  }
-
-  const inicioMes = `${diaBRT(agora.getTime()).slice(0, 7)}-01`;
-  const fimDisponivel = fimDiasAds(agora, ultimoOkEm);
-
-  if (fimDisponivel < inicioMes) {
-    return {
-      tipo: 'aguardando_mes',
-      janela: null,
-      inicioMes,
-      fimDisponivel,
-    };
-  }
-
-  return {
-    tipo: 'pronto',
-    janela: { desde: inicioMes, ate: fimDisponivel },
-  };
-}
-
 /** Retenção medida do Mercado Ads (spike 058): date_from = hoje BRT − 91 retorna 200; hoje − 92 retorna 400. */
 export const RETENCAO_ADS_DIAS = 91;
 
 const diaReal = (d: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && somarDias(d, 0) === d;
 
-/** Fluxo novo (redesenho do /ads): dias completos até ONTEM em BRT, sem recuo por coleta atrasada.
- *  `range` é validado (datas reais, ordem, ≤ ontem, dentro da retenção) e nunca vira outra janela. */
-export function resolverPeriodoAdsBRT(periodo: PeriodoAds, agora: Date): ResolucaoPeriodoAds {
+/** Dias completos até ONTEM em BRT; a coleta atrasada não desloca a janela (`ultimoOkEm` só mantém a assinatura).
+ *  Mês atual aguarda o 1º dia fechado. `range` é validado (datas reais, ordem, ≤ ontem, dentro da retenção)
+ *  e nunca vira outra janela. */
+export function resolverPeriodoAds(
+  periodo: PeriodoAds,
+  agora: Date,
+  _ultimoOkEm: string | null,
+): ResolucaoPeriodoAds {
   const hoje = diaBRT(agora.getTime());
   const ontem = somarDias(hoje, -1);
 

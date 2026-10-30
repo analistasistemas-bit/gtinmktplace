@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc } }));
 import {
-  buscarPainelAds, comparacaoAds, janelaAnteriorAds, janelaBRT, periodoAds, resolverPeriodoAds, resolverPeriodoAdsBRT,
+  buscarPainelAds, comparacaoAds, janelaAnteriorAds, janelaBRT, periodoAds, resolverPeriodoAds,
 } from '@/lib/ads-painel-dados';
 import { fimDiasAds } from '@/lib/sku-ads';
 import { dentroDaJanela } from '@/lib/vendas-sku';
@@ -58,104 +58,76 @@ describe('buscarPainelAds', () => {
   });
 });
 
-describe('resolverPeriodoAds: mês atual', () => {
+describe('resolverPeriodoAds: mês atual termina ontem BRT, sem recuo por coleta', () => {
   const mensal = { tipo: 'mes_atual' } as const;
 
   it.each([
-    ['2026-10-05T08:00:00-03:00', '2026-10-04T14:17:00Z', '2026-10-03'],
-    ['2026-10-05T12:00:00-03:00', '2026-10-05T14:17:00Z', '2026-10-04'],
-    ['2026-10-05T08:00:00-03:00', null, '2026-10-04'],
-    ['2026-10-05T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-04'],
-  ])('resolve %s com o recuo existente', (agora, sync, ate) => {
+    ['2026-10-05T08:00:00-03:00', '2026-10-04T14:17:00Z'],
+    ['2026-10-05T12:00:00-03:00', '2026-10-05T14:17:00Z'],
+    ['2026-10-05T08:00:00-03:00', null],
+    ['2026-10-05T08:00:00-03:00', '2026-10-01T14:17:00Z'],
+  ])('%s com coleta %s → até 2026-10-04', (agora, sync) => {
     expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
       tipo: 'pronto',
-      janela: { desde: '2026-10-01', ate },
+      janela: { desde: '2026-10-01', ate: '2026-10-04' },
     });
   });
 
   it.each([
-    ['2026-10-01T08:00:00-03:00', '2026-09-30T14:17:00Z', '2026-10-01', '2026-09-29'],
+    ['2026-10-01T08:00:00-03:00', null, '2026-10-01', '2026-09-30'],
     ['2026-10-01T12:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
-    ['2026-10-02T08:00:00-03:00', '2026-10-01T14:17:00Z', '2026-10-01', '2026-09-30'],
-    ['2027-01-01T12:00:00-03:00', '2027-01-01T14:17:00Z', '2027-01-01', '2026-12-31'],
-  ])('aguarda sem gerar intervalo invertido em %s',
-    (agora, sync, inicioMes, fimDisponivel) => {
-      expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
-        tipo: 'aguardando_mes',
-        janela: null,
-        inicioMes,
-        fimDisponivel,
-      });
-    },
-  );
-
-  it('libera o primeiro dia após a coleta do dia 2', () => {
-    expect(resolverPeriodoAds(
-      mensal,
-      new Date('2026-10-02T12:00:00-03:00'),
-      '2026-10-02T14:17:00Z',
-    )).toEqual({
-      tipo: 'pronto',
-      janela: { desde: '2026-10-01', ate: '2026-10-01' },
+    ['2027-01-01T12:00:00-03:00', null, '2027-01-01', '2026-12-31'],
+  ])('aguarda o 1º dia fechado em %s', (agora, sync, inicioMes, fimDisponivel) => {
+    expect(resolverPeriodoAds(mensal, new Date(agora), sync)).toEqual({
+      tipo: 'aguardando_mes', janela: null, inicioMes, fimDisponivel,
     });
+  });
+
+  it('dia 2 libera o dia 1, com ou sem coleta', () => {
+    expect(resolverPeriodoAds(mensal, new Date('2026-10-02T08:00:00-03:00'), null))
+      .toEqual({ tipo: 'pronto', janela: { desde: '2026-10-01', ate: '2026-10-01' } });
   });
 
   it('usa setembro quando UTC já está em outubro', () => {
-    expect(resolverPeriodoAds(
-      mensal,
-      new Date('2026-10-01T02:30:00Z'),
-      null,
-    )).toEqual({
-      tipo: 'pronto',
-      janela: { desde: '2026-09-01', ate: '2026-09-29' },
-    });
+    expect(resolverPeriodoAds(mensal, new Date('2026-10-01T02:30:00Z'), null))
+      .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-01', ate: '2026-09-29' } });
   });
 
   it('respeita fevereiro bissexto', () => {
-    expect(resolverPeriodoAds(
-      mensal,
-      new Date('2028-02-29T15:00:00-03:00'),
-      null,
-    )).toEqual({
-      tipo: 'pronto',
-      janela: { desde: '2028-02-01', ate: '2028-02-28' },
-    });
+    expect(resolverPeriodoAds(mensal, new Date('2028-02-29T15:00:00-03:00'), null))
+      .toEqual({ tipo: 'pronto', janela: { desde: '2028-02-01', ate: '2028-02-28' } });
   });
 
-  it.each([7, 30, 90] as const)('preserva o preset de %i dias', dias => {
+  it.each([7, 30, 90] as const)('preset de %i dias termina ontem mesmo com coleta em anteontem', dias => {
     const agora = new Date('2026-10-05T08:00:00-03:00');
-    const sync = '2026-10-04T14:17:00Z';
-
-    expect(resolverPeriodoAds({ tipo: 'preset', dias }, agora, sync))
-      .toEqual({
-        tipo: 'pronto',
-        janela: periodoAds(dias, agora, sync),
-      });
+    const r = resolverPeriodoAds({ tipo: 'preset', dias }, agora, '2026-10-04T14:17:00Z');
+    expect(r).toEqual({ tipo: 'pronto', janela: { desde: expect.any(String), ate: '2026-10-04' } });
+    expect(r).toEqual(resolverPeriodoAds({ tipo: 'preset', dias }, agora, null));
   });
 });
 
-describe('resolverPeriodoAdsBRT: termina em ontem BRT, sem recuo por coleta', () => {
+describe('resolverPeriodoAds: preset, virada UTC e range', () => {
   const agora = new Date('2026-10-05T08:00:00-03:00');
   it('preset e mês atual terminam em ontem', () => {
-    expect(resolverPeriodoAdsBRT({ tipo: 'preset', dias: 7 }, agora))
+    expect(resolverPeriodoAds({ tipo: 'preset', dias: 7 }, agora, null))
       .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-28', ate: '2026-10-04' } });
-    expect(resolverPeriodoAdsBRT({ tipo: 'mes_atual' }, agora))
+    expect(resolverPeriodoAds({ tipo: 'mes_atual' }, agora, null))
       .toEqual({ tipo: 'pronto', janela: { desde: '2026-10-01', ate: '2026-10-04' } });
   });
   it('ontem BRT na virada de dia em UTC: 22:30 BRT de 04/10 já é 05/10 em UTC', () => {
     const quase = new Date('2026-10-04T22:30:00-03:00'); // 2026-10-05T01:30Z
-    expect(resolverPeriodoAdsBRT({ tipo: 'preset', dias: 7 }, quase))
+    expect(resolverPeriodoAds({ tipo: 'preset', dias: 7 }, quase, null))
       .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-27', ate: '2026-10-03' } });
     const depois = new Date('2026-10-05T00:10:00-03:00');
-    expect(resolverPeriodoAdsBRT({ tipo: 'preset', dias: 7 }, depois))
+    expect(resolverPeriodoAds({ tipo: 'preset', dias: 7 }, depois, null))
       .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-28', ate: '2026-10-04' } });
   });
   it('dia 1º: mês atual aguarda o primeiro dia fechado', () => {
-    expect(resolverPeriodoAdsBRT({ tipo: 'mes_atual' }, new Date('2026-10-01T09:00:00-03:00')))
+    expect(resolverPeriodoAds({ tipo: 'mes_atual' }, new Date('2026-10-01T09:00:00-03:00'), null))
       .toEqual({ tipo: 'aguardando_mes', janela: null, inicioMes: '2026-10-01', fimDisponivel: '2026-09-30' });
   });
   it('range válido, inclusive fevereiro de ano bissexto', () => {
-    expect(resolverPeriodoAdsBRT({ tipo: 'range', desde: '2028-02-28', ate: '2028-02-29' }, new Date('2028-03-10T09:00:00-03:00')))
+    expect(resolverPeriodoAds({ tipo: 'range', desde: '2028-02-28', ate: '2028-02-29' }, new Date('2028-03-10T09:00:00-03:00'), null))
       .toEqual({ tipo: 'pronto', janela: { desde: '2028-02-28', ate: '2028-02-29' } });
   });
   it.each([
@@ -166,16 +138,16 @@ describe('resolverPeriodoAdsBRT: termina em ontem BRT, sem recuo por coleta', ()
     ['2026-10-01', '2026-10-05', 'futuro'], // hoje ainda não fechou
     ['2026-07-05', '2026-10-01', 'fora_da_retencao'], // hoje − 92
   ])('range %s → %s recusa com motivo %s', (desde, ate, motivo) => {
-    expect(resolverPeriodoAdsBRT({ tipo: 'range', desde, ate }, agora)).toEqual({ tipo: 'invalido', janela: null, motivo });
+    expect(resolverPeriodoAds({ tipo: 'range', desde, ate }, agora, null)).toEqual({ tipo: 'invalido', janela: null, motivo });
   });
   it('retenção: hoje − 91 passa, hoje − 92 recusa', () => {
-    expect(resolverPeriodoAdsBRT({ tipo: 'range', desde: '2026-07-06', ate: '2026-10-04' }, agora).tipo).toBe('pronto');
-    expect(resolverPeriodoAdsBRT({ tipo: 'range', desde: '2026-07-05', ate: '2026-10-04' }, agora).tipo).toBe('invalido');
+    expect(resolverPeriodoAds({ tipo: 'range', desde: '2026-07-06', ate: '2026-10-04' }, agora, null).tipo).toBe('pronto');
+    expect(resolverPeriodoAds({ tipo: 'range', desde: '2026-07-05', ate: '2026-10-04' }, agora, null).tipo).toBe('invalido');
   });
-  it('fluxo antigo preservado: resolverPeriodoAds ainda recua pela coleta; range ignora a coleta', () => {
+  it('a coleta não desloca a janela (preset e range)', () => {
     expect(resolverPeriodoAds({ tipo: 'preset', dias: 7 }, agora, '2026-10-04T14:17:00Z'))
-      .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-27', ate: '2026-10-03' } });
-    expect(resolverPeriodoAds({ tipo: 'range', desde: '2026-10-01', ate: '2026-10-04' }, agora, '2026-10-04T14:17:00Z'))
+      .toEqual({ tipo: 'pronto', janela: { desde: '2026-09-28', ate: '2026-10-04' } });
+    expect(resolverPeriodoAds({ tipo: 'range', desde: '2026-10-01', ate: '2026-10-04' }, agora, '2026-10-01T14:17:00Z'))
       .toEqual({ tipo: 'pronto', janela: { desde: '2026-10-01', ate: '2026-10-04' } });
   });
 });

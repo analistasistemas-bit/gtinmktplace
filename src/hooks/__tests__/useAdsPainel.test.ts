@@ -151,13 +151,13 @@ describe('useAdsPainel', () => {
     await waitFor(() => expect(r4.result.current.isError).toBe(true));
   });
 
-  it('(e) período termina no último dia coletado (08:00 BRT, antes da coleta do dia → anteontem)', async () => {
+  it('(e) período termina ontem BRT, mesmo com a coleta do dia ainda não feita', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T08:00:00-03:00') });
     m.buscarUltimoOkAds.mockResolvedValue('2026-10-04T14:17:00Z');
     const r = render();
     await waitFor(() => expect(r.result.current.painel).not.toBeNull());
-    expect(r.result.current.janela).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
-    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-04', '2026-10-03');
+    expect(r.result.current.janela).toEqual({ desde: '2026-09-05', ate: '2026-10-04' });
+    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-05', '2026-10-04');
     expect(m.buscarPainelAds).toHaveBeenCalledTimes(1);
   });
 
@@ -194,7 +194,7 @@ describe('useAdsPainel', () => {
 
     await waitFor(() => expect(result.current.painel).not.toBeNull());
 
-    const janela = { desde: '2026-10-01', ate: '2026-10-03' };
+    const janela = { desde: '2026-10-01', ate: '2026-10-04' };
 
     expect(result.current.janela).toEqual(janela);
     expect(m.buscarPainelAds).toHaveBeenCalledWith(janela.desde, janela.ate);
@@ -304,38 +304,6 @@ describe('useAdsPainel', () => {
     });
   });
 
-  it('refetch do dia 2 libera o mês após atualizar o sync', async () => {
-    vi.useFakeTimers({
-      toFake: ['Date'],
-      now: new Date('2026-10-02T12:00:00-03:00'),
-    });
-    m.buscarUltimoOkAds.mockResolvedValue('2026-10-01T14:17:00Z');
-
-    const { result } = renderHook(
-      () => useAdsPainel({ tipo: 'mes_atual' }),
-      { wrapper: criarWrapper() },
-    );
-
-    await waitFor(() =>
-      expect(result.current.situacaoPeriodo).toBe('aguardando_mes'),
-    );
-
-    m.buscarUltimoOkAds.mockResolvedValue('2026-10-02T14:17:00Z');
-
-    await act(async () => {
-      await result.current.refetch();
-    });
-
-    await waitFor(() => expect(result.current.painel).not.toBeNull());
-
-    expect(result.current.janela).toEqual({
-      desde: '2026-10-01',
-      ate: '2026-10-01',
-    });
-    expect(m.buscarPainelAds).toHaveBeenCalledTimes(1);
-    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-10-01', '2026-10-01');
-  });
-
   it('catálogo carregando: painel null e isLoading depois do sync', async () => {
     Object.assign(m.catQ, { data: undefined, isLoading: true });
     const r = render();
@@ -374,27 +342,6 @@ describe('useAdsPainel', () => {
     expect(m.catQ.refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('refetch que muda o fim deixa as novas chaves carregarem, sem refetch manual da janela antiga', async () => {
-    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
-    m.buscarUltimoOkAds.mockResolvedValue('2026-10-04T14:17:00Z');
-    const v = vendasQ([]);
-    m.useVendasSku.mockReturnValue(v);
-    const r = render();
-    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
-    expect(r.result.current.janela).toEqual({ desde: '2026-09-04', ate: '2026-10-03' });
-
-    m.buscarUltimoOkAds.mockResolvedValue('2026-10-05T14:17:00Z');
-    await act(async () => {
-      await r.result.current.refetch();
-    });
-
-    await waitFor(() => expect(r.result.current.janela).toEqual({ desde: '2026-09-05', ate: '2026-10-04' }));
-    await waitFor(() => expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-05', '2026-10-04'));
-    expect(m.buscarPainelAds.mock.calls.filter((c) => c[1] === '2026-10-03')).toHaveLength(1);
-    expect(v.refetch).not.toHaveBeenCalled();
-    expect(m.catQ.refetch).not.toHaveBeenCalled();
-  });
-
   it('troca de preset durante o refetch não repete as fontes do preset abandonado', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
     const v = vendasQ([]);
@@ -423,5 +370,43 @@ describe('useAdsPainel', () => {
     expect(m.buscarPainelAds.mock.calls.filter((c) => c[0] === '2026-09-05')).toHaveLength(1);
     expect(v.refetch).not.toHaveBeenCalled();
     expect(m.catQ.refetch).not.toHaveBeenCalled();
+  });
+  it('range válido chega ao hook: janela, RPC e vendas usam as datas escolhidas', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
+    const { result } = renderHook(
+      () => useAdsPainel({ tipo: 'range', desde: '2026-09-10', ate: '2026-09-20' }),
+      { wrapper: criarWrapper() },
+    );
+    await waitFor(() => expect(result.current.painel).not.toBeNull());
+    expect(result.current.janela).toEqual({ desde: '2026-09-10', ate: '2026-09-20' });
+    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-10', '2026-09-20');
+  });
+
+  it('range inválido não vira janela: situacao invalido e nenhuma consulta', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
+    m.useVendasSku.mockReturnValue(vendasQ(null, { isError: true }));
+    const { result } = renderHook(
+      () => useAdsPainel({ tipo: 'range', desde: '2026-02-30', ate: '2026-03-02' }),
+      { wrapper: criarWrapper() },
+    );
+    await waitFor(() => expect(result.current.situacaoPeriodo).toBe('invalido'));
+    expect(result.current.janela).toBeNull();
+    expect(result.current.painel).toBeNull();
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isError).toBe(false);
+    expect(m.buscarPainelAds).not.toHaveBeenCalled();
+    expect(m.useVendasSku.mock.calls.every((c) => c[2] === false)).toBe(true);
+  });
+
+  it('trocar só as datas do range muda a chave e consulta a nova janela', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
+    const { result, rerender } = renderHook(
+      ({ ate }: { ate: string }) => useAdsPainel({ tipo: 'range', desde: '2026-09-10', ate }),
+      { initialProps: { ate: '2026-09-20' }, wrapper: criarWrapper() },
+    );
+    await waitFor(() => expect(result.current.painel).not.toBeNull());
+    rerender({ ate: '2026-09-25' });
+    await waitFor(() => expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-10', '2026-09-25'));
+    await waitFor(() => expect(result.current.janela).toEqual({ desde: '2026-09-10', ate: '2026-09-25' }));
   });
 });

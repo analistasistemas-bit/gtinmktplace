@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  buscarPainelAds, janelaBRT, lucroPorFamilia, resolverPeriodoAds, type DiasAds, type JanelaDiasAds, type PeriodoAds,
+  buscarPainelAds, janelaBRT, lucroPorFamilia, resolverPeriodoAds, type JanelaDiasAds, type PeriodoAds,
 } from '@/lib/ads-painel-dados';
 import { BASE_ACOS_VALIDADA, montarPainelAds, type PainelAds } from '@/lib/ads-painel';
 import { buscarCodigosMlbs, buscarUltimoOkAds } from '@/lib/sku-dossie-dados';
@@ -23,24 +23,29 @@ export interface RetornoAdsPainel {
 }
 
 const meioDiaBRT = (dia: string) => new Date(`${dia}T12:00:00-03:00`);
-const selecionar = (tipo: PeriodoAds['tipo'], dias: DiasAds | null): PeriodoAds =>
-  tipo === 'preset' && dias !== null ? { tipo: 'preset', dias } : { tipo: 'mes_atual' };
 
 /** Painel de Ads (ADR-0179): gasto do Ads × lucro das vendas no MESMO recorte de dias BRT.
  *  A janela é resolvida uma vez (resolverPeriodoAds) e compartilhada por RPC, vendas e montagem. */
 export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
-  // O fim do período depende da última coleta (fimDiasAds): fonte e vendas só rodam depois dela,
-  // para não baixar as vendas de uma janela provisória e de novo na certa (egress, ADR-0081).
+  // O período termina ontem BRT, sem depender da coleta; o sync só alimenta `ultimoOkEm` e libera as consultas.
   const syncQ = useQuery({ queryKey: ['ads-sync-fim'], queryFn: buscarUltimoOkAds, staleTime: 5 * 60_000 });
   // Dia BRT a cada render, sem timer: a virada do dia aparece no próximo render/consulta/interação.
   const hoje = diaBRT(Date.now());
   const tipo = periodo.tipo;
   const dias = periodo.tipo === 'preset' ? periodo.dias : null;
+  const rDesde = periodo.tipo === 'range' ? periodo.desde : null;
+  const rAte = periodo.tipo === 'range' ? periodo.ate : null;
+  // Primitivos na identidade: o objeto do chamador pode mudar de referência sem mudar a seleção.
+  const selecionado = useMemo<PeriodoAds>(
+    () => (tipo === 'range' ? { tipo, desde: rDesde!, ate: rAte! }
+      : tipo === 'preset' ? { tipo, dias: dias! } : { tipo }),
+    [tipo, dias, rDesde, rAte],
+  );
   const ultimoOkEm = syncQ.data ?? null;
 
   const resolucao = useMemo(
-    () => resolverPeriodoAds(selecionar(tipo, dias), meioDiaBRT(hoje), ultimoOkEm),
-    [tipo, dias, hoje, ultimoOkEm],
+    () => resolverPeriodoAds(selecionado, meioDiaBRT(hoje), ultimoOkEm),
+    [selecionado, hoje, ultimoOkEm],
   );
   const habilitado = syncQ.isSuccess && resolucao.tipo === 'pronto';
   const desde = habilitado ? resolucao.janela!.desde : null;
@@ -87,7 +92,7 @@ export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
     || (habilitado && (fonteQ.isFetching || codQ.isFetching || vendas.isFetching || catQ.isFetching));
 
   // Identidade primitiva da seleção: troca de preset durante o refetch abandona a atualização manual.
-  const selecao = `${tipo}:${dias}`;
+  const selecao = `${tipo}:${dias}:${rDesde}:${rAte}`;
   const selecaoRef = useRef(selecao);
   selecaoRef.current = selecao;
 
@@ -95,7 +100,7 @@ export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
     const pedida = selecao;
     const r = await syncQ.refetch();
     if (r.isError || selecaoRef.current !== pedida) return;
-    const nova = resolverPeriodoAds(selecionar(tipo, dias), meioDiaBRT(diaBRT(Date.now())), r.data ?? null);
+    const nova = resolverPeriodoAds(selecionado, meioDiaBRT(diaBRT(Date.now())), r.data ?? null);
     // Mês aguardando: nada financeiro. Janela nova: as novas chaves carregam sozinhas.
     if (nova.tipo !== 'pronto' || nova.janela.desde !== desde || nova.janela.ate !== ate) return;
     await Promise.all([
