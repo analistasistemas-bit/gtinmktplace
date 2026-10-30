@@ -12,16 +12,31 @@ import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from 
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
-import type { Venda } from '@/lib/faturamento';
-import { janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-sku';
+import { calcularKpis, type Venda } from '@/lib/faturamento';
+import { dentroDaJanela, janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-sku';
+import type { CanalAtivo } from '@/lib/canal-ativo';
+
+export interface OpcoesVendasSku {
+  /** Canal das vendas. Default 'todos' (Faturamento, dossiê); o /ads pede 'mercado_livre'. */
+  canal?: CanalAtivo;
+  /** Janela anterior exata (ex.: dias BRT da comparação do /ads). Sem ela, `faturamentoConta.anterior` é null. */
+  anteriorFixa?: Janela;
+}
+
+/** Faturamento da conta (denominador do TACOS, plano §2.3): toda venda faturável do recorte, uma vez cada,
+ *  por `brutoDaVenda` (cupom do vendedor descontado, ADR-0180) — inclusive fora do catálogo PubliAI.
+ *  Reusa `calcularKpis`, o mesmo número do card Faturamento. */
+const faturamentoDa = (vendas: Venda[], j: Janela) =>
+  calcularKpis(vendas.filter((v) => dentroDaJanela(v.date_closed, j))).faturamento;
 
 /** Mesmos resolvers e mesma fonte da aba Vendas (aba-vendas.tsx:173-190): é isso que faz a soma bater. */
 /** `janelaFixa`: janela ISO pronta (ex.: dias BRT do painel de Ads), no lugar de `resolverJanela(periodo)`. */
-export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = true) {
+export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = true, opcoes: OpcoesVendasSku = {}) {
+  const { canal = 'todos', anteriorFixa } = opcoes;
   const janela = useMemo(() => janelaFixa ?? resolverJanela(periodo), [periodo, janelaFixa]);
-  const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
+  const anterior = useMemo(() => anteriorFixa ?? janelaAnterior(janela, periodo), [anteriorFixa, janela, periodo]);
   const estendida = useMemo(() => janelaEstendida(janela, anterior), [janela, anterior]);
-  const vendasQ = useVendas(estendida, 'todos', 'todos', enabled);
+  const vendasQ = useVendas(estendida, 'todos', canal, enabled);
   const custosQ = useCustos();
   const custos = custosQ.data;
   const { data: fotos } = useFotosProduto();
@@ -51,8 +66,18 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     });
   }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
 
+  // Só depende das vendas: catálogo/custos não entram no denominador do TACOS.
+  const faturamentoConta = useMemo(() => {
+    if (!vendasQ.data) return null;
+    return {
+      atual: faturamentoDa(vendasQ.data, janela),
+      anterior: anteriorFixa ? faturamentoDa(vendasQ.data, anteriorFixa) : null,
+    };
+  }, [vendasQ.data, janela, anteriorFixa]);
+
   return {
     dados,
+    faturamentoConta,
     isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading || devQ.isLoading,
     isFetching: vendasQ.isFetching || catQ.isFetching,
     /** Sem isso a tela ficaria em skeleton para sempre quando vendas, catálogo ou devoluções falham. */
