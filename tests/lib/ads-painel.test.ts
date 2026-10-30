@@ -265,3 +265,60 @@ describe('montarPainelAds — base fiscal (ADR-0055: sem alíquota confirmada n�
     expect(p.conta).toMatchObject({ lucroAntes: 300, resultado: 200, motivoFiscal: null });
   });
 });
+
+// Plano ads-redesign §2.6/§5.6 e emenda de 2026-10-30 do ADR-0179: resultado da conta com a série completa ao vivo.
+describe('montarPainelAds — conta com a série ao vivo do ML', () => {
+  const v = (valor: number) => ({ valor, motivo: null });
+  const diaVivo = (d: string, cost: number, total = 0, direct = 0) => ({ dia: d, metricas: {
+    cost: v(cost), clicks: v(3), prints: v(10), direct_amount: v(direct), total_amount: v(total) } });
+  const vivo = (serie = [diaVivo('2026-09-01', 30, 300, 200), diaVivo('2026-09-02', 40)], completo = true) =>
+    ({ serie, completo, lidoEm: '2026-10-04T15:00:00Z' });
+  const semGrupos = { sync: { ...sync, carga_inicial_ok: false }, conta: [] };
+
+  it('série completa calcula o resultado da conta sem grupos prontos (lucro − investimento ao vivo)', () => {
+    const p = montarPainelAds({ ...base(semGrupos), contaAoVivo: vivo() });
+    expect(p.gruposCobertos).toBe(false);
+    expect(p.contaMotivo).toBeNull();
+    expect(p.conta).toMatchObject({ custo: 70, vendasTotais: 300, vendasDiretas: 200, cliques: 6, impressoes: 20,
+      lucroAntes: 300, resultado: 230, diasAbertos: 0 });
+    // Sem conciliação entre fontes (Task 21): diferença de atualização nunca vira gasto não identificado.
+    expect(p.conta).toMatchObject({ naoIdentificado: null, naoIdentificadoPct: null, divergente: false });
+  });
+  it('a série ao vivo prevalece sobre a coletada (fontes não se misturam)', () => {
+    const p = montarPainelAds({ ...base(), contaAoVivo: vivo() });
+    expect(p.conta).toMatchObject({ custo: 70, resultado: 230 });
+  });
+  it('família continua bloqueada pela cobertura dos grupos mesmo com a conta disponível', () => {
+    const p = montarPainelAds({ ...base({ ...semGrupos, grupos: [grupo(1, 50, ['MLB1'], 500, 500)] }), contaAoVivo: vivo() });
+    expect(p.conta?.resultado).toBe(230);
+    expect(p.familias[0]).toMatchObject({ codigoPai: 'A', motivo: 'cobertura', resultado: null, margemConsumida: null,
+      semaforo: null });
+  });
+  it.each([
+    ['completo = false', vivo(undefined, false)],
+    ['dia faltando', vivo([diaVivo('2026-09-01', 30)])],
+    ['dia repetido', vivo([diaVivo('2026-09-01', 30), diaVivo('2026-09-01', 30)])],
+    ['custo nulo', vivo([diaVivo('2026-09-01', 30), { dia: '2026-09-02', metricas: { ...diaVivo('2026-09-02', 0).metricas,
+      cost: { valor: null, motivo: 'nao_retornada' as const } } }])],
+    ['campo ausente', vivo([diaVivo('2026-09-01', 30), { dia: '2026-09-02', metricas: { cost: v(40) } }])],
+  ])('série ao vivo incompleta (%s) → conta indisponível com motivo, sem cair para a coletada', (_, aoVivo) => {
+    const p = montarPainelAds({ ...base(), contaAoVivo: aoVivo });
+    expect(p.conta).toBeNull();
+    expect(p.contaMotivo).toBe('serie_incompleta');
+  });
+  it('base fiscal inválida continua bloqueando o resultado da conta ao vivo', () => {
+    const p = montarPainelAds({ ...base(semGrupos), contaAoVivo: vivo(),
+      baseFiscal: { ok: false, motivo: 'aliquotas_nao_confirmadas' } as BaseFiscal });
+    expect(p.conta).toMatchObject({ custo: 70, lucroAntes: null, resultado: null, margemConsumida: null,
+      motivoFiscal: 'aliquotas_nao_confirmadas' });
+  });
+  it('dia ainda em atribuição aberta na leitura ao vivo conta como provisório', () => {
+    const p = montarPainelAds({ ...base(semGrupos), contaAoVivo: { ...vivo(), lidoEm: '2026-09-10T15:00:00Z' } });
+    expect(p.conta?.diasAbertos).toBe(2);
+  });
+  it('sem contaAoVivo: comportamento anterior intacto (série coletada)', () => {
+    const p = montarPainelAds(base({ grupos: [grupo(1, 50, ['MLB1'])] }));
+    expect(p.conta).toMatchObject({ custo: 100, resultado: 200, naoIdentificado: 50, divergente: false });
+    expect(montarPainelAds(base(semGrupos)).contaMotivo).toBe('cobertura');
+  });
+});

@@ -4,6 +4,7 @@
 // Gasto parcial (fora da cobertura) ou lucro desconhecido (antes do histórico) nunca vira resultado.
 import { atribuicaoFinal, diaCoberto, diasEntre, historicoCobre } from './sku-ads';
 import type { BaseFiscal, FonteCusto } from './vendas-sku';
+import type { BlocoAdsMetricas } from '../../supabase/functions/_shared/ads/metricas';
 
 export interface SyncPainel {
   estado: string; erro: string | null; ultimo_ok_em: string | null; carga_inicial_ok: boolean;
@@ -14,6 +15,8 @@ export interface ContaDia { dia: string; cost: number; clicks: number; prints: n
 export interface GrupoPainel { ad_group_id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; status: string; cost: number;
   clicks: number; prints: number; direct_amount: number; indirect_amount: number; total_amount: number; membros: string[] }
 export interface FontePainelAds { sync: SyncPainel | null; conta: ContaDia[]; grupos: GrupoPainel[] }
+/** Série diária da conta lida ao vivo do ML (edge ads-metricas), não da coleta: não mexe nos marcadores do sync. */
+export type ContaAoVivo = Pick<BlocoAdsMetricas, 'serie' | 'completo' | 'lidoEm'>;
 export interface LucroFamilia { nome: string | null; lucro: number | null; brutoComCusto: number; fonteCusto: FonteCusto;
   markup: number | null }   // lucro ÷ custo do produto (mesma conta de Vendas SKU)
 export interface MetricasAds { custo: number; vendasDiretas: number; vendasTotais: number; cliques: number;
@@ -47,7 +50,7 @@ export interface PainelAds {
   gruposCobertos: boolean;              // período inteiro dentro da cobertura dos grupos (mesma regra do dossiê)
   semaforoLiberado: boolean;            // = baseAcosValidada
   conta: ContaPainel | null;            // null = série da conta não cobre o período
-  contaMotivo: 'cobertura' | null;
+  contaMotivo: 'cobertura' | 'serie_incompleta' | null;   // serie_incompleta = leitura ao vivo sem todos os dias/campos
   familias: FamiliaPainel[];            // ordenadas por custo desc
   compartilhados: { id: number; custo: number; familias: string[]; semCodigo: number }[];
 }
@@ -105,6 +108,23 @@ function semaforo(acosEquilibrio: number | null, vendasDiretas: number, acosDire
   return acosDireto <= acosEquilibrio ? 'dentro' : 'acima';
 }
 
+type LinhaSoma = Parameters<typeof acumular>[1];
+const CAMPOS_VIVO = ['cost', 'clicks', 'prints', 'direct_amount', 'total_amount'] as const;
+/** Um dia por dia do período, com todos os campos somados presentes; senão null (nunca zero no lugar do ausente). */
+function diasAoVivo(v: ContaAoVivo, dias: string[]): (LinhaSoma & { dia: string })[] | null {
+  if (!v.completo) return null;
+  const porDia = new Map<string, LinhaSoma & { dia: string }>();
+  for (const d of v.serie) {
+    if (d.dia < dias[0] || d.dia > dias[dias.length - 1]) continue;
+    if (porDia.has(d.dia)) return null;   // dia repetido: leitura inconsistente, não soma duas vezes
+    const val = (k: (typeof CAMPOS_VIVO)[number]) => d.metricas[k]?.valor ?? null;
+    if (CAMPOS_VIVO.some((k) => val(k) == null)) return null;
+    porDia.set(d.dia, { dia: d.dia, cost: val('cost')!, clicks: val('clicks')!, prints: val('prints')!,
+      direct_amount: val('direct_amount')!, total_amount: val('total_amount')! });
+  }
+  return dias.length > 0 && dias.every((d) => porDia.has(d)) ? [...porDia.values()] : null;
+}
+
 function estadoDo(sync: SyncPainel | null, contaCoberta: boolean, contaCustoC: number, gruposComCusto: boolean): EstadoPainel {
   if (!sync) return 'sem_coleta';
   if (sync.estado === 'sem_permissao' || sync.estado === 'sem_advertiser' || sync.estado === 'sem_acesso') return sync.estado;
@@ -125,6 +145,9 @@ export function montarPainelAds(p: {
   historicoDesde: string | null;                  // VendasSku.historicoDesde (ISO) — antes dele não há venda conhecida
   baseAcosValidada: boolean;                      // BASE_ACOS_VALIDADA (spike 055)
   agora: Date;
+  /** Presente = a conta usa SÓ a série ao vivo (plano §5.6): resultado sem depender da coleta dos grupos.
+   *  Incompleta → conta indisponível, nunca recai na série coletada. Famílias seguem pela cobertura dos grupos. */
+  contaAoVivo?: ContaAoVivo;
 }): PainelAds {
   const { sync, grupos } = p.fonte;
   const dias = diasEntre(p.janela.desde, p.janela.ate);
@@ -182,17 +205,21 @@ export function montarPainelAds(p: {
     };
   }).sort((a, b) => b.custo - a.custo || a.codigoPai.localeCompare(b.codigoPai));
 
-  // Série da conta: só vale se cobre todo dia do período.
+  // Série da conta: só vale se cobre todo dia do período. Ao vivo, a validade é da própria leitura (não do sync).
+  const vivo = p.contaAoVivo ? diasAoVivo(p.contaAoVivo, dias) : null;
   const contaDias = p.fonte.conta.filter((d) => d.dia >= p.janela.desde && d.dia <= p.janela.ate);
-  const contaCoberta = !!sync?.conta_cobertura_desde && sync.conta_cobertura_desde <= p.janela.desde
-    && new Set(contaDias.map((d) => d.dia)).size >= dias.length;
+  const contaCoberta = p.contaAoVivo ? vivo != null
+    : !!sync?.conta_cobertura_desde && sync.conta_cobertura_desde <= p.janela.desde
+      && new Set(contaDias.map((d) => d.dia)).size >= dias.length;
   const somaConta = somaVazia();
-  for (const d of contaDias) acumular(somaConta, d);
+  for (const d of vivo ?? contaDias) acumular(somaConta, d);
   let conta: ContaPainel | null = null;
   if (contaCoberta) {
     const custoC = somaConta.custoC;
-    const divergente = emFamiliasC + compartilhadoC > custoC;   // um centavo já é divergência
-    const naoIdentificadoC = custoC - emFamiliasC - compartilhadoC;
+    // Ao vivo × coleta dos grupos são fontes distintas: sem conciliação (Task 21) a diferença não vira
+    // "não identificado" nem divergência.
+    const divergente = !vivo && emFamiliasC + compartilhadoC > custoC;   // um centavo já é divergência
+    const naoIdentificadoC = vivo ? null : custoC - emFamiliasC - compartilhadoC;
     const lucroAntes = lucroConhecido ? p.lucroConta.lucro : null;
     conta = {
       ...somarMetricas(somaConta),
@@ -202,10 +229,11 @@ export function montarPainelAds(p: {
       fonteCusto: historicoOk ? p.lucroConta.fonteCusto : null,
       motivoFiscal,
       emFamilias: emFamiliasC / 100, compartilhado: compartilhadoC / 100,
-      naoIdentificado: divergente ? null : naoIdentificadoC / 100,
-      naoIdentificadoPct: divergente || custoC === 0 ? null : naoIdentificadoC / custoC,
+      naoIdentificado: divergente || naoIdentificadoC == null ? null : naoIdentificadoC / 100,
+      naoIdentificadoPct: divergente || naoIdentificadoC == null || custoC === 0 ? null : naoIdentificadoC / custoC,
       divergente,
-      diasAbertos: contaDias.filter((d) => !atribuicaoFinal(d.dia, d.coletado_em)).length,
+      diasAbertos: vivo ? vivo.filter((d) => !atribuicaoFinal(d.dia, p.contaAoVivo!.lidoEm)).length
+        : contaDias.filter((d) => !atribuicaoFinal(d.dia, d.coletado_em)).length,
     };
   }
 
@@ -213,7 +241,7 @@ export function montarPainelAds(p: {
     estado: estadoDo(sync, contaCoberta, somaConta.custoC, grupos.some((g) => cents(g.cost) > 0)),
     desatualizado: !sync?.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS,
     gruposCobertos, semaforoLiberado: p.baseAcosValidada,
-    conta, contaMotivo: conta ? null : 'cobertura',
+    conta, contaMotivo: conta ? null : p.contaAoVivo ? 'serie_incompleta' : 'cobertura',
     familias, compartilhados,
   };
 }
