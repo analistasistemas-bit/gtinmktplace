@@ -123,3 +123,72 @@ Promoções mostra hoje o mesmo custo inflado. A Central e o `resolverPack` não
 (como representar a unidade comercial do custo) exige ADR próprio. Tetos finais: 200 MLBs, 300 cores, 600 tarifas.
 Com a emenda de 2026-10-20 ao ADR-0151 (anúncio próprio nunca escala o custo), os 4 casos da Avil voltam a ter número;
 `pacote_a_conferir` fica só para escala a partir de cadastro sem kit próprio em anúncio de outro produto.
+
+## Emenda — métricas por período e redesenho do /ads (2026-10-30)
+
+**Plano:** [docs/superpowers/plans/2026-10-30-ads-redesign-premium.md](../superpowers/plans/2026-10-30-ads-redesign-premium.md)
+
+**Contexto:** a aba Campanhas apresenta configuração atual, mas não permite
+analisar investimento e desempenho por período. A apresentação atual do painel
+também exige interpretar conceitos de margem antes de localizar os KPIs
+conhecidos do Mercado Ads.
+
+**Decisão:**
+
+1. Esta emenda substitui o item 2 da emenda de 2026-10-20. A aba Campanhas passa
+   a apresentar métricas realizadas por período, obtidas sob demanda do Mercado
+   Livre: investimento, impressões, cliques, CTR, CPC, vendas e receitas diretas
+   e indiretas, unidades, ACOS, ROAS e conversão, conforme disponibilidade real
+   dos campos. Configuração atual e métricas históricas são identificadas
+   separadamente. A mudança não autoriza atribuir lucro ou margem às campanhas.
+
+2. Desempenho e Campanhas compartilham um único seletor de período e comparação.
+   Mês atual permanece o padrão. Presets e intervalos personalizados usam dias
+   completos em America/Sao_Paulo, terminando no máximo em ontem. Atraso na coleta
+   não desloca silenciosamente a janela: bloqueia somente os indicadores que
+   dependem da cobertura ausente. A comparação usa uma janela imediatamente
+   anterior com a mesma quantidade de dias completos.
+
+3. O topo apresenta Investimento, Vendas por Ads, ROAS, ACOS, TACOS da conta,
+   Impressões, Cliques, CTR, CPC e Conversão, acompanhado de evolução diária.
+   Logo abaixo permanecem o diferencial financeiro do PubliAI: Resultado após
+   Ads e ACOS de equilíbrio. Vendas atribuídas e unidades são conceitos distintos
+   e devem usar seus respectivos campos do fornecedor.
+
+4. Esta emenda refina a D3 do desenho original: diferenças entre períodos com
+   atribuição aberta podem ser exibidas, sempre identificadas como provisórias
+   e com apresentação neutra. Não fundamentam afirmações de tendência consolidada
+   nem recomendações automáticas. Comparações consolidadas exigem janelas
+   completas e atribuição efetivamente encerrada.
+
+5. A nova edge ads-metricas realiza somente leitura no ML e usa cache curto
+   segregado por organização, conexão, anunciante, período e recurso. Não cria
+   tabela de métricas de campanha, migration ou cron. A janela consultável é a
+   mantida pelo ML; intervalo anterior fora da retenção permanece indisponível
+   com motivo, sem truncamento ou reconstrução a partir do campaign_id atual.
+
+6. O Resultado após Ads da conta pode utilizar a série diária completa do
+   anunciante obtida sob demanda, confrontada com as vendas dos mesmos dias.
+   A análise por família continua utilizando a coleta existente e suas travas.
+   A composição do gasto só é conciliada entre fontes compatíveis; diferença
+   de atualização não deve ser classificada como gasto não identificado.
+
+7. TACOS da conta é investimento dividido pelo faturamento canônico total
+   do Mercado Livre da organização no período, incluindo vendas fora do
+   cadastro PubliAI e descontando cupom do vendedor conforme ADR-0180.
+   Não se presume equivalência com o campo tacos de outros recursos do ML.
+   O equilíbrio observado da conta é referência do mix vendido, sem semáforo
+   contra o ACOS total. Nas famílias, o semáforo continua usando ACOS direto.
+
+8. Permanecem todas as proteções: nenhum rateio entre famílias, nenhum default
+   silencioso de custo ou imposto, identificação de custo parcial/estimado,
+   avisos de histórico, cobertura, gasto compartilhado e gasto não identificado.
+   Resultado após Ads não é lucro causado pelo Ads. Diagnóstico e tipo de
+   campanha permanecem indisponíveis conforme spike 057; histórico de alterações
+   não é inferido de last_updated.
+
+**Consequências:** a interface adota o vocabulário do Mercado Ads e acrescenta
+margem real, sem reconstruir atribuição financeira por campanha. Métricas
+opcionais, competitividade e semântica de conversão exigem confirmação no
+anunciante real antes de habilitação. Todas as indisponibilidades preservam
+o motivo.
