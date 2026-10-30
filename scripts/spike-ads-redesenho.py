@@ -23,6 +23,7 @@ contagens e mensagem de erro do ML. Nunca token nem nomes (campanha/anúncio/con
 import datetime
 import importlib.util
 import json
+import math
 import pathlib
 import re
 import sys
@@ -108,6 +109,8 @@ class Ml:
                 corpo, status = r.read(), r.status
         except urllib.error.HTTPError as e:
             corpo, status = e.read(), e.code
+        except (urllib.error.URLError, TimeoutError, OSError):
+            corpo, status = b"", 0  # falha de rede: status 0, nunca confundida com recusa 4xx
         ms = round((time.monotonic() - t0) * 1000)
         try:
             corpo = json.loads(corpo)
@@ -189,47 +192,112 @@ def metricas_de(corpo):
     return out
 
 
-def classifica(ml, rotulo, caminho, campos_pedidos=TODAS_MET):
-    """Pede todas as métricas; se der 400, repete por grupo. Imprime confirmado/ausente/recusado por campo."""
-    grupos = {"base": BASE_MET, "qtd": QTD_MET, "comp": COMP_MET}
-    resultado = {}
-    st, c = ml.get(f"{rotulo}-todas", f"{caminho}&metrics={campos_pedidos}")
+def valido(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def estado(ms, k):
+    """Classe de um campo em N linhas: confirmado só se numérico válido (bool/texto/nulo não contam) em TODAS."""
+    n = len(ms)
+    if n == 0:
+        return "NÃO CONFIRMADO: sem linhas"
+    pres = [m[k] for m in ms if k in m]
+    if not pres:
+        return "ausente"
+    ok = [v for v in pres if valido(v)]
+    nulos = sum(1 for v in pres if v is None)
+    if len(ok) == n:
+        faixa = f" min={min(ok)} max={max(ok)}" if not aditiva(k) else ""
+        return f"confirmado {len(ok)}/{n}{faixa}"
+    return (f"NÃO CONFIRMADO: válido {len(ok)}/{n}, nulo {nulos}, inválido {len(pres) - len(ok) - nulos}, "
+            f"ausente {n - len(pres)}")
+
+
+def sondar(ml, rotulo, caminho, pedidos=TODAS_MET):
+    """Pede todos os campos; em 4xx (≠429) isola por subdivisão; 5xx/rede = falha operacional, nunca recusa.
+    Devolve (corpos 200, recusados {campo: http}, falhas {campo: http})."""
+    ok, rec, fal = [], {}, {}
+
+    def tenta(ks, nome):
+        st, c = ml.get(nome, f"{caminho}&metrics={','.join(ks)}")
+        if st == 200:
+            ok.append(c)
+        elif 400 <= st < 500 and len(ks) > 1:
+            m = len(ks) // 2
+            tenta(ks[:m], nome + "a")
+            tenta(ks[m:], nome + "b")
+        else:
+            for k in ks:
+                (rec if 400 <= st < 500 else fal)[k] = f"http={st}"
+
+    todos = pedidos.split(",")
+    st, c = ml.get(f"{rotulo}-todas", f"{caminho}&metrics={pedidos}")
     if st == 200:
-        blocos = {"todas": (st, c)}
+        ok.append(c)
+    elif 400 <= st < 500:
+        # Competitividade vai campo a campo; o resto subdivide só se também for recusado.
+        comp = [k for k in todos if k in COMP_MET.split(",")]
+        resto = [k for k in todos if k not in comp]
+        tenta(resto, f"{rotulo}-resto")
+        for k in comp:
+            tenta([k], f"{rotulo}-{k}")
     else:
-        blocos = {g: ml.get(f"{rotulo}-{g}", f"{caminho}&metrics={m}") for g, m in grupos.items()}
-    for g, (stg, cg) in blocos.items():
-        pedidos = campos_pedidos if g == "todas" else grupos[g]
-        ms = metricas_de(cg) if stg == 200 else []
-        for k in pedidos.split(","):
-            if stg != 200:
-                resultado[k] = f"RECUSADO (grupo {g} http={stg})"
-            else:
-                tipos = {tipo(m[k]) for m in ms if k in m}
-                nn = sum(1 for m in ms if m.get(k) is not None)
-                vs = [m[k] for m in ms if isinstance(m.get(k), (int, float)) and not isinstance(m[k], bool)]
-                faixa = f" min={min(vs)} max={max(vs)}" if vs and not aditiva(k) else ""
-                resultado[k] = f"confirmado {sorted(tipos)} não-nulo {nn}/{len(ms)}{faixa}" if tipos else "ausente"
-    print(f"  CLASSIFICAÇÃO {rotulo}:")
-    for k in campos_pedidos.split(","):
-        print(f"    {k}: {resultado[k]}")
-    return juntar([cg for stg, cg in blocos.values() if stg == 200])
+        fal = {k: f"http={st}" for k in todos}
+    return ok, rec, fal
+
+
+def imprime(rotulo, ms, rec, fal, pedidos=TODAS_MET):
+    print(f"  CLASSIFICAÇÃO {rotulo} ({len(ms)} linhas/blocos):")
+    for k in pedidos.split(","):
+        r = (f"RECUSADO ({rec[k]})" if k in rec else f"FALHA OPERACIONAL, não classificado ({fal[k]})" if k in fal
+             else estado(ms, k))
+        print(f"    {k}: {r}")
+
+
+def classifica(ml, rotulo, caminho, pedidos=TODAS_MET):
+    ok, rec, fal = sondar(ml, rotulo, caminho, pedidos)
+    corpo = juntar(ok)
+    imprime(rotulo, metricas_de(corpo), rec, fal, pedidos)
+    return corpo
 
 
 def dinheiro(k):
     return k == "cost" or k.endswith("_amount")
 
 
+def chave(r):
+    for k in ("item_id", "date", "id", "campaign_id"):
+        if r.get(k) is not None:
+            return (k, r[k])
+    raise ValueError("linha sem identificador estável (item_id/date/id/campaign_id)")
+
+
 def juntar(corpos):
-    """Une respostas por grupo de métricas (mesma ordem de linhas, mesmo filtro): paging do 1º, metrics mescladas."""
+    """Une respostas de grupos de métricas pelo identificador estável da linha. Rejeita duplicatas e
+    conjuntos de linhas diferentes (nunca por posição)."""
     if not corpos:
         return {}
     out = json.loads(json.dumps(corpos[0]))
+    idx = {}
+    for r in out.get("results") or []:
+        k = chave(r)
+        if k in idx:
+            raise ValueError(f"identificador duplicado: {k}")
+        idx[k] = r
     for c in corpos[1:]:
-        for ra, rb in zip(out.get("results") or [], c.get("results") or []):
+        outros = {}
+        for r in c.get("results") or []:
+            k = chave(r)
+            if k in outros:
+                raise ValueError(f"identificador duplicado: {k}")
+            outros[k] = r
+        if set(outros) != set(idx):
+            raise ValueError("respostas com conjuntos de linhas diferentes")
+        for k, rb in outros.items():
+            ra = idx[k]
             if isinstance(ra.get("metrics"), dict) and isinstance(rb.get("metrics"), dict):
                 ra["metrics"].update(rb["metrics"])
-            elif isinstance(ra, dict) and isinstance(rb, dict):
+            else:
                 ra.update(rb)
         for b in ("metrics", "metrics_summary"):
             if isinstance(out.get(b), dict) and isinstance(c.get(b), dict):
@@ -284,14 +352,18 @@ def conciliar(cx):
         classifica(ml, "E4", f"{base}/product_ads/campaigns/{cid}?{per}&aggregation_type=DAILY")
     # E5: campos pedidos por anúncio (todas as métricas) na 1ª página e conciliação completa por Σ.
     p5 = f"{adv_base}/ads/search?limit=50&{per}"
-    c5 = classifica(ml, "E5", f"{p5}&offset=0")
+    ok5, rec5, fal5 = sondar(ml, "E5", f"{p5}&offset=0")
+    c5 = juntar(ok5)
     total = (c5.get("paging") or {}).get("total") or 0
     anuncios = [r for r in c5.get("results") or [] if isinstance(r, dict)]
+    pedidos5 = ",".join(k for k in TODAS_MET.split(",") if k not in rec5 and k not in fal5)
     for off in range(50, total, 50):
-        st, c = ml.get(f"E5-pag-{off}", f"{p5}&offset={off}&metrics={BASE_MET},{QTD_MET}")
+        st, c = ml.get(f"E5-pag-{off}", f"{p5}&offset={off}&metrics={pedidos5}")
         if st != 200:
             raise SystemExit("página de E5 falhou; conciliação incompleta")
         anuncios += [r for r in c.get("results") or [] if isinstance(r, dict)]
+    # Classificação de E5 sobre TODAS as páginas (não só a 1ª).
+    imprime("E5", [r["metrics"] if isinstance(r.get("metrics"), dict) else r for r in anuncios], rec5, fal5)
     ids = [r.get("item_id") for r in anuncios]
     print(f"\nE5: {len(anuncios)} anúncios lidos de paging.total={total}; item_id distintos={len(set(ids))}")
     cent = {}

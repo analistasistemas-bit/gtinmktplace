@@ -103,13 +103,13 @@ competitividade, recusada). Ainda em E5 aparecem anúncios `idle`/`hold` (inclus
 **Método:** `python3 scripts/spike-ads-redesenho.py conciliar <connection_id>` (só GET, teto 60 chamadas, para no 1º
 429, token não renovado). Janela atual = 2026-09-30..2026-10-29. Cada endpoint pede todas as métricas; se a rota
 responde 400, repete por grupo (base / quantidades / competitividade) para isolar o que foi recusado. Total da Task 04:
-126 GET (Avil 3 × 27, Hairfly 3 × 15 — a 1ª e a 2ª rodada serviram para ajustar o script), nenhum 429.
+180 GET (126 nas três primeiras rodadas, que ajustaram o script, + 54 na rodada final após a revisão: Avil 33, Hairfly 21), nenhum 429. Transcrição sanitizada da rodada final: [anexo](058-anexo-classificacao.md).
 Prefixos e rotas como no topo (E1 lista+resumo, E2 diária da conta, E3 detalhe da campanha, E4 diária da campanha,
 E5 `ads/search` por anúncio).
 
 ## Classificação por campo (idêntica nas duas contas)
 
-Legenda: **C** confirmado (veio, tipo número, não nulo em todas as linhas) · **R** recusado (HTTP 400 ao pedir o campo)
+Legenda: **C** confirmado (número válido — não nulo, não booleano, não texto — em todas as linhas; em E5, em todas as 603/45 linhas de todas as páginas) · **R** recusado (HTTP 4xx isolado pedindo só o campo; 5xx/rede seria falha operacional, não recusa)
 · **A** ausente (rota 200 sem o campo).
 
 | Campo | E1 | E2 | E3 | E4 | E5 |
