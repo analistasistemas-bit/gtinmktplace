@@ -68,6 +68,20 @@ describe('PeriodoAdsSeletor', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('range trocado pelo pai (A→B) reaparece no popover e o Aplicar reemite B', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const A: PeriodoAds = { tipo: 'range', desde: '2026-10-01', ate: '2026-10-05' };
+    const B: PeriodoAds = { tipo: 'range', desde: '2026-10-10', ate: '2026-10-20' };
+    const { rerender } = render(<PeriodoAdsSeletor valor={A} comparar="anterior" onChange={onChange} agora={AGORA} />);
+    rerender(<PeriodoAdsSeletor valor={B} comparar="anterior" onChange={onChange} agora={AGORA} />);
+    await abrirPersonalizado(user);
+    expect(screen.getByLabelText('De')).toHaveValue('2026-10-10');
+    expect(screen.getByLabelText('Até')).toHaveValue('2026-10-20');
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(onChange).toHaveBeenCalledWith({ periodo: B, comparar: 'anterior' });
+  });
+
   it('trocar a comparação chama onChange mantendo o período', async () => {
     const user = userEvent.setup();
     const onChange = montar({ tipo: 'preset', dias: 7 });

@@ -80,7 +80,18 @@ export function PeriodoAdsSeletor({ valor, comparar, onChange, agora }: Props) {
             </Button>
           );
         })}
-        <Popover open={aberto} onOpenChange={setAberto}>
+        <Popover
+          open={aberto}
+          onOpenChange={(abrir) => {
+            // Ao abrir, o rascunho parte do range vigente (o pai pode tê-lo trocado); aberto, a edição local é preservada.
+            if (abrir) {
+              setDesde(valor.tipo === 'range' ? valor.desde : '');
+              setAte(valor.tipo === 'range' ? valor.ate : '');
+              setErro(null);
+            }
+            setAberto(abrir);
+          }}
+        >
           <PopoverTrigger asChild>
             <Button
               size="sm"
