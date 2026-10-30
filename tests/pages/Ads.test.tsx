@@ -465,7 +465,7 @@ describe('Ads', () => {
       semaforo: null, motivo: 'historico' }] }, { historicoDesde: '2026-10-05T15:00:00.000Z' });
 
     expect(screen.getByText(
-      'Sem referência: histórico de vendas só desde 05/10/2026. Escolha um período a partir dessa data.',
+      'Sem referência: histórico de vendas só desde 05/10/2026. Escolha um período a partir de 06/10/2026.',
     )).toBeVisible();
   });
 

@@ -97,6 +97,12 @@ export function fimDiasAds(agora: Date, ultimoOkEm: string | null): string {
 export const historicoCobre = (historicoDesde: string | null, desdeDia: string): boolean =>
   historicoDesde != null && Date.parse(historicoDesde) <= Date.parse(`${desdeDia}T03:00:00.000Z`);
 
+/** Primeiro dia BRT em que um período pode começar com o histórico cobrindo-o (`historicoCobre`). */
+export const primeiroDiaCoberto = (historicoDesde: string): string => {
+  const dia = diaBRT(Date.parse(historicoDesde));
+  return historicoCobre(historicoDesde, dia) ? dia : somarDias(dia, 1);
+};
+
 /** Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
  *  Dentro da cobertura, dia sem linha = gasto zero real (conferido no worker: ele grava a série densa de
  *  todo grupo com gasto na janela; grupo sem gasto não tem linha). Fora dela = sem dado. */

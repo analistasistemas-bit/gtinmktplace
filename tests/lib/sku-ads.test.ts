@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atribuicaoFinal, fimDiasAds, montarAds } from '@/lib/sku-ads';
+import { atribuicaoFinal, fimDiasAds, historicoCobre, montarAds, primeiroDiaCoberto } from '@/lib/sku-ads';
 import { montarPainelAds } from '@/lib/ads-painel';
 import { intervalosBRT } from '@/lib/calendario-brt';
 import type { AdsDia, AdsGrupo, AdsSync, FonteAds } from '@/lib/sku-dossie-dados';
@@ -301,5 +301,16 @@ describe('montarAds — fim no último dia coletado', () => {
       diasFinanceiros: { desde: '2026-09-28', ate: '2026-10-04' }, fonte: f8 });
     expect(a.fimDia).toBe('2026-10-04');
     expect(a).toMatchObject({ motivoSemLucro: 'cobertura', lucroAposAds: null });
+  });
+});
+
+describe('primeiroDiaCoberto', () => {
+  it('é o 1º dia em que historicoCobre aceita o início do período', () => {
+    expect(primeiroDiaCoberto('2026-10-05T15:00:00.000Z')).toBe('2026-10-06'); // venda no meio do dia
+    expect(primeiroDiaCoberto('2026-10-05T03:00:00.000Z')).toBe('2026-10-05'); // meia-noite BRT
+    expect(primeiroDiaCoberto('2026-10-06T02:30:00.000Z')).toBe('2026-10-06'); // 23:30 BRT do dia 05
+    for (const h of ['2026-10-05T15:00:00.000Z', '2026-10-05T03:00:00.000Z', '2026-10-06T02:30:00.000Z']) {
+      expect(historicoCobre(h, primeiroDiaCoberto(h))).toBe(true);
+    }
   });
 });

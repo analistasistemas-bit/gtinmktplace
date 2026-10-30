@@ -14,6 +14,7 @@ import {
 } from '@/lib/ads-apresentacao';
 import { DetalheFamilia } from '@/components/ads/detalhe-familia';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
+import { primeiroDiaCoberto } from '@/lib/sku-ads';
 
 const SEMAFORO: Record<Semaforo, { tom: 'success' | 'danger'; txt: string }> = {
   dentro: { tom: 'success', txt: 'Dentro do equilíbrio' },
@@ -210,7 +211,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
     ? null
     : contagem.semReferencia > 0
       ? historicoDesde && familias.some(f => f.motivo === 'historico')
-        ? `Sem referência: histórico de vendas só desde ${dataBRT(historicoDesde)}. Escolha um período a partir dessa data.`
+        ? `Sem referência: histórico de vendas só desde ${dataBRT(historicoDesde)}. Escolha um período a partir de ${primeiroDiaCoberto(historicoDesde).split('-').reverse().join('/')}.`
         : 'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.'
       : 'Nenhuma família acima do equilíbrio neste período.';
 
