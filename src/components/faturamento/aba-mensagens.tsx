@@ -94,6 +94,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
       await responderMensagem(c.pack_id, t);
       toast.success('Mensagem enviada.');
       setTexto('');
+      onAberto(false); // respondida: solta a fixação para sair de "Aguardando" no refetch
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
       await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
     } catch (e) {

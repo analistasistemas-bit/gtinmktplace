@@ -7,9 +7,9 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AbaMensagens } from '../aba-mensagens';
 
-const conversa = (naoLidas: string[]) => ({
+const conversa = (naoLidas: string[], aguardando = true) => ({
   pack_id: 'pack-2', order_id: 'order-2', item_titulo: 'Produto 2', item_id: 'MLB2',
-  comprador_nome: null, comprador_nick: 'NICK_2', order_status: 'paid', aguardando: true,
+  comprador_nome: null, comprador_nick: 'NICK_2', order_status: 'paid', aguardando,
   ultima: '2026-07-10T10:00:00Z', shipping_status: 'delivered', idsNaoLidosML: naoLidas,
   mensagens: [{
     id: 'message-2', pack_id: 'pack-2', order_id: 'order-2', message_id: 'm2', direcao: 'recebida', texto: 'Olá',
@@ -19,7 +19,9 @@ const conversa = (naoLidas: string[]) => ({
 });
 
 let lidaNoML = false;
-const buscarConversasMock = vi.fn(async () => [conversa(lidaNoML ? [] : ['m2'])]);
+let respondida = false;
+const buscarConversasMock = vi.fn(async () => [conversa(lidaNoML ? [] : ['m2'], !respondida)]);
+const responderMock = vi.fn(async () => { respondida = true; });
 const marcarLidasMock = vi.fn(async () => { lidaNoML = true; return { ok: true }; });
 
 vi.mock('@/lib/mensagens', async (importOriginal) => ({
@@ -29,6 +31,7 @@ vi.mock('@/lib/mensagens', async (importOriginal) => ({
     naoLidas: { aPreparar: 0, aCaminho: 0, entregues: 1, total: 1 }, lidas: { semResponder: 0, respondidas: 0 },
   }),
   marcarMensagensLidasML: () => marcarLidasMock(),
+  responderMensagem: () => responderMock(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
@@ -47,5 +50,18 @@ describe('AbaMensagens: conversa aberta fica visível após o refetch que a recl
 
     await userEvent.click(within(card()).getByRole('button', { name: 'Recolher' }));
     expect(screen.queryByText('Produto 2')).not.toBeInTheDocument(); // agora sai do filtro Entregues
+  });
+
+  it('Aguardando → abre → responde: o card solta a fixação e sai do filtro sem recarregar a página', async () => {
+    lidaNoML = true; respondida = false;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><AbaMensagens /></QueryClientProvider>);
+    const card = () => screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    await userEvent.click(within(await waitFor(card)).getByRole('button', { name: 'Conferir mensagem' }));
+    await userEvent.type(within(card()).getByRole('textbox', { name: 'Mensagem ao comprador' }), 'Resposta');
+    await userEvent.click(within(card()).getByRole('button', { name: 'Responder' }));
+
+    expect(responderMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText('Produto 2')).not.toBeInTheDocument());
   });
 });
