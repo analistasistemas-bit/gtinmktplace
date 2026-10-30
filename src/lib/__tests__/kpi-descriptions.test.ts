@@ -73,6 +73,9 @@ const ALL_EXPECTED_KEYS = [
   'Dentro do equilíbrio::Ads',
   'Sem referência::Ads',
   'Ads sobre a margem::Ads',
+  'Família::Ads',
+  'Gasto::Ads',
+  'Resultado após Ads::Ads',
 ];
 
 describe('kpi-descriptions', () => {

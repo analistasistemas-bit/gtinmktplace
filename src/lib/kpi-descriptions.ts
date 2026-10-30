@@ -166,6 +166,15 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     + 'R$ 9,20 (ACOS direto: gasto ÷ vendas diretas do anúncio) e o lucro antes do Ads era R$ 25,60 (equilíbrio). '
     + 'Barra verde: sobra lucro. Barra vermelha cheia: o Ads passou do equilíbrio e a venda pelo anúncio dá prejuízo. '
     + '"Sem venda direta": gastou sem vender pelo próprio anúncio.',
+  'Família::Ads':
+    'Produto agrupado pelo código PAI. Soma os grupos de Ads de todos os anúncios da família; grupo que mistura '
+    + 'famílias vai para Gastos associados, sem rateio.',
+  'Gasto::Ads':
+    'Despesa de Ads informada pela API do Mercado Livre no período, só dos grupos de Ads exclusivos desta família.',
+  'Resultado após Ads::Ads':
+    'Lucro antes de Ads (vendas da família no período, já sem comissão, frete, imposto e custo) menos o Gasto. '
+    + 'Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
+    + 'Ads não cobre o período ou há gasto compartilhado com outras famílias.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

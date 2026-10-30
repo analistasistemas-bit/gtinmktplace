@@ -736,6 +736,17 @@ describe('Ads', () => {
     expect(screen.getByText(/de cada R\$ 100 vendidos/)).toBeVisible();
   });
 
+  it('(i) nas colunas Família, Gasto e Resultado após Ads', () => {
+    montar();
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Família' }));
+    expect(screen.getByText(/código PAI/)).toBeVisible();
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Gasto' }));
+    expect(screen.getByText(/grupos de Ads exclusivos desta família/)).toBeVisible();
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Resultado após Ads' }));
+    expect(screen.getByText(/Não é o lucro causado pelo Ads/)).toBeVisible();
+  });
+
   it('detalhe mostra o markup antes de Ads', () => {
     montar();
     fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));

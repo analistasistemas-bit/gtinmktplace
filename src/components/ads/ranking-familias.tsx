@@ -53,13 +53,11 @@ function NomeFamilia({ f }: { f: FamiliaPainel }) {
   );
 }
 
-const ROTULO_USO = 'Ads sobre a margem';
-const INFO_USO = `${ROTULO_USO}::Ads`;
-
-function CabecalhoUso() {
+/** Rótulo de coluna com (i); a descrição vive em `kpi-descriptions` sob `<rótulo>::Ads`. */
+function Cabecalho({ rotulo }: { rotulo: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 max-sm:[&_button]:-m-[15px] max-sm:[&_button]:p-[15px]">
-      {ROTULO_USO}<KpiInfoButton infoKey={INFO_USO} />
+      {rotulo}<KpiInfoButton infoKey={`${rotulo}::Ads`} />
     </span>
   );
 }
@@ -168,15 +166,15 @@ function CartaoFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamili
       <div className="min-w-0"><NomeFamilia f={f} /></div>
       <dl className="space-y-2 text-sm">
         <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-muted-foreground">Gasto</dt>
+          <dt className="text-muted-foreground"><Cabecalho rotulo="Gasto" /></dt>
           <dd className="text-right tabular-nums">{fmtBRL(f.custo)}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
-          <dt className="text-muted-foreground"><CabecalhoUso /></dt>
+          <dt className="text-muted-foreground"><Cabecalho rotulo="Ads sobre a margem" /></dt>
           <dd className="text-right"><UsoMargem f={f} liberado={liberado} /></dd>
         </div>
         <div className="flex items-start justify-between gap-3">
-          <dt className="text-muted-foreground">Resultado após Ads</dt>
+          <dt className="text-muted-foreground"><Cabecalho rotulo="Resultado após Ads" /></dt>
           <dd className="text-right"><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></dd>
         </div>
       </dl>
@@ -245,10 +243,10 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
         <Table aria-label="Famílias por gasto" className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead scope="col" className="w-[34%] px-3 align-bottom whitespace-normal">Família</TableHead>
-              <TableHead scope="col" className="w-[14%] px-3 text-right align-bottom whitespace-normal">Gasto</TableHead>
-              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal"><CabecalhoUso /></TableHead>
-              <TableHead scope="col" className="w-[24%] px-3 text-right align-bottom whitespace-normal">Resultado após Ads</TableHead>
+              <TableHead scope="col" className="w-[34%] px-3 align-bottom whitespace-normal"><Cabecalho rotulo="Família" /></TableHead>
+              <TableHead scope="col" className="w-[14%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Gasto" /></TableHead>
+              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Ads sobre a margem" /></TableHead>
+              <TableHead scope="col" className="w-[24%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Resultado após Ads" /></TableHead>
               <TableHead scope="col" className="w-[6%] px-3 text-right align-bottom whitespace-normal"><span className="sr-only">Detalhes</span></TableHead>
             </TableRow>
           </TableHeader>
