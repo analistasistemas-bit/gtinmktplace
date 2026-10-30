@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { lerCampanhasComparadas, lerCampanhasPeriodo, lerEscopoCampanha, lerEscopoConta } from '../metricas-leitura.ts';
+import {
+  criarLeituraOrcada, lerCampanhasComparadas, lerCampanhasPeriodo, lerEscopoCampanha, lerEscopoConta,
+} from '../metricas-leitura.ts';
 
 const ATUAL = { desde: '2026-09-30', ate: '2026-10-29' };
 const ANT = { desde: '2026-08-31', ate: '2026-09-29' };
@@ -255,6 +257,29 @@ describe('escopos conta e campanha', () => {
       expect(detalhe(urls)).toEqual([]);
     });
 
+    it('pertencimento: dois anunciantes com listagens distintas; campanha de um é recusada pelo outro sem E3/E4', async () => {
+      const listas: Record<string, ReturnType<typeof camp>[]> = { '7': [camp(1, 1), camp(2, 2)], '8': [camp(5, 5)] };
+      const urls: string[] = [];
+      const buscar = async (url: string) => {
+        urls.push(url);
+        if (/product_ads\/campaigns\/\d+\?/.test(url)) {
+          return url.includes('aggregation_type=DAILY') ? { results: [] } : { id: 1, metrics: { cost: 3 } };
+        }
+        const adv = /advertisers\/(\d+)\//.exec(url)![1];
+        const offset = Number(/offset=(\d+)/.exec(url)![1]);
+        const todas = listas[adv];
+        return { paging: { offset, limit: 2, total: todas.length }, results: todas.slice(offset, offset + 2) };
+      };
+      const deps = { buscar, agora: () => 'T' };
+      // 5 é do anunciante 8: o 7 recusa; o 8 passa da prova (e lê E3/E4)
+      expect('recusa' in (await lerEscopoCampanha(deps, 7, 5, J, null))).toBe(true);
+      expect(detalhe(urls)).toEqual([]);
+      expect('recusa' in (await lerEscopoCampanha(deps, 8, 1, J, null))).toBe(true);
+      expect(detalhe(urls)).toEqual([]);
+      expect('recusa' in (await lerEscopoCampanha(deps, 8, 5, J, null))).toBe(false);
+      expect(detalhe(urls).length).toBe(2);
+    });
+
     it('pertencimento: id inválido é recusado sem nenhuma chamada', async () => {
       for (const id of [0, -9, 1.5, Number.NaN, '9' as unknown as number]) {
         const s = servidor({ camps: [camp(9, 1)] });
@@ -263,5 +288,117 @@ describe('escopos conta e campanha', () => {
         expect(s.urls).toEqual([]);
       }
     });
+  });
+});
+
+describe('limites de leitura (orçamento §5.5)', () => {
+  const r = (status: number, corpo: unknown = {}, retryAfterMs: number | null = null) => ({ status, corpo, retryAfterMs });
+  // Relógio e espera fictícios: esperar avança o relógio.
+  function ambiente(resp: (url: string, n: number) => ReturnType<typeof r> | Promise<ReturnType<typeof r>>) {
+    let t = 0;
+    const chamadas: string[] = [];
+    const esperas: number[] = [];
+    const orc = criarLeituraOrcada({
+      buscar: async (url) => { chamadas.push(url); return resp(url, chamadas.length); },
+      agoraMs: () => t,
+      esperar: async (ms) => { esperas.push(ms); t += ms; },
+    });
+    return { orc, chamadas, esperas, avancar: (ms: number) => { t += ms; } };
+  }
+  const pag = (o: number) => `https://x/a?limit=50&offset=${o}`;
+
+  it('limites: 21ª página lida estoura o teto de páginas com motivo', async () => {
+    const a = ambiente(() => r(200, { ok: 1 }));
+    for (let i = 0; i < 20; i++) expect(await a.orc.buscar(pag(i))).toEqual({ ok: 1 });
+    expect(await a.orc.buscar(pag(20))).toBeNull();
+    expect(a.chamadas).toHaveLength(20);
+    expect(a.orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'paginas' });
+    expect(await a.orc.buscar('https://x/b')).toBeNull(); // esgotado é definitivo
+  });
+
+  it('limites: 33ª chamada externa (retries incluídos) estoura o teto de chamadas', async () => {
+    const a = ambiente(() => r(200, {}));
+    for (let i = 0; i < 32; i++) expect(await a.orc.buscar(`https://x/c${i}`)).toEqual({});
+    expect(await a.orc.buscar('https://x/c33')).toBeNull();
+    expect(a.orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'chamadas' });
+    expect(a.chamadas).toHaveLength(32);
+  });
+
+  it('limites: retry conta como chamada externa', async () => {
+    const a = ambiente((_u, n) => (n % 2 === 1 ? r(503, {}, 1) : r(200, { ok: 1 })));
+    for (let i = 0; i < 16; i++) expect(await a.orc.buscar(`https://x/c${i}`)).toEqual({ ok: 1 });
+    expect(a.chamadas).toHaveLength(32);
+    expect(await a.orc.buscar('https://x/c99')).toBeNull();
+    expect(a.orc.estado().limite).toBe('chamadas');
+  });
+
+  it('limites: prazo de 20 s esgotado impede nova chamada', async () => {
+    const a = ambiente(() => r(200, {}));
+    expect(await a.orc.buscar('https://x/1')).toEqual({});
+    a.avancar(20_000);
+    expect(await a.orc.buscar('https://x/2')).toBeNull();
+    expect(a.chamadas).toHaveLength(1);
+    expect(a.orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'prazo' });
+  });
+
+  it('limites: 403 não repete e marca sem_permissao; 401 não repete e marca sem_acesso', async () => {
+    const a = ambiente(() => r(403));
+    expect(await a.orc.buscar('https://x/1')).toBeNull();
+    expect(a.chamadas).toHaveLength(1);
+    expect(a.orc.estado()).toEqual({ motivo: 'sem_permissao', limite: null });
+    const b = ambiente(() => r(401));
+    expect(await b.orc.buscar('https://x/1')).toBeNull();
+    expect(b.chamadas).toHaveLength(1);
+    expect(b.orc.estado().motivo).toBe('sem_acesso');
+  });
+
+  it('limites: 429 espera o Retry-After e repete uma vez', async () => {
+    const a = ambiente((_u, n) => (n === 1 ? r(429, {}, 2_500) : r(200, { ok: 1 })));
+    expect(await a.orc.buscar('https://x/1')).toEqual({ ok: 1 });
+    expect(a.esperas).toEqual([2_500]);
+    expect(a.chamadas).toHaveLength(2);
+    expect(a.orc.estado().motivo).toBeNull();
+  });
+
+  it('limites: 429 cujo Retry-After não cabe no prazo restante não espera nem repete', async () => {
+    const a = ambiente(() => r(429, {}, 15_000));
+    a.avancar(6_000); // restam 14 s < 15 s
+    expect(await a.orc.buscar('https://x/1')).toBeNull();
+    expect(a.esperas).toEqual([]);
+    expect(a.chamadas).toHaveLength(1);
+    expect(a.orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'prazo' });
+  });
+
+  it('limites: 5xx repete só 1 vez; segunda falha devolve null sem motivo de orçamento', async () => {
+    const a = ambiente(() => r(500));
+    expect(await a.orc.buscar('https://x/1')).toBeNull();
+    expect(a.chamadas).toHaveLength(2);
+    expect(a.orc.estado()).toEqual({ motivo: null, limite: null });
+  });
+
+  it('limites: no máximo 4 chamadas simultâneas', async () => {
+    let ativas = 0;
+    let pico = 0;
+    const a = ambiente(async () => {
+      ativas++; pico = Math.max(pico, ativas);
+      await new Promise((ok) => setTimeout(ok, 5));
+      ativas--;
+      return r(200, {});
+    });
+    await Promise.all(Array.from({ length: 10 }, (_, i) => a.orc.buscar(`https://x/${i}`)));
+    expect(pico).toBe(4);
+    expect(a.chamadas).toHaveLength(10);
+  });
+
+  it('limites: listagem E1 truncada pelo teto de páginas é incompleta, nunca completa', async () => {
+    // 30 páginas de 1 linha; o teto de 20 corta a leitura
+    const a = ambiente((url) => {
+      const o = Number(/offset=(\d+)/.exec(url)![1]);
+      return r(200, { paging: { offset: o, limit: 1, total: 30 }, results: [camp(o + 1, 1)] });
+    });
+    const l = await lerCampanhasPeriodo({ buscar: a.orc.buscar, agora: () => 'T' }, 7, ATUAL);
+    expect(l.completo).toBe(false);
+    expect(l.campanhas).toHaveLength(20);
+    expect(a.orc.estado().limite).toBe('paginas');
   });
 });

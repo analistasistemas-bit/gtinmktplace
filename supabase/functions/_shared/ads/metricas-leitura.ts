@@ -5,6 +5,8 @@ import {
   urlContaSerie,
   type BlocoAdsMetricas, type CampanhaPeriodoAds, type JanelaAdsMetricas, type MetricaBrutaAds, type ValorAds,
 } from './metricas.ts';
+import { classificarResposta } from './parsers.ts';
+import type { RespostaML } from '../trafego/sincronizar.ts';
 
 export interface DepsLeituraAds {
   buscar(url: string): Promise<unknown | null>;
@@ -226,4 +228,77 @@ export async function lerEscopoCampanha(
   const motivo = await provarPertencimento(deps, advertiserId, campanhaId, anterior ? [atual, anterior] : [atual]);
   if (motivo) return { recusa: { estado: 'sem_acesso', motivo } };
   return lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+}
+
+// --- Orçamento da leitura (plano §5.5): tetos da aplicação, não limites alegados da API. ---
+
+export const ORCAMENTO_LEITURA_ADS = { concorrencia: 4, paginas: 20, chamadas: 32, prazoMs: 20_000 } as const;
+const FALLBACK_RETRY_MS = 1_500;
+
+export interface EstadoLeituraOrcada {
+  /** `limite_de_leitura` (teto atingido), `sem_permissao` (403) ou `sem_acesso` (401: reautenticação do chamador). */
+  motivo: 'limite_de_leitura' | 'sem_permissao' | 'sem_acesso' | null;
+  limite: 'paginas' | 'chamadas' | 'prazo' | null;
+}
+
+/**
+ * Envolve o fetch do ML num orçamento POR REQUISIÇÃO (somando as janelas atual e anterior, não por janela):
+ * máx. 4 simultâneas, 20 páginas (URLs com `offset=`), 32 chamadas incluindo retries, 20 s. `buscar` devolve o corpo
+ * ou null, como `DepsLeituraAds.buscar`; o motivo do null fica em `estado()`. Teto atingido é definitivo na
+ * requisição, então as leituras ficam `completo: false` e o chamador devolve indisponibilidade (nunca listagem
+ * truncada como completa). 429/5xx: 1 repetição, respeitando Retry-After se couber no prazo; 403/401 não repetem.
+ * ponytail: E5 (anúncios da campanha, ~13 páginas/janela na Avil) cabe no teto só numa janela; atual+anterior
+ * (~26) estoura e a comparação fica indisponível por `limite_de_leitura`, sem truncar.
+ */
+export function criarLeituraOrcada(cfg: {
+  buscar(url: string): Promise<RespostaML>;
+  agoraMs(): number;
+  esperar(ms: number): Promise<void>;
+}) {
+  const fim = cfg.agoraMs() + ORCAMENTO_LEITURA_ADS.prazoMs;
+  let paginas = 0;
+  let chamadas = 0;
+  let ativas = 0;
+  let estado: EstadoLeituraOrcada = { motivo: null, limite: null };
+  const fila: (() => void)[] = [];
+  const parar = (motivo: EstadoLeituraOrcada['motivo'], limite: EstadoLeituraOrcada['limite'] = null) => {
+    estado = estado.motivo ? estado : { motivo, limite }; // o primeiro motivo vale
+    return null;
+  };
+  const vaga = async () => {
+    if (ativas >= ORCAMENTO_LEITURA_ADS.concorrencia) await new Promise<void>((ok) => fila.push(ok));
+    ativas++; // a vaga passa direto ao próximo da fila na liberação, sem corrida
+  };
+  const liberar = () => { ativas--; fila.shift()?.(); };
+
+  async function uma(url: string): Promise<unknown | null> {
+    for (let tentativa = 0; ; tentativa++) {
+      if (cfg.agoraMs() >= fim) return parar('limite_de_leitura', 'prazo');
+      if (tentativa === 0 && url.includes('offset=')) {
+        if (paginas >= ORCAMENTO_LEITURA_ADS.paginas) return parar('limite_de_leitura', 'paginas');
+        paginas++;
+      }
+      if (chamadas >= ORCAMENTO_LEITURA_ADS.chamadas) return parar('limite_de_leitura', 'chamadas');
+      chamadas++;
+      let r: RespostaML;
+      try { r = await cfg.buscar(url); } catch { return null; }
+      const c = classificarResposta(r);
+      if (c === 'ok') return r.corpo;
+      if (c === 'sem_permissao') return parar('sem_permissao');
+      if (c === 'sem_acesso') return parar('sem_acesso');
+      if (c !== 'transitorio' || tentativa >= 1) return null;
+      const espera = r.retryAfterMs ?? FALLBACK_RETRY_MS;
+      if (cfg.agoraMs() + espera >= fim) return parar('limite_de_leitura', 'prazo');
+      await cfg.esperar(espera);
+    }
+  }
+
+  return {
+    async buscar(url: string): Promise<unknown | null> {
+      if (estado.motivo) return null;
+      await vaga();
+      try { return estado.motivo ? null : await uma(url); } finally { liberar(); }
+    },
+    estado: () => estado,
+  };
 }
