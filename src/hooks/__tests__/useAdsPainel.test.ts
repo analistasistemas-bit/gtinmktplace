@@ -34,6 +34,7 @@ function linha(codigo: string, codigoPai: string | null, over: Partial<Acumulado
 }
 const vendasQ = (linhas: LinhaSku[] | null, extra: object = {}) => ({
   dados: linhas && { linhas, historicoDesde: '2026-01-01T03:00:00.000Z' },
+  baseFiscal: linhas && { ok: true },
   isLoading: false, isFetching: false, isError: false, refetch: vi.fn().mockResolvedValue([]), ...extra,
 });
 
@@ -100,6 +101,19 @@ describe('useAdsPainel', () => {
     await waitFor(() => expect(r2.result.current.painel).not.toBeNull());
     expect(ultimaChamada().lucroConta).toEqual({ lucro: null, fonteCusto: 'sem_custo' });
     expect(ultimaChamada().lucroPorFamilia.get('A')).toEqual({ nome: 'A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo', markup: null });
+  });
+
+  it('(a5) fiscal: a base fiscal das vendas chega ao painel; inválida bloqueia, ok (alíquota zero confirmada) libera', async () => {
+    const r = render();
+    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
+    expect(ultimaChamada().baseFiscal).toEqual({ ok: true });
+
+    const bloqueio = { ok: false, motivo: 'aliquotas_nao_confirmadas' };
+    m.useVendasSku.mockReturnValue(vendasQ([], { baseFiscal: bloqueio }));
+    const r2 = render();
+    await waitFor(() => expect(r2.result.current.painel).not.toBeNull());
+    expect(ultimaChamada().baseFiscal).toEqual(bloqueio);
+    expect(r2.result.current.painel!.familias.every((f) => f.lucroAntes == null && f.resultado == null)).toBe(true);
   });
 
   it('(b) códigos buscados para os MLBs únicos e ordenados de todos os grupos', async () => {

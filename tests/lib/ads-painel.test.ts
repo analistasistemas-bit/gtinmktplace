@@ -11,6 +11,7 @@ import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { montarVendasSku } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
+import type { BaseFiscal } from '@/lib/vendas-sku';
 
 const janela = { desde: '2026-09-01', ate: '2026-09-02' };
 const agora = new Date('2026-10-04T15:00:00-03:00');
@@ -30,6 +31,7 @@ const base = (f: Partial<FontePainelAds> = {}) => ({
   nomeDaFamilia: new Map<string, string>(),
   lucroPorFamilia: new Map([['A', { nome: 'Fam A', lucro: 250, brutoComCusto: 1000, fonteCusto: 'real' as const, markup: 0.5 }]]),
   lucroConta: { lucro: 300, fonteCusto: 'real' as const },
+  baseFiscal: { ok: true } as BaseFiscal,
 });
 
 describe('montarPainelAds', () => {
@@ -237,5 +239,29 @@ describe('montarPainelAds × vendas reais (integração)', () => {
     expect(f('K')).toMatchObject({ lucroAntes: 22, resultado: 19, fonteCusto: 'real', motivo: null });
     expect(f('K').acosEquilibrio).toBeCloseTo(22 / 30);
     expect(f('B')).toMatchObject({ lucroAntes: null, resultado: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_custo' });
+  });
+});
+
+describe('montarPainelAds — base fiscal (ADR-0055: sem alíquota confirmada não há lucro)', () => {
+  const invalidas: BaseFiscal[] = [
+    { ok: false, motivo: 'aliquotas_carregando' },
+    { ok: false, motivo: 'aliquotas_erro' },
+    { ok: false, motivo: 'aliquotas_nao_confirmadas' },
+    { ok: false, motivo: 'origem_nao_resolvida', codigos: ['A1'] },
+  ];
+  for (const bf of invalidas) {
+    it(`fiscal ${bf.ok ? '' : bf.motivo}: lucro, resultado e equilíbrio bloqueados em conta e famílias, com o motivo`, () => {
+      const b = { ...base({ grupos: [grupo(1, 80, ['MLB1', 'MLB2'], 800, 700)] }), baseFiscal: bf };
+      const p = montarPainelAds(b);
+      expect(p.familias[0]).toMatchObject({ lucroAntes: null, resultado: null, margemConsumida: null,
+        acosEquilibrio: null, semaforo: null, markup: null, motivo: 'fiscal' });
+      expect(p.conta).toMatchObject({ lucroAntes: null, resultado: null, margemConsumida: null, custo: 100 });
+      expect(p.conta?.motivoFiscal).toBe(bf.ok ? null : bf.motivo);
+    });
+  }
+  it('fiscal ok (inclui alíquota zero confirmada): lucro liberado, sem motivo fiscal', () => {
+    const p = montarPainelAds(base({ grupos: [grupo(1, 80, ['MLB1', 'MLB2'], 800, 700)] }));
+    expect(p.familias[0]).toMatchObject({ lucroAntes: 250, resultado: 170, acosEquilibrio: 0.25, motivo: null });
+    expect(p.conta).toMatchObject({ lucroAntes: 300, resultado: 200, motivoFiscal: null });
   });
 });

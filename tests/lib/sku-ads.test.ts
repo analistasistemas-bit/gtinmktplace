@@ -260,7 +260,7 @@ describe('montarAds — histórico de vendas (mesma regra do painel)', () => {
         status: 'ACTIVE', cost: 7, clicks: 0, prints: 0, direct_amount: 0, indirect_amount: 0, total_amount: 0, membros: ['MLB1'] }] },
       janela: DIAS_FIN, agora: AGORA, codigosPorMlb: new Map([['MLB1', ['A']]]), familiaDoCodigo: new Map([['A', 'P']]),
       nomeDaFamilia: new Map(), lucroPorFamilia: new Map([['P', { nome: 'P', lucro: 500, brutoComCusto: 1000, fonteCusto: 'real', markup: 1 }]]),
-      lucroConta: { lucro: 500, fonteCusto: 'real' }, historicoDesde, baseAcosValidada: false,
+      lucroConta: { lucro: 500, fonteCusto: 'real' }, historicoDesde, baseAcosValidada: false, baseFiscal: { ok: true },
     });
     expect(ads).toMatchObject({ motivoSemLucro: 'historico', lucroAposAds: null });
     expect(painel.familias[0]).toMatchObject({ motivo: 'historico', resultado: null });

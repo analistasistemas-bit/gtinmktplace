@@ -11,6 +11,7 @@ const MOTIVO: Record<Exclude<MotivoFamilia, null>, string> = {
   compartilhado: 'gasto compartilhado com outra família',
   cobertura: 'coleta de Ads incompleta no período',
   historico: 'período antes do histórico de vendas',
+  fiscal: 'resultado indisponível: confirme as alíquotas em Configurações',
   sem_vendas: 'sem vendas no período',
   sem_custo: 'sem custo cadastrado',
   custo_parcial: 'custo parcial: sem semáforo',

@@ -14,7 +14,8 @@ import { montarCorResolver } from '@/lib/cor-produto';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { calcularKpis, type Venda } from '@/lib/faturamento';
 import { ehFaturavel, type AliquotaResolver, type CustoResolver } from '@/lib/resumo-vendas';
-import { dentroDaJanela, janelaEstendida, montarVendasSku, SEM_CODIGO, type VendasSku } from '@/lib/vendas-sku';
+import { dentroDaJanela, janelaEstendida, montarVendasSku, SEM_CODIGO, type BaseFiscal, type VendasSku } from '@/lib/vendas-sku';
+export type { BaseFiscal };
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
 export interface OpcoesVendasSku {
@@ -23,15 +24,6 @@ export interface OpcoesVendasSku {
   /** Janela anterior exata (ex.: dias BRT da comparação do /ads). Sem ela, `faturamentoConta.anterior` é null. */
   anteriorFixa?: Janela;
 }
-
-/** Integridade fiscal do lucro (ADR-0055/0086: imposto nunca defaulta em silêncio). `ok:false` sempre que
- *  o imposto de `dados` depende do fallback 8/16 (alíquotas carregando, com erro ou nunca confirmadas em
- *  Configurações) ou de um item que entra no lucro sem alíquota resolvida (imposto sairia 0). Alíquota
- *  zero confirmada é válida. `codigos`: códigos dos itens sem origem ('' = item sem código). */
-export type BaseFiscal =
-  | { ok: true }
-  | { ok: false; motivo: 'aliquotas_carregando' | 'aliquotas_nao_confirmadas' | 'aliquotas_erro' }
-  | { ok: false; motivo: 'origem_nao_resolvida'; codigos: string[] };
 
 /** Mesmo recorte de `impostoDoItem` em agruparPorPedido: item faturável da venda, UF da venda. Relevante =
  *  entra no lucro (custo > 0, como custoDoItem). Só as janelas atual e anterior; as de tendência não têm dinheiro. */

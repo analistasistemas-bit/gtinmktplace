@@ -80,8 +80,10 @@ export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
       nomeDaFamilia: new Map(catQ.data.filter((c) => c.codigoPai && c.nomeFamilia).map((c) => [c.codigoPai!, c.nomeFamilia!])),
       lucroPorFamilia: lucroPorFamilia(vendas.dados.linhas), lucroConta,
       historicoDesde: vendas.dados.historicoDesde, baseAcosValidada: BASE_ACOS_VALIDADA,
+      // Sem base fiscal declarada não há lucro: o default é bloquear, nunca liberar (ADR-0055).
+      baseFiscal: vendas.baseFiscal ?? { ok: false, motivo: 'aliquotas_carregando' },
     });
-  }, [janela, fonteQ.data, codQ.data, catQ.data, vendas.dados]);
+  }, [janela, fonteQ.data, codQ.data, catQ.data, vendas.dados, vendas.baseFiscal]);
 
   // Precedência: erro de sync → sync carregando → aguardando_mes → erro das fontes → carregando → painel.
   const situacaoPeriodo = syncQ.isSuccess ? resolucao.tipo : 'carregando';

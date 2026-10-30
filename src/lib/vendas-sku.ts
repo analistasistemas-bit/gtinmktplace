@@ -413,6 +413,15 @@ export function janelaEstendida(atual: Janela, anterior: Janela): Janela {
   return { desde: new Date(inicio).toISOString(), ate: atual.ate };
 }
 
+/** Integridade fiscal do lucro (ADR-0055/0086: imposto nunca defaulta em silêncio). `ok:false` sempre que
+ *  o imposto de `dados` depende do fallback 8/16 (alíquotas carregando, com erro ou nunca confirmadas em
+ *  Configurações) ou de um item que entra no lucro sem alíquota resolvida (imposto sairia 0). Alíquota
+ *  zero confirmada é válida. `codigos`: códigos dos itens sem origem ('' = item sem código). */
+export type BaseFiscal =
+  | { ok: true }
+  | { ok: false; motivo: 'aliquotas_carregando' | 'aliquotas_nao_confirmadas' | 'aliquotas_erro' }
+  | { ok: false; motivo: 'origem_nao_resolvida'; codigos: string[] };
+
 export interface VendasSku {
   linhas: LinhaSku[]; linhasAnterior: LinhaSku[];
   kpis: KpisSku; kpisAnterior: KpisSku;

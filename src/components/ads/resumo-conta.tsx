@@ -17,6 +17,9 @@ function motivoResultadoConta(
   historicoDesde: string | null,
 ): string | null {
   if (conta.resultado != null) return null;
+  // Plano §4.9. Origem não resolvida: as alíquotas existem, falta a origem do produto (ADR-0055).
+  if (conta.motivoFiscal === 'origem_nao_resolvida') return 'resultado indisponível: produto vendido sem origem (nacional/importado)';
+  if (conta.motivoFiscal != null) return 'resultado indisponível: confirme as alíquotas em Configurações';
 
   if (conta.fonteCusto == null) {
     return historicoDesde

@@ -3,7 +3,7 @@
 // nunca rateado. A reconciliação com a série da conta é em centavos inteiros; só a saída volta a reais.
 // Gasto parcial (fora da cobertura) ou lucro desconhecido (antes do histórico) nunca vira resultado.
 import { atribuicaoFinal, diaCoberto, diasEntre, historicoCobre } from './sku-ads';
-import type { FonteCusto } from './vendas-sku';
+import type { BaseFiscal, FonteCusto } from './vendas-sku';
 
 export interface SyncPainel {
   estado: string; erro: string | null; ultimo_ok_em: string | null; carga_inicial_ok: boolean;
@@ -20,7 +20,9 @@ export interface MetricasAds { custo: number; vendasDiretas: number; vendasTotai
   impressoes: number; roas: number | null; roasDireto: number | null; acos: number | null }
 export type EstadoPainel = 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso' | 'coletando' | 'sem_ads' | 'ok';
 export type Semaforo = 'dentro' | 'acima' | 'sem_espaco';
-export type MotivoFamilia = 'compartilhado' | 'cobertura' | 'historico' | 'sem_vendas' | 'sem_custo' | 'custo_parcial' | null;
+/** Motivo da base fiscal inválida (BaseFiscal de useVendasSku); null = alíquotas confirmadas e resolvidas. */
+export type MotivoFiscal = Extract<BaseFiscal, { ok: false }>['motivo'];
+export type MotivoFamilia = 'compartilhado' | 'cobertura' | 'historico' | 'fiscal' | 'sem_vendas' | 'sem_custo' | 'custo_parcial' | null;
 export interface FamiliaPainel extends MetricasAds {
   codigoPai: string; nome: string | null;
   /** Grupos exclusivos da família (os compartilhados só entram em `custoCompartilhado`). */
@@ -34,6 +36,7 @@ export interface FamiliaPainel extends MetricasAds {
 }
 export interface ContaPainel extends MetricasAds {
   lucroAntes: number | null; resultado: number | null; margemConsumida: number | null; fonteCusto: FonteCusto | null;
+  motivoFiscal: MotivoFiscal | null;    // lucro bloqueado por imposto não confirmado/resolvido (ADR-0055)
   emFamilias: number; compartilhado: number;
   naoIdentificado: number | null; naoIdentificadoPct: number | null;   // null quando divergente
   divergente: boolean;                  // Σ grupos com membro > total da conta (em centavos): decomposição suspensa
@@ -118,6 +121,7 @@ export function montarPainelAds(p: {
   nomeDaFamilia: Map<string, string>;             // codigoPai → nome (catálogo): família sem venda no período
   lucroPorFamilia: Map<string, LucroFamilia>;     // codigoPai → lucro do período (só famílias com linha de venda)
   lucroConta: { lucro: number | null; fonteCusto: FonteCusto };
+  baseFiscal: BaseFiscal;                         // useVendasSku: sem ela confirmada, lucro é desconhecido (como o histórico)
   historicoDesde: string | null;                  // VendasSku.historicoDesde (ISO) — antes dele não há venda conhecida
   baseAcosValidada: boolean;                      // BASE_ACOS_VALIDADA (spike 055)
   agora: Date;
@@ -126,6 +130,9 @@ export function montarPainelAds(p: {
   const dias = diasEntre(p.janela.desde, p.janela.ate);
   const gruposCobertos = !!sync && sync.carga_inicial_ok && dias.length > 0 && dias.every((d) => diaCoberto(d, sync));
   const historicoOk = historicoCobre(p.historicoDesde, p.janela.desde);
+  // Imposto sem alíquota confirmada/resolvida: lucro desconhecido, nunca com 8/16 presumido ou 0 (ADR-0055).
+  const motivoFiscal = p.baseFiscal.ok ? null : p.baseFiscal.motivo;
+  const lucroConhecido = historicoOk && motivoFiscal == null;
 
   // Grupos → famílias exclusivas ou compartilhados.
   const porFamilia = new Map<string, { soma: Soma; grupos: number; compartilhadoC: number }>();
@@ -156,12 +163,12 @@ export function montarPainelAds(p: {
     const m = somarMetricas(f.soma);
     const l = p.lucroPorFamilia.get(codigoPai);
     const proprio = lucroDaFamilia(l);
-    const lucroAntes = historicoOk ? proprio.lucroAntes : null;
+    const lucroAntes = lucroConhecido ? proprio.lucroAntes : null;
     const custoCompartilhado = f.compartilhadoC / 100;
     // Bloqueio do resultado: período parcial dos grupos, lucro desconhecido, despesa compartilhada.
     const motivo: MotivoFamilia = !gruposCobertos ? 'cobertura' : !historicoOk ? 'historico'
-      : f.compartilhadoC > 0 ? 'compartilhado' : proprio.motivo;
-    const bloqueado = motivo === 'cobertura' || motivo === 'historico' || motivo === 'compartilhado';
+      : motivoFiscal != null ? 'fiscal' : f.compartilhadoC > 0 ? 'compartilhado' : proprio.motivo;
+    const bloqueado = motivo === 'cobertura' || motivo === 'historico' || motivo === 'fiscal' || motivo === 'compartilhado';
     const acosDireto = div(m.custo, m.vendasDiretas);
     const lucroConfiavel = proprio.motivo !== 'custo_parcial' && lucroAntes != null && l;
     const acosEquilibrio = lucroConfiavel && l.brutoComCusto > 0 ? lucroAntes / l.brutoComCusto : null;
@@ -186,13 +193,14 @@ export function montarPainelAds(p: {
     const custoC = somaConta.custoC;
     const divergente = emFamiliasC + compartilhadoC > custoC;   // um centavo já é divergência
     const naoIdentificadoC = custoC - emFamiliasC - compartilhadoC;
-    const lucroAntes = historicoOk ? p.lucroConta.lucro : null;
+    const lucroAntes = lucroConhecido ? p.lucroConta.lucro : null;
     conta = {
       ...somarMetricas(somaConta),
       lucroAntes,
       resultado: lucroAntes != null ? (cents(lucroAntes) - custoC) / 100 : null,
       margemConsumida: lucroAntes != null && lucroAntes > 0 ? custoC / 100 / lucroAntes : null,
       fonteCusto: historicoOk ? p.lucroConta.fonteCusto : null,
+      motivoFiscal,
       emFamilias: emFamiliasC / 100, compartilhado: compartilhadoC / 100,
       naoIdentificado: divergente ? null : naoIdentificadoC / 100,
       naoIdentificadoPct: divergente || custoC === 0 ? null : naoIdentificadoC / custoC,
