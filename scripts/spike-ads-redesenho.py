@@ -23,6 +23,7 @@ import datetime
 import importlib.util
 import json
 import pathlib
+import re
 import sys
 import time
 import urllib.error
@@ -43,10 +44,30 @@ COMP_MET = "impression_share,top_impression_share,lost_impression_share_by_budge
 TODAS_MET = f"{BASE_MET},{QTD_MET},{COMP_MET}"
 STATUS_TODOS = "active,paused,deleted,error"
 ANUNCIO_MET = "clicks,prints,cost,cpc,acos,direct_amount,indirect_amount,total_amount,units_quantity,advertising_items_quantity"
-BORDA_DIAS = (89, 90, 91, 100)
-# Únicos campos não numéricos do topo que podem aparecer (nenhum é nome).
+BORDA_DIAS = (90, 91, 92, 100)  # idade de date_from em dias, contada de hoje BRT
+# Únicos campos de identificação que podem aparecer (nenhum é nome); valores ainda passam por `seguro`.
 PERMITIDOS = {"id", "campaign_id", "ad_group_id", "item_id", "status", "date", "strategy", "currency",
               "last_updated", "date_created", "channel", "budget"}
+# Métricas permitidas (seção 2.3–2.7 do plano): só estes nomes, só valores numéricos/booleanos/null.
+METRICAS_OK = set((TODAS_MET + "," + ANUNCIO_MET).split(","))
+ADITIVAS = {"cost", "prints", "clicks"}
+TOKEN = re.compile(r"^[a-z0-9_.-]{1,64}$", re.I)
+DATA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def aditiva(k):
+    # Razões (cpc, roas, acos, ctr, cvr, sov, *_share) nunca são somadas.
+    return k in ADITIVAS or k.endswith(("_amount", "_quantity"))
+
+
+def seguro(v):
+    """Strings só se forem token curto alfanumérico; o resto vira <omitido>."""
+    return v if isinstance(v, str) and TOKEN.match(v) else "<omitido>"
+
+
+def limpa_metricas(d):
+    return {k: v for k, v in sorted(d.items())
+            if k in METRICAS_OK and (v is None or isinstance(v, (int, float, bool)))}
 
 
 def tipo(v):
@@ -54,7 +75,7 @@ def tipo(v):
 
 
 def campos(d):
-    return {k: tipo(v) for k, v in sorted(d.items())} if isinstance(d, dict) else {}
+    return {k: tipo(v) for k, v in sorted(d.items()) if TOKEN.match(str(k))} if isinstance(d, dict) else {}
 
 
 def totais(linhas):
@@ -63,7 +84,7 @@ def totais(linhas):
     for r in linhas:
         m = r.get("metrics") if isinstance(r.get("metrics"), dict) else r
         for k, v in m.items():
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if aditiva(k) and isinstance(v, (int, float)) and not isinstance(v, bool):
                 soma[k] = round(soma.get(k, 0) + v, 4)
                 presente[k] = presente.get(k, 0) + 1
     return {k: (soma[k], f"{presente[k]}/{len(linhas)}") for k in sorted(soma)}
@@ -92,8 +113,9 @@ class Ml:
             corpo = {}
         print(f"\n[{self.n}] {nome} http={status} {ms}ms")
         if status != 200:
-            msg = (corpo.get("message") or corpo.get("error") or "") if isinstance(corpo, dict) else ""
-            print(f"  erro ML: {str(msg)[:200]}")
+            # Só tokens curtos (códigos); mensagens livres podem conter nomes/e-mails.
+            erro = {k: seguro(corpo.get(k)) for k in ("error", "code") if isinstance(corpo, dict) and corpo.get(k)}
+            print(f"  erro ML: {erro or '<omitido>'}")
         if status == 429:
             raise SystemExit("429 — parar e registrar")
         return status, corpo if isinstance(corpo, dict) else {}
@@ -109,24 +131,27 @@ def descreve_lista(corpo, rotulo):
             print(f"  campos de metrics: {campos(res[0]['metrics'])}")
         stts = {}
         for r in res:
-            stts[r.get("status")] = stts.get(r.get("status"), 0) + 1
+            k = seguro(r.get("status")) if r.get("status") is not None else None
+            stts[k] = stts.get(k, 0) + 1
         if any(stts):
             print(f"  status: {stts}")
-        datas = sorted(r["date"] for r in res if isinstance(r.get("date"), str))
+        datas = sorted(r["date"] for r in res if isinstance(r.get("date"), str) and DATA.match(r["date"]))
         if datas:
             print(f"  datas: {len(set(datas))} distintas, {datas[0]}..{datas[-1]}")
         print(f"  Σ por campo (valor, linhas com o campo): {totais(res)}")
     if isinstance(corpo.get("metrics_summary"), dict):
-        print(f"  metrics_summary: {corpo['metrics_summary']}")
+        print(f"  metrics_summary: {limpa_metricas(corpo['metrics_summary'])}")
     return res
 
 
 def descreve_detalhe(corpo):
     print(f"  campos do topo: {campos(corpo)}")
-    print(f"  identificação: { {k: v for k, v in corpo.items() if k in PERMITIDOS} }")
+    ident = {k: (v if isinstance(v, (int, float, bool)) or v is None else seguro(v))
+             for k, v in sorted(corpo.items()) if k in PERMITIDOS}
+    print(f"  identificação: {ident}")
     for bloco in ("metrics", "metrics_summary"):
         if isinstance(corpo.get(bloco), dict):
-            print(f"  {bloco}: {corpo[bloco]}")
+            print(f"  {bloco}: {limpa_metricas(corpo[bloco])}")
     return corpo.get("results") or []
 
 
@@ -136,6 +161,16 @@ def com_fallback(ml, nome, caminho, caminho_reduzido):
         print("  (400 com o conjunto completo de métricas; repetindo só com o conjunto base)")
         st, c = ml.get(nome + "-base", caminho_reduzido)
     return st, c
+
+
+def conexoes():
+    """Lista conexões sem nomes: só ids, canal, vigência do token e se há conta externa."""
+    for r in s053.sql("select id, org_id, canal, conta_externa_id, expires_at from public.marketplace_connections "
+                      "order by criado_em"):
+        vigente = bool(r["expires_at"]) and datetime.datetime.fromisoformat(
+            r["expires_at"].replace("Z", "+00:00")) > datetime.datetime.now(datetime.timezone.utc)
+        print({"connection_id": r["id"], "org_id": r["org_id"], "canal": r["canal"],
+               "status": "token_vigente" if vigente else "token_vencido", "conta_externa_id": r["conta_externa_id"]})
 
 
 def hoje_brt():
@@ -214,20 +249,23 @@ def main(cx, dias, campanha):
         if st == 200:
             descreve_lista(c, "anúncios da campanha")
 
-    # Borda da retenção: date_from N dias atrás até ontem.
+    # Borda da retenção: date_from = hoje BRT − n (n = idade do date_from), date_to = ontem.
     print("\n--- retenção ---")
     for n in BORDA_DIAS:
-        df = (ontem - d(days=n)).isoformat()
+        df = (hoje_brt() - d(days=n)).isoformat()
+        incl = (ontem - datetime.date.fromisoformat(df)).days + 1
         st, c = ml.get(f"retencao-{n}d", f"{adv_base}/campaigns/search?limit=1&offset=0&date_from={df}"
                        f"&date_to={ontem.isoformat()}&metrics=cost&metrics_summary=true")
-        print(f"  date_from={df} ({n} dias atrás): http={st} summary={c.get('metrics_summary')}")
+        resumo = limpa_metricas(c["metrics_summary"]) if isinstance(c.get("metrics_summary"), dict) else None
+        print(f"  date_from={df} (hoje − {n}) date_to={ontem.isoformat()} ({incl} dias inclusivos): "
+              f"http={st} summary={resumo}")
     print(f"\nchamadas ML: {ml.n}/{MAX_CHAMADAS_ML}")
 
 
 if __name__ == "__main__":
     a = sys.argv[1:]
     if a == ["conexoes"]:
-        s053.conexoes()
+        conexoes()
     elif len(a) >= 2 and a[0] == "coletar":
         dias, camp, i = 30, None, 2
         while i < len(a):
