@@ -144,3 +144,48 @@ export function parseSerieMetricas(
   const serie = [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
   return { serie, completo: serie.length === dias };
 }
+
+// --- URLs (só path + query; o fetch e a paginação são da camada acima). Rotas e parâmetros do spike 058. ---
+// Cabeçalho `api-version: 2` vem de HEADERS_ADS (fiacao.ts). O BASE do coletor não é exportado: repetido aqui de propósito.
+const BASE = '/marketplace/advertising/MLB';
+const LIMITE_URL = 50;
+// Spike 058 (b): `error` entra no filtro, senão some campanha com gasto.
+const STATUS_HISTORICOS = 'active,paused,deleted,error';
+const BASE_MET = 'clicks,prints,ctr,cost,cpc,acos,roas,cvr,sov,direct_amount,indirect_amount,total_amount';
+const QTD_MET = 'direct_items_quantity,indirect_items_quantity,advertising_items_quantity,'
+  + 'direct_units_quantity,indirect_units_quantity,units_quantity,'
+  + 'organic_items_quantity,organic_units_quantity,organic_units_amount';
+// Competitividade: 200 só em E3/E4; em E1/E2/E5 o ML responde 400.
+const COMP_MET = 'impression_share,top_impression_share,lost_impression_share_by_budget,lost_impression_share_by_ad_rank';
+// Anúncio (E5): mesmas famílias de métrica da conta, sem competitividade.
+const METRICAS_CONTA = `${BASE_MET},${QTD_MET}`;
+const METRICAS_CAMPANHA = `${METRICAS_CONTA},${COMP_MET}`;
+
+const periodoUrl = (j: JanelaAdsMetricas) => `date_from=${j.desde}&date_to=${j.ate}`;
+const listaConta = (adv: number) => `${BASE}/advertisers/${adv}/product_ads/campaigns/search`;
+
+/** E1: campanhas + `metrics_summary`. O resumo só soma a página: `limit` 50 deve cobrir `paging.total`. */
+export const urlContaResumo = (adv: number, j: JanelaAdsMetricas, offset: number) =>
+  `${listaConta(adv)}?limit=${LIMITE_URL}&offset=${offset}&${periodoUrl(j)}&metrics=${METRICAS_CONTA}`
+  + `&metrics_summary=true&filters[status]=${STATUS_HISTORICOS}`;
+
+/** E2: uma linha por dia (sem `paging`). */
+export const urlContaSerie = (adv: number, j: JanelaAdsMetricas) =>
+  `${listaConta(adv)}?limit=${LIMITE_URL}&offset=0&${periodoUrl(j)}&metrics=${METRICAS_CONTA}`
+  + `&aggregation_type=DAILY&filters[status]=${STATUS_HISTORICOS}`;
+
+/** E3: detalhe da campanha, com competitividade. */
+export const urlCampanhaDetalhe = (id: number, j: JanelaAdsMetricas) =>
+  `${BASE}/product_ads/campaigns/${id}?${periodoUrl(j)}&metrics=${METRICAS_CAMPANHA}`;
+
+/** E4: série diária da campanha, com competitividade. */
+export const urlCampanhaSerie = (id: number, j: JanelaAdsMetricas) =>
+  `${urlCampanhaDetalhe(id, j)}&aggregation_type=DAILY`;
+
+/**
+ * E5: métricas por anúncio (`ads/search`), confirmadas e conciliadas em centavos no spike 058.
+ * Só para o detalhe da campanha; nunca fonte de total da conta (E1/E2). O chamador descarta linhas de outra campanha.
+ */
+export const urlAnunciosMetricas = (adv: number, j: JanelaAdsMetricas, offset: number, campanhaId?: number) =>
+  `${BASE}/advertisers/${adv}/product_ads/ads/search?limit=${LIMITE_URL}&offset=${offset}&${periodoUrl(j)}`
+  + `&metrics=${METRICAS_CONTA}${campanhaId === undefined ? '' : `&filters[campaign_id]=${campanhaId}`}`;

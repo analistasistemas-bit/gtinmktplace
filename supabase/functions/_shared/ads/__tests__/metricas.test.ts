@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { EscopoAdsMetricas, PedidoAdsMetricas } from '../metricas.ts';
-import { CAMPOS_METRICA_ADS, ESCALA_METRICA_ADS, parseMetricasResumo, parseSerieMetricas } from '../metricas.ts';
+import {
+  CAMPOS_METRICA_ADS, ESCALA_METRICA_ADS, parseMetricasResumo, parseSerieMetricas,
+  urlAnunciosMetricas, urlCampanhaDetalhe, urlCampanhaSerie, urlContaResumo, urlContaSerie,
+} from '../metricas.ts';
 
 describe('parseMetricasResumo', () => {
   it('campo ausente é null com motivo nao_retornada', () => {
@@ -118,5 +121,63 @@ describe('serie diária', () => {
     ['data malformada', corpo(dia('01/10/2026'))],
   ])('serie com envelope inválido (%s) → vazia e incompleta', (_n, c) => {
     expect(parseSerieMetricas(c, janela)).toEqual({ serie: [], completo: false });
+  });
+});
+
+describe('URLs das métricas por período', () => {
+  const j = { desde: '2026-09-30', ate: '2026-10-29' };
+  const COMP = ['impression_share', 'top_impression_share', 'lost_impression_share_by_budget', 'lost_impression_share_by_ad_rank'];
+  const q = (u: string) => new URL(`https://x${u}`).searchParams;
+  const metricas = (u: string) => (q(u).get('metrics') ?? '').split(',');
+
+  it('E1 resumo da conta: datas, resumo, status confirmados, limit 50, sem competitividade', () => {
+    const u = urlContaResumo(123, j, 0);
+    expect(u.startsWith('/marketplace/advertising/MLB/advertisers/123/product_ads/campaigns/search?')).toBe(true);
+    expect(q(u).get('date_from')).toBe('2026-09-30');
+    expect(q(u).get('date_to')).toBe('2026-10-29');
+    expect(q(u).get('metrics_summary')).toBe('true');
+    expect(q(u).get('filters[status]')).toBe('active,paused,deleted,error');
+    expect(q(u).get('limit')).toBe('50');
+    expect(q(u).get('offset')).toBe('0');
+    expect(metricas(u)).toContain('cost');
+    expect(metricas(u)).toContain('organic_units_amount');
+    for (const c of COMP) expect(metricas(u)).not.toContain(c);
+    expect(q(u).has('aggregation_type')).toBe(false);
+  });
+
+  it('E2 série da conta: DAILY, sem competitividade, sem resumo', () => {
+    const u = urlContaSerie(123, j);
+    expect(u).toContain('/advertisers/123/product_ads/campaigns/search?');
+    expect(q(u).get('aggregation_type')).toBe('DAILY');
+    expect(q(u).get('filters[status]')).toBe('active,paused,deleted,error');
+    expect(q(u).has('metrics_summary')).toBe(false);
+    for (const c of COMP) expect(metricas(u)).not.toContain(c);
+  });
+
+  it('E3/E4 detalhe e série da campanha: rota sem advertiser, competitividade só aqui', () => {
+    const d = urlCampanhaDetalhe(77, j);
+    const s = urlCampanhaSerie(77, j);
+    for (const u of [d, s]) {
+      expect(u.startsWith('/marketplace/advertising/MLB/product_ads/campaigns/77?')).toBe(true);
+      expect(u).not.toContain('advertisers');
+      expect(q(u).get('date_from')).toBe('2026-09-30');
+      for (const c of COMP) expect(metricas(u)).toContain(c);
+    }
+    expect(q(d).has('aggregation_type')).toBe(false);
+    expect(q(s).get('aggregation_type')).toBe('DAILY');
+  });
+
+  it('E1–E4 nunca usam /ads/search; E5 é builder próprio, com filtro de campanha e sem competitividade', () => {
+    for (const u of [urlContaResumo(1, j, 0), urlContaSerie(1, j), urlCampanhaDetalhe(2, j), urlCampanhaSerie(2, j)]) {
+      expect(u).not.toContain('/ads/search');
+    }
+    const u = urlAnunciosMetricas(123, j, 50, 99);
+    expect(u.startsWith('/marketplace/advertising/MLB/advertisers/123/product_ads/ads/search?')).toBe(true);
+    expect(q(u).get('filters[campaign_id]')).toBe('99');
+    expect(q(u).get('limit')).toBe('50');
+    expect(q(u).get('offset')).toBe('50');
+    expect(metricas(u)).toContain('units_quantity');
+    for (const c of COMP) expect(metricas(u)).not.toContain(c);
+    expect(q(urlAnunciosMetricas(123, j, 0)).has('filters[campaign_id]')).toBe(false);
   });
 });
