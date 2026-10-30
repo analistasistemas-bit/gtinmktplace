@@ -460,6 +460,15 @@ describe('Ads', () => {
     )).toBeVisible();
   });
 
+  it('sem referência por histórico diz desde quando e o que fazer', () => {
+    montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, acosEquilibrio: null,
+      semaforo: null, motivo: 'historico' }] }, { historicoDesde: '2026-10-05T15:00:00.000Z' });
+
+    expect(screen.getByText(
+      'Sem referência: histórico de vendas só desde 05/10/2026. Escolha um período a partir dessa data.',
+    )).toBeVisible();
+  });
+
   it('zero em atenção com todas avaliáveis tem a frase própria', () => {
     montar({ ...PAINEL, familias: [PAINEL.familias[0]] });
 

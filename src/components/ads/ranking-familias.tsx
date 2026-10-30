@@ -13,6 +13,7 @@ import {
   NADA, pct, textoMotivo, contarFamiliasAds, filtrarFamiliasAds, type FiltroFamiliasAds,
 } from '@/lib/ads-apresentacao';
 import { DetalheFamilia } from '@/components/ads/detalhe-familia';
+import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
 const SEMAFORO: Record<Semaforo, { tom: 'success' | 'danger'; txt: string }> = {
   dentro: { tom: 'success', txt: 'Dentro do equilíbrio' },
@@ -208,7 +209,9 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
   const fraseAtencao = !liberado || atencao > 0
     ? null
     : contagem.semReferencia > 0
-      ? 'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.'
+      ? historicoDesde && familias.some(f => f.motivo === 'historico')
+        ? `Sem referência: histórico de vendas só desde ${dataBRT(historicoDesde)}. Escolha um período a partir dessa data.`
+        : 'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.'
       : 'Nenhuma família acima do equilíbrio neste período.';
 
   const filtros = (
