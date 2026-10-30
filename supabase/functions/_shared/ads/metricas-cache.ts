@@ -1,5 +1,6 @@
 // Cache segregado e refresh limitado das métricas de Ads (plano ads-redesign §5.5). Arquivo próprio para não
 // misturar Redis com a leitura pura de metricas-leitura.ts. Deps injetáveis; `depsRedisAds` liga o client existente.
+import type { EscopoAdsMetricas } from './metricas.ts';
 import { redisGet, redisSet, redisSetNX } from '../redis/client.ts';
 
 export const VERSAO_CONTRATO_ADS = 'v1';
@@ -20,7 +21,7 @@ export interface ChaveMetricasAds {
   orgId: string;
   conexaoId: string;
   advertiserId: number;
-  escopo: 'conta' | 'campanha';
+  escopo: EscopoAdsMetricas;
   campanhaId: number | null;
   atual: Janela;
   anterior: Janela | null;
