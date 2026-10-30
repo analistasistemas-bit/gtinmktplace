@@ -251,10 +251,13 @@ export interface EstadoLeituraOrcada {
  * (~26) estoura e a comparação fica indisponível por `limite_de_leitura`, sem truncar.
  */
 export function criarLeituraOrcada(cfg: {
-  buscar(url: string): Promise<RespostaML>;
+  buscar(url: string, sinal?: AbortSignal): Promise<RespostaML>;
   agoraMs(): number;
   esperar(ms: number): Promise<void>;
+  /** Agenda `fn` daqui a `ms` e devolve o cancelamento (padrão: setTimeout). */
+  agendar?(ms: number, fn: () => void): () => void;
 }) {
+  const agendar = cfg.agendar ?? ((ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
   const fim = cfg.agoraMs() + ORCAMENTO_LEITURA_ADS.prazoMs;
   let paginas = 0;
   let chamadas = 0;
@@ -266,10 +269,10 @@ export function criarLeituraOrcada(cfg: {
     return null;
   };
   const vaga = async () => {
-    if (ativas >= ORCAMENTO_LEITURA_ADS.concorrencia) await new Promise<void>((ok) => fila.push(ok));
-    ativas++; // a vaga passa direto ao próximo da fila na liberação, sem corrida
+    if (ativas < ORCAMENTO_LEITURA_ADS.concorrencia) { ativas++; return; }
+    await new Promise<void>((ok) => fila.push(ok)); // a vaga é herdada de quem liberou (ativas não muda)
   };
-  const liberar = () => { ativas--; fila.shift()?.(); };
+  const liberar = () => { const prox = fila.shift(); if (prox) prox(); else ativas--; };
 
   async function uma(url: string): Promise<unknown | null> {
     for (let tentativa = 0; ; tentativa++) {
@@ -280,8 +283,17 @@ export function criarLeituraOrcada(cfg: {
       }
       if (chamadas >= ORCAMENTO_LEITURA_ADS.chamadas) return parar('limite_de_leitura', 'chamadas');
       chamadas++;
-      let r: RespostaML;
-      try { r = await cfg.buscar(url); } catch { return null; }
+      // O prazo corta a chamada em andamento: aborta o fetch e descarta qualquer corpo que chegue depois.
+      const ctl = new AbortController();
+      let cancelar = () => {};
+      const estouro = new Promise<null>((ok) => {
+        cancelar = agendar(Math.max(0, fim - cfg.agoraMs()), () => { ctl.abort(); ok(null); });
+      });
+      let rr: RespostaML | null;
+      try { rr = await Promise.race([cfg.buscar(url, ctl.signal), estouro]); } catch { rr = null; } finally { cancelar(); }
+      if (ctl.signal.aborted || cfg.agoraMs() > fim) return parar('limite_de_leitura', 'prazo');
+      if (!rr) return null;
+      const r = rr;
       const c = classificarResposta(r);
       if (c === 'ok') return r.corpo;
       if (c === 'sem_permissao') return parar('sem_permissao');

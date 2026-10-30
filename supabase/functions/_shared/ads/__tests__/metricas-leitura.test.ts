@@ -401,4 +401,52 @@ describe('limites de leitura (orçamento §5.5)', () => {
     expect(l.campanhas).toHaveLength(20);
     expect(a.orc.estado().limite).toBe('paginas');
   });
+
+  it('limites: resposta que chega depois do prazo é descartada com motivo', async () => {
+    let t = 0;
+    const orc = criarLeituraOrcada({
+      buscar: async () => { t = 21_000; return r(200, { tarde: 1 }); },
+      agoraMs: () => t, esperar: async () => {},
+    });
+    expect(await orc.buscar('https://x/1')).toBeNull();
+    expect(orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'prazo' });
+  });
+
+  it('limites: fetch que nunca resolve é abortado no prazo', async () => {
+    let t = 0;
+    let disparar: () => void = () => {};
+    let abortado = false;
+    const orc = criarLeituraOrcada({
+      buscar: (_u, sinal) => { sinal?.addEventListener('abort', () => { abortado = true; }); return new Promise(() => {}); },
+      agoraMs: () => t, esperar: async () => {},
+      agendar: (ms, fn) => { expect(ms).toBe(20_000); disparar = fn; return () => {}; },
+    });
+    const p = orc.buscar('https://x/1');
+    await Promise.resolve(); await Promise.resolve();
+    t = 20_000; disparar();
+    expect(await p).toBeNull();
+    expect(abortado).toBe(true);
+    expect(orc.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'prazo' });
+  });
+
+  it('limites: busca nova durante a liberação não fura as 4 vagas', async () => {
+    for (let ticks = 0; ticks <= 8; ticks++) { // varre o ponto da intercalação entre liberar e o aguardante retomar
+      let ativas = 0;
+      let pico = 0;
+      const liberar: (() => void)[] = [];
+      const a = ambiente(() => {
+        ativas++; pico = Math.max(pico, ativas);
+        return new Promise((ok) => liberar.push(() => { ativas--; ok(r(200, {})); }));
+      });
+      const ps = Array.from({ length: 5 }, (_, i) => a.orc.buscar(`https://x/${i}`)); // 4 ativas + 1 na fila
+      await new Promise((ok) => setTimeout(ok, 0));
+      liberar[0]();
+      for (let k = 0; k < ticks; k++) await Promise.resolve();
+      ps.push(a.orc.buscar('https://x/nova'));
+      await new Promise((ok) => setTimeout(ok, 0));
+      while (liberar.length) { liberar.shift()!(); await new Promise((ok) => setTimeout(ok, 0)); }
+      await Promise.all(ps);
+      expect(pico, `ticks=${ticks}`).toBe(4);
+    }
+  });
 });
