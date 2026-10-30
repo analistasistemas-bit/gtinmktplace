@@ -185,4 +185,32 @@ describe('escopos conta e campanha', () => {
     expect(r.atual.completo).toBe(true);
     expect(r.comparacao.estado).toBe('indisponivel');
   });
+
+  it('escopos: atual falha e anterior válida => comparação indisponível (conta e campanha)', async () => {
+    const s = servidor({ falhaEm: [J.desde] });
+    const c = await lerEscopoConta(s.deps, 7, J, JA);
+    expect(c.atual.completo).toBe(false);
+    expect(c.comparacao.estado).toBe('indisponivel');
+    expect(c.comparacao.motivo).toBeTruthy();
+    const k = await lerEscopoCampanha(s.deps, 9, J, JA);
+    expect(k.atual.completo).toBe(false);
+    expect(k.comparacao.estado).toBe('indisponivel');
+  });
+
+  it('escopos: resumo sem cost válido não é completo', async () => {
+    // campanha: E3 {metrics:{}} com E4 completo
+    const base = servidor();
+    const semCost = async (url: string) =>
+      /product_ads\/campaigns\/\d+\?/.test(url) && !url.includes('DAILY') ? { metrics: {} } : base.deps.buscar(url);
+    const k = await lerEscopoCampanha({ buscar: semCost, agora: () => 'T' }, 9, J, null);
+    expect(k.atual.completo).toBe(false);
+    // conta: metrics_summary.cost inválido cai no fallback Σ E2 (1 página)
+    const invalido = async (url: string) => {
+      const r = await base.deps.buscar(url) as Record<string, unknown>;
+      return r.metrics_summary ? { ...r, metrics_summary: { cost: 'x' } } : r;
+    };
+    const c = await lerEscopoConta({ buscar: invalido, agora: () => 'T' }, 7, J, null);
+    expect(c.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
+    expect(c.atual.completo).toBe(true);
+  });
 });

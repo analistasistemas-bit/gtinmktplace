@@ -148,7 +148,7 @@ async function lerBlocoConta(deps: DepsLeituraAds, adv: number, j: JanelaAdsMetr
   const e1 = await lerCampanhasPeriodo(deps, adv, j); // as linhas por campanha ficam de fora: aqui só interessa o resumo
   const { serie, completo } = parseSerieMetricas(await deps.buscar(urlContaSerie(adv, j)), j);
   // Sem resumo válido do E1 (2+ páginas ou falha), o total da conta é Σ E2, e só com a série inteira.
-  const resumo = e1.resumo ?? (completo ? somarSerie(serie) : {});
+  const resumo = e1.resumo?.cost?.motivo === null ? e1.resumo : (completo ? somarSerie(serie) : {});
   return { janela: j, resumo, serie, completo, lidoEm: deps.agora() };
 }
 
@@ -156,10 +156,10 @@ async function lerBlocoCampanha(deps: DepsLeituraAds, id: number, j: JanelaAdsMe
   const e3 = await deps.buscar(urlCampanhaDetalhe(id, j));
   const metrics = obj(e3) ? e3.metrics : null;
   const { serie, completo } = parseSerieMetricas(await deps.buscar(urlCampanhaSerie(id, j)), j);
-  const resumoOk = obj(metrics);
+  const resumo = obj(metrics) ? parseMetricasResumo(metrics) : {};
   return {
-    janela: j, resumo: resumoOk ? parseMetricasResumo(metrics) : {}, serie,
-    completo: resumoOk && completo, lidoEm: deps.agora(),
+    janela: j, resumo, serie,
+    completo: resumo.cost?.motivo === null && completo, lidoEm: deps.agora(),
   };
 }
 
@@ -173,8 +173,9 @@ async function lerComparado(
   if (!anterior) return { atual: a, anterior: null, comparacao: { estado: 'desligada', motivo: null } };
   let p: BlocoAdsMetricas | null = null;
   try { p = await ler(anterior); } catch { p = null; }
-  if (!p || !p.completo) {
-    return { atual: a, anterior: null, comparacao: { estado: 'indisponivel', motivo: 'Leitura da janela anterior incompleta ou indisponível.' } };
+  if (!a.completo || !p || !p.completo) {
+    const motivo = !a.completo ? 'Leitura da janela atual incompleta.' : 'Leitura da janela anterior incompleta ou indisponível.';
+    return { atual: a, anterior: null, comparacao: { estado: 'indisponivel', motivo } };
   }
   return { atual: a, anterior: p, comparacao: { estado: 'disponivel', motivo: null } };
 }
