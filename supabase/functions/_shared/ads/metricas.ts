@@ -134,15 +134,27 @@ export function parseSerieMetricas(
     if (typeof r !== 'object' || r === null || Array.isArray(r)) return invalida();
     const date = (r as Record<string, unknown>).date;
     if (typeof date !== 'string') return invalida();
-    const dia = date.slice(0, 10);
-    if (!DIA_RE.test(dia) || dia < janela.desde || dia > janela.ate || porDia.has(dia)) return invalida();
+    const dia = date;
+    if (!diaReal(dia) || dia < janela.desde || dia > janela.ate || porDia.has(dia)) return invalida();
     const metricas = parseMetricasResumo(r);
     if (metricas.cost?.motivo !== null) return invalida();
     porDia.set(dia, { dia, metricas });
   }
-  const dias = Math.round((Date.parse(`${janela.ate}T00:00:00Z`) - Date.parse(`${janela.desde}T00:00:00Z`)) / DIA_MS) + 1;
+  // Compara o conjunto de dias esperado com o recebido (não só a contagem).
+  if (!diaReal(janela.desde) || !diaReal(janela.ate) || janela.desde > janela.ate) return invalida();
+  let completo = true;
+  for (let t = Date.parse(`${janela.desde}T00:00:00Z`); t <= Date.parse(`${janela.ate}T00:00:00Z`); t += DIA_MS) {
+    if (!porDia.has(new Date(t).toISOString().slice(0, 10))) { completo = false; break; }
+  }
   const serie = [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
-  return { serie, completo: serie.length === dias };
+  return { serie, completo };
+}
+
+// `YYYY-MM-DD` inteiro e existente no calendário (ida e volta em UTC).
+function diaReal(s: string): boolean {
+  if (!DIA_RE.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === s;
 }
 
 // --- URLs (só path + query; o fetch e a paginação são da camada acima). Rotas e parâmetros do spike 058. ---

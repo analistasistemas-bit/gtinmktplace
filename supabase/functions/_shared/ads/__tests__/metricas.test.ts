@@ -113,6 +113,17 @@ describe('serie diária', () => {
     expect(r).toEqual({ serie: [], completo: false });
   });
 
+  it('serie com data inexistente no calendário não completa a janela', () => {
+    const j = { desde: '2026-09-30', ate: '2026-10-01' };
+    const r = parseSerieMetricas(corpo(dia('2026-09-30'), dia('2026-09-31')), j);
+    expect(r).toEqual({ serie: [], completo: false });
+  });
+
+  it('serie com sufixo na data invalida a série', () => {
+    const r = parseSerieMetricas(corpo(dia('2026-10-01INVALIDO'), dia('2026-10-02'), dia('2026-10-03')), janela);
+    expect(r).toEqual({ serie: [], completo: false });
+  });
+
   it.each([
     ['sem results', {}],
     ['results não é array', { results: {} }],
