@@ -73,20 +73,18 @@ cabe (a anterior começa em hoje − 60); a anterior só é consultável se come
 de retenção do script usam `limit=1` sem filtro de status e por isso imprimem `summary` de 1 linha, às vezes 0,0 —
 usar só o HTTP dessas linhas.)
 
-**(f) Métricas por anúncio em `ads/search` (`metrics=`): vieram, nas duas contas, atual e anterior.** Campos em
-`metrics`: `prints`, `clicks`, `cost`, `cpc`, `acos`, `direct_amount`, `indirect_amount`, `total_amount`,
-`direct_units_quantity`, `indirect_units_quantity`, `units_quantity`, `advertising_items_quantity`. **Ausentes:**
-`cvr`, `ctr`, `roas`, `sov`, `*_items_quantity` exceto `advertising_items_quantity`, `organic_*` e competitividade
-(não vêm por anúncio). Hairfly: Σ por anúncio das 45 linhas = totais de conta (119,34 / 1958,48 / 36 unidades), sem
-duplicação entre anúncios do mesmo grupo. Avil: só a 1ª página foi somada (50 de 603: R$ 555,48), então a conciliação
-com a conta ficou aberta — **Task 04**. Ainda em E5 aparecem anúncios `idle`/`hold` (inclusive `paused` na Hairfly).
+**(f) Métricas por anúncio em `ads/search` (`metrics=`): vieram, nas duas contas, atual e anterior.** A 1ª leitura
+pediu só 10 campos (`prints`, `clicks`, `cost`, `cpc`, `acos`, `direct_amount`, `indirect_amount`, `total_amount`,
+`units_quantity`, `advertising_items_quantity`); a ausência de `cvr`, `ctr`, `roas`, `sov` e `organic_*` registrada na
+Task 03 era **falta de pedido, não ausência no ML** — corrigido na Task 04 (seção abaixo: todos vêm por anúncio, exceto
+competitividade, recusada). Ainda em E5 aparecem anúncios `idle`/`hold` (inclusive `paused` na Hairfly).
 
 ## Diferenças e bloqueios
 
 - Nenhuma diferença não explicada entre E1, E2, E3 e E4. A única divergência medida (`limit=1`) é do próprio
   `metrics_summary` por página, explicada acima: **bloqueia** apenas ler o resumo com `limit` menor que o total.
-- E5 na Avil não foi conciliado com o total (603 anúncios, 13 páginas por janela); a tabela "Anúncios patrocinados"
-  da Task 31 pode usar as métricas por anúncio, mas qualquer total tem de vir de E1/E2.
+- E5 na Avil foi conciliado na Task 04 (seção abaixo): Σ por anúncio = total da conta em centavos. Mesmo assim o
+  total exibido vem de E1/E2; a soma de E5 só serve para auditoria.
 - Competitividade em lista/E1 recusada (400): mostrar só no detalhe da campanha.
 
 ## Consequências para o design
@@ -96,5 +94,90 @@ com a conta ficou aberta — **Task 04**. Ainda em E5 aparecem anúncios `idle`/
   explícito). Anterior zerado (Hairfly) é dado real do ML, não ausência: variação percentual indefinida.
 - Gráfico padrão "Vendas atribuídas × Outras vendas + ROAS" (seção 9.2): confirmado pelos campos `organic_*`.
 - Dado do ML em reais (float): arredondar a 2 casas ao somar/gravar.
-- Classificação final de campos opcionais (obrigatório × opcional por rota) e a conciliação completa de E5 na Avil:
-  Task 04.
+- Classificação final dos campos, escalas e conciliação de E5: seção "Task 04" abaixo.
+
+---
+
+# Task 04 — classificação dos campos, escalas e conciliação de E5
+
+**Método:** `python3 scripts/spike-ads-redesenho.py conciliar <connection_id>` (só GET, teto 60 chamadas, para no 1º
+429, token não renovado). Janela atual = 2026-09-30..2026-10-29. Cada endpoint pede todas as métricas; se a rota
+responde 400, repete por grupo (base / quantidades / competitividade) para isolar o que foi recusado. Total da Task 04:
+126 GET (Avil 3 × 27, Hairfly 3 × 15 — a 1ª e a 2ª rodada serviram para ajustar o script), nenhum 429.
+Prefixos e rotas como no topo (E1 lista+resumo, E2 diária da conta, E3 detalhe da campanha, E4 diária da campanha,
+E5 `ads/search` por anúncio).
+
+## Classificação por campo (idêntica nas duas contas)
+
+Legenda: **C** confirmado (veio, tipo número, não nulo em todas as linhas) · **R** recusado (HTTP 400 ao pedir o campo)
+· **A** ausente (rota 200 sem o campo).
+
+| Campo | E1 | E2 | E3 | E4 | E5 |
+|---|---|---|---|---|---|
+| `cost`, `clicks`, `prints`, `cpc`, `ctr`, `acos`, `roas` | C | C | C | C | C |
+| `direct_amount`, `indirect_amount`, `total_amount` | C | C | C | C | C |
+| `cvr`, `sov` | C | C | C | C | C |
+| `direct_items_quantity`, `indirect_items_quantity`, `advertising_items_quantity` | C | C | C | C | C |
+| `direct_units_quantity`, `indirect_units_quantity`, `units_quantity` | C | C | C | C | C |
+| `organic_items_quantity`, `organic_units_quantity`, `organic_units_amount` | C | C | C | C | C |
+| `impression_share`, `top_impression_share`, `lost_impression_share_by_budget`, `lost_impression_share_by_ad_rank` | R | R | C | C | R |
+
+Não houve campo ausente (A) entre os pedidos; competitividade só em E3/E4 (nos pedidos de lista, resumo e anúncio o ML
+devolve 400 e as outras três famílias de métricas seguem 200 pedidas sem ela). Em E4 também existe `acos_benchmark`
+(não pedido na Task 04).
+
+## Escala dos percentuais (medida)
+
+| Campo | Escala | Prova (números reais) |
+|---|---|---|
+| `ctr` | **percentual 0–100** | Avil resumo 0,36 × `clicks/prints` = 0,003554 (×100 = 0,36); Hairfly 0,74 × 0,007399 |
+| `acos` | **percentual 0–100** | Avil resumo 7,87 × `cost/total_amount` = 0,078729; por anúncio, maior diferença para 100·cost/total_amount = 0,0049 (47 anúncios Avil) e 0,0044 (5 Hairfly) |
+| `cvr` | **percentual 0–100** | Avil 10,31; Hairfly 15,13; máximo por anúncio 57,14 |
+| `sov` | **percentual 0–100** | Avil 43,59; Hairfly 69,44; máximo 100,0 |
+| `roas` | razão (×), não percentual | 12,70 = `total_amount/cost` = 12,7018 |
+| `cpc` | R$ | = `cost/clicks` (0,39 × 0,3865) |
+| `impression_share`, `lost_impression_share_by_budget`, `lost_impression_share_by_ad_rank` | **fração 0–1 (indício forte)** | nos dois detalhes a soma dá exatamente 1,00 (Avil 0,05 + 0,61 + 0,34; Hairfly 0,13 + 0,17 + 0,70) |
+| `top_impression_share` | **escala indeterminada** | Avil 3,5 (E3) e até 10,0 (E4) — acima de 1 e maior que `impression_share` (0,05), incompatível com fração; Hairfly 0,5 e máx. 1,0 |
+
+Valores monetários vêm em reais (float). `*_items_quantity`/`*_units_quantity` são inteiros.
+
+## CVR nativo × numeradores candidatos
+
+Comparação do `cvr` nativo (÷100) com cada numerador ÷ `clicks`, em resumo E1 e campanhas das duas contas (8
+recortes com cliques; E3 repete uma campanha):
+
+| Recorte | `cvr` nativo | `units_quantity`/`clicks` | `advertising_items_quantity`/`clicks` | `direct_units_quantity`/`clicks` | `direct_items_quantity`/`clicks` |
+|---|---|---|---|---|---|
+| Avil resumo | 10,31 | **10,31** | 7,69 | 9,61 | 7,09 |
+| Avil campanha A | 12,13 | **12,13** | 9,33 | 11,18 | 8,46 |
+| Avil campanha B | 7,30 | **7,30** | 5,69 | 6,74 | 5,32 |
+| Hairfly resumo | 15,13 | **15,13** | 10,50 | 13,45 | 9,24 |
+| Hairfly campanha | 22,50 | **22,50** | 12,50 | 17,50 | 10,00 |
+
+(Demais recortes — mais 2 campanhas Avil e 1 Hairfly — seguem o mesmo padrão.) Só `units_quantity/clicks`
+bate, em 8 de 8, com a precisão de 2 casas do ML. Registro de fato, não decisão de fórmula: **o app usa o `cvr`
+nativo**, nunca recalcula, e indisponibiliza quando ausente.
+
+## Conciliação completa de E5 na Avil (603 anúncios, 13 páginas, janela atual)
+
+603 linhas lidas de `paging.total=603`, 603 `item_id` distintos. Σ por anúncio × resumo E1 da conta, em centavos (R$) ou
+unidades; diferença **0 em todas as 15 métricas aditivas**: `cost` 321.315, `total_amount` 4.081.284,
+`direct_amount` 3.768.134, `indirect_amount` 313.150, `organic_units_amount` 4.449.200 (centavos);
+`prints` 2.338.925, `clicks` 8.313, `units_quantity` 857, `direct/indirect_units_quantity` 799/58,
+`direct/indirect_items_quantity` 589/50, `advertising_items_quantity` 639, `organic_items_quantity` 827,
+`organic_units_quantity` 1.179. Hairfly (1 página, 45 anúncios): também 0 em todas. Portanto **sem duplicação nem rateio**
+entre anúncios e a soma por anúncio fecha com a conta. Chamadas de página: `limit=50`, `offset` 0…600 com
+`metrics=` base + quantidades (competitividade recusada, 400).
+
+# Decisões para a implementação
+
+| Painel / campo | Decisão | Motivo |
+|---|---|---|
+| Totais, razões (ACOS, ROAS, CTR, CPC), direto × indireto | **Habilitado** | confirmado em E1–E5, concilia em centavos |
+| `cvr` e `sov` (conta, campanha, anúncio) | **Habilitado, nativo** (percentual 0–100, sem recálculo) | confirmado em todas as rotas; ausente → indisponível com motivo |
+| Gráfico padrão "Vendas atribuídas × Outras vendas + ROAS" e `organic_*` | **Habilitado** | `organic_*` confirmado em E1–E5 e conciliado (Σ anúncios = conta) |
+| Tabela "Anúncios patrocinados" (Task 31) com impressões, cliques, CPC, vendas atribuídas, receita, ACOS, CVR, SOV, ROAS | **Habilitada** (ordenável; variação vs anterior com `anterior.desde ≥ hoje − 91`) | todas as colunas vêm de E5; Σ fecha com a conta; chamada paginada (Avil: 13) |
+| Competitividade `impression_share`, `lost_impression_share_by_budget`, `lost_impression_share_by_ad_rank` | **Habilitada só no detalhe da campanha** (fração 0–1 → exibir em %) | confirmadas em E3/E4; soma = 1,00 nos dois detalhes medidos; recusadas (400) em lista, resumo e anúncio |
+| `top_impression_share` | **Indisponível** | escala indeterminada (3,5 e 10,0 na Avil) até o ML documentar |
+| Competitividade em lista, resumo da conta ou por anúncio | **Indisponível** | recusada pelo ML (HTTP 400) |
+| Período anterior fora dos 91 dias | **Indisponível** (motivo explícito) | ML recusa `date_from` além de hoje − 91 |

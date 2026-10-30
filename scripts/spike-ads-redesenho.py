@@ -4,6 +4,7 @@
 Uso:
   python3 scripts/spike-ads-redesenho.py conexoes
   python3 scripts/spike-ads-redesenho.py coletar <connection_id> [--dias 30] [--campaign-id ID]
+  python3 scripts/spike-ads-redesenho.py conciliar <connection_id>   # Task 04: campos, escalas, E5 completo
 
 PROTOCOLO: somente GET no ML (nenhum POST/PUT/DELETE). Token da conexão só em memória (via
 get_connection_tokens, SQL read-only), nunca impresso, nunca renovado (vencido => BLOCKED).
@@ -34,7 +35,8 @@ _spec = importlib.util.spec_from_file_location("s053", pathlib.Path(__file__).wi
 s053 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(s053)
 
-MAX_CHAMADAS_ML = 40
+# 60 = coletar (≤ 24) ou conciliar (≈ 36 na conta com 603 anúncios: 13 páginas de E5 + sondas de campos).
+MAX_CHAMADAS_ML = 60
 __doc__ = __doc__.replace("{max}", str(MAX_CHAMADAS_ML))
 
 BASE_MET = "clicks,prints,ctr,cost,cpc,acos,roas,cvr,sov,direct_amount,indirect_amount,total_amount"
@@ -177,7 +179,139 @@ def hoje_brt():
     return datetime.datetime.now(zoneinfo.ZoneInfo("America/Sao_Paulo")).date()
 
 
-def main(cx, dias, campanha):
+def metricas_de(corpo):
+    """Dicts de métricas de uma resposta: linhas (metrics ou a própria linha), metrics e metrics_summary."""
+    out = []
+    for r in corpo.get("results") or []:
+        if isinstance(r, dict):
+            out.append(r["metrics"] if isinstance(r.get("metrics"), dict) else r)
+    out += [corpo[b] for b in ("metrics", "metrics_summary") if isinstance(corpo.get(b), dict)]
+    return out
+
+
+def classifica(ml, rotulo, caminho, campos_pedidos=TODAS_MET):
+    """Pede todas as métricas; se der 400, repete por grupo. Imprime confirmado/ausente/recusado por campo."""
+    grupos = {"base": BASE_MET, "qtd": QTD_MET, "comp": COMP_MET}
+    resultado = {}
+    st, c = ml.get(f"{rotulo}-todas", f"{caminho}&metrics={campos_pedidos}")
+    if st == 200:
+        blocos = {"todas": (st, c)}
+    else:
+        blocos = {g: ml.get(f"{rotulo}-{g}", f"{caminho}&metrics={m}") for g, m in grupos.items()}
+    for g, (stg, cg) in blocos.items():
+        pedidos = campos_pedidos if g == "todas" else grupos[g]
+        ms = metricas_de(cg) if stg == 200 else []
+        for k in pedidos.split(","):
+            if stg != 200:
+                resultado[k] = f"RECUSADO (grupo {g} http={stg})"
+            else:
+                tipos = {tipo(m[k]) for m in ms if k in m}
+                nn = sum(1 for m in ms if m.get(k) is not None)
+                vs = [m[k] for m in ms if isinstance(m.get(k), (int, float)) and not isinstance(m[k], bool)]
+                faixa = f" min={min(vs)} max={max(vs)}" if vs and not aditiva(k) else ""
+                resultado[k] = f"confirmado {sorted(tipos)} não-nulo {nn}/{len(ms)}{faixa}" if tipos else "ausente"
+    print(f"  CLASSIFICAÇÃO {rotulo}:")
+    for k in campos_pedidos.split(","):
+        print(f"    {k}: {resultado[k]}")
+    return juntar([cg for stg, cg in blocos.values() if stg == 200])
+
+
+def dinheiro(k):
+    return k == "cost" or k.endswith("_amount")
+
+
+def juntar(corpos):
+    """Une respostas por grupo de métricas (mesma ordem de linhas, mesmo filtro): paging do 1º, metrics mescladas."""
+    if not corpos:
+        return {}
+    out = json.loads(json.dumps(corpos[0]))
+    for c in corpos[1:]:
+        for ra, rb in zip(out.get("results") or [], c.get("results") or []):
+            if isinstance(ra.get("metrics"), dict) and isinstance(rb.get("metrics"), dict):
+                ra["metrics"].update(rb["metrics"])
+            elif isinstance(ra, dict) and isinstance(rb, dict):
+                ra.update(rb)
+        for b in ("metrics", "metrics_summary"):
+            if isinstance(out.get(b), dict) and isinstance(c.get(b), dict):
+                out[b].update(c[b])
+    return out
+
+
+def razoes(m):
+    """Valor nativo × recálculo por fórmula candidata (só imprime; nenhuma fórmula é escolhida)."""
+    def d(a, b):
+        return round(a / b, 6) if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b else None
+    g = m.get
+    return {"ctr": (g("ctr"), d(g("clicks"), g("prints"))),
+            "acos": (g("acos"), d(g("cost"), g("total_amount"))),
+            "roas": (g("roas"), d(g("total_amount"), g("cost"))),
+            "cpc": (g("cpc"), d(g("cost"), g("clicks"))),
+            "cvr_nativo": g("cvr"),
+            "cvr/advertising_items": d(g("advertising_items_quantity"), g("clicks")),
+            "cvr/units": d(g("units_quantity"), g("clicks")),
+            "cvr/direct_items": d(g("direct_items_quantity"), g("clicks")),
+            "cvr/direct_units": d(g("direct_units_quantity"), g("clicks")),
+            "sov": g("sov")}
+
+
+def conciliar(cx):
+    token, ml, a = abre(cx)
+    d = datetime.timedelta
+    ontem = hoje_brt() - d(days=1)
+    j = ((ontem - d(days=29)).isoformat(), ontem.isoformat())
+    base = f"/marketplace/advertising/{a['site_id']}"
+    adv_base = f"{base}/advertisers/{a['advertiser_id']}/product_ads"
+    per = f"date_from={j[0]}&date_to={j[1]}"
+    print(f"janela atual={j}")
+    c1 = classifica(ml, "E1", f"{adv_base}/campaigns/search?limit=50&offset=0&{per}&metrics_summary=true"
+                    f"&filters[status]={STATUS_TODOS}")
+    res = [r for r in c1.get("results") or [] if isinstance(r, dict)]
+    resumo = c1.get("metrics_summary") if isinstance(c1.get("metrics_summary"), dict) else {}
+    print(f"  ESCALA resumo E1: {razoes(resumo)}")
+    for r in res:
+        if isinstance(r.get("metrics"), dict) and (r["metrics"].get("clicks") or 0) > 0:
+            print(f"  ESCALA campanha {r.get('id')}: {razoes(r['metrics'])}")
+    classifica(ml, "E2", f"{adv_base}/campaigns/search?limit=50&offset=0&{per}&aggregation_type=DAILY"
+               f"&filters[status]={STATUS_TODOS}")
+    cid = next((str(r["id"]) for r in sorted(res, key=lambda r: -float((r.get("metrics") or {}).get("cost") or 0))
+                if r.get("id")), None)
+    print(f"campanha do detalhe: {cid}")
+    if cid:
+        c3 = classifica(ml, "E3", f"{base}/product_ads/campaigns/{cid}?{per}")
+        for m in metricas_de(c3):
+            print(f"  ESCALA E3: {razoes(m)}")
+            print(f"  COMPETITIVIDADE E3: { {k: m.get(k) for k in COMP_MET.split(',')} }")
+        classifica(ml, "E4", f"{base}/product_ads/campaigns/{cid}?{per}&aggregation_type=DAILY")
+    # E5: campos pedidos por anúncio (todas as métricas) na 1ª página e conciliação completa por Σ.
+    p5 = f"{adv_base}/ads/search?limit=50&{per}"
+    c5 = classifica(ml, "E5", f"{p5}&offset=0")
+    total = (c5.get("paging") or {}).get("total") or 0
+    anuncios = [r for r in c5.get("results") or [] if isinstance(r, dict)]
+    for off in range(50, total, 50):
+        st, c = ml.get(f"E5-pag-{off}", f"{p5}&offset={off}&metrics={BASE_MET},{QTD_MET}")
+        if st != 200:
+            raise SystemExit("página de E5 falhou; conciliação incompleta")
+        anuncios += [r for r in c.get("results") or [] if isinstance(r, dict)]
+    ids = [r.get("item_id") for r in anuncios]
+    print(f"\nE5: {len(anuncios)} anúncios lidos de paging.total={total}; item_id distintos={len(set(ids))}")
+    cent = {}
+    for r in anuncios:
+        for k, v in (r.get("metrics") or {}).items():
+            if aditiva(k) and isinstance(v, (int, float)) and not isinstance(v, bool):
+                cent[k] = cent.get(k, 0) + round(v * 100 if dinheiro(k) else v)
+    for k in sorted(cent):
+        conta = resumo.get(k)
+        alvo = round(conta * 100) if dinheiro(k) and conta is not None else conta
+        print(f"  Σ anúncios {k}: {cent[k]} | resumo E1 da conta: {alvo} | diferença: "
+              f"{None if alvo is None else round(cent[k] - alvo, 2)} (centavos para valores em R$)")
+    dif = [abs(((r.get('metrics') or {}).get('acos') or 0) - 100 * ((r['metrics']['cost'] / r['metrics']['total_amount'])))
+           for r in anuncios if (r.get("metrics") or {}).get("total_amount")]
+    print(f"  acos por anúncio × 100·cost/total_amount: {len(dif)} anúncios com receita; maior diferença absoluta "
+          f"{round(max(dif), 4) if dif else None}")
+    print(f"\nchamadas ML: {ml.n}/{MAX_CHAMADAS_ML}")
+
+
+def abre(cx):
     assert all(c in "0123456789abcdef-" for c in cx), "connection_id inválido"
     linha = s053.sql(f"select access_token, expires_at from public.get_connection_tokens('{cx}'::uuid)")[0]
     token, expira = linha["access_token"], linha["expires_at"]
@@ -185,6 +319,14 @@ def main(cx, dias, campanha):
     if datetime.datetime.fromisoformat(expira.replace("Z", "+00:00")) <= datetime.datetime.now(datetime.timezone.utc):
         raise SystemExit("BLOCKED: token vencido; não renovar fora do app")
     ml = Ml(token)
+    st, adv = ml.get("advertisers", "/advertising/advertisers?product_id=PADS", versao="1")
+    if st != 200 or not adv.get("advertisers"):
+        raise SystemExit("sem advertiser / sem permissão")
+    return token, ml, next((x for x in adv["advertisers"] if x.get("site_id") == "MLB"), adv["advertisers"][0])
+
+
+def main(cx, dias, campanha):
+    token, ml, a = abre(cx)
 
     d = datetime.timedelta
     ontem = hoje_brt() - d(days=1)
@@ -193,10 +335,6 @@ def main(cx, dias, campanha):
     anterior = ((ant_fim - d(days=dias - 1)).isoformat(), ant_fim.isoformat())
     print(f"janela atual={atual} anterior={anterior} (BRT, {dias} dias)")
 
-    st, adv = ml.get("advertisers", "/advertising/advertisers?product_id=PADS", versao="1")
-    if st != 200 or not adv.get("advertisers"):
-        raise SystemExit("sem advertiser / sem permissão")
-    a = next((x for x in adv["advertisers"] if x.get("site_id") == "MLB"), adv["advertisers"][0])
     base = f"/marketplace/advertising/{a['site_id']}"
     adv_base = f"{base}/advertisers/{a['advertiser_id']}/product_ads"
 
@@ -266,6 +404,8 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if a == ["conexoes"]:
         conexoes()
+    elif len(a) == 2 and a[0] == "conciliar":
+        conciliar(a[1])
     elif len(a) >= 2 and a[0] == "coletar":
         dias, camp, i = 30, None, 2
         while i < len(a):
