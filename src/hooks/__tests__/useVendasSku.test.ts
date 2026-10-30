@@ -6,8 +6,9 @@ import { montarMapasCusto } from '@/lib/custos';
 import { resolverJanela, janelaAnterior } from '@/lib/metricas';
 import { janelaEstendida } from '@/lib/vendas-sku';
 
-const { custosQ, catQ, devQ, useVendas, vendasQ } = vi.hoisted(() => ({
+const { custosQ, catQ, devQ, useVendas, vendasQ, aliqQ } = vi.hoisted(() => ({
   useVendas: vi.fn(),
+  aliqQ: { data: { nacional: 8, importado: 16, confirmada: true, ufEmpresa: null, internaPct: null } as unknown, isError: false },
   vendasQ: { data: [] as unknown },
   custosQ: { data: undefined as unknown, isLoading: true, isFetching: true, isError: false },
   catQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
@@ -20,7 +21,7 @@ vi.mock('@/hooks/useCustos', () => ({ useCustos: () => custosQ }));
 vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => q(undefined) }));
 vi.mock('@/hooks/useCoresProduto', () => ({ useCoresProduto: () => q(undefined) }));
 vi.mock('@/hooks/useAnuncioCanonico', () => ({ useAnuncioCanonico: () => q(undefined) }));
-vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => q({ nacional: 8, importado: 16 }) }));
+vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliqQ }));
 vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => devQ }));
 vi.mock('@/hooks/useCatalogoVendasSku', () => ({ useCatalogoVendasSku: () => catQ }));
 
@@ -142,5 +143,100 @@ describe('useVendasSku — canal e faturamento da conta (TACOS do /ads)', () => 
     useVendas.mockClear();
     renderHook(() => useVendasSku(range, fixa, false));
     expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(fixa, janelaAnterior(fixa, range)), 'todos', 'todos', false);
+  });
+});
+
+describe('useVendasSku — integridade fiscal (ADR-0055: alíquota ausente não é zero)', () => {
+  const range = { tipo: 'range', desde: '2026-10-01', ate: '2026-10-10' } as const;
+  const fixa = { desde: '2026-10-01T03:00:00.000Z', ate: '2026-10-11T02:59:59.999Z' };
+  const confirmadas = { nacional: 8, importado: 16, confirmada: true, ufEmpresa: null, internaPct: null };
+  const item = (codigo: string | null, extra: Record<string, unknown> = {}) => ({
+    id: codigo ?? 'x', ml_item_id: `MLB-${codigo}`, variation_id: null, titulo: codigo, codigo, cor: null, ean: null,
+    quantity: 1, unit_price: 100, sale_fee: 0, is_publiai: false, cupom_vendedor: 0, ...extra,
+  });
+  const venda = (id: number, it: ReturnType<typeof item>, data = '2026-10-05T15:00:00.000Z', uf = 'SP') => ({
+    id: String(id), order_id: id, pack_id: null, status: 'paid', date_closed: data, total_amount: 100, cupom_vendedor: 0,
+    liquido: 100, sale_fee_total: 0, estorno: 0, uf, is_publiai: false, canal: 'mercado_livre', itens: [it],
+  });
+  const linhaCusto = (codigo: string, origem: string | null) => ({
+    custo: 40, peso_gramas: 100, ml_variation_id: null, gtin: null, codigo, atualizado_em: '2026-01-01',
+    familias: { ml_item_id: `MLB-${codigo}`, origem },
+  });
+  const render = () => renderHook(() => useVendasSku(range, fixa)).result.current;
+  const preparar = (rows: Record<string, unknown>[], vendas: unknown[]) => {
+    Object.assign(custosQ, { data: montarMapasCusto(rows), isLoading: false, isFetching: false, isError: false });
+    vendasQ.data = vendas;
+  };
+  const limpar = () => { Object.assign(aliqQ, { data: confirmadas, isError: false }); vendasQ.data = []; };
+
+  it('fiscal: alíquotas carregando → ok:false aliquotas_carregando', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: undefined, isError: false });
+    expect(render().baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_carregando' });
+    limpar();
+  });
+
+  it('fiscal: erro ao ler alíquotas → ok:false aliquotas_erro', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: undefined, isError: true });
+    expect(render().baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_erro' });
+    limpar();
+  });
+
+  it('fiscal: configuração sem confirmação (8/16 de fallback do fetch) → ok:false aliquotas_nao_confirmadas', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: { ...confirmadas, confirmada: false } });
+    expect(render().baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_nao_confirmadas' });
+    limpar();
+  });
+
+  it('fiscal: item com custo e família sem origem → origem_nao_resolvida com o código', () => {
+    preparar([linhaCusto('A', 'nacional'), linhaCusto('B', null)], [venda(1, item('A')), venda(2, item('B'))]);
+    expect(render().baseFiscal).toEqual({ ok: false, motivo: 'origem_nao_resolvida', codigos: ['B'] });
+    limpar();
+  });
+
+  it('fiscal: custo congelado sem produto no catálogo (imposto sairia 0 em silêncio) → origem_nao_resolvida', () => {
+    preparar([], [venda(1, item(null, { custo_congelado: 30 }))]);
+    expect(render().baseFiscal).toEqual({ ok: false, motivo: 'origem_nao_resolvida', codigos: [''] });
+    limpar();
+  });
+
+  it('fiscal: item sem custo não entra no lucro e não bloqueia; venda fora das janelas também não', () => {
+    preparar([linhaCusto('A', 'nacional')],
+      [venda(1, item('A')), venda(2, item('SEM-CUSTO')), venda(3, item(null, { custo_congelado: 30 }), '2026-08-01T15:00:00.000Z')]);
+    expect(render().baseFiscal).toEqual({ ok: true });
+    limpar();
+  });
+
+  it('fiscal: alíquota interna da UF resolve mesmo sem origem → ok:true', () => {
+    preparar([linhaCusto('B', null)], [venda(1, item('B'), undefined, 'PE')]);
+    Object.assign(aliqQ, { data: { ...confirmadas, ufEmpresa: 'PE', internaPct: 4 } });
+    expect(render().baseFiscal).toEqual({ ok: true });
+    limpar();
+  });
+
+  it('fiscal: alíquota explicitamente zero e confirmada é válida → ok:true e imposto 0', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: { ...confirmadas, nacional: 0 } });
+    const r = render();
+    expect(r.baseFiscal).toEqual({ ok: true });
+    expect(r.dados!.linhas.find((l) => l.codigo === 'A')!.acc.imposto).toBe(0);
+    limpar();
+  });
+
+  it('fiscal: consumidores antigos inalterados — sem alíquotas, dados seguem com o fallback 8%', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: undefined, isError: false });
+    const r = render();
+    expect(r.dados!.linhas.find((l) => l.codigo === 'A')!.acc.imposto).toBe(8);
+    expect(r.baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_carregando' });
+    limpar();
+  });
+
+  it('fiscal: sem dados montados, baseFiscal é null (nada a afirmar)', () => {
+    Object.assign(custosQ, { data: undefined, isLoading: true, isError: false });
+    expect(render().baseFiscal).toBeNull();
+    Object.assign(custosQ, { data: montarMapasCusto([]), isLoading: false });
   });
 });

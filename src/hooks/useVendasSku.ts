@@ -13,7 +13,8 @@ import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { calcularKpis, type Venda } from '@/lib/faturamento';
-import { dentroDaJanela, janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-sku';
+import { ehFaturavel, type AliquotaResolver, type CustoResolver } from '@/lib/resumo-vendas';
+import { dentroDaJanela, janelaEstendida, montarVendasSku, SEM_CODIGO, type VendasSku } from '@/lib/vendas-sku';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
 export interface OpcoesVendasSku {
@@ -21,6 +22,28 @@ export interface OpcoesVendasSku {
   canal?: CanalAtivo;
   /** Janela anterior exata (ex.: dias BRT da comparação do /ads). Sem ela, `faturamentoConta.anterior` é null. */
   anteriorFixa?: Janela;
+}
+
+/** Integridade fiscal do lucro (ADR-0055/0086: imposto nunca defaulta em silêncio). `ok:false` sempre que
+ *  o imposto de `dados` depende do fallback 8/16 (alíquotas carregando, com erro ou nunca confirmadas em
+ *  Configurações) ou de um item que entra no lucro sem alíquota resolvida (imposto sairia 0). Alíquota
+ *  zero confirmada é válida. `codigos`: códigos dos itens sem origem ('' = item sem código). */
+export type BaseFiscal =
+  | { ok: true }
+  | { ok: false; motivo: 'aliquotas_carregando' | 'aliquotas_nao_confirmadas' | 'aliquotas_erro' }
+  | { ok: false; motivo: 'origem_nao_resolvida'; codigos: string[] };
+
+/** Mesmo recorte de `impostoDoItem` em agruparPorPedido: item faturável da venda, UF da venda. Relevante =
+ *  entra no lucro (custo > 0, como custoDoItem). Só as janelas atual e anterior; as de tendência não têm dinheiro. */
+function origemNaoResolvida(vendas: Venda[], janelas: Janela[], custoR: CustoResolver, aliqR: AliquotaResolver): string[] {
+  const codigos = new Set<string>();
+  for (const v of vendas) {
+    if (!ehFaturavel(v.status) || !janelas.some((j) => dentroDaJanela(v.date_closed, j))) continue;
+    for (const it of v.itens) {
+      if ((custoR(it) ?? 0) > 0 && aliqR(it, v.uf) == null) codigos.add(it.codigo?.trim() || SEM_CODIGO);
+    }
+  }
+  return [...codigos].sort();
 }
 
 /** Faturamento da conta (denominador do TACOS, plano §2.3): toda venda faturável do recorte, uma vez cada,
@@ -42,12 +65,13 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
   const { data: fotos } = useFotosProduto();
   const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
-  const { data: aliquotas } = useAliquotas();
+  const aliqQ = useAliquotas();
+  const aliquotas = aliqQ.data;
   const devQ = useDevolucoes();
   const devolucoes = devQ.data;
   const catQ = useCatalogoVendasSku();
 
-  const dados = useMemo<VendasSku | null>(() => {
+  const calculo = useMemo<{ dados: VendasSku; baseFiscal: BaseFiscal } | null>(() => {
     // Sem custos toda linha sairia "sem custo" por um instante: espera a query assentar.
     // Com erro nos custos calcula sem eles ("sem custo" é o honesto).
     // Sem devoluções a taxa sairia 0 (no load ou com a query em erro): espera — o erro vai em isError.
@@ -55,16 +79,27 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
+    // Fallback 8/16 mantido para Faturamento/dossiê; o /ads lê `baseFiscal`, que acusa esse fallback.
     const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
     const corR = montarCorResolver(cores, canonico);
-    return montarVendasSku({
+    // Erro antes de "carregando": refetch com falha mantém data antiga, mas a base não está garantida.
+    let baseFiscal: BaseFiscal;
+    if (aliqQ.isError) baseFiscal = { ok: false, motivo: 'aliquotas_erro' };
+    else if (!aliquotas) baseFiscal = { ok: false, motivo: 'aliquotas_carregando' };
+    else if (!aliquotas.confirmada) baseFiscal = { ok: false, motivo: 'aliquotas_nao_confirmadas' };
+    else {
+      const codigos = origemNaoResolvida(vendasQ.data, [janela, anterior], custoR, aliqR);
+      baseFiscal = codigos.length ? { ok: false, motivo: 'origem_nao_resolvida', codigos } : { ok: true };
+    }
+    const dados = montarVendasSku({
       vendas: vendasQ.data,
       agrupar: (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR),
       janela, anterior,
       catalogo: new Map(catQ.data.map((c) => [c.codigo, c])),
       devolucoes,
     });
-  }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
+    return { dados, baseFiscal };
+  }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, aliqQ.isError, devolucoes, janela, anterior]);
 
   // Só depende das vendas: catálogo/custos não entram no denominador do TACOS.
   const faturamentoConta = useMemo(() => {
@@ -76,7 +111,9 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
   }, [vendasQ.data, janela, anteriorFixa]);
 
   return {
-    dados,
+    dados: calculo?.dados ?? null,
+    /** null enquanto `dados` não monta. */
+    baseFiscal: calculo?.baseFiscal ?? null,
     faturamentoConta,
     isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading || devQ.isLoading,
     isFetching: vendasQ.isFetching || catQ.isFetching,
