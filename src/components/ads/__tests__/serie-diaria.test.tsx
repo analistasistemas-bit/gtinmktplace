@@ -2,8 +2,9 @@ import { cloneElement, type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { DiaAdsMetricas, MetricaBrutaAds } from '../../../../supabase/functions/_shared/ads/metricas';
-import { SerieDiaria, pontosDiarios } from '../serie-diaria';
+import type { DiaAdsMetricas, MetricaBrutaAds, ValorAds } from '../../../../supabase/functions/_shared/ads/metricas';
+import { fmtBRL } from '@/lib/formato';
+import { SerieDiaria, pontosDiarios, textoValor } from '../serie-diaria';
 
 // Em jsdom o ResponsiveContainer fica 0x0 e não desenha nada: tamanho fixo para o SVG existir.
 vi.mock('recharts', async (orig) => ({
@@ -11,9 +12,9 @@ vi.mock('recharts', async (orig) => ({
   ResponsiveContainer: ({ children }: { children: ReactElement }) => cloneElement(children, { width: 800, height: 280 } as never),
 }));
 
-const dia = (d: string, m: Partial<Record<MetricaBrutaAds, number | null>>): DiaAdsMetricas => ({
+const dia = (d: string, m: Partial<Record<MetricaBrutaAds, number | null | ValorAds>>): DiaAdsMetricas => ({
   dia: d,
-  metricas: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v === null ? { valor: null, motivo: 'nao_retornada' } : { valor: v, motivo: null }])),
+  metricas: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v === null ? { valor: null, motivo: 'nao_retornada' } : typeof v === 'object' ? v : { valor: v, motivo: null }])),
 });
 
 const JANELA = { desde: '2026-10-01', ate: '2026-10-04' };
@@ -94,5 +95,55 @@ describe('SerieDiaria', () => {
   it('sem nenhum dia na janela mostra estado vazio', () => {
     render(<SerieDiaria serie={[]} janela={JANELA} />);
     expect(screen.getByText(/nenhum dia com dados/i)).toBeInTheDocument();
+  });
+
+  it('desenha barras e a linha de ROAS interrompida na lacuna', () => {
+    const { container } = render(<SerieDiaria serie={SERIE} janela={JANELA} />);
+    // Barras com valor > 0 (atribuídas 01 e 04; outras 01 e 03); dia ausente/nulo não vira barra.
+    expect(container.querySelectorAll('.recharts-bar-rectangle')).toHaveLength(4);
+    const d = container.querySelector('.recharts-line-curve')?.getAttribute('d') ?? '';
+    // 01/10 e 04/10 têm ROAS; 02 (ausente) e 03 (cost 0) quebram o traço em dois segmentos.
+    expect(d.match(/M/g)).toHaveLength(2);
+    expect(container.querySelectorAll('.recharts-line-dot')).toHaveLength(2);
+  });
+
+  it('tabela traz as datas e as células de cada dia', async () => {
+    render(<SerieDiaria serie={SERIE} janela={JANELA} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Ver dados em tabela' }));
+    const linhas = within(screen.getByRole('table')).getAllByRole('row');
+    expect(linhas.map((l) => within(l).queryByRole('rowheader')?.textContent)).toEqual([undefined, '01/10', '02/10', '03/10', '04/10']);
+    expect(within(linhas[1]).getAllByRole('cell').map((c) => c.textContent)).toEqual(['2', '5', fmtBRL(10), fmtBRL(50), '5,0×']);
+  });
+
+  it('tabela explica o motivo de cada valor indisponível', async () => {
+    const serie = [
+      dia('2026-10-01', { cost: { valor: null, motivo: 'fora_da_retencao' }, total_amount: 5, advertising_items_quantity: { valor: null, motivo: 'sem_permissao' }, organic_items_quantity: 1 }),
+    ];
+    render(<SerieDiaria serie={serie} janela={{ desde: '2026-10-01', ate: '2026-10-02' }} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Ver dados em tabela' }));
+    const linhas = within(screen.getByRole('table')).getAllByRole('row');
+    expect(within(linhas[1]).getAllByText('Período fora da retenção do ML.')[0]).toBeInTheDocument();
+    expect(within(linhas[1]).getByText('Sem permissão para ler esta métrica.')).toBeInTheDocument();
+    expect(within(linhas[2]).getAllByText('Sem retorno do ML neste dia.').length).toBeGreaterThan(0);
+  });
+
+  it('avisa quando o bloco está incompleto, com os motivos', () => {
+    const serie = [dia('2026-10-01', { cost: { valor: null, motivo: 'fora_da_retencao' } })];
+    render(<SerieDiaria serie={serie} janela={JANELA} completo={false} />);
+    const aviso = screen.getByRole('status');
+    expect(aviso).toHaveTextContent(/dados incompletos/i);
+    expect(aviso).toHaveTextContent('Período fora da retenção do ML.');
+  });
+
+  it('não avisa quando o bloco está completo', () => {
+    render(<SerieDiaria serie={SERIE} janela={JANELA} completo />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('tooltip chama quantidade de vendas, não de unidades', () => {
+    expect(textoValor('vendas', 'Vendas atribuídas', 3)).toBe('3 vendas');
+    expect(textoValor('vendas', 'Outras vendas', 1)).toBe('1 venda');
+    expect(textoValor('vendas', 'ROAS', 2.5)).toBe('2,5×');
+    expect(textoValor('valores', 'Investimento', 10)).toBe(fmtBRL(10));
   });
 });

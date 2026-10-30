@@ -3,7 +3,7 @@ import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ResponsiveConta
 import { Button } from '@/components/ui/button';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { EIXO, TOOLTIP, kCompacto } from '@/components/sku-dossie/serie-pontos';
-import type { DiaAdsMetricas, JanelaAdsMetricas, MetricaBrutaAds } from '../../../supabase/functions/_shared/ads/metricas';
+import type { DiaAdsMetricas, JanelaAdsMetricas, MetricaBrutaAds, MotivoMetricaAds } from '../../../supabase/functions/_shared/ads/metricas';
 
 type Visao = 'vendas' | 'valores';
 type ChaveValor = 'cost' | 'receita';
@@ -17,7 +17,22 @@ export interface PontoDiario {
   receita: number | null;
   roas: number | null;
   provisorio: boolean;
+  /** Por que um valor é `null`: motivo do ML, ou `dia_ausente` quando o dia nem veio na série. */
+  motivos: Partial<Record<CampoTabela, MotivoDia>>;
 }
+type CampoTabela = 'atribuidas' | 'outras' | 'cost' | 'receita' | 'roas';
+type MotivoDia = MotivoMetricaAds | 'dia_ausente';
+
+// Mesmos textos de src/components/ads/faixa-kpis.tsx.
+const MOTIVOS: Record<MotivoDia, string> = {
+  nao_retornada: 'O ML não retornou esta métrica.',
+  fora_da_retencao: 'Período fora da retenção do ML.',
+  sem_denominador: 'Sem investimento no dia: ROAS indefinido.',
+  resposta_invalida: 'Resposta inválida do ML.',
+  sem_permissao: 'Sem permissão para ler esta métrica.',
+  limite_de_leitura: 'Limite de leitura atingido. Tente novamente.',
+  dia_ausente: 'Sem retorno do ML neste dia.',
+};
 
 const DIA_MS = 86_400_000;
 const rotuloDia = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -32,13 +47,17 @@ export function pontosDiarios(serie: DiaAdsMetricas[], janela: JanelaAdsMetricas
     const dia = new Date(t).toISOString().slice(0, 10);
     const m = porDia.get(dia);
     const v = (k: MetricaBrutaAds) => m?.[k]?.valor ?? null;
+    const mot = (k: MetricaBrutaAds): MotivoDia | undefined => (v(k) !== null ? undefined : !m ? 'dia_ausente' : (m[k]?.motivo ?? 'nao_retornada'));
     const cost = v('cost');
     const receita = v('total_amount');
+    const semRoas = !(cost !== null && cost > 0 && receita !== null);
+    const motivoRoas: MotivoDia | undefined = !semRoas ? undefined : mot('cost') ?? mot('total_amount') ?? 'sem_denominador';
     out.push({
       dia, rotulo: rotuloDia(dia),
       atribuidas: v('advertising_items_quantity'), outras: v('organic_items_quantity'), cost, receita,
       roas: cost !== null && cost > 0 && receita !== null ? receita / cost : null,
       provisorio: provisorioDesde !== undefined && dia >= provisorioDesde,
+      motivos: { atribuidas: mot('advertising_items_quantity'), outras: mot('organic_items_quantity'), cost: mot('cost'), receita: mot('total_amount'), roas: motivoRoas },
     });
   }
   return out;
@@ -56,11 +75,29 @@ interface Props {
   /** Primeiro dia com atribuição ainda em aberto (os últimos dias da janela). */
   provisorioDesde?: string;
   visaoInicial?: Visao;
+  /** `completo` do bloco; `false` mostra o aviso de dados incompletos. */
+  completo?: boolean;
+}
+
+/** Texto do valor no tooltip: quantidades aqui são vendas (itens), não unidades. */
+export function textoValor(visao: Visao, nome: string, v: number): string {
+  if (nome === 'ROAS') return fmtRoas(v);
+  if (visao === 'valores') return fmtBRL(v);
+  return `${fmtInt(v)} ${v === 1 ? 'venda' : 'vendas'}`;
+}
+
+function Celula({ texto, motivo }: { texto: string | null; motivo?: MotivoDia }) {
+  if (texto !== null) return <td className="px-2 py-1 text-right">{texto}</td>;
+  return (
+    <td className="px-2 py-1 text-right" title={motivo ? MOTIVOS[motivo] : undefined}>
+      <span aria-hidden>—</span><span className="sr-only">{motivo ? MOTIVOS[motivo] : 'Sem valor'}</span>
+    </td>
+  );
 }
 
 /** Evolução diária do Mercado Ads. Padrão: barras empilhadas de vendas atribuídas e outras vendas, e
  *  ROAS do dia em linha no eixo da direita (×). Alternativa: Investimento × Receita Ads em R$, mesmo eixo. */
-export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 'vendas' }: Props) {
+export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 'vendas', completo }: Props) {
   const [visao, setVisao] = useState<Visao>(visaoInicial);
   // No celular a visão em R$ começa com uma série; a segunda é opcional. Limite: de 1 a 2 séries.
   const [ligadas, setLigadas] = useState<ChaveValor[]>(() => (
@@ -71,6 +108,8 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
 
   const dados = useMemo(() => pontosDiarios(serie, janela, provisorioDesde), [serie, janela, provisorioDesde]);
   const temDado = serie.length > 0;
+  // Motivos distintos do que falta (sem repetir por dia), para o aviso do bloco incompleto.
+  const motivosFaltantes = useMemo(() => [...new Set(dados.flatMap((d) => Object.values(d.motivos)).filter((m): m is MotivoDia => !!m && m !== 'sem_denominador'))], [dados]);
   const prov = dados.filter((d) => d.provisorio);
   const alternar = (c: ChaveValor) => setLigadas((l) => (l.includes(c) ? (l.length > 1 ? l.filter((x) => x !== c) : l) : [...l, c].slice(-2)));
   const nomeValor = (c: ChaveValor) => SERIES_VALORES.find((s) => s.chave === c)!.nome;
@@ -93,6 +132,13 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
             <Button key={s.chave} size="sm" variant={ligadas.includes(s.chave) ? 'secondary' : 'outline'} className="h-7 px-2.5 text-xs"
               aria-pressed={ligadas.includes(s.chave)} onClick={() => alternar(s.chave)}>{s.nome}</Button>
           ))}
+        </div>
+      )}
+
+      {completo === false && (
+        <div role="status" className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Dados incompletos: o período não veio inteiro do Mercado Livre.</p>
+          <ul className="list-disc pl-4">{motivosFaltantes.map((m) => <li key={m}>{MOTIVOS[m]}</li>)}</ul>
         </div>
       )}
 
@@ -148,11 +194,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
                     const d = p?.[0]?.payload as PontoDiario | undefined;
                     return d ? `${d.rotulo}${d.provisorio ? ' (atribuição em aberto)' : ''}` : '';
                   }}
-                  formatter={(v, nome) => {
-                    if (nome === 'ROAS') return [fmtRoas(Number(v)), nome];
-                    if (visao === 'valores') return [fmtBRL(Number(v)), nome];
-                    return [`${fmtInt(Number(v))} un.`, nome];
-                  }} />
+                  formatter={(v, nome) => [textoValor(visao, String(nome), Number(v)), nome]} />
                 {visao === 'vendas' ? (
                   <>
                     {/* Segmentos separados por 2px da cor do cartão; só o topo da pilha tem cantos arredondados. */}
@@ -215,11 +257,11 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
                   {dados.map((d) => (
                     <tr key={d.dia} className="border-t">
                       <th scope="row" className="px-2 py-1 text-left font-normal">{d.rotulo}{d.provisorio ? ' (em aberto)' : ''}</th>
-                      <td className="px-2 py-1 text-right">{d.atribuidas === null ? '—' : fmtInt(d.atribuidas)}</td>
-                      <td className="px-2 py-1 text-right">{d.outras === null ? '—' : fmtInt(d.outras)}</td>
-                      <td className="px-2 py-1 text-right">{d.cost === null ? '—' : fmtBRL(d.cost)}</td>
-                      <td className="px-2 py-1 text-right">{d.receita === null ? '—' : fmtBRL(d.receita)}</td>
-                      <td className="px-2 py-1 text-right">{d.roas === null ? '—' : fmtRoas(d.roas)}</td>
+                      <Celula texto={d.atribuidas === null ? null : fmtInt(d.atribuidas)} motivo={d.motivos.atribuidas} />
+                      <Celula texto={d.outras === null ? null : fmtInt(d.outras)} motivo={d.motivos.outras} />
+                      <Celula texto={d.cost === null ? null : fmtBRL(d.cost)} motivo={d.motivos.cost} />
+                      <Celula texto={d.receita === null ? null : fmtBRL(d.receita)} motivo={d.motivos.receita} />
+                      <Celula texto={d.roas === null ? null : fmtRoas(d.roas)} motivo={d.motivos.roas} />
                     </tr>
                   ))}
                 </tbody>
