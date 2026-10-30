@@ -1133,3 +1133,14 @@ As decisões já fechadas permanecem preservadas. Os pontos abaixo não impedem 
 | Primeiro teste de clareza | Falta confirmar se a nova hierarquia resolve a dificuldade do Diego | Usar Avil e uma conta com campanhas sem gasto no aceite; manter o piloto do ADR-0179 até registrar uma decisão concreta |
 
 **Próxima ação — até 2 minutos:** Claude revisar a emenda da seção 6 antes de iniciar a Task 01.
+## 9. Revisão do Claude e decisão do Diego (2026-10-30)
+
+1. **Métricas por anúncio (prints 3–4 do ML):** a Task 04 passa a testar também as métricas de `/ads/search`
+   (impressões, cliques, CPC, vendas atribuídas, receita, ACOS por MLB) no período — a documentação marca como
+   depreciado, mas o spike 057 observou respostas. **Se o spike confirmar:** o detalhe da campanha (Task 31) ganha a
+   tabela "Anúncios patrocinados" com essas colunas, ordenáveis, com variação vs período anterior. **Se não:** a seção
+   aparece como indisponível com motivo. Decisão do Diego: incluir condicionado ao spike.
+2. **Gráfico padrão:** se o spike confirmar `organic_items_quantity` (ou equivalente), a evolução diária (Task 25) abre
+   em "Vendas atribuídas × Outras vendas + ROAS" (barras empilhadas + linha em eixo `×`), como no Mercado Ads; senão,
+   mantém Investimento × Receita Ads.
+3. Nome do arquivo: o plano fica em `2026-10-30-ads-redesign-premium.md` (a Task 01 não renomeia).
