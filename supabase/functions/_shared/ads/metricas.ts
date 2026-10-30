@@ -52,8 +52,16 @@ export interface CampanhaPeriodoAds {
   anterior: BlocoAdsMetricas | null;
 }
 
-// EscopoAdsMetricas chega com a task do handler; aqui só o formato mínimo que o contrato exige.
-export type EscopoAdsMetricas = { tipo: 'conta' | 'campanhas' | 'campanha' | 'competitividade'; campanhaId?: number };
+export type EscopoAdsMetricas = 'conta' | 'campanhas' | 'campanha' | 'competitividade';
+
+export interface PedidoAdsMetricas {
+  desde: string;
+  ate: string;
+  comparar: 'anterior' | 'nenhum';
+  escopo: EscopoAdsMetricas;
+  campanhaId?: number;
+  fresco?: boolean;
+}
 
 export interface RespostaAdsMetricas {
   ok: true;

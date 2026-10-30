@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { EscopoAdsMetricas, PedidoAdsMetricas } from '../metricas.ts';
 import { CAMPOS_METRICA_ADS, ESCALA_METRICA_ADS, parseMetricasResumo } from '../metricas.ts';
 
 describe('parseMetricasResumo', () => {
@@ -49,5 +50,18 @@ describe('parseMetricasResumo', () => {
     expect(ESCALA_METRICA_ADS.cvr).toBe('percentual_0_100');
     expect(ESCALA_METRICA_ADS.lost_impression_share_by_budget).toBe('fracao_0_1');
     expect(ESCALA_METRICA_ADS.top_impression_share).toBe('nao_confirmada');
+  });
+});
+
+describe('contrato de pedido', () => {
+  it('escopo é a união da seção 5.2 e o pedido aceita os campos da spec', () => {
+    const escopos: EscopoAdsMetricas[] = ['conta', 'campanhas', 'campanha', 'competitividade'];
+    const pedido: PedidoAdsMetricas = {
+      desde: '2026-10-01', ate: '2026-10-07', comparar: 'anterior', escopo: 'campanha', campanhaId: 1, fresco: true,
+    };
+    // @ts-expect-error escopo fora da união
+    const invalido: EscopoAdsMetricas = 'outro';
+    expect(escopos).toContain(pedido.escopo);
+    expect(invalido).toBe('outro');
   });
 });
