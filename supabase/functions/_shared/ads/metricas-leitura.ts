@@ -1,7 +1,8 @@
 // Leitura paginada de campanhas por período (E1, plano ads-redesign §5.4). `buscar` é injetado: devolve o corpo
 // JSON ou null em falha. Sem cache, orçamento ou autorização (camadas acima). Nunca lança.
 import {
-  parseMetricasResumo, urlContaResumo,
+  CAMPOS_METRICA_ADS, parseMetricasResumo, parseSerieMetricas, urlCampanhaDetalhe, urlCampanhaSerie, urlContaResumo,
+  urlContaSerie,
   type BlocoAdsMetricas, type CampanhaPeriodoAds, type JanelaAdsMetricas, type MetricaBrutaAds, type ValorAds,
 } from './metricas.ts';
 
@@ -111,3 +112,79 @@ export async function lerCampanhasComparadas(
   });
   return { atual: a, anterior: p, campanhas };
 }
+
+// --- Escopos `conta` (E1+E2) e `campanha` (E3+E4), plano §5.4. ---
+
+export interface LeituraEscopoAds {
+  atual: BlocoAdsMetricas;
+  anterior: BlocoAdsMetricas | null;
+  comparacao: { estado: 'disponivel' | 'indisponivel' | 'desligada'; motivo: string | null };
+}
+
+// Razões nativas do ML (cvr/sov/participação): não somam entre dias.
+const NAO_ADITIVAS = new Set<MetricaBrutaAds>([
+  'cvr', 'sov', 'impression_share', 'top_impression_share',
+  'lost_impression_share_by_budget', 'lost_impression_share_by_ad_rank',
+]);
+
+/** Soma só as aditivas da série; dia com valor ausente/inválido torna a métrica indisponível, nunca zero. */
+function somarSerie(serie: BlocoAdsMetricas['serie']): Partial<Record<MetricaBrutaAds, ValorAds>> {
+  const saida: Partial<Record<MetricaBrutaAds, ValorAds>> = {};
+  for (const c of CAMPOS_METRICA_ADS) {
+    if (NAO_ADITIVAS.has(c)) { saida[c] = { valor: null, motivo: 'sem_denominador' }; continue; }
+    let soma = 0;
+    let falha: ValorAds | null = null;
+    for (const d of serie) {
+      const v = d.metricas[c];
+      if (!v || v.valor === null) { falha = { valor: null, motivo: v?.motivo ?? 'nao_retornada' }; break; }
+      soma += v.valor;
+    }
+    saida[c] = falha ?? { valor: Math.round(soma * 1e6) / 1e6, motivo: null };
+  }
+  return saida;
+}
+
+async function lerBlocoConta(deps: DepsLeituraAds, adv: number, j: JanelaAdsMetricas): Promise<BlocoAdsMetricas> {
+  const e1 = await lerCampanhasPeriodo(deps, adv, j); // as linhas por campanha ficam de fora: aqui só interessa o resumo
+  const { serie, completo } = parseSerieMetricas(await deps.buscar(urlContaSerie(adv, j)), j);
+  // Sem resumo válido do E1 (2+ páginas ou falha), o total da conta é Σ E2, e só com a série inteira.
+  const resumo = e1.resumo ?? (completo ? somarSerie(serie) : {});
+  return { janela: j, resumo, serie, completo, lidoEm: deps.agora() };
+}
+
+async function lerBlocoCampanha(deps: DepsLeituraAds, id: number, j: JanelaAdsMetricas): Promise<BlocoAdsMetricas> {
+  const e3 = await deps.buscar(urlCampanhaDetalhe(id, j));
+  const metrics = obj(e3) ? e3.metrics : null;
+  const { serie, completo } = parseSerieMetricas(await deps.buscar(urlCampanhaSerie(id, j)), j);
+  const resumoOk = obj(metrics);
+  return {
+    janela: j, resumo: resumoOk ? parseMetricasResumo(metrics) : {}, serie,
+    completo: resumoOk && completo, lidoEm: deps.agora(),
+  };
+}
+
+/** Lê atual e, se pedida, a anterior. Falha/incompletude da anterior só desliga a comparação. */
+async function lerComparado(
+  ler: (j: JanelaAdsMetricas) => Promise<BlocoAdsMetricas>,
+  atual: JanelaAdsMetricas,
+  anterior: JanelaAdsMetricas | null,
+): Promise<LeituraEscopoAds> {
+  const a = await ler(atual);
+  if (!anterior) return { atual: a, anterior: null, comparacao: { estado: 'desligada', motivo: null } };
+  let p: BlocoAdsMetricas | null = null;
+  try { p = await ler(anterior); } catch { p = null; }
+  if (!p || !p.completo) {
+    return { atual: a, anterior: null, comparacao: { estado: 'indisponivel', motivo: 'Leitura da janela anterior incompleta ou indisponível.' } };
+  }
+  return { atual: a, anterior: p, comparacao: { estado: 'disponivel', motivo: null } };
+}
+
+/** Escopo conta: E1 (resumo, se válido) + E2 (série diária da conta; não identifica campanha). */
+export const lerEscopoConta = (
+  deps: DepsLeituraAds, advertiserId: number, atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
+) => lerComparado((j) => lerBlocoConta(deps, advertiserId, j), atual, anterior);
+
+/** Escopo campanha: E3 (resumo + competitividade) + E4 (série diária). Autorização é da camada acima. */
+export const lerEscopoCampanha = (
+  deps: DepsLeituraAds, campanhaId: number, atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
+) => lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lerCampanhasComparadas, lerCampanhasPeriodo } from '../metricas-leitura.ts';
+import { lerCampanhasComparadas, lerCampanhasPeriodo, lerEscopoCampanha, lerEscopoConta } from '../metricas-leitura.ts';
 
 const ATUAL = { desde: '2026-09-30', ate: '2026-10-29' };
 const ANT = { desde: '2026-08-31', ate: '2026-09-29' };
@@ -88,5 +88,101 @@ describe('paginacao de campanhas (E1)', () => {
     expect(r.anterior).toBeNull();
     expect(r.campanhas[0].anterior).toBeNull();
     expect(f.urls).toHaveLength(1);
+  });
+});
+
+describe('escopos conta e campanha', () => {
+  const dias = (j: { desde: string; ate: string }, falta?: string) => {
+    const out: Record<string, unknown>[] = [];
+    for (let t = Date.parse(j.desde); t <= Date.parse(j.ate); t += 86_400_000) {
+      const date = new Date(t).toISOString().slice(0, 10);
+      if (date !== falta) out.push({ date, cost: 1, total_amount: 10, cvr: 5 });
+    }
+    return out;
+  };
+  const J = { desde: '2026-10-01', ate: '2026-10-03' };
+  const JA = { desde: '2026-09-28', ate: '2026-09-30' };
+  // Servidor fake para E1–E4; `falhaEm` devolve null para janelas cujo date_from está na lista.
+  function servidor(opts: { camps?: ReturnType<typeof camp>[]; falta?: string; falhaEm?: string[] } = {}) {
+    const urls: string[] = [];
+    const camps = opts.camps ?? [camp(1, 1), camp(2, 2)];
+    const buscar = async (url: string) => {
+      urls.push(url);
+      const desde = /date_from=([\d-]+)/.exec(url)![1];
+      if (opts.falhaEm?.includes(desde)) return null;
+      const j = desde === J.desde ? J : JA;
+      const diaria = url.includes('aggregation_type=DAILY');
+      if (/product_ads\/campaigns\/\d+\?/.test(url)) {
+        return diaria
+          ? { results: dias(j, opts.falta) }
+          : { id: 9, metrics: { cost: 3, impression_share: 0.5 } };
+      }
+      if (diaria) return { results: dias(j, opts.falta) };
+      const offset = Number(/offset=(\d+)/.exec(url)![1]);
+      return { paging: { offset, limit: 2, total: camps.length }, results: camps.slice(offset, offset + 2), metrics_summary: { cost: 777 } };
+    };
+    return { urls, deps: { buscar, agora: () => 'T' } };
+  }
+
+  it('conta: uma página usa o resumo do E1; a série E2 não vira campanha', async () => {
+    const s = servidor();
+    const r = await lerEscopoConta(s.deps, 7, J, null);
+    expect(r.atual.resumo.cost?.valor).toBe(777);
+    expect(r.atual.serie).toHaveLength(3);
+    expect(r.atual.completo).toBe(true);
+    expect(r).not.toHaveProperty('campanhas');
+    expect(r.comparacao).toEqual({ estado: 'desligada', motivo: null });
+  });
+
+  it('conta: 2+ páginas somam as aditivas de E2 e deixam razões indisponíveis', async () => {
+    const s = servidor({ camps: [camp(1, 1), camp(2, 2), camp(3, 3)] });
+    const r = await lerEscopoConta(s.deps, 7, J, null);
+    expect(r.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
+    expect(r.atual.resumo.total_amount?.valor).toBe(30);
+    expect(r.atual.resumo.cvr?.valor).toBeNull();
+    expect(r.atual.resumo.cvr?.motivo).not.toBeNull();
+    expect(r.atual.completo).toBe(true);
+  });
+
+  it('conta: série E2 incompleta com 2+ páginas não declara resumo nem completo', async () => {
+    const s = servidor({ camps: [camp(1, 1), camp(2, 2), camp(3, 3)], falta: '2026-10-02' });
+    const r = await lerEscopoConta(s.deps, 7, J, null);
+    expect(r.atual.completo).toBe(false);
+    expect(r.atual.resumo).toEqual({});
+    expect(r.atual.serie).toHaveLength(2);
+  });
+
+  it('conta: falha na anterior não derruba a atual', async () => {
+    const s = servidor({ falhaEm: [JA.desde] });
+    const r = await lerEscopoConta(s.deps, 7, J, JA);
+    expect(r.atual.completo).toBe(true);
+    expect(r.anterior).toBeNull();
+    expect(r.comparacao.estado).toBe('indisponivel');
+    expect(r.comparacao.motivo).toBeTruthy();
+  });
+
+  it('conta: anterior válida deixa a comparação disponível', async () => {
+    const s = servidor();
+    const r = await lerEscopoConta(s.deps, 7, J, JA);
+    expect(r.anterior?.completo).toBe(true);
+    expect(r.comparacao.estado).toBe('disponivel');
+  });
+
+  it('campanha: detalhe usa E3 (resumo com competitividade) e E4 (série)', async () => {
+    const s = servidor();
+    const r = await lerEscopoCampanha(s.deps, 9, J, null);
+    expect(r.atual.resumo.impression_share?.valor).toBe(0.5);
+    expect(r.atual.serie).toHaveLength(3);
+    expect(r.atual.completo).toBe(true);
+    expect(s.urls.some((u) => u.includes('/advertisers/'))).toBe(false);
+  });
+
+  it('campanha: E3 inválido deixa o bloco incompleto; falha na anterior isola', async () => {
+    const ruim = await lerEscopoCampanha({ buscar: async () => null, agora: () => 'T' }, 9, J, null);
+    expect(ruim.atual.completo).toBe(false);
+    const s = servidor({ falhaEm: [JA.desde] });
+    const r = await lerEscopoCampanha(s.deps, 9, J, JA);
+    expect(r.atual.completo).toBe(true);
+    expect(r.comparacao.estado).toBe('indisponivel');
   });
 });
