@@ -68,8 +68,8 @@ describe('comparacao honesta entre períodos', () => {
   it('percentual usa diferença em p.p.', () => {
     expect(compararIndicadorAds(ok(0.062), ok(0.05), 'percentual', false).texto).toBe('+1,2 p.p.');
   });
-  it('base zero vira "Sem base de comparação" e neutra', () => {
-    expect(compararIndicadorAds(ok(5), ok(0), 'razao', false, 'maior_melhor'))
+  it.each(['moeda', 'quantidade', 'razao', 'percentual'] as const)('base zero em %s vira "Sem base de comparação" e neutra', (u) => {
+    expect(compararIndicadorAds(ok(0.05), ok(0), u, false, 'maior_melhor'))
       .toEqual({ texto: 'Sem base de comparação', direcao: 'neutral', tom: 'neutral' });
   });
   it('base negativa em moeda usa diferença em R$', () => {

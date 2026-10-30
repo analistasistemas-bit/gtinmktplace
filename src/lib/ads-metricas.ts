@@ -83,6 +83,7 @@ export function compararIndicadorAds(
 
   let delta: number; // já na escala exibida (p.p., % ou R$)
   let texto: (sinal: string) => string;
+  if (b === 0) return SEM_BASE;
   if (unidade === 'percentual') {
     delta = Math.round((a - b) * 1000) / 10;
     texto = (s) => `${s}${fmt(delta, 1)} p.p.`;
