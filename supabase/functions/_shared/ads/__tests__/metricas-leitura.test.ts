@@ -449,6 +449,22 @@ describe('limites de leitura (orçamento §5.5)', () => {
       expect(pico, `ticks=${ticks}`).toBe(4);
     }
   });
+
+  it('ramo: 403 e prazo no ramo ficam no ramo; páginas e chamadas são as mesmas da requisição', async () => {
+    const a = ambiente((u) => (u.includes('negado') ? r(403) : r(200, { ok: 1 })));
+    const ramo = a.orc.ramo();
+    expect(await ramo.buscar('https://x/negado')).toBeNull();
+    expect(ramo.estado()).toEqual({ motivo: 'sem_permissao', limite: null });
+    expect(await ramo.buscar('https://x/1')).toBeNull(); // definitivo no ramo
+    expect(a.orc.estado()).toEqual({ motivo: null, limite: null });
+    expect(await a.orc.buscar(pag(0))).toEqual({ ok: 1 });
+    expect(a.orc.restante()).toEqual({ paginas: 19, chamadas: 30 });
+    const outro = a.orc.ramo();
+    a.avancar(20_000);
+    expect(await outro.buscar('https://x/2')).toBeNull();
+    expect(outro.estado()).toEqual({ motivo: 'limite_de_leitura', limite: 'prazo' });
+    expect(a.orc.estado().motivo).toBeNull();
+  });
 });
 
 describe('anúncios da campanha (E5, Task 31a)', () => {

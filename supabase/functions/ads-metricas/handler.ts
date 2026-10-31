@@ -158,8 +158,11 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
       const orcada = criarLeituraOrcada({
         buscar: (url, sinal) => get(url, HEADERS_ADS, sinal), agoraMs, esperar: deps.esperar,
       });
+      const agora = () => deps.agora().toISOString();
+      const e5 = orcada.ramo(); // falha do E5 (403/401/teto/prazo) fica na lista de anúncios
       const leitura: DepsLeituraAds = {
-        buscar: orcada.buscar, agora: () => deps.agora().toISOString(), restante: orcada.restante,
+        buscar: orcada.buscar, agora, restante: orcada.restante,
+        anuncios: { buscar: e5.buscar, agora, restante: e5.restante },
       };
       const resposta = await lerEscopo(leitura, adv, pedido, atual, anterior);
       const motivo = orcada.estado().motivo;
@@ -168,10 +171,13 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
         return { valor: vazia(motivo, avisos), completo: false };
       }
       if (motivo === 'limite_de_leitura') avisos.push('Limite de leitura atingido; dados incompletos.');
-      // Escopo campanha: E5 lido por último; um teto estourado nele vira o motivo da lista (não "resposta inválida").
+      // Escopo campanha: o motivo do ramo E5 (ou do principal, se já parado) substitui o genérico "resposta inválida".
+      // 401 só no E5 conta como sem permissão da lista: os KPIs da mesma sessão foram lidos.
+      const motivoE5 = e5.estado().motivo ?? motivo;
       const anuncios = resposta.anuncios === undefined ? {} : {
         anuncios: resposta.anuncios,
-        anunciosMotivo: resposta.anunciosMotivo && motivo === 'limite_de_leitura' ? motivo : resposta.anunciosMotivo ?? null,
+        anunciosMotivo: !resposta.anunciosMotivo || !motivoE5 ? resposta.anunciosMotivo ?? null
+          : motivoE5 === 'limite_de_leitura' ? 'limite_de_leitura' as const : 'sem_permissao' as const,
       };
       const valor: RespostaAdsMetricas = {
         // Estado olha só a janela atual (anterior incompleta só desliga a comparação); o cache exige as duas.

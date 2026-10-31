@@ -27,7 +27,9 @@ const janelaDe = (url: string) => {
 
 /** ML falso: 1 campanha (123) do anunciante 999; `lacuna` tira o 1º dia da série diária (só das janelas com
  *  `ate` ≤ `lacunaAte`, quando informado). E5: `anuncios` linhas da campanha + 1 de outra campanha (spike 057). */
-function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string; anuncios?: number } = {}) {
+function mlFalso(opc: {
+  lacuna?: boolean; lacunaAte?: string; anuncios?: number; e5?: (path: string) => RespostaML | null;
+} = {}) {
   const chamadas: string[] = [];
   const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
   const get = vi.fn(async (path: string): Promise<RespostaML> => {
@@ -40,6 +42,8 @@ function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string; anuncios?: number 
       return ok({ results: dias.map((date) => ({ date, cost: 1, clicks: 2, prints: 3 })) });
     };
     if (path.includes('/ads/search')) {
+      const forcada = opc.e5?.(path);
+      if (forcada) return forcada;
       const q = new URL(`https://x${path}`).searchParams;
       const offset = Number(q.get('offset'));
       const linhas = [
@@ -189,6 +193,30 @@ describe('ads-metricas: anúncios da campanha (E5)', () => {
     expect(corpo.anuncios).toBeNull();
     expect(corpo.anunciosMotivo).toBe('limite_de_leitura');
     expect(chaveMetricas(c.m)).toBe(false);
+  });
+
+  // Falha só no E5 fica na lista: KPIs (E3/E4) preservados, estado ok e nada cacheado.
+  describe.each([
+    ['403', 'sem_permissao'],
+    ['503', 'resposta_invalida'],
+    ['prazo', 'limite_de_leitura'],
+  ])('E5 com %s', (caso, motivoEsperado) => {
+    it('anuncios null com motivo, KPIs da campanha preservados', async () => {
+      let t = AGORA.getTime();
+      const e5 = (): RespostaML | null => {
+        if (caso === 'prazo') { t += 21_000; return null; } // a chamada passa do prazo de 20 s
+        return { status: Number(caso), retryAfterMs: 0, corpo: null };
+      };
+      const { deps, c } = montar({ agora: () => new Date(t) }, mlFalso({ e5 }));
+      const corpo = await (await tratar(post(P), deps)).json();
+      expect(corpo.estado).toBe('ok');
+      expect(corpo.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
+      expect(corpo.atual.completo).toBe(true);
+      expect(corpo.anuncios).toBeNull();
+      expect(corpo.anunciosMotivo).toBe(motivoEsperado);
+      expect(corpo.avisos).toEqual([]);
+      expect(chaveMetricas(c.m)).toBe(false);
+    });
   });
 });
 

@@ -14,6 +14,8 @@ export interface DepsLeituraAds {
   agora(): string;
   /** Saldo do orçamento da requisição (`criarLeituraOrcada().restante`); ausente = sem teto local. */
   restante?(): { paginas: number; chamadas: number };
+  /** Leitor do E5 (anúncios), num ramo do orçamento: a falha dele não para E1–E4. Ausente = o próprio `buscar`. */
+  anuncios?: DepsLeituraAds;
 }
 
 export interface LinhaCampanhaAds {
@@ -310,7 +312,7 @@ export async function lerEscopoCampanha(
   const motivo = await provarPertencimento(deps, advertiserId, campanhaId, anterior ? [atual, anterior] : [atual]);
   if (motivo) return { recusa: { estado: 'sem_acesso', motivo } };
   const r = await lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
-  return { ...r, ...(await lerAnunciosCampanha(deps, advertiserId, campanhaId, atual, anterior)) };
+  return { ...r, ...(await lerAnunciosCampanha(deps.anuncios ?? deps, advertiserId, campanhaId, atual, anterior)) };
 }
 
 // --- Orçamento da leitura (plano §5.5): tetos da aplicação, não limites alegados da API. ---
@@ -332,8 +334,8 @@ export interface EstadoLeituraOrcada {
  * truncada como completa). 429/5xx: 1 repetição, respeitando Retry-After se couber no prazo; 403/401 não repetem.
  * `restante()` expõe o saldo: o E5 (anúncios da campanha) confere antes de cada página e para sem tocar o teto
  * quando o resto da janela não cabe (anterior por anúncio vira `limite_de_leitura`, sem truncar a atual).
- * ponytail: o saldo ignora retries e prazo; um 429/5xx ou o prazo no meio do E5 ainda estoura e deixa a resposta
- * `parcial` (não cacheada).
+ * `ramo()`: leitor com estado próprio sobre os MESMOS contadores, prazo e vagas. Teto/403/401 dentro do ramo param
+ * só o ramo; o E5 roda num ramo para que a falha dele fique na lista e não apague os KPIs (E3/E4) já lidos.
  */
 export function criarLeituraOrcada(cfg: {
   buscar(url: string, sinal?: AbortSignal): Promise<RespostaML>;
@@ -347,10 +349,11 @@ export function criarLeituraOrcada(cfg: {
   let paginas = 0;
   let chamadas = 0;
   let ativas = 0;
-  let estado: EstadoLeituraOrcada = { motivo: null, limite: null };
+  type Ramo = { estado: EstadoLeituraOrcada };
+  const principal: Ramo = { estado: { motivo: null, limite: null } };
   const fila: (() => void)[] = [];
-  const parar = (motivo: EstadoLeituraOrcada['motivo'], limite: EstadoLeituraOrcada['limite'] = null) => {
-    estado = estado.motivo ? estado : { motivo, limite }; // o primeiro motivo vale
+  const parar = (ramo: Ramo, motivo: EstadoLeituraOrcada['motivo'], limite: EstadoLeituraOrcada['limite'] = null) => {
+    if (!ramo.estado.motivo) ramo.estado = { motivo, limite }; // o primeiro motivo vale
     return null;
   };
   const vaga = async () => {
@@ -359,14 +362,14 @@ export function criarLeituraOrcada(cfg: {
   };
   const liberar = () => { const prox = fila.shift(); if (prox) prox(); else ativas--; };
 
-  async function uma(url: string): Promise<unknown | null> {
+  async function uma(url: string, ramo: Ramo): Promise<unknown | null> {
     for (let tentativa = 0; ; tentativa++) {
-      if (cfg.agoraMs() >= fim) return parar('limite_de_leitura', 'prazo');
+      if (cfg.agoraMs() >= fim) return parar(ramo, 'limite_de_leitura', 'prazo');
       if (tentativa === 0 && url.includes('offset=')) {
-        if (paginas >= ORCAMENTO_LEITURA_ADS.paginas) return parar('limite_de_leitura', 'paginas');
+        if (paginas >= ORCAMENTO_LEITURA_ADS.paginas) return parar(ramo, 'limite_de_leitura', 'paginas');
         paginas++;
       }
-      if (chamadas >= ORCAMENTO_LEITURA_ADS.chamadas) return parar('limite_de_leitura', 'chamadas');
+      if (chamadas >= ORCAMENTO_LEITURA_ADS.chamadas) return parar(ramo, 'limite_de_leitura', 'chamadas');
       chamadas++;
       // O prazo corta a chamada em andamento: aborta o fetch e descarta qualquer corpo que chegue depois.
       const ctl = new AbortController();
@@ -376,29 +379,35 @@ export function criarLeituraOrcada(cfg: {
       });
       let rr: RespostaML | null;
       try { rr = await Promise.race([cfg.buscar(url, ctl.signal), estouro]); } catch { rr = null; } finally { cancelar(); }
-      if (ctl.signal.aborted || cfg.agoraMs() > fim) return parar('limite_de_leitura', 'prazo');
+      if (ctl.signal.aborted || cfg.agoraMs() > fim) return parar(ramo, 'limite_de_leitura', 'prazo');
       if (!rr) return null;
       const r = rr;
       const c = classificarResposta(r);
       if (c === 'ok') return r.corpo;
-      if (c === 'sem_permissao') return parar('sem_permissao');
-      if (c === 'sem_acesso') return parar('sem_acesso');
+      if (c === 'sem_permissao') return parar(ramo, 'sem_permissao');
+      if (c === 'sem_acesso') return parar(ramo, 'sem_acesso');
       if (c !== 'transitorio' || tentativa >= 1) return null;
       const espera = r.retryAfterMs ?? FALLBACK_RETRY_MS;
-      if (cfg.agoraMs() + espera >= fim) return parar('limite_de_leitura', 'prazo');
+      if (cfg.agoraMs() + espera >= fim) return parar(ramo, 'limite_de_leitura', 'prazo');
       await cfg.esperar(espera);
     }
   }
 
-  return {
-    async buscar(url: string): Promise<unknown | null> {
-      if (estado.motivo) return null;
-      await vaga();
-      try { return estado.motivo ? null : await uma(url); } finally { liberar(); }
-    },
-    estado: () => estado,
-    restante: () => ({
-      paginas: ORCAMENTO_LEITURA_ADS.paginas - paginas, chamadas: ORCAMENTO_LEITURA_ADS.chamadas - chamadas,
-    }),
+  const restante = () => ({
+    paginas: ORCAMENTO_LEITURA_ADS.paginas - paginas, chamadas: ORCAMENTO_LEITURA_ADS.chamadas - chamadas,
+  });
+  // O ramo também para se o principal já parou; o inverso não vale.
+  const leitor = (ramo: Ramo) => {
+    const parado = () => Boolean(principal.estado.motivo || ramo.estado.motivo);
+    return {
+      async buscar(url: string): Promise<unknown | null> {
+        if (parado()) return null;
+        await vaga();
+        try { return parado() ? null : await uma(url, ramo); } finally { liberar(); }
+      },
+      estado: () => ramo.estado,
+      restante,
+    };
   };
+  return { ...leitor(principal), ramo: () => leitor({ estado: { motivo: null, limite: null } }) };
 }
