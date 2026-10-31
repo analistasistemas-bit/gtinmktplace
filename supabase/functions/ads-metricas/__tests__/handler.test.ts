@@ -25,8 +25,9 @@ const janelaDe = (url: string) => {
   return { desde: q.get('date_from')!, ate: q.get('date_to')! };
 };
 
-/** ML falso: 1 campanha (123) do anunciante 999; `lacuna` tira o 1º dia da série diária. */
-function mlFalso(opc: { lacuna?: boolean } = {}) {
+/** ML falso: 1 campanha (123) do anunciante 999; `lacuna` tira o 1º dia da série diária (só das janelas com
+ *  `ate` ≤ `lacunaAte`, quando informado). */
+function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string } = {}) {
   const chamadas: string[] = [];
   const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
   const get = vi.fn(async (path: string): Promise<RespostaML> => {
@@ -34,7 +35,8 @@ function mlFalso(opc: { lacuna?: boolean } = {}) {
     if (path.startsWith('/advertising/advertisers')) return ok({ advertisers: [{ site_id: 'MLB', advertiser_id: ADV }] });
     const j = janelaDe(path);
     const serie = () => {
-      const dias = diasEntre(j.desde, j.ate).slice(opc.lacuna ? 1 : 0);
+      const corta = opc.lacuna && (!opc.lacunaAte || j.ate <= opc.lacunaAte);
+      const dias = diasEntre(j.desde, j.ate).slice(corta ? 1 : 0);
       return ok({ results: dias.map((date) => ({ date, cost: 1, clicks: 2, prints: 3 })) });
     };
     if (path.includes('/campaigns/search')) {
@@ -208,6 +210,15 @@ describe('ads-metricas: comparação', () => {
     const corpo = await (await tratar(post({ ...PEDIDO, desde: '2026-08-01', comparar: 'anterior' }), deps)).json();
     expect(corpo.comparacao.estado).toBe('indisponivel');
     expect(corpo.anterior).toBeNull();
+  });
+
+  it('só a anterior incompleta: estado ok, comparação indisponível e não cacheia', async () => {
+    const { deps, c } = montar({}, mlFalso({ lacuna: true, lacunaAte: '2026-10-27' }));
+    const corpo = await (await tratar(post({ ...PEDIDO, comparar: 'anterior' }), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.comparacao.estado).toBe('indisponivel');
+    expect(corpo.anterior).toBeNull();
+    expect([...c.m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'))).toBe(false);
   });
 
   it('campanhas: E1 atual + anterior unidos pelo ID', async () => {

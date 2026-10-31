@@ -166,14 +166,15 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
       }
       if (motivo === 'limite_de_leitura') avisos.push('Limite de leitura atingido; dados incompletos.');
       const valor: RespostaAdsMetricas = {
-        ok: true, estado: resposta.recusa ?? (resposta.completo && !motivo ? 'ok' : 'parcial'),
+        // Estado olha só a janela atual (anterior incompleta só desliga a comparação); o cache exige as duas.
+        ok: true, estado: resposta.recusa ?? (resposta.atual?.completo && !motivo ? 'ok' : 'parcial'),
         escopo: pedido.escopo, atual: resposta.atual, anterior: resposta.anterior, campanhas: resposta.campanhas,
         comparacao: foraDaRetencao
           ? { estado: 'indisponivel', motivo: 'Janela anterior fora da retenção do Mercado Ads.' }
           : resposta.comparacao,
         disponibilidade, avisos,
       };
-      return { valor, completo: valor.estado === 'ok' };
+      return { valor, completo: valor.estado === 'ok' && resposta.completo };
     });
     if (r.estado === 'recusado') return json({ ok: false, erro: r.motivo }, 429);
     return json(r.valor);
