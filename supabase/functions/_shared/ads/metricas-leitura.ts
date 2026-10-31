@@ -106,15 +106,18 @@ export async function lerCampanhasComparadas(
 ): Promise<{ atual: LeituraCampanhasAds; anterior: LeituraCampanhasAds | null; campanhas: CampanhaPeriodoAds[] }> {
   const a = await lerCampanhasPeriodo(deps, advertiserId, atual);
   const p = anterior ? await lerCampanhasPeriodo(deps, advertiserId, anterior) : null;
-  const ids = new Set([...a.campanhas.map((c) => c.id), ...(p?.campanhas.map((c) => c.id) ?? [])]);
+  // Anterior truncada não entra na tabela (nem campanha só dela, nem bloco parcial); segue em `anterior` para o
+  // handler declarar a comparação indisponível.
+  const pOk = p?.completo ? p : null;
+  const ids = new Set([...a.campanhas.map((c) => c.id), ...(pOk?.campanhas.map((c) => c.id) ?? [])]);
   const campanhas: CampanhaPeriodoAds[] = [...ids].sort((x, y) => x - y).map((id) => {
     const la = a.campanhas.find((c) => c.id === id);
-    const lp = p?.campanhas.find((c) => c.id === id);
+    const lp = pOk?.campanhas.find((c) => c.id === id);
     const base = (la ?? lp)!;
     return {
       id, nome: base.nome, statusAtual: base.status,
       atual: bloco(a, la),
-      anterior: p && lp ? bloco(p, lp) : null,
+      anterior: pOk && lp ? bloco(pOk, lp) : null,
     };
   });
   return { atual: a, anterior: p, campanhas };
@@ -138,7 +141,8 @@ const NAO_ADITIVAS = new Set<MetricaBrutaAds>([
 function somarSerie(serie: BlocoAdsMetricas['serie']): Partial<Record<MetricaBrutaAds, ValorAds>> {
   const saida: Partial<Record<MetricaBrutaAds, ValorAds>> = {};
   for (const c of CAMPOS_METRICA_ADS) {
-    if (NAO_ADITIVAS.has(c)) { saida[c] = { valor: null, motivo: 'sem_denominador' }; continue; }
+    // Razão nativa sem o agregado do período: o ML não a devolveu (não é falta de denominador).
+    if (NAO_ADITIVAS.has(c)) { saida[c] = { valor: null, motivo: 'nao_retornada' }; continue; }
     let soma = 0;
     let falha: ValorAds | null = null;
     for (const d of serie) {

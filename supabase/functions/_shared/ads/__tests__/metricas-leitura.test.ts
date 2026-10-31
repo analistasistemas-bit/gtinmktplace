@@ -81,11 +81,25 @@ describe('paginacao de campanhas (E1)', () => {
     expect(c3.statusAtual).toBe('deleted');
   });
 
-  it('janela incompleta marca os blocos como incompletos', async () => {
+  it('janela incompleta marca os blocos como incompletos (anterior incompleta não entra)', async () => {
     const f = fake({ [ATUAL.desde]: [camp(1, 1), camp(2, 2)], [ANT.desde]: [camp(1, 1), camp(2, 2)] }, 4, 2);
     const r = await lerCampanhasComparadas(f.deps, 7, ATUAL, ANT);
     expect(r.campanhas[0].atual.completo).toBe(false);
-    expect(r.campanhas[0].anterior?.completo).toBe(false);
+    expect(r.campanhas[0].anterior).toBeNull();
+  });
+
+  // I4: anterior truncada não injeta campanhas nem blocos parciais na tabela do período.
+  it('anterior incompleta: só as campanhas da atual, todas sem anterior', async () => {
+    const f = fake({ [ATUAL.desde]: [camp(1, 10)], [ANT.desde]: [camp(1, 5), camp(2, 7), camp(3, 1)] });
+    const buscar = async (url: string) => {
+      const r = await f.buscar(url);
+      // A 2ª página da anterior falha: listagem truncada (só C1 e C2 lidas).
+      return url.includes(`date_from=${ANT.desde}`) && url.includes('offset=2') ? null : r;
+    };
+    const r = await lerCampanhasComparadas({ ...f.deps, buscar }, 7, ATUAL, ANT);
+    expect(r.anterior?.completo).toBe(false);
+    expect(r.campanhas.map((c) => c.id)).toEqual([1]);
+    expect(r.campanhas[0].anterior).toBeNull();
   });
 
   it('sem anterior: não lê a janela anterior', async () => {
@@ -146,7 +160,8 @@ describe('escopos conta e campanha', () => {
     expect(r.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
     expect(r.atual.resumo.total_amount?.valor).toBe(30);
     expect(r.atual.resumo.cvr?.valor).toBeNull();
-    expect(r.atual.resumo.cvr?.motivo).not.toBeNull();
+    // I2: o ML não deu o agregado (só por dia, não somável) — não é falta de denominador.
+    expect(r.atual.resumo.cvr?.motivo).toBe('nao_retornada');
     expect(r.atual.completo).toBe(true);
   });
 

@@ -18,7 +18,7 @@ import {
   type DepsLeituraAds, type LeituraCampanhasAds,
 } from '../_shared/ads/metricas-leitura.ts';
 import {
-  TTL_CACHE_ADS_S, VERSAO_CONTRATO_ADS, chaveMetricasAds, lerMetricasComCache, type DepsCacheAds,
+  TTL_CACHE_ADS_S, VERSAO_CONTRATO_ADS, chaveFrescoAds, chaveMetricasAds, lerMetricasComCache, type DepsCacheAds,
 } from '../_shared/ads/metricas-cache.ts';
 
 export interface DepsAdsMetricas {
@@ -153,7 +153,8 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
       campanhaId: pedido.campanhaId ?? null, atual, anterior,
     });
 
-    const r = await lerMetricasComCache<RespostaAdsMetricas>(deps.cache, chave, orgId, pedido.fresco === true, async () => {
+    const chaveFresco = chaveFrescoAds({ orgId, escopo: pedido.escopo, campanhaId: pedido.campanhaId ?? null });
+    const r = await lerMetricasComCache<RespostaAdsMetricas>(deps.cache, chave, chaveFresco, pedido.fresco === true, async () => {
       const agoraMs = () => deps.agora().getTime();
       const orcada = criarLeituraOrcada({
         buscar: (url, sinal) => get(url, HEADERS_ADS, sinal), agoraMs, esperar: deps.esperar,
@@ -185,8 +186,12 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
         escopo: pedido.escopo, atual: resposta.atual, anterior: resposta.anterior, campanhas: resposta.campanhas,
         ...anuncios, comparacao: resposta.comparacao, disponibilidade, avisos,
       };
-      // Lista de anúncios indisponível ou sem a anterior também não é cacheada como completa.
-      return { valor, completo: valor.estado === 'ok' && resposta.completo && !valor.anunciosMotivo };
+      // Lista de anúncios indisponível não é cacheada. Lista atual inteira cuja anterior por anúncio ficou fora do
+      // orçamento (corte determinístico: o ramo E5 não parou) é cacheada COM o motivo — a resposta segue dizendo que
+      // a comparação por anúncio não foi lida; sem isso, campanha grande refaria todo o E5 a cada abertura.
+      const anunciosOk = !valor.anunciosMotivo
+        || (valor.anuncios != null && valor.anunciosMotivo === 'limite_de_leitura' && !e5.estado().motivo);
+      return { valor, completo: valor.estado === 'ok' && resposta.completo && anunciosOk };
     });
     if (r.estado === 'recusado') return json({ ok: false, erro: r.motivo }, 429);
     // Depois do cache: anterior fora da retenção gera a mesma chave que `comparar: 'nenhum'` (anterior null), e
@@ -270,6 +275,8 @@ async function lerEscopo(
   }
 
   // competitividade: leitura separada (falha aqui não derruba os KPIs), só E3 e só os campos de participação.
+  // A prova usa as duas janelas (campanha histórica só na anterior também é da conta, como na tabela); o E3 lê só a
+  // atual — a participação não é comparada — e por isso `completo` olha só a atual.
   const motivo = await provarPertencimento(leitura, adv, id, anterior ? [atual, anterior] : [atual]);
   if (motivo) return recusado(motivo);
   const r = await lerComparado(async (j) => {
@@ -278,8 +285,8 @@ async function lerEscopo(
     const resumo: BlocoAdsMetricas['resumo'] = {};
     if (todas) for (const c of CAMPOS_COMPETITIVIDADE) resumo[c] = todas[c];
     return { janela: j, resumo, serie: [], completo: todas !== null, lidoEm: leitura.agora() };
-  }, atual, anterior);
-  return { ...base, ...r, completo: fechado(r.atual, r.comparacao.estado) };
+  }, atual, null);
+  return { ...base, ...r, completo: r.atual.completo };
 }
 
 const recusado = (motivo: string): LeituraEscopo => ({

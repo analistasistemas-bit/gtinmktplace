@@ -37,6 +37,12 @@ export function chaveMetricasAds(c: ChaveMetricasAds): string {
   ].join(':');
 }
 
+/** Limite do `fresco` por org + escopo + campanha: o Atualizar da tela pede conta e campanhas juntas (QA C2). */
+export function chaveFrescoAds(c: Pick<ChaveMetricasAds, 'orgId' | 'escopo' | 'campanhaId'>): string {
+  const e = (v: string | number | null) => encodeURIComponent(String(v));
+  return ['ads:metricas:fresco', e(c.orgId), e(c.escopo), e(c.campanhaId)].join(':');
+}
+
 export type ResultadoCacheAds<T> =
   | { estado: 'ok'; valor: T; origem: 'cache' | 'ml' }
   | { estado: 'recusado'; motivo: string };
@@ -44,16 +50,17 @@ export type ResultadoCacheAds<T> =
 /**
  * Lê do cache (300 s) ou do ML via `ler`. Falha de leitura do cache segue para o ML; falha de escrita não derruba a
  * resposta. Só grava quando `completo` (nunca listagem truncada); a gravação substitui a chave, não acumula.
- * `fresco` ignora o cache e é limitado a 1 por organização a cada 60 s por `setNX`; se o Redis falhar não dá para
+ * `fresco` ignora o cache e é limitado a 1 por `chaveFresco` (chaveFrescoAds: org + escopo + campanha) a cada 60 s
+ * por `setNX`; se o Redis falhar não dá para
  * impor o limite, então é recusado (falha de cache não autoriza chamadas ilimitadas) — nenhuma chamada ao ML.
  */
 export async function lerMetricasComCache<T>(
-  deps: DepsCacheAds, chave: string, orgId: string, fresco: boolean,
+  deps: DepsCacheAds, chave: string, chaveFresco: string, fresco: boolean,
   ler: () => Promise<{ valor: T; completo: boolean }>,
 ): Promise<ResultadoCacheAds<T>> {
   if (fresco) {
     let livre: boolean;
-    try { livre = await deps.setNX(`ads:metricas:fresco:${encodeURIComponent(orgId)}`, '1', TTL_FRESCO_ADS_S); } catch {
+    try { livre = await deps.setNX(chaveFresco, '1', TTL_FRESCO_ADS_S); } catch {
       return { estado: 'recusado', motivo: 'Não foi possível confirmar o limite de atualização agora. Tente novamente em instantes.' };
     }
     if (!livre) return { estado: 'recusado', motivo: 'Atualização recente. Tente novamente em alguns segundos.' };

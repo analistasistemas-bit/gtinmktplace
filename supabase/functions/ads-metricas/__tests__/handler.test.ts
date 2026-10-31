@@ -29,6 +29,8 @@ const janelaDe = (url: string) => {
  *  `ate` ≤ `lacunaAte`, quando informado). E5: `anuncios` linhas da campanha + 1 de outra campanha (spike 057). */
 function mlFalso(opc: {
   lacuna?: boolean; lacunaAte?: string; anuncios?: number; e5?: (path: string) => RespostaML | null;
+  /** A campanha 123 só aparece na listagem E1 das janelas com `ate` ≤ este dia (campanha histórica). */
+  campanhaAte?: string;
 } = {}) {
   const chamadas: string[] = [];
   const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
@@ -55,6 +57,7 @@ function mlFalso(opc: {
     }
     if (path.includes('/campaigns/search')) {
       if (path.includes('aggregation_type=DAILY')) return serie();
+      if (opc.campanhaAte && j.ate > opc.campanhaAte) return ok({ paging: { total: 0 }, results: [], metrics_summary: { cost: 0 } });
       return ok({
         paging: { total: 1 },
         results: [{ id: CAMP, name: 'Campanha A', status: 'active', metrics: { cost: 3 } }],
@@ -154,6 +157,18 @@ describe('ads-metricas: isolamento', () => {
     expect(ml.chamadas.some((p) => /\/product_ads\/campaigns\/\d+/.test(p))).toBe(false);
   });
 
+  // I1c: campanha histórica (só na janela anterior) é provada pelas duas janelas; o E3 lê só a atual e cacheia.
+  it('competitividade com comparação: campanha só na anterior é da conta; E3 só da atual e cacheado', async () => {
+    const { deps, ml, c } = montar({}, mlFalso({ campanhaAte: '2026-10-27' }));
+    const corpo = await (await tratar(post({ ...PEDIDO, comparar: 'anterior', escopo: 'competitividade', campanhaId: CAMP }), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.atual.resumo.impression_share).toEqual({ valor: 0.4, motivo: null });
+    expect(corpo.anterior).toBeNull();
+    const e3 = ml.chamadas.filter((p) => p.includes(`/product_ads/campaigns/${CAMP}`));
+    expect(e3.map(janelaDe)).toEqual([{ desde: '2026-10-28', ate: '2026-10-30' }]);
+    expect([...c.m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'))).toBe(true);
+  });
+
   it('competitividade da campanha própria: só E3 e só campos de participação', async () => {
     const { deps, ml } = montar();
     const corpo = await (await tratar(post({ ...PEDIDO, escopo: 'competitividade', campanhaId: CAMP }), deps)).json();
@@ -183,6 +198,23 @@ describe('ads-metricas: anúncios da campanha (E5)', () => {
     const corpo = await (await tratar(post(PEDIDO), deps)).json();
     expect('anuncios' in corpo).toBe(false);
     expect(ml.chamadas.some((p) => p.includes('/ads/search'))).toBe(false);
+  });
+
+  // M3: a lista atual inteira com a comparação por anúncio cortada pelo orçamento (determinístico) é cacheada —
+  // com o motivo preservado no valor, nunca como lista comparada completa.
+  it('anterior por anúncio além do orçamento: lista atual inteira cacheada com o motivo preservado', async () => {
+    const { deps, c, ml } = montar({}, mlFalso({ anuncios: 480 }));
+    const corpo = await (await tratar(post({ ...P, comparar: 'anterior' }), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.anuncios).toHaveLength(480);
+    expect(corpo.anunciosMotivo).toBe('limite_de_leitura');
+    const chave = [...c.m.keys()].find((k) => k.startsWith('ads:metricas:v1:org'));
+    expect(chave).toBeDefined();
+    expect(JSON.parse(c.m.get(chave!)!).anunciosMotivo).toBe('limite_de_leitura');
+    const n = ml.get.mock.calls.length;
+    const cache = await (await tratar(post({ ...P, comparar: 'anterior' }), deps)).json();
+    expect(ml.get.mock.calls.length).toBe(n);
+    expect(cache.anunciosMotivo).toBe('limite_de_leitura');
   });
 
   it('atual que estoura o orçamento: anuncios null com motivo, KPIs ok e nada cacheado', async () => {
@@ -263,6 +295,17 @@ describe('ads-metricas: cache', () => {
     const n = ml.get.mock.calls.length;
     await tratar(post(PEDIDO), deps);
     expect(ml.get.mock.calls.length).toBeGreaterThan(n);
+  });
+
+  // C2: o limite de 60 s é por org + escopo + campanha: o Atualizar da aba Campanhas pede conta e campanhas juntas.
+  it('fresco em escopos/campanhas diferentes da mesma org não se bloqueiam; o mesmo recurso sim', async () => {
+    const { deps } = montar();
+    expect((await tratar(post({ ...PEDIDO, fresco: true }), deps)).status).toBe(200);
+    expect((await tratar(post({ ...PEDIDO, escopo: 'campanhas', fresco: true }), deps)).status).toBe(200);
+    expect((await tratar(post({ ...PEDIDO, escopo: 'campanha', campanhaId: CAMP, fresco: true }), deps)).status).toBe(200);
+    expect((await tratar(post({ ...PEDIDO, escopo: 'competitividade', campanhaId: CAMP, fresco: true }), deps)).status).toBe(200);
+    expect((await tratar(post({ ...PEDIDO, escopo: 'campanhas', fresco: true }), deps)).status).toBe(429);
+    expect((await tratar(post({ ...PEDIDO, escopo: 'campanha', campanhaId: CAMP, fresco: true }), deps)).status).toBe(429);
   });
 
   it('fresco repetido em 60 s é recusado com 429 sem chamar o ML', async () => {
