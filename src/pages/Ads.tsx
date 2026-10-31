@@ -109,8 +109,10 @@ export default function Ads() {
   const escolha = abaValida(params.get('aba')) ?? abaSalva();
   // Período inválido já decide (Desempenho): o motivo aparece nas duas abas e o seletor fica acima delas.
   // Sem acesso à Publicidade (conexão, anunciante, permissão): um aviso só, no lugar das duas abas. A leitura ao
-  // vivo da conta manda; sem ela, o estado do painel.
-  const estadoAcesso = ehEstadoAcesso(metricasConta?.estado) ? metricasConta!.estado
+  // vivo da conta manda; o estado do painel (vem da coleta, pode ser antigo) só vale enquanto ela não responde.
+  // Leitura ao vivo válida com coleta recusada: os blocos ficam e o aviso da coleta vai para as famílias.
+  const estadoAcesso = metricasConta
+    ? (ehEstadoAcesso(metricasConta.estado) ? metricasConta.estado : null)
     : painel && ehEstadoAcesso(painel.estado) ? painel.estado : null;
   const estadoPainel = situacaoPeriodo === 'aguardando_mes' || situacaoPeriodo === 'invalido'
     ? situacaoPeriodo : painel?.estado ?? (isError || blocos.grupos.isError ? 'erro' : estadoAcesso);
@@ -363,6 +365,8 @@ export default function Ads() {
     corpo = <CarregandoMarca rotulo="Carregando" mensagem="Calculando o gasto e o resultado das famílias…" />;
   } else if (painel.estado === 'sem_coleta' || painel.estado === 'coletando') {
     corpo = <Aviso texto={AVISO[painel.estado]!} acao={verificar} />;
+  } else if (ehEstadoAcesso(painel.estado)) {
+    corpo = <AvisoAcesso estado={painel.estado} />;
   } else if (painel.estado === 'sem_ads') {
     corpo = (
       <EmptyState

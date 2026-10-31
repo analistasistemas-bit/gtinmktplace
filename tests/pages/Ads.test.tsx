@@ -1243,6 +1243,22 @@ describe('estados: sem gasto e falhas parciais', () => {
     expect(screen.getByText(/Configuração atual indisponível/)).toBeInTheDocument();
   });
 
+  it('estados: coleta recusada antiga não bloqueia a leitura ao vivo válida', () => {
+    hookMetricas.mockImplementation(okMetricas);
+    montar({ ...PAINEL, estado: 'sem_permissao', conta: null, familias: [], compartilhados: [] },
+      { metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 100, motivo: null } }) }) });
+
+    const conta = within(screen.getByRole('region', { name: 'Conta inteira' }));
+    expect(conta.getByText('Investimento').closest('[data-kpi]')).toHaveTextContent(/R\$\s*100,00/);
+    // O aviso da coleta fica só no bloco das famílias, uma vez.
+    expect(screen.getAllByText(AVISO.sem_permissao!)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Abrir Canais' })).toHaveAttribute('href', '/configuracoes/canais');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Campanhas/ }));
+    expect(screen.getByRole('row', { name: /Camp Verão/ })).toBeInTheDocument();
+    expect(screen.queryByText(AVISO.sem_permissao!)).not.toBeInTheDocument();
+  });
+
   it('estados: falha da comparação não apaga o período atual', () => {
     montar(PAINEL, { comparacao: { tipo: 'pronta', janela: { desde: '2026-08-05', ate: '2026-09-03' } }, metricasConta: respostaMetricas({
       atual: bloco({ cost: { valor: 100, motivo: null } }), anterior: null,

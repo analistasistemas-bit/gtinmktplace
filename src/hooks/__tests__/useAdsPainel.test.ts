@@ -266,7 +266,7 @@ describe('useAdsPainel', () => {
     expect(r.result.current.metricasConta?.escopo).toBe('conta');
   });
 
-  it('"Sem comparação": não pede a janela anterior nas vendas nem nas métricas', async () => {
+  it('"Sem comparação": sem anteriorFixa nas vendas (faturamento anterior não é pedido) e métricas sem comparar', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
     const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 30 }, 'nenhum'), { wrapper: criarWrapper() });
     await waitFor(() => expect(r.result.current.painel).not.toBeNull());

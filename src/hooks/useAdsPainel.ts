@@ -80,7 +80,9 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
   const desde = resolucao.tipo === 'pronto' ? resolucao.janela.desde : null;
   const ate = resolucao.tipo === 'pronto' ? resolucao.janela.ate : null;
   const janela = useMemo(() => (desde && ate ? { desde, ate } : null), [desde, ate]);
-  // "Sem comparação": nenhuma janela anterior (nem vendas nem métricas da conta pedem o período anterior).
+  // "Sem comparação": sem janela anterior da comparação (nem `anteriorFixa` nas vendas, nem `comparar: anterior` nas
+  // métricas). O useVendasSku ainda lê a própria janela estendida (anterior interna + 60 dias de tendência) para
+  // deltas e tendências das linhas; ela não vira comparação nem faturamento anterior.
   const comparacao = useMemo(
     () => (janela && comparar === 'anterior' ? comparacaoAds(janela, meioDiaBRT(hoje)) : null), [janela, hoje, comparar]);
   const aDesde = comparacao?.tipo === 'pronta' ? comparacao.janela.desde : null;

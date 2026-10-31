@@ -63,6 +63,16 @@ beforeEach(() => {
 });
 
 describe('useAdsPainel com useVendasSku real', () => {
+  it.each([['anterior', 0], ['nenhum', null]] as const)(
+    'comparar %s: faturamento anterior só existe com comparação (useVendasSku real)', async (comparar, anterior) => {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 30 }, comparar), {
+        wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children) });
+      await waitFor(() => expect(r.result.current.faturamentoConta).not.toBeNull());
+      expect(r.result.current.faturamentoConta!.anterior).toBe(anterior);
+      expect(m.buscarMetricasAds).toHaveBeenCalledWith(expect.objectContaining({ comparar, escopo: 'conta' }));
+    });
+
   it('catálogo pendente: a conta espera (historicoDesde vem dele), sem erro geral', async () => {
     m.catQ = q(undefined, { isLoading: true });
     const r = render();
