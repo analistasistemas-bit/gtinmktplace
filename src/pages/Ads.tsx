@@ -329,7 +329,7 @@ export default function Ads() {
         conta={resultadoConta.conta}
         motivo={blocos.conta.motivo ?? resultadoConta.motivo}
         historicoDesde={historicoDesde}
-        faturamentoConta={faturamentoConta?.atual ?? null}
+        faturamentoConta={faturamentoConta?.atual.valor ?? null}
         composicao={comComposicao ? painel?.conta ?? undefined : undefined}
         onVerAcima={temAcima && !comComposicao ? verAcima : undefined}
       />

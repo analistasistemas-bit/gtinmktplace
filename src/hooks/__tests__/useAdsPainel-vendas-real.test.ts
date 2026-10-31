@@ -63,15 +63,43 @@ beforeEach(() => {
 });
 
 describe('useAdsPainel com useVendasSku real', () => {
-  it.each([['anterior', 0], ['nenhum', null]] as const)(
+  it.each([['anterior', { valor: 0, motivo: null }], ['nenhum', null]] as const)(
     'comparar %s: faturamento anterior só existe com comparação (useVendasSku real)', async (comparar, anterior) => {
       const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 30 }, comparar), {
         wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children) });
       await waitFor(() => expect(r.result.current.faturamentoConta).not.toBeNull());
-      expect(r.result.current.faturamentoConta!.anterior).toBe(anterior);
+      expect(r.result.current.faturamentoConta!.anterior).toEqual(anterior);
       expect(m.buscarMetricasAds).toHaveBeenCalledWith(expect.objectContaining({ comparar, escopo: 'conta' }));
     });
+
+  // C1: denominador do TACOS só com o histórico de vendas cobrindo a janela (atual e anterior, cada uma por si).
+  it('histórico de vendas começa depois do início da janela: faturamento indisponível com motivo, nunca truncado', async () => {
+    const recente = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    m.catQ = q([{ ...CATALOGO[0], primeiraVenda: recente }]);
+    const r = render();
+    await waitFor(() => expect(r.result.current.faturamentoConta).not.toBeNull());
+    expect(r.result.current.faturamentoConta).toEqual({
+      atual: { valor: null, motivo: 'sem_historico' }, anterior: { valor: null, motivo: 'sem_historico' } });
+  });
+
+  it('histórico cobre a atual mas não a anterior: só o anterior fica indisponível', async () => {
+    const meio = new Date(Date.now() - 45 * 86_400_000).toISOString();
+    m.catQ = q([{ ...CATALOGO[0], primeiraVenda: meio }]);
+    const r = render();
+    await waitFor(() => expect(r.result.current.faturamentoConta).not.toBeNull());
+    expect(r.result.current.faturamentoConta).toEqual({
+      atual: { valor: 0, motivo: null }, anterior: { valor: null, motivo: 'sem_historico' } });
+  });
+
+  it('catálogo pendente ou com erro: faturamento indisponível (histórico desconhecido), nunca o das vendas soltas', async () => {
+    for (const extra of [{ isLoading: true }, { isError: true }]) {
+      m.catQ = q(undefined, extra);
+      const r = render();
+      await waitFor(() => expect(r.result.current.faturamentoConta).not.toBeNull());
+      expect(r.result.current.faturamentoConta!.atual).toEqual({ valor: null, motivo: 'sem_historico' });
+    }
+  });
 
   it('catálogo pendente: a conta espera (historicoDesde vem dele), sem erro geral', async () => {
     m.catQ = q(undefined, { isLoading: true });

@@ -262,7 +262,7 @@ describe('useAdsPainel', () => {
     expect(m.useVendasSku.mock.calls.at(-1)![3]).toEqual({ canal: 'mercado_livre', anteriorFixa: janelaBRT('2026-08-06', '2026-09-04') });
     expect(m.buscarMetricasAds).toHaveBeenCalledWith(expect.objectContaining({
       desde: '2026-09-05', ate: '2026-10-04', comparar: 'anterior', escopo: 'conta' }));
-    expect(r.result.current.faturamentoConta).toEqual({ atual: 1000, anterior: 800 });
+    expect(r.result.current.faturamentoConta).toEqual({ atual: { valor: 1000, motivo: null }, anterior: { valor: 800, motivo: null } });
     expect(r.result.current.metricasConta?.escopo).toBe('conta');
   });
 

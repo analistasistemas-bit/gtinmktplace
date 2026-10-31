@@ -23,22 +23,22 @@ function campo(resumo: BlocoAdsMetricas['resumo'], nome: MetricaBrutaAds): Valor
 function razao(num: ValorAds, den: ValorAds): ValorAds {
   if (num.valor === null) return num;
   if (den.valor === null) return den;
-  if (den.valor === 0) return { ...SEM_DENOMINADOR };
+  if (den.valor <= 0) return { ...SEM_DENOMINADOR };
   return { valor: num.valor / den.valor, motivo: null };
 }
 
 export function indicadoresAds(
   resumo: BlocoAdsMetricas['resumo'],
-  faturamentoConta: number | null,
+  /** Número cru (faturamento conhecido) ou ValorAds já com motivo (ex.: 'sem_historico'); null = sem faturamento. */
+  faturamentoConta: number | ValorAds | null,
 ): Record<string, ValorAds> {
   const cost = campo(resumo, 'cost');
   const receita = campo(resumo, 'total_amount');
   const prints = campo(resumo, 'prints');
   const clicks = campo(resumo, 'clicks');
-  // Faturamento ausente ou zero: o TACOS não é presumido.
-  const fatura: ValorAds = faturamentoConta === null || !Number.isFinite(faturamentoConta)
-    ? { ...SEM_DENOMINADOR }
-    : { valor: faturamentoConta, motivo: null };
+  // Faturamento ausente, não positivo ou sem histórico: o TACOS não é presumido (o motivo do insumo propaga).
+  const f = typeof faturamentoConta === 'number' ? { valor: faturamentoConta, motivo: null } : faturamentoConta;
+  const fatura: ValorAds = f === null || (f.valor !== null && !Number.isFinite(f.valor)) ? { ...SEM_DENOMINADOR } : f;
   return {
     investimento: cost,
     vendas: campo(resumo, 'advertising_items_quantity'),

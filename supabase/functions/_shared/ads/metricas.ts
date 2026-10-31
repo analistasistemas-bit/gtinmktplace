@@ -19,7 +19,9 @@ export type MotivoMetricaAds =
   | 'sem_denominador'
   | 'resposta_invalida'
   | 'sem_permissao'
-  | 'limite_de_leitura';
+  | 'limite_de_leitura'
+  // Só o front emite: o faturamento da conta (denominador do TACOS) sem histórico de vendas cobrindo a janela.
+  | 'sem_historico';
 
 export interface ValorAds {
   valor: number | null;

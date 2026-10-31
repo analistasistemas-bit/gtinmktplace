@@ -51,6 +51,7 @@ const MOTIVOS: Record<NonNullable<ValorAds['motivo']>, string> = {
   resposta_invalida: 'Resposta inválida do ML.',
   sem_permissao: 'Sem permissão para ler esta métrica.',
   limite_de_leitura: 'Limite de leitura atingido. Tente novamente.',
+  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
 };
 
 function Delta({ texto, direcao, tom }: { texto: string; direcao: 'up' | 'down' | 'neutral'; tom: 'success' | 'danger' | 'neutral' }) {

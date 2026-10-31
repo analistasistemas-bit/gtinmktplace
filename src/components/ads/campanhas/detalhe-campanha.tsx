@@ -74,6 +74,7 @@ const MOTIVOS: Record<MotivoMetricaAds, string> = {
   resposta_invalida: 'Resposta inválida do ML.',
   sem_permissao: 'Sem permissão para ler esta métrica.',
   limite_de_leitura: 'Limite de leitura atingido.',
+  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
 };
 const SEM_VALOR: ValorAds = { valor: null, motivo: 'nao_retornada' };
 

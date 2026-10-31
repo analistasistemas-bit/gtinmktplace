@@ -9,12 +9,13 @@ import {
 } from '@/lib/ads-painel';
 import { buscarCodigosMlbs, buscarUltimoOkAds } from '@/lib/sku-dossie-dados';
 import { diaBRT } from '@/lib/calendario-brt';
+import { historicoCobre } from '@/lib/sku-ads';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { useCatalogoVendasSku } from '@/hooks/useCatalogoVendasSku';
 import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 import { metricas, somarAcumuladores } from '@/lib/vendas-sku';
-import type { PedidoAdsMetricas, RespostaAdsMetricas } from '../../supabase/functions/_shared/ads/metricas';
+import type { PedidoAdsMetricas, RespostaAdsMetricas, ValorAds } from '../../supabase/functions/_shared/ads/metricas';
 
 export interface EstadoBlocoAds { isLoading: boolean; isError: boolean; motivo?: 'catalogo' | null }
 /** Resultado da conta sem a composição (famílias/compartilhado/não identificado), que depende dos grupos. */
@@ -32,8 +33,10 @@ export interface RetornoAdsPainel {
   comparacao: ComparacaoAds | null;
   /** Resposta da edge para o escopo 'conta' (série ao vivo, resumo, anterior). */
   metricasConta: RespostaAdsMetricas | null;
-  /** Denominador do TACOS: vendas faturáveis do canal ML na janela (e na anterior, se houver comparação). */
-  faturamentoConta: { atual: number; anterior: number | null } | null;
+  /** Denominador do TACOS: vendas faturáveis do canal ML na janela (e na anterior, se houver comparação). Cada lado
+   *  só tem valor com o histórico de vendas cobrindo a própria janela; senão `sem_historico` (nunca truncado).
+   *  `anterior` null = sem comparação. */
+  faturamentoConta: { atual: ValorAds; anterior: ValorAds | null } | null;
   situacaoPeriodo: 'carregando' | 'pronto' | 'aguardando_mes' | 'invalido';
   historicoDesde: string | null;
   ultimoOkEm: string | null;
@@ -156,6 +159,17 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
     return { conta, motivo: null };
   }, [base, contaAoVivo]);
 
+  // Vendas antes de `historicoDesde` não existem no PubliAI: faturamento de janela não coberta sairia truncado.
+  // `dados` só monta com o catálogo (de onde vem o histórico); sem ele, o histórico é desconhecido → indisponível.
+  const faturamentoConta = useMemo<RetornoAdsPainel['faturamentoConta']>(() => {
+    const f = vendas.faturamentoConta;
+    if (!habilitado || !f || !desde) return null;
+    const h = vendas.dados?.historicoDesde ?? null;
+    const lado = (valor: number, dia: string): ValorAds => (vendas.dados && historicoCobre(h, dia)
+      ? { valor, motivo: null } : { valor: null, motivo: 'sem_historico' });
+    return { atual: lado(f.atual, desde), anterior: f.anterior != null && aDesde ? lado(f.anterior, aDesde) : null };
+  }, [habilitado, vendas.faturamentoConta, vendas.dados, desde, aDesde]);
+
   const situacaoPeriodo = resolucao.tipo;
   const erroGrupos = habilitado && (fonteQ.isError || codQ.isError || catQ.isError);
   const erroConta = habilitado && (vendas.isError || metricasQ.isError);
@@ -187,7 +201,7 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
   };
 
   return {
-    painel, resultadoConta, janela, comparacao, metricasConta: metricasQ.data ?? null, faturamentoConta: habilitado ? vendas.faturamentoConta : null,
+    painel, resultadoConta, janela, comparacao, metricasConta: metricasQ.data ?? null, faturamentoConta,
     situacaoPeriodo, historicoDesde: vendas.dados?.historicoDesde ?? null, ultimoOkEm, blocos,
     isLoading, isFetching, isError, refetch,
   };

@@ -45,10 +45,16 @@ describe('indicadores do Mercado Ads', () => {
     for (const k of ['roas', 'acos', 'ctr', 'cpc']) expect(r[k]).toEqual({ valor: null, motivo: 'sem_denominador' });
   });
 
-  it('TACOS sem faturamento (null ou 0) fica indisponível com motivo', () => {
-    for (const f of [null, 0]) {
+  it('TACOS sem faturamento (null, 0 ou negativo) fica indisponível com motivo', () => {
+    for (const f of [null, 0, -50]) {
       expect(indicadoresAds(resumo(), f).tacos).toEqual({ valor: null, motivo: 'sem_denominador' });
     }
+  });
+
+  it('TACOS com faturamento indisponível propaga o motivo dele (histórico incompleto)', () => {
+    expect(indicadoresAds(resumo(), { valor: null, motivo: 'sem_historico' }).tacos)
+      .toEqual({ valor: null, motivo: 'sem_historico' });
+    expect(indicadoresAds(resumo(), { valor: 2000, motivo: null }).tacos).toEqual(indicadoresAds(resumo(), 2000).tacos);
   });
 
   it('insumo indisponível propaga o motivo do insumo', () => {
