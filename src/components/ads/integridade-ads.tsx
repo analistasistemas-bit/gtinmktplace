@@ -3,10 +3,13 @@ import { GastosAssociados } from '@/components/ads/gastos-associados';
 import { fmtBRL } from '@/lib/formato';
 import { pct, textoMotivo } from '@/lib/ads-apresentacao';
 import type { ComposicaoConta, PainelAds } from '@/lib/ads-painel';
+import { historicoCobre } from '@/lib/sku-ads';
 import { asHoraDeBRT } from '@/components/sku-dossie/formato-dossie';
 
 export interface IntegridadeAdsProps {
   painel: PainelAds;
+  /** Primeiro dia BRT da janela (YYYY-MM-DD): o aviso de histórico depende dela, não das famílias. */
+  janelaDesde: string;
   historicoDesde: string | null;
   /** Última coleta das famílias (sync.ultimo_ok_em). */
   coletadoEm: string | null;
@@ -50,11 +53,11 @@ function ComposicaoColetada({ c, coletadoEm }: { c: ComposicaoConta; coletadoEm:
 
 /** Bloco final do Desempenho: o que limita os números (compartilhado, não identificado, cobertura, histórico,
  *  fiscal, conciliação) e de onde vêm. Tudo em texto visível, sem tooltip. */
-export function IntegridadeAds({ painel, historicoDesde, coletadoEm, lidoEm }: IntegridadeAdsProps) {
+export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm, lidoEm }: IntegridadeAdsProps) {
   const { conta, conciliacao } = painel;
   const temNaoId = !!conta && !conta.divergente && conta.naoIdentificado != null;
   const semCobertura = !painel.gruposCobertos || painel.contaMotivo === 'cobertura';
-  const semHistorico = painel.familias.some(f => f.motivo === 'historico');
+  const semHistorico = !historicoCobre(historicoDesde, janelaDesde);
 
   return (
     <section aria-label="Integridade dos números" className="space-y-3">

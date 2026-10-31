@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { IntegridadeAds } from '../integridade-ads';
 import type { PainelAds, ContaPainel, ComposicaoConta } from '@/lib/ads-painel';
-import { MSG_CONCILIACAO_PENDENTE } from '@/lib/ads-painel';
+import { MSG_CONCILIACAO_PENDENTE, montarPainelAds } from '@/lib/ads-painel';
 
 const conta = (o: Partial<ContaPainel> = {}) => ({
   custo: 1000, emFamilias: 600, compartilhado: 250, naoIdentificado: 150, naoIdentificadoPct: 0.15,
@@ -15,9 +15,40 @@ const painel = (o: Partial<PainelAds> = {}): PainelAds => ({
 });
 
 const COLETADA: ComposicaoConta = { custo: 900, emFamilias: 600, compartilhado: 250, naoIdentificado: 50, naoIdentificadoPct: 0.055, divergente: false };
-const props = { historicoDesde: null, coletadoEm: '2026-10-30T15:00:00Z', lidoEm: '2026-10-31T12:30:00Z' };
+const props = { janelaDesde: '2026-09-01', historicoDesde: null, coletadoEm: '2026-10-30T15:00:00Z', lidoEm: '2026-10-31T12:30:00Z' };
+
+const dominio = (o: Record<string, unknown> = {}) => montarPainelAds({
+  fonte: { sync: { estado: 'ok', erro: null, ultimo_ok_em: '2026-10-04T14:00:00Z', carga_inicial_ok: true,
+    cobertura_desde: '2026-06-29', conta_cobertura_desde: '2026-06-29' },
+  conta: [{ dia: '2026-09-01', cost: 60, clicks: 0, prints: 0, direct_amount: 0, indirect_amount: 0, total_amount: 0, coletado_em: '2026-10-04T12:00:00Z' }],
+  grupos: [] },
+  janela: { desde: '2026-09-01', ate: '2026-09-01' }, agora: new Date('2026-10-04T15:00:00-03:00'),
+  codigosPorMlb: new Map(), familiaDoCodigo: new Map(), nomeDaFamilia: new Map(), lucroPorFamilia: new Map(),
+  lucroConta: { lucro: 300, fonteCusto: 'real' }, baseFiscal: { ok: true }, baseAcosValidada: true,
+  historicoDesde: '2026-10-01T03:00:00.000Z', ...o,
+});
 
 describe('IntegridadeAds', () => {
+  it('histórico: aviso com nenhuma família (domínio)', () => {
+    const p = dominio();
+    expect(p.familias).toHaveLength(0);
+    render(<IntegridadeAds painel={p} {...props} historicoDesde="2026-10-01T03:00:00.000Z" />);
+    expect(screen.getByText(/antes do histórico de vendas \(desde 01\/10\/2026\)/i)).toBeTruthy();
+  });
+
+  it('cobertura e histórico juntos (domínio)', () => {
+    const p = dominio({ fonte: { sync: null, conta: [], grupos: [] } });
+    expect(p.gruposCobertos).toBe(false);
+    render(<IntegridadeAds painel={p} {...props} historicoDesde="2026-10-01T03:00:00.000Z" />);
+    expect(screen.getByText(/coleta de Ads incompleta no período/i)).toBeTruthy();
+    expect(screen.getByText(/antes do histórico de vendas/i)).toBeTruthy();
+  });
+
+  it('histórico cobrindo a janela: sem aviso', () => {
+    render(<IntegridadeAds painel={dominio({ historicoDesde: '2026-01-01T03:00:00.000Z' })} {...props} historicoDesde="2026-01-01T03:00:00.000Z" />);
+    expect(screen.queryByText(/antes do histórico/i)).toBeNull();
+  });
+
   it('mostra compartilhado e não identificado em texto, sem tooltip', () => {
     render(<IntegridadeAds painel={painel()} {...props} />);
     expect(screen.getByText('Gasto compartilhado entre famílias: não foi rateado.')).toBeTruthy();
@@ -64,8 +95,10 @@ describe('IntegridadeAds', () => {
     const { container } = render(<IntegridadeAds painel={painel({ desatualizado: true, gruposCobertos: false,
       conciliacao: { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE, coletadoEm: null, coletada: null, coletadaMotivo: 'cobertura' } })} {...props} />);
     for (const el of Array.from(container.querySelectorAll('*'))) {
-      const c = el.getAttribute('class') ?? '';
-      expect(/text-(destructive|danger)/.test(c) && /bg-\S+\/10/.test(c)).toBe(false);
+      if (!/text-(destructive|danger)/.test(el.getAttribute('class') ?? '')) continue;
+      for (let a: Element | null = el; a && a !== container.parentElement; a = a.parentElement) {
+        expect(/bg-\S+\/10/.test(a.getAttribute('class') ?? '')).toBe(false);
+      }
     }
   });
 });
