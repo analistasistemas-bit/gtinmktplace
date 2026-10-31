@@ -10,6 +10,7 @@ vi.mock('@/hooks/useAdsPainel', () => ({ useAdsPainel: hook }));
 const hookCampanhas = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/useAdsCampanhas', () => ({ useAdsCampanhas: hookCampanhas }));
 import Ads from '@/pages/Ads';
+import { ResumoConta } from '@/components/ads/resumo-conta';
 
 const metr = { cliques: 0, impressoes: 0 };
 const PAINEL: PainelAds = {
@@ -163,20 +164,6 @@ describe('Ads', () => {
     expect(resumo.queryByRole('img', { name: /margem/ })).not.toBeInTheDocument();
   });
 
-  it('indicadores ficam visíveis sem expandir, total antes do direto', () => {
-    montar();
-    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
-    const ind = within(resumo.getByRole('group', { name: 'Indicadores' }));
-    expect(ind.getByText('8,00×')).toBeVisible();
-    expect(ind.getByText('direto 7,00×')).toBeVisible();
-    expect(ind.getByText('12,5%')).toBeVisible();
-    expect(ind.getByText(/R\$\s*800,00/)).toBeVisible();
-    expect(ind.getByText(/direta R\$\s*700,00/)).toBeVisible();
-    expect(ind.getByText('ROAS').closest('dl')).toHaveTextContent(/8,00×[\s\S]*direto 7,00×/);
-    expect(ind.getByText('Vendas atribuídas').closest('dl')).toHaveTextContent(/800,00[\s\S]*direta R\$\s*700,00/);
-    expect(resumo.getByRole('button', { name: 'Composição do gasto' })).toHaveAttribute('aria-expanded', 'false');
-  });
-
   it('barra da margem com lucro positivo e legenda da despesa', () => {
     montar();
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
@@ -209,14 +196,14 @@ describe('Ads', () => {
     expect(resumo.getByRole('group', { name: 'Despesa de Ads' })).toHaveTextContent('despesa informada pela API de Ads');
   });
 
-  it.each(['parcial', 'estimado'] as const)(
-    'mantém custo %s no cabeçalho do resumo com composição fechada',
-    fonteCusto => {
+  it.each([['parcial', 'Resultado parcial após Ads'], ['estimado', 'Estimado']] as const)(
+    'custo %s fica marcado no resumo com composição fechada',
+    (fonteCusto, marca) => {
       montar({ ...PAINEL, conta: { ...PAINEL.conta!, fonteCusto } });
 
       const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
 
-      expect(resumo.getByText(`custo ${fonteCusto}`)).toBeVisible();
+      expect(resumo.getByText(marca)).toBeVisible();
       expect(resumo.getByRole('button', { name: 'Composição do gasto' }))
         .toHaveAttribute('aria-expanded', 'false');
     },
@@ -256,7 +243,6 @@ describe('Ads', () => {
     const ponte = screen.getByRole('group', { name: 'Cálculo do resultado' });
     expect(ponte).toHaveTextContent(/R\$\s*300,00/);
     expect(ponte).toHaveTextContent(/R\$\s*100,00/);
-    expect(ponte).toHaveTextContent(/R\$\s*200,00/);
   });
 
   it.each([7, 30, 90] as const)('preserva a preferência existente de %i dias', dias => {
@@ -945,5 +931,82 @@ describe('Ads', () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'Ver anúncios de Fam Z' })[0]);
       expect(screen.queryByRole('button', { name: 'Ver desempenho' })).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('resultado da conta após Ads', () => {
+  const resumo = () => within(screen.getByRole('region', { name: 'Resumo da conta' }));
+  const comConta = (c: Partial<NonNullable<PainelAds['conta']>>) => ({ ...PAINEL, conta: { ...PAINEL.conta!, ...c } });
+
+  it('resultado completo: rótulo simples, sem marca de parcial ou estimado', () => {
+    montar();
+    const r = resumo().getByRole('group', { name: 'Resultado após Ads' });
+    expect(r).toHaveTextContent(/R\$\s*200,00/);
+    expect(resumo().queryByText(/parcial/i)).not.toBeInTheDocument();
+    expect(resumo().queryByText('Estimado')).not.toBeInTheDocument();
+  });
+
+  it('resultado parcial: rótulo próprio e nenhum rótulo de resultado completo', () => {
+    montar(comConta({ fonteCusto: 'parcial' }));
+    expect(resumo().getByRole('group', { name: 'Resultado parcial após Ads' })).toHaveTextContent(/R\$\s*200,00/);
+    expect(resumo().queryByRole('group', { name: 'Resultado após Ads' })).not.toBeInTheDocument();
+    expect(resumo().getByText(/só com as vendas com custo cadastrado/)).toBeVisible();
+  });
+
+  it('resultado estimado: marca "Estimado" e sem cor de interpretação', () => {
+    montar(comConta({ fonteCusto: 'estimado', lucroAntes: 50, resultado: -50, margemConsumida: 2 }));
+    const r = resumo().getByRole('group', { name: 'Resultado após Ads' });
+    expect(resumo().getByText('Estimado')).toBeVisible();
+    expect(within(r).getByText(/−R\$\s*50,00/)).not.toHaveClass('text-danger');
+  });
+
+  it.each([
+    ['fiscal', { motivoFiscal: 'nao_confirmada' }, 'Resultado indisponível: confirme as alíquotas em Configurações.'],
+    ['histórico', { fonteCusto: null }, 'Resultado indisponível: período antes do histórico de vendas (desde 01/01/2026).'],
+    ['sem custo', { fonteCusto: 'sem_custo' }, 'Resultado indisponível: sem custo cadastrado.'],
+  ] as const)('resultado indisponível por %s tem texto próprio e nenhum zero', (_n, extra, texto) => {
+    montar(comConta({ lucroAntes: null, resultado: null, ...extra } as never));
+    const r = resumo().getByRole('group', { name: 'Resultado após Ads' });
+    expect(r).toHaveTextContent('—');
+    expect(r).toHaveTextContent(texto);
+    expect(r).not.toHaveTextContent(/R\$\s*0,00/);
+  });
+
+  it.each([
+    ['serie_incompleta', 'Resultado indisponível: a leitura ao vivo do ML veio incompleta neste período.'],
+    ['catalogo', 'Resultado indisponível: o catálogo não carregou, então o custo dos produtos é desconhecido.'],
+  ] as const)('sem conta (%s): motivo explícito', (motivo, texto) => {
+    render(<ResumoConta conta={null} motivo={motivo} historicoDesde={null} faturamentoConta={null} />);
+    expect(screen.getByText(texto)).toBeVisible();
+    expect(screen.getByText(/não é o lucro causado pelo Ads/)).toBeVisible();
+  });
+
+  it('ressalva causal fica visível em qualquer estado', () => {
+    montar(comConta({ lucroAntes: null, resultado: null, fonteCusto: null }));
+    expect(resumo().getByText('Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.')).toBeVisible();
+  });
+
+  it('atalho "Ver famílias acima do equilíbrio" chama onVerAcima', () => {
+    const onVerAcima = vi.fn();
+    render(<ResumoConta conta={PAINEL.conta!} historicoDesde={null} faturamentoConta={1000} onVerAcima={onVerAcima} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ver famílias acima do equilíbrio' }));
+    expect(onVerAcima).toHaveBeenCalledTimes(1);
+  });
+
+  it('equilíbrio observado da conta: lucro antes ÷ faturamento, neutro e sem comparar com o ACOS', () => {
+    render(<ResumoConta conta={PAINEL.conta!} historicoDesde={null} faturamentoConta={1000} />);
+    const eq = screen.getByRole('group', { name: 'Equilíbrio observado da conta' });
+    expect(eq).toHaveTextContent('30,0%');
+    expect(eq).toHaveTextContent(/referência do mix/i);
+    expect(eq.innerHTML).not.toMatch(/success|danger|warning/);
+    expect(eq).not.toHaveTextContent(/acima|abaixo|dentro/i);
+  });
+
+  it.each([
+    ['custo parcial', { fonteCusto: 'parcial' as const }, 1000],
+    ['sem faturamento', {}, null],
+  ])('equilíbrio indisponível com %s', (_n, extra, fat) => {
+    render(<ResumoConta conta={{ ...PAINEL.conta!, ...extra }} historicoDesde={null} faturamentoConta={fat} />);
+    expect(screen.getByRole('group', { name: 'Equilíbrio observado da conta' })).toHaveTextContent('—');
   });
 });

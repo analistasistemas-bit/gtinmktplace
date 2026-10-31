@@ -74,6 +74,7 @@ export default function Ads() {
     janela,
     situacaoPeriodo,
     historicoDesde,
+    faturamentoConta,
     isFetching,
     isError,
     refetch,
@@ -234,7 +235,7 @@ export default function Ads() {
           <p className="text-xs text-muted-foreground">Semáforo em validação: por ora o painel mostra o ACOS de equilíbrio de cada família como referência, sem verde ou vermelho.</p>
         )}
         {painel.conta
-          ? <ResumoConta conta={painel.conta} historicoDesde={historicoDesde} />
+          ? <ResumoConta conta={painel.conta} composicao={painel.conta} historicoDesde={historicoDesde} faturamentoConta={faturamentoConta?.atual ?? null} />
           : (
             <section aria-label="Resumo da conta" className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
               <p>Total da conta indisponível: a coleta ainda não cobre este período.</p>

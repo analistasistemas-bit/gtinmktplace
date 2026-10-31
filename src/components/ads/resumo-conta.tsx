@@ -1,33 +1,39 @@
-import { useId, useState, type ReactNode } from 'react';
-import { AlertTriangle, ChevronDown, Equal, Info, Minus, type LucideIcon } from 'lucide-react';
+import { useId, useState } from 'react';
+import { AlertTriangle, ChevronDown, Info, Minus, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtBRLSinal, fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { ContaPainel } from '@/lib/ads-painel';
-import { NADA, pct, razao } from '@/lib/ads-apresentacao';
+import type { ResultadoContaAds } from '@/hooks/useAdsPainel';
+import { NADA, pct } from '@/lib/ads-apresentacao';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
 const ROTULO = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
 const LEGENDA = 'text-xs text-muted-foreground';
 
-/** Resultado nulo: com `fonteCusto` nulo o lucro é desconhecido por histórico; senão, por custo (ADR-0179). */
+const MSG_CAUSAL = 'Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.';
+const PREFIXO = 'Resultado indisponível: ';
+
+/** Motivo do resultado nulo (plano §4.9): fiscal, origem, histórico, custo; sem conta, série ao vivo ou catálogo. */
 function motivoResultadoConta(
-  conta: ContaPainel,
+  conta: ResultadoContaAds | null,
+  motivoConta: MotivoConta,
   historicoDesde: string | null,
 ): string | null {
-  if (conta.resultado != null) return null;
-  // Plano §4.9. Origem não resolvida: as alíquotas existem, falta a origem do produto (ADR-0055).
-  if (conta.motivoFiscal === 'origem_nao_resolvida') return 'resultado indisponível: produto vendido sem origem (nacional/importado)';
-  if (conta.motivoFiscal != null) return 'resultado indisponível: confirme as alíquotas em Configurações';
-
-  if (conta.fonteCusto == null) {
-    return historicoDesde
-      ? `período antes do histórico de vendas (desde ${dataBRT(historicoDesde)})`
-      : 'período antes do histórico de vendas';
+  if (!conta) {
+    return motivoConta === 'catalogo'
+      ? `${PREFIXO}o catálogo não carregou, então o custo dos produtos é desconhecido.`
+      : `${PREFIXO}a leitura ao vivo do ML veio incompleta neste período.`;
   }
-
-  return 'sem custo cadastrado';
+  if (conta.resultado != null) return null;
+  // Origem não resolvida: as alíquotas existem, falta a origem do produto (ADR-0055).
+  if (conta.motivoFiscal === 'origem_nao_resolvida') return `${PREFIXO}produto vendido sem origem (nacional/importado).`;
+  if (conta.motivoFiscal != null) return `${PREFIXO}confirme as alíquotas em Configurações.`;
+  if (conta.fonteCusto == null) {
+    return `${PREFIXO}período antes do histórico de vendas${historicoDesde ? ` (desde ${dataBRT(historicoDesde)})` : ''}.`;
+  }
+  return `${PREFIXO}sem custo cadastrado.`;
 }
 
 /** Termo da ponte: linha compacta no mobile, coluna no desktop; `empilhado` = coluna sempre (resumo sem ponte). */
@@ -38,7 +44,7 @@ function Termo({ rotulo, valor, legenda, empilhado }: { rotulo: string; valor: s
       className={cn('min-w-0', empilhado ? 'space-y-1' : 'flex items-baseline justify-between gap-3 md:block md:space-y-1')}>
       <p id={id} className={cn(ROTULO, 'shrink-0')}>{rotulo}</p>
       <div className={cn('min-w-0', !empilhado && 'text-right md:text-left')}>
-        <p className={cn('font-semibold tracking-tight tabular-nums md:text-2xl xl:text-3xl', empilhado ? 'text-2xl' : 'text-lg')}>{valor}</p>
+        <p className={cn('font-semibold tracking-tight tabular-nums', empilhado ? 'text-xl' : 'text-lg md:text-xl')}>{valor}</p>
         <p className={LEGENDA}>{legenda}</p>
       </div>
     </div>
@@ -57,24 +63,52 @@ function Operador({ icone: Icone, texto, separador }: { icone: LucideIcon; texto
   );
 }
 
-function PainelResultado({ conta, motivo, className }: { conta: ContaPainel; motivo: string | null; className?: string }) {
+function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; motivo: string | null }) {
   const id = useId();
-  const negativo = conta.resultado != null && conta.resultado < 0;
+  const parcial = conta?.fonteCusto === 'parcial';
+  const estimado = conta?.fonteCusto === 'estimado';
+  const resultado = conta?.resultado ?? null;
+  // Plano §4.7: cor só quando a base permite interpretação completa (custo real).
+  const negativo = resultado != null && resultado < 0 && conta?.fonteCusto === 'real';
   return (
     <div
       role="group"
       aria-labelledby={id}
       className={cn(
         'min-w-0 space-y-1 rounded-lg border border-l-2 border-border bg-muted/30 p-4',
-        conta.resultado == null ? 'border-l-border' : negativo ? 'border-l-danger' : 'border-l-primary',
-        className,
+        resultado == null ? 'border-l-border' : negativo ? 'border-l-danger' : 'border-l-primary',
       )}
     >
-      <p id={id} className={ROTULO}>Resultado após Ads</p>
-      <p className={cn('text-3xl font-semibold tracking-tight tabular-nums lg:text-4xl', negativo && 'text-danger')}>
-        {conta.resultado == null ? NADA : fmtBRLSinal(conta.resultado)}
+      <div className="flex flex-wrap items-center gap-2">
+        <p id={id} className={ROTULO}>{parcial ? 'Resultado parcial após Ads' : 'Resultado após Ads'}</p>
+        {estimado && <StatusPill tone="neutral">Estimado</StatusPill>}
+      </div>
+      <p className={cn('text-3xl font-semibold tracking-tight tabular-nums', negativo && 'text-danger')}>
+        {resultado == null ? NADA : fmtBRLSinal(resultado)}
       </p>
       {motivo && <p className={LEGENDA}>{motivo}</p>}
+      {parcial && resultado != null && <p className={LEGENDA}>Lucro calculado só com as vendas com custo cadastrado.</p>}
+      {estimado && resultado != null && <p className={LEGENDA}>Há custo estimado nas vendas do período.</p>}
+    </div>
+  );
+}
+
+/** Referência neutra do mix vendido (plano §2.6): lucro antes de Ads ÷ faturamento, sem comparar com o ACOS total. */
+function EquilibrioConta({ conta, faturamento }: { conta: ResultadoContaAds | null; faturamento: number | null }) {
+  const id = useId();
+  const baseCompleta = conta != null && conta.lucroAntes != null && conta.motivoFiscal == null
+    && (conta.fonteCusto === 'real' || conta.fonteCusto === 'estimado');
+  const valor = baseCompleta && faturamento != null && faturamento > 0 ? conta.lucroAntes! / faturamento : null;
+  const legenda = valor != null
+    ? 'Lucro antes de Ads ÷ vendas do período. Referência do mix vendido; não é meta de ACOS.'
+    : conta?.fonteCusto === 'parcial'
+      ? 'Indisponível: há vendas sem custo cadastrado.'
+      : 'Indisponível: precisa de lucro antes de Ads completo e de vendas no período.';
+  return (
+    <div role="group" aria-labelledby={id} className="min-w-0 space-y-1 rounded-lg border border-border p-4">
+      <p id={id} className={ROTULO}>Equilíbrio observado da conta</p>
+      <p className="text-3xl font-semibold tracking-tight tabular-nums">{pct(valor)}</p>
+      <p className={LEGENDA}>{legenda}</p>
     </div>
   );
 }
@@ -115,16 +149,6 @@ function BarraMargem({ consumida }: { consumida: number }) {
   );
 }
 
-function Indicador({ rotulo, valor, detalhe, className }: { rotulo: string; valor: string; detalhe?: ReactNode; className?: string }) {
-  return (
-    <dl className={cn('min-w-0 space-y-0.5', className)}>
-      <dt className={ROTULO}>{rotulo}</dt>
-      <dd className="text-lg font-semibold tracking-tight tabular-nums">{valor}</dd>
-      {detalhe && <dd className={cn(LEGENDA, 'tabular-nums')}>{detalhe}</dd>}
-    </dl>
-  );
-}
-
 function LinhaComposicao({ cor, rotulo, valor }: { cor: string; rotulo: string; valor: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -134,121 +158,124 @@ function LinhaComposicao({ cor, rotulo, valor }: { cor: string; rotulo: string; 
   );
 }
 
+type MotivoConta = 'serie_incompleta' | 'catalogo' | null;
+type Composicao = Pick<ContaPainel, 'emFamilias' | 'compartilhado' | 'naoIdentificado' | 'naoIdentificadoPct' | 'divergente'>;
+
 /**
- * Resumo da conta: ponte Lucro antes − Despesa = Resultado, barra da margem e indicadores sempre visíveis;
- * provisório, custo e divergência ficam visíveis sem expandir. Usa os valores do domínio, sem recalcular (ADR-0179).
+ * Resultado da conta após Ads (plano §3.2/§4.9): resultado como elemento mais forte, equilíbrio observado da conta
+ * como referência neutra, ressalva causal sempre visível. Usa os valores do domínio (ADR-0179).
+ * `conta` null = série ao vivo ausente/incompleta (ou catálogo sem carregar); `composicao` só quando os grupos chegam.
  */
-export function ResumoConta({ conta, historicoDesde }: { conta: ContaPainel; historicoDesde: string | null }) {
+export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde, faturamentoConta, composicao, onVerAcima }: {
+  conta: ResultadoContaAds | null;
+  motivo?: MotivoConta;
+  historicoDesde: string | null;
+  faturamentoConta: number | null;
+  composicao?: Composicao;
+  onVerAcima?: () => void;
+}) {
   const [aberto, setAberto] = useState(false);
   const idComposicao = `${useId()}-composicao`;
-  const motivo = motivoResultadoConta(conta, historicoDesde);
-  const temPonte = conta.lucroAntes != null && conta.resultado != null;
-  const legendaDespesa = conta.margemConsumida != null
+  const motivo = motivoResultadoConta(conta, motivoConta, historicoDesde);
+  const temPonte = conta != null && conta.lucroAntes != null && conta.resultado != null;
+  const legendaDespesa = conta?.margemConsumida != null
     ? `${pct(conta.margemConsumida)} da margem`
     : 'despesa informada pela API de Ads';
-  const custoMarcado = conta.fonteCusto === 'parcial' || conta.fonteCusto === 'estimado';
+  const diasAbertos = conta?.diasAbertos ?? 0;
   // ponytail: sem barra da composição quando divergente — as parcelas não fecham com o total.
-  const segmentos = !conta.divergente && conta.custo > 0 && conta.naoIdentificado != null
+  const segmentos = conta && composicao && !composicao.divergente && conta.custo > 0 && composicao.naoIdentificado != null
     ? [
-      { cor: 'bg-primary', v: conta.emFamilias },
-      { cor: 'bg-primary/50', v: conta.compartilhado },
-      { cor: 'bg-muted-foreground/40', v: conta.naoIdentificado },
+      { cor: 'bg-primary', v: composicao.emFamilias },
+      { cor: 'bg-primary/50', v: composicao.compartilhado },
+      { cor: 'bg-muted-foreground/40', v: composicao.naoIdentificado },
     ]
     : null;
+  const termos = conta && (
+    <>
+      <Termo rotulo="Lucro antes de Ads" valor={conta.lucroAntes != null ? fmtBRL(conta.lucroAntes) : NADA} legenda="vendas do período" empilhado={!temPonte} />
+      {temPonte && <Operador icone={Minus} texto="menos" />}
+      <Termo rotulo="Despesa de Ads" valor={fmtBRL(conta.custo)} legenda={legendaDespesa} empilhado={!temPonte} />
+    </>
+  );
 
   return (
-    <section aria-label="Resumo da conta" className="space-y-6 rounded-lg border border-border bg-card p-4 sm:p-6">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-muted-foreground">Resumo da conta</h2>
-          {(conta.diasAbertos > 0 || custoMarcado) && (
-            <div className="flex flex-wrap gap-1.5">
-              {conta.diasAbertos > 0 && (
-                <StatusPill tone="warning" title="A atribuição de vendas do ML ainda pode mudar nestes dias.">
-                  provisório — {conta.diasAbertos} {conta.diasAbertos === 1 ? 'dia' : 'dias'} com atribuição em aberto
-                </StatusPill>
-              )}
-              {custoMarcado && <StatusPill tone="neutral">custo {conta.fonteCusto}</StatusPill>}
-            </div>
+    <section aria-label="Resumo da conta" className="space-y-4 rounded-lg border border-border bg-card p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Resultado da conta após Ads</h2>
+          {diasAbertos > 0 && (
+            <StatusPill tone="warning" title="A atribuição de vendas do ML ainda pode mudar nestes dias.">
+              provisório — {diasAbertos} {diasAbertos === 1 ? 'dia' : 'dias'} com atribuição em aberto
+            </StatusPill>
           )}
         </div>
-        {conta.divergente && (
-          <p role="alert" className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
-            <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-            A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.
-          </p>
+        {onVerAcima && (
+          <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={onVerAcima}>
+            Ver famílias acima do equilíbrio
+          </Button>
         )}
       </div>
 
-      {temPonte ? (
-        <div className="space-y-4">
-          <div
-            role="group"
-            aria-label="Cálculo do resultado"
-            className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1.25fr] md:items-center md:gap-4"
-          >
-            <Termo rotulo="Lucro antes de Ads" valor={fmtBRL(conta.lucroAntes!)} legenda="vendas do período" />
-            <Operador icone={Minus} texto="menos" />
-            <Termo rotulo="Despesa de Ads" valor={fmtBRL(conta.custo)} legenda={legendaDespesa} />
-            <Operador icone={Equal} texto="igual a" separador />
-            <PainelResultado conta={conta} motivo={motivo} />
-          </div>
-          {conta.lucroAntes! > 0 && conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} />}
+      {composicao?.divergente && (
+        <p role="alert" className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+          A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.
+        </p>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <PainelResultado conta={conta} motivo={motivo} />
+        <EquilibrioConta conta={conta} faturamento={faturamentoConta} />
+      </div>
+
+      {conta && (temPonte ? (
+        <div role="group" aria-label="Cálculo do resultado" className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-4">
+          {termos}
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-[1fr_1.25fr] md:items-center md:gap-6 lg:grid-cols-[1fr_2rem_1fr_2rem_1.25fr] lg:gap-4">
-          <Termo rotulo="Despesa de Ads" valor={fmtBRL(conta.custo)} legenda={legendaDespesa} empilhado />
-          <PainelResultado conta={conta} motivo={motivo} className="lg:col-span-3 lg:col-start-3" />
+        <div className="grid gap-3 sm:grid-cols-2">{termos}</div>
+      ))}
+      {conta && temPonte && conta.lucroAntes! > 0 && conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} />}
+
+      {composicao && conta && (
+        <div className="space-y-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-11 sm:h-8"
+            aria-expanded={aberto}
+            aria-controls={idComposicao}
+            onClick={() => setAberto(v => !v)}
+          >
+            Composição do gasto
+            <ChevronDown aria-hidden className={cn('size-4 motion-safe:transition-transform', aberto && 'rotate-180')} />
+          </Button>
+          {/* Montada sempre (hidden quando fechada) para o aria-controls apontar para um id existente. */}
+          <div id={idComposicao} role="region" aria-label="Composição do gasto" hidden={!aberto}
+            className="space-y-3 rounded-md bg-muted/30 p-3 sm:p-4">
+            {segmentos && (
+              <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+                {segmentos.map(sg => (
+                  <div key={sg.cor} className={cn('h-full', sg.cor)} style={{ width: `${(sg.v / conta.custo) * 100}%` }} />
+                ))}
+              </div>
+            )}
+            <dl className="space-y-1.5">
+              <LinhaComposicao cor="bg-primary" rotulo="Em famílias" valor={fmtBRL(composicao.emFamilias)} />
+              <LinhaComposicao cor="bg-primary/50" rotulo="Compartilhado entre famílias" valor={fmtBRL(composicao.compartilhado)} />
+              {!composicao.divergente && composicao.naoIdentificado != null && (
+                <LinhaComposicao cor="bg-muted-foreground/40" rotulo="Gasto de Ads não identificado"
+                  valor={`${fmtBRL(composicao.naoIdentificado)}${composicao.naoIdentificadoPct != null ? ` (${pct(composicao.naoIdentificadoPct)})` : ''}`} />
+              )}
+            </dl>
+          </div>
         </div>
       )}
 
-      <div className="space-y-4 border-t border-border pt-4">
-        {/* lg: mesmas colunas da ponte (operadores = 2rem), para ROAS/ACOS/Vendas alinharem com os termos acima. */}
-        <div role="group" aria-label="Indicadores"
-          className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-[1fr_2rem_1fr_2rem_1.25fr] lg:gap-x-4">
-          <Indicador rotulo="ROAS" valor={razao(conta.roas)} detalhe={`direto ${razao(conta.roasDireto)}`} />
-          <Indicador rotulo="ACOS" valor={pct(conta.acos)} className="lg:col-start-3" />
-          <div className="col-span-2 flex flex-wrap items-end justify-between gap-x-4 gap-y-4 sm:col-span-1 lg:col-start-5">
-            <Indicador rotulo="Vendas atribuídas" valor={fmtBRL(conta.vendasTotais)} detalhe={`direta ${fmtBRL(conta.vendasDiretas)}`} />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-8"
-              aria-expanded={aberto}
-              aria-controls={idComposicao}
-              onClick={() => setAberto(v => !v)}
-            >
-              Composição do gasto
-              <ChevronDown aria-hidden className={cn('size-4 motion-safe:transition-transform', aberto && 'rotate-180')} />
-            </Button>
-          </div>
-        </div>
-
-        {/* Montada sempre (hidden quando fechada) para o aria-controls apontar para um id existente. */}
-        <div id={idComposicao} role="region" aria-label="Composição do gasto" hidden={!aberto}
-          className="space-y-3 rounded-md bg-muted/30 p-3 sm:p-4">
-          {segmentos && (
-            <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-              {segmentos.map(s => (
-                <div key={s.cor} className={cn('h-full', s.cor)} style={{ width: `${(s.v / conta.custo) * 100}%` }} />
-              ))}
-            </div>
-          )}
-          <dl className="space-y-1.5">
-            <LinhaComposicao cor="bg-primary" rotulo="Em famílias" valor={fmtBRL(conta.emFamilias)} />
-            <LinhaComposicao cor="bg-primary/50" rotulo="Compartilhado entre famílias" valor={fmtBRL(conta.compartilhado)} />
-            {!conta.divergente && conta.naoIdentificado != null && (
-              <LinhaComposicao cor="bg-muted-foreground/40" rotulo="Gasto de Ads não identificado"
-                valor={`${fmtBRL(conta.naoIdentificado)}${conta.naoIdentificadoPct != null ? ` (${pct(conta.naoIdentificadoPct)})` : ''}`} />
-            )}
-          </dl>
-        </div>
-      </div>
-
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <Info aria-hidden className="mt-px size-3.5 shrink-0" />
-        Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.
+        {MSG_CAUSAL}
       </p>
     </section>
   );
