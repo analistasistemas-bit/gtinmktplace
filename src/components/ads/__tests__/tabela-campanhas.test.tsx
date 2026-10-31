@@ -6,6 +6,7 @@ import type {
   BlocoAdsMetricas, CampanhaPeriodoAds, MetricaBrutaAds, ValorAds,
 } from '../../../../supabase/functions/_shared/ads/metricas';
 import { TabelaCampanhas } from '../campanhas/tabela-campanhas';
+import { FaixaKpis } from '../faixa-kpis';
 
 const ok = (valor: number): ValorAds => ({ valor, motivo: null });
 const bloco = (m: Partial<Record<MetricaBrutaAds, ValorAds>>): BlocoAdsMetricas => ({
@@ -37,15 +38,34 @@ describe('TabelaCampanhas', () => {
     expect(within(linha).getByText(/R\$\s*50,00/)).toBeTruthy();
   });
 
-  it('filtrar e buscar mudam só as linhas; a tabela não exibe nem recalcula totais da conta', async () => {
+  it('filtrar, buscar e ordenar mudam só as linhas: resumo da conta e payload ficam intactos', async () => {
     const user = userEvent.setup();
-    render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />);
+    // Resumo da conta (todas as campanhas): totais diferentes de qualquer subconjunto filtrado.
+    const conta: Record<string, ValorAds> = { investimento: ok(450), vendas: ok(20), receita: ok(1900), roas: ok(4.22), acos: ok(0.2368) };
+    const original = structuredClone(CAMPANHAS);
+    const ordemOriginal = CAMPANHAS.map((c) => c.id);
+    render(
+      <>
+        <div data-testid="resumo"><FaixaKpis atual={conta} anterior={null} comparacao="desligada" /></div>
+        <TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />
+      </>,
+    );
+    const resumo = () => screen.getByTestId('resumo').textContent;
+    const antes = resumo();
+    expect(antes).toContain('450,00');
     expect(nomesNaTabela()).toHaveLength(3);
+
     await escolherNoSelect(user, 'Status', 'Pausada');
     expect(nomesNaTabela()).toEqual([expect.stringContaining('Inverno pausada')]);
-    expect(screen.queryByText(/total/i)).toBeNull();
     await user.type(screen.getByRole('searchbox', { name: /buscar campanha/i }), 'zzz');
-    expect(screen.getByText(/nenhuma campanha/i)).toBeTruthy();
+    expect(screen.getByText(/nenhuma campanha encontrada/i)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Ver todas' }));
+    await user.click(within(tabela()).getByRole('button', { name: /Investimento/ }));
+
+    expect(resumo()).toBe(antes);
+    expect(CAMPANHAS).toEqual(original);
+    expect(CAMPANHAS.map((c) => c.id)).toEqual(ordemOriginal);
+    expect(within(tabela()).queryByText(/total/i)).toBeNull();
   });
 
   it('troca de visão Resultado/Eficiência muda as colunas', async () => {
@@ -73,11 +93,13 @@ describe('TabelaCampanhas', () => {
     expect(nomes[3]).toContain('Sem dados');
   });
 
-  it('métrica indisponível mostra o motivo na célula', () => {
-    const sem = camp(5, 'Fora da retenção', 'active', { ...m(10, 50, 1), total_amount: { valor: null, motivo: 'fora_da_retencao' } });
+  it('métrica indisponível mostra travessão e o motivo dentro da célula', () => {
+    const sem = camp(5, 'Campanha Alfa', 'active', { ...m(10, 50, 1), total_amount: { valor: null, motivo: 'fora_da_retencao' } });
     render(<TabelaCampanhas campanhas={[sem]} comparacao={DISP} onAbrir={vi.fn()} />);
-    const linha = within(tabela()).getByText('Fora da retenção').closest('tr')!;
-    expect(within(linha).getAllByText(/fora da retenção/i).length).toBeGreaterThan(0);
+    const linha = within(tabela()).getByText('Campanha Alfa').closest('tr')!;
+    const colReceita = Array.from(tabela().querySelectorAll('th')).findIndex((h) => /Receita Ads/.test(h.textContent ?? ''));
+    const celula = within(linha).getAllByRole('cell')[colReceita];
+    expect(celula.textContent).toBe('—Período fora da retenção do ML.');
   });
 
   it('delta por célula: ACOS em queda é success; provisória fica neutra com selo', () => {
