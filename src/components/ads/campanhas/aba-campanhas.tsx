@@ -6,6 +6,7 @@ import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import type { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
 import type { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { AvisoAcesso } from '@/components/ads/aviso';
+import { lidoAsAds as lidoAs } from '@/lib/ads-metricas';
 import { TabelaCampanhas } from './tabela-campanhas';
 import { DetalheCampanha, type PedidoBaseDetalhe } from './detalhe-campanha';
 import { Competitividade } from './competitividade';
@@ -15,10 +16,6 @@ const BOTAO = 'h-8 max-sm:h-11 pointer-coarse:h-11';
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
 export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch' | 'atualizar'>;
-
-const lidoAs = (iso: string) =>
-  new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
-    .format(new Date(iso));
 
 /**
  * Aba Campanhas por período (plano ads-redesign §3.2/3.4/4.4). A página entrega o bloco da conta inteira (KPIs,

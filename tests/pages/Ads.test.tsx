@@ -1410,6 +1410,21 @@ describe('estados: sem gasto e falhas parciais', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  // Minor pré-merge: falha ao atualizar com leitura anterior em mãos mantém os valores e avisa com o horário.
+  it('estados: atualização da conta falha com dados anteriores → valores mantidos, aviso com horário e Tentar novamente', () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    montar(PAINEL, { refetch, metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 42, motivo: null } }) }),
+      blocos: { conta: { isLoading: false, isError: true }, grupos: { isLoading: false, isError: false },
+        sync: { isLoading: false, isError: false } } });
+
+    expect(screen.getByRole('region', { name: 'Resumo da conta' })).toBeInTheDocument();
+    expect(screen.getAllByText(/R\$\s*42,00/).length).toBeGreaterThan(0);
+    const aviso = screen.getByRole('alert');
+    expect(aviso).toHaveTextContent('Não foi possível atualizar a conta agora; os valores exibidos são da leitura das 09:00.');
+    fireEvent.click(within(aviso).getByRole('button', { name: 'Tentar novamente' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['sem_conexao', 'sem_acesso', true],
     ['sem_advertiser', 'sem_advertiser', false],

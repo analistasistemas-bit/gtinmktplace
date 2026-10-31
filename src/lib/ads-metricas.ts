@@ -119,6 +119,10 @@ export const inteiroAds = (n: number) => num(n, 0);
 export const razaoAds = (n: number) => `${num(n, 2)}×`;
 /** Fração → percentual com 1 casa (0,1176 → "11,8%"). */
 export const pctAds = (n: number) => `${num(n * 100, 1)}%`;
+/** Horário BRT de uma leitura (ISO → "12:05"). */
+export const lidoAsAds = (iso: string) =>
+  new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
+    .format(new Date(iso));
 
 export const MOTIVOS_METRICA_ADS: Record<MotivoMetricaAds, string> = {
   nao_retornada: 'O ML não retornou esta métrica.',

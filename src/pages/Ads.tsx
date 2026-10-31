@@ -15,7 +15,7 @@ import type { PedidoAdsMetricas } from '../../supabase/functions/_shared/ads/met
 import {
   MOTIVOS_PERIODO_ADS, PERIODO_PADRAO_ADS, resolverPeriodoAds, type DiasAds, type PeriodoAds,
 } from '@/lib/ads-painel-dados';
-import { indicadoresAds } from '@/lib/ads-metricas';
+import { indicadoresAds, lidoAsAds } from '@/lib/ads-metricas';
 import { ATALHO_ACIMA_EQUILIBRIO, contarFamiliasAds, ehEstadoAcesso } from '@/lib/ads-apresentacao';
 import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
 import { PeriodoAdsSeletor, type CompararAds } from '@/components/ads/periodo-ads';
@@ -275,8 +275,17 @@ export default function Ads() {
     // Comparação que falhou na leitura (a de fora da retenção já é explicada no cabeçalho): o período atual fica.
     const motivoComparacao = comparar === 'anterior' && comparacao?.tipo === 'pronta'
       && metricasConta.comparacao.estado === 'indisponivel' ? metricasConta.comparacao.motivo : undefined;
+    // Falha ao atualizar com a leitura anterior em mãos: valores mantidos, falha visível e recuperável.
+    const lidoEm = metricasConta.atual?.lidoEm;
     kpis = (
       <>
+        {blocos.conta.isError && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
+            <AlertTriangle aria-hidden className="size-4 shrink-0 text-warning" />
+            <span>{`Não foi possível atualizar a conta agora; os valores exibidos são da leitura${lidoEm ? ` das ${lidoAsAds(lidoEm)}` : ' anterior'}.`}</span>
+            <Button variant="outline" size="sm" className={BOTAO_ACAO} onClick={() => refetch()}>Tentar novamente</Button>
+          </div>
+        )}
         {motivoComparacao !== undefined && (
           <p className="text-xs text-muted-foreground">
             {motivoComparacao ? `Comparação indisponível: ${motivoComparacao}` : 'Comparação indisponível.'}
