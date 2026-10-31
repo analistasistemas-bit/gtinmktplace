@@ -65,7 +65,7 @@ export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm
     <section aria-label="Integridade dos números" className="space-y-3">
       <GastosAssociados painel={painel} />
 
-      <ul className="space-y-2 rounded-lg border border-border bg-card p-4">
+      <ul className="space-y-2 rounded-lg border border-border bg-card p-4 empty:hidden">
         {painel.compartilhados.length > 0 && <Ressalva>Gasto compartilhado entre famílias: não foi rateado.</Ressalva>}
         {temNaoId && (
           <Ressalva>Gasto de Ads não identificado: incluído no investimento da conta, sem distribuição entre famílias.</Ressalva>

@@ -15,6 +15,8 @@
 //   e `vendas_sku_codigos_mlbs`. Gasto, receita Ads, campanhas e MLBs dos grupos são FICTÍCIOS.
 // - Cenários: comparação provisória, famílias com gasto alto (candidatas a "acima do equilíbrio"), campanha ativa
 //   e pausada, gasto compartilhado e gasto não identificado.
+// - Polimentos 2026-10-31: campanha pausada sem gasto no período (sem denominador / sem base), anúncios patrocinados
+//   no detalhe (um sem período anterior) e coleta R$ 0,18 abaixo da leitura ao vivo (conciliação dentro da tolerância).
 async page => {
   const MLB = (i) => `MLB900000${i}`;
   const val = (v) => ({ valor: v, motivo: null });
@@ -65,12 +67,20 @@ async page => {
       comparacao: { estado: comparar ? 'provisoria' : 'desligada', motivo: null }, campanhas: [] };
     if (p.escopo === 'campanhas') {
       base.atual = null; base.anterior = null;
-      base.campanhas = [[7001, 'Moda Praia Verão', 'active', 1.0], [7002, 'Perfumaria Dia dos Pais', 'paused', 0.45]]
+      base.campanhas = [[7001, 'Moda Praia Verão', 'active', 1.0], [7002, 'Perfumaria Dia dos Pais', 'paused', 0.45],
+        [7003, 'Inverno Pausada', 'paused', 0]]
         .map(([id, nome, statusAtual, esc]) => ({ id, nome, statusAtual, atual: bloco(p.desde, p.ate, esc),
           anterior: comparar ? bloco(ad, af, esc * 0.85) : null }));
     } else {
       base.atual = bloco(p.desde, p.ate, 1);
       base.anterior = comparar ? bloco(ad, af, 0.9) : null;
+      if (p.escopo === 'campanha') {
+        // Anúncio novo no período: a linha anterior existe, mas zerada (sem base e sem denominador).
+        base.anuncios = [[MLB(0), 'Biquíni Cortininha Estampado', 0.6, 0.5], [MLB(1), 'Saída de Praia Kimono Longo', 0.4, 0]]
+          .map(([itemId, titulo, esc, escAnt]) => ({ itemId, titulo, statusAds: 'active', atual: bloco(p.desde, p.ate, esc),
+            anterior: comparar ? bloco(ad, af, escAnt) : null }));
+        base.anunciosMotivo = null;
+      }
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(base) });
   });
@@ -94,8 +104,9 @@ async page => {
   await page.route('**/rest/v1/rpc/ads_painel**', async (route) => {
     const p = JSON.parse(route.request().postData() || '{}');
     const ds = dias(p.p_desde, p.p_ate);
+    // Coleta R$ 0,18 abaixo da leitura ao vivo no 1º dia: dentro da tolerância de conciliação (ADR-0179, 2026-10-31).
     const conta = ds.map((dia, i) => { const m = metricasDia(i, 1);
-      return { dia, cost: m.cost, clicks: m.clicks, prints: m.prints, direct_amount: m.direct_amount,
+      return { dia, cost: i === 0 ? +(m.cost - 0.18).toFixed(2) : m.cost, clicks: m.clicks, prints: m.prints, direct_amount: m.direct_amount,
         indirect_amount: m.indirect_amount, total_amount: m.total_amount, coletado_em: new Date().toISOString() }; });
     const custos = [1300, 600, 380, 240, 120, 70]; // do maior ao menor gasto; os maiores tendem a passar do equilíbrio
     const grupos = custos.map((cost, i) => ({ ad_group_id: 500 + i, tipo: 'ITEM', status: 'active', cost,
