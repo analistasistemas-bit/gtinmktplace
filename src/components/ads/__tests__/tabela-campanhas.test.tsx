@@ -18,7 +18,7 @@ const camp = (
 ): CampanhaPeriodoAds => ({ id, nome, statusAtual, atual: bloco(atual), anterior: anterior && bloco(anterior) });
 
 const m = (cost: number, receita: number, vendas: number, prints = 1000, clicks = 50): Partial<Record<MetricaBrutaAds, ValorAds>> => ({
-  cost: ok(cost), total_amount: ok(receita), advertising_items_quantity: ok(vendas), prints: ok(prints), clicks: ok(clicks), cvr: ok(4),
+  cost: ok(cost), total_amount: ok(receita), units_quantity: ok(vendas), prints: ok(prints), clicks: ok(clicks), cvr: ok(4),
 });
 
 const CAMPANHAS = [
@@ -111,7 +111,7 @@ describe('TabelaCampanhas', () => {
   // M4: as descrições ::Ads dos cabeçalhos ficam acessíveis pelo "O que é" (fora do botão de ordenar).
   it('cabeçalhos com descrição oferecem "O que é" sem entrar no botão de ordenar', () => {
     render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />);
-    for (const r of ['Vendas Ads', 'Receita Ads']) {
+    for (const r of ['Vendas atribuídas', 'Receita Ads']) {
       const info = within(tabela()).getByRole('button', { name: `O que é ${r}` });
       expect(info.closest('th')).toBeTruthy();
       expect(within(tabela()).getByRole('button', { name: new RegExp(`^${r}$`) })).not.toContainElement(info);

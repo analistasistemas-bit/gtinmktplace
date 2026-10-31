@@ -21,7 +21,7 @@ import { DetalheCampanha } from '../campanhas/detalhe-campanha';
 const ok = (valor: number): ValorAds => ({ valor, motivo: null });
 type Res = Partial<Record<MetricaBrutaAds, ValorAds>>;
 const m = (cost: number, receita: number, vendas: number, prints: number, clicks: number): Res => ({
-  cost: ok(cost), total_amount: ok(receita), advertising_items_quantity: ok(vendas), prints: ok(prints), clicks: ok(clicks), cvr: ok(5),
+  cost: ok(cost), total_amount: ok(receita), advertising_items_quantity: ok(vendas), units_quantity: ok(vendas * 2), prints: ok(prints), clicks: ok(clicks), cvr: ok(5),
 });
 const bloco = (resumo: Res, serie: BlocoAdsMetricas['serie'] = []): BlocoAdsMetricas => ({
   janela: { desde: '2026-10-01', ate: '2026-10-07' }, resumo, serie, completo: true, lidoEm: '2026-10-08T10:00:00Z',
@@ -91,6 +91,14 @@ describe('DetalheCampanha', () => {
     expect(within(config).getByText(/R\$\s*10,00/)).toBeInTheDocument();
     expect(within(config).getByText(/5x/)).toBeInTheDocument();
     expect(within(metricas).queryByText(/Orçamento diário/)).toBeNull();
+  });
+
+  it('vendas atribuídas em unidades; pedidos atribuídos como informação secundária', () => {
+    abrir();
+    const metricas = screen.getByRole('region', { name: 'Métricas do período' });
+    const tile = metricas.querySelector('[data-kpi="vendas"]') as HTMLElement;
+    expect(tile.textContent).toContain('14'); // units_quantity (7 × 2)
+    expect(tile.textContent).toContain('7 pedidos atribuídos'); // advertising_items_quantity
   });
 
   it('TACOS da conta não aparece no escopo de uma campanha', () => {

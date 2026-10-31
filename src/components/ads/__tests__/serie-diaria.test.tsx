@@ -19,10 +19,10 @@ const dia = (d: string, m: Partial<Record<MetricaBrutaAds, number | null | Valor
 
 const JANELA = { desde: '2026-10-01', ate: '2026-10-04' };
 const SERIE = [
-  dia('2026-10-01', { cost: 10, total_amount: 50, advertising_items_quantity: 2, organic_items_quantity: 5 }),
+  dia('2026-10-01', { cost: 10, total_amount: 50, advertising_items_quantity: 2, units_quantity: 3, organic_items_quantity: 5 }),
   // 02/10 ausente: lacuna, nunca zero.
-  dia('2026-10-03', { cost: 0, total_amount: 0, advertising_items_quantity: 0, organic_items_quantity: 4 }),
-  dia('2026-10-04', { cost: 20, total_amount: 30, advertising_items_quantity: 1, organic_items_quantity: null }),
+  dia('2026-10-03', { cost: 0, total_amount: 0, advertising_items_quantity: 0, units_quantity: 0, organic_items_quantity: 4 }),
+  dia('2026-10-04', { cost: 20, total_amount: 30, advertising_items_quantity: 1, units_quantity: 4, organic_items_quantity: null }),
 ];
 
 describe('pontosDiarios', () => {
@@ -31,6 +31,12 @@ describe('pontosDiarios', () => {
     expect(p.map((x) => x.dia)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);
     expect(p[1]).toMatchObject({ atribuidas: null, outras: null, cost: null, receita: null, roas: null });
     expect(p[3].outras).toBeNull();
+  });
+
+  it('atribuídas usam units_quantity e outras usam organic_items_quantity', () => {
+    const p = pontosDiarios(SERIE, JANELA, undefined);
+    expect(p.map((x) => x.atribuidas)).toEqual([3, null, 0, 4]);
+    expect(p[0].outras).toBe(5);
   });
 
   it('ROAS = receita / investimento do dia; cost 0 deixa lacuna', () => {
@@ -113,12 +119,12 @@ describe('SerieDiaria', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ver dados em tabela' }));
     const linhas = within(screen.getByRole('table')).getAllByRole('row');
     expect(linhas.map((l) => within(l).queryByRole('rowheader')?.textContent)).toEqual([undefined, '01/10', '02/10', '03/10', '04/10']);
-    expect(within(linhas[1]).getAllByRole('cell').map((c) => c.textContent)).toEqual(['2', '5', fmtBRL(10), fmtBRL(50), '5,0×']);
+    expect(within(linhas[1]).getAllByRole('cell').map((c) => c.textContent)).toEqual(['3', '5', fmtBRL(10), fmtBRL(50), '5,0×']);
   });
 
   it('tabela explica o motivo de cada valor indisponível', async () => {
     const serie = [
-      dia('2026-10-01', { cost: { valor: null, motivo: 'fora_da_retencao' }, total_amount: 5, advertising_items_quantity: { valor: null, motivo: 'sem_permissao' }, organic_items_quantity: 1 }),
+      dia('2026-10-01', { cost: { valor: null, motivo: 'fora_da_retencao' }, total_amount: 5, units_quantity: { valor: null, motivo: 'sem_permissao' }, organic_items_quantity: 1 }),
     ];
     render(<SerieDiaria serie={serie} janela={{ desde: '2026-10-01', ate: '2026-10-02' }} />);
     await userEvent.click(screen.getByRole('button', { name: 'Ver dados em tabela' }));
@@ -142,7 +148,7 @@ describe('SerieDiaria', () => {
   });
 
   it('tooltip chama quantidade de vendas, não de unidades', () => {
-    expect(textoValor('vendas', 'Vendas atribuídas', 3)).toBe('3 vendas');
+    expect(textoValor('vendas', 'Vendas atribuídas', 3)).toBe('3 unidades');
     expect(textoValor('vendas', 'Outras vendas', 1)).toBe('1 venda');
     expect(textoValor('vendas', 'ROAS', 2.5)).toBe('2,5×');
     expect(textoValor('valores', 'Investimento', 10)).toBe(fmtBRL(10));

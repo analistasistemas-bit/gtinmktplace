@@ -192,3 +192,5 @@ margem real, sem reconstruir atribuição financeira por campanha. Métricas
 opcionais, competitividade e semântica de conversão exigem confirmação no
 anunciante real antes de habilitação. Todas as indisponibilidades preservam
 o motivo.
+
+**Ajuste 2026-10-31:** 'Vendas atribuídas' segue o painel do Mercado Ads (unidades, `units_quantity`); pedidos (`advertising_items_quantity`) ficam no detalhe.

@@ -1,6 +1,7 @@
 // Indicadores do topo da tela /ads (plano ads-redesign §2.3–2.5).
-// Quocientes sempre sobre agregados do período (nunca média diária). Vendas por Ads é a quantidade atribuída
-// (`advertising_items_quantity`), separada de unidades e da receita. CVR é o nativo do ML, nunca recalculado.
+// Quocientes sempre sobre agregados do período (nunca média diária). Vendas atribuídas são as UNIDADES atribuídas
+// (`units_quantity`), igual ao painel do Mercado Ads; `pedidos` é o número de vendas (`advertising_items_quantity`),
+// só para o detalhe. Receita fica à parte. CVR é o nativo do ML, nunca recalculado.
 // Tipos e mapa de escala vêm do contrato das edges (mesmo precedente de outros módulos de src/lib).
 import {
   ESCALA_METRICA_ADS,
@@ -42,7 +43,8 @@ export function indicadoresAds(
   const fatura: ValorAds = f === null || (f.valor !== null && !Number.isFinite(f.valor)) ? { ...SEM_DENOMINADOR } : f;
   return {
     investimento: cost,
-    vendas: campo(resumo, 'advertising_items_quantity'),
+    vendas: campo(resumo, 'units_quantity'),
+    pedidos: campo(resumo, 'advertising_items_quantity'),
     receita,
     roas: razao(receita, cost),
     acos: razao(cost, receita),

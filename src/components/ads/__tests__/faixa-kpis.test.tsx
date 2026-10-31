@@ -11,11 +11,18 @@ const base = (o: Record<string, ValorAds> = {}): Record<string, ValorAds> => ({
 });
 
 describe('FaixaKpis', () => {
-  it('Vendas por Ads mostra quantidade e a receita identificada à parte', () => {
+  it('Vendas atribuídas mostra quantidade e a receita identificada à parte', () => {
     render(<FaixaKpis atual={base()} anterior={null} comparacao="desligada" />);
-    const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
+    const tile = screen.getByText('Vendas atribuídas').closest('[data-kpi]') as HTMLElement;
     expect(tile.textContent).toContain('12');
     expect(tile.textContent).toMatch(/R\$\s850,50 em receita/);
+  });
+
+  it('mostrarPedidos acrescenta os pedidos atribuídos como apoio do card', () => {
+    const { rerender } = render(<FaixaKpis atual={base({ pedidos: v(7) })} anterior={null} comparacao="desligada" />);
+    expect(screen.getByText('Vendas atribuídas').closest('[data-kpi]')!.textContent).not.toContain('pedidos atribuídos');
+    rerender(<FaixaKpis atual={base({ pedidos: v(7) })} anterior={null} comparacao="desligada" mostrarPedidos />);
+    expect(screen.getByText('Vendas atribuídas').closest('[data-kpi]')!.textContent).toContain('7 pedidos atribuídos');
   });
 
   it('indisponível mostra o motivo em texto', () => {
@@ -50,14 +57,14 @@ describe('FaixaKpis', () => {
 
   it('receita aparece mesmo com vendas indisponíveis', () => {
     render(<FaixaKpis atual={base({ vendas: v(null, 'nao_retornada') })} anterior={null} comparacao="desligada" />);
-    const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
+    const tile = screen.getByText('Vendas atribuídas').closest('[data-kpi]') as HTMLElement;
     expect(tile.textContent).toContain('Indisponível');
     expect(tile.textContent).toMatch(/R\$\s850,50 em receita/);
   });
 
   it('receita indisponível mostra o motivo', () => {
     render(<FaixaKpis atual={base({ receita: v(null, 'fora_da_retencao') })} anterior={null} comparacao="desligada" />);
-    const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
+    const tile = screen.getByText('Vendas atribuídas').closest('[data-kpi]') as HTMLElement;
     expect(tile.textContent).toContain('Receita indisponível');
     expect(tile.textContent).toContain('fora da retenção');
   });

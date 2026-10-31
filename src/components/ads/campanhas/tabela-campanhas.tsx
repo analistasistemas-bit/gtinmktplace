@@ -37,7 +37,7 @@ const INVESTIMENTO: Def = { chave: 'investimento', rotulo: 'Investimento', unida
 const COLUNAS: Record<Visao, Def[]> = {
   resultado: [
     INVESTIMENTO,
-    { chave: 'vendas', rotulo: 'Vendas Ads', unidade: 'quantidade', sentido: 'neutro', formato: inteiro },
+    { chave: 'vendas', rotulo: 'Vendas atribuídas', unidade: 'quantidade', sentido: 'neutro', formato: inteiro },
     { chave: 'receita', rotulo: 'Receita Ads', unidade: 'moeda', sentido: 'neutro', formato: moeda },
     { chave: 'roas', rotulo: 'ROAS', unidade: 'razao', sentido: 'maior_melhor', formato: razao },
     { chave: 'acos', rotulo: 'ACOS', unidade: 'percentual', sentido: 'menor_melhor', formato: pct },

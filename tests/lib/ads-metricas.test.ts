@@ -22,9 +22,10 @@ describe('indicadores do Mercado Ads', () => {
     expect(r.cpc).toEqual(ok(0.5));
   });
 
-  it('vendas por Ads é a quantidade atribuída, não unidades nem receita', () => {
+  it('vendas atribuídas são unidades (units_quantity, igual ao painel do Mercado Ads); pedidos ficam à parte', () => {
     const r = indicadoresAds(resumo(), 2000);
-    expect(r.vendas).toEqual(ok(7));
+    expect(r.vendas).toEqual(ok(12));
+    expect(r.pedidos).toEqual(ok(7));
     expect(r.receita).toEqual(ok(500));
   });
 

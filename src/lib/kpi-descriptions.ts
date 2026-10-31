@@ -171,11 +171,11 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     + 'Só entram itens com custo; com custo parcial, o resultado também é parcial. Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
     + 'Ads não cobre o período ou há gasto compartilhado com outras famílias.',
   // ── Ads: faixa de KPIs, campanhas, competitividade e resumo da conta (Task 36) ──
-  'Vendas por Ads::Ads':
-    'Quantidade de vendas atribuídas ao Ads, como informada pelo Mercado Livre. É contagem de vendas, não receita nem unidades: '
-    + 'uma venda de 3 peças conta 1 aqui. A receita aparece em Receita Ads e as peças em Unidades vendidas.',
-  'Vendas Ads::Ads':
-    'Quantidade de vendas atribuídas ao Ads na campanha, como informada pelo ML. Não é receita nem unidades.',
+  'Vendas atribuídas::Ads':
+    'Unidades vendidas atribuídas ao Ads, mesmo critério do painel do Mercado Ads: uma venda de 3 peças conta 3 aqui. '
+    + 'O número de vendas (pedidos) aparece em Pedidos atribuídos e o valor em Receita Ads.',
+  'Pedidos atribuídos::Ads':
+    'Número de vendas (pedidos) atribuídas ao Ads, como informado pelo ML: uma venda de 3 peças conta 1. As unidades estão em Vendas atribuídas.',
   'Receita Ads::Ads':
     'Valor vendido (R$) que o ML atribui ao Ads no período, somando vendas diretas e indiretas. Não é lucro nem faturamento da conta.',
   'ROAS::Ads':

@@ -54,10 +54,10 @@ export function pontosDiarios(serie: DiaAdsMetricas[], janela: JanelaAdsMetricas
     const motivoRoas: MotivoDia | undefined = !semRoas ? undefined : mot('cost') ?? mot('total_amount') ?? 'sem_denominador';
     out.push({
       dia, rotulo: rotuloDia(dia),
-      atribuidas: v('advertising_items_quantity'), outras: v('organic_items_quantity'), cost, receita,
+      atribuidas: v('units_quantity'), outras: v('organic_items_quantity'), cost, receita,
       roas: cost !== null && cost > 0 && receita !== null ? receita / cost : null,
       provisorio: provisorioDesde !== undefined && dia >= provisorioDesde,
-      motivos: { atribuidas: mot('advertising_items_quantity'), outras: mot('organic_items_quantity'), cost: mot('cost'), receita: mot('total_amount'), roas: motivoRoas },
+      motivos: { atribuidas: mot('units_quantity'), outras: mot('organic_items_quantity'), cost: mot('cost'), receita: mot('total_amount'), roas: motivoRoas },
     });
   }
   return out;
@@ -82,10 +82,11 @@ interface Props {
   completo?: boolean;
 }
 
-/** Texto do valor no tooltip: quantidades aqui são vendas (itens), não unidades. */
+/** Texto do valor no tooltip: atribuídas são unidades (units_quantity); outras vendas seguem em vendas (organic_items_quantity), como no painel do ML. */
 export function textoValor(visao: Visao, nome: string, v: number): string {
   if (nome === 'ROAS') return fmtRoas(v);
   if (visao === 'valores') return fmtBRL(v);
+  if (nome === 'Vendas atribuídas') return `${fmtInt(v)} ${v === 1 ? 'unidade' : 'unidades'}`;
   return `${fmtInt(v)} ${v === 1 ? 'venda' : 'vendas'}`;
 }
 
@@ -227,6 +228,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
       <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         {visao === 'vendas' && (
           <p>
+            “Vendas atribuídas” são unidades atribuídas a Ads, como no painel do Mercado Ads.
             “Outras vendas” é o universo dos anúncios promovidos segundo o Mercado Livre (vendas deles sem atribuição a Ads),
             não as vendas orgânicas da conta inteira. ROAS do dia = receita de Ads ÷ investimento do dia; sem investimento, sem ponto.
           </p>

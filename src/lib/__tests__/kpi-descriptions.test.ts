@@ -78,8 +78,8 @@ const ALL_EXPECTED_KEYS = [
   'Investimento::Ads',
   'Resultado após Ads::Ads',
   // Ads: faixa de KPIs, tabela de campanhas, competitividade, resumo e série (Task 36)
-  'Vendas por Ads::Ads',
-  'Vendas Ads::Ads',
+  'Vendas atribuídas::Ads',
+  'Pedidos atribuídos::Ads',
   'Receita Ads::Ads',
   'ROAS::Ads',
   'ACOS::Ads',

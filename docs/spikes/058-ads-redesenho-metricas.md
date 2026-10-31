@@ -181,3 +181,15 @@ entre anúncios e a soma por anúncio fecha com a conta. Chamadas de página: `l
 | `top_impression_share` | **Indisponível** | escala indeterminada (3,5 e 10,0 na Avil) até o ML documentar |
 | Competitividade em lista, resumo da conta ou por anúncio | **Indisponível** | recusada pelo ML (HTTP 400) |
 | Período anterior fora dos 91 dias | **Indisponível** (motivo explícito) | ML recusa `date_from` além de hoje − 91 |
+
+## Conferência com o painel do Mercado Ads (2026-10-31)
+
+Print do painel da Hairfly ("Últimos 30 dias", tirado em 30/10) comparado com a série diária E2 da API acumulada até 29/10:
+
+| Painel do Mercado Ads | Valor | Campo da API | Valor na API |
+|---|---|---|---|
+| Receita | R$ 1.958 | `total_amount` | 1.958,48 |
+| Vendas atribuídas | 36 | `units_quantity` | 36 (`advertising_items_quantity` era 25) |
+| Outras vendas | 13 | `organic_items_quantity` | 13 (`organic_units_quantity` já era 14) |
+
+Conclusão: no painel, "Vendas atribuídas" = unidades atribuídas (`units_quantity`) e "Outras vendas" = `organic_items_quantity`. Na Avil (outubro) isso dá 862 unidades contra 646 vendas (pedidos). O /ads passa a mostrar `units_quantity` como "Vendas atribuídas"; `advertising_items_quantity` fica como "Pedidos atribuídos" no detalhe da campanha.

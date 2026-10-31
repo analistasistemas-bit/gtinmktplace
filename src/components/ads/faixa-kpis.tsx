@@ -28,7 +28,7 @@ interface Def {
 // Ordem = leitura do wireframe: linha 1 (resultado) e linha 2 (funil). Os 4 primeiros ficam visíveis no mobile.
 const KPIS: Def[] = [
   { chave: 'investimento', rotulo: 'Investimento', unidade: 'moeda', sentido: 'neutro', formato: moeda },
-  { chave: 'vendas', rotulo: 'Vendas por Ads', unidade: 'quantidade', sentido: 'neutro', formato: inteiro },
+  { chave: 'vendas', rotulo: 'Vendas atribuídas', unidade: 'quantidade', sentido: 'neutro', formato: inteiro },
   { chave: 'roas', rotulo: 'ROAS', unidade: 'razao', sentido: 'maior_melhor', formato: razao },
   { chave: 'acos', rotulo: 'ACOS', unidade: 'percentual', sentido: 'menor_melhor', formato: pct },
   { chave: 'tacos', rotulo: 'TACOS da conta', unidade: 'percentual', sentido: 'menor_melhor', formato: pct },
@@ -42,8 +42,10 @@ const VISIVEIS_MOBILE = 4;
 
 
 export function FaixaKpis({
-  atual, anterior, comparacao, loading = false, ocultar,
+  atual, anterior, comparacao, loading = false, ocultar, mostrarPedidos = false,
 }: {
+  /** Acrescenta "N pedidos atribuídos" (advertising_items_quantity) como apoio do card de vendas — usado no detalhe. */
+  mostrarPedidos?: boolean;
   /** Indicadores que não fazem sentido no escopo (ex.: `tacos` numa campanha). */
   ocultar?: string[];
   atual: Record<string, ValorAds>;
@@ -67,12 +69,22 @@ export function FaixaKpis({
           const receita = k.chave === 'vendas' ? atual.receita : null;
           const indisponivel = valor.valor === null;
 
-          const apoio = receita && (
-            <div className={cn('mt-0.5 tracking-normal', receita.valor === null ? 'text-xs font-normal text-muted-foreground' : 'text-sm font-medium text-foreground')}>
-              {receita.valor === null
-                ? `Receita indisponível: ${MOTIVOS[receita.motivo ?? 'nao_retornada']}`
-                : `${moeda(receita.valor)} em receita`}
-            </div>
+          const pedidos = mostrarPedidos && k.chave === 'vendas' ? atual.pedidos : null;
+          const apoio = (receita || pedidos) && (
+            <>
+              {receita && (
+                <div className={cn('mt-0.5 tracking-normal', receita.valor === null ? 'text-xs font-normal text-muted-foreground' : 'text-sm font-medium text-foreground')}>
+                  {receita.valor === null
+                    ? `Receita indisponível: ${MOTIVOS[receita.motivo ?? 'nao_retornada']}`
+                    : `${moeda(receita.valor)} em receita`}
+                </div>
+              )}
+              {pedidos?.valor != null && (
+                <div className="mt-0.5 text-xs font-normal tracking-normal text-muted-foreground">
+                  {`${inteiro(pedidos.valor)} ${pedidos.valor === 1 ? 'pedido atribuído' : 'pedidos atribuídos'}`}
+                </div>
+              )}
+            </>
           );
           const corpo = indisponivel ? (
             <>
