@@ -246,6 +246,7 @@ export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde,
       { cor: 'bg-muted-foreground/40', v: composicao.naoIdentificado },
     ]
     : null;
+  const baseSegmentos = segmentos?.reduce((t, sg) => t + sg.v, 0) ?? 0;
   const termos = conta && (
     <>
       <Termo rotulo="Lucro antes de Ads" valor={conta.lucroAntes != null ? fmtBRL(conta.lucroAntes) : NADA} legenda="vendas do período" empilhado={!temPonte} />
@@ -310,10 +311,11 @@ export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde,
           {/* Montada sempre (hidden quando fechada) para o aria-controls apontar para um id existente. */}
           <div id={idComposicao} role="region" aria-label="Composição do gasto" hidden={!aberto}
             className="space-y-3 rounded-md bg-muted/30 p-3 sm:p-4">
-            {segmentos && (
+            {segmentos && baseSegmentos > 0 && (
               <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+                {/* Proporção sobre a soma das parcelas (base coletada), não sobre o investimento ao vivo: uma base só. */}
                 {segmentos.map(sg => (
-                  <div key={sg.cor} className={cn('h-full', sg.cor)} style={{ width: `${(sg.v / conta.custo) * 100}%` }} />
+                  <div key={sg.cor} className={cn('h-full', sg.cor)} style={{ width: `${(sg.v / baseSegmentos) * 100}%` }} />
                 ))}
               </div>
             )}

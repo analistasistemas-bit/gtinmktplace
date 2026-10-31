@@ -194,3 +194,5 @@ anunciante real antes de habilitação. Todas as indisponibilidades preservam
 o motivo.
 
 **Ajuste 2026-10-31:** 'Vendas atribuídas' segue o painel do Mercado Ads (unidades, `units_quantity`); pedidos (`advertising_items_quantity`) ficam no detalhe.
+
+**Ajuste 2026-10-31:** tolerância de conciliação = max(R$ 1,00; 0,1%) do investimento ao vivo, comparando os totais da janela (substitui a exatidão em centavos por dia). Dentro dela a conciliação fica ok com a `diferenca` em centavos e a composição do gasto segue calculada sobre a base coletada; acima dela, pendente como antes.

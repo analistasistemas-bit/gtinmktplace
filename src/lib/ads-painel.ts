@@ -49,10 +49,10 @@ export interface ContaPainel extends MetricasAds {
 export interface ComposicaoConta { custo: number; emFamilias: number; compartilhado: number;
   naoIdentificado: number | null; naoIdentificadoPct: number | null; divergente: boolean }
 export const MSG_CONCILIACAO_PENDENTE = 'A leitura atual do ML ainda não está conciliada com a coleta das famílias.';
-/** Ao vivo × coleta (plano §5.6 item 5). Pendente: a conta ao vivo fica sem composição; a da última coleta segue
+/** Ao vivo × coleta (plano §5.6 item 5). Ok = totais dentro da TOLERANCIA_CONCILIACAO (ajuste 2026-10-31). Pendente: a conta ao vivo fica sem composição; a da última coleta segue
  *  à parte, identificada pelo horário. `coletada` null com motivo 'cobertura' = série da conta ou grupos coletados
  *  sem cobrir a janela (grupo ausente não é gasto zero conhecido). */
-export type ConciliacaoConta = { estado: 'ok' }
+export type ConciliacaoConta = { estado: 'ok'; /** |Σ coletada − Σ ao vivo| em centavos, dentro da tolerância. */ diferenca: number }
   | { estado: 'pendente'; mensagem: string; coletadoEm: string | null; coletada: ComposicaoConta | null;
       coletadaMotivo: 'cobertura' | null };
 export interface PainelAds {
@@ -71,6 +71,9 @@ export interface PainelAds {
 export const BASE_ACOS_VALIDADA = true;
 
 const DESATUALIZADO_MS = 48 * 3_600_000;
+/** Tolerância da conciliação ao vivo × coleta, em centavos: max(R$ 1,00; 0,1% do investimento ao vivo) — ADR-0179,
+ *  ajuste 2026-10-31. Cobre a diferença de atualização entre a coleta e a leitura atual (ex.: R$ 0,18 em R$ 3.278). */
+const toleranciaConciliacaoC = (aoVivoC: number) => Math.max(100, Math.round(aoVivoC / 1000));
 const cents = (x: number) => Math.round(x * 100);
 const div = (a: number, b: number) => (b !== 0 ? a / b : null);
 
@@ -235,15 +238,16 @@ export function montarPainelAds(p: {
       naoIdentificado: divergente ? null : naoIdC / 100,
       naoIdentificadoPct: divergente || custoC === 0 ? null : naoIdC / custoC, divergente };
   };
-  // Ao vivo só confronta a composição quando a coleta cobre a janela e cada dia coletado bate em centavos com a
-  // leitura atual; senão a diferença de atualização nunca vira "não identificado" (plano §5.6, ADR-0179 emenda item 6).
+  // Ao vivo só confronta a composição quando a coleta cobre a janela (grupos e série da conta) e o total coletado
+  // fica dentro da tolerância do total ao vivo; senão a diferença de atualização nunca vira "não identificado"
+  // (plano §5.6, ADR-0179 emenda item 6 e ajuste 2026-10-31: totais da janela, não mais centavo a centavo por dia).
   let conciliacao: ConciliacaoConta | null = null;
   if (vivo) {
-    const coletadoC = new Map<string, number>();
-    for (const d of contaDias) coletadoC.set(d.dia, coletadoC.has(d.dia) ? NaN : cents(d.cost));   // dia repetido não concilia
-    const concilia = gruposCobertos && coletadaCobre && vivo.every((d) => coletadoC.get(d.dia) === cents(d.cost));
+    const diaRepetido = new Set(contaDias.map((d) => d.dia)).size !== contaDias.length;   // somaria o dia duas vezes
     const coletadaOk = coletadaCobre && gruposCobertos;
-    conciliacao = concilia ? { estado: 'ok' } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
+    const diferenca = Math.abs(somaColetada.custoC - somaConta.custoC);
+    const concilia = coletadaOk && !diaRepetido && diferenca <= toleranciaConciliacaoC(somaConta.custoC);
+    conciliacao = concilia ? { estado: 'ok', diferenca } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
       coletadoEm: sync?.ultimo_ok_em ?? null, coletada: coletadaOk ? composicao(somaColetada.custoC) : null,
       coletadaMotivo: coletadaOk ? null : 'cobertura' };
   }
@@ -251,7 +255,10 @@ export function montarPainelAds(p: {
   let conta: ContaPainel | null = null;
   if (contaCoberta) {
     const custoC = somaConta.custoC;
-    const comp = !vivo || conciliacao?.estado === 'ok' ? composicao(custoC) : null;
+    // Composição sempre sobre a base da COLETA (a única em que grupos e conta são da mesma leitura): ao vivo, só
+    // quando concilia, e então com o total coletado — nunca com o ao vivo, ou a diferença tolerada (até 0,1%) viraria
+    // "não identificado". O investimento (`custo`) segue o ao vivo; as duas bases diferem de propósito em `diferenca`.
+    const comp = !vivo ? composicao(custoC) : conciliacao?.estado === 'ok' ? composicao(somaColetada.custoC) : null;
     const lucroAntes = lucroConhecido ? p.lucroConta.lucro : null;
     conta = {
       ...somarMetricas(somaConta),
