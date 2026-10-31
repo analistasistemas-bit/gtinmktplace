@@ -211,6 +211,16 @@ describe('DetalheCampanha', () => {
       expect(delta(linha, 7)).toEqual({ texto: '-15,0 p.p.', direcao: 'down', tom: 'success' }); // ACOS 25% vs 40%
     });
 
+    it('delta de vendas atribuídas usa unidades, não pedidos', () => {
+      const r = resposta();
+      r.anuncios = [anuncio('MLB1', 'Camiseta Azul',
+        { ...m(100, 400, 7, 2000, 100), units_quantity: ok(12) }, { ...m(80, 200, 7, 1500, 80), units_quantity: ok(6) })];
+      hook(r);
+      abrir();
+      const linha = within(tabela()).getByText('Camiseta Azul').closest('tr')!;
+      expect(delta(linha, 5)).toEqual({ texto: '+100%', direcao: 'up', tom: 'neutral' }); // unidades 12 vs 6; pedidos 7 vs 7
+    });
+
     it('comparação provisória: selo Provisória e nenhum tom de sucesso/perigo', () => {
       hook(resposta({ comparacao: { estado: 'provisoria', motivo: null } }));
       abrir();
