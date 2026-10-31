@@ -171,7 +171,8 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Produto agrupado pelo código PAI. Soma os grupos de Ads de todos os anúncios da família; grupo que mistura '
     + 'famílias vai para Gastos associados, sem rateio.',
   'Investimento::Ads':
-    'Despesa de Ads informada pela API do Mercado Livre no período, só dos grupos de Ads exclusivos desta família.',
+    'Gasto em Product Ads informado pelo Mercado Livre no escopo exibido: conta inteira, campanha ou família. '
+    + 'Na família, soma só os grupos de anúncios exclusivos dela; gasto compartilhado entre famílias não é rateado.',
   'Resultado após Ads::Ads':
     'Lucro antes de Ads (vendas da família no período, já sem comissão, frete, imposto e custo) menos o Gasto. '
     + 'Só entram itens com custo; com custo parcial, o resultado também é parcial. Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
@@ -214,11 +215,11 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Parcela das impressões perdidas porque o anúncio ficou mal classificado no leilão (lance, qualidade, relevância).',
   'Lucro antes de Ads::Ads':
     'Lucro das vendas da conta no período, já sem comissão, frete, imposto e custo, antes de descontar a despesa de Ads. '
-    + 'Itens sem custo ficam de fora; custo estimado ou parcial deixa o número parcial.',
+    + 'Parcial: vendas sem custo ficam de fora. Estimado: o custo existe, mas é o atual do cadastro, não o custo real congelado na venda.',
   'Despesa de Ads::Ads':
     'Investimento em Ads da conta inteira no período, informado pelo ML, incluindo gasto compartilhado ou não identificado, sem rateio.',
   'Resultado parcial após Ads::Ads':
-    'Lucro antes de Ads menos a despesa de Ads, com custo parcial ou estimado em parte das vendas. Não é o lucro completo nem o causado pelo Ads.',
+    'Lucro antes de Ads menos a despesa de Ads, com parte das vendas sem custo (por isso parcial). Custo apenas estimado é marcado como Estimado, à parte. Não é o lucro completo nem o causado pelo Ads.',
   'Equilíbrio no preço atual::Ads':
     'ACOS em que o anúncio zera a margem pelo preço de hoje: (líquido no preço − custo) ÷ preço, na pior variação. '
     + 'Diferente do equilíbrio observado, que usa as vendas já realizadas no período.',

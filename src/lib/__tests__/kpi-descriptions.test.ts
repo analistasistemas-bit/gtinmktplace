@@ -124,4 +124,21 @@ describe('kpi-descriptions', () => {
     expect(getKpiDescription('Mercado endereçável')).toMatch(/vida dos anúncios/i);
     expect(getKpiDescription('Mercado endereçável')).not.toMatch(/por ano|anual|mensal/i);
   });
+
+  it('"Investimento::Ads" cobre conta, campanha e a regra da família', () => {
+    const d = getKpiDescription('Investimento::Ads') ?? '';
+    expect(d).toMatch(/conta/i);
+    expect(d).toMatch(/campanha/i);
+    expect(d).toMatch(/exclusiv/i);
+    expect(d).toMatch(/não é rateado|sem rateio/i);
+  });
+
+  it('Ads: "parcial" é cobertura de custo; "estimado" é descrito à parte', () => {
+    const lucro = getKpiDescription('Lucro antes de Ads::Ads') ?? '';
+    expect(lucro).not.toMatch(/estimado ou parcial/i);
+    expect(lucro).toMatch(/estimado/i);
+    const res = getKpiDescription('Resultado parcial após Ads::Ads') ?? '';
+    expect(res).not.toMatch(/parcial ou estimado/i);
+    expect(res).toMatch(/Estimado/);
+  });
 });
