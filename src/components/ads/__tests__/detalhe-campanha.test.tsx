@@ -124,6 +124,26 @@ describe('DetalheCampanha', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível ler as métricas');
   });
 
+  // C2: atualização recusada (ex.: 429) com dado em tela não apaga as métricas nem a lista de anúncios.
+  it('erro ao atualizar com dado já lido mantém métricas e anúncios, com aviso', () => {
+    hook(resposta(), { isError: true, error: new Error('Atualização recente.') });
+    abrir();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Investimento').length).toBeGreaterThan(0);
+    expect(screen.getByRole('table', { name: 'Anúncios patrocinados no período' })).toBeInTheDocument();
+    expect(screen.getByText(/Não foi possível atualizar agora/)).toBeInTheDocument();
+  });
+
+  it('Tentar de novo refaz a consulta normal (sem furar o cache)', async () => {
+    const refetch = vi.fn();
+    const atualizar = vi.fn();
+    hook(undefined, { isError: true, error: new Error('falhou'), refetch, atualizar });
+    abrir();
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(atualizar).not.toHaveBeenCalled();
+  });
+
   describe('Anúncios patrocinados', () => {
     it('colunas pedidas, ordenado por investimento e valores calculados das aditivas', () => {
       abrir();

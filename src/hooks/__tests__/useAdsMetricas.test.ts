@@ -88,12 +88,33 @@ describe('useAdsMetricas', () => {
     expect(result.current.error?.message).toBe('pedido inválido: futuro');
   });
 
-  it('refetch envia fresco uma vez e grava na chave atual', async () => {
+  // C2: "Tentar novamente" refaz a consulta normal (cache da edge vale); só "Atualizar" fura o cache (fresco).
+  it('refetch refaz a consulta sem fresco', async () => {
+    m.buscarMetricasAds.mockResolvedValueOnce(resp('velho')).mockResolvedValueOnce(resp('novo'));
+    const { result } = render(pedido('2026-10-01'));
+    await waitFor(() => expect(result.current.data?.avisos).toEqual(['velho']));
+    await act(async () => { await result.current.refetch(); });
+    expect(m.buscarMetricasAds).toHaveBeenCalledTimes(2);
+    expect(m.buscarMetricasAds.mock.calls[1][0].fresco).toBeUndefined();
+    await waitFor(() => expect(result.current.data?.avisos).toEqual(['novo']));
+  });
+
+  it('atualizar recusado (429) mantém o dado já lido e acusa o erro', async () => {
+    m.buscarMetricasAds.mockResolvedValueOnce(resp('velho')).mockRejectedValueOnce(new Error('Atualização recente.'));
+    const { result } = render(pedido('2026-10-01'));
+    await waitFor(() => expect(result.current.data?.avisos).toEqual(['velho']));
+    await act(async () => { await result.current.atualizar(); });
+    expect(m.buscarMetricasAds.mock.calls[1][0].fresco).toBe(true);
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data?.avisos).toEqual(['velho']);
+  });
+
+  it('atualizar envia fresco uma vez e grava na chave atual', async () => {
     m.buscarMetricasAds.mockResolvedValueOnce(resp('velho')).mockResolvedValueOnce(resp('novo'));
     const { result } = render(pedido('2026-10-01'));
     await waitFor(() => expect(result.current.data?.avisos).toEqual(['velho']));
     expect(m.buscarMetricasAds.mock.calls[0][0].fresco).toBeUndefined();
-    await act(async () => { await result.current.refetch(); });
+    await act(async () => { await result.current.atualizar(); });
     expect(m.buscarMetricasAds.mock.calls[1][0].fresco).toBe(true);
     await waitFor(() => expect(result.current.data?.avisos).toEqual(['novo']));
     expect(m.buscarMetricasAds).toHaveBeenCalledTimes(2);

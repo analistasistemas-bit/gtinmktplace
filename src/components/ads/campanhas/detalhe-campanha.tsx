@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, Loader2, X } from 'lucide-react';
 import {
   Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
@@ -312,7 +312,8 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
   const anterior = useMemo(() => (data?.anterior ? indicadoresAds(data.anterior.resumo, null) : null), [data]);
 
   let metricas: ReactNode;
-  if (isError) {
+  // Dado antes do erro: falha ao atualizar mantém as métricas lidas (plano §4.9); o aviso vai junto.
+  if (isError && !data) {
     metricas = (
       <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
         <p>Não foi possível ler as métricas da campanha no Mercado Livre.</p>
@@ -331,6 +332,12 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
   } else {
     metricas = (
       <div className="space-y-4">
+        {isError && (
+          <p role="status" className="flex items-start gap-2 text-sm">
+            <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+            Não foi possível atualizar agora; os valores exibidos são da última leitura.
+          </p>
+        )}
         {data.comparacao.estado === 'indisponivel' && (
           <p className="text-sm text-muted-foreground">Comparação indisponível{data.comparacao.motivo ? `: ${data.comparacao.motivo}` : '.'}</p>
         )}

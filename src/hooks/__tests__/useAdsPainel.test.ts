@@ -538,6 +538,14 @@ describe('useAdsPainel', () => {
     expect(m.buscarCodigosMlbs).toHaveBeenCalledTimes(1);
     expect(v.refetch).toHaveBeenCalledTimes(1);
     expect(m.catQ.refetch).toHaveBeenCalledTimes(1);
+    // "Tentar/Verificar novamente": consulta normal; só o Atualizar fura o cache da edge (C2).
+    expect(m.buscarMetricasAds.mock.calls.at(-1)![0].fresco).toBeUndefined();
+
+    await act(async () => {
+      await r.result.current.atualizar();
+    });
+    expect(m.buscarPainelAds).toHaveBeenCalledTimes(2);
+    expect(v.refetch).toHaveBeenCalledTimes(2);
     expect(m.buscarMetricasAds).toHaveBeenLastCalledWith(expect.objectContaining({ escopo: 'conta', fresco: true }));
   });
 

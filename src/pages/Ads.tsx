@@ -98,6 +98,7 @@ export default function Ads() {
     isFetching,
     isError,
     refetch,
+    atualizar,
   } = useAdsPainel(periodo, comparar);
 
   const [automatica, setAutomatica] = useState<Aba | null>(null);
@@ -185,9 +186,9 @@ export default function Ads() {
   const pedidoCampanhas = useMemo<PedidoAdsMetricas | null>(() => (pedido ? { ...pedido, escopo: 'campanhas' } : null), [pedido]);
   const metricasCampanhas = useAdsMetricas(pedidoCampanhas, aba === 'campanhas' && pedidoCampanhas !== null);
   const atualizarTudo = () => {
-    void refetch();
+    void atualizar();
     if (aba !== 'campanhas') return;
-    void metricasCampanhas.refetch();
+    void metricasCampanhas.atualizar();
     void campanhasDados.atualizar();
   };
 

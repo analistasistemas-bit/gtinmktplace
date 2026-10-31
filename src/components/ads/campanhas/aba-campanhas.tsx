@@ -14,7 +14,7 @@ import type { AcoesFamilia } from './familia-campanha';
 const BOTAO = 'h-8 max-sm:h-11 pointer-coarse:h-11';
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
-export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch'>;
+export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch' | 'atualizar'>;
 
 const lidoAs = (iso: string) =>
   new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
@@ -55,7 +55,8 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
   const { resposta, campanhas, isLoading, isError, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
 
   let tabela: ReactNode;
-  if (metricas.isError) {
+  // Dado antes do erro: falha ao atualizar (ex.: limite de 1/min) mantém a tabela lida, com o horário (plano §4.9).
+  if (metricas.isError && !metricas.data) {
     tabela = (
       <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
         <p className="flex items-start gap-2">
@@ -71,9 +72,18 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
     tabela = <AvisoAcesso estado={metricas.data.estado} />;
   } else {
     const nomes = new Map(metricas.data.campanhas.map(c => [c.id, c.nome]));
+    const lidoEm = metricas.data.atual?.lidoEm;
     tabela = (
-      <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao}
-        onAbrir={id => abrir({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
+      <>
+        {metricas.isError && (
+          <p role="status" className="flex items-start gap-2 text-sm">
+            <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+            {`Não foi possível atualizar as campanhas agora; os valores exibidos são da leitura${lidoEm ? ` das ${lidoAs(lidoEm)}` : ' anterior'}.`}
+          </p>
+        )}
+        <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao}
+          onAbrir={id => abrir({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
+      </>
     );
   }
 

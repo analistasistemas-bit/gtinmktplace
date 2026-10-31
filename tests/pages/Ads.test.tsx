@@ -77,6 +77,7 @@ const montar = (
     isFetching: false,
     isError: false,
     refetch: vi.fn().mockResolvedValue(undefined),
+    atualizar: vi.fn().mockResolvedValue(undefined),
     ...extra,
   };
 
@@ -1243,21 +1244,50 @@ describe('contexto único: período, comparação e aba', () => {
     expect(screen.getAllByText(/não fecha com o total da conta/)).toHaveLength(1);
   });
 
-  it('Atualizar do cabeçalho em Campanhas refaz conta, tabela do período e configuração', () => {
+  it('Atualizar do cabeçalho em Campanhas refaz conta, tabela do período e configuração (fresco)', () => {
     const refetch = vi.fn().mockResolvedValue(undefined);
+    const atualizarPainel = vi.fn().mockResolvedValue(undefined);
     const refetchCampanhas = vi.fn().mockResolvedValue(undefined);
+    const atualizarCampanhas = vi.fn().mockResolvedValue(undefined);
     const atualizar = vi.fn().mockResolvedValue(undefined);
     hookCampanhas.mockReturnValue({ resposta: null, campanhas: null, isLoading: true, isError: false, erro: null,
       atualizando: false, atualizar, erroAtualizar: null, tentarDeNovo: vi.fn() });
     hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => ({
       data: p?.escopo === 'campanhas' ? respostaMetricas({ escopo: 'campanhas', atual: null, campanhas: [campanhaPeriodo()] }) : undefined,
-      isLoading: false, isFetching: false, isError: false, error: null, refetch: p?.escopo === 'campanhas' ? refetchCampanhas : vi.fn(),
+      isLoading: false, isFetching: false, isError: false, error: null,
+      refetch: p?.escopo === 'campanhas' ? refetchCampanhas : vi.fn(), atualizar: p?.escopo === 'campanhas' ? atualizarCampanhas : vi.fn(),
     }));
-    montar(PAINEL, { refetch }, 'campanhas');
+    montar(PAINEL, { refetch, atualizar: atualizarPainel }, 'campanhas');
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }));
-    expect(refetch).toHaveBeenCalledTimes(1);
-    expect(refetchCampanhas).toHaveBeenCalledTimes(1);
+    expect(atualizarPainel).toHaveBeenCalledTimes(1);
+    expect(atualizarCampanhas).toHaveBeenCalledTimes(1);
     expect(atualizar).toHaveBeenCalledTimes(1);
+    expect(refetch).not.toHaveBeenCalled();
+    expect(refetchCampanhas).not.toHaveBeenCalled();
+  });
+
+  // C2: falha ao atualizar (ex.: 429) com a tabela já lida não a apaga; "Tentar novamente" sem dado é consulta normal.
+  it('erro ao atualizar as campanhas com tabela lida mantém a tabela, com aviso', () => {
+    hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => (p?.escopo === 'campanhas'
+      ? { data: respostaMetricas({ escopo: 'campanhas', atual: null, campanhas: [campanhaPeriodo()] }), isLoading: false,
+        isFetching: false, isError: true, error: new Error('Atualização recente.'), refetch: vi.fn(), atualizar: vi.fn() }
+      : { data: undefined, isLoading: true, isFetching: false, isError: false, error: null, refetch: vi.fn(), atualizar: vi.fn() }));
+    montar(PAINEL, {}, 'campanhas');
+    expect(screen.getByRole('row', { name: /Camp Verão/ })).toBeInTheDocument();
+    expect(screen.getByText(/Não foi possível atualizar as campanhas agora/)).toBeInTheDocument();
+  });
+
+  it('erro sem tabela lida: Tentar novamente refaz a consulta normal', () => {
+    const refetchCampanhas = vi.fn();
+    const atualizarCampanhas = vi.fn();
+    hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => (p?.escopo === 'campanhas'
+      ? { data: undefined, isLoading: false, isFetching: false, isError: true, error: new Error('x'), refetch: refetchCampanhas, atualizar: atualizarCampanhas }
+      : { data: undefined, isLoading: true, isFetching: false, isError: false, error: null, refetch: vi.fn(), atualizar: vi.fn() }));
+    montar(PAINEL, {}, 'campanhas');
+    const alerta = screen.getByText('Não foi possível ler as campanhas do período no Mercado Livre.').closest('[role=alert]') as HTMLElement;
+    fireEvent.click(within(alerta).getByRole('button', { name: 'Tentar novamente' }));
+    expect(refetchCampanhas).toHaveBeenCalledTimes(1);
+    expect(atualizarCampanhas).not.toHaveBeenCalled();
   });
 
   it('Campanhas termina com a integridade e a procedência da conta', () => {

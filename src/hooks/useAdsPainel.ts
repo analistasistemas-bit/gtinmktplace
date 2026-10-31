@@ -45,7 +45,10 @@ export interface RetornoAdsPainel {
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
+  /** "Tentar/Verificar novamente": refaz as consultas (a edge pode responder do cache). */
   refetch: () => Promise<void>;
+  /** "Atualizar": o mesmo, com a leitura ao vivo furando o cache da edge (`fresco`). */
+  atualizar: () => Promise<void>;
 }
 
 const meioDiaBRT = (dia: string) => new Date(`${dia}T12:00:00-03:00`);
@@ -189,20 +192,22 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
 
   // ponytail: sem esperar o sync, o refetch dispara já nas chaves da janela atual; troca de período no meio
   // só deixa a busca terminar na chave antiga (sem placeholderData, ela nunca aparece na nova).
-  const refetch = async () => {
+  const recarregar = async (fresco: boolean) => {
     if (!habilitado) { await syncQ.refetch(); return; }
     await Promise.all([
       syncQ.refetch(),
       fonteQ.refetch().then((f) => (f.isSuccess ? codQ.refetch() : undefined)),
       vendas.refetch(),
       catQ.refetch(),
-      metricasQ.refetch(),
+      fresco ? metricasQ.atualizar() : metricasQ.refetch(),
     ]);
   };
+  const refetch = () => recarregar(false);
+  const atualizar = () => recarregar(true);
 
   return {
     painel, resultadoConta, janela, comparacao, metricasConta: metricasQ.data ?? null, faturamentoConta,
     situacaoPeriodo, historicoDesde: vendas.dados?.historicoDesde ?? null, ultimoOkEm, blocos,
-    isLoading, isFetching, isError, refetch,
+    isLoading, isFetching, isError, refetch, atualizar,
   };
 }
