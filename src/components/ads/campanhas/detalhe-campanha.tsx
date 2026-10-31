@@ -16,10 +16,10 @@ import { fmtBRL } from '@/lib/formato';
 import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
 import { cn } from '@/lib/utils';
 import {
-  compararIndicadorAds, indicadoresAds,
+  celulaAds, celulaCurtaAds, indicadoresAds,
   type SentidoAds, type UnidadeAds,
 } from '@/lib/ads-metricas';
-import { DeltaAds } from '@/components/ads/delta-ads';
+import { CelulaMetricaAds, LegendaCurtaAds } from '@/components/ads/delta-ads';
 import {
   MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct,
 } from '@/lib/ads-metricas';
@@ -72,38 +72,9 @@ const NUM = `${CELULA} text-right tabular-nums`;
 type Indicadores = Record<string, ValorAds>;
 interface Linha { a: AnuncioPeriodoAds; atual: Indicadores; anterior: Indicadores | null }
 
-function Valor({ def, linha, comparar, provisoria }: { def: Def; linha: Linha; comparar: boolean; provisoria: boolean }) {
-  const valor = linha.atual[def.chave] ?? SEM_VALOR;
-  if (valor.valor === null) {
-    return (
-      <div className="space-y-0.5">
-        <span className="block text-muted-foreground">—</span>
-        <span className="block text-xs font-normal leading-snug text-muted-foreground">{MOTIVOS[valor.motivo ?? 'nao_retornada']}</span>
-      </div>
-    );
-  }
-  const ant = comparar && linha.anterior ? linha.anterior[def.chave] ?? SEM_VALOR : null;
-  // Anterior sem valor: o motivo específico, não um genérico "Sem comparação".
-  const cmp = ant && ant.valor !== null ? compararIndicadorAds(valor, ant, def.unidade, provisoria, def.sentido) : null;
-  return (
-    <div className="space-y-0.5">
-      <span className="block font-medium">{def.formato(valor.valor)}</span>
-      {ant && ant.valor === null && (
-        <span className="block text-xs font-normal leading-snug text-muted-foreground">
-          Variação indisponível: {MOTIVOS[ant.motivo ?? 'nao_retornada']}
-        </span>
-      )}
-      {cmp && (
-        <span className="flex flex-wrap items-center justify-end gap-x-1.5">
-          <DeltaAds {...cmp} />
-          {provisoria && cmp.texto !== 'Sem comparação' && (
-            <span className="rounded-sm bg-muted px-1 text-[11px] font-medium text-muted-foreground">Provisória</span>
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
+/** Célula curta (polimento 2026-10-31): `anterior` só com comparação e linha anterior (o motivo da linha fica em Identificacao). */
+const celula = (def: Def, linha: Linha, comparar: boolean, provisoria: boolean) => celulaAds(
+  linha.atual[def.chave] ?? SEM_VALOR, comparar && linha.anterior ? linha.anterior[def.chave] ?? SEM_VALOR : null, def, provisoria);
 
 function Identificacao({ l, comparar, motivo }: { l: Linha; comparar: boolean; motivo: MotivoMetricaAds | null }) {
   const { itemId, titulo } = l.a;
@@ -166,6 +137,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
     anterior: a.anterior ? indicadoresAds(a.anterior.resumo, null) : null,
   })), [anuncios]);
   const visiveis = ordenar(linhas, ordem.coluna, ordem.direcao);
+  const temCurta = linhas.some(l => COLUNAS.some(d => celulaCurtaAds(celula(d, l, comparar, provisoria))));
 
   const ordenarPor = (coluna: string) => setOrdem(o => o.coluna === coluna
     ? { coluna, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }
@@ -200,7 +172,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
                 <TableCell className={CELULA}><Identificacao l={l} comparar={comparar} motivo={motivo ?? null} /></TableCell>
                 {COLUNAS.map(d => (
                   <TableCell key={d.chave} className={NUM}>
-                    <Valor def={d} linha={l} comparar={comparar} provisoria={provisoria} />
+                    <CelulaMetricaAds celula={celula(d, l, comparar, provisoria)} provisoria={provisoria} />
                   </TableCell>
                 ))}
               </TableRow>
@@ -234,7 +206,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
                 {COLUNAS.map(d => (
                   <div key={d.chave} className="flex items-start justify-between gap-3">
                     <dt className="text-muted-foreground">{d.rotulo}</dt>
-                    <dd className="text-right tabular-nums"><Valor def={d} linha={l} comparar={comparar} provisoria={provisoria} /></dd>
+                    <dd className="text-right tabular-nums"><CelulaMetricaAds celula={celula(d, l, comparar, provisoria)} provisoria={provisoria} /></dd>
                   </div>
                 ))}
               </dl>
@@ -242,6 +214,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
           ))}
         </ul>
       </div>
+      {temCurta && <LegendaCurtaAds />}
     </div>
   );
 }

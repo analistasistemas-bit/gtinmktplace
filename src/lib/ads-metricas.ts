@@ -138,3 +138,30 @@ export const MOTIVOS_METRICA_ADS: Record<MotivoMetricaAds, string> = {
 
 /** Métrica ausente na resposta: indisponível, nunca zero. */
 export const SEM_VALOR_ADS: ValorAds = { valor: null, motivo: 'nao_retornada' };
+
+/** Comparação sem número (sem base ou sem valor nos dois lados): nunca vira selo "Provisória" nem seta. */
+export const comparacaoSemNumeroAds = (c: ComparacaoAds) => c === SEM_BASE || c === SEM_COMPARACAO;
+
+/** Célula de tabela (polimento 2026-10-31): forma curta. Indisponível = "—" na tela e o motivo inteiro em texto
+ *  para leitor de tela; a legenda única abaixo da tabela explica o travessão. Os cards de KPI seguem com o texto. */
+export interface CelulaAds { valor: string | null; motivo: string | null; delta: ComparacaoAds | null; motivoDelta: string | null }
+
+/** `anterior` null = sem comparação pedida ou linha sem período anterior (o motivo da linha fica com quem chama). */
+export function celulaAds(
+  atual: ValorAds, anterior: ValorAds | null,
+  d: { unidade: UnidadeAds; sentido: SentidoAds; formato: (n: number) => string }, provisoria: boolean,
+): CelulaAds {
+  if (atual.valor === null) return { valor: null, motivo: MOTIVOS_METRICA_ADS[atual.motivo ?? 'nao_retornada'], delta: null, motivoDelta: null };
+  const base = { valor: d.formato(atual.valor), motivo: null };
+  if (!anterior) return { ...base, delta: null, motivoDelta: null };
+  if (anterior.valor === null) {
+    return { ...base, delta: null, motivoDelta: `Variação indisponível: ${MOTIVOS_METRICA_ADS[anterior.motivo ?? 'nao_retornada']}` };
+  }
+  const delta = compararIndicadorAds(atual, anterior, d.unidade, provisoria, d.sentido);
+  return comparacaoSemNumeroAds(delta)
+    ? { ...base, delta: null, motivoDelta: `Variação indisponível: ${delta.texto}.` }
+    : { ...base, delta, motivoDelta: null };
+}
+
+/** Alguma célula usa o travessão curto: a tabela mostra a legenda. */
+export const celulaCurtaAds = (c: CelulaAds) => c.valor === null || c.motivoDelta !== null;

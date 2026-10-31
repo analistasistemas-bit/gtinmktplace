@@ -8,13 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import {
-  compararIndicadorAds, indicadoresAds,
+  celulaAds, celulaCurtaAds, indicadoresAds,
   type SentidoAds, type UnidadeAds,
 } from '@/lib/ads-metricas';
-import { DeltaAds } from '@/components/ads/delta-ads';
+import { CelulaMetricaAds, LegendaCurtaAds } from '@/components/ads/delta-ads';
 import { OrdenarCartoes } from '@/components/ads/ordenar-cartoes';
 import {
-  MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct, razaoAds as razao,
+  SEM_VALOR_ADS as SEM_VALOR, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct, razaoAds as razao,
 } from '@/lib/ads-metricas';
 import type { CampanhaPeriodoAds, RespostaAdsMetricas, ValorAds } from '../../../../supabase/functions/_shared/ads/metricas';
 
@@ -70,34 +70,10 @@ const NUM = `${CELULA} text-right tabular-nums`;
 type Indicadores = Record<string, ValorAds>;
 interface Linha { c: CampanhaPeriodoAds; atual: Indicadores; anterior: Indicadores | null }
 
-/** Valor da métrica + variação vs período comparado; indisponível mostra travessão e o motivo (nunca zero). */
-function Celula({ def, linha, comparar, provisoria }: { def: Def; linha: Linha; comparar: boolean; provisoria: boolean }) {
-  const valor = linha.atual[def.chave] ?? SEM_VALOR;
-  if (valor.valor === null) {
-    return (
-      <div className="space-y-0.5">
-        <span className="block text-muted-foreground">—</span>
-        <span className="block text-xs font-normal leading-snug text-muted-foreground">{MOTIVOS[valor.motivo ?? 'nao_retornada']}</span>
-      </div>
-    );
-  }
-  const cmp = comparar && linha.anterior
-    ? compararIndicadorAds(valor, linha.anterior[def.chave] ?? SEM_VALOR, def.unidade, provisoria, def.sentido)
-    : null;
-  return (
-    <div className="space-y-0.5">
-      <span className="block font-medium">{def.formato(valor.valor)}</span>
-      {cmp && (
-        <span className="flex flex-wrap items-center justify-end gap-x-1.5">
-          <DeltaAds {...cmp} />
-          {provisoria && cmp.texto !== 'Sem comparação' && (
-            <span className="rounded-sm bg-muted px-1 text-[11px] font-medium text-muted-foreground">Provisória</span>
-          )}
-        </span>
-      )}
-    </div>
-  );
-}
+/** Valor da métrica + variação vs período comparado; indisponível mostra travessão curto e o motivo acessível
+ *  (nunca zero). Polimento 2026-10-31: o texto inteiro do motivo não ocupa mais a célula. */
+const celula = (def: Def, linha: Linha, comparar: boolean, provisoria: boolean) => celulaAds(
+  linha.atual[def.chave] ?? SEM_VALOR, comparar && linha.anterior ? linha.anterior[def.chave] ?? SEM_VALOR : null, def, provisoria);
 
 function Nome({ c }: { c: CampanhaPeriodoAds }) {
   const s = statusDe(c.statusAtual);
@@ -244,7 +220,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir, completa = tru
                 <TableCell className={CELULA}><Nome c={l.c} /></TableCell>
                 {colunas.map(d => (
                   <TableCell key={d.chave} className={NUM}>
-                    <Celula def={d} linha={l} comparar={comparar} provisoria={provisoria} />
+                    <CelulaMetricaAds celula={celula(d, l, comparar, provisoria)} provisoria={provisoria} />
                   </TableCell>
                 ))}
                 <TableCell className={`${CELULA} text-right`}><BotaoVer c={l.c} onAbrir={onAbrir} compacto /></TableCell>
@@ -263,7 +239,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir, completa = tru
               {colunas.map(d => (
                 <div key={d.chave} className="flex items-start justify-between gap-3">
                   <dt className="text-muted-foreground">{d.rotulo}</dt>
-                  <dd className="text-right tabular-nums"><Celula def={d} linha={l} comparar={comparar} provisoria={provisoria} /></dd>
+                  <dd className="text-right tabular-nums"><CelulaMetricaAds celula={celula(d, l, comparar, provisoria)} provisoria={provisoria} /></dd>
                 </div>
               ))}
             </dl>
@@ -271,6 +247,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir, completa = tru
           </li>
         ))}
       </ul>
+      {visiveis.some(l => colunas.some(d => celulaCurtaAds(celula(d, l, comparar, provisoria)))) && <LegendaCurtaAds />}
     </>
   );
 

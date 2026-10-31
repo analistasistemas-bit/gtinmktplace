@@ -153,6 +153,31 @@ describe('TabelaCampanhas', () => {
     expect(linha().querySelector('[data-delta]')).toBeNull();
   });
 
+  // Polimento 2026-10-31: forma curta na célula; motivo completo em sr-only e uma legenda abaixo da tabela.
+  const visivel = (el: Element) => {
+    const c = el.cloneNode(true) as Element;
+    c.querySelectorAll('.sr-only').forEach((n) => n.remove());
+    return c.textContent;
+  };
+  it('campanha pausada sem denominador: "—" curto, motivo acessível e legenda única', () => {
+    const pausada = camp(2, 'Inverno pausada', 'paused', m(0, 0, 0, 0, 0), m(0, 0, 0, 0, 0));
+    render(<TabelaCampanhas campanhas={[pausada, CAMPANHAS[0]]} comparacao={{ estado: 'provisoria', motivo: null }} onAbrir={vi.fn()} />);
+    const linha = within(tabela()).getByText('Inverno pausada').closest('tr')!;
+    const colAcos = Array.from(tabela().querySelectorAll('th')).findIndex((h) => /ACOS/.test(h.textContent ?? ''));
+    const colInv = Array.from(tabela().querySelectorAll('th')).findIndex((h) => /Investimento/.test(h.textContent ?? ''));
+    const acos = within(linha).getAllByRole('cell')[colAcos];
+    expect(visivel(acos)).toBe('—');
+    expect(within(acos).getByText(/^Sem denominador no período/)).toHaveClass('sr-only');
+    // Investimento 0 vs 0: sem base → "—" na variação, sem selo Provisória.
+    expect(visivel(within(linha).getAllByRole('cell')[colInv])).toBe('R$ 0,00—');
+    expect(within(linha).queryByText('Provisória')).toBeNull();
+    expect(screen.getAllByText(/— indica valor ou variação indisponível/)).toHaveLength(1);
+  });
+  it('sem célula indisponível: sem legenda do travessão', () => {
+    render(<TabelaCampanhas campanhas={[CAMPANHAS[0]]} comparacao={DISP} onAbrir={vi.fn()} />);
+    expect(screen.queryByText(/— indica valor ou variação indisponível/)).toBeNull();
+  });
+
   it('"Ver campanha" chama onAbrir com o id', async () => {
     const onAbrir = vi.fn();
     render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={onAbrir} />);

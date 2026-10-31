@@ -239,6 +239,45 @@ describe('DetalheCampanha', () => {
       expect(inv).toHaveTextContent('Variação indisponível: Período fora da retenção do ML.');
     });
 
+    // Polimento 2026-10-31: célula de tabela usa a forma curta ("—"); o motivo inteiro fica em sr-only + legenda única.
+    const visivel = (el: Element) => {
+      const c = el.cloneNode(true) as Element;
+      c.querySelectorAll('.sr-only').forEach((n) => n.remove());
+      return c.textContent;
+    };
+    const LEGENDA = /— indica valor ou variação indisponível/;
+    it('anúncio sem base no período anterior: "—" curto, motivo acessível, sem selo Provisória e legenda única', () => {
+      hook(resposta({ comparacao: { estado: 'provisoria', motivo: null },
+        anuncios: [anuncio('MLB1', 'Camiseta Azul', m(100, 400, 5, 2000, 100), m(0, 0, 0, 0, 0))] }));
+      abrir();
+      const linha = within(tabela()).getByText('Camiseta Azul').closest('tr')!;
+      const cel = within(linha).getAllByRole('cell');
+      // CPC (4) e ACOS (7): anterior sem denominador; Investimento (1): anterior zerado = sem base.
+      expect(visivel(cel[4])).toBe('R$ 1,00—');
+      expect(visivel(cel[7])).toBe('25,0%—');
+      expect(visivel(cel[1])).toBe('R$ 100,00—');
+      expect(within(cel[4]).getByText(/^Variação indisponível: Sem denominador no período/)).toHaveClass('sr-only');
+      expect(within(cel[1]).getByText('Variação indisponível: Sem base de comparação.')).toHaveClass('sr-only');
+      expect(linha.querySelector('[data-delta]')).toBeNull();
+      expect(within(linha).queryByText('Provisória')).toBeNull();
+      expect(screen.getAllByText(LEGENDA)).toHaveLength(1);
+      // Cartões (mobile) usam a mesma célula curta.
+      const cartao = within(screen.getByRole('list', { name: 'Anúncios patrocinados em cartões' })).getAllByRole('listitem')[0];
+      expect(within(cartao).queryByText('Provisória')).toBeNull();
+      expect(within(cartao).getAllByText(/^Variação indisponível: Sem denominador/)[0]).toHaveClass('sr-only');
+    });
+    it('valor atual indisponível na célula: "—" visível e motivo só para leitor de tela', () => {
+      hook(resposta({ anuncios: [anuncio('MLB1', 'Camiseta Azul', { ...m(100, 0, 0, 2000, 100) }, m(80, 200, 3, 1500, 80))] }));
+      abrir();
+      const acos = within(within(tabela()).getByText('Camiseta Azul').closest('tr')!).getAllByRole('cell')[7];
+      expect(visivel(acos)).toBe('—');
+      expect(within(acos).getByText(/^Sem denominador no período/)).toHaveClass('sr-only');
+    });
+    it('variações todas disponíveis: sem legenda do travessão', () => {
+      abrir();
+      expect(screen.queryByText(LEGENDA)).toBeNull();
+    });
+
     it('cartões (mobile): controle de direção inverte a ordem', async () => {
       const user = userEvent.setup();
       abrir();
