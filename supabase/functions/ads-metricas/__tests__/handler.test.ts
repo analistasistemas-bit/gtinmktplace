@@ -405,3 +405,13 @@ describe.each([
     expect([...c.m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'))).toBe(false);
   });
 });
+
+// I2 pré-merge: E1 com 500 na listagem atual sai parcial e incompleta (a UI não pode chamar de "nenhuma campanha").
+it('campanhas com E1 500: estado parcial, atual.completo false e lista vazia não cacheada', async () => {
+  const { deps, c } = montar({}, mlFalso({ falha: 500, ateFalha: '2026-10-30' }));
+  const corpo = await (await tratar(post({ ...PEDIDO, escopo: 'campanhas' }), deps)).json();
+  expect(corpo.estado).toBe('parcial');
+  expect(corpo.atual.completo).toBe(false);
+  expect(corpo.campanhas).toEqual([]);
+  expect([...c.m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'))).toBe(false);
+});

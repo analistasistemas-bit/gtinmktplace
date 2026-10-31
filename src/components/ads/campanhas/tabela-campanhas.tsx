@@ -151,9 +151,11 @@ function ordenar(linhas: Linha[], coluna: Coluna, direcao: Direcao): Linha[] {
   });
 }
 
-export function TabelaCampanhas({ campanhas, comparacao, onAbrir }: {
+export function TabelaCampanhas({ campanhas, comparacao, onAbrir, completa = true }: {
   campanhas: CampanhaPeriodoAds[];
   comparacao: RespostaAdsMetricas['comparacao'];
+  /** false = leitura parcial: lista vazia não é "nenhuma campanha" (o aviso de incompleta fica com quem chama). */
+  completa?: boolean;
   onAbrir: (campanhaId: number) => void;
 }) {
   const [visao, setVisao] = useState<Visao>('resultado');
@@ -216,7 +218,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir }: {
   );
 
   const corpo = campanhas.length === 0 ? (
-    <p className="text-sm text-muted-foreground">Nenhuma campanha com dados de Ads no período.</p>
+    completa ? <p className="text-sm text-muted-foreground">Nenhuma campanha com dados de Ads no período.</p> : null
   ) : visiveis.length === 0 ? (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
       <p>Nenhuma campanha encontrada com esta busca e status.</p>

@@ -73,15 +73,29 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
   } else {
     const nomes = new Map(metricas.data.campanhas.map(c => [c.id, c.nome]));
     const lidoEm = metricas.data.atual?.lidoEm;
+    // Leitura parcial (E1 com falha ou paginação parada): lista incompleta, nunca "nenhuma campanha" (pré-merge I2).
+    const completa = metricas.data.estado === 'ok' && metricas.data.atual?.completo !== false;
+    const motivo = metricas.data.avisos.length > 0
+      ? metricas.data.avisos.join(' ')
+      : 'o Mercado Livre não devolveu todas as campanhas do período nesta leitura.';
     tabela = (
       <>
+        {!completa && (
+          <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+            <p className="flex items-start gap-2">
+              <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+              {`Lista de campanhas incompleta: ${motivo} As campanhas exibidas podem não ser todas.`}
+            </p>
+            <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={() => void metricas.refetch()}>Tentar novamente</Button>
+          </div>
+        )}
         {metricas.isError && (
           <p role="status" className="flex items-start gap-2 text-sm">
             <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
             {`Não foi possível atualizar as campanhas agora; os valores exibidos são da leitura${lidoEm ? ` das ${lidoAs(lidoEm)}` : ' anterior'}.`}
           </p>
         )}
-        <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao}
+        <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao} completa={completa}
           onAbrir={id => abrir({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
       </>
     );

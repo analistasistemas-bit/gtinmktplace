@@ -236,6 +236,33 @@ describe('AbaCampanhas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     expect(m.refetch).toHaveBeenCalled();
   });
+  // I2 pré-merge: leitura incompleta (E1 500 ou paginação parada) nunca vira "nenhuma campanha" nem lista sem ressalva.
+  const parcial = (campanhas: unknown[], avisos: string[] = []) => {
+    const m = metricas();
+    return { ...m, data: { ...m.data, estado: 'parcial', campanhas, avisos,
+      atual: { ...blocoMetricas(0), resumo: {}, completo: false } } };
+  };
+  it('E1 500 (parcial, sem linhas): aviso de lista incompleta com Tentar novamente, sem "Nenhuma campanha"', () => {
+    const m = parcial([]);
+    aba(dados(), m);
+    expect(screen.getByRole('alert')).toHaveTextContent('Lista de campanhas incompleta');
+    expect(screen.queryByText(/Nenhuma campanha com dados/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(m.refetch).toHaveBeenCalled();
+  });
+  it('paginação parada após a 1ª página: subconjunto exibido com a ressalva e o motivo dos avisos', () => {
+    aba(dados(), parcial(metricas().data.campanhas, ['Limite de leitura atingido; dados incompletos.']));
+    expect(screen.getByRole('row', { name: /Campanha Verão/ })).toBeInTheDocument();
+    const alerta = screen.getByRole('alert');
+    expect(alerta).toHaveTextContent('Lista de campanhas incompleta');
+    expect(alerta).toHaveTextContent('Limite de leitura atingido; dados incompletos.');
+  });
+  it('leitura completa sem campanhas: estado vazio, sem aviso de incompleta', () => {
+    const m = metricas();
+    aba(dados(), { ...m, data: { ...m.data, campanhas: [], atual: blocoMetricas(0) } });
+    expect(screen.getByText('Nenhuma campanha com dados de Ads no período.')).toBeInTheDocument();
+    expect(screen.queryByText(/Lista de campanhas incompleta/)).not.toBeInTheDocument();
+  });
   it('sem_conexao nas métricas: pede para conectar em Canais', () => {
     const m = metricas();
     aba(dados(), { ...m, data: { ...m.data, estado: 'sem_conexao', campanhas: [] } });
