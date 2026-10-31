@@ -19,6 +19,10 @@ import {
   compararIndicadorAds, indicadoresAds,
   type SentidoAds, type UnidadeAds,
 } from '@/lib/ads-metricas';
+import { DeltaAds } from '@/components/ads/delta-ads';
+import {
+  MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct,
+} from '@/lib/ads-metricas';
 import type { CampanhaVista } from '@/lib/ads-campanhas';
 import type {
   AnuncioPeriodoAds, MotivoMetricaAds, PedidoAdsMetricas, ValorAds,
@@ -51,12 +55,6 @@ interface Props {
 type Direcao = 'asc' | 'desc';
 interface Def { chave: string; rotulo: string; unidade: UnidadeAds; sentido: SentidoAds; formato: (n: number) => string }
 
-const num = (n: number, casas: number) =>
-  n.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
-const moeda = (n: number) => `R$ ${num(n, 2)}`;
-const inteiro = (n: number) => num(n, 0);
-const pct = (n: number) => `${num(n * 100, 1)}%`;
-
 const COLUNAS: Def[] = [
   { chave: 'investimento', rotulo: 'Investimento', unidade: 'moeda', sentido: 'neutro', formato: moeda },
   { chave: 'impressoes', rotulo: 'Impressões', unidade: 'quantidade', sentido: 'neutro', formato: inteiro },
@@ -67,34 +65,12 @@ const COLUNAS: Def[] = [
   { chave: 'acos', rotulo: 'ACOS', unidade: 'percentual', sentido: 'menor_melhor', formato: pct },
 ];
 
-const MOTIVOS: Record<MotivoMetricaAds, string> = {
-  nao_retornada: 'O ML não retornou esta métrica.',
-  fora_da_retencao: 'Período fora da retenção do ML.',
-  sem_denominador: 'Sem denominador no período.',
-  resposta_invalida: 'Resposta inválida do ML.',
-  sem_permissao: 'Sem permissão para ler esta métrica.',
-  limite_de_leitura: 'Limite de leitura atingido.',
-  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
-};
-const SEM_VALOR: ValorAds = { valor: null, motivo: 'nao_retornada' };
 
 const CELULA = 'px-3 py-3 align-top whitespace-normal';
 const NUM = `${CELULA} text-right tabular-nums`;
 
 type Indicadores = Record<string, ValorAds>;
 interface Linha { a: AnuncioPeriodoAds; atual: Indicadores; anterior: Indicadores | null }
-
-function Delta({ texto, direcao, tom }: { texto: string; direcao: 'up' | 'down' | 'neutral'; tom: 'success' | 'danger' | 'neutral' }) {
-  const Seta = direcao === 'up' ? ArrowUp : direcao === 'down' ? ArrowDown : null;
-  return (
-    <span data-delta data-direcao={direcao} data-tom={tom}
-      className={cn('inline-flex items-center gap-0.5 text-xs font-medium',
-        tom === 'success' ? 'text-success' : tom === 'danger' ? 'text-destructive' : 'text-muted-foreground')}>
-      {Seta && <Seta className="h-3 w-3" aria-hidden />}
-      {texto}
-    </span>
-  );
-}
 
 function Valor({ def, linha, comparar, provisoria }: { def: Def; linha: Linha; comparar: boolean; provisoria: boolean }) {
   const valor = linha.atual[def.chave] ?? SEM_VALOR;
@@ -119,7 +95,7 @@ function Valor({ def, linha, comparar, provisoria }: { def: Def; linha: Linha; c
       )}
       {cmp && (
         <span className="flex flex-wrap items-center justify-end gap-x-1.5">
-          <Delta {...cmp} />
+          <DeltaAds {...cmp} />
           {provisoria && cmp.texto !== 'Sem comparação' && (
             <span className="rounded-sm bg-muted px-1 text-[11px] font-medium text-muted-foreground">Provisória</span>
           )}

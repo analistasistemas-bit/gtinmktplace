@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KpiCard } from '@/components/ui/kpi-card';
+import { DeltaAds } from '@/components/ads/delta-ads';
+import {
+  MOTIVOS_METRICA_ADS as MOTIVOS, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct, razaoAds as razao,
+} from '@/lib/ads-metricas';
 import {
   compararIndicadorAds,
   type SentidoAds,
@@ -22,13 +25,6 @@ interface Def {
   formato: (n: number) => string;
 }
 
-const num = (n: number, casas: number) =>
-  n.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
-const moeda = (n: number) => `R$ ${num(n, 2)}`;
-const inteiro = (n: number) => num(n, 0);
-const razao = (n: number) => `${num(n, 2)}×`;
-const pct = (n: number) => `${num(n * 100, 1)}%`;
-
 // Ordem = leitura do wireframe: linha 1 (resultado) e linha 2 (funil). Os 4 primeiros ficam visíveis no mobile.
 const KPIS: Def[] = [
   { chave: 'investimento', rotulo: 'Investimento', unidade: 'moeda', sentido: 'neutro', formato: moeda },
@@ -44,33 +40,6 @@ const KPIS: Def[] = [
 ];
 const VISIVEIS_MOBILE = 4;
 
-const MOTIVOS: Record<NonNullable<ValorAds['motivo']>, string> = {
-  nao_retornada: 'O ML não retornou esta métrica.',
-  fora_da_retencao: 'Período fora da retenção do ML.',
-  sem_denominador: 'Sem denominador no período (ex.: sem faturamento, cliques ou impressões).',
-  resposta_invalida: 'Resposta inválida do ML.',
-  sem_permissao: 'Sem permissão para ler esta métrica.',
-  limite_de_leitura: 'Limite de leitura atingido. Tente novamente.',
-  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
-};
-
-function Delta({ texto, direcao, tom }: { texto: string; direcao: 'up' | 'down' | 'neutral'; tom: 'success' | 'danger' | 'neutral' }) {
-  const Seta = direcao === 'up' ? ArrowUp : direcao === 'down' ? ArrowDown : null;
-  return (
-    <div
-      data-delta
-      data-direcao={direcao}
-      data-tom={tom}
-      className={cn(
-        'mt-1 flex items-center gap-0.5 text-xs font-medium',
-        tom === 'success' ? 'text-success' : tom === 'danger' ? 'text-destructive' : 'text-muted-foreground',
-      )}
-    >
-      {Seta && <Seta className="h-3 w-3" aria-hidden />}
-      {texto}
-    </div>
-  );
-}
 
 export function FaixaKpis({
   atual, anterior, comparacao, loading = false, ocultar,
@@ -119,7 +88,7 @@ export function FaixaKpis({
               {apoio}
               {cmp && (
                 <div className="flex flex-wrap items-center gap-x-1.5">
-                  <Delta {...cmp} />
+                  <DeltaAds {...cmp} className="mt-1 flex" />
                   {provisoria && cmp.texto !== 'Sem comparação' && (
                     <span className="mt-1 rounded-sm bg-muted px-1 text-[11px] font-medium text-muted-foreground">Provisória</span>
                   )}

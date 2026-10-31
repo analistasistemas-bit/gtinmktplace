@@ -93,6 +93,20 @@ describe('TabelaCampanhas', () => {
     expect(nomes[3]).toContain('Sem dados');
   });
 
+  // M1: os textos de motivo vêm de um mapa só — faixa da conta e tabela de campanhas dizem o mesmo.
+  it.each(['limite_de_leitura', 'sem_denominador', 'fora_da_retencao'] as const)(
+    'motivo %s tem o mesmo texto na faixa de KPIs e na tabela', (motivo) => {
+      const sem = camp(5, 'Campanha Alfa', 'active', { ...m(10, 50, 1), cost: { valor: null, motivo } });
+      const { unmount } = render(<TabelaCampanhas campanhas={[sem]} comparacao={DISP} onAbrir={vi.fn()} />);
+      const linha = within(tabela()).getByText('Campanha Alfa').closest('tr')!;
+      const colInv = Array.from(tabela().querySelectorAll('th')).findIndex((h) => /Investimento/.test(h.textContent ?? ''));
+      const naTabela = within(linha).getAllByRole('cell')[colInv].textContent!.replace(/^—/, '');
+      unmount();
+      render(<FaixaKpis atual={{ investimento: { valor: null, motivo } }} anterior={null} comparacao="desligada" />);
+      const tile = screen.getByText('Investimento').closest('[data-kpi]') as HTMLElement;
+      expect(tile.textContent).toContain(naTabela);
+    });
+
   it('métrica indisponível mostra travessão e o motivo dentro da célula', () => {
     const sem = camp(5, 'Campanha Alfa', 'active', { ...m(10, 50, 1), total_amount: { valor: null, motivo: 'fora_da_retencao' } });
     render(<TabelaCampanhas campanhas={[sem]} comparacao={DISP} onAbrir={vi.fn()} />);

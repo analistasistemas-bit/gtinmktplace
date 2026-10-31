@@ -6,6 +6,7 @@ import {
   ESCALA_METRICA_ADS,
   type BlocoAdsMetricas,
   type MetricaBrutaAds,
+  type MotivoMetricaAds,
   type ValorAds,
 } from '../../supabase/functions/_shared/ads/metricas';
 
@@ -105,3 +106,29 @@ export function compararIndicadorAds(
   }
   return { texto: texto(sinal), direcao, tom };
 }
+
+// Formatos e motivos das métricas do Mercado Ads (faixa de KPIs, tabela de campanhas, detalhe e
+// competitividade): uma fonte só, para o mesmo motivo nunca ter dois textos. O delta visual fica em delta-ads.tsx.
+// ponytail: `moeda`/`pct`/`razao` não reusam fmtBRL (Intl: NBSP e "-R$" no negativo) nem os de ads-apresentacao
+// (null → "—", sem milhar): trocar mudaria o texto das telas. Unificar quando o formato da casa for um só.
+
+const num = (n: number, casas: number) =>
+  n.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+export const moedaAds = (n: number) => `R$ ${num(n, 2)}`;
+export const inteiroAds = (n: number) => num(n, 0);
+export const razaoAds = (n: number) => `${num(n, 2)}×`;
+/** Fração → percentual com 1 casa (0,1176 → "11,8%"). */
+export const pctAds = (n: number) => `${num(n * 100, 1)}%`;
+
+export const MOTIVOS_METRICA_ADS: Record<MotivoMetricaAds, string> = {
+  nao_retornada: 'O ML não retornou esta métrica.',
+  fora_da_retencao: 'Período fora da retenção do ML.',
+  sem_denominador: 'Sem denominador no período (ex.: sem receita, cliques, impressões ou faturamento).',
+  resposta_invalida: 'Resposta inválida do ML.',
+  sem_permissao: 'Sem permissão para ler esta métrica.',
+  limite_de_leitura: 'Limite de leitura atingido.',
+  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
+};
+
+/** Métrica ausente na resposta: indisponível, nunca zero. */
+export const SEM_VALOR_ADS: ValorAds = { valor: null, motivo: 'nao_retornada' };

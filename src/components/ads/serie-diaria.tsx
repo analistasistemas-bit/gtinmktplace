@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ATIVO_ESCURO } from '@/components/ads/tela-ads';
 import { fmtBRL, fmtInt } from '@/lib/formato';
+import { MOTIVOS_METRICA_ADS } from '@/lib/ads-metricas';
 import { EIXO, TOOLTIP, kCompacto } from '@/components/sku-dossie/serie-pontos';
 import type { DiaAdsMetricas, JanelaAdsMetricas, MetricaBrutaAds, MotivoMetricaAds } from '../../../supabase/functions/_shared/ads/metricas';
 
@@ -25,15 +26,10 @@ export interface PontoDiario {
 type CampoTabela = 'atribuidas' | 'outras' | 'cost' | 'receita' | 'roas';
 type MotivoDia = MotivoMetricaAds | 'dia_ausente';
 
-// Mesmos textos de src/components/ads/faixa-kpis.tsx.
+// Textos de formato-ads; ROAS do dia e dia ausente têm texto próprio do gráfico.
 const MOTIVOS: Record<MotivoDia, string> = {
-  nao_retornada: 'O ML não retornou esta métrica.',
-  fora_da_retencao: 'Período fora da retenção do ML.',
+  ...MOTIVOS_METRICA_ADS,
   sem_denominador: 'Sem investimento no dia: ROAS indefinido.',
-  resposta_invalida: 'Resposta inválida do ML.',
-  sem_permissao: 'Sem permissão para ler esta métrica.',
-  limite_de_leitura: 'Limite de leitura atingido. Tente novamente.',
-  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
   dia_ausente: 'Sem retorno do ML neste dia.',
 };
 

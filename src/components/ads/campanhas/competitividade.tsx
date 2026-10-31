@@ -3,8 +3,9 @@ import { ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { cn } from '@/lib/utils';
+import { MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, pctAds as pct } from '@/lib/ads-metricas';
 import type {
-  MetricaBrutaAds, MotivoMetricaAds, PedidoAdsMetricas, ValorAds,
+  MetricaBrutaAds, PedidoAdsMetricas, ValorAds,
 } from '../../../../supabase/functions/_shared/ads/metricas';
 import type { PedidoBaseDetalhe } from './detalhe-campanha';
 
@@ -29,18 +30,7 @@ const BARRAS: Barra[] = [
     explicacao: 'Impressões perdidas porque o lance ou a qualidade do anúncio ficou abaixo dos concorrentes.' },
 ];
 
-const MOTIVOS: Record<MotivoMetricaAds, string> = {
-  nao_retornada: 'O ML não retornou esta métrica.',
-  fora_da_retencao: 'Período fora da retenção do ML.',
-  sem_denominador: 'Sem denominador no período.',
-  resposta_invalida: 'Resposta inválida do ML.',
-  sem_permissao: 'Sem permissão para ler esta métrica.',
-  limite_de_leitura: 'Limite de leitura atingido.',
-  sem_historico: 'O histórico de vendas no PubliAI não cobre todo o período (ou ainda não foi carregado).',
-};
 
-const SEM_VALOR: ValorAds = { valor: null, motivo: 'nao_retornada' };
-const pct = (fracao: number) => `${(fracao * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 // Fração fora de [0,1] não é participação: vira indisponível, nunca é exibida nem cortada.
 const valida = (v: ValorAds): ValorAds =>
