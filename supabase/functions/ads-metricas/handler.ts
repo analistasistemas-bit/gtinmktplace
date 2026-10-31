@@ -7,6 +7,7 @@ import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import type { RespostaML } from '../_shared/trafego/sincronizar.ts';
 import { HEADERS_ADS, HEADERS_ADVERTISER, urlAdvertiser } from '../_shared/ads/fiacao.ts';
 import { classificarResposta, parseAdvertiser } from '../_shared/ads/parsers.ts';
+import { DIAS_RELEITURA } from '../_shared/ads/janelas.ts';
 import {
   parseMetricasResumo, urlCampanhaDetalhe,
   type BlocoAdsMetricas, type EscopoAdsMetricas, type JanelaAdsMetricas, type MetricaBrutaAds,
@@ -169,20 +170,37 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
         // Estado olha só a janela atual (anterior incompleta só desliga a comparação); o cache exige as duas.
         ok: true, estado: resposta.recusa ?? (resposta.atual?.completo && !motivo ? 'ok' : 'parcial'),
         escopo: pedido.escopo, atual: resposta.atual, anterior: resposta.anterior, campanhas: resposta.campanhas,
-        comparacao: foraDaRetencao
-          ? { estado: 'indisponivel', motivo: 'Janela anterior fora da retenção do Mercado Ads.' }
-          : resposta.comparacao,
-        disponibilidade, avisos,
+        comparacao: resposta.comparacao, disponibilidade, avisos,
       };
       return { valor, completo: valor.estado === 'ok' && resposta.completo };
     });
     if (r.estado === 'recusado') return json({ ok: false, erro: r.motivo }, 429);
-    return json(r.valor);
+    // Depois do cache: anterior fora da retenção gera a mesma chave que `comparar: 'nenhum'` (anterior null), e
+    // "provisória" depende de hoje. O cache guarda só a leitura; o estado da comparação sai do pedido.
+    return json({ ...r.valor, comparacao: comparacaoDoPedido(r.valor.comparacao, pedido, foraDaRetencao, hoje, atual) });
   } catch (err) {
     // Detalhe só no log: a mensagem pode carregar corpo do ML; token nunca sai na resposta.
     console.error('[ads-metricas]', err);
     return json({ ok: false, erro: 'falha ao ler métricas de Ads' }, 500);
   }
+}
+
+const difDias = (a: string, b: string) => Math.round((Date.parse(`${a}T12:00:00Z`) - Date.parse(`${b}T12:00:00Z`)) / 86_400_000);
+
+/**
+ * Atribuição final (ADR-0179; `atribuicaoFinal` do front): o dia é final se hoje BRT − dia ≥ DIAS_RELEITURA.
+ * A anterior termina antes da atual, então basta o último dia da atual para saber se alguma das duas está aberta.
+ */
+function comparacaoDoPedido(
+  c: RespostaAdsMetricas['comparacao'], pedido: PedidoAdsMetricas, foraDaRetencao: boolean,
+  hoje: string, atual: JanelaAdsMetricas,
+): RespostaAdsMetricas['comparacao'] {
+  if (pedido.comparar === 'nenhum') return { estado: 'desligada', motivo: null };
+  if (foraDaRetencao) return { estado: 'indisponivel', motivo: 'Janela anterior fora da retenção do Mercado Ads.' };
+  if (c.estado === 'disponivel' && difDias(hoje, atual.ate) < DIAS_RELEITURA) {
+    return { estado: 'provisoria', motivo: 'O ML ainda pode revisar a atribuição de vendas destes dias.' };
+  }
+  return c;
 }
 
 interface LeituraEscopo {

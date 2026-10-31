@@ -225,8 +225,45 @@ describe('ads-metricas: comparação', () => {
     const { deps } = montar();
     const corpo = await (await tratar(post({ ...PEDIDO, escopo: 'campanhas', comparar: 'anterior' }), deps)).json();
     expect(corpo.estado).toBe('ok');
-    expect(corpo.comparacao.estado).toBe('disponivel');
+    expect(corpo.comparacao.estado).toBe('provisoria'); // 28–30/10 lido em 31/10: atribuição ainda aberta
     expect(corpo.campanhas).toHaveLength(1);
     expect(corpo.campanhas[0].anterior.janela).toEqual({ desde: '2026-10-25', ate: '2026-10-27' });
+  });
+
+  describe('modo da comparação com cache compartilhado (anterior fora da retenção)', () => {
+    const P = { ...PEDIDO, desde: '2026-08-01', ate: '2026-08-03' };
+    it('nenhum → anterior: a 2ª é indisponível com motivo', async () => {
+      const { deps } = montar();
+      expect((await (await tratar(post(P), deps)).json()).comparacao).toEqual({ estado: 'desligada', motivo: null });
+      const b = (await (await tratar(post({ ...P, comparar: 'anterior' }), deps)).json()).comparacao;
+      expect(b.estado).toBe('indisponivel');
+      expect(b.motivo).toBeTruthy();
+    });
+    it('anterior → nenhum: a 2ª é desligada', async () => {
+      const { deps } = montar();
+      expect((await (await tratar(post({ ...P, comparar: 'anterior' }), deps)).json()).comparacao.estado).toBe('indisponivel');
+      expect((await (await tratar(post(P), deps)).json()).comparacao).toEqual({ estado: 'desligada', motivo: null });
+    });
+  });
+
+  // Atribuição final: hoje BRT (31/10) − dia ≥ DIAS_RELEITURA (15) para todo dia das duas janelas.
+  const ABERTA = { desde: '2026-10-15', ate: '2026-10-17' }; // 31/10 − 17/10 = 14 → aberta
+  const ENCERRADA = { desde: '2026-10-14', ate: '2026-10-16' }; // 31/10 − 16/10 = 15 → final
+  describe.each([
+    ['conta', {}],
+    ['campanhas', {}],
+    ['campanha', { campanhaId: CAMP }],
+  ])('provisória no escopo %s', (escopo, extra) => {
+    it('janela aberta → provisoria com motivo', async () => {
+      const { deps } = montar();
+      const corpo = await (await tratar(post({ ...PEDIDO, ...ABERTA, ...extra, escopo, comparar: 'anterior' }), deps)).json();
+      expect(corpo.comparacao).toEqual({ estado: 'provisoria', motivo: 'O ML ainda pode revisar a atribuição de vendas destes dias.' });
+      expect(corpo.anterior).not.toBeNull();
+    });
+    it('janela encerrada → disponivel', async () => {
+      const { deps } = montar();
+      const corpo = await (await tratar(post({ ...PEDIDO, ...ENCERRADA, ...extra, escopo, comparar: 'anterior' }), deps)).json();
+      expect(corpo.comparacao).toEqual({ estado: 'disponivel', motivo: null });
+    });
   });
 });
