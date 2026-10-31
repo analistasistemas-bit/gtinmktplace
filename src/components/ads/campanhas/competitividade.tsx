@@ -41,8 +41,13 @@ const MOTIVOS: Record<MotivoMetricaAds, string> = {
 const SEM_VALOR: ValorAds = { valor: null, motivo: 'nao_retornada' };
 const pct = (fracao: number) => `${(fracao * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
-function Linha({ b, v }: { b: Barra; v: ValorAds }) {
-  const largura = v.valor === null ? 0 : Math.min(100, Math.max(0, v.valor * 100));
+// Fração fora de [0,1] não é participação: vira indisponível, nunca é exibida nem cortada.
+const valida = (v: ValorAds): ValorAds =>
+  v.valor !== null && (v.valor < 0 || v.valor > 1) ? { valor: null, motivo: 'resposta_invalida' } : v;
+
+function Linha({ b, v: bruto }: { b: Barra; v: ValorAds }) {
+  const v = valida(bruto);
+  const largura = v.valor === null ? 0 : v.valor * 100;
   return (
     <li className="space-y-1">
       <div className="flex items-baseline justify-between gap-3">

@@ -76,6 +76,24 @@ describe('Competitividade', () => {
     expect(screen.getByText(/o ml não retornou esta métrica/i)).toBeInTheDocument();
   });
 
+  it('valor fora de 0–1 vira indisponível com resposta inválida', async () => {
+    mock.mockReturnValue(ret(resposta({ ...COMPLETO, lost_impression_share_by_budget: ok(-0.1), lost_impression_share_by_ad_rank: ok(1.2) })));
+    render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
+    await expandir();
+    expect(screen.queryByText(/-10,0%|−10,0%|120,0%/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/resposta inválida do ml/i)).toHaveLength(2);
+    expect(screen.getByText('13,0%')).toBeInTheDocument();
+  });
+
+  it('zero e um explícitos são válidos', async () => {
+    mock.mockReturnValue(ret(resposta({ ...COMPLETO, impression_share: ok(1), lost_impression_share_by_budget: ok(0), lost_impression_share_by_ad_rank: ok(0) })));
+    render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
+    await expandir();
+    expect(screen.getByText('100,0%')).toBeInTheDocument();
+    expect(screen.getAllByText('0,0%')).toHaveLength(2);
+    expect(screen.queryByText(/resposta inválida/i)).not.toBeInTheDocument();
+  });
+
   it('erro mostra o motivo sem lançar', async () => {
     mock.mockReturnValue(ret(undefined, { isError: true }));
     render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
