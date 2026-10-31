@@ -187,7 +187,9 @@ Plano `docs/superpowers/plans/2026-10-30-ads-redesign-premium.md`; QA `docs/supe
 - [x] Edge `ads-metricas` (só leitura, `verify_jwt=true`, cache 300 s) deployada: v1 ACTIVE em 2026-10-31 15:58; nenhuma edge existente alterada; sem migration.
 - [x] `/ads` redesenhado: período e comparação compartilhados na URL, "Resultado após Ads", 10 KPIs, gráfico Vendas atribuídas × Outras vendas + ROAS, Campanhas por período com detalhe/anúncios patrocinados/competitividade, famílias ACOS direto × equilíbrio, integridade visível.
 - [x] Isolamento por org: `queryClient.clear()` ao entrar/sair do suporte; org no fim da chave dos hooks de vendas/custos/configurações/devoluções/catálogo.
+- [x] Task 40: aceite autenticado da edge `ads-metricas` v1 (4 escopos HTTP 200 / ok; campanha alheia → `sem_acesso`) e confronto canônico na DSA (investimento, faturamento e resultado: diferença R$ 0,00); ver `docs/superpowers/plans/2026-10-30-ads-redesenho-qa.md`, seção Task 40.
 - [ ] Diego: conferir investimento e receita contra o painel do Mercado Ads no mesmo intervalo (diferença ≤ 1 %).
+- [ ] Confronto do investimento, receita e TACOS em conta com gasto (Avil): a DSA tem gasto zero, então o aceite só provou o caminho sem gasto.
 - [ ] Merge na main (CI verde; a edge já está implantada).
 - [ ] Dívida (fora do escopo, ADR-0055): fallback silencioso de alíquotas 8/16 em `aba-vendas.tsx:187`, `aba-geografia.tsx:63`, `useSkuDossie.ts:133`, `Dashboard.tsx:161,178`, `DetalheFinanceiro.tsx:271,282`, `DetalheVendas.tsx:313`; imposto 0 durante o carregamento em `useResumoVendas.ts:51`; `sonar-dre`/`pulse` herdam 8/16 sem checar confirmação.
 

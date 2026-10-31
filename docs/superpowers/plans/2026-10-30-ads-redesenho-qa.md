@@ -156,3 +156,29 @@ Fixtures reproduzíveis agora no repositório: `tests/fixtures/ads-qa/` (`instal
 | 3. Reteste com dados | Refeito com a fixture: 1440x900 claro/escuro com o atalho visível (1 botão) e funcionando (filtro "Acima do equilíbrio" aplicado, 1 família); pills no escuro com dados: Provisória 9,35, selo 7,21, Acima do equilíbrio 6,02, Dentro do equilíbrio 6,70; selecionado no escuro 5,17; mobile 360x800 e paisagem 800x360 |
 | 4. Teste de Campanhas | Corrigido em `tests/pages/Ads.test.tsx`: aba pelo argumento certo (`'campanhas'`), família acima do equilíbrio na fixture, afirma a aba ativa; o teste do atalho agora também verifica o filtro aplicado e as linhas filtradas |
 | Minor 5 (pontuação "provisório: N dias") | Mantido como está por decisão do controlador: o texto não está na lista obrigatória da seção 4.9 |
+
+## Task 40: deploy da edge e aceite
+
+Data: 2026-10-31. Edge `ads-metricas` v1 em produção. Sessão Playwright própria (`t40`), login VALIDATION_* (org DSA), somente leitura: nenhuma escrita no banco nem no ML; o token só existiu dentro do navegador e nada identificável foi impresso. Período "Mês atual" 2026-10-01 a 2026-10-30 (BRT), `comparar: anterior` (2026-09-01 a 2026-09-30). Chamadas diretas à edge implantada com o token da sessão.
+
+| Escopo | HTTP | estado | comparacao.estado | Conteúdo |
+|---|---|---|---|---|
+| conta | 200 | ok | provisoria | `cost` 0, `total_amount` 0 (atual e anterior); série de 30 dias, `completo` |
+| campanhas | 200 | ok | provisoria | 1 campanha (pausada), `cost` 0 |
+| campanha (id da própria listagem) | 200 | ok | provisoria | `cost` 0; lista de 14 anúncios, `anunciosMotivo` nulo |
+| competitividade (mesmo id) | 200 | ok | provisoria | bloco atual/anterior completos (sem `cost`: o escopo traz as métricas de competitividade) |
+| campanha e competitividade com id inexistente | 200 | sem_acesso | indisponivel | "Campanha não pertence ao anunciante.", sem dado |
+
+A recusa de campanha alheia é comprovada pela edge implantada e não depende de campanha inexistente na DSA.
+
+### Confronto com a fonte canônica (SQL somente leitura)
+
+| Item | Edge / tela | Fonte canônica | Diferença |
+|---|---|---|---|
+| Investimento (conta) | R$ 0,00 | `sum(ml_ads_conta_dia.cost)` da DSA, 30 dias coletados (01 a 30/10): R$ 0,00 | R$ 0,00 |
+| Receita Ads (`total_amount`) | R$ 0,00 | `sum(total_amount)`: R$ 0,00 | R$ 0,00 |
+| Faturamento (denominador do TACOS), mês atual | card Faturamento do app (canal Todos, Mês atual): R$ 17.121,68 | SQL em `ml_vendas` (canal mercado_livre, status paid/partially_refunded/refunded, `total_amount` menos `cupom_vendedor`, `date_closed` na janela BRT): R$ 17.121,68 | R$ 0,00 |
+| Faturamento do período anterior (comparação) | não exibido (investimento 0) | mesma regra, 01 a 30/09: R$ 22.022,98 | registrado como referência |
+| Resultado após Ads | "Resultado parcial após Ads" R$ 897,64 | Lucro antes de Ads (R$ 897,64) menos Despesa de Ads (R$ 0,00) = R$ 897,64 | R$ 0,00: bate |
+
+Limites do aceite: a DSA tem gasto zero em Ads, então os confrontos de investimento e de resultado batem de forma trivial (0 contra 0; resultado = lucro antes de Ads) e o TACOS mostra 0,0% sem exercitar o denominador (o faturamento foi conferido à parte, igual ao do card). O "Lucro antes de Ads" vem do mesmo cálculo de Vendas SKU (parcial: há vendas sem custo cadastrado) e não foi recalculado de forma independente. Pendências mantidas em `docs/TASKS.md`: confronto com o painel do Mercado Ads (Diego) e confronto em conta com gasto (Avil).
