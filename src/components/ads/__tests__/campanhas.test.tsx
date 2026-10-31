@@ -246,6 +246,7 @@ describe('AbaCampanhas', () => {
     const m = parcial([]);
     aba(dados(), m as never);
     expect(screen.getByRole('alert')).toHaveTextContent('Lista de campanhas incompleta');
+    expect(screen.getByRole('alert')).toHaveTextContent('Nenhuma campanha foi lida.');
     expect(screen.queryByText(/Nenhuma campanha com dados/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     expect(m.refetch).toHaveBeenCalled();
@@ -256,6 +257,7 @@ describe('AbaCampanhas', () => {
     const alerta = screen.getByRole('alert');
     expect(alerta).toHaveTextContent('Lista de campanhas incompleta');
     expect(alerta).toHaveTextContent('Limite de leitura atingido; dados incompletos.');
+    expect(alerta).toHaveTextContent('As campanhas exibidas podem não ser todas.');
   });
   it('leitura completa sem campanhas: estado vazio, sem aviso de incompleta', () => {
     const m = metricas();

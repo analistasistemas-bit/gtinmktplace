@@ -81,7 +81,8 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
           <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
             <p className="flex items-start gap-2">
               <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-              {`Lista de campanhas incompleta: ${motivo} As campanhas exibidas podem não ser todas.`}
+              {`Lista de campanhas incompleta: ${motivo} ${metricas.data.campanhas.length === 0
+                ? 'Nenhuma campanha foi lida.' : 'As campanhas exibidas podem não ser todas.'}`}
             </p>
             <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={() => void metricas.refetch()}>Tentar novamente</Button>
           </div>
