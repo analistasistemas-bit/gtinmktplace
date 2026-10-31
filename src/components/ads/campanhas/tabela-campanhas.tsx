@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown, Search } from 'lucide
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { KpiInfoButton } from '@/components/ui/kpi-card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
@@ -132,6 +133,8 @@ function Cabecalho({ rotulo, coluna, ordem, onOrdenar, className, direita }: {
         {rotulo}
         <Icone aria-hidden className={cn('h-3 w-3 shrink-0', ativa ? 'opacity-100' : 'opacity-50')} />
       </button>
+      {/* Fora do botão de ordenar: dois controles, cada um com o seu nome. Sem descrição, não renderiza. */}
+      <KpiInfoButton infoKey={`${rotulo}::Ads`} />
     </TableHead>
   );
 }

@@ -154,13 +154,6 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Famílias cujo ACOS direto está dentro da referência pela margem observada no período.',
   'Sem referência::Ads':
     'Famílias sem semáforo disponível. Inclui todas as famílias enquanto o semáforo estiver em validação.',
-  // ── Ads: filtros da aba Campanhas ──
-  'Todas::Campanhas':
-    'Famílias com anúncios patrocinados nas campanhas ativas e pausadas (uma família conta em cada campanha onde aparece).',
-  'Em alerta::Campanhas':
-    'Famílias de campanhas ativas com ACOS-alvo acima do equilíbrio, patrocinado parado ou parcialmente patrocinada.',
-  'Sem referência::Campanhas':
-    'Famílias sem margem para Ads calculada: falta custo, origem, medidas, preço ou outro dado do cadastro.',
   'ACOS direto::Ads':
     'ACOS direto: investimento dividido pela receita atribuída diretamente aos produtos desta família. '
     + 'Ex.: 9,2% = de cada R$ 100 vendidos pelo anúncio, o Ads custou R$ 9,20. "sem venda direta": gastou sem vender pelo próprio anúncio.',
@@ -185,8 +178,6 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Quantidade de vendas atribuídas ao Ads na campanha, como informada pelo ML. Não é receita nem unidades.',
   'Receita Ads::Ads':
     'Valor vendido (R$) que o ML atribui ao Ads no período, somando vendas diretas e indiretas. Não é lucro nem faturamento da conta.',
-  'Unidades vendidas::Ads':
-    'Peças vendidas atribuídas ao Ads. Difere de vendas: uma venda com 3 peças são 3 unidades. Só aparece quando o ML informa o campo.',
   'ROAS::Ads':
     'Receita atribuída ao Ads ÷ investimento, calculados sobre o total do período (não é média dos dias). '
     + 'Ex.: 8,0x = cada R$ 1 investido trouxe R$ 8 em vendas atribuídas. Sem investimento, fica indisponível.',
@@ -220,9 +211,6 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Investimento em Ads da conta inteira no período, informado pelo ML, incluindo gasto compartilhado ou não identificado, sem rateio.',
   'Resultado parcial após Ads::Ads':
     'Lucro antes de Ads menos a despesa de Ads, com parte das vendas sem custo (por isso parcial). Custo apenas estimado é marcado como Estimado, à parte. Não é o lucro completo nem o causado pelo Ads.',
-  'Equilíbrio no preço atual::Ads':
-    'ACOS em que o anúncio zera a margem pelo preço de hoje: (líquido no preço − custo) ÷ preço, na pior variação. '
-    + 'Diferente do equilíbrio observado, que usa as vendas já realizadas no período.',
   'Outras vendas::Ads':
     'Vendas do universo dos anúncios promovidos que o ML não atribui ao Ads. Não são as vendas orgânicas da conta inteira.',
 };

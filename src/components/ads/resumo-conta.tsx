@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { AlertTriangle, ChevronDown, Info, Minus, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { KpiInfoButton } from '@/components/ui/kpi-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtBRLSinal, fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -42,7 +43,11 @@ function Termo({ rotulo, valor, legenda, empilhado }: { rotulo: string; valor: s
   return (
     <div role="group" aria-labelledby={id}
       className={cn('min-w-0', empilhado ? 'space-y-1' : 'flex items-baseline justify-between gap-3 md:block md:space-y-1')}>
-      <p id={id} className={cn(ROTULO, 'shrink-0')}>{rotulo}</p>
+      {/* "O que é" ao lado do rótulo, fora do elemento que nomeia o grupo (aria-labelledby). */}
+      <div className="flex shrink-0 items-center gap-1">
+        <p id={id} className={ROTULO}>{rotulo}</p>
+        <KpiInfoButton infoKey={`${rotulo}::Ads`} />
+      </div>
       <div className={cn('min-w-0', !empilhado && 'text-right md:text-left')}>
         <p className={cn('font-semibold tracking-tight tabular-nums', empilhado ? 'text-xl' : 'text-lg md:text-xl')}>{valor}</p>
         <p className={LEGENDA}>{legenda}</p>
@@ -86,6 +91,8 @@ function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; m
     >
       <div className="flex flex-wrap items-center gap-2">
         <p id={id} className={ROTULO}>{rotulo}</p>
+        {/* Só o parcial: a descrição de "Resultado após Ads::Ads" é a da família, não a da conta. */}
+        {parcial && <KpiInfoButton infoKey="Resultado parcial após Ads::Ads" />}
         {estimado && <StatusPill tone="neutral">Estimado</StatusPill>}
       </div>
       <p className={cn('text-3xl font-semibold tracking-tight tabular-nums', negativo && 'text-danger')}>

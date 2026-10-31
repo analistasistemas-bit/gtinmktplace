@@ -52,6 +52,7 @@ describe('SerieDiaria', () => {
     const legenda = screen.getByRole('list', { name: 'Legenda' });
     expect(within(legenda).getByText('Vendas atribuídas')).toBeInTheDocument();
     expect(within(legenda).getByText('Outras vendas')).toBeInTheDocument();
+    expect(within(legenda).getByRole('button', { name: 'O que é Outras vendas' })).toBeInTheDocument(); // M4
     expect(within(legenda).getByText(/ROAS/)).toBeInTheDocument();
     expect(screen.getByText(/universo dos anúncios promovidos/i)).toBeInTheDocument();
   });

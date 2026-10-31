@@ -305,6 +305,12 @@ describe('Ads', () => {
       const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
 
       expect(resumo.getByText(marca)).toBeVisible();
+      // M4: "O que é" do resultado parcial; os termos da ponte têm o seu, fora do rótulo do grupo.
+      if (fonteCusto === 'parcial') expect(resumo.getByRole('button', { name: 'O que é Resultado parcial após Ads' })).toBeInTheDocument();
+      for (const t of ['Lucro antes de Ads', 'Despesa de Ads']) {
+        expect(resumo.getByRole('button', { name: `O que é ${t}` })).toBeInTheDocument();
+        expect(resumo.getByRole('group', { name: t })).toBeInTheDocument();
+      }
       expect(resumo.getByRole('button', { name: 'Composição do gasto' }))
         .toHaveAttribute('aria-expanded', 'false');
     },

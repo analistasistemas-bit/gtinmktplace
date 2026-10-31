@@ -81,7 +81,6 @@ const ALL_EXPECTED_KEYS = [
   'Vendas por Ads::Ads',
   'Vendas Ads::Ads',
   'Receita Ads::Ads',
-  'Unidades vendidas::Ads',
   'ROAS::Ads',
   'ACOS::Ads',
   'TACOS da conta::Ads',
@@ -96,11 +95,18 @@ const ALL_EXPECTED_KEYS = [
   'Lucro antes de Ads::Ads',
   'Despesa de Ads::Ads',
   'Resultado parcial após Ads::Ads',
-  'Equilíbrio no preço atual::Ads',
   'Outras vendas::Ads',
 ];
 
 describe('kpi-descriptions', () => {
+  // M4: chave sem rótulo visível na tela é texto morto (cartões de filtro de Campanhas removidos; sem rótulo
+  // "Equilíbrio no preço atual" nem "Unidades vendidas" no /ads).
+  it('sem chaves mortas do /ads', () => {
+    const mortas = ['Todas::Campanhas', 'Em alerta::Campanhas', 'Sem referência::Campanhas',
+      'Equilíbrio no preço atual::Ads', 'Unidades vendidas::Ads'];
+    expect(mortas.filter((k) => k in KPI_DESCRIPTIONS)).toEqual([]);
+  });
+
   it('has a non-empty description for every KPI key used in the app', () => {
     const faltando = ALL_EXPECTED_KEYS.filter((k) => !getKpiDescription(k));
     expect(faltando).toEqual([]);

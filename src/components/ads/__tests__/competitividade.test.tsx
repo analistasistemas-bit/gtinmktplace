@@ -43,6 +43,15 @@ describe('Competitividade', () => {
     expect(pedido).toMatchObject({ escopo: 'competitividade', campanhaId: 7, comparar: 'anterior', desde: '2026-10-01', ate: '2026-10-07' });
   });
 
+  it('cada barra oferece o "O que é" da sua descrição (M4)', async () => {
+    mock.mockReturnValue(ret(resposta(COMPLETO)));
+    render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
+    await expandir();
+    for (const r of ['Ganhas', 'Perdidas por orçamento', 'Perdidas por classificação']) {
+      expect(screen.getByRole('button', { name: `O que é ${r}` })).toBeInTheDocument();
+    }
+  });
+
   it('mostra rótulos, percentuais e explicações visíveis', async () => {
     mock.mockReturnValue(ret(resposta(COMPLETO)));
     render(<Competitividade campanhaId={7} pedido={PEDIDO} />);

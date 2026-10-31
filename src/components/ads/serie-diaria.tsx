@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
+import { KpiInfoButton } from '@/components/ui/kpi-card';
 import { cn } from '@/lib/utils';
 import { ATIVO_ESCURO } from '@/components/ads/tela-ads';
 import { fmtBRL, fmtInt } from '@/lib/formato';
@@ -148,7 +149,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
         {visao === 'vendas' ? (
           <>
             <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px] bg-chart-1" />Vendas atribuídas</li>
-            <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px]" style={{ backgroundColor: COR_OUTRAS }} />Outras vendas</li>
+            <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px]" style={{ backgroundColor: COR_OUTRAS }} />Outras vendas<KpiInfoButton infoKey="Outras vendas::Ads" /></li>
             <li className="flex items-center gap-1.5"><LinhaLegenda />ROAS (eixo à direita, em ×)</li>
           </>
         ) : (

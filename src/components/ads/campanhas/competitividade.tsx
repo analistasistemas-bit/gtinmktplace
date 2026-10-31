@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { KpiInfoButton } from '@/components/ui/kpi-card';
 import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { cn } from '@/lib/utils';
 import { MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, pctAds as pct } from '@/lib/ads-metricas';
@@ -42,7 +43,9 @@ function Linha({ b, v: bruto }: { b: Barra; v: ValorAds }) {
   return (
     <li className="space-y-1">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium text-foreground">{b.rotulo}</span>
+        <span className="inline-flex items-center gap-1 text-sm font-medium text-foreground">
+          {b.rotulo}<KpiInfoButton infoKey={`${b.rotulo}::Ads`} />
+        </span>
         <span className="text-sm font-semibold tabular-nums text-foreground">
           {v.valor === null ? '—' : pct(v.valor)}
         </span>

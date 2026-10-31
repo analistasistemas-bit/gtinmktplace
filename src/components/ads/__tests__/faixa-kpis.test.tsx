@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FaixaKpis } from '../faixa-kpis';
+import { TELA_ADS } from '../tela-ads';
 import type { ValorAds } from '../../../../supabase/functions/_shared/ads/metricas';
 
 const v = (valor: number | null, motivo: ValorAds['motivo'] = null): ValorAds => ({ valor, motivo });
@@ -59,5 +60,15 @@ describe('FaixaKpis', () => {
     const tile = screen.getByText('Vendas por Ads').closest('[data-kpi]') as HTMLElement;
     expect(tile.textContent).toContain('Receita indisponível');
     expect(tile.textContent).toContain('fora da retenção');
+  });
+});
+
+// M2: o contraste do "O que é" é medido no navegador (QA); aqui só se trava que a tela de Ads aplica o muted cheio
+// (sem o /60 global) com hover, fora do botão de tom. jsdom não calcula a cor final.
+describe('TELA_ADS', () => {
+  it('ícone "O que é" com muted cheio e hover, sem mexer no de tom', () => {
+    const classes = TELA_ADS.split(' ');
+    expect(classes).toContain('[&_button[aria-label^="O_que_é"]:not([class*=text-destructive])]:text-muted-foreground');
+    expect(classes).toContain('[&_button[aria-label^="O_que_é"]:not([class*=text-destructive]):hover]:text-foreground');
   });
 });

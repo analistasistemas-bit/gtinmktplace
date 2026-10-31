@@ -60,7 +60,7 @@ describe('TabelaCampanhas', () => {
     await user.type(screen.getByRole('searchbox', { name: /buscar campanha/i }), 'zzz');
     expect(screen.getByText(/nenhuma campanha encontrada/i)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Ver todas' }));
-    await user.click(within(tabela()).getByRole('button', { name: /Investimento/ }));
+    await user.click(within(tabela()).getByRole('button', { name: /^Investimento$/ }));
 
     expect(resumo()).toBe(antes);
     expect(CAMPANHAS).toEqual(original);
@@ -86,11 +86,21 @@ describe('TabelaCampanhas', () => {
     const th = () => within(tabela()).getByRole('columnheader', { name: /Investimento/ });
     expect(th().getAttribute('aria-sort')).toBe('descending');
     expect(nomesNaTabela()[0]).toContain('Inverno');
-    await user.click(within(th()).getByRole('button', { name: /Investimento/ }));
+    await user.click(within(th()).getByRole('button', { name: /^Investimento$/ }));
     expect(th().getAttribute('aria-sort')).toBe('ascending');
     const nomes = nomesNaTabela();
     expect(nomes[0]).toContain('Antiga');
     expect(nomes[3]).toContain('Sem dados');
+  });
+
+  // M4: as descrições ::Ads dos cabeçalhos ficam acessíveis pelo "O que é" (fora do botão de ordenar).
+  it('cabeçalhos com descrição oferecem "O que é" sem entrar no botão de ordenar', () => {
+    render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />);
+    for (const r of ['Vendas Ads', 'Receita Ads']) {
+      const info = within(tabela()).getByRole('button', { name: `O que é ${r}` });
+      expect(info.closest('th')).toBeTruthy();
+      expect(within(tabela()).getByRole('button', { name: new RegExp(`^${r}$`) })).not.toContainElement(info);
+    }
   });
 
   // M1: os textos de motivo vêm de um mapa só — faixa da conta e tabela de campanhas dizem o mesmo.

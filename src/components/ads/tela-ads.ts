@@ -8,6 +8,8 @@
  *   texto principal leva a >= 4,5:1 nos dois temas.
  * - Alvos de toque: `max-sm:` (tela estreita) ou `pointer-coarse:` (toque, inclusive paisagem) sobem para 44 px;
  *   o breakpoint `sm:` sozinho voltava a 32 px em celular na horizontal.
+ * - Ícone "O que é" (KpiInfoButton): o `text-muted-foreground/60` global dava 2,43:1 (claro) / 3,39:1 (escuro);
+ *   aqui usa o muted cheio (o mesmo texto secundário da tela) e mantém o hover. O de tom (danger) fica como está.
  */
 export const TELA_ADS = [
   '[&_:is(button,a,input,[role=tab],[role=combobox]):focus-visible]:ring-2',
@@ -23,6 +25,8 @@ export const TELA_ADS = [
   'max-sm:[&_button[aria-label^="O_que_é"]]:-m-[15px]',
   'pointer-coarse:[&_button[aria-label^="O_que_é"]]:p-[15px]',
   'pointer-coarse:[&_button[aria-label^="O_que_é"]]:-m-[15px]',
+  '[&_button[aria-label^="O_que_é"]:not([class*=text-destructive])]:text-muted-foreground',
+  '[&_button[aria-label^="O_que_é"]:not([class*=text-destructive]):hover]:text-foreground',
 ].join(' ');
 
 /** Botão/segmento selecionado: no escuro o indigo claro (3,38:1 com texto branco) usa o tom do tema claro. */
