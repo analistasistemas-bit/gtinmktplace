@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { CelulaAds, ComparacaoAds } from '@/lib/ads-metricas';
 
 /** Seta = direção do número; cor = significado (já resolvido em compararIndicadorAds). */
@@ -15,12 +16,18 @@ export function DeltaAds({ texto, direcao, tom, className }: ComparacaoAds & { c
   );
 }
 
-/** Travessão visível; o motivo completo fica para leitor de tela (e no title, para quem passa o mouse). */
+/** Travessão visível; o motivo completo abre num popover (clique, toque ou teclado) e fica no nome acessível. */
 function Curto({ motivo, className }: { motivo: string; className?: string }) {
   return (
-    <span className={cn('block text-muted-foreground', className)} title={motivo}>
-      <span aria-hidden>—</span><span className="sr-only">{motivo}</span>
-    </span>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" title={motivo}
+          className={cn('ml-auto block cursor-help rounded-sm text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}>
+          <span aria-hidden>—</span><span className="sr-only">{motivo}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 text-sm text-muted-foreground">{motivo}</PopoverContent>
+    </Popover>
   );
 }
 

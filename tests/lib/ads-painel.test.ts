@@ -394,6 +394,11 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
     expect(montarPainelAds({ ...base({ grupos, conta }), contaAoVivo: vivo(100250, 100000) }).conciliacao?.estado)
       .toBe('pendente');
   });
+  it('conciliacao: limite de 0,1% não arredonda para cima (R$ 1,01 sobre R$ 1.005,00 pende)', () => {
+    const conta = [dia('2026-09-01', 503.99), dia('2026-09-02', 500)];
+    // Ao vivo R$ 1.005,00 → 0,1% = R$ 1,005; diferença R$ 1,01 fica acima (Math.round daria limite R$ 1,01 e aceitaria).
+    expect(montarPainelAds({ ...base({ grupos, conta }), contaAoVivo: vivo(505, 500) }).conciliacao?.estado).toBe('pendente');
+  });
   it('conciliacao pendente: dia coletado repetido nunca concilia (seria somado duas vezes)', () => {
     const conta = [dia('2026-09-01', 30), dia('2026-09-01', 30), dia('2026-09-02', 40)];
     // Σ coletada (30 + 30 + 40) bate com Σ ao vivo (60 + 40): só a trava do dia repetido impede a conciliação.

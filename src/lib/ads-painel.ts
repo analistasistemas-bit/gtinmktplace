@@ -74,7 +74,7 @@ export const BASE_ACOS_VALIDADA = true;
 const DESATUALIZADO_MS = 48 * 3_600_000;
 /** Tolerância da conciliação ao vivo × coleta, em centavos: max(R$ 1,00; 0,1% do investimento ao vivo) — ADR-0179,
  *  ajuste 2026-10-31. Cobre a diferença de atualização entre a coleta e a leitura atual (ex.: R$ 0,18 em R$ 3.278). */
-const toleranciaConciliacaoC = (aoVivoC: number) => Math.max(100, Math.round(aoVivoC / 1000));
+const toleranciaConciliacaoC = (aoVivoC: number) => Math.max(100, Math.floor(aoVivoC / 1000))  // floor: diferença é inteira, ≤ floor(x) ⇔ ≤ x;
 const cents = (x: number) => Math.round(x * 100);
 const div = (a: number, b: number) => (b !== 0 ? a / b : null);
 

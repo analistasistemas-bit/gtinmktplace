@@ -173,6 +173,16 @@ describe('TabelaCampanhas', () => {
     expect(within(linha).queryByText('Provisória')).toBeNull();
     expect(screen.getAllByText(/— indica valor ou variação indisponível/)).toHaveLength(1);
   });
+  it('"—" é botão: clique/toque/teclado abre o motivo em popover', async () => {
+    const pausada = camp(2, 'Inverno pausada', 'paused', m(0, 0, 0, 0, 0), m(0, 0, 0, 0, 0));
+    render(<TabelaCampanhas campanhas={[pausada]} comparacao={{ estado: 'desligada', motivo: null }} onAbrir={vi.fn()} />);
+    const linha = within(tabela()).getByText('Inverno pausada').closest('tr')!;
+    const botao = within(linha).getAllByRole('button', { name: /^Sem denominador no período/ })[0];
+    botao.focus();
+    expect(document.activeElement).toBe(botao);
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog')).toHaveTextContent(/^Sem denominador no período/);
+  });
   it('sem célula indisponível: sem legenda do travessão', () => {
     render(<TabelaCampanhas campanhas={[CAMPANHAS[0]]} comparacao={DISP} onAbrir={vi.fn()} />);
     expect(screen.queryByText(/— indica valor ou variação indisponível/)).toBeNull();
