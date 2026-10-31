@@ -335,26 +335,26 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
 
   it('conciliacao ok: centavos iguais por dia → composição confrontada com a conta ao vivo', () => {
     const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(60, 40) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0, coletadoEm: sync.ultimo_ok_em });
     expect(p.conta).toMatchObject({ custo: 100, emFamilias: 50, compartilhado: 20, naoIdentificado: 30,
       naoIdentificadoPct: 0.3, divergente: false });
   });
   it('conciliacao: compara em centavos inteiros (ruído abaixo do centavo concilia)', () => {
     const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-01', 60.001), dia('2026-09-02', 40)] }),
       contaAoVivo: vivo(59.999, 40.004) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0, coletadoEm: sync.ultimo_ok_em });
     expect(p.conta?.naoIdentificado).toBe(30);
   });
   // Ajuste 2026-10-31 (ADR-0179): a conciliação compara os TOTAIS da janela com tolerância de max(R$ 1,00; 0,1%);
   // substitui a exatidão por dia. A composição é sempre um total do período, então dias trocados não a alteram.
   it('conciliacao: dias trocados com o mesmo total → ok sem diferença', () => {
     const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(61, 39) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 0, coletadoEm: sync.ultimo_ok_em });
     expect(p.conta).toMatchObject({ custo: 100, naoIdentificado: 30 });
   });
   it('conciliacao ok dentro da tolerância: a composição fica sobre a base COLETADA (diferença nunca vira não identificado)', () => {
     const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(60.01, 40) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 1 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 1, coletadoEm: sync.ultimo_ok_em });
     // Investimento é o ao vivo; famílias + compartilhado + não identificado fecham com a coleta (100), não com 100,01.
     expect(p.conta).toMatchObject({ custo: 100.01, emFamilias: 50, compartilhado: 20, naoIdentificado: 30,
       naoIdentificadoPct: 0.3, divergente: false });
@@ -362,12 +362,12 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
   it('conciliacao: R$ 0,18 sobre R$ 3.278 (caso Avil 31/10) → ok com a diferença em centavos', () => {
     const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-01', 3000), dia('2026-09-02', 278.52)] }),
       contaAoVivo: vivo(3000, 278.70) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 18 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 18, coletadoEm: sync.ultimo_ok_em });
     expect(p.conta).toMatchObject({ custo: 3278.7, naoIdentificado: 3208.52 });
   });
   it('conciliacao: diferença ao vivo menor que a coleta também é em módulo', () => {
     const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(59.5, 40) });
-    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 50 });
+    expect(p.conciliacao).toEqual({ estado: 'ok', diferenca: 50, coletadoEm: sync.ultimo_ok_em });
   });
   it('conciliacao pendente: R$ 50 de diferença em R$ 3.278 → sem não identificado na conta ao vivo, composição coletada preservada', () => {
     const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-01', 3000), dia('2026-09-02', 278.70)] }),
@@ -381,16 +381,16 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
   });
   it('conciliacao: R$ 1,00 é o piso da tolerância (inclusive); R$ 1,01 pende', () => {
     expect(montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(61, 40) }).conciliacao)
-      .toEqual({ estado: 'ok', diferenca: 100 });
+      .toEqual({ estado: 'ok', diferenca: 100, coletadoEm: sync.ultimo_ok_em });
     expect(montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(61.01, 40) }).conciliacao?.estado).toBe('pendente');
   });
   it('conciliacao: em conta grande a tolerância é 0,1% do investimento ao vivo', () => {
     const conta = [dia('2026-09-01', 100000), dia('2026-09-02', 100000)];
     // Acima do piso de R$ 1,00, vale 0,1% do ao vivo (~R$ 200): R$ 1,50 e R$ 150 cabem; R$ 250 não.
     expect(montarPainelAds({ ...base({ grupos, conta }), contaAoVivo: vivo(100001.5, 100000) }).conciliacao)
-      .toEqual({ estado: 'ok', diferenca: 150 });
+      .toEqual({ estado: 'ok', diferenca: 150, coletadoEm: sync.ultimo_ok_em });
     expect(montarPainelAds({ ...base({ grupos, conta }), contaAoVivo: vivo(100150, 100000) }).conciliacao)
-      .toEqual({ estado: 'ok', diferenca: 15000 });
+      .toEqual({ estado: 'ok', diferenca: 15000, coletadoEm: sync.ultimo_ok_em });
     expect(montarPainelAds({ ...base({ grupos, conta }), contaAoVivo: vivo(100250, 100000) }).conciliacao?.estado)
       .toBe('pendente');
   });

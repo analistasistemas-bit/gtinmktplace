@@ -86,16 +86,16 @@ describe('IntegridadeAds', () => {
   });
 
   it('conciliação ok com diferença dentro da tolerância: nota discreta na origem, sem alerta', () => {
-    render(<IntegridadeAds painel={painel({ conciliacao: { estado: 'ok', diferenca: 18 } })} {...props} />);
+    render(<IntegridadeAds painel={painel({ conciliacao: { estado: 'ok', diferenca: 18, coletadoEm: '2026-10-29T15:00:00Z' } })} {...props} />);
     expect(screen.queryByText(MSG_CONCILIACAO_PENDENTE)).toBeNull();
     const origem = screen.getByRole('region', { name: 'Origem dos números' });
     expect(within(origem).getByText(
-      /^Coleta das famílias às \d{2}:\d{2} de 30\/10 difere R\$\s0,18 da leitura atual do ML; diferença dentro da tolerância\.$/,
+      /^Coleta das famílias às \d{2}:\d{2} de 29\/10 difere R\$\s0,18 da leitura atual do ML; diferença dentro da tolerância\.$/,
     )).toBeTruthy();
   });
 
   it('conciliação ok sem diferença: nenhuma nota de tolerância', () => {
-    render(<IntegridadeAds painel={painel({ conciliacao: { estado: 'ok', diferenca: 0 } })} {...props} />);
+    render(<IntegridadeAds painel={painel({ conciliacao: { estado: 'ok', diferenca: 0, coletadoEm: null } })} {...props} />);
     expect(screen.queryByText(/dentro da tolerância/)).toBeNull();
   });
 

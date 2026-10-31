@@ -52,7 +52,8 @@ export const MSG_CONCILIACAO_PENDENTE = 'A leitura atual do ML ainda não está 
 /** Ao vivo × coleta (plano §5.6 item 5). Ok = totais dentro da TOLERANCIA_CONCILIACAO (ajuste 2026-10-31). Pendente: a conta ao vivo fica sem composição; a da última coleta segue
  *  à parte, identificada pelo horário. `coletada` null com motivo 'cobertura' = série da conta ou grupos coletados
  *  sem cobrir a janela (grupo ausente não é gasto zero conhecido). */
-export type ConciliacaoConta = { estado: 'ok'; /** |Σ coletada − Σ ao vivo| em centavos, dentro da tolerância. */ diferenca: number }
+export type ConciliacaoConta = { estado: 'ok'; /** |Σ coletada − Σ ao vivo| em centavos, dentro da tolerância. */ diferenca: number;
+      /** Horário da coleta efetivamente comparada (o mesmo sync do painel). */ coletadoEm: string | null }
   | { estado: 'pendente'; mensagem: string; coletadoEm: string | null; coletada: ComposicaoConta | null;
       coletadaMotivo: 'cobertura' | null };
 export interface PainelAds {
@@ -247,7 +248,7 @@ export function montarPainelAds(p: {
     const coletadaOk = coletadaCobre && gruposCobertos;
     const diferenca = Math.abs(somaColetada.custoC - somaConta.custoC);
     const concilia = coletadaOk && !diaRepetido && diferenca <= toleranciaConciliacaoC(somaConta.custoC);
-    conciliacao = concilia ? { estado: 'ok', diferenca } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
+    conciliacao = concilia ? { estado: 'ok', diferenca, coletadoEm: sync?.ultimo_ok_em ?? null } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
       coletadoEm: sync?.ultimo_ok_em ?? null, coletada: coletadaOk ? composicao(somaColetada.custoC) : null,
       coletadaMotivo: coletadaOk ? null : 'cobertura' };
   }

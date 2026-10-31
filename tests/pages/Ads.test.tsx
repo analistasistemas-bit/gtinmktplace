@@ -37,7 +37,7 @@ const PAINEL: PainelAds = {
       margemConsumida: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_vendas', fonteCusto: null, markup: null },
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
-  conciliacao: { estado: 'ok', diferenca: 0 },
+  conciliacao: { estado: 'ok', diferenca: 0, coletadoEm: null },
 };
 const bloco = (resumo: BlocoAdsMetricas['resumo'] = {}): BlocoAdsMetricas => ({
   janela: { desde: '2026-09-04', ate: '2026-10-03' }, resumo, serie: [], completo: true, lidoEm: '2026-10-04T12:00:00Z',

@@ -99,7 +99,7 @@ export function FaixaKpis({
           ) : (
             <>
               {/* Valor numa linha só ("R$ 1.520,67" não quebra); o apoio e a variação seguem abaixo. */}
-              <span className="whitespace-nowrap">{k.formato(valor.valor!)}</span>
+              <span className="whitespace-nowrap max-sm:text-xl">{k.formato(valor.valor!)}</span>
               {apoio}
               {cmp && (
                 <div className="flex flex-wrap items-center gap-x-1.5">

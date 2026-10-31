@@ -109,7 +109,7 @@ export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm
         {/* Dentro da tolerância (ADR-0179, ajuste 2026-10-31): só uma nota; a composição já usa a base coletada. */}
         {conciliacao?.estado === 'ok' && conciliacao.diferenca > 0 && (
           <p>
-            Coleta das famílias {hora(coletadoEm)} difere {fmtBRL(conciliacao.diferenca / 100)} da leitura atual do ML;
+            Coleta das famílias {hora(conciliacao.coletadoEm)} difere {fmtBRL(conciliacao.diferenca / 100)} da leitura atual do ML;
             diferença dentro da tolerância.
           </p>
         )}

@@ -108,7 +108,8 @@ async page => {
     const conta = ds.map((dia, i) => { const m = metricasDia(i, 1);
       return { dia, cost: i === 0 ? +(m.cost - 0.18).toFixed(2) : m.cost, clicks: m.clicks, prints: m.prints, direct_amount: m.direct_amount,
         indirect_amount: m.indirect_amount, total_amount: m.total_amount, coletado_em: new Date().toISOString() }; });
-    const custos = [1300, 600, 380, 240, 120, 70]; // do maior ao menor gasto; os maiores tendem a passar do equilíbrio
+    // Do maior ao menor gasto (Σ R$ 2.168, abaixo da conta: composição fecha); os maiores tendem a passar do equilíbrio.
+    const custos = [1040, 480, 304, 192, 96, 56];
     const grupos = custos.map((cost, i) => ({ ad_group_id: 500 + i, tipo: 'ITEM', status: 'active', cost,
       clicks: Math.round(cost * 2), prints: Math.round(cost * 90), direct_amount: Math.round(cost * 3.2),
       indirect_amount: Math.round(cost * 1.1), total_amount: Math.round(cost * 4.3), membros: [MLB(i)] }));
