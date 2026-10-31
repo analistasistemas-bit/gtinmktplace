@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown, Search } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import { Section } from '@/components/ui/section';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -10,7 +11,8 @@ import { fmtBRL, fmtBRLSinal } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { ContaPainel, FamiliaPainel, PainelAds, Semaforo } from '@/lib/ads-painel';
 import {
-  NADA, pct, textoMotivo, contarFamiliasAds, filtrarFamiliasAds, type FiltroFamiliasAds,
+  NADA, pct, textoMotivo, contarFamiliasAds, filtrarFamiliasAds, buscarFamiliasAds, ordenarFamiliasAds,
+  type FiltroFamiliasAds, type ColunaFamiliasAds, type DirecaoAds,
 } from '@/lib/ads-apresentacao';
 import { DetalheFamilia } from '@/components/ads/detalhe-familia';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
@@ -62,17 +64,18 @@ function Cabecalho({ rotulo }: { rotulo: string }) {
   );
 }
 
-/** Uso da margem pelo Ads: ACOS direto sobre o ACOS de equilíbrio. Barra só com semáforo do domínio (cor e selo nunca
- *  fabricados aqui); a largura é só a proporção, travada em 100%. Sem semáforo, fica só o texto. */
-function UsoMargem({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
+/** ACOS direto da família (gasto ÷ vendas diretas). A barra compara com o equilíbrio e só existe com semáforo do
+ *  domínio (cor e selo nunca fabricados aqui); a largura é só a proporção, travada em 100%. */
+function AcosDireto({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
   const sem = liberado && f.semaforo ? SEMAFORO[f.semaforo] : null;
   const ads = f.vendasDiretas === 0 ? null : f.acosDireto;
   const eq = f.acosEquilibrio;
   const largura = sem && ads != null && eq != null && eq > 0 ? Math.min(ads / eq, 1) : null;
-  const limite = eq == null ? ' · sem referência' : eq <= 0 ? ' · sem margem para Ads'
-    : ads == null ? ` · até ${pct(eq)} possíveis` : ` de ${pct(eq)} possíveis`;
   return (
     <div className="space-y-1.5">
+      <span className={cn('block font-medium tabular-nums', ads == null && 'text-sm font-normal text-muted-foreground')}>
+        {ads == null ? 'sem venda direta' : pct(ads)}
+      </span>
       {largura != null && (
         <div aria-hidden className="ml-auto h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-muted">
           <div data-testid="barra-uso-margem" style={{ width: `${largura * 100}%` }}
@@ -80,12 +83,17 @@ function UsoMargem({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
               sem?.tom === 'danger' ? 'bg-danger' : 'bg-success')} />
         </div>
       )}
-      <span className="block tabular-nums">
-        Ads {ads == null ? <span>sem venda direta</span> : pct(ads)}{limite}
-      </span>
       {sem && <StatusPill tone={sem.tom}>{sem.txt}</StatusPill>}
     </div>
   );
+}
+
+/** Equilíbrio observado: lucro antes de Ads sobre as vendas da família no período (texto, nunca zero presumido). */
+function Equilibrio({ f }: { f: FamiliaPainel }) {
+  const eq = f.acosEquilibrio;
+  return eq != null && eq > 0
+    ? <span className="block font-medium tabular-nums">{pct(eq)}</span>
+    : <span className="block text-sm text-muted-foreground">{eq == null ? 'sem referência' : 'sem margem para Ads'}</span>;
 }
 
 /** Resultado após Ads com tudo o que o condiciona: travessão + motivo, marca de custo e divergência da conta. */
@@ -108,6 +116,29 @@ function Resultado({ f, conta, historicoDesde }: Omit<PropsFamilia, 'liberado'>)
       {marca && <StatusPill tone="neutral">{marca}</StatusPill>}
       {conta?.divergente && <span className="block text-xs text-warning">Composição da conta divergente</span>}
     </div>
+  );
+}
+
+/** Cabeçalho ordenável: o botão de ordenar e o (i) são irmãos (botão dentro de botão é inválido); aria-sort no <th>. */
+function CabecalhoOrdenavel({ rotulo, coluna, ordem, onOrdenar, className, direita }: {
+  rotulo: string; coluna: ColunaFamiliasAds; ordem: { coluna: ColunaFamiliasAds; direcao: DirecaoAds };
+  onOrdenar: (c: ColunaFamiliasAds) => void; className: string; direita?: boolean;
+}) {
+  const ativa = ordem.coluna === coluna;
+  const Icone = !ativa ? ChevronsUpDown : ordem.direcao === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <TableHead scope="col" className={cn('px-3 align-bottom whitespace-normal', direita && 'text-right', className)}
+      aria-sort={ativa ? (ordem.direcao === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <span className={cn('inline-flex items-center gap-1.5', direita && 'justify-end')}>
+        <button type="button" onClick={() => onOrdenar(coluna)}
+          className={cn('-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            ativa && 'text-foreground')}>
+          {rotulo}
+          <Icone aria-hidden className={cn('h-3 w-3 shrink-0', ativa ? 'opacity-100' : 'opacity-50')} />
+        </button>
+        <KpiInfoButton infoKey={`${rotulo}::Ads`} />
+      </span>
+    </TableHead>
   );
 }
 
@@ -140,7 +171,8 @@ function LinhaFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamilia
       <TableRow>
         <TableCell className={CELULA}><div ref={ref}><NomeFamilia f={f} /></div></TableCell>
         <TableCell className={NUM}>{fmtBRL(f.custo)}</TableCell>
-        <TableCell className={NUM}><UsoMargem f={f} liberado={liberado} /></TableCell>
+        <TableCell className={NUM}><AcosDireto f={f} liberado={liberado} /></TableCell>
+        <TableCell className={NUM}><Equilibrio f={f} /></TableCell>
         <TableCell className={NUM}><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></TableCell>
         <TableCell className={`${CELULA} text-right`}>
           <BotaoDetalhes f={f} aberto={aberto} controla={id} onClick={() => setAberto(v => !v)} compacto />
@@ -148,7 +180,7 @@ function LinhaFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamilia
       </TableRow>
       {aberto && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell id={id} colSpan={5} className="px-3 py-3 whitespace-normal">
+          <TableCell id={id} colSpan={6} className="px-3 py-3 whitespace-normal">
             <DetalheFamilia familia={f} conta={conta} />
           </TableCell>
         </TableRow>
@@ -166,12 +198,16 @@ function CartaoFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamili
       <div className="min-w-0"><NomeFamilia f={f} /></div>
       <dl className="space-y-2 text-sm">
         <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-muted-foreground"><Cabecalho rotulo="Gasto" /></dt>
+          <dt className="text-muted-foreground"><Cabecalho rotulo="Investimento" /></dt>
           <dd className="text-right tabular-nums">{fmtBRL(f.custo)}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
-          <dt className="text-muted-foreground"><Cabecalho rotulo="Ads sobre a margem" /></dt>
-          <dd className="text-right"><UsoMargem f={f} liberado={liberado} /></dd>
+          <dt className="text-muted-foreground"><Cabecalho rotulo="ACOS direto" /></dt>
+          <dd className="text-right"><AcosDireto f={f} liberado={liberado} /></dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <dt className="text-muted-foreground"><Cabecalho rotulo="Equilíbrio observado" /></dt>
+          <dd className="text-right"><Equilibrio f={f} /></dd>
         </div>
         <div className="flex items-start justify-between gap-3">
           <dt className="text-muted-foreground"><Cabecalho rotulo="Resultado após Ads" /></dt>
@@ -198,14 +234,19 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
   painel: PainelAds; historicoDesde: string | null; focoCodigoPai?: string | null;
 }) {
   const [filtro, setFiltro] = useState<FiltroFamiliasAds>('todas');
+  const [busca, setBusca] = useState('');
+  const [ordem, setOrdem] = useState<{ coluna: ColunaFamiliasAds; direcao: DirecaoAds }>({ coluna: 'investimento', direcao: 'desc' });
   const { conta, familias, semaforoLiberado: liberado } = painel;
   const contagem = contarFamiliasAds(familias, liberado);
-  const atencao = contagem.acima + contagem.semEspaco;
-  const visiveis = filtrarFamiliasAds(familias, filtro, liberado);
+  const visiveis = ordenarFamiliasAds(
+    buscarFamiliasAds(filtrarFamiliasAds(familias, filtro, liberado), busca), ordem.coluna, ordem.direcao);
+  const ordenarPor = (coluna: ColunaFamiliasAds) => setOrdem(o => o.coluna === coluna
+    ? { coluna, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }
+    : { coluna, direcao: coluna === 'nome' ? 'asc' : 'desc' });
   const alternar = (alvo: FiltroFamiliasAds) => setFiltro(atual => (atual === alvo ? 'todas' : alvo));
 
   // Semáforo desligado: a única mensagem é a de validação, na página.
-  const fraseAtencao = !liberado || atencao > 0
+  const fraseAtencao = !liberado || contagem.acima > 0
     ? null
     : contagem.semReferencia > 0
       ? historicoDesde && familias.some(f => f.motivo === 'historico')
@@ -218,9 +259,9 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
         <KpiCard size="compact" label="Todas" infoKey="Todas::Ads" value={contagem.total}
           ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className={CARD_FILTRO} />
-        {atencao > 0 && (
-          <KpiCard size="compact" label="Em atenção" infoKey="Em atenção::Ads" value={atencao} tom="warning"
-            ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className={CARD_FILTRO} />
+        {contagem.acima > 0 && (
+          <KpiCard size="compact" label="Acima do equilíbrio" infoKey="Acima do equilíbrio::Ads" value={contagem.acima} tom="danger"
+            ativo={filtro === 'acima'} onClick={() => alternar('acima')} className={CARD_FILTRO} />
         )}
         <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}
           tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} desabilitado={contagem.dentro === 0} className={CARD_FILTRO} />
@@ -228,14 +269,19 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
           ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} desabilitado={contagem.semReferencia === 0} className={CARD_FILTRO} />
       </div>
       {fraseAtencao && <p className="text-sm text-muted-foreground">{fraseAtencao}</p>}
+      <div className="relative sm:max-w-sm">
+        <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar nome ou código"
+          aria-label="Buscar família por nome ou código" className="h-11 pl-8 text-base sm:h-8 sm:text-sm" />
+      </div>
     </div>
   );
 
   const props = (f: FamiliaPainel) => ({ f, liberado, conta, historicoDesde, foco: f.codigoPai === focoCodigoPai });
   const conteudoRanking = visiveis.length === 0 ? (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-      <p>Nenhuma família neste filtro no período.</p>
-      <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => setFiltro('todas')}>Ver todas</Button>
+      <p>{busca.trim() ? 'Nenhuma família encontrada com esta busca e filtro.' : 'Nenhuma família neste filtro no período.'}</p>
+      <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => { setFiltro('todas'); setBusca(''); }}>Ver todas</Button>
     </div>
   ) : (
     <>
@@ -243,10 +289,11 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
         <Table aria-label="Famílias por gasto" className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead scope="col" className="w-[34%] px-3 align-bottom whitespace-normal"><Cabecalho rotulo="Família" /></TableHead>
-              <TableHead scope="col" className="w-[14%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Gasto" /></TableHead>
-              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Ads sobre a margem" /></TableHead>
-              <TableHead scope="col" className="w-[24%] px-3 text-right align-bottom whitespace-normal"><Cabecalho rotulo="Resultado após Ads" /></TableHead>
+              <CabecalhoOrdenavel rotulo="Família" coluna="nome" ordem={ordem} onOrdenar={ordenarPor} className="w-[28%]" />
+              <CabecalhoOrdenavel rotulo="Investimento" coluna="investimento" ordem={ordem} onOrdenar={ordenarPor} className="w-[13%]" direita />
+              <CabecalhoOrdenavel rotulo="ACOS direto" coluna="acos_direto" ordem={ordem} onOrdenar={ordenarPor} className="w-[17%]" direita />
+              <CabecalhoOrdenavel rotulo="Equilíbrio observado" coluna="equilibrio" ordem={ordem} onOrdenar={ordenarPor} className="w-[15%]" direita />
+              <CabecalhoOrdenavel rotulo="Resultado após Ads" coluna="resultado" ordem={ordem} onOrdenar={ordenarPor} className="w-[21%]" direita />
               <TableHead scope="col" className="w-[6%] px-3 text-right align-bottom whitespace-normal"><span className="sr-only">Detalhes</span></TableHead>
             </TableRow>
           </TableHeader>
@@ -263,7 +310,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
 
   return (
     <div role="region" aria-label="Ranking de famílias">
-      <Section title="Famílias por gasto" description="Quanto da margem de cada família o Ads está usando.">
+      <Section title="Famílias por gasto" description="ACOS direto de cada família contra o equilíbrio observado no período.">
         {familias.length === 0
           ? <p className="text-sm text-muted-foreground">Nenhum gasto de Ads por família no período.</p>
           : <>{filtros}{conteudoRanking}</>}

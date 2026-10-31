@@ -23,7 +23,6 @@ export const textoMotivo = (m: Exclude<MotivoFamilia, null>, historicoDesde: str
 
 export type FiltroFamiliasAds =
   | 'todas'
-  | 'atencao'
   | 'acima'
   | 'dentro'
   | 'sem_referencia';
@@ -69,7 +68,6 @@ export function filtrarFamiliasAds(
 
     if (filtro === 'todas') return true;
     if (filtro === 'acima') return estado === 'acima';
-    if (filtro === 'atencao') return estado === 'acima' || estado === 'sem_espaco';
     if (filtro === 'dentro') return estado === 'dentro';
     return estado === null;
   });

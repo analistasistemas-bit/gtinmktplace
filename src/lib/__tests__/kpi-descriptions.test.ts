@@ -69,12 +69,13 @@ const ALL_EXPECTED_KEYS = [
   'Média mensal por vendedor (12 meses)',
   // Ads (filtros do ranking de famílias)
   'Todas::Ads',
-  'Em atenção::Ads',
+  'Acima do equilíbrio::Ads',
   'Dentro do equilíbrio::Ads',
   'Sem referência::Ads',
-  'Ads sobre a margem::Ads',
+  'ACOS direto::Ads',
+  'Equilíbrio observado::Ads',
   'Família::Ads',
-  'Gasto::Ads',
+  'Investimento::Ads',
   'Resultado após Ads::Ads',
 ];
 

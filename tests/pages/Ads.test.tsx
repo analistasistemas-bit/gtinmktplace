@@ -400,7 +400,7 @@ describe('Ads', () => {
     expect(associados.getByText(/R\$\s*30,00/)).toBeInTheDocument();
     const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
     expect(tabela.queryByRole('row', { name: /Compartilhado|não identificado/ })).not.toBeInTheDocument();
-    expect(tabela.getAllByRole('columnheader')[1]).toHaveTextContent('Gasto');
+    expect(tabela.getAllByRole('columnheader')[1]).toHaveTextContent('Investimento');
   });
   it('ordem total / direto em toda a tela', () => {
     montar();
@@ -441,19 +441,19 @@ describe('Ads', () => {
     const associados = screen.getByRole('region', { name: 'Gastos associados' });
     const antes = associados.textContent;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em atenção' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Acima do equilíbrio' }));
 
     expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
     expect(tabela.getByRole('row', { name: /Fam B/ })).toBeInTheDocument();
     expect(associados.textContent).toBe(antes);
-    expect(screen.getByRole('button', { name: 'Remover filtro Em atenção' }))
+    expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' }))
       .toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('zero em atenção mostra frase sem botão de atenção', () => {
+  it('zero acima do equilíbrio mostra frase sem botão de atenção', () => {
     montar();
 
-    expect(screen.queryByRole('button', { name: /Filtrar por Em atenção/ }))
+    expect(screen.queryByRole('button', { name: /Filtrar por Acima do equilíbrio/ }))
       .not.toBeInTheDocument();
     expect(screen.getByText(
       'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.',
@@ -473,7 +473,7 @@ describe('Ads', () => {
     montar({ ...PAINEL, familias: [PAINEL.familias[0]] });
 
     expect(screen.getByText('Nenhuma família acima do equilíbrio neste período.')).toBeVisible();
-    // Dentro e Sem referência ficam sempre visíveis, mesmo com zero (§2.3); só Em atenção some.
+    // Dentro e Sem referência ficam sempre visíveis, mesmo com zero (§2.3); só Acima do equilíbrio some.
     expect(screen.getByRole('button', { name: 'Filtrar por Sem referência' })).toHaveTextContent('0');
     expect(screen.getByRole('button', { name: 'Filtrar por Dentro do equilíbrio' })).toHaveTextContent('1');
   });
@@ -493,7 +493,7 @@ describe('Ads', () => {
     const linha = within(screen.getByRole('row', { name: /Fam A/ }));
 
     expect(linha.getByText('sem venda direta')).toBeVisible();
-    expect(linha.getByText(/até 25,0% possíveis/)).toBeVisible();
+    expect(linha.getByText('25,0%')).toBeVisible();
     expect(linha.getByText('Acima do equilíbrio')).toBeVisible();
     expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
   });
@@ -642,14 +642,14 @@ describe('Ads', () => {
     const view = montar({ ...PAINEL, familias });
     const ultimo = (): RetornoAdsPainel => hook.mock.results.at(-1)?.value;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em atenção' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Acima do equilíbrio' }));
     fireEvent.click(within(screen.getByRole('row', { name: /Fam B/ }))
       .getByRole('button', { name: 'Ver detalhes de Fam B' }));
 
     // Refetch da mesma janela: filtro e detalhe permanecem.
     hook.mockReturnValue({ ...ultimo(), isFetching: true });
     view.rerender(<MemoryRouter><Ads /></MemoryRouter>);
-    expect(screen.getByRole('button', { name: 'Remover filtro Em atenção' }))
+    expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' }))
       .toHaveAttribute('aria-pressed', 'true');
     expect(within(screen.getByRole('table', { name: 'Famílias por gasto' }))
       .getByRole('button', { name: 'Ver detalhes de Fam B' })).toHaveAttribute('aria-expanded', 'true');
@@ -657,7 +657,7 @@ describe('Ads', () => {
     // Troca de período: volta a todas, detalhes fechados.
     hook.mockReturnValue({ ...ultimo(), isFetching: false, janela: { desde: '2026-09-27', ate: '2026-10-03' } });
     fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
-    expect(screen.queryByRole('button', { name: 'Remover filtro Em atenção' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).not.toBeInTheDocument();
     const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
     expect(tabela.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
     expect(tabela.getByRole('button', { name: 'Ver detalhes de Fam B' })).toHaveAttribute('aria-expanded', 'false');
@@ -699,10 +699,10 @@ describe('Ads', () => {
     for (const l of links) expect(l).toHaveAttribute('title', 'Fam A');
   });
 
-  it('uso da margem: barra proporcional e "Ads X% de Y% possíveis"', () => {
+  it('uso da margem: barra proporcional ao ACOS direto sobre o equilíbrio', () => {
     montar();
     const linha = within(screen.getByRole('row', { name: /Fam A/ }));
-    expect(linha.getByText('Ads 12,5% de 25,0% possíveis')).toBeVisible();
+    expect(linha.getByText('12,5%')).toBeVisible();
     const barra = linha.getByTestId('barra-uso-margem');
     expect(barra).toHaveStyle({ width: '50%' });
     expect(barra).toHaveClass('bg-success');
@@ -718,7 +718,8 @@ describe('Ads', () => {
   it('uso da margem sem semáforo: texto sem barra, mesmo com equilíbrio e venda direta', () => {
     montar({ ...PAINEL, semaforoLiberado: false, familias: [{ ...PAINEL.familias[0], semaforo: null }] });
     const linha = within(screen.getByRole('row', { name: /Fam A/ }));
-    expect(linha.getByText('Ads 12,5% de 25,0% possíveis')).toBeVisible();
+    expect(linha.getByText('12,5%')).toBeVisible();
+    expect(linha.getByText('25,0%')).toBeVisible();
     expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
   });
 
@@ -729,19 +730,21 @@ describe('Ads', () => {
     expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
   });
 
-  it('(i) da coluna explica como ler o campo', () => {
+  it('(i) das colunas explica como ler ACOS direto e Equilíbrio observado', () => {
     montar();
     const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
-    fireEvent.click(tabela.getByRole('button', { name: 'O que é Ads sobre a margem' }));
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é ACOS direto' }));
     expect(screen.getByText(/de cada R\$ 100 vendidos/)).toBeVisible();
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Equilíbrio observado' }));
+    expect(screen.getByText(/margem antes de Ads nas vendas desta família/)).toBeVisible();
   });
 
-  it('(i) nas colunas Família, Gasto e Resultado após Ads', () => {
+  it('(i) nas colunas Família, Investimento e Resultado após Ads', () => {
     montar();
     const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
     fireEvent.click(tabela.getByRole('button', { name: 'O que é Família' }));
     expect(screen.getByText(/código PAI/)).toBeVisible();
-    fireEvent.click(tabela.getByRole('button', { name: 'O que é Gasto' }));
+    fireEvent.click(tabela.getByRole('button', { name: 'O que é Investimento' }));
     expect(screen.getByText(/grupos de Ads exclusivos desta família/)).toBeVisible();
     fireEvent.click(tabela.getByRole('button', { name: 'O que é Resultado após Ads' }));
     expect(screen.getByText(/Não é o lucro causado pelo Ads/)).toBeVisible();
@@ -752,6 +755,80 @@ describe('Ads', () => {
     fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
     const linha = screen.getAllByText('Markup antes de Ads')[0].closest('div')!;
     expect(within(linha).getByText('+80%')).toBeInTheDocument();
+  });
+
+  describe('tabela de familias', () => {
+    const tresFamilias = () => ({
+      ...PAINEL,
+      familias: [
+        PAINEL.familias[0],
+        { ...PAINEL.familias[1], codigoPai: 'B', nome: 'Fam B', custo: 90, vendasDiretas: 100, acosDireto: 0.4,
+          acosEquilibrio: 0.2, semaforo: 'acima' as const, motivo: null, resultado: -5, fonteCusto: 'real' as const },
+        { ...PAINEL.familias[1], codigoPai: 'C', nome: 'Zeta C' },
+      ],
+    });
+    const nomesDasLinhas = () => within(screen.getByRole('table', { name: 'Famílias por gasto' }))
+      .getAllByRole('row').slice(1).map(r => r.textContent?.match(/Fam [A-Z]|Zeta C/)?.[0]);
+
+    it('cabeçalhos ACOS direto e Equilíbrio observado substituem a frase "Ads X% de Y% possíveis"', () => {
+      montar();
+      const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+      const cabecas = tabela.getAllByRole('columnheader').map(c => c.textContent);
+      expect(cabecas[1]).toContain('Investimento');
+      expect(cabecas[2]).toContain('ACOS direto');
+      expect(cabecas[3]).toContain('Equilíbrio observado');
+      expect(screen.queryByText(/possíveis/)).not.toBeInTheDocument();
+      const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+      expect(linha.getByText('12,5%')).toBeVisible();
+      expect(linha.getByText('25,0%')).toBeVisible();
+    });
+
+    it('busca filtra as linhas por nome ou código e mostra vazio com limpar', () => {
+      montar(tresFamilias());
+      const busca = screen.getByRole('searchbox', { name: /Buscar família/ });
+      fireEvent.change(busca, { target: { value: 'zeta' } });
+      expect(nomesDasLinhas()).toEqual(['Zeta C']);
+      fireEvent.change(busca, { target: { value: 'b' } });
+      expect(nomesDasLinhas()).toEqual(['Fam B']);
+      fireEvent.change(busca, { target: { value: 'nada' } });
+      expect(screen.queryByRole('table', { name: 'Famílias por gasto' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));
+      expect(nomesDasLinhas()).toHaveLength(3);
+    });
+
+    it('ordenação por coluna usa aria-sort e alterna a direção', () => {
+      montar(tresFamilias());
+      const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+      const th = (n: RegExp) => tabela.getAllByRole('columnheader').find(c => n.test(c.textContent ?? ''))!;
+      expect(th(/Investimento/)).toHaveAttribute('aria-sort', 'descending');
+      expect(nomesDasLinhas()).toEqual(['Fam B', 'Fam A', 'Zeta C']);
+      fireEvent.click(within(th(/Investimento/)).getByRole('button', { name: 'Investimento' }));
+      expect(th(/Investimento/)).toHaveAttribute('aria-sort', 'ascending');
+      expect(nomesDasLinhas()).toEqual(['Zeta C', 'Fam A', 'Fam B']);
+      fireEvent.click(within(th(/Família/)).getByRole('button', { name: 'Família' }));
+      expect(th(/Família/)).toHaveAttribute('aria-sort', 'ascending');
+      expect(th(/Investimento/)).toHaveAttribute('aria-sort', 'none');
+      expect(nomesDasLinhas()).toEqual(['Fam A', 'Fam B', 'Zeta C']);
+    });
+
+    it('motivos de indisponível continuam visíveis na linha', () => {
+      montar(tresFamilias());
+      const linha = within(screen.getByRole('row', { name: /Zeta C/ }));
+      expect(linha.getByText('sem vendas no período')).toBeVisible();
+      expect(linha.getByText('sem venda direta')).toBeVisible();
+      expect(linha.getByText('sem referência')).toBeVisible();
+    });
+
+    it('filtro Acima do equilíbrio mostra só as acima, com contagem independente da busca', () => {
+      montar(tresFamilias());
+      const botao = screen.getByRole('button', { name: 'Filtrar por Acima do equilíbrio' });
+      expect(botao).toHaveTextContent('1');
+      fireEvent.click(botao);
+      expect(nomesDasLinhas()).toEqual(['Fam B']);
+      expect(within(screen.getByRole('row', { name: /Fam B/ })).getByText('Acima do equilíbrio')).toBeVisible();
+      fireEvent.change(screen.getByRole('searchbox', { name: /Buscar família/ }), { target: { value: 'zeta' } });
+      expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveTextContent('1');
+    });
   });
 
   describe('abas Desempenho | Campanhas', () => {

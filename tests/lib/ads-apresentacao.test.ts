@@ -44,8 +44,8 @@ describe('apresentação de famílias Ads', () => {
       semReferencia: 1,
     });
 
-    expect(filtrarFamiliasAds(familias, 'atencao', true).map(f => f.codigoPai))
-      .toEqual(['B', 'D']);
+    expect(filtrarFamiliasAds(familias, 'acima', true).map(f => f.codigoPai))
+      .toEqual(['B']);
     expect(filtrarFamiliasAds(familias, 'dentro', true).map(f => f.codigoPai))
       .toEqual(['A']);
     expect(filtrarFamiliasAds(familias, 'sem_referencia', true).map(f => f.codigoPai))
@@ -60,7 +60,7 @@ describe('apresentação de famílias Ads', () => {
       dentro: 0,
       semReferencia: 4,
     });
-    expect(filtrarFamiliasAds(familias, 'atencao', false)).toEqual([]);
+    expect(filtrarFamiliasAds(familias, 'acima', false)).toEqual([]);
     expect(filtrarFamiliasAds(familias, 'sem_referencia', false)).toEqual(familias);
   });
 });
@@ -98,7 +98,8 @@ describe('busca, ordenação e atalho das famílias Ads', () => {
 
   it('busca e filtro não alteram as contagens da lista inteira', () => {
     const antes = contarFamiliasAds(lista, true);
-    buscarFamiliasAds(filtrarFamiliasAds(lista, 'acima', true), 'p3');
+    const achadas = buscarFamiliasAds(filtrarFamiliasAds(lista, 'acima', true), 'p3');
+    expect(ids(achadas)).toEqual(['P3']);
     expect(contarFamiliasAds(lista, true)).toEqual(antes);
     expect(antes.acima).toBe(2);
   });
