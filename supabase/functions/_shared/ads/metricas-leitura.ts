@@ -1,9 +1,10 @@
 // Leitura paginada de campanhas por período (E1, plano ads-redesign §5.4). `buscar` é injetado: devolve o corpo
 // JSON ou null em falha. Sem cache ou orçamento (camadas acima); o escopo campanha prova o pertencimento. Nunca lança.
 import {
-  CAMPOS_METRICA_ADS, parseMetricasResumo, parseSerieMetricas, urlCampanhaDetalhe, urlCampanhaSerie, urlContaResumo,
-  urlContaSerie,
-  type BlocoAdsMetricas, type CampanhaPeriodoAds, type JanelaAdsMetricas, type MetricaBrutaAds, type ValorAds,
+  CAMPOS_METRICA_ADS, parseMetricasResumo, parseSerieMetricas, urlAnunciosMetricas, urlCampanhaDetalhe,
+  urlCampanhaSerie, urlContaResumo, urlContaSerie,
+  type AnuncioPeriodoAds, type BlocoAdsMetricas, type CampanhaPeriodoAds, type JanelaAdsMetricas, type MetricaBrutaAds,
+  type MotivoMetricaAds, type ValorAds,
 } from './metricas.ts';
 import { classificarResposta } from './parsers.ts';
 import type { RespostaML } from '../trafego/sincronizar.ts';
@@ -11,6 +12,8 @@ import type { RespostaML } from '../trafego/sincronizar.ts';
 export interface DepsLeituraAds {
   buscar(url: string): Promise<unknown | null>;
   agora(): string;
+  /** Saldo do orçamento da requisição (`criarLeituraOrcada().restante`); ausente = sem teto local. */
+  restante?(): { paginas: number; chamadas: number };
 }
 
 export interface LinhaCampanhaAds {
@@ -213,21 +216,101 @@ export async function provarPertencimento(
     : 'Campanha não pertence ao anunciante.';
 }
 
+// --- Anúncios patrocinados da campanha (E5, Task 31a). ---
+
+export interface AnunciosCampanhaAds {
+  /** null = lista indisponível (motivo em `anunciosMotivo`); nunca uma lista parcial apresentada como inteira. */
+  anuncios: AnuncioPeriodoAds[] | null;
+  /** Com lista: motivo de a anterior por anúncio não ter sido lida (todas as `anterior` null). */
+  anunciosMotivo: MotivoMetricaAds | null;
+}
+
+interface LinhaAnuncioAds { titulo: string | null; statusAds: string; resumo: BlocoAdsMetricas['resumo'] }
+
+const MLB_RE = /^MLB\d+$/;
+
 /**
- * Escopo campanha: E3 (resumo + competitividade) + E4 (série diária), só depois de provar que `campanhaId`
- * pertence ao anunciante resolvido (o ID na URL não é autorização, plano §5.2).
+ * Pagina E5 (filtrado pela campanha) até `paging.total`. A completude conta TODAS as linhas lidas; só depois a de
+ * outra campanha é descartada (spike 057: o filtro do ML já devolveu linha alheia). Linha malformada ou item repetido
+ * invalida a lista. Antes de cada página confere o saldo do orçamento e para sem chamar se o resto da janela não
+ * couber: estourar o teto desligaria o restante da requisição (criarLeituraOrcada é definitivo).
+ */
+async function lerAnunciosPeriodo(
+  deps: DepsLeituraAds, adv: number, campanhaId: number, j: JanelaAdsMetricas,
+): Promise<{ motivo: MotivoMetricaAds | null; linhas: Map<string, LinhaAnuncioAds> }> {
+  const falha = (motivo: MotivoMetricaAds) => ({ motivo, linhas: new Map<string, LinhaAnuncioAds>() });
+  const linhas = new Map<string, LinhaAnuncioAds>();
+  const vistos = new Set<string>();
+  let total: number | null = null;
+  let porPagina = 1;
+  let offset = 0;
+  do {
+    const faltam = total === null ? 1 : Math.ceil((total - offset) / porPagina);
+    const saldo = deps.restante?.();
+    if (saldo && Math.min(saldo.paginas, saldo.chamadas) < faltam) return falha('limite_de_leitura');
+    const corpo = await deps.buscar(urlAnunciosMetricas(adv, j, offset, campanhaId));
+    const t = obj(corpo) && obj(corpo.paging) ? corpo.paging.total : null;
+    if (!obj(corpo) || !Array.isArray(corpo.results) || typeof t !== 'number' || !Number.isInteger(t) || t < 0
+      || (total !== null && t !== total)) return falha('resposta_invalida');
+    total = t;
+    for (const r of corpo.results) {
+      if (!obj(r) || typeof r.item_id !== 'string' || !MLB_RE.test(r.item_id) || vistos.has(r.item_id)
+        || typeof r.campaign_id !== 'number' || !Number.isInteger(r.campaign_id) || r.campaign_id <= 0
+        || typeof r.status !== 'string') return falha('resposta_invalida');
+      vistos.add(r.item_id);
+      if (r.campaign_id !== campanhaId) continue;
+      linhas.set(r.item_id, {
+        titulo: typeof r.title === 'string' && r.title.trim() ? r.title : null,
+        statusAds: r.status,
+        resumo: parseMetricasResumo(r.metrics),
+      });
+    }
+    if (corpo.results.length === 0) break; // página vazia: sem avanço
+    porPagina = corpo.results.length;
+    offset += corpo.results.length;
+  } while (offset < total);
+  return vistos.size === total ? { motivo: null, linhas } : falha('resposta_invalida');
+}
+
+/**
+ * Atual obrigatória; anterior só se couber no orçamento (senão todas `anterior` null + motivo, lista atual inteira).
+ * A tabela é do período atual: anúncio só na anterior fica de fora.
+ */
+async function lerAnunciosCampanha(
+  deps: DepsLeituraAds, adv: number, campanhaId: number,
+  atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
+): Promise<AnunciosCampanhaAds> {
+  const a = await lerAnunciosPeriodo(deps, adv, campanhaId, atual);
+  if (a.motivo) return { anuncios: null, anunciosMotivo: a.motivo };
+  const p = anterior ? await lerAnunciosPeriodo(deps, adv, campanhaId, anterior) : null;
+  const lidoEm = deps.agora();
+  const bloco = (janela: JanelaAdsMetricas, l: LinhaAnuncioAds): BlocoAdsMetricas => ({
+    janela, resumo: l.resumo, serie: [], completo: true, lidoEm,
+  });
+  const anuncios = [...a.linhas].map(([itemId, l]): AnuncioPeriodoAds => {
+    const lp = p && !p.motivo ? p.linhas.get(itemId) : undefined;
+    return { itemId, titulo: l.titulo, statusAds: l.statusAds, atual: bloco(atual, l), anterior: lp ? bloco(anterior!, lp) : null };
+  });
+  return { anuncios, anunciosMotivo: p?.motivo ?? null };
+}
+
+/**
+ * Escopo campanha: E3 (resumo + competitividade) + E4 (série diária) + E5 (anúncios), só depois de provar que
+ * `campanhaId` pertence ao anunciante resolvido (o ID na URL não é autorização, plano §5.2). E5 vem por último:
+ * é o que mais consome orçamento e não pode tirar páginas dos KPIs.
  */
 export async function lerEscopoCampanha(
   deps: DepsLeituraAds, advertiserId: number, campanhaId: number,
   atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
-): Promise<LeituraEscopoAds | RecusaCampanhaAds> {
+): Promise<(LeituraEscopoAds & AnunciosCampanhaAds) | RecusaCampanhaAds> {
   if (typeof campanhaId !== 'number' || !Number.isInteger(campanhaId) || campanhaId <= 0) {
     return { recusa: { estado: 'sem_acesso', motivo: 'Identificador de campanha inválido.' } };
   }
   // ponytail: E1 relido aqui; aceitar a listagem já feita pelo chamador quando a rota tiver uma em mãos.
   const motivo = await provarPertencimento(deps, advertiserId, campanhaId, anterior ? [atual, anterior] : [atual]);
   if (motivo) return { recusa: { estado: 'sem_acesso', motivo } };
-  return lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+  const r = await lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+  return { ...r, ...(await lerAnunciosCampanha(deps, advertiserId, campanhaId, atual, anterior)) };
 }
 
 // --- Orçamento da leitura (plano §5.5): tetos da aplicação, não limites alegados da API. ---
@@ -247,8 +330,10 @@ export interface EstadoLeituraOrcada {
  * ou null, como `DepsLeituraAds.buscar`; o motivo do null fica em `estado()`. Teto atingido é definitivo na
  * requisição, então as leituras ficam `completo: false` e o chamador devolve indisponibilidade (nunca listagem
  * truncada como completa). 429/5xx: 1 repetição, respeitando Retry-After se couber no prazo; 403/401 não repetem.
- * ponytail: E5 (anúncios da campanha, ~13 páginas/janela na Avil) cabe no teto só numa janela; atual+anterior
- * (~26) estoura e a comparação fica indisponível por `limite_de_leitura`, sem truncar.
+ * `restante()` expõe o saldo: o E5 (anúncios da campanha) confere antes de cada página e para sem tocar o teto
+ * quando o resto da janela não cabe (anterior por anúncio vira `limite_de_leitura`, sem truncar a atual).
+ * ponytail: o saldo ignora retries e prazo; um 429/5xx ou o prazo no meio do E5 ainda estoura e deixa a resposta
+ * `parcial` (não cacheada).
  */
 export function criarLeituraOrcada(cfg: {
   buscar(url: string, sinal?: AbortSignal): Promise<RespostaML>;
@@ -312,5 +397,8 @@ export function criarLeituraOrcada(cfg: {
       try { return estado.motivo ? null : await uma(url); } finally { liberar(); }
     },
     estado: () => estado,
+    restante: () => ({
+      paginas: ORCAMENTO_LEITURA_ADS.paginas - paginas, chamadas: ORCAMENTO_LEITURA_ADS.chamadas - chamadas,
+    }),
   };
 }

@@ -52,7 +52,17 @@ export interface CampanhaPeriodoAds {
   anterior: BlocoAdsMetricas | null;
 }
 
-export type EscopoAdsMetricas = 'conta' | 'campanhas' | 'campanha' | 'competitividade';
+/** Anúncio patrocinado da campanha no período (E5). `titulo` só se vier no `ads/search` (/items não é lido). */
+export interface AnuncioPeriodoAds {
+  itemId: string;
+  titulo: string | null;
+  statusAds: string;
+  atual: BlocoAdsMetricas;
+  /** null: sem linha na anterior lida inteira, ou anterior não lida (o motivo fica em `anunciosMotivo`). */
+  anterior: BlocoAdsMetricas | null;
+}
+
+export type EscopoAdsMetricas ='conta' | 'campanhas' | 'campanha' | 'competitividade';
 
 export interface PedidoAdsMetricas {
   desde: string;
@@ -70,6 +80,12 @@ export interface RespostaAdsMetricas {
   atual: BlocoAdsMetricas | null;
   anterior: BlocoAdsMetricas | null;
   campanhas: CampanhaPeriodoAds[];
+  /**
+   * Só no escopo `campanha`. null = lista indisponível (motivo em `anunciosMotivo`), nunca parcial. Lista com
+   * `anunciosMotivo` não nulo = a comparação por anúncio não foi lida (todos com `anterior` null).
+   */
+  anuncios?: AnuncioPeriodoAds[] | null;
+  anunciosMotivo?: MotivoMetricaAds | null;
   comparacao: { estado: 'disponivel' | 'provisoria' | 'indisponivel' | 'desligada'; motivo: string | null };
   disponibilidade: { desde: string; ate: string; fuso: 'America/Sao_Paulo' };
   avisos: string[];

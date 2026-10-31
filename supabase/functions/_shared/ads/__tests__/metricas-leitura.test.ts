@@ -450,3 +450,111 @@ describe('limites de leitura (orçamento §5.5)', () => {
     }
   });
 });
+
+describe('anúncios da campanha (E5, Task 31a)', () => {
+  const J = { desde: '2026-10-01', ate: '2026-10-03' };
+  const JA = { desde: '2026-09-28', ate: '2026-09-30' };
+  const anuncio = (n: number, campanha = 9) => ({
+    item_id: `MLB${n}`, campaign_id: campanha, status: 'active', title: `Anúncio ${n}`, metrics: { cost: n, clicks: 1 },
+  });
+  const lista = (qtd: number, campanha = 9) => Array.from({ length: qtd }, (_, i) => anuncio(i + 1, campanha));
+  const diasDe = (desde: string, ate: string) => {
+    const out: Record<string, unknown>[] = [];
+    for (let t = Date.parse(desde); t <= Date.parse(ate); t += 86_400_000) out.push({ date: new Date(t).toISOString().slice(0, 10), cost: 1 });
+    return out;
+  };
+  // ML falso: E1 com as campanhas do anunciante 7, E3/E4 da campanha e E5 paginado pelo `limit` da URL.
+  function servidorE5(porJanela: Record<string, unknown[]>, camps = [camp(9, 1)]) {
+    const urls: string[] = [];
+    const buscar = async (url: string) => {
+      urls.push(url);
+      const q = new URL(`https://x${url}`).searchParams;
+      const desde = q.get('date_from')!;
+      const offset = Number(q.get('offset'));
+      if (url.includes('/ads/search')) {
+        const todas = porJanela[desde] ?? [];
+        const limit = Number(q.get('limit'));
+        return { paging: { offset, limit, total: todas.length }, results: todas.slice(offset, offset + limit) };
+      }
+      if (/product_ads\/campaigns\/\d+\?/.test(url)) {
+        return url.includes('DAILY') ? { results: diasDe(desde, q.get('date_to')!) } : { metrics: { cost: 3 } };
+      }
+      return { paging: { offset, limit: 50, total: camps.length }, results: camps.slice(offset, offset + 50) };
+    };
+    return { urls, buscar, deps: { buscar, agora: () => 'T' } };
+  }
+  // Orçamento real (criarLeituraOrcada) por cima do servidor falso.
+  function orcado(s: ReturnType<typeof servidorE5>) {
+    const orc = criarLeituraOrcada({
+      buscar: async (url) => ({ status: 200, retryAfterMs: null, corpo: await s.buscar(url) }),
+      agoraMs: () => 0, esperar: async () => {}, agendar: () => () => {},
+    });
+    return { orc, deps: { buscar: orc.buscar, agora: () => 'T', restante: orc.restante } };
+  }
+  const e5 = (urls: string[]) => urls.filter((u) => u.includes('/ads/search'));
+
+  it('linhas de outra campanha são descartadas; métricas vêm de `metrics` e o título da resposta', async () => {
+    const s = servidorE5({
+      [J.desde]: [anuncio(1), anuncio(2, 8), { ...anuncio(3), title: undefined }],
+      [JA.desde]: [anuncio(1)],
+    });
+    const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, JA));
+    expect(r.anunciosMotivo).toBeNull();
+    expect(r.anuncios!.map((a) => a.itemId)).toEqual(['MLB1', 'MLB3']);
+    const [a1, a3] = r.anuncios!;
+    expect(a1.titulo).toBe('Anúncio 1');
+    expect(a1.statusAds).toBe('active');
+    expect(a1.atual.resumo.cost).toEqual({ valor: 1, motivo: null });
+    expect(a1.atual.janela).toEqual(J);
+    expect(a1.anterior?.resumo.cost).toEqual({ valor: 1, motivo: null });
+    expect(a3.titulo).toBeNull();
+    expect(a3.anterior).toBeNull(); // sem linha na anterior lida inteira: sem zero presumido
+    expect(e5(s.urls).every((u) => u.includes('filters[campaign_id]=9'))).toBe(true);
+  });
+
+  it('paginação completa da janela atual', async () => {
+    const s = servidorE5({ [J.desde]: lista(120) });
+    const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, null));
+    expect(r.anunciosMotivo).toBeNull();
+    expect(r.anuncios).toHaveLength(120);
+    expect(e5(s.urls).map((u) => /offset=(\d+)/.exec(u)![1])).toEqual(['0', '50', '100']);
+  });
+
+  it('linha malformada ou item repetido: lista indisponível, nunca parcial', async () => {
+    for (const ruins of [[anuncio(1), { campaign_id: 9, metrics: {} }], [anuncio(1), anuncio(1)]]) {
+      const s = servidorE5({ [J.desde]: ruins });
+      const r = leitura(await lerEscopoCampanha(s.deps, 7, 9, J, null));
+      expect(r.anuncios).toBeNull();
+      expect(r.anunciosMotivo).toBe('resposta_invalida');
+    }
+  });
+
+  it('anterior que estoura o orçamento: anterior null com motivo e a lista atual inteira', async () => {
+    // 2 páginas de E1 (prova) + 10 da atual cabem; a anterior (+10) não: para antes de estourar o teto.
+    const s = servidorE5({ [J.desde]: lista(500), [JA.desde]: lista(500) });
+    const o = orcado(s);
+    const r = leitura(await lerEscopoCampanha(o.deps, 7, 9, J, JA));
+    expect(r.anuncios).toHaveLength(500);
+    expect(r.anuncios!.every((a) => a.anterior === null && a.atual.completo)).toBe(true);
+    expect(r.anunciosMotivo).toBe('limite_de_leitura');
+    expect(r.comparacao.estado).toBe('disponivel'); // E3/E4 das duas janelas lidos antes do E5
+    expect(o.orc.estado().motivo).toBeNull(); // o teto não foi tocado: o resto da requisição segue
+  });
+
+  it('atual que estoura o orçamento: anuncios null com motivo', async () => {
+    const s = servidorE5({ [J.desde]: lista(1050) });
+    const o = orcado(s);
+    const r = leitura(await lerEscopoCampanha(o.deps, 7, 9, J, null));
+    expect(r.anuncios).toBeNull();
+    expect(r.anunciosMotivo).toBe('limite_de_leitura');
+    expect(r.atual.completo).toBe(true);
+    expect(o.orc.estado().motivo).toBeNull();
+  });
+
+  it('campanha sem pertencimento: nenhuma chamada E5', async () => {
+    const s = servidorE5({ [J.desde]: lista(3) }, [camp(1, 1)]);
+    const r = await lerEscopoCampanha(s.deps, 7, 9, J, JA);
+    expect('recusa' in r).toBe(true);
+    expect(e5(s.urls)).toEqual([]);
+  });
+});

@@ -26,8 +26,8 @@ const janelaDe = (url: string) => {
 };
 
 /** ML falso: 1 campanha (123) do anunciante 999; `lacuna` tira o 1º dia da série diária (só das janelas com
- *  `ate` ≤ `lacunaAte`, quando informado). */
-function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string } = {}) {
+ *  `ate` ≤ `lacunaAte`, quando informado). E5: `anuncios` linhas da campanha + 1 de outra campanha (spike 057). */
+function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string; anuncios?: number } = {}) {
   const chamadas: string[] = [];
   const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
   const get = vi.fn(async (path: string): Promise<RespostaML> => {
@@ -39,6 +39,16 @@ function mlFalso(opc: { lacuna?: boolean; lacunaAte?: string } = {}) {
       const dias = diasEntre(j.desde, j.ate).slice(corta ? 1 : 0);
       return ok({ results: dias.map((date) => ({ date, cost: 1, clicks: 2, prints: 3 })) });
     };
+    if (path.includes('/ads/search')) {
+      const q = new URL(`https://x${path}`).searchParams;
+      const offset = Number(q.get('offset'));
+      const linhas = [
+        ...Array.from({ length: opc.anuncios ?? 2 }, (_, i) => (
+          { item_id: `MLB${i + 1}`, campaign_id: CAMP, status: 'active', title: `A${i + 1}`, metrics: { cost: 1 } })),
+        { item_id: 'MLB999', campaign_id: 4242, status: 'idle', metrics: { cost: 0 } },
+      ];
+      return ok({ paging: { offset, total: linhas.length }, results: linhas.slice(offset, offset + Number(q.get('limit'))) });
+    }
     if (path.includes('/campaigns/search')) {
       if (path.includes('aggregation_type=DAILY')) return serie();
       return ok({
@@ -130,6 +140,7 @@ describe('ads-metricas: isolamento', () => {
     const corpo = await r.json();
     expect(corpo.estado).toBe('sem_acesso');
     expect(ml.chamadas.some((p) => /\/product_ads\/campaigns\/\d+/.test(p))).toBe(false);
+    expect(ml.chamadas.some((p) => p.includes('/ads/search'))).toBe(false);
   });
 
   it('competitividade de outro anunciante: sem_acesso sem chamar E3', async () => {
@@ -146,6 +157,38 @@ describe('ads-metricas: isolamento', () => {
     expect(corpo.atual.resumo.impression_share).toEqual({ valor: 0.4, motivo: null });
     expect(corpo.atual.resumo.cost).toBeUndefined();
     expect(ml.chamadas.some((p) => p.includes(`/product_ads/campaigns/${CAMP}`) && p.includes('aggregation_type'))).toBe(false);
+  });
+});
+
+describe('ads-metricas: anúncios da campanha (E5)', () => {
+  const P = { ...PEDIDO, escopo: 'campanha', campanhaId: CAMP };
+  const chaveMetricas = (m: Map<string, string>) => [...m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'));
+
+  it('campanha própria: anúncios da campanha (linha de outra descartada) e resposta cacheada', async () => {
+    const { deps, c } = montar();
+    const corpo = await (await tratar(post(P), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.anunciosMotivo).toBeNull();
+    expect(corpo.anuncios.map((a: { itemId: string }) => a.itemId)).toEqual(['MLB1', 'MLB2']);
+    expect(corpo.anuncios[0].atual.resumo.cost).toEqual({ valor: 1, motivo: null });
+    expect(chaveMetricas(c.m)).toBe(true);
+  });
+
+  it('outros escopos não carregam anúncios', async () => {
+    const { deps, ml } = montar();
+    const corpo = await (await tratar(post(PEDIDO), deps)).json();
+    expect('anuncios' in corpo).toBe(false);
+    expect(ml.chamadas.some((p) => p.includes('/ads/search'))).toBe(false);
+  });
+
+  it('atual que estoura o orçamento: anuncios null com motivo, KPIs ok e nada cacheado', async () => {
+    const { deps, c } = montar({}, mlFalso({ anuncios: 1050 }));
+    const corpo = await (await tratar(post(P), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.atual.completo).toBe(true);
+    expect(corpo.anuncios).toBeNull();
+    expect(corpo.anunciosMotivo).toBe('limite_de_leitura');
+    expect(chaveMetricas(c.m)).toBe(false);
   });
 });
 

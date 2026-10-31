@@ -158,7 +158,9 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
       const orcada = criarLeituraOrcada({
         buscar: (url, sinal) => get(url, HEADERS_ADS, sinal), agoraMs, esperar: deps.esperar,
       });
-      const leitura: DepsLeituraAds = { buscar: orcada.buscar, agora: () => deps.agora().toISOString() };
+      const leitura: DepsLeituraAds = {
+        buscar: orcada.buscar, agora: () => deps.agora().toISOString(), restante: orcada.restante,
+      };
       const resposta = await lerEscopo(leitura, adv, pedido, atual, anterior);
       const motivo = orcada.estado().motivo;
       const avisos = [...resposta.avisos];
@@ -166,13 +168,19 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
         return { valor: vazia(motivo, avisos), completo: false };
       }
       if (motivo === 'limite_de_leitura') avisos.push('Limite de leitura atingido; dados incompletos.');
+      // Escopo campanha: E5 lido por último; um teto estourado nele vira o motivo da lista (não "resposta inválida").
+      const anuncios = resposta.anuncios === undefined ? {} : {
+        anuncios: resposta.anuncios,
+        anunciosMotivo: resposta.anunciosMotivo && motivo === 'limite_de_leitura' ? motivo : resposta.anunciosMotivo ?? null,
+      };
       const valor: RespostaAdsMetricas = {
         // Estado olha só a janela atual (anterior incompleta só desliga a comparação); o cache exige as duas.
         ok: true, estado: resposta.recusa ?? (resposta.atual?.completo && !motivo ? 'ok' : 'parcial'),
         escopo: pedido.escopo, atual: resposta.atual, anterior: resposta.anterior, campanhas: resposta.campanhas,
-        comparacao: resposta.comparacao, disponibilidade, avisos,
+        ...anuncios, comparacao: resposta.comparacao, disponibilidade, avisos,
       };
-      return { valor, completo: valor.estado === 'ok' && resposta.completo };
+      // Lista de anúncios indisponível ou sem a anterior também não é cacheada como completa.
+      return { valor, completo: valor.estado === 'ok' && resposta.completo && !valor.anunciosMotivo };
     });
     if (r.estado === 'recusado') return json({ ok: false, erro: r.motivo }, 429);
     // Depois do cache: anterior fora da retenção gera a mesma chave que `comparar: 'nenhum'` (anterior null), e
@@ -211,13 +219,16 @@ interface LeituraEscopo {
   completo: boolean;
   recusa: 'sem_acesso' | null;
   avisos: string[];
+  /** Só no escopo campanha (E5). */
+  anuncios?: RespostaAdsMetricas['anuncios'];
+  anunciosMotivo?: RespostaAdsMetricas['anunciosMotivo'];
 }
 
 const blocoDaLista = (l: LeituraCampanhasAds): BlocoAdsMetricas => ({
   janela: l.janela, resumo: l.resumo ?? {}, serie: [], completo: l.completo, lidoEm: l.lidoEm,
 });
 
-/** Tabela §5.4: conta = E1+E2; campanhas = E1 paginado unido pelo ID; campanha = E3+E4; competitividade = só E3. */
+/** Tabela §5.4: conta = E1+E2; campanhas = E1 paginado unido pelo ID; campanha = E3+E4+E5; competitividade = só E3. */
 async function lerEscopo(
   leitura: DepsLeituraAds, adv: number, pedido: PedidoAdsMetricas,
   atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
