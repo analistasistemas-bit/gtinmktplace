@@ -129,6 +129,14 @@ describe('BlocoCampanha', () => {
     expect(linha.getByText('Parcialmente patrocinada')).toHaveAttribute('data-tone', 'neutral');
     expect(linha.getByRole('link', { name: 'Camiseta' })).toHaveAttribute('href', '/faturamento/sku/familia/P1');
   });
+  // M6: alvo de toque de 44 px como no ranking de famílias, sem perder o line-clamp do nome.
+  it('link da família: alvo de toque de 44 px e nome com line-clamp', () => {
+    pagina(<BlocoCampanha c={campanha({ familias: [familia()] })} filtrando={false} />);
+    const link = within(screen.getByRole('row', { name: /Camiseta/ })).getByRole('link', { name: 'Camiseta' });
+    expect(link.className).toMatch(/max-sm:min-h-11/);
+    expect(link.className).toMatch(/pointer-coarse:min-h-11/);
+    expect(link.querySelector('span.line-clamp-2')).toHaveTextContent('Camiseta');
+  });
   it('sem anúncios publicados diz que não foi publicado pelo PubliAI', () => {
     pagina(<BlocoCampanha c={campanha({ familias: [familia({ publicados: 0, patrocinados: 0 })] })} filtrando={false} />);
     expect(within(screen.getByRole('row', { name: /Camiseta/ })).getByText('Não publicado pelo PubliAI')).toBeInTheDocument();

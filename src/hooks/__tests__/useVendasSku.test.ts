@@ -240,3 +240,18 @@ describe('useVendasSku — integridade fiscal (ADR-0055: alíquota ausente não 
     Object.assign(custosQ, { data: montarMapasCusto([]), isLoading: false });
   });
 });
+
+// M6: "Atualizar" no /ads com alíquotas/custos em erro precisa refazê-los, senão a base fiscal fica travada.
+describe('useVendasSku — refetch', () => {
+  it('refaz também alíquotas e custos', async () => {
+    const aliq = vi.fn().mockResolvedValue(undefined);
+    const cust = vi.fn().mockResolvedValue(undefined);
+    Object.assign(aliqQ as object, { refetch: aliq });
+    Object.assign(custosQ, { refetch: cust });
+    Object.assign(catQ, { data: [], isError: false });
+    const r = renderHook(() => useVendasSku(periodo)).result.current;
+    await r.refetch();
+    expect(aliq).toHaveBeenCalledTimes(1);
+    expect(cust).toHaveBeenCalledTimes(1);
+  });
+});

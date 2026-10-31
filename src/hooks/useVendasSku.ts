@@ -115,6 +115,7 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     isError: vendasQ.isError || catQ.isError || devQ.isError,
     /** Origem do erro: o /ads separa catálogo (bloco) de vendas/devoluções (geral). */
     erros: { vendas: vendasQ.isError, catalogo: catQ.isError, devolucoes: devQ.isError },
-    refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch(), devQ.refetch()]),
+    // Alíquotas e custos entram na base fiscal/lucro: com erro neles, só refazer as vendas manteria o bloqueio.
+    refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch(), devQ.refetch(), aliqQ.refetch(), custosQ.refetch()]),
   };
 }
