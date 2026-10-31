@@ -144,3 +144,15 @@ Gravidade: **bloqueia** (nenhum), **deve corrigir**, cosmético.
 Deixados (custo/benefício): P8 e P9 (quebra de moeda e rodapé apertado do KPI no mobile), P10 ("Provisória" repetida), P11 (atalho de pulo do foco), P13 (estado "sem anúncios patrocinados"). Também não ampliados: botões de ordenar colunas das tabelas (visíveis só em lg+) e o link de nome do ranking.
 
 Verificação visual: dados reais da DSA (sem gasto), porque as fixtures do QA foram apagadas; prints `fix-*.png` na pasta de prints. Pills no escuro e o atalho em tela não foram vistos com a fixture rica; coberto por teste e por medição.
+
+### Round 1 da revisão (2026-10-31)
+
+Fixtures reproduzíveis agora no repositório: `tests/fixtures/ads-qa/` (`instalar-rotas.js`, `capturas.js`, `capturas-toque.js`; instruções no cabeçalho). Dados: vendas e catálogo reais da DSA; Ads (conta diária, 6 grupos, 2 campanhas, MLBs) fictícios. Artefatos da fixture, não bugs do app: "Composição da conta divergente" (grupos somam mais que a conta) e conversão 0,0%.
+
+| Achado | Resultado |
+|---|---|
+| 1. Link da família no cartão mobile (~40 px) | Corrigido: link `inline-flex` com `min-h-11` em tela estreita e em toque (`ranking-familias.tsx`). Com a fixture, em 360x800 e 800x360 com `hasTouch` real (`pointer: coarse` = true), Desempenho e Campanhas: 0 controles abaixo de 44 px. Também zerou o ícone "O que é" no 360 sem toque (regra `max-sm:` acrescentada em `TELA_ADS`) |
+| 2. Contraste do gráfico | Medido (marca vs fundo do card, claro/escuro). Texto (eixos, legendas, notas) 5,25 a 7,36 (>= 4,5). Barras "Vendas atribuídas" 4,91/5,37; linha de ROAS 16,8; hachura 5,25/7,36 (>= 3). **Falhou:** "Outras vendas" (`--chart-3`) 2,40 no claro, e a borda do marcador da hachura 2,43/3,39 (60% de alfa). Corrigido só em `serie-diaria.tsx`: `color-mix(chart-3, foreground 25%)` (3,97 claro, 9,74 escuro) e borda sem alfa (5,25/7,36). O ícone "O que é" (muted a 60%, 2,43/3,39) é do KpiCard global, não do gráfico: fora de escopo, registrado |
+| 3. Reteste com dados | Refeito com a fixture: 1440x900 claro/escuro com o atalho visível (1 botão) e funcionando (filtro "Acima do equilíbrio" aplicado, 1 família); pills no escuro com dados: Provisória 9,35, selo 7,21, Acima do equilíbrio 6,02, Dentro do equilíbrio 6,70; selecionado no escuro 5,17; mobile 360x800 e paisagem 800x360 |
+| 4. Teste de Campanhas | Corrigido em `tests/pages/Ads.test.tsx`: aba pelo argumento certo (`'campanhas'`), família acima do equilíbrio na fixture, afirma a aba ativa; o teste do atalho agora também verifica o filtro aplicado e as linhas filtradas |
+| Minor 5 (pontuação "provisório: N dias") | Mantido como está por decisão do controlador: o texto não está na lista obrigatória da seção 4.9 |

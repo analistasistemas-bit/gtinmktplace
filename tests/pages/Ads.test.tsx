@@ -152,10 +152,16 @@ describe('Ads', () => {
       montar({ ...PAINEL, familias: [PAINEL.familias[0], { ...PAINEL.familias[1], semaforo: 'acima' as const, acosEquilibrio: 0.2 }] });
       fireEvent.click(linha().getByRole('button', { name: 'Ver famílias acima do equilíbrio' }));
       expect(rolar).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveAttribute('aria-pressed', 'true');
+      const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+      expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
+      expect(tabela.getByRole('row', { name: /Fam B/ })).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'Ver famílias acima do equilíbrio' })).toHaveLength(1);
     });
     it('em Campanhas a linha existe sem o atalho', () => {
-      montar(PAINEL, {}, '/?aba=campanhas');
+      comCampanhas();
+      montar({ ...PAINEL, familias: [PAINEL.familias[0], { ...PAINEL.familias[1], semaforo: 'acima' as const, acosEquilibrio: 0.2 }] }, {}, 'campanhas');
+      expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
       expect(screen.getByTestId('linha-resultado')).toBeInTheDocument();
       expect(linha().queryByRole('button')).not.toBeInTheDocument();
     });

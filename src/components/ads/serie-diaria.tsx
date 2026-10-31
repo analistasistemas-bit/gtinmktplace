@@ -70,6 +70,9 @@ const SERIES_VALORES: { chave: ChaveValor; nome: string }[] = [
   { chave: 'receita', nome: 'Receita Ads' },
 ];
 const INK = 'var(--foreground)';
+// "Outras vendas": o --chart-3 do tema claro dá 2,4:1 sobre o card (mínimo 3:1 para elemento gráfico, QA 2026-10-31).
+// Misturar 25% do texto principal leva a >= 3:1 no claro e mantém o escuro (o foreground claro só clareia).
+const COR_OUTRAS = 'color-mix(in oklch, var(--chart-3), var(--foreground) 25%)';
 
 interface Props {
   serie: DiaAdsMetricas[];
@@ -148,7 +151,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
         {visao === 'vendas' ? (
           <>
             <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px] bg-chart-1" />Vendas atribuídas</li>
-            <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px] bg-chart-3" />Outras vendas</li>
+            <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px]" style={{ backgroundColor: COR_OUTRAS }} />Outras vendas</li>
             <li className="flex items-center gap-1.5"><LinhaLegenda />ROAS (eixo à direita, em ×)</li>
           </>
         ) : (
@@ -159,7 +162,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
         )}
         {prov.length > 0 && (
           <li className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-[2px] border border-muted-foreground/60" style={{ backgroundImage: 'repeating-linear-gradient(45deg, var(--muted-foreground) 0 1px, transparent 1px 4px)' }} />
+            <span className="size-2.5 rounded-[2px] border border-muted-foreground" style={{ backgroundImage: 'repeating-linear-gradient(45deg, var(--muted-foreground) 0 1px, transparent 1px 4px)' }} />
             Atribuição em aberto
           </li>
         )}
@@ -201,7 +204,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
                   <>
                     {/* Segmentos separados por 2px da cor do cartão; só o topo da pilha tem cantos arredondados. */}
                     <Bar yAxisId="esq" dataKey="atribuidas" name="Vendas atribuídas" stackId="v" fill="var(--chart-1)" stroke="var(--card)" strokeWidth={1} maxBarSize={28} isAnimationActive={false} />
-                    <Bar yAxisId="esq" dataKey="outras" name="Outras vendas" stackId="v" fill="var(--chart-3)" stroke="var(--card)" strokeWidth={1} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+                    <Bar yAxisId="esq" dataKey="outras" name="Outras vendas" stackId="v" fill={COR_OUTRAS} stroke="var(--card)" strokeWidth={1} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
                     {/* Linear, sem suavização; dia sem ROAS é lacuna (connectNulls=false). */}
                     <Line yAxisId="dir" dataKey="roas" name="ROAS" type="linear" stroke={INK} strokeWidth={2}
                       dot={{ r: 3, fill: INK, stroke: 'var(--card)', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />

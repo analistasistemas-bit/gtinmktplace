@@ -19,6 +19,8 @@ export const TELA_ADS = [
   '[&_[data-tone=danger]]:[color:color-mix(in_oklch,var(--danger),var(--foreground)_30%)]',
   '[&_[data-tone=info]]:[color:color-mix(in_oklch,var(--info),var(--foreground)_30%)]',
   '[&_[data-tone=neutral]]:[color:color-mix(in_oklch,var(--muted-foreground),var(--foreground)_30%)]',
+  'max-sm:[&_button[aria-label^="O_que_é"]]:p-[15px]',
+  'max-sm:[&_button[aria-label^="O_que_é"]]:-m-[15px]',
   'pointer-coarse:[&_button[aria-label^="O_que_é"]]:p-[15px]',
   'pointer-coarse:[&_button[aria-label^="O_que_é"]]:-m-[15px]',
 ].join(' ');

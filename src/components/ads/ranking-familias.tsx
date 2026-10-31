@@ -46,9 +46,11 @@ function useRolarAoFoco<T extends HTMLElement>(foco?: boolean) {
 function NomeFamilia({ f }: { f: FamiliaPainel }) {
   return (
     <>
-      <Link to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`} className={cn(LINK, 'line-clamp-2 break-words')}
+      {/* inline-flex + min-h: o alvo do link chega a 44 px em toque sem mexer no line-clamp do texto. */}
+      <Link to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`}
+        className={cn(LINK, 'inline-flex max-w-full items-center max-sm:min-h-11 pointer-coarse:min-h-11')}
         title={f.nome ?? f.codigoPai}>
-        {f.nome ?? f.codigoPai}
+        <span className="line-clamp-2 break-words">{f.nome ?? f.codigoPai}</span>
       </Link>
       {f.nome && <span className="block text-xs text-muted-foreground tabular-nums">{f.codigoPai}</span>}
     </>
