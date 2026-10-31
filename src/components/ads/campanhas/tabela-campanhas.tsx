@@ -133,7 +133,7 @@ function Nome({ c }: { c: CampanhaPeriodoAds }) {
 
 function BotaoVer({ c, onAbrir, compacto }: { c: CampanhaPeriodoAds; onAbrir: (id: number) => void; compacto?: boolean }) {
   return (
-    <Button type="button" variant={compacto ? 'ghost' : 'outline'} size="sm" className="h-11 sm:h-8"
+    <Button type="button" variant={compacto ? 'ghost' : 'outline'} size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11"
       aria-label={`Ver campanha ${c.nome}`} onClick={() => onAbrir(c.id)}>
       {compacto ? null : 'Ver campanha'}
       <ChevronRight aria-hidden className="h-4 w-4" />
@@ -213,10 +213,10 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir }: {
       <div className="relative sm:w-72">
         <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar nome ou código"
-          aria-label="Buscar campanha por nome ou código" className="h-11 pl-8 text-base sm:h-8 sm:text-sm" />
+          aria-label="Buscar campanha por nome ou código" className="h-8 pl-8 text-sm max-sm:h-11 max-sm:text-base pointer-coarse:h-11" />
       </div>
       <Select value={status} onValueChange={setStatus}>
-        <SelectTrigger aria-label="Status" className="h-11 w-full sm:h-8 sm:w-48">
+        <SelectTrigger aria-label="Status" className="h-8 w-full data-[size=default]:max-sm:h-11 data-[size=default]:pointer-coarse:h-11 sm:w-48">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -227,7 +227,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir }: {
       <div role="group" aria-label="Visão" className="inline-flex rounded-md border border-border p-0.5 sm:ml-auto">
         {VISOES.map(v => (
           <button key={v.chave} type="button" aria-pressed={visao === v.chave} onClick={() => trocarVisao(v.chave)}
-            className={cn('h-10 flex-1 rounded px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7 sm:flex-none',
+            className={cn('h-7 flex-1 rounded px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11 pointer-coarse:h-11 sm:flex-none',
               visao === v.chave ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}>
             {v.rotulo}
           </button>
@@ -241,7 +241,7 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir }: {
   ) : visiveis.length === 0 ? (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
       <p>Nenhuma campanha encontrada com esta busca e status.</p>
-      <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => { setStatus('todos'); setBusca(''); }}>Ver todas</Button>
+      <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" onClick={() => { setStatus('todos'); setBusca(''); }}>Ver todas</Button>
     </div>
   ) : (
     <>

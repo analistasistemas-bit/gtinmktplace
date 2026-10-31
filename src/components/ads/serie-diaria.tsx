@@ -1,6 +1,8 @@
 import { useId, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { ATIVO_ESCURO } from '@/components/ads/tela-ads';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { EIXO, TOOLTIP, kCompacto } from '@/components/sku-dossie/serie-pontos';
 import type { DiaAdsMetricas, JanelaAdsMetricas, MetricaBrutaAds, MotivoMetricaAds } from '../../../supabase/functions/_shared/ads/metricas';
@@ -120,7 +122,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
         <h3 id={`${idPadrao}-t`} className="text-sm font-medium">Evolução diária</h3>
         <div role="group" aria-label="Visão do gráfico" className="flex flex-wrap gap-1">
           {([['vendas', 'Vendas atribuídas × Outras vendas + ROAS'], ['valores', 'Investimento × Receita Ads']] as const).map(([v, nome]) => (
-            <Button key={v} size="sm" variant={visao === v ? 'default' : 'outline'} className="h-auto min-h-7 whitespace-normal px-2.5 py-1 text-left text-xs"
+            <Button key={v} size="sm" variant={visao === v ? 'default' : 'outline'} className={cn('h-auto min-h-7 whitespace-normal px-2.5 py-1 text-left text-xs max-sm:min-h-11 pointer-coarse:min-h-11', visao === v && ATIVO_ESCURO)}
               aria-pressed={visao === v} onClick={() => setVisao(v)}>{nome}</Button>
           ))}
         </div>
@@ -129,7 +131,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
       {visao === 'valores' && (
         <div role="group" aria-label="Séries visíveis" className="flex gap-1">
           {SERIES_VALORES.map((s) => (
-            <Button key={s.chave} size="sm" variant={ligadas.includes(s.chave) ? 'secondary' : 'outline'} className="h-7 px-2.5 text-xs"
+            <Button key={s.chave} size="sm" variant={ligadas.includes(s.chave) ? 'secondary' : 'outline'} className="h-7 px-2.5 text-xs max-sm:min-h-11 pointer-coarse:min-h-11"
               aria-pressed={ligadas.includes(s.chave)} onClick={() => alternar(s.chave)}>{s.nome}</Button>
           ))}
         </div>
@@ -236,7 +238,7 @@ export function SerieDiaria({ serie, janela, provisorioDesde, visaoInicial = 've
 
       {temDado && (
         <>
-          <Button size="sm" variant="outline" className="h-7 self-start px-2.5 text-xs" aria-expanded={tabela} onClick={() => setTabela(!tabela)}>
+          <Button size="sm" variant="outline" className="h-7 self-start px-2.5 text-xs max-sm:min-h-11 pointer-coarse:min-h-11" aria-expanded={tabela} onClick={() => setTabela(!tabela)}>
             {tabela ? 'Ocultar tabela' : 'Ver dados em tabela'}
           </Button>
           {tabela && (

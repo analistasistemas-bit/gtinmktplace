@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { DetalheCampanha, type PedidoBaseDetalhe } from './detalhe-campanha';
 import { Competitividade } from './competitividade';
 import type { AcoesFamilia } from './familia-campanha';
 
-const BOTAO = 'h-11 sm:h-8';
+const BOTAO = 'h-8 max-sm:h-11 pointer-coarse:h-11';
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
 export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch'>;
@@ -37,6 +37,21 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
   acoes?: AcoesFamilia;
 }) {
   const [aberta, setAberta] = useState<{ id: number; nome: string } | null>(null);
+  // O detalhe monta só quando há campanha aberta, então o Radix não tem gatilho para devolver o foco (cairia no
+  // body). Guardamos o botão que abriu e o refocamos depois que o Radix terminar de fechar (QA P3).
+  const gatilho = useRef<HTMLElement | null>(null);
+  const abrir = (c: { id: number; nome: string }) => {
+    gatilho.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setAberta(c);
+  };
+  useEffect(() => {
+    if (aberta !== null) return;
+    const t = setTimeout(() => {
+      if (gatilho.current?.isConnected) gatilho.current.focus();
+      gatilho.current = null;
+    }, 0);
+    return () => clearTimeout(t);
+  }, [aberta]);
   const { resposta, campanhas, isLoading, isError, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
 
   let tabela: ReactNode;
@@ -58,7 +73,7 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
     const nomes = new Map(metricas.data.campanhas.map(c => [c.id, c.nome]));
     tabela = (
       <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao}
-        onAbrir={id => setAberta({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
+        onAbrir={id => abrir({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
     );
   }
 
@@ -97,7 +112,7 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
             <span>Famílias em alerta na configuração atual:</span>
             {comAlerta.map(({ c, n }) => (
               <Button key={c.id} type="button" variant="outline" size="sm" className={BOTAO}
-                onClick={() => setAberta({ id: c.id, nome: c.nome })}>
+                onClick={() => abrir({ id: c.id, nome: c.nome })}>
                 {c.nome} · {n === 1 ? '1 família' : `${n} famílias`}
               </Button>
             ))}

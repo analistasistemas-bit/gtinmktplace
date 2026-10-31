@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { ATIVO_ESCURO } from '@/components/ads/tela-ads';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -27,9 +29,9 @@ const PRESETS: { rotulo: string; periodo: PeriodoAds }[] = [
 ];
 
 // Alvo de toque 44px e fonte 16px no mobile; compacto no desktop.
-const BOTAO = 'min-h-11 px-3 text-base sm:min-h-8 sm:px-2.5 sm:text-sm';
+const BOTAO = 'min-h-8 px-2.5 text-sm max-sm:min-h-11 max-sm:px-3 max-sm:text-base pointer-coarse:min-h-11';
 const CAMPO_DATA =
-  'min-h-11 rounded-md border bg-background px-2 text-base sm:min-h-8 sm:text-sm dark:[color-scheme:dark]';
+  'min-h-8 rounded-md border bg-background px-2 text-sm max-sm:min-h-11 max-sm:text-base pointer-coarse:min-h-11 dark:[color-scheme:dark]';
 
 const mesmoPreset = (a: PeriodoAds, b: PeriodoAds) =>
   a.tipo === b.tipo && (a.tipo !== 'preset' || a.dias === (b as typeof a).dias);
@@ -65,7 +67,7 @@ export function PeriodoAdsSeletor({ valor, comparar, onChange, agora }: Props) {
               size="sm"
               variant={ativo ? 'default' : 'outline'}
               aria-pressed={ativo}
-              className={BOTAO}
+              className={cn(BOTAO, ativo && ATIVO_ESCURO)}
               onClick={() => onChange({ periodo: p.periodo, comparar })}
             >
               {p.rotulo}
@@ -89,7 +91,7 @@ export function PeriodoAdsSeletor({ valor, comparar, onChange, agora }: Props) {
               size="sm"
               variant={valor.tipo === 'range' ? 'default' : 'outline'}
               aria-pressed={valor.tipo === 'range'}
-              className={BOTAO}
+              className={cn(BOTAO, valor.tipo === 'range' && ATIVO_ESCURO)}
             >
               <CalendarRange className="mr-1 h-3.5 w-3.5" aria-hidden />
               Personalizado
@@ -127,7 +129,7 @@ export function PeriodoAdsSeletor({ valor, comparar, onChange, agora }: Props) {
       <div className="flex items-center gap-2">
         <span id="ads-comparar-rotulo" className="text-sm text-muted-foreground">Comparar com</span>
         <Select value={comparar} onValueChange={(c) => onChange({ periodo: valor, comparar: c as CompararAds })}>
-          <SelectTrigger aria-labelledby="ads-comparar-rotulo" className="min-h-11 text-base sm:min-h-8 sm:text-sm">
+          <SelectTrigger aria-labelledby="ads-comparar-rotulo" className="min-h-8 text-sm max-sm:min-h-11 max-sm:text-base pointer-coarse:min-h-11">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -87,6 +87,7 @@ export function Competitividade({ campanhaId, pedido }: Props) {
     <section aria-label="Competitividade" className="space-y-3">
       <Button
         type="button" variant="outline" size="sm" aria-expanded={aberto}
+        className="max-sm:min-h-11 pointer-coarse:min-h-11"
         onClick={() => setAberto((a) => !a)}
       >
         <ChevronDown className={cn('size-4 transition-transform', aberto && 'rotate-180')} aria-hidden="true" />

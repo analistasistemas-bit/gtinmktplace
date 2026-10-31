@@ -40,7 +40,7 @@ export function GastosAssociados({ painel }: GastosAssociadosProps) {
               type="button"
               variant="ghost"
               size="sm"
-              className="-ml-2 h-auto min-h-11 min-w-0 shrink py-1 whitespace-normal text-left sm:min-h-8"
+              className="-ml-2 h-auto min-h-8 min-w-0 shrink py-1 whitespace-normal text-left max-sm:min-h-11 pointer-coarse:min-h-11"
               aria-expanded={aberto}
               aria-controls={idGrupos}
               onClick={() => setAberto(v => !v)}

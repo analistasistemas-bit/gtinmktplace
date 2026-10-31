@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CalendarClock, CalendarX2, Megaphone, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
@@ -21,13 +21,14 @@ import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
 import { PeriodoAdsSeletor, type CompararAds } from '@/components/ads/periodo-ads';
 import { FaixaKpis } from '@/components/ads/faixa-kpis';
 import { SerieDiaria } from '@/components/ads/serie-diaria';
-import { ResumoConta } from '@/components/ads/resumo-conta';
+import { LinhaResultado, ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
 import { IntegridadeAds } from '@/components/ads/integridade-ads';
 import { Aviso, AvisoAcesso, AVISO } from '@/components/ads/aviso';
 import { AbaCampanhas } from '@/components/ads/campanhas/aba-campanhas';
 import type { PedidoBaseDetalhe } from '@/components/ads/campanhas/detalhe-campanha';
 import { contarFamiliasEmAlerta } from '@/components/ads/campanhas/formato-campanha';
+import { TELA_ADS } from '@/components/ads/tela-ads';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
 // Contexto único (plano ads-redesign §3.1): período, comparação e aba valem para as duas abas e vivem na URL
@@ -64,7 +65,7 @@ const identidade = (p: PeriodoAds) =>
 const dataDia = (dia: string) =>
   `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
 
-const BOTAO_ACAO = 'h-11 sm:h-8';
+const BOTAO_ACAO = 'h-8 max-sm:h-11 pointer-coarse:h-11';
 
 type Aba = 'desempenho' | 'campanhas';
 const abaValida = (v: string | null): Aba | null => (v === 'desempenho' || v === 'campanhas' ? v : null);
@@ -293,10 +294,16 @@ export default function Ads() {
   const liberado = painel?.semaforoLiberado ?? false;
   const contagem = painel ? contarFamiliasAds(painel.familias, liberado) : null;
   const temAcima = contagem != null && contagem.acima + contagem.semEspaco > 0;
+  const rankingRef = useRef<HTMLDivElement>(null);
   const verAcima = () => {
     setFoco(null);
     setAtalho(n => n + 1);
     trocarAba('desempenho');
+    // O ranking remonta já filtrado; rola até ele depois do commit.
+    requestAnimationFrame(() => rankingRef.current?.scrollIntoView?.({
+      block: 'start',
+      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    }));
   };
 
   const erroLeituraConta = !metricasConta && blocos.conta.isError;
@@ -324,13 +331,20 @@ export default function Ads() {
         historicoDesde={historicoDesde}
         faturamentoConta={faturamentoConta?.atual ?? null}
         composicao={comComposicao ? painel?.conta ?? undefined : undefined}
-        onVerAcima={temAcima ? verAcima : undefined}
+        onVerAcima={temAcima && !comComposicao ? verAcima : undefined}
       />
     );
   };
 
+  // Linha-resumo acima da faixa: mesmo resultado do ResumoConta (sem recalcular), atalho só em Desempenho.
+  const linhaResumo = (comAtalho: boolean) => resultadoConta && (
+    <LinhaResultado conta={resultadoConta.conta} motivo={blocos.conta.motivo ?? resultadoConta.motivo}
+      historicoDesde={historicoDesde} onVerAcima={comAtalho && temAcima ? verAcima : undefined} />
+  );
+
   const blocoConta = (comComposicao: boolean) => (
     <div className="space-y-6">
+      {linhaResumo(comComposicao)}
       <section aria-labelledby="ads-conta-inteira" className="space-y-3">
         <h2 id="ads-conta-inteira" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Conta inteira</h2>
         {kpis}
@@ -395,9 +409,11 @@ export default function Ads() {
           <p className="text-xs text-muted-foreground">Semáforo em validação: por ora o painel mostra o ACOS de equilíbrio de cada família como referência, sem verde ou vermelho.</p>
         )}
         {/* A key reinicia filtro e detalhes ao trocar seleção, janela ou atalho; refetch da mesma janela não muda a key. */}
+        <div ref={rankingRef} className="scroll-mt-4 space-y-6">
         <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}:${atalho}`} painel={painel}
           historicoDesde={historicoDesde} focoCodigoPai={foco} inicial={atalho > 0 ? ATALHO_ACIMA_EQUILIBRIO : undefined} />
         {integridade(true)}
+        </div>
       </>
     );
   }
@@ -430,7 +446,7 @@ export default function Ads() {
   );
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[1440px] p-4 sm:p-6">
+    <div className={`mx-auto w-full min-w-0 max-w-[1440px] p-4 sm:p-6 ${TELA_ADS}`}>
       <PageHeader
         title="Ads"
         subtitle="Quanto o Ads custa e o que sobra depois dele."
@@ -447,8 +463,8 @@ export default function Ads() {
       ) : (
         <Tabs value={aba} onValueChange={v => trocarAba(v as Aba)} className="gap-6">
           <TabsList className="group-data-horizontal/tabs:h-auto">
-            <TabsTrigger value="desempenho" className="h-11 px-3 sm:h-8">Desempenho</TabsTrigger>
-            <TabsTrigger value="campanhas" className="h-11 px-3 sm:h-8">
+            <TabsTrigger value="desempenho" className="h-8 px-3 max-sm:h-11 pointer-coarse:h-11">Desempenho</TabsTrigger>
+            <TabsTrigger value="campanhas" className="h-8 px-3 max-sm:h-11 pointer-coarse:h-11">
               Campanhas
               {emAlerta > 0 && contagemAlerta}
             </TabsTrigger>

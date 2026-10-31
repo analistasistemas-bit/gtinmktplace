@@ -68,7 +68,7 @@ function BotaoDetalhes({ f, aberto, controla, onClick, compacto }: {
 }) {
   return (
     <Button type="button" variant={compacto ? 'ghost' : 'outline'} size="sm"
-      className={compacto ? 'h-11 w-11 px-0 sm:h-8 sm:w-8' : 'h-11 sm:h-8'}
+      className={compacto ? 'h-8 w-8 px-0 max-sm:h-11 max-sm:w-11 pointer-coarse:h-11 pointer-coarse:w-11' : 'h-8 max-sm:h-11 pointer-coarse:h-11'}
       aria-label={`Ver anúncios de ${f.nome ?? f.codigoPai}`} aria-expanded={aberto} aria-controls={controla} onClick={onClick}>
       {!compacto && 'Detalhes'}
       <ChevronDown aria-hidden className={cn('h-4 w-4 transition-transform', aberto && 'rotate-180')} />
@@ -83,7 +83,7 @@ function Detalhe({ f, verDesempenho, temDesempenho }: { f: FamiliaCampanha } & A
         {f.anuncios.map(a => <LinhaMlb key={a.mlb} a={a} />)}
       </ul>
       {verDesempenho && (temDesempenho?.(f.codigoPai) ?? true) && (
-        <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => verDesempenho(f.codigoPai)}>
+        <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" onClick={() => verDesempenho(f.codigoPai)}>
           Ver desempenho
         </Button>
       )}

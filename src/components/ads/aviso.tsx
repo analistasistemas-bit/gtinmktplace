@@ -19,7 +19,7 @@ const PEDE_CANAIS: readonly string[] = ['sem_conexao', 'sem_permissao', 'sem_ace
 export function AvisoAcesso({ estado }: { estado: string }) {
   return (
     <Aviso texto={AVISO[estado] ?? 'Não foi possível ler os dados de Ads no Mercado Livre.'} acao={PEDE_CANAIS.includes(estado) && (
-      <Button asChild variant="outline" size="sm" className="h-11 sm:h-8"><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
+      <Button asChild variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11"><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
     )} />
   );
 }

@@ -1,10 +1,11 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2, X } from 'lucide-react';
 import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
+  Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { TELA_ADS } from '@/components/ads/tela-ads';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Aviso, AVISO } from '@/components/ads/aviso';
@@ -233,7 +234,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
       <div className="space-y-3 lg:hidden">
         <div className="flex gap-2">
           <Select value={ordem.coluna} onValueChange={c => setOrdem(o => ({ coluna: c, direcao: c === o.coluna ? o.direcao : c === 'anuncio' ? 'asc' : 'desc' }))}>
-            <SelectTrigger aria-label="Ordenar anúncios por" className="h-11 flex-1">
+            <SelectTrigger aria-label="Ordenar anúncios por" className="h-8 flex-1 data-[size=default]:max-sm:h-11 data-[size=default]:pointer-coarse:h-11">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -241,7 +242,7 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
               {COLUNAS.map(d => <SelectItem key={d.chave} value={d.chave}>{d.rotulo}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button type="button" variant="outline" className="h-11 shrink-0"
+          <Button type="button" variant="outline" className="h-8 shrink-0 max-sm:h-11 pointer-coarse:h-11"
             aria-label={ordem.direcao === 'desc' ? 'Ordem decrescente: alternar para crescente' : 'Ordem crescente: alternar para decrescente'}
             onClick={() => setOrdem(o => ({ ...o, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }))}>
             {ordem.direcao === 'desc' ? <ArrowDown aria-hidden className="h-4 w-4" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
@@ -314,7 +315,7 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
     metricas = (
       <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
         <p>Não foi possível ler as métricas da campanha no Mercado Livre.</p>
-        <Button variant="outline" size="sm" className="mt-3 h-11 sm:h-8" onClick={() => void refetch()}>Tentar de novo</Button>
+        <Button variant="outline" size="sm" className="mt-3 h-8 max-sm:h-11 pointer-coarse:h-11" onClick={() => void refetch()}>Tentar de novo</Button>
       </div>
     );
   } else if (isLoading || !data) {
@@ -343,7 +344,14 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
 
   return (
     <Sheet open={aberto} onOpenChange={o => { if (!o) onFechar(); }}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-4xl">
+      <SheetContent showCloseButton={false} className={`w-full gap-0 overflow-y-auto sm:max-w-4xl ${TELA_ADS}`}>
+        {/* Fechar próprio: o do Sheet global tem 28 px; aqui chega a 44 px em toque. */}
+        <SheetClose asChild>
+          <Button type="button" variant="ghost" size="icon-sm" className="absolute top-3 right-3 z-10 max-sm:size-11 pointer-coarse:size-11">
+            <X aria-hidden />
+            <span className="sr-only">Close</span>
+          </Button>
+        </SheetClose>
         <SheetHeader className="border-b border-border pr-14">
           <SheetTitle className="break-words text-h3">{nome}</SheetTitle>
           <SheetDescription>

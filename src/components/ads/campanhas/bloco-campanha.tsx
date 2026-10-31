@@ -60,7 +60,7 @@ export function BlocoCampanha({ c, filtrando, verDesempenho, temDesempenho }: { 
           <Meta c={c} />
         </div>
         {!ativa && !filtrando && (
-          <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" aria-expanded={aberta} aria-controls={`${id}-c`}
+          <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" aria-expanded={aberta} aria-controls={`${id}-c`}
             aria-label={`${aberta ? 'Recolher' : 'Expandir'} ${c.nome}`} onClick={() => setAberta(v => !v)}>
             {aberta ? 'Recolher' : 'Expandir'}
             <ChevronDown aria-hidden className={cn('h-4 w-4 transition-transform', aberta && 'rotate-180')} />

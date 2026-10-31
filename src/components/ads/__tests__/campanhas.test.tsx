@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ReguaMargem } from '@/components/ads/campanhas/regua-margem';
 import { LinhaMlb } from '@/components/ads/campanhas/linha-mlb';
@@ -277,5 +277,14 @@ describe('AbaCampanhas', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Campanha Verão' })[0]);
     expect(within(screen.getByRole('dialog')).getByText('Configuração atual')).toBeInTheDocument();
     expect(within(screen.getByRole('dialog')).queryByText(/não está mais entre as campanhas/)).not.toBeInTheDocument();
+  });
+  it('Esc no detalhe devolve o foco ao botão que o abriu', async () => {
+    aba(dados());
+    const botao = screen.getAllByRole('button', { name: 'Ver campanha Campanha Verão' })[0];
+    botao.focus();
+    fireEvent.click(botao);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(botao).toHaveFocus());
   });
 });

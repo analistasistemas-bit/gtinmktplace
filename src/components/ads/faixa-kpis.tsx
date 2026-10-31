@@ -98,7 +98,7 @@ export function FaixaKpis({
           const indisponivel = valor.valor === null;
 
           const apoio = receita && (
-            <div className="mt-0.5 text-xs font-normal tracking-normal text-muted-foreground">
+            <div className={cn('mt-0.5 tracking-normal', receita.valor === null ? 'text-xs font-normal text-muted-foreground' : 'text-sm font-medium text-foreground')}>
               {receita.valor === null
                 ? `Receita indisponível: ${MOTIVOS[receita.motivo ?? 'nao_retornada']}`
                 : `${moeda(receita.valor)} em receita`}
@@ -138,7 +138,7 @@ export function FaixaKpis({
         <button
           type="button"
           onClick={() => setExpandido(true)}
-          className="mt-3 w-full rounded-md border py-2 text-sm font-medium text-muted-foreground lg:hidden"
+          className="mt-3 w-full min-h-11 rounded-md border py-2 text-sm font-medium text-muted-foreground lg:hidden"
         >
           Mostrar todos os indicadores
         </button>

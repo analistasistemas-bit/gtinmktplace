@@ -150,7 +150,7 @@ function BotaoDetalhes({ f, aberto, controla, onClick, compacto }: {
       type="button"
       variant={compacto ? 'ghost' : 'outline'}
       size="sm"
-      className={compacto ? 'h-11 w-11 px-0 sm:h-8 sm:w-8' : 'h-11 sm:h-8'}
+      className={compacto ? 'h-8 w-8 px-0 max-sm:h-11 max-sm:w-11 pointer-coarse:h-11 pointer-coarse:w-11' : 'h-8 max-sm:h-11 pointer-coarse:h-11'}
       aria-label={`Ver detalhes de ${f.nome ?? f.codigoPai}`}
       aria-expanded={aberto}
       aria-controls={controla}
@@ -276,7 +276,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai, inicial
       <div className="relative sm:max-w-sm">
         <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar nome ou código"
-          aria-label="Buscar família por nome ou código" className="h-11 pl-8 text-base sm:h-8 sm:text-sm" />
+          aria-label="Buscar família por nome ou código" className="h-8 pl-8 text-sm max-sm:h-11 max-sm:text-base pointer-coarse:h-11" />
       </div>
     </div>
   );
@@ -285,7 +285,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai, inicial
   const conteudoRanking = visiveis.length === 0 ? (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
       <p>{busca.trim() ? 'Nenhuma família encontrada com esta busca e filtro.' : 'Nenhuma família neste filtro no período.'}</p>
-      <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => { setFiltro('todas'); setBusca(''); }}>Ver todas</Button>
+      <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" onClick={() => { setFiltro('todas'); setBusca(''); }}>Ver todas</Button>
     </div>
   ) : (
     <>

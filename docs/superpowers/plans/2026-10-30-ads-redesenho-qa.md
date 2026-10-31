@@ -128,3 +128,19 @@ Gravidade: **bloqueia** (nenhum), **deve corrigir**, cosmético.
 
 - Medições brutas: `mobile.out`, `mobile2.out` e `contraste.out` na pasta de prints. Scripts e fixtures foram apagados ao final.
 - Dev server e sessão Playwright `adsqa` encerrados.
+
+## Correções (2026-10-31, commit "fix(ads): resultado na primeira dobra, foco, contraste e alvos de toque")
+
+| # | Situação | Como |
+|---|---|---|
+| P1 | corrigido | `LinhaResultado` (resumo-conta.tsx) acima de "Conta inteira" nas duas abas; mesma derivação do painel (`derivarResultado`), cor só com custo real; atalho "Ver famílias acima do equilíbrio" só em Desempenho, filtra e rola até o ranking (o botão duplicado do ResumoConta saiu de Desempenho). Ordem KPIs, gráfico, resultado mantida |
+| P2 | corrigido | "R$ X em receita" em `text-sm font-medium text-foreground` |
+| P3 | corrigido | `aba-campanhas.tsx` guarda o botão de origem e o refoca após o Radix fechar |
+| P4 | corrigido | `TELA_ADS` (tela-ads.ts) na raiz de Ads e no Sheet: anel de 2 px `--ring` + respiro de 2 px; `button.tsx` intacto. Medido: anel indigo oklch(0.55 0.2 277) sobre respiro claro |
+| P5 | corrigido | selecionado no escuro usa `oklch(0.55 0.2 277)` (`ATIVO_ESCURO`): 5,17:1 medido; pills: texto tonal misturado a 30% do foreground via `TELA_ADS` (Provisória 6,99 claro / 9,35 escuro; fundo composto aproximado) |
+| P6/P7 | corrigido | `max-sm:` (tela estreita) + `pointer-coarse:` (toque, inclusive paisagem), no lugar de `h-11 sm:h-8`. `pointer-coarse:` existe no Tailwind 4.3. SelectTrigger precisa de `data-[size=default]:` (o `data-[size=default]:h-8` do componente vencia o `h-11`, origem dos 32 px). Fechar do Sheet próprio (44 px em toque); ícone "O que é" vai a 44 px em toque por `TELA_ADS`. Medido em 800x360 e 360x800 com toque: nenhum controle < 44 px em `main` |
+| P12 | corrigido | "provisório: N dias com atribuição em aberto" |
+
+Deixados (custo/benefício): P8 e P9 (quebra de moeda e rodapé apertado do KPI no mobile), P10 ("Provisória" repetida), P11 (atalho de pulo do foco), P13 (estado "sem anúncios patrocinados"). Também não ampliados: botões de ordenar colunas das tabelas (visíveis só em lg+) e o link de nome do ranking.
+
+Verificação visual: dados reais da DSA (sem gasto), porque as fixtures do QA foram apagadas; prints `fix-*.png` na pasta de prints. Pills no escuro e o atalho em tela não foram vistos com a fixture rica; coberto por teste e por medição.

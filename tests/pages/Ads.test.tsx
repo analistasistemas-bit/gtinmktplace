@@ -118,6 +118,48 @@ describe('Ads', () => {
     expect(screen.getAllByText(/R\$\s?200,00/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Despesa informada pela API de Ads/)).toBeInTheDocument();
   });
+  describe('linha-resumo do resultado (primeira dobra)', () => {
+    const linha = () => within(screen.getByTestId('linha-resultado'));
+    it('vem antes da faixa "Conta inteira" e mostra o resultado com cor só com custo real', () => {
+      montar({ ...PAINEL, conta: { ...PAINEL.conta!, resultado: -40 } },
+        { resultadoConta: { conta: { ...PAINEL.conta!, resultado: -40 }, motivo: null } });
+      const el = screen.getByTestId('linha-resultado');
+      expect(el.compareDocumentPosition(screen.getByRole('heading', { name: 'Conta inteira' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(linha().getByText('Resultado após Ads')).toBeInTheDocument();
+      expect(linha().getByText(/40,00/)).toHaveClass('text-danger');
+    });
+    it('custo parcial: rótulo parcial, sem cor de interpretação', () => {
+      const conta = { ...PAINEL.conta!, resultado: -40, fonteCusto: 'parcial' as const };
+      montar({ ...PAINEL, conta }, { resultadoConta: { conta, motivo: null } });
+      expect(linha().getByText('Resultado parcial após Ads')).toBeInTheDocument();
+      expect(linha().getByText(/40,00/)).not.toHaveClass('text-danger');
+      expect(linha().getByText(/só com as vendas com custo cadastrado/)).toBeVisible();
+    });
+    it('custo estimado: selo Estimado', () => {
+      const conta = { ...PAINEL.conta!, fonteCusto: 'estimado' as const };
+      montar({ ...PAINEL, conta }, { resultadoConta: { conta, motivo: null } });
+      expect(linha().getByText('Estimado')).toBeInTheDocument();
+    });
+    it('indisponível: travessão e motivo, sem número', () => {
+      const conta = { ...PAINEL.conta!, resultado: null, fonteCusto: null };
+      montar({ ...PAINEL, conta }, { resultadoConta: { conta, motivo: null } });
+      expect(linha().getByText(/Resultado indisponível: /)).toBeVisible();
+    });
+    it('atalho em Desempenho filtra o ranking e rola até ele; em Campanhas não há atalho na linha', () => {
+      const rolar = vi.fn();
+      Element.prototype.scrollIntoView = rolar;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => { cb(0); return 0; });
+      montar({ ...PAINEL, familias: [PAINEL.familias[0], { ...PAINEL.familias[1], semaforo: 'acima' as const, acosEquilibrio: 0.2 }] });
+      fireEvent.click(linha().getByRole('button', { name: 'Ver famílias acima do equilíbrio' }));
+      expect(rolar).toHaveBeenCalled();
+      expect(screen.getAllByRole('button', { name: 'Ver famílias acima do equilíbrio' })).toHaveLength(1);
+    });
+    it('em Campanhas a linha existe sem o atalho', () => {
+      montar(PAINEL, {}, '/?aba=campanhas');
+      expect(screen.getByTestId('linha-resultado')).toBeInTheDocument();
+      expect(linha().queryByRole('button')).not.toBeInTheDocument();
+    });
+  });
   it('ranking por gasto com semáforo e link para o dossiê da família', () => {
     montar();
     const linhaA = screen.getByRole('row', { name: /Fam A/ });
@@ -263,7 +305,7 @@ describe('Ads', () => {
 
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
 
-    expect(resumo.getByText('provisório — 14 dias com atribuição em aberto'))
+    expect(resumo.getByText('provisório: 14 dias com atribuição em aberto'))
       .toBeVisible();
     expect(screen.getByText(/não fecha com o total da conta/)).toBeVisible();
     expect(resumo.getByRole('button', { name: 'Composição do gasto' }))

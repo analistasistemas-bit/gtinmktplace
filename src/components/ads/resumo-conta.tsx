@@ -63,13 +63,18 @@ function Operador({ icone: Icone, texto, separador }: { icone: LucideIcon; texto
   );
 }
 
-function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; motivo: string | null }) {
-  const id = useId();
+/** Estado do resultado (plano §4.7): fonte única do painel e da linha-resumo; cor só com base completa (custo real). */
+function derivarResultado(conta: ResultadoContaAds | null) {
   const parcial = conta?.fonteCusto === 'parcial';
   const estimado = conta?.fonteCusto === 'estimado';
   const resultado = conta?.resultado ?? null;
-  // Plano §4.7: cor só quando a base permite interpretação completa (custo real).
   const negativo = resultado != null && resultado < 0 && conta?.fonteCusto === 'real';
+  return { parcial, estimado, resultado, negativo, rotulo: parcial ? 'Resultado parcial após Ads' : 'Resultado após Ads' };
+}
+
+function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; motivo: string | null }) {
+  const id = useId();
+  const { parcial, estimado, resultado, negativo, rotulo } = derivarResultado(conta);
   return (
     <div
       role="group"
@@ -80,7 +85,7 @@ function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; m
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <p id={id} className={ROTULO}>{parcial ? 'Resultado parcial após Ads' : 'Resultado após Ads'}</p>
+        <p id={id} className={ROTULO}>{rotulo}</p>
         {estimado && <StatusPill tone="neutral">Estimado</StatusPill>}
       </div>
       <p className={cn('text-3xl font-semibold tracking-tight tabular-nums', negativo && 'text-danger')}>
@@ -89,6 +94,48 @@ function PainelResultado({ conta, motivo }: { conta: ResultadoContaAds | null; m
       {motivo && <p className={LEGENDA}>{motivo}</p>}
       {parcial && resultado != null && <p className={LEGENDA}>Lucro calculado só com as vendas com custo cadastrado.</p>}
       {estimado && resultado != null && <p className={LEGENDA}>Há custo estimado nas vendas do período.</p>}
+    </div>
+  );
+}
+
+/**
+ * Linha-resumo da primeira dobra (QA 2026-10-31, P1): responde "o Ads dá lucro?" antes dos KPIs, com o mesmo
+ * estado, a mesma cor (só com base completa) e os mesmos motivos do painel de resultado. Sem cálculo próprio.
+ * `onVerAcima` só existe em Desempenho; em Campanhas o atalho é omitido.
+ */
+export function LinhaResultado({ conta, motivo: motivoConta = null, historicoDesde, onVerAcima }: {
+  conta: ResultadoContaAds | null;
+  motivo?: MotivoConta;
+  historicoDesde: string | null;
+  onVerAcima?: () => void;
+}) {
+  const id = useId();
+  const { parcial, estimado, resultado, negativo, rotulo } = derivarResultado(conta);
+  const nota = motivoResultadoConta(conta, motivoConta, historicoDesde)
+    ?? (parcial ? 'Lucro calculado só com as vendas com custo cadastrado.' : estimado ? 'Há custo estimado nas vendas do período.' : null);
+  return (
+    <div
+      role="group"
+      aria-labelledby={id}
+      data-testid="linha-resultado"
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-x-6 gap-y-2 rounded-lg border border-l-4 border-border bg-card px-4 py-3',
+        resultado == null ? 'border-l-border' : negativo ? 'border-l-danger' : 'border-l-primary',
+      )}
+    >
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+        <p id={id} className={ROTULO}>{rotulo}</p>
+        <p className={cn('text-2xl font-semibold tracking-tight tabular-nums', negativo && 'text-danger')}>
+          {resultado == null ? NADA : fmtBRLSinal(resultado)}
+        </p>
+        {estimado && <StatusPill tone="neutral">Estimado</StatusPill>}
+        {nota && <p className={cn(LEGENDA, 'min-w-0')}>{nota}</p>}
+      </div>
+      {onVerAcima && (
+        <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" onClick={onVerAcima}>
+          Ver famílias acima do equilíbrio
+        </Button>
+      )}
     </div>
   );
 }
@@ -207,12 +254,12 @@ export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde,
           <h2 className="text-sm font-medium text-muted-foreground">Resultado da conta após Ads</h2>
           {diasAbertos > 0 && (
             <StatusPill tone="warning" title="A atribuição de vendas do ML ainda pode mudar nestes dias.">
-              provisório — {diasAbertos} {diasAbertos === 1 ? 'dia' : 'dias'} com atribuição em aberto
+              provisório: {diasAbertos} {diasAbertos === 1 ? 'dia' : 'dias'} com atribuição em aberto
             </StatusPill>
           )}
         </div>
         {onVerAcima && (
-          <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={onVerAcima}>
+          <Button type="button" variant="outline" size="sm" className="h-8 max-sm:h-11 pointer-coarse:h-11" onClick={onVerAcima}>
             Ver famílias acima do equilíbrio
           </Button>
         )}
@@ -245,7 +292,7 @@ export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde,
             type="button"
             variant="outline"
             size="sm"
-            className="h-11 sm:h-8"
+            className="h-8 max-sm:h-11 pointer-coarse:h-11"
             aria-expanded={aberto}
             aria-controls={idComposicao}
             onClick={() => setAberto(v => !v)}
