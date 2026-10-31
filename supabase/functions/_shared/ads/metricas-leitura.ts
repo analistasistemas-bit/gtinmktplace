@@ -16,6 +16,8 @@ export interface DepsLeituraAds {
   restante?(): { paginas: number; chamadas: number };
   /** Leitor do E5 (anúncios), num ramo do orçamento: a falha dele não para E1–E4. Ausente = o próprio `buscar`. */
   anuncios?: DepsLeituraAds;
+  /** Leitor da janela anterior, num ramo do orçamento: 403/401/teto nela só desligam a comparação. Ausente = `buscar`. */
+  anterior?: DepsLeituraAds;
 }
 
 export interface LinhaCampanhaAds {
@@ -105,7 +107,7 @@ export async function lerCampanhasComparadas(
   anterior: JanelaAdsMetricas | null,
 ): Promise<{ atual: LeituraCampanhasAds; anterior: LeituraCampanhasAds | null; campanhas: CampanhaPeriodoAds[] }> {
   const a = await lerCampanhasPeriodo(deps, advertiserId, atual);
-  const p = anterior ? await lerCampanhasPeriodo(deps, advertiserId, anterior) : null;
+  const p = anterior ? await lerCampanhasPeriodo(deps.anterior ?? deps, advertiserId, anterior) : null;
   // Anterior truncada não entra na tabela (nem campanha só dela, nem bloco parcial); segue em `anterior` para o
   // handler declarar a comparação indisponível.
   const pOk = p?.completo ? p : null;
@@ -174,16 +176,19 @@ async function lerBlocoCampanha(deps: DepsLeituraAds, id: number, j: JanelaAdsMe
   };
 }
 
-/** Lê atual e, se pedida, a anterior. Falha/incompletude da anterior só desliga a comparação. */
+/**
+ * Lê atual e, se pedida, a anterior. Falha/incompletude da anterior só desliga a comparação. `ler` recebe
+ * `eAnterior` para usar o leitor da anterior (`DepsLeituraAds.anterior`).
+ */
 export async function lerComparado(
-  ler: (j: JanelaAdsMetricas) => Promise<BlocoAdsMetricas>,
+  ler: (j: JanelaAdsMetricas, eAnterior: boolean) => Promise<BlocoAdsMetricas>,
   atual: JanelaAdsMetricas,
   anterior: JanelaAdsMetricas | null,
 ): Promise<LeituraEscopoAds> {
-  const a = await ler(atual);
+  const a = await ler(atual, false);
   if (!anterior) return { atual: a, anterior: null, comparacao: { estado: 'desligada', motivo: null } };
   let p: BlocoAdsMetricas | null = null;
-  try { p = await ler(anterior); } catch { p = null; }
+  try { p = await ler(anterior, true); } catch { p = null; }
   if (!a.completo || !p || !p.completo) {
     const motivo = !a.completo ? 'Leitura da janela atual incompleta.' : 'Leitura da janela anterior incompleta ou indisponível.';
     return { atual: a, anterior: null, comparacao: { estado: 'indisponivel', motivo } };
@@ -194,7 +199,7 @@ export async function lerComparado(
 /** Escopo conta: E1 (resumo, se válido) + E2 (série diária da conta; não identifica campanha). */
 export const lerEscopoConta = (
   deps: DepsLeituraAds, advertiserId: number, atual: JanelaAdsMetricas, anterior: JanelaAdsMetricas | null,
-) => lerComparado((j) => lerBlocoConta(deps, advertiserId, j), atual, anterior);
+) => lerComparado((j, ant) => lerBlocoConta(ant ? deps.anterior ?? deps : deps, advertiserId, j), atual, anterior);
 
 /**
  * Recusa do escopo campanha (plano §5.2): nenhuma chamada E3/E4 foi feita. Usa o estado `sem_acesso` do contrato
@@ -315,7 +320,9 @@ export async function lerEscopoCampanha(
   // ponytail: E1 relido aqui; aceitar a listagem já feita pelo chamador quando a rota tiver uma em mãos.
   const motivo = await provarPertencimento(deps, advertiserId, campanhaId, anterior ? [atual, anterior] : [atual]);
   if (motivo) return { recusa: { estado: 'sem_acesso', motivo } };
-  const r = await lerComparado((j) => lerBlocoCampanha(deps, campanhaId, j), atual, anterior);
+  const r = await lerComparado(
+    (j, ant) => lerBlocoCampanha(ant ? deps.anterior ?? deps : deps, campanhaId, j), atual, anterior,
+  );
   return { ...r, ...(await lerAnunciosCampanha(deps.anuncios ?? deps, advertiserId, campanhaId, atual, anterior)) };
 }
 

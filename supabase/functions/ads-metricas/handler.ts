@@ -161,11 +161,17 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
       });
       const agora = () => deps.agora().toISOString();
       const e5 = orcada.ramo(); // falha do E5 (403/401/teto/prazo) fica na lista de anúncios
+      const ant = orcada.ramo(); // falha da janela anterior (403/401/teto/prazo) só desliga a comparação
       const leitura: DepsLeituraAds = {
         buscar: orcada.buscar, agora, restante: orcada.restante,
         anuncios: { buscar: e5.buscar, agora, restante: e5.restante },
+        anterior: { buscar: ant.buscar, agora, restante: ant.restante },
       };
       const resposta = await lerEscopo(leitura, adv, pedido, atual, anterior);
+      const motivoAnt = ant.estado().motivo;
+      if (motivoAnt && resposta.comparacao.estado === 'indisponivel' && resposta.atual?.completo) {
+        resposta.comparacao = { estado: 'indisponivel', motivo: MOTIVO_ANTERIOR[motivoAnt] };
+      }
       const motivo = orcada.estado().motivo;
       const avisos = [...resposta.avisos];
       if (motivo === 'sem_permissao' || motivo === 'sem_acesso') {
@@ -203,6 +209,12 @@ export async function tratar(req: Request, deps: DepsAdsMetricas): Promise<Respo
     return json({ ok: false, erro: 'falha ao ler métricas de Ads' }, 500);
   }
 }
+
+const MOTIVO_ANTERIOR: Record<'sem_permissao' | 'sem_acesso' | 'limite_de_leitura', string> = {
+  sem_permissao: 'Sem permissão do Mercado Ads para ler a janela anterior.',
+  sem_acesso: 'Acesso ao Mercado Livre recusado na leitura da janela anterior.',
+  limite_de_leitura: 'Limite de leitura atingido na janela anterior.',
+};
 
 const difDias = (a: string, b: string) => Math.round((Date.parse(`${a}T12:00:00Z`) - Date.parse(`${b}T12:00:00Z`)) / 86_400_000);
 

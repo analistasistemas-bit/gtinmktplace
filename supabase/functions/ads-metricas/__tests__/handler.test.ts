@@ -31,6 +31,8 @@ function mlFalso(opc: {
   lacuna?: boolean; lacunaAte?: string; anuncios?: number; e5?: (path: string) => RespostaML | null;
   /** A campanha 123 só aparece na listagem E1 das janelas com `ate` ≤ este dia (campanha histórica). */
   campanhaAte?: string;
+  /** Status HTTP forçado em toda leitura das janelas com `ate` ≤ `ateFalha` (a anterior, no teste de isolamento). */
+  falha?: number; ateFalha?: string;
 } = {}) {
   const chamadas: string[] = [];
   const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
@@ -38,6 +40,7 @@ function mlFalso(opc: {
     chamadas.push(path);
     if (path.startsWith('/advertising/advertisers')) return ok({ advertisers: [{ site_id: 'MLB', advertiser_id: ADV }] });
     const j = janelaDe(path);
+    if (opc.falha && opc.ateFalha && j.ate <= opc.ateFalha) return { status: opc.falha, retryAfterMs: 0, corpo: null };
     const serie = () => {
       const corta = opc.lacuna && (!opc.lacunaAte || j.ate <= opc.lacunaAte);
       const dias = diasEntre(j.desde, j.ate).slice(corta ? 1 : 0);
@@ -379,5 +382,26 @@ describe('ads-metricas: comparação', () => {
       const corpo = await (await tratar(post({ ...PEDIDO, ...ENCERRADA, ...extra, escopo, comparar: 'anterior' }), deps)).json();
       expect(corpo.comparacao).toEqual({ estado: 'disponivel', motivo: null });
     });
+  });
+});
+
+// I1 pré-merge: 403/401 só na janela anterior não apaga a atual; a comparação sai indisponível com motivo.
+describe.each([
+  ['conta', {}],
+  ['campanhas', {}],
+  ['campanha', { campanhaId: CAMP }],
+])('anterior falha no escopo %s', (escopo, extra) => {
+  it.each([[403], [401]])('anterior %i com atual 200: atual preservada, comparação indisponível', async (status) => {
+    const { deps, c } = montar({}, mlFalso({ falha: status, ateFalha: '2026-10-27' }));
+    const corpo = await (await tratar(post({ ...PEDIDO, ...extra, escopo, comparar: 'anterior' }), deps)).json();
+    expect(corpo.estado).toBe('ok');
+    expect(corpo.atual).not.toBeNull();
+    expect(corpo.atual.completo).toBe(true);
+    expect(corpo.atual.resumo.cost).toEqual({ valor: 3, motivo: null });
+    expect(corpo.anterior).toBeNull();
+    expect(corpo.comparacao.estado).toBe('indisponivel');
+    expect(corpo.comparacao.motivo).toMatch(/anterior/i);
+    if (escopo === 'campanhas') expect(corpo.campanhas).toHaveLength(1);
+    expect([...c.m.keys()].some((k) => k.startsWith('ads:metricas:v1:org'))).toBe(false);
   });
 });
