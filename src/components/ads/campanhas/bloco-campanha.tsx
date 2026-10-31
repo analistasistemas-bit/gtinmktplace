@@ -25,8 +25,12 @@ function Meta({ c }: { c: CampanhaVista }) {
   } else if (c.acosObjetivo != null) {
     partes.push(<span key="a">ACOS-alvo {fmtPontos(c.acosObjetivo)}</span>);
   }
-  const n = c.familias.reduce((s, f) => s + f.anuncios.length, 0) + c.foraDoPubliai.length;
-  partes.push(<span key="n">{n} {n === 1 ? 'anúncio patrocinado' : 'anúncios patrocinados'}</span>);
+  // MLBs e grupos distintos: o mesmo MLB/grupo nunca conta duas vezes.
+  const todos = [...c.familias.flatMap(f => f.anuncios), ...c.foraDoPubliai];
+  const n = new Set(todos.map(a => a.mlb)).size;
+  const g = new Set(todos.flatMap(a => (a.grupoId == null ? [] : [a.grupoId]))).size;
+  const grupos = g > 0 ? `${g} ${g === 1 ? 'grupo' : 'grupos'} · ` : '';
+  partes.push(<span key="n">{grupos}{n} {n === 1 ? 'anúncio patrocinado' : 'anúncios patrocinados'}</span>);
   return (
     <p className="flex flex-col gap-y-1 text-sm text-muted-foreground tabular-nums sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2">
       {/* No mobile cada parte vai numa linha, sem o separador pendurado no começo. */}

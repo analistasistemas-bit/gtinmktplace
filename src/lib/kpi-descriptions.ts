@@ -158,7 +158,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Todas::Campanhas':
     'Famílias com anúncios patrocinados nas campanhas ativas e pausadas (uma família conta em cada campanha onde aparece).',
   'Em alerta::Campanhas':
-    'Famílias de campanhas ativas com ROAS objetivo acima da margem, patrocinado parado ou parcialmente patrocinada.',
+    'Famílias de campanhas ativas com ACOS-alvo acima do equilíbrio, patrocinado parado ou parcialmente patrocinada.',
   'Sem referência::Campanhas':
     'Famílias sem margem para Ads calculada: falta custo, origem, medidas, preço ou outro dado do cadastro.',
   'ACOS direto::Ads':

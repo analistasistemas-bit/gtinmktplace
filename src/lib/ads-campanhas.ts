@@ -18,7 +18,7 @@ export interface CampanhaVista extends CampanhaAds {
 }
 
 export const ROTULO_ALERTA: Record<AlertaCampanha, string> = {
-  roas_acima_margem: 'ROAS objetivo acima da margem',
+  roas_acima_margem: 'ACOS-alvo acima do equilíbrio',
   patrocinado_parado: 'Patrocinado parado',
   parcialmente_patrocinada: 'Parcialmente patrocinada',
 };

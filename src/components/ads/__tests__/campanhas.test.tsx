@@ -103,6 +103,12 @@ describe('BlocoCampanha', () => {
     expect(screen.getByText(/ROAS objetivo 5x/)).toHaveTextContent('ACOS-alvo 20%');
     expect(screen.getByText('1 anúncio patrocinado')).toBeInTheDocument();
   });
+  it('grupos distintos ficam separados da quantidade de MLBs, sem dupla contagem', () => {
+    const as = [anuncio({ mlb: 'MLB1', grupoId: 10 }), anuncio({ mlb: 'MLB2', grupoId: 10 }), anuncio({ mlb: 'MLB3', grupoId: 11 })];
+    const fora = anuncio({ mlb: 'MLB3', grupoId: 11 });
+    pagina(<BlocoCampanha c={campanha({ familias: [familia({ anuncios: as })], foraDoPubliai: [fora] })} filtrando={false} />);
+    expect(screen.getByText('2 grupos · 3 anúncios patrocinados')).toBeInTheDocument();
+  });
   it('estratégia desconhecida aparece crua e null some', () => {
     const { unmount } = pagina(<BlocoCampanha c={campanha({ estrategia: 'GROWTH' })} filtrando={false} />);
     expect(screen.getByText('GROWTH')).toBeInTheDocument();
@@ -115,7 +121,7 @@ describe('BlocoCampanha', () => {
     pagina(<BlocoCampanha c={campanha({ familias: [f] })} filtrando={false} />);
     const linha = within(screen.getByRole('row', { name: /Camiseta/ }));
     expect(linha.getByText('2 de 3 anúncios')).toBeInTheDocument();
-    expect(linha.getByText('ROAS objetivo acima da margem')).toHaveAttribute('data-tone', 'danger');
+    expect(linha.getByText('ACOS-alvo acima do equilíbrio')).toHaveAttribute('data-tone', 'danger');
     expect(linha.getByText('Patrocinado parado')).toHaveAttribute('data-tone', 'warning');
     expect(linha.getByText('Parcialmente patrocinada')).toHaveAttribute('data-tone', 'neutral');
     expect(linha.getByRole('link', { name: 'Camiseta' })).toHaveAttribute('href', '/faturamento/sku/familia/P1');
