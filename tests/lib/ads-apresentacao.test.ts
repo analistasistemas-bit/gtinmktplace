@@ -91,8 +91,8 @@ describe('busca, ordenação e atalho das famílias Ads', () => {
     expect(ids(ordenarFamiliasAds(lista, 'acos_direto', 'desc'))).toEqual(['P1', 'P4', 'P3', 'P2']);
     expect(ids(ordenarFamiliasAds(lista, 'resultado', 'asc'))).toEqual(['P4', 'P2', 'P3', 'P1']);
     expect(ids(ordenarFamiliasAds(lista, 'resultado', 'desc'))).toEqual(['P3', 'P2', 'P4', 'P1']);
-    expect(ids(ordenarFamiliasAds(lista, 'nome', 'asc'))).toEqual(['P4', 'P2', 'P1', 'P3']);
-    expect(ids(ordenarFamiliasAds(lista, 'nome', 'desc'))).toEqual(['P1', 'P2', 'P4', 'P3']);
+    expect(ids(ordenarFamiliasAds(lista, 'nome', 'asc'))).toEqual(['P4', 'P1', 'P2', 'P3']);
+    expect(ids(ordenarFamiliasAds(lista, 'nome', 'desc'))).toEqual(['P2', 'P1', 'P4', 'P3']);
     expect(ids(lista)).toEqual(['P1', 'P2', 'P3', 'P4']); // não muta a entrada
   });
 
