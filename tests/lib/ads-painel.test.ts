@@ -5,8 +5,8 @@ import { BASE_ACOS_VALIDADA, montarPainelAds, type FontePainelAds, type GrupoPai
 it('semáforo do ACOS de equilíbrio ligado', () => {
   expect(BASE_ACOS_VALIDADA).toBe(true);
 });
-import { janelaBRT, lucroPorFamilia, periodoAds } from '@/lib/ads-painel-dados';
-import { diasEntre } from '@/lib/sku-ads';
+import { janelaBRT, lucroPorFamilia } from '@/lib/ads-painel-dados';
+import { diasEntre, fimDiasAds } from '@/lib/sku-ads';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { montarVendasSku } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
@@ -99,7 +99,7 @@ describe('montarPainelAds', () => {
   it('às 08:00 BRT (coleta de hoje ainda não rodou) o período termina anteontem e fica coberto', () => {
     const agora8 = new Date('2026-10-05T08:00:00-03:00');
     const s8 = { ...sync, ultimo_ok_em: '2026-10-04T14:17:00Z' };
-    const j = periodoAds(7, agora8, s8.ultimo_ok_em);
+    const j = { desde: '2026-09-27', ate: fimDiasAds(agora8, s8.ultimo_ok_em) }; // 7 dias até anteontem (03/10)
     const conta = diasEntre(j.desde, j.ate).map((d) => dia(d, 10));
     const p = montarPainelAds({ ...base({ sync: s8, conta, grupos: [grupo(1, 30, ['MLB1'], 300, 300)] }), janela: j, agora: agora8 });
     expect(p.gruposCobertos).toBe(true);

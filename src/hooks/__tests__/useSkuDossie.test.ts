@@ -321,8 +321,8 @@ describe('useSkuDossie — tráfego', () => {
     montarAdsSpy.mockClear();
     const h = renderHook(() => useSkuDossie(sku('A'), { tipo: 'range', desde: '2026-09-28', ate: '2026-10-05' }, 'semana'), { wrapper });
     await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
-    const { periodoAds } = await import('@/lib/ads-painel-dados');
-    expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros).toEqual({ desde: '2026-09-28', ate: periodoAds(7, new Date(), ultimoOk).ate });
+    const { fimDiasAds } = await import('@/lib/sku-ads');
+    expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros).toEqual({ desde: '2026-09-28', ate: fimDiasAds(new Date(), ultimoOk) });
     expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros.ate).toBe('2026-10-03');
   });
 

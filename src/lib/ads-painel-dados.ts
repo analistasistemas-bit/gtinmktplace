@@ -4,18 +4,10 @@ import type { FontePainelAds, LucroFamilia } from '@/lib/ads-painel';
 import type { Janela, Periodo } from '@/lib/metricas';
 import { diaBRT } from '@/lib/calendario-brt';
 import { agruparPorFamilia, type LinhaSku } from '@/lib/vendas-sku';
-import { fimDiasAds } from '@/lib/sku-ads';
 
 export type DiasAds = 7 | 30 | 90;
 const somarDias = (dia: string, n: number) =>
   new Date(Date.parse(`${dia}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-
-/** N dias BRT inteiros terminando no último dia coletado (`fimDiasAds`): o Ads não tem hoje (spike 053 §3.2)
- *  e, antes da coleta do dia, nem ontem — as vendas seguem o mesmo recorte. */
-export function periodoAds(dias: DiasAds, agora: Date, ultimoOkEm: string | null): { desde: string; ate: string } {
-  const ate = fimDiasAds(agora, ultimoOkEm);
-  return { desde: somarDias(ate, -(dias - 1)), ate };
-}
 
 export type PeriodoAds = Extract<
   Periodo,
