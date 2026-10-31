@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-28
+atualizado: 2026-10-31
 ---
 
 # Changelog
@@ -8,6 +8,15 @@ atualizado: 2026-10-28
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-31
+
+- **/ads redesenhado no padrão do Mercado Ads** (emenda ADR-0179, main `89f45136`, edge `ads-metricas` v3):
+  KPIs do ML, campanhas por data e visual premium. "Vendas atribuídas" passou a ser unidades, como no
+  painel do ML (`66815230`). Conferido na Avil: investimento API × coleta com 0,005% de diferença.
+- **Polimentos do /ads** (main `6ccff859`, só front): "—" curto nas tabelas com o motivo em popover
+  (clique, toque, teclado); R$ sem quebra no card do detalhe; conciliação ok com diferença ≤ max(R$ 1,00;
+  0,1%) entre coleta e leitura ao vivo — acaba o aviso por centavos (ex.: R$ 0,18).
 
 ## 2026-10-28
 
