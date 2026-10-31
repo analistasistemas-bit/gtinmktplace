@@ -330,7 +330,9 @@ export default function Ads() {
         motivo={blocos.conta.motivo ?? resultadoConta.motivo}
         historicoDesde={historicoDesde}
         faturamentoConta={faturamentoConta?.atual.valor ?? null}
-        composicao={comComposicao ? painel?.conta ?? undefined : undefined}
+        // Composição só com a coleta conciliada com a leitura ao vivo (já implica grupos cobertos): sem isso,
+        // famílias/compartilhado da coleta ficariam ao lado de um investimento de outra base (ADR-0179 emenda, item 6).
+        composicao={comComposicao && painel?.conciliacao?.estado === 'ok' ? painel.conta ?? undefined : undefined}
         onVerAcima={temAcima && !comComposicao ? verAcima : undefined}
       />
     );

@@ -37,6 +37,7 @@ const PAINEL: PainelAds = {
       margemConsumida: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_vendas', fonteCusto: null, markup: null },
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
+  conciliacao: { estado: 'ok' },
 };
 const bloco = (resumo: BlocoAdsMetricas['resumo'] = {}): BlocoAdsMetricas => ({
   janela: { desde: '2026-09-04', ate: '2026-10-03' }, resumo, serie: [], completo: true, lidoEm: '2026-10-04T12:00:00Z',
@@ -183,6 +184,17 @@ describe('Ads', () => {
     expect(resumo.getByRole('group', { name: 'Resultado após Ads' })).toHaveTextContent(/R\$\s*200,00/);
     expect(resumo.queryByRole('button', { name: 'Composição do gasto' })).not.toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
+  });
+  // C3: composição só com grupos cobertos e conciliação ok — senão mistura investimento ao vivo com grupos não conciliados.
+  it.each([
+    ['conciliação pendente', { conciliacao: { estado: 'pendente' as const, mensagem: 'pendente', coletadoEm: null, coletada: null, coletadaMotivo: 'cobertura' as const } }],
+    ['grupos sem cobertura', { gruposCobertos: false, conciliacao: { estado: 'pendente' as const, mensagem: 'pendente', coletadoEm: null, coletada: null, coletadaMotivo: 'cobertura' as const } }],
+    ['sem conciliação', { conciliacao: null }],
+  ])('%s: sem "Composição do gasto" mesmo com a conta ao vivo montada', (_n, extra) => {
+    montar({ ...PAINEL, ...extra });
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByRole('group', { name: 'Resultado após Ads' })).toHaveTextContent(/R\$\s*200,00/);
+    expect(resumo.queryByRole('button', { name: 'Composição do gasto' })).not.toBeInTheDocument();
   });
   it('trocar o período chama o hook com o preset estruturado', () => {
     localStorage.setItem('ads-painel-dias', '30');
