@@ -88,6 +88,7 @@ export default function Ads() {
     painel,
     resultadoConta,
     metricasConta,
+    metricasContaDesatualizada,
     janela,
     comparacao,
     situacaoPeriodo,
@@ -279,7 +280,7 @@ export default function Ads() {
     const lidoEm = metricasConta.atual?.lidoEm;
     kpis = (
       <>
-        {blocos.conta.isError && (
+        {metricasContaDesatualizada && (
           <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
             <AlertTriangle aria-hidden className="size-4 shrink-0 text-warning" />
             <span>{`Não foi possível atualizar a conta agora; os valores exibidos são da leitura${lidoEm ? ` das ${lidoAsAds(lidoEm)}` : ' anterior'}.`}</span>

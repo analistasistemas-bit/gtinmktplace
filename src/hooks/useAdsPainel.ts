@@ -33,6 +33,9 @@ export interface RetornoAdsPainel {
   comparacao: ComparacaoAds | null;
   /** Resposta da edge para o escopo 'conta' (série ao vivo, resumo, anterior). */
   metricasConta: RespostaAdsMetricas | null;
+  /** A nova leitura ao vivo da conta falhou e `metricasConta` é a leitura anterior mantida (só a da edge: vendas e
+   *  catálogo têm aviso próprio). */
+  metricasContaDesatualizada: boolean;
   /** Denominador do TACOS: vendas faturáveis do canal ML na janela (e na anterior, se houver comparação). Cada lado
    *  só tem valor com o histórico de vendas cobrindo a própria janela; senão `sem_historico` (nunca truncado).
    *  `anterior` null = sem comparação. */
@@ -206,7 +209,8 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
   const atualizar = () => recarregar(true);
 
   return {
-    painel, resultadoConta, janela, comparacao, metricasConta: metricasQ.data ?? null, faturamentoConta,
+    painel, resultadoConta, janela, comparacao, metricasConta: metricasQ.data ?? null,
+    metricasContaDesatualizada: habilitado && metricasQ.isError && metricasQ.data !== undefined, faturamentoConta,
     situacaoPeriodo, historicoDesde: vendas.dados?.historicoDesde ?? null, ultimoOkEm, blocos,
     isLoading, isFetching, isError, refetch, atualizar,
   };

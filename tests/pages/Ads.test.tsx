@@ -70,6 +70,7 @@ const montar = (
     ultimoOkEm: '2026-10-04T14:17:00Z',
     comparacao: null,
     metricasConta: null,
+    metricasContaDesatualizada: false,
     faturamentoConta: null,
     blocos: { conta: { isLoading: false, isError: false }, grupos: { isLoading: false, isError: false },
       sync: { isLoading: false, isError: false } },
@@ -1414,6 +1415,7 @@ describe('estados: sem gasto e falhas parciais', () => {
   it('estados: atualização da conta falha com dados anteriores → valores mantidos, aviso com horário e Tentar novamente', () => {
     const refetch = vi.fn().mockResolvedValue(undefined);
     montar(PAINEL, { refetch, metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 42, motivo: null } }) }),
+      metricasContaDesatualizada: true,
       blocos: { conta: { isLoading: false, isError: true }, grupos: { isLoading: false, isError: false },
         sync: { isLoading: false, isError: false } } });
 
@@ -1423,6 +1425,13 @@ describe('estados: sem gasto e falhas parciais', () => {
     expect(aviso).toHaveTextContent('Não foi possível atualizar a conta agora; os valores exibidos são da leitura das 09:00.');
     fireEvent.click(within(aviso).getByRole('button', { name: 'Tentar novamente' }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('estados: erro do catálogo/vendas com leitura ao vivo fresca não diz que a conta deixou de atualizar', () => {
+    montar(PAINEL, { metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 42, motivo: null } }) }),
+      blocos: { conta: { isLoading: false, isError: true, motivo: 'catalogo' }, grupos: { isLoading: false, isError: true },
+        sync: { isLoading: false, isError: false } } });
+    expect(screen.queryByText(/Não foi possível atualizar a conta agora/)).not.toBeInTheDocument();
   });
 
   it.each([

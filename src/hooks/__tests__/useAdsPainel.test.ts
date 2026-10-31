@@ -106,6 +106,24 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('useAdsPainel', () => {
+  // Minor pré-merge: só a falha da própria leitura ao vivo (com a anterior em mãos) marca a conta desatualizada.
+  it('metricasContaDesatualizada: refetch da leitura ao vivo falha → true com a leitura anterior mantida; erro de vendas não', async () => {
+    const r = render();
+    await waitFor(() => expect(r.result.current.metricasConta).not.toBeNull());
+    expect(r.result.current.metricasContaDesatualizada).toBe(false);
+    m.buscarMetricasAds.mockRejectedValue(new Error('ML 500'));
+    await act(async () => { await r.result.current.refetch(); });
+    await waitFor(() => expect(r.result.current.metricasContaDesatualizada).toBe(true));
+    expect(r.result.current.metricasConta).not.toBeNull();
+
+    m.buscarMetricasAds.mockImplementation(async (p: PedidoAdsMetricas) => respostaConta(p));
+    m.useVendasSku.mockReturnValue(vendasQ(null, { isError: true }));
+    const r2 = render();
+    await waitFor(() => expect(r2.result.current.metricasConta).not.toBeNull());
+    expect(r2.result.current.blocos.conta.isError).toBe(true);
+    expect(r2.result.current.metricasContaDesatualizada).toBe(false);
+  });
+
   it('(a) vendas no mesmo recorte do Ads: range com os dias da janela e janela BRT explícita', async () => {
     const r = render();
     await waitFor(() => expect(r.result.current.painel).not.toBeNull());
