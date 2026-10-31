@@ -712,6 +712,19 @@ describe('Ads', () => {
     )).toBeVisible();
   });
 
+  // Minor pré-merge: cartões (mobile/tablet) também ordenam — coluna + direção, alvos de 44 px em toque.
+  it('cartões: controle de direção inverte a ordem e o seletor oferece as colunas', () => {
+    montar();
+    const nomes = () => within(screen.getByRole('list', { name: 'Famílias por gasto em cartões' }))
+      .getAllByRole('listitem').map(li => li.textContent ?? '');
+    expect(nomes()[0]).toContain('Fam A'); // investimento desc: 50 > 30
+    const direcao = screen.getByRole('button', { name: /ordem decrescente/i });
+    expect(direcao).toHaveClass('max-sm:h-11', 'pointer-coarse:h-11');
+    fireEvent.click(direcao);
+    expect(nomes()[0]).toContain('Fam B');
+    expect(screen.getByRole('combobox', { name: 'Ordenar famílias por' })).toHaveTextContent('Investimento');
+  });
+
   it('cartão e linha usam ids de expansão distintos', () => {
     montar();
     const lista = within(screen.getByRole('list', { name: 'Famílias por gasto em cartões' }));

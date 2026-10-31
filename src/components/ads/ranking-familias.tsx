@@ -15,6 +15,7 @@ import {
   type FiltroFamiliasAds, type ColunaFamiliasAds, type DirecaoAds,
 } from '@/lib/ads-apresentacao';
 import { DetalheFamilia } from '@/components/ads/detalhe-familia';
+import { OrdenarCartoes } from '@/components/ads/ordenar-cartoes';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 import { primeiroDiaCoberto } from '@/lib/sku-ads';
 
@@ -226,6 +227,12 @@ function CartaoFamilia({ f, liberado, conta, historicoDesde, foco }: PropsFamili
   );
 }
 
+const COLUNAS_CARTAO: { valor: ColunaFamiliasAds; rotulo: string }[] = [
+  { valor: 'nome', rotulo: 'Família' }, { valor: 'investimento', rotulo: 'Investimento' },
+  { valor: 'acos_direto', rotulo: 'ACOS direto' }, { valor: 'equilibrio', rotulo: 'Equilíbrio observado' },
+  { valor: 'resultado', rotulo: 'Resultado após Ads' },
+];
+
 // O (i) do KpiCard tem 38 px; no mobile o alvo de toque sobe para 44 px (14 + 2×15) sem mexer no layout
 // (margem negativa igual ao padding). Fica aqui, não no KpiCard, para não alterar as outras telas.
 const CARD_FILTRO = 'sm:min-w-36 max-sm:[&_button]:p-[15px] max-sm:[&_button]:-m-[15px]';
@@ -308,6 +315,8 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai, inicial
           </TableBody>
         </Table>
       </div>
+      <OrdenarCartoes rotulo="Ordenar famílias por" className="xl:hidden" ordem={ordem} onOrdem={setOrdem} colunaAsc="nome"
+        opcoes={COLUNAS_CARTAO} />
       <ul aria-label="Famílias por gasto em cartões" className="grid gap-3 md:grid-cols-2 xl:hidden">
         {visiveis.map(f => <CartaoFamilia key={f.codigoPai} {...props(f)} />)}
       </ul>

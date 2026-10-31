@@ -12,6 +12,7 @@ import {
   type SentidoAds, type UnidadeAds,
 } from '@/lib/ads-metricas';
 import { DeltaAds } from '@/components/ads/delta-ads';
+import { OrdenarCartoes } from '@/components/ads/ordenar-cartoes';
 import {
   MOTIVOS_METRICA_ADS as MOTIVOS, SEM_VALOR_ADS as SEM_VALOR, inteiroAds as inteiro, moedaAds as moeda, pctAds as pct, razaoAds as razao,
 } from '@/lib/ads-metricas';
@@ -252,6 +253,8 @@ export function TabelaCampanhas({ campanhas, comparacao, onAbrir, completa = tru
           </TableBody>
         </Table>
       </div>
+      <OrdenarCartoes rotulo="Ordenar campanhas por" className="xl:hidden" ordem={ordem} onOrdem={setOrdem} colunaAsc="nome"
+        opcoes={[{ valor: 'nome', rotulo: 'Campanha' }, ...colunas.map(d => ({ valor: d.chave, rotulo: d.rotulo }))]} />
       <ul aria-label="Campanhas no período em cartões" className="grid gap-3 md:grid-cols-2 xl:hidden">
         {visiveis.map(l => (
           <li key={l.c.id} className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3">

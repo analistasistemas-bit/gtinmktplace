@@ -31,6 +31,21 @@ const tabela = () => screen.getByRole('table');
 const nomesNaTabela = () => within(tabela()).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent ?? '');
 
 describe('TabelaCampanhas', () => {
+  // Minor pré-merge: cartões (mobile/tablet) também ordenam — coluna (Select Radix) + direção, 44 px em toque.
+  it('cartões: seletor de coluna e direção reordenam', async () => {
+    const user = userEvent.setup();
+    render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />);
+    const cartoes = () => within(screen.getByRole('list', { name: 'Campanhas no período em cartões' }))
+      .getAllByRole('listitem').map((li) => li.textContent ?? '');
+    expect(cartoes()[0]).toContain('Inverno pausada'); // investimento desc: 300
+    const direcao = screen.getByRole('button', { name: /ordem decrescente/i });
+    expect(direcao).toHaveClass('max-sm:h-11', 'pointer-coarse:h-11');
+    await user.click(direcao);
+    expect(cartoes()[0]).toContain('Antiga removida'); // 50
+    await escolherNoSelect(user, 'Ordenar campanhas por', 'Campanha');
+    expect(cartoes().map((t) => t.slice(0, 8))).toEqual(['Antiga r', 'Inverno ', 'Verão at']); // nome asc
+  });
+
   it('campanha histórica (deleted) devolvida pelo ML aparece com estado atual', () => {
     render(<TabelaCampanhas campanhas={CAMPANHAS} comparacao={DISP} onAbrir={vi.fn()} />);
     const linha = within(tabela()).getByText('Antiga removida').closest('tr')!;
