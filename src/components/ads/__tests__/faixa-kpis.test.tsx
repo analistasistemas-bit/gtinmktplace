@@ -25,6 +25,13 @@ describe('FaixaKpis', () => {
     expect(screen.getByText('Vendas atribuídas').closest('[data-kpi]')!.textContent).toContain('7 pedidos atribuídos');
   });
 
+  it('faixa da conta: valor sem quebra e as 5 colunas no desktop', () => {
+    render(<FaixaKpis atual={base({ investimento: v(3278.7) })} anterior={null} comparacao="desligada" />);
+    const card = screen.getByText('Investimento').closest('[data-kpi]') as HTMLElement;
+    expect(screen.getByText('R$ 3.278,70')).toHaveClass('whitespace-nowrap');
+    expect(card.parentElement).toHaveClass('lg:grid-cols-5');
+  });
+
   it('indisponível mostra o motivo em texto', () => {
     render(<FaixaKpis atual={base({ tacos: v(null, 'sem_denominador') })} anterior={null} comparacao="desligada" />);
     const tile = screen.getByText('TACOS da conta').closest('[data-kpi]') as HTMLElement;

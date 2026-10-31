@@ -294,7 +294,7 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
         {data.comparacao.estado === 'indisponivel' && (
           <p className="text-sm text-muted-foreground">Comparação indisponível{data.comparacao.motivo ? `: ${data.comparacao.motivo}` : '.'}</p>
         )}
-        <FaixaKpis atual={atual} anterior={anterior} comparacao={data.comparacao.estado} ocultar={['tacos']} mostrarPedidos />
+        <FaixaKpis atual={atual} anterior={anterior} comparacao={data.comparacao.estado} ocultar={['tacos']} mostrarPedidos grade="sm:grid-cols-3" />
         <SerieDiaria serie={data.atual.serie} janela={data.atual.janela} completo={data.atual.completo}
           provisorioDesde={inicioAtribuicaoAberta(data.atual.janela, data.atual.lidoEm)} />
       </div>

@@ -42,8 +42,10 @@ const VISIVEIS_MOBILE = 4;
 
 
 export function FaixaKpis({
-  atual, anterior, comparacao, loading = false, ocultar, mostrarPedidos = false,
+  atual, anterior, comparacao, loading = false, ocultar, mostrarPedidos = false, grade = 'lg:grid-cols-5',
 }: {
+  /** Colunas a partir do breakpoint (a base é 2). No Sheet do detalhe, 3: cinco cards estreitos quebravam o valor. */
+  grade?: 'lg:grid-cols-5' | 'sm:grid-cols-3';
   /** Acrescenta "N pedidos atribuídos" (advertising_items_quantity) como apoio do card de vendas — usado no detalhe. */
   mostrarPedidos?: boolean;
   /** Indicadores que não fazem sentido no escopo (ex.: `tacos` numa campanha). */
@@ -59,7 +61,7 @@ export function FaixaKpis({
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className={cn('grid grid-cols-2 gap-3', grade)}>
         {KPIS.filter((k) => !ocultar?.includes(k.chave)).map((k, i) => {
           const valor = atual[k.chave] ?? { valor: null, motivo: 'nao_retornada' as const };
           const oculto = i >= VISIVEIS_MOBILE && !expandido;
@@ -96,7 +98,8 @@ export function FaixaKpis({
             </>
           ) : (
             <>
-              {k.formato(valor.valor!)}
+              {/* Valor numa linha só ("R$ 1.520,67" não quebra); o apoio e a variação seguem abaixo. */}
+              <span className="whitespace-nowrap">{k.formato(valor.valor!)}</span>
               {apoio}
               {cmp && (
                 <div className="flex flex-wrap items-center gap-x-1.5">

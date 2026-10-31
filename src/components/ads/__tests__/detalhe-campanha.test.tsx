@@ -101,6 +101,16 @@ describe('DetalheCampanha', () => {
     expect(tile.textContent).toContain('7 pedidos atribuídos'); // advertising_items_quantity
   });
 
+  // Polimento 2026-10-31: no Sheet, "R$ 1.520,67" quebrava em duas linhas (cinco cards estreitos).
+  it('cards do detalhe: valor sem quebra e grade de 3 colunas no Sheet', () => {
+    abrir();
+    const card = document.querySelector('[data-kpi="investimento"]') as HTMLElement;
+    expect(within(card).getByText('R$ 400,00')).toHaveClass('whitespace-nowrap');
+    const grade = card.parentElement!;
+    expect(grade).toHaveClass('sm:grid-cols-3');
+    expect(grade).not.toHaveClass('lg:grid-cols-5');
+  });
+
   it('TACOS da conta não aparece no escopo de uma campanha', () => {
     abrir();
     expect(screen.queryByText('TACOS da conta')).toBeNull();
