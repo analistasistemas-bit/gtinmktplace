@@ -1349,6 +1349,13 @@ describe('estados: sem gasto e falhas parciais', () => {
     expect(screen.queryByText(AVISO.sem_permissao!)).not.toBeInTheDocument();
   });
 
+  // I5: o aviso de comparação provisória é texto visível, não só `title` (hover).
+  it('comparação provisória: microcopy visível no contexto', () => {
+    montar(PAINEL, { comparacao: { tipo: 'pronta', janela: { desde: '2026-08-05', ate: '2026-09-03' } }, metricasConta: respostaMetricas({
+      atual: bloco({ cost: { valor: 100, motivo: null } }), comparacao: { estado: 'provisoria', motivo: 'x' } }) });
+    expect(screen.getByText('Comparação provisória: o ML ainda pode revisar a atribuição de vendas.')).toBeVisible();
+  });
+
   it('estados: falha da comparação não apaga o período atual', () => {
     montar(PAINEL, { comparacao: { tipo: 'pronta', janela: { desde: '2026-08-05', ate: '2026-09-03' } }, metricasConta: respostaMetricas({
       atual: bloco({ cost: { valor: 100, motivo: null } }), anterior: null,

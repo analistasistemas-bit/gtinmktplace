@@ -74,15 +74,18 @@ interface Props {
 
 export function Competitividade({ campanhaId, pedido }: Props) {
   const [aberto, setAberto] = useState(false);
-  const { desde, ate } = pedido;
+  const { desde, ate, comparar } = pedido;
   const pedidoComp = useMemo<PedidoAdsMetricas>(
-    // Sem comparação: a participação do período anterior não é pedida aqui.
-    () => ({ desde, ate, comparar: 'nenhum', escopo: 'competitividade', campanhaId }),
-    [desde, ate, campanhaId],
+    // A comparação da tela só serve à prova de pertencimento (campanha histórica, só na anterior, também é da
+    // conta); a edge lê a participação apenas do período atual.
+    () => ({ desde, ate, comparar, escopo: 'competitividade', campanhaId }),
+    [desde, ate, comparar, campanhaId],
   );
   const q = useAdsMetricas(pedidoComp, aberto);
   const data = q.data;
-  const resumo = data?.atual?.resumo;
+  // Só leitura completa da janela atual vira barra; recusa ou E3 que falhou (resumo vazio) mostram o motivo.
+  const resumo = data && (data.estado === 'ok' || data.estado === 'parcial') && data.atual?.completo
+    ? data.atual.resumo : undefined;
 
   return (
     <section aria-label="Competitividade" className="space-y-3">
@@ -106,7 +109,7 @@ export function Competitividade({ campanhaId, pedido }: Props) {
             </p>
           ) : data && !resumo ? (
             <p role="status" className="text-sm text-muted-foreground">
-              Competitividade indisponível{data.comparacao.motivo ? `: ${data.comparacao.motivo}` : ' para este período.'}
+              {`Competitividade indisponível: ${data.avisos[0] ?? 'não foi possível ler a participação em impressões neste período.'}`}
             </p>
           ) : resumo ? (
             <>

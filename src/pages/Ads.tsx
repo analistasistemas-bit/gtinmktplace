@@ -201,7 +201,7 @@ export default function Ads() {
         {janela && comparar === 'anterior' && comparacao?.tipo === 'pronta' && (
           <span className="inline-flex items-center gap-1.5">
             {`Comparado com ${dataDia(comparacao.janela.desde)} a ${dataDia(comparacao.janela.ate)}`}
-            {provisoria && <StatusPill tone="warning" title="O ML ainda pode revisar a atribuição de vendas.">Provisória</StatusPill>}
+            {provisoria && <span>Comparação provisória: o ML ainda pode revisar a atribuição de vendas.</span>}
           </span>
         )}
         {janela && comparar === 'anterior' && comparacao?.tipo === 'indisponivel' && (

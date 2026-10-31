@@ -124,6 +124,25 @@ describe('DetalheCampanha', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível ler as métricas');
   });
 
+  // I3: recusa (pertencimento) mostra o motivo da resposta e não abre "Anúncios patrocinados".
+  it.each(['sem_acesso', 'sem_permissao', 'sem_conexao', 'sem_advertiser'] as const)(
+    'estado %s: sem a seção de anúncios', (estado) => {
+      hook(resposta({ estado, atual: null, anterior: null, anuncios: undefined, anunciosMotivo: undefined,
+        avisos: estado === 'sem_acesso' ? ['Campanha não pertence ao anunciante.'] : [] }));
+      abrir();
+      expect(screen.queryByRole('region', { name: 'Anúncios patrocinados' })).toBeNull();
+      expect(screen.queryByText(/Lista de anúncios indisponível/)).toBeNull();
+      if (estado === 'sem_acesso') expect(screen.getByText('Campanha não pertence ao anunciante.')).toBeInTheDocument();
+    });
+
+  it('erro da leitura: alerta sobre o card (nunca texto danger sobre fundo danger/10)', () => {
+    hook(undefined, { isError: true, error: new Error('falhou') });
+    abrir();
+    const alerta = screen.getByRole('alert');
+    expect(alerta.className).not.toMatch(/bg-danger\/10|text-danger/);
+    expect(alerta.className).toMatch(/bg-card/);
+  });
+
   // C2: atualização recusada (ex.: 429) com dado em tela não apaga as métricas nem a lista de anúncios.
   it('erro ao atualizar com dado já lido mantém métricas e anúncios, com aviso', () => {
     hook(resposta(), { isError: true, error: new Error('Atualização recente.') });

@@ -315,8 +315,11 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
   // Dado antes do erro: falha ao atualizar mantém as métricas lidas (plano §4.9); o aviso vai junto.
   if (isError && !data) {
     metricas = (
-      <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-        <p>Não foi possível ler as métricas da campanha no Mercado Livre.</p>
+      <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+        <p className="flex items-start gap-2">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+          Não foi possível ler as métricas da campanha no Mercado Livre.
+        </p>
         <Button variant="outline" size="sm" className="mt-3 h-8 max-sm:h-11 pointer-coarse:h-11" onClick={() => void refetch()}>Tentar de novo</Button>
       </div>
     );
@@ -328,7 +331,8 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
       </div>
     );
   } else if (!atual || !data.atual || (data.estado !== 'ok' && data.estado !== 'parcial')) {
-    metricas = <Aviso texto={AVISO[data.estado] ?? 'Não foi possível ler as métricas deste período.'} />;
+    // Recusa de pertencimento traz o motivo em `avisos`; o texto genérico do estado (ex.: reconectar) é o fallback.
+    metricas = <Aviso texto={data.avisos[0] ?? AVISO[data.estado] ?? 'Não foi possível ler as métricas deste período.'} />;
   } else {
     metricas = (
       <div className="space-y-4">
@@ -369,7 +373,7 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
         <div className="space-y-8 p-4">
           <Secao titulo="Métricas do período">{metricas}</Secao>
           {competitividade && <Secao titulo="Competitividade">{competitividade}</Secao>}
-          {aberto && data && (
+          {aberto && data && (data.estado === 'ok' || data.estado === 'parcial') && (
             <Secao titulo="Anúncios patrocinados">
               <AnunciosPatrocinados anuncios={data.anuncios} motivo={data.anunciosMotivo} comparacaoEstado={comparacaoEstado} />
             </Secao>

@@ -33,14 +33,14 @@ const expandir = () => userEvent.click(screen.getByRole('button', { name: /ver c
 beforeEach(() => mock.mockReset());
 
 describe('Competitividade', () => {
-  it('só consulta depois de expandir, com escopo competitividade e sem comparação', async () => {
+  it('só consulta depois de expandir, com escopo competitividade e a comparação da tela (prova pelas duas janelas)', async () => {
     mock.mockReturnValue(ret());
     render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
     expect(mock.mock.calls.every(([, hab]) => hab === false)).toBe(true);
     await expandir();
     const [pedido, hab] = mock.mock.calls.at(-1)!;
     expect(hab).toBe(true);
-    expect(pedido).toMatchObject({ escopo: 'competitividade', campanhaId: 7, comparar: 'nenhum', desde: '2026-10-01', ate: '2026-10-07' });
+    expect(pedido).toMatchObject({ escopo: 'competitividade', campanhaId: 7, comparar: 'anterior', desde: '2026-10-01', ate: '2026-10-07' });
   });
 
   it('mostra rótulos, percentuais e explicações visíveis', async () => {
@@ -101,10 +101,23 @@ describe('Competitividade', () => {
     expect(screen.getByText(/não foi possível ler a competitividade/i)).toBeInTheDocument();
   });
 
+  // I1a: forma real da recusa do handler — o motivo vem em `avisos` (comparacaoDoPedido reescreve `comparacao`).
   it('estado recusado mostra o motivo da resposta', async () => {
-    mock.mockReturnValue(ret(resposta({}, { estado: 'sem_acesso', atual: null, comparacao: { estado: 'indisponivel', motivo: 'Campanha não pertence à conta.' } })));
+    mock.mockReturnValue(ret(resposta({}, { estado: 'sem_acesso', atual: null, comparacao: { estado: 'desligada', motivo: null },
+      avisos: ['Campanha não pertence ao anunciante.'] })));
     render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
     await expandir();
-    expect(screen.getByText(/campanha não pertence à conta/i)).toBeInTheDocument();
+    expect(screen.getByText(/campanha não pertence ao anunciante/i)).toBeInTheDocument();
+  });
+
+  // I1b: E3 que falhou volta 'parcial' com resumo {} — não são três barras "o ML não retornou".
+  it('leitura parcial (E3 falhou): indisponível com motivo, sem barras', async () => {
+    const parcial = resposta({}, { estado: 'parcial', avisos: ['Limite de leitura atingido; dados incompletos.'] });
+    parcial.atual = { ...parcial.atual!, completo: false };
+    mock.mockReturnValue(ret(parcial));
+    render(<Competitividade campanhaId={7} pedido={PEDIDO} />);
+    await expandir();
+    expect(screen.getByText(/Competitividade indisponível: Limite de leitura atingido/)).toBeInTheDocument();
+    expect(screen.queryByText('Ganhas')).toBeNull();
   });
 });
