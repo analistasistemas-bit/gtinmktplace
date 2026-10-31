@@ -202,6 +202,32 @@ describe('useVendasSku — integridade fiscal (ADR-0055: alíquota ausente não 
     limpar();
   });
 
+  // I3 pré-merge: integridade fiscal por janela — problema só na anterior não bloqueia o resultado atual.
+  const anteriorFixa = { desde: '2026-09-21T03:00:00.000Z', ate: '2026-10-01T02:59:59.999Z' };
+  const naAnterior = '2026-09-25T15:00:00.000Z';
+  it('fiscal: venda sem origem só na anterior, sem comparação → atual ok:true e sem base anterior', () => {
+    preparar([linhaCusto('A', 'nacional'), linhaCusto('B', null)], [venda(1, item('A')), venda(2, item('B'), naAnterior)]);
+    const r = render();
+    expect(r.baseFiscal).toEqual({ ok: true });
+    expect(r.baseFiscalAnterior).toBeNull();
+    limpar();
+  });
+  it('fiscal: venda sem origem só na anterior, com comparação → atual ok:true, anterior origem_nao_resolvida', () => {
+    preparar([linhaCusto('A', 'nacional'), linhaCusto('B', null)], [venda(1, item('A')), venda(2, item('B'), naAnterior)]);
+    const r = renderHook(() => useVendasSku(range, fixa, true, { canal: 'mercado_livre', anteriorFixa })).result.current;
+    expect(r.baseFiscal).toEqual({ ok: true });
+    expect(r.baseFiscalAnterior).toEqual({ ok: false, motivo: 'origem_nao_resolvida', codigos: ['B'] });
+    limpar();
+  });
+  it('fiscal: alíquotas não confirmadas valem para as duas janelas', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: { ...confirmadas, confirmada: false } });
+    const r = renderHook(() => useVendasSku(range, fixa, true, { canal: 'mercado_livre', anteriorFixa })).result.current;
+    expect(r.baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_nao_confirmadas' });
+    expect(r.baseFiscalAnterior).toEqual({ ok: false, motivo: 'aliquotas_nao_confirmadas' });
+    limpar();
+  });
+
   it('fiscal: item sem custo não entra no lucro e não bloqueia; venda fora das janelas também não', () => {
     preparar([linhaCusto('A', 'nacional')],
       [venda(1, item('A')), venda(2, item('SEM-CUSTO')), venda(3, item(null, { custo_congelado: 30 }), '2026-08-01T15:00:00.000Z')]);

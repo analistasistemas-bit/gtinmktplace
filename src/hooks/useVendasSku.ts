@@ -26,11 +26,11 @@ export interface OpcoesVendasSku {
 }
 
 /** Mesmo recorte de `impostoDoItem` em agruparPorPedido: item faturável da venda, UF da venda. Relevante =
- *  entra no lucro (custo > 0, como custoDoItem). Só as janelas atual e anterior; as de tendência não têm dinheiro. */
-function origemNaoResolvida(vendas: Venda[], janelas: Janela[], custoR: CustoResolver, aliqR: AliquotaResolver): string[] {
+ *  entra no lucro (custo > 0, como custoDoItem). Uma janela por vez: a base fiscal é avaliada por janela. */
+function origemNaoResolvida(vendas: Venda[], janela: Janela, custoR: CustoResolver, aliqR: AliquotaResolver): string[] {
   const codigos = new Set<string>();
   for (const v of vendas) {
-    if (!ehFaturavel(v.status) || !janelas.some((j) => dentroDaJanela(v.date_closed, j))) continue;
+    if (!ehFaturavel(v.status) || !dentroDaJanela(v.date_closed, janela)) continue;
     for (const it of v.itens) {
       if ((custoR(it) ?? 0) > 0 && aliqR(it, v.uf) == null) codigos.add(it.codigo?.trim() || SEM_CODIGO);
     }
@@ -65,7 +65,7 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
   // histórico cobrindo a janela o lucro é desconhecido (historicoCobre). Por isso `dados` espera o catálogo.
   const catQ = useCatalogoVendasSku();
 
-  const calculo = useMemo<{ dados: VendasSku; baseFiscal: BaseFiscal } | null>(() => {
+  const calculo = useMemo<{ dados: VendasSku; baseFiscal: BaseFiscal; baseFiscalAnterior: BaseFiscal | null } | null>(() => {
     // Sem custos toda linha sairia "sem custo" por um instante: espera a query assentar.
     // Com erro nos custos calcula sem eles ("sem custo" é o honesto).
     // Sem devoluções a taxa sairia 0 (no load ou com a query em erro): espera — o erro vai em isError.
@@ -77,14 +77,17 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
     const corR = montarCorResolver(cores, canonico);
     // Erro antes de "carregando": refetch com falha mantém data antiga, mas a base não está garantida.
-    let baseFiscal: BaseFiscal;
-    if (aliqQ.isError) baseFiscal = { ok: false, motivo: 'aliquotas_erro' };
-    else if (!aliquotas) baseFiscal = { ok: false, motivo: 'aliquotas_carregando' };
-    else if (!aliquotas.confirmada) baseFiscal = { ok: false, motivo: 'aliquotas_nao_confirmadas' };
-    else {
-      const codigos = origemNaoResolvida(vendasQ.data, [janela, anterior], custoR, aliqR);
-      baseFiscal = codigos.length ? { ok: false, motivo: 'origem_nao_resolvida', codigos } : { ok: true };
-    }
+    // Por janela (pré-merge I3): venda sem origem só na anterior não bloqueia o resultado atual.
+    const vendas = vendasQ.data;
+    const baseDa = (j: Janela): BaseFiscal => {
+      if (aliqQ.isError) return { ok: false, motivo: 'aliquotas_erro' };
+      if (!aliquotas) return { ok: false, motivo: 'aliquotas_carregando' };
+      if (!aliquotas.confirmada) return { ok: false, motivo: 'aliquotas_nao_confirmadas' };
+      const codigos = origemNaoResolvida(vendas, j, custoR, aliqR);
+      return codigos.length ? { ok: false, motivo: 'origem_nao_resolvida', codigos } : { ok: true };
+    };
+    const baseFiscal = baseDa(janela);
+    const baseFiscalAnterior = anteriorFixa ? baseDa(anteriorFixa) : null;
     const dados = montarVendasSku({
       vendas: vendasQ.data,
       agrupar: (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR),
@@ -92,8 +95,8 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
       catalogo: new Map(catQ.data.map((c) => [c.codigo, c])),
       devolucoes,
     });
-    return { dados, baseFiscal };
-  }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, aliqQ.isError, devolucoes, janela, anterior]);
+    return { dados, baseFiscal, baseFiscalAnterior };
+  }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, aliqQ.isError, devolucoes, janela, anterior, anteriorFixa]);
 
   // Só depende das vendas: catálogo/custos não entram no denominador do TACOS.
   const faturamentoConta = useMemo(() => {
@@ -106,8 +109,10 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
 
   return {
     dados: calculo?.dados ?? null,
-    /** null enquanto `dados` não monta. */
+    /** Base fiscal da janela atual; null enquanto `dados` não monta. */
     baseFiscal: calculo?.baseFiscal ?? null,
+    /** Base fiscal da janela de comparação (`anteriorFixa`); null sem ela ou enquanto `dados` não monta. */
+    baseFiscalAnterior: calculo?.baseFiscalAnterior ?? null,
     faturamentoConta,
     isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading || devQ.isLoading,
     isFetching: vendasQ.isFetching || catQ.isFetching,

@@ -14,13 +14,14 @@ const q = (data: unknown, extra: object = {}) => ({ data, isLoading: false, isFe
 const m = vi.hoisted(() => ({
   buscarPainelAds: vi.fn(), buscarCodigosMlbs: vi.fn(), buscarUltimoOkAds: vi.fn(), buscarMetricasAds: vi.fn(),
   catQ: {} as Record<string, unknown>,
+  vendas: [] as unknown[], custos: [] as Record<string, unknown>[],
 }));
 vi.mock('@/hooks/useOrgEfetivaId', () => ({ useOrgEfetivaId: () => 'org-a' }));
 vi.mock('@/lib/ads-painel-dados', async (orig) => ({ ...(await orig<object>()), buscarPainelAds: m.buscarPainelAds }));
 vi.mock('@/lib/sku-dossie-dados', () => ({ buscarCodigosMlbs: m.buscarCodigosMlbs, buscarUltimoOkAds: m.buscarUltimoOkAds }));
 vi.mock('@/lib/ads-metricas-dados', () => ({ buscarMetricasAds: m.buscarMetricasAds }));
-vi.mock('@/hooks/useVendas', () => ({ useVendas: () => q([]) }));
-vi.mock('@/hooks/useCustos', () => ({ useCustos: () => q(montarMapasCusto([])) }));
+vi.mock('@/hooks/useVendas', () => ({ useVendas: () => q(m.vendas) }));
+vi.mock('@/hooks/useCustos', () => ({ useCustos: () => q(montarMapasCusto(m.custos as never)) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => q({ nacional: 8, importado: 16, confirmada: true, ufEmpresa: null, internaPct: null }) }));
 vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => q([]) }));
@@ -60,6 +61,8 @@ beforeEach(() => {
   m.buscarUltimoOkAds.mockReset().mockResolvedValue(null);
   m.buscarMetricasAds.mockReset().mockImplementation(async (p: PedidoAdsMetricas) => respostaConta(p));
   m.catQ = q(CATALOGO);
+  m.vendas = [];
+  m.custos = [];
 });
 
 describe('useAdsPainel com useVendasSku real', () => {
@@ -148,5 +151,21 @@ describe('useAdsPainel com useVendasSku real', () => {
     await waitFor(() => expect(r3.result.current.blocos.grupos.isError).toBe(true));
     await waitFor(() => expect(r3.result.current.resultadoConta?.conta?.lucroAntes).toBe(0));
     expect(r3.result.current.isError).toBe(false);
+  });
+
+  // I3 pré-merge: venda sem origem fiscal só na janela anterior não bloqueia o resultado atual.
+  it.each(['nenhum', 'anterior'] as const)('comparar %s: origem não resolvida só na anterior → resultado atual liberado', async (comparar) => {
+    m.custos = [{ custo: 40, peso_gramas: 100, ml_variation_id: null, gtin: null, codigo: 'B1', atualizado_em: '2026-01-01',
+      familias: { ml_item_id: 'MLB-B1', origem: null } }];
+    m.vendas = [{ id: '1', order_id: 1, pack_id: null, status: 'paid', date_closed: new Date(Date.now() - 45 * 86_400_000).toISOString(),
+      total_amount: 100, cupom_vendedor: 0, liquido: 100, sale_fee_total: 0, estorno: 0, uf: 'SP', is_publiai: false,
+      canal: 'mercado_livre', itens: [{ id: 'x', ml_item_id: 'MLB-B1', variation_id: null, titulo: 'B1', codigo: 'B1', cor: null,
+        ean: null, quantity: 1, unit_price: 100, sale_fee: 0, is_publiai: false, cupom_vendedor: 0 }] }];
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 30 }, comparar), {
+      wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children) });
+    await waitFor(() => expect(r.result.current.resultadoConta?.conta).toBeTruthy());
+    expect(r.result.current.resultadoConta!.conta!.motivoFiscal).toBeNull();
+    expect(r.result.current.resultadoConta!.conta!.lucroAntes).toBe(0);
   });
 });
