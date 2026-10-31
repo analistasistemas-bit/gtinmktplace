@@ -351,7 +351,7 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
     expect(p.conta).toMatchObject({ custo: 100, naoIdentificado: null, naoIdentificadoPct: null, divergente: false });
     expect(p.conciliacao).toEqual({ estado: 'pendente',
       mensagem: 'A leitura atual do ML ainda não está conciliada com a coleta das famílias.',
-      coletadoEm: sync.ultimo_ok_em,
+      coletadoEm: sync.ultimo_ok_em, coletadaMotivo: null,
       coletada: { custo: 100, emFamilias: 50, compartilhado: 20, naoIdentificado: 30, naoIdentificadoPct: 0.3, divergente: false } });
   });
   it('conciliacao pendente: um centavo de diferença num dia já pende; a diferença nunca vira não identificado', () => {
@@ -362,13 +362,21 @@ describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', (
   it('conciliacao pendente: série coletada sem cobrir a janela → sem composição coletada', () => {
     const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-02', 40)] }), contaAoVivo: vivo(60, 40) });
     expect(p.conta).toMatchObject({ custo: 100, naoIdentificado: null });
-    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletada: null });
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletada: null, coletadaMotivo: 'cobertura' });
   });
   it('conciliacao pendente: grupos sem cobertura da janela, mesmo com custos iguais', () => {
     const s = { ...sync, ultimo_ok_em: '2026-09-02T14:00:00Z' };
     const p = montarPainelAds({ ...base({ sync: s, grupos }), contaAoVivo: vivo(60, 40) });
     expect(p.conta?.naoIdentificado).toBeNull();
-    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletadoEm: s.ultimo_ok_em });
+    // Grupos fora da cobertura não são gasto zero conhecido: a composição coletada também fica indisponível.
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletadoEm: s.ultimo_ok_em, coletada: null,
+      coletadaMotivo: 'cobertura' });
+  });
+  it('conciliacao pendente: cobertura dos grupos começa depois da janela e nenhum grupo → nunca 100% não identificado', () => {
+    const p = montarPainelAds({ ...base({ sync: { ...sync, cobertura_desde: '2026-09-03' } }), contaAoVivo: vivo(60, 40) });
+    expect(p.gruposCobertos).toBe(false);
+    expect(p.conta?.naoIdentificado).toBeNull();
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletada: null, coletadaMotivo: 'cobertura' });
   });
   it('conciliacao: sem contaAoVivo não há estado de conciliação (comportamento anterior)', () => {
     expect(montarPainelAds(base({ grupos })).conciliacao).toBeNull();

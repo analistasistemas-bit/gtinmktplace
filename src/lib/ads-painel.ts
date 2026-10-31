@@ -50,9 +50,11 @@ export interface ComposicaoConta { custo: number; emFamilias: number; compartilh
   naoIdentificado: number | null; naoIdentificadoPct: number | null; divergente: boolean }
 export const MSG_CONCILIACAO_PENDENTE = 'A leitura atual do ML ainda não está conciliada com a coleta das famílias.';
 /** Ao vivo × coleta (plano §5.6 item 5). Pendente: a conta ao vivo fica sem composição; a da última coleta segue
- *  à parte, identificada pelo horário (`coletada` null = série coletada sem cobrir a janela). */
+ *  à parte, identificada pelo horário. `coletada` null com motivo 'cobertura' = série da conta ou grupos coletados
+ *  sem cobrir a janela (grupo ausente não é gasto zero conhecido). */
 export type ConciliacaoConta = { estado: 'ok' }
-  | { estado: 'pendente'; mensagem: string; coletadoEm: string | null; coletada: ComposicaoConta | null };
+  | { estado: 'pendente'; mensagem: string; coletadoEm: string | null; coletada: ComposicaoConta | null;
+      coletadaMotivo: 'cobertura' | null };
 export interface PainelAds {
   estado: EstadoPainel; desatualizado: boolean;
   gruposCobertos: boolean;              // período inteiro dentro da cobertura dos grupos (mesma regra do dossiê)
@@ -240,8 +242,10 @@ export function montarPainelAds(p: {
     const coletadoC = new Map<string, number>();
     for (const d of contaDias) coletadoC.set(d.dia, coletadoC.has(d.dia) ? NaN : cents(d.cost));   // dia repetido não concilia
     const concilia = gruposCobertos && coletadaCobre && vivo.every((d) => coletadoC.get(d.dia) === cents(d.cost));
+    const coletadaOk = coletadaCobre && gruposCobertos;
     conciliacao = concilia ? { estado: 'ok' } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
-      coletadoEm: sync?.ultimo_ok_em ?? null, coletada: coletadaCobre ? composicao(somaColetada.custoC) : null };
+      coletadoEm: sync?.ultimo_ok_em ?? null, coletada: coletadaOk ? composicao(somaColetada.custoC) : null,
+      coletadaMotivo: coletadaOk ? null : 'cobertura' };
   }
 
   let conta: ContaPainel | null = null;
