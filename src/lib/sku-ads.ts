@@ -80,6 +80,13 @@ export function diasEntre(desde: string, ate: string): string[] {
  *  coletado_em: com o worker parado, o dia continua em aberto por mais velho que seja. */
 export const atribuicaoFinal = (dia: string, coletadoEm: string) => difDias(diaBRT(Date.parse(coletadoEm)), dia) >= 15;
 
+/** Primeiro dia da janela com atribuição ainda em aberto, pela leitura ao vivo (`lidoEm`); leitura inválida = toda a
+ *  janela em aberto. Mesma regra do dossiê, usada no gráfico da conta e no detalhe da campanha. */
+export function inicioAtribuicaoAberta(janela: { desde: string; ate: string }, lidoEm: string): string | undefined {
+  const lido = Number.isNaN(Date.parse(lidoEm)) ? null : lidoEm;
+  return diasEntre(janela.desde, janela.ate).find(d => lido === null || !atribuicaoFinal(d, lido));
+}
+
 /** Último dia BRT que a coleta ok leu (ela lê até D-1). */
 export const ultimoDiaColetado = (ultimoOkEm: string | null): string | null =>
   ultimoOkEm ? somarDias(diaBRT(Date.parse(ultimoOkEm)), -1) : null;

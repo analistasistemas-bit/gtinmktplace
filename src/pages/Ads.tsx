@@ -1,51 +1,64 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { CalendarClock, Megaphone } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, CalendarClock, CalendarX2, Megaphone, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdsPainel } from '@/hooks/useAdsPainel';
 import { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
-import { PERIODO_PADRAO_ADS, type DiasAds, type PeriodoAds } from '@/lib/ads-painel-dados';
+import {
+  MOTIVOS_PERIODO_ADS, PERIODO_PADRAO_ADS, resolverPeriodoAds, type DiasAds, type PeriodoAds,
+} from '@/lib/ads-painel-dados';
+import { indicadoresAds } from '@/lib/ads-metricas';
+import { ATALHO_ACIMA_EQUILIBRIO, contarFamiliasAds } from '@/lib/ads-apresentacao';
+import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
+import { PeriodoAdsSeletor, type CompararAds } from '@/components/ads/periodo-ads';
+import { FaixaKpis } from '@/components/ads/faixa-kpis';
+import { SerieDiaria } from '@/components/ads/serie-diaria';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
-import { GastosAssociados } from '@/components/ads/gastos-associados';
+import { IntegridadeAds } from '@/components/ads/integridade-ads';
 import { Aviso, AVISO } from '@/components/ads/aviso';
 import { AbaCampanhas } from '@/components/ads/campanhas/aba-campanhas';
+import type { PedidoBaseDetalhe } from '@/components/ads/campanhas/detalhe-campanha';
 import { contarFamiliasEmAlerta } from '@/components/ads/campanhas/formato-campanha';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
-const PRESETS: {
-  valor: '7' | '30' | '90' | 'mes_atual';
-  label: string;
-  periodo: PeriodoAds;
-}[] = [
-  { valor: '7', label: '7 dias', periodo: { tipo: 'preset', dias: 7 } },
-  { valor: '30', label: '30 dias', periodo: { tipo: 'preset', dias: 30 } },
-  { valor: '90', label: '90 dias', periodo: { tipo: 'preset', dias: 90 } },
-  { valor: 'mes_atual', label: 'Mês atual', periodo: { tipo: 'mes_atual' } },
-];
+// Contexto único (plano ads-redesign §3.1): período, comparação e aba valem para as duas abas e vivem na URL
+// (?aba=&periodo=7|30|90|mes_atual|range&desde=&ate=&comparar=). A preferência antiga só entra quando a URL não diz.
 const CHAVE = 'ads-painel-dias';
+const CHAVE_ABA = 'ads-aba';
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+function presetDe(v: string | null): PeriodoAds | null {
+  if (v === 'mes_atual') return { tipo: 'mes_atual' };
+  if (v === '7' || v === '30' || v === '90') return { tipo: 'preset', dias: Number(v) as DiasAds };
+  return null;
+}
 
 function periodoSalvo(): PeriodoAds {
   try {
-    const valor = localStorage.getItem(CHAVE);
-
-    if (valor === 'mes_atual') return { tipo: 'mes_atual' };
-
-    if (valor === '7' || valor === '30' || valor === '90') {
-      const dias: DiasAds = valor === '7' ? 7 : valor === '30' ? 30 : 90;
-      return { tipo: 'preset', dias };
-    }
+    return presetDe(localStorage.getItem(CHAVE)) ?? PERIODO_PADRAO_ADS;
   } catch {
     return PERIODO_PADRAO_ADS;
   }
-
-  return PERIODO_PADRAO_ADS;
 }
+
+/** Range bem formado passa como veio: ordem, futuro e retenção são do resolvedor, que mostra o motivo
+ *  (nunca troca por outra janela). Só parâmetro ausente ou ilegível recai na preferência. */
+function periodoDaUrl(p: URLSearchParams): PeriodoAds | null {
+  if (p.get('periodo') !== 'range') return presetDe(p.get('periodo'));
+  const desde = p.get('desde');
+  const ate = p.get('ate');
+  return desde && ate && DIA.test(desde) && DIA.test(ate) ? { tipo: 'range', desde, ate } : null;
+}
+
+const identidade = (p: PeriodoAds) =>
+  (p.tipo === 'preset' ? String(p.dias) : p.tipo === 'range' ? `range:${p.desde}:${p.ate}` : p.tipo);
 
 /** Dia literal YYYY-MM-DD → DD/MM/AAAA (sem `new Date`, que leria o dia em UTC). */
 const dataDia = (dia: string) =>
@@ -54,37 +67,48 @@ const dataDia = (dia: string) =>
 const BOTAO_ACAO = 'h-11 sm:h-8';
 
 type Aba = 'desempenho' | 'campanhas';
-const CHAVE_ABA = 'ads-aba';
+const abaValida = (v: string | null): Aba | null => (v === 'desempenho' || v === 'campanhas' ? v : null);
 // Desempenho sem dado para mostrar (ou campanha recém-criada): a aba útil é Campanhas.
 const ESTADOS_SEM_DADO: readonly string[] = ['sem_ads', 'aguardando_mes', 'sem_coleta', 'coletando'];
+// Sem acesso à Publicidade: a leitura da conta também é recusada; o aviso da página basta.
+const ESTADOS_SEM_ACESSO: readonly string[] = ['sem_permissao', 'sem_advertiser', 'sem_acesso'];
 
 function abaSalva(): Aba | null {
   try {
-    const v = localStorage.getItem(CHAVE_ABA);
-    return v === 'desempenho' || v === 'campanhas' ? v : null;
+    return abaValida(localStorage.getItem(CHAVE_ABA));
   } catch {
     return null;
   }
 }
 
 export default function Ads() {
-  const [periodo, setPeriodo] = useState<PeriodoAds>(periodoSalvo);
+  const [params, setParams] = useSearchParams();
+  const periodo = periodoDaUrl(params) ?? periodoSalvo();
+  const comparar: CompararAds = params.get('comparar') === 'nenhum' ? 'nenhum' : 'anterior';
   const {
     painel,
+    resultadoConta,
+    metricasConta,
     janela,
+    comparacao,
     situacaoPeriodo,
     historicoDesde,
+    ultimoOkEm,
     faturamentoConta,
+    blocos,
     isFetching,
     isError,
     refetch,
   } = useAdsPainel(periodo);
 
-  const [escolha, setEscolha] = useState<Aba | null>(abaSalva);
   const [automatica, setAutomatica] = useState<Aba | null>(null);
   const [foco, setFoco] = useState<string | null>(null);
+  // Contador do atalho "Ver famílias acima do equilíbrio": cada clique remonta o ranking já filtrado.
+  const [atalho, setAtalho] = useState(0);
 
-  // Sem escolha guardada, a aba é decidida uma única vez, quando o estado do painel já é conhecido (sem piscar).
+  // URL > escolha guardada > decisão automática (uma única vez, quando o estado do painel já é conhecido, sem
+  // piscar). A automática nunca vai para a URL e nunca vence uma escolha explícita, por mais tardia a resposta.
+  const escolha = abaValida(params.get('aba')) ?? abaSalva();
   const estadoPainel = situacaoPeriodo === 'aguardando_mes' ? 'aguardando_mes' : painel?.estado ?? (isError ? 'erro' : null);
   if (escolha === null && automatica === null && estadoPainel !== null) {
     setAutomatica(ESTADOS_SEM_DADO.includes(estadoPainel) ? 'campanhas' : 'desempenho');
@@ -93,72 +117,81 @@ export default function Ads() {
   const campanhasDados = useAdsCampanhas(aba === 'campanhas');
   const emAlerta = contarFamiliasEmAlerta(campanhasDados.campanhas);
 
+  const gravarUrl = (mudar: (p: URLSearchParams) => void) =>
+    setParams(atual => {
+      const p = new URLSearchParams(atual);
+      mudar(p);
+      return p;
+    }, { replace: true });
+
   const trocarAba = (proxima: Aba) => {
-    setEscolha(proxima);
+    gravarUrl(p => p.set('aba', proxima));
 
     try {
       localStorage.setItem(CHAVE_ABA, proxima);
     } catch {
-      // A escolha continua válida nesta visita.
+      // A escolha continua válida nesta visita (está na URL).
     }
   };
   const codigosComDesempenho = new Set((painel?.familias ?? []).map(f => f.codigoPai));
   const verDesempenho = (codigoPai: string) => {
     setFoco(codigoPai);
+    setAtalho(0);
     trocarAba('desempenho');
   };
 
-  const escolherPeriodo = (proximo: PeriodoAds) => {
-    setPeriodo(proximo);
-    setFoco(null);
+  const escolherContexto = ({ periodo: proximo, comparar: cmp }: { periodo: PeriodoAds; comparar: CompararAds }) => {
+    const valor = proximo.tipo === 'preset' ? String(proximo.dias) : proximo.tipo;
+    if (identidade(proximo) !== identidade(periodo)) {
+      setFoco(null);
+      setAtalho(0);
+    }
+    gravarUrl(p => {
+      p.set('periodo', valor);
+      if (proximo.tipo === 'range') {
+        p.set('desde', proximo.desde);
+        p.set('ate', proximo.ate);
+      } else {
+        p.delete('desde');
+        p.delete('ate');
+      }
+      if (cmp === 'nenhum') p.set('comparar', 'nenhum');
+      else p.delete('comparar');
+    });
 
+    // Preferência antiga só guarda presets: um range vive só na URL.
+    if (proximo.tipo === 'range') return;
     try {
-      localStorage.setItem(
-        CHAVE,
-        proximo.tipo === 'preset' ? String(proximo.dias) : 'mes_atual',
-      );
+      localStorage.setItem(CHAVE, valor);
     } catch {
       // A seleção continua válida nesta visita.
     }
   };
-  const atual = periodo.tipo === 'preset' ? String(periodo.dias) : 'mes_atual';
+  const escolherPeriodo = (proximo: PeriodoAds) => escolherContexto({ periodo: proximo, comparar });
+  const atual = periodo.tipo === 'preset' ? String(periodo.dias) : periodo.tipo;
 
-  const acoesPeriodo = (
-    <div className="w-full min-w-0 space-y-2 sm:w-auto">
-      <div
-        role="group"
-        aria-label="Período"
-        className="grid grid-cols-2 gap-2 sm:flex"
-      >
-        {PRESETS.map(p => {
-          const selecionado = atual === p.valor;
+  const pedido = useMemo<PedidoBaseDetalhe | null>(
+    () => (janela ? { desde: janela.desde, ate: janela.ate, comparar } : null),
+    [janela, comparar],
+  );
 
-          return (
-            <Button
-              key={p.valor}
-              size="sm"
-              variant={selecionado ? 'default' : 'outline'}
-              aria-pressed={selecionado}
-              className={BOTAO_ACAO}
-              onClick={() => escolherPeriodo(p.periodo)}
-            >
-              {p.label}
-            </Button>
-          );
-        })}
+  const provisoria = comparar === 'anterior' && metricasConta?.comparacao.estado === 'provisoria';
+  const contexto = (
+    <div className="mb-6 space-y-2">
+      <PeriodoAdsSeletor valor={periodo} comparar={comparar} onChange={escolherContexto} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
+        {janela && <span>{`${dataDia(janela.desde)} a ${dataDia(janela.ate)} · BRT`}</span>}
+        {janela && comparar === 'anterior' && comparacao?.tipo === 'pronta' && (
+          <span className="inline-flex items-center gap-1.5">
+            {`Comparado com ${dataDia(comparacao.janela.desde)} a ${dataDia(comparacao.janela.ate)}`}
+            {provisoria && <StatusPill tone="warning" title="O ML ainda pode revisar a atribuição de vendas.">Provisória</StatusPill>}
+          </span>
+        )}
+        {janela && comparar === 'anterior' && comparacao?.tipo === 'indisponivel' && (
+          <span>Sem comparação: o período anterior está fora do histórico disponível no ML.</span>
+        )}
+        {isFetching && <span role="status">Atualizando…</span>}
       </div>
-
-      {janela && (
-        <p className="text-xs text-muted-foreground tabular-nums sm:text-right">
-          {`${dataDia(janela.desde)} a ${dataDia(janela.ate)} · BRT`}
-        </p>
-      )}
-
-      {isFetching && painel && (
-        <p role="status" className="text-xs text-muted-foreground sm:text-right">
-          Atualizando…
-        </p>
-      )}
     </div>
   );
 
@@ -169,18 +202,10 @@ export default function Ads() {
     <Button asChild variant="outline" size="sm" className={BOTAO_ACAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
   );
 
-  // A ressalva causal fica junto ao resumo quando ele existe; sem resumo, vai para a procedência.
-  let temResumo = false;
-  let corpo;
-  if (isError) {
-    corpo = (
-      <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-        <p>Não foi possível carregar o painel de Ads.</p>
-        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar de novo</Button>
-      </div>
-    );
-  } else if (situacaoPeriodo === 'aguardando_mes') {
-    corpo = (
+  // Sem janela pronta não há número em nenhuma das abas.
+  let semPeriodo: ReactNode = null;
+  if (situacaoPeriodo === 'aguardando_mes') {
+    semPeriodo = (
       <EmptyState
         icon={CalendarClock}
         title="Aguardando o primeiro dia de Ads deste mês"
@@ -193,8 +218,105 @@ export default function Ads() {
         )}
       />
     );
+  } else if (situacaoPeriodo === 'invalido') {
+    const r = resolverPeriodoAds(periodo, new Date(), null);
+    semPeriodo = (
+      <EmptyState
+        icon={CalendarX2}
+        title="Período inválido"
+        description={r.tipo === 'invalido' ? MOTIVOS_PERIODO_ADS[r.motivo] : 'Escolha outro período.'}
+        action={(
+          <Button variant="outline" size="sm" className={BOTAO_ACAO} onClick={() => escolherPeriodo(PERIODO_PADRAO_ADS)}>
+            Ver mês atual
+          </Button>
+        )}
+      />
+    );
+  }
+
+  // ---- Conta inteira: os mesmos KPIs, gráfico e resultado nas duas abas ----
+  const kpiAtual = useMemo(
+    () => (metricasConta?.atual ? indicadoresAds(metricasConta.atual.resumo, faturamentoConta?.atual ?? null) : null),
+    [metricasConta, faturamentoConta],
+  );
+  const kpiAnterior = useMemo(
+    () => (comparar === 'anterior' && metricasConta?.anterior
+      ? indicadoresAds(metricasConta.anterior.resumo, faturamentoConta?.anterior ?? null) : null),
+    [comparar, metricasConta, faturamentoConta],
+  );
+  let kpis: ReactNode;
+  if (!metricasConta) {
+    kpis = blocos.conta.isError ? (
+      <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+        <p className="flex items-start gap-2">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+          Não foi possível ler as métricas da conta no Mercado Livre.
+        </p>
+        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar novamente</Button>
+      </div>
+    ) : <FaixaKpis atual={{}} anterior={null} comparacao="desligada" loading />;
+  } else if (!kpiAtual || (metricasConta.estado !== 'ok' && metricasConta.estado !== 'parcial')) {
+    kpis = <Aviso texto={AVISO[metricasConta.estado] ?? 'Não foi possível ler as métricas da conta neste período.'} />;
+  } else {
+    kpis = (
+      <>
+        <FaixaKpis atual={kpiAtual} anterior={kpiAnterior}
+          comparacao={comparar === 'nenhum' ? 'desligada' : metricasConta.comparacao.estado} />
+        {metricasConta.atual && (
+          <SerieDiaria serie={metricasConta.atual.serie} janela={metricasConta.atual.janela} completo={metricasConta.atual.completo}
+            provisorioDesde={inicioAtribuicaoAberta(metricasConta.atual.janela, metricasConta.atual.lidoEm)} />
+        )}
+      </>
+    );
+  }
+
+  const liberado = painel?.semaforoLiberado ?? false;
+  const contagem = painel ? contarFamiliasAds(painel.familias, liberado) : null;
+  const temAcima = contagem != null && contagem.acima + contagem.semEspaco > 0;
+  const verAcima = () => {
+    setFoco(null);
+    setAtalho(n => n + 1);
+    trocarAba('desempenho');
+  };
+
+  const resumo = (comComposicao: boolean) => {
+    if (!resultadoConta) {
+      // Falha já explicada no bloco (alerta da página ou do bloco); senão, o lugar do resultado fica reservado.
+      return isError || blocos.conta.isError ? null : <Skeleton aria-hidden className="h-48 w-full rounded-lg" />;
+    }
+    return (
+      <ResumoConta
+        conta={resultadoConta.conta}
+        motivo={blocos.conta.motivo ?? resultadoConta.motivo}
+        historicoDesde={historicoDesde}
+        faturamentoConta={faturamentoConta?.atual ?? null}
+        composicao={comComposicao ? painel?.conta ?? undefined : undefined}
+        onVerAcima={temAcima ? verAcima : undefined}
+      />
+    );
+  };
+
+  const blocoConta = (comComposicao: boolean) => (
+    <div className="space-y-6">
+      <section aria-labelledby="ads-conta-inteira" className="space-y-3">
+        <h2 id="ads-conta-inteira" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Conta inteira</h2>
+        {kpis}
+      </section>
+      {resumo(comComposicao)}
+    </div>
+  );
+
+  // ---- Desempenho: famílias e integridade ----
+  let corpo: ReactNode;
+  if (isError) {
+    corpo = (
+      <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
+        <p>Não foi possível carregar o painel de Ads.</p>
+        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar de novo</Button>
+      </div>
+    );
   } else if (!painel) {
-    corpo = <CarregandoMarca rotulo="Carregando" mensagem="Calculando o gasto e o resultado do período…" />;
+    corpo = <CarregandoMarca rotulo="Carregando" mensagem="Calculando o gasto e o resultado das famílias…" />;
   } else if (painel.estado === 'sem_coleta' || painel.estado === 'coletando') {
     corpo = <Aviso texto={AVISO[painel.estado]!} acao={verificar} />;
   } else if (painel.estado === 'sem_permissao' || painel.estado === 'sem_acesso') {
@@ -223,31 +345,23 @@ export default function Ads() {
       />
     );
   } else {
-    temResumo = painel.conta != null;
     corpo = (
       <>
-        {painel.desatualizado && (
-          <p role="status" className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-            Os dados de Ads estão desatualizados: a última coleta bem-sucedida foi há mais de 48 h.
-          </p>
-        )}
         {!painel.semaforoLiberado && (
           <p className="text-xs text-muted-foreground">Semáforo em validação: por ora o painel mostra o ACOS de equilíbrio de cada família como referência, sem verde ou vermelho.</p>
         )}
-        {painel.conta
-          ? <ResumoConta conta={painel.conta} composicao={painel.conta} historicoDesde={historicoDesde} faturamentoConta={faturamentoConta?.atual ?? null} />
-          : (
-            <section aria-label="Resumo da conta" className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-              <p>Total da conta indisponível: a coleta ainda não cobre este período.</p>
-            </section>
-          )}
-        {/* A key reinicia filtro e detalhes ao trocar seleção ou janela; refetch da mesma janela não muda a key. */}
-        <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}`} painel={painel} historicoDesde={historicoDesde} focoCodigoPai={foco} />
-        <GastosAssociados painel={painel} />
+        {/* A key reinicia filtro e detalhes ao trocar seleção, janela ou atalho; refetch da mesma janela não muda a key. */}
+        <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}:${atalho}`} painel={painel}
+          historicoDesde={historicoDesde} focoCodigoPai={foco} inicial={atalho > 0 ? ATALHO_ACIMA_EQUILIBRIO : undefined} />
+        {janela && (
+          <IntegridadeAds painel={painel} janelaDesde={janela.desde} historicoDesde={historicoDesde}
+            coletadoEm={ultimoOkEm} lidoEm={metricasConta?.atual?.lidoEm ?? null} />
+        )}
       </>
     );
   }
 
+  const semAcesso = painel != null && ESTADOS_SEM_ACESSO.includes(painel.estado);
   const contagemAlerta = (
     <StatusPill tone="warning" title={emAlerta === 1 ? '1 família em alerta' : `${emAlerta} famílias em alerta`}>
       <span aria-hidden>{emAlerta}</span>
@@ -256,10 +370,15 @@ export default function Ads() {
   );
   const desempenho = (
     <div className="space-y-6">
-      {corpo}
+      {semPeriodo ?? (
+        <>
+          {!semAcesso && blocoConta(true)}
+          {corpo}
+        </>
+      )}
       <div className="space-y-1 text-xs text-muted-foreground">
         <p>Despesa informada pela API de Ads do Mercado Livre.</p>
-        {!temResumo && <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>}
+        {!resultadoConta && <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>}
         <p>
           {historicoDesde
             ? `Vendas desde ${dataBRT(historicoDesde)}, quando a organização começou a vender pelo PubliAI.`
@@ -274,8 +393,14 @@ export default function Ads() {
       <PageHeader
         title="Ads"
         subtitle="Quanto o Ads custa e o que sobra depois dele."
-        actions={aba === 'desempenho' ? acoesPeriodo : undefined}
+        actions={(
+          <Button variant="outline" size="sm" className={BOTAO_ACAO} disabled={isFetching} onClick={() => refetch()}>
+            <RefreshCw aria-hidden className="h-4 w-4" />
+            Atualizar
+          </Button>
+        )}
       />
+      {contexto}
       {aba === null ? (
         <CarregandoMarca rotulo="Carregando" mensagem="Abrindo o Ads…" />
       ) : (
@@ -289,8 +414,10 @@ export default function Ads() {
           </TabsList>
           <TabsContent value="desempenho">{desempenho}</TabsContent>
           <TabsContent value="campanhas">
-            <AbaCampanhas dados={campanhasDados} verDesempenho={verDesempenho}
-              temDesempenho={codigo => codigosComDesempenho.has(codigo)} />
+            {semPeriodo ?? (
+              <AbaCampanhas dados={campanhasDados} pedido={pedido} conta={blocoConta(false)}
+                acoes={{ verDesempenho, temDesempenho: codigo => codigosComDesempenho.has(codigo) }} />
+            )}
           </TabsContent>
         </Tabs>
       )}

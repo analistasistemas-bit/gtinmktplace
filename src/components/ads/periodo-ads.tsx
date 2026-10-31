@@ -4,9 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  RETENCAO_ADS_DIAS,
+  MOTIVOS_PERIODO_ADS,
   resolverPeriodoAds,
-  type MotivoPeriodoInvalidoAds,
   type PeriodoAds,
 } from '@/lib/ads-painel-dados';
 
@@ -26,13 +25,6 @@ const PRESETS: { rotulo: string; periodo: PeriodoAds }[] = [
   { rotulo: '30 dias', periodo: { tipo: 'preset', dias: 30 } },
   { rotulo: '90 dias', periodo: { tipo: 'preset', dias: 90 } },
 ];
-
-const MOTIVOS: Record<MotivoPeriodoInvalidoAds, string> = {
-  data_invalida: 'Informe datas válidas nos dois campos.',
-  ordem: 'A data de início não pode ser depois do fim.',
-  futuro: 'O fim precisa ser até ontem (o Ads só tem dias completos).',
-  fora_da_retencao: `O Mercado Ads guarda só os últimos ${RETENCAO_ADS_DIAS} dias; escolha um início mais recente.`,
-};
 
 // Alvo de toque 44px e fonte 16px no mobile; compacto no desktop.
 const BOTAO = 'min-h-11 px-3 text-base sm:min-h-8 sm:px-2.5 sm:text-sm';
@@ -56,7 +48,7 @@ export function PeriodoAdsSeletor({ valor, comparar, onChange, agora }: Props) {
   const aplicar = () => {
     const periodo: PeriodoAds = { tipo: 'range', desde, ate };
     const r = resolverPeriodoAds(periodo, agora ?? new Date(), null);
-    if (r.tipo === 'invalido') return setErro(MOTIVOS[r.motivo]);
+    if (r.tipo === 'invalido') return setErro(MOTIVOS_PERIODO_ADS[r.motivo]);
     setErro(null);
     setAberto(false);
     onChange({ periodo, comparar });

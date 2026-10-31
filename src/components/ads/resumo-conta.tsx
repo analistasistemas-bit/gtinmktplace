@@ -117,9 +117,11 @@ function Ponto({ cor }: { cor: string }) {
   return <span aria-hidden className={cn('inline-block size-2 shrink-0 rounded-full', cor)} />;
 }
 
-/** Barra da margem: só com margem positiva (o domínio só calcula `margemConsumida` com lucro > 0). */
-function BarraMargem({ consumida }: { consumida: number }) {
+/** Barra da margem: só com margem positiva (o domínio só calcula `margemConsumida` com lucro > 0).
+ *  `completa` = custo real; sem ela o excesso fica neutro, sem cor de interpretação (plano §4.7). */
+function BarraMargem({ consumida, completa }: { consumida: number; completa: boolean }) {
   const excede = consumida > 1;
+  const corExcesso = completa ? 'bg-danger' : 'bg-muted-foreground/60';
   const rotulo = excede
     ? `Ads consumiu mais que a margem (${pct(consumida)})`
     : `Ads consumiu ${pct(consumida)} da margem; resultado ${pct(1 - consumida)}`;
@@ -127,7 +129,7 @@ function BarraMargem({ consumida }: { consumida: number }) {
     <div className="space-y-2">
       <div role="img" aria-label={rotulo} className="flex h-2.5 overflow-hidden rounded-full bg-muted">
         {excede ? (
-          <div className="h-full w-full bg-danger" />
+          <div className={cn('h-full w-full', corExcesso)} />
         ) : (
           <>
             <div className="h-full bg-primary motion-safe:transition-[width]" style={{ width: `${(1 - consumida) * 100}%` }} />
@@ -137,7 +139,7 @@ function BarraMargem({ consumida }: { consumida: number }) {
       </div>
       <div aria-hidden className={cn(LEGENDA, 'flex flex-col gap-1 sm:flex-row sm:justify-between')}>
         {excede ? (
-          <span className="flex items-center gap-2"><Ponto cor="bg-danger" />Ads consumiu mais que a margem ({pct(consumida)})</span>
+          <span className="flex items-center gap-2"><Ponto cor={corExcesso} />Ads consumiu mais que a margem ({pct(consumida)})</span>
         ) : (
           <>
             <span className="flex items-center gap-2"><Ponto cor="bg-primary" />Resultado {pct(1 - consumida)} da margem</span>
@@ -235,7 +237,7 @@ export function ResumoConta({ conta, motivo: motivoConta = null, historicoDesde,
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">{termos}</div>
       ))}
-      {conta && temPonte && conta.lucroAntes! > 0 && conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} />}
+      {conta && temPonte && conta.lucroAntes! > 0 && conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} completa={conta.fonteCusto === 'real'} />}
 
       {composicao && conta && (
         <div className="space-y-3">

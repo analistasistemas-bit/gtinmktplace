@@ -1,20 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Info, Loader2, Megaphone } from 'lucide-react';
+import { AlertTriangle, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
-import { KpiCard } from '@/components/ui/kpi-card';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import type { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
-import type { CampanhaVista } from '@/lib/ads-campanhas';
+import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { Aviso, AVISO } from '@/components/ads/aviso';
-import { BlocoCampanha } from './bloco-campanha';
+import type { PedidoAdsMetricas } from '../../../../supabase/functions/_shared/ads/metricas';
+import { TabelaCampanhas } from './tabela-campanhas';
+import { DetalheCampanha, type PedidoBaseDetalhe } from './detalhe-campanha';
+import { Competitividade } from './competitividade';
 import type { AcoesFamilia } from './familia-campanha';
 
-type Filtro = 'todas' | 'alerta' | 'sem_referencia';
 const BOTAO = 'h-11 sm:h-8';
-// Mesmo ajuste de alvo de toque do ranking (o (i) do KpiCard tem 38 px).
-const CARD_FILTRO = 'sm:min-w-36 max-sm:[&_button]:p-[15px] max-sm:[&_button]:-m-[15px]';
+const PEDE_CANAIS: readonly string[] = ['sem_conexao', 'sem_permissao', 'sem_acesso'];
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
 
@@ -22,108 +21,124 @@ const lidoAs = (iso: string) =>
   new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
     .format(new Date(iso));
 
-// "Sem referência" só em campanha ativa: a margem de pausada não é calculada por definição.
-const PASSA: Record<Filtro, (f: CampanhaVista['familias'][number], c: CampanhaVista) => boolean> = {
-  todas: () => true,
-  alerta: f => f.alertas.length > 0,
-  sem_referencia: (f, c) => c.status === 'active' && f.equilibrioPct == null,
-};
-
-function Carregando() {
-  return <CarregandoMarca rotulo="Carregando campanhas" mensagem="Lendo as campanhas no Mercado Livre…" />;
+function AbrirCanais() {
+  return <Button asChild variant="outline" size="sm" className={BOTAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>;
 }
 
-/** Aba Campanhas: estado atual das campanhas no ML agrupado por família (emenda ADR-0179). */
-export function AbaCampanhas({ dados, ...acoes }: { dados: DadosCampanhas } & AcoesFamilia) {
-  const [filtro, setFiltro] = useState<Filtro>('todas');
-  const { resposta, campanhas, isLoading, isError, erro, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
+/**
+ * Aba Campanhas por período (plano ads-redesign §3.2/3.4/4.4). A página entrega o bloco da conta inteira (KPIs,
+ * gráfico e resultado da conta: nunca apresentado como resultado das campanhas); aqui ficam a tabela do período
+ * (ads-metricas, escopo 'campanhas') e o detalhe. A configuração atual (ads-campanhas) só alimenta o detalhe e o
+ * aviso de alertas: carregar ou falhar nela não esconde a tabela.
+ */
+export function AbaCampanhas({ dados, pedido, conta, acoes }: {
+  dados: DadosCampanhas;
+  /** Período e comparação compartilhados pela página; null = sem janela pronta. */
+  pedido: PedidoBaseDetalhe | null;
+  conta?: ReactNode;
+  acoes?: AcoesFamilia;
+}) {
+  const [aberta, setAberta] = useState<{ id: number; nome: string } | null>(null);
+  const consulta = useMemo<PedidoAdsMetricas | null>(() => (pedido ? { ...pedido, escopo: 'campanhas' } : null), [pedido]);
+  const metricas = useAdsMetricas(consulta, consulta !== null);
+  const { resposta, campanhas, isError, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
 
-  if (isError) {
-    return (
-      <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-        <p>Não foi possível ler as campanhas no Mercado Livre.</p>
-        {erro?.message && <p className="mt-1 text-xs text-danger/80">Detalhe: {erro.message}</p>}
-        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={tentarDeNovo}>Tentar de novo</Button>
+  let tabela: ReactNode;
+  if (metricas.isError) {
+    tabela = (
+      <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+        <p className="flex items-start gap-2">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+          Não foi possível ler as campanhas do período no Mercado Livre.
+        </p>
+        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO}`} onClick={() => void metricas.refetch()}>Tentar novamente</Button>
       </div>
     );
-  }
-  if (isLoading || !resposta || !campanhas) return <Carregando />;
-  if (resposta.estado !== 'ok') {
-    const texto = AVISO[resposta.estado] ?? 'Não foi possível ler as campanhas.';
-    const precisaCanais = resposta.estado === 'sem_conexao' || resposta.estado === 'sem_permissao' || resposta.estado === 'sem_acesso';
-    return (
-      <Aviso texto={texto} acao={precisaCanais && (
-        <Button asChild variant="outline" size="sm" className={BOTAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
-      )} />
-    );
-  }
-  if (campanhas.length === 0) {
-    return (
-      <EmptyState icon={Megaphone} title="Nenhuma campanha ativa ou pausada"
-        description="Quando você criar uma campanha no Mercado Ads, ela aparece aqui com os produtos e a margem de cada um." />
+  } else if (!metricas.data) {
+    tabela = <CarregandoMarca rotulo="Carregando campanhas" mensagem="Lendo as campanhas do período…" />;
+  } else if (metricas.data.estado !== 'ok' && metricas.data.estado !== 'parcial') {
+    const estado = metricas.data.estado;
+    tabela = <Aviso texto={AVISO[estado] ?? 'Não foi possível ler as campanhas deste período.'} acao={PEDE_CANAIS.includes(estado) && <AbrirCanais />} />;
+  } else {
+    const nomes = new Map(metricas.data.campanhas.map(c => [c.id, c.nome]));
+    tabela = (
+      <TabelaCampanhas campanhas={metricas.data.campanhas} comparacao={metricas.data.comparacao}
+        onAbrir={id => setAberta({ id, nome: nomes.get(id) ?? `Campanha ${id}` })} />
     );
   }
 
-  const todas = campanhas.flatMap(c => c.familias.map(f => ({ f, c })));
-  const emAlerta = todas.filter(({ f, c }) => PASSA.alerta(f, c)).length;
-  const semRef = todas.filter(({ f, c }) => PASSA.sem_referencia(f, c)).length;
-  const alternar = (alvo: Filtro) => setFiltro(atual => (atual === alvo ? 'todas' : alvo));
-  const filtrando = filtro !== 'todas';
-  const visiveis = campanhas
-    .map(c => ({ ...c, familias: c.familias.filter(f => PASSA[filtro](f, c)) }))
-    .filter(c => !filtrando || c.familias.length > 0);
+  // Configuração atual: só o que ela acrescenta (alertas, avisos de margem e horário da leitura).
+  const ok = resposta?.estado === 'ok' && campanhas;
+  const comAlerta = ok ? campanhas.map(c => ({ c, n: c.familias.filter(f => f.alertas.length > 0).length })).filter(x => x.n > 0) : [];
+  // Carregando ou sem conexão: nada a acrescentar (a tabela já mostra o aviso da conexão).
+  const configuracao = isError && (
+    <p role="status" className="flex flex-wrap items-center gap-2 text-sm">
+      <AlertTriangle aria-hidden className="size-4 shrink-0 text-warning" />
+      Configuração atual indisponível: estado, orçamento e produtos de cada campanha não foram lidos.
+      <Button variant="outline" size="sm" className={BOTAO} onClick={tentarDeNovo}>Tentar de novo</Button>
+    </p>
+  );
 
   return (
     <div className="space-y-6">
-      {!resposta.aliquotasConfirmadas && (
-        <p role="status" className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
-          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-          <span>Confirme as alíquotas de imposto em <Link to="/configuracoes" className="font-medium underline underline-offset-2">Configurações</Link> para ver a margem.</span>
-        </p>
-      )}
-      {resposta.projecaoLimitada && (
-        <p role="status" className="flex items-start gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2 text-sm">
-          <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
-          Alguns anúncios ficaram fora da projeção de margem nesta leitura.
-        </p>
-      )}
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-        <KpiCard size="compact" label="Famílias" infoKey="Todas::Campanhas" value={todas.length}
-          ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className={CARD_FILTRO} />
-        <KpiCard size="compact" label="Em alerta" infoKey="Em alerta::Campanhas" value={emAlerta} tom="warning"
-          ativo={filtro === 'alerta'} onClick={() => alternar('alerta')} desabilitado={emAlerta === 0} className={CARD_FILTRO} />
-        <KpiCard size="compact" label="Sem referência" infoKey="Sem referência::Campanhas" value={semRef}
-          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} desabilitado={semRef === 0} className={CARD_FILTRO} />
-      </div>
-      {visiveis.length === 0 ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-          <p>Nenhuma família neste filtro.</p>
-          <Button type="button" variant="outline" size="sm" className={BOTAO} onClick={() => setFiltro('todas')}>Ver todas</Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {visiveis.map(c => <BlocoCampanha key={c.id} c={c} filtrando={filtrando} {...acoes} />)}
-        </div>
-      )}
+      {conta}
+      <section aria-labelledby="ads-campanhas-titulo" className="space-y-3">
+        <h2 id="ads-campanhas-titulo" className="text-h3">Campanhas no período</h2>
+        {ok && !resposta.aliquotasConfirmadas && (
+          <p role="status" className="flex items-start gap-2 text-sm">
+            <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+            <span>Confirme as alíquotas de imposto em <Link to="/configuracoes" className="font-medium underline underline-offset-2">Configurações</Link> para ver a margem.</span>
+          </p>
+        )}
+        {ok && resposta.projecaoLimitada && (
+          <p role="status" className="flex items-start gap-2 text-sm">
+            <Info aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
+            Alguns anúncios ficaram fora da projeção de margem nesta leitura.
+          </p>
+        )}
+        {comAlerta.length > 0 && (
+          <div role="status" className="flex flex-wrap items-center gap-2 text-sm">
+            <AlertTriangle aria-hidden className="size-4 shrink-0 text-warning" />
+            <span>Famílias em alerta na configuração atual:</span>
+            {comAlerta.map(({ c, n }) => (
+              <Button key={c.id} type="button" variant="outline" size="sm" className={BOTAO}
+                onClick={() => setAberta({ id: c.id, nome: c.nome })}>
+                {c.nome} · {n === 1 ? '1 família' : `${n} famílias`}
+              </Button>
+            ))}
+          </div>
+        )}
+        {configuracao}
+        {tabela}
+      </section>
+
       <div className="space-y-3 text-xs text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="tabular-nums">Lido às {lidoAs(resposta.lidoEm)}</span>
-          <Button type="button" variant="outline" size="sm" className={BOTAO} disabled={atualizando} onClick={() => void atualizar()}>
-            {atualizando && <Loader2 aria-hidden className="h-4 w-4 animate-spin" />}
-            {atualizando ? 'Atualizando…' : 'Atualizar'}
-          </Button>
-          {erroAtualizar && (
-            <span role="alert" className="inline-flex items-center gap-1.5 text-warning">
-              <AlertTriangle aria-hidden className="size-3.5 shrink-0" />
-              Não foi possível atualizar agora; os dados acima são da última leitura.
-            </span>
-          )}
-        </div>
+        {ok && (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="tabular-nums">Configuração lida às {lidoAs(resposta.lidoEm)}</span>
+            <Button type="button" variant="outline" size="sm" className={BOTAO} disabled={atualizando} onClick={() => void atualizar()}>
+              {atualizando && <Loader2 aria-hidden className="h-4 w-4 animate-spin" />}
+              {atualizando ? 'Atualizando…' : 'Atualizar configuração'}
+            </Button>
+            {erroAtualizar && (
+              <span role="alert" className="inline-flex items-center gap-1.5 text-foreground">
+                <AlertTriangle aria-hidden className="size-3.5 shrink-0 text-warning" />
+                Não foi possível atualizar agora; a configuração exibida é da última leitura.
+              </span>
+            )}
+          </div>
+        )}
         <div className="space-y-1">
-          <p>Estado atual das campanhas no Mercado Livre; gasto e resultado ficam em Desempenho.</p>
+          <p>Métricas do período informadas pela API de Ads do Mercado Livre; estado, orçamento e produtos são a configuração atual.</p>
           <p>Margem para Ads = ACOS máximo que o produto aguenta sem prejuízo no preço atual.</p>
         </div>
       </div>
+
+      {aberta && pedido && (
+        <DetalheCampanha campanhaId={aberta.id} nome={aberta.nome} pedido={pedido}
+          campanha={campanhas?.find(c => c.id === aberta.id) ?? null} aberto onFechar={() => setAberta(null)}
+          competitividade={<Competitividade campanhaId={aberta.id} pedido={pedido} />} acoes={acoes} />
+      )}
     </div>
   );
 }

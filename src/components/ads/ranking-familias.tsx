@@ -230,12 +230,15 @@ const CARD_FILTRO = 'sm:min-w-36 max-sm:[&_button]:p-[15px] max-sm:[&_button]:-m
 
 /** Ranking por gasto (ordem do domínio) com os filtros por semáforo; filtro e expansões são locais e a página
  *  reinicia tudo pela `key` quando a seleção ou a janela mudam. */
-export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
+export function RankingFamilias({ painel, historicoDesde, focoCodigoPai, inicial }: {
   painel: PainelAds; historicoDesde: string | null; focoCodigoPai?: string | null;
+  /** Filtro e ordem iniciais (ex.: atalho "Ver famílias acima do equilíbrio"); a página remonta pela `key`. */
+  inicial?: { filtro: FiltroFamiliasAds; coluna: ColunaFamiliasAds; direcao: DirecaoAds };
 }) {
-  const [filtro, setFiltro] = useState<FiltroFamiliasAds>('todas');
+  const [filtro, setFiltro] = useState<FiltroFamiliasAds>(inicial?.filtro ?? 'todas');
   const [busca, setBusca] = useState('');
-  const [ordem, setOrdem] = useState<{ coluna: ColunaFamiliasAds; direcao: DirecaoAds }>({ coluna: 'investimento', direcao: 'desc' });
+  const [ordem, setOrdem] = useState<{ coluna: ColunaFamiliasAds; direcao: DirecaoAds }>(
+    inicial ? { coluna: inicial.coluna, direcao: inicial.direcao } : { coluna: 'investimento', direcao: 'desc' });
   const { conta, familias, semaforoLiberado: liberado } = painel;
   const contagem = contarFamiliasAds(familias, liberado);
   const acima = contagem.acima + contagem.semEspaco;   // mesma regra do filtro `acima`

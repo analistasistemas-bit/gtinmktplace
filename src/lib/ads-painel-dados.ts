@@ -47,6 +47,14 @@ export const PERIODO_PADRAO_ADS: PeriodoAds = {
 /** Retenção medida do Mercado Ads (spike 058): date_from = hoje BRT − 91 retorna 200; hoje − 92 retorna 400. */
 export const RETENCAO_ADS_DIAS = 91;
 
+/** Texto de cada motivo de período inválido (seletor e página do /ads). */
+export const MOTIVOS_PERIODO_ADS: Record<MotivoPeriodoInvalidoAds, string> = {
+  data_invalida: 'Informe datas válidas nos dois campos.',
+  ordem: 'A data de início não pode ser depois do fim.',
+  futuro: 'O fim precisa ser até ontem (o Ads só tem dias completos).',
+  fora_da_retencao: `O Mercado Ads guarda só os últimos ${RETENCAO_ADS_DIAS} dias; escolha um início mais recente.`,
+};
+
 const diaReal = (d: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && somarDias(d, 0) === d;
 

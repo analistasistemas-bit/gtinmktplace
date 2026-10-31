@@ -12,7 +12,7 @@ import { FaixaKpis } from '@/components/ads/faixa-kpis';
 import { SerieDiaria } from '@/components/ads/serie-diaria';
 import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { fmtBRL } from '@/lib/formato';
-import { atribuicaoFinal, diasEntre } from '@/lib/sku-ads';
+import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
 import { cn } from '@/lib/utils';
 import {
   compararIndicadorAds, indicadoresAds,
@@ -23,6 +23,7 @@ import type {
   AnuncioPeriodoAds, MotivoMetricaAds, PedidoAdsMetricas, ValorAds,
 } from '../../../../supabase/functions/_shared/ads/metricas';
 import { BlocoCampanha } from './bloco-campanha';
+import type { AcoesFamilia } from './familia-campanha';
 import { fmtPontos, rotuloEstrategia } from './formato-campanha';
 
 // Detalhe de uma campanha (plano ads-redesign §3.5/4.4/4.5, seção 9 item 1). Sheet à direita no desktop e tela
@@ -40,6 +41,8 @@ interface Props {
   onFechar: () => void;
   /** Seção Competitividade (Task 32). */
   competitividade?: ReactNode;
+  /** "Ver desempenho" das famílias atuais: abre a análise global da família no mesmo período (plano §3.5). */
+  acoes?: AcoesFamilia;
 }
 
 type Direcao = 'asc' | 'desc';
@@ -295,13 +298,7 @@ function Configuracao({ c }: { c: CampanhaVista }) {
   );
 }
 
-/** Primeiro dia da janela cuja atribuição ainda está em aberto (regra do dossiê: fecha 15+ dias após a leitura). */
-function inicioAtribuicaoAberta(janela: { desde: string; ate: string }, lidoEm: string): string | undefined {
-  const lido = Number.isNaN(Date.parse(lidoEm)) ? null : lidoEm;
-  return diasEntre(janela.desde, janela.ate).find(d => lido === null || !atribuicaoFinal(d, lido));
-}
-
-export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, onFechar, competitividade }: Props) {
+export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, onFechar, competitividade, acoes }: Props) {
   const consulta = useMemo<PedidoAdsMetricas>(
     () => ({ desde: pedido.desde, ate: pedido.ate, comparar: pedido.comparar, escopo: 'campanha', campanhaId }),
     [pedido.desde, pedido.ate, pedido.comparar, campanhaId],
@@ -372,7 +369,7 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
               <p className="text-sm text-muted-foreground">
                 Produtos patrocinados atualmente. A composição pode ter mudado durante o período.
               </p>
-              <BlocoCampanha c={campanha} filtrando={false} />
+              <BlocoCampanha c={campanha} filtrando={false} {...acoes} />
             </Secao>
           )}
         </div>

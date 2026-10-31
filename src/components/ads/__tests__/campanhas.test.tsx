@@ -6,6 +6,9 @@ import { LinhaMlb } from '@/components/ads/campanhas/linha-mlb';
 import { BlocoCampanha } from '@/components/ads/campanhas/bloco-campanha';
 import { AbaCampanhas, type DadosCampanhas } from '@/components/ads/campanhas/aba-campanhas';
 import type { AnuncioPatrocinado, CampanhaVista, FamiliaCampanha } from '@/lib/ads-campanhas';
+import { useAdsMetricas } from '@/hooks/useAdsMetricas';
+
+vi.mock('@/hooks/useAdsMetricas', () => ({ useAdsMetricas: vi.fn() }));
 
 const anuncio = (over: Partial<AnuncioPatrocinado> = {}): AnuncioPatrocinado => ({
   mlb: 'MLB1', campanhaId: 1, grupoId: null, statusAds: 'active', catalogo: false, titulo: 'Camiseta Azul',
@@ -175,42 +178,65 @@ describe('BlocoCampanha', () => {
 });
 
 describe('AbaCampanhas', () => {
+  const PEDIDO = { desde: '2026-09-04', ate: '2026-10-03', comparar: 'anterior' as const };
+  const blocoMetricas = (cost: number) => ({
+    janela: { desde: PEDIDO.desde, ate: PEDIDO.ate }, resumo: { cost: { valor: cost, motivo: null } }, serie: [], completo: true,
+    lidoEm: '2026-10-04T12:00:00Z',
+  });
+  const metricas = (over: Record<string, unknown> = {}) => ({
+    data: { ok: true, estado: 'ok', escopo: 'campanhas', atual: null, anterior: null,
+      campanhas: [{ id: 1, nome: 'Campanha Verão', statusAtual: 'active', atual: blocoMetricas(42), anterior: null }],
+      comparacao: { estado: 'desligada', motivo: null }, disponibilidade: { desde: '2026-04-01', ate: '2026-10-03', fuso: 'America/Sao_Paulo' }, avisos: [] },
+    isLoading: false, isFetching: false, isError: false, error: null, refetch: vi.fn(), ...over,
+  });
   const dados = (over: Partial<DadosCampanhas> = {}, campanhas: CampanhaVista[] | null = [campanha()]): DadosCampanhas => ({
     resposta: { ok: true, estado: 'ok', lidoEm: '2026-10-20T15:05:00Z', aliquotasConfirmadas: true, projecaoLimitada: false,
       publicadosPorFamilia: {}, campanhas: [], anuncios: [] },
     campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(), ...over,
   });
-  const aba = (d: DadosCampanhas) => pagina(<AbaCampanhas dados={d} />);
+  const aba = (d: DadosCampanhas, m = metricas()) => {
+    vi.mocked(useAdsMetricas).mockReturnValue(m as never);
+    return pagina(<AbaCampanhas dados={d} pedido={PEDIDO} conta={<p>Bloco da conta</p>} />);
+  };
 
-  it('carregando: esqueleto', () => {
-    aba(dados({ isLoading: true, resposta: null, campanhas: null }));
+  it('tabela do período pede o escopo campanhas com o período da página, depois do bloco da conta', () => {
+    aba(dados());
+    expect(vi.mocked(useAdsMetricas)).toHaveBeenLastCalledWith({ ...PEDIDO, escopo: 'campanhas' }, true);
+    expect(screen.getByText('Bloco da conta')).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Campanha Verão/ })).toHaveTextContent(/R\$\s*42,00/);
+  });
+  it('sem período pronto não consulta', () => {
+    vi.mocked(useAdsMetricas).mockReturnValue(metricas({ data: undefined, isLoading: true }) as never);
+    pagina(<AbaCampanhas dados={dados()} pedido={null} />);
+    expect(vi.mocked(useAdsMetricas)).toHaveBeenLastCalledWith(null, false);
+  });
+  it('carregando as métricas: esqueleto', () => {
+    aba(dados(), metricas({ data: undefined, isLoading: true }));
     expect(screen.getByRole('status', { name: 'Carregando campanhas' })).toBeInTheDocument();
   });
-  it('erro: alerta com a mensagem e Tentar de novo', () => {
-    const tentarDeNovo = vi.fn();
-    aba(dados({ isError: true, erro: new Error('Falhou no ML'), tentarDeNovo }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Falhou no ML');
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
-    expect(tentarDeNovo).toHaveBeenCalled();
+  it('erro das métricas: alerta e Tentar novamente', () => {
+    const m = metricas({ data: undefined, isError: true });
+    aba(dados(), m);
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível ler as campanhas do período no Mercado Livre.');
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(m.refetch).toHaveBeenCalled();
   });
-  it('Atualizar que falhou: aviso discreto, dados da última leitura ficam', () => {
-    aba(dados({ erroAtualizar: new Error('rede') }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível atualizar agora; os dados acima são da última leitura.');
-    expect(screen.getByRole('row', { name: /Camiseta/ })).toBeInTheDocument();
-  });
-  it('sem_conexao: pede para conectar em Canais', () => {
-    aba(dados({ resposta: { ok: true, estado: 'sem_conexao' }, campanhas: [] }));
+  it('sem_conexao nas métricas: pede para conectar em Canais', () => {
+    const m = metricas();
+    aba(dados(), { ...m, data: { ...m.data, estado: 'sem_conexao', campanhas: [] } });
     expect(screen.getByText('Conecte sua conta do Mercado Livre em Canais para ver as campanhas.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Abrir Canais' })).toHaveAttribute('href', '/configuracoes/canais');
   });
-  it.each(['sem_advertiser', 'sem_acesso', 'sem_permissao'] as const)('%s usa o aviso da página', estado => {
-    aba(dados({ resposta: { ok: true, estado }, campanhas: [] }));
-    expect(screen.getByText(/Mercado Livre|anunciante|conexão/)).toBeInTheDocument();
-  });
-  it('zero campanhas: estado vazio', () => {
-    aba(dados({}, []));
-    expect(screen.getByText('Nenhuma campanha ativa ou pausada')).toBeInTheDocument();
-    expect(screen.getByText(/Quando você criar uma campanha no Mercado Ads/)).toBeInTheDocument();
+  it('configuração carregando ou com erro não esconde a tabela do período', () => {
+    const tentarDeNovo = vi.fn();
+    const { unmount } = aba(dados({ isLoading: true, resposta: null, campanhas: null }));
+    expect(screen.getByRole('row', { name: /Campanha Verão/ })).toBeInTheDocument();
+    unmount();
+    aba(dados({ isError: true, erro: new Error('Falhou no ML'), tentarDeNovo }));
+    expect(screen.getByRole('row', { name: /Campanha Verão/ })).toBeInTheDocument();
+    expect(screen.getByText(/Configuração atual indisponível/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(tentarDeNovo).toHaveBeenCalled();
   });
   it('avisos de alíquota e de projeção limitada', () => {
     const base = dados();
@@ -218,41 +244,31 @@ describe('AbaCampanhas', () => {
     expect(screen.getByRole('link', { name: 'Configurações' })).toHaveAttribute('href', '/configuracoes');
     expect(screen.getByText('Alguns anúncios ficaram fora da projeção de margem nesta leitura.')).toBeInTheDocument();
   });
-  it('rodapé: lido às (BRT), Atualizar e notas', () => {
+  it('rodapé: configuração lida às (BRT), Atualizar configuração e notas', () => {
     const atualizar = vi.fn();
     aba(dados({ atualizar }));
-    expect(screen.getByText('Lido às 12:05')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }));
+    expect(screen.getByText('Configuração lida às 12:05')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar configuração' }));
     expect(atualizar).toHaveBeenCalled();
     expect(screen.getByText(/Margem para Ads = ACOS máximo/)).toBeInTheDocument();
+    expect(screen.queryByText(/ficam em Desempenho/)).not.toBeInTheDocument();
   });
-  it('Atualizar desabilitado enquanto atualiza', () => {
-    aba(dados({ atualizando: true }));
+  it('Atualizar desabilitado enquanto atualiza; falha mantém a última leitura', () => {
+    aba(dados({ atualizando: true, erroAtualizar: new Error('rede') }));
     expect(screen.getByRole('button', { name: 'Atualizando…' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível atualizar agora; a configuração exibida é da última leitura.');
   });
-  it('filtros: Em alerta e Sem referência filtram as famílias; sem resultado oferece Ver todas', () => {
-    const alerta = familia({ codigoPai: 'A', nome: 'Com alerta', alertas: ['roas_acima_margem'] });
-    const semRef = familia({ codigoPai: 'S', nome: 'Sem ref', equilibrioPct: null, motivoEquilibrio: 'sem_custo' });
-    const ok = familia({ codigoPai: 'O', nome: 'Normal' });
-    aba(dados({}, [campanha({ familias: [alerta, semRef, ok] })]));
-    const tabela = () => within(screen.getByRole('table'));
-    expect(tabela().getAllByRole('row')).toHaveLength(4);
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em alerta' }));
-    expect(tabela().getByRole('row', { name: /Com alerta/ })).toBeInTheDocument();
-    expect(tabela().queryByRole('row', { name: /Normal/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Remover filtro Em alerta' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Sem referência' }));
-    expect(tabela().getByRole('row', { name: /Sem ref/ })).toBeInTheDocument();
-    expect(tabela().queryByRole('row', { name: /Com alerta/ })).not.toBeInTheDocument();
+  it('famílias em alerta levam ao detalhe da campanha com os produtos atuais', () => {
+    aba(dados({}, [campanha({ familias: [familia({ alertas: ['patrocinado_parado'] })] })]));
+    fireEvent.click(screen.getByRole('button', { name: 'Campanha Verão · 1 família' }));
+    const detalhe = within(screen.getByRole('dialog'));
+    expect(detalhe.getAllByRole('heading', { name: 'Campanha Verão' })[0]).toBeInTheDocument();
+    expect(detalhe.getByText('Produtos patrocinados atualmente')).toBeInTheDocument();
   });
-  it('filtro ativo cujos dados deixam de ter famílias mostra vazio com Ver todas', () => {
-    const comAlerta = campanha({ familias: [familia({ alertas: ['patrocinado_parado'] })] });
-    const { rerender } = aba(dados({}, [comAlerta]));
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em alerta' }));
-    // Após "Atualizar", a leitura nova não traz mais alertas: o filtro continua ligado.
-    rerender(<MemoryRouter><AbaCampanhas dados={dados({}, [campanha()])} /></MemoryRouter>);
-    expect(screen.getByText('Nenhuma família neste filtro.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));
-    expect(screen.getByRole('table')).toBeInTheDocument();
+  it('abrir pela tabela usa o nome do período e a configuração atual da mesma campanha', () => {
+    aba(dados());
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Campanha Verão' })[0]);
+    expect(within(screen.getByRole('dialog')).getByText('Configuração atual')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).queryByText(/não está mais entre as campanhas/)).not.toBeInTheDocument();
   });
 });

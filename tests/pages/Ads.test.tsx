@@ -1,14 +1,23 @@
+import { cloneElement, type ReactElement } from 'react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { PainelAds } from '@/lib/ads-painel';
 import type { RetornoAdsPainel } from '@/hooks/useAdsPainel';
 import { PERIODO_PADRAO_ADS } from '@/lib/ads-painel-dados';
+import type { BlocoAdsMetricas, PedidoAdsMetricas, RespostaAdsMetricas } from '../../supabase/functions/_shared/ads/metricas';
 
 const hook = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/useAdsPainel', () => ({ useAdsPainel: hook }));
 const hookCampanhas = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/useAdsCampanhas', () => ({ useAdsCampanhas: hookCampanhas }));
+const hookMetricas = vi.hoisted(() => vi.fn());
+vi.mock('@/hooks/useAdsMetricas', () => ({ useAdsMetricas: hookMetricas }));
+// Em jsdom o ResponsiveContainer fica 0x0: tamanho fixo para o gráfico existir.
+vi.mock('recharts', async (orig) => ({
+  ...(await orig<typeof import('recharts')>()),
+  ResponsiveContainer: ({ children }: { children: ReactElement }) => cloneElement(children, { width: 800, height: 280 } as never),
+}));
 import Ads from '@/pages/Ads';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 
@@ -28,15 +37,31 @@ const PAINEL: PainelAds = {
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
 };
+const bloco = (resumo: BlocoAdsMetricas['resumo'] = {}): BlocoAdsMetricas => ({
+  janela: { desde: '2026-09-04', ate: '2026-10-03' }, resumo, serie: [], completo: true, lidoEm: '2026-10-04T12:00:00Z',
+});
+const respostaMetricas = (extra: Partial<RespostaAdsMetricas> = {}): RespostaAdsMetricas => ({
+  ok: true, estado: 'ok', escopo: 'conta', atual: bloco(), anterior: null, campanhas: [],
+  comparacao: { estado: 'desligada', motivo: null },
+  disponibilidade: { desde: '2026-04-01', ate: '2026-10-03', fuso: 'America/Sao_Paulo' }, avisos: [], ...extra,
+});
+/** Mostra a URL atual (aba/período/comparação vivem nela). */
+function Local() {
+  const l = useLocation();
+  return <output data-testid="local">{l.search}</output>;
+}
 const montar = (
   painel: PainelAds | null = PAINEL,
   extra: Partial<RetornoAdsPainel> = {},
   // Os testes de Desempenho fixam a aba; os da aba inicial passam null (nenhuma escolha guardada).
   abaGuardada: 'desempenho' | 'campanhas' | null = 'desempenho',
+  url = '/ads',
 ) => {
   try { if (abaGuardada) localStorage.setItem('ads-aba', abaGuardada); } catch { /* storage bloqueado no teste */ }
   const retorno: RetornoAdsPainel = {
     painel,
+    // O resultado da conta não espera os grupos; nos testes ele parte da conta do painel.
+    resultadoConta: painel?.conta ? { conta: painel.conta, motivo: null } : null,
     janela: { desde: '2026-09-04', ate: '2026-10-03' },
     situacaoPeriodo: 'pronto',
     historicoDesde: '2026-01-01T03:00:00.000Z',
@@ -54,7 +79,7 @@ const montar = (
   };
 
   hook.mockReturnValue(retorno);
-  return render(<MemoryRouter><Ads /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[url]}><Ads /><Local /></MemoryRouter>);
 };
 
 beforeEach(() => {
@@ -62,11 +87,24 @@ beforeEach(() => {
   localStorage.clear();
   hook.mockReset();
   hookCampanhas.mockReset();
+  hookMetricas.mockReset();
+  hookMetricas.mockReturnValue({ data: undefined, isLoading: true, isFetching: false, isError: false, error: null, refetch: vi.fn() });
   hookCampanhas.mockReturnValue({
     resposta: null, campanhas: null, isLoading: true, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(),
   });
 });
 afterEach(() => vi.restoreAllMocks());
+
+const campanhaPeriodo = (extra: Partial<RespostaAdsMetricas['campanhas'][number]> = {}) => ({
+  id: 7, nome: 'Camp Verão', statusAtual: 'active', atual: bloco({ cost: { valor: 50, motivo: null } }), anterior: null, ...extra,
+});
+/** Métricas por escopo: 'campanhas' devolve a tabela do período; os demais escopos seguem carregando. */
+const comCampanhas = (campanhas = [campanhaPeriodo()]) => hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => (
+  p?.escopo === 'campanhas'
+    ? { data: respostaMetricas({ escopo: 'campanhas', atual: null, campanhas }), isLoading: false, isFetching: false, isError: false, error: null, refetch: vi.fn() }
+    : { data: undefined, isLoading: true, isFetching: false, isError: false, error: null, refetch: vi.fn() }
+));
+const local = () => new URLSearchParams(screen.getByTestId('local').textContent ?? '');
 
 describe('Ads', () => {
   it('resumo da conta com as 3 parcelas da despesa e o resultado', () => {
@@ -90,10 +128,11 @@ describe('Ads', () => {
     montar({ ...PAINEL, conta: { ...PAINEL.conta!, diasAbertos: 14 } });
     expect(screen.getByText(/provisório/i)).toBeInTheDocument();
   });
-  it('conta indisponível mantém o ranking', () => {
-    montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura' });
+  it('composição indisponível (coleta sem cobertura) mantém o resultado da conta e o ranking', () => {
+    montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura' }, { resultadoConta: { conta: PAINEL.conta!, motivo: null } });
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
-    expect(resumo.getByText(/Total da conta indisponível: a coleta ainda não cobre este período\./)).toBeInTheDocument();
+    expect(resumo.getByRole('group', { name: 'Resultado após Ads' })).toHaveTextContent(/R\$\s*200,00/);
+    expect(resumo.queryByRole('button', { name: 'Composição do gasto' })).not.toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
   });
   it('trocar o período chama o hook com o preset estruturado', () => {
@@ -736,7 +775,7 @@ describe('Ads', () => {
     fireEvent.click(tabela.getByRole('button', { name: 'O que é Família' }));
     expect(screen.getByText(/código PAI/)).toBeVisible();
     fireEvent.click(tabela.getByRole('button', { name: 'O que é Investimento' }));
-    expect(screen.getByText(/grupos de Ads exclusivos desta família/)).toBeVisible();
+    expect(screen.getByText(/grupos de anúncios exclusivos dela/)).toBeVisible();
     fireEvent.click(tabela.getByRole('button', { name: 'O que é Resultado após Ads' }));
     expect(screen.getByText(/Não é o lucro causado pelo Ads/)).toBeVisible();
   });
@@ -888,9 +927,9 @@ describe('Ads', () => {
       expect(localStorage.getItem('ads-aba')).toBe('campanhas');
     });
 
-    it('seletor de período só aparece em Desempenho', () => {
+    it('o seletor de período vale para as duas abas', () => {
       montar(PAINEL, {}, 'campanhas');
-      expect(screen.queryByRole('group', { name: 'Período' })).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Período' })).toBeInTheDocument();
       fireEvent.mouseDown(screen.getByRole('tab', { name: 'Desempenho' }));
       expect(screen.getByRole('group', { name: 'Período' })).toBeInTheDocument();
     });
@@ -909,13 +948,15 @@ describe('Ads', () => {
       expect(screen.getByText('2 famílias em alerta')).toBeInTheDocument();
     });
 
-    it('Ver desempenho de uma família abre o detalhe dela no ranking', () => {
+    it('Ver desempenho de uma família (no detalhe da campanha) abre o detalhe dela no ranking', () => {
       const fam = { codigoPai: 'A', nome: 'Fam A', anuncios: [], equilibrioPct: 25, motivoEquilibrio: null,
         patrocinados: 1, publicados: 1, alertas: [] };
-      hookCampanhas.mockReturnValue(dadosOk([{ id: 1, nome: 'Camp', status: 'active', estrategia: null,
+      hookCampanhas.mockReturnValue(dadosOk([{ id: 7, nome: 'Camp Verão', status: 'active', estrategia: null,
         roasObjetivo: null, acosObjetivo: null, orcamentoDiario: null, familias: [fam], foraDoPubliai: [], totalAlertas: 0 }]));
+      comCampanhas();
       montar(PAINEL, {}, 'campanhas');
-      fireEvent.click(screen.getAllByRole('button', { name: 'Ver anúncios de Fam A' })[0]);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Camp Verão' })[0]);
+      fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Ver anúncios de Fam A' })[0]);
       fireEvent.click(screen.getAllByRole('button', { name: 'Ver desempenho' })[0]);
       expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
       expect(within(screen.getAllByRole('row', { name: /Fam A/ })[0]).getByRole('button', { name: 'Ver detalhes de Fam A' }))
@@ -925,10 +966,12 @@ describe('Ads', () => {
     it('família sem linha no painel não tem o link Ver desempenho', () => {
       const fam = { codigoPai: 'Z', nome: 'Fam Z', anuncios: [], equilibrioPct: 25, motivoEquilibrio: null,
         patrocinados: 1, publicados: 1, alertas: [] };
-      hookCampanhas.mockReturnValue(dadosOk([{ id: 1, nome: 'Camp', status: 'active', estrategia: null,
+      hookCampanhas.mockReturnValue(dadosOk([{ id: 7, nome: 'Camp Verão', status: 'active', estrategia: null,
         roasObjetivo: null, acosObjetivo: null, orcamentoDiario: null, familias: [fam], foraDoPubliai: [], totalAlertas: 0 }]));
+      comCampanhas();
       montar(PAINEL, {}, 'campanhas');
-      fireEvent.click(screen.getAllByRole('button', { name: 'Ver anúncios de Fam Z' })[0]);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Camp Verão' })[0]);
+      fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Ver anúncios de Fam Z' })[0]);
       expect(screen.queryByRole('button', { name: 'Ver desempenho' })).not.toBeInTheDocument();
     });
   });
@@ -958,6 +1001,10 @@ describe('resultado da conta após Ads', () => {
     const r = resumo().getByRole('group', { name: 'Resultado após Ads' });
     expect(resumo().getByText('Estimado')).toBeVisible();
     expect(within(r).getByText(/−R\$\s*50,00/)).not.toHaveClass('text-danger');
+    // Base incompleta: a barra da margem também fica neutra (plano §4.7).
+    const barra = resumo().getByRole('img', { name: /Ads consumiu mais que a margem/ });
+    expect(barra.firstElementChild).not.toHaveClass('bg-danger');
+    expect(barra.parentElement!.innerHTML).not.toMatch(/bg-danger/);
   });
 
   it.each([
@@ -1008,5 +1055,114 @@ describe('resultado da conta após Ads', () => {
   ])('equilíbrio indisponível com %s', (_n, extra, fat) => {
     render(<ResumoConta conta={{ ...PAINEL.conta!, ...extra }} historicoDesde={null} faturamentoConta={fat} />);
     expect(screen.getByRole('group', { name: 'Equilíbrio observado da conta' })).toHaveTextContent('—');
+  });
+});
+
+describe('contexto único: período, comparação e aba', () => {
+  const familiasAcima = { ...PAINEL, familias: [PAINEL.familias[0], { ...PAINEL.familias[1], semaforo: 'acima' as const, acosEquilibrio: 0.2 }] };
+
+  it('trocar de aba preserva datas e comparação, e a URL guarda os três', () => {
+    comCampanhas();
+    montar(PAINEL, {}, 'desempenho', '/ads?comparar=nenhum');
+    fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Campanhas/ }));
+
+    expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '7 dias' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Comparar com' })).toHaveTextContent('Sem comparação');
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 7 });
+    expect(hookMetricas).toHaveBeenCalledWith(
+      expect.objectContaining({ escopo: 'campanhas', desde: '2026-09-04', ate: '2026-10-03', comparar: 'nenhum' }), true);
+    expect(Object.fromEntries(local())).toEqual({ periodo: '7', comparar: 'nenhum', aba: 'campanhas' });
+  });
+
+  it('reload restaura aba, período personalizado e comparação da URL, acima da preferência antiga', () => {
+    localStorage.setItem('ads-painel-dias', '90');
+    comCampanhas();
+    montar(PAINEL, {}, 'desempenho', '/ads?aba=campanhas&periodo=range&desde=2026-09-10&ate=2026-09-20&comparar=nenhum');
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: '2026-09-10', ate: '2026-09-20' });
+    expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /Personalizado/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Comparar com' })).toHaveTextContent('Sem comparação');
+  });
+
+  it('período inválido na URL mostra o motivo em vez de outra janela', () => {
+    montar(null, { janela: null, situacaoPeriodo: 'invalido' }, 'desempenho', '/ads?periodo=range&desde=2026-10-20&ate=2026-10-01');
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: '2026-10-20', ate: '2026-10-01' });
+    expect(screen.getByText(/Período inválido/)).toBeVisible();
+    expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+  });
+
+  it('seleção explícita de aba não é desfeita por resposta tardia', () => {
+    const view = montar(null, { situacaoPeriodo: 'carregando', janela: null }, null);
+    const ultimo = (): RetornoAdsPainel => hook.mock.results.at(-1)?.value;
+    const rerender = (p: Partial<RetornoAdsPainel>) => {
+      hook.mockReturnValue({ ...ultimo(), ...p });
+      view.rerender(<MemoryRouter><Ads /></MemoryRouter>);
+    };
+    rerender({ painel: PAINEL, situacaoPeriodo: 'pronto' });
+    expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Campanhas/ }));
+    rerender({ painel: { ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] } });
+    expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Desempenho' }));
+    rerender({ painel: null, situacaoPeriodo: 'carregando' });
+    rerender({ painel: { ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] }, situacaoPeriodo: 'pronto' });
+    expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Campanhas mostra os KPIs da conta inteira, o resultado da conta e a tabela do período', () => {
+    comCampanhas();
+    montar(PAINEL, { metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 100, motivo: null } }) }) }, 'campanhas');
+
+    const conta = within(screen.getByRole('region', { name: 'Conta inteira' }));
+    expect(conta.getByText('Conta inteira')).toBeVisible();
+    expect(conta.getByText('Investimento').closest('[data-kpi]')).toHaveTextContent(/R\$\s*100,00/);
+    expect(screen.getByRole('heading', { name: 'Resultado da conta após Ads' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Campanhas no período' })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Camp Verão/ })).toHaveTextContent(/R\$\s*50,00/);
+    expect(screen.queryByText(/resultado das campanhas/i)).not.toBeInTheDocument();
+  });
+
+  it('abrir uma campanha abre o detalhe com métricas do período e configuração atual', () => {
+    comCampanhas();
+    montar(PAINEL, {}, 'campanhas');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Camp Verão' })[0]);
+
+    const detalhe = within(screen.getByRole('dialog'));
+    expect(detalhe.getByRole('heading', { name: 'Camp Verão' })).toBeInTheDocument();
+    expect(detalhe.getByText('Métricas do período')).toBeInTheDocument();
+    expect(detalhe.getByText('Competitividade')).toBeInTheDocument();
+    expect(detalhe.getByText('Configuração atual')).toBeInTheDocument();
+    expect(hookMetricas).toHaveBeenCalledWith(expect.objectContaining({ escopo: 'campanha', campanhaId: 7 }), true);
+  });
+
+  it('atalho do resultado filtra as famílias acima do equilíbrio, maior investimento primeiro', () => {
+    montar(familiasAcima);
+    fireEvent.click(screen.getByRole('button', { name: 'Ver famílias acima do equilíbrio' }));
+
+    expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveAttribute('aria-pressed', 'true');
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
+    expect(tabela.getByRole('row', { name: /Fam B/ })).toBeInTheDocument();
+    expect(tabela.getAllByRole('columnheader').find(c => /Investimento/.test(c.textContent ?? '')))
+      .toHaveAttribute('aria-sort', 'descending');
+  });
+
+  it('atalho a partir de Campanhas volta para Desempenho já filtrado', () => {
+    comCampanhas();
+    montar(familiasAcima, {}, 'campanhas');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver famílias acima do equilíbrio' }));
+
+    expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('sem família acima do equilíbrio não oferece o atalho', () => {
+    montar();
+    expect(screen.queryByRole('button', { name: 'Ver famílias acima do equilíbrio' })).not.toBeInTheDocument();
   });
 });

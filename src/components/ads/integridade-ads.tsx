@@ -68,7 +68,7 @@ export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm
         {temNaoId && (
           <Ressalva>Gasto de Ads não identificado: incluído no investimento da conta, sem distribuição entre famílias.</Ressalva>
         )}
-        {conta?.divergente && <Ressalva>A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.</Ressalva>}
+        {/* Divergência da composição: o aviso fica no resumo da conta, junto da composição (uma vez só na tela). */}
         {semCobertura && <Ressalva>Cobertura: {textoMotivo('cobertura', null)}.</Ressalva>}
         {painel.contaMotivo === 'serie_incompleta' && (
           <Ressalva>A leitura ao vivo do ML veio sem todos os dias do período: a conta está indisponível.</Ressalva>
