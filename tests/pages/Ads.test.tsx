@@ -831,6 +831,21 @@ describe('Ads', () => {
     });
   });
 
+  describe('tabela de familias sem espaço', () => {
+    it('sem espaço para Ads conta e filtra como acima do equilíbrio, mantendo o selo', () => {
+      const semEspaco = { ...PAINEL.familias[0], codigoPai: 'S', nome: 'Fam S', custo: 50, vendasDiretas: 100,
+        acosDireto: 0.5, acosEquilibrio: -0.1, semaforo: 'sem_espaco' as const, resultado: -60 };
+      montar({ ...PAINEL, familias: [PAINEL.familias[0], semEspaco] });
+      const botao = screen.getByRole('button', { name: 'Filtrar por Acima do equilíbrio' });
+      expect(botao).toHaveTextContent('1');
+      expect(screen.queryByText('Nenhuma família acima do equilíbrio neste período.')).not.toBeInTheDocument();
+      fireEvent.click(botao);
+      const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+      expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
+      expect(within(tabela.getByRole('row', { name: /Fam S/ })).getByText('Sem espaço para Ads')).toBeVisible();
+    });
+  });
+
   describe('abas Desempenho | Campanhas', () => {
     const dadosOk = (campanhas: unknown[] = []) => ({
       resposta: { ok: true, estado: 'ok', lidoEm: '2026-10-20T15:05:00Z', aliquotasConfirmadas: true, projecaoLimitada: false,

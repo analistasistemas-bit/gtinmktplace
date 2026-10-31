@@ -238,6 +238,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
   const [ordem, setOrdem] = useState<{ coluna: ColunaFamiliasAds; direcao: DirecaoAds }>({ coluna: 'investimento', direcao: 'desc' });
   const { conta, familias, semaforoLiberado: liberado } = painel;
   const contagem = contarFamiliasAds(familias, liberado);
+  const acima = contagem.acima + contagem.semEspaco;   // mesma regra do filtro `acima`
   const visiveis = ordenarFamiliasAds(
     buscarFamiliasAds(filtrarFamiliasAds(familias, filtro, liberado), busca), ordem.coluna, ordem.direcao);
   const ordenarPor = (coluna: ColunaFamiliasAds) => setOrdem(o => o.coluna === coluna
@@ -246,7 +247,7 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
   const alternar = (alvo: FiltroFamiliasAds) => setFiltro(atual => (atual === alvo ? 'todas' : alvo));
 
   // Semáforo desligado: a única mensagem é a de validação, na página.
-  const fraseAtencao = !liberado || contagem.acima > 0
+  const fraseAtencao = !liberado || acima > 0
     ? null
     : contagem.semReferencia > 0
       ? historicoDesde && familias.some(f => f.motivo === 'historico')
@@ -259,8 +260,8 @@ export function RankingFamilias({ painel, historicoDesde, focoCodigoPai }: {
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
         <KpiCard size="compact" label="Todas" infoKey="Todas::Ads" value={contagem.total}
           ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className={CARD_FILTRO} />
-        {contagem.acima > 0 && (
-          <KpiCard size="compact" label="Acima do equilíbrio" infoKey="Acima do equilíbrio::Ads" value={contagem.acima} tom="danger"
+        {acima > 0 && (
+          <KpiCard size="compact" label="Acima do equilíbrio" infoKey="Acima do equilíbrio::Ads" value={acima} tom="danger"
             ativo={filtro === 'acima'} onClick={() => alternar('acima')} className={CARD_FILTRO} />
         )}
         <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}

@@ -67,7 +67,8 @@ export function filtrarFamiliasAds(
     const estado = liberado ? familia.semaforo : null;
 
     if (filtro === 'todas') return true;
-    if (filtro === 'acima') return estado === 'acima';
+    // Sem espaço (equilíbrio ≤ 0): qualquer gasto já passa do equilíbrio, então entra aqui; o selo da linha segue o domínio.
+    if (filtro === 'acima') return estado === 'acima' || estado === 'sem_espaco';
     if (filtro === 'dentro') return estado === 'dentro';
     return estado === null;
   });

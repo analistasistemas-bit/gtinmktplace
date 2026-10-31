@@ -45,7 +45,7 @@ describe('apresentação de famílias Ads', () => {
     });
 
     expect(filtrarFamiliasAds(familias, 'acima', true).map(f => f.codigoPai))
-      .toEqual(['B']);
+      .toEqual(['B', 'D']);
     expect(filtrarFamiliasAds(familias, 'dentro', true).map(f => f.codigoPai))
       .toEqual(['A']);
     expect(filtrarFamiliasAds(familias, 'sem_referencia', true).map(f => f.codigoPai))
