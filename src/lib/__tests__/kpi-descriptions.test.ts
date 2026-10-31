@@ -77,6 +77,27 @@ const ALL_EXPECTED_KEYS = [
   'Família::Ads',
   'Investimento::Ads',
   'Resultado após Ads::Ads',
+  // Ads: faixa de KPIs, tabela de campanhas, competitividade, resumo e série (Task 36)
+  'Vendas por Ads::Ads',
+  'Vendas Ads::Ads',
+  'Receita Ads::Ads',
+  'Unidades vendidas::Ads',
+  'ROAS::Ads',
+  'ACOS::Ads',
+  'TACOS da conta::Ads',
+  'Impressões::Ads',
+  'Cliques::Ads',
+  'CTR::Ads',
+  'CPC::Ads',
+  'Conversão::Ads',
+  'Ganhas::Ads',
+  'Perdidas por orçamento::Ads',
+  'Perdidas por classificação::Ads',
+  'Lucro antes de Ads::Ads',
+  'Despesa de Ads::Ads',
+  'Resultado parcial após Ads::Ads',
+  'Equilíbrio no preço atual::Ads',
+  'Outras vendas::Ads',
 ];
 
 describe('kpi-descriptions', () => {

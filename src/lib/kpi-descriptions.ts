@@ -166,7 +166,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     + 'Ex.: 9,2% = de cada R$ 100 vendidos pelo anúncio, o Ads custou R$ 9,20. "sem venda direta": gastou sem vender pelo próprio anúncio.',
   'Equilíbrio observado::Ads':
     'Equilíbrio observado: margem antes de Ads nas vendas desta família durante o período. '
-    + 'O mix das vendas atribuídas pode ser diferente. ACOS direto acima disso: a venda pelo anúncio dá prejuízo.',
+    + 'O mix das vendas atribuídas pode ser diferente. ACOS direto acima disso: a venda pelo anúncio dá prejuízo. Não é o equilíbrio no preço atual.',
   'Família::Ads':
     'Produto agrupado pelo código PAI. Soma os grupos de Ads de todos os anúncios da família; grupo que mistura '
     + 'famílias vai para Gastos associados, sem rateio.',
@@ -176,6 +176,54 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Lucro antes de Ads (vendas da família no período, já sem comissão, frete, imposto e custo) menos o Gasto. '
     + 'Só entram itens com custo; com custo parcial, o resultado também é parcial. Não é o lucro causado pelo Ads. Fica "—" quando o período começa antes do histórico de vendas, a coleta de '
     + 'Ads não cobre o período ou há gasto compartilhado com outras famílias.',
+  // ── Ads: faixa de KPIs, campanhas, competitividade e resumo da conta (Task 36) ──
+  'Vendas por Ads::Ads':
+    'Quantidade de vendas atribuídas ao Ads, como informada pelo Mercado Livre. É contagem de vendas, não receita nem unidades: '
+    + 'uma venda de 3 peças conta 1 aqui. A receita aparece em Receita Ads e as peças em Unidades vendidas.',
+  'Vendas Ads::Ads':
+    'Quantidade de vendas atribuídas ao Ads na campanha, como informada pelo ML. Não é receita nem unidades.',
+  'Receita Ads::Ads':
+    'Valor vendido (R$) que o ML atribui ao Ads no período, somando vendas diretas e indiretas. Não é lucro nem faturamento da conta.',
+  'Unidades vendidas::Ads':
+    'Peças vendidas atribuídas ao Ads. Difere de vendas: uma venda com 3 peças são 3 unidades. Só aparece quando o ML informa o campo.',
+  'ROAS::Ads':
+    'Receita atribuída ao Ads ÷ investimento, calculados sobre o total do período (não é média dos dias). '
+    + 'Ex.: 8,0x = cada R$ 1 investido trouxe R$ 8 em vendas atribuídas. Sem investimento, fica indisponível.',
+  'ACOS::Ads':
+    'Investimento ÷ receita atribuída ao Ads no período. Ex.: 12% = de cada R$ 100 atribuídos ao Ads, R$ 12 foram gastos. '
+    + 'Sem receita atribuída, fica indisponível. É o inverso do ROAS.',
+  'TACOS da conta::Ads':
+    'Investimento em Ads ÷ faturamento total do Mercado Livre da organização no período. O faturamento inclui todas as vendas '
+    + 'faturáveis da conta (também as de anúncios sem Ads e fora do cadastro), já com o cupom do vendedor descontado. '
+    + 'Sem faturamento ou com histórico incompleto, fica indisponível.',
+  'Impressões::Ads':
+    'Quantas vezes seus anúncios patrocinados foram exibidos no período, informado pelo ML.',
+  'Cliques::Ads':
+    'Quantos cliques os anúncios patrocinados receberam no período, informado pelo ML.',
+  'CTR::Ads':
+    'Cliques ÷ impressões no total do período. Mostra quanto da exibição vira clique. Sem impressões, fica indisponível.',
+  'CPC::Ads':
+    'Investimento ÷ cliques no total do período: quanto cada clique custou em média. Sem cliques, fica indisponível.',
+  'Conversão::Ads':
+    'Conversão informada pelo ML para o período (CVR). O app não recalcula esse número: se o ML não o retornar, aparece como indisponível.',
+  'Ganhas::Ads':
+    'Participação nas impressões ganhas: parcela das exibições possíveis que a campanha efetivamente conquistou, segundo o ML.',
+  'Perdidas por orçamento::Ads':
+    'Parcela das impressões perdidas porque o orçamento da campanha acabou. Aumentar o orçamento pode recuperar parte delas.',
+  'Perdidas por classificação::Ads':
+    'Parcela das impressões perdidas porque o anúncio ficou mal classificado no leilão (lance, qualidade, relevância).',
+  'Lucro antes de Ads::Ads':
+    'Lucro das vendas da conta no período, já sem comissão, frete, imposto e custo, antes de descontar a despesa de Ads. '
+    + 'Itens sem custo ficam de fora; custo estimado ou parcial deixa o número parcial.',
+  'Despesa de Ads::Ads':
+    'Investimento em Ads da conta inteira no período, informado pelo ML, incluindo gasto compartilhado ou não identificado, sem rateio.',
+  'Resultado parcial após Ads::Ads':
+    'Lucro antes de Ads menos a despesa de Ads, com custo parcial ou estimado em parte das vendas. Não é o lucro completo nem o causado pelo Ads.',
+  'Equilíbrio no preço atual::Ads':
+    'ACOS em que o anúncio zera a margem pelo preço de hoje: (líquido no preço − custo) ÷ preço, na pior variação. '
+    + 'Diferente do equilíbrio observado, que usa as vendas já realizadas no período.',
+  'Outras vendas::Ads':
+    'Vendas do universo dos anúncios promovidos que o ML não atribui ao Ads. Não são as vendas orgânicas da conta inteira.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada
