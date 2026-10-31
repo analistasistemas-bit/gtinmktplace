@@ -105,6 +105,7 @@
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
 | **Ads (ADR-0179, emenda 2026-10-20)** ||||
 | ads-campanhas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 10 min por org) |
+| ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
@@ -1862,6 +1863,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
     a conexão/token), a resposta é **500** — o fan-out publica com `retries: 1`, então o QStash
     tenta de novo ~12s depois (cobre um tropeço de rede). O caminho "Atualizar agora" (usuário
     logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
+
+### Ads — redesenho do /ads (emenda ADR-0179, 2026-10-30)
+- **ads-metricas** *(nova, `verify_jwt=true`; org via `requireUserOrg`; **deployada e ACTIVE, v1, em 2026-10-31 15:58**, projeto `txvncrgkoynoxwopfkbp`; nenhuma edge existente alterada, sem migration)* — métricas do Mercado Ads por período, **só leitura no ML**. Escopos: `conta`, `campanhas`, `campanha` (inclui métricas por anúncio via `/ads/search`, descartando linhas de outra campanha) e `competitividade`. Prova que a campanha pertence ao anunciante da org antes de ler. Cache Redis de 300 s por org + conexão + anunciante + escopo + campanha + datas + modo de comparação; refresh forçado no máximo 1 por org a cada 60 s. Tetos por requisição: concorrência 4, 20 páginas, 32 chamadas, prazo 20 s. Comparação com o período anterior vem `provisoria` quando algum dia tem menos de 15 dias (`DIAS_RELEITURA`); a retenção do ML é de 91 dias. Spike 058 (`docs/spikes/058-ads-redesenho-metricas.md`). O CI não faz deploy desta edge.
 
 ### Ads — aba Campanhas (emenda ADR-0179, 2026-10-20)
 - **ads-campanhas** *(nova, `verify_jwt=true`; `requireUserOrg` read + módulo `ads`, `403` sem ele)* — campanhas e

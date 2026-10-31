@@ -180,6 +180,17 @@ relatórios fora do repo em `~/Desktop/IA/publiai-extensao-re/`). Glossário em 
 
 - [x] RLS de `ml_mensagens` e RPCs do badge/dispensar por `org_id` (antes `user_id`: membro da Avil sem a conexão ML via a aba vazia).
 
+## Redesenho premium do /ads (emenda ADR-0179) — 2026-10-30 — branch `worktree-ads-redesign-plano`
+
+Plano `docs/superpowers/plans/2026-10-30-ads-redesign-premium.md`; QA `docs/superpowers/plans/2026-10-30-ads-redesenho-qa.md`; spike `docs/spikes/058-ads-redesenho-metricas.md`.
+
+- [x] Edge `ads-metricas` (só leitura, `verify_jwt=true`, cache 300 s) deployada: v1 ACTIVE em 2026-10-31 15:58; nenhuma edge existente alterada; sem migration.
+- [x] `/ads` redesenhado: período e comparação compartilhados na URL, "Resultado após Ads", 10 KPIs, gráfico Vendas atribuídas × Outras vendas + ROAS, Campanhas por período com detalhe/anúncios patrocinados/competitividade, famílias ACOS direto × equilíbrio, integridade visível.
+- [x] Isolamento por org: `queryClient.clear()` ao entrar/sair do suporte; org no fim da chave dos hooks de vendas/custos/configurações/devoluções/catálogo.
+- [ ] Diego: conferir investimento e receita contra o painel do Mercado Ads no mesmo intervalo (diferença ≤ 1 %).
+- [ ] Merge na main (CI verde; a edge já está implantada).
+- [ ] Dívida (fora do escopo, ADR-0055): fallback silencioso de alíquotas 8/16 em `aba-vendas.tsx:187`, `aba-geografia.tsx:63`, `useSkuDossie.ts:133`, `Dashboard.tsx:161,178`, `DetalheFinanceiro.tsx:271,282`, `DetalheVendas.tsx:313`; imposto 0 durante o carregamento em `useResumoVendas.ts:51`; `sonar-dre`/`pulse` herdam 8/16 sem checar confirmação.
+
 ## Aba Campanhas do /ads (emenda ADR-0179) — 2026-10-20
 
 - [x] Grilling + spike 057 (`ads/search` por campanha; `hold` ≠ parado; diagnóstico fora da API).
