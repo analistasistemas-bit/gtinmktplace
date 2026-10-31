@@ -244,14 +244,14 @@ describe('AbaCampanhas', () => {
   };
   it('E1 500 (parcial, sem linhas): aviso de lista incompleta com Tentar novamente, sem "Nenhuma campanha"', () => {
     const m = parcial([]);
-    aba(dados(), m);
+    aba(dados(), m as never);
     expect(screen.getByRole('alert')).toHaveTextContent('Lista de campanhas incompleta');
     expect(screen.queryByText(/Nenhuma campanha com dados/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     expect(m.refetch).toHaveBeenCalled();
   });
   it('paginação parada após a 1ª página: subconjunto exibido com a ressalva e o motivo dos avisos', () => {
-    aba(dados(), parcial(metricas().data.campanhas, ['Limite de leitura atingido; dados incompletos.']));
+    aba(dados(), parcial(metricas().data.campanhas, ['Limite de leitura atingido; dados incompletos.']) as never);
     expect(screen.getByRole('row', { name: /Campanha Verão/ })).toBeInTheDocument();
     const alerta = screen.getByRole('alert');
     expect(alerta).toHaveTextContent('Lista de campanhas incompleta');
@@ -259,7 +259,7 @@ describe('AbaCampanhas', () => {
   });
   it('leitura completa sem campanhas: estado vazio, sem aviso de incompleta', () => {
     const m = metricas();
-    aba(dados(), { ...m, data: { ...m.data, campanhas: [], atual: blocoMetricas(0) } });
+    aba(dados(), { ...m, data: { ...m.data, campanhas: [], atual: blocoMetricas(0) } } as never);
     expect(screen.getByText('Nenhuma campanha com dados de Ads no período.')).toBeInTheDocument();
     expect(screen.queryByText(/Lista de campanhas incompleta/)).not.toBeInTheDocument();
   });
