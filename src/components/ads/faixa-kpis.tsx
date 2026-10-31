@@ -72,8 +72,10 @@ function Delta({ texto, direcao, tom }: { texto: string; direcao: 'up' | 'down' 
 }
 
 export function FaixaKpis({
-  atual, anterior, comparacao, loading = false,
+  atual, anterior, comparacao, loading = false, ocultar,
 }: {
+  /** Indicadores que não fazem sentido no escopo (ex.: `tacos` numa campanha). */
+  ocultar?: string[];
   atual: Record<string, ValorAds>;
   anterior: Record<string, ValorAds> | null;
   comparacao: EstadoComparacaoAds;
@@ -86,7 +88,7 @@ export function FaixaKpis({
   return (
     <div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {KPIS.map((k, i) => {
+        {KPIS.filter((k) => !ocultar?.includes(k.chave)).map((k, i) => {
           const valor = atual[k.chave] ?? { valor: null, motivo: 'nao_retornada' as const };
           const oculto = i >= VISIVEIS_MOBILE && !expandido;
           const cmp = compara
