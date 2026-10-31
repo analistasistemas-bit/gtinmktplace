@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { buscarVendas, marcaDagua, mesclarVendas, type Venda, type OrigemVenda } from '@/lib/faturamento';
 import { diaLocal, type Janela } from '@/lib/metricas';
 import type { CanalAtivo } from '@/lib/canal-ativo';
+import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 
 /** Chave de cache da janela: `desde` inteiro, `ate` truncado na data SÓ quando a janela termina
  *  HOJE — hoje no fuso LOCAL (`diaLocal`), não em UTC. Comparar `ate.slice(0, 10)` com a data UTC
@@ -42,8 +43,11 @@ export function chaveJanela(janela: Janela): [string, string] {
 
 export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo = 'todos', enabled = true) {
   const qc = useQueryClient();
+  const orgId = useOrgEfetivaId();
   const [desdeDia, ateDia] = chaveJanela(janela);
-  const queryKey = ['vendas', desdeDia, ateDia, origem, canal] as const;
+  // Org no fim: invalidateQueries(['vendas']) casa pelo prefixo, e o delta (ADR-0082) lê a marca d'água só
+  // do cache da própria org — resposta tardia de outra org cai na chave dela.
+  const queryKey = ['vendas', desdeDia, ateDia, origem, canal, orgId] as const;
   return useQuery<Venda[]>({
     queryKey,
     // Tempo real "leve": re-busca enquanto a aba está aberta e ao voltar o foco, para a venda
@@ -66,7 +70,7 @@ export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo
       const delta = await buscarVendas(janela, origem, canal, marca);
       return mesclarVendas(prev!, delta);
     },
-    enabled,
+    enabled: enabled && orgId != null,
     staleTime: 5 * 60_000,
     refetchInterval: 180_000,
     refetchOnWindowFocus: true,

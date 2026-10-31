@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { endSupport, fetchSupportContext, startSupport, type SupportContext } from '@/lib/suporte';
 import { useAuthStore } from '@/stores/auth-store';
+import { queryClient } from '@/lib/query-client';
 
 interface SupportState {
   context: SupportContext | null;
@@ -35,12 +36,15 @@ export const useSupportStore = create<SupportState>((set, get) => ({
   },
   start: async (requestId) => {
     await startSupport(requestId);
+    // A org efetiva vai mudar: cache da org anterior (inclusive resposta pendente) não pode montar a tela nova.
+    queryClient.clear();
     await get().loadContext();
   },
   end: async (requestId) => {
     try {
       await endSupport(requestId);
     } finally {
+      queryClient.clear();
       get().clear();
     }
   },

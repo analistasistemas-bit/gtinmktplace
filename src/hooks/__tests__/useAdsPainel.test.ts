@@ -85,7 +85,10 @@ function pendente<T>() {
   });
   return { promise, resolver };
 }
-const ultimaChamada = () => m.montarPainelAds.mock.calls.at(-1)![0];
+// Duas montagens independentes: a dos grupos (fonte da RPC) e a da conta (fonte vazia, só série ao vivo + vendas).
+const chamadasGrupos = () => m.montarPainelAds.mock.calls.filter((c) => c[0].fonte.grupos.length > 0);
+const chamadasConta = () => m.montarPainelAds.mock.calls.filter((c) => c[0].fonte.grupos.length === 0);
+const ultimaChamada = () => chamadasGrupos().at(-1)![0];
 
 beforeEach(() => {
   m.buscarPainelAds.mockReset().mockResolvedValue(FONTE);
@@ -169,18 +172,20 @@ describe('useAdsPainel', () => {
     const r3 = render();
     await waitFor(() => expect(m.buscarCodigosMlbs).toHaveBeenCalledTimes(3));
     expect(r3.result.current.painel).toBeNull();
-    expect(m.montarPainelAds).not.toHaveBeenCalled();
+    expect(chamadasGrupos()).toHaveLength(0);
   });
 
-  it('(d) erro em qualquer fonte → isError', async () => {
+  it('(d) erro de fonte dos grupos fica no bloco dos grupos; erro de vendas é geral', async () => {
     m.buscarPainelAds.mockRejectedValue(new Error('rpc'));
     const r = render();
-    await waitFor(() => expect(r.result.current.isError).toBe(true));
+    await waitFor(() => expect(r.result.current.blocos.grupos.isError).toBe(true));
+    expect(r.result.current.isError).toBe(false);
 
     m.buscarPainelAds.mockResolvedValue(FONTE);
     m.buscarCodigosMlbs.mockRejectedValue(new Error('cod'));
     const r2 = render();
-    await waitFor(() => expect(r2.result.current.isError).toBe(true));
+    await waitFor(() => expect(r2.result.current.blocos.grupos.isError).toBe(true));
+    expect(r2.result.current.isError).toBe(false);
 
     m.buscarCodigosMlbs.mockResolvedValue(new Map());
     m.useVendasSku.mockReturnValue(vendasQ(null, { isError: true }));
@@ -190,7 +195,30 @@ describe('useAdsPainel', () => {
     m.useVendasSku.mockReturnValue(vendasQ([]));
     m.catQ.isError = true;
     const r4 = render();
-    await waitFor(() => expect(r4.result.current.isError).toBe(true));
+    await waitFor(() => expect(r4.result.current.blocos.grupos.isError).toBe(true));
+    expect(r4.result.current.isError).toBe(false);
+  });
+
+  it('RPC/códigos pendentes ou com erro: resultado da conta sai com vendas + fiscal + série ao vivo completas', async () => {
+    m.buscarPainelAds.mockReturnValue(new Promise(() => {}));
+    const r = render();
+    await waitFor(() => expect(r.result.current.resultadoConta?.conta).toBeTruthy());
+    const { janela } = r.result.current;
+    expect(r.result.current.resultadoConta!.conta!.custo).toBe(diasDe(janela!.desde, janela!.ate).length);
+    expect(r.result.current.resultadoConta!.motivo).toBeNull();
+    // Composição depende dos grupos: não sai no resultado da conta (nunca zero presumido).
+    expect(r.result.current.resultadoConta!.conta).not.toHaveProperty('emFamilias');
+    expect(r.result.current.painel).toBeNull();
+    expect(r.result.current.blocos.grupos.isLoading).toBe(true);
+    expect(r.result.current.isLoading).toBe(false);
+
+    m.buscarPainelAds.mockResolvedValue(FONTE);
+    m.buscarCodigosMlbs.mockRejectedValue(new Error('cod'));
+    const r2 = render();
+    await waitFor(() => expect(r2.result.current.blocos.grupos.isError).toBe(true));
+    await waitFor(() => expect(r2.result.current.resultadoConta?.conta).toBeTruthy());
+    expect(r2.result.current.painel).toBeNull();
+    expect(r2.result.current.isError).toBe(false);
   });
 
   it('(e) período termina ontem BRT, mesmo com a coleta do dia ainda não feita', async () => {
@@ -286,9 +314,10 @@ describe('useAdsPainel', () => {
       await metricasA.promise;
     });
 
-    expect(m.montarPainelAds.mock.calls.every((c) => c[0].fonte === FONTE)).toBe(true);
-    expect(ultimaChamada().contaAoVivo.completo).toBe(true);
+    expect(chamadasGrupos().every((c) => c[0].fonte === FONTE)).toBe(true);
+    expect(m.montarPainelAds.mock.calls.every((c) => c[0].contaAoVivo.completo)).toBe(true);
     expect(r.result.current.painel!.conta).not.toBeNull();
+    expect(r.result.current.resultadoConta!.conta).not.toBeNull();
   });
 
   it('série ao vivo incompleta → conta indisponível com motivo, sem recair na coleta', async () => {
@@ -298,6 +327,7 @@ describe('useAdsPainel', () => {
     expect(ultimaChamada().contaAoVivo).toEqual(expect.objectContaining({ completo: false }));
     expect(r.result.current.painel!.conta).toBeNull();
     expect(r.result.current.painel!.contaMotivo).toBe('serie_incompleta');
+    expect(r.result.current.resultadoConta).toEqual({ conta: null, motivo: 'serie_incompleta' });
   });
 
   it('métricas da conta sem leitura (atual null) ou com erro → conta indisponível, nunca a série coletada', async () => {
@@ -314,14 +344,17 @@ describe('useAdsPainel', () => {
     expect(r2.result.current.painel!.contaMotivo).toBe('serie_incompleta');
   });
 
-  it('painel espera a leitura ao vivo assentar: nunca monta antes com a série coletada', async () => {
+  it('série ao vivo pendente: grupos saem já carregados, sem a série coletada e sem resultado da conta', async () => {
     m.buscarMetricasAds.mockReturnValue(new Promise(() => {}));
     const r = render();
-    await waitFor(() => expect(m.buscarCodigosMlbs).toHaveBeenCalled());
-    await act(async () => { await new Promise((res) => setTimeout(res, 20)); });
-    expect(m.montarPainelAds).not.toHaveBeenCalled();
-    expect(r.result.current.painel).toBeNull();
+    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
+    expect(r.result.current.painel!.familias.length).toBeGreaterThan(0);
+    // Nunca `undefined`: montarPainelAds recairia na série coletada.
+    expect(chamadasGrupos().every((c) => c[0].contaAoVivo && c[0].contaAoVivo.completo === false)).toBe(true);
+    expect(chamadasConta()).toHaveLength(0);
+    expect(r.result.current.resultadoConta).toBeNull();
     expect(r.result.current.blocos.conta.isLoading).toBe(true);
+    expect(r.result.current.blocos.grupos.isLoading).toBe(false);
   });
 
   it('(g) nome da família do catálogo vai como fallback', async () => {
@@ -455,21 +488,23 @@ describe('useAdsPainel', () => {
     });
   });
 
-  it('catálogo carregando: painel null e isLoading depois do sync', async () => {
+  it('catálogo carregando: painel null e grupos carregando; a conta não espera', async () => {
     Object.assign(m.catQ, { data: undefined, isLoading: true });
     const r = render();
     await waitFor(() => expect(r.result.current.situacaoPeriodo).toBe('pronto'));
     await waitFor(() => expect(m.buscarCodigosMlbs).toHaveBeenCalled());
     expect(r.result.current.painel).toBeNull();
-    expect(r.result.current.isLoading).toBe(true);
+    expect(r.result.current.blocos.grupos.isLoading).toBe(true);
+    await waitFor(() => expect(r.result.current.resultadoConta?.conta).toBeTruthy());
   });
 
-  it('erro de catálogo: isError depois do sync, sem skeleton permanente', async () => {
+  it('erro de catálogo: erro no bloco dos grupos, sem skeleton permanente nem erro geral', async () => {
     Object.assign(m.catQ, { data: undefined, isError: true });
     const r = render();
     await waitFor(() => expect(r.result.current.situacaoPeriodo).toBe('pronto'));
-    expect(r.result.current.isError).toBe(true);
-    expect(r.result.current.isLoading).toBe(false);
+    expect(r.result.current.blocos.grupos.isError).toBe(true);
+    expect(r.result.current.blocos.grupos.isLoading).toBe(false);
+    expect(r.result.current.isError).toBe(false);
   });
 
   it('refetch da mesma janela repete RPC, códigos, vendas e catálogo', async () => {

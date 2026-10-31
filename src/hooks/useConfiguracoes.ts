@@ -11,6 +11,7 @@ import {
   fetchModeloImagem, upsertModeloImagem,
   fetchEmpresaFiscal, upsertEmpresaFiscal, type EmpresaFiscalRow,
 } from '@/lib/queries';
+import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 
 export function useDescontoConcorrenciaPct() {
   return useQuery({ queryKey: ['configuracoes', 'desconto_concorrencia_pct'], queryFn: fetchDescontoConcorrenciaPct });
@@ -24,7 +25,9 @@ export function useSalvarDescontoConcorrenciaPct() {
 }
 
 export function useAliquotas() {
-  return useQuery({ queryKey: ['configuracoes', 'aliquotas'], queryFn: fetchAliquotas });
+  // Org no fim da chave: a invalidação de useSalvarAliquotas (['configuracoes', 'aliquotas']) casa pelo prefixo.
+  const orgId = useOrgEfetivaId();
+  return useQuery({ queryKey: ['configuracoes', 'aliquotas', orgId], queryFn: fetchAliquotas, enabled: orgId != null });
 }
 export function useSalvarAliquotas() {
   const qc = useQueryClient();
