@@ -127,6 +127,8 @@ verify_jwt = false
 # Emenda ADR-0179 (2026-10-20): aba Campanhas do /ads. Chamada pelo APP com o JWT do usuário; só GET no ML.
 [functions.ads-campanhas]
 verify_jwt = true
+[functions.ads-metricas]
+verify_jwt = true
 [functions.atributos-familia]
 verify_jwt = true
 [functions.ingest-lote]

@@ -166,7 +166,7 @@ async function lerBlocoCampanha(deps: DepsLeituraAds, id: number, j: JanelaAdsMe
 }
 
 /** Lê atual e, se pedida, a anterior. Falha/incompletude da anterior só desliga a comparação. */
-async function lerComparado(
+export async function lerComparado(
   ler: (j: JanelaAdsMetricas) => Promise<BlocoAdsMetricas>,
   atual: JanelaAdsMetricas,
   anterior: JanelaAdsMetricas | null,
@@ -199,7 +199,7 @@ export interface RecusaCampanhaAds {
  * Prova de pertencimento: o ID precisa constar numa listagem E1 COMPLETA do próprio anunciante (status históricos,
  * todas as páginas) numa das janelas pedidas. Listagem incompleta nunca autoriza, mesmo com o ID na página lida.
  */
-async function provarPertencimento(
+export async function provarPertencimento(
   deps: DepsLeituraAds, adv: number, id: number, janelas: JanelaAdsMetricas[],
 ): Promise<string | null> {
   let incompleta = false;
