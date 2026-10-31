@@ -61,6 +61,8 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
   const aliquotas = aliqQ.data;
   const devQ = useDevolucoes();
   const devolucoes = devQ.data;
+  // Catálogo é base de vendas, não só agrupamento: `historicoDesde` (primeira venda da org) sai dele, e sem
+  // histórico cobrindo a janela o lucro é desconhecido (historicoCobre). Por isso `dados` espera o catálogo.
   const catQ = useCatalogoVendasSku();
 
   const calculo = useMemo<{ dados: VendasSku; baseFiscal: BaseFiscal } | null>(() => {
@@ -111,6 +113,8 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     isFetching: vendasQ.isFetching || catQ.isFetching,
     /** Sem isso a tela ficaria em skeleton para sempre quando vendas, catálogo ou devoluções falham. */
     isError: vendasQ.isError || catQ.isError || devQ.isError,
+    /** Origem do erro: o /ads separa catálogo (bloco) de vendas/devoluções (geral). */
+    erros: { vendas: vendasQ.isError, catalogo: catQ.isError, devolucoes: devQ.isError },
     refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch(), devQ.refetch()]),
   };
 }

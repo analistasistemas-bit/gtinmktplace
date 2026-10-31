@@ -16,7 +16,7 @@ import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 import { metricas, somarAcumuladores } from '@/lib/vendas-sku';
 import type { PedidoAdsMetricas, RespostaAdsMetricas } from '../../supabase/functions/_shared/ads/metricas';
 
-export interface EstadoBlocoAds { isLoading: boolean; isError: boolean }
+export interface EstadoBlocoAds { isLoading: boolean; isError: boolean; motivo?: 'catalogo' | null }
 /** Resultado da conta sem a composição (famílias/compartilhado/não identificado), que depende dos grupos. */
 export type ResultadoContaAds = Omit<ContaPainel, 'emFamilias' | 'compartilhado' | 'naoIdentificado' | 'naoIdentificadoPct' | 'divergente'>;
 
@@ -154,15 +154,18 @@ export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
 
   const situacaoPeriodo = resolucao.tipo;
   const erroGrupos = habilitado && (fonteQ.isError || codQ.isError || catQ.isError);
+  const erroConta = habilitado && (vendas.isError || metricasQ.isError);
   const blocos = {
-    conta: { isLoading: habilitado && !vendas.isError && !metricasQ.isError && (!vendas.dados || !leituraAssentada),
-      isError: habilitado && (vendas.isError || metricasQ.isError) },
-    grupos: { isLoading: habilitado && !erroGrupos && (!fonteQ.data || !codQ.data || !catQ.data), isError: erroGrupos },
+    // Catálogo com erro: conta sem histórico (lucro desconhecido) e famílias sem mapa — erro nos dois blocos, com motivo.
+    conta: { isLoading: habilitado && !erroConta && resultadoConta === null, isError: erroConta,
+      motivo: habilitado && vendas.erros.catalogo ? 'catalogo' as const : null },
+    grupos: { isLoading: habilitado && !erroGrupos && !vendas.isError && painel === null, isError: erroGrupos },
     sync: { isLoading: syncQ.isPending && orgId != null, isError: syncQ.isError },
   };
-  // Geral só o que derruba os dois blocos (vendas). Grupos, leitura ao vivo e sync ficam no próprio bloco.
-  const isError = habilitado && vendas.isError;
-  const isLoading = habilitado && !isError && painel === null && resultadoConta === null;
+  // Geral só o que derruba os dois blocos sem motivo próprio: vendas ou devoluções. Catálogo, grupos, leitura ao
+  // vivo e sync ficam no próprio bloco.
+  const isError = habilitado && (vendas.erros.vendas || vendas.erros.devolucoes);
+  const isLoading = blocos.conta.isLoading && blocos.grupos.isLoading;
   const isFetching = syncQ.isFetching
     || (habilitado && (fonteQ.isFetching || codQ.isFetching || vendas.isFetching || catQ.isFetching || metricasQ.isFetching));
 

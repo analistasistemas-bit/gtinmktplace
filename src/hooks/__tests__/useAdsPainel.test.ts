@@ -36,11 +36,13 @@ function linha(codigo: string, codigoPai: string | null, over: Partial<Acumulado
   const acc = { ...somarAcumuladores([]), ...over };
   return { codigo, codigoPai, nomeFamilia: codigoPai, acc, m: metricas(acc) } as unknown as LinhaSku;
 }
-const vendasQ = (linhas: LinhaSku[] | null, extra: object = {}) => ({
+// isError do mock = erro das próprias vendas (o de catálogo é coberto em useAdsPainel-vendas-real.test.ts).
+const vendasQ = (linhas: LinhaSku[] | null, extra: { isError?: boolean; [k: string]: unknown } = {}) => ({
   dados: linhas && { linhas, historicoDesde: '2026-01-01T03:00:00.000Z' },
   baseFiscal: linhas && { ok: true },
   faturamentoConta: linhas && { atual: 1000, anterior: 800 },
   isLoading: false, isFetching: false, isError: false, refetch: vi.fn().mockResolvedValue([]), ...extra,
+  erros: { vendas: extra.isError ?? false, catalogo: false, devolucoes: false },
 });
 
 const somarDia = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
