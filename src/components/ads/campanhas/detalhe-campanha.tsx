@@ -12,6 +12,7 @@ import { FaixaKpis } from '@/components/ads/faixa-kpis';
 import { SerieDiaria } from '@/components/ads/serie-diaria';
 import { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { fmtBRL } from '@/lib/formato';
+import { atribuicaoFinal, diasEntre } from '@/lib/sku-ads';
 import { cn } from '@/lib/utils';
 import {
   compararIndicadorAds, indicadoresAds,
@@ -98,12 +99,17 @@ function Valor({ def, linha, comparar, provisoria }: { def: Def; linha: Linha; c
       </div>
     );
   }
-  const cmp = comparar && linha.anterior
-    ? compararIndicadorAds(valor, linha.anterior[def.chave] ?? SEM_VALOR, def.unidade, provisoria, def.sentido)
-    : null;
+  const ant = comparar && linha.anterior ? linha.anterior[def.chave] ?? SEM_VALOR : null;
+  // Anterior sem valor: o motivo específico, não um genérico "Sem comparação".
+  const cmp = ant && ant.valor !== null ? compararIndicadorAds(valor, ant, def.unidade, provisoria, def.sentido) : null;
   return (
     <div className="space-y-0.5">
       <span className="block font-medium">{def.formato(valor.valor)}</span>
+      {ant && ant.valor === null && (
+        <span className="block text-xs font-normal leading-snug text-muted-foreground">
+          Variação indisponível: {MOTIVOS[ant.motivo ?? 'nao_retornada']}
+        </span>
+      )}
       {cmp && (
         <span className="flex flex-wrap items-center justify-end gap-x-1.5">
           <Delta {...cmp} />
@@ -220,15 +226,23 @@ function AnunciosPatrocinados({ anuncios, motivo, comparacaoEstado }: {
         </Table>
       </div>
       <div className="space-y-3 lg:hidden">
-        <Select value={ordem.coluna} onValueChange={ordenarPor}>
-          <SelectTrigger aria-label="Ordenar anúncios por" className="h-11 w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="anuncio">Anúncio</SelectItem>
-            {COLUNAS.map(d => <SelectItem key={d.chave} value={d.chave}>{d.rotulo}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <Select value={ordem.coluna} onValueChange={c => setOrdem(o => ({ coluna: c, direcao: c === o.coluna ? o.direcao : c === 'anuncio' ? 'asc' : 'desc' }))}>
+            <SelectTrigger aria-label="Ordenar anúncios por" className="h-11 flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="anuncio">Anúncio</SelectItem>
+              {COLUNAS.map(d => <SelectItem key={d.chave} value={d.chave}>{d.rotulo}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button type="button" variant="outline" className="h-11 shrink-0"
+            aria-label={ordem.direcao === 'desc' ? 'Ordem decrescente: alternar para crescente' : 'Ordem crescente: alternar para decrescente'}
+            onClick={() => setOrdem(o => ({ ...o, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }))}>
+            {ordem.direcao === 'desc' ? <ArrowDown aria-hidden className="h-4 w-4" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
+            {ordem.direcao === 'desc' ? 'Decrescente' : 'Crescente'}
+          </Button>
+        </div>
         <ul aria-label="Anúncios patrocinados em cartões" className="grid gap-3 sm:grid-cols-2">
           {visiveis.map(l => (
             <li key={l.a.itemId} className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3">
@@ -281,6 +295,12 @@ function Configuracao({ c }: { c: CampanhaVista }) {
   );
 }
 
+/** Primeiro dia da janela cuja atribuição ainda está em aberto (regra do dossiê: fecha 15+ dias após a leitura). */
+function inicioAtribuicaoAberta(janela: { desde: string; ate: string }, lidoEm: string): string | undefined {
+  const lido = Number.isNaN(Date.parse(lidoEm)) ? null : lidoEm;
+  return diasEntre(janela.desde, janela.ate).find(d => lido === null || !atribuicaoFinal(d, lido));
+}
+
 export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, onFechar, competitividade }: Props) {
   const consulta = useMemo<PedidoAdsMetricas>(
     () => ({ desde: pedido.desde, ate: pedido.ate, comparar: pedido.comparar, escopo: 'campanha', campanhaId }),
@@ -314,7 +334,8 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
           <p className="text-sm text-muted-foreground">Comparação indisponível{data.comparacao.motivo ? `: ${data.comparacao.motivo}` : '.'}</p>
         )}
         <FaixaKpis atual={atual} anterior={anterior} comparacao={data.comparacao.estado} ocultar={['tacos']} />
-        <SerieDiaria serie={data.atual.serie} janela={data.atual.janela} completo={data.atual.completo} />
+        <SerieDiaria serie={data.atual.serie} janela={data.atual.janela} completo={data.atual.completo}
+          provisorioDesde={inicioAtribuicaoAberta(data.atual.janela, data.atual.lidoEm)} />
       </div>
     );
   }

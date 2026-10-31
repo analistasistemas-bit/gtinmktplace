@@ -150,10 +150,69 @@ describe('DetalheCampanha', () => {
       expect(ordemIds()[0]).toContain('MLB2');
     });
 
-    it('variação por anúncio quando há período anterior', () => {
+    // Células na ordem das colunas: 0 Anúncio, 1 Investimento, ..., 6 Receita, 7 ACOS.
+    const delta = (linha: HTMLElement, coluna: number) => {
+      const el = within(linha).getAllByRole('cell')[coluna].querySelector('[data-delta]') as HTMLElement | null;
+      return el && { texto: el.textContent, direcao: el.dataset.direcao, tom: el.dataset.tom };
+    };
+
+    it('variação por anúncio: texto, direção e tom de cada métrica', () => {
       abrir();
       const linha = within(tabela()).getByText('Camiseta Azul').closest('tr')!;
-      expect(linha.querySelector('[data-delta]')).not.toBeNull();
+      expect(delta(linha, 1)).toEqual({ texto: '+25%', direcao: 'up', tom: 'neutral' }); // 100 vs 80
+      expect(delta(linha, 6)).toEqual({ texto: '+100%', direcao: 'up', tom: 'neutral' }); // 400 vs 200
+      expect(delta(linha, 7)).toEqual({ texto: '-15,0 p.p.', direcao: 'down', tom: 'success' }); // ACOS 25% vs 40%
+    });
+
+    it('comparação provisória: selo Provisória e nenhum tom de sucesso/perigo', () => {
+      hook(resposta({ comparacao: { estado: 'provisoria', motivo: null } }));
+      abrir();
+      const linha = within(tabela()).getByText('Camiseta Azul').closest('tr')!;
+      expect(delta(linha, 7)).toEqual({ texto: '-15,0 p.p.', direcao: 'down', tom: 'neutral' });
+      expect(within(linha).getAllByText('Provisória').length).toBeGreaterThan(0);
+    });
+
+    it('métrica anterior sem valor: mostra o motivo específico, não só "Sem comparação"', () => {
+      const anterior = { ...m(80, 200, 3, 1500, 80), cost: { valor: null, motivo: 'fora_da_retencao' } as ValorAds };
+      hook(resposta({ anuncios: [anuncio('MLB1', 'Camiseta Azul', m(100, 400, 5, 2000, 100), anterior)] }));
+      abrir();
+      const linha = within(tabela()).getByText('Camiseta Azul').closest('tr')!;
+      const inv = within(linha).getAllByRole('cell')[1];
+      expect(inv.querySelector('[data-delta]')).toBeNull();
+      expect(inv).toHaveTextContent('Variação indisponível: Período fora da retenção do ML.');
+    });
+
+    it('cartões (mobile): controle de direção inverte a ordem', async () => {
+      const user = userEvent.setup();
+      abrir();
+      const cartoes = () => within(screen.getByRole('list', { name: 'Anúncios patrocinados em cartões' })).getAllByRole('listitem').map((li) => li.textContent ?? '');
+      expect(cartoes()[0]).toContain('MLB2'); // investimento desc
+      await user.click(screen.getByRole('button', { name: /ordem decrescente/i }));
+      expect(cartoes()[0]).toContain('MLB1');
+      expect(screen.getByRole('button', { name: /ordem crescente/i })).toBeInTheDocument();
+    });
+
+    it('atribuição em aberto: marca os dias do gráfico mesmo sem comparação', () => {
+      // lido em 08/10: nenhum dos dias 01–07/10 passou de 15 dias.
+      hook(resposta({ anterior: null, comparacao: { estado: 'desligada', motivo: null } }));
+      abrir();
+      expect(screen.getByText(/atribuição ainda em aberto \(7 dias\)/i)).toBeInTheDocument();
+    });
+
+    it('atribuição em aberto: só os dias lidos há menos de 15 dias', () => {
+      const r = resposta({ comparacao: { estado: 'desligada', motivo: null } });
+      r.atual = { ...r.atual!, lidoEm: '2026-10-20T10:00:00Z' }; // 01–05/10 já fechados; 06 e 07 em aberto
+      hook(r);
+      abrir();
+      expect(screen.getByText(/atribuição ainda em aberto \(2 dias\)/i)).toBeInTheDocument();
+    });
+
+    it('atribuição toda fechada: sem aviso de dias em aberto', () => {
+      const r = resposta();
+      r.atual = { ...r.atual!, lidoEm: '2026-11-30T10:00:00Z' };
+      hook(r);
+      abrir();
+      expect(screen.queryByText(/atribuição ainda em aberto/i)).toBeNull();
     });
 
     it('lista indisponível: mostra o motivo, não uma tabela vazia', () => {
