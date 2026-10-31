@@ -45,6 +45,14 @@ export interface ContaPainel extends MetricasAds {
   divergente: boolean;                  // Σ grupos com membro > total da conta (em centavos): decomposição suspensa
   diasAbertos: number;
 }
+/** Composição do gasto sobre uma base só (famílias + compartilhado + não identificado = custo, em centavos). */
+export interface ComposicaoConta { custo: number; emFamilias: number; compartilhado: number;
+  naoIdentificado: number | null; naoIdentificadoPct: number | null; divergente: boolean }
+export const MSG_CONCILIACAO_PENDENTE = 'A leitura atual do ML ainda não está conciliada com a coleta das famílias.';
+/** Ao vivo × coleta (plano §5.6 item 5). Pendente: a conta ao vivo fica sem composição; a da última coleta segue
+ *  à parte, identificada pelo horário (`coletada` null = série coletada sem cobrir a janela). */
+export type ConciliacaoConta = { estado: 'ok' }
+  | { estado: 'pendente'; mensagem: string; coletadoEm: string | null; coletada: ComposicaoConta | null };
 export interface PainelAds {
   estado: EstadoPainel; desatualizado: boolean;
   gruposCobertos: boolean;              // período inteiro dentro da cobertura dos grupos (mesma regra do dossiê)
@@ -53,6 +61,7 @@ export interface PainelAds {
   contaMotivo: 'cobertura' | 'serie_incompleta' | null;   // serie_incompleta = leitura ao vivo sem todos os dias/campos
   familias: FamiliaPainel[];            // ordenadas por custo desc
   compartilhados: { id: number; custo: number; familias: string[]; semCodigo: number }[];
+  conciliacao: ConciliacaoConta | null;  // null = sem conta ao vivo (ou conta indisponível)
 }
 
 /** Liga o semáforo. Ligado pelo Diego em 05/10/2026 com os números do spike 055 (mesma base de preço; o ML conta
@@ -208,18 +217,37 @@ export function montarPainelAds(p: {
   // Série da conta: só vale se cobre todo dia do período. Ao vivo, a validade é da própria leitura (não do sync).
   const vivo = p.contaAoVivo ? diasAoVivo(p.contaAoVivo, dias) : null;
   const contaDias = p.fonte.conta.filter((d) => d.dia >= p.janela.desde && d.dia <= p.janela.ate);
-  const contaCoberta = p.contaAoVivo ? vivo != null
-    : !!sync?.conta_cobertura_desde && sync.conta_cobertura_desde <= p.janela.desde
-      && new Set(contaDias.map((d) => d.dia)).size >= dias.length;
-  const somaConta = somaVazia();
-  for (const d of vivo ?? contaDias) acumular(somaConta, d);
+  const coletadaCobre = !!sync?.conta_cobertura_desde && sync.conta_cobertura_desde <= p.janela.desde
+    && new Set(contaDias.map((d) => d.dia)).size >= dias.length;
+  const contaCoberta = p.contaAoVivo ? vivo != null : coletadaCobre;
+  const somaColetada = somaVazia();
+  for (const d of contaDias) acumular(somaColetada, d);
+  const somaConta = vivo ? somaVazia() : somaColetada;
+  for (const d of vivo ?? []) acumular(somaConta, d);
+
+  // Composição sobre UMA base de custo: famílias + compartilhado + não identificado = custo (em centavos).
+  const composicao = (custoC: number): ComposicaoConta => {
+    const divergente = emFamiliasC + compartilhadoC > custoC;   // um centavo já é divergência
+    const naoIdC = custoC - emFamiliasC - compartilhadoC;
+    return { custo: custoC / 100, emFamilias: emFamiliasC / 100, compartilhado: compartilhadoC / 100,
+      naoIdentificado: divergente ? null : naoIdC / 100,
+      naoIdentificadoPct: divergente || custoC === 0 ? null : naoIdC / custoC, divergente };
+  };
+  // Ao vivo só confronta a composição quando a coleta cobre a janela e cada dia coletado bate em centavos com a
+  // leitura atual; senão a diferença de atualização nunca vira "não identificado" (plano §5.6, ADR-0179 emenda item 6).
+  let conciliacao: ConciliacaoConta | null = null;
+  if (vivo) {
+    const coletadoC = new Map<string, number>();
+    for (const d of contaDias) coletadoC.set(d.dia, coletadoC.has(d.dia) ? NaN : cents(d.cost));   // dia repetido não concilia
+    const concilia = gruposCobertos && coletadaCobre && vivo.every((d) => coletadoC.get(d.dia) === cents(d.cost));
+    conciliacao = concilia ? { estado: 'ok' } : { estado: 'pendente', mensagem: MSG_CONCILIACAO_PENDENTE,
+      coletadoEm: sync?.ultimo_ok_em ?? null, coletada: coletadaCobre ? composicao(somaColetada.custoC) : null };
+  }
+
   let conta: ContaPainel | null = null;
   if (contaCoberta) {
     const custoC = somaConta.custoC;
-    // Ao vivo × coleta dos grupos são fontes distintas: sem conciliação (Task 21) a diferença não vira
-    // "não identificado" nem divergência.
-    const divergente = !vivo && emFamiliasC + compartilhadoC > custoC;   // um centavo já é divergência
-    const naoIdentificadoC = vivo ? null : custoC - emFamiliasC - compartilhadoC;
+    const comp = !vivo || conciliacao?.estado === 'ok' ? composicao(custoC) : null;
     const lucroAntes = lucroConhecido ? p.lucroConta.lucro : null;
     conta = {
       ...somarMetricas(somaConta),
@@ -229,9 +257,8 @@ export function montarPainelAds(p: {
       fonteCusto: historicoOk ? p.lucroConta.fonteCusto : null,
       motivoFiscal,
       emFamilias: emFamiliasC / 100, compartilhado: compartilhadoC / 100,
-      naoIdentificado: divergente || naoIdentificadoC == null ? null : naoIdentificadoC / 100,
-      naoIdentificadoPct: divergente || naoIdentificadoC == null || custoC === 0 ? null : naoIdentificadoC / custoC,
-      divergente,
+      naoIdentificado: comp?.naoIdentificado ?? null, naoIdentificadoPct: comp?.naoIdentificadoPct ?? null,
+      divergente: comp?.divergente ?? false,
       diasAbertos: vivo ? vivo.filter((d) => !atribuicaoFinal(d.dia, p.contaAoVivo!.lidoEm)).length
         : contaDias.filter((d) => !atribuicaoFinal(d.dia, d.coletado_em)).length,
     };
@@ -242,6 +269,6 @@ export function montarPainelAds(p: {
     desatualizado: !sync?.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS,
     gruposCobertos, semaforoLiberado: p.baseAcosValidada,
     conta, contaMotivo: conta ? null : p.contaAoVivo ? 'serie_incompleta' : 'cobertura',
-    familias, compartilhados,
+    familias, compartilhados, conciliacao,
   };
 }

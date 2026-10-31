@@ -297,7 +297,7 @@ describe('montarPainelAds — conta com a série ao vivo do ML', () => {
   it.each([
     ['completo = false', vivo(undefined, false)],
     ['dia faltando', vivo([diaVivo('2026-09-01', 30)])],
-    ['dia repetido', vivo([diaVivo('2026-09-01', 30), diaVivo('2026-09-01', 30)])],
+    ['dia repetido', vivo([diaVivo('2026-09-01', 30), diaVivo('2026-09-02', 40), diaVivo('2026-09-01', 30)])],
     ['custo nulo', vivo([diaVivo('2026-09-01', 30), { dia: '2026-09-02', metricas: { ...diaVivo('2026-09-02', 0).metricas,
       cost: { valor: null, motivo: 'nao_retornada' as const } } }])],
     ['campo ausente', vivo([diaVivo('2026-09-01', 30), { dia: '2026-09-02', metricas: { cost: v(40) } }])],
@@ -320,5 +320,57 @@ describe('montarPainelAds — conta com a série ao vivo do ML', () => {
     const p = montarPainelAds(base({ grupos: [grupo(1, 50, ['MLB1'])] }));
     expect(p.conta).toMatchObject({ custo: 100, resultado: 200, naoIdentificado: 50, divergente: false });
     expect(montarPainelAds(base(semGrupos)).contaMotivo).toBe('cobertura');
+  });
+});
+
+// Plano §5.6 item 5 e emenda de 2026-10-30 (ADR-0179, item 6): a composição só é confrontada com a conta ao vivo
+// quando a coleta cobre a janela e o custo diário coletado concilia em centavos com a leitura atual.
+describe('montarPainelAds — conciliacao entre a coleta e a leitura ao vivo', () => {
+  const v = (valor: number) => ({ valor, motivo: null });
+  const diaVivo = (d: string, cost: number) => ({ dia: d, metricas: {
+    cost: v(cost), clicks: v(0), prints: v(0), direct_amount: v(0), total_amount: v(0) } });
+  const vivo = (c1: number, c2: number) =>
+    ({ serie: [diaVivo('2026-09-01', c1), diaVivo('2026-09-02', c2)], completo: true, lidoEm: '2026-10-04T15:00:00Z' });
+  const grupos = [grupo(1, 50, ['MLB1']), grupo(2, 20, ['MLB1', 'MLB3'])];
+
+  it('conciliacao ok: centavos iguais por dia → composição confrontada com a conta ao vivo', () => {
+    const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(60, 40) });
+    expect(p.conciliacao).toEqual({ estado: 'ok' });
+    expect(p.conta).toMatchObject({ custo: 100, emFamilias: 50, compartilhado: 20, naoIdentificado: 30,
+      naoIdentificadoPct: 0.3, divergente: false });
+  });
+  it('conciliacao: compara em centavos inteiros (ruído abaixo do centavo concilia)', () => {
+    const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-01', 60.001), dia('2026-09-02', 40)] }),
+      contaAoVivo: vivo(59.999, 40.004) });
+    expect(p.conciliacao).toEqual({ estado: 'ok' });
+    expect(p.conta?.naoIdentificado).toBe(30);
+  });
+  it('conciliacao pendente: custo diário divergente → sem não identificado na conta ao vivo, composição coletada preservada', () => {
+    // Totais iguais (100) com dias trocados: a conciliação é por dia, não pelo total.
+    const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(61, 39) });
+    expect(p.conta).toMatchObject({ custo: 100, naoIdentificado: null, naoIdentificadoPct: null, divergente: false });
+    expect(p.conciliacao).toEqual({ estado: 'pendente',
+      mensagem: 'A leitura atual do ML ainda não está conciliada com a coleta das famílias.',
+      coletadoEm: sync.ultimo_ok_em,
+      coletada: { custo: 100, emFamilias: 50, compartilhado: 20, naoIdentificado: 30, naoIdentificadoPct: 0.3, divergente: false } });
+  });
+  it('conciliacao pendente: um centavo de diferença num dia já pende; a diferença nunca vira não identificado', () => {
+    const p = montarPainelAds({ ...base({ grupos }), contaAoVivo: vivo(60.01, 40) });
+    expect(p.conta).toMatchObject({ custo: 100.01, naoIdentificado: null, divergente: false });
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletada: { custo: 100, naoIdentificado: 30 } });
+  });
+  it('conciliacao pendente: série coletada sem cobrir a janela → sem composição coletada', () => {
+    const p = montarPainelAds({ ...base({ grupos, conta: [dia('2026-09-02', 40)] }), contaAoVivo: vivo(60, 40) });
+    expect(p.conta).toMatchObject({ custo: 100, naoIdentificado: null });
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletada: null });
+  });
+  it('conciliacao pendente: grupos sem cobertura da janela, mesmo com custos iguais', () => {
+    const s = { ...sync, ultimo_ok_em: '2026-09-02T14:00:00Z' };
+    const p = montarPainelAds({ ...base({ sync: s, grupos }), contaAoVivo: vivo(60, 40) });
+    expect(p.conta?.naoIdentificado).toBeNull();
+    expect(p.conciliacao).toMatchObject({ estado: 'pendente', coletadoEm: s.ultimo_ok_em });
+  });
+  it('conciliacao: sem contaAoVivo não há estado de conciliação (comportamento anterior)', () => {
+    expect(montarPainelAds(base({ grupos })).conciliacao).toBeNull();
   });
 });
