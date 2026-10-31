@@ -56,6 +56,21 @@ describe('useAdsMetricas', () => {
     expect(result.current.data?.avisos).toEqual(['B']);
   });
 
+  it('troca de organização com resposta pendente: só a org nova fica visível', async () => {
+    const pend: Record<string, (v: RespostaAdsMetricas) => void> = {};
+    let org = 'org-a';
+    m.buscarMetricasAds.mockImplementation(() => new Promise((res) => { pend[org] = res; }));
+    const { result, rerender } = render(pedido('2026-10-01'));
+    await waitFor(() => expect(pend['org-a']).toBeDefined());
+    org = 'org-b'; m.org = 'org-b';
+    rerender({ p: pedido('2026-10-01'), h: true });
+    await waitFor(() => expect(pend['org-b']).toBeDefined());
+    await act(async () => { pend['org-b'](resp('B')); });
+    await waitFor(() => expect(result.current.data?.avisos).toEqual(['B']));
+    await act(async () => { pend['org-a'](resp('A')); });
+    expect(result.current.data?.avisos).toEqual(['B']);
+  });
+
   it('troca de pedido não mantém o dado anterior enquanto carrega', async () => {
     m.buscarMetricasAds.mockImplementation((p: PedidoAdsMetricas) =>
       p.desde === '2026-10-01' ? Promise.resolve(resp('A')) : new Promise(() => {}));
