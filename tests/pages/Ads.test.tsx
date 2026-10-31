@@ -1161,6 +1161,29 @@ describe('contexto único: período, comparação e aba', () => {
     expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('Atualizar do cabeçalho em Campanhas refaz conta, tabela do período e configuração', () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    const refetchCampanhas = vi.fn().mockResolvedValue(undefined);
+    const atualizar = vi.fn().mockResolvedValue(undefined);
+    hookCampanhas.mockReturnValue({ resposta: null, campanhas: null, isLoading: true, isError: false, erro: null,
+      atualizando: false, atualizar, erroAtualizar: null, tentarDeNovo: vi.fn() });
+    hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => ({
+      data: p?.escopo === 'campanhas' ? respostaMetricas({ escopo: 'campanhas', atual: null, campanhas: [campanhaPeriodo()] }) : undefined,
+      isLoading: false, isFetching: false, isError: false, error: null, refetch: p?.escopo === 'campanhas' ? refetchCampanhas : vi.fn(),
+    }));
+    montar(PAINEL, { refetch }, 'campanhas');
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refetchCampanhas).toHaveBeenCalledTimes(1);
+    expect(atualizar).toHaveBeenCalledTimes(1);
+  });
+
+  it('Campanhas termina com a integridade e a procedência da conta', () => {
+    comCampanhas();
+    montar(PAINEL, {}, 'campanhas');
+    expect(screen.getByRole('region', { name: 'Integridade dos números' })).toBeInTheDocument();
+  });
+
   it('sem família acima do equilíbrio não oferece o atalho', () => {
     montar();
     expect(screen.queryByRole('button', { name: 'Ver famílias acima do equilíbrio' })).not.toBeInTheDocument();

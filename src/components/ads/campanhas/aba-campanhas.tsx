@@ -1,12 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import type { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
-import { useAdsMetricas } from '@/hooks/useAdsMetricas';
+import type { useAdsMetricas } from '@/hooks/useAdsMetricas';
 import { Aviso, AVISO } from '@/components/ads/aviso';
-import type { PedidoAdsMetricas } from '../../../../supabase/functions/_shared/ads/metricas';
 import { TabelaCampanhas } from './tabela-campanhas';
 import { DetalheCampanha, type PedidoBaseDetalhe } from './detalhe-campanha';
 import { Competitividade } from './competitividade';
@@ -16,6 +15,7 @@ const BOTAO = 'h-11 sm:h-8';
 const PEDE_CANAIS: readonly string[] = ['sem_conexao', 'sem_permissao', 'sem_acesso'];
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
+export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch'>;
 
 const lidoAs = (iso: string) =>
   new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
@@ -27,21 +27,22 @@ function AbrirCanais() {
 
 /**
  * Aba Campanhas por período (plano ads-redesign §3.2/3.4/4.4). A página entrega o bloco da conta inteira (KPIs,
- * gráfico e resultado da conta: nunca apresentado como resultado das campanhas); aqui ficam a tabela do período
- * (ads-metricas, escopo 'campanhas') e o detalhe. A configuração atual (ads-campanhas) só alimenta o detalhe e o
- * aviso de alertas: carregar ou falhar nela não esconde a tabela.
+ * gráfico e resultado da conta: nunca apresentado como resultado das campanhas), a integridade e as métricas do
+ * período (ads-metricas, escopo 'campanhas', lidas lá para o Atualizar do cabeçalho alcançá-las); aqui ficam a
+ * tabela e o detalhe. A configuração atual (ads-campanhas) só alimenta o detalhe e o aviso de alertas: carregar ou
+ * falhar nela não esconde a tabela.
  */
-export function AbaCampanhas({ dados, pedido, conta, acoes }: {
+export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoes }: {
   dados: DadosCampanhas;
+  metricas: MetricasCampanhas;
   /** Período e comparação compartilhados pela página; null = sem janela pronta. */
   pedido: PedidoBaseDetalhe | null;
   conta?: ReactNode;
+  integridade?: ReactNode;
   acoes?: AcoesFamilia;
 }) {
   const [aberta, setAberta] = useState<{ id: number; nome: string } | null>(null);
-  const consulta = useMemo<PedidoAdsMetricas | null>(() => (pedido ? { ...pedido, escopo: 'campanhas' } : null), [pedido]);
-  const metricas = useAdsMetricas(consulta, consulta !== null);
-  const { resposta, campanhas, isError, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
+  const { resposta, campanhas, isLoading, isError, atualizando, atualizar, erroAtualizar, tentarDeNovo } = dados;
 
   let tabela: ReactNode;
   if (metricas.isError) {
@@ -112,6 +113,8 @@ export function AbaCampanhas({ dados, pedido, conta, acoes }: {
         {tabela}
       </section>
 
+      {integridade}
+
       <div className="space-y-3 text-xs text-muted-foreground">
         {ok && (
           <div className="flex flex-wrap items-center gap-3">
@@ -137,7 +140,8 @@ export function AbaCampanhas({ dados, pedido, conta, acoes }: {
       {aberta && pedido && (
         <DetalheCampanha campanhaId={aberta.id} nome={aberta.nome} pedido={pedido}
           campanha={campanhas?.find(c => c.id === aberta.id) ?? null} aberto onFechar={() => setAberta(null)}
-          competitividade={<Competitividade campanhaId={aberta.id} pedido={pedido} />} acoes={acoes} />
+          competitividade={<Competitividade campanhaId={aberta.id} pedido={pedido} />} acoes={acoes}
+          configuracao={isError || (resposta && resposta.estado !== 'ok') ? 'erro' : isLoading || !resposta ? 'carregando' : 'lida'} />
       )}
     </div>
   );

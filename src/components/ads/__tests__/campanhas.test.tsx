@@ -195,20 +195,27 @@ describe('AbaCampanhas', () => {
     campanhas, isLoading: false, isError: false, erro: null, atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn(), ...over,
   });
   const aba = (d: DadosCampanhas, m = metricas()) => {
-    vi.mocked(useAdsMetricas).mockReturnValue(m as never);
-    return pagina(<AbaCampanhas dados={d} pedido={PEDIDO} conta={<p>Bloco da conta</p>} />);
+    // O detalhe lê as próprias métricas: segue carregando nestes testes.
+    vi.mocked(useAdsMetricas).mockReturnValue({ ...metricas(), data: undefined, isLoading: true } as never);
+    return pagina(<AbaCampanhas dados={d} metricas={m as never} pedido={PEDIDO} conta={<p>Bloco da conta</p>}
+      integridade={<p>Integridade da conta</p>} />);
   };
 
-  it('tabela do período pede o escopo campanhas com o período da página, depois do bloco da conta', () => {
+  it('tabela do período depois do bloco da conta; integridade no fim', () => {
     aba(dados());
-    expect(vi.mocked(useAdsMetricas)).toHaveBeenLastCalledWith({ ...PEDIDO, escopo: 'campanhas' }, true);
     expect(screen.getByText('Bloco da conta')).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Campanha Verão/ })).toHaveTextContent(/R\$\s*42,00/);
+    expect(screen.getByText('Integridade da conta')).toBeInTheDocument();
   });
-  it('sem período pronto não consulta', () => {
-    vi.mocked(useAdsMetricas).mockReturnValue(metricas({ data: undefined, isLoading: true }) as never);
-    pagina(<AbaCampanhas dados={dados()} pedido={null} />);
-    expect(vi.mocked(useAdsMetricas)).toHaveBeenLastCalledWith(null, false);
+  it.each([
+    ['carregando', { isLoading: true, resposta: null, campanhas: null }, 'Lendo a configuração atual…'],
+    ['com erro', { isError: true, erro: new Error('x'), resposta: null, campanhas: null }, 'Configuração atual indisponível agora; as métricas do período continuam valendo.'],
+  ] as const)('detalhe com a configuração %s não diz que a campanha saiu', (_n, over, texto) => {
+    aba(dados(over as Partial<DadosCampanhas>));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver campanha Campanha Verão' })[0]);
+    const detalhe = within(screen.getByRole('dialog'));
+    expect(detalhe.getByText(texto)).toBeInTheDocument();
+    expect(detalhe.queryByText(/não está mais entre as campanhas/)).not.toBeInTheDocument();
   });
   it('carregando as métricas: esqueleto', () => {
     aba(dados(), metricas({ data: undefined, isLoading: true }));

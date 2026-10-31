@@ -43,6 +43,8 @@ interface Props {
   competitividade?: ReactNode;
   /** "Ver desempenho" das famílias atuais: abre a análise global da família no mesmo período (plano §3.5). */
   acoes?: AcoesFamilia;
+  /** Leitura da configuração atual: só 'lida' permite dizer que a campanha saiu das ativas/pausadas. */
+  configuracao?: 'lida' | 'carregando' | 'erro';
 }
 
 type Direcao = 'asc' | 'desc';
@@ -298,7 +300,7 @@ function Configuracao({ c }: { c: CampanhaVista }) {
   );
 }
 
-export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, onFechar, competitividade, acoes }: Props) {
+export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, onFechar, competitividade, acoes, configuracao = 'lida' }: Props) {
   const consulta = useMemo<PedidoAdsMetricas>(
     () => ({ desde: pedido.desde, ate: pedido.ate, comparar: pedido.comparar, escopo: 'campanha', campanhaId }),
     [pedido.desde, pedido.ate, pedido.comparar, campanhaId],
@@ -357,7 +359,16 @@ export function DetalheCampanha({ campanhaId, nome, pedido, campanha, aberto, on
             </Secao>
           )}
           <Secao titulo="Configuração atual">
-            {campanha ? <Configuracao c={campanha} /> : (
+            {campanha ? <Configuracao c={campanha} /> : configuracao === 'carregando' ? (
+              <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                Lendo a configuração atual…
+              </p>
+            ) : configuracao === 'erro' ? (
+              <p className="text-sm text-muted-foreground">
+                Configuração atual indisponível agora; as métricas do período continuam valendo.
+              </p>
+            ) : (
               <p className="text-sm text-muted-foreground">
                 Esta campanha não está mais entre as campanhas ativas ou pausadas no Mercado Livre. As métricas do período
                 continuam valendo; estado, orçamento e produtos atuais não estão disponíveis.

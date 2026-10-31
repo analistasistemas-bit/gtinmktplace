@@ -10,6 +10,8 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdsPainel } from '@/hooks/useAdsPainel';
 import { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
+import { useAdsMetricas } from '@/hooks/useAdsMetricas';
+import type { PedidoAdsMetricas } from '../../supabase/functions/_shared/ads/metricas';
 import {
   MOTIVOS_PERIODO_ADS, PERIODO_PADRAO_ADS, resolverPeriodoAds, type DiasAds, type PeriodoAds,
 } from '@/lib/ads-painel-dados';
@@ -174,6 +176,15 @@ export default function Ads() {
     () => (janela ? { desde: janela.desde, ate: janela.ate, comparar } : null),
     [janela, comparar],
   );
+  // Tabela de campanhas do período: lida aqui (só com a aba aberta) para o Atualizar do cabeçalho alcançá-la.
+  const pedidoCampanhas = useMemo<PedidoAdsMetricas | null>(() => (pedido ? { ...pedido, escopo: 'campanhas' } : null), [pedido]);
+  const metricasCampanhas = useAdsMetricas(pedidoCampanhas, aba === 'campanhas' && pedidoCampanhas !== null);
+  const atualizarTudo = () => {
+    void refetch();
+    if (aba !== 'campanhas') return;
+    void metricasCampanhas.refetch();
+    void campanhasDados.atualizar();
+  };
 
   const provisoria = comparar === 'anterior' && metricasConta?.comparacao.estado === 'provisoria';
   const contexto = (
@@ -306,6 +317,12 @@ export default function Ads() {
     </div>
   );
 
+  // Integridade e procedência: fim das duas abas (plano §3.2, linha 5), só com o painel montado.
+  const integridade = painel && janela && painel.estado === 'ok' && (
+    <IntegridadeAds painel={painel} janelaDesde={janela.desde} historicoDesde={historicoDesde}
+      coletadoEm={ultimoOkEm} lidoEm={metricasConta?.atual?.lidoEm ?? null} />
+  );
+
   // ---- Desempenho: famílias e integridade ----
   let corpo: ReactNode;
   if (isError) {
@@ -353,10 +370,7 @@ export default function Ads() {
         {/* A key reinicia filtro e detalhes ao trocar seleção, janela ou atalho; refetch da mesma janela não muda a key. */}
         <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}:${atalho}`} painel={painel}
           historicoDesde={historicoDesde} focoCodigoPai={foco} inicial={atalho > 0 ? ATALHO_ACIMA_EQUILIBRIO : undefined} />
-        {janela && (
-          <IntegridadeAds painel={painel} janelaDesde={janela.desde} historicoDesde={historicoDesde}
-            coletadoEm={ultimoOkEm} lidoEm={metricasConta?.atual?.lidoEm ?? null} />
-        )}
+        {integridade}
       </>
     );
   }
@@ -394,7 +408,7 @@ export default function Ads() {
         title="Ads"
         subtitle="Quanto o Ads custa e o que sobra depois dele."
         actions={(
-          <Button variant="outline" size="sm" className={BOTAO_ACAO} disabled={isFetching} onClick={() => refetch()}>
+          <Button variant="outline" size="sm" className={BOTAO_ACAO} disabled={isFetching} onClick={atualizarTudo}>
             <RefreshCw aria-hidden className="h-4 w-4" />
             Atualizar
           </Button>
@@ -415,7 +429,8 @@ export default function Ads() {
           <TabsContent value="desempenho">{desempenho}</TabsContent>
           <TabsContent value="campanhas">
             {semPeriodo ?? (
-              <AbaCampanhas dados={campanhasDados} pedido={pedido} conta={blocoConta(false)}
+              <AbaCampanhas dados={campanhasDados} metricas={metricasCampanhas} pedido={pedido} conta={blocoConta(false)}
+                integridade={integridade || undefined}
                 acoes={{ verDesempenho, temDesempenho: codigo => codigosComDesempenho.has(codigo) }} />
             )}
           </TabsContent>
