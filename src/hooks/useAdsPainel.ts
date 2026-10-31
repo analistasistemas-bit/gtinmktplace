@@ -28,7 +28,7 @@ export interface RetornoAdsPainel {
    *  `motivo` 'serie_incompleta' = leitura ao vivo ausente/incompleta (conta null). */
   resultadoConta: { conta: ResultadoContaAds | null; motivo: 'serie_incompleta' | null } | null;
   janela: JanelaDiasAds | null;
-  /** null sem janela pronta. */
+  /** null sem janela pronta ou com "Sem comparação". */
   comparacao: ComparacaoAds | null;
   /** Resposta da edge para o escopo 'conta' (série ao vivo, resumo, anterior). */
   metricasConta: RespostaAdsMetricas | null;
@@ -56,7 +56,7 @@ const SEM_GRUPOS: FontePainelAds = { sync: null, conta: [], grupos: [] };
  *  A janela é resolvida uma vez (resolverPeriodoAds, até ontem BRT, sem depender da coleta) e compartilhada por
  *  RPC, vendas, leitura ao vivo e montagem. A conta usa só a série ao vivo; grupos/famílias seguem pela coleta.
  *  Toda chave leva a org e não há placeholderData: resposta tardia de outra org/janela nunca monta esta tela. */
-export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
+export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum' = 'anterior'): RetornoAdsPainel {
   const orgId = useOrgEfetivaId();
   // O sync só alimenta `ultimoOkEm`: não bloqueia nem a janela nem as finanças.
   const syncQ = useQuery({ queryKey: ['ads-sync-fim', orgId], queryFn: buscarUltimoOkAds, staleTime: 5 * 60_000,
@@ -80,7 +80,9 @@ export function useAdsPainel(periodo: PeriodoAds): RetornoAdsPainel {
   const desde = resolucao.tipo === 'pronto' ? resolucao.janela.desde : null;
   const ate = resolucao.tipo === 'pronto' ? resolucao.janela.ate : null;
   const janela = useMemo(() => (desde && ate ? { desde, ate } : null), [desde, ate]);
-  const comparacao = useMemo(() => (janela ? comparacaoAds(janela, meioDiaBRT(hoje)) : null), [janela, hoje]);
+  // "Sem comparação": nenhuma janela anterior (nem vendas nem métricas da conta pedem o período anterior).
+  const comparacao = useMemo(
+    () => (janela && comparar === 'anterior' ? comparacaoAds(janela, meioDiaBRT(hoje)) : null), [janela, hoje, comparar]);
   const aDesde = comparacao?.tipo === 'pronta' ? comparacao.janela.desde : null;
   const aAte = comparacao?.tipo === 'pronta' ? comparacao.janela.ate : null;
 

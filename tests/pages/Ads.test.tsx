@@ -20,6 +20,7 @@ vi.mock('recharts', async (orig) => ({
 }));
 import Ads from '@/pages/Ads';
 import { ResumoConta } from '@/components/ads/resumo-conta';
+import { AVISO } from '@/components/ads/aviso';
 
 const metr = { cliques: 0, impressoes: 0 };
 const PAINEL: PainelAds = {
@@ -139,11 +140,11 @@ describe('Ads', () => {
     localStorage.setItem('ads-painel-dias', '30');
     montar();
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias: 30 });
 
     fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 7 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias: 7 });
   });
   it('família com gasto compartilhado: resultado indisponível com o motivo', () => {
     montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], custoCompartilhado: 20, resultado: null, semaforo: null, motivo: 'compartilhado' }] });
@@ -287,7 +288,7 @@ describe('Ads', () => {
   it.each([7, 30, 90] as const)('preserva a preferência existente de %i dias', dias => {
     localStorage.setItem('ads-painel-dias', String(dias));
     montar();
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias });
   });
 
   it.each([null, '', '31', '0', '030', 'range', '{"tipo":"mes_atual"}'])(
@@ -295,7 +296,7 @@ describe('Ads', () => {
     valor => {
       if (valor !== null) localStorage.setItem('ads-painel-dias', valor);
       montar();
-      expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+      expect(hook.mock.calls.at(-1)?.[0]).toEqual(PERIODO_PADRAO_ADS);
     },
   );
 
@@ -305,7 +306,7 @@ describe('Ads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
 
     expect(localStorage.getItem('ads-painel-dias')).toBe('mes_atual');
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'mes_atual' });
 
     primeira.unmount();
     montar();
@@ -324,11 +325,11 @@ describe('Ads', () => {
 
     montar();
 
-    expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual(PERIODO_PADRAO_ADS);
 
     fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'mes_atual' });
     expect(screen.getByRole('button', { name: 'Mês atual' }))
       .toHaveAttribute('aria-pressed', 'true');
   });
@@ -343,7 +344,7 @@ describe('Ads', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 30 dias' }));
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias: 30 });
     expect(localStorage.getItem('ads-painel-dias')).toBe('30');
   });
 
@@ -367,7 +368,7 @@ describe('Ads', () => {
     const refetch = vi.fn().mockResolvedValue(undefined);
     montar(null, { isError: true, refetch });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
 
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -375,7 +376,7 @@ describe('Ads', () => {
   it('erro do sync mostra o alerta, não o skeleton', () => {
     montar(null, { janela: null, situacaoPeriodo: 'carregando', isError: true, ultimoOkEm: null });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar o painel de Ads.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar as vendas do período.');
     expect(screen.queryByLabelText('Carregando')).not.toBeInTheDocument();
   });
 
@@ -397,17 +398,17 @@ describe('Ads', () => {
   it('sem_ads oferece os últimos 90 dias', () => {
     montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] });
 
-    expect(screen.getByText('Nenhum gasto de Ads no período')).toBeVisible();
+    expect(screen.getByText('Sem investimento em Ads neste período')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 90 dias' }));
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 90 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias: 90 });
   });
 
   it('sem_ads com 90 dias selecionado não repete a ação', () => {
     localStorage.setItem('ads-painel-dias', '90');
     montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] });
 
-    expect(screen.getByText('Nenhum gasto de Ads no período')).toBeVisible();
+    expect(screen.getByText('Sem investimento em Ads neste período')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Ver últimos 90 dias' })).not.toBeInTheDocument();
   });
 
@@ -1070,7 +1071,7 @@ describe('contexto único: período, comparação e aba', () => {
     expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: '7 dias' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('combobox', { name: 'Comparar com' })).toHaveTextContent('Sem comparação');
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 7 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'preset', dias: 7 });
     expect(hookMetricas).toHaveBeenCalledWith(
       expect.objectContaining({ escopo: 'campanhas', desde: '2026-09-04', ate: '2026-10-03', comparar: 'nenhum' }), true);
     expect(Object.fromEntries(local())).toEqual({ periodo: '7', comparar: 'nenhum', aba: 'campanhas' });
@@ -1081,7 +1082,7 @@ describe('contexto único: período, comparação e aba', () => {
     comCampanhas();
     montar(PAINEL, {}, 'desempenho', '/ads?aba=campanhas&periodo=range&desde=2026-09-10&ate=2026-09-20&comparar=nenhum');
 
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: '2026-09-10', ate: '2026-09-20' });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'range', desde: '2026-09-10', ate: '2026-09-20' });
     expect(screen.getByRole('tab', { name: /Campanhas/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /Personalizado/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('combobox', { name: 'Comparar com' })).toHaveTextContent('Sem comparação');
@@ -1089,7 +1090,7 @@ describe('contexto único: período, comparação e aba', () => {
 
   it('período inválido na URL mostra o motivo em vez de outra janela', () => {
     montar(null, { janela: null, situacaoPeriodo: 'invalido' }, 'desempenho', '/ads?periodo=range&desde=2026-10-20&ate=2026-10-01');
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: '2026-10-20', ate: '2026-10-01' });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'range', desde: '2026-10-20', ate: '2026-10-01' });
     expect(screen.getByText(/Período inválido/)).toBeVisible();
     expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
   });
@@ -1171,8 +1172,8 @@ describe('contexto único: período, comparação e aba', () => {
   it('range malformado na URL vai ao resolvedor como veio, sem cair noutra janela', () => {
     localStorage.setItem('ads-painel-dias', '30');
     montar(null, { janela: null, situacaoPeriodo: 'invalido' }, 'desempenho', '/ads?periodo=range&desde=foo&ate=2026-10-20');
-    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: 'foo', ate: '2026-10-20' });
-    expect(hook).not.toHaveBeenCalledWith({ tipo: 'preset', dias: 30 });
+    expect(hook.mock.calls.at(-1)?.[0]).toEqual({ tipo: 'range', desde: 'foo', ate: '2026-10-20' });
+    expect(hook.mock.calls.map(c => c[0])).not.toContainEqual({ tipo: 'preset', dias: 30 });
     expect(screen.getByText('Informe datas válidas nos dois campos.')).toBeVisible();
   });
 
@@ -1208,5 +1209,98 @@ describe('contexto único: período, comparação e aba', () => {
   it('sem família acima do equilíbrio não oferece o atalho', () => {
     montar();
     expect(screen.queryByRole('button', { name: 'Ver famílias acima do equilíbrio' })).not.toBeInTheDocument();
+  });
+});
+
+describe('estados: sem gasto e falhas parciais', () => {
+  const SEM_ADS = { ...PAINEL, estado: 'sem_ads' as const, conta: null, familias: [], compartilhados: [] };
+  const okMetricas = (p: PedidoAdsMetricas | null) => ({
+    data: p?.escopo === 'campanhas' ? respostaMetricas({ escopo: 'campanhas', atual: null, campanhas: [campanhaPeriodo()] }) : undefined,
+    isLoading: false, isFetching: false, isError: false, error: null, refetch: vi.fn(),
+  });
+
+  it('estados: zero confirmado mostra investimento zero e as campanhas', () => {
+    hookMetricas.mockImplementation(okMetricas);
+    montar(SEM_ADS, { metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 0, motivo: null } }) }) });
+
+    expect(screen.getByText('Sem investimento em Ads neste período')).toBeVisible();
+    expect(screen.getByText('Suas campanhas continuam disponíveis.')).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Conta inteira' })).getByText('Investimento').closest('[data-kpi]')).toHaveTextContent(/R\$\s*0,00/);
+    expect(within(screen.getByRole('region', { name: 'Conta inteira' })).getByText('ROAS').closest('[data-kpi]')).toHaveTextContent('Indisponível');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver campanhas' }));
+    expect(screen.getByRole('row', { name: /Camp Verão/ })).toBeInTheDocument();
+  });
+
+  it('estados: falha da configuração não apaga as métricas do período', () => {
+    hookMetricas.mockImplementation(okMetricas);
+    hookCampanhas.mockReturnValue({ resposta: null, campanhas: null, isLoading: false, isError: true, erro: new Error('ML'),
+      atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn() });
+    montar(PAINEL, { metricasConta: respostaMetricas({ atual: bloco({ cost: { valor: 100, motivo: null } }) }) }, 'campanhas');
+
+    expect(within(screen.getByRole('region', { name: 'Conta inteira' })).getByText('Investimento').closest('[data-kpi]')).toHaveTextContent(/R\$\s*100,00/);
+    expect(screen.getByRole('row', { name: /Camp Verão/ })).toBeInTheDocument();
+    expect(screen.getByText(/Configuração atual indisponível/)).toBeInTheDocument();
+  });
+
+  it('estados: falha da comparação não apaga o período atual', () => {
+    montar(PAINEL, { comparacao: { tipo: 'pronta', janela: { desde: '2026-08-05', ate: '2026-09-03' } }, metricasConta: respostaMetricas({
+      atual: bloco({ cost: { valor: 100, motivo: null } }), anterior: null,
+      comparacao: { estado: 'indisponivel', motivo: 'o ML não respondeu o período anterior' },
+    }) });
+
+    expect(within(screen.getByRole('region', { name: 'Conta inteira' })).getByText('Investimento').closest('[data-kpi]')).toHaveTextContent(/R\$\s*100,00/);
+    expect(screen.getByText('Comparação indisponível: o ML não respondeu o período anterior')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Resumo da conta' })).toBeInTheDocument();
+  });
+
+  it('estados: grupos com erro não apagam a conta e oferecem Tentar novamente', () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    montar(null, { refetch, resultadoConta: { conta: PAINEL.conta!, motivo: null },
+      blocos: { conta: { isLoading: false, isError: false }, grupos: { isLoading: false, isError: true },
+        sync: { isLoading: false, isError: false } } }, null);
+
+    expect(screen.getByRole('tab', { name: 'Desempenho' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Resumo da conta' })).toBeInTheDocument();
+    expect(screen.getByText('Não foi possível carregar as famílias do período.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('estados: leitura da conta com erro mostra Tentar novamente, que refaz a consulta', () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    montar(PAINEL, { refetch, metricasConta: null,
+      blocos: { conta: { isLoading: false, isError: true }, grupos: { isLoading: false, isError: false },
+        sync: { isLoading: false, isError: false } } });
+
+    expect(screen.getByText('Não foi possível ler as métricas da conta no Mercado Livre.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['sem_conexao', 'sem_acesso', true],
+    ['sem_advertiser', 'sem_advertiser', false],
+    ['sem_permissao', 'sem_permissao', true],
+  ] as const)('estados: %s tem um aviso só, com o caminho de recuperação, nas duas abas', (estado, estadoPainel, canais) => {
+    hookMetricas.mockImplementation((p: PedidoAdsMetricas | null) => ({
+      data: respostaMetricas({ estado, escopo: p?.escopo ?? 'conta', atual: null }),
+      isLoading: false, isFetching: false, isError: false, error: null, refetch: vi.fn(),
+    }));
+    hookCampanhas.mockReturnValue({ resposta: { ok: true, estado }, campanhas: [], isLoading: false, isError: false, erro: null,
+      atualizando: false, atualizar: vi.fn(), erroAtualizar: null, tentarDeNovo: vi.fn() });
+    montar({ ...PAINEL, estado: estadoPainel, conta: null, familias: [], compartilhados: [] },
+      { metricasConta: respostaMetricas({ estado, atual: null }), resultadoConta: null }, 'desempenho');
+
+    const verificar = () => {
+      expect(screen.getAllByText(AVISO[estado]!)).toHaveLength(1);
+      if (estadoPainel !== estado) expect(screen.queryAllByText(AVISO[estadoPainel]!)).toHaveLength(0);
+      expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+      if (canais) expect(screen.getByRole('link', { name: 'Abrir Canais' })).toHaveAttribute('href', '/configuracoes/canais');
+      else expect(screen.queryByRole('link', { name: 'Abrir Canais' })).not.toBeInTheDocument();
+    };
+    verificar();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Campanhas/ }));
+    verificar();
   });
 });

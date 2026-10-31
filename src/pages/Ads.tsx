@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CalendarClock, CalendarX2, Megaphone, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import {
   MOTIVOS_PERIODO_ADS, PERIODO_PADRAO_ADS, resolverPeriodoAds, type DiasAds, type PeriodoAds,
 } from '@/lib/ads-painel-dados';
 import { indicadoresAds } from '@/lib/ads-metricas';
-import { ATALHO_ACIMA_EQUILIBRIO, contarFamiliasAds } from '@/lib/ads-apresentacao';
+import { ATALHO_ACIMA_EQUILIBRIO, contarFamiliasAds, ehEstadoAcesso } from '@/lib/ads-apresentacao';
 import { inicioAtribuicaoAberta } from '@/lib/sku-ads';
 import { PeriodoAdsSeletor, type CompararAds } from '@/components/ads/periodo-ads';
 import { FaixaKpis } from '@/components/ads/faixa-kpis';
@@ -24,7 +24,7 @@ import { SerieDiaria } from '@/components/ads/serie-diaria';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
 import { IntegridadeAds } from '@/components/ads/integridade-ads';
-import { Aviso, AVISO } from '@/components/ads/aviso';
+import { Aviso, AvisoAcesso, AVISO } from '@/components/ads/aviso';
 import { AbaCampanhas } from '@/components/ads/campanhas/aba-campanhas';
 import type { PedidoBaseDetalhe } from '@/components/ads/campanhas/detalhe-campanha';
 import { contarFamiliasEmAlerta } from '@/components/ads/campanhas/formato-campanha';
@@ -70,8 +70,6 @@ type Aba = 'desempenho' | 'campanhas';
 const abaValida = (v: string | null): Aba | null => (v === 'desempenho' || v === 'campanhas' ? v : null);
 // Desempenho sem dado para mostrar (ou campanha recém-criada): a aba útil é Campanhas.
 const ESTADOS_SEM_DADO: readonly string[] = ['sem_ads', 'aguardando_mes', 'sem_coleta', 'coletando'];
-// Sem acesso à Publicidade: a leitura da conta também é recusada; o aviso da página basta.
-const ESTADOS_SEM_ACESSO: readonly string[] = ['sem_permissao', 'sem_advertiser', 'sem_acesso'];
 
 function abaSalva(): Aba | null {
   try {
@@ -99,7 +97,7 @@ export default function Ads() {
     isFetching,
     isError,
     refetch,
-  } = useAdsPainel(periodo);
+  } = useAdsPainel(periodo, comparar);
 
   const [automatica, setAutomatica] = useState<Aba | null>(null);
   const [foco, setFoco] = useState<string | null>(null);
@@ -110,8 +108,12 @@ export default function Ads() {
   // piscar). A automática nunca vai para a URL e nunca vence uma escolha explícita, por mais tardia a resposta.
   const escolha = abaValida(params.get('aba')) ?? abaSalva();
   // Período inválido já decide (Desempenho): o motivo aparece nas duas abas e o seletor fica acima delas.
+  // Sem acesso à Publicidade (conexão, anunciante, permissão): um aviso só, no lugar das duas abas. A leitura ao
+  // vivo da conta manda; sem ela, o estado do painel.
+  const estadoAcesso = ehEstadoAcesso(metricasConta?.estado) ? metricasConta!.estado
+    : painel && ehEstadoAcesso(painel.estado) ? painel.estado : null;
   const estadoPainel = situacaoPeriodo === 'aguardando_mes' || situacaoPeriodo === 'invalido'
-    ? situacaoPeriodo : painel?.estado ?? (isError ? 'erro' : null);
+    ? situacaoPeriodo : painel?.estado ?? (isError || blocos.grupos.isError ? 'erro' : estadoAcesso);
   if (escolha === null && automatica === null && estadoPainel !== null) {
     setAutomatica(ESTADOS_SEM_DADO.includes(estadoPainel) ? 'campanhas' : 'desempenho');
   }
@@ -209,9 +211,6 @@ export default function Ads() {
   const verificar = (
     <Button variant="outline" size="sm" className={BOTAO_ACAO} onClick={() => refetch()}>Verificar novamente</Button>
   );
-  const abrirCanais = (
-    <Button asChild variant="outline" size="sm" className={BOTAO_ACAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>
-  );
 
   // Sem janela pronta não há número em nenhuma das abas.
   let semPeriodo: ReactNode = null;
@@ -269,8 +268,16 @@ export default function Ads() {
   } else if (!kpiAtual || (metricasConta.estado !== 'ok' && metricasConta.estado !== 'parcial')) {
     kpis = <Aviso texto={AVISO[metricasConta.estado] ?? 'Não foi possível ler as métricas da conta neste período.'} />;
   } else {
+    // Comparação que falhou na leitura (a de fora da retenção já é explicada no cabeçalho): o período atual fica.
+    const motivoComparacao = comparar === 'anterior' && comparacao?.tipo === 'pronta'
+      && metricasConta.comparacao.estado === 'indisponivel' ? metricasConta.comparacao.motivo : undefined;
     kpis = (
       <>
+        {motivoComparacao !== undefined && (
+          <p className="text-xs text-muted-foreground">
+            {motivoComparacao ? `Comparação indisponível: ${motivoComparacao}` : 'Comparação indisponível.'}
+          </p>
+        )}
         <FaixaKpis atual={kpiAtual} anterior={kpiAnterior}
           comparacao={comparar === 'nenhum' ? 'desligada' : metricasConta.comparacao.estado} />
         {metricasConta.atual && (
@@ -290,10 +297,23 @@ export default function Ads() {
     trocarAba('desempenho');
   };
 
+  const erroLeituraConta = !metricasConta && blocos.conta.isError;
   const resumo = (comComposicao: boolean) => {
     if (!resultadoConta) {
-      // Falha já explicada no bloco (alerta da página ou do bloco); senão, o lugar do resultado fica reservado.
-      return isError || blocos.conta.isError ? null : <Skeleton aria-hidden className="h-48 w-full rounded-lg" />;
+      // Leitura da conta com erro: o alerta dos KPIs já explica e oferece a nova consulta.
+      if (erroLeituraConta) return null;
+      if (isError || blocos.conta.isError) {
+        return (
+          <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+            <p className="flex items-start gap-2">
+              <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+              Não foi possível carregar as vendas do período. O resultado da conta e o das famílias ficam indisponíveis.
+            </p>
+            <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar novamente</Button>
+          </div>
+        );
+      }
+      return <Skeleton aria-hidden className="h-48 w-full rounded-lg" />;
     }
     return (
       <ResumoConta
@@ -327,26 +347,28 @@ export default function Ads() {
   // ---- Desempenho: famílias e integridade ----
   let corpo: ReactNode;
   if (isError) {
+    // A nova consulta fica no alerta do resultado (mesma causa: vendas).
+    corpo = <p className="text-sm text-muted-foreground">Famílias indisponíveis: as vendas do período não carregaram.</p>;
+  } else if (blocos.grupos.isError) {
     corpo = (
-      <div role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-        <p>Não foi possível carregar o painel de Ads.</p>
-        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar de novo</Button>
+      <div role="alert" className="rounded-lg border border-border bg-card p-4 text-sm">
+        <p className="flex items-start gap-2">
+          <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
+          Não foi possível carregar as famílias do período.
+        </p>
+        <Button variant="outline" size="sm" className={`mt-3 ${BOTAO_ACAO}`} onClick={() => refetch()}>Tentar novamente</Button>
       </div>
     );
   } else if (!painel) {
     corpo = <CarregandoMarca rotulo="Carregando" mensagem="Calculando o gasto e o resultado das famílias…" />;
   } else if (painel.estado === 'sem_coleta' || painel.estado === 'coletando') {
     corpo = <Aviso texto={AVISO[painel.estado]!} acao={verificar} />;
-  } else if (painel.estado === 'sem_permissao' || painel.estado === 'sem_acesso') {
-    corpo = <Aviso texto={AVISO[painel.estado]!} acao={abrirCanais} />;
-  } else if (AVISO[painel.estado]) {
-    corpo = <Aviso texto={AVISO[painel.estado]!} />;
   } else if (painel.estado === 'sem_ads') {
     corpo = (
       <EmptyState
         icon={Megaphone}
-        title="Nenhum gasto de Ads no período"
-        description="Quando houver despesa nos anúncios, o resultado aparece aqui."
+        title="Sem investimento em Ads neste período"
+        description="Suas campanhas continuam disponíveis."
         action={(
           <div className="flex flex-wrap justify-center gap-2">
             {atual !== '90' && (
@@ -376,7 +398,7 @@ export default function Ads() {
     );
   }
 
-  const semAcesso = painel != null && ESTADOS_SEM_ACESSO.includes(painel.estado);
+  const bloqueio = estadoAcesso && <AvisoAcesso estado={estadoAcesso} />;
   const contagemAlerta = (
     <StatusPill tone="warning" title={emAlerta === 1 ? '1 família em alerta' : `${emAlerta} famílias em alerta`}>
       <span aria-hidden>{emAlerta}</span>
@@ -385,9 +407,9 @@ export default function Ads() {
   );
   const desempenho = (
     <div className="space-y-6">
-      {semPeriodo ?? (
+      {semPeriodo ?? bloqueio ?? (
         <>
-          {!semAcesso && blocoConta(true)}
+          {blocoConta(true)}
           {corpo}
         </>
       )}
@@ -429,7 +451,7 @@ export default function Ads() {
           </TabsList>
           <TabsContent value="desempenho">{desempenho}</TabsContent>
           <TabsContent value="campanhas">
-            {semPeriodo ?? (
+            {semPeriodo ?? bloqueio ?? (
               <AbaCampanhas dados={campanhasDados} metricas={metricasCampanhas} pedido={pedido} conta={blocoConta(false)}
                 integridade={integridade(false) || undefined}
                 acoes={{ verDesempenho, temDesempenho: codigo => codigosComDesempenho.has(codigo) }} />

@@ -114,3 +114,7 @@ export function ordenarFamiliasAds(
 export const ATALHO_ACIMA_EQUILIBRIO = {
   filtro: 'acima', coluna: 'investimento', direcao: 'desc',
 } as const satisfies { filtro: FiltroFamiliasAds; coluna: ColunaFamiliasAds; direcao: DirecaoAds };
+
+/** Sem acesso à Publicidade do ML (conexão, anunciante, permissão): a tela mostra um aviso só, sem números. */
+const ESTADOS_ACESSO: readonly string[] = ['sem_conexao', 'sem_advertiser', 'sem_permissao', 'sem_acesso'];
+export const ehEstadoAcesso = (estado: string | null | undefined): boolean => !!estado && ESTADOS_ACESSO.includes(estado);

@@ -266,6 +266,16 @@ describe('useAdsPainel', () => {
     expect(r.result.current.metricasConta?.escopo).toBe('conta');
   });
 
+  it('"Sem comparação": não pede a janela anterior nas vendas nem nas métricas', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
+    const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 30 }, 'nenhum'), { wrapper: criarWrapper() });
+    await waitFor(() => expect(r.result.current.painel).not.toBeNull());
+    expect(r.result.current.comparacao).toBeNull();
+    expect(m.useVendasSku.mock.calls.at(-1)![3]).toEqual({ canal: 'mercado_livre', anteriorFixa: undefined });
+    expect(m.buscarMetricasAds).toHaveBeenCalledWith(expect.objectContaining({ comparar: 'nenhum', escopo: 'conta' }));
+    expect(m.buscarMetricasAds).not.toHaveBeenCalledWith(expect.objectContaining({ comparar: 'anterior' }));
+  });
+
   it('comparação fora da retenção: sem janela anterior nas vendas e métricas sem comparar', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T12:00:00-03:00') });
     const r = renderHook(() => useAdsPainel({ tipo: 'preset', dias: 90 }), { wrapper: criarWrapper() });

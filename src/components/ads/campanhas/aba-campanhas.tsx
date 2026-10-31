@@ -5,14 +5,13 @@ import { Button } from '@/components/ui/button';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import type { useAdsCampanhas } from '@/hooks/useAdsCampanhas';
 import type { useAdsMetricas } from '@/hooks/useAdsMetricas';
-import { Aviso, AVISO } from '@/components/ads/aviso';
+import { AvisoAcesso } from '@/components/ads/aviso';
 import { TabelaCampanhas } from './tabela-campanhas';
 import { DetalheCampanha, type PedidoBaseDetalhe } from './detalhe-campanha';
 import { Competitividade } from './competitividade';
 import type { AcoesFamilia } from './familia-campanha';
 
 const BOTAO = 'h-11 sm:h-8';
-const PEDE_CANAIS: readonly string[] = ['sem_conexao', 'sem_permissao', 'sem_acesso'];
 
 export type DadosCampanhas = ReturnType<typeof useAdsCampanhas>;
 export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' | 'isError' | 'refetch'>;
@@ -20,10 +19,6 @@ export type MetricasCampanhas = Pick<ReturnType<typeof useAdsMetricas>, 'data' |
 const lidoAs = (iso: string) =>
   new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo' })
     .format(new Date(iso));
-
-function AbrirCanais() {
-  return <Button asChild variant="outline" size="sm" className={BOTAO}><Link to="/configuracoes/canais">Abrir Canais</Link></Button>;
-}
 
 /**
  * Aba Campanhas por período (plano ads-redesign §3.2/3.4/4.4). A página entrega o bloco da conta inteira (KPIs,
@@ -58,8 +53,7 @@ export function AbaCampanhas({ dados, metricas, pedido, conta, integridade, acoe
   } else if (!metricas.data) {
     tabela = <CarregandoMarca rotulo="Carregando campanhas" mensagem="Lendo as campanhas do período…" />;
   } else if (metricas.data.estado !== 'ok' && metricas.data.estado !== 'parcial') {
-    const estado = metricas.data.estado;
-    tabela = <Aviso texto={AVISO[estado] ?? 'Não foi possível ler as campanhas deste período.'} acao={PEDE_CANAIS.includes(estado) && <AbrirCanais />} />;
+    tabela = <AvisoAcesso estado={metricas.data.estado} />;
   } else {
     const nomes = new Map(metricas.data.campanhas.map(c => [c.id, c.nome]));
     tabela = (
