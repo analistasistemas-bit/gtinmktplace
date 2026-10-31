@@ -34,7 +34,6 @@ import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 // (?aba=&periodo=7|30|90|mes_atual|range&desde=&ate=&comparar=). A preferência antiga só entra quando a URL não diz.
 const CHAVE = 'ads-painel-dias';
 const CHAVE_ABA = 'ads-aba';
-const DIA = /^\d{4}-\d{2}-\d{2}$/;
 
 function presetDe(v: string | null): PeriodoAds | null {
   if (v === 'mes_atual') return { tipo: 'mes_atual' };
@@ -50,13 +49,12 @@ function periodoSalvo(): PeriodoAds {
   }
 }
 
-/** Range bem formado passa como veio: ordem, futuro e retenção são do resolvedor, que mostra o motivo
- *  (nunca troca por outra janela). Só parâmetro ausente ou ilegível recai na preferência. */
+/** `periodo=range` passa como veio, até com datas ausentes ou ilegíveis: o resolvedor dá o motivo (data_invalida,
+ *  ordem, futuro, retenção) e nenhuma outra janela é consultada. Só `periodo` ausente ou desconhecido recai na
+ *  preferência. */
 function periodoDaUrl(p: URLSearchParams): PeriodoAds | null {
   if (p.get('periodo') !== 'range') return presetDe(p.get('periodo'));
-  const desde = p.get('desde');
-  const ate = p.get('ate');
-  return desde && ate && DIA.test(desde) && DIA.test(ate) ? { tipo: 'range', desde, ate } : null;
+  return { tipo: 'range', desde: p.get('desde') ?? '', ate: p.get('ate') ?? '' };
 }
 
 const identidade = (p: PeriodoAds) =>
@@ -111,7 +109,9 @@ export default function Ads() {
   // URL > escolha guardada > decisão automática (uma única vez, quando o estado do painel já é conhecido, sem
   // piscar). A automática nunca vai para a URL e nunca vence uma escolha explícita, por mais tardia a resposta.
   const escolha = abaValida(params.get('aba')) ?? abaSalva();
-  const estadoPainel = situacaoPeriodo === 'aguardando_mes' ? 'aguardando_mes' : painel?.estado ?? (isError ? 'erro' : null);
+  // Período inválido já decide (Desempenho): o motivo aparece nas duas abas e o seletor fica acima delas.
+  const estadoPainel = situacaoPeriodo === 'aguardando_mes' || situacaoPeriodo === 'invalido'
+    ? situacaoPeriodo : painel?.estado ?? (isError ? 'erro' : null);
   if (escolha === null && automatica === null && estadoPainel !== null) {
     setAutomatica(ESTADOS_SEM_DADO.includes(estadoPainel) ? 'campanhas' : 'desempenho');
   }
@@ -318,9 +318,10 @@ export default function Ads() {
   );
 
   // Integridade e procedência: fim das duas abas (plano §3.2, linha 5), só com o painel montado.
-  const integridade = painel && janela && painel.estado === 'ok' && (
+  // `divergenciaNoResumo`: em Desempenho o resumo (com composição) já avisa; em Campanhas avisa aqui.
+  const integridade = (divergenciaNoResumo: boolean) => painel && janela && painel.estado === 'ok' && (
     <IntegridadeAds painel={painel} janelaDesde={janela.desde} historicoDesde={historicoDesde}
-      coletadoEm={ultimoOkEm} lidoEm={metricasConta?.atual?.lidoEm ?? null} />
+      coletadoEm={ultimoOkEm} lidoEm={metricasConta?.atual?.lidoEm ?? null} divergenciaNoResumo={divergenciaNoResumo} />
   );
 
   // ---- Desempenho: famílias e integridade ----
@@ -370,7 +371,7 @@ export default function Ads() {
         {/* A key reinicia filtro e detalhes ao trocar seleção, janela ou atalho; refetch da mesma janela não muda a key. */}
         <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}:${foco}:${atalho}`} painel={painel}
           historicoDesde={historicoDesde} focoCodigoPai={foco} inicial={atalho > 0 ? ATALHO_ACIMA_EQUILIBRIO : undefined} />
-        {integridade}
+        {integridade(true)}
       </>
     );
   }
@@ -430,7 +431,7 @@ export default function Ads() {
           <TabsContent value="campanhas">
             {semPeriodo ?? (
               <AbaCampanhas dados={campanhasDados} metricas={metricasCampanhas} pedido={pedido} conta={blocoConta(false)}
-                integridade={integridade || undefined}
+                integridade={integridade(false) || undefined}
                 acoes={{ verDesempenho, temDesempenho: codigo => codigosComDesempenho.has(codigo) }} />
             )}
           </TabsContent>

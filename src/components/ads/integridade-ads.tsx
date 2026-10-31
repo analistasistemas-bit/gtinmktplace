@@ -15,6 +15,8 @@ export interface IntegridadeAdsProps {
   coletadoEm: string | null;
   /** Instante da leitura ao vivo do ML (lidoEm). */
   lidoEm: string | null;
+  /** O resumo da conta (com composição) já mostra a divergência; sem ele, o aviso fica aqui (uma vez na tela). */
+  divergenciaNoResumo?: boolean;
 }
 
 const hora = (iso: string | null) => (iso ? asHoraDeBRT(iso) : 'horário indisponível');
@@ -53,7 +55,7 @@ function ComposicaoColetada({ c, coletadoEm }: { c: ComposicaoConta; coletadoEm:
 
 /** Bloco final do Desempenho: o que limita os números (compartilhado, não identificado, cobertura, histórico,
  *  fiscal, conciliação) e de onde vêm. Tudo em texto visível, sem tooltip. */
-export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm, lidoEm }: IntegridadeAdsProps) {
+export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm, lidoEm, divergenciaNoResumo = false }: IntegridadeAdsProps) {
   const { conta, conciliacao } = painel;
   const temNaoId = !!conta && !conta.divergente && conta.naoIdentificado != null;
   const semCobertura = !painel.gruposCobertos || painel.contaMotivo === 'cobertura';
@@ -68,7 +70,9 @@ export function IntegridadeAds({ painel, janelaDesde, historicoDesde, coletadoEm
         {temNaoId && (
           <Ressalva>Gasto de Ads não identificado: incluído no investimento da conta, sem distribuição entre famílias.</Ressalva>
         )}
-        {/* Divergência da composição: o aviso fica no resumo da conta, junto da composição (uma vez só na tela). */}
+        {conta?.divergente && !divergenciaNoResumo && (
+          <Ressalva>A soma dos grupos não fecha com o total da conta. A composição do gasto está indisponível.</Ressalva>
+        )}
         {semCobertura && <Ressalva>Cobertura: {textoMotivo('cobertura', null)}.</Ressalva>}
         {painel.contaMotivo === 'serie_incompleta' && (
           <Ressalva>A leitura ao vivo do ML veio sem todos os dias do período: a conta está indisponível.</Ressalva>

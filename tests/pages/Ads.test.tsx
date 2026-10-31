@@ -1161,6 +1161,27 @@ describe('contexto único: período, comparação e aba', () => {
     expect(screen.getByRole('button', { name: 'Remover filtro Acima do equilíbrio' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('período inválido sem aba guardada nem na URL mostra o motivo (não fica em "Abrindo o Ads…")', () => {
+    montar(null, { janela: null, situacaoPeriodo: 'invalido' }, null, '/ads?periodo=range&desde=2026-10-20&ate=2026-10-01');
+    expect(screen.getByText('Período inválido')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Período' })).toBeInTheDocument();
+    expect(screen.queryByText('Abrindo o Ads…')).not.toBeInTheDocument();
+  });
+
+  it('range malformado na URL vai ao resolvedor como veio, sem cair noutra janela', () => {
+    localStorage.setItem('ads-painel-dias', '30');
+    montar(null, { janela: null, situacaoPeriodo: 'invalido' }, 'desempenho', '/ads?periodo=range&desde=foo&ate=2026-10-20');
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'range', desde: 'foo', ate: '2026-10-20' });
+    expect(hook).not.toHaveBeenCalledWith({ tipo: 'preset', dias: 30 });
+    expect(screen.getByText('Informe datas válidas nos dois campos.')).toBeVisible();
+  });
+
+  it('divergência da composição aparece uma vez também em Campanhas', () => {
+    comCampanhas();
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, divergente: true, naoIdentificado: null, naoIdentificadoPct: null } }, {}, 'campanhas');
+    expect(screen.getAllByText(/não fecha com o total da conta/)).toHaveLength(1);
+  });
+
   it('Atualizar do cabeçalho em Campanhas refaz conta, tabela do período e configuração', () => {
     const refetch = vi.fn().mockResolvedValue(undefined);
     const refetchCampanhas = vi.fn().mockResolvedValue(undefined);
