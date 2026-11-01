@@ -135,7 +135,9 @@ export async function processarSincronizacaoFiscal(
       if (itemId) {
         await deps.portas.vincularSkuAnuncio(token, {
           sku: v.codigo, item_id: itemId,
-          ...(v.ml_variation_id ? { variation_id: v.ml_variation_id } : {}),
+          // ADR-0084: anúncio sem variação guarda o próprio item id em ml_variation_id (sentinela);
+          // mandá-la como variation_id dá 400 10094 "Variation not valid" (Daludi, 01/11/2026).
+          ...(v.ml_variation_id && v.ml_variation_id !== itemId ? { variation_id: v.ml_variation_id } : {}),
         });
       }
     }

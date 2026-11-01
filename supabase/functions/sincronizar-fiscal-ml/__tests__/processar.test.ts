@@ -107,6 +107,14 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     expect(d.updates.some((u) => u.can_invoice === true)).toBe(true);
   });
 
+  it('anúncio sem variação (ADR-0084: ml_variation_id = ml_item_id) vincula sem variation_id', async () => {
+    // Daludi 01/11/2026: o ML recusava o vínculo com 400 10094 "Variation not valid".
+    const d = deps({ variacoesOverride: [{ codigo: '00101', gtin: null, peso_gramas: 200, ml_variation_id: 'MLB1' }] });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: '00101', item_id: 'MLB1' });
+  });
+
   it('fix round 1: família sem ncm — 200 definitivo, can_invoice=false gravado, portas NUNCA chamadas', async () => {
     const d = deps({ familiaOverride: { ncm: null } });
     const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
