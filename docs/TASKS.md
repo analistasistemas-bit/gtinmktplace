@@ -7,7 +7,7 @@
 - [x] Fix: sentinela ADR-0084 enviada como `variation_id` no vínculo fiscal (main `88465891`).
 - [x] Vínculo fiscal nas cópias de catálogo, no push e na revarredura 6/6h (emenda ADR-0135, main `60867527`).
 - [ ] Conferir NCM/origem/CSOSN dos 18 produtos sem nota quando chegarem as notas de entrada (Helioderm bastão pode ser CSOSN 500 + CEST; jaquetas/regata: malha 61 × plano 62).
-- [ ] Confirmar a 1ª NF-e autorizada pelo faturador do ML (pedidos anteriores ao emissor: "Adicionar dados fiscais" no pedido).
+- [x] 1ª NF-e autorizada pelo faturador do ML em 01/11/2026 (nº 2, série 1, protocolo 126260132089): SKU 00000181, NCM 33049990, CSOSN 102, CFOP 6108 — dados iguais ao cadastro do PubliAI. Pedidos anteriores ao emissor: "Adicionar dados fiscais" no pedido.
 
 ## Pós-venda do ML no PubliAI (ADR-0192) — 2026-10-28
 
