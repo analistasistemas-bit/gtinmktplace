@@ -9,6 +9,12 @@
 - [ ] Conferir NCM/origem/CSOSN dos 18 produtos sem nota quando chegarem as notas de entrada (Helioderm bastão pode ser CSOSN 500 + CEST; jaquetas/regata: malha 61 × plano 62).
 - [x] 1ª NF-e autorizada pelo faturador do ML em 01/11/2026 (nº 2, série 1, protocolo 126260132089): SKU 00000181, NCM 33049990, CSOSN 102, CFOP 6108 — dados iguais ao cadastro do PubliAI. Pedidos anteriores ao emissor: "Adicionar dados fiscais" no pedido.
 
+## Mensagens de pós-venda: badge e reclamação aberta (emenda ADR-0067) — 2026-11-01
+
+- [x] Badge das abas Pós-venda/Mensagens soma as conversas lidas "Sem responder", igual ao avatar (main `09372603`).
+- [x] Conversa com reclamação `mediations` aberta: fora de "aguardando", aviso + link no lugar da resposta, 403 `blocked_by_claim`/`blocked_by_mediation` → 409 `reclamacao_aberta` (main `4ea30059`, migration `20261101214140`, `responder-mensagem` v39).
+- [ ] Confirmar se reclamação `returns` aberta também bloqueia a mensagem; hoje só `mediations` sai da contagem (os outros tipos só pelo 409).
+
 ## Pós-venda do ML no PubliAI (ADR-0192) — 2026-10-28
 
 - [x] Webhook `messages`/`post_purchase` corrigido (emenda de 28/10 ao ADR-0067): o webhook nunca havia entregue mensagem nem reclamação.

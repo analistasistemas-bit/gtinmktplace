@@ -20,6 +20,13 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   expedição (`invoice_pending`). Agora o push vincula as cópias e a revarredura 6/6h cobre as novas.
 - Pedido feito antes do emissor configurado fica "Anúncio sem dados fiscais" mesmo com SKU pronto —
   saída é "Adicionar dados fiscais" no próprio pedido.
+- **Badge do Pós-venda igual ao avatar** (main `09372603`): "N aguardando resposta" do avatar soma
+  perguntas + conversas sem resposta; as abas Pós-venda/Mensagens só somavam não lidas no ML e
+  mostravam 0. Passam a somar também as lidas "Sem responder" (`mensagensPendentes`).
+- **Conversa com reclamação aberta** (emenda ADR-0067, main `4ea30059`, migration `20261101214140`,
+  `responder-mensagem` v39): o ML recusa a mensagem (403 `blocked_by_claim`). A conversa sai de
+  "aguardando" (RPCs + front), o card mostra "Em reclamação" com link para Reclamações, e o 403
+  vira 409 `reclamacao_aberta`. Daludi: 3 → 2 aguardando.
 
 ## 2026-10-31
 
