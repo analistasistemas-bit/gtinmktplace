@@ -2,7 +2,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { SincronizarFiscalJob } from '../_shared/queue.ts';
 import {
-  montarFiscalInformation, type FamiliaFiscalPush, type VariacaoFiscalPush,
+  montarFiscalInformation, type FamiliaFiscalPush, type RelacaoItem, type VariacaoFiscalPush,
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
 import { mensagemNcm, ncmsInvalidos, type NcmInvalido } from '../_shared/fiscal/ncm-oficial.ts';
@@ -26,6 +26,7 @@ export interface DepsFiscal {
     empurrarFiscalSku: (token: string, payload: Record<string, unknown>) => Promise<void>;
     vincularSkuAnuncio: (token: string, v: { sku: string; item_id: string; variation_id?: string }) => Promise<void>;
     lerCanInvoice: (token: string, sku: string) => Promise<{ pronto: boolean; causa: string | null } | null>;
+    lerRelacoes: (token: string, itemIds: string[]) => Promise<Map<string, RelacaoItem[]>>;
   };
 }
 
@@ -126,6 +127,7 @@ export async function processarSincronizacaoFiscal(
   const skusOrfaos = skusOrfaosUP(variacoes.map((v) => v.codigo), itensUP);
 
   try {
+    const vinculos: Array<{ sku: string; item_id: string; variation_id?: string }> = [];
     for (const v of variacoes) {
       const payload = montarFiscalInformation(familia as FamiliaFiscalPush, v, {
         origin_type: empresa.origin_type,
@@ -133,12 +135,28 @@ export async function processarSincronizacaoFiscal(
       await deps.portas.empurrarFiscalSku(token, payload);
       const itemId = itemIdDoSku(v.codigo);
       if (itemId) {
-        await deps.portas.vincularSkuAnuncio(token, {
+        const vinculo = {
           sku: v.codigo, item_id: itemId,
           // ADR-0084: anúncio sem variação guarda o próprio item id em ml_variation_id (sentinela);
           // mandá-la como variation_id dá 400 10094 "Variation not valid" (Daludi, 01/11/2026).
           ...(v.ml_variation_id && v.ml_variation_id !== itemId ? { variation_id: v.ml_variation_id } : {}),
-        });
+        };
+        await deps.portas.vincularSkuAnuncio(token, vinculo);
+        vinculos.push(vinculo);
+      }
+    }
+    // Emenda 01/11/2026: cópia de catálogo do anúncio (item_relations) usa o mesmo SKU e trava a
+    // expedição sem o vínculo. Legacy com variação não lista as cópias no principal — a
+    // revarredura de monitorar-moderados cobre (parte das cópias).
+    if (vinculos.length > 0) {
+      const relacoes = await deps.portas.lerRelacoes(token, [...new Set(vinculos.map((x) => x.item_id))]);
+      const feitos = new Set<string>();
+      for (const x of vinculos) {
+        for (const r of relacoes.get(x.item_id) ?? []) {
+          if (r.variation_id !== (x.variation_id ?? null) || feitos.has(`${x.sku}|${r.id}`)) continue;
+          feitos.add(`${x.sku}|${r.id}`);
+          await deps.portas.vincularSkuAnuncio(token, { sku: x.sku, item_id: r.id });
+        }
       }
     }
   } catch (e) {

@@ -4,6 +4,7 @@
 // Peso (contrato lido em 20/10/2026): `net_weight`/`gross_weight` em kg ficam DENTRO de
 // tax_information; só enviamos gross_weight (peso_gramas é peso de pacote, não há peso líquido real).
 import { gtinValido } from '../nfe/regras.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 
 const BASE = 'https://api.mercadolibre.com';
 
@@ -85,6 +86,33 @@ export async function vincularSkuAnuncio(
   // 409 = vínculo já existe (replay do QStash) — sucesso idempotente.
   if (resp.ok || resp.status === 409) return;
   throw erroMl('POST fiscal_information/items', resp.status, await resp.text());
+}
+
+export interface RelacaoItem { id: string; variation_id: string | null }
+
+/** Emenda 01/11/2026 — `item_relations` de cada anúncio (cópias de catálogo). 404 no lote é
+ *  definitivo; envelope inválido vira 502 (transitório): nunca pode virar recusa definitiva. */
+export async function lerRelacoes(token: string, itemIds: string[]): Promise<Map<string, RelacaoItem[]>> {
+  const out = new Map<string, RelacaoItem[]>();
+  const ids = [...new Set(itemIds)];
+  for (let i = 0; i < ids.length; i += 20) {
+    const bloco = ids.slice(i, i + 20);
+    const resp = await fetch(`${BASE}${caminhoMultiget(bloco, 'id,item_relations')}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) throw erroMl('GET items/bulk', resp.status, await resp.text());
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco);
+    for (const e of Array.isArray(arr) ? arr : [null]) {
+      const { code, body } = (e ?? {}) as { code?: number; body?: { id?: string; item_relations?: unknown } };
+      if (code === 404) throw erroMl('GET items/bulk', 404, JSON.stringify(e));
+      if (code !== 200 || typeof body?.id !== 'string') throw erroMl('GET items/bulk', 502, JSON.stringify(e));
+      const rels = Array.isArray(body.item_relations) ? body.item_relations as Array<{ id?: unknown; variation_id?: unknown }> : [];
+      out.set(body.id, rels.filter((r) => typeof r.id === 'string').map((r) => ({
+        id: r.id as string, variation_id: r.variation_id == null ? null : String(r.variation_id),
+      })));
+    }
+  }
+  return out;
 }
 
 /** Emenda D-10 (19/10/2026): `GET /can_invoice/items/{id}` dá 403 PolicyAgent pro app mesmo com o

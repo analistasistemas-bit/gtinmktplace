@@ -25,6 +25,8 @@ function deps(opts: {
   updateErroQuando?: (patch: Record<string, unknown>) => boolean;
   /** C4: o update condicionado a atualizado_em casa 0 linhas (edição fiscal no meio). */
   updateZeroLinhas?: boolean;
+  /** Emenda 01/11/2026: item_relations dos anúncios vinculados. */
+  lerRelacoes?: ReturnType<typeof vi.fn>;
 } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
@@ -82,6 +84,7 @@ function deps(opts: {
       empurrarFiscalSku: vi.fn(async () => {}),
       vincularSkuAnuncio: vi.fn(async () => {}),
       lerCanInvoice: vi.fn(async () => ({ pronto: true, causa: null })),
+      lerRelacoes: opts.lerRelacoes ?? vi.fn(async () => new Map()),
     },
     updates,
     filtros,
@@ -113,6 +116,51 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
     expect(r.status).toBe(200);
     expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: '00101', item_id: 'MLB1' });
+  });
+
+  describe('cópias de catálogo (emenda 01/11/2026)', () => {
+    const relacoes = (m: Record<string, Array<{ id: string; variation_id: string | null }>>) =>
+      vi.fn(async () => new Map(Object.entries(m)));
+    const semVariacao = [{ codigo: '00101', gtin: null, peso_gramas: 200, ml_variation_id: 'MLB1' }];
+
+    it('vincula o SKU à cópia relacionada (variation_id nulo com nulo), sem variation_id', async () => {
+      const d = deps({ variacoesOverride: semVariacao, lerRelacoes: relacoes({ MLB1: [{ id: 'MLB9', variation_id: null }] }) });
+      const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+      expect(r.status).toBe(200);
+      expect(d.portas.lerRelacoes).toHaveBeenCalledWith('tok', ['MLB1']);
+      expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: '00101', item_id: 'MLB9' });
+    });
+
+    it('relação de outra variação não vincula; da mesma variação vincula sem variation_id', async () => {
+      const d = deps({ lerRelacoes: relacoes({ MLB1: [{ id: 'MLB8', variation_id: 'v2' }, { id: 'MLB7', variation_id: 'v1' }] }) });
+      await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+      expect(d.portas.vincularSkuAnuncio).not.toHaveBeenCalledWith('tok', expect.objectContaining({ item_id: 'MLB8' }));
+      expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: '00101', item_id: 'MLB7' });
+    });
+
+    it('sem vínculo feito não lê relações', async () => {
+      const d = deps({ familiaOverride: { ml_item_id: null }, itensUP: [{ sku: '00101', item_externo_id: null }] });
+      await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+      expect(d.portas.lerRelacoes).not.toHaveBeenCalled();
+    });
+
+    it('lerRelacoes 5xx → 500 (QStash retenta)', async () => {
+      const erro = Object.assign(new Error('GET items/bulk → 502'), { status: 502 });
+      const d = deps({ lerRelacoes: vi.fn(async () => { throw erro; }) });
+      const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+      expect(r.status).toBe(500);
+      expect(d.updates.some((u) => u.can_invoice === false)).toBe(false);
+    });
+
+    it('vínculo da cópia 4xx → recusa definitiva com causa push…', async () => {
+      const d = deps({ variacoesOverride: semVariacao, lerRelacoes: relacoes({ MLB1: [{ id: 'MLB9', variation_id: null }] }) });
+      d.portas.vincularSkuAnuncio.mockImplementation(async (_t: string, v: { item_id: string }) => {
+        if (v.item_id === 'MLB9') throw Object.assign(new Error('POST fiscal_information/items → 400'), { status: 400 });
+      });
+      const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+      expect(r.status).toBe(200);
+      expect(d.updates.some((u) => u.can_invoice === false && String(u.can_invoice_causa).startsWith('push'))).toBe(true);
+    });
   });
 
   it('fix round 1: família sem ncm — 200 definitivo, can_invoice=false gravado, portas NUNCA chamadas', async () => {

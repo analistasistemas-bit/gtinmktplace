@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  empurrarFiscalSku, lerCanInvoice, montarFiscalInformation, vincularSkuAnuncio,
+  empurrarFiscalSku, lerCanInvoice, lerRelacoes, montarFiscalInformation, vincularSkuAnuncio,
 } from '../fiscal-ml.ts';
 
 const globalFetch = globalThis.fetch;
@@ -150,5 +150,44 @@ describe('lerCanInvoice (por SKU, emenda D-10)', () => {
   it('outra resposta não-ok devolve null (sem lançar)', async () => {
     globalThis.fetch = fakeFetch([{ status: 500 }]);
     await expect(lerCanInvoice('tok', '00101')).resolves.toBeNull();
+  });
+});
+
+describe('lerRelacoes (cópias de catálogo, emenda 01/11/2026)', () => {
+  it('lê item_relations pelo /items/bulk e normaliza variation_id para string', async () => {
+    let url = '';
+    globalThis.fetch = (async (u: string) => {
+      url = u;
+      return new Response(JSON.stringify([
+        { status_code: 200, body: { id: 'MLB1', item_relations: [{ id: 'MLB9', variation_id: null, stock_relation: 1 }] } },
+        { status_code: 200, body: { id: 'MLB2', item_relations: [{ id: 'MLB8', variation_id: 197240123284 }] } },
+        { status_code: 200, body: { id: 'MLB3' } },
+      ]), { status: 200 });
+    }) as typeof fetch;
+    const m = await lerRelacoes('tok', ['MLB1', 'MLB2', 'MLB3']);
+    expect(url).toContain('/items/bulk?ids=MLB1,MLB2,MLB3');
+    expect(m.get('MLB1')).toEqual([{ id: 'MLB9', variation_id: null }]);
+    expect(m.get('MLB2')).toEqual([{ id: 'MLB8', variation_id: '197240123284' }]);
+    expect(m.get('MLB3')).toEqual([]);
+  });
+
+  it('sem ids não chama o ML', async () => {
+    globalThis.fetch = (async () => { throw new Error('não devia chamar'); }) as typeof fetch;
+    expect((await lerRelacoes('tok', [])).size).toBe(0);
+  });
+
+  it('resposta não-ok lança com o status real', async () => {
+    globalThis.fetch = fakeFetch([{ status: 503, body: 'x' }]);
+    await expect(lerRelacoes('tok', ['MLB1'])).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('item 404 no lote lança 404 (definitivo)', async () => {
+    globalThis.fetch = fakeFetch([{ status: 200, body: [{ status_code: 404 }] }]);
+    await expect(lerRelacoes('tok', ['MLB1'])).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('envelope inválido lança 502 (transitório, nunca recusa definitiva)', async () => {
+    globalThis.fetch = fakeFetch([{ status: 200, body: [{ status_code: 200 }] }]);
+    await expect(lerRelacoes('tok', ['MLB1'])).rejects.toMatchObject({ status: 502 });
   });
 });

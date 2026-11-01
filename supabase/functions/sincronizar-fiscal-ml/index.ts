@@ -5,7 +5,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, type SincronizarFiscalJob } from '../_shared/queue.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { empurrarFiscalSku, lerCanInvoice, vincularSkuAnuncio } from '../_shared/canais/fiscal-ml.ts';
+import { empurrarFiscalSku, lerCanInvoice, lerRelacoes, vincularSkuAnuncio } from '../_shared/canais/fiscal-ml.ts';
 import { listarItensFiscais } from '../_shared/fiscal/can-invoice.ts';
 import { processarSincronizacaoFiscal } from './processar.ts';
 
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     // C1: filhos User Products (ADR-0088) + partições do split — Task 8 extraiu pra _shared/fiscal/can-invoice.ts,
     // reusado também pela reconciliação de monitorar-moderados.
     listarItensFiscais,
-    portas: { empurrarFiscalSku, vincularSkuAnuncio, lerCanInvoice },
+    portas: { empurrarFiscalSku, vincularSkuAnuncio, lerCanInvoice, lerRelacoes },
   }, job);
   return new Response(
     typeof r.body === 'string' ? r.body : JSON.stringify(r.body),

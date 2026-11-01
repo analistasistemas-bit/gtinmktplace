@@ -13,6 +13,7 @@ import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/c
 import { lerCanInvoice } from '../_shared/canais/fiscal-ml.ts';
 import { reconciliarCanInvoice } from './can-invoice.ts';
 import { reenfileirarPushFiscalPendente } from './push-fiscal-pendente.ts';
+import { depsCopiasReais, vincularCopiasCatalogo } from './vinculo-fiscal-catalogo.ts';
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -193,6 +194,16 @@ Deno.serve(async (req) => {
       if (n > 0) console.log(`push fiscal reenfileirado: ${n} famílias (org ${cx.orgId})`);
     } catch (e) {
       console.warn('reenfileirar push fiscal falhou:', e instanceof Error ? e.message : e);
+    }
+    // Emenda ADR-0135 (01/11/2026): vínculo fiscal nas cópias de catálogo — try/catch próprio.
+    if (row.conta_externa_id) {
+      try {
+        const token = await getValidAccessTokenConexao(cx);
+        const n = await vincularCopiasCatalogo(cx.orgId, row.conta_externa_id, token, depsCopiasReais(admin));
+        if (n > 0) console.log(`vínculo fiscal em cópias de catálogo: ${n} (org ${cx.orgId})`);
+      } catch (e) {
+        console.warn('vínculo fiscal das cópias de catálogo falhou:', e instanceof Error ? e.message : e);
+      }
     }
   }
 

@@ -363,3 +363,25 @@ Não é decisão nova, é o D-7/D-9/D-10 valendo onde faltava:
    campo `unidade`.
 4. **Replicação em User Products** — a doc diz que dados fiscais replicam para itens irmãos;
    confirmar o efeito em famílias com variações.
+
+## Emenda — 2026-11-01: vínculo fiscal nas cópias de catálogo
+
+Medido na Daludi Shop (01/11/2026): o ML cria anúncios de catálogo a partir do anúncio do
+vendedor (opt-in do ADR-0021 ou conversão automática) com o **mesmo SKU** e ligados por
+`item_relations` (relação simétrica, `variation_id` nulo em UP). O push vinculava o SKU só ao
+anúncio do PubliAI; a cópia ficava "Sem dados fiscais" e a venda feita nela travava a expedição
+(`invoice_pending`). Vincular o SKU à cópia (`POST /items/fiscal_information/items`) resolveu —
+114 vínculos, 0 falhas. Duas peças, decisão do Diego (opção "envio + revarredura 6/6h"):
+
+- **No push (D-1):** depois de vincular cada SKU ao seu anúncio, `sincronizar-fiscal-ml` lê
+  `item_relations` desses anúncios (multiget `/items/bulk`, ADR-0177) e vincula o mesmo SKU a
+  cada relacionado cujo `variation_id` é o mesmo do vínculo (nulo com nulo). Falha de leitura
+  segue a regra do worker: 5xx/timeout retenta, 4xx é recusa definitiva com causa.
+- **Revarredura (D-10):** a reconciliação de 6/6h (`monitorar-moderados`) parte das **cópias**
+  (`/users/{id}/items/search?catalog_listing=true`, active e paused), não das famílias: no Legacy
+  com variação o anúncio principal vem com `item_relations` vazio e só a cópia aponta
+  `{principal, variation_id}`. Para cada cópia, SKU = `seller_custom_field`; se vazio, resolvido
+  pelo principal (variação da família, item UP ou mapa `variacoes_externas` da partição do split).
+  Só vincula SKU de família da org com NCM; falha numa cópia não para as outras; não reenfileira
+  push (sem duplicar o C4). Cópia nova fica até ~6 h sem fiscal; venda nesse intervalo usa
+  "Adicionar dados fiscais" no pedido.
