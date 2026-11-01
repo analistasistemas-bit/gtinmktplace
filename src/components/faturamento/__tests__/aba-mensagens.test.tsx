@@ -36,7 +36,7 @@ function conversaBase(id: number, aguardando: boolean) {
   return {
     pack_id: packId, order_id: `order-${id}`, item_titulo: `Produto ${id}`, item_id: `MLB${id}`,
     comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', aguardando,
-    ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[],
+    ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false,
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
       item_titulo: `Produto ${id}`, item_id: `MLB${id}`, comprador_nome: null, comprador_nick: `NICK_${id}`,
@@ -47,7 +47,7 @@ function conversaBase(id: number, aguardando: boolean) {
 
 const PACK_1_CANCELADA = {
   pack_id: 'pack-1', order_id: 'order-1', item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null,
-  comprador_nick: 'MARIA_01', order_status: 'cancelled', aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[],
+  comprador_nick: 'MARIA_01', order_status: 'cancelled', aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false,
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
@@ -171,6 +171,58 @@ describe('AbaMensagens', () => {
     expect(responderBtn).toBeDisabled();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+  });
+
+  it('conversa em reclamação aberta: aviso com link para Reclamações no lugar da caixa de resposta', async () => {
+    const ORIGINAL = CONVERSAS;
+    CONVERSAS = [{ ...conversaBase(2, false), reclamacaoAberta: true }];
+    try {
+      renderAba();
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      expect(within(card).getByText('Em reclamação')).toBeInTheDocument();
+      await abrir(card);
+      expect(within(card).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(card).queryByRole('button', { name: /responder/i })).not.toBeInTheDocument();
+      expect(within(card).getByRole('link', { name: /ver reclamação/i }))
+        .toHaveAttribute('href', '#/faturamento?aba=posvenda&sub=reclamacoes');
+    } finally { CONVERSAS = ORIGINAL; }
+  });
+
+  it('ML recusa por reclamação (409 reclamacao_aberta): troca a caixa pelo aviso e invalida', async () => {
+    responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('Pedido com reclamação aberta'), { codigo: 'reclamacao_aberta' }));
+    const { invalidateSpy } = renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    await abrir(card);
+    await userEvent.type(within(card).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
+    await userEvent.click(within(card).getByRole('button', { name: /responder/i }));
+    expect(toast.info).toHaveBeenCalledWith('Este pedido tem reclamação aberta no Mercado Livre: responda pela reclamação.');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(within(card).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /ver reclamação/i })).toBeInTheDocument();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+  });
+
+  it('reclamação fecha com o card aberto: o aviso some e a caixa de resposta volta (achado Codex)', async () => {
+    const ORIGINAL = CONVERSAS;
+    try {
+      responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('x'), { codigo: 'reclamacao_aberta' }));
+      const { rerender, queryClient } = renderAba();
+      const tela = () => <QueryClientProvider client={queryClient}><AbaMensagens /></QueryClientProvider>;
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = () => screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      await abrir(card());
+      await userEvent.type(within(card()).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
+      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
+      expect(within(card()).queryByRole('textbox')).not.toBeInTheDocument();
+      // sync traz a reclamação, depois o fechamento
+      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, reclamacaoAberta: true } : c);
+      rerender(tela());
+      expect(within(card()).queryByRole('textbox')).not.toBeInTheDocument();
+      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, reclamacaoAberta: false } : c);
+      rerender(tela());
+      expect(within(card()).getByRole('textbox')).toBeInTheDocument();
+    } finally { CONVERSAS = ORIGINAL; }
   });
 
   it('quando responderMensagem falha com erro genérico: exibe toast.error e não desabilita campos nem marca cancelada', async () => {

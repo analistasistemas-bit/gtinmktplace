@@ -38,6 +38,9 @@ export interface Conversa {
   shipping_status: string | null;
   /** Ids das recebidas ainda não lidas no ML (`lida_ml_em` nulo). */
   idsNaoLidosML: string[];
+  /** Pedido do pack com reclamação (mediations) aberta: o ML bloqueia a mensagem (`blocked_by_claim`);
+   *  a conversa segue pela reclamação e não conta como aguardando. Emenda ADR-0067 (01/11). */
+  reclamacaoAberta: boolean;
 }
 
 /** Situação de envio de cada conversa, de `ml_vendas` (RLS por org) pelo order_id. Falha na leitura
@@ -52,6 +55,19 @@ async function preencherEnvio(conversas: Conversa[]): Promise<void> {
     }
   }
   for (const c of conversas) c.shipping_status = (c.order_id && porOrder.get(c.order_id)) || null;
+}
+
+/** Marca as conversas cujo pedido (`order_id` de alguma mensagem, ou o `pack_id` em pedido solo)
+ *  tem reclamação `mediations` aberta em `ml_devolucoes` (RLS por org). Falha na leitura deixa
+ *  todas como sem reclamação — a lista segue; o 409 `reclamacao_aberta` da edge trava na hora. */
+async function preencherReclamacao(conversas: Conversa[]): Promise<void> {
+  const { data } = await supabase.from('ml_devolucoes').select('order_id')
+    .eq('status', 'opened').eq('type', 'mediations');
+  const abertas = new Set(((data ?? []) as Array<{ order_id: number | string }>).map((d) => String(d.order_id)));
+  for (const c of conversas) {
+    c.reclamacaoAberta = abertas.has(c.pack_id) || c.mensagens.some((m) => !!m.order_id && abertas.has(m.order_id));
+    if (c.reclamacaoAberta) c.aguardando = false;
+  }
 }
 
 /** Lê as mensagens (cronológica) e agrupa por pack. Conversas aguardando resposta primeiro. */
@@ -87,6 +103,7 @@ export async function buscarConversas(): Promise<Conversa[]> {
         ultima: null,
         shipping_status: null,
         idsNaoLidosML: [],
+        reclamacaoAberta: false,
       };
       porPack.set(m.pack_id, c);
     }
@@ -105,10 +122,14 @@ export async function buscarConversas(): Promise<Conversa[]> {
     c.idsNaoLidosML = c.mensagens.filter((m) => m.direcao === 'recebida' && !m.lida_ml_em).map((m) => m.message_id);
   }
   await preencherEnvio(conversas);
+  await preencherReclamacao(conversas);
   // Aguardando no topo; depois mais recentes.
   return conversas.sort((a, b) =>
     Number(b.aguardando) - Number(a.aguardando) || (b.ultima ?? '').localeCompare(a.ultima ?? ''));
 }
+
+export const ehReclamacaoAberta = (e: unknown): boolean =>
+  e instanceof Error && (e as Error & { codigo?: string }).codigo === 'reclamacao_aberta';
 
 export const ehPedidoCancelado = (e: unknown): boolean =>
   e instanceof Error && (

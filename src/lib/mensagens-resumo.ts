@@ -23,7 +23,7 @@ export function baldeDaConversa(c: Conversa): Balde | null {
   }
   const ultima = c.mensagens[c.mensagens.length - 1];
   if (ultima?.direcao === 'enviada') return 'respondidas';
-  if (ultima?.direcao === 'recebida' && !ultima.lida) return 'semResponder';
+  if (ultima?.direcao === 'recebida' && !ultima.lida) return c.reclamacaoAberta ? null : 'semResponder';
   return null;
 }
 

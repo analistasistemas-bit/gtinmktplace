@@ -1537,8 +1537,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado (`codigo: 'pedido_cancelado'`). Reusa
   `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
   entrar na query `.or()` de `resolverMetaPack` (plan 037). Se o ML rejeitar com 403
-  `blocked_by_mediation` (reclamação em mediação bloqueia o chat pós-venda), devolve 502 com a
-  orientação de responder dentro da reclamação — o app não tem acesso ao canal de mediação.
+  `blocked_by_claim` ou `blocked_by_mediation` (reclamação aberta bloqueia o chat pós-venda), devolve
+  409 `codigo: 'reclamacao_aberta'` e o card troca a caixa de resposta pelo link da reclamação; a
+  conversa sai de "aguardando" quando `ml_devolucoes` tem `mediations` aberta no pedido (emenda
+  ADR-0067, 01/11).
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173:** desde 28/09,

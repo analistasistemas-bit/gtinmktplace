@@ -160,3 +160,22 @@ Decisão:
 - Rede de segurança: etapa `mensagens` no `reconciliar-faturamento` horário (entre `claims` e
   `vendas`), lendo `GET /messages/unread?role=seller&tag=post_sale` e sincronizando esses packs em
   lotes de 10 com cursor. Substitui a dependência do backfill para conversas não lidas.
+
+## Emenda 2026-11-01 — conversa com reclamação aberta não é respondível
+
+Daludi Shop, 01/11: responder ao comprador devolveu `ML /messages 403 {"message":"blocked_by_claim"}`.
+O pedido tinha uma reclamação (`mediations`, "Produto não recebido") aberta 2 min depois da mensagem.
+Com reclamação aberta o ML recusa mensagem de pós-venda no pack: a conversa segue **dentro da
+reclamação**. Mesmo assim a conversa contava como "aguardando resposta" no avatar e no card
+"Sem responder", e a caixa de resposta ficava ativa.
+
+Decisão:
+- Conversa **em reclamação** = algum pedido do pack (`order_id` ou o próprio `pack_id`) com linha em
+  `ml_devolucoes` `type = 'mediations'` e `status = 'opened'` (claim ou dispute). Restrito a
+  `mediations` porque é o caso medido; outros tipos abertos (ex.: `returns`) não foram provados.
+- Ela sai de "aguardando" em todos os contadores: `contar_conversas_aguardando`,
+  `resumo_mensagens_posvenda.sem_responder` e o `aguardando`/`baldeDaConversa` do front.
+- No card, a caixa de resposta vira um aviso com link para Pós-venda › Reclamações.
+- Rede de segurança: `responder-mensagem` traduz o 403 `blocked_by_claim` (reclamação que ainda não
+  sincronizou, ou outro tipo) em 409 `codigo: 'reclamacao_aberta'`; o card trava a resposta na hora.
+- Reclamação fechada → a conversa volta a ser respondível e a contar, sem ação manual.

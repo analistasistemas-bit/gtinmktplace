@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-react';
+import { Sparkles, Send, MessagesSquare, ExternalLink, Check, LifeBuoy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens, useResumoMensagens } from '@/hooks/useMensagens';
 import {
-  responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, marcarMensagensLidasML, type Conversa,
+  responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, ehReclamacaoAberta, marcarMensagensLidasML, type Conversa,
 } from '@/lib/mensagens';
 import { baldeDaConversa, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
 import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
@@ -33,12 +33,22 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [canceladaLocal, setCanceladaLocal] = useState(false);
+  const [reclamacaoLocal, setReclamacaoLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
   const marcandoRef = useRef(false);
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
+  // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
+  const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
+  // A trava local (409) cai quando o banco confirma o fechamento (aberta → fechada); antes disso o
+  // dado pode só não ter sincronizado, então "false" sozinho não a solta.
+  const reclamacaoAntes = useRef(c.reclamacaoAberta);
+  useEffect(() => {
+    if (reclamacaoAntes.current && !c.reclamacaoAberta) setReclamacaoLocal(false);
+    reclamacaoAntes.current = c.reclamacaoAberta;
+  }, [c.reclamacaoAberta]);
   const cliente = nomeComprador(c.comprador_nome, c.comprador_nick);
   const enviandoRef = useRef(false);
   const rolagem = useRef<HTMLDivElement>(null);
@@ -98,7 +108,12 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
       await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
     } catch (e) {
-      if (ehPedidoCancelado(e)) {
+      if (ehReclamacaoAberta(e)) {
+        setReclamacaoLocal(true);
+        toast.info('Este pedido tem reclamação aberta no Mercado Livre: responda pela reclamação.');
+        await qc.invalidateQueries({ queryKey: ['mensagens'] });
+        await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+      } else if (ehPedidoCancelado(e)) {
         setCanceladaLocal(true);
         toast.info('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
         await qc.invalidateQueries({ queryKey: ['mensagens'] });
@@ -154,7 +169,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
           </div>
         </div>
         <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
-          {c.aguardando && !cancelada && (
+          {c.aguardando && !cancelada && !emReclamacao && (
             <Button
               variant="ghost"
               size="sm"
@@ -166,7 +181,9 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
               {dispensando ? 'Dispensando…' : 'Dispensar'}
             </Button>
           )}
-          {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill> : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
+          {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill>
+            : emReclamacao ? <StatusPill tone="danger">Em reclamação</StatusPill>
+            : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
           <Button variant={aberto ? 'ghost' : 'outline'} size="sm" onClick={alternar} aria-expanded={aberto}>
             {aberto ? 'Recolher' : 'Conferir mensagem'}
           </Button>
@@ -201,6 +218,17 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         ))}
       </div>
 
+      {emReclamacao ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t px-4 py-3 text-sm">
+          <LifeBuoy className="h-4 w-4 shrink-0 text-destructive" aria-hidden />
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            O comprador abriu uma reclamação neste pedido. O Mercado Livre bloqueia mensagens enquanto ela estiver aberta: responda pela reclamação.
+          </span>
+          <Button asChild variant="outline" size="sm">
+            <a href="#/faturamento?aba=posvenda&sub=reclamacoes">Ver reclamação</a>
+          </Button>
+        </div>
+      ) : (
       <div className="flex items-end gap-2 border-t px-3 py-2.5">
         <Button
           variant="ghost"
@@ -243,6 +271,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
           <Send className={cn('h-4 w-4', enviando && 'animate-pulse')} />
         </Button>
       </div>
+      )}
       </>}
     </div>
   );

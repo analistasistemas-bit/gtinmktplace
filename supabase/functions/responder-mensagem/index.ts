@@ -16,9 +16,14 @@ import {
   marcarConversaCancelada,
   ERRO_PEDIDO_CANCELADO,
   CODIGO_PEDIDO_CANCELADO,
+  ERRO_EM_MEDIACAO,
 } from '../_shared/faturamento/mensagens-io.ts';
 
 interface Body { pack_id?: string; text?: string }
+
+/** Reclamação aberta no pedido: o ML recusa a mensagem (403 `blocked_by_claim`) e a conversa segue
+ *  pela reclamação. Emenda ADR-0067 (01/11). */
+const ERRO_RECLAMACAO_ABERTA = 'Este pedido tem reclamação aberta no Mercado Livre: responda pela reclamação.';
 
 const erro = (msg: string, status: number, codigo?: string) => new Response(
   JSON.stringify({ ok: false, erro: msg, ...(codigo ? { codigo } : {}) }),
@@ -77,6 +82,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
     }
     await auditarOperacaoSuporte(admin, context, { type: 'pack', id: packId }, 'failed');
+    if (msg === ERRO_EM_MEDIACAO || msg.includes('blocked_by_claim')) return erro(ERRO_RECLAMACAO_ABERTA, 409, 'reclamacao_aberta');
     return erro(msg, 502);
   }
 

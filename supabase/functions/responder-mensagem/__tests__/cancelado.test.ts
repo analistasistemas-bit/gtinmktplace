@@ -40,6 +40,7 @@ vi.mock('../../_shared/faturamento/mensagens-io.ts', () => ({
   marcarConversaCancelada: (...args: unknown[]) => fronteiras.marcarCancelada(...args),
   ERRO_PEDIDO_CANCELADO: 'Não é possível responder porque o pedido foi cancelado.',
   CODIGO_PEDIDO_CANCELADO: 'pedido_cancelado',
+  ERRO_EM_MEDIACAO: 'Reclamação em mediação.',
 }));
 
 let handler: (req: Request) => Promise<Response>;
@@ -87,5 +88,37 @@ describe('responder-mensagem — pedido cancelado', () => {
       codigo: 'pedido_cancelado',
     });
     expect(fronteiras.marcarCancelada).toHaveBeenCalledWith(expect.anything(), 'org-1', '456', 'owner-1');
+  });
+
+  it('403 blocked_by_claim do ML → 409 reclamacao_aberta, sem marcar cancelada', async () => {
+    fronteiras.marcarCancelada.mockClear();
+    fronteiras.meta.mockResolvedValue({ orderStatus: 'paid' });
+    fronteiras.token.mockResolvedValue('token-ml');
+    fronteiras.comprador.mockResolvedValue('buyer-1');
+    fronteiras.envio.mockRejectedValue(new Error('ML /messages 403: {"code":"forbidden","message":"blocked_by_claim","stacktrace":null,"status_code":403}'));
+
+    const response = await handler(new Request('http://localhost', {
+      method: 'POST', body: JSON.stringify({ pack_id: '789', text: 'Olá' }),
+    }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      ok: false,
+      erro: 'Este pedido tem reclamação aberta no Mercado Livre: responda pela reclamação.',
+      codigo: 'reclamacao_aberta',
+    });
+    expect(fronteiras.marcarCancelada).not.toHaveBeenCalled();
+  });
+
+  it('403 blocked_by_mediation (ERRO_EM_MEDIACAO) → mesmo 409 reclamacao_aberta', async () => {
+    fronteiras.meta.mockResolvedValue({ orderStatus: 'paid' });
+    fronteiras.token.mockResolvedValue('token-ml');
+    fronteiras.comprador.mockResolvedValue('buyer-1');
+    fronteiras.envio.mockRejectedValue(new Error('Reclamação em mediação.'));
+    const response = await handler(new Request('http://localhost', {
+      method: 'POST', body: JSON.stringify({ pack_id: '790', text: 'Olá' }),
+    }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).codigo).toBe('reclamacao_aberta');
   });
 });

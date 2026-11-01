@@ -4,12 +4,17 @@ import type { Mensagem } from '../mensagens';
 // buscarConversas agora encadeia .order().limit(1000) e reverte o array (plan 036) — o mock
 // representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
 // controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
-const { mockLimit, mockDataOrder, mockMessageIdOrder } = vi.hoisted(() => ({
+const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes } = vi.hoisted(() => ({
   mockLimit: vi.fn(), mockDataOrder: vi.fn(), mockMessageIdOrder: vi.fn(),
+  mockReclamacoes: vi.fn(async () => ({ data: [] as Array<{ order_id: number }>, error: null })),
 }));
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: () => ({
+    from: (tabela: string) => tabela === 'ml_devolucoes' ? ({
+      select: () => ({ eq: () => ({ eq: mockReclamacoes }) }),
+    }) : tabela === 'ml_vendas' ? ({
+      select: () => ({ in: async () => ({ data: [], error: null }) }),
+    }) : ({
       select: () => ({
         order: (...args: unknown[]) => {
           mockDataOrder(...args);
@@ -179,5 +184,28 @@ describe('buscarConversas', () => {
     expect(mockDataOrder).toHaveBeenLastCalledWith('data_ml', { ascending: false, nullsFirst: false });
     expect(mockMessageIdOrder).toHaveBeenLastCalledWith('message_id', { ascending: false });
     expect(conversa).toMatchObject({ order_status: 'cancelled', aguardando: false });
+  });
+
+  it('pedido do pack com reclamação aberta → reclamacaoAberta e nunca aguardando', async () => {
+    mockReclamacoes.mockResolvedValueOnce({ data: [{ order_id: 2000019139476910 }], error: null });
+    mockLimit.mockResolvedValueOnce({
+      data: [
+        msg({ id: '1', pack_id: '2000015675716893', order_id: '2000019139476910', direcao: 'recebida' }),
+        msg({ id: '2', pack_id: 'pack-livre', message_id: 'm-2', direcao: 'recebida' }),
+      ],
+      error: null,
+    });
+    const conversas = await buscarConversas();
+    const presa = conversas.find((c) => c.pack_id === '2000015675716893')!;
+    const livre = conversas.find((c) => c.pack_id === 'pack-livre')!;
+    expect(presa).toMatchObject({ reclamacaoAberta: true, aguardando: false });
+    expect(livre).toMatchObject({ reclamacaoAberta: false, aguardando: true });
+  });
+
+  it('pack solo (pack_id = order_id) também casa com a reclamação', async () => {
+    mockReclamacoes.mockResolvedValueOnce({ data: [{ order_id: 555 }], error: null });
+    mockLimit.mockResolvedValueOnce({ data: [msg({ pack_id: '555', order_id: null })], error: null });
+    const [c] = await buscarConversas();
+    expect(c.reclamacaoAberta).toBe(true);
   });
 });

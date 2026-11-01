@@ -81,3 +81,11 @@ describe('mensagensPendentes (badge Pós-venda/Mensagens)', () => {
     expect(mensagensPendentes(undefined)).toBe(0);
   });
 });
+
+describe('conversa em reclamação aberta (emenda ADR-0067, 01/11)', () => {
+  it('lida e sem resposta, mas em reclamação → fora de Sem responder (o ML bloqueia a mensagem)', () => {
+    const c = conversa({ naoLidaML: false, reclamacaoAberta: true });
+    expect(baldeDaConversa(c)).toBeNull();
+    expect(resumirConversas([c]).lidas.semResponder).toBe(0);
+  });
+});
