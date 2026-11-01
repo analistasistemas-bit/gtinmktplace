@@ -28,8 +28,12 @@ export async function vincularCopiasCatalogo(
   const alvo: Array<{ sku: string; item_id: string }> = [];
   for (const c of copias) {
     if (!c.principal) continue;
-    const sku = c.sku ?? await deps.resolverSku(orgId, c.principal);
-    if (sku) alvo.push({ sku, item_id: c.id });
+    try {
+      const sku = c.sku ?? await deps.resolverSku(orgId, c.principal);
+      if (sku) alvo.push({ sku, item_id: c.id });
+    } catch (e) {
+      console.warn(`SKU da cópia ${c.id} não resolvido:`, (e as Error).message);
+    }
   }
   if (alvo.length === 0) return 0;
   const comFiscal = await deps.skusComFiscal(orgId, [...new Set(alvo.map((a) => a.sku))]);
@@ -87,6 +91,26 @@ export async function resolverSkuPeloPrincipal(
   return chaves.length === 1 ? chaves[0] : null;
 }
 
+/** IDs das cópias de catálogo (active + paused) via `search_type=scan`: o offset do search para
+ *  em 1000 e uma cópia de fora ficaria sem fiscal para sempre (medido: scan aceita o filtro). */
+export async function listarCopiasCatalogo(
+  get: (caminho: string) => Promise<unknown>, sellerId: string,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const status of ['active', 'paused']) {
+    let scroll: string | undefined;
+    for (;;) {
+      const d = await get(`/users/${sellerId}/items/search?search_type=scan&catalog_listing=true&status=${status}&limit=100`
+        + (scroll ? `&scroll_id=${encodeURIComponent(scroll)}` : '')) as { results?: string[]; scroll_id?: string };
+      const res = d.results ?? [];
+      res.forEach((id) => ids.add(id));
+      if (res.length === 0 || !d.scroll_id) break;
+      scroll = d.scroll_id;
+    }
+  }
+  return [...ids];
+}
+
 export function depsCopiasReais(admin: SupabaseClient): DepsCopias {
   const get = async (token: string, caminho: string): Promise<unknown> => {
     const r = await fetch(`${API}${caminho}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -99,19 +123,7 @@ export function depsCopiasReais(admin: SupabaseClient): DepsCopias {
       if (error) throw new Error(`vincularCopiasCatalogo: organizations: ${error.message}`);
       return ((data?.modulos_habilitados ?? []) as string[]).includes('fiscal');
     },
-    async listarCopias(token, sellerId) {
-      const ids: string[] = [];
-      for (const status of ['active', 'paused']) {
-        // ponytail: offset do search vai até 1000 por status; acima disso exigiria search_type=scan.
-        for (let off = 0; off < 1000; off += 100) {
-          const d = await get(token, `/users/${sellerId}/items/search?catalog_listing=true&status=${status}&limit=100&offset=${off}`) as
-            { results?: string[]; paging?: { total?: number } };
-          ids.push(...(d.results ?? []));
-          if (off + 100 >= (d.paging?.total ?? 0)) break;
-        }
-      }
-      return [...new Set(ids)];
-    },
+    listarCopias: (token, sellerId) => listarCopiasCatalogo((caminho) => get(token, caminho), sellerId),
     async lerCopias(token, ids) {
       const out: CopiaCatalogo[] = [];
       for (let i = 0; i < ids.length; i += 20) {

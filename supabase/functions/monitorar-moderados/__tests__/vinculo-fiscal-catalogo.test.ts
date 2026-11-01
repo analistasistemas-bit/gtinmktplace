@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolverSkuPeloPrincipal, vincularCopiasCatalogo, type DepsCopias } from '../vinculo-fiscal-catalogo.ts';
+import {
+  listarCopiasCatalogo, resolverSkuPeloPrincipal, vincularCopiasCatalogo, type DepsCopias,
+} from '../vinculo-fiscal-catalogo.ts';
 
 function deps(o: Partial<DepsCopias> = {}): DepsCopias & Record<string, ReturnType<typeof vi.fn>> {
   return {
@@ -62,6 +64,18 @@ describe('vincularCopiasCatalogo (emenda ADR-0135 01/11/2026)', () => {
     expect(d.vincular).toHaveBeenCalledTimes(2);
   });
 
+  it('erro ao resolver o SKU de uma cópia não para as outras (review Codex)', async () => {
+    const d = deps({
+      lerCopias: vi.fn(async () => [
+        { id: 'A', sku: null, principal: { id: 'P', variation_id: null } },
+        { id: 'B', sku: '2', principal: { id: 'Q', variation_id: null } },
+      ]),
+      resolverSku: vi.fn(async () => { throw new Error('db'); }),
+    });
+    expect(await vincularCopiasCatalogo('o1', '123', 'tok', d)).toBe(1);
+    expect(d.vincular).toHaveBeenCalledWith('tok', { sku: '2', item_id: 'B' });
+  });
+
   it('erro na busca das cópias propaga', async () => {
     const d = deps({ listarCopias: vi.fn(async () => { throw new Error('503'); }) });
     await expect(vincularCopiasCatalogo('o1', '123', 'tok', d)).rejects.toThrow('503');
@@ -79,6 +93,23 @@ function fakeAdmin(tabelas: Record<string, unknown[]>) {
     },
   } as never;
 }
+
+describe('listarCopiasCatalogo (scan, sem teto de 1000)', () => {
+  it('segue o scroll_id até página vazia, active e paused', async () => {
+    const paginas: Record<string, { results: string[]; scroll_id?: string }[]> = {
+      active: [{ results: ['A1', 'A2'], scroll_id: 's1' }, { results: ['A3'], scroll_id: 's2' }, { results: [] }],
+      paused: [{ results: ['P1'], scroll_id: 'x' }, { results: [] }],
+    };
+    const urls: string[] = [];
+    const get = vi.fn(async (c: string) => {
+      urls.push(c);
+      return paginas[c.includes('status=active') ? 'active' : 'paused'].shift();
+    });
+    expect(await listarCopiasCatalogo(get, '123')).toEqual(['A1', 'A2', 'A3', 'P1']);
+    expect(urls[0]).toContain('search_type=scan&catalog_listing=true&status=active');
+    expect(urls[1]).toContain('scroll_id=s1');
+  });
+});
 
 describe('resolverSkuPeloPrincipal', () => {
   it('Legacy com variação: casa ml_variation_id', async () => {
