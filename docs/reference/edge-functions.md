@@ -1381,6 +1381,14 @@ um smoke test contra Postgres real antes do primeiro deploy.
   **Payload (medido 2026-10-18):** `origin_type` vai dentro de `tax_information` (o ML recusa com
   400 se só estiver na raiz). `GET /can_invoice/items/{id}` pode responder 403 de `PolicyAgent` —
   leitura nula não grava o semáforo; ver "A verificar #2" do ADR-0135.
+  **Sentinela ADR-0084 (01/11/2026, main `88465891`):** anúncio sem variação guarda o próprio item
+  id em `ml_variation_id`; o vínculo omite `variation_id` quando ele é igual ao `item_id` (senão o ML
+  responde 400 10094 "Variation not valid").
+  **Cópias de catálogo (emenda ADR-0135 01/11/2026, main `60867527`):** depois dos vínculos, lê
+  `item_relations` dos anúncios (`lerRelacoes`, `/items/bulk`) e vincula o mesmo SKU a cada cópia
+  da mesma variação (nulo com nulo), sem `variation_id`. 404 no lote é definitivo; envelope
+  inválido vira 502 (retenta). Legacy com variação não lista as cópias no principal — coberto pela
+  revarredura do `monitorar-moderados`.
 - **atualizar-fiscal-familia** *(HTTP, JWT do app)* — modo edição do D-9: grava os campos fiscais
   de uma família já cadastrada (`ncm`, `cest`, `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms`)
   e, quando a família já está publicada, enfileira `sincronizar-fiscal-ml` para o re-push. 403 sem
@@ -1646,6 +1654,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram
   (ADR-0035). Runbook: [../runbooks/monitorar-moderados.md](../runbooks/monitorar-moderados.md).
+  Por conexão também roda a reconciliação fiscal do ADR-0135 (semáforo `can_invoice`, push
+  pendente C4) e, desde 01/11/2026, `vinculo-fiscal-catalogo.ts`: busca as cópias de catálogo da
+  conta (`search_type=scan&catalog_listing=true`, active + paused), resolve o SKU
+  (`seller_custom_field` ou pelo principal: variação, item UP, partição do split) e refaz o vínculo
+  SKU→cópia só para SKU de família com NCM. Falha numa cópia não para as outras; não enfileira push.
 - **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040). O total do aviso rateia o frete do envio entre todas as orders do pack/envio (`_shared/faturamento/liberacao.ts` → `ratearLiquidoPorFrete`, mesma regra do Financeiro), por org e em lotes de 80 — o `liquido` gravado traz o frete inteiro em cada order e somá-lo cobrava o frete N vezes (corrigido em 2026-10-05).
 
 ### Pulse (ADR-0119)

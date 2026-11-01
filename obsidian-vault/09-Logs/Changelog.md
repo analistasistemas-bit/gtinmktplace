@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-31
+atualizado: 2026-11-01
 ---
 
 # Changelog
@@ -8,6 +8,18 @@ atualizado: 2026-10-31
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-01
+
+- **Daludi Shop vira PJ e emite NF-e pelo ML** (ADR-0135): conta ML convertida para CNPJ, emissor
+  configurado, fiscal nos 27 produtos (9 pelas notas de compra, 18 sem nota — conferir depois).
+- **Fix do vínculo fiscal em anúncio sem variação** (main `88465891`, `sincronizar-fiscal-ml` v21): a
+  sentinela do ADR-0084 (`ml_variation_id = ml_item_id`) ia como `variation_id` → 400 10094.
+- **Fiscal nas cópias de catálogo** (emenda ADR-0135, main `60867527`, `sincronizar-fiscal-ml` v22 +
+  `monitorar-moderados` v102): cópia de catálogo criada pelo ML ficava "Sem dados fiscais" e travava a
+  expedição (`invoice_pending`). Agora o push vincula as cópias e a revarredura 6/6h cobre as novas.
+- Pedido feito antes do emissor configurado fica "Anúncio sem dados fiscais" mesmo com SKU pronto —
+  saída é "Adicionar dados fiscais" no próprio pedido.
 
 ## 2026-10-31
 

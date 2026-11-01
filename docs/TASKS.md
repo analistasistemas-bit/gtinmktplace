@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
+
+- [x] Org `daludishop` marcada PJ, `empresa_fiscal` preenchida, módulo `fiscal` ligado; conta ML convertida para CNPJ e emissor de NF-e configurado.
+- [x] Fiscal nos 27 produtos (9 pelas notas de compra 5388/810750; 18 sem nota, autorizado pelo Diego: CSOSN 102, origem 0, NCM por classificação). CSOSN padrão da org = 102.
+- [x] Fix: sentinela ADR-0084 enviada como `variation_id` no vínculo fiscal (main `88465891`).
+- [x] Vínculo fiscal nas cópias de catálogo, no push e na revarredura 6/6h (emenda ADR-0135, main `60867527`).
+- [ ] Conferir NCM/origem/CSOSN dos 18 produtos sem nota quando chegarem as notas de entrada (Helioderm bastão pode ser CSOSN 500 + CEST; jaquetas/regata: malha 61 × plano 62).
+- [ ] Confirmar a 1ª NF-e autorizada pelo faturador do ML (pedidos anteriores ao emissor: "Adicionar dados fiscais" no pedido).
+
 ## Pós-venda do ML no PubliAI (ADR-0192) — 2026-10-28
 
 - [x] Webhook `messages`/`post_purchase` corrigido (emenda de 28/10 ao ADR-0067): o webhook nunca havia entregue mensagem nem reclamação.
