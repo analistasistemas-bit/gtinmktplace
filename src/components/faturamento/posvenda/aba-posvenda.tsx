@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { useFilaPosvenda, useTentativasAtivas } from '@/hooks/usePosvenda';
 import { useResumoMensagens } from '@/hooks/useMensagens';
+import { mensagensPendentes } from '@/lib/mensagens-resumo';
 import { classificar, subAbaDe } from '@/lib/posvenda-fila';
 import { AbaDevolucoes } from '@/components/faturamento/aba-devolucoes';
 import { AbaMensagens } from '@/components/faturamento/aba-mensagens';
@@ -25,7 +26,7 @@ export function AbaPosvenda({ sub, onSub }: { sub: SubAba; onSub: (s: SubAba) =>
   // Sem conhecer as travas não dá para liberar ação nenhuma: carregando/erro => null (tudo indisponível).
   // Releitura com erro => desconhecidas, mesmo que o cache ainda tenha dados antigos.
   const travas = travasQ.isError ? null : travasQ.data ?? null;
-  const naoLidas = useResumoMensagens().data?.naoLidas.total ?? 0;
+  const mensagens = mensagensPendentes(useResumoMensagens().data);
   const [historico, setHistorico] = useState(false);
 
   const { reclamacoes, devolucoes } = useMemo(() => {
@@ -50,7 +51,7 @@ export function AbaPosvenda({ sub, onSub }: { sub: SubAba; onSub: (s: SubAba) =>
       <TabsList>
         <TabsTrigger value="reclamacoes">Reclamações<Badge n={urgentes(reclamacoes)} /></TabsTrigger>
         <TabsTrigger value="devolucoes">Devoluções<Badge n={urgentes(devolucoes)} /></TabsTrigger>
-        <TabsTrigger value="mensagens">Mensagens<Badge n={naoLidas} /></TabsTrigger>
+        <TabsTrigger value="mensagens">Mensagens<Badge n={mensagens} /></TabsTrigger>
       </TabsList>
       <TabsContent value="reclamacoes" className="mt-4">
         {avisoTravas}

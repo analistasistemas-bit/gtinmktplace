@@ -25,7 +25,7 @@ vi.mock('@/lib/posvenda', async (importOriginal) => {
 });
 vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => ({ data: undefined }) }));
 vi.mock('@/hooks/useAnuncioCanonico', () => ({ useAnuncioCanonico: () => ({ data: undefined }) }));
-vi.mock('@/hooks/useMensagens', () => ({ useResumoMensagens: () => ({ data: { naoLidas: { total: 0 } } }) }));
+vi.mock('@/hooks/useMensagens', () => ({ useResumoMensagens: () => ({ data: { naoLidas: { total: 0 }, lidas: { semResponder: 0 } } }) }));
 vi.mock('@/components/faturamento/aba-mensagens', () => ({ AbaMensagens: () => <div>MENSAGENS</div> }));
 vi.mock('@/components/faturamento/aba-devolucoes', () => ({ AbaDevolucoes: () => <div>HIST</div> }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));

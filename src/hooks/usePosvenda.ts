@@ -5,6 +5,7 @@ import { classificar, resumirPedido, type ProdutoPedido, type ItemPedido } from 
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import type { VendaItem } from '@/lib/faturamento';
 import { useResumoMensagens } from '@/hooks/useMensagens';
+import { mensagensPendentes } from '@/lib/mensagens-resumo';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 
@@ -39,9 +40,9 @@ export function useProdutosPedidos(orderIds: Array<number | null | undefined>): 
   }, [q.data, fotos, canonico]);
 }
 
-/** Badge da aba Pós-venda: urgentes + mensagens não lidas. */
+/** Badge da aba Pós-venda: urgentes + mensagens aguardando resposta. */
 export function usePosvendaBadge(): number {
   const fila = useFilaPosvenda().data;
-  const naoLidas = useResumoMensagens().data?.naoLidas.total ?? 0;
-  return (fila ?? []).filter((d) => classificar(d) === 'urgente').length + naoLidas;
+  const mensagens = mensagensPendentes(useResumoMensagens().data);
+  return (fila ?? []).filter((d) => classificar(d) === 'urgente').length + mensagens;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Conversa, Mensagem } from '../mensagens';
-import { baldeDaConversa, resumirConversas, rotuloVenda } from '../mensagens-resumo';
+import { baldeDaConversa, mensagensPendentes, resumirConversas, rotuloVenda } from '../mensagens-resumo';
 
 function msg(direcao: 'recebida' | 'enviada', extra: Partial<Mensagem> = {}): Mensagem {
   return {
@@ -68,5 +68,16 @@ describe('baldeDaConversa / rotuloVenda', () => {
     expect(rotuloVenda('shipped')).toBe('Venda a caminho');
     expect(rotuloVenda('delivered')).toBe('Venda entregue');
     expect(rotuloVenda(null)).toBe('Venda');
+  });
+});
+
+describe('mensagensPendentes (badge Pós-venda/Mensagens)', () => {
+  it('soma não lidas no ML + lidas sem responder (igual ao "aguardando resposta" do avatar)', () => {
+    const r = { naoLidas: { aPreparar: 0, aCaminho: 0, entregues: 0, total: 0 }, lidas: { semResponder: 3, respondidas: 9 } };
+    expect(mensagensPendentes(r)).toBe(3);
+    expect(mensagensPendentes({ ...r, naoLidas: { ...r.naoLidas, total: 2 } })).toBe(5);
+  });
+  it('sem resumo (carregando/erro) → 0', () => {
+    expect(mensagensPendentes(undefined)).toBe(0);
   });
 });

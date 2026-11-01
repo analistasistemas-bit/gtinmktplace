@@ -53,6 +53,13 @@ export function resumoDaRpc(l: {
   };
 }
 
+/** Badge das abas Pós-venda/Mensagens: tudo que espera resposta — não lidas no ML + lidas sem
+ *  responder. Sem o segundo termo, a conversa aberta no ML e não respondida some do badge, mas
+ *  segue no "aguardando resposta" do avatar (contar_conversas_aguardando). */
+export function mensagensPendentes(r: ResumoMensagens | undefined): number {
+  return r ? r.naoLidas.total + r.lidas.semResponder : 0;
+}
+
 /** Primeira linha do card recolhido, igual ao ML. */
 export function rotuloVenda(shipping: string | null): string {
   if (shipping && A_PREPARAR.includes(shipping)) return 'Venda para preparar';
