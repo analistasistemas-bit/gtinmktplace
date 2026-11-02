@@ -628,3 +628,40 @@ describe('extensao — frete cotado da oferta (auditoria × Avant, 0.3.1)', () =
     expect(vi.mocked(mlGet).mock.calls.some(([u]) => String(u).includes('/shipping_options'))).toBe(false);
   });
 });
+
+describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota', () => {
+  const PEDIDO = { acao: 'identificar_busca', eanDaBusca: null, itens: [{ itemId: 'MLB1', catalogProductId: null }, { itemId: 'MLB2', catalogProductId: null }] };
+  it('card sem preço: próprio e vínculo por item; zero ML, zero OAuth, zero cota de margem, sem registro de uso', async () => {
+    f.dados.kits_virtuais = [{ org_id: 'org-1', ml_item_id: 'MLB2' }];
+    const r = await post(PEDIDO);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ itens: [
+      { itemId: 'MLB1', proprio: false, vinculo: null },
+      { itemId: 'MLB2', proprio: true, vinculo: null },
+    ] });
+    expect(resolverConexao).not.toHaveBeenCalled();
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
+    expect(mlGet).not.toHaveBeenCalled();
+    expect(buscarListingPrice).not.toHaveBeenCalled();
+    expect(buscarPerfilVendedor).not.toHaveBeenCalled();
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
+    expect(f.rpcs).toEqual([]);
+    // service-role: toda tabela lida leva o filtro da org do usuário
+    for (const t of new Set(f.froms)) expect(f.eqs).toContainEqual([t, 'org_id', 'org-1']);
+    expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
+  });
+
+  it('protocolo 2: envelope com identidade', async () => {
+    expect(await (await post({ ...PEDIDO, protocolo: 2 })).json()).toEqual({
+      identidade: 'user-1:org-1:',
+      dados: { itens: [{ itemId: 'MLB1', proprio: false, vinculo: null }, { itemId: 'MLB2', proprio: false, vinculo: null }] },
+    });
+  });
+
+  it('banco fora (vínculo ilegível) → 500 interno, nunca "sem vínculo"/"não é próprio" inventado', async () => {
+    f.falharEscrita = true; // o mock devolve erro em toda consulta em lista
+    const r = await post(PEDIDO);
+    expect(r.status).toBe(500);
+    expect(await r.json()).toEqual({ erro: 'interno' });
+  });
+});

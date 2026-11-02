@@ -21,6 +21,7 @@ export type Pedido =
   | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
   | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null }
   | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[] }
+  | { acao: 'identificar_busca'; eanDaBusca: string | null; itens: Omit<ItemBusca, 'preco'>[] }
   | { acao: 'radar' | 'adicionar_radar'; catalogProductId: string }
   | { acao: 'sessao' };
 
@@ -108,6 +109,20 @@ export function validarPedido(body: unknown): Pedido | null {
         lidos.push({ itemId: i.itemId, catalogProductId: (i.catalogProductId as string | null | undefined) ?? null, preco: i.preco });
       }
       return { acao: 'analisar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: lidos };
+    }
+    case 'identificar_busca': {
+      // Só banco, sem preço: a extensão pode mandar ocorrências repetidas (orgânico + patrocinado); o teto vale
+      // para os itens deduplicados, com teto bruto de 2× para limitar o parsing.
+      const { itens, eanDaBusca } = b;
+      if (!Array.isArray(itens) || itens.length === 0 || itens.length > 2 * MAX_ITENS_BUSCA) return null;
+      if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null;
+      const lidos = new Map<string, Omit<ItemBusca, 'preco'>>();
+      for (const i of itens as Record<string, unknown>[]) {
+        if (!i || typeof i !== 'object' || !mlb(i.itemId) || (i.catalogProductId != null && !mlb(i.catalogProductId))) return null;
+        if (!lidos.has(i.itemId)) lidos.set(i.itemId, { itemId: i.itemId, catalogProductId: (i.catalogProductId as string | null | undefined) ?? null });
+      }
+      if (lidos.size > MAX_ITENS_BUSCA) return null;
+      return { acao: 'identificar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: [...lidos.values()] };
     }
     default:
       return null;

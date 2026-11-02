@@ -15,7 +15,8 @@ import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { extrairNossaOferta, leituraCompletaDaFicha } from '../_shared/pulse/parse.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
-import { analisarBusca } from '../_shared/extensao/busca.ts';
+import { analisarBusca, type DepsCasamento } from '../_shared/extensao/busca.ts';
+import { identificarBusca } from '../_shared/extensao/busca-local.ts';
 import { montarRadar, type LinhaAlertaPulse, type LinhaProdutoPulse, type RespostaRadar } from '../_shared/extensao/radar.ts';
 import { adicionarAoRadar, MENSAGEM_ML_INDISPONIVEL } from '../_shared/pulse/adicionar.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
@@ -70,14 +71,11 @@ async function getFreteOferta(url: string, token: string): Promise<unknown | nul
   }
 }
 
-/** `cotarFreteOferta`: só para cliente com protocolo 2 no anúncio; sem ele a dep não existe (resposta legada intacta). */
-function criarDeps(admin: SupabaseClient, orgId: string, cotarFreteOferta = false): DepsAnuncio {
-  const conexao = resolverConexao(admin, orgId, 'mercado_livre');
-  let token: Promise<string | null> | null = null;
-  // Token pedido uma vez por requisição e só quando alguma dep precisa do ML.
-  const tokenML = () => (token ??= conexao.then((c) => (c ? getValidAccessTokenConexao(c) : null)));
+type Consulta = PromiseLike<{ data: unknown; error: { message: string } | null }>;
 
-  const variacoes = async (q: PromiseLike<{ data: unknown; error: { message: string } | null }>, onde: string) => {
+/** Linhas de `variacoes` → VariacaoCusto (com o UNITS_PER_PACK da família-base dos kits). Só banco. */
+function lerVariacoes(admin: SupabaseClient, orgId: string) {
+  return async (q: Consulta, onde: string) => {
     const { data, error } = await q;
     falhou(onde, error);
     const linhas = (data ?? []) as LinhaVariacao[];
@@ -89,6 +87,51 @@ function criarDeps(admin: SupabaseClient, orgId: string, cotarFreteOferta = fals
     falhou(`${onde}:base`, e2);
     return variacoesDasLinhas(linhas, uppDasBases((fam ?? []) as { codigo_pai: string; atributos_ml: unknown }[]));
   };
+}
+
+/** Casamento card → SKU da busca, só banco (sem conexão/token ML). Usado por analisar_busca e identificar_busca. */
+function depsCasamento(admin: SupabaseClient, orgId: string): DepsCasamento & Pick<DepsAnuncio, 'porCatalogo'> {
+  const variacoes = lerVariacoes(admin, orgId);
+  const porCatalogo = (org: string, cpid: string) => variacoes(
+    admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).eq('catalog_product_id', cpid)
+      .order('atualizado_em', { ascending: false }).limit(50),
+    'porCatalogo',
+  );
+  return {
+    porCatalogo,
+    // Por catálogo, com o mesmo teto do anúncio (50 linhas por id): um SKU com muitos lotes não esconde outro catálogo.
+    porCatalogos: async (org, cpids) => new Map(await Promise.all(cpids.map(async (c) => [c, await porCatalogo(org, c)] as const))),
+    porGtin: (org, gtin) => variacoes(
+      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).in('gtin', formasGtin(gtin))
+        .order('atualizado_em', { ascending: false }).limit(50),
+      'porGtin',
+    ),
+    vinculosManuais: async (org, chaves) => {
+      if (!chaves.length) return new Map<string, VariacaoCusto>();
+      const { data, error } = await admin.from('extensao_vinculos').select('chave_tipo, chave, variacao_id')
+        .eq('org_id', org).in('chave', [...new Set(chaves.map((c) => c.valor))]);
+      falhou('vinculosManuais', error);
+      const vinculos = ((data ?? []) as { chave_tipo: string; chave: string; variacao_id: string }[])
+        .filter((v) => chaves.some((c) => c.tipo === v.chave_tipo && c.valor === v.chave));
+      if (!vinculos.length) return new Map<string, VariacaoCusto>();
+      const { data: d2, error: e2 } = await admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org)
+        .in('id', [...new Set(vinculos.map((v) => v.variacao_id))]);
+      falhou('vinculosManuais:variacoes', e2);
+      const porId = new Map(variacoesDasLinhas((d2 ?? []) as LinhaVariacao[]).map((v) => [v.variacaoId, v]));
+      return new Map(vinculos.flatMap((v) => (porId.has(v.variacao_id) ? [[`${v.chave_tipo}:${v.chave}`, porId.get(v.variacao_id)!] as const] : [])));
+    },
+  };
+}
+
+/** `cotarFreteOferta`: só para cliente com protocolo 2 no anúncio; sem ele a dep não existe (resposta legada intacta). */
+function criarDeps(admin: SupabaseClient, orgId: string, cotarFreteOferta = false): DepsAnuncio {
+  const conexao = resolverConexao(admin, orgId, 'mercado_livre');
+  let token: Promise<string | null> | null = null;
+  // Token pedido uma vez por requisição e só quando alguma dep precisa do ML.
+  const tokenML = () => (token ??= conexao.then((c) => (c ? getValidAccessTokenConexao(c) : null)));
+
+  const variacoes = lerVariacoes(admin, orgId);
+  const casamento = depsCasamento(admin, orgId);
 
   return {
     contaDaOrg: async () => {
@@ -102,16 +145,8 @@ function criarDeps(admin: SupabaseClient, orgId: string, cotarFreteOferta = fals
       const n = (v: unknown) => (v == null ? null : Number(v));
       return { confirmada: data?.aliquotas_confirmadas_em != null, nacional: n(data?.aliquota_nacional_pct), importado: n(data?.aliquota_importado_pct) };
     },
-    porCatalogo: (org, cpid) => variacoes(
-      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).eq('catalog_product_id', cpid)
-        .order('atualizado_em', { ascending: false }).limit(50),
-      'porCatalogo',
-    ),
-    porGtin: (org, gtin) => variacoes(
-      admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org).in('gtin', formasGtin(gtin))
-        .order('atualizado_em', { ascending: false }).limit(50),
-      'porGtin',
-    ),
+    porCatalogo: casamento.porCatalogo,
+    porGtin: casamento.porGtin,
     porVinculoManual: async (org, chave) => {
       const { data, error } = await admin.from('extensao_vinculos').select('variacao_id')
         .eq('org_id', org).eq('chave_tipo', chave.tipo).eq('chave', chave.valor).maybeSingle();
@@ -230,28 +265,9 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
   const deps = criarDeps(admin, orgId);
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   const token = conexao ? await getValidAccessTokenConexao(conexao).catch(() => null) : null;
-  const linhasPara = async (q: PromiseLike<{ data: unknown; error: { message: string } | null }>, onde: string) => {
-    const { data, error } = await q;
-    falhou(onde, error);
-    return (data ?? []) as LinhaVariacao[];
-  };
+  const { porCatalogos, porGtin, vinculosManuais } = depsCasamento(admin, orgId);
   return analisarBusca(orgId, p, {
-    // Por catálogo, com o mesmo teto do anúncio (50 linhas por id): um SKU com muitos lotes não esconde outro catálogo.
-    porCatalogos: async (org, cpids) => new Map(await Promise.all(cpids.map(async (c) => [c, await deps.porCatalogo(org, c)] as const))),
-    porGtin: (org, gtin) => deps.porGtin(org, gtin),
-    vinculosManuais: async (org, chaves) => {
-      if (!chaves.length) return new Map<string, VariacaoCusto>();
-      const { data, error } = await admin.from('extensao_vinculos').select('chave_tipo, chave, variacao_id')
-        .eq('org_id', org).in('chave', [...new Set(chaves.map((c) => c.valor))]);
-      falhou('vinculosManuais', error);
-      const vinculos = ((data ?? []) as { chave_tipo: string; chave: string; variacao_id: string }[])
-        .filter((v) => chaves.some((c) => c.tipo === v.chave_tipo && c.valor === v.chave));
-      if (!vinculos.length) return new Map<string, VariacaoCusto>();
-      const linhas = await linhasPara(admin.from('variacoes').select(SELECT_VARIACAO).eq('org_id', org)
-        .in('id', [...new Set(vinculos.map((v) => v.variacao_id))]), 'vinculosManuais:variacoes');
-      const porId = new Map(variacoesDasLinhas(linhas).map((v) => [v.variacaoId, v]));
-      return new Map(vinculos.flatMap((v) => (porId.has(v.variacao_id) ? [[`${v.chave_tipo}:${v.chave}`, porId.get(v.variacao_id)!] as const] : [])));
-    },
+    porCatalogos, porGtin, vinculosManuais,
     ofertasDoCatalogo: (cpid) => {
       if (!token) return Promise.resolve(null);
       // Só item_id e categoria (a categoria vem da oferta exata do card); falha não é cacheada.
@@ -414,6 +430,9 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
     }
     case 'analisar_busca':
       return buscaAnalisada(admin, ctx, p);
+    case 'identificar_busca':
+      // Só banco: sem cota de 30/min nem registro de uso (a telemetria da busca vem por geração de página).
+      return identificarBusca(admin, orgId, p, depsCasamento(admin, orgId));
     case 'radar':
       return radar(admin, orgId, p.catalogProductId);
     case 'adicionar_radar':

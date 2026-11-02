@@ -371,6 +371,26 @@ describe('analisar_busca (Task 21)', () => {
   });
 });
 
+describe('identificar_busca (Task 2, emenda 02/11)', () => {
+  const card = (itemId: string, extra: Record<string, unknown> = {}) => ({ itemId, catalogProductId: 'MLB100', ...extra });
+  it('card sem preço é aceito; dedupe preservando a ordem; EAN opcional', () => {
+    expect(validarPedido({ acao: 'identificar_busca', eanDaBusca: '7891234567895', itens: [card('MLB1'), card('MLB2', { preco: 10 }), card('MLB1')] }))
+      .toEqual({ acao: 'identificar_busca', eanDaBusca: '7891234567895', itens: [card('MLB1'), card('MLB2')] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: null })] }))
+      .toEqual({ acao: 'identificar_busca', eanDaBusca: null, itens: [card('MLB1', { catalogProductId: null })] });
+  });
+  it('até 50 itens DEDUPLICADOS (ocorrências repetidas não contam); recusa vazio, 51 distintos, id e EAN inválidos', () => {
+    const cinquenta = Array.from({ length: 50 }, (_, i) => card(`MLB${i + 1}`));
+    expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, ...cinquenta] })).toMatchObject({ itens: cinquenta });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, card('MLB51')] })).toBeNull();
+    expect(validarPedido({ acao: 'identificar_busca', itens: [] })).toBeNull();
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card('X1')] })).toBeNull();
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: 'x' })] })).toBeNull();
+    expect(validarPedido({ acao: 'identificar_busca', eanDaBusca: 'x'.repeat(21), itens: [card('MLB1')] })).toBeNull();
+    expect(validarPedido({ acao: 'identificar_busca', itens: Array.from({ length: 101 }, () => card('MLB1')) })).toBeNull();
+  });
+});
+
 describe('validarPedido — radar (Task 18)', () => {
   it('radar e adicionar_radar só com id de catálogo válido', () => {
     expect(validarPedido({ acao: 'radar', catalogProductId: 'MLB32466350' })).toEqual({ acao: 'radar', catalogProductId: 'MLB32466350' });
