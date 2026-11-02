@@ -1,15 +1,14 @@
 // Content script da busca (ADR-0189 D-11, Task 22): lê os cards (que montam depois do document_idle e entram no
-// scroll), manda ao SW e, quando o painel analisa, põe o selo só nos cards casados com SKU da org. Nunca reordena nem
-// esconde cards do ML; o destaque pedido pelo painel só rola e contorna o card por 2 s.
-import type { ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
-import { cardsDoItem, lerBusca, type CardBusca } from '../leitura/busca';
-import { CORES, MARCA } from './aparencia';
-import { seloDaBusca } from './selo-busca';
+// scroll), manda ao SW e põe o Mini-bloco da busca em cada card (emenda 2026-11-02). Nunca reordena nem esconde cards do
+// ML; o destaque pedido pelo painel só rola e contorna o card por 2 s.
+import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
+import { cardsDoItem, INJETADO, lerBusca, type CardBusca } from '../leitura/busca';
+import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca';
 
 const ESPERA_MS = 800;
 const PULSO_MS = 61_000; // janela da cota da edge (1 min) + folga
 const LIMITE_ESPERA_MS = 15_000;
-const HOST = 'publiai-selo-busca';
+const HOST = HOST_MINI_BLOCO;
 let enviados = new Map<string, string>(); // itemId → assinatura do que já foi enviado
 let resultados: Record<string, ResultadoCard> = {};
 // Chave "Extensão ativa" e login: desligada ou deslogado, nada é enviado nem desenhado. Fail-closed: só liga com o SW dizendo
@@ -54,47 +53,47 @@ function lerEEnviar(): void {
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));
-  enviarCards({ tipo: 'publiai:busca-cards', geracao, url, cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length } as { geracao: string | null });
+  enviarCards({ tipo: 'publiai:busca-cards', geracao, url, cards: novos, ocorrencias: [...document.querySelectorAll('.poly-card')].filter((c) => !c.closest(INJETADO)).length } as { geracao: string | null });
 }
 
-function criarSelo(texto: string, titulo: string, tom: keyof typeof CORES): HTMLElement {
-  const host = document.createElement('div');
-  host.className = HOST;
-  host.style.cssText = 'display:block;margin:6px 0 2px';
-  // Fechado: scripts da página não leem a margem (dado financeiro da org).
-  const raiz = host.attachShadow({ mode: 'closed' });
-  const c = CORES[tom];
-  raiz.innerHTML = `<style>
-      span.selo{box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:2px 10px 2px 6px;
-        border:1px solid ${c.borda};border-radius:999px;background:${c.fundo};color:${c.texto};
-        font:600 12px/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap}
-      svg{width:14px;height:14px;flex:none}
-    </style><span class="selo" role="note">${MARCA}<span></span></span>`;
-  const rotulo = raiz.querySelector('span.selo > span')!;
-  rotulo.textContent = texto;
-  const selo = raiz.querySelector('span.selo')!;
-  selo.setAttribute('title', titulo);
-  selo.setAttribute('aria-label', `PubliAI: ${texto}. ${titulo}`);
-  return host;
-}
+// Assinatura do que cada host desenha (memória do content script, não no DOM: a página não lê a margem por atributo).
+const assinaturas = new WeakMap<Element, string>();
+// Metadados do banco (anúncio próprio, vínculo); ausente = ainda não identificado.
+let metadados: Record<string, MetadadosCardBusca> = {};
 
-/** Selo nos cards casados (idempotente: refaz do zero, então resultado que deixou de ter selo perde o antigo). */
-function aplicarSelos(): void {
+const doCard = (card: Element, seletor: string) =>
+  [...card.querySelectorAll(seletor)].find((e) => !e.closest(INJETADO) && e.closest('.poly-card') === card);
+
+/** Mini-bloco em cada card (vinculado ou não), idempotente por host/assinatura: só refaz o host cujo conteúdo mudou
+ *  (ML reusou o nó para outro item, preço, resultado) e tira os que não correspondem a mais nada. A i-ésima aparição do
+ *  item no DOM é a i-ésima ocorrência do lerBusca (mesmos filtros). Sem preço no card = encaixe inseguro: só o painel. */
+function aplicarBlocos(): void {
   if (!ligada) return;
-  for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
-  for (const [itemId, r] of Object.entries(resultados)) {
-    const s = seloDaBusca(r);
-    if (!s) continue;
-    for (const card of cardsDoItem(document, itemId)) {
-      const preco = card.querySelector('.poly-component__price');
-      (preco?.parentElement ?? card).insertBefore(criarSelo(s.texto, s.titulo, s.tom), preco?.nextSibling ?? null);
-    }
+  const vivos = new Set<Element>();
+  for (const c of lerBusca(document)) {
+    cardsDoItem(document, c.itemId).forEach((card, i) => {
+      const oc = c.ocorrencias[i];
+      const preco = doCard(card, '.poly-component__price');
+      if (!oc || !preco?.parentElement) return;
+      const daOcorrencia = { ...c, ocorrencias: [oc] };
+      const meta = metadados[c.itemId], res = resultados[c.itemId];
+      const assinatura = JSON.stringify([daOcorrencia, meta ?? null, res ?? null]);
+      const atual = doCard(card, `.${HOST}`);
+      if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); return; }
+      const novo = renderizarMiniBlocoDaBusca(daOcorrencia, meta, res);
+      assinaturas.set(novo, assinatura);
+      atual?.remove();
+      preco.parentElement.insertBefore(novo, preco.nextSibling);
+      vivos.add(novo);
+    });
   }
+  for (const h of document.querySelectorAll(`.${HOST}`)) if (!vivos.has(h)) h.remove();
 }
 
 function limparSelos(): void {
   tirarDestaque();
   resultados = {};
+  metadados = {};
   for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
 }
 
@@ -126,7 +125,7 @@ function agendarPulso(): void {
 
 const daPagina = (msg: { url?: unknown; geracao?: unknown }) => geracao !== null && msg.geracao === geracao && msg.url === location.href.split('#')[0];
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
@@ -134,12 +133,14 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     limparSelos();
     enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (e o SW analisa sozinho)
     lerEEnviar();
+    agendar(); // blocos locais voltam sem o dado da sessão anterior
   } else if (ligada && msg?.tipo === 'publiai:busca-retomar' && daPagina(msg)) {
     agendarPulso();
   } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && daPagina(msg) && msg.resultados && typeof msg.resultados === 'object') {
     // Resultado de outra página (URL ou geração anterior) não vale aqui.
     resultados = msg.resultados as Record<string, ResultadoCard>;
-    aplicarSelos();
+    metadados = msg.metadados && typeof msg.metadados === 'object' ? msg.metadados as Record<string, MetadadosCardBusca> : {};
+    aplicarBlocos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);
   } else if (ligada && msg?.tipo === 'publiai:sessao-mudou') {
@@ -147,17 +148,25 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     limparSelos();
     enviados = new Map(); // nova sessão: o SW zerou o estado; os cards voltam a ser enviados
     lerEEnviar();
+    agendar();
   }
 });
 
 // Cards montam depois do document_idle e entram no scroll: observa a página com espera curta entre leituras.
 let timer: ReturnType<typeof setTimeout> | undefined;
-const agendar = () => { clearTimeout(timer); timer = setTimeout(() => { lerEEnviar(); aplicarSelos(); }, ESPERA_MS); };
-new MutationObserver((mudancas) => {
-  // Mudanças só dos nossos selos não disparam nova leitura.
-  if (mudancas.every((m) => [...m.addedNodes, ...m.removedNodes].every((n) => (n as Element).classList?.contains(HOST)))) return;
-  agendar();
-}).observe(document.body, { childList: true, subtree: true });
+function agendar(): void { clearTimeout(timer); timer = setTimeout(() => { lerEEnviar(); aplicarBlocos(); }, ESPERA_MS); }
+
+/** Nó dentro do Avant ou de um host PubliAI (o próprio host incluído). */
+const deFora = (n: Node | null) => !!(n && (n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest(`${INJETADO}, .${HOST}`));
+/** Mutação que pede nova leitura: do ML (cards, preço, imagem, link). Dentro do Avant ou dos nossos hosts (inclusive
+ *  characterData), ou só entrando/saindo um deles, não vale: sem ciclo com o Avant nem com os nossos próprios blocos.
+ *  ponytail: host removido sozinho pela página só volta na próxima mutação útil (o ML refaz o card inteiro na prática). */
+export function mutacaoUtil(m: MutationRecord): boolean {
+  if (deFora(m.target)) return false;
+  return m.type !== 'childList' || [...m.addedNodes, ...m.removedNodes].some((n) => !deFora(n));
+}
+new MutationObserver((mudancas) => { if (mudancas.some(mutacaoUtil)) agendar(); })
+  .observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'src', 'srcset'] });
 const inicio = Date.now();
 (function esperarCards() {
   if (document.querySelector('.poly-card')) { agendar(); return; } // mesma espera do observer: card ainda montando

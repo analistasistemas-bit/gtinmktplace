@@ -45,7 +45,7 @@ const MLB = /^MLB\d{6,20}$/;
 const MLBU = /^MLBU\d{6,20}$/;
 const HOSTS = new Set(['www.mercadolivre.com.br', 'produto.mercadolivre.com.br', 'click1.mercadolivre.com.br']);
 const HOSTS_DESTINO = new Set(['www.mercadolivre.com.br', 'produto.mercadolivre.com.br']);
-const INJETADO = '.avantpro-product-container';
+export const INJETADO = '.avantpro-product-container';
 
 /** Elementos do card que são do ML e deste card (nem injetados por outras extensões, nem de um card aninhado). */
 function doMl(card: Element, seletor: string): Element[] {

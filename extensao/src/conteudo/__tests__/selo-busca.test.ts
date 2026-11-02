@@ -12,16 +12,16 @@ describe('seloDaBusca', () => {
     expect(seloDaBusca({ itemId: 'MLB1', estado: 'sem_vinculo' })).toBeNull();
   });
   it('casado: simulação Clássico com uma casa, tom pelo sinal', () => {
-    expect(seloDaBusca(ok('ok', 11.21) as never)).toMatchObject({ texto: 'Simulação Clássico 11,2%', tom: 'lucro' });
-    expect(seloDaBusca(ok('ok', -3.4) as never)).toMatchObject({ texto: 'Simulação Clássico -3,4%', tom: 'prejuizo' });
+    expect(seloDaBusca(ok('ok', 11.21) as never)).toMatchObject({ texto: 'Minha margem · simulação Clássico 11,2%', tom: 'lucro' });
+    expect(seloDaBusca(ok('ok', -3.4) as never)).toMatchObject({ texto: 'Minha margem · simulação Clássico -3,4%', tom: 'prejuizo' });
   });
   it('margem não calculável nunca vira zero', () => {
-    expect(seloDaBusca(ok('ok', null) as never)).toMatchObject({ texto: 'Margem indisponível', tom: 'neutro' });
-    expect(seloDaBusca(ok('indisponivel', null) as never)).toMatchObject({ texto: 'Margem indisponível', titulo: 'Informe a origem do produto' });
+    expect(seloDaBusca(ok('ok', null) as never)).toMatchObject({ texto: 'Minha margem indisponível', tom: 'neutro' });
+    expect(seloDaBusca(ok('indisponivel', null) as never)).toMatchObject({ texto: 'Minha margem indisponível', titulo: 'Informe a origem do produto' });
   });
   it('limite, sem categoria e indisponível com texto próprio', () => {
-    expect(seloDaBusca({ itemId: 'MLB1', estado: 'limite', fonte: 'catalogo', codigo: 'x' })?.texto).toBe('Limite de análise');
-    expect(seloDaBusca({ itemId: 'MLB1', estado: 'sem_categoria', fonte: 'catalogo', codigo: 'x' })?.texto).toBe('Sem categoria');
+    expect(seloDaBusca({ itemId: 'MLB1', estado: 'limite', fonte: 'catalogo', codigo: 'x' })).toMatchObject({ texto: 'Minha margem · aguardando cota', tom: 'aguardando' });
+    expect(seloDaBusca({ itemId: 'MLB1', estado: 'sem_categoria', fonte: 'catalogo', codigo: 'x' })?.texto).toBe('Minha margem indisponível');
     expect(seloDaBusca({ itemId: 'MLB1', estado: 'indisponivel', fonte: 'catalogo', codigo: 'x', motivo: 'falha' })?.titulo).toBe('falha');
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 let ouvinte: (m: unknown) => void = () => {};
 // SW falso: cards sem a geração atual voltam recusados com ela (a página adota e reenvia).
@@ -12,7 +12,15 @@ const enviar = vi.fn(async (m: { tipo?: string; geracao?: unknown }) => {
 const aqui = () => location.href.split('#')[0];
 const cardsEnviados = () => enviar.mock.calls.filter(([m]) => (m as { geracao?: unknown }).geracao === G).flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null; userProductId?: string | null }[] }).cards ?? []);
 
+// Shadow fechado: o teste captura a raiz no attachShadow para ler o texto do bloco.
+const raizes = new WeakMap<Element, ShadowRoot>();
+const blocos = () => [...document.querySelectorAll('.publiai-mini-bloco-busca')];
+const textoDosBlocos = () => blocos().map((h) => raizes.get(h)?.textContent ?? '').join('|');
+const OK = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { preco: 19.9, classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
+
 beforeAll(async () => {
+  const orig = Element.prototype.attachShadow;
+  Element.prototype.attachShadow = function (this: Element, init: ShadowRootInit) { const r = orig.call(this, init); raizes.set(this, r); return r; };
   document.body.innerHTML = `<div class="poly-card">
     <a class="poly-component__title" href="https://www.mercadolivre.com.br/p/MLB100#wid=MLB5321956667">Sabonete</a>
     <div><div class="poly-component__price"></div></div></div>`;
@@ -28,26 +36,38 @@ it('1ª leitura espera o card montar; preço que aparece depois reenvia o card',
   await vi.waitFor(() => expect(cardsEnviados().at(-1)!.preco).toBe(19.9), { timeout: 3000 });
 });
 
-it('selo some do card quando o resultado deixa de autorizar (ok → sem vínculo)', () => {
-  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+it('card sem resultado nenhum recebe o bloco local (um por card)', async () => {
+  await vi.waitFor(() => expect(blocos()).toHaveLength(1), { timeout: 3000 });
+  expect(textoDosBlocos()).not.toContain('Minha margem');
 });
 
-it('ativacao false remove selos dos cards; true reenvia os cards sem analisar sozinha', async () => {
-  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
+it('margem sai do bloco quando o resultado deixa de autorizar (ok → sem vínculo); o bloco fica', () => {
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  expect(blocos()).toHaveLength(1);
+  expect(textoDosBlocos()).toContain('Minha margem · simulação Clássico 10,9%');
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
+  expect(blocos()).toHaveLength(1);
+  expect(textoDosBlocos()).not.toContain('Minha margem');
+});
+
+it('mesmo resultado de novo não refaz o bloco (idempotente por assinatura)', () => {
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  const host = blocos()[0];
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  expect(blocos()[0]).toBe(host);
+});
+
+it('ativacao false remove os blocos; true reenvia os cards sem analisar sozinha', async () => {
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).toContain('Minha margem');
   ouvinte({ tipo: 'publiai:ativacao', ativa: false, logado: true, geracao: 2 });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  expect(blocos()).toHaveLength(0);
   const antes = cardsEnviados().length;
   ouvinte({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 3 });
   // Geração invalidada na hora: 1º envio sem ela, recusado; o reenvio já com a geração atual.
   await vi.waitFor(() => expect(cardsEnviados().length).toBe(antes + 1));
   expect(enviar.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:analisar-busca')).toBe(false);
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  expect(textoDosBlocos()).not.toContain('Minha margem');
 });
 
 it('/up/ que aparece depois, sozinho, reenvia o card (assinatura inclui userProductId)', async () => {
@@ -82,10 +102,9 @@ it('conflito de catálogo (só identidadeConflitante muda) reenvia o card, e a r
 });
 
 it('resultado de outra página (URL diferente) é ignorado', () => {
-  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
-  ouvinte({ tipo: 'publiai:busca-resultados', url: 'https://lista.mercadolivre.com.br/outra', resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: 'https://lista.mercadolivre.com.br/outra', resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).not.toContain('Minha margem');
 });
 
 it('SW pede retomada: um pulso só, depois da janela da cota', () => {
@@ -107,13 +126,12 @@ it('SW pede retomada: um pulso só, depois da janela da cota', () => {
 });
 
 it('achado 1: resultado de outra geração (navegação/sessão anterior, mesma URL) é ignorado', () => {
-  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: 'G0', resultados: { MLB5321956667: ok } });
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: 'G0', resultados: { MLB5321956667: OK } });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).not.toContain('Minha margem');
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).toContain('Minha margem');
 });
 
 it('achado 1: SW recusa com geração nova (sessão mudou) → a página adota e reenvia tudo com ela', async () => {
@@ -124,19 +142,96 @@ it('achado 1: SW recusa com geração nova (sessão mudou) → a página adota e
   expect(enviar.mock.calls.at(-1)![0]).toMatchObject({ tipo: 'publiai:busca-cards', geracao: 'G2' });
 });
 
-it('I1: troca de sessão invalida a geração na hora: resultado antigo antes da resposta dos cards não desenha selo', async () => {
-  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
+it('I1: troca de sessão invalida a geração na hora: resultado antigo antes da resposta dos cards não desenha margem', async () => {
   const velha = G;
   let soltar!: (v: unknown) => void;
   enviar.mockImplementationOnce(() => new Promise((r) => { soltar = r; }) as never); // resposta dos cards fica em voo
   ouvinte({ tipo: 'publiai:ativacao', ativa: true, logado: true }); // envio de ANTES da troca, resposta pendente
   G = 'G3';
   ouvinte({ tipo: 'publiai:sessao-mudou' });
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).not.toContain('Minha margem');
   // Resposta atrasada do aperto de mão de antes da troca (com a geração velha) não restaura a velha.
   soltar({ ok: false, erro: 'geracao_antiga', geracao: velha });
   await new Promise((r) => setTimeout(r, 0));
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: ok } });
-  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).not.toContain('Minha margem');
+});
+
+it('sessão alterada: blocos com dado da sessão anterior saem na hora', () => {
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
+  expect(textoDosBlocos()).toContain('Minha margem');
+  ouvinte({ tipo: 'publiai:sessao-mudou' });
+  expect(blocos()).toHaveLength(0);
+});
+
+it('ML reusa o nó do card para outro item (só o href muda): o bloco é refeito com o novo item', async () => {
+  const NOVO = 'MLB5321950001';
+  document.body.insertAdjacentHTML('beforeend', `<div class="poly-card" id="reuso">
+    <a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950000&position=4">A</a>
+    <div><div class="poly-component__price"></div></div></div>`);
+  const doCard = () => [...document.querySelectorAll('#reuso .publiai-mini-bloco-busca')];
+  await vi.waitFor(() => expect(doCard()).toHaveLength(1), { timeout: 3000 });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {}, metadados: { [NOVO]: { itemId: NOVO, proprio: true, vinculo: null } } });
+  expect(raizes.get(doCard()[0])!.textContent).not.toContain('Meu anúncio');
+  document.querySelector('#reuso a')!.setAttribute('href', `https://www.mercadolivre.com.br/x#wid=${NOVO}&position=4`);
+  await vi.waitFor(() => expect(raizes.get(doCard()[0])?.textContent).toContain('Meu anúncio · posição 4 · orgânico'), { timeout: 3000 });
+  expect(doCard()).toHaveLength(1);
+});
+
+it('ML refaz o conteúdo do card (o host sai junto): o bloco volta', async () => {
+  const card = document.querySelector('#reuso')!;
+  card.innerHTML = `<a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950001&position=4">A</a>
+    <div><div class="poly-component__price"></div></div>`;
+  expect(card.querySelectorAll('.publiai-mini-bloco-busca')).toHaveLength(0);
+  await vi.waitFor(() => expect(card.querySelectorAll('.publiai-mini-bloco-busca')).toHaveLength(1), { timeout: 3000 });
+});
+
+it('contagem de ocorrências ignora cards dentro do Avant', async () => {
+  document.body.insertAdjacentHTML('beforeend', `<div class="avantpro-product-container"><div class="poly-card">
+    <a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950777">Avant</a></div></div>
+    <div class="poly-card"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950778">Novo</a></div>`);
+  const msg = () => enviar.mock.calls.map(([m]) => m as { cards?: { itemId: string }[]; ocorrencias?: number })
+    .filter((m) => m.cards?.some((c) => c.itemId === 'MLB5321950778')).at(-1);
+  await vi.waitFor(() => expect(msg()).toBeTruthy(), { timeout: 3000 });
+  expect(msg()!.ocorrencias).toBe(document.querySelectorAll('.poly-card').length - 1);
+});
+
+describe('mutacaoUtil: o que o observer ignora', () => {
+  const registros = async (fazer: () => void) => {
+    const rs: MutationRecord[] = [];
+    const obs = new MutationObserver((m) => rs.push(...m));
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+    fazer();
+    await Promise.resolve();
+    rs.push(...obs.takeRecords());
+    obs.disconnect();
+    return rs;
+  };
+  it('dentro do Avant (inclusive characterData) e do host PubliAI não vale; host próprio entrando/saindo também não', async () => {
+    const { mutacaoUtil } = await import('../busca');
+    document.body.insertAdjacentHTML('beforeend', '<div class="poly-card"><div class="avantpro-product-container"><span id="m-av">R$ 1</span></div><div id="m-pai"></div></div>');
+    const host = document.createElement('div');
+    host.className = 'publiai-mini-bloco-busca';
+    const rs = await registros(() => {
+      document.querySelector('#m-av')!.firstChild!.textContent = 'R$ 2';
+      document.querySelector('#m-av')!.setAttribute('title', 'x');
+      document.querySelector('.avantpro-product-container')!.append(document.createElement('b'));
+      document.querySelector('#m-pai')!.append(host);
+      host.setAttribute('data-x', '1');
+      host.remove();
+    });
+    expect(rs.length).toBeGreaterThan(0);
+    expect(rs.filter(mutacaoUtil)).toHaveLength(0);
+  });
+  it('preço, imagem e link do ML valem', async () => {
+    const { mutacaoUtil } = await import('../busca');
+    document.body.insertAdjacentHTML('beforeend', '<div class="poly-card"><a id="m-a" href="https://x">t</a><img id="m-img" src="a"><span id="m-preco">10</span></div>');
+    const rs = await registros(() => {
+      document.querySelector('#m-a')!.setAttribute('href', 'https://y');
+      document.querySelector('#m-img')!.setAttribute('srcset', 'b 1x');
+      document.querySelector('#m-preco')!.firstChild!.textContent = '12';
+    });
+    expect(rs.filter(mutacaoUtil)).toHaveLength(3);
+  });
 });

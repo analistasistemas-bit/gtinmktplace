@@ -12,9 +12,11 @@ const enviar = vi.fn(async (m: { tipo?: string }) => {
   return resposta;
 });
 const cardsEnviados = () => enviar.mock.calls.filter(([m]) => m.tipo === 'publiai:busca-cards').length;
+const blocos = () => document.querySelectorAll('.publiai-mini-bloco-busca').length;
 const folga = (ms = 1200) => new Promise((r) => setTimeout(r, ms)); // > ESPERA_MS (800)
 
 async function carregar() {
+  ouvinte({ tipo: 'publiai:ativacao', ativa: false, logado: false }); // desliga a instância do teste anterior (observer vivo)
   vi.resetModules();
   document.body.innerHTML = `<div class="poly-card">
     <a class="poly-component__title" href="https://www.mercadolivre.com.br/p/MLB100#wid=MLB5321956667">Sabonete</a>
@@ -31,22 +33,26 @@ describe('busca: boot fail-closed', () => {
     await carregar();
     await folga();
     expect(cardsEnviados()).toBe(0);
+    expect(blocos()).toBe(0);
   });
   it('estado-extensao logado:false → nenhum busca-cards', async () => {
     resposta = { ativa: true, logado: false };
     await carregar();
     await folga();
     expect(cardsEnviados()).toBe(0);
+    expect(blocos()).toBe(0);
   });
   it('estado-extensao falhando → nenhum busca-cards', async () => {
     resposta = new Error('contexto invalidado');
     await carregar();
     await folga();
     expect(cardsEnviados()).toBe(0);
+    expect(blocos()).toBe(0);
   });
   it('estado ativa e logado → envia os cards', async () => {
     await carregar();
     await vi.waitFor(() => expect(cardsEnviados()).toBe(1), { timeout: 3000 });
+    await vi.waitFor(() => expect(blocos()).toBe(1), { timeout: 3000 });
   });
   it('corrida: ativacao false chega antes da resposta atrasada do boot (ligada) → continua desligada', async () => {
     adiar = true;
@@ -55,6 +61,7 @@ describe('busca: boot fail-closed', () => {
     responder({ ativa: true, logado: true });
     await folga();
     expect(cardsEnviados()).toBe(0);
+    expect(blocos()).toBe(0);
   });
   it('corrida: ativacao true chega antes do boot desligado atrasado → continua ligada', async () => {
     adiar = true;
