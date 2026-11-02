@@ -387,3 +387,31 @@ o preço lido (`event_data.price`), com o frete da conta da organização, impos
 **Não entra:** visitas e conversão (o Avant obtém de backend próprio; o ML devolve 403 ao nosso token); faturamento e
 "ritmo atual" (dependem de visitas ou de vendas por período que não temos); idade do anúncio em `/p/` (a data do item
 vencedor não está na página de catálogo; segue a emenda de 22/10, data só do HTML do próprio anúncio).
+
+## Emenda 2026-11-02 — modo busca completo (D-11, D-16, D-18; emendas Task 20/21/22)
+
+Diego abriu a busca "creatina max tita" com o painel aberto: o resumo funcionava, mas os 60 cards (nenhum vinculado)
+ficavam sem nada na página. Grilling com Diego (02/11) e análise do Codex `gpt-6.1-sol` high (matriz Avant × JoomPulse
+campo a campo) fecharam:
+
+1. **Enriquecimento de catálogo também para concorrente** (revoga "card sem vínculo não vai ao ML", Task 21). Cards com
+   catálogo identificado consultam `/products/{id}`, `/products/{id}/items` e `/users/{seller}` com a conta da
+   organização; cache transitório com TTL (substitui, nunca acumula série). Fora de catálogo: só o que o card mostra
+   (`/items` de terceiro = 403). Continuam proibidos API de busca, PDP em segundo plano e histórico de concorrente (D-1,
+   D-14, D-19).
+2. **Mini-bloco da busca** em cada card (emenda D-16): vendedor + medalha + UF; volume mínimo ao preço atual (piso ×
+   preço, nunca "faturamento"); tipo da oferta + comissão na conta da organização; catálogo: nº de vendedores + idade do
+   catálogo com semáforo. Sempre, quando houver: minha margem (vinculado) e "Meu anúncio · posição X" (`itemId` ×
+   anúncios da org, sem ML). Painel: lista com miniatura do card, resumo por medalha/UF/vendedores/tipo/faixa de
+   vendedores por catálogo, cobertura explícita. Ficam fora: visitas, conversão, ritmo, participação, idade do anúncio
+   do concorrente, faturamento histórico, tendências da categoria.
+3. **Análise automática** com a extensão ativa e sessão válida, painel aberto ou fechado (revoga "nunca há análise sem o
+   painel aberto", Task 22): dados do card imediatos; enriquecimento progressivo, cards novos do scroll incluídos.
+4. **Cota híbrida** (emenda D-18): cota de enriquecimento separada da de margem; debita 1 por catálogo pedido à edge
+   (com ou sem cache, protege a CPU — ADR-0173); teto global por app para o ML. Estourou → card "aguardando" e completa
+   na janela seguinte. Números medidos e aprovados no plano.
+5. **Simulação sem vínculo** no painel: custo do pacote + origem (sem padrão) ou SKU escolhido só para a conta; não grava
+   vínculo; 1 da cota de margem por simulação confirmada.
+6. **Entrega em 3 fatias:** (1) mini-bloco com dados do card + painel redesenhado com miniaturas + meu anúncio nesta
+   busca + análise automática, sem chamada nova ao ML; (2) enriquecimento de catálogo + cota híbrida + resumo por
+   medalha/UF/vendedores; (3) simulação sem vínculo.

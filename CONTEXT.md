@@ -92,3 +92,23 @@ _Evitar_: match, de-para.
 **Minha margem**:
 Lucro que a organização teria vendendo o produto analisado a um preço informado, com custo real do SKU vinculado, imposto por origem, comissão do tipo de anúncio e frete calculado para a conta da organização.
 _Evitar_: margem do concorrente, recebe do vendedor.
+
+**Simulação sem vínculo**:
+Minha margem calculada para um anúncio de concorrente com custo e origem informados pelo operador (ou um SKU escolhido só para aquela conta), sem gravar vínculo de produto. Some ao sair da busca; gravar exige "Vincular".
+_Evitar_: vínculo temporário.
+
+**Mini-bloco da busca**:
+Bloco curto que a Extensão PubliAI coloca dentro de cada card de uma busca do Mercado Livre, com poucos números do produto; a análise completa fica no painel lateral.
+_Evitar_: selo (o selo é a etiqueta única de margem), card do PubliAI.
+
+**Enriquecimento de catálogo**:
+Consulta à API oficial do Mercado Livre, com a conta da organização, sobre um produto de catálogo visto numa busca, para trazer vendedor, medalha, UF, tipo da oferta, número de vendedores e data de criação do catálogo. Vale também para anúncio de concorrente; o resultado é transitório e não forma base de mercado.
+_Evitar_: coleta, raspagem, monitoramento.
+
+**Volume mínimo ao preço atual**:
+Piso da faixa de vendidos exibida pelo Mercado Livre multiplicado pelo preço atual do card. Mostra a ordem de grandeza do produto; não é faturamento, porque as vendas ocorreram a outros preços.
+_Evitar_: faturamento, receita, faturamento do catálogo.
+
+**Meu anúncio nesta busca**:
+Anúncio próprio que aparece entre os cards carregados de uma busca, com a posição observada naquela página (orgânica ou patrocinada). Não é ranking geral, e SKU vinculado não é anúncio próprio.
+_Evitar_: meu ranking, minha posição no ML.
