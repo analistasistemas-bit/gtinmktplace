@@ -9,6 +9,14 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-11-02
+
+- **Pergunta em anúncio inativo** (main `052e60ff`, `responder-pergunta` v44): o ML recusa resposta
+  em anúncio pausado/finalizado (400 `not_active_item`) — Avil, Tecido Oxford pausado na manhã
+  seguinte à pergunta. O card pendente mostra "Anúncio pausado/finalizado/inativo" pelo
+  `ml_trafego_item.status` (sem bloquear o envio) e o erro vira 409 `anuncio_inativo` com a
+  orientação de reativar.
+
 ## 2026-11-01
 
 - **Daludi Shop vira PJ e emite NF-e pelo ML** (ADR-0135): conta ML convertida para CNPJ, emissor
