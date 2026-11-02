@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Extensão PubliAI 0.4.0 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
+
+- [x] Implementada na branch `worktree-extensao-busca-lista` (HEAD de código `2fc075b8` + commit da Task 6): painel de busca redesenhado (miniaturas, filtros, ordenação, resumo com cobertura) e Mini-bloco da busca dentro de cada card do ML. Versão 0.4.0 em `manifest.json` e `package.json`.
+- [x] Prova visual reproduzível: harness `extensao/qa/` (fora do build; 68 ocorrências, 60 produtos, dados fictícios, sem token), prints em `.superpowers/sdd/2026-11-02-extensao-busca-completa/prints/`.
+- [ ] Validação visual final, smoke real (`build:dev`, perfil isolado), revisão do diff, CI verde, merge.
+- [ ] Ordem de deploy: edge `extensao` (`supabase functions deploy extensao --project-ref txvncrgkoynoxwopfkbp`, conferir versão ACTIVE e compatibilidade com 0.3.2; sem migration) ANTES de publicar o ZIP 0.4.0 na Web Store.
+
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 
 - [x] Org `daludishop` marcada PJ, `empresa_fiscal` preenchida, módulo `fiscal` ligado; conta ML convertida para CNPJ e emissor de NF-e configurado.
