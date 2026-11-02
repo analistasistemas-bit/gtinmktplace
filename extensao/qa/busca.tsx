@@ -30,7 +30,8 @@ function painel() {
   );
 }
 
-const brl = (n: number | null) => (n === null ? '' : `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+// Preço NATIVO do ML (`.poly-price__current`): fica acima do ponto de inserção do Mini-bloco; o print prova que não é coberto.
+const precoNativo = (n: number | null) => { const [f, c] = (n ?? 0).toFixed(2).split('.'); return { fraction: Number(f).toLocaleString('pt-BR'), cents: c }; };
 
 function grade() {
   document.body.style.cssText = 'margin:0;background:#ebebeb;font:14px/1.3 "Proxima Nova",Arial,sans-serif;color:#333';
@@ -48,13 +49,15 @@ function grade() {
     el.innerHTML = `<img src="${c.miniaturaUrl}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;background:#f5f5f5;display:block">
       <div style="padding:10px 12px 0">
         ${c.patrocinado ? '<div style="font-size:11px;color:#999">Patrocinado</div>' : ''}
-        <div style="font-size:14px;margin:2px 0 6px"></div>
-        <div style="font-size:22px;color:#333">${brl(o.preco)}</div>
+        <div class="qa-titulo" style="font-size:14px;margin:2px 0 6px"></div>
+        <div class="poly-component__price"><div class="poly-price__current" style="display:flex;align-items:baseline;gap:6px">
+          <span class="andes-money-amount" style="font-size:24px;color:#333"><span style="font-size:14px">R$ </span><span class="andes-money-amount__fraction">${precoNativo(o.preco).fraction}</span><sup class="andes-money-amount__cents" style="font-size:13px">${precoNativo(o.preco).cents}</sup></span>
+          ${c.freteGratis ? '<span class="andes-money-amount__discount" style="font-size:12px;color:#00a650">5% OFF</span>' : ''}</div></div>
         <div style="font-size:12px;color:#00a650">${c.freteGratis ? 'Frete grátis' : ''} ${c.full ? '<b style="color:#00a650">⚡ FULL</b>' : ''}</div>
         <div style="font-size:12px;color:#777">${c.nota ? '★ ' + c.nota.toFixed(1) : ''} ${o.vendidosTexto ? '| ' + o.vendidosTexto : ''}</div>
         ${c.lojaOficial ? '<div style="font-size:12px;color:#3483fa">Loja oficial</div>' : ''}
       </div>`;
-    (el.querySelector('div > div:nth-child(2)') as HTMLElement).textContent = c.titulo;
+    (el.querySelector('.qa-titulo') as HTMLElement).textContent = c.titulo;
     const miolo = document.createElement('div');
     miolo.style.cssText = 'padding:0 12px';
     miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId]));

@@ -215,7 +215,7 @@ function Linha({ card: c, resultado, meta, aberto, onAbrir, onDestacar, chamar, 
             {m !== null && <span className={`bs-margem ${m < 0 ? 'prejuizo' : 'lucro'}`} aria-label={`Margem simulada no Clássico: ${pct(m)}`}>{pct(m)}</span>}
             {estado === 'ok' && m === null && <span className="bs-estado">Margem indisponível</span>}
             {estado === 'sem_categoria' && <span className="bs-estado">Sem categoria</span>}
-            {estado === 'limite' && <span className="bs-estado aguardando">Minha margem aguardando cota</span>}
+            {estado === 'limite' && <span className="bs-estado aguardando">Aguardando cota</span>}
             {estado === 'indisponivel' && <span className="bs-estado">Indisponível</span>}
           </span>
         </div>

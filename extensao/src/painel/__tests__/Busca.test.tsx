@@ -151,10 +151,10 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
     expect(within(lista()).getAllByRole('button', { name: 'Vincular ao meu SKU' })).toHaveLength(1);
   });
 
-  it('cota esgotada: "Minha margem aguardando cota" na linha e tentar de novo explícito', async () => {
+  it('cota esgotada: "Aguardando cota" na linha e tentar de novo explícito', async () => {
     const p = props({ estado: estado({ MLB1000001: { estado: 'limite', fonte: 'catalogo', codigo: '1' } }) });
     render(<Busca {...p} />);
-    within(lista()).getByText('Minha margem aguardando cota');
+    within(lista()).getByText('Aguardando cota');
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([]));
   });

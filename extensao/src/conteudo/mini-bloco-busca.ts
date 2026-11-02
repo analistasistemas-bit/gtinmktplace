@@ -17,7 +17,7 @@ const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR',
 // (oklch puxa para vermelho), contraste ≥ 4,5:1 sobre o fundo do bloco e dos chips.
 const CSS = `
 :host{all:initial;display:block;margin:6px 0 4px}
-.b{--chart-1:oklch(0.55 0.20 277);--chart-2:oklch(0.58 0.21 300);--chart-3:oklch(0.70 0.12 190);
+.b{--chart-1:oklch(0.55 0.20 277);--chart-2:oklch(0.58 0.21 300);--chart-3:oklch(0.70 0.12 190);--chart-4:oklch(0.76 0.15 75);
   --chart-5:oklch(0.63 0.20 12);--success:oklch(0.51 0.15 150);--destructive:oklch(0.545 0.22 25);--warning:oklch(0.53 0.16 75);
   --brand-gradient:linear-gradient(180deg,oklch(0.56 0.21 277),oklch(0.585 0.21 300));
   --texto:oklch(0.30 0.02 277);--suave:oklch(0.45 0.02 277);
@@ -30,9 +30,10 @@ svg{width:13px;height:13px;flex:none}
 .v{color:var(--suave)}
 .c{--c:var(--chart-1);display:inline-block;padding:0 6px;border-radius:999px;font-weight:600;font-size:11.5px;line-height:17px;
   color:color-mix(in oklab,var(--c) 70%,black);background:color-mix(in oklab,var(--c) 13%,white)}
+.c.catalogo{background:transparent;padding-inline:2px}
 .t{color:color-mix(in oklab,var(--c) 72%,black);font-weight:600}
 b{font-weight:650;color:var(--texto)}
-.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
+.ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
 `;
 
@@ -75,8 +76,8 @@ export function renderizarMiniBlocoDaBusca(
   topo.append(card.vendedor ? el('span', 'v', card.vendedor) : el('span', 'v', 'Vendedor não informado'));
   if (card.full) topo.append(el('span', 'c cyan', 'Full'));
   if (card.freteGratis) topo.append(el('span', 'c cyan', 'Frete grátis'));
-  if (card.lojaOficial) topo.append(el('span', 'c violeta', 'Loja oficial'));
-  if (card.catalogProductId) topo.append(el('span', 'c violeta', 'Catálogo'));
+  if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
+  if (card.catalogProductId) topo.append(el('span', 'c violeta catalogo', 'Catálogo'));
   if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
 
   // 2. Volume mínimo ao preço atual: piso e preço da MESMA ocorrência.
@@ -97,7 +98,7 @@ export function renderizarMiniBlocoDaBusca(
   const m = margemDaOcorrencia(metadados, margem, oc.preco);
   if (m) {
     // Rótulo roxo (identidade), valor no tom do resultado; sem valor o rótulo leva o estado (aguardando = warning).
-    const l = linha(el('span', `t ${m.valor !== null || m.tom !== 'aguardando' ? 'roxo' : 'aguardando'}`, m.rotulo));
+    const l = linha(el('span', `t ${m.valor !== null ? 'roxo' : m.tom === 'aguardando' ? 'aguardando' : 'neutro'}`, m.rotulo));
     if (m.valor !== null) l.append(' ', el('b', `t ${m.tom}`, m.valor));
     l.title = m.titulo;
     bloco.append(l);

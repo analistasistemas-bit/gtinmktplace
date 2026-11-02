@@ -424,7 +424,7 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 .bs-bloco {
   display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; min-width: 0;
   border-radius: calc(var(--radius) * 0.8); background: var(--brand-gradient-soft);
-  border-left: 3px solid var(--chart-1); box-shadow: var(--brand-glow);
+  border-left: 3px solid var(--chart-1); box-shadow: 0 3px 10px oklch(0.55 0.20 277 / 0.10);
 }
 .bs-bloco[data-cor='vinculado'] { border-left-color: color-mix(in oklab, var(--chart-1) 50%, var(--card)); }
 .bs-bloco dt { font-size: 12px; font-weight: 500; color: color-mix(in oklab, var(--foreground) 80%, var(--card)); }
@@ -432,7 +432,8 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 .bs-bloco-nota { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0; color: color-mix(in oklab, var(--warning) 62%, var(--foreground)); }
 .bs-bloco dd.bs-verificando { font-size: 13px; font-weight: 500; letter-spacing: 0; color: color-mix(in oklab, var(--warning) 62%, var(--foreground)); }
 .bs-faixas { display: flex; flex-direction: column; gap: 6px; }
-.bs-faixas .ct-forte { white-space: normal; text-align: right; }
+.bs-faixas .ct-forte { white-space: nowrap; flex: 0 0 auto; text-align: right; }
+.bs-faixas .ct-rotulo { min-width: 0; }
 .bs-cobertura { text-align: right; }
 .bs-aviso {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
@@ -452,6 +453,9 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 .bs-chip[aria-pressed='true'] { background: color-mix(in oklab, var(--cor) 14%, var(--card)); border-color: var(--cor); color: color-mix(in oklab, var(--cor) 55%, var(--foreground)); font-weight: 600; }
 .bs-chip[aria-pressed='true'] .mono { color: inherit; }
 .bs-ordem .opcoes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 360px) {
+  .bs-ordem .opcoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .bs-lista { list-style: none; margin: 0; padding: 0; }
 .bs-item { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 10px; padding: 10px 0; }
 .bs-item + .bs-item { border-top: 1px solid var(--border); }
@@ -476,6 +480,8 @@ li[data-estado='nao_informado'] .ql-valor { font-weight: 500; color: var(--muted
 .bs-margem { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bs-margem.lucro { background: color-mix(in oklab, var(--success) 14%, var(--card)); color: color-mix(in oklab, var(--success) 70%, var(--foreground)); }
 .bs-margem.prejuizo { background: color-mix(in oklab, var(--destructive) 14%, var(--card)); color: color-mix(in oklab, var(--destructive) 70%, var(--foreground)); }
+.bs-linha:has(.bs-estado.aguardando) { flex-wrap: wrap; }
+.bs-valor:has(.bs-estado.aguardando) { flex-basis: 100%; max-width: none; text-align: left; }
 .bs-estado { font-size: 11px; color: var(--muted-foreground); }
 .bs-estado.aguardando { padding: 1px 6px; border-radius: 6px; font-weight: 600; background: color-mix(in oklab, var(--warning) 14%, var(--card)); color: color-mix(in oklab, var(--warning) 55%, var(--foreground)); }
 .bs-sinais { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--muted-foreground); }

@@ -100,3 +100,14 @@ it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguar
   expect(raizes[2].querySelector('.t.aguardando')!.textContent).toBe('Minha margem · aguardando cota');
   expect(raizes[2].querySelector('.t.roxo, .t.lucro, .t.prejuizo')).toBeNull();
 });
+
+it('Loja oficial é âmbar, Catálogo é chip transparente e margem indisponível tem rótulo neutro', () => {
+  const h = renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), { itemId: 'MLB1000001', proprio: false, vinculo: { fonte: 'catalogo', codigo: '81' } },
+    { itemId: 'MLB1000001', estado: 'sem_categoria', fonte: 'catalogo', codigo: '81' });
+  void h;
+  const r = raizes[raizes.length - 1];
+  expect(r.querySelector('.c.ambar')!.textContent).toBe('Loja oficial');
+  expect(r.querySelector('.c.catalogo')!.textContent).toBe('Catálogo');
+  expect(r.querySelector('.t.neutro')!.textContent).toBe('Minha margem indisponível');
+  expect(r.querySelector('.t.roxo')).toBeNull();
+});
