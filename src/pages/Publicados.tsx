@@ -391,10 +391,14 @@ function LinhaTabela({
             <span title={item.precoPublicacaoMax > item.precoPublicacao ? 'Preço ao vivo da cor principal do anúncio' : undefined}>
               {fmtBRL(item.precoAtual)}
               {item.precoPublicacaoMax > item.precoPublicacao && <span className="ml-1 text-xs text-muted-foreground">(1ª cor)</span>}
-              {item.precoOriginal != null && (
+              {(item.precoOriginal != null || item.variacoesEmPromocao) && (
                 <span className="mt-1 flex flex-col items-start gap-1">
-                  <span className="text-xs text-muted-foreground line-through">{fmtBRL(item.precoOriginal)}</span>
-                  <StatusPill tone="success">Em promoção</StatusPill>
+                  {item.precoOriginal != null && <span className="text-xs text-muted-foreground line-through">{fmtBRL(item.precoOriginal)}</span>}
+                  <StatusPill tone="success">
+                    Em promoção
+                    {item.variacoesEmPromocao && item.variacoesEmPromocao.em < item.variacoesEmPromocao.total
+                      && ` · ${item.variacoesEmPromocao.em} de ${item.variacoesEmPromocao.total} variações`}
+                  </StatusPill>
                 </span>
               )}
             </span>
@@ -1305,7 +1309,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         ? { unidadesVendidas: v?.unidades ?? null, valorVendido: v?.valor ?? null }
         : { unidadesVendidas: null, valorVendido: null };
       return s
-        ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, precoOriginal: s.precoOriginal ?? null, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
+        ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, precoOriginal: s.precoOriginal ?? null, variacoesEmPromocao: s.variacoesEmPromocao, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
   }, [publicados, statusData, resumo, canonicoPronto]);

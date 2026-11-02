@@ -57,6 +57,19 @@ describe('agregarStatusUP', () => {
   it('estoque desconhecido em todos os filhos → null', () => {
     expect(agregarStatusUP(st('ativo', null), [st('ativo', null)])?.estoque).toBeNull();
   });
+
+  // Avil 02/11: Tecido Ponge com 1 de 8 SKUs na 11.11 não mostrava promoção — a linha lia o
+  // /sale_price só do item principal (fora da campanha).
+  it('conta os SKUs em promoção mesmo com o principal fora dela', () => {
+    const promo = { ...st('ativo', 1), preco: 66.4, precoOriginal: 69.9 };
+    const r = agregarStatusUP(st('ativo', 1), [st('ativo', 1), promo, st('ativo', 1)]);
+    expect(r?.variacoesEmPromocao).toEqual({ em: 1, total: 3 });
+    expect(r?.preco).toBe(41.9);
+  });
+
+  it('nenhum SKU em promoção → sem contagem', () => {
+    expect(agregarStatusUP(st('ativo', 1), [st('ativo', 1)])?.variacoesEmPromocao).toBeUndefined();
+  });
 });
 
 // Status agregado sem vendas agregadas jogava a família UP em "Encalhados" (ativo + 0 vendas no
