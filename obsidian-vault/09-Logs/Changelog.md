@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-01
+atualizado: 2026-11-02
 ---
 
 # Changelog
@@ -11,6 +11,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-02
 
+- **Promoção parcial em família UP no Publicados** (main `0571d3c8`, só front): Avil, Tecido Ponge
+  com 1 de 8 SKUs na 11.11 não mostrava promoção — a linha lia o `/sale_price` só do item principal
+  (fora da campanha). `agregarStatusUP` conta os SKUs em promoção; selo "Em promoção · N de M
+  variações" quando parcial. Preço riscado segue só quando o principal está em promoção.
 - **Logo PubliAI pulsando nos carregamentos** (main `8cb4aafa`, só front): `CarregandoMarca` ganha
   atraso de 300 ms (cache não pisca) e variantes `compacta`/`tela`; substitui o "Carregando…" seco em
   19 pontos (Suspense de rota, guards de sessão/permissão, Progresso, Relatório, Revisão, Lotes,
