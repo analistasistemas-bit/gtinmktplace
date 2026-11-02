@@ -1,15 +1,15 @@
 // Mini-bloco da busca (ADR-0189, emenda 2026-11-02): bloco curto dentro de CADA card da busca do ML, com dados locais
 // (vendedor observado, sinais, volume mínimo) e, quando há, Meu anúncio e Minha margem. Shadow DOM fechado: isola o
 // estilo e não deixa scripts da página lerem a margem com facilidade (não é garantia absoluta de sigilo).
-// `card.ocorrencias[0]` é a aparição DESTE card no DOM: posição, patrocínio, preço e vendidos são dela, e a margem só
-// aparece se foi calculada a esse mesmo preço.
+// `card` é a leitura DESTE card no DOM (lerCard): vendedor, sinais, posição, patrocínio, preço e vendidos são dele, e a
+// margem só aparece se foi calculada a esse mesmo preço.
 import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import { volumeMinimoAoPrecoAtual } from '../compartilhado/volume-minimo';
-import type { CardBusca } from '../leitura/busca';
+import { HOST_PUBLIAI, type CardBusca } from '../leitura/busca';
 import { MARCA } from './aparencia';
-import { seloDaBusca, type TomDaMargem } from './selo-busca';
+import { seloDaBusca, type LinhaDaMargem } from './selo-busca';
 
-export const HOST_MINI_BLOCO = 'publiai-mini-bloco-busca';
+export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -52,9 +52,9 @@ function linha(...filhos: HTMLElement[]): HTMLElement {
 /** Texto da margem desta ocorrência; null = nada a mostrar (sem vínculo, ou margem de outro preço). */
 function margemDaOcorrencia(
   metadados: MetadadosCardBusca | undefined, margem: ResultadoCard | undefined, preco: number | null,
-): { texto: string; tom: TomDaMargem; titulo: string } | null {
+): LinhaDaMargem | null {
   if (margem?.estado === 'ok' && (preco === null || margem.margem?.preco !== preco)) return null;
-  if (!margem && metadados?.vinculo) return { texto: 'Minha margem · calculando', tom: 'aguardando', titulo: `SKU ${metadados.vinculo.codigo}: a margem chega em instantes.` };
+  if (!margem && metadados?.vinculo) return { rotulo: 'Minha margem · calculando', valor: null, tom: 'aguardando', titulo: `SKU ${metadados.vinculo.codigo}: a margem chega em instantes.` };
   return seloDaBusca(margem);
 }
 
@@ -96,7 +96,9 @@ export function renderizarMiniBlocoDaBusca(
   // 4. Minha margem (simulação Clássico) ou o estado dela.
   const m = margemDaOcorrencia(metadados, margem, oc.preco);
   if (m) {
-    const l = linha(el('span', `t ${m.tom}`, m.texto));
+    // Rótulo roxo (identidade), valor no tom do resultado; sem valor o rótulo leva o estado (aguardando = warning).
+    const l = linha(el('span', `t ${m.valor !== null || m.tom !== 'aguardando' ? 'roxo' : 'aguardando'}`, m.rotulo));
+    if (m.valor !== null) l.append(' ', el('b', `t ${m.tom}`, m.valor));
     l.title = m.titulo;
     bloco.append(l);
   }

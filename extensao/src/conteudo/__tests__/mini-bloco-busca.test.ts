@@ -84,3 +84,19 @@ it('sem vendedor nem sinais: diz "vendedor não informado"; sem vendidos não in
   expect(t).toContain('Vendedor não informado');
   expect(t).not.toContain('Volume mínimo');
 });
+
+it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguardando em warning com texto', () => {
+  const css = (r: ShadowRoot) => r.querySelector('style')!.textContent!.replace(/\s+/g, '');
+  renderizarMiniBlocoDaBusca(card(), undefined, ok(50, 11.21) as never);
+  expect(raizes[0].querySelector('.t.roxo')!.textContent).toBe('Minha margem · simulação Clássico');
+  expect(raizes[0].querySelector('.t.lucro')!.textContent).toBe('11,2%');
+  for (const regra of ['.roxo{--c:var(--chart-1)}', '.lucro{--c:var(--success)}', '.prejuizo{--c:var(--destructive)}', '.aguardando{--c:var(--warning)}']) {
+    expect(css(raizes[0])).toContain(regra);
+  }
+  renderizarMiniBlocoDaBusca(card(), undefined, ok(50, -3.4) as never);
+  expect(raizes[1].querySelector('.t.prejuizo')!.textContent).toBe('-3,4%');
+  expect(raizes[1].querySelector('.t.lucro')).toBeNull();
+  renderizarMiniBlocoDaBusca(card(), undefined, { itemId: 'MLB1000001', estado: 'limite', fonte: 'catalogo', codigo: '81' });
+  expect(raizes[2].querySelector('.t.aguardando')!.textContent).toBe('Minha margem · aguardando cota');
+  expect(raizes[2].querySelector('.t.roxo, .t.lucro, .t.prejuizo')).toBeNull();
+});

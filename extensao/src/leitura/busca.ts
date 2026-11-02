@@ -46,6 +46,14 @@ const MLBU = /^MLBU\d{6,20}$/;
 const HOSTS = new Set(['www.mercadolivre.com.br', 'produto.mercadolivre.com.br', 'click1.mercadolivre.com.br']);
 const HOSTS_DESTINO = new Set(['www.mercadolivre.com.br', 'produto.mercadolivre.com.br']);
 export const INJETADO = '.avantpro-product-container';
+/** Host do Mini-bloco da busca (conteudo/mini-bloco-busca.ts): subárvore própria, nunca lida como card do ML. */
+export const HOST_PUBLIAI = 'publiai-mini-bloco-busca';
+
+/** Regra única de card elegível (parser, localização dos cards e contagem): `.poly-card` fora do Avant e dos hosts
+ *  PubliAI e não aninhado em outro card. */
+export function cardsElegiveis(doc: Document): Element[] {
+  return [...doc.querySelectorAll('.poly-card')].filter((c) => !c.closest(`${INJETADO}, .${HOST_PUBLIAI}`) && !c.parentElement?.closest('.poly-card'));
+}
 
 /** Elementos do card que são do ML e deste card (nem injetados por outras extensões, nem de um card aninhado). */
 function doMl(card: Element, seletor: string): Element[] {
@@ -106,43 +114,49 @@ function lerPreco(card: Element): number | null {
   return Number(frac) + (cents ? Number(cents) / 100 : 0);
 }
 
+/** Uma aparição (um card elegível) lida sozinha: sinais, vendedor e ocorrência são só dela. null = sem item comprovado. */
+export function lerCard(card: Element): CardBusca | null {
+  const titulo = doMl(card, 'a.poly-component__title')[0];
+  const link = titulo ? lerLink(titulo.getAttribute('href') ?? '') : null;
+  if (!link) return null;
+  const review = texto(doMl(card, '.poly-component__review-compacted')[0]);
+  // Nota só no formato "4.9 |" (decimal antes do separador); "4 vendidos" não é nota.
+  const nota = Number(/^(\d[.,]\d)\s*\|/.exec(review)?.[1]?.replace(',', '.'));
+  const vendidos = /\+?\d+(?:[.,]\d+)?\s*(?:mil\s*)?vendidos?/i.exec(review)?.[0]?.replace(/\s+/g, ' ') ?? null;
+  const aria = (rotulo: RegExp, dentro: Element) => doMl(card, '[aria-label]')
+    .some((e) => dentro.contains(e) && rotulo.test(e.getAttribute('aria-label') ?? ''));
+  const vendedorEl = doMl(card, '.poly-component__seller')[0];
+  const lido: CardBusca = {
+    itemId: link.itemId,
+    catalogProductId: link.catalogProductId,
+    userProductId: link.userProductId,
+    posicao: link.posicao,
+    titulo: texto(titulo),
+    preco: lerPreco(card),
+    vendedor: texto(vendedorEl) || null,
+    nota: Number.isFinite(nota) && nota > 0 && nota <= 5 ? nota : null,
+    vendidosTexto: vendidos,
+    freteGratis: doMl(card, '.polylabel-label').some((e) => /^frete gr[áa]tis$/i.test(texto(e))) || null,
+    full: aria(/^enviado pelo full$/i, card) || null,
+    lojaOficial: (vendedorEl ? aria(/^loja oficial$/i, vendedorEl) : false) || null,
+    patrocinado: link.anuncio || doMl(card, 'a.poly-component__ads-promotions[aria-label="Patrocinado"]').length > 0,
+    selos: doMl(card, '.poly-component__poly-label').map((e) => texto(e)).filter(Boolean),
+    miniaturaUrl: lerMiniatura(card),
+    ocorrencias: [],
+    identidadeConflitante: false,
+  };
+  lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco, vendidosTexto: vendidos });
+  return lido;
+}
+
 export function lerBusca(doc: Document): CardBusca[] {
   // O mesmo item aparece como patrocinado e como orgânico: uma entrada só, completando o que a outra não trouxe
   // (o patrocinado passa por click1 e não tem o /p/ do catálogo).
   const porItem = new Map<string, CardBusca>();
   const conflito = new Set<string>();
-  for (const card of doc.querySelectorAll('.poly-card')) {
-    if (card.closest(INJETADO)) continue;
-    const titulo = doMl(card, 'a.poly-component__title')[0];
-    const link = titulo ? lerLink(titulo.getAttribute('href') ?? '') : null;
-    if (!link) continue;
-    const review = texto(doMl(card, '.poly-component__review-compacted')[0]);
-    // Nota só no formato "4.9 |" (decimal antes do separador); "4 vendidos" não é nota.
-    const nota = Number(/^(\d[.,]\d)\s*\|/.exec(review)?.[1]?.replace(',', '.'));
-    const vendidos = /\+?\d+(?:[.,]\d+)?\s*(?:mil\s*)?vendidos?/i.exec(review)?.[0]?.replace(/\s+/g, ' ') ?? null;
-    const aria = (rotulo: RegExp, dentro: Element) => doMl(card, '[aria-label]')
-      .some((e) => dentro.contains(e) && rotulo.test(e.getAttribute('aria-label') ?? ''));
-    const vendedorEl = doMl(card, '.poly-component__seller')[0];
-    const lido: CardBusca = {
-      itemId: link.itemId,
-      catalogProductId: link.catalogProductId,
-      userProductId: link.userProductId,
-      posicao: link.posicao,
-      titulo: texto(titulo),
-      preco: lerPreco(card),
-      vendedor: texto(vendedorEl) || null,
-      nota: Number.isFinite(nota) && nota > 0 && nota <= 5 ? nota : null,
-      vendidosTexto: vendidos,
-      freteGratis: doMl(card, '.polylabel-label').some((e) => /^frete gr[áa]tis$/i.test(texto(e))) || null,
-      full: aria(/^enviado pelo full$/i, card) || null,
-      lojaOficial: (vendedorEl ? aria(/^loja oficial$/i, vendedorEl) : false) || null,
-      patrocinado: link.anuncio || doMl(card, 'a.poly-component__ads-promotions[aria-label="Patrocinado"]').length > 0,
-      selos: doMl(card, '.poly-component__poly-label').map((e) => texto(e)).filter(Boolean),
-      miniaturaUrl: lerMiniatura(card),
-      ocorrencias: [],
-      identidadeConflitante: false,
-    };
-    lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco, vendidosTexto: vendidos });
+  for (const card of cardsElegiveis(doc)) {
+    const lido = lerCard(card);
+    if (!lido) continue;
     const ja = porItem.get(lido.itemId);
     if (!ja) { porItem.set(lido.itemId, lido); continue; }
     // Duas ocorrências com catálogos diferentes para o mesmo item: catálogo desconhecido (não escolhe um).
@@ -197,8 +211,7 @@ export function normalizarCards(v: unknown): CardBusca[] {
 
 /** Cards da página (elementos) de um item, para o selo e o destaque; mesma identidade do lerBusca. */
 export function cardsDoItem(doc: Document, itemId: string): Element[] {
-  return [...doc.querySelectorAll('.poly-card')].filter((card) => {
-    if (card.closest(INJETADO)) return false;
+  return cardsElegiveis(doc).filter((card) => {
     const titulo = doMl(card, 'a.poly-component__title')[0];
     return !!titulo && lerLink(titulo.getAttribute('href') ?? '')?.itemId === itemId;
   });

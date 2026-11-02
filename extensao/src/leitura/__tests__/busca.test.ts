@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { lerBusca, normalizarCards } from '../busca';
+import { cardsDoItem, cardsElegiveis, lerBusca, lerCard, normalizarCards } from '../busca';
 
 // Estrutura medida em lista.mercadolivre.com.br (22/10): card patrocinado (click1 + is_advertising), card de catálogo
 // (/p/MLB…) e card /up/; o Avantpro injeta `.avantpro-product-container` dentro do card (deve ser ignorado).
@@ -182,5 +182,25 @@ describe('ocorrências e conflito (fix rodada 1)', () => {
     const outroP = 'https://www.mercadolivre.com.br/y/p/MLB77777777#wid=MLB4053374163&position=9';
     const [c] = lerBusca(pagina(card({ href: P, titulo: 'a', frac: '1' }) + card({ href: outroP, titulo: 'a', frac: '1' })));
     expect([c.catalogProductId, c.identidadeConflitante]).toEqual([null, true]);
+  });
+});
+
+describe('elegibilidade e leitura por aparição (Task 4, achados 1 e 3)', () => {
+  it('lerCard: cada aparição traz os próprios sinais (sem completar com a outra)', () => {
+    pagina(card({ href: PAD, titulo: 'a', frac: '10', ad: true }) + card({ href: P, titulo: 'a', frac: '30', vendedor: 'Loja X', frete: true, full: true }));
+    const [pad, org] = cardsElegiveis(document).map(lerCard);
+    expect([pad!.vendedor, pad!.freteGratis, pad!.full, pad!.patrocinado]).toEqual([null, null, null, true]);
+    expect([org!.vendedor, org!.freteGratis, org!.full, org!.patrocinado]).toEqual(['Loja X', true, true, false]);
+    expect(pad!.ocorrencias).toEqual([{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null }]);
+  });
+  it('card aninhado, card dentro do Avant e card dentro de host PubliAI não são elegíveis (parser, localização e contagem)', () => {
+    document.body.innerHTML = `<ol><li><div class="poly-card"><a class="poly-component__title" href="${P}">Fora</a>
+      <div class="poly-card"><a class="poly-component__title" href="${UP}">Dentro</a></div></div></li>
+      <div class="avantpro-product-container"><div class="poly-card"><a class="poly-component__title" href="${UP}">Av</a></div></div>
+      <div class="publiai-mini-bloco-busca"><div class="poly-card"><a class="poly-component__title" href="${UP}">Pa</a></div></div></ol>`;
+    expect(cardsElegiveis(document)).toHaveLength(1);
+    expect(lerBusca(document).map((c) => c.titulo)).toEqual(['Fora']);
+    expect(cardsDoItem(document, 'MLB2880235461')).toHaveLength(0);
+    expect(cardsDoItem(document, 'MLB4053374163')).toHaveLength(1);
   });
 });

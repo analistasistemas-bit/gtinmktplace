@@ -2,7 +2,7 @@
 // scroll), manda ao SW e põe o Mini-bloco da busca em cada card (emenda 2026-11-02). Nunca reordena nem esconde cards do
 // ML; o destaque pedido pelo painel só rola e contorna o card por 2 s.
 import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
-import { cardsDoItem, INJETADO, lerBusca, type CardBusca } from '../leitura/busca';
+import { cardsDoItem, cardsElegiveis, INJETADO, lerBusca, lerCard, type CardBusca } from '../leitura/busca';
 import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca';
 
 const ESPERA_MS = 800;
@@ -53,48 +53,70 @@ function lerEEnviar(): void {
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));
-  enviarCards({ tipo: 'publiai:busca-cards', geracao, url, cards: novos, ocorrencias: [...document.querySelectorAll('.poly-card')].filter((c) => !c.closest(INJETADO)).length } as { geracao: string | null });
+  enviarCards({ tipo: 'publiai:busca-cards', geracao, url, cards: novos, ocorrencias: cardsElegiveis(document).length } as { geracao: string | null });
 }
 
 // Assinatura do que cada host desenha (memória do content script, não no DOM: a página não lê a margem por atributo).
 const assinaturas = new WeakMap<Element, string>();
 // Metadados do banco (anúncio próprio, vínculo); ausente = ainda não identificado.
 let metadados: Record<string, MetadadosCardBusca> = {};
+// Hosts que NÓS tiramos: a remoção deles não pede nova leitura (a feita pela página pede, para o bloco voltar).
+const removidosPorNos = new WeakSet<Node>();
+// Card → nó de preço em que o bloco foi desenhado. Host sumido com o mesmo preço = a página tirou só o host: restaura
+// até MAX_RESTAUROS vezes por card e depois desiste (sem ciclo com quem remove; o painel segue com tudo).
+let ancoras = new WeakMap<Element, Element>();
+let restauros = new WeakMap<Element, number>();
+const MAX_RESTAUROS = 3;
 
 const doCard = (card: Element, seletor: string) =>
   [...card.querySelectorAll(seletor)].find((e) => !e.closest(INJETADO) && e.closest('.poly-card') === card);
 
-/** Mini-bloco em cada card (vinculado ou não), idempotente por host/assinatura: só refaz o host cujo conteúdo mudou
- *  (ML reusou o nó para outro item, preço, resultado) e tira os que não correspondem a mais nada. A i-ésima aparição do
- *  item no DOM é a i-ésima ocorrência do lerBusca (mesmos filtros). Sem preço no card = encaixe inseguro: só o painel. */
+function tirarHost(h: Element): void {
+  removidosPorNos.add(h);
+  h.remove();
+}
+
+/** Mini-bloco em cada card elegível (vinculado ou não), com a leitura daquele card só (sinais e ocorrência dele).
+ *  Idempotente por host/assinatura: só refaz o host cujo conteúdo mudou (ML reusou o nó para outro item, preço,
+ *  resultado) e tira os que não correspondem a mais nada. Sem preço no card = encaixe inseguro: só o painel. */
 function aplicarBlocos(): void {
   if (!ligada) return;
   const vivos = new Set<Element>();
-  for (const c of lerBusca(document)) {
-    cardsDoItem(document, c.itemId).forEach((card, i) => {
-      const oc = c.ocorrencias[i];
-      const preco = doCard(card, '.poly-component__price');
-      if (!oc || !preco?.parentElement) return;
-      const daOcorrencia = { ...c, ocorrencias: [oc] };
-      const meta = metadados[c.itemId], res = resultados[c.itemId];
-      const assinatura = JSON.stringify([daOcorrencia, meta ?? null, res ?? null]);
-      const atual = doCard(card, `.${HOST}`);
-      if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); return; }
-      const novo = renderizarMiniBlocoDaBusca(daOcorrencia, meta, res);
-      assinaturas.set(novo, assinatura);
-      atual?.remove();
-      preco.parentElement.insertBefore(novo, preco.nextSibling);
-      vivos.add(novo);
-    });
+  for (const card of cardsElegiveis(document)) {
+    const c = lerCard(card);
+    const preco = doCard(card, '.poly-component__price');
+    if (!c || !preco?.parentElement) continue;
+    const meta = metadados[c.itemId], res = resultados[c.itemId];
+    const assinatura = JSON.stringify([c, meta ?? null, res ?? null]);
+    const atual = doCard(card, `.${HOST}`);
+    if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); continue; }
+    if (!atual && ancoras.get(card) === preco) {
+      const n = restauros.get(card) ?? 0;
+      if (n >= MAX_RESTAUROS) continue;
+      restauros.set(card, n + 1);
+    }
+    const novo = renderizarMiniBlocoDaBusca(c, meta, res);
+    assinaturas.set(novo, assinatura);
+    if (atual) tirarHost(atual);
+    preco.parentElement.insertBefore(novo, preco.nextSibling);
+    ancoras.set(card, preco);
+    vivos.add(novo);
   }
-  for (const h of document.querySelectorAll(`.${HOST}`)) if (!vivos.has(h)) h.remove();
+  for (const h of document.querySelectorAll(`.${HOST}`)) {
+    if (vivos.has(h)) continue;
+    const card = h.closest('.poly-card');
+    if (card) ancoras.delete(card);
+    tirarHost(h);
+  }
 }
 
 function limparSelos(): void {
   tirarDestaque();
   resultados = {};
   metadados = {};
-  for (const h of document.querySelectorAll(`.${HOST}`)) h.remove();
+  ancoras = new WeakMap();
+  restauros = new WeakMap();
+  for (const h of document.querySelectorAll(`.${HOST}`)) tirarHost(h);
 }
 
 let destaque: { card: HTMLElement; outline: string; offset: string; timer: ReturnType<typeof setTimeout> } | null = null;
@@ -158,12 +180,14 @@ function agendar(): void { clearTimeout(timer); timer = setTimeout(() => { lerEE
 
 /** Nó dentro do Avant ou de um host PubliAI (o próprio host incluído). */
 const deFora = (n: Node | null) => !!(n && (n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest(`${INJETADO}, .${HOST}`));
-/** Mutação que pede nova leitura: do ML (cards, preço, imagem, link). Dentro do Avant ou dos nossos hosts (inclusive
- *  characterData), ou só entrando/saindo um deles, não vale: sem ciclo com o Avant nem com os nossos próprios blocos.
- *  ponytail: host removido sozinho pela página só volta na próxima mutação útil (o ML refaz o card inteiro na prática). */
+/** Mutação que pede nova leitura: do ML (cards, preço, imagem, link) ou host nosso removido pela página. Dentro do Avant
+ *  ou dos nossos hosts (inclusive characterData), host entrando, ou host que nós mesmos tiramos, não vale: sem ciclo com
+ *  o Avant nem com os nossos próprios blocos. */
 export function mutacaoUtil(m: MutationRecord): boolean {
   if (deFora(m.target)) return false;
-  return m.type !== 'childList' || [...m.addedNodes, ...m.removedNodes].some((n) => !deFora(n));
+  if (m.type !== 'childList') return true;
+  const hostDaPagina = (n: Node) => (n as Element).classList?.contains(HOST) && !removidosPorNos.has(n);
+  return [...m.addedNodes].some((n) => !deFora(n)) || [...m.removedNodes].some((n) => !deFora(n) || hostDaPagina(n));
 }
 new MutationObserver((mudancas) => { if (mudancas.some(mutacaoUtil)) agendar(); })
   .observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'src', 'srcset'] });

@@ -197,6 +197,54 @@ it('contagem de ocorrências ignora cards dentro do Avant', async () => {
   expect(msg()!.ocorrencias).toBe(document.querySelectorAll('.poly-card').length - 1);
 });
 
+const precoHtml = (v: string) => `<div><div class="poly-component__price"><div class="poly-price__current"><span class="andes-money-amount__fraction">${v}</span></div></div></div>`;
+
+it('achado 1: sinais são da aparição — mesmo item com vendedor/Full/frete só numa delas', async () => {
+  const ID = 'MLB5321950900';
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="poly-card" id="sig1"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=${ID}&position=8">S</a>
+      <span class="poly-component__seller">Loja Um</span>${precoHtml('30')}
+      <div><span class="polylabel-label">Frete grátis</span><svg aria-label="Enviado pelo FULL"></svg></div></div>
+    <div class="poly-card" id="sig2"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=${ID}&position=9&is_advertising=true">S</a>${precoHtml('35')}</div>`);
+  const t = (id: string) => raizes.get(document.querySelector(`#${id} .publiai-mini-bloco-busca`)!)?.textContent ?? '';
+  await vi.waitFor(() => expect(t('sig2')).toContain('Patrocinado'), { timeout: 3000 });
+  expect(t('sig1')).toContain('Loja Um');
+  expect(t('sig1')).toContain('Frete grátis');
+  expect(t('sig1')).toContain('Full');
+  expect(t('sig2')).not.toContain('Loja Um');
+  expect(t('sig2')).not.toContain('Frete grátis');
+  expect(t('sig2')).not.toContain('Full');
+});
+
+it('achado 2: host removido sozinho pela página num card estável volta após o agendamento; remoção repetida para (sem ciclo)', async () => {
+  document.body.insertAdjacentHTML('beforeend', `<div class="poly-card" id="estavel">
+    <a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950950&position=10">E</a>${precoHtml('40')}</div>`);
+  const host = () => document.querySelector('#estavel .publiai-mini-bloco-busca');
+  await vi.waitFor(() => expect(host()).not.toBeNull(), { timeout: 3000 });
+  for (let i = 0; i < 3; i++) {
+    host()!.remove();
+    expect(host()).toBeNull();
+    await vi.waitFor(() => expect(host()).not.toBeNull(), { timeout: 3000 });
+  }
+  host()!.remove(); // 4ª remoção: a página insiste → o PubliAI desiste deste card (o painel segue com tudo)
+  await new Promise((r) => setTimeout(r, 1200));
+  expect(host()).toBeNull();
+});
+
+it('achado 3: card aninhado em outro card não recebe bloco nem entra na contagem', async () => {
+  document.body.insertAdjacentHTML('beforeend', `<div class="poly-card" id="fora">
+    <a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950960&position=11">F</a>${precoHtml('50')}
+    <div class="poly-card" id="dentro"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321950961">D</a>${precoHtml('5')}</div></div>`);
+  const msg = () => enviar.mock.calls.map(([m]) => m as { cards?: { itemId: string }[]; ocorrencias?: number })
+    .filter((m) => m.cards?.some((c) => c.itemId === 'MLB5321950960')).at(-1);
+  await vi.waitFor(() => expect(msg()).toBeTruthy(), { timeout: 3000 });
+  expect(msg()!.cards!.some((c) => c.itemId === 'MLB5321950961')).toBe(false);
+  const elegiveis = [...document.querySelectorAll('.poly-card')].filter((c) => !c.closest('.avantpro-product-container') && !c.parentElement?.closest('.poly-card'));
+  expect(msg()!.ocorrencias).toBe(elegiveis.length);
+  await vi.waitFor(() => expect(document.querySelectorAll('#fora .publiai-mini-bloco-busca')).toHaveLength(1), { timeout: 3000 });
+  expect(document.querySelectorAll('#dentro .publiai-mini-bloco-busca')).toHaveLength(0);
+});
+
 describe('mutacaoUtil: o que o observer ignora', () => {
   const registros = async (fazer: () => void) => {
     const rs: MutationRecord[] = [];
@@ -219,10 +267,11 @@ describe('mutacaoUtil: o que o observer ignora', () => {
       document.querySelector('.avantpro-product-container')!.append(document.createElement('b'));
       document.querySelector('#m-pai')!.append(host);
       host.setAttribute('data-x', '1');
-      host.remove();
     });
     expect(rs.length).toBeGreaterThan(0);
     expect(rs.filter(mutacaoUtil)).toHaveLength(0);
+    // Remoção do host feita pela página (não por nós) vale: o bloco precisa voltar.
+    expect((await registros(() => host.remove())).filter(mutacaoUtil)).toHaveLength(1);
   });
   it('preço, imagem e link do ML valem', async () => {
     const { mutacaoUtil } = await import('../busca');
