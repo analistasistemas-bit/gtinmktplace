@@ -225,9 +225,9 @@ describe('AbaCampanhas', () => {
     expect(detalhe.getByText(texto)).toBeInTheDocument();
     expect(detalhe.queryByText(/não está mais entre as campanhas/)).not.toBeInTheDocument();
   });
-  it('carregando as métricas: esqueleto', () => {
+  it('carregando as métricas: esqueleto', async () => {
     aba(dados(), metricas({ data: undefined, isLoading: true }));
-    expect(screen.getByRole('status', { name: 'Carregando campanhas' })).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'Carregando campanhas' })).toBeInTheDocument();
   });
   it('erro das métricas: alerta e Tentar novamente', () => {
     const m = metricas({ data: undefined, isError: true });

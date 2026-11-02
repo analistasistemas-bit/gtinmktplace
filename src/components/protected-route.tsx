@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth-store';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -19,9 +20,7 @@ export function ProtectedRoute() {
 
   if (loading || (user && profileLoading)) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
-        Carregando…
-      </div>
+      <CarregandoMarca variante="tela" rotulo="Carregando" mensagem="Abrindo o PubliAI…" />
     );
   }
 

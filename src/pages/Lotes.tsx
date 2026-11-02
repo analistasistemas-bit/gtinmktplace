@@ -14,6 +14,7 @@ import { colunasFaltando, lerCabecalhoXlsx, COLUNAS_OBRIGATORIAS_PLANILHA } from
 import { useUploadLote } from '@/hooks/useUploadLote';
 import { useLotes } from '@/hooks/useLotes';
 import { usePaginacao } from '@/hooks/usePaginacao';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 type ValidacaoPlanilha =
   | { tipo: 'validando' }
@@ -186,7 +187,7 @@ export default function Lotes() {
 
         <h2 className="mb-2 mt-2 text-sm font-medium text-muted-foreground">Histórico de lotes</h2>
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Carregando lotes...</div>
+          <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo os lotes…" />
         ) : error ? (
           <div className="text-sm text-destructive">Erro ao carregar lotes: {(error as Error).message}</div>
         ) : lotes.length === 0 ? (

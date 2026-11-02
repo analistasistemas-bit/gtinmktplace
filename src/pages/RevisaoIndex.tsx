@@ -4,12 +4,13 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { escolherLoteRevisao } from '@/lib/escolher-lote-revisao';
 import { useLotes } from '@/hooks/useLotes';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export default function RevisaoIndex() {
   const { data: lotes, isLoading } = useLotes();
 
   if (isLoading) {
-    return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
+    return <div className="p-4 sm:p-6"><CarregandoMarca rotulo="Carregando" mensagem="Procurando o lote para revisar…" /></div>;
   }
 
   if (!lotes || lotes.length === 0) {

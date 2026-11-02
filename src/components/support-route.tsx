@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export function SupportRoute() {
   const { profile, profileLoading } = useProfile();
@@ -13,7 +14,7 @@ export function SupportRoute() {
   }, [needsSupportContext, loaded, loading, loadContext]);
 
   if (profileLoading || (needsSupportContext && (!loaded || loading))) {
-    return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Carregando…</div>;
+    return <CarregandoMarca variante="tela" rotulo="Carregando" mensagem="Abrindo o PubliAI…" />;
   }
 
   if (needsSupportContext && error) {

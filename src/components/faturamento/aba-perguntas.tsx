@@ -18,6 +18,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildPerguntasReport } from '@/lib/export/adapters';
 import { toast } from 'sonner';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
   const qc = useQueryClient();
@@ -196,7 +197,7 @@ export function AbaPerguntas() {
       </div>
 
       {isFetching && itens.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+        <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as perguntas…" />
       ) : isError ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           <MessageCircleQuestion className="h-6 w-6" />

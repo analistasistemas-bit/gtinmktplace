@@ -7,6 +7,7 @@ import { SuperAdminRoute } from '@/components/super-admin-route';
 import { MenuGuard } from '@/components/menu-guard';
 import { SupportRoute } from '@/components/support-route';
 import { InstallPromptBanner } from '@/components/install-prompt-banner';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 // Páginas carregadas sob demanda (code-splitting): tira recharts/jspdf/xlsx do bundle inicial.
 const Login = lazy(() => import('@/pages/Login'));
@@ -41,7 +42,7 @@ const NotFound = lazy(() => import('@/pages/NotFound'));
 
 export function AppRoutes() {
   return (
-    <Suspense fallback={<div className="grid min-h-screen place-items-center"><div className="size-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>}>
+    <Suspense fallback={<CarregandoMarca variante="tela" rotulo="Carregando" mensagem="Abrindo a tela…" />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/definir-senha" element={<DefinirSenha />} />

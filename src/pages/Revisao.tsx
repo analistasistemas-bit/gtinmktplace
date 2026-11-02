@@ -45,6 +45,7 @@ import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import type { Familia } from '@/lib/tipos-dominio';
 import { normalizarParaBusca } from '@/lib/texto';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas' | 'preco_alterado';
 
@@ -570,9 +571,7 @@ export default function Revisao() {
       )}
       <div ref={listaRef} className="flex-1 overflow-auto">
         {isLoading ? (
-          <div role="status" className="p-8 text-center text-sm text-muted-foreground">
-            Carregando famílias...
-          </div>
+          <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as famílias…" />
         ) : error ? (
           <div role="alert" className="p-8 text-center text-sm text-destructive">
             Erro ao carregar famílias: {(error as Error).message}

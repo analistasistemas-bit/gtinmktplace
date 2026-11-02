@@ -11,6 +11,7 @@ import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Progress } from '@/components/ui/progress';
 import { JornadaLote } from '@/components/jornada-lote';
 import { resultadoPublicacao } from '@/lib/jornada';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export default function Relatorio() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -45,7 +46,7 @@ export default function Relatorio() {
   const emPublicacao = familias.filter((f) => f.status === 'publicando').length;
   const comErro = familias.filter((f) => f.status === 'erro').length;
 
-  if (!lote) return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
+  if (!lote) return <div className="p-4 sm:p-6"><CarregandoMarca rotulo="Carregando" mensagem="Lendo o relatório do lote…" /></div>;
 
   // Famílias que entraram na publicação (selecionadas) = publicado + publicando + erro.
   // A barra avança conforme cada uma termina (sucesso OU erro). Guiada pelo status das

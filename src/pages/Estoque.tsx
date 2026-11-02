@@ -8,7 +8,6 @@ import { Boxes, Plus, PackagePlus, Grid3x3, FileUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogImportarNota } from '@/components/estoque/importar-nota/dialog-importar-nota';
 import { CardPacoteContador } from '@/components/estoque/pacote-contador/card-pacote-contador';
@@ -43,6 +42,7 @@ import {
 import { useProfile } from '@/hooks/useProfile';
 import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 import { formatarNomeProduto } from '@/lib/texto';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 const RESUMO_VAZIO: ResumoEstoque = {
   produtos: 0, skus: 0, unidades: 0, skusSemEstoque: 0, valorEmEstoque: 0, skusSemCusto: 0,
@@ -217,9 +217,7 @@ export default function Estoque() {
       {isLoading ? (
         <>
           <ResumoEstoqueKpis resumo={resumo} carregando />
-          <div className="flex flex-col gap-1.5">
-            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
-          </div>
+          <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo o estoque…" />
         </>
       ) : isError ? (
         <p className="text-sm text-muted-foreground">não foi possível carregar os produtos.</p>
