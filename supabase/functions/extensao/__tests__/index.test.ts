@@ -651,6 +651,26 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
   });
 
+  it('cada consulta (fontes + catálogo + EAN + vínculo manual) leva org_id; nenhum fetch', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    f.dados.extensao_vinculos = [{ chave_tipo: 'item', chave: 'MLB1', variacao_id: 'v1' }];
+    f.dados.variacoes = [{
+      id: 'v1', codigo: '001', nome: 'X', custo: 10, peso_gramas: 500, altura_cm: 10, largura_cm: 10, comprimento_cm: 10, atualizado_em: '2026-10-01',
+      familias: { origem: 'nacional', kit_multiplicador: null, nome_pai: null, codigo_pai: 'P1', atributos_ml: null },
+    }];
+    const r = await post({ acao: 'identificar_busca', eanDaBusca: '7891234567895', itens: [{ itemId: 'MLB1', catalogProductId: 'MLB42' }] });
+    expect(r.status).toBe(200);
+    expect((await r.json()).itens[0]).toMatchObject({ itemId: 'MLB1', vinculo: { fonte: 'catalogo', codigo: '001' } });
+    // variacoes: legado (fonte) + porCatalogo + porGtin + vinculosManuais:variacoes
+    expect(f.froms.filter((t) => t === 'variacoes')).toHaveLength(4);
+    for (const t of new Set(f.froms)) {
+      expect(f.eqs.filter(([tt, col, v]) => tt === t && col === 'org_id' && v === 'org-1')).toHaveLength(f.froms.filter((x) => x === t).length);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(resolverConexao).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it('protocolo 2: envelope com identidade', async () => {
     expect(await (await post({ ...PEDIDO, protocolo: 2 })).json()).toEqual({
       identidade: 'user-1:org-1:',
