@@ -250,7 +250,7 @@ export function topFamilias(itens: ResultadoItem[], catalogo: Map<string, Famili
     .sort((a, b) => b.gross - a.gross || (a.g.key < b.g.key ? -1 : a.g.key > b.g.key ? 1 : 0));
   const universo = ordenadas.reduce((s, x) => s + x.gross, 0);
   let acum = 0;
-  const rows: FamilyRow[] = ordenadas.map(({ g, gross }) => {
+  const rows = ordenadas.map(({ g, gross }): FamilyRow => {
     const antes = universo > 0 ? acum / universo : 0;
     acum += gross;
     const profit = g.calc > 0 ? cents(g.lucro) : null;

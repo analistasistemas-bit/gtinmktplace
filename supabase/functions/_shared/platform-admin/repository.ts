@@ -1,4 +1,5 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
+import { montarRelatorioMensal } from './monthly-report-io.ts';
 import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
@@ -177,6 +178,8 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       return { rows, total: summaries.length, page: input.page, page_size: input.page_size, totals };
     },
     metrics: (_actorId: string, orgId: string, month: string) => readOrgMetrics(db as never, orgId, month, now()),
+    // ADR-0193 Fatia 1: toda leitura filtra org_id explicitamente (service_role ignora RLS).
+    monthlyReport: (_actorId: string, orgId: string, month: string) => montarRelatorioMensal(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },
     saveTerms: (actorId: string, input: Record<string, unknown>) => rpc<CommercialTerms>('platform_save_terms', { p_actor: actorId, p_input: input }),
     preview: (actorId: string, orgId: string, month: string) => rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: orgId, p_month: monthDate(month) }),

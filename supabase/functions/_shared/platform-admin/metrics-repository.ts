@@ -52,9 +52,10 @@ const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, date_closed, date_
   + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price, cupom_vendedor), '
   + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 /** ADR-0190: `SALES_COLUMNS` + `titulo` do item — a notificação gerencial nomeia o produto (prejuízo,
- *  sem custo, top). Lista separada para não engordar a leitura da carteira, que não usa o título. */
+ *  sem custo, top). Lista separada para não engordar a leitura da carteira, que não usa o título.
+ *  `kit_item_id`: o relatório mensal (ADR-0193 D-5) conta o pedido de kit no MLB do kit. */
 const COLUNAS_VENDAS_GERENCIAL = 'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
-  + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, '
+  + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, kit_item_id, '
   + 'itens:ml_vendas_itens(ml_item_id, variation_id, titulo, codigo, ean, quantity, unit_price, cupom_vendedor), '
   + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 

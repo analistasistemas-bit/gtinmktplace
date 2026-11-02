@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit'] as const;
+  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit','monthlyReport'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
