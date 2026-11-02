@@ -440,7 +440,25 @@ describe('Publicados', () => {
         refetch: vi.fn(),
       });
       renderTela();
-      expect(screen.getByText('Em promoção')).toBeInTheDocument();
+      expect(screen.getByText('Em promoção · 1 de 2 variações')).toBeInTheDocument();
+    });
+
+    // Avil 02/11 (Tecido Ponge): só um irmão na campanha, principal fora → antes não mostrava nada.
+    it('UP: irmão em promoção com o principal fora → selo com a fração, sem preço riscado', () => {
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ mlItemIdsUP: ['MLB1', 'MLB2'] })], isLoading: false, error: null, refetch: vi.fn(),
+      });
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [
+          { ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 3, preco: 69.9 },
+          { ml_item_id: 'MLB2', status: 'ativo', motivo: null, estoque: 4, preco: 66.4, precoOriginal: 69.9 },
+        ] },
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+      renderTela();
+      expect(screen.getByText('Em promoção · 1 de 2 variações')).toBeInTheDocument();
+      expect(document.querySelector('.line-through')).toBeNull();
     });
 
     it('primeira carga do status: logo pulsando no lugar da tabela', async () => {
