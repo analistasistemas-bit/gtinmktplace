@@ -126,6 +126,15 @@ describe('OrganizacaoDetalhe', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it('carregando a organização: logo da marca no lugar do título e das abas', async () => {
+    usePlatformOrganization.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() });
+    renderPage();
+
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo a organização…');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Voltar para organizações/ })).toBeInTheDocument();
+  });
+
   it('expõe falha de carregamento em vez de um detalhe vazio', () => {
     usePlatformOrganization.mockReturnValue({
       data: undefined,

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrgAudit } from '@/components/platform-admin/org-audit';
@@ -198,9 +199,7 @@ export default function OrganizacaoDetalhe() {
       </Button>
 
       {organization.isLoading ? (
-        <div className="mb-6 border-b pb-4">
-          <Skeleton className="h-8 w-64" />
-        </div>
+        <CarregandoMarca rotulo="Carregando" mensagem="Lendo a organização…" />
       ) : organization.isError || !org ? (
         <div className="mb-6 border-b pb-4">
           <PageHeader title="Organização indisponível" />
@@ -237,7 +236,7 @@ export default function OrganizacaoDetalhe() {
         }}
       />
 
-      <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
+      {!organization.isLoading && <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
         <TabsList aria-label="Seções da organização">
           <TabsTrigger value="resultados"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
           <TabsTrigger value="pulse"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
@@ -259,7 +258,7 @@ export default function OrganizacaoDetalhe() {
         <TabsContent value="cobranca" className="pt-4"><OrgBilling orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="auditoria" className="pt-4"><OrgAudit orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="configuracoes" className="pt-4"><OrgSettings orgId={orgId} /></TabsContent>
-      </Tabs>
+      </Tabs>}
     </div>
   );
 }
