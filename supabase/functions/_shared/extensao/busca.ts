@@ -93,7 +93,7 @@ export async function analisarBusca(
   orgId: string,
   pedido: { eanDaBusca: string | null; itens: { itemId: string; catalogProductId: string | null; preco: number }[]; registrarUso?: boolean },
   deps: DepsBusca,
-): Promise<{ itens: ResultadoCard[]; limiteAtingido: boolean; usoRegistrado: boolean }> {
+): Promise<{ itens: ResultadoCard[]; limiteAtingido: boolean; usoRegistrado?: boolean }> {
   const casamentos = await casarCards(orgId, pedido.itens, pedido.eanDaBusca, deps);
   const resultado = new Map<string, ResultadoCard>();
   const reservados: { item: (typeof pedido.itens)[number]; casamento: Casamento; codigo: string }[] = [];
@@ -130,5 +130,7 @@ export async function analisarBusca(
       resultado.set(item.itemId, { ...base, estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
     }
   });
-  return { itens: pedido.itens.map((i) => resultado.get(i.itemId)!), limiteAtingido, usoRegistrado };
+  const itensOrdenados = pedido.itens.map((i) => resultado.get(i.itemId)!);
+  // Cliente 0.3.2 (sem o campo): resposta idêntica à anterior, sem a chave nova.
+  return pedido.registrarUso === undefined ? { itens: itensOrdenados, limiteAtingido } : { itens: itensOrdenados, limiteAtingido, usoRegistrado };
 }

@@ -37,7 +37,8 @@ function agruparVendas(cards: CardBusca[]): { grupos: Map<string, CardBusca[]>; 
 }
 
 export function resumoBusca(cards: CardBusca[], metadados: Metadados, ocorrencias: number) {
-  const precos = cards.map((c) => c.preco).filter((p): p is number => p !== null);
+  // Faixa por aparição: o mesmo item a R$10 (patrocinado) e R$30 (orgânico) entra com os dois preços.
+  const precos = cards.flatMap((c) => (c.ocorrencias.length ? c.ocorrencias.map((o) => o.preco) : [c.preco])).filter((p): p is number => p !== null);
   const { grupos, conflitos } = agruparVendas(cards);
   let somaVendidos = 0, coberturaVendidos = 0, somaVolume = 0, coberturaVolume = 0;
   for (const g of grupos.values()) {

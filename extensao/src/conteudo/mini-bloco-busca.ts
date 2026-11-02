@@ -52,9 +52,11 @@ function linha(...filhos: HTMLElement[]): HTMLElement {
 
 /** Texto da margem desta ocorrência; null = nada a mostrar (sem vínculo, ou margem de outro preço). */
 function margemDaOcorrencia(
-  metadados: MetadadosCardBusca | undefined, margem: ResultadoCard | undefined, preco: number | null,
+  metadados: MetadadosCardBusca | undefined, margem: ResultadoCard | undefined, preco: number | null, precoDoCard: number | null,
 ): LinhaDaMargem | null {
   if (margem?.estado === 'ok' && (preco === null || margem.margem?.preco !== preco)) return null;
+  // Limite, sem categoria e indisponível também são do preço analisado (o do card agregado): outra aparição não os herda.
+  if ((margem?.estado === 'limite' || margem?.estado === 'sem_categoria' || margem?.estado === 'indisponivel') && (preco === null || preco !== precoDoCard)) return null;
   if (!margem && metadados?.vinculo) return { rotulo: 'Minha margem · calculando', valor: null, tom: 'aguardando', titulo: `SKU ${metadados.vinculo.codigo}: a margem chega em instantes.` };
   return seloDaBusca(margem);
 }
@@ -63,6 +65,8 @@ export function renderizarMiniBlocoDaBusca(
   card: CardBusca,
   metadados: MetadadosCardBusca | undefined,
   margem: ResultadoCard | undefined,
+  /** Preço em que o item foi (ou seria) analisado: o 1º preço do item na busca (= `preco` do card agregado no SW). */
+  precoAnalisado: number | null = card.preco,
 ): HTMLElement {
   const oc = card.ocorrencias[0] ?? { posicao: card.posicao, patrocinado: card.patrocinado, preco: card.preco, vendidosTexto: card.vendidosTexto };
   const host = document.createElement('div');
@@ -95,7 +99,7 @@ export function renderizarMiniBlocoDaBusca(
   }
 
   // 4. Minha margem (simulação Clássico) ou o estado dela.
-  const m = margemDaOcorrencia(metadados, margem, oc.preco);
+  const m = margemDaOcorrencia(metadados, margem, oc.preco, precoAnalisado);
   if (m) {
     // Rótulo roxo (identidade), valor no tom do resultado; sem valor o rótulo leva o estado (aguardando = warning).
     const l = linha(el('span', `t ${m.valor !== null ? 'roxo' : m.tom === 'aguardando' ? 'aguardando' : 'neutro'}`, m.rotulo));

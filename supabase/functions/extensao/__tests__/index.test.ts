@@ -645,8 +645,9 @@ describe('extensao — analisar_busca: telemetria por geração (emenda 02/11)',
     expect(r.dados.usoRegistrado).toBe(true);
     expect(usos()).toBe(1);
     f.rpcs.length = 0;
-    await post({ acao: 'analisar_busca', eanDaBusca: null, itens, ...P2 });
+    const legado = await (await post({ acao: 'analisar_busca', eanDaBusca: null, itens, ...P2 })).json();
     expect(usos()).toBe(2);
+    expect('usoRegistrado' in legado.dados).toBe(false);
     f.rpcs.length = 0;
     await post({ acao: 'analisar_busca', eanDaBusca: null, itens, registrarUso: false, ...P2 });
     expect(usos()).toBe(0); // extensão nova: a contagem é no identificar_busca

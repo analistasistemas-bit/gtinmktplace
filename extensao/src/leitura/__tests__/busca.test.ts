@@ -29,6 +29,8 @@ function pagina(html: string) {
   return document;
 }
 
+const SEM_SINAIS = { full: null, freteGratis: null, lojaOficial: null };
+
 describe('lerBusca (Task 20)', () => {
   it('card de catálogo: item pelo wid, catálogo pelo caminho e campos observados', () => {
     const [c] = lerBusca(pagina(card({ href: P, titulo: 'Jogo de Panelas Tramontina', vendedor: 'TRAMONTINA', oficial: true, review: '4.9 | +10mil vendidos', frac: '301', cents: '30', frete: true, full: true, selo: 'MAIS VENDIDO' })));
@@ -36,7 +38,7 @@ describe('lerBusca (Task 20)', () => {
       itemId: 'MLB4053374163', catalogProductId: 'MLB32466350', userProductId: null, posicao: 5,
       titulo: 'Jogo de Panelas Tramontina', preco: 301.3, vendedor: 'TRAMONTINA',
       nota: 4.9, vendidosTexto: '+10mil vendidos', freteGratis: true, full: true, lojaOficial: true, patrocinado: false, selos: ['MAIS VENDIDO'],
-      miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [{ posicao: 5, patrocinado: false, preco: 301.3, vendidosTexto: '+10mil vendidos' }],
+      miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [{ posicao: 5, patrocinado: false, preco: 301.3, vendidosTexto: '+10mil vendidos', full: true, freteGratis: true, lojaOficial: true }],
     });
   });
 
@@ -156,8 +158,8 @@ describe('miniatura e ocorrências (modo busca completo)', () => {
     const b = comImg(card({ href: P, titulo: 'a', frac: '12' }), IMG);
     const [c] = lerBusca(pagina(a + b));
     expect(c.ocorrencias).toEqual([
-      { posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null },
-      { posicao: 5, patrocinado: false, preco: 12, vendidosTexto: null },
+      { posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null, ...SEM_SINAIS },
+      { posicao: 5, patrocinado: false, preco: 12, vendidosTexto: null, ...SEM_SINAIS },
     ]);
     expect(c.miniaturaUrl).toBe(IMG);
   });
@@ -167,7 +169,7 @@ describe('miniatura e ocorrências (modo busca completo)', () => {
       identidadeConflitante: 1, ocorrencias: [{ posicao: 2, patrocinado: 1, preco: 9.5 }, { posicao: -1, patrocinado: true, preco: 'x', vendidosTexto: '+5 vendidos' }, 'lixo'] }]);
     expect(c.identidadeConflitante).toBe(false);
     expect(c.miniaturaUrl).toBeNull();
-    expect(c.ocorrencias).toEqual([{ posicao: 2, patrocinado: false, preco: 9.5, vendidosTexto: null }, { posicao: null, patrocinado: true, preco: null, vendidosTexto: '+5 vendidos' }]);
+    expect(c.ocorrencias).toEqual([{ posicao: 2, patrocinado: false, preco: 9.5, vendidosTexto: null, ...SEM_SINAIS }, { posicao: null, patrocinado: true, preco: null, vendidosTexto: '+5 vendidos', ...SEM_SINAIS }]);
     expect(normalizarCards([{ itemId: 'MLB4053374163', miniaturaUrl: IMG }])[0].miniaturaUrl).toBe(IMG);
   });
 });
@@ -177,6 +179,14 @@ describe('ocorrências e conflito (fix rodada 1)', () => {
     const a = card({ href: PAD, titulo: 'a', frac: '10', ad: true });
     const b = card({ href: P, titulo: 'a', frac: '30', review: '4.9 | +100 vendidos' });
     expect(lerBusca(pagina(a + b))[0].ocorrencias.map((o) => [o.preco, o.vendidosTexto])).toEqual([[10, null], [30, '+100 vendidos']]);
+  });
+  it('Full, frete grátis e loja oficial ficam na ocorrência de origem (revisão final)', () => {
+    const a = card({ href: PAD, titulo: 'a', frac: '10', ad: true });
+    const b = card({ href: P, titulo: 'a', frac: '30', review: '4.9 | +100 vendidos', full: true, frete: true, vendedor: 'Loja X', oficial: true });
+    const [c] = lerBusca(pagina(a + b));
+    expect(c.ocorrencias.map((o) => [o.preco, o.full, o.freteGratis, o.lojaOficial])).toEqual([[10, null, null, null], [30, true, true, true]]);
+    const [n] = normalizarCards([{ itemId: 'MLB4053374163', ocorrencias: [{ preco: 30, full: true, freteGratis: 'sim', lojaOficial: true }] }]);
+    expect([n.ocorrencias[0].full, n.ocorrencias[0].freteGratis, n.ocorrencias[0].lojaOficial]).toEqual([true, null, true]);
   });
   it('catálogos diferentes para o mesmo item: catálogo null e identidadeConflitante true', () => {
     const outroP = 'https://www.mercadolivre.com.br/y/p/MLB77777777#wid=MLB4053374163&position=9';
@@ -191,7 +201,7 @@ describe('elegibilidade e leitura por aparição (Task 4, achados 1 e 3)', () =>
     const [pad, org] = cardsElegiveis(document).map(lerCard);
     expect([pad!.vendedor, pad!.freteGratis, pad!.full, pad!.patrocinado]).toEqual([null, null, null, true]);
     expect([org!.vendedor, org!.freteGratis, org!.full, org!.patrocinado]).toEqual(['Loja X', true, true, false]);
-    expect(pad!.ocorrencias).toEqual([{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null }]);
+    expect(pad!.ocorrencias).toEqual([{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null, ...SEM_SINAIS }]);
   });
   it('card aninhado, card dentro do Avant e card dentro de host PubliAI não são elegíveis (parser, localização e contagem)', () => {
     document.body.innerHTML = `<ol><li><div class="poly-card"><a class="poly-component__title" href="${P}">Fora</a>

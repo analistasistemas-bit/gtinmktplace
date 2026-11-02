@@ -156,7 +156,7 @@ export function Busca({ estado, chamar, analisar, destacar }: {
         {r.vinculados > 0 && <p className="nota">Margem simulada no Clássico ao preço de cada card.</p>}
         <ul className="bs-lista" aria-label="Produtos da busca">
           {mostrar.map((c) => (
-            <Linha key={c.itemId} card={c} resultado={resultados[c.itemId]} meta={metadados[c.itemId]} aberto={aberto === c.itemId}
+            <Linha key={c.itemId} card={c} resultado={resultados[c.itemId]} precoDaMargem={estado.resposta.precoDaMargem?.[c.itemId]} meta={metadados[c.itemId]} aberto={aberto === c.itemId}
               onAbrir={() => setAberto(aberto === c.itemId ? null : c.itemId)} onDestacar={() => destacar(c.itemId)}
               chamar={chamar} onVinculado={() => { setAberto(null); void rodar([c.itemId]); }} />
           ))}
@@ -197,12 +197,17 @@ function Composicao({ rotulo, tipo }: { rotulo: string; tipo: { estado: string; 
   );
 }
 
-function Linha({ card: c, resultado, meta, aberto, onAbrir, onDestacar, chamar, onVinculado }: {
-  card: CardBusca; resultado: Resultado; meta: MetadadosCardBusca | undefined; aberto: boolean;
+function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDestacar, chamar, onVinculado }: {
+  card: CardBusca; resultado: Resultado; precoDaMargem: number | undefined; meta: MetadadosCardBusca | undefined; aberto: boolean;
   onAbrir: () => void; onDestacar: () => void; chamar: Chamar; onVinculado: () => void;
 }) {
   const m = margemClassico(resultado);
   const estado = resultado?.estado;
+  // Uma aparição só por linha: a do preço da margem (ou do card); vendidos e selos vêm dela, nunca da outra aparição.
+  const alvo = precoDaMargem ?? c.preco;
+  const oc = c.ocorrencias.find((o) => o.preco === alvo) ?? c.ocorrencias[0];
+  const sinal = (k: 'full' | 'lojaOficial') => (oc && k in oc ? oc[k] : c[k]); // estado antigo: ocorrência sem sinais
+  const ap = { preco: oc ? oc.preco : c.preco, vendidosTexto: oc ? oc.vendidosTexto : c.vendidosTexto, full: sinal('full'), lojaOficial: sinal('lojaOficial'), patrocinado: oc ? oc.patrocinado : c.patrocinado };
   const proprio = meta?.proprio === true, vinculado = !!meta?.vinculo, semVinculo = !!meta && !meta.vinculo;
   const borda = proprio ? 'meu' : vinculado ? 'vinculado' : meta ? 'sem-vinculo' : 'desconhecido';
   return (
@@ -220,13 +225,13 @@ function Linha({ card: c, resultado, meta, aberto, onAbrir, onDestacar, chamar, 
           </span>
         </div>
         <div className="bs-sinais">
-          <span className="mono bs-preco">{c.preco === null ? 'Preço não lido' : brl(c.preco)}</span>
-          {c.vendidosTexto && <span>{c.vendidosTexto}</span>}
+          <span className="mono bs-preco">{ap.preco === null ? 'Preço não lido' : brl(ap.preco)}</span>
+          {ap.vendidosTexto && <span>{ap.vendidosTexto}</span>}
           {proprio && <span className="bs-tag" data-cor="1">Meu anúncio</span>}
           {vinculado && <span className="bs-tag" data-cor="1">SKU vinculado</span>}
-          {c.full && <span className="bs-tag" data-cor="3">Full</span>}
-          {c.lojaOficial && <span className="bs-tag" data-cor="4">Oficial</span>}
-          {c.patrocinado && <span className="bs-tag" data-cor="5">Patrocinado</span>}
+          {ap.full && <span className="bs-tag" data-cor="3">Full</span>}
+          {ap.lojaOficial && <span className="bs-tag" data-cor="4">Oficial</span>}
+          {ap.patrocinado && <span className="bs-tag" data-cor="5">Patrocinado</span>}
           {semVinculo && (
             <button type="button" className="bs-vincular" aria-label="Vincular ao meu SKU" aria-expanded={aberto} onClick={onAbrir}>Vincular</button>
           )}

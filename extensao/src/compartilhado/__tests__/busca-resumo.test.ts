@@ -93,6 +93,14 @@ describe('filtrarCards / ordenarCards', () => {
   });
 });
 
+describe('faixa de preço por aparição (revisão final)', () => {
+  it('menor e maior entre todas as ocorrências, não só o preço do card', () => {
+    const oc = (preco: number | null) => ({ posicao: 1, patrocinado: false, preco, vendidosTexto: null });
+    const c = card('MLB1', { preco: 10, ocorrencias: [oc(10), oc(30)] });
+    expect(resumoBusca([c, card('MLB2', { preco: 20, ocorrencias: [] })], {}, 3)).toMatchObject({ menorPreco: 10, maiorPreco: 30 });
+  });
+});
+
 describe('fix rodada 1', () => {
   it('piso só pareia com o preço da mesma ocorrência: patrocinado R$10 sem vendidos + orgânico R$30 com +100 = R$3.000', () => {
     const c = card('MLB1', { vendidosTexto: '+100 vendidos', ocorrencias: [

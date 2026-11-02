@@ -15,6 +15,10 @@ export interface OcorrenciaBusca {
   preco: number | null;
   /** Vendidos lidos NESTA aparição: o piso só pareia com o preço dela. */
   vendidosTexto: string | null;
+  /** Sinais lidos NESTA aparição (null = não visto nela). Opcionais: estado gravado antes não os tem. */
+  full?: true | null;
+  freteGratis?: true | null;
+  lojaOficial?: true | null;
 }
 
 export interface CardBusca {
@@ -145,7 +149,10 @@ export function lerCard(card: Element): CardBusca | null {
     ocorrencias: [],
     identidadeConflitante: false,
   };
-  lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco, vendidosTexto: vendidos });
+  lido.ocorrencias.push({
+    posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco, vendidosTexto: vendidos,
+    full: lido.full, freteGratis: lido.freteGratis, lojaOficial: lido.lojaOficial,
+  });
   return lido;
 }
 
@@ -202,7 +209,10 @@ export function normalizarCards(v: unknown): CardBusca[] {
       identidadeConflitante: c.identidadeConflitante === true,
       ocorrencias: Array.isArray(c.ocorrencias)
         ? c.ocorrencias.slice(0, 10).filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
-          .map((o) => ({ posicao: num(o.posicao, 10000), patrocinado: o.patrocinado === true, preco: num(o.preco, 1e9), vendidosTexto: textoCurto(o.vendidosTexto, 40) }))
+          .map((o) => ({
+            posicao: num(o.posicao, 10000), patrocinado: o.patrocinado === true, preco: num(o.preco, 1e9), vendidosTexto: textoCurto(o.vendidosTexto, 40),
+            full: verdadeiro(o.full), freteGratis: verdadeiro(o.freteGratis), lojaOficial: verdadeiro(o.lojaOficial),
+          }))
         : [],
     });
   }

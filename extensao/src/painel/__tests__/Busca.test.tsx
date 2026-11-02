@@ -8,7 +8,7 @@ afterEach(() => cleanup());
 
 const card = (itemId: string, o: Record<string, unknown> = {}) => ({
   itemId, catalogProductId: 'MLB100', userProductId: null, posicao: null, titulo: `Produto ${itemId}`, preco: 100, vendedor: null, nota: null,
-  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [{ posicao: null, patrocinado: false, preco: 100, vendidosTexto: '+100 vendidos' }], ...o,
+  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [{ posicao: null, patrocinado: o.patrocinado ?? false, preco: o.preco === undefined ? 100 : o.preco, vendidosTexto: o.vendidosTexto === undefined ? '+100 vendidos' : o.vendidosTexto }], ...o,
 });
 const okMargem = (pct: number) => ({
   estado: 'ok', fonte: 'catalogo', codigo: '00000081', custo: {},
@@ -218,6 +218,25 @@ describe('Task 5, revisão rodada 1', () => {
     expect(container.querySelector('img')).toBeNull();
     rerender(<Busca {...p} estado={com('https://http2.mlstatic.com/b.webp')} />);
     expect(container.querySelector('img')?.getAttribute('src')).toBe('https://http2.mlstatic.com/b.webp');
+  });
+});
+
+describe('linha por aparição (revisão final)', () => {
+  it('patrocinado R$10 (sem vendidos, sem Full) + orgânico R$30 (+100 vendidos, Full): a linha é a do R$10; faixa R$10 a R$30', () => {
+    const c = card('MLB1000001', {
+      preco: 10, vendidosTexto: '+100 vendidos', full: true, patrocinado: true,
+      ocorrencias: [
+        { posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null, full: null, freteGratis: null, lojaOficial: null },
+        { posicao: 5, patrocinado: false, preco: 30, vendidosTexto: '+100 vendidos', full: true, freteGratis: null, lojaOficial: null },
+      ],
+    });
+    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21) }, [c]) })} />);
+    const linha = within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).closest('li')!;
+    within(linha).getByText('R$ 10,00');
+    within(linha).getByText('Patrocinado');
+    expect(within(linha).queryByText('+100 vendidos')).toBeNull();
+    expect(within(linha).queryByText('Full')).toBeNull();
+    screen.getByText('R$ 10,00 a R$ 30,00');
   });
 });
 

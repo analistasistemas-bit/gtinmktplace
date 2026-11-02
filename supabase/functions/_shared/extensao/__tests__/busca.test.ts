@@ -132,7 +132,9 @@ describe('analisarBusca (Task 21)', () => {
       const d = depsBusca();
       const r = await analisarBusca('org', { eanDaBusca: null, itens: doisCasados }, d);
       expect(d.registrarUso).toHaveBeenCalledTimes(2);
-      expect(r.usoRegistrado).toBe(true);
+      // Resposta da 0.3.2 idêntica à anterior: sem a chave nova.
+      expect('usoRegistrado' in r).toBe(false);
+      expect(Object.keys(r)).toEqual(['itens', 'limiteAtingido']);
     });
     it('registrarUso true: no máximo um registro na chamada; false: nenhum', async () => {
       const d = depsBusca();

@@ -52,6 +52,20 @@ it('margem só aparece quando o preço dela coincide com o da ocorrência', () =
   expect(texto(document.body)).not.toContain('Minha margem');
 });
 
+it('status de margem (limite, sem categoria, indisponível) só na aparição do preço analisado (revisão final)', () => {
+  const base = { itemId: 'MLB1000001', fonte: 'catalogo' as const, codigo: '81' };
+  const estados = [{ ...base, estado: 'limite' as const }, { ...base, estado: 'sem_categoria' as const }, { ...base, estado: 'indisponivel' as const, motivo: 'x' }];
+  for (const m of estados) {
+    raizes = [];
+    // Item analisado a R$10 (1º preço do item na busca); esta aparição (orgânica) é a de R$30.
+    renderizarMiniBlocoDaBusca(card({ preco: 30, ocorrencias: [{ posicao: 5, patrocinado: false, preco: 30, vendidosTexto: null }] }), undefined, m, 10);
+    expect(texto(document.body)).not.toContain('Minha margem');
+    raizes = [];
+    renderizarMiniBlocoDaBusca(card({ preco: 10, ocorrencias: [{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null }] }), undefined, m, 10);
+    expect(texto(document.body)).toContain('Minha margem');
+  }
+});
+
 it('meu anúncio com posição e tipo da ocorrência; posição ausente = "posição não informada"; proprio null nada conclusivo', () => {
   const meta = { itemId: 'MLB1000001', proprio: true, vinculo: null };
   renderizarMiniBlocoDaBusca(card({ ocorrencias: [{ posicao: 7, patrocinado: true, preco: 50, vendidosTexto: null }] }), meta, undefined);

@@ -199,6 +199,19 @@ it('contagem de ocorrências ignora cards dentro do Avant', async () => {
 
 const precoHtml = (v: string) => `<div><div class="poly-component__price"><div class="poly-price__current"><span class="andes-money-amount__fraction">${v}</span></div></div></div>`;
 
+it('revisão final: status de margem (aguardando cota) só na aparição com o preço analisado (1º preço do item)', async () => {
+  const ID = 'MLB5321950800';
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="poly-card" id="lim1"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=${ID}&position=1&is_advertising=true">L</a>${precoHtml('10')}</div>
+    <div class="poly-card" id="lim2"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=${ID}&position=5">L</a>${precoHtml('30')}</div>`);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { [ID]: { itemId: ID, estado: 'limite', fonte: 'catalogo', codigo: '81' } } });
+  const t = (id: string) => raizes.get(document.querySelector(`#${id} .publiai-mini-bloco-busca`)!)?.textContent ?? '';
+  await vi.waitFor(() => expect(t('lim1')).toContain('Minha margem'), { timeout: 3000 });
+  expect(t('lim2')).not.toContain('Minha margem');
+  document.querySelector('#lim1')!.remove();
+  document.querySelector('#lim2')!.remove();
+});
+
 it('achado 1: sinais são da aparição — mesmo item com vendedor/Full/frete só numa delas', async () => {
   const ID = 'MLB5321950900';
   document.body.insertAdjacentHTML('beforeend', `

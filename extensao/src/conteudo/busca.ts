@@ -82,12 +82,16 @@ function tirarHost(h: Element): void {
 function aplicarBlocos(): void {
   if (!ligada) return;
   const vivos = new Set<Element>();
+  // Preço analisado por item = o do card agregado (1º preço legível na ordem da página), o mesmo que o SW manda à edge.
+  // ponytail: lido do DOM atual; se o scroll trouxer o 1º preço numa leitura e outro antes dele na seguinte, diverge.
+  const precoAnalisado = new Map(lerBusca(document).map((c) => [c.itemId, c.preco]));
   for (const card of cardsElegiveis(document)) {
     const c = lerCard(card);
     const preco = doCard(card, '.poly-component__price');
     if (!c || !preco?.parentElement) continue;
     const meta = metadados[c.itemId], res = resultados[c.itemId];
-    const assinatura = JSON.stringify([c, meta ?? null, res ?? null]);
+    const pa = precoAnalisado.get(c.itemId) ?? c.preco;
+    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa]);
     const atual = doCard(card, `.${HOST}`);
     if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); continue; }
     if (!atual && ancoras.get(card) === preco) {
@@ -95,7 +99,7 @@ function aplicarBlocos(): void {
       if (n >= MAX_RESTAUROS) continue;
       restauros.set(card, n + 1);
     }
-    const novo = renderizarMiniBlocoDaBusca(c, meta, res);
+    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa);
     assinaturas.set(novo, assinatura);
     if (atual) tirarHost(atual);
     preco.parentElement.insertBefore(novo, preco.nextSibling);
