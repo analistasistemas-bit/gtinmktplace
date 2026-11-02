@@ -36,8 +36,45 @@ _Evitar_: consumo gratuito como sinônimo de consumo sem custo para a Daludi.
 Documento que apresenta a base de faturamento, os componentes da remuneração e o consumo faturável de uma organização no mês, para conferência e cobrança manual pela Daludi.
 _Evitar_: comprovante de pagamento ou cobrança automaticamente emitida.
 
+**Relatório mensal do cliente**:
+Prestação de contas comercial que a Daludi envia ao gestor da loja sobre um mês com demonstrativo mensal já fechado: resultados da loja no mês e, em página própria, o faturamento e a comissão a depositar, com os mesmos valores congelados do demonstrativo. Mês sem demonstrativo fechado não gera relatório. Sempre apresenta lucro, margem s/ venda e markup, mesmo quando a organização esconde o lucro do próprio dashboard: é a prestação de contas da Daludi, não a tela do cliente. O resultado é apresentado em cascata (faturamento → líquido → lucro → lucro após Ads da loja), com destaque no lucro após Ads; a remuneração Daludi fica fora da cascata, só na página de cobrança. As páginas de desempenho usam o faturamento da loja (já sem cupons do vendedor, como o dashboard); a página de cobrança parte dele e mostra a ponte até a base de cobrança (+ cupons do vendedor − devoluções abatidas), pois a cobrança não deduz cupom.
+_Evitar_: demonstrativo mensal como sinônimo (o demonstrativo é a conferência interna da cobrança), prévia de cobrança.
+
+**Lucro após Ads da loja**:
+Lucro da organização no mês menos todo o gasto de Ads do mês da conta, sem atribuição por produto. Dele derivam a **margem s/ venda após Ads** (÷ faturamento) e o **markup após Ads** (÷ custo dos produtos), sempre com "após Ads" no nome.
+_Evitar_: lucro após Ads por SKU/família (que exige gasto exclusivo e cobertura do período), lucro líquido.
+
+**Dados de recebimento Daludi**:
+Favorecido, documento, conta bancária e chave Pix da Daludi, únicos para todas as organizações, que o relatório mensal apresenta junto do valor a depositar e de um Pix com esse valor exato.
+_Evitar_: dados de pagamento por organização, cobrança automática.
+
+**Vencimento da remuneração**:
+Dia do mês seguinte à competência em que o valor a depositar deve ser pago; faz parte das condições comerciais da organização, com padrão no dia 05. O demonstrativo da competência é fechado sempre no dia 01 do mês seguinte, de modo que o vencimento nunca antecede o fechamento.
+
+**Fechamento automático**:
+Fechamento do demonstrativo mensal que a plataforma executa sozinha no dia 01 para cada organização com condições comerciais e sem pendência, avisando a Daludi do resultado. Organização com pendência continua aberta até o fechamento manual. Fechar não envia nada ao cliente: o relatório mensal só sai após revisão da Daludi.
+_Evitar_: envio automático, cobrança automática.
+
+**Aviso de fechamento mensal**:
+Mensagem da plataforma à Daludi, no dia 01, com o valor a receber de cada organização fechada e as organizações que ficaram com pendência. Só administradores da plataforma recebem; nenhum gestor de cliente vê valores de outras organizações.
+_Evitar_: notificação gerencial (que é por organização e para o cliente).
+_Evitar_: data de fechamento do demonstrativo como vencimento.
+
+**Principais produtos do mês**:
+Curva ABC por família de produto, ordenada por faturamento sobre todo o universo do mês, da qual o relatório mostra no máximo cinco famílias com unidades, faturamento, participação, lucro, margem s/ venda e markup (antes de Ads, pois o gasto de Ads não é atribuído por família) e a participação somada das cinco no faturamento.
+_Evitar_: ranking por SKU/variação, top 5 por lucro.
+
+**Visitas dos anúncios acompanhados**:
+Soma das visitas do mês nos anúncios da organização que o PubliAI acompanha, sempre apresentada com a quantidade de anúncios cobertos. Pode diferir do total de visitas exibido no painel do Mercado Livre, que inclui anúncios fora do PubliAI e usa outra janela.
+_Evitar_: visitas da loja, visitas totais.
+
+**Conversão dos anúncios acompanhados**:
+Pedidos desses mesmos anúncios ÷ suas visitas no mês. Nunca divide pedidos da loja inteira por visitas de parte dos anúncios.
+_Evitar_: conversão da loja, taxa de conversão do ML.
+
+
 **Condições comerciais da organização**:
-Modalidade, valores e percentuais negociados com cada cliente, incluindo implantação, sustentação de infraestrutura, percentual sobre faturamento bruto e preço da consulta Sonar. A modalidade 2 também pode incluir cobrança de infraestrutura; os valores da apresentação são referências iniciais.
+Modalidade, valores e percentuais negociados com cada cliente, incluindo implantação, sustentação de infraestrutura, percentual sobre faturamento bruto e preço da consulta Sonar. A modalidade 1 não cobra consulta Sonar do cliente e a modalidade 2 não tem infraestrutura separada (ADR-0165); os valores da apresentação são referências iniciais.
 _Evitar_: tabela de preços obrigatória como sinônimo de condições contratadas.
 
 **Vigência comercial**:
