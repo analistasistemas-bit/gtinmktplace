@@ -629,6 +629,27 @@ describe('extensao — frete cotado da oferta (auditoria × Avant, 0.3.1)', () =
   });
 });
 
+describe('extensao — analisar_busca: telemetria por geração (emenda 02/11)', () => {
+  it('registrarUso true conta 1 vez na chamada; sem o campo (cliente 0.3.2), 1 por card reservado', async () => {
+    f.dados.variacoes = [{
+      id: 'v1', codigo: '001', nome: 'X', custo: 10, peso_gramas: 500, altura_cm: 10, largura_cm: 10, comprimento_cm: 10, atualizado_em: '2026-10-01',
+      familias: { origem: 'nacional', kit_multiplicador: null, nome_pai: null, codigo_pai: 'P1', atributos_ml: null },
+    }];
+    vi.mocked(mlGet).mockResolvedValue({ results: [{ item_id: 'MLB1', category_id: 'MLB5' }, { item_id: 'MLB2', category_id: 'MLB5' }], paging: { total: 2 } });
+    const itens = [{ itemId: 'MLB1', catalogProductId: 'MLB43', preco: 100 }, { itemId: 'MLB2', catalogProductId: 'MLB43', preco: 100 }];
+    const usos = () => f.rpcs.filter((r) => r.fn === 'extensao_registrar_uso').length;
+    const P2 = { protocolo: 2 };
+    const r = await (await post({ acao: 'analisar_busca', eanDaBusca: null, itens, registrarUso: true, ...P2 })).json();
+    // Sem conexão ML neste describe: os dois casam e reservam a cota (o uso conta na reserva), depois sem_categoria.
+    expect(r.dados.itens.map((i: { estado: string }) => i.estado)).toEqual(['sem_categoria', 'sem_categoria']);
+    expect(r.dados.usoRegistrado).toBe(true);
+    expect(usos()).toBe(1);
+    f.rpcs.length = 0;
+    await post({ acao: 'analisar_busca', eanDaBusca: null, itens, ...P2 });
+    expect(usos()).toBe(2);
+  });
+});
+
 describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota', () => {
   const PEDIDO = { acao: 'identificar_busca', eanDaBusca: null, itens: [{ itemId: 'MLB1', catalogProductId: null }, { itemId: 'MLB2', catalogProductId: null }] };
   it('card sem preço: próprio e vínculo por item; zero ML, zero OAuth, zero cota de margem, sem registro de uso', async () => {

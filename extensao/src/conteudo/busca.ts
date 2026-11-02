@@ -34,7 +34,7 @@ function lerEEnviar(): void {
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));
-  enviar({ tipo: 'publiai:busca-cards', cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length });
+  enviar({ tipo: 'publiai:busca-cards', url, cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length });
 }
 
 function criarSelo(texto: string, titulo: string, tom: keyof typeof CORES): HTMLElement {

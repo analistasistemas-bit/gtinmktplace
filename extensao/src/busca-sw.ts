@@ -146,6 +146,9 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
 
   const identificados = new Set<string>(), enviados = new Set<string>();
   let falha: Falha | null = null, retomar = false, fase: 'identificar' | 'margem' = 'identificar';
+  // Gravação recusada com a época e a página ainda valendo = só a identidade mudou desde o início (ex.: recém-logado,
+  // descoberta na 1ª chamada): o pulso refaz com a nova. Época/página nova → `vale()` falso, nada a retomar.
+  const recusada = () => { retomar ||= vale(); return SEM_SESSAO; };
   for (;;) {
     if (!vale()) return SEM_SESSAO;
     const aba = await lerAba(tabId);
@@ -181,7 +184,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
           else if (r2.resultados[m.itemId]?.estado === 'sem_vinculo') descartarMargem(r2, m.itemId);
         }
       });
-      if (!gravou) return SEM_SESSAO;
+      if (!gravou) { falha = recusada(); break; }
       continue;
     }
 
@@ -202,7 +205,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
           descartarMargem(r2, c.itemId);
           r2.resultados[c.itemId] = { itemId: c.itemId, estado: 'limite', fonte: v.fonte, codigo: v.codigo };
         }
-      }))) return SEM_SESSAO;
+      }))) falha = recusada();
       break;
     }
     const lote = elegiveis.slice(0, MAX_POR_ANALISE);
@@ -231,7 +234,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       }
       if (dados.usoRegistrado === true) r2.usoRegistrado = true;
       if (dados.limiteAtingido === true) r2.limiteEm = minuto();
-    }))) return SEM_SESSAO;
+    }))) { falha = recusada(); break; }
   }
   // Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois.
   if (retomar && vale()) {

@@ -178,9 +178,12 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       const e = epocaAtual(); // na chegada, antes de qualquer await
       // Desligada ou deslogada: nada é gravado (sem cota nem edge). Ativa: grava e processa em segundo plano (emenda
       // 02/11: painel aberto ou fechado); a resposta não espera a edge.
+      // URL em que os cards foram lidos ≠ a da aba agora (mensagem atrasada de antes de um filtro por script): ignora.
+      const urlAba = sender.tab?.url ?? sender.url;
+      if (typeof msg.url === 'string' && msg.url.split('#')[0] !== urlAba?.split('#')[0]) return undefined;
       return impedimento(e).then(async (erro) => {
         if (erro) return undefined;
-        const r = await registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url);
+        const r = await registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, urlAba);
         emSegundoPlano(processarBuscaDaAba(tabId, e));
         return r;
       });

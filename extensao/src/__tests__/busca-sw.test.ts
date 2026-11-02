@@ -272,6 +272,25 @@ describe('isolamento de sessão e de página', () => {
     expect(corpos).toHaveLength(1);
   });
 
+  it('cards lidos numa URL e chegando depois de a aba ir para outra busca são ignorados', async () => {
+    await rotear({ tipo: 'publiai:busca-cards', url: 'https://lista.mercadolivre.com.br/antiga', cards: [card(1)], ocorrencias: 1 }, BUSCA);
+    await complementosPendentes();
+    expect(await estado()).toBeNull();
+    expect(corpos).toHaveLength(0);
+    await rotear({ tipo: 'publiai:busca-cards', url: `${URL_BUSCA}#D[A:panela]`, cards: [card(1)], ocorrencias: 1 }, BUSCA);
+    await complementosPendentes();
+    expect(await estado()).not.toBeNull();
+  });
+
+  it('identidade descoberta no meio (recém-logado): gravação recusada pede retomada e o pulso conclui', async () => {
+    logar({ identidade: null });
+    await registrar([card(1)]);
+    expect((await estado())!.resposta.metadados[id(1)]).toBeUndefined();
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(1);
+    await pulso();
+    expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
+  });
+
   it('desligada: cards e pulso não chamam nada', async () => {
     await chrome.storage.local.set({ ativa: false });
     await registrar(cards(1, 3));
