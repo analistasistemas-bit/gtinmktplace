@@ -15,7 +15,7 @@
 - Preço mínimo da Relâmpago: **R$ 19,00** (`deal_price < 19` → recusa). Só LIGHTNING.
 - Estoque enviado = `stock.min` da leitura fresca; nunca ausente, nunca acima do mínimo.
 - Payload aderir: `{promotion_id, promotion_type:'LIGHTNING', deal_price, stock}`; sair: query `promotion_type=LIGHTNING&promotion_id={pid}&offer_id={OFFER-…}&app_version=v2`.
-- DEAL e SMART não mudam de comportamento (todos os testes existentes continuam verdes sem edição de asserções).
+- DEAL e SMART não mudam de comportamento. Ajustar asserções/fixtures existentes SÓ onde o contrato cresce (campos novos `estoque_min`, `disponivel`, atributos do multiget, método novo nos mocks) — nunca mudar o comportamento verificado de DEAL/SMART.
 - Testes: `pnpm test -- <arquivo>`; portão final: `pnpm preflight` (ver memória: não remontar checklist à mão).
 - Migrations só por `supabase migration new` + `supabase db push` (ADR-0043). Dropdown sempre `ui/select`.
 - Comentários e mensagens em pt-BR; mensagens de usuário exatas como neste plano.
@@ -84,12 +84,12 @@ Regras LIGHTNING em `decidir` (aderir, após os checks atuais de participando/ca
 5. Estoque: `e1 = fresco.estoque_min`, `e2 = oferta.estoque_min`; ambos null, ou ambos não-null e diferentes → `fim('erro', 'O ML não informou o estoque mínimo da oferta')`; `stock = e1 ?? e2`.
 6. `relacoes?.disponivel == null` → `fim('bloqueado', 'O ML não informou o estoque disponível do anúncio')`; `< stock` → `fim('bloqueado', 'Estoque disponível (N) menor que o mínimo da Relâmpago (M)')`.
 7. → `{tipo:'post', body:{promotion_id, promotion_type:'LIGHTNING', deal_price:p, stock}}`.
-Sair LIGHTNING: `fresco.offer_id` começa com `OFFER-` → delete com a query do Global Constraints; senão `fim('erro', 'O ML não informou a oferta deste anúncio')`.
+Sair LIGHTNING (vale para execução e retry): `fresco?.status === 'candidate'` → `fim('ja_estava')` (única prova de saída); `fresco === null` ou status não participando e ≠ candidate → `fim('erro', 'O ML não mostra este anúncio na Relâmpago. Confira no Seller Center.')` (nunca `ja_estava`, para não espelhar saída sem prova); participando com `offer_id` começando por `OFFER-` → delete com a query do Global Constraints; senão `fim('erro', 'O ML não informou a oferta deste anúncio')`. Em `executar.ts`, o ramo `ja_estava` de `sair` espelha `saiu` só quando LIGHTNING tem `candidate` (já garantido por `decidir`).
 
 `validarPedido`: `TIPOS` inclui `'LIGHTNING'`; mensagem de tipo inválido vira `'Só promoções DEAL, SMART e Relâmpago aceitam operação em massa.'` (atualizar o teste existente). Aderir LIGHTNING reusa o ramo de preço da DEAL (preço do pedido, faixa fechada, mesma mensagem) **e** depois `p < 19` → recusa `'Abaixo de R$ 19 o comprador perde o frete grátis'` — antes do semáforo, independe de `confirmado_risco`.
 
 - [ ] **Step 1: testes que falham:**
-  - decidir: `LIGHTNING aderir monta POST com stock` (fresco candidate `preco_min 8.7, estoque_min 5`, oferta `5.8/26.1/24.65/5`, disponivel 180, preço 24.65) → `{tipo:'post', body:{promotion_id:'LGH-1', promotion_type:'LIGHTNING', deal_price:24.65, stock:5}}`; `min efetivo é o maior` (preço 8 → `mudou`); `sem oferta → erro`; `faixa null → erro`; `18.99 → bloqueado`; `estoque divergente 5×6 → erro`; `disponivel null → bloqueado`; `disponivel 3 < 5 → bloqueado`; `sair com OFFER → delete query exata`; `sair com CANDIDATE → erro`.
+  - decidir: `LIGHTNING aderir monta POST com stock` (fresco candidate `preco_min 8.7, estoque_min 5`, oferta `5.8/26.1/24.65/5`, disponivel 180, preço 24.65) → `{tipo:'post', body:{promotion_id:'LGH-1', promotion_type:'LIGHTNING', deal_price:24.65, stock:5}}`; `min efetivo é o maior` (preço 8 → `mudou`); `sem oferta → erro`; `faixa null → erro`; `18.99 → bloqueado`; `estoque divergente 5×6 → erro`; `disponivel null → bloqueado`; `disponivel 3 < 5 → bloqueado`; `sair com OFFER → delete query exata`; `sair participando sem OFFER → erro`; `sair LIGHTNING com fresco null → erro (não ja_estava)`; `sair LIGHTNING com candidate → ja_estava`; `sair DEAL com fresco null → ja_estava (inalterado)`.
   - validar: `LIGHTNING aderir preço fora da faixa → motivo`; `LIGHTNING sem faixa → 'O ML não informou a faixa de preço deste anúncio'`; `LIGHTNING 18.99 com confirmado_risco → recusa R$ 19`; `LIGHTNING válido → ok com preco`; teste de tipo inválido usa `'OUTRO'`.
 - [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/operacoes/__tests__/decidir.test.ts supabase/functions/_shared/operacoes/__tests__/validar.test.ts` → FAIL.
 - [ ] **Step 3:** implementar.
@@ -121,7 +121,7 @@ Mudanças:
 ### Task 5: Sync da Central enriquece a Relâmpago (`_shared/promocoes`)
 
 **Files:**
-- Modify: `supabase/functions/_shared/promocoes/ml.ts`, `supabase/functions/_shared/promocoes/sincronizar.ts`, `supabase/functions/_shared/promocoes/deps.ts`
+- Modify: `supabase/functions/_shared/promocoes/ml.ts`, `supabase/functions/_shared/promocoes/sincronizar.ts`, `supabase/functions/_shared/promocoes/deps.ts`, `supabase/functions/sincronizar-promocoes/index.ts`
 - Test: `__tests__/ml.test.ts`, `__tests__/sincronizar.test.ts`
 
 **Interfaces — Produces:**
@@ -130,6 +130,8 @@ Mudanças:
 - `sincronizar.ts`: `export function comOfertaRelampago(it: ItemPromocaoML, o: {...} | null): ItemPromocaoML` — puro: convidado (`candidate`): `preco_promo = null`, `preco_min = max(it.preco_min, o.preco_min)` (ignorando null), `preco_max = o?.preco_max ?? null`, `preco_sugerido = o?.preco_sugerido ?? null`; participando: inalterado.
 
 Em `sincronizarPromocao`, só quando `msg.tipo === 'LIGHTNING'`: dentro do callback de `emParalelo` (antes de `projetarItem`), `const o = it.status === 'candidate' ? await deps.ofertaRelampago(it.ml_item_id).catch((e) => { console.warn(...); return null; }) : null` e usar `comOfertaRelampago(it, o)`. Nunca deixa a exceção chegar ao `catch` que chama `falhar`.
+
+CPU (ADR-0173): faixa preenchida ativa `ateQuantoDescer` (até ~8 tarifas por variação) além do GET novo. Em `sincronizar-promocoes/index.ts`, mensagens com `tipo === 'LIGHTNING'` usam `maxItens: 40` (constante `MAX_ITENS_RELAMPAGO = 40`, comentário com o motivo); DEAL/SMART seguem 100. A continuação pelo cursor já existe. Medição real na Task 7.
 
 - [ ] **Step 1: testes que falham:** `comOfertaRelampago convidado` (it `preco_promo 28.13, preco_min 8.7` + o `5.8/26.1/24.65` → `preco_promo null, preco_min 8.7, preco_max 26.1, preco_sugerido 24.65`); `comOfertaRelampago null degrada` (→ max/sugerido/promo null); `participando inalterado`; `sincronizarPromocao LIGHTNING: ofertaRelampago lança → rodada conclui e linha sem faixa`; `DEAL não chama ofertaRelampago`; `lerOfertaRelampago filtra id+type`.
 - [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/promocoes` → FAIL nos novos.
@@ -145,12 +147,14 @@ Em `sincronizarPromocao`, só quando `msg.tipo === 'LIGHTNING'`: dentro do callb
 
 **Interfaces:**
 - `export type TipoPromocaoOperavel = 'DEAL' | 'SMART' | 'LIGHTNING'` em `src/lib/operacoes.ts`; `export const ehTipoOperavel = (t: string | null | undefined): t is TipoPromocaoOperavel`.
+- `LinhaPreview` ganha `estoqueMin: number | null` (de `it.estoque_min`), preenchido por `montarPreview`.
 - `montarPreview(acao, tipo: TipoPromocaoOperavel, itens)`: aderir LIGHTNING usa `preco_sugerido` (como DEAL).
+- `construirLinhas` (preview-operacao.tsx:36) passa a aceitar `TipoPromocaoOperavel`.
 - `PreviewOperacao` prop `tipo: TipoPromocaoOperavel`; `podeEditarPreco = acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING')`; `precoInvalido` também `tipo === 'LIGHTNING' && preco < 19`, com texto sob o input `'Mínimo R$ 19,00 (frete grátis)'`; LIGHTNING aderir mostra por linha `Reserva {estoque_min} un.` quando `estoque_min != null`.
 - Os 3 call sites trocam `x === 'SMART' ? 'SMART' : 'DEAL'` por `ehTipoOperavel(x) ? x : 'DEAL'`; `podeSelecionar` e `operavel` usam `ehTipoOperavel`.
 
-- [ ] **Step 1: testes que falham:** `montarPreview LIGHTNING usa sugerido`; preview: `LIGHTNING preço editável`, `LIGHTNING 18,99 bloqueia envio e mostra 'Mínimo R$ 19,00 (frete grátis)'`, `mostra 'Reserva 5 un.'`; PromocaoDetalhe: `Relâmpago tem checkbox de seleção`.
-- [ ] **Step 2:** `pnpm test -- src/lib/__tests__/operacoes.test.ts src/components/promocoes/__tests__/preview-operacao.test.tsx src/pages/__tests__/PromocaoDetalhe.test.tsx` → FAIL.
+- [ ] **Step 1: testes que falham:** `montarPreview LIGHTNING usa sugerido e leva estoqueMin`; preview: `LIGHTNING preço editável`, `LIGHTNING 18,99 bloqueia envio e mostra 'Mínimo R$ 19,00 (frete grátis)'`, `LIGHTNING fora da faixa bloqueia`, `mostra 'Reserva 5 un.'`; PromocaoDetalhe: `Relâmpago tem checkbox de seleção` (o teste atual de tipo não operável, `PromocaoDetalhe.test.tsx:70`, troca LIGHTNING por um tipo não operável como `PRICE_DISCOUNT`); lista-participando: `Sair de Relâmpago abre preview com tipo LIGHTNING`; lista-operacoes: `Reverter de sair LIGHTNING abre aderir com tipo LIGHTNING, preço sugerido editável e bloqueio < R$ 19`.
+- [ ] **Step 2:** `pnpm test -- src/lib/__tests__/operacoes.test.ts src/components/promocoes/__tests__/preview-operacao.test.tsx src/pages/__tests__/PromocaoDetalhe.test.tsx src/components/promocoes/__tests__/lista-participando.test.tsx src/components/operacoes/__tests__/lista-operacoes.test.tsx` → FAIL.
 - [ ] **Step 3:** implementar.
 - [ ] **Step 4:** PASS; `pnpm test -- src/components/promocoes src/components/operacoes src/lib src/pages` verde.
 - [ ] **Step 5:** commit `feat(promocoes): Relâmpago selecionável no app (preço, R$ 19, reserva)`.
@@ -164,4 +168,4 @@ Em `sincronizarPromocao`, só quando `msg.tipo === 'LIGHTNING'`: dentro do callb
 - [ ] **Step 5:** `supabase db push` (migration) → conferir constraint no `pg_constraint`.
 - [ ] **Step 6:** `supabase functions deploy operacoes-massa sincronizar-promocoes ads-campanhas coletar-ads-ml coletar-trafego-ml` → conferir versões novas.
 - [ ] **Step 7:** merge fast-forward na `main` (`push origin <sha>:main`), `git pull --ff-only` no checkout principal, remover worktree/branch.
-- [ ] **Step 8:** verificação em produção (só leitura): disparar sync de promoções da Avil e conferir em `ml_promocao_itens` da `LGH-MLB1000` que convidados têm `preco_sugerido`/`preco_max` preenchidos e `preco_promo` null.
+- [ ] **Step 8:** verificação em produção (só leitura): disparar sync de promoções da Avil e conferir em `ml_promocao_itens` da `LGH-MLB1000` que convidados têm `preco_sugerido`/`preco_max` preenchidos e `preco_promo` null; medir CPU nos logs de `sincronizar-promocoes` (analytics `function_logs`/`function_edge_logs`, sem `CPU time exceeded`/546 na rodada; registrar tempo por mensagem). Se estourar, baixar `MAX_ITENS_RELAMPAGO` e redeployar.
