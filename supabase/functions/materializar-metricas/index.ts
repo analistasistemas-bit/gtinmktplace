@@ -1,6 +1,6 @@
 // Perf FASE 3.4 (ADR-0159, plano docs/superpowers/plans/2026-09-07-perf-central-organizacoes.md).
-// Pré-aquecimento de `platform_org_month_metrics`: para cada organização, materializa os últimos 6
-// meses fechados que estiverem ausentes ou inválidos (mesma validação do read-through de
+// Pré-aquecimento de `platform_org_month_metrics`: para cada organização, materializa os últimos 12
+// meses fechados (ADR-0193 D-8; eram 6) que estiverem ausentes ou inválidos (mesma validação do read-through de
 // `readOrgMetrics`). Disparada por QStash Schedule (diária, 03:00 BRT — schedule fica fora do
 // repo, como as demais: docs/reference/edge-functions.md).
 //
@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
   const resumo: Record<string, { materialized: string[]; skipped: string[] }> = {};
   await mapLimit((organizations ?? []) as { id: string }[], PARALELAS, async (org) => {
     try {
-      resumo[org.id] = await materializeRecentMonths(admin as never, org.id, now);
+      // ADR-0193 D-8: 12 meses (série do relatório mensal); só misses/v1 são recalculados.
+      resumo[org.id] = await materializeRecentMonths(admin as never, org.id, now, 12);
     } catch (err) {
       console.error(`materializar-metricas: falhou para org ${org.id}:`, err instanceof Error ? err.message : err);
       resumo[org.id] = { materialized: [], skipped: ['erro'] };

@@ -4,7 +4,9 @@ import { diaBrt } from './janelas.ts';
 import { nomeSku } from './nome-sku.ts';
 import type { ResultadoItem } from './resultado.ts';
 
-export interface CatalogoEstoque { codigo: string; estoque: number | null; ehKit: boolean; nome: string | null; nomeFamilia: string | null }
+export interface CatalogoEstoque { codigo: string; estoque: number | null; ehKit: boolean; nome: string | null; nomeFamilia: string | null;
+  /** ADR-0193 D-7: código do pai da família canônica (agrupa o ABC por família). */
+  codigoPai?: string | null }
 export interface ItemEstoque { codigo: string; nome: string; estoque: number; porDia: number; cobertura: number | null; zerado: boolean; lucro30: number }
 
 export const CAMPEOES = 20;

@@ -82,14 +82,14 @@ export async function lerCatalogoEstoque(
 ): Promise<Map<string, CatalogoEstoque>> {
   type Linha = {
     codigo: string; nome: string | null; estoque: number | null;
-    familias: { nome_pai: string | null; kit_multiplicador: number | null; criado_em: string; id: string };
+    familias: { nome_pai: string | null; codigo_pai: string | null; kit_multiplicador: number | null; criado_em: string; id: string };
   };
   const catalogo = new Map<string, CatalogoEstoque>();
   const canonica = new Map<string, Linha['familias']>();
   for (let i = 0; i < codigos.length; i += LOTE_CATALOGO) {
     // paginado por `id` (único): reimportações podem passar de 1.000 linhas por lote (max_rows)
     const data = await paginas(() => admin.from('variacoes')
-      .select('codigo, nome, estoque, familias!inner(nome_pai, kit_multiplicador, criado_em, id)')
+      .select('codigo, nome, estoque, familias!inner(nome_pai, codigo_pai, kit_multiplicador, criado_em, id)')
       .eq('org_id', orgId).eq('familias.org_id', orgId).in('codigo', codigos.slice(i, i + LOTE_CATALOGO))
       .order('id', { ascending: true }), 'catálogo de estoque');
     for (const r of data as unknown as Linha[]) {
@@ -99,7 +99,7 @@ export async function lerCatalogoEstoque(
       canonica.set(r.codigo, f);
       catalogo.set(r.codigo, {
         codigo: r.codigo, estoque: r.estoque == null ? null : Number(r.estoque), ehKit: f.kit_multiplicador != null,
-        nome: r.nome ?? f.nome_pai, nomeFamilia: f.nome_pai,
+        nome: r.nome ?? f.nome_pai, nomeFamilia: f.nome_pai, codigoPai: f.codigo_pai ?? null,
       });
     }
   }

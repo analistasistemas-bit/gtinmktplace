@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { materializeMonth, materializeRecentMonths, readOrgMetrics } from '../metrics-repository.ts';
+import { materializeMonth, materializeRecentMonths, readMonthSeries, readOrgMetrics } from '../metrics-repository.ts';
 
 type Row = Record<string, unknown>;
 type TableData = Record<string, { rows?: Row[]; error?: string }>;
@@ -228,6 +228,10 @@ describe('readOrgMetrics', () => {
 
 // Perf FASE 3.3: read-through de `platform_org_month_metrics`. Mês exibido 2026-06, agora em
 // 2026-10-15 — fechado e diferente do mês anterior real (2026-09), então é elegível a cache.
+/** Componentes v2 (ADR-0193) de uma linha do cache. */
+const V2: Row = { cache_version: 2, units: 7, net_cents: 400_000, tax_cents: 40_000, cost_cents: 200_000, profit_cents: 160_000,
+  covered_gross_cents: 555_500, item_gross_cents: 555_500, excluded_items: 0 };
+
 describe('cache de meses fechados (FASE 3)', () => {
   // Carimbo da config padrão do módulo (nacional 8, importado 16, UF CE, interna 8) — mesmo formato
   // que `taxConfigStamp` grava (`JSON.stringify([nacional, importado, ufEmpresa, internaPct])`).
@@ -238,7 +242,8 @@ describe('cache de meses fechados (FASE 3)', () => {
   const cachedRow = (patch: Row = {}): Row => ({
     org_id: 'org-a', month: '2026-06-01', gross_cents: 555_500, orders: 7, ticket_cents: 79_357,
     markup: 0.5, cost_covered_orders: 7, total_orders: 7, updated_at: '2026-06-10T12:00:00-03:00',
-    source_count: 1, source_max_updated_at: '2026-06-10T12:00:00-03:00', tax_config_stamp: stamp, ...patch,
+    source_count: 1, source_max_updated_at: '2026-06-10T12:00:00-03:00', tax_config_stamp: stamp,
+    ...V2, ...patch,
   });
   const validationRow = (patch: Row = {}): Row => ({
     org_id: 'org-a', month: '2026-06-01', source_count: 1, source_max_updated_at: '2026-06-10T12:00:00-03:00', ...patch,
@@ -254,6 +259,24 @@ describe('cache de meses fechados (FASE 3)', () => {
     // 555 500 ≠ 10 000 (o que a única venda real de junho daria ao vivo) — prova que veio do cache.
     expect(metrics.gross_cents).toBe(555_500);
     expect(metrics.orders).toBe(7);
+  });
+
+  it('linha v1 (sem cache_version / componentes) é miss: recalcula ao vivo e regrava v2, nunca zero', async () => {
+    const v1: Row = { ...cachedRow() };
+    for (const k of Object.keys(V2)) delete v1[k];
+    for (const row of [v1, cachedRow({ cache_version: 1 })]) {
+      const db = dbFor(base({
+        ml_vendas: { rows: [junSale] },
+        platform_org_month_metrics: { rows: [row] },
+        platform_org_month_validation: { rows: [validationRow()] },
+      }));
+      const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
+      expect(metrics.gross_cents).toBe(10_000);
+      const upsert = db.calls.find((call) => call.op === 'upsert' && (call.value as Row).month === '2026-06-01');
+      // junSale: R$ 100, líquido 80, imposto 8, custo congelado 50 → lucro 22
+      expect(upsert).toMatchObject({ value: { cache_version: 2, gross_cents: 10_000, profit_cents: 2_200, cost_cents: 5_000,
+        covered_gross_cents: 10_000, item_gross_cents: 10_000, excluded_items: 0, units: 1, net_cents: 8_000, tax_cents: 800, refunds_cents: null } });
+    }
   });
 
   it('invalida por count diferente da validação e recalcula ao vivo', async () => {
@@ -330,7 +353,8 @@ describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
       platform_org_month_metrics: { rows: [{
         org_id: 'org-a', month: '2026-08-01', gross_cents: 1, orders: 0, ticket_cents: 0, markup: null,
         cost_covered_orders: 0, total_orders: 0, updated_at: null, source_count: 0, source_max_updated_at: null,
-        tax_config_stamp: stamp,
+        tax_config_stamp: stamp, cache_version: 2, units: 0, net_cents: 0, tax_cents: 0, cost_cents: null, profit_cents: null,
+        covered_gross_cents: 0, item_gross_cents: 0, excluded_items: 0,
       }] },
       platform_org_month_validation: { rows: [] },
     }));
@@ -340,5 +364,55 @@ describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
     expect(result.skipped).toEqual([]);
     const julUpsert = db.calls.find((call) => call.op === 'upsert' && (call.value as Row).month === '2026-07-01');
     expect(julUpsert).toMatchObject({ value: { gross_cents: 10_000 } });
+  });
+});
+
+describe('janela parametrizada (ADR-0193 D-8)', () => {
+  const now = new Date('2026-11-02T12:00:00-03:00');
+
+  it('materializeRecentMonths com 12 meses grava 12 linhas v2; padrão segue 6', async () => {
+    const twelve = await materializeRecentMonths(dbFor(base({ ml_vendas: { rows: [] } })), 'org-a', now, 12);
+    expect(twelve.materialized.sort()).toEqual(['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05',
+      '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+    expect((await materializeRecentMonths(dbFor(base({ ml_vendas: { rows: [] } })), 'org-a', now)).materialized).toHaveLength(6);
+  });
+
+  it('readOrgMetrics mantém 6 pontos por padrão', async () => {
+    expect((await readOrgMetrics(dbFor(base({ ml_vendas: { rows: [] } })), 'org-a', '2026-10', now)).series).toHaveLength(6);
+  });
+
+  it('readMonthSeries: paridade ao vivo × cache e conhecidos não são relidos', async () => {
+    const rows = [sale('s1', '2026-07-10T12:00:00-03:00'), sale('s2', '2026-08-10T12:00:00-03:00')];
+    const live = await readMonthSeries(dbFor(base({ ml_vendas: { rows } })), 'org-a', '2026-10', now, 12);
+    expect(live.map((p) => p.month)).toHaveLength(12);
+    const jul = live.find((p) => p.month === '2026-07')!;
+    expect(jul).toMatchObject({ unavailable_reason: null, componentes: { gross_cents: 10_000, profit_cents: 2_200, excluded_items: 0 } });
+    // a linha gravada pelo miss volta igual quando servida do cache
+    const db = dbFor(base({ ml_vendas: { rows } }));
+    await readMonthSeries(db, 'org-a', '2026-10', now, 12);
+    const julRow = db.calls.find((c) => c.op === 'upsert' && (c.value as Row).month === '2026-07-01')!.value as Row;
+    const cached = await readMonthSeries(dbFor(base({
+      ml_vendas: { rows: [] }, // vazio: se recalculasse, sairia zero
+      platform_org_month_metrics: { rows: [{ ...julRow, org_id: 'org-a' }] },
+      platform_org_month_validation: { rows: [{ org_id: 'org-a', month: '2026-07-01', source_count: julRow.source_count, source_max_updated_at: julRow.source_max_updated_at }] },
+    })), 'org-a', '2026-10', now, 12);
+    expect(cached.find((p) => p.month === '2026-07')!.componentes).toEqual(jul.componentes);
+
+    const conhecido = { ...jul.componentes!, gross_cents: 1 };
+    const db2 = dbFor(base({ ml_vendas: { rows } }));
+    const comConhecido = await readMonthSeries(db2, 'org-a', '2026-10', now, 12, new Map([['2026-10', conhecido]]));
+    expect(comConhecido.at(-1)!.componentes).toBe(conhecido);
+  });
+
+  it('readMonthSeries: mês acima do orçamento vira ponto volume, nunca zero', async () => {
+    const many = Array.from({ length: 5001 }, (_, i) => sale(`s${i + 1}`, '2026-05-10T12:00:00-03:00'));
+    const serie = await readMonthSeries(dbFor(base({ ml_vendas: { rows: many } })), 'org-a', '2026-10', now, 12);
+    expect(serie.find((p) => p.month === '2026-05')).toEqual({ month: '2026-05', componentes: null, unavailable_reason: 'volume' });
+    expect(serie.find((p) => p.month === '2026-06')!.componentes).toMatchObject({ gross_cents: 0 });
+  });
+
+  it('readMonthSeries: falha do catálogo vira ponto leitura', async () => {
+    const serie = await readMonthSeries(dbFor(base({ ml_vendas: { rows: [] }, platform_org_cost_catalog: { error: 'boom' } })), 'org-a', '2026-10', now, 2);
+    expect(serie.map((p) => p.unavailable_reason)).toEqual(['leitura', 'leitura']);
   });
 });

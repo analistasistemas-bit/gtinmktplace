@@ -5,6 +5,7 @@ import {
 } from './sales-costs.ts';
 import { comCustoCongelado, type CustoCongeladoRow, type Venda, type VendaItem } from './sales-types.ts';
 import type { JanelaIso } from '../notificacoes/gerencial/janelas.ts';
+import { calcularMes, type ComponentesSerie } from './monthly-report.ts';
 
 type DbError = { message: string } | null;
 type Page = { data: Record<string, unknown>[] | null; error: DbError };
@@ -29,7 +30,11 @@ const BRT_OFFSET = '-03:00';
 const CACHE_TABLE = 'platform_org_month_metrics';
 const VALIDATION_RPC = 'platform_org_month_validation';
 const CACHE_COLUMNS = 'org_id,month,gross_cents,orders,ticket_cents,markup,cost_covered_orders,total_orders,'
-  + 'updated_at,source_count,source_max_updated_at,tax_config_stamp';
+  + 'updated_at,source_count,source_max_updated_at,tax_config_stamp,cache_version,units,net_cents,tax_cents,'
+  + 'cost_cents,profit_cents,covered_gross_cents,item_gross_cents,excluded_items';
+/** ADR-0193 D-8: v2 = linha com os componentes do lucro por item calculável. Outra versão = miss
+ *  (recalcula ao vivo e regrava), nunca zero. */
+const CACHE_VERSION = 2;
 
 /** Perf FASE 2.1: lista mínima que `readOrgMetrics`/`calcularResumo` de fato leem — não a de
  *  `buscarVendas` (`src/lib/faturamento.ts`), que alimenta telas com mais colunas (Publicados,
@@ -213,6 +218,8 @@ type MonthComputed = {
   cost_covered_orders: number; total_orders: number; updated_at: string | null;
   source_count: number; source_max_updated_at: string | null;
   costsAvailable: boolean; catalogErrorMessage: string | null;
+  /** ADR-0193: componentes do lucro por item (mesmo `calcularMes` do relatório). */
+  componentes: ComponentesSerie;
 };
 
 /** Linhas planas de `platform_org_cost_catalog` → mapas de custo/peso/origem. */
@@ -231,10 +238,11 @@ function mapasDoCatalogo(catalogRows: Record<string, unknown>[], orgId: string):
  *  isso que garante paridade por construção (perf FASE 3.2). */
 async function computeMonth(
   db: MetricsDb, orgId: string, month: string, now: Date, end: string, configState: ConfigState,
+  opcoes?: { maxLinhas?: number },
 ): Promise<MonthComputed> {
   const salesResult = await readPages(() => db.from('ml_vendas').select(SALES_COLUMNS)
     .eq('org_id', orgId).gte('date_closed', startOf(month)).lt('date_closed', end)
-    .order('date_closed', { ascending: true }).order('id', { ascending: true }));
+    .order('date_closed', { ascending: true }).order('id', { ascending: true }), opcoes);
   if (salesResult.error) throw new Error(salesResult.error.message);
   const sales = normalizeSales(salesResult.rows, orgId);
 
@@ -243,7 +251,14 @@ async function computeMonth(
   const costsAvailable = !catalogResult.error && catalogRows != null;
   const maps = catalogRows == null || catalogResult.error ? undefined : mapasDoCatalogo(catalogRows, orgId);
 
-  const summary = summarize(sales, maps, configState.rates, now, costsAvailable, configState.configAvailable);
+  // `calcularMes` roda o mesmo `calcularResumo` de `summarize` (com as mesmas travas de markup) e, em
+  // cima, o lucro por item calculável — o relatório mensal e o cache não divergem por construção.
+  const { resumo: summary, componentes: completos } = calcularMes(sales, {
+    maps, rates: configState.rates, custosOk: costsAvailable, configOk: configState.configAvailable,
+  }, now);
+  if (!costsAvailable || !configState.configAvailable) summary.markup = null;
+  // Só o que o cache guarda: ao vivo e servido do cache têm o mesmo formato.
+  const { ticket_cents: _t, seller_coupon_cents: _s, cancelled_orders: _c, exclusions: _e, ...componentes } = completos;
   const updated = sales.map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
 
   return {
@@ -252,6 +267,7 @@ async function computeMonth(
     updated_at: updated, source_count: sales.length, source_max_updated_at: updated,
     costsAvailable,
     catalogErrorMessage: catalogResult.error?.message ?? (catalogRows == null ? 'catálogo em formato inesperado' : null),
+    componentes,
   };
 }
 
@@ -283,6 +299,7 @@ type CachedMonthRow = {
   gross_cents: number; orders: number; ticket_cents: number; markup: number | null;
   cost_covered_orders: number; total_orders: number; updated_at: string | null;
   source_count: number; source_max_updated_at: string | null; tax_config_stamp: string;
+  cache_version: number; componentes: ComponentesSerie | null;
 };
 type MonthValidation = { count: number; maxUpdatedAt: string | null };
 
@@ -302,7 +319,23 @@ function toCachedRow(row: Record<string, unknown>): CachedMonthRow {
     source_count: Number(row.source_count),
     source_max_updated_at: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
     tax_config_stamp: String(row.tax_config_stamp),
+    cache_version: Number(row.cache_version ?? 1),
+    componentes: Number(row.cache_version ?? 1) !== CACHE_VERSION ? null : {
+      gross_cents: Number(row.gross_cents), orders: Number(row.orders), units: Number(row.units),
+      net_cents: Number(row.net_cents), tax_cents: nullableNumber(row.tax_cents),
+      cost_cents: nullableNumber(row.cost_cents), profit_cents: nullableNumber(row.profit_cents),
+      covered_gross_cents: Number(row.covered_gross_cents), item_gross_cents: Number(row.item_gross_cents),
+      excluded_items: Number(row.excluded_items),
+    },
   };
+}
+const nullableNumber = (value: unknown): number | null => (value == null ? null : Number(value));
+
+/** Linha do cache ainda vale para (count, max atualizado_em, config, versão)? Versão antiga = miss. */
+function cacheValido(cached: CachedMonthRow | undefined, check: MonthValidation | undefined, stamp: string): cached is CachedMonthRow {
+  return !!cached && !!check && cached.cache_version === CACHE_VERSION && cached.componentes != null
+    && cached.source_count === check.count && cached.source_max_updated_at === check.maxUpdatedAt
+    && cached.tax_config_stamp === stamp;
 }
 
 /** Perf FASE 3.3: UMA leitura da tabela materializada + (só se houver linha candidata) UMA
@@ -310,9 +343,11 @@ function toCachedRow(row: Record<string, unknown>): CachedMonthRow {
  *  nunca por org). Sem linha candidata, a validação nem roda: nada a validar, tudo cai no cálculo
  *  ao vivo, sem round-trip extra (é o caso de hoje, cache frio — mantém os testes antigos intactos).
  *  Nunca lança: qualquer falha devolve cache vazio e tudo vira ao vivo (nunca zero silencioso). */
-export async function loadMetricsCache(db: MetricsDb, orgIds: string[], month: string, now: Date): Promise<MetricsCache> {
+export async function loadMetricsCache(
+  db: MetricsDb, orgIds: string[], month: string, now: Date, months = 6,
+): Promise<MetricsCache> {
   if (!orgIds.length) return EMPTY_CACHE;
-  const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
+  const seriesMonths = janelaMeses(month, months);
   const eligible = seriesMonths.filter((value) => isCacheEligible(value, now));
   if (!eligible.length) return EMPTY_CACHE;
   try {
@@ -357,6 +392,11 @@ type ResolvedMonth = {
   costsAvailable: boolean; catalogErrorMessage: string | null;
 };
 
+/** `months` meses terminando em `month` (inclusive), ascendentes. */
+function janelaMeses(month: string, months: number): string[] {
+  return Array.from({ length: months }, (_, index) => addMonths(month, index - (months - 1)));
+}
+
 async function upsertMonth(
   db: MetricsDb, orgId: string, month: string, computed: MonthComputed, stamp: string, now: Date,
 ): Promise<void> {
@@ -365,6 +405,13 @@ async function upsertMonth(
     ticket_cents: computed.ticket_cents, markup: computed.markup, cost_covered_orders: computed.cost_covered_orders,
     total_orders: computed.total_orders, updated_at: computed.updated_at, source_count: computed.source_count,
     source_max_updated_at: computed.source_max_updated_at, tax_config_stamp: stamp, computed_at: now.toISOString(),
+    cache_version: CACHE_VERSION, units: computed.componentes.units, net_cents: computed.componentes.net_cents,
+    tax_cents: computed.componentes.tax_cents, cost_cents: computed.componentes.cost_cents,
+    profit_cents: computed.componentes.profit_cents, covered_gross_cents: computed.componentes.covered_gross_cents,
+    item_gross_cents: computed.componentes.item_gross_cents, excluded_items: computed.componentes.excluded_items,
+    // Estorno pela data do estorno não é invalidado pelo watermark de `ml_vendas` (date_closed):
+    // não grava um número que pode envelhecer em silêncio. KPIs do mês leem as devoluções ao vivo.
+    refunds_cents: null,
   }, { onConflict: 'org_id,month' });
 }
 
@@ -379,10 +426,7 @@ async function resolveMonth(
   if (isCacheEligible(value, now)) {
     const key = cacheKey(orgId, value);
     const cached = cache.cachedRows.get(key);
-    const validation = cache.validation.get(key);
-    if (cached && validation && cached.source_count === validation.count
-      && cached.source_max_updated_at === validation.maxUpdatedAt
-      && cached.tax_config_stamp === taxConfigStamp(configState)) {
+    if (cacheValido(cached, cache.validation.get(key), taxConfigStamp(configState))) {
       return {
         gross_cents: cached.gross_cents, orders: cached.orders, ticket_cents: cached.ticket_cents,
         markup: cached.markup, cost_covered_orders: cached.cost_covered_orders, total_orders: cached.total_orders,
@@ -407,10 +451,10 @@ async function resolveMonth(
  *  lança: falha de leitura do cache vira "materializar tudo de novo", falha de materialização de UM
  *  mês vira "pular esse mês e seguir os outros". */
 export async function materializeRecentMonths(
-  db: MetricsDb, orgId: string, now: Date,
+  db: MetricsDb, orgId: string, now: Date, count = 6,
 ): Promise<{ materialized: string[]; skipped: string[] }> {
   const cur = currentMonth(now);
-  const months = Array.from({ length: 6 }, (_, index) => addMonths(cur, -(index + 1)));
+  const months = Array.from({ length: count }, (_, index) => addMonths(cur, -(index + 1)));
   const configState = await loadConfigState(db, orgId);
   const stamp = taxConfigStamp(configState);
 
@@ -440,11 +484,7 @@ export async function materializeRecentMonths(
   const materialized: string[] = [];
   const skipped: string[] = [];
   await Promise.all(months.map(async (value) => {
-    const cached = cachedRows.get(value);
-    const check = validation.get(value);
-    const valid = !!cached && !!check && cached.source_count === check.count
-      && cached.source_max_updated_at === check.maxUpdatedAt && cached.tax_config_stamp === stamp;
-    if (valid) return;
+    if (cacheValido(cachedRows.get(value), validation.get(value), stamp)) return;
     try {
       const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState);
       if (computed.costsAvailable && !configState.configErrored) {
@@ -460,20 +500,64 @@ export async function materializeRecentMonths(
   return { materialized, skipped };
 }
 
+export type SerieMes = { month: string; componentes: ComponentesSerie | null; unavailable_reason: 'volume' | 'leitura' | null };
+
+/** ADR-0193 D-8: componentes de `months` meses terminando em `month` (ascendentes), pelo cache v2 e,
+ *  nos misses, ao vivo com ORÇAMENTO somado de `LIMITE_VENDAS_POR_EXECUCAO` vendas: mês que não cabe
+ *  vira ponto `volume`, falha de leitura vira `leitura` — nunca zero. `conhecidos`: meses que o
+ *  chamador já calculou ao vivo (não relê). Miss íntegro é gravado (best-effort), como `resolveMonth`. */
+export async function readMonthSeries(
+  db: MetricsDb, orgId: string, month: string, now: Date, months: number,
+  conhecidos: Map<string, ComponentesSerie> = new Map(),
+): Promise<SerieMes[]> {
+  const lista = janelaMeses(month, months);
+  const [configState, cache] = await Promise.all([
+    loadConfigState(db, orgId), loadMetricsCache(db, [orgId], month, now, months),
+  ]);
+  const stamp = taxConfigStamp(configState);
+  let orcamento = LIMITE_VENDAS_POR_EXECUCAO;
+  const out = new Map<string, SerieMes>();
+  const ponto = (value: string, componentes: ComponentesSerie | null, unavailable_reason: SerieMes['unavailable_reason']) =>
+    out.set(value, { month: value, componentes, unavailable_reason });
+  // Do mais recente para o mais antigo: o orçamento favorece os meses perto da competência.
+  for (const value of [...lista].reverse()) {
+    const conhecido = conhecidos.get(value);
+    if (conhecido) { ponto(value, conhecido, null); continue; }
+    const key = cacheKey(orgId, value);
+    const cached = cache.cachedRows.get(key);
+    const check = cache.validation.get(key);
+    if (isCacheEligible(value, now) && cacheValido(cached, check, stamp)) { ponto(value, cached.componentes, null); continue; }
+    if (configState.configErrored) { ponto(value, null, 'leitura'); continue; }
+    if (check && check.count > orcamento) { ponto(value, null, 'volume'); continue; }
+    try {
+      const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState, { maxLinhas: orcamento });
+      orcamento -= computed.source_count;
+      if (!computed.costsAvailable) { ponto(value, null, 'leitura'); continue; }
+      if (isClosed(value, now)) {
+        try { await upsertMonth(db, orgId, value, computed, stamp, now); } catch { /* best-effort */ }
+      }
+      ponto(value, computed.componentes, null);
+    } catch (error) {
+      ponto(value, null, error instanceof VolumeAcimaDoLimite ? 'volume' : 'leitura');
+    }
+  }
+  return lista.map((value) => out.get(value)!);
+}
+
 export async function readOrgMetrics(
-  db: MetricsDb, orgId: string, month: string, now: Date, cache?: MetricsCache,
+  db: MetricsDb, orgId: string, month: string, now: Date, cache?: MetricsCache, months = 6,
 ): Promise<OrgMetrics> {
   if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('month inválido');
   if (!orgId) throw new Error('org_id inválido');
 
-  const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
+  const seriesMonths = janelaMeses(month, months);
   const isCurrent = month === currentMonth(now);
   const previousMonth = addMonths(month, -1);
   const selectedEnd = isCurrent ? now.toISOString() : startOf(addMonths(month, 1));
 
   const [configState, effectiveCache] = await Promise.all([
     loadConfigState(db, orgId),
-    cache ?? loadMetricsCache(db, [orgId], month, now),
+    cache ?? loadMetricsCache(db, [orgId], month, now, months),
   ]);
 
   let selected: ResolvedMonth;

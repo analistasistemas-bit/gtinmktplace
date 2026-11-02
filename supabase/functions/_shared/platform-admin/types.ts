@@ -208,3 +208,114 @@ export type ExtensaoUsage = {
   erros_total: number;
   primeiro_uso: string | null;
 };
+
+// ---------------------------------------------------------------------------------------------
+// ADR-0193 (Fatia 1): relatório mensal do cliente. Fonte única do PDF e da aba Resultados — a UI
+// nunca recalcula dinheiro. `null` = indisponível (com motivo), nunca zero.
+// ---------------------------------------------------------------------------------------------
+/** Faturamento (centavos) dos itens faturáveis sem lucro calculável, por motivo (ADR-0193 D-3). */
+export type ProfitExclusions = { sem_custo: Cents; aliquota_nao_confirmada: Cents; frete_nao_lido: Cents };
+export type AfterAdsUnavailableReason =
+  | 'lucro_indisponivel' | 'lucro_parcial' | 'ads_indisponivel' | 'ads_cobertura_parcial';
+
+export type PeriodKpis = {
+  /** Faturamento da loja (total_amount − cupom do vendedor) das vendas faturáveis. */
+  gross_cents: Cents;
+  orders: number;
+  units: number;
+  ticket_cents: Cents;
+  unit_price_cents: Cents | null;
+  cancelled_orders: number;
+  /** Estornos pela data do estorno (ADR-0106); informativo — não reduz faturamento nem lucro. */
+  refunds_cents: Cents | null;
+  seller_coupon_cents: Cents;
+  /** Líquido do ML (após comissão e frete), ANTES do imposto. */
+  net_cents: Cents;
+  /** null = alíquota não confirmada (nunca presumida). */
+  tax_cents: Cents | null;
+  /** Custo dos itens com lucro calculável (base do markup). */
+  cost_cents: Cents | null;
+  profit_cents: Cents | null;
+  covered_gross_cents: Cents;
+  /** covered ÷ faturamento dos itens faturáveis (mesmo conjunto de itens). */
+  profit_coverage: number | null;
+  excluded_items: number;
+  exclusions: ProfitExclusions;
+  /** Antes de Ads: lucro ÷ covered_gross (parcial quando `profit_partial`). */
+  margin: number | null;
+  markup: number | null;
+  ads_cost_cents: Cents | null;
+  profit_after_ads_cents: Cents | null;
+  margin_after_ads: number | null;
+  markup_after_ads: number | null;
+  profit_partial: boolean;
+  unavailable_reason: AfterAdsUnavailableReason | null;
+};
+
+export type DailyPoint = {
+  day: string; gross_cents: Cents; orders: number;
+  profit_after_ads_cents: Cents | null; prev_gross_cents: Cents | null;
+};
+
+export type SeriesPoint = {
+  month: Month;
+  gross_cents: Cents | null;
+  profit_cents: Cents | null;
+  ads_cost_cents: Cents | null;
+  profit_after_ads_cents: Cents | null;
+  margin_after_ads: number | null;
+  partial: boolean;
+  /** Mês não calculado (volume acima do teto ou falha de leitura): ponto indisponível, nunca zero. */
+  unavailable_reason: 'volume' | 'leitura' | null;
+};
+
+export type FamilyRow = {
+  key: string; name: string | null; units: number; gross_cents: Cents; share: number;
+  profit_cents: Cents | null; margin: number | null; markup: number | null; partial: boolean;
+  class: 'A' | 'B' | 'C' | null;
+};
+
+export type TopFamilies = {
+  rows: FamilyRow[];
+  top_share: number;
+  universe_gross_cents: Cents;
+  without_code_gross_cents: Cents;
+  unknown_family_gross_cents: Cents;
+};
+
+export type AdsKpis = {
+  coverage: 'complete' | 'partial' | 'none';
+  days_covered: number;
+  days_expected: number;
+  /** Métricas só com cobertura completa; senão null (ausência de linha ≠ zero). */
+  cost_cents: Cents | null;
+  revenue_cents: Cents | null;
+  direct_revenue_cents: Cents | null;
+  roas: number | null; acos: number | null; tacos: number | null;
+  prints: number | null; clicks: number | null; ctr: number | null; cpc_cents: Cents | null;
+  attribution: 'final' | 'open' | null;
+  /** Último dia com atribuição em aberto; prazo previsto = esse dia + 15. */
+  attribution_open_until: string | null;
+  attribution_expected_final_on: string | null;
+};
+
+export type TrafficKpis = {
+  visits: number; listings: number; orders: number; conversion: number | null;
+  days_covered: number; days_in_month: number;
+};
+
+export type MonthlyReport = {
+  org: { id: string; nome: string; slug: string; modality: 1 | 2 | null };
+  month: Month;
+  previous_month: Month;
+  generated_at: string;
+  statement: { status: 'closed'; id: string; closed_at: string; snapshot: BillingStatement } | { status: 'open' };
+  summary: { current: PeriodKpis; previous: PeriodKpis | null };
+  daily: DailyPoint[];
+  series: SeriesPoint[];
+  /** null = catálogo de famílias ilegível (ver warnings). */
+  top_families: TopFamilies | null;
+  ads: AdsKpis | null;
+  traffic: TrafficKpis | null;
+  warnings: MetricsWarning[];
+};
