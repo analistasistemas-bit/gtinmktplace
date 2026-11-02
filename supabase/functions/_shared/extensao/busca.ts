@@ -60,8 +60,18 @@ export interface DepsBusca extends DepsCasamento {
   ofertasDoCatalogo(cpid: string): Promise<unknown | null>;
   /** Debita 1 do limite de análises; false = esgotado (D-18). */
   reservar(): Promise<boolean>;
+  /** +1 em extensao_uso_diario (tipo busca). Falha não derruba a análise. */
+  registrarUso(): Promise<void>;
   /** Análise de um card casado ao preço do card, com EXATAMENTE o SKU do casamento (rótulo e margem iguais). */
   analisar(e: EntradaAnuncio, casamento: Casamento): Promise<RespostaAnuncio>;
+}
+
+/** identificar_busca (emenda 02/11): anúncio próprio e vínculo de produto, estados independentes, só do banco. */
+export interface MetadadosCardBusca {
+  itemId: string;
+  /** null = verificação indisponível (fonte falhou ou veio incompleta); nunca um false presumido. */
+  proprio: boolean | null;
+  vinculo: { fonte: FonteCusto; codigo: string } | null;
 }
 
 type Base = { itemId: string };
@@ -81,13 +91,16 @@ async function emLotes<T>(itens: T[], fazer: (t: T) => Promise<void>): Promise<v
  *  (e só então) leem as ofertas do catálogo e são analisados, em lotes de 5. */
 export async function analisarBusca(
   orgId: string,
-  pedido: { eanDaBusca: string | null; itens: { itemId: string; catalogProductId: string | null; preco: number }[] },
+  pedido: { eanDaBusca: string | null; itens: { itemId: string; catalogProductId: string | null; preco: number }[]; registrarUso?: boolean },
   deps: DepsBusca,
-): Promise<{ itens: ResultadoCard[]; limiteAtingido: boolean }> {
+): Promise<{ itens: ResultadoCard[]; limiteAtingido: boolean; usoRegistrado: boolean }> {
   const casamentos = await casarCards(orgId, pedido.itens, pedido.eanDaBusca, deps);
   const resultado = new Map<string, ResultadoCard>();
   const reservados: { item: (typeof pedido.itens)[number]; casamento: Casamento; codigo: string }[] = [];
   let limiteAtingido = false;
+  // Telemetria (emenda 02/11): sem o campo (cliente 0.3.2) = um registro por card reservado; true = um só na chamada
+  // (a extensão manda true até a 1ª chamada da geração de página que contar); false = nenhum.
+  let usoRegistrado = false;
   for (const item of pedido.itens) {
     const c = casamentos.get(item.itemId);
     if (!c?.variacao) { resultado.set(item.itemId, { itemId: item.itemId, estado: 'sem_vinculo' }); continue; }
@@ -95,6 +108,8 @@ export async function analisarBusca(
     // Sem catálogo não há como achar a categoria da oferta: não gasta cota nem ML.
     if (!item.catalogProductId) { resultado.set(item.itemId, { ...base, estado: 'sem_categoria' }); continue; }
     if (limiteAtingido || !(await deps.reservar())) { limiteAtingido = true; resultado.set(item.itemId, { ...base, estado: 'limite' }); continue; }
+    if (pedido.registrarUso === undefined || (pedido.registrarUso && !usoRegistrado)) await deps.registrarUso();
+    usoRegistrado ||= pedido.registrarUso !== false;
     reservados.push({ item, casamento: c, codigo: c.variacao.codigo });
   }
   // Uma leitura de ofertas por catálogo (vários cards podem ser do mesmo), só dos reservados.
@@ -115,5 +130,5 @@ export async function analisarBusca(
       resultado.set(item.itemId, { ...base, estado: 'indisponivel', motivo: 'falha ao consultar o Mercado Livre' });
     }
   });
-  return { itens: pedido.itens.map((i) => resultado.get(i.itemId)!), limiteAtingido };
+  return { itens: pedido.itens.map((i) => resultado.get(i.itemId)!), limiteAtingido, usoRegistrado };
 }

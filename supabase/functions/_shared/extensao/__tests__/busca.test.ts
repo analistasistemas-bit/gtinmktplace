@@ -69,6 +69,7 @@ describe('analisarBusca (Task 21)', () => {
       ...deps(),
       ofertasDoCatalogo: vi.fn(async () => ({ results: [{ item_id: 'MLB1', category_id: 'MLB5' }, { item_id: 'MLB3', category_id: 'MLB5' }, { item_id: 'MLB4', category_id: 'MLB5' }] })),
       reservar: vi.fn(async () => saldo-- > 0),
+      registrarUso: vi.fn(async () => {}),
       analisar: vi.fn(async () => ({ margem, custo: { fonte: 'catalogo' } }) as never),
       ...over,
     };
@@ -120,6 +121,33 @@ describe('analisarBusca (Task 21)', () => {
     const d = depsBusca();
     await analisarBusca('org', { eanDaBusca: null, itens: [itens[0]] }, d);
     expect(d.analisar).toHaveBeenCalledWith(expect.anything(), { fonte: 'catalogo', variacao: v('cat') });
+  });
+
+  describe('telemetria (emenda 02/11): uma vez por geração de página', () => {
+    const doisCasados = [
+      { itemId: 'MLB1', catalogProductId: 'MLB100', preco: 100 },
+      { itemId: 'MLB3', catalogProductId: 'MLB100', preco: 101 },
+    ];
+    it('sem registrarUso (cliente 0.3.2): um registro por card reservado, como antes', async () => {
+      const d = depsBusca();
+      const r = await analisarBusca('org', { eanDaBusca: null, itens: doisCasados }, d);
+      expect(d.registrarUso).toHaveBeenCalledTimes(2);
+      expect(r.usoRegistrado).toBe(true);
+    });
+    it('registrarUso true: no máximo um registro na chamada; false: nenhum', async () => {
+      const d = depsBusca();
+      expect((await analisarBusca('org', { eanDaBusca: null, itens: doisCasados, registrarUso: true }, d)).usoRegistrado).toBe(true);
+      expect(d.registrarUso).toHaveBeenCalledTimes(1);
+      const e = depsBusca();
+      expect((await analisarBusca('org', { eanDaBusca: null, itens: doisCasados, registrarUso: false }, e)).usoRegistrado).toBe(false);
+      expect(e.registrarUso).not.toHaveBeenCalled();
+    });
+    it('registrarUso true sem nenhuma reserva (cota esgotada ou sem catálogo): não conta', async () => {
+      const d = depsBusca({ reservar: vi.fn(async () => false) });
+      const r = await analisarBusca('org', { eanDaBusca: null, itens: [...doisCasados, itens[2]], registrarUso: true }, d);
+      expect(r.usoRegistrado).toBe(false);
+      expect(d.registrarUso).not.toHaveBeenCalled();
+    });
   });
 
   it('falha na análise de um item não derruba os outros', async () => {

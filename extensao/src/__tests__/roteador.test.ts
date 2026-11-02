@@ -585,15 +585,30 @@ describe('busca no SW (Task 22)', () => {
     expect(await estado()).toBeNull();
   });
 
-  it('painel analisa os pendentes (até 50) com o EAN da URL da busca e o content script recebe os resultados', async () => {
+  // Edge da busca: identificar_busca pelo conjunto de vinculados; analisar_busca ok para eles.
+  const edgeBusca = (vinc: string[], antes?: (acao: string) => Promise<void>) => fetchFalso.mockImplementation(async (_u: string, init?: RequestInit) => {
+    const b = JSON.parse(String(init?.body));
+    if (antes) await antes(b.acao);
+    if (b.acao === 'identificar_busca') {
+      return new Response(JSON.stringify({ itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinc.includes(i.itemId) ? { fonte: 'catalogo', codigo: '81' } : null })) }), { status: 200 });
+    }
+    return respostaEdge(b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, estado: vinc.includes(i.itemId) ? 'ok' : 'sem_vinculo' })));
+  });
+  const registrar = async (cards: object[], s: Sender = BUSCA) => {
+    await rotearMensagem({ tipo: 'publiai:busca-cards', cards, ocorrencias: cards.length }, s);
+    await complementosPendentes();
+  };
+
+  it('automático (painel fechado): identifica, analisa a margem do vinculado com preço e o EAN da URL; a página recebe os resultados', async () => {
     await registrarEanDaAba(7, '96385074'); // EAN de outra busca da mesma aba: não vale
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001'), card('MLB1000002', { preco: null })], ocorrencias: 2 }, BUSCA_EAN);
-    fetchFalso.mockImplementation(async () => new Response(JSON.stringify({ itens: [{ itemId: 'MLB1000001', estado: 'sem_vinculo' }], limiteAtingido: false }), { status: 200 }));
-    const r = await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
-    expect(r).toMatchObject({ ok: true });
-    const corpo = JSON.parse(ultimaEdge()[1].body);
+    edgeBusca(['MLB1000001', 'MLB1000002']);
+    await registrar([card('MLB1000001'), card('MLB1000002', { preco: null }), card('MLB1000003')], BUSCA_EAN);
+    const corpo = JSON.parse(String(analisesNaEdge().at(-1)![1].body));
     expect(corpo).toMatchObject({ acao: 'analisar_busca', eanDaBusca: '7899941205918', itens: [{ itemId: 'MLB1000001', preco: 10 }] });
-    expect((await estado())!.resposta.resultados.MLB1000001.estado).toBe('sem_vinculo');
+    expect(corpo.itens).toHaveLength(1);
+    const e = (await estado())!;
+    expect(e.resposta.resultados.MLB1000001.estado).toBe('ok');
+    expect(e.resposta.resultados.MLB1000003.estado).toBe('sem_vinculo');
     expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, expect.objectContaining({ tipo: 'publiai:busca-resultados' }));
   });
 
@@ -605,44 +620,51 @@ describe('busca no SW (Task 22)', () => {
 
   it('Grok: busca textual na mesma aba não herda o EAN guardado de busca anterior', async () => {
     await registrarEanDaAba(7, '7899941205918');
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
-    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_vinculo' }]));
-    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
-    expect(JSON.parse(ultimaEdge()[1].body).eanDaBusca).toBeNull();
+    edgeBusca(['MLB1000001']);
+    await registrar([card('MLB1000001')]);
+    expect(JSON.parse(String(analisesNaEdge().at(-1)![1].body)).eanDaBusca).toBeNull();
   });
 
   it('Grok: cards do scroll durante a análise não apagam o resultado que chega', async () => {
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
-    fetchFalso.mockImplementation(async () => {
+    let uma = true;
+    edgeBusca(['MLB1000001'], async (acao) => {
+      if (acao !== 'analisar_busca' || !uma) return;
+      uma = false;
       await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000002')], ocorrencias: 2 }, BUSCA);
-      return respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_vinculo' }]);
     });
-    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000003')], ocorrencias: 3 }, BUSCA);
+    await registrar([card('MLB1000001')]);
+    await registrar([card('MLB1000003')]);
     const e = (await estado())!;
-    expect(e.resposta.resultados.MLB1000001.estado).toBe('sem_vinculo');
+    expect(e.resposta.resultados.MLB1000001.estado).toBe('ok');
     expect(e.observado.cards.map((c) => c.itemId)).toEqual(['MLB1000001', 'MLB1000002', 'MLB1000003']);
   });
 
-  it('Grok: duas análises sobrepostas mandam o card à edge uma vez só (cota debitada uma vez)', async () => {
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
-    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'ok' }]));
+  it('Grok: painel pedindo junto com o automático manda o card à edge uma vez só (cota debitada uma vez)', async () => {
+    edgeBusca(['MLB1000001']);
     await Promise.all([
+      registrar([card('MLB1000001')]),
       rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL),
       rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL),
     ]);
+    await complementosPendentes();
     expect(analisesNaEdge()).toHaveLength(1);
   });
 
   it('Grok: card reenviado com preço novo perde o resultado e volta a pendente', async () => {
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001', { preco: null })], ocorrencias: 1 }, BUSCA);
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001')], ocorrencias: 1 }, BUSCA);
-    fetchFalso.mockImplementation(async () => respostaEdge([{ itemId: 'MLB1000001', estado: 'sem_categoria' }]));
-    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
-    await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [card('MLB1000001', { preco: 12, catalogProductId: 'MLB2000000' })], ocorrencias: 1 }, BUSCA);
+    edgeBusca(['MLB1000001']);
+    await registrar([card('MLB1000001', { preco: null })]);
+    await registrar([card('MLB1000001')]);
+    expect((await estado())!.resposta.resultados.MLB1000001.estado).toBe('ok');
+    let segurar!: () => void;
+    const segura = new Promise<void>((r) => { segurar = r; });
+    edgeBusca(['MLB1000001'], (acao) => (acao === 'analisar_busca' ? segura : Promise.resolve()));
+    const reg = registrar([card('MLB1000001', { preco: 12, catalogProductId: 'MLB2000000' })]);
+    await vi.waitFor(() => expect(analisesNaEdge()).toHaveLength(2));
+    // Antes da resposta: o resultado antigo já saiu (outro catálogo/preço).
     expect((await estado())!.resposta.resultados.MLB1000001).toBeUndefined();
-    await rotearMensagem({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
-    expect(JSON.parse(ultimaEdge()[1].body).itens).toMatchObject([{ itemId: 'MLB1000001', catalogProductId: 'MLB2000000', preco: 12 }]);
+    segurar();
+    await reg;
+    expect(JSON.parse(String(analisesNaEdge().at(-1)![1].body)).itens).toMatchObject([{ itemId: 'MLB1000001', catalogProductId: 'MLB2000000', preco: 12 }]);
   });
 
   it('Grok: só o hash mudou na busca → mantém cards; outra URL de busca → começa do zero', async () => {
@@ -804,6 +826,7 @@ describe('conta, chave ativa e geração (Task 5)', () => {
   it('estado de busca não é reanalisado pela idade', async () => {
     const BUSCA: Sender = { id: 'ext-publiai', tab: { id: 7, url: 'https://lista.mercadolivre.com.br/panela' } as chrome.tabs.Tab, url: 'https://lista.mercadolivre.com.br/panela' };
     await rotearMensagem({ tipo: 'publiai:busca-cards', cards: [{ itemId: 'MLB1000001', catalogProductId: null, preco: 10, titulo: 'x', selos: [], patrocinado: false }], ocorrencias: 1 }, BUSCA);
+    await complementosPendentes(); // identificação automática (emenda 02/11) termina antes
     const v = (await chrome.storage.session.get('estado:7'))['estado:7'] as Record<string, unknown>;
     await chrome.storage.session.set({ 'estado:7': { ...v, gravadoEm: 0 } });
     fetchFalso.mockClear();

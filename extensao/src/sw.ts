@@ -3,6 +3,7 @@
 import { protegerCredenciais } from './credenciais';
 import { ajustarPainelDaAba, esquecerAba, esquecerEstado, painelSoNoMl } from './abas';
 import { aoAtualizarAba, rotearMensagem } from './roteador';
+import { cancelarBuscaDaAba } from './busca-sw';
 import { apagarSessaoLegada, receberMensagemExterna } from './sessao';
 
 // Antes de tudo: storage.local só para contextos confiáveis (por padrão, content scripts leem). Toda gravação de
@@ -32,4 +33,4 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.url || info.status === 'loading') void ajustarPainelDaAba(tabId, tab.url).catch(() => {});
   void aoAtualizarAba(tabId, info);
 });
-chrome.tabs.onRemoved.addListener((tabId) => { esquecerAba(tabId); esquecerEstado(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { cancelarBuscaDaAba(tabId); esquecerAba(tabId); esquecerEstado(tabId); });

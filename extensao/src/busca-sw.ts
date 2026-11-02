@@ -1,29 +1,67 @@
-// Busca no service worker (ADR-0189 D-11, Task 22): o content script manda os cards lidos; o painel pede a análise.
+// Busca no service worker (ADR-0189 D-11, Task 22; emenda 2026-11-02, Task 3): o content script manda os cards lidos e
+// o SW, com a extensão ativa e a sessão válida, identifica todos no banco (`identificar_busca`, sem ML nem cota) e analisa
+// a margem só dos vinculados com preço (`analisar_busca`) — painel aberto ou fechado. O painel só consome o estado.
 // O estado fica na mesma chave da aba (geração por página e por sessão): resposta atrasada de outra busca não volta.
 import { chamarExtensao } from './api';
 import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
 import { identidadeAtual, seAindaIdentidade } from './sessao';
-import type { ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
+import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
 
 export const MAX_POR_ANALISE = 50; // = MAX_ITENS_BUSCA da edge
 
+export interface RespostaBusca {
+  /** Margem (financeiro). `limite` = "Minha margem aguardando cota"; `sem_vinculo` vem da identificação (sem cota). */
+  resultados: Record<string, ResultadoCard>;
+  /** Anúncio próprio e vínculo de produto, do banco. Ausente = ainda não identificado (nunca "não próprio"). */
+  metadados: Record<string, MetadadosCardBusca>;
+  /** Preço do card em que a margem de `resultados[id]` foi calculada: não vale para ocorrência com outro preço. */
+  precoDaMargem: Record<string, number>;
+  /** Minuto (Date.now()/60 000) em que a cota de 30/min esgotou: os `limite` só voltam à edge na janela seguinte. */
+  limiteEm: number | null;
+  /** Telemetria `busca` já contada nesta geração de página (nova URL de busca começa sem). */
+  usoRegistrado: boolean;
+}
+
 export interface EstadoBusca {
   entrada: { tipoPagina: 'busca'; url: string };
-  resposta: { resultados: Record<string, ResultadoCard> };
+  resposta: RespostaBusca;
   observado: { cards: CardBusca[]; ocorrencias: number };
 }
 
 export const ehBusca = (e: unknown): e is EstadoBusca => (e as { entrada?: { tipoPagina?: unknown } } | null)?.entrada?.tipoPagina === 'busca';
 
-async function gravar(tabId: number, geracao: string | null, sessao: number, e: EstadoBusca): Promise<void> {
-  await registrarEstado(tabId, { geracao, sessao, entrada: e.entrada, resposta: e.resposta, observado: e.observado });
+const minuto = () => Math.floor(Date.now() / 60_000);
+
+/** Cópia mutável da resposta guardada (estado gravado antes da Task 3 não tem os campos novos). */
+function respostaDe(e: EstadoBusca | null): RespostaBusca {
+  const r: Partial<RespostaBusca> = e?.resposta ?? {};
+  return {
+    resultados: { ...r.resultados }, metadados: { ...r.metadados }, precoDaMargem: { ...r.precoDaMargem },
+    limiteEm: typeof r.limiteEm === 'number' ? r.limiteEm : null, usoRegistrado: r.usoRegistrado === true,
+  };
+}
+
+function descartarMargem(r: RespostaBusca, itemId: string): void {
+  delete r.resultados[itemId];
+  delete r.precoDaMargem[itemId];
+}
+
+type Pagina = { geracao: string | null; sessao: number; url: string };
+
+async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
+  await registrarEstado(tabId, { geracao: p.geracao, sessao: p.sessao, entrada: e.entrada, resposta: e.resposta, observado: e.observado });
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
 }
 
+/** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). */
+function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
+  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: p.geracao, url: p.url, resultados: r.resultados, metadados: r.metadados }).catch(() => {});
+}
+
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
-// resultado da análise); `analises` faz a 2ª análise esperar a 1ª e mandar só o que ainda falta (cota debitada uma vez).
+// respostas da edge); `analises` faz o processamento seguinte esperar o anterior e mandar só o que ainda falta.
 const escritas = new Map<number, Promise<unknown>>();
 const analises = new Map<number, Promise<unknown>>();
 function naFila<T>(filas: Map<number, Promise<unknown>>, tabId: number, fn: () => Promise<T>): Promise<T> {
@@ -34,8 +72,8 @@ function naFila<T>(filas: Map<number, Promise<unknown>>, tabId: number, fn: () =
   return r;
 }
 
-/** Content script → cards lidos (os novos do scroll somam aos de antes, na mesma busca). Card reenviado com preço ou
- *  catálogo diferente perde o resultado (volta a pendente); outra URL de busca começa do zero. */
+/** Content script → cards lidos (os novos do scroll somam aos de antes, na mesma busca). Catálogo (ou conflito) diferente
+ *  descarta vínculo e margem; preço diferente, só a margem; só a miniatura, nada. Outra URL de busca começa do zero. */
 export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorrencias: unknown, url: unknown): Promise<{ ok: true }> {
   const cards = normalizarCards(cardsBrutos);
   if (typeof url !== 'string' || !/^https:\/\/lista\.mercadolivre\.com\.br\//.test(url)) return Promise.resolve({ ok: true });
@@ -44,68 +82,163 @@ export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorr
     const { geracao, sessao, estado } = await lerAba(tabId);
     const antes = ehBusca(estado) && estado.entrada.url === semHash ? estado : null;
     const porItem = new Map((antes?.observado.cards ?? []).map((c) => [c.itemId, c]));
-    const resultados = { ...(antes?.resposta.resultados ?? {}) };
+    const r = respostaDe(antes);
     let descartou = false;
     for (const c of cards) {
       const velho = porItem.get(c.itemId);
-      if (velho && (velho.preco !== c.preco || velho.catalogProductId !== c.catalogProductId) && resultados[c.itemId]) {
-        delete resultados[c.itemId];
+      if (velho && (velho.catalogProductId !== c.catalogProductId || velho.identidadeConflitante !== c.identidadeConflitante)) {
+        descartou ||= !!(r.resultados[c.itemId] || r.metadados[c.itemId]);
+        delete r.metadados[c.itemId];
+        descartarMargem(r, c.itemId);
+      } else if (velho && velho.preco !== c.preco && r.resultados[c.itemId] && r.resultados[c.itemId].estado !== 'sem_vinculo') {
         descartou = true;
+        descartarMargem(r, c.itemId);
       }
       porItem.set(c.itemId, c);
     }
-    await gravar(tabId, geracao, sessao, {
+    const p = { geracao, sessao, url: semHash };
+    await gravar(tabId, p, {
       entrada: { tipoPagina: 'busca', url: semHash },
-      resposta: { resultados },
+      resposta: r,
       observado: { cards: [...porItem.values()], ocorrencias: typeof ocorrencias === 'number' && ocorrencias >= 0 ? Math.min(ocorrencias, 1000) : porItem.size },
     });
-    if (descartou) chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', resultados }).catch(() => {});
+    if (descartou) avisarPagina(tabId, p, r);
     return { ok: true as const };
   });
 }
 
-/** Painel → analisa os cards ainda sem resultado (ou que ficaram no limite), até 50, na ordem da busca.
- *  `forcar` = itens que o painel quer reanalisar mesmo com resultado (ex.: logo depois de vincular ao SKU). */
-export function analisarBuscaDaAba(tabId: number, forcar: string[] = [], epoca = epocaAtual()): Promise<unknown> {
-  return naFila(analises, tabId, () => analisar(tabId, forcar, epoca));
+// Cancelamento por aba (aba fechada, navegação): processamento enfileirado/em curso de antes para no próximo passo.
+// Pausa, saída e troca de sessão já abrem época nova (abas.ts), que para tudo igual.
+const cancelamentos = new Map<number, number>();
+export function cancelarBuscaDaAba(tabId: number): void {
+  cancelamentos.set(tabId, (cancelamentos.get(tabId) ?? 0) + 1);
 }
 
-/** `epoca` = a de quando o painel pediu: sessão/pausa mudou enquanto esperava na fila → a edge não é chamada. */
-async function analisar(tabId: number, forcar: string[], epoca: number): Promise<unknown> {
+type Falha = { ok: false; erro: string };
+const SEM_SESSAO: Falha = { ok: false, erro: 'sem_sessao' };
+// Vale tentar de novo no próximo pulso: rede/5xx e limite da edge. Os demais (sessão, módulo, acesso) esperam evento novo.
+const transitoria = (f: Falha) => f.erro === 'interno' || f.erro === 'limite';
+
+/** Identifica no banco o que falta e analisa a margem dos vinculados elegíveis, em lotes de até 50, tudo a partir do
+ *  estado guardado (reinício do SW, pulso, scroll e painel convergem). `epoca` = a de quando a mensagem chegou: sessão,
+ *  pausa ou navegação no meio → nada é chamado, gravado nem transmitido. `forcar` = itens que o painel quer refazer
+ *  (ex.: logo depois de vincular ao SKU): identificação e margem de novo, mesmo com resultado. */
+export function processarBuscaDaAba(tabId: number, epoca: number, forcar: string[] = []): Promise<{ ok: true } | Falha> {
+  const vez = cancelamentos.get(tabId) ?? 0; // síncrono: cancelamento depois daqui vale para esta rodada
+  const vale = () => epoca === epocaAtual() && vez === (cancelamentos.get(tabId) ?? 0);
+  return naFila(analises, tabId, () => processar(tabId, epoca, vale, new Set(forcar)));
+}
+
+async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>): Promise<{ ok: true } | Falha> {
+  if (!vale()) return SEM_SESSAO;
   const identidade = await identidadeAtual();
-  const { geracao, sessao, estado } = await lerAba(tabId);
-  if (!ehBusca(estado)) return { ok: false, erro: 'payload_invalido' };
-  const refazer = new Set(forcar);
-  const pendentes = estado.observado.cards
-    .filter((c) => c.preco !== null && (refazer.has(c.itemId) || !estado.resposta.resultados[c.itemId] || estado.resposta.resultados[c.itemId].estado === 'limite'))
-    .slice(0, MAX_POR_ANALISE);
-  if (pendentes.length === 0) return { ok: true, dados: { itens: [], limiteAtingido: false } };
-  const resposta = await chamarExtensao<{ itens: ResultadoCard[]; limiteAtingido: boolean }>({
-    acao: 'analisar_busca',
-    // EAN da própria busca analisada (o guardado na aba pode ser de outra busca da mesma aba)
-    eanDaBusca: eanDaUrlDeBusca(estado.entrada.url),
-    itens: pendentes.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId, preco: c.preco })),
-  }, epoca);
-  if (!resposta.ok) return resposta;
-  const enviados = new Map(pendentes.map((c) => [c.itemId, c]));
-  return (await seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
-    // Só grava se a aba ainda é a mesma busca (geração, sessão e URL): resposta atrasada de outra busca é descartada.
-    const atual = await lerAba(tabId);
-    if (atual.geracao !== geracao || atual.sessao !== sessao || !ehBusca(atual.estado) || atual.estado.entrada.url !== estado.entrada.url) {
-      return { ok: false, erro: 'interno' };
+  /** Aplica `mudar` só se sessão (época, identidade) e página (geração, sessão, URL) ainda são as do pedido. */
+  const gravarSe = (p: Pagina, mudar: (r: RespostaBusca, agora: Map<string, CardBusca>) => void) =>
+    seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
+      const atual = await lerAba(tabId);
+      if (!vale() || atual.geracao !== p.geracao || atual.sessao !== p.sessao || !ehBusca(atual.estado) || atual.estado.entrada.url !== p.url) return false;
+      const r = respostaDe(atual.estado);
+      mudar(r, new Map(atual.estado.observado.cards.map((c) => [c.itemId, c])));
+      await gravar(tabId, p, { ...atual.estado, resposta: r });
+      if (vale()) avisarPagina(tabId, p, r);
+      return true;
+    })).then((ok) => ok === true);
+
+  const identificados = new Set<string>(), enviados = new Set<string>();
+  let falha: Falha | null = null, retomar = false, fase: 'identificar' | 'margem' = 'identificar';
+  for (;;) {
+    if (!vale()) return SEM_SESSAO;
+    const aba = await lerAba(tabId);
+    if (!ehBusca(aba.estado)) return { ok: false, erro: 'payload_invalido' };
+    const e = aba.estado, r = respostaDe(e);
+    const p = { geracao: aba.geracao, sessao: aba.sessao, url: e.entrada.url };
+    const eanDaBusca = eanDaUrlDeBusca(p.url); // o da própria busca (o guardado na aba pode ser de outra)
+
+    if (fase === 'identificar') {
+      const lote = e.observado.cards
+        .filter((c) => !identificados.has(c.itemId) && (!r.metadados[c.itemId] || forcar.has(c.itemId))).slice(0, MAX_POR_ANALISE);
+      if (lote.length === 0) { fase = 'margem'; continue; }
+      for (const c of lote) identificados.add(c.itemId);
+      const resp = await chamarExtensao<{ itens?: unknown }>({
+        acao: 'identificar_busca', eanDaBusca, itens: lote.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId })),
+      }, epoca);
+      const itens = resp.ok && Array.isArray(resp.dados?.itens) ? (resp.dados.itens as MetadadosCardBusca[]) : null;
+      if (!itens) {
+        // Falha inteira (500, corpo fora do formato): metadados seguem desconhecidos; o pulso tenta de novo.
+        falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
+        retomar ||= transitoria(falha);
+        fase = 'margem';
+        continue;
+      }
+      const enviado = new Map(lote.map((c) => [c.itemId, c]));
+      const gravou = await gravarSe(p, (r2, agora) => {
+        for (const m of itens) {
+          const ev = enviado.get(m?.itemId), a = agora.get(m?.itemId);
+          if (!ev || !a || a.catalogProductId !== ev.catalogProductId) continue; // mudou de catálogo: refaz depois
+          r2.metadados[m.itemId] = m;
+          // Sem vínculo, a margem nem é pedida (= resposta da edge, sem cota); vínculo novo derruba o sem_vinculo.
+          if (m.vinculo === null) { descartarMargem(r2, m.itemId); r2.resultados[m.itemId] = { itemId: m.itemId, estado: 'sem_vinculo' }; }
+          else if (r2.resultados[m.itemId]?.estado === 'sem_vinculo') descartarMargem(r2, m.itemId);
+        }
+      });
+      if (!gravou) return SEM_SESSAO;
+      continue;
     }
-    const agora = new Map(atual.estado.observado.cards.map((c) => [c.itemId, c]));
-    const resultados = { ...atual.estado.resposta.resultados };
-    for (const r of resposta.dados.itens) {
-      // Card que mudou preço/catálogo durante a análise fica pendente (o resultado é do card antigo).
-      const e = enviados.get(r.itemId), a = agora.get(r.itemId);
-      if (e && a && (a.preco !== e.preco || a.catalogProductId !== e.catalogProductId)) continue;
-      resultados[r.itemId] = r;
+
+    const elegiveis = e.observado.cards.filter((c) => {
+      const res = r.resultados[c.itemId];
+      return c.preco !== null && !!r.metadados[c.itemId]?.vinculo && !enviados.has(c.itemId)
+        && (forcar.has(c.itemId) || !res || res.estado === 'limite');
+    });
+    if (elegiveis.length === 0) break;
+    if (r.limiteEm === minuto()) {
+      // Cota da janela já esgotou: os que faltam ficam "aguardando cota" sem ir à edge; o pulso retoma na próxima.
+      retomar = true;
+      const faltam = elegiveis.filter((c) => r.resultados[c.itemId]?.estado !== 'limite');
+      if (faltam.length && !(await gravarSe(p, (r2) => {
+        for (const c of faltam) {
+          const v = r2.metadados[c.itemId]?.vinculo;
+          if (!v) continue;
+          descartarMargem(r2, c.itemId);
+          r2.resultados[c.itemId] = { itemId: c.itemId, estado: 'limite', fonte: v.fonte, codigo: v.codigo };
+        }
+      }))) return SEM_SESSAO;
+      break;
     }
-    await gravar(tabId, geracao, sessao, { ...atual.estado, resposta: { resultados } });
-    chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', resultados }).catch(() => {});
-    return resposta;
-  }))) ?? { ok: false, erro: 'sem_sessao' };
+    const lote = elegiveis.slice(0, MAX_POR_ANALISE);
+    for (const c of lote) enviados.add(c.itemId);
+    const resp = await chamarExtensao<{ itens?: unknown; limiteAtingido?: unknown; usoRegistrado?: unknown }>({
+      acao: 'analisar_busca', eanDaBusca,
+      itens: lote.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId, preco: c.preco })),
+      // Telemetria: uma vez por geração de página — pedida até a edge confirmar que contou.
+      registrarUso: !r.usoRegistrado,
+    }, epoca);
+    if (!resp.ok || !Array.isArray(resp.dados?.itens)) {
+      falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
+      retomar ||= transitoria(falha);
+      break;
+    }
+    const dados = resp.dados, itens = resp.dados.itens as ResultadoCard[];
+    retomar ||= dados.limiteAtingido === true;
+    const enviado = new Map(lote.map((c) => [c.itemId, c]));
+    if (!(await gravarSe(p, (r2, agora) => {
+      for (const res of itens) {
+        // Card que mudou preço/catálogo durante a análise fica pendente (o resultado é do card antigo).
+        const ev = enviado.get(res?.itemId), a = agora.get(res?.itemId);
+        if (!ev || !a || a.preco !== ev.preco || a.catalogProductId !== ev.catalogProductId) continue;
+        r2.resultados[res.itemId] = res;
+        r2.precoDaMargem[res.itemId] = ev.preco!;
+      }
+      if (dados.usoRegistrado === true) r2.usoRegistrado = true;
+      if (dados.limiteAtingido === true) r2.limiteEm = minuto();
+    }))) return SEM_SESSAO;
+  }
+  // Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois.
+  if (retomar && vale()) {
+    const { estado } = await lerAba(tabId);
+    if (vale() && ehBusca(estado)) chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-retomar', url: estado.entrada.url }).catch(() => {});
+  }
+  return falha ?? { ok: true };
 }
 
 /** Painel → localiza e destaca o card na página (o DOM do ML não é reordenado). */

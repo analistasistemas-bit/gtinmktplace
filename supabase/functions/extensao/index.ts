@@ -279,11 +279,10 @@ async function buscaAnalisada(admin: SupabaseClient, ctx: { orgId: string; userI
         return { results, completa: leituraCompletaDaFicha(j) };
       }, TTL_OFERTAS_S);
     },
-    reservar: async () => {
-      if (await redisIncrComTTL(chaveLimite(userId, new Date()), 120) > LIMITE_ANALISES_MIN) return false;
+    reservar: async () => (await redisIncrComTTL(chaveLimite(userId, new Date()), 120)) <= LIMITE_ANALISES_MIN,
+    registrarUso: async () => {
       const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
       if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
-      return true;
     },
     // Card da busca: sem vendedor nem data de catálogo (só a margem ao preço do card).
     // Exatamente o SKU do casamento (o rótulo do card e a margem não podem vir de SKUs diferentes); casado por catálogo

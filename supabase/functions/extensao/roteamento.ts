@@ -20,7 +20,7 @@ export type Pedido =
   | { acao: 'remover_vinculo'; chave: ChaveVinculo }
   | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
   | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null }
-  | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[] }
+  | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[]; registrarUso?: boolean }
   | { acao: 'identificar_busca'; eanDaBusca: string | null; itens: Omit<ItemBusca, 'preco'>[] }
   | { acao: 'radar' | 'adicionar_radar'; catalogProductId: string }
   | { acao: 'sessao' };
@@ -97,9 +97,10 @@ export function validarPedido(body: unknown): Pedido | null {
     case 'adicionar_radar':
       return mlb(b.catalogProductId) ? { acao: b.acao, catalogProductId: b.catalogProductId } : null;
     case 'analisar_busca': {
-      const { itens, eanDaBusca } = b;
+      const { itens, eanDaBusca, registrarUso } = b;
       if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ITENS_BUSCA) return null;
       if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null; // mesmo critério do analisar_anuncio (gtinOuNull decide)
+      if (registrarUso !== undefined && typeof registrarUso !== 'boolean') return null;
       const vistos = new Set<string>();
       const lidos: ItemBusca[] = [];
       for (const i of itens as Record<string, unknown>[]) {
@@ -109,7 +110,8 @@ export function validarPedido(body: unknown): Pedido | null {
         vistos.add(i.itemId);
         lidos.push({ itemId: i.itemId, catalogProductId: (i.catalogProductId as string | null | undefined) ?? null, preco: i.preco });
       }
-      return { acao: 'analisar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: lidos };
+      // registrarUso ausente (cliente 0.3.2) fica ausente: telemetria por card reservado, como antes.
+      return { acao: 'analisar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: lidos, ...(registrarUso === undefined ? {} : { registrarUso }) };
     }
     case 'identificar_busca': {
       // Só banco, sem preço: a extensão pode mandar ocorrências repetidas (orgânico + patrocinado); o teto vale

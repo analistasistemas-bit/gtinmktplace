@@ -9,7 +9,7 @@ import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao'
 import { eanDaAba, eanParaAnuncio, epocaAtual, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado, transmitirConta } from './abas';
 import { URL_APP } from './painel/formato';
 import { normalizarQualidade } from './compartilhado/qualidade';
-import { analisarBuscaDaAba, destacarCard, ehBusca, registrarCardsDaBusca } from './busca-sw';
+import { cancelarBuscaDaAba, destacarCard, ehBusca, processarBuscaDaAba, registrarCardsDaBusca } from './busca-sw';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -53,13 +53,19 @@ export async function aoAtualizarAba(tabId: number, info: { status?: string; url
   } else if (info.status === 'loading') {
     await esquecerAnuncioDaAba(tabId).catch(() => {});
   } else return;
+  cancelarBuscaDaAba(tabId); // fila da busca anterior para antes da nova geração
   await novaPaginaNaAba(tabId).catch(() => {});
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {});
 }
 
-// Complementos em segundo plano (data/faixa do anúncio). Exposto para os testes esperarem antes de desmontar o `chrome`.
-const pendentes = new Set<Promise<void>>();
+// Complementos em segundo plano (data/faixa do anúncio, processamento da busca). Exposto para os testes esperarem antes
+// de desmontar o `chrome`.
+const pendentes = new Set<Promise<unknown>>();
 export const complementosPendentes = () => Promise.allSettled([...pendentes]);
+function emSegundoPlano(p: Promise<unknown>): void {
+  const q = p.catch(() => {}).finally(() => pendentes.delete(q));
+  pendentes.add(q);
+}
 
 /** Faixa e data do anúncio (ADR-0189 emenda 2026-10-22) gravadas no `observado` da aba depois da análise. */
 async function completarCriacao(tabId: number, geracao: string | null, sessao: number, identidade: string | null, epoca: number, mlItemId: string): Promise<void> {
@@ -166,12 +172,31 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (msg.ean === null) return esquecerAba(tabId).then(() => ({ ok: true }));
       if (typeof msg.ean !== 'string' || !/^\d{8,14}$/.test(msg.ean)) return undefined;
       return registrarEanDaAba(tabId, msg.ean).then(() => ({ ok: true }));
-    case 'publiai:busca-cards':
+    case 'publiai:busca-cards': {
       // Content script da busca: cards lidos na própria aba (nunca de outra).
       if (tabId === undefined || pagina) return undefined;
-      // Desligada ou deslogada: nada é gravado (sem cota nem edge).
-      return impedimento(epocaAtual()).then((erro) =>
-        erro ? undefined : registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url));
+      const e = epocaAtual(); // na chegada, antes de qualquer await
+      // Desligada ou deslogada: nada é gravado (sem cota nem edge). Ativa: grava e processa em segundo plano (emenda
+      // 02/11: painel aberto ou fechado); a resposta não espera a edge.
+      return impedimento(e).then(async (erro) => {
+        if (erro) return undefined;
+        const r = await registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, sender.tab?.url ?? sender.url);
+        emSegundoPlano(processarBuscaDaAba(tabId, e));
+        return r;
+      });
+    }
+    case 'publiai:busca-pulso': {
+      // Content script da busca: retomada (cota da janela seguinte, falha transitória) — o SW do MV3 não guarda timer.
+      // Só a busca que a aba guarda; outra URL (página velha) é ignorada.
+      if (tabId === undefined || pagina) return undefined;
+      const e = epocaAtual(), url = (sender.tab?.url ?? sender.url ?? '').split('#')[0];
+      return impedimento(e).then(async (erro) => {
+        if (erro) return undefined;
+        const estado = await estadoDaAba(tabId);
+        if (ehBusca(estado) && estado.entrada.url === url) emSegundoPlano(processarBuscaDaAba(tabId, e));
+        return { ok: true };
+      });
+    }
     case 'publiai:analisar-busca': {
       if (!pagina || typeof msg.tabId !== 'number') return undefined;
       if (!geracaoEmDia(msg)) return ANTIGA();
@@ -179,7 +204,8 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       const forcar = Array.isArray(msg.forcar)
         ? msg.forcar.filter((i): i is string => typeof i === 'string' && /^MLB\d{6,20}$/.test(i)).slice(0, 50)
         : [];
-      return comando(e, () => analisarBuscaDaAba(id, forcar, e));
+      // Mesma fila do processamento automático: abrir o painel no meio não duplica chamadas.
+      return comando(e, () => processarBuscaDaAba(id, e, forcar));
     }
     case 'publiai:destacar-card':
       if (!pagina || typeof msg.tabId !== 'number' || typeof msg.itemId !== 'string' || !/^MLB\d{6,20}$/.test(msg.itemId)) return undefined;
@@ -242,8 +268,7 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
           });
           // A data não segura o selo: chega depois e só entra se a aba ainda é a mesma página e sessão (e a época).
           if (typeof mlItemId === 'string' && e === epocaAtual()) {
-            const p: Promise<void> = completarCriacao(tab, geracao, sessao, identidade, e, mlItemId).finally(() => pendentes.delete(p));
-            pendentes.add(p);
+            emSegundoPlano(completarCriacao(tab, geracao, sessao, identidade, e, mlItemId));
           }
           return r;
         });

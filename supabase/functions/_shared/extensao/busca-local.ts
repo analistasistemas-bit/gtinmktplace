@@ -2,15 +2,10 @@
 // — estados independentes —, só pelo banco (zero ML, zero OAuth, zero cota). O cliente é service-role: o filtro
 // explícito de org em CADA consulta é o único isolamento entre organizações.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { casarCards, type DepsCasamento } from './busca.ts';
-import type { FonteCusto } from './vinculo.ts';
+import { casarCards, type DepsCasamento, type MetadadosCardBusca } from './busca.ts';
 
-export interface MetadadosCardBusca {
-  itemId: string;
-  /** null = verificação indisponível (fonte falhou ou veio incompleta); nunca um false presumido. */
-  proprio: boolean | null;
-  vinculo: { fonte: FonteCusto; codigo: string } | null;
-}
+// Tipo em busca.ts (sem import jsr:): a extensão o importa sem puxar o supabase-js.
+export type { MetadadosCardBusca };
 
 /** Teto por fonte (abaixo do max_rows do PostgREST): bateu o teto = leitura possivelmente cortada → incompleta. */
 export const MAX_LINHAS_FONTE = 1000;

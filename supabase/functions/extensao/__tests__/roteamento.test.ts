@@ -360,6 +360,12 @@ describe('analisar_busca (Task 21)', () => {
       .toEqual({ acao: 'analisar_busca', eanDaBusca: '7891234567895', itens: [item('MLB1'), item('MLB2')] });
     expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1', { catalogProductId: null })] })).toMatchObject({ eanDaBusca: null });
   });
+  it('registrarUso (emenda 02/11): boolean passa; ausente fica ausente (cliente 0.3.2); outro tipo recusa', () => {
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1')], registrarUso: true })).toMatchObject({ registrarUso: true });
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1')], registrarUso: false })).toMatchObject({ registrarUso: false });
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1')] })).not.toHaveProperty('registrarUso');
+    expect(validarPedido({ acao: 'analisar_busca', itens: [item('MLB1')], registrarUso: 'sim' })).toBeNull();
+  });
   it('recusa vazio, mais de 50, preço inválido, id inválido e EAN fora do formato', () => {
     expect(validarPedido({ acao: 'analisar_busca', itens: [] })).toBeNull();
     expect(validarPedido({ acao: 'analisar_busca', itens: Array.from({ length: 51 }, (_, i) => item(`MLB${i + 1}`)) })).toBeNull();

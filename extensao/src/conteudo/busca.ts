@@ -7,6 +7,7 @@ import { CORES, MARCA } from './aparencia';
 import { seloDaBusca } from './selo-busca';
 
 const ESPERA_MS = 800;
+const PULSO_MS = 61_000; // janela da cota da edge (1 min) + folga
 const LIMITE_ESPERA_MS = 15_000;
 const HOST = 'publiai-selo-busca';
 let enviados = new Map<string, string>(); // itemId → assinatura do que já foi enviado
@@ -96,14 +97,24 @@ function destacar(itemId: string): void {
   card.style.outlineOffset = '2px';
 }
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown }) => {
+// Pulso de retomada (cota da janela seguinte, falha transitória): o SW pede, a página manda depois. Um timer só.
+let pulso: ReturnType<typeof setTimeout> | undefined;
+function agendarPulso(): void {
+  if (pulso) return;
+  pulso = setTimeout(() => { pulso = undefined; if (ligada) enviar({ tipo: 'publiai:busca-pulso' }); }, PULSO_MS);
+}
+
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
     limparSelos();
     enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (a análise só sai quando o painel pedir)
     lerEEnviar();
-  } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && msg.resultados && typeof msg.resultados === 'object') {
+  } else if (ligada && msg?.tipo === 'publiai:busca-retomar' && msg.url === location.href.split('#')[0]) {
+    agendarPulso();
+  } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && msg.url === location.href.split('#')[0] && msg.resultados && typeof msg.resultados === 'object') {
+    // Resultado de outra página (URL anterior, antes do filtro por script) não vale aqui.
     resultados = msg.resultados as Record<string, ResultadoCard>;
     aplicarSelos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {

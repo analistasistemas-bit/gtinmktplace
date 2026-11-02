@@ -17,7 +17,7 @@ const okMargem = (pct: number) => ({
 function estado(resultados: Record<string, unknown> = {}, cards = [card('MLB1000001', { full: true, preco: 19.99 }), card('MLB1000002', { preco: 50, patrocinado: true }), card('MLB1000003', { preco: 80, catalogProductId: null })]): EstadoBusca {
   return {
     entrada: { tipoPagina: 'busca', url: 'https://lista.mercadolivre.com.br/batom' },
-    resposta: { resultados: Object.fromEntries(Object.entries(resultados).map(([k, v]) => [k, { itemId: k, ...(v as object) }])) as never },
+    resposta: { resultados: Object.fromEntries(Object.entries(resultados).map(([k, v]) => [k, { itemId: k, ...(v as object) }])) as never, metadados: {}, precoDaMargem: {}, limiteEm: null, usoRegistrado: false },
     observado: { cards: cards as never, ocorrencias: 5 },
   };
 }
