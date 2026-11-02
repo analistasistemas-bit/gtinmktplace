@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { lerBusca } from '../busca';
+import { lerBusca, normalizarCards } from '../busca';
 
 // Estrutura medida em lista.mercadolivre.com.br (22/10): card patrocinado (click1 + is_advertising), card de catálogo
 // (/p/MLB…) e card /up/; o Avantpro injeta `.avantpro-product-container` dentro do card (deve ser ignorado).
@@ -36,6 +36,7 @@ describe('lerBusca (Task 20)', () => {
       itemId: 'MLB4053374163', catalogProductId: 'MLB32466350', userProductId: null, posicao: 5,
       titulo: 'Jogo de Panelas Tramontina', preco: 301.3, vendedor: 'TRAMONTINA',
       nota: 4.9, vendidosTexto: '+10mil vendidos', freteGratis: true, full: true, lojaOficial: true, patrocinado: false, selos: ['MAIS VENDIDO'],
+      miniaturaUrl: null, ocorrencias: [{ posicao: 5, patrocinado: false, preco: 301.3 }],
     });
   });
 
@@ -122,5 +123,50 @@ describe('lerBusca (Task 20)', () => {
   it('preço ilegível vira null (nunca zero)', () => {
     const [c] = lerBusca(pagina(card({ href: P, titulo: 'X', frac: 'abc' })));
     expect(c.preco).toBeNull();
+  });
+});
+
+// Medido em 02/11 (lista.mercadolivre.com.br): cada card tem uma `img.poly-component__picture` em `.poly-card__portada`,
+// lazy, com `src` real em http2.mlstatic.com mesmo abaixo da dobra (currentSrc vazio até carregar).
+const IMG = 'https://http2.mlstatic.com/D_Q_NP_2X_776821-MLA99365251528_112025-E.webp';
+const comImg = (html: string, src: string | null) =>
+  html.replace('<div class="poly-card__portada">', `<div class="poly-card__portada">${src === null ? '' : `<img class="poly-component__picture" loading="lazy" srcset="${src} 2x" src="${src}">`}`);
+
+describe('miniatura e ocorrências (modo busca completo)', () => {
+  it('lê o src da imagem do próprio card; a injetada pelo Avant e a de card aninhado não valem', () => {
+    const base = card({ href: P, titulo: 'a', frac: '1' })
+      .replace('Comece a usar', '<img class="poly-component__picture" src="https://http2.mlstatic.com/AVANT.webp">Comece a usar');
+    expect(lerBusca(pagina(comImg(base, IMG)))[0].miniaturaUrl).toBe(IMG);
+    expect(lerBusca(pagina(base))[0].miniaturaUrl).toBeNull();
+    document.body.innerHTML = `<ol><li><div class="poly-card"><a class="poly-component__title" href="${P}">Fora</a>
+      <div class="poly-card"><div class="poly-card__portada"><img class="poly-component__picture" src="${IMG}"></div></div></div></li></ol>`;
+    expect(lerBusca(document)[0].miniaturaUrl).toBeNull();
+  });
+
+  it('só https em http2.mlstatic.com, sem credenciais; data:, outro host e http viram null', () => {
+    const ruins = ['data:image/gif;base64,R0lGOD', 'http://http2.mlstatic.com/a.webp', 'https://evil.example.com/a.webp',
+      'https://user:pw@http2.mlstatic.com/a.webp', 'https://http2.mlstatic.com.evil.com/a.webp', 'javascript:alert(1)'];
+    for (const src of ruins) {
+      expect(lerBusca(pagina(comImg(card({ href: P, titulo: 'a', frac: '1' }), src)))[0].miniaturaUrl).toBeNull();
+    }
+  });
+
+  it('item repetido guarda cada ocorrência com a própria posição e preço; imagem que só o 2º card traz completa', () => {
+    const a = card({ href: PAD, titulo: 'a', frac: '10', ad: true });
+    const b = comImg(card({ href: P, titulo: 'a', frac: '12' }), IMG);
+    const [c] = lerBusca(pagina(a + b));
+    expect(c.ocorrencias).toEqual([
+      { posicao: 1, patrocinado: true, preco: 10 },
+      { posicao: 5, patrocinado: false, preco: 12 },
+    ]);
+    expect(c.miniaturaUrl).toBe(IMG);
+  });
+
+  it('normalizarCards revalida miniatura e ocorrências vindas da página', () => {
+    const [c] = normalizarCards([{ itemId: 'MLB4053374163', miniaturaUrl: 'https://evil.example.com/a.webp',
+      ocorrencias: [{ posicao: 2, patrocinado: 1, preco: 9.5 }, { posicao: -1, patrocinado: true, preco: 'x' }, 'lixo'] }]);
+    expect(c.miniaturaUrl).toBeNull();
+    expect(c.ocorrencias).toEqual([{ posicao: 2, patrocinado: false, preco: 9.5 }, { posicao: null, patrocinado: true, preco: null }]);
+    expect(normalizarCards([{ itemId: 'MLB4053374163', miniaturaUrl: IMG }])[0].miniaturaUrl).toBe(IMG);
   });
 });

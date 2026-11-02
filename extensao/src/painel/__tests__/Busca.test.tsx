@@ -8,7 +8,7 @@ afterEach(() => cleanup());
 
 const card = (itemId: string, o: Record<string, unknown> = {}) => ({
   itemId, catalogProductId: 'MLB100', userProductId: null, posicao: null, titulo: `Produto ${itemId}`, preco: 100, vendedor: null, nota: null,
-  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], ...o,
+  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, ocorrencias: [{ posicao: null, patrocinado: false, preco: 100 }], ...o,
 });
 const okMargem = (pct: number) => ({
   estado: 'ok', fonte: 'catalogo', codigo: '00000081', custo: {},
@@ -39,7 +39,7 @@ describe('Busca no painel (Task 22)', () => {
     const seus = screen.getByText('Seus produtos', { selector: 'dt' }).closest('div')!;
     within(seus).getByText('1');
     screen.getByText('Soma dos mínimos informados');
-    screen.getByText('3 de 3 produtos');
+    screen.getByText('2 de 2 grupos de vendas');
   });
 
   it('lista: margem simulada do card casado; sem vínculo oferece vincular; clique destaca o card na página', async () => {

@@ -8,6 +8,13 @@
 //  Nada é lido de subárvores injetadas por outras extensões (ex.: `.avantpro-product-container`), nem de um card
 //  aninhado em outro. Selo ausente = null (desconhecido), nunca `false` (consultor, 22/10).
 
+/** Uma aparição do item na página: posição, patrocínio e preço são desta aparição (não se misturam entre elas). */
+export interface OcorrenciaBusca {
+  posicao: number | null;
+  patrocinado: boolean;
+  preco: number | null;
+}
+
 export interface CardBusca {
   itemId: string;
   catalogProductId: string | null;
@@ -25,6 +32,9 @@ export interface CardBusca {
   lojaOficial: true | null;
   patrocinado: boolean;
   selos: string[];
+  /** Miniatura do próprio card (https em http2.mlstatic.com); null = ausente ou inválida. */
+  miniaturaUrl: string | null;
+  ocorrencias: OcorrenciaBusca[];
 }
 
 const MLB = /^MLB\d{6,20}$/;
@@ -72,6 +82,19 @@ function lerLink(href: string): Pick<CardBusca, 'itemId' | 'catalogProductId' | 
   };
 }
 
+/** Só https no host de imagens do ML (medido 02/11), sem credenciais. Nunca busca nada: o painel só exibe a URL. */
+export function miniaturaValida(v: unknown): string | null {
+  if (typeof v !== 'string' || v.length > 500) return null;
+  let u: URL;
+  try { u = new URL(v); } catch { return null; }
+  return u.protocol === 'https:' && u.host === 'http2.mlstatic.com' && !u.username && !u.password ? u.href : null;
+}
+
+// `src` real chega em todos os cards, mesmo abaixo da dobra (currentSrc é que fica vazio até carregar).
+function lerMiniatura(card: Element): string | null {
+  return miniaturaValida(doMl(card, 'img.poly-component__picture')[0]?.getAttribute('src'));
+}
+
 function lerPreco(card: Element): number | null {
   const frac = texto(doMl(card, '.poly-price__current .andes-money-amount__fraction')[0]).replace(/\./g, '');
   const cents = texto(doMl(card, '.poly-price__current .andes-money-amount__cents')[0]);
@@ -111,13 +134,17 @@ export function lerBusca(doc: Document): CardBusca[] {
       lojaOficial: (vendedorEl ? aria(/^loja oficial$/i, vendedorEl) : false) || null,
       patrocinado: link.anuncio || doMl(card, 'a.poly-component__ads-promotions[aria-label="Patrocinado"]').length > 0,
       selos: doMl(card, '.poly-component__poly-label').map((e) => texto(e)).filter(Boolean),
+      miniaturaUrl: lerMiniatura(card),
+      ocorrencias: [],
     };
+    lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco });
     const ja = porItem.get(lido.itemId);
     if (!ja) { porItem.set(lido.itemId, lido); continue; }
     // Duas ocorrências com catálogos diferentes para o mesmo item: catálogo desconhecido (não escolhe um).
     if (ja.catalogProductId && lido.catalogProductId && ja.catalogProductId !== lido.catalogProductId) conflito.add(lido.itemId);
     const completar = <K extends keyof CardBusca>(k: K) => { if (ja[k] === null) ja[k] = lido[k]; };
-    for (const k of ['catalogProductId', 'userProductId', 'posicao', 'preco', 'vendedor', 'nota', 'vendidosTexto', 'freteGratis', 'full', 'lojaOficial'] as const) completar(k);
+    for (const k of ['catalogProductId', 'userProductId', 'posicao', 'preco', 'vendedor', 'nota', 'vendidosTexto', 'freteGratis', 'full', 'lojaOficial', 'miniaturaUrl'] as const) completar(k);
+    ja.ocorrencias.push(...lido.ocorrencias);
     ja.patrocinado ||= lido.patrocinado;
     ja.selos = [...new Set([...ja.selos, ...lido.selos])];
   }
@@ -152,6 +179,11 @@ export function normalizarCards(v: unknown): CardBusca[] {
       lojaOficial: verdadeiro(c.lojaOficial),
       patrocinado: c.patrocinado === true,
       selos: Array.isArray(c.selos) ? c.selos.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(0, 5) : [],
+      miniaturaUrl: miniaturaValida(c.miniaturaUrl),
+      ocorrencias: Array.isArray(c.ocorrencias)
+        ? c.ocorrencias.slice(0, 10).filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+          .map((o) => ({ posicao: num(o.posicao, 10000), patrocinado: o.patrocinado === true, preco: num(o.preco, 1e9) }))
+        : [],
     });
   }
   return out;

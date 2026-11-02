@@ -2,7 +2,7 @@
 // scroll), manda ao SW e, quando o painel analisa, põe o selo só nos cards casados com SKU da org. Nunca reordena nem
 // esconde cards do ML; o destaque pedido pelo painel só rola e contorna o card por 2 s.
 import type { ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
-import { cardsDoItem, lerBusca } from '../leitura/busca';
+import { cardsDoItem, lerBusca, type CardBusca } from '../leitura/busca';
 import { CORES, MARCA } from './aparencia';
 import { seloDaBusca } from './selo-busca';
 
@@ -27,9 +27,9 @@ function lerEEnviar(): void {
   // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
   const url = location.href.split('#')[0];
   if (url !== urlAtual) { urlAtual = url; enviados = new Map(); limparSelos(); }
-  // Reenvia também o card que completou preço, catálogo ou vendidos depois da 1ª leitura.
-  const assinatura = (c: { preco: number | null; catalogProductId: string | null; vendidosTexto: string | null }) =>
-    `${c.preco}|${c.catalogProductId}|${c.vendidosTexto}`;
+  // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
+  const assinatura = (c: CardBusca) =>
+    `${c.preco}|${c.catalogProductId}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));

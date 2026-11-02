@@ -4,6 +4,7 @@
 import type { ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import type { CardBusca } from '../leitura/busca';
 import { pisoDosVendidos } from './quanto-vende';
+import { volumeMinimoAoPrecoAtual } from './volume-minimo';
 
 export type ResultadoBusca = ResultadoCard;
 export type Resultados = Record<string, ResultadoBusca | undefined>;
@@ -13,17 +14,37 @@ export type OrdemBusca = 'relevancia' | 'vendidos' | 'preco' | 'margem';
 const OFERTA = /oferta/i;
 const vinculado = (r: ResultadoBusca | undefined) => !!r && r.estado !== 'sem_vinculo';
 
+/** Grupos de vendas (o card de catálogo ou /up/ mostra o número do produto, não da oferta). Chave: catálogo → /up/ → item.
+ *  Item sem catálogo herda o do /up/ só se todos os itens com esse /up/ que têm catálogo concordam. /up/ com dois
+ *  catálogos é conflito: seus itens saem dos totais (e são contados à parte). */
+function agruparVendas(cards: CardBusca[]): { grupos: Map<string, CardBusca[]>; conflitos: number } {
+  const catsDoUp = new Map<string, Set<string>>();
+  for (const c of cards) {
+    if (c.userProductId && c.catalogProductId) catsDoUp.set(c.userProductId, (catsDoUp.get(c.userProductId) ?? new Set()).add(c.catalogProductId));
+  }
+  const grupos = new Map<string, CardBusca[]>();
+  const emConflito = new Set<string>();
+  for (const c of cards) {
+    const cats = c.userProductId ? catsDoUp.get(c.userProductId) : undefined;
+    if (cats && cats.size > 1) { emConflito.add(c.userProductId!); continue; }
+    const cat = c.catalogProductId ?? (cats ? [...cats][0] : null);
+    const k = cat ? `c:${cat}` : c.userProductId ? `u:${c.userProductId}` : `i:${c.itemId}`;
+    grupos.set(k, [...(grupos.get(k) ?? []), c]);
+  }
+  return { grupos, conflitos: emConflito.size };
+}
+
 export function resumoBusca(cards: CardBusca[], resultados: Resultados, ocorrencias: number) {
   const precos = cards.map((c) => c.preco).filter((p): p is number => p !== null);
-  // Vendidos por catálogo uma vez só (o card de catálogo mostra o número do produto, não da oferta).
-  const porChave = new Map<string, number>();
-  let cobertura = 0;
-  for (const c of cards) {
-    const piso = pisoDosVendidos(c.vendidosTexto);
-    if (piso === null) continue;
-    cobertura++;
-    const k = c.catalogProductId ?? c.itemId;
-    porChave.set(k, Math.max(porChave.get(k) ?? 0, piso));
+  const { grupos, conflitos } = agruparVendas(cards);
+  let somaVendidos = 0, coberturaVendidos = 0, somaVolume = 0, coberturaVolume = 0;
+  for (const g of grupos.values()) {
+    const pisos = g.map((c) => pisoDosVendidos(c.vendidosTexto)).filter((p): p is number => p !== null);
+    if (pisos.length) { coberturaVendidos++; somaVendidos += Math.max(...pisos); }
+    // Menor contribuição completa (piso e preço da mesma aparição); nunca piso de um card com preço de outro.
+    const contribuicoes = g.flatMap((c) => c.ocorrencias.map((o) => volumeMinimoAoPrecoAtual(c.vendidosTexto, o.preco)))
+      .filter((v): v is number => v !== null);
+    if (contribuicoes.length) { coberturaVolume++; somaVolume += Math.min(...contribuicoes); }
   }
   return {
     ocorrencias,
@@ -38,7 +59,9 @@ export function resumoBusca(cards: CardBusca[], resultados: Resultados, ocorrenc
     comCatalogo: cards.filter((c) => c.catalogProductId).length,
     semCatalogo: cards.filter((c) => !c.catalogProductId).length,
     vinculados: cards.filter((c) => vinculado(resultados[c.itemId])).length,
-    vendidosMinimos: { soma: [...porChave.values()].reduce((s, n) => s + n, 0), cobertura },
+    vendidosMinimos: { soma: somaVendidos, cobertura: coberturaVendidos, grupos: grupos.size, conflitos },
+    /** Centavos; piso × preço atual, não é faturamento. */
+    volumeMinimo: { centavos: somaVolume, cobertura: coberturaVolume, grupos: grupos.size, conflitos },
   };
 }
 
