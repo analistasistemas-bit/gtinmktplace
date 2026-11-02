@@ -22,19 +22,35 @@ const enviar = (msg: object) => {
 };
 
 let urlAtual = location.href.split('#')[0];
+// Geração da página dada pelo SW (navegação + sessão). Começa sem: o 1º envio volta recusado com a atual, que a página
+// adota e reenvia. Cards levam e resultados/retomada só valem com ela: mensagem atrasada de outra geração, mesmo na
+// mesma URL, é descartada nos dois sentidos.
+let geracao: string | null = null;
+
+/** Cards ao SW; recusa por geração antiga traz a atual → adota e reenvia tudo com ela. */
+function enviarCards(msg: { geracao: string | null }): void {
+  try {
+    chrome.runtime.sendMessage(msg).then((r: { erro?: unknown; geracao?: unknown } | undefined) => {
+      if (!ligada || r?.erro !== 'geracao_antiga' || typeof r.geracao !== 'string' || r.geracao === msg.geracao) return;
+      geracao = r.geracao;
+      enviados = new Map();
+      lerEEnviar();
+    }).catch(() => {});
+  } catch { /* contexto invalidado */ }
+}
 
 function lerEEnviar(): void {
   if (!ligada) return;
   // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
   const url = location.href.split('#')[0];
-  if (url !== urlAtual) { urlAtual = url; enviados = new Map(); limparSelos(); }
+  if (url !== urlAtual) { urlAtual = url; enviados = new Map(); geracao = null; limparSelos(); }
   // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
   const assinatura = (c: CardBusca) =>
     `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.identidadeConflitante}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));
-  enviar({ tipo: 'publiai:busca-cards', url, cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length });
+  enviarCards({ tipo: 'publiai:busca-cards', geracao, url, cards: novos, ocorrencias: document.querySelectorAll('.poly-card').length } as { geracao: string | null });
 }
 
 function criarSelo(texto: string, titulo: string, tom: keyof typeof CORES): HTMLElement {
@@ -101,20 +117,22 @@ function destacar(itemId: string): void {
 let pulso: ReturnType<typeof setTimeout> | undefined;
 function agendarPulso(): void {
   if (pulso) return;
-  pulso = setTimeout(() => { pulso = undefined; if (ligada) enviar({ tipo: 'publiai:busca-pulso' }); }, PULSO_MS);
+  pulso = setTimeout(() => { pulso = undefined; if (ligada) enviar({ tipo: 'publiai:busca-pulso', geracao }); }, PULSO_MS);
 }
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown }) => {
+const daPagina = (msg: { url?: unknown; geracao?: unknown }) => geracao !== null && msg.geracao === geracao && msg.url === location.href.split('#')[0];
+
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
     limparSelos();
-    enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (a análise só sai quando o painel pedir)
+    enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (e o SW analisa sozinho)
     lerEEnviar();
-  } else if (ligada && msg?.tipo === 'publiai:busca-retomar' && msg.url === location.href.split('#')[0]) {
+  } else if (ligada && msg?.tipo === 'publiai:busca-retomar' && daPagina(msg)) {
     agendarPulso();
-  } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && msg.url === location.href.split('#')[0] && msg.resultados && typeof msg.resultados === 'object') {
-    // Resultado de outra página (URL anterior, antes do filtro por script) não vale aqui.
+  } else if (ligada && msg?.tipo === 'publiai:busca-resultados' && daPagina(msg) && msg.resultados && typeof msg.resultados === 'object') {
+    // Resultado de outra página (URL ou geração anterior) não vale aqui.
     resultados = msg.resultados as Record<string, ResultadoCard>;
     aplicarSelos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {

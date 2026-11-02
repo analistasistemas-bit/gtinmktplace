@@ -21,7 +21,7 @@ export type Pedido =
   | { acao: 'erro_leitura'; tipoPagina: TipoPagina; mlItemId: string | null; versao: string; motivo: string }
   | { acao: 'catalogo'; catalogProductId: string; itemDaPagina: string | null }
   | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[]; registrarUso?: boolean }
-  | { acao: 'identificar_busca'; eanDaBusca: string | null; itens: Omit<ItemBusca, 'preco'>[] }
+  | { acao: 'identificar_busca'; eanDaBusca: string | null; itens: Omit<ItemBusca, 'preco'>[]; registrarUso?: boolean }
   | { acao: 'radar' | 'adicionar_radar'; catalogProductId: string }
   | { acao: 'sessao' };
 
@@ -116,16 +116,18 @@ export function validarPedido(body: unknown): Pedido | null {
     case 'identificar_busca': {
       // Só banco, sem preço: a extensão pode mandar ocorrências repetidas (orgânico + patrocinado); o teto vale
       // para os IDs distintos; o teto bruto (200 entradas) é só anti-abuso de parsing.
-      const { itens, eanDaBusca } = b;
+      const { itens, eanDaBusca, registrarUso } = b;
       if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ENTRADAS_IDENTIFICAR) return null;
       if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null;
+      if (registrarUso !== undefined && typeof registrarUso !== 'boolean') return null;
       const lidos = new Map<string, Omit<ItemBusca, 'preco'>>();
       for (const i of itens as Record<string, unknown>[]) {
         if (!i || typeof i !== 'object' || !mlb(i.itemId) || (i.catalogProductId != null && !mlb(i.catalogProductId))) return null;
         if (!lidos.has(i.itemId)) lidos.set(i.itemId, { itemId: i.itemId, catalogProductId: (i.catalogProductId as string | null | undefined) ?? null });
       }
       if (lidos.size > MAX_ITENS_BUSCA) return null;
-      return { acao: 'identificar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: [...lidos.values()] };
+      // registrarUso: a extensão manda true só no 1º lote de cada geração de página (telemetria `busca`, uma por busca).
+      return { acao: 'identificar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: [...lidos.values()], ...(registrarUso === undefined ? {} : { registrarUso }) };
     }
     default:
       return null;

@@ -400,6 +400,16 @@ describe('identificar_busca (Task 2, emenda 02/11)', () => {
   });
 });
 
+describe('identificar_busca — registrarUso (achado 3, rodada 1)', () => {
+  const card = { itemId: 'MLB1', catalogProductId: null };
+  it('boolean passa; ausente fica ausente; outro tipo recusa', () => {
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card], registrarUso: true })).toMatchObject({ registrarUso: true });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card], registrarUso: false })).toMatchObject({ registrarUso: false });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card] })).not.toHaveProperty('registrarUso');
+    expect(validarPedido({ acao: 'identificar_busca', itens: [card], registrarUso: 1 })).toBeNull();
+  });
+});
+
 describe('validarPedido — radar (Task 18)', () => {
   it('radar e adicionar_radar só com id de catálogo válido', () => {
     expect(validarPedido({ acao: 'radar', catalogProductId: 'MLB32466350' })).toEqual({ acao: 'radar', catalogProductId: 'MLB32466350' });

@@ -2,9 +2,15 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 
 let ouvinte: (m: unknown) => void = () => {};
-const enviar = vi.fn(async (m: { tipo?: string }) => (m.tipo === 'publiai:estado-extensao' ? { ativa: true, logado: true } : undefined));
+// SW falso: cards sem a geração atual voltam recusados com ela (a página adota e reenvia).
+let G = 'G1';
+const enviar = vi.fn(async (m: { tipo?: string; geracao?: unknown }) => {
+  if (m.tipo === 'publiai:estado-extensao') return { ativa: true, logado: true };
+  if (m.tipo === 'publiai:busca-cards' && m.geracao !== G) return { ok: false, erro: 'geracao_antiga', geracao: G };
+  return undefined;
+});
 const aqui = () => location.href.split('#')[0];
-const cardsEnviados = () => enviar.mock.calls.flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null; userProductId?: string | null }[] }).cards ?? []);
+const cardsEnviados = () => enviar.mock.calls.filter(([m]) => (m as { geracao?: unknown }).geracao === G).flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null; userProductId?: string | null }[] }).cards ?? []);
 
 beforeAll(async () => {
   document.body.innerHTML = `<div class="poly-card">
@@ -24,15 +30,15 @@ it('1ª leitura espera o card montar; preço que aparece depois reenvia o card',
 
 it('selo some do card quando o resultado deixa de autorizar (ok → sem vínculo)', () => {
   const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: ok } });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });
 
 it('ativacao false remove selos dos cards; true reenvia os cards sem analisar sozinha', () => {
   const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: ok } });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
   ouvinte({ tipo: 'publiai:ativacao', ativa: false, logado: true, geracao: 2 });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
@@ -76,7 +82,7 @@ it('conflito de catálogo (só identidadeConflitante muda) reenvia o card, e a r
 
 it('resultado de outra página (URL diferente) é ignorado', () => {
   const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: {} });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
   ouvinte({ tipo: 'publiai:busca-resultados', url: 'https://lista.mercadolivre.com.br/outra', resultados: { MLB5321956667: ok } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });
@@ -85,14 +91,34 @@ it('SW pede retomada: um pulso só, depois da janela da cota', () => {
   vi.useFakeTimers();
   try {
     const pulsos = () => enviar.mock.calls.filter(([m]) => (m as { tipo: string }).tipo === 'publiai:busca-pulso').length;
-    ouvinte({ tipo: 'publiai:busca-retomar', url: aqui() });
-    ouvinte({ tipo: 'publiai:busca-retomar', url: aqui() });
-    ouvinte({ tipo: 'publiai:busca-retomar', url: 'https://lista.mercadolivre.com.br/outra' });
+    ouvinte({ tipo: 'publiai:busca-retomar', url: aqui(), geracao: G });
+    ouvinte({ tipo: 'publiai:busca-retomar', url: aqui(), geracao: G });
+    ouvinte({ tipo: 'publiai:busca-retomar', url: 'https://lista.mercadolivre.com.br/outra', geracao: G });
+    ouvinte({ tipo: 'publiai:busca-retomar', url: aqui(), geracao: 'G0' });
     vi.advanceTimersByTime(60_000);
     expect(pulsos()).toBe(0);
     vi.advanceTimersByTime(2_000);
     expect(pulsos()).toBe(1);
+    expect(enviar.mock.calls.find(([m]) => (m as { tipo: string }).tipo === 'publiai:busca-pulso')![0]).toMatchObject({ geracao: G });
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('achado 1: resultado de outra geração (navegação/sessão anterior, mesma URL) é ignorado', () => {
+  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: 'G0', resultados: { MLB5321956667: ok } });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), resultados: { MLB5321956667: ok } });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
+});
+
+it('achado 1: SW recusa com geração nova (sessão mudou) → a página adota e reenvia tudo com ela', async () => {
+  G = 'G2';
+  const antes = cardsEnviados().length;
+  ouvinte({ tipo: 'publiai:sessao-mudou' });
+  await vi.waitFor(() => expect(cardsEnviados().length).toBeGreaterThan(antes), { timeout: 3000 });
+  expect(enviar.mock.calls.at(-1)![0]).toMatchObject({ tipo: 'publiai:busca-cards', geracao: 'G2' });
 });

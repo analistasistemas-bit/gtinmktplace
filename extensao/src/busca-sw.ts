@@ -50,6 +50,10 @@ function descartarMargem(r: RespostaBusca, itemId: string): void {
 
 type Pagina = { geracao: string | null; sessao: number; url: string };
 
+/** Geração da página como a página do ML a vê: página (navegação) + sessão. Toda mensagem cards ↔ resultados a leva;
+ *  diferente da atual = mensagem atrasada de outra navegação ou sessão (mesmo na mesma URL) → descartada. */
+export const geracaoDaPagina = (geracao: string | null, sessao: number): string => `${geracao ?? '-'}:${sessao}`;
+
 async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
   await registrarEstado(tabId, { geracao: p.geracao, sessao: p.sessao, entrada: e.entrada, resposta: e.resposta, observado: e.observado });
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
@@ -57,7 +61,7 @@ async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
 
 /** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). */
 function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
-  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: p.geracao, url: p.url, resultados: r.resultados, metadados: r.metadados }).catch(() => {});
+  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados }).catch(() => {});
 }
 
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
@@ -73,13 +77,18 @@ function naFila<T>(filas: Map<number, Promise<unknown>>, tabId: number, fn: () =
 }
 
 /** Content script → cards lidos (os novos do scroll somam aos de antes, na mesma busca). Catálogo (ou conflito) diferente
- *  descarta vínculo e margem; preço diferente, só a margem; só a miniatura, nada. Outra URL de busca começa do zero. */
-export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorrencias: unknown, url: unknown): Promise<{ ok: true }> {
+ *  descarta vínculo e margem; preço diferente, só a margem; só a miniatura, nada. Outra URL de busca começa do zero.
+ *  `geracaoMsg` = geracaoDaPagina que a página conhece, conferida DENTRO da fila de escrita: outra (ou nenhuma) → nada é
+ *  gravado e a resposta traz a atual (a página adota e reenvia). */
+export type RespostaCards = { ok: true } | { ok: false; erro: 'geracao_antiga'; geracao: string };
+export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorrencias: unknown, url: unknown, geracaoMsg: unknown): Promise<RespostaCards> {
   const cards = normalizarCards(cardsBrutos);
   if (typeof url !== 'string' || !/^https:\/\/lista\.mercadolivre\.com\.br\//.test(url)) return Promise.resolve({ ok: true });
   const semHash = url.split('#')[0];
-  return naFila(escritas, tabId, async () => {
+  return naFila(escritas, tabId, async (): Promise<RespostaCards> => {
     const { geracao, sessao, estado } = await lerAba(tabId);
+    const atual = geracaoDaPagina(geracao, sessao);
+    if (geracaoMsg !== atual) return { ok: false, erro: 'geracao_antiga', geracao: atual };
     const antes = ehBusca(estado) && estado.entrada.url === semHash ? estado : null;
     const porItem = new Map((antes?.observado.cards ?? []).map((c) => [c.itemId, c]));
     const r = respostaDe(antes);
@@ -149,6 +158,22 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   // Gravação recusada com a época e a página ainda valendo = só a identidade mudou desde o início (ex.: recém-logado,
   // descoberta na 1ª chamada): o pulso refaz com a nova. Época/página nova → `vale()` falso, nada a retomar.
   const recusada = () => { retomar ||= vale(); return SEM_SESSAO; };
+  // Logo antes do envio (depois dos awaits de token/identidade): a rodada não foi cancelada, a página (geração, sessão,
+  // URL) é a mesma e cada item do lote ainda tem a assinatura de quando foi escolhido. Recusa com tudo valendo = o lote
+  // mudou: refaz a seleção. Sem isso, navegação ou preço novo durante a preparação ainda chamariam a edge.
+  let recusouEnvio = false;
+  const guarda = (p: Pagina, lote: CardBusca[], assinatura: (c: CardBusca) => string) => ({
+    aindaVale: vale,
+    conferir: async () => {
+      const a = await lerAba(tabId);
+      const ok = vale() && a.geracao === p.geracao && a.sessao === p.sessao && ehBusca(a.estado) && a.estado.entrada.url === p.url && (() => {
+        const agora = new Map(a.estado.observado.cards.map((c) => [c.itemId, c]));
+        return lote.every((c) => { const x = agora.get(c.itemId); return !!x && assinatura(x) === assinatura(c); });
+      })();
+      recusouEnvio = !ok && vale();
+      return ok;
+    },
+  });
   for (;;) {
     if (!vale()) return SEM_SESSAO;
     const aba = await lerAba(tabId);
@@ -164,7 +189,10 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       for (const c of lote) identificados.add(c.itemId);
       const resp = await chamarExtensao<{ itens?: unknown }>({
         acao: 'identificar_busca', eanDaBusca, itens: lote.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId })),
-      }, epoca);
+        // Telemetria `busca`: uma por geração de página, no 1º lote (falhou → o próximo pede de novo).
+        registrarUso: !r.usoRegistrado,
+      }, epoca, guarda(p, lote, (c) => `${c.catalogProductId}`));
+      if (recusouEnvio) { recusouEnvio = false; for (const c of lote) identificados.delete(c.itemId); continue; }
       const itens = resp.ok && Array.isArray(resp.dados?.itens) ? (resp.dados.itens as MetadadosCardBusca[]) : null;
       if (!itens) {
         // Falha inteira (500, corpo fora do formato): metadados seguem desconhecidos; o pulso tenta de novo.
@@ -175,6 +203,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       }
       const enviado = new Map(lote.map((c) => [c.itemId, c]));
       const gravou = await gravarSe(p, (r2, agora) => {
+        r2.usoRegistrado = true; // pedido nesta chamada (ou já antes) e a edge respondeu: contou
         for (const m of itens) {
           const ev = enviado.get(m?.itemId), a = agora.get(m?.itemId);
           if (!ev || !a || a.catalogProductId !== ev.catalogProductId) continue; // mudou de catálogo: refaz depois
@@ -213,9 +242,9 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
     const resp = await chamarExtensao<{ itens?: unknown; limiteAtingido?: unknown; usoRegistrado?: unknown }>({
       acao: 'analisar_busca', eanDaBusca,
       itens: lote.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId, preco: c.preco })),
-      // Telemetria: uma vez por geração de página — pedida até a edge confirmar que contou.
-      registrarUso: !r.usoRegistrado,
-    }, epoca);
+      registrarUso: false, // a telemetria da busca é contada no identificar_busca
+    }, epoca, guarda(p, lote, (c) => `${c.preco}|${c.catalogProductId}`));
+    if (recusouEnvio) { recusouEnvio = false; for (const c of lote) enviados.delete(c.itemId); continue; }
     if (!resp.ok || !Array.isArray(resp.dados?.itens)) {
       falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
       retomar ||= transitoria(falha);
@@ -232,14 +261,15 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         r2.resultados[res.itemId] = res;
         r2.precoDaMargem[res.itemId] = ev.preco!;
       }
-      if (dados.usoRegistrado === true) r2.usoRegistrado = true;
       if (dados.limiteAtingido === true) r2.limiteEm = minuto();
     }))) { falha = recusada(); break; }
   }
   // Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois.
   if (retomar && vale()) {
-    const { estado } = await lerAba(tabId);
-    if (vale() && ehBusca(estado)) chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-retomar', url: estado.entrada.url }).catch(() => {});
+    const a = await lerAba(tabId);
+    if (vale() && ehBusca(a.estado)) {
+      chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-retomar', geracao: geracaoDaPagina(a.geracao, a.sessao), url: a.estado.entrada.url }).catch(() => {});
+    }
   }
   return falha ?? { ok: true };
 }

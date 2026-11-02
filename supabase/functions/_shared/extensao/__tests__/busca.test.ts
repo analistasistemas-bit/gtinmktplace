@@ -123,7 +123,7 @@ describe('analisarBusca (Task 21)', () => {
     expect(d.analisar).toHaveBeenCalledWith(expect.anything(), { fonte: 'catalogo', variacao: v('cat') });
   });
 
-  describe('telemetria (emenda 02/11): uma vez por geração de página', () => {
+  describe('registrarUso no analisar_busca (a contagem por geração de página é no identificar_busca; a extensão manda false aqui)', () => {
     const doisCasados = [
       { itemId: 'MLB1', catalogProductId: 'MLB100', preco: 100 },
       { itemId: 'MLB3', catalogProductId: 'MLB100', preco: 101 },

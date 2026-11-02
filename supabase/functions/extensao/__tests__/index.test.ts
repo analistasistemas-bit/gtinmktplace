@@ -647,6 +647,9 @@ describe('extensao — analisar_busca: telemetria por geração (emenda 02/11)',
     f.rpcs.length = 0;
     await post({ acao: 'analisar_busca', eanDaBusca: null, itens, ...P2 });
     expect(usos()).toBe(2);
+    f.rpcs.length = 0;
+    await post({ acao: 'analisar_busca', eanDaBusca: null, itens, registrarUso: false, ...P2 });
+    expect(usos()).toBe(0); // extensão nova: a contagem é no identificar_busca
   });
 });
 
@@ -670,6 +673,17 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     // service-role: toda tabela lida leva o filtro da org do usuário
     for (const t of new Set(f.froms)) expect(f.eqs).toContainEqual([t, 'org_id', 'org-1']);
     expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
+  });
+
+  it('registrarUso true (1º lote da geração de página): 1 registro tipo busca, mesmo sem nenhum vinculado; sem o campo, nenhum', async () => {
+    const usos = () => f.rpcs.filter((r) => r.fn === 'extensao_registrar_uso');
+    expect((await post({ ...PEDIDO, registrarUso: true })).status).toBe(200);
+    expect(usos()).toEqual([{ fn: 'extensao_registrar_uso', args: { p_org_id: 'org-1', p_user_id: 'user-1', p_tipo: 'busca' } }]);
+    f.rpcs.length = 0;
+    await post(PEDIDO);
+    await post({ ...PEDIDO, registrarUso: false });
+    expect(usos()).toEqual([]);
+    expect(redisIncrComTTL).not.toHaveBeenCalled(); // telemetria não consome a cota de margem
   });
 
   it('cada consulta (fontes + catálogo + EAN + vínculo manual) leva org_id; nenhum fetch', async () => {

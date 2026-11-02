@@ -171,6 +171,29 @@ describe('chamarExtensao', () => {
   });
 });
 
+describe('chamarExtensao — guarda de quem pede (busca: página e item ainda valem)', () => {
+  it('conferir (assíncrona, depois de preparar o token) e aindaVale (síncrona, colada no fetch) recusam → nada sai', async () => {
+    await conectar();
+    expect(await chamarExtensao({ acao: 'x' }, undefined, { conferir: async () => false })).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(await chamarExtensao({ acao: 'x' }, undefined, { aindaVale: () => false })).toEqual({ ok: false, erro: 'sem_sessao' });
+    expect(fetchFalso).not.toHaveBeenCalled();
+  });
+
+  it('conferir roda depois da renovação do token (await da preparação)', async () => {
+    await conectar();
+    local.credenciais = { ...(local.credenciais as object), expiresAt: 1 };
+    const ordem: string[] = [];
+    fetchFalso.mockImplementation(async (u: string) => {
+      ordem.push(String(u).includes('/auth/v1/token') ? 'renovar' : 'edge');
+      return String(u).includes('/auth/v1/token')
+        ? resposta(200, { access_token: 'tok-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'u1' } })
+        : envelope({ ok: 1 });
+    });
+    await chamarExtensao({ acao: 'x' }, undefined, { conferir: async () => { ordem.push('conferir'); return true; } });
+    expect(ordem).toEqual(['renovar', 'conferir', 'edge']);
+  });
+});
+
 describe('atualizarSessao', () => {
   it('sem sessão → false sem rede', async () => {
     expect(await atualizarSessao()).toBe(false);

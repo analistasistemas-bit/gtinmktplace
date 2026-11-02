@@ -11,8 +11,15 @@ const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai
 const CONTEUDO: Sender = { id: 'ext-publiai', tab: { id: 7 } as chrome.tabs.Tab, url: 'https://produto.mercadolivre.com.br/MLB-1' };
 const OUTRA_EXT: Sender = { id: 'outra', url: 'chrome-extension://outra/x.html' };
 // Painel em dia: manda a geração (época do SW) da última resposta — aqui, a viva. Testes de geração antiga usam rotearBruto.
-const rotearMensagem = (msg: unknown, s: Sender) =>
-  rotearBruto(s === PAINEL && typeof msg === 'object' && msg !== null && !('geracao' in msg) ? { geracao: epocaAtual(), ...msg } : msg, s);
+// Cards da busca sem geração: faz o aperto de mão do content script (recusa com a geração atual → reenvia com ela).
+const rotearMensagem = (msg: unknown, s: Sender): Promise<unknown> | undefined => {
+  const m = msg as Record<string, unknown>;
+  if (m?.tipo === 'publiai:busca-cards' && !('geracao' in m)) {
+    const r = rotearBruto(m, s);
+    return r?.then((x) => ((x as { erro?: string })?.erro === 'geracao_antiga' ? rotearBruto({ ...m, geracao: (x as { geracao: string }).geracao }, s) : x));
+  }
+  return rotearBruto(s === PAINEL && typeof msg === 'object' && msg !== null && !('geracao' in msg) ? { geracao: epocaAtual(), ...msg } : msg, s);
+};
 const fetchFalso = vi.fn();
 // Última chamada à edge (o GET do HTML do anúncio para a data de criação roda em paralelo/depois).
 const ultimaEdge = () => fetchFalso.mock.calls.filter(([u]) => !String(u).startsWith('https://produto.')).at(-1)!;

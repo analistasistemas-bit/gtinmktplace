@@ -1,10 +1,10 @@
 // Busca automática no SW (ADR-0189 emenda 2026-11-02, Task 3): registrar cards → identificar no banco → margem só dos
 // vinculados elegíveis, painel aberto ou fechado, com isolamento de sessão e de página.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { epocaAtual, lerAba } from '../abas';
+import { epocaAtual, lerAba, limparEstadosDasAbas } from '../abas';
 import { aoAtualizarAba, complementosPendentes, rotearMensagem as rotearBruto } from '../roteador';
 import { sair } from '../credenciais';
-import { instalarChromeFalso, logar } from './chrome-falso';
+import { instalarChromeFalso, local, logar } from './chrome-falso';
 
 type Sender = chrome.runtime.MessageSender;
 const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai/src/painel/index.html' };
@@ -16,18 +16,23 @@ const card = (n: number, o: Record<string, unknown> = {}) =>
   ({ itemId: id(n), catalogProductId: 'MLB1000000', preco: 10, titulo: id(n), selos: [], patrocinado: false, miniaturaUrl: null, ocorrencias: [], ...o });
 const cards = (de: number, ate: number) => Array.from({ length: ate - de + 1 }, (_, i) => card(de + i));
 
-// Edge falsa no protocolo 2: identificar_busca pelo conjunto `vinculados`; analisar_busca com cota por minuto e a
-// telemetria da edge (registrarUso true → no máximo 1 registro na chamada, só se reservou).
+// Edge falsa no protocolo 2: identificar_busca pelo conjunto `vinculados` (registrarUso true → 1 registro de uso);
+// analisar_busca com cota por minuto (sem o campo, legado: 1 registro por reserva; false: nenhum).
 let vinculados: Set<string>;
 let cota: number;
 let registros: number;
 let bloqueio: Promise<void> | null;
 let antesDeResponder: ((acao: string) => Promise<void> | void) | null;
 let falharIdentificar: boolean;
+let aoRenovar: (() => Promise<void>) | null;
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
 
-async function edge(_u: string, init?: RequestInit): Promise<Response> {
+async function edge(u: string, init?: RequestInit): Promise<Response> {
+  if (String(u).includes('/auth/v1/token')) {
+    if (aoRenovar) { const f = aoRenovar; aoRenovar = null; await f(); }
+    return new Response(JSON.stringify({ access_token: 'tok-novo', refresh_token: 'ref-novo', expires_in: 3600, user: { id: 'u1' } }), { status: 200 });
+  }
   const b = JSON.parse(String(init?.body));
   const env = (dados: unknown) => new Response(JSON.stringify({ identidade: b.identidadeEsperada, dados }), { status: 200 });
   if (b.acao === 'sessao') return new Response(JSON.stringify({ identidade: 'u1:org1:', dados: {} }), { status: 200 });
@@ -36,6 +41,7 @@ async function edge(_u: string, init?: RequestInit): Promise<Response> {
   if (antesDeResponder) await antesDeResponder(b.acao);
   if (b.acao === 'identificar_busca') {
     if (falharIdentificar) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
+    if (b.registrarUso === true) registros++;
     return env({ itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinculados.has(i.itemId) ? { fonte: 'catalogo', codigo: `SKU-${i.itemId}` } : null })) });
   }
   if (b.acao === 'analisar_busca') {
@@ -66,15 +72,25 @@ beforeEach(() => {
   bloqueio = null;
   antesDeResponder = null;
   falharIdentificar = false;
+  aoRenovar = null;
+  geracaoCs = null;
   corpos.length = 0;
 });
 afterEach(async () => { await complementosPendentes(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
+// Geração da página como o content script a conhece: começa sem; o SW responde geracao_antiga com a atual e ele reenvia.
+let geracaoCs: string | null;
+const enviarCards = async (lista: object[], s: Sender = BUSCA) => {
+  const msg = { tipo: 'publiai:busca-cards', url: s.url, cards: lista, ocorrencias: lista.length };
+  let r = await rotear({ ...msg, geracao: geracaoCs }, s) as { ok?: boolean; erro?: string; geracao?: string } | undefined;
+  if (r?.erro === 'geracao_antiga') { geracaoCs = r.geracao!; r = await rotear({ ...msg, geracao: geracaoCs }, s) as typeof r; }
+  return r;
+};
 const registrar = async (lista: object[], s: Sender = BUSCA) => {
-  await rotear({ tipo: 'publiai:busca-cards', cards: lista, ocorrencias: lista.length }, s);
+  await enviarCards(lista, s);
   await complementosPendentes();
 };
-const pulso = async (s: Sender = BUSCA) => { await rotear({ tipo: 'publiai:busca-pulso' }, s); await complementosPendentes(); };
+const pulso = async (s: Sender = BUSCA, geracao = geracaoCs) => { await rotear({ tipo: 'publiai:busca-pulso', geracao }, s); await complementosPendentes(); };
 type Estado = { resposta: { resultados: Record<string, { estado: string }>; metadados: Record<string, { vinculo: unknown }>; precoDaMargem: Record<string, number>; limiteEm: number | null; usoRegistrado: boolean } };
 const estado = async () => (await lerAba(7)).estado as unknown as Estado | null;
 const mensagensPagina = (tipo: string) => vi.mocked(chrome.tabs.sendMessage).mock.calls.filter(([t, m]) => t === 7 && (m as { tipo: string }).tipo === tipo).map(([, m]) => m as Record<string, unknown>);
@@ -94,7 +110,7 @@ describe('análise automática da busca (painel fechado)', () => {
     expect(e.resposta.resultados[id(4)].estado).toBe('sem_vinculo');
     // Resultado vai à página com a geração e a URL (o content script descarta o de outra página).
     const ultima = mensagensPagina('publiai:busca-resultados').at(-1)!;
-    expect(ultima).toMatchObject({ url: URL_BUSCA, geracao: (await lerAba(7)).geracao });
+    expect(ultima).toMatchObject({ url: URL_BUSCA, geracao: geracaoCs });
     expect(Object.keys(ultima.metadados as object)).toHaveLength(60);
   });
 
@@ -169,7 +185,7 @@ describe('invalidação por item', () => {
     antesDeResponder = async (acao) => {
       if (acao !== 'analisar_busca') return;
       antesDeResponder = null;
-      void rotear({ tipo: 'publiai:busca-cards', cards: [card(1, { preco: 15 })], ocorrencias: 1 }, BUSCA);
+      void rotear({ tipo: 'publiai:busca-cards', geracao: geracaoCs, cards: [card(1, { preco: 15 })], ocorrencias: 1 }, BUSCA);
       await vi.waitFor(async () => expect(((await lerAba(7)).estado as { observado: { cards: { preco: number }[] } }).observado.cards[0].preco).toBe(15));
     };
     await registrar([card(1)]);
@@ -205,7 +221,25 @@ describe('cota e telemetria', () => {
     const f = (await estado())!;
     expect(Object.values(f.resposta.resultados).filter((r) => r.estado === 'ok')).toHaveLength(60);
     expect(registros).toBe(1);
-    expect(doTipo('analisar_busca').filter((c) => c.registrarUso === true)).toHaveLength(1);
+    expect(doTipo('identificar_busca').map((c) => c.registrarUso)).toEqual([true, false, false]);
+    expect(doTipo('analisar_busca').every((c) => c.registrarUso === false)).toBe(true);
+  });
+
+  it('achado 3: busca sem nenhum vinculado também conta (1 registro, no 1º lote da identificação)', async () => {
+    await registrar(cards(1, 60));
+    expect(doTipo('analisar_busca')).toHaveLength(0);
+    expect(doTipo('identificar_busca').map((c) => c.registrarUso)).toEqual([true, false]);
+    expect(registros).toBe(1);
+    expect((await estado())!.resposta.usoRegistrado).toBe(true);
+  });
+
+  it('achado 3: identificação falhou no 1º lote → o próximo (retomada) pede o registro de novo', async () => {
+    falharIdentificar = true;
+    await registrar([card(1)]);
+    falharIdentificar = false;
+    await pulso();
+    expect(doTipo('identificar_busca').map((c) => c.registrarUso)).toEqual([true, true]);
+    expect(registros).toBe(1);
   });
 
   it('nova URL de busca (nova geração) conta de novo', async () => {
@@ -273,13 +307,15 @@ describe('isolamento de sessão e de página', () => {
   });
 
   it('cards lidos numa URL e chegando depois de a aba ir para outra busca são ignorados', async () => {
-    await rotear({ tipo: 'publiai:busca-cards', url: 'https://lista.mercadolivre.com.br/antiga', cards: [card(1)], ocorrencias: 1 }, BUSCA);
+    await enviarCards([card(2)]); // aprende a geração
     await complementosPendentes();
-    expect(await estado()).toBeNull();
+    corpos.length = 0;
+    await rotear({ tipo: 'publiai:busca-cards', geracao: geracaoCs, url: 'https://lista.mercadolivre.com.br/antiga', cards: [card(1)], ocorrencias: 1 }, BUSCA);
+    await complementosPendentes();
     expect(corpos).toHaveLength(0);
-    await rotear({ tipo: 'publiai:busca-cards', url: `${URL_BUSCA}#D[A:panela]`, cards: [card(1)], ocorrencias: 1 }, BUSCA);
+    await rotear({ tipo: 'publiai:busca-cards', geracao: geracaoCs, url: `${URL_BUSCA}#D[A:panela]`, cards: [card(1)], ocorrencias: 1 }, BUSCA);
     await complementosPendentes();
-    expect(await estado()).not.toBeNull();
+    expect(doTipo('identificar_busca').map((c) => c.itens[0].itemId)).toEqual([id(1)]);
   });
 
   it('identidade descoberta no meio (recém-logado): gravação recusada pede retomada e o pulso conclui', async () => {
@@ -289,6 +325,73 @@ describe('isolamento de sessão e de página', () => {
     expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(1);
     await pulso();
     expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
+  });
+
+  it('achado 1: cards sem a geração da página (ou de outra) não entram; a resposta traz a atual', async () => {
+    const r = await rotear({ tipo: 'publiai:busca-cards', url: URL_BUSCA, cards: [card(1)], ocorrencias: 1 }, BUSCA) as { erro: string; geracao: string };
+    expect(r).toMatchObject({ ok: false, erro: 'geracao_antiga' });
+    expect(typeof r.geracao).toBe('string');
+    await complementosPendentes();
+    expect(await estado()).toBeNull();
+    expect(corpos).toHaveLength(0);
+  });
+
+  it('achado 1: mensagem atrasada da sessão anterior, mesma URL, é descartada', async () => {
+    await registrar([card(1)]);
+    const velha = geracaoCs;
+    await limparEstadosDasAbas(); // troca de sessão
+    corpos.length = 0;
+    const r = await rotear({ tipo: 'publiai:busca-cards', geracao: velha, url: URL_BUSCA, cards: [card(2)], ocorrencias: 1 }, BUSCA);
+    await complementosPendentes();
+    expect(r).toMatchObject({ erro: 'geracao_antiga' });
+    expect(await estado()).toBeNull();
+    expect(corpos).toHaveLength(0);
+    await pulso(BUSCA, velha);
+    expect(corpos).toHaveLength(0);
+  });
+
+  it('achado 1: navegação (recarga, mesma URL) enquanto a mensagem espera na fila de escrita → descartada', async () => {
+    await registrar([card(1)]);
+    const velha = geracaoCs;
+    corpos.length = 0;
+    const msg = rotear({ tipo: 'publiai:busca-cards', geracao: velha, url: URL_BUSCA, cards: [card(2)], ocorrencias: 1 }, BUSCA);
+    await aoAtualizarAba(7, { status: 'loading' });
+    expect(await msg).toMatchObject({ erro: 'geracao_antiga' });
+    await complementosPendentes();
+    expect(await estado()).toBeNull();
+    expect(corpos).toHaveLength(0);
+  });
+
+  it('achado 1: resultados e retomada vão à página com a geração que ela conhece', async () => {
+    falharIdentificar = true;
+    await registrar([card(1)]);
+    expect(mensagensPagina('publiai:busca-retomar').at(-1)).toMatchObject({ geracao: geracaoCs, url: URL_BUSCA });
+    falharIdentificar = false;
+    await pulso();
+    expect(mensagensPagina('publiai:busca-resultados').at(-1)).toMatchObject({ geracao: geracaoCs, url: URL_BUSCA });
+  });
+
+  it('achado 2: navegação durante a preparação da chamada (renovação do token) → nenhum fetch à edge', async () => {
+    await registrar([card(1)]);
+    corpos.length = 0;
+    local.credenciais = { ...(local.credenciais as object), expiresAt: 1 };
+    aoRenovar = () => aoAtualizarAba(7, { status: 'loading' });
+    await registrar([card(2)]);
+    expect(corpos).toHaveLength(0);
+  });
+
+  it('achado 2: preço mudou durante a preparação da margem → a chamada com o preço velho não sai', async () => {
+    vinculados = new Set([id(1)]);
+    antesDeResponder = (acao) => {
+      if (acao !== 'identificar_busca') return;
+      antesDeResponder = null;
+      local.credenciais = { ...(local.credenciais as object), expiresAt: 1 }; // a margem vai renovar o token antes
+      aoRenovar = async () => { await rotear({ tipo: 'publiai:busca-cards', geracao: geracaoCs, url: URL_BUSCA, cards: [card(1, { preco: 15 })], ocorrencias: 1 }, BUSCA); };
+    };
+    await registrar([card(1)]);
+    await complementosPendentes();
+    expect(doTipo('analisar_busca').map((c) => c.itens[0].preco)).toEqual([15]);
+    expect((await estado())!.resposta.precoDaMargem[id(1)]).toBe(15);
   });
 
   it('desligada: cards e pulso não chamam nada', async () => {
@@ -314,7 +417,7 @@ describe('isolamento de sessão e de página', () => {
     falharIdentificar = false;
     vi.resetModules(); // SW novo: filas e época em memória zeradas; storage.session continua
     const novo = await import('../roteador');
-    await novo.rotearMensagem({ tipo: 'publiai:busca-pulso' }, BUSCA);
+    await novo.rotearMensagem({ tipo: 'publiai:busca-pulso', geracao: geracaoCs }, BUSCA);
     await novo.complementosPendentes();
     expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
   });

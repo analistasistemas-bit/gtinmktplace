@@ -40,9 +40,14 @@ async function contexto(epoca = epocaAtual()): Promise<Contexto | Falha> {
 /** Conferência SÍNCRONA, usada sem nenhum await até o uso (fetch disparado / resposta aceita no mesmo passo). */
 const vale = (c: Contexto) => c.epoca === epocaAtual();
 
+/** Guarda de quem pede, além da época (busca: a página e os itens do lote ainda valem). `conferir` roda depois de
+ *  preparar o token (renovação/identidade são awaits); `aindaVale`, síncrona, colada no fetch. false → nada sai. */
+export interface Guarda { conferir?: () => Promise<boolean>; aindaVale?: () => boolean }
+
 /** POST na edge no protocolo 2. Sucesso devolve o envelope ainda não conferido contra a identidade. */
-async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
-  if (!vale(c)) return falha('sem_sessao'); // nada sai com o token de uma sessão que já acabou
+async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null, aindaVale?: () => boolean): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
+  // nada sai com o token de uma sessão que já acabou (nem para quem já não quer a resposta)
+  if (!vale(c) || (aindaVale && !aindaVale())) return falha('sem_sessao');
   let r: Response;
   try {
     r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extensao`, {
@@ -109,7 +114,7 @@ export async function atualizarSessao(): Promise<boolean> {
 }
 
 /** `epoca`: a de quando o pedido chegou (mensagem do painel/menu/content script). Padrão: agora. */
-export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual()): Promise<RespostaExtensao<T>> {
+export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual(), guarda: Guarda = {}): Promise<RespostaExtensao<T>> {
   let c = await contexto(epoca);
   if ('erro' in c) return c;
   if (c.identidade === null) {
@@ -121,7 +126,8 @@ export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual()): Pr
     if (c.identidade === null) return falha('sem_sessao');
   }
 
-  const r = await postar(c, corpo, c.identidade);
+  if (guarda.conferir && !(await guarda.conferir())) return falha('sem_sessao');
+  const r = await postar(c, corpo, c.identidade, guarda.aindaVale);
   if (r.ok && r.identidade === c.identidade) return { ok: true, dados: r.dados as T };
   if (r.ok || r.erro === 'identidade_mudou') {
     // Org/suporte mudou: o dado nunca é entregue e a ação não é refeita. Abas limpas antes (mesmo se a sessao

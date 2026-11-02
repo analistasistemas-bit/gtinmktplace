@@ -9,7 +9,7 @@ import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao'
 import { eanDaAba, eanParaAnuncio, epocaAtual, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado, transmitirConta } from './abas';
 import { URL_APP } from './painel/formato';
 import { normalizarQualidade } from './compartilhado/qualidade';
-import { cancelarBuscaDaAba, destacarCard, ehBusca, processarBuscaDaAba, registrarCardsDaBusca } from './busca-sw';
+import { cancelarBuscaDaAba, destacarCard, ehBusca, geracaoDaPagina, processarBuscaDaAba, registrarCardsDaBusca } from './busca-sw';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -183,20 +183,22 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       if (typeof msg.url === 'string' && msg.url.split('#')[0] !== urlAba?.split('#')[0]) return undefined;
       return impedimento(e).then(async (erro) => {
         if (erro) return undefined;
-        const r = await registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, urlAba);
-        emSegundoPlano(processarBuscaDaAba(tabId, e));
+        const r = await registrarCardsDaBusca(tabId, msg.cards, msg.ocorrencias, urlAba, msg.geracao);
+        if (r.ok) emSegundoPlano(processarBuscaDaAba(tabId, e));
         return r;
       });
     }
     case 'publiai:busca-pulso': {
       // Content script da busca: retomada (cota da janela seguinte, falha transitória) — o SW do MV3 não guarda timer.
-      // Só a busca que a aba guarda; outra URL (página velha) é ignorada.
+      // Só a busca que a aba guarda, na geração que a página conhece; outra URL ou geração (página velha) é ignorada.
       if (tabId === undefined || pagina) return undefined;
       const e = epocaAtual(), url = (sender.tab?.url ?? sender.url ?? '').split('#')[0];
       return impedimento(e).then(async (erro) => {
         if (erro) return undefined;
-        const estado = await estadoDaAba(tabId);
-        if (ehBusca(estado) && estado.entrada.url === url) emSegundoPlano(processarBuscaDaAba(tabId, e));
+        const a = await lerAba(tabId);
+        if (ehBusca(a.estado) && a.estado.entrada.url === url && msg.geracao === geracaoDaPagina(a.geracao, a.sessao)) {
+          emSegundoPlano(processarBuscaDaAba(tabId, e));
+        }
         return { ok: true };
       });
     }

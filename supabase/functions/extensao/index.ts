@@ -429,9 +429,16 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
     }
     case 'analisar_busca':
       return buscaAnalisada(admin, ctx, p);
-    case 'identificar_busca':
-      // Só banco: sem cota de 30/min nem registro de uso (a telemetria da busca vem por geração de página).
-      return identificarBusca(admin, orgId, p, depsCasamento(admin, orgId));
+    case 'identificar_busca': {
+      // Só banco, sem cota de 30/min. Telemetria `busca`: uma por geração de página — a extensão pede (registrarUso)
+      // só no 1º lote dela; conta depois da identificação (falha inteira não conta, o lote é refeito pedindo de novo).
+      const r = await identificarBusca(admin, orgId, p, depsCasamento(admin, orgId));
+      if (p.registrarUso === true) {
+        const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
+        if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
+      }
+      return r;
+    }
     case 'radar':
       return radar(admin, orgId, p.catalogProductId);
     case 'adicionar_radar':
