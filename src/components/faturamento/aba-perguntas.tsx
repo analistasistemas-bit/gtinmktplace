@@ -26,6 +26,11 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
   // Perguntas ≠ anúncios: o mesmo comprador chega a perguntar duas vezes no mesmo item.
   const anuncios = [...new Map(grupo.perguntas.map((q) => [q.item_id ?? q.id, q])).values()];
   const respondida = p.status !== 'UNANSWERED';
+  // O ML recusa resposta em anúncio não ativo (400 not_active_item). Só avisa: o status vem do
+  // coletor de tráfego e pode estar defasado logo após reativar, então não bloqueia o envio.
+  const inativo = !respondida && grupo.perguntas.some((q) => q.anuncio_status && q.anuncio_status !== 'active');
+  const rotuloInativo = grupo.perguntas.some((q) => q.anuncio_status === 'paused') ? 'Anúncio pausado'
+    : grupo.perguntas.some((q) => q.anuncio_status === 'closed') ? 'Anúncio finalizado' : 'Anúncio inativo';
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -88,8 +93,16 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
             </ul>
           )}
         </div>
-        <StatusPill tone={respondida ? 'success' : 'warning'}>{respondida ? 'Respondida' : 'Pendente'}</StatusPill>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          {inativo && <StatusPill tone="danger">{rotuloInativo}</StatusPill>}
+          <StatusPill tone={respondida ? 'success' : 'warning'}>{respondida ? 'Respondida' : 'Pendente'}</StatusPill>
+        </div>
       </div>
+      {inativo && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          O Mercado Livre só aceita a resposta com o anúncio ativo: reative o anúncio no Mercado Livre para responder.
+        </p>
+      )}
 
       {respondida ? (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">

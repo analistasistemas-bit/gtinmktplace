@@ -1531,6 +1531,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   chat único da org. Ao terminar, apaga a linha de dedup do pack em `ml_webhook_eventos`
   (reabre para a próxima mensagem da mesma conversa — plan 035).
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
+  Anúncio pausado/finalizado: o ML recusa com 400 `not_active_item` → 409 `codigo: 'anuncio_inativo'`
+  com a orientação de reativar; a aba Perguntas já avisa pelo `ml_trafego_item.status` (02/11/2026).
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
   re-busca o pack e marca as recebidas como lidas. Se o pedido for cancelado (detectado localmente ou
   rejeitado pelo ML com 403 `blocked_by_cancelled_order`), persiste `order_status = 'cancelled'` em

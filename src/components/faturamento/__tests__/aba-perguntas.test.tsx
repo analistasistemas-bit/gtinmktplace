@@ -57,6 +57,20 @@ describe('AbaPerguntas', () => {
     fetchMock.mockResolvedValue(pagina(PERGUNTAS, 2));
   });
 
+  it('pendente em anúncio pausado: avisa que o ML só aceita resposta com o anúncio ativo', async () => {
+    fetchMock.mockResolvedValue(pagina([{ ...PERGUNTAS[0], status: 'UNANSWERED', resposta: null, anuncio_status: 'paused' }], 1));
+    renderAba();
+    expect(await screen.findByText('Anúncio pausado')).toBeInTheDocument();
+    expect(screen.getByText(/reative o anúncio no Mercado Livre para responder/i)).toBeInTheDocument();
+  });
+
+  it('pendente em anúncio ativo: sem aviso', async () => {
+    fetchMock.mockResolvedValue(pagina([{ ...PERGUNTAS[0], status: 'UNANSWERED', resposta: null, anuncio_status: 'active' }], 1));
+    renderAba();
+    await screen.findByText('Tem estoque?');
+    expect(screen.queryByText(/Anúncio (pausado|finalizado|inativo)/)).not.toBeInTheDocument();
+  });
+
   it('abre na aba Pendentes, página 1', async () => {
     renderAba();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
