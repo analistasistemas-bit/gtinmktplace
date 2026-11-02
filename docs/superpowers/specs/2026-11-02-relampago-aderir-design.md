@@ -100,6 +100,32 @@ variações (modelo antigo).
    recusa ("O ML não informou a faixa"), como DEAL hoje.
 9. **Sair de `started`:** a UI deixa tentar; a conferência existente decide (saída não confirmada em 24 h).
 
+## Ajustes obrigatórios (revisão Grok 4.7 xhigh, 02/11) — bloqueiam a implementação se ausentes
+
+1. **Ramo próprio de LIGHTNING no preço (criação e execução).** Hoje todo tipo ≠ DEAL usa `preco_promo`
+   (`validar.ts:82-83`), a faixa só roda em DEAL (`validar.ts:73-80`) e na execução faixa nula não barra
+   (`decidir.ts:38`). LIGHTNING: preço = o do pedido; faixa **fechada** (min ou max null → recusa na criação /
+   `erro` sem POST na execução); piso R$ 19; tudo isso **fora** do atalho de `confirmado_risco`
+   (`executar.ts:81-88`). Front: `preview-operacao.tsx:70/:93` (preço editável e enviado só p/ DEAL) e os 3
+   lugares que forçam `'DEAL'` (`PromocaoDetalhe.tsx:265`, `lista-participando.tsx:83`, `lista-operacoes.tsx:310`)
+   passam a repassar `'LIGHTNING'`.
+2. **Conferência nunca confirma saída por leitura incompleta.** Visão por item = lista de promoções do
+   anúncio → filtrar `id === promocaoId && type === 'LIGHTNING'`. Visão da campanha: entre linhas do mesmo MLB,
+   preferir a participando (`OFFER-…`), defensivo mesmo com `item_id=` devolvendo 1 linha. Status e `ref_id`
+   **só da campanha**. Falha da visão por item → conferência **reagenda** (não vira `null`/"saiu"). DELETE só
+   com `ref_id` `OFFER-…`; `CANDIDATE-…` → `erro`.
+3. **Estoque nunca vazio.** `stock.min` null, ou mins diferentes entre as visões → `erro` sem POST.
+   `available_quantity` null → `bloqueado`; `< stock.min` → `bloqueado`. Checagem em `decidir`, alimentada pelo
+   mesmo multiget de `lerRelacoes` (`executar.ts:57`).
+4. **Semáforo/janela:** no sync, convidado LIGHTNING grava `preco_promo = null` (o `price` do convite não serve)
+   para `precoAvaliado` cair no sugerido ou ficar indisponível. Participando segue `price` (= `deal_price`
+   gravado, conferido no spike: 24,65). Janela: releitura da campanha **logo após o POST** grava a mensagem
+   "Agendada: dd/mm hh:mm–hh:mm" no item `aplicado` (`executar.ts:89`); `executar.ts` entra nas peças.
+5. **Sync resiliente e redeploy completo:** GET por item dentro do lote (teto 100/mensagem,
+   `sincronizar-promocoes/index.ts:18`), concorrência baixa, falha **degrada a linha** (faixa null), nunca
+   `falhar` a rodada. Redeploy: `operacoes-massa`, `sincronizar-promocoes`, `ads-campanhas`, `coletar-ads-ml`,
+   `coletar-trafego-ml` (importam `_shared/promocoes`).
+
 ## Não-objetivos
 - Escolher quantidade ou horário da Relâmpago.
 - Sair de Relâmpago `started` (não testado — se a saída não confirmar em 24 h, cai no fluxo de saída não
