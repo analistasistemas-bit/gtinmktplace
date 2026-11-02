@@ -8,7 +8,7 @@ afterEach(() => cleanup());
 
 const card = (itemId: string, o: Record<string, unknown> = {}) => ({
   itemId, catalogProductId: 'MLB100', userProductId: null, posicao: null, titulo: `Produto ${itemId}`, preco: 100, vendedor: null, nota: null,
-  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, ocorrencias: [{ posicao: null, patrocinado: false, preco: 100 }], ...o,
+  vendidosTexto: '+100 vendidos', freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [{ posicao: null, patrocinado: false, preco: 100, vendidosTexto: '+100 vendidos' }], ...o,
 });
 const okMargem = (pct: number) => ({
   estado: 'ok', fonte: 'catalogo', codigo: '00000081', custo: {},
@@ -96,5 +96,13 @@ describe('Busca no painel (Task 22)', () => {
     render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21), MLB1000002: { estado: 'sem_vinculo' }, MLB1000003: { estado: 'sem_vinculo' } }) })} />);
     fireEvent.click(screen.getAllByRole('button', { name: 'Vincular ao meu SKU' })[0]);
     screen.getByRole('heading', { name: 'Qual SKU seu é este produto?' });
+  });
+});
+
+describe('conflitos na cobertura (fix rodada 1)', () => {
+  it('mostra quantos grupos foram excluídos por identificação conflitante', () => {
+    const cards = [card('MLB1000001', { catalogProductId: null }), card('MLB1000002', { catalogProductId: null, identidadeConflitante: true })];
+    render(<Busca {...props({ estado: estado({}, cards) })} />);
+    screen.getByText('1 de 1 grupos de vendas · 1 excluído por identificação conflitante');
   });
 });

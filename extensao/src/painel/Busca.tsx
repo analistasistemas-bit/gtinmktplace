@@ -105,7 +105,7 @@ export function Busca({ estado, chamar, analisar, destacar }: {
           <span className="ct-rotulo">Soma dos mínimos informados</span>
           <span className="mono ct-forte">{`${num(r.vendidosMinimos.soma)} vendidos`}</span>
         </div>
-        <p className="nota bs-cobertura">{`${num(r.vendidosMinimos.cobertura)} de ${num(r.vendidosMinimos.grupos)} grupos de vendas`}</p>
+        <p className="nota bs-cobertura">{`${num(r.vendidosMinimos.cobertura)} de ${num(r.vendidosMinimos.grupos)} grupos de vendas${r.vendidosMinimos.conflitos ? ` · ${num(r.vendidosMinimos.conflitos)} ${r.vendidosMinimos.conflitos === 1 ? 'excluído' : 'excluídos'} por identificação conflitante` : ''}`}</p>
       </div>
 
       {ocupado && <p className="nota" role="status">{`Analisando ${num(Math.min(pendentes.length, MAX_POR_ANALISE))} produtos…`}</p>}

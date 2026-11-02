@@ -26,7 +26,8 @@ function agruparVendas(cards: CardBusca[]): { grupos: Map<string, CardBusca[]>; 
   const emConflito = new Set<string>();
   for (const c of cards) {
     const cats = c.userProductId ? catsDoUp.get(c.userProductId) : undefined;
-    if (cats && cats.size > 1) { emConflito.add(c.userProductId!); continue; }
+    if (c.identidadeConflitante) { emConflito.add(`i:${c.itemId}`); continue; }
+    if (cats && cats.size > 1) { emConflito.add(`u:${c.userProductId}`); continue; }
     const cat = c.catalogProductId ?? (cats ? [...cats][0] : null);
     const k = cat ? `c:${cat}` : c.userProductId ? `u:${c.userProductId}` : `i:${c.itemId}`;
     grupos.set(k, [...(grupos.get(k) ?? []), c]);
@@ -42,7 +43,7 @@ export function resumoBusca(cards: CardBusca[], resultados: Resultados, ocorrenc
     const pisos = g.map((c) => pisoDosVendidos(c.vendidosTexto)).filter((p): p is number => p !== null);
     if (pisos.length) { coberturaVendidos++; somaVendidos += Math.max(...pisos); }
     // Menor contribuição completa (piso e preço da mesma aparição); nunca piso de um card com preço de outro.
-    const contribuicoes = g.flatMap((c) => c.ocorrencias.map((o) => volumeMinimoAoPrecoAtual(c.vendidosTexto, o.preco)))
+    const contribuicoes = g.flatMap((c) => c.ocorrencias.map((o) => volumeMinimoAoPrecoAtual(o.vendidosTexto, o.preco)))
       .filter((v): v is number => v !== null);
     if (contribuicoes.length) { coberturaVolume++; somaVolume += Math.min(...contribuicoes); }
   }

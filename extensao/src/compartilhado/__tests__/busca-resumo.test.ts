@@ -1,10 +1,11 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { filtrarCards, ordenarCards, resumoBusca, type ResultadoBusca } from '../busca-resumo';
-import type { CardBusca } from '../../leitura/busca';
+import { lerBusca, type CardBusca } from '../../leitura/busca';
 
 const card = (itemId: string, o: Partial<CardBusca> = {}): CardBusca => ({
   itemId, catalogProductId: null, userProductId: null, posicao: null, titulo: itemId, preco: 100, vendedor: null, nota: null,
-  vendidosTexto: null, freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, ocorrencias: [], ...o,
+  vendidosTexto: null, freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [], ...o,
 });
 const ok = (pct: number, premium = pct - 4): ResultadoBusca => ({
   itemId: 'x', estado: 'ok', fonte: 'catalogo', codigo: '001',
@@ -31,12 +32,12 @@ describe('resumoBusca (Task 22)', () => {
 });
 
 describe('totais por grupo de vendas (modo busca completo)', () => {
-  const oc = (preco: number | null, posicao = 1) => ({ posicao, patrocinado: false, preco });
+  const oc = (preco: number | null, posicao = 1, vendidosTexto: string | null = '+100 vendidos') => ({ posicao, patrocinado: false, preco, vendidosTexto });
   it('volume: menor contribuição completa do grupo, sem misturar piso de um card com preço de outro', () => {
     const g = [
       card('MLB1', { catalogProductId: 'MLB100', vendidosTexto: '+100 vendidos', preco: 30, ocorrencias: [oc(30), oc(20, 2)] }),
-      card('MLB2', { catalogProductId: 'MLB100', vendidosTexto: null, preco: 10, ocorrencias: [oc(10)] }),
-      card('MLB3', { vendidosTexto: '+10 vendidos', preco: null, ocorrencias: [oc(null)] }),
+      card('MLB2', { catalogProductId: 'MLB100', vendidosTexto: null, preco: 10, ocorrencias: [oc(10, 1, null)] }),
+      card('MLB3', { vendidosTexto: '+10 vendidos', preco: null, ocorrencias: [oc(null, 1, '+10 vendidos')] }),
     ];
     const r = resumoBusca(g, {}, 4);
     expect(r.volumeMinimo).toEqual({ centavos: 200000, cobertura: 1, grupos: 2, conflitos: 0 });
@@ -45,14 +46,14 @@ describe('totais por grupo de vendas (modo busca completo)', () => {
   });
   it('/up/ comprovada propaga o catálogo do outro item; /up/ com dois catálogos exclui o grupo e conta conflito', () => {
     const prop = [
-      card('MLB1', { catalogProductId: 'MLB100', userProductId: 'MLBU1', vendidosTexto: '+50 vendidos', ocorrencias: [oc(10)] }),
+      card('MLB1', { catalogProductId: 'MLB100', userProductId: 'MLBU1', vendidosTexto: '+50 vendidos', ocorrencias: [oc(10, 1, '+50 vendidos')] }),
       card('MLB2', { userProductId: 'MLBU1', vendidosTexto: '+50 vendidos', ocorrencias: [oc(8)] }),
     ];
     expect(resumoBusca(prop, {}, 2).vendidosMinimos).toMatchObject({ soma: 50, grupos: 1 });
     const conf = [
       card('MLB1', { catalogProductId: 'MLB100', userProductId: 'MLBU1', vendidosTexto: '+50 vendidos', ocorrencias: [oc(10)] }),
       card('MLB2', { catalogProductId: 'MLB200', userProductId: 'MLBU1', vendidosTexto: '+70 vendidos', ocorrencias: [oc(8)] }),
-      card('MLB3', { vendidosTexto: '+5 vendidos', ocorrencias: [oc(1)] }),
+      card('MLB3', { vendidosTexto: '+5 vendidos', ocorrencias: [oc(1, 1, '+5 vendidos')] }),
     ];
     const r = resumoBusca(conf, {}, 3);
     expect(r.vendidosMinimos).toMatchObject({ soma: 5, cobertura: 1, grupos: 1 });
@@ -71,5 +72,26 @@ describe('filtrarCards / ordenarCards', () => {
     expect(ordenarCards(cards, resultados, 'vendidos').map((c) => c.itemId)).toEqual(['MLB1', 'MLB2', 'MLB3', 'MLB4']);
     expect(ordenarCards(cards, resultados, 'preco').map((c) => c.itemId)).toEqual(['MLB3', 'MLB1', 'MLB2', 'MLB4']);
     expect(ordenarCards(cards, resultados, 'margem').map((c) => c.itemId)).toEqual(['MLB2', 'MLB1', 'MLB3', 'MLB4']);
+  });
+});
+
+describe('fix rodada 1', () => {
+  it('piso só pareia com o preço da mesma ocorrência: patrocinado R$10 sem vendidos + orgânico R$30 com +100 = R$3.000', () => {
+    const c = card('MLB1', { vendidosTexto: '+100 vendidos', ocorrencias: [
+      { posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null },
+      { posicao: 2, patrocinado: false, preco: 30, vendidosTexto: '+100 vendidos' },
+    ] });
+    expect(resumoBusca([c], {}, 2).volumeMinimo).toMatchObject({ centavos: 300000, cobertura: 1 });
+  });
+  it('conflito de catálogo do mesmo item (leitura → resumo): fora dos totais e contado', () => {
+    const outro = 'https://www.mercadolivre.com.br/y/p/MLB77777777#wid=MLB4053374163&position=9';
+    const um = 'https://www.mercadolivre.com.br/x/p/MLB32466350#wid=MLB4053374163&position=5';
+    const li = (href: string) => `<div class="poly-card"><a class="poly-component__title" href="${href}">a</a>
+      <div class="poly-component__review-compacted">4.9 | +100 vendidos</div>
+      <div class="poly-price__current"><span class="andes-money-amount__fraction">10</span></div></div>`;
+    document.body.innerHTML = li(um) + li(outro);
+    const r = resumoBusca(lerBusca(document), {}, 2);
+    expect(r.vendidosMinimos).toMatchObject({ soma: 0, cobertura: 0, grupos: 0, conflitos: 1 });
+    expect(r.volumeMinimo).toMatchObject({ centavos: 0, grupos: 0, conflitos: 1 });
   });
 });

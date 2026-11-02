@@ -3,7 +3,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 
 let ouvinte: (m: unknown) => void = () => {};
 const enviar = vi.fn(async (m: { tipo?: string }) => (m.tipo === 'publiai:estado-extensao' ? { ativa: true, logado: true } : undefined));
-const cardsEnviados = () => enviar.mock.calls.flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null }[] }).cards ?? []);
+const cardsEnviados = () => enviar.mock.calls.flatMap(([m]) => (m as { cards?: { itemId: string; preco: number | null; userProductId?: string | null }[] }).cards ?? []);
 
 beforeAll(async () => {
   document.body.innerHTML = `<div class="poly-card">
@@ -40,4 +40,16 @@ it('ativacao false remove selos dos cards; true reenvia os cards sem analisar so
   expect(cardsEnviados().length).toBe(antes + 1);
   expect(enviar.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:analisar-busca')).toBe(false);
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+});
+
+it('/up/ que aparece depois, sozinho, reenvia o card (assinatura inclui userProductId)', async () => {
+  document.body.insertAdjacentHTML('beforeend', `<div class="poly-card" id="up-tardio">
+    <a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=MLB5321956999">Outro</a></div>`);
+  const dele = () => cardsEnviados().filter((c) => c.itemId === 'MLB5321956999') as { userProductId: string | null }[];
+  await vi.waitFor(() => expect(dele().length).toBeGreaterThan(0), { timeout: 3000 });
+  const antes = dele().length;
+  document.querySelector('#up-tardio')!.innerHTML =
+    '<a class="poly-component__title" href="https://www.mercadolivre.com.br/x/up/MLBU1959450397#wid=MLB5321956999">Outro</a>';
+  await vi.waitFor(() => expect(dele().at(-1)!.userProductId).toBe('MLBU1959450397'), { timeout: 3000 });
+  expect(dele().length).toBe(antes + 1);
 });

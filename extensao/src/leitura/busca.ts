@@ -13,6 +13,8 @@ export interface OcorrenciaBusca {
   posicao: number | null;
   patrocinado: boolean;
   preco: number | null;
+  /** Vendidos lidos NESTA aparição: o piso só pareia com o preço dela. */
+  vendidosTexto: string | null;
 }
 
 export interface CardBusca {
@@ -35,6 +37,8 @@ export interface CardBusca {
   /** Miniatura do próprio card (https em http2.mlstatic.com); null = ausente ou inválida. */
   miniaturaUrl: string | null;
   ocorrencias: OcorrenciaBusca[];
+  /** Duas aparições do item com catálogos diferentes: identidade desconhecida, fora dos totais. */
+  identidadeConflitante: boolean;
 }
 
 const MLB = /^MLB\d{6,20}$/;
@@ -136,8 +140,9 @@ export function lerBusca(doc: Document): CardBusca[] {
       selos: doMl(card, '.poly-component__poly-label').map((e) => texto(e)).filter(Boolean),
       miniaturaUrl: lerMiniatura(card),
       ocorrencias: [],
+      identidadeConflitante: false,
     };
-    lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco });
+    lido.ocorrencias.push({ posicao: lido.posicao, patrocinado: lido.patrocinado, preco: lido.preco, vendidosTexto: vendidos });
     const ja = porItem.get(lido.itemId);
     if (!ja) { porItem.set(lido.itemId, lido); continue; }
     // Duas ocorrências com catálogos diferentes para o mesmo item: catálogo desconhecido (não escolhe um).
@@ -148,7 +153,7 @@ export function lerBusca(doc: Document): CardBusca[] {
     ja.patrocinado ||= lido.patrocinado;
     ja.selos = [...new Set([...ja.selos, ...lido.selos])];
   }
-  for (const id of conflito) porItem.get(id)!.catalogProductId = null;
+  for (const id of conflito) { const c = porItem.get(id)!; c.catalogProductId = null; c.identidadeConflitante = true; }
   return [...porItem.values()];
 }
 
@@ -180,9 +185,10 @@ export function normalizarCards(v: unknown): CardBusca[] {
       patrocinado: c.patrocinado === true,
       selos: Array.isArray(c.selos) ? c.selos.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(0, 5) : [],
       miniaturaUrl: miniaturaValida(c.miniaturaUrl),
+      identidadeConflitante: c.identidadeConflitante === true,
       ocorrencias: Array.isArray(c.ocorrencias)
         ? c.ocorrencias.slice(0, 10).filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
-          .map((o) => ({ posicao: num(o.posicao, 10000), patrocinado: o.patrocinado === true, preco: num(o.preco, 1e9) }))
+          .map((o) => ({ posicao: num(o.posicao, 10000), patrocinado: o.patrocinado === true, preco: num(o.preco, 1e9), vendidosTexto: textoCurto(o.vendidosTexto, 40) }))
         : [],
     });
   }
