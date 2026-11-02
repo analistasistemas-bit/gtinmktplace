@@ -59,6 +59,12 @@ Pedido do Diego (02/11): o painel atual está "muito sem cor"; usar as cores do 
 - Mini-bloco no card do ML: filete lateral em `--brand-gradient` para ser reconhecível ao lado do Avant sem poluir o card.
 - Contraste ≥ 4,5:1 em texto de 12–13 px (o roxo puro no escuro não passa; usar `--link`). Cor sempre acompanhada de texto. `color-mix` em `oklab`, não `oklch` (bug conhecido puxando para vermelho).
 
+## Regime de revisão
+
+- **Por task:** ao fim de cada Task de código, Codex `gpt-6.1-sol` high revisa o diff da task (read-only, `< /dev/null`); fallback Gemini 4 Argon High via `cursor-agent`. Corrigir antes de seguir; nunca avançar com pendência.
+- **Pré-merge da fatia:** Grok 4.7 xhigh revisa o diff completo da fatia (rodada única: corrigiu → teste + CI → merge).
+- **UI:** aprovação visual do Codex com prints (seção Design premium).
+
 ## Foco da revisão
 
 | Condição | Resultado exigido | Testes responsáveis |
@@ -124,7 +130,8 @@ function volumeMinimoAoPrecoAtual(
   ```
 - [ ] **2. Executar e confirmar falha:**
   `rtk pnpm --dir extensao test -- src/leitura/__tests__/busca.test.ts src/compartilhado/__tests__/busca-resumo.test.ts src/compartilhado/__tests__/volume-minimo.test.ts`.
-- [ ] **3. Implementar:** ler `currentSrc || src` da imagem do próprio card; aceitar apenas HTTPS em domínio de imagens ML observado e validado, sem credenciais. Preservar ocorrências sem transformar o preço de uma ocorrência no preço de outra. O `<img>` do painel reutiliza essa URL, sem fetch, proxy ou consulta de resolução.
+- [ ] **0. Medir antes (lazy loading):** salvar o HTML real de uma busca (topo e após scroll) como fixture sintética em `extensao/src/leitura/__fixtures__/busca-*.html`, anotando em que atributo a imagem real chega nos cards abaixo da dobra (`src` provisório/`data:`, `data-src`, `srcset`). Nenhum teste atual cobre imagem de card.
+- [ ] **3. Implementar:** ler a imagem real do próprio card (`currentSrc || src`, e `data-src`/`srcset` conforme o passo 0; `data:` e placeholder = sem miniatura); quando a imagem real chegar depois, o MutationObserver (atributos `src`/`srcset` do `<img>` do card) atualiza só a miniatura; aceitar apenas HTTPS em domínio de imagens ML observado e validado, sem credenciais. Preservar ocorrências sem transformar o preço de uma ocorrência no preço de outra. O `<img>` do painel reutiliza essa URL, sem fetch, proxy ou consulta de resolução.
 - [ ] **4. GREEN:** repetir o comando. Totais usam chave canônica com precedência **catálogo → `/up/` → anúncio**, propagando associações apenas quando comprovadas pelos mesmos itens. Conflito entre identidades exclui o grupo da soma e aparece na cobertura. Por grupo, somar o piso uma vez; para volume, escolher a menor contribuição completa observada, sem combinar piso de um card com preço de outro.
 - [ ] **5. Commit:** `rtk git commit -m "feat(extensao): preservar ocorrencias e volume minimo da busca"`.
 
@@ -179,7 +186,7 @@ function cancelarBuscaDaAba(tabId: number): void;
 - [ ] **1. RED:** registrar 60 itens com painel fechado processa identificação em lotes 50+10; margem só dos vinculados elegíveis. Abrir painel durante processamento não duplica chamadas. Testar navegação, preço alterado, pausa, suporte expirado, logout e reinício do SW.
 - [ ] **2. Executar:** `rtk pnpm --dir extensao test -- src/__tests__/busca-sw.test.ts src/__tests__/roteador.test.ts src/__tests__/sessao.test.ts`; confirmar falha.
 - [ ] **3. Implementar:** registrar cards → identificar no banco → analisar margens elegíveis pelo caminho existente. Reutilizar filas de escrita/análise; o painel passa a consumir estado. Validar época capturada antes do primeiro `await`, identidade, geração da página, URL e assinatura do item antes de chamar, gravar ou transmitir. Levar a geração às mensagens de cards/resultados.
-- [ ] **4. GREEN:** repetir testes. Limite financeiro mantém “Minha margem aguardando cota”; a próxima janela retoma sem painel aberto. O content script fornece o pulso de retomada, pois MV3 não garante timers longos no SW. Pausa ou fechamento cancela a fila; nova mensagem após reinício reconstrói o processamento.
+- [ ] **4. GREEN:** repetir testes. Limite financeiro mantém “Minha margem aguardando cota” **também no Mini-bloco**; a próxima janela retoma sem painel aberto. **Telemetria:** `extensao_registrar_uso` tipo `busca` registra uma vez por geração de página (URL de busca nova), nunca a cada lote do scroll ou retomada de cota — teste: 60 cards em 3 lotes + retomada = 1 registro. O content script fornece o pulso de retomada, pois MV3 não garante timers longos no SW. Pausa ou fechamento cancela a fila; nova mensagem após reinício reconstrói o processamento.
 - [ ] **5. Commit:** `rtk git commit -m "feat(extensao): analisar busca automaticamente com geracoes"`.
 
 **Regra de invalidação:** mudança só da miniatura atualiza apresentação; mudança de preço invalida margem; mudança de catálogo invalida vínculo e dependências. Resposta de uma ocorrência nunca confirma margem em outra com preço diferente.
@@ -235,7 +242,7 @@ function renderizarMiniBlocoDaBusca(
 
 - [ ] **1. Preparar prova reproduzível:** harness monta o componente `Busca` real e os Mini-blocos reais com dados fictícios, imagens locais e respostas controladas; nenhum token. Incluir imagem quebrada, título longo, margem negativa, 68 ocorrências e duplicatas. O build de produção não inclui `qa/`.
 - [ ] **2. Validar visualmente** (ver "Design premium"): iniciar `rtk pnpm --dir extensao exec vite --host 127.0.0.1 --port 5174`; abrir com `rtk playwright-cli -s=publiai-busca-f1 open http://127.0.0.1:5174/qa/busca.html`. Capturar claro/escuro, 320/400/600 px e zoom 150%. Corrigir em um lote e confirmar uma vez. Fazer smoke real com `build:dev`, extensão carregada em perfil isolado, painel fechado, scroll, Avant, pausa e religamento.
-- [ ] **3. Verificar e revisar:** executar o pacote de verificação abaixo; revisão de diff pelo Codex cobrindo os cinco focos deste plano. Corrigir achados bloqueantes antes do commit de release.
+- [ ] **3. Verificar e revisar:** executar o pacote de verificação abaixo; revisão final do diff da fatia pelo Grok 4.7 xhigh cobrindo os cinco focos deste plano (as tasks já passaram pela revisão do Codex). Corrigir achados bloqueantes antes do commit de release.
 - [ ] **4. Integrar e deployar:** CI `frontend` e `backend-lint` verdes no SHA final → merge fast-forward e push da `main` → `rtk supabase functions deploy extensao --project-ref txvncrgkoynoxwopfkbp`. Conferir versão ACTIVE e compatibilidade com 0.3.2. Esta fatia não tem migration.
 - [ ] **5. Publicar:** build de produção, ZIP do conteúdo de `extensao/dist` como `extensao/publiai-extensao-0.4.0.zip`, `unzip -t`, atualização do mesmo item na Web Store e smoke após distribuição. Registrar SHA, edge, ZIP e evidências em `docs/TASKS.md`.
 
@@ -260,35 +267,35 @@ function renderizarMiniBlocoDaBusca(
 
 **Pontos de atenção:** o normalizador atual de perfil exige `transactions.total`; isso pode descartar medalha/UF válidas. Ausência de `power_seller_status` também não prova “sem medalha”. A documentação é referência de contrato; a medição confirma o payload acessível à conta. [Consulta oficial de usuários](https://developers.mercadolivre.com.br/pt_br/servico-consulta-de-usuarios)
 
-### Task 8 — criar cotas atômicas separadas
+### Task 8 — cotas separadas no Redis (sem migration)
+
+> Revisão 02/11: a cota atual de 30/min já é contador atômico no Redis (`redisIncrComTTL(chaveLimite(...), 120)` em `supabase/functions/extensao/index.ts`). As novas cotas seguem o mesmo mecanismo — sem tabela, sem trava de linha por chamada ML e sem teste em Supabase local (Docker não sobe nesta máquina).
 
 **Arquivos**
 
-- Criar pela CLI: migration **`extensao_busca_cotas`**.
 - Criar: `supabase/functions/_shared/extensao/cotas-busca.ts`.
-- Testar: `supabase/functions/_shared/extensao/__tests__/cotas-busca.test.ts`, `supabase/tests/extensao_busca_cotas.sql`, `supabase/tests/extensao_busca_cotas_concorrencia.sh`.
+- Modificar: `supabase/functions/extensao/index.ts` (usar as funções novas).
+- Testar: novo `supabase/functions/_shared/extensao/__tests__/cotas-busca.test.ts` (Redis falso em memória, como os testes atuais da edge).
 
-O nome completo da migration será o caminho retornado por `rtk supabase migration new extensao_busca_cotas`; o timestamp não deve ser inventado nem o arquivo criado manualmente.
+**Interfaces**
 
-**Contratos SQL**
-
-```sql
-extensao_reservar_enriquecimento(
-  p_org_id uuid, p_user_id uuid, p_quantidade integer
-)
--- retorna permitidos, restantes, retomar_em
-
-extensao_reservar_chamada_ml(p_app_id text)
--- retorna permitida, restantes, retomar_em
+```ts
+// Chaves com janela de minuto UTC, TTL 120 s (mesmo padrão de chaveLimite).
+function chaveEnriquecimento(orgId: string, userId: string, agora: Date): string; // ext:enr:{org}:{user}:{yyyymmddhhmm}
+function chaveOrcamentoMl(agora: Date): string;                                   // ext:mlapp:{yyyymmddhhmm}
+/** Reserva até `quantidade` catálogos na ordem pedida; devolve quantos couberam e quando retomar. */
+function reservarEnriquecimento(orgId: string, userId: string, quantidade: number, agora: Date): Promise<{ permitidos: number; retomarEm: string | null }>;
+/** 1 unidade antes de cada chamada ML real do enriquecimento (inclui listing_prices). */
+function reservarChamadaMl(agora: Date): Promise<boolean>;
 ```
 
-- [ ] **1. RED:** concorrência reserva exatamente 20 unidades entre pedidos simultâneos; catálogo servido por cache também debita. Usuários/orgs independentes; chamadas de todos compartilham o teto do mesmo app. Usuário autenticado não executa RPC diretamente.
-- [ ] **2. Executar:** `rtk pnpm test -- supabase/functions/_shared/extensao/__tests__/cotas-busca.test.ts`; executar SQL e concorrência no Supabase local e confirmar falhas antes da migration.
-- [ ] **3. Implementar migration:** tabela `extensao_cota_enriquecimento`, chave `(org_id,user_id)`, e tabela técnica `extensao_orcamento_ml`, chave `app_id`. Cada linha mantém somente janela atual e consumo, com reset e reserva sob bloqueio atômico. RPC de lote concede `min(pedido, restante)` na ordem enviada; recusados não debitam. RLS ligada; sem políticas/grants para clientes, execução somente `service_role`, `search_path` fixo.
-- [ ] **4. GREEN:** aplicar localmente com `rtk supabase db push --local`; executar `rtk supabase test db supabase/tests/extensao_busca_cotas.sql` e `rtk bash supabase/tests/extensao_busca_cotas_concorrencia.sh`. Repetir Vitest e `rtk pnpm db:check`. Erro do banco bloqueia chamada ML e devolve espera; nunca libera por falha.
-- [ ] **5. Commit:** `rtk git commit -m "feat(extensao): separar cotas de enriquecimento e chamadas ML"`.
+- [ ] **1. RED:** 20/min por usuário+org (débito também em cache); pedido de 25 concede 20 e devolve `retomarEm` = início do próximo minuto; usuários/orgs independentes; teto global compartilhado; INCR além do teto devolve o excedente (DECRBY) para não inflar a janela; **erro de Redis no orçamento global bloqueia a chamada ML** (fail-closed) e devolve espera — diferente do cache, que é fail-open.
+- [ ] **2. Executar:** `rtk pnpm test -- supabase/functions/_shared/extensao/__tests__/cotas-busca.test.ts`; confirmar falha.
+- [ ] **3. Implementar:** `INCRBY` da quantidade pedida + TTL; se passar do teto, `DECRBY` do excedente e conceder só o restante. Reutilizar o cliente `_shared/redis/client.ts`; acrescentar `redisIncrBy`/`redisDecrBy` se não existirem (com teste). Sem dados de tenant na chave global.
+- [ ] **4. GREEN:** repetir testes + `rtk deno lint --config supabase/functions/deno.json`.
+- [ ] **5. Commit:** `rtk git commit -m "feat(extensao): cotas de enriquecimento e orcamento ML no Redis"`.
 
-**Preservação obrigatória:** as 30/min continuam no Redis, por usuário, com `chaveLimite`. `extensao_registrar_uso` continua sendo telemetria diária, não limitador. A tabela técnica global não contém dados de tenant; seu acesso é exclusivamente de servidor.
+**Preservação obrigatória:** as 30/min de margem continuam intactas (`chaveLimite`); `extensao_registrar_uso` continua só telemetria. Esta fatia passa a **não ter migration**.
 
 ### Task 9 — enriquecer somente catálogos e ofertas comprovados
 
@@ -327,7 +334,7 @@ A resposta por catálogo informa `estado`, `consultadoEm`, `expiraEm`, criação
 
 - [ ] **1. RED:** cache frio/quente, débito por catálogo nos dois casos, ficha parcial, `paging` ausente, dois itens do mesmo vendedor, vendedor sem transações, oferta exata ausente, 403/429/timeout e teto global concorrente. Catálogo duplicado no mesmo pedido debita uma vez; nova requisição debita novamente.
 - [ ] **2. Executar:** `rtk pnpm test -- supabase/functions/_shared/extensao/__tests__/enriquecimento-busca.test.ts supabase/functions/_shared/extensao/__tests__/enriquecimento-busca-io.test.ts supabase/functions/extensao/__tests__/index.test.ts supabase/functions/extensao/__tests__/roteamento.test.ts`; confirmar falha.
-- [ ] **3. Implementar:** validar limites antes do processamento; autenticação, módulo e identidade antes da reserva. Reservar catálogo **antes de consultar cache**. Consultar P/O; contar vendedores únicos, não ofertas. Buscar perfis somente dos vendedores dos itens exatos pedidos. Antes de cada chamada ML real, inclusive comissão, reservar orçamento global. Novo adaptador faz uma tentativa, sem retry oculto.
+- [ ] **3. Implementar:** validar limites antes do processamento; autenticação, módulo e identidade antes da reserva. Reservar catálogo **antes de consultar cache**. Consultar P/O; contar vendedores únicos, não ofertas. Buscar perfis somente dos vendedores dos itens exatos pedidos. Antes de cada chamada ML real, inclusive comissão, `reservarChamadaMl` (Task 8). **Comissão só para o par categoria/preço/tipo das ofertas exatas pedidas, dentro da mesma unidade do catálogo** (não debita à parte); com o orçamento global esgotado, a comissão fica "aguardando" e o restante do catálogo é entregue. Novo adaptador faz uma tentativa, sem retry oculto.
 - [ ] **4. GREEN:** caches projetados e versionados por org/conexão/conta/catálogo; perfil pode reutilizar o cache público validado existente. Reutilizar `normalizarPerfilVendedor`, `validarPerfilVendedor`, `dataDoProduto` e `comissaoDaListingPrice`; complementar parsing parcial de medalha/UF no módulo novo, sem alterar o comportamento compartilhado de Pulse. Comissão usa categoria exata, preço do card e tipo confirmado, com chave financeira incluindo org e conta.
 - [ ] **5. Commit:** `rtk git commit -m "feat(extensao): enriquecer catalogos da busca com cobertura"`.
 
@@ -367,10 +374,10 @@ A resposta por catálogo informa `estado`, `consultadoEm`, `expiraEm`, criação
 - [ ] **1. Ampliar prova:** fixtures com catálogo parcial, oferta ausente, vendedor repetido, UF/medalha desconhecidos, comissão indisponível e espera de cota. Executar testes da Task 10 e o pacote de verificação.
 - [ ] **2. Validar visual e segurança:** repetir harness/Playwright e smoke real da Task 6; testar duas abas, painel fechado e troca de suporte em voo. Conferir que título, miniatura e lista observada não são enviados à telemetria.
 - [ ] **3. Medir hospedado:** em ambiente de validação, medir lotes de 1/3/5 catálogos, cache frio/quente e fichas de 100 ofertas; pelo menos dez amostras por tamanho/estado. Correlacionar identificador técnico de execução com `cpu_time_used`; logs contêm apenas contagens, bytes, cache e duração, sem payload de concorrente. Exigir os critérios de CPU do cabeçalho; reduzir lote e registrar nova aprovação se necessário.
-- [ ] **4. Revisar e integrar:** revisão do diff pelo Codex → CI verde no SHA final → merge/push → `rtk supabase db push --linked` → `rtk pnpm db:check` → `rtk supabase functions deploy extensao --project-ref txvncrgkoynoxwopfkbp`. Confirmar migration aplicada, edge ACTIVE e clientes 0.3.2/0.4.0 compatíveis.
+- [ ] **4. Revisar e integrar:** revisão final do diff da fatia pelo Grok 4.7 xhigh (pré-merge) → CI verde no SHA final → merge/push → `rtk supabase functions deploy extensao --project-ref txvncrgkoynoxwopfkbp` (fatia sem migration). Confirmar edge ACTIVE e clientes 0.3.2/0.4.0 compatíveis.
 - [ ] **5. Publicar:** build, ZIP `publiai-extensao-0.5.0.zip`, teste do ZIP, revisão das declarações de privacidade e envio à Web Store. Registrar resultados reais de CPU, chamadas, cotas e cobertura.
 
-**Gate:** a 0.5.0 só é distribuída após migration, edge e medição aprovadas. Falha operacional desliga o enriquecimento no servidor; leitura local e margem existente continuam disponíveis.
+**Gate:** a 0.5.0 só é distribuída após edge e medição aprovadas. Falha operacional desliga o enriquecimento no servidor; leitura local e margem existente continuam disponíveis.
 
 ---
 
@@ -440,7 +447,7 @@ interface PedidoSimulacaoSemVinculo {
 
 - [ ] **1. Ampliar prova:** custo manual, SKU com composição confirmada, unidades ausentes, frete estimado, margem negativa, confirmação falha e limite financeiro. Executar testes da Task 13 e pacote de verificação.
 - [ ] **2. Validar visualmente:** repetir Playwright/harness em claro/escuro, 320/400/600 px e zoom 150%. Smoke com troca rápida de produto, preço, aba e identidade; demonstrar que simular não grava vínculo.
-- [ ] **3. Revisar:** Codex revisa diff, arredondamento em centavos, composição, procedência financeira e ausência de persistência. Corrigir bloqueios e obter CI verde no SHA final.
+- [ ] **3. Revisar:** Grok 4.7 xhigh revisa o diff final da fatia (tasks já revisadas pelo Codex): arredondamento em centavos, composição, procedência financeira e ausência de persistência. Corrigir bloqueios e obter CI verde no SHA final.
 - [ ] **4. Integrar e deployar:** merge/push da `main` → `rtk supabase functions deploy extensao --project-ref txvncrgkoynoxwopfkbp`; conferir ACTIVE e smoke das versões anteriores. Esta fatia não cria migration.
 - [ ] **5. Publicar:** build de produção, ZIP `publiai-extensao-0.6.0.zip`, teste do ZIP, Web Store e registro final das evidências em `docs/TASKS.md`.
 
