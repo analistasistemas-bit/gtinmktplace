@@ -13,6 +13,7 @@ import {
 import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/lib/supabase';
 import { decideSupport, listSupportRequests, revokeSupport, type SupportRequest, type SupportStatus } from '@/lib/suporte';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 interface AuditEvent {
   id: string;
@@ -126,7 +127,7 @@ export default function SupportRequests() {
     }
   }
 
-  if (profileLoading) return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
+  if (profileLoading) return <div className="p-4 lg:p-6"><CarregandoMarca rotulo="Carregando" mensagem="Conferindo seus acessos…" /></div>;
   if (!isAdmin) {
     return <div className="mx-auto max-w-3xl p-4 lg:p-6"><EmptyState title="Acesso restrito" description="Somente administradores da organização podem consultar solicitações e histórico de suporte." /></div>;
   }

@@ -17,6 +17,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { toast } from 'sonner';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 const fmtHora = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -403,7 +404,7 @@ export function AbaMensagens() {
       </Tabs>
 
       {isFetching && lista.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+        <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as mensagens…" />
       ) : itens.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           <MessagesSquare className="h-6 w-6" />

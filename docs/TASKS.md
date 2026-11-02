@@ -20,6 +20,7 @@
 
 - [x] Badge das abas Pós-venda/Mensagens soma as conversas lidas "Sem responder", igual ao avatar (main `09372603`).
 - [x] Conversa com reclamação `mediations` aberta: fora de "aguardando", aviso + link no lugar da resposta, 403 `blocked_by_claim`/`blocked_by_mediation` → 409 `reclamacao_aberta` (main `4ea30059`, migration `20261101214140`, `responder-mensagem` v39).
+- [x] Pergunta em anúncio pausado/finalizado: aviso no card (`ml_trafego_item.status`) e 400 `not_active_item` → 409 `anuncio_inativo` com orientação de reativar (02/11).
 - [ ] Confirmar se reclamação `returns` aberta também bloqueia a mensagem; hoje só `mediations` sai da contagem (os outros tipos só pelo 409).
 
 ## Pós-venda do ML no PubliAI (ADR-0192) — 2026-10-28

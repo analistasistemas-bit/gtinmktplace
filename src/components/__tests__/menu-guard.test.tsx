@@ -84,10 +84,10 @@ describe('MenuGuard — módulos undefined na 1ª carga (ADR-0153 D5)', () => {
     expect(screen.queryByText('Módulos indisponíveis')).toBeNull();
   });
 
-  it('ainda carregando (modulos undefined, isLoading true) mostra "Carregando…" e não redireciona', () => {
+  it('ainda carregando (modulos undefined, isLoading true) mostra o carregando da marca e não redireciona', async () => {
     modulosMock.mockReturnValue({ data: undefined, isLoading: true });
     renderEm('/estoque');
-    expect(screen.getByText('Carregando…')).toBeTruthy();
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toBeTruthy();
     expect(screen.queryByText('SEM ACESSO')).toBeNull();
   });
 });

@@ -54,7 +54,15 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     await responderAnswer(token, body.question_id, text);
   } catch (e) {
     await auditarOperacaoSuporte(admin, context, { type: 'item', id: String(body.question_id) }, 'failed');
-    return new Response(JSON.stringify({ ok: false, erro: (e as Error).message }), {
+    const msg = (e as Error).message;
+    // Anúncio pausado/finalizado: o ML recusa (400 not_active_item) até reativar.
+    if (msg.includes('not_active_item')) {
+      return new Response(JSON.stringify({
+        ok: false, codigo: 'anuncio_inativo',
+        erro: 'O anúncio não está ativo no Mercado Livre (pausado ou finalizado). Reative o anúncio para responder.',
+      }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ ok: false, erro: msg }), {
       status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

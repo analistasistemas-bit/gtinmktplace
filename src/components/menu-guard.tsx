@@ -6,6 +6,7 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useSupportStore } from '@/stores/support-store';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export function MenuGuard() {
   const { profile, profileLoading } = useProfile();
@@ -18,8 +19,8 @@ export function MenuGuard() {
 
   if (profileLoading || modulosLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Carregando…
+      <div className="p-4 sm:p-6">
+        <CarregandoMarca rotulo="Carregando" mensagem="Conferindo seus acessos…" />
       </div>
     );
   }

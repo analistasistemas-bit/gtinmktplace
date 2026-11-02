@@ -443,10 +443,10 @@ describe('Publicados', () => {
       expect(screen.getByText('Em promoção')).toBeInTheDocument();
     });
 
-    it('primeira carga do status: logo pulsando no lugar da tabela', () => {
+    it('primeira carga do status: logo pulsando no lugar da tabela', async () => {
       useStatusPublicadosMock.mockReturnValue({ data: undefined, isFetching: true, refetch: vi.fn() });
       renderTela();
-      expect(screen.getByRole('status', { name: 'Carregando' })).toBeInTheDocument();
+      expect(await screen.findByRole('status', { name: 'Carregando' })).toBeInTheDocument();
       expect(screen.queryByRole('columnheader', { name: /Preço atual/ })).not.toBeInTheDocument();
     });
 

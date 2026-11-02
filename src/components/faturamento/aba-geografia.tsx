@@ -17,6 +17,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from '@/components/ui/table';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 7, label: '7 dias' },
@@ -197,7 +198,7 @@ export function AbaGeografia() {
 
       {/* Estado de carregando / vazio */}
       {carregando && (
-        <div className="py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+        <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as vendas por região…" />
       )}
       {semDados && (
         <div className="py-10 text-center text-sm text-muted-foreground">

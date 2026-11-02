@@ -30,6 +30,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { toast } from 'sonner';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 7, label: '7 dias' }, { dias: 30, label: '30 dias' }, { dias: 90, label: '90 dias' },
@@ -465,7 +466,7 @@ export function AbaVendas() {
           </div>
         )}
         {isFetching && (vendas ?? []).length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+          <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as vendas…" />
         )}
       </div>
     </div>

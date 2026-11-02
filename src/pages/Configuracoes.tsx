@@ -1,12 +1,12 @@
 import { Navigate, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/page-header';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { cn } from '@/lib/utils';
 import { SECOES, type Secao } from '@/components/configuracoes/secoes';
 import { usePermissoesConfig } from '@/components/configuracoes/permissoes';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 /**
  * O guard de OAuth do ML roda ANTES de qualquer hook da tela — por isso mora neste
@@ -49,7 +49,7 @@ function ConfiguracoesLayout() {
     return (
       <div className="p-4 sm:p-6">
         <PageHeader title="Configurações" />
-        <Skeleton className="h-64 w-full max-w-3xl" />
+        <CarregandoMarca className="max-w-3xl" rotulo="Carregando" mensagem="Lendo as configurações…" />
       </div>
     );
   }

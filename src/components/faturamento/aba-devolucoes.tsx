@@ -10,6 +10,7 @@ import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildDevolucoesReport } from '@/lib/export/adapters';
 import { Button } from '@/components/ui/button';
 import { type PeriodoDias, type Periodo, resolverJanela } from '@/lib/metricas';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 const ACAO_LABEL: Record<string, string> = {
   send_money_back: 'Devolver dinheiro',
@@ -211,7 +212,7 @@ export function AbaDevolucoes() {
       {!isError && !isFetching && lista.length === 0 && devolucoes?.length !== 0 && (
         <div className="px-4 py-10 text-center text-sm text-muted-foreground">Nenhum registro encontrado para os filtros selecionados.</div>
       )}
-      {!isError && isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
+      {!isError && isFetching && lista.length === 0 && <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo as devoluções…" />}
       </div>
     </div>
   );

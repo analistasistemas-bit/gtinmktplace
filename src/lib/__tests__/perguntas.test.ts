@@ -28,9 +28,17 @@ for (const m of ['select', 'in', 'not']) {
 cadeiaVendas.then = (resolve: (v: typeof respostaVendas) => unknown) =>
   Promise.resolve(respostaVendas).then(resolve);
 
+const respostaTrafego: { data: { ml_item_id: string; status: string }[] } = { data: [] };
+const cadeiaTrafego: Record<string, unknown> = {};
+for (const m of ['select', 'in']) {
+  cadeiaTrafego[m] = vi.fn((...args: unknown[]) => { registrar(`trafego.${m}`, args); return cadeiaTrafego; });
+}
+cadeiaTrafego.then = (resolve: (v: typeof respostaTrafego) => unknown) =>
+  Promise.resolve(respostaTrafego).then(resolve);
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: vi.fn((tabela: string) => (tabela === 'ml_vendas' ? cadeiaVendas : cadeiaPerguntas)),
+    from: vi.fn((tabela: string) => (tabela === 'ml_vendas' ? cadeiaVendas : tabela === 'ml_trafego_item' ? cadeiaTrafego : cadeiaPerguntas)),
   },
 }));
 
@@ -106,6 +114,17 @@ describe('lib/perguntas — fetchPerguntasPagina', () => {
     expect(chamadas['vendas.in']).toEqual([['comprador_id', [10, 20]]]);
     expect(r.itens.find((p) => p.comprador_id === 10)?.comprador_nome).toBe('Maria Silva');
     expect(r.itens.find((p) => p.comprador_id === 20)?.comprador_nome).toBeNull();
+  });
+
+  it('status do anúncio no ML vem de ml_trafego_item (ML recusa resposta em anúncio inativo)', async () => {
+    respostaPerguntas.data = [pergunta(1), { ...pergunta(2), item_id: 'MLB2' }];
+    respostaPerguntas.count = 2;
+    respostaTrafego.data = [{ ml_item_id: 'MLB1', status: 'paused' }];
+    const r = await fetchPerguntasPagina(1, 20);
+    expect(chamadas['trafego.in']?.at(-1)).toEqual(['ml_item_id', ['MLB1', 'MLB2']]);
+    expect(r.itens.find((p) => p.item_id === 'MLB1')?.anuncio_status).toBe('paused');
+    expect(r.itens.find((p) => p.item_id === 'MLB2')?.anuncio_status).toBeNull();
+    respostaTrafego.data = [];
   });
 
   it('usa o cliente supabase do projeto na tabela certa', async () => {

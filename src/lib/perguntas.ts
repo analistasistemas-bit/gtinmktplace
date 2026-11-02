@@ -14,6 +14,9 @@ export interface Pergunta {
   resposta: string | null;
   respondida_em: string | null;
   criada_em: string | null;
+  /** Status do anúncio no ML (`ml_trafego_item`, coletor de tráfego); null = desconhecido. O ML
+   *  recusa resposta em anúncio não ativo (400 `not_active_item`). */
+  anuncio_status?: string | null;
 }
 
 /**
@@ -106,6 +109,18 @@ export function pergCasaStatus(status: string, filtro: FiltroStatusPergunta): bo
 const COLUNAS_PERGUNTA =
   'id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em';
 
+/** Status no ML dos anúncios da página (RLS por org). Falha na leitura = desconhecido: o aviso no
+ *  card some, mas a resposta segue possível e o erro da edge orienta. */
+async function statusPorAnuncio(ids: string[]): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  if (!ids.length) return m;
+  const { data } = await supabase.from('ml_trafego_item').select('ml_item_id, status').in('ml_item_id', ids);
+  for (const r of (data ?? []) as Array<{ ml_item_id: string; status: string | null }>) {
+    if (r.status) m.set(r.ml_item_id, r.status);
+  }
+  return m;
+}
+
 /** Uma página de perguntas. A separação por status virou aba (ver AbaPerguntas) — aqui a ordem é
  *  sempre por data, mais recente primeiro. RLS por user. */
 export async function fetchPerguntasPagina(
@@ -127,9 +142,11 @@ export async function fetchPerguntasPagina(
   const nomes = await nomesPorComprador(
     [...new Set(lista.map((p) => p.comprador_id).filter((i): i is number => i != null))],
   );
+  const status = await statusPorAnuncio([...new Set(lista.map((p) => p.item_id).filter((i): i is string => !!i))]);
   const itens = lista.map((p) => ({
     ...p,
     comprador_nome: (p.comprador_id != null ? nomes.get(p.comprador_id) : null) ?? null,
+    anuncio_status: (p.item_id ? status.get(p.item_id) : null) ?? null,
   }));
   return { itens, total: count ?? 0 };
 }

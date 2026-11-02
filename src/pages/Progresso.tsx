@@ -15,6 +15,7 @@ import { totalAnomalias } from '@/lib/tipos-dominio';
 import { familiasElegiveisEstoqueRapido, deveExibirGateEstoqueRapido } from '@/lib/estoque-rapido';
 import { publicarFamilias, familiasEnviadas } from '@/lib/publicar';
 import { QK } from '@/lib/queries';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export default function Progresso() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -60,7 +61,7 @@ export default function Progresso() {
 
   if (!lote) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Carregando…</div>
+      <div className="p-4 sm:p-6"><CarregandoMarca rotulo="Carregando" mensagem="Lendo o progresso do lote…" /></div>
     );
   }
 

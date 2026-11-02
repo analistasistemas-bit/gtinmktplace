@@ -20,7 +20,6 @@ import { PageHeader } from '@/components/ui/page-header';
 import { BorderTrail } from '@/components/ui/border-trail';
 import { PulsoAoVivo } from '@/components/ui/ao-vivo';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
 import { TabelaRadar } from '@/components/pulse/tabela-radar';
 import { DialogDetalhe } from '@/components/pulse/dialog-detalhe';
 import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
@@ -36,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
 import { useCountUp } from '@/hooks/use-count-up';
 import PulseSonar from './PulseSonar';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 /** Alvo único da reprecificação: a aba Alertas e a linha do Radar alimentam o MESMO dialog. */
 type AlvoReprecificar = { codigoPai: string | null; precoInicial: number | null; produtoId: string | null };
@@ -331,9 +331,7 @@ export default function Pulse() {
       )}
 
       {isLoading ? (
-        <div className="flex flex-col gap-1.5">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
-        </div>
+        <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo o radar…" />
       ) : isError ? (
         // Falha de leitura não pode se disfarçar de "radar vazio" — o operador leria "sem
         // concorrência nova" quando na verdade a consulta caiu.
