@@ -2,7 +2,7 @@
 // o SW, com a extensão ativa e a sessão válida, identifica todos no banco (`identificar_busca`, sem ML nem cota) e analisa
 // a margem só dos vinculados com preço (`analisar_busca`) — painel aberto ou fechado. O painel só consome o estado.
 // O estado fica na mesma chave da aba (geração por página e por sessão): resposta atrasada de outra busca não volta.
-import { atualizarSessao, chamarExtensao } from './api';
+import { chamarExtensao, consultarSessaoAtual } from './api';
 import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
@@ -142,7 +142,11 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   if (!vale()) return SEM_SESSAO;
   // Identidade desconhecida (recém-logado): resolvida ANTES de capturar a da rodada — senão a 1ª chamada a descobre, a
   // gravação é recusada e a retomada pede (e conta) a telemetria de novo.
-  if ((await identidadeAtual()) === null) await atualizarSessao();
+  // Falha transitória (rede/5xx) na consulta: pede retomada; recusa definitiva (401, sem acesso, saída) só para.
+  if ((await identidadeAtual()) === null) {
+    const s = await consultarSessaoAtual();
+    if (!s.ok && transitoria(s)) { await pedirRetomada(tabId, vale); return s; }
+  }
   if (!vale()) return SEM_SESSAO;
   const identidade = await identidadeAtual();
   if (identidade === null) return SEM_SESSAO;
@@ -269,14 +273,17 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (dados.limiteAtingido === true) r2.limiteEm = minuto();
     }))) { falha = recusada(); break; }
   }
-  // Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois.
-  if (retomar && vale()) {
-    const a = await lerAba(tabId);
-    if (vale() && ehBusca(a.estado)) {
-      chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-retomar', geracao: geracaoDaPagina(a.geracao, a.sessao), url: a.estado.entrada.url }).catch(() => {});
-    }
-  }
+  if (retomar) await pedirRetomada(tabId, vale);
   return falha ?? { ok: true };
+}
+
+/** Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois. */
+async function pedirRetomada(tabId: number, vale: () => boolean): Promise<void> {
+  if (!vale()) return;
+  const a = await lerAba(tabId);
+  if (vale() && ehBusca(a.estado)) {
+    chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-retomar', geracao: geracaoDaPagina(a.geracao, a.sessao), url: a.estado.entrada.url }).catch(() => {});
+  }
 }
 
 /** Painel → localiza e destaca o card na página (o DOM do ML não é reordenado). */

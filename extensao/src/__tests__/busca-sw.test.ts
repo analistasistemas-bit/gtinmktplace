@@ -25,6 +25,7 @@ let bloqueio: Promise<void> | null;
 let antesDeResponder: ((acao: string) => Promise<void> | void) | null;
 let falharIdentificar: boolean;
 let aoRenovar: (() => Promise<void>) | null;
+let statusSessao: number;
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
 
@@ -35,7 +36,10 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
   }
   const b = JSON.parse(String(init?.body));
   const env = (dados: unknown) => new Response(JSON.stringify({ identidade: b.identidadeEsperada, dados }), { status: 200 });
-  if (b.acao === 'sessao') return new Response(JSON.stringify({ identidade: 'u1:org1:', dados: {} }), { status: 200 });
+  if (b.acao === 'sessao') {
+    if (statusSessao !== 200) { const st = statusSessao; statusSessao = 200; corpos.push(b); return new Response(JSON.stringify({ erro: 'x' }), { status: st }); }
+    return new Response(JSON.stringify({ identidade: 'u1:org1:', dados: {} }), { status: 200 });
+  }
   corpos.push(b);
   if (bloqueio) await bloqueio;
   if (antesDeResponder) await antesDeResponder(b.acao);
@@ -73,6 +77,7 @@ beforeEach(() => {
   antesDeResponder = null;
   falharIdentificar = false;
   aoRenovar = null;
+  statusSessao = 200;
   geracaoCs = null;
   corpos.length = 0;
 });
@@ -394,6 +399,25 @@ describe('isolamento de sessão e de página', () => {
     await complementosPendentes();
     expect(doTipo('analisar_busca').map((c) => c.itens[0].preco)).toEqual([15]);
     expect((await estado())!.resposta.precoDaMargem[id(1)]).toBe(15);
+  });
+
+  it('identidade desconhecida + sessão com falha transitória (503): pede retomada; o pulso conclui com 1 registro', async () => {
+    logar({ identidade: null });
+    statusSessao = 503;
+    await registrar([card(1)]);
+    expect(doTipo('identificar_busca')).toHaveLength(0);
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(1);
+    await pulso();
+    expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
+    expect(registros).toBe(1);
+  });
+
+  it('identidade desconhecida + sessão recusada (401): para sem retomada', async () => {
+    logar({ identidade: null });
+    statusSessao = 401;
+    await registrar([card(1)]);
+    expect(doTipo('identificar_busca')).toHaveLength(0);
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
   });
 
   it('desligada: cards e pulso não chamam nada', async () => {

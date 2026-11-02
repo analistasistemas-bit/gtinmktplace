@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { geracaoAtual } from '../abas';
-import { atualizarSessao, chamarExtensao } from '../api';
+import { atualizarSessao, chamarExtensao, consultarSessaoAtual } from '../api';
 import { entrar, sair } from '../credenciais';
 import { definirIdentidade, identidadeAtual, obterSessaoValida, perfilAtual } from '../sessao';
 import { instalarChromeFalso, local, logar } from './chrome-falso';
@@ -191,6 +191,20 @@ describe('chamarExtensao — guarda de quem pede (busca: página e item ainda va
     });
     await chamarExtensao({ acao: 'x' }, undefined, { conferir: async () => { ordem.push('conferir'); return true; } });
     expect(ordem).toEqual(['renovar', 'conferir', 'edge']);
+  });
+});
+
+describe('consultarSessaoAtual: transitório × definitivo (a busca só retoma no transitório)', () => {
+  it('503 ou rede → interno, credenciais mantidas; 401 → sessao_expirada e desloga', async () => {
+    await conectar();
+    fetchFalso.mockResolvedValueOnce(resposta(503, 'indisponível'));
+    expect(await consultarSessaoAtual()).toEqual({ ok: false, erro: 'interno' });
+    fetchFalso.mockRejectedValueOnce(new TypeError('rede'));
+    expect(await consultarSessaoAtual()).toEqual({ ok: false, erro: 'interno' });
+    expect(local.credenciais).toBeDefined();
+    fetchFalso.mockResolvedValueOnce(resposta(401, { erro: 'sessao_expirada' }));
+    expect(await consultarSessaoAtual()).toEqual({ ok: false, erro: 'sessao_expirada' });
+    expect(local.credenciais).toBeUndefined();
   });
 });
 
