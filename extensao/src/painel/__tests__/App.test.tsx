@@ -156,11 +156,11 @@ describe('App', () => {
   });
 
   // Monta o App com um SW falso; `ext` pode mudar entre leituras.
-  const montar = async (ext: () => EstadoExt, extra?: (m: { tipo: string }) => unknown) => {
+  const montar = async (ext: () => EstadoExt, extra?: (m: { tipo: string }) => unknown, aba: unknown = { entrada: ENTRADA, resposta: { ok: true, dados: DADOS } }) => {
     const ouvintes: Array<(m: unknown) => void> = [];
     const sendMessage = vi.fn(async (m: { tipo: string }) => {
       if (m.tipo === 'publiai:estado-extensao') return ext();
-      if (m.tipo === 'publiai:estado-da-aba') return { entrada: ENTRADA, resposta: { ok: true, dados: DADOS } };
+      if (m.tipo === 'publiai:estado-da-aba') return aba;
       return extra?.(m);
     });
     vi.stubGlobal('chrome', {
@@ -170,6 +170,19 @@ describe('App', () => {
     await act(async () => { render(<App />); });
     return { sendMessage, avisar: async (m: unknown) => { await act(async () => { ouvintes.forEach((f) => f(m)); }); } };
   };
+
+  it('aba numa busca: mostra a Busca e não pede análise ao montar (o SW analisa sozinho)', async () => {
+    const card = { itemId: 'MLB1000001', catalogProductId: null, userProductId: null, posicao: 1, titulo: 'Batom', preco: 10, vendedor: null, nota: null, vendidosTexto: null, freteGratis: null, full: null, lojaOficial: null, patrocinado: false, selos: [], miniaturaUrl: null, identidadeConflitante: false, ocorrencias: [] };
+    const busca = {
+      entrada: { tipoPagina: 'busca', url: 'https://lista.mercadolivre.com.br/batom' },
+      resposta: { resultados: {}, metadados: {}, precoDaMargem: {}, limiteEm: null, usoRegistrado: false },
+      observado: { cards: [card], ocorrencias: 1 },
+    };
+    const { sendMessage } = await montar(() => EXT, undefined, busca);
+    screen.getByRole('heading', { name: 'Busca' });
+    await act(async () => { await Promise.resolve(); });
+    expect(sendMessage.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:analisar-busca')).toBe(false);
+  });
 
   it('deslogado mostra Entrar; desativada mostra Ativar', async () => {
     await montar(() => ({ ...EXT, logado: false, perfil: null }));

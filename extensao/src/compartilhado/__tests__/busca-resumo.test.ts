@@ -20,14 +20,31 @@ const cards = [
   card('MLB4', { preco: null }),
 ];
 
+const VINC = { fonte: 'catalogo' as const, codigo: '001' };
+const meta = (proprio: boolean | null, vinculo: typeof VINC | null) => ({ itemId: 'x', proprio, vinculo });
+
 describe('resumoBusca (Task 22)', () => {
   it('conta por produto único e soma só os mínimos informados, sem somar o mesmo catálogo duas vezes', () => {
-    const r = resumoBusca(cards, { MLB1: ok(12) }, 6);
+    const r = resumoBusca(cards, { MLB1: meta(false, VINC) }, 6);
     expect(r).toMatchObject({
       ocorrencias: 6, produtos: 4, menorPreco: 20, maiorPreco: 80, full: 1, freteGratis: 1, oficiais: 1, patrocinados: 1,
       comOferta: 1, comCatalogo: 2, semCatalogo: 2, vinculados: 1,
       vendidosMinimos: { soma: 10004, cobertura: 2, grupos: 3 },
     });
+  });
+});
+
+describe('identificação (Task 5): anúncio próprio e SKU vinculado independentes, desconhecido nunca vira 0', () => {
+  it('conta meus e vinculados pelos metadados; sem metadado = não identificado', () => {
+    const r = resumoBusca(cards, { MLB1: meta(true, null), MLB2: meta(true, VINC), MLB3: meta(null, VINC) }, 4);
+    expect(r).toMatchObject({ identificados: 3, meus: 2, vinculados: 2, proprioDesconhecido: 2, proprioIndisponivel: 1 });
+    expect(resumoBusca(cards, {}, 4)).toMatchObject({ identificados: 0, meus: 0, vinculados: 0, proprioDesconhecido: 4 });
+  });
+  it('filtros meus e vinculados são distintos', () => {
+    const m = { MLB1: meta(true, null), MLB2: meta(false, VINC), MLB3: meta(true, VINC) };
+    expect(filtrarCards(cards, m, new Set(['meus'])).map((c) => c.itemId)).toEqual(['MLB1', 'MLB3']);
+    expect(filtrarCards(cards, m, new Set(['vinculados'])).map((c) => c.itemId)).toEqual(['MLB2', 'MLB3']);
+    expect(filtrarCards(cards, m, new Set(['meus', 'vinculados'])).map((c) => c.itemId)).toEqual(['MLB3']);
   });
 });
 
@@ -64,9 +81,10 @@ describe('totais por grupo de vendas (modo busca completo)', () => {
 describe('filtrarCards / ordenarCards', () => {
   const resultados = { MLB1: ok(12), MLB2: ok(30), MLB3: { itemId: 'MLB3', estado: 'sem_vinculo' } as ResultadoBusca };
   it('filtros combinam (e)', () => {
-    expect(filtrarCards(cards, resultados, new Set(['seus'])).map((c) => c.itemId)).toEqual(['MLB1', 'MLB2']);
-    expect(filtrarCards(cards, resultados, new Set(['seus', 'full'])).map((c) => c.itemId)).toEqual(['MLB1']);
-    expect(filtrarCards(cards, resultados, new Set(['catalogo'])).map((c) => c.itemId)).toEqual(['MLB1', 'MLB2']);
+    const m = { MLB1: meta(false, VINC), MLB2: meta(false, VINC), MLB3: meta(false, null) };
+    expect(filtrarCards(cards, m, new Set(['vinculados'])).map((c) => c.itemId)).toEqual(['MLB1', 'MLB2']);
+    expect(filtrarCards(cards, m, new Set(['vinculados', 'full'])).map((c) => c.itemId)).toEqual(['MLB1']);
+    expect(filtrarCards(cards, {}, new Set(['catalogo'])).map((c) => c.itemId)).toEqual(['MLB1', 'MLB2']);
   });
   it('ordena por vendidos (mínimo), preço e margem; desconhecidos sempre no fim', () => {
     expect(ordenarCards(cards, resultados, 'vendidos').map((c) => c.itemId)).toEqual(['MLB1', 'MLB2', 'MLB3', 'MLB4']);

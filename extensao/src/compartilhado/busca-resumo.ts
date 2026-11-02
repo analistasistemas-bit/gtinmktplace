@@ -1,18 +1,19 @@
 // Resumo, filtros e ordenação da busca no painel (ADR-0189 D-11, Task 22). Tudo sobre os resultados carregados e por
 // produto único; nada é presumido (consultor, 22/10): vendidos = soma dos mínimos informados, com cobertura; "sem
 // catálogo identificado" não prova "fora do catálogo"; medalhas não entram (o card não mostra o vendedor).
-import type { ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
+import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import type { CardBusca } from '../leitura/busca';
 import { pisoDosVendidos } from './quanto-vende';
 import { volumeMinimoAoPrecoAtual } from './volume-minimo';
 
 export type ResultadoBusca = ResultadoCard;
 export type Resultados = Record<string, ResultadoBusca | undefined>;
-export type FiltroBusca = 'seus' | 'full' | 'frete' | 'oficiais' | 'patrocinados' | 'catalogo' | 'oferta';
+/** Ausente = ainda não identificado (nunca "não próprio" nem "sem vínculo"). */
+export type Metadados = Record<string, MetadadosCardBusca | undefined>;
+export type FiltroBusca = 'meus' | 'vinculados' | 'full' | 'frete' | 'oficiais' | 'patrocinados' | 'catalogo' | 'oferta';
 export type OrdemBusca = 'relevancia' | 'vendidos' | 'preco' | 'margem';
 
 const OFERTA = /oferta/i;
-const vinculado = (r: ResultadoBusca | undefined) => !!r && r.estado !== 'sem_vinculo';
 
 /** Grupos de vendas (o card de catálogo ou /up/ mostra o número do produto, não da oferta). Chave: catálogo → /up/ → item.
  *  Item sem catálogo herda o do /up/ só se todos os itens com esse /up/ que têm catálogo concordam. /up/ com dois
@@ -35,7 +36,7 @@ function agruparVendas(cards: CardBusca[]): { grupos: Map<string, CardBusca[]>; 
   return { grupos, conflitos: emConflito.size };
 }
 
-export function resumoBusca(cards: CardBusca[], resultados: Resultados, ocorrencias: number) {
+export function resumoBusca(cards: CardBusca[], metadados: Metadados, ocorrencias: number) {
   const precos = cards.map((c) => c.preco).filter((p): p is number => p !== null);
   const { grupos, conflitos } = agruparVendas(cards);
   let somaVendidos = 0, coberturaVendidos = 0, somaVolume = 0, coberturaVolume = 0;
@@ -59,15 +60,22 @@ export function resumoBusca(cards: CardBusca[], resultados: Resultados, ocorrenc
     comOferta: cards.filter((c) => c.selos.some((s) => OFERTA.test(s))).length,
     comCatalogo: cards.filter((c) => c.catalogProductId).length,
     semCatalogo: cards.filter((c) => !c.catalogProductId).length,
-    vinculados: cards.filter((c) => vinculado(resultados[c.itemId])).length,
+    /** Cards com identificação (anúncio próprio e vínculo) já devolvida pelo banco. */
+    identificados: cards.filter((c) => metadados[c.itemId]).length,
+    meus: cards.filter((c) => metadados[c.itemId]?.proprio === true).length,
+    proprioDesconhecido: cards.filter((c) => (metadados[c.itemId]?.proprio ?? null) === null).length,
+    /** Identificados cuja verificação de anúncio próprio falhou (null): nunca contam como "não meu". */
+    proprioIndisponivel: cards.filter((c) => metadados[c.itemId] && metadados[c.itemId]!.proprio === null).length,
+    vinculados: cards.filter((c) => metadados[c.itemId]?.vinculo).length,
     vendidosMinimos: { soma: somaVendidos, cobertura: coberturaVendidos, grupos: grupos.size, conflitos },
     /** Centavos; piso × preço atual, não é faturamento. */
     volumeMinimo: { centavos: somaVolume, cobertura: coberturaVolume, grupos: grupos.size, conflitos },
   };
 }
 
-const TESTE: Record<FiltroBusca, (c: CardBusca, r: ResultadoBusca | undefined) => boolean> = {
-  seus: (_c, r) => vinculado(r),
+const TESTE: Record<FiltroBusca, (c: CardBusca, m: MetadadosCardBusca | undefined) => boolean> = {
+  meus: (_c, m) => m?.proprio === true,
+  vinculados: (_c, m) => !!m?.vinculo,
   full: (c) => !!c.full,
   frete: (c) => !!c.freteGratis,
   oficiais: (c) => !!c.lojaOficial,
@@ -77,8 +85,8 @@ const TESTE: Record<FiltroBusca, (c: CardBusca, r: ResultadoBusca | undefined) =
 };
 
 /** Filtros combinados (todos precisam valer). */
-export function filtrarCards(cards: CardBusca[], resultados: Resultados, filtros: Set<FiltroBusca>): CardBusca[] {
-  return cards.filter((c) => [...filtros].every((f) => TESTE[f](c, resultados[c.itemId])));
+export function filtrarCards(cards: CardBusca[], metadados: Metadados, filtros: Set<FiltroBusca>): CardBusca[] {
+  return cards.filter((c) => [...filtros].every((f) => TESTE[f](c, metadados[c.itemId])));
 }
 
 /** Margem Clássico em %, só de card analisado com margem disponível. */
