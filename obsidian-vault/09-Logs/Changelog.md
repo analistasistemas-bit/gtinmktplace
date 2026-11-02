@@ -11,6 +11,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-02
 
+- **Logo PubliAI pulsando nos carregamentos** (main `8cb4aafa`, só front): `CarregandoMarca` ganha
+  atraso de 300 ms (cache não pisca) e variantes `compacta`/`tela`; substitui o "Carregando…" seco em
+  19 pontos (Suspense de rota, guards de sessão/permissão, Progresso, Relatório, Revisão, Lotes,
+  Configurações, Estoque, Pulse, 5 abas do Faturamento). Skeletons com o layout real ficam.
 - **Pergunta em anúncio inativo** (main `052e60ff`, `responder-pergunta` v44): o ML recusa resposta
   em anúncio pausado/finalizado (400 `not_active_item`) — Avil, Tecido Oxford pausado na manhã
   seguinte à pergunta. O card pendente mostra "Anúncio pausado/finalizado/inativo" pelo
