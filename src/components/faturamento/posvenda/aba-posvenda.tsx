@@ -10,6 +10,7 @@ import { AbaDevolucoes } from '@/components/faturamento/aba-devolucoes';
 import { AbaMensagens } from '@/components/faturamento/aba-mensagens';
 import { ListaReclamacoes } from './lista-reclamacoes';
 import { ListaDevolucoes } from './lista-devolucoes';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
 export const SUB_ABAS = ['reclamacoes', 'devolucoes', 'mensagens'] as const;
 export type SubAba = (typeof SUB_ABAS)[number];
@@ -44,7 +45,9 @@ export function AbaPosvenda({ sub, onSub }: { sub: SubAba; onSub: (s: SubAba) =>
   ) : travasQ.isPending ? (
     <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Conferindo ações em andamento…</div>
   ) : null;
-  const erroFila = fila.isError ? <p className="text-sm text-destructive">Não foi possível carregar a fila: {(fila.error as Error).message}</p> : null;
+  // Fila na 1ª leitura: sem isto a lista vazia diria "Nenhuma … em andamento" antes de a resposta chegar.
+  const erroFila = fila.isError ? <p className="text-sm text-destructive">Não foi possível carregar a fila: {(fila.error as Error).message}</p>
+    : fila.isPending ? <CarregandoMarca variante="compacta" rotulo="Carregando" mensagem="Lendo a fila do pós-venda…" /> : null;
 
   return (
     <Tabs value={sub} onValueChange={(v) => onSub(v as SubAba)}>

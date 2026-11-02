@@ -99,3 +99,13 @@ describe('6. produto carrega depois de abrir a revisão', () => {
     expect(await within(dlg).findByText(/Fita Cetim Bufalo/)).toBeInTheDocument();
   });
 });
+
+describe('fila ainda carregando', () => {
+  it('mostra a logo da marca, não "Nenhuma devolução em andamento"', async () => {
+    filaMock.mockReturnValue(new Promise(() => {}));
+    travasMock.mockResolvedValue([]);
+    montar();
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo a fila do pós-venda…');
+    expect(screen.queryByText('Nenhuma devolução em andamento.')).not.toBeInTheDocument();
+  });
+});
