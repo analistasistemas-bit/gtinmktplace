@@ -41,7 +41,7 @@ Prestação de contas comercial que a Daludi envia ao gestor da loja sobre um m�
 _Evitar_: demonstrativo mensal como sinônimo (o demonstrativo é a conferência interna da cobrança), prévia de cobrança.
 
 **Lucro após Ads da loja**:
-Lucro da organização no mês menos todo o gasto de Ads do mês da conta, sem atribuição por produto. Dele derivam a **margem s/ venda após Ads** (÷ faturamento) e o **markup após Ads** (÷ custo dos produtos), sempre com "após Ads" no nome.
+Lucro da organização no mês menos todo o gasto de Ads do mês da conta, sem atribuição por produto. Dele derivam a **margem s/ venda após Ads** (÷ faturamento) e o **markup após Ads** (÷ custo dos produtos), sempre com "após Ads" no nome. Só existe quando todo o faturamento do mês tem lucro calculável e o gasto de Ads do mês é conhecido; caso contrário fica indisponível com o motivo.
 _Evitar_: lucro após Ads por SKU/família (que exige gasto exclusivo e cobertura do período), lucro líquido.
 
 **Dados de recebimento Daludi**:
