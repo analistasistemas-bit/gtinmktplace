@@ -109,13 +109,14 @@ export function Busca({ estado, chamar, analisar, destacar }: {
             </div>
             <div className="ct-linha">
               <span className="ct-rotulo">Soma dos mínimos informados</span>
-              <span className="mono ct-forte">{`${num(vm.soma)} vendidos`}</span>
+              <span className="mono ct-forte">{vm.cobertura ? `${num(vm.soma)} vendidos` : 'Não informado'}</span>
             </div>
+            <p className="nota bs-cobertura">{`${num(vm.cobertura)} de ${num(vm.grupos)} grupos de vendas${vm.conflitos ? ` · ${num(vm.conflitos)} ${vm.conflitos === 1 ? 'excluído' : 'excluídos'} por identificação conflitante` : ''}`}</p>
             <div className="ct-linha">
               <span className="ct-rotulo">Volume mínimo ao preço atual</span>
               <span className="mono ct-forte">{r.volumeMinimo.cobertura ? brl(r.volumeMinimo.centavos / 100) : 'Não informado'}</span>
             </div>
-            <p className="nota bs-cobertura">{`${num(vm.cobertura)} de ${num(vm.grupos)} grupos de vendas${vm.conflitos ? ` · ${num(vm.conflitos)} ${vm.conflitos === 1 ? 'excluído' : 'excluídos'} por identificação conflitante` : ''}`}</p>
+            <p className="nota bs-cobertura">{`Volume: ${num(r.volumeMinimo.cobertura)} de ${num(r.volumeMinimo.grupos)} grupos com piso e preço`}</p>
           </div>
         </div>
 
@@ -189,7 +190,7 @@ function Composicao({ rotulo, tipo }: { rotulo: string; tipo: { estado: string; 
       {v ? (
         <dd>
           <span className="mono">{`Lucro ${r$(v.lucro)}${typeof v.margemPct === 'number' ? ` · ${pct(v.margemPct)}` : ''}`}</span>
-          <span className="mono bs-tipo-conta">{`Recebe ${r$(v.recebe)} · comissão ${r$(v.comissao)} · imposto ${r$(v.imposto)} · frete ${r$(v.frete)} · custo ${r$(v.custo)}`}</span>
+          <span className="mono bs-tipo-conta">{`Recebe ${r$(v.recebe)} · Comissão na sua conta ${r$(v.comissao)} · imposto ${r$(v.imposto)} · Frete na sua conta ${r$(v.frete)} · custo ${r$(v.custo)}`}</span>
         </dd>
       ) : <dd>Indisponível</dd>}
     </div>
@@ -206,7 +207,7 @@ function Linha({ card: c, resultado, meta, aberto, onAbrir, onDestacar, chamar, 
   const borda = proprio ? 'meu' : vinculado ? 'vinculado' : meta ? 'sem-vinculo' : 'desconhecido';
   return (
     <li className="bs-item">
-      <Miniatura url={c.miniaturaUrl} estado={borda} />
+      <Miniatura key={c.miniaturaUrl ?? ''} url={c.miniaturaUrl} estado={borda} />
       <div className="bs-conteudo">
         <div className="bs-linha">
           <button type="button" className="bs-titulo" onClick={onDestacar} title="Mostrar este card na página">{c.titulo}</button>

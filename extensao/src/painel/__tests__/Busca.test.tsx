@@ -181,6 +181,46 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
   });
 });
 
+describe('Task 5, revisão rodada 1', () => {
+  it('detalhes: comissão e frete com procedência "na sua conta"', () => {
+    const m = okMargem(11.21);
+    const comConta = { ...m, margem: { ...m.margem, classico: { estado: 'ok', valor: { margemPct: 11.21, lucro: 2.24, recebe: 15, comissao: 2.5, imposto: 1.6, frete: 0, custo: 9 } } } };
+    render(<Busca {...props({ estado: estado({ MLB1000001: comConta }) })} />);
+    const det = within(lista()).getByText('Produto MLB1000001', { selector: '.bs-detalhes p' }).closest('details')!;
+    within(det).getAllByText(/Comissão na sua conta R\$ 2,50/);
+    within(det).getAllByText(/Frete na sua conta R\$ 0,00/);
+  });
+
+  it('cobertura separada para vendidos e volume (2 grupos com vendidos, 1 com preço)', () => {
+    const oc = (preco: number | null, vendidosTexto: string | null) => ({ posicao: 1, patrocinado: false, preco, vendidosTexto });
+    const cards = [
+      card('MLB1000001', { catalogProductId: 'MLB100', vendidosTexto: '+100 vendidos', preco: 30, ocorrencias: [oc(30, '+100 vendidos')] }),
+      card('MLB1000003', { catalogProductId: null, vendidosTexto: '+10 vendidos', preco: null, ocorrencias: [oc(null, '+10 vendidos')] }),
+    ];
+    render(<Busca {...props({ estado: estado({}, cards) })} />);
+    screen.getByText('2 de 2 grupos de vendas');
+    screen.getByText('Volume: 1 de 2 grupos com piso e preço');
+  });
+
+  it('sem piso informado: "Não informado", nunca "0 vendidos"', () => {
+    const cards = [card('MLB1000001', { vendidosTexto: null, ocorrencias: [{ posicao: 1, patrocinado: false, preco: 100, vendidosTexto: null }] })];
+    render(<Busca {...props({ estado: estado({}, cards) })} />);
+    expect(screen.queryByText('0 vendidos')).toBeNull();
+    const linha = screen.getByText('Soma dos mínimos informados').closest('.ct-linha')!;
+    within(linha as HTMLElement).getByText('Não informado');
+  });
+
+  it('miniatura: fallback reinicia quando a URL muda', () => {
+    const com = (url: string) => estado({}, [card('MLB1000001', { miniaturaUrl: url })]);
+    const p = props({ estado: com('https://http2.mlstatic.com/a.webp') });
+    const { container, rerender } = render(<Busca {...p} />);
+    fireEvent.error(container.querySelector('img')!);
+    expect(container.querySelector('img')).toBeNull();
+    rerender(<Busca {...p} estado={com('https://http2.mlstatic.com/b.webp')} />);
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('https://http2.mlstatic.com/b.webp');
+  });
+});
+
 describe('conflitos na cobertura (fix rodada 1)', () => {
   it('mostra quantos grupos foram excluídos por identificação conflitante', () => {
     const cards = [card('MLB1000001', { catalogProductId: null }), card('MLB1000002', { catalogProductId: null, identidadeConflitante: true })];
