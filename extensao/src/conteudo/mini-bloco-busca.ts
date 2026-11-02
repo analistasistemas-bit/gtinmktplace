@@ -33,6 +33,7 @@ svg{width:13px;height:13px;flex:none}
   color:color-mix(in oklab,var(--c) 70%,black);background:color-mix(in oklab,var(--c) 13%,white)}
 .c.catalogo{background:transparent;padding-inline:2px}
 .t{color:color-mix(in oklab,var(--c) 72%,black);font-weight:600}
+.g{display:inline-flex;gap:4px;align-items:baseline;white-space:nowrap}
 .i{color:var(--suave);cursor:help;font-size:12px}
 b{font-weight:650;color:var(--texto)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
@@ -89,11 +90,12 @@ export function renderizarMiniBlocoDaBusca(
   // 2. Giro mínimo ao preço atual: piso e preço da MESMA ocorrência.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
   if (volume !== null) {
-    const l = linha(el('span', 'v', 'Giro mínimo ao preço atual'), el('b', '', brl(volume)));
     const i = el('span', 'i', 'ⓘ');
     i.title = GIRO;
     i.setAttribute('aria-label', GIRO);
-    l.append(i);
+    const rotulo = el('span', 'g');
+    rotulo.append(el('span', 'v', 'Giro mínimo ao preço atual'), i);
+    const l = linha(rotulo, el('b', '', brl(volume)));
     l.title = `Piso de "${oc.vendidosTexto}" × preço atual. Não é faturamento: as vendas foram a outros preços.`;
     bloco.append(l);
   }
