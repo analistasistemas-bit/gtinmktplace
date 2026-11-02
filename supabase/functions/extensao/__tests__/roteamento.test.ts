@@ -387,7 +387,10 @@ describe('identificar_busca (Task 2, emenda 02/11)', () => {
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('X1')] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: 'x' })] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', eanDaBusca: 'x'.repeat(21), itens: [card('MLB1')] })).toBeNull();
-    expect(validarPedido({ acao: 'identificar_busca', itens: Array.from({ length: 101 }, () => card('MLB1')) })).toBeNull();
+    // Teto bruto só anti-abuso (200 entradas); o limite de 50 é sobre IDs distintos.
+    expect(validarPedido({ acao: 'identificar_busca', itens: Array.from({ length: 101 }, () => card('MLB1')) })).toMatchObject({ itens: [card('MLB1')] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: Array.from({ length: 200 }, () => card('MLB1')) })).toMatchObject({ itens: [card('MLB1')] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: Array.from({ length: 201 }, () => card('MLB1')) })).toBeNull();
   });
 });
 

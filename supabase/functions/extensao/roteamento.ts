@@ -28,6 +28,7 @@ export type Pedido =
 /** Card da busca enviado pelo content script (Task 21). */
 export interface ItemBusca { itemId: string; catalogProductId: string | null; preco: number }
 export const MAX_ITENS_BUSCA = 50;
+const MAX_ENTRADAS_IDENTIFICAR = 200;
 
 const MLB = /^MLB\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -112,9 +113,9 @@ export function validarPedido(body: unknown): Pedido | null {
     }
     case 'identificar_busca': {
       // Só banco, sem preço: a extensão pode mandar ocorrências repetidas (orgânico + patrocinado); o teto vale
-      // para os itens deduplicados, com teto bruto de 2× para limitar o parsing.
+      // para os IDs distintos; o teto bruto (200 entradas) é só anti-abuso de parsing.
       const { itens, eanDaBusca } = b;
-      if (!Array.isArray(itens) || itens.length === 0 || itens.length > 2 * MAX_ITENS_BUSCA) return null;
+      if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ENTRADAS_IDENTIFICAR) return null;
       if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null;
       const lidos = new Map<string, Omit<ItemBusca, 'preco'>>();
       for (const i of itens as Record<string, unknown>[]) {
