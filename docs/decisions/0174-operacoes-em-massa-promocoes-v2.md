@@ -213,6 +213,26 @@ depois de selecionar anúncios em outra tela. Cada origem passa a ter a sua aba,
 - O item "Operações" sai do menu lateral; `/operacoes` redireciona para `/publicados?aba=operacoes` (links e
   favoritos antigos). Permissão inalterada (menu `publicados`). `Operacoes.tsx` removido. Só front.
 
+## Emenda 2026-11-02 — 3º tipo de promoção: Relâmpago (LIGHTNING)
+
+Diego não conseguia aderir à Relâmpago pelo app (só DEAL/SMART). Spike de escrita autorizado (Avil,
+`MLB5244990621`, `LGH-MLB1000`): `POST {promotion_id, promotion_type:'LIGHTNING', deal_price, stock}` → 201 com
+`offer_id`; o item fica `pending` com janela atribuída pelo ML (12 h no spike) e as duas visões refletem na hora;
+`DELETE ?promotion_type=LIGHTNING&promotion_id&offer_id` → 200 vazio e volta a `candidate` em ≤ 5 min (padrão
+SMART). Desenho completo: `docs/superpowers/specs/2026-11-02-relampago-aderir-design.md`.
+
+1. **Preço do pedido, faixa fechada:** min = maior entre visão da campanha e visão por item; max e sugerido só
+   existem na visão por item. Faixa ausente → recusa/erro, nunca POST.
+2. **Piso R$ 19,00** (regra do Diego: abaixo disso o comprador perde o frete grátis) — vale mesmo com risco
+   confirmado. Só Relâmpago.
+3. **Estoque = `stock.min`** da leitura fresca; ausente ou divergente → erro; disponível menor → bloqueado.
+4. **Conferência da saída** só confirma com `candidate` na visão da campanha (leitura ausente reagenda); o espelho
+   volta a `candidate` (como DEAL).
+5. **Janela** (`start_date`–`finish_date`) vai na mensagem do item aplicado; sem coluna nova.
+6. **Central:** convidado Relâmpago descarta o `price` do convite (não é o sugerido nem o atual) e usa faixa e
+   sugerido da visão por item; falha da leitura degrada só a linha (sem faixa → indisponível).
+7. Constraint `operacoes_massa_promocao_tipo_check` passa a aceitar `'LIGHTNING'`.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de
