@@ -255,6 +255,15 @@ describe('Organizacoes', () => {
     expect(screen.queryByText(/^0 organizações/)).not.toBeInTheDocument();
   });
 
+  it('carregando a carteira: logo da marca no lugar dos cards e da tabela', async () => {
+    usePlatformWallet.mockReturnValue({ refetch: vi.fn(), isError: false, data: undefined, isLoading: true });
+    renderPage();
+
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo a carteira das organizações…');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByText('Previsão de cobrança')).not.toBeInTheDocument();
+  });
+
   it('nenhuma org com condição comercial: Previsão de cobrança vira — (nunca R$ 0,00)', async () => {
     const org = makeOrg({ id: 'sem-termos', nome: 'SemTermos', modality: null, forecast_cents: null, pending_count: null });
     usePlatformWallet.mockReturnValue(makeWallet([org], {
