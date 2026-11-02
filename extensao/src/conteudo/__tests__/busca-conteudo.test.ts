@@ -53,3 +53,22 @@ it('/up/ que aparece depois, sozinho, reenvia o card (assinatura inclui userProd
   await vi.waitFor(() => expect(dele().at(-1)!.userProductId).toBe('MLBU1959450397'), { timeout: 3000 });
   expect(dele().length).toBe(antes + 1);
 });
+
+it('conflito de catálogo (só identidadeConflitante muda) reenvia o card, e a resolução também', async () => {
+  const ID = 'MLB5321956888';
+  const cardHtml = (cat: string | null) =>
+    `<a class="poly-component__title" href="https://www.mercadolivre.com.br/x${cat ? `/p/${cat}` : ''}#wid=${ID}&position=1">Dup</a>`;
+  document.body.insertAdjacentHTML('beforeend', `<div class="poly-card" id="dup1">${cardHtml(null)}</div><div class="poly-card" id="dup2">${cardHtml(null)}</div>`);
+  const dele = () => cardsEnviados().filter((c) => c.itemId === ID) as { identidadeConflitante?: boolean }[];
+  await vi.waitFor(() => expect(dele().length).toBeGreaterThan(0), { timeout: 3000 });
+  expect(dele().at(-1)!.identidadeConflitante).toBe(false);
+  const n0 = dele().length;
+  document.querySelector('#dup1')!.innerHTML = cardHtml('MLB11111111');
+  document.querySelector('#dup2')!.innerHTML = cardHtml('MLB22222222');
+  await vi.waitFor(() => expect(dele().at(-1)!.identidadeConflitante).toBe(true), { timeout: 3000 });
+  expect(dele().length).toBe(n0 + 1);
+  document.querySelector('#dup1')!.innerHTML = cardHtml(null);
+  document.querySelector('#dup2')!.innerHTML = cardHtml(null);
+  await vi.waitFor(() => expect(dele().at(-1)!.identidadeConflitante).toBe(false), { timeout: 3000 });
+  expect(dele().length).toBe(n0 + 2);
+});

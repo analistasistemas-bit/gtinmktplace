@@ -29,7 +29,7 @@ function lerEEnviar(): void {
   if (url !== urlAtual) { urlAtual = url; enviados = new Map(); limparSelos(); }
   // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
   const assinatura = (c: CardBusca) =>
-    `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
+    `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.identidadeConflitante}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
   const novos = lerBusca(document).filter((c) => enviados.get(c.itemId) !== assinatura(c));
   if (novos.length === 0) return;
   for (const c of novos) enviados.set(c.itemId, assinatura(c));
