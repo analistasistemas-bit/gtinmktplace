@@ -532,3 +532,20 @@ button.chave:hover { filter: none; }
 .botao.secundario { background: transparent; color: var(--foreground); border-color: var(--border); }
 .botao.secundario:hover { background: var(--secondary); filter: none; }
 button.perigo { color: var(--destructive); }
+
+/* Busca autoexplicativa (0.4.1): botão ⓘ ao lado do rótulo e explicação logo abaixo da linha. */
+.bs-info {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; min-width: 16px; padding: 0; margin-left: 6px; vertical-align: middle;
+  border-radius: 50%; border: 1px solid currentColor; background: transparent; color: var(--link, var(--primary));
+  font: italic 700 10px/1 Georgia, serif; cursor: pointer;
+}
+.bs-info:hover { background: color-mix(in oklab, var(--link, var(--primary)) 12%, var(--card)); filter: none; }
+.bs-info:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.bs-ajuda {
+  margin: 0; padding: 8px 10px; line-height: 1.45; color: var(--foreground); overflow-wrap: anywhere;
+  border-radius: calc(var(--radius) * 0.8); background: color-mix(in oklab, var(--primary) 7%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--primary) 22%, var(--border));
+}
+.bs-ordem-rotulo { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.bs-ordem label[data-desativada] { opacity: 0.55; cursor: not-allowed; }
+.bs-ordem label[data-desativada] input { cursor: not-allowed; }

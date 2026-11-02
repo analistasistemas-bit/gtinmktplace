@@ -28,8 +28,24 @@ const FILTROS: { id: FiltroBusca; rotulo: string; cor: 1 | 2 | 3 | 4 | 5 }[] = [
   { id: 'oferta', rotulo: 'Com oferta', cor: 5 },
 ];
 const ORDENS: { id: OrdemBusca; rotulo: string }[] = [
-  { id: 'relevancia', rotulo: 'Relevância' }, { id: 'vendidos', rotulo: 'Vendidos' }, { id: 'preco', rotulo: 'Preço' }, { id: 'margem', rotulo: 'Margem' },
+  { id: 'relevancia', rotulo: 'Relevância' }, { id: 'vendidos', rotulo: 'Vendidos' }, { id: 'preco', rotulo: 'Preço' }, { id: 'margem', rotulo: 'Minha margem' },
 ];
+
+const AJUDA = {
+  faixa: ['Faixa de preço', 'Menor e maior preço entre os cards lidos nesta página, incluindo os patrocinados.'],
+  vendas: ['Vendas mínimas da página', 'Soma do piso de vendidos que o Mercado Livre mostra em cada produto ("+100mil" conta como 100.000). Cada produto entra uma vez. Em card de catálogo, os vendidos são do produto somando todos os vendedores. É um mínimo: o total real é maior.'],
+  giro: ['Giro mínimo ao preço atual', 'Vendas mínimas de cada produto × o preço atual do card. Mostra a ordem de grandeza do dinheiro que esses produtos movimentam. Não é faturamento: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.'],
+  meus: ['Meus anúncios', 'Anúncios desta página publicados pelas contas do Mercado Livre conectadas à sua empresa.'],
+  vinculados: ['SKUs vinculados', 'Produtos desta página ligados a um SKU do seu catálogo (pelo catálogo do ML, pelo EAN da busca ou por vínculo manual). Só eles têm Minha margem calculada.'],
+  ordem: ['Ordenar', 'Relevância: a ordem do Mercado Livre. Vendidos: maior piso de vendidos primeiro. Preço: menor primeiro. Minha margem: sua margem simulada no Clássico ao preço de cada card, só para produtos vinculados. A ordem muda apenas esta lista, nunca a página do ML.'],
+} as const;
+type IdAjuda = keyof typeof AJUDA;
+
+/** Botão "i" ao lado de um rótulo; a explicação (`Ajuda`) aparece logo abaixo da linha. */
+function Info({ id, aberto, onAlternar }: { id: IdAjuda; aberto: boolean; onAlternar: (id: IdAjuda) => void }) {
+  return <button type="button" className="bs-info" aria-label={`O que é ${AJUDA[id][0]}?`} aria-expanded={aberto} onClick={() => onAlternar(id)}>i</button>;
+}
+const Ajuda = ({ id, aberto }: { id: IdAjuda; aberto: IdAjuda | null }) => (aberto === id ? <p className="nota bs-ajuda" role="note">{AJUDA[id][1]}</p> : null);
 
 type Analisar = (forcar: string[]) => Promise<{ ok: boolean; erro?: string }>;
 type Resultado = EstadoBusca['resposta']['resultados'][string] | undefined;
@@ -45,6 +61,8 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   const [aberto, setAberto] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [ajuda, setAjuda] = useState<IdAjuda | null>(null);
+  const alternarAjuda = (id: IdAjuda) => setAjuda((a) => (a === id ? null : id));
   const nomeOrdem = useId();
 
   const rodar = async (forcar: string[] = []) => {
@@ -57,7 +75,10 @@ export function Busca({ estado, chamar, analisar, destacar }: {
 
   const r = resumoBusca(cards, metadados, ocorrencias);
   const aguardando = cards.filter((c) => resultados[c.itemId]?.estado === 'limite').length;
-  const visiveis = ordenarCards(filtrarCards(cards, metadados, filtros), resultados, ordem);
+  // Sem produto vinculado não há margem para ordenar: a aba fica desabilitada e a ordem cai para Relevância.
+  const semMargem = r.vinculados === 0;
+  const ordemAtiva: OrdemBusca = ordem === 'margem' && semMargem ? 'relevancia' : ordem;
+  const visiveis = ordenarCards(filtrarCards(cards, metadados, filtros), resultados, ordemAtiva);
   const mostrar = todos ? visiveis : visiveis.slice(0, LINHAS);
   const contagem: Record<FiltroBusca, number> = {
     meus: r.meus, vinculados: r.vinculados, full: r.full, frete: r.freteGratis, oficiais: r.oficiais, catalogo: r.comCatalogo, patrocinados: r.patrocinados, oferta: r.comOferta,
@@ -99,24 +120,28 @@ export function Busca({ estado, chamar, analisar, destacar }: {
       <div className="bs-corpo">
         <div className="bs-resumo">
           <dl className="bs-blocos">
-            <div className="bs-bloco" data-cor="meu"><dt>Meus anúncios</dt>{contar(r.meus, r.proprioIndisponivel)}</div>
-            <div className="bs-bloco" data-cor="vinculado"><dt>SKUs vinculados</dt>{contar(r.vinculados)}</div>
+            <div className="bs-bloco" data-cor="meu"><dt>Meus anúncios<Info id="meus" aberto={ajuda === 'meus'} onAlternar={alternarAjuda} /></dt>{contar(r.meus, r.proprioIndisponivel)}</div>
+            <div className="bs-bloco" data-cor="vinculado"><dt>SKUs vinculados<Info id="vinculados" aberto={ajuda === 'vinculados'} onAlternar={alternarAjuda} /></dt>{contar(r.vinculados)}</div>
           </dl>
+          <Ajuda id="meus" aberto={ajuda} /><Ajuda id="vinculados" aberto={ajuda} />
           <div className="bs-faixas">
             <div className="ct-linha">
-              <span className="ct-rotulo">Faixa de preço</span>
+              <span className="ct-rotulo">Faixa de preço<Info id="faixa" aberto={ajuda === 'faixa'} onAlternar={alternarAjuda} /></span>
               <span className="mono ct-forte">{r.menorPreco === null ? 'Não informada' : `${brl(r.menorPreco)} a ${brl(r.maiorPreco!)}`}</span>
             </div>
+            <Ajuda id="faixa" aberto={ajuda} />
             <div className="ct-linha">
-              <span className="ct-rotulo">Soma dos mínimos informados</span>
+              <span className="ct-rotulo">Vendas mínimas da página<Info id="vendas" aberto={ajuda === 'vendas'} onAlternar={alternarAjuda} /></span>
               <span className="mono ct-forte">{vm.cobertura ? `${num(vm.soma)} vendidos` : 'Não informado'}</span>
             </div>
+            <Ajuda id="vendas" aberto={ajuda} />
             <p className="nota bs-cobertura">{`${num(vm.cobertura)} de ${num(vm.grupos)} grupos de vendas${vm.conflitos ? ` · ${num(vm.conflitos)} ${vm.conflitos === 1 ? 'excluído' : 'excluídos'} por identificação conflitante` : ''}`}</p>
             <div className="ct-linha">
-              <span className="ct-rotulo">Volume mínimo ao preço atual</span>
+              <span className="ct-rotulo">Giro mínimo ao preço atual<Info id="giro" aberto={ajuda === 'giro'} onAlternar={alternarAjuda} /></span>
               <span className="mono ct-forte">{r.volumeMinimo.cobertura ? brl(r.volumeMinimo.centavos / 100) : 'Não informado'}</span>
             </div>
-            <p className="nota bs-cobertura">{`Volume: ${num(r.volumeMinimo.cobertura)} de ${num(r.volumeMinimo.grupos)} grupos com piso e preço`}</p>
+            <Ajuda id="giro" aberto={ajuda} />
+            <p className="nota bs-cobertura">{`Giro: ${num(r.volumeMinimo.cobertura)} de ${num(r.volumeMinimo.grupos)} grupos com piso e preço`}</p>
           </div>
         </div>
 
@@ -142,11 +167,15 @@ export function Busca({ estado, chamar, analisar, destacar }: {
           ))}
         </div>
 
+        <div className="bs-ordem-rotulo">
+          <span className="ct-rotulo">Ordenar<Info id="ordem" aberto={ajuda === 'ordem'} onAlternar={alternarAjuda} /></span>
+        </div>
+        <Ajuda id="ordem" aberto={ajuda} />
         <div className="segmentado ct-ordem bs-ordem">
           <div className="opcoes" role="radiogroup" aria-label="Ordenar produtos por">
             {ORDENS.map((o) => (
-              <label key={o.id}>
-                <input type="radio" name={nomeOrdem} checked={ordem === o.id} onChange={() => setOrdem(o.id)} />
+              <label key={o.id} title={o.id === 'margem' && semMargem ? 'Vincule um SKU a algum produto desta busca para ordenar por margem.' : undefined} data-desativada={o.id === 'margem' && semMargem ? '' : undefined}>
+                <input type="radio" name={nomeOrdem} checked={ordemAtiva === o.id} disabled={o.id === 'margem' && semMargem} onChange={() => setOrdem(o.id)} />
                 {o.rotulo}
               </label>
             ))}
@@ -215,7 +244,7 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
       <Miniatura key={c.miniaturaUrl ?? ''} url={c.miniaturaUrl} estado={borda} />
       <div className="bs-conteudo">
         <div className="bs-linha">
-          <button type="button" className="bs-titulo" onClick={onDestacar} title="Mostrar este card na página">{c.titulo}</button>
+          <button type="button" className="bs-titulo" onClick={onDestacar} title={`${c.titulo}\nClique para mostrar este card na página`}>{c.titulo}</button>
           <span className="bs-valor">
             {m !== null && <span className={`bs-margem ${m < 0 ? 'prejuizo' : 'lucro'}`} aria-label={`Margem simulada no Clássico: ${pct(m)}`}>{pct(m)}</span>}
             {estado === 'ok' && m === null && <span className="bs-estado">Margem indisponível</span>}
@@ -236,17 +265,19 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
             <button type="button" className="bs-vincular" aria-label="Vincular ao meu SKU" aria-expanded={aberto} onClick={onAbrir}>Vincular</button>
           )}
         </div>
-        <details className="bs-detalhes">
-          <summary>Detalhes</summary>
-          <p>{c.titulo}</p>
-          {resultado?.estado === 'ok' && resultado.margem && (
+        {/* O SKU fica visível em qualquer estado com código; com composição ele vai dentro de Detalhes. */}
+        {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
+        {/* Detalhes só quando há a conta da margem (título completo fica no hover do título). */}
+        {resultado?.estado === 'ok' && resultado.margem && (
+          <details className="bs-detalhes">
+            <summary>Detalhes</summary>
             <dl className="bs-composicao">
               <Composicao rotulo="Clássico" tipo={resultado.margem.classico} />
               <Composicao rotulo="Premium" tipo={resultado.margem.premium} />
             </dl>
-          )}
-          {resultado && 'codigo' in resultado && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
-        </details>
+            {'codigo' in resultado && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
+          </details>
+        )}
       </div>
       {aberto && semVinculo && (
         <div className="bs-vinculo">

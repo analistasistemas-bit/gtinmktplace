@@ -1,5 +1,5 @@
 // Mini-bloco da busca (ADR-0189, emenda 2026-11-02): bloco curto dentro de CADA card da busca do ML, com dados locais
-// (vendedor observado, sinais, volume mínimo) e, quando há, Meu anúncio e Minha margem. Shadow DOM fechado: isola o
+// (vendedor observado, sinais, giro mínimo) e, quando há, Meu anúncio e Minha margem. Shadow DOM fechado: isola o
 // estilo e não deixa scripts da página lerem a margem com facilidade (não é garantia absoluta de sigilo).
 // `card` é a leitura DESTE card no DOM (lerCard): vendedor, sinais, posição, patrocínio, preço e vendidos são dele, e a
 // margem só aparece se foi calculada a esse mesmo preço.
@@ -11,6 +11,7 @@ import { seloDaBusca, type LinhaDaMargem } from './selo-busca';
 
 export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
+const GIRO = 'Vendas mínimas de cada produto × o preço atual do card. Mostra a ordem de grandeza do dinheiro que esses produtos movimentam. Não é faturamento: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Tokens do app (src/index.css, tema claro: a página do ML é clara). Texto de cor = matiz misturado com preto em oklab
@@ -32,6 +33,7 @@ svg{width:13px;height:13px;flex:none}
   color:color-mix(in oklab,var(--c) 70%,black);background:color-mix(in oklab,var(--c) 13%,white)}
 .c.catalogo{background:transparent;padding-inline:2px}
 .t{color:color-mix(in oklab,var(--c) 72%,black);font-weight:600}
+.i{color:var(--suave);cursor:help;font-size:12px}
 b{font-weight:650;color:var(--texto)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
@@ -84,10 +86,14 @@ export function renderizarMiniBlocoDaBusca(
   if (card.catalogProductId) topo.append(el('span', 'c violeta catalogo', 'Catálogo'));
   if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
 
-  // 2. Volume mínimo ao preço atual: piso e preço da MESMA ocorrência.
+  // 2. Giro mínimo ao preço atual: piso e preço da MESMA ocorrência.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
   if (volume !== null) {
-    const l = linha(el('span', 'v', 'Volume mínimo ao preço atual'), el('b', '', brl(volume)));
+    const l = linha(el('span', 'v', 'Giro mínimo ao preço atual'), el('b', '', brl(volume)));
+    const i = el('span', 'i', 'ⓘ');
+    i.title = GIRO;
+    i.setAttribute('aria-label', GIRO);
+    l.append(i);
     l.title = `Piso de "${oc.vendidosTexto}" × preço atual. Não é faturamento: as vendas foram a outros preços.`;
     bloco.append(l);
   }

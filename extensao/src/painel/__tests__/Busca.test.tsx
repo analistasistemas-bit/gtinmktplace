@@ -48,8 +48,8 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
     within(bloco('Meus anúncios')).getByText('0');
     within(bloco('SKUs vinculados')).getByText('1');
     screen.getByText('2 de 2 grupos de vendas');
-    const titulos = [...document.querySelectorAll('.bs-resumo dt, .bs-resumo .ct-rotulo')].map((e) => e.textContent);
-    expect(titulos).toEqual(['Meus anúncios', 'SKUs vinculados', 'Faixa de preço', 'Soma dos mínimos informados', 'Volume mínimo ao preço atual']);
+    const titulos = [...document.querySelectorAll('.bs-resumo dt, .bs-resumo .ct-rotulo')].map((e) => e.firstChild!.textContent);
+    expect(titulos).toEqual(['Meus anúncios', 'SKUs vinculados', 'Faixa de preço', 'Vendas mínimas da página', 'Giro mínimo ao preço atual']);
   });
 
   it('zero × desconhecido: sem identificação mostra "Verificando", nunca 0; parcial mostra a cobertura', () => {
@@ -144,8 +144,8 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
     within(lista()).getByLabelText('Margem simulada no Clássico: 11,2%');
     within(lista()).getByText('R$ 19,99');
     within(lista()).getByText('Sem categoria');
-    const det = within(lista()).getByText('Produto MLB1000001', { selector: '.bs-detalhes p' });
-    within(det.closest('details')!).getByText('Premium');
+    const itens = within(lista()).getAllByRole('listitem');
+    within(itens[0].querySelector('details')!).getByText('Premium');
     fireEvent.click(within(lista()).getByRole('button', { name: 'Produto MLB1000001' }));
     expect(p.destacar).toHaveBeenCalledWith('MLB1000001');
     expect(within(lista()).getAllByRole('button', { name: 'Vincular ao meu SKU' })).toHaveLength(1);
@@ -181,12 +181,24 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
   });
 });
 
+describe('Detalhes só com conteúdo novo (02/11, Diego)', () => {
+  it('sem composição não há "Detalhes"; com composição não repete o título; título completo no hover', () => {
+    const { container } = render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21), MLB1000002: SEM }) })} />);
+    const itens = within(lista()).getAllByRole('listitem');
+    expect(itens[0].querySelector('details')).not.toBeNull();
+    expect(itens[1].querySelector('details')).toBeNull();
+    expect(itens[2].querySelector('details')).toBeNull();
+    expect(container.querySelectorAll('.bs-detalhes p:not(.nota)')).toHaveLength(0);
+    expect(within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).getAttribute('title')).toContain('Produto MLB1000001');
+  });
+});
+
 describe('Task 5, revisão rodada 1', () => {
   it('detalhes: comissão e frete com procedência "na sua conta"', () => {
     const m = okMargem(11.21);
     const comConta = { ...m, margem: { ...m.margem, classico: { estado: 'ok', valor: { margemPct: 11.21, lucro: 2.24, recebe: 15, comissao: 2.5, imposto: 1.6, frete: 0, custo: 9 } } } };
     render(<Busca {...props({ estado: estado({ MLB1000001: comConta }) })} />);
-    const det = within(lista()).getByText('Produto MLB1000001', { selector: '.bs-detalhes p' }).closest('details')!;
+    const det = within(lista()).getAllByRole('listitem')[0].querySelector('details')!;
     within(det).getAllByText(/Comissão na sua conta R\$ 2,50/);
     within(det).getAllByText(/Frete na sua conta R\$ 0,00/);
   });
@@ -199,14 +211,14 @@ describe('Task 5, revisão rodada 1', () => {
     ];
     render(<Busca {...props({ estado: estado({}, cards) })} />);
     screen.getByText('2 de 2 grupos de vendas');
-    screen.getByText('Volume: 1 de 2 grupos com piso e preço');
+    screen.getByText('Giro: 1 de 2 grupos com piso e preço');
   });
 
   it('sem piso informado: "Não informado", nunca "0 vendidos"', () => {
     const cards = [card('MLB1000001', { vendidosTexto: null, ocorrencias: [{ posicao: 1, patrocinado: false, preco: 100, vendidosTexto: null }] })];
     render(<Busca {...props({ estado: estado({}, cards) })} />);
     expect(screen.queryByText('0 vendidos')).toBeNull();
-    const linha = screen.getByText('Soma dos mínimos informados').closest('.ct-linha')!;
+    const linha = screen.getByText('Vendas mínimas da página').closest('.ct-linha')!;
     within(linha as HTMLElement).getByText('Não informado');
   });
 
@@ -245,5 +257,47 @@ describe('conflitos na cobertura (fix rodada 1)', () => {
     const cards = [card('MLB1000001', { catalogProductId: null }), card('MLB1000002', { catalogProductId: null, identidadeConflitante: true })];
     render(<Busca {...props({ estado: estado({}, cards) })} />);
     screen.getByText('1 de 1 grupos de vendas · 1 excluído por identificação conflitante');
+  });
+});
+
+describe('Painel autoexplicativo (0.4.1)', () => {
+  it('estado não-ok com código: sem "Detalhes", mas o SKU aparece', () => {
+    const { container } = render(<Busca {...props({ estado: estado({ MLB1000001: { estado: 'sem_categoria', fonte: 'catalogo', codigo: '9' }, MLB1000002: SEM, MLB1000003: SEM }) })} />);
+    expect(container.querySelector('details')).toBeNull();
+    screen.getByText('SKU 9');
+  });
+
+  it('ⓘ abre e fecha a explicação da linha, com os textos exatos', () => {
+    render(<Busca {...props()} />);
+    const b = screen.getByRole('button', { name: 'O que é Faixa de preço?' });
+    expect(b.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('note')).toBeNull();
+    fireEvent.click(b);
+    expect(b.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('note').textContent).toBe('Menor e maior preço entre os cards lidos nesta página, incluindo os patrocinados.');
+    fireEvent.click(b);
+    expect(screen.queryByRole('note')).toBeNull();
+    for (const r of ['Vendas mínimas da página', 'Giro mínimo ao preço atual', 'Meus anúncios', 'SKUs vinculados', 'Ordenar']) screen.getByRole('button', { name: `O que é ${r}?` });
+    fireEvent.click(screen.getByRole('button', { name: 'O que é Giro mínimo ao preço atual?' }));
+    expect(screen.getByRole('note').textContent).toMatch(/^Vendas mínimas de cada produto × o preço atual do card\./);
+  });
+
+  it('aba "Minha margem" desabilitada sem vinculados e cai para Relevância', () => {
+    const { unmount } = render(<Busca {...props()} />);
+    const aba = screen.getByRole('radio', { name: 'Minha margem' }) as HTMLInputElement;
+    expect(aba.disabled).toBe(true);
+    expect(aba.closest('label')!.getAttribute('title')).toBe('Vincule um SKU a algum produto desta busca para ordenar por margem.');
+    unmount();
+    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21), MLB1000002: SEM, MLB1000003: SEM }) })} />);
+    expect((screen.getByRole('radio', { name: 'Minha margem' }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it('selecionada e depois indisponível: volta a Relevância', () => {
+    const com = estado({ MLB1000001: okMargem(11.21), MLB1000002: SEM, MLB1000003: SEM });
+    const { rerender } = render(<Busca {...props({ estado: com })} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Minha margem' }));
+    expect((screen.getByRole('radio', { name: 'Minha margem' }) as HTMLInputElement).checked).toBe(true);
+    rerender(<Busca {...props({ estado: estado() })} />);
+    expect((screen.getByRole('radio', { name: 'Relevância' }) as HTMLInputElement).checked).toBe(true);
   });
 });

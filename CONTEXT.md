@@ -105,9 +105,13 @@ _Evitar_: selo (o selo é a etiqueta única de margem), card do PubliAI.
 Consulta à API oficial do Mercado Livre, com a conta da organização, sobre um produto de catálogo visto numa busca, para trazer vendedor, medalha, UF, tipo da oferta, número de vendedores e data de criação do catálogo. Vale também para anúncio de concorrente; o resultado é transitório e não forma base de mercado.
 _Evitar_: coleta, raspagem, monitoramento.
 
-**Volume mínimo ao preço atual**:
+**Giro mínimo ao preço atual**:
 Piso da faixa de vendidos exibida pelo Mercado Livre multiplicado pelo preço atual do card. Mostra a ordem de grandeza do produto; não é faturamento, porque as vendas ocorreram a outros preços.
-_Evitar_: faturamento, receita, faturamento do catálogo.
+_Evitar_: faturamento, receita, faturamento do catálogo, volume mínimo.
+
+**Vendas mínimas da página**:
+Soma do piso da faixa de vendidos exibida pelo Mercado Livre em cada produto da busca, contando cada produto uma vez. É um mínimo, não o total vendido.
+_Evitar_: total de vendas, soma dos mínimos.
 
 **Meu anúncio nesta busca**:
 Anúncio próprio que aparece entre os cards carregados de uma busca, com a posição observada naquela página (orgânica ou patrocinada). Não é ranking geral, e SKU vinculado não é anúncio próprio.

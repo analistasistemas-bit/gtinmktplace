@@ -37,7 +37,10 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
   expect(t).toContain('Loja Boa');
   expect(t).toContain('Full');
   expect(t).toContain('Frete grátis');
-  expect(t).toContain('Volume mínimo ao preço atual');
+  expect(t).toContain('Giro mínimo ao preço atual');
+  const i = raizes[0].querySelector('[aria-label^="Vendas mínimas"]') as HTMLElement;
+  expect(i.textContent).toBe('ⓘ');
+  expect(i.title).toMatch(/^Vendas mínimas de cada produto × o preço atual do card\./);
   expect(t).toContain('R$ 5.000,00');
   expect(t).not.toContain('Minha margem');
   expect(t).not.toContain('Meu anúncio');
@@ -96,7 +99,7 @@ it('sem vendedor nem sinais: diz "vendedor não informado"; sem vendidos não in
   renderizarMiniBlocoDaBusca(card({ vendedor: null, full: null, freteGratis: null, ocorrencias: [{ posicao: 1, patrocinado: false, preco: 50, vendidosTexto: null }] }), undefined, undefined);
   const t = texto(document.body);
   expect(t).toContain('Vendedor não informado');
-  expect(t).not.toContain('Volume mínimo');
+  expect(t).not.toContain('Giro mínimo');
 });
 
 it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguardando em warning com texto', () => {
