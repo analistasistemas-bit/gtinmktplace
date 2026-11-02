@@ -146,3 +146,9 @@ it('ⓘ do giro é botão: ativar mostra a explicação, de novo esconde; não p
   expect(noCard).not.toHaveBeenCalled();
   document.body.removeEventListener('click', noCard);
 });
+
+it('host fica acima do link esticado do título do ML (::before inset 0, z-index 1): ⓘ clicável sem abrir o anúncio', () => {
+  const host = renderizarMiniBlocoDaBusca(card(), undefined, undefined);
+  expect(host.style.position).toBe('relative');
+  expect(Number(host.style.zIndex)).toBeGreaterThan(1);
+});

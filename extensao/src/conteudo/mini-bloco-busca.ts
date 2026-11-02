@@ -76,6 +76,10 @@ export function renderizarMiniBlocoDaBusca(
   const oc = card.ocorrencias[0] ?? { posicao: card.posicao, patrocinado: card.patrocinado, preco: card.preco, vendidosTexto: card.vendidosTexto };
   const host = document.createElement('div');
   host.className = HOST_MINI_BLOCO;
+  // O título do card do ML estica o link sobre o card inteiro (`a.poly-component__title::before`, inset 0, z-index 1;
+  // medido 02/11). Sem subir o host, o ⓘ não recebe hover nem clique e o clique abre o anúncio.
+  host.style.position = 'relative';
+  host.style.zIndex = '2';
   const raiz = host.attachShadow({ mode: 'closed' });
   raiz.innerHTML = `<style>${CSS}</style><div class="b" role="note" aria-label="PubliAI"><div class="l">${MARCA}</div></div>`;
   const bloco = raiz.querySelector('.b')!;
