@@ -11,7 +11,7 @@ import { seloDaBusca, type LinhaDaMargem } from './selo-busca';
 
 export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
-const GIRO = 'Vendas mínimas de cada produto × o preço atual do card. Mostra a ordem de grandeza do dinheiro que esses produtos movimentam. Não é faturamento: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
+const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Tokens do app (src/index.css, tema claro: a página do ML é clara). Texto de cor = matiz misturado com preto em oklab
@@ -34,7 +34,9 @@ svg{width:13px;height:13px;flex:none}
 .c.catalogo{background:transparent;padding-inline:2px}
 .t{color:color-mix(in oklab,var(--c) 72%,black);font-weight:600}
 .g{display:inline-flex;gap:4px;align-items:baseline;white-space:nowrap}
-.i{color:var(--suave);cursor:help;font-size:12px}
+.i{all:unset;box-sizing:border-box;color:var(--suave);cursor:pointer;font-size:12px;line-height:1;padding:1px 2px;border-radius:4px}
+.i:focus-visible{outline:2px solid var(--chart-1);outline-offset:1px}
+.a{color:var(--suave);font-size:11.5px;line-height:1.35}
 b{font-weight:650;color:var(--texto)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
@@ -90,14 +92,24 @@ export function renderizarMiniBlocoDaBusca(
   // 2. Giro mínimo ao preço atual: piso e preço da MESMA ocorrência.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
   if (volume !== null) {
-    const i = el('span', 'i', 'ⓘ');
-    i.title = GIRO;
-    i.setAttribute('aria-label', GIRO);
+    const i = el('button', 'i', 'ⓘ') as HTMLButtonElement;
+    i.type = 'button';
+    i.setAttribute('aria-label', 'O que é giro mínimo?');
+    i.setAttribute('aria-expanded', 'false');
     const rotulo = el('span', 'g');
     rotulo.append(el('span', 'v', 'Giro mínimo ao preço atual'), i);
     const l = linha(rotulo, el('b', '', brl(volume)));
     l.title = `Piso de "${oc.vendidosTexto}" × preço atual. Não é faturamento: as vendas foram a outros preços.`;
     bloco.append(l);
+    const ajuda = el('div', 'a', GIRO);
+    // Botão dentro do card do ML (que é um link): o clique não pode navegar nem subir até o card.
+    i.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const aberto = i.getAttribute('aria-expanded') !== 'true';
+      i.setAttribute('aria-expanded', String(aberto));
+      if (aberto) l.after(ajuda); else ajuda.remove();
+    });
   }
 
   // 3. Meu anúncio nesta busca (proprio null = verificação indisponível: nada conclusivo).

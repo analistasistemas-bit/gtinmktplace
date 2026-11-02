@@ -34,7 +34,7 @@ const ORDENS: { id: OrdemBusca; rotulo: string }[] = [
 const AJUDA = {
   faixa: ['Faixa de preço', 'Menor e maior preço entre os cards lidos nesta página, incluindo os patrocinados.'],
   vendas: ['Vendas mínimas da página', 'Soma do piso de vendidos que o Mercado Livre mostra em cada produto ("+100mil" conta como 100.000). Cada produto entra uma vez. Em card de catálogo, os vendidos são do produto somando todos os vendedores. É um mínimo: o total real é maior.'],
-  giro: ['Giro mínimo ao preço atual', 'Vendas mínimas de cada produto × o preço atual do card. Mostra a ordem de grandeza do dinheiro que esses produtos movimentam. Não é faturamento: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.'],
+  giro: ['Giro mínimo ao preço atual', 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.'],
   meus: ['Meus anúncios', 'Anúncios desta página publicados pelas contas do Mercado Livre conectadas à sua empresa.'],
   vinculados: ['SKUs vinculados', 'Produtos desta página ligados a um SKU do seu catálogo (pelo catálogo do ML, pelo EAN da busca ou por vínculo manual). Só eles têm Minha margem calculada.'],
   ordem: ['Ordenar', 'Relevância: a ordem do Mercado Livre. Vendidos: maior piso de vendidos primeiro. Preço: menor primeiro. Minha margem: sua margem simulada no Clássico ao preço de cada card, só para produtos vinculados. A ordem muda apenas esta lista, nunca a página do ML.'],

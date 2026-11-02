@@ -279,7 +279,7 @@ describe('Painel autoexplicativo (0.4.1)', () => {
     expect(screen.queryByRole('note')).toBeNull();
     for (const r of ['Vendas mínimas da página', 'Giro mínimo ao preço atual', 'Meus anúncios', 'SKUs vinculados', 'Ordenar']) screen.getByRole('button', { name: `O que é ${r}?` });
     fireEvent.click(screen.getByRole('button', { name: 'O que é Giro mínimo ao preço atual?' }));
-    expect(screen.getByRole('note').textContent).toMatch(/^Vendas mínimas de cada produto × o preço atual do card\./);
+    expect(screen.getByRole('note').textContent).toBe('Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.');
   });
 
   it('aba "Minha margem" desabilitada sem vinculados e cai para Relevância', () => {
@@ -299,5 +299,12 @@ describe('Painel autoexplicativo (0.4.1)', () => {
     expect((screen.getByRole('radio', { name: 'Minha margem' }) as HTMLInputElement).checked).toBe(true);
     rerender(<Busca {...props({ estado: estado() })} />);
     expect((screen.getByRole('radio', { name: 'Relevância' }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('vinculado com estado ok mas margem indisponível: sem Detalhes, SKU visível', () => {
+    const semConta = { estado: 'ok', fonte: 'catalogo', codigo: '77', custo: {} };
+    const { container } = render(<Busca {...props({ estado: estado({ MLB1000001: semConta, MLB1000002: SEM, MLB1000003: SEM }) })} />);
+    expect(container.querySelector('details')).toBeNull();
+    screen.getByText('SKU 77');
   });
 });

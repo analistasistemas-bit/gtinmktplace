@@ -536,7 +536,7 @@ button.perigo { color: var(--destructive); }
 /* Busca autoexplicativa (0.4.1): botão ⓘ ao lado do rótulo e explicação logo abaixo da linha. */
 .bs-info {
   display: inline-grid; place-items: center; width: 16px; height: 16px; min-width: 16px; padding: 0; margin-left: 6px; vertical-align: middle;
-  border-radius: 50%; border: 1px solid currentColor; background: transparent; color: var(--link, var(--primary));
+  border-radius: 50%; border: 1px solid currentColor; background: transparent; color: oklch(0.50 0.20 277); /* claro: 5,5:1 sobre o lavanda dos blocos (o --primary dá 4,4:1) */
   font: italic 700 10px/1 Georgia, serif; cursor: pointer;
 }
 .bs-info:hover { background: color-mix(in oklab, var(--link, var(--primary)) 12%, var(--card)); filter: none; }
@@ -549,3 +549,4 @@ button.perigo { color: var(--destructive); }
 .bs-ordem-rotulo { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
 .bs-ordem label[data-desativada] { opacity: 0.55; cursor: not-allowed; }
 .bs-ordem label[data-desativada] input { cursor: not-allowed; }
+@media (prefers-color-scheme: dark) { .bs-info { color: oklch(0.78 0.13 277); } } /* escuro: ≥ 5:1 sobre o roxo escuro */

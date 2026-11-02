@@ -38,9 +38,9 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
   expect(t).toContain('Full');
   expect(t).toContain('Frete grátis');
   expect(t).toContain('Giro mínimo ao preço atual');
-  const i = raizes[0].querySelector('[aria-label^="Vendas mínimas"]') as HTMLElement;
+  const i = raizes[0].querySelector('button[aria-label="O que é giro mínimo?"]') as HTMLButtonElement;
+  expect(i.type).toBe('button');
   expect(i.textContent).toBe('ⓘ');
-  expect(i.title).toMatch(/^Vendas mínimas de cada produto × o preço atual do card\./);
   expect(t).toContain('R$ 5.000,00');
   expect(t).not.toContain('Minha margem');
   expect(t).not.toContain('Meu anúncio');
@@ -127,4 +127,22 @@ it('Loja oficial é âmbar, Catálogo é chip transparente e margem indisponíve
   expect(r.querySelector('.c.catalogo')!.textContent).toBe('Catálogo');
   expect(r.querySelector('.t.neutro')!.textContent).toBe('Minha margem indisponível');
   expect(r.querySelector('.t.roxo')).toBeNull();
+});
+
+it('ⓘ do giro é botão: ativar mostra a explicação, de novo esconde; não propaga o clique ao card', () => {
+  renderizarMiniBlocoDaBusca(card(), { itemId: 'MLB1000001', proprio: false, vinculo: null }, { itemId: 'MLB1000001', estado: 'sem_vinculo' });
+  const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
+  const i = raizes[0].querySelector('button[aria-label="O que é giro mínimo?"]') as HTMLButtonElement;
+  const noCard = vi.fn();
+  document.body.addEventListener('click', noCard);
+  expect(i.getAttribute('aria-expanded')).toBe('false');
+  expect(raizes[0].textContent).not.toContain(GIRO);
+  i.click();
+  expect(i.getAttribute('aria-expanded')).toBe('true');
+  expect(raizes[0].textContent).toContain(GIRO);
+  i.click();
+  expect(i.getAttribute('aria-expanded')).toBe('false');
+  expect(raizes[0].textContent).not.toContain(GIRO);
+  expect(noCard).not.toHaveBeenCalled();
+  document.body.removeEventListener('click', noCard);
 });
