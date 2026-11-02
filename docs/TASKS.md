@@ -1,13 +1,14 @@
 # PubliAI — Tasks
 
-## Extensão PubliAI 0.4.0 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
+## Extensão PubliAI 0.4.0/0.4.1 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
 
 - [x] Implementada na branch `worktree-extensao-busca-lista` (HEAD de código `2fc075b8` + commit da Task 6): painel de busca redesenhado (miniaturas, filtros, ordenação, resumo com cobertura) e Mini-bloco da busca dentro de cada card do ML. Versão 0.4.0 em `manifest.json` e `package.json`.
 - [x] Prova visual reproduzível: harness `extensao/qa/` (fora do build; 68 ocorrências, 60 produtos, dados fictícios, sem token), prints em `.superpowers/sdd/2026-11-02-extensao-busca-completa/prints/`.
 - [x] Revisão: Codex gpt-6.1-sol high por task (Tasks 1–5, 1–3 rodadas cada), revisão visual Codex 8/10 → 5 ajustes aplicados, Grok 4.7 xhigh pré-merge (1 Important + 2 Minor corrigidos em `e1180246`). Visual aprovado pelo Diego.
 - [x] Merge na main `959f1079` (CI verde, 6 jobs). Edge `extensao` v19 ACTIVE em 02/11 (smoke 401 sem auth; resposta legada da 0.3.2 inalterada). Sem migration.
-- [x] ZIP `~/Desktop/IA/publiai-extensao-0.4.0.zip` (unzip -t ok, sem qa/).
-- [ ] Diego: enviar o ZIP 0.4.0 à Web Store e validar numa busca real do ML (painel fechado, scroll, Avant junto, desligar/religar).
+- [x] 0.4.1 (main `3fd30467`): painel autoexplicativo — ⓘ clicável no resumo e na ordenação, botão ⓘ no Mini-bloco; renomes "Vendas mínimas da página" e "Giro mínimo ao preço atual" (glossário); "Detalhes" só com a composição da margem; aba "Minha margem" desabilitada sem vinculados. Sem mudança de edge.
+- [x] 0.4.1 publicada na Web Store pelo Diego em 02/11 (o ZIP 0.4.0 não foi enviado).
+- [ ] Validar numa busca real do ML (painel fechado, scroll, Avant junto, desligar/religar).
 - [ ] Fatia 2 (enriquecimento de catálogo + cota híbrida no Redis) — números a aprovar após medição da Task 7.
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
