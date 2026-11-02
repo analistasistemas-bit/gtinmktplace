@@ -36,7 +36,7 @@ it('selo some do card quando o resultado deixa de autorizar (ok → sem vínculo
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });
 
-it('ativacao false remove selos dos cards; true reenvia os cards sem analisar sozinha', () => {
+it('ativacao false remove selos dos cards; true reenvia os cards sem analisar sozinha', async () => {
   const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: ok } });
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(1);
@@ -44,7 +44,8 @@ it('ativacao false remove selos dos cards; true reenvia os cards sem analisar so
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
   const antes = cardsEnviados().length;
   ouvinte({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 3 });
-  expect(cardsEnviados().length).toBe(antes + 1);
+  // Geração invalidada na hora: 1º envio sem ela, recusado; o reenvio já com a geração atual.
+  await vi.waitFor(() => expect(cardsEnviados().length).toBe(antes + 1));
   expect(enviar.mock.calls.some(([m]) => (m as { tipo: string }).tipo === 'publiai:analisar-busca')).toBe(false);
   expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });
@@ -121,4 +122,21 @@ it('achado 1: SW recusa com geração nova (sessão mudou) → a página adota e
   ouvinte({ tipo: 'publiai:sessao-mudou' });
   await vi.waitFor(() => expect(cardsEnviados().length).toBeGreaterThan(antes), { timeout: 3000 });
   expect(enviar.mock.calls.at(-1)![0]).toMatchObject({ tipo: 'publiai:busca-cards', geracao: 'G2' });
+});
+
+it('I1: troca de sessão invalida a geração na hora: resultado antigo antes da resposta dos cards não desenha selo', async () => {
+  const ok = { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { classico: { estado: 'ok', valor: { margemPct: 10.9 } } } };
+  const velha = G;
+  let soltar!: (v: unknown) => void;
+  enviar.mockImplementationOnce(() => new Promise((r) => { soltar = r; }) as never); // resposta dos cards fica em voo
+  ouvinte({ tipo: 'publiai:ativacao', ativa: true, logado: true }); // envio de ANTES da troca, resposta pendente
+  G = 'G3';
+  ouvinte({ tipo: 'publiai:sessao-mudou' });
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: ok } });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
+  // Resposta atrasada do aperto de mão de antes da troca (com a geração velha) não restaura a velha.
+  soltar({ ok: false, erro: 'geracao_antiga', geracao: velha });
+  await new Promise((r) => setTimeout(r, 0));
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: velha, resultados: { MLB5321956667: ok } });
+  expect(document.querySelectorAll('.publiai-selo-busca')).toHaveLength(0);
 });

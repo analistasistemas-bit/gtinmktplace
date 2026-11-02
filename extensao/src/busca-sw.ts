@@ -2,7 +2,7 @@
 // o SW, com a extensão ativa e a sessão válida, identifica todos no banco (`identificar_busca`, sem ML nem cota) e analisa
 // a margem só dos vinculados com preço (`analisar_busca`) — painel aberto ou fechado. O painel só consome o estado.
 // O estado fica na mesma chave da aba (geração por página e por sessão): resposta atrasada de outra busca não volta.
-import { chamarExtensao } from './api';
+import { atualizarSessao, chamarExtensao } from './api';
 import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
@@ -140,7 +140,12 @@ export function processarBuscaDaAba(tabId: number, epoca: number, forcar: string
 
 async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>): Promise<{ ok: true } | Falha> {
   if (!vale()) return SEM_SESSAO;
+  // Identidade desconhecida (recém-logado): resolvida ANTES de capturar a da rodada — senão a 1ª chamada a descobre, a
+  // gravação é recusada e a retomada pede (e conta) a telemetria de novo.
+  if ((await identidadeAtual()) === null) await atualizarSessao();
+  if (!vale()) return SEM_SESSAO;
   const identidade = await identidadeAtual();
+  if (identidade === null) return SEM_SESSAO;
   /** Aplica `mudar` só se sessão (época, identidade) e página (geração, sessão, URL) ainda são as do pedido. */
   const gravarSe = (p: Pagina, mudar: (r: RespostaBusca, agora: Map<string, CardBusca>) => void) =>
     seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {

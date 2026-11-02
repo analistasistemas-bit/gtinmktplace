@@ -318,13 +318,15 @@ describe('isolamento de sessão e de página', () => {
     expect(doTipo('identificar_busca').map((c) => c.itens[0].itemId)).toEqual([id(1)]);
   });
 
-  it('identidade descoberta no meio (recém-logado): gravação recusada pede retomada e o pulso conclui', async () => {
+  it('identidade desconhecida (recém-logado): resolvida antes da rodada → identifica de primeira e registra o uso UMA vez', async () => {
     logar({ identidade: null });
     await registrar([card(1)]);
-    expect((await estado())!.resposta.metadados[id(1)]).toBeUndefined();
-    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(1);
-    await pulso();
     expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
+    expect((await estado())!.resposta.usoRegistrado).toBe(true);
+    await pulso();
+    await registrar([card(2)]);
+    expect(registros).toBe(1);
+    expect(doTipo('identificar_busca').map((c) => c.registrarUso)).toEqual([true, false]);
   });
 
   it('achado 1: cards sem a geração da página (ou de outra) não entram; a resposta traz a atual', async () => {

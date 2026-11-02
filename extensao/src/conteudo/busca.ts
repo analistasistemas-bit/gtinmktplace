@@ -26,12 +26,16 @@ let urlAtual = location.href.split('#')[0];
 // adota e reenvia. Cards levam e resultados/retomada só valem com ela: mensagem atrasada de outra geração, mesmo na
 // mesma URL, é descartada nos dois sentidos.
 let geracao: string | null = null;
+// Sobe a cada invalidação (sessão, ativação, conta, URL): resposta de aperto de mão pedida antes dela não restaura a velha.
+let invalidacoes = 0;
+function invalidarGeracao(): void { geracao = null; invalidacoes++; }
 
 /** Cards ao SW; recusa por geração antiga traz a atual → adota e reenvia tudo com ela. */
 function enviarCards(msg: { geracao: string | null }): void {
+  const vez = invalidacoes;
   try {
     chrome.runtime.sendMessage(msg).then((r: { erro?: unknown; geracao?: unknown } | undefined) => {
-      if (!ligada || r?.erro !== 'geracao_antiga' || typeof r.geracao !== 'string' || r.geracao === msg.geracao) return;
+      if (!ligada || vez !== invalidacoes || r?.erro !== 'geracao_antiga' || typeof r.geracao !== 'string' || r.geracao === msg.geracao) return;
       geracao = r.geracao;
       enviados = new Map();
       lerEEnviar();
@@ -43,7 +47,7 @@ function lerEEnviar(): void {
   if (!ligada) return;
   // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
   const url = location.href.split('#')[0];
-  if (url !== urlAtual) { urlAtual = url; enviados = new Map(); geracao = null; limparSelos(); }
+  if (url !== urlAtual) { urlAtual = url; enviados = new Map(); invalidarGeracao(); limparSelos(); }
   // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
   const assinatura = (c: CardBusca) =>
     `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.identidadeConflitante}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
@@ -126,6 +130,7 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
+    invalidarGeracao(); // na hora: resultado atrasado da sessão/ativação anterior não passa até o novo aperto de mão
     limparSelos();
     enviados = new Map(); // o SW zerou o estado; ligando, os cards voltam (e o SW analisa sozinho)
     lerEEnviar();
@@ -138,6 +143,7 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);
   } else if (ligada && msg?.tipo === 'publiai:sessao-mudou') {
+    invalidarGeracao();
     limparSelos();
     enviados = new Map(); // nova sessão: o SW zerou o estado; os cards voltam a ser enviados
     lerEEnviar();
