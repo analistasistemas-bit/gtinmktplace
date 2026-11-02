@@ -333,7 +333,8 @@ create table if not exists public.ml_vendas (
   status text,
   atualizado_em timestamptz,
   tem_devolucao boolean not null default false,
-  estorno numeric not null default 0
+  estorno numeric not null default 0,
+  raw jsonb
 );
 create table public.ml_vendas_itens (
   id uuid primary key,

@@ -13,7 +13,8 @@ create table if not exists public.ml_vendas (
   status text not null,
   atualizado_em timestamptz not null,
   tem_devolucao boolean not null default false,
-  estorno numeric not null default 0
+  estorno numeric not null default 0,
+  raw jsonb
 );
 
 \ir ../migrations/20260906170200_platform_billing.sql
@@ -21,6 +22,7 @@ create table if not exists public.ml_vendas (
 -- Fora de ordem (ou ausentes) o teste roda contra a versao antiga das funcoes e passa em falso.
 \ir ../migrations/20260907102428_platform_terms_contract_fix.sql
 \ir ../migrations/20260918010100_platform_billing_tiers.sql
+\ir ../migrations/20261102221455_platform_devolucao_abatimento_automatico.sql
 select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 insert into public.organizations(id,nome,slug) values
@@ -282,18 +284,14 @@ declare v_month date := (date_trunc('month',now() at time zone 'America/Fortalez
 declare v_preview jsonb;
 begin
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
-  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]') then
-    raise exception 'paid with estorno was not blocked: %',v_preview;
-  end if;
-  if not (v_preview->'blockers' @> '[{"sale_id":"50000000-0000-0000-0000-000000000008","order_ref":"900008","source_updated_at":"2026-07-02T12:00:00+00:00","gross_cents":10000,"status":"paid","refunded_product_cents":null}]') then
-    raise exception 'paid estorno blocker missing candidate fields: %',v_preview;
+  -- Emenda ADR-0155 (02/11/2026): estorno abate sozinho; mediacao sem estorno abate 0, sem pendencia.
+  if jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'paid with estorno/tem_devolucao must not block: %',v_preview;
   end if;
   if (v_preview->>'gross_cents')::bigint<>15000 then raise exception 'paid evidence gross must include both sales: %',v_preview; end if;
-  begin
-    perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month,v_preview->>'revision');
-    raise exception 'paid estorno close was accepted';
-  exception when check_violation then null;
-  end;
+  if (v_preview->>'refund_cents')::bigint<>1250 or (v_preview->>'base_cents')::bigint<>13750 then
+    raise exception 'estorno was not abated automatically: %',v_preview;
+  end if;
   perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
     'org_id','90000000-0000-0000-0000-000000000009','sale_id','50000000-0000-0000-0000-000000000008',
     'source_updated_at','2026-07-02T12:00:00Z','refunded_product_cents',8000,'reason','product only'));
@@ -303,9 +301,6 @@ begin
   end if;
   if v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]' then
     raise exception 'paid estorno blocker remained after reconciliation: %',v_preview;
-  end if;
-  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000009"}]') then
-    raise exception 'paid with tem_devolucao was not blocked: %',v_preview;
   end if;
   perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
     'org_id','90000000-0000-0000-0000-000000000009','sale_id','50000000-0000-0000-0000-000000000009',
@@ -344,8 +339,10 @@ begin
   update public.ml_vendas set total_amount=110,atualizado_em='2026-08-02T12:00:00Z'
     where id='50000000-0000-0000-0000-000000000008';
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
-  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]') then
-    raise exception 'gross change after reconciliation was not blocked: %',v_preview;
+  -- conciliacao manual deixa de casar com a fonte nova: volta o automatico (estorno 12,50)
+  if jsonb_array_length(v_preview->'blockers')<>0 or (v_preview->>'refund_cents')::bigint<>1250
+    or (v_preview->>'base_cents')::bigint<>14750 then
+    raise exception 'gross change after reconciliation must fall back to estorno: %',v_preview;
   end if;
 end $$;
 
@@ -359,8 +356,9 @@ begin
   update public.ml_vendas set tem_devolucao=true,estorno=15,atualizado_em='2026-08-03T12:00:00Z'
     where id='50000000-0000-0000-0000-000000000010';
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000010',v_next);
-  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000010"}]') then
-    raise exception 'late paid evidence was not blocked: %',v_preview;
+  -- devolucao tardia: credita sozinho (20000 bruto, 500 bps: 1000 cobrado, revisado 925 => 75)
+  if jsonb_array_length(v_preview->'blockers')<>0 or v_preview#>>'{adjustments,0,amount_cents}'<>'75' then
+    raise exception 'late paid evidence must credit automatically: %',v_preview;
   end if;
   if v_preview->'blockers' @> '[{"code":"billing_source_changed","sale_id":"50000000-0000-0000-0000-000000000010"}]' then
     raise exception 'late paid evidence was classified as source changed: %',v_preview;
