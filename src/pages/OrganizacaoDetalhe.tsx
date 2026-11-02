@@ -57,6 +57,11 @@ export default function OrganizacaoDetalhe() {
   const requestedTab = searchParams.get('aba');
   const tab: Tab = isTab(requestedTab) ? requestedTab : 'resultados';
   const organization = usePlatformOrganization(orgId, month);
+  // Só a 1ª leitura troca a tela pela logo: numa troca de mês sem cache as abas ficam montadas
+  // (filtros da Auditoria e edições em Configurações não podem ser zerados) — Codex.
+  const [jaCarregou, setJaCarregou] = useState(false);
+  if (organization.data && !jaCarregou) setJaCarregou(true);
+  const primeiraLeitura = organization.isLoading && !jaCarregou;
   const org = organization.data;
   const preview = usePlatformPreview(orgId, month);
   const startSupport = useSupportStore((state) => state.start);
@@ -199,7 +204,8 @@ export default function OrganizacaoDetalhe() {
       </Button>
 
       {organization.isLoading ? (
-        <CarregandoMarca rotulo="Carregando" mensagem="Lendo a organização…" />
+        <CarregandoMarca variante={primeiraLeitura ? 'pagina' : 'compacta'} className={primeiraLeitura ? undefined : 'mb-6 border-b'}
+          rotulo="Carregando" mensagem="Lendo a organização…" />
       ) : organization.isError || !org ? (
         <div className="mb-6 border-b pb-4">
           <PageHeader title="Organização indisponível" />
@@ -236,7 +242,7 @@ export default function OrganizacaoDetalhe() {
         }}
       />
 
-      {!organization.isLoading && <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
+      {!primeiraLeitura && <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
         <TabsList aria-label="Seções da organização">
           <TabsTrigger value="resultados"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
           <TabsTrigger value="pulse"><Radar className="h-4 w-4" />Pulse</TabsTrigger>

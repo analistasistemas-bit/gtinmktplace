@@ -10,7 +10,6 @@ import { supabase } from '@/lib/supabase';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -100,23 +99,11 @@ async function callUsuarios(body: Record<string, unknown>) {
 
 /** Card de destaque do topo (Faturamento bruto da carteira). Mesma estrutura de HeroVenda
  *  (Dashboard.tsx), mas não-linkável: é um agregado da carteira, não o drill-down de uma org. */
-function HeroCarteira({ totals, orgs, loading, className }: {
+function HeroCarteira({ totals, orgs, className }: {
   totals?: WalletTotals;
   orgs: OrgSummary[];
-  loading: boolean;
   className?: string;
 }) {
-  if (loading) {
-    return (
-      <div className={cn('h-full rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm', className)}>
-        <div className="mb-1 flex items-center gap-1.5 text-xs text-info">
-          <Receipt className="h-4 w-4 shrink-0" /> Faturamento bruto
-        </div>
-        <Skeleton className="h-9 w-40" />
-      </div>
-    );
-  }
-
   const comPrevio = orgs.length > 0 && orgs.every((o) => (o.metrics?.previous?.gross_cents ?? 0) > 0);
   let delta: { texto: string; up: boolean } | null = null;
   if (comPrevio) {
@@ -532,10 +519,9 @@ export default function Organizacoes() {
       />
 
       {!wallet.isLoading && <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <HeroCarteira totals={totals} orgs={orgs.filter((o) => !o.arquivada_em)} loading={wallet.isLoading} className="col-span-2 sm:col-span-3 lg:col-span-2" />
+        <HeroCarteira totals={totals} orgs={orgs.filter((o) => !o.arquivada_em)} className="col-span-2 sm:col-span-3 lg:col-span-2" />
         <KpiCard
           label="Previsão de cobrança" icon={WalletIcon} infoKey="Previsão de cobrança"
-          loading={wallet.isLoading}
           value={
             totals && totals.org_count > 0 && totals.orgs_without_terms >= totals.org_count
               ? <span title="Nenhuma organização tem condição comercial vigente — sem base para prever">—</span>
@@ -545,7 +531,6 @@ export default function Organizacoes() {
         />
         <KpiCard
           label="Pendências" icon={AlertTriangle} infoKey="Pendências da carteira"
-          loading={wallet.isLoading}
           value={totals?.pending_count != null ? fmtInt(totals.pending_count) : '—'}
           tom={(totals?.pending_count ?? 0) > 0 ? 'warning' : undefined}
           valueClassName={(totals?.pending_count ?? 0) > 0 ? 'text-warning' : undefined}
@@ -554,7 +539,6 @@ export default function Organizacoes() {
         />
         <KpiCard
           label="Organizações" icon={Building2} infoKey="Organizações da carteira" className="col-span-2 sm:col-span-1"
-          loading={wallet.isLoading}
           value={fmtInt(totals?.org_count ?? 0)}
         />
       </div>}

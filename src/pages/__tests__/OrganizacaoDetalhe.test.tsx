@@ -135,6 +135,17 @@ describe('OrganizacaoDetalhe', () => {
     expect(screen.getByRole('link', { name: /Voltar para organizações/ })).toBeInTheDocument();
   });
 
+  it('troca de mês sem cache: abas continuam montadas (não perdem estado), logo compacta no cabeçalho', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    renderPage();
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    usePlatformOrganization.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() });
+    await user.click(screen.getByRole('tab', { name: /Auditoria/ }));
+
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo a organização…');
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+  });
+
   it('expõe falha de carregamento em vez de um detalhe vazio', () => {
     usePlatformOrganization.mockReturnValue({
       data: undefined,
