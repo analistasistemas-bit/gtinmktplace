@@ -58,7 +58,7 @@ export function sobreporSimulacao(atual: ItemPromocao, simulado: ItemPromocao): 
  *  `recebe` é o líquido do servidor; sem tarifa/custo → null (nunca zero). */
 export function detalheLiquido(c: CorProjetada, preco: number | null): {
   comissao: number; comissaoPct: number; imposto: number; aliquotaPct: number; frete: number; recebe: number; lucro: number;
-  markup: number; margem: number;
+  markup: number; margem: number | null;
 } | null {
   if (preco == null || c.liquido == null || c.custo == null || c.comissao_pct == null || c.frete == null || c.aliquota_pct == null) return null;
   const lucro = c.liquido - c.custo;
@@ -67,7 +67,7 @@ export function detalheLiquido(c: CorProjetada, preco: number | null): {
     imposto: preco * c.aliquota_pct / 100, aliquotaPct: c.aliquota_pct, frete: c.frete,
     recebe: c.liquido, lucro, markup: c.custo > 0 ? lucro / c.custo : 0,
     // Margem sobre a venda (lucro ÷ preço), mesma régua de cascata-pedido.ts e Vendas SKU.
-    margem: preco > 0 ? lucro / preco : 0,
+    margem: preco > 0 ? lucro / preco : null,
   };
 }
 

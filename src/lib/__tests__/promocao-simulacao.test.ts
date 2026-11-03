@@ -80,7 +80,8 @@ describe('detalheLiquido', () => {
     expect(d.lucro).toBeCloseTo(14.164, 3);
     expect(Math.round(d.markup * 100)).toBe(77);
     // Margem = lucro ÷ preço de venda (mesma régua de cascata-pedido/Vendas SKU): 14,164 / 49,90.
-    expect(Math.round(d.margem * 100)).toBe(28);
+    expect(Math.round(d.margem! * 100)).toBe(28);
+    expect(detalheLiquido(cor, 0)!.margem).toBeNull(); // preço 0: margem indefinida, nunca "0%"
   });
   it('comissão fixa entra na comissão', () => {
     expect(detalheLiquido({ ...cor, comissao_fixa: 6.25 }, 49.9)!.comissao).toBeCloseTo(13.236, 3);

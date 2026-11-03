@@ -52,7 +52,7 @@ export function SheetCores({ item, simulado = false, onClose }: { item: ItemProm
                           {d.lucro < 0 ? 'prejuízo ' : 'lucro '}
                           <span className="font-semibold">{fmtBRL(d.lucro)}</span>
                           {' · margem '}
-                          <span className="font-semibold">{Math.round(d.margem * 100)}%</span>
+                          <span className="font-semibold">{d.margem != null ? `${Math.round(d.margem * 100)}%` : '—'}</span>
                           {' · markup '}
                           <span className="font-semibold">{Math.round(d.markup * 100)}%</span>
                         </p>
