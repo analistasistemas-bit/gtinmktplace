@@ -4,12 +4,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { StatusPill } from '@/components/ui/status-pill';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { urlFotoMl, type ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import { custoAquisicaoUnit, quantidadeEmEstoque } from '../../../../supabase/functions/_shared/nfe/regras.ts';
+import { classificarIcmsEntrada, csosnSaidaSugerido } from '../../../../supabase/functions/_shared/nfe/icms-entrada.ts';
+import type { ItemNotaLido } from '../../../../supabase/functions/_shared/nfe/tipos.ts';
 import { contarProntos, definirFator, definirProduto, itemPronto, type DecisaoItem, type EstadoImportacao } from './estado';
 
 function selo(d: DecisaoItem): { texto: string; ok: boolean } {
@@ -19,6 +22,15 @@ function selo(d: DecisaoItem): { texto: string; ok: boolean } {
   if (d.codigoPai) return { texto: 'Produto escolhido', ok: true };
   if (d.candidatosNota.length > 1) return { texto: 'Cadastrado mais de uma vez — escolha', ok: false };
   return { texto: d.candidatosGtin.length > 1 ? 'GTIN ambíguo — escolha' : 'Sem produto', ok: false };
+}
+
+/** ADR-0181 D-10: o fiscal do produto existente não muda; só avisa se o CSOSN dele diverge do indicado pela nota. */
+export function avisoCsosnDivergente(
+  item: Pick<ItemNotaLido, 'icmsGrupo' | 'csosn' | 'cstIcms'>, csosnProduto: string | null | undefined, padrao: string | null,
+): string | null {
+  const sugerido = csosnSaidaSugerido(classificarIcmsEntrada(item), padrao);
+  if (sugerido === null || csosnProduto == null || csosnProduto === sugerido) return null;
+  return `CSOSN do produto (${csosnProduto}) difere do indicado pela nota (${sugerido}) — confira o cadastro fiscal do produto.`;
 }
 
 // Mesma resolução de capa do card da tela Estoque (Storage assinado, senão foto do ML).
@@ -67,7 +79,7 @@ function SeletorProduto({ produtos, candidatos, carregando, erro, foco, onEscolh
 }
 
 export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, carregandoTipos,
-  conferirFalhou, onTentarNovamente, carregandoProdutos, erroProdutos }: {
+  conferirFalhou, onTentarNovamente, carregandoProdutos, erroProdutos, fiscalAtivo, csosnPadrao }: {
   e: EstadoImportacao;
   setE: (e: EstadoImportacao) => void;
   produtos: ProdutoEstoqueResumo[];
@@ -81,6 +93,10 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
   /** Carga/erro da lista de produtos — distintos de catálogo vazio. */
   carregandoProdutos?: boolean;
   erroProdutos?: boolean;
+  /** Módulo fiscal ligado: mostra o aviso de CSOSN divergente nos produtos vinculados. */
+  fiscalAtivo?: boolean;
+  /** `empresa_fiscal.csosn_padrao_revenda`. */
+  csosnPadrao?: string | null;
 }) {
   // `buscando`: seletor aberto por clique ("Trocar" ou "Escolher existente…").
   const [buscando, setBuscando] = useState<Set<number>>(new Set());
@@ -115,6 +131,7 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
         const distribuidas = d.distribuicao.reduce((a, l) => a + l.quantidade, 0);
         const pct = q.ok ? Math.min(100, Math.round((distribuidas / q.quantidade) * 100)) : 0;
         // Sem produto + conferência falhou: escolher um existente é o caminho seguro (não duplica cadastro).
+        const avisoCsosn = fiscalAtivo && d.codigoPai ? avisoCsosnDivergente(item, produto?.tributacaoIcms, csosnPadrao ?? null) : null;
         const primarioEscolher = !!conferirFalhou && !d.codigoPai;
         return (
           <div key={d.nItem} className="space-y-2 rounded-md border p-3">
@@ -140,6 +157,10 @@ export function EtapaItens({ e, setE, produtos, onCadastrarNovo, tiposProduto, c
                   ? <Button size="sm" variant="ghost" onClick={() => fechar(d.nItem)}>Cancelar</Button>
                   : <Button size="sm" variant="ghost" onClick={() => abrir(d.nItem)}>Trocar</Button>)}
               </div>
+            )}
+
+            {avisoCsosn && (
+              <StatusPill tone="warning" className="max-w-full whitespace-normal rounded-md text-left">{avisoCsosn}</StatusPill>
             )}
 
             {escolhendo && (

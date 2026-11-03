@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EtapaItens } from '../etapa-itens';
+import { EtapaItens, avisoCsosnDivergente } from '../etapa-itens';
 import type { EstadoImportacao } from '../estado';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
@@ -145,5 +145,27 @@ describe('EtapaItens — layout em cartões', () => {
     expect(screen.getByText('Não foi possível conferir produtos já cadastrados desta nota')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     expect(onTentarNovamente).toHaveBeenCalled();
+  });
+});
+
+describe('aviso de CSOSN divergente em produto existente (ADR-0181 D-10)', () => {
+  const st = { icmsGrupo: 'ICMS60', csosn: null, cstIcms: '60' };
+  it('avisoCsosnDivergente', () => {
+    const msg = avisoCsosnDivergente(st, '102', '102');
+    expect(msg).toContain('(102)');
+    expect(msg).toContain('(500)');
+    expect(avisoCsosnDivergente(st, '500', '102')).toBeNull();
+    expect(avisoCsosnDivergente({ icmsGrupo: 'ICMSSN400', csosn: '400', cstIcms: null }, '102', '102')).toBeNull();
+    expect(avisoCsosnDivergente(st, null, '102')).toBeNull();
+  });
+  it('render: aparece com fiscalAtivo e some sem ele', () => {
+    const est = estado([dec({ codigoPai: '00000010', origemVinculo: 'vinculo' })], [{ ...item, ...st } as unknown as typeof item]);
+    const produto = { ...SHORT, tributacaoIcms: '102' } as ProdutoEstoqueResumo;
+    const { unmount } = render(<Wrap><EtapaItens e={est} setE={vi.fn()} produtos={[produto]} tiposProduto={[]}
+      fiscalAtivo csosnPadrao="102" /></Wrap>);
+    expect(screen.getByText(/CSOSN do produto \(102\) difere do indicado pela nota \(500\)/)).toBeInTheDocument();
+    unmount();
+    render(<Wrap><EtapaItens e={est} setE={vi.fn()} produtos={[produto]} tiposProduto={[]} csosnPadrao="102" /></Wrap>);
+    expect(screen.queryByText(/CSOSN do produto/)).not.toBeInTheDocument();
   });
 });
