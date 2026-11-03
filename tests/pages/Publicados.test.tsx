@@ -443,6 +443,24 @@ describe('Publicados', () => {
       expect(screen.getByText('Em promoção · 1 de 2 variações')).toBeInTheDocument();
     });
 
+    // Zaven 03/11: os SKUs de fora estavam pausados sem estoque — o selo diz por quê.
+    it('UP: SKUs fora da promoção sem estoque aparecem no selo', () => {
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ mlItemIdsUP: ['MLB1', 'MLB2', 'MLB3'] })], isLoading: false, error: null, refetch: vi.fn(),
+      });
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [
+          { ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 3, preco: 43.9, precoOriginal: 73.25 },
+          { ml_item_id: 'MLB2', status: 'pausado', motivo: null, estoque: 0, preco: 73.25 },
+          { ml_item_id: 'MLB3', status: 'ativo', motivo: null, estoque: 2, preco: 73.25 },
+        ] },
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+      renderTela();
+      expect(screen.getByText('Em promoção · 1 de 3 variações · 1 sem estoque')).toBeInTheDocument();
+    });
+
     // Avil 02/11 (Tecido Ponge): só um irmão na campanha, principal fora → antes não mostrava nada.
     it('UP: irmão em promoção com o principal fora → selo com a fração, sem preço riscado', () => {
       usePublicadosMock.mockReturnValue({

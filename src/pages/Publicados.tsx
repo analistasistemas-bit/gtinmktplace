@@ -397,7 +397,8 @@ function LinhaTabela({
                   <StatusPill tone="success">
                     Em promoção
                     {item.variacoesEmPromocao && item.variacoesEmPromocao.em < item.variacoesEmPromocao.total
-                      && ` · ${item.variacoesEmPromocao.em} de ${item.variacoesEmPromocao.total} variações`}
+                      && ` · ${item.variacoesEmPromocao.em} de ${item.variacoesEmPromocao.total} variações`
+                        + (item.variacoesEmPromocao.semEstoque > 0 ? ` · ${item.variacoesEmPromocao.semEstoque} sem estoque` : '')}
                   </StatusPill>
                 </span>
               )}
