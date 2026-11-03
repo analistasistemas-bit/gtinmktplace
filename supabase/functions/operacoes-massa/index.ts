@@ -336,9 +336,14 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
 
 /** Simulação de preço/desconto (qualquer membro): líquido exato por anúncio no preço pedido. Só leitura. */
 async function simularPrecos(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
-  const ctx = await autenticar(req);
-  if (ctx instanceof Response) return ctx;
-  const { orgId } = ctx;
+  let orgId: string;
+  try {
+    // Só leitura: suporte com escopo `read` também simula (os demais ramos seguem exigindo escrita).
+    ({ orgId } = await requireUserOrg(req, { access: 'read' }));
+  } catch (resp) {
+    if (resp instanceof Response) return resp;
+    throw resp;
+  }
   if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
   const pedido = lerSimular(bruto);
   if (!pedido) return json({ erro: `Pedido inválido (até ${MAX_SIMULAR} anúncios por simulação).` }, 400);

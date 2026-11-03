@@ -59,6 +59,8 @@ describe('montarPreview', () => {
     expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
     expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
     expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });
+    // Achado Codex (diff): todos ignorados (mapa vazio) continua simulação ativa.
+    expect(montarPreview('aderir', 'DEAL', [naoSimulado], new Map())[0].marcado).toBe(false);
   });
 
   it('LIGHTNING aderir usa o sugerido e leva estoqueMin', () => {

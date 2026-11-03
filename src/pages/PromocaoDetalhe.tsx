@@ -114,9 +114,12 @@ export default function PromocaoDetalhe() {
   const podeSelecionar = promo != null && ehTipoOperavel(promo.tipo) && promo.status !== 'finished';
   // Preço escolhido só existe em DEAL/Relâmpago (SMART: preço do ML) e só para convidados (participando não adere).
   const podeSimular = podeSelecionar && (promo.tipo === 'DEAL' || promo.tipo === 'LIGHTNING') && !participando;
-  const itensVisao = useMemo(
-    () => (itens.data ?? []).map((i) => simulacao?.itens.get(i.ml_item_id) ?? i), [itens.data, simulacao],
-  );
+  // Achado Codex (diff): sobre o item ATUAL (refetch traz status/faixa/reserva novos), só preço, projeção e semáforo
+  // simulados — e só enquanto ainda é convidado (virou participando → a simulação não vale mais).
+  const itensVisao = useMemo(() => (itens.data ?? []).map((i) => {
+    const s = simulacao?.itens.get(i.ml_item_id);
+    return s && i.status === 'candidate' ? { ...i, preco_avaliado: s.preco_avaliado, projecao: s.projecao, pior_semaforo: s.pior_semaforo } : i;
+  }), [itens.data, simulacao]);
   const daAba = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), [itensVisao, participando, busca]);
   const linhas = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), [itensVisao, semaforo, participando, busca]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
@@ -369,7 +372,11 @@ export default function PromocaoDetalhe() {
       </div>
       <BarraSelecao
         convidados={convidadosSelecionados.length} participando={participandoSelecionados.length}
-        onAderir={() => setPreview({ acao: 'aderir', itens: convidadosSelecionados })}
+        onAderir={() => {
+          // Achado Codex (diff): preview aberto no meio do cálculo congelaria a projeção velha com o preço novo.
+          if (simularM.isPending) { toast.info('Aguarde a simulação terminar.'); return; }
+          setPreview({ acao: 'aderir', itens: convidadosSelecionados });
+        }}
         onSair={() => setPreview({ acao: 'sair', itens: participandoSelecionados })}
         onLimpar={() => setSelecionados(new Set())}
       />

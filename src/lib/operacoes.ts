@@ -55,7 +55,8 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
  *  `simulados` (emenda 2026-11-03): preço escolhido na simulação — os itens chegam com a projeção do servidor
  *  naquele preço; com simulação ativa, item não simulado vem desmarcado (nunca adesão com outro preço às cegas). */
 export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], simulados?: Map<string, number>): LinhaPreview[] {
-  const comSimulacao = acao === 'aderir' && simulados != null && simulados.size > 0;
+  // Achado Codex (diff): mapa vazio (todos ignorados) ainda é simulação ativa — nada sai marcado no sugerido.
+  const comSimulacao = acao === 'aderir' && simulados != null;
   return itens.map((it) => {
     const padrao = acao === 'sair' ? it.preco_promo : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
