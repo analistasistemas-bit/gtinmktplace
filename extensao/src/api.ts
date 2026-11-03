@@ -41,16 +41,32 @@ async function contexto(epoca = epocaAtual()): Promise<Contexto | Falha> {
 const vale = (c: Contexto) => c.epoca === epocaAtual();
 
 /** Guarda de quem pede, além da época (busca: a página e os itens do lote ainda valem). `conferir` roda depois de
- *  preparar o token (renovação/identidade são awaits); `aindaVale`, síncrona, colada no fetch. false → nada sai. */
-export interface Guarda { conferir?: () => Promise<boolean>; aindaVale?: () => boolean }
+ *  preparar o token (renovação/identidade são awaits); `aindaVale`, síncrona, colada no fetch. false → nada sai.
+ *  `timeoutMs`: prazo do cliente (envio + leitura do corpo); estourou → fetch abortado e falha `interno`. */
+export interface Guarda { conferir?: () => Promise<boolean>; aindaVale?: () => boolean; timeoutMs?: number }
 
 /** POST na edge no protocolo 2. Sucesso devolve o envelope ainda não conferido contra a identidade. */
-async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null, aindaVale?: () => boolean): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
+async function postar(c: Contexto, corpo: object, identidadeEsperada: string | null, aindaVale?: () => boolean, timeoutMs?: number): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
   // nada sai com o token de uma sessão que já acabou (nem para quem já não quer a resposta)
   if (!vale(c) || (aindaVale && !aindaVale())) return falha('sem_sessao');
+  // Prazo do cliente: aborta o fetch e vence a corrida mesmo se o corpo (ou um fetch que ignora o sinal) não terminar.
+  const ac = timeoutMs ? new AbortController() : null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expirou = new Promise<never>((_, rejeitar) => {
+    if (ac) timer = setTimeout(() => { ac.abort(); rejeitar(new Error('timeout')); }, timeoutMs);
+  });
+  expirou.catch(() => {});
+  try {
+    return await enviar(c, corpo, identidadeEsperada, ac?.signal, expirou);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enviar(c: Contexto, corpo: object, identidadeEsperada: string | null, signal: AbortSignal | undefined, expirou: Promise<never>): Promise<{ ok: true; identidade: string; dados: unknown } | Falha> {
   let r: Response;
   try {
-    r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extensao`, {
+    r = await Promise.race([fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extensao`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${c.accessToken}`,
@@ -58,7 +74,8 @@ async function postar(c: Contexto, corpo: object, identidadeEsperada: string | n
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ ...corpo, protocolo: 2, ...(identidadeEsperada === null ? {} : { identidadeEsperada }) }),
-    });
+      ...(signal ? { signal } : {}),
+    }), expirou]);
   } catch {
     return falha('interno');
   }
@@ -69,7 +86,13 @@ async function postar(c: Contexto, corpo: object, identidadeEsperada: string | n
     await limparSessao(c.accessToken);
     return falha('sessao_expirada');
   }
-  const json = (await r.json().catch(() => null)) as { identidade?: unknown; dados?: unknown; erro?: unknown } | null;
+  let json: { identidade?: unknown; dados?: unknown; erro?: unknown } | null;
+  try {
+    json = await Promise.race([r.json(), expirou]);
+  } catch {
+    if (signal?.aborted) return falha('interno'); // prazo do cliente na leitura do corpo
+    json = null;
+  }
   // Pedida em outra sessão (sair/entrar, troca de identidade, fim de suporte): não chega a ninguém.
   // ponytail: 'sem_sessao' em vez de um código novo — quem pediu já está numa geração que descarta o resultado.
   if (!vale(c)) return falha('sem_sessao');
@@ -127,7 +150,7 @@ export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual(), gua
   }
 
   if (guarda.conferir && !(await guarda.conferir())) return falha('sem_sessao');
-  const r = await postar(c, corpo, c.identidade, guarda.aindaVale);
+  const r = await postar(c, corpo, c.identidade, guarda.aindaVale, guarda.timeoutMs);
   if (r.ok && r.identidade === c.identidade) return { ok: true, dados: r.dados as T };
   if (r.ok || r.erro === 'identidade_mudou') {
     // Org/suporte mudou: o dado nunca é entregue e a ação não é refeita. Abas limpas antes (mesmo se a sessao

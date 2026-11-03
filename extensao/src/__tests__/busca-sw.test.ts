@@ -912,4 +912,57 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     expect((await enr())!.falhou).toBe(true);
     expect((await enr())!.catalogos[CAT].ofertas).toMatchObject({ estado: 'ok' });
   });
+
+  it('pré-merge 1: 60 catálogos e o 1º pedido falha → os 60 terminam indisponíveis (nenhum em "Consultando"), sem repetir', async () => {
+    falharEnr = true;
+    const lista = porCatalogo(1, 60);
+    await registrar(lista);
+    expect(pedidosEnr).toHaveLength(1);
+    const e = (await enr())!;
+    expect(lista.filter((c) => e.catalogos[c.catalogProductId]?.ofertas?.estado !== 'indisponivel')).toEqual([]);
+    expect(e.falhou).toBe(true);
+    await pulso();
+    expect(pedidosEnr).toHaveLength(1);
+  });
+
+  it('pré-merge 2: edge pendurada → o cliente aborta em 10 s e o pedido fica indisponível (terminal)', async () => {
+    let sinal: AbortSignal | undefined;
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao !== 'enriquecer_catalogos_busca') return edge(String(u), init);
+      pedidosEnr.push(b);
+      sinal = init?.signal ?? undefined;
+      return new Promise<Response>(() => {}); // nunca responde (nem com o abort)
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await enviarCards([card(1)]);
+    for (let i = 0; i < 1000 && pedidosEnr.length === 0; i++) await vi.advanceTimersByTimeAsync(0); // sem avançar o relógio
+    expect(pedidosEnr).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect((await enr())?.catalogos[CAT]?.ofertas).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2);
+    await vi.waitFor(async () => expect((await enr())?.catalogos[CAT]?.ofertas?.estado).toBe('indisponivel'));
+    expect(sinal?.aborted).toBe(true);
+    expect((await enr())!.falhou).toBe(true);
+  });
+
+  it('pré-merge 3: "Tentar novamente" no Retry-After responde aguardar sem esperar a margem pendente', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:00Z'));
+    vinculados = new Set([id(1)]);
+    ofertas429 = true;
+    tentarAposEm = '2026-11-03T12:00:30.000Z';
+    let soltar!: () => void;
+    const margem = new Promise<void>((r) => { soltar = r; });
+    antesDeResponder = (acao) => (acao === 'analisar_busca' ? margem : undefined);
+    await enviarCards([card(1)]);
+    await vi.waitFor(async () => expect((await enr())?.catalogos[CAT]?.ofertas?.estado).toBe('indisponivel'));
+    await vi.waitFor(() => expect(doTipo('analisar_busca')).toHaveLength(1));
+    let respondeu: unknown = null;
+    void retentar().then((r) => { respondeu = r; });
+    await vi.waitFor(() => expect(respondeu).toMatchObject({ ok: false, erro: 'aguardar' }));
+    soltar();
+    await complementosPendentes();
+    expect((await estado())!.resposta.resultados[id(1)].estado).toBe('ok');
+  });
 });

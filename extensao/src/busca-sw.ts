@@ -220,11 +220,12 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   // Logo antes do envio (depois dos awaits de token/identidade): a rodada não foi cancelada, a página (geração, sessão,
   // URL) é a mesma e cada item do lote ainda tem a assinatura de quando foi escolhido. Recusa com tudo valendo = o lote
   // mudou: refaz a seleção. Sem isso, navegação ou preço novo durante a preparação ainda chamariam a edge.
-  const guarda = (p: Pagina, lote: CardBusca[], assinatura: (c: CardBusca) => string) => {
+  const guarda = (p: Pagina, lote: CardBusca[], assinatura: (c: CardBusca) => string, timeoutMs?: number) => {
     let recusou = false;
     return {
       recusou: () => recusou,
       aindaVale: vale,
+      timeoutMs,
       conferir: async () => {
         const a = await lerAba(tabId);
         const ok = vale() && a.geracao === p.geracao && a.sessao === p.sessao && ehBusca(a.estado) && a.estado.entrada.url === p.url && (() => {
@@ -322,7 +323,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       const marcas = marcasDoPedido(pedido);
       for (const m of marcas) jaPedidos.add(m);
       const cats = new Set(pedido.catalogos.map((c) => c.catalogProductId));
-      const g = guarda(p, e.observado.cards.filter((c) => c.catalogProductId && cats.has(c.catalogProductId)), (c) => `${c.preco}|${c.catalogProductId}`);
+      const g = guarda(p, e.observado.cards.filter((c) => c.catalogProductId && cats.has(c.catalogProductId)), (c) => `${c.preco}|${c.catalogProductId}`, TIMEOUT_ENRIQUECIMENTO_MS);
       const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>({ acao: 'enriquecer_catalogos_busca', ...pedido }, epoca, g);
       if (g.recusou()) { for (const m of marcas) jaPedidos.delete(m); continue; }
       const d = resp.ok ? resp.dados : null;
@@ -334,7 +335,18 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (d?.estado !== 'ok' || !d.valor || !Array.isArray(d.valor.catalogos)) {
         // Rede/5xx/corpo fora do formato: o pedido fica indisponível (terminal, sem repetição automática); o painel
         // oferece "Tentar novamente". O que não foi pedido ainda vai no próximo dado novo.
-        return (await gravarSe(p, (r2) => marcarFalha(r2.enriquecimento, pedido, MOTIVO_FALHA_REDE))) ? null : recusada();
+        // O excedente de 50 desta rodada (ainda não enviado) também termina indisponível: nada fica em "Consultando" e
+        // nada é repetido sozinho. O que vem do cache é aplicado.
+        return (await gravarSe(p, (r2, agora) => {
+          marcarFalha(r2.enriquecimento, pedido, MOTIVO_FALHA_REDE);
+          for (let resto = planejarLote([...agora.values()], r2.metadados, r2.enriquecimento, cache, Date.now(), jaPedidos); ;
+            resto = planejarLote([...agora.values()], r2.metadados, r2.enriquecimento, cache, Date.now(), jaPedidos)) {
+            aplicarHits(r2.enriquecimento, resto.hits);
+            if (!resto.pedido) break;
+            for (const m of marcasDoPedido(resto.pedido)) jaPedidos.add(m);
+            marcarFalha(r2.enriquecimento, resto.pedido, MOTIVO_FALHA_REDE);
+          }
+        })) ? null : recusada();
       }
       const valor = d.valor, conta = typeof valor.conta === 'string' ? valor.conta : null;
       if (conta !== null && contaMudou(conta, r.contaMl, bruto.conta)) {
@@ -421,14 +433,21 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   }
   const fm = naFila(margens, tabId, margem);
   const fe = await enriquecer();
-  return {
-    margem: fm.then(async (m): Promise<Resultado> => {
-      if (fe === 'sair' || m === 'sair') return SEM_SESSAO;
-      if (retomar) await pedirRetomada(tabId, vale);
-      return fe ?? m ?? fId ?? { ok: true };
-    }),
-  };
+  const fim = fm.then(async (m): Promise<Resultado> => {
+    if (fe === 'sair' || m === 'sair') return SEM_SESSAO;
+    if (retomar) await pedirRetomada(tabId, vale);
+    return fe ?? m ?? fId ?? { ok: true };
+  });
+  // "Tentar novamente" é do enriquecimento: responde já (ex.: `aguardar`), a margem segue no fluxo dela.
+  if (retentar) {
+    void fim.catch(() => {});
+    return fe === 'sair' ? SEM_SESSAO : fe ?? fId ?? { ok: true };
+  }
+  return { margem: fim };
 }
+
+/** Prazo do cliente no enriquecimento (a edge para em 8 s; 10 s cobre rede + leitura do corpo). */
+export const TIMEOUT_ENRIQUECIMENTO_MS = 10_000;
 
 const REVALIDAR_CONTA_MS = 5 * 60_000;
 
