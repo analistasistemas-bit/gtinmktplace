@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Relâmpago (LIGHTNING) pelo app — aderir/sair (emenda ADR-0174) — 2026-11-02
+
+- [x] Spike de escrita na Avil (`MLB5244990621`, `LGH-MLB1000`): POST 201 + `offer_id`, `pending` com janela do ML; DELETE 200 → `candidate` em ≤ 5 min.
+- [x] Spec + plano (`docs/superpowers/specs|plans/2026-11-02-relampago-aderir*`), revisões Grok (spec) e Codex (plano e por task).
+- [x] Motor (`_shared/operacoes`), sync da Central (`_shared/promocoes`, teto 40 itens/mensagem na Relâmpago) e front (seleção, preço editável, bloqueio < R$ 19, "Reserva N un.").
+- [ ] Migration `20261102235326_operacoes_massa_lightning` aplicada; edges `operacoes-massa`, `sincronizar-promocoes`, `ads-campanhas`, `coletar-ads-ml`, `coletar-trafego-ml` redeployadas.
+- [ ] Medir CPU do sync da Relâmpago na Avil após o deploy.
+- [ ] 1ª adesão real pelo app (Diego).
+
 ## Extensão PubliAI 0.4.0/0.4.1 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
 
 - [x] Implementada na branch `worktree-extensao-busca-lista` (HEAD de código `2fc075b8` + commit da Task 6): painel de busca redesenhado (miniaturas, filtros, ordenação, resumo com cobertura) e Mini-bloco da busca dentro de cada card do ML. Versão 0.4.0 em `manifest.json` e `package.json`.
