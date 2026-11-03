@@ -2,6 +2,7 @@
 // nada aqui recalcula dinheiro. Desconhecido (null) vira "—", nunca zero. Os textos espelham os do
 // PDF mensal (`pdf-relatorio-mensal.ts`), que fica fora deste módulo para não puxar o jsPDF ao bundle.
 import { fmtBRL } from '@/lib/formato';
+import type { PeriodKpis, SeriesPoint } from '@/lib/platform-admin';
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -52,6 +53,54 @@ export const MOTIVO_APOS_ADS: Record<string, string> = {
   ads_indisponivel: 'dados de Ads indisponíveis',
   ads_cobertura_parcial: 'Ads sem cobertura completa do mês',
 };
+
+// ---------------------------------------------------------------------------------------------
+// Cascata e série (tela e PDF usam as mesmas funções): só leem campos do contrato.
+// ---------------------------------------------------------------------------------------------
+export type LinhaCascata = {
+  chave: 'bruto' | 'canal' | 'imposto' | 'liquido' | 'custo' | 'lucro' | 'ads' | 'apos_ads';
+  rotulo: string; valor: number | null; sub?: string; tipo: 'total' | 'menos' | 'final';
+  /** Saldo de onde a saída parte e onde termina (centavos do contrato); null = indisponível. */
+  de: number | null; ate: number | null;
+};
+
+/** Linhas da cascata pelos saldos do contrato. Custo só encadeia com lucro de cobertura total: com lucro
+ *  parcial o custo é só dos itens calculáveis e não fecha com o líquido de todos os itens. */
+export function linhasCascata(k: PeriodKpis): LinhaCascata[] {
+  const total = (valor: number | null) => ({ de: valor == null ? null : 0, ate: valor });
+  return [
+    { chave: 'bruto', rotulo: 'Faturamento da loja', valor: k.gross_cents, tipo: 'total', ...total(k.gross_cents) },
+    { chave: 'canal', rotulo: 'Comissão e frete do ML', valor: k.channel_costs_cents, tipo: 'menos', de: k.gross_cents, ate: k.net_cents },
+    { chave: 'imposto', rotulo: 'Imposto', valor: k.tax_cents, sub: k.tax_cents == null ? 'alíquota não confirmada' : undefined, tipo: 'menos', de: k.net_cents, ate: k.net_after_tax_cents },
+    { chave: 'liquido', rotulo: 'Líquido', valor: k.net_after_tax_cents, tipo: 'total', ...total(k.net_after_tax_cents) },
+    { chave: 'custo', rotulo: 'Custo dos produtos', valor: k.cost_cents, tipo: 'menos', de: k.net_after_tax_cents, ate: k.profit_partial ? null : k.profit_cents },
+    { chave: 'lucro', rotulo: k.profit_partial ? 'Lucro (parcial)' : 'Lucro', valor: k.profit_cents, tipo: 'total', ...total(k.profit_cents) },
+    { chave: 'ads', rotulo: 'Ads da conta', valor: k.ads_cost_cents, sub: k.ads_cost_cents == null ? 'indisponível' : undefined, tipo: 'menos', de: k.profit_cents, ate: k.profit_after_ads_cents },
+    {
+      chave: 'apos_ads', rotulo: 'Lucro após Ads', valor: k.profit_after_ads_cents, tipo: 'final', ...total(k.profit_after_ads_cents),
+      sub: k.profit_after_ads_cents == null ? (MOTIVO_APOS_ADS[k.unavailable_reason ?? ''] ?? 'indisponível') : undefined,
+    },
+  ];
+}
+
+/** Geometria da barra em frações do faturamento: [min(de, ate), max(de, ate)] limitado a [0, 1].
+ *  Saldo indisponível → null (sem barra; o valor ainda aparece em texto). */
+export function barraCascata(l: LinhaCascata, grossCents: number): { esq: number; larg: number } | null {
+  if (l.valor == null || l.de == null || l.ate == null) return null;
+  const g = Math.max(grossCents, 1);
+  const lim = (v: number) => Math.max(0, Math.min(v, g));
+  const lo = lim(Math.min(l.de, l.ate));
+  const hi = lim(Math.max(l.de, l.ate));
+  return { esq: lo / g, larg: (hi - lo) / g };
+}
+
+/** Lucro e margem de um mês da série: após Ads quando o contrato tem; senão antes de Ads (marcado). */
+export function lucroDoMes(p: SeriesPoint): { lucro: number | null; margem: number | null; aposAds: boolean } {
+  const aposAds = p.profit_after_ads_cents != null;
+  return aposAds
+    ? { lucro: p.profit_after_ads_cents, margem: p.margin_after_ads, aposAds }
+    : { lucro: p.profit_cents, margem: p.margin, aposAds };
+}
 
 export const brl = (cents: number | null | undefined) => (cents == null ? '—' : fmtBRL(cents / 100));
 export const pct = (fracao: number | null | undefined, casas = 1) =>

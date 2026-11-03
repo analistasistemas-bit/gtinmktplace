@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgResults } from '../org-results';
-import { pontosDiarios } from '../org-results-graficos';
+import { pontosDiarios, pontosMensais } from '../org-results-graficos';
 import type { MonthlyReport } from '@/lib/platform-admin';
 import { kpisFixture, relatorioFixture } from '@/lib/export/__tests__/relatorio-mensal-fixture';
 
@@ -101,6 +101,28 @@ describe('OrgResults', () => {
     expect(screen.getByText('Evolução de 12 meses')).toBeInTheDocument();
   });
 
+  it('série com um mês não calculado continua mostrando a evolução, com lacuna (achado 3)', () => {
+    const base = relatorioFixture({ meses: 3 });
+    const r = { ...base, series: base.series.map((p, i) => (i === 1 ? { ...p, gross_cents: null, profit_cents: null, profit_after_ads_cents: null,
+      margin_after_ads: null, margin: null, markup: null, profit_coverage: null, unavailable_reason: 'volume' as const } : p)) };
+    render(<OrgResults report={query(r)} />);
+    expect(screen.getByText('Evolução de 3 meses')).toBeInTheDocument();
+  });
+
+  it('evolução escolhe o lucro por mês: mês antigo sem após Ads mostra o lucro antes de Ads, marcado (achado 2)', async () => {
+    const base = relatorioFixture({ meses: 2 });
+    const antigo = { ...base.series[0], profit_after_ads_cents: null, margin_after_ads: null, profit_cents: 2_000_00, margin: 0.5 };
+    const pontos = pontosMensais([antigo, base.series[1]]);
+    expect(pontos[0]).toMatchObject({ lucro: 2_000_00, margem: 0.5, aposAds: false });
+    expect(pontos[1]).toMatchObject({ lucro: base.series[1].profit_after_ads_cents, aposAds: true });
+    render(<OrgResults report={query({ ...base, series: [antigo, base.series[1]] })} />);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Ver dados' }).at(-1)!);
+    const linha = screen.getByRole('rowheader', { name: /set\/26/ }).closest('tr')!;
+    expect(within(linha).getByText(/R\$\s*2\.000,00/)).toBeInTheDocument();
+    expect(within(linha).getByText('50,0%')).toBeInTheDocument();
+    expect(linha.textContent).toMatch(/antes de Ads/);
+  });
+
   it('sem mês anterior: sem variação e sem inventar base', () => {
     render(<OrgResults report={query(relatorioFixture({ semAnterior: true }))} />);
     expect(screen.queryByText('+14,6%')).not.toBeInTheDocument();
@@ -174,12 +196,16 @@ describe('OrgResults', () => {
     expect(screen.getByText(/catálogo de famílias não pôde ser lido/)).toBeInTheDocument();
   });
 
-  it('mês sem vendas mostra estado vazio', () => {
+  it('mês sem vendas: estado vazio só no bloco de vendas; Ads, visitas e estornos conhecidos continuam (achado 5)', () => {
     const base = relatorioFixture();
     const r: MonthlyReport = { ...base, summary: { ...base.summary, current: kpisFixture({ orders: 0, gross_cents: 0, units: 0 }) } };
     render(<OrgResults report={query(r)} />);
     expect(screen.getByText('Sem vendas em Outubro de 2026')).toBeInTheDocument();
     expect(screen.queryByText('Faturamento da loja')).not.toBeInTheDocument();
+    expect(screen.getByText('Anúncios patrocinados (Mercado Ads)')).toBeInTheDocument();
+    expect(screen.getByText('Investimento')).toBeInTheDocument();
+    expect(screen.getByText('Visitas dos anúncios acompanhados')).toBeInTheDocument();
+    expect(screen.getByText('Estornos')).toBeInTheDocument();
   });
 
   it('carregando mostra esqueleto; erro sem dado mostra alerta com Tentar novamente', async () => {

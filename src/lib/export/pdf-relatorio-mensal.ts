@@ -6,6 +6,7 @@
 import { jsPDF } from 'jspdf';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { vencimentoDaCompetencia } from '@/lib/platform-admin';
+import { barraCascata, linhasCascata, lucroDoMes } from '@/lib/relatorio-mensal-ui';
 import type {
   AdsKpis,
   BillingStatement,
@@ -209,26 +210,13 @@ function compacto(doc: jsPDF, x: number, y: number, w: number, h: number, rotulo
 
 function cascata(doc: jsPDF, k: PeriodKpis, y0: number): number {
   secao(doc, 'Do faturamento ao lucro', y0, k.profit_partial ? `parcial · cobertura ${pct(k.profit_coverage, 0)} do faturamento` : undefined);
-  const gross = Math.max(k.gross_cents, 1);
-  const semImposto = k.tax_cents == null;
-  const liquido = k.tax_cents == null ? null : k.net_cents - k.tax_cents;
-  type Linha = { rotulo: string; valor: number | null; sub?: string; tipo: 'total' | 'menos' | 'final'; ate: number | null };
-  const linhas: Linha[] = [
-    { rotulo: 'Faturamento da loja', valor: k.gross_cents, tipo: 'total', ate: k.gross_cents },
-    { rotulo: '– Comissão e frete do ML', valor: k.gross_cents - k.net_cents, tipo: 'menos', ate: k.net_cents },
-    { rotulo: '– Imposto', valor: k.tax_cents, sub: semImposto ? 'alíquota não confirmada' : undefined, tipo: 'menos', ate: liquido },
-    { rotulo: '= Líquido', valor: liquido, tipo: 'total', ate: liquido },
-    { rotulo: '– Custo dos produtos', valor: k.cost_cents, tipo: 'menos', ate: k.profit_cents != null && liquido != null && !k.profit_partial ? k.profit_cents : null },
-    { rotulo: k.profit_partial ? '= Lucro (parcial)' : '= Lucro', valor: k.profit_cents, tipo: 'total', ate: k.profit_cents },
-    { rotulo: '– Ads da conta', valor: k.ads_cost_cents, sub: k.ads_cost_cents == null ? 'indisponível' : undefined, tipo: 'menos', ate: k.profit_after_ads_cents },
-    { rotulo: '= Lucro após Ads', valor: k.profit_after_ads_cents, sub: k.profit_after_ads_cents == null ? (MOTIVO_APOS_ADS[k.unavailable_reason ?? ''] ?? 'indisponível') : undefined, tipo: 'final', ate: k.profit_after_ads_cents },
-  ];
+  // Mesmas linhas e saldos da tela (`linhasCascata`, contrato); aqui só desenho.
+  const linhas = linhasCascata(k).map((l, i) => ({ ...l, rotulo: `${l.tipo === 'menos' ? '– ' : i > 0 ? '= ' : ''}${l.rotulo}` }));
   const barX = M + 52;
   const barW = 82;
   const valX = W - M;
   const rh = 8.2;
   let y = y0 + 6;
-  let anterior = k.gross_cents;
   linhas.forEach((l, i) => {
     if (i % 2 === 0) doc.setFillColor(251, 251, 254).rect(M, y, CW, rh, 'F');
     const final = l.tipo === 'final';
@@ -239,27 +227,19 @@ function cascata(doc: jsPDF, k: PeriodKpis, y0: number): number {
     } else {
       const cor: Rgb = final ? VIOLET : l.tipo === 'total' ? INDIGO : ROSE;
       const negativo = l.valor < 0;
-      let ini: number;
-      let fim: number;
-      if (l.tipo === 'menos') {
-        fim = Math.max(0, Math.min(anterior, gross));
-        ini = Math.max(0, fim - Math.abs(l.valor));
-      } else {
-        ini = 0;
-        fim = Math.max(0, Math.min(l.valor, gross));
+      const b = barraCascata(l, k.gross_cents);
+      if (b) {
+        const bw = Math.max(b.larg * barW, l.valor === 0 ? 0 : 0.8);
+        if (bw > 0) doc.setFillColor(...(negativo ? BAD : cor)).roundedRect(barX + b.esq * barW, y + 1.9, bw, 4.4, 0.8, 0.8, 'F');
       }
-      const bx = barX + (ini / gross) * barW;
-      const bw = Math.max(((fim - ini) / gross) * barW, l.valor === 0 ? 0 : 0.8);
-      if (bw > 0) doc.setFillColor(...(negativo ? BAD : cor)).roundedRect(bx, y + 1.9, bw, 4.4, 0.8, 0.8, 'F');
       const txt = l.tipo === 'menos' ? `– ${brl(Math.abs(l.valor))}` : brl(l.valor);
       texto(doc, txt, valX - 2, y + 5.4, { size: final ? 10 : 8.5, bold: l.tipo !== 'menos', color: final ? VIOLET : INK, align: 'right' });
     }
-    if (l.tipo !== 'menos' && l.valor != null) anterior = l.valor;
     y += rh;
   });
   if (k.profit_partial || k.excluded_items > 0) {
     y += 1.5;
-    texto(doc, `Itens sem lucro calculável: ${fmtInt(k.excluded_items)} (${brl(k.gross_cents - k.covered_gross_cents)} de faturamento fora do lucro).`, M + 2, y + 2.5, { size: 7, color: AMBER, bold: true });
+    texto(doc, `Itens sem lucro calculável: ${fmtInt(k.excluded_items)} (${brl(k.excluded_gross_cents)} de faturamento fora do lucro).`, M + 2, y + 2.5, { size: 7, color: AMBER, bold: true });
     texto(doc, 'Líquido considera todos os itens; custo, lucro e margens consideram só os itens com lucro calculável.', M + 2, y + 6.4, { size: 6.6, color: MUTED });
     y += 7;
   }
@@ -279,11 +259,14 @@ function rotuloMes(month: string): string {
   return `${MES_CURTO[m - 1]}/${String(a).slice(2)}`;
 }
 
-function evolucao(doc: jsPDF, series: SeriesPoint[], y0: number, usaAposAds: boolean) {
+function evolucao(doc: jsPDF, series: SeriesPoint[], y0: number) {
   const pts = series.slice(-12);
   secao(doc, 'Evolução dos últimos meses', y0);
-  const val = (p: SeriesPoint) => (usaAposAds ? p.profit_after_ads_cents : p.profit_cents);
-  const rotuloLucro = usaAposAds ? 'Lucro após Ads' : 'Lucro (antes de Ads, pode ser parcial)';
+  // Escolha por mês (contrato): após Ads quando disponível, senão antes de Ads, marcado com "°".
+  const val = (p: SeriesPoint) => lucroDoMes(p).lucro;
+  const todosApos = pts.every((p) => p.unavailable_reason != null || lucroDoMes(p).aposAds);
+  const nenhumApos = pts.every((p) => !lucroDoMes(p).aposAds);
+  const rotuloLucro = todosApos ? 'Lucro após Ads' : nenhumApos ? 'Lucro (antes de Ads, pode ser parcial)' : 'Lucro (após Ads quando disponível; ° antes de Ads)';
   // Painel de barras
   const px = M;
   const py = y0 + 4;
@@ -331,14 +314,16 @@ function evolucao(doc: jsPDF, series: SeriesPoint[], y0: number, usaAposAds: boo
       texto(doc, abreviar(p.gross_cents ?? 0), cx - 0.3, alt - 1.2, { size: 6, bold: true, color: INDIGO, align: 'center' });
     }
     texto(doc, rotuloMes(p.month), cx, gy + gh + 4.6, { size: 5.8, color: MUTED, align: 'center' });
-    if (p.partial) texto(doc, '*', cx, gy + gh + 7.6, { size: 6, color: AMBER, align: 'center' });
+    const marcas = `${p.partial ? '*' : ''}${!todosApos && !nenhumApos && p.unavailable_reason == null && !lucroDoMes(p).aposAds ? '°' : ''}`;
+    if (marcas) texto(doc, marcas, cx, gy + gh + 7.6, { size: 6, color: AMBER, align: 'center' });
   });
   // Painel de margem
   const mx = px + pw + 4;
   const mw = CW - pw - 4;
   paineis(doc, mx, py, mw, ph, WHITE);
-  texto(doc, usaAposAds ? 'Margem s/ venda após Ads' : 'Margem s/ venda', mx + 4, py + 6.7, { size: 6.8, bold: true, color: MUTED });
-  const mpts = pts.map((p) => (usaAposAds ? p.margin_after_ads : (p.gross_cents && p.profit_cents != null ? p.profit_cents / p.gross_cents : null)));
+  texto(doc, todosApos ? 'Margem s/ venda após Ads' : nenhumApos ? 'Margem s/ venda (antes de Ads)' : 'Margem s/ venda (após Ads quando disponível)',
+    mx + 4, py + 6.7, { size: 6.8, bold: true, color: MUTED });
+  const mpts = pts.map((p) => lucroDoMes(p).margem);
   const validos = mpts.filter((v): v is number => v != null);
   const lx = mx + 10;
   const lw = mw - 14;
@@ -425,8 +410,8 @@ function pagina1(doc: jsPDF, report: MonthlyReport) {
   texto(doc, `* Margem s/ venda e markup${sufixo}${parcial ? ', calculados só sobre os itens com lucro calculável' : ''}.`, M, cy + 25, { size: 6.4, color: MUTED });
 
   const y = cascata(doc, k, cy + 33);
-  const comVenda = report.series.filter((s) => (s.gross_cents ?? 0) > 0).length;
-  if (comVenda > 1) evolucao(doc, report.series, y + 8, apos);
+  // Pela quantidade de competências: mês não calculado é lacuna, não some com a série.
+  if (report.series.length > 1) evolucao(doc, report.series, y + 8);
   doc.setDrawColor(...HAIR).setLineWidth(0.25).line(M, 285, W - M, 285);
   texto(doc, `Daludi  ·  gerado em ${dataHora(report.generated_at)}`, M, 290, { size: 6.8, color: MUTED });
   texto(doc, `Página 1/${TOTAL_PAGES}`, W - M, 290, { size: 6.8, color: MUTED, align: 'right' });

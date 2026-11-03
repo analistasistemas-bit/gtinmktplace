@@ -2,13 +2,20 @@
 import type { BillingStatement, MonthlyReport, PaymentProfile, PeriodKpis, SeriesPoint } from '@/lib/platform-admin';
 
 export function kpisFixture(o: Partial<PeriodKpis> = {}): PeriodKpis {
-  return {
+  const k = {
     gross_cents: 18_452_390, orders: 1_204, units: 1_868, ticket_cents: 15_326, unit_price_cents: 9_879, cancelled_orders: 37,
     refunds_cents: 412_300, seller_coupon_cents: 61_000, net_cents: 13_900_000, tax_cents: 1_476_000, cost_cents: 6_300_000,
     profit_cents: 6_124_000, covered_gross_cents: 18_452_390, profit_coverage: 1, excluded_items: 0,
     exclusions: { sem_custo: 0, aliquota_nao_confirmada: 0, frete_nao_lido: 0 }, margin: 0.332, markup: 0.97,
     ads_cost_cents: 1_020_000, profit_after_ads_cents: 5_104_000, margin_after_ads: 0.2766, markup_after_ads: 0.81,
     profit_partial: false, unavailable_reason: null, ...o,
+  };
+  // Saldos da cascata vêm do contrato; o fixture os mantém coerentes com os overrides.
+  return {
+    channel_costs_cents: k.gross_cents - k.net_cents,
+    net_after_tax_cents: k.tax_cents == null ? null : k.net_cents - k.tax_cents,
+    excluded_gross_cents: k.gross_cents - k.covered_gross_cents,
+    ...k,
   };
 }
 
@@ -17,7 +24,8 @@ export function serieFixture(n: number): SeriesPoint[] {
   return meses.slice(12 - n).map((month, i) => ({
     month, gross_cents: 9_000_000 + i * 780_000 + (i % 3) * 400_000, profit_cents: 3_000_000 + i * 300_000,
     ads_cost_cents: 600_000 + i * 35_000, profit_after_ads_cents: 2_300_000 + i * 270_000,
-    margin_after_ads: 0.2 + i * 0.007 - (i % 4) * 0.004, partial: i === 2, unavailable_reason: null,
+    margin_after_ads: 0.2 + i * 0.007 - (i % 4) * 0.004, margin: 0.3 + i * 0.005, markup: 0.9 + i * 0.01,
+    profit_coverage: i === 2 ? 0.9 : 1, partial: i === 2, unavailable_reason: null,
   }));
 }
 

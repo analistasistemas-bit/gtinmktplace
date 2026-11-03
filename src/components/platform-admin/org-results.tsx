@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
 import type { AdsKpis, MonthlyReport, PeriodKpis, TopFamilies } from '@/lib/platform-admin';
 import {
-  MOTIVO_APOS_ADS, brl, dataHoraBr, mesPorExtenso, nomeDoMes, pct, variacaoPp, variacaoRel, type Variacao,
+  MOTIVO_APOS_ADS, barraCascata, brl, dataHoraBr, linhasCascata, mesPorExtenso, nomeDoMes, pct, variacaoPp, variacaoRel,
+  type Variacao,
 } from '@/lib/relatorio-mensal-ui';
 import { EvolucaoMensal, GraficoDiario } from './org-results-graficos';
 
@@ -154,40 +155,11 @@ function GradeIndicadores({ report }: { report: MonthlyReport }) {
 // ---------------------------------------------------------------------------------------------
 // Cascata do resultado (mesma do PDF)
 // ---------------------------------------------------------------------------------------------
-type Linha = { rotulo: string; valor: number | null; sub?: string; tipo: 'total' | 'menos' | 'final'; ate: number | null };
-
-function linhasCascata(k: PeriodKpis): Linha[] {
-  const liquido = k.tax_cents == null ? null : k.net_cents - k.tax_cents;
-  return [
-    { rotulo: 'Faturamento da loja', valor: k.gross_cents, tipo: 'total', ate: k.gross_cents },
-    { rotulo: 'Comissão e frete do ML', valor: k.gross_cents - k.net_cents, tipo: 'menos', ate: k.net_cents },
-    { rotulo: 'Imposto', valor: k.tax_cents, sub: k.tax_cents == null ? 'alíquota não confirmada' : undefined, tipo: 'menos', ate: liquido },
-    { rotulo: 'Líquido', valor: liquido, tipo: 'total', ate: liquido },
-    { rotulo: 'Custo dos produtos', valor: k.cost_cents, tipo: 'menos', ate: k.profit_cents != null && liquido != null && !k.profit_partial ? k.profit_cents : null },
-    { rotulo: k.profit_partial ? 'Lucro (parcial)' : 'Lucro', valor: k.profit_cents, tipo: 'total', ate: k.profit_cents },
-    { rotulo: 'Ads da conta', valor: k.ads_cost_cents, sub: k.ads_cost_cents == null ? 'indisponível' : undefined, tipo: 'menos', ate: k.profit_after_ads_cents },
-    {
-      rotulo: 'Lucro após Ads', valor: k.profit_after_ads_cents, tipo: 'final', ate: k.profit_after_ads_cents,
-      sub: k.profit_after_ads_cents == null ? (MOTIVO_APOS_ADS[k.unavailable_reason ?? ''] ?? 'indisponível') : undefined,
-    },
-  ];
-}
-
 function Cascata({ k }: { k: PeriodKpis }) {
-  const gross = Math.max(k.gross_cents, 1);
-  let anterior = k.gross_cents;
+  // Saldos e valores vêm prontos do contrato (`linhasCascata`); aqui só a geometria da barra.
   const linhas = linhasCascata(k).map((l) => {
-    let ini = 0;
-    let fim = 0;
-    if (l.valor != null) {
-      if (l.tipo === 'menos') {
-        fim = Math.max(0, Math.min(anterior, gross));
-        ini = Math.max(0, fim - Math.abs(l.valor));
-      } else fim = Math.max(0, Math.min(l.valor, gross));
-    }
-    const out = { ...l, esq: (ini / gross) * 100, larg: l.valor == null ? 0 : Math.max(((fim - ini) / gross) * 100, l.valor === 0 ? 0 : 0.8) };
-    if (l.tipo !== 'menos' && l.valor != null) anterior = l.valor;
-    return out;
+    const b = barraCascata(l, k.gross_cents);
+    return { ...l, barra: b && { esq: b.esq * 100, larg: Math.max(b.larg * 100, l.valor === 0 ? 0 : 0.8) } };
   });
 
   return (
@@ -213,11 +185,11 @@ function Cascata({ k }: { k: PeriodKpis }) {
               </span>
               {l.valor == null ? (
                 l.sub && <span className="col-span-2 text-xs text-muted-foreground">{l.sub}</span>
-              ) : (
+              ) : l.barra && (
                 <span aria-hidden className="relative col-span-2 h-2 rounded-full bg-muted/60">
                   <span
                     className={cn('absolute inset-y-0 rounded-full', negativo ? 'bg-destructive' : l.tipo === 'final' ? 'bg-chart-2' : l.tipo === 'total' ? 'bg-chart-1' : 'bg-chart-5')}
-                    style={{ left: `${l.esq}%`, width: `${l.larg}%` }}
+                    style={{ left: `${l.barra.esq}%`, width: `${l.barra.larg}%` }}
                   />
                 </span>
               )}
@@ -228,7 +200,7 @@ function Cascata({ k }: { k: PeriodKpis }) {
       {(k.profit_partial || k.excluded_items > 0) && (
         <Faixa tom="aviso">
           <span>
-            <strong>Itens sem lucro calculável: {fmtInt(k.excluded_items)}</strong> ({brl(k.gross_cents - k.covered_gross_cents)} de faturamento fora do lucro).
+            <strong>Itens sem lucro calculável: {fmtInt(k.excluded_items)}</strong> ({brl(k.excluded_gross_cents)} de faturamento fora do lucro).
             O líquido considera todos os itens; custo, lucro e margens consideram só os itens com lucro calculável.
           </span>
         </Faixa>
@@ -387,8 +359,8 @@ export function OrgResults({ report: query }: { report: UseQueryResult<MonthlyRe
   const erros = report.warnings.filter((w) => w.severity === 'error');
   const avisos = report.warnings.filter((w) => w.severity === 'warning');
   const semVenda = k.orders === 0 && k.gross_cents === 0;
-  const apos = k.profit_after_ads_cents != null;
-  const comVenda = report.series.filter((s) => (s.gross_cents ?? 0) > 0).length;
+  // Pela quantidade de competências: mês não calculado é lacuna, não some com a série inteira.
+  const evolucao = report.series.length > 1;
   const motivoSemLucro = MOTIVO_APOS_ADS[k.unavailable_reason ?? ''] ?? 'dado ausente';
 
   return (
@@ -408,15 +380,21 @@ export function OrgResults({ report: query }: { report: UseQueryResult<MonthlyRe
       {avisos.length > 0 && <Faixa tom="aviso"><div className="space-y-1">{avisos.map((w) => <p key={w.code}>{w.message}</p>)}</div></Faixa>}
 
       {semVenda ? (
-        <EmptyState icon={BarChart3} title={`Sem vendas em ${mesPorExtenso(report.month)}`}
-          description="Não há pedidos faturáveis neste mês. Escolha outro mês para ver os resultados." />
+        // Vazio só no bloco de vendas: Ads, visitas, cancelamentos e estornos do mês seguem conhecidos.
+        <>
+          <EmptyState icon={BarChart3} title={`Sem vendas em ${mesPorExtenso(report.month)}`}
+            description="Não há pedidos faturáveis neste mês; os demais indicadores conhecidos seguem abaixo." />
+          <GradeIndicadores report={report} />
+          {evolucao && <EvolucaoMensal series={report.series} />}
+          <BlocoAds ads={report.ads} />
+        </>
       ) : (
         <>
           <Destaques report={report} />
           <GradeIndicadores report={report} />
           <GraficoDiario report={report} motivoSemLucro={motivoSemLucro} />
-          <div className={cn('grid gap-4', comVenda > 1 && 'lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
-            {comVenda > 1 && <EvolucaoMensal series={report.series} usaAposAds={apos} />}
+          <div className={cn('grid gap-4', evolucao && 'lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]')}>
+            {evolucao && <EvolucaoMensal series={report.series} />}
             <Cascata k={k} />
           </div>
           <Produtos tf={report.top_families} />

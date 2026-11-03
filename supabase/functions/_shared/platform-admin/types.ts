@@ -265,6 +265,12 @@ export type PeriodKpis = {
   profit_coverage: number | null;
   excluded_items: number;
   exclusions: ProfitExclusions;
+  /** Comissão + frete do ML (faturamento − líquido do ML). */
+  channel_costs_cents: Cents;
+  /** Líquido após imposto (= "Líquido" da cascata); null sem alíquota confirmada. */
+  net_after_tax_cents: Cents | null;
+  /** Faturamento dos itens faturáveis sem lucro calculável (Σ `exclusions`). */
+  excluded_gross_cents: Cents;
   /** Antes de Ads: lucro ÷ covered_gross (parcial quando `profit_partial`). */
   margin: number | null;
   markup: number | null;
@@ -288,6 +294,12 @@ export type SeriesPoint = {
   ads_cost_cents: Cents | null;
   profit_after_ads_cents: Cents | null;
   margin_after_ads: number | null;
+  /** Antes de Ads, sobre a base calculável (lucro ÷ faturamento dos itens calculáveis). */
+  margin: number | null;
+  markup: number | null;
+  /** Faturamento dos itens calculáveis ÷ faturamento dos itens faturáveis. */
+  profit_coverage: number | null;
+  /** Lucro parcial (algum item faturável sem lucro calculável). */
   partial: boolean;
   /** Mês não calculado (volume acima do teto ou falha de leitura): ponto indisponível, nunca zero. */
   unavailable_reason: 'volume' | 'leitura' | null;

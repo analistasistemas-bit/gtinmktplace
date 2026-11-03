@@ -44,6 +44,19 @@ describe('gerarRelatorioMensalPdf', () => {
     expect(pdf).toContain('Família desconhecida');
   });
 
+  it('evolução aparece com um mês não calculado na série (decide pela quantidade de competências)', () => {
+    const report = relatorioFixture({ meses: 2 });
+    report.series[0] = { ...report.series[0], gross_cents: null, profit_cents: null, profit_after_ads_cents: null, margin_after_ads: null,
+      margin: null, markup: null, profit_coverage: null, unavailable_reason: 'volume' };
+    expect(pdfDe(montar({}, undefined, undefined, report))).toContain('Evolução dos últimos meses');
+  });
+
+  it('itens fora do lucro usam o valor do contrato (excluded_gross_cents), não uma subtração no front', () => {
+    const report = relatorioFixture();
+    report.summary.current = kpisFixture({ profit_partial: true, excluded_items: 2, excluded_gross_cents: 123_45 });
+    expect(pdfDe(montar({}, undefined, undefined, report))).toContain('R$ 123,45 de faturamento fora do lucro');
+  });
+
   it('mostra o selo de atribuição em aberto e some quando final', () => {
     expect(pdfDe(montar())).toContain('Atribuição do ML em fechamento até 15/11');
     expect(pdfDe(montar({ atribuicaoAberta: false }))).not.toContain('Atribuição do ML em fechamento');
