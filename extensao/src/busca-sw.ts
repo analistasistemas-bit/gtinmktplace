@@ -7,7 +7,7 @@ import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
 import { identidadeAtual, limparAbasNaFila, seAindaIdentidade } from './sessao';
-import { aplicarHits, aplicarResposta, gravarCache, lerCache, planejarLote, type CacheEnr, type RespostaEnriquecimento } from './cache-enriquecimento';
+import { aplicarHits, aplicarResposta, gravarCache, lerCache, marcasDoPedido, planejarLote, type CacheEnr, type RespostaEnriquecimento } from './cache-enriquecimento';
 import { enriquecimentoDe, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
 
@@ -27,6 +27,9 @@ export interface RespostaBusca {
   /** Catálogos enriquecidos (vendedor, medalha, UF, tipo, comissão, vendedores, idade) e a fila deles (Task 10).
    *  Opcional só no tipo (estado de antes da 0.5.0); `respostaDe` sempre preenche. */
   enriquecimento?: EstadoEnriquecimento;
+  /** Impressão da conta ML da org vista pela identificação desta página (null = sem conexão; ausente = desconhecida,
+   *  edge antiga). O cache do enriquecimento só é reutilizado se for da mesma conta. */
+  contaMl?: string | null;
 }
 
 export interface EstadoBusca {
@@ -47,6 +50,7 @@ function respostaDe(e: EstadoBusca | null): RespostaViva {
     resultados: { ...r.resultados }, metadados: { ...r.metadados }, precoDaMargem: { ...r.precoDaMargem },
     limiteEm: typeof r.limiteEm === 'number' ? r.limiteEm : null, usoRegistrado: r.usoRegistrado === true,
     enriquecimento: enriquecimentoDe(r.enriquecimento),
+    ...(typeof r.contaMl === 'string' || r.contaMl === null ? { contaMl: r.contaMl } : {}),
   };
 }
 
@@ -209,7 +213,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         .filter((c) => !identificados.has(c.itemId) && (!r.metadados[c.itemId] || forcar.has(c.itemId))).slice(0, MAX_POR_ANALISE);
       if (lote.length === 0) { fase = 'margem'; continue; }
       for (const c of lote) identificados.add(c.itemId);
-      const resp = await chamarExtensao<{ itens?: unknown }>({
+      const resp = await chamarExtensao<{ itens?: unknown; contaMl?: unknown }>({
         acao: 'identificar_busca', eanDaBusca, itens: lote.map((c) => ({ itemId: c.itemId, catalogProductId: c.catalogProductId })),
         // Telemetria `busca`: uma por geração de página, no 1º lote (falhou → o próximo pede de novo).
         registrarUso: !r.usoRegistrado,
@@ -223,8 +227,16 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         fase = 'margem';
         continue;
       }
+      const contaMl = resp.ok && (typeof resp.dados.contaMl === 'string' || resp.dados.contaMl === null) ? resp.dados.contaMl : undefined;
+      if (contaMl !== undefined && contaMudou(contaMl, r.contaMl, (await lerCache(identidade)).conta)) {
+        // Outra conta ML (ou conexão removida): comissão e margem lidas com a anterior saem de todas as abas e do cache
+        // ANTES de qualquer reuso.
+        await limparAbasNaFila();
+        return SEM_SESSAO;
+      }
       const enviado = new Map(lote.map((c) => [c.itemId, c]));
       const gravou = await gravarSe(p, (r2, agora) => {
+        if (contaMl !== undefined) r2.contaMl = contaMl;
         r2.usoRegistrado = true; // pedido nesta chamada (ou já antes) e a edge respondeu: contou
         for (const m of itens) {
           const ev = enviado.get(m?.itemId), a = agora.get(m?.itemId);
@@ -302,7 +314,9 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         continue;
       }
       if (enr.falhou || enr.indisponivel) break;
-      const cache = await lerCache(identidade);
+      // Cache só da conta ML confirmada para esta página (identificação); conta desconhecida = sem cache.
+      const bruto = await lerCache(identidade);
+      const cache: CacheEnr = r.contaMl !== undefined && bruto.conta === r.contaMl ? bruto : { ...bruto, produtos: {}, ofertas: {}, vendedores: {} };
       const plano = planejarLote(e.observado.cards, r.metadados, enr, cache, Date.now(), jaPedidos);
       retomar ||= plano.esperar;
       if (plano.hits.usados.length && !(await gravarSe(p, (r2) => aplicarHits(r2.enriquecimento, plano.hits), () => (c) => {
@@ -310,7 +324,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       }))) { falha = recusada(); break; }
       const pedido = plano.pedido;
       if (!pedido) break;
-      const marcas = [...pedido.catalogos.map((c) => c.catalogProductId), ...pedido.perfis.map((s) => `perfil:${s}`)];
+      const marcas = marcasDoPedido(pedido);
       for (const m of marcas) jaPedidos.add(m);
       const cats = new Set(pedido.catalogos.map((c) => c.catalogProductId));
       const lote = e.observado.cards.filter((c) => c.catalogProductId && cats.has(c.catalogProductId));
@@ -330,18 +344,26 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         break;
       }
       const valor = d.valor, conta = typeof valor.conta === 'string' ? valor.conta : null;
-      if (conta !== null && cache.conta !== null && cache.conta !== conta) {
+      if (conta !== null && contaMudou(conta, r.contaMl, bruto.conta)) {
         // Outra conta ML na org: comissão (e margem) lidas com a anterior saem de todas as abas e do cache.
         await limparAbasNaFila();
         return SEM_SESSAO;
       }
       let noCache: ((c: CacheEnr) => void) | null = null;
       if (!(await gravarSe(p, (r2) => { noCache = aplicarResposta(r2.enriquecimento, pedido, valor, Date.now()); },
-        () => (c) => { if (conta !== null) c.conta = conta; noCache?.(c); }))) { falha = recusada(); break; }
+        () => (c) => {
+          if (conta !== null && c.conta !== conta) { c.produtos = {}; c.ofertas = {}; c.vendedores = {}; c.conta = conta; }
+          noCache?.(c);
+        }))) { falha = recusada(); break; }
     }
   }
   if (retomar) await pedirRetomada(tabId, vale);
   return falha ?? { ok: true };
+}
+
+/** Conta ML `nova` difere da já vista nesta página ou da gravada no cache (null = sem conexão também conta). */
+function contaMudou(nova: string | null, daPagina: string | null | undefined, doCache: string | null): boolean {
+  return (daPagina !== undefined && daPagina !== nova) || (doCache !== null && doCache !== nova);
 }
 
 /** Pulso pedido à página (MV3 não garante timer longo no SW): o content script manda `publiai:busca-pulso` depois. */

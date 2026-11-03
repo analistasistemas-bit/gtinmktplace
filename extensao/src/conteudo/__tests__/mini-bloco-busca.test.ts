@@ -172,7 +172,7 @@ it('enriquecido e compacto: vendedor · medalha · UF; tipo · comissão; giro; 
   renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), undefined, ok(50, 23.4) as never, 50, vistaDoCard(card(), completo()), AGORA);
   expect(linhas()).toEqual([
     'Loja Boa· Platinum· SPLoja oficial',
-    'Clássico·comissãoR$ 7,10 (14%)ⓘ',
+    'Clássico·comissão na sua contaR$ 7,10 (14%)ⓘ',
     'Giro mín.R$ 5 milⓘ',
     '9 vendedores·catálogohá 120 diasⓘ',
     'Minha margem · Clássico 23,4%',
@@ -192,7 +192,8 @@ it('moeda compacta do Mini-bloco: mil / mi com 1 casa (sem ",0")', () => {
 
 it('outra aparição do item com outro preço: comissão não aparece (é do preço exato)', () => {
   comEnr(completo(), card({ ocorrencias: [{ posicao: 9, patrocinado: true, preco: 55, vendidosTexto: null }] }));
-  expect(texto()).not.toContain('comissão');
+  expect(texto()).not.toContain('comissão na sua conta R');
+  expect(texto()).not.toContain('R$ 7,10');
 });
 
 it('leitura parcial: "N+ vendedores" (sentido no ⓘ); sem vendedor identificado: "vendedores não identificados"', () => {
@@ -220,7 +221,23 @@ it('estados: aguardando dados, próxima janela, oferta não localizada, perfil n
   expect(texto()).toContain('Tipo não confirmado'); // comissão aguardando ainda é mostrada à parte
 
   expect(texto()).toContain('Tipo não confirmado');
-  expect(texto()).toContain('comissãoaguardandoⓘ');
+  expect(texto()).toContain('comissão na sua contaaguardandoⓘ');
+});
+
+it('pendência por componente: metadados lidos + ofertas aguardando janela → mostra a idade E a espera', () => {
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, aguardandoJanela: true } }, retomarEm: AGORA + 1000 }));
+  expect(texto()).toContain('Aguardando próxima janela');
+  expect(texto()).toContain('há 120 dias');
+  raizes = [];
+  // Ofertas lidas, metadados ainda aguardando: vendedores + "idade aguardando".
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never, produto: { estado: 'aguardando', retomarEm: AGORA + 1000, tentativas: 1 } } } }));
+  expect(texto()).toContain('9 vendedores');
+  expect(texto()).toContain('idade aguardando');
+  raizes = [];
+  // Aguardando esgotado (2 tentativas) deixa de ser espera.
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never, produto: { estado: 'aguardando', retomarEm: null, tentativas: 2 } } } }));
+  expect(texto()).not.toContain('idade aguardando');
+  expect(texto()).not.toContain('Aguardando');
 });
 
 it('sem tipo e sem comissão: uma frase só ("Tipo e comissão não confirmados")', () => {

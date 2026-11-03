@@ -148,7 +148,7 @@ export function renderizarMiniBlocoDaBusca(
   if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
 
   // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem dado do catálogo: o estado da espera.
-  if (vista?.espera) {
+  if (vista?.espera && vista.faltaOfertas) {
     bloco.append(linha(el('span', `t ${vista.espera === 'dados' || vista.espera === 'janela' ? 'aguardando' : 'neutro'}`, vista.motivo ?? ESPERA[vista.espera as keyof typeof ESPERA])));
   } else if (exata?.estado === 'nao_encontrada') {
     bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
@@ -159,7 +159,7 @@ export function renderizarMiniBlocoDaBusca(
     // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
     else if (oc.preco === exata.preco) {
       const c = exata.comissao;
-      l.append(el('span', 'v', '·'), el('span', 'v', 'comissão'));
+      l.append(el('span', 'v', '·'), el('span', 'v', 'comissão na sua conta'));
       if (c.estado === 'ok') l.append(el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
       else l.append(el('span', `t ${c.estado === 'aguardando' ? 'aguardando' : 'neutro'}`, c.estado === 'aguardando' ? 'aguardando' : 'indisponível'));
       if (c.estado === 'indisponivel') l.title = c.motivo;
@@ -178,8 +178,9 @@ export function renderizarMiniBlocoDaBusca(
   }
 
   // 4. Catálogo: vendedores (N+ = leitura parcial) · idade com semáforo (cor sempre com o texto "há D dias").
-  const o = vista?.espera ? null : vista?.ofertas;
+  const o = vista?.ofertas;
   const idade = vista ? idadeDoCatalogo(vista.criadoEm, agora) : null;
+  const idadeAguardando = !!o && !!vista?.espera && vista.faltaProduto && !vista.faltaOfertas;
   if (o || idade) {
     const l = linha();
     l.classList.add('pq');
@@ -187,6 +188,7 @@ export function renderizarMiniBlocoDaBusca(
       const n = o.vendedoresIdentificados;
       l.append(el('b', '', !o.completa && n === 0 ? 'vendedores não identificados' : `${n}${o.completa ? '' : '+'} ${n === 1 ? 'vendedor' : 'vendedores'}`));
     }
+    if (idadeAguardando) l.append(el('span', 'v', '·'), el('span', 't aguardando', 'idade aguardando'));
     if (idade) {
       if (o) l.append(el('span', 'v', '·'));
       const g = el('span', 'g');

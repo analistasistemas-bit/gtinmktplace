@@ -434,12 +434,14 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
     case 'identificar_busca': {
       // Só banco, sem cota de 30/min. Telemetria `busca`: uma por geração de página — a extensão pede (registrarUso)
       // só no 1º lote dela; conta depois da identificação (falha inteira não conta, o lote é refeito pedindo de novo).
-      const r = await identificarBusca(admin, orgId, p, depsCasamento(admin, orgId));
+      // contaMl: impressão da conta ML da org (só a linha da conexão, sem token): o navegador valida o cache do
+      // enriquecimento antes de reusá-lo e limpa tudo se a conta mudou (Revisão 03/11, regra 10).
+      const [r, conexao] = await Promise.all([identificarBusca(admin, orgId, p, depsCasamento(admin, orgId)), resolverConexao(admin, orgId, 'mercado_livre')]);
       if (p.registrarUso === true) {
         const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
         if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       }
-      return r;
+      return { ...r, contaMl: conexao?.contaExternaId ? await impressaoConta(conexao.contaExternaId) : null };
     }
     case 'enriquecer_catalogos_busca': {
       // Leitura (suporte só leitura pode; sem auditoria, como catalogo). Sem extensao_registrar_uso: a busca já
@@ -447,18 +449,15 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
       if (!conexao?.contaExternaId) return SEM_CONEXAO;
       const token = await getValidAccessTokenConexao(conexao);
-      const { catalogos, perfis, perfisEmCache } = p;
+      const { catalogos, perfis, perfisEmCache, perfisRestantes } = p;
       const conta = String(conexao.contaExternaId);
-      // Impressão opaca da conta ML (Revisão 03/11, regra 10): o navegador chaveia o cache por ela e descarta o que
-      // foi lido com outra conta (a comissão é da conta). Nunca o id cru.
-      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`publiai-ext-conta:${conta}`)));
       return {
         estado: 'ok',
         valor: {
-          ...await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+          ...await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache, perfisRestantes }, {
             conta, agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
           }),
-          conta: [...digest.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join(''),
+          conta: await impressaoConta(conta),
         },
       };
     }
@@ -486,6 +485,13 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       return { ok: true };
     }
   }
+}
+
+/** Impressão opaca da conta ML (Revisão 03/11, regra 10): o navegador chaveia o cache por ela e descarta o que foi
+ *  lido com outra conta (a comissão é da conta). Nunca o id cru. */
+async function impressaoConta(contaExternaId: string | number): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`publiai-ext-conta:${contaExternaId}`)));
+  return [...d.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 Deno.serve(async (req) => {

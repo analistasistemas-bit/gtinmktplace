@@ -80,8 +80,12 @@ export function valorDaComissao(c: ComissaoML, preco: number): number {
 export type VistaCard =
   | null
   | {
-    /** 'dados' = ainda não pedido/respondido; 'janela' = cota esgotada; 'falha' = rede; 'indisponivel' = sem conexão. */
+    /** O que ainda falta, por componente (o que já chegou continua visível): 'dados' = ainda não pedido/respondido;
+     *  'janela' = cota/orçamento esgotado; 'falha' = rede; 'indisponivel' = sem conexão. null = nada pendente. */
     espera: 'dados' | 'janela' | 'falha' | 'indisponivel' | null;
+    /** Metadados (idade) e ofertas (vendedores/oferta exata do item) ainda pendentes. */
+    faltaProduto: boolean;
+    faltaOfertas: boolean;
     motivo?: string;
     criadoEm: string | null | undefined; // undefined = metadados não lidos
     produtoIndisponivel: boolean;
@@ -91,16 +95,22 @@ export type VistaCard =
     vendedor: VendedorVista | null;
   };
 
-export function vistaDoCard(card: Pick<CardBusca, 'itemId' | 'catalogProductId' | 'identidadeConflitante'>, e: EstadoEnriquecimento | undefined): VistaCard {
+export function vistaDoCard(card: Pick<CardBusca, 'itemId' | 'catalogProductId' | 'identidadeConflitante'> & { preco?: number | null }, e: EstadoEnriquecimento | undefined): VistaCard {
   if (!card.catalogProductId || card.identidadeConflitante) return null;
   const c = e?.catalogos[card.catalogProductId];
   const ofertas = c?.ofertas?.estado === 'ok' ? c.ofertas : null;
   const exata = ofertas?.exatas[card.itemId] ?? null;
   const sellerId = exata?.estado === 'ok' ? exata.sellerId : null;
-  const temDado = !!(c?.produto || c?.ofertas);
-  const espera = temDado ? null : e?.indisponivel ? 'indisponivel' : e?.falhou ? 'falha' : c?.aguardandoJanela ? 'janela' : 'dados';
+  // Pendente = ausente ou aguardando com nova tentativa ainda possível (esgotado deixa de ser espera).
+  const pendente = (x: ProdutoVista | OfertasVista | undefined) => !x || (x.estado === 'aguardando' && x.tentativas < 2);
+  const faltaProduto = pendente(c?.produto);
+  // Item do card ainda sem oferta exata numa leitura já feita (21º em diante, scroll): pendente também.
+  const faltaOfertas = pendente(c?.ofertas) || (!!ofertas && !exata && typeof card.preco === 'number' && card.preco > 0);
+  const aguarda = (x: ProdutoVista | OfertasVista | undefined) => x?.estado === 'aguardando';
+  const espera = !faltaProduto && !faltaOfertas ? null : e?.indisponivel ? 'indisponivel' : e?.falhou ? 'falha'
+    : c?.aguardandoJanela || aguarda(c?.produto) || aguarda(c?.ofertas) ? 'janela' : 'dados';
   return {
-    espera, ...(espera === 'indisponivel' ? { motivo: e!.indisponivel! } : {}),
+    espera, ...(espera === 'indisponivel' ? { motivo: e!.indisponivel! } : {}), faltaProduto, faltaOfertas,
     criadoEm: c?.produto?.estado === 'ok' ? c.produto.criadoEm : undefined,
     produtoIndisponivel: c?.produto?.estado === 'indisponivel',
     ofertas, ofertasEstado: c?.ofertas?.estado ?? null, exata,

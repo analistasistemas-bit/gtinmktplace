@@ -199,6 +199,20 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     expect(r.vendedores.at(-1)).toEqual({ sellerId: 5, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
   });
 
+  it('saldo de perfis da busca (perfisRestantes) limita também os automáticos; 0 = nenhum /users', async () => {
+    respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([1, 2, 3].map((s) => oferta(`MLB1${s}`, s, { listing_type_id: 'x' }))));
+    for (const s of [1, 2, 3]) respostasMl.set(`${ML}/users/${s}`, usuario(s));
+    const itens = [1, 2, 3].map((s) => ({ itemId: `MLB1${s}`, preco: 10 }));
+    const zero = await run(pedido([cat('MLB1', itens, ['ofertas'])], { perfisRestantes: 0 }));
+    expect(urlsMl.filter((u) => u.includes('/users/'))).toEqual([]);
+    expect(zero.vendedores).toEqual([1, 2, 3].map((sellerId) => ({ sellerId, estado: 'indisponivel', motivo: 'limite de perfis da busca' })));
+    expect((zero.catalogos[0].ofertas as { exatas: { perfil: unknown }[] }).exatas.map((e) => e.perfil)).toEqual(['indisponivel', 'indisponivel', 'indisponivel']);
+    urlsMl = [];
+    const dois = await run(pedido([cat('MLB1', itens, ['ofertas'])], { perfisRestantes: 2 }));
+    expect(urlsMl.filter((u) => u.includes('/users/'))).toEqual([1, 2].map((s) => `${ML}/users/${s}`));
+    expect(dois.vendedores.map((v) => [v.sellerId, v.estado])).toEqual([[1, 'ok'], [2, 'ok'], [3, 'indisponivel']]);
+  });
+
   it('oferta sem seller_id: identificação incompleta explícita, nunca "0 vendedores, completa"', async () => {
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7, { seller_id: undefined })]));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB10', preco: 10 }], ['ofertas'])]));

@@ -451,6 +451,11 @@ describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
     expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5] })).not.toBeNull();
     expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5, 6] })).toBeNull();
     expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: Array.from({ length: 101 }, (_, i) => i + 1) })).toBeNull();
+    // Saldo de perfis da busca (aditivo): inteiro 0..20; ausente = sem o campo.
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 0 })).toMatchObject({ perfisRestantes: 0 });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 20 })).toMatchObject({ perfisRestantes: 20 });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')] })).not.toHaveProperty('perfisRestantes');
+    for (const v of [-1, 21, 1.5, '3', null]) expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: v })).toBeNull();
   });
   it.each([
     ['vazio', { catalogos: [] }],

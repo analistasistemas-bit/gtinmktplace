@@ -321,8 +321,8 @@ describe('Catálogos e vendedores (Task 10)', () => {
   it('medalha, UF, tipo e faixas com denominadores; parciais "≥ N"; desconhecidos à parte', () => {
     render(<Busca {...props({ estado: comEnr({
       catalogos: {
-        MLB100: { ofertas: { estado: 'ok', total: 3, lidas: 3, vendedoresIdentificados: 3, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
-        MLB200: { ofertas: { estado: 'ok', total: 50, lidas: 50, vendedoresIdentificados: 31, ofertasSemVendedor: 2, completa: false, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } },
+        MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 3, lidas: 3, vendedoresIdentificados: 3, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
+        MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 50, lidas: 50, vendedoresIdentificados: 31, ofertasSemVendedor: 2, completa: false, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } },
       },
       vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'platinum', uf: 'SP' }, 8: { estado: 'indisponivel' } },
     }) })} />);
@@ -348,6 +348,16 @@ describe('Catálogos e vendedores (Task 10)', () => {
     within(secao()).getByText('Aguardando dados do catálogo');
     unmount();
     render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { aguardandoJanela: true } }, retomarEm: Date.now() + 30_000 }) })} />);
+    within(secao()).getByText('Aguardando próxima janela');
+  });
+
+  it('catálogo com metadados lidos e ofertas pendentes não conta como lido: aviso de espera continua', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: {
+      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 1, lidas: 1, vendedoresIdentificados: 1, ofertasSemVendedor: 0, completa: true,
+        exatas: { MLB1000001: { estado: 'nao_encontrada', preco: 100 }, MLB1000002: { estado: 'nao_encontrada', preco: 100 } } } },
+      MLB200: { produto: { estado: 'ok', criadoEm: null }, aguardandoJanela: true },
+    }, retomarEm: Date.now() + 30_000 }) })} />);
+    within(secao()).getByText('1 de 2');
     within(secao()).getByText('Aguardando próxima janela');
   });
 

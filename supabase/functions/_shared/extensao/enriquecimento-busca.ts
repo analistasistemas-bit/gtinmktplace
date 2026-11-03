@@ -32,6 +32,8 @@ export interface PedidoEnriquecimento {
   perfis: number[];
   /** Vendedores com perfil válido no cache do navegador: não são consultados. */
   perfisEmCache: number[];
+  /** Saldo de perfis da busca (teto de 20 no navegador), vale também para os automáticos. Ausente = só os 5 por pedido. */
+  perfisRestantes?: number;
 }
 
 export interface RespostaMl { status: number; corpo: unknown }
@@ -225,7 +227,8 @@ export async function enriquecerCatalogosBusca(
   const sellers = liberado
     ? [...new Set([...p.perfis, ...exatas.flatMap((e) => (e.sellerId ? [e.sellerId] : []))])].filter((s) => !emCache.has(s))
     : [];
-  const consultar = sellers.slice(0, MAX_PERFIS_PEDIDO);
+  const teto = Math.min(MAX_PERFIS_PEDIDO, p.perfisRestantes ?? MAX_PERFIS_PEDIDO);
+  const consultar = sellers.slice(0, teto);
 
   // Fase 2: perfis + comissões ausentes (limite superior calculado depois das ofertas).
   const r2 = await despacharFase([
@@ -240,7 +243,9 @@ export async function enriquecerCatalogosBusca(
     if (r.status !== 200 || !registro(r.corpo)) return { sellerId, estado: 'indisponivel', motivo: 'perfil indisponível' };
     return { sellerId, estado: 'ok', ...vendedorDoUsuario(r.corpo), expiraEm: em(TTL_PERFIL_MS) };
   });
-  for (const sellerId of sellers.slice(MAX_PERFIS_PEDIDO)) vendedores.push({ sellerId, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
+  // Saldo da busca esgotado: o resto não é consultado nem fica pendente (o navegador não volta a pedir).
+  if (teto < MAX_PERFIS_PEDIDO) for (const sellerId of sellers.slice(teto)) vendedores.push({ sellerId, estado: 'indisponivel', motivo: 'limite de perfis da busca' });
+  else for (const sellerId of sellers.slice(MAX_PERFIS_PEDIDO)) vendedores.push({ sellerId, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
   if (!liberado) for (const sellerId of p.perfis) vendedores.push({ sellerId, ...espera(cota.retomarEm) });
 
   const gravar: Promise<unknown>[] = [];

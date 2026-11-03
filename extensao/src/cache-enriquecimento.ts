@@ -102,7 +102,15 @@ export function gravarCache(identidade: string, mudar: (c: CacheEnr) => void, ag
 }
 
 // ---------------------------------------------------------------- planejamento
-export interface PedidoLote { catalogos: CatalogoPedido[]; perfis: number[]; perfisEmCache: number[] }
+export interface PedidoLote { catalogos: CatalogoPedido[]; perfis: number[]; perfisEmCache: number[]; /** Saldo de perfis da busca (a edge limita também os automáticos). */ perfisRestantes: number }
+
+/** Marcas do que um pedido levou, para `jaPedidos` (nada se repete dentro da rodada). */
+export function marcasDoPedido(p: PedidoLote): string[] {
+  return [
+    ...p.catalogos.flatMap((c) => [...c.componentes.map((x) => `${x}:${c.catalogProductId}`), ...c.itens.map((i) => `item:${i.itemId}`)]),
+    ...p.perfis.map((s) => `perfil:${s}`),
+  ];
+}
 export interface Plano {
   /** Vindo do cache: aplicar na vista da aba (sem edge, sem cota). */
   hits: { catalogos: Record<string, CatalogoVista>; vendedores: Record<string, VendedorVista>; usados: { m: (typeof MAPAS)[number]; k: string }[] };
@@ -126,7 +134,7 @@ export function planejarLote(
   cards: Pick<CardBusca, 'itemId' | 'catalogProductId' | 'preco' | 'identidadeConflitante'>[],
   metadados: Record<string, MetadadosCardBusca | undefined>,
   enr: EstadoEnriquecimento, cache: CacheEnr, agora: number,
-  /** `catalogo` e `perfil:{id}` já pedidos nesta rodada: não repetem (sem laço dentro da rodada). */
+  /** marcasDoPedido já pedidas nesta rodada: não repetem (sem laço dentro da rodada). */
   jaPedidos: Set<string>,
 ): Plano {
   const hits: Plano['hits'] = { catalogos: {}, vendedores: {}, usados: [] };
@@ -139,7 +147,7 @@ export function planejarLote(
     if (!c.catalogProductId || c.identidadeConflitante) continue;
     if (!itensPorCat.has(c.catalogProductId)) { itensPorCat.set(c.catalogProductId, []); ordem.push(c.catalogProductId); }
     const itens = itensPorCat.get(c.catalogProductId)!;
-    if (typeof c.preco === 'number' && c.preco > 0 && itens.length < MAX_ITENS_CATALOGO && !itens.some((i) => i.itemId === c.itemId)) itens.push({ itemId: c.itemId, preco: c.preco });
+    if (typeof c.preco === 'number' && c.preco > 0 && !itens.some((i) => i.itemId === c.itemId)) itens.push({ itemId: c.itemId, preco: c.preco });
   }
   const janelaFechada = enr.retomarEm !== null && agora < enr.retomarEm;
   const valida = <T extends { exp: number }>(e: T | undefined) => (e && e.exp > agora ? e : undefined);
@@ -152,19 +160,30 @@ export function planejarLote(
     const v = vistas(cat);
     let produto = precisa(v.produto, agora);
     let ofertas = precisa(v.ofertas, agora);
-    if (v.ofertas?.estado === 'ok' && !cobre(v.ofertas, itens)) ofertas = 'sim';
+    // Itens ainda sem oferta exata ao preço do card (21º em diante, scroll, preço novo); leitura nova = todos.
+    let pendentes = v.ofertas?.estado === 'ok' ? itens.filter((i) => (v.ofertas as OfertasOk).exatas[i.itemId]?.preco !== i.preco) : itens;
+    if (v.ofertas?.estado === 'ok' && pendentes.length) ofertas = 'sim';
     const hit: CatalogoVista = {};
     const p = valida(cache.produtos[cat]);
     if (produto === 'sim' && p) { hit.produto = { estado: 'ok', criadoEm: p.criadoEm }; hits.usados.push({ m: 'produtos', k: cat }); produto = 'nao'; }
     const o = valida(cache.ofertas[cat]);
-    if (ofertas === 'sim' && o && cobre(o.v, itens)) { hit.ofertas = o.v; hits.usados.push({ m: 'ofertas', k: cat }); ofertas = 'nao'; }
+    if (ofertas === 'sim' && o && cobre(o.v, pendentes)) {
+      hit.ofertas = { ...o.v, exatas: { ...(v.ofertas?.estado === 'ok' ? v.ofertas.exatas : {}), ...o.v.exatas } };
+      hits.usados.push({ m: 'ofertas', k: cat });
+      ofertas = 'nao';
+      pendentes = [];
+    }
     if (hit.produto || hit.ofertas) hits.catalogos[cat] = hit;
-    const componentes = [produto === 'sim' && 'produto', ofertas === 'sim' && 'ofertas'].filter(Boolean) as Componente[];
     esperar ||= produto === 'esperar' || ofertas === 'esperar';
-    if (componentes.length === 0) continue;
     // Já pedido nesta rodada (aguardando de novo) ou janela fechada: fica para o pulso.
-    if (jaPedidos.has(cat) || janelaFechada) { esperar = true; continue; }
-    const enviar = componentes.includes('ofertas') ? itens : [];
+    const novos = pendentes.filter((i) => !jaPedidos.has(`item:${i.itemId}`)).slice(0, MAX_ITENS_CATALOGO);
+    const pedirProduto = produto === 'sim' && !jaPedidos.has(`produto:${cat}`);
+    const pedirOfertas = ofertas === 'sim' && (novos.length > 0 || (pendentes.length === 0 && !jaPedidos.has(`ofertas:${cat}`)));
+    if ((produto === 'sim' && !pedirProduto) || (ofertas === 'sim' && !pedirOfertas)) esperar = true;
+    const componentes = [pedirProduto && 'produto', pedirOfertas && 'ofertas'].filter(Boolean) as Componente[];
+    if (componentes.length === 0) continue;
+    if (janelaFechada) { esperar = true; continue; }
+    const enviar = pedirOfertas ? novos : [];
     if (cheio || catalogos.length === MAX_CATALOGOS_LOTE || itensLote + enviar.length > MAX_ITENS_LOTE) { cheio = true; continue; }
     catalogos.push({ catalogProductId: cat, componentes, itens: enviar });
     itensLote += enviar.length;
@@ -195,13 +214,14 @@ export function planejarLote(
   if (janelaFechada && faltam.length && enr.perfis < MAX_PERFIS_BUSCA) esperar = true;
 
   if (catalogos.length === 0 && perfis.length === 0) return { hits, pedido: null, esperar };
-  // Com perfil válido aqui (ou teto da busca atingido), a edge não consulta de novo. ponytail: vendedor ainda
-  // desconhecido de uma oferta do lote não tem como entrar aqui; o teto de 20 pode passar em até 4 no último lote.
+  // Com perfil válido aqui, a edge não consulta de novo; o saldo da busca limita também os perfis automáticos.
   const emCache = new Set<number>();
   for (const [k, v] of [...Object.entries(enr.vendedores), ...Object.entries(hits.vendedores)]) if (v.estado === 'ok') emCache.add(Number(k));
   for (const [k, e] of Object.entries(cache.vendedores)) if (valida(e)) emCache.add(Number(k));
-  if (enr.perfis >= MAX_PERFIS_BUSCA) for (const s of conhecidos) emCache.add(s);
-  return { hits, pedido: { catalogos, perfis, perfisEmCache: [...emCache].filter((s) => Number.isInteger(s) && s > 0).slice(0, MAX_PERFIS_EM_CACHE) }, esperar };
+  return { hits, pedido: {
+    catalogos, perfis, perfisEmCache: [...emCache].filter((s) => Number.isInteger(s) && s > 0).slice(0, MAX_PERFIS_EM_CACHE),
+    perfisRestantes: Math.max(0, MAX_PERFIS_BUSCA - enr.perfis),
+  }, esperar };
 }
 
 /** Hits do cache → vista da aba (muta `enr`). */
@@ -253,7 +273,8 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
           : { estado: 'nao_encontrada', preco: pr };
       }
       const ok: OfertasOk = { estado: 'ok', total: o.total, lidas: o.lidas, vendedoresIdentificados: o.vendedoresIdentificados, ofertasSemVendedor: o.ofertasSemVendedor, completa: o.completa, exatas };
-      v.ofertas = ok;
+      // Na aba, as ofertas exatas de lotes anteriores do mesmo catálogo ficam (item 21+); no cache, só a leitura nova.
+      v.ofertas = antes.ofertas?.estado === 'ok' ? { ...ok, exatas: { ...antes.ofertas.exatas, ...exatas } } : ok;
       const exp = ms(o.expiraEm);
       escritas.push((x) => { x.ofertas[cat] = { v: ok, exp, u: agora }; });
     } else if (o?.estado === 'aguardando') v.ofertas = aguardar(o.retomarEm, antes.ofertas);
@@ -272,7 +293,7 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
       enr.vendedores[k] = aguardar(s.retomarEm, enr.vendedores[k], s.motivo !== 'limite de perfis por pedido');
     } else {
       enr.vendedores[k] = { estado: 'indisponivel' };
-      enr.perfis++;
+      if (s.motivo !== 'limite de perfis da busca') enr.perfis++; // fora do saldo: nem foi consultado
     }
   }
   return (c) => { for (const f of escritas) f(c); };

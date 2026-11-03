@@ -1,6 +1,6 @@
 // Cache do enriquecimento no navegador e planejamento do lote (plano, Revisão 03/11, regras 2-3 e 10).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { aplicarResposta, gravarCache, lerCache, planejarLote, type CacheEnr } from '../cache-enriquecimento';
+import { aplicarResposta, gravarCache, lerCache, marcasDoPedido, planejarLote, type CacheEnr } from '../cache-enriquecimento';
 import { enriquecimentoVazio, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import { limparEstadosDasAbas } from '../abas';
 import { instalarChromeFalso } from './chrome-falso';
@@ -33,6 +33,35 @@ describe('planejarLote', () => {
     const p = planejarLote(cards, meta, enriquecimentoVazio(), vazioCache(), T0, new Set());
     expect(p.pedido!.catalogos.map((c) => c.catalogProductId)).toEqual(['MLB7', 'MLB8', 'MLB1', 'MLB2', 'MLB5']);
     expect(p.pedido!.catalogos.find((c) => c.catalogProductId === 'MLB5')!.itens).toEqual([]);
+  });
+
+  it('item 21+ do mesmo catálogo: o lote seguinte pede só os pendentes e a vista junta as ofertas exatas', () => {
+    const cards = Array.from({ length: 25 }, (_, i) => card(i));
+    const e = enriquecimentoVazio();
+    const ja = new Set<string>();
+    const p1 = planejarLote(cards, {}, e, vazioCache(), T0, ja).pedido!;
+    expect(p1.catalogos[0].itens.map((i) => i.itemId)).toEqual(cards.slice(0, 20).map((c: { itemId: string }) => c.itemId));
+    for (const m of marcasDoPedido(p1)) ja.add(m);
+    const resp = (itens: { itemId: string }[]) => ({ consultadoEm: iso(T0), vendedores: [], custo: { comandosRedis: 0, chamadasMl: 0 },
+      catalogos: [{ catalogProductId: 'MLB900', estado: 'ok' as const, retomarEm: null, consultadoEm: iso(T0),
+        produto: { estado: 'ok' as const, criadoEm: null, expiraEm: iso(T0 + 1000) },
+        ofertas: { estado: 'ok' as const, expiraEm: iso(T0 + 1000), total: 30, lidas: 30, vendedoresIdentificados: 30, ofertasSemVendedor: 0, completa: true,
+          exatas: itens.map((i) => ({ itemId: i.itemId, estado: 'nao_encontrada' as const, motivo: 'x' })) } }] });
+    aplicarResposta(e, p1, resp(p1.catalogos[0].itens), T0);
+    const p2 = planejarLote(cards, {}, e, vazioCache(), T0, ja).pedido!;
+    expect(p2.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: cards.slice(20).map((c: { itemId: string }) => ({ itemId: c.itemId, preco: 10 })) }]);
+    for (const m of marcasDoPedido(p2)) ja.add(m);
+    aplicarResposta(e, p2, resp(p2.catalogos[0].itens), T0);
+    const o = e.catalogos.MLB900.ofertas as { exatas: Record<string, unknown> };
+    expect(Object.keys(o.exatas)).toHaveLength(25);
+    expect(planejarLote(cards, {}, e, vazioCache(), T0, ja).pedido).toBeNull();
+  });
+
+  it('saldo de perfis da busca vai em todo pedido (a edge limita também os automáticos)', () => {
+    const e = enriquecimentoVazio();
+    expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido!.perfisRestantes).toBe(20);
+    e.perfis = 20;
+    expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido!.perfisRestantes).toBe(0);
   });
 
   it('≤ 20 itens por catálogo e ≤ 50 itens no lote', () => {
@@ -89,7 +118,7 @@ describe('planejarLote', () => {
     const exatas = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`MLB${1000000 + i}`, { estado: 'ok', preco: 10, sellerId: 50 + i, tipo: null, comissao: { estado: 'aguardando' } }]));
     e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertasOk(exatas) };
     const cards = Array.from({ length: 8 }, (_, i) => card(i));
-    expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set()).pedido).toEqual({ catalogos: [], perfis: [50, 51, 52, 53, 54], perfisEmCache: [] });
+    expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set()).pedido).toEqual({ catalogos: [], perfis: [50, 51, 52, 53, 54], perfisEmCache: [], perfisRestantes: 20 });
     e.perfis = 18;
     expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set()).pedido!.perfis).toEqual([50, 51]);
     e.perfis = 20;
@@ -97,18 +126,10 @@ describe('planejarLote', () => {
     e.perfis = 0;
     expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set(['perfil:50', 'perfil:51'])).pedido!.perfis).toEqual([52, 53, 54, 55, 56]);
   });
-
-  it('teto de perfis da busca atingido: vendedores conhecidos vão em perfisEmCache (a edge não os consulta)', () => {
-    const e = enriquecimentoVazio();
-    e.perfis = 20;
-    e.vendedores['9'] = { estado: 'ok', nome: null, medalha: null, uf: null };
-    const p = planejarLote([card(1, { catalogProductId: 'MLB1' })], {}, e, vazioCache(), T0, new Set());
-    expect(p.pedido).toMatchObject({ perfis: [], perfisEmCache: [9] });
-  });
 });
 
 describe('aplicarResposta', () => {
-  const pedido = { catalogos: [{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'] as ('produto' | 'ofertas')[], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [] };
+  const pedido = { catalogos: [{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'] as ('produto' | 'ofertas')[], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [], perfisRestantes: 20 };
 
   it('ok → vista e cache com a expiração do servidor; vendedores contam no teto', () => {
     const e: EstadoEnriquecimento = enriquecimentoVazio();
@@ -130,6 +151,14 @@ describe('aplicarResposta', () => {
     expect(c.ofertas.MLB900.exp).toBe(T0 + 60_000);
     expect(c.vendedores['7'].exp).toBe(T0 + 24 * 3600_000);
     expect(c.vendedores['8']).toBeUndefined(); // só ok vai ao cache
+  });
+
+  it('perfil fora do saldo da busca → indisponível (não volta à fila) e não conta no teto', () => {
+    const e = enriquecimentoVazio();
+    aplicarResposta(e, pedido, { consultadoEm: iso(T0), catalogos: [], custo: { comandosRedis: 0, chamadasMl: 0 },
+      vendedores: [{ sellerId: 3, estado: 'indisponivel', motivo: 'limite de perfis da busca' }] }, T0);
+    expect(e.vendedores['3']).toEqual({ estado: 'indisponivel' });
+    expect(e.perfis).toBe(0);
   });
 
   it('cota esgotada → aguardandoJanela + retomarEm; limite de perfis por pedido não conta tentativa', () => {

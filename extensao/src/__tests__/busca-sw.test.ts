@@ -32,7 +32,10 @@ let enrConta: string;
 let falharEnr: boolean;
 let bloqueioEnr: Promise<void> | null;
 let antesDeEnriquecer: (() => Promise<void> | void) | null;
-type PedidoEnr = { catalogos: { catalogProductId: string; componentes: string[]; itens: { itemId: string; preco: number }[] }[]; perfis: number[]; perfisEmCache: number[] };
+let sellerPorItem: boolean;
+let perfisConsultados: number;
+type PedidoEnr = { catalogos: { catalogProductId: string; componentes: string[]; itens: { itemId: string; preco: number }[] }[]; perfis: number[]; perfisEmCache: number[]; perfisRestantes?: number };
+const sellerDe = (itemId: string) => (sellerPorItem ? Number(itemId.slice(3)) : 7);
 const pedidosEnr: PedidoEnr[] = [];
 const isoDe = (ms: number) => new Date(ms).toISOString();
 function respostaEnr(b: PedidoEnr) {
@@ -44,12 +47,19 @@ function respostaEnr(b: PedidoEnr) {
       catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null, consultadoEm: isoDe(agora),
       ...(c.componentes.includes('produto') ? { produto: { estado: 'ok', criadoEm: '2026-06-01T00:00:00Z', expiraEm: isoDe(agora + 6 * 3600_000) } } : {}),
       ...(c.componentes.includes('ofertas') ? { ofertas: { estado: 'ok', expiraEm: isoDe(agora + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
-        exatas: c.itens.map((i) => ({ itemId: i.itemId, estado: 'ok', categoriaId: 'MLB5', sellerId: 7, tipo: 'gold_special', perfil: 'carregado', comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } })) } } : {}),
+        exatas: c.itens.map((i) => ({ itemId: i.itemId, estado: 'ok', categoriaId: 'MLB5', sellerId: sellerDe(i.itemId), tipo: 'gold_special', perfil: 'carregado', comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } })) } } : {}),
     };
   });
-  const comOfertas = catalogos.some((c) => 'ofertas' in c) || b.perfis.includes(7);
-  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 },
-    vendedores: comOfertas && !b.perfisEmCache.includes(7) ? [{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) }] : [] } };
+  // Como a edge: explícitos + vendedores das ofertas exatas, menos os em cache; até 5 e até o saldo da busca.
+  const sellers = [...new Set([...b.perfis, ...b.catalogos.filter((c) => c.componentes.includes('ofertas') && enrCota >= 0).flatMap((c) => c.itens.map((i) => sellerDe(i.itemId)))])]
+    .filter((x) => !b.perfisEmCache.includes(x));
+  const teto = Math.min(5, b.perfisRestantes ?? 5);
+  perfisConsultados += Math.min(sellers.length, teto);
+  const vendedores = [
+    ...sellers.slice(0, teto).map((x) => ({ sellerId: x, estado: 'ok', nome: `V${x}`, medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) })),
+    ...sellers.slice(teto).map((x) => (teto < 5 ? { sellerId: x, estado: 'indisponivel', motivo: 'limite de perfis da busca' } : { sellerId: x, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' })),
+  ];
+  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores } };
 }
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
@@ -78,7 +88,7 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
   if (b.acao === 'identificar_busca') {
     if (falharIdentificar) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
     if (b.registrarUso === true) registros++;
-    return env({ itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinculados.has(i.itemId) ? { fonte: 'catalogo', codigo: `SKU-${i.itemId}` } : null })) });
+    return env({ contaMl: enrConta, itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinculados.has(i.itemId) ? { fonte: 'catalogo', codigo: `SKU-${i.itemId}` } : null })) });
   }
   if (b.acao === 'analisar_busca') {
     let limiteAtingido = false, usoRegistrado = false;
@@ -115,6 +125,8 @@ beforeEach(() => {
   falharEnr = false;
   bloqueioEnr = null;
   antesDeEnriquecer = null;
+  sellerPorItem = false;
+  perfisConsultados = 0;
   pedidosEnr.length = 0;
   geracaoCs = null;
   corpos.length = 0;
@@ -582,11 +594,46 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect((await enr())!).toMatchObject({ falhou: false, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
   });
 
-  it('conta ML mudou entre respostas: abas e cache limpos (a comissão é da conta)', async () => {
+  it('conta ML trocada: a identificação da página seguinte detecta antes de reusar o cache; abas e cache limpos', async () => {
     await registrar([card(1)]);
+    expect((await chrome.storage.session.get('enr:cache'))['enr:cache']).toMatchObject({ conta: 'conta-a' });
     enrConta = 'conta-b';
-    await registrar([card(2, { catalogProductId: 'MLB2000000' })]);
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    await aoAtualizarAba(7, { url: OUTRA });
+    geracaoCs = null;
+    const antes = pedidosEnr.length;
+    vi.mocked(chrome.tabs.sendMessage).mockClear();
+    await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
+    // A comissão em cache (da conta A) nunca chega à página: nada de enriquecimento antes da limpeza.
+    expect(mensagensPagina('publiai:busca-resultados').some((m) => m.enriquecimento && Object.keys((m.enriquecimento as { catalogos: object }).catalogos).length)).toBe(false);
+    expect(pedidosEnr.length).toBe(antes);
     expect(await chrome.storage.session.get('enr:cache')).toEqual({});
     expect(await estado()).toBeNull();
   });
+
+  it('conta ML desconhecida (edge antiga, sem contaMl): o cache não é reutilizado', async () => {
+    await registrar([card(1)]);
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const r = await edge(String(u), init);
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao !== 'identificar_busca') return r;
+      const j = await r.json();
+      delete j.dados.contaMl;
+      return new Response(JSON.stringify(j), { status: 200 });
+    });
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    await aoAtualizarAba(7, { url: OUTRA });
+    geracaoCs = null;
+    await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
+    expect(pedidosEnr).toHaveLength(2);
+  });
+
+  it('teto de 20 perfis por busca: depois de 20, nenhum perfil a mais (nem os automáticos)', async () => {
+    sellerPorItem = true;
+    await registrar(Array.from({ length: 30 }, (_, i) => card(i + 1, { catalogProductId: `MLB${2000000 + i}` })));
+    expect(pedidosEnr.length).toBeGreaterThanOrEqual(6);
+    expect(perfisConsultados).toBe(20);
+    expect(pedidosEnr.at(-1)!.perfisRestantes).toBe(0);
+  });
+
 });

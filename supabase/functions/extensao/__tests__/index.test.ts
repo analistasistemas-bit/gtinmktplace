@@ -667,8 +667,8 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(await r.json()).toEqual({ itens: [
       { itemId: 'MLB1', proprio: false, vinculo: null },
       { itemId: 'MLB2', proprio: true, vinculo: null },
-    ] });
-    expect(resolverConexao).not.toHaveBeenCalled();
+    ], contaMl: null });
+    // Só a linha da conexão (impressão da conta ML para o cache do navegador): sem token nem chamada ML.
     expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     expect(mlGet).not.toHaveBeenCalled();
     expect(buscarListingPrice).not.toHaveBeenCalled();
@@ -678,6 +678,17 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     // service-role: toda tabela lida leva o filtro da org do usuário
     for (const t of new Set(f.froms)) expect(f.eqs).toContainEqual([t, 'org_id', 'org-1']);
     expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
+  });
+
+  it('devolve a impressão da conta ML da org (a mesma do enriquecimento) para o navegador validar o cache', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok-ml');
+    const id = (await (await post(PEDIDO)).json()).contaMl;
+    expect(id).toMatch(/^[0-9a-f]{16}$/);
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    const enr = await (await post({ acao: 'enriquecer_catalogos_busca', catalogos: [{ catalogProductId: 'MLB42', itens: [] }] })).json();
+    expect(enr.valor.conta).toBe(id);
   });
 
   it('registrarUso true (1º lote da geração de página): 1 registro tipo busca, mesmo sem nenhum vinculado; sem o campo, nenhum', async () => {
@@ -707,14 +718,15 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
       expect(f.eqs.filter(([tt, col, v]) => tt === t && col === 'org_id' && v === 'org-1')).toHaveLength(f.froms.filter((x) => x === t).length);
     }
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(resolverConexao).not.toHaveBeenCalled();
+    expect(vi.mocked(resolverConexao).mock.calls.map((c) => c.slice(1))).toEqual([['org-1', 'mercado_livre']]); // só a conexão da org (impressão da conta)
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
   it('protocolo 2: envelope com identidade', async () => {
     expect(await (await post({ ...PEDIDO, protocolo: 2 })).json()).toEqual({
       identidade: 'user-1:org-1:',
-      dados: { itens: [{ itemId: 'MLB1', proprio: false, vinculo: null }, { itemId: 'MLB2', proprio: false, vinculo: null }] },
+      dados: { itens: [{ itemId: 'MLB1', proprio: false, vinculo: null }, { itemId: 'MLB2', proprio: false, vinculo: null }], contaMl: null },
     });
   });
 
