@@ -8,7 +8,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { qstashClient, verificarAssinatura } from '../_shared/queue.ts';
 import {
-  AguardandoOrgs, EntradaInvalida, processarJobFechamento, type JobFechamento,
+  AguardandoOrgs, EntradaInvalida, processarJobFechamento,
 } from '../_shared/platform-admin/fechamento-automatico-io.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
   if (!(await verificarAssinatura(req, body))) {
     return new Response('Invalid signature', { status: 401, headers: corsHeaders });
   }
-  let job: JobFechamento;
+  let job: unknown;
   try { job = body.trim() ? JSON.parse(body) : {}; } catch { return json({ ok: false, erro: 'JSON inválido' }, 400); }
 
   const ator = Deno.env.get('PLATFORM_SYSTEM_ACTOR_ID') ?? '';

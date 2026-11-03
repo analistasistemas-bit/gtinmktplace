@@ -33,15 +33,17 @@ function fakeDb(init: { orgs?: Row[]; terms?: Row[]; statements?: Row[]; profile
 
   function query(table: string) {
     const preds: Array<(r: Row) => boolean> = [];
-    let single = false; let lim = Infinity;
+    let single = false; let lim = Infinity; let de = 0;
     const val = (r: Row, col: string) => col === 'details->>run_id' ? (r.details as Row | undefined)?.run_id : r[col];
     const exec = (): { data: unknown; error: Erro | null } => {
-      const rows = t[table].filter((r) => preds.every((p) => p(r))).slice(0, lim);
+      const rows = t[table].filter((r) => preds.every((p) => p(r))).slice(de, de + lim);
       return { data: single ? rows[0] ?? null : rows, error: null };
     };
     // deno-lint-ignore no-explicit-any
     const q: any = {
-      select: () => q, order: () => q, range: () => q,
+      select: () => q, order: () => q,
+      // PostgREST: max_rows = 1000 por requisição, mesmo com range maior.
+      range: (a: number, b: number) => { de = a; lim = Math.min(b - a + 1, 1000); return q; },
       limit: (n: number) => { lim = n; return q; },
       eq: (c: string, v: unknown) => { preds.push((r) => val(r, c) === v); return q; },
       lte: (c: string, v: string) => { preds.push((r) => String(r[c]) <= v); return q; },
@@ -50,6 +52,8 @@ function fakeDb(init: { orgs?: Row[]; terms?: Row[]; statements?: Row[]; profile
       is: (c: string, v: unknown) => { preds.push((r) => (r[c] ?? null) === v); return q; },
       contains: (c: string, vs: unknown[]) => { preds.push((r) => vs.every((v) => ((r[c] as unknown[]) ?? []).includes(v))); return q; },
       maybeSingle: () => { single = true; return q; },
+      update: () => { writes.push(`update:${table}`); return q; },
+      upsert: () => { writes.push(`upsert:${table}`); return q; },
       insert: (row: Row) => {
         writes.push(`insert:${table}`);
         if (table === 'platform_audit_events' && row.action === 'fechamento_mensal_aviso'
@@ -86,7 +90,7 @@ function fakeDb(init: { orgs?: Row[]; terms?: Row[]; statements?: Row[]; profile
 function ctx(over: Partial<CtxFechamento> = {}): CtxFechamento & { publicar: ReturnType<typeof vi.fn> } {
   return {
     agora: new Date('2026-11-01T09:00:00Z'), ator: ATOR, tokenTelegram: 'BOT', linkCentral: 'https://app/#/admin',
-    url: 'https://fn/fechar-mes-plataforma', retried: 0, publicar: vi.fn(async () => []), novoId: () => 'run-1', ...over,
+    url: 'https://fn/fechar-mes-plataforma', retried: 0, publicar: vi.fn(async (msgs: unknown[]) => msgs.map((_, i) => ({ messageId: `m${i}` }))), novoId: () => 'run-1', ...over,
   } as CtxFechamento & { publicar: ReturnType<typeof vi.fn> };
 }
 
@@ -204,12 +208,14 @@ describe('processarJobFechamento (IO)', () => {
     const db = fakeDb({ orgs: ORGS, terms: TERMS });
     const c = ctx();
     expect(await processarJobFechamento(db.admin, {}, c)).toEqual({ month: MES, run_id: 'run-1', publicados: 2 });
-    const msgs = c.publicar.mock.calls[0][0];
+    const msgs = c.publicar.mock.calls.flatMap((call) => call[0]);
     expect(msgs.map((m: { body: unknown }) => m.body)).toEqual([
       { orgId: A, month: MES, run_id: 'run-1' }, { orgId: B, month: MES, run_id: 'run-1' },
       { aviso: true, month: MES, run_id: 'run-1', orgIds: [A, B] },
     ]);
     expect(msgs[2].delay).toBeGreaterThan(0);
+    // o aviso só sai depois dos jobs confirmados (chamada separada, posterior)
+    expect(c.publicar.mock.calls.at(-1)![0].map((m: { body: Row }) => m.body.aviso)).toEqual([true]);
     expect(db.writes).toEqual([]);
   });
 
@@ -320,5 +326,93 @@ describe('processarJobFechamento (IO)', () => {
     await rodada(db);
     expect(await processarJobFechamento(db.admin, aviso, ctx())).toEqual({ enviados: 0, motivo: 'sem destinatário' });
     expect(db.t.platform_audit_events.some((e) => e.action === 'fechamento_mensal_aviso')).toBe(false);
+  });
+});
+
+describe('Codex Fatia 3 — achado 1: body estrito, dry_run nunca escreve', () => {
+  const RUN = 'run-1';
+  it.each([
+    ['job da org com dry_run', { orgId: A, month: MES, run_id: RUN, dry_run: true }],
+    ['job da org com dry_run false', { orgId: A, month: MES, run_id: RUN, dry_run: false }],
+    ['aviso com dry_run', { aviso: true, month: MES, run_id: RUN, orgIds: [A], dry_run: true }],
+    ['orgId + aviso juntos', { aviso: true, orgId: A, month: MES, run_id: RUN, orgIds: [A] }],
+    ['job da org sem run_id', { orgId: A, month: MES }],
+    ['job da org com orgId inválido', { orgId: 'x', month: MES, run_id: RUN }],
+    ['aviso sem orgIds', { aviso: true, month: MES, run_id: RUN }],
+    ['aviso com orgId inválido na lista', { aviso: true, month: MES, run_id: RUN, orgIds: ['x'] }],
+    ['aviso: false', { aviso: false, month: MES }],
+    ['disparo com run_id', { month: MES, run_id: RUN }],
+    ['disparo com orgIds', { month: MES, orgIds: [A] }],
+    ['dry_run não booleano', { month: MES, dry_run: 'true' }],
+    ['chave desconhecida', { month: MES, dryRun: true }],
+    ['body não-objeto (array)', [] as unknown],
+    ['body null', null as unknown],
+  ])('%s → EntradaInvalida sem nenhuma leitura/escrita/publicação/envio', async (_l, job) => {
+    const db = fakeDb({ orgs: ORGS, terms: TERMS, profiles: [SUPER] });
+    const from = vi.spyOn(db.admin, 'from'); const rpc = vi.spyOn(db.admin, 'rpc');
+    const c = ctx({ retried: RETRIES_AVISO });
+    // deno-lint-ignore no-explicit-any
+    await expect(processarJobFechamento(db.admin, job as any, c)).rejects.toBeInstanceOf(EntradaInvalida);
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(db.writes).toEqual([]);
+    expect(c.publicar).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Codex Fatia 3 — achado 2: batch do QStash parcial', () => {
+  const ok = (msgs: unknown[]) => msgs.map((_, i) => ({ messageId: `m${i}` }));
+
+  it('resposta mista: retenta só os jobs que falharam (mesmo run_id) e só então publica o aviso', async () => {
+    const db = fakeDb({ orgs: ORGS, terms: TERMS });
+    const publicar = vi.fn()
+      .mockResolvedValueOnce([{ messageId: 'a' }, { error: 'rate limited' }])
+      .mockImplementation(async (msgs: unknown[]) => ok(msgs));
+    const c = ctx({ publicar });
+    expect(await processarJobFechamento(db.admin, {}, c)).toMatchObject({ publicados: 2 });
+    const bodies = publicar.mock.calls.map((call) => call[0].map((m: { body: Row }) => m.body));
+    expect(bodies).toEqual([
+      [{ orgId: A, month: MES, run_id: 'run-1' }, { orgId: B, month: MES, run_id: 'run-1' }],
+      [{ orgId: B, month: MES, run_id: 'run-1' }],
+      [{ aviso: true, month: MES, run_id: 'run-1', orgIds: [A, B] }],
+    ]);
+  });
+
+  it('falha persistente de um job → lança (500 ao schedule) e o aviso NÃO é publicado', async () => {
+    const db = fakeDb({ orgs: ORGS, terms: TERMS });
+    const publicar = vi.fn(async (msgs: Array<{ body: Row }>) =>
+      msgs.map((m, i) => (m.body.orgId === B ? { error: 'falhou' } : { messageId: `m${i}` })));
+    const c = ctx({ publicar });
+    await expect(processarJobFechamento(db.admin, {}, c)).rejects.toThrow(/1 job/);
+    expect(publicar.mock.calls.flatMap((call) => call[0]).some((m: { body: Row }) => m.body.aviso)).toBe(false);
+  });
+
+  it('aviso recusado pelo batch → lança (500)', async () => {
+    const db = fakeDb({ orgs: ORGS, terms: TERMS });
+    const publicar = vi.fn(async (msgs: Array<{ body: Row }>) =>
+      msgs.map((m, i) => (m.body.aviso ? { error: 'falhou' } : { messageId: `m${i}` })));
+    await expect(processarJobFechamento(db.admin, {}, ctx({ publicar }))).rejects.toThrow(/aviso/);
+  });
+});
+
+describe('Codex Fatia 3 — achado 3: leituras paginadas (1.001+ linhas)', () => {
+  it('contratos: org com versões além da 1ª página não some', async () => {
+    const terms = [...Array.from({ length: 1001 }, () => ({ org_id: A, starts_on: '2026-09-01' })), { org_id: B, starts_on: '2026-10-01' }];
+    const db = fakeDb({ orgs: ORGS, terms });
+    const c = ctx();
+    expect(await processarJobFechamento(db.admin, {}, c)).toMatchObject({ publicados: 2 });
+  });
+
+  it('aviso: resultado mais recente além da 1ª página prevalece', async () => {
+    const db = fakeDb({ orgs: ORGS, profiles: [SUPER] });
+    for (let i = 0; i < 1001; i++) {
+      db.t.platform_audit_events.push({ org_id: A, action: 'fechamento_automatico', target: MES, result: 'erro', reason: 'x',
+        details: { run_id: 'run-1' }, occurred_at: `2026-11-01T09:00:00.${String(i).padStart(3, '0')}Z` });
+    }
+    db.t.platform_audit_events.push({ org_id: A, action: 'fechamento_automatico', target: MES, result: 'fechada', reason: null,
+      details: { run_id: 'run-1', total_cents: 500 }, occurred_at: '2026-11-01T09:05:00.000Z' });
+    expect(await processarJobFechamento(db.admin, { aviso: true, month: MES, run_id: 'run-1', orgIds: [A] }, ctx())).toEqual({ enviados: 1 });
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).text).toContain('✅ Avil · R$ 5,00');
   });
 });
