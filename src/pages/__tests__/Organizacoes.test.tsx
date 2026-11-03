@@ -212,6 +212,14 @@ describe('Organizacoes', () => {
     expect(usePlatformWallet).toHaveBeenLastCalledWith(expect.objectContaining({ month: '2026-08' }));
   });
 
+  it('faturamento e variação também aparecem na célula da organização (mobile)', () => {
+    renderPage();
+    const celula = screen.getByRole('link', { name: /Ver organização Cliente/i }).closest('td')!;
+    expect(celula).toHaveTextContent(/R\$\s*1\.500,00/);
+    expect(celula).toHaveTextContent('+50%');
+    expect(celula).toHaveTextContent(/Previsão\s*R\$\s*2\.000,00/);
+  });
+
   it('diálogo Nova empresa tem rótulos persistentes nos cinco campos', async () => {
     const user = userEvent.setup();
     renderPage();

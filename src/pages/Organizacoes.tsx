@@ -68,6 +68,26 @@ function FechamentoOrg({ org, month }: { org: OrgSummary; month: string }) {
   );
 }
 
+/** Faturamento da org no mês e variação sobre o mesmo período do mês anterior. */
+function FaturamentoOrg({ org, alinhar = 'direita' }: { org: OrgSummary; alinhar?: 'direita' | 'esquerda' }) {
+  if (!org.metrics) return <span title="Métricas indisponíveis">—</span>;
+  const prev = org.metrics.previous;
+  const pct = prev && prev.gross_cents > 0
+    ? ((org.metrics.gross_cents - prev.gross_cents) / prev.gross_cents) * 100
+    : null;
+  return (
+    <div className="tabular-nums">
+      <div className="font-semibold">{fmtBRL(org.metrics.gross_cents / 100)}</div>
+      {pct != null && (
+        <div className={cn('flex items-center gap-0.5 text-xs', alinhar === 'direita' && 'justify-end', pct >= 0 ? 'text-success' : 'text-destructive')}>
+          {pct >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+          {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+        </div>
+      )}
+    </div>
+  );
+}
+
 function fmtHora(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
@@ -397,31 +417,25 @@ export default function Organizacoes() {
                   : <StatusPill tone="warning">Sem condições</StatusPill>}
             </div>
             <FechamentoOrg org={o} month={month} />
+            {/* No celular a coluna Faturamento some (ficava atrás da coluna de ações): o valor sobe para a célula da organização. */}
+            <div className="mt-2 flex max-w-[14rem] flex-wrap gap-x-6 gap-y-2 sm:hidden">
+              <div><div className="text-[11px] text-muted-foreground">Faturamento</div><FaturamentoOrg org={o} alinhar="esquerda" /></div>
+              <div>
+                <div className="text-[11px] text-muted-foreground">Previsão</div>
+                <div className="font-medium tabular-nums">{o.forecast_cents == null ? '—' : fmtBRL(o.forecast_cents / 100)}</div>
+              </div>
+              {(o.pending_count ?? 0) > 0 && (
+                <div className="self-end"><StatusPill tone="warning">{o.pending_count} {o.pending_count === 1 ? 'pendência' : 'pendências'}</StatusPill></div>
+              )}
+            </div>
           </div>
         );
       },
     },
     {
-      key: 'gross', header: 'Faturamento', className: 'w-[9.5rem] text-right tabular-nums',
+      key: 'gross', header: 'Faturamento', className: 'w-[9.5rem] text-right tabular-nums max-sm:hidden',
       sortValue: (o) => o.metrics?.gross_cents ?? null,
-      cell: (o) => {
-        if (!o.metrics) return <span title="Métricas indisponíveis">—</span>;
-        const prev = o.metrics.previous;
-        const pct = prev && prev.gross_cents > 0
-          ? ((o.metrics.gross_cents - prev.gross_cents) / prev.gross_cents) * 100
-          : null;
-        return (
-          <div>
-            <div className="font-semibold">{fmtBRL(o.metrics.gross_cents / 100)}</div>
-            {pct != null && (
-              <div className={cn('flex items-center justify-end gap-0.5 text-xs', pct >= 0 ? 'text-success' : 'text-destructive')}>
-                {pct >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
-              </div>
-            )}
-          </div>
-        );
-      },
+      cell: (o) => <FaturamentoOrg org={o} />,
     },
     {
       key: 'markup', header: 'Markup', className: 'w-[6rem] text-right tabular-nums hidden md:table-cell',
@@ -455,7 +469,7 @@ export default function Organizacoes() {
         : <span className={o.billable_units === 0 ? 'text-muted-foreground' : undefined}>{fmtInt(o.billable_units)}</span>,
     },
     {
-      key: 'forecast', header: 'Previsão', className: 'w-[8.5rem] text-right tabular-nums',
+      key: 'forecast', header: 'Previsão', className: 'w-[8.5rem] text-right tabular-nums max-sm:hidden',
       cell: (o) => {
         if (o.forecast_cents == null) {
           const title = o.modality != null
@@ -469,7 +483,7 @@ export default function Organizacoes() {
       },
     },
     {
-      key: 'pending', header: 'Pendências', className: 'w-[6rem] text-right',
+      key: 'pending', header: 'Pendências', className: 'w-[6rem] text-right max-sm:hidden',
       cell: (o) => {
         if (o.pending_count == null) return <span title="Prévia indisponível">—</span>;
         if (o.pending_count === 0) return '—';
