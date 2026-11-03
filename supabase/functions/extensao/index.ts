@@ -458,15 +458,12 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       const token = await getValidAccessTokenConexao(conexao);
       const { catalogos, perfis, perfisEmCache, perfisRestantes } = p;
       const conta = String(conexao.contaExternaId);
-      return {
-        estado: 'ok',
-        valor: {
-          ...await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache, perfisRestantes }, {
-            conta, agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
-          }),
-          conta: await impressaoConta(conta),
-        },
-      };
+      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache, perfisRestantes }, {
+        conta, agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
+      });
+      // Medição de custo (Task 11): só contagens, sem dado de vendedor nem de tenant além da contagem.
+      console.log(JSON.stringify({ ext_enr_custo: r.custo, catalogos: catalogos.length }));
+      return { estado: 'ok', valor: { ...r, conta: await impressaoConta(conta) } };
     }
     case 'radar':
       return radar(admin, orgId, p.catalogProductId);
