@@ -1,6 +1,6 @@
 // Emenda ADR-0174 (2026-11-03) — busca e "mesmo preço/desconto" para um produto e suas variações no detalhe
 // da campanha. Regras puras; o líquido no preço escolhido vem SEMPRE do servidor (etapa 'simular').
-import type { ItemPromocao, SemaforoPromo, CorProjetada } from '@/lib/promocoes';
+import { corDeReferencia, type ItemPromocao, type SemaforoPromo, type CorProjetada } from '@/lib/promocoes';
 
 export type ModoAlvo = 'desconto' | 'preco';
 export type ResultadoSimulacao =
@@ -69,6 +69,16 @@ export function detalheLiquido(c: CorProjetada, preco: number | null): {
     // Margem sobre a venda (lucro ÷ preço), mesma régua de cascata-pedido.ts e Vendas SKU.
     margem: preco > 0 ? lucro / preco : null,
   };
+}
+
+/** Recebe/lucro/margem de uma linha no preço que o servidor simulou — a cor de referência (a pior) manda,
+ *  como nas colunas Líquido/Markup da tabela. Kit a conferir ou sem líquido → null. */
+export function resumoLucro(
+  it: ItemPromocao, sim: { preco: number; projecao: CorProjetada[]; pior_semaforo: SemaforoPromo },
+): { recebe: number; lucro: number; margem: number | null } | null {
+  const c = corDeReferencia({ ...it, projecao: sim.projecao, pior_semaforo: sim.pior_semaforo });
+  const d = c ? detalheLiquido(c, sim.preco) : null;
+  return d ? { recebe: d.recebe, lucro: d.lucro, margem: d.margem } : null;
 }
 
 /** Itens simulados com o preço, a projeção e o semáforo calculados pelo servidor naquele preço. */

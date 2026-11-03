@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aplicarSimulacao, detalheLiquido, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao } from '@/lib/promocao-simulacao';
+import { aplicarSimulacao, detalheLiquido, filtrarPorBusca, foraDaFaixa, precoAlvo, resumoLucro, sobreporSimulacao } from '@/lib/promocao-simulacao';
 import type { ItemPromocao } from '@/lib/promocoes';
 
 const item = (o: Partial<ItemPromocao> & { ml_item_id: string }): ItemPromocao => ({
@@ -91,6 +91,24 @@ describe('detalheLiquido', () => {
     expect(detalheLiquido({ ...cor, frete: null }, 49.9)).toBeNull();
     expect(detalheLiquido({ ...cor, custo: null }, 49.9)).toBeNull();
     expect(detalheLiquido(cor, null)).toBeNull();
+  });
+});
+
+describe('resumoLucro', () => {
+  const tarifa = { comissao_pct: 14, comissao_fixa: 0, frete: 8.25, aliquota_pct: 4 };
+  const cor = (o: object) => ({ variation_id: 1, cor: 'A', sku: null, custo: 18.5, piso: 28.5, origem: 'nacional', ...tarifa,
+    liquido: 32.664, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde', motivo: null, ...o }) as never;
+
+  it('recebe, lucro e margem da cor de referência (a pior) no preço do servidor', () => {
+    const r = resumoLucro(item({ ml_item_id: 'A' }), { preco: 49.9, pior_semaforo: 'amarelo', projecao: [
+      cor({ variation_id: 1, semaforo: 'verde', liquido: 40 }), cor({ variation_id: 2, semaforo: 'amarelo', liquido: 32.664 }),
+    ] })!;
+    expect(r.recebe).toBe(32.664);
+    expect(r.lucro).toBeCloseTo(14.164, 3);
+    expect(Math.round(r.margem! * 100)).toBe(28);
+  });
+  it('kit a conferir ou sem líquido → null', () => {
+    expect(resumoLucro(item({ ml_item_id: 'A' }), { preco: 49.9, pior_semaforo: 'indisponivel', projecao: [cor({ motivo: 'kit_divergente', liquido: null })] })).toBeNull();
   });
 });
 

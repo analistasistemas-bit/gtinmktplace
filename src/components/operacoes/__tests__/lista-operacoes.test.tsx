@@ -15,6 +15,7 @@ vi.mock('@/hooks/useOperacoes', async () => {
   return {
     ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
     useCriarOperacao: vi.fn(), useOperacao: vi.fn(), useOperacaoPorOrigem: vi.fn(), useRetomarOperacao: vi.fn(),
+    useSimularPrecos: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
