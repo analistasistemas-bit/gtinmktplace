@@ -1,4 +1,5 @@
 // ADR-0174, emenda 2026-10-05 — aba "Em promoção": tudo que participa, por campanha; DEAL/SMART saem pelo motor.
+import { ehTipoOperavel } from '@/lib/operacoes';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BadgePercent, ExternalLink } from 'lucide-react';
@@ -80,7 +81,7 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
       </ul>
       {operavel && (
         <PreviewOperacao
-          acao="sair" tipo={p.tipo === 'SMART' ? 'SMART' : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
+          acao="sair" tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
           itens={saindo ?? []} aberto={saindo != null} onClose={() => setSaindo(null)} onSucesso={() => setSelecionados(new Set())}
         />
       )}

@@ -1,9 +1,10 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
-import { ateQuantoDaLinha, mlbExibido, rotuloMlb, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
+import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
 export type AcaoPromocao = 'aderir' | 'sair';
+export { ehTipoOperavel, type TipoPromocaoOperavel };
 export type AcaoStatus = 'pausar' | 'reativar';
 export type AcaoOperacao = AcaoPromocao | AcaoStatus | 'reajustar';
 export const ehAcaoStatus = (a: string): a is AcaoStatus => a === 'pausar' || a === 'reativar';
@@ -17,6 +18,8 @@ export interface LinhaPreview {
   /** MLB exibido (o normal no par normal/catálogo); o pedido segue por `ml_item_id`. */
   rotulo?: string;
   mlb?: string;
+  /** Reserva de estoque da Relâmpago (stock.min da leitura do ML). */
+  estoqueMin: number | null;
 }
 
 const PESO: Record<Semaforo, number> = { indisponivel: 0, verde: 1, amarelo: 2, vermelho: 3 };
@@ -49,12 +52,12 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
 
 /** Preview do pedido: aderir usa o preço sugerido (DEAL) ou o preço da oferta (SMART) e só marca o verde;
  *  sair usa o preço no ar e marca tudo — o cálculo do front é só orientação, o backend revalida. */
-export function montarPreview(acao: AcaoPromocao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[]): LinhaPreview[] {
+export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[]): LinhaPreview[] {
   return itens.map((it) => {
-    const preco = acao === 'sair' ? it.preco_promo : tipo === 'DEAL' ? it.preco_sugerido : it.preco_promo;
+    const preco = acao === 'sair' ? it.preco_promo : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
-      ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), mlb: mlbExibido(it), titulo: it.titulo, preco, min: it.preco_min, max: it.preco_max,
+      ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), mlb: mlbExibido(it), titulo: it.titulo, preco, estoqueMin: it.estoque_min, min: it.preco_min, max: it.preco_max,
       sugerido: it.preco_sugerido, ateQuanto: ateQuantoDaLinha(it).valor, semaforo,
       marcado: acao === 'sair' ? true : semaforo === 'verde',
     };

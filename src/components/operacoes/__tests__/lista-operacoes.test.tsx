@@ -206,6 +206,29 @@ describe('ListaOperacoes', () => {
     }));
   });
 
+  it('Reverter de sair LIGHTNING abre aderir com tipo LIGHTNING, preço sugerido editável e bloqueio < R$ 19', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', promocao_tipo: 'LIGHTNING', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })] } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({
+      data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate', preco_min: 10, preco_max: 90 })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+
+    expect(screen.getByText('Aderir à Campanha X')).toBeInTheDocument();
+    const input = screen.getByLabelText('Preço de MLB1');
+    expect(input).toHaveValue('85,00');
+    await user.clear(input);
+    await user.type(input, '18,99');
+    expect(screen.getByText('Mínimo R$ 19,00 (frete grátis)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+  });
+
   it('mantém a seleção do preview do Reverter entre re-renders sem mudança real de dados (fix round 1, achado 1)', async () => {
     const user = userEvent.setup();
     vi.mocked(useOperacoes).mockReturnValue({

@@ -61,6 +61,16 @@ describe('ListaParticipando', () => {
     }));
   });
 
+  it('Sair de Relâmpago abre preview com tipo LIGHTNING', async () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo({ promocao_id: 'L', tipo: 'LIGHTNING', nome: 'Relâmpago X' })], isLoading: false } as never);
+    vi.mocked(useParticipacoes).mockReturnValue({ data: [part({ promocao_id: 'L', ml_item_id: 'MLB3' })], isLoading: false } as never);
+    renderLista();
+    const bloco = screen.getByRole('region', { name: 'Relâmpago X' });
+    await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar MLB3' }));
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Sair 1' }));
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({ acao: 'sair', tipo: 'LIGHTNING', promocaoId: 'L' }));
+  });
+
   it('tipo que o app não opera: sem seleção, com link para o Seller Center', () => {
     renderLista();
     const bloco = screen.getByRole('region', { name: 'Campanha do ML' });

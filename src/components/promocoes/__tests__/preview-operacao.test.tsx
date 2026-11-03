@@ -77,6 +77,44 @@ describe('PreviewOperacao', () => {
     expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
   });
 
+  describe('LIGHTNING', () => {
+    const rel = (over: Partial<ItemPromocao> = {}) => item({
+      ml_item_id: 'L', preco_sugerido: 30, preco_min: 10, preco_max: 50, estoque_min: 5, projecao: [cor({ custo: 5, piso: 8 })], ...over,
+    });
+
+    it('preço editável', () => {
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });
+      expect(screen.getByLabelText('Preço de L')).toHaveValue('30,00');
+    });
+
+    it("18,99 bloqueia envio e mostra 'Mínimo R$ 19,00 (frete grátis)'", async () => {
+      const user = userEvent.setup();
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });
+      expect(screen.getByText('Mínimo R$ 19,00 (frete grátis)')).toBeInTheDocument();
+      const input = screen.getByLabelText('Preço de L');
+      await user.clear(input);
+      await user.type(input, '18,99');
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it('fora da faixa bloqueia', async () => {
+      const user = userEvent.setup();
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });
+      const input = screen.getByLabelText('Preço de L');
+      await user.clear(input);
+      await user.type(input, '60');
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it("mostra 'Reserva 5 un.' e envia o preço", async () => {
+      const user = userEvent.setup();
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });
+      expect(screen.getByText('Reserva 5 un.')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ itens: [{ ml_item_id: 'L', preco: 30, confirmado_risco: false }] }));
+    });
+  });
+
   it('item vermelho marcado exige o checkbox de risco para habilitar Executar', async () => {
     const user = userEvent.setup();
     const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_min: 1, preco_max: 90, projecao: [cor({ custo: 5, piso: 10 })] });
