@@ -111,3 +111,23 @@ Custo de ML de um catálogo frio = 2 chamadas (`/products` + `/products/items`) 
 | Custo Redis | — | aceitável | Base atual ~US$ 5,5/mês. +US$ 2,25/mês com 100 buscas/dia frias e +US$ 11,25/mês com 500. |
 
 **Não medido:** CPU por ação (`catalogo` × `analisar_anuncio` × `analisar_busca`) e por cache frio/quente medido de fato; chamadas ML por minuto no app; CPU de um lote de 5 fichas de 100 ofertas (Task 11).
+
+## 6. Spike "lote por página" (03/11/2026, Task 11.1)
+
+**Motivo:** no teste real da 0.5.0, uma busca de ~50 cards ficou minutos em "Aguardando próxima janela" (cota de 10 catálogos/min). Diego escolheu enriquecer a página inteira numa rodada.
+
+**Método:** edge experimental descartável (apagada após a medição), só `GET` na API oficial com o token de uma org própria; 150 catálogos reais em 3 grupos de 50; pool contínuo de 16 chamadas, comissão com sublimite de 4; timeout de 3 s por GET; parada da família no primeiro 429. Projeção para agregados, nenhum corpo guardado.
+
+| Cenário | Páginas | Chamadas ML/página | Tempo da página (ML) | Total na edge | 429 |
+|---|---|---|---|---|---|
+| 20 catálogos, pool 5 | 1 | 78 | 2,9 s | 3,7 s | 0 |
+| 50 catálogos, pool 16/4 | 11 sequenciais | 178–183 | 2,4–3,3 s | 2,8–4,2 s | 0 |
+| 50 catálogos, 2 páginas simultâneas | 3 rodadas | 178–183 cada | 2,2–2,9 s | 2,9–3,8 s | 0 |
+
+- **Por página de 50:** 50 `/products` + 50 `/products/{id}/items` (6–11 respondem 404 "No winners found") + 50 `/users` + 28–33 `listing_prices` distintos.
+- **Latência p95 por endpoint:** 150–510 ms; máximo observado 540 ms.
+- **Vazão sustentada:** ~2.900 chamadas em ~2,5 min (~1.100/min) com um token, **zero 429**, inclusive em `listing_prices`.
+- **CPU:** `cpu_time_used` dos workers encerrados 35–89 ms (limite 2.000 ms); sem `CPUTime`/546. Payload de uma página ≈ 1,7 MB.
+- **Limite:** um token, um horário (manhã, fora do pico de 06h UTC que gerou os 429 de `listing_prices`); ausência de 429 mostra capacidade observada, não o limite contratual do ML.
+
+**Decisão:** gate aprovado para **uma requisição de até 50 catálogos**, pool 16 com sublimite 4 na comissão, deadline de 8 s. Orçamento global de chamadas ML passa de 120 para **1.000/min** (vazão sustentada medida, ~5 páginas frias/min no app inteiro), fail-closed.

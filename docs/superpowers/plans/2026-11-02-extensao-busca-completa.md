@@ -407,6 +407,215 @@ A resposta por catálogo informa `estado`, `consultadoEm`, `expiraEm`, criação
 
 ---
 
+---
+
+## Fatia 2 — Revisão 03/11-b: lote por página (prevalece sobre a Revisão 03/11 e as Tasks 8–11)
+
+> **Diego, 03/11:** "não quero ficar esperando carregar". Engenharia reversa (Avant/JoomPulse) mostrou que a velocidade deles vem de banco de mercado próprio (D-1 proíbe) e de PDP oculta com remoção do antibot (proibido). Escolha: **lote por página**. Spike aprovado (docs/spikes/2026-11-02-extensao-busca-medicoes.md §6): 50 catálogos em ~3 s, 0 429, CPU < 100 ms. Task 11.1 concluída. Planejamento do Codex gpt-6.1-sol high.
+
+### Desenho
+
+### Pedido e concorrência
+
+**Escolha inicial: uma requisição de enriquecimento com até 50 catálogos e 50 itens distintos.**
+
+Preservar `enriquecer_catalogos_busca` e seu DTO parcial. Continuam existindo as chamadas de identificação e margem; “uma requisição” refere-se ao **enriquecimento**, não a toda comunicação da extensão.
+
+| Controle | Proposta |
+|---|---|
+| Catálogos normalizados/pedido | 50 |
+| Itens distintos/pedido e máximo por catálogo | 50 |
+| Perfis/pedido | Até 50, deduplicados por `seller_id` |
+| Chamadas ML simultâneas | Pool contínuo de 16 |
+| `listing_prices` simultâneas | Sublimite de 4, dentro das 16 |
+
+Substituir as ondas de cinco por pool contínuo: uma resposta lenta não segura todas as vagas da onda.
+
+**Fallback por CPU:** se 50 reprovar e 20 passar, usar **20 + 20 + 10 em paralelo**, como uma operação lógica no SW. Isso aumenta reservas, MGETs e coordenação; deve ter medição própria. Não escolher esse caminho antecipadamente.
+
+### Cota por página e orçamento global
+
+**Cota: 20 pedidos lógicos/min por usuário+org**, debitando uma unidade por pedido não vazio:
+
+```text
+ext:enr:pagina:v1:{orgId}:{userId}:{minutoUTC}
+TTL: 120 s
+```
+
+Uma unidade representa **uma rodada de até 50 catálogos**, não uma URL que pode receber consultas ilimitadas. Scroll posterior envia somente o delta, consumindo outra unidade; repetição manual também. Cache válido não chama a edge nem debita cota.
+
+**Orçamento global: 1.000 chamadas ML/min (medido no spike, seção 6 do documento de medições).** ~5 páginas frias/min no app inteiro; cota por usuário continua 20 rodadas/min.
+
+Reservar **uma vez por página**, antes do primeiro GET, um limite superior calculado no servidor:
+
+```text
+B = produtos pedidos
+  + ofertas pedidas
+  + limite superior de perfis novos, até 50
+  + limite superior de comissões distintas, até nº de itens pedidos
+
+B máximo = 200
+```
+
+Compartilhar essa reserva entre as duas fases. Após ofertas e MGET, o custo real diminui; devolver somente o saldo **não despachado**, uma vez. Preservar:
+
+- chamada despachada conta mesmo com erro ou timeout;
+- devolução na chave original;
+- re-reserva das unidades restantes ao virar o minuto;
+- erro de Redis impede novos despachos.
+
+A janela UTC existente permite rajadas junto à virada. **400/min UTC não significa 400 em qualquer intervalo móvel de 60 s.** Incluir essa condição no spike; se reprovar, será necessário rever o limitador e seu custo.
+
+### Redis: conta exata
+
+Para a página típica fria, com ~40 perfis, reserva de 200 e uso de 190:
+
+| Operação | Comandos |
+|---|---:|
+| `INCRBY` da cota de página em 1 | 1 |
+| `INCRBY` da reserva global | 1 |
+| `MGET` das comissões distintas | 1 |
+| `DECRBY` das 10 unidades não despachadas | 1 |
+| **Total, com contadores existentes** | **4** |
+
+Acrescentar **até dois `EXPIRE`** quando os contadores nascem: **6 comandos**. Se usar toda a reserva, não há devolução: 3 ou 5. Sem chaves de comissão, não há MGET.
+
+Virada de minuto, concessão parcial e cancelamento acrescentam comandos; instrumentar esses caminhos, sem apresentar quatro como máximo absoluto.
+
+**Mudança necessária para esse custo:** retirar os `SET` de comissão desta ação. Hoje, 50 misses bem-sucedidos acrescentam **50 comandos**. Pipeline não elimina essa cobrança.
+
+O enriquecimento:
+
+- lê o cache financeiro existente com **um MGET**;
+- calcula misses dentro do orçamento ML;
+- guarda o resultado no navegador, ligado ao preço exato;
+- deixa os produtores financeiros existentes continuarem preenchendo o Redis.
+
+Isso reduz o aquecimento compartilhado de comissão e pode aumentar chamadas ML em outras sessões. O spike deve medir essa troca. É a menor alteração para aproximar quatro comandos sem criar outro cache.
+
+### Perfis, comissão e resposta parcial
+
+**Perfis:** consultar somente vendedores das ofertas exatas pedidas, deduplicados em toda a página, descontando perfis válidos no navegador. Retirar o limite de 20 por busca; ele deixaria uma página com 40 vendedores incompleta por construção. Não consultar todos os vendedores das 5.000 ofertas lidas.
+
+**Comissão:** manter `chaveComissao(conta, categoria, tipo, precoExato)`, sem arredondar preço ou substituir categoria/tipo. Deduplicar antes do MGET. Não alterar a chave compartilhada neste trabalho.
+
+**Timeout:** orçamento total de **8 s desde a entrada na edge**, incluindo autenticação; parar novos despachos antes do fim para montar a resposta. Cada GET recebe timeout de até **3 s**, limitado pelo tempo restante. Cliente com timeout de **10 s**.
+
+Em 429, interromper novos despachos daquela família de endpoint na execução; preservar respostas já obtidas. Sem retry automático nessa rodada:
+
+| Situação | Resultado visível |
+|---|---|
+| Processamento em curso | “Consultando dados do catálogo” |
+| 429, timeout ou orçamento insuficiente | Dados disponíveis + “Dados adicionais indisponíveis agora” |
+| Só comissão falhou | “Comissão na sua conta indisponível agora” |
+| Oferta exata ausente | “Oferta não localizada nesta leitura” |
+
+Finalizar a rodada, oferecendo **“Tentar novamente”** no painel, respeitando `Retry-After`. Não deixar pendência que o pulso reabra a cada minuto.
+
+Dados locais continuam visíveis durante todo o processo. “Completar em 8 s” deve distinguir **sucesso dos campos consultáveis** de **encerrar com resultado parcial**; resposta vazia rápida não aprova o gate.
+
+### Delta sobre a branch
+
+| Área | Alteração mínima |
+|---|---|
+| `_shared/extensao/cotas-busca.ts` | Trocar débito por catálogo por uma unidade/página, com chave versionada. Preservar helpers de reserva/devolução e fail-closed. Teto global 1.000/min. |
+| `_shared/extensao/enriquecimento-busca.ts` e `enriquecimento-busca-io.ts` | Uma reserva compartilhada; substituir `despacharFase` por despacho com pool e saldo comum; dedupe global de perfis; deadline/circuito por endpoint; remover gravações Redis de comissão. |
+| `extensao/{roteamento,index}.ts` | Elevar limites normalizados para 50; teto bruto de 100 entradas de catálogo antes do dedupe, preservando limites de itens. Passar deadline e registrar métricas agregadas. Manter assinatura das ações antigas. |
+| `extensao/src/{cache-enriquecimento,busca-sw}.ts` | `planejarLote` passa a planejar a página inteira; retirar fila de perfis em lotes de cinco e retomada automática do enriquecimento. Executá-lo após identificação, **antes da margem**, que hoje o bloqueia. |
+| Leitura e apresentação | Ajustar `conteudo/busca.ts`, `mini-bloco-busca.ts`, `compartilhado/enriquecimento.ts` e textos do painel para processamento e resultado parcial terminal. Reutilizar o leitor DOM existente. |
+
+**Código que fica morto:** `ONDA=5`, `TTL_COMISSAO_S` e a lista `gravar` desta ação; limites 5/20 de perfis; lógica de `aguardandoJanela`, tentativas e `retomarEm` usada exclusivamente para retomar enriquecimento.
+
+**Preservar o pulso da margem:** ela continua com sua cota própria de 30/min. Não remover `pedirRetomada` ou timers compartilhados sem separar esse uso.
+
+O leitor `leitura/busca.ts` já extrai preço, vendidos, catálogo, Full, frete e loja oficial. **Não criar ponte para `__PRELOADED_STATE__` sem medir um campo faltante.** Ajustar a renderização local para não depender do debounce de 800 ms da rede. Full e frete já visíveis no card nativo não precisam ser duplicados.
+
+Manter identidade, época, geração, impressão da conta ML, limpeza em logout/suporte e descarte de resposta antiga. O cache atual de comissão junto das ofertas por 60 s pode permanecer: não é necessário criar outro mapa para esta entrega.
+
+### Tasks (substituem o restante da Task 11)
+
+> Executar em sequência. O spike escolhe os números antes das mudanças funcionais. Cada task de código segue RED → GREEN → revisão → commit.
+
+### Task 11.1 — provar capacidade da página
+
+**Arquivos:** criar o script descartável e uma edge experimental de validação; atualizar `docs/spikes/2026-11-02-extensao-busca-medicoes.md`.
+
+- [ ] Executar a matriz de medição da seção 1, com limites e parada por 429.
+- [ ] Correlacionar CPU hospedada com cada execução; não usar duração como CPU.
+- [ ] Registrar decisão: 50 ou 20+20+10, concorrência e orçamento global demonstrados.
+- [ ] Bloquear implementação do desenho rápido se nenhum cenário passar.
+- [ ] Registrar somente agregados; descartar payloads e executor experimental após a medição.
+
+**Aprovação:** critérios de CPU, latência e 429 da seção 1. Se faltar capacidade medida, o resultado é reprovação explícita da promessa de preenchimento completo.
+
+### Task 11.2 — executar a página com orçamento único
+
+**Arquivos:** cotas, enriquecimento, adaptador HTTP, roteamento e index da edge.
+
+**Interfaces:** manter `enriquecerCatalogosBusca(...)`; compartilhar uma reserva entre fases. `getMlUmaVez(...)` recebe cancelamento/deadline da página.
+
+- [ ] **RED:** 20 páginas aceitas e 21ª recusada; usuários/orgs separados; 50 catálogos; 50 itens no mesmo catálogo; 51º rejeitado.
+- [ ] **RED:** 40 vendedores distintos geram 40 GETs; repetidos geram um; máximo simultâneo 16/4; chamadas nunca excedem a reserva.
+- [ ] **Implementar:** reserva única, pool, deadline, devolução e resultado parcial; nenhum `SET` de comissão.
+- [ ] **GREEN:** testar virada UTC, Redis inválido, cancelamento, 429 por endpoint e preservação de 404 “No winners found”.
+- [ ] Revisar e commitar o delta da edge.
+
+```bash
+rtk pnpm test -- supabase/functions/_shared/extensao/__tests__/{cotas-busca,enriquecimento-busca,enriquecimento-busca-io}.test.ts supabase/functions/extensao/__tests__/{roteamento,index}.test.ts
+```
+
+**Esperado:** testes verdes; custo contado igual aos comandos emitidos; ações de 0.3.2/0.4.2 preservadas.
+
+### Task 11.3 — enviar uma página pelo SW
+
+**Arquivos:** `cache-enriquecimento.ts`, `busca-sw.ts` e respectivos testes.
+
+**Interface:** manter `planejarLote(...)`, ampliando o planejamento para até 50; pedido parcial e aplicação do cache continuam existentes.
+
+- [ ] **RED:** 50 catálogos geram um pedido; cache totalmente válido gera zero; pedido parcial contém apenas vencidos.
+- [ ] **RED:** margem lenta não adia enriquecimento; painel fechado funciona; scroll/reações simultâneas não duplicam a rodada.
+- [ ] **Implementar:** antecipar enriquecimento e retirar retomada por janela; repetição somente por ação explícita ou novos dados.
+- [ ] **GREEN:** resposta antiga, logout durante storage, troca de suporte/conta e reinício do SW não restauram dados anteriores.
+- [ ] Revisar e commitar o delta do SW.
+
+```bash
+rtk pnpm --dir extensao test -- src/__tests__/cache-enriquecimento.test.ts src/__tests__/busca-sw.test.ts
+```
+
+### Task 11.4 — mostrar dados locais e encerrar parciais
+
+**Arquivos:** content script, mini-bloco, tipos/vistas compartilhados, painel e testes correspondentes.
+
+- [ ] **RED:** dados locais aparecem com a rede pendurada; alvo de renderização ≤300 ms após cards elegíveis e ativação confirmada.
+- [ ] **RED:** 429 parcial preserva dados recebidos, não vira zero e não exibe “Aguardando próxima janela”.
+- [ ] **Implementar:** renderização local independente do debounce de envio e textos terminais da seção 2.
+- [ ] **GREEN:** preço diferente não herda comissão; oferta ausente não herda vendedor/tipo; resumo mantém cobertura e desconhecidos.
+- [ ] Validar prints em 320/400/600 px e zoom 150%; revisar e commitar.
+
+Executar os testes existentes de `conteudo/busca`, `mini-bloco-busca`, `compartilhado/enriquecimento`, `busca-resumo` e `painel/Busca`.
+
+### Task 11.5 — gate final e publicação
+
+**Arquivos:** fixtures de QA, plano, spike, ADR, status, tarefas e ledger de progresso.
+
+- [ ] Medir a implementação hospedada com navegador/comissão frios e quentes, duas abas e virada UTC.
+- [ ] Aplicar o gate abaixo, contabilizando a operação inteira caso haja três subpedidos.
+- [ ] Executar verificações exigidas pela branch e revisão do diff final; CI no SHA final.
+- [ ] Publicar a edge compatível antes de distribuir a extensão; smoke de clientes **0.3.2 e 0.4.2**.
+- [ ] Gerar/testar ZIP 0.5.0 e seguir o fluxo existente de merge e Web Store. Não repetir etapas já concluídas sem necessidade.
+
+**Novo gate obrigatório:**
+
+| Métrica | Aprovação |
+|---|---|
+| Redis/enriquecimento | Caminho normal **3–6 comandos**; alvo p95 ≤10; média **<83 por busca**, incluindo exceções e subpedidos |
+| CPU | p95 <1.000 ms; máximo <1.500 ms; zero `CPUTime`/546 |
+| ML | Zero 429 na carga candidata; contagem por endpoint e carga dos outros módulos registradas |
+| Tempo | Local ≤300 ms após elegibilidade; preenchimento bem-sucedido p95 ≤8 s; falhas encerram em parcial dentro do deadline |
+| Correção | Sem corte artificial após 20 perfis; procedência e isolamento preservados; zero repetição automática por janela |
+
+O custo de margem permanece contabilizado separadamente, como no gate anterior. Conferir o contador instrumentado contra Upstash numa janela controlada; quatro comandos instrumentados não bastam se houver operações financeiras ocultas no fluxo.
+
 ## Fatia 3 — Simulação sem vínculo — versão 0.6.0
 
 **Entrega publicável:** escolher SKU apenas para calcular ou informar custo do pacote e origem, sem salvar vínculo.

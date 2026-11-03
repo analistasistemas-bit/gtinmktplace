@@ -423,3 +423,11 @@ catálogos/min por usuário+org, teto global de 120 chamadas ML/min (fail-closed
 corte de custo do Redis (emenda ADR-0170 de 03/11), o cache de `/products`, ofertas e `/users` fica **no navegador** (por
 sessão, limpo na troca de identidade), e o Redis guarda só contadores por lote (reserva com devolução das unidades não despachadas) e a comissão na
 chave existente (conta + categoria + tipo + preço exato), lida em lote com `MGET`. Catálogo sem ofertas (404 "No winners found") = 0 ofertas; "ganhador" não vem de `/products`.
+
+## Emenda 2026-11-03-b — enriquecimento por página
+
+> Substitui, para a busca automática, a cota de 10 catálogos/min, os lotes de cinco e a conclusão em janelas futuras. Dados já presentes nos cards são apresentados sem rede. O SW envia uma rodada com até 50 catálogos e 50 itens distintos, somente para componentes vencidos no navegador. A cota passa a 20 rodadas/min por usuário+org; representa proteção contra abuso, não garantia de capacidade sustentada.
+>
+> A edge consulta exclusivamente a API oficial, com concorrência limitada e orçamento global fail-closed reservado por página. Spike hospedado (03/11): 50 catálogos por requisição, pool de 16 (4 na comissão), teto global de 1.000 chamadas ML/min. Perfis são deduplicados por vendedor das ofertas exatas. Comissão usa um MGET na chave financeira existente; misses calculados pelo enriquecimento ficam somente no navegador. Falhas e limites encerram a rodada com resultado parcial, sem retomada automática por janela.
+>
+> Permanecem D-1, ausência de cache Redis de produto/oferta/perfil, proibição de PDP oculta e evasão de antibot, isolamento do cache por identidade e conta ML, procedência da oferta exata e identificação de “comissão na sua conta”. Nenhuma escrita é feita no ML. Distribuição depende dos gates de CPU, Redis, 429, cobertura e tempo da Task 11.
