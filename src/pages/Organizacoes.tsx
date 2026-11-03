@@ -19,6 +19,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { EmptyState } from '@/components/ui/empty-state';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Pagination } from '@/components/ui/pagination';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -204,6 +205,8 @@ export default function Organizacoes() {
   const [arquivarAlvo, setArquivarAlvo] = useState<{ org: OrgSummary; modo: 'arquivar' | 'desarquivar' } | null>(null);
   const [sort, setSort] = useState<'name' | 'slug' | 'gross_desc'>('gross_desc');
   const [page, setPage] = useState(1);
+  // Só o Select de ordenação (mobile) incrementa: remonta a tabela com a ordem local alinhada ao `sort`.
+  const [ordemKey, setOrdemKey] = useState(0);
   const [somentePendencias, setSomentePendencias] = useState(false);
   const [novaOpen, setNovaOpen] = useState(false);
   const [recebimentoOpen, setRecebimentoOpen] = useState(false);
@@ -663,8 +666,27 @@ export default function Organizacoes() {
         </div>
       )}
 
+      {/* Mobile: os cabeçalhos de ordenação saem junto com as colunas; o Select devolve a ordenação por nome/slug/faturamento. */}
+      <div className="mb-3 flex items-center gap-2 sm:hidden">
+        <span id="ordenar-carteira" className="text-xs font-medium text-muted-foreground">Ordenar por</span>
+        <Select
+          value={sort}
+          onValueChange={(value) => { setSort(value as typeof sort); setPage(1); setOrdemKey((k) => k + 1); }}
+        >
+          <SelectTrigger aria-label="Ordenar organizações" className="h-11 flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="gross_desc">Faturamento</SelectItem>
+            <SelectItem value="name">Nome</SelectItem>
+            <SelectItem value="slug">Slug</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* 1ª leitura da carteira: a logo ocupa o lugar dos cards e da tabela (mesmo carregando das outras telas). */}
       {wallet.isLoading ? <CarregandoMarca rotulo="Carregando" mensagem="Lendo a carteira das organizações…" /> : <DataTable<OrgSummary>
+        key={ordemKey}
         className="bg-card"
         columns={colunas}
         rows={orgsVisiveis}
@@ -672,7 +694,7 @@ export default function Organizacoes() {
         loading={wallet.isLoading}
         skeletonRows={3}
         onRowClick={(o) => navigate(`/admin/organizacoes/${o.id}?mes=${month}`)}
-        defaultSort={{ key: 'gross', dir: 'desc' }}
+        defaultSort={sort === 'name' ? { key: 'nome', dir: 'asc' } : sort === 'gross_desc' ? { key: 'gross', dir: 'desc' } : undefined}
         onSortChange={onSortChange}
         empty={
           // Em erro a faixa destrutiva acima já explica o vazio: repetir "nenhuma organização"

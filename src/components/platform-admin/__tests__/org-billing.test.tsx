@@ -356,4 +356,37 @@ describe('OrgBilling', () => {
     expect(screen.queryByText('Pronta para fechar')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Fechar demonstrativo' })).not.toBeInTheDocument();
   });
+
+  it('fechar só é oferecido com a ausência de demonstrativo confirmada: carregando, erro e fechado não têm botão', () => {
+    const base = { rows: [] as unknown[], total: 0, page: 1, page_size: 1 };
+    // carregando
+    mocks.useStatements.mockImplementation((_o: string, month?: string) => ({
+      data: month ? undefined : { rows: [], total: 0, page: 1, page_size: 20 }, isLoading: Boolean(month), isError: false, refetch: vi.fn(),
+    }));
+    const { unmount } = render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.queryByRole('button', { name: 'Fechar demonstrativo' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Pronta para fechar')).not.toBeInTheDocument();
+    expect(screen.getByText('Verificando o fechamento da competência…')).toBeInTheDocument();
+    unmount();
+    // erro: mensagem + tentar de novo, sem botão de fechar
+    const refetch = vi.fn();
+    mocks.useStatements.mockImplementation((_o: string, month?: string) => ({
+      data: month ? undefined : { rows: [], total: 0, page: 1, page_size: 20 }, isLoading: false, isError: Boolean(month), refetch,
+    }));
+    const erro = render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.queryByRole('button', { name: 'Fechar demonstrativo' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Pronta para fechar')).not.toBeInTheDocument();
+    screen.getByRole('button', { name: 'Tentar novamente' }).click();
+    expect(refetch).toHaveBeenCalled();
+    erro.unmount();
+    // fechado
+    mocks.useStatements.mockReturnValue({ data: { ...base, rows: [makeStatement()] }, isLoading: false, isError: false });
+    const fechado = render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.queryByRole('button', { name: 'Fechar demonstrativo' })).not.toBeInTheDocument();
+    fechado.unmount();
+    // aberto confirmado: botão
+    mocks.useStatements.mockReturnValue({ data: base, isLoading: false, isError: false });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeEnabled();
+  });
 });

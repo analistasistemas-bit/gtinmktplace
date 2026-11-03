@@ -220,6 +220,30 @@ describe('Organizacoes', () => {
     expect(celula).toHaveTextContent(/Previsão\s*R\$\s*2\.000,00/);
   });
 
+  it('mobile: ordenação por Select do DS com o estado atual, e volta ao faturamento depois de nome', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    usePlatformWallet.mockReturnValue(makeWallet([
+      makeOrg({ id: 'z', nome: 'Zeta', slug: 'zeta', metrics: { ...makeOrg().metrics, gross_cents: 900_000 } }),
+      makeOrg({ id: 'a', nome: 'Alfa', slug: 'alfa', metrics: { ...makeOrg().metrics, gross_cents: 100_000 } }),
+    ]));
+    const user = userEvent.setup();
+    renderPage();
+    const ordem = () => screen.getAllByRole('link', { name: /Ver organização/ }).map((l) => l.textContent);
+    expect(screen.getByRole('combobox', { name: 'Ordenar organizações' })).toHaveTextContent('Faturamento');
+    expect(ordem()).toEqual(['Zeta', 'Alfa']);
+    screen.getByRole('combobox', { name: 'Ordenar organizações' }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: 'Nome' });
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(screen.getByRole('combobox', { name: 'Ordenar organizações' })).toHaveTextContent('Nome');
+    expect(ordem()).toEqual(['Alfa', 'Zeta']);
+    screen.getByRole('combobox', { name: 'Ordenar organizações' }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: 'Faturamento' });
+    await user.keyboard('{ArrowUp}{Enter}');
+    expect(ordem()).toEqual(['Zeta', 'Alfa']);
+  });
+
   it('diálogo Nova empresa tem rótulos persistentes nos cinco campos', async () => {
     const user = userEvent.setup();
     renderPage();

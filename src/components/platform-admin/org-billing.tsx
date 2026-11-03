@@ -141,7 +141,6 @@ export function OrgBilling({ orgId, month }: Props) {
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const completedMonth = useMemo(() => month < currentFortalezaMonth(), [month]);
   const preview = previewQuery.data;
-  const canClose = Boolean(preview?.terms && preview.blockers.length === 0 && completedMonth);
   const current = useMemo(
     () => latestTerm(termsQuery.data?.rows ?? []),
     [termsQuery.data],
@@ -149,6 +148,11 @@ export function OrgBilling({ orgId, month }: Props) {
 
   const statementDoMes = (statementDoMesQuery.data?.rows ?? []).find((row) => row.month === month) ?? null;
   const mesFechado = Boolean(statementDoMes);
+  // Fechar só com a ausência de demonstrativo CONFIRMADA: carregando ou erro não é "mês aberto".
+  const estadoMes: 'carregando' | 'erro' | 'fechado' | 'aberto' = statementDoMes ? 'fechado'
+    : statementDoMesQuery.isError ? 'erro'
+    : statementDoMesQuery.isLoading || !statementDoMesQuery.data ? 'carregando' : 'aberto';
+  const canClose = Boolean(preview?.terms && preview.blockers.length === 0 && completedMonth && estadoMes === 'aberto');
   const motivoRelatorio = statementDoMesQuery.isLoading
     ? 'Carregando demonstrativos…'
     : statementDoMesQuery.isError ? 'Não foi possível ler os demonstrativos; o estado do mês é desconhecido.'
@@ -272,10 +276,18 @@ export function OrgBilling({ orgId, month }: Props) {
               <CardDescription>
                 {statementDoMes
                   ? <StatusPill tone="success">Fechado em {diaMesBr(statementDoMes.closed_at)}</StatusPill>
+                  : estadoMes === 'carregando' ? <StatusPill tone="neutral">Verificando o fechamento da competência…</StatusPill>
+                  : estadoMes === 'erro' ? <StatusPill tone="warning">Fechamento indisponível</StatusPill>
                   : <StatusPill tone={state.tone}>{state.label}</StatusPill>}
               </CardDescription>
             </div>
-            {!statementDoMes && (
+            {estadoMes === 'erro' && (
+              <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+                <span>Não foi possível confirmar o fechamento da competência.</span>
+                <Button variant="outline" size="sm" className="max-sm:min-h-11" onClick={() => void statementDoMesQuery.refetch()}>Tentar novamente</Button>
+              </div>
+            )}
+            {estadoMes === 'aberto' && (
               <Button
                 className="max-sm:min-h-11"
                 disabled={!canClose || close.isPending}
