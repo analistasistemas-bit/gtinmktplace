@@ -44,9 +44,12 @@ export function foraDaFaixa(it: ItemPromocao, preco: number, tipo: string): stri
 /** Simulação sobre o item ATUAL: preço, projeção e semáforo do servidor; o "até quanto descer" fica o do sync —
  *  depende da faixa e do piso, não do preço escolhido (a simulação não o recalcula). */
 export function sobreporSimulacao(atual: ItemPromocao, simulado: ItemPromocao): ItemPromocao {
-  const projecao = simulado.projecao.map((c, i) => {
-    const o = atual.projecao.find((x) => x.variation_id === c.variation_id) ?? atual.projecao[i];
-    return { ...c, ate_quanto: o?.ate_quanto ?? null, ate_quanto_motivo: o?.ate_quanto_motivo ?? null };
+  const projecao = simulado.projecao.map((c) => {
+    // Achados Codex: só a mesma cor (nunca por posição) e só com as mesmas premissas — custo/piso/alíquota
+    // relidos diferentes invalidam o limite antigo (poderia levar a prejuízo).
+    const o = atual.projecao.find((x) => x.variation_id === c.variation_id);
+    const valido = o != null && o.custo === c.custo && o.piso === c.piso && o.aliquota_pct === c.aliquota_pct;
+    return { ...c, ate_quanto: valido ? o.ate_quanto : null, ate_quanto_motivo: valido ? o.ate_quanto_motivo : null };
   });
   return { ...atual, preco_avaliado: simulado.preco_avaliado, projecao, pior_semaforo: simulado.pior_semaforo };
 }

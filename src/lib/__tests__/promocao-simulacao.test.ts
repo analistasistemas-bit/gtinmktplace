@@ -108,4 +108,15 @@ describe('sobreporSimulacao', () => {
       expect.objectContaining({ variation_id: 1, liquido: 31, ate_quanto: 41.45, ate_quanto_motivo: null }),
     ]);
   });
+
+  it('achados Codex: cor sem par no sync ou com custo/piso/alíquota diferentes → sem "até quanto"', () => {
+    const base = { custo: 20, piso: 30, aliquota_pct: 4, ate_quanto: null, ate_quanto_motivo: null };
+    const atual = item({ ml_item_id: 'A', projecao: [{ variation_id: 1, ...base, ate_quanto: 36.59 } as never] });
+    const sim = (o: object) => sobreporSimulacao(atual, item({ ml_item_id: 'A', projecao: [{ variation_id: 1, ...base, ...o } as never] })).projecao[0];
+    expect(sim({}).ate_quanto).toBe(36.59);
+    expect(sim({ variation_id: 2 }).ate_quanto).toBeNull();
+    expect(sim({ custo: 50 }).ate_quanto).toBeNull();
+    expect(sim({ piso: 60 }).ate_quanto).toBeNull();
+    expect(sim({ aliquota_pct: 16 }).ate_quanto).toBeNull();
+  });
 });
