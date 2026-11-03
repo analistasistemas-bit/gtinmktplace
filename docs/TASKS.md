@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Central de Promoções: anúncio reenviado em vários lotes caía em "Sem custo" (emenda ADR-0170) — 2026-11-03
+
+- [x] Causa: `resolverCor` (`_shared/promocoes/cadastro.ts`) só casava por `ml_item_id` com 1 linha; a Avil subiu a mesma planilha em 03/08, 01/09 e 16/10 → 3 linhas do mesmo código por anúncio → `sem_cadastro` (rótulo "Sem custo no PubliAI"). Custo nunca sumiu do banco; financeiro não afetado (custo-vigente já usa a mais recente).
+- [x] Fix: `porItem` deduplica por código normalizado (com custo vence, depois a mais recente). Códigos distintos seguem ambíguos. Teste em `__tests__/cadastro.test.ts`.
+- [x] Main `ff0b3047` (CI verde, revisão Gemini 4 Argon High — Codex sem cota). Edges `sincronizar-promocoes`, `operacoes-massa`, `ads-campanhas`, `ads-metricas`, `coletar-ads-ml`, `coletar-trafego-ml` redeployadas; fonte baixada confere.
+- [x] Sync da Avil pós-deploy: `sem_cadastro` 34 → 1 (`MLB4907268497`, Fitas Velcro Laranja, sem família no cadastro).
+
 ## Relâmpago (LIGHTNING) pelo app — aderir/sair (emenda ADR-0174) — 2026-11-02
 
 - [x] Spike de escrita na Avil (`MLB5244990621`, `LGH-MLB1000`): POST 201 + `offer_id`, `pending` com janela do ML; DELETE 200 → `candidate` em ≤ 5 min.
