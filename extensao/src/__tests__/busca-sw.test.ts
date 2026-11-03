@@ -636,6 +636,17 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect(mensagensPagina('publiai:sessao-mudou').length).toBeGreaterThan(0);
   });
 
+  it('revalidação que falhou (rede/sem contaMl) também conta para o limite de 5 min: duas ativações = uma chamada', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:00Z'));
+    await registrar([card(1)]);
+    const vazios = () => doTipo('identificar_busca').filter((c) => c.itens.length === 0);
+    falharIdentificar = true;
+    vi.setSystemTime(Date.parse('2026-11-03T12:06:00Z'));
+    for (let i = 0; i < 2; i++) { await rotear({ tipo: 'publiai:busca-visivel', geracao: geracaoCs }, BUSCA); await complementosPendentes(); }
+    expect(vazios()).toHaveLength(1);
+  });
+
   it('identificação atrasada (conta antiga) depois da navegação não limpa o estado novo', async () => {
     await registrar([card(1)]);
     const sessaoAntes = (await chrome.storage.session.get('geracao-sessao'))['geracao-sessao'];

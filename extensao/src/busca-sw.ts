@@ -393,6 +393,17 @@ export function revalidarContaDaAba(tabId: number, epoca: number): Promise<void>
       const b = await lerAba(tabId);
       return vale() && b.geracao === p.geracao && b.sessao === p.sessao && ehBusca(b.estado) && b.estado.entrada.url === p.url;
     };
+    /** Grava na aba só se identidade, rodada e página ainda são as do início. */
+    const gravarNaPagina = (mudar: (r2: RespostaViva) => void) => seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
+      const b = await lerAba(tabId);
+      if (!vale() || b.geracao !== p.geracao || b.sessao !== p.sessao || !ehBusca(b.estado) || b.estado.entrada.url !== p.url) return false;
+      const r2 = respostaDe(b.estado);
+      mudar(r2);
+      await registrarEstado(tabId, { geracao: p.geracao, sessao: p.sessao, entrada: b.estado.entrada, resposta: r2, observado: b.estado.observado });
+      return true;
+    })).then((ok) => ok === true);
+    // A tentativa conta antes do envio: falha de rede ou resposta sem contaMl também respeita os 5 min.
+    if (!(await gravarNaPagina((r2) => { r2.contaVerificadaEm = Date.now(); }))) return;
     const resp = await chamarExtensao<{ contaMl?: unknown }>({ acao: 'identificar_busca', eanDaBusca: null, itens: [], registrarUso: false }, epoca,
       { aindaVale: vale, conferir: mesmaPagina });
     const contaMl = resp.ok && (typeof resp.dados.contaMl === 'string' || resp.dados.contaMl === null) ? resp.dados.contaMl : undefined;
@@ -402,14 +413,7 @@ export function revalidarContaDaAba(tabId: number, epoca: number): Promise<void>
       await limparAbasNaFila();
       return;
     }
-    await seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
-      const b = await lerAba(tabId);
-      if (!vale() || b.geracao !== p.geracao || b.sessao !== p.sessao || !ehBusca(b.estado) || b.estado.entrada.url !== p.url) return;
-      const r2 = respostaDe(b.estado);
-      r2.contaMl = contaMl;
-      r2.contaVerificadaEm = Date.now();
-      await registrarEstado(tabId, { geracao: p.geracao, sessao: p.sessao, entrada: b.estado.entrada, resposta: r2, observado: b.estado.observado });
-    }));
+    await gravarNaPagina((r2) => { r2.contaMl = contaMl; });
   });
 }
 
