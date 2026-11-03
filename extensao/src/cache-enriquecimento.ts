@@ -120,8 +120,8 @@ export interface Plano {
   pedido: PedidoLote | null;
 }
 
-/** Ainda não pedido (ou `aguardando` gravado antes da 11.3). ok e indisponível são terminais: sem retomada automática. */
-const precisa = (v: { estado: string } | undefined) => !v || v.estado === 'aguardando';
+/** Ainda não pedido (o legado `aguardando` vira ausente em enriquecimentoDe). ok e indisponível são terminais. */
+const precisa = (v: { estado: string } | undefined) => !v;
 
 /** Itens do card que a leitura de ofertas precisa cobrir (preço legível; a comissão é do preço exato). */
 const cobre = (o: OfertasOk, itens: { itemId: string; preco: number }[]) => itens.every((i) => o.exatas[i.itemId]?.preco === i.preco);
@@ -260,12 +260,7 @@ export function marcarFalha(enr: EstadoEnriquecimento, pedido: PedidoLote, motiv
   enr.falhou = true;
 }
 
-/** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
-export function haParaTentar(enr: EstadoEnriquecimento): boolean {
-  return enr.falhou || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
-    !!c.aguardandoJanela || (!!c.produto && c.produto.estado !== 'ok') || (!!c.ofertas && c.ofertas.estado !== 'ok')
-    || (c.ofertas?.estado === 'ok' && Object.values(c.ofertas.exatas).some((e) => e.estado === 'indisponivel' || (e.estado === 'ok' && e.comissao.estado !== 'ok'))));
-}
+export { haParaTentar } from './compartilhado/enriquecimento';
 
 /** "Tentar novamente" (ação explícita): antes do Retry-After do ML → false, nada muda. Senão apaga todo indisponível
  *  (componentes, ofertas exatas sem comissão ou não lidas, vendedores) para o planejamento pedir de novo. Muta `enr`. */
@@ -273,7 +268,6 @@ export function prepararNovaTentativa(enr: EstadoEnriquecimento, agora: number):
   if (enr.tentarAposEm != null && agora < enr.tentarAposEm) return false;
   for (const [cat, c] of Object.entries(enr.catalogos)) {
     const v: CatalogoVista = { ...c };
-    delete v.aguardandoJanela;
     if (v.produto && v.produto.estado !== 'ok') delete v.produto;
     if (v.ofertas?.estado === 'ok') {
       const exatas = Object.fromEntries(Object.entries(v.ofertas.exatas).filter(([, e]) => e.estado === 'nao_encontrada' || (e.estado === 'ok' && e.comissao.estado === 'ok')));
@@ -284,7 +278,6 @@ export function prepararNovaTentativa(enr: EstadoEnriquecimento, agora: number):
   for (const [k, v] of Object.entries(enr.vendedores)) if (v.estado !== 'ok') delete enr.vendedores[k];
   enr.falhou = false;
   enr.tentarAposEm = null;
-  enr.retomarEm = null;
   return true;
 }
 
@@ -298,7 +291,6 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
     if (!pc) continue;
     const cat = c.catalogProductId;
     const v: CatalogoVista = { ...enr.catalogos[cat] };
-    delete v.aguardandoJanela;
     // Catálogo inteiro recusado (cota de páginas, Redis fora) ou estado desconhecido: nada consultado.
     const recusado = c.estado !== 'ok' ? motivoDe(c, MOTIVO_PADRAO) : null;
     const p = recusado ? undefined : c.produto;

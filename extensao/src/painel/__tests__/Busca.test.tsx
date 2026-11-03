@@ -326,10 +326,11 @@ describe('Painel autoexplicativo (0.4.1)', () => {
 });
 
 describe('Catálogos e vendedores (Task 10)', () => {
-  const ex = (sellerId: number | null, tipo: string | null) => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: { estado: 'aguardando' } });
+  const COM = { estado: 'ok', valor: { percentual: 14, fixa: 0, saleFeeAmount: 14, precoConsultado: 100 } };
+  const ex = (sellerId: number | null, tipo: string | null) => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: COM });
   const comEnr = (enr: Record<string, unknown>) => {
     const e = estado({}, [card('MLB1000001'), card('MLB1000002'), card('MLB1000003', { catalogProductId: 'MLB200' }), card('MLB1000004', { catalogProductId: null })]);
-    e.resposta.enriquecimento = { catalogos: {}, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0, ...enr } as never;
+    e.resposta.enriquecimento = { catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null, ...enr } as never;
     return e;
   };
   const secao = () => screen.getByRole('region', { name: 'Catálogos e vendedores' });
@@ -359,33 +360,74 @@ describe('Catálogos e vendedores (Task 10)', () => {
     }
   });
 
-  it('nada lido ainda: "Aguardando dados do catálogo"; janela esgotada: "Aguardando próxima janela"', () => {
-    const { unmount } = render(<Busca {...props({ estado: comEnr({}) })} />);
-    within(secao()).getByText('Aguardando dados do catálogo');
-    unmount();
-    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { aguardandoJanela: true } }, retomarEm: Date.now() + 30_000 }) })} />);
-    within(secao()).getByText('Aguardando próxima janela');
+  const OFERTAS1 = { estado: 'ok', total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } };
+  const VENDEDORES = { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP' }, 8: { estado: 'ok', nome: 'B', medalha: 'silver', uf: 'RJ' } };
+
+  it('nada lido ainda: "Consultando dados do catálogo", sem "Tentar novamente" nem "Aguardando próxima janela"', () => {
+    render(<Busca {...props({ estado: comEnr({}) })} />);
+    within(secao()).getByText('Consultando dados do catálogo');
+    expect(secao().textContent).not.toMatch(/próxima janela|Aguardando/);
+    expect(within(secao()).queryByRole('button', { name: 'Tentar novamente' })).toBeNull();
   });
 
-  it('catálogo com metadados lidos e ofertas pendentes não conta como lido: aviso de espera continua', () => {
+  it('catálogo com metadados lidos e ofertas em processamento não conta como lido', () => {
     render(<Busca {...props({ estado: comEnr({ catalogos: {
-      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 1, lidas: 1, vendedoresIdentificados: 1, ofertasSemVendedor: 0, completa: true,
-        exatas: { MLB1000001: { estado: 'nao_encontrada', preco: 100 }, MLB1000002: { estado: 'nao_encontrada', preco: 100 } } } },
-      MLB200: { produto: { estado: 'ok', criadoEm: null }, aguardandoJanela: true },
-    }, retomarEm: Date.now() + 30_000 }) })} />);
+      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000001: { estado: 'nao_encontrada', preco: 100 }, MLB1000002: { estado: 'nao_encontrada', preco: 100 } } } },
+      MLB200: { produto: { estado: 'ok', criadoEm: null } },
+    } }) })} />);
     within(secao()).getByText('1 de 2');
-    within(secao()).getByText('Aguardando próxima janela');
+    within(secao()).getByText('Consultando dados do catálogo');
   });
 
-  it('ofertas completas com metadados pendentes: distribuições aparecem; "lidos" conta só catálogos sem pendência', () => {
-    render(<Busca {...props({ estado: comEnr({ catalogos: {
-      MLB100: { produto: { estado: 'aguardando', retomarEm: Date.now() + 30_000, tentativas: 1 }, ofertas: { estado: 'ok', total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
-        exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
-    }, vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP' } } }) })} />);
+  it('ofertas completas com metadados em processamento: distribuições aparecem; "lidos" conta só catálogos sem pendência', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { ofertas: OFERTAS1 } }, vendedores: { 7: VENDEDORES[7] } }) })} />);
     const s = within(secao());
     s.getByText('0 de 2');
     expect(s.getByText('Gold').closest('li')!.textContent).toContain('1');
     expect(s.getByText('1–5').closest('li')!.textContent).toContain('1');
+  });
+
+  it('Task 11.4: 429 parcial terminal preserva o recebido, conta à parte e oferece "Tentar novamente" (sem falha de rede)', async () => {
+    const p = props({ estado: comEnr({ catalogos: {
+      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: OFERTAS1 },
+      MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } },
+    }, vendedores: VENDEDORES }) });
+    render(<Busca {...p} />);
+    const s = within(secao());
+    s.getByText('1 de 2');
+    s.getByText('1 catálogo sem ofertas lidas agora');
+    s.getByText('Dados adicionais indisponíveis agora');
+    expect(s.getByText('Gold').closest('li')!.textContent).toContain('1'); // o que chegou fica
+    s.getByText('2 vendedores únicos · 1 de 3 cards de catálogo sem vendedor identificado'); // desconhecido não vira zero
+    expect(secao().textContent).not.toMatch(/próxima janela|Consultando/);
+    fireEvent.click(s.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
+  it('Task 11.4: só a comissão indisponível também oferece "Tentar novamente" (haParaTentar)', () => {
+    const semCom = { ...OFERTAS1, exatas: { MLB1000001: { ...ex(7, 'gold_special'), comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }, MLB1000002: ex(8, 'gold_pro') } };
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: semCom }, MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } } }, vendedores: VENDEDORES }) })} />);
+    within(secao()).getByRole('button', { name: 'Tentar novamente' });
+  });
+
+  it('Task 11.4: tudo lido: nem aviso nem botão', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: OFERTAS1 }, MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } } }, vendedores: VENDEDORES }) })} />);
+    expect(within(secao()).queryByRole('button', { name: 'Tentar novamente' })).toBeNull();
+    expect(secao().textContent).not.toMatch(/indisponíveis agora|Consultando/);
+  });
+
+  it('Task 11.4: SW responde "aguardar" (Retry-After) → texto com a hora; Retry-After já no estado → mesma frase antes do clique', async () => {
+    const quando = Date.now() + 90_000;
+    const hhmm = new Date(quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const parcial = { catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } } } };
+    const p = props({ estado: comEnr(parcial), analisar: vi.fn(async () => ({ ok: false, erro: 'aguardar', tentarAposEm: quando })) });
+    const { unmount } = render(<Busca {...p} />);
+    fireEvent.click(within(secao()).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => within(secao()).getByText(`O Mercado Livre pediu uma pausa; tente de novo às ${hhmm}`));
+    expect(screen.queryByRole('alert')).toBeNull(); // não vai para o aviso genérico da margem
+    unmount();
+    render(<Busca {...props({ estado: comEnr({ ...parcial, tentarAposEm: quando }) })} />);
+    within(secao()).getByText(`O Mercado Livre pediu uma pausa; tente de novo às ${hhmm}`);
   });
 
   it('falha de rede: aviso com "Tentar novamente" que refaz o enriquecimento uma vez', async () => {

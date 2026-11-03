@@ -124,7 +124,7 @@ describe('fix rodada 1', () => {
 });
 
 describe('resumoEnriquecimento (Task 10)', () => {
-  const ex = (sellerId: number | null, tipo: string | null = 'gold_special') => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: { estado: 'aguardando' } });
+  const ex = (sellerId: number | null, tipo: string | null = 'gold_special') => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } });
   const of = (vendedoresIdentificados: number, completa: boolean, exatas: Record<string, unknown>) =>
     ({ estado: 'ok', total: vendedoresIdentificados, lidas: vendedoresIdentificados, vendedoresIdentificados, ofertasSemVendedor: 0, completa, exatas }) as never;
 
@@ -142,6 +142,19 @@ describe('resumoEnriquecimento (Task 10)', () => {
     expect(r.vendedores).toMatchObject({ unicos: 3, medalhas: { platinum: 1, gold: 0, silver: 0, sem: 0 }, medalhaDesconhecida: 2, ufs: [['RJ', 1], ['SP', 1]], ufOutros: 0, ufDesconhecida: 1, cardsSemVendedor: 3 });
     expect(r.tipos).toEqual({ classico: 3, premium: 1, desconhecido: 1, exatas: 5 });
     expect(r.faixas).toEqual({ ate5: 1, ate10: 0, ate30: 0, acima30: 1, semOfertas: 0, completos: 2, parciais: [12], catalogos: 4 });
+  });
+
+  it('Task 11.4: parcial terminal (429) mantém cobertura e desconhecidos; lidos, em consulta e indisponíveis à parte', () => {
+    const e = enriquecimentoVazio();
+    e.catalogos.MLB1 = { produto: { estado: 'ok', criadoEm: null }, ofertas: of(3, true, { A1: ex(7), A2: { estado: 'indisponivel', preco: 100, motivo: 'limite do Mercado Livre' } }) };
+    e.catalogos.MLB2 = { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+    e.vendedores = { 7: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+    const cards = [card('A1', { catalogProductId: 'MLB1' }), card('A2', { catalogProductId: 'MLB1' }), card('B1', { catalogProductId: 'MLB2' }), card('C1', { catalogProductId: 'MLB3' })];
+    const r = resumoEnriquecimento(cards, e);
+    expect(r).toMatchObject({ cardsComCatalogo: 4, catalogosLidos: 1, catalogosConsultando: 1, catalogosIndisponiveis: 1 });
+    // Vendedor com perfil indisponível: único, medalha/UF desconhecidas (nunca "sem medalha" nem zero).
+    expect(r.vendedores).toMatchObject({ unicos: 1, medalhas: { platinum: 0, gold: 0, silver: 0, sem: 0 }, medalhaDesconhecida: 1, ufDesconhecida: 1, cardsSemVendedor: 3 });
+    expect(r.tipos).toEqual({ classico: 1, premium: 0, desconhecido: 0, exatas: 1 });
   });
 
   it('UF: 5 maiores + outros; nada enriquecido = zeros sem inventar', () => {

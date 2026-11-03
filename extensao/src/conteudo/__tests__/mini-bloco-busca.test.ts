@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CardBusca } from '../../leitura/busca';
 import { brlCompacto, renderizarMiniBlocoDaBusca } from '../mini-bloco-busca';
-import { idadeDoCatalogo, vistaDoCard, type EstadoEnriquecimento } from '../../compartilhado/enriquecimento';
+import { enriquecimentoDe, idadeDoCatalogo, vistaDoCard, type EstadoEnriquecimento } from '../../compartilhado/enriquecimento';
 
 let raizes: ShadowRoot[] = [];
 let modos: string[] = [];
@@ -165,7 +165,7 @@ it('host fica acima do link esticado do título do ML (::before inset 0, z-index
 
 // Task 10: catálogo enriquecido (vendedor/medalha/UF, tipo + comissão na sua conta, vendedores, idade) e estados.
 const AGORA = Date.parse('2026-11-03T12:00:00Z');
-const enr = (o: Partial<EstadoEnriquecimento> = {}): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0, ...o });
+const enr = (o: Partial<EstadoEnriquecimento> = {}): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null, ...o });
 const exata = (o: Record<string, unknown> = {}) => ({ estado: 'ok', preco: 50, sellerId: 7, tipo: 'gold_special', comissao: { estado: 'ok', valor: { percentual: 14, fixa: 0, saleFeeAmount: 7.1, precoConsultado: 50 } }, ...o });
 const ofertas = (o: Record<string, unknown> = {}, ex: Record<string, unknown> = { MLB1000001: exata() }) =>
   ({ estado: 'ok', total: 12, lidas: 12, vendedoresIdentificados: 9, ofertasSemVendedor: 0, completa: true, exatas: ex, ...o });
@@ -214,39 +214,77 @@ it('leitura parcial: "N+ vendedores" (sentido no ⓘ); sem vendedor identificado
   expect(texto()).toContain('vendedores não identificados');
 });
 
-it('estados: aguardando dados, próxima janela, oferta não localizada, perfil não carregado, comissão aguardando', () => {
+it('Task 11.4: processamento, oferta não localizada, perfil não carregado; nunca "Aguardando próxima janela"', () => {
   comEnr(enr());
-  expect(texto()).toContain('Aguardando dados do catálogo');
+  expect(texto()).toContain('Consultando dados do catálogo');
   raizes = [];
-  comEnr(enr({ catalogos: { MLB200: { aguardandoJanela: true } }, retomarEm: AGORA + 1000 }));
-  expect(texto()).toContain('Aguardando próxima janela');
+  // Depois de uma falha de rede (falhou), card novo do scroll com o pedido em voo: processamento, não "não lido".
+  comEnr(enr({ falhou: true, catalogos: { MLB999: { produto: { estado: 'indisponivel', motivo: 'falha de rede' }, ofertas: { estado: 'indisponivel', motivo: 'falha de rede' } } } }));
+  expect(texto()).toContain('Consultando dados do catálogo');
+  expect(texto()).not.toMatch(/não lido|próxima janela/i);
   raizes = [];
   comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertas({}, { MLB1000001: { estado: 'nao_encontrada', preco: 50 } }) as never } } }));
   expect(texto()).toContain('Oferta não localizada nesta leitura');
   expect(texto()).toContain('9 vendedores'); // metadados do catálogo seguem
+  expect(texto()).not.toMatch(/Clássico|Premium|Platinum|comissão/); // oferta ausente não herda vendedor/tipo
   raizes = [];
-  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'aguardando' } }) }) as never } } }));
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }) }) as never } } }));
   expect(texto()).toContain('Perfil não carregado');
-  expect(texto()).toContain('Tipo não confirmado'); // comissão aguardando ainda é mostrada à parte
-
-  expect(texto()).toContain('Tipo não confirmado');
-  expect(texto()).toContain('comissão na sua contaaguardandoⓘ');
+  expect(texto()).toContain('Tipo e comissão na sua conta não confirmados');
 });
 
-it('pendência por componente: metadados lidos + ofertas aguardando janela → mostra a idade E a espera', () => {
-  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, aguardandoJanela: true } }, retomarEm: AGORA + 1000 }));
-  expect(texto()).toContain('Aguardando próxima janela');
+it('Task 11.4: só a comissão falhou → "Comissão na sua conta indisponível agora" (motivo no title), tipo fica', () => {
+  comEnr(completo({ exatas: { MLB1000001: exata({ comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }) } }));
+  expect(texto()).toContain('Clássico· Comissão na sua conta indisponível agoraⓘ');
+  expect(texto()).not.toMatch(/R\$ 0|\(0%\)/); // desconhecido nunca vira zero
+  const l = [...raizes[0].querySelectorAll('.b > .l')].find((x) => x.textContent!.includes('indisponível agora')) as HTMLElement;
+  expect(l.title).toBe('limite do Mercado Livre');
+});
+
+it('Task 11.4: 429 parcial preserva o que chegou, não vira zero e mostra "Dados adicionais indisponíveis agora" com ⓘ', () => {
+  // Ofertas recusadas (429) e metadados lidos: idade fica, ofertas = parcial terminal.
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } } } }));
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  expect(texto()).toContain('há 120 dias');
+  expect(texto()).not.toMatch(/0 vendedores|R\$ 0|próxima janela|Consultando/);
+  expect(raizes[0].querySelector('button.i[aria-label="O que é dados adicionais indisponíveis?"]')).not.toBeNull();
+  raizes = [];
+  // Ofertas lidas e metadados recusados: vendedores e oferta ficam; a idade, indisponível agora.
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: ofertas() as never } }, vendedores: { 7: { estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'RJ' } } }));
+  expect(texto()).toContain('9 vendedores·idade indisponível agora');
+  expect(texto()).toContain('R$ 7,10');
+  raizes = [];
+  // Item do scroll num catálogo já lido, não consultado nesta rodada (429): parcial, não "não localizada".
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: ofertas({}, { MLB1000001: { estado: 'indisponivel', preco: 50, motivo: 'limite do Mercado Livre' } }) as never } } }));
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  expect(texto()).not.toContain('Oferta não localizada');
+  expect(texto()).toContain('9 vendedores');
+});
+
+it('Task 11.4: ofertas indisponíveis valem para o item/preço tentado; preço novo do mesmo item volta a "Consultando"', () => {
+  const e = enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: { estado: 'indisponivel', motivo: 'falha de rede', itens: { MLB1000001: 50 } } } } });
+  comEnr(e);
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  raizes = [];
+  comEnr(e, card({ preco: 60, ocorrencias: [{ posicao: 1, patrocinado: false, preco: 60, vendidosTexto: null }] }));
+  expect(texto()).toContain('Consultando dados do catálogo');
+});
+
+it('pendência por componente: metadados lidos + ofertas em processamento → idade E "Consultando"', () => {
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) } } } }));
+  expect(texto()).toContain('Consultando dados do catálogo');
   expect(texto()).toContain('há 120 dias');
   raizes = [];
-  // Ofertas lidas, metadados ainda aguardando: vendedores + "idade aguardando".
-  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never, produto: { estado: 'aguardando', retomarEm: AGORA + 1000, tentativas: 1 } } } }));
-  expect(texto()).toContain('9 vendedores');
-  expect(texto()).toContain('idade aguardando');
-  raizes = [];
-  // Aguardando esgotado (2 tentativas) deixa de ser espera.
-  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never, produto: { estado: 'aguardando', retomarEm: null, tentativas: 2 } } } }));
-  expect(texto()).not.toContain('idade aguardando');
-  expect(texto()).not.toContain('Aguardando');
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never } } }));
+  expect(texto()).toContain('9 vendedores·consultando idade');
+});
+
+it('legado gravado antes da 11.3 (aguardando/aguardandoJanela) vira processamento, nunca "Aguardando próxima janela"', () => {
+  const e = enriquecimentoDe({ catalogos: { MLB200: { aguardandoJanela: true, produto: { estado: 'aguardando', retomarEm: 1, tentativas: 2 } } }, vendedores: { 7: { estado: 'aguardando' } }, retomarEm: 5, perfis: 3 });
+  expect(e).toEqual({ catalogos: { MLB200: {} }, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null });
+  comEnr(e);
+  expect(texto()).toContain('Consultando dados do catálogo');
+  expect(texto()).not.toMatch(/próxima janela|Aguardando dados/);
 });
 
 it('sem tipo e sem comissão: uma frase só ("Tipo e comissão na sua conta não confirmados")', () => {

@@ -15,7 +15,9 @@ export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa. Valor arredondado aqui; o painel mostra o valor completo.';
 const COMISSAO = 'Tarifa de venda que o Mercado Livre cobraria na sua conta para este tipo de anúncio, nesta categoria e a este preço. Não inclui frete nem imposto.';
 const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "N+" = leitura parcial: o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor, então há pelo menos N.';
-const ESPERA = { dados: 'Aguardando dados do catálogo', janela: 'Aguardando próxima janela', falha: 'Catálogo não lido · Tentar novamente no painel' } as const;
+const PARCIAL = 'O Mercado Livre limitou as consultas, o tempo acabou ou a conexão falhou nesta leitura. O que já chegou continua aqui; nada foi presumido. Use "Tentar novamente" no painel do PubliAI.';
+const CONSULTANDO = 'Consultando dados do catálogo';
+const ADICIONAIS = 'Dados adicionais indisponíveis agora';
 const pctBr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -147,9 +149,21 @@ export function renderizarMiniBlocoDaBusca(
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
   if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
 
-  // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem dado do catálogo: o estado da espera.
-  if (vista?.espera && vista.faltaOfertas) {
-    bloco.append(linha(el('span', `t ${vista.espera === 'dados' || vista.espera === 'janela' ? 'aguardando' : 'neutro'}`, vista.motivo ?? ESPERA[vista.espera as keyof typeof ESPERA])));
+  // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem a oferta: processamento ou parcial terminal.
+  const parcial = (motivo: string) => {
+    const l = linha(el('span', 't neutro', ADICIONAIS));
+    l.title = motivo;
+    ajuda(l, 'dados adicionais indisponíveis', PARCIAL);
+    bloco.append(l);
+  };
+  if (vista?.indisponivel && !exata) {
+    bloco.append(linha(el('span', 't neutro', vista.indisponivel)));
+  } else if (vista?.faltaOfertas) {
+    bloco.append(linha(el('span', 't violeta', CONSULTANDO)));
+  } else if (vista?.ofertasIndisponivel) {
+    parcial(vista.ofertasIndisponivel);
+  } else if (exata?.estado === 'indisponivel') {
+    parcial(exata.motivo);
   } else if (exata?.estado === 'nao_encontrada') {
     bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
   } else if (exata?.estado === 'ok') {
@@ -159,10 +173,9 @@ export function renderizarMiniBlocoDaBusca(
     // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
     else if (oc.preco === exata.preco) {
       const c = exata.comissao;
-      l.append(el('span', 'v', '·'), el('span', 'v', 'comissão na sua conta'));
-      if (c.estado === 'ok') l.append(el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
-      else l.append(el('span', `t ${c.estado === 'aguardando' ? 'aguardando' : 'neutro'}`, c.estado === 'aguardando' ? 'aguardando' : 'indisponível'));
-      if (c.estado === 'indisponivel') l.title = c.motivo;
+      // Separador junto do texto: quebrando a linha, o "·" vai com a comissão (não fica pendurado no tipo).
+      if (c.estado === 'ok') l.append(el('span', 'v', '·'), el('span', 'v', 'comissão na sua conta'), el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
+      else { l.append(el('span', 't neutro', '· Comissão na sua conta indisponível agora')); l.title = c.motivo; }
       ajuda(l, 'comissão na sua conta', COMISSAO);
     }
     bloco.append(l);
@@ -180,7 +193,8 @@ export function renderizarMiniBlocoDaBusca(
   // 4. Catálogo: vendedores (N+ = leitura parcial) · idade com semáforo (cor sempre com o texto "há D dias").
   const o = vista?.ofertas;
   const idade = vista ? idadeDoCatalogo(vista.criadoEm, agora) : null;
-  const idadeAguardando = !!o && !!vista?.espera && vista.faltaProduto && !vista.faltaOfertas;
+  // Ofertas lidas e metadados não: a idade em processamento ou indisponível (o que já chegou fica).
+  const idadeEstado = !o || idade ? null : vista!.faltaProduto && !vista!.indisponivel ? 'consultando idade' : vista!.produtoIndisponivel ? 'idade indisponível agora' : null;
   if (o || idade) {
     const l = linha();
     l.classList.add('pq');
@@ -188,7 +202,11 @@ export function renderizarMiniBlocoDaBusca(
       const n = o.vendedoresIdentificados;
       l.append(el('b', '', !o.completa && n === 0 ? 'vendedores não identificados' : `${n}${o.completa ? '' : '+'} ${n === 1 ? 'vendedor' : 'vendedores'}`));
     }
-    if (idadeAguardando) l.append(el('span', 'v', '·'), el('span', 't aguardando', 'idade aguardando'));
+    if (idadeEstado) {
+      const t = el('span', `t ${idadeEstado === 'consultando idade' ? 'violeta' : 'neutro'}`, idadeEstado);
+      if (vista!.produtoIndisponivel) t.title = vista!.produtoIndisponivel;
+      l.append(el('span', 'v', '·'), t);
+    }
     if (idade) {
       if (o) l.append(el('span', 'v', '·'));
       const g = el('span', 'g');

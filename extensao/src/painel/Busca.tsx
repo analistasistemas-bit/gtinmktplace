@@ -1,13 +1,13 @@
 // Visão "Busca" do painel (ADR-0189 D-11, Task 22; emenda 2026-11-02, Task 5): resumo dos produtos carregados, filtros
 // e ordenação só no painel (o DOM do ML não é reordenado; o clique destaca o card na página), lista com miniatura,
 // Minha margem dos vinculados e vínculo dos demais. O SW identifica e analisa sozinho: o painel só consome o estado e
-// oferece "Tentar de novo" quando o estado diz que algo aguarda cota ou falhou.
+// oferece "Tentar de novo" (margem aguardando cota ou falha) e "Tentar novamente" (enriquecimento parcial).
 import { useId, useState } from 'react';
 import type { EstadoBusca } from '../busca-sw';
 import {
   filtrarCards, margemClassico, ordenarCards, resumoBusca, resumoEnriquecimento, type FiltroBusca, type OrdemBusca,
 } from '../compartilhado/busca-resumo';
-import { NOME_MEDALHA, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
+import { haParaTentar, NOME_MEDALHA, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import type { CardBusca } from '../leitura/busca';
 import type { MetadadosCardBusca } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import type { MargemTipo } from '../../../supabase/functions/_shared/extensao/tipos.ts';
@@ -38,7 +38,7 @@ const AJUDA = {
   giro: ['Giro mínimo ao preço atual', 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.'],
   meus: ['Meus anúncios', 'Anúncios desta página publicados pelas contas do Mercado Livre conectadas à sua empresa.'],
   vinculados: ['SKUs vinculados', 'Produtos desta página ligados a um SKU do seu catálogo (pelo catálogo do ML, pelo EAN da busca ou por vínculo manual). Só eles têm Minha margem calculada.'],
-  catalogos: ['Catálogos lidos', 'Catálogos do Mercado Livre desta página já consultados: vendedores, medalha, UF, tipo do anúncio e idade. A leitura avança aos poucos, até 10 catálogos por minuto.'],
+  catalogos: ['Catálogos lidos', 'Catálogos do Mercado Livre desta página já consultados: vendedores, medalha, UF, tipo do anúncio e idade. A página inteira é consultada de uma vez. Se o Mercado Livre limitar as consultas ou o tempo acabar, o que já chegou fica e o restante aparece como indisponível até você tocar em "Tentar novamente".'],
   medalhas: ['Vendedores por medalha', 'Cada vendedor conta uma vez, mesmo com vários anúncios na página. Só entram vendedores de anúncios localizados no catálogo; perfil não carregado ou medalha não informada pelo Mercado Livre ficam em "Não informada".'],
   ufs: ['UF dos vendedores', 'Estado do endereço do vendedor no Mercado Livre, um por vendedor. Mostra as 5 UFs mais frequentes; as demais somam em "Outras".'],
   tipos: ['Tipo de anúncio', 'Clássico ou Premium da oferta de cada card no catálogo. Cards cuja oferta não foi localizada na leitura não entram.'],
@@ -53,7 +53,9 @@ function Info({ id, aberto, onAlternar }: { id: IdAjuda; aberto: boolean; onAlte
 }
 const Ajuda = ({ id, aberto }: { id: IdAjuda; aberto: IdAjuda | null }) => (aberto === id ? <p className="nota bs-ajuda" role="note">{AJUDA[id][1]}</p> : null);
 
-type Analisar = (forcar: string[], retentar?: boolean) => Promise<{ ok: boolean; erro?: string }>;
+type Analisar = (forcar: string[], retentar?: boolean) => Promise<{ ok: boolean; erro?: string; tentarAposEm?: number }>;
+const hora = (ms: number) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const pausa = (ms: number) => `O Mercado Livre pediu uma pausa; tente de novo às ${hora(ms)}`;
 type Resultado = EstadoBusca['resposta']['resultados'][string] | undefined;
 
 export function Busca({ estado, chamar, analisar, destacar }: {
@@ -68,15 +70,24 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ajuda, setAjuda] = useState<IdAjuda | null>(null);
+  // Resposta do "Tentar novamente" do enriquecimento (pausa pedida pelo ML ou erro): fica na seção dos catálogos.
+  const [avisoRetentar, setAvisoRetentar] = useState<string | null>(null);
   const alternarAjuda = (id: IdAjuda) => setAjuda((a) => (a === id ? null : id));
   const nomeOrdem = useId();
 
-  const rodar = async (forcar: string[] = [], retentar = false) => {
+  const rodar = async (forcar: string[] = []) => {
     setOcupado(true);
     setErro(null);
-    const r = retentar ? await analisar(forcar, true) : await analisar(forcar);
+    const r = await analisar(forcar);
     setOcupado(false);
     if (!r.ok) setErro(mensagemDeErro(r.erro ?? 'interno'));
+  };
+  const retentar = async () => {
+    setOcupado(true);
+    setAvisoRetentar(null);
+    const r = await analisar([], true);
+    setOcupado(false);
+    if (!r.ok) setAvisoRetentar(r.erro === 'aguardar' && typeof r.tentarAposEm === 'number' ? pausa(r.tentarAposEm) : mensagemDeErro(r.erro ?? 'interno'));
   };
 
   const r = resumoBusca(cards, metadados, ocorrencias);
@@ -151,7 +162,7 @@ export function Busca({ estado, chamar, analisar, destacar }: {
           </div>
         </div>
 
-        <Catalogos cards={cards} enr={estado.resposta.enriquecimento} ajuda={ajuda} alternarAjuda={alternarAjuda} ocupado={ocupado} retentar={() => rodar([], true)} />
+        <Catalogos cards={cards} enr={estado.resposta.enriquecimento} ajuda={ajuda} alternarAjuda={alternarAjuda} ocupado={ocupado} retentar={retentar} aviso={avisoRetentar} />
 
         {ocupado && <p className="nota" role="status">Analisando…</p>}
         {!ocupado && erro && (
@@ -224,17 +235,19 @@ function Distribuicao({ rotulo, fatias, total, classe }: { rotulo: string; fatia
 }
 
 /** Catálogos e vendedores (Task 10): resumo do enriquecimento, sempre com denominador; desconhecido fica à parte. */
-function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar }: {
-  cards: CardBusca[]; enr: EstadoEnriquecimento | undefined; ajuda: IdAjuda | null; alternarAjuda: (id: IdAjuda) => void; ocupado: boolean; retentar: () => void;
+function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso }: {
+  cards: CardBusca[]; enr: EstadoEnriquecimento | undefined; ajuda: IdAjuda | null; alternarAjuda: (id: IdAjuda) => void; ocupado: boolean; retentar: () => void; aviso: string | null;
 }) {
   const r = resumoEnriquecimento(cards, enr);
   if (r.cardsComCatalogo === 0) return null;
   const { vendedores: v, tipos: t, faixas: f } = r;
   const lidos = r.catalogosLidos;
   const comOfertas = f.completos + f.parciais.length;
-  const janela = !!enr && Object.values(enr.catalogos).some((c) => c.aguardandoJanela);
   const titulo = (id: IdAjuda) => <h3 className="ct-rotulo bs-sub">{AJUDA[id][0]}<Info id={id} aberto={ajuda === id} onAlternar={alternarAjuda} /></h3>;
   const plural = (n: number, um: string, varios: string) => `${num(n)} ${n === 1 ? um : varios}`;
+  // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
+  const tentar = !!enr && !enr.indisponivel && haParaTentar(enr);
+  const pausado = typeof enr?.tentarAposEm === 'number' && enr.tentarAposEm > Date.now();
   return (
     <section className="bs-catalogos" aria-labelledby="bs-catalogos-titulo">
       <h3 id="bs-catalogos-titulo" className="bs-catalogos-titulo">Catálogos e vendedores</h3>
@@ -243,15 +256,14 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar }: {
         <span className="mono ct-forte">{`${num(lidos)} de ${num(f.catalogos)}`}</span>
       </div>
       <Ajuda id="catalogos" aberto={ajuda} />
+      {r.catalogosIndisponiveis > 0 && <p className="nota bs-cobertura">{`${plural(r.catalogosIndisponiveis, 'catálogo', 'catálogos')} sem ofertas lidas agora`}</p>}
       {enr?.indisponivel && <p className="nota">{enr.indisponivel}</p>}
-      {!enr?.indisponivel && !ocupado && enr?.falhou && (
-        <div className="bs-aviso erro" role="alert">
-          <span>Não foi possível ler os catálogos agora.</span>
+      {!enr?.indisponivel && r.catalogosConsultando > 0 && <p className="nota bs-estado-enr" role="status">Consultando dados do catálogo</p>}
+      {tentar && !ocupado && (
+        <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
+          <span>{aviso ?? (pausado ? pausa(enr!.tentarAposEm!) : enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora')}</span>
           <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
         </div>
-      )}
-      {!enr?.indisponivel && !enr?.falhou && lidos < f.catalogos && (
-        <p className="nota bs-estado-enr">{janela ? 'Aguardando próxima janela' : 'Aguardando dados do catálogo'}</p>
       )}
       {comOfertas > 0 && (
         <>

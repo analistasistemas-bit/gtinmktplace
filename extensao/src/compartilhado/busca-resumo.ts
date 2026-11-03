@@ -122,13 +122,17 @@ export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento
   const porUf = new Map<string, number>();
   let medalhaDesconhecida = 0, ufDesconhecida = 0, cardsComCatalogo = 0, cardsSemVendedor = 0;
   const tipos = { classico: 0, premium: 0, desconhecido: 0, exatas: 0 };
-  const pendentes = new Set<string>(); // catálogos ainda sem dado nenhum (aguardando, falha, indisponível)
+  const consultando = new Set<string>(); // catálogos com algo em processamento
+  const indisponiveis = new Set<string>(); // catálogos cujas ofertas ficaram indisponíveis nesta leitura (429, tempo, rede)
+  const semEnriquecimento = new Set<string>(); // página sem enriquecimento (ex.: sem conexão ML)
   const catalogos = new Map<string, NonNullable<NonNullable<ReturnType<typeof vistaDoCard>>['ofertas']> | null>();
   for (const c of cards) {
     const v = vistaDoCard(c, e);
     if (!v) continue;
     cardsComCatalogo++;
-    if (v.espera) pendentes.add(c.catalogProductId!);
+    if (v.faltaProduto || v.faltaOfertas) consultando.add(c.catalogProductId!);
+    else if (v.ofertasIndisponivel) indisponiveis.add(c.catalogProductId!);
+    else if (v.indisponivel && !v.ofertas) semEnriquecimento.add(c.catalogProductId!);
     if (!catalogos.get(c.catalogProductId!)) catalogos.set(c.catalogProductId!, v.ofertas);
     const x = v.exata;
     if (x?.estado !== 'ok') { cardsSemVendedor++; continue; }
@@ -153,8 +157,10 @@ export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento
   faixas.parciais.sort((a, b) => b - a);
   return {
     cardsComCatalogo,
-    /** Catálogos únicos com algum dado já lido (inclusive indisponível) e os que ainda esperam. */
-    catalogosLidos: catalogos.size - pendentes.size,
+    /** Catálogos únicos com as ofertas lidas e nada em processamento; os em consulta e os indisponíveis à parte. */
+    catalogosLidos: [...catalogos.keys()].filter((k) => !consultando.has(k) && !indisponiveis.has(k) && !semEnriquecimento.has(k)).length,
+    catalogosConsultando: consultando.size,
+    catalogosIndisponiveis: [...indisponiveis].filter((k) => !consultando.has(k)).length,
     vendedores: {
       unicos: vendedores.size, medalhas, medalhaDesconhecida,
       ufs: ufsOrdenadas.slice(0, 5), ufOutros: ufsOrdenadas.slice(5).reduce((n, [, k]) => n + k, 0), ufDesconhecida, cardsSemVendedor,

@@ -71,3 +71,26 @@ describe('busca: boot fail-closed', () => {
     await vi.waitFor(() => expect(cardsEnviados()).toBeGreaterThanOrEqual(1), { timeout: 3000 });
   });
 });
+
+describe('Task 11.4: dados locais primeiro', () => {
+  it('rede pendurada: o bloco local sai em ≤ 300 ms após a ativação confirmada, antes do envio ao SW (debounce 800 ms)', async () => {
+    const padrao = enviar.getMockImplementation()!;
+    // SW nunca responde aos cards (rede pendurada).
+    enviar.mockImplementation(async (m: { tipo?: string }) => (m.tipo === 'publiai:busca-cards' ? new Promise(() => {}) : padrao(m)));
+    vi.useFakeTimers();
+    try {
+      await carregar();
+      document.querySelector('.poly-component__price')!.innerHTML =
+        '<div class="poly-price__current"><span class="andes-money-amount__fraction">19</span><span class="andes-money-amount__cents">90</span></div>';
+      await vi.advanceTimersByTimeAsync(300);
+      expect(blocos()).toBe(1);
+      expect(cardsEnviados()).toBe(0); // o bloco não esperou a rede
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(cardsEnviados()).toBe(1);
+      expect(blocos()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      enviar.mockImplementation(padrao);
+    }
+  });
+});

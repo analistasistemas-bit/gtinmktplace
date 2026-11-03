@@ -1,16 +1,21 @@
 // Harness de QA visual da busca (não entra no build de produção: o Vite só empacota sw e painel).
 //   ?vista=painel (padrão)  → componente `Busca` REAL num contêiner de largura ?w=320|400|600
 //   ?vista=grid             → grade falsa do ML com o `renderizarMiniBlocoDaBusca` REAL em cada card
+//   &cenario=local|consultando|preenchido|parcial|nao_localizada|pausa (Task 11.4; sem = fixtures padrão)
 // O tema escuro vem do `prefers-color-scheme` (emulado pelo Playwright), como no painel de verdade.
 import { createRoot } from 'react-dom/client';
 import { Busca } from '../src/painel/Busca';
 import { renderizarMiniBlocoDaBusca } from '../src/conteudo/mini-bloco-busca';
 import type { CardBusca } from '../src/leitura/busca';
-import { AGORA_QA, cards, ENR, ESTADO, meta, resultados } from './busca-fixtures';
+import { AGORA_QA, cards, cenario, ENR, ESTADO, meta as META, resultados as RESULTADOS, type Cenario } from './busca-fixtures';
 import { vistaDoCard } from '../src/compartilhado/enriquecimento';
 
 const q = new URLSearchParams(location.search);
 const raiz = document.getElementById('raiz')!;
+const cen = q.get('cenario') as Cenario | null;
+const dados = cen ? cenario(cen) : { enr: ENR, meta: META, resultados: RESULTADOS };
+const { meta, resultados } = dados;
+const estado = { ...ESTADO, resposta: { ...ESTADO.resposta, metadados: meta, resultados, enriquecimento: dados.enr } } as typeof ESTADO;
 
 function painel() {
   import('../src/painel/painel.css');
@@ -21,9 +26,9 @@ function painel() {
       <header className="topo"><h1>PubliAI</h1></header>
       <main>
         <Busca
-          estado={ESTADO}
+          estado={estado}
           chamar={(async () => ({ ok: false, erro: 'interno' })) as never}
-          analisar={async () => ({ ok: true })}
+          analisar={async (_f, retentar) => (retentar && cen === 'pausa' ? { ok: false, erro: 'aguardar', tentarAposEm: dados.enr?.tentarAposEm ?? Date.now() } : { ok: true })}
           destacar={() => {}}
         />
       </main>
@@ -61,7 +66,7 @@ function grade() {
     (el.querySelector('.qa-titulo') as HTMLElement).textContent = c.titulo;
     const miolo = document.createElement('div');
     miolo.style.cssText = 'padding:0 12px';
-    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], c.preco, vistaDoCard(c, ENR), AGORA_QA));
+    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], c.preco, vistaDoCard(c, dados.enr), AGORA_QA));
     el.append(miolo);
     doc.append(el);
   }

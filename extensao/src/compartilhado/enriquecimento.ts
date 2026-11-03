@@ -6,13 +6,12 @@ import type { CardBusca } from '../leitura/busca';
 
 // = Medalha de _shared/extensao/enriquecimento-busca.ts (não importado: o módulo puxa tipos do Deno para o tsc daqui).
 export type Medalha = 'silver' | 'gold' | 'platinum' | 'sem';
-/** Legado (gravado antes da Task 11.3): o SW não produz mais; o planejamento o pede de novo uma vez. */
-type Aguardando = { estado: 'aguardando'; retomarEm: number | null; tentativas: number };
-/** Terminal: só o "Tentar novamente" (ou dado novo) volta a pedir. `motivo` = o da edge (MOTIVO) ou 'falha de rede'. */
+/** Terminal: só o "Tentar novamente" (ou dado novo) volta a pedir. `motivo` = o da edge (MOTIVO) ou 'falha de rede'.
+ *  Componente AUSENTE = em processamento (pedido em voo ou ainda não enviado). */
 type Indisponivel = { estado: 'indisponivel'; motivo?: string };
 
-export type ProdutoVista = { estado: 'ok'; criadoEm: string | null } | Aguardando | Indisponivel;
-export type ComissaoVista = { estado: 'ok'; valor: ComissaoML } | { estado: 'aguardando' } | { estado: 'indisponivel'; motivo: string };
+export type ProdutoVista = { estado: 'ok'; criadoEm: string | null } | Indisponivel;
+export type ComissaoVista = { estado: 'ok'; valor: ComissaoML } | { estado: 'indisponivel'; motivo: string };
 /** Oferta do item do card no catálogo; `preco` = o preço do card enviado (a comissão só vale para ele). */
 export type ExataVista =
   | { estado: 'ok'; preco: number; sellerId: number | null; tipo: 'gold_special' | 'gold_pro' | null; comissao: ComissaoVista }
@@ -30,40 +29,52 @@ export interface OfertasOk {
   exatas: Record<string, ExataVista>;
 }
 /** Indisponível: `itens` = item → preço já tentados (terminais); item ou preço novo do mesmo catálogo ainda é pedido. */
-export type OfertasVista = OfertasOk | Aguardando | (Indisponivel & { itens?: Record<string, number> });
+export type OfertasVista = OfertasOk | (Indisponivel & { itens?: Record<string, number> });
 export interface CatalogoVista {
-  /** Legado (antes da Task 11.3; o SW não grava mais): cota esgotada aguardando a janela. */
-  aguardandoJanela?: boolean;
   produto?: ProdutoVista;
   ofertas?: OfertasVista;
 }
-export type VendedorVista = { estado: 'ok'; nome: string | null; medalha: Medalha | null; uf: string | null } | Aguardando | Indisponivel;
+export type VendedorVista = { estado: 'ok'; nome: string | null; medalha: Medalha | null; uf: string | null } | Indisponivel;
 
 export interface EstadoEnriquecimento {
   catalogos: Record<string, CatalogoVista>;
   vendedores: Record<string, VendedorVista>;
-  /** Legado (antes da Task 11.3; sempre null agora): não há retomada automática do enriquecimento. */
-  retomarEm: number | null;
   /** ms: Retry-After do ML na última rodada; o "Tentar novamente" só vale a partir daqui. null/ausente = já pode. */
   tentarAposEm?: number | null;
   /** Falha de rede numa rodada (o pedido dela ficou indisponível): o painel oferece "Tentar novamente". */
   falhou: boolean;
   /** Edge respondeu indisponível (ex.: sem conexão ML): motivo; nada mais é pedido nesta página. */
   indisponivel: string | null;
-  /** Legado (antes da Task 11.3; não conta mais): sem teto de perfis por busca. */
-  perfis: number;
 }
 
-export const enriquecimentoVazio = (): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, retomarEm: null, tentarAposEm: null, falhou: false, indisponivel: null, perfis: 0 });
+export const enriquecimentoVazio = (): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null });
 
-/** Cópia defensiva (estado gravado por versão anterior não tem o campo). */
+/** Estado gravado antes da Task 11.3 (`aguardando`, `aguardandoJanela`, `retomarEm`, `perfis`): o componente em espera
+ *  vira ausente (o planejamento pede de novo), o resto do legado some. */
+const semLegado = <T extends { estado?: unknown }>(x: T | undefined): T | undefined => (x?.estado === 'aguardando' ? undefined : x);
+
+/** Cópia defensiva (estado gravado por versão anterior não tem o campo, ou tem o legado). */
 export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
   const e = (v && typeof v === 'object' ? v : {}) as Partial<EstadoEnriquecimento>;
+  const catalogos: Record<string, CatalogoVista> = {};
+  for (const [k, c] of Object.entries(e.catalogos ?? {})) {
+    const produto = semLegado(c?.produto), ofertas = semLegado(c?.ofertas);
+    catalogos[k] = { ...(produto ? { produto } : {}), ...(ofertas ? { ofertas } : {}) };
+  }
+  const vendedores: Record<string, VendedorVista> = {};
+  for (const [k, x] of Object.entries(e.vendedores ?? {})) { const y = semLegado(x); if (y) vendedores[k] = y; }
   return {
-    catalogos: { ...e.catalogos }, vendedores: { ...e.vendedores },
-    retomarEm: typeof e.retomarEm === 'number' ? e.retomarEm : null, tentarAposEm: typeof e.tentarAposEm === 'number' ? e.tentarAposEm : null, falhou: e.falhou === true,
-    indisponivel: typeof e.indisponivel === 'string' ? e.indisponivel : null, perfis: typeof e.perfis === 'number' ? e.perfis : 0,
+    catalogos, vendedores,
+    tentarAposEm: typeof e.tentarAposEm === 'number' ? e.tentarAposEm : null, falhou: e.falhou === true,
+    indisponivel: typeof e.indisponivel === 'string' ? e.indisponivel : null,
   };
+}
+
+/** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
+export function haParaTentar(enr: EstadoEnriquecimento): boolean {
+  return enr.falhou || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
+    (!!c.produto && c.produto.estado !== 'ok') || (!!c.ofertas && c.ofertas.estado !== 'ok')
+    || (c.ofertas?.estado === 'ok' && Object.values(c.ofertas.exatas).some((e) => e.estado === 'indisponivel' || (e.estado === 'ok' && e.comissao.estado !== 'ok'))));
 }
 
 const DIA = 86_400_000;
@@ -87,40 +98,41 @@ export function valorDaComissao(c: ComissaoML, preco: number): number {
 export type VistaCard =
   | null
   | {
-    /** O que ainda falta, por componente (o que já chegou continua visível): 'dados' = ainda não pedido/respondido;
-     *  'janela' = cota/orçamento esgotado; 'falha' = rede; 'indisponivel' = sem conexão. null = nada pendente. */
-    espera: 'dados' | 'janela' | 'falha' | 'indisponivel' | null;
-    /** Metadados (idade) e ofertas (vendedores/oferta exata do item) ainda pendentes. */
+    /** Página inteira sem enriquecimento (ex.: sem conexão ML): o motivo. Nada mais é pedido. */
+    indisponivel: string | null;
+    /** Em processamento ("Consultando dados do catálogo"): componente ausente, ou item/preço do card ainda não pedido. */
     faltaProduto: boolean;
     faltaOfertas: boolean;
-    motivo?: string;
     criadoEm: string | null | undefined; // undefined = metadados não lidos
-    produtoIndisponivel: boolean;
+    /** Terminal parcial (429, tempo, orçamento, rede): motivo; o que já chegou fica. */
+    produtoIndisponivel: string | null;
+    ofertasIndisponivel: string | null;
     ofertas: OfertasOk | null;
-    ofertasEstado: 'ok' | 'aguardando' | 'indisponivel' | null;
     exata: ExataVista | null;
     vendedor: VendedorVista | null;
   };
 
+const MOTIVO_PADRAO = 'dados indisponíveis';
+
 export function vistaDoCard(card: Pick<CardBusca, 'itemId' | 'catalogProductId' | 'identidadeConflitante'> & { preco?: number | null }, e: EstadoEnriquecimento | undefined): VistaCard {
   if (!card.catalogProductId || card.identidadeConflitante) return null;
   const c = e?.catalogos[card.catalogProductId];
-  const ofertas = c?.ofertas?.estado === 'ok' ? c.ofertas : null;
+  const o = c?.ofertas;
+  const ofertas = o?.estado === 'ok' ? o : null;
   const exata = ofertas?.exatas[card.itemId] ?? null;
   const sellerId = exata?.estado === 'ok' ? exata.sellerId : null;
-  // Pendente = ausente ou aguardando com nova tentativa ainda possível (esgotado deixa de ser espera).
-  const pendente = (x: ProdutoVista | OfertasVista | undefined) => !x || (x.estado === 'aguardando' && x.tentativas < 2);
-  const faltaProduto = pendente(c?.produto);
-  // Item do card ainda sem oferta exata numa leitura já feita (21º em diante, scroll): pendente também.
-  const faltaOfertas = pendente(c?.ofertas) || (!!ofertas && !exata && typeof card.preco === 'number' && card.preco > 0);
-  const aguarda = (x: ProdutoVista | OfertasVista | undefined) => x?.estado === 'aguardando';
-  const espera = !faltaProduto && !faltaOfertas ? null : e?.indisponivel ? 'indisponivel' : e?.falhou ? 'falha'
-    : c?.aguardandoJanela || aguarda(c?.produto) || aguarda(c?.ofertas) ? 'janela' : 'dados';
+  const temPreco = typeof card.preco === 'number' && card.preco > 0;
+  // Ofertas indisponíveis valem só para o item/preço já tentado; item ou preço novo (scroll) ainda vai à edge.
+  const tentado = o?.estado === 'indisponivel' && (!o.itens || !temPreco || o.itens[card.itemId] === card.preco);
+  const indisponivel = e?.indisponivel ?? null;
   return {
-    espera, ...(espera === 'indisponivel' ? { motivo: e!.indisponivel! } : {}), faltaProduto, faltaOfertas,
+    indisponivel,
+    faltaProduto: !indisponivel && !c?.produto,
+    faltaOfertas: !indisponivel && (!o || (o.estado === 'indisponivel' && !tentado) || (!!ofertas && !exata && temPreco)),
     criadoEm: c?.produto?.estado === 'ok' ? c.produto.criadoEm : undefined,
-    produtoIndisponivel: c?.produto?.estado === 'indisponivel',
-    ofertas, ofertasEstado: c?.ofertas?.estado ?? null, exata,
+    produtoIndisponivel: c?.produto?.estado === 'indisponivel' ? c.produto.motivo ?? MOTIVO_PADRAO : null,
+    ofertasIndisponivel: o?.estado === 'indisponivel' && tentado ? o.motivo ?? MOTIVO_PADRAO : null,
+    ofertas, exata,
     vendedor: sellerId !== null ? e?.vendedores[String(sellerId)] ?? null : null,
   };
 }

@@ -1,7 +1,7 @@
 // Cache do enriquecimento no navegador e planejamento da página (Revisão 03/11-b: lote por página, Task 11.3).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { aplicarResposta, gravarCache, haParaTentar, lerCache, marcarFalha, marcasDoPedido, planejarLote, prepararNovaTentativa, type CacheEnr } from '../cache-enriquecimento';
-import { enriquecimentoVazio, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
+import { enriquecimentoDe, enriquecimentoVazio, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import { limparEstadosDasAbas } from '../abas';
 import { sair } from '../credenciais';
 import { instalarChromeFalso, logar } from './chrome-falso';
@@ -113,7 +113,7 @@ describe('planejarLote', () => {
         ofertas: { estado: 'ok', expiraEm: iso(T0 + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
           exatas: [{ itemId: 'MLB1000002', estado: 'nao_encontrada', motivo: 'x' }] } }] } as never, T0);
     expect(e.catalogos.MLB900.ofertas).toMatchObject({ estado: 'ok', exatas: { MLB1000001: { estado: 'indisponivel', preco: 10, motivo: 'falha de rede' }, MLB1000002: { estado: 'nao_encontrada' } } });
-    expect(vistaDoCard(card(1), e)!.espera).not.toBe('dados');
+    expect(vistaDoCard(card(1), e)).toMatchObject({ faltaProduto: false, faltaOfertas: false });
     expect(planejarLote([card(1), card(2)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
     // Segunda falha no mesmo catálogo soma os tentados.
     const f = enriquecimentoVazio();
@@ -133,9 +133,8 @@ describe('planejarLote', () => {
     expect(p.hits.catalogos.MLB900.ofertas).toMatchObject({ estado: 'ok', exatas: { MLB1000001: { estado: 'indisponivel' }, MLB1000002: { estado: 'nao_encontrada' } } });
   });
 
-  it('estado "aguardando" gravado por versão anterior: pedido de novo (uma vez por rodada)', () => {
-    const e = enriquecimentoVazio();
-    e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'aguardando', retomarEm: null, tentativas: 2 } };
+  it('estado "aguardando" gravado por versão anterior (normalizado em enriquecimentoDe): pedido de novo (uma vez por rodada)', () => {
+    const e = enriquecimentoDe({ catalogos: { MLB900: { aguardandoJanela: true, produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'aguardando', retomarEm: null, tentativas: 2 } } }, retomarEm: 1, perfis: 4 });
     const p = planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido!;
     expect(p.catalogos[0].componentes).toEqual(['ofertas']);
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set(marcasDoPedido(p))).pedido).toBeNull();
@@ -272,7 +271,7 @@ describe('falha da rodada e "Tentar novamente"', () => {
     for (const f of casos) {
       const e = enriquecimentoVazio();
       f(e);
-      expect(vistaDoCard(card(1), e)!.espera).not.toBe('dados');
+      expect(vistaDoCard(card(1), e)).toMatchObject({ faltaProduto: false, faltaOfertas: false });
     }
   });
 });

@@ -7,6 +7,8 @@ import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca'
 import { enriquecimentoDe, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 
 const ESPERA_MS = 800;
+// Dados locais (preço, vendidos, sinais) não esperam a rede: o bloco sai com o card, separado do envio ao SW.
+const ESPERA_BLOCOS_MS = 120;
 const PULSO_MS = 61_000; // janela da cota da edge (1 min) + folga
 const LIMITE_ESPERA_MS = 15_000;
 const HOST = HOST_MINI_BLOCO;
@@ -186,7 +188,13 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
 
 // Cards montam depois do document_idle e entram no scroll: observa a página com espera curta entre leituras.
 let timer: ReturnType<typeof setTimeout> | undefined;
-function agendar(): void { clearTimeout(timer); timer = setTimeout(() => { lerEEnviar(); aplicarBlocos(); }, ESPERA_MS); }
+// ponytail: blocos com timer que não reinicia (página do ML montando sem parar não adia além de ESPERA_BLOCOS_MS).
+let timerBlocos: ReturnType<typeof setTimeout> | undefined;
+function agendar(): void {
+  clearTimeout(timer);
+  timer = setTimeout(() => { lerEEnviar(); aplicarBlocos(); }, ESPERA_MS);
+  timerBlocos ??= setTimeout(() => { timerBlocos = undefined; aplicarBlocos(); }, ESPERA_BLOCOS_MS);
+}
 
 /** Nó dentro do Avant ou de um host PubliAI (o próprio host incluído). */
 const deFora = (n: Node | null) => !!(n && (n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest(`${INJETADO}, .${HOST}`));
