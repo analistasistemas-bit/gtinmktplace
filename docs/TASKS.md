@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Pós-venda: claim `cancel_purchase` gera um aviso só (emenda ADR-0121) — 2026-11-03
+
+- [x] `sync-devolucao` não manda "Nova reclamação" para `cancel_purchase`, que o ML fecha sozinho em ~3 min.
+- [x] Aviso de cancelamento com texto próprio quando o pedido tem esse claim; a regra de reposição não mudou.
+
 ## Nota de compra: etapa fiscal toda preenchida (emenda ADR-0181 D-10) — 2026-11-03
 
 - [x] Leitor do XML lê grupo ICMS, CSOSN/CST, CEST, nFCI e UF do emitente; `icms-entrada.ts` classifica ST / sem ST / exceção.

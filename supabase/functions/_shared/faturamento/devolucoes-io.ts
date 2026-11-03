@@ -287,3 +287,13 @@ export async function carregarDevolucoesLocais(
   }
   return mapa;
 }
+
+/** O pedido tem claim `cancel_purchase`? Erro lança: quem chama decide o texto de reserva. */
+export async function cancelamentoPeloComprador(
+  admin: SupabaseClient, p: { orgId: string; orderId: string | number },
+): Promise<boolean> {
+  const { data, error } = await admin.from('ml_devolucoes').select('id')
+    .eq('org_id', p.orgId).eq('order_id', p.orderId).eq('type', 'cancel_purchase').limit(1);
+  if (error) throw new Error(`claim do pedido ${p.orderId}: ${error.message}`);
+  return (data ?? []).length > 0;
+}

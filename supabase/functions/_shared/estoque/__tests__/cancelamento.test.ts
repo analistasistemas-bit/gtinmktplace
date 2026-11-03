@@ -31,6 +31,7 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
       chamadas.consultasDeBaixa++;
       return Promise.resolve(true);
     },
+    cancelamentoPeloComprador: () => Promise.resolve(false),
     reservarNotificacao: (_admin, _org, _user, entidade, chave) => {
       chamadas.reservas.push({ entidade, chave });
       return Promise.resolve(true);
@@ -87,6 +88,26 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     expect(chamadas.notificacoes[0].categoria).toBe('pos_venda');
     expect(chamadas.notificacoes[0].texto).toContain('Cancelado');
     expect(chamadas.reservas[0]).toEqual({ entidade: 'estoque_cancelado_despachado', chave: String(BASE.orderId) });
+  });
+
+  // Emenda ADR-0121 (03/11/2026): claim cancel_purchase, fechado pelo ML em ~3 min. O texto não
+  // pode mandar "conferir o que voltou" nem afirmar que a mercadoria ficou, mas mantém a entrada manual.
+  it('cancel_purchase usa texto próprio e NÃO estorna', async () => {
+    const { chamadas, deps } = fakeDeps({ cancelamentoPeloComprador: () => Promise.resolve(true) });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'cancelled' });
+    expect(r).toBe('avisado');
+    expect(chamadas.estornos).toHaveLength(0);
+    expect(chamadas.notificacoes).toHaveLength(1);
+    expect(chamadas.notificacoes[0].texto).toContain(`Comprador cancelou o pedido ${BASE.orderId}`);
+    expect(chamadas.notificacoes[0].texto).toContain('entrada manual em Estoque');
+    expect(chamadas.notificacoes[0].texto).not.toContain('Confira o que voltou');
+  });
+
+  it('falha ao ler o claim cai no texto genérico e não cala o aviso', async () => {
+    const { chamadas, deps } = fakeDeps({ cancelamentoPeloComprador: () => Promise.reject(new Error('rede')) });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'cancelled' });
+    expect(r).toBe('avisado');
+    expect(chamadas.notificacoes[0].texto).toContain('Confira o que voltou');
   });
 
   it('envio entregue avisa e NÃO estorna', async () => {

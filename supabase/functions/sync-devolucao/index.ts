@@ -5,6 +5,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, resolverConexaoPorId, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarClaim, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { avisaNovaDevolucao } from '../_shared/faturamento/devolucao.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
@@ -78,7 +79,7 @@ Deno.serve(async (req) => {
 
   const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
 
-  if (nova && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
+  if (nova && orgId && avisaNovaDevolucao(row.type) && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
     // O claim só traz o order_id; o número que o ML exibe é o pack (quando há), lido da venda.
     // Venda ausente/erro: cai no order_id (a venda sincroniza antes da devolução, então é raro).
     const { data: venda, error: erroVenda } = row.order_id != null

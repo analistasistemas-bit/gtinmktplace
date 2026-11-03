@@ -109,6 +109,9 @@ const REASON_PREFIXO: Array<[RegExp, string]> = [
   [/^CANCEL/i, 'Cancelamento'],
 ];
 
+/** O ML fecha `cancel_purchase` sozinho em ~3 min: quem avisa é `tratarPedidoCancelado` (emenda ADR-0121). */
+export const avisaNovaDevolucao = (tipo: string | null | undefined): boolean => tipo !== 'cancel_purchase';
+
 export function traduzirReason(reasonId: string | null | undefined): string | null {
   if (!reasonId) return null;
   for (const [re, label] of REASON_PREFIXO) if (re.test(reasonId)) return label;
