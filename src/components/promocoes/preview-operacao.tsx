@@ -1,5 +1,5 @@
 // ADR-0174 — preview de "Aderir"/"Sair" no detalhe da campanha; reutilizado pelo Reverter.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -21,7 +21,7 @@ import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrec
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
 
-type Exato = { preco: number; recebe: number; lucro: number; margem: number | null };
+type Exato = { preco: number; recebe: number; lucro: number; margem: number | null; semaforo: LinhaPreview['semaforo'] };
 interface LinhaEditavel extends LinhaPreview {
   precoTexto: string;
   motivoBloqueio?: string;
@@ -40,8 +40,10 @@ const pctInt = (n: number) => `${Math.round(n * 100)}%`;
 function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): LinhaEditavel {
   const preco = parsePreco(texto);
   const original = itens.find((i) => i.ml_item_id === l.ml_item_id);
-  const semaforo = original ? semaforoNoPreco(original.projecao, preco) : l.semaforo;
-  return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined };
+  // Achado Codex: voltou a um preço já calculado no servidor → o semáforo é o do servidor, não a estimativa local.
+  const doServidor = l.exato != null && preco != null && centavos(l.exato.preco) === centavos(preco) ? l.exato.semaforo : null;
+  const semaforo = doServidor ?? (original ? semaforoNoPreco(original.projecao, preco) : l.semaforo);
+  return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined, avisoCalculo: undefined };
 }
 
 function construirLinhas(
@@ -53,7 +55,7 @@ function construirLinhas(
     // A projeção do item já é a do servidor no preço avaliado (sugerido, ou o simulado na tela): de graça.
     const it = porId.get(l.ml_item_id);
     const r = it?.preco_avaliado != null ? resumoLucro(it, { preco: it.preco_avaliado, projecao: it.projecao, pior_semaforo: it.pior_semaforo }) : null;
-    const exato = r && it?.preco_avaliado != null ? { preco: it.preco_avaliado, ...r } : null;
+    const exato = r && it?.preco_avaliado != null ? { preco: it.preco_avaliado, ...r, semaforo: it.pior_semaforo } : null;
     return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco), exato };
   });
 }
@@ -80,8 +82,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [confirmadoRisco, setConfirmadoRisco] = useState(false);
 
+  // Achado Codex: cálculo pendente de uma abertura anterior não toca as linhas da nova (nem segue para o próximo lote).
+  const geracao = useRef(0);
   // Reabrir com preview novo (item mudou, ou trocou o grupo aderir/sair): recomeça do zero.
   useEffect(() => {
+    geracao.current++;
     if (!aberto) return;
     setLinhas(construirLinhas(acao, tipo, itens, naoRevertiveis, simulados));
     setConfirmadoRisco(false);
@@ -121,8 +126,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   function aplicarATodos() {
     if (valor == null) return;
     let semOriginal = 0;
+    // Todas as linhas (menos bloqueadas): quem veio desmarcado (não verde) também recebe o preço; marcação intacta.
     const novos = linhas.map((l) => {
-      if (!l.marcado) return l;
+      if (l.motivoBloqueio) return l;
       const it = itens.find((i) => i.ml_item_id === l.ml_item_id);
       const p = it ? precoAlvo(it, modo, valor) : null;
       if (p == null) { semOriginal++; return l; }
@@ -130,33 +136,38 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     });
     if (semOriginal) toast.info(`${semOriginal} anúncio(s) sem preço original ficaram com o preço anterior.`);
     setLinhas(novos);
-    void calcularExato(novos.filter((l) => l.marcado));
+    void calcularExato(novos.filter((l) => !l.motivoBloqueio));
   }
   /** Recebe/lucro/margem no servidor, preço exato (lotes de MAX_SIMULAR, em sequência). */
   async function calcularExato(alvo: LinhaEditavel[]) {
+    const g = geracao.current;
     const pedidos = alvo.filter((l) => l.preco != null && l.preco > 0 && !exatoVale(l)).map((l) => ({ ml_item_id: l.ml_item_id, preco: l.preco! }));
     for (let i = 0; i < pedidos.length; i += MAX_SIMULAR) {
+      const lote = pedidos.slice(i, i + MAX_SIMULAR);
       let res;
       try {
-        res = await simularM.mutateAsync({ promocao_id: promocaoId, itens: pedidos.slice(i, i + MAX_SIMULAR) });
+        res = await simularM.mutateAsync({ promocao_id: promocaoId, itens: lote });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
+        if (g === geracao.current) toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
         return;
       }
+      if (g !== geracao.current) return;
+      const pedido = new Map(lote.map((p) => [p.ml_item_id, p.preco]));
       const porId = new Map(res.map((r) => [r.ml_item_id, r]));
-      // Resposta só vale para a linha que ainda está no mesmo preço (o operador pode ter editado no meio).
+      // Resposta (inclusive "ignorado") só vale para a linha que ainda está no preço pedido.
       setLinhas((prev) => prev.map((l) => {
         const r = porId.get(l.ml_item_id);
-        if (!r || l.preco == null) return l;
+        const pedidoPreco = pedido.get(l.ml_item_id);
+        if (!r || l.preco == null || pedidoPreco == null || centavos(pedidoPreco) !== centavos(l.preco)) return l;
         if (r.status === 'ignorado') return { ...l, exato: null, avisoCalculo: r.motivo };
-        if (centavos(r.preco) !== centavos(l.preco)) return l;
         const it = itens.find((x) => x.ml_item_id === l.ml_item_id);
         const s = it ? resumoLucro(it, r) : null;
-        return { ...l, semaforo: r.pior_semaforo, exato: s ? { preco: r.preco, ...s } : null, avisoCalculo: undefined };
+        return { ...l, semaforo: r.pior_semaforo, exato: s ? { preco: r.preco, ...s, semaforo: r.pior_semaforo } : null, avisoCalculo: undefined };
       }));
     }
   }
-  const faltaCalcular = podeEditarPreco && marcadas.some((l) => l.preco != null && l.preco > 0 && !exatoVale(l));
+  const editaveis = linhas.filter((l) => !l.motivoBloqueio);
+  const faltaCalcular = podeEditarPreco && editaveis.some((l) => l.preco != null && l.preco > 0 && !exatoVale(l));
 
   async function executar() {
     const pedido = marcadas.map((l) => ({
@@ -197,7 +208,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
         </SheetHeader>
         {podeEditarPreco && (
           <div className="flex flex-col gap-2 border-b px-4 pb-3">
-            <p className="text-xs font-medium text-muted-foreground">Mesmo preço para os {marcadas.length} marcados</p>
+            <p className="text-xs font-medium text-muted-foreground">Mesmo preço para {editaveis.length === 1 ? 'o anúncio' : `todos os ${editaveis.length} anúncios`}</p>
             <div className="flex flex-wrap items-center gap-2">
               <Tabs value={modo} onValueChange={(v) => setModo(v as ModoAlvo)}>
                 <TabsList aria-label="Aplicar desconto ou preço aos marcados">
@@ -208,14 +219,14 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
               <Input
                 value={valorTexto} onChange={(e) => setValorTexto(e.target.value)} inputMode="decimal"
                 placeholder={modo === 'desconto' ? 'Ex.: 15' : 'Ex.: 59,90'}
-                aria-label={modo === 'desconto' ? 'Desconto em % para os marcados' : 'Preço em reais para os marcados'}
+                aria-label={modo === 'desconto' ? 'Desconto em % para todos' : 'Preço em reais para todos'}
                 className="w-28 tabular-nums"
               />
-              <Button type="button" size="sm" onClick={aplicarATodos} disabled={valor == null || marcadas.length === 0 || simularM.isPending}>
-                Aplicar aos marcados
+              <Button type="button" size="sm" onClick={aplicarATodos} disabled={valor == null || editaveis.length === 0 || simularM.isPending}>
+                Aplicar a todos
               </Button>
               {faltaCalcular && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => void calcularExato(marcadas)} disabled={simularM.isPending}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void calcularExato(editaveis)} disabled={simularM.isPending}>
                   {simularM.isPending ? 'Calculando…' : 'Recalcular lucro'}
                 </Button>
               )}

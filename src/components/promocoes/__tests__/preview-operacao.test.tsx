@@ -203,14 +203,14 @@ describe('PreviewOperacao', () => {
   });
 
   // Pedido do Diego (03/11): mesmo desconto/preço para todas as variações marcadas, com lucro do servidor.
-  describe('aplicar aos marcados', () => {
+  describe('aplicar a todos', () => {
     const tarifa = { comissao_pct: 14, comissao_fixa: 0, frete: 8.25, aliquota_pct: 4 };
     const variacao = (id: string) => item({
       ml_item_id: id, preco_original: 73.25, preco_min: 14.65, preco_max: 71.05, preco_sugerido: 63.72, preco_avaliado: 63.72,
       projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 44.3 })],
     });
 
-    it('desconto % vira o preço de cada marcada, e o lucro vem do servidor naquele preço', async () => {
+    it('desconto % vira o preço de cada linha (marcada ou não), e o lucro vem do servidor naquele preço', async () => {
       const user = userEvent.setup();
       simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
         ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'verde',
@@ -220,13 +220,31 @@ describe('PreviewOperacao', () => {
       // abre com o lucro do preço sugerido (projeção do sync = mesmo preço)
       expect(screen.getAllByText(/R\$ 25,80/)).toHaveLength(2); // 44,30 − 18,50
 
-      await user.type(screen.getByLabelText('Desconto em % para os marcados'), '20');
-      await user.click(screen.getByRole('button', { name: 'Aplicar aos marcados' }));
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
 
       expect(simularAsync).toHaveBeenCalledWith({ promocao_id: 'P1', itens: [{ ml_item_id: 'A', preco: 58.6 }, { ml_item_id: 'B', preco: 58.6 }] });
       expect(screen.getByLabelText('Preço de A')).toHaveValue('58,60');
       expect(screen.getByLabelText('Preço de B')).toHaveValue('58,60');
       expect(await screen.findAllByText(/R\$ 21,42/)).toHaveLength(2); // lucro 39,92 − 18,50
+    });
+
+    it('achado Codex: voltar ao preço já calculado restaura o semáforo do servidor (não a estimativa local)', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
+        ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'vermelho',
+        projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 10, semaforo: 'vermelho' })],
+      })));
+      renderPreview({ itens: [variacao('A')] });
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
+      expect(await screen.findByText('Prejuízo')).toBeInTheDocument();
+      const campo = screen.getByLabelText('Preço de A');
+      await user.clear(campo);
+      await user.type(campo, '60');
+      await user.clear(campo);
+      await user.type(campo, '58,60');
+      expect(screen.getByText('Prejuízo')).toBeInTheDocument();
     });
 
     it('"Menor preço viável" mostra o valor no botão', () => {
