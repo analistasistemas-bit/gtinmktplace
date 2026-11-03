@@ -93,4 +93,37 @@ describe('Task 11.4: dados locais primeiro', () => {
       enviar.mockImplementation(padrao);
     }
   });
+
+  it('URL muda por script (filtro): o desenho local rápido não reaproveita a margem da página anterior', async () => {
+    const raizes = new WeakMap<Element, ShadowRoot>();
+    const orig = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (this: Element, init: ShadowRootInit) { const r = orig.call(this, init); raizes.set(this, r); return r; };
+    const padrao = enviar.getMockImplementation()!;
+    let G = 'G1';
+    enviar.mockImplementation(async (m: { tipo?: string; geracao?: unknown }) =>
+      (m.tipo === 'publiai:busca-cards' && m.geracao !== G ? { ok: false, erro: 'geracao_antiga', geracao: G } : padrao(m)));
+    vi.useFakeTimers();
+    const texto = () => [...document.querySelectorAll('.publiai-mini-bloco-busca')].map((h) => raizes.get(h)?.textContent ?? '').join('|');
+    try {
+      await carregar();
+      document.querySelector('.poly-component__price')!.innerHTML =
+        '<div class="poly-price__current"><span class="andes-money-amount__fraction">19</span><span class="andes-money-amount__cents">90</span></div>';
+      await vi.advanceTimersByTimeAsync(1500);
+      const aqui = location.href.split('#')[0];
+      ouvinte({ tipo: 'publiai:busca-resultados', url: aqui, geracao: G, resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'ok', codigo: '81', margem: { preco: 19.9, classico: { estado: 'ok', valor: { margemPct: 10.9 } } } } } });
+      expect(texto()).toContain('Minha margem');
+      const antes = cardsEnviados();
+      history.pushState({}, '', '/outra');
+      G = 'G2';
+      document.querySelector('.poly-card')!.append(document.createElement('span')); // ML mexe no card: observer agenda
+      await vi.advanceTimersByTimeAsync(300);
+      expect(cardsEnviados()).toBe(antes); // o envio ainda não saiu
+      expect(texto()).not.toContain('Minha margem');
+    } finally {
+      vi.useRealTimers();
+      enviar.mockImplementation(padrao);
+      Element.prototype.attachShadow = orig;
+      history.pushState({}, '', '/');
+    }
+  });
 });

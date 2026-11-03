@@ -45,11 +45,17 @@ function enviarCards(msg: { geracao: string | null }): void {
   } catch { /* contexto invalidado */ }
 }
 
-function lerEEnviar(): void {
-  if (!ligada) return;
-  // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
+/** URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; descarta o dado da
+ *  página anterior e reenvia tudo. Chamado antes de enviar E antes de desenhar (o desenho local sai antes do envio). */
+function conferirUrl(): string {
   const url = location.href.split('#')[0];
   if (url !== urlAtual) { urlAtual = url; enviados = new Map(); invalidarGeracao(); limparSelos(); }
+  return url;
+}
+
+function lerEEnviar(): void {
+  if (!ligada) return;
+  const url = conferirUrl();
   // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
   const assinatura = (c: CardBusca) =>
     `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.identidadeConflitante}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
@@ -86,6 +92,7 @@ function tirarHost(h: Element): void {
  *  resultado) e tira os que não correspondem a mais nada. Sem preço no card = encaixe inseguro: só o painel. */
 function aplicarBlocos(): void {
   if (!ligada) return;
+  conferirUrl();
   const vivos = new Set<Element>();
   // Preço analisado por item = o do card agregado (1º preço legível na ordem da página), o mesmo que o SW manda à edge.
   // ponytail: lido do DOM atual; se o scroll trouxer o 1º preço numa leitura e outro antes dele na seguinte, diverge.
