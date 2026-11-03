@@ -20,7 +20,9 @@ export interface Recusa { ml_item_id: string; motivo: string; semaforo?: Semafor
 export type SemaforoExato = (linha: LinhaCentral, preco: number) => Promise<Semaforo>;
 
 export const MAX_ITENS = 500;
-const TIPOS = new Set(['DEAL', 'SMART']);
+/** Relâmpago: abaixo disto o comprador perde o frete grátis (regra do Diego, só LIGHTNING). */
+export const PRECO_MIN_RELAMPAGO = 19;
+const TIPOS = new Set(['DEAL', 'SMART', 'LIGHTNING']);
 const reais = (n: number) => n.toFixed(2).replace('.', ',');
 const centavos = (n: number) => Math.round(n * 100);
 
@@ -46,7 +48,7 @@ export function semaforoReal(l: LinhaCentral, preco: number | null, exato: Semaf
 export async function validarPedido(
   acao: Acao, tipo: string, itens: ItemPedido[], central: Map<string, LinhaCentral>, exato: SemaforoExato,
 ): Promise<{ ok: true; itens: PedidoValidado[] } | { ok: false; erro: string; itens?: Recusa[] }> {
-  if (!TIPOS.has(tipo)) return { ok: false, erro: 'Só promoções DEAL e SMART aceitam operação em massa.' };
+  if (!TIPOS.has(tipo)) return { ok: false, erro: 'Só promoções DEAL, SMART e Relâmpago aceitam operação em massa.' };
   if (!itens.length) return { ok: false, erro: 'Selecione ao menos um anúncio.' };
   if (itens.length > MAX_ITENS) return { ok: false, erro: `No máximo ${MAX_ITENS} anúncios por operação.` };
 
@@ -70,7 +72,7 @@ export async function validarPedido(
 
     if (l.status !== 'candidate') { recusar('O anúncio não está como Convidado nesta promoção'); continue; }
     let preco: number | null;
-    if (tipo === 'DEAL') {
+    if (tipo === 'DEAL' || tipo === 'LIGHTNING') {
       const p = it.preco;
       if (typeof p !== 'number' || !Number.isFinite(p)) { recusar('Informe o preço da oferta'); continue; }
       if (l.preco_min == null || l.preco_max == null) { recusar('O ML não informou a faixa de preço deste anúncio'); continue; }
@@ -78,6 +80,8 @@ export async function validarPedido(
         recusar(`Preço fora da faixa do ML (${reais(l.preco_min)} a ${reais(l.preco_max)})`);
         continue;
       }
+      // Piso da Relâmpago fica antes do semáforo: risco confirmado não libera.
+      if (tipo === 'LIGHTNING' && p < PRECO_MIN_RELAMPAGO) { recusar('Abaixo de R$ 19 o comprador perde o frete grátis'); continue; }
       preco = p;
     } else {
       preco = l.preco_promo; // SMART: o preço é o da oferta do ML (informativo)

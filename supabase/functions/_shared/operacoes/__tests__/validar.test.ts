@@ -42,9 +42,32 @@ describe('semaforoReal', () => {
 });
 
 describe('validarPedido', () => {
-  it('tipo fora de DEAL/SMART → erro', async () => {
-    const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 15 }], central(linha()), semExato);
-    expect(r).toEqual({ ok: false, erro: 'Só promoções DEAL e SMART aceitam operação em massa.' });
+  it('tipo fora de DEAL/SMART/LIGHTNING → erro', async () => {
+    const r = await validarPedido('aderir', 'OUTRO', [{ ml_item_id: 'MLB1', preco: 15 }], central(linha()), semExato);
+    expect(r).toEqual({ ok: false, erro: 'Só promoções DEAL, SMART e Relâmpago aceitam operação em massa.' });
+  });
+  describe('LIGHTNING aderir', () => {
+    // Faixa da Relâmpago: 8,70 a 26,10; sugerido 24,65 = preço avaliado.
+    const rl = (o: Partial<LinhaCentral> = {}) =>
+      linha({ preco_min: 8.7, preco_max: 26.1, preco_sugerido: 24.65, preco_avaliado: 24.65, ...o });
+    const exatoVerde = async (): Promise<Semaforo> => 'verde';
+    it('preço fora da faixa → motivo', async () => {
+      const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 27 }], central(rl()), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'Preço fora da faixa do ML (8,70 a 26,10)' }]);
+    });
+    it('sem faixa (visão por item falhou no sync) → recusa', async () => {
+      const l = rl({ preco_max: null, preco_sugerido: null, preco_promo: null, preco_avaliado: null });
+      const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 20, confirmado_risco: true }], central(l), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'O ML não informou a faixa de preço deste anúncio' }]);
+    });
+    it('18,99 com confirmado_risco → recusa R$ 19', async () => {
+      const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 18.99, confirmado_risco: true }], central(rl()), exatoVerde);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'Abaixo de R$ 19 o comprador perde o frete grátis' }]);
+    });
+    it('válido → ok com o preço do pedido', async () => {
+      const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 24.65 }], central(rl()), semExato);
+      expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 24.65, semaforo: 'verde', confirmado_risco: false }] });
+    });
   });
   it('lista vazia ou mais de 500 → erro', async () => {
     expect((await validarPedido('aderir', 'DEAL', [], central(), semExato)).ok).toBe(false);
