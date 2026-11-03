@@ -64,12 +64,20 @@ export async function carregarCadastro(admin: SupabaseClient, orgId: string): Pr
 /** Comissão + frete exatos num preço (cache `promo:` no Redis); estimado lança TarifaEstimada.
  * `fresco` (reajuste, C1): não lê o cache — mudança de tarifa do ML não passa despercebida; ainda grava. */
 export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean }): (q: QueryTarifa) => Promise<Tarifa> {
+  // Disjuntor: 429/5xx que resistiu às retentativas → o resto desta execução não espera de novo
+  // (cores são sequenciais; esperar 4 s em cada estouraria o tempo da edge).
+  let semRetentativa = false;
   return async ({ preco, categoria, listingType, dim }) => {
     const p = preco.toFixed(2);
     const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
     const [comissao, frete] = await Promise.all([
       emCache<Comissao>(`promo:lp:v1:${categoria}:${listingType}:${p}`, async () => {
-        const c = comissaoDeComProveniencia(await buscarListingPriceComRetentativa(cx.token, preco, categoria, listingType));
+        const lp = await buscarListingPriceComRetentativa(cx.token, preco, categoria, listingType, semRetentativa ? [] : undefined)
+          .catch((e: Error) => {
+            if (/listing_prices \S+ (429|5\d\d)/.test(e.message)) semRetentativa = true;
+            throw e;
+          });
+        const c = comissaoDeComProveniencia(lp);
         if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
         return c.valor;
       }, opts?.fresco),
