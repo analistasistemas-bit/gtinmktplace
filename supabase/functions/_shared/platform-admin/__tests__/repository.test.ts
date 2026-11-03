@@ -70,6 +70,31 @@ describe('createPlatformAdminRepository', () => {
     expect((await repository.statements('actor', 'org-a', 1, 20)).total).toBe(21);
   });
 
+  it('assinatura do aviso de fechamento grava só o próprio perfil e preserva as outras categorias', async () => {
+    const perfis: Row[] = [{ id: 'eu', telegram_chat_id: null, telegram_categorias: ['vendas'] }, { id: 'outro', telegram_chat_id: '9', telegram_categorias: [] }];
+    const db = {
+      from: () => {
+        let alvo = ''; let patch: Row | null = null;
+        // deno-lint-ignore no-explicit-any
+        const q: any = {
+          select: () => q,
+          update: (v: Row) => { patch = v; return q; },
+          eq: (_c: string, v: string) => { alvo = v; if (patch) Object.assign(perfis.find((p) => p.id === alvo)!, patch); return patch ? Promise.resolve({ error: null }) : q; },
+          maybeSingle: async () => ({ data: perfis.find((p) => p.id === alvo) ?? null, error: null }),
+        };
+        return q;
+      },
+    };
+    const repo = createPlatformAdminRepository(db as never, () => new Date('2026-11-02T00:00:00Z'));
+    expect(await repo.noticeSubscription('eu')).toEqual({ chat_id: null, ativo: false });
+    await repo.saveNoticeSubscription('eu', { chatId: '123', ativo: true });
+    expect(perfis[0]).toMatchObject({ telegram_chat_id: '123', telegram_categorias: ['vendas', 'fechamento_mensal'] });
+    expect(await repo.noticeSubscription('eu')).toEqual({ chat_id: '123', ativo: true });
+    await repo.saveNoticeSubscription('eu', { chatId: '123', ativo: false });
+    expect(perfis[0].telegram_categorias).toEqual(['vendas']);
+    expect(perfis[1]).toEqual({ id: 'outro', telegram_chat_id: '9', telegram_categorias: [] });
+  });
+
   it('lê a linha única dos dados de recebimento e devolve null sem cadastro', async () => {
     const vazio = createPlatformAdminRepository(fakeDb({ platform_payment_profile: { rows: [] } }) as never);
     expect(await vazio.paymentProfile('actor')).toBeNull();

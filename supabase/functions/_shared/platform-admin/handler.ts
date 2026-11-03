@@ -1,8 +1,8 @@
-import { validatePaymentProfile, validateTerms } from './validation.ts';
+import { validarAssinaturaAviso, validatePaymentProfile, validateTerms } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report','payment_profile','save_payment_profile']);
+const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report','payment_profile','save_payment_profile','notice_subscription','save_notice_subscription']);
 // deno-lint-ignore no-explicit-any
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
@@ -54,6 +54,9 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
         // Dados de recebimento são da plataforma (sem org_id): fora de orgActions.
         case 'payment_profile': result = await deps.repository.paymentProfile(userId); break;
         case 'save_payment_profile': result = await deps.repository.savePaymentProfile(userId, validatePaymentProfile(body)); break;
+        // ADR-0193 D-11: assinatura do aviso de fechamento mensal — só o PRÓPRIO perfil do super-admin.
+        case 'notice_subscription': result = await deps.repository.noticeSubscription(userId); break;
+        case 'save_notice_subscription': result = await deps.repository.saveNoticeSubscription(userId, validarAssinaturaAviso(body)); break;
         case 'monthly_report': result = await deps.repository.monthlyReport(userId, orgId, month(body.month)); break;
         case 'audit': result = await deps.repository.audit(userId, orgId, month(body.month), { category: typeof body.category === 'string' ? body.category : undefined, actor_id: body.actor_id === undefined ? undefined : uuid(body.actor_id, 'actor_id'), result: typeof body.result === 'string' ? body.result : undefined }, page(body.page), pageSize(body.page_size)); break;
       }

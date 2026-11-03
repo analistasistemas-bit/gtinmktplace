@@ -126,6 +126,7 @@
 | **Acesso / usuários** ||||
 | platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
 | materializar-metricas | false | QStash schedule | sim (upsert por org/mês) |
+| fechar-mes-plataforma | false | QStash schedule `0 9 1 * *` (sem body) → 1 job `{orgId, month, run_id}` por org + aviso `{aviso, month, run_id, orgIds}` (atraso 5 min); manual `{month, dry_run}` | sim (close devolve o statement existente; aviso 1×/competência por índice único) |
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | extensao | true | HTTP (extensão Chrome, JWT do usuário) | leituras e upserts por chave; contadores incrementais |
@@ -178,6 +179,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
+| `fechar-mes-plataforma` (ADR-0193 D-10/D-11) | `0 9 1 * *` | *(sem body)* | 3 — **a criar no deploy da Fatia 3** |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |

@@ -33,6 +33,8 @@ export type PaymentProfileInput = {
 };
 
 export type PaymentProfile = PaymentProfileInput & { updated_at: string; updated_by: string };
+/** Assinatura do aviso de fechamento mensal (ADR-0193 D-11) no perfil do próprio super-admin. */
+export type NoticeSubscription = { chat_id: string | null; ativo: boolean };
 
 export type CommercialTerms = CommercialTermsInput & {
   id: string;

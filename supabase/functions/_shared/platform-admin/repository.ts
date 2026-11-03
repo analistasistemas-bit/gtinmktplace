@@ -1,6 +1,7 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
 import { montarRelatorioMensal } from './monthly-report-io.ts';
-import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
+import { CATEGORIA_FECHAMENTO } from './fechamento-automatico.ts';
+import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, NoticeSubscription, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -18,7 +19,7 @@ type DbQuery = PromiseLike<DbResult> & {
   like(column: string, value: string): DbQuery;
   limit(n: number): DbQuery;
 };
-type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery };
+type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery; update(values: Record<string, unknown>): DbQuery };
 type Db = { from(table: string): DbTable; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
 
 type OrgRow = { id: string; nome: string; slug: string; is_test: boolean; arquivada_em: string | null };
@@ -187,6 +188,20 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       return (data as PaymentProfile | null) ?? null;
     },
     savePaymentProfile: (actorId: string, input: PaymentProfileInput) => rpc<PaymentProfile>('platform_save_payment_profile', { p_actor: actorId, p_input: input }),
+    // ADR-0193 D-11: assinatura do aviso de fechamento mensal no PRÓPRIO perfil (userId vem da autenticação de super-admin).
+    async noticeSubscription(userId: string): Promise<NoticeSubscription> {
+      const { data, error } = await db.from('profiles').select('telegram_chat_id,telegram_categorias').eq('id', userId).maybeSingle(); fail(error);
+      const row = data as { telegram_chat_id: string | null; telegram_categorias: string[] | null } | null;
+      return { chat_id: row?.telegram_chat_id ?? null, ativo: (row?.telegram_categorias ?? []).includes(CATEGORIA_FECHAMENTO) };
+    },
+    async saveNoticeSubscription(userId: string, input: { chatId: string | null; ativo: boolean }): Promise<NoticeSubscription> {
+      const { data, error } = await db.from('profiles').select('telegram_categorias').eq('id', userId).maybeSingle(); fail(error);
+      const outras = ((data as { telegram_categorias: string[] | null } | null)?.telegram_categorias ?? []).filter((c) => c !== CATEGORIA_FECHAMENTO);
+      const { error: e2 } = await db.from('profiles').update({
+        telegram_chat_id: input.chatId, telegram_categorias: input.ativo ? [...outras, CATEGORIA_FECHAMENTO] : outras, updated_at: now().toISOString(),
+      }).eq('id', userId); fail(e2);
+      return { chat_id: input.chatId, ativo: input.ativo };
+    },
     preview: (actorId: string, orgId: string, month: string) => rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: orgId, p_month: monthDate(month) }),
     close: (actorId: string, orgId: string, month: string, revision: string) => rpc<BillingStatement>('platform_billing_close', { p_actor: actorId, p_org: orgId, p_month: monthDate(month), p_expected_revision: revision }),
     reconcile: (actorId: string, input: Record<string, unknown>) => rpc<{ id: string }>('platform_reconcile_revenue', { p_actor: actorId, p_input: input }),

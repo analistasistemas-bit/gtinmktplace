@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit','monthlyReport','paymentProfile','savePaymentProfile'] as const;
+  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit','monthlyReport','paymentProfile','savePaymentProfile','noticeSubscription','saveNoticeSubscription'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
@@ -77,6 +77,8 @@ describe('createPlatformAdminHandler', () => {
     ['extensao_usage', 'extensaoUsage', { org_id: ORG, month: '2026-10' }, [ACTOR, ORG, '2026-10']],
     ['payment_profile', 'paymentProfile', {}, [ACTOR]],
     ['save_payment_profile', 'savePaymentProfile', PROFILE, [ACTOR, { ...PROFILE, document: '11222333000181' }]],
+    ['notice_subscription', 'noticeSubscription', {}, [ACTOR]],
+    ['save_notice_subscription', 'saveNoticeSubscription', { chat_id: ' 123 ', ativo: true }, [ACTOR, { chatId: '123', ativo: true }]],
     ['audit', 'audit', { org_id: ORG, month: '2026-08', category: 'billing', actor_id: ACTOR, result: 'success', page: 1, page_size: 20 }, [ACTOR, ORG, '2026-08', { category: 'billing', actor_id: ACTOR, result: 'success' }, 1, 20]],
   ])('dispatches %s with validated arguments', async (label, method, input, args) => {
     const action = label.split(' ')[0];
@@ -85,6 +87,13 @@ describe('createPlatformAdminHandler', () => {
     expect(response.status, JSON.stringify(await payload(response.clone()))).toBe(200);
     expect(repository[method]).toHaveBeenCalledWith(...args);
     if (['wallet', 'organization', 'payment_profile', 'save_payment_profile'].includes(action)) expect(repository.organizationExists).not.toHaveBeenCalled();
+  });
+
+  it('rejects a group chat for the closing notice with 400 (ADR-0193 D-11: chat privado)', async () => {
+    const { handler, repository } = harness();
+    const response = await handler(request({ action: 'save_notice_subscription', chat_id: '-100123', ativo: true }));
+    expect(response.status).toBe(400);
+    expect(repository.saveNoticeSubscription).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid payment profile with 400 before touching the repository', async () => {

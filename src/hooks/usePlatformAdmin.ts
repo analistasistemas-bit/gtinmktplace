@@ -14,6 +14,7 @@ import {
   type Page,
   type PaymentProfile,
   type PaymentProfileInput,
+  type NoticeSubscription,
   type PulseUsage,
   type RevenueReconciliationInput,
   type Wallet,
@@ -94,6 +95,8 @@ export const platformAdminKeys = {
     key(userId, 'monthly_report', orgId, month, {}),
   paymentProfile: (userId: UserId) =>
     key(userId, 'payment_profile', null, null, {}),
+  noticeSubscription: (userId: UserId) =>
+    key(userId, 'notice_subscription', null, null, {}),
   audit: (userId: UserId, params: PlatformAuditParams) =>
     key(userId, 'audit', params.org_id, params.month, filters({
       category: params.category,
@@ -292,6 +295,32 @@ export function useReconcilePlatformRevenue(month: Month) {
     onSuccess: async (_result, input) => {
       if (!userId) return;
       await invalidateBilling(queryClient, userId, input.org_id, month);
+    },
+  });
+}
+
+/** Aviso de fechamento mensal no Telegram (ADR-0193 D-11): assinatura do próprio super-admin. */
+export function useNoticeSubscription(enabled = true) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<NoticeSubscription>({
+    queryKey: platformAdminKeys.noticeSubscription(userId),
+    queryFn: () => callPlatformAdmin('notice_subscription', {}),
+    enabled: Boolean(userId) && enabled,
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+export function useSaveNoticeSubscription() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  return useMutation<NoticeSubscription, Error, NoticeSubscription>({
+    mutationFn: (input) => {
+      requireUser(userId);
+      return callPlatformAdmin('save_notice_subscription', { ...input });
+    },
+    onSuccess: async () => {
+      if (!userId) return;
+      await queryClient.invalidateQueries({ queryKey: platformAdminKeys.noticeSubscription(userId) });
     },
   });
 }

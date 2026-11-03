@@ -1,4 +1,5 @@
 import { validarCnpj } from '../fiscal/validar.ts';
+import { chatPrivado } from '../notificacoes/destinatario.ts';
 import type { CommercialTermsInput, Month, PaymentProfileInput, PixKeyType } from './types.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -145,4 +146,14 @@ export function validatePaymentProfile(input: unknown): PaymentProfileInput {
     pix_key: pixKey,
     city,
   };
+}
+
+// ADR-0193 D-11: assinatura do aviso de fechamento mensal (super-admin, chat privado).
+/** Valida a assinatura do aviso vinda da Central. Ativo exige chat privado (valores de todas as orgs). */
+export function validarAssinaturaAviso(body: { chat_id?: unknown; ativo?: unknown }): { chatId: string | null; ativo: boolean } {
+  const chat = String(body.chat_id ?? '').trim();
+  const ativo = body.ativo === true;
+  if (chat && !/^-?\d+$/.test(chat)) throw new TypeError('chat_id deve ser numérico (ex.: 123456789)');
+  if (ativo && !chatPrivado(chat)) throw new TypeError('chat_id de conversa privada (número positivo) é obrigatório para receber o aviso');
+  return { chatId: chat || null, ativo };
 }
