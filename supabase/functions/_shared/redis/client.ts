@@ -56,3 +56,36 @@ export async function redisSetNX(
   const r = await call<string>(['SET', chave, valor, 'NX', 'EX', ttlSegundos]);
   return r === 'OK';
 }
+
+/** Contadores do orçamento da extensão (fatia 2): resposta que não é inteiro lança — sem o `?? 0` de
+ *  `redisIncrComTTL`, porque quem chama é fail-closed. */
+async function inteiro(comando: (string | number)[]): Promise<number> {
+  const n = await call<number>(comando);
+  if (!Number.isInteger(n)) throw new Error(`Redis ${comando[0]}: resposta inválida ${JSON.stringify(n)}`);
+  return n as number;
+}
+
+export function redisIncrBy(chave: string, n: number): Promise<number> {
+  return inteiro(['INCRBY', chave, n]);
+}
+
+export function redisDecrBy(chave: string, n: number): Promise<number> {
+  return inteiro(['DECRBY', chave, n]);
+}
+
+/** true = TTL aplicado; false = chave não existe. */
+export async function redisExpire(chave: string, ttlSegundos: number): Promise<boolean> {
+  const r = await inteiro(['EXPIRE', chave, ttlSegundos]);
+  if (r !== 0 && r !== 1) throw new Error(`Redis EXPIRE: resposta inválida ${r}`);
+  return r === 1;
+}
+
+/** Um único MGET (1 comando no Upstash; pipeline de GET contaria N). Ordem preservada, miss = null. */
+export async function redisMget(chaves: string[]): Promise<(string | null)[]> {
+  if (chaves.length === 0) return [];
+  const r = await call<unknown[]>(['MGET', ...chaves]);
+  if (!Array.isArray(r) || r.length !== chaves.length || r.some((v) => v !== null && typeof v !== 'string')) {
+    throw new Error('Redis MGET: resposta inválida');
+  }
+  return r as (string | null)[];
+}
