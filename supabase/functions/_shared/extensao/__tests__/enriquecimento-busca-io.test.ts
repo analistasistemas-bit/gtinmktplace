@@ -30,4 +30,22 @@ describe('getMlUmaVez', () => {
     expect(await getMlUmaVez('https://ml/x', 'tok', 10)).toEqual({ status: 0, corpo: null });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('cancelamento da página aborta o GET em voo → status 0, sem retry', async () => {
+    fetchMock.mockImplementation((_u: string, init: RequestInit) => new Promise((_ok, ko) => {
+      init.signal!.addEventListener('abort', () => ko(new DOMException('abort', 'AbortError')));
+    }));
+    const ctl = new AbortController();
+    const p = getMlUmaVez('https://ml/x', 'tok', 3000, ctl.signal);
+    ctl.abort();
+    expect(await p).toEqual({ status: 0, corpo: null });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('timeout curto (restante da página) também aborta', async () => {
+    fetchMock.mockImplementation((_u: string, init: RequestInit) => new Promise((_ok, ko) => {
+      init.signal!.addEventListener('abort', () => ko(new DOMException('timeout', 'TimeoutError')));
+    }));
+    expect(await getMlUmaVez('https://ml/x', 'tok', 5, new AbortController().signal)).toEqual({ status: 0, corpo: null });
+  });
 });

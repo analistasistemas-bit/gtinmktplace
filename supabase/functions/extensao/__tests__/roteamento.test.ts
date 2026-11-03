@@ -436,29 +436,29 @@ describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
     expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['produto'] }), c('MLB1', { componentes: ['ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] })] }))
       .toMatchObject({ catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] }] });
   });
-  it('limites: 5 catálogos distintos, 20 itens por catálogo, 50 no pedido, 5 perfis, teto bruto anti-abuso', () => {
-    const cinco = ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5'].map((id) => c(id));
-    expect(validarPedido({ acao: E, catalogos: [...cinco, ...cinco] })).toMatchObject({ catalogos: { length: 5 } });
-    expect(validarPedido({ acao: E, catalogos: [...cinco, c('MLB6')] })).toBeNull();
-    expect(validarPedido({ acao: E, catalogos: Array.from({ length: 21 }, () => c('MLB1')) })).toBeNull();
+  it('limites da página: 50 catálogos distintos, 50 itens no mesmo catálogo, 50 no pedido, 50 perfis, teto bruto anti-abuso', () => {
+    const ids = (n: number, base = 1) => Array.from({ length: n }, (_, i) => `MLB${i + base}`);
     const itens = (n: number, base = 10) => Array.from({ length: n }, (_, i) => ({ itemId: `MLB${i + base}`, preco: 1 }));
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(6) })] })).toMatchObject({ catalogos: [{ itens: { length: 6 } }] });
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(20) })] })).not.toBeNull();
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(21) })] })).toBeNull();
-    // repetidos não contam para os 20 (teto bruto de 50 entradas por catálogo)
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: [...itens(20), ...itens(20)] })] })).toMatchObject({ catalogos: [{ itens: { length: 20 } }] });
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: Array.from({ length: 51 }, () => itens(1)[0]) })] })).toBeNull();
+    const cinquenta = ids(50).map((id) => c(id, { itens: [] }));
+    expect(validarPedido({ acao: E, catalogos: cinquenta })).toMatchObject({ catalogos: { length: 50 } });
+    expect(validarPedido({ acao: E, catalogos: [...cinquenta, ...cinquenta] })).toMatchObject({ catalogos: { length: 50 } }); // 100 brutas, dedupe
+    expect(validarPedido({ acao: E, catalogos: [...cinquenta, c('MLB51', { itens: [] })] })).toBeNull(); // 51º catálogo
+    expect(validarPedido({ acao: E, catalogos: Array.from({ length: 101 }, () => c('MLB1')) })).toBeNull(); // teto bruto
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(50) })] })).toMatchObject({ catalogos: [{ itens: { length: 50 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(51) })] })).toBeNull(); // 51º item no mesmo catálogo
+    // repetidos não contam (teto bruto de 100 entradas por catálogo)
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: [...itens(50), ...itens(50)] })] })).toMatchObject({ catalogos: [{ itens: { length: 50 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: Array.from({ length: 101 }, () => itens(1)[0]) })] })).toBeNull();
     const tres = ['MLB1', 'MLB2', 'MLB3'].map((id, k) => c(id, { itens: itens(17, 100 * (k + 1)) })); // 51 no pedido
     expect(validarPedido({ acao: E, catalogos: tres })).toBeNull();
     expect(validarPedido({ acao: E, catalogos: tres.slice(0, 2).concat(c('MLB3', { itens: itens(16, 300) })) })).not.toBeNull();
-    expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5] })).not.toBeNull();
-    expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5, 6] })).toBeNull();
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: Array.from({ length: 101 }, (_, i) => i + 1) })).toBeNull();
-    // Saldo de perfis da busca (aditivo): inteiro 0..20; ausente = sem o campo.
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 0 })).toMatchObject({ perfisRestantes: 0 });
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 20 })).toMatchObject({ perfisRestantes: 20 });
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1')] })).not.toHaveProperty('perfisRestantes');
-    for (const v of [-1, 21, 1.5, '3', null]) expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: v })).toBeNull();
+    const perfis = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+    expect(validarPedido({ acao: E, catalogos: [], perfis: perfis(50) })).not.toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [], perfis: perfis(51) })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: perfis(101) })).toBeNull();
+    // `perfisRestantes` (SW anterior à Task 11.3) é aceito e ignorado
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 3 })).not.toHaveProperty('perfisRestantes');
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 'x' })).not.toBeNull();
   });
   it.each([
     ['vazio', { catalogos: [] }],

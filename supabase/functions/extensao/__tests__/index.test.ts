@@ -791,7 +791,7 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     }));
   });
 
-  it('enriquece com a conta da org; sem telemetria, sem cache Redis de produto/oferta/perfil; grava só a comissão', async () => {
+  it('enriquece com a conta da org; sem telemetria, sem cache Redis de produto/oferta/perfil nem SET de comissão', async () => {
     const r = await post(PEDIDO);
     expect(r.status).toBe(200);
     const j = await r.json();
@@ -807,10 +807,24 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     expect(redisGet).not.toHaveBeenCalled();
     expect(redisIncrComTTL).not.toHaveBeenCalled(); // cota de margem (30/min) intacta
     expect(redisMget).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(redisSet).mock.calls.map((c) => c[0])).toEqual(['ext:lp:555:MLB5:gold_special:10']);
-    expect(vi.mocked(redisIncrBy).mock.calls.map((c) => c[0])).toEqual([
-      expect.stringMatching(/^ext:enr:org-1:user-1:\d{12}$/), expect.stringMatching(/^ext:mlapp:\d{12}$/), expect.stringMatching(/^ext:mlapp:\d{12}$/),
+    expect(redisSet).not.toHaveBeenCalled();
+    // 1 unidade da cota de páginas + UMA reserva do orçamento global (fases 1 e 2)
+    expect(vi.mocked(redisIncrBy).mock.calls).toEqual([
+      [expect.stringMatching(/^ext:enr:pagina:v1:org-1:user-1:\d{12}$/), 1], [expect.stringMatching(/^ext:mlapp:\d{12}$/), 4],
     ]);
+  });
+
+  it('GET com timeout ≤ 3 s ligado ao cancelamento da requisição; log agregado com custo e duração', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sinais: AbortSignal[] = [];
+    const f0 = vi.mocked(fetch);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => { sinais.push(init.signal!); return f0(url, init); }));
+    await post(PEDIDO);
+    expect(sinais).toHaveLength(4);
+    expect(sinais.every((x) => x instanceof AbortSignal && !x.aborted)).toBe(true);
+    const linha = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('ext_enr_custo'))!;
+    expect(JSON.parse(linha)).toEqual({ ext_enr_custo: { comandosRedis: expect.any(Number), chamadasMl: 4 }, catalogos: 1, ms: expect.any(Number) });
+    log.mockRestore();
   });
 
   it('devolve a impressão opaca da conta ML (chave do cache do navegador): estável por conta, nunca o id cru', async () => {
@@ -829,8 +843,13 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     expect(urls).toEqual([]);
   });
 
-  it('payload acima do limite (6 catálogos) → 400 antes de qualquer consulta', async () => {
-    const r = await post({ acao: 'enriquecer_catalogos_busca', catalogos: [1, 2, 3, 4, 5, 6].map((i) => ({ catalogProductId: `MLB${i}`, itens: [] })) });
+  it('página de 50 catálogos numa requisição; 51 → 400 antes de qualquer consulta', async () => {
+    const pag = (n: number) => ({ acao: 'enriquecer_catalogos_busca', catalogos: Array.from({ length: n }, (_, i) => ({ catalogProductId: `MLB${i + 1}`, itens: [], componentes: ['produto'] })) });
+    const ok = await (await post(pag(50))).json();
+    expect(ok.valor.catalogos).toHaveLength(50);
+    expect(urls).toHaveLength(50);
+    vi.clearAllMocks();
+    const r = await post(pag(51));
     expect(r.status).toBe(400);
     expect(resolverConexao).not.toHaveBeenCalled();
     expect(redisIncrBy).not.toHaveBeenCalled();

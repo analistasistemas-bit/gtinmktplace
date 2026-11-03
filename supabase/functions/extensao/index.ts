@@ -42,6 +42,7 @@ const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
 const IDENTIDADE = /^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/;
 const TIMEOUT_FRETE_OFERTA_MS = 2500; // complementar: não pode segurar a análise (nem o selo)
+const PRAZO_ENRIQUECIMENTO_MS = 8000;
 const LIMITE_RADAR_HORA = 10; // adicionar ao radar: cada um custa GET /products e trabalho futuro do coletor
 
 function json(body: unknown, status = 200): Response {
@@ -405,7 +406,10 @@ async function adicionarRadar(admin: SupabaseClient, ctx: Contexto, catalogProdu
   return { estado: 'ok', jaExistia: r.jaExistia };
 }
 
-async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protocolo?: number): Promise<unknown> {
+/** Instante de entrada na edge e cancelamento do cliente (só o enriquecimento usa). */
+interface Requisicao { entrada: number; sinal: AbortSignal }
+
+async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protocolo: number | undefined, req: Requisicao): Promise<unknown> {
   const { orgId, userId } = ctx;
   switch (p.acao) {
     case 'analisar_anuncio': {
@@ -456,13 +460,15 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
       if (!conexao?.contaExternaId) return SEM_CONEXAO;
       const token = await getValidAccessTokenConexao(conexao);
-      const { catalogos, perfis, perfisEmCache, perfisRestantes } = p;
+      const { catalogos, perfis, perfisEmCache } = p;
       const conta = String(conexao.contaExternaId);
-      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache, perfisRestantes }, {
-        conta, agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
+      // Prazo de 8 s desde a entrada na edge (inclui autenticação); cliente desconectado = nada novo ao ML.
+      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+        conta, agora: () => new Date(), prazo: req.entrada + PRAZO_ENRIQUECIMENTO_MS, sinal: req.sinal,
+        getMl: (url, timeoutMs) => getMlUmaVez(url, token, timeoutMs, req.sinal),
       });
-      // Medição de custo (Task 11): só contagens, sem dado de vendedor nem de tenant além da contagem.
-      console.log(JSON.stringify({ ext_enr_custo: r.custo, catalogos: catalogos.length }));
+      // Medição de custo (Task 11): só contagens agregadas, sem dado de vendedor nem de tenant.
+      console.log(JSON.stringify({ ext_enr_custo: r.custo, catalogos: catalogos.length, ms: Date.now() - req.entrada }));
       return { estado: 'ok', valor: { ...r, conta: await impressaoConta(conta) } };
     }
     case 'radar':
@@ -511,6 +517,7 @@ async function impressaoConta(contaExternaId: string | number): Promise<string> 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+  const entrada = Date.now(); // prazo do enriquecimento conta daqui (antes do corpo e da sessão)
 
   // Protocolo 2 (extensão 0.3.0+, emenda 2026-10-24): envelope `{ identidade, dados }` / `{ erro, identidade }`.
   // Sem `protocolo`, respostas byte a byte iguais às da 0.2.x.
@@ -536,7 +543,7 @@ Deno.serve(async (req) => {
     if (!(await exigirModulo(admin, orgId, 'extensao'))) throw new ErroExtensao('modulo_desligado', 403);
     const pedido = validarPedido(body);
     if (!pedido) throw new ErroExtensao('payload_invalido', 400);
-    const dados = await executar(pedido, admin, ctx, protocolo);
+    const dados = await executar(pedido, admin, ctx, protocolo, { entrada, sinal: req.signal });
     return json(protocolo === 2 ? { identidade, dados } : dados);
   } catch (e) {
     const { status, corpo } = normalizarErro(e, protocolo);
