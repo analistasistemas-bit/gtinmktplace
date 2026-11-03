@@ -41,6 +41,9 @@ begin
      or has_table_privilege('authenticated', 'public.platform_payment_profile', 'truncate') then
     raise exception 'privilégio indevido em platform_payment_profile';
   end if;
+  if not has_table_privilege('service_role', 'public.platform_payment_profile', 'select') then
+    raise exception 'service_role (edge) precisa ler platform_payment_profile';
+  end if;
   if has_function_privilege('anon', 'public.platform_save_payment_profile(uuid,jsonb)', 'execute')
      or has_function_privilege('authenticated', 'public.platform_save_payment_profile(uuid,jsonb)', 'execute') then
     raise exception 'execute indevido em platform_save_payment_profile';

@@ -24,6 +24,21 @@ describe('crc16 (BR Code)', () => {
     expect(crc16('123456789')).toBe('29B1');
     expect(crc16('')).toBe('FFFF');
   });
+
+  it('bate com o exemplo de QR Code estático do BACEN', () => {
+    // Fonte: BACEN, Manual de Padrões para Iniciação do Pix v2.10.0, §2.6.3 "Exemplo de QR Code estático",
+    // p. 14 (bcb.gov.br/content/estabilidadefinanceira/pix/Regulamento_Pix/II_ManualdePadroesparaIniciacaodoPix.pdf).
+    const exemplo = '00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***63041D3D';
+    expect(crc16(exemplo.slice(0, -4))).toBe('1D3D');
+    expect(campos(exemplo)).toMatchObject({ '00': '01', '52': '0000', '53': '986', '58': 'BR', '59': 'Fulano de Tal', '60': 'BRASILIA', '62': '0503***', '63': '1D3D' });
+  });
+
+  it('o montador reproduz o exemplo do BACEN quando o valor é informado', () => {
+    // Mesmo exemplo + campo 54; o resto da sequência é idêntico ao do manual.
+    const payload = pixPayload({ chave: '123e4567-e12b-12d1-a456-426655440000', valorCents: 100, nome: 'Fulano de Tal', cidade: 'BRASILIA' });
+    expect(payload.slice(0, -4)).toBe('00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-426655440000520400005303986540'
+      + '41.005802BR5913Fulano de Tal6008BRASILIA62070503***6304');
+  });
 });
 
 describe('pixPayload', () => {
