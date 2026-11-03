@@ -29,6 +29,11 @@ function card(i: number): CardBusca {
 }
 
 export const cards: CardBusca[] = Array.from({ length: 60 }, (_, i) => card(i));
+// Nomes de vendedor para a prova do corte do nome (0 = Loja oficial; 15 = Patrocinado; 36 = nome muito longo).
+Object.assign(cards[0], { vendedor: 'DARK LAB', lojaOficial: true });
+Object.assign(cards[15], { vendedor: 'DUX NUTRITION', patrocinado: true });
+cards[15].ocorrencias[0].patrocinado = true;
+Object.assign(cards[36], { vendedor: 'Distribuidora Nacional de Cosméticos Ltda' });
 export const meta: Record<string, MetadadosCardBusca> = {};
 export const resultados: Record<string, ResultadoCard> = {};
 const id = (i: number) => cards[i].itemId;

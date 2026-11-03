@@ -34,7 +34,7 @@ const CSS = `
   font:400 12px/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;overflow:hidden}
 .b::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand-gradient)}
 .l{display:flex;flex-wrap:wrap;align-items:center;gap:1px 3px;min-width:0;overflow-wrap:anywhere}
-.um{flex-wrap:nowrap}
+.k{display:flex;align-items:center;gap:3px;min-width:0;flex:0 1 auto}
 .pq{font-size:11px;letter-spacing:-0.005em}
 .n{flex:0 1 auto;min-width:2.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .um .c,.f{flex:none;white-space:nowrap}
@@ -134,21 +134,24 @@ export function renderizarMiniBlocoDaBusca(
   host.style.position = 'relative';
   host.style.zIndex = '2';
   const raiz = host.attachShadow({ mode: 'closed' });
-  raiz.innerHTML = `<style>${CSS}</style><div class="b" role="note" aria-label="PubliAI"><div class="l um">${MARCA}</div></div>`;
+  raiz.innerHTML = `<style>${CSS}</style><div class="b" role="note" aria-label="PubliAI"><div class="l um"><div class="k">${MARCA}</div></div></div>`;
   const bloco = raiz.querySelector('.b')!;
   const exata = vista?.exata;
 
   // 1. Uma linha: vendedor · medalha · UF (perfil da oferta exata; medalha desconhecida fica de fora) + selos que o
   // card do ML não deixa claros por si (Loja oficial, Patrocinado). Full, frete e "Catálogo" já aparecem no card / na
   // linha do catálogo. Nome longo é cortado com reticências (completo no title).
+  // Marca + nome + medalha + UF formam um grupo (.k) que só encolhe pelo nome; os selos (chips) vão para uma 2ª linha
+  // apenas quando não cabem — assim o nome não é cortado cedo demais.
+  const grupo = bloco.querySelector('.k') as HTMLElement;
   const topo = bloco.querySelector('.l') as HTMLElement;
   // Só o nome encolhe (reticências); medalha e UF ficam sempre visíveis.
   const nome = el('span', 'v n', card.vendedor ?? 'Vendedor não informado');
   nome.title = nome.textContent ?? '';
-  topo.append(nome);
+  grupo.append(nome);
   if (exata?.estado === 'ok' && exata.sellerId !== null) {
     const v = vista!.vendedor;
-    const extra = (classe: string, t: string) => { const f = el('span', 'v f', '· '); f.append(el('span', classe, t)); topo.append(f); };
+    const extra = (classe: string, t: string) => { const f = el('span', 'v f', '· '); f.append(el('span', classe, t)); grupo.append(f); };
     if (v?.estado === 'ok') {
       if (v.medalha) extra(v.medalha === 'sem' ? 'v' : 'med', NOME_MEDALHA[v.medalha]);
       if (v.uf) extra('v', v.uf);

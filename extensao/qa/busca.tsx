@@ -41,7 +41,7 @@ const precoNativo = (n: number | null) => { const [f, c] = (n ?? 0).toFixed(2).s
 
 function grade() {
   document.body.style.cssText = 'margin:0;background:#ebebeb;font:14px/1.3 "Proxima Nova",Arial,sans-serif;color:#333';
-  const sel = [0, 1, 2, 'p2', 3, 5, 6, 8, 9, 10, 12, 'p12', 20, 21, 30, 40] as (number | string)[];
+  const sel = [0, 1, 2, 'p2', 3, 5, 6, 8, 9, 10, 12, 'p12', 20, 21, 30, 40, 15, 36] as (number | string)[];
   const doc = document.createElement('div');
   doc.style.cssText = 'width:1280px;margin:0 auto;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start';
   for (const s of sel) {
