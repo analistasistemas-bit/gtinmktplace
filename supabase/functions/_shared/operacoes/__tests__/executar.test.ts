@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Semaforo } from '../../promocoes/tipos.ts';
 import { conferir, executar, proximoIntervalo, type ItemRow, type OperacaoRow } from '../executar.ts';
 import { SemEscritaPromocoes, type ClienteML } from '../ml.ts';
-import type { ItemNaCampanha } from '../tipos.ts';
+import type { ItemNaCampanha, OfertaNoItem } from '../tipos.ts';
 
 const RECONECTAR = 'Sem permissão de escrita em promoções — reconecte a conta do Mercado Livre em Canais';
 const SELLER_CENTER = 'O ML ainda não confirmou a saída. Confira no Seller Center.';
@@ -15,23 +15,30 @@ const item = (id: string, x: Partial<Linha> = {}): Linha => ({
   proxima_conferencia: null, saida_pedida_em: null, ...x,
 });
 const conv = (x: Partial<ItemNaCampanha> = {}): ItemNaCampanha =>
-  ({ status: 'candidate', preco_min: 5, preco_max: 20, offer_id: null, ...x });
+  ({ status: 'candidate', preco_min: 5, preco_max: 20, offer_id: null, estoque_min: null, ...x });
 
 function montar(itens: Linha[], opts: {
   campanha?: (id: string, chamada: number) => ItemNaCampanha | null;
   post?: (id: string) => { offer_id: string | null };
+  oferta?: (id: string, chamada: number) => OfertaNoItem | null;
   semaforo?: Semaforo | null;
   passoMs?: number;
 } = {}) {
   let t = T0;
   const leituras = new Map<string, number>();
+  const leiturasOferta = new Map<string, number>();
   const ml: ClienteML = {
     lerNaCampanha: vi.fn(async (_p, _t, id: string) => {
       const n = (leituras.get(id) ?? 0) + 1;
       leituras.set(id, n);
       return opts.campanha ? opts.campanha(id, n) : conv();
     }),
-    lerRelacoes: vi.fn(async () => ({ catalog_listing: false, relacionados: [] })),
+    lerOfertaNoItem: vi.fn(async (_p, id: string) => {
+      const n = (leiturasOferta.get(id) ?? 0) + 1;
+      leiturasOferta.set(id, n);
+      return opts.oferta ? opts.oferta(id, n) : null;
+    }),
+    lerRelacoes: vi.fn(async () => ({ catalog_listing: false, relacionados: [], disponivel: 180 })),
     post: vi.fn(async (id: string) => (opts.post ? opts.post(id) : { offer_id: null })),
     del: vi.fn(async () => {}),
   };
@@ -88,6 +95,7 @@ describe('executar — aderir', () => {
     expect(itens[0].status).toBe('aplicado');
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
     expect(deps.concluir).toHaveBeenCalledTimes(1);
+    expect(ml.lerOfertaNoItem).not.toHaveBeenCalled();
   });
 
   it('ainda candidate depois do 201 → espelha o status da promoção (ativa: started; futura: pending)', async () => {
@@ -212,6 +220,101 @@ describe('executar — aderir', () => {
     expect(deps.continuar).toHaveBeenCalledTimes(1);
     expect(deps.concluir).not.toHaveBeenCalled();
     expect(itens.some((i) => i.status === 'pendente')).toBe(true);
+  });
+});
+
+// Relâmpago (spike 02/11): campanha min 8,70 + stock.min 5; visão por item 5,80/26,10/24,65; janela atribuída pelo ML.
+describe('executar — LIGHTNING', () => {
+  const LGH: OperacaoRow = { ...DEAL_ADERIR, promocao_id: 'LGH-1', promocao_tipo: 'LIGHTNING', promocao_status: 'pending' };
+  const LGH_SAIR: OperacaoRow = { ...LGH, acao: 'sair' };
+  const convite = conv({ preco_min: 8.7, preco_max: null, offer_id: 'CANDIDATE-MLB1-5', estoque_min: 5 });
+  const ofertaConvite: OfertaNoItem = { preco_min: 5.8, preco_max: 26.1, preco_sugerido: 24.65, estoque_min: 5, inicio: null, fim: null };
+  const ofertaAgendada: OfertaNoItem = { ...ofertaConvite, estoque_min: null, inicio: '2026-11-06T00:00:00', fim: '2026-11-06T11:59:59' };
+
+  it('aderir: POST com stock e mensagem de janela', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, {
+      campanha: (_id, n) => (n === 1 ? convite : conv({ status: 'pending', offer_id: 'OFFER-X-1' })),
+      oferta: (_id, n) => (n === 1 ? ofertaConvite : ofertaAgendada),
+      post: () => ({ offer_id: 'OFFER-X-1' }),
+    });
+    await executar(LGH, deps, OPTS);
+    expect(ml.lerOfertaNoItem).toHaveBeenCalledWith('LGH-1', 'MLB1');
+    expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'LGH-1', promotion_type: 'LIGHTNING', deal_price: 24.65, stock: 5 });
+    expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-X-1', mensagem: 'Agendada: 06/11 00:00–11:59' });
+    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('LGH-1', 'LIGHTNING', 'MLB1', 'pending');
+  });
+
+  it('janela com fuso explícito → horário de Brasília', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps } = montar(itens, {
+      campanha: () => convite,
+      oferta: (_id, n) => (n === 1 ? ofertaConvite : { ...ofertaAgendada, inicio: '2026-11-06T03:00:00Z', fim: '2026-11-06T11:59:59-03:00' }),
+    });
+    await executar(LGH, deps, OPTS);
+    expect(itens[0].mensagem).toBe('Agendada: 06/11 00:00–11:59');
+  });
+
+  it('releitura da oferta falha depois do POST → aplicado sem mensagem', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => convite, oferta: () => ofertaConvite });
+    vi.mocked(ml.lerOfertaNoItem).mockResolvedValueOnce(ofertaConvite).mockRejectedValueOnce(new Error('ML 500'));
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null });
+  });
+
+  it('visão por item falha antes do POST → erro sem POST', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => convite });
+    vi.mocked(ml.lerOfertaNoItem).mockRejectedValue(new Error('ML 500 em /seller-promotions/items'));
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 500 em /seller-promotions/items' });
+  });
+
+  it('18,99 com confirmado_risco não posta', async () => {
+    const itens = [item('MLB1', { preco: 18.99, confirmado_risco: true })];
+    const { deps, ml } = montar(itens, { campanha: () => convite, oferta: () => ofertaConvite });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'bloqueado', mensagem: 'Abaixo de R$ 19 o comprador perde o frete grátis' });
+  });
+
+  it('estoque disponível 3 < mínimo 5 → bloqueado sem POST', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => convite, oferta: () => ofertaConvite });
+    vi.mocked(ml.lerRelacoes).mockResolvedValue({ catalog_listing: false, relacionados: [], disponivel: 3 });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'bloqueado', mensagem: 'Estoque disponível (3) menor que o mínimo da Relâmpago (5)' });
+  });
+
+  it('sair: DELETE com o OFFER da campanha', async () => {
+    const itens = [item('MLB1', { preco: null })];
+    const { deps, ml } = montar(itens, { campanha: () => conv({ status: 'pending', offer_id: 'OFFER-X-1' }) });
+    await executar(LGH_SAIR, deps, OPTS);
+    expect(ml.del).toHaveBeenCalledWith('MLB1', 'promotion_type=LIGHTNING&promotion_id=LGH-1&offer_id=OFFER-X-1&app_version=v2');
+    expect(itens[0].status).toBe('saida_solicitada');
+  });
+
+  const vencido = () => item('MLB1', {
+    status: 'saida_solicitada', saida_pedida_em: new Date(T0 - H).toISOString(), proxima_conferencia: new Date(T0).toISOString(),
+  });
+  it('conferir: null reagenda (não confirma saída sem prova)', async () => {
+    const itens = [vencido()];
+    const { deps } = montar(itens, { campanha: () => null });
+    expect(await conferir(LGH_SAIR, deps)).toEqual({ confirmados: 0, pendentes: 1 });
+    expect(itens[0]).toMatchObject({ status: 'saida_solicitada', conferencias: 1 });
+    expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+  });
+
+  it('conferir: candidate confirma e espelha saiu', async () => {
+    const itens = [vencido()];
+    const { deps } = montar(itens, { campanha: () => convite });
+    expect(await conferir(LGH_SAIR, deps)).toEqual({ confirmados: 1, pendentes: 0 });
+    expect(itens[0]).toMatchObject({ status: 'aplicado', proxima_conferencia: null });
+    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('LGH-1', 'LIGHTNING', 'MLB1', 'saiu');
   });
 });
 

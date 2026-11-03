@@ -13,7 +13,7 @@ export interface OperacaoRow {
   id: string; org_id: string; acao: Acao; promocao_id: string; promocao_tipo: TipoPromocao;
   promocao_status: 'pending' | 'started';   // ml_promocoes.status: futura ou ativa
 }
-/** Espelho em ml_promocao_itens: pending/started = participando; saiu = DEAL volta a candidate, SMART apaga a linha. */
+/** Espelho em ml_promocao_itens: pending/started = participando; saiu = DEAL/LIGHTNING volta a candidate, SMART apaga a linha. */
 export type Espelho = 'pending' | 'started' | 'saiu';
 export interface DepsExecutar extends DepsLaco {
   ml: ClienteML;
@@ -42,6 +42,25 @@ export function proximoIntervalo(conferencias: number, decorridoSeg: number): nu
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+
+const HORA_BRASILIA = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+/** 'dd/mm hh:mm' em Brasília. Sem fuso (formato do spike: 2026-11-06T00:00:00) já é horário local: não converte. */
+function quando(s: string): { dia: string; hora: string } | null {
+  const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(s);
+  if (m) return { dia: `${m[2]}/${m[1]}`, hora: `${m[3]}:${m[4]}` };
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return null;
+  const p = Object.fromEntries(HORA_BRASILIA.formatToParts(t).map((x) => [x.type, x.value]));
+  return { dia: `${p.day}/${p.month}`, hora: `${p.hour}:${p.minute}` };
+}
+/** Janela atribuída pelo ML à Relâmpago: 'Agendada: 06/11 00:00–11:59'; null se faltar/não der para ler. */
+export function mensagemJanela(inicio: string | null, fim: string | null): string | null {
+  const a = inicio ? quando(inicio) : null;
+  const b = fim ? quando(fim) : null;
+  return a && b ? `Agendada: ${a.dia} ${a.hora}–${b.hora}` : null;
+}
 /** Status real na Central depois de aderir: o da campanha; ainda candidate (atraso do ML) → o da promoção. */
 const espelhoAderido = (op: OperacaoRow, f: ItemNaCampanha | null): Espelho =>
   f?.status === 'pending' || f?.status === 'started' ? f.status : op.promocao_status;
@@ -54,8 +73,11 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   const id = it.ml_item_id;
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id);
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
-  const relacoes = op.acao === 'aderir' && fresco?.status === 'candidate' ? await ml.lerRelacoes(id) : null;
-  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, fresco, relacoes);
+  const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
+  const relacoes = convidado ? await ml.lerRelacoes(id) : null;
+  // Relâmpago: máximo, sugerido e stock.min só na visão por item; falha aqui lança → erro sem escrita.
+  const oferta = convidado && op.promocao_tipo === 'LIGHTNING' ? await ml.lerOfertaNoItem(op.promocao_id, id) : null;
+  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, fresco, relacoes, oferta);
 
   if (d.tipo === 'fim') {
     if (d.status !== 'ja_estava') return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
@@ -87,6 +109,12 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
 
   const { offer_id } = await ml.post(id, d.body);
   await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, offer_id }));
+  if (op.promocao_tipo === 'LIGHTNING') {
+    // Best-effort: o item já está aplicado; a janela é informativa.
+    const o = await ml.lerOfertaNoItem(op.promocao_id, id).catch(() => null);
+    const mensagem = o && mensagemJanela(o.inicio, o.fim);
+    if (mensagem) await deps.gravarItem(op.id, id, { mensagem }).catch(() => {});
+  }
   const depois = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
   await espelhar(deps, op, id, espelhoAderido(op, depois));
 }
@@ -114,7 +142,11 @@ export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ c
       semPermissao = e instanceof SemEscritaPromocoes;
       return undefined;
     });
-    if (fresco !== undefined && (fresco === null || !ehParticipando(fresco.status))) {
+    // Relâmpago: só a volta a candidate prova a saída; sumir da campanha (null) não confirma.
+    const saiu = fresco !== undefined && (op.promocao_tipo === 'LIGHTNING'
+      ? fresco?.status === 'candidate'
+      : fresco === null || !ehParticipando(fresco.status));
+    if (saiu) {
       await deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, proxima_conferencia: null });
       await espelhar(deps, op, id, 'saiu');
       confirmados++;

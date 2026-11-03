@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MSG_ALIQUOTA, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
+  comOfertaRelampago, MSG_ALIQUOTA, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
   type DepsLeitura, type DepsLista, type MsgLeitura,
 } from '../sincronizar.ts';
 import { montarCadastro, type LinhaVariacao } from '../cadastro.ts';
@@ -205,6 +205,7 @@ function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
     buscarItensML: vi.fn(async (ids: string[]) => new Map(ids.map((id) => [id, itemMl({ id })]))),
     carregarCadastro: vi.fn(async () => montarCadastro([linhaVar({ id: 'a' })], [])),
     tarifaEm: vi.fn(async () => tarifa10),
+    ofertaRelampago: vi.fn(async () => null),
     gravarLote: vi.fn(async () => {}),
     removerItens: vi.fn(async () => {}),
     continuar: vi.fn(async () => {}),
@@ -418,5 +419,64 @@ describe('sincronizarPromocao', () => {
     const d = depsLeitura({ lerAliquotas: vi.fn(async () => null) });
     expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('erro');
     expect(d.falhar).toHaveBeenCalledWith(MSG_ALIQUOTA);
+  });
+});
+
+describe('Relâmpago: faixa e sugerido da visão por item', () => {
+  const o = { preco_min: 5.8, preco_max: 26.1, preco_sugerido: 24.65 };
+
+  it('comOfertaRelampago convidado: promo null, min = maior das visões, max/sugerido do item', () => {
+    expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: 8.7 }), o)).toMatchObject({
+      preco_promo: null, preco_min: 8.7, preco_max: 26.1, preco_sugerido: 24.65,
+    });
+    expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: null }), o).preco_min).toBe(5.8);
+  });
+
+  it('comOfertaRelampago null degrada: sem faixa nem preço', () => {
+    expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: 8.7 }), null)).toMatchObject({
+      preco_promo: null, preco_min: 8.7, preco_max: null, preco_sugerido: null,
+    });
+  });
+
+  it('participando inalterado', () => {
+    const p = item({ status: 'started', preco_promo: 24.65, preco_min: 8.7 });
+    expect(comOfertaRelampago(p, o)).toEqual(p);
+  });
+
+  const msgL: MsgLeitura = { ...msg, tipo: 'LIGHTNING' };
+
+  it('sincronizarPromocao LIGHTNING: usa a visão por item no convidado e não lê a do participando', async () => {
+    const d = depsLeitura({
+      listarItens: vi.fn(async () => [item({ ml_item_id: 'MLB1', preco_promo: 28.13, preco_min: 8.7 }),
+        item({ ml_item_id: 'MLB2', status: 'started', preco_promo: 24.65 })]),
+      ofertaRelampago: vi.fn(async () => o),
+    });
+    expect(await sincronizarPromocao(d, msgL, opts)).toEqual({ resultado: 'concluida', processados: 2 });
+    expect(d.ofertaRelampago.mock.calls).toEqual([['MLB1']]);
+    const [l1, l2] = d.gravarLote.mock.calls[0][0];
+    expect(l1).toMatchObject({ preco_promo: null, preco_min: 8.7, preco_max: 26.1, preco_sugerido: 24.65, preco_avaliado: 24.65 });
+    expect(l2).toMatchObject({ preco_promo: 24.65, preco_avaliado: 24.65 });
+  });
+
+  it('sincronizarPromocao LIGHTNING: ofertaRelampago lança → rodada conclui e linha sem faixa', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const d = depsLeitura({
+      listarItens: vi.fn(async () => [item({ ml_item_id: 'MLB1', preco_promo: 28.13, preco_min: 8.7 })]),
+      ofertaRelampago: vi.fn(async () => { throw new Error('ML 500'); }),
+    });
+    expect(await sincronizarPromocao(d, msgL, opts)).toEqual({ resultado: 'concluida', processados: 1 });
+    expect(d.falhar).not.toHaveBeenCalled();
+    expect(d.gravarLote.mock.calls[0][0][0]).toMatchObject({
+      preco_promo: null, preco_max: null, preco_sugerido: null, preco_avaliado: null, pior_semaforo: 'indisponivel',
+    });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('DEAL não chama ofertaRelampago', async () => {
+    const d = depsLeitura();
+    await sincronizarPromocao(d, msg, opts);
+    expect(d.ofertaRelampago).not.toHaveBeenCalled();
+    expect(d.gravarLote.mock.calls[0][0][0]).toMatchObject({ preco_promo: 50 });
   });
 });

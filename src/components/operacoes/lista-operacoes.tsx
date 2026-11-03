@@ -13,7 +13,7 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, useRetomarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, precisaRetomar, tituloOperacao, totalDoTitulo, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, ehTipoOperavel, inversa, itensRevertiveis, ehAcaoStatus, precisaRetomar, tituloOperacao, totalDoTitulo, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 import { PreviewStatus } from './preview-status';
@@ -307,7 +307,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
 
       {reversaoAtiva && (
         <PreviewOperacao
-          acao={reversaoAtiva.acaoNova} tipo={reversaoAtiva.op.promocao_tipo === 'SMART' ? 'SMART' : 'DEAL'}
+          acao={reversaoAtiva.acaoNova} tipo={ehTipoOperavel(reversaoAtiva.op.promocao_tipo) ? reversaoAtiva.op.promocao_tipo : 'DEAL'}
           promocaoId={reversaoAtiva.op.promocao_id ?? ''} promocaoNome={reversaoAtiva.op.promocao_nome ?? reversaoAtiva.op.promocao_id ?? ''}
           itens={reversaoAtiva.itens} origemId={reversaoAtiva.op.id} naoRevertiveis={reversaoAtiva.naoRevertiveis}
           aberto onClose={fecharPreviewReversao} onSucesso={fecharPreviewReversao}

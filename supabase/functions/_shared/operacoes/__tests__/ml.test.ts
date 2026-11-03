@@ -18,7 +18,7 @@ describe('lerNaCampanha', () => {
     const f = vi.fn().mockResolvedValue(resp(200, naCampanha));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerNaCampanha('P-MLB9', 'SMART', 'MLB1')).toEqual({
-      status: 'candidate', preco_min: 7, preco_max: 18.99, offer_id: 'CANDIDATE-MLB1-772',
+      status: 'candidate', preco_min: 7, preco_max: 18.99, offer_id: 'CANDIDATE-MLB1-772', estoque_min: null,
     });
     expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/promotions/P-MLB9/items?promotion_type=SMART&item_id=MLB1&app_version=v2`);
     expect(f.mock.calls[0][1]).toMatchObject({ method: 'GET', headers: { Authorization: 'Bearer tok' } });
@@ -29,7 +29,7 @@ describe('lerNaCampanha', () => {
       .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started' }] }));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toBeNull();
-    expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toEqual({ status: 'started', preco_min: null, preco_max: null, offer_id: null });
+    expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toEqual({ status: 'started', preco_min: null, preco_max: null, offer_id: null, estoque_min: null });
   });
 
   it('500, 500, 200 → sucesso depois de 2 esperas de 1 s', async () => {
@@ -66,6 +66,101 @@ describe('lerNaCampanha', () => {
     const ml = criarClienteML('tok', f, semEspera());
     await expect(ml.lerNaCampanha('P', 'DEAL', 'MLB1')).rejects.toBeInstanceOf(SemEscritaPromocoes);
     expect(f).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Formato real da Relâmpago (spike 02/11/2026, MLB5244990621 / LGH-MLB1000).
+describe('lerNaCampanha LIGHTNING', () => {
+  it('lê ref_id e stock.min', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', ref_id: 'OFFER-X-1', status: 'pending', price: 24.65,
+        start_date: '2026-11-06T00:00:00', finish_date: '2026-11-06T11:59:59', stock: { remaining_stock: 5 } }] }))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', ref_id: 'CANDIDATE-MLB1-5', status: 'candidate', price: 28.13,
+        original_price: 29.0, min_discounted_price: 8.7, stock: { min: 5, max: 180 } }] }));
+    const ml = criarClienteML('tok', f, semEspera());
+    expect(await ml.lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
+      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null,
+    });
+    expect(await ml.lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
+      status: 'candidate', preco_min: 8.7, preco_max: null, offer_id: 'CANDIDATE-MLB1-5', estoque_min: 5,
+    });
+    expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/promotions/LGH-1/items?promotion_type=LIGHTNING&item_id=MLB1&app_version=v2`);
+  });
+
+  it('ref_id fora do padrão OFFER-/CANDIDATE- não vira offer_id', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', ref_id: '123', status: 'pending' }] }));
+    expect((await criarClienteML('tok', f, semEspera()).lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1'))?.offer_id).toBeNull();
+  });
+
+  it('ref_id fora de LIGHTNING não vira offer_id (SMART/DEAL inalterados)', async () => {
+    const f = vi.fn(async () => resp(200, { results: [{ id: 'MLB1', ref_id: 'CANDIDATE-MLB1-5', status: 'candidate' }] }));
+    const ml = criarClienteML('tok', f, semEspera());
+    expect((await ml.lerNaCampanha('P', 'SMART', 'MLB1'))?.offer_id).toBeNull();
+    expect((await ml.lerNaCampanha('P', 'DEAL', 'MLB1'))?.offer_id).toBeNull();
+  });
+
+  it('stock.min fora de LIGHTNING → estoque_min null', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', status: 'candidate', stock: { min: 5 } }] }));
+    expect((await criarClienteML('tok', f, semEspera()).lerNaCampanha('P', 'DEAL', 'MLB1'))?.estoque_min).toBeNull();
+  });
+
+  it('prefere a linha participando', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { results: [
+      { id: 'MLB1', ref_id: 'CANDIDATE-MLB1-5', status: 'candidate', stock: { min: 5, max: 180 } },
+      { id: 'MLB1', ref_id: 'OFFER-X-1', status: 'pending', stock: { remaining_stock: 5 } },
+    ] }));
+    expect(await criarClienteML('tok', f, semEspera()).lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
+      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null,
+    });
+  });
+});
+
+describe('lerOfertaNoItem', () => {
+  const visaoItem = [
+    { id: 'P-SMART', type: 'SMART', status: 'candidate', min_discounted_price: 1 },
+    { id: 'LGH-OUTRA', type: 'LIGHTNING', status: 'candidate', min_discounted_price: 2, max_discounted_price: 3 },
+    { id: 'LGH-1', type: 'LIGHTNING', status: 'candidate', ref_id: 'CANDIDATE-MLB1-5', min_discounted_price: 5.8,
+      max_discounted_price: 26.1, suggested_discounted_price: 24.65, stock: { min: 5, max: 180 } },
+  ];
+
+  it('filtra a Relâmpago pelo id e tipo; URL da visão por item', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, visaoItem));
+    expect(await criarClienteML('tok', f, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).toEqual({
+      preco_min: 5.8, preco_max: 26.1, preco_sugerido: 24.65, estoque_min: 5, inicio: null, fim: null,
+    });
+    expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/items/MLB1?app_version=v2`);
+  });
+
+  it('janela de start_date/finish_date', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'LGH-1', type: 'LIGHTNING', status: 'pending',
+      start_date: '2026-11-06T00:00:00', finish_date: '2026-11-06T11:59:59', stock: { remaining_stock: 5 } }]));
+    expect(await criarClienteML('tok', f, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).toEqual({
+      preco_min: null, preco_max: null, preco_sugerido: null, estoque_min: null,
+      inicio: '2026-11-06T00:00:00', fim: '2026-11-06T11:59:59',
+    });
+  });
+
+  it('ausente (ou mesmo id com outro tipo) → null', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'LGH-1', type: 'SMART' }, ...visaoItem.slice(0, 2)]));
+    expect(await criarClienteML('tok', f, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).toBeNull();
+  });
+
+  it('500, 500, 200 → sucesso; 500 × 3 → lança; 404 → lança sem retry', async () => {
+    const f = vi.fn().mockResolvedValueOnce(resp(500)).mockResolvedValueOnce(resp(502)).mockResolvedValueOnce(resp(200, visaoItem));
+    const esperar = semEspera();
+    expect(await criarClienteML('tok', f, esperar).lerOfertaNoItem('LGH-1', 'MLB1')).not.toBeNull();
+    expect(esperar.mock.calls).toEqual([[1000], [1000]]);
+    const g = vi.fn().mockResolvedValue(resp(500));
+    await expect(criarClienteML('tok', g, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).rejects.toThrow('ML 500 em /seller-promotions/items');
+    expect(g).toHaveBeenCalledTimes(3);
+    const h = vi.fn().mockResolvedValue(resp(404, { message: 'not found' }));
+    await expect(criarClienteML('tok', h, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).rejects.toThrow('ML 404: not found');
+    expect(h).toHaveBeenCalledTimes(1);
+  });
+
+  it('403 → SemEscritaPromocoes', async () => {
+    const f = vi.fn().mockResolvedValue(resp(403));
+    await expect(criarClienteML('tok', f, semEspera()).lerOfertaNoItem('LGH-1', 'MLB1')).rejects.toBeInstanceOf(SemEscritaPromocoes);
   });
 });
 
@@ -120,9 +215,9 @@ describe('lerRelacoes', () => {
         item_relations: [{ id: 'MLB2', variation_id: null, stock_relation: 1 }] } }]))
       .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB2', catalog_listing: true } }]));
     const ml = criarClienteML('tok', f, semEspera());
-    expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: false, relacionados: [{ id: 'MLB2', catalog_listing: true }] });
+    expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: false, relacionados: [{ id: 'MLB2', catalog_listing: true }], disponivel: null });
     expect(f).toHaveBeenCalledTimes(2);
-    expect(f.mock.calls[0][0]).toBe(`${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.catalog_listing,body.item_relations`);
+    expect(f.mock.calls[0][0]).toBe(`${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.catalog_listing,body.item_relations,body.available_quantity`);
     expect(f.mock.calls[1][0]).toBe(`${API}/items/bulk?ids=MLB2&attributes=status_code,body.id,body.catalog_listing`);
   });
 
@@ -146,7 +241,7 @@ describe('lerRelacoes', () => {
     const f = vi.fn().mockResolvedValueOnce(resp(200, [{ code: 200, body: { id: 'MLB1', catalog_listing: true } }]))
       .mockResolvedValueOnce(resp(403));
     const ml = criarClienteML('tok', f, semEspera());
-    expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: true, relacionados: [] });
+    expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: true, relacionados: [], disponivel: null });
     expect(f).toHaveBeenCalledTimes(1);
     await expect(ml.lerRelacoes('MLB1')).rejects.toBeInstanceOf(SemEscritaPromocoes);
   });
@@ -157,6 +252,11 @@ describe('lerRelacoes', () => {
         item_relations: [{ id: 'MLB2', variation_id: null, stock_relation: 1 }] } }]))
       .mockResolvedValueOnce(resp(200, [{ code: 404, body: { message: 'not found' } }]));
     await expect(criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1')).rejects.toThrow('MLB2');
+  });
+
+  it('devolve disponivel de available_quantity', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ code: 200, body: { id: 'MLB1', catalog_listing: true, available_quantity: 180 } }]));
+    expect(await criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1')).toEqual({ catalog_listing: true, relacionados: [], disponivel: 180 });
   });
 
   it('item não devolvido pelo multiget → Error', async () => {
@@ -187,7 +287,7 @@ describe.each(['code', 'status_code'] as const)('lerRelacoes — fronteira do mo
     );
     expect(await c.lerRelacoes('MLB1')).toEqual({
       catalog_listing: false,
-      relacionados: [{ id: 'MLB2', catalog_listing: true }, { id: 'MLB2', catalog_listing: true }],
+      relacionados: [{ id: 'MLB2', catalog_listing: true }, { id: 'MLB2', catalog_listing: true }], disponivel: null,
     });
   });
 });

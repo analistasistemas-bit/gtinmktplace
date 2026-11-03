@@ -1,12 +1,14 @@
 // ADR-0174 — cliente ML do motor de operações em massa: leitura fresca na VISÃO DA CAMPANHA (a visão por item
 // atrasa) e escrita em /seller-promotions. 401/403 em qualquer chamada → SemEscritaPromocoes (reconectar a conta).
-import type { ItemNaCampanha, Relacoes, TipoPromocao } from './tipos.ts';
+import type { ItemNaCampanha, OfertaNoItem, Relacoes, TipoPromocao } from './tipos.ts';
+import { ehParticipando } from '../promocoes/projecao.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 
 type Obj = Record<string, unknown>;
 export class SemEscritaPromocoes extends Error {}
 export interface ClienteML {
   lerNaCampanha(promocaoId: string, tipo: TipoPromocao, itemId: string): Promise<ItemNaCampanha | null>;
+  lerOfertaNoItem(promocaoId: string, itemId: string): Promise<OfertaNoItem | null>;
   lerRelacoes(itemId: string): Promise<Relacoes>;
   post(itemId: string, body: Record<string, unknown>): Promise<{ offer_id: string | null }>;
   del(itemId: string, query: string): Promise<void>;
@@ -20,6 +22,11 @@ const num = (x: unknown): number | null => {
 };
 const str = (x: unknown): string | null => (typeof x === 'string' && x !== '' ? x : null);
 const lista = (x: unknown): Obj[] => (Array.isArray(x) ? (x as Obj[]) : []);
+const obj = (x: unknown): Obj => (x && typeof x === 'object' ? (x as Obj) : {});
+const oferta = (x: unknown): string | null => {
+  const s = str(x);
+  return s && (s.startsWith('OFFER-') || s.startsWith('CANDIDATE-')) ? s : null;
+};
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: (ms: number) => Promise<void> = dormir): ClienteML {
@@ -47,28 +54,46 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
     return m;
   };
 
+  // /seller-promotions devolve 500 intermitente: 500/502/503 → até 3 tentativas com 1 s; outro erro lança.
+  const lerComRetry = async (path: string, rota: string, extrair: (j: unknown) => unknown): Promise<unknown> => {
+    for (let i = 1; ; i++) {
+      const r = await chamar('GET', path);
+      if (r.ok) return extrair(await r.json());
+      if (![500, 502, 503].includes(r.status)) throw await falha(r);
+      if (i === TENTATIVAS) throw new Error(`ML ${r.status} em ${rota}`);
+      await esperar(1000);
+    }
+  };
+
   return {
     async lerNaCampanha(promocaoId, tipo, itemId) {
       const path = `/seller-promotions/promotions/${encodeURIComponent(promocaoId)}/items?promotion_type=${tipo}&item_id=${encodeURIComponent(itemId)}&app_version=v2`;
-      for (let i = 1; ; i++) {
-        const r = await chamar('GET', path);
-        if (r.ok) {
-          const x = lista(((await r.json()) as Obj | null)?.results)[0];
-          if (!x) return null;
-          const status = str(x.status);
-          // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
-          if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
-          return { status, preco_min: num(x.min_discounted_price),
-            preco_max: num(x.max_discounted_price), offer_id: str(x.offer_id) };
-        }
-        if (![500, 502, 503].includes(r.status)) throw await falha(r);
-        if (i === TENTATIVAS) throw new Error(`ML ${r.status} em /seller-promotions/promotions`);
-        await esperar(1000);
-      }
+      const rs = lista(await lerComRetry(path, '/seller-promotions/promotions', (j) => (j as Obj | null)?.results));
+      // Mesmo MLB em 2 linhas (CANDIDATE + OFFER): vale a participando — defensivo, com item_id= o ML devolve 1.
+      const x = rs.find((r) => ehParticipando(String(r.status))) ?? rs[0];
+      if (!x) return null;
+      const status = str(x.status);
+      // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
+      if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
+      // LIGHTNING: o id da oferta vem em ref_id e o estoque exigido em stock.min; DEAL/SMART não leem nenhum dos dois.
+      const lgh = tipo === 'LIGHTNING';
+      return { status, preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
+        offer_id: str(x.offer_id) ?? (lgh ? oferta(x.ref_id) : null),
+        estoque_min: lgh ? num(obj(x.stock).min) : null };
+    },
+
+    async lerOfertaNoItem(promocaoId, itemId) {
+      const path = `/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`;
+      const x = lista(await lerComRetry(path, '/seller-promotions/items', (j) => j))
+        .find((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+      if (!x) return null;
+      return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
+        preco_sugerido: num(x.suggested_discounted_price), estoque_min: num(obj(x.stock).min),
+        inicio: str(x.start_date), fim: str(x.finish_date) };
     },
 
     async lerRelacoes(itemId) {
-      const item = (await multiget([itemId], 'id,catalog_listing,item_relations')).get(itemId);
+      const item = (await multiget([itemId], 'id,catalog_listing,item_relations,available_quantity')).get(itemId);
       if (!item) throw new Error(`ML não devolveu o item ${itemId}`);
       const rels = lista(item.item_relations).map((r) => str(r.id)).filter((x): x is string => x != null);
       const m = rels.length ? await multiget(rels, 'id,catalog_listing') : new Map<string, Obj>();
@@ -78,6 +103,7 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       return {
         catalog_listing: item.catalog_listing === true,
         relacionados: rels.map((id) => ({ id, catalog_listing: m.get(id)!.catalog_listing === true })),
+        disponivel: num(item.available_quantity),
       };
     },
 

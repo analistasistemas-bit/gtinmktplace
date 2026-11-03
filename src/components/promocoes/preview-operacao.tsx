@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
+import type { TipoPromocaoOperavel } from '@/lib/operacoes';
 import { fmtBRL, fmtBRLSemSimbolo } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ interface LinhaEditavel extends LinhaPreview {
   motivoErro?: string;
 }
 
+const PRECO_MINIMO_RELAMPAGO = 19;
 const formatarInput = (n: number | null) => (n == null ? '' : n.toFixed(2).replace('.', ','));
 
 function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): LinhaEditavel {
@@ -33,7 +35,7 @@ function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): L
   return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined };
 }
 
-function construirLinhas(acao: AcaoPromocao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
+function construirLinhas(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
   return montarPreview(acao, tipo, itens).map((l) => {
     const motivoBloqueio = naoRevertiveis?.get(l.ml_item_id);
     return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco) };
@@ -48,7 +50,7 @@ function textoRisco(vermelho: number, indisponivel: number): string {
 }
 
 export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis }: {
-  acao: AcaoPromocao; tipo: 'DEAL' | 'SMART'; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
+  acao: AcaoPromocao; tipo: TipoPromocaoOperavel; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
    *  sheet (X, Esc, overlay) não pode apagar a seleção que o operador fez nas duas abas. */
@@ -67,11 +69,13 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     setConfirmadoRisco(false);
   }, [aberto, acao, tipo, itens, naoRevertiveis]);
 
-  const podeEditarPreco = acao === 'aderir' && tipo === 'DEAL';
+  const podeEditarPreco = acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING');
+  const minimoRelampago = (l: LinhaEditavel) => tipo === 'LIGHTNING' && l.preco != null && l.preco < PRECO_MINIMO_RELAMPAGO;
   const marcadas = linhas.filter((l) => l.marcado);
   const risco = precisaConfirmarRisco(acao, linhas);
   const temRisco = risco.vermelho + risco.indisponivel > 0;
-  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
+  const semFaixa = (l: LinhaEditavel) => tipo === 'LIGHTNING' && (l.min == null || l.max == null);
+  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || semFaixa(l) || minimoRelampago(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
   function alternarMarcado(id: string) {
@@ -173,6 +177,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                         </Button>
                       )}
                     </div>
+                    {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
+                    {tipo === 'LIGHTNING' && <span className={cn('text-xs', minimoRelampago(l) ? 'text-danger' : 'text-muted-foreground')}>Mínimo R$ 19,00 (frete grátis)</span>}
+                    {tipo === 'LIGHTNING' && l.estoqueMin != null && <span className="text-xs text-muted-foreground">Reserva {l.estoqueMin} un.</span>}
                   </div>
                 ) : (
                   <p className="ml-7 text-sm tabular-nums">{l.preco != null ? fmtBRL(l.preco) : '—'}</p>

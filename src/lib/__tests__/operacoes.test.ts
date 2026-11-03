@@ -50,6 +50,11 @@ describe('montarPreview', () => {
     expect(linha).toMatchObject({ ml_item_id: 'MLB7', mlb: 'MLB5', rotulo: 'MLB5 · promoção via catálogo MLB7' });
   });
 
+  it('LIGHTNING aderir usa o sugerido e leva estoqueMin', () => {
+    const [linha] = montarPreview('aderir', 'LIGHTNING', [item({ preco_promo: 80, preco_sugerido: 25, estoque_min: 5 })]);
+    expect(linha).toMatchObject({ preco: 25, estoqueMin: 5 });
+  });
+
   it('SMART aderir usa o preço da oferta (preco_promo)', () => {
     const it1 = item({ preco_promo: 80, preco_sugerido: 999 });
     const [linha] = montarPreview('aderir', 'SMART', [it1]);
@@ -66,10 +71,10 @@ describe('montarPreview', () => {
 
 describe('precisaConfirmarRisco', () => {
   const linhas = [
-    { ml_item_id: '1', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: true },
-    { ml_item_id: '2', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: false },
-    { ml_item_id: '3', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'indisponivel' as const, marcado: true },
-    { ml_item_id: '4', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'verde' as const, marcado: true },
+    { ml_item_id: '1', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, estoqueMin: null, semaforo: 'vermelho' as const, marcado: true },
+    { ml_item_id: '2', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, estoqueMin: null, semaforo: 'vermelho' as const, marcado: false },
+    { ml_item_id: '3', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, estoqueMin: null, semaforo: 'indisponivel' as const, marcado: true },
+    { ml_item_id: '4', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, estoqueMin: null, semaforo: 'verde' as const, marcado: true },
   ];
   it('aderir conta só as linhas marcadas', () => {
     expect(precisaConfirmarRisco('aderir', linhas)).toEqual({ vermelho: 1, indisponivel: 1 });

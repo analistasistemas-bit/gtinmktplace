@@ -127,6 +127,16 @@ export async function listarItensPromocao(get: GetJson, p: PromocaoML): Promise<
   throw new Error(`paginação dos itens da promoção ${p.id} não terminou em 400 páginas`);
 }
 
+export interface OfertaRelampago { preco_min: number | null; preco_max: number | null; preco_sugerido: number | null }
+
+/** Visão por item (lista das promoções do anúncio): só ela traz max e sugerido da Relâmpago. */
+export async function lerOfertaRelampago(get: GetJson, promocaoId: string, itemId: string): Promise<OfertaRelampago | null> {
+  const x = lista(await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`))
+    .find((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+  if (!x) return null;
+  return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price), preco_sugerido: num(x.suggested_discounted_price) };
+}
+
 export async function buscarItensML(get: GetJson, ids: string[]): Promise<Map<string, ItemML>> {
   const m = new Map<string, ItemML>();
   for (let i = 0; i < ids.length; i += 20) {

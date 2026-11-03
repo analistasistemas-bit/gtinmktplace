@@ -67,8 +67,17 @@ describe('PromocaoDetalhe', () => {
     expect(within(screen.getByRole('dialog')).getByText('Anúncio teste')).toBeTruthy();
   });
 
-  it('não mostra seleção quando o tipo da campanha não é DEAL/SMART', () => {
+  it('Relâmpago tem checkbox de seleção', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'LIGHTNING' }], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+
+    renderDetalhe();
+
+    expect(screen.getAllByLabelText('Selecionar MLB1').length).toBeGreaterThan(0);
+  });
+
+  it('não mostra seleção quando o tipo da campanha não é operável', () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'PRICE_DISCOUNT' }], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
 
     renderDetalhe();
