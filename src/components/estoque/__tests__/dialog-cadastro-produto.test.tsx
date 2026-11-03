@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { escolherNoSelect } from '@/test/select';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
+import { DialogCadastroProduto, fiscalDoInicial, type CadastroInicial } from '../dialog-cadastro-produto';
 import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 import { supabase } from '@/lib/supabase';
@@ -1267,5 +1267,13 @@ describe('DialogCadastroProduto — marca própria (ADR-0188)', () => {
     fechar();
     reabrir();
     expect(screen.getByLabelText(/^Marca/)).toHaveValue('Zaven');
+  });
+});
+
+describe('fiscalDoInicial', () => {
+  it('copia CSOSN, CEST e FCI da nota', () => {
+    expect(fiscalDoInicial({ fiscal: { tributacaoIcms: '500', cest: '2805900', fci: 'X' } })).toMatchObject({
+      tributacaoIcms: '500', cest: '2805900', fci: 'X',
+    });
   });
 });

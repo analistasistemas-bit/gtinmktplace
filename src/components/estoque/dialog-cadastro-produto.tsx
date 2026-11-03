@@ -26,6 +26,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import type { ClasseIcmsEntrada } from '../../../supabase/functions/_shared/nfe/icms-entrada.ts';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useMarcaOrg } from '@/hooks/useMarcaOrg';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
@@ -41,10 +42,20 @@ import {
   CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm, type Cadastrado,
 } from '@/components/estoque/use-cadastro-produto';
 
-// Prefill vindo da Viabilidade (T5, plano 2026-08-08). `origem` de propósito NÃO tem campo
-// aqui — nem em tempo de compilação: é a trava da V-3 (ADR-0055/0107), rádio sem seleção e
-// botão de salvar travado, mesmo com todo o resto preenchido. Não adicionar `origem` a este
-// tipo.
+// Prefill vindo da Viabilidade (T5, plano 2026-08-08) ou da nota de compra. `origem` de propósito
+// NÃO tem campo aqui — nem em tempo de compilação: é a trava da V-3 (ADR-0055/0107), rádio sem
+// seleção e botão de salvar travado, mesmo com todo o resto preenchido. Só a nota pré-seleciona a
+// origem (via `origemSugerida` + `sugestaoDaNota`, com selo e "Conferi"). Não adicionar `origem`.
+export interface AvisosFiscaisNota {
+  classe: ClasseIcmsEntrada;
+  /** CSOSN ou CST do fornecedor, só para exibir. */
+  codigoFornecedor: string | null;
+  semCest: boolean;
+  interestadual: boolean;
+  /** Entrada sem ST, mas a empresa não tem CSOSN padrão válido. */
+  semPadrao: boolean;
+}
+
 export interface CadastroInicial {
   nomePai?: string;
   descricaoPai?: string;
@@ -57,10 +68,12 @@ export interface CadastroInicial {
   descricaoFiscal?: string;
   /** Custo de aquisição unitário (R$). Vale para a variação (simples) ou o cabeçalho (grade). */
   custo?: number;
-  /** `tributacaoIcms` é sempre vazio: o CSOSN do fornecedor nunca é copiado (D-10). */
-  fiscal?: { ncm?: string; origemNfe?: number; tributacaoIcms?: '' };
-  /** SÓ o selo "Sugestão da nota" — a origem binária continua nascendo vazia (V-3). */
+  /** `tributacaoIcms` é o CSOSN de SAÍDA sugerido (500 / padrão / vazio) — o do fornecedor nunca é copiado (D-10). */
+  fiscal?: { ncm?: string; origemNfe?: number; tributacaoIcms?: string; cest?: string; fci?: string };
+  /** Pré-seleciona a origem binária SOMENTE com `sugestaoDaNota` (a Viabilidade não usa: V-3). */
   origemSugerida?: 'nacional' | 'importado';
+  /** Avisos fiscais da nota (classe do ICMS de entrada, CEST ausente, compra interestadual). */
+  avisosNota?: AvisosFiscaisNota;
   /** Campos vieram da nota do fornecedor: selos + "Conferi NCM e origem" obrigatório. */
   sugestaoDaNota?: boolean;
   /** `nfe:{chave}:{nItem}` — vai ao payload (só com `origemNota`) para a importação retomar o vínculo. */
@@ -84,6 +97,9 @@ export function fiscalDoInicial(inicial: CadastroInicial | undefined): FiscalFor
     ...fiscalVazio(),
     ncm: f?.ncm ?? '',
     origemNfe: f?.origemNfe != null ? String(f.origemNfe) : '',
+    tributacaoIcms: f?.tributacaoIcms ?? '',
+    cest: f?.cest ?? '',
+    fci: f?.fci ?? '',
     descricaoFiscal: inicial?.descricaoFiscal ?? '',
   };
 }

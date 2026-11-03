@@ -64,7 +64,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     if (!e) return;
     const item = e.itens.find((i) => i.nItem === nItem)!;
     const d = e.decisoes.find((x) => x.nItem === nItem)!;
-    setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator) });
+    setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator, {
+      csosnPadrao: empresa?.csosn_padrao_revenda ?? null, ufEmpresa: empresa?.uf ?? null,
+    }) });
   }
 
   function aoCadastrar(nItem: number, { codigoPai, sugestaoDistribuicao }: { codigoPai: string; sugestaoDistribuicao?: SugestaoDistribuicao | null }) {
