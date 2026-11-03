@@ -70,6 +70,14 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Aba **Operações**: resultado por anúncio; **Reverter** = nova operação inversa com preview; já revertida mostra "Revertida em {data}".
 - Só admin executa (suporte só com acesso total). Conta ML precisa reconectar para ganhar `offers:/read-write`.
 
+### Relâmpago (emenda 2026-11-02 — em produção desde 2026-11-03)
+
+- Relâmpago (LIGHTNING) vira o 3º tipo: mesma seleção/preview/Reverter de DEAL/SMART.
+- Preço editável (padrão = sugerido do ML), dentro da faixa do ML e **nunca abaixo de R$ 19,00** (comprador perde o frete grátis) — vale mesmo com "Aderir mesmo assim".
+- Estoque reservado = mínimo exigido pelo ML (preview mostra "Reserva N un."); estoque disponível menor → bloqueado.
+- Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
+- Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
+
 ### Pausar/reativar em massa (emenda 2026-10-04 — em produção desde 2026-10-04)
 
 - 2º tipo do mesmo motor, mas **fora de Promoções**: seleção, barra e preview em Publicados; acompanhamento na aba **Publicados › Operações** (`?aba=operacoes`; a tela global `/operacoes` saiu do menu em 2026-10-07 e redireciona para lá). Esta aba Operações é a mesma lista filtrada por promoção.
