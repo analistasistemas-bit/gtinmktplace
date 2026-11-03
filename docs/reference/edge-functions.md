@@ -1486,7 +1486,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   mediação pós-despacho). O aviso exige `houveBaixaDeVenda` — sem movimento `venda` daquele
   pedido não há saldo a conferir; sem esse corte a primeira varredura alertou 26 cancelamentos
   históricos de uma vez (18/08/2026). Redeploy: `sync-venda` **v72**, `reconciliar-faturamento`
-  **v68**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  **v68**. **Emenda 03/11/2026:** claim `cancel_purchase` não gera "Nova reclamação"
+  (`avisaNovaDevolucao`); o aviso de cancelamento ganha texto próprio quando o pedido tem esse claim
+  (`cancelamentoPeloComprador`) e a reposição não muda. Redeploy: `sync-devolucao` **v82**,
+  `sync-venda` **v119**, `reconciliar-faturamento` **v108**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
