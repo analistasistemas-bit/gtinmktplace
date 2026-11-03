@@ -88,7 +88,7 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
         vDesc: numero(prod, 'vDesc'), vOutro: numero(prod, 'vOutro'),
         vIPI: numero(ipi, 'vIPI'), vST: numero(icms, 'vICMSST'), vFCPST: numero(icms, 'vFCPST'),
         orig: orig === null ? null : Number(orig),
-        icmsGrupo: icms?.match(new RegExp(`<${PFX}(ICMS[A-Z0-9]+)\\b`))?.[1] ?? null,
+        icmsGrupo: icms?.match(new RegExp(`<${PFX}([A-Za-z_][\\w.-]*)`))?.[1] ?? null, // 1º filho, qualquer nome
         csosn: texto(icms, 'CSOSN'), cstIcms: texto(icms, 'CST'),
         cest: cest && /^\d{7}$/.test(cest) ? cest : null, nFci: texto(prod, 'nFCI'),
       };

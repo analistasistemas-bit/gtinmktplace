@@ -101,6 +101,12 @@ describe('lerNfe — ICMS, CEST, nFCI e UF do emitente (ADR-0181 D-10)', () => {
     if (!r.ok) throw new Error(r.erro);
     expect(r.nota.itens[0]).toMatchObject({ icmsGrupo: null, csosn: null, cstIcms: null });
   });
+  it('ICMSPart (CST 10): o grupo é o 1º filho de ICMS, qualquer nome', () => {
+    const xml = base.replace('<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>', '<ICMSPart><orig>0</orig><CST>10</CST></ICMSPart>');
+    const r = lerNfe(xml);
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.nota.itens[0]).toMatchObject({ icmsGrupo: 'ICMSPart', cstIcms: '10', csosn: null });
+  });
   it('ICMS60 sem vICMSST continua classificado como ST', () => {
     const xml = base.replace('<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>', '<ICMS60><orig>0</orig><CST>60</CST><vICMSSTRet>0.00</vICMSSTRet></ICMS60>');
     const r = lerNfe(xml);

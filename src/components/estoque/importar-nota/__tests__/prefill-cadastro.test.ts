@@ -52,7 +52,7 @@ describe('prefillCadastro', () => {
   it('ST → 500 e CEST da nota', () => {
     const r = prefillCadastro(item({ icmsGrupo: 'ICMS60', cstIcms: '60', cest: '2805900' }), nota({ emitenteUf: 'PE' }), 1, ctx);
     expect(r.fiscal).toMatchObject({ tributacaoIcms: '500', cest: '2805900' });
-    expect(r.avisosNota).toEqual({ classe: 'st', codigoFornecedor: '60', semCest: false, interestadual: false, semPadrao: false });
+    expect(r.avisosNota).toEqual({ classe: 'st', codigoFornecedor: '60', interestadual: false, semPadrao: false });
   });
   it('sem ST → padrão', () => expect(prefillCadastro(item({ icmsGrupo: 'ICMSSN102', csosn: '102' }), nota(), 1, ctx).fiscal?.tributacaoIcms).toBe('102'));
   it('exceção → vazio', () => expect(prefillCadastro(item({ icmsGrupo: 'ICMSSN400', csosn: '400' }), nota(), 1, ctx).fiscal?.tributacaoIcms).toBe(''));

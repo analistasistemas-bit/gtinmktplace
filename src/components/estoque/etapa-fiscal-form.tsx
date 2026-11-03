@@ -31,7 +31,8 @@ export interface ConfirmacoesNota { conferido: boolean; semCestVigente: boolean;
 export const CONFIRMACOES_VAZIAS: ConfirmacoesNota = { conferido: false, semCestVigente: false, interestadualConferido: false };
 
 export function confirmacoesNotaOk(f: FiscalForm, avisos: AvisosFiscaisNota | undefined, c: ConfirmacoesNota): boolean {
-  return c.conferido && (!avisos?.semCest || !!f.cest || c.semCestVigente) && (!avisos?.interestadual || c.interestadualConferido);
+  // CEST pelo valor ATUAL: apagar o que veio da nota também exige a declaração.
+  return c.conferido && (!avisos || !!f.cest || c.semCestVigente) && (!avisos?.interestadual || c.interestadualConferido);
 }
 
 /** Matriz de invalidação: mexeu no campo atestado → a confirmação cai. */
@@ -297,7 +298,7 @@ export function EtapaFiscalForm({
           />
           <span className="text-xs text-muted-foreground">7 dígitos — opcional.</span>
           {sugestaoDaNota && !!valor.cest && <SeloNota />}
-          {avisosNota?.semCest && !valor.cest && (
+          {avisosNota && !valor.cest && (
             <>
               <AvisoNota>A nota não trouxe CEST. Preencha se o NCM tiver CEST vigente.</AvisoNota>
               <label className="flex items-center gap-2 text-sm">

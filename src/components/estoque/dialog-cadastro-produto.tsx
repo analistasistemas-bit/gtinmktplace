@@ -53,7 +53,6 @@ export interface AvisosFiscaisNota {
   classe: ClasseIcmsEntrada;
   /** CSOSN ou CST do fornecedor, só para exibir. */
   codigoFornecedor: string | null;
-  semCest: boolean;
   interestadual: boolean;
   /** Entrada sem ST, mas a empresa não tem CSOSN padrão válido. */
   semPadrao: boolean;

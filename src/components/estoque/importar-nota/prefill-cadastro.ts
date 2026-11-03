@@ -26,7 +26,6 @@ export function prefillCadastro(
   const avisosNota: AvisosFiscaisNota = {
     classe,
     codigoFornecedor: item.csosn ?? item.cstIcms,
-    semCest: !item.cest,
     interestadual: !!nota.emitenteUf && !!ctx.ufEmpresa && nota.emitenteUf !== ctx.ufEmpresa.trim().toUpperCase(),
     semPadrao: classe === 'sem_st' && csosn === null,
   };

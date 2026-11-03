@@ -127,14 +127,14 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
 
 describe('confirmacoes da nota (ADR-0181 D-10)', () => {
   const ok: ConfirmacoesNota = { conferido: true, semCestVigente: false, interestadualConferido: false };
-  const av = (o: object = {}) => ({ classe: 'sem_st' as const, codigoFornecedor: '102', semCest: false, interestadual: false, semPadrao: false, ...o });
+  const av = (o: object = {}) => ({ classe: 'sem_st' as const, codigoFornecedor: '102', interestadual: false, semPadrao: false, ...o });
   it('confirmacoesNotaOk', () => {
     expect(confirmacoesNotaOk(fiscalVazio(), undefined, ok)).toBe(true);
-    expect(confirmacoesNotaOk(fiscalVazio(), av({ semCest: true }), ok)).toBe(false);
-    expect(confirmacoesNotaOk(fiscalVazio(), av({ semCest: true }), { ...ok, semCestVigente: true })).toBe(true);
-    expect(confirmacoesNotaOk({ ...fiscalVazio(), cest: '2805900' }, av({ semCest: true }), ok)).toBe(true);
+    expect(confirmacoesNotaOk(fiscalVazio(), av(), ok)).toBe(false);
+    expect(confirmacoesNotaOk(fiscalVazio(), av(), { ...ok, semCestVigente: true })).toBe(true);
+    expect(confirmacoesNotaOk({ ...fiscalVazio(), cest: '2805900' }, av(), ok)).toBe(true);
     expect(confirmacoesNotaOk(fiscalVazio(), av({ interestadual: true }), ok)).toBe(false);
-    expect(confirmacoesNotaOk(fiscalVazio(), av({ interestadual: true }), { ...ok, interestadualConferido: true })).toBe(true);
+    expect(confirmacoesNotaOk({ ...fiscalVazio(), cest: '2805900' }, av({ interestadual: true }), { ...ok, interestadualConferido: true })).toBe(true);
     expect(confirmacoesNotaOk(fiscalVazio(), undefined, { ...ok, conferido: false })).toBe(false);
   });
   it('confirmacoesAposMudanca: matriz de invalidação', () => {
