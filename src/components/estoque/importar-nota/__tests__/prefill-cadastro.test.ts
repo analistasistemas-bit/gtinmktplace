@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { prefillCadastro } from '../prefill-cadastro';
 
 const item = { nItem: 1, cProd: 'REF 06', xProd: 'Short masculino - DIV - DIV', ncm: '62034900', cfop: '5102',
-  gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, rateio: {} };
+  gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, icmsGrupo: null, csosn: null, cstIcms: null, cest: null, nFci: null, rateio: {} };
 const nota = { emitenteNome: 'FORNECEDOR TESTE LTDA', chave: '2'.repeat(44) } as never;
 
 describe('prefillCadastro', () => {

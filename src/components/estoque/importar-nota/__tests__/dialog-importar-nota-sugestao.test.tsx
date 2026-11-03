@@ -25,10 +25,10 @@ vi.mock('@/components/estoque/dialog-cadastro-grade', () => ({ DialogCadastroGra
 vi.mock('../../../../../supabase/functions/_shared/nfe/ler-nfe.ts', () => ({
   lerNfe: () => ({ ok: true, nota: {
     chave: '3'.repeat(44), numero: 1, serie: 1, modelo: 55, tipoNf: 1, emitidaEm: '2026-10-13T00:00:00-03:00',
-    emitenteCnpj: '11222333000181', emitenteNome: 'F', destinatarioCnpj: '11444777000161', assinada: false, cStat: 100,
+    emitenteCnpj: '11222333000181', emitenteNome: 'F', emitenteUf: null, destinatarioCnpj: '11444777000161', assinada: false, cStat: 100,
     totais: { vProd: 320, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 320 },
     itens: [{ nItem: 1, cProd: 'R', xProd: 'Short', ncm: null, cfop: '5102', gtin: null, uCom: 'PC', qCom: 32,
-      vProd: 320, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0 }],
+      vProd: 320, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, icmsGrupo: null, csosn: null, cstIcms: null, cest: null, nFci: null }],
   } }),
 }));
 
