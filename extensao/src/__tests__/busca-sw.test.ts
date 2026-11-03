@@ -5,6 +5,7 @@ import { epocaAtual, lerAba, limparEstadosDasAbas } from '../abas';
 import { aoAtualizarAba, complementosPendentes, rotearMensagem as rotearBruto } from '../roteador';
 import { sair } from '../credenciais';
 import { instalarChromeFalso, local, logar } from './chrome-falso';
+import { haParaTentar, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 
 type Sender = chrome.runtime.MessageSender;
 const PAINEL: Sender = { id: 'ext-publiai', url: 'chrome-extension://ext-publiai/src/painel/index.html' };
@@ -31,6 +32,9 @@ let statusSessao: number;
 let enrCota: number;
 let enrConta: string;
 let falharEnr: boolean;
+/** Erro definitivo da edge (403 com o código) em cada ação; null = segue normal. */
+let erroEnr: string | null;
+let erroIdentificar: string | null;
 let ofertas429: boolean;
 let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
@@ -87,6 +91,7 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
     if (bloqueioEnr) await bloqueioEnr;
     if (antesDeEnriquecer) { const f = antesDeEnriquecer; antesDeEnriquecer = null; await f(); }
     if (falharEnr) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
+    if (erroEnr) return new Response(JSON.stringify({ erro: erroEnr }), { status: 403 });
     const r = respostaEnr(b);
     return r ? env(r) : new Response(JSON.stringify({ erro: 'payload_invalido' }), { status: 400 });
   }
@@ -95,6 +100,7 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
   if (antesDeResponder) await antesDeResponder(b.acao);
   if (b.acao === 'identificar_busca') {
     if (falharIdentificar) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
+    if (erroIdentificar) return new Response(JSON.stringify({ erro: erroIdentificar }), { status: 403 });
     if (b.registrarUso === true) registros++;
     return env({ contaMl: enrConta, itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinculados.has(i.itemId) ? { fonte: 'catalogo', codigo: `SKU-${i.itemId}` } : null })) });
   }
@@ -131,6 +137,8 @@ beforeEach(() => {
   enrCota = Infinity;
   enrConta = 'conta-a';
   falharEnr = false;
+  erroEnr = null;
+  erroIdentificar = null;
   ofertas429 = false;
   tentarAposEm = null;
   bloqueioEnr = null;
@@ -515,7 +523,7 @@ describe('isolamento de sessão e de página', () => {
 
 // Task 11.3 (Revisão 03/11-b): a página inteira num pedido de enriquecimento, logo depois da identificação e antes da
 // margem; tudo terminal (sem retomada automática); repetição só por "Tentar novamente" ou cards novos (delta).
-type EstadoEnr = { catalogos: Record<string, { produto?: { estado: string; motivo?: string }; ofertas?: { estado: string; motivo?: string; exatas?: Record<string, { estado: string }> } }>; vendedores: Record<string, { estado: string; medalha?: string; motivo?: string }>; tentarAposEm?: number | null; falhou: boolean };
+type EstadoEnr = { catalogos: Record<string, { produto?: { estado: string; motivo?: string }; ofertas?: { estado: string; motivo?: string; exatas?: Record<string, { estado: string }> } }>; vendedores: Record<string, { estado: string; medalha?: string; motivo?: string }>; tentarAposEm?: number | null; falhou: boolean; indisponivel: string | null };
 const enr = async () => ((await lerAba(7)).estado as unknown as { resposta: { enriquecimento?: EstadoEnr } } | null)?.resposta.enriquecimento;
 const CAT = 'MLB1000000';
 const porCatalogo = (de: number, ate: number) => cards(de, ate).map((c) => ({ ...c, catalogProductId: `MLB${3000000 + Number(c.itemId.slice(3))}` }));
@@ -620,6 +628,37 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     await complementosPendentes();
     expect(pedidosEnr.at(-1)!.catalogos).toEqual([{ catalogProductId: CAT, componentes: ['ofertas'], itens: [{ itemId: id(1), preco: 10 }] }]);
     expect((await enr())!).toMatchObject({ tentarAposEm: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('Rodada 1 (11.4): erro definitivo no enriquecimento (módulo desligado) grava indisponível terminal; "Tentar novamente" refaz', async () => {
+    erroEnr = 'modulo_desligado';
+    await registrar([card(1)]);
+    const e1 = (await enr())! as unknown as EstadoEnriquecimento;
+    expect(e1.indisponivel).toBe('A extensão não está habilitada para sua empresa');
+    expect(vistaDoCard({ itemId: id(1), catalogProductId: CAT, identidadeConflitante: false, preco: 10 }, e1)).toMatchObject({ faltaProduto: false, faltaOfertas: false });
+    expect(haParaTentar(e1)).toBe(true);
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
+    erroEnr = null;
+    expect(await retentar()).toMatchObject({ ok: true });
+    await complementosPendentes();
+    expect((await enr())!).toMatchObject({ indisponivel: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('Rodada 1 (11.4): erro definitivo na identificação grava indisponível (nada fica em "Consultando"); "Tentar novamente" refaz', async () => {
+    erroIdentificar = 'payload_invalido';
+    await registrar([card(1)]);
+    expect(pedidosEnr).toHaveLength(0);
+    expect((await enr())!.indisponivel).toBe('Não foi possível analisar este anúncio. Tente de novo.');
+    erroIdentificar = null;
+    expect(await retentar()).toMatchObject({ ok: true });
+    await complementosPendentes();
+    expect((await enr())!).toMatchObject({ indisponivel: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('Rodada 1 (11.4): sessão expirada não grava indisponível (a sessão limpa os blocos)', async () => {
+    erroEnr = 'sessao_suporte_expirada';
+    await registrar([card(1)]);
+    expect((await enr())?.indisponivel ?? null).toBeNull();
   });
 
   it('falha de rede: terminal, sem repetição automática; scroll manda só o delta; "Tentar novamente" refaz o que falhou', async () => {

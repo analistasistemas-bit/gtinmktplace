@@ -246,7 +246,8 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
   const titulo = (id: IdAjuda) => <h3 className="ct-rotulo bs-sub">{AJUDA[id][0]}<Info id={id} aberto={ajuda === id} onAlternar={alternarAjuda} /></h3>;
   const plural = (n: number, um: string, varios: string) => `${num(n)} ${n === 1 ? um : varios}`;
   // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
-  const tentar = !!enr && !enr.indisponivel && haParaTentar(enr);
+  // Página inteira indisponível (sem conexão ML, módulo desligado...) também: o motivo e o "Tentar novamente".
+  const tentar = !!enr && haParaTentar(enr);
   const pausado = typeof enr?.tentarAposEm === 'number' && enr.tentarAposEm > Date.now();
   return (
     <section className="bs-catalogos" aria-labelledby="bs-catalogos-titulo">
@@ -257,11 +258,10 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
       </div>
       <Ajuda id="catalogos" aberto={ajuda} />
       {r.catalogosIndisponiveis > 0 && <p className="nota bs-cobertura">{`${plural(r.catalogosIndisponiveis, 'catálogo', 'catálogos')} sem ofertas lidas agora`}</p>}
-      {enr?.indisponivel && <p className="nota">{enr.indisponivel}</p>}
       {!enr?.indisponivel && r.catalogosConsultando > 0 && <p className="nota bs-estado-enr" role="status">Consultando dados do catálogo</p>}
       {tentar && !ocupado && (
         <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
-          <span>{aviso ?? (pausado ? pausa(enr!.tentarAposEm!) : enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora')}</span>
+          <span>{aviso ?? (pausado ? pausa(enr!.tentarAposEm!) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora'))}</span>
           <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
         </div>
       )}

@@ -278,6 +278,7 @@ export function prepararNovaTentativa(enr: EstadoEnriquecimento, agora: number):
   for (const [k, v] of Object.entries(enr.vendedores)) if (v.estado !== 'ok') delete enr.vendedores[k];
   enr.falhou = false;
   enr.tentarAposEm = null;
+  enr.indisponivel = null;
   return true;
 }
 

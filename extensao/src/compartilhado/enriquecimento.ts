@@ -72,7 +72,7 @@ export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
 
 /** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
 export function haParaTentar(enr: EstadoEnriquecimento): boolean {
-  return enr.falhou || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
+  return enr.falhou || !!enr.indisponivel || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
     (!!c.produto && c.produto.estado !== 'ok') || (!!c.ofertas && c.ofertas.estado !== 'ok')
     || (c.ofertas?.estado === 'ok' && Object.values(c.ofertas.exatas).some((e) => e.estado === 'indisponivel' || (e.estado === 'ok' && e.comissao.estado !== 'ok'))));
 }

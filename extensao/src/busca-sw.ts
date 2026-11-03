@@ -14,6 +14,7 @@ import {
 } from './cache-enriquecimento';
 import { enriquecimentoDe, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
+import { mensagemDeErro } from './painel/formato';
 
 export const MAX_POR_ANALISE = 50; // = MAX_ITENS_BUSCA da edge
 
@@ -149,6 +150,8 @@ type Falha = { ok: false; erro: string; tentarAposEm?: number };
 const SEM_SESSAO: Falha = { ok: false, erro: 'sem_sessao' };
 // Vale tentar de novo no próximo pulso: rede/5xx e limite da edge. Os demais (sessão, módulo, acesso) esperam evento novo.
 const transitoria = (f: Falha) => f.erro === 'interno' || f.erro === 'limite';
+// Erros de sessão: a própria sessão limpa abas e blocos (época nova); não há o que gravar.
+const DE_SESSAO = new Set(['sem_sessao', 'sessao_expirada', 'sessao_suporte_expirada', 'identidade_mudou', 'inativa', 'geracao_antiga']);
 
 /** Identifica no banco o que falta, enriquece os catálogos da página e analisa a margem dos vinculados elegíveis, tudo a
  *  partir do estado guardado (reinício do SW, pulso, scroll e painel convergem; uma rodada por aba de cada vez).
@@ -199,6 +202,16 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   // Gravação recusada com a época e a página ainda valendo = só a identidade mudou desde o início (ex.: recém-logado,
   // descoberta na 1ª chamada): o pulso refaz com a nova. Época/página nova → `vale()` falso, nada a retomar.
   const recusada = () => { retomar ||= vale(); return SEM_SESSAO; };
+  /** Erro definitivo (módulo desligado, sem acesso, pedido recusado): o enriquecimento da página fica indisponível com a
+   *  mensagem, terminal (nenhum card em "Consultando" para sempre); o "Tentar novamente" do painel refaz. */
+  const encerrar = async (f: Falha): Promise<Falha> => {
+    if (DE_SESSAO.has(f.erro) || transitoria(f) || !vale()) return f;
+    const aba = await lerAba(tabId);
+    if (!ehBusca(aba.estado)) return f;
+    const p = { geracao: aba.geracao, sessao: aba.sessao, url: aba.estado.entrada.url };
+    await gravarSe(p, (r2) => { r2.enriquecimento.indisponivel = mensagemDeErro(f.erro); });
+    return f;
+  };
   /** Antes de um efeito global (limpar todas as abas): a rodada não foi cancelada, a identidade e a página são as do
    *  pedido. Resposta atrasada de outra navegação/sessão não apaga o estado novo. */
   const aindaDaPagina = async (p: Pagina) => {
@@ -315,7 +328,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>({ acao: 'enriquecer_catalogos_busca', ...pedido }, epoca, g);
       if (g.recusou()) { for (const m of marcas) jaPedidos.delete(m); continue; }
       const d = resp.ok ? resp.dados : null;
-      if (!resp.ok && !transitoria(resp)) return resp;
+      if (!resp.ok && !transitoria(resp)) return encerrar(resp);
       if (d?.estado === 'indisponivel') {
         const motivo = typeof d.motivo === 'string' ? d.motivo : 'Enriquecimento indisponível';
         return (await gravarSe(p, (r2) => { r2.enriquecimento.indisponivel = motivo; })) ? null : recusada();
@@ -405,6 +418,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   const fId = await identificar();
   if (fId === 'sair') return SEM_SESSAO;
   if (fId !== null && !transitoria(fId)) {
+    await encerrar(fId);
     if (retomar) await pedirRetomada(tabId, vale);
     return fId;
   }

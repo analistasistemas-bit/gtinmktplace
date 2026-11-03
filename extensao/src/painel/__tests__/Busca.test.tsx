@@ -430,6 +430,16 @@ describe('Catálogos e vendedores (Task 10)', () => {
     within(secao()).getByText(`O Mercado Livre pediu uma pausa; tente de novo às ${hhmm}`);
   });
 
+  it('Rodada 1: página indisponível (erro definitivo, estado vazio): motivo + "Tentar novamente", nada em "Consultando"', async () => {
+    const p = props({ estado: comEnr({ indisponivel: 'A extensão não está habilitada para sua empresa' }) });
+    render(<Busca {...p} />);
+    const s = within(secao());
+    s.getByText('A extensão não está habilitada para sua empresa');
+    expect(secao().textContent).not.toContain('Consultando');
+    fireEvent.click(s.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
   it('falha de rede: aviso com "Tentar novamente" que refaz o enriquecimento uma vez', async () => {
     const p = props({ estado: comEnr({ falhou: true }) });
     render(<Busca {...p} />);

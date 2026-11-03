@@ -67,6 +67,14 @@ function linha(...filhos: (HTMLElement | string)[]): HTMLElement {
   return l;
 }
 
+/** Texto longo de estado (neutro) em dois trechos: o ⓘ prende só o último (2 palavras), o resto quebra livre — com
+ *  zoom ou card estreito a linha nunca é cortada. */
+function quebravel(texto: string): (HTMLElement | string)[] {
+  const p = texto.split(' ');
+  // O espaço entre os trechos é só texto (no flex, espaço solto não ocupa lugar; o gap separa).
+  return [el('span', 't neutro', p.slice(0, -2).join(' ')), ' ', el('span', 't neutro', p.slice(-2).join(' '))];
+}
+
 /** ⓘ no fim da linha: abre/fecha a explicação logo abaixo dela. Dentro do card do ML (um link): o clique não navega
  *  nem sobe até o card. Botão de verdade: foco e Enter/Espaço pelo teclado. */
 function ajuda(l: HTMLElement, nome: string, texto: string): void {
@@ -151,7 +159,7 @@ export function renderizarMiniBlocoDaBusca(
 
   // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem a oferta: processamento ou parcial terminal.
   const parcial = (motivo: string) => {
-    const l = linha(el('span', 't neutro', ADICIONAIS));
+    const l = linha(...quebravel(ADICIONAIS));
     l.title = motivo;
     ajuda(l, 'dados adicionais indisponíveis', PARCIAL);
     bloco.append(l);
@@ -168,17 +176,24 @@ export function renderizarMiniBlocoDaBusca(
     bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
   } else if (exata?.estado === 'ok') {
     const semTipo = !exata.tipo && exata.comissao.estado === 'indisponivel'; // sem tipo a comissão não tem como ser consultada
-    const l = linha(el('span', semTipo ? 't neutro' : 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : semTipo ? 'Tipo e comissão na sua conta não confirmados' : 'Tipo não confirmado'));
+    // Tipo em chip (sem "·"): quebrando a linha, nenhum separador fica no começo ou no fim dela.
+    const l = linha(exata.tipo ? el('span', 'c roxo', NOME_TIPO[exata.tipo]) : el('span', 't neutro', semTipo ? 'Tipo e comissão na sua conta não confirmados' : 'Tipo não confirmado'));
+    bloco.append(l);
     if (semTipo && oc.preco === exata.preco) ajuda(l, 'comissão na sua conta', COMISSAO);
     // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
     else if (oc.preco === exata.preco) {
       const c = exata.comissao;
-      // Separador junto do texto: quebrando a linha, o "·" vai com a comissão (não fica pendurado no tipo).
-      if (c.estado === 'ok') l.append(el('span', 'v', '·'), el('span', 'v', 'comissão na sua conta'), el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
-      else { l.append(el('span', 't neutro', '· Comissão na sua conta indisponível agora')); l.title = c.motivo; }
-      ajuda(l, 'comissão na sua conta', COMISSAO);
+      if (c.estado === 'ok') {
+        l.append(el('span', 'v', 'comissão na sua conta'), el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
+        ajuda(l, 'comissão na sua conta', COMISSAO);
+      } else {
+        // Indisponível: linha própria (o texto é longo e quebraria no meio da do tipo).
+        const lc = linha(...quebravel('Comissão na sua conta indisponível agora'));
+        lc.title = c.motivo;
+        ajuda(lc, 'comissão na sua conta', COMISSAO);
+        bloco.append(lc);
+      }
     }
-    bloco.append(l);
   }
 
   // 3. Giro mínimo ao preço atual (piso e preço da MESMA ocorrência), compacto; o painel mostra o valor completo.

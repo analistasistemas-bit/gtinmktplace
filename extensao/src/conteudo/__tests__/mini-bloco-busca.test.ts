@@ -181,7 +181,7 @@ it('enriquecido e compacto: vendedor · medalha · UF; tipo · comissão; giro; 
   renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), undefined, ok(50, 23.4) as never, 50, vistaDoCard(card(), completo()), AGORA);
   expect(linhas()).toEqual([
     'Loja Boa· Platinum· SPLoja oficial',
-    'Clássico·comissão na sua contaR$ 7,10 (14%)ⓘ',
+    'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
     'Giro mín.R$ 5 milⓘ',
     '9 vendedores·catálogohá 120 diasⓘ',
     'Minha margem · Clássico 23,4%',
@@ -235,7 +235,11 @@ it('Task 11.4: processamento, oferta não localizada, perfil não carregado; nun
 
 it('Task 11.4: só a comissão falhou → "Comissão na sua conta indisponível agora" (motivo no title), tipo fica', () => {
   comEnr(completo({ exatas: { MLB1000001: exata({ comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }) } }));
-  expect(texto()).toContain('Clássico· Comissão na sua conta indisponível agoraⓘ');
+  // Rodada 1: linha própria, sem "·" (nunca um separador no começo/fim de linha quando quebra).
+  const linhas = [...raizes[0].querySelectorAll('.b > .l')].map((x) => x.textContent!.trim());
+  expect(linhas).toContain('Clássico');
+  expect(linhas).toContain('Comissão na sua conta indisponível agoraⓘ');
+  expect(linhas.some((x) => x.startsWith('·') || x.endsWith('·'))).toBe(false);
   expect(texto()).not.toMatch(/R\$ 0|\(0%\)/); // desconhecido nunca vira zero
   const l = [...raizes[0].querySelectorAll('.b > .l')].find((x) => x.textContent!.includes('indisponível agora')) as HTMLElement;
   expect(l.title).toBe('limite do Mercado Livre');
