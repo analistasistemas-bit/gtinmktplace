@@ -131,3 +131,12 @@ Custo de ML de um catálogo frio = 2 chamadas (`/products` + `/products/items`) 
 - **Limite:** um token, um horário (manhã, fora do pico de 06h UTC que gerou os 429 de `listing_prices`); ausência de 429 mostra capacidade observada, não o limite contratual do ML.
 
 **Decisão:** gate aprovado para **uma requisição de até 50 catálogos**, pool 16 com sublimite 4 na comissão, deadline de 8 s. Orçamento global de chamadas ML passa de 120 para **1.000/min** (vazão sustentada medida, ~5 páginas frias/min no app inteiro), fail-closed.
+
+## 7. Spike da fatia 2.1 (03/11/2026): marca, cidade, reputação e frete
+
+Mesmo método da §6 (edge descartável, só `GET`, 3 grupos de 50 catálogos reais, depois apagada).
+
+- **Cobertura:** `BRAND.value_name` em 147/148 produtos lidos; `address.city` em 65/65 perfis; `seller_reputation.level_id` em 64/65.
+- **`/items/{id}/shipping_options?zip_code=01310100`** (1º item de cada catálogo, 39–44 por página): pool 4 → 5,5–5,7 s para a família; **pool 8 → 2,4–2,6 s**, p50 440–520 ms, p95 ≤ 552 ms (pior 760 ms no pool 4). Duas páginas simultâneas em pool 8: 2,5 s cada. **Zero 429.** 1–2 itens por página responderam 424 (sem cotação) → indisponível.
+
+**Decisão:** frete com fila própria e sublimite 8; começa na fase 1 (o id do item vem do card), em paralelo com produtos/ofertas, para não somar ao tempo total. Pool total 24 (16 dos componentes existentes + 8 do frete). Gate final mede na edge real.
