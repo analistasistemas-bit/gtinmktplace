@@ -14,6 +14,26 @@ export async function buscarListingPrice(
   return resp.json() as Promise<ListingPriceML>;
 }
 
+/** `buscarListingPrice` retentando só 429/5xx (o ML devolve `local_rate_limited` sob carga). Esgotou → lança. */
+export async function buscarListingPriceComRetentativa(
+  token: string,
+  preco: number,
+  categoria: string,
+  listingType: string,
+  esperasMs: number[] = [1000, 3000],
+): Promise<ListingPriceML> {
+  for (let tentativa = 0; ; tentativa++) {
+    try {
+      return await buscarListingPrice(token, preco, categoria, listingType);
+    } catch (e) {
+      const status = Number(/listing_prices \S+ (\d{3})/.exec((e as Error).message)?.[1]);
+      const transitorio = status === 429 || status >= 500;
+      if (!transitorio || tentativa >= esperasMs.length) throw e;
+      await new Promise((r) => setTimeout(r, esperasMs[tentativa]));
+    }
+  }
+}
+
 /**
  * Comissão para PRECIFICAR (emenda ADR-0020, 2026-10-27): retenta só 429/5xx (o ML devolve
  * `local_rate_limited` com famílias processando em paralelo) e só aceita comissão oficial —
@@ -25,21 +45,9 @@ export async function buscarComissaoParaPreco(
   categoria: string,
   esperasMs: number[] = [1000, 3000],
 ): Promise<{ percentual: number; fixa: number }> {
-  for (let tentativa = 0; ; tentativa++) {
-    let lp: ListingPriceML;
-    try {
-      lp = await buscarListingPrice(token, preco, categoria, 'gold_special');
-    } catch (e) {
-      const status = Number(/listing_prices \S+ (\d{3})/.exec((e as Error).message)?.[1]);
-      const transitorio = status === 429 || status >= 500;
-      if (!transitorio || tentativa >= esperasMs.length) throw e;
-      await new Promise((r) => setTimeout(r, esperasMs[tentativa]));
-      continue;
-    }
-    const c = comissaoDeComProveniencia(lp);
-    if (c.proveniencia !== 'official') throw new Error(`listing_prices sem sale_fee_details completo (${categoria})`);
-    return c.valor;
-  }
+  const c = comissaoDeComProveniencia(await buscarListingPriceComRetentativa(token, preco, categoria, 'gold_special', esperasMs));
+  if (c.proveniencia !== 'official') throw new Error(`listing_prices sem sale_fee_details completo (${categoria})`);
+  return c.valor;
 }
 
 /** Comissão (%/fixa em R$) a partir da resposta de listing_prices. */

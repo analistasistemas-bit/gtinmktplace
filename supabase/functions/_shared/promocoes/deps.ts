@@ -1,7 +1,7 @@
 // Fiação real do sync de promoções (ADR-0170). Só ligação, nenhuma decisão — a regra vive em
 // sincronizar.ts / alertas.ts, testadas por vitest. Validada contra Postgres real e o ML na Task 10.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { buscarListingPrice, comissaoDeComProveniencia } from '../ml/listing-prices.ts';
+import { buscarListingPriceComRetentativa, comissaoDeComProveniencia } from '../ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../ml/frete.ts';
 import { redisGet, redisSet } from '../redis/client.ts';
 import { paginarTudo } from '../pagina.ts';
@@ -69,7 +69,7 @@ export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean }): (q: QueryTar
     const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
     const [comissao, frete] = await Promise.all([
       emCache<Comissao>(`promo:lp:v1:${categoria}:${listingType}:${p}`, async () => {
-        const c = comissaoDeComProveniencia(await buscarListingPrice(cx.token, preco, categoria, listingType));
+        const c = comissaoDeComProveniencia(await buscarListingPriceComRetentativa(cx.token, preco, categoria, listingType));
         if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
         return c.valor;
       }, opts?.fresco),

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { comissaoDe, buscarComissaoParaPreco } from '../listing-prices';
+import { comissaoDe, buscarComissaoParaPreco, buscarListingPriceComRetentativa } from '../listing-prices';
 
 // Emenda ADR-0020 (2026-10-27): 429 do ML jogava o preço no piso em silêncio (lote Hairfly).
 describe('buscarComissaoParaPreco', () => {
@@ -35,6 +35,14 @@ describe('buscarComissaoParaPreco', () => {
   it('200 sem sale_fee_details: lança (comissaoDe viraria 0% em silêncio)', async () => {
     stub(resp(200, { sale_fee_amount: 0 }));
     await expect(buscarComissaoParaPreco('t', 20, 'MLB1265', [0, 0])).rejects.toThrow(/sale_fee_details/);
+  });
+
+  // Promoções (03/11/2026): 429 na sincronização diária deixava anúncios da Zaven "Sem líquido".
+  it('buscarListingPriceComRetentativa: 429 seguido de sucesso devolve a resposta do tipo pedido', async () => {
+    const f = stub(resp(429, { message: 'local_rate_limited' }), resp(200, OK));
+    await expect(buscarListingPriceComRetentativa('t', 20, 'MLB1265', 'gold_pro', [0, 0])).resolves.toEqual(OK);
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(String(f.mock.calls[1][0])).toContain('listing_type_id=gold_pro');
   });
 });
 

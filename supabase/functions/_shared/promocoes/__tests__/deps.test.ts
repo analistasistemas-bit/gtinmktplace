@@ -7,7 +7,7 @@ vi.mock('../../redis/client.ts', () => ({
   redisSet: (k: string, v: string, ttl?: number) => m.set(k, v, ttl),
 }));
 vi.mock('../../ml/listing-prices.ts', () => ({
-  buscarListingPrice: () => m.lp(),
+  buscarListingPriceComRetentativa: () => m.lp(),
   comissaoDeComProveniencia: (c: unknown) => ({ valor: c, proveniencia: 'official' }),
 }));
 vi.mock('../../ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: () => m.frete() }));
