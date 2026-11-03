@@ -37,6 +37,8 @@ let erroEnr: string | null;
 let erroIdentificar: string | null;
 /** Erro definitivo só na próxima resposta de enriquecimento (consumido). */
 let erroEnrUmaVez: string | null;
+/** Erro definitivo na margem (analisar_busca); null = segue normal. */
+let erroMargem: string | null;
 let ofertas429: boolean;
 let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
@@ -108,6 +110,7 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
     return env({ contaMl: enrConta, itens: b.itens.map((i: { itemId: string }) => ({ itemId: i.itemId, proprio: false, vinculo: vinculados.has(i.itemId) ? { fonte: 'catalogo', codigo: `SKU-${i.itemId}` } : null })) });
   }
   if (b.acao === 'analisar_busca') {
+    if (erroMargem) return new Response(JSON.stringify({ erro: erroMargem }), { status: 403 });
     let limiteAtingido = false, usoRegistrado = false;
     const itens = b.itens.map((i: { itemId: string }) => {
       if (!vinculados.has(i.itemId)) return { itemId: i.itemId, estado: 'sem_vinculo' };
@@ -143,6 +146,7 @@ beforeEach(() => {
   erroEnr = null;
   erroIdentificar = null;
   erroEnrUmaVez = null;
+  erroMargem = null;
   ofertas429 = false;
   tentarAposEm = null;
   bloqueioEnr = null;
@@ -673,6 +677,18 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     bloqueioEnr = null;
     soltar();
     await complementosPendentes();
+    const e = (await enr())!;
+    expect(e.indisponivel).toBeNull();
+    expect(pedidosEnr.at(-1)!.catalogos.map((c) => c.catalogProductId)).toEqual(['MLB2000000']);
+    expect(e.catalogos.MLB2000000).toMatchObject({ ofertas: { estado: 'ok' } });
+  });
+
+  it('Rodada 3 (11.4): erro definitivo só na margem não marca o enriquecimento; o delta do scroll é enriquecido', async () => {
+    vinculados = new Set([id(1), id(2)]);
+    erroMargem = 'payload_invalido';
+    await registrar([card(1)]);
+    expect((await enr())!).toMatchObject({ indisponivel: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+    await registrar([card(1), card(2, { catalogProductId: 'MLB2000000' })]);
     const e = (await enr())!;
     expect(e.indisponivel).toBeNull();
     expect(pedidosEnr.at(-1)!.catalogos.map((c) => c.catalogProductId)).toEqual(['MLB2000000']);

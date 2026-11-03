@@ -393,7 +393,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (!resp.ok || !Array.isArray(resp.dados?.itens)) {
         const falha: Falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
         retomar ||= transitoria(falha);
-        return encerrar(falha, p);
+        return falha; // erro da margem não encerra o enriquecimento (fase própria)
       }
       const dados = resp.dados, itens = resp.dados.itens as ResultadoCard[];
       retomar ||= dados.limiteAtingido === true;
