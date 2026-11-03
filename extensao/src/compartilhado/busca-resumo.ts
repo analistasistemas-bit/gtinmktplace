@@ -5,6 +5,7 @@ import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functi
 import type { CardBusca } from '../leitura/busca';
 import { pisoDosVendidos } from './quanto-vende';
 import { volumeMinimoAoPrecoAtual } from './volume-minimo';
+import { vistaDoCard, type EstadoEnriquecimento, type Medalha } from './enriquecimento';
 
 export type ResultadoBusca = ResultadoCard;
 export type Resultados = Record<string, ResultadoBusca | undefined>;
@@ -110,4 +111,55 @@ export function ordenarCards(cards: CardBusca[], resultados: Resultados, ordem: 
       return (desc ? b.v - a.v : a.v - b.v) || a.i - b.i;
     })
     .map((x) => x.c);
+}
+
+/** Resumo do enriquecimento (Task 10). Medalha/UF: vendedores ÚNICOS das ofertas exatas dos cards (perfil não carregado
+ *  ou medalha ausente = desconhecida). Tipo: cards com oferta exata. Faixas de vendedores: catálogos únicos com leitura
+ *  completa; parciais à parte como "≥ N". Tudo com denominador; nada presumido. */
+export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento | undefined) {
+  const medalhas: Record<Medalha, number> = { platinum: 0, gold: 0, silver: 0, sem: 0 };
+  const vendedores = new Set<number>();
+  const porUf = new Map<string, number>();
+  let medalhaDesconhecida = 0, ufDesconhecida = 0, cardsComCatalogo = 0, cardsSemVendedor = 0;
+  const tipos = { classico: 0, premium: 0, desconhecido: 0, exatas: 0 };
+  const pendentes = new Set<string>(); // catálogos ainda sem dado nenhum (aguardando, falha, indisponível)
+  const catalogos = new Map<string, NonNullable<NonNullable<ReturnType<typeof vistaDoCard>>['ofertas']> | null>();
+  for (const c of cards) {
+    const v = vistaDoCard(c, e);
+    if (!v) continue;
+    cardsComCatalogo++;
+    if (v.espera) pendentes.add(c.catalogProductId!);
+    if (!catalogos.get(c.catalogProductId!)) catalogos.set(c.catalogProductId!, v.ofertas);
+    const x = v.exata;
+    if (x?.estado !== 'ok') { cardsSemVendedor++; continue; }
+    tipos.exatas++;
+    if (x.tipo === 'gold_special') tipos.classico++; else if (x.tipo === 'gold_pro') tipos.premium++; else tipos.desconhecido++;
+    if (x.sellerId === null) { cardsSemVendedor++; continue; }
+    if (vendedores.has(x.sellerId)) continue;
+    vendedores.add(x.sellerId);
+    const p = v.vendedor?.estado === 'ok' ? v.vendedor : null;
+    if (p?.medalha) medalhas[p.medalha]++; else medalhaDesconhecida++;
+    if (p?.uf) porUf.set(p.uf, (porUf.get(p.uf) ?? 0) + 1); else ufDesconhecida++;
+  }
+  const ufsOrdenadas = [...porUf].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const faixas = { ate5: 0, ate10: 0, ate30: 0, acima30: 0, semOfertas: 0, completos: 0, parciais: [] as number[], catalogos: catalogos.size };
+  for (const o of catalogos.values()) {
+    if (!o) continue;
+    const n = o.vendedoresIdentificados;
+    if (!o.completa) { faixas.parciais.push(n); continue; }
+    faixas.completos++;
+    if (n === 0) faixas.semOfertas++; else if (n <= 5) faixas.ate5++; else if (n <= 10) faixas.ate10++; else if (n <= 30) faixas.ate30++; else faixas.acima30++;
+  }
+  faixas.parciais.sort((a, b) => b - a);
+  return {
+    cardsComCatalogo,
+    /** Catálogos únicos com algum dado já lido (inclusive indisponível) e os que ainda esperam. */
+    catalogosLidos: catalogos.size - pendentes.size,
+    vendedores: {
+      unicos: vendedores.size, medalhas, medalhaDesconhecida,
+      ufs: ufsOrdenadas.slice(0, 5), ufOutros: ufsOrdenadas.slice(5).reduce((n, [, k]) => n + k, 0), ufDesconhecida, cardsSemVendedor,
+    },
+    tipos,
+    faixas,
+  };
 }

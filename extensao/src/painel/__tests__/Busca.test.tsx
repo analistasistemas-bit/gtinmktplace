@@ -308,3 +308,58 @@ describe('Painel autoexplicativo (0.4.1)', () => {
     screen.getByText('SKU 77');
   });
 });
+
+describe('Catálogos e vendedores (Task 10)', () => {
+  const ex = (sellerId: number | null, tipo: string | null) => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: { estado: 'aguardando' } });
+  const comEnr = (enr: Record<string, unknown>) => {
+    const e = estado({}, [card('MLB1000001'), card('MLB1000002'), card('MLB1000003', { catalogProductId: 'MLB200' }), card('MLB1000004', { catalogProductId: null })]);
+    e.resposta.enriquecimento = { catalogos: {}, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0, ...enr } as never;
+    return e;
+  };
+  const secao = () => screen.getByRole('region', { name: 'Catálogos e vendedores' });
+
+  it('medalha, UF, tipo e faixas com denominadores; parciais "≥ N"; desconhecidos à parte', () => {
+    render(<Busca {...props({ estado: comEnr({
+      catalogos: {
+        MLB100: { ofertas: { estado: 'ok', total: 3, lidas: 3, vendedoresIdentificados: 3, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
+        MLB200: { ofertas: { estado: 'ok', total: 50, lidas: 50, vendedoresIdentificados: 31, ofertasSemVendedor: 2, completa: false, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } },
+      },
+      vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'platinum', uf: 'SP' }, 8: { estado: 'indisponivel' } },
+    }) })} />);
+    const s = within(secao());
+    s.getByText('2 de 2');
+    expect(s.getByText('Platinum').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Não informada', { selector: '.bs-medalhas *' }).closest('li')!.textContent).toContain('1');
+    s.getByText('2 vendedores únicos · 1 de 3 cards de catálogo sem vendedor identificado');
+    expect(s.getByText('SP').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Clássico').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Premium').closest('li')!.textContent).toContain('1');
+    s.getByText('2 de 3 cards de catálogo com oferta localizada');
+    expect(s.getByText('1–5').closest('li')!.textContent).toContain('1');
+    s.getByText('1 de 2 catálogos com leitura completa · Leitura parcial: ≥ 31');
+    expect(secao().textContent).not.toMatch(/faturamento/i);
+    for (const n of ['Catálogos lidos', 'Vendedores por medalha', 'UF dos vendedores', 'Tipo de anúncio', 'Vendedores por catálogo']) {
+      s.getByRole('button', { name: `O que é ${n}?` });
+    }
+  });
+
+  it('nada lido ainda: "Aguardando dados do catálogo"; janela esgotada: "Aguardando próxima janela"', () => {
+    const { unmount } = render(<Busca {...props({ estado: comEnr({}) })} />);
+    within(secao()).getByText('Aguardando dados do catálogo');
+    unmount();
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { aguardandoJanela: true } }, retomarEm: Date.now() + 30_000 }) })} />);
+    within(secao()).getByText('Aguardando próxima janela');
+  });
+
+  it('falha de rede: aviso com "Tentar novamente" que refaz o enriquecimento uma vez', async () => {
+    const p = props({ estado: comEnr({ falhou: true }) });
+    render(<Busca {...p} />);
+    fireEvent.click(within(secao()).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
+  it('sem cards de catálogo: a seção não aparece', () => {
+    render(<Busca {...props({ estado: estado({}, [card('MLB1000004', { catalogProductId: null })]) })} />);
+    expect(screen.queryByRole('region', { name: 'Catálogos e vendedores' })).toBeNull();
+  });
+});

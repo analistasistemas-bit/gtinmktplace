@@ -770,6 +770,15 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     ]);
   });
 
+  it('devolve a impressão opaca da conta ML (chave do cache do navegador): estável por conta, nunca o id cru', async () => {
+    const a = (await (await post(PEDIDO)).json()).valor.conta;
+    expect(a).toMatch(/^[0-9a-f]{16}$/);
+    expect(a).not.toContain('555');
+    expect((await (await post(PEDIDO)).json()).valor.conta).toBe(a);
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 556 } as never);
+    expect((await (await post(PEDIDO)).json()).valor.conta).not.toBe(a);
+  });
+
   it('sem conexão ML: indisponível sem debitar cota nem chamar o ML', async () => {
     vi.mocked(resolverConexao).mockResolvedValue(null);
     expect(await (await post(PEDIDO)).json()).toEqual({ estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' });

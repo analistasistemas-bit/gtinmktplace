@@ -50,6 +50,19 @@ it('margem sai do bloco quando o resultado deixa de autorizar (ok → sem víncu
   expect(textoDosBlocos()).not.toContain('Minha margem');
 });
 
+it('enriquecimento do catálogo chega com os resultados e entra no bloco do card (Task 10)', () => {
+  const link = document.querySelector('a.poly-component__title')!;
+  const href = link.getAttribute('href')!;
+  link.setAttribute('href', 'https://www.mercadolivre.com.br/p/MLB1000000#wid=MLB5321956667');
+  const enriquecimento = { catalogos: { MLB1000000: { ofertas: { estado: 'ok', total: 4, lidas: 4, vendedoresIdentificados: 4, ofertasSemVendedor: 0, completa: true, exatas: {} } } }, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0 };
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {}, enriquecimento });
+  expect(textoDosBlocos()).toContain('4 vendedores no catálogo');
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
+  expect(textoDosBlocos()).toContain('Aguardando dados do catálogo');
+  link.setAttribute('href', href);
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
+});
+
 it('mesmo resultado de novo não refaz o bloco (idempotente por assinatura)', () => {
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
   const host = blocos()[0];

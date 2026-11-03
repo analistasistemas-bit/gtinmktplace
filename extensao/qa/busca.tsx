@@ -6,7 +6,8 @@ import { createRoot } from 'react-dom/client';
 import { Busca } from '../src/painel/Busca';
 import { renderizarMiniBlocoDaBusca } from '../src/conteudo/mini-bloco-busca';
 import type { CardBusca } from '../src/leitura/busca';
-import { cards, ESTADO, meta, resultados } from './busca-fixtures';
+import { AGORA_QA, cards, ENR, ESTADO, meta, resultados } from './busca-fixtures';
+import { vistaDoCard } from '../src/compartilhado/enriquecimento';
 
 const q = new URLSearchParams(location.search);
 const raiz = document.getElementById('raiz')!;
@@ -60,7 +61,7 @@ function grade() {
     (el.querySelector('.qa-titulo') as HTMLElement).textContent = c.titulo;
     const miolo = document.createElement('div');
     miolo.style.cssText = 'padding:0 12px';
-    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId]));
+    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], c.preco, vistaDoCard(c, ENR), AGORA_QA));
     el.append(miolo);
     doc.append(el);
   }

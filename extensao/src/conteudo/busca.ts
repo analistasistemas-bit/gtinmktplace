@@ -4,6 +4,7 @@
 import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import { cardsDoItem, cardsElegiveis, INJETADO, lerBusca, lerCard, type CardBusca } from '../leitura/busca';
 import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca';
+import { enriquecimentoDe, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 
 const ESPERA_MS = 800;
 const PULSO_MS = 61_000; // janela da cota da edge (1 min) + folga
@@ -60,6 +61,8 @@ function lerEEnviar(): void {
 const assinaturas = new WeakMap<Element, string>();
 // Metadados do banco (anúncio próprio, vínculo); ausente = ainda não identificado.
 let metadados: Record<string, MetadadosCardBusca> = {};
+// Catálogos enriquecidos (Task 10): vista por card calculada na hora do desenho.
+let enriquecimento: EstadoEnriquecimento | undefined;
 // Hosts que NÓS tiramos: a remoção deles não pede nova leitura (a feita pela página pede, para o bloco voltar).
 const removidosPorNos = new WeakSet<Node>();
 // Card → nó de preço em que o bloco foi desenhado. Host sumido com o mesmo preço = a página tirou só o host: restaura
@@ -91,7 +94,8 @@ function aplicarBlocos(): void {
     if (!c || !preco?.parentElement) continue;
     const meta = metadados[c.itemId], res = resultados[c.itemId];
     const pa = precoAnalisado.get(c.itemId) ?? c.preco;
-    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa]);
+    const vista = vistaDoCard(c, enriquecimento);
+    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa, vista]);
     const atual = doCard(card, `.${HOST}`);
     if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); continue; }
     if (!atual && ancoras.get(card) === preco) {
@@ -99,7 +103,7 @@ function aplicarBlocos(): void {
       if (n >= MAX_RESTAUROS) continue;
       restauros.set(card, n + 1);
     }
-    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa);
+    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa, vista);
     assinaturas.set(novo, assinatura);
     if (atual) tirarHost(atual);
     preco.parentElement.insertBefore(novo, preco.nextSibling);
@@ -118,6 +122,7 @@ function limparSelos(): void {
   tirarDestaque();
   resultados = {};
   metadados = {};
+  enriquecimento = undefined;
   ancoras = new WeakMap();
   restauros = new WeakMap();
   for (const h of document.querySelectorAll(`.${HOST}`)) tirarHost(h);
@@ -151,7 +156,7 @@ function agendarPulso(): void {
 
 const daPagina = (msg: { url?: unknown; geracao?: unknown }) => geracao !== null && msg.geracao === geracao && msg.url === location.href.split('#')[0];
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; enriquecimento?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
@@ -166,6 +171,7 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     // Resultado de outra página (URL ou geração anterior) não vale aqui.
     resultados = msg.resultados as Record<string, ResultadoCard>;
     metadados = msg.metadados && typeof msg.metadados === 'object' ? msg.metadados as Record<string, MetadadosCardBusca> : {};
+    enriquecimento = msg.enriquecimento ? enriquecimentoDe(msg.enriquecimento) : undefined;
     aplicarBlocos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);

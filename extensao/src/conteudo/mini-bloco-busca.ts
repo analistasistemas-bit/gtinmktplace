@@ -8,10 +8,15 @@ import { volumeMinimoAoPrecoAtual } from '../compartilhado/volume-minimo';
 import { HOST_PUBLIAI, type CardBusca } from '../leitura/busca';
 import { MARCA } from './aparencia';
 import { seloDaBusca, type LinhaDaMargem } from './selo-busca';
+import { idadeDoCatalogo, NOME_MEDALHA, NOME_TIPO, valorDaComissao, type VistaCard } from '../compartilhado/enriquecimento';
 
 export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
 const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
+const COMISSAO = 'Tarifa de venda que o Mercado Livre cobraria na sua conta para este tipo de anúncio, nesta categoria e a este preço. Não inclui frete nem imposto.';
+const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "≥" quando o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor.';
+const ESPERA = { dados: 'Aguardando dados do catálogo', janela: 'Aguardando próxima janela', falha: 'Catálogo não lido · Tentar novamente no painel' } as const;
+const pctBr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Tokens do app (src/index.css, tema claro: a página do ML é clara). Texto de cor = matiz misturado com preto em oklab
@@ -38,6 +43,7 @@ svg{width:13px;height:13px;flex:none}
 .i:focus-visible{outline:2px solid var(--chart-1);outline-offset:1px}
 .a{color:var(--suave);font-size:11.5px;line-height:1.35}
 b{font-weight:650;color:var(--texto)}
+.idade.recente{--c:var(--success)}.idade.medio{--c:var(--warning)}.idade.antigo{--c:var(--suave)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
 `;
@@ -49,10 +55,32 @@ function el(tag: string, classe: string, texto?: string): HTMLElement {
   return e;
 }
 
-function linha(...filhos: HTMLElement[]): HTMLElement {
+function linha(...filhos: (HTMLElement | string)[]): HTMLElement {
   const l = el('div', 'l');
   l.append(...filhos);
   return l;
+}
+
+/** Rótulo com ⓘ: o botão abre/fecha a explicação logo abaixo da linha. Dentro do card do ML (um link): o clique não
+ *  navega nem sobe até o card. */
+function comAjuda(rotulo: HTMLElement, nome: string, texto: string): { rotulo: HTMLElement; ligar: (l: HTMLElement) => void } {
+  const i = el('button', 'i', 'ⓘ') as HTMLButtonElement;
+  i.type = 'button';
+  i.setAttribute('aria-label', `O que é ${nome}?`);
+  i.setAttribute('aria-expanded', 'false');
+  const g = el('span', 'g');
+  g.append(rotulo, i);
+  const ajuda = el('div', 'a', texto);
+  return {
+    rotulo: g,
+    ligar: (l) => i.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const aberto = i.getAttribute('aria-expanded') !== 'true';
+      i.setAttribute('aria-expanded', String(aberto));
+      if (aberto) l.after(ajuda); else ajuda.remove();
+    }),
+  };
 }
 
 /** Texto da margem desta ocorrência; null = nada a mostrar (sem vínculo, ou margem de outro preço). */
@@ -72,6 +100,9 @@ export function renderizarMiniBlocoDaBusca(
   margem: ResultadoCard | undefined,
   /** Preço em que o item foi (ou seria) analisado: o 1º preço do item na busca (= `preco` do card agregado no SW). */
   precoAnalisado: number | null = card.preco,
+  /** Catálogo enriquecido deste card (vistaDoCard); null/ausente = card sem catálogo: só dados da página. */
+  vista: VistaCard = null,
+  agora = Date.now(),
 ): HTMLElement {
   const oc = card.ocorrencias[0] ?? { posicao: card.posicao, patrocinado: card.patrocinado, preco: card.preco, vendidosTexto: card.vendidosTexto };
   const host = document.createElement('div');
@@ -92,28 +123,60 @@ export function renderizarMiniBlocoDaBusca(
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
   if (card.catalogProductId) topo.append(el('span', 'c violeta catalogo', 'Catálogo'));
   if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
+  // Perfil do vendedor da oferta exata (medalha ausente/desconhecida fica de fora: nunca presumida).
+  const exata = vista?.exata;
+  if (exata?.estado === 'ok' && exata.sellerId !== null) {
+    const v = vista!.vendedor;
+    if (v?.estado === 'ok') {
+      if (v.medalha) topo.append(el('span', `c ${v.medalha === 'sem' ? 'neutro' : 'ambar'}`, NOME_MEDALHA[v.medalha]));
+      if (v.uf) topo.append(el('span', 'v', v.uf));
+    } else topo.append(el('span', 'v', 'Perfil não carregado'));
+  }
 
   // 2. Giro mínimo ao preço atual: piso e preço da MESMA ocorrência.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
   if (volume !== null) {
-    const i = el('button', 'i', 'ⓘ') as HTMLButtonElement;
-    i.type = 'button';
-    i.setAttribute('aria-label', 'O que é giro mínimo?');
-    i.setAttribute('aria-expanded', 'false');
-    const rotulo = el('span', 'g');
-    rotulo.append(el('span', 'v', 'Giro mínimo ao preço atual'), i);
-    const l = linha(rotulo, el('b', '', brl(volume)));
+    const a = comAjuda(el('span', 'v', 'Giro mínimo ao preço atual'), 'giro mínimo', GIRO);
+    const l = linha(a.rotulo, el('b', '', brl(volume)));
     l.title = `Piso de "${oc.vendidosTexto}" × preço atual. Não é faturamento: as vendas foram a outros preços.`;
     bloco.append(l);
-    const ajuda = el('div', 'a', GIRO);
-    // Botão dentro do card do ML (que é um link): o clique não pode navegar nem subir até o card.
-    i.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const aberto = i.getAttribute('aria-expanded') !== 'true';
-      i.setAttribute('aria-expanded', String(aberto));
-      if (aberto) l.after(ajuda); else ajuda.remove();
-    });
+    a.ligar(l);
+  }
+
+  // 2b. Catálogo enriquecido: oferta exata (tipo + comissão na sua conta) e catálogo (vendedores + idade).
+  if (vista) {
+    if (vista.espera) bloco.append(linha(el('span', `t ${vista.espera === 'dados' || vista.espera === 'janela' ? 'aguardando' : 'neutro'}`, vista.motivo ?? ESPERA[vista.espera as keyof typeof ESPERA])));
+    if (exata?.estado === 'nao_encontrada') bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
+    else if (exata?.estado === 'ok') {
+      const l = linha(el('span', 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : 'Tipo não confirmado'));
+      // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
+      if (oc.preco === exata.preco) {
+        const c = exata.comissao;
+        const a = comAjuda(el('span', 'v', 'Comissão na sua conta'), 'Comissão na sua conta', COMISSAO);
+        l.append(a.rotulo);
+        if (c.estado === 'ok') l.append(el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
+        else l.append(el('span', `t ${c.estado === 'aguardando' ? 'aguardando' : 'neutro'}`, c.estado === 'aguardando' ? 'aguardando' : 'indisponível'));
+        if (c.estado === 'indisponivel') l.title = c.motivo;
+        a.ligar(l);
+      }
+      bloco.append(l);
+    }
+    const o = vista.ofertas;
+    const idade = idadeDoCatalogo(vista.criadoEm, agora);
+    if (o || idade) {
+      const l = linha();
+      if (o) {
+        const n = o.vendedoresIdentificados;
+        const texto = !o.completa && n === 0 ? 'Vendedores não identificados'
+          : `${o.completa ? '' : '≥ '}${n} ${n === 1 ? 'vendedor' : 'vendedores'} no catálogo`;
+        const a = comAjuda(el('b', '', texto), 'vendedores no catálogo', VENDEDORES);
+        l.append(a.rotulo);
+        if (!o.completa) l.append(el('span', 'c aguardando', 'Leitura parcial'));
+        a.ligar(l);
+      }
+      if (idade) l.append(el('span', `c idade ${idade.tom}`, `catálogo criado há ${idade.dias} ${idade.dias === 1 ? 'dia' : 'dias'}`));
+      bloco.append(l);
+    }
   }
 
   // 3. Meu anúncio nesta busca (proprio null = verificação indisponível: nada conclusivo).

@@ -448,11 +448,18 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       if (!conexao?.contaExternaId) return SEM_CONEXAO;
       const token = await getValidAccessTokenConexao(conexao);
       const { catalogos, perfis, perfisEmCache } = p;
+      const conta = String(conexao.contaExternaId);
+      // Impressão opaca da conta ML (Revisão 03/11, regra 10): o navegador chaveia o cache por ela e descarta o que
+      // foi lido com outra conta (a comissão é da conta). Nunca o id cru.
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`publiai-ext-conta:${conta}`)));
       return {
         estado: 'ok',
-        valor: await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
-          conta: String(conexao.contaExternaId), agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
-        }),
+        valor: {
+          ...await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+            conta, agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
+          }),
+          conta: [...digest.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join(''),
+        },
       };
     }
     case 'radar':

@@ -137,7 +137,7 @@ export async function limparEstadosDasAbas(): Promise<void> {
   const remover: string[] = [];
   for (const k of Object.keys(tudo)) {
     const [prefixo, id] = k.split(':');
-    if (prefixo === 'ean') remover.push(k);
+    if (prefixo === 'ean' || prefixo === 'enr') remover.push(k); // enr: cache do enriquecimento (cache-enriquecimento.ts)
     if (prefixo === 'estado' || prefixo === 'geracao') abas.add(Number(id));
   }
   if (remover.length) await chrome.storage.session.remove(remover);

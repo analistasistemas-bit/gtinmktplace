@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { filtrarCards, ordenarCards, resumoBusca, type ResultadoBusca } from '../busca-resumo';
+import { filtrarCards, ordenarCards, resumoBusca, resumoEnriquecimento, type ResultadoBusca } from '../busca-resumo';
+import { enriquecimentoVazio } from '../enriquecimento';
 import { lerBusca, type CardBusca } from '../../leitura/busca';
 
 const card = (itemId: string, o: Partial<CardBusca> = {}): CardBusca => ({
@@ -119,5 +120,41 @@ describe('fix rodada 1', () => {
     const r = resumoBusca(lerBusca(document), {}, 2);
     expect(r.vendidosMinimos).toMatchObject({ soma: 0, cobertura: 0, grupos: 0, conflitos: 1 });
     expect(r.volumeMinimo).toMatchObject({ centavos: 0, grupos: 0, conflitos: 1 });
+  });
+});
+
+describe('resumoEnriquecimento (Task 10)', () => {
+  const ex = (sellerId: number | null, tipo: string | null = 'gold_special') => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: { estado: 'aguardando' } });
+  const of = (vendedoresIdentificados: number, completa: boolean, exatas: Record<string, unknown>) =>
+    ({ estado: 'ok', total: vendedoresIdentificados, lidas: vendedoresIdentificados, vendedoresIdentificados, ofertasSemVendedor: 0, completa, exatas }) as never;
+
+  it('medalha e UF por vendedor ÚNICO dos cards identificados; desconhecidos à parte, com denominadores', () => {
+    const e = enriquecimentoVazio();
+    e.catalogos.MLB1 = { ofertas: of(3, true, { A1: ex(7), A2: ex(7, 'gold_pro'), A3: ex(8) }) };
+    e.catalogos.MLB2 = { ofertas: of(40, true, { B1: ex(9, null), B2: { estado: 'nao_encontrada', preco: 100 } }) };
+    e.catalogos.MLB3 = { ofertas: of(12, false, { C1: ex(null) }) };
+    e.vendedores = { 7: { estado: 'ok', nome: null, medalha: 'platinum', uf: 'SP' }, 8: { estado: 'ok', nome: null, medalha: null, uf: 'RJ' }, 9: { estado: 'indisponivel' } };
+    const cards = [card('A1', { catalogProductId: 'MLB1' }), card('A2', { catalogProductId: 'MLB1' }), card('A3', { catalogProductId: 'MLB1' }),
+      card('B1', { catalogProductId: 'MLB2' }), card('B2', { catalogProductId: 'MLB2' }), card('C1', { catalogProductId: 'MLB3' }),
+      card('D1', { catalogProductId: 'MLB4' }), card('E1')];
+    const r = resumoEnriquecimento(cards, e);
+    expect(r.cardsComCatalogo).toBe(7);
+    expect(r.vendedores).toMatchObject({ unicos: 3, medalhas: { platinum: 1, gold: 0, silver: 0, sem: 0 }, medalhaDesconhecida: 2, ufs: [['RJ', 1], ['SP', 1]], ufOutros: 0, ufDesconhecida: 1, cardsSemVendedor: 3 });
+    expect(r.tipos).toEqual({ classico: 3, premium: 1, desconhecido: 1, exatas: 5 });
+    expect(r.faixas).toEqual({ ate5: 1, ate10: 0, ate30: 0, acima30: 1, semOfertas: 0, completos: 2, parciais: [12], catalogos: 4 });
+  });
+
+  it('UF: 5 maiores + outros; nada enriquecido = zeros sem inventar', () => {
+    const e = enriquecimentoVazio();
+    const exatas: Record<string, unknown> = {};
+    const cards: CardBusca[] = [];
+    ['SP', 'SP', 'RJ', 'MG', 'PR', 'SC', 'BA', 'GO'].forEach((uf, i) => { exatas[`I${i}`] = ex(i + 1); e.vendedores[String(i + 1)] = { estado: 'ok', nome: null, medalha: 'gold', uf }; cards.push(card(`I${i}`, { catalogProductId: 'MLB1' })); });
+    e.catalogos.MLB1 = { ofertas: of(8, true, exatas) };
+    const r = resumoEnriquecimento(cards, e);
+    expect(r.vendedores.ufs).toEqual([['SP', 2], ['BA', 1], ['GO', 1], ['MG', 1], ['PR', 1]]);
+    expect(r.vendedores.ufOutros).toBe(2);
+    const vazio = resumoEnriquecimento(cards, enriquecimentoVazio());
+    expect(vazio.vendedores.unicos).toBe(0);
+    expect(vazio.faixas.completos).toBe(0);
   });
 });

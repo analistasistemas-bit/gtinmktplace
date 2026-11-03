@@ -6,7 +6,9 @@ import { chamarExtensao, consultarSessaoAtual } from './api';
 import { epocaAtual, lerAba, registrarEstado } from './abas';
 import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
-import { identidadeAtual, seAindaIdentidade } from './sessao';
+import { identidadeAtual, limparAbasNaFila, seAindaIdentidade } from './sessao';
+import { aplicarHits, aplicarResposta, gravarCache, lerCache, planejarLote, type CacheEnr, type RespostaEnriquecimento } from './cache-enriquecimento';
+import { enriquecimentoDe, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
 
 export const MAX_POR_ANALISE = 50; // = MAX_ITENS_BUSCA da edge
@@ -22,6 +24,9 @@ export interface RespostaBusca {
   limiteEm: number | null;
   /** Telemetria `busca` já contada nesta geração de página (nova URL de busca começa sem). */
   usoRegistrado: boolean;
+  /** Catálogos enriquecidos (vendedor, medalha, UF, tipo, comissão, vendedores, idade) e a fila deles (Task 10).
+   *  Opcional só no tipo (estado de antes da 0.5.0); `respostaDe` sempre preenche. */
+  enriquecimento?: EstadoEnriquecimento;
 }
 
 export interface EstadoBusca {
@@ -35,11 +40,13 @@ export const ehBusca = (e: unknown): e is EstadoBusca => (e as { entrada?: { tip
 const minuto = () => Math.floor(Date.now() / 60_000);
 
 /** Cópia mutável da resposta guardada (estado gravado antes da Task 3 não tem os campos novos). */
-function respostaDe(e: EstadoBusca | null): RespostaBusca {
+type RespostaViva = RespostaBusca & { enriquecimento: EstadoEnriquecimento };
+function respostaDe(e: EstadoBusca | null): RespostaViva {
   const r: Partial<RespostaBusca> = e?.resposta ?? {};
   return {
     resultados: { ...r.resultados }, metadados: { ...r.metadados }, precoDaMargem: { ...r.precoDaMargem },
     limiteEm: typeof r.limiteEm === 'number' ? r.limiteEm : null, usoRegistrado: r.usoRegistrado === true,
+    enriquecimento: enriquecimentoDe(r.enriquecimento),
   };
 }
 
@@ -61,7 +68,7 @@ async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
 
 /** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). */
 function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
-  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados }).catch(() => {});
+  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados, enriquecimento: r.enriquecimento }).catch(() => {});
 }
 
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
@@ -132,13 +139,13 @@ const transitoria = (f: Falha) => f.erro === 'interno' || f.erro === 'limite';
  *  estado guardado (reinício do SW, pulso, scroll e painel convergem). `epoca` = a de quando a mensagem chegou: sessão,
  *  pausa ou navegação no meio → nada é chamado, gravado nem transmitido. `forcar` = itens que o painel quer refazer
  *  (ex.: logo depois de vincular ao SKU): identificação e margem de novo, mesmo com resultado. */
-export function processarBuscaDaAba(tabId: number, epoca: number, forcar: string[] = []): Promise<{ ok: true } | Falha> {
+export function processarBuscaDaAba(tabId: number, epoca: number, forcar: string[] = [], retentar = false): Promise<{ ok: true } | Falha> {
   const vez = cancelamentos.get(tabId) ?? 0; // síncrono: cancelamento depois daqui vale para esta rodada
   const vale = () => epoca === epocaAtual() && vez === (cancelamentos.get(tabId) ?? 0);
-  return naFila(analises, tabId, () => processar(tabId, epoca, vale, new Set(forcar)));
+  return naFila(analises, tabId, () => processar(tabId, epoca, vale, new Set(forcar), retentar));
 }
 
-async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>): Promise<{ ok: true } | Falha> {
+async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>, retentar: boolean): Promise<{ ok: true } | Falha> {
   if (!vale()) return SEM_SESSAO;
   // Identidade desconhecida (recém-logado): resolvida ANTES de capturar a da rodada — senão a 1ª chamada a descobre, a
   // gravação é recusada e a retomada pede (e conta) a telemetria de novo.
@@ -150,17 +157,23 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   if (!vale()) return SEM_SESSAO;
   const identidade = await identidadeAtual();
   if (identidade === null) return SEM_SESSAO;
-  /** Aplica `mudar` só se sessão (época, identidade) e página (geração, sessão, URL) ainda são as do pedido. */
-  const gravarSe = (p: Pagina, mudar: (r: RespostaBusca, agora: Map<string, CardBusca>) => void) =>
-    seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
-      const atual = await lerAba(tabId);
-      if (!vale() || atual.geracao !== p.geracao || atual.sessao !== p.sessao || !ehBusca(atual.estado) || atual.estado.entrada.url !== p.url) return false;
-      const r = respostaDe(atual.estado);
-      mudar(r, new Map(atual.estado.observado.cards.map((c) => [c.itemId, c])));
-      await gravar(tabId, p, { ...atual.estado, resposta: r });
-      if (vale()) avisarPagina(tabId, p, r);
-      return true;
-    })).then((ok) => ok === true);
+  /** Aplica `mudar` só se sessão (época, identidade) e página (geração, sessão, URL) ainda são as do pedido. `cache`
+   *  (enriquecimento) grava no cache do navegador na MESMA checagem: resposta antiga nunca o repovoa. */
+  const gravarSe = (p: Pagina, mudar: (r: RespostaViva, agora: Map<string, CardBusca>) => void, cache?: () => ((c: CacheEnr) => void) | null) =>
+    seAindaIdentidade(identidade, async () => {
+      const ok = await naFila(escritas, tabId, async () => {
+        const atual = await lerAba(tabId);
+        if (!vale() || atual.geracao !== p.geracao || atual.sessao !== p.sessao || !ehBusca(atual.estado) || atual.estado.entrada.url !== p.url) return false;
+        const r = respostaDe(atual.estado);
+        mudar(r, new Map(atual.estado.observado.cards.map((c) => [c.itemId, c])));
+        await gravar(tabId, p, { ...atual.estado, resposta: r });
+        if (vale()) avisarPagina(tabId, p, r);
+        return true;
+      });
+      const f = ok && vale() ? cache?.() : null;
+      if (f) await gravarCache(identidade, f);
+      return ok;
+    }).then((ok) => ok === true);
 
   const identificados = new Set<string>(), enviados = new Set<string>();
   let falha: Falha | null = null, retomar = false, fase: 'identificar' | 'margem' = 'identificar';
@@ -272,6 +285,60 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       }
       if (dados.limiteAtingido === true) r2.limiteEm = minuto();
     }))) { falha = recusada(); break; }
+  }
+
+  // 3. Enriquecimento dos catálogos (Task 10; plano, Revisão 03/11): fila deduplicada por catálogo, um lote em voo por
+  // aba (esta fila), só componentes vencidos no cache do navegador. Janela/retomarEm → pulso; rede → só o painel retoma.
+  if (falha === null || transitoria(falha)) {
+    const jaPedidos = new Set<string>();
+    for (let primeira = true; ; primeira = false) {
+      if (!vale()) return SEM_SESSAO;
+      const aba = await lerAba(tabId);
+      if (!ehBusca(aba.estado)) break;
+      const e = aba.estado, r = respostaDe(e), enr = r.enriquecimento;
+      const p = { geracao: aba.geracao, sessao: aba.sessao, url: e.entrada.url };
+      if (primeira && retentar && enr.falhou) {
+        if (!(await gravarSe(p, (r2) => { r2.enriquecimento.falhou = false; }))) { falha = recusada(); break; }
+        continue;
+      }
+      if (enr.falhou || enr.indisponivel) break;
+      const cache = await lerCache(identidade);
+      const plano = planejarLote(e.observado.cards, r.metadados, enr, cache, Date.now(), jaPedidos);
+      retomar ||= plano.esperar;
+      if (plano.hits.usados.length && !(await gravarSe(p, (r2) => aplicarHits(r2.enriquecimento, plano.hits), () => (c) => {
+        for (const u of plano.hits.usados) { const x = c[u.m][u.k]; if (x) x.u = Date.now(); } // menos usado sai primeiro
+      }))) { falha = recusada(); break; }
+      const pedido = plano.pedido;
+      if (!pedido) break;
+      const marcas = [...pedido.catalogos.map((c) => c.catalogProductId), ...pedido.perfis.map((s) => `perfil:${s}`)];
+      for (const m of marcas) jaPedidos.add(m);
+      const cats = new Set(pedido.catalogos.map((c) => c.catalogProductId));
+      const lote = e.observado.cards.filter((c) => c.catalogProductId && cats.has(c.catalogProductId));
+      const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>(
+        { acao: 'enriquecer_catalogos_busca', ...pedido }, epoca, guarda(p, lote, (c) => `${c.preco}|${c.catalogProductId}`));
+      if (recusouEnvio) { recusouEnvio = false; for (const m of marcas) jaPedidos.delete(m); continue; }
+      const d = resp.ok ? resp.dados : null;
+      if (!resp.ok && !transitoria(resp)) { falha = resp; break; }
+      if (d?.estado === 'indisponivel') {
+        const motivo = typeof d.motivo === 'string' ? d.motivo : 'Enriquecimento indisponível';
+        if (!(await gravarSe(p, (r2) => { r2.enriquecimento.indisponivel = motivo; }))) falha = recusada();
+        break;
+      }
+      if (d?.estado !== 'ok' || !d.valor || !Array.isArray(d.valor.catalogos)) {
+        // Rede/5xx/corpo fora do formato: sem repetição automática (o pulso não retoma); o painel oferece "Tentar novamente".
+        if (!(await gravarSe(p, (r2) => { r2.enriquecimento.falhou = true; }))) falha = recusada();
+        break;
+      }
+      const valor = d.valor, conta = typeof valor.conta === 'string' ? valor.conta : null;
+      if (conta !== null && cache.conta !== null && cache.conta !== conta) {
+        // Outra conta ML na org: comissão (e margem) lidas com a anterior saem de todas as abas e do cache.
+        await limparAbasNaFila();
+        return SEM_SESSAO;
+      }
+      let noCache: ((c: CacheEnr) => void) | null = null;
+      if (!(await gravarSe(p, (r2) => { noCache = aplicarResposta(r2.enriquecimento, pedido, valor, Date.now()); },
+        () => (c) => { if (conta !== null) c.conta = conta; noCache?.(c); }))) { falha = recusada(); break; }
+    }
   }
   if (retomar) await pedirRetomada(tabId, vale);
   return falha ?? { ok: true };

@@ -26,6 +26,31 @@ let antesDeResponder: ((acao: string) => Promise<void> | void) | null;
 let falharIdentificar: boolean;
 let aoRenovar: (() => Promise<void>) | null;
 let statusSessao: number;
+// Enriquecimento (Task 10): cota por catálogo, conta ML, falha de rede e trava próprias; pedidos à parte de `corpos`.
+let enrCota: number;
+let enrConta: string;
+let falharEnr: boolean;
+let bloqueioEnr: Promise<void> | null;
+let antesDeEnriquecer: (() => Promise<void> | void) | null;
+type PedidoEnr = { catalogos: { catalogProductId: string; componentes: string[]; itens: { itemId: string; preco: number }[] }[]; perfis: number[]; perfisEmCache: number[] };
+const pedidosEnr: PedidoEnr[] = [];
+const isoDe = (ms: number) => new Date(ms).toISOString();
+function respostaEnr(b: PedidoEnr) {
+  const agora = Date.now();
+  const catalogos = b.catalogos.map((c) => {
+    if (enrCota <= 0) return { catalogProductId: c.catalogProductId, estado: 'aguardando', retomarEm: isoDe((Math.floor(agora / 60_000) + 1) * 60_000), consultadoEm: null };
+    enrCota--;
+    return {
+      catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null, consultadoEm: isoDe(agora),
+      ...(c.componentes.includes('produto') ? { produto: { estado: 'ok', criadoEm: '2026-06-01T00:00:00Z', expiraEm: isoDe(agora + 6 * 3600_000) } } : {}),
+      ...(c.componentes.includes('ofertas') ? { ofertas: { estado: 'ok', expiraEm: isoDe(agora + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
+        exatas: c.itens.map((i) => ({ itemId: i.itemId, estado: 'ok', categoriaId: 'MLB5', sellerId: 7, tipo: 'gold_special', perfil: 'carregado', comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } })) } } : {}),
+    };
+  });
+  const comOfertas = catalogos.some((c) => 'ofertas' in c) || b.perfis.includes(7);
+  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 },
+    vendedores: comOfertas && !b.perfisEmCache.includes(7) ? [{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) }] : [] } };
+}
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
 
@@ -39,6 +64,13 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
   if (b.acao === 'sessao') {
     if (statusSessao !== 200) { const st = statusSessao; statusSessao = 200; corpos.push(b); return new Response(JSON.stringify({ erro: 'x' }), { status: st }); }
     return new Response(JSON.stringify({ identidade: 'u1:org1:', dados: {} }), { status: 200 });
+  }
+  if (b.acao === 'enriquecer_catalogos_busca') {
+    pedidosEnr.push(b);
+    if (bloqueioEnr) await bloqueioEnr;
+    if (antesDeEnriquecer) { const f = antesDeEnriquecer; antesDeEnriquecer = null; await f(); }
+    if (falharEnr) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
+    return env(respostaEnr(b));
   }
   corpos.push(b);
   if (bloqueio) await bloqueio;
@@ -78,6 +110,12 @@ beforeEach(() => {
   falharIdentificar = false;
   aoRenovar = null;
   statusSessao = 200;
+  enrCota = Infinity;
+  enrConta = 'conta-a';
+  falharEnr = false;
+  bloqueioEnr = null;
+  antesDeEnriquecer = null;
+  pedidosEnr.length = 0;
   geracaoCs = null;
   corpos.length = 0;
 });
@@ -446,5 +484,105 @@ describe('isolamento de sessão e de página', () => {
     await novo.rotearMensagem({ tipo: 'publiai:busca-pulso', geracao: geracaoCs }, BUSCA);
     await novo.complementosPendentes();
     expect((await estado())!.resposta.metadados[id(1)]).toBeDefined();
+  });
+});
+
+// Task 10: fila progressiva do enriquecimento (plano, Revisão 03/11, regras 1-3, 5, 6 e 10).
+type EstadoEnr = { catalogos: Record<string, { aguardandoJanela?: boolean; produto?: { estado: string }; ofertas?: { estado: string } }>; vendedores: Record<string, { estado: string; medalha?: string }>; retomarEm: number | null; falhou: boolean };
+const enr = async () => ((await lerAba(7)).estado as unknown as { resposta: { enriquecimento?: EstadoEnr } } | null)?.resposta.enriquecimento;
+const CAT = 'MLB1000000';
+
+describe('enriquecimento dos catálogos (fila progressiva)', () => {
+  it('dez cards do mesmo catálogo → um pedido com uma entrada; scroll e painel juntos não duplicam', async () => {
+    let soltar!: () => void;
+    bloqueioEnr = new Promise((r) => { soltar = r; });
+    await enviarCards(cards(1, 10));
+    await vi.waitFor(() => expect(pedidosEnr).toHaveLength(1));
+    await enviarCards(cards(1, 10).map((c) => ({ ...c, miniaturaUrl: 'https://http2.mlstatic.com/x.jpg' })));
+    const painel = rotear({ tipo: 'publiai:analisar-busca', tabId: 7 }, PAINEL);
+    soltar();
+    await painel;
+    await complementosPendentes();
+    expect(pedidosEnr).toHaveLength(1);
+    expect(pedidosEnr[0].catalogos).toEqual([{ catalogProductId: CAT, componentes: ['produto', 'ofertas'], itens: cards(1, 10).map((c) => ({ itemId: c.itemId, preco: 10 })) }]);
+    const e = (await enr())!;
+    expect(e.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' }, ofertas: { estado: 'ok' } });
+    expect(e.vendedores['7']).toMatchObject({ estado: 'ok', medalha: 'gold' });
+    expect(mensagensPagina('publiai:busca-resultados').at(-1)!.enriquecimento).toMatchObject({ catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
+  });
+
+  it('catálogo em cache válido (outra busca) não vai à edge nem gasta cota', async () => {
+    await registrar([card(1)]);
+    expect(pedidosEnr).toHaveLength(1);
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    await aoAtualizarAba(7, { url: OUTRA });
+    geracaoCs = null;
+    await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
+    expect(pedidosEnr).toHaveLength(1);
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ ofertas: { estado: 'ok' } });
+    expect((await enr())!.vendedores['7']).toMatchObject({ estado: 'ok' });
+  });
+
+  it('janela esgotada: aguardando + pulso; pulso antes da janela não chama; depois retoma', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:10Z'));
+    enrCota = 0;
+    await registrar([card(1)]);
+    expect((await enr())!.catalogos[CAT]).toEqual({ aguardandoJanela: true });
+    expect((await enr())!.retomarEm).toBe(Date.parse('2026-11-03T12:01:00Z'));
+    expect(mensagensPagina('publiai:busca-retomar').length).toBeGreaterThan(0);
+    await pulso();
+    expect(pedidosEnr).toHaveLength(1);
+    vi.setSystemTime(Date.parse('2026-11-03T12:01:11Z'));
+    enrCota = 10;
+    await pulso();
+    expect(pedidosEnr).toHaveLength(2);
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ ofertas: { estado: 'ok' } });
+  });
+
+  it('reinício do SW com catálogo pendente: o pulso seguinte retoma do estado guardado', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:10Z'));
+    enrCota = 0;
+    await registrar([card(1)]);
+    vi.resetModules();
+    const novo = await import('../roteador');
+    vi.setSystemTime(Date.parse('2026-11-03T12:01:11Z'));
+    enrCota = 10;
+    await novo.rotearMensagem({ tipo: 'publiai:busca-pulso', geracao: geracaoCs }, BUSCA);
+    await novo.complementosPendentes();
+    expect(pedidosEnr).toHaveLength(2);
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' } });
+  });
+
+  it('resposta antiga depois da pausa: nada gravado na aba nem no cache', async () => {
+    antesDeEnriquecer = async () => { await rotear({ tipo: 'publiai:definir-ativa', ativa: false }, PAINEL); };
+    await registrar([card(1)]);
+    expect(await enr()).toBeUndefined();
+    expect(await chrome.storage.session.get('enr:cache')).toEqual({});
+  });
+
+  it('falha de rede: "Tentar novamente" sem repetição automática; o painel refaz uma vez', async () => {
+    falharEnr = true;
+    await registrar([card(1)]);
+    expect((await enr())!.falhou).toBe(true);
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
+    await pulso();
+    await registrar([card(2)]);
+    expect(pedidosEnr).toHaveLength(1);
+    falharEnr = false;
+    await rotear({ tipo: 'publiai:analisar-busca', tabId: 7, retentar: true }, PAINEL);
+    await complementosPendentes();
+    expect(pedidosEnr).toHaveLength(2);
+    expect((await enr())!).toMatchObject({ falhou: false, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('conta ML mudou entre respostas: abas e cache limpos (a comissão é da conta)', async () => {
+    await registrar([card(1)]);
+    enrConta = 'conta-b';
+    await registrar([card(2, { catalogProductId: 'MLB2000000' })]);
+    expect(await chrome.storage.session.get('enr:cache')).toEqual({});
+    expect(await estado()).toBeNull();
   });
 });

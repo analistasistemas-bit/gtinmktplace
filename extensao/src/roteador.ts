@@ -210,7 +210,8 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         ? msg.forcar.filter((i): i is string => typeof i === 'string' && /^MLB\d{6,20}$/.test(i)).slice(0, 50)
         : [];
       // Mesma fila do processamento automático: abrir o painel no meio não duplica chamadas.
-      return comando(e, () => processarBuscaDaAba(id, e, forcar));
+      // retentar: "Tentar novamente" do enriquecimento depois de falha de rede (sem repetição automática).
+      return comando(e, () => processarBuscaDaAba(id, e, forcar, msg.retentar === true));
     }
     case 'publiai:destacar-card':
       if (!pagina || typeof msg.tabId !== 'number' || typeof msg.itemId !== 'string' || !/^MLB\d{6,20}$/.test(msg.itemId)) return undefined;
