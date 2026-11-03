@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BarChart3, ChevronLeft, ChevronRight, FileText, Puzzle, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, FileText, Puzzle, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -16,11 +15,12 @@ import { OrgBilling } from '@/components/platform-admin/org-billing';
 import { OrgPulse } from '@/components/platform-admin/org-pulse';
 import { OrgExtensao } from '@/components/platform-admin/org-extensao';
 import { OrgResults } from '@/components/platform-admin/org-results';
+import { SeletorMes } from '@/components/platform-admin/seletor-mes';
 import { OrgSettings } from '@/components/platform-admin/org-settings';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
 import { useMonthlyReport, usePlatformOrganization, usePlatformPreview } from '@/hooks/usePlatformAdmin';
 import { baixarRelatorioMensal } from '@/lib/export/relatorio-mensal-download';
-import { diaMesBr, mesPorExtenso, opcoesDeMes, somarMeses } from '@/lib/relatorio-mensal-ui';
+import { diaMesBr, mesPorExtenso } from '@/lib/relatorio-mensal-ui';
 import { cancelSupport, listSupportRequests } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -141,22 +141,7 @@ export default function OrganizacaoDetalhe() {
   const blockerCount = preview.isError ? null : preview.data?.blockers.length ?? 0;
 
   const mesAtual = currentMonth();
-  const monthField = (
-    <div role="group" aria-label="Mês da organização" className="flex items-center gap-1">
-      <Button variant="outline" size="icon" aria-label="Mês anterior" className="max-sm:size-11"
-        onClick={() => updateSearch('mes', somarMeses(month, -1))}><ChevronLeft /></Button>
-      <Select value={month} onValueChange={(value) => updateSearch('mes', value)}>
-        <SelectTrigger aria-label="Escolher mês" className="w-44 justify-between max-sm:h-11">
-          <SelectValue>{mesPorExtenso(month)}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {opcoesDeMes(mesAtual, month).map((m) => <SelectItem key={m} value={m}>{mesPorExtenso(m)}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Button variant="outline" size="icon" aria-label="Próximo mês" className="max-sm:size-11"
-        disabled={month >= mesAtual} onClick={() => updateSearch('mes', somarMeses(month, 1))}><ChevronRight /></Button>
-    </div>
-  );
+  const monthField = <SeletorMes month={month} mesAtual={mesAtual} onChange={(value) => updateSearch('mes', value)} />;
 
   const fechado = report.data?.statement.status === 'closed' ? report.data.statement : null;
   const motivoRelatorio = report.isLoading ? 'Carregando o mês…'

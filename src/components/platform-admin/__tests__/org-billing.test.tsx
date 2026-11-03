@@ -119,10 +119,11 @@ beforeEach(() => {
     isError: false,
     refetch: mocks.refetch,
   });
-  mocks.useStatements.mockReturnValue({
-    data: { rows: [makeStatement()], total: 1, page: 1, page_size: 20 },
+  // Padrão: lista tem o demonstrativo, mas a competência consultada está aberta (consulta por mês vem vazia).
+  mocks.useStatements.mockImplementation((_orgId: string, month?: string) => ({
+    data: month ? { rows: [], total: 0, page: 1, page_size: 1 } : { rows: [makeStatement()], total: 1, page: 1, page_size: 20 },
     isLoading: false,
-  });
+  }));
   mocks.useReport.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   mocks.useTerms.mockReturnValue({
     data: { rows: [terms] },
@@ -146,6 +147,7 @@ describe('OrgBilling', () => {
   });
 
   it('relatório mensal: com mês fechado, gera o PDF da organização e do mês', async () => {
+    mocks.useStatements.mockReturnValue({ data: { rows: [makeStatement()], total: 1, page: 1, page_size: 20 }, isLoading: false });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<OrgBilling orgId="org-a" month="2026-08" />);
     await user.click(screen.getByRole('button', { name: /Gerar relatório mensal/ }));
@@ -171,6 +173,7 @@ describe('OrgBilling', () => {
   });
 
   it('relatório mensal: falha vira toast de erro', async () => {
+    mocks.useStatements.mockReturnValue({ data: { rows: [makeStatement()], total: 1, page: 1, page_size: 20 }, isLoading: false });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mocks.baixar.mockRejectedValueOnce(new Error('sem rede'));
     render(<OrgBilling orgId="org-a" month="2026-08" />);
@@ -336,5 +339,21 @@ describe('OrgBilling', () => {
     expect(screen.getByText('Estado do fechamento indisponível')).toBeInTheDocument();
     expect(screen.queryByText('Demonstrativo em aberto')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Gerar relatório mensal/ })).toBeDisabled();
+  });
+
+  it('mês aberto: título "Prévia de cobrança" com mês por extenso e botão de fechar', () => {
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Prévia de cobrança · Agosto de 2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeInTheDocument();
+  });
+
+  it('mês fechado: título "Demonstrativo", pílula "Fechado em" e nenhuma ação de fechar', () => {
+    const fechado = { ...makeStatement(), month: '2026-08' };
+    mocks.useStatements.mockReturnValue({ data: { rows: [fechado], total: 1, page: 1, page_size: 20 }, isLoading: false });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Demonstrativo · Agosto de 2026')).toBeInTheDocument();
+    expect(screen.getByText('Fechado em 01/09')).toBeInTheDocument();
+    expect(screen.queryByText('Pronta para fechar')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fechar demonstrativo' })).not.toBeInTheDocument();
   });
 });

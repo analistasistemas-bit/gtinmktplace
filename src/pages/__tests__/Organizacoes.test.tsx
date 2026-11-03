@@ -203,6 +203,15 @@ describe('Organizacoes', () => {
     expect(screen.queryByRole('link', { name: 'Ver cobrança de Delta' })).not.toBeInTheDocument();
   });
 
+  it('seletor de mês da carteira: por extenso, navega com ‹ › e preserva ?mes=', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    expect(screen.getByRole('combobox', { name: 'Escolher mês' })).toHaveTextContent('Setembro de 2026');
+    await user.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    expect(screen.getByRole('combobox', { name: 'Escolher mês' })).toHaveTextContent('Agosto de 2026');
+    expect(usePlatformWallet).toHaveBeenLastCalledWith(expect.objectContaining({ month: '2026-08' }));
+  });
+
   it('diálogo Nova empresa tem rótulos persistentes nos cinco campos', async () => {
     const user = userEvent.setup();
     renderPage();

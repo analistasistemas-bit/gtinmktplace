@@ -268,27 +268,31 @@ export function OrgBilling({ orgId, month }: Props) {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <CardTitle>Prévia de cobrança · {month}</CardTitle>
+              <CardTitle>{statementDoMes ? 'Demonstrativo' : 'Prévia de cobrança'} · {mesPorExtenso(month)}</CardTitle>
               <CardDescription>
-                <StatusPill tone={state.tone}>{state.label}</StatusPill>
+                {statementDoMes
+                  ? <StatusPill tone="success">Fechado em {diaMesBr(statementDoMes.closed_at)}</StatusPill>
+                  : <StatusPill tone={state.tone}>{state.label}</StatusPill>}
               </CardDescription>
             </div>
-            <Button
-              className="max-sm:min-h-11"
-              disabled={!canClose || close.isPending}
-              title={canClose ? undefined : state.label}
-              onClick={() => setConfirming(true)}
-            >
-              Fechar demonstrativo
-            </Button>
+            {!statementDoMes && (
+              <Button
+                className="max-sm:min-h-11"
+                disabled={!canClose || close.isPending}
+                title={canClose ? undefined : state.label}
+                onClick={() => setConfirming(true)}
+              >
+                Fechar demonstrativo
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Composition preview={preview} />
+          <Composition preview={statementDoMes ?? preview} />
           {statementDoMes && (
             <CouponBridge snapshotGross={statementDoMes.gross_cents} coupon={statementDoMes.seller_coupon_cents} storeGross={lojaGross} />
           )}
-          {preview.blockers.length > 0 && (
+          {!statementDoMes && preview.blockers.length > 0 && (
             <div className="space-y-2" aria-label="Pendências da cobrança">
               {preview.blockers.map((blocker, index) => {
                 const reconciliation = candidateFrom(preview, index);
@@ -319,7 +323,7 @@ export function OrgBilling({ orgId, month }: Props) {
       <Card>
         <CardHeader>
           <CardTitle>Demonstrativos fechados</CardTitle>
-          <CardDescription>O relatório mensal do cliente usa o demonstrativo fechado de {month}.</CardDescription>
+          <CardDescription>O relatório mensal do cliente usa o demonstrativo fechado de {mesPorExtenso(month)}.</CardDescription>
         </CardHeader>
         <CardContent>
           {statementsQuery.isLoading ? (
@@ -339,7 +343,7 @@ export function OrgBilling({ orgId, month }: Props) {
               {statementsQuery.data!.rows.map((statement) => (
                 <li key={statement.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
                   <div>
-                    <p className="font-medium">{statement.month}</p>
+                    <p className="font-medium">{mesPorExtenso(statement.month)}</p>
                     <p className="text-sm text-muted-foreground tabular-nums">
                       Total: {fmtBRL(statement.total_cents / 100)}
                     </p>

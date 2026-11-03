@@ -32,6 +32,7 @@ import { useSupportStore } from '@/stores/support-store';
 import { PaymentProfileDialog } from '@/components/platform-admin/payment-profile-dialog';
 import { NoticeSubscriptionDialog } from '@/components/platform-admin/notice-subscription-dialog';
 import { DialogArquivarOrg } from '@/components/platform-admin/dialog-arquivar-org';
+import { SeletorMes } from '@/components/platform-admin/seletor-mes';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
 
 const PAGE_SIZE = 10;
@@ -526,20 +527,16 @@ export default function Organizacoes() {
         subtitle="Carteira financeira e operacional da plataforma."
         actions={
           <>
-            <label className="flex items-center gap-2 text-sm" htmlFor="wallet-month">
-              <span>Mês</span>
-              <Input
-                id="wallet-month"
-                type="month"
-                aria-label="Mês da carteira"
-                value={month}
-                onChange={(event) => setSearchParams((previous) => {
-                  const next = new URLSearchParams(previous);
-                  next.set('mes', event.target.value);
-                  return next;
-                })}
-              />
-            </label>
+            <SeletorMes
+              month={month}
+              mesAtual={currentMonth()}
+              rotulo="Mês da carteira"
+              onChange={(value) => setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set('mes', value);
+                return next;
+              })}
+            />
             <Button variant="outline" onClick={() => setRecebimentoOpen(true)}>Dados de recebimento</Button>
             <Button variant="outline" onClick={() => setAvisoOpen(true)}>Aviso no Telegram</Button>
             <Button onClick={() => setNovaOpen(true)}>Nova empresa</Button>
