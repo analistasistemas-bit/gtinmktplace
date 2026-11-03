@@ -5,8 +5,9 @@
 - [x] Spike de escrita na Avil (`MLB5244990621`, `LGH-MLB1000`): POST 201 + `offer_id`, `pending` com janela do ML; DELETE 200 → `candidate` em ≤ 5 min.
 - [x] Spec + plano (`docs/superpowers/specs|plans/2026-11-02-relampago-aderir*`), revisões Grok (spec) e Codex (plano e por task).
 - [x] Motor (`_shared/operacoes`), sync da Central (`_shared/promocoes`, teto 40 itens/mensagem na Relâmpago) e front (seleção, preço editável, bloqueio < R$ 19, "Reserva N un.").
-- [ ] Migration `20261102235326_operacoes_massa_lightning` aplicada; edges `operacoes-massa`, `sincronizar-promocoes`, `ads-campanhas`, `coletar-ads-ml`, `coletar-trafego-ml` redeployadas.
-- [ ] Medir CPU do sync da Relâmpago na Avil após o deploy.
+- [x] Main `88a7aa80` (CI verde). Migration `20261102235326_operacoes_massa_lightning` aplicada em 03/11 00:3x UTC; edges `operacoes-massa` v29, `sincronizar-promocoes` v29, `ads-campanhas` v12, `coletar-ads-ml` v19, `coletar-trafego-ml` v18.
+- [x] Sync da Avil pós-deploy: 282/282 convidados da `LGH-MLB1000` com faixa+sugerido; ~20 mensagens todas 200, máx. 73 s, nenhum 546.
+- [ ] Minors adiados: teste do espelho LIGHTNING só com mock; janela que cruza meia-noite sem data final.
 - [ ] 1ª adesão real pelo app (Diego).
 
 ## Extensão PubliAI 0.4.0/0.4.1 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
