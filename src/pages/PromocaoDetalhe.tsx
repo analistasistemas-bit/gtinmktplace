@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useSimularPrecos } from '@/hooks/useOperacoes';
 import { parsePreco } from '@/lib/operacoes';
 import {
-  MAX_SIMULAR, aplicarSimulacao, filtrarPorBusca, foraDaFaixa, precoAlvo, type ModoAlvo,
+  MAX_SIMULAR, aplicarSimulacao, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao, type ModoAlvo,
 } from '@/lib/promocao-simulacao';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -121,7 +121,7 @@ export default function PromocaoDetalhe() {
   // simulados — e só enquanto ainda é convidado (virou participando → a simulação não vale mais).
   const itensVisao = useMemo(() => (itens.data ?? []).map((i) => {
     const s = simulacao?.itens.get(i.ml_item_id);
-    return s && i.status === 'candidate' ? { ...i, preco_avaliado: s.preco_avaliado, projecao: s.projecao, pior_semaforo: s.pior_semaforo } : i;
+    return s && i.status === 'candidate' ? sobreporSimulacao(i, s) : i;
   }), [itens.data, simulacao]);
   const daAba = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), [itensVisao, participando, busca]);
   const linhas = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), [itensVisao, semaforo, participando, busca]);
@@ -383,7 +383,7 @@ export default function PromocaoDetalhe() {
         onSair={() => setPreview({ acao: 'sair', itens: participandoSelecionados })}
         onLimpar={() => setSelecionados(new Set())}
       />
-      <SheetCores item={aberto} onClose={() => setAberto(null)} />
+      <SheetCores item={aberto} simulado={aberto != null && (simulacao?.precos.has(aberto.ml_item_id) ?? false)} onClose={() => setAberto(null)} />
       <PreviewOperacao
         acao={preview?.acao ?? 'aderir'} tipo={ehTipoOperavel(promo?.tipo) ? promo.tipo : 'DEAL'}
         promocaoId={promocaoId} promocaoNome={promo?.nome ?? promocaoId} itens={preview?.itens ?? []}

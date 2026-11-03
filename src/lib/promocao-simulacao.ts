@@ -41,6 +41,30 @@ export function foraDaFaixa(it: ItemPromocao, preco: number, tipo: string): stri
   return null;
 }
 
+/** Simulação sobre o item ATUAL: preço, projeção e semáforo do servidor; o "até quanto descer" fica o do sync —
+ *  depende da faixa e do piso, não do preço escolhido (a simulação não o recalcula). */
+export function sobreporSimulacao(atual: ItemPromocao, simulado: ItemPromocao): ItemPromocao {
+  const projecao = simulado.projecao.map((c, i) => {
+    const o = atual.projecao.find((x) => x.variation_id === c.variation_id) ?? atual.projecao[i];
+    return { ...c, ate_quanto: o?.ate_quanto ?? null, ate_quanto_motivo: o?.ate_quanto_motivo ?? null };
+  });
+  return { ...atual, preco_avaliado: simulado.preco_avaliado, projecao, pior_semaforo: simulado.pior_semaforo };
+}
+
+/** Mesmo "Você recebe por venda" de Publicados, decomposto a partir da tarifa que o servidor gravou na cor.
+ *  `recebe` é o líquido do servidor; sem tarifa/custo → null (nunca zero). */
+export function detalheLiquido(c: CorProjetada, preco: number | null): {
+  comissao: number; comissaoPct: number; imposto: number; aliquotaPct: number; frete: number; recebe: number; lucro: number; markup: number;
+} | null {
+  if (preco == null || c.liquido == null || c.custo == null || c.comissao_pct == null || c.frete == null || c.aliquota_pct == null) return null;
+  const lucro = c.liquido - c.custo;
+  return {
+    comissao: preco * c.comissao_pct / 100 + (c.comissao_fixa ?? 0), comissaoPct: c.comissao_pct,
+    imposto: preco * c.aliquota_pct / 100, aliquotaPct: c.aliquota_pct, frete: c.frete,
+    recebe: c.liquido, lucro, markup: c.custo > 0 ? lucro / c.custo : 0,
+  };
+}
+
 /** Itens simulados com o preço, a projeção e o semáforo calculados pelo servidor naquele preço. */
 export function aplicarSimulacao(itens: ItemPromocao[], resultados: ResultadoSimulacao[]): Map<string, ItemPromocao> {
   const porId = new Map(itens.map((i) => [i.ml_item_id, i]));

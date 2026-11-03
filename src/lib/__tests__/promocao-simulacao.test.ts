@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aplicarSimulacao, filtrarPorBusca, foraDaFaixa, precoAlvo } from '@/lib/promocao-simulacao';
+import { aplicarSimulacao, detalheLiquido, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao } from '@/lib/promocao-simulacao';
 import type { ItemPromocao } from '@/lib/promocoes';
 
 const item = (o: Partial<ItemPromocao> & { ml_item_id: string }): ItemPromocao => ({
@@ -61,5 +61,51 @@ describe('aplicarSimulacao', () => {
     ]);
     expect([...m.keys()]).toEqual(['A']);
     expect(m.get('A')).toMatchObject({ preco_avaliado: 55, projecao: [cor], pior_semaforo: 'amarelo' });
+  });
+});
+
+// Jaqueta MLB5441057075 a R$ 49,90 (Zaven, 03/11): mesmo cálculo do "Você recebe por venda" de Publicados.
+describe('detalheLiquido', () => {
+  const cor = {
+    variation_id: 1, cor: 'Azul Celeste', sku: null, custo: 18.5, piso: 28.5, origem: 'nacional',
+    comissao_pct: 14, comissao_fixa: 0, frete: 8.25, aliquota_pct: 4, liquido: 32.664,
+    ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde' as const, motivo: null,
+  };
+  it('decompõe o líquido do servidor em comissão, imposto, frete, lucro e markup', () => {
+    const d = detalheLiquido(cor, 49.9)!;
+    expect(d.comissao).toBeCloseTo(6.986, 3);
+    expect(d.imposto).toBeCloseTo(1.996, 3);
+    expect(d.frete).toBe(8.25);
+    expect(d.recebe).toBe(32.664);
+    expect(d.lucro).toBeCloseTo(14.164, 3);
+    expect(Math.round(d.markup * 100)).toBe(77);
+  });
+  it('comissão fixa entra na comissão', () => {
+    expect(detalheLiquido({ ...cor, comissao_fixa: 6.25 }, 49.9)!.comissao).toBeCloseTo(13.236, 3);
+  });
+  it('sem líquido, custo ou tarifa → null (nunca zero)', () => {
+    expect(detalheLiquido({ ...cor, liquido: null }, 49.9)).toBeNull();
+    expect(detalheLiquido({ ...cor, frete: null }, 49.9)).toBeNull();
+    expect(detalheLiquido({ ...cor, custo: null }, 49.9)).toBeNull();
+    expect(detalheLiquido(cor, null)).toBeNull();
+  });
+});
+
+describe('sobreporSimulacao', () => {
+  it('preço, projeção e semáforo simulados; "até quanto descer" fica o do sync (não depende do preço)', () => {
+    const atual = item({ ml_item_id: 'A', projecao: [
+      { variation_id: 1, liquido: 40, ate_quanto: 41.45, ate_quanto_motivo: null } as never,
+      { variation_id: 2, liquido: 40, ate_quanto: null, ate_quanto_motivo: 'qualquer' } as never,
+    ] });
+    const sim = item({ ml_item_id: 'A', preco_avaliado: 49.9, pior_semaforo: 'amarelo', projecao: [
+      { variation_id: 2, liquido: 30, ate_quanto: null, ate_quanto_motivo: null } as never,
+      { variation_id: 1, liquido: 31, ate_quanto: null, ate_quanto_motivo: null } as never,
+    ] });
+    const r = sobreporSimulacao(atual, sim);
+    expect(r).toMatchObject({ preco_avaliado: 49.9, pior_semaforo: 'amarelo' });
+    expect(r.projecao).toEqual([
+      expect.objectContaining({ variation_id: 2, liquido: 30, ate_quanto: null, ate_quanto_motivo: 'qualquer' }),
+      expect.objectContaining({ variation_id: 1, liquido: 31, ate_quanto: 41.45, ate_quanto_motivo: null }),
+    ]);
   });
 });
