@@ -213,6 +213,34 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Lucro antes de Ads menos a despesa de Ads, com parte das vendas sem custo (por isso parcial). Custo apenas estimado é marcado como Estimado, à parte. Não é o lucro completo nem o causado pelo Ads.',
   'Outras vendas::Ads':
     'Vendas do universo dos anúncios promovidos que o ML não atribui ao Ads. Não são as vendas orgânicas da conta inteira.',
+
+  // ── Central de controle: aba Resultados (ADR-0193) ──
+  'Faturamento da loja::Resultados':
+    'Soma do valor das vendas faturáveis do mês, já sem os cupons do vendedor. Estornos são informativos e não reduzem este número. Não é a base de cobrança da Daludi.',
+  'Lucro após Ads::Resultados':
+    'Líquido do ML (após comissão e frete) menos imposto e custo dos produtos, menos o gasto de Ads da conta. Só existe quando todos os itens têm lucro calculável e o Ads do mês está completo. Não é o lucro causado pelos anúncios e não desconta a remuneração da Daludi.',
+  'Lucro antes de Ads::Resultados':
+    'Líquido do ML (após comissão e frete) menos imposto e custo dos produtos, antes do gasto de Ads. Parcial quando há itens sem custo, alíquota confirmada ou frete lido: esses itens ficam fora do lucro.',
+  'Pedidos::Resultados':
+    'Pedidos faturáveis do mês. Um carrinho com vários itens conta como 1 pedido.',
+  'Unidades::Resultados':
+    'Soma das quantidades dos itens das vendas faturáveis do mês.',
+  'Ticket médio::Resultados':
+    'Faturamento da loja ÷ pedidos.',
+  'Preço médio por unidade::Resultados':
+    'Faturamento da loja ÷ unidades vendidas. Sem unidades, fica "—".',
+  'Margem s/ venda::Resultados':
+    'Lucro ÷ faturamento dos itens com lucro calculável. Com Ads completo e todos os itens calculáveis, usa o lucro após Ads e leva "após Ads" no nome; senão, é antes de Ads e pode ser parcial.',
+  'Markup::Resultados':
+    'Lucro ÷ custo dos itens com lucro calculável. Mesma base e mesma regra de "após Ads" da margem s/ venda.',
+  'Visitas dos anúncios acompanhados::Resultados':
+    'Visitas dos anúncios com leitura diária válida no mês. Não são as visitas totais da loja; o cartão informa quantos anúncios e quantos dias entram.',
+  'Conversão dos anúncios acompanhados::Resultados':
+    'Pedidos desses mesmos anúncios ÷ suas visitas no mês. Não é a conversão oficial do Mercado Livre.',
+  'Vendas canceladas::Resultados':
+    'Quantidade de pedidos cancelados no mês. Ficam fora do faturamento.',
+  'Estornos::Resultados':
+    'Estornos pela data em que ocorreram (um estorno de venda de mês anterior conta no mês do estorno). É informativo: não reduz o faturamento nem o lucro mostrados aqui.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada
