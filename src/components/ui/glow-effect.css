@@ -62,26 +62,28 @@
    negativo) seria clipada pelo `overflow-y-auto` do pai; `box-shadow` é desenhado fora da borda e o
    overflow do próprio elemento não o corta. Mesmas cores do resto (--chart-1/2/3), sem elemento
    extra e sem mexer no scroll. Uso: classe direto no elemento que deve brilhar enquanto processa. */
+/* Alcance ajustável (padrão = diálogos): card dentro da página usa menos para caber no padding lateral,
+   já que o app-shell corta o que passa (overflow-x-hidden). */
 .glow-effect-sombra {
   animation: glow-effect-sombra-shift 3s linear infinite;
 }
 
 @keyframes glow-effect-sombra-shift {
   0% {
-    box-shadow: 0 0 20px 1px var(--chart-1),
-                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+    box-shadow: 0 0 var(--glow-sombra-nucleo, 20px) 1px var(--chart-1),
+                0 0 var(--glow-sombra-halo, 56px) var(--glow-sombra-spread, 10px) color-mix(in oklab, var(--chart-1) 40%, transparent);
   }
   33% {
-    box-shadow: 0 0 20px 1px var(--chart-2),
-                0 0 56px 10px color-mix(in oklab, var(--chart-2) 40%, transparent);
+    box-shadow: 0 0 var(--glow-sombra-nucleo, 20px) 1px var(--chart-2),
+                0 0 var(--glow-sombra-halo, 56px) var(--glow-sombra-spread, 10px) color-mix(in oklab, var(--chart-2) 40%, transparent);
   }
   66% {
-    box-shadow: 0 0 20px 1px var(--chart-3),
-                0 0 56px 10px color-mix(in oklab, var(--chart-3) 40%, transparent);
+    box-shadow: 0 0 var(--glow-sombra-nucleo, 20px) 1px var(--chart-3),
+                0 0 var(--glow-sombra-halo, 56px) var(--glow-sombra-spread, 10px) color-mix(in oklab, var(--chart-3) 40%, transparent);
   }
   100% {
-    box-shadow: 0 0 20px 1px var(--chart-1),
-                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+    box-shadow: 0 0 var(--glow-sombra-nucleo, 20px) 1px var(--chart-1),
+                0 0 var(--glow-sombra-halo, 56px) var(--glow-sombra-spread, 10px) color-mix(in oklab, var(--chart-1) 40%, transparent);
   }
 }
 
@@ -89,8 +91,8 @@
 @media (prefers-reduced-motion: reduce) {
   .glow-effect-sombra {
     animation: none;
-    box-shadow: 0 0 20px 1px var(--chart-1),
-                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+    box-shadow: 0 0 var(--glow-sombra-nucleo, 20px) 1px var(--chart-1),
+                0 0 var(--glow-sombra-halo, 56px) var(--glow-sombra-spread, 10px) color-mix(in oklab, var(--chart-1) 40%, transparent);
   }
 }
 

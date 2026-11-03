@@ -20,6 +20,10 @@ export interface DepsExecutar extends DepsLaco {
   /** Semáforo no preço pedido com a projeção atual da Central; null = item sumiu da Central. */
   semaforoAtual(promocaoId: string, mlItemId: string, preco: number | null): Promise<Semaforo | null>;
   espelharStatusCentral(promocaoId: string, tipo: TipoPromocao, mlItemId: string, espelho: Espelho): Promise<void>;
+  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort. */
+  espelharPreco(promocaoId: string, mlItemId: string, preco: number): Promise<void>;
+  /** Recalcula ml_promocoes.contagem a partir das linhas da Central (mesma regra do sync). Best-effort. */
+  recontarCentral(promocaoId: string): Promise<void>;
 }
 
 const RECONECTAR = 'Sem permissão de escrita em promoções — reconecte a conta do Mercado Livre em Canais';
@@ -117,6 +121,8 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   }
   const depois = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
   await espelhar(deps, op, id, espelhoAderido(op, depois));
+  // Sem isto a Central mostrava o sugerido (e o líquido dele) até o sync do dia seguinte.
+  if (it.preco != null) await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
 }
 
 export function executar(
@@ -124,7 +130,12 @@ export function executar(
 ): Promise<{ processados: number; continuou: boolean }> {
   // Sem permissão de escrita em promoções: nada mais passa nesta conta — encerra este e todos os restantes.
   return laco(op.id, deps, opts, (it) => processarItem(op, it, deps),
-    { eh: (e) => e instanceof SemEscritaPromocoes, mensagem: RECONECTAR });
+    { eh: (e) => e instanceof SemEscritaPromocoes, mensagem: RECONECTAR })
+    .then(async (r) => {
+      // Contagem do card da campanha ("Participando") acompanha o espelho — senão fica até o próximo sync.
+      if (r.processados > 0) await deps.recontarCentral(op.promocao_id).catch(() => {});
+      return r;
+    });
 }
 
 export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ confirmados: number; pendentes: number }> {
@@ -171,5 +182,6 @@ export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ c
   }
 
   await agendarOuConcluir(deps, restantes);
+  if (confirmados > 0) await deps.recontarCentral(op.promocao_id).catch(() => {});
   return { confirmados, pendentes: restantes.length };
 }

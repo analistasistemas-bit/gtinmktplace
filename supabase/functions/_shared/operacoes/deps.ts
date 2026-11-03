@@ -5,8 +5,10 @@ import { qstashClient } from '../queue.ts';
 import { buscarItensML, criarGetJson } from '../promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas, type Cx } from '../promocoes/deps.ts';
 import { projetarItem } from '../promocoes/sincronizar.ts';
+import { contar } from '../promocoes/projecao.ts';
+import { paginarTudo } from '../pagina.ts';
 import type { Cadastro } from '../promocoes/cadastro.ts';
-import type { Aliquotas, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
+import type { Aliquotas, LinhaItem, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import { criarClienteML } from './ml.ts';
 import { semaforoReal, type LinhaCentral, type SemaforoExato } from './validar.ts';
 import type { ProjecaoExata } from './simular.ts';
@@ -130,7 +132,9 @@ export function depsLaco(admin: SupabaseClient, op: { id: string; org_id: string
 }
 
 export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, chave: string): DepsExecutar {
-  const semaforoExato = criarSemaforoExato(admin, cx);
+  // Uma projeção (cadastro + alíquotas carregados 1×) para a trava e para o espelho do preço.
+  const projetar = criarProjecaoExata(admin, cx);
+  const semaforoExato: SemaforoExato = async (l, preco) => (await projetar(l, preco))?.pior_semaforo ?? 'indisponivel';
   return {
     ...depsLaco(admin, op, chave),
     ml: criarClienteML(cx.token),
@@ -150,6 +154,31 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
         : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho });
       const { error } = await q.eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
       falhou('espelharStatusCentral', error);
+    },
+
+    async espelharPreco(promocaoId, mlItemId, preco) {
+      const linha = () => admin.from('ml_promocao_itens');
+      const { data, error } = await linha().select(COLS_CENTRAL)
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).maybeSingle();
+      falhou('espelharPreco.ler', error);
+      if (!data) return;
+      // Líquido no preço aplicado pelo mesmo caminho da trava; sem projeção, só o preço (nunca preço novo
+      // com líquido velho no preco_avaliado — a tela calcula o líquido sobre ele).
+      const r = await projetar(linhaCentral(data), preco).catch(() => null);
+      const patch = r
+        ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
+        : { preco_promo: preco };
+      const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
+      falhou('espelharPreco', upd.error);
+    },
+
+    async recontarCentral(promocaoId) {
+      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>>((de, ate) =>
+        admin.from('ml_promocao_itens').select('ml_item_id, status, pior_semaforo, ml_pct')
+          .eq('org_id', op.org_id).eq('promocao_id', promocaoId).order('ml_item_id').range(de, ate) as never);
+      const { error } = await admin.from('ml_promocoes').update({ contagem: contar(linhas) })
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId);
+      falhou('recontarCentral', error);
     },
   };
 }

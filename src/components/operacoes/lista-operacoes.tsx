@@ -100,7 +100,10 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
   return (
     <li aria-busy={rodando}>
       <BorderTrail active={rodando} radius={12} className="rounded-xl">
-      <div className={cn('rounded-xl border bg-card shadow-xs', rodando && 'glow-effect-sombra')}>
+      {/* Achado Codex: alcance da aura (~14px) menor que o padding lateral da página (16px no celular),
+          senão o overflow-x-hidden do app-shell corta o halo. */}
+      <div className={cn('rounded-xl border bg-card shadow-xs',
+        rodando && 'glow-effect-sombra [--glow-sombra-halo:12px] [--glow-sombra-nucleo:8px] [--glow-sombra-spread:2px]')}>
       <button type="button" onClick={onAbrir}
         className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="flex items-start justify-between gap-3">

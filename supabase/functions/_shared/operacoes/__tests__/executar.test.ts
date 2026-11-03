@@ -61,6 +61,8 @@ function montar(itens: Linha[], opts: {
     }),
     semaforoAtual: vi.fn(async () => (opts.semaforo === undefined ? 'verde' : opts.semaforo)),
     espelharStatusCentral: vi.fn(async () => {}),
+    espelharPreco: vi.fn(async () => {}),
+    recontarCentral: vi.fn(async () => {}),
     continuar: vi.fn(async (_s?: number) => {}),
     agendarConferencia: vi.fn(async (_s: number) => {}),
     concluir: vi.fn(async () => {}),
@@ -96,6 +98,27 @@ describe('executar — aderir', () => {
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
     expect(deps.concluir).toHaveBeenCalledTimes(1);
     expect(ml.lerOfertaNoItem).not.toHaveBeenCalled();
+  });
+
+  // Jaquetas da Zaven (03/11): aplicadas a R$ 49,90, Central seguia com R$ 63,72 e "0 participando" até o sync.
+  it('espelha o preço aplicado e recalcula a contagem da campanha ao fim', async () => {
+    const itens = [item('MLB1', { preco: 12 }), item('MLB2', { preco: 12 })];
+    const { deps } = montar(itens, { campanha: (_id, n) => (n % 2 === 1 ? conv() : conv({ status: 'started' })) });
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 12);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB2', 12);
+    expect(deps.recontarCentral).toHaveBeenCalledTimes(1);
+    expect(deps.recontarCentral).toHaveBeenCalledWith('P-1');
+  });
+
+  it('SMART (sem preço pedido) não espelha preço; falha do espelho/recontagem não derruba a execução', async () => {
+    const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
+    const itens = [item('MLB1', { preco: null })];
+    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1' }), post: () => ({ offer_id: 'O-1' }) });
+    deps.recontarCentral.mockRejectedValue(new Error('db'));
+    expect(await executar(op, deps, OPTS)).toEqual({ processados: 1, continuou: false });
+    expect(deps.espelharPreco).not.toHaveBeenCalled();
+    expect(itens[0].status).toBe('aplicado');
   });
 
   it('ainda candidate depois do 201 → espelha o status da promoção (ativa: started; futura: pending)', async () => {
