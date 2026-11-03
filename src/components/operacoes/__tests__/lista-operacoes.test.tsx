@@ -119,6 +119,24 @@ describe('ListaOperacoes', () => {
     expect(useOperacoes).toHaveBeenLastCalledWith(undefined);
   });
 
+  // Pedido do Diego (03/11): o mesmo sinal de espera do cadastro (aura) + raio na borda enquanto roda.
+  it('operação executando: aria-busy, aura e raio na borda; concluída: nenhum', () => {
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [
+        op({ id: 'RODA', status: 'executando', itens: [{ status: 'pendente' }, { status: 'aplicado' }] }),
+        op({ id: 'FIM', acao: 'sair', status: 'concluida', itens: [{ status: 'aplicado' }] }),
+      ], isLoading: false,
+    } as never);
+    const { container } = renderLista();
+    const [rodando, concluida] = [...container.querySelectorAll('li')];
+    expect(rodando).toHaveAttribute('aria-busy', 'true');
+    expect(rodando.querySelector('.glow-effect-sombra')).not.toBeNull();
+    expect(rodando.querySelector('.border-trail__glow')).not.toBeNull();
+    expect(concluida).toHaveAttribute('aria-busy', 'false');
+    expect(concluida.querySelector('.glow-effect-sombra')).toBeNull();
+    expect(concluida.querySelector('.border-trail__glow')).toBeNull();
+  });
+
   it('mostra as contagens por status em chips', () => {
     vi.mocked(useOperacoes).mockReturnValue({
       data: [op({ itens: [{ status: 'aplicado' }, { status: 'aplicado' }, { status: 'erro' }] })], isLoading: false,

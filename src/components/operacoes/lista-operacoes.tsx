@@ -6,6 +6,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
+import { BorderTrail } from '@/components/ui/border-trail';
+// `glow-effect-sombra` mora no CSS do GlowEffect (mesma aura do diálogo "processando" do cadastro).
+import '@/components/ui/glow-effect.css';
+import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -90,8 +94,13 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
   const feitos = total - emAndamento;
   const soAguardandoMl = op.status === 'executando' && emAndamento === 0 && (contagem.saida_solicitada ?? 0) > 0;
 
+  // Rodando: o mesmo sinal de espera do cadastro de produto (aura `glow-effect-sombra`) + raio contornando a
+  // borda; os dois somem sozinhos quando a operação termina (pedido do Diego, 03/11).
+  const rodando = op.status === 'executando';
   return (
-    <li className="rounded-xl border bg-card shadow-xs">
+    <li aria-busy={rodando}>
+      <BorderTrail active={rodando} radius={12} className="rounded-xl">
+      <div className={cn('rounded-xl border bg-card shadow-xs', rodando && 'glow-effect-sombra')}>
       <button type="button" onClick={onAbrir}
         className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="flex items-start justify-between gap-3">
@@ -119,6 +128,8 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
           )
         )}
       </button>
+      </div>
+      </BorderTrail>
     </li>
   );
 }
