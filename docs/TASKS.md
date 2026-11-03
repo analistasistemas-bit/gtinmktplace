@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Nota de compra: etapa fiscal toda preenchida (emenda ADR-0181 D-10) — 2026-11-03
+
+- [x] Leitor do XML lê grupo ICMS, CSOSN/CST, CEST, nFCI e UF do emitente; `icms-entrada.ts` classifica ST / sem ST / exceção.
+- [x] Produto novo a partir da nota chega com NCM, origem NF-e e binária, FCI, CSOSN (500 com ST, padrão da empresa sem ST), CEST e descrição; exceção fica vazia com escolha obrigatória.
+- [x] Avisos e confirmações: CEST ausente, compra de outra UF, CSOSN divergente em produto existente; "Conferi" cai se o campo mudar.
+- [ ] Diego: preencher card Empresa da Daludi Shop (CSOSN padrão 102) e ligar o módulo Fiscal.
+- [ ] Se passar a comprar de fora do estado: tabela de NCMs com antecipação, classificada pelo contador.
+
 ## Promoções e Publicados: ajustes pós-uso real (só front) — 2026-11-03
 
 - [x] Aura + raio de borda em todos os diálogos `processando` (`ui/dialog`, `ui/alert-dialog`); diálogos roláveis (kit, kit virtual, adicionar variação, estender grade) rolam num filho (main `99c2091c`).
