@@ -111,9 +111,10 @@ describe('executar — aderir', () => {
     expect(deps.recontarCentral).toHaveBeenCalledWith('P-1');
   });
 
-  it('SMART (sem preço pedido) não espelha preço; falha do espelho/recontagem não derruba a execução', async () => {
+  it('achado Codex P1: SMART não espelha preço (POST só leva offer_id; o preço é do ML), mesmo com preço do preview', async () => {
     const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
-    const itens = [item('MLB1', { preco: null })];
+    // Fluxo real: validarPedido preenche o preço do SMART com o preco_promo do preview.
+    const itens = [item('MLB1', { preco: 15 })];
     const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1' }), post: () => ({ offer_id: 'O-1' }) });
     deps.recontarCentral.mockRejectedValue(new Error('db'));
     expect(await executar(op, deps, OPTS)).toEqual({ processados: 1, continuou: false });

@@ -121,8 +121,10 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   }
   const depois = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
   await espelhar(deps, op, id, espelhoAderido(op, depois));
-  // Sem isto a Central mostrava o sugerido (e o líquido dele) até o sync do dia seguinte.
-  if (it.preco != null) await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
+  // Sem isto a Central mostrava o sugerido (e o líquido dele) até o sync do dia seguinte. Só DEAL/Relâmpago:
+  // no SMART o POST manda só o offer_id e o preço é o do ML (achado Codex P1). O retry `ja_estava` (acima) não
+  // espelha preço de propósito: a leitura do ML não traz o preço da oferta, e o item pode já participar com outro.
+  if (it.preco != null && op.promocao_tipo !== 'SMART') await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
 }
 
 export function executar(

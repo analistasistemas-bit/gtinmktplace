@@ -135,6 +135,12 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
   // Uma projeção (cadastro + alíquotas carregados 1×) para a trava e para o espelho do preço.
   const projetar = criarProjecaoExata(admin, cx);
   const semaforoExato: SemaforoExato = async (l, preco) => (await projetar(l, preco))?.pior_semaforo ?? 'indisponivel';
+  const syncEmCurso = async (promocaoId: string): Promise<boolean> => {
+    const { data, error } = await admin.from('ml_promocoes').select('rodada_em_curso')
+      .eq('org_id', op.org_id).eq('promocao_id', promocaoId).maybeSingle();
+    falhou('syncEmCurso', error);
+    return data?.rodada_em_curso != null;
+  };
   return {
     ...depsLaco(admin, op, chave),
     ml: criarClienteML(cx.token),
@@ -157,6 +163,8 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
     },
 
     async espelharPreco(promocaoId, mlItemId, preco) {
+      // Achado Codex P2: com sync em curso ele mesmo grava o estado real do ML — não disputar a linha.
+      if (await syncEmCurso(promocaoId)) return;
       const linha = () => admin.from('ml_promocao_itens');
       const { data, error } = await linha().select(COLS_CENTRAL)
         .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).maybeSingle();
@@ -168,7 +176,9 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const patch = r
         ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
         : { preco_promo: preco };
-      const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
+      // Só se a linha ainda é participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
+        .in('status', ['pending', 'started']);
       falhou('espelharPreco', upd.error);
     },
 
@@ -176,8 +186,9 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>>((de, ate) =>
         admin.from('ml_promocao_itens').select('ml_item_id, status, pior_semaforo, ml_pct')
           .eq('org_id', op.org_id).eq('promocao_id', promocaoId).order('ml_item_id').range(de, ate) as never);
+      // Achado Codex P2: só sem rodada do sync reservada (atômico no UPDATE) — com sync em curso, o concluir dele conta.
       const { error } = await admin.from('ml_promocoes').update({ contagem: contar(linhas) })
-        .eq('org_id', op.org_id).eq('promocao_id', promocaoId);
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId).is('rodada_em_curso', null);
       falhou('recontarCentral', error);
     },
   };

@@ -251,6 +251,11 @@ todas as variações dele (cada cor costuma ser um MLB próprio), vendo o lucro 
 4. **Aderir** com simulação ativa: o preview usa o preço simulado antes de calcular semáforo/marcação; selecionado
    não simulado vem desmarcado. O backend revalida na criação, como sempre.
 5. Resposta de simulação que chega depois de limpar/trocar aba/campanha é descartada (geração por chamada).
+6. **Espelho financeiro após aderir** (incidente Zaven 03/11: jaquetas aplicadas a R$ 49,90 apareciam a R$ 63,72 e a
+   campanha com "0 participando" até o sync seguinte): DEAL/Relâmpago gravam `preco_promo` e, com a projeção exata no
+   preço aplicado, `preco_avaliado`/`projecao`/`pior_semaforo`; ao fim da execução/conferência a contagem da campanha
+   é recalculada (`contar` do sync). SMART não espelha preço (o preço é do ML). Com rodada do sync reservada nada disso
+   escreve (o sync grava o estado real); o retry `ja_estava` não espelha preço (a leitura do ML não traz o da oferta).
 
 ## Consequências
 
