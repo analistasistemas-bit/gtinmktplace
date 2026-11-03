@@ -25,6 +25,9 @@ const fetchRedis = vi.fn(async (_url: string, init: RequestInit) => {
 
 const AGORA = new Date('2026-11-03T14:05:30.000Z');
 const PROXIMO = '2026-11-03T14:06:00.000Z';
+const MAIS_6H = '2026-11-03T20:05:30.000Z'; // metadados do catálogo
+const MAIS_60S = '2026-11-03T14:06:30.000Z'; // ofertas
+const MAIS_24H = '2026-11-04T14:05:30.000Z'; // perfis
 const ML = 'https://api.mercadolibre.com';
 const CONTA = '555';
 const LP_OK = { sale_fee_amount: 12, sale_fee_details: { percentage_fee: 12, fixed_fee: 0 } };
@@ -91,17 +94,17 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     respostasMl.set(urlLp(150, 'MLB6', 'gold_pro'), ok(LP_OK));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB12', preco: 150 }])]));
     expect(r.catalogos).toEqual([{
-      catalogProductId: 'MLB1', estado: 'ok', retomarEm: null,
-      produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z' },
+      catalogProductId: 'MLB1', estado: 'ok', retomarEm: null, consultadoEm: AGORA.toISOString(),
+      produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', expiraEm: MAIS_6H },
       ofertas: {
-        estado: 'ok', total: 3, lidas: 3, vendedores: 2, completa: true,
+        estado: 'ok', expiraEm: MAIS_60S, total: 3, lidas: 3, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
         exatas: [{
-          itemId: 'MLB12', estado: 'ok', categoriaId: 'MLB6', sellerId: 8, tipo: 'gold_pro',
+          itemId: 'MLB12', estado: 'ok', categoriaId: 'MLB6', sellerId: 8, tipo: 'gold_pro', perfil: 'carregado',
           comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 12, fixa: 0, saleFeeAmount: 12, precoConsultado: 150 } },
         }],
       },
     }]);
-    expect(r.vendedores).toEqual([{ sellerId: 8, estado: 'ok', nome: 'V8', medalha: 'gold', uf: 'SP' }]);
+    expect(r.vendedores).toEqual([{ sellerId: 8, estado: 'ok', nome: 'V8', medalha: 'gold', uf: 'SP', expiraEm: MAIS_24H }]);
     // "ganhador" nunca vem de /products (regra 6)
     expect(JSON.stringify(r)).not.toMatch(/winner|ganhador|MLB9/);
     // só o perfil do vendedor da oferta exata
@@ -114,7 +117,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     const r = await run(pedido([cat('MLB1', [], ['ofertas'])], { perfisEmCache: [7] }));
     expect(urlsMl).toEqual([`${ML}/products/MLB1/items?limit=100`]);
     expect(r.catalogos[0]).not.toHaveProperty('produto');
-    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', vendedores: 1 });
+    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', vendedoresIdentificados: 1 });
   });
 
   it('pedido parcial: só produto não lê ofertas nem perfis', async () => {
@@ -129,7 +132,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, { status: 404, corpo: { message: 'No winners found', error: 'not_found', status: 404 } });
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB10', preco: 10 }], ['ofertas'])]));
     expect(r.catalogos[0].ofertas).toEqual({
-      estado: 'ok', total: 0, lidas: 0, vendedores: 0, completa: true,
+      estado: 'ok', expiraEm: MAIS_60S, total: 0, lidas: 0, vendedoresIdentificados: 0, ofertasSemVendedor: 0, completa: true,
       exatas: [{ itemId: 'MLB10', estado: 'nao_encontrada', motivo: 'catálogo sem ofertas' }],
     });
   });
@@ -147,8 +150,8 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7)]));
     respostasMl.set(`${ML}/users/7`, usuario(7));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB99', preco: 10 }])]));
-    expect(r.catalogos[0].produto).toEqual({ estado: 'ok', criadoEm: '2024-01-02T00:00:00Z' });
-    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 1, vendedores: 1,
+    expect(r.catalogos[0].produto).toEqual({ estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', expiraEm: MAIS_6H });
+    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 1, vendedoresIdentificados: 1,
       exatas: [{ itemId: 'MLB99', estado: 'nao_encontrada', motivo: 'oferta não está entre as ofertas do catálogo' }] });
     expect(urlsMl.some((u) => u.includes('/users/') || u.includes('listing_prices'))).toBe(false);
     expect(r.vendedores).toEqual([]);
@@ -157,7 +160,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
   it('ficha > 100 ofertas: leitura parcial (≥ N), oferta ausente com motivo próprio', async () => {
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7), oferta('MLB11', 8)], 117));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB99', preco: 10 }], ['ofertas'])]));
-    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 117, lidas: 2, vendedores: 2, completa: false,
+    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 117, lidas: 2, vendedoresIdentificados: 2, completa: false,
       exatas: [{ itemId: 'MLB99', estado: 'nao_encontrada', motivo: 'oferta fora das ofertas lidas' }] });
   });
 
@@ -173,7 +176,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     respostasMl.set(`${ML}/users/7`, usuario(7));
     respostasMl.set(urlLp(10), ok(LP_OK));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 10 }], ['ofertas']), cat('MLB2', [{ itemId: 'MLB20', preco: 10 }], ['ofertas'])]));
-    expect(r.catalogos[0].ofertas).toMatchObject({ vendedores: 1 });
+    expect(r.catalogos[0].ofertas).toMatchObject({ vendedoresIdentificados: 1 });
     expect(urlsMl.filter((u) => u === `${ML}/users/7`)).toHaveLength(1);
     expect(r.vendedores).toHaveLength(1);
     // comissão: chave deduplicada (mesma conta/categoria/tipo/preço) → um listing_prices
@@ -196,10 +199,36 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     expect(r.vendedores.at(-1)).toEqual({ sellerId: 5, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
   });
 
+  it('oferta sem seller_id: identificação incompleta explícita, nunca "0 vendedores, completa"', async () => {
+    respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7, { seller_id: undefined })]));
+    const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB10', preco: 10 }], ['ofertas'])]));
+    expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 1, lidas: 1, vendedoresIdentificados: 0, ofertasSemVendedor: 1, completa: false,
+      exatas: [{ itemId: 'MLB10', sellerId: null, perfil: null }] });
+  });
+
+  it('mesmo catálogo com 7 itens: todos casados; perfis além de 5 voltam pendentes no item e em vendedores[]', async () => {
+    const s = [1, 2, 3, 4, 5, 6, 7];
+    respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas(s.map((x) => oferta(`MLB1${x}`, x, { listing_type_id: 'x' }))));
+    for (const x of s) respostasMl.set(`${ML}/users/${x}`, usuario(x));
+    respostasMl.set(`${ML}/users/3`, { status: 403, corpo: null });
+    const r = await run(pedido([cat('MLB1', s.map((x) => ({ itemId: `MLB1${x}`, preco: 10 })), ['ofertas'])], { perfisEmCache: [2] }));
+    const ex = (r.catalogos[0].ofertas as { exatas: { itemId: string; perfil: unknown }[] }).exatas;
+    expect(ex.map((e) => e.perfil)).toEqual(['carregado', 'no_navegador', 'indisponivel', 'carregado', 'carregado', 'carregado', 'aguardando']);
+    expect(r.vendedores.find((v) => v.sellerId === 7)).toEqual({ sellerId: 7, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
+  });
+
+  it('expiraEm só em componente ok; aguardando/indisponível não têm expiração', async () => {
+    respostasMl.set(`${ML}/products/MLB1`, { status: 429, corpo: null });
+    respostasMl.set(`${ML}/products/MLB1/items?limit=100`, { status: 403, corpo: null });
+    const r = await run(pedido([cat('MLB1')]));
+    expect(r.catalogos[0]).toEqual({ catalogProductId: 'MLB1', estado: 'ok', retomarEm: null, consultadoEm: AGORA.toISOString(),
+      produto: { estado: 'aguardando', retomarEm: null }, ofertas: { estado: 'indisponivel', motivo: 'ofertas indisponíveis' } });
+  });
+
   it('pedido só de perfis (ofertas em cache no navegador): debita 1 da cota', async () => {
     respostasMl.set(`${ML}/users/40`, usuario(40, { power_seller_status: null }));
     const r = await run(pedido([], { perfis: [40] }));
-    expect(r.vendedores).toEqual([{ sellerId: 40, estado: 'ok', nome: 'V40', medalha: 'sem', uf: 'SP' }]);
+    expect(r.vendedores).toEqual([{ sellerId: 40, estado: 'ok', nome: 'V40', medalha: 'sem', uf: 'SP', expiraEm: MAIS_24H }]);
     expect(db.get('ext:enr:org1:u1:202611031405')).toBe(1);
   });
 });
@@ -231,7 +260,7 @@ describe('cota de enriquecimento e orçamento global', () => {
     for (const id of ['MLB1', 'MLB2', 'MLB3']) respostasMl.set(`${ML}/products/${id}`, ok({ date_created: '2024-01-02T00:00:00Z' }));
     const r = await run(pedido(['MLB1', 'MLB2', 'MLB3'].map((id) => cat(id, [], ['produto']))));
     expect(r.catalogos.map((c) => c.estado)).toEqual(['ok', 'ok', 'aguardando']);
-    expect(r.catalogos[2]).toEqual({ catalogProductId: 'MLB3', estado: 'aguardando', retomarEm: PROXIMO });
+    expect(r.catalogos[2]).toEqual({ catalogProductId: 'MLB3', estado: 'aguardando', retomarEm: PROXIMO, consultadoEm: null });
     expect(urlsMl).toEqual([`${ML}/products/MLB1`, `${ML}/products/MLB2`]);
   });
 
@@ -247,7 +276,7 @@ describe('cota de enriquecimento e orçamento global', () => {
     redisFora = true;
     const r = await run(pedido([cat('MLB1')]));
     expect(urlsMl).toEqual([]);
-    expect(r.catalogos[0]).toEqual({ catalogProductId: 'MLB1', estado: 'aguardando', retomarEm: PROXIMO });
+    expect(r.catalogos[0]).toEqual({ catalogProductId: 'MLB1', estado: 'aguardando', retomarEm: PROXIMO, consultadoEm: null });
   });
 
   it('orçamento parcial: despacha só o concedido e o restante fica aguardando', async () => {

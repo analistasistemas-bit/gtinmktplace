@@ -433,14 +433,21 @@ describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
     expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['produto'] }), c('MLB1', { componentes: ['ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] })] }))
       .toMatchObject({ catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] }] });
   });
-  it('limites: 5 catálogos distintos, 5 itens por catálogo, 5 perfis, teto bruto anti-abuso', () => {
+  it('limites: 5 catálogos distintos, 20 itens por catálogo, 50 no pedido, 5 perfis, teto bruto anti-abuso', () => {
     const cinco = ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5'].map((id) => c(id));
     expect(validarPedido({ acao: E, catalogos: [...cinco, ...cinco] })).toMatchObject({ catalogos: { length: 5 } });
     expect(validarPedido({ acao: E, catalogos: [...cinco, c('MLB6')] })).toBeNull();
     expect(validarPedido({ acao: E, catalogos: Array.from({ length: 21 }, () => c('MLB1')) })).toBeNull();
-    const itens = (n: number) => Array.from({ length: n }, (_, i) => ({ itemId: `MLB${i + 10}`, preco: 1 }));
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(5) })] })).not.toBeNull();
-    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(6) })] })).toBeNull();
+    const itens = (n: number, base = 10) => Array.from({ length: n }, (_, i) => ({ itemId: `MLB${i + base}`, preco: 1 }));
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(6) })] })).toMatchObject({ catalogos: [{ itens: { length: 6 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(20) })] })).not.toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(21) })] })).toBeNull();
+    // repetidos não contam para os 20 (teto bruto de 50 entradas por catálogo)
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: [...itens(20), ...itens(20)] })] })).toMatchObject({ catalogos: [{ itens: { length: 20 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: Array.from({ length: 51 }, () => itens(1)[0]) })] })).toBeNull();
+    const tres = ['MLB1', 'MLB2', 'MLB3'].map((id, k) => c(id, { itens: itens(17, 100 * (k + 1)) })); // 51 no pedido
+    expect(validarPedido({ acao: E, catalogos: tres })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: tres.slice(0, 2).concat(c('MLB3', { itens: itens(16, 300) })) })).not.toBeNull();
     expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5] })).not.toBeNull();
     expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5, 6] })).toBeNull();
     expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: Array.from({ length: 101 }, (_, i) => i + 1) })).toBeNull();

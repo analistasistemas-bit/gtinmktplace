@@ -755,9 +755,9 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     expect(j.estado).toBe('ok');
     expect(j.valor.catalogos[0]).toMatchObject({
       catalogProductId: 'MLB42', estado: 'ok', produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z' },
-      ofertas: { estado: 'ok', total: 1, vendedores: 1, exatas: [{ itemId: 'MLB10', sellerId: 7, tipo: 'gold_special', comissaoNaSuaConta: { estado: 'ok' } }] },
+      ofertas: { estado: 'ok', total: 1, vendedoresIdentificados: 1, exatas: [{ itemId: 'MLB10', sellerId: 7, tipo: 'gold_special', comissaoNaSuaConta: { estado: 'ok' } }] },
     });
-    expect(j.valor.vendedores).toEqual([{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'sem', uf: 'SP' }]);
+    expect(j.valor.vendedores).toMatchObject([{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'sem', uf: 'SP' }]);
     expect(j.valor.custo).toMatchObject({ chamadasMl: 4 });
     expect(urls).toHaveLength(4);
     expect(f.rpcs).toEqual([]);

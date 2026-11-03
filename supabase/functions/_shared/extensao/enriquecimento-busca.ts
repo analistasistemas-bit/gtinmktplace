@@ -19,6 +19,10 @@ const TTL_COMISSAO_S = 6 * 3600; // = TTL_CACHE_S da edge (a mesma chave é lida
 const TIPOS = new Set(['gold_special', 'gold_pro']);
 const MEDALHAS = new Set(['silver', 'gold', 'platinum']);
 const CATEGORIA = /^MLB\d{1,20}$/;
+// Expirações do cache do navegador (Revisão 03/11, regra 10), calculadas aqui para o cliente só obedecer.
+const TTL_PRODUTO_MS = 6 * 3600_000;
+const TTL_OFERTAS_MS = 60_000;
+const TTL_PERFIL_MS = 24 * 3600_000;
 
 export type Componente = 'produto' | 'ofertas';
 export interface CatalogoPedido { catalogProductId: string; componentes: Componente[]; itens: { itemId: string; preco: number }[] }
@@ -47,6 +51,8 @@ export interface VendedorBusca { nome: string | null; medalha: Medalha | null; u
 export type OfertaExata =
   | {
     itemId: string; estado: 'ok'; categoriaId: string | null; sellerId: number | null; tipo: 'gold_special' | 'gold_pro' | null;
+    /** Situação do perfil do vendedor deste item (null = sem seller_id). Detalhe em `vendedores[]`. */
+    perfil: 'carregado' | 'no_navegador' | 'aguardando' | 'indisponivel' | null;
     comissaoNaSuaConta: Disponivel<ComissaoML> | Aguardando;
   }
   | { itemId: string; estado: 'nao_encontrada'; motivo: string };
@@ -56,12 +62,19 @@ export interface CatalogoEnriquecido {
   /** aguardando = cota de enriquecimento esgotada; nada foi consultado. */
   estado: 'ok' | 'aguardando';
   retomarEm: string | null;
-  produto?: { estado: 'ok'; criadoEm: string | null } | Aguardando | Ind;
-  ofertas?: { estado: 'ok'; total: number | null; lidas: number; vendedores: number; completa: boolean; exatas: OfertaExata[] } | Aguardando | Ind;
+  /** null = nada consultado (cota). */
+  consultadoEm: string | null;
+  produto?: { estado: 'ok'; criadoEm: string | null; expiraEm: string } | Aguardando | Ind;
+  ofertas?: {
+    estado: 'ok'; expiraEm: string; total: number | null; lidas: number;
+    vendedoresIdentificados: number; ofertasSemVendedor: number;
+    /** Todas as ofertas lidas (leitura completa) E todas com vendedor identificado; senão "≥ N". */
+    completa: boolean; exatas: OfertaExata[];
+  } | Aguardando | Ind;
 }
 
 export type VendedorEnriquecido =
-  | ({ sellerId: number; estado: 'ok' } & VendedorBusca)
+  | ({ sellerId: number; estado: 'ok'; expiraEm: string } & VendedorBusca)
   | ({ sellerId: number; motivo?: string } & Aguardando)
   | ({ sellerId: number } & Ind);
 
@@ -95,11 +108,11 @@ export function vendedorDoUsuario(corpo: unknown): VendedorBusca {
 }
 
 type Projecao = { item_id: unknown; seller_id: unknown; category_id: unknown; listing_type_id: unknown };
-type OfertasLidas = { total: number | null; lidas: Projecao[]; completa: boolean };
+type OfertasLidas = { total: number | null; lidas: Projecao[]; leituraCompleta: boolean };
 
 /** Resposta de /products/{id}/items → só os 4 campos usados (o corpo de ~100 KB sai de escopo aqui). */
 function projetarOfertas(r: RespostaMl): OfertasLidas | Aguardando | Ind {
-  if (r.status === 404 && /no winners found/i.test(String(registro(r.corpo)?.message ?? ''))) return { total: 0, lidas: [], completa: true };
+  if (r.status === 404 && /no winners found/i.test(String(registro(r.corpo)?.message ?? ''))) return { total: 0, lidas: [], leituraCompleta: true };
   if (r.status === 429) return { estado: 'aguardando', retomarEm: null };
   const results = registro(r.corpo)?.results;
   if (r.status !== 200 || !Array.isArray(results)) return { estado: 'indisponivel', motivo: 'ofertas indisponíveis' };
@@ -107,7 +120,7 @@ function projetarOfertas(r: RespostaMl): OfertasLidas | Aguardando | Ind {
   return {
     total: typeof total === 'number' && Number.isFinite(total) ? total : null,
     lidas: results.map((o) => { const x = registro(o); return { item_id: x?.item_id, seller_id: x?.seller_id, category_id: x?.category_id, listing_type_id: x?.listing_type_id }; }),
-    completa: leituraCompletaDaFicha(r.corpo),
+    leituraCompleta: leituraCompletaDaFicha(r.corpo),
   };
 }
 
@@ -147,12 +160,13 @@ export async function enriquecerCatalogosBusca(
 ): Promise<RespostaEnriquecimento> {
   const custo = { comandosRedis: 0, chamadasMl: 0 };
   const inicio = deps.agora();
+  const em = (ms: number) => new Date(inicio.getTime() + ms).toISOString();
   // 1 por catálogo pedido; pedido só de perfis debita 1 (anti-abuso: sem isso seria ilimitado por usuário).
   const cota = await reservarEnriquecimento(orgId, userId, p.catalogos.length || 1, inicio, custo);
   const n = p.catalogos.length === 0 ? 0 : cota.permitidos;
   const liberado = cota.permitidos > 0;
   const processados = p.catalogos.slice(0, n);
-  const catalogos: CatalogoEnriquecido[] = p.catalogos.slice(n).map((c) => ({ catalogProductId: c.catalogProductId, estado: 'aguardando', retomarEm: cota.retomarEm }));
+  const catalogos: CatalogoEnriquecido[] = p.catalogos.slice(n).map((c) => ({ catalogProductId: c.catalogProductId, estado: 'aguardando', retomarEm: cota.retomarEm, consultadoEm: null }));
 
   // Fase 1: /products e /products/items dos componentes pedidos.
   const urls1 = processados.flatMap((c) => [
@@ -169,7 +183,7 @@ export async function enriquecerCatalogosBusca(
       produto: produto === undefined ? undefined
         : aguardou(produto) ? produto
         : produto.status === 429 ? espera(null)
-        : produto.status === 200 ? { estado: 'ok' as const, criadoEm: dataDoProduto(produto.corpo) }
+        : produto.status === 200 ? { estado: 'ok' as const, criadoEm: dataDoProduto(produto.corpo), expiraEm: em(TTL_PRODUTO_MS) }
         : { estado: 'indisponivel' as const, motivo: 'catálogo indisponível' },
       ofertas: ofertas === undefined ? undefined : aguardou(ofertas) ? ofertas : projetarOfertas(ofertas),
     };
@@ -184,7 +198,7 @@ export async function enriquecerCatalogosBusca(
       if (!o) {
         return {
           itemId: i.itemId,
-          motivo: ofertas.total === 0 ? 'catálogo sem ofertas' : ofertas.completa ? 'oferta não está entre as ofertas do catálogo' : 'oferta fora das ofertas lidas',
+          motivo: ofertas.total === 0 ? 'catálogo sem ofertas' : ofertas.leituraCompleta ? 'oferta não está entre as ofertas do catálogo' : 'oferta fora das ofertas lidas',
         };
       }
       const categoriaId = typeof o.category_id === 'string' && CATEGORIA.test(o.category_id) ? o.category_id : null;
@@ -224,7 +238,7 @@ export async function enriquecerCatalogosBusca(
     if (aguardou(r)) return { sellerId, ...r };
     if (r.status === 429) return { sellerId, ...espera(null) };
     if (r.status !== 200 || !registro(r.corpo)) return { sellerId, estado: 'indisponivel', motivo: 'perfil indisponível' };
-    return { sellerId, estado: 'ok', ...vendedorDoUsuario(r.corpo) };
+    return { sellerId, estado: 'ok', ...vendedorDoUsuario(r.corpo), expiraEm: em(TTL_PERFIL_MS) };
   });
   for (const sellerId of sellers.slice(MAX_PERFIS_PEDIDO)) vendedores.push({ sellerId, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' });
   if (!liberado) for (const sellerId of p.perfis) vendedores.push({ sellerId, ...espera(cota.retomarEm) });
@@ -243,18 +257,27 @@ export async function enriquecerCatalogosBusca(
   });
   await Promise.all(gravar);
 
+  const perfilDe = (s: number | null): Extract<OfertaExata, { estado: 'ok' }>['perfil'] => {
+    if (s === null) return null;
+    if (emCache.has(s)) return 'no_navegador';
+    const v = vendedores.find((x) => x.sellerId === s)?.estado;
+    return v === 'ok' ? 'carregado' : v === 'indisponivel' ? 'indisponivel' : 'aguardando';
+  };
+  const consultadoEm = inicio.toISOString();
   const montados = lidos.map(({ c, produto, ofertas }, ci): CatalogoEnriquecido => {
-    const out: CatalogoEnriquecido = { catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null };
+    const out: CatalogoEnriquecido = { catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null, consultadoEm };
     if (produto) out.produto = produto;
     if (ofertas) {
+      const ids = 'lidas' in ofertas ? ofertas.lidas.map((o) => sellerValido(o.seller_id)) : [];
+      const semVendedor = ids.filter((s) => s === null).length;
       out.ofertas = 'lidas' in ofertas
         ? {
-          estado: 'ok', total: ofertas.total, lidas: ofertas.lidas.length,
-          vendedores: new Set(ofertas.lidas.map((o) => sellerValido(o.seller_id)).filter((s) => s !== null)).size,
-          completa: ofertas.completa,
+          estado: 'ok', expiraEm: em(TTL_OFERTAS_MS), total: ofertas.total, lidas: ofertas.lidas.length,
+          vendedoresIdentificados: new Set(ids.filter((s) => s !== null)).size, ofertasSemVendedor: semVendedor,
+          completa: ofertas.leituraCompleta && semVendedor === 0,
           exatas: exatasPorCat[ci]!.map((e): OfertaExata => ('preco' in e
             ? {
-              itemId: e.itemId, estado: 'ok', categoriaId: e.categoriaId, sellerId: e.sellerId, tipo: e.tipo,
+              itemId: e.itemId, estado: 'ok', categoriaId: e.categoriaId, sellerId: e.sellerId, tipo: e.tipo, perfil: perfilDe(e.sellerId),
               comissaoNaSuaConta: e.chave ? comissoes.get(e.chave)!
                 : { estado: 'indisponivel', motivo: e.tipo ? 'categoria não confirmada' : 'tipo do anúncio não confirmado' },
             }
@@ -265,5 +288,5 @@ export async function enriquecerCatalogosBusca(
     return out;
   });
 
-  return { consultadoEm: inicio.toISOString(), catalogos: [...montados, ...catalogos], vendedores, custo };
+  return { consultadoEm, catalogos: [...montados, ...catalogos], vendedores, custo };
 }

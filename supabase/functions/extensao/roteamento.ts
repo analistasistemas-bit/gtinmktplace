@@ -33,9 +33,11 @@ export const MAX_ITENS_BUSCA = 50;
 const MAX_ENTRADAS_IDENTIFICAR = 200;
 /** Enriquecimento da busca (Revisão 03/11): por requisição. O navegador limita 20 perfis por busca. */
 export const MAX_CATALOGOS_ENRIQUECER = 5;
-export const MAX_ITENS_POR_CATALOGO = 5;
+export const MAX_ITENS_POR_CATALOGO = 20; // casar item × oferta não custa chamada ML
+export const MAX_ITENS_ENRIQUECER = 50; // itens distintos no pedido inteiro
 export const MAX_PERFIS_PEDIDO = 5;
-const MAX_ENTRADAS_ENRIQUECER = 20; // teto bruto (antes do dedupe), só anti-abuso de parsing
+const MAX_ENTRADAS_ENRIQUECER = 20; // tetos brutos (antes do dedupe), só anti-abuso de parsing
+const MAX_ENTRADAS_ITENS = 50;
 const MAX_PERFIS_EM_CACHE = 100;
 
 const MLB = /^MLB\d{1,20}$/;
@@ -163,7 +165,7 @@ function enriquecimento(b: Record<string, unknown>): Pedido | null {
     if (!c || typeof c !== 'object' || !mlb(c.catalogProductId)) return null;
     const comp = c.componentes === undefined ? ['produto', 'ofertas'] : c.componentes;
     if (!Array.isArray(comp) || comp.length === 0 || !comp.every((x) => x === 'produto' || x === 'ofertas')) return null;
-    if (!Array.isArray(c.itens) || c.itens.length > MAX_ENTRADAS_ENRIQUECER) return null;
+    if (!Array.isArray(c.itens) || c.itens.length > MAX_ENTRADAS_ITENS) return null;
     const atual = lidos.get(c.catalogProductId) ?? { catalogProductId: c.catalogProductId, componentes: [], itens: [] };
     for (const x of comp as Componente[]) if (!atual.componentes.includes(x)) atual.componentes.push(x);
     for (const i of c.itens as Record<string, unknown>[]) {
@@ -174,6 +176,7 @@ function enriquecimento(b: Record<string, unknown>): Pedido | null {
     lidos.set(c.catalogProductId, atual);
   }
   if (lidos.size > MAX_CATALOGOS_ENRIQUECER || (lidos.size === 0 && perfis.length === 0)) return null;
+  if ([...lidos.values()].reduce((n, c) => n + c.itens.length, 0) > MAX_ITENS_ENRIQUECER) return null;
   // Ordem estável dos componentes (o servidor despacha produto antes de ofertas).
   const catalogosLidos = [...lidos.values()].map((c) => ({ ...c, componentes: (['produto', 'ofertas'] as const).filter((x) => c.componentes.includes(x)) }));
   return { acao: 'enriquecer_catalogos_busca', catalogos: catalogosLidos, perfis, perfisEmCache };
