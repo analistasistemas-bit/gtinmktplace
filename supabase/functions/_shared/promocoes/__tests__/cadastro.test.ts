@@ -31,6 +31,18 @@ describe('resolverCor', () => {
     expect(resolverCor(multi, { item_id: 'MLB1', variation_id: null, sku: null, gtin: null })).toBeNull();
   });
 
+  it('mesmo anúncio subido em vários lotes (mesmo código) resolve pela linha com custo mais recente', () => {
+    const c = montarCadastro([
+      v({ id: 'ago', codigo: '02929309', custo: 1.3579, atualizado_em: '2026-08-03T00:00:00Z' }),
+      v({ id: 'out', codigo: '02929309', custo: 1.2939, atualizado_em: '2026-10-16T00:00:00Z' }),
+      v({ id: 'set', codigo: '2929309', custo: null, atualizado_em: '2026-11-01T00:00:00Z' }),
+    ], []);
+    expect(resolverCor(c, { item_id: 'MLB1', variation_id: null, sku: null, gtin: null })?.variacao_id).toBe('out');
+    // códigos distintos no mesmo anúncio continuam ambíguos
+    const multi = montarCadastro([v({ id: 'a', codigo: '1' }), v({ id: 'b', codigo: '2' })], []);
+    expect(resolverCor(multi, { item_id: 'MLB1', variation_id: null, sku: null, gtin: null })).toBeNull();
+  });
+
   it('duplicata: linha sem custo nunca vence linha com custo, mesmo mais nova', () => {
     const c = montarCadastro([
       v({ id: 'com', codigo: '8', custo: 6, atualizado_em: '2026-01-01T00:00:00Z', familias: { ml_item_id: null, origem: 'nacional' } }),
