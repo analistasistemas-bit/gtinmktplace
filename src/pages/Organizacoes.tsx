@@ -28,6 +28,7 @@ import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import { cancelSupport, listSupportRequests, type SupportRequest } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
+import { PaymentProfileDialog } from '@/components/platform-admin/payment-profile-dialog';
 import { DialogArquivarOrg } from '@/components/platform-admin/dialog-arquivar-org';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
 
@@ -161,6 +162,7 @@ export default function Organizacoes() {
   const [page, setPage] = useState(1);
   const [somentePendencias, setSomentePendencias] = useState(false);
   const [novaOpen, setNovaOpen] = useState(false);
+  const [recebimentoOpen, setRecebimentoOpen] = useState(false);
   const [supportOrg, setSupportOrg] = useState<OrgSummary | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
   // Perf FASE 2.4: quando a carteira cabe inteira na resposta (repository.ts devolve todas as
@@ -513,6 +515,7 @@ export default function Organizacoes() {
                 })}
               />
             </label>
+            <Button variant="outline" onClick={() => setRecebimentoOpen(true)}>Dados de recebimento</Button>
             <Button onClick={() => setNovaOpen(true)}>Nova empresa</Button>
           </>
         }
@@ -661,6 +664,8 @@ export default function Organizacoes() {
           tamanhos={[PAGE_SIZE]}
         />
       )}
+
+      {recebimentoOpen && <PaymentProfileDialog open onOpenChange={setRecebimentoOpen} />}
 
       <NovaOrgDialog
         open={novaOpen}

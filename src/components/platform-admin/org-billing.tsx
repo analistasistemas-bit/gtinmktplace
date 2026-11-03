@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, FileText } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { CommercialTermsForm } from '@/components/platform-admin/commercial-terms-form';
 import { RevenueReconciliation, type ReconciliationCandidate } from '@/components/platform-admin/revenue-reconciliation';
@@ -17,6 +17,7 @@ import {
   usePlatformTerms,
 } from '@/hooks/usePlatformAdmin';
 import { buildBillingReport } from '@/lib/export/platform-billing';
+import { baixarRelatorioMensal } from '@/lib/export/relatorio-mensal-download';
 import { fmtBRL } from '@/lib/formato';
 import { latestTerm, type BillingLine, type BillingPreview, type PlatformAdminError } from '@/lib/platform-admin';
 
@@ -107,6 +108,7 @@ export function OrgBilling({ orgId, month }: Props) {
   const close = useClosePlatformStatement();
   const [confirming, setConfirming] = useState(false);
   const [candidate, setCandidate] = useState<ReconciliationCandidate | null>(null);
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const completedMonth = useMemo(() => month < currentFortalezaMonth(), [month]);
   const preview = previewQuery.data;
   const canClose = Boolean(preview?.terms && preview.blockers.length === 0 && completedMonth);
@@ -114,6 +116,23 @@ export function OrgBilling({ orgId, month }: Props) {
     () => latestTerm(termsQuery.data?.rows ?? []),
     [termsQuery.data],
   );
+
+  const mesFechado = (statementsQuery.data?.rows ?? []).some((row) => row.month === month);
+  const motivoRelatorio = statementsQuery.isLoading
+    ? 'Carregando demonstrativos…'
+    : mesFechado ? undefined : `Feche o demonstrativo de ${month} para gerar o relatório mensal.`;
+
+  async function gerarRelatorio() {
+    setGerandoRelatorio(true);
+    try {
+      await baixarRelatorioMensal(orgId, month);
+      toast.success('Relatório mensal gerado.');
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Não foi possível gerar o relatório mensal.');
+    } finally {
+      setGerandoRelatorio(false);
+    }
+  }
 
   async function confirmClose() {
     if (!preview || !canClose) return;
@@ -219,7 +238,21 @@ export function OrgBilling({ orgId, month }: Props) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Demonstrativos fechados</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Demonstrativos fechados</CardTitle>
+          <CardDescription>O relatório mensal do cliente usa o demonstrativo fechado de {month}.</CardDescription>
+          <CardAction>
+            <Button
+              variant="outline"
+              disabled={!mesFechado || gerandoRelatorio}
+              title={motivoRelatorio}
+              onClick={() => void gerarRelatorio()}
+            >
+              {gerandoRelatorio ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <FileText className="h-4 w-4" aria-hidden />}
+              {gerandoRelatorio ? 'Gerando relatório…' : 'Gerar relatório mensal'}
+            </Button>
+          </CardAction>
+        </CardHeader>
         <CardContent>
           {statementsQuery.isLoading ? (
             <div className="space-y-2">

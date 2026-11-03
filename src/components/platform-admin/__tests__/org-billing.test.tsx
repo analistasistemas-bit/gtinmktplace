@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
   useStatements: vi.fn(),
   useTerms: vi.fn(),
   report: null as unknown,
+  baixar: vi.fn(),
 }));
+
+vi.mock('@/lib/export/relatorio-mensal-download', () => ({ baixarRelatorioMensal: mocks.baixar }));
 
 vi.mock('@/hooks/usePlatformAdmin', () => ({
   usePlatformPreview: mocks.usePreview,
@@ -105,6 +108,7 @@ beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue(terms);
   mocks.refetch.mockReset().mockResolvedValue({ data: makePreview() });
   mocks.report = null;
+  mocks.baixar.mockReset().mockResolvedValue(undefined);
   toastSuccess.mockReset();
   toastError.mockReset();
   mocks.usePreview.mockReturnValue({
@@ -131,6 +135,29 @@ afterEach(() => {
 });
 
 describe('OrgBilling', () => {
+  it('relatório mensal: desabilitado sem demonstrativo fechado do mês, com o motivo', () => {
+    render(<OrgBilling orgId="org-a" month="2026-07" />);
+    const botao = screen.getByRole('button', { name: /Gerar relatório mensal/ });
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute('title', expect.stringContaining('Feche o demonstrativo de 2026-07'));
+  });
+
+  it('relatório mensal: com mês fechado, gera o PDF da organização e do mês', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    await user.click(screen.getByRole('button', { name: /Gerar relatório mensal/ }));
+    expect(mocks.baixar).toHaveBeenCalledWith('org-a', '2026-08');
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Relatório mensal gerado.'));
+  });
+
+  it('relatório mensal: falha vira toast de erro', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mocks.baixar.mockRejectedValueOnce(new Error('sem rede'));
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    await user.click(screen.getByRole('button', { name: /Gerar relatório mensal/ }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('sem rede'));
+  });
+
   it('contrato futuro ainda nao vigente nao reabre como primeiro contrato', () => {
     mocks.useTerms.mockReturnValue({
       data: { rows: [{ ...terms, starts_on: '2026-10-01' }] },
