@@ -44,7 +44,7 @@ it('card sem resultado nenhum recebe o bloco local (um por card)', async () => {
 it('margem sai do bloco quando o resultado deixa de autorizar (ok → sem vínculo); o bloco fica', () => {
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
   expect(blocos()).toHaveLength(1);
-  expect(textoDosBlocos()).toContain('Minha margem · simulação Clássico 10,9%');
+  expect(textoDosBlocos()).toContain('Minha margem · Clássico 10,9%');
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: { itemId: 'MLB5321956667', estado: 'sem_vinculo' } } });
   expect(blocos()).toHaveLength(1);
   expect(textoDosBlocos()).not.toContain('Minha margem');
@@ -56,7 +56,7 @@ it('enriquecimento do catálogo chega com os resultados e entra no bloco do card
   link.setAttribute('href', 'https://www.mercadolivre.com.br/p/MLB1000000#wid=MLB5321956667');
   const enriquecimento = { catalogos: { MLB1000000: { ofertas: { estado: 'ok', total: 4, lidas: 4, vendedoresIdentificados: 4, ofertasSemVendedor: 0, completa: true, exatas: {} } } }, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0 };
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {}, enriquecimento });
-  expect(textoDosBlocos()).toContain('4 vendedores no catálogo');
+  expect(textoDosBlocos()).toContain('4 vendedores');
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
   expect(textoDosBlocos()).toContain('Aguardando dados do catálogo');
   link.setAttribute('href', href);
@@ -225,7 +225,7 @@ it('revisão final: status de margem (aguardando cota) só na aparição com o p
   document.querySelector('#lim2')!.remove();
 });
 
-it('achado 1: sinais são da aparição — mesmo item com vendedor/Full/frete só numa delas', async () => {
+it('achado 1: sinais são da aparição — mesmo item com vendedor/Full/frete só numa delas (Full e frete ficam no card do ML)', async () => {
   const ID = 'MLB5321950900';
   document.body.insertAdjacentHTML('beforeend', `
     <div class="poly-card" id="sig1"><a class="poly-component__title" href="https://www.mercadolivre.com.br/x#wid=${ID}&position=8">S</a>
@@ -235,8 +235,7 @@ it('achado 1: sinais são da aparição — mesmo item com vendedor/Full/frete s
   const t = (id: string) => raizes.get(document.querySelector(`#${id} .publiai-mini-bloco-busca`)!)?.textContent ?? '';
   await vi.waitFor(() => expect(t('sig2')).toContain('Patrocinado'), { timeout: 3000 });
   expect(t('sig1')).toContain('Loja Um');
-  expect(t('sig1')).toContain('Frete grátis');
-  expect(t('sig1')).toContain('Full');
+  expect(t('sig1')).not.toContain('Patrocinado');
   expect(t('sig2')).not.toContain('Loja Um');
   expect(t('sig2')).not.toContain('Frete grátis');
   expect(t('sig2')).not.toContain('Full');

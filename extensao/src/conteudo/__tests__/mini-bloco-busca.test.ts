@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CardBusca } from '../../leitura/busca';
-import { renderizarMiniBlocoDaBusca } from '../mini-bloco-busca';
+import { brlCompacto, renderizarMiniBlocoDaBusca } from '../mini-bloco-busca';
 import { idadeDoCatalogo, vistaDoCard, type EstadoEnriquecimento } from '../../compartilhado/enriquecimento';
 
 let raizes: ShadowRoot[] = [];
@@ -36,13 +36,13 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
   expect(modos).toEqual(['closed']);
   const t = texto(h);
   expect(t).toContain('Loja Boa');
-  expect(t).toContain('Full');
-  expect(t).toContain('Frete grátis');
-  expect(t).toContain('Giro mínimo ao preço atual');
+  // Full, frete e "Catálogo" já estão no card do ML / na linha do catálogo: fora do bloco compacto.
+  expect(t).not.toMatch(/Full|Frete grátis|Catálogo/);
+  expect(t).toContain('Giro mín.');
   const i = raizes[0].querySelector('button[aria-label="O que é giro mínimo?"]') as HTMLButtonElement;
   expect(i.type).toBe('button');
   expect(i.textContent).toBe('ⓘ');
-  expect(t).toContain('R$ 5.000,00');
+  expect(t).toContain('R$ 5 mil');
   expect(t).not.toContain('Minha margem');
   expect(t).not.toContain('Meu anúncio');
   expect(t).not.toMatch(/faturamento/i);
@@ -50,7 +50,7 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
 
 it('margem só aparece quando o preço dela coincide com o da ocorrência', () => {
   renderizarMiniBlocoDaBusca(card(), undefined, ok(50, 11.21) as never);
-  expect(texto(document.body)).toContain('Minha margem · simulação Clássico 11,2%');
+  expect(texto(document.body)).toContain('Minha margem · Clássico 11,2%');
   raizes = [];
   renderizarMiniBlocoDaBusca(card({ preco: 45, ocorrencias: [{ posicao: 3, patrocinado: true, preco: 45, vendidosTexto: null }] }), undefined, ok(50, 11.21) as never);
   expect(texto(document.body)).not.toContain('Minha margem');
@@ -106,7 +106,7 @@ it('sem vendedor nem sinais: diz "vendedor não informado"; sem vendidos não in
 it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguardando em warning com texto', () => {
   const css = (r: ShadowRoot) => r.querySelector('style')!.textContent!.replace(/\s+/g, '');
   renderizarMiniBlocoDaBusca(card(), undefined, ok(50, 11.21) as never);
-  expect(raizes[0].querySelector('.t.roxo')!.textContent).toBe('Minha margem · simulação Clássico');
+  expect(raizes[0].querySelector('.t.roxo')!.textContent).toBe('Minha margem · Clássico');
   expect(raizes[0].querySelector('.t.lucro')!.textContent).toBe('11,2%');
   for (const regra of ['.roxo{--c:var(--chart-1)}', '.lucro{--c:var(--success)}', '.prejuizo{--c:var(--destructive)}', '.aguardando{--c:var(--warning)}']) {
     expect(css(raizes[0])).toContain(regra);
@@ -119,13 +119,13 @@ it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguar
   expect(raizes[2].querySelector('.t.roxo, .t.lucro, .t.prejuizo')).toBeNull();
 });
 
-it('Loja oficial é âmbar, Catálogo é chip transparente e margem indisponível tem rótulo neutro', () => {
+it('Loja oficial é âmbar, sem chip Catálogo, e margem indisponível tem rótulo neutro', () => {
   const h = renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), { itemId: 'MLB1000001', proprio: false, vinculo: { fonte: 'catalogo', codigo: '81' } },
     { itemId: 'MLB1000001', estado: 'sem_categoria', fonte: 'catalogo', codigo: '81' });
   void h;
   const r = raizes[raizes.length - 1];
   expect(r.querySelector('.c.ambar')!.textContent).toBe('Loja oficial');
-  expect(r.querySelector('.c.catalogo')!.textContent).toBe('Catálogo');
+  expect(r.querySelector('.c.catalogo')).toBeNull();
   expect(r.querySelector('.t.neutro')!.textContent).toBe('Minha margem indisponível');
   expect(r.querySelector('.t.roxo')).toBeNull();
 });
@@ -167,34 +167,41 @@ const completo = (o: Record<string, unknown> = {}) => enr({
   vendedores: { 7: { estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP' } },
 });
 
-it('enriquecido: medalha (chip âmbar) + UF, Clássico + comissão na sua conta (valor do ML ao preço), vendedores e idade', () => {
-  comEnr(completo());
-  const t = texto();
-  expect(t).toContain('Platinum');
-  expect(t).toContain('SP');
-  expect(t).toContain('Clássico');
-  expect(t).toContain('Comissão na sua contaⓘR$ 7,10 (14%)');
-  expect(t).toContain('9 vendedores no catálogo');
-  expect(t).toContain('catálogo criado há 120 dias');
-  expect(raizes[0].querySelector('.c.ambar')!.textContent).toBe('Platinum');
+it('enriquecido e compacto: vendedor · medalha · UF; tipo · comissão; giro; vendedores · idade (≤ 5 linhas com margem)', () => {
+  const linhas = () => [...raizes[0].querySelectorAll('.b > .l')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim());
+  renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), undefined, ok(50, 23.4) as never, 50, vistaDoCard(card(), completo()), AGORA);
+  expect(linhas()).toEqual([
+    'Loja Boa· Platinum· SPLoja oficial',
+    'Clássico·comissãoR$ 7,10 (14%)ⓘ',
+    'Giro mín.R$ 5 milⓘ',
+    '9 vendedores·catálogohá 120 diasⓘ',
+    'Minha margem · Clássico 23,4%',
+  ]);
+  expect(raizes[0].querySelector('.med')!.textContent).toBe('Platinum');
   expect(raizes[0].querySelector('.idade')!.className).toContain('recente');
-  expect(t).not.toMatch(/faturamento|ganhador|vencedor/i);
-  // ≤ 5 linhas sem margem/meu anúncio (topo, giro, oferta, catálogo).
-  expect(raizes[0].querySelectorAll('.b > .l').length).toBeLessThanOrEqual(5);
+  expect(raizes[0].querySelector('.idade')!.textContent).toBe('há 120 dias');
+  expect(texto()).not.toMatch(/faturamento|ganhador|vencedor/i);
+});
+
+it('moeda compacta do Mini-bloco: mil / mi com 1 casa (sem ",0")', () => {
+  expect(brlCompacto(209000)).toBe('R$ 209 mil');
+  expect(brlCompacto(4350000)).toBe('R$ 4,4 mi');
+  expect(brlCompacto(34553589)).toBe('R$ 34,6 mi');
+  expect(brlCompacto(950)).toBe('R$ 950');
 });
 
 it('outra aparição do item com outro preço: comissão não aparece (é do preço exato)', () => {
   comEnr(completo(), card({ ocorrencias: [{ posicao: 9, patrocinado: true, preco: 55, vendidosTexto: null }] }));
-  expect(texto()).not.toContain('Comissão na sua conta R$');
+  expect(texto()).not.toContain('comissão');
 });
 
-it('leitura parcial: "≥ N vendedores" + "Leitura parcial"; sem vendedor identificado: "vendedores não identificados"', () => {
+it('leitura parcial: "N+ vendedores" (sentido no ⓘ); sem vendedor identificado: "vendedores não identificados"', () => {
   comEnr(completo({ completa: false }));
-  expect(texto()).toContain('≥ 9 vendedores no catálogo');
-  expect(texto()).toContain('Leitura parcial');
+  expect(texto()).toContain('9+ vendedores');
+  expect(texto()).not.toContain('Leitura parcial');
   raizes = [];
   comEnr(completo({ completa: false, vendedoresIdentificados: 0, ofertasSemVendedor: 3 }));
-  expect(texto()).toContain('Vendedores não identificados');
+  expect(texto()).toContain('vendedores não identificados');
 });
 
 it('estados: aguardando dados, próxima janela, oferta não localizada, perfil não carregado, comissão aguardando', () => {
@@ -206,31 +213,39 @@ it('estados: aguardando dados, próxima janela, oferta não localizada, perfil n
   raizes = [];
   comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertas({}, { MLB1000001: { estado: 'nao_encontrada', preco: 50 } }) as never } } }));
   expect(texto()).toContain('Oferta não localizada nesta leitura');
-  expect(texto()).toContain('9 vendedores no catálogo'); // metadados do catálogo seguem
+  expect(texto()).toContain('9 vendedores'); // metadados do catálogo seguem
   raizes = [];
   comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'aguardando' } }) }) as never } } }));
   expect(texto()).toContain('Perfil não carregado');
+  expect(texto()).toContain('Tipo não confirmado'); // comissão aguardando ainda é mostrada à parte
+
   expect(texto()).toContain('Tipo não confirmado');
-  expect(texto()).toContain('Comissão na sua contaⓘaguardando');
+  expect(texto()).toContain('comissãoaguardandoⓘ');
+});
+
+it('sem tipo e sem comissão: uma frase só ("Tipo e comissão não confirmados")', () => {
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'indisponivel', motivo: 'tipo do anúncio não confirmado' } }) }) as never } } }));
+  expect(texto()).toContain('Tipo e comissão não confirmados');
+  expect(texto()).not.toContain('indisponível');
 });
 
 it('card sem catálogo mantém só os dados da página', () => {
   comEnr(completo(), card({ catalogProductId: null }));
-  expect(texto()).not.toMatch(/catálogo criado|vendedores no catálogo|Aguardando dados/);
+  expect(texto()).not.toMatch(/catálogo há|vendedores|Aguardando dados/);
 });
 
-it('ⓘ de "Comissão na sua conta" e de "vendedores no catálogo" abrem texto curto, sem navegar', () => {
+it('ⓘ de "comissão na sua conta" e de "vendedores no catálogo" abrem texto curto, sem navegar', () => {
   const h = comEnr(completo());
   document.body.append(h);
   const botoes = [...raizes[0].querySelectorAll('button.i')] as HTMLButtonElement[];
-  const com = botoes.find((b) => b.getAttribute('aria-label') === 'O que é Comissão na sua conta?')!;
+  const com = botoes.find((b) => b.getAttribute('aria-label') === 'O que é comissão na sua conta?')!;
   const ven = botoes.find((b) => b.getAttribute('aria-label') === 'O que é vendedores no catálogo?')!;
   const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
   com.dispatchEvent(ev);
   expect(ev.defaultPrevented).toBe(true);
   expect(texto()).toContain('na sua conta para este tipo de anúncio');
   ven.click();
-  expect(texto()).toMatch(/vendedores diferentes/);
+  expect(texto()).toMatch(/vendedores diferentes.*"N\+" = leitura parcial/);
   h.remove();
 });
 

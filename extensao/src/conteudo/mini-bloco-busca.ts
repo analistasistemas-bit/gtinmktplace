@@ -12,9 +12,9 @@ import { idadeDoCatalogo, NOME_MEDALHA, NOME_TIPO, valorDaComissao, type VistaCa
 
 export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
-const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.';
+const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa. Valor arredondado aqui; o painel mostra o valor completo.';
 const COMISSAO = 'Tarifa de venda que o Mercado Livre cobraria na sua conta para este tipo de anúncio, nesta categoria e a este preço. Não inclui frete nem imposto.';
-const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "≥" quando o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor.';
+const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "N+" = leitura parcial: o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor, então há pelo menos N.';
 const ESPERA = { dados: 'Aguardando dados do catálogo', janela: 'Aguardando próxima janela', falha: 'Catálogo não lido · Tentar novamente no painel' } as const;
 const pctBr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -27,21 +27,25 @@ const CSS = `
   --chart-5:oklch(0.63 0.20 12);--success:oklch(0.51 0.15 150);--destructive:oklch(0.545 0.22 25);--warning:oklch(0.53 0.16 75);
   --brand-gradient:linear-gradient(180deg,oklch(0.56 0.21 277),oklch(0.585 0.21 300));
   --texto:oklch(0.30 0.02 277);--suave:oklch(0.45 0.02 277);
-  position:relative;box-sizing:border-box;display:grid;gap:2px;padding:5px 8px 5px 11px;border-radius:8px;
+  position:relative;box-sizing:border-box;display:grid;gap:1px;padding:4px 6px 4px 9px;border-radius:8px;
   background:oklch(0.985 0.006 277);border:1px solid color-mix(in oklab,var(--chart-1) 16%,white);color:var(--texto);
-  font:400 12px/1.35 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;overflow:hidden}
+  font:400 12px/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;overflow:hidden}
 .b::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand-gradient)}
-.l{display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;min-width:0;overflow-wrap:anywhere}
+.l{display:flex;flex-wrap:wrap;align-items:center;gap:1px 3px;min-width:0;overflow-wrap:anywhere}
+.um{flex-wrap:nowrap}
+.pq{font-size:11px;letter-spacing:-0.005em}
+.n{flex:0 1 auto;min-width:2.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.um .c,.f{flex:none;white-space:nowrap}
+.med{font-weight:650;color:color-mix(in oklab,var(--chart-4) 50%,black)}
 svg{width:13px;height:13px;flex:none}
 .v{color:var(--suave)}
-.c{--c:var(--chart-1);display:inline-block;padding:0 6px;border-radius:999px;font-weight:600;font-size:11.5px;line-height:17px;
+.c{--c:var(--chart-1);display:inline-block;padding:0 6px;border-radius:999px;font-weight:600;font-size:11px;line-height:16px;
   color:color-mix(in oklab,var(--c) 70%,black);background:color-mix(in oklab,var(--c) 13%,white)}
-.c.catalogo{background:transparent;padding-inline:2px}
 .t{color:color-mix(in oklab,var(--c) 72%,black);font-weight:600}
-.g{display:inline-flex;gap:4px;align-items:baseline;white-space:nowrap}
-.i{all:unset;box-sizing:border-box;color:var(--suave);cursor:pointer;font-size:12px;line-height:1;padding:1px 2px;border-radius:4px}
+.g{display:inline-flex;gap:3px;align-items:baseline;white-space:nowrap}
+.i{all:unset;box-sizing:border-box;color:var(--suave);cursor:pointer;font-size:12px;line-height:1;padding:1px;border-radius:4px}
 .i:focus-visible{outline:2px solid var(--chart-1);outline-offset:1px}
-.a{color:var(--suave);font-size:11.5px;line-height:1.35}
+.a{color:var(--suave);font-size:11px;line-height:1.3}
 b{font-weight:650;color:var(--texto)}
 .idade.recente{--c:var(--success)}.idade.medio{--c:var(--warning)}.idade.antigo{--c:var(--suave)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
@@ -61,26 +65,34 @@ function linha(...filhos: (HTMLElement | string)[]): HTMLElement {
   return l;
 }
 
-/** Rótulo com ⓘ: o botão abre/fecha a explicação logo abaixo da linha. Dentro do card do ML (um link): o clique não
- *  navega nem sobe até o card. */
-function comAjuda(rotulo: HTMLElement, nome: string, texto: string): { rotulo: HTMLElement; ligar: (l: HTMLElement) => void } {
+/** ⓘ no fim da linha: abre/fecha a explicação logo abaixo dela. Dentro do card do ML (um link): o clique não navega
+ *  nem sobe até o card. Botão de verdade: foco e Enter/Espaço pelo teclado. */
+function ajuda(l: HTMLElement, nome: string, texto: string): void {
   const i = el('button', 'i', 'ⓘ') as HTMLButtonElement;
   i.type = 'button';
   i.setAttribute('aria-label', `O que é ${nome}?`);
   i.setAttribute('aria-expanded', 'false');
+  const a = el('div', 'a', texto);
+  i.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const aberto = i.getAttribute('aria-expanded') !== 'true';
+    i.setAttribute('aria-expanded', String(aberto));
+    if (aberto) l.after(a); else a.remove();
+  });
+  // ⓘ preso ao último trecho da linha: nunca quebra sozinho para uma linha nova.
   const g = el('span', 'g');
-  g.append(rotulo, i);
-  const ajuda = el('div', 'a', texto);
-  return {
-    rotulo: g,
-    ligar: (l) => i.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const aberto = i.getAttribute('aria-expanded') !== 'true';
-      i.setAttribute('aria-expanded', String(aberto));
-      if (aberto) l.after(ajuda); else ajuda.remove();
-    }),
-  };
+  const ultimo = l.lastElementChild;
+  if (ultimo) g.append(ultimo);
+  g.append(i);
+  l.append(g);
+}
+
+/** Moeda compacta do Mini-bloco (o painel mostra o valor completo): R$ 950 · R$ 209 mil · R$ 4,4 mi (1 casa, sem ",0"). */
+export function brlCompacto(reais: number): string {
+  const [v, sufixo] = reais >= 1e6 ? [reais / 1e6, ' mi'] : reais >= 1e3 ? [reais / 1e3, ' mil'] : [reais, ''];
+  const r = sufixo ? Math.round(v * 10) / 10 : Math.round(v);
+  return `R$ ${r.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${sufixo}`;
 }
 
 /** Texto da margem desta ocorrência; null = nada a mostrar (sem vínculo, ou margem de outro preço). */
@@ -112,71 +124,77 @@ export function renderizarMiniBlocoDaBusca(
   host.style.position = 'relative';
   host.style.zIndex = '2';
   const raiz = host.attachShadow({ mode: 'closed' });
-  raiz.innerHTML = `<style>${CSS}</style><div class="b" role="note" aria-label="PubliAI"><div class="l">${MARCA}</div></div>`;
+  raiz.innerHTML = `<style>${CSS}</style><div class="b" role="note" aria-label="PubliAI"><div class="l um">${MARCA}</div></div>`;
   const bloco = raiz.querySelector('.b')!;
-
-  // 1. Vendedor observado + sinais explícitos do card (cor sempre com texto).
-  const topo = bloco.querySelector('.l') as HTMLElement;
-  topo.append(card.vendedor ? el('span', 'v', card.vendedor) : el('span', 'v', 'Vendedor não informado'));
-  if (card.full) topo.append(el('span', 'c cyan', 'Full'));
-  if (card.freteGratis) topo.append(el('span', 'c cyan', 'Frete grátis'));
-  if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
-  if (card.catalogProductId) topo.append(el('span', 'c violeta catalogo', 'Catálogo'));
-  if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
-  // Perfil do vendedor da oferta exata (medalha ausente/desconhecida fica de fora: nunca presumida).
   const exata = vista?.exata;
+
+  // 1. Uma linha: vendedor · medalha · UF (perfil da oferta exata; medalha desconhecida fica de fora) + selos que o
+  // card do ML não deixa claros por si (Loja oficial, Patrocinado). Full, frete e "Catálogo" já aparecem no card / na
+  // linha do catálogo. Nome longo é cortado com reticências (completo no title).
+  const topo = bloco.querySelector('.l') as HTMLElement;
+  // Só o nome encolhe (reticências); medalha e UF ficam sempre visíveis.
+  const nome = el('span', 'v n', card.vendedor ?? 'Vendedor não informado');
+  nome.title = nome.textContent ?? '';
+  topo.append(nome);
   if (exata?.estado === 'ok' && exata.sellerId !== null) {
     const v = vista!.vendedor;
+    const extra = (classe: string, t: string) => { const f = el('span', 'v f', '· '); f.append(el('span', classe, t)); topo.append(f); };
     if (v?.estado === 'ok') {
-      if (v.medalha) topo.append(el('span', `c ${v.medalha === 'sem' ? 'neutro' : 'ambar'}`, NOME_MEDALHA[v.medalha]));
-      if (v.uf) topo.append(el('span', 'v', v.uf));
-    } else topo.append(el('span', 'v', 'Perfil não carregado'));
+      if (v.medalha) extra(v.medalha === 'sem' ? 'v' : 'med', NOME_MEDALHA[v.medalha]);
+      if (v.uf) extra('v', v.uf);
+    } else extra('v', 'Perfil não carregado');
+  }
+  if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
+  if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
+
+  // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem dado do catálogo: o estado da espera.
+  if (vista?.espera) {
+    bloco.append(linha(el('span', `t ${vista.espera === 'dados' || vista.espera === 'janela' ? 'aguardando' : 'neutro'}`, vista.motivo ?? ESPERA[vista.espera as keyof typeof ESPERA])));
+  } else if (exata?.estado === 'nao_encontrada') {
+    bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
+  } else if (exata?.estado === 'ok') {
+    const semTipo = !exata.tipo && exata.comissao.estado === 'indisponivel'; // sem tipo a comissão não tem como ser consultada
+    const l = linha(el('span', semTipo ? 't neutro' : 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : semTipo ? 'Tipo e comissão não confirmados' : 'Tipo não confirmado'));
+    if (semTipo && oc.preco === exata.preco) ajuda(l, 'comissão na sua conta', COMISSAO);
+    // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
+    else if (oc.preco === exata.preco) {
+      const c = exata.comissao;
+      l.append(el('span', 'v', '·'), el('span', 'v', 'comissão'));
+      if (c.estado === 'ok') l.append(el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
+      else l.append(el('span', `t ${c.estado === 'aguardando' ? 'aguardando' : 'neutro'}`, c.estado === 'aguardando' ? 'aguardando' : 'indisponível'));
+      if (c.estado === 'indisponivel') l.title = c.motivo;
+      ajuda(l, 'comissão na sua conta', COMISSAO);
+    }
+    bloco.append(l);
   }
 
-  // 2. Giro mínimo ao preço atual: piso e preço da MESMA ocorrência.
+  // 3. Giro mínimo ao preço atual (piso e preço da MESMA ocorrência), compacto; o painel mostra o valor completo.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
   if (volume !== null) {
-    const a = comAjuda(el('span', 'v', 'Giro mínimo ao preço atual'), 'giro mínimo', GIRO);
-    const l = linha(a.rotulo, el('b', '', brl(volume)));
-    l.title = `Piso de "${oc.vendidosTexto}" × preço atual. Não é faturamento: as vendas foram a outros preços.`;
+    const l = linha(el('span', 'v', 'Giro mín.'), el('b', '', brlCompacto(volume / 100)));
+    l.title = `Piso de "${oc.vendidosTexto}" × preço atual = ${brl(volume)}. Não é faturamento: as vendas foram a outros preços.`;
+    ajuda(l, 'giro mínimo', GIRO);
     bloco.append(l);
-    a.ligar(l);
   }
 
-  // 2b. Catálogo enriquecido: oferta exata (tipo + comissão na sua conta) e catálogo (vendedores + idade).
-  if (vista) {
-    if (vista.espera) bloco.append(linha(el('span', `t ${vista.espera === 'dados' || vista.espera === 'janela' ? 'aguardando' : 'neutro'}`, vista.motivo ?? ESPERA[vista.espera as keyof typeof ESPERA])));
-    if (exata?.estado === 'nao_encontrada') bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
-    else if (exata?.estado === 'ok') {
-      const l = linha(el('span', 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : 'Tipo não confirmado'));
-      // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
-      if (oc.preco === exata.preco) {
-        const c = exata.comissao;
-        const a = comAjuda(el('span', 'v', 'Comissão na sua conta'), 'Comissão na sua conta', COMISSAO);
-        l.append(a.rotulo);
-        if (c.estado === 'ok') l.append(el('b', '', `R$ ${valorDaComissao(c.valor, exata.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pctBr(c.valor.percentual)})`));
-        else l.append(el('span', `t ${c.estado === 'aguardando' ? 'aguardando' : 'neutro'}`, c.estado === 'aguardando' ? 'aguardando' : 'indisponível'));
-        if (c.estado === 'indisponivel') l.title = c.motivo;
-        a.ligar(l);
-      }
-      bloco.append(l);
+  // 4. Catálogo: vendedores (N+ = leitura parcial) · idade com semáforo (cor sempre com o texto "há D dias").
+  const o = vista?.espera ? null : vista?.ofertas;
+  const idade = vista ? idadeDoCatalogo(vista.criadoEm, agora) : null;
+  if (o || idade) {
+    const l = linha();
+    l.classList.add('pq');
+    if (o) {
+      const n = o.vendedoresIdentificados;
+      l.append(el('b', '', !o.completa && n === 0 ? 'vendedores não identificados' : `${n}${o.completa ? '' : '+'} ${n === 1 ? 'vendedor' : 'vendedores'}`));
     }
-    const o = vista.ofertas;
-    const idade = idadeDoCatalogo(vista.criadoEm, agora);
-    if (o || idade) {
-      const l = linha();
-      if (o) {
-        const n = o.vendedoresIdentificados;
-        const texto = !o.completa && n === 0 ? 'Vendedores não identificados'
-          : `${o.completa ? '' : '≥ '}${n} ${n === 1 ? 'vendedor' : 'vendedores'} no catálogo`;
-        const a = comAjuda(el('b', '', texto), 'vendedores no catálogo', VENDEDORES);
-        l.append(a.rotulo);
-        if (!o.completa) l.append(el('span', 'c aguardando', 'Leitura parcial'));
-        a.ligar(l);
-      }
-      if (idade) l.append(el('span', `c idade ${idade.tom}`, `catálogo criado há ${idade.dias} ${idade.dias === 1 ? 'dia' : 'dias'}`));
-      bloco.append(l);
+    if (idade) {
+      if (o) l.append(el('span', 'v', '·'));
+      const g = el('span', 'g');
+      g.append(el('span', 'v', 'catálogo'), el('span', `t idade ${idade.tom}`, `há ${idade.dias} ${idade.dias === 1 ? 'dia' : 'dias'}`));
+      l.append(g);
     }
+    if (o) ajuda(l, 'vendedores no catálogo', VENDEDORES);
+    bloco.append(l);
   }
 
   // 3. Meu anúncio nesta busca (proprio null = verificação indisponível: nada conclusivo).

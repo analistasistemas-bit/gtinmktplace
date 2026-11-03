@@ -21,7 +21,7 @@ export function seloDaBusca(r: ResultadoCard | undefined): LinhaDaMargem | null 
   }
   const m = c.valor.margemPct;
   return {
-    rotulo: 'Minha margem · simulação Clássico',
+    rotulo: 'Minha margem · Clássico',
     valor: pct(m),
     tom: m < 0 ? 'prejuizo' : 'lucro',
     titulo: `Seu SKU ${r.codigo}: margem simulada no Clássico ao preço deste card. Abra o painel para ver o Premium.`,

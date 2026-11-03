@@ -12,8 +12,8 @@ describe('seloDaBusca', () => {
     expect(seloDaBusca({ itemId: 'MLB1', estado: 'sem_vinculo' })).toBeNull();
   });
   it('casado: simulação Clássico com uma casa, tom pelo sinal', () => {
-    expect(seloDaBusca(ok('ok', 11.21) as never)).toMatchObject({ rotulo: 'Minha margem · simulação Clássico', valor: '11,2%', tom: 'lucro' });
-    expect(seloDaBusca(ok('ok', -3.4) as never)).toMatchObject({ rotulo: 'Minha margem · simulação Clássico', valor: '-3,4%', tom: 'prejuizo' });
+    expect(seloDaBusca(ok('ok', 11.21) as never)).toMatchObject({ rotulo: 'Minha margem · Clássico', valor: '11,2%', tom: 'lucro' });
+    expect(seloDaBusca(ok('ok', -3.4) as never)).toMatchObject({ rotulo: 'Minha margem · Clássico', valor: '-3,4%', tom: 'prejuizo' });
   });
   it('margem não calculável nunca vira zero', () => {
     expect(seloDaBusca(ok('ok', null) as never)).toMatchObject({ rotulo: 'Minha margem indisponível', valor: null, tom: 'neutro' });
