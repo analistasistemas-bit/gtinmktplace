@@ -61,7 +61,14 @@ export function relatorioFixture(o: { meses?: number; semAnterior?: boolean; ads
       }),
     },
     daily: [],
-    series: serieFixture(meses).map((p) => (o.adsIndisponivel ? { ...p, ads_cost_cents: null, profit_after_ads_cents: null, margin_after_ads: null } : p)),
+    // Último ponto = competência: mesmos números do resumo (em produção ambos vêm da mesma fonte).
+    series: serieFixture(meses).map((p, i, arr) => {
+      const cur = kpisFixture(apos);
+      const q = i === arr.length - 1
+        ? { ...p, gross_cents: cur.gross_cents, profit_cents: cur.profit_cents, ads_cost_cents: cur.ads_cost_cents, profit_after_ads_cents: cur.profit_after_ads_cents, margin_after_ads: cur.margin_after_ads }
+        : p;
+      return o.adsIndisponivel ? { ...q, ads_cost_cents: null, profit_after_ads_cents: null, margin_after_ads: null } : q;
+    }),
     top_families: {
       rows: [
         ['Conjunto Térmico Feminino Premium Inverno', 'A', 0.211, 0.352], ['Camiseta Básica Algodão Pima', 'A', 0.164, 0.301],

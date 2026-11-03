@@ -417,11 +417,12 @@ function pagina1(doc: jsPDF, report: MonthlyReport) {
     ['PEDIDOS', fmtInt(k.orders), deltaRel(k.orders, p?.orders)],
     ['UNIDADES', fmtInt(k.units), deltaRel(k.units, p?.units)],
     ['TICKET MÉDIO', brl(k.ticket_cents), deltaRel(k.ticket_cents, p?.ticket_cents)],
-    [`MARGEM S/ VENDA${apos ? '' : '*'}`, pct(margem), deltaPp(margem, margemAnt)],
-    [`MARKUP${apos ? '' : '*'}`, mk == null ? '—' : pct(mk, 0), deltaPp(mk, mkAnt)],
+    // Glossário: margem/markup sobre o lucro após Ads levam "após Ads" no nome — aqui via nota (*).
+    ['MARGEM S/ VENDA*', pct(margem), deltaPp(margem, margemAnt)],
+    ['MARKUP*', mk == null ? '—' : pct(mk, 0), deltaPp(mk, mkAnt)],
   ];
   celulas.forEach(([r, v, d], i) => compacto(doc, M + i * (cw + 3), cy, cw, 21, r, v, d));
-  if (!apos) texto(doc, `* Margem s/ venda e markup${sufixo}${parcial ? ', calculados só sobre os itens com lucro calculável' : ''}.`, M, cy + 25, { size: 6.4, color: MUTED });
+  texto(doc, `* Margem s/ venda e markup${sufixo}${parcial ? ', calculados só sobre os itens com lucro calculável' : ''}.`, M, cy + 25, { size: 6.4, color: MUTED });
 
   const y = cascata(doc, k, cy + 33);
   const comVenda = report.series.filter((s) => (s.gross_cents ?? 0) > 0).length;
