@@ -84,6 +84,15 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - ML: `PUT /seller-promotions/items/{id}` com o novo `deal_price` — não sai da promoção (spike Zaven 03/11). Relâmpago: sair e reaplicar; SMART: preço do ML.
 - Reverter volta ao preço que o ML tinha antes (gravado no momento da escrita); se o preço mudou depois, o item fica "Mudou".
 
+- 1ª alteração em massa real (03/11, Zaven): 13 jaquetas a R$ 43,90 em 38 s; quem já estava no preço vira "Já estava" sem PUT.
+
+### Aba Em promoção e Operações (2026-11-03, só front)
+
+- Em promoção: 20 anúncios por página em cada campanha (20/50/100), ordem por descrição; "Selecionar todos" e as ações valem para todas as páginas.
+- Operação concluída com itens em erro (ex.: ML 500 transitório): **Tentar novamente N com erro** abre o mesmo preview com a mesma ação, só esses itens e no preço da operação; cria operação nova (sem origem — validação completa no servidor). Quem já entrou por outro caminho aparece bloqueado. Não vale para Reverter nem pausar/reativar/reajustar.
+- ML 500 na adesão é transitório (Regata, 2 de 17): readerir resolveu. Não há retry automático de 5xx no aderir.
+- Publicados: selo "Em promoção · X de Y variações · N sem estoque" — SKU UP zerado é pausado pelo ML e não entra em campanha (fica convidado).
+
 ### Busca + mesmo preço/desconto por produto (emenda 2026-11-03)
 
 - Campo de busca no detalhe da campanha (título, MLB ou SKU, sem acento/caixa); "Selecionar todos" marca só o resultado — atalho para "o produto e todas as variações".

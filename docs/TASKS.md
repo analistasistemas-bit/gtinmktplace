@@ -1,11 +1,19 @@
 # PubliAI — Tasks
 
+## Promoções e Publicados: ajustes pós-uso real (só front) — 2026-11-03
+
+- [x] Aura + raio de borda em todos os diálogos `processando` (`ui/dialog`, `ui/alert-dialog`); diálogos roláveis (kit, kit virtual, adicionar variação, estender grade) rolam num filho (main `99c2091c`).
+- [x] Aba Em promoção: 20 por página por campanha (seleção vale para todas as páginas), ordem por descrição; `<main>` do AppShell `relative` — filhos `absolute` escapavam do overflow e o body rolava (faixa preta no fim da página) (main `bb2c0555`).
+- [x] Publicados: selo "Em promoção · X de Y variações · N sem estoque" (SKUs UP fora da promoção com estoque 0; o ML não deixa SKU zerado participar) (main `f929b980`).
+- [x] Operações de promoção: "Tentar novamente N com erro" — mesma ação, só os itens com erro, preço do log, operação nova sem origem; Reverter fora (main `9a9485d7`).
+- [ ] Opcional: retry automático de 5xx na adesão (`operacoes-massa`) — hoje ML 500 vira `erro` direto.
+
 ## Promoções: alterar o preço de quem já participa (DEAL) — 2026-11-03
 
 - [x] Spike autorizado: `PUT /seller-promotions/items/{id}` muda o deal_price sem sair (Zaven MLB5441057075 → R$ 43,90).
 - [x] Ação `alterar_preco` (migration `20261103151129`), executor com etapa durável/preço anterior/PUT incerto, Reverter validado no servidor.
 - [x] "Alterar preço N" com busca na aba Em promoção e na aba Participando (Desconto %/Preço R$ + lucro exato).
-- [ ] Diego: primeira alteração em massa real (ex.: 13 jaquetas restantes a R$ 43,90).
+- [x] Diego: primeira alteração em massa real — 13 jaquetas a R$ 43,90 em 38 s (op `a48ca9f1`, 03/11 15:49 UTC); a já ajustada virou `ja_estava` sem PUT.
 
 ## Promoções: busca + mesmo preço/desconto para produto e variações (emenda ADR-0174) — 2026-11-03
 
