@@ -22,7 +22,7 @@ export function AppShell() {
         <BannerOffline />
         <SupportBanner />
         <Topbar onOpenMobile={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/30">
+        <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-muted/30">
           {readOnlySupport ? (
             <fieldset disabled className="contents" aria-label="Operação em modo somente leitura">
               <legend className="sr-only">Modo de suporte somente leitura: alterações estão desativadas.</legend>

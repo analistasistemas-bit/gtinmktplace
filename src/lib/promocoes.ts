@@ -1,6 +1,7 @@
 // ADR-0170 — leitura da Central de Promoções (o sync grava; aqui só lemos) + regras de exibição puras.
 import { supabase } from '@/lib/supabase';
 import { buscarTodasPaginas } from '@/lib/paginacao-supabase';
+import { formatarNomeProduto } from '@/lib/texto';
 
 export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export interface ContagemPromo {
@@ -84,6 +85,12 @@ export function agruparParticipacoes(itens: Participacao[], promocoes: Promocao[
     const g = grupos.get(it.promocao_id) ?? { promocao, itens: [], operavel: ehTipoOperavel(promocao.tipo) };
     g.itens.push(it);
     grupos.set(it.promocao_id, g);
+  }
+  // Dentro da campanha: ordem de descrição (o que aparece na linha), desempate pelo MLB — pedido do Diego, 03/11.
+  const desc = (i: Participacao) => formatarNomeProduto(i.titulo) || i.ml_item_id;
+  for (const g of grupos.values()) {
+    g.itens.sort((a, b) => desc(a).localeCompare(desc(b), 'pt-BR', { sensitivity: 'base', numeric: true })
+      || a.ml_item_id.localeCompare(b.ml_item_id));
   }
   const fim = (g: GrupoParticipacao) => (g.promocao.fim ? Date.parse(g.promocao.fim) : Infinity);
   return [...grupos.values()].sort((a, b) => fim(a) - fim(b));

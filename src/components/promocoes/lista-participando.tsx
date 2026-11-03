@@ -1,10 +1,12 @@
 // ADR-0174, emenda 2026-10-05 — aba "Em promoção": tudo que participa, por campanha; DEAL/SMART saem pelo motor.
 import { ehTipoOperavel } from '@/lib/operacoes';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BadgePercent, ExternalLink, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Pagination } from '@/components/ui/pagination';
+import { usePaginacao } from '@/hooks/usePaginacao';
 import { filtrarPorBusca } from '@/lib/promocao-simulacao';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -58,7 +60,7 @@ export function ListaParticipando() {
       {visiveis.length === 0
         ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio em promoção com essa busca.</p>
         : visiveis.map(({ grupo: g, itens }) => (
-          <BlocoCampanha key={g.promocao.promocao_id} grupo={g} visiveis={itens}
+          <BlocoCampanha key={g.promocao.promocao_id} grupo={g} visiveis={itens} busca={busca}
             selecionados={selecao[g.promocao.promocao_id] ?? VAZIO}
             onSelecao={(s) => setSelecao((prev) => ({ ...prev, [g.promocao.promocao_id]: s }))} />
         ))}
@@ -67,9 +69,10 @@ export function ListaParticipando() {
 }
 
 const VAZIO: Set<string> = new Set();
+const TAMANHOS = [20, 50, 100];
 
-function BlocoCampanha({ grupo, visiveis, selecionados, onSelecao }: {
-  grupo: GrupoParticipacao; visiveis: Participacao[]; selecionados: Set<string>; onSelecao: (s: Set<string>) => void;
+function BlocoCampanha({ grupo, visiveis, busca, selecionados, onSelecao }: {
+  grupo: GrupoParticipacao; visiveis: Participacao[]; busca: string; selecionados: Set<string>; onSelecao: (s: Set<string>) => void;
 }) {
   const { promocao: p, itens, operavel } = grupo;
   const [preview, setPreview] = useState<{ acao: 'sair' | 'alterar_preco'; itens: Participacao[] } | null>(null);
@@ -81,6 +84,15 @@ function BlocoCampanha({ grupo, visiveis, selecionados, onSelecao }: {
   const marcados = itens.filter((i) => selecionados.has(i.ml_item_id));
   const todos = visiveis.length > 0 && visiveis.every((i) => selecionados.has(i.ml_item_id));
   const setSelecionados = (f: (prev: Set<string>) => Set<string>) => onSelecao(f(selecionados));
+  // Paginação só da exibição (03/11): seleção e "Selecionar todos" continuam valendo para todas as páginas.
+  const pag = usePaginacao(visiveis, { tamanhoInicial: 20 });
+  const { reset } = pag;
+  useEffect(() => reset(), [busca, reset]);
+  const topo = useRef<HTMLElement>(null);
+  const irPara = (n: number) => {
+    pag.irPara(n);
+    topo.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
 
   const alternar = (id: string) => setSelecionados((prev) => {
     const novo = new Set(prev);
@@ -94,7 +106,7 @@ function BlocoCampanha({ grupo, visiveis, selecionados, onSelecao }: {
   });
 
   return (
-    <section aria-labelledby={tituloId} className="rounded-xl border bg-card shadow-xs">
+    <section ref={topo} aria-labelledby={tituloId} className="scroll-mt-6 rounded-xl border bg-card shadow-xs">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
         <div className="flex min-w-0 items-center gap-3">
           {operavel && (
@@ -127,8 +139,13 @@ function BlocoCampanha({ grupo, visiveis, selecionados, onSelecao }: {
         )}
       </header>
       <ul className="divide-y">
-        {visiveis.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
+        {pag.itensPagina.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
       </ul>
+      {pag.total > TAMANHOS[0] && (
+        <Pagination className="border-t px-4" rotuloItem="anúncio" tamanhos={TAMANHOS} paginaAtual={pag.paginaAtual}
+          totalPaginas={pag.totalPaginas} inicio={pag.inicio} fim={pag.fim} total={pag.total} tamanho={pag.tamanho}
+          onIrPara={irPara} onTamanho={pag.setTamanho} />
+      )}
       {operavel && (
         <PreviewOperacao
           acao={preview?.acao ?? 'sair'} tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
