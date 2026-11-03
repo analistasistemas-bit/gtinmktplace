@@ -143,6 +143,15 @@ describe('agruparParticipacoes', () => {
     ]);
   });
 
+  it('itens de cada campanha em ordem de descrição (pt-BR, sem caixa/acento, números naturais); sem título vai pelo MLB', () => {
+    const promos = [promo({ promocao_id: 'A' })];
+    const t = (ml_item_id: string, titulo: string | null) => ({ promocao_id: 'A', ml_item_id, titulo }) as Participacao;
+    const g = agruparParticipacoes([
+      t('MLB5', 'jaqueta 10'), t('MLB4', 'Jaqueta 9'), t('MLB3', 'Água'), t('MLB2', null), t('MLB9', 'bermuda'), t('MLB1', 'Bermuda'),
+    ], promos, agora);
+    expect(g[0].itens.map((i) => i.ml_item_id)).toEqual(['MLB3', 'MLB1', 'MLB9', 'MLB4', 'MLB5', 'MLB2']);
+  });
+
   it('fora: campanha encerrada (status ou fim vencido), cupom, campanha desconhecida', () => {
     const promos = [
       promo({ promocao_id: 'F', status: 'finished' }),

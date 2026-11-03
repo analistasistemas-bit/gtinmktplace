@@ -43,7 +43,8 @@ o Diego em 2026-09-24.
    vigente do financeiro (variação → anúncio → GTIN → código; linha com custo vence
    linha sem custo, depois a mais recente, ADR-0108), com o vínculo de item filho de User Products por
    `anuncios_externos_itens` na frente (família dissolvida não tem SKU, ADR-0105) e "anúncio" valendo só
-   para anúncio de cor única. O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança
+   para anúncio de cor única (emenda 2026-11-03: linhas do mesmo código no mesmo anúncio — planilha
+   reenviada em vários lotes — contam como uma cor só, pela mesma régua). O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança
    no cadastro aparece no próximo sync. Comissão ou frete que o ML não informou (proveniência
    `estimated`) deixam a cor **sem líquido** — nunca viram zero. A origem vem de `familias.origem`
    (obrigatória desde o ingest, ADR-0107).

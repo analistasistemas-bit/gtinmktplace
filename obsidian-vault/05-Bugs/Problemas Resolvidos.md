@@ -10,6 +10,18 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Faixa preta no fim de páginas longas (2026-11-03)** — na aba Em promoção (77 anúncios) a casca acabava no meio da
+  tela e o resto ficava preto. **Raiz:** `<main>` do AppShell (`overflow-y-auto`) sem `position`; filhos `absolute`
+  (`sr-only` de cada linha, input escondido do Checkbox) usavam o viewport como containing block, escapavam do clip e
+  esticavam o documento (3804 px numa tela de 720). **Fix:** `relative` no `<main>` (main `bb2c0555`) — vale para
+  todas as páginas. Medir `document.documentElement.scrollHeight` × `innerHeight` no Chromium; jsdom não mostra.
+
+- **Central de Promoções: "Sem custo no PubliAI" em anúncio com custo (2026-11-03)** — 32 anúncios
+  da Avil (alfinetes, Kit Costura…) sem líquido. **Raiz:** a mesma planilha subida em 3 lotes gerou
+  3 linhas do mesmo código por `ml_item_id`, e o resolvedor só aceitava anúncio com 1 linha
+  (`sem_cadastro`, que a tela rotula igual a `sem_custo`). **Fix:** linhas do mesmo código contam
+  como uma cor só (emenda ADR-0170, main `ff0b3047`). 34 → 1.
+
 - **Mensagens pós-venda invisíveis para membro da org (2026-10-20)** — Samuel (Avil) via
   Faturamento → Mensagens vazio e sem badge; Diego via a conversa. **Raiz:** RLS de `ml_mensagens`
   e as RPCs `contar_conversas_aguardando`/`marcar_mensagens_lidas` filtravam `user_id = auth.uid()`,

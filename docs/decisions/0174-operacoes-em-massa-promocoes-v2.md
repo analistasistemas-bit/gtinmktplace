@@ -233,6 +233,49 @@ SMART). Desenho completo: `docs/superpowers/specs/2026-11-02-relampago-aderir-de
    sugerido da visão por item; falha da leitura degrada só a linha (sem faixa → indisponível).
 7. Constraint `operacoes_massa_promocao_tipo_check` passa a aceitar `'LIGHTNING'`.
 
+## Emenda 2026-11-03 — busca e mesmo preço/desconto para um produto e suas variações
+
+Pedido do Diego: no detalhe da campanha, achar um produto e aplicar **o mesmo desconto (%) ou o mesmo preço (R$)** a
+todas as variações dele (cada cor costuma ser um MLB próprio), vendo o lucro líquido antes de aderir. Plano:
+`docs/superpowers/plans/2026-11-03-promo-busca-simular-desconto.md` (revisado pelo Codex: 5 achados absorvidos).
+
+1. **Busca** no front: todas as palavras no título, MLB (inclusive o normal do par de catálogo) ou SKU; "Selecionar
+   todos" marca só o resultado.
+2. **Simulação** só DEAL/Relâmpago, aba Convidados: desconto sobre `preco_original` (centavos arredondados) ou preço
+   fixo. O líquido vem **sempre do servidor** — `operacoes-massa` `etapa: 'simular'` (qualquer membro, só leitura,
+   ≤ 50 anúncios por chamada) reprojeta cada anúncio no preço pedido pelo mesmo caminho da trava
+   (`criarProjecaoExata`, de onde `criarSemaforoExato` passa a derivar). Calcular no front com a tarifa gravada
+   erraria em silêncio quando comissão fixa/frete mudam de faixa.
+3. Item sem faixa do ML, fora da Central ou não convidado → "não simulado" com motivo; fora da faixa / < R$ 19
+   (Relâmpago) → aviso na linha (o preview bloqueia como antes).
+4. **Aderir** com simulação ativa: o preview usa o preço simulado antes de calcular semáforo/marcação; selecionado
+   não simulado vem desmarcado. O backend revalida na criação, como sempre.
+5. Resposta de simulação que chega depois de limpar/trocar aba/campanha é descartada (geração por chamada).
+6. **Espelho financeiro após aderir** (incidente Zaven 03/11: jaquetas aplicadas a R$ 49,90 apareciam a R$ 63,72 e a
+   campanha com "0 participando" até o sync seguinte): DEAL/Relâmpago gravam `preco_promo` e, com a projeção exata no
+   preço aplicado, `preco_avaliado`/`projecao`/`pior_semaforo`; ao fim da execução/conferência a contagem da campanha
+   é recalculada (`contar` do sync). SMART não espelha preço (o preço é do ML). Com rodada do sync reservada nada disso
+   escreve (o sync grava o estado real); o retry `ja_estava` não espelha preço (a leitura do ML não traz o da oferta).
+
+## Emenda 2026-11-03 (2) — 4º tipo: alterar o preço de quem já participa (DEAL)
+
+Pedido do Diego: mudar o desconto de anúncios que já estão na campanha, em massa e com busca, sem sair. Spike
+autorizado (Zaven `MLB5441057075`, `P-MLB17909028`): `PUT /seller-promotions/items/{id}?app_version=v2`
+`{promotion_id, promotion_type:'DEAL', deal_price}` → 200, continua `started`, preço novo nas duas visões em ≤15 s.
+Plano: `docs/superpowers/plans/2026-11-03-promo-alterar-preco.md` (Codex: 3×P1 + 2×P2 absorvidos).
+
+1. Ação `alterar_preco` (migration `20261103151129`: checks de ação + barreiras `operacoes_massa_reivindicar` /
+   `reajuste_reivindicar` com o reajuste). **Só DEAL** — Relâmpago exige sair e reaplicar; SMART = preço do ML.
+2. Validação: item participando, preço em centavos > 0 e < `preco_original`; participante não tem faixa (o ML
+   valida); trava financeira igual à adesão.
+3. Executor: `etapa='escrita_pedida'` + `preco_anterior` lido no ML **antes** do PUT (retry não sobrescreve); PUT
+   incerto é conferido relendo o ML; retry com etapa e preço igual = `aplicado` (escrita recuperada). Espelho grava o
+   preço e o líquido exato (ou líquido indisponível, nunca o velho).
+4. Reverter = outra `alterar_preco` de volta ao `preco_anterior`, validada no servidor contra os itens `aplicado` da
+   origem; preço vivo diferente do que a origem deixou → `mudou` (não sobrescreve alteração posterior).
+5. Telas: "Alterar preço N" na aba Em promoção (com busca) e na aba Participando da campanha (com a simulação
+   Desconto %/Preço R$); o painel calcula recebe·lucro·margem no servidor ao abrir e ao aplicar.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de

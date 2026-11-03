@@ -1,5 +1,5 @@
 // ADR-0174 — preview de "Aderir"/"Sair" no detalhe da campanha; reutilizado pelo Reverter.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -16,29 +16,47 @@ import {
   type AcaoPromocao, type LinhaPreview,
 } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
-import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
+import { MAX_SIMULAR, precoAlvo, resumoLucro, type ModoAlvo } from '@/lib/promocao-simulacao';
+import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrecos } from '@/hooks/useOperacoes';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
 
+type Exato = { preco: number; recebe: number; lucro: number; margem: number | null; semaforo: LinhaPreview['semaforo'] };
 interface LinhaEditavel extends LinhaPreview {
   precoTexto: string;
   motivoBloqueio?: string;
   motivoErro?: string;
+  /** Recebe/lucro/margem calculados no servidor NESTE preço; só vale enquanto o preço da linha for o mesmo. */
+  exato?: Exato | null;
+  avisoCalculo?: string;
 }
 
 const PRECO_MINIMO_RELAMPAGO = 19;
 const formatarInput = (n: number | null) => (n == null ? '' : n.toFixed(2).replace('.', ','));
+const centavos = (n: number) => Math.round(n * 100);
+const exatoVale = (l: LinhaEditavel) => l.exato != null && l.preco != null && centavos(l.exato.preco) === centavos(l.preco);
+const pctInt = (n: number) => `${Math.round(n * 100)}%`;
 
 function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): LinhaEditavel {
   const preco = parsePreco(texto);
   const original = itens.find((i) => i.ml_item_id === l.ml_item_id);
-  const semaforo = original ? semaforoNoPreco(original.projecao, preco) : l.semaforo;
-  return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined };
+  // Achado Codex: voltou a um preço já calculado no servidor → o semáforo é o do servidor, não a estimativa local.
+  const doServidor = l.exato != null && preco != null && centavos(l.exato.preco) === centavos(preco) ? l.exato.semaforo : null;
+  const semaforo = doServidor ?? (original ? semaforoNoPreco(original.projecao, preco) : l.semaforo);
+  return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined, avisoCalculo: undefined };
 }
 
-function construirLinhas(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
-  return montarPreview(acao, tipo, itens).map((l) => {
+function construirLinhas(
+  acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], naoRevertiveis?: Map<string, string>, simulados?: Map<string, number>,
+): LinhaEditavel[] {
+  const porId = new Map(itens.map((i) => [i.ml_item_id, i]));
+  return montarPreview(acao, tipo, itens, simulados).map((l) => {
     const motivoBloqueio = naoRevertiveis?.get(l.ml_item_id);
-    return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco) };
+    // A projeção do item já é a do servidor no preço avaliado (sugerido, ou o simulado na tela): de graça.
+    const it = porId.get(l.ml_item_id);
+    const r = it?.preco_avaliado != null ? resumoLucro(it, { preco: it.preco_avaliado, projecao: it.projecao, pior_semaforo: it.pior_semaforo }) : null;
+    const exato = r && it?.preco_avaliado != null ? { preco: it.preco_avaliado, ...r, semaforo: it.pior_semaforo } : null;
+    return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco), exato };
   });
 }
 
@@ -49,12 +67,14 @@ function textoRisco(vermelho: number, indisponivel: number): string {
   return partes.join(' e ');
 }
 
-export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis }: {
+export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados }: {
   acao: AcaoPromocao; tipo: TipoPromocaoOperavel; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
    *  sheet (X, Esc, overlay) não pode apagar a seleção que o operador fez nas duas abas. */
   onSucesso?: () => void; naoRevertiveis?: Map<string, string>;
+  /** Preço escolhido na simulação (emenda 2026-11-03); os itens já chegam com a projeção do servidor nesse preço. */
+  simulados?: Map<string, number>;
 }) {
   const podeExecutar = usePodeExecutarOperacao();
   const criar = useCriarOperacao();
@@ -62,20 +82,31 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [confirmadoRisco, setConfirmadoRisco] = useState(false);
 
+  // Achado Codex: cálculo pendente de uma abertura anterior não toca as linhas da nova (nem segue para o próximo lote).
+  const geracao = useRef(0);
   // Reabrir com preview novo (item mudou, ou trocou o grupo aderir/sair): recomeça do zero.
   useEffect(() => {
+    geracao.current++;
     if (!aberto) return;
-    setLinhas(construirLinhas(acao, tipo, itens, naoRevertiveis));
+    const novas = construirLinhas(acao, tipo, itens, naoRevertiveis, simulados);
+    setLinhas(novas);
     setConfirmadoRisco(false);
-  }, [aberto, acao, tipo, itens, naoRevertiveis]);
+    // Achado Codex P2 (alterar preço): preço inicial sem cálculo válido (Reverter, simulação parcial) já abre
+    // calculando no servidor — nunca mostra o lucro de outro preço.
+    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recomeça só quando o preview muda (podeEditarPreco deriva de acao/tipo)
+  }, [aberto, acao, tipo, itens, naoRevertiveis, simulados]);
 
-  const podeEditarPreco = acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING');
+  // Alterar preço (emenda 2026-11-03): só campanhas tradicionais aceitam PUT do deal_price.
+  const podeEditarPreco = (acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING')) || (acao === 'alterar_preco' && tipo === 'DEAL');
+  const originalDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.preco_original ?? null;
+  const acimaDoOriginal = (l: LinhaEditavel) => acao === 'alterar_preco' && l.preco != null && originalDe(l.ml_item_id) != null && l.preco >= originalDe(l.ml_item_id)!;
   const minimoRelampago = (l: LinhaEditavel) => tipo === 'LIGHTNING' && l.preco != null && l.preco < PRECO_MINIMO_RELAMPAGO;
   const marcadas = linhas.filter((l) => l.marcado);
   const risco = precisaConfirmarRisco(acao, linhas);
   const temRisco = risco.vermelho + risco.indisponivel > 0;
   const semFaixa = (l: LinhaEditavel) => tipo === 'LIGHTNING' && (l.min == null || l.max == null);
-  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || semFaixa(l) || minimoRelampago(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
+  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || l.preco <= 0 || semFaixa(l) || minimoRelampago(l) || acimaDoOriginal(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
   function alternarMarcado(id: string) {
@@ -85,11 +116,66 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     setLinhas((prev) => prev.map((l) => (l.ml_item_id === id ? aplicarPreco(l, texto, itens) : l)));
   }
   function usarAteQuanto(id: string) {
-    setLinhas((prev) => prev.map((l) => (l.ml_item_id === id && l.ateQuanto != null ? aplicarPreco(l, formatarInput(l.ateQuanto), itens) : l)));
+    const novos = linhas.map((l) => (l.ml_item_id === id && l.ateQuanto != null ? aplicarPreco(l, formatarInput(l.ateQuanto), itens) : l));
+    setLinhas(novos);
+    void calcularExato(novos.filter((l) => l.ml_item_id === id));
   }
   function usarAteQuantoTodos() {
-    setLinhas((prev) => prev.map((l) => (l.ateQuanto != null ? aplicarPreco(l, formatarInput(l.ateQuanto), itens) : l)));
+    const novos = linhas.map((l) => (l.ateQuanto != null ? aplicarPreco(l, formatarInput(l.ateQuanto), itens) : l));
+    setLinhas(novos);
+    void calcularExato(novos.filter((l) => l.ateQuanto != null));
   }
+
+  // Mesmo desconto % ou preço para todas as variações marcadas (pedido do Diego, 03/11).
+  const [modo, setModo] = useState<ModoAlvo>('desconto');
+  const [valorTexto, setValorTexto] = useState('');
+  const simularM = useSimularPrecos();
+  const valor = parsePreco(valorTexto);
+  function aplicarATodos() {
+    if (valor == null) return;
+    let semOriginal = 0;
+    // Todas as linhas (menos bloqueadas): quem veio desmarcado (não verde) também recebe o preço; marcação intacta.
+    const novos = linhas.map((l) => {
+      if (l.motivoBloqueio) return l;
+      const it = itens.find((i) => i.ml_item_id === l.ml_item_id);
+      const p = it ? precoAlvo(it, modo, valor) : null;
+      if (p == null) { semOriginal++; return l; }
+      return aplicarPreco(l, formatarInput(p), itens);
+    });
+    if (semOriginal) toast.info(`${semOriginal} anúncio(s) sem preço original ficaram com o preço anterior.`);
+    setLinhas(novos);
+    void calcularExato(novos.filter((l) => !l.motivoBloqueio));
+  }
+  /** Recebe/lucro/margem no servidor, preço exato (lotes de MAX_SIMULAR, em sequência). */
+  async function calcularExato(alvo: LinhaEditavel[]) {
+    const g = geracao.current;
+    const pedidos = alvo.filter((l) => l.preco != null && l.preco > 0 && !exatoVale(l)).map((l) => ({ ml_item_id: l.ml_item_id, preco: l.preco! }));
+    for (let i = 0; i < pedidos.length; i += MAX_SIMULAR) {
+      const lote = pedidos.slice(i, i + MAX_SIMULAR);
+      let res;
+      try {
+        res = await simularM.mutateAsync({ promocao_id: promocaoId, itens: lote });
+      } catch (e) {
+        if (g === geracao.current) toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
+        return;
+      }
+      if (g !== geracao.current || !Array.isArray(res)) return;
+      const pedido = new Map(lote.map((p) => [p.ml_item_id, p.preco]));
+      const porId = new Map(res.map((r) => [r.ml_item_id, r]));
+      // Resposta (inclusive "ignorado") só vale para a linha que ainda está no preço pedido.
+      setLinhas((prev) => prev.map((l) => {
+        const r = porId.get(l.ml_item_id);
+        const pedidoPreco = pedido.get(l.ml_item_id);
+        if (!r || l.preco == null || pedidoPreco == null || centavos(pedidoPreco) !== centavos(l.preco)) return l;
+        if (r.status === 'ignorado') return { ...l, exato: null, avisoCalculo: r.motivo };
+        const it = itens.find((x) => x.ml_item_id === l.ml_item_id);
+        const s = it ? resumoLucro(it, r) : null;
+        return { ...l, semaforo: r.pior_semaforo, exato: s ? { preco: r.preco, ...s, semaforo: r.pior_semaforo } : null, avisoCalculo: undefined };
+      }));
+    }
+  }
+  const editaveis = linhas.filter((l) => !l.motivoBloqueio);
+  const faltaCalcular = podeEditarPreco && editaveis.some((l) => l.preco != null && l.preco > 0 && !exatoVale(l));
 
   async function executar() {
     const pedido = marcadas.map((l) => ({
@@ -119,7 +205,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     }
   }
 
-  const titulo = acao === 'aderir' ? `Aderir à ${promocaoNome}` : `Sair de ${promocaoNome}`;
+  const titulo = acao === 'aderir' ? `Aderir à ${promocaoNome}`
+    : acao === 'alterar_preco' ? `${origemId ? 'Reverter preço' : 'Alterar preço'} em ${promocaoNome}`
+    : `Sair de ${promocaoNome}`;
 
   return (
     <Sheet open={aberto} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -128,11 +216,41 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
           <SheetTitle>{titulo}</SheetTitle>
           <SheetDescription>{marcadas.length} de {linhas.length} selecionados para enviar.</SheetDescription>
         </SheetHeader>
-        {podeEditarPreco && linhas.some((l) => l.ateQuanto != null) && (
-          <div className="px-4">
-            <Button type="button" variant="outline" size="sm" onClick={usarAteQuantoTodos}>
-              Usar &quot;Até quanto descer&quot; em todos
-            </Button>
+        {podeEditarPreco && (
+          <div className="flex flex-col gap-2 border-b px-4 pb-3">
+            <p className="text-xs font-medium text-muted-foreground">Mesmo preço para {editaveis.length === 1 ? 'o anúncio' : `todos os ${editaveis.length} anúncios`}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs value={modo} onValueChange={(v) => setModo(v as ModoAlvo)}>
+                <TabsList aria-label="Aplicar desconto ou preço aos marcados">
+                  <TabsTrigger value="desconto">Desconto %</TabsTrigger>
+                  <TabsTrigger value="preco">Preço R$</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Input
+                value={valorTexto} onChange={(e) => setValorTexto(e.target.value)} inputMode="decimal"
+                placeholder={modo === 'desconto' ? 'Ex.: 15' : 'Ex.: 59,90'}
+                aria-label={modo === 'desconto' ? 'Desconto em % para todos' : 'Preço em reais para todos'}
+                className="w-28 tabular-nums"
+              />
+              <Button type="button" size="sm" onClick={aplicarATodos} disabled={valor == null || editaveis.length === 0 || simularM.isPending}>
+                Aplicar a todos
+              </Button>
+              {faltaCalcular && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void calcularExato(editaveis)} disabled={simularM.isPending}>
+                  {simularM.isPending ? 'Calculando…' : 'Recalcular lucro'}
+                </Button>
+              )}
+            </div>
+            {linhas.some((l) => l.ateQuanto != null) && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={usarAteQuantoTodos}>
+                  Usar o menor preço viável em todos
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Menor preço da faixa do ML em que você ainda recebe o seu líquido mínimo cadastrado.
+                </span>
+              </div>
+            )}
           </div>
         )}
         <ul className="flex flex-1 flex-col divide-y divide-border overflow-y-auto px-4">
@@ -172,12 +290,26 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                         <span className="text-xs text-muted-foreground">{fmtBRLSemSimbolo(l.min)} a {fmtBRLSemSimbolo(l.max)}</span>
                       )}
                       {l.ateQuanto != null && (
-                        <Button type="button" variant="outline" size="xs" onClick={() => usarAteQuanto(l.ml_item_id)}>
-                          Usar Até quanto descer
+                        <Button type="button" variant="outline" size="xs" onClick={() => usarAteQuanto(l.ml_item_id)}
+                          title="Menor preço da faixa do ML em que você ainda recebe o seu líquido mínimo cadastrado">
+                          Menor preço viável: {fmtBRL(l.ateQuanto)}
                         </Button>
                       )}
                     </div>
+                    {exatoVale(l) ? (
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        recebe <span className="font-medium text-foreground">{fmtBRL(l.exato!.recebe)}</span>
+                        {' · '}
+                        <span className={l.exato!.lucro < 0 ? 'text-destructive' : 'text-success'}>
+                          {l.exato!.lucro < 0 ? 'prejuízo' : 'lucro'} <span className="font-semibold">{fmtBRL(l.exato!.lucro)}</span>
+                        </span>
+                        {' · margem '}<span className="font-medium text-foreground">{l.exato!.margem != null ? pctInt(l.exato!.margem) : '—'}</span>
+                      </p>
+                    ) : l.avisoCalculo ? (
+                      <p className="text-xs text-danger">{l.avisoCalculo}</p>
+                    ) : null}
                     {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
+                    {acimaDoOriginal(l) && <span className="text-xs text-danger">Precisa ser menor que o preço original ({fmtBRL(originalDe(l.ml_item_id)!)})</span>}
                     {tipo === 'LIGHTNING' && <span className={cn('text-xs', minimoRelampago(l) ? 'text-danger' : 'text-muted-foreground')}>Mínimo R$ 19,00 (frete grátis)</span>}
                     {tipo === 'LIGHTNING' && l.estoqueMin != null && <span className="text-xs text-muted-foreground">Reserva {l.estoqueMin} un.</span>}
                   </div>

@@ -90,4 +90,75 @@ describe('ListaParticipando', () => {
     renderLista();
     expect(screen.getByText('Nenhum anúncio em promoção.')).toBeTruthy();
   });
+
+  // Emenda 2026-11-03: busca + "Alterar preço" em massa (só DEAL).
+  it('busca filtra os blocos; "Selecionar todos" marca só o resultado; Alterar preço abre o preview certo', async () => {
+    renderLista();
+    await userEvent.type(screen.getByLabelText('Buscar anúncios em promoção'), 'mascara');
+    expect(screen.queryByRole('heading', { name: 'Campanha do ML' })).toBeNull();
+    const bloco = screen.getByRole('region', { name: '10.10' });
+    expect(within(bloco).queryByText('Shampoo')).toBeNull();
+    await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar todos de 10.10' }));
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Alterar preço 1' }));
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({
+      acao: 'alterar_preco', promocaoId: 'D', tipo: 'DEAL', itens: [expect.objectContaining({ ml_item_id: 'MLB7' })],
+    }));
+  });
+
+  it('busca sem resultado avisa; Relâmpago não oferece Alterar preço (o ML exige sair e entrar de novo)', async () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo({ promocao_id: 'L', tipo: 'LIGHTNING', nome: 'Relâmpago X' })], isLoading: false } as never);
+    vi.mocked(useParticipacoes).mockReturnValue({ data: [part({ promocao_id: 'L', ml_item_id: 'MLB3' })], isLoading: false } as never);
+    renderLista();
+    const bloco = screen.getByRole('region', { name: 'Relâmpago X' });
+    await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar MLB3' }));
+    expect(within(bloco).queryByRole('button', { name: /Alterar preço/ })).toBeNull();
+    await userEvent.type(screen.getByLabelText('Buscar anúncios em promoção'), 'zzz');
+    expect(screen.getByText('Nenhum anúncio em promoção com essa busca.')).toBeTruthy();
+  });
+
+  // Paginação por campanha (03/11): 20 por página, ordem de descrição, seleção vale para todas as páginas.
+  describe('paginação', () => {
+    const muitos = (promocao_id: string, n: number, prefixo = 'Item') =>
+      Array.from({ length: n }, (_, k) => part({ promocao_id, ml_item_id: `MLB${promocao_id}${k}`, titulo: `${prefixo} ${String(k).padStart(2, '0')}` }));
+    const linhas = (bloco: HTMLElement) => within(bloco).getAllByRole('checkbox', { name: /^Selecionar MLB/ });
+    beforeEach(() => {
+      vi.mocked(usePromocoes).mockReturnValue({ data: [promo({ promocao_id: 'D', nome: '10.10' }), promo({ promocao_id: 'E', nome: '11.11' })], isLoading: false } as never);
+      vi.mocked(useParticipacoes).mockReturnValue({ data: [...muitos('D', 25).reverse(), ...muitos('E', 3)], isLoading: false } as never);
+    });
+
+    it('20 na 1ª página em ordem de descrição, 5 na 2ª; outra campanha não pagina', async () => {
+      renderLista();
+      const bloco = screen.getByRole('region', { name: '10.10' });
+      expect(linhas(bloco)).toHaveLength(20);
+      expect(within(bloco).getAllByText(/^Item \d+$/).map((e) => e.textContent).slice(0, 2)).toEqual(['Item 00', 'Item 01']);
+      expect(linhas(screen.getByRole('region', { name: '11.11' }))).toHaveLength(3);
+      await userEvent.click(within(bloco).getByRole('button', { name: 'Página 2' }));
+      expect(linhas(bloco)).toHaveLength(5);
+      expect(within(bloco).getByText('Item 24')).toBeTruthy();
+      expect(linhas(screen.getByRole('region', { name: '11.11' }))).toHaveLength(3);
+    });
+
+    it('"Selecionar todos" marca as 25 (todas as páginas) e o preview recebe os 25 ids', async () => {
+      renderLista();
+      const bloco = screen.getByRole('region', { name: '10.10' });
+      await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar todos de 10.10' }));
+      await userEvent.click(within(bloco).getByRole('button', { name: 'Alterar preço 25' }));
+      const ids = (preview.mock.calls.at(-1)![0].itens as { ml_item_id: string }[]).map((i) => i.ml_item_id).sort();
+      expect(ids).toEqual(muitos('D', 25).map((i) => i.ml_item_id).sort());
+    });
+
+    it('marcação sobrevive à troca de página; busca volta para a 1ª página', async () => {
+      renderLista();
+      const bloco = screen.getByRole('region', { name: '10.10' });
+      await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar MLBD0' }));
+      await userEvent.click(within(bloco).getByRole('button', { name: 'Página 2' }));
+      await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar MLBD24' }));
+      await userEvent.click(within(bloco).getByRole('button', { name: 'Página 1' }));
+      expect(within(bloco).getByRole('checkbox', { name: 'Selecionar MLBD0' })).toBeChecked();
+      expect(within(bloco).getByRole('button', { name: 'Alterar preço 2' })).toBeTruthy();
+      await userEvent.click(within(bloco).getByRole('button', { name: 'Página 2' }));
+      await userEvent.type(screen.getByLabelText('Buscar anúncios em promoção'), 'item');
+      expect(linhas(screen.getByRole('region', { name: '10.10' }))).toHaveLength(20);
+    });
+  });
 });

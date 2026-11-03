@@ -63,8 +63,22 @@ describe('agregarStatusUP', () => {
   it('conta os SKUs em promoção mesmo com o principal fora dela', () => {
     const promo = { ...st('ativo', 1), preco: 66.4, precoOriginal: 69.9 };
     const r = agregarStatusUP(st('ativo', 1), [st('ativo', 1), promo, st('ativo', 1)]);
-    expect(r?.variacoesEmPromocao).toEqual({ em: 1, total: 3 });
+    expect(r?.variacoesEmPromocao).toEqual({ em: 1, total: 3, semEstoque: 0 });
     expect(r?.preco).toBe(41.9);
+  });
+
+  // Zaven 03/11: jaqueta com 14 de 18 na 11.11 — os 4 de fora pausados por falta de estoque (o ML não
+  // deixa SKU zerado participar). Estoque desconhecido (null) não conta como "sem estoque".
+  it('conta os SKUs fora da promoção que estão sem estoque', () => {
+    const promo = { ...st('ativo', 1), precoOriginal: 73.25 };
+    const r = agregarStatusUP(promo, [promo, promo, st('pausado', 0), st('pausado', 0), st('ativo', null), st('ativo', 2)]);
+    expect(r?.variacoesEmPromocao).toEqual({ em: 2, total: 6, semEstoque: 2 });
+  });
+
+  it('sem estoque só conta quem está fora da promoção e zerado (promo zerado e pausado com estoque, não)', () => {
+    const promoZerado = { ...st('pausado', 0), precoOriginal: 73.25 };
+    const r = agregarStatusUP(promoZerado, [promoZerado, st('pausado', 5), st('ativo', 1)]);
+    expect(r?.variacoesEmPromocao).toEqual({ em: 1, total: 3, semEstoque: 0 });
   });
 
   it('nenhum SKU em promoção → sem contagem', () => {

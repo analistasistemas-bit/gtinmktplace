@@ -293,8 +293,10 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       <DialogContent
         processando={criarMutation.isPending}
         rotuloProcessando="Publicando kit virtual"
-        className="max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl"
+        className="flex max-h-[85vh] w-full max-w-[calc(100vw-2rem)] flex-col p-0 sm:max-w-4xl"
       >
+        {/* Rolagem num filho: no próprio Content o raio da borda (processando) rolaria junto. */}
+        <div className="grid min-h-0 gap-4 overflow-y-auto p-4">
         <DialogHeader>
           <DialogTitle>Criar Kit Virtual</DialogTitle>
           <DialogDescription>
@@ -391,6 +393,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
             </>
           )}
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

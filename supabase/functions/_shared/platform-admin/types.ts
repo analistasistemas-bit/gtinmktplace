@@ -14,7 +14,27 @@ export type CommercialTermsInput = {
   setup_fee_cents: Cents;
   setup_due_month: Month | null;
   reason: string;
+  /** Dia do vencimento no mês seguinte à competência (1..28, padrão 5 — ADR-0193 D-9). */
+  due_day: number;
 };
+
+export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+
+/** Dados de recebimento da Daludi (ADR-0193 D-9): linha única, só service_role. */
+export type PaymentProfileInput = {
+  beneficiary_name: string;
+  document: string;
+  bank_name: string;
+  branch: string;
+  account: string;
+  pix_key_type: PixKeyType;
+  pix_key: string;
+  city: string;
+};
+
+export type PaymentProfile = PaymentProfileInput & { updated_at: string; updated_by: string };
+/** Assinatura do aviso de fechamento mensal (ADR-0193 D-11) no perfil do próprio super-admin. */
+export type NoticeSubscription = { chat_id: string | null; ativo: boolean };
 
 export type CommercialTerms = CommercialTermsInput & {
   id: string;
@@ -69,6 +89,10 @@ export type BillingPreview = {
     recognized_base_cents: Cents;
   }>;
   revision: string;
+  /** ADR-0193 D-4: Σ cupons do vendedor do mês (informativo). Ausente em snapshot anterior à Fatia 2a. */
+  seller_coupon_cents?: Cents | null;
+  /** ADR-0193 D-9: vencimento dos termos. Ausente em snapshot antigo (ler com `?? 5`). */
+  due_day?: number | null;
   blockers: Array<{
     code: string;
     message: string;
@@ -131,7 +155,15 @@ export type OrgSummary = {
   next_terms_starts_on?: string | null;
   /** ADR-0175: data em que a organização foi arquivada; `null`/ausente = ativa. */
   arquivada_em?: string | null;
+  /** ADR-0193 D-12: fechamento da competência exibida (só na carteira). `null` = sem condição
+   *  comercial vigente; ausente = desconhecido (prévia ou leitura do fechamento falhou, ou resposta
+   *  anterior ao deploy). */
+  statement?: WalletStatementState | null;
 };
+
+export type WalletStatementState =
+  | { status: 'closed'; id: string; closed_at: string; total_cents: Cents }
+  | { status: 'open' };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };
 
@@ -146,6 +178,13 @@ export type WalletTotals = {
   org_count: number;
   pending_count: number | null;
   orders: number | null;
+  /** ADR-0193 D-12: bruto do mesmo período do mês anterior, sobre o MESMO universo de `gross_cents`
+   *  (ativas, mesmos filtros, antes da paginação). `null` quando `previous_available` é false.
+   *  Zero é real: o front não calcula percentual sobre anterior zero. Opcionais: resposta anterior
+   *  ao deploy não traz os campos. */
+  previous_gross_cents?: Cents | null;
+  /** false se alguma organização do universo não tem a métrica (atual ou anterior) — ausência nunca vira zero. */
+  previous_available?: boolean;
   warnings: string[];
 };
 
@@ -241,6 +280,12 @@ export type PeriodKpis = {
   profit_coverage: number | null;
   excluded_items: number;
   exclusions: ProfitExclusions;
+  /** Comissão + frete do ML (faturamento − líquido do ML). */
+  channel_costs_cents: Cents;
+  /** Líquido após imposto (= "Líquido" da cascata); null sem alíquota confirmada. */
+  net_after_tax_cents: Cents | null;
+  /** Faturamento dos itens faturáveis sem lucro calculável (Σ `exclusions`). */
+  excluded_gross_cents: Cents;
   /** Antes de Ads: lucro ÷ covered_gross (parcial quando `profit_partial`). */
   margin: number | null;
   markup: number | null;
@@ -264,6 +309,12 @@ export type SeriesPoint = {
   ads_cost_cents: Cents | null;
   profit_after_ads_cents: Cents | null;
   margin_after_ads: number | null;
+  /** Antes de Ads, sobre a base calculável (lucro ÷ faturamento dos itens calculáveis). */
+  margin: number | null;
+  markup: number | null;
+  /** Faturamento dos itens calculáveis ÷ faturamento dos itens faturáveis. */
+  profit_coverage: number | null;
+  /** Lucro parcial (algum item faturável sem lucro calculável). */
   partial: boolean;
   /** Mês não calculado (volume acima do teto ou falha de leitura): ponto indisponível, nunca zero. */
   unavailable_reason: 'volume' | 'leitura' | null;

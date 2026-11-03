@@ -22,6 +22,7 @@ const statement: BillingStatement = {
     setup_fee_cents: 0,
     setup_due_month: null,
     reason: 'Contrato vigente',
+    due_day: 5,
     version: 1,
     timezone: 'America/Fortaleza',
     created_at: '2026-07-15T12:00:00Z',

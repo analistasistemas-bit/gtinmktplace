@@ -32,7 +32,7 @@ export function DialogArquivarOrg({ org, modo, onClose, onConfirm }: Props) {
 
   return (
     <Dialog open={!!org} onOpenChange={(aberto) => { if (!aberto) { setValor(''); onClose(); } }}>
-      <DialogContent>
+      <DialogContent processando={enviando} destrutivo={arquivar} rotuloProcessando={arquivar ? 'Arquivando organização' : 'Desarquivando organização'}>
         <DialogHeader>
           <DialogTitle>{rotulo} organização</DialogTitle>
           <DialogDescription>
@@ -43,7 +43,7 @@ export function DialogArquivarOrg({ org, modo, onClose, onConfirm }: Props) {
         </DialogHeader>
         <div className="flex flex-col gap-1.5 text-sm">
           <label htmlFor="arquivar-org-slug">Digite <strong>{org?.slug}</strong> para confirmar</label>
-          <Input id="arquivar-org-slug" value={valor} onChange={(e) => setValor(e.target.value)} autoComplete="off" />
+          <Input id="arquivar-org-slug" value={valor} disabled={enviando} onChange={(e) => setValor(e.target.value)} autoComplete="off" />
         </div>
         <DialogFooter>
           <Button
@@ -51,7 +51,7 @@ export function DialogArquivarOrg({ org, modo, onClose, onConfirm }: Props) {
             disabled={valor !== org?.slug || enviando}
             onClick={confirmar}
           >
-            {rotulo}
+            {enviando ? `${arquivar ? 'Arquivando' : 'Desarquivando'}…` : rotulo}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -43,8 +43,9 @@ export interface PublicadoItem {
   precoAtual?: number | null;
   /** Preço "de" quando o anúncio está em promoção; `precoAtual` é então o promocional. */
   precoOriginal?: number | null;
-  /** UP: quantos SKUs da família estão em promoção (ausente se nenhum). */
-  variacoesEmPromocao?: { em: number; total: number };
+  /** UP: quantos SKUs da família estão em promoção (ausente se nenhum); `semEstoque` = SKUs fora dela com
+   *  estoque 0 (o ML pausa e não deixa participar — Zaven 03/11). */
+  variacoesEmPromocao?: { em: number; total: number; semEstoque: number };
   motivo?: string | null;
   /** Modo do anúncio no ML (ao vivo): 'classico' (gold_special) / 'premium' (gold_pro). null se indisponível. */
   listingType?: 'classico' | 'premium' | null;
@@ -113,17 +114,18 @@ export interface PublicadoItem {
  */
 export function agregarStatusUP<S extends { status: StatusPublicado; estoque: number | null; precoOriginal?: number | null }>(
   principal: S | undefined, filhos: S[],
-): (S & { variacoesEmPromocao?: { em: number; total: number } }) | undefined {
+): (S & { variacoesEmPromocao?: { em: number; total: number; semEstoque: number } }) | undefined {
   if (filhos.length === 0) return principal;
   const base = principal ?? filhos[0];
   const conhecidos = filhos.filter((f) => f.estoque != null);
   // Promoção é por SKU no ML: o principal pode estar fora e um irmão dentro (Avil 02/11, Ponge).
   const em = filhos.filter((f) => f.precoOriginal != null).length;
+  const semEstoque = filhos.filter((f) => f.precoOriginal == null && f.estoque === 0).length;
   return {
     ...base,
     status: filhos.some((f) => f.status === 'ativo') ? 'ativo' : base.status,
     estoque: conhecidos.length ? conhecidos.reduce((s, f) => s + (f.estoque as number), 0) : null,
-    ...(em > 0 ? { variacoesEmPromocao: { em, total: filhos.length } } : {}),
+    ...(em > 0 ? { variacoesEmPromocao: { em, total: filhos.length, semEstoque } } : {}),
   };
 }
 

@@ -180,3 +180,29 @@ describe('piorou', () => {
     expect(piorou('indisponivel', 'verde')).toBe(false);
   });
 });
+
+// Emenda ADR-0174 (2026-11-03): alterar o deal_price de item DEAL já participando (PUT; spike Zaven).
+describe('decidir — alterar_preco', () => {
+  const part = { status: 'started', preco_min: null, preco_max: null, offer_id: null, estoque_min: null, preco: 49.9 };
+  it('participando com outro preço → PUT do deal_price', () => {
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(43.9), part, null))
+      .toEqual({ tipo: 'put', body: { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 43.9 } });
+  });
+  it('preço vivo já é o pedido → ja_estava (idempotente: retry não escreve)', () => {
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(49.9), part, null)).toEqual({ tipo: 'fim', status: 'ja_estava', mensagem: null });
+  });
+  it('não participando mais → mudou; Relâmpago/SMART → bloqueado; sem preço → erro', () => {
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(43.9), { ...part, status: 'candidate' }, null))
+      .toEqual({ tipo: 'fim', status: 'mudou', mensagem: 'O anúncio não está mais participando desta promoção' });
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(43.9), null, null)).toMatchObject({ status: 'mudou' });
+    expect(decidir('alterar_preco', 'LIGHTNING', 'P-1', pedido(43.9), part, null)).toMatchObject({ status: 'bloqueado' });
+    expect(decidir('alterar_preco', 'SMART', 'P-1', pedido(43.9), part, null)).toMatchObject({ status: 'bloqueado' });
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(null), part, null)).toMatchObject({ status: 'erro' });
+  });
+  it('Reverter (achado Codex P1): preço vivo ≠ o que a origem deixou → mudou, não sobrescreve', () => {
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', { ...pedido(49.9), esperado: 43.9 }, { ...part, preco: 41 }, null))
+      .toEqual({ tipo: 'fim', status: 'mudou', mensagem: 'O preço mudou desde a alteração original' });
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', { ...pedido(49.9), esperado: 43.9 }, { ...part, preco: 43.9 }, null))
+      .toMatchObject({ tipo: 'put' });
+  });
+});

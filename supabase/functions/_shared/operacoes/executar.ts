@@ -3,7 +3,7 @@
 import { ehParticipando } from '../promocoes/projecao.ts';
 import type { Semaforo } from '../promocoes/tipos.ts';
 import { decidir, piorou } from './decidir.ts';
-import { agendarOuConcluir, gravarPos, laco, type DepsLaco } from './laco.ts';
+import { agendarOuConcluir, FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
 import { type ClienteML, SemEscritaPromocoes } from './ml.ts';
 import type { Acao, ItemNaCampanha, ItemRow, TipoPromocao } from './tipos.ts';
 
@@ -20,6 +20,10 @@ export interface DepsExecutar extends DepsLaco {
   /** Semáforo no preço pedido com a projeção atual da Central; null = item sumiu da Central. */
   semaforoAtual(promocaoId: string, mlItemId: string, preco: number | null): Promise<Semaforo | null>;
   espelharStatusCentral(promocaoId: string, tipo: TipoPromocao, mlItemId: string, espelho: Espelho): Promise<void>;
+  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort. */
+  espelharPreco(promocaoId: string, mlItemId: string, preco: number): Promise<void>;
+  /** Recalcula ml_promocoes.contagem a partir das linhas da Central (mesma regra do sync). Best-effort. */
+  recontarCentral(promocaoId: string): Promise<void>;
 }
 
 const RECONECTAR = 'Sem permissão de escrita em promoções — reconecte a conta do Mercado Livre em Canais';
@@ -68,10 +72,69 @@ const espelhoAderido = (op: OperacaoRow, f: ItemNaCampanha | null): Espelho =>
 const espelhar = (deps: DepsExecutar, op: OperacaoRow, id: string, e: Espelho) =>
   deps.espelharStatusCentral(op.promocao_id, op.promocao_tipo, id, e).catch(() => {});
 
+const centavos = (n: number) => Math.round(n * 100);
+const espelharPrecoSeguro = (deps: DepsExecutar, op: OperacaoRow, id: string, preco: number) =>
+  deps.espelharPreco(op.promocao_id, id, preco).catch(() => {});
+
+/**
+ * Alterar o deal_price (emenda 2026-11-03, achados Codex P1): etapa durável + preço lido no ML ANTES do PUT (o
+ * Reverter volta a ele; retry não sobrescreve); PUT com resultado incerto é conferido relendo o ML.
+ */
+async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fresco: ItemNaCampanha | null): Promise<void> {
+  const id = it.ml_item_id;
+  const d = decidir('alterar_preco', op.promocao_tipo, op.promocao_id,
+    { ml_item_id: id, preco: it.preco, esperado: it.preco_esperado ?? null }, fresco, null);
+  if (d.tipo === 'fim') {
+    if (d.status !== 'ja_estava') return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
+    // Preço vivo = pedido (confirmado na leitura do ML). Com etapa gravada é a escrita desta operação recuperada
+    // depois de um crash → aplicado (revertível); sem etapa, já estava assim antes.
+    const recuperada = it.etapa === 'escrita_pedida';
+    await gravarPos(deps.gravarItem(op.id, id, recuperada
+      ? { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }
+      : { status: 'ja_estava', mensagem: null }));
+    return espelharPrecoSeguro(deps, op, id, it.preco!);
+  }
+  if (d.tipo !== 'put') throw new Error(`decisão inesperada para alterar preço: ${d.tipo}`);
+  // Achado Codex P2: sem o preço vivo não há como reverter depois — não escreve.
+  if (it.preco_anterior == null && fresco?.preco == null) {
+    return deps.gravarItem(op.id, id, { status: 'erro', mensagem: 'O ML não informou o preço atual da oferta' });
+  }
+
+  if (!it.confirmado_risco) {
+    const atual = await deps.semaforoAtual(op.promocao_id, id, it.preco);
+    if (atual === null) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: SAIU_DA_CENTRAL });
+    if (piorou(it.semaforo ?? 'verde', atual)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: PIOROU });
+  }
+
+  await deps.gravarItem(op.id, id, it.preco_anterior == null
+    ? { etapa: 'escrita_pedida', preco_anterior: fresco?.preco ?? null }
+    : { etapa: 'escrita_pedida' });
+  try {
+    await deps.ml.put(id, d.body);
+  } catch (e) {
+    if (e instanceof SemEscritaPromocoes) throw e;
+    // Recusa definitiva do ML (4xx que não é 429): o preço não mudou → erro com a mensagem do ML.
+    const status = Number(/^ML (\d{3})/.exec(e instanceof Error ? e.message : '')?.[1]);
+    if (status >= 400 && status < 500 && status !== 429) throw e;
+    // Resultado incerto (timeout/5xx depois de o ML aplicar?): releitura com o preço novo = aplicado; senão
+    // (achado Codex P1: o ML leva até ~15 s para refletir) o item fica `enviando` com a etapa e o retry reconfere —
+    // o PUT é idempotente.
+    const depois = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => undefined);
+    if (depois?.preco == null || centavos(depois.preco) !== centavos(it.preco!)) throw new FalhaPosEscrita(e);
+  }
+  await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }));
+  await espelharPrecoSeguro(deps, op, id, it.preco!);
+}
+
 async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): Promise<void> {
   const { ml } = deps;
   const id = it.ml_item_id;
-  const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id);
+  // Achado Codex P1: na retomada de uma escrita (etapa gravada), falha de leitura não pode virar `erro` — o PUT pode
+  // ter sido aplicado; o item fica `enviando` e o retry relê.
+  const retomada = op.acao === 'alterar_preco' && it.etapa === 'escrita_pedida';
+  const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
+    .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
+  if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
   const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
   const relacoes = convidado ? await ml.lerRelacoes(id) : null;
@@ -117,6 +180,10 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   }
   const depois = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
   await espelhar(deps, op, id, espelhoAderido(op, depois));
+  // Sem isto a Central mostrava o sugerido (e o líquido dele) até o sync do dia seguinte. Só DEAL/Relâmpago:
+  // no SMART o POST manda só o offer_id e o preço é o do ML (achado Codex P1). O retry `ja_estava` (acima) não
+  // espelha preço de propósito: a leitura do ML não traz o preço da oferta, e o item pode já participar com outro.
+  if (it.preco != null && op.promocao_tipo !== 'SMART') await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
 }
 
 export function executar(
@@ -124,7 +191,12 @@ export function executar(
 ): Promise<{ processados: number; continuou: boolean }> {
   // Sem permissão de escrita em promoções: nada mais passa nesta conta — encerra este e todos os restantes.
   return laco(op.id, deps, opts, (it) => processarItem(op, it, deps),
-    { eh: (e) => e instanceof SemEscritaPromocoes, mensagem: RECONECTAR });
+    { eh: (e) => e instanceof SemEscritaPromocoes, mensagem: RECONECTAR })
+    .then(async (r) => {
+      // Contagem do card da campanha ("Participando") acompanha o espelho — senão fica até o próximo sync.
+      if (r.processados > 0) await deps.recontarCentral(op.promocao_id).catch(() => {});
+      return r;
+    });
 }
 
 export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ confirmados: number; pendentes: number }> {
@@ -171,5 +243,6 @@ export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ c
   }
 
   await agendarOuConcluir(deps, restantes);
+  if (confirmados > 0) await deps.recontarCentral(op.promocao_id).catch(() => {});
   return { confirmados, pendentes: restantes.length };
 }

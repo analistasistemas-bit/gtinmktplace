@@ -543,8 +543,10 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
         <DialogContent
           processando={salvando}
           rotuloProcessando="Enviando a grade nova ao Mercado Livre"
-          className="max-h-[90vh] sm:max-w-5xl overflow-y-auto"
+          className="flex max-h-[90vh] sm:max-w-5xl flex-col p-0"
         >
+          {/* Rolagem num filho: no próprio Content o raio da borda (processando) rolaria junto. */}
+          <div className="grid min-h-0 gap-4 overflow-y-auto p-4">
           <DialogHeader>
             <DialogTitle>Adicionar à grade</DialogTitle>
             <DialogDescription>
@@ -712,6 +714,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade, r
               {salvando ? 'Enviando…' : 'Salvar'}
             </Button>
           </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

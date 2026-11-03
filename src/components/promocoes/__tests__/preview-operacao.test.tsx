@@ -7,10 +7,14 @@ import { PreviewOperacao } from '../preview-operacao';
 import { useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
 import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+const simularAsync = vi.fn();
 vi.mock('@/hooks/useOperacoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOperacoes')>('@/hooks/useOperacoes');
-  return { ...actual, useCriarOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn() };
+  return {
+    ...actual, useCriarOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
+    useSimularPrecos: () => ({ mutateAsync: simularAsync, isPending: false }),
+  };
 });
 
 function cor(over: Partial<CorProjetada> = {}): CorProjetada {
@@ -196,5 +200,117 @@ describe('PreviewOperacao', () => {
     expect(screen.getByLabelText('Selecionar V')).not.toBeChecked();
     expect(screen.getByLabelText('Selecionar V')).toBeDisabled();
     expect(screen.getByText('Não revertível: o anúncio não está mais convidado/participando')).toBeInTheDocument();
+  });
+
+  // Emenda 2026-11-03: alterar o preço de quem já participa (DEAL), em massa.
+  describe('alterar_preco', () => {
+    const participante = (id: string) => item({
+      ml_item_id: id, status: 'started', preco_original: 73.25, preco_promo: 49.9, preco_avaliado: 49.9,
+      preco_min: null, preco_max: null, preco_sugerido: null,
+      projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 32.67 })],
+    });
+
+    it('abre com o preço vigente, todos marcados; Aplicar a todos troca o preço e o envio leva alterar_preco', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
+        ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'verde',
+        projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 29, semaforo: 'verde' })],
+      })));
+      renderPreview({ acao: 'alterar_preco', itens: [participante('A'), participante('B')] });
+      expect(screen.getByText('Alterar preço em Campanha X')).toBeInTheDocument();
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('49,90');
+      expect(screen.getByLabelText('Selecionar A')).toBeChecked();
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '40');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('43,95'); // 73,25 × 0,60
+      await screen.findAllByText(/R\$ 10,50/); // lucro 29 − 18,50 no preço novo, do servidor
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+        acao: 'alterar_preco', promocao_id: 'P1',
+        itens: [expect.objectContaining({ ml_item_id: 'A', preco: 43.95 }), expect.objectContaining({ ml_item_id: 'B', preco: 43.95 })],
+      }));
+    });
+
+    it('preço igual ou acima do original bloqueia o envio', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockResolvedValue([]);
+      renderPreview({ acao: 'alterar_preco', itens: [participante('A')] });
+      const campo = screen.getByLabelText('Preço de A');
+      await user.clear(campo);
+      await user.type(campo, '73,25');
+      expect(screen.getByText(/Precisa ser menor que o preço original/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it('Reverter: abre com o preço anterior e calcula o lucro dele no servidor ao abrir', async () => {
+      simularAsync.mockReset().mockResolvedValue([{ ml_item_id: 'A', status: 'simulado', preco: 49.9, pior_semaforo: 'verde',
+        projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 32.67 })] }]);
+      renderPreview({ acao: 'alterar_preco', origemId: 'OP1', itens: [{ ...participante('A'), preco_promo: 43.9, preco_avaliado: 43.9 }], simulados: new Map([['A', 49.9]]) });
+      expect(screen.getByText('Reverter preço em Campanha X')).toBeInTheDocument();
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('49,90');
+      expect(simularAsync).toHaveBeenCalledWith({ promocao_id: 'P1', itens: [{ ml_item_id: 'A', preco: 49.9 }] });
+      expect(await screen.findByText(/R\$ 14,17/)).toBeInTheDocument();
+    });
+  });
+
+  // Pedido do Diego (03/11): mesmo desconto/preço para todas as variações marcadas, com lucro do servidor.
+  describe('aplicar a todos', () => {
+    const tarifa = { comissao_pct: 14, comissao_fixa: 0, frete: 8.25, aliquota_pct: 4 };
+    const variacao = (id: string) => item({
+      ml_item_id: id, preco_original: 73.25, preco_min: 14.65, preco_max: 71.05, preco_sugerido: 63.72, preco_avaliado: 63.72,
+      projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 44.3 })],
+    });
+
+    it('desconto % vira o preço de cada linha (marcada ou não), e o lucro vem do servidor naquele preço', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
+        ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'verde',
+        projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 39.92 })],
+      })));
+      renderPreview({ itens: [variacao('A'), variacao('B')] });
+      // abre com o lucro do preço sugerido (projeção do sync = mesmo preço)
+      expect(screen.getAllByText(/R\$ 25,80/)).toHaveLength(2); // 44,30 − 18,50
+
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
+
+      expect(simularAsync).toHaveBeenCalledWith({ promocao_id: 'P1', itens: [{ ml_item_id: 'A', preco: 58.6 }, { ml_item_id: 'B', preco: 58.6 }] });
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('58,60');
+      expect(screen.getByLabelText('Preço de B')).toHaveValue('58,60');
+      expect(await screen.findAllByText(/R\$ 21,42/)).toHaveLength(2); // lucro 39,92 − 18,50
+    });
+
+    it('achado Codex: voltar ao preço já calculado restaura o semáforo do servidor (não a estimativa local)', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
+        ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'vermelho',
+        projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 10, semaforo: 'vermelho' })],
+      })));
+      renderPreview({ itens: [variacao('A')] });
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
+      expect(await screen.findByText('Prejuízo')).toBeInTheDocument();
+      const campo = screen.getByLabelText('Preço de A');
+      await user.clear(campo);
+      await user.type(campo, '60');
+      await user.clear(campo);
+      await user.type(campo, '58,60');
+      expect(screen.getByText('Prejuízo')).toBeInTheDocument();
+    });
+
+    it('"Menor preço viável" mostra o valor no botão', () => {
+      renderPreview({ itens: [item({ ...variacao('A'), projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 44.3, ate_quanto: 41.45 })] })] });
+      expect(screen.getByRole('button', { name: /Menor preço viável: R\$\s41,45/ })).toBeInTheDocument();
+    });
+
+    it('editar o preço à mão esconde o lucro antigo e oferece recalcular', async () => {
+      const user = userEvent.setup();
+      renderPreview({ itens: [variacao('A')] });
+      const campo = screen.getByLabelText('Preço de A');
+      await user.clear(campo);
+      await user.type(campo, '60');
+      expect(screen.queryByText(/R\$ 25,80/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Recalcular lucro' })).toBeInTheDocument();
+    });
   });
 });

@@ -11,6 +11,8 @@ export interface ClienteML {
   lerOfertaNoItem(promocaoId: string, itemId: string): Promise<OfertaNoItem | null>;
   lerRelacoes(itemId: string): Promise<Relacoes>;
   post(itemId: string, body: Record<string, unknown>): Promise<{ offer_id: string | null }>;
+  /** Alterar o deal_price de item DEAL já participando (spike 03/11: 200 e o preço muda na hora). */
+  put(itemId: string, body: Record<string, unknown>): Promise<void>;
   del(itemId: string, query: string): Promise<void>;
 }
 
@@ -79,7 +81,7 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       const lgh = tipo === 'LIGHTNING';
       return { status, preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
         offer_id: str(x.offer_id) ?? (lgh ? oferta(x.ref_id) : null),
-        estoque_min: lgh ? num(obj(x.stock).min) : null };
+        estoque_min: lgh ? num(obj(x.stock).min) : null, preco: num(x.price) };
     },
 
     async lerOfertaNoItem(promocaoId, itemId) {
@@ -112,6 +114,11 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       if (r.status !== 200 && r.status !== 201) throw await falha(r);
       // SMART devolve o offer_id NOVO (OFFER-...) — é ele que a saída usa; DEAL não traz offer_id.
       return { offer_id: str(((await r.json().catch(() => null)) as Obj | null)?.offer_id) };
+    },
+
+    async put(itemId, body) {
+      const r = await chamar('PUT', `/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`, body);
+      if (r.status !== 200 && r.status !== 201) throw await falha(r);
     },
 
     async del(itemId, query) {

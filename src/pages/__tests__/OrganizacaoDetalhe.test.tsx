@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
-const { usePlatformOrganization, usePlatformPreview, start, end, requestSupport, cancelSupport, listSupportRequests } = vi.hoisted(() => ({
+const { usePlatformOrganization, usePlatformPreview, useMonthlyReport, baixarRelatorioMensal, start, end, requestSupport, cancelSupport, listSupportRequests } = vi.hoisted(() => ({
   usePlatformOrganization: vi.fn(),
   usePlatformPreview: vi.fn(),
+  useMonthlyReport: vi.fn(),
+  baixarRelatorioMensal: vi.fn(),
   start: vi.fn(),
   end: vi.fn(),
   requestSupport: vi.fn(),
@@ -14,13 +16,14 @@ const { usePlatformOrganization, usePlatformPreview, start, end, requestSupport,
   listSupportRequests: vi.fn(),
 }));
 
-vi.mock('@/hooks/usePlatformAdmin', () => ({ usePlatformOrganization, usePlatformPreview }));
+vi.mock('@/hooks/usePlatformAdmin', () => ({ usePlatformOrganization, usePlatformPreview, useMonthlyReport }));
+vi.mock('@/lib/export/relatorio-mensal-download', () => ({ baixarRelatorioMensal }));
 vi.mock('@/lib/suporte', () => ({ requestSupport, cancelSupport, listSupportRequests }));
 vi.mock('@/stores/support-store', () => ({
   useSupportStore: (selector: (state: { start: typeof start; end: typeof end }) => unknown) => selector({ start, end }),
 }));
 vi.mock('@/components/platform-admin/org-results', () => ({
-  OrgResults: ({ organization }: { organization: { data?: { id: string } } }) => <p>Resultados {organization.data?.id}</p>,
+  OrgResults: ({ report }: { report: { data?: { org: { id: string } } } }) => <p>Resultados {report.data?.org.id}</p>,
 }));
 vi.mock('@/components/platform-admin/org-pulse', () => ({
   OrgPulse: ({ orgId, month }: { orgId: string; month: string }) => <p>Pulse {orgId} {month}</p>,
@@ -71,6 +74,10 @@ function makePreview(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeReport(statement: Record<string, unknown> = { status: 'open' }, extra: Record<string, unknown> = {}) {
+  return { data: { org: { id: 'org-avil' }, statement }, isLoading: false, isError: false, refetch: vi.fn(), ...extra };
+}
+
 beforeEach(() => {
   usePlatformOrganization.mockReturnValue({
     data: {
@@ -91,6 +98,7 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   usePlatformPreview.mockReturnValue({ data: makePreview(), isLoading: false, isError: false });
+  useMonthlyReport.mockReturnValue(makeReport());
   listSupportRequests.mockResolvedValue({ requests: [], total: 0, page: 1, pageSize: 50 });
 });
 
@@ -106,9 +114,10 @@ describe('OrganizacaoDetalhe', () => {
     expect(screen.getByRole('heading', { name: 'Avil' })).toBeInTheDocument();
     expect(screen.getByText('Ambiente de teste')).toBeInTheDocument();
     expect(screen.getByText(/avil · Modalidade 1 · 5% sobre receita/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Mês da organização')).toHaveValue('2026-08');
+    expect(screen.getByRole('combobox', { name: 'Escolher mês' })).toHaveTextContent('Agosto de 2026');
     expect(screen.getByText('Resultados org-avil')).toBeInTheDocument();
     expect(usePlatformOrganization).toHaveBeenCalledWith('org-avil', '2026-08');
+    expect(useMonthlyReport).toHaveBeenCalledWith('org-avil', '2026-08');
     await waitFor(() => expect(listSupportRequests).toHaveBeenCalledWith({ orgId: 'org-avil', page: 1, pageSize: 50, status: 'actionable' }));
     expect(start).not.toHaveBeenCalled();
     expect(screen.queryByText(/pode estar desatualizado/i)).not.toBeInTheDocument();
@@ -260,5 +269,51 @@ describe('OrganizacaoDetalhe', () => {
     const endButton = screen.getByRole('button', { name: 'Encerrar suporte' });
     await user.click(endButton);
     await waitFor(() => expect(end).toHaveBeenCalledWith('request-3'));
+  });
+
+  it('navega o mês com ‹ › preservando a aba, e bloqueia avançar além do mês atual', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin/organizacoes/org-avil?mes=2026-01&aba=pulse');
+    expect(screen.getByRole('combobox', { name: 'Escolher mês' })).toHaveTextContent('Janeiro de 2026');
+    await user.click(screen.getByRole('button', { name: 'Mês anterior' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('mes=2025-12');
+    expect(screen.getByTestId('location')).toHaveTextContent('aba=pulse');
+    await user.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await user.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('mes=2026-02');
+  });
+
+  it('mês atual: botão Próximo mês fica desabilitado', () => {
+    const agora = new Date();
+    const mes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+    renderPage(`/admin/organizacoes/org-avil?mes=${mes}`);
+    expect(screen.getByRole('button', { name: 'Próximo mês' })).toBeDisabled();
+  });
+
+  it('mês aberto: pílula "Mês em aberto" e relatório desabilitado com o motivo', () => {
+    renderPage();
+    expect(screen.getByText('Mês em aberto')).toBeInTheDocument();
+    const botao = screen.getByRole('button', { name: /Gerar relatório mensal/ });
+    expect(botao).toBeDisabled();
+    expect(botao.parentElement).toHaveAttribute('title', expect.stringContaining('Feche o demonstrativo de Agosto de 2026'));
+  });
+
+  it('mês fechado: pílula com a data e relatório habilitado que gera o PDF', async () => {
+    const user = userEvent.setup();
+    useMonthlyReport.mockReturnValue(makeReport({ status: 'closed', id: 's1', closed_at: '2026-09-01T12:00:00Z', snapshot: {} }));
+    baixarRelatorioMensal.mockResolvedValue(undefined);
+    renderPage();
+    expect(screen.getByText('Demonstrativo fechado em 01/09')).toBeInTheDocument();
+    const botao = screen.getByRole('button', { name: /Gerar relatório mensal/ });
+    expect(botao).toBeEnabled();
+    await user.click(botao);
+    await waitFor(() => expect(baixarRelatorioMensal).toHaveBeenCalledWith('org-avil', '2026-08'));
+  });
+
+  it('relatório ainda carregando: sem pílula de estado e botão desabilitado', () => {
+    useMonthlyReport.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() });
+    renderPage();
+    expect(screen.queryByText('Mês em aberto')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gerar relatório mensal/ })).toBeDisabled();
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -107,11 +107,13 @@ export function OrgSettings({ orgId }: { orgId: string }) {
 
   if (organizations.isLoading) {
     return (
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2" aria-busy="true">
+        <span className="sr-only" role="status">Carregando as configurações…</span>
         <Skeleton className="h-48 rounded-lg" />
         <Skeleton className="h-48 rounded-lg" />
         <Skeleton className="h-48 rounded-lg" />
         <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-36 rounded-lg lg:col-span-2" />
       </div>
     );
   }
@@ -128,8 +130,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      <Card size="sm">
         <CardHeader><CardTitle>Cadastro</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1 text-sm">
@@ -147,7 +149,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           {error?.key === 'person' && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
           )}
-          <div className="flex items-center gap-3">
+        </CardContent>
+        <CardFooter className="gap-3">
             <Button
               onClick={() => run(
                 'person',
@@ -159,16 +162,15 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar cadastro
             </Button>
             {cardFooter('person')}
-          </div>
-        </CardContent>
+        </CardFooter>
       </Card>
 
-      <Card>
+      <Card size="sm">
         <CardHeader><CardTitle>Canais</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             {LISTA_CANAIS.map((channel) => (
-              <label key={channel.id} className="flex items-center gap-2 text-sm">
+              <label key={channel.id} className="-mx-2 flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-2 text-sm hover:bg-muted/50">
                 <Checkbox
                   checked={channels.has(channel.id)}
                   disabled={channel.id === 'mercado_livre'}
@@ -185,7 +187,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           {error?.key === 'channels' && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
           )}
-          <div className="flex items-center gap-3">
+        </CardContent>
+        <CardFooter className="gap-3">
             <Button
               onClick={() => run(
                 'channels',
@@ -197,16 +200,15 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar canais
             </Button>
             {cardFooter('channels')}
-          </div>
-        </CardContent>
+        </CardFooter>
       </Card>
 
-      <Card>
+      <Card size="sm">
         <CardHeader><CardTitle>Módulos</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             {MODULOS.map((module) => (
-              <label key={module.id} className="flex items-start gap-2 text-sm">
+              <label key={module.id} className="-mx-2 flex min-h-11 cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted/50">
                 <Checkbox
                   checked={modules.has(module.id)}
                   onCheckedChange={(checked) => setModules((previous) => {
@@ -222,7 +224,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           {error?.key === 'modules' && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
           )}
-          <div className="flex items-center gap-3">
+        </CardContent>
+        <CardFooter className="gap-3">
             <Button
               onClick={() => run(
                 'modules',
@@ -234,11 +237,10 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar módulos
             </Button>
             {cardFooter('modules')}
-          </div>
-        </CardContent>
+        </CardFooter>
       </Card>
 
-      <Card>
+      <Card size="sm">
         <CardHeader><CardTitle>Tipo de produto</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
@@ -246,7 +248,7 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           </p>
           <div className="space-y-2">
             {TIPOS_PRODUTO.map((tipo) => (
-              <label key={tipo.id} className="flex items-start gap-2 text-sm">
+              <label key={tipo.id} className="-mx-2 flex min-h-11 cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted/50">
                 <Checkbox
                   checked={productTypes.has(tipo.id)}
                   onCheckedChange={(checked) => setProductTypes((previous) => {
@@ -262,7 +264,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           {error?.key === 'productTypes' && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
           )}
-          <div className="flex items-center gap-3">
+        </CardContent>
+        <CardFooter className="gap-3">
             <Button
               onClick={() => run(
                 'productTypes',
@@ -278,11 +281,10 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar tipo de produto
             </Button>
             {cardFooter('productTypes')}
-          </div>
-        </CardContent>
+        </CardFooter>
       </Card>
 
-      <Card>
+      <Card size="sm" className="lg:col-span-2">
         <CardHeader><CardTitle>Marca própria</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
@@ -304,7 +306,8 @@ export function OrgSettings({ orgId }: { orgId: string }) {
           {error?.key === 'marca' && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
           )}
-          <div className="flex items-center gap-3">
+        </CardContent>
+        <CardFooter className="gap-3">
             <Button
               onClick={() => {
                 if (marcaPropria && !marcaPadrao.trim()) {
@@ -324,8 +327,7 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar marca
             </Button>
             {cardFooter('marca')}
-          </div>
-        </CardContent>
+        </CardFooter>
       </Card>
     </div>
   );

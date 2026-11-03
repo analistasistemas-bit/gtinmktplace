@@ -12,6 +12,9 @@ import {
   type MonthlyReport,
   type OrgSummary,
   type Page,
+  type PaymentProfile,
+  type PaymentProfileInput,
+  type NoticeSubscription,
   type PulseUsage,
   type RevenueReconciliationInput,
   type Wallet,
@@ -79,8 +82,8 @@ export const platformAdminKeys = {
     key(userId, 'terms', orgId, null, {}),
   preview: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'preview', orgId, month, {}),
-  statements: (userId: UserId, orgId: string) =>
-    key(userId, 'statements', orgId, null, {}),
+  statements: (userId: UserId, orgId: string, month: Month | null = null) =>
+    key(userId, 'statements', orgId, month, {}),
   pulseUsage: (userId: UserId, params: PlatformPulseUsageParams) =>
     key(userId, 'pulse_usage', params.org_id, params.month, filters({
       page: params.page,
@@ -90,6 +93,10 @@ export const platformAdminKeys = {
     key(userId, 'extensao_usage', orgId, month, {}),
   monthlyReport: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'monthly_report', orgId, month, {}),
+  paymentProfile: (userId: UserId) =>
+    key(userId, 'payment_profile', null, null, {}),
+  noticeSubscription: (userId: UserId) =>
+    key(userId, 'notice_subscription', null, null, {}),
   audit: (userId: UserId, params: PlatformAuditParams) =>
     key(userId, 'audit', params.org_id, params.month, filters({
       category: params.category,
@@ -150,11 +157,12 @@ export function usePlatformPreview(orgId: string, month: Month) {
   });
 }
 
-export function usePlatformStatements(orgId: string) {
+/** Com `month`, só o demonstrativo daquela competência (0 ou 1 linha), independente da paginação. */
+export function usePlatformStatements(orgId: string, month?: Month) {
   const userId = useAuthStore((state) => state.user?.id ?? null);
   return useQuery<Page<BillingStatement>>({
-    queryKey: platformAdminKeys.statements(userId, orgId),
-    queryFn: () => callPlatformAdmin('statements', { org_id: orgId }),
+    queryKey: platformAdminKeys.statements(userId, orgId, month ?? null),
+    queryFn: () => callPlatformAdmin('statements', month ? { org_id: orgId, month, page_size: 1 } : { org_id: orgId }),
     enabled: Boolean(userId && orgId),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
@@ -189,6 +197,32 @@ export function useMonthlyReport(orgId: string, month: Month) {
     queryFn: () => callPlatformAdmin('monthly_report', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+/** Dados de recebimento da Daludi (ADR-0193 D-9): linha única de plataforma; null = sem cadastro. */
+export function usePaymentProfile() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<PaymentProfile | null>({
+    queryKey: platformAdminKeys.paymentProfile(userId),
+    queryFn: () => callPlatformAdmin('payment_profile', {}),
+    enabled: Boolean(userId),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+export function useSavePaymentProfile() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  return useMutation<PaymentProfile, Error, PaymentProfileInput>({
+    mutationFn: (input) => {
+      requireUser(userId);
+      return callPlatformAdmin('save_payment_profile', { ...input });
+    },
+    onSuccess: async () => {
+      if (!userId) return;
+      await queryClient.invalidateQueries({ queryKey: platformAdminKeys.paymentProfile(userId) });
+    },
   });
 }
 
@@ -261,6 +295,32 @@ export function useReconcilePlatformRevenue(month: Month) {
     onSuccess: async (_result, input) => {
       if (!userId) return;
       await invalidateBilling(queryClient, userId, input.org_id, month);
+    },
+  });
+}
+
+/** Aviso de fechamento mensal no Telegram (ADR-0193 D-11): assinatura do próprio super-admin. */
+export function useNoticeSubscription(enabled = true) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<NoticeSubscription>({
+    queryKey: platformAdminKeys.noticeSubscription(userId),
+    queryFn: () => callPlatformAdmin('notice_subscription', {}),
+    enabled: Boolean(userId) && enabled,
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+export function useSaveNoticeSubscription() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  return useMutation<NoticeSubscription, Error, NoticeSubscription>({
+    mutationFn: (input) => {
+      requireUser(userId);
+      return callPlatformAdmin('save_notice_subscription', { ...input });
+    },
+    onSuccess: async () => {
+      if (!userId) return;
+      await queryClient.invalidateQueries({ queryKey: platformAdminKeys.noticeSubscription(userId) });
     },
   });
 }

@@ -19,9 +19,9 @@ function resultTone(result: string): StatusTone {
 }
 
 const columns: Column<PulseUsageRow>[] = [
-  { key: 'at', header: 'Data', cell: (row) => new Date(row.at).toLocaleString('pt-BR') },
+  { key: 'at', header: 'Data', className: 'tabular-nums', cell: (row) => new Date(row.at).toLocaleString('pt-BR') },
   {
-    key: 'query', header: 'Consulta',
+    key: 'query', header: 'Consulta', className: 'min-w-48 whitespace-normal break-words',
     cell: (row) => (
       <div>
         <span className="font-medium">{row.query}</span>
@@ -29,7 +29,7 @@ const columns: Column<PulseUsageRow>[] = [
       </div>
     ),
   },
-  { key: 'actor', header: 'Pessoa', cell: (row) => row.actor_name ?? row.actor_id },
+  { key: 'actor', header: 'Pessoa', className: 'whitespace-normal break-words', cell: (row) => row.actor_name ?? row.actor_id },
   {
     key: 'origin', header: 'Origem',
     cell: (row) => row.origin === 'daludi'
@@ -41,7 +41,7 @@ const columns: Column<PulseUsageRow>[] = [
     cell: (row) => <StatusPill tone={resultTone(row.result)}>{row.result}</StatusPill>,
   },
   { key: 'units', header: 'Unidades', className: 'text-right tabular-nums', cell: (row) => row.units },
-  { key: 'exempt', header: 'Isenção', cell: (row) => row.exempt_reason ?? '—' },
+  { key: 'exempt', header: 'Isenção', className: 'min-w-32 whitespace-normal break-words', cell: (row) => row.exempt_reason ?? '—' },
 ];
 
 export function OrgPulse({ orgId, month }: { orgId: string; month: string }) {
@@ -67,7 +67,8 @@ export function OrgPulse({ orgId, month }: { orgId: string; month: string }) {
   const totalPages = usage ? Math.max(1, Math.ceil(usage.total / usage.page_size)) : 1;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={loading || undefined}>
+      {loading && <span className="sr-only" role="status">Carregando o consumo do Pulse…</span>}
       {query.isError && usage && (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           <span>A atualização do consumo falhou; os últimos dados disponíveis permanecem na tela.</span>
@@ -75,44 +76,50 @@ export function OrgPulse({ orgId, month }: { orgId: string; month: string }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,3fr)]">
         <KpiCard
-          size="compact" loading={loading} icon={Radar} label="Unidades do cliente"
-          value={usage ? fmtInt(usage.client_units) : undefined}
+          size="default" variant="brand" loading={loading} icon={Radar} label="Unidades do cliente"
+          value={usage ? fmtInt(usage.client_units) : undefined} valueClassName="text-3xl"
         />
-        <KpiCard
-          size="compact" loading={loading} icon={Users} label="Consultas Daludi"
-          value={usage ? fmtInt(usage.daludi_searches) : undefined}
-        />
-        <KpiCard
-          size="compact" loading={loading} icon={XCircle} label="Falhas"
-          tom={usage && usage.failures > 0 ? 'danger' : 'success'}
-          value={usage ? fmtInt(usage.failures) : undefined}
-        />
-        <KpiCard
-          size="compact" loading={loading} icon={RotateCcw} label="Reaberturas"
-          value={usage ? fmtInt(usage.reopens) : undefined}
-        />
-        <KpiCard
-          size="compact" loading={loading} icon={Coins} label="Custo medido"
-          value={usage ? (usage.measured_cost_cents == null ? '—' : fmtBRL(usage.measured_cost_cents / 100)) : undefined}
-          hint="Sem medição do fornecedor"
-        />
+        <div className="grid items-start grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCard
+            size="compact" loading={loading} icon={Users} label="Consultas Daludi"
+            value={usage ? fmtInt(usage.daludi_searches) : undefined}
+          />
+          <KpiCard
+            size="compact" loading={loading} icon={XCircle} label="Falhas"
+            tom={usage && usage.failures > 0 ? 'danger' : 'success'}
+            value={usage ? fmtInt(usage.failures) : undefined}
+          />
+          <KpiCard
+            size="compact" loading={loading} icon={RotateCcw} label="Reaberturas"
+            value={usage ? fmtInt(usage.reopens) : undefined}
+          />
+          <KpiCard
+            size="compact" loading={loading} icon={Coins} label="Custo medido"
+            value={usage ? (usage.measured_cost_cents == null ? '—' : fmtBRL(usage.measured_cost_cents / 100)) : undefined}
+            hint="Sem medição do fornecedor"
+          />
+        </div>
       </div>
 
-      {usage?.tracked_since && (
-        <p className="text-xs text-muted-foreground">
-          Rastreado desde {new Date(usage.tracked_since).toLocaleDateString('pt-BR')}.
-        </p>
-      )}
-
-      <DataTable
-        columns={columns}
-        rows={usage?.rows ?? []}
-        rowKey={(row) => row.id}
-        loading={loading}
-        empty={<EmptyState icon={Radar} title="Nenhuma consulta no período" />}
-      />
+      <section className="space-y-2" aria-labelledby="pulse-consultas">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 id="pulse-consultas" className="text-sm font-medium">Consultas</h3>
+          {usage?.tracked_since && (
+            <p className="text-xs text-muted-foreground">
+              Rastreado desde {new Date(usage.tracked_since).toLocaleDateString('pt-BR')}.
+            </p>
+          )}
+        </div>
+        <DataTable
+          columns={columns}
+          rows={usage?.rows ?? []}
+          rowKey={(row) => row.id}
+          loading={loading}
+          empty={<EmptyState icon={Radar} title="Nenhuma consulta no período" />}
+        />
+      </section>
 
       {usage && usage.total > usage.page_size && (
         <Pagination

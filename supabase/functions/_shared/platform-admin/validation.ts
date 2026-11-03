@@ -1,4 +1,6 @@
-import type { CommercialTermsInput, Month } from './types.ts';
+import { validarCnpj } from '../fiscal/validar.ts';
+import { chatPrivado } from '../notificacoes/destinatario.ts';
+import type { CommercialTermsInput, Month, PaymentProfileInput, PixKeyType } from './types.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -45,6 +47,9 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     fail('Modalidade 2 não tem infraestrutura separada: informe 0');
   }
   if (typeof value.reason !== 'string' || !value.reason.trim()) fail('reason é obrigatório');
+  // ADR-0193 D-9: vencimento no mês seguinte à competência; ausente = dia 05.
+  const dueDay = value.due_day === undefined ? 5 : value.due_day;
+  if (typeof dueDay !== 'number' || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) fail('due_day deve estar entre 1 e 28');
 
   const setupFee = cents(value.setup_fee_cents, 'setup_fee_cents');
   let setupDueMonth: Month | null;
@@ -69,5 +74,86 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     setup_fee_cents: setupFee,
     setup_due_month: setupDueMonth,
     reason: value.reason.trim(),
+    due_day: dueDay,
   };
+}
+
+/** Remove acento e tudo que não for ASCII imprimível: o BR Code conta comprimento em bytes. */
+export function normalizarBrCode(texto: string): string {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export function validarCpf(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+  const dv = (n: number) => {
+    let soma = 0;
+    for (let i = 0; i < n; i++) soma += Number(cpf[i]) * (n + 1 - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(cpf[9]) && dv(10) === Number(cpf[10]);
+}
+
+// Schema `Email` da API-DICT (BACEN, bcb.gov.br/content/estabilidadefinanceira/pix/API-DICT.html), literal:
+// só ASCII minúsculo; o DICT limita a chave a 77 caracteres.
+const EMAIL_DICT = /^[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+const PIX_KEY_TYPES: readonly PixKeyType[] = ['cpf', 'cnpj', 'email', 'phone', 'random'];
+const LIMITES_TEXTO = { beneficiary_name: 60, bank_name: 60, branch: 20, account: 30, city: 60 } as const;
+
+function texto(value: unknown, field: keyof typeof LIMITES_TEXTO): string {
+  if (typeof value !== 'string' || !value.trim()) fail(`${field} é obrigatório`);
+  const result = value.trim();
+  if (result.length > LIMITES_TEXTO[field]) fail(`${field} deve ter no máximo ${LIMITES_TEXTO[field]} caracteres`);
+  return result;
+}
+
+/** Dados de recebimento da Daludi (ADR-0193 D-9). Nome ≤ 25 e cidade ≤ 15 depois de normalizados são
+ *  os limites dos campos 59/60 do BR Code: validar aqui evita Pix com favorecido truncado em silêncio. */
+export function validatePaymentProfile(input: unknown): PaymentProfileInput {
+  const value = object(input);
+  const beneficiaryName = texto(value.beneficiary_name, 'beneficiary_name');
+  const city = texto(value.city, 'city');
+  if (!normalizarBrCode(beneficiaryName) || normalizarBrCode(beneficiaryName).length > 25) fail('beneficiary_name deve ter até 25 caracteres sem acento (limite do Pix)');
+  if (!normalizarBrCode(city) || normalizarBrCode(city).length > 15) fail('city deve ter até 15 caracteres sem acento (limite do Pix)');
+  if (typeof value.document !== 'string') fail('document é obrigatório');
+  const document = value.document.replace(/\D/g, '');
+  if (!(document.length === 11 ? validarCpf(document) : document.length === 14 && validarCnpj(document))) fail('document deve ser CPF ou CNPJ válido');
+  if (typeof value.pix_key_type !== 'string' || !PIX_KEY_TYPES.includes(value.pix_key_type as PixKeyType)) fail('pix_key_type inválido');
+  const pixKeyType = value.pix_key_type as PixKeyType;
+  if (typeof value.pix_key !== 'string' || !value.pix_key.trim()) fail('pix_key é obrigatória');
+  const raw = value.pix_key.trim();
+  let pixKey: string;
+  switch (pixKeyType) {
+    case 'cpf': pixKey = raw.replace(/[.\-\s]/g, ''); if (!validarCpf(pixKey)) fail('pix_key não é um CPF válido'); break;
+    case 'cnpj': pixKey = raw.replace(/[.\-/\s]/g, ''); if (!/^\d{14}$/.test(pixKey) || !validarCnpj(pixKey)) fail('pix_key não é um CNPJ válido'); break;
+    case 'email': pixKey = raw.toLowerCase(); if (pixKey.length > 77 || !EMAIL_DICT.test(pixKey)) fail('pix_key não é um e-mail válido (formato do DICT: sem acento, minúsculo, até 77)'); break;
+    case 'phone': {
+      const digits = raw.replace(/\D/g, '');
+      pixKey = `+${digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`}`;
+      if (!/^\+55\d{10,11}$/.test(pixKey)) fail('pix_key deve ser celular com DDD (+55DDDNÚMERO)');
+      break;
+    }
+    case 'random': pixKey = raw.toLowerCase(); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(pixKey)) fail('pix_key aleatória deve ser um UUID'); break;
+  }
+  return {
+    beneficiary_name: beneficiaryName,
+    document,
+    bank_name: texto(value.bank_name, 'bank_name'),
+    branch: texto(value.branch, 'branch'),
+    account: texto(value.account, 'account'),
+    pix_key_type: pixKeyType,
+    pix_key: pixKey,
+    city,
+  };
+}
+
+// ADR-0193 D-11: assinatura do aviso de fechamento mensal (super-admin, chat privado).
+/** Valida a assinatura do aviso vinda da Central. Ativo exige chat privado (valores de todas as orgs). */
+export function validarAssinaturaAviso(body: { chat_id?: unknown; ativo?: unknown }): { chatId: string | null; ativo: boolean } {
+  const chat = String(body.chat_id ?? '').trim();
+  const ativo = body.ativo === true;
+  if (chat && !/^-?\d+$/.test(chat)) throw new TypeError('chat_id deve ser numérico (ex.: 123456789)');
+  if (ativo && !chatPrivado(chat)) throw new TypeError('chat_id de conversa privada (número positivo) é obrigatório para receber o aviso');
+  return { chatId: chat || null, ativo };
 }

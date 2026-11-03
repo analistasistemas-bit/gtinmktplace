@@ -108,6 +108,8 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
+| *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
@@ -126,6 +128,7 @@
 | **Acesso / usuários** ||||
 | platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
 | materializar-metricas | false | QStash schedule | sim (upsert por org/mês) |
+| fechar-mes-plataforma | false | QStash schedule `0 9 1 * *` (sem body) → 1 job `{orgId, month, run_id}` por org + aviso `{aviso, month, run_id, orgIds}` (atraso 5 min); manual `{month, dry_run}` | sim (close devolve o statement existente; aviso 1×/competência por índice único) |
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | extensao | true | HTTP (extensão Chrome, JWT do usuário) | leituras e upserts por chave; contadores incrementais |
@@ -178,6 +181,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
+| `fechar-mes-plataforma` (ADR-0193 D-10/D-11) | `0 9 1 * *` | `{}` | 3 — `scd_6DQnEroeusFMAa8hdA5215nfZgZk` (criado 2026-11-03; dry_run de 2026-10 validado em prod) |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |

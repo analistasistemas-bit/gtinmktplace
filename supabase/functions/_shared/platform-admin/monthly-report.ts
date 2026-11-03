@@ -104,6 +104,16 @@ function aposAds(c: ComponentesSerie, ads: Pick<AdsKpis, 'coverage' | 'cost_cent
   };
 }
 
+/** Razões ANTES de Ads sobre a base calculável (D-3): margem = lucro ÷ faturamento dos itens calculáveis,
+ *  markup = lucro ÷ custo deles, cobertura = calculáveis ÷ faturáveis. Mesma conta no período e na série. */
+function antesDeAds(c: ComponentesSerie) {
+  return {
+    profit_coverage: c.item_gross_cents > 0 ? c.covered_gross_cents / c.item_gross_cents : null,
+    margin: c.profit_cents != null && c.covered_gross_cents > 0 ? c.profit_cents / c.covered_gross_cents : null,
+    markup: c.profit_cents != null && (c.cost_cents ?? 0) > 0 ? c.profit_cents / c.cost_cents! : null,
+  };
+}
+
 export function kpisDoPeriodo(c: ComponentesMes, refundsCents: Cents | null, ads: AdsKpis | null): PeriodKpis {
   return {
     gross_cents: c.gross_cents, orders: c.orders, units: c.units, ticket_cents: c.ticket_cents,
@@ -111,10 +121,13 @@ export function kpisDoPeriodo(c: ComponentesMes, refundsCents: Cents | null, ads
     cancelled_orders: c.cancelled_orders, refunds_cents: refundsCents, seller_coupon_cents: c.seller_coupon_cents,
     net_cents: c.net_cents, tax_cents: c.tax_cents, cost_cents: c.cost_cents, profit_cents: c.profit_cents,
     covered_gross_cents: c.covered_gross_cents,
-    profit_coverage: c.item_gross_cents > 0 ? c.covered_gross_cents / c.item_gross_cents : null,
     excluded_items: c.excluded_items, exclusions: c.exclusions,
-    margin: c.profit_cents != null && c.covered_gross_cents > 0 ? c.profit_cents / c.covered_gross_cents : null,
-    markup: c.profit_cents != null && (c.cost_cents ?? 0) > 0 ? c.profit_cents / c.cost_cents! : null,
+    // Saldos prontos da cascata (a UI e o PDF só formatam): comissão + frete do ML, líquido após imposto e
+    // faturamento dos itens fora do lucro (mesmo conjunto de itens da cobertura).
+    channel_costs_cents: c.gross_cents - c.net_cents,
+    net_after_tax_cents: c.tax_cents == null ? null : c.net_cents - c.tax_cents,
+    excluded_gross_cents: c.item_gross_cents - c.covered_gross_cents,
+    ...antesDeAds(c),
     ...aposAds(c, ads),
   };
 }
@@ -349,13 +362,14 @@ export function serieMensal(pontos: PontoMes[], adsPorMes: Map<Month, Pick<AdsKp
     const c = p.componentes;
     if (!c) {
       return { month: p.month, gross_cents: null, profit_cents: null, ads_cost_cents: null, profit_after_ads_cents: null,
-        margin_after_ads: null, partial: false, unavailable_reason: p.unavailable_reason ?? 'leitura' };
+        margin_after_ads: null, margin: null, markup: null, profit_coverage: null, partial: false,
+        unavailable_reason: p.unavailable_reason ?? 'leitura' };
     }
     const pos = aposAds(c, adsPorMes.get(p.month) ?? null);
     return {
       month: p.month, gross_cents: c.gross_cents, profit_cents: c.profit_cents, ads_cost_cents: pos.ads_cost_cents,
       profit_after_ads_cents: pos.profit_after_ads_cents, margin_after_ads: pos.margin_after_ads,
-      partial: pos.profit_partial, unavailable_reason: null,
+      ...antesDeAds(c), partial: pos.profit_partial, unavailable_reason: null,
     };
   });
 }

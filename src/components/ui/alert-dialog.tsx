@@ -3,6 +3,7 @@ import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { BorderTrailDecor, RAIO_XL } from "@/components/ui/border-trail"
 import { ProgressoIndeterminado } from "@/components/ui/progresso-indeterminado"
 
 function AlertDialog({
@@ -78,6 +79,7 @@ function AlertDialogContent({
         )}
         {...props}
       >
+        {processando && !destrutivo && <BorderTrailDecor radius={RAIO_XL} inset={0} />}
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}

@@ -392,6 +392,14 @@ Duas coisas que não estão lá:
   org_id = '<org>'` (cursor, `estado`, `lease_ate`) e `select * from worker_pendencias where
   org_id = '<org>' and descartado_em is null` (pendências ativas) — via Management API, read-only.
 
+## Fechamento mensal automático da Central e backfill do cache (ADR-0193)
+
+- **Schedule:** QStash `scd_6DQnEroeusFMAa8hdA5215nfZgZk`, cron `0 9 1 * *` (dia 01, 06h BRT) em `fechar-mes-plataforma`. Secret `PLATFORM_SYSTEM_ACTOR_ID` = super-admin ativo que assina o `platform_billing_close` (`supabase secrets set`; conferir o valor depois, pois `secrets set` grava vazio se a variável do shell estiver vazia). Bot do aviso = `TELEGRAM_BOT_TOKEN` (da Daludi).
+- **Ensaio sem escrever (`dry_run`):** publicar no QStash para a URL da função, com o `curl` do projeto (ver "Destravar família/worker" acima; não o MCP), body `{"month":"YYYY-MM","dry_run":true}`. Devolve o resultado por org (fechada, já fechada, pendência, mês anterior aberto, conflito, erro) sem gravar nada.
+- **Fechamento real manual:** mesmo publish sem `dry_run`. Org com pendência ou mês anterior aberto fica aberta; enquanto nenhuma org tiver mês fechado o automático reporta "mês anterior aberto".
+- **Backfill do cache `platform_org_month_metrics` v2:** publicar em `materializar-metricas` (sem body). Teto de 5.000 vendas por execução e 12 meses; repetir até os meses ficarem preenchidos. Mês que excede o teto vira ponto indisponível, não zero.
+- **Aviso:** o super-admin assina em "Aviso no Telegram" na carteira da Central (chat privado); sem assinante, nada é enviado. Dados de recebimento no dialog "Dados de recebimento" da carteira (necessários para o PDF).
+
 ## Verificar/reconciliar histórico de migrations
 
 ```bash

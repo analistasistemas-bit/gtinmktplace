@@ -50,6 +50,29 @@ describe('montarPreview', () => {
     expect(linha).toMatchObject({ ml_item_id: 'MLB7', mlb: 'MLB5', rotulo: 'MLB5 · promoção via catálogo MLB7' });
   });
 
+  // Emenda 2026-11-03 (achados 1 e 5 do Codex): preço simulado define semáforo/marcado; não simulado vem desmarcado.
+  it('com simulação: usa o preço simulado antes do semáforo; selecionado sem simulação fica desmarcado', () => {
+    const p = [cor({ custo: 50, piso: 50 })];
+    const simulado = item({ ml_item_id: 'S', preco_sugerido: 100, projecao: p });
+    const naoSimulado = item({ ml_item_id: 'N', preco_sugerido: 100, projecao: p });
+    const linhas = montarPreview('aderir', 'DEAL', [simulado, naoSimulado], new Map([['S', 55]]));
+    expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
+    expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
+    expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });
+    // Achado Codex (diff): todos ignorados (mapa vazio) continua simulação ativa.
+    expect(montarPreview('aderir', 'DEAL', [naoSimulado], new Map())[0].marcado).toBe(false);
+  });
+
+  // Emenda 2026-11-03: alterar o preço de quem já participa (DEAL).
+  it('alterar_preco: parte do preço vigente, todos marcados; com simulação usa o simulado e desmarca o resto', () => {
+    const p = [cor({ custo: 5, piso: 10 })];
+    const a = item({ ml_item_id: 'A', status: 'started', preco_promo: 49.9, preco_avaliado: 49.9, preco_sugerido: null, projecao: p });
+    const b = item({ ml_item_id: 'B', status: 'started', preco_promo: 49.9, preco_avaliado: 49.9, preco_sugerido: null, projecao: p });
+    expect(montarPreview('alterar_preco', 'DEAL', [a, b]).map((l) => [l.preco, l.marcado])).toEqual([[49.9, true], [49.9, true]]);
+    const sim = montarPreview('alterar_preco', 'DEAL', [a, b], new Map([['A', 43.9]]));
+    expect(sim.map((l) => [l.ml_item_id, l.preco, l.marcado])).toEqual([['A', 43.9, true], ['B', 49.9, false]]);
+  });
+
   it('LIGHTNING aderir usa o sugerido e leva estoqueMin', () => {
     const [linha] = montarPreview('aderir', 'LIGHTNING', [item({ preco_promo: 80, preco_sugerido: 25, estoque_min: 5 })]);
     expect(linha).toMatchObject({ preco: 25, estoqueMin: 5 });
@@ -97,12 +120,20 @@ describe('itensRevertiveis', () => {
   it('aderir reverte aplicado e ja_estava', () => {
     expect(itensRevertiveis('aderir', itens)).toEqual(['A', 'B']);
   });
+  it('alterar_preco só reverte o que ESTA operação alterou (aplicado)', () => {
+    expect(itensRevertiveis('alterar_preco', itens)).toEqual(['A']);
+  });
 });
 
 describe('inversa', () => {
-  it('troca a ação', () => {
+  it('troca a ação; alterar preço reverte com outra alteração', () => {
     expect(inversa('aderir')).toBe('sair');
     expect(inversa('sair')).toBe('aderir');
+    expect(inversa('alterar_preco')).toBe('alterar_preco');
+  });
+  it('título da operação de alterar preço', () => {
+    expect(tituloOperacao({ acao: 'alterar_preco', promocao_nome: '11.11 da Black', promocao_id: 'P-1' }, 14)).toBe('Alterar preço em 11.11 da Black');
+    expect(tituloOperacao({ acao: 'alterar_preco', promocao_nome: '11.11 da Black', promocao_id: 'P-1', origem_id: 'X' }, 2)).toBe('Reverter preço em 11.11 da Black');
   });
 });
 

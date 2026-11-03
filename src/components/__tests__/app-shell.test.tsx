@@ -31,3 +31,12 @@ describe('AppShell em suporte leitura', () => {
     }
   });
 });
+
+describe('AppShell — rolagem', () => {
+  // Sem position no <main>, filhos absolute (sr-only, input do Checkbox) escapam do overflow e o body ganha
+  // rolagem própria: faixa preta abaixo da casca em listas longas (Promoções, 03/11).
+  it('o <main> é o containing block dos filhos absolute', () => {
+    renderShell(null);
+    expect(screen.getByRole('main').className).toMatch(/\brelative\b/);
+  });
+});

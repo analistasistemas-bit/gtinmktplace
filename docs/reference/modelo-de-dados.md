@@ -136,6 +136,13 @@ nunca normaliza em silêncio. Backfill das 3 organizações existentes desabilit
 imutabilidade da tabela só durante os `UPDATE`s de correção, dentro de uma transação com asserção
 LOUD antes de reabilitar.
 
+#### Relatório mensal, recebimento e fechamento automático (ADR-0193) e devolução automática (emenda ADR-0155)
+
+- `20261102221455_platform_devolucao_abatimento_automatico.sql`: função imutável `platform_auto_refund_cents(status, estorno, raw)` — devolução de produto = conciliação manual > `ml_vendas.estorno` > soma de `raw.payments[].transaction_amount_refunded`, limitada ao bruto. `paid` sem valor abate 0; só `partially_refunded` sem valor continua pendente. Recria `platform_billing_preview`/`platform_billing_close`.
+- `20261102234250_platform_month_metrics_v2.sql`: `platform_org_month_metrics` ganha `cache_version` (padrão 1), componentes de lucro (`units`, `net_cents`, `tax_cents`, `cost_cents`, `profit_cents`, `covered_gross_cents`, `item_gross_cents`, `excluded_items`, `refunds_cents`) e assinatura v2 (`v2_source_count`, `v2_source_max_updated_at`, `v2_tax_config_stamp`). Colunas novas nuláveis: `null` = não calculado/indisponível, nunca zero. Linha com versão ou assinatura antigas é miss para a série do relatório; a carteira segue aceitando a linha v1 válida.
+- `20261103004908_platform_recebimento_vencimento.sql`: `platform_audit_events.org_id` passa a aceitar NULL (evento de plataforma); `platform_payment_profile` (linha única `id boolean`, favorecido, documento, banco/agência/conta, chave Pix, cidade do BR Code) com RLS sem policy e privilégios revogados de `PUBLIC`/`anon`/`authenticated`, escrita só por `platform_save_payment_profile` (super-admin, auditada, registra só tipo e 4 últimos caracteres); `platform_commercial_terms.due_day` (padrão 5, 1..28; recria `platform_save_terms`); `platform_billing_preview` devolve `seller_coupon_cents` e `due_day` fora das fontes (informativos; a revisão de toda prévia aberta muda uma vez).
+- `20261103014103_fechamento_mensal_plataforma.sql`: `fechamento_mensal` entra no `CHECK` de `profiles.telegram_categorias` (categoria de plataforma, só super-admin) e índice único parcial `platform_audit_events_aviso_fechamento_key (target) where action='fechamento_mensal_aviso'` (uma mensagem por competência).
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration

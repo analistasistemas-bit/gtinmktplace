@@ -5,10 +5,13 @@ import { qstashClient } from '../queue.ts';
 import { buscarItensML, criarGetJson } from '../promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas, type Cx } from '../promocoes/deps.ts';
 import { projetarItem } from '../promocoes/sincronizar.ts';
+import { contar } from '../promocoes/projecao.ts';
+import { paginarTudo } from '../pagina.ts';
 import type { Cadastro } from '../promocoes/cadastro.ts';
-import type { Aliquotas, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
+import type { Aliquotas, LinhaItem, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import { criarClienteML } from './ml.ts';
 import { semaforoReal, type LinhaCentral, type SemaforoExato } from './validar.ts';
+import type { ProjecaoExata } from './simular.ts';
 import type { DepsExecutar, ItemRow, OperacaoRow } from './executar.ts';
 import type { DepsLaco } from './laco.ts';
 import type { DepsStatus, OperacaoStatusRow } from './executar-status.ts';
@@ -17,8 +20,8 @@ import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 
 const ITENS = 'operacoes_massa_itens';
-const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em';
-export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
+const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior';
+export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
 
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
@@ -32,7 +35,7 @@ const numOuNull = (x: unknown) => (x == null ? null : Number(x));
 export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
   return {
     ml_item_id: String(r.ml_item_id), status: String(r.status), titulo: (r.titulo as string | null) ?? null,
-    preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
+    preco_original: numOuNull(r.preco_original), preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
     preco_promo: numOuNull(r.preco_promo), preco_avaliado: numOuNull(r.preco_avaliado),
     projecao: (r.projecao as ProjecaoCor[] | null) ?? [],
   };
@@ -43,20 +46,26 @@ export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
  * tarifaEm com cache `promo:`), com o preço pedido no lugar do avaliado. Cadastro e alíquotas carregados 1x.
  */
 export function criarSemaforoExato(admin: SupabaseClient, cx: Cx): SemaforoExato {
+  const projetar = criarProjecaoExata(admin, cx);
+  return async (l, preco) => (await projetar(l, preco))?.pior_semaforo ?? 'indisponivel';
+}
+
+/** Projeção completa no preço exato — fonte da simulação de desconto e da trava acima (mesmo número). */
+export function criarProjecaoExata(admin: SupabaseClient, cx: Cx): ProjecaoExata {
   const get = criarGetJson(cx.token);
   const tarifaEm = criarTarifaEm(cx);
   let base: Promise<[Cadastro, Aliquotas | null]> | null = null;
   return async (l, preco) => {
     base ??= Promise.all([carregarCadastro(admin, cx.orgId), lerAliquotas(admin, cx.orgId)]);
     const [cad, aliq] = await base;
-    if (!aliq) return 'indisponivel';
+    if (!aliq) return null;
     const ml = (await buscarItensML(get, [l.ml_item_id])).get(l.ml_item_id) ?? null;
     // Convidado com min/max nulos: precoAvaliado = preco_sugerido (o pedido) e não roda o "até quanto".
     const r = await projetarItem({
       ml_item_id: l.ml_item_id, status: 'candidate', preco_original: null, preco_promo: preco, preco_sugerido: preco,
       preco_min: null, preco_max: null, ml_pct: null, vendedor_pct: null, estoque_min: null, estoque_max: null,
     }, ml, cad, aliq, tarifaEm);
-    return r.pior_semaforo;
+    return { projecao: r.projecao, pior_semaforo: r.pior_semaforo };
   };
 }
 
@@ -66,7 +75,11 @@ export function criarSemaforoExato(admin: SupabaseClient, cx: Cx): SemaforoExato
  */
 export function depsLaco(admin: SupabaseClient, op: { id: string; org_id: string }, chave: string): DepsLaco {
   const linhas = (data: unknown): ItemRow[] => ((data ?? []) as Record<string, unknown>[])
-    .map((r) => ({ ...(r as unknown as ItemRow), preco: numOuNull(r.preco) }));
+    .map((r) => ({
+      ...(r as unknown as ItemRow), preco: numOuNull(r.preco), preco_anterior: numOuNull(r.preco_anterior),
+      // Reverter de alterar_preco: o preço que a operação de origem deixou (gravado na criação).
+      preco_esperado: numOuNull((r.estado_anterior as { preco_esperado?: unknown } | null)?.preco_esperado),
+    }));
   const publicar = async (etapa: 'executar' | 'conferir', delay?: number) => {
     await qstashClient().publishJSON({
       url: urlOperacoes(), body: { etapa, operacao_id: op.id }, retries: 3,
@@ -123,7 +136,15 @@ export function depsLaco(admin: SupabaseClient, op: { id: string; org_id: string
 }
 
 export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, chave: string): DepsExecutar {
-  const semaforoExato = criarSemaforoExato(admin, cx);
+  // Uma projeção (cadastro + alíquotas carregados 1×) para a trava e para o espelho do preço.
+  const projetar = criarProjecaoExata(admin, cx);
+  const semaforoExato: SemaforoExato = async (l, preco) => (await projetar(l, preco))?.pior_semaforo ?? 'indisponivel';
+  const syncEmCurso = async (promocaoId: string): Promise<boolean> => {
+    const { data, error } = await admin.from('ml_promocoes').select('rodada_em_curso')
+      .eq('org_id', op.org_id).eq('promocao_id', promocaoId).maybeSingle();
+    falhou('syncEmCurso', error);
+    return data?.rodada_em_curso != null;
+  };
   return {
     ...depsLaco(admin, op, chave),
     ml: criarClienteML(cx.token),
@@ -143,6 +164,41 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
         : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho });
       const { error } = await q.eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
       falhou('espelharStatusCentral', error);
+    },
+
+    async espelharPreco(promocaoId, mlItemId, preco) {
+      // Achado Codex P2: com sync em curso ele mesmo grava o estado real do ML — não disputar a linha.
+      if (await syncEmCurso(promocaoId)) return;
+      const linha = () => admin.from('ml_promocao_itens');
+      const { data, error } = await linha().select(COLS_CENTRAL)
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).maybeSingle();
+      falhou('espelharPreco.ler', error);
+      if (!data) return;
+      // Líquido no preço aplicado pelo mesmo caminho da trava. Sem projeção (achado Codex P2): o preço confirmado
+      // entra com o líquido INDISPONÍVEL — nunca preço novo com líquido velho; o sync recalcula depois.
+      const central = linhaCentral(data);
+      const r = await projetar(central, preco).catch(() => null);
+      const semCalculo = central.projecao.map((c) => ({
+        ...c, comissao_pct: null, comissao_fixa: null, frete: null, aliquota_pct: null,
+        liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'indisponivel' as const, motivo: 'erro_tarifa' as const,
+      }));
+      const patch = r
+        ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
+        : { preco_promo: preco, preco_avaliado: preco, projecao: semCalculo, pior_semaforo: 'indisponivel' };
+      // Só se a linha ainda é participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
+        .in('status', ['pending', 'started']);
+      falhou('espelharPreco', upd.error);
+    },
+
+    async recontarCentral(promocaoId) {
+      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>>((de, ate) =>
+        admin.from('ml_promocao_itens').select('ml_item_id, status, pior_semaforo, ml_pct')
+          .eq('org_id', op.org_id).eq('promocao_id', promocaoId).order('ml_item_id').range(de, ate) as never);
+      // Achado Codex P2: só sem rodada do sync reservada (atômico no UPDATE) — com sync em curso, o concluir dele conta.
+      const { error } = await admin.from('ml_promocoes').update({ contagem: contar(linhas) })
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId).is('rodada_em_curso', null);
+      falhou('recontarCentral', error);
     },
   };
 }

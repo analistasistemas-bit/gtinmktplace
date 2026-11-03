@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { toast } from 'sonner';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -15,6 +15,7 @@ vi.mock('@/hooks/useOperacoes', async () => {
   return {
     ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
     useCriarOperacao: vi.fn(), useOperacao: vi.fn(), useOperacaoPorOrigem: vi.fn(), useRetomarOperacao: vi.fn(),
+    useSimularPrecos: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
@@ -118,6 +119,24 @@ describe('ListaOperacoes', () => {
     expect(useOperacoes).toHaveBeenLastCalledWith(undefined);
   });
 
+  // Pedido do Diego (03/11): o mesmo sinal de espera do cadastro (aura) + raio na borda enquanto roda.
+  it('operação executando: aria-busy, aura e raio na borda; concluída: nenhum', () => {
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [
+        op({ id: 'RODA', status: 'executando', itens: [{ status: 'pendente' }, { status: 'aplicado' }] }),
+        op({ id: 'FIM', acao: 'sair', status: 'concluida', itens: [{ status: 'aplicado' }] }),
+      ], isLoading: false,
+    } as never);
+    const { container } = renderLista();
+    const [rodando, concluida] = [...container.querySelectorAll('li')];
+    expect(rodando).toHaveAttribute('aria-busy', 'true');
+    expect(rodando.querySelector('.glow-effect-sombra')).not.toBeNull();
+    expect(rodando.querySelector('.border-trail__glow')).not.toBeNull();
+    expect(concluida).toHaveAttribute('aria-busy', 'false');
+    expect(concluida.querySelector('.glow-effect-sombra')).toBeNull();
+    expect(concluida.querySelector('.border-trail__glow')).toBeNull();
+  });
+
   it('mostra as contagens por status em chips', () => {
     vi.mocked(useOperacoes).mockReturnValue({
       data: [op({ itens: [{ status: 'aplicado' }, { status: 'aplicado' }, { status: 'erro' }] })], isLoading: false,
@@ -204,6 +223,31 @@ describe('ListaOperacoes', () => {
       itens: [{ ml_item_id: 'MLB1', preco: 85, confirmado_risco: false }],
       // preco: preco_sugerido do item central (DEAL aderir usa o sugerido, não o preço no ar).
     }));
+  });
+
+  // Emenda 2026-11-03: Reverter de alterar preço = outra alteração, de volta ao preço que a origem leu no ML.
+  it('Reverter de alterar preço: preview de alterar com o preço anterior; sem preço anterior → não revertível', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'alterar_preco', itens: [{ status: 'aplicado' }, { status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [
+      itemLog({ ml_item_id: 'MLB1', status: 'aplicado', preco: 43.9, preco_anterior: 49.9 } as never),
+      itemLog({ ml_item_id: 'MLB2', status: 'aplicado', preco: 43.9, preco_anterior: null } as never),
+    ] } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [
+      itemCentral({ ml_item_id: 'MLB1', status: 'started', preco_promo: 43.9, preco_avaliado: 43.9 }),
+      itemCentral({ ml_item_id: 'MLB2', status: 'started', preco_promo: 43.9, preco_avaliado: 43.9 }),
+    ] } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Alterar preço em Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+
+    expect(screen.getByText('Reverter preço em Campanha X')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preço de MLB1')).toHaveValue('49,90');
+    expect(screen.getByLabelText('Selecionar MLB2')).toBeDisabled();
+    expect(screen.getByText('Sem preço anterior registrado para reverter')).toBeInTheDocument();
   });
 
   it('Reverter de sair LIGHTNING abre aderir com tipo LIGHTNING, preço sugerido editável e bloqueio < R$ 19', async () => {
@@ -484,6 +528,77 @@ describe('ListaOperacoes', () => {
       renderLista();
       await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
       expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    });
+  });
+
+  // Pedido do Diego (03/11): ML 500 em 2 de 17 adesões — botão para tentar de novo só os itens com erro.
+  describe('Tentar novamente os com erro', () => {
+    const opErro = (over: Partial<OperacaoRow> = {}) => op({ id: 'OP1', acao: 'aderir', itens: [{ status: 'erro' }, { status: 'erro' }, { status: 'aplicado' }], ...over });
+    beforeEach(() => {
+      vi.mocked(useOperacoes).mockReturnValue({ data: [opErro()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [
+        itemLog({ ml_item_id: 'MLB1', status: 'erro', preco: 44.9, mensagem: 'ML 500: Oops! Something went wrong...' }),
+        itemLog({ ml_item_id: 'MLB2', status: 'erro', preco: 44.9 }),
+        itemLog({ ml_item_id: 'MLB3', status: 'aplicado', preco: 44.9 }),
+      ] } as never);
+      vi.mocked(useItensPromocao).mockReturnValue({ data: [
+        itemCentral({ ml_item_id: 'MLB1', status: 'candidate' }), itemCentral({ ml_item_id: 'MLB2', status: 'started' }),
+        itemCentral({ ml_item_id: 'MLB3', status: 'started' }),
+      ], isSuccess: true } as never);
+    });
+
+    it('abre o preview da mesma ação só com os itens com erro, no preço da operação; quem já entrou fica bloqueado', async () => {
+      const user = userEvent.setup();
+      renderLista();
+      await user.click(screen.getByText('Aderir à Campanha X'));
+      await user.click(screen.getByRole('button', { name: 'Tentar novamente 2 com erro' }));
+      expect(within(screen.getByRole('dialog')).getByText('Aderir à Campanha X')).toBeInTheDocument();
+      expect(screen.getByLabelText('Selecionar MLB1')).toBeChecked();
+      expect(screen.getByLabelText('Selecionar MLB2')).toBeDisabled();
+      expect(screen.queryByLabelText('Selecionar MLB3')).toBeNull();
+      expect(screen.getByText('Não dá para tentar de novo: o anúncio não está mais convidado/participando')).toBeInTheDocument();
+      // Preço da operação original (não o sugerido da Central, R$ 85).
+      expect(screen.getByLabelText('Preço de MLB1')).toHaveValue('44,90');
+    });
+
+    it('SMART: tenta de novo sem preço (o preço é do ML)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [opErro({ promocao_tipo: 'SMART' })], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'erro', preco: null })] } as never);
+      renderLista();
+      await user.click(screen.getByText('Aderir à Campanha X'));
+      await user.click(screen.getByRole('button', { name: 'Tentar novamente 1 com erro' }));
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ acao: 'aderir', promocao_id: 'P1', origem_id: null }));
+      expect(mutateAsync.mock.calls.at(-1)![0].itens.map((i: { ml_item_id: string }) => i.ml_item_id)).toEqual(['MLB1']);
+    });
+
+    it('sem botão: Reverter (tem origem), executando, sem permissão, sem erros; Central carregando → desabilitado', async () => {
+      const user = userEvent.setup();
+      const casos: [Partial<OperacaoRow>, ItemOperacaoRow[] | null][] = [
+        [{ origem_id: 'OP0' }, null], [{ status: 'executando' }, null],
+        [{ itens: [{ status: 'aplicado' }] }, [itemLog({ ml_item_id: 'MLB3', status: 'aplicado' })]],
+      ];
+      for (const [over, log] of casos) {
+        vi.mocked(useOperacoes).mockReturnValue({ data: [opErro(over)], isLoading: false } as never);
+        if (log) vi.mocked(useItensOperacao).mockReturnValue({ data: log } as never);
+        const { unmount } = renderLista();
+        await user.click(screen.getAllByText(/Campanha X/)[0]);
+        expect(screen.queryByRole('button', { name: /Tentar novamente/ })).toBeNull();
+        unmount();
+      }
+      vi.mocked(useOperacoes).mockReturnValue({ data: [opErro()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'erro' }), itemLog({ ml_item_id: 'MLB2', status: 'erro' })] } as never);
+      vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
+      const { unmount } = renderLista();
+      await user.click(screen.getByText('Aderir à Campanha X'));
+      expect(screen.queryByRole('button', { name: /Tentar novamente/ })).toBeNull();
+      unmount();
+      vi.mocked(usePodeExecutarOperacao).mockReturnValue(true);
+      vi.mocked(useItensPromocao).mockReturnValue({ data: undefined, isSuccess: false } as never);
+      renderLista();
+      await user.click(screen.getByText('Aderir à Campanha X'));
+      expect(screen.getByRole('button', { name: 'Tentar novamente 2 com erro' })).toBeDisabled();
     });
   });
 });

@@ -1,6 +1,6 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-10-20
+atualizado: 2026-11-03
 ---
 
 # Índice de ADRs
@@ -210,5 +210,8 @@ Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
 | 0190 | [Notificação gerencial de venda, resumo diário e comandos Telegram](../../docs/decisions/0190-notificacao-gerencial-de-venda-e-comandos-telegram.md) — **Aceito — em produção desde 2026-10-25 (main `15e9c496`)**. Mensagem por carrinho com Lucro/Margem s/ venda/Markup (`notificacao_carrinho`), resumo às 8h, bot de leitura (`/hoje /ontem /mes /top /ajuda`) com inbox durável; só admin, chat privado. |
 | 0191 | [Produto único na planilha: `PAI` vazio sem filhos](../../docs/decisions/0191-produto-unico-pai-vazio.md) — **Aceito (2026-10-26) — em produção (main `e8903069`)**. `PAI` vazio sem filhos vira família de 1 SKU (a própria linha); `PAI = 0` sem filhos segue descartado (ADR-0013). Planilha da Hairfly. |
 | 0192 | [Pós-venda do ML: ações de escrita (revisão, reclamação, mensagem)](../../docs/decisions/0192-posvenda-ml-acoes.md) — **Aceito — em produção desde 2026-10-28 (main `3cc3af3b`)**. O PubliAI passa a agir em devoluções, reclamações e mensagens do ML, com auditoria e trava anti-duplicação em `ml_posvenda_acoes` e leitura sincronizada no ML (`lida_ml_em`). |
+| 0193 | [Relatório mensal do cliente, fechamento automático e Central premium](../../docs/decisions/0193-relatorio-mensal-do-cliente-e-fechamento-automatico.md) — **Aceito — em produção desde 2026-11-03 (main `ae4072cf`, 5 fatias)**. PDF mensal do cliente com cascata até o Lucro após Ads e Pix de valor exato, aba Resultados no mesmo contrato, dados de recebimento e vencimento, fechamento automático dia 01 às 06h BRT (`fechar-mes-plataforma`) com aviso Telegram de plataforma e redesenho das abas da Central. |
 
 **Emendas de 2026-10-26/27 (lote Hairfly):** ADR-0020 — comissão do ML indisponível não cai mais no piso: retry de 429/5xx e, esgotado, família em `erro` sem preço (main `f29fc85b`). ADR-0044 — em categoria do ML sem `COLOR`, cor que só o Vision achou vira `'Outra'` e sai de título, seção de cores e prosa da descrição (main `0f4b572b`, `f29fc85b`). ADR-0071 — emenda 1 (Kit sem contagem → Unidade, main `b4d570da`) foi **substituída** no mesmo dia: o ML ligou o "Pós Química" Unidade/1 a uma ficha de catálogo `flex` Kit/2 e a página ficou "indisponível". Emenda 2 (main `9a179bac`): Kit sem quantidade deixa o atributo faltando e a Revisão pede ao operador; `vincular-catalogo` alerta por Telegram quando o ML cria o item já como catálogo e a ficha diverge. Emenda 3 (main `6f7ed9b3`): "Kit" da IA só com prova no texto (kit, quantidade, " + " no nome); shampoo e condicionador no nome é sempre kit; kit vinculado grava "É kit" Sim. Ingest normaliza cabeçalho da planilha (espaço/caixa) e aborta coluna repetida (main `b6c9cc19`).
+
+**Emenda de 2026-11-02:** ADR-0155 — devolução abatida automaticamente na cobrança (`platform_auto_refund_cents`: conciliação manual > estorno > `raw.payments` refunded, limitado ao bruto); só `partially_refunded` sem valor fica pendente. Out/2026: 17 pendências → 0 (main `b7555f4d`).

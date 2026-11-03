@@ -6,7 +6,7 @@ import type { Acao } from './tipos.ts';
 /** Linha de `ml_promocao_itens` (Central) que a validação usa. */
 export interface LinhaCentral {
   ml_item_id: string; status: string; titulo: string | null;
-  preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; preco_promo: number | null;
+  preco_original: number | null; preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; preco_promo: number | null;
   preco_avaliado: number | null; projecao: ProjecaoCor[];
 }
 export interface ItemPedido { ml_item_id: string; preco?: number | null; confirmado_risco?: boolean }
@@ -45,6 +45,30 @@ export function semaforoReal(l: LinhaCentral, preco: number | null, exato: Semaf
   return exato(l, preco);
 }
 
+/** Reverter de alterar_preco (achado Codex P1): só itens `aplicado` da origem, voltando exatamente ao preço que ela
+ *  leu no ML antes de escrever. `esperados` = preço que a origem deixou (o executor compara com o vivo). */
+export function reversaoAlterarValida(
+  pedido: { ml_item_id: string; preco?: number | null }[],
+  origem: { ml_item_id: string; status: string; preco: number | null; preco_anterior: number | null }[],
+): { esperados: Map<string, number>; recusas: Recusa[] } {
+  const porId = new Map(origem.map((o) => [o.ml_item_id, o]));
+  const esperados = new Map<string, number>();
+  const recusas: Recusa[] = [];
+  for (const it of pedido) {
+    const o = porId.get(it.ml_item_id);
+    if (!o || o.status !== 'aplicado' || o.preco == null) {
+      recusas.push({ ml_item_id: it.ml_item_id, motivo: 'O anúncio não foi alterado pela operação de origem' });
+    } else if (o.preco_anterior == null) {
+      recusas.push({ ml_item_id: it.ml_item_id, motivo: 'Sem preço anterior registrado para reverter' });
+    } else if (it.preco == null || centavos(it.preco) !== centavos(o.preco_anterior)) {
+      recusas.push({ ml_item_id: it.ml_item_id, motivo: `O Reverter volta ao preço anterior (${reais(o.preco_anterior)})` });
+    } else {
+      esperados.set(it.ml_item_id, o.preco);
+    }
+  }
+  return { esperados, recusas };
+}
+
 export async function validarPedido(
   acao: Acao, tipo: string, itens: ItemPedido[], central: Map<string, LinhaCentral>, exato: SemaforoExato,
 ): Promise<{ ok: true; itens: PedidoValidado[] } | { ok: false; erro: string; itens?: Recusa[] }> {
@@ -63,6 +87,26 @@ export async function validarPedido(
     const l = central.get(id);
     if (!l) { recusar('O anúncio não está nesta promoção na Central'); continue; }
     const confirmado = it.confirmado_risco === true;
+
+    // Emenda 2026-11-03: participante não tem faixa (o ML valida e recusa com mensagem); o resto é a trava de sempre.
+    if (acao === 'alterar_preco') {
+      if (tipo !== 'DEAL') { recusar('Só campanhas tradicionais aceitam alterar o preço'); continue; }
+      if (!ehParticipando(l.status)) { recusar('O anúncio não está Participando desta promoção'); continue; }
+      const p = it.preco;
+      if (typeof p !== 'number' || !Number.isFinite(p) || p <= 0) { recusar('Informe o preço da oferta'); continue; }
+      const preco = centavos(p) / 100;
+      if (l.preco_original != null && preco >= l.preco_original) {
+        recusar(`O preço da promoção precisa ser menor que o original (${reais(l.preco_original)})`);
+        continue;
+      }
+      const s = await semaforoReal(l, preco, exato);
+      if ((s === 'vermelho' || s === 'indisponivel') && !confirmado) {
+        recusar('Resultado vermelho ou sem cálculo: confirme o risco para incluir', s);
+        continue;
+      }
+      ok.push({ ml_item_id: id, titulo: l.titulo, preco, semaforo: s, confirmado_risco: confirmado });
+      continue;
+    }
 
     if (acao === 'sair') {
       if (!ehParticipando(l.status)) { recusar('O anúncio não está Participando desta promoção'); continue; }

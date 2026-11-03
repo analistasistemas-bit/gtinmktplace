@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useReconcilePlatformRevenue } from '@/hooks/usePlatformAdmin';
 import { fmtBRL } from '@/lib/formato';
 
@@ -69,7 +70,7 @@ export function RevenueReconciliation({ orgId, month, candidate, onClose, onDone
 
   return (
     <Dialog open={candidate !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent processando={reconcile.isPending} rotuloProcessando="Salvando conciliação">
         <DialogHeader>
           <DialogTitle>Conciliar devolução</DialogTitle>
           <DialogDescription>
@@ -98,11 +99,12 @@ export function RevenueReconciliation({ orgId, month, candidate, onClose, onDone
                 onChange={(event) => setRefunded(event.target.value)}
               />
             </label>
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="reconciliation-reason">
               <span className="font-medium">Motivo da conciliação</span>
-              <textarea
+              <Textarea
+                id="reconciliation-reason"
                 aria-label="Motivo da conciliação"
-                className="min-h-20 w-full rounded-md border border-input bg-background p-2"
+                className="min-h-20"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
               />

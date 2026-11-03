@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateTerms } from '../validation.ts';
+import { validatePaymentProfile, validateTerms } from '../validation.ts';
 
 const ORG = '90000000-0000-0000-0000-000000000001';
 const valid = {
@@ -65,5 +65,58 @@ describe('validateTerms', () => {
   it('rejeita tipo inválido antes da checagem de modalidade', () => {
     expect(() => validateTerms({ ...valid, modality: 1, monthly_fee_cents: 60000, sonar_unit_cents: '0' }))
       .toThrow('sonar_unit_cents deve ser um inteiro não negativo');
+  });
+});
+
+describe('validateTerms — vencimento (ADR-0193 D-9)', () => {
+  it('ausente vira dia 05 e informado é preservado', () => {
+    expect(validateTerms(valid).due_day).toBe(5);
+    expect(validateTerms({ ...valid, due_day: 28 }).due_day).toBe(28);
+  });
+  it.each([0, 29, 5.5, '10', null])('rejeita due_day %s', (dueDay) => {
+    expect(() => validateTerms({ ...valid, due_day: dueDay })).toThrow('due_day');
+  });
+});
+
+describe('validatePaymentProfile', () => {
+  const perfil = { beneficiary_name: 'Daludi Comércio', document: '111.444.777-35', bank_name: 'Banco', branch: '0001', account: '12345-6', pix_key_type: 'cpf', pix_key: '111.444.777-35', city: 'São Paulo' };
+
+  it('aceita CPF/CNPJ válidos e normaliza documento e chave', () => {
+    expect(validatePaymentProfile(perfil)).toMatchObject({ document: '11144477735', pix_key: '11144477735', city: 'São Paulo' });
+    expect(validatePaymentProfile({ ...perfil, document: '11.222.333/0001-81', pix_key_type: 'cnpj', pix_key: '11.222.333/0001-81' }))
+      .toMatchObject({ document: '11222333000181', pix_key: '11222333000181' });
+  });
+
+  it('rejeita documento com dígito verificador errado ou repetido', () => {
+    expect(() => validatePaymentProfile({ ...perfil, document: '11144477734' })).toThrow('document');
+    expect(() => validatePaymentProfile({ ...perfil, document: '11111111111' })).toThrow('document');
+    expect(() => validatePaymentProfile({ ...perfil, document: '11222333000180' })).toThrow('document');
+  });
+
+  it('exige chave Pix coerente com o tipo', () => {
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'cnpj' })).toThrow('CNPJ');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'sem-arroba' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'random', pix_key: 'abc' })).toThrow('UUID');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'boleto' })).toThrow('pix_key_type');
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: ' Financeiro@Daludi.com.br ' }).pix_key).toBe('financeiro@daludi.com.br');
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '(85) 99999-8888' }).pix_key).toBe('+5585999998888');
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '+55 85 99999-8888' }).pix_key).toBe('+5585999998888');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '9999' })).toThrow('celular');
+    // Formato do DICT (schema Email da API-DICT): só ASCII minúsculo, até 77.
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'joão@example.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'joao@exámple.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'a b@example.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: `${'a'.repeat(66)}@example.com` })).toThrow('e-mail');
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: `${'a'.repeat(65)}@example.com` }).pix_key).toHaveLength(77);
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: "o'neil+pix@sub.example.com" }).pix_key).toBe("o'neil+pix@sub.example.com");
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'random', pix_key: '123E4567-E89B-12D3-A456-426614174000' }).pix_key)
+      .toBe('123e4567-e89b-12d3-a456-426614174000');
+  });
+
+  it('aplica os limites do BR Code depois de remover acentos (nome ≤ 25, cidade ≤ 15)', () => {
+    expect(() => validatePaymentProfile({ ...perfil, beneficiary_name: 'A'.repeat(26) })).toThrow('25');
+    expect(validatePaymentProfile({ ...perfil, beneficiary_name: 'Ç'.repeat(25) }).beneficiary_name).toBe('Ç'.repeat(25));
+    expect(() => validatePaymentProfile({ ...perfil, city: 'Cidade Comprida X' })).toThrow('15');
+    expect(() => validatePaymentProfile({ ...perfil, bank_name: '  ' })).toThrow('bank_name');
   });
 });

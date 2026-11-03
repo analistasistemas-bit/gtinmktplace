@@ -7,7 +7,7 @@
 .border-trail__track,
 .border-trail__fallback {
   position: absolute;
-  inset: -1px;
+  inset: var(--border-trail-inset, -1px);
   z-index: 1;
   overflow: hidden;
   pointer-events: none;

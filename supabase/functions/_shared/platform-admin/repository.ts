@@ -1,6 +1,7 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
 import { montarRelatorioMensal } from './monthly-report-io.ts';
-import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
+import { CATEGORIA_FECHAMENTO } from './fechamento-automatico.ts';
+import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, NoticeSubscription, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletStatementState, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -18,7 +19,7 @@ type DbQuery = PromiseLike<DbResult> & {
   like(column: string, value: string): DbQuery;
   limit(n: number): DbQuery;
 };
-type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery };
+type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery; update(values: Record<string, unknown>): DbQuery };
 type Db = { from(table: string): DbTable; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
 
 type OrgRow = { id: string; nome: string; slug: string; is_test: boolean; arquivada_em: string | null };
@@ -118,6 +119,28 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       return;
     }
   };
+  // ADR-0193 D-12: estado do fechamento das linhas devolvidas — UMA leitura por carteira, org_id
+  // explícito (service_role ignora RLS). Só o total do snapshot (JSON path), não o snapshot inteiro.
+  // Falha de leitura deixa `statement` ausente (desconhecido) e devolve false para o aviso.
+  const fillStatements = async (rows: OrgSummary[], month: string): Promise<boolean> => {
+    if (!rows.length) return true;
+    let closed: Map<string, WalletStatementState>;
+    try {
+      const found = await allRows<{ org_id: string; id: string; closed_at: string; total_cents: number | string }>((from, to) => db
+        .from('platform_billing_statements').select('org_id,id,closed_at,total_cents:snapshot->total_cents')
+        .in('org_id', rows.map((row) => row.id)).eq('month', monthDate(month)).order('org_id').range(from, to));
+      closed = new Map(found.map((row) => [row.org_id, { status: 'closed', id: row.id, closed_at: row.closed_at, total_cents: Number(row.total_cents) }]));
+    } catch {
+      return false;
+    }
+    for (const row of rows) {
+      const state = closed.get(row.id);
+      // Prévia falhou e não há fechamento: não sabemos se há condição vigente — fica ausente.
+      if (state) row.statement = state;
+      else if (row.pending_count !== null) row.statement = row.modality === null ? null : { status: 'open' };
+    }
+    return true;
+  };
   const loadOrganizations = (includeTest: boolean, includeArchived: boolean) => allRows<OrgRow>((from, to) => {
     let query = db.from('organizations').select('id,nome,slug,is_test,arquivada_em').order('id');
     if (!includeTest) query = query.eq('is_test', false);
@@ -159,6 +182,9 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       // `pending_count === null` só vem de prévia que falhou: a previsão sai incompleta sem que
       // `orgs_without_terms` distinga isso de "sem contrato".
       if (!completePreviews) warnings.push('Prévia indisponível para parte da carteira');
+      // ADR-0193 D-12: o anterior sai do MESMO universo do bruto (ativas, antes de paginar) —
+      // `metrics.previous` já vem de `readOrgMetrics`, sem leitura nova.
+      const previousAvailable = ativas.every((row) => row.metrics?.previous);
       const totals: WalletTotals = {
         gross_cents: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
         forecast_cents: ativas.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
@@ -167,6 +193,8 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         org_count: ativas.length,
         pending_count: completePreviews ? ativas.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
         orders: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
+        previous_gross_cents: previousAvailable ? ativas.reduce((sum, row) => sum + row.metrics!.previous!.gross_cents, 0) : null,
+        previous_available: previousAvailable,
         warnings,
       };
       // Perf FASE 2.4: o servidor já enriqueceu TODAS as organizações acima (precisa, para os
@@ -175,6 +203,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       // página de sempre — sem isso, 30 orgs de ~30 KB cada estourariam o payload à toa.
       const from = (input.page - 1) * input.page_size;
       const rows = summaries.length <= WALLET_ALL_ROWS_MAX ? summaries : summaries.slice(from, from + input.page_size);
+      if (!(await fillStatements(rows, input.month))) warnings.push('Fechamento indisponível para parte da carteira');
       return { rows, total: summaries.length, page: input.page, page_size: input.page_size, totals };
     },
     metrics: (_actorId: string, orgId: string, month: string) => readOrgMetrics(db as never, orgId, month, now()),
@@ -182,11 +211,32 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     monthlyReport: (_actorId: string, orgId: string, month: string) => montarRelatorioMensal(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },
     saveTerms: (actorId: string, input: Record<string, unknown>) => rpc<CommercialTerms>('platform_save_terms', { p_actor: actorId, p_input: input }),
+    async paymentProfile(_actorId: string): Promise<PaymentProfile | null> {
+      const { data, error } = await db.from('platform_payment_profile').select('beneficiary_name,document,bank_name,branch,account,pix_key_type,pix_key,city,updated_at,updated_by').eq('id', true).maybeSingle(); fail(error);
+      return (data as PaymentProfile | null) ?? null;
+    },
+    savePaymentProfile: (actorId: string, input: PaymentProfileInput) => rpc<PaymentProfile>('platform_save_payment_profile', { p_actor: actorId, p_input: input }),
+    // ADR-0193 D-11: assinatura do aviso de fechamento mensal no PRÓPRIO perfil (userId vem da autenticação de super-admin).
+    async noticeSubscription(userId: string): Promise<NoticeSubscription> {
+      const { data, error } = await db.from('profiles').select('telegram_chat_id,telegram_categorias').eq('id', userId).maybeSingle(); fail(error);
+      const row = data as { telegram_chat_id: string | null; telegram_categorias: string[] | null } | null;
+      return { chat_id: row?.telegram_chat_id ?? null, ativo: (row?.telegram_categorias ?? []).includes(CATEGORIA_FECHAMENTO) };
+    },
+    async saveNoticeSubscription(userId: string, input: { chatId: string | null; ativo: boolean }): Promise<NoticeSubscription> {
+      const { data, error } = await db.from('profiles').select('telegram_categorias').eq('id', userId).maybeSingle(); fail(error);
+      const outras = ((data as { telegram_categorias: string[] | null } | null)?.telegram_categorias ?? []).filter((c) => c !== CATEGORIA_FECHAMENTO);
+      const { error: e2 } = await db.from('profiles').update({
+        telegram_chat_id: input.chatId, telegram_categorias: input.ativo ? [...outras, CATEGORIA_FECHAMENTO] : outras, updated_at: now().toISOString(),
+      }).eq('id', userId); fail(e2);
+      return { chat_id: input.chatId, ativo: input.ativo };
+    },
     preview: (actorId: string, orgId: string, month: string) => rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: orgId, p_month: monthDate(month) }),
     close: (actorId: string, orgId: string, month: string, revision: string) => rpc<BillingStatement>('platform_billing_close', { p_actor: actorId, p_org: orgId, p_month: monthDate(month), p_expected_revision: revision }),
     reconcile: (actorId: string, input: Record<string, unknown>) => rpc<{ id: string }>('platform_reconcile_revenue', { p_actor: actorId, p_input: input }),
-    async statements(_actorId: string, orgId: string, page: number, pageSize: number): Promise<Page<BillingStatement>> {
-      const from = (page - 1) * pageSize; const { data, error, count } = await db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by', { count: 'exact' }).eq('org_id', orgId).order('month', { ascending: false }).range(from, from + pageSize - 1); fail(error);
+    async statements(_actorId: string, orgId: string, page: number, pageSize: number, month?: string): Promise<Page<BillingStatement>> {
+      const from = (page - 1) * pageSize; let query = db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by', { count: 'exact' }).eq('org_id', orgId);
+      if (month) query = query.eq('month', monthDate(month));
+      const { data, error, count } = await query.order('month', { ascending: false }).range(from, from + pageSize - 1); fail(error);
       return { rows: ((data ?? []) as StatementRow[]).map((row) => ({ ...row.snapshot, id: row.id, closed_at: row.closed_at, closed_by: row.closed_by })), total: count ?? 0, page, page_size: pageSize };
     },
     async statement(_actorId: string, orgId: string, statementId: string): Promise<BillingStatement> {

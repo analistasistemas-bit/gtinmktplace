@@ -20,6 +20,7 @@ const conv = (x: Partial<ItemNaCampanha> = {}): ItemNaCampanha =>
 function montar(itens: Linha[], opts: {
   campanha?: (id: string, chamada: number) => ItemNaCampanha | null;
   post?: (id: string) => { offer_id: string | null };
+  put?: (id: string) => void;
   oferta?: (id: string, chamada: number) => OfertaNoItem | null;
   semaforo?: Semaforo | null;
   passoMs?: number;
@@ -40,6 +41,7 @@ function montar(itens: Linha[], opts: {
     }),
     lerRelacoes: vi.fn(async () => ({ catalog_listing: false, relacionados: [], disponivel: 180 })),
     post: vi.fn(async (id: string) => (opts.post ? opts.post(id) : { offer_id: null })),
+    put: vi.fn(async (id: string) => { if (opts.put) opts.put(id); }),
     del: vi.fn(async () => {}),
   };
   const deps = {
@@ -61,6 +63,8 @@ function montar(itens: Linha[], opts: {
     }),
     semaforoAtual: vi.fn(async () => (opts.semaforo === undefined ? 'verde' : opts.semaforo)),
     espelharStatusCentral: vi.fn(async () => {}),
+    espelharPreco: vi.fn(async () => {}),
+    recontarCentral: vi.fn(async () => {}),
     continuar: vi.fn(async (_s?: number) => {}),
     agendarConferencia: vi.fn(async (_s: number) => {}),
     concluir: vi.fn(async () => {}),
@@ -96,6 +100,28 @@ describe('executar — aderir', () => {
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
     expect(deps.concluir).toHaveBeenCalledTimes(1);
     expect(ml.lerOfertaNoItem).not.toHaveBeenCalled();
+  });
+
+  // Jaquetas da Zaven (03/11): aplicadas a R$ 49,90, Central seguia com R$ 63,72 e "0 participando" até o sync.
+  it('espelha o preço aplicado e recalcula a contagem da campanha ao fim', async () => {
+    const itens = [item('MLB1', { preco: 12 }), item('MLB2', { preco: 12 })];
+    const { deps } = montar(itens, { campanha: (_id, n) => (n % 2 === 1 ? conv() : conv({ status: 'started' })) });
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 12);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB2', 12);
+    expect(deps.recontarCentral).toHaveBeenCalledTimes(1);
+    expect(deps.recontarCentral).toHaveBeenCalledWith('P-1');
+  });
+
+  it('achado Codex P1: SMART não espelha preço (POST só leva offer_id; o preço é do ML), mesmo com preço do preview', async () => {
+    const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
+    // Fluxo real: validarPedido preenche o preço do SMART com o preco_promo do preview.
+    const itens = [item('MLB1', { preco: 15 })];
+    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1' }), post: () => ({ offer_id: 'O-1' }) });
+    deps.recontarCentral.mockRejectedValue(new Error('db'));
+    expect(await executar(op, deps, OPTS)).toEqual({ processados: 1, continuou: false });
+    expect(deps.espelharPreco).not.toHaveBeenCalled();
+    expect(itens[0].status).toBe('aplicado');
   });
 
   it('ainda candidate depois do 201 → espelha o status da promoção (ativa: started; futura: pending)', async () => {
@@ -326,6 +352,107 @@ describe('executar — teto por contagem (ADR-0173 §4)', () => {
     expect(r).toEqual({ processados: 2, continuou: true });
     expect(deps.continuar).toHaveBeenCalledTimes(1);
     expect(deps.concluir).not.toHaveBeenCalled();
+  });
+});
+
+// Emenda ADR-0174 (2026-11-03): alterar o deal_price de item DEAL participando (achados Codex P1 incluídos).
+describe('executar — alterar_preco', () => {
+  const ALTERAR: OperacaoRow = { ...DEAL_ADERIR, acao: 'alterar_preco' };
+  const part = (preco: number, x: Partial<ItemNaCampanha> = {}) => conv({ status: 'started', preco, ...x });
+
+  it('PUT aplicado: guarda o preço lido no ML ANTES de escrever (etapa durável), aplica e espelha', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(49.9) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 43.9 });
+    const ordem = deps.gravarItem.mock.calls.map((c) => c[2]);
+    expect(ordem[0]).toEqual({ etapa: 'escrita_pedida', preco_anterior: 49.9 });
+    expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', preco_anterior: 49.9 });
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 43.9);
+    expect(ml.post).not.toHaveBeenCalled();
+  });
+
+  it('retry não sobrescreve o preço anterior já gravado', async () => {
+    const itens = [item('MLB1', { preco: 43.9, preco_anterior: 49.9 })];
+    const { deps } = montar(itens, { campanha: () => part(45) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(deps.gravarItem.mock.calls[0][2]).toEqual({ etapa: 'escrita_pedida' });
+    expect(itens[0].preco_anterior).toBe(49.9);
+  });
+
+  it('crash depois do PUT (etapa gravada) e preço vivo = pedido → aplicado (escrita recuperada, revertível)', async () => {
+    const itens = [item('MLB1', { preco: 43.9, etapa: 'escrita_pedida', preco_anterior: 49.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(43.9) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'aplicado' });
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 43.9);
+  });
+
+  it('sem etapa e preço vivo já = pedido → ja_estava (nada escrito)', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(43.9) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0].status).toBe('ja_estava');
+  });
+
+  it('PUT incerto (erro) mas o ML já mostra o preço → aplicado; recusa 4xx do ML → erro', async () => {
+    const a = [item('MLB1', { preco: 43.9 })];
+    const ma = montar(a, { campanha: (_id, n) => (n === 1 ? part(49.9) : part(43.9)), put: () => { throw new Error('timeout'); } });
+    await executar(ALTERAR, ma.deps, OPTS);
+    expect(a[0].status).toBe('aplicado');
+    const b = [item('MLB1', { preco: 43.9 })];
+    const mb = montar(b, { campanha: () => part(49.9), put: () => { throw new Error('ML 400: deal_price fora da faixa'); } });
+    await executar(ALTERAR, mb.deps, OPTS);
+    expect(b[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: deal_price fora da faixa' });
+  });
+
+  it('achado Codex P1: PUT incerto (5xx/timeout) e releitura ainda com o preço antigo → mantém enviando (reconfere no retry)', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps } = montar(itens, { campanha: () => part(49.9), put: () => { throw new Error('ML 503: indisponível'); } });
+    await expect(executar(ALTERAR, deps, OPTS)).rejects.toThrow('ML 503');
+    expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida', preco_anterior: 49.9 });
+  });
+
+  it('achado Codex P1: retomada com etapa gravada e falha na leitura → mantém enviando (não vira erro)', async () => {
+    const itens = [item('MLB1', { preco: 43.9, etapa: 'escrita_pedida', preco_anterior: 49.9 })];
+    const { deps, ml } = montar(itens);
+    vi.mocked(ml.lerNaCampanha).mockRejectedValueOnce(new Error('ML 500'));
+    await expect(executar(ALTERAR, deps, OPTS)).rejects.toThrow('ML 500');
+    expect(itens[0].status).toBe('enviando');
+  });
+
+  it('achado Codex P2: sem o preço vivo da oferta antes da 1ª escrita → erro, nada escrito', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(49.9, { preco: null }) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'O ML não informou o preço atual da oferta' });
+  });
+
+  it('PUT incerto e a releitura também falha → relança (item fica enviando para o retry)', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps, ml } = montar(itens, { put: () => { throw new Error('timeout'); } });
+    vi.mocked(ml.lerNaCampanha).mockResolvedValueOnce(part(49.9)).mockRejectedValueOnce(new Error('ML 500'));
+    await expect(executar(ALTERAR, deps, OPTS)).rejects.toThrow('timeout');
+    expect(itens[0].status).toBe('enviando');
+  });
+
+  it('trava financeira: resultado piorou desde o preview → mudou, sem PUT', async () => {
+    const itens = [item('MLB1', { preco: 30, semaforo: 'verde' })];
+    const { deps, ml } = montar(itens, { campanha: () => part(49.9), semaforo: 'vermelho' });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0].status).toBe('mudou');
+  });
+
+  it('Reverter: preço vivo ≠ o que a origem deixou → mudou, sem PUT', async () => {
+    const itens = [item('MLB1', { preco: 49.9, preco_esperado: 43.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(41) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O preço mudou desde a alteração original' });
   });
 });
 

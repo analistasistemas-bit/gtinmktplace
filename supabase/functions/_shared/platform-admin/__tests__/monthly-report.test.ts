@@ -56,6 +56,13 @@ describe('componentesDoMes + kpisDoPeriodo', () => {
     expect(k.unavailable_reason).toBeNull();
     expect(k.ticket_cents).toBe(10_000);
     expect(k.unit_price_cents).toBe(5_000);
+    // componentes prontos da cascata (a UI/PDF só formatam)
+    expect(k).toMatchObject({ channel_costs_cents: 2_000, net_after_tax_cents: 7_200, excluded_gross_cents: 0 });
+  });
+
+  it('cascata sem alíquota confirmada: líquido após imposto indisponível', () => {
+    const k = kpisDoPeriodo(componentesDoMes([venda()], { ...ctx, configOk: false }, AGORA), null, null);
+    expect(k).toMatchObject({ channel_costs_cents: 2_000, net_after_tax_cents: null, excluded_gross_cents: 10_000 });
   });
 
   it('cupom do vendedor: faturamento já sem cupom e ponte do cupom separada', () => {
@@ -85,6 +92,7 @@ describe('componentesDoMes + kpisDoPeriodo', () => {
     expect(k.margin).toBeCloseTo(c.profit_cents! / 6_000);
     expect(k.profit_after_ads_cents).toBeNull();
     expect(k.unavailable_reason).toBe('lucro_parcial');
+    expect(k.excluded_gross_cents).toBe(4_000);
   });
 
   it('venda calculável de R$ 100 + item de faturamento zero sem custo → parcial e Após Ads indisponível', () => {
@@ -324,5 +332,15 @@ describe('serieMensal', () => {
     expect(s[0].margin_after_ads).toBeCloseTo(0.14);
     expect(s[1]).toMatchObject({ gross_cents: null, profit_cents: null, unavailable_reason: 'volume' });
     expect(s[2]).toMatchObject({ partial: true, profit_after_ads_cents: null, ads_cost_cents: null });
+    // margem/markup antes de Ads, sobre a base calculável (achado Codex Fatia 4)
+    expect(s[0]).toMatchObject({ margin: 0.2, markup: 0.5, profit_coverage: 1 });
+    expect(s[1]).toMatchObject({ margin: null, markup: null, profit_coverage: null });
+  });
+
+  it('margem da série é sobre a base calculável, não sobre o faturamento total (D-3)', () => {
+    const [p] = serieMensal([{ month: '2026-10', unavailable_reason: null, componentes: {
+      gross_cents: 10_000, orders: 3, units: 3, net_cents: 8_000, tax_cents: 800, cost_cents: 1_000, profit_cents: 2_000,
+      covered_gross_cents: 4_000, item_gross_cents: 10_000, excluded_items: 2 } }], new Map());
+    expect(p).toMatchObject({ margin: 0.5, markup: 2, profit_coverage: 0.4, partial: true, margin_after_ads: null });
   });
 });

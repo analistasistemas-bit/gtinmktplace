@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, BarChart3, Puzzle, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, FileText, Puzzle, Radar, Receipt, ScrollText, Settings2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
@@ -16,9 +15,12 @@ import { OrgBilling } from '@/components/platform-admin/org-billing';
 import { OrgPulse } from '@/components/platform-admin/org-pulse';
 import { OrgExtensao } from '@/components/platform-admin/org-extensao';
 import { OrgResults } from '@/components/platform-admin/org-results';
+import { SeletorMes } from '@/components/platform-admin/seletor-mes';
 import { OrgSettings } from '@/components/platform-admin/org-settings';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
-import { usePlatformOrganization, usePlatformPreview } from '@/hooks/usePlatformAdmin';
+import { useMonthlyReport, usePlatformOrganization, usePlatformPreview } from '@/hooks/usePlatformAdmin';
+import { baixarRelatorioMensal } from '@/lib/export/relatorio-mensal-download';
+import { diaMesBr, mesPorExtenso } from '@/lib/relatorio-mensal-ui';
 import { cancelSupport, listSupportRequests } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -64,6 +66,8 @@ export default function OrganizacaoDetalhe() {
   const primeiraLeitura = organization.isLoading && !jaCarregou;
   const org = organization.data;
   const preview = usePlatformPreview(orgId, month);
+  const report = useMonthlyReport(orgId, month);
+  const [gerando, setGerando] = useState(false);
   const startSupport = useSupportStore((state) => state.start);
   const endSupport = useSupportStore((state) => state.end);
 
@@ -136,11 +140,32 @@ export default function OrganizacaoDetalhe() {
   // Contagem desconhecida (falha) não é 0: some do badge em vez de mentir "sem bloqueios".
   const blockerCount = preview.isError ? null : preview.data?.blockers.length ?? 0;
 
-  const monthField = (
-    <label className="flex items-center gap-2 text-sm" htmlFor="organization-month">
-      <span className="font-medium">Mês</span>
-      <Input id="organization-month" type="month" aria-label="Mês da organização" value={month} onChange={(event) => updateSearch('mes', event.target.value)} />
-    </label>
+  const mesAtual = currentMonth();
+  const monthField = <SeletorMes month={month} mesAtual={mesAtual} onChange={(value) => updateSearch('mes', value)} />;
+
+  const fechado = report.data?.statement.status === 'closed' ? report.data.statement : null;
+  const motivoRelatorio = report.isLoading ? 'Carregando o mês…'
+    : report.isError ? 'Não foi possível ler o mês.'
+    : fechado ? undefined : `Feche o demonstrativo de ${mesPorExtenso(month)} (aba Cobrança) para gerar o relatório mensal.`;
+
+  async function gerarRelatorio() {
+    setGerando(true);
+    try {
+      await baixarRelatorioMensal(orgId, month);
+      toast.success('Relatório mensal gerado.');
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Não foi possível gerar o relatório mensal.');
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  const reportButton = (
+    <span title={motivoRelatorio} className="inline-flex">
+      <Button variant="outline" onClick={gerarRelatorio} disabled={Boolean(motivoRelatorio) || gerando} className="max-sm:min-h-11">
+        <FileText />{gerando ? 'Gerando…' : 'Gerar relatório mensal'}
+      </Button>
+    </span>
   );
 
   const supportButton = request?.status === 'active' ? (
@@ -219,7 +244,7 @@ export default function OrganizacaoDetalhe() {
           <PageHeader
             className="mb-2"
             title={org.nome}
-            actions={<>{monthField}{supportButton}</>}
+            actions={<>{monthField}{reportButton}{supportButton}</>}
           />
           <div className="flex flex-wrap items-center gap-2">
             {org.is_test && <Badge variant="outline">Ambiente de teste</Badge>}
@@ -228,6 +253,8 @@ export default function OrganizacaoDetalhe() {
                 Acesso ativo{request.expires_at ? ` · expira às ${fmtHora(request.expires_at)}` : ''}
               </StatusPill>
             )}
+            {fechado && <StatusPill tone="success">Demonstrativo fechado em {diaMesBr(fechado.closed_at)}</StatusPill>}
+            {report.data && !fechado && <StatusPill tone="neutral">Mês em aberto</StatusPill>}
             {subtitleNode}
           </div>
         </div>
@@ -243,11 +270,13 @@ export default function OrganizacaoDetalhe() {
       />
 
       {!primeiraLeitura && <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
-        <TabsList aria-label="Seções da organização">
-          <TabsTrigger value="resultados"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
-          <TabsTrigger value="pulse"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
-          <TabsTrigger value="extensao"><Puzzle className="h-4 w-4" />Extensão</TabsTrigger>
-          <TabsTrigger value="cobranca">
+        <div className="relative">
+        <TabsList variant="line" aria-label="Seções da organização"
+          className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-11 sm:w-full sm:justify-start">
+          <TabsTrigger value="resultados" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
+          <TabsTrigger value="pulse" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
+          <TabsTrigger value="extensao" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Puzzle className="h-4 w-4" />Extensão</TabsTrigger>
+          <TabsTrigger value="cobranca" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit">
             <Receipt className="h-4 w-4" />Cobrança
             {blockerCount !== null && blockerCount > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
@@ -255,10 +284,13 @@ export default function OrganizacaoDetalhe() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="auditoria"><ScrollText className="h-4 w-4" />Auditoria</TabsTrigger>
-          <TabsTrigger value="configuracoes"><Settings2 className="h-4 w-4" />Configurações</TabsTrigger>
+          <TabsTrigger value="auditoria" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><ScrollText className="h-4 w-4" />Auditoria</TabsTrigger>
+          <TabsTrigger value="configuracoes" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Settings2 className="h-4 w-4" />Configurações</TabsTrigger>
         </TabsList>
-        <TabsContent value="resultados" className="pt-4"><OrgResults organization={organization} /></TabsContent>
+        {/* Pista de rolagem: no celular a barra rola sem scrollbar visível; o degradê indica que há mais abas à direita. */}
+        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
+        </div>
+        <TabsContent value="resultados" className="pt-4"><OrgResults report={report} /></TabsContent>
         <TabsContent value="pulse" className="pt-4"><OrgPulse orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="extensao" className="pt-4"><OrgExtensao orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="cobranca" className="pt-4"><OrgBilling orgId={orgId} month={month} /></TabsContent>

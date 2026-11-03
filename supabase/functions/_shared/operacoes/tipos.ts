@@ -1,7 +1,8 @@
 // ADR-0174 — tipos do motor de operações em massa (aderir/sair de promoções DEAL/SMART do ML).
 import type { Semaforo } from '../promocoes/tipos.ts';
 
-export type Acao = 'aderir' | 'sair';
+/** `alterar_preco` (emenda 2026-11-03): PUT do deal_price de item DEAL já participando. */
+export type Acao = 'aderir' | 'sair' | 'alterar_preco';
 export type TipoPromocao = 'DEAL' | 'SMART' | 'LIGHTNING';
 export type StatusItem =
   | 'rascunho' | 'pendente' | 'enviando' | 'conferindo'
@@ -12,6 +13,9 @@ export interface ItemRow {
   semaforo: Semaforo | null; confirmado_risco: boolean;
   proxima_conferencia: string | null;   // ISO; null = sem conferência agendada
   saida_pedida_em: string | null;       // ISO do 1º DELETE aceito; relógio das 24 h
+  // alterar_preco: etapa durável antes do PUT, preço lido no ML antes de escrever e (Reverter) o preço que a
+  // operação de origem deixou — preço vivo diferente vira `mudou`.
+  etapa?: 'escrita_pedida' | 'ml_confirmado' | null; preco_anterior?: number | null; preco_esperado?: number | null;
 }
 export interface CamposItem {
   status: StatusItem; mensagem: string | null; offer_id: string | null; conferencias: number;
@@ -26,6 +30,8 @@ export interface ItemNaCampanha {
   preco_min: number | null; preco_max: number | null;
   offer_id: string | null;        // CANDIDATE-... (convidado) ou OFFER-... (participando); LIGHTNING vem em ref_id
   estoque_min: number | null;     // stock.min da Relâmpago; null fora de LIGHTNING ou ausente
+  /** `price` da visão da campanha: no participante é o preço promocional vigente (spike 03/11). */
+  preco?: number | null;
 }
 /** Relâmpago na visão POR ITEM (/seller-promotions/items/{id}): a única com máximo e sugerido. null = não aparece. */
 export interface OfertaNoItem {
@@ -36,9 +42,10 @@ export interface Relacoes {
   catalog_listing: boolean; relacionados: { id: string; catalog_listing: boolean }[];
   disponivel: number | null;      // available_quantity do item (estoque que a Relâmpago reserva)
 }
-export interface PedidoItem { ml_item_id: string; preco: number | null }
+export interface PedidoItem { ml_item_id: string; preco: number | null; esperado?: number | null }
 export type Decisao =
   | { tipo: 'post'; body: Record<string, unknown> }
+  | { tipo: 'put'; body: Record<string, unknown> }
   | { tipo: 'delete'; query: string }
   | { tipo: 'fim'; status: Exclude<StatusItem, 'rascunho' | 'pendente' | 'enviando' | 'conferindo'>; mensagem: string | null };
 

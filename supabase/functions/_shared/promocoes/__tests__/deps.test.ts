@@ -7,7 +7,7 @@ vi.mock('../../redis/client.ts', () => ({
   redisSet: (k: string, v: string, ttl?: number) => m.set(k, v, ttl),
 }));
 vi.mock('../../ml/listing-prices.ts', () => ({
-  buscarListingPrice: () => m.lp(),
+  buscarListingPriceComRetentativa: (_t: string, _p: number, _c: string, _l: string, esperas?: number[]) => m.lp(esperas),
   comissaoDeComProveniencia: (c: unknown) => ({ valor: c, proveniencia: 'official' }),
 }));
 vi.mock('../../ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: () => m.frete() }));
@@ -36,5 +36,14 @@ describe('criarTarifaEm', () => {
     expect(await criarTarifaEm(cx, { fresco: true })(q)).toEqual({ comissao: { percentual: 16, fixa: 0 }, frete: 20 });
     expect(m.get).not.toHaveBeenCalled();
     expect(m.set).toHaveBeenCalledTimes(2);
+  });
+
+  it('disjuntor: retentativa esgotada uma vez → as próximas da execução falham sem esperar', async () => {
+    m.get.mockResolvedValue(null);
+    m.lp.mockRejectedValue(new Error('listing_prices gold_special 429: local_rate_limited'));
+    const tarifaEm = criarTarifaEm(cx);
+    await expect(tarifaEm(q)).rejects.toThrow(/429/);
+    await expect(tarifaEm(q)).rejects.toThrow(/429/);
+    expect(m.lp.mock.calls).toEqual([[undefined], [[]]]);
   });
 });

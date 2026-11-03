@@ -1,5 +1,6 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART, pausar/reativar e reajustar preço — ADR-0178). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
+//  - Usuário, simulação: { etapa: 'simular' } (qualquer membro) devolve o líquido exato num preço escolhido (só leitura).
 //  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica;
 //    { etapa: 'retomar' } (admin/suporte full) republica a execução de um reajuste executando parado (dedup novo).
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
@@ -14,10 +15,11 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { MLApiError } from '../_shared/ml/erro-ml.ts';
 import { conferir, executar, type OperacaoRow } from '../_shared/operacoes/executar.ts';
 import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/executar-status.ts';
-import { MAX_ITENS, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
+import { MAX_ITENS, reversaoAlterarValida, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
+import { lerSimular, MAX_SIMULAR, simular } from '../_shared/operacoes/simular.ts';
 import {
-  COLS_CENTRAL, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
+  COLS_CENTRAL, criarProjecaoExata, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
 import {
   lerConexaoML, MSG_RECONECTAR, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML,
@@ -50,6 +52,8 @@ async function conexaoDaOrg(admin: Admin, orgId: string) {
 }
 
 const ativa = (s: unknown): s is 'pending' | 'started' => s === 'pending' || s === 'started';
+/** Ação que a operação de origem precisa ter para ser revertida pelo pedido. */
+const INVERSA_PROMOCAO: Record<Acao, Acao> = { aderir: 'sair', sair: 'aderir', alterar_preco: 'alterar_preco' };
 
 async function lerPromocao(admin: Admin, orgId: string, promocaoId: string) {
   const { data, error } = await admin.from('ml_promocoes').select('tipo, nome, status')
@@ -155,7 +159,7 @@ function lerPedido(x: unknown): Pedido | null {
     }
     return { acao: b.acao, origem_id, itens };
   }
-  if ((b.acao !== 'aderir' && b.acao !== 'sair') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
+  if ((b.acao !== 'aderir' && b.acao !== 'sair' && b.acao !== 'alterar_preco') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
   const itens: ItemPedido[] = [];
   for (const i of b.itens as Record<string, unknown>[]) {
     if (!i || typeof i.ml_item_id !== 'string' || !i.ml_item_id) return null;
@@ -191,12 +195,29 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
   if (!promo) return json({ erro: 'Promoção não encontrada.' }, 404);
   if (!ativa(promo.status)) return json({ erro: 'Esta promoção já terminou.' }, 400);
 
+  // Reverter de alterar_preco: a origem também é alterar_preco (reverte com outra alteração); o resto exige a inversa.
+  let esperados: Map<string, number> | null = null;
   if (pedido.origem_id) {
     const { data: origem, error } = await admin.from('operacoes_massa').select('acao, promocao_id')
       .eq('org_id', orgId).eq('id', pedido.origem_id).maybeSingle();
     if (error) throw new Error(`origem: ${error.message}`);
-    if (!origem || origem.acao === pedido.acao || origem.promocao_id !== pedido.promocao_id) {
+    const alterar = pedido.acao === 'alterar_preco';
+    // Achado Codex P2: só o par exato reverte (aderir↔sair; alterar_preco↔alterar_preco) — "sair" não desfaz alteração.
+    const acaoOk = origem?.acao === INVERSA_PROMOCAO[pedido.acao];
+    if (!origem || !acaoOk || origem.promocao_id !== pedido.promocao_id) {
       return json({ erro: 'A operação de origem não pode ser revertida por este pedido.' }, 400);
+    }
+    if (alterar) {
+      // Achado Codex P1: itens e preços do Reverter conferidos contra o que a origem realmente alterou.
+      const { data: itensOrigem, error: eO } = await admin.from('operacoes_massa_itens')
+        .select('ml_item_id, status, preco, preco_anterior').eq('org_id', orgId).eq('operacao_id', pedido.origem_id);
+      if (eO) throw new Error(`itens da origem: ${eO.message}`);
+      const r = reversaoAlterarValida(pedido.itens, (itensOrigem ?? []).map((x) => ({
+        ml_item_id: String(x.ml_item_id), status: String(x.status),
+        preco: x.preco == null ? null : Number(x.preco), preco_anterior: x.preco_anterior == null ? null : Number(x.preco_anterior),
+      })));
+      if (r.recusas.length) return json({ erro: 'Alguns anúncios não podem ser revertidos.', itens: r.recusas }, 400);
+      esperados = r.esperados;
     }
   }
 
@@ -232,10 +253,14 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
   return gravarEPublicar(admin, ctx, {
     acao: pedido.acao, promocao_id: pedido.promocao_id, promocao_tipo: promo.tipo,
     promocao_nome: promo.nome, origem_id: pedido.origem_id,
-  }, v.itens.map((i) => ({
-    promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
-    preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
-  })));
+  }, v.itens.map((i) => {
+    const esperado = esperados?.get(i.ml_item_id);
+    return {
+      promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
+      preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
+      ...(esperado != null ? { estado_anterior: { preco_esperado: esperado } } : {}),
+    };
+  }));
 }
 
 const REVERSAO_INVALIDA = 'A operação de origem não pode ser revertida por este pedido.';
@@ -328,7 +353,43 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
   if (bruto?.etapa === 'preview') return previewReajuste(admin, req, bruto);
   if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'retomar') return retomarReajuste(admin, req, bruto);
+  if (bruto?.etapa === 'simular') return simularPrecos(admin, req, bruto);
   return criar(admin, req, body);
+}
+
+/** Simulação de preço/desconto (qualquer membro): líquido exato por anúncio no preço pedido. Só leitura. */
+async function simularPrecos(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  let orgId: string;
+  try {
+    // Só leitura: suporte com escopo `read` também simula (os demais ramos seguem exigindo escrita).
+    ({ orgId } = await requireUserOrg(req, { access: 'read' }));
+  } catch (resp) {
+    if (resp instanceof Response) return resp;
+    throw resp;
+  }
+  if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
+  const pedido = lerSimular(bruto);
+  if (!pedido) return json({ erro: `Pedido inválido (até ${MAX_SIMULAR} anúncios por simulação).` }, 400);
+  const promo = await lerPromocao(admin, orgId, pedido.promocao_id);
+  if (!promo) return json({ erro: 'Promoção não encontrada.' }, 404);
+  if (!ativa(promo.status)) return json({ erro: 'Esta promoção já terminou.' }, 400);
+  if (promo.tipo !== 'DEAL' && promo.tipo !== 'LIGHTNING') return json({ erro: 'Só campanhas e Relâmpago aceitam preço escolhido.' }, 400);
+
+  const ids = [...new Set(pedido.itens.map((i) => i.ml_item_id))];
+  const { data, error } = await admin.from('ml_promocao_itens').select(COLS_CENTRAL)
+    .eq('org_id', orgId).eq('promocao_id', pedido.promocao_id).in('ml_item_id', ids);
+  if (error) throw new Error(`ml_promocao_itens: ${error.message}`);
+  const central = new Map<string, LinhaCentral>((data ?? []).map((r) => [String(r.ml_item_id), linhaCentral(r)]));
+
+  try {
+    const cx = await conexaoDaOrg(admin, orgId);
+    if (!cx) throw new SemConexaoML();
+    return json({ itens: await simular(pedido.itens, central, criarProjecaoExata(admin, cx)) });
+  } catch (e) {
+    const r = respostaFalhaCriacao(e);
+    if (!r) throw e;
+    return json({ erro: r.erro }, r.status);
+  }
 }
 
 /** Preview do reajuste (qualquer membro; Reverter só admin/suporte full). executaveis = 0 → nada gravado (C4). */

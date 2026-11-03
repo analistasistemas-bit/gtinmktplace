@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -24,8 +25,12 @@ type FormState = {
   sonar: string;
   setup: string;
   setupDueMonth: string;
+  dueDay: string;
   reason: string;
 };
+
+// ADR-0193 D-9: 1..28 para existir em todo mês (fevereiro incluso).
+const DUE_DAYS = Array.from({ length: 28 }, (_, i) => String(i + 1));
 
 function formatScaled(value: number, scale: number): string {
   const divisor = 10 ** scale;
@@ -79,6 +84,7 @@ function initialState(current: CommercialTerms | null, startsOn: string): FormSt
     sonar: formatScaled(current?.sonar_unit_cents ?? (modality === '2' ? 120 : 0), 2),
     setup: formatScaled(current?.setup_fee_cents ?? 300_000, 2),
     setupDueMonth: current?.setup_due_month ?? startsOn.slice(0, 7),
+    dueDay: String(current?.due_day ?? 5),
     reason: '',
   };
 }
@@ -193,6 +199,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         setup_fee_cents: isFirstContract ? setup! : 0,
         setup_due_month: effectiveSetupDue,
         reason: form.reason.trim(),
+        due_day: Number(form.dueDay),
       });
       set('reason', '');
       onSaved();
@@ -356,11 +363,25 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 />
               </label>
             </div>
-            <label className="space-y-1 text-sm md:col-span-2">
+            <label className="space-y-1 text-sm" htmlFor="terms-due-day">
+              <span className="font-medium">Vencimento (dia)</span>
+              <Select value={form.dueDay} onValueChange={(value) => set('dueDay', value)}>
+                <SelectTrigger id="terms-due-day" aria-label="Vencimento (dia)" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DUE_DAYS.map((day) => (
+                    <SelectItem key={day} value={day}>Dia {day.padStart(2, '0')} do mês seguinte</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="space-y-1 text-sm md:col-span-2" htmlFor="terms-reason">
               <span className="font-medium">Motivo</span>
-              <textarea
+              <Textarea
+                id="terms-reason"
                 aria-label="Motivo"
-                className="min-h-20 w-full rounded-md border border-input bg-background p-2"
+                className="min-h-20"
                 value={form.reason}
                 onChange={(event) => set('reason', event.target.value)}
               />

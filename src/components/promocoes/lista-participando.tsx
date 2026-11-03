@@ -1,9 +1,13 @@
 // ADR-0174, emenda 2026-10-05 — aba "Em promoção": tudo que participa, por campanha; DEAL/SMART saem pelo motor.
 import { ehTipoOperavel } from '@/lib/operacoes';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgePercent, ExternalLink } from 'lucide-react';
+import { BadgePercent, ExternalLink, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Pagination } from '@/components/ui/pagination';
+import { usePaginacao } from '@/hooks/usePaginacao';
+import { filtrarPorBusca } from '@/lib/promocao-simulacao';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,9 +24,17 @@ import { PreviewOperacao } from './preview-operacao';
 export function ListaParticipando() {
   const promocoes = usePromocoes();
   const participacoes = useParticipacoes();
+  const [busca, setBusca] = useState('');
   const grupos = useMemo(
     () => agruparParticipacoes(participacoes.data ?? [], promocoes.data ?? [], Date.now()),
     [participacoes.data, promocoes.data],
+  );
+  // Busca (título/MLB/SKU) em todas as campanhas: bloco sem resultado some. Achado Codex P2: a seleção mora aqui (por
+  // campanha) — buscar não apaga marcações e as ações valem para tudo que está marcado na campanha.
+  const [selecao, setSelecao] = useState<Record<string, Set<string>>>({});
+  const visiveis = useMemo(
+    () => grupos.map((g) => ({ grupo: g, itens: filtrarPorBusca(g.itens, busca) as Participacao[] })).filter((x) => x.itens.length > 0),
+    [grupos, busca],
   );
 
   if (promocoes.isLoading || participacoes.isLoading) {
@@ -32,31 +44,74 @@ export function ListaParticipando() {
     return <EmptyState icon={BadgePercent} title="Não foi possível carregar os anúncios em promoção." description="Tente atualizar a página." className="mt-4" />;
   }
   if (grupos.length === 0) return <EmptyState icon={BadgePercent} title="Nenhum anúncio em promoção." className="mt-4" />;
-  return <div className="mt-4 flex flex-col gap-4">{grupos.map((g) => <BlocoCampanha key={g.promocao.promocao_id} grupo={g} />)}</div>;
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="relative w-full sm:max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, MLB ou SKU"
+          aria-label="Buscar anúncios em promoção" className="pl-9 pr-9" />
+        {busca && (
+          <button type="button" onClick={() => setBusca('')} aria-label="Limpar busca"
+            className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+            <X className="size-4" aria-hidden />
+          </button>
+        )}
+      </div>
+      {visiveis.length === 0
+        ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio em promoção com essa busca.</p>
+        : visiveis.map(({ grupo: g, itens }) => (
+          <BlocoCampanha key={g.promocao.promocao_id} grupo={g} visiveis={itens} busca={busca}
+            selecionados={selecao[g.promocao.promocao_id] ?? VAZIO}
+            onSelecao={(s) => setSelecao((prev) => ({ ...prev, [g.promocao.promocao_id]: s }))} />
+        ))}
+    </div>
+  );
 }
 
-function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
+const VAZIO: Set<string> = new Set();
+const TAMANHOS = [20, 50, 100];
+
+function BlocoCampanha({ grupo, visiveis, busca, selecionados, onSelecao }: {
+  grupo: GrupoParticipacao; visiveis: Participacao[]; busca: string; selecionados: Set<string>; onSelecao: (s: Set<string>) => void;
+}) {
   const { promocao: p, itens, operavel } = grupo;
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
-  const [saindo, setSaindo] = useState<Participacao[] | null>(null);
+  const [preview, setPreview] = useState<{ acao: 'sair' | 'alterar_preco'; itens: Participacao[] } | null>(null);
+  // Alterar o preço da oferta só existe em campanha tradicional (PUT do deal_price — spike 03/11).
+  const podeAlterar = operavel && p.tipo === 'DEAL';
   const nome = p.nome ?? rotuloTipo(p.tipo);
   const tituloId = `campanha-${p.promocao_id}`;
+  // Ações: tudo que está marcado na campanha (inclusive fora da busca atual); "Selecionar todos": só os visíveis.
   const marcados = itens.filter((i) => selecionados.has(i.ml_item_id));
-  const todos = itens.length > 0 && marcados.length === itens.length;
+  const todos = visiveis.length > 0 && visiveis.every((i) => selecionados.has(i.ml_item_id));
+  const setSelecionados = (f: (prev: Set<string>) => Set<string>) => onSelecao(f(selecionados));
+  // Paginação só da exibição (03/11): seleção e "Selecionar todos" continuam valendo para todas as páginas.
+  const pag = usePaginacao(visiveis, { tamanhoInicial: 20 });
+  const { reset } = pag;
+  useEffect(() => reset(), [busca, reset]);
+  const topo = useRef<HTMLElement>(null);
+  const irPara = (n: number) => {
+    pag.irPara(n);
+    topo.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
 
   const alternar = (id: string) => setSelecionados((prev) => {
     const novo = new Set(prev);
     if (novo.has(id)) novo.delete(id); else novo.add(id);
     return novo;
   });
+  const alternarVisiveis = (marcar: boolean) => setSelecionados((prev) => {
+    const novo = new Set(prev);
+    for (const i of visiveis) { if (marcar) novo.add(i.ml_item_id); else novo.delete(i.ml_item_id); }
+    return novo;
+  });
 
   return (
-    <section aria-labelledby={tituloId} className="rounded-xl border bg-card shadow-xs">
+    <section ref={topo} aria-labelledby={tituloId} className="scroll-mt-6 rounded-xl border bg-card shadow-xs">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
         <div className="flex min-w-0 items-center gap-3">
           {operavel && (
             <Checkbox aria-label={`Selecionar todos de ${nome}`} checked={todos}
-              onCheckedChange={(v) => setSelecionados(v ? new Set(itens.map((i) => i.ml_item_id)) : new Set())} />
+              onCheckedChange={(v) => alternarVisiveis(!!v)} />
           )}
           <div className="min-w-0">
             <h3 id={tituloId} className="truncate font-semibold">
@@ -69,7 +124,14 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
           </div>
         </div>
         {operavel ? (
-          marcados.length > 0 && <Button size="sm" variant="outline" onClick={() => setSaindo(marcados)}>Sair {marcados.length}</Button>
+          marcados.length > 0 && (
+            <div className="flex items-center gap-2">
+              {podeAlterar && (
+                <Button size="sm" onClick={() => setPreview({ acao: 'alterar_preco', itens: marcados })}>Alterar preço {marcados.length}</Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setPreview({ acao: 'sair', itens: marcados })}>Sair {marcados.length}</Button>
+            </div>
+          )
         ) : (
           <Button asChild size="sm" variant="ghost">
             <a href={URL_PROMOCOES_ML} target="_blank" rel="noreferrer">Gerenciar no Mercado Livre <ExternalLink className="size-4" aria-hidden /></a>
@@ -77,12 +139,17 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
         )}
       </header>
       <ul className="divide-y">
-        {itens.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
+        {pag.itensPagina.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
       </ul>
+      {pag.total > TAMANHOS[0] && (
+        <Pagination className="border-t px-4" rotuloItem="anúncio" tamanhos={TAMANHOS} paginaAtual={pag.paginaAtual}
+          totalPaginas={pag.totalPaginas} inicio={pag.inicio} fim={pag.fim} total={pag.total} tamanho={pag.tamanho}
+          onIrPara={irPara} onTamanho={pag.setTamanho} />
+      )}
       {operavel && (
         <PreviewOperacao
-          acao="sair" tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
-          itens={saindo ?? []} aberto={saindo != null} onClose={() => setSaindo(null)} onSucesso={() => setSelecionados(new Set())}
+          acao={preview?.acao ?? 'sair'} tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
+          itens={preview?.itens ?? []} aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => onSelecao(new Set())}
         />
       )}
     </section>

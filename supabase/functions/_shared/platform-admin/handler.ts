@@ -1,8 +1,8 @@
-import { validateTerms } from './validation.ts';
+import { validarAssinaturaAviso, validatePaymentProfile, validateTerms } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report']);
+const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report','payment_profile','save_payment_profile','notice_subscription','save_notice_subscription']);
 // deno-lint-ignore no-explicit-any
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
@@ -45,11 +45,18 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
         case 'save_terms': result = await deps.repository.saveTerms(userId, validateTerms(body)); break;
         case 'preview': result = await deps.repository.preview(userId, orgId, month(body.month)); break;
         case 'close': result = await deps.repository.close(userId, orgId, month(body.month), requiredString(body.expected_revision, 'expected_revision')); break;
-        case 'statements': result = await deps.repository.statements(userId, orgId, page(body.page), pageSize(body.page_size)); break;
+        // `month` opcional: existência do demonstrativo da competência sem depender da paginação.
+        case 'statements': result = await deps.repository.statements(userId, orgId, page(body.page), pageSize(body.page_size), body.month === undefined ? undefined : month(body.month)); break;
         case 'statement': result = await deps.repository.statement(userId, orgId, uuid(body.statement_id, 'statement_id')); break;
         case 'reconcile_revenue': result = await deps.repository.reconcile(userId, { org_id: orgId, sale_id: uuid(body.sale_id, 'sale_id'), source_updated_at: requiredString(body.source_updated_at, 'source_updated_at'), refunded_product_cents: body.refunded_product_cents, reason: requiredString(body.reason, 'reason') }); break;
         case 'pulse_usage': result = await deps.repository.pulseUsage(userId, orgId, month(body.month), page(body.page), pageSize(body.page_size)); break;
         case 'extensao_usage': result = await deps.repository.extensaoUsage(userId, orgId, month(body.month)); break;
+        // Dados de recebimento são da plataforma (sem org_id): fora de orgActions.
+        case 'payment_profile': result = await deps.repository.paymentProfile(userId); break;
+        case 'save_payment_profile': result = await deps.repository.savePaymentProfile(userId, validatePaymentProfile(body)); break;
+        // ADR-0193 D-11: assinatura do aviso de fechamento mensal — só o PRÓPRIO perfil do super-admin.
+        case 'notice_subscription': result = await deps.repository.noticeSubscription(userId); break;
+        case 'save_notice_subscription': result = await deps.repository.saveNoticeSubscription(userId, validarAssinaturaAviso(body)); break;
         case 'monthly_report': result = await deps.repository.monthlyReport(userId, orgId, month(body.month)); break;
         case 'audit': result = await deps.repository.audit(userId, orgId, month(body.month), { category: typeof body.category === 'string' ? body.category : undefined, actor_id: body.actor_id === undefined ? undefined : uuid(body.actor_id, 'actor_id'), result: typeof body.result === 'string' ? body.result : undefined }, page(body.page), pageSize(body.page_size)); break;
       }

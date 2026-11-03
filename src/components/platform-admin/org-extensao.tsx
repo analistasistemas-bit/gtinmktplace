@@ -2,6 +2,7 @@
 // Mesmo idioma da aba Pulse (KpiCard, DataTable, EmptyState); dados de extensao_uso_diario e extensao_erros_leitura.
 import { AlertTriangle, Link2, MousePointerClick, Puzzle, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { type Column, DataTable } from '@/components/ui/data-table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -30,7 +31,7 @@ function motivoLegivel(motivo: string): string {
 }
 
 const colunasPessoas: Column<ExtensaoUsoPessoa>[] = [
-  { key: 'pessoa', header: 'Pessoa', cell: (row) => row.actor_name ?? row.actor_id },
+  { key: 'pessoa', header: 'Pessoa', className: 'whitespace-normal break-words', cell: (row) => row.actor_name ?? row.actor_id },
   { key: 'analises', header: 'Análises', className: 'text-right tabular-nums', cell: (row) => fmtInt(row.analises) },
   { key: 'ultimo', header: 'Último uso', className: 'tabular-nums', cell: (row) => dataBr(row.ultimo_dia) },
 ];
@@ -39,7 +40,7 @@ const colunasErros: Column<ExtensaoErroLeitura>[] = [
   { key: 'dia', header: 'Data', className: 'tabular-nums', cell: (row) => dataBr(row.dia) },
   { key: 'pagina', header: 'Página', cell: (row) => <StatusPill tone="neutral">{PAGINA[row.tipo_pagina] ?? row.tipo_pagina}</StatusPill> },
   {
-    key: 'motivo', header: 'Motivo',
+    key: 'motivo', header: 'Motivo', className: 'min-w-56 whitespace-normal break-words',
     cell: (row) => (
       <div>
         <span>{motivoLegivel(row.motivo)}</span>
@@ -78,43 +79,50 @@ export function OrgExtensao({ orgId, month }: { orgId: string; month: string }) 
           <Button variant="outline" size="sm" onClick={() => query.refetch()}>Tentar novamente</Button>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard size="compact" loading={loading} icon={MousePointerClick} label="Análises no mês" value={uso ? fmtInt(uso.analises) : undefined}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)]">
+        <KpiCard size="default" variant="brand" loading={loading} icon={MousePointerClick} label="Análises no mês" value={uso ? fmtInt(uso.analises) : undefined}
+          valueClassName="text-3xl"
           hint={uso ? `${fmtInt(uso.dias_com_uso)} ${uso.dias_com_uso === 1 ? 'dia' : 'dias'} com uso` : undefined} />
-        <KpiCard size="compact" loading={loading} icon={Users} label="Pessoas ativas" value={uso ? fmtInt(uso.pessoas_ativas) : undefined} />
-        <KpiCard size="compact" loading={loading} icon={Link2} label="Vínculos de produto"
-          value={uso ? (uso.vinculos === null ? 'Indisponível' : fmtInt(uso.vinculos)) : undefined}
-          hint={uso?.vinculos === null ? 'Contagem indisponível' : 'Total da organização'} />
-        <KpiCard size="compact" loading={loading} icon={AlertTriangle} label="Erros de leitura"
-          tom={uso && uso.erros_total > 0 ? 'danger' : 'success'} value={uso ? fmtInt(uso.erros_total) : undefined} hint="Ocorrências no mês" />
-      </div>
-
-      {uso && uso.analises > 0 && (
-        <div className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Análises por tipo de página</h3>
-          <ul aria-label="Análises por tipo de página" className="space-y-2">
-            {tipos.map(({ tipo, n }) => (
-              <li key={tipo} className="grid grid-cols-[88px_1fr_48px] items-center gap-3 text-sm">
-                <span className="text-muted-foreground">{PAGINA[tipo]}</span>
-                <span className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                  <span className="block h-full rounded-full bg-primary/70" style={{ width: `${(n / uso.analises) * 100}%` }} />
-                </span>
-                <span className="text-right font-medium tabular-nums">{fmtInt(n)}</span>
-              </li>
-            ))}
-          </ul>
+        <div className="grid items-start gap-3 sm:grid-cols-3">
+          <KpiCard size="compact" loading={loading} icon={Users} label="Pessoas ativas" value={uso ? fmtInt(uso.pessoas_ativas) : undefined} />
+          <KpiCard size="compact" loading={loading} icon={Link2} label="Vínculos de produto"
+            value={uso ? (uso.vinculos === null ? 'Indisponível' : fmtInt(uso.vinculos)) : undefined}
+            hint={uso?.vinculos === null ? 'Contagem indisponível' : 'Total da organização'} />
+          <KpiCard size="compact" loading={loading} icon={AlertTriangle} label="Erros de leitura"
+            tom={uso && uso.erros_total > 0 ? 'danger' : 'success'} value={uso ? fmtInt(uso.erros_total) : undefined} hint="Ocorrências no mês" />
         </div>
-      )}
+      </div>
 
       {uso?.primeiro_uso && (
         <p className="text-xs text-muted-foreground">Em uso desde {dataBr(uso.primeiro_uso)}.</p>
       )}
 
-      <section className="space-y-2" aria-labelledby="ext-pessoas">
-        <h3 id="ext-pessoas" className="text-sm font-medium">Quem usou</h3>
-        <DataTable columns={colunasPessoas} rows={uso?.pessoas ?? []} rowKey={(row) => row.actor_id} loading={loading}
-          empty={<div className="whitespace-normal"><EmptyState icon={Puzzle} title="Ninguém usou a extensão neste mês" description="As análises aparecem aqui quando alguém da organização abrir anúncios do Mercado Livre com a extensão conectada." /></div>} />
-      </section>
+      <div className={uso && uso.analises > 0 ? 'grid items-start gap-4 lg:grid-cols-2' : undefined}>
+        {uso && uso.analises > 0 && (
+          <Card size="sm">
+            <CardHeader><CardTitle>Análises por tipo de página</CardTitle></CardHeader>
+            <CardContent>
+              <ul aria-label="Análises por tipo de página" className="space-y-3">
+                {tipos.map(({ tipo, n }) => (
+                  <li key={tipo} className="grid grid-cols-[88px_1fr_48px] items-center gap-3 text-sm">
+                    <span className="text-muted-foreground">{PAGINA[tipo]}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                      <span className="block h-full rounded-full bg-[image:var(--brand-gradient)]" style={{ width: `${(n / uso.analises) * 100}%` }} />
+                    </span>
+                    <span className="text-right font-medium tabular-nums">{fmtInt(n)}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        <section className="space-y-2" aria-labelledby="ext-pessoas">
+          <h3 id="ext-pessoas" className="text-sm font-medium">Quem usou</h3>
+          <DataTable columns={colunasPessoas} rows={uso?.pessoas ?? []} rowKey={(row) => row.actor_id} loading={loading}
+            empty={<div className="whitespace-normal"><EmptyState icon={Puzzle} title="Ninguém usou a extensão neste mês" description="As análises aparecem aqui quando alguém da organização abrir anúncios do Mercado Livre com a extensão conectada." /></div>} />
+        </section>
+      </div>
 
       <section className="space-y-2" aria-labelledby="ext-erros">
         <h3 id="ext-erros" className="text-sm font-medium">Erros de leitura de página</h3>

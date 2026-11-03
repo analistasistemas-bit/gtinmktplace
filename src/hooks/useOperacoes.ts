@@ -6,6 +6,7 @@ import type { Tables } from '@/lib/database.types';
 import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import { QK } from '@/lib/queries';
 import type { Ajuste, Confirmacao, ItemPreview } from '@/lib/reajuste';
+import type { ResultadoSimulacao } from '@/lib/promocao-simulacao';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -47,7 +48,7 @@ export function useOperacoes(filtro?: 'promocao' | 'publicados') {
     queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
     queryFn: async () => {
       let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status, incluido)').neq('status', 'rascunho');
-      if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
+      if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair', 'alterar_preco']);
       if (filtro === 'publicados') q = q.in('acao', ['pausar', 'reativar', 'reajustar']);
       const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
       if (error) throw error;
@@ -62,10 +63,13 @@ export function useOperacoes(filtro?: 'promocao' | 'publicados') {
   const montadoEm = useRef(Date.now());
   const tratadas = useRef(new Set<string>());
   useEffect(() => {
-    const novas = (query.data ?? []).filter((o) => (ehAcaoStatus(o.acao) || o.acao === 'reajustar') && o.status === 'concluida' && !tratadas.current.has(o.id)
+    const novas = (query.data ?? []).filter((o) => o.status === 'concluida' && !tratadas.current.has(o.id)
       && Date.parse(o.concluido_em ?? '') > montadoEm.current - JANELA_STATUS_MS);
     if (!novas.length) return;
     for (const o of novas) tratadas.current.add(o.id);
+    // Promoção (aderir/sair/alterar preço): a Central já foi espelhada pelo executor — recarrega preço e contagem.
+    if (novas.some((o) => o.promocao_id != null)) qc.invalidateQueries({ queryKey: ['promocoes'] });
+    if (!novas.some((o) => ehAcaoStatus(o.acao) || o.acao === 'reajustar')) return;
     qc.invalidateQueries({ queryKey: QK.statusPublicados });
     // Reajuste muda preço (e fixa `preco_publicacao`), que a lista de Publicados lê do banco.
     if (novas.some((o) => o.acao === 'reajustar')) qc.invalidateQueries({ queryKey: QK.publicados });
@@ -173,6 +177,17 @@ export function useCriarOperacao() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK_OPERACOES });
       qc.invalidateQueries({ queryKey: ['promocoes'] });
+    },
+  });
+}
+
+/** Simulação de preço/desconto (emenda ADR-0174, 2026-11-03): líquido exato no servidor. Só leitura; nada a invalidar. */
+export function useSimularPrecos() {
+  return useMutation({
+    mutationFn: async (pedido: { promocao_id: string; itens: { ml_item_id: string; preco: number }[] }) => {
+      const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'simular', ...pedido } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível simular agora.');
+      return (data as { itens: ResultadoSimulacao[] }).itens;
     },
   });
 }
