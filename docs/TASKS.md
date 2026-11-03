@@ -1,5 +1,18 @@
 # PubliAI — Tasks
 
+## Central premium, relatório mensal do cliente e fechamento automático (ADR-0193) — 2026-11-02/03
+
+- [x] Emenda ADR-0155 (main `b7555f4d`): devolução abatida sozinha na cobrança (`platform_auto_refund_cents`: conciliação manual > estorno > `raw.payments` refunded, limitado ao bruto; `paid` sem reembolso abate 0; só `partially_refunded` sem valor fica pendente). Out/2026: 17 pendências → 0. Migration `20261102221455`.
+- [x] Fatia 1: ação `monthly_report` na edge `platform-admin` + cache `platform_org_month_metrics` v2 (`cache_version`, componentes de lucro, assinatura v2, janela parametrizada; `materializar-metricas` com teto de 5.000 vendas por execução e 12 meses). Migration `20261102234250`. Validado na Avil 2026-10: faturamento R$ 111.886,28 · Ads R$ 3.411,27 · lucro R$ 22.039,95 · lucro após Ads R$ 18.628,68.
+- [x] Fatia 2: PDF "Relatório mensal do cliente" (3 páginas A4) com Pix BR Code de valor exato (CRC validado com vetor oficial do BACEN); `platform_payment_profile` (linha única, RLS sem policy, grants revogados), `platform_commercial_terms.due_day` (padrão 5), `seller_coupon_cents`/`due_day` na prévia; `platform_audit_events.org_id` aceita NULL. Botão "Gerar relatório mensal" (só com demonstrativo fechado) e dialog "Dados de recebimento" na carteira. Migration `20261103004908`.
+- [x] Fatia 3: edge `fechar-mes-plataforma` (`verify_jwt=false`, assinatura QStash, fan-out por org, `dry_run` manual), schedule `scd_6DQnEroeusFMAa8hdA5215nfZgZk` `0 9 1 * *` (dia 01, 06h BRT), secret `PLATFORM_SYSTEM_ACTOR_ID`; aviso Telegram de plataforma `fechamento_mensal` (bot `TELEGRAM_BOT_TOKEN` da Daludi, só super-admin ativo assinante com chat privado; assinatura na carteira em "Aviso no Telegram"). Migration `20261103014103`. Dry_run 2026-10 em prod: Hairfly e Zaven fechariam; Avil, Daludi Shop e DSA "mês anterior aberto" (setembro aberto); nenhuma escrita.
+- [x] Fatia 4: aba Resultados premium (mesmo contrato do PDF; KPIs estilo ML, diário vs mês anterior, 12 meses, cascata, top 5 famílias, Ads).
+- [x] Fatia 5: redesenho visual de Pulse, Extensão, Cobrança, Auditoria, Configurações, cabeçalho e carteira (variação do hero no universo total; estado do fechamento por org; seletor de mês por extenso compartilhado).
+- [x] Tudo na main (última `ae4072cf`), em produção.
+- [ ] Diego: preencher "Dados de recebimento" e assinar "Aviso no Telegram".
+- [ ] Diego: decidir fechar setembro e outubro — nenhuma org tem mês fechado; o automático reporta "mês anterior aberto" até lá.
+- [ ] Itens "precisa aprovação" de `docs/superpowers/specs/2026-11-03-central-abas-diagnostico-codex.md` não implementados.
+
 ## Central de Promoções: anúncio reenviado em vários lotes caía em "Sem custo" (emenda ADR-0170) — 2026-11-03
 
 - [x] Causa: `resolverCor` (`_shared/promocoes/cadastro.ts`) só casava por `ml_item_id` com 1 linha; a Avil subiu a mesma planilha em 03/08, 01/09 e 16/10 → 3 linhas do mesmo código por anúncio → `sem_cadastro` (rótulo "Sem custo no PubliAI"). Custo nunca sumiu do banco; financeiro não afetado (custo-vigente já usa a mais recente).

@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-02
+atualizado: 2026-11-03
 ---
 
 # Changelog
@@ -8,6 +8,11 @@ atualizado: 2026-11-02
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-03
+
+- **Central premium, relatório mensal e fechamento automático** ([[0193-relatorio-mensal-do-cliente-e-fechamento-automatico|ADR-0193]], 5 fatias, main `ae4072cf`): PDF "Relatório mensal do cliente" com Pix BR Code, aba Resultados premium (`monthly_report`, cache `platform_org_month_metrics` v2), dados de recebimento + `due_day`, edge `fechar-mes-plataforma` (QStash `scd_6DQnEroeusFMAa8hdA5215nfZgZk`, dia 01 06h BRT, secret `PLATFORM_SYSTEM_ACTOR_ID`) com aviso Telegram `fechamento_mensal`, redesenho das demais abas. Migrations `20261102234250`, `20261103004908`, `20261103014103`. Validado Avil 2026-10: lucro após Ads R$ 18.628,68. Dry_run 2026-10: Hairfly e Zaven fechariam; as demais "mês anterior aberto". Pendente Diego: dados de recebimento, assinar o aviso, fechar setembro/outubro.
+- **Devolução automática na cobrança** (main `b7555f4d`, emenda ADR-0155, migration `20261102221455`): `platform_auto_refund_cents`; Out/2026: 17 pendências → 0.
 
 ## 2026-11-02
 
