@@ -59,6 +59,17 @@ function sale(id: string, orgId: string, amount: number): Row {
 const preview = (total: number, blockers: Row[] = [], terms: Row | null = { modality: 2 }): Row => ({ total_cents: total, sonar_units: 2, blockers, terms });
 
 describe('createPlatformAdminRepository', () => {
+  it('statements filtra pela competência quando informada (mês fora da 1ª página)', async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => ({ id: `st-${i}`, org_id: 'org-a', month: `2025-${String((i % 12) + 1).padStart(2, '0')}-01`.replace('2025', String(2025 + Math.floor(i / 12))), snapshot: { month: 'x' }, closed_at: 'c', closed_by: 'a' }));
+    const db = fakeDb({ platform_billing_statements: { rows } });
+    const repository = createPlatformAdminRepository(db as never);
+    const filtrado = await repository.statements('actor', 'org-a', 1, 20, '2025-01');
+    expect(filtrado.total).toBe(1);
+    expect(filtrado.rows[0].id).toBe('st-0');
+    expect(db.calls).toContainEqual({ table: 'platform_billing_statements', op: 'eq', column: 'month', value: '2025-01-01' });
+    expect((await repository.statements('actor', 'org-a', 1, 20)).total).toBe(21);
+  });
+
   it('lê a linha única dos dados de recebimento e devolve null sem cadastro', async () => {
     const vazio = createPlatformAdminRepository(fakeDb({ platform_payment_profile: { rows: [] } }) as never);
     expect(await vazio.paymentProfile('actor')).toBeNull();

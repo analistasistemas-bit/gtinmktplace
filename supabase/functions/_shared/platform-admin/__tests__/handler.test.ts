@@ -52,6 +52,7 @@ describe('createPlatformAdminHandler', () => {
     for (const body of [
       { action: 'metrics', org_id: 'bad', month: '2026-08' },
       { action: 'metrics', org_id: ORG, month: '2026-13' },
+      { action: 'statements', org_id: ORG, month: '2026-8' },
       { action: 'wallet', month: '2026-08', page: 0 },
       { action: 'wallet', month: '2026-08', page_size: 51 },
       { action: 'wallet', month: '2026-08', sort: 'unknown' },
@@ -68,7 +69,8 @@ describe('createPlatformAdminHandler', () => {
     ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova', due_day: 5 }]],
     ['preview', 'preview', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['close', 'close', { org_id: ORG, month: '2026-08', expected_revision: 'rev' }, [ACTOR, ORG, '2026-08', 'rev']],
-    ['statements', 'statements', { org_id: ORG, page: 2, page_size: 10 }, [ACTOR, ORG, 2, 10]],
+    ['statements', 'statements', { org_id: ORG, page: 2, page_size: 10 }, [ACTOR, ORG, 2, 10, undefined]],
+    ['statements (competência)', 'statements', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, 1, 20, '2026-08']],
     ['statement', 'statement', { org_id: ORG, statement_id: STATEMENT }, [ACTOR, ORG, STATEMENT]],
     ['reconcile_revenue', 'reconcile', { org_id: ORG, sale_id: STATEMENT, source_updated_at: '2026-08-02T12:00:00Z', refunded_product_cents: 0, reason: 'evidência' }, [ACTOR, { org_id: ORG, sale_id: STATEMENT, source_updated_at: '2026-08-02T12:00:00Z', refunded_product_cents: 0, reason: 'evidência' }]],
     ['pulse_usage', 'pulseUsage', { org_id: ORG, month: '2026-08', page: 1, page_size: 20 }, [ACTOR, ORG, '2026-08', 1, 20]],
@@ -76,7 +78,8 @@ describe('createPlatformAdminHandler', () => {
     ['payment_profile', 'paymentProfile', {}, [ACTOR]],
     ['save_payment_profile', 'savePaymentProfile', PROFILE, [ACTOR, { ...PROFILE, document: '11222333000181' }]],
     ['audit', 'audit', { org_id: ORG, month: '2026-08', category: 'billing', actor_id: ACTOR, result: 'success', page: 1, page_size: 20 }, [ACTOR, ORG, '2026-08', { category: 'billing', actor_id: ACTOR, result: 'success' }, 1, 20]],
-  ])('dispatches %s with validated arguments', async (action, method, input, args) => {
+  ])('dispatches %s with validated arguments', async (label, method, input, args) => {
+    const action = label.split(' ')[0];
     const { handler, repository } = harness();
     const response = await handler(request({ action, ...input }));
     expect(response.status, JSON.stringify(await payload(response.clone()))).toBe(200);

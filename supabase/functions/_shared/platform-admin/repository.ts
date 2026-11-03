@@ -190,8 +190,10 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     preview: (actorId: string, orgId: string, month: string) => rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: orgId, p_month: monthDate(month) }),
     close: (actorId: string, orgId: string, month: string, revision: string) => rpc<BillingStatement>('platform_billing_close', { p_actor: actorId, p_org: orgId, p_month: monthDate(month), p_expected_revision: revision }),
     reconcile: (actorId: string, input: Record<string, unknown>) => rpc<{ id: string }>('platform_reconcile_revenue', { p_actor: actorId, p_input: input }),
-    async statements(_actorId: string, orgId: string, page: number, pageSize: number): Promise<Page<BillingStatement>> {
-      const from = (page - 1) * pageSize; const { data, error, count } = await db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by', { count: 'exact' }).eq('org_id', orgId).order('month', { ascending: false }).range(from, from + pageSize - 1); fail(error);
+    async statements(_actorId: string, orgId: string, page: number, pageSize: number, month?: string): Promise<Page<BillingStatement>> {
+      const from = (page - 1) * pageSize; let query = db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by', { count: 'exact' }).eq('org_id', orgId);
+      if (month) query = query.eq('month', monthDate(month));
+      const { data, error, count } = await query.order('month', { ascending: false }).range(from, from + pageSize - 1); fail(error);
       return { rows: ((data ?? []) as StatementRow[]).map((row) => ({ ...row.snapshot, id: row.id, closed_at: row.closed_at, closed_by: row.closed_by })), total: count ?? 0, page, page_size: pageSize };
     },
     async statement(_actorId: string, orgId: string, statementId: string): Promise<BillingStatement> {

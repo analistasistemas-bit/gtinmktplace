@@ -150,6 +150,23 @@ describe('OrgBilling', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Relatório mensal gerado.'));
   });
 
+  it('relatório mensal: com 21+ demonstrativos, o mais antigo (fora da 1ª página) continua habilitado', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const pagina = Array.from({ length: 20 }, (_, i) => ({ ...makeStatement(), id: `st-${i}`, month: `2025-${String(i % 12 + 1).padStart(2, '0')}` }));
+    const antigo = { ...makeStatement(), id: 'st-antigo', month: '2024-01' };
+    mocks.useStatements.mockImplementation((_orgId: string, month?: string) => ({
+      data: month ? { rows: month === '2024-01' ? [antigo] : [], total: month === '2024-01' ? 1 : 0, page: 1, page_size: 1 }
+        : { rows: pagina, total: 21, page: 1, page_size: 20 },
+      isLoading: false,
+    }));
+    render(<OrgBilling orgId="org-a" month="2024-01" />);
+    const botao = screen.getByRole('button', { name: /Gerar relatório mensal/ });
+    expect(botao).toBeEnabled();
+    await user.click(botao);
+    expect(mocks.baixar).toHaveBeenCalledWith('org-a', '2024-01');
+    expect(mocks.useStatements).toHaveBeenCalledWith('org-a', '2024-01');
+  });
+
   it('relatório mensal: falha vira toast de erro', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mocks.baixar.mockRejectedValueOnce(new Error('sem rede'));

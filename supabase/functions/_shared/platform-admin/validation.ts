@@ -93,6 +93,10 @@ export function validarCpf(cpf: string): boolean {
   return dv(9) === Number(cpf[9]) && dv(10) === Number(cpf[10]);
 }
 
+// Schema `Email` da API-DICT (BACEN, bcb.gov.br/content/estabilidadefinanceira/pix/API-DICT.html), literal:
+// só ASCII minúsculo; o DICT limita a chave a 77 caracteres.
+const EMAIL_DICT = /^[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
 const PIX_KEY_TYPES: readonly PixKeyType[] = ['cpf', 'cnpj', 'email', 'phone', 'random'];
 const LIMITES_TEXTO = { beneficiary_name: 60, bank_name: 60, branch: 20, account: 30, city: 60 } as const;
 
@@ -122,7 +126,7 @@ export function validatePaymentProfile(input: unknown): PaymentProfileInput {
   switch (pixKeyType) {
     case 'cpf': pixKey = raw.replace(/[.\-\s]/g, ''); if (!validarCpf(pixKey)) fail('pix_key não é um CPF válido'); break;
     case 'cnpj': pixKey = raw.replace(/[.\-/\s]/g, ''); if (!/^\d{14}$/.test(pixKey) || !validarCnpj(pixKey)) fail('pix_key não é um CNPJ válido'); break;
-    case 'email': pixKey = raw.toLowerCase(); if (pixKey.length > 77 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(pixKey)) fail('pix_key não é um e-mail válido'); break;
+    case 'email': pixKey = raw.toLowerCase(); if (pixKey.length > 77 || !EMAIL_DICT.test(pixKey)) fail('pix_key não é um e-mail válido (formato do DICT: sem acento, minúsculo, até 77)'); break;
     case 'phone': {
       const digits = raw.replace(/\D/g, '');
       pixKey = `+${digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`}`;

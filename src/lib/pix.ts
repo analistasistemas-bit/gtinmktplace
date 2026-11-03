@@ -33,9 +33,12 @@ export function pixPayload({ chave, valorCents, nome, cidade, txid }: PixInput):
   if (!Number.isSafeInteger(valorCents) || valorCents <= 0) throw new Error('Pix exige valor positivo em centavos');
   const chaveLimpa = chave.trim();
   if (!chaveLimpa || chaveLimpa.length > 77) throw new Error('chave Pix inválida');
+  // A chave vai crua para o TLV: fora do ASCII imprimível, tamanho e CRC (em bytes) divergiriam.
+  if (!/^[\x21-\x7e]+$/.test(chaveLimpa)) throw new Error('chave Pix deve ser ASCII (sem acento)');
   const nomeBr = normalizarBrCode(nome).slice(0, 25).trim();
   const cidadeBr = normalizarBrCode(cidade).slice(0, 15).trim();
   if (!nomeBr || !cidadeBr) throw new Error('Pix exige nome e cidade do favorecido');
+  // txid só com [A-Za-z0-9] (ASCII por construção); nome e cidade já saem ASCII de normalizarBrCode.
   const txidBr = (txid ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 25) || '***';
   const corpo = tlv('00', '01')
     + tlv('26', tlv('00', 'br.gov.bcb.pix') + tlv('01', chaveLimpa))

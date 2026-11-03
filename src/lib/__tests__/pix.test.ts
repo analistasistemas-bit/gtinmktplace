@@ -71,6 +71,11 @@ describe('pixPayload', () => {
     expect(() => pixPayload({ ...base, valorCents })).toThrow();
   });
 
+  it('recusa chave não ASCII (o CRC e os tamanhos do TLV são em bytes)', () => {
+    expect(() => pixPayload({ ...base, chave: 'joão@example.com' })).toThrow('ASCII');
+    expect(() => pixPayload({ ...base, chave: 'pix@example.com\u200b' })).toThrow('ASCII');
+  });
+
   it('recusa chave, nome ou cidade vazios', () => {
     expect(() => pixPayload({ ...base, chave: ' ' })).toThrow();
     expect(() => pixPayload({ ...base, nome: '' })).toThrow();

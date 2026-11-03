@@ -41,7 +41,9 @@ create table public.platform_payment_profile (
   constraint platform_payment_profile_pix_key_shape check (
     (pix_key_type = 'cpf' and pix_key ~ '^[0-9]{11}$')
     or (pix_key_type = 'cnpj' and pix_key ~ '^[0-9]{14}$')
-    or (pix_key_type = 'email' and char_length(pix_key) <= 77 and pix_key ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
+    -- e-mail: schema Email da API-DICT (BACEN), só ASCII minúsculo, até 77 (a barra do original vai sem escape).
+    or (pix_key_type = 'email' and char_length(pix_key) <= 77
+      and pix_key ~ '^[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$')
     or (pix_key_type = 'phone' and pix_key ~ '^\+55[0-9]{10,11}$')
     or (pix_key_type = 'random' and pix_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   )

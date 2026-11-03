@@ -81,8 +81,8 @@ export const platformAdminKeys = {
     key(userId, 'terms', orgId, null, {}),
   preview: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'preview', orgId, month, {}),
-  statements: (userId: UserId, orgId: string) =>
-    key(userId, 'statements', orgId, null, {}),
+  statements: (userId: UserId, orgId: string, month: Month | null = null) =>
+    key(userId, 'statements', orgId, month, {}),
   pulseUsage: (userId: UserId, params: PlatformPulseUsageParams) =>
     key(userId, 'pulse_usage', params.org_id, params.month, filters({
       page: params.page,
@@ -154,11 +154,12 @@ export function usePlatformPreview(orgId: string, month: Month) {
   });
 }
 
-export function usePlatformStatements(orgId: string) {
+/** Com `month`, só o demonstrativo daquela competência (0 ou 1 linha), independente da paginação. */
+export function usePlatformStatements(orgId: string, month?: Month) {
   const userId = useAuthStore((state) => state.user?.id ?? null);
   return useQuery<Page<BillingStatement>>({
-    queryKey: platformAdminKeys.statements(userId, orgId),
-    queryFn: () => callPlatformAdmin('statements', { org_id: orgId }),
+    queryKey: platformAdminKeys.statements(userId, orgId, month ?? null),
+    queryFn: () => callPlatformAdmin('statements', month ? { org_id: orgId, month, page_size: 1 } : { org_id: orgId }),
     enabled: Boolean(userId && orgId),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
   });

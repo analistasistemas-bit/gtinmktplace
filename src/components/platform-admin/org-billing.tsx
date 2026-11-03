@@ -104,6 +104,8 @@ function Composition({ preview }: { preview: BillingPreview }) {
 export function OrgBilling({ orgId, month }: Props) {
   const previewQuery = usePlatformPreview(orgId, month);
   const statementsQuery = usePlatformStatements(orgId);
+  // Existência pela competência, não pela 1ª página da lista (com 21+ demonstrativos o antigo sumia).
+  const statementDoMesQuery = usePlatformStatements(orgId, month);
   const termsQuery = usePlatformTerms(orgId);
   const close = useClosePlatformStatement();
   const [confirming, setConfirming] = useState(false);
@@ -117,8 +119,8 @@ export function OrgBilling({ orgId, month }: Props) {
     [termsQuery.data],
   );
 
-  const mesFechado = (statementsQuery.data?.rows ?? []).some((row) => row.month === month);
-  const motivoRelatorio = statementsQuery.isLoading
+  const mesFechado = (statementDoMesQuery.data?.rows ?? []).some((row) => row.month === month);
+  const motivoRelatorio = statementDoMesQuery.isLoading
     ? 'Carregando demonstrativos…'
     : mesFechado ? undefined : `Feche o demonstrativo de ${month} para gerar o relatório mensal.`;
 

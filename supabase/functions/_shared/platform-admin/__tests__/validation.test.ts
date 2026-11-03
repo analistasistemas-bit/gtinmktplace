@@ -102,6 +102,13 @@ describe('validatePaymentProfile', () => {
     expect(validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '(85) 99999-8888' }).pix_key).toBe('+5585999998888');
     expect(validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '+55 85 99999-8888' }).pix_key).toBe('+5585999998888');
     expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'phone', pix_key: '9999' })).toThrow('celular');
+    // Formato do DICT (schema Email da API-DICT): só ASCII minúsculo, até 77.
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'joão@example.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'joao@exámple.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: 'a b@example.com' })).toThrow('e-mail');
+    expect(() => validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: `${'a'.repeat(66)}@example.com` })).toThrow('e-mail');
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: `${'a'.repeat(65)}@example.com` }).pix_key).toHaveLength(77);
+    expect(validatePaymentProfile({ ...perfil, pix_key_type: 'email', pix_key: "o'neil+pix@sub.example.com" }).pix_key).toBe("o'neil+pix@sub.example.com");
     expect(validatePaymentProfile({ ...perfil, pix_key_type: 'random', pix_key: '123E4567-E89B-12D3-A456-426614174000' }).pix_key)
       .toBe('123e4567-e89b-12d3-a456-426614174000');
   });

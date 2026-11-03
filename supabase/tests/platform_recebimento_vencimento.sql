@@ -73,6 +73,16 @@ begin
   begin perform public.platform_save_payment_profile(ator, entrada || '{"pix_key_type":"cpf"}');
   exception when check_violation then falhou := true; end;
   if not falhou then raise exception 'chave aleatória aceita como cpf'; end if;
+  -- e-mail no formato do DICT: aceita ASCII minúsculo com especiais; recusa acento, maiúscula e > 77.
+  perfil := public.platform_save_payment_profile(ator, entrada || jsonb_build_object('pix_key_type', 'email', 'pix_key', 'o''neil+pix@sub.example.com'));
+  if perfil->>'pix_key' <> 'o''neil+pix@sub.example.com' then raise exception 'e-mail DICT válido recusado: %', perfil; end if;
+  foreach detalhe in array array['"joão@example.com"'::jsonb, '"Joao@example.com"'::jsonb,
+      to_jsonb(repeat('a', 66) || '@example.com')] loop
+    falhou := false;
+    begin perform public.platform_save_payment_profile(ator, entrada || jsonb_build_object('pix_key_type', 'email', 'pix_key', detalhe));
+    exception when check_violation then falhou := true; end;
+    if not falhou then raise exception 'e-mail fora do DICT aceito: %', detalhe; end if;
+  end loop;
   falhou := false;
   begin perform public.platform_save_payment_profile(ator, entrada - 'city');
   exception when invalid_parameter_value then falhou := true; end;

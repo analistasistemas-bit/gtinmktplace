@@ -45,7 +45,8 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
         case 'save_terms': result = await deps.repository.saveTerms(userId, validateTerms(body)); break;
         case 'preview': result = await deps.repository.preview(userId, orgId, month(body.month)); break;
         case 'close': result = await deps.repository.close(userId, orgId, month(body.month), requiredString(body.expected_revision, 'expected_revision')); break;
-        case 'statements': result = await deps.repository.statements(userId, orgId, page(body.page), pageSize(body.page_size)); break;
+        // `month` opcional: existência do demonstrativo da competência sem depender da paginação.
+        case 'statements': result = await deps.repository.statements(userId, orgId, page(body.page), pageSize(body.page_size), body.month === undefined ? undefined : month(body.month)); break;
         case 'statement': result = await deps.repository.statement(userId, orgId, uuid(body.statement_id, 'statement_id')); break;
         case 'reconcile_revenue': result = await deps.repository.reconcile(userId, { org_id: orgId, sale_id: uuid(body.sale_id, 'sale_id'), source_updated_at: requiredString(body.source_updated_at, 'source_updated_at'), refunded_product_cents: body.refunded_product_cents, reason: requiredString(body.reason, 'reason') }); break;
         case 'pulse_usage': result = await deps.repository.pulseUsage(userId, orgId, month(body.month), page(body.page), pageSize(body.page_size)); break;
