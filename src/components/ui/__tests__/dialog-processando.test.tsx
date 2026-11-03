@@ -84,3 +84,63 @@ describe('AlertDialogContent — sinal de processamento', () => {
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 });
+
+// Raio de borda: acompanha a aura. Mesma regra — destrutivo não ganha motion lúdico.
+type Props = { processando?: boolean; destrutivo?: boolean };
+describe.each([
+  {
+    nome: 'DialogContent',
+    slot: 'dialog-content',
+    montar: (p: Props) => (
+      <Dialog open>
+        <DialogContent {...p}>
+          <DialogTitle>Teste</DialogTitle>
+          <input aria-label="campo" />
+        </DialogContent>
+      </Dialog>
+    ),
+  },
+  {
+    nome: 'AlertDialogContent',
+    slot: 'alert-dialog-content',
+    montar: (p: Props) => (
+      <AlertDialog open>
+        <AlertDialogContent {...p}>
+          <AlertDialogTitle>Teste</AlertDialogTitle>
+          <input aria-label="campo" />
+        </AlertDialogContent>
+      </AlertDialog>
+    ),
+  },
+])('$nome — raio de borda', ({ slot, montar }) => {
+  const conteudo = () => document.querySelector(`[data-slot="${slot}"]`)!;
+  const raio = () => conteudo().querySelectorAll('.border-trail__track, .border-trail__fallback');
+
+  it('processando mostra o raio dentro do conteúdo, sem wrapper .border-trail', () => {
+    render(montar({ processando: true }));
+    expect(raio()).toHaveLength(2);
+    expect(conteudo().querySelector('.border-trail__track')).toHaveAttribute('aria-hidden', 'true');
+    expect(document.querySelector('.border-trail')).toBeNull();
+  });
+
+  it('ocioso não mostra o raio', () => {
+    render(montar({}));
+    expect(raio()).toHaveLength(0);
+  });
+
+  it('destrutivo não mostra o raio', () => {
+    render(montar({ processando: true, destrutivo: true }));
+    expect(raio()).toHaveLength(0);
+  });
+
+  it('alternar processando não desmonta os filhos', () => {
+    const { rerender } = render(montar({}));
+    const campo = screen.getByLabelText('campo');
+    rerender(montar({ processando: true }));
+    expect(screen.getByLabelText('campo')).toBe(campo);
+    expect(raio()).toHaveLength(2);
+    rerender(montar({}));
+    expect(screen.getByLabelText('campo')).toBe(campo);
+    expect(raio()).toHaveLength(0);
+  });
+});

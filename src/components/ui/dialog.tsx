@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { BorderTrailDecor, RAIO_XL } from "@/components/ui/border-trail"
 import { ProgressoIndeterminado } from "@/components/ui/progresso-indeterminado"
 // A classe `glow-effect-sombra` mora no CSS do GlowEffect, que sem este import só chegaria ao
 // bundle pelo componente (sidebar/overlay de login). Importando aqui, todo diálogo do sistema
@@ -85,6 +86,7 @@ function DialogContent({
         )}
         {...props}
       >
+        {processando && !destrutivo && <BorderTrailDecor radius={RAIO_XL} inset={0} />}
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
