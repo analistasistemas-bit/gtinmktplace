@@ -32,6 +32,7 @@ const TONE_STATUS: Record<StatusItemOperacao, StatusTone> = {
 const ORDEM_STATUS = Object.keys(ROTULO_STATUS) as StatusItemOperacao[];
 const NAO_TERMINAL: StatusItemOperacao[] = ['pendente', 'enviando', 'conferindo'];
 const MOTIVO_NAO_REVERTIVEL = 'Não revertível: o anúncio não está mais convidado/participando';
+const MOTIVO_NAO_RETENTAVEL = 'Não dá para tentar de novo: o anúncio não está mais convidado/participando';
 // Revisão Grok (achado IMPORTANTE): status de item que prova que a reversão pegou pelo menos um
 // anúncio; sem nenhum destes (tudo erro/mudou/bloqueado — `encerrarComErro`) não conta como revertida.
 const ITENS_REVERSAO_OK: StatusItemOperacao[] = ['aplicado', 'ja_estava'];
@@ -66,25 +67,54 @@ function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentra
   const acao = op.acao as AcaoOperacao;
   if (ehAcaoStatus(acao) || acao === 'reajustar') return null; // reajuste reverte pelo próprio preview (I5)
   const acaoNova = inversa(acao);
-  const ids = itensRevertiveis(acao, paraRevertiveis(itensOp));
-  const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));
   const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));
-  const naoRevertiveis = new Map<string, string>();
+  const { itens, bloqueados: naoRevertiveis } = itensDoLog(acaoNova, itensRevertiveis(acao, paraRevertiveis(itensOp)), itensCentral, porLog, MOTIVO_NAO_REVERTIVEL);
   // Alterar preço (emenda 2026-11-03): reverte com outra alteração, de volta ao preço que a origem leu no ML.
   const simulados = acao === 'alterar_preco' ? new Map<string, number>() : undefined;
-  const itens = ids.map((id) => {
-    const atual = itemAtualOuStub(id, porCentral, porLog.get(id)!);
-    const ok = acaoNova === 'aderir' ? atual.status === 'candidate' : atual.status === 'started' || atual.status === 'pending';
-    if (!ok) naoRevertiveis.set(id, MOTIVO_NAO_REVERTIVEL);
-    if (simulados) {
+  if (simulados) {
+    for (const { ml_item_id: id } of itens) {
       const anterior = porLog.get(id)?.preco_anterior;
       if (anterior == null) naoRevertiveis.set(id, 'Sem preço anterior registrado para reverter');
       else simulados.set(id, Number(anterior));
     }
-    return atual;
-  });
+  }
   return { acaoNova, itens, naoRevertiveis, simulados };
 }
+
+/** Itens da Central (ou stub do log) para um preview montado a partir do log; bloqueia quem não está mais no estado
+ *  que a ação exige (aderir: convidado; sair/alterar: participando). */
+function itensDoLog(
+  acao: AcaoOperacao, ids: string[], itensCentral: ItemPromocao[], porLog: Map<string, ItemOperacaoRow>, motivo: string,
+) {
+  const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));
+  const bloqueados = new Map<string, string>();
+  const itens = ids.map((id) => {
+    const atual = itemAtualOuStub(id, porCentral, porLog.get(id)!);
+    const ok = acao === 'aderir' ? atual.status === 'candidate' : atual.status === 'started' || atual.status === 'pending';
+    if (!ok) bloqueados.set(id, motivo);
+    return atual;
+  });
+  return { itens, bloqueados };
+}
+
+/** "Tentar novamente" (pedido do Diego, 03/11 — ML 500 em 2 de 17 adesões): a MESMA ação, só os itens com erro, no
+ *  preço que o operador escolheu na operação. Operação nova sem origem: passa por toda a validação do servidor. */
+function montarRetentativa(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentral: ItemPromocao[]) {
+  const acao = op.acao as AcaoOperacao;
+  const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));
+  const ids = itensOp.filter((i) => i.status === 'erro').map((i) => i.ml_item_id);
+  const { itens, bloqueados } = itensDoLog(acao, ids, itensCentral, porLog, MOTIVO_NAO_RETENTAVEL);
+  // SMART: o preço é do ML (POST só com offer_id); sair não tem preço.
+  const comPreco = acao === 'alterar_preco' || (acao === 'aderir' && op.promocao_tipo !== 'SMART');
+  const simulados = comPreco ? new Map<string, number>() : undefined;
+  for (const id of ids) {
+    const preco = porLog.get(id)?.preco;
+    if (simulados && preco != null) simulados.set(id, Number(preco));
+  }
+  return { acaoNova: acao, itens, naoRevertiveis: bloqueados, simulados };
+}
+
+const ACOES_RETENTAVEIS: AcaoOperacao[] = ['aderir', 'sair', 'alterar_preco'];
 
 function contarPorStatus(itens: { status: StatusItemOperacao }[]): Partial<Record<StatusItemOperacao, number>> {
   const c: Partial<Record<StatusItemOperacao, number>> = {};
@@ -154,6 +184,8 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
   const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & NonNullable<ReturnType<typeof montarReversao>>) | null>(null);
 
   const [reversaoReajuste, setReversaoReajuste] = useState<string | null>(null);
+  // Mesmo snapshot do Reverter, sem origem (origem_id = Reverter no servidor).
+  const [retentativa, setRetentativa] = useState<({ op: OperacaoRow } & ReturnType<typeof montarRetentativa>) | null>(null);
   const [reversaoStatus, setReversaoStatus] = useState<{ op: OperacaoRow; itens: { ml_item_id: string; titulo: string | null }[] } | null>(null);
 
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
@@ -192,6 +224,16 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
     () => (opAberta && itensOp.data ? montarReversao(opAberta, itensOp.data, central.data ?? []) : null),
     [opAberta, itensOp.data, central.data],
   );
+
+  // Reverter (tem origem) fica fora: recriar sem origem perderia a proteção do preço esperado (achado Codex).
+  const comErro = opAberta && itensOp.data ? itensOp.data.filter((i) => i.status === 'erro').length : 0;
+  const podeRetentar = podeExecutar && !!opAberta && opAberta.status === 'concluida' && !opAberta.origem_id
+    && ACOES_RETENTAVEIS.includes(opAberta.acao as AcaoOperacao) && comErro > 0;
+  function iniciarRetentativa() {
+    if (!opAberta || !itensOp.data || !central.isSuccess) return;
+    setRetentativa({ op: opAberta, ...montarRetentativa(opAberta, itensOp.data, central.data ?? []) });
+    setAbertaId(null);
+  }
 
   const retomar = useRetomarOperacao();
   const podeRetomar = podeExecutar && !!opAberta && precisaRetomar(opAberta, itensOp.data ?? [], Date.now());
@@ -296,6 +338,15 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
                   <Button variant="outline" onClick={retomarOperacao} disabled={retomar.isPending}>Retomar</Button>
                 </div>
               )}
+              {podeRetentar && (
+                <div className="flex items-center justify-between gap-3 border-t p-4">
+                  <p className="text-sm text-muted-foreground">O ML recusou ou falhou em parte dos anúncios.</p>
+                  {/* Central carregando ≠ item ausente: sem ela, o snapshot congelaria tudo como bloqueado (achado Codex). */}
+                  <Button variant="outline" onClick={iniciarRetentativa} disabled={!central.isSuccess}>
+                    Tentar novamente {comErro} com erro
+                  </Button>
+                </div>
+              )}
               {podeReverter && !carregandoRevertida && (
                 <div className="border-t p-4">
                   {revertidaAndamento ? (
@@ -323,6 +374,15 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
         <PreviewReajuste
           pedido={{ origem_id: reversaoReajuste }} onFechar={fecharPreviewReversao}
           onCriada={() => { toast.success('Reversão iniciada'); fecharPreviewReversao(); }}
+        />
+      )}
+
+      {retentativa && (
+        <PreviewOperacao
+          acao={retentativa.acaoNova as 'aderir' | 'sair' | 'alterar_preco'} tipo={ehTipoOperavel(retentativa.op.promocao_tipo) ? retentativa.op.promocao_tipo : 'DEAL'}
+          promocaoId={retentativa.op.promocao_id ?? ''} promocaoNome={retentativa.op.promocao_nome ?? retentativa.op.promocao_id ?? ''}
+          itens={retentativa.itens} origemId={null} naoRevertiveis={retentativa.naoRevertiveis} simulados={retentativa.simulados}
+          aberto onClose={() => setRetentativa(null)} onSucesso={() => setRetentativa(null)}
         />
       )}
 
