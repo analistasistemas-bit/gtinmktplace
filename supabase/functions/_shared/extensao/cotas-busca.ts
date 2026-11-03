@@ -47,22 +47,30 @@ export async function reservarEnriquecimento(
 
 export interface ReservaOrcamentoMl { concedidas: number; chave: string; retomarEm: string | null }
 
-const devolvidas = new WeakSet<ReservaOrcamentoMl>();
+/** Reservas ainda devolvíveis → instante (ms) a partir do qual a chave pode já ter expirado: início do minuto
+ *  + TTL. A chave nasce com EXPIRE 120 s em algum ponto desse minuto, então antes disso ela está viva. */
+const devolviveis = new WeakMap<ReservaOrcamentoMl, number>();
 
 /** Reserva o limite superior de chamadas ML de uma fase do lote. Nunca despachar além de `concedidas`. */
 export async function reservarOrcamentoMl(unidades: number, agora: Date): Promise<ReservaOrcamentoMl> {
   const chave = chaveOrcamentoMl(agora);
   if (!valido(unidades)) return { concedidas: 0, chave, retomarEm: null };
   const concedidas = await reservarOuZero(chave, unidades, LIMITE_ORCAMENTO_ML_MIN);
-  return { concedidas, chave, retomarEm: concedidas < unidades ? proximoMinuto(agora) : null };
+  const reserva = { concedidas, chave, retomarEm: concedidas < unidades ? proximoMinuto(agora) : null };
+  if (concedidas > 0) devolviveis.set(reserva, Math.floor(agora.getTime() / 60_000) * 60_000 + TTL_S * 1000);
+  return reserva;
 }
 
 /** Fim da fase: devolve só as não despachadas, uma vez por reserva, na chave do minuto da reserva e nunca
- *  mais do que ela recebeu. Erro = débito mantido (na dúvida, conta). Retorna quantas devolveu. */
-export async function devolverOrcamentoMl(reserva: ReservaOrcamentoMl, naoDespachadas: number): Promise<number> {
+ *  mais do que ela recebeu. Chave possivelmente expirada = no-op (DECRBY recriaria um contador negativo sem
+ *  TTL). Erro = débito mantido (na dúvida, conta). Retorna quantas devolveu. */
+export async function devolverOrcamentoMl(
+  reserva: ReservaOrcamentoMl, naoDespachadas: number, agora: Date,
+): Promise<number> {
+  const vivaAte = devolviveis.get(reserva);
   const n = Math.min(Math.floor(naoDespachadas), reserva.concedidas);
-  if (devolvidas.has(reserva) || !(n > 0)) return 0;
-  devolvidas.add(reserva);
+  if (vivaAte === undefined || agora.getTime() >= vivaAte || !(n > 0)) return 0;
+  devolviveis.delete(reserva);
   try {
     await redisDecrBy(reserva.chave, n);
     return n;
