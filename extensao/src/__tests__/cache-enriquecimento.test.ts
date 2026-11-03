@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { aplicarResposta, gravarCache, lerCache, marcasDoPedido, planejarLote, type CacheEnr } from '../cache-enriquecimento';
 import { enriquecimentoVazio, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import { limparEstadosDasAbas } from '../abas';
-import { instalarChromeFalso } from './chrome-falso';
+import { sair } from '../credenciais';
+import { instalarChromeFalso, logar } from './chrome-falso';
 
 const T0 = Date.parse('2026-11-03T12:00:00Z');
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -198,6 +199,22 @@ describe('cache no chrome.storage.session', () => {
     vi.mocked(chrome.storage.session.set).mockRejectedValueOnce(new Error('QUOTA_BYTES'));
     await expect(gravarCache('u1:org1:', (c) => { c.produtos.MLB1 = { criadoEm: null, exp: T0 + 10, u: T0 }; }, T0)).resolves.toBeUndefined();
     vi.mocked(chrome.storage.session.get).mockRejectedValueOnce(new Error('x'));
+    expect((await lerCache('u1:org1:', T0)).produtos).toEqual({});
+  });
+
+  it('logout com a gravação em voo: o set que termina depois da limpeza não ressuscita o cache', async () => {
+    logar();
+    const set = vi.mocked(chrome.storage.session.set);
+    let soltar!: () => void;
+    const portao = new Promise<void>((r) => { soltar = r; });
+    set.mockImplementationOnce(async (o: Record<string, unknown>) => { await portao; Object.assign(sessao, o); });
+    const gravando = gravarCache('u1:org1:', (c) => { c.produtos.MLB1 = { criadoEm: null, exp: T0 + 10, u: T0 }; }, T0);
+    await new Promise((r) => setTimeout(r, 0)); // o set já começou
+    await sair();
+    soltar();
+    await gravando;
+    expect(sessao['enr:cache']).toBeUndefined();
+    logar();
     expect((await lerCache('u1:org1:', T0)).produtos).toEqual({});
   });
 

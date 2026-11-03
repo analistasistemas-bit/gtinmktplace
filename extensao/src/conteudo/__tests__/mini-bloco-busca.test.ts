@@ -90,6 +90,15 @@ it('margem aguardando cota (limite) e calculando (vinculado sem resultado)', () 
   expect(texto(document.body)).toContain('Minha margem · calculando');
 });
 
+it('"calculando" só na aparição do preço analisado: patrocinado R$80 (analisado) e orgânico R$100, vinculado', () => {
+  const meta = { itemId: 'MLB1000001', proprio: false, vinculo: { fonte: 'catalogo' as const, codigo: '81' } };
+  renderizarMiniBlocoDaBusca(card({ preco: 80, ocorrencias: [{ posicao: 1, patrocinado: true, preco: 80, vendidosTexto: null }] }), meta, undefined, 80);
+  expect(texto(document.body)).toContain('Minha margem · calculando');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(card({ preco: 100, ocorrencias: [{ posicao: 4, patrocinado: false, preco: 100, vendidosTexto: null }] }), meta, undefined, 80);
+  expect(texto(document.body)).not.toContain('Minha margem');
+});
+
 it('texto da página entra como texto, nunca como HTML', () => {
   renderizarMiniBlocoDaBusca(card({ vendedor: '<img src=x onerror=alert(1)>' }), undefined, undefined);
   expect(raizes[0].querySelector('img')).toBeNull();
@@ -240,9 +249,9 @@ it('pendência por componente: metadados lidos + ofertas aguardando janela → m
   expect(texto()).not.toContain('Aguardando');
 });
 
-it('sem tipo e sem comissão: uma frase só ("Tipo e comissão não confirmados")', () => {
+it('sem tipo e sem comissão: uma frase só ("Tipo e comissão na sua conta não confirmados")', () => {
   comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'indisponivel', motivo: 'tipo do anúncio não confirmado' } }) }) as never } } }));
-  expect(texto()).toContain('Tipo e comissão não confirmados');
+  expect(texto()).toContain('Tipo e comissão na sua conta não confirmados');
   expect(texto()).not.toContain('indisponível');
 });
 

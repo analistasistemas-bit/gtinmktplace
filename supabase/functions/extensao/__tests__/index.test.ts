@@ -34,7 +34,7 @@ const f = vi.hoisted(() => ({
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
 vi.mock('../../_shared/auth.ts', () => ({ requireUserOrg: vi.fn(async () => f.contexto) }));
 vi.mock('../../_shared/produto/modulo.ts', () => ({ exigirModulo: vi.fn(async () => true) }));
-vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexao: vi.fn(async () => null) }));
+vi.mock('../../_shared/canais/conexao.ts', async (orig) => ({ ...(await orig<object>()), resolverConexao: vi.fn(async () => null) }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn() }));
 vi.mock('../../_shared/ml/listing-prices.ts', async (orig) => ({ ...(await orig<object>()), buscarListingPrice: vi.fn() }));
 vi.mock('../../_shared/ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: vi.fn() }));
@@ -677,10 +677,11 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(f.rpcs).toEqual([]);
     // service-role: toda tabela lida leva o filtro da org do usuário
     for (const t of new Set(f.froms)) expect(f.eqs).toContainEqual([t, 'org_id', 'org-1']);
-    expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
+    expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos', 'marketplace_connections']));
   });
 
   it('devolve a impressão da conta ML da org (a mesma do enriquecimento) para o navegador validar o cache', async () => {
+    f.linhas.marketplace_connections = { id: 'c1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: '555', expires_at: null };
     vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
     vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok-ml');
     const id = (await (await post(PEDIDO)).json()).contaMl;
@@ -692,12 +693,12 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
   });
 
   it('sem itens (revalidação da conta ML na busca parada): só a linha da conexão; nada de banco de produto, uso, ML ou Redis', async () => {
-    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    f.linhas.marketplace_connections = { id: 'c1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: '555', expires_at: null };
     const r = await post({ acao: 'identificar_busca', eanDaBusca: null, itens: [] });
     expect(r.status).toBe(200);
     const j = await r.json();
     expect(j).toEqual({ itens: [], contaMl: expect.stringMatching(/^[0-9a-f]{16}$/) });
-    expect(f.froms).toEqual([]);
+    expect(f.froms).toEqual(['marketplace_connections']);
     expect(f.rpcs).toEqual([]);
     expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     expect(redisIncrComTTL).not.toHaveBeenCalled();
@@ -730,9 +731,27 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
       expect(f.eqs.filter(([tt, col, v]) => tt === t && col === 'org_id' && v === 'org-1')).toHaveLength(f.froms.filter((x) => x === t).length);
     }
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(vi.mocked(resolverConexao).mock.calls.map((c) => c.slice(1))).toEqual([['org-1', 'mercado_livre']]); // só a conexão da org (impressão da conta)
+    expect(f.eqs.filter(([t]) => t === 'marketplace_connections')).toEqual([
+      ['marketplace_connections', 'org_id', 'org-1'], ['marketplace_connections', 'canal', 'mercado_livre'],
+    ]); // só a conexão da org (impressão da conta)
     expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it('leitura da conexão falhou: contaMl ausente (inconclusivo), nunca null; itens seguem', async () => {
+    f.erroDb = 'conexao fora';
+    for (const itens of [PEDIDO.itens, []]) {
+      const r = await post({ ...PEDIDO, itens });
+      expect(r.status).toBe(200);
+      const j = await r.json();
+      expect(j).not.toHaveProperty('contaMl');
+      expect(j.itens).toHaveLength(itens.length);
+    }
+  });
+
+  it('leitura da conexão ok sem linha: contaMl null (org sem ML conectado)', async () => {
+    f.linhas.marketplace_connections = null;
+    expect((await (await post(PEDIDO)).json()).contaMl).toBeNull();
   });
 
   it('protocolo 2: envelope com identidade', async () => {

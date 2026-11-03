@@ -320,13 +320,16 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
   card: CardBusca; resultado: Resultado; precoDaMargem: number | undefined; meta: MetadadosCardBusca | undefined; aberto: boolean;
   onAbrir: () => void; onDestacar: () => void; chamar: Chamar; onVinculado: () => void;
 }) {
-  const m = margemClassico(resultado);
-  const estado = resultado?.estado;
   // Uma aparição só por linha: a do preço da margem (ou do card); vendidos e selos vêm dela, nunca da outra aparição.
   const alvo = precoDaMargem ?? c.preco;
   const oc = c.ocorrencias.find((o) => o.preco === alvo) ?? c.ocorrencias[0];
   const sinal = (k: 'full' | 'lojaOficial') => (oc && k in oc ? oc[k] : c[k]); // estado antigo: ocorrência sem sinais
   const ap = { preco: oc ? oc.preco : c.preco, vendidosTexto: oc ? oc.vendidosTexto : c.vendidosTexto, full: sinal('full'), lojaOficial: sinal('lojaOficial'), patrocinado: oc ? oc.patrocinado : c.patrocinado };
+  // Margem calculada a outro preço (ex.: estado da 0.4.2 sem precoDaMargem): o % não vai ao lado deste preço.
+  const precoM = resultado?.estado === 'ok' ? resultado.margem?.preco : undefined;
+  const outroPreco = typeof precoM === 'number' && precoM !== ap.preco;
+  const m = outroPreco ? null : margemClassico(resultado);
+  const estado = outroPreco ? undefined : resultado?.estado;
   const proprio = meta?.proprio === true, vinculado = !!meta?.vinculo, semVinculo = !!meta && !meta.vinculo;
   const borda = proprio ? 'meu' : vinculado ? 'vinculado' : meta ? 'sem-vinculo' : 'desconhecido';
   return (
@@ -356,9 +359,9 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
           )}
         </div>
         {/* O SKU fica visível em qualquer estado com código; com composição ele vai dentro de Detalhes. */}
-        {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
+        {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem && !outroPreco) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
         {/* Detalhes só quando há a conta da margem (título completo fica no hover do título). */}
-        {resultado?.estado === 'ok' && resultado.margem && (
+        {!outroPreco && resultado?.estado === 'ok' && resultado.margem && (
           <details className="bs-detalhes">
             <summary>Detalhes</summary>
             <dl className="bs-composicao">

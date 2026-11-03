@@ -657,6 +657,29 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect((await chrome.storage.session.get('enr:cache'))['enr:cache']).toMatchObject({ conta: 'conta-a' });
   });
 
+  it('contaMl ausente (leitura da conexão falhou na edge): nem o lote seguinte nem a revalidação limpam abas ou cache', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:00Z'));
+    await registrar([card(1)]);
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const r = await edge(String(u), init);
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao !== 'identificar_busca') return r;
+      const j = await r.json();
+      delete j.dados.contaMl;
+      return new Response(JSON.stringify(j), { status: 200 });
+    });
+    vi.mocked(chrome.tabs.sendMessage).mockClear();
+    await registrar([card(1), card(2)]);
+    vi.setSystemTime(Date.parse('2026-11-03T12:06:00Z'));
+    await rotear({ tipo: 'publiai:busca-visivel', geracao: geracaoCs }, BUSCA);
+    await complementosPendentes();
+    expect(doTipo('identificar_busca').filter((c) => c.itens.length === 0)).toHaveLength(1);
+    expect(mensagensPagina('publiai:sessao-mudou')).toHaveLength(0);
+    expect((await chrome.storage.session.get('enr:cache'))['enr:cache']).toMatchObject({ conta: 'conta-a' });
+    expect(await estado()).not.toBeNull();
+  });
+
   it('conta ML desconhecida (edge antiga, sem contaMl): o cache não é reutilizado', async () => {
     await registrar([card(1)]);
     vi.mocked(fetch).mockImplementation(async (u, init) => {

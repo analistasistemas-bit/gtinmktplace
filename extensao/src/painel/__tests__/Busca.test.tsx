@@ -242,13 +242,29 @@ describe('linha por aparição (revisão final)', () => {
         { posicao: 5, patrocinado: false, preco: 30, vendidosTexto: '+100 vendidos', full: true, freteGratis: null, lojaOficial: null },
       ],
     });
-    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21) }, [c]) })} />);
+    const m10 = { ...okMargem(11.21), margem: { ...okMargem(11.21).margem, preco: 10 } };
+    render(<Busca {...props({ estado: estado({ MLB1000001: m10 }, [c]) })} />);
     const linha = within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).closest('li')!;
     within(linha).getByText('R$ 10,00');
     within(linha).getByText('Patrocinado');
+    within(linha).getByLabelText('Margem simulada no Clássico: 11,2%');
     expect(within(linha).queryByText('+100 vendidos')).toBeNull();
     expect(within(linha).queryByText('Full')).toBeNull();
     screen.getByText('R$ 10,00 a R$ 30,00');
+  });
+
+  it('margem de outro preço (estado 0.4.2 sem precoDaMargem): a linha de R$10 não mostra o % calculado a R$19,99', () => {
+    const c = card('MLB1000001', {
+      preco: 10, ocorrencias: [{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null, full: null, freteGratis: null, lojaOficial: null }],
+    });
+    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21) }, [c]) })} />);
+    const linha = within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).closest('li')!;
+    within(linha).getByText('R$ 10,00');
+    expect(within(linha).queryByLabelText(/Margem simulada/)).toBeNull();
+    expect(within(linha).queryByText('11,2%')).toBeNull();
+    expect(within(linha).queryByText('Margem indisponível')).toBeNull();
+    expect(within(linha).queryByText('Detalhes')).toBeNull(); // a composição também é do outro preço
+    within(linha).getByText('SKU 00000081');
   });
 });
 

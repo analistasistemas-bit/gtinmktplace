@@ -102,7 +102,7 @@ function margemDaOcorrencia(
   if (margem?.estado === 'ok' && (preco === null || margem.margem?.preco !== preco)) return null;
   // Limite, sem categoria e indisponível também são do preço analisado (o do card agregado): outra aparição não os herda.
   if ((margem?.estado === 'limite' || margem?.estado === 'sem_categoria' || margem?.estado === 'indisponivel') && (preco === null || preco !== precoDoCard)) return null;
-  if (!margem && metadados?.vinculo) return { rotulo: 'Minha margem · calculando', valor: null, tom: 'aguardando', titulo: `SKU ${metadados.vinculo.codigo}: a margem chega em instantes.` };
+  if (!margem && metadados?.vinculo && preco !== null && preco === precoDoCard) return { rotulo: 'Minha margem · calculando', valor: null, tom: 'aguardando', titulo: `SKU ${metadados.vinculo.codigo}: a margem chega em instantes.` };
   return seloDaBusca(margem);
 }
 
@@ -154,7 +154,7 @@ export function renderizarMiniBlocoDaBusca(
     bloco.append(linha(el('span', 'v', 'Oferta não localizada nesta leitura')));
   } else if (exata?.estado === 'ok') {
     const semTipo = !exata.tipo && exata.comissao.estado === 'indisponivel'; // sem tipo a comissão não tem como ser consultada
-    const l = linha(el('span', semTipo ? 't neutro' : 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : semTipo ? 'Tipo e comissão não confirmados' : 'Tipo não confirmado'));
+    const l = linha(el('span', semTipo ? 't neutro' : 't roxo', exata.tipo ? NOME_TIPO[exata.tipo] : semTipo ? 'Tipo e comissão na sua conta não confirmados' : 'Tipo não confirmado'));
     if (semTipo && oc.preco === exata.preco) ajuda(l, 'comissão na sua conta', COMISSAO);
     // A comissão é do preço enviado: outra aparição do item com outro preço não a herda.
     else if (oc.preco === exata.preco) {

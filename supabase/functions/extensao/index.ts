@@ -6,7 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { mapearConexao, resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
@@ -439,12 +439,15 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       // Sem itens: só a revalidação da conta (busca parada) — nenhuma leitura de produto nem registro de uso.
       const [r, conexao] = await Promise.all([
         p.itens.length ? identificarBusca(admin, orgId, p, depsCasamento(admin, orgId)) : { itens: [] },
-        resolverConexao(admin, orgId, 'mercado_livre'),
+        conexaoMlOuFalha(admin, orgId),
       ]);
       if (p.registrarUso === true && p.itens.length) {
         const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
         if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       }
+      // Leitura falhou: contaMl omitido (inconclusivo). null só quando a consulta deu certo e não há conexão —
+      // o navegador trata null como conta removida e limpa tudo (Revisão final da fatia 2, achado 1).
+      if (conexao === undefined) return r;
       return { ...r, contaMl: conexao?.contaExternaId ? await impressaoConta(conexao.contaExternaId) : null };
     }
     case 'enriquecer_catalogos_busca': {
@@ -489,6 +492,16 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       return { ok: true };
     }
   }
+}
+
+/** Conexão ML da org separando falha de leitura (undefined) de "sem conexão" (null). resolverConexao, compartilhado,
+ *  junta os dois em null; aqui a diferença decide se o navegador apaga a busca inteira. */
+async function conexaoMlOuFalha(admin: SupabaseClient, orgId: string) {
+  const { data, error } = await admin.from('marketplace_connections')
+    .select('id, org_id, canal, conta_externa_id, expires_at')
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
+  if (error) { console.warn(`extensao: conexao: ${error.message}`); return undefined; }
+  return mapearConexao(data ?? null);
 }
 
 /** Impressão opaca da conta ML (Revisão 03/11, regra 10): o navegador chaveia o cache por ela e descarta o que foi

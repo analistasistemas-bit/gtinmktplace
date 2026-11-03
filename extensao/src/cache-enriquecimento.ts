@@ -1,6 +1,7 @@
 // Enriquecimento dos catálogos da busca no SW (plano, Revisão 03/11, regras 2-3 e 10): cache do navegador por identidade
 // (chrome.storage.session; metadados 6 h, ofertas 60 s, perfis 24 h, expirações do servidor) e o planejamento do lote
 // (fila deduplicada por catálogo; só os componentes vencidos vão à edge). Funções puras + I/O mínima do cache.
+import { epocaAtual } from './abas';
 import type { CardBusca } from './leitura/busca';
 import type { MetadadosCardBusca } from '../../supabase/functions/_shared/extensao/busca.ts';
 import type { ComissaoML, Disponivel } from '../../supabase/functions/_shared/extensao/tipos.ts';
@@ -82,6 +83,7 @@ let fila: Promise<unknown> = Promise.resolve();
  *  usados até ~4 MiB. Falha de gravação = segue sem cache.
  *  ponytail: uma chave só (o mapa inteiro é regravado a cada lote); DTO mínimo mantém isso em KBs por busca. */
 export function gravarCache(identidade: string, mudar: (c: CacheEnr) => void, agora = Date.now()): Promise<void> {
+  const epoca = epocaAtual();
   const r = fila.then(async () => {
     const c = await lerCache(identidade, agora);
     mudar(c);
@@ -96,6 +98,8 @@ export function gravarCache(identidade: string, mudar: (c: CacheEnr) => void, ag
       }
     }
     await chrome.storage.session.set({ [CHAVE]: c });
+    // Logout/pausa durante o set (sair sobe a época antes do 1º await): a limpeza já passou — apaga de novo.
+    if (epoca !== epocaAtual()) await chrome.storage.session.remove(CHAVE);
   }).catch(() => {});
   fila = r;
   return r;
