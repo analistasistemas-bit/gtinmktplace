@@ -36,7 +36,7 @@ RLS: leitura por `org_id = current_org_id()`; escrita só `service_role` (worker
 
 Edge nova, `verify_jwt=false` (valida assinatura QStash **ou** JWT do usuário). Dois modos:
 
-- **QStash `{}`** (schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, `0 */6 * * *`) → fan-out por org
+- **QStash `{}`** (schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, `10 9 * * *` desde 03/11/2026 — emenda ADR-0170; antes `10 */6`) → fan-out por org
   com o módulo ativo. Etapa **`lista`**: trava de 5 min, lista as promoções, encerra as que
   sumiram, roda os alertas lendo o banco, reserva + enfileira 1 leitura por promoção
   `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio, lotes de 20 itens,

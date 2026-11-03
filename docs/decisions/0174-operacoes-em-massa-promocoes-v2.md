@@ -196,7 +196,7 @@ por `item_relations` sem `variation_id`. O ML convida os dois, mas só aceita a 
 dos dois lados (relação unilateral ou múltipla não junta nada); normal escondido é apagado explicitamente
 (`removerItens`), porque uma tentativa anterior da mesma rodada pode tê-lo gravado com o mesmo `sincronizado_em`.
 
-**Limites aceitos (o sync seguinte, a cada 6 h, corrige):** o normal que passa a participar entre duas
+**Limites aceitos (o sync seguinte, a cada 6 h — 1×/dia desde a emenda ADR-0170 de 2026-11-03 —, corrige):** o normal que passa a participar entre duas
 mensagens da mesma rodada some até a próxima leitura; depois de sair com o normal participando, as duas linhas
 ficam até o próximo sync. Os dois casos exigem inscrição pelo normal, que o motor bloqueia.
 **Follow-ups fora do escopo (já existiam):** o espelho do motor só atualiza `status` (preço/contagem ficam do
