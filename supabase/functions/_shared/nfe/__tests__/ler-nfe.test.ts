@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lerNfe } from '../ler-nfe';
+import { classificarIcmsEntrada } from '../icms-entrada';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 
@@ -21,7 +22,9 @@ describe('lerNfe — exportação de ERP', () => {
     expect(r.nota.itens[0]).toEqual({
       nItem: 1, cProd: 'REF 06', xProd: 'Short masculino - DIV - DIV', ncm: '62034900', cfop: '5102',
       gtin: null, uCom: 'PC', qCom: 35, vProd: 350, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0,
+      icmsGrupo: 'ICMSSN102', csosn: '102', cstIcms: null, cest: null, nFci: null,
     });
+    expect(r.nota.emitenteUf).toBeNull();
     expect(r.nota.itens[1].xProd).toBe('Conjunto infantil & bebê - DIV - DIV');
   });
 });
@@ -75,5 +78,39 @@ describe('lerNfe — recusas', () => {
     expect(lerNfe('<?xml version="1.0"?><cteProc/>')).toEqual({ ok: false, erro: expect.stringContaining('NF-e') });
     expect(lerNfe(fx('nfe-exportacao-erp.xml').replace(/<det>[\s\S]*<\/det>/, '')).ok).toBe(false);
     expect(lerNfe(fx('nfe-exportacao-erp.xml').replace('<qCom>35.0000</qCom>', '<qCom>abc</qCom>')).ok).toBe(false);
+  });
+});
+
+describe('lerNfe — ICMS, CEST, nFCI e UF do emitente (ADR-0181 D-10)', () => {
+  const base = fx('nfe-exportacao-erp.xml');
+  const comPrefixo = (x: string) => x.replace(/<(\/?)([A-Za-z])/g, '<$1nfe:$2').replace('<nfe:?xml', '<?xml');
+  it('namespace prefixado: ICMS60, CEST, nFCI, UF; 2º item ICMSSN102', () => {
+    const xml = comPrefixo(base
+      .replace('<emit>', '<emit><enderEmit><UF>pe</UF></enderEmit>')
+      .replace('<CFOP>5102</CFOP></prod>', '<CFOP>5102</CFOP><CEST>2805900</CEST><nFCI>B01F70AF-10BF-4B1F-848C-65FF57F616FE</nFCI></prod>')
+      .replace('<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>', '<ICMS60><orig>0</orig><CST>60</CST></ICMS60>'));
+    const r = lerNfe(xml);
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.nota.emitenteUf).toBe('PE');
+    expect(r.nota.itens[0]).toMatchObject({ icmsGrupo: 'ICMS60', cstIcms: '60', csosn: null, cest: '2805900', nFci: 'B01F70AF-10BF-4B1F-848C-65FF57F616FE' });
+    expect(r.nota.itens[1]).toMatchObject({ icmsGrupo: 'ICMSSN102', csosn: '102', cstIcms: null, cest: null, nFci: null });
+  });
+  it('CST do PIS não vira cstIcms quando o item não tem ICMS', () => {
+    const xml = base.replace(/<imposto>[\s\S]*?<\/imposto>/, '<imposto><PIS><PISAliq><CST>01</CST></PISAliq></PIS></imposto>');
+    const r = lerNfe(xml);
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.nota.itens[0]).toMatchObject({ icmsGrupo: null, csosn: null, cstIcms: null });
+  });
+  it('ICMSPart (CST 10): o grupo é o 1º filho de ICMS, qualquer nome', () => {
+    const xml = base.replace('<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>', '<ICMSPart><orig>0</orig><CST>10</CST></ICMSPart>');
+    const r = lerNfe(xml);
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.nota.itens[0]).toMatchObject({ icmsGrupo: 'ICMSPart', cstIcms: '10', csosn: null });
+  });
+  it('ICMS60 sem vICMSST continua classificado como ST', () => {
+    const xml = base.replace('<ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102>', '<ICMS60><orig>0</orig><CST>60</CST><vICMSSTRet>0.00</vICMSSTRet></ICMS60>');
+    const r = lerNfe(xml);
+    if (!r.ok) throw new Error(r.erro);
+    expect(classificarIcmsEntrada(r.nota.itens[0])).toBe('st');
   });
 });

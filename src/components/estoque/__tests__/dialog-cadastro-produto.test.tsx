@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { escolherNoSelect } from '@/test/select';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
+import { DialogCadastroProduto, fiscalDoInicial, type CadastroInicial } from '../dialog-cadastro-produto';
 import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 import { supabase } from '@/lib/supabase';
@@ -1196,16 +1196,17 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(screen.getByText(/Para cadastrar grade \(tamanho\), habilite roupa\/calçado em Configurações/)).toBeInTheDocument();
   });
 
-  it('com módulo fiscal: NCM/origem NF-e prefilled, CSOSN vazio e "Conferi NCM e origem" obrigatório', async () => {
+  it('com módulo fiscal: origem pré-selecionada com selo, NCM/origem NF-e prefilled, CSOSN vazio e "Conferi" obrigatório', async () => {
     modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
     (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
     const user = userEvent.setup();
     renderNota();
 
-    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Nacional' })).toBeChecked();
+    expect(screen.getByText(/Veio da nota: Nacional — confira/)).toBeInTheDocument();
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
     await preencherEmbalagem(user, 1);
-    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.click(screen.getByRole('button', { name: 'Avançar' }));
 
     expect(await screen.findByLabelText('NCM')).toHaveValue('62034900');
@@ -1216,8 +1217,176 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
 
     await escolherNoSelect(user, 'CSOSN', '102');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: 'Conferi NCM e origem' }));
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
+  function renderNotaCom(inicial: CadastroInicial) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroProduto aberto onFechar={() => {}} origemNota inicial={inicial} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('prefill completo: CSOSN 500 e CEST com selo; trocar o CSOSN depois do "Conferi" desmarca e trava', async () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
+    const user = userEvent.setup();
+    renderNotaCom({
+      ...inicialNota,
+      fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '500', cest: '2805900' },
+      avisosNota: { classe: 'st', codigoFornecedor: '60', interestadual: false, semPadrao: false },
+    });
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await preencherEmbalagem(user, 1);
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    expect(await screen.findByLabelText('CEST')).toHaveValue('2805900');
+    expect(screen.getByRole('combobox', { name: 'CSOSN' })).toHaveTextContent('500');
+    expect(screen.getByText(/Nota do fornecedor com ST \(60\) — CSOSN 500\./)).toBeInTheDocument();
+    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(4);
+
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    await escolherNoSelect(user, 'CSOSN', '102');
+    expect(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+
+  it('sem CEST na nota: exige "Este NCM não tem CEST vigente"; digitar o CEST dispensa o checkbox', async () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
+    const user = userEvent.setup();
+    renderNotaCom({
+      ...inicialNota,
+      fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '102' },
+      avisosNota: { classe: 'sem_st', codigoFornecedor: '102', interestadual: false, semPadrao: false },
+    });
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await preencherEmbalagem(user, 1);
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    expect(await screen.findByText(/A nota não trouxe CEST/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    // Digitar o CEST derruba "Conferi"; refeito, o checkbox de CEST deixou de ser exigido.
+    await user.type(screen.getByLabelText('CEST'), '2805900');
+    expect(screen.queryByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
+  function elementoNota(aberto: boolean, inicial: CadastroInicial, qc: QueryClient) {
+    return (
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroProduto aberto={aberto} onFechar={() => {}} origemNota inicial={inicial} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+  const novoQc = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const prepararFiscal = () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
+  };
+  async function irParaEtapaFiscal(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await preencherEmbalagem(user, 1);
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+  }
+
+  it('módulo fiscal chega DEPOIS da abertura: a origem da nota é pré-selecionada', async () => {
+    modulosMock.mockReturnValue({ data: [], isLoading: false });
+    const qc = novoQc();
+    const { rerender } = render(elementoNota(true, inicialNota, qc));
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    rerender(elementoNota(true, inicialNota, qc));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Nacional' })).toBeChecked());
+  });
+
+  it('módulo fiscal chega depois e o operador já escolheu a origem: a escolha não é sobrescrita', async () => {
+    modulosMock.mockReturnValue({ data: [], isLoading: false });
+    const qc = novoQc();
+    const user = userEvent.setup();
+    const { rerender } = render(elementoNota(true, inicialNota, qc));
+    await user.click(screen.getByRole('radio', { name: 'Importado' }));
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    rerender(elementoNota(true, inicialNota, qc));
+    expect(screen.getByRole('radio', { name: 'Importado' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+  });
+
+  it('fechar e reabrir zera as confirmações ("Conferi" desmarcado)', async () => {
+    prepararFiscal();
+    const qc = novoQc();
+    const user = userEvent.setup();
+    const { rerender } = render(elementoNota(true, inicialNota, qc));
+    await irParaEtapaFiscal(user);
+    await user.click(await screen.findByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ })).toBeChecked();
+
+    rerender(elementoNota(false, inicialNota, qc));
+    rerender(elementoNota(true, inicialNota, qc));
+    await irParaEtapaFiscal(user);
+    expect(await screen.findByRole('checkbox', { name: /^Conferi os dados fiscais/ })).not.toBeChecked();
+  });
+
+  it('o payload leva CEST, FCI e CSOSN pré-preenchidos pela nota (origem NF-e 5)', async () => {
+    prepararFiscal();
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', codigoPai: '00000010', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000011' }],
+    });
+    const antes = cadastrarProdutoMock.mock.calls.length;
+    const user = userEvent.setup();
+    renderNotaCom({
+      ...inicialNota,
+      fiscal: { ncm: '62034900', origemNfe: 5, tributacaoIcms: '500', cest: '2805900', fci: 'B01F70AF-10BF-4B1F-848C-65FF57F616FE' },
+      avisosNota: { classe: 'st', codigoFornecedor: '60', interestadual: false, semPadrao: false },
+    });
+    await irParaEtapaFiscal(user);
+    await user.click(await screen.findByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock.mock.calls.length).toBe(antes + 1));
+    expect(cadastrarProdutoMock.mock.calls.at(-1)![0].fiscal).toMatchObject({
+      ncm: '62034900', origemNfe: 5, tributacaoIcms: '500', cest: '2805900', fci: 'B01F70AF-10BF-4B1F-848C-65FF57F616FE',
+    });
+  });
+
+  it('CEST veio da nota e o operador apaga: Cadastrar só libera com "Este NCM não tem CEST vigente"', async () => {
+    prepararFiscal();
+    const user = userEvent.setup();
+    renderNotaCom({
+      ...inicialNota,
+      fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '500', cest: '2805900' },
+      avisosNota: { classe: 'st', codigoFornecedor: '60', interestadual: false, semPadrao: false },
+    });
+    await irParaEtapaFiscal(user);
+    await user.clear(await screen.findByLabelText('CEST'));
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
+  it('Viabilidade (sem sugestaoDaNota): origemSugerida NÃO pré-seleciona a origem (V-3)', () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    renderDialogCom({ inicial: { nomePai: 'X', origemSugerida: 'nacional' } });
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Importado' })).not.toBeChecked();
   });
 });
 
@@ -1267,5 +1436,13 @@ describe('DialogCadastroProduto — marca própria (ADR-0188)', () => {
     fechar();
     reabrir();
     expect(screen.getByLabelText(/^Marca/)).toHaveValue('Zaven');
+  });
+});
+
+describe('fiscalDoInicial', () => {
+  it('copia CSOSN, CEST e FCI da nota', () => {
+    expect(fiscalDoInicial({ fiscal: { tributacaoIcms: '500', cest: '2805900', fci: 'X' } })).toMatchObject({
+      tributacaoIcms: '500', cest: '2805900', fci: 'X',
+    });
   });
 });

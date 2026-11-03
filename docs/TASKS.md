@@ -1,11 +1,20 @@
 # PubliAI — Tasks
 
+## Nota de compra: etapa fiscal toda preenchida (emenda ADR-0181 D-10) — 2026-11-03
+
+- [x] Leitor do XML lê grupo ICMS, CSOSN/CST, CEST, nFCI e UF do emitente; `icms-entrada.ts` classifica ST / sem ST / exceção.
+- [x] Produto novo a partir da nota chega com NCM, origem NF-e e binária, FCI, CSOSN (500 com ST, padrão da empresa sem ST), CEST e descrição; exceção fica vazia com escolha obrigatória.
+- [x] Avisos e confirmações: CEST ausente, compra de outra UF, CSOSN divergente em produto existente; "Conferi" cai se o campo mudar.
+- [ ] Diego: preencher card Empresa da Daludi Shop (CSOSN padrão 102) e ligar o módulo Fiscal.
+- [ ] Se passar a comprar de fora do estado: tabela de NCMs com antecipação, classificada pelo contador.
+
 ## Promoções e Publicados: ajustes pós-uso real (só front) — 2026-11-03
 
 - [x] Aura + raio de borda em todos os diálogos `processando` (`ui/dialog`, `ui/alert-dialog`); diálogos roláveis (kit, kit virtual, adicionar variação, estender grade) rolam num filho (main `99c2091c`).
 - [x] Aba Em promoção: 20 por página por campanha (seleção vale para todas as páginas), ordem por descrição; `<main>` do AppShell `relative` — filhos `absolute` escapavam do overflow e o body rolava (faixa preta no fim da página) (main `bb2c0555`).
 - [x] Publicados: selo "Em promoção · X de Y variações · N sem estoque" (SKUs UP fora da promoção com estoque 0; o ML não deixa SKU zerado participar) (main `f929b980`).
 - [x] Operações de promoção: "Tentar novamente N com erro" — mesma ação, só os itens com erro, preço do log, operação nova sem origem; Reverter fora (main `9a9485d7`).
+- [x] Dashboard: KPIs agregam a família UP com `agregarStatusUP`, igual a Publicados — SKU principal zerado, pausado pelo ML, gerava aviso de "pausados" sem nada no filtro (Zaven, main `9a112d6b`).
 - [ ] Opcional: retry automático de 5xx na adesão (`operacoes-massa`) — hoje ML 500 vira `erro` direto.
 
 ## Promoções: alterar o preço de quem já participa (DEAL) — 2026-11-03

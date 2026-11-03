@@ -5,6 +5,9 @@ export interface ItemNotaLido {
   vProd: number; vFrete: number; vSeg: number; vDesc: number; vOutro: number; vIPI: number; vST: number;
   vFCPST: number; // FCP retido por ST: integra o custo como o ST (R5-I2)
   orig: number | null;
+  /** Grupo ICMS do item (ex.: 'ICMS60', 'ICMSSN102'); CSOSN/CST só do bloco ICMS. */
+  icmsGrupo: string | null; csosn: string | null; cstIcms: string | null;
+  cest: string | null; nFci: string | null;
 }
 export type CampoAcessorio = 'vFrete' | 'vSeg' | 'vDesc' | 'vOutro' | 'vIPI' | 'vST' | 'vFCPST';
 export interface TotaisNota {
@@ -13,7 +16,7 @@ export interface TotaisNota {
 }
 export interface NotaCompraLida {
   chave: string; numero: number; serie: number; modelo: number; tipoNf: number;
-  emitidaEm: string; emitenteCnpj: string; emitenteNome: string; destinatarioCnpj: string;
+  emitidaEm: string; emitenteCnpj: string; emitenteNome: string; emitenteUf: string | null; destinatarioCnpj: string;
   totais: TotaisNota; assinada: boolean; cStat: number | null; itens: ItemNotaLido[];
 }
 /** Item depois da conciliação: valores efetivos (documento + rateio) e o rateio aplicado. */

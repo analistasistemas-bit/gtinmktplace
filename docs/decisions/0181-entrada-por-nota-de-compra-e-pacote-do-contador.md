@@ -131,6 +131,39 @@ A tela mostra lado a lado o custo de aquisição e o custo de precificação.
   de revenda" da `empresa_fiscal`**, informado com o contador, que aparece no produto para confirmar
   e nunca é aplicado em silêncio.
 
+**Emenda D-10 (2026-11-03) — a etapa fiscal chega toda preenchida; o operador confere.** Pedido do
+Diego; regras validadas pelo contador da Daludi Shop e pelo Codex. Vale só para produto **novo**
+cadastrado a partir do item da nota, com o módulo `fiscal` ligado. Spec:
+`docs/superpowers/specs/2026-11-03-fiscal-prefill-xml-design.md`.
+
+| Campo | Vem preenchido com | Conferência |
+|---|---|---|
+| NCM, origem NF-e, descrição fiscal | XML (origem traduzida 1→2, 6→7) | "Conferi" geral |
+| Origem binária (`familias.origem`) | Pré-selecionada por `ORIGENS_NFE_POR_ORIGEM`; sem `orig`, vazia | "Conferi" geral |
+| FCI | `nFCI` do XML quando a origem é 3/5/8 | Obrigatório pelo form |
+| CSOSN, entrada com ST | `500` | "Conferi" geral |
+| CSOSN, entrada sem ST | `csosn_padrao_revenda`; padrão nulo → vazio + aviso | "Conferi" geral |
+| CSOSN, exceção | Vazio, sem sugestão, com aviso do código do fornecedor | Escolha obrigatória |
+| CEST | XML, com qualquer CSOSN | Ausente → preencher ou marcar "Este NCM não tem CEST vigente" |
+| Fornecedor de outra UF | Aviso de possível ST por antecipação | "Conferi o CSOSN com o contador" |
+
+- **Entrada com ST:** grupo `ICMSST`, CSOSN 201/202/203/500 ou CST 10/30/60/70. Decide o código, não o
+  valor (CST 60 com ST zerada continua ST). **Sem ST:** CSOSN 101/102, CST 00/20. **Exceção:** todo o
+  resto, inclusive 103/300/400/900, CST 40/41/50/51/90 e código ausente. O contador: "não deve deixar em
+  branco ou replicar, tem que analisar cada caso e o motivo da isenção".
+- **O código do fornecedor continua sem ser copiado:** ele é só indício; o CSOSN de saída é sempre 500,
+  o padrão da empresa ou a escolha do operador.
+- **Exceção ao "nunca pré-escolher" da origem (ADR-0055/0107):** só neste fluxo, porque o valor vem do
+  documento, com selo e conferência obrigatória. Default em silêncio continua proibido: sem `orig` a
+  origem fica vazia, e sem módulo fiscal (não há etapa de conferência) também. A Viabilidade segue com a
+  trava V-3.
+- **Confirmação perde validade:** alterar NCM, origem, CSOSN, CEST ou FCI depois do "Conferi" o desmarca.
+- **Produto já existente:** o fiscal não muda. CSOSN indicado pela nota diferente do cadastrado gera aviso
+  não bloqueante na etapa de itens.
+- **Fora do escopo:** tabela de NCM com antecipação (o contador: só muda em compra de fora do estado; hoje
+  a Daludi só compra dentro), CSOSN 101 para venda a contribuinte revendedor (CSOSN é do cadastro, não da
+  venda) e tabela oficial NCM→CEST.
+
 **D-11 — Desfazer e cancelamento.** **Desfazer importação** é só para admin: reduz o saldo via
 `ajustar_estoque`, marca a nota como `desfeita` (não apaga) e é recusado listando os SKUs quando parte já
 foi vendida (saldo insuficiente). O **cancelamento fiscal** da nota pelo fornecedor não é detectável sem

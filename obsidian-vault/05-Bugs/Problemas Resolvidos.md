@@ -10,6 +10,12 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Dashboard avisava "2 anúncios pausados" e Publicados não mostrava nenhum (2026-11-03)** — Zaven: 14 publicados,
+  12 ativos no Dashboard × 14/14 em Publicados. **Raiz:** o ML pausa sozinho o SKU que zera; `calcularKpisDashboard`
+  olhava só o `mlItemId` (SKU principal), enquanto Publicados agrega a família UP (ativo se qualquer SKU está ativo).
+  Duas famílias tinham o principal com estoque 0 e saldo nos irmãos. **Fix:** KPIs usam `agregarStatusUP`
+  (main `9a112d6b`).
+
 - **Faixa preta no fim de páginas longas (2026-11-03)** — na aba Em promoção (77 anúncios) a casca acabava no meio da
   tela e o resto ficava preto. **Raiz:** `<main>` do AppShell (`overflow-y-auto`) sem `position`; filhos `absolute`
   (`sr-only` de cada linha, input escondido do Checkbox) usavam o viewport como containing block, escapavam do clip e
