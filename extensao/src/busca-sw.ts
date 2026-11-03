@@ -83,9 +83,12 @@ function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
 }
 
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
-// respostas da edge); `analises` faz o processamento seguinte esperar o anterior e mandar só o que ainda falta.
+// respostas da edge); `analises` (identificação → enriquecimento) e `margens` (margem) são pipelines independentes:
+// cada rodada espera só a anterior da MESMA fila e manda só o que ainda falta. Margem lenta não segura o enriquecimento
+// do scroll, e vice-versa.
 const escritas = new Map<number, Promise<unknown>>();
 const analises = new Map<number, Promise<unknown>>();
+const margens = new Map<number, Promise<unknown>>();
 function naFila<T>(filas: Map<number, Promise<unknown>>, tabId: number, fn: () => Promise<T>): Promise<T> {
   const r = (filas.get(tabId) ?? Promise.resolve()).catch(() => {}).then(fn);
   const fim = r.catch(() => {});
@@ -155,10 +158,14 @@ const transitoria = (f: Falha) => f.erro === 'interno' || f.erro === 'limite';
 export function processarBuscaDaAba(tabId: number, epoca: number, forcar: string[] = [], retentar = false): Promise<{ ok: true } | Falha> {
   const vez = cancelamentos.get(tabId) ?? 0; // síncrono: cancelamento depois daqui vale para esta rodada
   const vale = () => epoca === epocaAtual() && vez === (cancelamentos.get(tabId) ?? 0);
-  return naFila(analises, tabId, () => processar(tabId, epoca, vale, new Set(forcar), retentar));
+  return naFila(analises, tabId, () => processar(tabId, epoca, vale, new Set(forcar), retentar))
+    .then((x) => ('margem' in x ? x.margem : x));
 }
 
-async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>, retentar: boolean): Promise<{ ok: true } | Falha> {
+type Resultado = { ok: true } | Falha;
+/** Na fila `analises`: identificação e enriquecimento. A margem vai para a fila `margens` logo depois da identificação;
+ *  `margem` = o resultado final da rodada (fora da fila `analises`, que libera a próxima rodada sem esperá-la). */
+async function processar(tabId: number, epoca: number, vale: () => boolean, forcar: Set<string>, retentar: boolean): Promise<Resultado | { margem: Promise<Resultado> }> {
   if (!vale()) return SEM_SESSAO;
   // Identidade desconhecida (recém-logado): resolvida ANTES de capturar a da rodada — senão a 1ª chamada a descobre, a
   // gravação é recusada e a retomada pede (e conta) a telemetria de novo.
@@ -393,19 +400,23 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
     }
   };
 
-  // Identificação falhou de forma transitória: enriquecimento e margem seguem com o que já foi identificado.
-  let falha = await identificar();
-  if (falha === 'sair') return SEM_SESSAO;
-  if (falha === null || transitoria(falha)) {
-    for (const fase of [enriquecer, margem]) {
-      const f = await fase();
-      if (f === 'sair') return SEM_SESSAO;
-      falha = f ?? falha;
-      if (f === SEM_SESSAO) break; // gravação recusada: o pulso refaz a rodada
-    }
+  // Identificação falhou de forma transitória: enriquecimento e margem seguem com o que já foi identificado, em filas
+  // próprias (falha de uma não marca a outra).
+  const fId = await identificar();
+  if (fId === 'sair') return SEM_SESSAO;
+  if (fId !== null && !transitoria(fId)) {
+    if (retomar) await pedirRetomada(tabId, vale);
+    return fId;
   }
-  if (retomar) await pedirRetomada(tabId, vale);
-  return falha ?? { ok: true };
+  const fm = naFila(margens, tabId, margem);
+  const fe = await enriquecer();
+  return {
+    margem: fm.then(async (m): Promise<Resultado> => {
+      if (fe === 'sair' || m === 'sair') return SEM_SESSAO;
+      if (retomar) await pedirRetomada(tabId, vale);
+      return fe ?? m ?? fId ?? { ok: true };
+    }),
+  };
 }
 
 const REVALIDAR_CONTA_MS = 5 * 60_000;

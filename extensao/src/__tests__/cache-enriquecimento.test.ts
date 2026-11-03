@@ -94,10 +94,43 @@ describe('planejarLote', () => {
     const e = enriquecimentoVazio();
     e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertasOk({ MLB1000001: { estado: 'nao_encontrada', preco: 10 } }) };
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
-    e.catalogos.MLB900 = { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+    e.catalogos.MLB900 = { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre', itens: { MLB1000001: 10 } } };
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
     e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertasOk({ MLB1000001: { estado: 'indisponivel', preco: 10, motivo: 'tempo esgotado' } }) };
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
+  });
+
+  it('rodada falhou: item novo (ou preço novo) do MESMO catálogo vai como delta; os tentados mantêm o resultado terminal', () => {
+    const e = enriquecimentoVazio();
+    const pedido = { catalogos: [{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'] as ('produto' | 'ofertas')[], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [] };
+    marcarFalha(e, pedido, 'falha de rede');
+    const p = planejarLote([card(1), card(2)], {}, e, vazioCache(), T0, new Set()).pedido!;
+    expect(p.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000002', preco: 10 }] }]);
+    expect(planejarLote([card(1, { preco: 12 })], {}, e, vazioCache(), T0, new Set()).pedido!.catalogos[0].itens).toEqual([{ itemId: 'MLB1000001', preco: 12 }]);
+    // O delta lido: o item novo ganha a oferta exata e o tentado continua indisponível (sem spinner).
+    aplicarResposta(e, p, { consultadoEm: iso(T0), custo: { comandosRedis: 1, chamadasMl: 1 }, tentarAposEm: null, vendedores: [],
+      catalogos: [{ catalogProductId: 'MLB900', estado: 'ok', retomarEm: null, consultadoEm: iso(T0),
+        ofertas: { estado: 'ok', expiraEm: iso(T0 + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
+          exatas: [{ itemId: 'MLB1000002', estado: 'nao_encontrada', motivo: 'x' }] } }] } as never, T0);
+    expect(e.catalogos.MLB900.ofertas).toMatchObject({ estado: 'ok', exatas: { MLB1000001: { estado: 'indisponivel', preco: 10, motivo: 'falha de rede' }, MLB1000002: { estado: 'nao_encontrada' } } });
+    expect(vistaDoCard(card(1), e)!.espera).not.toBe('dados');
+    expect(planejarLote([card(1), card(2)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
+    // Segunda falha no mesmo catálogo soma os tentados.
+    const f = enriquecimentoVazio();
+    marcarFalha(f, pedido, 'falha de rede');
+    marcarFalha(f, { ...pedido, catalogos: [{ ...pedido.catalogos[0], componentes: ['ofertas'], itens: [{ itemId: 'MLB1000002', preco: 10 }] }] }, 'tempo esgotado');
+    expect(planejarLote([card(1), card(2)], {}, f, vazioCache(), T0, new Set()).pedido).toBeNull();
+  });
+
+  it('rodada falhou e o delta vem do cache: os tentados continuam indisponíveis na vista', () => {
+    const e = enriquecimentoVazio();
+    marcarFalha(e, { catalogos: [{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [] }, 'falha de rede');
+    const cache = vazioCache();
+    cache.produtos.MLB900 = { criadoEm: null, exp: T0 + 1000, u: 0 };
+    cache.ofertas.MLB900 = { v: ofertasOk({ MLB1000002: { estado: 'nao_encontrada', preco: 10 } }), exp: T0 + 1000, u: 0 };
+    const p = planejarLote([card(1), card(2)], {}, e, cache, T0, new Set());
+    expect(p.pedido).toBeNull();
+    expect(p.hits.catalogos.MLB900.ofertas).toMatchObject({ estado: 'ok', exatas: { MLB1000001: { estado: 'indisponivel' }, MLB1000002: { estado: 'nao_encontrada' } } });
   });
 
   it('estado "aguardando" gravado por versão anterior: pedido de novo (uma vez por rodada)', () => {
@@ -162,7 +195,7 @@ describe('aplicarResposta', () => {
     const gravar = aplicarResposta(e, pedido, { consultadoEm: iso(T0), custo: { comandosRedis: 1, chamadasMl: 0 }, tentarAposEm: iso(T0 + 30_000),
       catalogos: [{ catalogProductId: 'MLB900', estado: 'indisponivel', motivo: 'limite de páginas por minuto', retomarEm: null, consultadoEm: null }],
       vendedores: [{ sellerId: 9, estado: 'indisponivel', motivo: 'limite de páginas por minuto' }] } as never, T0);
-    expect(e.catalogos.MLB900).toEqual({ produto: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, ofertas: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' } });
+    expect(e.catalogos.MLB900).toEqual({ produto: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, ofertas: { estado: 'indisponivel', motivo: 'limite de páginas por minuto', itens: { MLB1000001: 10 } } });
     expect(e.tentarAposEm).toBe(T0 + 30_000);
     const c = vazioCache();
     gravar(c);

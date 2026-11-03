@@ -29,7 +29,8 @@ export interface OfertasOk {
   completa: boolean;
   exatas: Record<string, ExataVista>;
 }
-export type OfertasVista = OfertasOk | Aguardando | Indisponivel;
+/** Indisponível: `itens` = item → preço já tentados (terminais); item ou preço novo do mesmo catálogo ainda é pedido. */
+export type OfertasVista = OfertasOk | Aguardando | (Indisponivel & { itens?: Record<string, number> });
 export interface CatalogoVista {
   /** Legado (antes da Task 11.3; o SW não grava mais): cota esgotada aguardando a janela. */
   aguardandoJanela?: boolean;

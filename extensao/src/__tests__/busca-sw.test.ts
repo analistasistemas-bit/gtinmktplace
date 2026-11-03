@@ -591,7 +591,7 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     cota = 0; // margem sem cota: ela pede o pulso dela
     enrCota = 0;
     await registrar([card(1)]);
-    expect((await enr())!.catalogos[CAT]).toEqual({ produto: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, ofertas: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' } });
+    expect((await enr())!.catalogos[CAT]).toEqual({ produto: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, ofertas: { estado: 'indisponivel', motivo: 'limite de páginas por minuto', itens: { [id(1)]: 10 } } });
     expect(mensagensPagina('publiai:busca-retomar').length).toBeGreaterThan(0); // da margem
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 61_000);
@@ -785,5 +785,52 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     geracaoCs = null;
     await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
     expect(pedidosEnr).toHaveLength(2);
+  });
+
+  it('Rodada 1: margem lenta + scroll → o enriquecimento dos cards novos sai sem esperar a margem', async () => {
+    vinculados = new Set([id(1)]);
+    let soltar!: () => void;
+    const margem = new Promise<void>((r) => { soltar = r; });
+    antesDeResponder = (acao) => (acao === 'analisar_busca' ? margem : undefined);
+    await enviarCards([card(1)]);
+    await vi.waitFor(() => expect(doTipo('analisar_busca')).toHaveLength(1));
+    await enviarCards([card(1), card(2, { catalogProductId: 'MLB2000000' })]);
+    await vi.waitFor(async () => expect((await enr())?.catalogos.MLB2000000?.ofertas?.estado).toBe('ok'));
+    expect(pedidosEnr.map((p) => p.catalogos.map((c) => c.catalogProductId))).toEqual([[CAT], ['MLB2000000']]);
+    expect((await estado())!.resposta.resultados[id(1)]).toBeUndefined(); // margem ainda em voo
+    soltar();
+    await complementosPendentes();
+    expect((await estado())!.resposta.resultados[id(1)].estado).toBe('ok');
+    expect(doTipo('analisar_busca')).toHaveLength(1);
+  });
+
+  it('Rodada 1: enriquecimento lento não adia a margem', async () => {
+    vinculados = new Set([id(1)]);
+    let soltar!: () => void;
+    bloqueioEnr = new Promise((r) => { soltar = r; });
+    await enviarCards([card(1)]);
+    await vi.waitFor(async () => expect((await estado())?.resposta.resultados[id(1)]?.estado).toBe('ok'));
+    expect(pedidosEnr).toHaveLength(1);
+    expect((await enr())?.catalogos[CAT]?.ofertas).toBeUndefined(); // enriquecimento ainda em voo
+    soltar();
+    await complementosPendentes();
+    expect((await enr())!.catalogos[CAT].ofertas).toMatchObject({ estado: 'ok' });
+  });
+
+  it('Rodada 1: falha de uma fase não marca a outra', async () => {
+    vinculados = new Set([id(1)]);
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao === 'analisar_busca') { corpos.push(b); return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 }); }
+      return edge(String(u), init);
+    });
+    await registrar([card(1)]);
+    expect((await enr())!).toMatchObject({ falhou: false, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+    vi.mocked(fetch).mockImplementation(edge as never);
+    falharEnr = true;
+    await registrar([card(1), card(2, { catalogProductId: 'MLB2000000' })]);
+    expect((await estado())!.resposta.resultados[id(1)].estado).toBe('ok');
+    expect((await enr())!.falhou).toBe(true);
+    expect((await enr())!.catalogos[CAT].ofertas).toMatchObject({ estado: 'ok' });
   });
 });

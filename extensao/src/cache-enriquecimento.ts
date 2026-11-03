@@ -155,15 +155,17 @@ export function planejarLote(
     const itens = itensPorCat.get(cat)!;
     const v = vistas(cat);
     let produto = precisa(v.produto);
-    // Itens ainda sem oferta exata ao preço do card (scroll, preço novo, 51º em diante); leitura nova = todos.
-    let pendentes = v.ofertas?.estado === 'ok' ? itens.filter((i) => (v.ofertas as OfertasOk).exatas[i.itemId]?.preco !== i.preco) : itens;
-    let ofertas = precisa(v.ofertas) || (v.ofertas?.estado === 'ok' && pendentes.length > 0);
+    // Itens ainda sem oferta exata (nem tentativa terminal) ao preço do card: scroll, preço novo, 51º em diante. Leitura
+    // nova = todos. Ofertas indisponíveis valem só para os itens/preços já tentados: o delta novo vai.
+    const ja = exatasAnteriores(v.ofertas);
+    let pendentes = itens.filter((i) => ja[i.itemId]?.preco !== i.preco);
+    let ofertas = precisa(v.ofertas) || pendentes.length > 0;
     const hit: CatalogoVista = {};
     const p = valida(cache.produtos[cat]);
     if (produto && p) { hit.produto = { estado: 'ok', criadoEm: p.criadoEm }; hits.usados.push({ m: 'produtos', k: cat }); produto = false; }
     const o = valida(cache.ofertas[cat]);
     if (ofertas && o && cobre(o.v, pendentes)) {
-      hit.ofertas = { ...o.v, exatas: { ...(v.ofertas?.estado === 'ok' ? v.ofertas.exatas : {}), ...o.v.exatas } };
+      hit.ofertas = { ...o.v, exatas: { ...ja, ...o.v.exatas } };
       hits.usados.push({ m: 'ofertas', k: cat });
       ofertas = false;
       pendentes = [];
@@ -230,7 +232,19 @@ function ofertasIndisponiveis(v: CatalogoVista, itens: { itemId: string; preco: 
     const exatas = { ...v.ofertas.exatas };
     for (const i of itens) exatas[i.itemId] = { estado: 'indisponivel', preco: i.preco, motivo };
     v.ofertas = { ...v.ofertas, exatas };
-  } else v.ofertas = { estado: 'indisponivel', motivo };
+  } else {
+    // Lembra itens/preços tentados: item novo do mesmo catálogo ainda vai (delta); estes ficam terminais.
+    const antes = v.ofertas?.estado === 'indisponivel' ? v.ofertas.itens : undefined;
+    v.ofertas = { estado: 'indisponivel', motivo, itens: { ...antes, ...Object.fromEntries(itens.map((i) => [i.itemId, i.preco])) } };
+  }
+}
+
+/** Ofertas exatas que a vista já tem do catálogo; das ofertas indisponíveis, os itens tentados (terminal, com o motivo). */
+function exatasAnteriores(o: CatalogoVista['ofertas']): Record<string, ExataVista> {
+  if (o?.estado === 'ok') return o.exatas;
+  if (o?.estado !== 'indisponivel' || !o.itens) return {};
+  const motivo = o.motivo ?? MOTIVO_PADRAO;
+  return Object.fromEntries(Object.entries(o.itens).map(([id, preco]) => [id, { estado: 'indisponivel' as const, preco, motivo }]));
 }
 
 /** Rodada que não respondeu (rede/5xx/corpo fora do formato): o que ela pediu fica indisponível (sem repetição
@@ -308,7 +322,7 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
       const ok: OfertasOk = { estado: 'ok', total: o.total, lidas: o.lidas, vendedoresIdentificados: o.vendedoresIdentificados, ofertasSemVendedor: o.ofertasSemVendedor, completa: o.completa, exatas };
       // Na aba, as ofertas exatas de pedidos anteriores do mesmo catálogo ficam (scroll). No cache, só a leitura nova e
       // sem oferta exata cuja comissão não veio: em outra busca ela não vale como dado válido.
-      v.ofertas = v.ofertas?.estado === 'ok' ? { ...ok, exatas: { ...v.ofertas.exatas, ...exatas } } : ok;
+      v.ofertas = { ...ok, exatas: { ...exatasAnteriores(v.ofertas), ...exatas } };
       const validas = Object.fromEntries(Object.entries(exatas).filter(([, e]) => e.estado !== 'ok' || e.comissao.estado === 'ok'));
       const exp = ms(o.expiraEm);
       escritas.push((x) => { x.ofertas[cat] = { v: { ...ok, exatas: validas }, exp, u: agora }; });
