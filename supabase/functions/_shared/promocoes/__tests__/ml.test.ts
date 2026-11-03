@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  buscarItensML, criarGetJson, listarItensPromocao, listarPromocoes, normalizarItemML,
+  buscarItensML, criarGetJson, lerOfertaRelampago, listarItensPromocao, listarPromocoes, normalizarItemML,
   normalizarItemPromocao, normalizarPromocao, SemAcessoPromocoes,
 } from '../ml.ts';
 import type { PromocaoML } from '../tipos.ts';
@@ -159,5 +159,19 @@ describe('fixtures reais (Task 0)', () => {
     const itens = (multiget as { code: number; body: Record<string, unknown> }[]).map((x) => normalizarItemML(x.body));
     expect(itens.some((i) => i.variacoes.length > 1 && i.variacoes.every((v) => v.cor))).toBe(true);
     for (const i of itens) expect(i.thumbnail).toMatch(/^https:\/\//);
+  });
+});
+
+describe('lerOfertaRelampago', () => {
+  it('filtra id+type na visão por item; ausente → null', async () => {
+    const get = vi.fn(async () => [
+      { id: 'LGH-MLB1000', type: 'DEAL', min_discounted_price: 1, max_discounted_price: 2, suggested_discounted_price: 1.5 },
+      { id: 'OUTRA', type: 'LIGHTNING', min_discounted_price: 3, max_discounted_price: 4, suggested_discounted_price: 3.5 },
+      { id: 'LGH-MLB1000', type: 'LIGHTNING', min_discounted_price: 5.8, max_discounted_price: 26.1, suggested_discounted_price: 24.65 },
+    ]);
+    expect(await lerOfertaRelampago(get, 'LGH-MLB1000', 'MLB5244990621')).toEqual({ preco_min: 5.8, preco_max: 26.1, preco_sugerido: 24.65 });
+    expect(get).toHaveBeenCalledWith('/seller-promotions/items/MLB5244990621?app_version=v2');
+    expect(await lerOfertaRelampago(get, 'LGH-OUTRA', 'MLB5244990621')).toBeNull();
+    expect(await lerOfertaRelampago(vi.fn(async () => ({ erro: 1 })), 'LGH-MLB1000', 'MLB1')).toBeNull();
   });
 });

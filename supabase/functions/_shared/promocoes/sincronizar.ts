@@ -2,7 +2,7 @@
 // com continuação). Decisão aqui; IO nas deps (fiação real em deps.ts).
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverPack, type Cadastro } from './cadastro.ts';
-import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
+import { SemAcessoPromocoes, TIPOS_CUPOM, type OfertaRelampago } from './ml.ts';
 import { papelNoPar, relacionadosFaltando } from './pares.ts';
 import { ateQuantoDescer, ehParticipando, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
 import type {
@@ -38,6 +38,8 @@ export interface DepsLeitura {
   buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
   carregarCadastro(): Promise<Cadastro>;
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
+  /** Relâmpago: faixa e sugerido da visão por item (a da campanha não os traz). null = ausente. */
+  ofertaRelampago(itemId: string): Promise<OfertaRelampago | null>;
   /** Upsert das linhas com sincronizado_em = rodada. */
   gravarLote(linhas: LinhaItem[]): Promise<void>;
   /** Apaga da Central da promoção os normais que viraram a linha do catálogo (par normal/catálogo). */
@@ -202,6 +204,19 @@ export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
   return [...m.values()];
 }
 
+/**
+ * Convidado da Relâmpago: max e sugerido só da visão por item; min = o maior das duas visões (conservador);
+ * o `price` do convite não serve (spike 02/11) → null. Sem visão por item a linha fica sem faixa (⚪).
+ */
+export function comOfertaRelampago(it: ItemPromocaoML, o: OfertaRelampago | null): ItemPromocaoML {
+  if (it.status !== 'candidate') return it;
+  const mins = [it.preco_min, o?.preco_min].filter((n): n is number => n != null);
+  return {
+    ...it, preco_promo: null, preco_min: mins.length ? Math.max(...mins) : null,
+    preco_max: o?.preco_max ?? null, preco_sugerido: o?.preco_sugerido ?? null,
+  };
+}
+
 const porId = (a: ItemPromocaoML, b: ItemPromocaoML) => (a.ml_item_id < b.ml_item_id ? -1 : a.ml_item_id > b.ml_item_id ? 1 : 0);
 
 export async function sincronizarPromocao(
@@ -240,7 +255,18 @@ export async function sincronizarPromocao(
       // (code ≠ 200) e o normal ficou gravado solto, já atrás do cursor.
       const escondidos = [...new Set(papeis.flatMap((x) =>
         x.par.papel === 'normal_escondido' ? [x.it.ml_item_id] : x.par.papel === 'catalogo' ? [x.par.normal.id] : []))];
-      const linhas = await emParalelo(visiveis, opts.concorrencia, async ({ it, par }) => {
+      const linhas = await emParalelo(visiveis, opts.concorrencia, async ({ it: bruto, par }) => {
+        let it = bruto;
+        if (msg.tipo === 'LIGHTNING') {
+          // Falha degrada só a linha (sem faixa → ⚪); nunca derruba a rodada.
+          const o = it.status === 'candidate'
+            ? await deps.ofertaRelampago(it.ml_item_id).catch((e) => {
+              console.warn('[promocoes] visão por item da Relâmpago indisponível', { ml_item_id: it.ml_item_id, erro: mensagem(e) });
+              return null;
+            })
+            : null;
+          it = comOfertaRelampago(it, o);
+        }
         const l = await projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q));
         if (par.papel !== 'catalogo') return l;
         const n = par.normal;

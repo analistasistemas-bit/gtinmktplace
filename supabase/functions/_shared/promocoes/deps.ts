@@ -7,7 +7,7 @@ import { redisGet, redisSet } from '../redis/client.ts';
 import { paginarTudo } from '../pagina.ts';
 import { qstashClient } from '../queue.ts';
 import { montarCadastro, type Cadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro.ts';
-import { buscarItensML, criarGetJson, listarItensPromocao, listarPromocoes } from './ml.ts';
+import { buscarItensML, criarGetJson, lerOfertaRelampago, listarItensPromocao, listarPromocoes } from './ml.ts';
 import { contar } from './projecao.ts';
 import { avisarPromocoes, depsAlertas } from './alertas.ts';
 import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura, type QueryTarifa } from './sincronizar.ts';
@@ -160,6 +160,7 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
 
     carregarCadastro: () => carregarCadastro(admin, orgId),
     tarifaEm: criarTarifaEm(cx),
+    ofertaRelampago: (itemId) => lerOfertaRelampago(get, msg.promocao_id, itemId),
 
     async gravarLote(linhas: LinhaItem[]) {
       const { error } = await admin.from('ml_promocao_itens').upsert(linhas.map((l) => ({

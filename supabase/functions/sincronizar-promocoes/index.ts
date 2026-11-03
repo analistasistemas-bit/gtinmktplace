@@ -16,6 +16,9 @@ import { depsLeitura, depsLista } from '../_shared/promocoes/deps.ts';
 
 // maxItens: a 11.11 da Avil caiu por CPU (546) com ~220 anúncios numa mensagem (04/10/2026).
 const LEITURA = { limiteMs: 90_000, lote: 20, concorrencia: 6, maxItens: 100 };
+// Relâmpago (ADR-0173): +1 GET por convidado (visão por item) e a faixa preenchida ativa o "até quanto descer"
+// (até ~8 tarifas por variação). Teto menor por mensagem; a continuação pelo cursor cobre o resto. Medir na Task 7.
+const MAX_ITENS_RELAMPAGO = 40;
 const THROTTLE_MS = 2 * 60_000;
 const TRAVA_LISTA_MS = 5 * 60_000;
 
@@ -80,7 +83,8 @@ Deno.serve(async (req) => {
       if (payload.etapa === 'promocao') {
         const cx = await conexaoDaOrg(admin, payload.org_id);
         if (!cx) return json({ ok: false, erro: 'sem conexão' });
-        const r = await sincronizarPromocao(depsLeitura(admin, cx, payload as MsgLeitura), payload as MsgLeitura, LEITURA);
+        const r = await sincronizarPromocao(depsLeitura(admin, cx, payload as MsgLeitura), payload as MsgLeitura,
+          payload.tipo === 'LIGHTNING' ? { ...LEITURA, maxItens: MAX_ITENS_RELAMPAGO } : LEITURA);
         return json({ ok: true, ...r });
       }
       // ADR-0171: falha de conexão na etapa 'lista' devolve 500 só aqui (ramo QStash) — o
