@@ -1,8 +1,10 @@
 // ADR-0174 — barra de ação fixa no rodapé quando há seleção no detalhe da campanha.
 import { Button } from '@/components/ui/button';
 
-export function BarraSelecao({ convidados, participando, onAderir, onSair, onLimpar }: {
+export function BarraSelecao({ convidados, participando, onAderir, onSair, onLimpar, onAlterar }: {
   convidados: number; participando: number; onAderir: () => void; onSair: () => void; onLimpar: () => void;
+  /** Emenda 2026-11-03: alterar o preço de quem já participa (só campanha DEAL; ausente = sem o botão). */
+  onAlterar?: () => void;
 }) {
   const total = convidados + participando;
   if (total === 0) return null;
@@ -11,10 +13,11 @@ export function BarraSelecao({ convidados, participando, onAderir, onSair, onLim
       <p className="text-sm font-medium">
         {total} selecionado{total > 1 ? 's' : ''}
         {convidados > 0 && <span className="text-muted-foreground"> · Aderir {convidados}</span>}
-        {participando > 0 && <span className="text-muted-foreground"> · Sair {participando}</span>}
+        {participando > 0 && <span className="text-muted-foreground"> · {onAlterar ? 'Alterar preço ou sair' : 'Sair'} {participando}</span>}
       </p>
       <div className="flex items-center gap-2">
         {convidados > 0 && <Button size="sm" onClick={onAderir}>Aderir {convidados}</Button>}
+        {participando > 0 && onAlterar && <Button size="sm" onClick={onAlterar}>Alterar preço {participando}</Button>}
         {participando > 0 && <Button size="sm" variant="outline" onClick={onSair}>Sair {participando}</Button>}
         <Button size="sm" variant="ghost" onClick={onLimpar}>Limpar</Button>
       </div>

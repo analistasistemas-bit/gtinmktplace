@@ -78,6 +78,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
 - Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
 
+### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)
+
+- "Alterar preço N" na aba **Em promoção** (com busca título/MLB/SKU) e na aba **Participando** da campanha; mesmo painel da adesão (Desconto % / Preço R$ → Aplicar a todos, recebe·lucro·margem do servidor).
+- ML: `PUT /seller-promotions/items/{id}` com o novo `deal_price` — não sai da promoção (spike Zaven 03/11). Relâmpago: sair e reaplicar; SMART: preço do ML.
+- Reverter volta ao preço que o ML tinha antes (gravado no momento da escrita); se o preço mudou depois, o item fica "Mudou".
+
 ### Busca + mesmo preço/desconto por produto (emenda 2026-11-03)
 
 - Campo de busca no detalhe da campanha (título, MLB ou SKU, sem acento/caixa); "Selecionar todos" marca só o resultado — atalho para "o produto e todas as variações".

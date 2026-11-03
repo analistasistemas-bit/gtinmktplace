@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { semaforoNoPreco, semaforoReal, validarPedido, type LinhaCentral } from '../validar.ts';
+import { reversaoAlterarValida, semaforoNoPreco, semaforoReal, validarPedido, type LinhaCentral } from '../validar.ts';
 import type { ProjecaoCor, Semaforo } from '../../promocoes/tipos.ts';
 
 // 12% de comissão, 8% de imposto, sem frete: líquido = 0,8 × preço. Custo 10, piso 12.
@@ -9,7 +9,7 @@ const cor = (o: Partial<ProjecaoCor> = {}): ProjecaoCor => ({
   liquido: 12, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde', motivo: null, ...o,
 });
 const linha = (o: Partial<LinhaCentral> = {}): LinhaCentral => ({
-  ml_item_id: 'MLB1', status: 'candidate', titulo: 'Caneca', preco_min: 7, preco_max: 18.99,
+  ml_item_id: 'MLB1', status: 'candidate', titulo: 'Caneca', preco_original: 20, preco_min: 7, preco_max: 18.99,
   preco_sugerido: 15, preco_promo: null, preco_avaliado: 15, projecao: [cor()], ...o,
 });
 const central = (...ls: LinhaCentral[]) => new Map(ls.map((l) => [l.ml_item_id, l]));
@@ -117,5 +117,56 @@ describe('validarPedido', () => {
       { ml_item_id: 'MLB1', motivo: 'Anúncio repetido no pedido' },
       { ml_item_id: 'MLB9', motivo: 'O anúncio não está nesta promoção na Central' },
     ]);
+  });
+});
+
+// Achado Codex P1: Reverter de alterar_preco validado no servidor contra a origem.
+describe('reversaoAlterarValida', () => {
+  const origem = [
+    { ml_item_id: 'A', status: 'aplicado', preco: 43.9, preco_anterior: 49.9 },
+    { ml_item_id: 'B', status: 'erro', preco: 43.9, preco_anterior: 49.9 },
+    { ml_item_id: 'C', status: 'aplicado', preco: 43.9, preco_anterior: null },
+  ];
+  it('item aplicado da origem, no preço anterior → aceito com o preço que a origem deixou como esperado', () => {
+    expect(reversaoAlterarValida([{ ml_item_id: 'A', preco: 49.9 }], origem))
+      .toEqual({ esperados: new Map([['A', 43.9]]), recusas: [] });
+  });
+  it('fora da origem, não aplicado, sem preço anterior ou preço diferente do anterior → recusa', () => {
+    const r = reversaoAlterarValida(
+      [{ ml_item_id: 'X', preco: 10 }, { ml_item_id: 'B', preco: 49.9 }, { ml_item_id: 'C', preco: 49.9 }, { ml_item_id: 'A', preco: 45 }], origem);
+    expect(r.recusas).toEqual([
+      { ml_item_id: 'X', motivo: 'O anúncio não foi alterado pela operação de origem' },
+      { ml_item_id: 'B', motivo: 'O anúncio não foi alterado pela operação de origem' },
+      { ml_item_id: 'C', motivo: 'Sem preço anterior registrado para reverter' },
+      { ml_item_id: 'A', motivo: 'O Reverter volta ao preço anterior (49,90)' },
+    ]);
+  });
+});
+
+// Emenda ADR-0174 (2026-11-03): alterar o preço de item DEAL participando (faixa não existe para participante).
+describe('validarPedido — alterar_preco', () => {
+  const part = (o: Partial<LinhaCentral> = {}) => linha({ status: 'started', preco_min: null, preco_max: null, preco_promo: 16, preco_avaliado: 16, ...o });
+  const exatoVerde = vi.fn(async () => 'verde' as Semaforo);
+
+  it('participando DEAL: aceita, preço normalizado a centavos e semáforo exato no preço novo', async () => {
+    const r = await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 15.004 }], central(part()), exatoVerde);
+    expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 15, semaforo: 'verde', confirmado_risco: false }] });
+  });
+  it('não DEAL, convidado, sem preço ou preço ≥ original → recusa com motivo', async () => {
+    expect(await validarPedido('alterar_preco', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 15 }], central(part()), exatoVerde))
+      .toMatchObject({ ok: false, itens: [{ motivo: 'Só campanhas tradicionais aceitam alterar o preço' }] });
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 15 }], central(linha()), exatoVerde))
+      .toMatchObject({ ok: false, itens: [{ motivo: 'O anúncio não está Participando desta promoção' }] });
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 0 }], central(part()), exatoVerde))
+      .toMatchObject({ ok: false, itens: [{ motivo: 'Informe o preço da oferta' }] });
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 20 }], central(part()), exatoVerde))
+      .toMatchObject({ ok: false, itens: [{ motivo: 'O preço da promoção precisa ser menor que o original (20,00)' }] });
+  });
+  it('trava financeira: vermelho sem risco confirmado → recusa; com risco → aceita', async () => {
+    const exatoVermelho = vi.fn(async () => 'vermelho' as Semaforo);
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 11 }], central(part()), exatoVermelho))
+      .toMatchObject({ ok: false, itens: [{ semaforo: 'vermelho' }] });
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 11, confirmado_risco: true }], central(part()), exatoVermelho))
+      .toMatchObject({ ok: true });
   });
 });

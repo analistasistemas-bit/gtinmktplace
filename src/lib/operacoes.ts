@@ -3,7 +3,8 @@ import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
 import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
-export type AcaoPromocao = 'aderir' | 'sair';
+/** `alterar_preco` (emenda 2026-11-03): PUT do deal_price de item DEAL já participando. */
+export type AcaoPromocao = 'aderir' | 'sair' | 'alterar_preco';
 export { ehTipoOperavel, type TipoPromocaoOperavel };
 export type AcaoStatus = 'pausar' | 'reativar';
 export type AcaoOperacao = AcaoPromocao | AcaoStatus | 'reajustar';
@@ -56,15 +57,21 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
  *  naquele preço; com simulação ativa, item não simulado vem desmarcado (nunca adesão com outro preço às cegas). */
 export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], simulados?: Map<string, number>): LinhaPreview[] {
   // Achado Codex (diff): mapa vazio (todos ignorados) ainda é simulação ativa — nada sai marcado no sugerido.
-  const comSimulacao = acao === 'aderir' && simulados != null;
+  const comSimulacao = (acao === 'aderir' || acao === 'alterar_preco') && simulados != null;
   return itens.map((it) => {
-    const padrao = acao === 'sair' ? it.preco_promo : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
+    // Alterar: parte do preço vigente da oferta; aderir: sugerido (DEAL/Relâmpago) ou o da oferta (SMART).
+    const padrao = acao === 'sair' ? it.preco_promo
+      : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
+      : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
       ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), mlb: mlbExibido(it), titulo: it.titulo, preco, estoqueMin: it.estoque_min, min: it.preco_min, max: it.preco_max,
       sugerido: it.preco_sugerido, ateQuanto: ateQuantoDaLinha(it).valor, semaforo,
-      marcado: acao === 'sair' ? true : semaforo === 'verde' && (!comSimulacao || simulados.has(it.ml_item_id)),
+      // Sair e alterar: o operador escolheu os itens (o risco é confirmado à parte); aderir: só o verde.
+      marcado: acao === 'sair' ? true
+        : acao === 'alterar_preco' ? !comSimulacao || simulados.has(it.ml_item_id)
+        : semaforo === 'verde' && (!comSimulacao || simulados.has(it.ml_item_id)),
     };
   });
 }
@@ -96,6 +103,7 @@ export function inversa(a: AcaoOperacao): AcaoOperacao {
   switch (a) {
     case 'aderir': return 'sair';
     case 'sair': return 'aderir';
+    case 'alterar_preco': return 'alterar_preco'; // reverte com outra alteração, de volta ao preço anterior
     case 'pausar': return 'reativar';
     case 'reativar': return 'pausar';
     case 'reajustar': return 'reajustar';
@@ -115,6 +123,7 @@ export function tituloOperacao(
   if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Reajustar preço de ${anuncios}`;
   if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${anuncios}`;
   const nome = op.promocao_nome ?? op.promocao_id ?? '';
+  if (op.acao === 'alterar_preco') return `${op.origem_id ? 'Reverter preço' : 'Alterar preço'} em ${nome}`;
   return `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${nome}`;
 }
 

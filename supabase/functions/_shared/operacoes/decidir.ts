@@ -51,11 +51,32 @@ function sairRelampago(promocaoId: string, fresco: ItemNaCampanha | null): Decis
   };
 }
 
+const centavos = (n: number) => Math.round(n * 100);
+
+/** Alterar preço (emenda 2026-11-03): só DEAL aceita PUT do deal_price (Relâmpago/SMART: sair e reaplicar / preço do
+ *  ML). Idempotente pelo preço vivo; no Reverter, preço vivo ≠ o que a origem deixou → não sobrescreve. */
+function alterarPreco(
+  tipo: TipoPromocao, promocaoId: string, pedido: PedidoItem, fresco: ItemNaCampanha | null, participando: boolean,
+): Decisao {
+  if (tipo !== 'DEAL') return fim('bloqueado', 'Só campanhas tradicionais aceitam alterar o preço; saia e entre de novo');
+  if (!participando) return fim('mudou', 'O anúncio não está mais participando desta promoção');
+  const p = pedido.preco;
+  if (p == null || !(p > 0)) return fim('erro', 'Informe o preço da oferta');
+  const vivo = fresco!.preco ?? null;
+  if (vivo != null && centavos(vivo) === centavos(p)) return fim('ja_estava');
+  if (pedido.esperado != null && (vivo == null || centavos(vivo) !== centavos(pedido.esperado))) {
+    return fim('mudou', 'O preço mudou desde a alteração original');
+  }
+  return { tipo: 'put', body: { promotion_id: promocaoId, promotion_type: 'DEAL', deal_price: p } };
+}
+
 export function decidir(
   acao: Acao, tipo: TipoPromocao, promocaoId: string, pedido: PedidoItem,
   fresco: ItemNaCampanha | null, relacoes: Relacoes | null, oferta?: OfertaNoItem | null,
 ): Decisao {
   const participando = fresco !== null && ehParticipando(fresco.status);
+
+  if (acao === 'alterar_preco') return alterarPreco(tipo, promocaoId, pedido, fresco, participando);
 
   if (acao === 'sair') {
     if (tipo === 'LIGHTNING') return sairRelampago(promocaoId, fresco);

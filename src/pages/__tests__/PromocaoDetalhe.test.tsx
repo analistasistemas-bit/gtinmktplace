@@ -132,6 +132,22 @@ describe('PromocaoDetalhe', () => {
     expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
   });
 
+  // Emenda 2026-11-03: alterar o preço de quem já participa (DEAL) a partir da aba Participando.
+  it('Participando (DEAL): Alterar preço N abre o painel de alteração', async () => {
+    const user = userEvent.setup();
+    const participa = { ...item, ml_item_id: 'MLB2', status: 'started', preco_promo: 49.9, preco_avaliado: 49.9, titulo: 'Jaqueta' } as ItemPromocao;
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [participa], isLoading: false } as never);
+    fns.invoke.mockResolvedValue({ data: { itens: [] }, error: null });
+    renderDetalhe();
+    await user.click(screen.getByRole('tab', { name: 'Participando' }));
+    const tabela = within(screen.getByRole('region', { name: 'Tabela de dados' }));
+    await user.click(tabela.getByLabelText('Selecionar MLB2'));
+    await user.click(screen.getByRole('button', { name: 'Alterar preço 1' }));
+    expect(within(screen.getByRole('dialog')).getByText('Alterar preço em Campanha teste')).toBeTruthy();
+    fns.invoke.mockReset();
+  });
+
   // Emenda ADR-0174 (2026-11-03): busca + mesmo desconto/preço para um produto e suas variações.
   describe('busca e simulação', () => {
     const short = { ...item, ml_item_id: 'MLB1', titulo: 'Short Linho Azul' } as ItemPromocao;

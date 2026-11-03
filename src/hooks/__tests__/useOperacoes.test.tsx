@@ -130,7 +130,7 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     limitMock.mockResolvedValue({ data: [], error: null });
     const { result: r1 } = montar('promocao');
     await waitFor(() => expect(r1.current.isSuccess).toBe(true));
-    expect(inMock).toHaveBeenCalledWith('acao', ['aderir', 'sair']);
+    expect(inMock).toHaveBeenCalledWith('acao', ['aderir', 'sair', 'alterar_preco']);
     expect(inLimitMock).toHaveBeenCalledWith(50); // limit no builder retornado por .in
     expect(listaOrderMock).not.toHaveBeenCalled(); // o builder original não é usado depois do .in
     inMock.mockClear();

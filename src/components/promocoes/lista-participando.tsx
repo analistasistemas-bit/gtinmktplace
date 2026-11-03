@@ -2,8 +2,10 @@
 import { ehTipoOperavel } from '@/lib/operacoes';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgePercent, ExternalLink } from 'lucide-react';
+import { BadgePercent, ExternalLink, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { filtrarPorBusca } from '@/lib/promocao-simulacao';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,9 +22,15 @@ import { PreviewOperacao } from './preview-operacao';
 export function ListaParticipando() {
   const promocoes = usePromocoes();
   const participacoes = useParticipacoes();
+  const [busca, setBusca] = useState('');
   const grupos = useMemo(
     () => agruparParticipacoes(participacoes.data ?? [], promocoes.data ?? [], Date.now()),
     [participacoes.data, promocoes.data],
+  );
+  // Busca (título/MLB/SKU) em todas as campanhas: bloco sem resultado some; ações agem sobre o visível marcado.
+  const filtrados = useMemo(
+    () => grupos.map((g) => ({ ...g, itens: filtrarPorBusca(g.itens, busca) as Participacao[] })).filter((g) => g.itens.length > 0),
+    [grupos, busca],
   );
 
   if (promocoes.isLoading || participacoes.isLoading) {
@@ -32,13 +40,32 @@ export function ListaParticipando() {
     return <EmptyState icon={BadgePercent} title="Não foi possível carregar os anúncios em promoção." description="Tente atualizar a página." className="mt-4" />;
   }
   if (grupos.length === 0) return <EmptyState icon={BadgePercent} title="Nenhum anúncio em promoção." className="mt-4" />;
-  return <div className="mt-4 flex flex-col gap-4">{grupos.map((g) => <BlocoCampanha key={g.promocao.promocao_id} grupo={g} />)}</div>;
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="relative w-full sm:max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, MLB ou SKU"
+          aria-label="Buscar anúncios em promoção" className="pl-9 pr-9" />
+        {busca && (
+          <button type="button" onClick={() => setBusca('')} aria-label="Limpar busca"
+            className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+            <X className="size-4" aria-hidden />
+          </button>
+        )}
+      </div>
+      {filtrados.length === 0
+        ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio em promoção com essa busca.</p>
+        : filtrados.map((g) => <BlocoCampanha key={g.promocao.promocao_id} grupo={g} />)}
+    </div>
+  );
 }
 
 function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
   const { promocao: p, itens, operavel } = grupo;
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
-  const [saindo, setSaindo] = useState<Participacao[] | null>(null);
+  const [preview, setPreview] = useState<{ acao: 'sair' | 'alterar_preco'; itens: Participacao[] } | null>(null);
+  // Alterar o preço da oferta só existe em campanha tradicional (PUT do deal_price — spike 03/11).
+  const podeAlterar = operavel && p.tipo === 'DEAL';
   const nome = p.nome ?? rotuloTipo(p.tipo);
   const tituloId = `campanha-${p.promocao_id}`;
   const marcados = itens.filter((i) => selecionados.has(i.ml_item_id));
@@ -69,7 +96,14 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
           </div>
         </div>
         {operavel ? (
-          marcados.length > 0 && <Button size="sm" variant="outline" onClick={() => setSaindo(marcados)}>Sair {marcados.length}</Button>
+          marcados.length > 0 && (
+            <div className="flex items-center gap-2">
+              {podeAlterar && (
+                <Button size="sm" onClick={() => setPreview({ acao: 'alterar_preco', itens: marcados })}>Alterar preço {marcados.length}</Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setPreview({ acao: 'sair', itens: marcados })}>Sair {marcados.length}</Button>
+            </div>
+          )
         ) : (
           <Button asChild size="sm" variant="ghost">
             <a href={URL_PROMOCOES_ML} target="_blank" rel="noreferrer">Gerenciar no Mercado Livre <ExternalLink className="size-4" aria-hidden /></a>
@@ -81,8 +115,8 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
       </ul>
       {operavel && (
         <PreviewOperacao
-          acao="sair" tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
-          itens={saindo ?? []} aberto={saindo != null} onClose={() => setSaindo(null)} onSucesso={() => setSelecionados(new Set())}
+          acao={preview?.acao ?? 'sair'} tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
+          itens={preview?.itens ?? []} aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => setSelecionados(new Set())}
         />
       )}
     </section>

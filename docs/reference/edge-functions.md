@@ -108,6 +108,7 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||

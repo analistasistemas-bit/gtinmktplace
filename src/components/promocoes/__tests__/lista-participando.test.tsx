@@ -90,4 +90,29 @@ describe('ListaParticipando', () => {
     renderLista();
     expect(screen.getByText('Nenhum anúncio em promoção.')).toBeTruthy();
   });
+
+  // Emenda 2026-11-03: busca + "Alterar preço" em massa (só DEAL).
+  it('busca filtra os blocos; "Selecionar todos" marca só o resultado; Alterar preço abre o preview certo', async () => {
+    renderLista();
+    await userEvent.type(screen.getByLabelText('Buscar anúncios em promoção'), 'mascara');
+    expect(screen.queryByRole('heading', { name: 'Campanha do ML' })).toBeNull();
+    const bloco = screen.getByRole('region', { name: '10.10' });
+    expect(within(bloco).queryByText('Shampoo')).toBeNull();
+    await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar todos de 10.10' }));
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Alterar preço 1' }));
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({
+      acao: 'alterar_preco', promocaoId: 'D', tipo: 'DEAL', itens: [expect.objectContaining({ ml_item_id: 'MLB7' })],
+    }));
+  });
+
+  it('busca sem resultado avisa; Relâmpago não oferece Alterar preço (o ML exige sair e entrar de novo)', async () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo({ promocao_id: 'L', tipo: 'LIGHTNING', nome: 'Relâmpago X' })], isLoading: false } as never);
+    vi.mocked(useParticipacoes).mockReturnValue({ data: [part({ promocao_id: 'L', ml_item_id: 'MLB3' })], isLoading: false } as never);
+    renderLista();
+    const bloco = screen.getByRole('region', { name: 'Relâmpago X' });
+    await userEvent.click(within(bloco).getByRole('checkbox', { name: 'Selecionar MLB3' }));
+    expect(within(bloco).queryByRole('button', { name: /Alterar preço/ })).toBeNull();
+    await userEvent.type(screen.getByLabelText('Buscar anúncios em promoção'), 'zzz');
+    expect(screen.getByText('Nenhum anúncio em promoção com essa busca.')).toBeTruthy();
+  });
 });

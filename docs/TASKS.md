@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Promoções: alterar o preço de quem já participa (DEAL) — 2026-11-03
+
+- [x] Spike autorizado: `PUT /seller-promotions/items/{id}` muda o deal_price sem sair (Zaven MLB5441057075 → R$ 43,90).
+- [x] Ação `alterar_preco` (migration `20261103151129`), executor com etapa durável/preço anterior/PUT incerto, Reverter validado no servidor.
+- [x] "Alterar preço N" com busca na aba Em promoção e na aba Participando (Desconto %/Preço R$ + lucro exato).
+- [ ] Diego: primeira alteração em massa real (ex.: 13 jaquetas restantes a R$ 43,90).
+
 ## Promoções: busca + mesmo preço/desconto para produto e variações (emenda ADR-0174) — 2026-11-03
 
 - [x] Busca no detalhe da campanha (título/MLB/SKU); "Selecionar todos" vale para o resultado.

@@ -88,17 +88,25 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   useEffect(() => {
     geracao.current++;
     if (!aberto) return;
-    setLinhas(construirLinhas(acao, tipo, itens, naoRevertiveis, simulados));
+    const novas = construirLinhas(acao, tipo, itens, naoRevertiveis, simulados);
+    setLinhas(novas);
     setConfirmadoRisco(false);
+    // Achado Codex P2 (alterar preço): preço inicial sem cálculo válido (Reverter, simulação parcial) já abre
+    // calculando no servidor — nunca mostra o lucro de outro preço.
+    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recomeça só quando o preview muda (podeEditarPreco deriva de acao/tipo)
   }, [aberto, acao, tipo, itens, naoRevertiveis, simulados]);
 
-  const podeEditarPreco = acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING');
+  // Alterar preço (emenda 2026-11-03): só campanhas tradicionais aceitam PUT do deal_price.
+  const podeEditarPreco = (acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING')) || (acao === 'alterar_preco' && tipo === 'DEAL');
+  const originalDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.preco_original ?? null;
+  const acimaDoOriginal = (l: LinhaEditavel) => acao === 'alterar_preco' && l.preco != null && originalDe(l.ml_item_id) != null && l.preco >= originalDe(l.ml_item_id)!;
   const minimoRelampago = (l: LinhaEditavel) => tipo === 'LIGHTNING' && l.preco != null && l.preco < PRECO_MINIMO_RELAMPAGO;
   const marcadas = linhas.filter((l) => l.marcado);
   const risco = precisaConfirmarRisco(acao, linhas);
   const temRisco = risco.vermelho + risco.indisponivel > 0;
   const semFaixa = (l: LinhaEditavel) => tipo === 'LIGHTNING' && (l.min == null || l.max == null);
-  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || semFaixa(l) || minimoRelampago(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
+  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || l.preco <= 0 || semFaixa(l) || minimoRelampago(l) || acimaDoOriginal(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
   function alternarMarcado(id: string) {
@@ -151,7 +159,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
         if (g === geracao.current) toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
         return;
       }
-      if (g !== geracao.current) return;
+      if (g !== geracao.current || !Array.isArray(res)) return;
       const pedido = new Map(lote.map((p) => [p.ml_item_id, p.preco]));
       const porId = new Map(res.map((r) => [r.ml_item_id, r]));
       // Resposta (inclusive "ignorado") só vale para a linha que ainda está no preço pedido.
@@ -197,7 +205,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     }
   }
 
-  const titulo = acao === 'aderir' ? `Aderir à ${promocaoNome}` : `Sair de ${promocaoNome}`;
+  const titulo = acao === 'aderir' ? `Aderir à ${promocaoNome}`
+    : acao === 'alterar_preco' ? `${origemId ? 'Reverter preço' : 'Alterar preço'} em ${promocaoNome}`
+    : `Sair de ${promocaoNome}`;
 
   return (
     <Sheet open={aberto} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -299,6 +309,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                       <p className="text-xs text-danger">{l.avisoCalculo}</p>
                     ) : null}
                     {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
+                    {acimaDoOriginal(l) && <span className="text-xs text-danger">Precisa ser menor que o preço original ({fmtBRL(originalDe(l.ml_item_id)!)})</span>}
                     {tipo === 'LIGHTNING' && <span className={cn('text-xs', minimoRelampago(l) ? 'text-danger' : 'text-muted-foreground')}>Mínimo R$ 19,00 (frete grátis)</span>}
                     {tipo === 'LIGHTNING' && l.estoqueMin != null && <span className="text-xs text-muted-foreground">Reserva {l.estoqueMin} un.</span>}
                   </div>

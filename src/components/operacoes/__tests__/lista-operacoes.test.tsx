@@ -225,6 +225,31 @@ describe('ListaOperacoes', () => {
     }));
   });
 
+  // Emenda 2026-11-03: Reverter de alterar preço = outra alteração, de volta ao preço que a origem leu no ML.
+  it('Reverter de alterar preço: preview de alterar com o preço anterior; sem preço anterior → não revertível', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'alterar_preco', itens: [{ status: 'aplicado' }, { status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [
+      itemLog({ ml_item_id: 'MLB1', status: 'aplicado', preco: 43.9, preco_anterior: 49.9 } as never),
+      itemLog({ ml_item_id: 'MLB2', status: 'aplicado', preco: 43.9, preco_anterior: null } as never),
+    ] } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [
+      itemCentral({ ml_item_id: 'MLB1', status: 'started', preco_promo: 43.9, preco_avaliado: 43.9 }),
+      itemCentral({ ml_item_id: 'MLB2', status: 'started', preco_promo: 43.9, preco_avaliado: 43.9 }),
+    ] } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Alterar preço em Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+
+    expect(screen.getByText('Reverter preço em Campanha X')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preço de MLB1')).toHaveValue('49,90');
+    expect(screen.getByLabelText('Selecionar MLB2')).toBeDisabled();
+    expect(screen.getByText('Sem preço anterior registrado para reverter')).toBeInTheDocument();
+  });
+
   it('Reverter de sair LIGHTNING abre aderir com tipo LIGHTNING, preço sugerido editável e bloqueio < R$ 19', async () => {
     const user = userEvent.setup();
     vi.mocked(useOperacoes).mockReturnValue({

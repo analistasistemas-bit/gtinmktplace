@@ -34,16 +34,23 @@ describe('simular', () => {
     expect(r).toEqual([{ ml_item_id: 'MLB1', status: 'simulado', preco: 63.5, projecao: [expect.anything()], pior_semaforo: 'verde' }]);
   });
 
-  it('fora da Central, não convidado ou sem faixa do ML → ignorado com motivo, sem projetar', async () => {
+  it('fora da Central, encerrado ou convidado sem faixa do ML → ignorado com motivo, sem projetar', async () => {
     let chamadas = 0;
     const r = await simular(
-      [{ ml_item_id: 'X', preco: 50 }, { ml_item_id: 'P', preco: 50 }, { ml_item_id: 'F', preco: 50 }],
-      central(linha({ ml_item_id: 'P', status: 'started' }), linha({ ml_item_id: 'F', preco_min: null, preco_max: null })),
+      [{ ml_item_id: 'X', preco: 50 }, { ml_item_id: 'E', preco: 50 }, { ml_item_id: 'F', preco: 50 }],
+      central(linha({ ml_item_id: 'E', status: 'finished' }), linha({ ml_item_id: 'F', preco_min: null, preco_max: null })),
       async (l, p) => { chamadas++; return projetarOk(l, p); },
     );
     expect(chamadas).toBe(0);
-    expect(r.map((x) => [x.ml_item_id, x.status])).toEqual([['X', 'ignorado'], ['P', 'ignorado'], ['F', 'ignorado']]);
+    expect(r.map((x) => [x.ml_item_id, x.status])).toEqual([['X', 'ignorado'], ['E', 'ignorado'], ['F', 'ignorado']]);
     expect(r[2]).toMatchObject({ motivo: 'O ML não informou a faixa de preço deste anúncio' });
+  });
+
+  // Emenda 2026-11-03 (alterar preço): participante simula sem faixa (o ML não a informa para quem já participa).
+  it('participando (started/pending) sem faixa → simula', async () => {
+    const r = await simular([{ ml_item_id: 'P', preco: 43.9 }],
+      central(linha({ ml_item_id: 'P', status: 'started', preco_min: null, preco_max: null })), projetarOk);
+    expect(r[0]).toMatchObject({ ml_item_id: 'P', status: 'simulado', preco: 43.9 });
   });
 
   it('falha da projeção (ML/tarifa) ou sem alíquota → ignorado; nunca líquido inventado', async () => {

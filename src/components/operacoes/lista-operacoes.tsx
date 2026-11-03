@@ -70,13 +70,20 @@ function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentra
   const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));
   const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));
   const naoRevertiveis = new Map<string, string>();
+  // Alterar preço (emenda 2026-11-03): reverte com outra alteração, de volta ao preço que a origem leu no ML.
+  const simulados = acao === 'alterar_preco' ? new Map<string, number>() : undefined;
   const itens = ids.map((id) => {
     const atual = itemAtualOuStub(id, porCentral, porLog.get(id)!);
     const ok = acaoNova === 'aderir' ? atual.status === 'candidate' : atual.status === 'started' || atual.status === 'pending';
     if (!ok) naoRevertiveis.set(id, MOTIVO_NAO_REVERTIVEL);
+    if (simulados) {
+      const anterior = porLog.get(id)?.preco_anterior;
+      if (anterior == null) naoRevertiveis.set(id, 'Sem preço anterior registrado para reverter');
+      else simulados.set(id, Number(anterior));
+    }
     return atual;
   });
-  return { acaoNova, itens, naoRevertiveis };
+  return { acaoNova, itens, naoRevertiveis, simulados };
 }
 
 function contarPorStatus(itens: { status: StatusItemOperacao }[]): Partial<Record<StatusItemOperacao, number>> {
@@ -324,6 +331,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
           acao={reversaoAtiva.acaoNova} tipo={ehTipoOperavel(reversaoAtiva.op.promocao_tipo) ? reversaoAtiva.op.promocao_tipo : 'DEAL'}
           promocaoId={reversaoAtiva.op.promocao_id ?? ''} promocaoNome={reversaoAtiva.op.promocao_nome ?? reversaoAtiva.op.promocao_id ?? ''}
           itens={reversaoAtiva.itens} origemId={reversaoAtiva.op.id} naoRevertiveis={reversaoAtiva.naoRevertiveis}
+          simulados={reversaoAtiva.simulados}
           aberto onClose={fecharPreviewReversao} onSucesso={fecharPreviewReversao}
         />
       )}

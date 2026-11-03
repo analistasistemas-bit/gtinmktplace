@@ -2,6 +2,7 @@
 // Puro: a projeção no preço (tarifa/frete daquele preço, mesmo caminho do sync e da trava) entra por parâmetro.
 // Só leitura — nada é gravado no banco nem no ML.
 import { emParalelo, MSG_ALIQUOTA } from '../promocoes/sincronizar.ts';
+import { ehParticipando } from '../promocoes/projecao.ts';
 import type { ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import type { LinhaCentral } from './validar.ts';
 
@@ -35,9 +36,11 @@ export function simular(
   return emParalelo(itens, CONCORRENCIA, async ({ ml_item_id, preco }): Promise<ResultadoSimulacao> => {
     const ignorar = (motivo: string) => ({ ml_item_id, status: 'ignorado' as const, motivo });
     const l = central.get(ml_item_id);
-    if (!l || l.status !== 'candidate') return ignorar('O anúncio não está como Convidado nesta promoção');
-    // Sem faixa o executor recusa a adesão (validar.ts) — não há o que simular.
-    if (l.preco_min == null || l.preco_max == null) return ignorar('O ML não informou a faixa de preço deste anúncio');
+    const participando = l != null && ehParticipando(l.status);
+    if (!l || (l.status !== 'candidate' && !participando)) return ignorar('O anúncio não está como Convidado nem Participando nesta promoção');
+    // Convidado sem faixa: o executor recusa a adesão (validar.ts). Participante nunca tem faixa (alterar preço:
+    // o ML valida o preço) — simula mesmo assim.
+    if (!participando && (l.preco_min == null || l.preco_max == null)) return ignorar('O ML não informou a faixa de preço deste anúncio');
     try {
       const r = await projetar(l, preco);
       if (!r) return ignorar(MSG_ALIQUOTA);

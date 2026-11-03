@@ -115,13 +115,15 @@ export default function PromocaoDetalhe() {
   useEffect(() => { setSelecionados(new Set()); setPreview(null); setBusca(''); limparSimulacao(); }, [promocaoId]);
 
   const podeSelecionar = promo != null && ehTipoOperavel(promo.tipo) && promo.status !== 'finished';
-  // Preço escolhido só existe em DEAL/Relâmpago (SMART: preço do ML) e só para convidados (participando não adere).
-  const podeSimular = podeSelecionar && (promo.tipo === 'DEAL' || promo.tipo === 'LIGHTNING') && !participando;
+  // Preço escolhido: convidados de DEAL/Relâmpago (aderir) e participantes de DEAL (alterar preço — emenda 2026-11-03).
+  // SMART: preço do ML; Relâmpago participando: o ML exige sair e entrar de novo.
+  const podeSimular = podeSelecionar && (participando ? promo.tipo === 'DEAL' : promo.tipo === 'DEAL' || promo.tipo === 'LIGHTNING');
+  const podeAlterar = podeSelecionar && promo.tipo === 'DEAL';
   // Achado Codex (diff): sobre o item ATUAL (refetch traz status/faixa/reserva novos), só preço, projeção e semáforo
-  // simulados — e só enquanto ainda é convidado (virou participando → a simulação não vale mais).
+  // simulados — e só enquanto o item mantém o status de quando foi simulado (mudou → a simulação não vale mais).
   const itensVisao = useMemo(() => (itens.data ?? []).map((i) => {
     const s = simulacao?.itens.get(i.ml_item_id);
-    return s && i.status === 'candidate' ? sobreporSimulacao(i, s) : i;
+    return s && s.status === i.status ? sobreporSimulacao(i, s) : i;
   }), [itens.data, simulacao]);
   const daAba = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), [itensVisao, participando, busca]);
   const linhas = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), [itensVisao, semaforo, participando, busca]);
@@ -131,6 +133,8 @@ export default function PromocaoDetalhe() {
   const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate');
   const participandoSelecionados = selecionadosItens.filter((i) => i.status === 'started' || i.status === 'pending');
   const todosMarcadosNoFiltro = linhas.length > 0 && linhas.every((r) => selecionados.has(r.ml_item_id));
+  // A simulação age sobre o grupo da aba: convidados (aderir) ou participantes (alterar preço).
+  const alvoSimulacao = participando ? participandoSelecionados : convidadosSelecionados;
 
   const valor = parsePreco(valorTexto);
   async function simularSelecionados() {
@@ -138,7 +142,7 @@ export default function PromocaoDetalhe() {
     const base = new Map((itens.data ?? []).map((i) => [i.ml_item_id, i]));
     const pedidos: { ml_item_id: string; preco: number }[] = [];
     const semPreco: { ml_item_id: string; motivo: string }[] = [];
-    for (const it of convidadosSelecionados) {
+    for (const it of alvoSimulacao) {
       const p = precoAlvo(base.get(it.ml_item_id) ?? it, modo, valor);
       if (p == null) semPreco.push({ ml_item_id: it.ml_item_id, motivo: 'Sem preço original para aplicar o desconto' });
       else pedidos.push({ ml_item_id: it.ml_item_id, preco: p });
@@ -323,24 +327,24 @@ export default function PromocaoDetalhe() {
             />
             <Button
               onClick={simularSelecionados}
-              disabled={valor == null || convidadosSelecionados.length === 0 || simularM.isPending}>
-              {simularM.isPending ? 'Calculando…' : `Simular ${convidadosSelecionados.length || ''}`.trim()}
+              disabled={valor == null || alvoSimulacao.length === 0 || simularM.isPending}>
+              {simularM.isPending ? 'Calculando…' : `Simular ${alvoSimulacao.length || ''}`.trim()}
             </Button>
             {simulacao && <Button variant="ghost" onClick={limparSimulacao}>Limpar simulação</Button>}
           </div>
         )}
       </div>
-      {podeSimular && (simulacao || convidadosSelecionados.length === 0) && (
+      {podeSimular && (simulacao || alvoSimulacao.length === 0) && (
         <p className="-mt-3 text-xs text-muted-foreground">
           {simulacao
             ? <>
                 {simulacao.itens.size} simulado{simulacao.itens.size === 1 ? '' : 's'} com o líquido exato do Mercado Livre
                 {simulacao.ignorados.length > 0 && (
                   <span title={simulacao.ignorados.slice(0, 8).map((i) => `${i.ml_item_id}: ${i.motivo}`).join('\n')} className="text-danger">
-                    {` · ${simulacao.ignorados.length} não simulado${simulacao.ignorados.length === 1 ? '' : 's'} (ficam fora da adesão)`}
+                    {` · ${simulacao.ignorados.length} não simulado${simulacao.ignorados.length === 1 ? '' : 's'} (ficam de fora)`}
                   </span>
                 )}
-                . Aderir usa o preço simulado.
+                {participando ? '. Alterar preço usa o preço simulado.' : '. Aderir usa o preço simulado.'}
               </>
             : `Busque o produto, selecione as variações e aplique o mesmo desconto ou preço (até ${MAX_SIMULAR} por vez).`}
         </p>
@@ -381,6 +385,10 @@ export default function PromocaoDetalhe() {
           setPreview({ acao: 'aderir', itens: convidadosSelecionados });
         }}
         onSair={() => setPreview({ acao: 'sair', itens: participandoSelecionados })}
+        onAlterar={podeAlterar ? () => {
+          if (simularM.isPending) { toast.info('Aguarde a simulação terminar.'); return; }
+          setPreview({ acao: 'alterar_preco', itens: participandoSelecionados });
+        } : undefined}
         onLimpar={() => setSelecionados(new Set())}
       />
       <SheetCores item={aberto} simulado={aberto != null && (simulacao?.precos.has(aberto.ml_item_id) ?? false)} onClose={() => setAberto(null)} />

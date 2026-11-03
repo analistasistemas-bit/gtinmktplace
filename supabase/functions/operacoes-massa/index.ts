@@ -15,7 +15,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { MLApiError } from '../_shared/ml/erro-ml.ts';
 import { conferir, executar, type OperacaoRow } from '../_shared/operacoes/executar.ts';
 import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/executar-status.ts';
-import { MAX_ITENS, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
+import { MAX_ITENS, reversaoAlterarValida, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
 import { lerSimular, MAX_SIMULAR, simular } from '../_shared/operacoes/simular.ts';
 import {
@@ -157,7 +157,7 @@ function lerPedido(x: unknown): Pedido | null {
     }
     return { acao: b.acao, origem_id, itens };
   }
-  if ((b.acao !== 'aderir' && b.acao !== 'sair') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
+  if ((b.acao !== 'aderir' && b.acao !== 'sair' && b.acao !== 'alterar_preco') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
   const itens: ItemPedido[] = [];
   for (const i of b.itens as Record<string, unknown>[]) {
     if (!i || typeof i.ml_item_id !== 'string' || !i.ml_item_id) return null;
@@ -193,12 +193,28 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
   if (!promo) return json({ erro: 'Promoção não encontrada.' }, 404);
   if (!ativa(promo.status)) return json({ erro: 'Esta promoção já terminou.' }, 400);
 
+  // Reverter de alterar_preco: a origem também é alterar_preco (reverte com outra alteração); o resto exige a inversa.
+  let esperados: Map<string, number> | null = null;
   if (pedido.origem_id) {
     const { data: origem, error } = await admin.from('operacoes_massa').select('acao, promocao_id')
       .eq('org_id', orgId).eq('id', pedido.origem_id).maybeSingle();
     if (error) throw new Error(`origem: ${error.message}`);
-    if (!origem || origem.acao === pedido.acao || origem.promocao_id !== pedido.promocao_id) {
+    const alterar = pedido.acao === 'alterar_preco';
+    const acaoOk = alterar ? origem?.acao === 'alterar_preco' : origem?.acao !== pedido.acao;
+    if (!origem || !acaoOk || origem.promocao_id !== pedido.promocao_id) {
       return json({ erro: 'A operação de origem não pode ser revertida por este pedido.' }, 400);
+    }
+    if (alterar) {
+      // Achado Codex P1: itens e preços do Reverter conferidos contra o que a origem realmente alterou.
+      const { data: itensOrigem, error: eO } = await admin.from('operacoes_massa_itens')
+        .select('ml_item_id, status, preco, preco_anterior').eq('org_id', orgId).eq('operacao_id', pedido.origem_id);
+      if (eO) throw new Error(`itens da origem: ${eO.message}`);
+      const r = reversaoAlterarValida(pedido.itens, (itensOrigem ?? []).map((x) => ({
+        ml_item_id: String(x.ml_item_id), status: String(x.status),
+        preco: x.preco == null ? null : Number(x.preco), preco_anterior: x.preco_anterior == null ? null : Number(x.preco_anterior),
+      })));
+      if (r.recusas.length) return json({ erro: 'Alguns anúncios não podem ser revertidos.', itens: r.recusas }, 400);
+      esperados = r.esperados;
     }
   }
 
@@ -234,10 +250,14 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
   return gravarEPublicar(admin, ctx, {
     acao: pedido.acao, promocao_id: pedido.promocao_id, promocao_tipo: promo.tipo,
     promocao_nome: promo.nome, origem_id: pedido.origem_id,
-  }, v.itens.map((i) => ({
-    promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
-    preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
-  })));
+  }, v.itens.map((i) => {
+    const esperado = esperados?.get(i.ml_item_id);
+    return {
+      promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
+      preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
+      ...(esperado != null ? { estado_anterior: { preco_esperado: esperado } } : {}),
+    };
+  }));
 }
 
 const REVERSAO_INVALIDA = 'A operação de origem não pode ser revertida por este pedido.';

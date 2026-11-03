@@ -18,7 +18,7 @@ describe('lerNaCampanha', () => {
     const f = vi.fn().mockResolvedValue(resp(200, naCampanha));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerNaCampanha('P-MLB9', 'SMART', 'MLB1')).toEqual({
-      status: 'candidate', preco_min: 7, preco_max: 18.99, offer_id: 'CANDIDATE-MLB1-772', estoque_min: null,
+      status: 'candidate', preco_min: 7, preco_max: 18.99, offer_id: 'CANDIDATE-MLB1-772', estoque_min: null, preco: 38.79,
     });
     expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/promotions/P-MLB9/items?promotion_type=SMART&item_id=MLB1&app_version=v2`);
     expect(f.mock.calls[0][1]).toMatchObject({ method: 'GET', headers: { Authorization: 'Bearer tok' } });
@@ -29,7 +29,13 @@ describe('lerNaCampanha', () => {
       .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started' }] }));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toBeNull();
-    expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toEqual({ status: 'started', preco_min: null, preco_max: null, offer_id: null, estoque_min: null });
+    expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toEqual({ status: 'started', preco_min: null, preco_max: null, offer_id: null, estoque_min: null, preco: null });
+  });
+
+  // Spike 03/11 (Zaven): no participante, `price` da visão da campanha é o deal_price vigente.
+  it('participante: preco = price da campanha', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', status: 'started', price: 49.9, original_price: 73.25 }] }));
+    expect(await criarClienteML('tok', f, semEspera()).lerNaCampanha('P', 'DEAL', 'MLB1')).toMatchObject({ status: 'started', preco: 49.9 });
   });
 
   it('500, 500, 200 → sucesso depois de 2 esperas de 1 s', async () => {
@@ -79,10 +85,10 @@ describe('lerNaCampanha LIGHTNING', () => {
         original_price: 29.0, min_discounted_price: 8.7, stock: { min: 5, max: 180 } }] }));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
-      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null,
+      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null, preco: 24.65,
     });
     expect(await ml.lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
-      status: 'candidate', preco_min: 8.7, preco_max: null, offer_id: 'CANDIDATE-MLB1-5', estoque_min: 5,
+      status: 'candidate', preco_min: 8.7, preco_max: null, offer_id: 'CANDIDATE-MLB1-5', estoque_min: 5, preco: 28.13,
     });
     expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/promotions/LGH-1/items?promotion_type=LIGHTNING&item_id=MLB1&app_version=v2`);
   });
@@ -110,7 +116,7 @@ describe('lerNaCampanha LIGHTNING', () => {
       { id: 'MLB1', ref_id: 'OFFER-X-1', status: 'pending', stock: { remaining_stock: 5 } },
     ] }));
     expect(await criarClienteML('tok', f, semEspera()).lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
-      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null,
+      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null, preco: null,
     });
   });
 });
@@ -188,6 +194,23 @@ describe('post', () => {
     expect(e).not.toBeInstanceOf(SemEscritaPromocoes);
     expect(e.message).toBe(`ML 400: ${'x'.repeat(200)}`);
     expect(e.message).not.toContain('segredo');
+  });
+});
+
+// Spike 03/11 (Zaven MLB5441057075): PUT → 200 {price, original_price, currency_id}.
+describe('put', () => {
+  it('200 → ok; mesma URL do POST com método PUT e body JSON', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { price: 43.9, original_price: 73.25, currency_id: 'BRL' }));
+    const body = { promotion_id: 'P', promotion_type: 'DEAL', deal_price: 43.9 };
+    await criarClienteML('tok', f, semEspera()).put('MLB1', body);
+    expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/items/MLB1?app_version=v2`);
+    expect(f.mock.calls[0][1]).toMatchObject({ method: 'PUT', body: JSON.stringify(body) });
+  });
+  it('403 → SemEscritaPromocoes; 400 → Error com a message do ML', async () => {
+    const f = vi.fn().mockResolvedValueOnce(resp(403, {})).mockResolvedValueOnce(resp(400, { message: 'deal_price inválido' }));
+    const ml = criarClienteML('tok', f, semEspera());
+    await expect(ml.put('MLB1', {})).rejects.toBeInstanceOf(SemEscritaPromocoes);
+    await expect(ml.put('MLB1', {})).rejects.toThrow('ML 400: deal_price inválido');
   });
 });
 

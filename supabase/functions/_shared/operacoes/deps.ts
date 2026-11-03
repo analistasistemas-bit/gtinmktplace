@@ -20,8 +20,8 @@ import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 
 const ITENS = 'operacoes_massa_itens';
-const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em';
-export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
+const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior';
+export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
 
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
@@ -35,7 +35,7 @@ const numOuNull = (x: unknown) => (x == null ? null : Number(x));
 export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
   return {
     ml_item_id: String(r.ml_item_id), status: String(r.status), titulo: (r.titulo as string | null) ?? null,
-    preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
+    preco_original: numOuNull(r.preco_original), preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
     preco_promo: numOuNull(r.preco_promo), preco_avaliado: numOuNull(r.preco_avaliado),
     projecao: (r.projecao as ProjecaoCor[] | null) ?? [],
   };
@@ -75,7 +75,11 @@ export function criarProjecaoExata(admin: SupabaseClient, cx: Cx): ProjecaoExata
  */
 export function depsLaco(admin: SupabaseClient, op: { id: string; org_id: string }, chave: string): DepsLaco {
   const linhas = (data: unknown): ItemRow[] => ((data ?? []) as Record<string, unknown>[])
-    .map((r) => ({ ...(r as unknown as ItemRow), preco: numOuNull(r.preco) }));
+    .map((r) => ({
+      ...(r as unknown as ItemRow), preco: numOuNull(r.preco), preco_anterior: numOuNull(r.preco_anterior),
+      // Reverter de alterar_preco: o preço que a operação de origem deixou (gravado na criação).
+      preco_esperado: numOuNull((r.estado_anterior as { preco_esperado?: unknown } | null)?.preco_esperado),
+    }));
   const publicar = async (etapa: 'executar' | 'conferir', delay?: number) => {
     await qstashClient().publishJSON({
       url: urlOperacoes(), body: { etapa, operacao_id: op.id }, retries: 3,
@@ -170,12 +174,17 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
         .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).maybeSingle();
       falhou('espelharPreco.ler', error);
       if (!data) return;
-      // Líquido no preço aplicado pelo mesmo caminho da trava; sem projeção, só o preço (nunca preço novo
-      // com líquido velho no preco_avaliado — a tela calcula o líquido sobre ele).
-      const r = await projetar(linhaCentral(data), preco).catch(() => null);
+      // Líquido no preço aplicado pelo mesmo caminho da trava. Sem projeção (achado Codex P2): o preço confirmado
+      // entra com o líquido INDISPONÍVEL — nunca preço novo com líquido velho; o sync recalcula depois.
+      const central = linhaCentral(data);
+      const r = await projetar(central, preco).catch(() => null);
+      const semCalculo = central.projecao.map((c) => ({
+        ...c, comissao_pct: null, comissao_fixa: null, frete: null, aliquota_pct: null,
+        liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'indisponivel' as const, motivo: 'erro_tarifa' as const,
+      }));
       const patch = r
         ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
-        : { preco_promo: preco };
+        : { preco_promo: preco, preco_avaliado: preco, projecao: semCalculo, pior_semaforo: 'indisponivel' };
       // Só se a linha ainda é participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
       const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
         .in('status', ['pending', 'started']);

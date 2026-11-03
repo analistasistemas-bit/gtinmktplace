@@ -202,6 +202,57 @@ describe('PreviewOperacao', () => {
     expect(screen.getByText('Não revertível: o anúncio não está mais convidado/participando')).toBeInTheDocument();
   });
 
+  // Emenda 2026-11-03: alterar o preço de quem já participa (DEAL), em massa.
+  describe('alterar_preco', () => {
+    const participante = (id: string) => item({
+      ml_item_id: id, status: 'started', preco_original: 73.25, preco_promo: 49.9, preco_avaliado: 49.9,
+      preco_min: null, preco_max: null, preco_sugerido: null,
+      projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 32.67 })],
+    });
+
+    it('abre com o preço vigente, todos marcados; Aplicar a todos troca o preço e o envio leva alterar_preco', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockImplementation(async ({ itens }) => itens.map((i: { ml_item_id: string; preco: number }) => ({
+        ml_item_id: i.ml_item_id, status: 'simulado', preco: i.preco, pior_semaforo: 'verde',
+        projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 29, semaforo: 'verde' })],
+      })));
+      renderPreview({ acao: 'alterar_preco', itens: [participante('A'), participante('B')] });
+      expect(screen.getByText('Alterar preço em Campanha X')).toBeInTheDocument();
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('49,90');
+      expect(screen.getByLabelText('Selecionar A')).toBeChecked();
+      await user.type(screen.getByLabelText('Desconto em % para todos'), '40');
+      await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('43,95'); // 73,25 × 0,60
+      await screen.findAllByText(/R\$ 10,50/); // lucro 29 − 18,50 no preço novo, do servidor
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+        acao: 'alterar_preco', promocao_id: 'P1',
+        itens: [expect.objectContaining({ ml_item_id: 'A', preco: 43.95 }), expect.objectContaining({ ml_item_id: 'B', preco: 43.95 })],
+      }));
+    });
+
+    it('preço igual ou acima do original bloqueia o envio', async () => {
+      const user = userEvent.setup();
+      simularAsync.mockReset().mockResolvedValue([]);
+      renderPreview({ acao: 'alterar_preco', itens: [participante('A')] });
+      const campo = screen.getByLabelText('Preço de A');
+      await user.clear(campo);
+      await user.type(campo, '73,25');
+      expect(screen.getByText(/Precisa ser menor que o preço original/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it('Reverter: abre com o preço anterior e calcula o lucro dele no servidor ao abrir', async () => {
+      simularAsync.mockReset().mockResolvedValue([{ ml_item_id: 'A', status: 'simulado', preco: 49.9, pior_semaforo: 'verde',
+        projecao: [cor({ comissao_pct: 14, frete: 8.25, aliquota_pct: 4, custo: 18.5, piso: 28.5, liquido: 32.67 })] }]);
+      renderPreview({ acao: 'alterar_preco', origemId: 'OP1', itens: [{ ...participante('A'), preco_promo: 43.9, preco_avaliado: 43.9 }], simulados: new Map([['A', 49.9]]) });
+      expect(screen.getByText('Reverter preço em Campanha X')).toBeInTheDocument();
+      expect(screen.getByLabelText('Preço de A')).toHaveValue('49,90');
+      expect(simularAsync).toHaveBeenCalledWith({ promocao_id: 'P1', itens: [{ ml_item_id: 'A', preco: 49.9 }] });
+      expect(await screen.findByText(/R\$ 14,17/)).toBeInTheDocument();
+    });
+  });
+
   // Pedido do Diego (03/11): mesmo desconto/preço para todas as variações marcadas, com lucro do servidor.
   describe('aplicar a todos', () => {
     const tarifa = { comissao_pct: 14, comissao_fixa: 0, frete: 8.25, aliquota_pct: 4 };
