@@ -207,6 +207,11 @@ const inicio = Date.now();
   if (Date.now() - inicio < LIMITE_ESPERA_MS) setTimeout(esperarCards, 500);
 })();
 
+// Busca parada que volta a ficar visível: o SW confirma a conta ML da org (≤ 1 vez/5 min por aba; ele decide).
+document.addEventListener('visibilitychange', () => {
+  if (ligada && geracao !== null && document.visibilityState === 'visible') enviar({ tipo: 'publiai:busca-visivel', geracao });
+});
+
 // Estado inicial da chave (sem rede no SW). Falha ou resposta que não diz ativa e logado: continua desligada.
 void (async () => {
   try {

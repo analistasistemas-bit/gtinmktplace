@@ -30,6 +30,8 @@ export interface RespostaBusca {
   /** Impressão da conta ML da org vista pela identificação desta página (null = sem conexão; ausente = desconhecida,
    *  edge antiga). O cache do enriquecimento só é reutilizado se for da mesma conta. */
   contaMl?: string | null;
+  /** ms da última confirmação da conta ML para esta página (identificação ou revalidação ao voltar a ficar visível). */
+  contaVerificadaEm?: number;
 }
 
 export interface EstadoBusca {
@@ -51,6 +53,7 @@ function respostaDe(e: EstadoBusca | null): RespostaViva {
     limiteEm: typeof r.limiteEm === 'number' ? r.limiteEm : null, usoRegistrado: r.usoRegistrado === true,
     enriquecimento: enriquecimentoDe(r.enriquecimento),
     ...(typeof r.contaMl === 'string' || r.contaMl === null ? { contaMl: r.contaMl } : {}),
+    ...(typeof r.contaVerificadaEm === 'number' ? { contaVerificadaEm: r.contaVerificadaEm } : {}),
   };
 }
 
@@ -184,6 +187,13 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   // Gravação recusada com a época e a página ainda valendo = só a identidade mudou desde o início (ex.: recém-logado,
   // descoberta na 1ª chamada): o pulso refaz com a nova. Época/página nova → `vale()` falso, nada a retomar.
   const recusada = () => { retomar ||= vale(); return SEM_SESSAO; };
+  /** Antes de um efeito global (limpar todas as abas): a rodada não foi cancelada, a identidade e a página são as do
+   *  pedido. Resposta atrasada de outra navegação/sessão não apaga o estado novo. */
+  const aindaDaPagina = async (p: Pagina) => {
+    if (!vale() || (await identidadeAtual()) !== identidade) return false;
+    const a = await lerAba(tabId);
+    return vale() && a.geracao === p.geracao && a.sessao === p.sessao && ehBusca(a.estado) && a.estado.entrada.url === p.url;
+  };
   // Logo antes do envio (depois dos awaits de token/identidade): a rodada não foi cancelada, a página (geração, sessão,
   // URL) é a mesma e cada item do lote ainda tem a assinatura de quando foi escolhido. Recusa com tudo valendo = o lote
   // mudou: refaz a seleção. Sem isso, navegação ou preço novo durante a preparação ainda chamariam a edge.
@@ -231,12 +241,13 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (contaMl !== undefined && contaMudou(contaMl, r.contaMl, (await lerCache(identidade)).conta)) {
         // Outra conta ML (ou conexão removida): comissão e margem lidas com a anterior saem de todas as abas e do cache
         // ANTES de qualquer reuso.
+        if (!(await aindaDaPagina(p))) { falha = recusada(); break; }
         await limparAbasNaFila();
         return SEM_SESSAO;
       }
       const enviado = new Map(lote.map((c) => [c.itemId, c]));
       const gravou = await gravarSe(p, (r2, agora) => {
-        if (contaMl !== undefined) r2.contaMl = contaMl;
+        if (contaMl !== undefined) { r2.contaMl = contaMl; r2.contaVerificadaEm = Date.now(); }
         r2.usoRegistrado = true; // pedido nesta chamada (ou já antes) e a edge respondeu: contou
         for (const m of itens) {
           const ev = enviado.get(m?.itemId), a = agora.get(m?.itemId);
@@ -346,6 +357,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       const valor = d.valor, conta = typeof valor.conta === 'string' ? valor.conta : null;
       if (conta !== null && contaMudou(conta, r.contaMl, bruto.conta)) {
         // Outra conta ML na org: comissão (e margem) lidas com a anterior saem de todas as abas e do cache.
+        if (!(await aindaDaPagina(p))) { falha = recusada(); break; }
         await limparAbasNaFila();
         return SEM_SESSAO;
       }
@@ -359,6 +371,46 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   }
   if (retomar) await pedirRetomada(tabId, vale);
   return falha ?? { ok: true };
+}
+
+const REVALIDAR_CONTA_MS = 5 * 60_000;
+
+/** Aba da busca voltou a ficar visível (content script): confirma a conta ML da org sem itens (só banco, sem uso), no
+ *  máximo 1 vez a cada 5 min por aba. Outra conta (ou conexão removida) → limpa cache e vistas de todas as abas; a
+ *  página recebe `sessao-mudou`, reenvia os cards e o processamento refaz tudo com a conta nova. */
+export function revalidarContaDaAba(tabId: number, epoca: number): Promise<void> {
+  const vez = cancelamentos.get(tabId) ?? 0;
+  const vale = () => epoca === epocaAtual() && vez === (cancelamentos.get(tabId) ?? 0);
+  return naFila(analises, tabId, async () => {
+    const identidade = await identidadeAtual();
+    if (!vale() || identidade === null) return;
+    const a = await lerAba(tabId);
+    if (!ehBusca(a.estado)) return;
+    const r = respostaDe(a.estado);
+    if (r.contaVerificadaEm !== undefined && Date.now() - r.contaVerificadaEm < REVALIDAR_CONTA_MS) return;
+    const p = { geracao: a.geracao, sessao: a.sessao, url: a.estado.entrada.url };
+    const mesmaPagina = async () => {
+      const b = await lerAba(tabId);
+      return vale() && b.geracao === p.geracao && b.sessao === p.sessao && ehBusca(b.estado) && b.estado.entrada.url === p.url;
+    };
+    const resp = await chamarExtensao<{ contaMl?: unknown }>({ acao: 'identificar_busca', eanDaBusca: null, itens: [], registrarUso: false }, epoca,
+      { aindaVale: vale, conferir: mesmaPagina });
+    const contaMl = resp.ok && (typeof resp.dados.contaMl === 'string' || resp.dados.contaMl === null) ? resp.dados.contaMl : undefined;
+    if (contaMl === undefined) return; // edge antiga ou falha: nada a concluir
+    if (contaMudou(contaMl, r.contaMl, (await lerCache(identidade)).conta)) {
+      if (!(await mesmaPagina()) || (await identidadeAtual()) !== identidade) return;
+      await limparAbasNaFila();
+      return;
+    }
+    await seAindaIdentidade(identidade, () => naFila(escritas, tabId, async () => {
+      const b = await lerAba(tabId);
+      if (!vale() || b.geracao !== p.geracao || b.sessao !== p.sessao || !ehBusca(b.estado) || b.estado.entrada.url !== p.url) return;
+      const r2 = respostaDe(b.estado);
+      r2.contaMl = contaMl;
+      r2.contaVerificadaEm = Date.now();
+      await registrarEstado(tabId, { geracao: p.geracao, sessao: p.sessao, entrada: b.estado.entrada, resposta: r2, observado: b.estado.observado });
+    }));
+  });
 }
 
 /** Conta ML `nova` difere da já vista nesta página ou da gravada no cache (null = sem conexão também conta). */

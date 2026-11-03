@@ -385,11 +385,14 @@ describe('identificar_busca (Task 2, emenda 02/11)', () => {
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: null })] }))
       .toEqual({ acao: 'identificar_busca', eanDaBusca: null, itens: [card('MLB1', { catalogProductId: null })] });
   });
-  it('até 50 itens DEDUPLICADOS (ocorrências repetidas não contam); recusa vazio, 51 distintos, id e EAN inválidos', () => {
+  it('até 50 itens DEDUPLICADOS (ocorrências repetidas não contam); vazio só sem registro de uso; recusa 51 distintos, id e EAN inválidos', () => {
     const cinquenta = Array.from({ length: 50 }, (_, i) => card(`MLB${i + 1}`));
     expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, ...cinquenta] })).toMatchObject({ itens: cinquenta });
     expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, card('MLB51')] })).toBeNull();
-    expect(validarPedido({ acao: 'identificar_busca', itens: [] })).toBeNull();
+    // Sem itens = só revalidar a conta ML da org (Task 10, rodada 2); nunca com registro de uso.
+    expect(validarPedido({ acao: 'identificar_busca', itens: [] })).toEqual({ acao: 'identificar_busca', eanDaBusca: null, itens: [] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [], registrarUso: false })).toMatchObject({ itens: [] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [], registrarUso: true })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('X1')] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: 'x' })] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', eanDaBusca: 'x'.repeat(21), itens: [card('MLB1')] })).toBeNull();

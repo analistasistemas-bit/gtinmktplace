@@ -253,7 +253,7 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar }: {
       {!enr?.indisponivel && !enr?.falhou && lidos < f.catalogos && (
         <p className="nota bs-estado-enr">{janela ? 'Aguardando próxima janela' : 'Aguardando dados do catálogo'}</p>
       )}
-      {lidos > 0 && (
+      {comOfertas > 0 && (
         <>
           {titulo('medalhas')}
           <Ajuda id="medalhas" aberto={ajuda} />

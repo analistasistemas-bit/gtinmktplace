@@ -9,7 +9,7 @@ import { identidadeAtual, obterSessaoValida, seAindaIdentidade } from './sessao'
 import { eanDaAba, eanParaAnuncio, epocaAtual, esquecerAba, esquecerAnuncioDaAba, estadoDaAba, lerAba, mesmoAnuncioNaAba, novaPaginaNaAba, registrarEanDaAba, registrarEstado, transmitirConta } from './abas';
 import { URL_APP } from './painel/formato';
 import { normalizarQualidade } from './compartilhado/qualidade';
-import { cancelarBuscaDaAba, destacarCard, ehBusca, geracaoDaPagina, processarBuscaDaAba, registrarCardsDaBusca } from './busca-sw';
+import { cancelarBuscaDaAba, destacarCard, ehBusca, geracaoDaPagina, processarBuscaDaAba, registrarCardsDaBusca, revalidarContaDaAba } from './busca-sw';
 
 // ponytail: Tasks 21/23 ampliam esta lista (busca/catálogo).
 const ACOES_CONTENT_SCRIPT = new Set(['analisar_anuncio', 'erro_leitura']);
@@ -198,6 +198,19 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
         const a = await lerAba(tabId);
         if (ehBusca(a.estado) && a.estado.entrada.url === url && msg.geracao === geracaoDaPagina(a.geracao, a.sessao)) {
           emSegundoPlano(processarBuscaDaAba(tabId, e));
+        }
+        return { ok: true };
+      });
+    }
+    case 'publiai:busca-visivel': {
+      // Content script: a aba da busca voltou a ficar visível → revalida a conta ML (≤ 1 vez/5 min por aba, no SW).
+      if (tabId === undefined || pagina) return undefined;
+      const e = epocaAtual(), url = (sender.tab?.url ?? sender.url ?? '').split('#')[0];
+      return impedimento(e).then(async (erro) => {
+        if (erro) return undefined;
+        const a = await lerAba(tabId);
+        if (ehBusca(a.estado) && a.estado.entrada.url === url && msg.geracao === geracaoDaPagina(a.geracao, a.sessao)) {
+          emSegundoPlano(revalidarContaDaAba(tabId, e));
         }
         return { ok: true };
       });

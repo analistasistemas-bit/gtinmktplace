@@ -691,6 +691,18 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(enr.valor.conta).toBe(id);
   });
 
+  it('sem itens (revalidação da conta ML na busca parada): só a linha da conexão; nada de banco de produto, uso, ML ou Redis', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    const r = await post({ acao: 'identificar_busca', eanDaBusca: null, itens: [] });
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toEqual({ itens: [], contaMl: expect.stringMatching(/^[0-9a-f]{16}$/) });
+    expect(f.froms).toEqual([]);
+    expect(f.rpcs).toEqual([]);
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
+  });
+
   it('registrarUso true (1º lote da geração de página): 1 registro tipo busca, mesmo sem nenhum vinculado; sem o campo, nenhum', async () => {
     const usos = () => f.rpcs.filter((r) => r.fn === 'extensao_registrar_uso');
     expect((await post({ ...PEDIDO, registrarUso: true })).status).toBe(200);

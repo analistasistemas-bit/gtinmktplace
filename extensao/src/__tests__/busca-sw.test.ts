@@ -611,6 +611,41 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect(await estado()).toBeNull();
   });
 
+  it('busca parada: ao voltar a ficar visível revalida a conta (sem itens, sem uso, ≤ 1 vez/5 min); outra conta → limpa e reprocessa', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:00Z'));
+    await registrar([card(1)]);
+    const vazios = () => doTipo('identificar_busca').filter((c) => c.itens.length === 0);
+    const visivel = async () => { await rotear({ tipo: 'publiai:busca-visivel', geracao: geracaoCs }, BUSCA); await complementosPendentes(); };
+    await visivel(); // logo depois da identificação: já verificada há < 5 min
+    expect(vazios()).toHaveLength(0);
+    vi.setSystemTime(Date.parse('2026-11-03T12:06:00Z'));
+    await visivel(); // mesma conta: grava a verificação, nada limpo
+    expect(vazios()).toHaveLength(1);
+    expect(vazios()[0].registrarUso).toBe(false);
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ ofertas: { estado: 'ok' } });
+    await visivel();
+    expect(vazios()).toHaveLength(1); // ≤ 1 vez a cada 5 min
+    enrConta = 'conta-b';
+    vi.setSystemTime(Date.parse('2026-11-03T12:12:00Z'));
+    await visivel();
+    expect(vazios()).toHaveLength(2);
+    expect(await chrome.storage.session.get('enr:cache')).toEqual({});
+    expect(await estado()).toBeNull();
+    // A página é avisada (sessao-mudou) e reenvia os cards: reprocessa com a conta nova.
+    expect(mensagensPagina('publiai:sessao-mudou').length).toBeGreaterThan(0);
+  });
+
+  it('identificação atrasada (conta antiga) depois da navegação não limpa o estado novo', async () => {
+    await registrar([card(1)]);
+    const sessaoAntes = (await chrome.storage.session.get('geracao-sessao'))['geracao-sessao'];
+    enrConta = 'conta-b';
+    antesDeResponder = async (acao) => { if (acao === 'identificar_busca') { antesDeResponder = null; await aoAtualizarAba(7, { url: 'https://lista.mercadolivre.com.br/frigideira' }); } };
+    await registrar([card(1), card(2)]);
+    expect((await chrome.storage.session.get('geracao-sessao'))['geracao-sessao']).toBe(sessaoAntes);
+    expect((await chrome.storage.session.get('enr:cache'))['enr:cache']).toMatchObject({ conta: 'conta-a' });
+  });
+
   it('conta ML desconhecida (edge antiga, sem contaMl): o cache não é reutilizado', async () => {
     await registrar([card(1)]);
     vi.mocked(fetch).mockImplementation(async (u, init) => {

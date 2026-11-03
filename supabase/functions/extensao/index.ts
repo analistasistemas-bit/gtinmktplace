@@ -436,8 +436,12 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       // só no 1º lote dela; conta depois da identificação (falha inteira não conta, o lote é refeito pedindo de novo).
       // contaMl: impressão da conta ML da org (só a linha da conexão, sem token): o navegador valida o cache do
       // enriquecimento antes de reusá-lo e limpa tudo se a conta mudou (Revisão 03/11, regra 10).
-      const [r, conexao] = await Promise.all([identificarBusca(admin, orgId, p, depsCasamento(admin, orgId)), resolverConexao(admin, orgId, 'mercado_livre')]);
-      if (p.registrarUso === true) {
+      // Sem itens: só a revalidação da conta (busca parada) — nenhuma leitura de produto nem registro de uso.
+      const [r, conexao] = await Promise.all([
+        p.itens.length ? identificarBusca(admin, orgId, p, depsCasamento(admin, orgId)) : { itens: [] },
+        resolverConexao(admin, orgId, 'mercado_livre'),
+      ]);
+      if (p.registrarUso === true && p.itens.length) {
         const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
         if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       }

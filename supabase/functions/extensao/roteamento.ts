@@ -128,7 +128,8 @@ export function validarPedido(body: unknown): Pedido | null {
       // Só banco, sem preço: a extensão pode mandar ocorrências repetidas (orgânico + patrocinado); o teto vale
       // para os IDs distintos; o teto bruto (200 entradas) é só anti-abuso de parsing.
       const { itens, eanDaBusca, registrarUso } = b;
-      if (!Array.isArray(itens) || itens.length === 0 || itens.length > MAX_ENTRADAS_IDENTIFICAR) return null;
+      // Lista vazia = só revalidar a conta ML da org (busca parada, Task 10); nunca com registro de uso.
+      if (!Array.isArray(itens) || itens.length > MAX_ENTRADAS_IDENTIFICAR || (itens.length === 0 && registrarUso === true)) return null;
       if (eanDaBusca != null && !texto(eanDaBusca, 20)) return null;
       if (registrarUso !== undefined && typeof registrarUso !== 'boolean') return null;
       const lidos = new Map<string, Omit<ItemBusca, 'preco'>>();

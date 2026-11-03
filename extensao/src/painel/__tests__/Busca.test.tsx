@@ -361,6 +361,17 @@ describe('Catálogos e vendedores (Task 10)', () => {
     within(secao()).getByText('Aguardando próxima janela');
   });
 
+  it('ofertas completas com metadados pendentes: distribuições aparecem; "lidos" conta só catálogos sem pendência', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: {
+      MLB100: { produto: { estado: 'aguardando', retomarEm: Date.now() + 30_000, tentativas: 1 }, ofertas: { estado: 'ok', total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
+        exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
+    }, vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP' } } }) })} />);
+    const s = within(secao());
+    s.getByText('0 de 2');
+    expect(s.getByText('Gold').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('1–5').closest('li')!.textContent).toContain('1');
+  });
+
   it('falha de rede: aviso com "Tentar novamente" que refaz o enriquecimento uma vez', async () => {
     const p = props({ estado: comEnr({ falhou: true }) });
     render(<Busca {...p} />);

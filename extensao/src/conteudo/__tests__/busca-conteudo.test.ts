@@ -63,6 +63,18 @@ it('enriquecimento do catálogo chega com os resultados e entra no bloco do card
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
 });
 
+it('aba volta a ficar visível: pede a revalidação da conta ML com a geração da página', () => {
+  enviar.mockClear();
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(enviar).toHaveBeenCalledWith({ tipo: 'publiai:busca-visivel', geracao: G });
+  enviar.mockClear();
+  Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(enviar).not.toHaveBeenCalled();
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+});
+
 it('mesmo resultado de novo não refaz o bloco (idempotente por assinatura)', () => {
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: { MLB5321956667: OK } });
   const host = blocos()[0];
