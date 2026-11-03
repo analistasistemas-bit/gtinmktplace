@@ -14,6 +14,7 @@ create table if not exists public.ml_vendas (
   atualizado_em timestamptz not null,
   tem_devolucao boolean not null default false,
   estorno numeric not null default 0,
+  cupom_vendedor numeric,
   raw jsonb
 );
 
@@ -23,6 +24,7 @@ create table if not exists public.ml_vendas (
 \ir ../migrations/20260907102428_platform_terms_contract_fix.sql
 \ir ../migrations/20260918010100_platform_billing_tiers.sql
 \ir ../migrations/20261102221455_platform_devolucao_abatimento_automatico.sql
+\ir ../migrations/20261103004908_platform_recebimento_vencimento.sql
 select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 insert into public.organizations(id,nome,slug) values

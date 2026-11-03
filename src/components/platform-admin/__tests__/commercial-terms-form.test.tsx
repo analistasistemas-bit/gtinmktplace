@@ -10,6 +10,7 @@ const ROTULOS_OPCAO = {
   '2': 'Modalidade 2 · Gestão Completa + Inteligência',
   '2026-09-01': 'Este mês (2026-09-01)',
   '2026-10-01': 'Próximo mês (2026-10-01)',
+  '10': 'Dia 10 do mês seguinte',
 };
 const escolherNoSelect = (user: ReturnType<typeof userEvent.setup>, rotulo: string, valor: string) =>
   escolher(user, rotulo, valor, ROTULOS_OPCAO);
@@ -38,6 +39,7 @@ const current: CommercialTerms = {
   setup_fee_cents: 0,
   setup_due_month: null,
   reason: 'condição atual',
+  due_day: 12,
   version: 1,
   timezone: 'America/Fortaleza',
   created_at: '2026-09-01T03:00:00Z',
@@ -57,6 +59,27 @@ afterEach(() => {
 });
 
 describe('CommercialTermsForm', () => {
+  it('vencimento: padrão dia 05 no primeiro contrato e escolhido pelo Select', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+    await user.type(screen.getByLabelText('Motivo'), 'novo contrato');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+    expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ due_day: 5 }));
+
+    await escolherNoSelect(user, 'Vencimento (dia)', '10');
+    await user.type(screen.getByLabelText('Motivo'), 'novo contrato');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+    expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ due_day: 10 }));
+  });
+
+  it('vencimento: renegociação parte do dia da condição atual', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
+    await user.type(screen.getByLabelText('Motivo'), 'renegociação');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ due_day: 12 }));
+  });
+
   it('salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);

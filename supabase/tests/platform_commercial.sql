@@ -334,6 +334,7 @@ create table if not exists public.ml_vendas (
   atualizado_em timestamptz,
   tem_devolucao boolean not null default false,
   estorno numeric not null default 0,
+  cupom_vendedor numeric,
   raw jsonb
 );
 create table public.ml_vendas_itens (

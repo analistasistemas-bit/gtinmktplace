@@ -36,7 +36,18 @@ export function effectiveTerm(rows: CommercialTerms[], today: string): Commercia
   return latestTerm(rows.filter((row) => row.starts_on <= today));
 }
 
-export type PlatformAdminError = Error & { code?: string };
+/** Vencimento da remuneração (ADR-0193 D-9): dia `dueDay` do mês seguinte à competência `YYYY-MM`.
+ *  Snapshot antigo sem o campo → chamar com `snapshot.due_day ?? 5`. */
+export function vencimentoDaCompetencia(month: string, dueDay: number): string {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('competência deve ser YYYY-MM');
+  if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) throw new Error('vencimento deve estar entre 1 e 28');
+  const [year, number] = month.split('-').map(Number);
+  const nextYear = number === 12 ? year + 1 : year;
+  const nextMonth = number === 12 ? 1 : number + 1;
+  return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+}
+
+export type PlatformAdminError =Error & { code?: string };
 
 type ErrorPayload = {
   error?: unknown;

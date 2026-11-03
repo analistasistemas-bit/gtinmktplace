@@ -14,7 +14,25 @@ export type CommercialTermsInput = {
   setup_fee_cents: Cents;
   setup_due_month: Month | null;
   reason: string;
+  /** Dia do vencimento no mês seguinte à competência (1..28, padrão 5 — ADR-0193 D-9). */
+  due_day: number;
 };
+
+export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+
+/** Dados de recebimento da Daludi (ADR-0193 D-9): linha única, só service_role. */
+export type PaymentProfileInput = {
+  beneficiary_name: string;
+  document: string;
+  bank_name: string;
+  branch: string;
+  account: string;
+  pix_key_type: PixKeyType;
+  pix_key: string;
+  city: string;
+};
+
+export type PaymentProfile = PaymentProfileInput & { updated_at: string; updated_by: string };
 
 export type CommercialTerms = CommercialTermsInput & {
   id: string;
@@ -69,6 +87,10 @@ export type BillingPreview = {
     recognized_base_cents: Cents;
   }>;
   revision: string;
+  /** ADR-0193 D-4: Σ cupons do vendedor do mês (informativo). Ausente em snapshot anterior à Fatia 2a. */
+  seller_coupon_cents?: Cents | null;
+  /** ADR-0193 D-9: vencimento dos termos. Ausente em snapshot antigo (ler com `?? 5`). */
+  due_day?: number | null;
   blockers: Array<{
     code: string;
     message: string;

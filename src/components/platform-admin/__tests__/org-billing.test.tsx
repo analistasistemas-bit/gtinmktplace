@@ -50,6 +50,7 @@ const terms: CommercialTerms = {
   setup_fee_cents: 0,
   setup_due_month: null,
   reason: 'contrato',
+  due_day: 5,
   version: 1,
   timezone: 'America/Fortaleza',
   created_at: '2026-08-01T03:00:00Z',

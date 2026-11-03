@@ -59,6 +59,14 @@ function sale(id: string, orgId: string, amount: number): Row {
 const preview = (total: number, blockers: Row[] = [], terms: Row | null = { modality: 2 }): Row => ({ total_cents: total, sonar_units: 2, blockers, terms });
 
 describe('createPlatformAdminRepository', () => {
+  it('lê a linha única dos dados de recebimento e devolve null sem cadastro', async () => {
+    const vazio = createPlatformAdminRepository(fakeDb({ platform_payment_profile: { rows: [] } }) as never);
+    expect(await vazio.paymentProfile('actor')).toBeNull();
+    const db = fakeDb({ platform_payment_profile: { rows: [{ id: true, beneficiary_name: 'X', pix_key: 'k' }] } });
+    expect(await createPlatformAdminRepository(db as never).paymentProfile('actor')).toMatchObject({ beneficiary_name: 'X' });
+    expect(db.calls).toContainEqual({ table: 'platform_payment_profile', op: 'eq', column: 'id', value: true });
+  });
+
   it('totals the whole wallet before paginating and leaves organizations without terms out of the forecast', async () => {
     const organizations = [
       { id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false, arquivada_em: null },

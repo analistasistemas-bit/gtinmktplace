@@ -1,6 +1,6 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
 import { montarRelatorioMensal } from './monthly-report-io.ts';
-import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
+import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -182,6 +182,11 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     monthlyReport: (_actorId: string, orgId: string, month: string) => montarRelatorioMensal(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },
     saveTerms: (actorId: string, input: Record<string, unknown>) => rpc<CommercialTerms>('platform_save_terms', { p_actor: actorId, p_input: input }),
+    async paymentProfile(_actorId: string): Promise<PaymentProfile | null> {
+      const { data, error } = await db.from('platform_payment_profile').select('beneficiary_name,document,bank_name,branch,account,pix_key_type,pix_key,city,updated_at,updated_by').eq('id', true).maybeSingle(); fail(error);
+      return (data as PaymentProfile | null) ?? null;
+    },
+    savePaymentProfile: (actorId: string, input: PaymentProfileInput) => rpc<PaymentProfile>('platform_save_payment_profile', { p_actor: actorId, p_input: input }),
     preview: (actorId: string, orgId: string, month: string) => rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: orgId, p_month: monthDate(month) }),
     close: (actorId: string, orgId: string, month: string, revision: string) => rpc<BillingStatement>('platform_billing_close', { p_actor: actorId, p_org: orgId, p_month: monthDate(month), p_expected_revision: revision }),
     reconcile: (actorId: string, input: Record<string, unknown>) => rpc<{ id: string }>('platform_reconcile_revenue', { p_actor: actorId, p_input: input }),

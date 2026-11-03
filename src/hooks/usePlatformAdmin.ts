@@ -12,6 +12,8 @@ import {
   type MonthlyReport,
   type OrgSummary,
   type Page,
+  type PaymentProfile,
+  type PaymentProfileInput,
   type PulseUsage,
   type RevenueReconciliationInput,
   type Wallet,
@@ -90,6 +92,8 @@ export const platformAdminKeys = {
     key(userId, 'extensao_usage', orgId, month, {}),
   monthlyReport: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'monthly_report', orgId, month, {}),
+  paymentProfile: (userId: UserId) =>
+    key(userId, 'payment_profile', null, null, {}),
   audit: (userId: UserId, params: PlatformAuditParams) =>
     key(userId, 'audit', params.org_id, params.month, filters({
       category: params.category,
@@ -189,6 +193,32 @@ export function useMonthlyReport(orgId: string, month: Month) {
     queryFn: () => callPlatformAdmin('monthly_report', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+/** Dados de recebimento da Daludi (ADR-0193 D-9): linha única de plataforma; null = sem cadastro. */
+export function usePaymentProfile() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<PaymentProfile | null>({
+    queryKey: platformAdminKeys.paymentProfile(userId),
+    queryFn: () => callPlatformAdmin('payment_profile', {}),
+    enabled: Boolean(userId),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
+export function useSavePaymentProfile() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  return useMutation<PaymentProfile, Error, PaymentProfileInput>({
+    mutationFn: (input) => {
+      requireUser(userId);
+      return callPlatformAdmin('save_payment_profile', { ...input });
+    },
+    onSuccess: async () => {
+      if (!userId) return;
+      await queryClient.invalidateQueries({ queryKey: platformAdminKeys.paymentProfile(userId) });
+    },
   });
 }
 
