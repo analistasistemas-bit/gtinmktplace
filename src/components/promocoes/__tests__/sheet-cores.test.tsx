@@ -23,6 +23,7 @@ describe('SheetCores', () => {
     expect(screen.getAllByText(/por sua conta −R\$ 8,25/)).toHaveLength(2);
     expect(screen.getByText('R$ 14,16')).toBeTruthy(); // lucro Azul: 32,664 − 18,50
     expect(screen.getByText('77%')).toBeTruthy();
+    expect(screen.getByText('28%')).toBeTruthy(); // margem Azul: 14,164 / 49,90
     expect(screen.getByText(/prejuízo/)).toBeTruthy(); // Rosa: 32,66 − 40
     expect(screen.getByText('Sem custo no PubliAI')).toBeTruthy();
   });

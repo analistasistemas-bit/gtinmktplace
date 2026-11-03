@@ -51,6 +51,8 @@ export function SheetCores({ item, simulado = false, onClose }: { item: ItemProm
                         <p className={cn('mt-0.5 text-[11px]', d.lucro < 0 ? 'text-destructive' : 'text-success')}>
                           {d.lucro < 0 ? 'prejuízo ' : 'lucro '}
                           <span className="font-semibold">{fmtBRL(d.lucro)}</span>
+                          {' · margem '}
+                          <span className="font-semibold">{Math.round(d.margem * 100)}%</span>
                           {' · markup '}
                           <span className="font-semibold">{Math.round(d.markup * 100)}%</span>
                         </p>
