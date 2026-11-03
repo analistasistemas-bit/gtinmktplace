@@ -1,6 +1,6 @@
 // Cache do enriquecimento no navegador e planejamento da página (Revisão 03/11-b: lote por página, Task 11.3).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { aplicarResposta, gravarCache, lerCache, marcarFalha, marcasDoPedido, planejarLote, prepararNovaTentativa, type CacheEnr } from '../cache-enriquecimento';
+import { aplicarResposta, gravarCache, haParaTentar, lerCache, marcarFalha, marcasDoPedido, planejarLote, prepararNovaTentativa, type CacheEnr } from '../cache-enriquecimento';
 import { enriquecimentoVazio, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import { limparEstadosDasAbas } from '../abas';
 import { sair } from '../credenciais';
@@ -200,7 +200,9 @@ describe('falha da rodada e "Tentar novamente"', () => {
       MLB1000002: { estado: 'ok', preco: 10, sellerId: 7, tipo: null, comissao: { estado: 'indisponivel', motivo: 'x' } },
       MLB1000003: { estado: 'indisponivel', preco: 10, motivo: 'tempo esgotado' },
       MLB1000004: { estado: 'nao_encontrada', preco: 10 } }) };
+    expect(haParaTentar(e)).toBe(true);
     expect(prepararNovaTentativa(e, T0)).toBe(true);
+    expect(haParaTentar(e)).toBe(false);
     expect(e.falhou).toBe(false);
     expect(e.catalogos.MLB900).toEqual({});
     expect(e.vendedores).toEqual({});

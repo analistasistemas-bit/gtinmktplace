@@ -246,6 +246,13 @@ export function marcarFalha(enr: EstadoEnriquecimento, pedido: PedidoLote, motiv
   enr.falhou = true;
 }
 
+/** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
+export function haParaTentar(enr: EstadoEnriquecimento): boolean {
+  return enr.falhou || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
+    !!c.aguardandoJanela || (!!c.produto && c.produto.estado !== 'ok') || (!!c.ofertas && c.ofertas.estado !== 'ok')
+    || (c.ofertas?.estado === 'ok' && Object.values(c.ofertas.exatas).some((e) => e.estado === 'indisponivel' || (e.estado === 'ok' && e.comissao.estado !== 'ok'))));
+}
+
 /** "Tentar novamente" (ação explícita): antes do Retry-After do ML → false, nada muda. Senão apaga todo indisponível
  *  (componentes, ofertas exatas sem comissão ou não lidas, vendedores) para o planejamento pedir de novo. Muta `enr`. */
 export function prepararNovaTentativa(enr: EstadoEnriquecimento, agora: number): boolean {
