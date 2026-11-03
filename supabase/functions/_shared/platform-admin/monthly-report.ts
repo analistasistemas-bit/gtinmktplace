@@ -125,6 +125,17 @@ export function kpisDoPeriodo(c: ComponentesMes, refundsCents: Cents | null, ads
 export interface EstornoDevolucao {
   order_id: number | null; type: string | null; return_status_money: string | null;
   aberto_em: string | null; fechado_em: string | null; valor_estornado: number;
+  /** Sem `order_id` ou sem a venda do pedido: valor desconhecido (entra como 0, igual ao dashboard, mas avisado). */
+  sem_valor?: boolean;
+}
+
+/** Devoluções concluídas no período cujo valor é desconhecido (ver `sem_valor`). */
+export function estornosSemValor(devs: EstornoDevolucao[], j: { desde: string; ate: string }): number {
+  const de = Date.parse(j.desde), ate = Date.parse(j.ate);
+  return devs.filter((d) => {
+    const t = Date.parse(d.fechado_em ?? d.aberto_em ?? '');
+    return d.sem_valor && d.type === 'returns' && d.return_status_money === 'refunded' && Number.isFinite(t) && t >= de && t < ate;
+  }).length;
 }
 
 /** Σ estornado (centavos) das devoluções concluídas com `fechado_em ?? aberto_em` ∈ [desde, ate),

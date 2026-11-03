@@ -95,6 +95,15 @@ describe('montarRelatorioMensal (IO)', () => {
     expect(r.summary.previous!.refunds_cents).toBe(0);
   });
 
+  it('devolução concluída no mês sem pedido vinculado: avisa (valor desconhecido), sem inventar', async () => {
+    const t = tabelas();
+    t.ml_devolucoes.push({ id: 'sem-pedido', org_id: A, order_id: null, type: 'returns', return_status_money: 'refunded',
+      aberto_em: '2026-10-08T10:00:00Z', fechado_em: '2026-10-15T10:00:00Z' });
+    const r = await montarRelatorioMensal(adminCom(t), A, '2026-10', AGORA);
+    expect(r.summary.current.refunds_cents).toBe(0);
+    expect(r.warnings).toEqual([expect.objectContaining({ code: 'refunds_unmatched', severity: 'warning' })]);
+  });
+
   it('seção que falha vira null + aviso error (Ads), sem zerar', async () => {
     const admin = adminCom(tabelas());
     const from = admin.from;

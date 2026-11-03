@@ -5,7 +5,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { carregarContexto, lerPaginas, lerVendasJanela, readMonthSeries, type MetricsDb } from './metrics-repository.ts';
 import {
-  calcularMes, diario, estornosNoPeriodo, kpisAds, kpisDoPeriodo, serieMensal, topFamilias, trafego,
+  calcularMes, diario, estornosNoPeriodo, estornosSemValor, kpisAds, kpisDoPeriodo, serieMensal, topFamilias, trafego,
   type AdsDiaRow, type ComponentesSerie, type EstornoDevolucao, type VisitaDiaRow,
 } from './monthly-report.ts';
 import type { BillingStatement, MetricsWarning, Month, MonthlyReport } from './types.ts';
@@ -48,6 +48,7 @@ async function lerDevolucoes(admin: SupabaseClient, orgId: string, desde: string
     return_status_money: (r.return_status_money as string | null) ?? null,
     aberto_em: (r.aberto_em as string | null) ?? null, fechado_em: (r.fechado_em as string | null) ?? null,
     valor_estornado: estorno.get(r.order_id) ?? 0,
+    sem_valor: r.order_id == null || !estorno.has(r.order_id),
   }));
 }
 
@@ -100,6 +101,11 @@ export async function montarRelatorioMensal(admin: SupabaseClient, orgId: string
       .then((rows) => rows as unknown as VisitaDiaRow[]), 'traffic_read_failed', 'Falha ao ler as visitas'),
   ]);
   if (!org) throw new Error('organization not found');
+  const semValor = devs ? estornosSemValor(devs, jM) : 0;
+  if (semValor > 0) {
+    warnings.push({ code: 'refunds_unmatched', severity: 'warning',
+      message: `${semValor} ${semValor === 1 ? 'devolução concluída sem pedido vinculado' : 'devoluções concluídas sem pedido vinculado'}: valor fora dos estornos` });
+  }
   if (!ctx.configOk) warnings.push({ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' });
 
   const hoje = diaBrt(agora);
