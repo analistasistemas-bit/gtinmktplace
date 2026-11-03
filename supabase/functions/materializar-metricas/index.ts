@@ -11,7 +11,7 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { materializeRecentMonths } from '../_shared/platform-admin/metrics-repository.ts';
+import { LIMITE_VENDAS_POR_EXECUCAO, materializeRecentMonths } from '../_shared/platform-admin/metrics-repository.ts';
 
 // Mesmo grau de paralelismo de organizações usado na carteira (repository.ts `wallet`, ADR-0158 §3)
 // — nenhuma chamada externa aqui (só Postgres), mas mantém o limite para não abrir uma conexão por
@@ -47,10 +47,14 @@ Deno.serve(async (req) => {
   }
 
   const resumo: Record<string, { materialized: string[]; skipped: string[] }> = {};
+  // Achado Codex 2 (ADR-0173): teto de vendas recalculadas pela EXECUÇÃO inteira, compartilhado entre
+  // as orgs. O que não coube fica em `skipped` e a próxima rodada do agendamento continua (as linhas
+  // já gravadas validam e são puladas). A 1ª carga v2 pode levar alguns dias de rodadas.
+  const orcamento = { restante: LIMITE_VENDAS_POR_EXECUCAO };
   await mapLimit((organizations ?? []) as { id: string }[], PARALELAS, async (org) => {
     try {
       // ADR-0193 D-8: 12 meses (série do relatório mensal); só misses/v1 são recalculados.
-      resumo[org.id] = await materializeRecentMonths(admin as never, org.id, now, 12);
+      resumo[org.id] = await materializeRecentMonths(admin as never, org.id, now, 12, orcamento);
     } catch (err) {
       console.error(`materializar-metricas: falhou para org ${org.id}:`, err instanceof Error ? err.message : err);
       resumo[org.id] = { materialized: [], skipped: ['erro'] };

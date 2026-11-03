@@ -189,9 +189,11 @@ describe('kpisAds', () => {
     expect(a!.attribution_expected_final_on).toBe('2026-11-15');
   });
 
-  it('mês corrente: só conta os dias até ontem', () => {
+  it('mês corrente: exige Ads no MESMO intervalo das vendas (até hoje); sem a coleta de hoje → parcial', () => {
     const a = kpisAds(['2026-11-01'].map((d) => adsDia(d)), { conta_cobertura_desde: '2026-01-01' }, '2026-11', '2026-11-02', 0);
-    expect(a).toMatchObject({ coverage: 'complete', days_expected: 1, tacos: null });
+    expect(a).toMatchObject({ coverage: 'partial', days_expected: 2, days_covered: 1, cost_cents: null });
+    const b = kpisAds(['2026-11-01', '2026-11-02'].map((d) => adsDia(d)), { conta_cobertura_desde: '2026-01-01' }, '2026-11', '2026-11-02', 0);
+    expect(b).toMatchObject({ coverage: 'complete', days_expected: 2, tacos: null });
   });
 
   it('atribuicaoFinal tem paridade com a tela (src/lib/sku-ads)', () => {
@@ -284,6 +286,19 @@ describe('diario', () => {
     const d = diario('2026-10', atual, resultadoPorItem(atual, ctx), [], ads, AGORA);
     expect(d[19]).toMatchObject({ day: '2026-10-20', profit_after_ads_cents: 3_200 - 100 });
     expect(d[0].profit_after_ads_cents).toBe(-100);
+  });
+
+  it('dia sem Ads coletado → lucro após Ads do dia null (nunca custo zero)', () => {
+    const atual = [venda()];
+    const ads = diasOut.filter((d) => d !== '2026-10-05').map((dia) => adsDia(dia));
+    const d = diario('2026-10', atual, resultadoPorItem(atual, ctx), [], ads, AGORA);
+    expect(d[4].profit_after_ads_cents).toBeNull();
+    expect(d[19].profit_after_ads_cents).toBe(3_100);
+  });
+
+  it('mês sem venda: sem lucro após Ads no diário, mesmo com Ads (elegibilidade mensal)', () => {
+    const d = diario('2026-10', [], [], [], diasOut.map((dia) => adsDia(dia)), AGORA);
+    expect(d.every((x) => x.profit_after_ads_cents === null)).toBe(true);
   });
 
   it('mês corrente: dias só até hoje', () => {

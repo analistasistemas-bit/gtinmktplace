@@ -8,8 +8,10 @@ type TableData = Record<string, { rows?: Row[]; error?: string }>;
  *  `rows` (array jsonb) ou `error`. */
 function dbFor(tables: TableData) {
   const calls: Array<{ table: string; op: string; column?: string; value?: unknown }> = [];
+  /** Linhas de `ml_vendas` efetivamente devolvidas em páginas (trabalho transferido). */
+  const transferidas = { ml_vendas: 0 };
   return {
-    calls,
+    calls, transferidas,
     rpc(name: string, args: Record<string, unknown>) {
       calls.push({ table: name, op: 'rpc', value: args });
       const source = tables[name] ?? {};
@@ -18,10 +20,20 @@ function dbFor(tables: TableData) {
     },
     from(table: string) {
       const filters: Array<(row: Row) => boolean> = [];
+      let head = false;
       const query = {
-        select(columns: string) {
+        select(columns: string, options?: { head?: boolean }) {
           calls.push({ table, op: 'select', value: columns });
+          head = !!options?.head;
           return query;
+        },
+        // `select('id', { count, head })` aguardado direto (contagem antes de paginar)
+        then(resolve: (value: unknown) => void, reject: (reason: unknown) => void) {
+          const source = tables[table] ?? {};
+          if (!head) return Promise.reject(new Error('fake: await sem head')).then(resolve, reject);
+          calls.push({ table, op: 'count' });
+          return Promise.resolve(source.error ? { count: null, error: { message: source.error } }
+            : { count: (source.rows ?? []).filter((row) => filters.every((filter) => filter(row))).length, error: null }).then(resolve, reject);
         },
         eq(column: string, value: unknown) {
           calls.push({ table, op: 'eq', column, value });
@@ -48,12 +60,17 @@ function dbFor(tables: TableData) {
           calls.push({ table, op: 'range', value: [from, to] });
           const source = tables[table] ?? {};
           if (source.error) return { data: null, error: { message: source.error } };
-          return { data: (source.rows ?? []).filter((row) => filters.every((filter) => filter(row))).slice(from, to + 1), error: null };
+          const data = (source.rows ?? []).filter((row) => filters.every((filter) => filter(row))).slice(from, to + 1);
+          if (table === 'ml_vendas') transferidas.ml_vendas += data.length;
+          return { data, error: null };
         },
         // Perf FASE 3: upsert do cache (`platform_org_month_metrics`) — best-effort nos testes,
         // só registra a chamada; nenhum teste depende de reler a linha gravada.
+        // Persiste (substitui por org/mês): permite testar a continuação do backfill entre execuções.
         async upsert(row: Row) {
           calls.push({ table, op: 'upsert', value: row });
+          const source = tables[table] ?? (tables[table] = { rows: [] });
+          source.rows = [...(source.rows ?? []).filter((r) => !(r.org_id === row.org_id && r.month === row.month)), row];
           return { error: null };
         },
       };
@@ -230,7 +247,8 @@ describe('readOrgMetrics', () => {
 // 2026-10-15 — fechado e diferente do mês anterior real (2026-09), então é elegível a cache.
 /** Componentes v2 (ADR-0193) de uma linha do cache. */
 const V2: Row = { cache_version: 2, units: 7, net_cents: 400_000, tax_cents: 40_000, cost_cents: 200_000, profit_cents: 160_000,
-  covered_gross_cents: 555_500, item_gross_cents: 555_500, excluded_items: 0 };
+  covered_gross_cents: 555_500, item_gross_cents: 555_500, excluded_items: 0,
+  v2_source_count: 1, v2_source_max_updated_at: '2026-06-10T12:00:00-03:00', v2_tax_config_stamp: '[8,16,"CE",8]' };
 
 describe('cache de meses fechados (FASE 3)', () => {
   // Carimbo da config padrão do módulo (nacional 8, importado 16, UF CE, interna 8) — mesmo formato
@@ -261,21 +279,43 @@ describe('cache de meses fechados (FASE 3)', () => {
     expect(metrics.orders).toBe(7);
   });
 
-  it('linha v1 (sem cache_version / componentes) é miss: recalcula ao vivo e regrava v2, nunca zero', async () => {
+  it('carteira (readOrgMetrics) segue servindo a linha v1 válida: só volume/markup, sem tempestade de recálculo', async () => {
     const v1: Row = { ...cachedRow() };
     for (const k of Object.keys(V2)) delete v1[k];
-    for (const row of [v1, cachedRow({ cache_version: 1 })]) {
+    const db = dbFor(base({
+      ml_vendas: { rows: [junSale] },
+      platform_org_month_metrics: { rows: [v1] },
+      platform_org_month_validation: { rows: [validationRow()] },
+    }));
+    expect((await readOrgMetrics(db, 'org-a', '2026-06', now)).gross_cents).toBe(555_500);
+  });
+
+  it('série (componentes) trata v1, v2 sem assinatura e v2 sobrescrito por upsert legado como miss: recalcula e regrava v2', async () => {
+    const v1: Row = { ...cachedRow() };
+    for (const k of Object.keys(V2)) delete v1[k];
+    // upsert legado: base atualizada para a fonte nova (count 2), assinatura v2 ficou na fonte antiga (count 1)
+    const legado = cachedRow({ source_count: 2, source_max_updated_at: '2026-06-11T00:00:00-03:00' });
+    const sales = [junSale, sale('sale-jun2', '2026-06-11T00:00:00-03:00', 'org-a', { custos: [] })];
+    for (const [row, vendas, validacao] of [
+      [v1, [junSale], validationRow()], [cachedRow({ cache_version: 1 }), [junSale], validationRow()],
+      [cachedRow({ v2_source_count: null }), [junSale], validationRow()],
+      [legado, sales, validationRow({ source_count: 2, source_max_updated_at: '2026-06-11T00:00:00-03:00' })],
+    ] as Array<[Row, Row[], Row]>) {
       const db = dbFor(base({
-        ml_vendas: { rows: [junSale] },
+        ml_vendas: { rows: vendas },
         platform_org_month_metrics: { rows: [row] },
-        platform_org_month_validation: { rows: [validationRow()] },
+        platform_org_month_validation: { rows: [validacao] },
       }));
-      const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
-      expect(metrics.gross_cents).toBe(10_000);
+      const serie = await readMonthSeries(db, 'org-a', '2026-06', now, 1);
+      expect(serie[0].componentes!.gross_cents).toBe(vendas.length * 10_000);
       const upsert = db.calls.find((call) => call.op === 'upsert' && (call.value as Row).month === '2026-06-01');
       // junSale: R$ 100, líquido 80, imposto 8, custo congelado 50 → lucro 22
-      expect(upsert).toMatchObject({ value: { cache_version: 2, gross_cents: 10_000, profit_cents: 2_200, cost_cents: 5_000,
-        covered_gross_cents: 10_000, item_gross_cents: 10_000, excluded_items: 0, units: 1, net_cents: 8_000, tax_cents: 800, refunds_cents: null } });
+      expect(upsert).toMatchObject({ value: { cache_version: 2, v2_source_count: vendas.length, v2_tax_config_stamp: stamp,
+        v2_source_max_updated_at: (upsert!.value as Row).source_max_updated_at, refunds_cents: null } });
+      if (vendas.length === 1) {
+        expect(upsert).toMatchObject({ value: { gross_cents: 10_000, profit_cents: 2_200, cost_cents: 5_000,
+          covered_gross_cents: 10_000, item_gross_cents: 10_000, excluded_items: 0, units: 1, net_cents: 8_000, tax_cents: 800 } });
+      }
     }
   });
 
@@ -355,6 +395,7 @@ describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
         cost_covered_orders: 0, total_orders: 0, updated_at: null, source_count: 0, source_max_updated_at: null,
         tax_config_stamp: stamp, cache_version: 2, units: 0, net_cents: 0, tax_cents: 0, cost_cents: null, profit_cents: null,
         covered_gross_cents: 0, item_gross_cents: 0, excluded_items: 0,
+        v2_source_count: 0, v2_source_max_updated_at: null, v2_tax_config_stamp: stamp,
       }] },
       platform_org_month_validation: { rows: [] },
     }));
@@ -412,7 +453,67 @@ describe('janela parametrizada (ADR-0193 D-8)', () => {
   });
 
   it('readMonthSeries: falha do catálogo vira ponto leitura', async () => {
-    const serie = await readMonthSeries(dbFor(base({ ml_vendas: { rows: [] }, platform_org_cost_catalog: { error: 'boom' } })), 'org-a', '2026-10', now, 2);
-    expect(serie.map((p) => p.unavailable_reason)).toEqual(['leitura', 'leitura']);
+    const rows = [sale('s9', '2026-09-10T12:00:00-03:00'), sale('s10', '2026-10-10T12:00:00-03:00')];
+    const serie = await readMonthSeries(dbFor(base({ ml_vendas: { rows }, platform_org_cost_catalog: { error: 'boom' } })), 'org-a', '2026-10', now, 3);
+    // mês sem venda não precisa de custo: fica conhecido (zero de volume, lucro indisponível)
+    expect(serie.map((p) => p.unavailable_reason)).toEqual([null, 'leitura', 'leitura']);
+    expect(serie[0].componentes).toMatchObject({ gross_cents: 0, orders: 0, profit_cents: null });
+  });
+});
+
+describe('limite de trabalho (achados Codex 2 e 3)', () => {
+  const now = new Date('2026-10-15T12:00:00-03:00');
+  const doMes = (mes: string, n: number) => Array.from({ length: n }, (_, i) => sale(`s${mes}${i}`, `2026-${mes}-10T12:00:00-03:00`));
+
+  it('backfill para no teto compartilhado e a execução seguinte continua de onde parou', async () => {
+    const tables = base({ ml_vendas: { rows: [...doMes('07', 2), ...doMes('08', 2), ...doMes('09', 2)] } });
+    tables.platform_org_month_validation = { rows: ['07', '08', '09'].map((m) => ({ org_id: 'org-a', month: `2026-${m}-01`,
+      source_count: 2, source_max_updated_at: `2026-${m}-10T12:00:00-03:00` })) };
+    const rodada = async () => {
+      const db = dbFor(tables);
+      const r = await materializeRecentMonths(db, 'org-a', now, 6, { restante: 3 });
+      return { r, transferidas: db.transferidas.ml_vendas };
+    };
+    const r1 = await rodada();
+    expect(r1.r.materialized).toContain('2026-09');
+    expect(r1.r.skipped).toEqual(expect.arrayContaining(['2026-08', '2026-07']));
+    expect(r1.transferidas).toBeLessThanOrEqual(3);
+    const r2 = await rodada();
+    expect(r2.r.materialized).toEqual(['2026-08']);
+    const r3 = await rodada();
+    expect(r3.r.materialized).toEqual(['2026-07']);
+    expect((await rodada()).r).toEqual({ materialized: [], skipped: [] });
+  });
+
+  it('série: orçamento compartilhado conta antes de paginar; esgotou, os misses seguintes viram volume sem ler', async () => {
+    const db = dbFor(base({ ml_vendas: { rows: [...doMes('07', 60), ...doMes('08', 60), ...doMes('09', 60)] } }));
+    const orcamento = { restante: 100 };
+    const serie = await readMonthSeries(db, 'org-a', '2026-09', now, 3, new Map(), orcamento);
+    expect(serie.map((p) => p.unavailable_reason)).toEqual(['volume', 'volume', null]);
+    expect(db.transferidas.ml_vendas).toBe(60);
+    expect(orcamento.restante).toBe(40);
+  });
+
+  it('série: leitura que estoura o teto (venda chegou entre a contagem e as páginas) zera o orçamento', async () => {
+    const tables = base({ ml_vendas: { rows: [...doMes('08', 3), ...doMes('09', 3)] } });
+    const db = dbFor(tables);
+    const from = db.from.bind(db);
+    let contagens = 0;
+    db.from = (table: string) => {
+      const q = from(table);
+      if (table !== 'ml_vendas') return q;
+      const select = q.select.bind(q);
+      q.select = (columns: string, options?: { head?: boolean }) => {
+        const r = select(columns, options);
+        if (options?.head) contagens++;
+        else if (contagens === 1) (tables.ml_vendas.rows as Row[]).push(...doMes('09', 5));
+        return r;
+      };
+      return q;
+    };
+    const orcamento = { restante: 6 };
+    const serie = await readMonthSeries(db, 'org-a', '2026-09', now, 2, new Map(), orcamento);
+    expect(serie.map((p) => p.unavailable_reason)).toEqual(['volume', 'volume']);
+    expect(orcamento.restante).toBe(0);
   });
 });

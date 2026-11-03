@@ -3,9 +3,11 @@
 // Vendas e contexto de custo são o núcleo: falha lança. Devoluções, Ads, visitas e catálogo de
 // família são seções: falha vira `null` + aviso `error` (desconhecido nunca vira zero).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { carregarContexto, lerPaginas, lerVendasJanela, readMonthSeries, type MetricsDb } from './metrics-repository.ts';
 import {
-  calcularMes, diario, estornosNoPeriodo, estornosSemValor, kpisAds, kpisDoPeriodo, serieMensal, topFamilias, trafego,
+  carregarContexto, lerPaginas, lerVendasJanela, LIMITE_VENDAS_POR_EXECUCAO, readMonthSeries, type MetricsDb,
+} from './metrics-repository.ts';
+import {
+  calcularMes, diario, diasDoMes, estornosNoPeriodo, estornosSemValor, kpisAds, kpisDoPeriodo, serieMensal, topFamilias, trafego,
   type AdsDiaRow, type ComponentesSerie, type EstornoDevolucao, type VisitaDiaRow,
 } from './monthly-report.ts';
 import type { BillingStatement, MetricsWarning, Month, MonthlyReport } from './types.ts';
@@ -58,7 +60,12 @@ async function lerUm<T>(build: () => PromiseLike<{ data: unknown; error: { messa
   return (data as T | null) ?? null;
 }
 
-export async function montarRelatorioMensal(admin: SupabaseClient, orgId: string, month: Month, agora: Date): Promise<MonthlyReport> {
+/** `orcamentoVendas`: teto de vendas lidas pela chamada INTEIRA (achado Codex 3). M e M−1 são lidos
+ *  primeiro (cada um já limitado por `lerVendasJanela`) e consomem o orçamento; a série só calcula
+ *  misses com o que sobrar — o resto vira ponto `volume`. */
+export async function montarRelatorioMensal(
+  admin: SupabaseClient, orgId: string, month: Month, agora: Date, orcamentoVendas = LIMITE_VENDAS_POR_EXECUCAO,
+): Promise<MonthlyReport> {
   const db = admin as unknown as MetricsDb;
   const prev = addMonths(month, -1);
   const corrente = month === diaBrt(agora).slice(0, 7);
@@ -113,7 +120,9 @@ export async function montarRelatorioMensal(admin: SupabaseClient, orgId: string
   const anterior = calcularMes(vendasPrev, ctx, agora);
   // Ads com falha de leitura de uma das duas tabelas = indisponível (o aviso já foi registrado).
   const adsOk = ads != null && !warnings.some((w) => w.code === 'ads_read_failed');
-  const adsDoMes = (m: Month, gross: number) => (adsOk ? kpisAds(ads!, sync, m, hoje, gross) : null);
+  // Ads cobre o mesmo intervalo das vendas lidas: mês fechado até o último dia; mês corrente até hoje.
+  const ateDia = (m: Month) => (m === month && corrente ? hoje : diasDoMes(m).at(-1)!);
+  const adsDoMes = (m: Month, gross: number) => (adsOk ? kpisAds(ads!, sync, m, ateDia(m), gross) : null);
   const adsM = adsDoMes(month, atual.componentes.gross_cents);
 
   const codigos = [...new Set(atual.itens.map((it) => it.codigo?.trim()).filter((c): c is string => !!c))];
@@ -121,11 +130,13 @@ export async function montarRelatorioMensal(admin: SupabaseClient, orgId: string
 
   const conhecidos = new Map<Month, ComponentesSerie>([[month, atual.componentes]]);
   if (!corrente) conhecidos.set(prev, anterior.componentes);
-  const pontos = await readMonthSeries(db, orgId, month, agora, MESES_SERIE, conhecidos);
+  const orcamento = { restante: Math.max(0, orcamentoVendas - vendas.length - vendasPrev.length) };
+  const pontos = await readMonthSeries(db, orgId, month, agora, MESES_SERIE, conhecidos, orcamento);
   const adsPorMes = new Map(pontos.map((p) => [p.month, p.componentes ? adsDoMes(p.month, p.componentes.gross_cents) : null]));
 
   const termo = (termos as Array<{ modality: number; starts_on: string }>).find((t) => t.starts_on <= `${month}-01`);
   const modality = (stmt?.snapshot?.terms?.modality ?? termo?.modality ?? null) as 1 | 2 | null;
+  const current = kpisDoPeriodo(atual.componentes, devs ? estornosNoPeriodo(devs, jM) : null, adsM);
   return {
     org: { id: org.id, nome: org.nome, slug: org.slug, modality },
     month, previous_month: prev, generated_at: agora.toISOString(),
@@ -133,12 +144,14 @@ export async function montarRelatorioMensal(admin: SupabaseClient, orgId: string
       ? { status: 'closed', id: stmt.id, closed_at: stmt.closed_at, snapshot: { ...stmt.snapshot, id: stmt.id, closed_at: stmt.closed_at, closed_by: stmt.closed_by } }
       : { status: 'open' },
     summary: {
-      current: kpisDoPeriodo(atual.componentes, devs ? estornosNoPeriodo(devs, jM) : null, adsM),
+      current,
       previous: anterior.componentes.orders > 0
         ? kpisDoPeriodo(anterior.componentes, devs ? estornosNoPeriodo(devs, jP) : null, corrente ? null : adsDoMes(prev, anterior.componentes.gross_cents))
         : null,
     },
-    daily: diario(month, vendas, atual.itens, vendasPrev, adsM?.coverage === 'complete' ? ads!.filter((d) => d.dia.startsWith(`${month}-`)) : null, agora),
+    // diário só com a mesma elegibilidade do mês (achado Codex 5)
+    daily: diario(month, vendas, atual.itens, vendasPrev,
+      current.unavailable_reason == null ? ads!.filter((d) => d.dia.startsWith(`${month}-`)) : null, agora),
     series: serieMensal(pontos, adsPorMes),
     top_families: catalogo ? topFamilias(atual.itens, catalogo) : null,
     ads: adsM,

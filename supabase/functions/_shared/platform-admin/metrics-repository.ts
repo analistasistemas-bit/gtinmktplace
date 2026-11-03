@@ -31,7 +31,8 @@ const CACHE_TABLE = 'platform_org_month_metrics';
 const VALIDATION_RPC = 'platform_org_month_validation';
 const CACHE_COLUMNS = 'org_id,month,gross_cents,orders,ticket_cents,markup,cost_covered_orders,total_orders,'
   + 'updated_at,source_count,source_max_updated_at,tax_config_stamp,cache_version,units,net_cents,tax_cents,'
-  + 'cost_cents,profit_cents,covered_gross_cents,item_gross_cents,excluded_items';
+  + 'cost_cents,profit_cents,covered_gross_cents,item_gross_cents,excluded_items,'
+  + 'v2_source_count,v2_source_max_updated_at,v2_tax_config_stamp';
 /** ADR-0193 D-8: v2 = linha com os componentes do lucro por item calculável. Outra versão = miss
  *  (recalcula ao vivo e regrava), nunca zero. */
 const CACHE_VERSION = 2;
@@ -301,6 +302,8 @@ type CachedMonthRow = {
   cost_covered_orders: number; total_orders: number; updated_at: string | null;
   source_count: number; source_max_updated_at: string | null; tax_config_stamp: string;
   cache_version: number; componentes: ComponentesSerie | null;
+  /** Assinatura da fonte dos componentes, gravada SÓ pelo código v2 (o upsert legado não toca). */
+  v2_source_count: number | null; v2_source_max_updated_at: string | null; v2_tax_config_stamp: string | null;
 };
 type MonthValidation = { count: number; maxUpdatedAt: string | null };
 
@@ -328,15 +331,72 @@ function toCachedRow(row: Record<string, unknown>): CachedMonthRow {
       covered_gross_cents: Number(row.covered_gross_cents), item_gross_cents: Number(row.item_gross_cents),
       excluded_items: Number(row.excluded_items),
     },
+    v2_source_count: nullableNumber(row.v2_source_count),
+    v2_source_max_updated_at: row.v2_source_max_updated_at == null ? null : String(row.v2_source_max_updated_at),
+    v2_tax_config_stamp: row.v2_tax_config_stamp == null ? null : String(row.v2_tax_config_stamp),
   };
 }
 const nullableNumber = (value: unknown): number | null => (value == null ? null : Number(value));
 
-/** Linha do cache ainda vale para (count, max atualizado_em, config, versão)? Versão antiga = miss. */
-function cacheValido(cached: CachedMonthRow | undefined, check: MonthValidation | undefined, stamp: string): cached is CachedMonthRow {
-  return !!cached && !!check && cached.cache_version === CACHE_VERSION && cached.componentes != null
-    && cached.source_count === check.count && cached.source_max_updated_at === check.maxUpdatedAt
-    && cached.tax_config_stamp === stamp;
+/** Linha do cache ainda vale para (count, max atualizado_em, config)? Com `exigeV2` (componentes do
+ *  lucro: série do relatório e backfill), também precisa da versão 2 E da assinatura v2 batendo com a
+ *  fonte atual: um upsert do código antigo atualiza só as colunas base, a assinatura v2 fica velha e a
+ *  linha vira miss. Sem `exigeV2` (carteira: volume/markup) a linha v1 segue valendo — as colunas base
+ *  são as mesmas de antes, e isso evita recalcular 6 meses × todas as orgs na 1ª abertura pós-deploy. */
+function cacheValido(
+  cached: CachedMonthRow | undefined, check: MonthValidation | undefined, stamp: string, exigeV2 = false,
+): cached is CachedMonthRow {
+  const base = !!cached && !!check && cached.source_count === check.count
+    && cached.source_max_updated_at === check.maxUpdatedAt && cached.tax_config_stamp === stamp;
+  if (!base || !exigeV2) return base;
+  return cached.cache_version === CACHE_VERSION && cached.componentes != null && cached.v2_source_count === check.count
+    && cached.v2_source_max_updated_at === check.maxUpdatedAt && cached.v2_tax_config_stamp === stamp;
+}
+
+function mesSemVenda(configState: ConfigState, now: Date): MonthComputed {
+  const { componentes: c } = calcularMes([], { maps: undefined, rates: configState.rates, custosOk: true, configOk: configState.configAvailable }, now);
+  return {
+    gross_cents: 0, orders: 0, ticket_cents: 0, markup: null, cost_covered_orders: 0, total_orders: 0, updated_at: null,
+    source_count: 0, source_max_updated_at: null, costsAvailable: true, catalogErrorMessage: null,
+    componentes: { gross_cents: c.gross_cents, orders: c.orders, units: c.units, net_cents: c.net_cents, tax_cents: c.tax_cents,
+      cost_cents: c.cost_cents, profit_cents: c.profit_cents, covered_gross_cents: c.covered_gross_cents,
+      item_gross_cents: c.item_gross_cents, excluded_items: c.excluded_items },
+  };
+}
+
+/** Orçamento de vendas lidas por execução, compartilhado entre meses (e orgs, no job). */
+export type Orcamento = { restante: number };
+
+async function contarVendasDoMes(db: MetricsDb, orgId: string, month: string): Promise<number> {
+  const r = await (db.from('ml_vendas').select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId).gte('date_closed', startOf(month)).lt('date_closed', startOf(addMonths(month, 1))) as unknown as PromiseLike<
+      { count: number | null; error: DbError }>);
+  if (r.error) throw new Error(r.error.message);
+  return r.count ?? 0;
+}
+
+/** Miss calculado dentro do orçamento (achados Codex 2/3): conta ANTES de paginar; não cabe → `volume`
+ *  sem ler nada; cabe → reserva antes de ler (chamadas paralelas não sobrecomprometem) e lê com teto
+ *  no saldo. Leitura que estoura o teto (vendas chegaram depois da contagem) zera o orçamento — as
+ *  páginas recebidas já custaram. */
+async function missComOrcamento(
+  db: MetricsDb, orgId: string, value: string, now: Date, configState: ConfigState, orcamento: Orcamento,
+): Promise<{ computed: MonthComputed } | { motivo: 'volume' | 'leitura' }> {
+  let contagem: number;
+  try { contagem = await contarVendasDoMes(db, orgId, value); } catch { return { motivo: 'leitura' }; }
+  // Mês sem venda: componentes conhecidos (zero de volume, lucro indisponível) sem ler vendas nem catálogo.
+  if (contagem === 0) return { computed: mesSemVenda(configState, now) };
+  if (contagem > orcamento.restante) return { motivo: 'volume' };
+  const disponivel = orcamento.restante;
+  orcamento.restante -= contagem;
+  try {
+    const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState, { maxLinhas: disponivel });
+    orcamento.restante = Math.max(0, orcamento.restante + contagem - computed.source_count);
+    return { computed };
+  } catch (error) {
+    if (error instanceof VolumeAcimaDoLimite) { orcamento.restante = 0; return { motivo: 'volume' }; }
+    return { motivo: 'leitura' };
+  }
 }
 
 /** Perf FASE 3.3: UMA leitura da tabela materializada + (só se houver linha candidata) UMA
@@ -410,6 +470,7 @@ async function upsertMonth(
     tax_cents: computed.componentes.tax_cents, cost_cents: computed.componentes.cost_cents,
     profit_cents: computed.componentes.profit_cents, covered_gross_cents: computed.componentes.covered_gross_cents,
     item_gross_cents: computed.componentes.item_gross_cents, excluded_items: computed.componentes.excluded_items,
+    v2_source_count: computed.source_count, v2_source_max_updated_at: computed.source_max_updated_at, v2_tax_config_stamp: stamp,
     // Estorno pela data do estorno não é invalidado pelo watermark de `ml_vendas` (date_closed):
     // não grava um número que pode envelhecer em silêncio. KPIs do mês leem as devoluções ao vivo.
     refunds_cents: null,
@@ -452,7 +513,7 @@ async function resolveMonth(
  *  lança: falha de leitura do cache vira "materializar tudo de novo", falha de materialização de UM
  *  mês vira "pular esse mês e seguir os outros". */
 export async function materializeRecentMonths(
-  db: MetricsDb, orgId: string, now: Date, count = 6,
+  db: MetricsDb, orgId: string, now: Date, count = 6, orcamento: Orcamento = { restante: LIMITE_VENDAS_POR_EXECUCAO },
 ): Promise<{ materialized: string[]; skipped: string[] }> {
   const cur = currentMonth(now);
   const months = Array.from({ length: count }, (_, index) => addMonths(cur, -(index + 1)));
@@ -484,39 +545,39 @@ export async function materializeRecentMonths(
 
   const materialized: string[] = [];
   const skipped: string[] = [];
-  await Promise.all(months.map(async (value) => {
-    if (cacheValido(cachedRows.get(value), validation.get(value), stamp)) return;
+  // Achado Codex 2 (ADR-0173): um mês por vez, do mais recente ao mais antigo, dentro do orçamento
+  // compartilhado da execução. O que não coube fica em `skipped` e a próxima rodada continua (as linhas
+  // já gravadas validam e são puladas). Linha só é gravada depois do mês inteiro calculado.
+  for (const value of months) {
+    if (cacheValido(cachedRows.get(value), validation.get(value), stamp, true)) continue;
+    if (configState.configErrored) { skipped.push(value); continue; }
+    const miss = await missComOrcamento(db, orgId, value, now, configState, orcamento);
+    if (!('computed' in miss) || !miss.computed.costsAvailable) { skipped.push(value); continue; }
     try {
-      const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState);
-      if (computed.costsAvailable && !configState.configErrored) {
-        await upsertMonth(db, orgId, value, computed, stamp, now);
-        materialized.push(value);
-      } else {
-        skipped.push(value);
-      }
+      await upsertMonth(db, orgId, value, miss.computed, stamp, now);
+      materialized.push(value);
     } catch {
       skipped.push(value);
     }
-  }));
+  }
   return { materialized, skipped };
 }
 
 export type SerieMes = { month: string; componentes: ComponentesSerie | null; unavailable_reason: 'volume' | 'leitura' | null };
 
 /** ADR-0193 D-8: componentes de `months` meses terminando em `month` (ascendentes), pelo cache v2 e,
- *  nos misses, ao vivo com ORÇAMENTO somado de `LIMITE_VENDAS_POR_EXECUCAO` vendas: mês que não cabe
+ *  nos misses, ao vivo dentro do `orcamento` (compartilhado com quem já leu M/M−1): mês que não cabe
  *  vira ponto `volume`, falha de leitura vira `leitura` — nunca zero. `conhecidos`: meses que o
  *  chamador já calculou ao vivo (não relê). Miss íntegro é gravado (best-effort), como `resolveMonth`. */
 export async function readMonthSeries(
   db: MetricsDb, orgId: string, month: string, now: Date, months: number,
-  conhecidos: Map<string, ComponentesSerie> = new Map(),
+  conhecidos: Map<string, ComponentesSerie> = new Map(), orcamento: Orcamento = { restante: LIMITE_VENDAS_POR_EXECUCAO },
 ): Promise<SerieMes[]> {
   const lista = janelaMeses(month, months);
   const [configState, cache] = await Promise.all([
     loadConfigState(db, orgId), loadMetricsCache(db, [orgId], month, now, months),
   ]);
   const stamp = taxConfigStamp(configState);
-  let orcamento = LIMITE_VENDAS_POR_EXECUCAO;
   const out = new Map<string, SerieMes>();
   const ponto = (value: string, componentes: ComponentesSerie | null, unavailable_reason: SerieMes['unavailable_reason']) =>
     out.set(value, { month: value, componentes, unavailable_reason });
@@ -527,20 +588,15 @@ export async function readMonthSeries(
     const key = cacheKey(orgId, value);
     const cached = cache.cachedRows.get(key);
     const check = cache.validation.get(key);
-    if (isCacheEligible(value, now) && cacheValido(cached, check, stamp)) { ponto(value, cached.componentes, null); continue; }
+    if (isCacheEligible(value, now) && cacheValido(cached, check, stamp, true)) { ponto(value, cached.componentes, null); continue; }
     if (configState.configErrored) { ponto(value, null, 'leitura'); continue; }
-    if (check && check.count > orcamento) { ponto(value, null, 'volume'); continue; }
-    try {
-      const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState, { maxLinhas: orcamento });
-      orcamento -= computed.source_count;
-      if (!computed.costsAvailable) { ponto(value, null, 'leitura'); continue; }
-      if (isClosed(value, now)) {
-        try { await upsertMonth(db, orgId, value, computed, stamp, now); } catch { /* best-effort */ }
-      }
-      ponto(value, computed.componentes, null);
-    } catch (error) {
-      ponto(value, null, error instanceof VolumeAcimaDoLimite ? 'volume' : 'leitura');
+    const miss = await missComOrcamento(db, orgId, value, now, configState, orcamento);
+    if (!('computed' in miss)) { ponto(value, null, miss.motivo); continue; }
+    if (!miss.computed.costsAvailable) { ponto(value, null, 'leitura'); continue; }
+    if (isClosed(value, now)) {
+      try { await upsertMonth(db, orgId, value, miss.computed, stamp, now); } catch { /* best-effort */ }
     }
+    ponto(value, miss.computed.componentes, null);
   }
   return lista.map((value) => out.get(value)!);
 }

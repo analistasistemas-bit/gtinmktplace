@@ -163,14 +163,15 @@ export interface AdsDiaRow {
 export const atribuicaoFinal = (dia: string, coletadoEm: string): boolean =>
   Math.round((Date.parse(`${diaBrt(new Date(Date.parse(coletadoEm)))}T00:00:00Z`) - Date.parse(`${dia}T00:00:00Z`)) / DIA_MS) >= 15;
 
-/** `hoje` = dia BRT de agora: a coleta lê até D-1, então os dias esperados vão até ontem.
- *  `null` = org sem nenhum dado de Ads (sem sync e sem linha). */
+/** `ateDia` = último dia (inclusive) das VENDAS lidas: o Ads tem de cobrir o mesmo intervalo, senão o
+ *  lucro após Ads misturaria vendas até agora com investimento até D−1 (no mês corrente, a coleta de
+ *  hoje ainda não existe → cobertura parcial). `null` = org sem nenhum dado de Ads (sem sync e sem linha). */
 export function kpisAds(
-  dias: AdsDiaRow[], sync: { conta_cobertura_desde: string | null } | null, month: Month, hoje: string, grossCents: Cents,
+  dias: AdsDiaRow[], sync: { conta_cobertura_desde: string | null } | null, month: Month, ateDia: string, grossCents: Cents,
 ): AdsKpis | null {
   const doMes = new Map(dias.filter((d) => d.dia.startsWith(`${month}-`)).map((d) => [d.dia, d]));
   if (!sync && doMes.size === 0) return null;
-  const esperados = diasDoMes(month).filter((d) => d < hoje);
+  const esperados = diasDoMes(month).filter((d) => d <= ateDia);
   const desde = sync?.conta_cobertura_desde ?? null;
   const completo = esperados.length > 0 && esperados.every((d) => doMes.has(d)) && desde != null && desde <= esperados[0];
   const rows = esperados.map((d) => doMes.get(d)).filter((d): d is AdsDiaRow => d != null);
@@ -285,8 +286,9 @@ export function topFamilias(itens: ResultadoItem[], catalogo: Map<string, Famili
 // ---------------------------------------------------------------------------------------------
 // Diário e série
 // ---------------------------------------------------------------------------------------------
-/** Dia i do mês × dia i do anterior. `adsCompletos`: linhas de Ads do mês SÓ quando `kpisAds` deu
- *  cobertura completa (senão null); o lucro após Ads diário exige também nenhum item fora no mês. */
+/** Dia i do mês × dia i do anterior. `adsCompletos`: linhas de Ads do mês SÓ quando o lucro após Ads do
+ *  MÊS está disponível (`kpisDoPeriodo(...).unavailable_reason === null`); senão null. Por defesa, repete
+ *  a elegibilidade mensal (≥ 1 item calculável e nenhum fora) e dia sem Ads coletado sai null. */
 export function diario(
   month: Month, vendas: Venda[], itens: ResultadoItem[], vendasAnterior: Venda[], adsCompletos: AdsDiaRow[] | null, agora: Date,
 ): DailyPoint[] {
@@ -313,7 +315,7 @@ export function diario(
   })();
   const diasAnterior = new Set(diasDoMes(mesAnterior));
   const fat = itens.filter((it) => it.faturavel);
-  const comAposAds = adsCompletos != null && fat.every((it) => it.lucro != null);
+  const comAposAds = adsCompletos != null && fat.length > 0 && fat.every((it) => it.lucro != null);
   const lucroPorDia = new Map<string, number>();
   if (comAposAds) {
     const diaDaOrder = new Map(vendas.map((v) => [v.order_id, dataDaVenda(v)]));
@@ -330,7 +332,7 @@ export function diario(
     const prev = `${mesAnterior}${day.slice(7)}`;
     return {
       day, gross_cents: cents(a?.bruto ?? 0), orders: a?.pedidos.size ?? 0,
-      profit_after_ads_cents: comAposAds ? cents(lucroPorDia.get(day) ?? 0) - cents(adsPorDia.get(day) ?? 0) : null,
+      profit_after_ads_cents: comAposAds && adsPorDia.has(day) ? cents(lucroPorDia.get(day) ?? 0) - cents(adsPorDia.get(day)!) : null,
       prev_gross_cents: diasAnterior.has(prev) ? cents(anterior.get(prev)?.bruto ?? 0) : null,
     };
   });

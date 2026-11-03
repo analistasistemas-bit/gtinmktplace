@@ -131,6 +131,36 @@ describe('montarRelatorioMensal (IO)', () => {
   });
 });
 
+describe('montarRelatorioMensal — intervalo de Ads, diário e orçamento (achados Codex 3–5)', () => {
+  it('mês corrente: vendas até agora × Ads até ontem → após Ads indisponível e diário null', async () => {
+    const t = tabelas();
+    t.ml_vendas.push(venda(A, `${A}-nov`, 77, '2026-11-02T09:00:00-03:00', 100));
+    t.ml_ads_conta_dia.push({ org_id: A, dia: '2026-11-01', cost: 1, clicks: 1, prints: 1, direct_amount: 0, indirect_amount: 0,
+      total_amount: 0, coletado_em: '2026-11-02T11:00:00-03:00' });
+    const r = await montarRelatorioMensal(adminCom(t), A, '2026-11', AGORA);
+    expect(r.summary.current.gross_cents).toBe(10_000);
+    expect(r.summary.current).toMatchObject({ profit_after_ads_cents: null, unavailable_reason: 'ads_cobertura_parcial' });
+    expect(r.daily.map((d) => d.profit_after_ads_cents)).toEqual([null, null]);
+  });
+
+  it('mês sem venda com Ads completo: resumo e diário sem lucro após Ads', async () => {
+    const t = tabelas();
+    t.ml_vendas = t.ml_vendas.filter((v) => v.id !== `${A}-out`);
+    const r = await montarRelatorioMensal(adminCom(t), A, '2026-10', AGORA);
+    expect(r.summary.current.profit_after_ads_cents).toBeNull();
+    expect(r.daily.every((d) => d.profit_after_ads_cents === null)).toBe(true);
+  });
+
+  it('orçamento compartilhado: M e M−1 consomem antes da série; o resto vira volume', async () => {
+    const t = tabelas();
+    t.ml_vendas.push(venda(A, `${A}-ago`, 55, '2026-08-10T12:00:00-03:00', 30));
+    const r = await montarRelatorioMensal(adminCom(t), A, '2026-10', AGORA, 2);
+    expect(r.series.map((p) => [p.month, p.unavailable_reason])).toEqual([['2026-08', 'volume'], ['2026-09', null], ['2026-10', null]]);
+    const r2 = await montarRelatorioMensal(adminCom(t), A, '2026-10', AGORA, 3);
+    expect(r2.series[0]).toMatchObject({ month: '2026-08', gross_cents: 3_000, unavailable_reason: null });
+  });
+});
+
 describe('ação monthly_report no handler', () => {
   const ORG = '90000000-0000-0000-0000-000000000001';
   const req = (body: Row) => new Request('http://local/platform-admin', { method: 'POST', body: JSON.stringify(body) });

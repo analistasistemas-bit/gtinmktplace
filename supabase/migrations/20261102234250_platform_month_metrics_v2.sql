@@ -1,6 +1,7 @@
 -- ADR-0193 D-8 (Fatia 1): cache de meses fechados ganha versão e os componentes do lucro por item
--- calculável (`resultadoPorItem`, ADR-0190). Linha com `cache_version` < 2 é miss (recalcula ao vivo e
--- regrava v2) — nunca vira zero. Colunas novas são nuláveis: `null` = não calculado (linha v1) ou
+-- calculável (`resultadoPorItem`, ADR-0190). Para os componentes (série do relatório, backfill), linha com
+-- `cache_version` < 2 ou assinatura v2 diferente da fonte atual é miss (recalcula e regrava v2) — nunca
+-- vira zero. A carteira (volume/markup, colunas base) segue aceitando a linha v1 válida. Colunas novas são nuláveis: `null` = não calculado (linha v1) ou
 -- indisponível (ex.: `profit_cents` sem nenhum item calculável), nunca "zero".
 --
 -- `refunds_cents` é estorno pela data do estorno (ADR-0106). A validação do cache só olha
@@ -16,4 +17,10 @@ alter table public.platform_org_month_metrics
   add column covered_gross_cents bigint,   -- Σ faturamento dos itens calculáveis
   add column item_gross_cents    bigint,   -- Σ faturamento dos itens faturáveis (base da cobertura)
   add column excluded_items      integer,  -- nº de itens faturáveis sem lucro calculável
-  add column refunds_cents       bigint;
+  add column refunds_cents       bigint,
+  -- Assinatura da fonte usada nos componentes, gravada SÓ pelo código v2. O código antigo (ainda no ar
+  -- durante o deploy) faz upsert das colunas base e atualizaria source_count/max/stamp sem recalcular os
+  -- componentes; com a assinatura separada, o leitor v2 vê que ela não bate e trata como miss.
+  add column v2_source_count          integer,
+  add column v2_source_max_updated_at timestamptz,
+  add column v2_tax_config_stamp      text;

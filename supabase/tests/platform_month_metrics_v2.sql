@@ -12,7 +12,8 @@ declare
 begin
   select array_agg(c) into faltando
     from unnest(array['cache_version','units','net_cents','tax_cents','cost_cents','profit_cents',
-                      'covered_gross_cents','item_gross_cents','excluded_items','refunds_cents']) c
+                      'covered_gross_cents','item_gross_cents','excluded_items','refunds_cents',
+                      'v2_source_count','v2_source_max_updated_at','v2_tax_config_stamp']) c
    where not exists (select 1 from information_schema.columns
                       where table_schema = 'public' and table_name = 'platform_org_month_metrics' and column_name = c);
   if faltando is not null then raise exception 'colunas ausentes: %', faltando; end if;
@@ -42,6 +43,29 @@ begin
   if r.cache_version <> 2 or r.excluded_items <> 2 or r.profit_cents is not null then
     raise exception 'v2 não gravou: %', row_to_json(r);
   end if;
+
+  -- Achado Codex: código ANTIGO (ainda implantado durante o deploy) faz upsert só das colunas base.
+  -- A assinatura v2 tem que sobreviver intacta, para o leitor v2 ver que os componentes envelheceram.
+  update public.platform_org_month_metrics
+     set source_count = 5, source_max_updated_at = '1999-01-20T00:00:00Z', tax_config_stamp = 'unconfirmed',
+         v2_source_count = 5, v2_source_max_updated_at = '1999-01-20T00:00:00Z', v2_tax_config_stamp = 'unconfirmed'
+   where org_id = org and month = '1999-01-01';
+  -- upsert exatamente com a lista de colunas do código legado (upsertMonth antes da v2), fonte mudou (6 vendas)
+  insert into public.platform_org_month_metrics as m (org_id, month, gross_cents, orders, ticket_cents, markup,
+    cost_covered_orders, total_orders, updated_at, source_count, source_max_updated_at, tax_config_stamp, computed_at)
+  values (org, '1999-01-01', 999, 6, 166, null, 0, 6, '1999-01-25T00:00:00Z', 6, '1999-01-25T00:00:00Z', 'unconfirmed', now())
+  on conflict (org_id, month) do update set gross_cents = excluded.gross_cents, orders = excluded.orders,
+    ticket_cents = excluded.ticket_cents, markup = excluded.markup, cost_covered_orders = excluded.cost_covered_orders,
+    total_orders = excluded.total_orders, updated_at = excluded.updated_at, source_count = excluded.source_count,
+    source_max_updated_at = excluded.source_max_updated_at, tax_config_stamp = excluded.tax_config_stamp,
+    computed_at = excluded.computed_at;
+  select * into r from public.platform_org_month_metrics where org_id = org and month = '1999-01-01';
+  -- mesma regra de `cacheValido(..., exigeV2)` (metrics-repository.ts) contra a validação atual (6, 25/01)
+  if r.cache_version = 2 and r.v2_source_count = 6 and r.v2_source_max_updated_at = '1999-01-25T00:00:00Z'
+     and r.v2_tax_config_stamp = 'unconfirmed' then
+    raise exception 'upsert legado deixou a linha válida como v2 com componentes antigos: %', row_to_json(r);
+  end if;
+  if r.v2_source_count <> 5 then raise exception 'assinatura v2 foi alterada pelo upsert legado'; end if;
 
   -- RLS/privilégios inalterados: authenticated segue sem acesso
   if has_table_privilege('authenticated', 'public.platform_org_month_metrics', 'select') then
