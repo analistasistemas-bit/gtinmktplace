@@ -20,7 +20,7 @@ import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 
 const ITENS = 'operacoes_massa_itens';
-const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior';
+const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
 export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
 

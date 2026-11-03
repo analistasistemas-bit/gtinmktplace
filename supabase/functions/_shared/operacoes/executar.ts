@@ -5,7 +5,7 @@ import type { Semaforo } from '../promocoes/tipos.ts';
 import { decidir, piorou } from './decidir.ts';
 import { agendarOuConcluir, FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
 import { type ClienteML, SemEscritaPromocoes } from './ml.ts';
-import type { Acao, ItemNaCampanha, ItemRow, TipoPromocao } from './tipos.ts';
+import { type Acao, type ItemNaCampanha, type ItemRow, ofertaFixaNova, type TipoPromocao } from './tipos.ts';
 
 export type { CamposItem, ItemRow } from './tipos.ts';
 
@@ -31,6 +31,9 @@ const AGUARDANDO = 'Saída pedida ao ML; aguardando confirmação';
 const SELLER_CENTER = 'O ML ainda não confirmou a saída. Confira no Seller Center.';
 const PIOROU = 'O resultado piorou desde o preview';
 const SAIU_DA_CENTRAL = 'O anúncio saiu da Central desde o preview';
+const ADESAO_SEM_CONFIRMACAO = 'Não foi possível confirmar a adesão no ML. Confira no Seller Center.';
+/** Ofertas fixas: releituras da adesão incerta. Entre elas o claim leva > 2 min → ~13 min, bem acima do atraso de ~2 min. */
+const TENTATIVAS_ADESAO = 5;
 
 const MIN = 60;
 const ESCADA = [5 * MIN, 10 * MIN, 20 * MIN, 40 * MIN];
@@ -65,9 +68,11 @@ export function mensagemJanela(inicio: string | null, fim: string | null): strin
   const b = fim ? quando(fim) : null;
   return a && b ? `Agendada: ${a.dia} ${a.hora}–${b.hora}` : null;
 }
-/** Status real na Central depois de aderir: o da campanha; ainda candidate (atraso do ML) → o da promoção. */
+/** Ofertas fixas ainda em candidate (atraso de ~2 min): o status do item é o do tipo, não o da campanha (spike). */
+const ESPELHO_OFERTA: Partial<Record<TipoPromocao, Espelho>> = { SMART_LIGHTNING: 'pending', PRICE_MATCHING: 'started' };
+/** Status real na Central depois de aderir: o da campanha; ainda candidate (atraso do ML) → o do tipo ou o da promoção. */
 const espelhoAderido = (op: OperacaoRow, f: ItemNaCampanha | null): Espelho =>
-  f?.status === 'pending' || f?.status === 'started' ? f.status : op.promocao_status;
+  f?.status === 'pending' || f?.status === 'started' ? f.status : ESPELHO_OFERTA[op.promocao_tipo] ?? op.promocao_status;
 // Espelho é best-effort: o item já está gravado; o sync da Central corrige depois.
 const espelhar = (deps: DepsExecutar, op: OperacaoRow, id: string, e: Espelho) =>
   deps.espelharStatusCentral(op.promocao_id, op.promocao_tipo, id, e).catch(() => {});
@@ -75,6 +80,58 @@ const espelhar = (deps: DepsExecutar, op: OperacaoRow, id: string, e: Espelho) =
 const centavos = (n: number) => Math.round(n * 100);
 const espelharPrecoSeguro = (deps: DepsExecutar, op: OperacaoRow, id: string, preco: number) =>
   deps.espelharPreco(op.promocao_id, id, preco).catch(() => {});
+
+/** Recusa definitiva do ML (4xx que não é 429): nada foi escrito. */
+const recusaDefinitiva = (e: unknown) => {
+  const status = Number(/^ML (\d{3})/.exec(e instanceof Error ? e.message : '')?.[1]);
+  return status >= 400 && status < 500 && status !== 429;
+};
+/** Escrita de oferta fixa com etapa gravada: recusa clara vira erro; o resto é incerto (item fica `enviando`, retry relê). */
+const escritaIncerta = (e: unknown) => (e instanceof SemEscritaPromocoes || recusaDefinitiva(e) ? e : new FalhaPosEscrita(e));
+
+/** Saída confirmada: o novo convite pode ter outro preço e o sync é 1×/dia. O preço vem ANTES do status: espelharPreco
+ *  só grava em linha participando, e o espelho `saiu` a devolve a candidate. */
+async function espelharSaida(deps: DepsExecutar, op: OperacaoRow, id: string, f: ItemNaCampanha | null | undefined) {
+  if (ofertaFixaNova(op.promocao_tipo) && f?.preco != null) await espelharPrecoSeguro(deps, op, id, f.preco);
+  await espelhar(deps, op, id, 'saiu');
+}
+
+/** Saída aceita (ou incerta) → escada de conferência. */
+function aguardarSaida(deps: DepsExecutar, op: OperacaoRow, id: string): Promise<void> {
+  const agora = deps.agora();
+  return gravarPos(deps.gravarItem(op.id, id, {
+    status: 'saida_solicitada', mensagem: AGUARDANDO, conferencias: 0, saida_pedida_em: iso(agora),
+    proxima_conferencia: iso(agora + proximoIntervalo(0, 0)! * 1000),
+  }));
+}
+
+/**
+ * Oferta fixa com etapa gravada: o POST/DELETE pode ter sido aceito, então nunca escreve de novo. `candidate` logo
+ * depois do POST é o atraso do ML; depois do DELETE é a saída (o item participava quando a etapa foi gravada).
+ */
+async function retomarOfertaFixa(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fresco: ItemNaCampanha | null): Promise<void> {
+  const id = it.ml_item_id;
+  if (op.acao === 'sair') {
+    if (fresco?.status !== 'candidate') return aguardarSaida(deps, op, id);
+    await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }));
+    return espelharSaida(deps, op, id, fresco);
+  }
+  if (fresco !== null && ehParticipando(fresco.status)) {
+    await gravarPos(deps.gravarItem(op.id, id, {
+      status: 'aplicado', mensagem: null, etapa: 'ml_confirmado', ...(fresco.offer_id ? { offer_id: fresco.offer_id } : {}),
+    }));
+    await espelhar(deps, op, id, espelhoAderido(op, fresco));
+    if (it.preco != null) await espelharPrecoSeguro(deps, op, id, it.preco);
+    return;
+  }
+  // ponytail: o laço não conta tentativas; `conferencias` (sem uso em aderir) conta, como no reajuste.
+  const conferencias = it.conferencias + 1;
+  if (conferencias >= TENTATIVAS_ADESAO) {
+    return deps.gravarItem(op.id, id, { status: 'erro', mensagem: ADESAO_SEM_CONFIRMACAO, conferencias });
+  }
+  await gravarPos(deps.gravarItem(op.id, id, { conferencias }));
+  throw new FalhaPosEscrita(new Error(`ML ainda não confirmou a adesão do item ${id}`));
+}
 
 /**
  * Alterar o deal_price (emenda 2026-11-03, achados Codex P1): etapa durável + preço lido no ML ANTES do PUT (o
@@ -113,9 +170,8 @@ async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fr
     await deps.ml.put(id, d.body);
   } catch (e) {
     if (e instanceof SemEscritaPromocoes) throw e;
-    // Recusa definitiva do ML (4xx que não é 429): o preço não mudou → erro com a mensagem do ML.
-    const status = Number(/^ML (\d{3})/.exec(e instanceof Error ? e.message : '')?.[1]);
-    if (status >= 400 && status < 500 && status !== 429) throw e;
+    // Recusa definitiva do ML: o preço não mudou → erro com a mensagem do ML.
+    if (recusaDefinitiva(e)) throw e;
     // Resultado incerto (timeout/5xx depois de o ML aplicar?): releitura com o preço novo = aplicado; senão
     // (achado Codex P1: o ML leva até ~15 s para refletir) o item fica `enviando` com a etapa e o retry reconfere —
     // o PUT é idempotente.
@@ -131,10 +187,12 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   const id = it.ml_item_id;
   // Achado Codex P1: na retomada de uma escrita (etapa gravada), falha de leitura não pode virar `erro` — o PUT pode
   // ter sido aplicado; o item fica `enviando` e o retry relê.
-  const retomada = op.acao === 'alterar_preco' && it.etapa === 'escrita_pedida';
+  const fixa = ofertaFixaNova(op.promocao_tipo);
+  const retomada = (op.acao === 'alterar_preco' || fixa) && it.etapa === 'escrita_pedida';
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
     .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
+  if (retomada) return retomarOfertaFixa(op, it, deps, fresco);
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
   const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
   const relacoes = convidado ? await ml.lerRelacoes(id) : null;
@@ -154,12 +212,9 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   }
 
   if (d.tipo === 'delete') {
-    await ml.del(id, d.query);
-    const agora = deps.agora();
-    return gravarPos(deps.gravarItem(op.id, id, {
-      status: 'saida_solicitada', mensagem: AGUARDANDO, conferencias: 0, saida_pedida_em: iso(agora),
-      proxima_conferencia: iso(agora + proximoIntervalo(0, 0)! * 1000),
-    }));
+    if (fixa) await deps.gravarItem(op.id, id, { etapa: 'escrita_pedida', offer_id: fresco?.offer_id ?? null });
+    await ml.del(id, d.query).catch((e) => { throw fixa ? escritaIncerta(e) : e; });
+    return aguardarSaida(deps, op, id);
   }
 
   // Decisão 5 do ADR: resultado pior que o do preview só entra com risco confirmado.
@@ -170,8 +225,12 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
     if (piorou(it.semaforo ?? 'verde', atual)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: PIOROU });
   }
 
-  const { offer_id } = await ml.post(id, d.body);
-  await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, offer_id }));
+  if (fixa) await deps.gravarItem(op.id, id, { etapa: 'escrita_pedida' });
+  const { offer_id, inicio, fim } = await ml.post(id, d.body).catch((e) => { throw fixa ? escritaIncerta(e) : e; });
+  await gravarPos(deps.gravarItem(op.id, id, {
+    status: 'aplicado', offer_id, mensagem: op.promocao_tipo === 'SMART_LIGHTNING' ? mensagemJanela(inicio, fim) : null,
+    ...(fixa ? { etapa: 'ml_confirmado' as const } : {}),
+  }));
   if (op.promocao_tipo === 'LIGHTNING') {
     // Best-effort: o item já está aplicado; a janela é informativa.
     const o = await ml.lerOfertaNoItem(op.promocao_id, id).catch(() => null);
@@ -214,13 +273,13 @@ export async function conferir(op: OperacaoRow, deps: DepsExecutar): Promise<{ c
       semPermissao = e instanceof SemEscritaPromocoes;
       return undefined;
     });
-    // Relâmpago: só a volta a candidate prova a saída; sumir da campanha (null) não confirma.
-    const saiu = fresco !== undefined && (op.promocao_tipo === 'LIGHTNING'
+    // Relâmpago e ofertas fixas: só a volta a candidate prova a saída; sumir da campanha (null) não confirma.
+    const saiu = fresco !== undefined && (op.promocao_tipo === 'LIGHTNING' || ofertaFixaNova(op.promocao_tipo)
       ? fresco?.status === 'candidate'
       : fresco === null || !ehParticipando(fresco.status));
     if (saiu) {
       await deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, proxima_conferencia: null });
-      await espelhar(deps, op, id, 'saiu');
+      await espelharSaida(deps, op, id, fresco);
       confirmados++;
       continue;
     }
