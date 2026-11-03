@@ -36,7 +36,10 @@ import {
 } from '@/components/estoque/linha-variacao-form';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
-import { EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm } from '@/components/estoque/etapa-fiscal-form';
+import {
+  EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
+  type FiscalForm,
+} from '@/components/estoque/etapa-fiscal-form';
 import { EtapaFotos } from '@/components/estoque/etapa-fotos';
 import {
   CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm, type Cadastrado,
@@ -104,13 +107,15 @@ export function fiscalDoInicial(inicial: CadastroInicial | undefined): FiscalFor
   };
 }
 
-/** ADR-0181 D-10: a origem binária define o imposto e nunca vem pré-escolhida — só sugerida. */
-export function SeloSugestaoOrigem({ inicial }: { inicial?: CadastroInicial }) {
+/** ADR-0181 D-10: com o módulo fiscal a origem vem pré-selecionada pela nota (selo + "Conferi");
+ *  sem ele não há etapa de conferência e a origem continua só sugerida. */
+export function SeloSugestaoOrigem({ inicial, preSelecionada = false }: { inicial?: CadastroInicial; preSelecionada?: boolean }) {
   if (!inicial?.sugestaoDaNota || !inicial.origemSugerida) return null;
+  const nome = inicial.origemSugerida === 'nacional' ? 'Nacional' : 'Importado';
   return (
     <StatusPill tone="info" className="w-fit">
       <FileText className="h-3 w-3" />
-      Sugestão da nota: {inicial.origemSugerida === 'nacional' ? 'Nacional' : 'Importado'} — escolha para confirmar
+      {preSelecionada ? `Veio da nota: ${nome} — confira` : `Sugestão da nota: ${nome} — escolha para confirmar`}
     </StatusPill>
   );
 }
@@ -169,8 +174,14 @@ export function DialogCadastroProduto({
   const [etapaFiscal, setEtapaFiscal] = useState(false);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
   const ncmOficial = useNcmOficial(fiscal.ncm);
-  // ADR-0181 D-10: confirmação ativa do NCM/origem vindos da nota.
-  const [conferiuFiscal, setConferiuFiscal] = useState(false);
+  // ADR-0181 D-10: confirmações ativas dos campos fiscais vindos da nota.
+  const [confirmacoes, setConfirmacoes] = useState(CONFIRMACOES_VAZIAS);
+  // Toda mudança fiscal (inclusive "aplicar sugestão") passa por aqui: derruba as confirmações do que mudou.
+  function mudarFiscal(patch: Partial<FiscalForm>) {
+    const depois = { ...fiscal, ...patch };
+    setFiscal(depois);
+    setConfirmacoes((c) => confirmacoesAposMudanca(c, fiscal, depois));
+  }
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
@@ -184,11 +195,11 @@ export function DialogCadastroProduto({
     setTentouSalvar(false);
     setEtapaFiscal(false);
     setFiscal(fiscalVazio());
-    setConferiuFiscal(false);
+    setConfirmacoes(CONFIRMACOES_VAZIAS);
   }, [aberto]);
 
   // Efeito de ABERTURA (T5) — separado do reset acima, que roda ao FECHAR e fica intocado.
-  // `origem` nunca é tocada aqui (V-3): CadastroInicial nem tem o campo. Sem `inicial`
+  // `origem` não é tocada aqui (V-3): CadastroInicial nem tem o campo. Sem `inicial`
   // (uso atual do Estoque.tsx) é no-op — comportamento byte a byte igual ao de hoje.
   useEffect(() => {
     if (!aberto || !inicial) return;
@@ -203,6 +214,13 @@ export function DialogCadastroProduto({
     }]);
     setFiscal(fiscalDoInicial(inicial));
   }, [aberto, inicial]);
+
+  // ADR-0181 D-10: só a nota pré-seleciona a origem binária, e só com o módulo fiscal (é ele que
+  // tem a etapa de conferência). Viabilidade não usa `sugestaoDaNota` → V-3 intacta.
+  useEffect(() => {
+    if (!aberto || !fiscalAtivo || !inicial?.sugestaoDaNota || !inicial.origemSugerida) return;
+    setOrigem((atual) => atual ?? inicial.origemSugerida!);
+  }, [aberto, fiscalAtivo, inicial]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && (!marcaPropria || !!marca.trim()) && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
@@ -286,14 +304,15 @@ export function DialogCadastroProduto({
             valor={fiscal}
             ncmOficial={ncmOficial}
             origem={origem}
-            onMudar={(patch) => setFiscal((prev) => ({ ...prev, ...patch }))}
+            onMudar={mudarFiscal}
             sugestaoNcm={sugestaoNcm}
             carregandoSugestao={carregandoSugestao}
-            onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+            onAplicarSugestao={() => sugestaoNcm && mudarFiscal({ ncm: sugestaoNcm.ncm })}
             csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
             sugestaoDaNota={!!inicial?.sugestaoDaNota}
-            conferido={conferiuFiscal}
-            onConferir={setConferiuFiscal}
+            confirmacoes={confirmacoes}
+            onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
+            avisosNota={inicial?.avisosNota}
           />
         ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
@@ -374,7 +393,8 @@ export function DialogCadastroProduto({
                     <label key={o} className="flex items-center gap-1.5 text-sm">
                       <input
                         type="radio" name="origem" value={o}
-                        checked={origem === o} onChange={() => setOrigem(o)}
+                        checked={origem === o}
+                        onChange={() => { setOrigem(o); setConfirmacoes((c) => ({ ...c, conferido: false })); }}
                       />
                       {o === 'nacional' ? 'Nacional' : 'Importado'}
                     </label>
@@ -383,7 +403,7 @@ export function DialogCadastroProduto({
                 {!origem && (
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
-                <SeloSugestaoOrigem inicial={inicial} />
+                <SeloSugestaoOrigem inicial={inicial} preSelecionada={fiscalAtivo} />
               </div>
             </div>
 
@@ -481,7 +501,7 @@ export function DialogCadastroProduto({
               <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={api.salvando}>Voltar</Button>
               <Button
                 onClick={submeter}
-                disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !conferiuFiscal) || api.salvando}
+                disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
               >
                 {api.salvando ? rotuloSalvando : 'Cadastrar'}
               </Button>

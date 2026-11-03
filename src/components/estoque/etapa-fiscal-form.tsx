@@ -2,12 +2,14 @@
 // org tem o módulo fiscal): ver dialog-cadastro-produto.tsx. As regras de completude espelham
 // `camposFiscaisFaltantes` (supabase/functions/_shared/fiscal/validar.ts) para os campos que
 // este form cobre — a edge continua sendo a autoridade final (400 com `erros[]`).
-import { FileText, Loader2, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { AlertTriangle, FileText, Loader2, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
 import type { NcmStatus } from '@/hooks/useNcmOficial';
+import type { AvisosFiscaisNota } from '@/components/estoque/dialog-cadastro-produto';
 
 export interface FiscalForm {
   ncm: string;
@@ -22,6 +24,24 @@ export interface FiscalForm {
 
 export function fiscalVazio(): FiscalForm {
   return { ncm: '', cest: '', origemNfe: '', fci: '', exTipi: '', tributacaoIcms: '', descricaoFiscal: '' };
+}
+
+/** ADR-0181 D-10: confirmações obrigatórias do operador sobre o que veio da nota. */
+export interface ConfirmacoesNota { conferido: boolean; semCestVigente: boolean; interestadualConferido: boolean }
+export const CONFIRMACOES_VAZIAS: ConfirmacoesNota = { conferido: false, semCestVigente: false, interestadualConferido: false };
+
+export function confirmacoesNotaOk(f: FiscalForm, avisos: AvisosFiscaisNota | undefined, c: ConfirmacoesNota): boolean {
+  return c.conferido && (!avisos?.semCest || !!f.cest || c.semCestVigente) && (!avisos?.interestadual || c.interestadualConferido);
+}
+
+/** Matriz de invalidação: mexeu no campo atestado → a confirmação cai. */
+export function confirmacoesAposMudanca(c: ConfirmacoesNota, antes: FiscalForm, depois: FiscalForm): ConfirmacoesNota {
+  const mudou = (...ks: Array<keyof FiscalForm>) => ks.some((k) => antes[k] !== depois[k]);
+  return {
+    conferido: mudou('ncm', 'origemNfe', 'tributacaoIcms', 'cest', 'fci') ? false : c.conferido,
+    semCestVigente: mudou('ncm', 'cest') ? false : c.semCestVigente,
+    interestadualConferido: mudou('tributacaoIcms') ? false : c.interestadualConferido,
+  };
 }
 
 // Códigos de origem_nfe que exigem FCI (spec §2.3). Usado tanto na validação (fiscalCompleto)
@@ -90,6 +110,22 @@ function SeloNota() {
   );
 }
 
+const ORIENTACAO_CONTADOR = [
+  '102 — tributada pelo Simples, sem crédito, quando não se enquadrar em código específico',
+  '103 — isenção por faixa de receita bruta do Simples',
+  '300 — operação imune ao ICMS',
+  '400 — não tributada pelo ICMS no Simples',
+  '500 — ICMS já cobrado por ST ou antecipação',
+];
+
+function AvisoNota({ children }: { children: ReactNode }) {
+  return (
+    <StatusPill tone="warning" className="max-w-full items-start whitespace-normal rounded-md text-left">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> <span>{children}</span>
+    </StatusPill>
+  );
+}
+
 function NcmOficialInfo({ ncm, status, descricao }: { ncm: string; status: NcmStatus; descricao: string | null }) {
   if (status === 'ok') {
     return <span className="text-xs text-muted-foreground">{`${ncm.slice(0, 4)}.${ncm.slice(4, 6)}.${ncm.slice(6)} — ${descricao}`}</span>;
@@ -102,7 +138,7 @@ function NcmOficialInfo({ ncm, status, descricao }: { ncm: string; status: NcmSt
 
 export function EtapaFiscalForm({
   valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao, csosnPadrao,
-  sugestaoDaNota, conferido, onConferir, ncmOficial,
+  sugestaoDaNota, confirmacoes, onConfirmar, avisosNota, ncmOficial,
 }: {
   valor: FiscalForm;
   origem: 'nacional' | 'importado' | null;
@@ -113,11 +149,12 @@ export function EtapaFiscalForm({
   /** ADR-0181 D-10: `empresa_fiscal.csosn_padrao_revenda`. Só SUGERE (botão) — nunca preenche
    *  sozinho: campo fiscal nunca entra por default silencioso. */
   csosnPadrao?: string | null;
-  /** ADR-0181 D-10: NCM e origem NF-e pré-preenchidos pela nota — selo + "Conferi" obrigatório
-   *  (o dialog trava o Cadastrar até `conferido`). */
+  /** ADR-0181 D-10: campos fiscais pré-preenchidos pela nota — selo + "Conferi" obrigatório
+   *  (o dialog trava o Cadastrar até `confirmacoesNotaOk`). */
   sugestaoDaNota?: boolean;
-  conferido?: boolean;
-  onConferir?: (v: boolean) => void;
+  confirmacoes?: ConfirmacoesNota;
+  onConfirmar?: (patch: Partial<ConfirmacoesNota>) => void;
+  avisosNota?: AvisosFiscaisNota;
   /** ADR-0187: resultado de `useNcmOficial(valor.ncm)`, chamado pelo dialog (que também o passa
    *  a `fiscalCompleto`). */
   ncmOficial?: { status: NcmStatus; descricao: string | null };
@@ -126,6 +163,8 @@ export function EtapaFiscalForm({
   const sugerirCsosn = !valor.tributacaoIcms && !!csosnPadrao
     && CSOSN_OPCOES.some((o) => o.valor === csosnPadrao);
   const fciVisivel = ORIGENS_COM_FCI.includes(Number(valor.origemNfe));
+  const excecao = avisosNota?.classe === 'excecao';
+  const conf = confirmacoes ?? CONFIRMACOES_VAZIAS;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -207,7 +246,35 @@ export function EtapaFiscalForm({
               {CSOSN_OPCOES.map((o) => <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>)}
             </SelectContent>
           </Select>
-          {sugerirCsosn && (
+          {sugestaoDaNota && !!valor.tributacaoIcms && <SeloNota />}
+          {avisosNota?.classe === 'st' && (
+            <AvisoNota>Nota do fornecedor com ST ({avisosNota.codigoFornecedor}) — CSOSN 500.</AvisoNota>
+          )}
+          {excecao && (
+            <>
+              <AvisoNota>
+                O fornecedor usou {avisosNota?.codigoFornecedor ?? 'um código sem regra'} (isenção, imunidade ou caso especial).
+                Escolha o CSOSN de saída analisando o motivo — orientação do contador:
+              </AvisoNota>
+              <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                {ORIENTACAO_CONTADOR.map((l) => <li key={l}>{l}</li>)}
+              </ul>
+            </>
+          )}
+          {avisosNota?.semPadrao && <AvisoNota>Sem CSOSN padrão de revenda no card Empresa — escolha o CSOSN.</AvisoNota>}
+          {avisosNota?.interestadual && (
+            <>
+              <AvisoNota>Compra de outro estado: pode haver ST por antecipação. Confira o CSOSN com o contador.</AvisoNota>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" checked={conf.interestadualConferido}
+                  onChange={(e) => onConfirmar?.({ interestadualConferido: e.target.checked })}
+                />
+                Conferi o CSOSN com o contador<span className="text-destructive" aria-hidden="true"> *</span>
+              </label>
+            </>
+          )}
+          {sugerirCsosn && !excecao && (
             <button
               type="button"
               onClick={() => onMudar({ tributacaoIcms: csosnPadrao! })}
@@ -229,6 +296,19 @@ export function EtapaFiscalForm({
             onChange={(e) => onMudar({ cest: soDigitos(e.target.value, 7) })}
           />
           <span className="text-xs text-muted-foreground">7 dígitos — opcional.</span>
+          {sugestaoDaNota && !!valor.cest && <SeloNota />}
+          {avisosNota?.semCest && !valor.cest && (
+            <>
+              <AvisoNota>A nota não trouxe CEST. Preencha se o NCM tiver CEST vigente.</AvisoNota>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox" checked={conf.semCestVigente}
+                  onChange={(e) => onConfirmar?.({ semCestVigente: e.target.checked })}
+                />
+                Este NCM não tem CEST vigente<span className="text-destructive" aria-hidden="true"> *</span>
+              </label>
+            </>
+          )}
         </div>
 
         {fciVisivel && (
@@ -241,6 +321,7 @@ export function EtapaFiscalForm({
             <span className="text-xs text-muted-foreground">
               Obrigatório para origem fiscal 3, 5 ou 8.
             </span>
+            {sugestaoDaNota && !!valor.fci && <SeloNota />}
           </div>
         )}
       </div>
@@ -266,8 +347,8 @@ export function EtapaFiscalForm({
 
       {sugestaoDaNota && (
         <label className="flex items-center gap-2 rounded-md border border-info/40 bg-info/5 p-2 text-sm">
-          <input type="checkbox" checked={!!conferido} onChange={(e) => onConferir?.(e.target.checked)} />
-          Conferi NCM e origem<span className="text-destructive" aria-hidden="true"> *</span>
+          <input type="checkbox" checked={conf.conferido} onChange={(e) => onConfirmar?.({ conferido: e.target.checked })} />
+          Conferi os dados fiscais (NCM, origem, CSOSN, CEST)<span className="text-destructive" aria-hidden="true"> *</span>
         </label>
       )}
     </div>

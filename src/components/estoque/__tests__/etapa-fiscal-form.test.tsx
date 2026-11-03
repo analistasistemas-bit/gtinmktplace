@@ -2,7 +2,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { abrirSelect, escolherNoSelect } from '@/test/select';
 import { describe, expect, it, vi } from 'vitest';
-import { EtapaFiscalForm, fiscalCompleto, fiscalVazio } from '../etapa-fiscal-form';
+import {
+  EtapaFiscalForm, fiscalCompleto, fiscalVazio, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
+  type ConfirmacoesNota,
+} from '../etapa-fiscal-form';
 
 describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
   it('origem nacional só oferece códigos 0/3/4/5/8 no select de origem fiscal', async () => {
@@ -119,5 +122,38 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
       fireEvent.change(input, { target: { value: 'Short masculino' } });
       expect(onMudar).toHaveBeenCalledWith({ descricaoFiscal: 'Short masculino' });
     });
+  });
+});
+
+describe('confirmacoes da nota (ADR-0181 D-10)', () => {
+  const ok: ConfirmacoesNota = { conferido: true, semCestVigente: false, interestadualConferido: false };
+  const av = (o: object = {}) => ({ classe: 'sem_st' as const, codigoFornecedor: '102', semCest: false, interestadual: false, semPadrao: false, ...o });
+  it('confirmacoesNotaOk', () => {
+    expect(confirmacoesNotaOk(fiscalVazio(), undefined, ok)).toBe(true);
+    expect(confirmacoesNotaOk(fiscalVazio(), av({ semCest: true }), ok)).toBe(false);
+    expect(confirmacoesNotaOk(fiscalVazio(), av({ semCest: true }), { ...ok, semCestVigente: true })).toBe(true);
+    expect(confirmacoesNotaOk({ ...fiscalVazio(), cest: '2805900' }, av({ semCest: true }), ok)).toBe(true);
+    expect(confirmacoesNotaOk(fiscalVazio(), av({ interestadual: true }), ok)).toBe(false);
+    expect(confirmacoesNotaOk(fiscalVazio(), av({ interestadual: true }), { ...ok, interestadualConferido: true })).toBe(true);
+    expect(confirmacoesNotaOk(fiscalVazio(), undefined, { ...ok, conferido: false })).toBe(false);
+  });
+  it('confirmacoesAposMudanca: matriz de invalidação', () => {
+    const tudo: ConfirmacoesNota = { conferido: true, semCestVigente: true, interestadualConferido: true };
+    const f = fiscalVazio();
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, ncm: '1' })).toEqual({ conferido: false, semCestVigente: false, interestadualConferido: true });
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, cest: '1' })).toEqual({ conferido: false, semCestVigente: false, interestadualConferido: true });
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, tributacaoIcms: '102' })).toEqual({ conferido: false, semCestVigente: true, interestadualConferido: false });
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, origemNfe: '0' })).toEqual({ conferido: false, semCestVigente: true, interestadualConferido: true });
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, fci: 'X' })).toEqual({ conferido: false, semCestVigente: true, interestadualConferido: true });
+    expect(confirmacoesAposMudanca(tudo, f, { ...f, exTipi: '01' })).toEqual(tudo);
+  });
+  it('exceção: mostra o código do fornecedor e a orientação do contador, sem "Usar padrão"', () => {
+    render(<EtapaFiscalForm valor={fiscalVazio()} origem="nacional" onMudar={vi.fn()}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()}
+      csosnPadrao="102" sugestaoDaNota confirmacoes={CONFIRMACOES_VAZIAS}
+      avisosNota={av({ classe: 'excecao', codigoFornecedor: '400' })} />);
+    expect(screen.getByText(/O fornecedor usou 400/)).toBeInTheDocument();
+    expect(screen.getByText('300 — operação imune ao ICMS')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Usar padrão da empresa/ })).not.toBeInTheDocument();
   });
 });

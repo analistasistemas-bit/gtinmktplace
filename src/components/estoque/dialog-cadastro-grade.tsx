@@ -42,7 +42,8 @@ import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
 import {
-  EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
+  EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
+  type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
 import { EtapaFotos } from '@/components/estoque/etapa-fotos';
 import {
@@ -127,7 +128,13 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
   const ncmOficial = useNcmOficial(fiscal.ncm);
   // ADR-0181 D-10: confirmação ativa do NCM/origem vindos da nota.
-  const [conferiuFiscal, setConferiuFiscal] = useState(false);
+  const [confirmacoes, setConfirmacoes] = useState(CONFIRMACOES_VAZIAS);
+  // Toda mudança fiscal (inclusive "aplicar sugestão") passa por aqui: derruba as confirmações do que mudou.
+  function mudarFiscal(patch: Partial<FiscalForm>) {
+    const depois = { ...fiscal, ...patch };
+    setFiscal(depois);
+    setConfirmacoes((c) => confirmacoesAposMudanca(c, fiscal, depois));
+  }
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   // Alias de leitura, sem dependência de nada — movido para antes do `useEffect` de reconciliação
@@ -160,10 +167,10 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setTentouSalvar(false);
     setConfirmar(null);
-    setConferiuFiscal(false);
+    setConfirmacoes(CONFIRMACOES_VAZIAS);
   }, [aberto]);
 
-  // Efeito de ABERTURA (ADR-0181), separado do reset acima. `origem` nunca é tocada aqui.
+  // Efeito de ABERTURA (ADR-0181), separado do reset acima. `origem` não é tocada aqui (a pré-seleção da nota é o efeito abaixo).
   useEffect(() => {
     if (!aberto || !inicial) return;
     setNomePai(inicial.nomePai ?? '');
@@ -177,6 +184,12 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     });
     setFiscal(fiscalDoInicial(inicial));
   }, [aberto, inicial]);
+
+  // ADR-0181 D-10: só a nota pré-seleciona a origem, e só com o módulo fiscal (etapa de conferência).
+  useEffect(() => {
+    if (!aberto || !fiscalAtivo || !inicial?.sugestaoDaNota || !inicial.origemSugerida) return;
+    setOrigem((atual) => atual ?? inicial.origemSugerida!);
+  }, [aberto, fiscalAtivo, inicial]);
 
   // A seleção JÁ É a ação: nenhum botão "Gerar". `reconciliarGrade` é pura e devolve o diff —
   // aqui só aplicamos. Ordenar por `ordem` mantém a lista agrupada por cor mesmo depois de o
@@ -560,14 +573,15 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
               valor={fiscal}
               ncmOficial={ncmOficial}
               origem={origem}
-              onMudar={(patch) => setFiscal((prev) => ({ ...prev, ...patch }))}
+              onMudar={mudarFiscal}
               sugestaoNcm={sugestaoNcm}
               carregandoSugestao={carregandoSugestao}
-              onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+              onAplicarSugestao={() => sugestaoNcm && mudarFiscal({ ncm: sugestaoNcm.ncm })}
               csosnPadrao={empresaFiscal?.csosn_padrao_revenda ?? null}
               sugestaoDaNota={!!inicial?.sugestaoDaNota}
-              conferido={conferiuFiscal}
-              onConferir={setConferiuFiscal}
+              confirmacoes={confirmacoes}
+              onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
+              avisosNota={inicial?.avisosNota}
             />
           ) : passo0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -680,7 +694,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     <label key={o} className="flex items-center gap-1.5 text-sm">
                       <input
                         type="radio" name="grade-origem" value={o}
-                        checked={origem === o} onChange={() => setOrigem(o)}
+                        checked={origem === o}
+                        onChange={() => { setOrigem(o); setConfirmacoes((c) => ({ ...c, conferido: false })); }}
                       />
                       {o === 'nacional' ? 'Nacional' : 'Importado'}
                     </label>
@@ -689,7 +704,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 {!origem && (
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
-                <SeloSugestaoOrigem inicial={inicial} />
+                <SeloSugestaoOrigem inicial={inicial} preSelecionada={fiscalAtivo} />
               </div>
 
               <div className="flex flex-col gap-2">
@@ -866,7 +881,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 </Button>
                 <Button
                   onClick={submeter}
-                  disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !conferiuFiscal) || api.salvando}
+                  disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
                 >
                   {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>

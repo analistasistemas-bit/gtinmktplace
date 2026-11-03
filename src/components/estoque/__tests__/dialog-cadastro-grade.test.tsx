@@ -1013,6 +1013,73 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
   });
 
+  it('com módulo fiscal: origem pré-selecionada pela nota; sem módulo fiscal nasce vazia', async () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    onTestFinished(() => { modulosMock.mockReturnValue({ data: [], isLoading: false }); });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { unmount } = render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroGrade aberto onFechar={() => {}} origemNota
+            inicial={{ nomePai: 'Short', sugestaoDaNota: true, origemSugerida: 'importado', fiscal: { ncm: '62034900', origemNfe: 2, tributacaoIcms: '' } }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Importado' })).toBeChecked());
+    expect(screen.getByText(/Veio da nota: Importado — confira/)).toBeInTheDocument();
+    unmount();
+    modulosMock.mockReturnValue({ data: [], isLoading: false });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroGrade aberto onFechar={() => {}} origemNota
+            inicial={{ nomePai: 'Short', sugestaoDaNota: true, origemSugerida: 'importado' }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole('radio', { name: 'Importado' })).not.toBeChecked();
+    expect(screen.getByText(/Sugestão da nota: Importado — escolha para confirmar/)).toBeInTheDocument();
+  });
+
+  it('etapa fiscal da nota: "Conferi" libera; digitar CEST dispensa o checkbox; trocar CSOSN desmarca', async () => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    onTestFinished(() => { modulosMock.mockReturnValue({ data: [], isLoading: false }); });
+    vi.mocked(supabase.rpc).mockImplementation(rpcNcmPadrao as never);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroGrade aberto onFechar={() => {}} origemNota
+            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, origemSugerida: 'nacional',
+              fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '102' },
+              avisosNota: { classe: 'sem_st', codigoFornecedor: '102', semCest: true, interestadual: false, semPadrao: false },
+              refNota: `nfe:${'1'.repeat(44)}:2` }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Nacional' })).toBeChecked());
+    await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await preencherEmbalagem(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await escolherGrade(user, 'letras');
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    await user.click(await screen.findByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ }));
+    expect(await screen.findByText(/^6203\.49\.00 — /)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    await escolherNoSelectBase(user, 'CSOSN', '500');
+    expect(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ })).not.toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+    await user.type(screen.getByLabelText('CEST'), '2805900');
+    expect(screen.queryByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ })).not.toBeChecked();
+  });
+
   it('aba "Quantidade da nota" (sem "Estoque"), contador X de Q e payload com quantidadeNota, nunca estoqueInicial', async () => {
     const sugestaoDistribuicao = { fator: 1, linhas: [{ codigo: '00000021', quantidade: 2 }] };
     cadastrarProdutoMock.mockResolvedValueOnce({
