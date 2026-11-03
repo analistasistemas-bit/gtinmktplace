@@ -5,7 +5,7 @@
 - [x] Leitor do XML lê grupo ICMS, CSOSN/CST, CEST, nFCI e UF do emitente; `icms-entrada.ts` classifica ST / sem ST / exceção.
 - [x] Produto novo a partir da nota chega com NCM, origem NF-e e binária, FCI, CSOSN (500 com ST, padrão da empresa sem ST), CEST e descrição; exceção fica vazia com escolha obrigatória.
 - [x] Avisos e confirmações: CEST ausente, compra de outra UF, CSOSN divergente em produto existente; "Conferi" cai se o campo mudar.
-- [ ] Diego: preencher card Empresa da Daludi Shop (CSOSN padrão 102) e ligar o módulo Fiscal.
+- [ ] Diego: 1º cadastro real pelo fluxo na Daludi Shop (card Empresa e módulo Fiscal já prontos desde 01/11); conferir o produto salvo.
 - [ ] Se passar a comprar de fora do estado: tabela de NCMs com antecipação, classificada pelo contador.
 
 ## Promoções e Publicados: ajustes pós-uso real (só front) — 2026-11-03
