@@ -415,3 +415,11 @@ campo a campo) fecharam:
 6. **Entrega em 3 fatias:** (1) mini-bloco com dados do card + painel redesenhado com miniaturas + meu anúncio nesta
    busca + análise automática, sem chamada nova ao ML; (2) enriquecimento de catálogo + cota híbrida + resumo por
    medalha/UF/vendedores; (3) simulação sem vínculo.
+
+### Adendo 2026-11-03 — números e custo da fatia 2
+
+Medição em `docs/spikes/2026-11-02-extensao-busca-medicoes.md`. Aprovado pelo Diego: cota de enriquecimento 10
+catálogos/min por usuário+org, teto global de 120 chamadas ML/min (fail-closed), lotes de 5 catálogos. Para não anular o
+corte de custo do Redis (emenda ADR-0170 de 03/11), o cache de `/products`, ofertas e `/users` fica **no navegador** (por
+sessão, limpo na troca de identidade), e o Redis guarda só contadores por lote (reserva com devolução das unidades não despachadas) e a comissão na
+chave existente (conta + categoria + tipo + preço exato), lida em lote com `MGET`. Catálogo sem ofertas (404 "No winners found") = 0 ofertas; "ganhador" não vem de `/products`.

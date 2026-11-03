@@ -18,7 +18,7 @@
 
 | Controle | Proposta inicial | Justificativa |
 |---|---|---|
-| Cota de enriquecimento | **20 catálogos/min por usuário e organização**; janela UTC fixa | Uma busca com 25 catálogos atravessa até duas janelas; separa carga automática das 30 análises/min existentes. |
+| Cota de enriquecimento | **APROVADO 03/11: 10 catálogos/min por usuário e organização** (era 20); janela UTC fixa | Uma busca com 25 catálogos atravessa até duas janelas; separa carga automática das 30 análises/min existentes. |
 | Teto global por app | **120 chamadas ML/min para o novo enriquecimento**, compartilhadas entre usuários e organizações do mesmo Client ID | Limita a carga adicional. Antes da aprovação, medir consumo dos demais módulos e verificar a folga real do app. |
 | Trabalho por requisição | **5 catálogos**, **100 ofertas por catálogo**, **10 itens exatos**, **5 perfis**; até **20 perfis por busca** | Limita parsing, transformação, consultas de comissão e serialização. |
 | TTLs de catálogo | `/products`: **6 h**; `/products/items`: **60 s**; `/users`: **24 h** | Metadados mudam menos que ofertas. Cache substitui valores, sem série histórica. |
@@ -250,6 +250,24 @@ function renderizarMiniBlocoDaBusca(
 
 ## Fatia 2 — enriquecimento progressivo e cota híbrida — versão 0.5.0
 
+> **Revisão 03/11 (Diego, após a Task 7 — `docs/spikes/2026-11-02-extensao-busca-medicoes.md`) — PREVALECE sobre o texto das Tasks 8–10 abaixo.**
+> Motivo: a fatura Upstash de outubro (US$ 4,63, Redis Pay as You Go cobra por comando) levou ao corte do sync de promoções em 03/11 (emenda ADR-0170). O desenho original da fatia 2 (~300 comandos Redis por busca, US$ 2–11/mês) anularia essa economia.
+>
+> **Números aprovados:** cota de enriquecimento **10 catálogos/min por usuário+org**; teto global **120 chamadas ML/min** do enriquecimento (fail-closed); **5 catálogos por requisição**; até 100 ofertas por catálogo (sem paginar); **5 perfis por requisição, 20 por busca**.
+>
+> **Desenho econômico (meta ~20 comandos Redis por busca de 25 catálogos):**
+> 1. **Sem cache de `/products`, `/products/items` e `/users` no Redis.** O cache fica no **navegador** (SW, `chrome.storage.session`, por identidade de sessão): DTO do catálogo enriquecido 6 h, perfil de vendedor 24 h, ofertas 60 s. Trocar usuário/org/suporte ou sair limpa o cache. Catálogo em cache válido não vai à edge nem debita cota. Nada de dado de concorrente persiste fora da sessão do navegador (D-1).
+> 2. **Cota por lote, não por catálogo:** 1 `INCRBY` da quantidade do lote (+ `EXPIRE` só quando a chave nasce) na chave do usuário; concede `min(pedido, restante)`, devolve o excedente com `DECRBY` só quando passou do teto.
+> 3. **Teto global por lote:** reservar de uma vez a estimativa de chamadas ML do lote (catálogos×2 + perfis não cacheados no navegador + comissões ausentes) com 1 `INCRBY`; sem comando por chamada individual. Redis indisponível no orçamento global = não chama o ML (fail-closed).
+> 4. **Comissão com a chave existente da edge** (`chaveComissao` em `supabase/functions/extensao/roteamento.ts`: conta ML + categoria exata + tipo confirmado + **preço exato**; versionar se acrescentar `org_id`). Chaves deduplicadas antes de **um único `MGET`** por lote; gravar só os misses; 429 em `listing_prices` = "comissão aguardando", sem retry. Nada de aproximar por faixa de preço sem provar equivalência financeira.
+> 5. Catálogo sem ofertas: o ML responde **404 "No winners found"** — tratar como 0 ofertas/0 vendedores, não como falha.
+> 6. `buy_box_winner` veio nulo nas 30 fichas medidas: não exibir "ganhador" a partir de `/products`.
+> 7. Task 11 mede comandos Redis reais por busca (contador do Upstash antes/depois) e CPU do lote de 5 fichas de 100 ofertas; meta de custo do enriquecimento < US$ 0,50/mês a 100 buscas/dia.
+> 8. **Orçamento global — reserva e devolução (Codex, crítico):** o servidor reserva um **limite superior** por fase (fase 1: `catálogos×2` para `/products` + ofertas; fase 2: perfis não cacheados + comissões ausentes, calculado depois das ofertas). Nunca despachar mais chamadas que o saldo concedido. Ao encerrar a fase, devolver **somente as unidades não despachadas**, uma vez, na chave original do minuto em que foram reservadas, e nunca mais do que a própria requisição reservou. Chamada despachada conta mesmo com 403/404/429/timeout; na dúvida, manter o débito. Se o minuto UTC virar, reservar de novo o que ainda não foi despachado.
+> 9. **Helpers Redis (Task 8):** adicionar em `_shared/redis/client.ts`, com testes, `redisIncrBy`, `redisDecrBy`, `redisExpire` e `redisMget` (preserva a ordem; miss = `null`; `MGET` real conta 1 comando no Upstash — pipeline de `GET` não). Contadores rejeitam resposta nula/inválida (sem o `?? 0` de `redisIncrComTTL`: o orçamento é fail-closed). `EXPIRE` só quando o `INCRBY` devolve exatamente a quantidade incrementada (chave nova). A Task 8 original (`reservarChamadaMl` por chamada) fica **substituída** por isto.
+> 10. **Cache no navegador (Tasks 9–10):** a edge **não** usa cache Redis de produtos/ofertas/perfis nem o cache público de vendedor; o pedido à edge informa só os componentes vencidos (pedido parcial). No SW: expirações independentes (metadados do catálogo 6 h, ofertas 60 s, perfis 24 h, comissão ligada ao preço exato); cache válido só cobre o item pedido; chave inclui a identidade da sessão e a conexão/conta ML; limpar em logout, sessão definitivamente inválida, troca/expiração de suporte e troca de conta; resposta antiga nunca repovoa o cache (mesma checagem de época/identidade de `sessao.ts`). `chrome.storage.session` tem **10 MiB para tudo** (inclui o estado das abas): DTO mínimo, descarte de expirados, remoção do menos usado ao passar de ~5 MiB, falha de gravação = segue sem cache. Manter `TRUSTED_CONTEXTS`.
+> 11. **Task 11 (gate econômico):** medir comandos Redis por busca instrumentando a edge (contagem por execução), separando navegador frio/quente e comissão fria/quente, esperas e devoluções; confrontar com o contador do Upstash numa janela controlada (o contador é compartilhado com outros módulos). Meta: média < 83 comandos por busca de 25 catálogos (≈ US$ 0,50/mês a 100 buscas/dia), sem contar a margem já existente.
+
 **Entrega publicável:** Mini-bloco completo e resumo de vendedores, medalhas, UF, tipo e faixas de vendedores por catálogo.
 
 ### Task 7 — medir fontes, custo e CPU antes do código funcional
@@ -268,6 +286,8 @@ function renderizarMiniBlocoDaBusca(
 **Pontos de atenção:** o normalizador atual de perfil exige `transactions.total`; isso pode descartar medalha/UF válidas. Ausência de `power_seller_status` também não prova “sem medalha”. A documentação é referência de contrato; a medição confirma o payload acessível à conta. [Consulta oficial de usuários](https://developers.mercadolivre.com.br/pt_br/servico-consulta-de-usuarios)
 
 ### Task 8 — cotas separadas no Redis (sem migration)
+
+> ⚠️ **Revisão 03/11 prevalece** (bloco no início da Fatia 2, regras 1–11): onde este texto falar em cache Redis de produtos/ofertas/perfis, 20/min, `reservarChamadaMl` por chamada ou comissão por faixa, siga o bloco.
 
 > Revisão 02/11: a cota atual de 30/min já é contador atômico no Redis (`redisIncrComTTL(chaveLimite(...), 120)` em `supabase/functions/extensao/index.ts`). As novas cotas seguem o mesmo mecanismo — sem tabela, sem trava de linha por chamada ML e sem teste em Supabase local (Docker não sobe nesta máquina).
 
@@ -298,6 +318,8 @@ function reservarChamadaMl(agora: Date): Promise<boolean>;
 **Preservação obrigatória:** as 30/min de margem continuam intactas (`chaveLimite`); `extensao_registrar_uso` continua só telemetria. Esta fatia passa a **não ter migration**.
 
 ### Task 9 — enriquecer somente catálogos e ofertas comprovados
+
+> ⚠️ **Revisão 03/11 prevalece** (bloco no início da Fatia 2, regras 1–11): onde este texto falar em cache Redis de produtos/ofertas/perfis, 20/min, `reservarChamadaMl` por chamada ou comissão por faixa, siga o bloco.
 
 **Arquivos**
 
@@ -348,6 +370,8 @@ A resposta por catálogo informa `estado`, `consultadoEm`, `expiraEm`, criação
 
 ### Task 10 — integrar fila progressiva, Mini-bloco completo e resumo
 
+> ⚠️ **Revisão 03/11 prevalece** (bloco no início da Fatia 2, regras 1–11): onde este texto falar em cache Redis de produtos/ofertas/perfis, 20/min, `reservarChamadaMl` por chamada ou comissão por faixa, siga o bloco.
+
 **Arquivos**
 
 - Modificar: `extensao/src/busca-sw.ts`, `extensao/src/roteador.ts`, `extensao/src/conteudo/busca.ts`, `extensao/src/conteudo/mini-bloco-busca.ts`.
@@ -365,6 +389,8 @@ A resposta por catálogo informa `estado`, `consultadoEm`, `expiraEm`, criação
 **Idade:** calcular somente dias e semáforo do catálogo; não reutilizar os cálculos de ritmo de `quantoVende`. Data futura/inválida fica indisponível. Cor sempre acompanhada de texto.
 
 ### Task 11 — medir o lote e publicar a fatia 2
+
+> ⚠️ **Revisão 03/11 prevalece** (bloco no início da Fatia 2, regras 1–11): onde este texto falar em cache Redis de produtos/ofertas/perfis, 20/min, `reservarChamadaMl` por chamada ou comissão por faixa, siga o bloco.
 
 **Arquivos**
 
