@@ -314,6 +314,7 @@ describe('isolamento de sessão e de página', () => {
     await registrar(cards(1, 60));
     expect(await estado()).toBeNull();
     expect(corpos).toHaveLength(1);
+    expect(pedidosEnr).toHaveLength(0);
     expect(mensagensPagina('publiai:busca-resultados')).toHaveLength(0);
   });
 
@@ -328,6 +329,7 @@ describe('isolamento de sessão e de página', () => {
     expect(corpos).toHaveLength(1);
     await pulso();
     expect(corpos).toHaveLength(1);
+    expect(pedidosEnr).toHaveLength(0);
   });
 
   it('logout durante a margem: nada gravado nem transmitido', async () => {
@@ -346,6 +348,7 @@ describe('isolamento de sessão e de página', () => {
     });
     await registrar(cards(1, 60));
     expect(await estado()).toBeNull();
+    expect(pedidosEnr).toHaveLength(0);
     expect(corpos).toHaveLength(1);
   });
 
@@ -463,6 +466,7 @@ describe('isolamento de sessão e de página', () => {
     await registrar(cards(1, 3));
     await pulso();
     expect(corpos).toHaveLength(0);
+    expect(pedidosEnr).toHaveLength(0);
   });
 
   it('pulso de outra página (URL diferente da busca guardada) é ignorado; painel não manda pulso', async () => {
