@@ -15,19 +15,23 @@ export const chaveEnriquecimento = (orgId: string, userId: string, agora: Date) 
 /** Sem dado de tenant: o teto é do app. */
 export const chaveOrcamentoMl = (agora: Date) => `ext:mlapp:${minutoUtc(agora)}`;
 
+/** Contador opcional de comandos Redis emitidos (Task 11 mede o custo por busca); conta tentativas. */
+export interface ContadorRedis { comandosRedis: number }
+
 /** Reserva até `quantidade` na janela e devolve o concedido. Lança em erro/resposta inválida do Redis. */
-async function reservar(chave: string, quantidade: number, teto: number): Promise<number> {
+async function reservar(chave: string, quantidade: number, teto: number, c?: ContadorRedis): Promise<number> {
+  if (c) c.comandosRedis++;
   const n = await redisIncrBy(chave, quantidade);
-  if (n === quantidade) await redisExpire(chave, TTL_S); // chave nova
+  if (n === quantidade) { if (c) c.comandosRedis++; await redisExpire(chave, TTL_S); } // chave nova
   // Nunca devolve mais do que esta requisição somou (uma concorrente pode ter estourado antes).
   const excedente = Math.min(quantidade, n - teto);
-  if (excedente > 0) await redisDecrBy(chave, excedente);
+  if (excedente > 0) { if (c) c.comandosRedis++; await redisDecrBy(chave, excedente); }
   return quantidade - Math.max(0, excedente);
 }
 
-async function reservarOuZero(chave: string, quantidade: number, teto: number): Promise<number> {
+async function reservarOuZero(chave: string, quantidade: number, teto: number, c?: ContadorRedis): Promise<number> {
   try {
-    return await reservar(chave, quantidade, teto);
+    return await reservar(chave, quantidade, teto, c);
   } catch (e) {
     console.warn('[cotas-busca] Redis falhou, fail-closed', chave.split(':').slice(0, 2).join(':'), String(e));
     return 0;
@@ -38,10 +42,10 @@ const valido = (q: number) => Number.isInteger(q) && q > 0;
 
 /** Debita os catálogos que vão à edge (com ou sem cache do lado do servidor); concede `min(pedido, restante)`. */
 export async function reservarEnriquecimento(
-  orgId: string, userId: string, quantidade: number, agora: Date,
+  orgId: string, userId: string, quantidade: number, agora: Date, c?: ContadorRedis,
 ): Promise<{ permitidos: number; retomarEm: string | null }> {
   if (!valido(quantidade)) return { permitidos: 0, retomarEm: null };
-  const permitidos = await reservarOuZero(chaveEnriquecimento(orgId, userId, agora), quantidade, LIMITE_ENRIQUECIMENTO_MIN);
+  const permitidos = await reservarOuZero(chaveEnriquecimento(orgId, userId, agora), quantidade, LIMITE_ENRIQUECIMENTO_MIN, c);
   return { permitidos, retomarEm: permitidos < quantidade ? proximoMinuto(agora) : null };
 }
 
@@ -52,10 +56,10 @@ export interface ReservaOrcamentoMl { concedidas: number; chave: string; retomar
 const devolviveis = new WeakMap<ReservaOrcamentoMl, number>();
 
 /** Reserva o limite superior de chamadas ML de uma fase do lote. Nunca despachar além de `concedidas`. */
-export async function reservarOrcamentoMl(unidades: number, agora: Date): Promise<ReservaOrcamentoMl> {
+export async function reservarOrcamentoMl(unidades: number, agora: Date, c?: ContadorRedis): Promise<ReservaOrcamentoMl> {
   const chave = chaveOrcamentoMl(agora);
   if (!valido(unidades)) return { concedidas: 0, chave, retomarEm: null };
-  const concedidas = await reservarOuZero(chave, unidades, LIMITE_ORCAMENTO_ML_MIN);
+  const concedidas = await reservarOuZero(chave, unidades, LIMITE_ORCAMENTO_ML_MIN, c);
   const reserva = { concedidas, chave, retomarEm: concedidas < unidades ? proximoMinuto(agora) : null };
   if (concedidas > 0) devolviveis.set(reserva, Math.floor(agora.getTime() / 60_000) * 60_000 + TTL_S * 1000);
   return reserva;
@@ -65,13 +69,14 @@ export async function reservarOrcamentoMl(unidades: number, agora: Date): Promis
  *  mais do que ela recebeu. Chave possivelmente expirada = no-op (DECRBY recriaria um contador negativo sem
  *  TTL). Erro = débito mantido (na dúvida, conta). Retorna quantas devolveu. */
 export async function devolverOrcamentoMl(
-  reserva: ReservaOrcamentoMl, naoDespachadas: number, agora: Date,
+  reserva: ReservaOrcamentoMl, naoDespachadas: number, agora: Date, c?: ContadorRedis,
 ): Promise<number> {
   const vivaAte = devolviveis.get(reserva);
   const n = Math.min(Math.floor(naoDespachadas), reserva.concedidas);
   if (vivaAte === undefined || agora.getTime() >= vivaAte || !(n > 0)) return 0;
   devolviveis.delete(reserva);
   try {
+    if (c) c.comandosRedis++;
     await redisDecrBy(reserva.chave, n);
     return n;
   } catch (e) {

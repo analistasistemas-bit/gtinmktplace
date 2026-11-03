@@ -17,6 +17,8 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { analisarBusca, type DepsCasamento } from '../_shared/extensao/busca.ts';
 import { identificarBusca } from '../_shared/extensao/busca-local.ts';
+import { enriquecerCatalogosBusca } from '../_shared/extensao/enriquecimento-busca.ts';
+import { getMlUmaVez } from '../_shared/extensao/enriquecimento-busca-io.ts';
 import { montarRadar, type LinhaAlertaPulse, type LinhaProdutoPulse, type RespostaRadar } from '../_shared/extensao/radar.ts';
 import { adicionarAoRadar, MENSAGEM_ML_INDISPONIVEL } from '../_shared/pulse/adicionar.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
@@ -438,6 +440,20 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
         if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       }
       return r;
+    }
+    case 'enriquecer_catalogos_busca': {
+      // Leitura (suporte só leitura pode; sem auditoria, como catalogo). Sem extensao_registrar_uso: a busca já
+      // registra uma vez por geração no identificar_busca. Conexão antes da cota: sem ML conectado não queima a janela.
+      const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+      if (!conexao?.contaExternaId) return SEM_CONEXAO;
+      const token = await getValidAccessTokenConexao(conexao);
+      const { catalogos, perfis, perfisEmCache } = p;
+      return {
+        estado: 'ok',
+        valor: await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+          conta: String(conexao.contaExternaId), agora: () => new Date(), getMl: (url) => getMlUmaVez(url, token),
+        }),
+      };
     }
     case 'radar':
       return radar(admin, orgId, p.catalogProductId);

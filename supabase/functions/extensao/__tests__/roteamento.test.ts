@@ -418,3 +418,44 @@ describe('validarPedido — radar (Task 18)', () => {
     expect(validarPedido({ acao: 'radar' })).toBeNull();
   });
 });
+
+describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
+  const E = 'enriquecer_catalogos_busca';
+  const c = (id: string, extra: Record<string, unknown> = {}) => ({ catalogProductId: id, itens: [{ itemId: 'MLB10', preco: 10 }], ...extra });
+  it('componentes ausentes = ambos; perfis opcionais; normaliza', () => {
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')] })).toEqual({
+      acao: E, catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }] }], perfis: [], perfisEmCache: [],
+    });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['ofertas'] })], perfis: [7, 7], perfisEmCache: [8] }))
+      .toMatchObject({ catalogos: [{ componentes: ['ofertas'] }], perfis: [7], perfisEmCache: [8] });
+  });
+  it('catálogo repetido no mesmo pedido vira um (componentes e itens unidos, item repetido uma vez)', () => {
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['produto'] }), c('MLB1', { componentes: ['ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] })] }))
+      .toMatchObject({ catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] }] });
+  });
+  it('limites: 5 catálogos distintos, 5 itens por catálogo, 5 perfis, teto bruto anti-abuso', () => {
+    const cinco = ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5'].map((id) => c(id));
+    expect(validarPedido({ acao: E, catalogos: [...cinco, ...cinco] })).toMatchObject({ catalogos: { length: 5 } });
+    expect(validarPedido({ acao: E, catalogos: [...cinco, c('MLB6')] })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: Array.from({ length: 21 }, () => c('MLB1')) })).toBeNull();
+    const itens = (n: number) => Array.from({ length: n }, (_, i) => ({ itemId: `MLB${i + 10}`, preco: 1 }));
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(5) })] })).not.toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(6) })] })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5] })).not.toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [], perfis: [1, 2, 3, 4, 5, 6] })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: Array.from({ length: 101 }, (_, i) => i + 1) })).toBeNull();
+  });
+  it.each([
+    ['vazio', { catalogos: [] }],
+    ['sem catalogos', {}],
+    ['id inválido', { catalogos: [c('X1')] }],
+    ['componente desconhecido', { catalogos: [c('MLB1', { componentes: ['vencedor'] })] }],
+    ['componentes vazio', { catalogos: [c('MLB1', { componentes: [] })] }],
+    ['preço ≤ 0', { catalogos: [c('MLB1', { itens: [{ itemId: 'MLB10', preco: 0 }] })] }],
+    ['item inválido', { catalogos: [c('MLB1', { itens: [{ itemId: 'x', preco: 1 }] })] }],
+    ['seller inválido', { catalogos: [c('MLB1')], perfis: [-1] }],
+    ['seller não inteiro', { catalogos: [c('MLB1')], perfisEmCache: ['7'] }],
+  ])('recusa %s', (_n, corpo) => {
+    expect(validarPedido({ acao: E, ...corpo })).toBeNull();
+  });
+});

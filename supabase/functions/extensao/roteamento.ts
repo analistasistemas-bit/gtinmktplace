@@ -6,6 +6,7 @@ import type { PerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { comissaoDeComProveniencia } from '../_shared/ml/listing-prices.ts';
 import type { ListingPriceML } from '../_shared/ml/tarifa.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
+import type { CatalogoPedido, Componente, PedidoEnriquecimento } from '../_shared/extensao/enriquecimento-busca.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
@@ -23,12 +24,19 @@ export type Pedido =
   | { acao: 'analisar_busca'; eanDaBusca: string | null; itens: ItemBusca[]; registrarUso?: boolean }
   | { acao: 'identificar_busca'; eanDaBusca: string | null; itens: Omit<ItemBusca, 'preco'>[]; registrarUso?: boolean }
   | { acao: 'radar' | 'adicionar_radar'; catalogProductId: string }
+  | ({ acao: 'enriquecer_catalogos_busca' } & PedidoEnriquecimento)
   | { acao: 'sessao' };
 
 /** Card da busca enviado pelo content script (Task 21). */
 export interface ItemBusca { itemId: string; catalogProductId: string | null; preco: number }
 export const MAX_ITENS_BUSCA = 50;
 const MAX_ENTRADAS_IDENTIFICAR = 200;
+/** Enriquecimento da busca (Revisão 03/11): por requisição. O navegador limita 20 perfis por busca. */
+export const MAX_CATALOGOS_ENRIQUECER = 5;
+export const MAX_ITENS_POR_CATALOGO = 5;
+export const MAX_PERFIS_PEDIDO = 5;
+const MAX_ENTRADAS_ENRIQUECER = 20; // teto bruto (antes do dedupe), só anti-abuso de parsing
+const MAX_PERFIS_EM_CACHE = 100;
 
 const MLB = /^MLB\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -129,9 +137,46 @@ export function validarPedido(body: unknown): Pedido | null {
       // registrarUso: a extensão manda true só no 1º lote de cada geração de página (telemetria `busca`, uma por busca).
       return { acao: 'identificar_busca', eanDaBusca: (eanDaBusca as string | null | undefined) ?? null, itens: [...lidos.values()], ...(registrarUso === undefined ? {} : { registrarUso }) };
     }
+    case 'enriquecer_catalogos_busca':
+      return enriquecimento(b);
     default:
       return null;
   }
+}
+
+const sellerIds = (v: unknown, max: number): number[] | null => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > max || !v.every((s) => Number.isSafeInteger(s) && s > 0)) return null;
+  return [...new Set(v as number[])];
+};
+
+/** Pedido parcial do navegador: por catálogo só os componentes vencidos lá (ausente = ambos). Catálogo repetido
+ *  vira um (debita uma vez), com componentes e itens unidos. */
+function enriquecimento(b: Record<string, unknown>): Pedido | null {
+  const { catalogos } = b;
+  if (!Array.isArray(catalogos) || catalogos.length > MAX_ENTRADAS_ENRIQUECER) return null;
+  const perfis = sellerIds(b.perfis, MAX_PERFIS_PEDIDO);
+  const perfisEmCache = sellerIds(b.perfisEmCache, MAX_PERFIS_EM_CACHE);
+  if (!perfis || !perfisEmCache) return null;
+  const lidos = new Map<string, CatalogoPedido>();
+  for (const c of catalogos as Record<string, unknown>[]) {
+    if (!c || typeof c !== 'object' || !mlb(c.catalogProductId)) return null;
+    const comp = c.componentes === undefined ? ['produto', 'ofertas'] : c.componentes;
+    if (!Array.isArray(comp) || comp.length === 0 || !comp.every((x) => x === 'produto' || x === 'ofertas')) return null;
+    if (!Array.isArray(c.itens) || c.itens.length > MAX_ENTRADAS_ENRIQUECER) return null;
+    const atual = lidos.get(c.catalogProductId) ?? { catalogProductId: c.catalogProductId, componentes: [], itens: [] };
+    for (const x of comp as Componente[]) if (!atual.componentes.includes(x)) atual.componentes.push(x);
+    for (const i of c.itens as Record<string, unknown>[]) {
+      if (!i || typeof i !== 'object' || !mlb(i.itemId) || typeof i.preco !== 'number' || !Number.isFinite(i.preco) || i.preco <= 0) return null;
+      if (!atual.itens.some((x) => x.itemId === i.itemId)) atual.itens.push({ itemId: i.itemId, preco: i.preco });
+    }
+    if (atual.itens.length > MAX_ITENS_POR_CATALOGO) return null;
+    lidos.set(c.catalogProductId, atual);
+  }
+  if (lidos.size > MAX_CATALOGOS_ENRIQUECER || (lidos.size === 0 && perfis.length === 0)) return null;
+  // Ordem estável dos componentes (o servidor despacha produto antes de ofertas).
+  const catalogosLidos = [...lidos.values()].map((c) => ({ ...c, componentes: (['produto', 'ofertas'] as const).filter((x) => c.componentes.includes(x)) }));
+  return { acao: 'enriquecer_catalogos_busca', catalogos: catalogosLidos, perfis, perfisEmCache };
 }
 
 function utc(agora: Date, comMinuto: boolean): string {
