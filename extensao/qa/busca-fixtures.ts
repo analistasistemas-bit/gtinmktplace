@@ -3,6 +3,7 @@
 import type { EstadoBusca } from '../src/busca-sw';
 import type { CardBusca, OcorrenciaBusca } from '../src/leitura/busca';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
+import type { EstadoEnriquecimento, ExataVista, Medalha } from '../src/compartilhado/enriquecimento';
 
 const NOMES = ['Batom Matte', 'Hidratante Facial', 'Sérum Vitamina C', 'Protetor Solar FPS 50', 'Shampoo Antiqueda', 'Condicionador Nutritivo',
   'Máscara Capilar', 'Esmalte Gel', 'Base Líquida', 'Pó Compacto', 'Rímel à Prova d’Água', 'Perfume Floral', 'Sabonete Líquido', 'Creme para Mãos'];
@@ -28,6 +29,11 @@ function card(i: number): CardBusca {
 }
 
 export const cards: CardBusca[] = Array.from({ length: 60 }, (_, i) => card(i));
+// Nomes de vendedor para a prova do corte do nome (0 = Loja oficial; 15 = Patrocinado; 36 = nome muito longo).
+Object.assign(cards[0], { vendedor: 'DARK LAB', lojaOficial: true });
+Object.assign(cards[15], { vendedor: 'DUX NUTRITION', patrocinado: true });
+cards[15].ocorrencias[0].patrocinado = true;
+Object.assign(cards[36], { vendedor: 'Distribuidora Nacional de Cosméticos Ltda' });
 export const meta: Record<string, MetadadosCardBusca> = {};
 export const resultados: Record<string, ResultadoCard> = {};
 const id = (i: number) => cards[i].itemId;
@@ -69,9 +75,75 @@ vinculado(12, false, ok(12, 18.2)); // duplicata: a margem só vale na ocorrênc
 cards[10].identidadeConflitante = true; cards[10].catalogProductId = null; // conflito de identidade
 for (let i = 55; i < 60; i++) { delete meta[id(i)]; delete resultados[id(i)]; }
 
+// Enriquecimento (Task 10/11.4), FICTÍCIO: medalhas/UFs variadas, catálogo parcial, oferta não localizada, perfil não
+// carregado, comissão indisponível, catálogo em consulta. Cenários da Task 11.4 em `cenario()` (?cenario=).
+export const AGORA_QA = Date.parse('2026-11-03T12:00:00Z');
+const diasAtras = (n: number) => new Date(AGORA_QA - n * 86_400_000).toISOString();
+export const ENR: EstadoEnriquecimento = { catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null };
+const comissao = (i: number) => ({ estado: 'ok' as const, valor: { percentual: i % 2 ? 16.5 : 14, fixa: 0, saleFeeAmount: Math.round((cards[i].preco ?? 0) * (i % 2 ? 0.165 : 0.14) * 100) / 100, precoConsultado: cards[i].preco ?? 0 } });
+function catalogo(i: number, o: { vendedores: number; completa?: boolean; dias: number | null; exata?: Partial<Extract<ExataVista, { estado: 'ok' }>> | 'nao_encontrada'; seller?: { medalha: Medalha | null; uf: string | null } | 'indisponivel' }) {
+  const c = cards[i];
+  const sellerId = 900 + i;
+  const exata: ExataVista = o.exata === 'nao_encontrada' ? { estado: 'nao_encontrada', preco: c.preco! }
+    : { estado: 'ok', preco: c.preco!, sellerId, tipo: i % 2 ? 'gold_pro' : 'gold_special', comissao: comissao(i), ...o.exata };
+  ENR.catalogos[c.catalogProductId!] = {
+    produto: { estado: 'ok', criadoEm: o.dias === null ? null : diasAtras(o.dias) },
+    ofertas: { estado: 'ok', total: o.vendedores + 2, lidas: o.vendedores + 2, vendedoresIdentificados: o.vendedores, ofertasSemVendedor: o.completa === false ? 2 : 0, completa: o.completa !== false, exatas: { [c.itemId]: exata } },
+  };
+  if (o.seller === 'indisponivel') ENR.vendedores[sellerId] = { estado: 'indisponivel', motivo: 'limite do Mercado Livre' };
+  else if (o.seller) ENR.vendedores[sellerId] = { estado: 'ok', nome: c.vendedor, ...o.seller };
+}
+catalogo(0, { vendedores: 9, dias: 120, seller: { medalha: 'platinum', uf: 'SP' } });
+catalogo(3, { vendedores: 31, completa: false, dias: 300, exata: { comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }, seller: { medalha: 'gold', uf: 'RJ' } });
+catalogo(6, { vendedores: 14, dias: 800, exata: 'nao_encontrada' });
+catalogo(9, { vendedores: 4, dias: 181, exata: { tipo: null, comissao: { estado: 'indisponivel', motivo: 'tipo do anúncio não confirmado' } }, seller: 'indisponivel' });
+ENR.catalogos[cards[12].catalogProductId!] = { produto: { estado: 'ok', criadoEm: diasAtras(90) }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+// cards[21]: catálogo ainda sem dado ("Consultando dados do catálogo").
+catalogo(30, { vendedores: 3, dias: 45, seller: { medalha: 'sem', uf: 'MG' } });
+catalogo(15, { vendedores: 7, dias: 400, seller: { medalha: 'platinum', uf: 'SP' } });
+catalogo(18, { vendedores: 2, dias: 20, seller: { medalha: 'silver', uf: 'PR' } });
+catalogo(24, { vendedores: 45, dias: 900, seller: { medalha: 'gold', uf: 'SC' } });
+catalogo(27, { vendedores: 12, dias: 200, seller: { medalha: null, uf: 'BA' } });
+catalogo(33, { vendedores: 5, dias: 60, seller: { medalha: 'gold', uf: 'GO' } });
+catalogo(36, { vendedores: 1, dias: 10, seller: { medalha: 'platinum', uf: 'RS' } });
+
+/** Cenários da Task 11.4: local (nada da rede), consultando (identificado, enriquecimento em voo), preenchido (tudo
+ *  lido), parcial (429 em parte), nao_localizada (ofertas lidas sem a do card), pausa (parcial + Retry-After). */
+export type Cenario = 'local' | 'consultando' | 'preenchido' | 'parcial' | 'nao_localizada' | 'pausa';
+export function cenario(c: Cenario, agora = Date.now()): { enr: EstadoEnriquecimento | undefined; meta: typeof meta; resultados: typeof resultados } {
+  if (c === 'local') return { enr: undefined, meta: {}, resultados: {} };
+  if (c === 'consultando') return { enr: { ...ENR, catalogos: {}, vendedores: {} }, meta, resultados };
+  const e: EstadoEnriquecimento = structuredClone(ENR);
+  const okDe = (x: NonNullable<EstadoEnriquecimento['catalogos'][string]['ofertas']>) => (x.estado === 'ok' ? x : null);
+  if (c === 'preenchido') {
+    for (const card of cards) {
+      const cat = card.catalogProductId;
+      if (!cat || card.identidadeConflitante || e.catalogos[cat]?.ofertas?.estado === 'ok') continue;
+      e.catalogos[cat] = { produto: { estado: 'ok', criadoEm: diasAtras(150) }, ofertas: { estado: 'ok', total: 6, lidas: 6, vendedoresIdentificados: 6, ofertasSemVendedor: 0, completa: true,
+        exatas: { [card.itemId]: { estado: 'ok', preco: card.preco!, sellerId: 990, tipo: 'gold_special', comissao: comissao(0) } } } };
+    }
+    e.vendedores[990] = { estado: 'ok', nome: 'Loja', medalha: 'gold', uf: 'SP' };
+    for (const [k, v] of Object.entries(e.vendedores)) if (v.estado !== 'ok') e.vendedores[k] = { estado: 'ok', nome: null, medalha: 'silver', uf: 'MG' };
+    for (const v of Object.values(e.catalogos)) {
+      const o = v.ofertas && okDe(v.ofertas);
+      if (o) for (const [k, x] of Object.entries(o.exatas)) if (x.estado === 'ok' && x.comissao.estado !== 'ok') o.exatas[k] = { ...x, comissao: comissao(0) };
+      if (v.produto?.estado !== 'ok') v.produto = { estado: 'ok', criadoEm: diasAtras(150) };
+    }
+    return { enr: e, meta, resultados };
+  }
+  if (c === 'nao_localizada') {
+    const e = cenario('preenchido', agora).enr!;
+    for (const v of Object.values(e.catalogos)) { const o = v.ofertas && okDe(v.ofertas); if (o) for (const [k, x] of Object.entries(o.exatas)) o.exatas[k] = { estado: 'nao_encontrada', preco: x.preco }; }
+    return { enr: e, meta, resultados };
+  }
+  // parcial / pausa: 429 em parte das ofertas (e cards 21+ em consulta ficam indisponíveis também).
+  for (const card of cards.slice(20)) if (card.catalogProductId && !e.catalogos[card.catalogProductId]) e.catalogos[card.catalogProductId] = { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+  if (c === 'pausa') e.tentarAposEm = agora + 4 * 60_000;
+  return { enr: e, meta, resultados };
+}
 export const OCORRENCIAS = cards.reduce((n, c) => n + c.ocorrencias.length, 0);
 export const ESTADO: EstadoBusca = {
   entrada: { tipoPagina: 'busca', url: 'https://lista.mercadolivre.com.br/cosmeticos' },
-  resposta: { resultados, metadados: meta, precoDaMargem: {}, limiteEm: null, usoRegistrado: true },
+  resposta: { resultados, metadados: meta, precoDaMargem: {}, limiteEm: null, usoRegistrado: true, enriquecimento: ENR },
   observado: { cards, ocorrencias: OCORRENCIAS },
 };

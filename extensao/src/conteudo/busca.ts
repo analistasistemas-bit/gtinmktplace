@@ -4,8 +4,11 @@
 import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import { cardsDoItem, cardsElegiveis, INJETADO, lerBusca, lerCard, type CardBusca } from '../leitura/busca';
 import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca';
+import { enriquecimentoDe, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 
 const ESPERA_MS = 800;
+// Dados locais (preço, vendidos, sinais) não esperam a rede: o bloco sai com o card, separado do envio ao SW.
+const ESPERA_BLOCOS_MS = 120;
 const PULSO_MS = 61_000; // janela da cota da edge (1 min) + folga
 const LIMITE_ESPERA_MS = 15_000;
 const HOST = HOST_MINI_BLOCO;
@@ -42,11 +45,17 @@ function enviarCards(msg: { geracao: string | null }): void {
   } catch { /* contexto invalidado */ }
 }
 
-function lerEEnviar(): void {
-  if (!ligada) return;
-  // URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; reenvia tudo.
+/** URL mudou sem recarregar (filtro aplicado por script): o SW abriu outra geração e zerou o estado; descarta o dado da
+ *  página anterior e reenvia tudo. Chamado antes de enviar E antes de desenhar (o desenho local sai antes do envio). */
+function conferirUrl(): string {
   const url = location.href.split('#')[0];
   if (url !== urlAtual) { urlAtual = url; enviados = new Map(); invalidarGeracao(); limparSelos(); }
+  return url;
+}
+
+function lerEEnviar(): void {
+  if (!ligada) return;
+  const url = conferirUrl();
   // Reenvia também o card que completou preço, catálogo, vendidos, miniatura ou ocorrência depois da 1ª leitura.
   const assinatura = (c: CardBusca) =>
     `${c.preco}|${c.catalogProductId}|${c.userProductId}|${c.identidadeConflitante}|${c.vendidosTexto}|${c.miniaturaUrl}|${JSON.stringify(c.ocorrencias)}`;
@@ -60,6 +69,8 @@ function lerEEnviar(): void {
 const assinaturas = new WeakMap<Element, string>();
 // Metadados do banco (anúncio próprio, vínculo); ausente = ainda não identificado.
 let metadados: Record<string, MetadadosCardBusca> = {};
+// Catálogos enriquecidos (Task 10): vista por card calculada na hora do desenho.
+let enriquecimento: EstadoEnriquecimento | undefined;
 // Hosts que NÓS tiramos: a remoção deles não pede nova leitura (a feita pela página pede, para o bloco voltar).
 const removidosPorNos = new WeakSet<Node>();
 // Card → nó de preço em que o bloco foi desenhado. Host sumido com o mesmo preço = a página tirou só o host: restaura
@@ -81,6 +92,7 @@ function tirarHost(h: Element): void {
  *  resultado) e tira os que não correspondem a mais nada. Sem preço no card = encaixe inseguro: só o painel. */
 function aplicarBlocos(): void {
   if (!ligada) return;
+  conferirUrl();
   const vivos = new Set<Element>();
   // Preço analisado por item = o do card agregado (1º preço legível na ordem da página), o mesmo que o SW manda à edge.
   // ponytail: lido do DOM atual; se o scroll trouxer o 1º preço numa leitura e outro antes dele na seguinte, diverge.
@@ -91,7 +103,8 @@ function aplicarBlocos(): void {
     if (!c || !preco?.parentElement) continue;
     const meta = metadados[c.itemId], res = resultados[c.itemId];
     const pa = precoAnalisado.get(c.itemId) ?? c.preco;
-    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa]);
+    const vista = vistaDoCard(c, enriquecimento);
+    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa, vista]);
     const atual = doCard(card, `.${HOST}`);
     if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); continue; }
     if (!atual && ancoras.get(card) === preco) {
@@ -99,7 +112,7 @@ function aplicarBlocos(): void {
       if (n >= MAX_RESTAUROS) continue;
       restauros.set(card, n + 1);
     }
-    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa);
+    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa, vista);
     assinaturas.set(novo, assinatura);
     if (atual) tirarHost(atual);
     preco.parentElement.insertBefore(novo, preco.nextSibling);
@@ -118,6 +131,7 @@ function limparSelos(): void {
   tirarDestaque();
   resultados = {};
   metadados = {};
+  enriquecimento = undefined;
   ancoras = new WeakMap();
   restauros = new WeakMap();
   for (const h of document.querySelectorAll(`.${HOST}`)) tirarHost(h);
@@ -151,7 +165,7 @@ function agendarPulso(): void {
 
 const daPagina = (msg: { url?: unknown; geracao?: unknown }) => geracao !== null && msg.geracao === geracao && msg.url === location.href.split('#')[0];
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; enriquecimento?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
@@ -166,6 +180,7 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     // Resultado de outra página (URL ou geração anterior) não vale aqui.
     resultados = msg.resultados as Record<string, ResultadoCard>;
     metadados = msg.metadados && typeof msg.metadados === 'object' ? msg.metadados as Record<string, MetadadosCardBusca> : {};
+    enriquecimento = msg.enriquecimento ? enriquecimentoDe(msg.enriquecimento) : undefined;
     aplicarBlocos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);
@@ -180,7 +195,13 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
 
 // Cards montam depois do document_idle e entram no scroll: observa a página com espera curta entre leituras.
 let timer: ReturnType<typeof setTimeout> | undefined;
-function agendar(): void { clearTimeout(timer); timer = setTimeout(() => { lerEEnviar(); aplicarBlocos(); }, ESPERA_MS); }
+// ponytail: blocos com timer que não reinicia (página do ML montando sem parar não adia além de ESPERA_BLOCOS_MS).
+let timerBlocos: ReturnType<typeof setTimeout> | undefined;
+function agendar(): void {
+  clearTimeout(timer);
+  timer = setTimeout(() => { lerEEnviar(); aplicarBlocos(); }, ESPERA_MS);
+  timerBlocos ??= setTimeout(() => { timerBlocos = undefined; aplicarBlocos(); }, ESPERA_BLOCOS_MS);
+}
 
 /** Nó dentro do Avant ou de um host PubliAI (o próprio host incluído). */
 const deFora = (n: Node | null) => !!(n && (n.nodeType === 1 ? (n as Element) : n.parentElement)?.closest(`${INJETADO}, .${HOST}`));
@@ -200,6 +221,11 @@ const inicio = Date.now();
   if (document.querySelector('.poly-card')) { agendar(); return; } // mesma espera do observer: card ainda montando
   if (Date.now() - inicio < LIMITE_ESPERA_MS) setTimeout(esperarCards, 500);
 })();
+
+// Busca parada que volta a ficar visível: o SW confirma a conta ML da org (≤ 1 vez/5 min por aba; ele decide).
+document.addEventListener('visibilitychange', () => {
+  if (ligada && geracao !== null && document.visibilityState === 'visible') enviar({ tipo: 'publiai:busca-visivel', geracao });
+});
 
 // Estado inicial da chave (sem rede no SW). Falha ou resposta que não diz ativa e logado: continua desligada.
 void (async () => {

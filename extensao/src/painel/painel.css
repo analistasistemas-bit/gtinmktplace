@@ -550,3 +550,24 @@ button.perigo { color: var(--destructive); }
 .bs-ordem label[data-desativada] { opacity: 0.55; cursor: not-allowed; }
 .bs-ordem label[data-desativada] input { cursor: not-allowed; }
 @media (prefers-color-scheme: dark) { .bs-info { color: oklch(0.78 0.13 277); } } /* escuro: ≥ 5:1 sobre o roxo escuro */
+
+/* Catálogos e vendedores (Task 10): mesma linguagem do resumo (rótulo suave, número mono à direita); a barra é só a
+   fatia do denominador, nunca o único sinal (rótulo e número sempre presentes). Medalha = chart-4 (âmbar), desconhecido
+   e "outras" em tom neutro; o resto em chart-1 (identidade). */
+.bs-catalogos { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+.bs-catalogos-titulo { margin: 0; font-size: 13px; font-weight: 600; color: var(--foreground); }
+.bs-sub { margin: 6px 0 0; font-size: 12px; font-weight: 500; display: flex; align-items: center; }
+.bs-estado-enr { color: color-mix(in oklab, var(--warning) 62%, var(--foreground)); font-weight: 500; }
+.bs-distrib { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.bs-distrib li {
+  --cor: var(--chart-1);
+  display: grid; grid-template-columns: minmax(72px, 38%) minmax(0, 1fr) 3ch; align-items: center; gap: 8px; font-size: 12px;
+}
+.bs-distrib li[data-cor='4'] { --cor: var(--chart-4); }
+.bs-distrib li[data-neutra] { --cor: var(--muted-foreground); }
+.bs-distrib-rotulo { color: var(--foreground); overflow-wrap: anywhere; }
+.bs-distrib li[data-cor='4'] .bs-distrib-rotulo { color: color-mix(in oklab, var(--cor) 55%, var(--foreground)); font-weight: 600; }
+.bs-distrib li[data-neutra] .bs-distrib-rotulo { color: var(--muted-foreground); }
+.bs-distrib-barra { height: 6px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.bs-distrib-barra > span { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--cor) 75%, var(--card)); }
+.bs-distrib .mono { text-align: right; font-weight: 600; color: var(--foreground); }

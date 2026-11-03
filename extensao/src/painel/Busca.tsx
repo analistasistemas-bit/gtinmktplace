@@ -1,12 +1,13 @@
 // Visão "Busca" do painel (ADR-0189 D-11, Task 22; emenda 2026-11-02, Task 5): resumo dos produtos carregados, filtros
 // e ordenação só no painel (o DOM do ML não é reordenado; o clique destaca o card na página), lista com miniatura,
 // Minha margem dos vinculados e vínculo dos demais. O SW identifica e analisa sozinho: o painel só consome o estado e
-// oferece "Tentar de novo" quando o estado diz que algo aguarda cota ou falhou.
+// oferece "Tentar de novo" (margem aguardando cota ou falha) e "Tentar novamente" (enriquecimento parcial).
 import { useId, useState } from 'react';
 import type { EstadoBusca } from '../busca-sw';
 import {
-  filtrarCards, margemClassico, ordenarCards, resumoBusca, type FiltroBusca, type OrdemBusca,
+  filtrarCards, margemClassico, ordenarCards, resumoBusca, resumoEnriquecimento, type FiltroBusca, type OrdemBusca,
 } from '../compartilhado/busca-resumo';
+import { haParaTentar, NOME_MEDALHA, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import type { CardBusca } from '../leitura/busca';
 import type { MetadadosCardBusca } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import type { MargemTipo } from '../../../supabase/functions/_shared/extensao/tipos.ts';
@@ -37,6 +38,11 @@ const AJUDA = {
   giro: ['Giro mínimo ao preço atual', 'Piso de vendidos de cada produto × o preço atual do card. Serve para comparar o tamanho dos produtos entre si. Não é faturamento nem o valor realmente vendido: as vendas aconteceram a outros preços e o Mercado Livre só informa a faixa.'],
   meus: ['Meus anúncios', 'Anúncios desta página publicados pelas contas do Mercado Livre conectadas à sua empresa.'],
   vinculados: ['SKUs vinculados', 'Produtos desta página ligados a um SKU do seu catálogo (pelo catálogo do ML, pelo EAN da busca ou por vínculo manual). Só eles têm Minha margem calculada.'],
+  catalogos: ['Catálogos lidos', 'Catálogos do Mercado Livre desta página já consultados: vendedores, medalha, UF, tipo do anúncio e idade. A página inteira é consultada de uma vez. Se o Mercado Livre limitar as consultas ou o tempo acabar, o que já chegou fica e o restante aparece como indisponível até você tocar em "Tentar novamente".'],
+  medalhas: ['Vendedores por medalha', 'Cada vendedor conta uma vez, mesmo com vários anúncios na página. Só entram vendedores de anúncios localizados no catálogo; perfil não carregado ou medalha não informada pelo Mercado Livre ficam em "Não informada".'],
+  ufs: ['UF dos vendedores', 'Estado do endereço do vendedor no Mercado Livre, um por vendedor. Mostra as 5 UFs mais frequentes; as demais somam em "Outras".'],
+  tipos: ['Tipo de anúncio', 'Clássico ou Premium da oferta de cada card no catálogo. Cards cuja oferta não foi localizada na leitura não entram.'],
+  faixas: ['Vendedores por catálogo', 'Quantos vendedores diferentes cada catálogo tem, contando só catálogos com leitura completa. Leitura parcial aparece como "≥ N": há pelo menos N vendedores.'],
   ordem: ['Ordenar', 'Relevância: a ordem do Mercado Livre. Vendidos: maior piso de vendidos primeiro. Preço: menor primeiro. Minha margem: sua margem simulada no Clássico ao preço de cada card, só para produtos vinculados. A ordem muda apenas esta lista, nunca a página do ML.'],
 } as const;
 type IdAjuda = keyof typeof AJUDA;
@@ -47,7 +53,9 @@ function Info({ id, aberto, onAlternar }: { id: IdAjuda; aberto: boolean; onAlte
 }
 const Ajuda = ({ id, aberto }: { id: IdAjuda; aberto: IdAjuda | null }) => (aberto === id ? <p className="nota bs-ajuda" role="note">{AJUDA[id][1]}</p> : null);
 
-type Analisar = (forcar: string[]) => Promise<{ ok: boolean; erro?: string }>;
+type Analisar = (forcar: string[], retentar?: boolean) => Promise<{ ok: boolean; erro?: string; tentarAposEm?: number }>;
+const hora = (ms: number) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const pausa = (ms: number) => `O Mercado Livre pediu uma pausa; tente de novo às ${hora(ms)}`;
 type Resultado = EstadoBusca['resposta']['resultados'][string] | undefined;
 
 export function Busca({ estado, chamar, analisar, destacar }: {
@@ -62,6 +70,8 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ajuda, setAjuda] = useState<IdAjuda | null>(null);
+  // Resposta do "Tentar novamente" do enriquecimento (pausa pedida pelo ML ou erro): fica na seção dos catálogos.
+  const [avisoRetentar, setAvisoRetentar] = useState<string | null>(null);
   const alternarAjuda = (id: IdAjuda) => setAjuda((a) => (a === id ? null : id));
   const nomeOrdem = useId();
 
@@ -71,6 +81,13 @@ export function Busca({ estado, chamar, analisar, destacar }: {
     const r = await analisar(forcar);
     setOcupado(false);
     if (!r.ok) setErro(mensagemDeErro(r.erro ?? 'interno'));
+  };
+  const retentar = async () => {
+    setOcupado(true);
+    setAvisoRetentar(null);
+    const r = await analisar([], true);
+    setOcupado(false);
+    if (!r.ok) setAvisoRetentar(r.erro === 'aguardar' && typeof r.tentarAposEm === 'number' ? pausa(r.tentarAposEm) : mensagemDeErro(r.erro ?? 'interno'));
   };
 
   const r = resumoBusca(cards, metadados, ocorrencias);
@@ -145,6 +162,8 @@ export function Busca({ estado, chamar, analisar, destacar }: {
           </div>
         </div>
 
+        <Catalogos cards={cards} enr={estado.resposta.enriquecimento} ajuda={ajuda} alternarAjuda={alternarAjuda} ocupado={ocupado} retentar={retentar} aviso={avisoRetentar} />
+
         {ocupado && <p className="nota" role="status">Analisando…</p>}
         {!ocupado && erro && (
           <div className="bs-aviso erro" role="alert">
@@ -199,6 +218,89 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   );
 }
 
+type Fatia = { rotulo: string; n: number; cor?: 4 | 'neutra' };
+/** Distribuição em linhas rótulo · barra · contagem; a barra é a fatia do denominador (cor sempre com texto e número). */
+function Distribuicao({ rotulo, fatias, total, classe }: { rotulo: string; fatias: Fatia[]; total: number; classe?: string }) {
+  return (
+    <ul className={`bs-distrib ${classe ?? ''}`} aria-label={rotulo}>
+      {fatias.map((f) => (
+        <li key={f.rotulo} data-cor={f.cor === 4 ? '4' : undefined} data-neutra={f.cor === 'neutra' ? '' : undefined}>
+          <span className="bs-distrib-rotulo">{f.rotulo}</span>
+          <span className="bs-distrib-barra" aria-hidden="true"><span style={{ width: `${total ? Math.round((f.n / total) * 100) : 0}%` }} /></span>
+          <span className="mono">{num(f.n)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Catálogos e vendedores (Task 10): resumo do enriquecimento, sempre com denominador; desconhecido fica à parte. */
+function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso }: {
+  cards: CardBusca[]; enr: EstadoEnriquecimento | undefined; ajuda: IdAjuda | null; alternarAjuda: (id: IdAjuda) => void; ocupado: boolean; retentar: () => void; aviso: string | null;
+}) {
+  const r = resumoEnriquecimento(cards, enr);
+  if (r.cardsComCatalogo === 0) return null;
+  const { vendedores: v, tipos: t, faixas: f } = r;
+  const lidos = r.catalogosLidos;
+  const comOfertas = f.completos + f.parciais.length;
+  const titulo = (id: IdAjuda) => <h3 className="ct-rotulo bs-sub">{AJUDA[id][0]}<Info id={id} aberto={ajuda === id} onAlternar={alternarAjuda} /></h3>;
+  const plural = (n: number, um: string, varios: string) => `${num(n)} ${n === 1 ? um : varios}`;
+  // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
+  // Página inteira indisponível (sem conexão ML, módulo desligado...) também: o motivo e o "Tentar novamente".
+  const tentar = !!enr && haParaTentar(enr);
+  const pausado = typeof enr?.tentarAposEm === 'number' && enr.tentarAposEm > Date.now();
+  return (
+    <section className="bs-catalogos" aria-labelledby="bs-catalogos-titulo">
+      <h3 id="bs-catalogos-titulo" className="bs-catalogos-titulo">Catálogos e vendedores</h3>
+      <div className="ct-linha">
+        <span className="ct-rotulo">Catálogos lidos<Info id="catalogos" aberto={ajuda === 'catalogos'} onAlternar={alternarAjuda} /></span>
+        <span className="mono ct-forte">{`${num(lidos)} de ${num(f.catalogos)}`}</span>
+      </div>
+      <Ajuda id="catalogos" aberto={ajuda} />
+      {r.catalogosIndisponiveis > 0 && <p className="nota bs-cobertura">{`${plural(r.catalogosIndisponiveis, 'catálogo', 'catálogos')} sem ofertas lidas agora`}</p>}
+      {!enr?.indisponivel && r.catalogosConsultando > 0 && <p className="nota bs-estado-enr" role="status">Consultando dados do catálogo</p>}
+      {tentar && !ocupado && (
+        <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
+          <span>{aviso ?? (pausado ? pausa(enr!.tentarAposEm!) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora'))}</span>
+          <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
+        </div>
+      )}
+      {comOfertas > 0 && (
+        <>
+          {titulo('medalhas')}
+          <Ajuda id="medalhas" aberto={ajuda} />
+          <Distribuicao rotulo="Vendedores por medalha" classe="bs-medalhas" total={v.unicos} fatias={[
+            ...(['platinum', 'gold', 'silver', 'sem'] as const).map((m) => ({ rotulo: NOME_MEDALHA[m], n: v.medalhas[m], cor: m === 'sem' ? 'neutra' as const : 4 as const })),
+            { rotulo: 'Não informada', n: v.medalhaDesconhecida, cor: 'neutra' },
+          ]} />
+          <p className="nota bs-cobertura">{`${plural(v.unicos, 'vendedor único', 'vendedores únicos')} · ${num(v.cardsSemVendedor)} de ${num(r.cardsComCatalogo)} cards de catálogo sem vendedor identificado`}</p>
+          {titulo('ufs')}
+          <Ajuda id="ufs" aberto={ajuda} />
+          <Distribuicao rotulo="UF dos vendedores" total={v.unicos} fatias={[
+            ...v.ufs.map(([uf, n]) => ({ rotulo: uf, n })),
+            ...(v.ufOutros ? [{ rotulo: 'Outras', n: v.ufOutros, cor: 'neutra' as const }] : []),
+            ...(v.ufDesconhecida ? [{ rotulo: 'Não informada', n: v.ufDesconhecida, cor: 'neutra' as const }] : []),
+          ]} />
+          {titulo('tipos')}
+          <Ajuda id="tipos" aberto={ajuda} />
+          <Distribuicao rotulo="Tipo de anúncio" total={t.exatas} fatias={[
+            { rotulo: 'Clássico', n: t.classico }, { rotulo: 'Premium', n: t.premium },
+            ...(t.desconhecido ? [{ rotulo: 'Não confirmado', n: t.desconhecido, cor: 'neutra' as const }] : []),
+          ]} />
+          <p className="nota bs-cobertura">{`${num(t.exatas)} de ${num(r.cardsComCatalogo)} cards de catálogo com oferta localizada`}</p>
+          {titulo('faixas')}
+          <Ajuda id="faixas" aberto={ajuda} />
+          <Distribuicao rotulo="Vendedores por catálogo" total={f.completos} fatias={[
+            ...(f.semOfertas ? [{ rotulo: 'Sem ofertas', n: f.semOfertas, cor: 'neutra' as const }] : []),
+            { rotulo: '1–5', n: f.ate5 }, { rotulo: '6–10', n: f.ate10 }, { rotulo: '11–30', n: f.ate30 }, { rotulo: 'Mais de 30', n: f.acima30 },
+          ]} />
+          <p className="nota bs-cobertura">{`${num(f.completos)} de ${num(comOfertas)} ${comOfertas === 1 ? 'catálogo' : 'catálogos'} com leitura completa${f.parciais.length ? ` · Leitura parcial: ${f.parciais.map((n) => `≥ ${num(n)}`).join(', ')}` : ''}`}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 function Miniatura({ url, estado }: { url: string | null; estado: string }) {
   const [falhou, setFalhou] = useState(false);
   return (
@@ -230,13 +332,16 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
   card: CardBusca; resultado: Resultado; precoDaMargem: number | undefined; meta: MetadadosCardBusca | undefined; aberto: boolean;
   onAbrir: () => void; onDestacar: () => void; chamar: Chamar; onVinculado: () => void;
 }) {
-  const m = margemClassico(resultado);
-  const estado = resultado?.estado;
   // Uma aparição só por linha: a do preço da margem (ou do card); vendidos e selos vêm dela, nunca da outra aparição.
   const alvo = precoDaMargem ?? c.preco;
   const oc = c.ocorrencias.find((o) => o.preco === alvo) ?? c.ocorrencias[0];
   const sinal = (k: 'full' | 'lojaOficial') => (oc && k in oc ? oc[k] : c[k]); // estado antigo: ocorrência sem sinais
   const ap = { preco: oc ? oc.preco : c.preco, vendidosTexto: oc ? oc.vendidosTexto : c.vendidosTexto, full: sinal('full'), lojaOficial: sinal('lojaOficial'), patrocinado: oc ? oc.patrocinado : c.patrocinado };
+  // Margem calculada a outro preço (ex.: estado da 0.4.2 sem precoDaMargem): o % não vai ao lado deste preço.
+  const precoM = resultado?.estado === 'ok' ? resultado.margem?.preco : undefined;
+  const outroPreco = typeof precoM === 'number' && precoM !== ap.preco;
+  const m = outroPreco ? null : margemClassico(resultado);
+  const estado = outroPreco ? undefined : resultado?.estado;
   const proprio = meta?.proprio === true, vinculado = !!meta?.vinculo, semVinculo = !!meta && !meta.vinculo;
   const borda = proprio ? 'meu' : vinculado ? 'vinculado' : meta ? 'sem-vinculo' : 'desconhecido';
   return (
@@ -266,9 +371,9 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
           )}
         </div>
         {/* O SKU fica visível em qualquer estado com código; com composição ele vai dentro de Detalhes. */}
-        {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
+        {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem && !outroPreco) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
         {/* Detalhes só quando há a conta da margem (título completo fica no hover do título). */}
-        {resultado?.estado === 'ok' && resultado.margem && (
+        {!outroPreco && resultado?.estado === 'ok' && resultado.margem && (
           <details className="bs-detalhes">
             <summary>Detalhes</summary>
             <dl className="bs-composicao">

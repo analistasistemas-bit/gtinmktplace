@@ -385,11 +385,14 @@ describe('identificar_busca (Task 2, emenda 02/11)', () => {
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: null })] }))
       .toEqual({ acao: 'identificar_busca', eanDaBusca: null, itens: [card('MLB1', { catalogProductId: null })] });
   });
-  it('até 50 itens DEDUPLICADOS (ocorrências repetidas não contam); recusa vazio, 51 distintos, id e EAN inválidos', () => {
+  it('até 50 itens DEDUPLICADOS (ocorrências repetidas não contam); vazio só sem registro de uso; recusa 51 distintos, id e EAN inválidos', () => {
     const cinquenta = Array.from({ length: 50 }, (_, i) => card(`MLB${i + 1}`));
     expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, ...cinquenta] })).toMatchObject({ itens: cinquenta });
     expect(validarPedido({ acao: 'identificar_busca', itens: [...cinquenta, card('MLB51')] })).toBeNull();
-    expect(validarPedido({ acao: 'identificar_busca', itens: [] })).toBeNull();
+    // Sem itens = só revalidar a conta ML da org (Task 10, rodada 2); nunca com registro de uso.
+    expect(validarPedido({ acao: 'identificar_busca', itens: [] })).toEqual({ acao: 'identificar_busca', eanDaBusca: null, itens: [] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [], registrarUso: false })).toMatchObject({ itens: [] });
+    expect(validarPedido({ acao: 'identificar_busca', itens: [], registrarUso: true })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('X1')] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', itens: [card('MLB1', { catalogProductId: 'x' })] })).toBeNull();
     expect(validarPedido({ acao: 'identificar_busca', eanDaBusca: 'x'.repeat(21), itens: [card('MLB1')] })).toBeNull();
@@ -416,5 +419,58 @@ describe('validarPedido — radar (Task 18)', () => {
     expect(validarPedido({ acao: 'adicionar_radar', catalogProductId: 'MLB32466350', preco: 10 })).toEqual({ acao: 'adicionar_radar', catalogProductId: 'MLB32466350' });
     expect(validarPedido({ acao: 'adicionar_radar', catalogProductId: 'https://x/p/MLB1' })).toBeNull();
     expect(validarPedido({ acao: 'radar' })).toBeNull();
+  });
+});
+
+describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
+  const E = 'enriquecer_catalogos_busca';
+  const c = (id: string, extra: Record<string, unknown> = {}) => ({ catalogProductId: id, itens: [{ itemId: 'MLB10', preco: 10 }], ...extra });
+  it('componentes ausentes = ambos; perfis opcionais; normaliza', () => {
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')] })).toEqual({
+      acao: E, catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }] }], perfis: [], perfisEmCache: [],
+    });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['ofertas'] })], perfis: [7, 7], perfisEmCache: [8] }))
+      .toMatchObject({ catalogos: [{ componentes: ['ofertas'] }], perfis: [7], perfisEmCache: [8] });
+  });
+  it('catálogo repetido no mesmo pedido vira um (componentes e itens unidos, item repetido uma vez)', () => {
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { componentes: ['produto'] }), c('MLB1', { componentes: ['ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] })] }))
+      .toMatchObject({ catalogos: [{ catalogProductId: 'MLB1', componentes: ['produto', 'ofertas'], itens: [{ itemId: 'MLB10', preco: 10 }, { itemId: 'MLB11', preco: 5 }] }] });
+  });
+  it('limites da página: 50 catálogos distintos, 50 itens no mesmo catálogo, 50 no pedido, 50 perfis, teto bruto anti-abuso', () => {
+    const ids = (n: number, base = 1) => Array.from({ length: n }, (_, i) => `MLB${i + base}`);
+    const itens = (n: number, base = 10) => Array.from({ length: n }, (_, i) => ({ itemId: `MLB${i + base}`, preco: 1 }));
+    const cinquenta = ids(50).map((id) => c(id, { itens: [] }));
+    expect(validarPedido({ acao: E, catalogos: cinquenta })).toMatchObject({ catalogos: { length: 50 } });
+    expect(validarPedido({ acao: E, catalogos: [...cinquenta, ...cinquenta] })).toMatchObject({ catalogos: { length: 50 } }); // 100 brutas, dedupe
+    expect(validarPedido({ acao: E, catalogos: [...cinquenta, c('MLB51', { itens: [] })] })).toBeNull(); // 51º catálogo
+    expect(validarPedido({ acao: E, catalogos: Array.from({ length: 101 }, () => c('MLB1')) })).toBeNull(); // teto bruto
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(50) })] })).toMatchObject({ catalogos: [{ itens: { length: 50 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: itens(51) })] })).toBeNull(); // 51º item no mesmo catálogo
+    // repetidos não contam (teto bruto de 100 entradas por catálogo)
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: [...itens(50), ...itens(50)] })] })).toMatchObject({ catalogos: [{ itens: { length: 50 } }] });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1', { itens: Array.from({ length: 101 }, () => itens(1)[0]) })] })).toBeNull();
+    const tres = ['MLB1', 'MLB2', 'MLB3'].map((id, k) => c(id, { itens: itens(17, 100 * (k + 1)) })); // 51 no pedido
+    expect(validarPedido({ acao: E, catalogos: tres })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: tres.slice(0, 2).concat(c('MLB3', { itens: itens(16, 300) })) })).not.toBeNull();
+    const perfis = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+    expect(validarPedido({ acao: E, catalogos: [], perfis: perfis(50) })).not.toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [], perfis: perfis(51) })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisEmCache: perfis(101) })).toBeNull();
+    // `perfisRestantes` (SW anterior à Task 11.3) é aceito e ignorado
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 3 })).not.toHaveProperty('perfisRestantes');
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 'x' })).not.toBeNull();
+  });
+  it.each([
+    ['vazio', { catalogos: [] }],
+    ['sem catalogos', {}],
+    ['id inválido', { catalogos: [c('X1')] }],
+    ['componente desconhecido', { catalogos: [c('MLB1', { componentes: ['vencedor'] })] }],
+    ['componentes vazio', { catalogos: [c('MLB1', { componentes: [] })] }],
+    ['preço ≤ 0', { catalogos: [c('MLB1', { itens: [{ itemId: 'MLB10', preco: 0 }] })] }],
+    ['item inválido', { catalogos: [c('MLB1', { itens: [{ itemId: 'x', preco: 1 }] })] }],
+    ['seller inválido', { catalogos: [c('MLB1')], perfis: [-1] }],
+    ['seller não inteiro', { catalogos: [c('MLB1')], perfisEmCache: ['7'] }],
+  ])('recusa %s', (_n, corpo) => {
+    expect(validarPedido({ acao: E, ...corpo })).toBeNull();
   });
 });

@@ -166,7 +166,7 @@ function Logado({ geracao, aoDescartar, vigente }: { geracao: number; aoDescarta
         key={`${tabId}:${(estado.entrada as { url?: string }).url ?? ''}`}
         estado={estado as unknown as EstadoBusca}
         chamar={chamarViaSw}
-        analisar={(forcar) => comando(geracao, { tipo: 'publiai:analisar-busca', tabId, forcar }, aoDescartar, vigente) as never}
+        analisar={(forcar, retentar) => comando(geracao, { tipo: 'publiai:analisar-busca', tabId, forcar, ...(retentar ? { retentar: true } : {}) }, aoDescartar, vigente) as never}
         destacar={(itemId) => { chrome.runtime.sendMessage({ tipo: 'publiai:destacar-card', tabId, itemId }).catch(() => {}); }}
       />
     );

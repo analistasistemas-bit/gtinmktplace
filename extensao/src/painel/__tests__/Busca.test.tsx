@@ -242,13 +242,29 @@ describe('linha por aparição (revisão final)', () => {
         { posicao: 5, patrocinado: false, preco: 30, vendidosTexto: '+100 vendidos', full: true, freteGratis: null, lojaOficial: null },
       ],
     });
-    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21) }, [c]) })} />);
+    const m10 = { ...okMargem(11.21), margem: { ...okMargem(11.21).margem, preco: 10 } };
+    render(<Busca {...props({ estado: estado({ MLB1000001: m10 }, [c]) })} />);
     const linha = within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).closest('li')!;
     within(linha).getByText('R$ 10,00');
     within(linha).getByText('Patrocinado');
+    within(linha).getByLabelText('Margem simulada no Clássico: 11,2%');
     expect(within(linha).queryByText('+100 vendidos')).toBeNull();
     expect(within(linha).queryByText('Full')).toBeNull();
     screen.getByText('R$ 10,00 a R$ 30,00');
+  });
+
+  it('margem de outro preço (estado 0.4.2 sem precoDaMargem): a linha de R$10 não mostra o % calculado a R$19,99', () => {
+    const c = card('MLB1000001', {
+      preco: 10, ocorrencias: [{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: null, full: null, freteGratis: null, lojaOficial: null }],
+    });
+    render(<Busca {...props({ estado: estado({ MLB1000001: okMargem(11.21) }, [c]) })} />);
+    const linha = within(lista()).getByRole('button', { name: 'Produto MLB1000001' }).closest('li')!;
+    within(linha).getByText('R$ 10,00');
+    expect(within(linha).queryByLabelText(/Margem simulada/)).toBeNull();
+    expect(within(linha).queryByText('11,2%')).toBeNull();
+    expect(within(linha).queryByText('Margem indisponível')).toBeNull();
+    expect(within(linha).queryByText('Detalhes')).toBeNull(); // a composição também é do outro preço
+    within(linha).getByText('SKU 00000081');
   });
 });
 
@@ -306,5 +322,133 @@ describe('Painel autoexplicativo (0.4.1)', () => {
     const { container } = render(<Busca {...props({ estado: estado({ MLB1000001: semConta, MLB1000002: SEM, MLB1000003: SEM }) })} />);
     expect(container.querySelector('details')).toBeNull();
     screen.getByText('SKU 77');
+  });
+});
+
+describe('Catálogos e vendedores (Task 10)', () => {
+  const COM = { estado: 'ok', valor: { percentual: 14, fixa: 0, saleFeeAmount: 14, precoConsultado: 100 } };
+  const ex = (sellerId: number | null, tipo: string | null) => ({ estado: 'ok', preco: 100, sellerId, tipo, comissao: COM });
+  const comEnr = (enr: Record<string, unknown>) => {
+    const e = estado({}, [card('MLB1000001'), card('MLB1000002'), card('MLB1000003', { catalogProductId: 'MLB200' }), card('MLB1000004', { catalogProductId: null })]);
+    e.resposta.enriquecimento = { catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null, ...enr } as never;
+    return e;
+  };
+  const secao = () => screen.getByRole('region', { name: 'Catálogos e vendedores' });
+
+  it('medalha, UF, tipo e faixas com denominadores; parciais "≥ N"; desconhecidos à parte', () => {
+    render(<Busca {...props({ estado: comEnr({
+      catalogos: {
+        MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 3, lidas: 3, vendedoresIdentificados: 3, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } } },
+        MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'ok', total: 50, lidas: 50, vendedoresIdentificados: 31, ofertasSemVendedor: 2, completa: false, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } },
+      },
+      vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'platinum', uf: 'SP' }, 8: { estado: 'indisponivel' } },
+    }) })} />);
+    const s = within(secao());
+    s.getByText('2 de 2');
+    expect(s.getByText('Platinum').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Não informada', { selector: '.bs-medalhas *' }).closest('li')!.textContent).toContain('1');
+    s.getByText('2 vendedores únicos · 1 de 3 cards de catálogo sem vendedor identificado');
+    expect(s.getByText('SP').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Clássico').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('Premium').closest('li')!.textContent).toContain('1');
+    s.getByText('2 de 3 cards de catálogo com oferta localizada');
+    expect(s.getByText('1–5').closest('li')!.textContent).toContain('1');
+    s.getByText('1 de 2 catálogos com leitura completa · Leitura parcial: ≥ 31');
+    expect(secao().textContent).not.toMatch(/faturamento/i);
+    for (const n of ['Catálogos lidos', 'Vendedores por medalha', 'UF dos vendedores', 'Tipo de anúncio', 'Vendedores por catálogo']) {
+      s.getByRole('button', { name: `O que é ${n}?` });
+    }
+  });
+
+  const OFERTAS1 = { estado: 'ok', total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true, exatas: { MLB1000001: ex(7, 'gold_special'), MLB1000002: ex(8, 'gold_pro') } };
+  const VENDEDORES = { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP' }, 8: { estado: 'ok', nome: 'B', medalha: 'silver', uf: 'RJ' } };
+
+  it('nada lido ainda: "Consultando dados do catálogo", sem "Tentar novamente" nem "Aguardando próxima janela"', () => {
+    render(<Busca {...props({ estado: comEnr({}) })} />);
+    within(secao()).getByText('Consultando dados do catálogo');
+    expect(secao().textContent).not.toMatch(/próxima janela|Aguardando/);
+    expect(within(secao()).queryByRole('button', { name: 'Tentar novamente' })).toBeNull();
+  });
+
+  it('catálogo com metadados lidos e ofertas em processamento não conta como lido', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: {
+      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000001: { estado: 'nao_encontrada', preco: 100 }, MLB1000002: { estado: 'nao_encontrada', preco: 100 } } } },
+      MLB200: { produto: { estado: 'ok', criadoEm: null } },
+    } }) })} />);
+    within(secao()).getByText('1 de 2');
+    within(secao()).getByText('Consultando dados do catálogo');
+  });
+
+  it('ofertas completas com metadados em processamento: distribuições aparecem; "lidos" conta só catálogos sem pendência', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { ofertas: OFERTAS1 } }, vendedores: { 7: VENDEDORES[7] } }) })} />);
+    const s = within(secao());
+    s.getByText('0 de 2');
+    expect(s.getByText('Gold').closest('li')!.textContent).toContain('1');
+    expect(s.getByText('1–5').closest('li')!.textContent).toContain('1');
+  });
+
+  it('Task 11.4: 429 parcial terminal preserva o recebido, conta à parte e oferece "Tentar novamente" (sem falha de rede)', async () => {
+    const p = props({ estado: comEnr({ catalogos: {
+      MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: OFERTAS1 },
+      MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } },
+    }, vendedores: VENDEDORES }) });
+    render(<Busca {...p} />);
+    const s = within(secao());
+    s.getByText('1 de 2');
+    s.getByText('1 catálogo sem ofertas lidas agora');
+    s.getByText('Dados adicionais indisponíveis agora');
+    expect(s.getByText('Gold').closest('li')!.textContent).toContain('1'); // o que chegou fica
+    s.getByText('2 vendedores únicos · 1 de 3 cards de catálogo sem vendedor identificado'); // desconhecido não vira zero
+    expect(secao().textContent).not.toMatch(/próxima janela|Consultando/);
+    fireEvent.click(s.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
+  it('Task 11.4: só a comissão indisponível também oferece "Tentar novamente" (haParaTentar)', () => {
+    const semCom = { ...OFERTAS1, exatas: { MLB1000001: { ...ex(7, 'gold_special'), comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }, MLB1000002: ex(8, 'gold_pro') } };
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: semCom }, MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } } }, vendedores: VENDEDORES }) })} />);
+    within(secao()).getByRole('button', { name: 'Tentar novamente' });
+  });
+
+  it('Task 11.4: tudo lido: nem aviso nem botão', () => {
+    render(<Busca {...props({ estado: comEnr({ catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: OFERTAS1 }, MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: { ...OFERTAS1, exatas: { MLB1000003: { estado: 'nao_encontrada', preco: 100 } } } } }, vendedores: VENDEDORES }) })} />);
+    expect(within(secao()).queryByRole('button', { name: 'Tentar novamente' })).toBeNull();
+    expect(secao().textContent).not.toMatch(/indisponíveis agora|Consultando/);
+  });
+
+  it('Task 11.4: SW responde "aguardar" (Retry-After) → texto com a hora; Retry-After já no estado → mesma frase antes do clique', async () => {
+    const quando = Date.now() + 90_000;
+    const hhmm = new Date(quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const parcial = { catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } } } };
+    const p = props({ estado: comEnr(parcial), analisar: vi.fn(async () => ({ ok: false, erro: 'aguardar', tentarAposEm: quando })) });
+    const { unmount } = render(<Busca {...p} />);
+    fireEvent.click(within(secao()).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => within(secao()).getByText(`O Mercado Livre pediu uma pausa; tente de novo às ${hhmm}`));
+    expect(screen.queryByRole('alert')).toBeNull(); // não vai para o aviso genérico da margem
+    unmount();
+    render(<Busca {...props({ estado: comEnr({ ...parcial, tentarAposEm: quando }) })} />);
+    within(secao()).getByText(`O Mercado Livre pediu uma pausa; tente de novo às ${hhmm}`);
+  });
+
+  it('Rodada 1: página indisponível (erro definitivo, estado vazio): motivo + "Tentar novamente", nada em "Consultando"', async () => {
+    const p = props({ estado: comEnr({ indisponivel: 'A extensão não está habilitada para sua empresa' }) });
+    render(<Busca {...p} />);
+    const s = within(secao());
+    s.getByText('A extensão não está habilitada para sua empresa');
+    expect(secao().textContent).not.toContain('Consultando');
+    fireEvent.click(s.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
+  it('falha de rede: aviso com "Tentar novamente" que refaz o enriquecimento uma vez', async () => {
+    const p = props({ estado: comEnr({ falhou: true }) });
+    render(<Busca {...p} />);
+    fireEvent.click(within(secao()).getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
+  });
+
+  it('sem cards de catálogo: a seção não aparece', () => {
+    render(<Busca {...props({ estado: estado({}, [card('MLB1000004', { catalogProductId: null })]) })} />);
+    expect(screen.queryByRole('region', { name: 'Catálogos e vendedores' })).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import { buscarListingPrice } from '../../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../../_shared/ml/frete.ts';
 import { mlGet } from '../../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../../_shared/ml/perfil-vendedor.ts';
-import { redisIncrComTTL, redisSet } from '../../_shared/redis/client.ts';
+import { redisGet, redisIncrBy, redisIncrComTTL, redisMget, redisSet } from '../../_shared/redis/client.ts';
 
 type Contexto = { userId: string; orgId: string; isAdmin: boolean; support: null | { requestId: string; scope: 'read' | 'full' } };
 
@@ -34,13 +34,17 @@ const f = vi.hoisted(() => ({
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
 vi.mock('../../_shared/auth.ts', () => ({ requireUserOrg: vi.fn(async () => f.contexto) }));
 vi.mock('../../_shared/produto/modulo.ts', () => ({ exigirModulo: vi.fn(async () => true) }));
-vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexao: vi.fn(async () => null) }));
+vi.mock('../../_shared/canais/conexao.ts', async (orig) => ({ ...(await orig<object>()), resolverConexao: vi.fn(async () => null) }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn() }));
 vi.mock('../../_shared/ml/listing-prices.ts', async (orig) => ({ ...(await orig<object>()), buscarListingPrice: vi.fn() }));
 vi.mock('../../_shared/ml/frete.ts', () => ({ buscarFreteVendedorComProveniencia: vi.fn() }));
 vi.mock('../../_shared/ml/http.ts', () => ({ mlGet: vi.fn() }));
 vi.mock('../../_shared/ml/perfil-vendedor.ts', () => ({ buscarPerfilVendedor: vi.fn(async () => null) }));
-vi.mock('../../_shared/redis/client.ts', () => ({ redisGet: vi.fn(), redisSet: vi.fn(), redisIncrComTTL: vi.fn(async () => 1) }));
+vi.mock('../../_shared/redis/client.ts', () => ({
+  redisGet: vi.fn(), redisSet: vi.fn(), redisIncrComTTL: vi.fn(async () => 1),
+  redisIncrBy: vi.fn(async (_k: string, n: number) => n), redisDecrBy: vi.fn(async () => 0), redisExpire: vi.fn(async () => true),
+  redisMget: vi.fn(async (ks: string[]) => ks.map(() => null)),
+}));
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
     rpc: async (fn: string, args: unknown) => { f.rpcs.push({ fn, args }); return { error: null }; },
@@ -663,8 +667,8 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(await r.json()).toEqual({ itens: [
       { itemId: 'MLB1', proprio: false, vinculo: null },
       { itemId: 'MLB2', proprio: true, vinculo: null },
-    ] });
-    expect(resolverConexao).not.toHaveBeenCalled();
+    ], contaMl: null });
+    // Só a linha da conexão (impressão da conta ML para o cache do navegador): sem token nem chamada ML.
     expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     expect(mlGet).not.toHaveBeenCalled();
     expect(buscarListingPrice).not.toHaveBeenCalled();
@@ -673,7 +677,31 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     expect(f.rpcs).toEqual([]);
     // service-role: toda tabela lida leva o filtro da org do usuário
     for (const t of new Set(f.froms)) expect(f.eqs).toContainEqual([t, 'org_id', 'org-1']);
-    expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos']));
+    expect(new Set(f.froms)).toEqual(new Set(['familias', 'anuncios_externos', 'anuncios_externos_itens', 'kits_virtuais', 'variacoes', 'extensao_vinculos', 'marketplace_connections']));
+  });
+
+  it('devolve a impressão da conta ML da org (a mesma do enriquecimento) para o navegador validar o cache', async () => {
+    f.linhas.marketplace_connections = { id: 'c1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: '555', expires_at: null };
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok-ml');
+    const id = (await (await post(PEDIDO)).json()).contaMl;
+    expect(id).toMatch(/^[0-9a-f]{16}$/);
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    const enr = await (await post({ acao: 'enriquecer_catalogos_busca', catalogos: [{ catalogProductId: 'MLB42', itens: [] }] })).json();
+    expect(enr.valor.conta).toBe(id);
+  });
+
+  it('sem itens (revalidação da conta ML na busca parada): só a linha da conexão; nada de banco de produto, uso, ML ou Redis', async () => {
+    f.linhas.marketplace_connections = { id: 'c1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: '555', expires_at: null };
+    const r = await post({ acao: 'identificar_busca', eanDaBusca: null, itens: [] });
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toEqual({ itens: [], contaMl: expect.stringMatching(/^[0-9a-f]{16}$/) });
+    expect(f.froms).toEqual(['marketplace_connections']);
+    expect(f.rpcs).toEqual([]);
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
+    expect(redisIncrComTTL).not.toHaveBeenCalled();
   });
 
   it('registrarUso true (1º lote da geração de página): 1 registro tipo busca, mesmo sem nenhum vinculado; sem o campo, nenhum', async () => {
@@ -703,14 +731,33 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
       expect(f.eqs.filter(([tt, col, v]) => tt === t && col === 'org_id' && v === 'org-1')).toHaveLength(f.froms.filter((x) => x === t).length);
     }
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(resolverConexao).not.toHaveBeenCalled();
+    expect(f.eqs.filter(([t]) => t === 'marketplace_connections')).toEqual([
+      ['marketplace_connections', 'org_id', 'org-1'], ['marketplace_connections', 'canal', 'mercado_livre'],
+    ]); // só a conexão da org (impressão da conta)
+    expect(getValidAccessTokenConexao).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it('leitura da conexão falhou: contaMl ausente (inconclusivo), nunca null; itens seguem', async () => {
+    f.erroDb = 'conexao fora';
+    for (const itens of [PEDIDO.itens, []]) {
+      const r = await post({ ...PEDIDO, itens });
+      expect(r.status).toBe(200);
+      const j = await r.json();
+      expect(j).not.toHaveProperty('contaMl');
+      expect(j.itens).toHaveLength(itens.length);
+    }
+  });
+
+  it('leitura da conexão ok sem linha: contaMl null (org sem ML conectado)', async () => {
+    f.linhas.marketplace_connections = null;
+    expect((await (await post(PEDIDO)).json()).contaMl).toBeNull();
   });
 
   it('protocolo 2: envelope com identidade', async () => {
     expect(await (await post({ ...PEDIDO, protocolo: 2 })).json()).toEqual({
       identidade: 'user-1:org-1:',
-      dados: { itens: [{ itemId: 'MLB1', proprio: false, vinculo: null }, { itemId: 'MLB2', proprio: false, vinculo: null }] },
+      dados: { itens: [{ itemId: 'MLB1', proprio: false, vinculo: null }, { itemId: 'MLB2', proprio: false, vinculo: null }], contaMl: null },
     });
   });
 
@@ -719,5 +766,116 @@ describe('extensao — identificar_busca (Task 2): só banco, sem ML, sem cota',
     const r = await post(PEDIDO);
     expect(r.status).toBe(500);
     expect(await r.json()).toEqual({ erro: 'interno' });
+  });
+});
+
+describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
+  const PEDIDO = { acao: 'enriquecer_catalogos_busca', catalogos: [{ catalogProductId: 'MLB42', itens: [{ itemId: 'MLB10', preco: 10 }] }] };
+  const ML = 'https://api.mercadolibre.com';
+  let urls: string[];
+  beforeEach(() => {
+    urls = [];
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 555 } as never);
+    vi.mocked(getValidAccessTokenConexao).mockResolvedValue('tok-ml');
+    vi.mocked(redisSet).mockResolvedValue(undefined);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      urls.push(url);
+      expect(init.headers).toEqual({ Authorization: 'Bearer tok-ml' });
+      if (url === `${ML}/products/MLB42`) return new Response(JSON.stringify({ date_created: '2024-01-02T00:00:00Z' }));
+      if (url === `${ML}/products/MLB42/items?limit=100`) {
+        return new Response(JSON.stringify({ paging: { total: 1 }, results: [{ item_id: 'MLB10', seller_id: 7, category_id: 'MLB5', listing_type_id: 'gold_special' }] }));
+      }
+      if (url === `${ML}/users/7`) return new Response(JSON.stringify({ id: 7, nickname: 'V7', address: { state: 'SP' }, seller_reputation: { power_seller_status: null } }));
+      if (url.startsWith(`${ML}/sites/MLB/listing_prices`)) return new Response(JSON.stringify({ sale_fee_amount: 1.2, sale_fee_details: { percentage_fee: 12, fixed_fee: 0 } }));
+      return new Response('{}', { status: 404 });
+    }));
+  });
+
+  it('enriquece com a conta da org; sem telemetria, sem cache Redis de produto/oferta/perfil nem SET de comissão', async () => {
+    const r = await post(PEDIDO);
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j.estado).toBe('ok');
+    expect(j.valor.catalogos[0]).toMatchObject({
+      catalogProductId: 'MLB42', estado: 'ok', produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z' },
+      ofertas: { estado: 'ok', total: 1, vendedoresIdentificados: 1, exatas: [{ itemId: 'MLB10', sellerId: 7, tipo: 'gold_special', comissaoNaSuaConta: { estado: 'ok' } }] },
+    });
+    expect(j.valor.vendedores).toMatchObject([{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'sem', uf: 'SP' }]);
+    expect(j.valor.custo).toMatchObject({ chamadasMl: 4 });
+    expect(urls).toHaveLength(4);
+    expect(f.rpcs).toEqual([]);
+    expect(redisGet).not.toHaveBeenCalled();
+    expect(redisIncrComTTL).not.toHaveBeenCalled(); // cota de margem (30/min) intacta
+    expect(redisMget).toHaveBeenCalledTimes(1);
+    expect(redisSet).not.toHaveBeenCalled();
+    // 1 unidade da cota de páginas + UMA reserva do orçamento global (fases 1 e 2)
+    expect(vi.mocked(redisIncrBy).mock.calls).toEqual([
+      [expect.stringMatching(/^ext:enr:pagina:v1:org-1:user-1:\d{12}$/), 1, expect.any(AbortSignal)],
+      [expect.stringMatching(/^ext:mlapp:\d{12}$/), 4, expect.any(AbortSignal)],
+    ]);
+  });
+
+  it('GET com timeout ≤ 3 s ligado ao cancelamento da requisição; log agregado com custo e duração', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sinais: AbortSignal[] = [];
+    const f0 = vi.mocked(fetch);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => { sinais.push(init.signal!); return f0(url, init); }));
+    await post(PEDIDO);
+    expect(sinais).toHaveLength(4);
+    expect(sinais.every((x) => x instanceof AbortSignal && !x.aborted)).toBe(true);
+    const linha = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('ext_enr_custo'))!;
+    expect(JSON.parse(linha)).toEqual({ ext_enr_custo: { comandosRedis: expect.any(Number), chamadasMl: 4 }, catalogos: 1, ms: expect.any(Number) });
+    log.mockRestore();
+  });
+
+  it('devolve a impressão opaca da conta ML (chave do cache do navegador): estável por conta, nunca o id cru', async () => {
+    const a = (await (await post(PEDIDO)).json()).valor.conta;
+    expect(a).toMatch(/^[0-9a-f]{16}$/);
+    expect(a).not.toContain('555');
+    expect((await (await post(PEDIDO)).json()).valor.conta).toBe(a);
+    vi.mocked(resolverConexao).mockResolvedValue({ contaExternaId: 556 } as never);
+    expect((await (await post(PEDIDO)).json()).valor.conta).not.toBe(a);
+  });
+
+  it('sem conexão ML: indisponível sem debitar cota nem chamar o ML', async () => {
+    vi.mocked(resolverConexao).mockResolvedValue(null);
+    expect(await (await post(PEDIDO)).json()).toEqual({ estado: 'indisponivel', motivo: 'Conecte o Mercado Livre à organização' });
+    expect(redisIncrBy).not.toHaveBeenCalled();
+    expect(urls).toEqual([]);
+  });
+
+  it('página de 50 catálogos numa requisição; 51 → 400 antes de qualquer consulta', async () => {
+    const pag = (n: number) => ({ acao: 'enriquecer_catalogos_busca', catalogos: Array.from({ length: n }, (_, i) => ({ catalogProductId: `MLB${i + 1}`, itens: [], componentes: ['produto'] })) });
+    const ok = await (await post(pag(50))).json();
+    expect(ok.valor.catalogos).toHaveLength(50);
+    expect(urls).toHaveLength(50);
+    vi.clearAllMocks();
+    const r = await post(pag(51));
+    expect(r.status).toBe(400);
+    expect(resolverConexao).not.toHaveBeenCalled();
+    expect(redisIncrBy).not.toHaveBeenCalled();
+  });
+
+  it('suporte só leitura pode enriquecer (leitura, sem auditoria); protocolo 2 com identidade', async () => {
+    f.contexto = suporte('read');
+    const r = await post({ ...PEDIDO, protocolo: 2 });
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j.identidade).toBe('admin-1:org-1:req-1');
+    expect(j.dados.estado).toBe('ok');
+    expect(auditorias()).toEqual([]);
+  });
+
+  it('identidade divergente → 409 sem nada executado', async () => {
+    const r = await post({ ...PEDIDO, protocolo: 2, identidadeEsperada: 'outro:org-1:' });
+    expect(r.status).toBe(409);
+    expect(resolverConexao).not.toHaveBeenCalled();
+    expect(urls).toEqual([]);
+  });
+
+  it('módulo extensao desligado → 403 sem nada executado', async () => {
+    vi.mocked(exigirModulo).mockResolvedValue(false);
+    expect((await post(PEDIDO)).status).toBe(403);
+    expect(resolverConexao).not.toHaveBeenCalled();
   });
 });

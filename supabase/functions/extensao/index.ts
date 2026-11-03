@@ -6,7 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { mapearConexao, resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
@@ -17,6 +17,8 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { montarCatalogo, parsePrecoParaGanhar, perfisPrioritarios, vencedorDoCatalogo, type RespostaCatalogo } from '../_shared/extensao/catalogo.ts';
 import { analisarBusca, type DepsCasamento } from '../_shared/extensao/busca.ts';
 import { identificarBusca } from '../_shared/extensao/busca-local.ts';
+import { enriquecerCatalogosBusca } from '../_shared/extensao/enriquecimento-busca.ts';
+import { getMlUmaVez } from '../_shared/extensao/enriquecimento-busca-io.ts';
 import { montarRadar, type LinhaAlertaPulse, type LinhaProdutoPulse, type RespostaRadar } from '../_shared/extensao/radar.ts';
 import { adicionarAoRadar, MENSAGEM_ML_INDISPONIVEL } from '../_shared/pulse/adicionar.ts';
 import type { VariacaoCusto } from '../_shared/extensao/vinculo.ts';
@@ -40,6 +42,7 @@ const MAX_PERFIS_CATALOGO = 20;
 const ML_API = 'https://api.mercadolibre.com';
 const IDENTIDADE = /^[\w-]{1,64}:[\w-]{0,64}:[\w-]{0,64}$/;
 const TIMEOUT_FRETE_OFERTA_MS = 2500; // complementar: não pode segurar a análise (nem o selo)
+const PRAZO_ENRIQUECIMENTO_MS = 8000;
 const LIMITE_RADAR_HORA = 10; // adicionar ao radar: cada um custa GET /products e trabalho futuro do coletor
 
 function json(body: unknown, status = 200): Response {
@@ -403,7 +406,10 @@ async function adicionarRadar(admin: SupabaseClient, ctx: Contexto, catalogProdu
   return { estado: 'ok', jaExistia: r.jaExistia };
 }
 
-async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protocolo?: number): Promise<unknown> {
+/** Instante de entrada na edge e cancelamento do cliente (só o enriquecimento usa). */
+interface Requisicao { entrada: number; sinal: AbortSignal }
+
+async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protocolo: number | undefined, req: Requisicao): Promise<unknown> {
   const { orgId, userId } = ctx;
   switch (p.acao) {
     case 'analisar_anuncio': {
@@ -432,12 +438,38 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
     case 'identificar_busca': {
       // Só banco, sem cota de 30/min. Telemetria `busca`: uma por geração de página — a extensão pede (registrarUso)
       // só no 1º lote dela; conta depois da identificação (falha inteira não conta, o lote é refeito pedindo de novo).
-      const r = await identificarBusca(admin, orgId, p, depsCasamento(admin, orgId));
-      if (p.registrarUso === true) {
+      // contaMl: impressão da conta ML da org (só a linha da conexão, sem token): o navegador valida o cache do
+      // enriquecimento antes de reusá-lo e limpa tudo se a conta mudou (Revisão 03/11, regra 10).
+      // Sem itens: só a revalidação da conta (busca parada) — nenhuma leitura de produto nem registro de uso.
+      const [r, conexao] = await Promise.all([
+        p.itens.length ? identificarBusca(admin, orgId, p, depsCasamento(admin, orgId)) : { itens: [] },
+        conexaoMlOuFalha(admin, orgId),
+      ]);
+      if (p.registrarUso === true && p.itens.length) {
         const { error } = await admin.rpc('extensao_registrar_uso', { p_org_id: orgId, p_user_id: userId, p_tipo: 'busca' });
         if (error) console.warn(`extensao_registrar_uso: ${error.message}`);
       }
-      return r;
+      // Leitura falhou: contaMl omitido (inconclusivo). null só quando a consulta deu certo e não há conexão —
+      // o navegador trata null como conta removida e limpa tudo (Revisão final da fatia 2, achado 1).
+      if (conexao === undefined) return r;
+      return { ...r, contaMl: conexao?.contaExternaId ? await impressaoConta(conexao.contaExternaId) : null };
+    }
+    case 'enriquecer_catalogos_busca': {
+      // Leitura (suporte só leitura pode; sem auditoria, como catalogo). Sem extensao_registrar_uso: a busca já
+      // registra uma vez por geração no identificar_busca. Conexão antes da cota: sem ML conectado não queima a janela.
+      const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+      if (!conexao?.contaExternaId) return SEM_CONEXAO;
+      const token = await getValidAccessTokenConexao(conexao);
+      const { catalogos, perfis, perfisEmCache } = p;
+      const conta = String(conexao.contaExternaId);
+      // Prazo de 8 s desde a entrada na edge (inclui autenticação); cliente desconectado = nada novo ao ML.
+      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+        conta, agora: () => new Date(), prazo: req.entrada + PRAZO_ENRIQUECIMENTO_MS, sinal: req.sinal,
+        getMl: (url, timeoutMs) => getMlUmaVez(url, token, timeoutMs, req.sinal),
+      });
+      // Medição de custo (Task 11): só contagens agregadas, sem dado de vendedor nem de tenant.
+      console.log(JSON.stringify({ ext_enr_custo: r.custo, catalogos: catalogos.length, ms: Date.now() - req.entrada }));
+      return { estado: 'ok', valor: { ...r, conta: await impressaoConta(conta) } };
     }
     case 'radar':
       return radar(admin, orgId, p.catalogProductId);
@@ -465,9 +497,27 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
   }
 }
 
+/** Conexão ML da org separando falha de leitura (undefined) de "sem conexão" (null). resolverConexao, compartilhado,
+ *  junta os dois em null; aqui a diferença decide se o navegador apaga a busca inteira. */
+async function conexaoMlOuFalha(admin: SupabaseClient, orgId: string) {
+  const { data, error } = await admin.from('marketplace_connections')
+    .select('id, org_id, canal, conta_externa_id, expires_at')
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
+  if (error) { console.warn(`extensao: conexao: ${error.message}`); return undefined; }
+  return mapearConexao(data ?? null);
+}
+
+/** Impressão opaca da conta ML (Revisão 03/11, regra 10): o navegador chaveia o cache por ela e descarta o que foi
+ *  lido com outra conta (a comissão é da conta). Nunca o id cru. */
+async function impressaoConta(contaExternaId: string | number): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`publiai-ext-conta:${contaExternaId}`)));
+  return [...d.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+  const entrada = Date.now(); // prazo do enriquecimento conta daqui (antes do corpo e da sessão)
 
   // Protocolo 2 (extensão 0.3.0+, emenda 2026-10-24): envelope `{ identidade, dados }` / `{ erro, identidade }`.
   // Sem `protocolo`, respostas byte a byte iguais às da 0.2.x.
@@ -493,7 +543,7 @@ Deno.serve(async (req) => {
     if (!(await exigirModulo(admin, orgId, 'extensao'))) throw new ErroExtensao('modulo_desligado', 403);
     const pedido = validarPedido(body);
     if (!pedido) throw new ErroExtensao('payload_invalido', 400);
-    const dados = await executar(pedido, admin, ctx, protocolo);
+    const dados = await executar(pedido, admin, ctx, protocolo, { entrada, sinal: req.signal });
     return json(protocolo === 2 ? { identidade, dados } : dados);
   } catch (e) {
     const { status, corpo } = normalizarErro(e, protocolo);

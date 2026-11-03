@@ -1,9 +1,10 @@
 const URL = () => Deno.env.get('UPSTASH_REDIS_REST_URL')!;
 const TOKEN = () => Deno.env.get('UPSTASH_REDIS_REST_TOKEN')!;
 
-async function call<T>(comando: (string | number)[]): Promise<T | null> {
+async function call<T>(comando: (string | number)[], sinal?: AbortSignal): Promise<T | null> {
   const res = await fetch(URL(), {
     method: 'POST',
+    signal: sinal,
     headers: {
       'Authorization': `Bearer ${TOKEN()}`,
       'Content-Type': 'application/json',
@@ -55,4 +56,38 @@ export async function redisSetNX(
 ): Promise<boolean> {
   const r = await call<string>(['SET', chave, valor, 'NX', 'EX', ttlSegundos]);
   return r === 'OK';
+}
+
+/** Contadores do orçamento da extensão (fatia 2): resposta que não é inteiro lança — sem o `?? 0` de
+ *  `redisIncrComTTL`, porque quem chama é fail-closed. */
+async function inteiro(comando: (string | number)[], sinal?: AbortSignal): Promise<number> {
+  const n = await call<number>(comando, sinal);
+  if (!Number.isInteger(n)) throw new Error(`Redis ${comando[0]}: resposta inválida ${JSON.stringify(n)}`);
+  return n as number;
+}
+
+/** `sinal` (opcional, só os contadores da extensão usam): abortar = lança; o resultado no servidor fica incerto. */
+export function redisIncrBy(chave: string, n: number, sinal?: AbortSignal): Promise<number> {
+  return inteiro(['INCRBY', chave, n], sinal);
+}
+
+export function redisDecrBy(chave: string, n: number, sinal?: AbortSignal): Promise<number> {
+  return inteiro(['DECRBY', chave, n], sinal);
+}
+
+/** true = TTL aplicado; false = chave não existe. */
+export async function redisExpire(chave: string, ttlSegundos: number, sinal?: AbortSignal): Promise<boolean> {
+  const r = await inteiro(['EXPIRE', chave, ttlSegundos], sinal);
+  if (r !== 0 && r !== 1) throw new Error(`Redis EXPIRE: resposta inválida ${r}`);
+  return r === 1;
+}
+
+/** Um único MGET (1 comando no Upstash; pipeline de GET contaria N). Ordem preservada, miss = null. */
+export async function redisMget(chaves: string[], sinal?: AbortSignal): Promise<(string | null)[]> {
+  if (chaves.length === 0) return [];
+  const r = await call<unknown[]>(['MGET', ...chaves], sinal);
+  if (!Array.isArray(r) || r.length !== chaves.length || r.some((v) => v !== null && typeof v !== 'string')) {
+    throw new Error('Redis MGET: resposta inválida');
+  }
+  return r as (string | null)[];
 }

@@ -14,6 +14,7 @@
 - [x] Aba Em promoção: 20 por página por campanha (seleção vale para todas as páginas), ordem por descrição; `<main>` do AppShell `relative` — filhos `absolute` escapavam do overflow e o body rolava (faixa preta no fim da página) (main `bb2c0555`).
 - [x] Publicados: selo "Em promoção · X de Y variações · N sem estoque" (SKUs UP fora da promoção com estoque 0; o ML não deixa SKU zerado participar) (main `f929b980`).
 - [x] Operações de promoção: "Tentar novamente N com erro" — mesma ação, só os itens com erro, preço do log, operação nova sem origem; Reverter fora (main `9a9485d7`).
+- [x] Dashboard: KPIs agregam a família UP com `agregarStatusUP`, igual a Publicados — SKU principal zerado, pausado pelo ML, gerava aviso de "pausados" sem nada no filtro (Zaven, main `9a112d6b`).
 - [ ] Opcional: retry automático de 5xx na adesão (`operacoes-massa`) — hoje ML 500 vira `erro` direto.
 
 ## Promoções: alterar o preço de quem já participa (DEAL) — 2026-11-03
@@ -59,7 +60,7 @@
 - [ ] Minors adiados: teste do espelho LIGHTNING só com mock; janela que cruza meia-noite sem data final.
 - [ ] 1ª adesão real pelo app (Diego).
 
-## Extensão PubliAI 0.4.0/0.4.1 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
+## Extensão PubliAI 0.4.0/0.4.1/0.4.2 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
 
 - [x] Implementada na branch `worktree-extensao-busca-lista` (HEAD de código `2fc075b8` + commit da Task 6): painel de busca redesenhado (miniaturas, filtros, ordenação, resumo com cobertura) e Mini-bloco da busca dentro de cada card do ML. Versão 0.4.0 em `manifest.json` e `package.json`.
 - [x] Prova visual reproduzível: harness `extensao/qa/` (fora do build; 68 ocorrências, 60 produtos, dados fictícios, sem token), prints em `.superpowers/sdd/2026-11-02-extensao-busca-completa/prints/`.
@@ -67,8 +68,13 @@
 - [x] Merge na main `959f1079` (CI verde, 6 jobs). Edge `extensao` v19 ACTIVE em 02/11 (smoke 401 sem auth; resposta legada da 0.3.2 inalterada). Sem migration.
 - [x] 0.4.1 (main `3fd30467`): painel autoexplicativo — ⓘ clicável no resumo e na ordenação, botão ⓘ no Mini-bloco; renomes "Vendas mínimas da página" e "Giro mínimo ao preço atual" (glossário); "Detalhes" só com a composição da margem; aba "Minha margem" desabilitada sem vinculados. Sem mudança de edge.
 - [x] 0.4.1 publicada na Web Store pelo Diego em 02/11 (o ZIP 0.4.0 não foi enviado).
+- [x] 0.4.2 (main `49512f9c`): hospedeiro do Mini-bloco acima do link esticado do título do card do ML; publicada na Web Store em 02/11.
 - [ ] Validar numa busca real do ML (painel fechado, scroll, Avant junto, desligar/religar).
-- [ ] Fatia 2 (enriquecimento de catálogo + cota híbrida no Redis) — números a aprovar após medição da Task 7.
+- [x] Fatia 2, Task 7: medições de contrato ML, CPU, folga e custo Redis em `docs/spikes/2026-11-02-extensao-busca-medicoes.md`.
+- [x] Fatia 2: números aprovados pelo Diego em 03/11 (10 catálogos/min por usuário, teto 120 chamadas ML/min, lotes de 5) e desenho econômico de Redis (cache no navegador; Redis só contadores e comissão em lote).
+- [x] Fatia 2: Tasks 8–10 (cotas Redis por lote, enriquecimento de catálogo, cache no navegador, Mini-bloco completo e resumo "Catálogos e vendedores").
+- [x] Fatia 2, Task 11 — **lote por página** (emenda ADR-0189 2026-11-03-b): teste real do Diego mostrou espera de minutos ("Aguardando próxima janela"); engenharia reversa Avant/JoomPulse (banco de mercado / PDP oculta — ambos descartados); spike aprovado (50 catálogos ~3 s, 0 429, CPU < 100 ms). Uma requisição por página (≤50 catálogos, pool 16/4, deadline 8 s), cota 20 páginas/min por usuário+org, teto global 1.000 chamadas ML/min, 4–9 comandos Redis por busca, parcial terminal com "Tentar novamente" (Retry-After). Edge `extensao` v24 em 03/11. Busca real do Diego: 47–48 catálogos em ~5,7 s, CPU ≤ 151 ms.
+- [ ] Publicar o ZIP 0.5.0 na Web Store (Diego).
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CardBusca } from '../../leitura/busca';
-import { renderizarMiniBlocoDaBusca } from '../mini-bloco-busca';
+import { brlCompacto, renderizarMiniBlocoDaBusca } from '../mini-bloco-busca';
+import { enriquecimentoDe, idadeDoCatalogo, vistaDoCard, type EstadoEnriquecimento } from '../../compartilhado/enriquecimento';
 
 let raizes: ShadowRoot[] = [];
 let modos: string[] = [];
@@ -35,13 +36,13 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
   expect(modos).toEqual(['closed']);
   const t = texto(h);
   expect(t).toContain('Loja Boa');
-  expect(t).toContain('Full');
-  expect(t).toContain('Frete grátis');
-  expect(t).toContain('Giro mínimo ao preço atual');
+  // Full, frete e "Catálogo" já estão no card do ML / na linha do catálogo: fora do bloco compacto.
+  expect(t).not.toMatch(/Full|Frete grátis|Catálogo/);
+  expect(t).toContain('Giro mín.');
   const i = raizes[0].querySelector('button[aria-label="O que é giro mínimo?"]') as HTMLButtonElement;
   expect(i.type).toBe('button');
   expect(i.textContent).toBe('ⓘ');
-  expect(t).toContain('R$ 5.000,00');
+  expect(t).toContain('R$ 5 mil');
   expect(t).not.toContain('Minha margem');
   expect(t).not.toContain('Meu anúncio');
   expect(t).not.toMatch(/faturamento/i);
@@ -49,7 +50,7 @@ it('card sem vínculo recebe bloco local em Shadow DOM fechado: vendedor, sinais
 
 it('margem só aparece quando o preço dela coincide com o da ocorrência', () => {
   renderizarMiniBlocoDaBusca(card(), undefined, ok(50, 11.21) as never);
-  expect(texto(document.body)).toContain('Minha margem · simulação Clássico 11,2%');
+  expect(texto(document.body)).toContain('Minha margem · Clássico 11,2%');
   raizes = [];
   renderizarMiniBlocoDaBusca(card({ preco: 45, ocorrencias: [{ posicao: 3, patrocinado: true, preco: 45, vendidosTexto: null }] }), undefined, ok(50, 11.21) as never);
   expect(texto(document.body)).not.toContain('Minha margem');
@@ -89,6 +90,15 @@ it('margem aguardando cota (limite) e calculando (vinculado sem resultado)', () 
   expect(texto(document.body)).toContain('Minha margem · calculando');
 });
 
+it('"calculando" só na aparição do preço analisado: patrocinado R$80 (analisado) e orgânico R$100, vinculado', () => {
+  const meta = { itemId: 'MLB1000001', proprio: false, vinculo: { fonte: 'catalogo' as const, codigo: '81' } };
+  renderizarMiniBlocoDaBusca(card({ preco: 80, ocorrencias: [{ posicao: 1, patrocinado: true, preco: 80, vendidosTexto: null }] }), meta, undefined, 80);
+  expect(texto(document.body)).toContain('Minha margem · calculando');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(card({ preco: 100, ocorrencias: [{ posicao: 4, patrocinado: false, preco: 100, vendidosTexto: null }] }), meta, undefined, 80);
+  expect(texto(document.body)).not.toContain('Minha margem');
+});
+
 it('texto da página entra como texto, nunca como HTML', () => {
   renderizarMiniBlocoDaBusca(card({ vendedor: '<img src=x onerror=alert(1)>' }), undefined, undefined);
   expect(raizes[0].querySelector('img')).toBeNull();
@@ -105,7 +115,7 @@ it('sem vendedor nem sinais: diz "vendedor não informado"; sem vendidos não in
 it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguardando em warning com texto', () => {
   const css = (r: ShadowRoot) => r.querySelector('style')!.textContent!.replace(/\s+/g, '');
   renderizarMiniBlocoDaBusca(card(), undefined, ok(50, 11.21) as never);
-  expect(raizes[0].querySelector('.t.roxo')!.textContent).toBe('Minha margem · simulação Clássico');
+  expect(raizes[0].querySelector('.t.roxo')!.textContent).toBe('Minha margem · Clássico');
   expect(raizes[0].querySelector('.t.lucro')!.textContent).toBe('11,2%');
   for (const regra of ['.roxo{--c:var(--chart-1)}', '.lucro{--c:var(--success)}', '.prejuizo{--c:var(--destructive)}', '.aguardando{--c:var(--warning)}']) {
     expect(css(raizes[0])).toContain(regra);
@@ -118,13 +128,13 @@ it('cores da margem: rótulo roxo (identidade), valor success/destructive, aguar
   expect(raizes[2].querySelector('.t.roxo, .t.lucro, .t.prejuizo')).toBeNull();
 });
 
-it('Loja oficial é âmbar, Catálogo é chip transparente e margem indisponível tem rótulo neutro', () => {
+it('Loja oficial é âmbar, sem chip Catálogo, e margem indisponível tem rótulo neutro', () => {
   const h = renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), { itemId: 'MLB1000001', proprio: false, vinculo: { fonte: 'catalogo', codigo: '81' } },
     { itemId: 'MLB1000001', estado: 'sem_categoria', fonte: 'catalogo', codigo: '81' });
   void h;
   const r = raizes[raizes.length - 1];
   expect(r.querySelector('.c.ambar')!.textContent).toBe('Loja oficial');
-  expect(r.querySelector('.c.catalogo')!.textContent).toBe('Catálogo');
+  expect(r.querySelector('.c.catalogo')).toBeNull();
   expect(r.querySelector('.t.neutro')!.textContent).toBe('Minha margem indisponível');
   expect(r.querySelector('.t.roxo')).toBeNull();
 });
@@ -151,4 +161,168 @@ it('host fica acima do link esticado do título do ML (::before inset 0, z-index
   const host = renderizarMiniBlocoDaBusca(card(), undefined, undefined);
   expect(host.style.position).toBe('relative');
   expect(Number(host.style.zIndex)).toBeGreaterThan(1);
+});
+
+// Task 10: catálogo enriquecido (vendedor/medalha/UF, tipo + comissão na sua conta, vendedores, idade) e estados.
+const AGORA = Date.parse('2026-11-03T12:00:00Z');
+const enr = (o: Partial<EstadoEnriquecimento> = {}): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null, ...o });
+const exata = (o: Record<string, unknown> = {}) => ({ estado: 'ok', preco: 50, sellerId: 7, tipo: 'gold_special', comissao: { estado: 'ok', valor: { percentual: 14, fixa: 0, saleFeeAmount: 7.1, precoConsultado: 50 } }, ...o });
+const ofertas = (o: Record<string, unknown> = {}, ex: Record<string, unknown> = { MLB1000001: exata() }) =>
+  ({ estado: 'ok', total: 12, lidas: 12, vendedoresIdentificados: 9, ofertasSemVendedor: 0, completa: true, exatas: ex, ...o });
+const comEnr = (e: EstadoEnriquecimento, c = card()) => renderizarMiniBlocoDaBusca(c, undefined, undefined, c.preco, vistaDoCard(c, e), AGORA);
+const dias = (n: number) => new Date(AGORA - n * 86_400_000).toISOString();
+const completo = (o: Record<string, unknown> = {}) => enr({
+  catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: ofertas(o) as never } },
+  vendedores: { 7: { estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP' } },
+});
+
+it('enriquecido e compacto: vendedor · medalha · UF; tipo · comissão; giro; vendedores · idade (≤ 5 linhas com margem)', () => {
+  const linhas = () => [...raizes[0].querySelectorAll('.b > .l')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim());
+  renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), undefined, ok(50, 23.4) as never, 50, vistaDoCard(card(), completo()), AGORA);
+  expect(linhas()).toEqual([
+    'Loja Boa· Platinum· SPLoja oficial',
+    'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
+    'Giro mín.R$ 5 milⓘ',
+    '9 vendedores·catálogohá 120 diasⓘ',
+    'Minha margem · Clássico 23,4%',
+  ]);
+  expect(raizes[0].querySelector('.med')!.textContent).toBe('Platinum');
+  expect(raizes[0].querySelector('.idade')!.className).toContain('recente');
+  expect(raizes[0].querySelector('.idade')!.textContent).toBe('há 120 dias');
+  expect(texto()).not.toMatch(/faturamento|ganhador|vencedor/i);
+});
+
+it('moeda compacta do Mini-bloco: mil / mi com 1 casa (sem ",0")', () => {
+  expect(brlCompacto(209000)).toBe('R$ 209 mil');
+  expect(brlCompacto(4350000)).toBe('R$ 4,4 mi');
+  expect(brlCompacto(34553589)).toBe('R$ 34,6 mi');
+  expect(brlCompacto(950)).toBe('R$ 950');
+});
+
+it('outra aparição do item com outro preço: comissão não aparece (é do preço exato)', () => {
+  comEnr(completo(), card({ ocorrencias: [{ posicao: 9, patrocinado: true, preco: 55, vendidosTexto: null }] }));
+  expect(texto()).not.toContain('comissão na sua conta R');
+  expect(texto()).not.toContain('R$ 7,10');
+});
+
+it('leitura parcial: "N+ vendedores" (sentido no ⓘ); sem vendedor identificado: "vendedores não identificados"', () => {
+  comEnr(completo({ completa: false }));
+  expect(texto()).toContain('9+ vendedores');
+  expect(texto()).not.toContain('Leitura parcial');
+  raizes = [];
+  comEnr(completo({ completa: false, vendedoresIdentificados: 0, ofertasSemVendedor: 3 }));
+  expect(texto()).toContain('vendedores não identificados');
+});
+
+it('Task 11.4: processamento, oferta não localizada, perfil não carregado; nunca "Aguardando próxima janela"', () => {
+  comEnr(enr());
+  expect(texto()).toContain('Consultando dados do catálogo');
+  raizes = [];
+  // Depois de uma falha de rede (falhou), card novo do scroll com o pedido em voo: processamento, não "não lido".
+  comEnr(enr({ falhou: true, catalogos: { MLB999: { produto: { estado: 'indisponivel', motivo: 'falha de rede' }, ofertas: { estado: 'indisponivel', motivo: 'falha de rede' } } } }));
+  expect(texto()).toContain('Consultando dados do catálogo');
+  expect(texto()).not.toMatch(/não lido|próxima janela/i);
+  raizes = [];
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertas({}, { MLB1000001: { estado: 'nao_encontrada', preco: 50 } }) as never } } }));
+  expect(texto()).toContain('Oferta não localizada nesta leitura');
+  expect(texto()).toContain('9 vendedores'); // metadados do catálogo seguem
+  expect(texto()).not.toMatch(/Clássico|Premium|Platinum|comissão/); // oferta ausente não herda vendedor/tipo
+  raizes = [];
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }) }) as never } } }));
+  expect(texto()).toContain('Perfil não carregado');
+  expect(texto()).toContain('Tipo e comissão na sua conta não confirmados');
+});
+
+it('Task 11.4: só a comissão falhou → "Comissão na sua conta indisponível agora" (motivo no title), tipo fica', () => {
+  comEnr(completo({ exatas: { MLB1000001: exata({ comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }) } }));
+  // Rodada 1: linha própria, sem "·" (nunca um separador no começo/fim de linha quando quebra).
+  const linhas = [...raizes[0].querySelectorAll('.b > .l')].map((x) => x.textContent!.trim());
+  expect(linhas).toContain('Clássico');
+  expect(linhas).toContain('Comissão na sua conta indisponível agoraⓘ');
+  expect(linhas.some((x) => x.startsWith('·') || x.endsWith('·'))).toBe(false);
+  expect(texto()).not.toMatch(/R\$ 0|\(0%\)/); // desconhecido nunca vira zero
+  const l = [...raizes[0].querySelectorAll('.b > .l')].find((x) => x.textContent!.includes('indisponível agora')) as HTMLElement;
+  expect(l.title).toBe('limite do Mercado Livre');
+});
+
+it('Task 11.4: 429 parcial preserva o que chegou, não vira zero e mostra "Dados adicionais indisponíveis agora" com ⓘ', () => {
+  // Ofertas recusadas (429) e metadados lidos: idade fica, ofertas = parcial terminal.
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } } } }));
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  expect(texto()).toContain('há 120 dias');
+  expect(texto()).not.toMatch(/0 vendedores|R\$ 0|próxima janela|Consultando/);
+  expect(raizes[0].querySelector('button.i[aria-label="O que é dados adicionais indisponíveis?"]')).not.toBeNull();
+  raizes = [];
+  // Ofertas lidas e metadados recusados: vendedores e oferta ficam; a idade, indisponível agora.
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: ofertas() as never } }, vendedores: { 7: { estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'RJ' } } }));
+  expect(texto()).toContain('9 vendedores·idade indisponível agora');
+  expect(texto()).toContain('R$ 7,10');
+  raizes = [];
+  // Item do scroll num catálogo já lido, não consultado nesta rodada (429): parcial, não "não localizada".
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: ofertas({}, { MLB1000001: { estado: 'indisponivel', preco: 50, motivo: 'limite do Mercado Livre' } }) as never } } }));
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  expect(texto()).not.toContain('Oferta não localizada');
+  expect(texto()).toContain('9 vendedores');
+});
+
+it('Task 11.4: ofertas indisponíveis valem para o item/preço tentado; preço novo do mesmo item volta a "Consultando"', () => {
+  const e = enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) }, ofertas: { estado: 'indisponivel', motivo: 'falha de rede', itens: { MLB1000001: 50 } } } } });
+  comEnr(e);
+  expect(texto()).toContain('Dados adicionais indisponíveis agora');
+  raizes = [];
+  comEnr(e, card({ preco: 60, ocorrencias: [{ posicao: 1, patrocinado: false, preco: 60, vendidosTexto: null }] }));
+  expect(texto()).toContain('Consultando dados do catálogo');
+});
+
+it('pendência por componente: metadados lidos + ofertas em processamento → idade E "Consultando"', () => {
+  comEnr(enr({ catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120) } } } }));
+  expect(texto()).toContain('Consultando dados do catálogo');
+  expect(texto()).toContain('há 120 dias');
+  raizes = [];
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas() as never } } }));
+  expect(texto()).toContain('9 vendedores·consultando idade');
+});
+
+it('legado gravado antes da 11.3 (aguardando/aguardandoJanela) vira processamento, nunca "Aguardando próxima janela"', () => {
+  const e = enriquecimentoDe({ catalogos: { MLB200: { aguardandoJanela: true, produto: { estado: 'aguardando', retomarEm: 1, tentativas: 2 } } }, vendedores: { 7: { estado: 'aguardando' } }, retomarEm: 5, perfis: 3 });
+  expect(e).toEqual({ catalogos: { MLB200: {} }, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null });
+  comEnr(e);
+  expect(texto()).toContain('Consultando dados do catálogo');
+  expect(texto()).not.toMatch(/próxima janela|Aguardando dados/);
+});
+
+it('sem tipo e sem comissão: uma frase só ("Tipo e comissão na sua conta não confirmados")', () => {
+  comEnr(enr({ catalogos: { MLB200: { ofertas: ofertas({}, { MLB1000001: exata({ tipo: null, comissao: { estado: 'indisponivel', motivo: 'tipo do anúncio não confirmado' } }) }) as never } } }));
+  expect(texto()).toContain('Tipo e comissão na sua conta não confirmados');
+  expect(texto()).not.toContain('indisponível');
+});
+
+it('card sem catálogo mantém só os dados da página', () => {
+  comEnr(completo(), card({ catalogProductId: null }));
+  expect(texto()).not.toMatch(/catálogo há|vendedores|Aguardando dados/);
+});
+
+it('ⓘ de "comissão na sua conta" e de "vendedores no catálogo" abrem texto curto, sem navegar', () => {
+  const h = comEnr(completo());
+  document.body.append(h);
+  const botoes = [...raizes[0].querySelectorAll('button.i')] as HTMLButtonElement[];
+  const com = botoes.find((b) => b.getAttribute('aria-label') === 'O que é comissão na sua conta?')!;
+  const ven = botoes.find((b) => b.getAttribute('aria-label') === 'O que é vendedores no catálogo?')!;
+  const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+  com.dispatchEvent(ev);
+  expect(ev.defaultPrevented).toBe(true);
+  expect(texto()).toContain('na sua conta para este tipo de anúncio');
+  ven.click();
+  expect(texto()).toMatch(/vendedores diferentes.*"N\+" = leitura parcial/);
+  h.remove();
+});
+
+it('semáforo da idade nos limites 180/181/365/366 dias; futura ou inválida = indisponível', () => {
+  expect(idadeDoCatalogo(dias(180), AGORA)).toEqual({ dias: 180, tom: 'recente' });
+  expect(idadeDoCatalogo(dias(181), AGORA)).toEqual({ dias: 181, tom: 'medio' });
+  expect(idadeDoCatalogo(dias(365), AGORA)).toEqual({ dias: 365, tom: 'medio' });
+  expect(idadeDoCatalogo(dias(366), AGORA)).toEqual({ dias: 366, tom: 'antigo' });
+  expect(idadeDoCatalogo(new Date(AGORA + 86_400_000).toISOString(), AGORA)).toBeNull();
+  expect(idadeDoCatalogo('ontem', AGORA)).toBeNull();
+  expect(idadeDoCatalogo(null, AGORA)).toBeNull();
 });
