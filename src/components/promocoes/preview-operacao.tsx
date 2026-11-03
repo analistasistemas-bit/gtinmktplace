@@ -74,7 +74,8 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const marcadas = linhas.filter((l) => l.marcado);
   const risco = precisaConfirmarRisco(acao, linhas);
   const temRisco = risco.vermelho + risco.indisponivel > 0;
-  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || minimoRelampago(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
+  const semFaixa = (l: LinhaEditavel) => tipo === 'LIGHTNING' && (l.min == null || l.max == null);
+  const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || semFaixa(l) || minimoRelampago(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
   function alternarMarcado(id: string) {
@@ -176,6 +177,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                         </Button>
                       )}
                     </div>
+                    {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
                     {tipo === 'LIGHTNING' && <span className={cn('text-xs', minimoRelampago(l) ? 'text-danger' : 'text-muted-foreground')}>Mínimo R$ 19,00 (frete grátis)</span>}
                     {tipo === 'LIGHTNING' && l.estoqueMin != null && <span className="text-xs text-muted-foreground">Reserva {l.estoqueMin} un.</span>}
                   </div>

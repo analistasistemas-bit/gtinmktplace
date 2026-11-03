@@ -97,6 +97,22 @@ describe('PreviewOperacao', () => {
       expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
     });
 
+    it('faixa incompleta bloqueia e avisa', () => {
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel({ preco_min: 40, preco_max: null, preco_sugerido: 30 })] });
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+      expect(screen.getByText('O ML não informou a faixa de preço deste anúncio')).toBeInTheDocument();
+    });
+
+    it('envia o preço editado, não o sugerido', async () => {
+      const user = userEvent.setup();
+      renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });
+      const input = screen.getByLabelText('Preço de L');
+      await user.clear(input);
+      await user.type(input, '42,50');
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ itens: [{ ml_item_id: 'L', preco: 42.5, confirmado_risco: false }] }));
+    });
+
     it('fora da faixa bloqueia', async () => {
       const user = userEvent.setup();
       renderPreview({ tipo: 'LIGHTNING', itens: [rel()] });

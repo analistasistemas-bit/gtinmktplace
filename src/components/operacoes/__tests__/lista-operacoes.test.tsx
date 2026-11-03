@@ -227,6 +227,13 @@ describe('ListaOperacoes', () => {
     await user.type(input, '18,99');
     expect(screen.getByText('Mínimo R$ 19,00 (frete grátis)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+
+    await user.clear(input);
+    await user.type(input, '40,25');
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      acao: 'aderir', itens: [{ ml_item_id: 'MLB1', preco: 40.25, confirmado_risco: false }],
+    }));
   });
 
   it('mantém a seleção do preview do Reverter entre re-renders sem mudança real de dados (fix round 1, achado 1)', async () => {
