@@ -23,8 +23,13 @@ export interface CorProjetada {
   liquido: number | null; ate_quanto: number | null; ate_quanto_motivo: 'qualquer' | 'nenhum' | null;
   semaforo: SemaforoPromo; motivo: string | null;
 }
-export type TipoPromocaoOperavel = 'DEAL' | 'SMART' | 'LIGHTNING';
-export const ehTipoOperavel = (t: string | null | undefined): t is TipoPromocaoOperavel => t === 'DEAL' || t === 'SMART' || t === 'LIGHTNING';
+export type TipoPromocaoOperavel = 'DEAL' | 'SMART' | 'LIGHTNING' | 'SMART_LIGHTNING' | 'PRICE_MATCHING';
+export const ehTipoOperavel = (t: string | null | undefined): t is TipoPromocaoOperavel =>
+  t === 'DEAL' || t === 'SMART' || t === 'LIGHTNING' || t === 'SMART_LIGHTNING' || t === 'PRICE_MATCHING';
+/** Oferta de preço fixo do ML: o preço exibido não se edita, mas vai no pedido (o backend o compara com o do ML). */
+export const ehOfertaFixa = (t: string | null | undefined) => t === 'SMART_LIGHTNING' || t === 'PRICE_MATCHING';
+/** Tipo que o ML trouxe e o PubliAI ainda não ativa (cupom é do vendedor, não é para aderir). */
+export const ehTipoSoSellerCenter = (t: string | null | undefined) => !ehTipoOperavel(t) && t !== 'SELLER_COUPON_CAMPAIGN';
 
 export interface ItemPromocao {
   ml_item_id: string; status: string;
@@ -48,7 +53,7 @@ export type AbaPromo = 'ativas' | 'futuras' | 'encerradas';
 export const URL_PROMOCOES_ML = 'https://www.mercadolivre.com.br/anuncios/promocoes';
 
 const TIPOS: Record<string, string> = {
-  DEAL: 'Campanha', MARKETPLACE_CAMPAIGN: 'Campanha do ML', SMART: 'Co-participação',
+  DEAL: 'Campanha', MARKETPLACE_CAMPAIGN: 'Campanha do ML', SMART: 'Co-participação', SMART_LIGHTNING: 'Relâmpago co-participação',
   LIGHTNING: 'Relâmpago', PRICE_MATCHING: 'Preço competitivo', PRICE_DISCOUNT: 'Desconto próprio',
   SELLER_COUPON_CAMPAIGN: 'Cupom', VOLUME: 'Desconto por volume',
 };

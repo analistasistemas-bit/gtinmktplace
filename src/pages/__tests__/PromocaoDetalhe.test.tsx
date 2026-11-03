@@ -86,6 +86,22 @@ describe('PromocaoDetalhe', () => {
     expect(screen.getAllByLabelText('Selecionar MLB1').length).toBeGreaterThan(0);
   });
 
+  it.each(['SMART_LIGHTNING', 'PRICE_MATCHING'])('%s tem checkbox de seleção e não mostra o aviso de Seller Center', (tipo) => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo }], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+    renderDetalhe();
+    expect(screen.getAllByLabelText('Selecionar MLB1').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Este tipo de campanha ainda não pode ser ativado pelo PubliAI. Use o Seller Center.')).not.toBeInTheDocument();
+  });
+
+  it('tipo desconhecido (VOLUME) avisa que só o Seller Center ativa; PRICE_DISCOUNT segue sem seleção', () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'VOLUME' }], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+    renderDetalhe();
+    expect(screen.getByText('Este tipo de campanha ainda não pode ser ativado pelo PubliAI. Use o Seller Center.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Selecionar MLB1')).not.toBeInTheDocument();
+  });
+
   it('não mostra seleção quando o tipo da campanha não é operável', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'PRICE_DISCOUNT' }], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
