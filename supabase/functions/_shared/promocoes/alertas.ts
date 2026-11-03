@@ -10,7 +10,9 @@ import type { Contagem, ProjecaoCor } from './tipos.ts';
 const JANELA_PRAZO_MS = 48 * 3_600_000;
 const MAX_LISTADOS = 10;
 
-export interface PromoAlerta { promocao_id: string; nome: string | null; status: string; prazo_adesao: string | null; contagem: Contagem | null }
+export const TIPOS_SUPORTADOS = new Set(['DEAL', 'SMART', 'LIGHTNING', 'SMART_LIGHTNING', 'PRICE_MATCHING', 'SELLER_COUPON_CAMPAIGN']);
+
+export interface PromoAlerta { promocao_id: string; tipo: string; nome: string | null; status: string; prazo_adesao: string | null; contagem: Contagem | null }
 export interface ItemAlerta { promocao_id: string; ml_item_id: string; titulo: string | null; preco_avaliado: number | null; projecao: ProjecaoCor[] }
 export interface DepsAlertas {
   ativo(): Promise<boolean>;
@@ -18,6 +20,8 @@ export interface DepsAlertas {
   lerParticipandoNoPrejuizo(): Promise<ItemAlerta[]>;
   reservar(entidade: 'promo_prejuizo' | 'promo_prazo', chave: string): Promise<boolean>;
   notificar(texto: string): Promise<number>;
+  /** Entrega persistente (chave promo_tipo_novo:<tipo>), independe do switch de alertas. */
+  notificarTipoNovo(texto: string, tipo: string): Promise<number>;
 }
 export type Selecao = { prejuizo: { promo: PromoAlerta; item: ItemAlerta }[]; prazo: { promo: PromoAlerta; verdes: number }[] };
 
@@ -63,9 +67,26 @@ export function montarMensagemPromocoes(s: Selecao): string {
   return blocos(...prejuizo, ...prazos, ['Veja em Promoções no PubliAI.']);
 }
 
+export function tiposNovos(promos: PromoAlerta[]): { tipo: string; nome: string | null }[] {
+  const vistos = new Map<string, string | null>();
+  for (const p of promos) if (!TIPOS_SUPORTADOS.has(p.tipo) && !vistos.has(p.tipo)) vistos.set(p.tipo, p.nome);
+  return [...vistos].map(([tipo, nome]) => ({ tipo, nome }));
+}
+
 export async function avisarPromocoes(agoraMs: number, deps: DepsAlertas): Promise<number> {
+  // Tipo novo avisa antes do gate: o switch está desligado em todas as orgs e o aviso é por org+tipo.
+  let promos: PromoAlerta[] = [];
+  try {
+    promos = await deps.lerPromocoes();
+    for (const { tipo, nome } of tiposNovos(promos)) {
+      try {
+        await deps.notificarTipoNovo(
+          `🆕 Promoções: o ML trouxe um tipo de campanha que o PubliAI ainda não ativa\nTipo: ${tipo}\nCampanha: ${nome ?? tipo}\nPor enquanto, adira pelo Seller Center.`, tipo);
+      } catch (e) { console.warn(`[promocoes] aviso de tipo novo ${tipo} falhou`, e); }
+    }
+  } catch (e) { console.warn('[promocoes] leitura para tipo novo falhou', e); }
   if (!(await deps.ativo())) return 0;
-  const s = selecionarAlertas(await deps.lerPromocoes(), await deps.lerParticipandoNoPrejuizo(), agoraMs);
+  const s = selecionarAlertas(promos, await deps.lerParticipandoNoPrejuizo(), agoraMs);
   const novos: Selecao = { prejuizo: [], prazo: [] };
   for (const x of s.prejuizo) {
     if (await deps.reservar('promo_prejuizo', `${x.promo.promocao_id}:${x.item.ml_item_id}`)) novos.prejuizo.push(x);
@@ -87,7 +108,7 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas {
     },
     async lerPromocoes() {
       const { data, error } = await admin.from('ml_promocoes')
-        .select('promocao_id, nome, status, prazo_adesao, contagem')
+        .select('promocao_id, tipo, nome, status, prazo_adesao, contagem')
         .eq('org_id', orgId).in('status', ['pending', 'started']);
       if (error) throw new Error(`lerPromocoes: ${error.message}`);
       return (data ?? []) as PromoAlerta[];
@@ -101,5 +122,6 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas {
     },
     reservar: (entidade, chave) => reservarNotificacao(admin, orgId, null, entidade, chave),
     notificar: (texto) => notificarCategoria(admin, orgId, 'financeiro', texto),
+    notificarTipoNovo: (texto, tipo) => notificarCategoria(admin, orgId, 'integracao', texto, { chave: `promo_tipo_novo:${tipo}` }),
   };
 }
