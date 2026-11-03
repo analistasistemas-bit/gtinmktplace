@@ -203,12 +203,10 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   // descoberta na 1ª chamada): o pulso refaz com a nova. Época/página nova → `vale()` falso, nada a retomar.
   const recusada = () => { retomar ||= vale(); return SEM_SESSAO; };
   /** Erro definitivo (módulo desligado, sem acesso, pedido recusado): o enriquecimento da página fica indisponível com a
-   *  mensagem, terminal (nenhum card em "Consultando" para sempre); o "Tentar novamente" do painel refaz. */
-  const encerrar = async (f: Falha): Promise<Falha> => {
+   *  mensagem, terminal (nenhum card em "Consultando" para sempre); o "Tentar novamente" do painel refaz.
+   *  `p` = a página de QUANDO o pedido saiu: erro de uma busca anterior nunca marca a busca nova da aba. */
+  const encerrar = async (f: Falha, p: Pagina): Promise<Falha> => {
     if (DE_SESSAO.has(f.erro) || transitoria(f) || !vale()) return f;
-    const aba = await lerAba(tabId);
-    if (!ehBusca(aba.estado)) return f;
-    const p = { geracao: aba.geracao, sessao: aba.sessao, url: aba.estado.entrada.url };
     await gravarSe(p, (r2) => { r2.enriquecimento.indisponivel = mensagemDeErro(f.erro); });
     return f;
   };
@@ -266,7 +264,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         // Falha inteira (500, corpo fora do formato): metadados seguem desconhecidos; o pulso tenta de novo.
         const falha: Falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
         retomar ||= transitoria(falha);
-        return falha;
+        return encerrar(falha, p);
       }
       const contaMl = resp.ok && (typeof resp.dados.contaMl === 'string' || resp.dados.contaMl === null) ? resp.dados.contaMl : undefined;
       if (contaMl !== undefined && contaMudou(contaMl, r.contaMl, (await lerCache(identidade)).conta)) {
@@ -328,7 +326,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>({ acao: 'enriquecer_catalogos_busca', ...pedido }, epoca, g);
       if (g.recusou()) { for (const m of marcas) jaPedidos.delete(m); continue; }
       const d = resp.ok ? resp.dados : null;
-      if (!resp.ok && !transitoria(resp)) return encerrar(resp);
+      if (!resp.ok && !transitoria(resp)) return encerrar(resp, p);
       if (d?.estado === 'indisponivel') {
         const motivo = typeof d.motivo === 'string' ? d.motivo : 'Enriquecimento indisponível';
         return (await gravarSe(p, (r2) => { r2.enriquecimento.indisponivel = motivo; })) ? null : recusada();
@@ -395,7 +393,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (!resp.ok || !Array.isArray(resp.dados?.itens)) {
         const falha: Falha = resp.ok ? { ok: false, erro: 'interno' } : resp;
         retomar ||= transitoria(falha);
-        return falha;
+        return encerrar(falha, p);
       }
       const dados = resp.dados, itens = resp.dados.itens as ResultadoCard[];
       retomar ||= dados.limiteAtingido === true;
@@ -418,7 +416,6 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
   const fId = await identificar();
   if (fId === 'sair') return SEM_SESSAO;
   if (fId !== null && !transitoria(fId)) {
-    await encerrar(fId);
     if (retomar) await pedirRetomada(tabId, vale);
     return fId;
   }

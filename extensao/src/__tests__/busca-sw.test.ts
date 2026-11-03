@@ -35,6 +35,8 @@ let falharEnr: boolean;
 /** Erro definitivo da edge (403 com o código) em cada ação; null = segue normal. */
 let erroEnr: string | null;
 let erroIdentificar: string | null;
+/** Erro definitivo só na próxima resposta de enriquecimento (consumido). */
+let erroEnrUmaVez: string | null;
 let ofertas429: boolean;
 let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
@@ -92,6 +94,7 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
     if (antesDeEnriquecer) { const f = antesDeEnriquecer; antesDeEnriquecer = null; await f(); }
     if (falharEnr) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
     if (erroEnr) return new Response(JSON.stringify({ erro: erroEnr }), { status: 403 });
+    if (erroEnrUmaVez) { const erro = erroEnrUmaVez; erroEnrUmaVez = null; return new Response(JSON.stringify({ erro }), { status: 403 }); }
     const r = respostaEnr(b);
     return r ? env(r) : new Response(JSON.stringify({ erro: 'payload_invalido' }), { status: 400 });
   }
@@ -139,6 +142,7 @@ beforeEach(() => {
   falharEnr = false;
   erroEnr = null;
   erroIdentificar = null;
+  erroEnrUmaVez = null;
   ofertas429 = false;
   tentarAposEm = null;
   bloqueioEnr = null;
@@ -653,6 +657,26 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     expect(await retentar()).toMatchObject({ ok: true });
     await complementosPendentes();
     expect((await enr())!).toMatchObject({ indisponivel: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('Rodada 2 (11.4): erro definitivo do pedido da busca A, com a busca B já na aba, não marca B; B ainda enriquece', async () => {
+    let soltar!: () => void;
+    bloqueioEnr = new Promise((r) => { soltar = r; });
+    erroEnrUmaVez = 'modulo_desligado';
+    await enviarCards([card(1)]);
+    await vi.waitFor(() => expect(pedidosEnr).toHaveLength(1));
+    // A aba vai para a busca B (cards registrados) com o pedido de A ainda em voo.
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    const B = { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA };
+    geracaoCs = null;
+    await enviarCards([card(2, { catalogProductId: 'MLB2000000' })], B);
+    bloqueioEnr = null;
+    soltar();
+    await complementosPendentes();
+    const e = (await enr())!;
+    expect(e.indisponivel).toBeNull();
+    expect(pedidosEnr.at(-1)!.catalogos.map((c) => c.catalogProductId)).toEqual(['MLB2000000']);
+    expect(e.catalogos.MLB2000000).toMatchObject({ ofertas: { estado: 'ok' } });
   });
 
   it('Rodada 1 (11.4): sessão expirada não grava indisponível (a sessão limpa os blocos)', async () => {
