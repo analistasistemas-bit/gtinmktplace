@@ -89,12 +89,16 @@ async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fr
     // Preço vivo = pedido (confirmado na leitura do ML). Com etapa gravada é a escrita desta operação recuperada
     // depois de um crash → aplicado (revertível); sem etapa, já estava assim antes.
     const recuperada = it.etapa === 'escrita_pedida';
-    await deps.gravarItem(op.id, id, recuperada
+    await gravarPos(deps.gravarItem(op.id, id, recuperada
       ? { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }
-      : { status: 'ja_estava', mensagem: null });
+      : { status: 'ja_estava', mensagem: null }));
     return espelharPrecoSeguro(deps, op, id, it.preco!);
   }
   if (d.tipo !== 'put') throw new Error(`decisão inesperada para alterar preço: ${d.tipo}`);
+  // Achado Codex P2: sem o preço vivo não há como reverter depois — não escreve.
+  if (it.preco_anterior == null && fresco?.preco == null) {
+    return deps.gravarItem(op.id, id, { status: 'erro', mensagem: 'O ML não informou o preço atual da oferta' });
+  }
 
   if (!it.confirmado_risco) {
     const atual = await deps.semaforoAtual(op.promocao_id, id, it.preco);
@@ -109,10 +113,14 @@ async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fr
     await deps.ml.put(id, d.body);
   } catch (e) {
     if (e instanceof SemEscritaPromocoes) throw e;
-    // Resultado incerto (timeout/5xx depois de o ML aplicar?): só a releitura decide.
+    // Recusa definitiva do ML (4xx que não é 429): o preço não mudou → erro com a mensagem do ML.
+    const status = Number(/^ML (\d{3})/.exec(e instanceof Error ? e.message : '')?.[1]);
+    if (status >= 400 && status < 500 && status !== 429) throw e;
+    // Resultado incerto (timeout/5xx depois de o ML aplicar?): releitura com o preço novo = aplicado; senão
+    // (achado Codex P1: o ML leva até ~15 s para refletir) o item fica `enviando` com a etapa e o retry reconfere —
+    // o PUT é idempotente.
     const depois = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => undefined);
-    if (depois === undefined) throw new FalhaPosEscrita(e);   // item fica `enviando`; o retry redecide
-    if (depois?.preco == null || centavos(depois.preco) !== centavos(it.preco!)) throw e;
+    if (depois?.preco == null || centavos(depois.preco) !== centavos(it.preco!)) throw new FalhaPosEscrita(e);
   }
   await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }));
   await espelharPrecoSeguro(deps, op, id, it.preco!);
@@ -121,7 +129,11 @@ async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fr
 async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): Promise<void> {
   const { ml } = deps;
   const id = it.ml_item_id;
-  const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id);
+  // Achado Codex P1: na retomada de uma escrita (etapa gravada), falha de leitura não pode virar `erro` — o PUT pode
+  // ter sido aplicado; o item fica `enviando` e o retry relê.
+  const retomada = op.acao === 'alterar_preco' && it.etapa === 'escrita_pedida';
+  const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
+    .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
   const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';

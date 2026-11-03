@@ -27,9 +27,11 @@ export function ListaParticipando() {
     () => agruparParticipacoes(participacoes.data ?? [], promocoes.data ?? [], Date.now()),
     [participacoes.data, promocoes.data],
   );
-  // Busca (título/MLB/SKU) em todas as campanhas: bloco sem resultado some; ações agem sobre o visível marcado.
-  const filtrados = useMemo(
-    () => grupos.map((g) => ({ ...g, itens: filtrarPorBusca(g.itens, busca) as Participacao[] })).filter((g) => g.itens.length > 0),
+  // Busca (título/MLB/SKU) em todas as campanhas: bloco sem resultado some. Achado Codex P2: a seleção mora aqui (por
+  // campanha) — buscar não apaga marcações e as ações valem para tudo que está marcado na campanha.
+  const [selecao, setSelecao] = useState<Record<string, Set<string>>>({});
+  const visiveis = useMemo(
+    () => grupos.map((g) => ({ grupo: g, itens: filtrarPorBusca(g.itens, busca) as Participacao[] })).filter((x) => x.itens.length > 0),
     [grupos, busca],
   );
 
@@ -53,27 +55,41 @@ export function ListaParticipando() {
           </button>
         )}
       </div>
-      {filtrados.length === 0
+      {visiveis.length === 0
         ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio em promoção com essa busca.</p>
-        : filtrados.map((g) => <BlocoCampanha key={g.promocao.promocao_id} grupo={g} />)}
+        : visiveis.map(({ grupo: g, itens }) => (
+          <BlocoCampanha key={g.promocao.promocao_id} grupo={g} visiveis={itens}
+            selecionados={selecao[g.promocao.promocao_id] ?? VAZIO}
+            onSelecao={(s) => setSelecao((prev) => ({ ...prev, [g.promocao.promocao_id]: s }))} />
+        ))}
     </div>
   );
 }
 
-function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
+const VAZIO: Set<string> = new Set();
+
+function BlocoCampanha({ grupo, visiveis, selecionados, onSelecao }: {
+  grupo: GrupoParticipacao; visiveis: Participacao[]; selecionados: Set<string>; onSelecao: (s: Set<string>) => void;
+}) {
   const { promocao: p, itens, operavel } = grupo;
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: 'sair' | 'alterar_preco'; itens: Participacao[] } | null>(null);
   // Alterar o preço da oferta só existe em campanha tradicional (PUT do deal_price — spike 03/11).
   const podeAlterar = operavel && p.tipo === 'DEAL';
   const nome = p.nome ?? rotuloTipo(p.tipo);
   const tituloId = `campanha-${p.promocao_id}`;
+  // Ações: tudo que está marcado na campanha (inclusive fora da busca atual); "Selecionar todos": só os visíveis.
   const marcados = itens.filter((i) => selecionados.has(i.ml_item_id));
-  const todos = itens.length > 0 && marcados.length === itens.length;
+  const todos = visiveis.length > 0 && visiveis.every((i) => selecionados.has(i.ml_item_id));
+  const setSelecionados = (f: (prev: Set<string>) => Set<string>) => onSelecao(f(selecionados));
 
   const alternar = (id: string) => setSelecionados((prev) => {
     const novo = new Set(prev);
     if (novo.has(id)) novo.delete(id); else novo.add(id);
+    return novo;
+  });
+  const alternarVisiveis = (marcar: boolean) => setSelecionados((prev) => {
+    const novo = new Set(prev);
+    for (const i of visiveis) { if (marcar) novo.add(i.ml_item_id); else novo.delete(i.ml_item_id); }
     return novo;
   });
 
@@ -83,7 +99,7 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
         <div className="flex min-w-0 items-center gap-3">
           {operavel && (
             <Checkbox aria-label={`Selecionar todos de ${nome}`} checked={todos}
-              onCheckedChange={(v) => setSelecionados(v ? new Set(itens.map((i) => i.ml_item_id)) : new Set())} />
+              onCheckedChange={(v) => alternarVisiveis(!!v)} />
           )}
           <div className="min-w-0">
             <h3 id={tituloId} className="truncate font-semibold">
@@ -111,12 +127,12 @@ function BlocoCampanha({ grupo }: { grupo: GrupoParticipacao }) {
         )}
       </header>
       <ul className="divide-y">
-        {itens.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
+        {visiveis.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
       </ul>
       {operavel && (
         <PreviewOperacao
           acao={preview?.acao ?? 'sair'} tipo={ehTipoOperavel(p.tipo) ? p.tipo : 'DEAL'} promocaoId={p.promocao_id} promocaoNome={nome}
-          itens={preview?.itens ?? []} aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => setSelecionados(new Set())}
+          itens={preview?.itens ?? []} aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => onSelecao(new Set())}
         />
       )}
     </section>

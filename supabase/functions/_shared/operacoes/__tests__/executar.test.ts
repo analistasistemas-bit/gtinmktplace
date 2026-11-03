@@ -397,7 +397,7 @@ describe('executar — alterar_preco', () => {
     expect(itens[0].status).toBe('ja_estava');
   });
 
-  it('PUT incerto (erro) mas o ML já mostra o preço → aplicado; não mostra → erro', async () => {
+  it('PUT incerto (erro) mas o ML já mostra o preço → aplicado; recusa 4xx do ML → erro', async () => {
     const a = [item('MLB1', { preco: 43.9 })];
     const ma = montar(a, { campanha: (_id, n) => (n === 1 ? part(49.9) : part(43.9)), put: () => { throw new Error('timeout'); } });
     await executar(ALTERAR, ma.deps, OPTS);
@@ -406,6 +406,29 @@ describe('executar — alterar_preco', () => {
     const mb = montar(b, { campanha: () => part(49.9), put: () => { throw new Error('ML 400: deal_price fora da faixa'); } });
     await executar(ALTERAR, mb.deps, OPTS);
     expect(b[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: deal_price fora da faixa' });
+  });
+
+  it('achado Codex P1: PUT incerto (5xx/timeout) e releitura ainda com o preço antigo → mantém enviando (reconfere no retry)', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps } = montar(itens, { campanha: () => part(49.9), put: () => { throw new Error('ML 503: indisponível'); } });
+    await expect(executar(ALTERAR, deps, OPTS)).rejects.toThrow('ML 503');
+    expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida', preco_anterior: 49.9 });
+  });
+
+  it('achado Codex P1: retomada com etapa gravada e falha na leitura → mantém enviando (não vira erro)', async () => {
+    const itens = [item('MLB1', { preco: 43.9, etapa: 'escrita_pedida', preco_anterior: 49.9 })];
+    const { deps, ml } = montar(itens);
+    vi.mocked(ml.lerNaCampanha).mockRejectedValueOnce(new Error('ML 500'));
+    await expect(executar(ALTERAR, deps, OPTS)).rejects.toThrow('ML 500');
+    expect(itens[0].status).toBe('enviando');
+  });
+
+  it('achado Codex P2: sem o preço vivo da oferta antes da 1ª escrita → erro, nada escrito', async () => {
+    const itens = [item('MLB1', { preco: 43.9 })];
+    const { deps, ml } = montar(itens, { campanha: () => part(49.9, { preco: null }) });
+    await executar(ALTERAR, deps, OPTS);
+    expect(ml.put).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'O ML não informou o preço atual da oferta' });
   });
 
   it('PUT incerto e a releitura também falha → relança (item fica enviando para o retry)', async () => {

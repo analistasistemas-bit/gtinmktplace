@@ -52,6 +52,8 @@ async function conexaoDaOrg(admin: Admin, orgId: string) {
 }
 
 const ativa = (s: unknown): s is 'pending' | 'started' => s === 'pending' || s === 'started';
+/** Ação que a operação de origem precisa ter para ser revertida pelo pedido. */
+const INVERSA_PROMOCAO: Record<Acao, Acao> = { aderir: 'sair', sair: 'aderir', alterar_preco: 'alterar_preco' };
 
 async function lerPromocao(admin: Admin, orgId: string, promocaoId: string) {
   const { data, error } = await admin.from('ml_promocoes').select('tipo, nome, status')
@@ -200,7 +202,8 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
       .eq('org_id', orgId).eq('id', pedido.origem_id).maybeSingle();
     if (error) throw new Error(`origem: ${error.message}`);
     const alterar = pedido.acao === 'alterar_preco';
-    const acaoOk = alterar ? origem?.acao === 'alterar_preco' : origem?.acao !== pedido.acao;
+    // Achado Codex P2: só o par exato reverte (aderir↔sair; alterar_preco↔alterar_preco) — "sair" não desfaz alteração.
+    const acaoOk = origem?.acao === INVERSA_PROMOCAO[pedido.acao];
     if (!origem || !acaoOk || origem.promocao_id !== pedido.promocao_id) {
       return json({ erro: 'A operação de origem não pode ser revertida por este pedido.' }, 400);
     }
