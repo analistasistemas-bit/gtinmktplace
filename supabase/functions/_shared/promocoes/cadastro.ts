@@ -41,6 +41,8 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
     porCodigo: new Map(), porGtin: new Map(), porItem: new Map(),
   };
   const quando = new Map<CadastroVariacao, number>();
+  // Mesmo anúncio subido em vários lotes = várias linhas do mesmo código: conta como uma cor só.
+  const doItem = new Map<string, Map<string, CadastroVariacao>>();
   const recente = (m: Map<string, CadastroVariacao>, k: string, val: CadastroVariacao) => {
     const atual = m.get(k);
     const vence = !atual
@@ -73,8 +75,13 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
     if (r.ml_variation_id != null) recente(c.porVariacaoMl, String(r.ml_variation_id), val);
     if (r.codigo) recente(c.porCodigo, normGtin(r.codigo.trim()), val);
     if (r.gtin) recente(c.porGtin, normGtin(r.gtin.trim()), val);
-    if (fam?.ml_item_id) c.porItem.set(fam.ml_item_id, [...(c.porItem.get(fam.ml_item_id) ?? []), val]);
+    if (fam?.ml_item_id) {
+      const m = doItem.get(fam.ml_item_id) ?? new Map<string, CadastroVariacao>();
+      recente(m, r.codigo ? normGtin(r.codigo.trim()) : `id:${r.id}`, val);
+      doItem.set(fam.ml_item_id, m);
+    }
   }
+  for (const [item, m] of doItem) c.porItem.set(item, [...m.values()]);
   for (const u of itensUp) c.porItemUp.set(u.item_externo_id, u.variacao_id);
   return c;
 }
