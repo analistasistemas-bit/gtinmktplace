@@ -20,9 +20,9 @@ export function sinalComPrazo(timeoutMs: number, sinal?: AbortSignal): { signal:
 export function retryAfterMs(v: string | null, agoraMs: number): number | undefined {
   if (!v) return undefined;
   const t = v.trim();
-  if (/^\d+$/.test(t)) return agoraMs + Number(t) * 1000;
-  const d = Date.parse(t);
-  return Number.isFinite(d) ? d : undefined;
+  // Teto de 1 dia: instante fora do intervalo de Date faria o toISOString da resposta lançar.
+  const d = /^\d+$/.test(t) ? agoraMs + Number(t) * 1000 : Date.parse(t);
+  return Number.isFinite(d) && d <= agoraMs + 86_400_000 ? d : undefined;
 }
 
 /** status 0 = timeout/rede/cancelado. Corpo não-JSON = null. Nunca lança. `sinal` = cancelamento da página. */

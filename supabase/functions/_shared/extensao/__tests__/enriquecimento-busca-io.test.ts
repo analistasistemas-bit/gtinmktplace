@@ -71,6 +71,8 @@ describe('getMlUmaVez', () => {
     expect(retryAfterMs(null, 0)).toBeUndefined();
     expect(retryAfterMs('daqui a pouco', 0)).toBeUndefined();
     expect(retryAfterMs(' 2 ', 1000)).toBe(3000);
+    expect(retryAfterMs('9999999999999', 0)).toBeUndefined();
+    expect(retryAfterMs('Fri, 01 Jan 2100 00:00:00 GMT', 0)).toBeUndefined();
   });
 
   it('sem AbortSignal.any no runtime: o cancelamento ainda aborta o GET em voo e o listener é removido', async () => {
