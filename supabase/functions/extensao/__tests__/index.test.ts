@@ -810,7 +810,8 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     expect(redisSet).not.toHaveBeenCalled();
     // 1 unidade da cota de páginas + UMA reserva do orçamento global (fases 1 e 2)
     expect(vi.mocked(redisIncrBy).mock.calls).toEqual([
-      [expect.stringMatching(/^ext:enr:pagina:v1:org-1:user-1:\d{12}$/), 1], [expect.stringMatching(/^ext:mlapp:\d{12}$/), 4],
+      [expect.stringMatching(/^ext:enr:pagina:v1:org-1:user-1:\d{12}$/), 1, expect.any(AbortSignal)],
+      [expect.stringMatching(/^ext:mlapp:\d{12}$/), 4, expect.any(AbortSignal)],
     ]);
   });
 

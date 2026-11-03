@@ -72,3 +72,25 @@ describe('redisMget', () => {
     await expect(redisMget(['k1', 'k2'])).rejects.toThrow();
   });
 });
+
+describe('sinal opcional (prazo da página da extensão)', () => {
+  it('repassa o sinal ao fetch; sem sinal, igual a antes', async () => {
+    const s = new AbortController().signal;
+    responder(1); await redisIncrBy('k', 1, s);
+    responder(1); await redisDecrBy('k', 1, s);
+    responder(1); await redisExpire('k', 9, s);
+    responder(['a']); await redisMget(['k'], s);
+    responder(1); await redisIncrBy('k', 1);
+    expect(fetchMock.mock.calls.map((c) => c[1].signal)).toEqual([s, s, s, s, undefined]);
+  });
+
+  it('abortado → lança (resultado incerto para o chamador)', async () => {
+    fetchMock.mockImplementationOnce((_u: string, init: RequestInit) => new Promise((_ok, ko) => {
+      init.signal!.addEventListener('abort', () => ko(new DOMException('a', 'AbortError')));
+    }));
+    const ctl = new AbortController();
+    const p = redisMget(['k'], ctl.signal);
+    ctl.abort();
+    await expect(p).rejects.toThrow();
+  });
+});

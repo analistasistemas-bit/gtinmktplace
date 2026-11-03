@@ -9,10 +9,13 @@ const db = new Map<string, string | number>();
 let comandos: unknown[][] = [];
 let redisFora = false;
 let falharPrefixo: string | null = null;
+/** Comando que o Redis falso nunca responde (só o abort do chamador o encerra). */
+let lento: ((cmd: unknown[]) => boolean) | null = null;
 
 const fetchRedis = vi.fn(async (_url: string, init: RequestInit) => {
   const cmd = JSON.parse(init.body as string) as [string, ...(string | number)[]];
   comandos.push(cmd);
+  if (lento?.(cmd)) return new Promise<Response>((_ok, ko) => init.signal?.addEventListener('abort', () => ko(new DOMException('prazo', 'AbortError'))));
   if (redisFora || (falharPrefixo && String(cmd[1]).startsWith(falharPrefixo))) return new Response('erro', { status: 500 });
   const [op, k, n] = cmd as [string, string, number];
   let result: unknown;
@@ -80,7 +83,7 @@ const CHAVE_ML = 'ext:mlapp:202611031405';
 const exatasDe = (c: unknown) => (c as { ofertas: { exatas: Record<string, unknown>[] } }).ofertas.exatas;
 
 beforeEach(() => {
-  db.clear(); comandos = []; redisFora = false; falharPrefixo = null; respostasMl = new Map(); urlsMl = []; timeouts = []; agoraMs = AGORA.getTime();
+  db.clear(); comandos = []; redisFora = false; falharPrefixo = null; lento = null; respostasMl = new Map(); urlsMl = []; timeouts = []; agoraMs = AGORA.getTime();
   ativos = 0; maxAtivos = 0; ativosLp = 0; maxLp = 0; aoChamar = () => {}; extra = {};
   vi.stubGlobal('fetch', fetchRedis);
   vi.stubGlobal('Deno', { env: { get: (k: string) => (k === 'UPSTASH_REDIS_REST_URL' ? 'https://r.test' : 'tok') } });
@@ -494,5 +497,69 @@ describe('falhas por endpoint (uma tentativa, chamada despachada conta)', () => 
     expect(urlsMl).toHaveLength(5);
     expect(r.custo.chamadasMl).toBe(5);
     expect(ops()).not.toContain('SET');
+  });
+});
+
+describe('Rodada 1 (revisão): prazo em todo I/O, MGET falho, Retry-After', () => {
+  const rapido = async (f: () => Promise<unknown>) => { const t = Date.now(); await f(); return Date.now() - t; };
+
+  it('Redis lento na cota de página: responde no prazo, nada vai ao ML', async () => {
+    extra.prazo = AGORA.getTime() + 50;
+    lento = (c) => c[0] === 'INCRBY';
+    let r!: Awaited<ReturnType<typeof run>>;
+    expect(await rapido(async () => { r = await run(pagina(2)); })).toBeLessThan(2000);
+    expect(r.catalogos.every((c) => c.estado === 'indisponivel' && c.motivo === 'serviço indisponível agora')).toBe(true);
+    expect(urlsMl).toEqual([]);
+  });
+
+  it('Redis lento na reserva global: resultado incerto = nenhum despacho, dentro do prazo', async () => {
+    extra.prazo = AGORA.getTime() + 50;
+    lento = (c) => c[0] === 'INCRBY' && String(c[1]).startsWith('ext:mlapp:');
+    let r!: Awaited<ReturnType<typeof run>>;
+    expect(await rapido(async () => { r = await run(pagina(2)); })).toBeLessThan(2000);
+    expect(urlsMl).toEqual([]);
+    expect(r.catalogos.every((c) => JSON.stringify(c.produto) === JSON.stringify(IND_ORC))).toBe(true);
+  });
+
+  it('MGET 503 depois da reserva: fase 1 entregue, nenhum /users nem listing_prices, perfis e comissão indisponíveis', async () => {
+    falharPrefixo = 'ext:lp:';
+    const r = await run(pagina(3));
+    expect(urlsMl.every((u) => u.includes('/products/'))).toBe(true);
+    expect(urlsMl).toHaveLength(6);
+    expect(r.catalogos.every((c) => c.produto?.estado === 'ok' && c.ofertas?.estado === 'ok')).toBe(true);
+    const IND_REDIS = { estado: 'indisponivel', motivo: 'serviço indisponível agora' };
+    expect(r.vendedores).toEqual([100, 101, 102].map((sellerId) => ({ sellerId, ...IND_REDIS })));
+    expect(r.catalogos.flatMap((c) => exatasDe(c)).map((e) => [e.perfil, e.comissaoNaSuaConta])).toEqual(Array(3).fill(['indisponivel', IND_REDIS]));
+    // não despachado volta ao orçamento: reservou 12, usou 6
+    expect(comandos.at(-1)).toEqual(['DECRBY', CHAVE_ML, 6]);
+  });
+
+  it('MGET lento: abortado no prazo e tratado como falha (sem fase 2)', async () => {
+    extra.prazo = AGORA.getTime() + 1000;
+    lento = (c) => c[0] === 'MGET';
+    let r!: Awaited<ReturnType<typeof run>>;
+    expect(await rapido(async () => { r = await run(pagina(1)); })).toBeLessThan(3000);
+    expect(urlsMl).toHaveLength(2);
+    expect(r.vendedores).toEqual([{ sellerId: 100, estado: 'indisponivel', motivo: 'serviço indisponível agora' }]);
+  });
+
+  it('devolução lenta: abortada no prazo, débito mantido', async () => {
+    extra.prazo = AGORA.getTime() + 1000;
+    lento = (c) => c[0] === 'DECRBY';
+    respostasMl.set(`${ML}/products/MLB7/items?limit=100`, ofertas([]));
+    const t = Date.now();
+    await run(pedido([cat('MLB7', [{ itemId: 'MLB70', preco: 10 }], ['ofertas'])])); // reservou 3, usou 1
+    expect(Date.now() - t).toBeLessThan(3000);
+    expect(comandos.at(-1)).toEqual(['DECRBY', CHAVE_ML, 2]);
+    expect(db.get(CHAVE_ML)).toBe(3); // DECRBY não confirmado: débito mantido
+  });
+
+  it('tentarAposEm: o maior Retry-After entre os 429 da rodada; sem 429 = null', async () => {
+    const p = pagina(2);
+    respostasMl.set(`${ML}/products/MLB1000`, { status: 429, corpo: null, tentarApos: Date.parse('2026-11-03T14:06:00.000Z') });
+    respostasMl.set(urlLp(11), { status: 429, corpo: null, tentarApos: Date.parse('2026-11-03T14:07:30.000Z') });
+    expect((await run(p)).tentarAposEm).toBe('2026-11-03T14:07:30.000Z');
+    respostasMl = new Map();
+    expect((await run(pagina(2))).tentarAposEm).toBeNull();
   });
 });

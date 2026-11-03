@@ -20,12 +20,14 @@ export interface ContadorRedis { comandosRedis: number }
 
 /** Debita uma página (rodada de até 50 catálogos). Acima do teto o contador só cresce (sem DECRBY: a janela já
  *  está fechada até o minuto virar). Erro/resposta inválida do Redis = 'falha' (recusada, fail-closed). */
-export async function reservarPagina(orgId: string, userId: string, agora: Date, c?: ContadorRedis): Promise<'ok' | 'limite' | 'falha'> {
+export async function reservarPagina(
+  orgId: string, userId: string, agora: Date, c?: ContadorRedis, sinal?: AbortSignal,
+): Promise<'ok' | 'limite' | 'falha'> {
   const chave = chavePagina(orgId, userId, agora);
   try {
     if (c) c.comandosRedis++;
-    const n = await redisIncrBy(chave, 1);
-    if (n === 1) { if (c) c.comandosRedis++; await redisExpire(chave, TTL_S); }
+    const n = await redisIncrBy(chave, 1, sinal);
+    if (n === 1) { if (c) c.comandosRedis++; await redisExpire(chave, TTL_S, sinal); }
     return n <= LIMITE_PAGINAS_MIN ? 'ok' : 'limite';
   } catch (e) {
     console.warn('[cotas-busca] Redis falhou, fail-closed', 'ext:enr', String(e));
@@ -34,13 +36,13 @@ export async function reservarPagina(orgId: string, userId: string, agora: Date,
 }
 
 /** Reserva até `quantidade` na janela e devolve o concedido. Lança em erro/resposta inválida do Redis. */
-async function reservar(chave: string, quantidade: number, teto: number, c?: ContadorRedis): Promise<number> {
+async function reservar(chave: string, quantidade: number, teto: number, c?: ContadorRedis, sinal?: AbortSignal): Promise<number> {
   if (c) c.comandosRedis++;
-  const n = await redisIncrBy(chave, quantidade);
-  if (n === quantidade) { if (c) c.comandosRedis++; await redisExpire(chave, TTL_S); } // chave nova
+  const n = await redisIncrBy(chave, quantidade, sinal);
+  if (n === quantidade) { if (c) c.comandosRedis++; await redisExpire(chave, TTL_S, sinal); } // chave nova
   // Nunca devolve mais do que esta requisição somou (uma concorrente pode ter estourado antes).
   const excedente = Math.min(quantidade, n - teto);
-  if (excedente > 0) { if (c) c.comandosRedis++; await redisDecrBy(chave, excedente); }
+  if (excedente > 0) { if (c) c.comandosRedis++; await redisDecrBy(chave, excedente, sinal); }
   return quantidade - Math.max(0, excedente);
 }
 
@@ -52,13 +54,14 @@ export interface ReservaOrcamentoMl { concedidas: number; chave: string }
  *  + TTL. A chave nasce com EXPIRE 120 s em algum ponto desse minuto, então antes disso ela está viva. */
 const devolviveis = new WeakMap<ReservaOrcamentoMl, number>();
 
-/** Reserva o limite superior de chamadas ML da página. Nunca despachar além de `concedidas`. Erro = 0. */
-export async function reservarOrcamentoMl(unidades: number, agora: Date, c?: ContadorRedis): Promise<ReservaOrcamentoMl> {
+/** Reserva o limite superior de chamadas ML da página. Nunca despachar além de `concedidas`. Erro ou resultado
+ *  incerto (`sinal` abortado no meio) = 0: nada é despachado e o que o Redis tiver somado fica debitado. */
+export async function reservarOrcamentoMl(unidades: number, agora: Date, c?: ContadorRedis, sinal?: AbortSignal): Promise<ReservaOrcamentoMl> {
   const chave = chaveOrcamentoMl(agora);
   if (!valido(unidades)) return { concedidas: 0, chave };
   let concedidas = 0;
   try {
-    concedidas = await reservar(chave, unidades, LIMITE_ORCAMENTO_ML_MIN, c);
+    concedidas = await reservar(chave, unidades, LIMITE_ORCAMENTO_ML_MIN, c, sinal);
   } catch (e) {
     console.warn('[cotas-busca] Redis falhou, fail-closed', 'ext:mlapp', String(e));
   }
@@ -68,10 +71,10 @@ export async function reservarOrcamentoMl(unidades: number, agora: Date, c?: Con
 }
 
 /** Devolve só as não despachadas, uma vez por reserva, na chave do minuto da reserva e nunca mais do que ela
- *  recebeu. Chave possivelmente expirada = no-op (DECRBY recriaria um contador negativo sem TTL). Erro = débito
- *  mantido (na dúvida, conta). Retorna quantas devolveu. */
+ *  recebeu. Chave possivelmente expirada = no-op (DECRBY recriaria um contador negativo sem TTL). Erro ou
+ *  resultado incerto (`sinal` abortado) = débito mantido (na dúvida, conta). Retorna quantas devolveu. */
 export async function devolverOrcamentoMl(
-  reserva: ReservaOrcamentoMl, naoDespachadas: number, agora: Date, c?: ContadorRedis,
+  reserva: ReservaOrcamentoMl, naoDespachadas: number, agora: Date, c?: ContadorRedis, sinal?: AbortSignal,
 ): Promise<number> {
   const vivaAte = devolviveis.get(reserva);
   const n = Math.min(Math.floor(naoDespachadas), reserva.concedidas);
@@ -79,7 +82,7 @@ export async function devolverOrcamentoMl(
   devolviveis.delete(reserva);
   try {
     if (c) c.comandosRedis++;
-    await redisDecrBy(reserva.chave, n);
+    await redisDecrBy(reserva.chave, n, sinal);
     return n;
   } catch (e) {
     console.warn('[cotas-busca] devolução falhou, débito mantido', String(e));

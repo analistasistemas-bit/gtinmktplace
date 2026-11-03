@@ -15,6 +15,7 @@ import type { ComissaoML, Disponivel } from './tipos.ts';
 import {
   chaveOrcamentoMl, devolverOrcamentoMl, reservarOrcamentoMl, reservarPagina, type ContadorRedis, type ReservaOrcamentoMl,
 } from './cotas-busca.ts';
+import { sinalComPrazo } from './enriquecimento-busca-io.ts';
 
 const ML = 'https://api.mercadolibre.com';
 const POOL = 16; // chamadas ML simultâneas
@@ -52,7 +53,8 @@ export interface PedidoEnriquecimento {
   perfisEmCache: number[];
 }
 
-export interface RespostaMl { status: number; corpo: unknown }
+/** `tentarApos` (ms): Retry-After de um 429, quando veio. */
+export interface RespostaMl { status: number; corpo: unknown; tentarApos?: number }
 export interface DepsEnriquecimento {
   /** Conta ML da conexão da org (chave da comissão). */
   conta: string;
@@ -105,7 +107,12 @@ export interface RespostaEnriquecimento {
   catalogos: CatalogoEnriquecido[];
   vendedores: VendedorEnriquecido[];
   custo: { comandosRedis: number; chamadasMl: number };
+  /** Maior Retry-After dos 429 desta rodada (ISO); null = nenhum 429 com Retry-After. Só para o "Tentar novamente". */
+  tentarAposEm: string | null;
 }
+
+/** Roda uma operação Redis com o prazo restante da página; abortada = lança (o chamador trata como incerta). */
+type NoPrazo = <T>(f: (sinal: AbortSignal) => Promise<T>) => Promise<T>;
 
 const registro = (v: unknown) => (typeof v === 'object' && v != null && !Array.isArray(v) ? v as Record<string, unknown> : null);
 const ind = (motivo: string): Ind => ({ estado: 'indisponivel', motivo });
@@ -162,17 +169,18 @@ interface Tarefa { url: string; familia: Familia }
 /** Despacho da página com UMA reserva do orçamento global compartilhada pelas fases. Nunca despacha além do
  *  saldo; 429 numa família fecha só ela; deadline e cancelamento param os despachos novos. Minuto UTC virou com
  *  saldo → devolve o saldo na chave antiga e re-reserva na nova (uma virada por vez). */
-function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamadasMl: number }, prazo: number) {
+function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamadasMl: number }, prazo: number, noPrazo: NoPrazo) {
   let reserva: ReservaOrcamentoMl = { concedidas: 0, chave: '' };
   let saldo = 0;
   let virada: Promise<void> | null = null;
+  let tentarApos = 0;
   const fechadas = new Set<Familia>();
 
   async function virar(agora: Date) {
     const pedir = saldo;
-    await devolverOrcamentoMl(reserva, saldo, agora, custo);
+    await noPrazo((s) => devolverOrcamentoMl(reserva, saldo, agora, custo, s));
     saldo = 0;
-    reserva = await reservarOrcamentoMl(pedir, agora, custo);
+    reserva = await noPrazo((s) => reservarOrcamentoMl(pedir, agora, custo, s));
     saldo = reserva.concedidas;
   }
 
@@ -218,7 +226,7 @@ function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamad
             .then((r) => {
               out[i] = r; ativos--;
               if (comissao) ativosComissao--;
-              if (r.status === 429) fechadas.add(t.familia);
+              if (r.status === 429) { fechadas.add(t.familia); tentarApos = Math.max(tentarApos, r.tentarApos ?? 0); }
               bombear();
             });
         }
@@ -230,15 +238,16 @@ function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamad
 
   return {
     async reservar(unidades: number) {
-      reserva = await reservarOrcamentoMl(unidades, deps.agora(), custo);
+      reserva = await noPrazo((s) => reservarOrcamentoMl(unidades, deps.agora(), custo, s));
       saldo = reserva.concedidas;
     },
     executar,
     /** Fim da página: devolve só o não despachado, uma vez, na chave da reserva vigente. */
     async devolver() {
-      if (saldo > 0) await devolverOrcamentoMl(reserva, saldo, deps.agora(), custo);
+      if (saldo > 0) await noPrazo((s) => devolverOrcamentoMl(reserva, saldo, deps.agora(), custo, s));
       saldo = 0;
     },
+    tentarAposEm: () => (tentarApos > 0 ? new Date(tentarApos).toISOString() : null),
   };
 }
 
@@ -252,8 +261,15 @@ export async function enriquecerCatalogosBusca(
   const emCache = new Set(p.perfisEmCache);
   const explicitos = [...new Set(p.perfis)].filter((s) => !emCache.has(s));
 
+  // Todo I/O da página (Redis e ML) cabe no prazo contado da entrada na edge.
+  const prazo = deps.prazo ?? inicio.getTime() + PRAZO_MS;
+  const noPrazo: NoPrazo = async (f) => {
+    const { signal, liberar } = sinalComPrazo(prazo - deps.agora().getTime());
+    try { return await f(signal); } finally { liberar(); }
+  };
+
   // Uma unidade por pedido (página inteira ou delta do scroll), inclusive pedido só de perfis.
-  const pagina = await reservarPagina(orgId, userId, inicio, custo);
+  const pagina = await noPrazo((s) => reservarPagina(orgId, userId, inicio, custo, s));
   if (pagina !== 'ok') {
     const motivo = pagina === 'limite' ? MOTIVO.cotaPaginas : MOTIVO.redis;
     return {
@@ -261,6 +277,7 @@ export async function enriquecerCatalogosBusca(
       catalogos: p.catalogos.map((c) => ({ catalogProductId: c.catalogProductId, estado: 'indisponivel', motivo, retomarEm: null, consultadoEm: null })),
       vendedores: explicitos.map((sellerId) => ({ sellerId, ...ind(motivo) })),
       custo,
+      tentarAposEm: null,
     };
   }
 
@@ -272,7 +289,7 @@ export async function enriquecerCatalogosBusca(
   const itensComOfertas = p.catalogos.reduce((n, c) => n + (c.componentes.includes('ofertas') ? c.itens.length : 0), 0);
   const limite = Math.min(MAX_RESERVA, urls1.length + Math.min(MAX_PERFIS_PEDIDO, explicitos.length + itensComOfertas) + itensComOfertas);
 
-  const despacho = criarDespacho(deps, custo, deps.prazo ?? inicio.getTime() + PRAZO_MS);
+  const despacho = criarDespacho(deps, custo, prazo, noPrazo);
   try {
     await despacho.reservar(limite);
 
@@ -311,12 +328,14 @@ export async function enriquecerCatalogosBusca(
     });
     const exatas = exatasPorCat.flatMap((l) => l ?? []).filter((e): e is Exata => 'preco' in e);
 
-    // Comissão: UM MGET das chaves distintas; erro de Redis = todos misses (cache é otimização).
+    // Comissão: UM MGET das chaves distintas. Erro/prazo no Redis = nenhum despacho novo (fase 2 inteira
+    // indisponível); os dados da fase 1 seguem.
     const chaves = [...new Set(exatas.flatMap((e) => (e.chave ? [e.chave] : [])))];
     const comissoes = new Map<string, Disponivel<ComissaoML>>();
+    let redisFalhou = false;
     if (chaves.length) {
       custo.comandosRedis++;
-      const hits = await redisMget(chaves).catch(() => chaves.map(() => null));
+      const hits = await noPrazo((s) => redisMget(chaves, s)).catch(() => { redisFalhou = true; return []; });
       hits.forEach((h, i) => {
         try { const v = h ? JSON.parse(h) : null; if (v?.estado === 'ok' && v.valor) comissoes.set(chaves[i], v); } catch { /* miss */ }
       });
@@ -328,10 +347,11 @@ export async function enriquecerCatalogosBusca(
     const consultar = sellers.slice(0, MAX_PERFIS_PEDIDO);
 
     // Fase 2: perfis antes das comissões ausentes (ordem = prioridade no saldo).
-    const r2 = await despacho.executar([
+    const tarefas2: Tarefa[] = [
       ...consultar.map((s) => ({ url: `${ML}/users/${s}`, familia: 'perfil' as const })),
       ...misses.map((e) => ({ url: `${ML}/sites/MLB/listing_prices?price=${e.preco}&category_id=${e.categoriaId}&listing_type_id=${e.tipo}`, familia: 'comissao' as const })),
-    ]);
+    ];
+    const r2 = redisFalhou ? tarefas2.map(() => ind(MOTIVO.redis)) : await despacho.executar(tarefas2);
 
     const vendedores: VendedorEnriquecido[] = consultar.map((sellerId, i) => {
       const r = respostaOk(r2[i], 'perfil indisponível');
@@ -373,7 +393,7 @@ export async function enriquecerCatalogosBusca(
       return out;
     });
 
-    return { consultadoEm, catalogos, vendedores, custo };
+    return { consultadoEm, catalogos, vendedores, custo, tentarAposEm: despacho.tentarAposEm() };
   } finally {
     await despacho.devolver();
   }
