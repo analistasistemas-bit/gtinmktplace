@@ -1,6 +1,6 @@
 import type { Lote } from '@/lib/tipos-dominio';
 import type { PublicadoItem } from '@/lib/publicados';
-import { STATUS_PROBLEMA } from '@/lib/publicados';
+import { STATUS_PROBLEMA, agregarStatusUP } from '@/lib/publicados';
 import type { StatusPublicadoItem } from '@/lib/queries';
 
 export interface KpisDashboard {
@@ -22,7 +22,10 @@ export function calcularKpisDashboard(
   // de anúncios ativos/pausados/com problema seja 100% idêntica entre o Dashboard e a lista de Publicados.
   if (publicados.length > 0) {
     const statusMap = new Map(statusItens.map((s) => [s.ml_item_id, s]));
-    const statusDosPublicados = publicados.map((p) => statusMap.get(p.mlItemId)?.status);
+    const statusDosPublicados = publicados.map((p) => agregarStatusUP(
+      statusMap.get(p.mlItemId),
+      (p.mlItemIdsUP ?? []).flatMap((id) => statusMap.get(id) ?? []),
+    )?.status);
     return {
       publicados: publicados.length,
       ativos: statusDosPublicados.filter((s) => s === 'ativo').length,
