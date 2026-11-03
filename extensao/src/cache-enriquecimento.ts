@@ -1,48 +1,47 @@
-// Enriquecimento dos catálogos da busca no SW (plano, Revisão 03/11, regras 2-3 e 10): cache do navegador por identidade
-// (chrome.storage.session; metadados 6 h, ofertas 60 s, perfis 24 h, expirações do servidor) e o planejamento do lote
-// (fila deduplicada por catálogo; só os componentes vencidos vão à edge). Funções puras + I/O mínima do cache.
+// Enriquecimento dos catálogos da busca no SW (Revisão 03/11-b, Task 11.3: lote por página): cache do navegador por
+// identidade (chrome.storage.session; metadados 6 h, ofertas 60 s, perfis 24 h, expirações do servidor) e o planejamento
+// da página (deduplicada por catálogo; só os componentes vencidos vão à edge). Funções puras + I/O mínima do cache.
 import { epocaAtual } from './abas';
 import type { CardBusca } from './leitura/busca';
 import type { MetadadosCardBusca } from '../../supabase/functions/_shared/extensao/busca.ts';
 import type { ComissaoML, Disponivel } from '../../supabase/functions/_shared/extensao/tipos.ts';
 import type { CatalogoVista, EstadoEnriquecimento, ExataVista, Medalha, OfertasOk, VendedorVista } from './compartilhado/enriquecimento';
 
-// Contrato de `enriquecer_catalogos_busca` (_shared/extensao/enriquecimento-busca.ts, relatório da Task 9). Copiado e não
-// importado: aquele módulo puxa roteamento.ts/redis (Deno) para o tsc da extensão.
+// Contrato de `enriquecer_catalogos_busca` (_shared/extensao/enriquecimento-busca.ts, relatório da Task 11.2). Copiado e
+// não importado: aquele módulo puxa roteamento.ts/redis (Deno) para o tsc da extensão.
 export type Componente = 'produto' | 'ofertas';
 export interface CatalogoPedido { catalogProductId: string; componentes: Componente[]; itens: { itemId: string; preco: number }[] }
-type AguardandoEdge = { estado: 'aguardando'; retomarEm: string | null };
 type IndEdge = { estado: 'indisponivel'; motivo: string };
 type OfertaExataEdge =
   | { itemId: string; estado: 'ok'; categoriaId: string | null; sellerId: number | null; tipo: 'gold_special' | 'gold_pro' | null;
-    perfil: 'carregado' | 'no_navegador' | 'aguardando' | 'indisponivel' | null; comissaoNaSuaConta: Disponivel<ComissaoML> | AguardandoEdge }
+    perfil: 'carregado' | 'no_navegador' | 'indisponivel' | null; comissaoNaSuaConta: Disponivel<ComissaoML> }
   | { itemId: string; estado: 'nao_encontrada'; motivo: string };
 export interface RespostaEnriquecimento {
   consultadoEm: string;
   catalogos: {
-    catalogProductId: string; estado: 'ok' | 'aguardando'; retomarEm: string | null; consultadoEm: string | null;
-    produto?: { estado: 'ok'; criadoEm: string | null; expiraEm: string } | AguardandoEdge | IndEdge;
+    /** indisponivel = nada consultado (cota de páginas, Redis fora), com `motivo`. */
+    catalogProductId: string; estado: 'ok' | 'indisponivel'; motivo?: string; retomarEm: null; consultadoEm: string | null;
+    produto?: { estado: 'ok'; criadoEm: string | null; expiraEm: string } | IndEdge;
     ofertas?: { estado: 'ok'; expiraEm: string; total: number | null; lidas: number; vendedoresIdentificados: number; ofertasSemVendedor: number;
-      completa: boolean; exatas: OfertaExataEdge[] } | AguardandoEdge | IndEdge;
+      completa: boolean; exatas: OfertaExataEdge[] } | IndEdge;
   }[];
   vendedores: (
     | { sellerId: number; estado: 'ok'; nome: string | null; medalha: Medalha | null; uf: string | null; expiraEm: string }
-    | ({ sellerId: number; motivo?: string } & AguardandoEdge)
     | ({ sellerId: number } & IndEdge)
   )[];
   custo: { comandosRedis: number; chamadasMl: number };
+  /** Maior Retry-After dos 429 da rodada (ISO); null = sem. Só vale para o "Tentar novamente". */
+  tentarAposEm?: string | null;
   /** Impressão opaca da conta ML (edge ≥ fatia 2); ausente em edge antiga. */
   conta?: string;
 }
 
-// = limites da edge (roteamento.ts) e do plano (5 perfis por pedido, 20 por busca).
-export const MAX_CATALOGOS_LOTE = 5;
-export const MAX_ITENS_CATALOGO = 20;
+// = limites da edge (extensao/roteamento.ts, Revisão 03/11-b): passar deles é 400 na página inteira.
+export const MAX_CATALOGOS_LOTE = 50;
+export const MAX_ITENS_CATALOGO = 50;
 export const MAX_ITENS_LOTE = 50;
-export const MAX_PERFIS_PEDIDO = 5;
-export const MAX_PERFIS_BUSCA = 20;
+export const MAX_PERFIS_PEDIDO = 50;
 const MAX_PERFIS_EM_CACHE = 100;
-const JANELA_MS = 60_000;
 
 // ---------------------------------------------------------------- cache
 const CHAVE = 'enr:cache'; // prefixo `enr` apagado por limparEstadosDasAbas (saída, identidade, suporte, sessão inválida)
@@ -106,7 +105,7 @@ export function gravarCache(identidade: string, mudar: (c: CacheEnr) => void, ag
 }
 
 // ---------------------------------------------------------------- planejamento
-export interface PedidoLote { catalogos: CatalogoPedido[]; perfis: number[]; perfisEmCache: number[]; /** Saldo de perfis da busca (a edge limita também os automáticos). */ perfisRestantes: number }
+export interface PedidoLote { catalogos: CatalogoPedido[]; perfis: number[]; perfisEmCache: number[] }
 
 /** Marcas do que um pedido levou, para `jaPedidos` (nada se repete dentro da rodada). */
 export function marcasDoPedido(p: PedidoLote): string[] {
@@ -119,21 +118,16 @@ export interface Plano {
   /** Vindo do cache: aplicar na vista da aba (sem edge, sem cota). */
   hits: { catalogos: Record<string, CatalogoVista>; vendedores: Record<string, VendedorVista>; usados: { m: (typeof MAPAS)[number]; k: string }[] };
   pedido: PedidoLote | null;
-  /** Há trabalho travado por tempo (janela/retomarEm): a página deve mandar o pulso. */
-  esperar: boolean;
 }
 
-type Retentavel = { estado: string; retomarEm?: number | null; tentativas?: number } | undefined;
-/** undefined → pedir; aguardando → no máximo 1 nova tentativa automática, depois da hora dada. */
-function precisa(v: Retentavel, agora: number): 'sim' | 'nao' | 'esperar' {
-  if (!v) return 'sim';
-  if (v.estado !== 'aguardando' || (v.tentativas ?? 0) >= 2) return 'nao';
-  return v.retomarEm != null && agora < v.retomarEm ? 'esperar' : 'sim';
-}
+/** Ainda não pedido (ou `aguardando` gravado antes da 11.3). ok e indisponível são terminais: sem retomada automática. */
+const precisa = (v: { estado: string } | undefined) => !v || v.estado === 'aguardando';
 
 /** Itens do card que a leitura de ofertas precisa cobrir (preço legível; a comissão é do preço exato). */
 const cobre = (o: OfertasOk, itens: { itemId: string; preco: number }[]) => itens.every((i) => o.exatas[i.itemId]?.preco === i.preco);
 
+/** A página inteira num pedido (≤ 50 catálogos, ≤ 50 itens, ≤ 50 perfis = limites da edge); o excedente fica para o
+ *  pedido seguinte da mesma rodada. Só o que falta na vista e não está válido no cache vai à edge. */
 export function planejarLote(
   cards: Pick<CardBusca, 'itemId' | 'catalogProductId' | 'preco' | 'identidadeConflitante'>[],
   metadados: Record<string, MetadadosCardBusca | undefined>,
@@ -142,7 +136,6 @@ export function planejarLote(
   jaPedidos: Set<string>,
 ): Plano {
   const hits: Plano['hits'] = { catalogos: {}, vendedores: {}, usados: [] };
-  let esperar = false;
   // Fila deduplicada por catálogo: próprios/vinculados primeiro, depois a ordem observada.
   const prioridade = (c: { itemId: string }) => (metadados[c.itemId]?.proprio === true || metadados[c.itemId]?.vinculo ? 0 : 1);
   const itensPorCat = new Map<string, { itemId: string; preco: number }[]>();
@@ -153,7 +146,6 @@ export function planejarLote(
     const itens = itensPorCat.get(c.catalogProductId)!;
     if (typeof c.preco === 'number' && c.preco > 0 && !itens.some((i) => i.itemId === c.itemId)) itens.push({ itemId: c.itemId, preco: c.preco });
   }
-  const janelaFechada = enr.retomarEm !== null && agora < enr.retomarEm;
   const valida = <T extends { exp: number }>(e: T | undefined) => (e && e.exp > agora ? e : undefined);
   const vistas = (cat: string): CatalogoVista => ({ ...enr.catalogos[cat], ...hits.catalogos[cat] });
 
@@ -162,38 +154,33 @@ export function planejarLote(
   for (const cat of ordem) {
     const itens = itensPorCat.get(cat)!;
     const v = vistas(cat);
-    let produto = precisa(v.produto, agora);
-    let ofertas = precisa(v.ofertas, agora);
-    // Itens ainda sem oferta exata ao preço do card (21º em diante, scroll, preço novo); leitura nova = todos.
+    let produto = precisa(v.produto);
+    // Itens ainda sem oferta exata ao preço do card (scroll, preço novo, 51º em diante); leitura nova = todos.
     let pendentes = v.ofertas?.estado === 'ok' ? itens.filter((i) => (v.ofertas as OfertasOk).exatas[i.itemId]?.preco !== i.preco) : itens;
-    if (v.ofertas?.estado === 'ok' && pendentes.length) ofertas = 'sim';
+    let ofertas = precisa(v.ofertas) || (v.ofertas?.estado === 'ok' && pendentes.length > 0);
     const hit: CatalogoVista = {};
     const p = valida(cache.produtos[cat]);
-    if (produto === 'sim' && p) { hit.produto = { estado: 'ok', criadoEm: p.criadoEm }; hits.usados.push({ m: 'produtos', k: cat }); produto = 'nao'; }
+    if (produto && p) { hit.produto = { estado: 'ok', criadoEm: p.criadoEm }; hits.usados.push({ m: 'produtos', k: cat }); produto = false; }
     const o = valida(cache.ofertas[cat]);
-    if (ofertas === 'sim' && o && cobre(o.v, pendentes)) {
+    if (ofertas && o && cobre(o.v, pendentes)) {
       hit.ofertas = { ...o.v, exatas: { ...(v.ofertas?.estado === 'ok' ? v.ofertas.exatas : {}), ...o.v.exatas } };
       hits.usados.push({ m: 'ofertas', k: cat });
-      ofertas = 'nao';
+      ofertas = false;
       pendentes = [];
     }
     if (hit.produto || hit.ofertas) hits.catalogos[cat] = hit;
-    esperar ||= produto === 'esperar' || ofertas === 'esperar';
-    // Já pedido nesta rodada (aguardando de novo) ou janela fechada: fica para o pulso.
     const novos = pendentes.filter((i) => !jaPedidos.has(`item:${i.itemId}`)).slice(0, MAX_ITENS_CATALOGO);
-    const pedirProduto = produto === 'sim' && !jaPedidos.has(`produto:${cat}`);
-    const pedirOfertas = ofertas === 'sim' && (novos.length > 0 || (pendentes.length === 0 && !jaPedidos.has(`ofertas:${cat}`)));
-    if ((produto === 'sim' && !pedirProduto) || (ofertas === 'sim' && !pedirOfertas)) esperar = true;
+    const pedirProduto = produto && !jaPedidos.has(`produto:${cat}`);
+    const pedirOfertas = ofertas && (novos.length > 0 || (pendentes.length === 0 && !jaPedidos.has(`ofertas:${cat}`)));
     const componentes = [pedirProduto && 'produto', pedirOfertas && 'ofertas'].filter(Boolean) as Componente[];
     if (componentes.length === 0) continue;
-    if (janelaFechada) { esperar = true; continue; }
     const enviar = pedirOfertas ? novos : [];
     if (cheio || catalogos.length === MAX_CATALOGOS_LOTE || itensLote + enviar.length > MAX_ITENS_LOTE) { cheio = true; continue; }
     catalogos.push({ catalogProductId: cat, componentes, itens: enviar });
     itensLote += enviar.length;
   }
 
-  // Perfis dos vendedores das ofertas exatas já lidas (os do lote a edge acrescenta sozinha).
+  // Perfis dos vendedores das ofertas exatas já lidas (os do pedido a edge acrescenta sozinha, deduplicados).
   const noLote = new Set(catalogos.filter((c) => c.componentes.includes('ofertas')).map((c) => c.catalogProductId));
   const conhecidos = new Set<number>();
   const faltam: number[] = [];
@@ -204,28 +191,20 @@ export function planejarLote(
       if (e.estado !== 'ok' || e.sellerId === null || conhecidos.has(e.sellerId)) continue;
       const k = String(e.sellerId);
       conhecidos.add(e.sellerId);
-      const atual = hits.vendedores[k] ?? enr.vendedores[k];
-      const falta = precisa(atual, agora); // limite por pedido volta com 0 tentativas: só faltou a vez
+      if (!precisa(hits.vendedores[k] ?? enr.vendedores[k])) continue;
       const c = valida(cache.vendedores[k]);
-      if (falta === 'sim' && c) { hits.vendedores[k] = c.v; hits.usados.push({ m: 'vendedores', k }); continue; }
-      esperar ||= falta === 'esperar';
-      if (falta === 'sim' && jaPedidos.has(`perfil:${k}`)) esperar = true;
-      else if (falta === 'sim') faltam.push(e.sellerId);
+      if (c) { hits.vendedores[k] = c.v; hits.usados.push({ m: 'vendedores', k }); continue; }
+      if (!jaPedidos.has(`perfil:${k}`)) faltam.push(e.sellerId);
     }
   }
-  const vaga = Math.max(0, Math.min(MAX_PERFIS_PEDIDO, MAX_PERFIS_BUSCA - enr.perfis));
-  const perfis = janelaFechada ? [] : faltam.slice(0, vaga);
-  if (janelaFechada && faltam.length && enr.perfis < MAX_PERFIS_BUSCA) esperar = true;
+  const perfis = faltam.slice(0, MAX_PERFIS_PEDIDO);
 
-  if (catalogos.length === 0 && perfis.length === 0) return { hits, pedido: null, esperar };
-  // Com perfil válido aqui, a edge não consulta de novo; o saldo da busca limita também os perfis automáticos.
+  if (catalogos.length === 0 && perfis.length === 0) return { hits, pedido: null };
+  // Com perfil válido aqui, a edge não consulta de novo.
   const emCache = new Set<number>();
   for (const [k, v] of [...Object.entries(enr.vendedores), ...Object.entries(hits.vendedores)]) if (v.estado === 'ok') emCache.add(Number(k));
   for (const [k, e] of Object.entries(cache.vendedores)) if (valida(e)) emCache.add(Number(k));
-  return { hits, pedido: {
-    catalogos, perfis, perfisEmCache: [...emCache].filter((s) => Number.isInteger(s) && s > 0).slice(0, MAX_PERFIS_EM_CACHE),
-    perfisRestantes: Math.max(0, MAX_PERFIS_BUSCA - enr.perfis),
-  }, esperar };
+  return { hits, pedido: { catalogos, perfis, perfisEmCache: [...emCache].filter((s) => Number.isInteger(s) && s > 0).slice(0, MAX_PERFIS_EM_CACHE) } };
 }
 
 /** Hits do cache → vista da aba (muta `enr`). */
@@ -236,53 +215,97 @@ export function aplicarHits(enr: EstadoEnriquecimento, hits: Plano['hits']): voi
 
 // ---------------------------------------------------------------- resposta
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
-const aguardar = (r: string | null, antes: Retentavel, conta = true) => ({
-  estado: 'aguardando' as const, retomarEm: Number.isFinite(ms(r)) ? ms(r) : null,
-  tentativas: (antes?.estado === 'aguardando' ? antes.tentativas ?? 0 : 0) + (conta ? 1 : 0),
-});
+const MOTIVO_PADRAO = 'catálogo indisponível';
+/** Rodada sem resposta da edge (rede/5xx/corpo fora do formato). */
+export const MOTIVO_FALHA_REDE = 'falha de rede';
+const motivoDe = (x: unknown, padrao: string) => {
+  const m = (x as { motivo?: unknown } | undefined)?.motivo;
+  return typeof m === 'string' ? m : padrao;
+};
 
-/** Resposta da edge → vista da aba (muta `enr`). Devolve o que gravar no cache (só componentes `ok`, com o `expiraEm`
- *  do servidor), para rodar na mesma checagem de identidade/época/página da vista. */
+/** Ofertas pedidas e não lidas (terminal). Catálogo já lido (delta do scroll): a leitura anterior fica e só os itens
+ *  pedidos ficam indisponíveis; senão o componente inteiro. */
+function ofertasIndisponiveis(v: CatalogoVista, itens: { itemId: string; preco: number }[], motivo: string): void {
+  if (v.ofertas?.estado === 'ok') {
+    const exatas = { ...v.ofertas.exatas };
+    for (const i of itens) exatas[i.itemId] = { estado: 'indisponivel', preco: i.preco, motivo };
+    v.ofertas = { ...v.ofertas, exatas };
+  } else v.ofertas = { estado: 'indisponivel', motivo };
+}
+
+/** Rodada que não respondeu (rede/5xx/corpo fora do formato): o que ela pediu fica indisponível (sem repetição
+ *  automática; o delta do scroll continua) e o painel oferece "Tentar novamente". Muta `enr`. */
+export function marcarFalha(enr: EstadoEnriquecimento, pedido: PedidoLote, motivo: string): void {
+  for (const pc of pedido.catalogos) {
+    const v: CatalogoVista = { ...enr.catalogos[pc.catalogProductId] };
+    if (pc.componentes.includes('produto')) v.produto = { estado: 'indisponivel', motivo };
+    if (pc.componentes.includes('ofertas')) ofertasIndisponiveis(v, pc.itens, motivo);
+    enr.catalogos[pc.catalogProductId] = v;
+  }
+  for (const s of pedido.perfis) enr.vendedores[String(s)] = { estado: 'indisponivel', motivo };
+  enr.falhou = true;
+}
+
+/** "Tentar novamente" (ação explícita): antes do Retry-After do ML → false, nada muda. Senão apaga todo indisponível
+ *  (componentes, ofertas exatas sem comissão ou não lidas, vendedores) para o planejamento pedir de novo. Muta `enr`. */
+export function prepararNovaTentativa(enr: EstadoEnriquecimento, agora: number): boolean {
+  if (enr.tentarAposEm != null && agora < enr.tentarAposEm) return false;
+  for (const [cat, c] of Object.entries(enr.catalogos)) {
+    const v: CatalogoVista = { ...c };
+    delete v.aguardandoJanela;
+    if (v.produto && v.produto.estado !== 'ok') delete v.produto;
+    if (v.ofertas?.estado === 'ok') {
+      const exatas = Object.fromEntries(Object.entries(v.ofertas.exatas).filter(([, e]) => e.estado === 'nao_encontrada' || (e.estado === 'ok' && e.comissao.estado === 'ok')));
+      v.ofertas = { ...v.ofertas, exatas };
+    } else delete v.ofertas;
+    enr.catalogos[cat] = v;
+  }
+  for (const [k, v] of Object.entries(enr.vendedores)) if (v.estado !== 'ok') delete enr.vendedores[k];
+  enr.falhou = false;
+  enr.tentarAposEm = null;
+  enr.retomarEm = null;
+  return true;
+}
+
+/** Resposta da edge → vista da aba (muta `enr`). Tudo terminal: ok, ou indisponível com o motivo (estado desconhecido de
+ *  outra versão da edge também). Devolve o que gravar no cache (só o válido, com o `expiraEm` do servidor), para rodar
+ *  na mesma checagem de identidade/época/página da vista. */
 export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r: RespostaEnriquecimento, agora: number): (c: CacheEnr) => void {
   const escritas: ((c: CacheEnr) => void)[] = [];
   for (const c of r.catalogos ?? []) {
     const pc = pedido.catalogos.find((x) => x.catalogProductId === c.catalogProductId);
     if (!pc) continue;
     const cat = c.catalogProductId;
-    const antes = enr.catalogos[cat] ?? {};
-    if (c.estado === 'aguardando') {
-      enr.catalogos[cat] = { ...antes, aguardandoJanela: true };
-      const t = Number.isFinite(ms(c.retomarEm)) ? ms(c.retomarEm) : agora + JANELA_MS;
-      enr.retomarEm = Math.max(enr.retomarEm ?? 0, t);
-      continue;
-    }
-    const v: CatalogoVista = { ...antes };
+    const v: CatalogoVista = { ...enr.catalogos[cat] };
     delete v.aguardandoJanela;
-    const p = c.produto;
+    // Catálogo inteiro recusado (cota de páginas, Redis fora) ou estado desconhecido: nada consultado.
+    const recusado = c.estado !== 'ok' ? motivoDe(c, MOTIVO_PADRAO) : null;
+    const p = recusado ? undefined : c.produto;
     if (p?.estado === 'ok') {
       v.produto = { estado: 'ok', criadoEm: p.criadoEm };
       const exp = ms(p.expiraEm);
       escritas.push((x) => { x.produtos[cat] = { criadoEm: p.criadoEm, exp, u: agora }; });
-    } else if (p?.estado === 'aguardando') v.produto = aguardar(p.retomarEm, antes.produto);
-    else if (p) v.produto = { estado: 'indisponivel' };
-    const o = c.ofertas;
+    } else if (p || pc.componentes.includes('produto')) v.produto = { estado: 'indisponivel', motivo: recusado ?? motivoDe(p, MOTIVO_PADRAO) };
+    const o = recusado ? undefined : c.ofertas;
     if (o?.estado === 'ok') {
       const preco = new Map(pc.itens.map((i) => [i.itemId, i.preco]));
       const exatas: Record<string, ExataVista> = {};
       for (const e of o.exatas) {
         const pr = preco.get(e.itemId);
         if (pr === undefined) continue;
+        const cm = e.estado === 'ok' ? e.comissaoNaSuaConta : null;
         exatas[e.itemId] = e.estado === 'ok'
-          ? { estado: 'ok', preco: pr, sellerId: e.sellerId, tipo: e.tipo, comissao: e.comissaoNaSuaConta.estado === 'ok' ? { estado: 'ok', valor: e.comissaoNaSuaConta.valor } : e.comissaoNaSuaConta.estado === 'aguardando' ? { estado: 'aguardando' } : { estado: 'indisponivel', motivo: e.comissaoNaSuaConta.motivo } }
+          ? { estado: 'ok', preco: pr, sellerId: e.sellerId, tipo: e.tipo, comissao: cm?.estado === 'ok' ? { estado: 'ok', valor: cm.valor } : { estado: 'indisponivel', motivo: motivoDe(cm, 'comissão indisponível') } }
           : { estado: 'nao_encontrada', preco: pr };
       }
       const ok: OfertasOk = { estado: 'ok', total: o.total, lidas: o.lidas, vendedoresIdentificados: o.vendedoresIdentificados, ofertasSemVendedor: o.ofertasSemVendedor, completa: o.completa, exatas };
-      // Na aba, as ofertas exatas de lotes anteriores do mesmo catálogo ficam (item 21+); no cache, só a leitura nova.
-      v.ofertas = antes.ofertas?.estado === 'ok' ? { ...ok, exatas: { ...antes.ofertas.exatas, ...exatas } } : ok;
+      // Na aba, as ofertas exatas de pedidos anteriores do mesmo catálogo ficam (scroll). No cache, só a leitura nova e
+      // sem oferta exata cuja comissão não veio: em outra busca ela não vale como dado válido.
+      v.ofertas = v.ofertas?.estado === 'ok' ? { ...ok, exatas: { ...v.ofertas.exatas, ...exatas } } : ok;
+      const validas = Object.fromEntries(Object.entries(exatas).filter(([, e]) => e.estado !== 'ok' || e.comissao.estado === 'ok'));
       const exp = ms(o.expiraEm);
-      escritas.push((x) => { x.ofertas[cat] = { v: ok, exp, u: agora }; });
-    } else if (o?.estado === 'aguardando') v.ofertas = aguardar(o.retomarEm, antes.ofertas);
-    else if (o) v.ofertas = { estado: 'indisponivel' };
+      escritas.push((x) => { x.ofertas[cat] = { v: { ...ok, exatas: validas }, exp, u: agora }; });
+    } else if (o || pc.componentes.includes('ofertas')) ofertasIndisponiveis(v, pc.itens, recusado ?? motivoDe(o, MOTIVO_PADRAO));
     enr.catalogos[cat] = v;
   }
   for (const s of r.vendedores ?? []) {
@@ -290,15 +313,11 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
     if (s.estado === 'ok') {
       const v: VendedorOk = { estado: 'ok', nome: s.nome, medalha: s.medalha, uf: s.uf };
       enr.vendedores[k] = v;
-      enr.perfis++;
       const exp = ms(s.expiraEm);
       escritas.push((x) => { x.vendedores[k] = { v, exp, u: agora }; });
-    } else if (s.estado === 'aguardando') {
-      enr.vendedores[k] = aguardar(s.retomarEm, enr.vendedores[k], s.motivo !== 'limite de perfis por pedido');
-    } else {
-      enr.vendedores[k] = { estado: 'indisponivel' };
-      if (s.motivo !== 'limite de perfis da busca') enr.perfis++; // fora do saldo: nem foi consultado
-    }
+    } else enr.vendedores[k] = { estado: 'indisponivel', motivo: motivoDe(s, 'perfil indisponível') };
   }
+  const t = ms(r.tentarAposEm);
+  if (Number.isFinite(t)) enr.tentarAposEm = Math.max(enr.tentarAposEm ?? 0, t);
   return (c) => { for (const f of escritas) f(c); };
 }

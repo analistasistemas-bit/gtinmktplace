@@ -26,10 +26,13 @@ let antesDeResponder: ((acao: string) => Promise<void> | void) | null;
 let falharIdentificar: boolean;
 let aoRenovar: (() => Promise<void>) | null;
 let statusSessao: number;
-// Enriquecimento (Task 10): cota por catálogo, conta ML, falha de rede e trava próprias; pedidos à parte de `corpos`.
+// Enriquecimento (Task 11.2): cota de PÁGINAS por minuto (uma unidade por pedido), conta ML, falha de rede, 429 nas
+// ofertas com Retry-After e trava próprias; pedidos à parte de `corpos`.
 let enrCota: number;
 let enrConta: string;
 let falharEnr: boolean;
+let ofertas429: boolean;
+let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
 let antesDeEnriquecer: (() => Promise<void> | void) | null;
 let sellerPorItem: boolean;
@@ -40,26 +43,30 @@ const pedidosEnr: PedidoEnr[] = [];
 const isoDe = (ms: number) => new Date(ms).toISOString();
 function respostaEnr(b: PedidoEnr) {
   const agora = Date.now();
-  const catalogos = b.catalogos.map((c) => {
-    if (enrCota <= 0) return { catalogProductId: c.catalogProductId, estado: 'aguardando', retomarEm: isoDe((Math.floor(agora / 60_000) + 1) * 60_000), consultadoEm: null };
-    enrCota--;
-    return {
-      catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null, consultadoEm: isoDe(agora),
-      ...(c.componentes.includes('produto') ? { produto: { estado: 'ok', criadoEm: '2026-06-01T00:00:00Z', expiraEm: isoDe(agora + 6 * 3600_000) } } : {}),
-      ...(c.componentes.includes('ofertas') ? { ofertas: { estado: 'ok', expiraEm: isoDe(agora + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
-        exatas: c.itens.map((i) => ({ itemId: i.itemId, estado: 'ok', categoriaId: 'MLB5', sellerId: sellerDe(i.itemId), tipo: 'gold_special', perfil: 'carregado', comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } })) } } : {}),
-    };
-  });
-  // Como a edge: explícitos + vendedores das ofertas exatas, menos os em cache; até 5 e até o saldo da busca.
-  const sellers = [...new Set([...b.perfis, ...b.catalogos.filter((c) => c.componentes.includes('ofertas') && enrCota >= 0).flatMap((c) => c.itens.map((i) => sellerDe(i.itemId)))])]
+  // Mesmos limites do roteamento da edge: passar deles = 400 (o teste falha por `falhou`).
+  if (b.catalogos.length > 50 || b.catalogos.reduce((n, c) => n + c.itens.length, 0) > 50 || b.perfis.length > 50 || b.perfisEmCache.length > 100) return null;
+  if (enrCota <= 0) {
+    const motivo = 'limite de páginas por minuto';
+    return { estado: 'ok', valor: { consultadoEm: isoDe(agora), conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 0 }, tentarAposEm: null,
+      catalogos: b.catalogos.map((c) => ({ catalogProductId: c.catalogProductId, estado: 'indisponivel', motivo, retomarEm: null, consultadoEm: null })),
+      vendedores: b.perfis.map((s) => ({ sellerId: s, estado: 'indisponivel', motivo })) } };
+  }
+  enrCota--;
+  const catalogos = b.catalogos.map((c) => ({
+    catalogProductId: c.catalogProductId, estado: 'ok', retomarEm: null, consultadoEm: isoDe(agora),
+    ...(c.componentes.includes('produto') ? { produto: { estado: 'ok', criadoEm: '2026-06-01T00:00:00Z', expiraEm: isoDe(agora + 6 * 3600_000) } } : {}),
+    ...(c.componentes.includes('ofertas') ? { ofertas: ofertas429 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', expiraEm: isoDe(agora + 60_000), total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
+      exatas: c.itens.map((i) => ({ itemId: i.itemId, estado: 'ok', categoriaId: 'MLB5', sellerId: sellerDe(i.itemId), tipo: 'gold_special', perfil: 'carregado', comissaoNaSuaConta: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } })) } } : {}),
+  }));
+  // Como a edge: explícitos + vendedores das ofertas exatas lidas, menos os em cache, deduplicados; até 50 por pedido.
+  const sellers = [...new Set([...b.perfis, ...(ofertas429 ? [] : b.catalogos.filter((c) => c.componentes.includes('ofertas')).flatMap((c) => c.itens.map((i) => sellerDe(i.itemId))))])]
     .filter((x) => !b.perfisEmCache.includes(x));
-  const teto = Math.min(5, b.perfisRestantes ?? 5);
-  perfisConsultados += Math.min(sellers.length, teto);
+  perfisConsultados += Math.min(sellers.length, 50);
   const vendedores = [
-    ...sellers.slice(0, teto).map((x) => ({ sellerId: x, estado: 'ok', nome: `V${x}`, medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) })),
-    ...sellers.slice(teto).map((x) => (teto < 5 ? { sellerId: x, estado: 'indisponivel', motivo: 'limite de perfis da busca' } : { sellerId: x, estado: 'aguardando', retomarEm: null, motivo: 'limite de perfis por pedido' })),
+    ...sellers.slice(0, 50).map((x) => ({ sellerId: x, estado: 'ok', nome: `V${x}`, medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) })),
+    ...sellers.slice(50).map((x) => ({ sellerId: x, estado: 'indisponivel', motivo: 'limite de perfis por pedido' })),
   ];
-  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores } };
+  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores, tentarAposEm: ofertas429 ? tentarAposEm : null } };
 }
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
@@ -80,7 +87,8 @@ async function edge(u: string, init?: RequestInit): Promise<Response> {
     if (bloqueioEnr) await bloqueioEnr;
     if (antesDeEnriquecer) { const f = antesDeEnriquecer; antesDeEnriquecer = null; await f(); }
     if (falharEnr) return new Response(JSON.stringify({ erro: 'interno' }), { status: 500 });
-    return env(respostaEnr(b));
+    const r = respostaEnr(b);
+    return r ? env(r) : new Response(JSON.stringify({ erro: 'payload_invalido' }), { status: 400 });
   }
   corpos.push(b);
   if (bloqueio) await bloqueio;
@@ -123,6 +131,8 @@ beforeEach(() => {
   enrCota = Infinity;
   enrConta = 'conta-a';
   falharEnr = false;
+  ofertas429 = false;
+  tentarAposEm = null;
   bloqueioEnr = null;
   antesDeEnriquecer = null;
   sellerPorItem = false;
@@ -503,12 +513,15 @@ describe('isolamento de sessão e de página', () => {
   });
 });
 
-// Task 10: fila progressiva do enriquecimento (plano, Revisão 03/11, regras 1-3, 5, 6 e 10).
-type EstadoEnr = { catalogos: Record<string, { aguardandoJanela?: boolean; produto?: { estado: string }; ofertas?: { estado: string } }>; vendedores: Record<string, { estado: string; medalha?: string }>; retomarEm: number | null; falhou: boolean };
+// Task 11.3 (Revisão 03/11-b): a página inteira num pedido de enriquecimento, logo depois da identificação e antes da
+// margem; tudo terminal (sem retomada automática); repetição só por "Tentar novamente" ou cards novos (delta).
+type EstadoEnr = { catalogos: Record<string, { produto?: { estado: string; motivo?: string }; ofertas?: { estado: string; motivo?: string; exatas?: Record<string, { estado: string }> } }>; vendedores: Record<string, { estado: string; medalha?: string; motivo?: string }>; tentarAposEm?: number | null; falhou: boolean };
 const enr = async () => ((await lerAba(7)).estado as unknown as { resposta: { enriquecimento?: EstadoEnr } } | null)?.resposta.enriquecimento;
 const CAT = 'MLB1000000';
+const porCatalogo = (de: number, ate: number) => cards(de, ate).map((c) => ({ ...c, catalogProductId: `MLB${3000000 + Number(c.itemId.slice(3))}` }));
+const retentar = () => rotear({ tipo: 'publiai:analisar-busca', tabId: 7, retentar: true }, PAINEL) as Promise<{ ok: boolean; erro?: string; tentarAposEm?: number }>;
 
-describe('enriquecimento dos catálogos (fila progressiva)', () => {
+describe('enriquecimento dos catálogos (lote por página)', () => {
   it('dez cards do mesmo catálogo → um pedido com uma entrada; scroll e painel juntos não duplicam', async () => {
     let soltar!: () => void;
     bloqueioEnr = new Promise((r) => { soltar = r; });
@@ -521,11 +534,44 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     await complementosPendentes();
     expect(pedidosEnr).toHaveLength(1);
     expect(pedidosEnr[0].catalogos).toEqual([{ catalogProductId: CAT, componentes: ['produto', 'ofertas'], itens: cards(1, 10).map((c) => ({ itemId: c.itemId, preco: 10 })) }]);
+    expect(pedidosEnr[0]).not.toHaveProperty('perfisRestantes');
     const e = (await enr())!;
     expect(e.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' }, ofertas: { estado: 'ok' } });
     expect(e.vendedores['7']).toMatchObject({ estado: 'ok', medalha: 'gold' });
     expect(mensagensPagina('publiai:busca-resultados').at(-1)!.enriquecimento).toMatchObject({ catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
     expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
+  });
+
+  it('página de 50 catálogos (painel fechado) → UM pedido com os 50 e todos os 50 perfis', async () => {
+    sellerPorItem = true;
+    await registrar(porCatalogo(1, 50));
+    expect(pedidosEnr).toHaveLength(1);
+    expect(pedidosEnr[0].catalogos).toHaveLength(50);
+    expect(perfisConsultados).toBe(50);
+    const e = (await enr())!;
+    expect(Object.values(e.catalogos).every((c) => c.ofertas?.estado === 'ok')).toBe(true);
+    expect(Object.values(e.vendedores).filter((v) => v.estado === 'ok')).toHaveLength(50);
+  });
+
+  it('margem lenta não adia o enriquecimento: o pedido sai e é gravado com a margem ainda em voo', async () => {
+    vinculados = new Set(cards(1, 5).map((c) => c.itemId));
+    let soltar!: () => void;
+    const margem = new Promise<void>((r) => { soltar = r; });
+    antesDeResponder = (acao) => (acao === 'analisar_busca' ? margem : undefined);
+    const reg = registrar(cards(1, 5));
+    await vi.waitFor(async () => expect((await enr())?.catalogos[CAT]?.ofertas?.estado).toBe('ok'));
+    expect(doTipo('analisar_busca')).toHaveLength(1); // a margem já saiu, ainda sem resposta
+    expect(Object.values((await estado())!.resposta.resultados).some((r) => r.estado === 'ok')).toBe(false);
+    soltar();
+    await reg;
+    expect((await estado())!.resposta.resultados[id(1)].estado).toBe('ok');
+  });
+
+  it('scroll manda só o delta: cards novos = um pedido só com os novos', async () => {
+    await registrar(porCatalogo(1, 10));
+    await registrar(porCatalogo(11, 15));
+    expect(pedidosEnr).toHaveLength(2);
+    expect(pedidosEnr[1].catalogos.map((c) => c.catalogProductId)).toEqual(porCatalogo(11, 15).map((c) => c.catalogProductId));
   });
 
   it('catálogo em cache válido (outra busca) não vai à edge nem gasta cota', async () => {
@@ -540,36 +586,74 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect((await enr())!.vendedores['7']).toMatchObject({ estado: 'ok' });
   });
 
-  it('janela esgotada: aguardando + pulso; pulso antes da janela não chama; depois retoma', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.parse('2026-11-03T12:00:10Z'));
+  it('cota de páginas esgotada: parcial terminal (sem pulso); o pulso da margem não reabre; "Tentar novamente" refaz', async () => {
+    vinculados = new Set([id(1)]);
+    cota = 0; // margem sem cota: ela pede o pulso dela
     enrCota = 0;
     await registrar([card(1)]);
-    expect((await enr())!.catalogos[CAT]).toEqual({ aguardandoJanela: true });
-    expect((await enr())!.retomarEm).toBe(Date.parse('2026-11-03T12:01:00Z'));
-    expect(mensagensPagina('publiai:busca-retomar').length).toBeGreaterThan(0);
-    await pulso();
-    expect(pedidosEnr).toHaveLength(1);
-    vi.setSystemTime(Date.parse('2026-11-03T12:01:11Z'));
+    expect((await enr())!.catalogos[CAT]).toEqual({ produto: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, ofertas: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' } });
+    expect(mensagensPagina('publiai:busca-retomar').length).toBeGreaterThan(0); // da margem
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 61_000);
     enrCota = 10;
     await pulso();
+    expect(pedidosEnr).toHaveLength(1); // o pulso (da margem) não repete o enriquecimento
+    expect(await retentar()).toMatchObject({ ok: true });
+    await complementosPendentes();
     expect(pedidosEnr).toHaveLength(2);
-    expect((await enr())!.catalogos[CAT]).toMatchObject({ ofertas: { estado: 'ok' } });
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' }, ofertas: { estado: 'ok' } });
   });
 
-  it('reinício do SW com catálogo pendente: o pulso seguinte retoma do estado guardado', async () => {
+  it('429 do ML com Retry-After: "Tentar novamente" antes dele é recusado sem chamada; depois, refaz', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.parse('2026-11-03T12:00:10Z'));
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:00Z'));
+    ofertas429 = true;
+    tentarAposEm = '2026-11-03T12:00:30.000Z';
+    await registrar([card(1)]);
+    expect((await enr())!).toMatchObject({ tentarAposEm: Date.parse(tentarAposEm), catalogos: { [CAT]: { produto: { estado: 'ok' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } } } });
+    ofertas429 = false;
+    expect(await retentar()).toMatchObject({ ok: false, erro: 'aguardar', tentarAposEm: Date.parse(tentarAposEm) });
+    await complementosPendentes();
+    expect(pedidosEnr).toHaveLength(1);
+    vi.setSystemTime(Date.parse('2026-11-03T12:00:31Z'));
+    expect(await retentar()).toMatchObject({ ok: true });
+    await complementosPendentes();
+    expect(pedidosEnr.at(-1)!.catalogos).toEqual([{ catalogProductId: CAT, componentes: ['ofertas'], itens: [{ itemId: id(1), preco: 10 }] }]);
+    expect((await enr())!).toMatchObject({ tentarAposEm: null, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('falha de rede: terminal, sem repetição automática; scroll manda só o delta; "Tentar novamente" refaz o que falhou', async () => {
+    falharEnr = true;
+    await registrar([card(1)]);
+    expect((await enr())!).toMatchObject({ falhou: true, catalogos: { [CAT]: { ofertas: { estado: 'indisponivel' } } } });
+    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
+    await pulso();
+    expect(pedidosEnr).toHaveLength(1);
+    falharEnr = false;
+    await registrar([card(1), card(2, { catalogProductId: 'MLB2000000' })]);
+    expect(pedidosEnr).toHaveLength(2);
+    expect(pedidosEnr[1].catalogos.map((c) => c.catalogProductId)).toEqual(['MLB2000000']);
+    await retentar();
+    await complementosPendentes();
+    expect(pedidosEnr).toHaveLength(3);
+    expect(pedidosEnr[2].catalogos.map((c) => c.catalogProductId)).toEqual([CAT]);
+    expect((await enr())!).toMatchObject({ falhou: false, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+  });
+
+  it('reinício do SW: o parcial terminal guardado não é reaberto pelo pulso; cards novos vão como delta', async () => {
     enrCota = 0;
     await registrar([card(1)]);
     vi.resetModules();
     const novo = await import('../roteador');
-    vi.setSystemTime(Date.parse('2026-11-03T12:01:11Z'));
     enrCota = 10;
     await novo.rotearMensagem({ tipo: 'publiai:busca-pulso', geracao: geracaoCs }, BUSCA);
     await novo.complementosPendentes();
+    expect(pedidosEnr).toHaveLength(1);
+    await novo.rotearMensagem({ tipo: 'publiai:busca-cards', geracao: geracaoCs, url: URL_BUSCA, cards: [card(1), card(2, { catalogProductId: 'MLB2000000' })], ocorrencias: 2 }, BUSCA);
+    await novo.complementosPendentes();
     expect(pedidosEnr).toHaveLength(2);
-    expect((await enr())!.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' } });
+    expect(pedidosEnr[1].catalogos.map((c) => c.catalogProductId)).toEqual(['MLB2000000']);
+    expect((await enr())!.catalogos[CAT].ofertas).toMatchObject({ estado: 'indisponivel' });
   });
 
   it('resposta antiga depois da pausa: nada gravado na aba nem no cache', async () => {
@@ -579,19 +663,25 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     expect(await chrome.storage.session.get('enr:cache')).toEqual({});
   });
 
-  it('falha de rede: "Tentar novamente" sem repetição automática; o painel refaz uma vez', async () => {
-    falharEnr = true;
+  it('logout com o enriquecimento em voo: nada gravado na aba nem no cache; login de novo começa sem nada', async () => {
+    antesDeEnriquecer = async () => { await sair(); };
     await registrar([card(1)]);
-    expect((await enr())!.falhou).toBe(true);
-    expect(mensagensPagina('publiai:busca-retomar')).toHaveLength(0);
-    await pulso();
-    await registrar([card(2)]);
-    expect(pedidosEnr).toHaveLength(1);
-    falharEnr = false;
-    await rotear({ tipo: 'publiai:analisar-busca', tabId: 7, retentar: true }, PAINEL);
-    await complementosPendentes();
+    expect(await estado()).toBeNull();
+    expect(await chrome.storage.session.get('enr:cache')).toEqual({});
+  });
+
+  it('suporte expirado no enriquecimento: abas e cache limpos, nada gravado', async () => {
+    await registrar([card(1)]);
+    expect((await chrome.storage.session.get('enr:cache'))['enr:cache']).toBeDefined();
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao === 'enriquecer_catalogos_busca') { pedidosEnr.push(b); return new Response(JSON.stringify({ erro: 'sessao_suporte_expirada' }), { status: 403 }); }
+      return edge(String(u), init);
+    });
+    await registrar([card(1), card(2, { catalogProductId: 'MLB2000000' })]);
     expect(pedidosEnr).toHaveLength(2);
-    expect((await enr())!).toMatchObject({ falhou: false, catalogos: { [CAT]: { ofertas: { estado: 'ok' } } } });
+    expect(await estado()).toBeNull();
+    expect(await chrome.storage.session.get('enr:cache')).toEqual({});
   });
 
   it('conta ML trocada: a identificação da página seguinte detecta antes de reusar o cache; abas e cache limpos', async () => {
@@ -696,13 +786,4 @@ describe('enriquecimento dos catálogos (fila progressiva)', () => {
     await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
     expect(pedidosEnr).toHaveLength(2);
   });
-
-  it('teto de 20 perfis por busca: depois de 20, nenhum perfil a mais (nem os automáticos)', async () => {
-    sellerPorItem = true;
-    await registrar(Array.from({ length: 30 }, (_, i) => card(i + 1, { catalogProductId: `MLB${2000000 + i}` })));
-    expect(pedidosEnr.length).toBeGreaterThanOrEqual(6);
-    expect(perfisConsultados).toBe(20);
-    expect(pedidosEnr.at(-1)!.perfisRestantes).toBe(0);
-  });
-
 });

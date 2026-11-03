@@ -6,15 +6,19 @@ import type { CardBusca } from '../leitura/busca';
 
 // = Medalha de _shared/extensao/enriquecimento-busca.ts (não importado: o módulo puxa tipos do Deno para o tsc daqui).
 export type Medalha = 'silver' | 'gold' | 'platinum' | 'sem';
+/** Legado (gravado antes da Task 11.3): o SW não produz mais; o planejamento o pede de novo uma vez. */
 type Aguardando = { estado: 'aguardando'; retomarEm: number | null; tentativas: number };
-type Indisponivel = { estado: 'indisponivel' };
+/** Terminal: só o "Tentar novamente" (ou dado novo) volta a pedir. `motivo` = o da edge (MOTIVO) ou 'falha de rede'. */
+type Indisponivel = { estado: 'indisponivel'; motivo?: string };
 
 export type ProdutoVista = { estado: 'ok'; criadoEm: string | null } | Aguardando | Indisponivel;
 export type ComissaoVista = { estado: 'ok'; valor: ComissaoML } | { estado: 'aguardando' } | { estado: 'indisponivel'; motivo: string };
 /** Oferta do item do card no catálogo; `preco` = o preço do card enviado (a comissão só vale para ele). */
 export type ExataVista =
   | { estado: 'ok'; preco: number; sellerId: number | null; tipo: 'gold_special' | 'gold_pro' | null; comissao: ComissaoVista }
-  | { estado: 'nao_encontrada'; preco: number };
+  | { estado: 'nao_encontrada'; preco: number }
+  /** Item pedido depois (scroll) num catálogo já lido e não consultado nesta rodada: terminal, a leitura anterior fica. */
+  | { estado: 'indisponivel'; preco: number; motivo: string };
 export interface OfertasOk {
   estado: 'ok';
   total: number | null;
@@ -27,7 +31,7 @@ export interface OfertasOk {
 }
 export type OfertasVista = OfertasOk | Aguardando | Indisponivel;
 export interface CatalogoVista {
-  /** Cota de enriquecimento esgotada: nada consultado ainda (a janela está em `EstadoEnriquecimento.retomarEm`). */
+  /** Legado (antes da Task 11.3; o SW não grava mais): cota esgotada aguardando a janela. */
   aguardandoJanela?: boolean;
   produto?: ProdutoVista;
   ofertas?: OfertasVista;
@@ -37,24 +41,26 @@ export type VendedorVista = { estado: 'ok'; nome: string | null; medalha: Medalh
 export interface EstadoEnriquecimento {
   catalogos: Record<string, CatalogoVista>;
   vendedores: Record<string, VendedorVista>;
-  /** ms: cota de enriquecimento esgotada até este instante (pulso da página retoma). */
+  /** Legado (antes da Task 11.3; sempre null agora): não há retomada automática do enriquecimento. */
   retomarEm: number | null;
-  /** Falha de rede na rodada: só o "Tentar novamente" do painel retoma (sem repetição automática). */
+  /** ms: Retry-After do ML na última rodada; o "Tentar novamente" só vale a partir daqui. null/ausente = já pode. */
+  tentarAposEm?: number | null;
+  /** Falha de rede numa rodada (o pedido dela ficou indisponível): o painel oferece "Tentar novamente". */
   falhou: boolean;
   /** Edge respondeu indisponível (ex.: sem conexão ML): motivo; nada mais é pedido nesta página. */
   indisponivel: string | null;
-  /** Perfis consultados nesta busca (teto MAX_PERFIS_BUSCA). */
+  /** Legado (antes da Task 11.3; não conta mais): sem teto de perfis por busca. */
   perfis: number;
 }
 
-export const enriquecimentoVazio = (): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, retomarEm: null, falhou: false, indisponivel: null, perfis: 0 });
+export const enriquecimentoVazio = (): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, retomarEm: null, tentarAposEm: null, falhou: false, indisponivel: null, perfis: 0 });
 
 /** Cópia defensiva (estado gravado por versão anterior não tem o campo). */
 export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
   const e = (v && typeof v === 'object' ? v : {}) as Partial<EstadoEnriquecimento>;
   return {
     catalogos: { ...e.catalogos }, vendedores: { ...e.vendedores },
-    retomarEm: typeof e.retomarEm === 'number' ? e.retomarEm : null, falhou: e.falhou === true,
+    retomarEm: typeof e.retomarEm === 'number' ? e.retomarEm : null, tentarAposEm: typeof e.tentarAposEm === 'number' ? e.tentarAposEm : null, falhou: e.falhou === true,
     indisponivel: typeof e.indisponivel === 'string' ? e.indisponivel : null, perfis: typeof e.perfis === 'number' ? e.perfis : 0,
   };
 }
