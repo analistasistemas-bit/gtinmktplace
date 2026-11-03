@@ -2,7 +2,7 @@
 import type { Semaforo } from '../promocoes/tipos.ts';
 
 export type Acao = 'aderir' | 'sair';
-export type TipoPromocao = 'DEAL' | 'SMART';
+export type TipoPromocao = 'DEAL' | 'SMART' | 'LIGHTNING';
 export type StatusItem =
   | 'rascunho' | 'pendente' | 'enviando' | 'conferindo'
   | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
@@ -24,9 +24,18 @@ export interface CamposItem {
 export interface ItemNaCampanha {
   status: string;                 // candidate | started | pending | ...
   preco_min: number | null; preco_max: number | null;
-  offer_id: string | null;        // CANDIDATE-... (convidado SMART) ou OFFER-... (participando SMART)
+  offer_id: string | null;        // CANDIDATE-... (convidado) ou OFFER-... (participando); LIGHTNING vem em ref_id
+  estoque_min: number | null;     // stock.min da Relâmpago; null fora de LIGHTNING ou ausente
 }
-export interface Relacoes { catalog_listing: boolean; relacionados: { id: string; catalog_listing: boolean }[] }
+/** Relâmpago na visão POR ITEM (/seller-promotions/items/{id}): a única com máximo e sugerido. null = não aparece. */
+export interface OfertaNoItem {
+  preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; estoque_min: number | null;
+  inicio: string | null; fim: string | null;  // start_date/finish_date sem fuso (horário de Brasília, spike)
+}
+export interface Relacoes {
+  catalog_listing: boolean; relacionados: { id: string; catalog_listing: boolean }[];
+  disponivel: number | null;      // available_quantity do item (estoque que a Relâmpago reserva)
+}
 export interface PedidoItem { ml_item_id: string; preco: number | null }
 export type Decisao =
   | { tipo: 'post'; body: Record<string, unknown> }
