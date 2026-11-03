@@ -285,11 +285,13 @@ export default function OrganizacaoDetalhe() {
       />
 
       {!primeiraLeitura && <Tabs value={tab} onValueChange={(value) => updateSearch('aba', value)}>
-        <TabsList aria-label="Seções da organização">
-          <TabsTrigger value="resultados"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
-          <TabsTrigger value="pulse"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
-          <TabsTrigger value="extensao"><Puzzle className="h-4 w-4" />Extensão</TabsTrigger>
-          <TabsTrigger value="cobranca">
+        <div className="relative">
+        <TabsList variant="line" aria-label="Seções da organização"
+          className="w-full gap-0 border-b p-0 group-data-horizontal/tabs:h-11 sm:w-full sm:justify-start">
+          <TabsTrigger value="resultados" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><BarChart3 className="h-4 w-4" />Resultados</TabsTrigger>
+          <TabsTrigger value="pulse" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Radar className="h-4 w-4" />Pulse</TabsTrigger>
+          <TabsTrigger value="extensao" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Puzzle className="h-4 w-4" />Extensão</TabsTrigger>
+          <TabsTrigger value="cobranca" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit">
             <Receipt className="h-4 w-4" />Cobrança
             {blockerCount !== null && blockerCount > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
@@ -297,9 +299,12 @@ export default function OrganizacaoDetalhe() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="auditoria"><ScrollText className="h-4 w-4" />Auditoria</TabsTrigger>
-          <TabsTrigger value="configuracoes"><Settings2 className="h-4 w-4" />Configurações</TabsTrigger>
+          <TabsTrigger value="auditoria" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><ScrollText className="h-4 w-4" />Auditoria</TabsTrigger>
+          <TabsTrigger value="configuracoes" className="h-11 px-3 after:bottom-[-1px] max-sm:min-w-fit"><Settings2 className="h-4 w-4" />Configurações</TabsTrigger>
         </TabsList>
+        {/* Pista de rolagem: no celular a barra rola sem scrollbar visível; o degradê indica que há mais abas à direita. */}
+        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
+        </div>
         <TabsContent value="resultados" className="pt-4"><OrgResults report={report} /></TabsContent>
         <TabsContent value="pulse" className="pt-4"><OrgPulse orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="extensao" className="pt-4"><OrgExtensao orgId={orgId} month={month} /></TabsContent>

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   usePreview: vi.fn(),
   useStatements: vi.fn(),
   useTerms: vi.fn(),
+  useReport: vi.fn(),
   report: null as unknown,
   baixar: vi.fn(),
 }));
@@ -22,6 +23,7 @@ vi.mock('@/hooks/usePlatformAdmin', () => ({
   usePlatformPreview: mocks.usePreview,
   usePlatformStatements: mocks.useStatements,
   usePlatformTerms: mocks.useTerms,
+  useMonthlyReport: mocks.useReport,
   useClosePlatformStatement: () => ({ mutateAsync: mocks.close, isPending: false }),
   useReconcilePlatformRevenue: () => ({ mutateAsync: mocks.reconcile, isPending: false }),
   useSavePlatformTerms: () => ({ mutateAsync: mocks.save, isPending: false }),
@@ -121,6 +123,7 @@ beforeEach(() => {
     data: { rows: [makeStatement()], total: 1, page: 1, page_size: 20 },
     isLoading: false,
   });
+  mocks.useReport.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   mocks.useTerms.mockReturnValue({
     data: { rows: [terms] },
     isLoading: false,
@@ -298,5 +301,40 @@ describe('OrgBilling', () => {
 
     expect(screen.getByText('Pronta para fechar')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeEnabled();
+  });
+
+  it('mês sem demonstrativo: pill "em aberto", motivo visível e ligado ao botão, sem ponte do cupom', () => {
+    render(<OrgBilling orgId="org-a" month="2026-07" />);
+    expect(screen.getByText('Demonstrativo em aberto')).toBeInTheDocument();
+    const botao = screen.getByRole('button', { name: /Gerar relatório mensal/ });
+    expect(botao).toHaveAccessibleDescription(expect.stringContaining('Feche o demonstrativo de 2026-07'));
+    expect(screen.getByText(/Fechamento automático: dia 01, às 06h/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Ponte para o faturamento da loja')).not.toBeInTheDocument();
+  });
+
+  it('mês fechado: pill com a data e ponte do cupom com a diferença assinada para a loja', () => {
+    const fechado = { ...makeStatement(), month: '2026-08', seller_coupon_cents: 30_000 };
+    mocks.useStatements.mockReturnValue({ data: { rows: [fechado], total: 1, page: 1, page_size: 20 }, isLoading: false, isError: false });
+    mocks.useReport.mockReturnValue({ data: { summary: { current: { gross_cents: 970_000 } } }, isLoading: false, isError: false });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Demonstrativo fechado em 01/09')).toBeInTheDocument();
+    const ponte = screen.getByLabelText('Ponte para o faturamento da loja');
+    expect(ponte).toHaveTextContent(/R\$\s*300,00/);
+    expect(ponte).toHaveTextContent(/−R\$\s*300,00/);
+  });
+
+  it('snapshot antigo sem cupons: avisa a ausência do detalhamento em vez de inventar zero', () => {
+    const fechado = { ...makeStatement(), month: '2026-08' };
+    mocks.useStatements.mockReturnValue({ data: { rows: [fechado], total: 1, page: 1, page_size: 20 }, isLoading: false, isError: false });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Snapshot sem detalhamento de cupons')).toBeInTheDocument();
+  });
+
+  it('erro na leitura dos demonstrativos não vira "mês em aberto"', () => {
+    mocks.useStatements.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: vi.fn() });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Estado do fechamento indisponível')).toBeInTheDocument();
+    expect(screen.queryByText('Demonstrativo em aberto')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Gerar relatório mensal/ })).toBeDisabled();
   });
 });

@@ -165,6 +165,53 @@ describe('Organizacoes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/organizacoes/avil?mes=2026-09');
   });
 
+  it('hero: variação vem do total da carteira (previous_gross_cents), não das linhas da página', () => {
+    usePlatformWallet.mockReturnValue({
+      ...makeWallet([makeOrg({ metrics: { ...makeOrg().metrics, previous: { gross_cents: 1, orders: 1, markup: 1 } } })]),
+      data: { rows: [makeOrg()], total: 11, page: 1, page_size: 10,
+        totals: makeTotals({ gross_cents: 1_200_000, previous_gross_cents: 1_000_000, previous_available: true }) },
+    });
+    renderPage();
+    expect(screen.getByText('+20%')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['anterior indisponível', { previous_gross_cents: null, previous_available: false }],
+    ['anterior zero', { previous_gross_cents: 0, previous_available: true }],
+    ['campos ausentes (resposta antiga)', {}],
+  ])('hero: sem percentual quando %s', (_nome, extra) => {
+    usePlatformWallet.mockReturnValue({
+      ...makeWallet([makeOrg()]),
+      data: { rows: [makeOrg()], total: 1, page: 1, page_size: 10, totals: makeTotals(extra) },
+    });
+    renderPage();
+    expect(screen.queryByText(/vs\. mesmo período do mês anterior/)).not.toBeInTheDocument();
+  });
+
+  it('estado do fechamento por org: fechado com data, em aberto, indisponível e sem pílula para sem condições', () => {
+    usePlatformWallet.mockReturnValue(makeWallet([
+      makeOrg({ id: 'a', nome: 'Alfa', slug: 'alfa', statement: { status: 'closed', id: 's1', closed_at: '2026-10-01T09:00:00Z', total_cents: 1000 } }),
+      makeOrg({ id: 'b', nome: 'Beta', slug: 'beta', statement: { status: 'open' } }),
+      makeOrg({ id: 'c', nome: 'Gama', slug: 'gama' }),
+      makeOrg({ id: 'd', nome: 'Delta', slug: 'delta', statement: null }),
+    ]));
+    renderPage();
+    expect(screen.getByText('Fechado em 01/10')).toBeInTheDocument();
+    expect(screen.getAllByText('Em aberto')).toHaveLength(1);
+    expect(screen.getAllByText('Fechamento indisponível')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Ver cobrança de Alfa' })).toHaveAttribute('href', expect.stringContaining('aba=cobranca'));
+    expect(screen.queryByRole('link', { name: 'Ver cobrança de Delta' })).not.toBeInTheDocument();
+  });
+
+  it('diálogo Nova empresa tem rótulos persistentes nos cinco campos', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Nova empresa' }));
+    for (const rotulo of ['Nome da empresa', 'Slug', 'Marca padrão', 'E-mail do primeiro admin', 'Nome do primeiro admin']) {
+      expect(screen.getByLabelText(rotulo)).toBeInTheDocument();
+    }
+  });
+
   it('filtra organizações de teste e exibe falha do backend', async () => {
     usePlatformWallet.mockReturnValue(makeWallet(
       [makeOrg({ id: 'test', nome: 'Org teste', is_test: true })],

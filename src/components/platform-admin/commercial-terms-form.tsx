@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -375,11 +376,12 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 </SelectContent>
               </Select>
             </label>
-            <label className="space-y-1 text-sm md:col-span-2">
+            <label className="space-y-1 text-sm md:col-span-2" htmlFor="terms-reason">
               <span className="font-medium">Motivo</span>
-              <textarea
+              <Textarea
+                id="terms-reason"
                 aria-label="Motivo"
-                className="min-h-20 w-full rounded-md border border-input bg-background p-2"
+                className="min-h-20"
                 value={form.reason}
                 onChange={(event) => set('reason', event.target.value)}
               />

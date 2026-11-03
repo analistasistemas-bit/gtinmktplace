@@ -26,6 +26,7 @@ import { usePlatformWallet } from '@/hooks/usePlatformAdmin';
 import type { OrgSummary, WalletTotals } from '@/lib/platform-admin';
 import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { cn } from '@/lib/utils';
+import { diaMesBr } from '@/lib/relatorio-mensal-ui';
 import { cancelSupport, listSupportRequests, type SupportRequest } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
 import { PaymentProfileDialog } from '@/components/platform-admin/payment-profile-dialog';
@@ -42,6 +43,28 @@ function currentMonth(now = new Date()): string {
     month: '2-digit',
   }).formatToParts(now);
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}`;
+}
+
+/** ADR-0193 D-12: estado do fechamento da competência por organização, com atalho para a Cobrança do mês.
+ *  `null` = sem condição comercial (a pílula "Sem condições" já diz); ausente = leitura indisponível (nunca vira "sem condições"). */
+function FechamentoOrg({ org, month }: { org: OrgSummary; month: string }) {
+  const st = org.statement;
+  if (st === null) return null;
+  const pill = st === undefined
+    ? <StatusPill tone="neutral">Fechamento indisponível</StatusPill>
+    : st.status === 'closed'
+      ? <StatusPill tone="success">Fechado em {diaMesBr(st.closed_at)}</StatusPill>
+      : <StatusPill tone="neutral">Em aberto</StatusPill>;
+  return (
+    <Link
+      to={`/admin/organizacoes/${org.id}?mes=${month}&aba=cobranca`}
+      aria-label={`Ver cobrança de ${org.nome}`}
+      className="mt-1 inline-flex rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-8 max-sm:items-center"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {pill}
+    </Link>
+  );
 }
 
 function fmtHora(iso: string): string {
@@ -101,17 +124,16 @@ async function callUsuarios(body: Record<string, unknown>) {
 
 /** Card de destaque do topo (Faturamento bruto da carteira). Mesma estrutura de HeroVenda
  *  (Dashboard.tsx), mas não-linkável: é um agregado da carteira, não o drill-down de uma org. */
-function HeroCarteira({ totals, orgs, className }: {
+function HeroCarteira({ totals, className }: {
   totals?: WalletTotals;
-  orgs: OrgSummary[];
   className?: string;
 }) {
-  const comPrevio = orgs.length > 0 && orgs.every((o) => (o.metrics?.previous?.gross_cents ?? 0) > 0);
+  // Variação sobre o MESMO universo de `gross_cents` (calculado no servidor antes da paginação).
+  // Indisponível ou anterior zero ≠ 0%: sem percentual.
+  const anterior = totals?.previous_gross_cents;
   let delta: { texto: string; up: boolean } | null = null;
-  if (comPrevio) {
-    const prevSum = orgs.reduce((soma, o) => soma + o.metrics!.previous!.gross_cents, 0);
-    const curSum = orgs.reduce((soma, o) => soma + (o.metrics?.gross_cents ?? 0), 0);
-    const pct = ((curSum - prevSum) / prevSum) * 100;
+  if (totals?.previous_available === true && anterior != null && anterior > 0 && totals.gross_cents != null) {
+    const pct = ((totals.gross_cents - anterior) / anterior) * 100;
     delta = { texto: `${pct >= 0 ? '+' : ''}${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`, up: pct >= 0 };
   }
 
@@ -373,6 +395,7 @@ export default function Organizacoes() {
                   ? <StatusPill tone="info">Vigência em {mesDaVigencia(o.next_terms_starts_on)}</StatusPill>
                   : <StatusPill tone="warning">Sem condições</StatusPill>}
             </div>
+            <FechamentoOrg org={o} month={month} />
           </div>
         );
       },
@@ -525,7 +548,7 @@ export default function Organizacoes() {
       />
 
       {!wallet.isLoading && <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <HeroCarteira totals={totals} orgs={orgs.filter((o) => !o.arquivada_em)} className="col-span-2 sm:col-span-3 lg:col-span-2" />
+        <HeroCarteira totals={totals} className="col-span-2 sm:col-span-3 lg:col-span-2" />
         <KpiCard
           label="Previsão de cobrança" icon={WalletIcon} infoKey="Previsão de cobrança"
           value={
@@ -554,20 +577,20 @@ export default function Organizacoes() {
           <h2 className="mb-2 text-sm font-medium text-muted-foreground">Precisa da sua atenção</h2>
           <div className="flex flex-col gap-2">
             {itensAtencao.map((item) => (
-              <div key={item.chave} className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3">
+              <div key={item.chave} className="flex flex-col gap-2 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <span className="flex items-center gap-2 text-sm">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
                   {item.mensagem}
                 </span>
                 {item.acao && (
                   item.acao.to ? (
-                    <Button asChild size="sm" variant="outline">
+                    <Button asChild size="sm" variant="outline" className="max-sm:min-h-11 max-sm:self-start">
                       <Link to={item.acao.to} aria-label={item.acao.ariaLabel}>
                         {item.acao.rotulo} <ArrowRight className="ml-1 h-4 w-4" />
                       </Link>
                     </Button>
                   ) : (
-                    <Button size="sm" aria-label={item.acao.ariaLabel} onClick={item.acao.onClick}>
+                    <Button size="sm" className="max-sm:min-h-11 max-sm:self-start" aria-label={item.acao.ariaLabel} onClick={item.acao.onClick}>
                       {item.acao.rotulo}
                     </Button>
                   )
@@ -582,7 +605,7 @@ export default function Organizacoes() {
         <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
           <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="pl-8"
+            className="pl-8 max-sm:h-11"
             placeholder="Buscar por nome ou slug"
             aria-label="Buscar organizações"
             value={searchInput}
@@ -590,14 +613,14 @@ export default function Organizacoes() {
           />
         </div>
         <div role="group" aria-label="Filtrar organizações" className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
-          <Button size="sm" className="h-7" variant={!somentePendencias ? 'secondary' : 'ghost'} aria-pressed={!somentePendencias} onClick={() => setSomentePendencias(false)}>
+          <Button size="sm" className="h-8 max-sm:h-10" variant={!somentePendencias ? 'secondary' : 'ghost'} aria-pressed={!somentePendencias} onClick={() => setSomentePendencias(false)}>
             Todas
           </Button>
-          <Button size="sm" className="h-7" variant={somentePendencias ? 'secondary' : 'ghost'} aria-pressed={somentePendencias} onClick={() => setSomentePendencias(true)}>
+          <Button size="sm" className="h-8 max-sm:h-10" variant={somentePendencias ? 'secondary' : 'ghost'} aria-pressed={somentePendencias} onClick={() => setSomentePendencias(true)}>
             Com pendências
           </Button>
         </div>
-        <label className="ml-auto flex items-center gap-2 text-sm" htmlFor="include-test-organizations">
+        <label className="flex min-h-11 items-center gap-2 text-sm sm:ml-auto sm:min-h-0" htmlFor="include-test-organizations">
           <Checkbox
             id="include-test-organizations"
             checked={includeTest}
@@ -605,7 +628,7 @@ export default function Organizacoes() {
           />
           Incluir testes
         </label>
-        <label className="flex items-center gap-2 text-sm" htmlFor="include-archived-organizations">
+        <label className="flex min-h-11 items-center gap-2 text-sm sm:min-h-0" htmlFor="include-archived-organizations">
           <Checkbox
             id="include-archived-organizations"
             checked={includeArchived}
@@ -735,14 +758,29 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent processando={enviando} rotuloProcessando="Criando empresa">
         <DialogHeader><DialogTitle>Nova empresa</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
-          <Input placeholder="Nome da empresa" value={nome} onChange={(e) => setNome(e.target.value)} />
-          <Input placeholder="Slug (ex.: minha-empresa)" value={slug} onChange={(e) => setSlug(e.target.value)} />
-          <Input placeholder="Marca padrão (ex.: MinhaMarca)" value={marcaPadrao} onChange={(e) => setMarcaPadrao(e.target.value)} />
-          <Input type="email" placeholder="E-mail do primeiro admin" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
-          <Input placeholder="Nome do primeiro admin" value={adminNome} onChange={(e) => setAdminNome(e.target.value)} />
+          <div className="space-y-1.5">
+            <label htmlFor="nova-org-nome" className="text-sm font-medium">Nome da empresa</label>
+            <Input id="nova-org-nome" placeholder="Nome da empresa" value={nome} onChange={(e) => setNome(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="nova-org-slug" className="text-sm font-medium">Slug</label>
+            <Input id="nova-org-slug" placeholder="Slug (ex.: minha-empresa)" value={slug} onChange={(e) => setSlug(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="nova-org-marca" className="text-sm font-medium">Marca padrão</label>
+            <Input id="nova-org-marca" placeholder="Marca padrão (ex.: MinhaMarca)" value={marcaPadrao} onChange={(e) => setMarcaPadrao(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="nova-org-email" className="text-sm font-medium">E-mail do primeiro admin</label>
+            <Input id="nova-org-email" type="email" placeholder="E-mail do primeiro admin" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="nova-org-admin" className="text-sm font-medium">Nome do primeiro admin</label>
+            <Input id="nova-org-admin" placeholder="Nome do primeiro admin" value={adminNome} onChange={(e) => setAdminNome(e.target.value)} />
+          </div>
         </div>
         <DialogFooter>
           <Button onClick={criar} disabled={!nome || !slug || !adminEmail || enviando}>

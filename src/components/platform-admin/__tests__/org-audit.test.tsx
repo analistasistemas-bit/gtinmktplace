@@ -85,8 +85,20 @@ describe('OrgAudit', () => {
     render(<OrgAudit orgId="org-a" month="2026-09" />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar a auditoria.');
+    expect(screen.queryByText('Nenhum evento encontrado')).not.toBeInTheDocument();
     screen.getByRole('button', { name: 'Tentar novamente' }).click();
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it('filtros têm rótulo visível e o nome do responsável preenche o filtro por UUID', async () => {
+    const user = userEvent.setup();
+    mocks.useAudit.mockReturnValue({ data: makePage([makeRow()]), isLoading: false, isError: false, refetch: vi.fn() });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    expect(screen.getByText('Responsável (UUID)', { selector: 'label' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Filtrar pelo responsável Diego Souza' }));
+    expect(screen.getByLabelText('Responsável')).toHaveValue('user-1');
   });
 
   it('mostra o vazio dedicado quando não há eventos', () => {
