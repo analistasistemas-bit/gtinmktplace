@@ -39,10 +39,13 @@ function precoPromo(r: ItemPromocao, sim?: { aviso: string | null }) {
   const d = descontoPct(r.preco_original, r.preco_avaliado);
   return (
     <span className="block">
-      <span className="block font-medium">
-        {sim && <span className="mr-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">simulado</span>}
-        {r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}
-      </span>
+      {/* Selo em linha própria: na coluna estreita do cartão mobile, ao lado do preço, ele invadia o Líquido. */}
+      {sim && (
+        <span className="block">
+          <span className="inline-block rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">simulado</span>
+        </span>
+      )}
+      <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>
       {r.preco_original != null && (
         <span className="block text-xs text-muted-foreground">
           <s>{fmtBRL(r.preco_original)}</s>{d != null && ` · −${d}%`}
