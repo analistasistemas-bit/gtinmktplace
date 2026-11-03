@@ -590,13 +590,13 @@ describe('ListaOperacoes', () => {
       vi.mocked(useOperacoes).mockReturnValue({ data: [opErro()], isLoading: false } as never);
       vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'erro' }), itemLog({ ml_item_id: 'MLB2', status: 'erro' })] } as never);
       vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
-      let r = renderLista();
+      const { unmount } = renderLista();
       await user.click(screen.getByText('Aderir à Campanha X'));
       expect(screen.queryByRole('button', { name: /Tentar novamente/ })).toBeNull();
-      r.unmount();
+      unmount();
       vi.mocked(usePodeExecutarOperacao).mockReturnValue(true);
       vi.mocked(useItensPromocao).mockReturnValue({ data: undefined, isSuccess: false } as never);
-      r = renderLista();
+      renderLista();
       await user.click(screen.getByText('Aderir à Campanha X'));
       expect(screen.getByRole('button', { name: 'Tentar novamente 2 com erro' })).toBeDisabled();
     });
