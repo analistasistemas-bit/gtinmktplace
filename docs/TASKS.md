@@ -79,7 +79,7 @@
 - [x] Fatia 2: números aprovados pelo Diego em 03/11 (10 catálogos/min por usuário, teto 120 chamadas ML/min, lotes de 5) e desenho econômico de Redis (cache no navegador; Redis só contadores e comissão em lote).
 - [x] Fatia 2: Tasks 8–10 (cotas Redis por lote, enriquecimento de catálogo, cache no navegador, Mini-bloco completo e resumo "Catálogos e vendedores").
 - [x] Fatia 2, Task 11 — **lote por página** (emenda ADR-0189 2026-11-03-b): teste real do Diego mostrou espera de minutos ("Aguardando próxima janela"); engenharia reversa Avant/JoomPulse (banco de mercado / PDP oculta — ambos descartados); spike aprovado (50 catálogos ~3 s, 0 429, CPU < 100 ms). Uma requisição por página (≤50 catálogos, pool 16/4, deadline 8 s), cota 20 páginas/min por usuário+org, teto global 1.000 chamadas ML/min, 4–9 comandos Redis por busca, parcial terminal com "Tentar novamente" (Retry-After). Edge `extensao` v24 em 03/11. Busca real do Diego: 47–48 catálogos em ~5,7 s, CPU ≤ 151 ms.
-- [ ] Publicar o ZIP 0.5.0 na Web Store (Diego).
+- [x] ZIP 0.5.0 publicado na Web Store em 03/11 (não listado).
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 
