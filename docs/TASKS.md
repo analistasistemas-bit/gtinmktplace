@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Promoções: busca + mesmo preço/desconto para produto e variações (emenda ADR-0174) — 2026-11-03
+
+- [x] Busca no detalhe da campanha (título/MLB/SKU); "Selecionar todos" vale para o resultado.
+- [x] "Desconto %" / "Preço R$" + Simular (DEAL/Relâmpago, convidados): líquido exato no servidor (`operacoes-massa` `etapa: 'simular'`, ≤ 50 por vez); Aderir usa o preço simulado.
+- [ ] Diego: primeira simulação + adesão real.
+
 ## Central premium, relatório mensal do cliente e fechamento automático (ADR-0193) — 2026-11-02/03
 
 - [x] Emenda ADR-0155 (main `b7555f4d`): devolução abatida sozinha na cobrança (`platform_auto_refund_cents`: conciliação manual > estorno > `raw.payments` refunded, limitado ao bruto; `paid` sem reembolso abate 0; só `partially_refunded` sem valor fica pendente). Out/2026: 17 pendências → 0. Migration `20261102221455`.

@@ -233,6 +233,25 @@ SMART). Desenho completo: `docs/superpowers/specs/2026-11-02-relampago-aderir-de
    sugerido da visão por item; falha da leitura degrada só a linha (sem faixa → indisponível).
 7. Constraint `operacoes_massa_promocao_tipo_check` passa a aceitar `'LIGHTNING'`.
 
+## Emenda 2026-11-03 — busca e mesmo preço/desconto para um produto e suas variações
+
+Pedido do Diego: no detalhe da campanha, achar um produto e aplicar **o mesmo desconto (%) ou o mesmo preço (R$)** a
+todas as variações dele (cada cor costuma ser um MLB próprio), vendo o lucro líquido antes de aderir. Plano:
+`docs/superpowers/plans/2026-11-03-promo-busca-simular-desconto.md` (revisado pelo Codex: 5 achados absorvidos).
+
+1. **Busca** no front: todas as palavras no título, MLB (inclusive o normal do par de catálogo) ou SKU; "Selecionar
+   todos" marca só o resultado.
+2. **Simulação** só DEAL/Relâmpago, aba Convidados: desconto sobre `preco_original` (centavos arredondados) ou preço
+   fixo. O líquido vem **sempre do servidor** — `operacoes-massa` `etapa: 'simular'` (qualquer membro, só leitura,
+   ≤ 50 anúncios por chamada) reprojeta cada anúncio no preço pedido pelo mesmo caminho da trava
+   (`criarProjecaoExata`, de onde `criarSemaforoExato` passa a derivar). Calcular no front com a tarifa gravada
+   erraria em silêncio quando comissão fixa/frete mudam de faixa.
+3. Item sem faixa do ML, fora da Central ou não convidado → "não simulado" com motivo; fora da faixa / < R$ 19
+   (Relâmpago) → aviso na linha (o preview bloqueia como antes).
+4. **Aderir** com simulação ativa: o preview usa o preço simulado antes de calcular semáforo/marcação; selecionado
+   não simulado vem desmarcado. O backend revalida na criação, como sempre.
+5. Resposta de simulação que chega depois de limpar/trocar aba/campanha é descartada (geração por chamada).
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de

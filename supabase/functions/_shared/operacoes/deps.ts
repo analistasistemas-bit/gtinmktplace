@@ -9,6 +9,7 @@ import type { Cadastro } from '../promocoes/cadastro.ts';
 import type { Aliquotas, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import { criarClienteML } from './ml.ts';
 import { semaforoReal, type LinhaCentral, type SemaforoExato } from './validar.ts';
+import type { ProjecaoExata } from './simular.ts';
 import type { DepsExecutar, ItemRow, OperacaoRow } from './executar.ts';
 import type { DepsLaco } from './laco.ts';
 import type { DepsStatus, OperacaoStatusRow } from './executar-status.ts';
@@ -43,20 +44,26 @@ export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
  * tarifaEm com cache `promo:`), com o preço pedido no lugar do avaliado. Cadastro e alíquotas carregados 1x.
  */
 export function criarSemaforoExato(admin: SupabaseClient, cx: Cx): SemaforoExato {
+  const projetar = criarProjecaoExata(admin, cx);
+  return async (l, preco) => (await projetar(l, preco))?.pior_semaforo ?? 'indisponivel';
+}
+
+/** Projeção completa no preço exato — fonte da simulação de desconto e da trava acima (mesmo número). */
+export function criarProjecaoExata(admin: SupabaseClient, cx: Cx): ProjecaoExata {
   const get = criarGetJson(cx.token);
   const tarifaEm = criarTarifaEm(cx);
   let base: Promise<[Cadastro, Aliquotas | null]> | null = null;
   return async (l, preco) => {
     base ??= Promise.all([carregarCadastro(admin, cx.orgId), lerAliquotas(admin, cx.orgId)]);
     const [cad, aliq] = await base;
-    if (!aliq) return 'indisponivel';
+    if (!aliq) return null;
     const ml = (await buscarItensML(get, [l.ml_item_id])).get(l.ml_item_id) ?? null;
     // Convidado com min/max nulos: precoAvaliado = preco_sugerido (o pedido) e não roda o "até quanto".
     const r = await projetarItem({
       ml_item_id: l.ml_item_id, status: 'candidate', preco_original: null, preco_promo: preco, preco_sugerido: preco,
       preco_min: null, preco_max: null, ml_pct: null, vendedor_pct: null, estoque_min: null, estoque_max: null,
     }, ml, cad, aliq, tarifaEm);
-    return r.pior_semaforo;
+    return { projecao: r.projecao, pior_semaforo: r.pior_semaforo };
   };
 }
 

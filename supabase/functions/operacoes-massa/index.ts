@@ -1,5 +1,6 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART, pausar/reativar e reajustar preço — ADR-0178). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
+//  - Usuário, simulação: { etapa: 'simular' } (qualquer membro) devolve o líquido exato num preço escolhido (só leitura).
 //  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica;
 //    { etapa: 'retomar' } (admin/suporte full) republica a execução de um reajuste executando parado (dedup novo).
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
@@ -16,8 +17,9 @@ import { conferir, executar, type OperacaoRow } from '../_shared/operacoes/execu
 import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/executar-status.ts';
 import { MAX_ITENS, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
+import { lerSimular, MAX_SIMULAR, simular } from '../_shared/operacoes/simular.ts';
 import {
-  COLS_CENTRAL, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
+  COLS_CENTRAL, criarProjecaoExata, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
 import {
   lerConexaoML, MSG_RECONECTAR, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML,
@@ -328,7 +330,38 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
   if (bruto?.etapa === 'preview') return previewReajuste(admin, req, bruto);
   if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'retomar') return retomarReajuste(admin, req, bruto);
+  if (bruto?.etapa === 'simular') return simularPrecos(admin, req, bruto);
   return criar(admin, req, body);
+}
+
+/** Simulação de preço/desconto (qualquer membro): líquido exato por anúncio no preço pedido. Só leitura. */
+async function simularPrecos(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  const ctx = await autenticar(req);
+  if (ctx instanceof Response) return ctx;
+  const { orgId } = ctx;
+  if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
+  const pedido = lerSimular(bruto);
+  if (!pedido) return json({ erro: `Pedido inválido (até ${MAX_SIMULAR} anúncios por simulação).` }, 400);
+  const promo = await lerPromocao(admin, orgId, pedido.promocao_id);
+  if (!promo) return json({ erro: 'Promoção não encontrada.' }, 404);
+  if (!ativa(promo.status)) return json({ erro: 'Esta promoção já terminou.' }, 400);
+  if (promo.tipo !== 'DEAL' && promo.tipo !== 'LIGHTNING') return json({ erro: 'Só campanhas e Relâmpago aceitam preço escolhido.' }, 400);
+
+  const ids = [...new Set(pedido.itens.map((i) => i.ml_item_id))];
+  const { data, error } = await admin.from('ml_promocao_itens').select(COLS_CENTRAL)
+    .eq('org_id', orgId).eq('promocao_id', pedido.promocao_id).in('ml_item_id', ids);
+  if (error) throw new Error(`ml_promocao_itens: ${error.message}`);
+  const central = new Map<string, LinhaCentral>((data ?? []).map((r) => [String(r.ml_item_id), linhaCentral(r)]));
+
+  try {
+    const cx = await conexaoDaOrg(admin, orgId);
+    if (!cx) throw new SemConexaoML();
+    return json({ itens: await simular(pedido.itens, central, criarProjecaoExata(admin, cx)) });
+  } catch (e) {
+    const r = respostaFalhaCriacao(e);
+    if (!r) throw e;
+    return json({ erro: r.erro }, r.status);
+  }
 }
 
 /** Preview do reajuste (qualquer membro; Reverter só admin/suporte full). executaveis = 0 → nada gravado (C4). */

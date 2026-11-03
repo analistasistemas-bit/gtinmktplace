@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -6,6 +6,16 @@ import { describe, expect, it, vi } from 'vitest';
 import PromocaoDetalhe from '../PromocaoDetalhe';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import type { ItemPromocao, Promocao } from '@/lib/promocoes';
+
+// supabase.functions é getter (cliente novo a cada acesso): spy não pega — troca só o invoke, mantém o resto.
+const fns = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@/lib/supabase', async (orig) => {
+  const m = await orig<typeof import('@/lib/supabase')>();
+  const supabase = new Proxy(m.supabase, {
+    get: (t, p) => { if (p === 'functions') return fns; const v = Reflect.get(t, p, t); return typeof v === 'function' ? v.bind(t) : v; },
+  });
+  return { ...m, supabase };
+});
 
 vi.mock('@/hooks/usePromocoes', () => ({
   usePromocoes: vi.fn(), useItensPromocao: vi.fn(),
@@ -120,5 +130,64 @@ describe('PromocaoDetalhe', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
+  });
+
+  // Emenda ADR-0174 (2026-11-03): busca + mesmo desconto/preço para um produto e suas variações.
+  describe('busca e simulação', () => {
+    const short = { ...item, ml_item_id: 'MLB1', titulo: 'Short Linho Azul' } as ItemPromocao;
+    const calca = { ...item, ml_item_id: 'MLB2', titulo: 'Calça Sarja' } as ItemPromocao;
+    const corSim = { ...item.projecao[0], liquido: 55.55, semaforo: 'verde' };
+    const montar = () => {
+      vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+      vi.mocked(useItensPromocao).mockReturnValue({ data: [short, calca], isLoading: false } as never);
+      renderDetalhe();
+      return within(screen.getByRole('region', { name: 'Tabela de dados' }));
+    };
+
+    it('a busca filtra as linhas e o "Selecionar todos" marca só o resultado', async () => {
+      const user = userEvent.setup();
+      const tabela = montar();
+      await user.type(screen.getByLabelText('Buscar anúncios da campanha'), 'short');
+      expect(tabela.queryByLabelText('Selecionar MLB2')).toBeNull();
+      await user.click(tabela.getByLabelText('Selecionar todos'));
+      expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
+    });
+
+    it('simula o desconto no servidor e mostra o líquido devolvido; Aderir usa o preço simulado', async () => {
+      const user = userEvent.setup();
+      const invoke = fns.invoke.mockResolvedValue({
+        data: { itens: [{ ml_item_id: 'MLB1', status: 'simulado', preco: 90, projecao: [corSim], pior_semaforo: 'verde' }] }, error: null,
+      } as never);
+      const tabela = montar();
+      await user.click(tabela.getByLabelText('Selecionar MLB1'));
+      await user.type(screen.getByLabelText('Desconto em %'), '10');
+      await user.click(screen.getByRole('button', { name: 'Simular 1' }));
+
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith('operacoes-massa', {
+        body: { etapa: 'simular', promocao_id: 'P1', itens: [{ ml_item_id: 'MLB1', preco: 90 }] },
+      }));
+      expect(await tabela.findByText('R$ 55,55')).toBeTruthy();
+      expect(tabela.getByText('simulado')).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: 'Aderir 1' }));
+      expect(within(screen.getByRole('dialog')).getByDisplayValue('90,00')).toBeTruthy();
+      invoke.mockReset();
+    });
+
+    it('achado 4 (Codex): resposta que chega depois de trocar de aba é descartada', async () => {
+      const user = userEvent.setup();
+      let responder!: (v: unknown) => void;
+      const invoke = fns.invoke.mockReturnValue(new Promise((r) => { responder = r; }) as never);
+      const tabela = montar();
+      await user.click(tabela.getByLabelText('Selecionar MLB1'));
+      await user.type(screen.getByLabelText('Desconto em %'), '10');
+      await user.click(screen.getByRole('button', { name: 'Simular 1' }));
+      await user.click(screen.getByRole('tab', { name: 'Participando' }));
+      await user.click(screen.getByRole('tab', { name: 'Convidados' }));
+      responder({ data: { itens: [{ ml_item_id: 'MLB1', status: 'simulado', preco: 90, projecao: [corSim], pior_semaforo: 'verde' }] }, error: null });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(tabela.queryByText('simulado')).toBeNull();
+      invoke.mockReset();
+    });
   });
 });

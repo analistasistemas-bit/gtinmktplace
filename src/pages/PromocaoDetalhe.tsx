@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CircleX, ExternalLink } from 'lucide-react';
+import { CircleX, ExternalLink, Search, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
+import { useSimularPrecos } from '@/hooks/useOperacoes';
+import { parsePreco } from '@/lib/operacoes';
+import {
+  MAX_SIMULAR, aplicarSimulacao, filtrarPorBusca, foraDaFaixa, precoAlvo, type ModoAlvo,
+} from '@/lib/promocao-simulacao';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
@@ -28,18 +35,27 @@ import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2, indisponivel: 3 };
 
 // Reutilizados pela coluna da tabela desktop e pelo cartão da lista mobile — mesmo conteúdo, um só lugar.
-function precoPromo(r: ItemPromocao) {
+function precoPromo(r: ItemPromocao, sim?: { aviso: string | null }) {
   const d = descontoPct(r.preco_original, r.preco_avaliado);
   return (
     <span className="block">
-      <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>
+      <span className="block font-medium">
+        {sim && <span className="mr-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">simulado</span>}
+        {r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}
+      </span>
       {r.preco_original != null && (
         <span className="block text-xs text-muted-foreground">
           <s>{fmtBRL(r.preco_original)}</s>{d != null && ` · −${d}%`}
         </span>
       )}
+      {sim?.aviso && <span className="block text-xs font-medium text-danger">{sim.aviso}</span>}
     </span>
   );
+}
+
+/** Simulação ativa: itens mesclados com a projeção do servidor + preço escolhido por anúncio. */
+interface Simulacao {
+  itens: Map<string, ItemPromocao>; precos: Map<string, number>; ignorados: { ml_item_id: string; motivo: string }[];
 }
 
 function liquidoCel(r: ItemPromocao) {
@@ -82,20 +98,61 @@ export default function PromocaoDetalhe() {
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
+  const [busca, setBusca] = useState('');
+  const [modo, setModo] = useState<ModoAlvo>('desconto');
+  const [valorTexto, setValorTexto] = useState('');
+  const [simulacao, setSimulacao] = useState<Simulacao | null>(null);
+  const simularM = useSimularPrecos();
+  // Achado 4 (Codex): cada simulação tem uma geração; resposta de geração velha (limpou, trocou aba/campanha) é descartada.
+  const geracao = useRef(0);
+  const limparSimulacao = () => { geracao.current++; setSimulacao(null); };
 
   const promo = promocoes.data?.find((p) => p.promocao_id === promocaoId) ?? null;
   // Trocar de campanha (navegação entre detalhes) não deve arrastar a seleção anterior.
-  useEffect(() => { setSelecionados(new Set()); setPreview(null); }, [promocaoId]);
+  useEffect(() => { setSelecionados(new Set()); setPreview(null); setBusca(''); limparSimulacao(); }, [promocaoId]);
 
   const podeSelecionar = promo != null && ehTipoOperavel(promo.tipo) && promo.status !== 'finished';
-  const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
-  const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
+  // Preço escolhido só existe em DEAL/Relâmpago (SMART: preço do ML) e só para convidados (participando não adere).
+  const podeSimular = podeSelecionar && (promo.tipo === 'DEAL' || promo.tipo === 'LIGHTNING') && !participando;
+  const itensVisao = useMemo(
+    () => (itens.data ?? []).map((i) => simulacao?.itens.get(i.ml_item_id) ?? i), [itens.data, simulacao],
+  );
+  const daAba = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), [itensVisao, participando, busca]);
+  const linhas = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), [itensVisao, semaforo, participando, busca]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
 
-  const selecionadosItens = useMemo(() => (itens.data ?? []).filter((i) => selecionados.has(i.ml_item_id)), [itens.data, selecionados]);
+  const selecionadosItens = useMemo(() => itensVisao.filter((i) => selecionados.has(i.ml_item_id)), [itensVisao, selecionados]);
   const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate');
   const participandoSelecionados = selecionadosItens.filter((i) => i.status === 'started' || i.status === 'pending');
   const todosMarcadosNoFiltro = linhas.length > 0 && linhas.every((r) => selecionados.has(r.ml_item_id));
+
+  const valor = parsePreco(valorTexto);
+  async function simularSelecionados() {
+    if (!promo || valor == null) return;
+    const base = new Map((itens.data ?? []).map((i) => [i.ml_item_id, i]));
+    const pedidos: { ml_item_id: string; preco: number }[] = [];
+    const semPreco: { ml_item_id: string; motivo: string }[] = [];
+    for (const it of convidadosSelecionados) {
+      const p = precoAlvo(base.get(it.ml_item_id) ?? it, modo, valor);
+      if (p == null) semPreco.push({ ml_item_id: it.ml_item_id, motivo: 'Sem preço original para aplicar o desconto' });
+      else pedidos.push({ ml_item_id: it.ml_item_id, preco: p });
+    }
+    if (!pedidos.length) { toast.error('Nenhum anúncio selecionado pode receber esse valor.'); return; }
+    if (pedidos.length > MAX_SIMULAR) { toast.error(`Selecione até ${MAX_SIMULAR} anúncios por simulação.`); return; }
+    const g = ++geracao.current;
+    try {
+      const res = await simularM.mutateAsync({ promocao_id: promo.promocao_id, itens: pedidos });
+      if (g !== geracao.current) return;
+      const mesclados = aplicarSimulacao(itens.data ?? [], res);
+      setSimulacao({
+        itens: mesclados,
+        precos: new Map([...mesclados].map(([id, it]) => [id, it.preco_avaliado!])),
+        ignorados: [...semPreco, ...res.flatMap((r) => (r.status === 'ignorado' ? [{ ml_item_id: r.ml_item_id, motivo: r.motivo }] : []))],
+      });
+    } catch (e) {
+      if (g === geracao.current) toast.error(e instanceof Error ? e.message : 'Não foi possível simular agora.');
+    }
+  }
 
   function alternarItem(id: string) {
     setSelecionados((prev) => {
@@ -116,6 +173,11 @@ export default function PromocaoDetalhe() {
     for (const i of daAba) c[i.pior_semaforo]++;
     return c;
   }, [daAba]);
+
+  const simInfo = (r: ItemPromocao) => {
+    const p = simulacao?.precos.get(r.ml_item_id);
+    return p == null || !promo ? undefined : { aviso: foraDaFaixa(r, p, promo.tipo) };
+  };
 
   const colunas: Column<ItemPromocao>[] = [
     ...(podeSelecionar ? [{
@@ -157,7 +219,7 @@ export default function PromocaoDetalhe() {
     {
       key: 'preco', header: 'Preço na promoção', className: 'whitespace-normal text-right tabular-nums leading-tight',
       sortValue: (r) => r.preco_avaliado,
-      cell: (r) => precoPromo(r),
+      cell: (r) => precoPromo(r, simInfo(r)),
     },
     {
       key: 'banca', header: 'ML banca', className: 'text-right tabular-nums',
@@ -219,13 +281,64 @@ export default function PromocaoDetalhe() {
           <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
         </div>
         <Tabs value={participando ? 'participando' : 'convidados'}
-          onValueChange={(v) => { setParticipando(v === 'participando'); setSemaforo(null); }}>
+          onValueChange={(v) => { setParticipando(v === 'participando'); setSemaforo(null); limparSimulacao(); }}>
           <TabsList aria-label="Filtrar por participação">
             <TabsTrigger value="convidados">Convidados</TabsTrigger>
             <TabsTrigger value="participando">Participando</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, MLB ou SKU"
+            aria-label="Buscar anúncios da campanha" className="pl-9 pr-9"
+          />
+          {busca && (
+            <button type="button" onClick={() => setBusca('')} aria-label="Limpar busca"
+              className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+              <X className="size-4" aria-hidden />
+            </button>
+          )}
+        </div>
+        {podeSimular && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs value={modo} onValueChange={(v) => setModo(v as ModoAlvo)}>
+              <TabsList aria-label="Aplicar desconto ou preço">
+                <TabsTrigger value="desconto">Desconto %</TabsTrigger>
+                <TabsTrigger value="preco">Preço R$</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Input
+              value={valorTexto} onChange={(e) => setValorTexto(e.target.value)} inputMode="decimal"
+              placeholder={modo === 'desconto' ? 'Ex.: 15' : 'Ex.: 59,90'}
+              aria-label={modo === 'desconto' ? 'Desconto em %' : 'Preço em reais'} className="w-28 tabular-nums"
+            />
+            <Button
+              onClick={simularSelecionados}
+              disabled={valor == null || convidadosSelecionados.length === 0 || simularM.isPending}>
+              {simularM.isPending ? 'Calculando…' : `Simular ${convidadosSelecionados.length || ''}`.trim()}
+            </Button>
+            {simulacao && <Button variant="ghost" onClick={limparSimulacao}>Limpar simulação</Button>}
+          </div>
+        )}
+      </div>
+      {podeSimular && (simulacao || convidadosSelecionados.length === 0) && (
+        <p className="-mt-3 text-xs text-muted-foreground">
+          {simulacao
+            ? <>
+                {simulacao.itens.size} simulado{simulacao.itens.size === 1 ? '' : 's'} com o líquido exato do Mercado Livre
+                {simulacao.ignorados.length > 0 && (
+                  <span title={simulacao.ignorados.slice(0, 8).map((i) => `${i.ml_item_id}: ${i.motivo}`).join('\n')} className="text-danger">
+                    {` · ${simulacao.ignorados.length} não simulado${simulacao.ignorados.length === 1 ? '' : 's'} (ficam fora da adesão)`}
+                  </span>
+                )}
+                . Aderir usa o preço simulado.
+              </>
+            : `Busque o produto, selecione as variações e aplique o mesmo desconto ou preço (até ${MAX_SIMULAR} por vez).`}
+        </p>
+      )}
       {/* Achado 1 (revisão): quem rola é este bloco, não a página — a BarraSelecao (abaixo, fora
           do scroll) fica sempre visível, presa ao rodapé da área visível. */}
       <div className="flex-1 overflow-y-auto">
@@ -249,7 +362,7 @@ export default function PromocaoDetalhe() {
             </div>
           )}
           <ListaMobile
-            linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto}
+            linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto} simInfo={simInfo}
             podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
           />
         </div>
@@ -264,7 +377,9 @@ export default function PromocaoDetalhe() {
       <PreviewOperacao
         acao={preview?.acao ?? 'aderir'} tipo={ehTipoOperavel(promo?.tipo) ? promo.tipo : 'DEAL'}
         promocaoId={promocaoId} promocaoNome={promo?.nome ?? promocaoId} itens={preview?.itens ?? []}
-        aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => setSelecionados(new Set())}
+        aberto={preview != null} onClose={() => setPreview(null)}
+        onSucesso={() => { setSelecionados(new Set()); limparSimulacao(); }}
+        simulados={simulacao?.precos}
       />
     </div>
     </TooltipProvider>
@@ -272,8 +387,9 @@ export default function PromocaoDetalhe() {
 }
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
-function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, onToggle }: {
+function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, onToggle, simInfo }: {
   linhas: ItemPromocao[]; loading: boolean; onAbrir: (r: ItemPromocao) => void;
+  simInfo: (r: ItemPromocao) => { aviso: string | null } | undefined;
   podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;
 }) {
   if (loading) {
@@ -318,7 +434,7 @@ function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, o
               <dl className="mt-3 grid grid-cols-3 gap-2">
                 <div>
                   <dt className="text-xs text-muted-foreground">Promo</dt>
-                  <dd className="tabular-nums">{precoPromo(r)}</dd>
+                  <dd className="tabular-nums">{precoPromo(r, simInfo(r))}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">Líquido</dt>

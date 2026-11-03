@@ -78,6 +78,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
 - Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
 
+### Busca + mesmo preço/desconto por produto (emenda 2026-11-03)
+
+- Campo de busca no detalhe da campanha (título, MLB ou SKU, sem acento/caixa); "Selecionar todos" marca só o resultado — atalho para "o produto e todas as variações".
+- DEAL/Relâmpago, aba Convidados: "Desconto %" (sobre o preço original) ou "Preço R$" + **Simular N** (até 50). Líquido/markup/semáforo vêm do servidor (`operacoes-massa` `etapa: 'simular'`, mesmo cálculo da trava, tarifa e frete do preço exato); linha ganha selo "simulado" e aviso se sair da faixa do ML.
+- Aderir abre o preview já com o preço simulado; selecionado não simulado vem desmarcado.
+
 ### Pausar/reativar em massa (emenda 2026-10-04 — em produção desde 2026-10-04)
 
 - 2º tipo do mesmo motor, mas **fora de Promoções**: seleção, barra e preview em Publicados; acompanhamento na aba **Publicados › Operações** (`?aba=operacoes`; a tela global `/operacoes` saiu do menu em 2026-10-07 e redireciona para lá). Esta aba Operações é a mesma lista filtrada por promoção.

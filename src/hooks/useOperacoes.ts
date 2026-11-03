@@ -6,6 +6,7 @@ import type { Tables } from '@/lib/database.types';
 import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import { QK } from '@/lib/queries';
 import type { Ajuste, Confirmacao, ItemPreview } from '@/lib/reajuste';
+import type { ResultadoSimulacao } from '@/lib/promocao-simulacao';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -173,6 +174,17 @@ export function useCriarOperacao() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK_OPERACOES });
       qc.invalidateQueries({ queryKey: ['promocoes'] });
+    },
+  });
+}
+
+/** Simulação de preço/desconto (emenda ADR-0174, 2026-11-03): líquido exato no servidor. Só leitura; nada a invalidar. */
+export function useSimularPrecos() {
+  return useMutation({
+    mutationFn: async (pedido: { promocao_id: string; itens: { ml_item_id: string; preco: number }[] }) => {
+      const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'simular', ...pedido } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível simular agora.');
+      return (data as { itens: ResultadoSimulacao[] }).itens;
     },
   });
 }

@@ -35,8 +35,10 @@ function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): L
   return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined };
 }
 
-function construirLinhas(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
-  return montarPreview(acao, tipo, itens).map((l) => {
+function construirLinhas(
+  acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], naoRevertiveis?: Map<string, string>, simulados?: Map<string, number>,
+): LinhaEditavel[] {
+  return montarPreview(acao, tipo, itens, simulados).map((l) => {
     const motivoBloqueio = naoRevertiveis?.get(l.ml_item_id);
     return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco) };
   });
@@ -49,12 +51,14 @@ function textoRisco(vermelho: number, indisponivel: number): string {
   return partes.join(' e ');
 }
 
-export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis }: {
+export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados }: {
   acao: AcaoPromocao; tipo: TipoPromocaoOperavel; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
    *  sheet (X, Esc, overlay) não pode apagar a seleção que o operador fez nas duas abas. */
   onSucesso?: () => void; naoRevertiveis?: Map<string, string>;
+  /** Preço escolhido na simulação (emenda 2026-11-03); os itens já chegam com a projeção do servidor nesse preço. */
+  simulados?: Map<string, number>;
 }) {
   const podeExecutar = usePodeExecutarOperacao();
   const criar = useCriarOperacao();
@@ -65,9 +69,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   // Reabrir com preview novo (item mudou, ou trocou o grupo aderir/sair): recomeça do zero.
   useEffect(() => {
     if (!aberto) return;
-    setLinhas(construirLinhas(acao, tipo, itens, naoRevertiveis));
+    setLinhas(construirLinhas(acao, tipo, itens, naoRevertiveis, simulados));
     setConfirmadoRisco(false);
-  }, [aberto, acao, tipo, itens, naoRevertiveis]);
+  }, [aberto, acao, tipo, itens, naoRevertiveis, simulados]);
 
   const podeEditarPreco = acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING');
   const minimoRelampago = (l: LinhaEditavel) => tipo === 'LIGHTNING' && l.preco != null && l.preco < PRECO_MINIMO_RELAMPAGO;

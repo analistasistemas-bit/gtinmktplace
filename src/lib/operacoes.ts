@@ -51,15 +51,19 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
 }
 
 /** Preview do pedido: aderir usa o preço sugerido (DEAL) ou o preço da oferta (SMART) e só marca o verde;
- *  sair usa o preço no ar e marca tudo — o cálculo do front é só orientação, o backend revalida. */
-export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[]): LinhaPreview[] {
+ *  sair usa o preço no ar e marca tudo — o cálculo do front é só orientação, o backend revalida.
+ *  `simulados` (emenda 2026-11-03): preço escolhido na simulação — os itens chegam com a projeção do servidor
+ *  naquele preço; com simulação ativa, item não simulado vem desmarcado (nunca adesão com outro preço às cegas). */
+export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, itens: ItemPromocao[], simulados?: Map<string, number>): LinhaPreview[] {
+  const comSimulacao = acao === 'aderir' && simulados != null && simulados.size > 0;
   return itens.map((it) => {
-    const preco = acao === 'sair' ? it.preco_promo : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
+    const padrao = acao === 'sair' ? it.preco_promo : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
+    const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
       ml_item_id: it.ml_item_id, rotulo: rotuloMlb(it), mlb: mlbExibido(it), titulo: it.titulo, preco, estoqueMin: it.estoque_min, min: it.preco_min, max: it.preco_max,
       sugerido: it.preco_sugerido, ateQuanto: ateQuantoDaLinha(it).valor, semaforo,
-      marcado: acao === 'sair' ? true : semaforo === 'verde',
+      marcado: acao === 'sair' ? true : semaforo === 'verde' && (!comSimulacao || simulados.has(it.ml_item_id)),
     };
   });
 }

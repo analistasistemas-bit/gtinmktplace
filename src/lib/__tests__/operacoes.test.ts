@@ -50,6 +50,17 @@ describe('montarPreview', () => {
     expect(linha).toMatchObject({ ml_item_id: 'MLB7', mlb: 'MLB5', rotulo: 'MLB5 · promoção via catálogo MLB7' });
   });
 
+  // Emenda 2026-11-03 (achados 1 e 5 do Codex): preço simulado define semáforo/marcado; não simulado vem desmarcado.
+  it('com simulação: usa o preço simulado antes do semáforo; selecionado sem simulação fica desmarcado', () => {
+    const p = [cor({ custo: 50, piso: 50 })];
+    const simulado = item({ ml_item_id: 'S', preco_sugerido: 100, projecao: p });
+    const naoSimulado = item({ ml_item_id: 'N', preco_sugerido: 100, projecao: p });
+    const linhas = montarPreview('aderir', 'DEAL', [simulado, naoSimulado], new Map([['S', 55]]));
+    expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
+    expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
+    expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });
+  });
+
   it('LIGHTNING aderir usa o sugerido e leva estoqueMin', () => {
     const [linha] = montarPreview('aderir', 'LIGHTNING', [item({ preco_promo: 80, preco_sugerido: 25, estoque_min: 5 })]);
     expect(linha).toMatchObject({ preco: 25, estoqueMin: 5 });
