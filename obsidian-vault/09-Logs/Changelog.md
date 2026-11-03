@@ -11,6 +11,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-02
 
+- **Relâmpago pelo app** (main `88a7aa80` + docs `d6cc76d4`, emenda ADR-0174): aderir/sair de LIGHTNING pelo motor de operações, piso R$ 19, stock = mínimo do ML, faixa das duas visões; Central da Relâmpago corrigida (sugerido/faixa da visão por item). Migration `20261102235326`; edges operacoes-massa v29, sincronizar-promocoes v29, ads-campanhas v12, coletar-ads-ml v19, coletar-trafego-ml v18. Validado: spike na Avil (aderir 201 + sair confirmado) e sync 282/282 sem estouro de CPU.
 - **Promoção parcial em família UP no Publicados** (main `0571d3c8`, só front): Avil, Tecido Ponge
   com 1 de 8 SKUs na 11.11 não mostrava promoção — a linha lia o `/sale_price` só do item principal
   (fora da campanha). `agregarStatusUP` conta os SKUs em promoção; selo "Em promoção · N de M

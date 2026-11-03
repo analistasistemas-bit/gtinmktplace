@@ -15,7 +15,7 @@ import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import type { AcaoPromocao } from '@/lib/operacoes';
+import { ehTipoOperavel, type AcaoPromocao } from '@/lib/operacoes';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
@@ -87,7 +87,7 @@ export default function PromocaoDetalhe() {
   // Trocar de campanha (navegação entre detalhes) não deve arrastar a seleção anterior.
   useEffect(() => { setSelecionados(new Set()); setPreview(null); }, [promocaoId]);
 
-  const podeSelecionar = promo != null && (promo.tipo === 'DEAL' || promo.tipo === 'SMART') && promo.status !== 'finished';
+  const podeSelecionar = promo != null && ehTipoOperavel(promo.tipo) && promo.status !== 'finished';
   const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
   const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
@@ -262,7 +262,7 @@ export default function PromocaoDetalhe() {
       />
       <SheetCores item={aberto} onClose={() => setAberto(null)} />
       <PreviewOperacao
-        acao={preview?.acao ?? 'aderir'} tipo={promo?.tipo === 'SMART' ? 'SMART' : 'DEAL'}
+        acao={preview?.acao ?? 'aderir'} tipo={ehTipoOperavel(promo?.tipo) ? promo.tipo : 'DEAL'}
         promocaoId={promocaoId} promocaoNome={promo?.nome ?? promocaoId} itens={preview?.itens ?? []}
         aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => setSelecionados(new Set())}
       />

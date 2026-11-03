@@ -9,6 +9,7 @@ import {
   type CommercialTermsInput,
   type ExtensaoUsage,
   type Month,
+  type MonthlyReport,
   type OrgSummary,
   type Page,
   type PulseUsage,
@@ -87,6 +88,8 @@ export const platformAdminKeys = {
     })),
   extensaoUsage: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'extensao_usage', orgId, month, {}),
+  monthlyReport: (userId: UserId, orgId: string, month: Month) =>
+    key(userId, 'monthly_report', orgId, month, {}),
   audit: (userId: UserId, params: PlatformAuditParams) =>
     key(userId, 'audit', params.org_id, params.month, filters({
       category: params.category,
@@ -178,6 +181,17 @@ export function usePlatformExtensaoUsage(orgId: string, month: Month) {
   });
 }
 
+/** Relatório mensal do cliente (ADR-0193): fonte única do PDF e da aba Resultados. */
+export function useMonthlyReport(orgId: string, month: Month) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<MonthlyReport>({
+    queryKey: platformAdminKeys.monthlyReport(userId, orgId, month),
+    queryFn: () => callPlatformAdmin('monthly_report', { org_id: orgId, month }),
+    enabled: Boolean(userId && orgId && month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+  });
+}
+
 export function usePlatformAudit(params: PlatformAuditParams) {
   const userId = useAuthStore((state) => state.user?.id ?? null);
   return useQuery<Page<AuditRow>>({
@@ -198,6 +212,8 @@ async function invalidateBilling(
     queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'wallet', null, month] }),
     queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'preview', orgId, month] }),
     queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'statements', orgId] }),
+    // fechar muda `statement` do relatório mensal do mês
+    queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'monthly_report', orgId, month] }),
   ]);
 }
 

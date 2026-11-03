@@ -296,7 +296,7 @@ describe('estoque acabando e nomes do prejuízo (fase 1)', () => {
 });
 
 describe('lerCatalogoEstoque', () => {
-  const fam = (id: string, org_id: string, criado_em: string, extra = {}) => ({ id, org_id, nome_pai: `Fam ${id}`, kit_multiplicador: null, criado_em, ...extra });
+  const fam = (id: string, org_id: string, criado_em: string, extra = {}) => ({ id, org_id, nome_pai: `Fam ${id}`, codigo_pai: `P-${id}`, kit_multiplicador: null, criado_em, ...extra });
   const vari = (codigo: string, familia_id: string, org_id = ORG, extra = {}) => ({ org_id, codigo, nome: null, estoque: 4, familia_id, ...extra });
 
   it('canônica = família mais nova; empate de data → maior id; nome cai para o da família', async () => {
@@ -305,7 +305,7 @@ describe('lerCatalogoEstoque', () => {
       variacoes: [vari('X', 'a'), vari('X', 'c'), vari('X', 'b'), vari('Y', 'a'), vari('Y', 'd')],
     });
     const cat = await lerCatalogoEstoque(admin, ORG, ['X', 'Y']);
-    expect(cat.get('X')).toEqual({ codigo: 'X', estoque: 4, ehKit: false, nome: 'Fam c', nomeFamilia: 'Fam c' });
+    expect(cat.get('X')).toEqual({ codigo: 'X', estoque: 4, ehKit: false, nome: 'Fam c', nomeFamilia: 'Fam c', codigoPai: 'P-c' });
     expect(cat.get('Y')?.nomeFamilia).toBe('Fam d');
   });
 

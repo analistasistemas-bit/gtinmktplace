@@ -22,6 +22,9 @@ export interface CorProjetada {
   liquido: number | null; ate_quanto: number | null; ate_quanto_motivo: 'qualquer' | 'nenhum' | null;
   semaforo: SemaforoPromo; motivo: string | null;
 }
+export type TipoPromocaoOperavel = 'DEAL' | 'SMART' | 'LIGHTNING';
+export const ehTipoOperavel = (t: string | null | undefined): t is TipoPromocaoOperavel => t === 'DEAL' || t === 'SMART' || t === 'LIGHTNING';
+
 export interface ItemPromocao {
   ml_item_id: string; status: string;
   preco_original: number | null; preco_promo: number | null; preco_min: number | null; preco_max: number | null;
@@ -78,7 +81,7 @@ export function agruparParticipacoes(itens: Participacao[], promocoes: Promocao[
   for (const it of itens) {
     const promocao = vivas.get(it.promocao_id);
     if (!promocao) continue;
-    const g = grupos.get(it.promocao_id) ?? { promocao, itens: [], operavel: promocao.tipo === 'DEAL' || promocao.tipo === 'SMART' };
+    const g = grupos.get(it.promocao_id) ?? { promocao, itens: [], operavel: ehTipoOperavel(promocao.tipo) };
     g.itens.push(it);
     grupos.set(it.promocao_id, g);
   }

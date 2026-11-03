@@ -141,6 +141,15 @@ export interface LucroPeriodo {
   vendaCustoEstimado: number;
   pedidosFreteNaoLido: number;
   markup: number | null;
+  /** ADR-0193 (relatório mensal): base da cobertura e do markup, do MESMO conjunto de itens. */
+  vendaFaturavel: number;
+  vendaComLucro: number;
+  custoComLucro: number;
+  itensComLucro: number;
+  /** Itens faturáveis sem lucro calculável (inclui item de faturamento zero). */
+  itensSemLucro: number;
+  /** Venda dos itens com custo e alíquota, mas frete do envio ainda não lido. */
+  vendaFreteNaoLido: number;
 }
 
 /** Lucro de período = Σ dos itens com lucro calculável, com a cobertura para a linha de rodapé. */
@@ -160,6 +169,12 @@ export function lucroDoPeriodo(itens: ResultadoItem[], configOk: boolean): Lucro
     vendaCustoEstimado: soma(fat.filter((it) => it.custo != null && it.custoEstimado), (it) => it.venda),
     pedidosFreteNaoLido: new Set(fat.filter((it) => it.freteNaoLido).map((it) => it.packChave)).size,
     markup: configOk && custo > 0 ? lucro / custo : null,
+    vendaFaturavel: vendaTotal,
+    vendaComLucro: soma(comLucro, (it) => it.venda),
+    custoComLucro: custo,
+    itensComLucro: comLucro.length,
+    itensSemLucro: fat.length - comLucro.length,
+    vendaFreteNaoLido: soma(fat.filter((it) => it.custo != null && it.impostoOk && it.freteNaoLido), (it) => it.venda),
   };
 }
 

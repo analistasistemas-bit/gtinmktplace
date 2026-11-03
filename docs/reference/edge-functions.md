@@ -181,7 +181,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
-| `sincronizar-promocoes` | `10 */6 * * *` | `{}` | 1 |
+| `sincronizar-promocoes` | `10 9 * * *` | `{}` | 1 |
 | `renovar-tokens-ml` | `40 * * * *` | `{}` | 0 (sempre responde 200; retry só martelaria `/oauth/token`) |
 | `coletar-trafego-ml` | `17 9 * * *` | `{}` | 1 |
 | `coletar-ads-ml` | `17 14 * * *` | `{}` | 1 |
@@ -197,7 +197,9 @@ auditado como JSON puro logo após a criação. Cron em UTC: `0 9 * * *` = 06:00
 
 O schedule de `sincronizar-promocoes` (ADR-0170) é `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, criado em
 2026-09-24; o cron mudou à mão para `10 */6 * * *` em 2026-09-26 (ADR-0171, item 1) para sair da
-virada da hora, onde disputava o rate limit de refresh do ML com os demais crons.
+virada da hora, onde disputava o rate limit de refresh do ML com os demais crons. Em 2026-11-03 passou
+à mão para **`10 9 * * *`** (1×/dia, 06:10 BRT) para cortar ~75% do custo do Redis (emenda ADR-0170 de
+2026-11-03).
 
 O schedule de `renovar-tokens-ml` (ADR-0171) é criado no deploy deste ADR, cron `40 * * * *` — o
 único minuto livre de `*/15`, `30 6`, `30 12` e `10 */6` — para renovar conexões ML com token perto
@@ -1899,7 +1901,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Operações em massa (ADR-0174) — código pronto, deploy pendente
 - **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de
-  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`). Código em
+  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`/`LIGHTNING` — Relâmpago desde
+  02/11/2026, emenda ADR-0174: preço do pedido, faixa fechada, piso R$ 19, `stock` = `stock.min`, leitura em duas visões). Código em
   `supabase/functions/_shared/operacoes/` (`validar`, `decidir`, `executar`, `ml`, `deps`, `falhas`,
   `tipos`). Dois modos:
   - **HTTP com JWT do usuário** (criação) — valida `isAdmin || support.scope === 'full'`, o módulo

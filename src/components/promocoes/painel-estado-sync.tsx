@@ -30,7 +30,7 @@ export function PainelEstadoSync({ estado, temDados, onAtualizar, atualizando, a
   if (estado?.estado === 'sem_promocoes' && !temDados) {
     return (
       <EmptyState icon={BadgePercent} title="O Mercado Livre não convidou seus anúncios para nenhuma promoção agora."
-        description="Campanhas novas aparecem aqui sozinhas a cada 6 horas." />
+        description="Campanhas novas aparecem aqui sozinhas uma vez por dia, ou na hora com “Atualizar agora”." />
     );
   }
   if ((estado?.estado === 'erro' || estado?.estado === 'sem_acesso') && temDados) {

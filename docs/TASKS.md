@@ -1,5 +1,15 @@
 # PubliAI — Tasks
 
+## Relâmpago (LIGHTNING) pelo app — aderir/sair (emenda ADR-0174) — 2026-11-02
+
+- [x] Spike de escrita na Avil (`MLB5244990621`, `LGH-MLB1000`): POST 201 + `offer_id`, `pending` com janela do ML; DELETE 200 → `candidate` em ≤ 5 min.
+- [x] Spec + plano (`docs/superpowers/specs|plans/2026-11-02-relampago-aderir*`), revisões Grok (spec) e Codex (plano e por task).
+- [x] Motor (`_shared/operacoes`), sync da Central (`_shared/promocoes`, teto 40 itens/mensagem na Relâmpago) e front (seleção, preço editável, bloqueio < R$ 19, "Reserva N un.").
+- [x] Main `88a7aa80` (CI verde). Migration `20261102235326_operacoes_massa_lightning` aplicada em 03/11 00:3x UTC; edges `operacoes-massa` v29, `sincronizar-promocoes` v29, `ads-campanhas` v12, `coletar-ads-ml` v19, `coletar-trafego-ml` v18.
+- [x] Sync da Avil pós-deploy: 282/282 convidados da `LGH-MLB1000` com faixa+sugerido; ~20 mensagens todas 200, máx. 73 s, nenhum 546.
+- [ ] Minors adiados: teste do espelho LIGHTNING só com mock; janela que cruza meia-noite sem data final.
+- [ ] 1ª adesão real pelo app (Diego).
+
 ## Extensão PubliAI 0.4.0/0.4.1/0.4.2 — modo busca completo, fatia 1 (emenda ADR-0189) — 2026-11-02
 
 - [x] Implementada na branch `worktree-extensao-busca-lista` (HEAD de código `2fc075b8` + commit da Task 6): painel de busca redesenhado (miniaturas, filtros, ordenação, resumo com cobertura) e Mini-bloco da busca dentro de cada card do ML. Versão 0.4.0 em `manifest.json` e `package.json`.
@@ -11,7 +21,8 @@
 - [x] 0.4.2 (main `49512f9c`): hospedeiro do Mini-bloco acima do link esticado do título do card do ML; publicada na Web Store em 02/11.
 - [ ] Validar numa busca real do ML (painel fechado, scroll, Avant junto, desligar/religar).
 - [x] Fatia 2, Task 7: medições de contrato ML, CPU, folga e custo Redis em `docs/spikes/2026-11-02-extensao-busca-medicoes.md`.
-- [ ] Fatia 2 (enriquecimento de catálogo + cotas no Redis) — Diego aprovar os números da Task 7.
+- [x] Fatia 2: números aprovados pelo Diego em 03/11 (10 catálogos/min por usuário, teto 120 chamadas ML/min, lotes de 5) e desenho econômico de Redis (cache no navegador; Redis só contadores e comissão em lote).
+- [ ] Fatia 2: Tasks 8–11.
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 

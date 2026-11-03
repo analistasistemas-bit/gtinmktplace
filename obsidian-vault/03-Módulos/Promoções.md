@@ -36,7 +36,7 @@ RLS: leitura por `org_id = current_org_id()`; escrita só `service_role` (worker
 
 Edge nova, `verify_jwt=false` (valida assinatura QStash **ou** JWT do usuário). Dois modos:
 
-- **QStash `{}`** (schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, `0 */6 * * *`) → fan-out por org
+- **QStash `{}`** (schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, `10 9 * * *` desde 03/11/2026 — emenda ADR-0170; antes `10 */6`) → fan-out por org
   com o módulo ativo. Etapa **`lista`**: trava de 5 min, lista as promoções, encerra as que
   sumiram, roda os alertas lendo o banco, reserva + enfileira 1 leitura por promoção
   `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio, lotes de 20 itens,
@@ -69,6 +69,14 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Execução via QStash: relê a campanha no ML antes de escrever (item que mudou não é escrito; par de catálogo oculto é bloqueado); saída fica "Saída pedida" até o ML confirmar (conferência 5→60 min, até 24 h, depois erro).
 - Aba **Operações**: resultado por anúncio; **Reverter** = nova operação inversa com preview; já revertida mostra "Revertida em {data}".
 - Só admin executa (suporte só com acesso total). Conta ML precisa reconectar para ganhar `offers:/read-write`.
+
+### Relâmpago (emenda 2026-11-02 — em produção desde 2026-11-03)
+
+- Relâmpago (LIGHTNING) vira o 3º tipo: mesma seleção/preview/Reverter de DEAL/SMART.
+- Preço editável (padrão = sugerido do ML), dentro da faixa do ML e **nunca abaixo de R$ 19,00** (comprador perde o frete grátis) — vale mesmo com "Aderir mesmo assim".
+- Estoque reservado = mínimo exigido pelo ML (preview mostra "Reserva N un."); estoque disponível menor → bloqueado.
+- Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
+- Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
 
 ### Pausar/reativar em massa (emenda 2026-10-04 — em produção desde 2026-10-04)
 
