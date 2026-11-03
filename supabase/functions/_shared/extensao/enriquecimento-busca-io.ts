@@ -9,7 +9,9 @@ const TIMEOUT_MS = 3000;
 export async function getMlUmaVez(url: string, token: string, timeoutMs = TIMEOUT_MS, sinal?: AbortSignal): Promise<RespostaMl> {
   try {
     const tempo = AbortSignal.timeout(timeoutMs);
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: sinal ? AbortSignal.any([tempo, sinal]) : tempo });
+    // Sem AbortSignal.any no runtime: perde só o cancelamento do cliente, nunca o GET inteiro.
+    const signal = sinal && typeof AbortSignal.any === 'function' ? AbortSignal.any([tempo, sinal]) : tempo;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
     let corpo: unknown = null;
     try { corpo = await r.json(); } catch { /* corpo não-JSON */ }
     return { status: r.status, corpo };
