@@ -147,7 +147,9 @@ unidade (ADR-0151) e SKU do kit próprio (`00000012`). O resolvedor tenta GTIN a
 A fatura Upstash de outubro (US$ 4,63 de Redis Pay as You Go) veio quase inteira deste worker. Medido em
 02–03/11: o contador de `GET` do Redis só sobe nas rodadas do `sincronizar-promocoes`; a de 00:10 UTC fez
 **13.491 `GET` em ~7 min** (599 `SET`) para 1.846 pares item×promoção ativos em 5 orgs, ~7 `GET` por par
-(comissão + frete do cache `promo:` a cada preço testado por `ateQuantoDescer`). ~90 mil `GET`/dia ≈ US$ 5,50/mês.
+(comissão + frete do cache `promo:` a cada preço testado por `ateQuantoDescer`). O total diário, lido no
+contador do Upstash (zera 00:00 UTC), ficou em ~90 mil `GET`/dia de 29/10 a 02/11 (≈ US$ 5,50/mês); as 4
+rodadas do dia têm tamanhos diferentes, a das 00:10 é das menores.
 
 **Decisão (Diego):** o schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm` passa de `10 */6 * * *` para
 **`10 9 * * *`** (06:10 BRT), mantendo body, retries e o minuto fora da virada da hora (ADR-0171). Economia
@@ -155,8 +157,10 @@ esperada ~75%. Convite novo pode levar até 1 dia para aparecer sozinho; "Atuali
 caso urgente (ex.: Relâmpago de prazo curto). Texto da tela vazia ajustado.
 
 **TTL do cache `promo:` mantido em 8 h** (`_shared/promocoes/deps.ts`; o comentário "> período do schedule
-(6 h)" ficou desatualizado e não foi editado para não desalinhar o hash implantado de `_shared/`). O Redis
-cobra por comando e `emCache` faz o `GET` com hit ou miss, então subir o TTL não reduz a conta; só deixaria
+(6 h)" ficou desatualizado e não foi editado para não desalinhar o hash implantado de `_shared/`; idem o cabeçalho "schedule 6/6 h"
+de `sincronizar-promocoes/index.ts`). O Redis
+cobra por comando e `emCache` faz o `GET` com hit ou miss, então subir o TTL não reduz os `GET`, que
+são ~95% dos comandos (evitaria só parte dos `SET`) e deixaria
 comissão/frete até 1 dia velhos no /ads Campanhas e nas operações em massa. Consequência: cada rodada diária
 acha o cache frio (~1–1,5 mil chamadas ao ML por rodada, menos que as ~2,4 mil/dia de antes no total).
 
