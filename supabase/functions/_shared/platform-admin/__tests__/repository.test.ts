@@ -49,8 +49,7 @@ function fakeDb(tables: Tables, previews: Record<string, Row | Error> = {}) {
   };
 }
 
-function sale(id: string, orgId: string, amount: number): Row {
-  const date = '2026-08-05T12:00:00-03:00';
+function sale(id: string, orgId: string, amount: number, date = '2026-08-05T12:00:00-03:00'): Row {
   return { id, org_id: orgId, order_id: Number(id.replace(/\D/g, '')) || 1, status: 'paid', date_closed: date,
     date_created: date, total_amount: amount, paid_amount: amount, liquido: amount, sale_fee_total: 0, atualizado_em: date,
     currency: 'BRL', is_publiai: true, tem_devolucao: false, itens: [], custos: [] };
@@ -124,7 +123,7 @@ describe('createPlatformAdminRepository', () => {
     expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
     expect(wallet.totals).toEqual({
       gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, orgs_future_terms: 0, org_count: 2,
-      pending_count: 1, orders: 2, warnings: [],
+      pending_count: 1, orders: 2, previous_gross_cents: 0, previous_available: true, warnings: [],
     });
     // A contagem de buscas Sonar em voo deixou de ser pendência. O `toContainEqual` positivo prova
     // que a forma registrada em `calls` é essa — sem ele, o negativo passaria de graça.
@@ -269,6 +268,89 @@ describe('createPlatformAdminRepository', () => {
     expect(wallet.rows).toHaveLength(50);
     expect(wallet.rows[0]).toMatchObject({ id: 'org-050' });
     expect(wallet.rows.at(-1)).toMatchObject({ id: 'org-099' });
+  });
+
+  // ADR-0193 D-12: a variação do hero sai dos totais (mesmo universo, antes de paginar), nunca das linhas.
+  describe('carteira: anterior agregado e estado do fechamento', () => {
+    const now = () => new Date('2026-09-06T12:00:00Z');
+    const JUL = '2026-07-10T12:00:00-03:00';
+    const org = (n: number, extra: Row = {}) => {
+      const label = String(n).padStart(3, '0');
+      return { id: `org-${label}`, nome: `Org ${label}`, slug: `org-${label}`, is_test: false, arquivada_em: null, ...extra };
+    };
+    // Primeiras 10 orgs caem (jul 200 → ago 100); a 11ª dispara (jul 100 → ago 2000): página 1 cai, carteira sobe.
+    const vendasOpostas = (orgs: Row[]) => orgs.flatMap((o, i) => {
+      const sobe = i === orgs.length - 1;
+      return [sale(`s${i}a`, String(o.id), sobe ? 2000 : 100), sale(`s${i}j`, String(o.id), sobe ? 100 : 200, JUL)];
+    });
+    const tabelas = (orgs: Row[], extra: Tables = {}) => ({ organizations: { rows: orgs }, ml_vendas: { rows: vendasOpostas(orgs) }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {}, ...extra });
+
+    it('11 orgs: anterior agregado é global e não muda com a página', async () => {
+      const orgs = Array.from({ length: 11 }, (_, n) => org(n));
+      const repo = createPlatformAdminRepository(fakeDb(tabelas(orgs)) as never, now);
+      const p1 = await repo.wallet('actor', { month: '2026-08', page: 1, page_size: 10, sort: 'name' });
+      const p2 = await repo.wallet('actor', { month: '2026-08', page: 2, page_size: 10, sort: 'gross_desc' });
+      expect(p1.totals).toMatchObject({ gross_cents: 10 * 10_000 + 200_000, previous_gross_cents: 10 * 20_000 + 10_000, previous_available: true });
+      expect(p2.totals).toEqual(p1.totals);
+    });
+
+    it('>200 orgs paginado no servidor: totais iguais em páginas com tendências opostas', async () => {
+      const orgs = Array.from({ length: 201 }, (_, n) => org(n));
+      const repo = createPlatformAdminRepository(fakeDb(tabelas(orgs)) as never, now);
+      const p1 = await repo.wallet('actor', { month: '2026-08', page: 1, page_size: 50, sort: 'name' });
+      const p5 = await repo.wallet('actor', { month: '2026-08', page: 5, page_size: 50, sort: 'name' });
+      expect(p1.rows).toHaveLength(50);
+      expect(p5.rows.map((r) => r.id)).toEqual(['org-200']);
+      expect(p1.totals).toMatchObject({ gross_cents: 200 * 10_000 + 200_000, previous_gross_cents: 200 * 20_000 + 10_000, previous_available: true });
+      expect(p5.totals).toEqual(p1.totals);
+    });
+
+    it('anterior zero é zero real (sem percentual no front), não indisponível', async () => {
+      const db = fakeDb({ organizations: { rows: [org(1)] }, ml_vendas: { rows: [sale('s1', 'org-001', 100)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+      expect(wallet.totals).toMatchObject({ gross_cents: 10_000, previous_gross_cents: 0, previous_available: true });
+    });
+
+    it('métrica ausente torna o anterior indisponível, nunca zero', async () => {
+      const db = fakeDb({ organizations: { rows: [org(1)] }, ml_vendas: { error: 'metrics unavailable' }, platform_sonar_searches: {} });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+      expect(wallet.totals).toMatchObject({ previous_gross_cents: null, previous_available: false });
+    });
+
+    it('arquivada fica fora do anterior agregado', async () => {
+      const orgs = [org(1), org(2, { arquivada_em: '2026-10-01T00:00:00Z' })];
+      const db = fakeDb({ ...tabelas(orgs), ml_vendas: { rows: [sale('a', 'org-001', 100), sale('b', 'org-001', 50, JUL), sale('c', 'org-002', 999, JUL)] } });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name', include_archived: true });
+      expect(wallet.totals).toMatchObject({ gross_cents: 10_000, previous_gross_cents: 5_000, previous_available: true });
+    });
+
+    it('estado do fechamento por org (fechada/aberta/sem condição/desconhecido) em UMA consulta filtrada por org_id', async () => {
+      const orgs = [org(1), org(2), org(3), org(4)];
+      const statements = [
+        { id: 'st-1', org_id: 'org-001', month: '2026-08-01', closed_at: '2026-09-02T10:00:00Z', total_cents: 4321 },
+        { id: 'st-old', org_id: 'org-002', month: '2026-07-01', closed_at: '2026-08-02T10:00:00Z', total_cents: 1 },
+        { id: 'st-outra', org_id: 'org-fora', month: '2026-08-01', closed_at: '2026-09-02T10:00:00Z', total_cents: 9 },
+      ];
+      const db = fakeDb({ ...tabelas(orgs), platform_billing_statements: { rows: statements } }, {
+        'org-001': preview(10), 'org-002': preview(10), 'org-003': preview(0, [{ code: 'commercial_terms_required' }], null), 'org-004': new Error('preview unavailable'),
+      });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+      const byId = new Map(wallet.rows.map((r) => [r.id, r]));
+      expect(byId.get('org-001')!.statement).toEqual({ status: 'closed', id: 'st-1', closed_at: '2026-09-02T10:00:00Z', total_cents: 4321 });
+      expect(byId.get('org-002')!.statement).toEqual({ status: 'open' });
+      expect(byId.get('org-003')!.statement).toBeNull();
+      expect(byId.get('org-004')).not.toHaveProperty('statement');
+      const inCalls = db.calls.filter((c) => c.table === 'platform_billing_statements' && c.op === 'in');
+      expect(inCalls).toEqual([{ table: 'platform_billing_statements', op: 'in', column: 'org_id', value: ['org-001', 'org-002', 'org-003', 'org-004'] }]);
+      expect(db.calls).toContainEqual({ table: 'platform_billing_statements', op: 'eq', column: 'month', value: '2026-08-01' });
+    });
+
+    it('falha ao ler os fechamentos deixa o estado desconhecido e avisa', async () => {
+      const db = fakeDb({ ...tabelas([org(1)]), platform_billing_statements: { error: 'boom' } }, { 'org-001': preview(10) });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+      expect(wallet.rows[0]).not.toHaveProperty('statement');
+      expect(wallet.totals.warnings).toContain('Fechamento indisponível para parte da carteira');
+    });
   });
 
   it('maps delivery amounts by search_id and counts month-wide Daludi, failures, and reopen intents', async () => {

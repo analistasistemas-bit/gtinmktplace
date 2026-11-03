@@ -1,7 +1,7 @@
 import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
 import { montarRelatorioMensal } from './monthly-report-io.ts';
 import { CATEGORIA_FECHAMENTO } from './fechamento-automatico.ts';
-import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, NoticeSubscription, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
+import type { AuditRow, PaymentProfile, PaymentProfileInput, BillingPreview, BillingStatement, CommercialTerms, ExtensaoErroLeitura, ExtensaoUsage, ExtensaoUsoPessoa, NoticeSubscription, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletStatementState, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -119,6 +119,28 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       return;
     }
   };
+  // ADR-0193 D-12: estado do fechamento das linhas devolvidas — UMA leitura por carteira, org_id
+  // explícito (service_role ignora RLS). Só o total do snapshot (JSON path), não o snapshot inteiro.
+  // Falha de leitura deixa `statement` ausente (desconhecido) e devolve false para o aviso.
+  const fillStatements = async (rows: OrgSummary[], month: string): Promise<boolean> => {
+    if (!rows.length) return true;
+    let closed: Map<string, WalletStatementState>;
+    try {
+      const found = await allRows<{ org_id: string; id: string; closed_at: string; total_cents: number | string }>((from, to) => db
+        .from('platform_billing_statements').select('org_id,id,closed_at,total_cents:snapshot->total_cents')
+        .in('org_id', rows.map((row) => row.id)).eq('month', monthDate(month)).order('org_id').range(from, to));
+      closed = new Map(found.map((row) => [row.org_id, { status: 'closed', id: row.id, closed_at: row.closed_at, total_cents: Number(row.total_cents) }]));
+    } catch {
+      return false;
+    }
+    for (const row of rows) {
+      const state = closed.get(row.id);
+      // Prévia falhou e não há fechamento: não sabemos se há condição vigente — fica ausente.
+      if (state) row.statement = state;
+      else if (row.pending_count !== null) row.statement = row.modality === null ? null : { status: 'open' };
+    }
+    return true;
+  };
   const loadOrganizations = (includeTest: boolean, includeArchived: boolean) => allRows<OrgRow>((from, to) => {
     let query = db.from('organizations').select('id,nome,slug,is_test,arquivada_em').order('id');
     if (!includeTest) query = query.eq('is_test', false);
@@ -160,6 +182,9 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       // `pending_count === null` só vem de prévia que falhou: a previsão sai incompleta sem que
       // `orgs_without_terms` distinga isso de "sem contrato".
       if (!completePreviews) warnings.push('Prévia indisponível para parte da carteira');
+      // ADR-0193 D-12: o anterior sai do MESMO universo do bruto (ativas, antes de paginar) —
+      // `metrics.previous` já vem de `readOrgMetrics`, sem leitura nova.
+      const previousAvailable = ativas.every((row) => row.metrics?.previous);
       const totals: WalletTotals = {
         gross_cents: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
         forecast_cents: ativas.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
@@ -168,6 +193,8 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         org_count: ativas.length,
         pending_count: completePreviews ? ativas.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
         orders: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
+        previous_gross_cents: previousAvailable ? ativas.reduce((sum, row) => sum + row.metrics!.previous!.gross_cents, 0) : null,
+        previous_available: previousAvailable,
         warnings,
       };
       // Perf FASE 2.4: o servidor já enriqueceu TODAS as organizações acima (precisa, para os
@@ -176,6 +203,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       // página de sempre — sem isso, 30 orgs de ~30 KB cada estourariam o payload à toa.
       const from = (input.page - 1) * input.page_size;
       const rows = summaries.length <= WALLET_ALL_ROWS_MAX ? summaries : summaries.slice(from, from + input.page_size);
+      if (!(await fillStatements(rows, input.month))) warnings.push('Fechamento indisponível para parte da carteira');
       return { rows, total: summaries.length, page: input.page, page_size: input.page_size, totals };
     },
     metrics: (_actorId: string, orgId: string, month: string) => readOrgMetrics(db as never, orgId, month, now()),

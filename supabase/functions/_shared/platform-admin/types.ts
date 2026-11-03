@@ -155,7 +155,15 @@ export type OrgSummary = {
   next_terms_starts_on?: string | null;
   /** ADR-0175: data em que a organização foi arquivada; `null`/ausente = ativa. */
   arquivada_em?: string | null;
+  /** ADR-0193 D-12: fechamento da competência exibida (só na carteira). `null` = sem condição
+   *  comercial vigente; ausente = desconhecido (prévia ou leitura do fechamento falhou, ou resposta
+   *  anterior ao deploy). */
+  statement?: WalletStatementState | null;
 };
+
+export type WalletStatementState =
+  | { status: 'closed'; id: string; closed_at: string; total_cents: Cents }
+  | { status: 'open' };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };
 
@@ -170,6 +178,13 @@ export type WalletTotals = {
   org_count: number;
   pending_count: number | null;
   orders: number | null;
+  /** ADR-0193 D-12: bruto do mesmo período do mês anterior, sobre o MESMO universo de `gross_cents`
+   *  (ativas, mesmos filtros, antes da paginação). `null` quando `previous_available` é false.
+   *  Zero é real: o front não calcula percentual sobre anterior zero. Opcionais: resposta anterior
+   *  ao deploy não traz os campos. */
+  previous_gross_cents?: Cents | null;
+  /** false se alguma organização do universo não tem a métrica (atual ou anterior) — ausência nunca vira zero. */
+  previous_available?: boolean;
   warnings: string[];
 };
 
