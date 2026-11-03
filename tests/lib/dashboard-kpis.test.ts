@@ -84,4 +84,28 @@ describe('calcularKpisDashboard', () => {
     expect(r.ativos).toBe(1);
     expect(r.pausados).toBe(1); // ignora o MLBextra para bater 1:1 com a listagem de anúncios
   });
+
+  // Zaven 03/11: o ML pausou só o SKU principal (zerado) e o Dashboard avisava "2 pausados" que a
+  // tela Publicados, que agrega a família, não mostrava.
+  it('família UP com principal pausado e irmão ativo conta como ativa, igual à tela Publicados', () => {
+    const up = { ...pub('a'), mlItemIdsUP: ['MLBa', 'MLBa2'] };
+    const statusItens: StatusPublicadoItem[] = [
+      { ml_item_id: 'MLBa', status: 'pausado', motivo: null, estoque: 0, preco: 10 },
+      { ml_item_id: 'MLBa2', status: 'ativo', motivo: null, estoque: 5, preco: 10 },
+    ];
+    const r = calcularKpisDashboard([], [up], statusItens);
+    expect(r.ativos).toBe(1);
+    expect(r.pausados).toBe(0);
+  });
+
+  it('família UP com todos os SKUs pausados segue contando como pausada', () => {
+    const up = { ...pub('a'), mlItemIdsUP: ['MLBa', 'MLBa2'] };
+    const statusItens: StatusPublicadoItem[] = [
+      { ml_item_id: 'MLBa', status: 'pausado', motivo: null, estoque: 0, preco: 10 },
+      { ml_item_id: 'MLBa2', status: 'pausado', motivo: null, estoque: 0, preco: 10 },
+    ];
+    const r = calcularKpisDashboard([], [up], statusItens);
+    expect(r.ativos).toBe(0);
+    expect(r.pausados).toBe(1);
+  });
 });
