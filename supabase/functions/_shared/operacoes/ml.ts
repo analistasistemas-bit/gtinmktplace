@@ -75,9 +75,11 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       const status = str(x.status);
       // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
       if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
+      // LIGHTNING: o id da oferta vem em ref_id e o estoque exigido em stock.min; DEAL/SMART não leem nenhum dos dois.
+      const lgh = tipo === 'LIGHTNING';
       return { status, preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
-        offer_id: str(x.offer_id) ?? oferta(x.ref_id), // LIGHTNING: o id da oferta vem em ref_id
-        estoque_min: tipo === 'LIGHTNING' ? num(obj(x.stock).min) : null };
+        offer_id: str(x.offer_id) ?? (lgh ? oferta(x.ref_id) : null),
+        estoque_min: lgh ? num(obj(x.stock).min) : null };
     },
 
     async lerOfertaNoItem(promocaoId, itemId) {

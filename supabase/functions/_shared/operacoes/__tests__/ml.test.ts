@@ -92,6 +92,13 @@ describe('lerNaCampanha LIGHTNING', () => {
     expect((await criarClienteML('tok', f, semEspera()).lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1'))?.offer_id).toBeNull();
   });
 
+  it('ref_id fora de LIGHTNING não vira offer_id (SMART/DEAL inalterados)', async () => {
+    const f = vi.fn(async () => resp(200, { results: [{ id: 'MLB1', ref_id: 'CANDIDATE-MLB1-5', status: 'candidate' }] }));
+    const ml = criarClienteML('tok', f, semEspera());
+    expect((await ml.lerNaCampanha('P', 'SMART', 'MLB1'))?.offer_id).toBeNull();
+    expect((await ml.lerNaCampanha('P', 'DEAL', 'MLB1'))?.offer_id).toBeNull();
+  });
+
   it('stock.min fora de LIGHTNING → estoque_min null', async () => {
     const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', status: 'candidate', stock: { min: 5 } }] }));
     expect((await criarClienteML('tok', f, semEspera()).lerNaCampanha('P', 'DEAL', 'MLB1'))?.estoque_min).toBeNull();
