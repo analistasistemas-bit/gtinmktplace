@@ -1,6 +1,6 @@
 # ADR-0194 — Sugestões de promoção para girar o que vende pouco
 
-**Status:** Proposto — desenho fechado em grilling (2026-11-03). Implementação pelo [plano](../superpowers/plans/2026-11-03-sugestoes-promocao.md).
+**Status:** Aceito — desenho fechado em grilling (2026-11-03) com opinião do Codex `gpt-6.1-sol` high. Implementado pelo [plano](../superpowers/plans/2026-11-03-sugestoes-promocao.md).
 **Data:** 2026-11-03
 **Decisores:** Diego
 **Estende:** [ADR-0170](0170-central-de-promocoes-ml.md) (Central), [ADR-0174](0174-operacoes-em-massa-promocoes-v2.md) (operações em massa)
@@ -32,6 +32,10 @@ A Central lista campanhas e o operador escolhe anúncios dentro de cada uma. Nad
 **D-9. Marcação de origem, sem tela de resultado na V1.** Operação nascida de sugestão grava `operacoes_massa.sugestao` (faixa, oportunidade, chave). A tela de antes e depois vem numa segunda etapa, com dados de pelo menos 30 dias.
 
 **D-10. Tela.** Aba Sugestões da Central (`?aba=sugestoes`), 20 por página em cada faixa, Quase vendendo primeiro. Cálculo ao abrir, no front, a partir de leituras do banco: sem chamada ao ML, sem job. Aderir é por card e abre o painel existente com os anúncios daquele produto naquela campanha; sem adesão em massa entre produtos. Preço e lucro são recalculados no painel e o servidor relê o ML ao executar, então dado de até 24 h não vira adesão errada.
+
+## Medição (Avil, 04/11, dados reais)
+
+85 sugestões: 6 Quase vendendo e 79 Invisível. RPC em ~130 ms, lista na tela em ~830 ms. Por produto o número cai muito frente aos 59 anúncios medidos no grilling, porque somar visitas e vendas do produto e exigir vendas abaixo do esperado separa o que antes parecia fraco anúncio a anúncio. Filtros de cobertura, idade, estoque e ativo tiram no máximo 4.
 
 ## Alternativas descartadas
 

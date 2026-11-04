@@ -92,6 +92,13 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 
 - 1ª alteração em massa real (03/11, Zaven): 13 jaquetas a R$ 43,90 em 38 s; quem já estava no preço vira "Já estava" sem PUT.
 
+### Sugestões (ADR-0194, 2026-11-04)
+
+- Aba **Sugestões**: produtos com menos de 5 vendas em 30 dias e convite de campanha, sem participar. **Quase vendendo** recebe visitas e vende abaixo da média da conta; **Invisível** tem poucas visitas. Por produto, com plano B por anúncio.
+- Regra pura em `src/lib/sugestoes-promocao.ts`, sobre a RPC `sugestoes_promocao_sinais` e os convites. Sem chamada ao ML.
+- Verde e amarelo (selo "Abaixo do piso"), lucro maior que zero. Campanha recomendada = maior desconto; até 2 pontos é empate e ganha o lucro.
+- Dispensar vale 30 dias para a org. Adesão vinda de sugestão fica marcada em `operacoes_massa.sugestao` para medir depois.
+
 ### Aba Em promoção e Operações (2026-11-03, só front)
 
 - Em promoção: 20 anúncios por página em cada campanha (20/50/100), ordem por descrição; "Selecionar todos" e as ações valem para todas as páginas.

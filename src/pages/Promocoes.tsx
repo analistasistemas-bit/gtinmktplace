@@ -99,7 +99,7 @@ export default function Promocoes() {
         </div>
       ) : temDados && (
         <Tabs value={aba} onValueChange={setAba}>
-          <TabsList>
+          <TabsList className="max-w-full justify-start overflow-x-auto [scrollbar-width:none]">
             <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
             <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
             <TabsTrigger value="encerradas">Encerradas</TabsTrigger>

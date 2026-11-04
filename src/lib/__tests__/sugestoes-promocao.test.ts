@@ -192,6 +192,11 @@ describe('montarSugestoes', () => {
     expect(r.invisivel[0].titulo).toBe('Produto');
   });
 
+  it('título em maiúsculas sai legível', () => {
+    const r = montar({ sinais: [conta, sinal({ nome_produto: 'LINHA PARA COSTURA' })] });
+    expect(r.invisivel[0].titulo).toBe('Linha Para Costura');
+  });
+
   it('ordena por oportunidade, desempate por visitas', () => {
     const r = montar({
       convites: [convite(), convite({ ml_item_id: 'MLB2' }), convite({ ml_item_id: 'MLB3' })],

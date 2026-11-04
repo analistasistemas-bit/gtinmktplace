@@ -30,7 +30,7 @@ const TABELAS = [
   'ml_vendas_itens', 'ml_perguntas', 'ml_devolucoes', 'ml_moderacao', 'ml_webhook_eventos', 'configuracoes',
   'estoque_movimentos',
   'pulse_produtos', 'pulse_ofertas', 'pulse_vendedores', 'pulse_alertas',
-  'ml_promocoes', 'ml_promocao_itens', 'ml_promocoes_sync',
+  'ml_promocoes', 'ml_promocao_itens', 'ml_promocoes_sync', 'promocao_sugestoes_dispensadas',
 ];
 
 type Resultado = { assercao: string; status: 'PASS' | 'FAIL'; detalhe: string };
@@ -88,6 +88,7 @@ async function criarTenant(tag: string) {
   if (promoErr) throw new Error(`ml_promocoes no seed ${tag}: ${promoErr.message}`);
   await svc.from('ml_promocao_itens').insert({ org_id: orgId, promocao_id: promoId, ml_item_id: `MLB${tag}1`, status: 'candidate', pior_semaforo: 'verde' });
   await svc.from('ml_promocoes_sync').insert({ org_id: orgId, estado: 'ok' });
+  await svc.from('promocao_sugestoes_dispensadas').insert({ org_id: orgId, chave: `p:ISO${tag}`, expira_em: new Date(Date.now() + 864e5).toISOString() });
 
   return { orgId, userId, email, senha, loteId: lote!.id as string, famId: fam!.id as string };
 }
@@ -252,7 +253,7 @@ async function main() {
     // limpa, e a FK para `organizations` trava o delete da org, deixando lixo no banco.
     // `estoque_movimentos` e as `pulse_*` vêm primeiro: referenciam organizations sem
     // ON DELETE CASCADE (as pulse_* na ordem filhas → pai).
-    for (const t of ['ml_promocao_itens', 'ml_promocoes', 'ml_promocoes_sync', 'estoque_movimentos', 'pulse_alertas', 'pulse_ofertas', 'pulse_vendedores', 'pulse_produtos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
+    for (const t of ['promocao_sugestoes_dispensadas', 'ml_promocao_itens', 'ml_promocoes', 'ml_promocoes_sync', 'estoque_movimentos', 'pulse_alertas', 'pulse_ofertas', 'pulse_vendedores', 'pulse_produtos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
       const { error } = await svc.from(t).delete().eq('org_id', tenant.orgId);
       // Limpeza silenciosa que falha deixa dado de teste no banco (aconteceu em
       // 2026-07-29 com estoque_movimentos). Erro aqui tem que aparecer.

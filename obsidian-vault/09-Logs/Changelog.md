@@ -9,6 +9,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-11-04
+
+- **Sugestões de promoção** ([[0194-sugestoes-de-promocao|ADR-0194]]): aba nova na Central com produtos que vendem pouco e têm convite, em duas faixas (Quase vendendo, Invisível), ordem por Oportunidade, Aderir por card e Dispensar por 30 dias. Migration `20261104010745`. Avil: 85 sugestões.
+
 ## 2026-11-03
 
 - **SMART_LIGHTNING e Preço competitivo pelo app** (emenda ADR-0174): motor com escrita idempotente, piso R$ 19, aviso de tipo novo e tela. Migration `20261103234235`.

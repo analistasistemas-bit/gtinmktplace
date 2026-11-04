@@ -131,7 +131,7 @@ export function montarSugestoes(e: {
 
     const sugestao: Sugestao = {
       chave, faixa, visitas, estoque, recomendada, alternativas, vendasAbaixo,
-      titulo: sinais.find((s) => s.nome_produto)?.nome_produto ?? (formatarNomeProduto(convites[0].titulo) || convites[0].ml_item_id),
+      titulo: formatarNomeProduto(sinais.find((s) => s.nome_produto)?.nome_produto ?? convites[0].titulo) || convites[0].ml_item_id,
       thumbnail: convites.find((c) => c.thumbnail)?.thumbnail ?? null,
       unidades: soma(sinais, (s) => s.unidades_30d),
       anunciosConvidados: ids.length,

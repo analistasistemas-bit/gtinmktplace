@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Sugestões de promoção (ADR-0194) — 2026-11-04
+
+- [x] Aba Sugestões na Central: Quase vendendo e Invisível, por produto, ordem por Oportunidade, campanha de maior desconto com lucro, Aderir por card, Dispensar por 30 dias.
+- [x] Migration `20261104010745`; `sincronizar-promocoes` grava `date_created`; `operacoes-massa` com dispensa e marcação de origem.
+- [ ] Segunda etapa, depois de 30 dias de uso: tela de antes e depois por faixa, a partir de `operacoes_massa.sugestao`.
+
 ## SMART_LIGHTNING e PRICE_MATCHING pelo app + aviso de tipo novo (emenda ADR-0174) — 2026-11-03
 
 - [x] Spike autorizado e desfeito (Avil `MLB5048402257`, DSA `MLB5114275523`): 201 nos dois; saída confirma em ≤ 5 min.
