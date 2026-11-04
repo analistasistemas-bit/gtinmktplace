@@ -19,12 +19,20 @@ const item = (o: Partial<ItemPromocaoML> = {}): ItemPromocaoML => ({
   preco_sugerido: null, ml_pct: null, vendedor_pct: null, estoque_min: null, estoque_max: null, ...o,
 });
 const itemMl = (o: Partial<ItemML> = {}): ItemML => ({
-  id: 'MLB1', titulo: 'Toalha', thumbnail: null, permalink: 'https://p', listing_type_id: 'gold_special',
+  id: 'MLB1', titulo: 'Toalha', thumbnail: null, permalink: 'https://p', listing_type_id: 'gold_special', criado_em: null,
   categoria: 'MLB123', sku: null, gtin: null, unidades: null, formato_kit: false, variacoes: [],
   catalogo: false, relacionados: [], ...o,
 });
 
 describe('projetarItem', () => {
+  // ADR-0194 D-7: a idade do anúncio sai do date_created lido no sync.
+  it('leva a data de criação do anúncio para a linha; sem leitura do ML fica nula', async () => {
+    const cad = montarCadastro([], []);
+    const com = await projetarItem(item(), itemMl({ criado_em: '2026-10-21T23:11:38.634Z' }), cad, aliq, async () => tarifa10);
+    expect(com.anuncio_criado_em).toBe('2026-10-21T23:11:38.634Z');
+    expect((await projetarItem(item(), null, cad, aliq, async () => tarifa10)).anuncio_criado_em).toBeNull();
+  });
+
   describe('kit (incidente MLB7665740658)', () => {
     const cad = montarCadastro([
       linhaVar({ id: 'base', codigo: '00000010', gtin: '7891010027858', custo: 29.9, preco: 39.99, peso_gramas: 800,
