@@ -4,7 +4,7 @@
 import type { CodigoErro } from '../../supabase/functions/_shared/extensao/erros.ts';
 import { epocaAtual } from './abas';
 import { sair, type Perfil, type TokenValido } from './credenciais';
-import { definirIdentidade, limparAbasNaFila, limparSessao, obterSessaoValida } from './sessao';
+import { definirIdentidade, identidadeAtual, limparAbasNaFila, limparSessao, obterSessaoValida } from './sessao';
 
 const CODIGOS: Record<CodigoErro, true> = {
   sessao_expirada: true,
@@ -111,6 +111,18 @@ async function enviar(c: Contexto, corpo: object, identidadeEsperada: string | n
   return falha(erro);
 }
 
+/** Última resposta da edge que confirmou a identidade (session: o SW dorme). Até 10 min depois, quem abre não espera a
+ *  conferência: nada na tela é mais velho que essa prova, e todo comando segue validado na edge. */
+const CONFERIDA = 'identidadeConferida';
+const JANELA_CONFERIDA = 10 * 60_000;
+const marcarConferida = (identidade: string) => { void chrome.storage.session.set({ [CONFERIDA]: { identidade, em: Date.now() } }).catch(() => {}); };
+
+export async function identidadeConferidaHaPouco(): Promise<boolean> {
+  const [g, identidade] = await Promise.all([chrome.storage.session.get(CONFERIDA), identidadeAtual()]);
+  const c = g[CONFERIDA] as { identidade?: unknown; em?: unknown } | undefined;
+  return identidade !== null && c?.identidade === identidade && typeof c.em === 'number' && Date.now() - c.em <= JANELA_CONFERIDA;
+}
+
 /** Ação `sessao` (sem identidade esperada: é ela que descobre a identidade) → definirIdentidade com a época do
  *  pedido (sair/entrar desde então → não grava), que limpa as abas se uma identidade conhecida mudou.
  *  Perfil inativo/sem org (`sem_acesso`) → sai. */
@@ -122,7 +134,9 @@ async function consultarSessao(c: Contexto): Promise<{ ok: true } | Falha> {
   }
   const d = r.dados as Record<string, unknown> | null;
   const perfil: Perfil = { nome: texto(d?.nome), email: texto(d?.email), orgNome: texto(d?.orgNome) };
-  return (await definirIdentidade(r.identidade, perfil, c.epoca)) ? { ok: true } : falha('sem_sessao');
+  if (!(await definirIdentidade(r.identidade, perfil, c.epoca))) return falha('sem_sessao');
+  marcarConferida(r.identidade);
+  return { ok: true };
 }
 
 /** Busca identidade e perfil na edge e grava; devolve o motivo da falha (login: modulo_desligado/sem_acesso). */
@@ -151,7 +165,10 @@ export async function chamarExtensao<T>(corpo: object, epoca = epocaAtual(), gua
 
   if (guarda.conferir && !(await guarda.conferir())) return falha('sem_sessao');
   const r = await postar(c, corpo, c.identidade, guarda.aindaVale, guarda.timeoutMs);
-  if (r.ok && r.identidade === c.identidade) return { ok: true, dados: r.dados as T };
+  if (r.ok && r.identidade === c.identidade) {
+    marcarConferida(r.identidade);
+    return { ok: true, dados: r.dados as T };
+  }
   if (r.ok || r.erro === 'identidade_mudou') {
     // Org/suporte mudou: o dado nunca é entregue e a ação não é refeita. Abas limpas antes (mesmo se a sessao
     // falhar), depois uma consulta à sessao para mostrar a identidade nova.

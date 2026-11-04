@@ -180,7 +180,7 @@ it('enriquecido e compacto: vendedor · medalha · UF; tipo · comissão; giro; 
   const linhas = () => [...raizes[0].querySelectorAll('.b > .l')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim());
   renderizarMiniBlocoDaBusca(card({ lojaOficial: true }), undefined, ok(50, 23.4) as never, 50, vistaDoCard(card(), completo()), AGORA);
   expect(linhas()).toEqual([
-    'Loja Boa· Platinum· SPLoja oficial',
+    'Loja BoaPlatinum · SPLoja oficial',
     'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
     'Giro mín.R$ 5 milⓘ',
     '9 vendedores·catálogohá 120 diasⓘ',
@@ -342,7 +342,7 @@ it('fatia 2.1, caso cheio: cidade/UF + ponto de reputação, frete na linha do g
   renderizarMiniBlocoDaBusca(c, meta, ok(50, 23.4) as never, 50, vistaDoCard(c, cheio()), AGORA,
     { frete: { estado: 'ok', valor: 23.45, expiraEm: AGORA + 1 } });
   expect(linhas21()).toEqual([
-    'Loja Boa· Platinum· São José dos Campos/SPⓘLoja oficial',
+    'Loja BoaPlatinum · São José dos Campos/SPⓘLoja oficial',
     'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
     'Giro mín.R$ 5 milⓘFrete cotadoR$ 23,45ⓘ',
     '9 vendedores·catálogohá 120 diasⓘ',
@@ -378,7 +378,7 @@ it('fatia 2.1: reputação desconhecida sem ponto; sem cidade fica a UF; perfil 
   e.vendedores['7'] = { estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'RJ', cidade: null, reputacao: null };
   comEnr(e);
   expect(raizes[0].querySelector('.rep')).toBeNull();
-  expect(linhas21()[0]).toBe('Loja Boa· Gold· RJ');
+  expect(linhas21()[0]).toBe('Loja BoaGold · RJ');
   raizes = [];
   e.vendedores['7'] = { estado: 'ok', nome: 'V7', medalha: null, uf: null, reputacao: '1_red' };
   comEnr(e);

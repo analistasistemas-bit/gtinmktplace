@@ -1,7 +1,7 @@
 // Roteamento das mensagens internas do SW (ADR-0189). Separado do sw.ts para ser testável.
 // Páginas da extensão (painel) têm o conjunto completo; content scripts rodam dentro da página
 // do ML e só podem pedir leitura do anúncio e registrar erro de leitura.
-import { atualizarSessao, chamarExtensao, consultarSessaoAtual } from './api';
+import { atualizarSessao, chamarExtensao, consultarSessaoAtual, identidadeConferidaHaPouco } from './api';
 import { observadoDoAnuncio } from './criacao';
 import { entrar, estaLogado, lerCredenciais, sair } from './credenciais';
 import { definirAtiva, estaAtiva } from './preferencias';
@@ -304,7 +304,15 @@ export function rotearMensagem(msg: unknown, sender: chrome.runtime.MessageSende
       // Qualquer contexto da extensão. `abrindo` (painel/menu a cada abertura): confere a sessão na edge antes —
       // identidade nova limpa as abas e transmite conta-mudou; sem_acesso/sessão expirada desloga.
       // Painel: confere por padrão (abrindo:false pula); content script (menu do cabeçalho): só com abrindo:true.
-      return ((pagina ? msg.abrindo !== false : msg.abrindo === true) ? atualizarSessao().catch(() => false) : Promise.resolve()).then(estadoExtensao);
+      // Identidade confirmada há pouco (a própria busca confirma): não segura a tela nos ~2 s da edge fria; a conferência
+      // roda igual e o que mudar chega por conta-mudou.
+      if (!(pagina ? msg.abrindo !== false : msg.abrindo === true)) return estadoExtensao();
+      return identidadeConferidaHaPouco().catch(() => false).then((recente) => {
+        const conferencia = atualizarSessao().catch(() => false);
+        if (!recente) return conferencia;
+        emSegundoPlano(conferencia);
+        return undefined;
+      }).then(estadoExtensao);
     case 'publiai:entrar': {
       // Só o painel (página da extensão): a senha nunca é digitada na página do ML. Não é gravada nem registrada.
       if (!pagina || typeof msg.email !== 'string' || typeof msg.senha !== 'string') return undefined;

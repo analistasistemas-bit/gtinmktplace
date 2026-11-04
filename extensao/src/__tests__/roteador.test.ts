@@ -759,10 +759,29 @@ describe('conta, chave ativa e geração (Task 5)', () => {
     expect(acoesNaEdge()).toEqual([]);
   });
 
+  it('identidade confirmada há pouco: responde sem esperar a edge; a troca chega pelo aviso. Passados 10 min, espera', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([{ id: 7 }] as never);
+    await chamar(ANUNCIO, CONTEUDO);
+    sessaoNaEdge('u1:org2:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Org 2' });
+    const r = await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, PAINEL) as { perfil: { orgNome: string } };
+    expect(r.perfil.orgNome).not.toBe('Org 2');
+    await complementosPendentes();
+    expect(await estadoAba()).toBeNull();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ tipo: 'publiai:conta-mudou', logado: true, ativa: true, geracao: epocaAtual() });
+
+    const { identidadeConferida: c } = await chrome.storage.session.get('identidadeConferida') as { identidadeConferida: { identidade: string; em: number } };
+    expect(c.identidade).toBe('u1:org2:');
+    await chrome.storage.session.set({ identidadeConferida: { ...c, em: Date.now() - 10 * 60_000 - 1 } });
+    sessaoNaEdge('u1:org3:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Org 3' });
+    const s = await rotearBruto({ tipo: 'publiai:estado-extensao', abrindo: true }, PAINEL) as { perfil: { orgNome: string } };
+    expect(s.perfil.orgNome).toBe('Org 3');
+  });
+
   it('estado-extensao do painel chama sessao e, com identidade nova, limpa abas e transmite conta-mudou', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([{ id: 7 }] as never);
     await chamar(ANUNCIO, CONTEUDO);
     expect(await estadoAba()).not.toBeNull();
+    await chrome.storage.session.remove('identidadeConferida');
     sessaoNaEdge('u1:org2:', { nome: 'Diego', email: 'd@x.com', orgNome: 'Org 2' });
     fetchFalso.mockClear();
     vi.mocked(chrome.runtime.sendMessage).mockClear();

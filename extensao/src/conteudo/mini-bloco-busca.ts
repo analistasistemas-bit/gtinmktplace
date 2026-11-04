@@ -57,7 +57,7 @@ b{font-weight:650;color:var(--texto)}
 /* Cidade/UF + ⓘ: item próprio da linha do vendedor; quebra junto (com os selos) quando não cabe, o nome não é
    espremido; cidade longa corta. */
 .fc{display:flex;flex:0 1 auto;min-width:0;white-space:nowrap}.fc>span{flex:none}.fc>.cid{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.l>.g:has(.fc){min-width:6em;max-width:100%}.i{flex:none}
+.l>.g:has(.fc){min-width:6em;max-width:100%}.k.cheio{flex:1 0 100%}.i{flex:none}
 .idade.recente{--c:var(--success)}.idade.medio{--c:var(--warning)}.idade.antigo{--c:var(--suave)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
@@ -172,20 +172,22 @@ export function renderizarMiniBlocoDaBusca(
         r.title = `Reputação ${NOME_REPUTACAO[v.reputacao]} (termômetro do Mercado Livre)`;
         nome.after(r);
       }
-      if (v.medalha) extra(v.medalha === 'sem' ? 'v' : 'med', NOME_MEDALHA[v.medalha]);
-      // Cidade/UF no lugar da UF: só a cidade encolhe (reticências), a UF fica.
-      if (v.cidade) {
-        const f = el('span', 'v fc');
-        f.title = `Cidade cadastrada do vendedor: ${v.cidade}${v.uf ? `/${v.uf}` : ''}`;
-        f.append(el('span', '', '·\u00a0'), el('span', 'cid', v.cidade));
-        if (v.uf) f.append(el('span', '', `/${v.uf}`));
-        // Fora do grupo do nome: na quebra, divide a linha de baixo com os selos (Loja oficial, Patrocinado).
+      // Linha de baixo do nome, com os selos: medalha · cidade/UF numa unidade só (nenhum "·" sobra no começo da linha).
+      // Só a cidade encolhe (reticências); medalha e UF ficam.
+      const local = v.cidade ?? v.uf;
+      if (v.medalha || local) {
+        grupo.classList.add('cheio');
+        const f = el('span', v.cidade ? 'v fc' : 'v f');
+        if (v.medalha) f.append(el('span', v.medalha === 'sem' ? 'v' : 'med', NOME_MEDALHA[v.medalha]));
+        if (v.medalha && local) f.append(el('span', '', '\u00a0·\u00a0'));
+        if (v.cidade) {
+          f.title = `Cidade cadastrada do vendedor: ${v.cidade}${v.uf ? `/${v.uf}` : ''}`;
+          f.append(el('span', 'cid', v.cidade));
+          if (v.uf) f.append(el('span', '', `/${v.uf}`));
+        } else if (v.uf) f.append(el('span', '', v.uf));
         topo.append(f);
-        ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR);
-      } else {
-        if (v.uf) extra('v', v.uf);
-        if (v.reputacao) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR, grupo);
-      }
+        if (v.cidade || v.reputacao) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR);
+      } else if (v.reputacao) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR, grupo);
     } else extra('v', 'Perfil não carregado');
   }
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
