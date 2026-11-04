@@ -5,7 +5,7 @@ import type { Semaforo } from '../promocoes/tipos.ts';
 import { decidir, piorou } from './decidir.ts';
 import { agendarOuConcluir, FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
 import { type ClienteML, SemEscritaPromocoes } from './ml.ts';
-import { type Acao, type ItemNaCampanha, type ItemRow, ofertaFixaNova, type TipoPromocao } from './tipos.ts';
+import { type Acao, type CamposItem, type ItemNaCampanha, type ItemRow, ofertaFixaNova, type TipoPromocao } from './tipos.ts';
 
 export type { CamposItem, ItemRow } from './tipos.ts';
 
@@ -24,6 +24,10 @@ export interface DepsExecutar extends DepsLaco {
   espelharPreco(promocaoId: string, mlItemId: string, preco: number): Promise<void>;
   /** Recalcula ml_promocoes.contagem a partir das linhas da Central (mesma regra do sync). Best-effort. */
   recontarCentral(promocaoId: string): Promise<void>;
+  /** Ofertas fixas: outra operação aderiu a este item há pouco (`candidate` ainda não prova nada). */
+  adesaoRecente(promocaoId: string, mlItemId: string): Promise<boolean>;
+  /** Ofertas fixas: grava a etapa só se o item segue `enviando` sem etapa; false = outro worker já escreveu ou escreve. */
+  adquirirEscrita(operacaoId: string, mlItemId: string, campos: Partial<CamposItem>): Promise<boolean>;
 }
 
 const RECONECTAR = 'Sem permissão de escrita em promoções — reconecte a conta do Mercado Livre em Canais';
@@ -32,7 +36,8 @@ const SELLER_CENTER = 'O ML ainda não confirmou a saída. Confira no Seller Cen
 const PIOROU = 'O resultado piorou desde o preview';
 const SAIU_DA_CENTRAL = 'O anúncio saiu da Central desde o preview';
 const ADESAO_SEM_CONFIRMACAO = 'Não foi possível confirmar a adesão no ML. Confira no Seller Center.';
-/** Ofertas fixas: releituras da adesão incerta. Entre elas o claim leva > 2 min → ~13 min, bem acima do atraso de ~2 min. */
+const ADESAO_RECENTE = 'Adesão recente ainda propagando no ML. Aguarde alguns minutos e tente de novo.';
+/** Ofertas fixas: releituras da adesão incerta, uma por continuação de 150 s → ~13 min, bem acima do atraso de ~2 min. */
 const TENTATIVAS_ADESAO = 5;
 
 const MIN = 60;
@@ -109,8 +114,11 @@ function aguardarSaida(deps: DepsExecutar, op: OperacaoRow, id: string): Promise
  * Oferta fixa com etapa gravada: o POST/DELETE pode ter sido aceito, então nunca escreve de novo. `candidate` logo
  * depois do POST é o atraso do ML; depois do DELETE é a saída (o item participava quando a etapa foi gravada).
  */
-async function retomarOfertaFixa(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fresco: ItemNaCampanha | null): Promise<void> {
+async function retomarOfertaFixa(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): Promise<void> {
   const id = it.ml_item_id;
+  // Leitura falha = sem prova, como item fora da campanha: aderir gasta tentativa, sair vai para a escada de 24 h.
+  const fresco = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
+    .catch((e) => { if (e instanceof SemEscritaPromocoes) throw e; return null; });
   if (op.acao === 'sair') {
     if (fresco?.status !== 'candidate') return aguardarSaida(deps, op, id);
     await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' }));
@@ -126,11 +134,12 @@ async function retomarOfertaFixa(op: OperacaoRow, it: ItemRow, deps: DepsExecuta
   }
   // ponytail: o laço não conta tentativas; `conferencias` (sem uso em aderir) conta, como no reajuste.
   const conferencias = it.conferencias + 1;
+  // Esgotou: a etapa fica gravada; é ela que faz adesaoRecente segurar uma nova operação (a adesão segue incerta).
   if (conferencias >= TENTATIVAS_ADESAO) {
     return deps.gravarItem(op.id, id, { status: 'erro', mensagem: ADESAO_SEM_CONFIRMACAO, conferencias });
   }
+  // Sem lançar: esperar não é falha (500 gastaria os retries do QStash). O item fica `enviando` e `finalizar` continua.
   await gravarPos(deps.gravarItem(op.id, id, { conferencias }));
-  throw new FalhaPosEscrita(new Error(`ML ainda não confirmou a adesão do item ${id}`));
 }
 
 /**
@@ -188,11 +197,11 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   // Achado Codex P1: na retomada de uma escrita (etapa gravada), falha de leitura não pode virar `erro` — o PUT pode
   // ter sido aplicado; o item fica `enviando` e o retry relê.
   const fixa = ofertaFixaNova(op.promocao_tipo);
-  const retomada = (op.acao === 'alterar_preco' || fixa) && it.etapa === 'escrita_pedida';
+  if (fixa && op.acao !== 'alterar_preco' && it.etapa === 'escrita_pedida') return retomarOfertaFixa(op, it, deps);
+  const retomada = op.acao === 'alterar_preco' && it.etapa === 'escrita_pedida';
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
     .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
-  if (retomada) return retomarOfertaFixa(op, it, deps, fresco);
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
   const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
   const relacoes = convidado ? await ml.lerRelacoes(id) : null;
@@ -212,7 +221,8 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   }
 
   if (d.tipo === 'delete') {
-    if (fixa) await deps.gravarItem(op.id, id, { etapa: 'escrita_pedida', offer_id: fresco?.offer_id ?? null });
+    // Não adquiriu: outro worker escreve ou já escreveu; se ele morrer, o claim vencido traz o item de volta como retomada.
+    if (fixa && !(await deps.adquirirEscrita(op.id, id, { etapa: 'escrita_pedida', offer_id: fresco?.offer_id ?? null }))) return;
     await ml.del(id, d.query).catch((e) => { throw fixa ? escritaIncerta(e) : e; });
     return aguardarSaida(deps, op, id);
   }
@@ -225,8 +235,17 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
     if (piorou(it.semaforo ?? 'verde', atual)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: PIOROU });
   }
 
-  if (fixa) await deps.gravarItem(op.id, id, { etapa: 'escrita_pedida' });
-  const { offer_id, inicio, fim } = await ml.post(id, d.body).catch((e) => { throw fixa ? escritaIncerta(e) : e; });
+  if (fixa) {
+    if (await deps.adesaoRecente(op.promocao_id, id)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: ADESAO_RECENTE });
+    if (!(await deps.adquirirEscrita(op.id, id, { etapa: 'escrita_pedida' }))) return;
+  }
+  const { offer_id, inicio, fim } = await ml.post(id, d.body).catch(async (e) => {
+    if (!fixa) throw e;
+    const incerta = escritaIncerta(e);
+    // Recusa clara: nada foi escrito; sem isto adesaoRecente seguraria a nova tentativa como se a adesão propagasse.
+    if (incerta === e) await deps.gravarItem(op.id, id, { etapa: null }).catch(() => {});
+    throw incerta;
+  });
   await gravarPos(deps.gravarItem(op.id, id, {
     status: 'aplicado', offer_id, mensagem: op.promocao_tipo === 'SMART_LIGHTNING' ? mensagemJanela(inicio, fim) : null,
     ...(fixa ? { etapa: 'ml_confirmado' as const } : {}),

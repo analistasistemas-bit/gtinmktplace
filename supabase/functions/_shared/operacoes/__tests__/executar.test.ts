@@ -65,6 +65,13 @@ function montar(itens: Linha[], opts: {
     espelharStatusCentral: vi.fn(async () => {}),
     espelharPreco: vi.fn(async () => {}),
     recontarCentral: vi.fn(async () => {}),
+    adesaoRecente: vi.fn(async (_p: string, _id: string) => false),
+    adquirirEscrita: vi.fn(async (_o: string, id: string, c: Partial<Linha>) => {
+      const it = itens.find((i) => i.ml_item_id === id)!;
+      if (it.status !== 'enviando' || it.etapa) return false;
+      Object.assign(it, c);
+      return true;
+    }),
     continuar: vi.fn(async (_s?: number) => {}),
     agendarConferencia: vi.fn(async (_s: number) => {}),
     concluir: vi.fn(async () => {}),
@@ -592,8 +599,53 @@ describe('ofertas de preço fixo', () => {
   const part = (status: string, preco = 69.98) => conv({ status, preco_min: null, preco_max: null, offer_id: 'OFFER-MLB1-9', preco });
   const etapa = { etapa: 'escrita_pedida' as const };
   const ordem = (f: unknown, n = 0) => vi.mocked(f as () => void).mock.invocationCallOrder[n];
-  /** Reentrega: o `enviando` parado volta para o laço (o mock só devolve `pendente`). */
-  const reentregar = (it: Linha) => { it.status = 'pendente'; };
+  const RETRY_SEG = [12, 148, 1800]; // intervalos do QStash entre as 4 entregas de uma mensagem
+  /** Relógio + claim de 2 min + fila do QStash: 500 reentrega a mesma mensagem (até 4 entregas), `continuar` publica outra. */
+  function comFila(op: OperacaoRow, itens: Linha[], opts: Parameters<typeof montar>[1] = {}) {
+    const m = montar(itens, opts);
+    const { deps, avancar } = m;
+    const tocado = new Map<string, number>();
+    const acha = (id: string) => itens.find((i) => i.ml_item_id === id)!;
+    const toca = (id: string) => tocado.set(id, deps.agora());
+    const livre = (i: Linha) => i.status === 'pendente'
+      || (i.status === 'enviando' && deps.agora() - (tocado.get(i.ml_item_id) ?? 0) > 120_000);
+    deps.reivindicar.mockImplementation(async (_o, id) => {
+      if (!livre(acha(id))) return false;
+      acha(id).status = 'enviando';
+      toca(id);
+      return true;
+    });
+    deps.itensPendentes.mockImplementation(async (_o, limite) => itens.filter(livre).slice(0, limite).map((i) => ({ ...i })));
+    deps.gravarItem.mockImplementation(async (_o, id, c) => { Object.assign(acha(id), c); toca(id); });
+    deps.adquirirEscrita.mockImplementation(async (_o, id, c) => {
+      if (acha(id).status !== 'enviando' || acha(id).etapa) return false;
+      Object.assign(acha(id), c);
+      toca(id);
+      return true;
+    });
+    const fila = [{ em: deps.agora(), entrega: 1 }];
+    deps.continuar.mockImplementation(async (seg = 0) => { fila.push({ em: deps.agora() + seg * 1000, entrega: 1 }); });
+    const rodar = async () => {
+      const respostas: number[] = [];
+      let mortas = 0;
+      while (fila.length) {
+        expect(respostas.length).toBeLessThan(40);
+        fila.sort((a, b) => a.em - b.em);
+        const msg = fila.shift()!;
+        avancar(Math.max(0, msg.em - deps.agora()));
+        try {
+          await executar(op, deps, OPTS);
+          respostas.push(200);
+        } catch {
+          respostas.push(500);
+          if (msg.entrega < 4) fila.push({ em: deps.agora() + RETRY_SEG[msg.entrega - 1] * 1000, entrega: msg.entrega + 1 });
+          else mortas++;
+        }
+      }
+      return { respostas, mortas };
+    };
+    return { ...m, rodar, tocado };
+  }
 
   describe('aderir', () => {
     it('SMART_LIGHTNING: etapa antes do POST, stock.min, janela do POST, espelho pending com a releitura em candidate', async () => {
@@ -602,8 +654,8 @@ describe('ofertas de preço fixo', () => {
         post: () => ({ offer_id: 'OFFER-MLB1-9', inicio: '2026-11-04T12:00:00', fim: '2026-11-04T23:59:59' }) });
       await executar(SL, deps, OPTS);
       expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-MLB18055120', promotion_type: 'SMART_LIGHTNING', offer_id: 'CANDIDATE-MLB1-1', stock: 5 });
-      expect(deps.gravarItem).toHaveBeenNthCalledWith(1, 'op1', 'MLB1', { etapa: 'escrita_pedida' });
-      expect(ordem(deps.gravarItem)).toBeLessThan(ordem(ml.post));
+      expect(deps.adquirirEscrita).toHaveBeenCalledWith('op1', 'MLB1', { etapa: 'escrita_pedida' });
+      expect(ordem(deps.adquirirEscrita)).toBeLessThan(ordem(ml.post));
       expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-MLB1-9', etapa: 'ml_confirmado', mensagem: 'Agendada: 04/11 12:00–23:59' });
       expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18055120', 'SMART_LIGHTNING', 'MLB1', 'pending');
       expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18055120', 'MLB1', 64);
@@ -663,10 +715,70 @@ describe('ofertas de preço fixo', () => {
     it('falha ao gravar a etapa → erro sem POST', async () => {
       const itens = [item('MLB1', { preco: 64 })];
       const { deps, ml } = montar(itens, { campanha: () => convSL() });
-      deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      deps.adquirirEscrita.mockRejectedValueOnce(new Error('db'));
       await executar(SL, deps, OPTS);
       expect(ml.post).not.toHaveBeenCalled();
       expect(itens[0].status).toBe('erro');
+    });
+
+    it('adesão recente de outra operação → mudou, sem etapa e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      deps.adesaoRecente.mockResolvedValue(true);
+      await executar(SL, deps, OPTS);
+      expect(deps.adesaoRecente).toHaveBeenCalledWith('P-MLB18055120', 'MLB1');
+      expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'Adesão recente ainda propagando no ML. Aguarde alguns minutos e tente de novo.' });
+      expect(itens[0].etapa).toBeUndefined();
+      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('segunda operação com o espelho da primeira falho: sem POST na janela de 10 min; depois dela posta', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const op1 = comFila(SL, a, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      op1.deps.espelharStatusCentral.mockRejectedValue(new Error('db'));
+      await op1.rodar();
+      expect(a[0].status).toBe('aplicado');
+
+      const segunda = (esperaMs: number) => {
+        const b = [item('MLB1', { preco: 64 })];
+        const op = comFila({ ...SL, id: 'op2' }, b, { campanha: () => convSL() });
+        op.avancar(esperaMs);
+        // Mesmo predicado de deps.adesaoRecente: `aplicado` há menos de 10 min.
+        op.deps.adesaoRecente.mockImplementation(async () => op.deps.agora() - op1.tocado.get('MLB1')! < 600_000);
+        return { b, op };
+      };
+      const cedo = segunda(60_000);
+      await cedo.op.rodar();
+      expect(cedo.b[0].status).toBe('mudou');
+      expect(cedo.op.ml.post).not.toHaveBeenCalled();
+
+      const tarde = segunda(11 * 60_000);
+      await tarde.op.rodar();
+      expect(tarde.b[0].status).toBe('aplicado');
+      expect(tarde.op.ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('dois workers: claim vencido antes da etapa → um só POST, e quem perdeu não mexe no item', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, avancar, rodar } = comFila(SL, itens, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      deps.semaforoAtual.mockImplementationOnce(async () => {
+        avancar(180_000); // worker A parado: o claim vence e o worker B faz o item inteiro
+        await executar(SL, deps, OPTS);
+        return 'verde';
+      });
+      await rodar();
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9' });
+    });
+
+    it('etapa de outro worker gravada e ainda enviando: quem perdeu não posta e a operação continua', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      deps.adquirirEscrita.mockResolvedValueOnce(false);
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: true });
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(deps.continuar).toHaveBeenCalledWith(150);
     });
 
     it('4xx claro do ML → erro com a mensagem do ML', async () => {
@@ -674,7 +786,7 @@ describe('ofertas de preço fixo', () => {
       const { deps, ml } = montar(itens, { campanha: () => convSL() });
       vi.mocked(ml.post).mockRejectedValue(new Error('ML 400: oferta inválida'));
       expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: false });
-      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: oferta inválida' });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: oferta inválida', etapa: null });
     });
 
     it('403 → RECONECTAR (fatal), como nos outros tipos', async () => {
@@ -682,29 +794,25 @@ describe('ofertas de preço fixo', () => {
       const { deps, ml } = montar(itens, { campanha: () => convSL() });
       vi.mocked(ml.post).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
       await executar(SL, deps, OPTS);
-      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR, etapa: null });
     });
 
-    it.each(['timeout', 'ML 500: x', 'ML 429: x'])('resultado incerto (%s) fica enviando com a etapa; retry nunca posta de novo', async (msg) => {
+    it.each(['timeout', 'ML 500: x', 'ML 429: x'])('resultado incerto (%s): um só 500, um só POST, etapa mantida', async (msg) => {
       const itens = [item('MLB1', { preco: 64 })];
-      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      const { ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
       vi.mocked(ml.post).mockRejectedValue(new Error(msg));
-      await expect(executar(SL, deps, OPTS)).rejects.toThrow(msg);
-      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida' });
-      reentregar(itens[0]);
-      await executar(SL, deps, OPTS).catch(() => {});
+      const r = await rodar();
+      expect(r.respostas.filter((x) => x === 500)).toHaveLength(1);
+      expect(r.respostas[0]).toBe(500);
       expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[0].etapa).toBe('escrita_pedida');
     });
 
-    it('crash ao gravar pós-POST: fica enviando; retry confirma sem novo POST', async () => {
+    it('crash ao gravar pós-POST: 500; a reentrega continua e confirma sem novo POST', async () => {
       const itens = [item('MLB1', { preco: 64 })];
-      const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? convSL() : part('pending', 64)), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
-      deps.gravarItem.mockImplementationOnce(async (_o, id, c) => { Object.assign(itens.find((i) => i.ml_item_id === id)!, c); })
-        .mockRejectedValueOnce(new Error('db'));
-      await expect(executar(SL, deps, OPTS)).rejects.toThrow('db');
-      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida' });
-      reentregar(itens[0]);
-      await executar(SL, deps, OPTS);
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => (n === 1 ? convSL() : part('pending', 64)), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      expect((await rodar()).respostas).toEqual([500, 200, 200]);
       expect(ml.post).toHaveBeenCalledTimes(1);
       expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9' });
     });
@@ -716,6 +824,8 @@ describe('ofertas de preço fixo', () => {
       expect(await executar(DEAL_ADERIR, deps, OPTS)).toEqual({ processados: 1, continuou: false });
       expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'timeout' });
       expect(itens[0].etapa).toBeUndefined();
+      expect(deps.adesaoRecente).not.toHaveBeenCalled();
+      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
     });
   });
 
@@ -730,62 +840,80 @@ describe('ofertas de preço fixo', () => {
       expect(ml.post).not.toHaveBeenCalled();
     });
 
-    it('ainda candidate → fica enviando e conta a tentativa, sem POST', async () => {
+    it.each([['candidate', () => convSL()], ['fora da campanha', () => null]])('%s: conta a tentativa e continua com 200, sem POST', async (_n, campanha) => {
       const itens = [item('MLB1', { preco: 64, ...etapa })];
-      const { deps, ml } = montar(itens, { campanha: () => convSL() });
-      await expect(executar(SL, deps, OPTS)).rejects.toThrow();
+      const { deps, ml } = montar(itens, { campanha });
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: true });
       expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida', conferencias: 1 });
+      expect(deps.continuar).toHaveBeenCalledWith(150);
       expect(ml.post).not.toHaveBeenCalled();
       expect(ml.lerRelacoes).not.toHaveBeenCalled();
       expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
     });
 
-    it('fora da campanha também espera (nunca POST)', async () => {
-      const itens = [item('MLB1', { preco: 64, ...etapa })];
-      const { deps, ml } = montar(itens, { campanha: () => null });
-      await expect(executar(SL, deps, OPTS)).rejects.toThrow();
-      expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1 });
-      expect(ml.post).not.toHaveBeenCalled();
+    it('não espera por outro item: o laço segue para os próximos', async () => {
+      const itens = [item('MLB1', { preco: 64, ...etapa }), item('MLB2', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      await executar(SL, deps, OPTS);
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[1].status).toBe('aplicado');
     });
 
-    it('esgotadas as 5 tentativas → erro, sem POST, e a operação conclui', async () => {
-      const itens = [item('MLB1', { preco: 64, ...etapa })];
-      const { deps, ml } = montar(itens, { campanha: () => convSL() });
-      for (let i = 1; i <= 4; i++) {
-        await expect(executar(SL, deps, OPTS)).rejects.toThrow();
-        expect(itens[0].conferencias).toBe(i);
-        reentregar(itens[0]);
-      }
-      await executar(SL, deps, OPTS);
-      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5 });
-      expect(ml.post).not.toHaveBeenCalled();
+    it('fila: ML sempre candidate → um só 500 (o POST incerto), continuações com 200 e erro na 5ª tentativa', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(deps.continuar.mock.calls).toEqual([[150], [150], [150], [150], [150]]);
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
+      expect(ml.post).toHaveBeenCalledTimes(1);
       expect(deps.concluir).toHaveBeenCalledTimes(1);
     });
 
-    it('confirma na 3ª tentativa depois do atraso do ML', async () => {
-      const itens = [item('MLB1', { preco: 64, ...etapa })];
-      const { deps, ml } = montar(itens, { campanha: (_id, n) => (n < 3 ? convSL() : part('pending', 64)) });
-      for (let i = 0; i < 2; i++) {
-        await expect(executar(SL, deps, OPTS)).rejects.toThrow();
-        reentregar(itens[0]);
-      }
-      await executar(SL, deps, OPTS);
-      expect(itens[0].status).toBe('aplicado');
+    it('fila: confirma depois do atraso do ML, sem novo POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => (n <= 2 ? convSL() : part('pending', 64)) });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200], mortas: 0 });
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', conferencias: 1 });
+      expect(ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('fila: leitura sempre falhando gasta as mesmas 5 tentativas, sem 500 e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => {
+        if (n > 1) throw new Error('ML 500 em /seller-promotions/promotions');
+        return convSL();
+      } });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(deps.concluir).toHaveBeenCalledTimes(1);
+    });
+
+    it('fila: lote em retomada não esgota as entregas da mensagem', async () => {
+      const itens = ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5', 'MLB6'].map((id) => item(id, { preco: 64, ...etapa }));
+      const { ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      const r = await rodar();
+      expect(r.mortas).toBe(0);
+      expect(r.respostas).not.toContain(500);
+      expect(itens.every((i) => i.status === 'erro' && i.etapa === 'escrita_pedida')).toBe(true);
       expect(ml.post).not.toHaveBeenCalled();
     });
 
-    it('falha ao gravar a tentativa ou na leitura → fica enviando, nunca erro', async () => {
+    it('falha ao gravar a tentativa → 500 e fica enviando; 401/403 na leitura segue fatal', async () => {
       const a = [item('MLB1', { preco: 64, ...etapa })];
       const x = montar(a, { campanha: () => convSL() });
       x.deps.gravarItem.mockRejectedValueOnce(new Error('db'));
       await expect(executar(SL, x.deps, OPTS)).rejects.toThrow('db');
-      expect(a[0].status).toBe('enviando');
+      expect(a[0]).toMatchObject({ status: 'enviando', conferencias: 0 });
 
       const b = [item('MLB1', { preco: 64, ...etapa })];
       const y = montar(b);
-      vi.mocked(y.ml.lerNaCampanha).mockRejectedValue(new Error('ML 500 em /seller-promotions/promotions'));
-      await expect(executar(SL, y.deps, OPTS)).rejects.toThrow('ML 500');
-      expect(b[0].status).toBe('enviando');
+      vi.mocked(y.ml.lerNaCampanha).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
+      await executar(SL, y.deps, OPTS);
+      expect(b[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR, etapa: 'escrita_pedida' });
       expect(y.ml.post).not.toHaveBeenCalled();
     });
 
@@ -802,8 +930,9 @@ describe('ofertas de preço fixo', () => {
       const itens = [item('MLB1', { preco: null })];
       const { deps, ml } = montar(itens, { campanha: () => part('started') });
       await executar(SAIR_PM, deps, OPTS);
-      expect(deps.gravarItem).toHaveBeenNthCalledWith(1, 'op1', 'MLB1', { etapa: 'escrita_pedida', offer_id: 'OFFER-MLB1-9' });
-      expect(ordem(deps.gravarItem)).toBeLessThan(ordem(ml.del));
+      expect(deps.adquirirEscrita).toHaveBeenCalledWith('op1', 'MLB1', { etapa: 'escrita_pedida', offer_id: 'OFFER-MLB1-9' });
+      expect(ordem(deps.adquirirEscrita)).toBeLessThan(ordem(ml.del));
+      expect(deps.adesaoRecente).not.toHaveBeenCalled();
       expect(ml.del).toHaveBeenCalledWith('MLB1', 'promotion_type=PRICE_MATCHING&promotion_id=P-MLB18099366&offer_id=OFFER-MLB1-9&app_version=v2');
       expect(itens[0]).toMatchObject({ status: 'saida_solicitada', conferencias: 0, proxima_conferencia: new Date(T0 + 300_000).toISOString() });
       expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
@@ -826,19 +955,29 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: não pode' });
     });
 
-    it('timeout no DELETE: fica enviando; retry com candidate → aplicado + saiu, sem novo DELETE', async () => {
+    it('fila: timeout no DELETE, reentrega com candidate → aplicado + saiu, sem novo DELETE', async () => {
       const itens = [item('MLB1', { preco: null })];
-      const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? part('started') : convPM({ preco: 72 })) });
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: (_id, n) => (n === 1 ? part('started') : convPM({ preco: 72 })) });
       vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
-      await expect(executar(SAIR_PM, deps, OPTS)).rejects.toThrow('timeout');
-      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida' });
-      reentregar(itens[0]);
-      await executar(SAIR_PM, deps, OPTS);
+      expect(await rodar()).toEqual({ respostas: [500, 200, 200], mortas: 0 });
       expect(ml.del).toHaveBeenCalledTimes(1);
       expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' });
       expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18099366', 'PRICE_MATCHING', 'MLB1', 'saiu');
       expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 72);
       expect(ordem(deps.espelharPreco)).toBeLessThan(ordem(deps.espelharStatusCentral));
+    });
+
+    it('fila: timeout no DELETE e leitura sempre falhando → escada de 24 h, sem novo DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: (_id, n) => {
+        if (n > 1) throw new Error('ML 500 em /seller-promotions/promotions');
+        return part('started');
+      } });
+      vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [500, 200, 200], mortas: 0 });
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0].status).toBe('saida_solicitada');
+      expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
     });
 
     it.each([['participando', () => part('started')], ['fora da campanha', () => null]])('retomada %s → saida_solicitada com a escada, sem DELETE', async (_n, campanha) => {
@@ -851,14 +990,25 @@ describe('ofertas de preço fixo', () => {
       expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
     });
 
-    it('crash ao gravar pós-DELETE: retry não repete o DELETE', async () => {
+    it('fila: crash ao gravar pós-DELETE não repete o DELETE', async () => {
       const itens = [item('MLB1', { preco: null })];
-      const { deps, ml } = montar(itens, { campanha: () => part('started') });
-      deps.gravarItem.mockImplementationOnce(async (_o, id, c) => { Object.assign(itens.find((i) => i.ml_item_id === id)!, c); })
-        .mockRejectedValueOnce(new Error('db'));
-      await expect(executar(SAIR_PM, deps, OPTS)).rejects.toThrow('db');
-      reentregar(itens[0]);
-      await executar(SAIR_PM, deps, OPTS);
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: () => part('started') });
+      deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      expect((await rodar()).respostas).toEqual([500, 200, 200]);
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0].status).toBe('saida_solicitada');
+    });
+
+    it('dois workers: claim vencido antes da etapa → um só DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, avancar, rodar } = comFila(SAIR_PM, itens, { campanha: () => part('started') });
+      const adquirir = deps.adquirirEscrita.getMockImplementation()!;
+      deps.adquirirEscrita.mockImplementationOnce(async (...a) => {
+        avancar(180_000); // worker A parado: o claim vence e o worker B faz o item inteiro
+        await executar(SAIR_PM, deps, OPTS);
+        return adquirir(...a);
+      });
+      await rodar();
       expect(ml.del).toHaveBeenCalledTimes(1);
       expect(itens[0].status).toBe('saida_solicitada');
     });
@@ -869,6 +1019,7 @@ describe('ofertas de preço fixo', () => {
       await executar(SAIR_SMART, deps, OPTS);
       expect(itens[0].etapa).toBeUndefined();
       expect(itens[0].status).toBe('saida_solicitada');
+      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
     });
   });
 

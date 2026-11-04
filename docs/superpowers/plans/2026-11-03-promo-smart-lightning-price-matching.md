@@ -67,9 +67,10 @@
 **`executar.ts` — idempotência (revisão Codex P1/P2; reusar o padrão `etapa='escrita_pedida'` + `FalhaPosEscrita` de `alterarPreco`, `executar.ts:83-127`):**
 - Só nos tipos novos, ANTES do POST e do DELETE: gravar `etapa:'escrita_pedida'` (no DELETE, também o `offer_id` OFFER observado). `itensPendentes`/leitura dos itens em `deps.ts:23` passa a carregar `offer_id`.
 - Timeout/erro ambíguo depois da etapa gravada = `FalhaPosEscrita` (fica `enviando`, retry relê), como no alterar_preco. 4xx claro do ML = `erro` com a mensagem do ML.
-- **Retomada de aderir** (`etapa==='escrita_pedida'`): NUNCA posta de novo. Participando → `aplicado` com o `offer_id` lido + espelho. Ainda `candidate` → `FalhaPosEscrita` (atraso de ~2 min); esgotadas as tentativas do laço, `erro` `'Não foi possível confirmar a adesão no ML. Confira no Seller Center.'`.
+- **Retomada de aderir** (`etapa==='escrita_pedida'`): NUNCA posta de novo. Participando → `aplicado` com o `offer_id` lido + espelho. Ainda `candidate`, fora da campanha ou leitura falha → conta em `conferencias` e retorna sem lançar (fica `enviando`; `finalizar` publica `continuar(150)` com 200; revisão Codex final). Na 5ª, `erro` `'Não foi possível confirmar a adesão no ML. Confira no Seller Center.'` mantendo a etapa.
 - **Retomada de sair** (`etapa==='escrita_pedida'`): `candidate` → saída concluída (`aplicado` + espelho `saiu`); participando → `saida_solicitada` com a escada de conferência (sem novo DELETE).
 - Sem evidência anterior, sair com `candidate` segue a regra de `sairOfertaFixa` (`mudou`, pede para tentar de novo).
+- Etapa por transição atômica (`adquirirEscrita`: `status='enviando'` e `etapa IS NULL`); só quem adquiriu escreve. Antes do POST, `adesaoRecente` (outra operação `aderir` do item com etapa `escrita_pedida` ou `aplicado`/`ja_estava` nos últimos 10 min) → `mudou` `'Adesão recente ainda propagando no ML. Aguarde alguns minutos e tente de novo.'`. Recusa clara do POST limpa a etapa.
 
 **`executar.ts` — demais:**
 - `conferir`: `ofertaFixaNova` segue a regra da Relâmpago (só `candidate` confirma; `null` reagenda). Confirmada a saída, se `fresco.preco != null`, `espelharPreco(promocao, id, fresco.preco)` best-effort: o novo convite pode ter outro preço e o sync agora é 1x/dia.
