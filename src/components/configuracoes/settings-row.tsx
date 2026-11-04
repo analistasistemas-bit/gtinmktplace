@@ -105,6 +105,36 @@ export function AvisoLeitura({ children }: { children: ReactNode }) {
 
 export type EstadoCampo = 'salvando' | 'salvo' | 'erro';
 
+// O postgrest-js só repete GET/HEAD: em POST, a primeira queda de conexão vira erro na hora, em
+// objeto simples (não `Error`) com message `TypeError: <texto do navegador>`. Toda gravação da fila
+// é upsert idempotente, então repetir é seguro mesmo que a primeira tenha chegado ao banco.
+const ESPERAS_REDE_MS = [400, 800];
+
+function mensagemCrua(err: unknown): string | undefined {
+  return (err as { message?: string } | null)?.message;
+}
+
+function falhaDeRede(err: unknown): boolean {
+  return mensagemCrua(err)?.startsWith('TypeError:') ?? false;
+}
+
+function mensagemDoErro(err: unknown): string {
+  if (falhaDeRede(err)) return 'Sem conexão com o servidor. Tente de novo.';
+  return mensagemCrua(err) ?? String(err);
+}
+
+async function comRetentativa(executar: () => Promise<unknown>): Promise<unknown> {
+  for (const espera of ESPERAS_REDE_MS) {
+    try {
+      return await executar();
+    } catch (err) {
+      if (!falhaDeRede(err)) throw err;
+      await new Promise((r) => setTimeout(r, espera));
+    }
+  }
+  return executar();
+}
+
 /**
  * Fila de gravação single-flight por tabela, com estado por campo.
  *
@@ -154,13 +184,13 @@ export function useFilaDeSalvamento<T extends object>(carregado: T | undefined |
     fila.current = fila.current
       // Uma falha não pode descartar o que já está enfileirado atrás dela.
       .catch(() => undefined)
-      .then(() => executar({ ...(snapshot.current as T) }))
+      .then(() => comRetentativa(() => executar({ ...(snapshot.current as T) })))
       .then(
         () => { if (atual()) setEstados((e) => ({ ...e, [campo]: 'salvo' })); },
         (err: unknown) => {
           if (!atual()) return;
           setEstados((e) => ({ ...e, [campo]: 'erro' }));
-          setErros((e) => ({ ...e, [campo]: err instanceof Error ? err.message : String(err) }));
+          setErros((e) => ({ ...e, [campo]: mensagemDoErro(err) }));
         },
       );
   };

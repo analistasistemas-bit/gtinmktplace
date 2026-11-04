@@ -12,6 +12,23 @@ export const UNIDADES_FISCAIS = [
 
 // A4 (auditoria fiscal 19/10): espelho de CSOSN_VALIDOS/CST_ICMS_VALIDOS/FCI_REGEX do validar.ts.
 export const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'] as const;
+// Whitelist copiada de supabase/functions/ingest-lote/verificar-fiscal.ts (CSOSN_VALIDOS) —
+// cópia deliberada, runtimes diferentes (Deno x Vite), sem módulo compartilhado.
+// ponytail: só CSOSN (regime Simples) — org em regime "normal" precisa de CST, não coberto
+// nesta entrega (escopo do brief da T12). `camposFiscaisFaltantes` valida por regime da org, mas
+// não impede um CSOSN de passar como se fosse CST; ver task-12-report.md.
+export const CSOSN_OPCOES: Array<{ valor: string; rotulo: string }> = [
+  { valor: '101', rotulo: '101 — Simples, com crédito' },
+  { valor: '102', rotulo: '102 — Simples, sem crédito' },
+  { valor: '103', rotulo: '103 — Simples, isenção (faixa)' },
+  { valor: '201', rotulo: '201 — Simples, com crédito + ST' },
+  { valor: '202', rotulo: '202 — Simples, sem crédito + ST' },
+  { valor: '203', rotulo: '203 — Simples, isenção (faixa) + ST' },
+  { valor: '300', rotulo: '300 — Imune' },
+  { valor: '400', rotulo: '400 — Não tributada' },
+  { valor: '500', rotulo: '500 — ICMS cobrado por ST/antecipação' },
+  { valor: '900', rotulo: '900 — Outros' },
+];
 export const CST_ICMS_VALIDOS = [
   '00', '02', '10', '15', '20', '30', '40', '41', '50', '51', '53', '60', '61', '70', '90',
 ] as const;

@@ -176,6 +176,14 @@ describe('CEP preenche o endereço (ViaCEP)', () => {
 });
 
 describe('Operação fiscal conforme o regime', () => {
+  it('CSOSN padrão: lista com legenda e grava só o código', async () => {
+    const user = userEvent.setup();
+    renderSecao({ empresa: EMPRESA_BASE });
+    await user.click(screen.getByRole('combobox', { name: 'CSOSN padrão de revenda' }));
+    await user.click(await screen.findByRole('option', { name: '102 — Simples, sem crédito' }));
+    await waitFor(() => expect(salvarEmpresa).toHaveBeenCalledWith({ csosn_padrao_revenda: '102' }));
+  });
+
   it('Simples: só Papel da empresa à vista; portabilidade num bloco recolhido', () => {
     renderSecao({ empresa: { ...EMPRESA_BASE, natureza_operacao: 'Venda de mercadoria' } });
     expect(screen.getByRole('combobox', { name: 'Papel da empresa' })).toBeInTheDocument();

@@ -7,7 +7,7 @@ import { AlertTriangle, FileText, Loader2, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
-import { ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
+import { CSOSN_OPCOES, ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
 import type { NcmStatus } from '@/hooks/useNcmOficial';
 import type { AvisosFiscaisNota } from '@/components/estoque/dialog-cadastro-produto';
 
@@ -79,24 +79,6 @@ const ROTULOS_ORIGEM_NFE: Record<number, string> = {
   7: '7 — Estrangeira – mercado interno sem similar',
   8: '8 — Nacional >70% importado',
 };
-
-// Whitelist copiada de supabase/functions/ingest-lote/verificar-fiscal.ts (CSOSN_VALIDOS) —
-// cópia deliberada, runtimes diferentes (Deno x Vite), sem módulo compartilhado.
-// ponytail: só CSOSN (regime Simples) — org em regime "normal" precisa de CST, não coberto
-// nesta entrega (escopo do brief da T12). `camposFiscaisFaltantes` valida por regime da org, mas
-// não impede um CSOSN de passar como se fosse CST; ver task-12-report.md.
-const CSOSN_OPCOES: Array<{ valor: string; rotulo: string }> = [
-  { valor: '101', rotulo: '101 — Simples, com crédito' },
-  { valor: '102', rotulo: '102 — Simples, sem crédito' },
-  { valor: '103', rotulo: '103 — Simples, isenção (faixa)' },
-  { valor: '201', rotulo: '201 — Simples, com crédito + ST' },
-  { valor: '202', rotulo: '202 — Simples, sem crédito + ST' },
-  { valor: '203', rotulo: '203 — Simples, isenção (faixa) + ST' },
-  { valor: '300', rotulo: '300 — Imune' },
-  { valor: '400', rotulo: '400 — Não tributada' },
-  { valor: '500', rotulo: '500 — ICMS cobrado por ST/antecipação' },
-  { valor: '900', rotulo: '900 — Outros' },
-];
 
 function soDigitos(v: string, max: number): string {
   return v.replace(/\D/g, '').slice(0, max);

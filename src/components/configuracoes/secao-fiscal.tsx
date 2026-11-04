@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAliquotas, useSalvarAliquotas, useEmpresaFiscal, useSalvarEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { buscarCep } from '@/lib/cep';
-import { UFS, validarCnpj } from '@/lib/fiscal';
+import { CSOSN_OPCOES, UFS, validarCnpj } from '@/lib/fiscal';
 import { cn } from '@/lib/utils';
 import { usePermissoesConfig } from './permissoes';
 import {
@@ -16,7 +16,6 @@ import {
 const UF_NENHUMA = '__nenhuma__';
 // ADR-0181 D-10: mesma sentinela para "CSOSN padrão não definido".
 const CSOSN_NENHUM = '__nenhum__';
-const CSOSNS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'];
 
 // Obrigatórios por subgrupo — espelho exato de OBRIGATORIOS em
 // supabase/functions/_shared/fiscal/ativacao.ts (front e Deno não compartilham módulo; manter
@@ -487,7 +486,7 @@ export function SecaoFiscal() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={CSOSN_NENHUM}>Não definido</SelectItem>
-                    {CSOSNS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {CSOSN_OPCOES.map((o) => <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">

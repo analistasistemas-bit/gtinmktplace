@@ -130,4 +130,42 @@ describe('useFilaDeSalvamento', () => {
     await waitFor(() => expect(result.current.estados.nacional).toBe('salvo'));
     expect(result.current.erros.nacional).toBeUndefined();
   });
+
+  // Formato real de falha de rede no postgrest-js: objeto simples, status 0, nunca chega ao servidor.
+  const FALHA_DE_REDE = { message: 'TypeError: Load failed', details: '', hint: '', code: '' };
+
+  it('falha de rede: tenta de novo sozinha e a linha termina salva', async () => {
+    const { result } = renderHook(() => useFilaDeSalvamento<Aliquotas>(CARREGADO));
+    await waitFor(() => expect(result.current.pronto).toBe(true));
+
+    const executar = vi.fn().mockRejectedValueOnce(FALHA_DE_REDE).mockResolvedValue(undefined);
+    act(() => result.current.salvar('nacional', { nacional: 9 }, executar));
+
+    await waitFor(() => expect(result.current.estados.nacional).toBe('salvo'), { timeout: 3000 });
+    expect(executar).toHaveBeenCalledTimes(2);
+  });
+
+  it('falha de rede persistente: desiste após 3 tentativas com mensagem legível', async () => {
+    const { result } = renderHook(() => useFilaDeSalvamento<Aliquotas>(CARREGADO));
+    await waitFor(() => expect(result.current.pronto).toBe(true));
+
+    const executar = vi.fn().mockRejectedValue(FALHA_DE_REDE);
+    act(() => result.current.salvar('nacional', { nacional: 9 }, executar));
+
+    await waitFor(() => expect(result.current.estados.nacional).toBe('erro'), { timeout: 3000 });
+    expect(executar).toHaveBeenCalledTimes(3);
+    expect(result.current.erros.nacional).toBe('Sem conexão com o servidor. Tente de novo.');
+  });
+
+  it('erro do banco em objeto simples: mostra a mensagem e não repete', async () => {
+    const { result } = renderHook(() => useFilaDeSalvamento<Aliquotas>(CARREGADO));
+    await waitFor(() => expect(result.current.pronto).toBe(true));
+
+    const executar = vi.fn().mockRejectedValue({ message: 'viola a regra', details: null, hint: null, code: '23514' });
+    act(() => result.current.salvar('nacional', { nacional: 9 }, executar));
+
+    await waitFor(() => expect(result.current.estados.nacional).toBe('erro'));
+    expect(executar).toHaveBeenCalledTimes(1);
+    expect(result.current.erros.nacional).toBe('viola a regra');
+  });
 });
