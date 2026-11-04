@@ -16,6 +16,7 @@ vi.mock('@/stores/auth-store', () => ({
 }));
 vi.mock('@/stores/support-store', () => ({
   useSupportStore: (seletor: (s: unknown) => unknown) => seletor({ context: null }),
+  effectiveOrgId: () => 'org-1',
 }));
 
 const salvarEmpresa = vi.fn().mockResolvedValue(undefined);
