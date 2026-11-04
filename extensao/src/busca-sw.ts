@@ -13,7 +13,6 @@ import {
   semDados, type CacheEnr, type RespostaEnriquecimento,
 } from './cache-enriquecimento';
 import { enriquecimentoDe, esperaDaNovaTentativa, VERSAO_ENRIQUECIMENTO, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
-import { participacaoNosPisos } from './compartilhado/busca-resumo';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
 import { mensagemDeErro } from './painel/formato';
 
@@ -80,13 +79,9 @@ async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
 }
 
-/** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). A participação nos
- *  pisos vai calculada sobre TODOS os cards carregados nesta geração (não sobre o DOM). */
-function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca, cards: CardBusca[]): void {
-  chrome.tabs.sendMessage(tabId, {
-    tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados,
-    enriquecimento: r.enriquecimento, participacao: participacaoNosPisos(cards),
-  }).catch(() => {});
+/** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). */
+function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
+  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados, enriquecimento: r.enriquecimento }).catch(() => {});
 }
 
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
@@ -134,16 +129,12 @@ export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorr
       porItem.set(c.itemId, c);
     }
     const p = { geracao, sessao, url: semHash };
-    const todos = [...porItem.values()];
     await gravar(tabId, p, {
       entrada: { tipoPagina: 'busca', url: semHash },
       resposta: r,
-      observado: { cards: todos, ocorrencias: typeof ocorrencias === 'number' && ocorrencias >= 0 ? Math.min(ocorrencias, 1000) : porItem.size },
+      observado: { cards: [...porItem.values()], ocorrencias: typeof ocorrencias === 'number' && ocorrencias >= 0 ? Math.min(ocorrencias, 1000) : porItem.size },
     });
-    // Scroll muda a base da participação: os blocos antigos recebem o valor novo mesmo sem rodada de rede (a 1ª leitura
-    // não tem bloco antigo; a identificação já avisa).
-    const mudouParticipacao = !!antes && JSON.stringify(participacaoNosPisos(antes.observado.cards).porItem) !== JSON.stringify(participacaoNosPisos(todos).porItem);
-    if (descartou || mudouParticipacao) avisarPagina(tabId, p, r, todos);
+    if (descartou) avisarPagina(tabId, p, r);
     return { ok: true as const };
   });
 }
@@ -200,7 +191,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         const r = respostaDe(atual.estado);
         mudar(r, new Map(atual.estado.observado.cards.map((c) => [c.itemId, c])));
         await gravar(tabId, p, { ...atual.estado, resposta: r });
-        if (vale()) avisarPagina(tabId, p, r, atual.estado.observado.cards);
+        if (vale()) avisarPagina(tabId, p, r);
         return true;
       });
       const f = ok && vale() ? cache?.() : null;

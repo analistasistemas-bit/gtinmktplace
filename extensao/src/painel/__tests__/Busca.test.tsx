@@ -460,7 +460,7 @@ describe('fatia 2.1 no painel', () => {
       exatas: { MLB1000001: { estado: 'ok', preco: 19.99, sellerId: 7, tipo: 'gold_special', comissao: { estado: 'indisponivel', motivo: 'x' } },
         MLB1000002: { estado: 'ok', preco: 50, sellerId: 8, tipo: 'gold_special', comissao: { estado: 'indisponivel', motivo: 'x' } } } } } },
     vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP', cidade: 'Campinas', reputacao: '5_green' }, 8: { estado: 'ok', nome: 'B', medalha: null, uf: 'RJ', reputacao: null } },
-    fretes: { 'MLB1000001|19.99|01310100': { estado: 'ok', valor: 23.45 }, 'MLB1000002|50|01310100': { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } },
+    fretes: { 'MLB1000001|19.99|01310100': { estado: 'ok', valor: 23.45, expiraEm: Date.now() + 3600_000 }, 'MLB1000002|50|01310100': { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } },
   };
   const comEnr = () => { const e = estado(); (e.resposta as { enriquecimento?: unknown }).enriquecimento = enr; return e; };
 
@@ -480,6 +480,19 @@ describe('fatia 2.1 no painel', () => {
     expect(linhas[2].textContent).toContain('Consultando frete');
     // Frete nunca dentro da margem nem "na sua conta" fora da composição.
     expect(screen.queryByText(/Frete cotado na sua conta/)).toBeNull();
+  });
+
+  it('busca sem catálogo, só o frete falhou (rede/429): aviso e "Tentar novamente" aparecem e refazem', async () => {
+    const semCat = [card('MLB1000003', { preco: 80, catalogProductId: null }), card('MLB1000004', { preco: 30, catalogProductId: null })];
+    const e = estado({}, semCat);
+    (e.resposta as { enriquecimento?: unknown }).enriquecimento = { versao: 2, catalogos: {}, vendedores: {}, tentarAposEm: null, freteAposEm: null, falhou: true, indisponivel: null,
+      fretes: { 'MLB1000003|80|01310100': { estado: 'indisponivel', motivo: 'falha de rede' }, 'MLB1000004|30|01310100': { estado: 'indisponivel', motivo: 'frete da oferta indisponível' } } };
+    const p = props({ estado: e });
+    render(<Busca {...p} />);
+    expect(screen.queryByRole('region', { name: 'Catálogos e vendedores' })).toBeNull(); // sem catálogo: sem a seção
+    screen.getByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await waitFor(() => expect(p.analisar).toHaveBeenCalledWith([], true));
   });
 
   it('resumo: % dos pisos e frete com cobertura e ⓘ; reputação por vendedor único com desconhecidos e denominador', () => {

@@ -72,6 +72,9 @@ vinculado(6, false, { itemId: id(6), estado: 'limite', fonte: 'catalogo', codigo
 vinculado(8, true, ok(8, 12.1)); // meu anúncio + vinculado
 vinculado(9, null, { itemId: id(9), estado: 'sem_categoria', fonte: 'ean_da_busca', codigo: '0000109' }); // proprio desconhecido
 vinculado(12, false, ok(12, 18.2)); // duplicata: a margem só vale na ocorrência com o preço calculado
+// Caso cheio (rodada 1): catálogo + Loja oficial (card 0) + Patrocinado + Meu anúncio + Minha margem + frete.
+cards[0].patrocinado = true; cards[0].ocorrencias[0].patrocinado = true;
+vinculado(0, true, ok(0, 21.5));
 cards[10].identidadeConflitante = true; cards[10].catalogProductId = null; // conflito de identidade
 for (let i = 55; i < 60; i++) { delete meta[id(i)]; delete resultados[id(i)]; }
 
@@ -110,12 +113,14 @@ catalogo(27, { vendedores: 12, dias: 200, seller: { medalha: null, uf: 'BA' } })
 catalogo(33, { vendedores: 5, dias: 60, seller: { medalha: 'gold', uf: 'GO' } });
 catalogo(36, { vendedores: 1, dias: 10, seller: { medalha: 'platinum', uf: 'RS' } });
 
+// Validade das cotações no relógio REAL (o harness chama vistaDoFrete sem `agora`; relativa a AGORA_QA venceria).
+const FRETE_VALE_ATE = Number.MAX_SAFE_INTEGER;
 // Frete cotado (fatia 2.1): todos com preço, exceto 2 indisponíveis (sem opção / 429) e os de 45+ ainda em consulta.
 for (const c of cards) {
   if (c.preco === null || Number(c.itemId.slice(-2)) >= 45) continue;
   const n = Number(c.itemId.slice(-2));
   ENR.fretes![chaveFrete(c.itemId, c.preco)] = n === 7 ? { estado: 'indisponivel', motivo: 'frete da oferta indisponível' }
-    : n === 15 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', valor: Math.round((14 + (n * 3.7) % 30) * 100) / 100 };
+    : n === 15 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', valor: Math.round((14 + (n * 3.7) % 30) * 100) / 100, expiraEm: FRETE_VALE_ATE };
 }
 
 /** Cenários da Task 11.4: local (nada da rede), consultando (identificado, enriquecimento em voo), preenchido (tudo
@@ -135,7 +140,7 @@ export function cenario(c: Cenario, agora = Date.now()): { enr: EstadoEnriquecim
     }
     e.vendedores[990] = { estado: 'ok', nome: 'Loja', medalha: 'gold', uf: 'SP', cidade: 'Campinas', reputacao: '5_green' };
     for (const [k, v] of Object.entries(e.vendedores)) if (v.estado !== 'ok') e.vendedores[k] = { estado: 'ok', nome: null, medalha: 'silver', uf: 'MG', cidade: 'Uberlândia', reputacao: '4_light_green' };
-    for (const card of cards) if (card.preco !== null && !e.fretes![chaveFrete(card.itemId, card.preco)]) e.fretes![chaveFrete(card.itemId, card.preco)] = { estado: 'ok', valor: 21.9 };
+    for (const card of cards) if (card.preco !== null && !e.fretes![chaveFrete(card.itemId, card.preco)]) e.fretes![chaveFrete(card.itemId, card.preco)] = { estado: 'ok', valor: 21.9, expiraEm: FRETE_VALE_ATE };
     for (const v of Object.values(e.catalogos)) {
       const o = v.ofertas && okDe(v.ofertas);
       if (o) for (const [k, x] of Object.entries(o.exatas)) if (x.estado === 'ok' && x.comissao.estado !== 'ok') o.exatas[k] = { ...x, comissao: comissao(0) };

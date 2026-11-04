@@ -334,22 +334,31 @@ const cheio = () => enr({
 });
 const linhas21 = () => [...raizes[0].querySelectorAll('.b > .l')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim());
 
-it('fatia 2.1, caso cheio: reputação (ponto acessível), cidade/UF, frete cotado, % dos pisos, marca — ≤ 6 linhas sem margem', () => {
-  renderizarMiniBlocoDaBusca(card(), undefined, undefined, 50, vistaDoCard(card(), cheio()), AGORA,
-    { frete: { estado: 'ok', valor: 23.45 }, participacao: { fracao: 0.123, cobertura: 8, grupos: 10 } });
+// Caso cheio de verdade (rodada 1): catálogo + frete + Meu anúncio + Minha margem + Loja oficial + Patrocinado. Linhas
+// LÓGICAS (jsdom não tem layout); as renderizadas a 210/260 px e zoom 150% são medidas no navegador (medir-cheio.js).
+it('fatia 2.1, caso cheio: cidade/UF + ponto de reputação, frete na linha do giro; marca e % dos pisos fora do card', () => {
+  const c = card({ lojaOficial: true, patrocinado: true, ocorrencias: [{ posicao: 3, patrocinado: true, preco: 50, vendidosTexto: '+100 vendidos' }] });
+  const meta = { itemId: 'MLB1000001', proprio: true, vinculo: { fonte: 'catalogo' as const, codigo: '81' } };
+  renderizarMiniBlocoDaBusca(c, meta, ok(50, 23.4) as never, 50, vistaDoCard(c, cheio()), AGORA,
+    { frete: { estado: 'ok', valor: 23.45, expiraEm: AGORA + 1 } });
   expect(linhas21()).toEqual([
-    'Loja Boa· Platinum· São José dos Campos/SPⓘ',
+    'Loja Boa· Platinum· São José dos Campos/SPⓘLoja oficialPatrocinado',
     'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
-    'Frete cotadoR$ 23,45ⓘ',
-    'Giro mín.R$ 5 milⓘ12%dos pisos observadosⓘ',
-    '9 vendedores·catálogohá 120 diasⓘmarca Natura Cosméticos Industrial Ltda',
+    'Giro mín.R$ 5 milⓘFrete cotadoR$ 23,45ⓘ',
+    '9 vendedores·catálogohá 120 diasⓘ',
+    'Meu anúncio · posição 3 · patrocinado',
+    'Minha margem · Clássico 23,4%',
   ]);
+  // Cidade/UF + ⓘ fora do grupo do nome: na quebra, divide a linha de baixo com os selos.
+  const topo = raizes[0].querySelector('.b > .l')!;
+  expect(topo.querySelector(':scope > .g > .fc')).not.toBeNull();
+  // Frete e ⓘ quebram juntos (uma unidade), na linha do giro.
+  expect(raizes[0].querySelector('button[aria-label="O que é frete cotado?"]')!.parentElement!.textContent).toBe('Frete cotadoR$ 23,45ⓘ');
   const rep = raizes[0].querySelector('.rep')!;
   expect(rep.getAttribute('role')).toBe('img');
   expect(rep.getAttribute('aria-label')).toBe('Reputação verde');
   expect(raizes[0].querySelector('.fc')!.getAttribute('title')).toBe('Cidade cadastrada do vendedor: São José dos Campos/SP');
-  expect(raizes[0].querySelector('.marca')!.getAttribute('title')).toBe('Marca do catálogo: Natura Cosméticos Industrial Ltda');
-  for (const n of ['frete cotado', 'participação nos pisos observados', 'reputação e cidade do vendedor']) {
+  for (const n of ['frete cotado', 'reputação e cidade do vendedor']) {
     const i = raizes[0].querySelector(`button[aria-label="O que é ${n}?"]`) as HTMLButtonElement;
     expect(i).not.toBeNull();
     i.click();
@@ -357,8 +366,9 @@ it('fatia 2.1, caso cheio: reputação (ponto acessível), cidade/UF, frete cota
   const t = texto();
   expect(t).toContain('CEP 01310-100 (São Paulo capital)');
   expect(t).toContain('Não é o custo efetivamente pago pelo vendedor');
-  expect(t).toContain('Base: 8 de 10 produtos com piso informado');
   expect(t).toContain('cidade cadastrada do vendedor');
+  // Marca e participação só no painel (decisão do Diego, rodada 1).
+  expect(t).not.toMatch(/Natura|marca|pisos observados/);
   // Frete nunca "na sua conta" nem dentro da margem.
   expect(raizes[0].querySelector('.b')!.textContent).not.toMatch(/[Ff]rete na sua conta/);
 });
@@ -381,24 +391,13 @@ it('fatia 2.1: frete consultando / indisponível (nunca R$ 0) / ausente; card se
   expect(texto()).toContain('Consultando frete');
   raizes = [];
   renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } });
-  expect(texto()).toContain('Frete cotado indisponível agora');
+  expect(texto()).toContain('Frete cotado indisponível');
+  expect(raizes[0].querySelector('[title="limite do Mercado Livre"]')).not.toBeNull(); // motivo no title
   expect(texto()).not.toContain('R$ 0');
   raizes = [];
-  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: { estado: 'ok', valor: 0 } });
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: { estado: 'ok', valor: 0, expiraEm: AGORA + 1 } });
   expect(texto()).toContain('Frete cotadoR$ 0,00');
   raizes = [];
   renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: null });
   expect(texto()).not.toMatch(/Frete/);
-});
-
-it('fatia 2.1: participação "—" sem piso (linha própria) e sem linha antes de chegar do SW', () => {
-  const c = card({ vendidosTexto: null, ocorrencias: [{ posicao: 3, patrocinado: false, preco: 50, vendidosTexto: null }] });
-  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { participacao: { fracao: null, cobertura: 3, grupos: 5 } });
-  expect(linhas21()).toContain('—dos pisos observadosⓘ');
-  raizes = [];
-  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA);
-  expect(texto()).not.toContain('pisos observados');
-  raizes = [];
-  renderizarMiniBlocoDaBusca(card(), undefined, undefined, 50, null, AGORA, { participacao: { fracao: 0.034, cobertura: 3, grupos: 5 } });
-  expect(texto()).toContain('3,4%dos pisos observados');
 });

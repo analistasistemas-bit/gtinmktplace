@@ -6,7 +6,7 @@ import type { CardBusca } from './leitura/busca';
 import type { MetadadosCardBusca } from '../../supabase/functions/_shared/extensao/busca.ts';
 import type { ComissaoML, Disponivel } from '../../supabase/functions/_shared/extensao/tipos.ts';
 import {
-  chaveFrete, ehReputacao, esperaDaNovaTentativa, freteParaTentar,
+  chaveFrete, ehReputacao, VALIDADE_FRETE_MS, esperaDaNovaTentativa, freteParaTentar,
   type CatalogoVista, type EstadoEnriquecimento, type ExataVista, type FreteVista, type Medalha, type OfertasOk, type Reputacao, type VendedorVista,
 } from './compartilhado/enriquecimento';
 
@@ -237,9 +237,10 @@ export function planejarLote(
     const k = chaveFrete(c.itemId, c.preco);
     if (vistos.has(k)) continue;
     vistos.add(k);
-    if (enr.fretes?.[k]) continue;
+    const naVista = enr.fretes?.[k];
+    if (naVista && !(naVista.estado === 'ok' && !(naVista.expiraEm > agora))) continue; // vencida na vista = recotar
     const f = valida(cache.fretes[k]);
-    if (f) { hits.fretes[k] = { estado: 'ok', valor: f.v }; hits.usados.push({ m: 'fretes', k }); continue; }
+    if (f) { hits.fretes[k] = { estado: 'ok', valor: f.v, expiraEm: f.exp }; hits.usados.push({ m: 'fretes', k }); continue; }
     if (!jaPedidos.has(`frete:${k}`) && fretes.length < MAX_FRETES_PEDIDO) fretes.push({ itemId: c.itemId, preco: c.preco });
   }
 
@@ -413,7 +414,7 @@ export function aplicarResposta(enr: EstadoEnriquecimento, pedido: PedidoLote, r
       const f = rf?.frete;
       if (f?.estado === 'ok' && typeof f.valor === 'number' && Number.isFinite(f.valor) && f.valor >= 0) {
         const valor = f.valor, exp = ms(rf!.expiraEm);
-        enr.fretes[k] = { estado: 'ok', valor };
+        enr.fretes[k] = { estado: 'ok', valor, expiraEm: Number.isFinite(exp) ? exp : agora + VALIDADE_FRETE_MS };
         if (Number.isFinite(exp)) escritas.push((x) => { x.fretes[k] = { v: valor, exp, u: agora }; });
       } else {
         const motivo = motivoDe(f, MOTIVO_FRETE_PADRAO);

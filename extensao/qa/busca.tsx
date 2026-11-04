@@ -9,7 +9,6 @@ import { renderizarMiniBlocoDaBusca } from '../src/conteudo/mini-bloco-busca';
 import type { CardBusca } from '../src/leitura/busca';
 import { AGORA_QA, cards, cenario, ENR, ESTADO, meta as META, resultados as RESULTADOS, type Cenario } from './busca-fixtures';
 import { vistaDoCard, vistaDoFrete } from '../src/compartilhado/enriquecimento';
-import { participacaoNosPisos } from '../src/compartilhado/busca-resumo';
 
 const q = new URLSearchParams(location.search);
 const raiz = document.getElementById('raiz')!;
@@ -53,7 +52,6 @@ const precoNativo = (n: number | null) => { const [f, c] = (n ?? 0).toFixed(2).s
 function grade() {
   document.body.style.cssText = 'margin:0;background:#ebebeb;font:14px/1.3 "Proxima Nova",Arial,sans-serif;color:#333';
   const sel = [0, 1, 2, 'p2', 3, 5, 6, 8, 9, 10, 12, 'p12', 20, 21, 30, 40, 15, 36] as (number | string)[];
-  const part = participacaoNosPisos(cards);
   const doc = document.createElement('div');
   doc.style.cssText = 'width:1280px;margin:0 auto;padding:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start';
   for (const s of sel) {
@@ -78,11 +76,9 @@ function grade() {
     (el.querySelector('.qa-titulo') as HTMLElement).textContent = c.titulo;
     const miolo = document.createElement('div');
     miolo.style.cssText = 'padding:0 12px';
-    // Como o content script: frete só na aparição ao preço do card agregado; participação do conjunto inteiro (SW).
+    // Como o content script: frete só na aparição ao preço do card agregado (marca e % dos pisos só no painel).
     const frete = c.preco === base.preco ? vistaDoFrete(c, c.preco, dados.enr) : null;
-    const f = part.porItem[c.itemId];
-    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], base.preco, vistaDoCard(c, dados.enr), AGORA_QA,
-      BASE ? {} : { frete, participacao: dados.enr ? { fracao: f ?? null, cobertura: part.cobertura, grupos: part.grupos } : undefined }));
+    miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], base.preco, vistaDoCard(c, dados.enr), AGORA_QA, BASE ? {} : { frete }));
     el.append(miolo);
     doc.append(el);
   }

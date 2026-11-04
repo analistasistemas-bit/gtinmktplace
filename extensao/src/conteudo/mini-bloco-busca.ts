@@ -18,12 +18,9 @@ const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, n
 const PARCIAL = 'O Mercado Livre limitou as consultas, o tempo acabou ou a conexão falhou nesta leitura. O que já chegou continua aqui; nada foi presumido. Use "Tentar novamente" no painel do PubliAI.';
 const FRETE = 'Cotação do Mercado Livre para esta oferta, CEP 01310-100 (São Paulo capital). Valor antes dos descontos, opção recomendada ou primeira disponível. Não é o custo efetivamente pago pelo vendedor.';
 const VENDEDOR = 'Ponto colorido: reputação do vendedor no termômetro do Mercado Livre (verde, verde-claro, amarela, laranja ou vermelha); sem ponto = reputação não informada. Cidade/UF: cidade cadastrada do vendedor, não necessariamente a origem do envio.';
-const participacaoAjuda = (p: ParticipacaoCard) => `Piso de vendidos deste produto ÷ soma dos pisos de vendidos dos produtos carregados nesta busca. Cada produto conta uma vez (catálogo = o produto inteiro, patrocinado e orgânico juntos). Base: ${p.cobertura} de ${p.grupos} ${p.grupos === 1 ? 'produto' : 'produtos'} com piso informado. Não é participação de mercado. "—" = sem piso de vendidos.`;
 const CONSULTANDO = 'Consultando dados do catálogo';
 const ADICIONAIS = 'Dados adicionais indisponíveis agora';
 const pctBr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
-/** Fração 0–1 em % compacto: 12% · 3,4% · <0,1%. */
-const pctParticipacao = (f: number) => (f > 0 && f < 0.001 ? '<0,1%' : pctBr(Math.round(f * (f < 0.1 ? 1000 : 100)) / (f < 0.1 ? 10 : 1)));
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Tokens do app (src/index.css, tema claro: a página do ML é clara). Texto de cor = matiz misturado com preto em oklab
@@ -57,11 +54,10 @@ b{font-weight:650;color:var(--texto)}
 .rep{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;box-shadow:inset 0 0 0 1px oklch(0 0 0/.18)}
 .rep.r5{background:oklch(0.62 0.17 150)}.rep.r4{background:oklch(0.80 0.17 130)}.rep.r3{background:oklch(0.86 0.16 95)}
 .rep.r2{background:oklch(0.74 0.17 55)}.rep.r1{background:oklch(0.60 0.22 25)}
-/* Cidade/UF + ⓘ quebram juntos para a linha de baixo quando não cabem (o nome não é espremido); cidade longa corta. */
-.k:has(.fc){flex-wrap:wrap;row-gap:1px}
-.fc{display:flex;flex:0 1 auto;min-width:0;white-space:nowrap}.fc>span{flex:none}.fc>.cid{flex:0 1 auto;min-width:4em;overflow:hidden;text-overflow:ellipsis}
-.k>.g:has(.fc){min-width:0;max-width:100%}.i{flex:none}
-.marca{flex:1 1 0;min-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Cidade/UF + ⓘ: item próprio da linha do vendedor; quebra junto (com os selos) quando não cabe, o nome não é
+   espremido; cidade longa corta. */
+.fc{display:flex;flex:0 1 auto;min-width:0;white-space:nowrap}.fc>span{flex:none}.fc>.cid{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.l>.g:has(.fc){min-width:6em;max-width:100%}.i{flex:none}
 .idade.recente{--c:var(--success)}.idade.medio{--c:var(--warning)}.idade.antigo{--c:var(--suave)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
@@ -129,9 +125,6 @@ function margemDaOcorrencia(
   return seloDaBusca(margem);
 }
 
-/** Participação do card nos pisos observados (calculada no SW sobre todos os cards da geração). fracao null = "—". */
-export type ParticipacaoCard = { fracao: number | null; cobertura: number; grupos: number };
-
 export function renderizarMiniBlocoDaBusca(
   card: CardBusca,
   metadados: MetadadosCardBusca | undefined,
@@ -141,8 +134,8 @@ export function renderizarMiniBlocoDaBusca(
   /** Catálogo enriquecido deste card (vistaDoCard); null/ausente = card sem catálogo: só dados da página. */
   vista: VistaCard = null,
   agora = Date.now(),
-  /** Frete cotado (vistaDoFrete, já ao preço desta ocorrência) e participação; ausentes = sem linha. */
-  extras: { frete?: FreteVista | 'consultando' | null; participacao?: ParticipacaoCard } = {},
+  /** Frete cotado (vistaDoFrete, já ao preço desta ocorrência); ausente = sem frete. Marca e % dos pisos ficam só no painel. */
+  extras: { frete?: FreteVista | 'consultando' | null } = {},
 ): HTMLElement {
   const oc = card.ocorrencias[0] ?? { posicao: card.posicao, patrocinado: card.patrocinado, preco: card.preco, vendidosTexto: card.vendidosTexto };
   const host = document.createElement('div');
@@ -186,9 +179,13 @@ export function renderizarMiniBlocoDaBusca(
         f.title = `Cidade cadastrada do vendedor: ${v.cidade}${v.uf ? `/${v.uf}` : ''}`;
         f.append(el('span', '', '·\u00a0'), el('span', 'cid', v.cidade));
         if (v.uf) f.append(el('span', '', `/${v.uf}`));
-        grupo.append(f);
-      } else if (v.uf) extra('v', v.uf);
-      if (v.reputacao || v.cidade) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR, grupo);
+        // Fora do grupo do nome: na quebra, divide a linha de baixo com os selos (Loja oficial, Patrocinado).
+        topo.append(f);
+        ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR);
+      } else {
+        if (v.uf) extra('v', v.uf);
+        if (v.reputacao) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR, grupo);
+      }
     } else extra('v', 'Perfil não carregado');
   }
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
@@ -233,25 +230,11 @@ export function renderizarMiniBlocoDaBusca(
     }
   }
 
-  // Frete cotado da oferta exata (qualquer card com preço), fora da margem.
-  const fr = extras.frete;
-  if (fr === 'consultando') bloco.append(linha(el('span', 't violeta', 'Consultando frete')));
-  else if (fr?.estado === 'ok') {
-    const l = linha(el('span', 'v', 'Frete cotado'), el('b', '', `R$ ${fr.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`));
-    ajuda(l, 'frete cotado', FRETE);
-    bloco.append(l);
-  } else if (fr?.estado === 'indisponivel') {
-    const l = linha(...quebravel('Frete cotado indisponível agora'));
-    l.title = fr.motivo;
-    ajuda(l, 'frete cotado', FRETE);
-    bloco.append(l);
-  }
-
   // 3. Giro mínimo ao preço atual (piso e preço da MESMA ocorrência), compacto; o painel mostra o valor completo. Na
-  // mesma linha (quebrando se não couber), a participação nos pisos observados.
+  // mesma linha (quebrando como uma unidade se não couber), o frete cotado da oferta exata, fora da margem.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
-  const part = extras.participacao;
-  if (volume !== null || part) {
+  const fr = extras.frete;
+  if (volume !== null || fr) {
     const l = linha();
     if (volume !== null) {
       const g = el('span', 'g');
@@ -260,12 +243,13 @@ export function renderizarMiniBlocoDaBusca(
       l.append(g);
       ajuda(l, 'giro mínimo', GIRO);
     }
-    if (part) {
+    if (fr === 'consultando') l.append(el('span', 't violeta', 'Consultando frete'));
+    else if (fr) {
       const g = el('span', 'g');
-      g.append(el('b', '', part.fracao === null ? '—' : pctParticipacao(part.fracao)), el('span', 'v', 'dos pisos observados'));
-      if (part.fracao === null) g.title = 'Sem piso de vendidos informado (ou nenhum produto carregado com piso).';
+      if (fr.estado === 'ok') g.append(el('span', 'v', 'Frete cotado'), el('b', '', `R$ ${fr.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`));
+      else { g.append(el('span', 't neutro', 'Frete cotado indisponível')); g.title = fr.motivo; }
       l.append(g);
-      ajuda(l, 'participação nos pisos observados', participacaoAjuda(part));
+      ajuda(l, 'frete cotado', FRETE);
     }
     bloco.append(l);
   }
@@ -275,8 +259,7 @@ export function renderizarMiniBlocoDaBusca(
   const idade = vista ? idadeDoCatalogo(vista.criadoEm, agora) : null;
   // Ofertas lidas e metadados não: a idade em processamento ou indisponível (o que já chegou fica).
   const idadeEstado = !o || idade ? null : vista!.faltaProduto && !vista!.indisponivel ? 'consultando idade' : vista!.produtoIndisponivel ? 'idade indisponível agora' : null;
-  const marca = vista?.marca ?? null;
-  if (o || idade || marca) {
+  if (o || idade) {
     const l = linha();
     l.classList.add('pq');
     if (o) {
@@ -295,13 +278,6 @@ export function renderizarMiniBlocoDaBusca(
       l.append(g);
     }
     if (o) ajuda(l, 'vendedores no catálogo', VENDEDORES);
-    // Marca do catálogo: ocupa o resto da linha e corta com reticências (nome completo no title).
-    if (marca) {
-      const m = el('span', 'v marca', 'marca ');
-      m.append(el('b', '', marca));
-      m.title = `Marca do catálogo: ${marca}`;
-      l.append(m);
-    }
     bloco.append(l);
   }
 

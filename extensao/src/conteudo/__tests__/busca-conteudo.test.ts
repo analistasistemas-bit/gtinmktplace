@@ -64,20 +64,17 @@ it('enriquecimento do catálogo chega com os resultados e entra no bloco do card
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
 });
 
-it('fatia 2.1: participação do SW entra na assinatura (scroll atualiza o bloco antigo); frete cotado ao preço do card', () => {
-  const msg = (fracao: number | null, extra: Record<string, unknown> = {}) => ({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {},
-    participacao: { porItem: { MLB5321956667: fracao }, cobertura: 2, grupos: 3 }, ...extra });
-  ouvinte(msg(0.5));
-  expect(textoDosBlocos()).toContain('50%dos pisos observados');
-  ouvinte(msg(0.25)); // scroll: a base cresceu, o mesmo bloco muda
-  expect(textoDosBlocos()).toContain('25%dos pisos observados');
-  ouvinte(msg(null));
-  expect(textoDosBlocos()).toContain('—dos pisos observados');
-  const enriquecimento = { versao: 2, catalogos: {}, vendedores: {}, fretes: { 'MLB5321956667|19.9|01310100': { estado: 'ok', valor: 12 } }, tentarAposEm: null, falhou: false, indisponivel: null };
-  ouvinte(msg(0.25, { enriquecimento }));
+it('fatia 2.1: frete cotado ao preço do card; cotação vencida some do bloco; marca e % dos pisos nunca no card', () => {
+  const msg = (expiraEm: number) => ({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {},
+    // `participacao` de SW antigo é ignorada (a % dos pisos é só do painel).
+    participacao: { porItem: { MLB5321956667: 0.5 }, cobertura: 2, grupos: 3 },
+    enriquecimento: { versao: 2, catalogos: {}, vendedores: {}, fretes: { 'MLB5321956667|19.9|01310100': { estado: 'ok', valor: 12, expiraEm } }, tentarAposEm: null, falhou: false, indisponivel: null } });
+  ouvinte(msg(Date.now() + 3600_000));
   expect(textoDosBlocos()).toContain('Frete cotadoR$ 12,00');
-  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} }); // sem participação: sem a linha
   expect(textoDosBlocos()).not.toContain('pisos observados');
+  ouvinte(msg(Date.now() - 1)); // 6 h depois, mesma aba: vencida não aparece
+  expect(textoDosBlocos()).not.toContain('Frete cotado');
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
 });
 
 it('aba volta a ficar visível: pede a revalidação da conta ML com a geração da página', () => {

@@ -41,6 +41,8 @@ let erroEnrUmaVez: string | null;
 let erroMargem: string | null;
 let ofertas429: boolean;
 let frete429: boolean;
+/** Frete que a edge devolve como 'frete da oferta indisponível' (status 0/timeout e não-200 do ML caem nesse motivo). */
+let freteSemOferta: boolean;
 let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
 let antesDeEnriquecer: (() => Promise<void> | void) | null;
@@ -78,7 +80,8 @@ function respostaEnr(b: PedidoEnr) {
     ...sellers.slice(50).map((x) => ({ sellerId: x, estado: 'indisponivel', motivo: 'limite de perfis por pedido' })),
   ];
   // Frete (fatia 2.1): só quando pedido; ok com expiração de 6 h, ou 429 só no frete (`frete429`).
-  const fretes = b.fretes?.map((f) => ({ ...f, frete: frete429 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', valor: 19.9 }, expiraEm: frete429 ? null : isoDe(agora + 6 * 3600_000) }));
+  const fretes = b.fretes?.map((f) => ({ ...f, frete: frete429 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : freteSemOferta ? { estado: 'indisponivel', motivo: 'frete da oferta indisponível' } : { estado: 'ok', valor: 19.9 },
+    expiraEm: frete429 || freteSemOferta ? null : isoDe(agora + 6 * 3600_000) }));
   return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores, tentarAposEm: ofertas429 || frete429 ? tentarAposEm : null, ...(fretes ? { fretes } : {}) } };
 }
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
@@ -154,6 +157,7 @@ beforeEach(() => {
   erroMargem = null;
   ofertas429 = false;
   frete429 = false;
+  freteSemOferta = false;
   tentarAposEm = null;
   bloqueioEnr = null;
   antesDeEnriquecer = null;
@@ -981,7 +985,7 @@ describe('fatia 2.1 no SW', () => {
     await registrar([card(1), card(2, { catalogProductId: null }), card(3, { preco: null })]);
     expect(pedidosEnr).toHaveLength(1);
     expect(pedidosEnr[0].fretes).toEqual([{ itemId: id(1), preco: 10 }, { itemId: id(2), preco: 10 }]);
-    expect((await fretesDe()).fretes).toEqual({ [`${id(1)}|10|01310100`]: { estado: 'ok', valor: 19.9 }, [`${id(2)}|10|01310100`]: { estado: 'ok', valor: 19.9 } });
+    expect((await fretesDe()).fretes).toMatchObject({ [`${id(1)}|10|01310100`]: { estado: 'ok', valor: 19.9 }, [`${id(2)}|10|01310100`]: { estado: 'ok', valor: 19.9 } });
     expect(mensagensPagina('publiai:busca-resultados').at(-1)!.enriquecimento).toMatchObject({ fretes: { [`${id(1)}|10|01310100`]: { estado: 'ok' } } });
     pedidosEnr.length = 0;
     await registrar([card(9, { preco: null, catalogProductId: 'MLB3000009' })]);
@@ -1000,7 +1004,7 @@ describe('fatia 2.1 no SW', () => {
     expect(pedidosEnr).toHaveLength(2);
     expect(pedidosEnr[1].catalogos).toEqual([{ catalogProductId: CAT, componentes: ['ofertas'], itens: [{ itemId: id(1), preco: 10 }] }]);
     expect(pedidosEnr[1]).not.toHaveProperty('fretes');
-    expect((await fretesDe()).fretes[`${id(1)}|10|01310100`]).toEqual({ estado: 'ok', valor: 19.9 });
+    expect((await fretesDe()).fretes[`${id(1)}|10|01310100`]).toMatchObject({ estado: 'ok', valor: 19.9 });
   });
 
   it('frete vencido com o resto válido vai sozinho (pedido só de frete)', async () => {
@@ -1048,14 +1052,70 @@ describe('fatia 2.1 no SW', () => {
     expect(pedidosEnr[0].catalogos[0]).toMatchObject({ catalogProductId: CAT, componentes: ['produto', 'ofertas'] });
   });
 
-  it('scroll muda a participação: a página recebe o valor novo mesmo sem rodada de rede', async () => {
-    await registrar([card(1, { catalogProductId: null, preco: null, vendidosTexto: '+100 vendidos' })]);
-    const antes = mensagensPagina('publiai:busca-resultados').length;
-    expect(mensagensPagina('publiai:busca-resultados').at(-1)!.participacao).toMatchObject({ porItem: { [id(1)]: 1 } });
-    // Card novo já identificado (ex.: só o texto de vendidos mudou num card antigo): sem identificação nem enriquecimento.
-    await registrar([card(1, { catalogProductId: null, preco: null, vendidosTexto: '+100 vendidos' }), card(2, { catalogProductId: null, preco: null, vendidosTexto: '+300 vendidos' })]);
-    const msgs = mensagensPagina('publiai:busca-resultados');
-    expect(msgs.length).toBeGreaterThan(antes);
-    expect(msgs.at(-1)!.participacao).toMatchObject({ porItem: { [id(1)]: 0.25, [id(2)]: 0.75 }, cobertura: 2, grupos: 2 });
+  // Rodada 1 (B2): a edge não distingue "sem opção de envio" de timeout/5xx do ML (mesmo motivo): todo frete
+  // indisponível é refeito pelo "Tentar novamente".
+  const semCatalogo = () => [card(1, { catalogProductId: null })];
+  const K1 = `${id(1)}|10|01310100`;
+  it('ML em timeout/5xx no frete (edge: "frete da oferta indisponível"): painel acende o retry e ele recota', async () => {
+    freteSemOferta = true;
+    await registrar(semCatalogo());
+    expect((await fretesDe()).fretes[K1]).toEqual({ estado: 'indisponivel', motivo: 'frete da oferta indisponível' });
+    expect(haParaTentar((await enr()) as unknown as EstadoEnriquecimento)).toBe(true);
+    freteSemOferta = false;
+    pedidosEnr.length = 0;
+    expect(await retentar()).toMatchObject({ ok: true });
+    await complementosPendentes();
+    expect(pedidosEnr).toEqual([expect.objectContaining({ catalogos: [], fretes: [{ itemId: id(1), preco: 10 }] })]);
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'ok', valor: 19.9 });
+  });
+
+  it('5xx da própria edge: frete indisponível terminal e o "Tentar novamente" recota', async () => {
+    falharEnr = true;
+    await registrar(semCatalogo());
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'indisponivel' });
+    falharEnr = false;
+    pedidosEnr.length = 0;
+    await retentar();
+    await complementosPendentes();
+    expect(pedidosEnr.map((p) => p.fretes)).toEqual([[{ itemId: id(1), preco: 10 }]]);
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'ok' });
+  });
+
+  it('timeout do cliente (edge pendurada 10 s): frete indisponível e o "Tentar novamente" recota', async () => {
+    let pendurar = true;
+    vi.mocked(fetch).mockImplementation(async (u, init) => {
+      const b = JSON.parse(String(init?.body ?? '{}'));
+      if (b.acao !== 'enriquecer_catalogos_busca' || !pendurar) return edge(String(u), init);
+      pedidosEnr.push(b);
+      return new Promise<Response>(() => {});
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    await enviarCards(semCatalogo());
+    for (let i = 0; i < 1000 && pedidosEnr.length === 0; i++) await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_001);
+    await vi.waitFor(async () => expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'indisponivel' }));
+    vi.useRealTimers();
+    pendurar = false;
+    pedidosEnr.length = 0;
+    await retentar();
+    await complementosPendentes();
+    expect(pedidosEnr.map((p) => p.fretes)).toEqual([[{ itemId: id(1), preco: 10 }]]);
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'ok' });
+  });
+
+  // Rodada 1 (B3): a validade vive na vista da aba; na MESMA aba e geração, a cotação vencida é recotada.
+  it('mesma aba e geração, 6 h depois: a cotação vencida volta ao pedido (só de frete)', async () => {
+    await registrar(semCatalogo());
+    const g = (await lerAba(7)).geracao;
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'ok', expiraEm: expect.any(Number) });
+    pedidosEnr.length = 0;
+    await registrar(semCatalogo()); // antes de vencer: nada a pedir
+    expect(pedidosEnr).toHaveLength(0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 6 * 3600_000 + 1000);
+    await registrar([...semCatalogo(), card(2, { catalogProductId: null })]);
+    expect((await lerAba(7)).geracao).toBe(g);
+    expect(pedidosEnr).toEqual([expect.objectContaining({ catalogos: [], fretes: [{ itemId: id(1), preco: 10 }, { itemId: id(2), preco: 10 }] })]);
+    expect((await fretesDe()).fretes[K1]).toMatchObject({ estado: 'ok', expiraEm: Date.now() + 6 * 3600_000 });
   });
 });

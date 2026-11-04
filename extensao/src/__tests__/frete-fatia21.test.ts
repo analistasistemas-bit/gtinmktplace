@@ -37,7 +37,7 @@ describe('planejamento do frete', () => {
     expect(hit.pedido).toBeNull();
     const e = enriquecimentoVazio();
     aplicarHits(e, hit.hits);
-    expect(e.fretes![K(1)]).toEqual({ estado: 'ok', valor: 23.45 });
+    expect(e.fretes![K(1)]).toEqual({ estado: 'ok', valor: 23.45, expiraEm: T0 + 1000 });
     // Vencido (6 h): pedido só de frete (nada mais vencido).
     expect(planejarLote([card(1)], {}, enriquecimentoVazio(), c, T0 + 1000, new Set()).pedido).toEqual({ catalogos: [], perfis: [], perfisEmCache: [], fretes: [{ itemId: 'MLB1000001', preco: 10 }] });
     // Outro preço: outra chave.
@@ -70,7 +70,7 @@ describe('resposta do frete', () => {
     const e = enriquecimentoVazio();
     const gravar = aplicarResposta(e, pedido, resposta({ fretes: [freteOk(1, 0), { itemId: 'MLB1000002', preco: 10, frete: { estado: 'indisponivel', motivo: 'frete da oferta indisponível' }, expiraEm: null }] }), T0);
     expect(e.fretes).toEqual({
-      [K(1)]: { estado: 'ok', valor: 0 },
+      [K(1)]: { estado: 'ok', valor: 0, expiraEm: T0 + 6 * 3600_000 },
       [K(2)]: { estado: 'indisponivel', motivo: 'frete da oferta indisponível' },
       [K(3)]: { estado: 'indisponivel', motivo: 'frete indisponível' },
     });
@@ -88,7 +88,7 @@ describe('resposta do frete', () => {
     const e = enriquecimentoVazio();
     const gravar = aplicarResposta(e, pedido, resposta({ fretes: [freteOk(1, 9, 99), { ...freteOk(2, 7), expiraEm: null }, freteOk(8, 5)] }), T0);
     expect(e.fretes![K(1)]).toEqual({ estado: 'indisponivel', motivo: 'frete indisponível' });
-    expect(e.fretes![K(2)]).toEqual({ estado: 'ok', valor: 7 });
+    expect(e.fretes![K(2)]).toEqual({ estado: 'ok', valor: 7, expiraEm: T0 + 6 * 3600_000 }); // validade padrão só na vista
     expect(e.fretes![K(8)]).toBeUndefined();
     const c = cacheVazio();
     gravar(c);
@@ -170,14 +170,27 @@ describe('falha e "Tentar novamente" com frete', () => {
     expect(prepararNovaTentativa(e, T0)).toBe(false);
   });
 
-  it('sem opção de envio é definitivo: não acende o "Tentar novamente" nem é apagado por ele', () => {
-    const e: EstadoEnriquecimento = { ...enriquecimentoVazio(), fretes: { [K(1)]: { estado: 'indisponivel', motivo: 'frete da oferta indisponível' } } };
-    expect(haParaTentar(e)).toBe(false);
-    e.fretes![K(2)] = { estado: 'indisponivel', motivo: 'tempo esgotado' };
+  it('todo frete indisponível é refeito (motivo genérico da edge cobre timeout, 5xx, status 0 e sem opção); ok fica', () => {
+    const e: EstadoEnriquecimento = { ...enriquecimentoVazio(), fretes: {
+      [K(1)]: { estado: 'indisponivel', motivo: 'frete da oferta indisponível' }, // 5xx / status 0 / sem opção
+      [K(2)]: { estado: 'indisponivel', motivo: 'tempo esgotado' },
+      [K(3)]: { estado: 'ok', valor: 9, expiraEm: T0 + 1000 } } };
     expect(haParaTentar(e)).toBe(true);
-    prepararNovaTentativa(e, T0);
-    expect(Object.keys(e.fretes!)).toEqual([K(1)]);
+    expect(prepararNovaTentativa(e, T0)).toBe(true);
+    expect(Object.keys(e.fretes!)).toEqual([K(3)]);
     expect(haParaTentar(e)).toBe(false);
+    expect(planejarLote([card(1), card(2), card(3)], {}, e, cacheVazio(), T0, new Set()).pedido!.fretes).toEqual([{ itemId: 'MLB1000001', preco: 10 }, { itemId: 'MLB1000002', preco: 10 }]);
+  });
+
+  it('cotação vencida na vista da MESMA aba (6 h depois): some do card e é recotada na rodada seguinte', () => {
+    const e = enriquecimentoVazio();
+    const p: PedidoLote = { catalogos: [], perfis: [], perfisEmCache: [], fretes: [{ itemId: 'MLB1000001', preco: 10 }] };
+    aplicarResposta(e, p, resposta({ fretes: [freteOk(1, 12)] }), T0);
+    expect(vistaDoFrete(card(1), 10, e, T0 + 1000)).toEqual({ estado: 'ok', valor: 12, expiraEm: T0 + 6 * 3600_000 });
+    expect(planejarLote([card(1)], {}, e, cacheVazio(), T0 + 1000, new Set()).pedido).toBeNull();
+    const depois = T0 + 6 * 3600_000;
+    expect(vistaDoFrete(card(1), 10, e, depois)).toBeNull();
+    expect(planejarLote([card(1)], {}, e, cacheVazio(), depois, new Set()).pedido!.fretes).toEqual([{ itemId: 'MLB1000001', preco: 10 }]);
   });
 });
 

@@ -267,16 +267,23 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
   cards: CardBusca[]; enr: EstadoEnriquecimento | undefined; ajuda: IdAjuda | null; alternarAjuda: (id: IdAjuda) => void; ocupado: boolean; retentar: () => void; aviso: string | null;
 }) {
   const r = resumoEnriquecimento(cards, enr);
-  if (r.cardsComCatalogo === 0) return null;
+  // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
+  // Página inteira indisponível (sem conexão ML, módulo desligado...) também: o motivo e o "Tentar novamente". Vale também
+  // para busca sem catálogo (só frete).
+  const tentar = !!enr && haParaTentar(enr);
+  const espera = enr ? esperaDaNovaTentativa(enr, Date.now()) : null;
+  const avisoTentar = tentar && !ocupado && (
+    <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
+      <span>{aviso ?? (espera !== null ? pausa(espera) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os dados adicionais agora.' : 'Dados adicionais indisponíveis agora'))}</span>
+      <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
+    </div>
+  );
+  if (r.cardsComCatalogo === 0) return avisoTentar || null;
   const { vendedores: v, tipos: t, faixas: f } = r;
   const lidos = r.catalogosLidos;
   const comOfertas = f.completos + f.parciais.length;
   const titulo = (id: IdAjuda) => <h3 className="ct-rotulo bs-sub">{AJUDA[id][0]}<Info id={id} aberto={ajuda === id} onAlternar={alternarAjuda} /></h3>;
   const plural = (n: number, um: string, varios: string) => `${num(n)} ${n === 1 ? um : varios}`;
-  // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
-  // Página inteira indisponível (sem conexão ML, módulo desligado...) também: o motivo e o "Tentar novamente".
-  const tentar = !!enr && haParaTentar(enr);
-  const espera = enr ? esperaDaNovaTentativa(enr, Date.now()) : null;
   return (
     <section className="bs-catalogos" aria-labelledby="bs-catalogos-titulo">
       <h3 id="bs-catalogos-titulo" className="bs-catalogos-titulo">Catálogos e vendedores</h3>
@@ -287,12 +294,7 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
       <Ajuda id="catalogos" aberto={ajuda} />
       {r.catalogosIndisponiveis > 0 && <p className="nota bs-cobertura">{`${plural(r.catalogosIndisponiveis, 'catálogo', 'catálogos')} sem ofertas lidas agora`}</p>}
       {!enr?.indisponivel && r.catalogosConsultando > 0 && <p className="nota bs-estado-enr" role="status">Consultando dados do catálogo</p>}
-      {tentar && !ocupado && (
-        <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
-          <span>{aviso ?? (espera !== null ? pausa(espera) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora'))}</span>
-          <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
-        </div>
-      )}
+      {avisoTentar}
       {comOfertas > 0 && (
         <>
           {titulo('medalhas')}

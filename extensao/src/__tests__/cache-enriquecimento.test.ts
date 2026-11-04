@@ -14,7 +14,7 @@ const vazioCache = (): CacheEnr => ({ versao: 2, identidade: 'u1:org1:', conta: 
 /** Vista com o frete de todos os cards de teste já cotado (10 e 12): os testes do catálogo não veem o frete. */
 const cotado = (): EstadoEnriquecimento => {
   const e = enriquecimentoVazio();
-  for (let n = 0; n < 100; n++) for (const p of [10, 12]) e.fretes![chaveFrete(`MLB${1000000 + n}`, p)] = { estado: 'ok', valor: 5 };
+  for (let n = 0; n < 100; n++) for (const p of [10, 12]) e.fretes![chaveFrete(`MLB${1000000 + n}`, p)] = { estado: 'ok', valor: 5, expiraEm: Number.MAX_SAFE_INTEGER };
   return e;
 };
 const ofertasOk = (exatas: Record<string, unknown>) =>

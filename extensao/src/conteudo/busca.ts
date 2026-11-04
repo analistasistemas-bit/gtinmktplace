@@ -3,7 +3,7 @@
 // ML; o destaque pedido pelo painel só rola e contorna o card por 2 s.
 import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import { cardsDoItem, cardsElegiveis, INJETADO, lerBusca, lerCard, type CardBusca } from '../leitura/busca';
-import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca, type ParticipacaoCard } from './mini-bloco-busca';
+import { HOST_MINI_BLOCO, renderizarMiniBlocoDaBusca } from './mini-bloco-busca';
 import { enriquecimentoDe, vistaDoCard, vistaDoFrete, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 
 const ESPERA_MS = 800;
@@ -71,9 +71,6 @@ const assinaturas = new WeakMap<Element, string>();
 let metadados: Record<string, MetadadosCardBusca> = {};
 // Catálogos enriquecidos (Task 10): vista por card calculada na hora do desenho.
 let enriquecimento: EstadoEnriquecimento | undefined;
-// Participação nos pisos observados, calculada pelo SW sobre todos os cards da geração. null = ainda não recebida
-// (sem linha); item com valor null = "—".
-let participacao: { porItem: Record<string, number | null>; cobertura: number; grupos: number } | null = null;
 // Hosts que NÓS tiramos: a remoção deles não pede nova leitura (a feita pela página pede, para o bloco voltar).
 const removidosPorNos = new WeakSet<Node>();
 // Card → nó de preço em que o bloco foi desenhado. Host sumido com o mesmo preço = a página tirou só o host: restaura
@@ -109,9 +106,7 @@ function aplicarBlocos(): void {
     const vista = vistaDoCard(c, enriquecimento);
     // Frete só da ocorrência ao preço analisado (o cotado); outra aparição com outro preço não o herda.
     const frete = c.preco !== null && c.preco === pa ? vistaDoFrete(c, pa, enriquecimento) : null;
-    const part: ParticipacaoCard | undefined = participacao && c.itemId in participacao.porItem
-      ? { fracao: participacao.porItem[c.itemId], cobertura: participacao.cobertura, grupos: participacao.grupos } : undefined;
-    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa, vista, frete, part ?? null]);
+    const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa, vista, frete]);
     const atual = doCard(card, `.${HOST}`);
     if (atual && atual.previousSibling === preco && assinaturas.get(atual) === assinatura) { vivos.add(atual); continue; }
     if (!atual && ancoras.get(card) === preco) {
@@ -119,7 +114,7 @@ function aplicarBlocos(): void {
       if (n >= MAX_RESTAUROS) continue;
       restauros.set(card, n + 1);
     }
-    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa, vista, Date.now(), { frete, participacao: part });
+    const novo = renderizarMiniBlocoDaBusca(c, meta, res, pa, vista, Date.now(), { frete });
     assinaturas.set(novo, assinatura);
     if (atual) tirarHost(atual);
     preco.parentElement.insertBefore(novo, preco.nextSibling);
@@ -139,7 +134,6 @@ function limparSelos(): void {
   resultados = {};
   metadados = {};
   enriquecimento = undefined;
-  participacao = null;
   ancoras = new WeakMap();
   restauros = new WeakMap();
   for (const h of document.querySelectorAll(`.${HOST}`)) tirarHost(h);
@@ -173,7 +167,7 @@ function agendarPulso(): void {
 
 const daPagina = (msg: { url?: unknown; geracao?: unknown }) => geracao !== null && msg.geracao === geracao && msg.url === location.href.split('#')[0];
 
-chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; enriquecimento?: unknown; participacao?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
+chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknown; metadados?: unknown; enriquecimento?: unknown; itemId?: unknown; ativa?: unknown; logado?: unknown; url?: unknown; geracao?: unknown }) => {
   if (msg?.tipo === 'publiai:ativacao' || msg?.tipo === 'publiai:conta-mudou') {
     estadoRecebido = true;
     ligada = msg.ativa === true && msg.logado === true;
@@ -189,7 +183,6 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     resultados = msg.resultados as Record<string, ResultadoCard>;
     metadados = msg.metadados && typeof msg.metadados === 'object' ? msg.metadados as Record<string, MetadadosCardBusca> : {};
     enriquecimento = msg.enriquecimento ? enriquecimentoDe(msg.enriquecimento) : undefined;
-    participacao = participacaoDe(msg.participacao);
     aplicarBlocos();
   } else if (ligada && msg?.tipo === 'publiai:destacar-card' && typeof msg.itemId === 'string') {
     destacar(msg.itemId);
@@ -201,15 +194,6 @@ chrome.runtime.onMessage.addListener((msg: { tipo?: unknown; resultados?: unknow
     agendar();
   }
 });
-
-/** Participação vinda do SW (cópia defensiva; formato inesperado = não recebida). */
-function participacaoDe(x: unknown): typeof participacao {
-  const p = x as { porItem?: unknown; cobertura?: unknown; grupos?: unknown } | null;
-  if (!p || typeof p.porItem !== 'object' || p.porItem === null || typeof p.cobertura !== 'number' || typeof p.grupos !== 'number') return null;
-  const porItem: Record<string, number | null> = {};
-  for (const [k, v] of Object.entries(p.porItem)) porItem[k] = typeof v === 'number' && Number.isFinite(v) ? v : null;
-  return { porItem, cobertura: p.cobertura, grupos: p.grupos };
-}
 
 // Cards montam depois do document_idle e entram no scroll: observa a página com espera curta entre leituras.
 let timer: ReturnType<typeof setTimeout> | undefined;

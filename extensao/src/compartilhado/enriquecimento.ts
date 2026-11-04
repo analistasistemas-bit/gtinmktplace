@@ -17,12 +17,13 @@ type Indisponivel = { estado: 'indisponivel'; motivo?: string };
 
 export type ProdutoVista = { estado: 'ok'; criadoEm: string | null; marca?: string | null } | Indisponivel;
 /** Frete cotado da oferta exata (item do card ao preço do card, CEP 01310-100). Ausente = em processamento. */
-export type FreteVista = { estado: 'ok'; valor: number } | { estado: 'indisponivel'; motivo: string };
+/** `expiraEm` (ms) = validade da cotação (6 h, do servidor): vencida não é mostrada e é recotada na mesma aba. */
+export type FreteVista = { estado: 'ok'; valor: number; expiraEm: number } | { estado: 'indisponivel'; motivo: string };
+/** Validade da cotação quando a resposta não traz `expiraEm` (só na vista; não vai ao cache). */
+export const VALIDADE_FRETE_MS = 6 * 3600_000;
 /** CEP fixo da cotação (São Paulo capital). Entra na chave: outro CEP nunca herda o valor. */
 export const CEP_FRETE = '01310100';
 export const chaveFrete = (itemId: string, preco: number) => `${itemId}|${preco}|${CEP_FRETE}`;
-/** Sem opção de envio (404/424 do ML): não é falha passageira, o "Tentar novamente" não refaz. */
-export const MOTIVO_FRETE_SEM_OPCAO = 'frete da oferta indisponível';
 export type ComissaoVista = { estado: 'ok'; valor: ComissaoML } | { estado: 'indisponivel'; motivo: string };
 /** Oferta do item do card no catálogo; `preco` = o preço do card enviado (a comissão só vale para ele). */
 export type ExataVista =
@@ -90,7 +91,7 @@ export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
   for (const [k, x] of Object.entries(e.vendedores ?? {})) { const y = semLegado(x); if (y) vendedores[k] = y; }
   const fretes: Record<string, FreteVista> = {};
   for (const [k, f] of Object.entries(e.fretes ?? {})) {
-    if (f?.estado === 'ok' && typeof f.valor === 'number') fretes[k] = f;
+    if (f?.estado === 'ok' && typeof f.valor === 'number' && typeof f.expiraEm === 'number') fretes[k] = f;
     else if (f?.estado === 'indisponivel') fretes[k] = { estado: 'indisponivel', motivo: typeof f.motivo === 'string' ? f.motivo : MOTIVO_PADRAO };
   }
   return {
@@ -101,8 +102,9 @@ export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
   };
 }
 
-/** Frete que o "Tentar novamente" refaz (sem opção de envio é definitivo, como oferta não localizada). */
-export const freteParaTentar = (f: FreteVista) => f.estado !== 'ok' && f.motivo !== MOTIVO_FRETE_SEM_OPCAO;
+/** Frete que o "Tentar novamente" refaz: todo indisponível. A edge usa o mesmo motivo para "sem opção de envio" e para
+ *  timeout/5xx/status 0, então nenhum é tratado como definitivo. */
+export const freteParaTentar = (f: FreteVista) => f.estado !== 'ok';
 
 /** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
 export function haParaTentar(enr: EstadoEnriquecimento): boolean {
@@ -189,10 +191,13 @@ export function vistaDoCard(card: Pick<CardBusca, 'itemId' | 'catalogProductId' 
 /** Frete cotado de um card ao preço desta ocorrência. null = nada a mostrar (sem enriquecimento na página, preço não
  *  lido, identidade conflitante); 'consultando' = ainda não respondido. */
 export function vistaDoFrete(
-  card: Pick<CardBusca, 'itemId' | 'identidadeConflitante'>, preco: number | null | undefined, e: EstadoEnriquecimento | undefined,
+  card: Pick<CardBusca, 'itemId' | 'identidadeConflitante'>, preco: number | null | undefined, e: EstadoEnriquecimento | undefined, agora = Date.now(),
 ): FreteVista | 'consultando' | null {
   if (!e || e.indisponivel || card.identidadeConflitante || typeof preco !== 'number' || !(preco > 0)) return null;
-  return e.fretes?.[chaveFrete(card.itemId, preco)] ?? 'consultando';
+  const f = e.fretes?.[chaveFrete(card.itemId, preco)];
+  // Cotação vencida (mesma aba depois de 6 h): some até a próxima rodada recotar.
+  if (f?.estado === 'ok' && !(f.expiraEm > agora)) return null;
+  return f ?? 'consultando';
 }
 
 export const NOME_MEDALHA: Record<Medalha, string> = { platinum: 'Platinum', gold: 'Gold', silver: 'Silver', sem: 'Sem medalha' };
