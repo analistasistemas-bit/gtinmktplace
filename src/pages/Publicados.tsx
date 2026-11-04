@@ -53,7 +53,7 @@ import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel,
 import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { PainelAnalise } from '@/components/painel-analise';
-import { fetchFamiliaPublicada } from '@/lib/queries';
+import { fetchFamiliaComCustoRecente } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 import type { BaseParaKit } from '@/lib/kit';
 import { DialogCriarKit } from '@/components/kit/dialog-criar-kit';
@@ -295,7 +295,7 @@ function LinhaTabela({
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.mlItemId}`, false);
-  const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
+  const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto, true);
 
   // Toggle só faz sentido entre ativo⇄pausado (ADR-0060). Moderado/encerrado/etc. ficam desabilitados.
   const podeAlternar = item.status === 'ativo' || item.status === 'pausado';
@@ -1409,7 +1409,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
       await Promise.all(
         itensExibidos.map(async (it) => {
           try {
-            const familia = await fetchFamiliaPublicada(it.familiaId);
+            const familia = await fetchFamiliaComCustoRecente(it.familiaId);
             viabilidades!.set(it.familiaId, resumoViabilidade(familia, it.precoAtual ?? it.precoPublicacao));
           } catch {
             // item sem família acessível → fica sem sublinha de viabilidade

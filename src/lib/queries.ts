@@ -353,23 +353,27 @@ export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia>
   const row = data as FamiliaRow & { variacoes: VariacaoRow[] };
   // ADR-0088: mesma resolução do sinal UP que fetchFamilias — o expand de Publicados renderiza
   // criticasVariacao; sem o set, cores UP (mlVariationId=null) apareceriam como "sem foto" à toa.
-  // A linha de Publicados aponta a família mais antiga do anúncio; o custo vigente mora no lote mais novo. Mesmo critério
-  // da Central (cadastro.ts): mais recente com custo, por SKU, dentro do mesmo anúncio (kit tem anúncio próprio).
-  const [skusAtivos, categoriasUserProducts, recentes] = await Promise.all([
+  const [skusAtivos, categoriasUserProducts] = await Promise.all([
     fetchSkusAtivosUP([row.codigo_pai]),
     fetchCategoriasUserProducts([row.categoria_ml_id]),
-    row.ml_item_id
-      ? buscarTodasPaginas<{ codigo: string; custo: number | null }>((de, ate) => supabase.from('variacoes')
-        .select('codigo, custo, familias!inner(ml_item_id)').eq('familias.ml_item_id', row.ml_item_id!).gt('custo', 0)
-        .order('atualizado_em', { ascending: false }).order('id').range(de, ate) as never)
-      : Promise.resolve([]),
   ]);
   return familiaFromRow({
     ...row,
-    variacoes: comCustoRecente(row.variacoes, recentes),
     skus_ativos_up: skusAtivos.get(row.codigo_pai) ?? new Set<string>(),
     formato_publicacao_ml: categoriasUserProducts.has(row.categoria_ml_id ?? '') ? 'user_products' : null,
   });
+}
+
+/** Leitura de análise (painel e exportação de Publicados). A linha aponta a família mais antiga do anúncio; o custo vigente
+ *  mora no lote mais novo. Mesmo critério da Central (cadastro.ts): mais recente com custo, por SKU, no mesmo anúncio
+ *  (kit tem anúncio próprio). Criar kit NÃO usa isto: a edge grava o custo da família-base. */
+export async function fetchFamiliaComCustoRecente(familiaId: string): Promise<Familia> {
+  const familia = await fetchFamiliaPublicada(familiaId);
+  if (!familia.mlItemId) return familia;
+  const recentes = await buscarTodasPaginas<{ codigo: string; custo: number | null }>((de, ate) => supabase.from('variacoes')
+    .select('codigo, custo, familias!inner(ml_item_id)').eq('familias.ml_item_id', familia.mlItemId!).gt('custo', 0)
+    .order('atualizado_em', { ascending: false }).order('id').range(de, ate) as never);
+  return { ...familia, variacoes: comCustoRecente(familia.variacoes, recentes) };
 }
 
 // ============================================================================
