@@ -14,7 +14,17 @@ import { participacaoNosPisos } from '../src/compartilhado/busca-resumo';
 const q = new URLSearchParams(location.search);
 const raiz = document.getElementById('raiz')!;
 const cen = q.get('cenario') as Cenario | null;
-const dados = cen ? cenario(cen) : { enr: ENR, meta: META, resultados: RESULTADOS };
+const dados0 = cen ? cenario(cen) : { enr: ENR, meta: META, resultados: RESULTADOS };
+// ?base=1: mesma página sem o que a fatia 2.1 acrescenta (comparação de altura antes × depois).
+const BASE = q.get('base') === '1';
+const semFatia21 = (e: typeof ENR | undefined) => {
+  if (!e) return e;
+  const x = structuredClone(e);
+  for (const c of Object.values(x.catalogos)) if (c.produto?.estado === 'ok') c.produto.marca = null;
+  for (const v of Object.values(x.vendedores)) if (v.estado === 'ok') { v.cidade = null; v.reputacao = null; }
+  return x;
+};
+const dados = BASE ? { ...dados0, enr: semFatia21(dados0.enr) } : dados0;
 const { meta, resultados } = dados;
 const estado = { ...ESTADO, resposta: { ...ESTADO.resposta, metadados: meta, resultados, enriquecimento: dados.enr } } as typeof ESTADO;
 
@@ -72,7 +82,7 @@ function grade() {
     const frete = c.preco === base.preco ? vistaDoFrete(c, c.preco, dados.enr) : null;
     const f = part.porItem[c.itemId];
     miolo.append(renderizarMiniBlocoDaBusca(c, meta[c.itemId], resultados[c.itemId], base.preco, vistaDoCard(c, dados.enr), AGORA_QA,
-      { frete, participacao: dados.enr ? { fracao: f ?? null, cobertura: part.cobertura, grupos: part.grupos } : undefined }));
+      BASE ? {} : { frete, participacao: dados.enr ? { fracao: f ?? null, cobertura: part.cobertura, grupos: part.grupos } : undefined }));
     el.append(miolo);
     doc.append(el);
   }
