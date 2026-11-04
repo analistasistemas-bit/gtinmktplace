@@ -1,7 +1,7 @@
 // Busca automática no SW (ADR-0189 emenda 2026-11-02, Task 3): registrar cards → identificar no banco → margem só dos
 // vinculados elegíveis, painel aberto ou fechado, com isolamento de sessão e de página.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { epocaAtual, lerAba, limparEstadosDasAbas } from '../abas';
+import { epocaAtual, lerAba, limparEstadosDasAbas, registrarEstado } from '../abas';
 import { aoAtualizarAba, complementosPendentes, rotearMensagem as rotearBruto } from '../roteador';
 import { sair } from '../credenciais';
 import { instalarChromeFalso, local, logar } from './chrome-falso';
@@ -40,12 +40,13 @@ let erroEnrUmaVez: string | null;
 /** Erro definitivo na margem (analisar_busca); null = segue normal. */
 let erroMargem: string | null;
 let ofertas429: boolean;
+let frete429: boolean;
 let tentarAposEm: string | null;
 let bloqueioEnr: Promise<void> | null;
 let antesDeEnriquecer: (() => Promise<void> | void) | null;
 let sellerPorItem: boolean;
 let perfisConsultados: number;
-type PedidoEnr = { catalogos: { catalogProductId: string; componentes: string[]; itens: { itemId: string; preco: number }[] }[]; perfis: number[]; perfisEmCache: number[]; perfisRestantes?: number };
+type PedidoEnr = { catalogos: { catalogProductId: string; componentes: string[]; itens: { itemId: string; preco: number }[] }[]; perfis: number[]; perfisEmCache: number[]; perfisRestantes?: number; fretes?: { itemId: string; preco: number }[] };
 const sellerDe = (itemId: string) => (sellerPorItem ? Number(itemId.slice(3)) : 7);
 const pedidosEnr: PedidoEnr[] = [];
 const isoDe = (ms: number) => new Date(ms).toISOString();
@@ -53,11 +54,13 @@ function respostaEnr(b: PedidoEnr) {
   const agora = Date.now();
   // Mesmos limites do roteamento da edge: passar deles = 400 (o teste falha por `falhou`).
   if (b.catalogos.length > 50 || b.catalogos.reduce((n, c) => n + c.itens.length, 0) > 50 || b.perfis.length > 50 || b.perfisEmCache.length > 100) return null;
+  if (b.fretes && (b.fretes.length === 0 || b.fretes.length > 50)) return null; // `fretes: []` = 400 na edge
   if (enrCota <= 0) {
     const motivo = 'limite de páginas por minuto';
     return { estado: 'ok', valor: { consultadoEm: isoDe(agora), conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 0 }, tentarAposEm: null,
       catalogos: b.catalogos.map((c) => ({ catalogProductId: c.catalogProductId, estado: 'indisponivel', motivo, retomarEm: null, consultadoEm: null })),
-      vendedores: b.perfis.map((s) => ({ sellerId: s, estado: 'indisponivel', motivo })) } };
+      vendedores: b.perfis.map((s) => ({ sellerId: s, estado: 'indisponivel', motivo })),
+      ...(b.fretes ? { fretes: b.fretes.map((f) => ({ ...f, frete: { estado: 'indisponivel', motivo }, expiraEm: null })) } : {}) } };
   }
   enrCota--;
   const catalogos = b.catalogos.map((c) => ({
@@ -74,7 +77,9 @@ function respostaEnr(b: PedidoEnr) {
     ...sellers.slice(0, 50).map((x) => ({ sellerId: x, estado: 'ok', nome: `V${x}`, medalha: 'gold', uf: 'SP', expiraEm: isoDe(agora + 24 * 3600_000) })),
     ...sellers.slice(50).map((x) => ({ sellerId: x, estado: 'indisponivel', motivo: 'limite de perfis por pedido' })),
   ];
-  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores, tentarAposEm: ofertas429 ? tentarAposEm : null } };
+  // Frete (fatia 2.1): só quando pedido; ok com expiração de 6 h, ou 429 só no frete (`frete429`).
+  const fretes = b.fretes?.map((f) => ({ ...f, frete: frete429 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', valor: 19.9 }, expiraEm: frete429 ? null : isoDe(agora + 6 * 3600_000) }));
+  return { estado: 'ok', valor: { consultadoEm: isoDe(agora), catalogos, conta: enrConta, custo: { comandosRedis: 1, chamadasMl: 1 }, vendedores, tentarAposEm: ofertas429 || frete429 ? tentarAposEm : null, ...(fretes ? { fretes } : {}) } };
 }
 const corpos: { acao: string; itens: { itemId: string; preco?: number; catalogProductId: string | null }[]; registrarUso?: boolean }[] = [];
 const doTipo = (acao: string) => corpos.filter((c) => c.acao === acao);
@@ -148,6 +153,7 @@ beforeEach(() => {
   erroEnrUmaVez = null;
   erroMargem = null;
   ofertas429 = false;
+  frete429 = false;
   tentarAposEm = null;
   bloqueioEnr = null;
   antesDeEnriquecer = null;
@@ -964,5 +970,92 @@ describe('enriquecimento dos catálogos (lote por página)', () => {
     soltar();
     await complementosPendentes();
     expect((await estado())!.resposta.resultados[id(1)].estado).toBe('ok');
+  });
+});
+
+// Fatia 2.1: frete como componente próprio (6 h), versão da vista da aba e participação nos pisos.
+describe('fatia 2.1 no SW', () => {
+  const fretesDe = async () => ((await lerAba(7)).estado as unknown as { resposta: { enriquecimento: { fretes: Record<string, { estado: string; valor?: number; motivo?: string }>; freteAposEm?: number | null; tentarAposEm?: number | null } } }).resposta.enriquecimento;
+
+  it('frete de todo card com preço vai junto do pedido normal (catálogo ou não); card sem preço não leva a chave', async () => {
+    await registrar([card(1), card(2, { catalogProductId: null }), card(3, { preco: null })]);
+    expect(pedidosEnr).toHaveLength(1);
+    expect(pedidosEnr[0].fretes).toEqual([{ itemId: id(1), preco: 10 }, { itemId: id(2), preco: 10 }]);
+    expect((await fretesDe()).fretes).toEqual({ [`${id(1)}|10|01310100`]: { estado: 'ok', valor: 19.9 }, [`${id(2)}|10|01310100`]: { estado: 'ok', valor: 19.9 } });
+    expect(mensagensPagina('publiai:busca-resultados').at(-1)!.enriquecimento).toMatchObject({ fretes: { [`${id(1)}|10|01310100`]: { estado: 'ok' } } });
+    pedidosEnr.length = 0;
+    await registrar([card(9, { preco: null, catalogProductId: 'MLB3000009' })]);
+    expect(pedidosEnr).toHaveLength(1);
+    expect(pedidosEnr[0]).not.toHaveProperty('fretes'); // nada de frete a pedir = corpo da 0.5.0
+  });
+
+  it('ofertas vencidas (60 s) noutra busca: só as ofertas vão; o frete válido (6 h) não é recotado', async () => {
+    await registrar([card(1)]);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 61_000);
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    await aoAtualizarAba(7, { url: OUTRA });
+    geracaoCs = null;
+    await registrar([card(1)], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
+    expect(pedidosEnr).toHaveLength(2);
+    expect(pedidosEnr[1].catalogos).toEqual([{ catalogProductId: CAT, componentes: ['ofertas'], itens: [{ itemId: id(1), preco: 10 }] }]);
+    expect(pedidosEnr[1]).not.toHaveProperty('fretes');
+    expect((await fretesDe()).fretes[`${id(1)}|10|01310100`]).toEqual({ estado: 'ok', valor: 19.9 });
+  });
+
+  it('frete vencido com o resto válido vai sozinho (pedido só de frete)', async () => {
+    await registrar([card(1)]);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 6 * 3600_000 + 1000);
+    const OUTRA = 'https://lista.mercadolivre.com.br/frigideira';
+    await aoAtualizarAba(7, { url: OUTRA });
+    geracaoCs = null;
+    await registrar([card(1, { catalogProductId: null })], { ...BUSCA, tab: { id: 7, url: OUTRA } as chrome.tabs.Tab, url: OUTRA });
+    expect(pedidosEnr.at(-1)).toMatchObject({ catalogos: [], perfis: [], fretes: [{ itemId: id(1), preco: 10 }] });
+  });
+
+  it('rede/5xx com 60 fretes pendentes: tudo terminal, sem laço; nada de frete vai ao cache', async () => {
+    falharEnr = true;
+    await registrar(cards(1, 60).map((c) => ({ ...c, catalogProductId: null })));
+    expect(pedidosEnr).toHaveLength(1);
+    const f = (await fretesDe()).fretes;
+    expect(Object.keys(f)).toHaveLength(60);
+    expect(Object.values(f).every((x) => x.estado === 'indisponivel' && x.motivo === 'falha de rede')).toBe(true);
+  });
+
+  it('429 só no frete: a pausa fica no frete; outros componentes não ficam "limitados"', async () => {
+    frete429 = true;
+    tentarAposEm = new Date(Date.now() + 120_000).toISOString();
+    await registrar([card(1)]);
+    const e = await fretesDe();
+    expect(e.tentarAposEm).toBeNull();
+    expect(e.freteAposEm).toBe(Date.parse(tentarAposEm));
+    expect((await enr())!.catalogos[CAT]).toMatchObject({ produto: { estado: 'ok' }, ofertas: { estado: 'ok' } });
+    expect(await retentar()).toMatchObject({ ok: false, erro: 'aguardar', tentarAposEm: Date.parse(tentarAposEm) });
+    expect(pedidosEnr).toHaveLength(1);
+  });
+
+  it('vista gravada por versão anterior (sem `versao`) não vale como completa: o planejamento pede de novo', async () => {
+    await registrar([card(1)]);
+    const a = await lerAba(7);
+    const est = a.estado as unknown as { entrada: object; resposta: { enriquecimento: Record<string, unknown> }; observado: object };
+    const { versao: _v, fretes: _f, ...antiga } = est.resposta.enriquecimento;
+    await registrarEstado(7, { geracao: a.geracao, sessao: a.sessao, entrada: est.entrada, resposta: { ...est.resposta, enriquecimento: antiga }, observado: est.observado } as never);
+    await chrome.storage.session.remove('enr:cache');
+    pedidosEnr.length = 0;
+    await registrar([card(1), card(2)]);
+    expect(pedidosEnr).toHaveLength(1);
+    expect(pedidosEnr[0].catalogos[0]).toMatchObject({ catalogProductId: CAT, componentes: ['produto', 'ofertas'] });
+  });
+
+  it('scroll muda a participação: a página recebe o valor novo mesmo sem rodada de rede', async () => {
+    await registrar([card(1, { catalogProductId: null, preco: null, vendidosTexto: '+100 vendidos' })]);
+    const antes = mensagensPagina('publiai:busca-resultados').length;
+    expect(mensagensPagina('publiai:busca-resultados').at(-1)!.participacao).toMatchObject({ porItem: { [id(1)]: 1 } });
+    // Card novo já identificado (ex.: só o texto de vendidos mudou num card antigo): sem identificação nem enriquecimento.
+    await registrar([card(1, { catalogProductId: null, preco: null, vendidosTexto: '+100 vendidos' }), card(2, { catalogProductId: null, preco: null, vendidosTexto: '+300 vendidos' })]);
+    const msgs = mensagensPagina('publiai:busca-resultados');
+    expect(msgs.length).toBeGreaterThan(antes);
+    expect(msgs.at(-1)!.participacao).toMatchObject({ porItem: { [id(1)]: 0.25, [id(2)]: 0.75 }, cobertura: 2, grupos: 2 });
   });
 });

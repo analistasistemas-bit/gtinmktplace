@@ -8,7 +8,7 @@ import { volumeMinimoAoPrecoAtual } from '../compartilhado/volume-minimo';
 import { HOST_PUBLIAI, type CardBusca } from '../leitura/busca';
 import { MARCA } from './aparencia';
 import { seloDaBusca, type LinhaDaMargem } from './selo-busca';
-import { idadeDoCatalogo, NOME_MEDALHA, NOME_TIPO, valorDaComissao, type VistaCard } from '../compartilhado/enriquecimento';
+import { idadeDoCatalogo, NOME_MEDALHA, NOME_REPUTACAO, NOME_TIPO, valorDaComissao, type FreteVista, type VistaCard } from '../compartilhado/enriquecimento';
 
 export const HOST_MINI_BLOCO = HOST_PUBLIAI;
 
@@ -16,9 +16,14 @@ const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve 
 const COMISSAO = 'Tarifa de venda que o Mercado Livre cobraria na sua conta para este tipo de anúncio, nesta categoria e a este preço. Não inclui frete nem imposto.';
 const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "N+" = leitura parcial: o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor, então há pelo menos N.';
 const PARCIAL = 'O Mercado Livre limitou as consultas, o tempo acabou ou a conexão falhou nesta leitura. O que já chegou continua aqui; nada foi presumido. Use "Tentar novamente" no painel do PubliAI.';
+const FRETE = 'Cotação do Mercado Livre para esta oferta, CEP 01310-100 (São Paulo capital). Valor antes dos descontos, opção recomendada ou primeira disponível. Não é o custo efetivamente pago pelo vendedor.';
+const VENDEDOR = 'Ponto colorido: reputação do vendedor no termômetro do Mercado Livre (verde, verde-claro, amarela, laranja ou vermelha); sem ponto = reputação não informada. Cidade/UF: cidade cadastrada do vendedor, não necessariamente a origem do envio.';
+const participacaoAjuda = (p: ParticipacaoCard) => `Piso de vendidos deste produto ÷ soma dos pisos de vendidos dos produtos carregados nesta busca. Cada produto conta uma vez (catálogo = o produto inteiro, patrocinado e orgânico juntos). Base: ${p.cobertura} de ${p.grupos} ${p.grupos === 1 ? 'produto' : 'produtos'} com piso informado. Não é participação de mercado. "—" = sem piso de vendidos.`;
 const CONSULTANDO = 'Consultando dados do catálogo';
 const ADICIONAIS = 'Dados adicionais indisponíveis agora';
 const pctBr = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+/** Fração 0–1 em % compacto: 12% · 3,4% · <0,1%. */
+const pctParticipacao = (f: number) => (f > 0 && f < 0.001 ? '<0,1%' : pctBr(Math.round(f * (f < 0.1 ? 1000 : 100)) / (f < 0.1 ? 10 : 1)));
 const brl = (centavos: number) => `R$ ${(centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Tokens do app (src/index.css, tema claro: a página do ML é clara). Texto de cor = matiz misturado com preto em oklab
@@ -49,6 +54,14 @@ svg{width:13px;height:13px;flex:none}
 .i:focus-visible{outline:2px solid var(--chart-1);outline-offset:1px}
 .a{color:var(--suave);font-size:11px;line-height:1.3}
 b{font-weight:650;color:var(--texto)}
+.rep{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;box-shadow:inset 0 0 0 1px oklch(0 0 0/.18)}
+.rep.r5{background:oklch(0.62 0.17 150)}.rep.r4{background:oklch(0.80 0.17 130)}.rep.r3{background:oklch(0.86 0.16 95)}
+.rep.r2{background:oklch(0.74 0.17 55)}.rep.r1{background:oklch(0.60 0.22 25)}
+/* Cidade/UF + ⓘ quebram juntos para a linha de baixo quando não cabem (o nome não é espremido); cidade longa corta. */
+.k:has(.fc){flex-wrap:wrap;row-gap:1px}
+.fc{display:flex;flex:0 1 auto;min-width:0;white-space:nowrap}.fc>span{flex:none}.fc>.cid{flex:0 1 auto;min-width:4em;overflow:hidden;text-overflow:ellipsis}
+.k>.g:has(.fc){min-width:0;max-width:100%}.i{flex:none}
+.marca{flex:1 1 0;min-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .idade.recente{--c:var(--success)}.idade.medio{--c:var(--warning)}.idade.antigo{--c:var(--suave)}
 .ambar{--c:var(--chart-4)}.cyan{--c:var(--chart-3)}.violeta{--c:var(--chart-2)}.rosa{--c:var(--chart-5)}.roxo{--c:var(--chart-1)}
 .lucro{--c:var(--success)}.prejuizo{--c:var(--destructive)}.aguardando{--c:var(--warning)}.neutro{--c:var(--suave)}
@@ -77,7 +90,7 @@ function quebravel(texto: string): (HTMLElement | string)[] {
 
 /** ⓘ no fim da linha: abre/fecha a explicação logo abaixo dela. Dentro do card do ML (um link): o clique não navega
  *  nem sobe até o card. Botão de verdade: foco e Enter/Espaço pelo teclado. */
-function ajuda(l: HTMLElement, nome: string, texto: string): void {
+function ajuda(l: HTMLElement, nome: string, texto: string, onde: HTMLElement = l): void {
   const i = el('button', 'i', 'ⓘ') as HTMLButtonElement;
   i.type = 'button';
   i.setAttribute('aria-label', `O que é ${nome}?`);
@@ -92,10 +105,10 @@ function ajuda(l: HTMLElement, nome: string, texto: string): void {
   });
   // ⓘ preso ao último trecho da linha: nunca quebra sozinho para uma linha nova.
   const g = el('span', 'g');
-  const ultimo = l.lastElementChild;
+  const ultimo = onde.lastElementChild;
   if (ultimo) g.append(ultimo);
   g.append(i);
-  l.append(g);
+  onde.append(g);
 }
 
 /** Moeda compacta do Mini-bloco (o painel mostra o valor completo): R$ 950 · R$ 209 mil · R$ 4,4 mi (1 casa, sem ",0"). */
@@ -116,6 +129,9 @@ function margemDaOcorrencia(
   return seloDaBusca(margem);
 }
 
+/** Participação do card nos pisos observados (calculada no SW sobre todos os cards da geração). fracao null = "—". */
+export type ParticipacaoCard = { fracao: number | null; cobertura: number; grupos: number };
+
 export function renderizarMiniBlocoDaBusca(
   card: CardBusca,
   metadados: MetadadosCardBusca | undefined,
@@ -125,6 +141,8 @@ export function renderizarMiniBlocoDaBusca(
   /** Catálogo enriquecido deste card (vistaDoCard); null/ausente = card sem catálogo: só dados da página. */
   vista: VistaCard = null,
   agora = Date.now(),
+  /** Frete cotado (vistaDoFrete, já ao preço desta ocorrência) e participação; ausentes = sem linha. */
+  extras: { frete?: FreteVista | 'consultando' | null; participacao?: ParticipacaoCard } = {},
 ): HTMLElement {
   const oc = card.ocorrencias[0] ?? { posicao: card.posicao, patrocinado: card.patrocinado, preco: card.preco, vendidosTexto: card.vendidosTexto };
   const host = document.createElement('div');
@@ -153,8 +171,24 @@ export function renderizarMiniBlocoDaBusca(
     const v = vista!.vendedor;
     const extra = (classe: string, t: string) => { const f = el('span', 'v f', '· '); f.append(el('span', classe, t)); grupo.append(f); };
     if (v?.estado === 'ok') {
+      // Reputação: ponto na cor do termômetro do ML, com o texto acessível; desconhecida = sem ponto.
+      if (v.reputacao) {
+        const r = el('span', `rep r${v.reputacao[0]}`);
+        r.setAttribute('role', 'img');
+        r.setAttribute('aria-label', `Reputação ${NOME_REPUTACAO[v.reputacao]}`);
+        r.title = `Reputação ${NOME_REPUTACAO[v.reputacao]} (termômetro do Mercado Livre)`;
+        nome.after(r);
+      }
       if (v.medalha) extra(v.medalha === 'sem' ? 'v' : 'med', NOME_MEDALHA[v.medalha]);
-      if (v.uf) extra('v', v.uf);
+      // Cidade/UF no lugar da UF: só a cidade encolhe (reticências), a UF fica.
+      if (v.cidade) {
+        const f = el('span', 'v fc');
+        f.title = `Cidade cadastrada do vendedor: ${v.cidade}${v.uf ? `/${v.uf}` : ''}`;
+        f.append(el('span', '', '·\u00a0'), el('span', 'cid', v.cidade));
+        if (v.uf) f.append(el('span', '', `/${v.uf}`));
+        grupo.append(f);
+      } else if (v.uf) extra('v', v.uf);
+      if (v.reputacao || v.cidade) ajuda(topo, 'reputação e cidade do vendedor', VENDEDOR, grupo);
     } else extra('v', 'Perfil não carregado');
   }
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
@@ -199,12 +233,40 @@ export function renderizarMiniBlocoDaBusca(
     }
   }
 
-  // 3. Giro mínimo ao preço atual (piso e preço da MESMA ocorrência), compacto; o painel mostra o valor completo.
+  // Frete cotado da oferta exata (qualquer card com preço), fora da margem.
+  const fr = extras.frete;
+  if (fr === 'consultando') bloco.append(linha(el('span', 't violeta', 'Consultando frete')));
+  else if (fr?.estado === 'ok') {
+    const l = linha(el('span', 'v', 'Frete cotado'), el('b', '', `R$ ${fr.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`));
+    ajuda(l, 'frete cotado', FRETE);
+    bloco.append(l);
+  } else if (fr?.estado === 'indisponivel') {
+    const l = linha(...quebravel('Frete cotado indisponível agora'));
+    l.title = fr.motivo;
+    ajuda(l, 'frete cotado', FRETE);
+    bloco.append(l);
+  }
+
+  // 3. Giro mínimo ao preço atual (piso e preço da MESMA ocorrência), compacto; o painel mostra o valor completo. Na
+  // mesma linha (quebrando se não couber), a participação nos pisos observados.
   const volume = volumeMinimoAoPrecoAtual(oc.vendidosTexto, oc.preco);
-  if (volume !== null) {
-    const l = linha(el('span', 'v', 'Giro mín.'), el('b', '', brlCompacto(volume / 100)));
-    l.title = `Piso de "${oc.vendidosTexto}" × preço atual = ${brl(volume)}. Não é faturamento: as vendas foram a outros preços.`;
-    ajuda(l, 'giro mínimo', GIRO);
+  const part = extras.participacao;
+  if (volume !== null || part) {
+    const l = linha();
+    if (volume !== null) {
+      const g = el('span', 'g');
+      g.append(el('span', 'v', 'Giro mín.'), el('b', '', brlCompacto(volume / 100)));
+      g.title = `Piso de "${oc.vendidosTexto}" × preço atual = ${brl(volume)}. Não é faturamento: as vendas foram a outros preços.`;
+      l.append(g);
+      ajuda(l, 'giro mínimo', GIRO);
+    }
+    if (part) {
+      const g = el('span', 'g');
+      g.append(el('b', '', part.fracao === null ? '—' : pctParticipacao(part.fracao)), el('span', 'v', 'dos pisos observados'));
+      if (part.fracao === null) g.title = 'Sem piso de vendidos informado (ou nenhum produto carregado com piso).';
+      l.append(g);
+      ajuda(l, 'participação nos pisos observados', participacaoAjuda(part));
+    }
     bloco.append(l);
   }
 
@@ -213,7 +275,8 @@ export function renderizarMiniBlocoDaBusca(
   const idade = vista ? idadeDoCatalogo(vista.criadoEm, agora) : null;
   // Ofertas lidas e metadados não: a idade em processamento ou indisponível (o que já chegou fica).
   const idadeEstado = !o || idade ? null : vista!.faltaProduto && !vista!.indisponivel ? 'consultando idade' : vista!.produtoIndisponivel ? 'idade indisponível agora' : null;
-  if (o || idade) {
+  const marca = vista?.marca ?? null;
+  if (o || idade || marca) {
     const l = linha();
     l.classList.add('pq');
     if (o) {
@@ -232,6 +295,13 @@ export function renderizarMiniBlocoDaBusca(
       l.append(g);
     }
     if (o) ajuda(l, 'vendedores no catálogo', VENDEDORES);
+    // Marca do catálogo: ocupa o resto da linha e corta com reticências (nome completo no title).
+    if (marca) {
+      const m = el('span', 'v marca', 'marca ');
+      m.append(el('b', '', marca));
+      m.title = `Marca do catálogo: ${marca}`;
+      l.append(m);
+    }
     bloco.append(l);
   }
 

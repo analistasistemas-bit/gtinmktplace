@@ -6,11 +6,23 @@ import type { CardBusca } from '../leitura/busca';
 
 // = Medalha de _shared/extensao/enriquecimento-busca.ts (não importado: o módulo puxa tipos do Deno para o tsc daqui).
 export type Medalha = 'silver' | 'gold' | 'platinum' | 'sem';
+/** Termômetro do ML (`seller_reputation.level_id`); outro valor = null na edge (fatia 2.1). */
+export type Reputacao = '1_red' | '2_orange' | '3_yellow' | '4_light_green' | '5_green';
+export const REPUTACOES: readonly Reputacao[] = ['5_green', '4_light_green', '3_yellow', '2_orange', '1_red'];
+export const NOME_REPUTACAO: Record<Reputacao, string> = { '5_green': 'verde', '4_light_green': 'verde-claro', '3_yellow': 'amarela', '2_orange': 'laranja', '1_red': 'vermelha' };
+export const ehReputacao = (x: unknown): x is Reputacao => typeof x === 'string' && (REPUTACOES as readonly string[]).includes(x);
 /** Terminal: só o "Tentar novamente" (ou dado novo) volta a pedir. `motivo` = o da edge (MOTIVO) ou 'falha de rede'.
  *  Componente AUSENTE = em processamento (pedido em voo ou ainda não enviado). */
 type Indisponivel = { estado: 'indisponivel'; motivo?: string };
 
-export type ProdutoVista = { estado: 'ok'; criadoEm: string | null } | Indisponivel;
+export type ProdutoVista = { estado: 'ok'; criadoEm: string | null; marca?: string | null } | Indisponivel;
+/** Frete cotado da oferta exata (item do card ao preço do card, CEP 01310-100). Ausente = em processamento. */
+export type FreteVista = { estado: 'ok'; valor: number } | { estado: 'indisponivel'; motivo: string };
+/** CEP fixo da cotação (São Paulo capital). Entra na chave: outro CEP nunca herda o valor. */
+export const CEP_FRETE = '01310100';
+export const chaveFrete = (itemId: string, preco: number) => `${itemId}|${preco}|${CEP_FRETE}`;
+/** Sem opção de envio (404/424 do ML): não é falha passageira, o "Tentar novamente" não refaz. */
+export const MOTIVO_FRETE_SEM_OPCAO = 'frete da oferta indisponível';
 export type ComissaoVista = { estado: 'ok'; valor: ComissaoML } | { estado: 'indisponivel'; motivo: string };
 /** Oferta do item do card no catálogo; `preco` = o preço do card enviado (a comissão só vale para ele). */
 export type ExataVista =
@@ -34,11 +46,22 @@ export interface CatalogoVista {
   produto?: ProdutoVista;
   ofertas?: OfertasVista;
 }
-export type VendedorVista = { estado: 'ok'; nome: string | null; medalha: Medalha | null; uf: string | null } | Indisponivel;
+export type VendedorVista =
+  | { estado: 'ok'; nome: string | null; medalha: Medalha | null; uf: string | null; cidade?: string | null; reputacao?: Reputacao | null }
+  | Indisponivel;
+
+/** Versão do formato da vista gravada na aba: estado de outra versão (sem marca/cidade/reputação/frete) não vale como
+ *  completo — `respostaDe` (busca-sw) o descarta e o planejamento pede de novo. */
+export const VERSAO_ENRIQUECIMENTO = 2;
 
 export interface EstadoEnriquecimento {
+  versao?: number;
   catalogos: Record<string, CatalogoVista>;
   vendedores: Record<string, VendedorVista>;
+  /** Por chaveFrete (item + preço exato + CEP). Opcional só no tipo (estado de antes da 0.5.1); enriquecimentoDe preenche. */
+  fretes?: Record<string, FreteVista>;
+  /** ms: Retry-After de um 429 que veio SÓ do frete: segura só os fretes, o resto pode ser refeito já. */
+  freteAposEm?: number | null;
   /** ms: Retry-After do ML na última rodada; o "Tentar novamente" só vale a partir daqui. null/ausente = já pode. */
   tentarAposEm?: number | null;
   /** Falha de rede numa rodada (o pedido dela ficou indisponível): o painel oferece "Tentar novamente". */
@@ -47,7 +70,9 @@ export interface EstadoEnriquecimento {
   indisponivel: string | null;
 }
 
-export const enriquecimentoVazio = (): EstadoEnriquecimento => ({ catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null });
+export const enriquecimentoVazio = (): EstadoEnriquecimento => ({
+  versao: VERSAO_ENRIQUECIMENTO, catalogos: {}, vendedores: {}, fretes: {}, freteAposEm: null, tentarAposEm: null, falhou: false, indisponivel: null,
+});
 
 /** Estado gravado antes da Task 11.3 (`aguardando`, `aguardandoJanela`, `retomarEm`, `perfis`): o componente em espera
  *  vira ausente (o planejamento pede de novo), o resto do legado some. */
@@ -63,15 +88,36 @@ export function enriquecimentoDe(v: unknown): EstadoEnriquecimento {
   }
   const vendedores: Record<string, VendedorVista> = {};
   for (const [k, x] of Object.entries(e.vendedores ?? {})) { const y = semLegado(x); if (y) vendedores[k] = y; }
+  const fretes: Record<string, FreteVista> = {};
+  for (const [k, f] of Object.entries(e.fretes ?? {})) {
+    if (f?.estado === 'ok' && typeof f.valor === 'number') fretes[k] = f;
+    else if (f?.estado === 'indisponivel') fretes[k] = { estado: 'indisponivel', motivo: typeof f.motivo === 'string' ? f.motivo : MOTIVO_PADRAO };
+  }
   return {
-    catalogos, vendedores,
+    versao: VERSAO_ENRIQUECIMENTO, catalogos, vendedores, fretes,
+    freteAposEm: typeof e.freteAposEm === 'number' ? e.freteAposEm : null,
     tentarAposEm: typeof e.tentarAposEm === 'number' ? e.tentarAposEm : null, falhou: e.falhou === true,
     indisponivel: typeof e.indisponivel === 'string' ? e.indisponivel : null,
   };
 }
 
+/** Frete que o "Tentar novamente" refaz (sem opção de envio é definitivo, como oferta não localizada). */
+export const freteParaTentar = (f: FreteVista) => f.estado !== 'ok' && f.motivo !== MOTIVO_FRETE_SEM_OPCAO;
+
 /** Algo que o "Tentar novamente" refaria (mesmo critério de prepararNovaTentativa): o painel mostra o botão. */
 export function haParaTentar(enr: EstadoEnriquecimento): boolean {
+  return haParaTentarForaDoFrete(enr) || Object.values(enr.fretes ?? {}).some(freteParaTentar);
+}
+
+/** Até quando o "Tentar novamente" ainda não vale (ms; null = já vale): Retry-After geral, ou o do frete quando só há
+ *  fretes a refazer. */
+export function esperaDaNovaTentativa(enr: EstadoEnriquecimento, agora: number): number | null {
+  if (enr.tentarAposEm != null && agora < enr.tentarAposEm) return enr.tentarAposEm;
+  if (enr.freteAposEm != null && agora < enr.freteAposEm && !haParaTentarForaDoFrete(enr)) return enr.freteAposEm;
+  return null;
+}
+
+export function haParaTentarForaDoFrete(enr: EstadoEnriquecimento): boolean {
   return enr.falhou || !!enr.indisponivel || Object.values(enr.vendedores).some((v) => v.estado !== 'ok') || Object.values(enr.catalogos).some((c) =>
     (!!c.produto && c.produto.estado !== 'ok') || (!!c.ofertas && c.ofertas.estado !== 'ok')
     || (c.ofertas?.estado === 'ok' && Object.values(c.ofertas.exatas).some((e) => e.estado === 'indisponivel' || (e.estado === 'ok' && e.comissao.estado !== 'ok'))));
@@ -104,6 +150,8 @@ export type VistaCard =
     faltaProduto: boolean;
     faltaOfertas: boolean;
     criadoEm: string | null | undefined; // undefined = metadados não lidos
+    /** Marca do catálogo (BRAND do produto); null = não informada ou metadados não lidos. */
+    marca: string | null;
     /** Terminal parcial (429, tempo, orçamento, rede): motivo; o que já chegou fica. */
     produtoIndisponivel: string | null;
     ofertasIndisponivel: string | null;
@@ -130,11 +178,21 @@ export function vistaDoCard(card: Pick<CardBusca, 'itemId' | 'catalogProductId' 
     faltaProduto: !indisponivel && !c?.produto,
     faltaOfertas: !indisponivel && (!o || (o.estado === 'indisponivel' && !tentado) || (!!ofertas && !exata && temPreco)),
     criadoEm: c?.produto?.estado === 'ok' ? c.produto.criadoEm : undefined,
+    marca: c?.produto?.estado === 'ok' ? c.produto.marca ?? null : null,
     produtoIndisponivel: c?.produto?.estado === 'indisponivel' ? c.produto.motivo ?? MOTIVO_PADRAO : null,
     ofertasIndisponivel: o?.estado === 'indisponivel' && tentado ? o.motivo ?? MOTIVO_PADRAO : null,
     ofertas, exata,
     vendedor: sellerId !== null ? e?.vendedores[String(sellerId)] ?? null : null,
   };
+}
+
+/** Frete cotado de um card ao preço desta ocorrência. null = nada a mostrar (sem enriquecimento na página, preço não
+ *  lido, identidade conflitante); 'consultando' = ainda não respondido. */
+export function vistaDoFrete(
+  card: Pick<CardBusca, 'itemId' | 'identidadeConflitante'>, preco: number | null | undefined, e: EstadoEnriquecimento | undefined,
+): FreteVista | 'consultando' | null {
+  if (!e || e.indisponivel || card.identidadeConflitante || typeof preco !== 'number' || !(preco > 0)) return null;
+  return e.fretes?.[chaveFrete(card.itemId, preco)] ?? 'consultando';
 }
 
 export const NOME_MEDALHA: Record<Medalha, string> = { platinum: 'Platinum', gold: 'Gold', silver: 'Silver', sem: 'Sem medalha' };

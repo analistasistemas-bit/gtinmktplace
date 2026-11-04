@@ -5,9 +5,11 @@
 import { useId, useState } from 'react';
 import type { EstadoBusca } from '../busca-sw';
 import {
-  filtrarCards, margemClassico, ordenarCards, resumoBusca, resumoEnriquecimento, type FiltroBusca, type OrdemBusca,
+  filtrarCards, margemClassico, ordenarCards, participacaoNosPisos, resumoBusca, resumoEnriquecimento, type FiltroBusca, type OrdemBusca,
 } from '../compartilhado/busca-resumo';
-import { haParaTentar, NOME_MEDALHA, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
+import {
+  esperaDaNovaTentativa, haParaTentar, NOME_MEDALHA, NOME_REPUTACAO, REPUTACOES, vistaDoCard, vistaDoFrete, type EstadoEnriquecimento, type Reputacao,
+} from '../compartilhado/enriquecimento';
 import type { CardBusca } from '../leitura/busca';
 import type { MetadadosCardBusca } from '../../../supabase/functions/_shared/extensao/busca.ts';
 import type { MargemTipo } from '../../../supabase/functions/_shared/extensao/tipos.ts';
@@ -17,6 +19,8 @@ import { VinculoProduto } from './VinculoProduto';
 const LINHAS = 15;
 const num = (n: number) => n.toLocaleString('pt-BR');
 const pct = (n: number) => `${n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+/** Fração 0–1 dos pisos observados: 12% · 3,4% · <0,1% (mesma regra do Mini-bloco). */
+const pctPisos = (f: number) => (f > 0 && f < 0.001 ? '<0,1%' : `${(Math.round(f * (f < 0.1 ? 1000 : 100)) / (f < 0.1 ? 10 : 1)).toLocaleString('pt-BR')}%`);
 /** `cor` = significado fixo da paleta (chart-1 meu/minha margem, 2 catálogo, 3 Full/frete, 4 medalha, 5 patrocinado/oferta). */
 const FILTROS: { id: FiltroBusca; rotulo: string; cor: 1 | 2 | 3 | 4 | 5 }[] = [
   { id: 'meus', rotulo: 'Meus anúncios', cor: 1 },
@@ -43,6 +47,9 @@ const AJUDA = {
   ufs: ['UF dos vendedores', 'Estado do endereço do vendedor no Mercado Livre, um por vendedor. Mostra as 5 UFs mais frequentes; as demais somam em "Outras".'],
   tipos: ['Tipo de anúncio', 'Clássico ou Premium da oferta de cada card no catálogo. Cards cuja oferta não foi localizada na leitura não entram.'],
   faixas: ['Vendedores por catálogo', 'Quantos vendedores diferentes cada catálogo tem, contando só catálogos com leitura completa. Leitura parcial aparece como "≥ N": há pelo menos N vendedores.'],
+  participacao: ['% dos pisos observados', 'Em cada produto da lista: o piso de vendidos dele ÷ a soma dos pisos de vendidos dos produtos carregados nesta busca (a mesma base das Vendas mínimas). Cada produto conta uma vez: catálogo = o produto inteiro, patrocinado e orgânico juntos. "—" = sem piso de vendidos. Não é participação de mercado.'],
+  frete: ['Frete cotado', 'Cotação do Mercado Livre para a oferta de cada card, CEP 01310-100 (São Paulo capital). Valor antes dos descontos, opção recomendada ou primeira disponível. Não é o custo efetivamente pago pelo vendedor nem o "Frete na sua conta" da Minha margem.'],
+  reputacao: ['Vendedores por reputação', 'Cor do termômetro de reputação do Mercado Livre, um por vendedor único das ofertas localizadas no catálogo. Perfil não carregado ou reputação não informada ficam em "Não informada". Na lista, o ponto colorido ao lado da cidade cadastrada do vendedor.'],
   ordem: ['Ordenar', 'Relevância: a ordem do Mercado Livre. Vendidos: maior piso de vendidos primeiro. Preço: menor primeiro. Minha margem: sua margem simulada no Clássico ao preço de cada card, só para produtos vinculados. A ordem muda apenas esta lista, nunca a página do ML.'],
 } as const;
 type IdAjuda = keyof typeof AJUDA;
@@ -91,6 +98,11 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   };
 
   const r = resumoBusca(cards, metadados, ocorrencias);
+  const enr = estado.resposta.enriquecimento;
+  // Base única: todos os cards carregados (o filtro e a ordem da lista não mudam a participação).
+  const participacao = participacaoNosPisos(cards);
+  const fretes = cards.map((c) => vistaDoFrete(c, c.preco, enr)).filter((f) => f !== null);
+  const fretesCotados = fretes.filter((f) => f !== 'consultando' && f.estado === 'ok').length;
   const aguardando = cards.filter((c) => resultados[c.itemId]?.estado === 'limite').length;
   // Sem produto vinculado não há margem para ordenar: a aba fica desabilitada e a ordem cai para Relevância.
   const semMargem = r.vinculados === 0;
@@ -159,10 +171,26 @@ export function Busca({ estado, chamar, analisar, destacar }: {
             </div>
             <Ajuda id="giro" aberto={ajuda} />
             <p className="nota bs-cobertura">{`Giro: ${num(r.volumeMinimo.cobertura)} de ${num(r.volumeMinimo.grupos)} grupos com piso e preço`}</p>
+            <div className="ct-linha">
+              <span className="ct-rotulo">% dos pisos observados<Info id="participacao" aberto={ajuda === 'participacao'} onAlternar={alternarAjuda} /></span>
+              <span className="mono ct-forte">{`${num(participacao.cobertura)} de ${num(participacao.grupos)}`}</span>
+            </div>
+            <Ajuda id="participacao" aberto={ajuda} />
+            <p className="nota bs-cobertura">grupos de vendas com piso, mostrado em cada produto da lista</p>
+            {fretes.length > 0 && (
+              <>
+                <div className="ct-linha">
+                  <span className="ct-rotulo">Frete cotado<Info id="frete" aberto={ajuda === 'frete'} onAlternar={alternarAjuda} /></span>
+                  <span className="mono ct-forte">{`${num(fretesCotados)} de ${num(fretes.length)}`}</span>
+                </div>
+                <Ajuda id="frete" aberto={ajuda} />
+                <p className="nota bs-cobertura">produtos com frete cotado, CEP 01310-100</p>
+              </>
+            )}
           </div>
         </div>
 
-        <Catalogos cards={cards} enr={estado.resposta.enriquecimento} ajuda={ajuda} alternarAjuda={alternarAjuda} ocupado={ocupado} retentar={retentar} aviso={avisoRetentar} />
+        <Catalogos cards={cards} enr={enr} ajuda={ajuda} alternarAjuda={alternarAjuda} ocupado={ocupado} retentar={retentar} aviso={avisoRetentar} />
 
         {ocupado && <p className="nota" role="status">Analisando…</p>}
         {!ocupado && erro && (
@@ -204,7 +232,7 @@ export function Busca({ estado, chamar, analisar, destacar }: {
         {r.vinculados > 0 && <p className="nota">Margem simulada no Clássico ao preço de cada card.</p>}
         <ul className="bs-lista" aria-label="Produtos da busca">
           {mostrar.map((c) => (
-            <Linha key={c.itemId} card={c} resultado={resultados[c.itemId]} precoDaMargem={estado.resposta.precoDaMargem?.[c.itemId]} meta={metadados[c.itemId]} aberto={aberto === c.itemId}
+            <Linha key={c.itemId} card={c} enr={enr} participacao={participacao.porItem[c.itemId] ?? null} resultado={resultados[c.itemId]} precoDaMargem={estado.resposta.precoDaMargem?.[c.itemId]} meta={metadados[c.itemId]} aberto={aberto === c.itemId}
               onAbrir={() => setAberto(aberto === c.itemId ? null : c.itemId)} onDestacar={() => destacar(c.itemId)}
               chamar={chamar} onVinculado={() => { setAberto(null); void rodar([c.itemId]); }} />
           ))}
@@ -218,13 +246,13 @@ export function Busca({ estado, chamar, analisar, destacar }: {
   );
 }
 
-type Fatia = { rotulo: string; n: number; cor?: 4 | 'neutra' };
+type Fatia = { rotulo: string; n: number; cor?: 4 | 'neutra' | Reputacao };
 /** Distribuição em linhas rótulo · barra · contagem; a barra é a fatia do denominador (cor sempre com texto e número). */
 function Distribuicao({ rotulo, fatias, total, classe }: { rotulo: string; fatias: Fatia[]; total: number; classe?: string }) {
   return (
     <ul className={`bs-distrib ${classe ?? ''}`} aria-label={rotulo}>
       {fatias.map((f) => (
-        <li key={f.rotulo} data-cor={f.cor === 4 ? '4' : undefined} data-neutra={f.cor === 'neutra' ? '' : undefined}>
+        <li key={f.rotulo} data-cor={f.cor === 4 ? '4' : undefined} data-neutra={f.cor === 'neutra' ? '' : undefined} data-rep={typeof f.cor === 'string' && f.cor !== 'neutra' ? f.cor : undefined}>
           <span className="bs-distrib-rotulo">{f.rotulo}</span>
           <span className="bs-distrib-barra" aria-hidden="true"><span style={{ width: `${total ? Math.round((f.n / total) * 100) : 0}%` }} /></span>
           <span className="mono">{num(f.n)}</span>
@@ -248,7 +276,7 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
   // Parcial terminal (429, tempo, orçamento, rede): o que chegou fica; só o "Tentar novamente" refaz (sem retomada sozinha).
   // Página inteira indisponível (sem conexão ML, módulo desligado...) também: o motivo e o "Tentar novamente".
   const tentar = !!enr && haParaTentar(enr);
-  const pausado = typeof enr?.tentarAposEm === 'number' && enr.tentarAposEm > Date.now();
+  const espera = enr ? esperaDaNovaTentativa(enr, Date.now()) : null;
   return (
     <section className="bs-catalogos" aria-labelledby="bs-catalogos-titulo">
       <h3 id="bs-catalogos-titulo" className="bs-catalogos-titulo">Catálogos e vendedores</h3>
@@ -261,7 +289,7 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
       {!enr?.indisponivel && r.catalogosConsultando > 0 && <p className="nota bs-estado-enr" role="status">Consultando dados do catálogo</p>}
       {tentar && !ocupado && (
         <div className={`bs-aviso ${enr!.falhou ? 'erro' : 'aguardando'}`} role={enr!.falhou ? 'alert' : undefined}>
-          <span>{aviso ?? (pausado ? pausa(enr!.tentarAposEm!) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora'))}</span>
+          <span>{aviso ?? (espera !== null ? pausa(espera) : enr!.indisponivel ?? (enr!.falhou ? 'Não foi possível ler os catálogos agora.' : 'Dados adicionais indisponíveis agora'))}</span>
           <button type="button" className="secundario" onClick={retentar}>Tentar novamente</button>
         </div>
       )}
@@ -274,6 +302,13 @@ function Catalogos({ cards, enr, ajuda, alternarAjuda, ocupado, retentar, aviso 
             { rotulo: 'Não informada', n: v.medalhaDesconhecida, cor: 'neutra' },
           ]} />
           <p className="nota bs-cobertura">{`${plural(v.unicos, 'vendedor único', 'vendedores únicos')} · ${num(v.cardsSemVendedor)} de ${num(r.cardsComCatalogo)} cards de catálogo sem vendedor identificado`}</p>
+          {titulo('reputacao')}
+          <Ajuda id="reputacao" aberto={ajuda} />
+          <Distribuicao rotulo="Vendedores por reputação" classe="bs-reputacao" total={v.unicos} fatias={[
+            ...REPUTACOES.map((k) => ({ rotulo: NOME_REPUTACAO[k][0].toUpperCase() + NOME_REPUTACAO[k].slice(1), n: v.reputacoes[k], cor: k })),
+            { rotulo: 'Não informada', n: v.reputacaoDesconhecida, cor: 'neutra' as const },
+          ]} />
+          <p className="nota bs-cobertura">{`de ${plural(v.unicos, 'vendedor único', 'vendedores únicos')} · ${num(v.reputacaoDesconhecida)} sem reputação informada`}</p>
           {titulo('ufs')}
           <Ajuda id="ufs" aberto={ajuda} />
           <Distribuicao rotulo="UF dos vendedores" total={v.unicos} fatias={[
@@ -328,8 +363,33 @@ function Composicao({ rotulo, tipo }: { rotulo: string; tipo: { estado: string; 
   );
 }
 
-function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDestacar, chamar, onVinculado }: {
-  card: CardBusca; resultado: Resultado; precoDaMargem: number | undefined; meta: MetadadosCardBusca | undefined; aberto: boolean;
+/** Fatia 2.1 na linha: marca, reputação (ponto) + cidade/UF do vendedor da oferta exata, % dos pisos e frete cotado. */
+function Extras({ card: c, preco, enr, participacao }: { card: CardBusca; preco: number | null; enr: EstadoEnriquecimento | undefined; participacao: number | null }) {
+  const v = vistaDoCard(c, enr);
+  const vend = v?.vendedor?.estado === 'ok' ? v.vendedor : null;
+  // Frete só da aparição ao preço cotado (o do card agregado).
+  const frete = preco !== null && preco === c.preco ? vistaDoFrete(c, preco, enr) : null;
+  const local = vend?.cidade ? `${vend.cidade}${vend.uf ? `/${vend.uf}` : ''}` : null;
+  return (
+    <div className="bs-sinais bs-extras">
+      <span title="Piso de vendidos deste produto ÷ soma dos pisos dos produtos carregados">{`${participacao === null ? '—' : pctPisos(participacao)} dos pisos observados`}</span>
+      {frete === 'consultando' && <span className="bs-consultando">Consultando frete</span>}
+      {frete && frete !== 'consultando' && (frete.estado === 'ok'
+        ? <span>Frete cotado <span className="mono bs-forte">{brl(frete.valor)}</span></span>
+        : <span title={frete.motivo}>Frete cotado indisponível</span>)}
+      {(vend?.reputacao || local) && (
+        <span className="bs-vendedor" title={local ? 'Cidade cadastrada do vendedor' : undefined}>
+          {vend?.reputacao && <span className="bs-rep" data-rep={vend.reputacao} role="img" aria-label={`Reputação ${NOME_REPUTACAO[vend.reputacao]}`} title={`Reputação ${NOME_REPUTACAO[vend.reputacao]}`} />}
+          {local && <span className="bs-cidade">{local}</span>}
+        </span>
+      )}
+      {v?.marca && <span className="bs-marca" title={`Marca do catálogo: ${v.marca}`}>marca <b>{v.marca}</b></span>}
+    </div>
+  );
+}
+
+function Linha({ card: c, enr, participacao, resultado, precoDaMargem, meta, aberto, onAbrir, onDestacar, chamar, onVinculado }: {
+  card: CardBusca; enr: EstadoEnriquecimento | undefined; participacao: number | null; resultado: Resultado; precoDaMargem: number | undefined; meta: MetadadosCardBusca | undefined; aberto: boolean;
   onAbrir: () => void; onDestacar: () => void; chamar: Chamar; onVinculado: () => void;
 }) {
   // Uma aparição só por linha: a do preço da margem (ou do card); vendidos e selos vêm dela, nunca da outra aparição.
@@ -370,6 +430,7 @@ function Linha({ card: c, resultado, precoDaMargem, meta, aberto, onAbrir, onDes
             <button type="button" className="bs-vincular" aria-label="Vincular ao meu SKU" aria-expanded={aberto} onClick={onAbrir}>Vincular</button>
           )}
         </div>
+        <Extras card={c} preco={ap.preco} enr={enr} participacao={participacao} />
         {/* O SKU fica visível em qualquer estado com código; com composição ele vai dentro de Detalhes. */}
         {resultado && 'codigo' in resultado && !(resultado.estado === 'ok' && resultado.margem && !outroPreco) && <p className="nota">{`SKU ${resultado.codigo}`}</p>}
         {/* Detalhes só quando há a conta da margem (título completo fica no hover do título). */}

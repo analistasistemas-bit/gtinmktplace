@@ -1,7 +1,7 @@
 // Cache do enriquecimento no navegador e planejamento da página (Revisão 03/11-b: lote por página, Task 11.3).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { aplicarResposta, gravarCache, haParaTentar, lerCache, marcarFalha, marcasDoPedido, planejarLote, prepararNovaTentativa, type CacheEnr } from '../cache-enriquecimento';
-import { enriquecimentoDe, enriquecimentoVazio, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
+import { chaveFrete, enriquecimentoDe, enriquecimentoVazio, vistaDoCard, type EstadoEnriquecimento } from '../compartilhado/enriquecimento';
 import { limparEstadosDasAbas } from '../abas';
 import { sair } from '../credenciais';
 import { instalarChromeFalso, logar } from './chrome-falso';
@@ -10,7 +10,13 @@ const T0 = Date.parse('2026-11-03T12:00:00Z');
 const iso = (ms: number) => new Date(ms).toISOString();
 const card = (n: number, o: Record<string, unknown> = {}) =>
   ({ itemId: `MLB${1000000 + n}`, catalogProductId: 'MLB900', preco: 10, identidadeConflitante: false, ...o }) as never;
-const vazioCache = (): CacheEnr => ({ identidade: 'u1:org1:', conta: null, produtos: {}, ofertas: {}, vendedores: {} });
+const vazioCache = (): CacheEnr => ({ versao: 2, identidade: 'u1:org1:', conta: null, produtos: {}, ofertas: {}, vendedores: {}, fretes: {} });
+/** Vista com o frete de todos os cards de teste já cotado (10 e 12): os testes do catálogo não veem o frete. */
+const cotado = (): EstadoEnriquecimento => {
+  const e = enriquecimentoVazio();
+  for (let n = 0; n < 100; n++) for (const p of [10, 12]) e.fretes![chaveFrete(`MLB${1000000 + n}`, p)] = { estado: 'ok', valor: 5 };
+  return e;
+};
 const ofertasOk = (exatas: Record<string, unknown>) =>
   ({ estado: 'ok' as const, total: 3, lidas: 3, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true, exatas: exatas as never });
 
@@ -27,13 +33,13 @@ describe('planejarLote', () => {
 
   it('dez cards do mesmo catálogo → uma entrada, com os dez itens (preço do card), produto + ofertas', () => {
     const cards = Array.from({ length: 10 }, (_, i) => card(i));
-    const p = planejarLote(cards, {}, enriquecimentoVazio(), vazioCache(), T0, new Set());
+    const p = planejarLote(cards, {}, cotado(), vazioCache(), T0, new Set());
     expect(p.pedido!.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'], itens: cards.map((c: { itemId: string }) => ({ itemId: c.itemId, preco: 10 })) }]);
   });
 
   it('página inteira: 50 catálogos → UM pedido com os 50 (sem saldo de perfis da busca)', () => {
     const cards = Array.from({ length: 50 }, (_, i) => card(i, { catalogProductId: `MLB${i + 1}` }));
-    const p = planejarLote(cards, {}, enriquecimentoVazio(), vazioCache(), T0, new Set());
+    const p = planejarLote(cards, {}, cotado(), vazioCache(), T0, new Set());
     expect(p.pedido!.catalogos).toHaveLength(50);
     expect(p.pedido!.catalogos.reduce((n, c) => n + c.itens.length, 0)).toBe(50);
     expect(p.pedido).not.toHaveProperty('perfisRestantes');
@@ -46,14 +52,14 @@ describe('planejarLote', () => {
       card(6, { catalogProductId: 'MLB6' }), card(7, { catalogProductId: 'MLB7' }), card(8, { catalogProductId: 'MLB8' }),
     ];
     const meta = { MLB1000008: { proprio: true, vinculo: null }, MLB1000007: { proprio: false, vinculo: { fonte: 'catalogo', codigo: 'x' } } } as never;
-    const p = planejarLote(cards, meta, enriquecimentoVazio(), vazioCache(), T0, new Set());
+    const p = planejarLote(cards, meta, cotado(), vazioCache(), T0, new Set());
     expect(p.pedido!.catalogos.map((c) => c.catalogProductId)).toEqual(['MLB7', 'MLB8', 'MLB1', 'MLB2', 'MLB5', 'MLB6']);
     expect(p.pedido!.catalogos.find((c) => c.catalogProductId === 'MLB5')!.itens).toEqual([]);
   });
 
   it('≤ 50 itens no pedido e por catálogo; o excedente vai no pedido seguinte da rodada, que junta as ofertas exatas', () => {
     const cards = Array.from({ length: 60 }, (_, i) => card(i));
-    const e = enriquecimentoVazio();
+    const e = cotado();
     const ja = new Set<string>();
     const p1 = planejarLote(cards, {}, e, vazioCache(), T0, ja).pedido!;
     expect(p1.catalogos[0].itens.map((i) => i.itemId)).toEqual(cards.slice(0, 50).map((c: { itemId: string }) => c.itemId));
@@ -67,7 +73,7 @@ describe('planejarLote', () => {
     expect(planejarLote(cards, {}, e, vazioCache(), T0, ja).pedido).toBeNull();
     // Dois catálogos de 30: o segundo não cabe nos 50 itens do primeiro pedido.
     const dois = [1, 2].flatMap((k) => Array.from({ length: 30 }, (_, i) => card(k * 100 + i, { catalogProductId: `MLB${k}` })));
-    expect(planejarLote(dois, {}, enriquecimentoVazio(), vazioCache(), T0, new Set()).pedido!.catalogos.map((c) => c.itens.length)).toEqual([30]);
+    expect(planejarLote(dois, {}, cotado(), vazioCache(), T0, new Set()).pedido!.catalogos.map((c) => c.itens.length)).toEqual([30]);
   });
 
   it('cache totalmente válido = zero pedidos; parcial = só os componentes vencidos', () => {
@@ -75,23 +81,23 @@ describe('planejarLote', () => {
     cache.produtos.MLB900 = { criadoEm: '2026-01-01T00:00:00Z', exp: T0 + 1000, u: 0 };
     cache.ofertas.MLB900 = { v: ofertasOk({ MLB1000001: { estado: 'ok', preco: 10, sellerId: 7, tipo: 'gold_special', comissao: { estado: 'ok', valor: { percentual: 14, fixa: 0 } } } }), exp: T0 + 1000, u: 0 };
     cache.vendedores['7'] = { v: { estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'SP' }, exp: T0 + 1000, u: 0 };
-    const hit = planejarLote([card(1)], {}, enriquecimentoVazio(), cache, T0, new Set());
+    const hit = planejarLote([card(1)], {}, cotado(), cache, T0, new Set());
     expect(hit.pedido).toBeNull();
     expect(hit.hits.catalogos.MLB900).toMatchObject({ produto: { estado: 'ok' }, ofertas: { estado: 'ok' } });
     expect(hit.hits.vendedores['7']).toMatchObject({ estado: 'ok', medalha: 'gold' });
     // Produto válido, ofertas vencidas: só ofertas.
     const soOfertas = { ...cache, ofertas: { MLB900: { ...cache.ofertas.MLB900, exp: T0 - 1 } } };
-    expect(planejarLote([card(1)], {}, enriquecimentoVazio(), soOfertas, T0, new Set()).pedido!.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000001', preco: 10 }] }]);
-    const novo = planejarLote([card(1), card(2)], {}, enriquecimentoVazio(), cache, T0, new Set());
+    expect(planejarLote([card(1)], {}, cotado(), soOfertas, T0, new Set()).pedido!.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000001', preco: 10 }] }]);
+    const novo = planejarLote([card(1), card(2)], {}, cotado(), cache, T0, new Set());
     expect(novo.pedido!.catalogos).toEqual([{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000001', preco: 10 }, { itemId: 'MLB1000002', preco: 10 }] }]);
     expect(novo.pedido!.perfisEmCache).toEqual([7]);
-    const preco = planejarLote([card(1, { preco: 12 })], {}, enriquecimentoVazio(), cache, T0, new Set());
+    const preco = planejarLote([card(1, { preco: 12 })], {}, cotado(), cache, T0, new Set());
     expect(preco.pedido!.catalogos[0].componentes).toEqual(['ofertas']);
-    expect(planejarLote([card(1)], {}, enriquecimentoVazio(), cache, T0 + 1000, new Set()).pedido!.catalogos[0].componentes).toEqual(['produto', 'ofertas']);
+    expect(planejarLote([card(1)], {}, cotado(), cache, T0 + 1000, new Set()).pedido!.catalogos[0].componentes).toEqual(['produto', 'ofertas']);
   });
 
   it('vista da aba já lida ou indisponível (terminal): nada pedido — nem cache expirado nem indisponível se repetem sozinhos', () => {
-    const e = enriquecimentoVazio();
+    const e = cotado();
     e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertasOk({ MLB1000001: { estado: 'nao_encontrada', preco: 10 } }) };
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
     e.catalogos.MLB900 = { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre', itens: { MLB1000001: 10 } } };
@@ -101,7 +107,7 @@ describe('planejarLote', () => {
   });
 
   it('rodada falhou: item novo (ou preço novo) do MESMO catálogo vai como delta; os tentados mantêm o resultado terminal', () => {
-    const e = enriquecimentoVazio();
+    const e = cotado();
     const pedido = { catalogos: [{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'] as ('produto' | 'ofertas')[], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [] };
     marcarFalha(e, pedido, 'falha de rede');
     const p = planejarLote([card(1), card(2)], {}, e, vazioCache(), T0, new Set()).pedido!;
@@ -116,14 +122,14 @@ describe('planejarLote', () => {
     expect(vistaDoCard(card(1), e)).toMatchObject({ faltaProduto: false, faltaOfertas: false });
     expect(planejarLote([card(1), card(2)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();
     // Segunda falha no mesmo catálogo soma os tentados.
-    const f = enriquecimentoVazio();
+    const f = cotado();
     marcarFalha(f, pedido, 'falha de rede');
     marcarFalha(f, { ...pedido, catalogos: [{ ...pedido.catalogos[0], componentes: ['ofertas'], itens: [{ itemId: 'MLB1000002', preco: 10 }] }] }, 'tempo esgotado');
     expect(planejarLote([card(1), card(2)], {}, f, vazioCache(), T0, new Set()).pedido).toBeNull();
   });
 
   it('rodada falhou e o delta vem do cache: os tentados continuam indisponíveis na vista', () => {
-    const e = enriquecimentoVazio();
+    const e = cotado();
     marcarFalha(e, { catalogos: [{ catalogProductId: 'MLB900', componentes: ['ofertas'], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [], perfisEmCache: [] }, 'falha de rede');
     const cache = vazioCache();
     cache.produtos.MLB900 = { criadoEm: null, exp: T0 + 1000, u: 0 };
@@ -141,12 +147,12 @@ describe('planejarLote', () => {
   });
 
   it('perfis: vendedores das ofertas já lidas, até 50 por pedido, sem teto por busca; já pedido na rodada não repete', () => {
-    const e = enriquecimentoVazio();
+    const e = cotado();
     const exatas = Object.fromEntries(Array.from({ length: 55 }, (_, i) => [`MLB${1000000 + i}`, { estado: 'ok', preco: 10, sellerId: 50 + i, tipo: null, comissao: { estado: 'ok', valor: { percentual: 1, fixa: 0 } } }]));
     e.catalogos.MLB900 = { produto: { estado: 'ok', criadoEm: null }, ofertas: ofertasOk(exatas) };
     const cards = Array.from({ length: 55 }, (_, i) => card(i));
     const p = planejarLote(cards, {}, e, vazioCache(), T0, new Set()).pedido!;
-    expect(p).toEqual({ catalogos: [], perfis: Array.from({ length: 50 }, (_, i) => 50 + i), perfisEmCache: [] });
+    expect(p).toEqual({ catalogos: [], perfis: Array.from({ length: 50 }, (_, i) => 50 + i), perfisEmCache: [], fretes: [] });
     expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set(marcasDoPedido(p))).pedido!.perfis).toEqual([100, 101, 102, 103, 104]);
     e.vendedores['50'] = { estado: 'indisponivel', motivo: 'limite do Mercado Livre' }; // terminal: não volta
     expect(planejarLote(cards, {}, e, vazioCache(), T0, new Set()).pedido!.perfis[0]).toBe(51);
@@ -168,7 +174,7 @@ describe('aplicarResposta', () => {
       vendedores: [{ sellerId: 7, estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP', expiraEm: iso(T0 + 24 * 3600_000) }, { sellerId: 9, estado: 'indisponivel', motivo: 'limite de perfis por pedido' }],
     }), T0);
     expect(e.catalogos.MLB900.ofertas).toMatchObject({ estado: 'ok', exatas: { MLB1000001: { estado: 'ok', preco: 10, sellerId: 7, tipo: 'gold_pro', comissao: { estado: 'ok' } } } });
-    expect(e.vendedores['7']).toEqual({ estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP' });
+    expect(e.vendedores['7']).toEqual({ estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP', cidade: null, reputacao: null });
     expect(e.vendedores['9']).toEqual({ estado: 'indisponivel', motivo: 'limite de perfis por pedido' });
     const c = vazioCache();
     gravar(c);
@@ -224,7 +230,7 @@ describe('falha da rodada e "Tentar novamente"', () => {
   const pedido = { catalogos: [{ catalogProductId: 'MLB900', componentes: ['produto', 'ofertas'] as ('produto' | 'ofertas')[], itens: [{ itemId: 'MLB1000001', preco: 10 }] }], perfis: [9], perfisEmCache: [] };
 
   it('falha de rede: pedido marcado indisponível (terminal) e `falhou`; nova tentativa limpa tudo o que é indisponível', () => {
-    const e = enriquecimentoVazio();
+    const e = cotado();
     marcarFalha(e, pedido, 'falha de rede');
     expect(e).toMatchObject({ falhou: true, catalogos: { MLB900: { produto: { estado: 'indisponivel', motivo: 'falha de rede' }, ofertas: { estado: 'indisponivel' } } }, vendedores: { 9: { estado: 'indisponivel' } } });
     expect(planejarLote([card(1)], {}, e, vazioCache(), T0, new Set()).pedido).toBeNull();

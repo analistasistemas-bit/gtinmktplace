@@ -64,6 +64,22 @@ it('enriquecimento do catálogo chega com os resultados e entra no bloco do card
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
 });
 
+it('fatia 2.1: participação do SW entra na assinatura (scroll atualiza o bloco antigo); frete cotado ao preço do card', () => {
+  const msg = (fracao: number | null, extra: Record<string, unknown> = {}) => ({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {},
+    participacao: { porItem: { MLB5321956667: fracao }, cobertura: 2, grupos: 3 }, ...extra });
+  ouvinte(msg(0.5));
+  expect(textoDosBlocos()).toContain('50%dos pisos observados');
+  ouvinte(msg(0.25)); // scroll: a base cresceu, o mesmo bloco muda
+  expect(textoDosBlocos()).toContain('25%dos pisos observados');
+  ouvinte(msg(null));
+  expect(textoDosBlocos()).toContain('—dos pisos observados');
+  const enriquecimento = { versao: 2, catalogos: {}, vendedores: {}, fretes: { 'MLB5321956667|19.9|01310100': { estado: 'ok', valor: 12 } }, tentarAposEm: null, falhou: false, indisponivel: null };
+  ouvinte(msg(0.25, { enriquecimento }));
+  expect(textoDosBlocos()).toContain('Frete cotadoR$ 12,00');
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} }); // sem participação: sem a linha
+  expect(textoDosBlocos()).not.toContain('pisos observados');
+});
+
 it('aba volta a ficar visível: pede a revalidação da conta ML com a geração da página', () => {
   enviar.mockClear();
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });

@@ -285,7 +285,7 @@ it('pendência por componente: metadados lidos + ofertas em processamento → id
 
 it('legado gravado antes da 11.3 (aguardando/aguardandoJanela) vira processamento, nunca "Aguardando próxima janela"', () => {
   const e = enriquecimentoDe({ catalogos: { MLB200: { aguardandoJanela: true, produto: { estado: 'aguardando', retomarEm: 1, tentativas: 2 } } }, vendedores: { 7: { estado: 'aguardando' } }, retomarEm: 5, perfis: 3 });
-  expect(e).toEqual({ catalogos: { MLB200: {} }, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null });
+  expect(e).toEqual({ versao: 2, catalogos: { MLB200: {} }, vendedores: {}, fretes: {}, freteAposEm: null, tentarAposEm: null, falhou: false, indisponivel: null });
   comEnr(e);
   expect(texto()).toContain('Consultando dados do catálogo');
   expect(texto()).not.toMatch(/próxima janela|Aguardando dados/);
@@ -325,4 +325,80 @@ it('semáforo da idade nos limites 180/181/365/366 dias; futura ou inválida = i
   expect(idadeDoCatalogo(new Date(AGORA + 86_400_000).toISOString(), AGORA)).toBeNull();
   expect(idadeDoCatalogo('ontem', AGORA)).toBeNull();
   expect(idadeDoCatalogo(null, AGORA)).toBeNull();
+});
+
+// ---------------------------------------------------------------- fatia 2.1
+const cheio = () => enr({
+  catalogos: { MLB200: { produto: { estado: 'ok', criadoEm: dias(120), marca: 'Natura Cosméticos Industrial Ltda' }, ofertas: ofertas() as never } },
+  vendedores: { 7: { estado: 'ok', nome: 'V7', medalha: 'platinum', uf: 'SP', cidade: 'São José dos Campos', reputacao: '5_green' } },
+});
+const linhas21 = () => [...raizes[0].querySelectorAll('.b > .l')].map((l) => l.textContent!.replace(/\s+/g, ' ').trim());
+
+it('fatia 2.1, caso cheio: reputação (ponto acessível), cidade/UF, frete cotado, % dos pisos, marca — ≤ 6 linhas sem margem', () => {
+  renderizarMiniBlocoDaBusca(card(), undefined, undefined, 50, vistaDoCard(card(), cheio()), AGORA,
+    { frete: { estado: 'ok', valor: 23.45 }, participacao: { fracao: 0.123, cobertura: 8, grupos: 10 } });
+  expect(linhas21()).toEqual([
+    'Loja Boa· Platinum· São José dos Campos/SPⓘ',
+    'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
+    'Frete cotadoR$ 23,45ⓘ',
+    'Giro mín.R$ 5 milⓘ12%dos pisos observadosⓘ',
+    '9 vendedores·catálogohá 120 diasⓘmarca Natura Cosméticos Industrial Ltda',
+  ]);
+  const rep = raizes[0].querySelector('.rep')!;
+  expect(rep.getAttribute('role')).toBe('img');
+  expect(rep.getAttribute('aria-label')).toBe('Reputação verde');
+  expect(raizes[0].querySelector('.fc')!.getAttribute('title')).toBe('Cidade cadastrada do vendedor: São José dos Campos/SP');
+  expect(raizes[0].querySelector('.marca')!.getAttribute('title')).toBe('Marca do catálogo: Natura Cosméticos Industrial Ltda');
+  for (const n of ['frete cotado', 'participação nos pisos observados', 'reputação e cidade do vendedor']) {
+    const i = raizes[0].querySelector(`button[aria-label="O que é ${n}?"]`) as HTMLButtonElement;
+    expect(i).not.toBeNull();
+    i.click();
+  }
+  const t = texto();
+  expect(t).toContain('CEP 01310-100 (São Paulo capital)');
+  expect(t).toContain('Não é o custo efetivamente pago pelo vendedor');
+  expect(t).toContain('Base: 8 de 10 produtos com piso informado');
+  expect(t).toContain('cidade cadastrada do vendedor');
+  // Frete nunca "na sua conta" nem dentro da margem.
+  expect(raizes[0].querySelector('.b')!.textContent).not.toMatch(/[Ff]rete na sua conta/);
+});
+
+it('fatia 2.1: reputação desconhecida sem ponto; sem cidade fica a UF; perfil sem reputação/cidade sem ⓘ extra', () => {
+  const e = cheio();
+  e.vendedores['7'] = { estado: 'ok', nome: 'V7', medalha: 'gold', uf: 'RJ', cidade: null, reputacao: null };
+  comEnr(e);
+  expect(raizes[0].querySelector('.rep')).toBeNull();
+  expect(linhas21()[0]).toBe('Loja Boa· Gold· RJ');
+  raizes = [];
+  e.vendedores['7'] = { estado: 'ok', nome: 'V7', medalha: null, uf: null, reputacao: '1_red' };
+  comEnr(e);
+  expect(raizes[0].querySelector('.rep')!.getAttribute('aria-label')).toBe('Reputação vermelha');
+});
+
+it('fatia 2.1: frete consultando / indisponível (nunca R$ 0) / ausente; card sem catálogo também mostra o frete', () => {
+  const c = card({ catalogProductId: null });
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: 'consultando' });
+  expect(texto()).toContain('Consultando frete');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } });
+  expect(texto()).toContain('Frete cotado indisponível agora');
+  expect(texto()).not.toContain('R$ 0');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: { estado: 'ok', valor: 0 } });
+  expect(texto()).toContain('Frete cotadoR$ 0,00');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { frete: null });
+  expect(texto()).not.toMatch(/Frete/);
+});
+
+it('fatia 2.1: participação "—" sem piso (linha própria) e sem linha antes de chegar do SW', () => {
+  const c = card({ vendidosTexto: null, ocorrencias: [{ posicao: 3, patrocinado: false, preco: 50, vendidosTexto: null }] });
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA, { participacao: { fracao: null, cobertura: 3, grupos: 5 } });
+  expect(linhas21()).toContain('—dos pisos observadosⓘ');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(c, undefined, undefined, 50, null, AGORA);
+  expect(texto()).not.toContain('pisos observados');
+  raizes = [];
+  renderizarMiniBlocoDaBusca(card(), undefined, undefined, 50, null, AGORA, { participacao: { fracao: 0.034, cobertura: 3, grupos: 5 } });
+  expect(texto()).toContain('3,4%dos pisos observados');
 });

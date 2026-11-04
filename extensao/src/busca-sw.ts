@@ -9,10 +9,11 @@ import { eanDaUrlDeBusca } from './conteudo/ean';
 import { normalizarCards, type CardBusca } from './leitura/busca';
 import { identidadeAtual, limparAbasNaFila, seAindaIdentidade } from './sessao';
 import {
-  aplicarHits, aplicarResposta, gravarCache, lerCache, marcarFalha, marcasDoPedido, MOTIVO_FALHA_REDE, planejarLote, prepararNovaTentativa,
-  type CacheEnr, type RespostaEnriquecimento,
+  aplicarHits, aplicarResposta, corpoDoPedido, gravarCache, lerCache, marcarFalha, marcasDoPedido, MOTIVO_FALHA_REDE, planejarLote, prepararNovaTentativa,
+  semDados, type CacheEnr, type RespostaEnriquecimento,
 } from './cache-enriquecimento';
-import { enriquecimentoDe, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
+import { enriquecimentoDe, esperaDaNovaTentativa, VERSAO_ENRIQUECIMENTO, type EstadoEnriquecimento } from './compartilhado/enriquecimento';
+import { participacaoNosPisos } from './compartilhado/busca-resumo';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
 import { mensagemDeErro } from './painel/formato';
 
@@ -56,7 +57,8 @@ function respostaDe(e: EstadoBusca | null): RespostaViva {
   return {
     resultados: { ...r.resultados }, metadados: { ...r.metadados }, precoDaMargem: { ...r.precoDaMargem },
     limiteEm: typeof r.limiteEm === 'number' ? r.limiteEm : null, usoRegistrado: r.usoRegistrado === true,
-    enriquecimento: enriquecimentoDe(r.enriquecimento),
+    // Vista de outra versão (sem marca, cidade, reputação, frete) não vale como completa: começa de novo.
+    enriquecimento: enriquecimentoDe((r.enriquecimento as { versao?: unknown } | undefined)?.versao === VERSAO_ENRIQUECIMENTO ? r.enriquecimento : undefined),
     ...(typeof r.contaMl === 'string' || r.contaMl === null ? { contaMl: r.contaMl } : {}),
     ...(typeof r.contaVerificadaEm === 'number' ? { contaVerificadaEm: r.contaVerificadaEm } : {}),
   };
@@ -78,9 +80,13 @@ async function gravar(tabId: number, p: Pagina, e: EstadoBusca): Promise<void> {
   chrome.runtime.sendMessage({ tipo: 'publiai:estado-atualizado', tabId }).catch(() => {}); // painel fechado
 }
 
-/** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). */
-function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca): void {
-  chrome.tabs.sendMessage(tabId, { tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados, enriquecimento: r.enriquecimento }).catch(() => {});
+/** Página do ML: resultado com a geração e a URL dela (o content script descarta o de outra página). A participação nos
+ *  pisos vai calculada sobre TODOS os cards carregados nesta geração (não sobre o DOM). */
+function avisarPagina(tabId: number, p: Pagina, r: RespostaBusca, cards: CardBusca[]): void {
+  chrome.tabs.sendMessage(tabId, {
+    tipo: 'publiai:busca-resultados', geracao: geracaoDaPagina(p.geracao, p.sessao), url: p.url, resultados: r.resultados, metadados: r.metadados,
+    enriquecimento: r.enriquecimento, participacao: participacaoNosPisos(cards),
+  }).catch(() => {});
 }
 
 // Filas por aba (memória do SW): `escritas` serializa todo ler-modificar-gravar do estado da busca (cards do scroll ×
@@ -128,12 +134,16 @@ export function registrarCardsDaBusca(tabId: number, cardsBrutos: unknown, ocorr
       porItem.set(c.itemId, c);
     }
     const p = { geracao, sessao, url: semHash };
+    const todos = [...porItem.values()];
     await gravar(tabId, p, {
       entrada: { tipoPagina: 'busca', url: semHash },
       resposta: r,
-      observado: { cards: [...porItem.values()], ocorrencias: typeof ocorrencias === 'number' && ocorrencias >= 0 ? Math.min(ocorrencias, 1000) : porItem.size },
+      observado: { cards: todos, ocorrencias: typeof ocorrencias === 'number' && ocorrencias >= 0 ? Math.min(ocorrencias, 1000) : porItem.size },
     });
-    if (descartou) avisarPagina(tabId, p, r);
+    // Scroll muda a base da participação: os blocos antigos recebem o valor novo mesmo sem rodada de rede (a 1ª leitura
+    // não tem bloco antigo; a identificação já avisa).
+    const mudouParticipacao = !!antes && JSON.stringify(participacaoNosPisos(antes.observado.cards).porItem) !== JSON.stringify(participacaoNosPisos(todos).porItem);
+    if (descartou || mudouParticipacao) avisarPagina(tabId, p, r, todos);
     return { ok: true as const };
   });
 }
@@ -190,7 +200,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
         const r = respostaDe(atual.estado);
         mudar(r, new Map(atual.estado.observado.cards.map((c) => [c.itemId, c])));
         await gravar(tabId, p, { ...atual.estado, resposta: r });
-        if (vale()) avisarPagina(tabId, p, r);
+        if (vale()) avisarPagina(tabId, p, r, atual.estado.observado.cards);
         return true;
       });
       const f = ok && vale() ? cache?.() : null;
@@ -306,14 +316,15 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       if (primeira && retentar) {
         const agora = Date.now();
         // Retry-After do ML ainda valendo: recusa sem chamar (o painel mostra até quando).
-        if (enr.tentarAposEm != null && agora < enr.tentarAposEm) return { ok: false, erro: 'aguardar', tentarAposEm: enr.tentarAposEm };
+        const espera = esperaDaNovaTentativa(enr, agora);
+        if (espera !== null) return { ok: false, erro: 'aguardar', tentarAposEm: espera };
         if (!(await gravarSe(p, (r2) => { prepararNovaTentativa(r2.enriquecimento, agora); }))) return recusada();
         continue;
       }
       if (enr.indisponivel) return null;
       // Cache só da conta ML confirmada para esta página (identificação); conta desconhecida = sem cache.
       const bruto = await lerCache(identidade);
-      const cache: CacheEnr = r.contaMl !== undefined && bruto.conta === r.contaMl ? bruto : { ...bruto, produtos: {}, ofertas: {}, vendedores: {} };
+      const cache: CacheEnr = r.contaMl !== undefined && bruto.conta === r.contaMl ? bruto : semDados(bruto);
       const plano = planejarLote(e.observado.cards, r.metadados, enr, cache, Date.now(), jaPedidos);
       if (plano.hits.usados.length && !(await gravarSe(p, (r2) => aplicarHits(r2.enriquecimento, plano.hits), () => (c) => {
         for (const u of plano.hits.usados) { const x = c[u.m][u.k]; if (x) x.u = Date.now(); } // menos usado sai primeiro
@@ -323,8 +334,9 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       const marcas = marcasDoPedido(pedido);
       for (const m of marcas) jaPedidos.add(m);
       const cats = new Set(pedido.catalogos.map((c) => c.catalogProductId));
-      const g = guarda(p, e.observado.cards.filter((c) => c.catalogProductId && cats.has(c.catalogProductId)), (c) => `${c.preco}|${c.catalogProductId}`, TIMEOUT_ENRIQUECIMENTO_MS);
-      const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>({ acao: 'enriquecer_catalogos_busca', ...pedido }, epoca, g);
+      const comFrete = new Set((pedido.fretes ?? []).map((f) => f.itemId));
+      const g = guarda(p, e.observado.cards.filter((c) => (c.catalogProductId && cats.has(c.catalogProductId)) || comFrete.has(c.itemId)), (c) => `${c.preco}|${c.catalogProductId}`, TIMEOUT_ENRIQUECIMENTO_MS);
+      const resp = await chamarExtensao<{ estado?: unknown; motivo?: unknown; valor?: RespostaEnriquecimento }>({ acao: 'enriquecer_catalogos_busca', ...corpoDoPedido(pedido) }, epoca, g);
       if (g.recusou()) { for (const m of marcas) jaPedidos.delete(m); continue; }
       const d = resp.ok ? resp.dados : null;
       if (!resp.ok && !transitoria(resp)) return encerrar(resp, p);
@@ -358,7 +370,7 @@ async function processar(tabId: number, epoca: number, vale: () => boolean, forc
       let noCache: ((c: CacheEnr) => void) | null = null;
       if (!(await gravarSe(p, (r2) => { noCache = aplicarResposta(r2.enriquecimento, pedido, valor, Date.now()); },
         () => (c) => {
-          if (conta !== null && c.conta !== conta) { c.produtos = {}; c.ofertas = {}; c.vendedores = {}; c.conta = conta; }
+          if (conta !== null && c.conta !== conta) { Object.assign(c, semDados(c)); c.conta = conta; }
           noCache?.(c);
         }))) return recusada();
     }

@@ -49,7 +49,7 @@ describe('Busca no painel (Task 22 + Task 5)', () => {
     within(bloco('SKUs vinculados')).getByText('1');
     screen.getByText('2 de 2 grupos de vendas');
     const titulos = [...document.querySelectorAll('.bs-resumo dt, .bs-resumo .ct-rotulo')].map((e) => e.firstChild!.textContent);
-    expect(titulos).toEqual(['Meus anúncios', 'SKUs vinculados', 'Faixa de preço', 'Vendas mínimas da página', 'Giro mínimo ao preço atual']);
+    expect(titulos).toEqual(['Meus anúncios', 'SKUs vinculados', 'Faixa de preço', 'Vendas mínimas da página', 'Giro mínimo ao preço atual', '% dos pisos observados']);
   });
 
   it('zero × desconhecido: sem identificação mostra "Verificando", nunca 0; parcial mostra a cobertura', () => {
@@ -450,5 +450,48 @@ describe('Catálogos e vendedores (Task 10)', () => {
   it('sem cards de catálogo: a seção não aparece', () => {
     render(<Busca {...props({ estado: estado({}, [card('MLB1000004', { catalogProductId: null })]) })} />);
     expect(screen.queryByRole('region', { name: 'Catálogos e vendedores' })).toBeNull();
+  });
+});
+
+describe('fatia 2.1 no painel', () => {
+  const enr = {
+    versao: 2, tentarAposEm: null, falhou: false, indisponivel: null,
+    catalogos: { MLB100: { produto: { estado: 'ok', criadoEm: null, marca: 'Natura' }, ofertas: { estado: 'ok', total: 2, lidas: 2, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
+      exatas: { MLB1000001: { estado: 'ok', preco: 19.99, sellerId: 7, tipo: 'gold_special', comissao: { estado: 'indisponivel', motivo: 'x' } },
+        MLB1000002: { estado: 'ok', preco: 50, sellerId: 8, tipo: 'gold_special', comissao: { estado: 'indisponivel', motivo: 'x' } } } } } },
+    vendedores: { 7: { estado: 'ok', nome: 'A', medalha: 'gold', uf: 'SP', cidade: 'Campinas', reputacao: '5_green' }, 8: { estado: 'ok', nome: 'B', medalha: null, uf: 'RJ', reputacao: null } },
+    fretes: { 'MLB1000001|19.99|01310100': { estado: 'ok', valor: 23.45 }, 'MLB1000002|50|01310100': { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } },
+  };
+  const comEnr = () => { const e = estado(); (e.resposta as { enriquecimento?: unknown }).enriquecimento = enr; return e; };
+
+  it('linha: % dos pisos, frete cotado (indisponível nunca R$ 0), reputação acessível + cidade/UF, marca', () => {
+    render(<Busca {...props({ estado: comEnr() })} />);
+    const linhas = within(lista()).getAllByRole('listitem');
+    const l1 = linhas[0].textContent!.replace(/\s+/g, ' ');
+    expect(l1).toContain('50% dos pisos observados'); // 1 e 2 = mesmo catálogo (um grupo); 3 = outro
+    expect(l1).toContain('Frete cotado R$ 23,45');
+    expect(l1).toContain('Campinas/SP');
+    expect(l1).toContain('marca Natura');
+    within(linhas[0]).getByRole('img', { name: 'Reputação verde' });
+    const l2 = linhas[1].textContent!;
+    expect(l2).toContain('Frete cotado indisponível');
+    expect(l2).not.toContain('R$ 0');
+    expect(within(linhas[1]).queryByRole('img', { name: /Reputação/ })).toBeNull(); // reputação desconhecida: sem ponto
+    expect(linhas[2].textContent).toContain('Consultando frete');
+    // Frete nunca dentro da margem nem "na sua conta" fora da composição.
+    expect(screen.queryByText(/Frete cotado na sua conta/)).toBeNull();
+  });
+
+  it('resumo: % dos pisos e frete com cobertura e ⓘ; reputação por vendedor único com desconhecidos e denominador', () => {
+    render(<Busca {...props({ estado: comEnr() })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'O que é Frete cotado?' }));
+    screen.getByText(/CEP 01310-100 \(São Paulo capital\)/);
+    screen.getByText('1 de 3');
+    fireEvent.click(screen.getByRole('button', { name: 'O que é % dos pisos observados?' }));
+    screen.getByText(/Não é participação de mercado/);
+    const rep = screen.getByRole('list', { name: 'Vendedores por reputação' });
+    expect(within(rep).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Verde1', 'Verde-claro0', 'Amarela0', 'Laranja0', 'Vermelha0', 'Não informada1']);
+    screen.getByText('de 2 vendedores únicos · 1 sem reputação informada');
+    screen.getByRole('button', { name: 'O que é Vendedores por reputação?' });
   });
 });

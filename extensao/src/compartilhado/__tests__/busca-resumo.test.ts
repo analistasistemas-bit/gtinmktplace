@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { filtrarCards, ordenarCards, resumoBusca, resumoEnriquecimento, type ResultadoBusca } from '../busca-resumo';
+import { filtrarCards, ordenarCards, participacaoNosPisos, resumoBusca, resumoEnriquecimento, type ResultadoBusca } from '../busca-resumo';
 import { enriquecimentoVazio } from '../enriquecimento';
 import { lerBusca, type CardBusca } from '../../leitura/busca';
 
@@ -169,5 +169,48 @@ describe('resumoEnriquecimento (Task 10)', () => {
     const vazio = resumoEnriquecimento(cards, enriquecimentoVazio());
     expect(vazio.vendedores.unicos).toBe(0);
     expect(vazio.faixas.completos).toBe(0);
+  });
+});
+
+describe('participação nos pisos observados (fatia 2.1)', () => {
+  it('maior piso por grupo (catálogo → /up/ → item) ÷ soma dos grupos; sem vendidos fora da soma e "—"; conflito fora; cobertura', () => {
+    const r = participacaoNosPisos([
+      card('MLB1', { catalogProductId: 'MLB100', vendidosTexto: '+1000 vendidos' }),
+      card('MLB2', { catalogProductId: 'MLB100', vendidosTexto: '+500 vendidos' }), // mesmo catálogo: grupo único, maior piso
+      card('MLB3', { vendidosTexto: '+500 vendidos' }),
+      card('MLB4', { vendidosTexto: null }), // sem piso: fora do denominador
+      card('MLB5', { userProductId: 'UP1', vendidosTexto: '+500 vendidos' }),
+      card('MLB6', { userProductId: 'UP1', vendidosTexto: '+100 vendidos' }), // mesmo /up/
+      card('MLB7', { identidadeConflitante: true, vendidosTexto: '+5mil vendidos' }), // conflito: fora
+    ]);
+    expect(r.porItem).toEqual({ MLB1: 0.5, MLB2: 0.5, MLB3: 0.25, MLB4: null, MLB5: 0.25, MLB6: 0.25, MLB7: null });
+    expect(r).toMatchObject({ cobertura: 3, grupos: 4 });
+  });
+
+  it('patrocinado + orgânico do mesmo item não duplicam (um card agregado); soma zero = "—"', () => {
+    const c = card('MLB1', { vendidosTexto: '+100 vendidos', ocorrencias: [{ posicao: 1, patrocinado: true, preco: 10, vendidosTexto: '+100 vendidos' }, { posicao: 9, patrocinado: false, preco: 12, vendidosTexto: '+100 vendidos' }] });
+    expect(participacaoNosPisos([c, card('MLB2', { vendidosTexto: '+100 vendidos' })]).porItem).toEqual({ MLB1: 0.5, MLB2: 0.5 });
+    expect(participacaoNosPisos([card('MLB1', { vendidosTexto: '0 vendidos' })]).porItem).toEqual({ MLB1: null });
+  });
+
+  it('base = todos os cards passados: filtro/ordem do painel não mudam o valor; scroll muda', () => {
+    const base = [card('MLB1', { vendidosTexto: '+100 vendidos' }), card('MLB2', { vendidosTexto: '+100 vendidos' })];
+    expect(participacaoNosPisos(base).porItem.MLB1).toBe(0.5);
+    expect(participacaoNosPisos([...base, card('MLB3', { vendidosTexto: '+200 vendidos' })]).porItem.MLB1).toBe(0.25);
+  });
+});
+
+describe('reputação no resumo do enriquecimento (fatia 2.1)', () => {
+  it('por vendedor único, com desconhecidos explícitos', () => {
+    const e = enriquecimentoVazio();
+    const exata = (itemId: string, sellerId: number) => ({ [itemId]: { estado: 'ok' as const, preco: 100, sellerId, tipo: null, comissao: { estado: 'indisponivel' as const, motivo: 'x' } } });
+    e.catalogos.MLB100 = { ofertas: { estado: 'ok', total: 3, lidas: 3, vendedoresIdentificados: 3, ofertasSemVendedor: 0, completa: true, exatas: { ...exata('MLB1', 7), ...exata('MLB2', 7), ...exata('MLB3', 8), ...exata('MLB4', 9) } } };
+    e.vendedores['7'] = { estado: 'ok', nome: null, medalha: null, uf: null, reputacao: '5_green' };
+    e.vendedores['8'] = { estado: 'ok', nome: null, medalha: null, uf: null, reputacao: null };
+    const cs = ['MLB1', 'MLB2', 'MLB3', 'MLB4'].map((id) => card(id, { catalogProductId: 'MLB100' }));
+    const v = resumoEnriquecimento(cs, e).vendedores;
+    expect(v.unicos).toBe(3);
+    expect(v.reputacoes).toEqual({ '5_green': 1, '4_light_green': 0, '3_yellow': 0, '2_orange': 0, '1_red': 0 });
+    expect(v.reputacaoDesconhecida).toBe(2); // 8 sem reputação, 9 sem perfil
   });
 });

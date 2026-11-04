@@ -5,7 +5,7 @@ import type { MetadadosCardBusca, ResultadoCard } from '../../../supabase/functi
 import type { CardBusca } from '../leitura/busca';
 import { pisoDosVendidos } from './quanto-vende';
 import { volumeMinimoAoPrecoAtual } from './volume-minimo';
-import { vistaDoCard, type EstadoEnriquecimento, type Medalha } from './enriquecimento';
+import { vistaDoCard, type EstadoEnriquecimento, type Medalha, type Reputacao } from './enriquecimento';
 
 export type ResultadoBusca = ResultadoCard;
 export type Resultados = Record<string, ResultadoBusca | undefined>;
@@ -35,6 +35,31 @@ function agruparVendas(cards: CardBusca[]): { grupos: Map<string, CardBusca[]>; 
     grupos.set(k, [...(grupos.get(k) ?? []), c]);
   }
   return { grupos, conflitos: emConflito.size };
+}
+
+/** Participação nos pisos observados (fatia 2.1): por grupo de vendas (o mesmo de `resumoBusca`: catálogo → /up/ →
+ *  item), o maior piso válido ÷ a soma dos pisos dos grupos. Patrocinado + orgânico do mesmo item e itens do mesmo
+ *  catálogo são um grupo só; conflito de identidade fica fora. `porItem[id]`: fração 0–1, ou null ("—": card sem piso,
+ *  fora dos grupos ou soma zero). Base = os cards passados (no SW: todos os carregados nesta geração). */
+export function participacaoNosPisos(cards: CardBusca[]): { porItem: Record<string, number | null>; cobertura: number; grupos: number } {
+  const { grupos } = agruparVendas(cards);
+  const pisoDe = new Map<string, number>();
+  let soma = 0, cobertura = 0;
+  for (const [k, g] of grupos) {
+    const pisos = g.map((c) => pisoDosVendidos(c.vendidosTexto)).filter((p): p is number => p !== null);
+    if (!pisos.length) continue;
+    cobertura++;
+    const p = Math.max(...pisos);
+    pisoDe.set(k, p);
+    soma += p;
+  }
+  const porItem: Record<string, number | null> = {};
+  for (const c of cards) porItem[c.itemId] = null;
+  for (const [k, g] of grupos) {
+    const p = pisoDe.get(k);
+    for (const c of g) porItem[c.itemId] = p !== undefined && soma > 0 ? p / soma : null;
+  }
+  return { porItem, cobertura, grupos: grupos.size };
 }
 
 export function resumoBusca(cards: CardBusca[], metadados: Metadados, ocorrencias: number) {
@@ -120,7 +145,8 @@ export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento
   const medalhas: Record<Medalha, number> = { platinum: 0, gold: 0, silver: 0, sem: 0 };
   const vendedores = new Set<number>();
   const porUf = new Map<string, number>();
-  let medalhaDesconhecida = 0, ufDesconhecida = 0, cardsComCatalogo = 0, cardsSemVendedor = 0;
+  let medalhaDesconhecida = 0, ufDesconhecida = 0, cardsComCatalogo = 0, cardsSemVendedor = 0, reputacaoDesconhecida = 0;
+  const reputacoes: Record<Reputacao, number> = { '5_green': 0, '4_light_green': 0, '3_yellow': 0, '2_orange': 0, '1_red': 0 };
   const tipos = { classico: 0, premium: 0, desconhecido: 0, exatas: 0 };
   const consultando = new Set<string>(); // catálogos com algo em processamento
   const indisponiveis = new Set<string>(); // catálogos cujas ofertas ficaram indisponíveis nesta leitura (429, tempo, rede)
@@ -144,6 +170,7 @@ export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento
     const p = v.vendedor?.estado === 'ok' ? v.vendedor : null;
     if (p?.medalha) medalhas[p.medalha]++; else medalhaDesconhecida++;
     if (p?.uf) porUf.set(p.uf, (porUf.get(p.uf) ?? 0) + 1); else ufDesconhecida++;
+    if (p?.reputacao) reputacoes[p.reputacao]++; else reputacaoDesconhecida++;
   }
   const ufsOrdenadas = [...porUf].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const faixas = { ate5: 0, ate10: 0, ate30: 0, acima30: 0, semOfertas: 0, completos: 0, parciais: [] as number[], catalogos: catalogos.size };
@@ -162,7 +189,7 @@ export function resumoEnriquecimento(cards: CardBusca[], e: EstadoEnriquecimento
     catalogosConsultando: consultando.size,
     catalogosIndisponiveis: [...indisponiveis].filter((k) => !consultando.has(k)).length,
     vendedores: {
-      unicos: vendedores.size, medalhas, medalhaDesconhecida,
+      unicos: vendedores.size, medalhas, medalhaDesconhecida, reputacoes, reputacaoDesconhecida,
       ufs: ufsOrdenadas.slice(0, 5), ufOutros: ufsOrdenadas.slice(5).reduce((n, [, k]) => n + k, 0), ufDesconhecida, cardsSemVendedor,
     },
     tipos,

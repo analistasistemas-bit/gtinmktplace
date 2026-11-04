@@ -3,7 +3,7 @@
 import type { EstadoBusca } from '../src/busca-sw';
 import type { CardBusca, OcorrenciaBusca } from '../src/leitura/busca';
 import type { MetadadosCardBusca, ResultadoCard } from '../../supabase/functions/_shared/extensao/busca.ts';
-import type { EstadoEnriquecimento, ExataVista, Medalha } from '../src/compartilhado/enriquecimento';
+import { chaveFrete, type EstadoEnriquecimento, type ExataVista, type Medalha, type Reputacao } from '../src/compartilhado/enriquecimento';
 
 const NOMES = ['Batom Matte', 'Hidratante Facial', 'Sérum Vitamina C', 'Protetor Solar FPS 50', 'Shampoo Antiqueda', 'Condicionador Nutritivo',
   'Máscara Capilar', 'Esmalte Gel', 'Base Líquida', 'Pó Compacto', 'Rímel à Prova d’Água', 'Perfume Floral', 'Sabonete Líquido', 'Creme para Mãos'];
@@ -79,7 +79,10 @@ for (let i = 55; i < 60; i++) { delete meta[id(i)]; delete resultados[id(i)]; }
 // carregado, comissão indisponível, catálogo em consulta. Cenários da Task 11.4 em `cenario()` (?cenario=).
 export const AGORA_QA = Date.parse('2026-11-03T12:00:00Z');
 const diasAtras = (n: number) => new Date(AGORA_QA - n * 86_400_000).toISOString();
-export const ENR: EstadoEnriquecimento = { catalogos: {}, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null };
+export const ENR: EstadoEnriquecimento = { versao: 2, catalogos: {}, vendedores: {}, fretes: {}, freteAposEm: null, tentarAposEm: null, falhou: false, indisponivel: null };
+// Fatia 2.1: marcas (uma bem longa), cidades (uma bem longa) e reputações variadas.
+const MARCAS = ['Natura', "L'Oréal Paris", 'Eudora', 'Boticário', 'Vult', 'Ruby Rose', 'Distribuidora Internacional de Cosméticos Premium'];
+const CIDADES: [string | null, Reputacao | null][] = [['São Paulo', '5_green'], ['Rio de Janeiro', '4_light_green'], ['São José dos Campos', '3_yellow'], ['Curitiba', '2_orange'], [null, '1_red'], ['Belo Horizonte', null]];
 const comissao = (i: number) => ({ estado: 'ok' as const, valor: { percentual: i % 2 ? 16.5 : 14, fixa: 0, saleFeeAmount: Math.round((cards[i].preco ?? 0) * (i % 2 ? 0.165 : 0.14) * 100) / 100, precoConsultado: cards[i].preco ?? 0 } });
 function catalogo(i: number, o: { vendedores: number; completa?: boolean; dias: number | null; exata?: Partial<Extract<ExataVista, { estado: 'ok' }>> | 'nao_encontrada'; seller?: { medalha: Medalha | null; uf: string | null } | 'indisponivel' }) {
   const c = cards[i];
@@ -87,11 +90,11 @@ function catalogo(i: number, o: { vendedores: number; completa?: boolean; dias: 
   const exata: ExataVista = o.exata === 'nao_encontrada' ? { estado: 'nao_encontrada', preco: c.preco! }
     : { estado: 'ok', preco: c.preco!, sellerId, tipo: i % 2 ? 'gold_pro' : 'gold_special', comissao: comissao(i), ...o.exata };
   ENR.catalogos[c.catalogProductId!] = {
-    produto: { estado: 'ok', criadoEm: o.dias === null ? null : diasAtras(o.dias) },
+    produto: { estado: 'ok', criadoEm: o.dias === null ? null : diasAtras(o.dias), marca: i % 5 === 4 ? null : MARCAS[i % MARCAS.length] },
     ofertas: { estado: 'ok', total: o.vendedores + 2, lidas: o.vendedores + 2, vendedoresIdentificados: o.vendedores, ofertasSemVendedor: o.completa === false ? 2 : 0, completa: o.completa !== false, exatas: { [c.itemId]: exata } },
   };
   if (o.seller === 'indisponivel') ENR.vendedores[sellerId] = { estado: 'indisponivel', motivo: 'limite do Mercado Livre' };
-  else if (o.seller) ENR.vendedores[sellerId] = { estado: 'ok', nome: c.vendedor, ...o.seller };
+  else if (o.seller) ENR.vendedores[sellerId] = { estado: 'ok', nome: c.vendedor, cidade: CIDADES[i % CIDADES.length][0], reputacao: CIDADES[i % CIDADES.length][1], ...o.seller };
 }
 catalogo(0, { vendedores: 9, dias: 120, seller: { medalha: 'platinum', uf: 'SP' } });
 catalogo(3, { vendedores: 31, completa: false, dias: 300, exata: { comissao: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } }, seller: { medalha: 'gold', uf: 'RJ' } });
@@ -106,6 +109,14 @@ catalogo(24, { vendedores: 45, dias: 900, seller: { medalha: 'gold', uf: 'SC' } 
 catalogo(27, { vendedores: 12, dias: 200, seller: { medalha: null, uf: 'BA' } });
 catalogo(33, { vendedores: 5, dias: 60, seller: { medalha: 'gold', uf: 'GO' } });
 catalogo(36, { vendedores: 1, dias: 10, seller: { medalha: 'platinum', uf: 'RS' } });
+
+// Frete cotado (fatia 2.1): todos com preço, exceto 2 indisponíveis (sem opção / 429) e os de 45+ ainda em consulta.
+for (const c of cards) {
+  if (c.preco === null || Number(c.itemId.slice(-2)) >= 45) continue;
+  const n = Number(c.itemId.slice(-2));
+  ENR.fretes![chaveFrete(c.itemId, c.preco)] = n === 7 ? { estado: 'indisponivel', motivo: 'frete da oferta indisponível' }
+    : n === 15 ? { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } : { estado: 'ok', valor: Math.round((14 + (n * 3.7) % 30) * 100) / 100 };
+}
 
 /** Cenários da Task 11.4: local (nada da rede), consultando (identificado, enriquecimento em voo), preenchido (tudo
  *  lido), parcial (429 em parte), nao_localizada (ofertas lidas sem a do card), pausa (parcial + Retry-After). */
@@ -122,8 +133,9 @@ export function cenario(c: Cenario, agora = Date.now()): { enr: EstadoEnriquecim
       e.catalogos[cat] = { produto: { estado: 'ok', criadoEm: diasAtras(150) }, ofertas: { estado: 'ok', total: 6, lidas: 6, vendedoresIdentificados: 6, ofertasSemVendedor: 0, completa: true,
         exatas: { [card.itemId]: { estado: 'ok', preco: card.preco!, sellerId: 990, tipo: 'gold_special', comissao: comissao(0) } } } };
     }
-    e.vendedores[990] = { estado: 'ok', nome: 'Loja', medalha: 'gold', uf: 'SP' };
-    for (const [k, v] of Object.entries(e.vendedores)) if (v.estado !== 'ok') e.vendedores[k] = { estado: 'ok', nome: null, medalha: 'silver', uf: 'MG' };
+    e.vendedores[990] = { estado: 'ok', nome: 'Loja', medalha: 'gold', uf: 'SP', cidade: 'Campinas', reputacao: '5_green' };
+    for (const [k, v] of Object.entries(e.vendedores)) if (v.estado !== 'ok') e.vendedores[k] = { estado: 'ok', nome: null, medalha: 'silver', uf: 'MG', cidade: 'Uberlândia', reputacao: '4_light_green' };
+    for (const card of cards) if (card.preco !== null && !e.fretes![chaveFrete(card.itemId, card.preco)]) e.fretes![chaveFrete(card.itemId, card.preco)] = { estado: 'ok', valor: 21.9 };
     for (const v of Object.values(e.catalogos)) {
       const o = v.ofertas && okDe(v.ofertas);
       if (o) for (const [k, x] of Object.entries(o.exatas)) if (x.estado === 'ok' && x.comissao.estado !== 'ok') o.exatas[k] = { ...x, comissao: comissao(0) };
@@ -138,6 +150,7 @@ export function cenario(c: Cenario, agora = Date.now()): { enr: EstadoEnriquecim
   }
   // parcial / pausa: 429 em parte das ofertas (e cards 21+ em consulta ficam indisponíveis também).
   for (const card of cards.slice(20)) if (card.catalogProductId && !e.catalogos[card.catalogProductId]) e.catalogos[card.catalogProductId] = { produto: { estado: 'indisponivel', motivo: 'tempo esgotado' }, ofertas: { estado: 'indisponivel', motivo: 'limite do Mercado Livre' } };
+  for (const card of cards.slice(40)) if (card.preco !== null) e.fretes![chaveFrete(card.itemId, card.preco)] = { estado: 'indisponivel', motivo: 'limite do Mercado Livre' };
   if (c === 'pausa') e.tentarAposEm = agora + 4 * 60_000;
   return { enr: e, meta, resultados };
 }
