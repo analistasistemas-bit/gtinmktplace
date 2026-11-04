@@ -61,6 +61,19 @@ describe('PromocaoDetalhe', () => {
     expect(screen.queryByTestId('lista-mobile')).toBeNull();
   });
 
+  it('piso acima de toda a faixa não aparece como erro', () => {
+    const semPreco = { ...item, projecao: item.projecao.map((c) => ({ ...c, ate_quanto_motivo: 'nenhum' })) } as ItemPromocao;
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [semPreco], isLoading: false } as never);
+
+    renderDetalhe();
+
+    const rotulos = screen.getAllByText('Piso fora da faixa');
+    expect(rotulos.length).toBeGreaterThan(0);
+    rotulos.forEach((r) => expect(r.className).not.toContain('text-danger'));
+    expect(screen.queryByText('Sem preço viável')).toBeNull();
+  });
+
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);

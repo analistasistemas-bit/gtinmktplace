@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CircleX, ExternalLink, Search, X } from 'lucide-react';
+import { ExternalLink, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { useSimularPrecos } from '@/hooks/useOperacoes';
@@ -78,12 +78,11 @@ function ateQuanto(r: ItemPromocao, { tooltip }: { tooltip: boolean }) {
   if (r.preco_min == null || r.preco_max == null) return '—';
   const a = ateQuantoDaLinha(r);
   if (a.motivo === 'nenhum') {
-    const conteudo = <><CircleX className="size-3.5" aria-hidden />Sem preço viável</>;
-    if (!tooltip) return <span className="inline-flex items-center gap-1 text-xs font-medium text-danger">{conteudo}</span>;
+    if (!tooltip) return <span className="text-xs font-medium text-muted-foreground">Piso fora da faixa</span>;
     return (
       <Tooltip>
-        <TooltipTrigger className="inline-flex items-center gap-1 text-xs font-medium text-danger">{conteudo}</TooltipTrigger>
-        <TooltipContent>Nenhum preço da faixa da promoção atinge o líquido mínimo.</TooltipContent>
+        <TooltipTrigger className="text-xs font-medium text-muted-foreground">Piso fora da faixa</TooltipTrigger>
+        <TooltipContent>Nem o maior preço da faixa atinge seu líquido mínimo. Não significa prejuízo: confira o lucro antes de aderir.</TooltipContent>
       </Tooltip>
     );
   }
