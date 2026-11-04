@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useFilaDeSalvamento } from '../settings-row';
+import { useSupportStore } from '@/stores/support-store';
 
 type Aliquotas = { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null };
 
@@ -155,6 +156,21 @@ describe('useFilaDeSalvamento', () => {
     await waitFor(() => expect(result.current.estados.nacional).toBe('erro'), { timeout: 3000 });
     expect(executar).toHaveBeenCalledTimes(3);
     expect(result.current.erros.nacional).toBe('Sem conexão com o servidor. Tente de novo.');
+  });
+
+  it('org mudou durante a espera: não repete, para não gravar na organização errada', async () => {
+    const { result } = renderHook(() => useFilaDeSalvamento<Aliquotas>(CARREGADO));
+    await waitFor(() => expect(result.current.pronto).toBe(true));
+
+    const executar = vi.fn(async () => {
+      useSupportStore.setState({ context: { orgId: 'outra-org' } as never });
+      throw FALHA_DE_REDE;
+    });
+    act(() => result.current.salvar('nacional', { nacional: 9 }, executar));
+
+    await waitFor(() => expect(result.current.estados.nacional).toBe('erro'), { timeout: 3000 });
+    useSupportStore.setState({ context: null });
+    expect(executar).toHaveBeenCalledTimes(1);
   });
 
   it('erro do banco em objeto simples: mostra a mensagem e não repete', async () => {

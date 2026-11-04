@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { effectiveOrgId } from '@/stores/support-store';
 
 // Primitivos da tela de Configurações. Moram aqui, e não em components/ui/, porque hoje têm
 // um consumidor só — promover para o design system (e para o StyleGuide) quando aparecer o
@@ -124,12 +125,15 @@ function mensagemDoErro(err: unknown): string {
 }
 
 async function comRetentativa(executar: () => Promise<unknown>): Promise<unknown> {
+  // Os upserts releem a org na hora: sair do suporte durante a espera gravaria na org errada.
+  const org = effectiveOrgId();
   for (const espera of ESPERAS_REDE_MS) {
     try {
       return await executar();
     } catch (err) {
       if (!falhaDeRede(err)) throw err;
       await new Promise((r) => setTimeout(r, espera));
+      if (effectiveOrgId() !== org) throw err;
     }
   }
   return executar();
