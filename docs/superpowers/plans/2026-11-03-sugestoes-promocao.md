@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** aba Sugestões na Central de Promoções, com produtos que vendem pouco, em duas faixas, ordenados por Oportunidade, com Aderir por card e Dispensar por 30 dias.
+**Goal:** aba Sugestões na Central de Promoções, com produtos que vendem pouco, em duas faixas, ordenados por Oportunidade, com Aderir por card e Dispensar por 30 dias. Execução: sessão única, com revisão do contrato da RPC antes da tela e revisão do Codex no fim.
 
 **Architecture:** o cálculo é uma função pura em `src/lib/sugestoes-promocao.ts`, rodando no front sobre leituras do banco (convites, participações, promoções, RPC de sinais, dispensas). Aderir reusa `PreviewOperacao`. A edge `operacoes-massa` ganha dispensa/reativação e a marcação de origem; o sync grava a data de criação do anúncio.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Migrations só por `supabase migration new` + `supabase db push`; validar com `npm run db:check` (ADR-0043). Nunca rebaixar modelo em migration, RLS ou publicação em marketplace.
-- Limites exatos: vende pouco `< 5` unidades; janela `30` dias; Quase vendendo `visitas >= max(30, 3 * visitasPorUnidade)`; dispensa `30` dias; idade mínima `30` dias; `20` por página.
+- Limites exatos: vende pouco `< 5` unidades; janela `30` dias; Quase vendendo `visitas_ok >= max(30, 3 * visitasPorUnidade)` e `unidades_ok < visitas_ok / visitasPorUnidade`; cobertura mínima `80%`; empate de desconto `2` pontos; dispensa `30` dias; idade mínima `30` dias; `20` por página.
 - Vendas: regra de `ehFaturavel` (`src/lib/resumo-vendas.ts`). Janela de 30 dias em BRT. Conversão: visitas e unidades nos mesmos pares MLB×dia com `estado = 'ok'` (modelo: `supabase/migrations/20261003232750_vitrine_identificacao.sql`).
 - RPC com mais de 1000 linhas: `supabase.rpc(fn, undefined, { get: true }).range()` via `buscarTodasPaginas`.
 - Escrita em `promocao_sugestoes_dispensadas` só pela edge (service role). Dropdown: `ui/select`. Nada de `<select>` nativo.
@@ -39,9 +39,9 @@
 **Interfaces:**
 - Produces: tabela `promocao_sugestoes_dispensadas(org_id uuid, chave text, dispensado_por uuid, dispensado_em timestamptz default now(), expira_em timestamptz not null, primary key (org_id, chave))`, RLS ligada, `revoke all` de `public, anon, authenticated` antes do grant, policy de select por `org_id = current_org_id()`, grant só de select a `authenticated`, sem policy de escrita (modelo: `ml_posvenda_acoes`).
 - Produces: `ml_promocao_itens.anuncio_criado_em timestamptz`, `operacoes_massa.sugestao jsonb`.
-- Produces: `sugestoes_promocao_sinais()` `returns setof json`, `stable security definer`, `set search_path = ''`, filtrando por `public.current_org_id()`, com revoke de `public, anon` e grant a `authenticated` (modelo: `vendas_sku_catalogo`). Cada linha: `{ ml_item_id, unidades_30d, visitas_ok, unidades_ok, codigo_pai, nome_produto, estoque_produto, criado_em }`, com `order by ml_item_id` (paginação estável). `unidades_30d` = todas as faturáveis da janela; `visitas_ok`/`unidades_ok` = só dos pares MLB×dia `ok`; `criado_em` = menor entre `ml_promocao_itens.anuncio_criado_em` e `publicado_em` de `anuncios_externos`/`familias`. Todo join filtra pelo `org_id` da CTE `org`.
+- Produces: `sugestoes_promocao_sinais()` `returns setof json`, `stable security definer`, `set search_path = ''`, filtrando por `public.current_org_id()`, com revoke de `public, anon` e grant a `authenticated` (modelo: `vendas_sku_catalogo`). Cada linha: `{ ml_item_id, unidades_30d, visitas_ok, unidades_ok, dias_ok, ativo, codigo_pai, nome_produto, estoque_produto, criado_em }`, com `order by ml_item_id` (paginação estável). `unidades_30d` = todas as faturáveis da janela; `visitas_ok`/`unidades_ok` = só dos pares MLB×dia `ok`; `criado_em` = menor entre `ml_promocao_itens.anuncio_criado_em` e `publicado_em` de `anuncios_externos`/`familias`. Todo join filtra pelo `org_id` da CTE `org`.
 
-- [ ] **Step 1:** criar a migration. Vínculo MLB → `codigo_pai`, nesta ordem: `anuncios_externos_itens.item_externo_id` e `catalog_listing_id`, `anuncios_externos.item_externo_id`, `familias.ml_item_id`, `ml_vendas_itens.codigo` → `variacoes.codigo`. Universo de linhas: união dos MLBs com visita ou venda em 30 dias e dos que têm linha em `ml_promocao_itens`. `unidades_30d` espelha `ehFaturavel`, conferido no arquivo antes de escrever o filtro.
+- [ ] **Step 1:** criar a migration. Vínculo MLB → `codigo_pai`, as fontes da Vitrine (`anuncios_externos`, `anuncios_externos_itens` com `catalog_listing_id`, `familias.ml_item_id`, `variacoes.catalog_listing_id`) e por último `ml_vendas_itens.codigo` → `variacoes.codigo`. `ativo` = status em `ml_trafego_item` igual a `active` ou desconhecido. Universo de linhas: união dos MLBs com visita ou venda em 30 dias e dos que têm linha em `ml_promocao_itens`. `unidades_30d` espelha `ehFaturavel`, conferido no arquivo antes de escrever o filtro.
 - [ ] **Step 2:** testar com `scripts/teste-sql-desfeito.py` (migration e teste em transação desfeita), simulando `authenticated` com claims de uma org: devolve só linhas dela, sem vazar por join; soma de `visitas_ok` da Avil bate com a consulta direta de `estado='ok'`; `authenticated` não consegue `insert`, `update`, `delete` nem `truncate` na tabela. Acrescentar a tabela e a RPC a `scripts/verificar-isolamento-tenant.ts`.
 - [ ] **Step 3:** `supabase db push`, `npm run db:check`, regenerar tipos.
 - [ ] **Step 4:** commit.
@@ -57,27 +57,29 @@
 - Produces:
 
 ```ts
-export interface SinalAnuncio { ml_item_id: string; unidades_30d: number; visitas_ok: number; unidades_ok: number; codigo_pai: string | null; nome_produto: string | null; estoque_produto: number | null; criado_em: string | null }
+export interface SinalAnuncio { ml_item_id: string; unidades_30d: number; visitas_ok: number; unidades_ok: number; dias_ok: number; ativo: boolean; codigo_pai: string | null; nome_produto: string | null; estoque_produto: number | null; criado_em: string | null }
 export interface Dispensa { chave: string; expira_em: string; dispensado_em: string; dispensado_por: string | null }
 export type ConvitePromocao = ItemPromocao & { promocao_id: string }
 export interface OpcaoCampanha { promocao: Promocao; itens: ConvitePromocao[]; descontoPct: number; lucroPorVenda: number; semaforo: 'verde' | 'amarelo' }
-export interface Sugestao { chave: string; titulo: string; thumbnail: string | null; faixa: 'quase_vendendo' | 'invisivel'; unidades: number; visitas: number; estoque: number | null; anunciosConvidados: number; oportunidade: number; recomendada: OpcaoCampanha; alternativas: OpcaoCampanha[] }
+export interface Sugestao { chave: string; titulo: string; thumbnail: string | null; faixa: 'quase_vendendo' | 'invisivel'; unidades: number; visitas: number; estoque: number | null; anunciosConvidados: number; vendasAbaixo: number; oportunidade: number; recomendada: OpcaoCampanha; alternativas: OpcaoCampanha[] }
 export interface ResultadoSugestoes { quaseVendendo: Sugestao[]; invisivel: Sugestao[]; dispensadas: Sugestao[]; visitasPorUnidade: number | null }
 export function montarSugestoes(e: { convites: ConvitePromocao[]; participacoes: Participacao[]; promocoes: Promocao[]; sinais: SinalAnuncio[]; dispensas: Dispensa[]; agoraMs: number }): ResultadoSugestoes
 ```
 
-`chave` = `p:<codigo_pai>` ou `a:<ml_item_id>`. Lucro de uma linha = menor `liquido - custo` entre as cores; linha com cor sem `custo` (nulo ou zero) ou sem `liquido` é inválida. Lucro da opção = média das linhas. Desconto da opção = média de `1 - preco_avaliado / preco_original`, sem arredondar; empate quando a diferença for menor que 0,1 ponto percentual. Não usar `descontoPct` (arredonda para inteiro), que fica só para exibir. `visitasPorUnidade` = soma de `visitas_ok` ÷ soma de `unidades_ok`; `unidades` do corte = `unidades_30d`; vendas perdidas usam `visitas_ok` e `unidades_ok`.
+`chave` = `p:<codigo_pai>` ou `a:<ml_item_id>`. Lucro de uma linha = menor `liquido - custo` entre as cores; linha com cor sem `custo` (nulo ou zero) ou sem `liquido` é inválida. Lucro da opção = média das linhas. Desconto da opção = média de `1 - preco_avaliado / preco_original`, sem arredondar. Candidatas = as que estão a até 2 pontos do maior desconto; entre elas ganha o maior lucro, depois a maior cobertura. Linha válida exige lucro maior que zero, anúncio ativo e, em `LIGHTNING`, preço de pelo menos R$ 19. Cobertura do produto = média de `dias_ok / 30` dos seus anúncios; abaixo de 0,8 sai. `estoque_produto === 0` sai. Não usar `descontoPct` (arredonda para inteiro), que fica só para exibir. `visitasPorUnidade` = soma de `visitas_ok` ÷ soma de `unidades_ok`; `unidades` do corte = `unidades_30d`, somando o produto. Faixa usa `visitas_ok`/`unidades_ok` do produto. `vendasAbaixo` e `oportunidade` usam só os anúncios da recomendada. Produto com visitas no corte e vendas na média ou acima fica fora.
 
 - [ ] **Step 1:** escrever os testes, com estes nomes e valores:
   - `classifica Quase vendendo pelo corte da conta`: 2390 visitas e 100 unidades na conta (23,9); produto com 72 visitas e 0 unidades é `quase_vendendo`; com 71, `invisivel`.
+  - `visitas no corte e conversão na média fica fora`: 72 visitas e 4 unidades não aparece em nenhuma faixa.
+  - `cobertura abaixo de 80% sai`, `estoque zero sai`, `anúncio inativo não entra`, `lucro zero não entra`, `Relâmpago abaixo de 19 não entra`.
   - `piso de 30 visitas`: conta a 8,6 visitas por unidade; 29 visitas é `invisivel`, 30 é `quase_vendendo`.
   - `conta sem vendas`: `visitasPorUnidade` nulo, `oportunidade` 0, 30 visitas é `quase_vendendo`.
-  - `oportunidade`: 212 visitas, 23,9, 1 unidade, lucro 6 → `(212/23.9 - 1) * 6`.
+  - `oportunidade`: 212 visitas, 23,9, 1 unidade, lucro 6 → `vendasAbaixo` `212/23.9 - 1`, `oportunidade` vezes 6; visitas de anúncio fora da campanha não entram.
   - `produto que vende 5 ou mais sai`, mesmo com anúncio individual zerado.
   - `soma anúncios não convidados do produto` em unidades e visitas.
   - `participante sai`: MLB `candidate` numa campanha e `started` em outra não entra.
   - `exclui vermelho, indisponivel, cor sem custo, preço acima do original, tipo não operável, campanha encerrada`.
-  - `recomenda maior desconto; empate por lucro; depois cobertura`; `alternativas` traz as demais. Caso: 10,1% com lucro 2 vence 9,9% com lucro 5.
+  - `recomenda maior desconto; empate por lucro; depois cobertura`; `alternativas` traz as demais. Caso: 9,9% com lucro 5 vence 10,1% com lucro 2 (empate de 2 pontos); 20% com lucro 2 vence 10% com lucro 5.
   - `produto novo sai pela menor data entre todos os sinais do produto`: anúncio antigo sem convite mantém o produto na lista; `sem data entra`.
   - `conversão ignora dia pendente`: `unidades_30d` 10 e `unidades_ok` 4 usa 4 na conversão e 10 no corte.
   - `dispensa vigente vai para dispensadas; expirada volta`.
@@ -142,11 +144,11 @@ Antes de codar, invocar `frontend-design-fable5` em modo sistema e `ui-ux-pro-ma
 
 **Desenho (trabalho de sistema, sem identidade nova):**
 - Duas seções, não grade de cards: cabeçalho "Quase vendendo" + contagem + frase curta do que é, lista em `divide-y`, paginação; depois "Invisível". Mesmo idioma de `BlocoCampanha`.
-- Linha: miniatura, produto, motivo em uma linha ("212 visitas, 0 vendas em 30 dias"), estoque. À direita, em `tabular-nums`, **~R$ 48/mês** é o número mais forte da linha; abaixo, "Oportunidade estimada". Depois, campanha, preço riscado → preço, desconto, lucro por venda, "14 de 18 anúncios nesta campanha", selo `StatusPill` warning "abaixo do piso" no amarelo.
+- Linha: miniatura, produto, motivo em uma linha ("212 visitas, 0 vendas em 30 dias"), estoque. À direita, em `tabular-nums`, **~8 vendas abaixo do esperado** é o dado mais forte da linha, seguido do lucro por venda. Depois, campanha, preço riscado → preço, desconto, lucro por venda, "14 de 18 anúncios nesta campanha", selo `StatusPill` warning "abaixo do piso" no amarelo.
 - "+N campanhas" expande as alternativas na própria linha; escolher uma troca a campanha do Aderir.
 - Cor de destaque só no botão Aderir. Dispensar é `ghost`.
 - Estados: esqueleto no carregamento; erro com "Tentar novamente"; vazio geral ("Nenhuma sugestão agora. Produtos que vendem pouco e têm convite de campanha aparecem aqui."); faixa vazia some; sem permissão, sem Aderir e Dispensar; sem campanha sincronizada, aponta para Atualizar agora.
-- Tooltip em Oportunidade explica a conta e que é estimativa. Faixa de "Campanhas atualizadas há X h" reusa o estado do sync.
+- Tooltip explica a conta e que é estimativa, comparada à média da conta, não promessa de venda. Faixa de "Campanhas atualizadas há X h" reusa o estado do sync.
 - Filtro "Dispensados" (`Tabs`/toggle do design system) com botão Reativar.
 - 390 px: a coluna de valores desce para baixo do título; alvos de toque de 44 px; sem rolagem horizontal.
 
