@@ -154,6 +154,50 @@ describe('PreviewOperacao', () => {
     expect(screen.getByText('Só administradores executam operações em massa.')).toBeInTheDocument();
   });
 
+  describe.each(['SMART_LIGHTNING', 'PRICE_MATCHING'] as const)('%s (oferta fixa)', (tipo) => {
+    const fixo = (over: Partial<ItemPromocao> = {}) => item({
+      ml_item_id: 'F', preco_promo: 64, preco_sugerido: null, preco_min: null, preco_max: null, estoque_min: 5, projecao: [cor({ custo: 5, piso: 8 })], ...over,
+    });
+
+    it('preço travado, mas enviado no pedido', async () => {
+      const user = userEvent.setup();
+      renderPreview({ tipo, itens: [fixo()] });
+      expect(screen.queryByLabelText('Preço de F')).not.toBeInTheDocument();
+      expect(screen.getByText('R$ 64,00')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ itens: [{ ml_item_id: 'F', preco: 64, confirmado_risco: false }] }));
+    });
+
+    it('18,99 bloqueia aderir com a mensagem do piso', () => {
+      renderPreview({ tipo, itens: [fixo({ preco_promo: 18.99 })] });
+      expect(screen.getByText('Mínimo R$ 19,00 (frete grátis)')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it('preço nulo bloqueia aderir', () => {
+      renderPreview({ tipo, itens: [fixo({ preco_promo: null })] });
+      expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
+    });
+
+    it('sair com preço < 19 continua livre', () => {
+      renderPreview({ tipo, acao: 'sair', itens: [fixo({ status: 'started', preco_promo: 18.99 })] });
+      expect(screen.queryByText('Mínimo R$ 19,00 (frete grátis)')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Executar' })).not.toBeDisabled();
+    });
+
+    it('aviso de entrada imediata só no PRICE_MATCHING', () => {
+      renderPreview({ tipo, itens: [fixo()] });
+      const aviso = screen.queryByText('Entra no ar assim que você confirmar.');
+      if (tipo === 'PRICE_MATCHING') expect(aviso).toBeInTheDocument(); else expect(aviso).not.toBeInTheDocument();
+    });
+
+    it('Reserva N un. só no SMART_LIGHTNING', () => {
+      renderPreview({ tipo, itens: [fixo()] });
+      const reserva = screen.queryByText('Reserva 5 un.');
+      if (tipo === 'SMART_LIGHTNING') expect(reserva).toBeInTheDocument(); else expect(reserva).not.toBeInTheDocument();
+    });
+  });
+
   it('Executar chama a mutation com {acao, promocao_id, itens}', async () => {
     const user = userEvent.setup();
     const verde = item({ ml_item_id: 'V', preco_sugerido: 10, preco_min: 7, preco_max: 18.99, projecao: [cor({ custo: 5, piso: 8 })] });
@@ -312,5 +356,18 @@ describe('PreviewOperacao', () => {
       expect(screen.queryByText(/R\$ 25,80/)).toBeNull();
       expect(screen.getByRole('button', { name: 'Recalcular lucro' })).toBeInTheDocument();
     });
+  });
+
+  // ADR-0194 D-9: adesão vinda de sugestão leva a marcação; adesão comum não manda o campo.
+  it('repassa a marcação de origem só quando vem de sugestão', async () => {
+    const user = userEvent.setup();
+    const sugestao = { faixa: 'quase_vendendo' as const, oportunidade: 12.5, chave: 'p:1' };
+    const { unmount } = renderPreview({ tipo: 'SMART', itens: [item()], sugestao });
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync).toHaveBeenLastCalledWith(expect.objectContaining({ sugestao }));
+    unmount();
+    renderPreview({ tipo: 'SMART', itens: [item()] });
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync.mock.calls.at(-1)![0]).not.toHaveProperty('sugestao');
   });
 });

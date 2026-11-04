@@ -9,7 +9,7 @@ export const TIPOS_CUPOM = new Set(['SELLER_COUPON_CAMPAIGN']);
 
 const API = 'https://api.mercadolibre.com';
 const LIMITE = 50;
-const ATRIBUTOS_ITEM = 'id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations,catalog_listing,item_relations';
+const ATRIBUTOS_ITEM = 'id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations,catalog_listing,item_relations,date_created';
 
 const num = (x: unknown): number | null => {
   const n = Number(x);
@@ -70,7 +70,7 @@ export function normalizarItemML(raw: Obj): ItemML {
     }))
     .filter((v) => Number.isFinite(v.variation_id));
   return {
-    id: String(raw.id), titulo: str(raw.title),
+    id: String(raw.id), titulo: str(raw.title), criado_em: str(raw.date_created),
     thumbnail: (str(raw.secure_thumbnail) ?? str(raw.thumbnail))?.replace(/^http:\/\//, 'https://') ?? null, permalink: str(raw.permalink),
     listing_type_id: str(raw.listing_type_id), categoria: str(raw.category_id),
     sku: str(raw.seller_custom_field) ?? atributo(raw.attributes, 'SELLER_SKU'),

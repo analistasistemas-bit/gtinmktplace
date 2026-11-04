@@ -18,6 +18,7 @@ import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/exe
 import { MAX_ITENS, reversaoAlterarValida, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
 import { lerSimular, MAX_SIMULAR, simular } from '../_shared/operacoes/simular.ts';
+import { chaveValida, dispensarSugestao, lerSugestao, reativarSugestao, type DepsDispensa, type MarcaSugestao } from '../_shared/operacoes/sugestao.ts';
 import {
   COLS_CENTRAL, criarProjecaoExata, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
@@ -142,7 +143,7 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
 
 type PedidoStatus = { acao: AcaoStatus; origem_id: string | null; itens: ItemPedidoStatus[] };
 type Pedido =
-  | { acao: Acao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+  | { acao: Acao; promocao_id: string; origem_id: string | null; itens: ItemPedido[]; sugestao: MarcaSugestao | null }
   | PedidoStatus;
 const ehStatus = (p: Pedido): p is PedidoStatus => p.acao === 'pausar' || p.acao === 'reativar';
 function lerPedido(x: unknown): Pedido | null {
@@ -166,7 +167,10 @@ function lerPedido(x: unknown): Pedido | null {
     if (i.preco != null && typeof i.preco !== 'number') return null;
     itens.push({ ml_item_id: i.ml_item_id, preco: (i.preco as number | null | undefined) ?? null, confirmado_risco: i.confirmado_risco === true });
   }
-  return { acao: b.acao, promocao_id: b.promocao_id, origem_id, itens };
+  // Marcação de origem (ADR-0194 D-9): só adesão nova; Reverter e demais ações não nascem de sugestão.
+  const sugestao = lerSugestao(b.sugestao);
+  if (!sugestao.ok || (sugestao.valor && (b.acao !== 'aderir' || origem_id))) return null;
+  return { acao: b.acao, promocao_id: b.promocao_id, origem_id, itens, sugestao: sugestao.valor };
 }
 
 /** Usuário: valida o pedido contra a Central, grava a operação e publica a 1ª etapa. */
@@ -252,7 +256,7 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
 
   return gravarEPublicar(admin, ctx, {
     acao: pedido.acao, promocao_id: pedido.promocao_id, promocao_tipo: promo.tipo,
-    promocao_nome: promo.nome, origem_id: pedido.origem_id,
+    promocao_nome: promo.nome, origem_id: pedido.origem_id, sugestao: pedido.sugestao,
   }, v.itens.map((i) => {
     const esperado = esperados?.get(i.ml_item_id);
     return {
@@ -354,7 +358,40 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
   if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'retomar') return retomarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'simular') return simularPrecos(admin, req, bruto);
+  if (bruto?.etapa === 'dispensar_sugestao' || bruto?.etapa === 'reativar_sugestao') return dispensa(admin, req, bruto);
   return criar(admin, req, body);
+}
+
+const depsDispensa = (admin: Admin): DepsDispensa => ({
+  agora: () => Date.now(),
+  async gravar(linha) {
+    const { error } = await admin.from('promocao_sugestoes_dispensadas').upsert(linha, { onConflict: 'org_id,chave' });
+    if (error) throw new Error(`dispensar: ${error.message}`);
+  },
+  async remover(orgId, chave) {
+    const { error } = await admin.from('promocao_sugestoes_dispensadas').delete().eq('org_id', orgId).eq('chave', chave);
+    if (error) throw new Error(`reativar: ${error.message}`);
+  },
+});
+
+/** Dispensa e reativação de sugestão (ADR-0194 D-8): mesma autorização de quem cria operação. */
+async function dispensa(admin: Admin, req: Request, bruto: Record<string, unknown>): Promise<Response> {
+  let ctx: Ctx;
+  try {
+    ctx = await requireUserOrg(req, { access: 'write' });
+  } catch (resp) {
+    if (resp instanceof Response) return resp;
+    throw resp;
+  }
+  if (!podeExecutar(ctx)) {
+    await auditarOperacaoSuporte(admin, ctx, { type: 'org', id: ctx.orgId }, 'denied');
+    return json({ erro: 'Só administradores dispensam sugestões.' }, 403);
+  }
+  if (!(await exigirModulo(admin, ctx.orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
+  if (!chaveValida(bruto.chave)) return json({ erro: 'Sugestão inválida.' }, 400);
+  if (bruto.etapa === 'dispensar_sugestao') await dispensarSugestao(depsDispensa(admin), ctx.orgId, ctx.userId, bruto.chave);
+  else await reativarSugestao(depsDispensa(admin), ctx.orgId, bruto.chave);
+  return json({ ok: true });
 }
 
 /** Simulação de preço/desconto (qualquer membro): líquido exato por anúncio no preço pedido. Só leitura. */

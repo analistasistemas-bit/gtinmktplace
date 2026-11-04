@@ -1,5 +1,19 @@
 # PubliAI — Tasks
 
+## Sugestões de promoção (ADR-0194) — 2026-11-04
+
+- [x] Aba Sugestões na Central: Quase vendendo e Invisível, por produto, ordem por Oportunidade, campanha de maior desconto com lucro, Aderir por card, Dispensar por 30 dias.
+- [x] Migration `20261104010745`; `sincronizar-promocoes` grava `date_created`; `operacoes-massa` com dispensa e marcação de origem.
+- [ ] Segunda etapa, depois de 30 dias de uso: tela de antes e depois por faixa, a partir de `operacoes_massa.sugestao`.
+
+## SMART_LIGHTNING e PRICE_MATCHING pelo app + aviso de tipo novo (emenda ADR-0174) — 2026-11-03
+
+- [x] Spike autorizado e desfeito (Avil `MLB5048402257`, DSA `MLB5114275523`): 201 nos dois; saída confirma em ≤ 5 min.
+- [x] Plano e diff revisados pelo Codex; motor, aviso de tipo novo (`integracao`, fora de `alertas_promocoes_ativo`) e front.
+- [x] Main `4fbc5004` (CI verde). Migration `20261103234235` aplicada em 04/11; `operacoes-massa` v38, `sincronizar-promocoes` v34, `ads-campanhas` v17, `resumo-diario` v14, `telegram-bot` v14.
+- [x] Sync da Avil pós-deploy: SMART_LIGHTNING (9 convidados), Relâmpago e SMART sem erro; nenhum aviso falso de tipo novo.
+- [ ] 1ª adesão real em cada tipo (Diego). Conferir as queries `adesaoRecente`/`adquirirEscrita` nesse uso.
+
 ## Pós-venda: claim `cancel_purchase` gera um aviso só (emenda ADR-0121) — 2026-11-03
 
 - [x] `sync-devolucao` não manda "Nova reclamação" para `cancel_purchase`, que o ML fecha sozinho em ~3 min.

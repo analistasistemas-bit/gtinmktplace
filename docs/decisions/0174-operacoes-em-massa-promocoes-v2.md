@@ -276,6 +276,30 @@ Plano: `docs/superpowers/plans/2026-11-03-promo-alterar-preco.md` (Codex: 3×P1 
 5. Telas: "Alterar preço N" na aba Em promoção (com busca) e na aba Participando da campanha (com a simulação
    Desconto %/Preço R$); o painel calcula recebe·lucro·margem no servidor ao abrir e ao aplicar.
 
+## Emenda 2026-11-03 — SMART_LIGHTNING e PRICE_MATCHING + aviso de tipo novo
+
+Diego quer ativar pelo app toda campanha que o ML trouxer. Campanha nova de tipo conhecido já funciona sozinha; o que
+exige código é **tipo** novo, porque cada tipo tem contrato próprio. Spike autorizado e desfeito em 03/11 (Avil
+`MLB5048402257`, DSA `MLB5114275523`): `POST {promotion_id, promotion_type, offer_id: CANDIDATE-…}` → 201 nos dois
+(SMART_LIGHTNING também com `stock`); SMART_LIGHTNING agenda janela de 12 h, PRICE_MATCHING entra `started` **na
+hora**. As visões seguem `candidate` por ~2 min após o POST. `DELETE ?promotion_type&promotion_id&offer_id=OFFER-…`
+→ 200 vazio e volta a `candidate` em ≤ 5 min, mesmo já `started`. Plano:
+`docs/superpowers/plans/2026-11-03-promo-smart-lightning-price-matching.md`.
+
+1. **Oferta de preço fixo:** o preço é o do ML, sem edição. O preview envia o preço exibido; criação e execução o
+   comparam com a Central e com a leitura fresca (mudou → não escreve).
+2. **Piso R$ 19** também nestes dois tipos, independente de risco confirmado.
+3. **Estoque** (SMART_LIGHTNING) = `stock.min`; ausente → erro; disponível menor → bloqueado.
+4. **Idempotência:** por causa do atraso de ~2 min, `candidate` não prova nada logo após escrever. `etapa` gravada
+   antes do POST/DELETE, com aquisição atômica (`status='enviando' AND etapa IS NULL`); retomada nunca repete a
+   escrita e escrita incerta não derruba a mensagem do QStash. Sem evidência anterior, sair com `candidate` vira
+   `mudou`. Nova adesão ao mesmo anúncio fica barrada por 30 min (`JANELA_PROPAGACAO_MS`). Teto conhecido: passados
+   30 min, `candidate` vale como verdade. Trava sem expiração descartada: o ML devolve o mesmo `CANDIDATE` após a
+   saída, então não há evidência de saída feita no Seller Center e o anúncio ficaria bloqueado para sempre.
+5. **Aviso de tipo novo:** categoria `integracao` por org com `opcoes.chave`, fora de `alertas_promocoes_ativo`
+   (desligado em todas as orgs) e sem reserva prévia (reserva sem entrega calaria o aviso para sempre).
+6. Constraint `operacoes_massa_promocao_tipo_check` aceita os dois tipos.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de

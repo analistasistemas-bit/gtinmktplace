@@ -34,7 +34,7 @@ function op(over: Partial<OperacaoRow> = {}): OperacaoRow {
   return {
     id: 'OP1', org_id: 'ORG1', acao: 'aderir', promocao_id: 'P1', promocao_nome: 'Campanha X', promocao_tipo: 'DEAL',
     status: 'concluida', criado_em: '2026-09-01T10:00:00Z', criado_por: 'U1', concluido_em: '2026-09-01T10:05:00Z',
-    origem_id: null, expira_em: null, itens: [], ...over,
+    origem_id: null, expira_em: null, sugestao: null, itens: [], ...over,
   };
 }
 function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
@@ -532,6 +532,25 @@ describe('ListaOperacoes', () => {
   });
 
   // Pedido do Diego (03/11): ML 500 em 2 de 17 adesões — botão para tentar de novo só os itens com erro.
+  it.each(['SMART_LIGHTNING', 'PRICE_MATCHING'])('Reverter de sair %s mantém o tipo e envia o preço exibido da oferta', async (tipo) => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', promocao_tipo: tipo, itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })] } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({
+      data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate', preco_promo: 64, preco_sugerido: null, estoque_min: 5 })],
+    } as never);
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+    expect(screen.queryByLabelText('Preço de MLB1')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      acao: 'aderir', itens: [{ ml_item_id: 'MLB1', preco: 64, confirmado_risco: false }],
+    }));
+  });
+
   describe('Tentar novamente os com erro', () => {
     const opErro = (over: Partial<OperacaoRow> = {}) => op({ id: 'OP1', acao: 'aderir', itens: [{ status: 'erro' }, { status: 'erro' }, { status: 'aplicado' }], ...over });
     beforeEach(() => {
@@ -559,6 +578,21 @@ describe('ListaOperacoes', () => {
       expect(screen.getByText('Não dá para tentar de novo: o anúncio não está mais convidado/participando')).toBeInTheDocument();
       // Preço da operação original (não o sugerido da Central, R$ 85).
       expect(screen.getByLabelText('Preço de MLB1')).toHaveValue('44,90');
+    });
+
+    it.each(['SMART_LIGHTNING', 'PRICE_MATCHING'])('%s: retentativa usa o preço atual da Central, não o do log', async (tipo) => {
+      const user = userEvent.setup();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [opErro({ promocao_tipo: tipo })], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'erro', preco: 44.9 })] } as never);
+      vi.mocked(useItensPromocao).mockReturnValue({
+        data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate', preco_promo: 64, preco_sugerido: null })], isSuccess: true,
+      } as never);
+      renderLista();
+      await user.click(screen.getByText('Aderir à Campanha X'));
+      await user.click(screen.getByRole('button', { name: 'Tentar novamente 1 com erro' }));
+      expect(screen.getByLabelText('Selecionar MLB1')).toBeChecked();
+      await user.click(screen.getByRole('button', { name: 'Executar' }));
+      expect(mutateAsync.mock.calls.at(-1)![0].itens).toEqual([{ ml_item_id: 'MLB1', preco: 64, confirmado_risco: false }]);
     });
 
     it('SMART: tenta de novo sem preço (o preço é do ML)', async () => {

@@ -108,6 +108,7 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(ADR-0194, 2026-11-04)* `operacoes-massa` ganha `etapa: 'dispensar_sugestao'`/`'reativar_sugestao'` (admin ou suporte full, módulo `promocoes`) e aceita `sugestao` na adesão, gravada em `operacoes_massa.sugestao`; `sincronizar-promocoes` grava `date_created` do ML em `ml_promocao_itens.anuncio_criado_em` ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
@@ -1486,7 +1487,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   mediação pós-despacho). O aviso exige `houveBaixaDeVenda` — sem movimento `venda` daquele
   pedido não há saldo a conferir; sem esse corte a primeira varredura alertou 26 cancelamentos
   históricos de uma vez (18/08/2026). Redeploy: `sync-venda` **v72**, `reconciliar-faturamento`
-  **v68**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  **v68**. **Emenda 03/11/2026:** claim `cancel_purchase` não gera "Nova reclamação"
+  (`avisaNovaDevolucao`); o aviso de cancelamento ganha texto próprio quando o pedido tem esse claim
+  (`cancelamentoPeloComprador`) e a reposição não muda. Redeploy: `sync-devolucao` **v82**,
+  `sync-venda` **v119**, `reconciliar-faturamento` **v108**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
@@ -1905,7 +1909,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Operações em massa (ADR-0174) — código pronto, deploy pendente
 - **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de
-  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`/`LIGHTNING` — Relâmpago desde
+  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`/`LIGHTNING`/`SMART_LIGHTNING`/`PRICE_MATCHING` — os dois últimos desde 03/11/2026, oferta de preço fixo; Relâmpago desde
   02/11/2026, emenda ADR-0174: preço do pedido, faixa fechada, piso R$ 19, `stock` = `stock.min`, leitura em duas visões). Código em
   `supabase/functions/_shared/operacoes/` (`validar`, `decidir`, `executar`, `ml`, `deps`, `falhas`,
   `tipos`). Dois modos:

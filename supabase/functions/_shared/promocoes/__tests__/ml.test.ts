@@ -38,7 +38,8 @@ describe('normalizadores', () => {
       variations: [{ id: 11, seller_custom_field: 'SKU-A',
         attribute_combinations: [{ id: 'COLOR', value_name: 'Azul' }], attributes: [{ id: 'GTIN', value_name: '0789' }] }] });
     expect(legacy.variacoes).toEqual([{ variation_id: 11, cor: 'Azul', sku: 'SKU-A', gtin: '0789', unidades: null }]);
-    expect(legacy).toMatchObject({ categoria: 'MLB123', listing_type_id: 'gold_special', thumbnail: 'https://x/t.jpg', gtin: '789' });
+    expect(legacy).toMatchObject({ categoria: 'MLB123', listing_type_id: 'gold_special', thumbnail: 'https://x/t.jpg', gtin: '789', criado_em: null });
+    expect(normalizarItemML({ id: 'MLB9', date_created: '2026-10-21T23:11:38.634Z' }).criado_em).toBe('2026-10-21T23:11:38.634Z');
     const up = normalizarItemML({ id: 'MLB2', attributes: [{ id: 'SELLER_SKU', value_name: '00123' }] });
     expect(up).toMatchObject({ sku: '00123', variacoes: [], unidades: null });
   });
@@ -115,7 +116,7 @@ describe('paginação', () => {
     expect(get).toHaveBeenCalledTimes(3);
     expect(m.size).toBe(44);
     expect(m.has('MLB3')).toBe(false);
-    expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations,body\.catalog_listing,body\.item_relations&include_attributes=all$/);
+    expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations,body\.catalog_listing,body\.item_relations,body\.date_created&include_attributes=all$/);
   });
 
   // ADR-0177: par real antigo × bulk (mesmos ids) normaliza igual; o 404 sem body fica fora.

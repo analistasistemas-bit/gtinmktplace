@@ -153,3 +153,21 @@ _Evitar_: total de vendas, soma dos mínimos.
 **Meu anúncio nesta busca**:
 Anúncio próprio que aparece entre os cards carregados de uma busca, com a posição observada naquela página (orgânica ou patrocinada). Não é ranking geral, e SKU vinculado não é anúncio próprio.
 _Evitar_: meu ranking, minha posição no ML.
+
+## Sugestões de promoção
+
+**Quase vendendo**:
+Produto que vende pouco e abaixo do esperado apesar de receber visitas, sinal de que o preço pode ser a barreira. É a faixa prioritária das sugestões de promoção.
+_Evitar_: encalhado, parado (esses olham só as vendas).
+
+**Invisível**:
+Produto que vende pouco e recebe poucas visitas. Desconto sozinho tende a render pouco: a campanha ajuda pela exposição, ou o problema é outro.
+_Evitar_: encalhado, parado.
+
+**Vende pouco**:
+Produto com menos de 5 unidades vendidas nos últimos 30 dias, somando todos os seus anúncios. Inclui quem vendeu zero. Anúncio sem produto cadastrado é avaliado sozinho.
+_Evitar_: baixo giro (que olha duas janelas de 30 dias e exclui quem vendeu zero).
+
+**Oportunidade**:
+Estimativa do lucro das vendas que as visitas dos anúncios da campanha recomendada deveriam ter gerado na conversão média da conta e não geraram. Só ordena as sugestões: mede distância da média, não o que a promoção recupera, e por isso a tela mostra vendas abaixo do esperado, não um valor em reais.
+_Evitar_: dinheiro parado, potencial garantido.

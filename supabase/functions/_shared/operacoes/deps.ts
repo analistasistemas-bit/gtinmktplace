@@ -20,9 +20,13 @@ import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 
 const ITENS = 'operacoes_massa_itens';
-const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior';
+const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
 export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
+// ponytail: teto por tempo. Passados 30 min, `candidate` é aceito como verdade (o ML reflete em ~2 min) e nova adesão posta.
+// Sem expiração não dá: o ML devolve o mesmo CANDIDATE após a saída, e quem sai pelo Seller Center ficaria travado para
+// sempre. Upgrade: persistir o CANDIDATE usado e liberar só com saída observada.
+const JANELA_PROPAGACAO_MS = 30 * 60_000;
 
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
 export const urlOperacoes = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/operacoes-massa`;
@@ -189,6 +193,24 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
         .in('status', ['pending', 'started']);
       falhou('espelharPreco', upd.error);
+    },
+
+    async adesaoRecente(promocaoId, mlItemId) {
+      // `atualizado_em` é a última gravação do item: a da escrita ou depois dela, então a janela só erra para mais.
+      const { data, error } = await admin.from(ITENS).select('operacao_id, operacoes_massa!inner(acao)')
+        .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).neq('operacao_id', op.id)
+        .eq('operacoes_massa.acao', 'aderir').or('etapa.eq.escrita_pedida,status.in.(aplicado,ja_estava)')
+        .gt('atualizado_em', new Date(Date.now() - JANELA_PROPAGACAO_MS).toISOString()).limit(1);
+      falhou('adesaoRecente', error);
+      return (data ?? []).length > 0;
+    },
+
+    async adquirirEscrita(operacaoId, mlItemId, campos) {
+      const { data, error } = await admin.from(ITENS).update({ ...campos, atualizado_em: agoraIso() })
+        .eq('org_id', op.org_id).eq('operacao_id', operacaoId).eq('ml_item_id', mlItemId)
+        .eq('status', 'enviando').is('etapa', null).select('ml_item_id');
+      falhou('adquirirEscrita', error);
+      return (data ?? []).length > 0;
     },
 
     async recontarCentral(promocaoId) {

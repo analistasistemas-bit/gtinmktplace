@@ -78,6 +78,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
 - Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
 
+### SMART_LIGHTNING e Preço competitivo (emenda 2026-11-03)
+
+- Ofertas de preço fixo do ML: sem edição, com piso de R$ 19 e revalidação do preço antes de escrever. SMART_LIGHTNING reserva o estoque mínimo e agenda 12 h; Preço competitivo (PRICE_MATCHING) **entra no ar na hora**.
+- Depois de aderir, o ML leva ~2 min para refletir: nova adesão ao mesmo anúncio fica barrada por 30 min.
+- Tipo de campanha que o app não sabe ativar: aviso uma vez por org (Telegram/sino, categoria Integração) e mensagem na tela indicando o Seller Center.
+
 ### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)
 
 - "Alterar preço N" na aba **Em promoção** (com busca título/MLB/SKU) e na aba **Participando** da campanha; mesmo painel da adesão (Desconto % / Preço R$ → Aplicar a todos, recebe·lucro·margem do servidor).
@@ -85,6 +91,13 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Reverter volta ao preço que o ML tinha antes (gravado no momento da escrita); se o preço mudou depois, o item fica "Mudou".
 
 - 1ª alteração em massa real (03/11, Zaven): 13 jaquetas a R$ 43,90 em 38 s; quem já estava no preço vira "Já estava" sem PUT.
+
+### Sugestões (ADR-0194, 2026-11-04)
+
+- Aba **Sugestões**: produtos com menos de 5 vendas em 30 dias e convite de campanha, sem participar. **Quase vendendo** recebe visitas e vende abaixo da média da conta; **Invisível** tem poucas visitas. Por produto, com plano B por anúncio.
+- Regra pura em `src/lib/sugestoes-promocao.ts`, sobre a RPC `sugestoes_promocao_sinais` e os convites. Sem chamada ao ML.
+- Verde e amarelo (selo "Abaixo do piso"), lucro maior que zero. Campanha recomendada = maior desconto; até 2 pontos é empate e ganha o lucro.
+- Dispensar vale 30 dias para a org. Adesão vinda de sugestão fica marcada em `operacoes_massa.sugestao` para medir depois.
 
 ### Aba Em promoção e Operações (2026-11-03, só front)
 

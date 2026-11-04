@@ -979,6 +979,10 @@ default `{}`), `contagem jsonb`, `erro`, `sincronizado_em`, `itens_sincronizados
 `rodada_em_curso` — reserva da leitura em curso (janela de 30 min; `null` = nenhuma leitura em
 andamento), conferida pelo worker antes de cada lote e na conclusão.
 
+### `promocao_sugestoes_dispensadas`
+
+*Migration `20261104010745_sugestoes_promocao.sql` (ADR-0194).* Sugestão dispensada por 30 dias: `org_id`, `chave` (`p:<codigo_pai>` ou `a:<ml_item_id>`), `dispensado_por`, `dispensado_em`, `expira_em`. PK `(org_id, chave)`. RLS de leitura por org; escrita só pela edge `operacoes-massa`. A mesma migration cria `ml_promocao_itens.anuncio_criado_em`, `operacoes_massa.sugestao` (marcação de origem) e a RPC `sugestoes_promocao_sinais()` (uma linha por anúncio: unidades e visitas de 30 dias, produto, estoque, data).
+
 ### `ml_promocao_itens`
 Um anúncio candidato/participante dentro de uma promoção. `org_id` + `promocao_id` + `ml_item_id`
 (PK composta, FK composta para `ml_promocoes`, cascade). `status`, `preco_original`,

@@ -9,7 +9,7 @@ export type ResultadoSimulacao =
 
 /** Mesmo teto do servidor (`_shared/operacoes/simular.ts#MAX_SIMULAR`). */
 export const MAX_SIMULAR = 50;
-const PRECO_MIN_RELAMPAGO = 19;
+export const PRECO_MIN_RELAMPAGO = 19;
 
 const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const reais = (n: number) => n.toFixed(2).replace('.', ',');

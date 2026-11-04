@@ -131,6 +131,7 @@ export async function projetarItem(
   return {
     ...it,
     titulo: ml?.titulo ?? null, thumbnail: ml?.thumbnail ?? null, permalink: ml?.permalink ?? null,
+    anuncio_criado_em: ml?.criado_em ?? null,
     listing_type_id: ml?.listing_type_id ?? null, preco_avaliado: preco, projecao, anuncio_normal_id: null,
     pior_semaforo: semaforoDaLinha(projecao, projecao.map((p) => p.semaforo)),
   };
