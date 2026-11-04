@@ -1,10 +1,11 @@
 {
   "name": "publiai-extensao",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "scripts": {
     "build": "tsc -p . && vite build && node scripts/build-conteudo.mjs && node scripts/checar-dist.mjs",
+    "pacote": "pnpm run build && node scripts/checar-dist.mjs publicacao",
     "build:dev": "tsc -p . && vite build --mode development && node scripts/build-conteudo.mjs development && node scripts/checar-dist.mjs development",
     "test": "vitest run"
   },

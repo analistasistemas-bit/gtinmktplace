@@ -33,6 +33,12 @@ for (const f of ['anuncio.js', 'busca-ean.js', 'cabecalho.js']) {
   if (!statSync(p, { throwIfNoEntry: false })) { erros.push(`${f} ausente`); continue; }
   if (/(^|[;}\n])\s*(import\s*[\w{*"']|export\s*[\w{*])/.test(readFileSync(p, 'utf8'))) erros.push(`${f} contém import/export`);
 }
+// Pacote para a Web Store: sem o .env.local o Vite embute `undefined` e a extensão não fala com a edge (0.5.1, 04/11).
+// Só em `publicacao`: o build do CI roda sem as variáveis.
+if (process.argv[2] === 'publicacao'
+  && !/https:\/\/[\w.-]+\.supabase\.co\/functions\/v1\/extensao/.test(readFileSync(path.join(dist, 'sw.js'), 'utf8'))) {
+  erros.push('URL do Supabase ausente no sw.js: build sem .env.local');
+}
 if (erros.length) {
   console.error('[checar-dist] reprovado:\n' + erros.join('\n'));
   process.exit(1);

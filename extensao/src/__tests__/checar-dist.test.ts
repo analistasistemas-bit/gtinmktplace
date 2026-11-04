@@ -24,6 +24,24 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dist, { recursive: true, force: true }));
 
+describe('checar-dist publicacao: pacote sem URL do Supabase não sai', () => {
+  const publicacao = () => spawnSync(process.execPath, [SCRIPT, 'publicacao'], { env: { ...process.env, CHECAR_DIST_DIR: dist }, encoding: 'utf8' });
+
+  it('sw.js com a URL ausente ("undefined/functions/v1") reprova', () => {
+    escrever('sw.js', `${AUTH};fetch("undefined/functions/v1/extensao")`);
+    const r = publicacao();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('URL do Supabase ausente');
+  });
+
+  it('sw.js com a URL real passa; o build comum (CI, sem env) não exige', () => {
+    escrever('sw.js', `${AUTH};fetch("https://abc.supabase.co/functions/v1/extensao")`);
+    expect(publicacao().status).toBe(0);
+    escrever('sw.js', `${AUTH};fetch("undefined/functions/v1/extensao")`);
+    expect(checar().status).toBe(0);
+  });
+});
+
 describe('checar-dist: auth só no sw.js', () => {
   it('endpoint de token e refresh_token no sw.js passam', () => {
     const r = checar();
