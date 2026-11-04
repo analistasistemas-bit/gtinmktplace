@@ -17,7 +17,8 @@ export type OperacaoRow = Tables<'operacoes_massa'> & { itens: { status: StatusI
 export type ItemOperacaoRow = Tables<'operacoes_massa_itens'>;
 
 interface ItemPedido { ml_item_id: string; preco: number | null; confirmado_risco: boolean }
-export interface PedidoOperacao { acao: AcaoPromocao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+export interface MarcaSugestao { faixa: 'quase_vendendo' | 'invisivel'; oportunidade: number; chave: string }
+export interface PedidoOperacao { acao: AcaoPromocao; promocao_id: string; origem_id: string | null; itens: ItemPedido[]; sugestao?: MarcaSugestao }
 export interface PedidoOperacaoStatus {
   acao: AcaoStatus; origem_id: string | null; itens: { ml_item_id: string; titulo: string | null }[];
 }
@@ -32,7 +33,7 @@ export class ErroOperacao extends Error {
   }
 }
 
-async function lerErroEdge(error: unknown, fallback: string): Promise<ErroOperacao> {
+export async function lerErroEdge(error: unknown, fallback: string): Promise<ErroOperacao> {
   const corpo = await (error as { context?: Response }).context?.json().catch(() => null);
   const c = corpo as { erro?: string; itens?: RecusaItem[] } | null;
   return new ErroOperacao(c?.erro ?? fallback, c?.itens);

@@ -45,11 +45,12 @@ as $$
     from public.ml_item_visitas_dia v cross join org cross join j
     where v.org_id = org.id and v.estado = 'ok' and v.dia between j.ini and j.fim
   ),
-  ped as (
+  -- Kit virtual: o ML emite uma order por componente do mesmo pack. Cada grupo conta a quantidade de kits uma vez.
+  linhas as (
     select coalesce(s.kit_item_id, i.ml_item_id) as ml_item_id,
            (s.date_closed at time zone 'America/Sao_Paulo')::date as dia,
-           count(distinct coalesce(s.pack_id::text, s.id::text)) filter (where s.kit_item_id is not null)
-             + coalesce(sum(i.quantity) filter (where s.kit_item_id is null), 0) as unidades
+           case when s.kit_item_id is null then i.id::text else coalesce(s.pack_id::text, s.id::text) end as grupo,
+           i.quantity
     from public.ml_vendas s
     join public.ml_vendas_itens i on i.venda_id = s.id and i.org_id = s.org_id
     cross join org cross join j
@@ -57,6 +58,10 @@ as $$
       and s.status in ('paid', 'partially_refunded', 'refunded')
       and s.date_closed >= (j.ini::timestamp at time zone 'America/Sao_Paulo')
       and s.date_closed <  ((j.fim + 1)::timestamp at time zone 'America/Sao_Paulo')
+  ),
+  ped as (
+    select ml_item_id, dia, sum(q) as unidades
+    from (select ml_item_id, dia, grupo, min(quantity) as q from linhas group by 1, 2, 3) g
     group by 1, 2
   ),
   -- Mesmas fontes da Vitrine; prio menor vence. publicado_em alimenta a idade do produto.
@@ -89,12 +94,12 @@ as $$
   ),
   -- Família canônica por SKU: a mais recente. Vale para o código das vendas e para o estoque.
   canonica as (
-    select distinct on (v.codigo) v.codigo, v.estoque, f.codigo_pai, f.nome_pai, f.kit_multiplicador
+    select distinct on (v.codigo) v.codigo, v.estoque, f.codigo_pai, f.nome_pai, f.kit_multiplicador, f.kit_base_codigo_pai
     from public.variacoes v
     join public.familias f on f.id = v.familia_id and f.org_id = v.org_id
     cross join org
     where v.org_id = org.id
-    order by v.codigo, f.criado_em desc
+    order by v.codigo, f.criado_em desc, f.id desc
   ),
   por_venda as (
     select distinct on (i.ml_item_id) i.ml_item_id, c.codigo_pai
@@ -110,11 +115,18 @@ as $$
     where p.org_id = org.id
     group by 1
   ),
+  base as (
+    select codigo_pai, count(*) as variacoes, min(estoque) as estoque from canonica group by 1
+  ),
   produto as (
+    -- Kit deriva o saldo da família-base (regra de vendas_sku_catalogo): floor(estoque da única variação / N).
+    -- Base ausente ou com mais de uma variação: saldo desconhecido, não zero.
     select c.codigo_pai, max(c.nome_pai) as nome_pai,
-           -- Kit deriva o saldo da família-base: o estoque próprio não diz nada.
-           case when bool_or(c.kit_multiplicador is not null) then null else sum(c.estoque) end as estoque
+           case when bool_or(c.kit_multiplicador is not null) then
+                  max(case when b.variacoes = 1 then floor(b.estoque::numeric / nullif(c.kit_multiplicador, 0)) end)
+                else sum(c.estoque) end as estoque
     from canonica c
+    left join base b on b.codigo_pai = c.kit_base_codigo_pai
     group by 1
   ),
   universo as (

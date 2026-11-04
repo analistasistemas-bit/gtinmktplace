@@ -17,7 +17,7 @@ import {
 } from '@/lib/operacoes';
 import { ehOfertaFixa, type ItemPromocao } from '@/lib/promocoes';
 import { MAX_SIMULAR, precoAlvo, resumoLucro, type ModoAlvo } from '@/lib/promocao-simulacao';
-import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrecos } from '@/hooks/useOperacoes';
+import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrecos, type MarcaSugestao } from '@/hooks/useOperacoes';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
 
@@ -67,7 +67,7 @@ function textoRisco(vermelho: number, indisponivel: number): string {
   return partes.join(' e ');
 }
 
-export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados }: {
+export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados, sugestao }: {
   acao: AcaoPromocao; tipo: TipoPromocaoOperavel; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
@@ -75,6 +75,8 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   onSucesso?: () => void; naoRevertiveis?: Map<string, string>;
   /** Preço escolhido na simulação (emenda 2026-11-03); os itens já chegam com a projeção do servidor nesse preço. */
   simulados?: Map<string, number>;
+  /** Marcação de origem quando a adesão nasce de uma sugestão (ADR-0194 D-9). */
+  sugestao?: MarcaSugestao;
 }) {
   const podeExecutar = usePodeExecutarOperacao();
   const criar = useCriarOperacao();
@@ -187,7 +189,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
       confirmado_risco: confirmadoRisco && (l.semaforo === 'vermelho' || l.semaforo === 'indisponivel'),
     }));
     try {
-      await criar.mutateAsync({ acao, promocao_id: promocaoId, origem_id: origemId ?? null, itens: pedido });
+      await criar.mutateAsync({ acao, promocao_id: promocaoId, origem_id: origemId ?? null, itens: pedido, ...(sugestao ? { sugestao } : {}) });
       toast.success(`Operação iniciada: ${pedido.length} anúncios`);
       onSucesso?.();
       onClose();

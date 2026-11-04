@@ -357,4 +357,17 @@ describe('PreviewOperacao', () => {
       expect(screen.getByRole('button', { name: 'Recalcular lucro' })).toBeInTheDocument();
     });
   });
+
+  // ADR-0194 D-9: adesão vinda de sugestão leva a marcação; adesão comum não manda o campo.
+  it('repassa a marcação de origem só quando vem de sugestão', async () => {
+    const user = userEvent.setup();
+    const sugestao = { faixa: 'quase_vendendo' as const, oportunidade: 12.5, chave: 'p:1' };
+    const { unmount } = renderPreview({ tipo: 'SMART', itens: [item()], sugestao });
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync).toHaveBeenLastCalledWith(expect.objectContaining({ sugestao }));
+    unmount();
+    renderPreview({ tipo: 'SMART', itens: [item()] });
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(mutateAsync.mock.calls.at(-1)![0]).not.toHaveProperty('sugestao');
+  });
 });

@@ -34,7 +34,7 @@ function op(over: Partial<OperacaoRow> = {}): OperacaoRow {
   return {
     id: 'OP1', org_id: 'ORG1', acao: 'aderir', promocao_id: 'P1', promocao_nome: 'Campanha X', promocao_tipo: 'DEAL',
     status: 'concluida', criado_em: '2026-09-01T10:00:00Z', criado_por: 'U1', concluido_em: '2026-09-01T10:05:00Z',
-    origem_id: null, expira_em: null, itens: [], ...over,
+    origem_id: null, expira_em: null, sugestao: null, itens: [], ...over,
   };
 }
 function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {

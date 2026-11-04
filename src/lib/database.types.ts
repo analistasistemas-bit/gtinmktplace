@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       anuncios_externos: {
@@ -2076,6 +2101,7 @@ export type Database = {
       }
       ml_promocao_itens: {
         Row: {
+          anuncio_criado_em: string | null
           anuncio_normal_id: string | null
           estoque_max: number | null
           estoque_min: number | null
@@ -2100,6 +2126,7 @@ export type Database = {
           vendedor_pct: number | null
         }
         Insert: {
+          anuncio_criado_em?: string | null
           anuncio_normal_id?: string | null
           estoque_max?: number | null
           estoque_min?: number | null
@@ -2124,6 +2151,7 @@ export type Database = {
           vendedor_pct?: number | null
         }
         Update: {
+          anuncio_criado_em?: string | null
           anuncio_normal_id?: string | null
           estoque_max?: number | null
           estoque_min?: number | null
@@ -2952,6 +2980,7 @@ export type Database = {
           promocao_nome: string | null
           promocao_tipo: string | null
           status: string
+          sugestao: Json | null
         }
         Insert: {
           acao: string
@@ -2966,6 +2995,7 @@ export type Database = {
           promocao_nome?: string | null
           promocao_tipo?: string | null
           status?: string
+          sugestao?: Json | null
         }
         Update: {
           acao?: string
@@ -2980,6 +3010,7 @@ export type Database = {
           promocao_nome?: string | null
           promocao_tipo?: string | null
           status?: string
+          sugestao?: Json | null
         }
         Relationships: [
           {
@@ -3156,7 +3187,7 @@ export type Database = {
           details: Json
           id: string
           occurred_at: string
-          org_id: string
+          org_id: string | null
           reason: string | null
           result: string
           target: string | null
@@ -3168,7 +3199,7 @@ export type Database = {
           details?: Json
           id?: string
           occurred_at?: string
-          org_id: string
+          org_id?: string | null
           reason?: string | null
           result: string
           target?: string | null
@@ -3180,7 +3211,7 @@ export type Database = {
           details?: Json
           id?: string
           occurred_at?: string
-          org_id?: string
+          org_id?: string | null
           reason?: string | null
           result?: string
           target?: string | null
@@ -3329,6 +3360,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string
+          due_day: number
           id: string
           modality: number
           monthly_fee_cents: number
@@ -3348,6 +3380,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by: string
+          due_day?: number
           id?: string
           modality: number
           monthly_fee_cents: number
@@ -3367,6 +3400,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string
+          due_day?: number
           id?: string
           modality?: number
           monthly_fee_cents?: number
@@ -3395,49 +3429,88 @@ export type Database = {
       }
       platform_org_month_metrics: {
         Row: {
+          cache_version: number
           computed_at: string
+          cost_cents: number | null
           cost_covered_orders: number
+          covered_gross_cents: number | null
+          excluded_items: number | null
           gross_cents: number
+          item_gross_cents: number | null
           markup: number | null
           month: string
+          net_cents: number | null
           orders: number
           org_id: string
+          profit_cents: number | null
+          refunds_cents: number | null
           source_count: number
           source_max_updated_at: string | null
+          tax_cents: number | null
           tax_config_stamp: string
           ticket_cents: number
           total_orders: number
+          units: number | null
           updated_at: string | null
+          v2_source_count: number | null
+          v2_source_max_updated_at: string | null
+          v2_tax_config_stamp: string | null
         }
         Insert: {
+          cache_version?: number
           computed_at?: string
+          cost_cents?: number | null
           cost_covered_orders: number
+          covered_gross_cents?: number | null
+          excluded_items?: number | null
           gross_cents: number
+          item_gross_cents?: number | null
           markup?: number | null
           month: string
+          net_cents?: number | null
           orders: number
           org_id: string
+          profit_cents?: number | null
+          refunds_cents?: number | null
           source_count: number
           source_max_updated_at?: string | null
+          tax_cents?: number | null
           tax_config_stamp: string
           ticket_cents: number
           total_orders: number
+          units?: number | null
           updated_at?: string | null
+          v2_source_count?: number | null
+          v2_source_max_updated_at?: string | null
+          v2_tax_config_stamp?: string | null
         }
         Update: {
+          cache_version?: number
           computed_at?: string
+          cost_cents?: number | null
           cost_covered_orders?: number
+          covered_gross_cents?: number | null
+          excluded_items?: number | null
           gross_cents?: number
+          item_gross_cents?: number | null
           markup?: number | null
           month?: string
+          net_cents?: number | null
           orders?: number
           org_id?: string
+          profit_cents?: number | null
+          refunds_cents?: number | null
           source_count?: number
           source_max_updated_at?: string | null
+          tax_cents?: number | null
           tax_config_stamp?: string
           ticket_cents?: number
           total_orders?: number
+          units?: number | null
           updated_at?: string | null
+          v2_source_count?: number | null
+          v2_source_max_updated_at?: string | null
+          v2_tax_config_stamp?: string | null
         }
         Relationships: [
           {
@@ -3448,6 +3521,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      platform_payment_profile: {
+        Row: {
+          account: string
+          bank_name: string
+          beneficiary_name: string
+          branch: string
+          city: string
+          document: string
+          id: boolean
+          pix_key: string
+          pix_key_type: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          account: string
+          bank_name: string
+          beneficiary_name: string
+          branch: string
+          city: string
+          document: string
+          id?: boolean
+          pix_key: string
+          pix_key_type: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          account?: string
+          bank_name?: string
+          beneficiary_name?: string
+          branch?: string
+          city?: string
+          document?: string
+          id?: boolean
+          pix_key?: string
+          pix_key_type?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: []
       }
       platform_revenue_reconciliations: {
         Row: {
@@ -3829,6 +3944,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "profiles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promocao_sugestoes_dispensadas: {
+        Row: {
+          chave: string
+          dispensado_em: string
+          dispensado_por: string | null
+          expira_em: string
+          org_id: string
+        }
+        Insert: {
+          chave: string
+          dispensado_em?: string
+          dispensado_por?: string | null
+          expira_em: string
+          org_id: string
+        }
+        Update: {
+          chave?: string
+          dispensado_em?: string
+          dispensado_por?: string | null
+          expira_em?: string
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promocao_sugestoes_dispensadas_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -5077,6 +5224,10 @@ export type Database = {
         Args: { p_actor: string; p_org_id: string; p_support_request?: string }
         Returns: string
       }
+      platform_auto_refund_cents: {
+        Args: { p_estorno: number; p_raw: Json; p_status: string }
+        Returns: number
+      }
       platform_billing_close: {
         Args: {
           p_actor: string
@@ -5139,6 +5290,7 @@ export type Database = {
         Returns: {
           created_at: string
           created_by: string
+          due_day: number
           id: string
           modality: number
           monthly_fee_cents: number
@@ -5165,6 +5317,10 @@ export type Database = {
       platform_sale_needs_refund_reconciliation: {
         Args: { p_estorno: number; p_status: string; p_tem_devolucao: boolean }
         Returns: boolean
+      }
+      platform_save_payment_profile: {
+        Args: { p_actor: string; p_input: Json }
+        Returns: Json
       }
       platform_save_terms: {
         Args: { p_actor: string; p_input: Json }
@@ -5445,6 +5601,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      sugestoes_promocao_sinais: { Args: never; Returns: Json[] }
       telegram_config_status: {
         Args: never
         Returns: {
@@ -5739,6 +5896,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       canal_externo: ["mercado_livre"],

@@ -39,6 +39,21 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, estoque) values
   ('96000000-0000-0000-0000-00000000b101', '96000000-0000-0000-0000-00000000b001', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 'SKU1', 'Variação', 10, 7);
 
+-- Kit virtual: 3 kits num pack, uma order por componente (A e B) -> 3 unidades, não 1 nem 6.
+insert into public.ml_vendas (id, user_id, org_id, order_id, status, date_closed, kit_item_id, pack_id) values
+  ('96000000-0000-0000-0000-00000000a005', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 9600005, 'paid', now() - interval '2 days', 'MLBK1', 9600050),
+  ('96000000-0000-0000-0000-00000000a006', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 9600006, 'paid', now() - interval '2 days', 'MLBK1', 9600050);
+insert into public.ml_vendas_itens (user_id, org_id, venda_id, ml_item_id, variation_id, codigo, quantity, unit_price) values
+  ('96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', '96000000-0000-0000-0000-00000000a005', 'MLBA', null, null, 3, 10),
+  ('96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', '96000000-0000-0000-0000-00000000a006', 'MLBB', null, null, 3, 10);
+-- Kit vinculado: base com 1 variação de estoque 1, multiplicador 2 -> saldo 0 (não desconhecido).
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, ml_item_id, kit_base_codigo_pai, kit_multiplicador) values
+  ('96000000-0000-0000-0000-00000000b002', '96000000-0000-0000-0000-00000000c001', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 'BASE1', 'Base', 'CREATE', null, null, null),
+  ('96000000-0000-0000-0000-00000000b003', '96000000-0000-0000-0000-00000000c001', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 'KIT1', 'Kit', 'CREATE', 'MLBK2', 'BASE1', 2);
+insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, estoque) values
+  ('96000000-0000-0000-0000-00000000b102', '96000000-0000-0000-0000-00000000b002', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 'SKUB', 'Base', 10, 1),
+  ('96000000-0000-0000-0000-00000000b103', '96000000-0000-0000-0000-00000000b003', '96000000-0000-0000-0000-000000000101', '96000000-0000-0000-0000-000000000001', 'SKUK', 'Kit', 20, 0);
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"96000000-0000-0000-0000-000000000101","role":"authenticated"}';
 
@@ -46,8 +61,12 @@ do $$
 declare s json; n int;
 begin
   select count(*) into n from public.sugestoes_promocao_sinais();
-  if n is distinct from 1 then raise exception 'linhas (vazou outra org?) %', n; end if;
-  select x into s from public.sugestoes_promocao_sinais() x;
+  if n is distinct from 3 then raise exception 'linhas (vazou outra org?) %', n; end if;
+  select x into s from public.sugestoes_promocao_sinais() x where x->>'ml_item_id' = 'MLBK1';
+  if (s->>'unidades_30d')::int is distinct from 3 then raise exception 'kit virtual: 3 kits %', s; end if;
+  select x into s from public.sugestoes_promocao_sinais() x where x->>'ml_item_id' = 'MLBK2';
+  if (s->>'estoque_produto')::int is distinct from 0 then raise exception 'kit vinculado: saldo derivado zero %', s; end if;
+  select x into s from public.sugestoes_promocao_sinais() x where x->>'ml_item_id' = 'MLBS1';
   if s->>'ml_item_id' is distinct from 'MLBS1' then raise exception 'mlb %', s; end if;
   if (s->>'visitas_ok')::int is distinct from 150 then raise exception 'visitas_ok (pendente não conta) %', s; end if;
   if (s->>'dias_ok')::int is distinct from 2 then raise exception 'dias_ok %', s; end if;

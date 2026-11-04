@@ -191,6 +191,14 @@ export async function fetchParticipacoes(): Promise<Participacao[]> {
       .order('promocao_id').order('ml_item_id').range(de, ate) as never);
 }
 
+/** Convites das campanhas vivas (ADR-0194): itens históricos ficam gravados, por isso o filtro por campanha no banco. */
+export async function fetchConvites(promocaoIds: string[]): Promise<(ItemPromocao & { promocao_id: string })[]> {
+  if (promocaoIds.length === 0) return [];
+  return buscarTodasPaginas<ItemPromocao & { promocao_id: string }>((de, ate) =>
+    supabase.from('ml_promocao_itens').select(`promocao_id, ${COLS_ITEM}`).eq('status', 'candidate').in('promocao_id', promocaoIds)
+      .order('promocao_id').order('ml_item_id').range(de, ate) as never);
+}
+
 export async function fetchEstadoSyncPromocoes(): Promise<EstadoSyncPromo | null> {
   const { data, error } = await supabase.from('ml_promocoes_sync')
     .select('estado, iniciado_em, ultimo_ok_em, ultimo_erro_em, erro').maybeSingle();

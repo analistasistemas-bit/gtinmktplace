@@ -30,6 +30,8 @@ export interface VariacaoML {
 }
 export interface ItemML {
   id: string; titulo: string | null; thumbnail: string | null; permalink: string | null;
+  /** date_created do ML (ADR-0194 D-7). */
+  criado_em: string | null;
   listing_type_id: string | null; categoria: string | null; sku: string | null; gtin: string | null;
   /** UNITS_PER_PACK do anúncio (kit); null = o ML não informa. */
   unidades: number | null;
@@ -63,6 +65,7 @@ export interface LinhaItem extends ItemPromocaoML {
   preco_avaliado: number | null; projecao: ProjecaoCor[]; pior_semaforo: Semaforo;
   /** Linha do catálogo exibida com a cara do normal do mesmo User Product (ADR-0174, emenda 2026-10-05). */
   anuncio_normal_id: string | null;
+  anuncio_criado_em: string | null;
 }
 export interface Contagem {
   convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;
