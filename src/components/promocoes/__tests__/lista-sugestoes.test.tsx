@@ -53,7 +53,7 @@ describe('ListaSugestoes', () => {
   it('compara vendas e expectativa na mesma base (dias com coleta ok)', () => {
     carregar(dados({ quaseVendendo: [sugestao({ unidades: 4, unidadesOk: 1, vendasEsperadas: 3.07 })] }));
     renderLista();
-    expect(screen.getByText('1 de ~3')).toBeInTheDocument();
+    expect(screen.getByText('Vendeu 1 · esperado ~3')).toBeInTheDocument();
   });
 
   it('duas faixas, Quase vendendo primeiro, com o motivo e vendas abaixo do esperado', () => {
@@ -64,8 +64,8 @@ describe('ListaSugestoes', () => {
     expect(titulos[1]).toContain('Invisível');
     const quase = screen.getByRole('region', { name: /Quase vendendo/ });
     expect(within(quase).getByText('212 visitas, 0 vendas em 30 dias')).toBeInTheDocument();
-    expect(within(quase).getByText('0 de ~8')).toBeInTheDocument();
-    expect(within(quase).getByText('vendas esperadas pela média da conta')).toBeInTheDocument();
+    expect(within(quase).getByText('Vendeu 0 · esperado ~8')).toBeInTheDocument();
+    expect(within(quase).getByText('pela média da conta')).toBeInTheDocument();
     expect(within(quase).getByText(/Preço atual R\$\s73,25/)).toBeInTheDocument();
     expect(within(quase).getByText('Estoque 36')).toBeInTheDocument();
     expect(screen.queryByText(/R\$.*\/mês/)).toBeNull();

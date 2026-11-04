@@ -331,6 +331,16 @@ export async function fetchFamiliasResumo(loteId: string): Promise<FamiliaResumo
   return rows.map((r) => familiaResumoFromRow(r, porCodigo.get(r.codigo_pai) ?? []));
 }
 
+/** Custo mais recente de cada SKU (`recentes` da linha mais nova para a mais antiga). Só o custo muda: a família
+ *  aberta continua a mesma, então UPDATE parcial não tira cor do painel e piso/medidas/origem seguem como estão. */
+export function comCustoRecente<V extends { codigo: string; custo: number | null }>(
+  variacoes: V[], recentes: { codigo: string; custo: number | null }[],
+): V[] {
+  const porCodigo = new Map<string, number>();
+  for (const r of recentes) if (r.custo != null && !porCodigo.has(r.codigo)) porCodigo.set(r.codigo, Number(r.custo));
+  return variacoes.map((v) => ({ ...v, custo: porCodigo.get(v.codigo) ?? v.custo }));
+}
+
 // Carrega UMA família (com variações) por id e mapeia para o tipo de domínio. Usado pelo
 // expandir de Publicados, que precisa da análise completa (estratégia, concorrência, custo).
 export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia> {
@@ -343,12 +353,20 @@ export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia>
   const row = data as FamiliaRow & { variacoes: VariacaoRow[] };
   // ADR-0088: mesma resolução do sinal UP que fetchFamilias — o expand de Publicados renderiza
   // criticasVariacao; sem o set, cores UP (mlVariationId=null) apareceriam como "sem foto" à toa.
-  const [skusAtivos, categoriasUserProducts] = await Promise.all([
+  // A linha de Publicados aponta a família mais antiga do anúncio; o custo vigente mora no lote mais novo. Mesmo critério
+  // da Central (cadastro.ts): mais recente com custo, por SKU, dentro do mesmo anúncio (kit tem anúncio próprio).
+  const [skusAtivos, categoriasUserProducts, recentes] = await Promise.all([
     fetchSkusAtivosUP([row.codigo_pai]),
     fetchCategoriasUserProducts([row.categoria_ml_id]),
+    row.ml_item_id
+      ? buscarTodasPaginas<{ codigo: string; custo: number | null }>((de, ate) => supabase.from('variacoes')
+        .select('codigo, custo, familias!inner(ml_item_id)').eq('familias.ml_item_id', row.ml_item_id!).gt('custo', 0)
+        .order('atualizado_em', { ascending: false }).order('id').range(de, ate) as never)
+      : Promise.resolve([]),
   ]);
   return familiaFromRow({
     ...row,
+    variacoes: comCustoRecente(row.variacoes, recentes),
     skus_ativos_up: skusAtivos.get(row.codigo_pai) ?? new Set<string>(),
     formato_publicacao_ml: categoriasUserProducts.has(row.categoria_ml_id ?? '') ? 'user_products' : null,
   });

@@ -88,8 +88,8 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
       <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end sm:gap-2">
         {quase && comConversao ? (
           <p className="leading-tight sm:text-right">
-            <span className="block text-xl font-semibold tabular-nums">{s.unidadesOk.toLocaleString('pt-BR')} de ~{Math.round(s.vendasEsperadas)}</span>
-            <span className="block text-xs text-muted-foreground">vendas esperadas pela média da conta</span>
+            <span className="block text-base font-semibold tabular-nums">Vendeu {s.unidadesOk.toLocaleString('pt-BR')} · esperado ~{Math.round(s.vendasEsperadas)}</span>
+            <span className="block text-xs text-muted-foreground">pela média da conta</span>
           </p>
         ) : !quase ? <p className="text-xs text-muted-foreground">Poucas visitas</p> : <span />}
         {podeExecutar && (

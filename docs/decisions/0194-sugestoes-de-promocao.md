@@ -39,7 +39,7 @@ A Central lista campanhas e o operador escolhe anúncios dentro de cada uma. Nad
 
 ## Emenda 2026-11-04: clareza do card e do painel Aderir
 
-Pedido do Diego: "~3 vendas abaixo do esperado" ao lado de "0 vendas" confundia. O card passa a mostrar "0 de ~3 vendas esperadas pela média da conta" (`vendasEsperadas` = visitas do produto nos dias `ok` ÷ visitas por unidade da conta). A ordem por Oportunidade (D-5) não muda: `vendasAbaixo` segue só ordenando. O card mostra o preço atual (`preco_original`). O painel de adesão mostra o preço atual e o "Você recebe por venda" com comissão, imposto, frete, lucro, margem e markup, no tipo real do anúncio (Clássico ou Premium, de `ml_promocao_itens.listing_type_id`). A conta sai da projeção do servidor, sem chamada nova ao ML; com várias cores, vale a cor de menor líquido.
+Pedido do Diego: "~3 vendas abaixo do esperado" ao lado de "0 vendas" confundia. O card passa a mostrar "Vendeu 0 · esperado ~3, pela média da conta" (`vendasEsperadas` = visitas do produto nos dias `ok` ÷ visitas por unidade da conta; as vendas usam a mesma base de dias `ok`). A ordem por Oportunidade (D-5) não muda: `vendasAbaixo` segue só ordenando. O card mostra o preço atual (`preco_original`). O painel de adesão mostra o preço atual e o "Você recebe por venda" com comissão, imposto, frete, lucro, margem e markup, no tipo real do anúncio (Clássico ou Premium, de `ml_promocao_itens.listing_type_id`). A conta sai da projeção do servidor, sem chamada nova ao ML; com várias cores, vale a cor de menor líquido.
 
 ## Alternativas descartadas
 
