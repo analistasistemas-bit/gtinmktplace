@@ -16,7 +16,7 @@ const GIRO = 'Piso de vendidos de cada produto × o preço atual do card. Serve 
 const COMISSAO = 'Tarifa de venda que o Mercado Livre cobraria na sua conta para este tipo de anúncio, nesta categoria e a este preço. Não inclui frete nem imposto.';
 const VENDEDORES = 'Quantos vendedores diferentes têm oferta neste catálogo, na leitura feita agora. "N+" = leitura parcial: o Mercado Livre não devolveu todas as ofertas ou alguma veio sem vendedor, então há pelo menos N.';
 const PARCIAL = 'O Mercado Livre limitou as consultas, o tempo acabou ou a conexão falhou nesta leitura. O que já chegou continua aqui; nada foi presumido. Use "Tentar novamente" no painel do PubliAI.';
-const FRETE = 'Cotação do Mercado Livre para esta oferta, CEP 01310-100 (São Paulo capital). Valor antes dos descontos, opção recomendada ou primeira disponível. Não é o custo efetivamente pago pelo vendedor.';
+const FRETE = 'Cotação do Mercado Livre para esta oferta, CEP 01310-100 (São Paulo capital). Valor antes dos descontos, da opção recomendada; se ela vier zerada, da primeira opção com valor. Não é o custo efetivamente pago pelo vendedor.';
 const VENDEDOR = 'Ponto colorido: reputação do vendedor no termômetro do Mercado Livre (verde, verde-claro, amarela, laranja ou vermelha); sem ponto = reputação não informada. Cidade/UF: cidade cadastrada do vendedor, não necessariamente a origem do envio.';
 const CONSULTANDO = 'Consultando dados do catálogo';
 const ADICIONAIS = 'Dados adicionais indisponíveis agora';

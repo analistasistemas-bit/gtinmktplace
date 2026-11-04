@@ -77,6 +77,27 @@ it('patrocinado sem /p/ herda o catálogo do orgânico do mesmo item; sozinho na
   enviarMsg();
   expect(blocos()).toHaveLength(2);
   expect(blocos().every((h) => raizes.get(h)?.textContent?.includes('4 vendedores'))).toBe(true);
+  // Patrocinado a outro preço: vendedores sim, comissão do orgânico não; ofertas terminais não prendem em "Consultando".
+  const fracao = (ad.querySelector('.andes-money-amount__fraction') as HTMLElement);
+  fracao.textContent = '15';
+  const exata = { estado: 'ok', preco: 19.9, sellerId: null, tipo: 'gold_special', comissao: { estado: 'ok', valor: { percentual: 12, valorFixo: 0 } } };
+  const oferta = enriquecimento.catalogos.MLB1000000.ofertas as Record<string, unknown>;
+  oferta.exatas = { MLB5321956667: exata };
+  enviarMsg();
+  const [, doAd] = blocos().map((h) => raizes.get(h)?.textContent ?? '');
+  expect(doAd).toContain('4 vendedores');
+  expect(doAd).not.toContain('comissão na sua conta');
+  (enriquecimento.catalogos.MLB1000000 as Record<string, unknown>).ofertas = { estado: 'indisponivel', motivo: 'x', itens: { MLB5321956667: 19.9 } };
+  enviarMsg();
+  expect(textoDosBlocos()).not.toContain('Consultando dados do catálogo');
+  fracao.textContent = '19';
+  (enriquecimento.catalogos.MLB1000000 as Record<string, unknown>).ofertas = oferta;
+  oferta.exatas = {};
+  // Catálogos diferentes para o mesmo item: identidade conflitante, nenhum card recebe a vista.
+  ad.querySelector('a.poly-component__title')!.setAttribute('href', 'https://www.mercadolivre.com.br/p/MLB2000000#wid=MLB5321956667');
+  enviarMsg();
+  expect(textoDosBlocos()).not.toContain('4 vendedores');
+  ad.querySelector('a.poly-component__title')!.setAttribute('href', 'https://click1.mercadolivre.com.br/mclics/clicks/external/MLB/count?a=x&pdp_filters=item_id%3AMLB5321956667#is_advertising=true&position=1&type=pad');
   link.setAttribute('href', href);
   primeiro.remove();
   enviarMsg();
