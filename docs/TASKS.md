@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Configurações › Fiscal — 2026-11-04
+
+- [x] Gravação automática repete até 2x em falha de rede: o cliente Supabase não repete POST e a queda aparecia como "Não salvou" com `[object Object]` (nenhum erro no servidor). Mensagem legível; não repete se a org mudou.
+- [x] CSOSN padrão com legenda: `CSOSN_OPCOES` em `lib/fiscal.ts`, a mesma lista do cadastro de produto.
+
 ## Sugestões de promoção (ADR-0194) — 2026-11-04
 
 - [x] Aba Sugestões na Central: Quase vendendo e Invisível, por produto, ordem por Oportunidade, campanha de maior desconto com lucro, Aderir por card, Dispensar por 30 dias.
