@@ -193,6 +193,15 @@ describe('participação nos pisos observados (fatia 2.1)', () => {
     expect(participacaoNosPisos([card('MLB1', { vendidosTexto: '0 vendidos' })]).porItem).toEqual({ MLB1: null });
   });
 
+  it('card sem vendidos num grupo com piso mostra "—" (o grupo continua no denominador pelo piso do irmão)', () => {
+    const r = participacaoNosPisos([
+      card('MLB1', { catalogProductId: 'MLB100', vendidosTexto: '+100 vendidos' }),
+      card('MLB2', { catalogProductId: 'MLB100', vendidosTexto: null }),
+      card('MLB3', { vendidosTexto: '+100 vendidos' }),
+    ]);
+    expect(r.porItem).toEqual({ MLB1: 0.5, MLB2: null, MLB3: 0.5 });
+  });
+
   it('base = todos os cards passados: filtro/ordem do painel não mudam o valor; scroll muda', () => {
     const base = [card('MLB1', { vendidosTexto: '+100 vendidos' }), card('MLB2', { vendidosTexto: '+100 vendidos' })];
     expect(participacaoNosPisos(base).porItem.MLB1).toBe(0.5);
