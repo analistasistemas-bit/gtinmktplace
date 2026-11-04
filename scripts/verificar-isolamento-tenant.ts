@@ -243,19 +243,24 @@ async function main() {
       assert(false, 'edge publicar-familias respondeu', String(e));
     }
 
-    // 5d. Dispensa de sugestão (ADR-0194 D-8): membro sem admin recebe 403 e nada é gravado.
+    // 5d. Dispensa de sugestão (ADR-0194 D-8): com o módulo ligado, só a falta de admin pode recusar. A chave é a do
+    // seed: reativar uma chave inexistente não provaria nada.
     try {
+      await svc.from('organizations').update({ modulos_habilitados: ['promocoes'] }).eq('id', B.orgId);
+      const { data: antes } = await svc.from('promocao_sugestoes_dispensadas').select('chave, expira_em').eq('org_id', B.orgId).single();
       const { data: sess } = await cliB.auth.getSession();
-      for (const etapa of ['dispensar_sugestao', 'reativar_sugestao']) {
+      for (const [etapa, chave] of [['dispensar_sugestao', 'p:ISO-403'], ['reativar_sugestao', antes!.chave]]) {
         const resp = await fetch(`${URL}/functions/v1/operacoes-massa`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${sess.session?.access_token}`, apikey: ANON!, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ etapa, chave: 'p:ISO-403' }),
+          body: JSON.stringify({ etapa, chave }),
         });
-        assert(resp.status === 403, `edge operacoes-massa: ${etapa} sem admin responde 403`, `status=${resp.status}`);
+        const corpo = await resp.json();
+        assert(resp.status === 403 && /administradores/.test(corpo.erro ?? ''), `edge operacoes-massa: ${etapa} sem admin é recusado por falta de admin`, `status=${resp.status} erro=${corpo.erro}`);
       }
-      const { count } = await svc.from('promocao_sugestoes_dispensadas').select('*', { count: 'exact', head: true }).eq('org_id', B.orgId).eq('chave', 'p:ISO-403');
-      assert(count === 0, 'edge operacoes-massa: dispensa negada não grava linha', `linhas=${count}`);
+      const { data: depois } = await svc.from('promocao_sugestoes_dispensadas').select('chave, expira_em').eq('org_id', B.orgId);
+      assert(depois?.length === 1 && depois[0].chave === antes!.chave && depois[0].expira_em === antes!.expira_em,
+        'edge operacoes-massa: recusa não grava nem remove dispensa', `linhas=${depois?.length}`);
     } catch (e) {
       assert(false, 'edge operacoes-massa respondeu', String(e));
     }
