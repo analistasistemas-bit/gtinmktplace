@@ -94,6 +94,9 @@
 - [x] Fatia 2: Tasks 8–10 (cotas Redis por lote, enriquecimento de catálogo, cache no navegador, Mini-bloco completo e resumo "Catálogos e vendedores").
 - [x] Fatia 2, Task 11 — **lote por página** (emenda ADR-0189 2026-11-03-b): teste real do Diego mostrou espera de minutos ("Aguardando próxima janela"); engenharia reversa Avant/JoomPulse (banco de mercado / PDP oculta — ambos descartados); spike aprovado (50 catálogos ~3 s, 0 429, CPU < 100 ms). Uma requisição por página (≤50 catálogos, pool 16/4, deadline 8 s), cota 20 páginas/min por usuário+org, teto global 1.000 chamadas ML/min, 4–9 comandos Redis por busca, parcial terminal com "Tentar novamente" (Retry-After). Edge `extensao` v24 em 03/11. Busca real do Diego: 47–48 catálogos em ~5,7 s, CPU ≤ 151 ms.
 - [x] ZIP 0.5.0 publicado na Web Store em 03/11 (não listado).
+- [x] Fatia 2.1 / 0.5.1 (plano `docs/superpowers/plans/2026-11-03-extensao-busca-fatia21.md`, spike §7): marca, cidade e reputação (cor do termômetro) do vendedor, participação nos pisos observados (painel) e "Frete cotado" (`shipping_options`, CEP 01310-100, valor antes dos descontos) — frete como componente explícito do pedido (0.5.0 não paga nada a mais), fila própria de 8 na fase 1, reserva máx. 250, sem Redis novo. Edge `extensao` v27 (04/11). Marca e % só no painel (Diego); card cheio 260 px 9→10 linhas.
+- [ ] Enviar `publiai-extensao-0.5.1.zip` à Web Store (Diego) e validar numa busca real.
+- [-] Fatia 3 (simulação sem vínculo) suspensa: a página do produto já simula com custo digitado.
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 
