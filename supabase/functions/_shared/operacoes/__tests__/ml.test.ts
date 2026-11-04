@@ -32,6 +32,27 @@ describe('lerNaCampanha', () => {
     expect(await ml.lerNaCampanha('P', 'DEAL', 'MLB1')).toEqual({ status: 'started', preco_min: null, preco_max: null, offer_id: null, estoque_min: null, preco: null });
   });
 
+  it('SMART_LIGHTNING lê stock.min, preço e offer_id (spike); PRICE_MATCHING sem stock → estoque null', async () => {
+    const f = vi.fn().mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB5048402257', status: 'candidate', price: 64, original_price: 69.9,
+      offer_id: 'CANDIDATE-MLB5048402257-1', meli_percentage: 3, seller_percentage: 5, stock: { min: 5, max: 197 } }] }))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB5114275523', status: 'candidate', price: 69.98, offer_id: 'CANDIDATE-MLB5114275523-1',
+        start_date: '2026-11-03T00:00:00Z', end_date: '2026-11-10T00:00:00Z' }] }));
+    const ml = criarClienteML('tok', f, semEspera());
+    expect(await ml.lerNaCampanha('P-MLB18055120', 'SMART_LIGHTNING', 'MLB5048402257')).toEqual({ status: 'candidate', preco_min: null, preco_max: null,
+      offer_id: 'CANDIDATE-MLB5048402257-1', estoque_min: 5, preco: 64 });
+    expect(await ml.lerNaCampanha('P-MLB18099366', 'PRICE_MATCHING', 'MLB5114275523')).toEqual({ status: 'candidate', preco_min: null, preco_max: null,
+      offer_id: 'CANDIDATE-MLB5114275523-1', estoque_min: null, preco: 69.98 });
+    expect(f.mock.calls[0][0]).toContain('promotion_type=SMART_LIGHTNING');
+  });
+
+  it('stock.min continua ignorado em DEAL/SMART/PRICE_MATCHING', async () => {
+    const f = vi.fn().mockImplementation(async () => resp(200, { results: [{ id: 'MLB1', status: 'candidate', stock: { min: 5 } }] }));
+    const ml = criarClienteML('tok', f, semEspera());
+    for (const t of ['DEAL', 'SMART', 'PRICE_MATCHING'] as const) {
+      expect(await ml.lerNaCampanha('P', t, 'MLB1')).toMatchObject({ estoque_min: null });
+    }
+  });
+
   // Spike 03/11 (Zaven): no participante, `price` da visão da campanha é o deal_price vigente.
   it('participante: preco = price da campanha', async () => {
     const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', status: 'started', price: 49.9, original_price: 73.25 }] }));
@@ -175,14 +196,21 @@ describe('post', () => {
     const f = vi.fn().mockResolvedValue(resp(201, { offer_id: 'OFFER-X', price: 38.79, original_price: 39.99 }));
     const ml = criarClienteML('tok', f, semEspera());
     const body = { promotion_id: 'P', promotion_type: 'SMART', offer_id: 'CANDIDATE-X' };
-    expect(await ml.post('MLB1', body)).toEqual({ offer_id: 'OFFER-X' });
+    expect(await ml.post('MLB1', body)).toEqual({ offer_id: 'OFFER-X', inicio: null, fim: null });
     expect(f.mock.calls[0][0]).toBe(`${API}/seller-promotions/items/MLB1?app_version=v2`);
     expect(f.mock.calls[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify(body) });
   });
 
   it('201 DEAL sem offer_id → null', async () => {
     const f = vi.fn().mockResolvedValue(resp(201, { price: 18, original_price: 19.99, currency_id: 'BRL' }));
-    expect(await criarClienteML('tok', f, semEspera()).post('MLB1', {})).toEqual({ offer_id: null });
+    expect(await criarClienteML('tok', f, semEspera()).post('MLB1', {})).toEqual({ offer_id: null, inicio: null, fim: null });
+  });
+
+  it('201 SMART_LIGHTNING devolve a janela do spike', async () => {
+    const f = vi.fn().mockResolvedValue(resp(201, { offer_id: 'OFFER-X', price: 64, original_price: 69.9,
+      start_date: '2026-11-04T12:00:00', end_date: '2026-11-04T23:59:59' }));
+    expect(await criarClienteML('tok', f, semEspera()).post('MLB1', {}))
+      .toEqual({ offer_id: 'OFFER-X', inicio: '2026-11-04T12:00:00', fim: '2026-11-04T23:59:59' });
   });
 
   it('403 → SemEscritaPromocoes; 400 → Error com a message do ML cortada em 200', async () => {

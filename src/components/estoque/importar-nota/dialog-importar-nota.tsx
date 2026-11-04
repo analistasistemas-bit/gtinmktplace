@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { DialogCadastroProduto, type CadastroInicial } from '@/components/estoque/dialog-cadastro-produto';
 import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
@@ -34,6 +35,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   const qc = useQueryClient();
   const { data: empresa } = useEmpresaFiscal();
   const cnpj = empresa?.cnpj ?? '';
+  const { data: modulos } = useModulosHabilitados();
   const [etapa, setEtapa] = useState(0);
   const [e, setE] = useState<EstadoImportacao | null>(null);
   const [recusa, setRecusa] = useState<Recusa | null>(null);
@@ -64,7 +66,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     if (!e) return;
     const item = e.itens.find((i) => i.nItem === nItem)!;
     const d = e.decisoes.find((x) => x.nItem === nItem)!;
-    setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator) });
+    setCadastro({ nItem, modo, inicial: prefillCadastro(item, e.nota, d.fator, {
+      csosnPadrao: empresa?.csosn_padrao_revenda ?? null, ufEmpresa: empresa?.uf ?? null,
+    }) });
   }
 
   function aoCadastrar(nItem: number, { codigoPai, sugestaoDistribuicao }: { codigoPai: string; sugestaoDistribuicao?: SugestaoDistribuicao | null }) {
@@ -183,7 +187,8 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
             <EtapaItens e={e} setE={setE} produtos={produtos} onCadastrarNovo={cadastrarNovo}
               tiposProduto={tiposProduto} carregandoTipos={carregandoTipos}
               conferirFalhou={conferirFalhou} onTentarNovamente={tentarNovamente}
-              carregandoProdutos={carregandoProdutos} erroProdutos={erroProdutos} />
+              carregandoProdutos={carregandoProdutos} erroProdutos={erroProdutos}
+              fiscalAtivo={!!modulos?.includes('fiscal')} csosnPadrao={empresa?.csosn_padrao_revenda ?? null} />
           )}
           {etapa === 2 && e && (
             <EtapaDistribuicao e={e} atualizar={(f) => setE((s) => (s ? f(s) : s))} />

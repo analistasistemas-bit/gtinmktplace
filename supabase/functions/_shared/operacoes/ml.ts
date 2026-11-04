@@ -10,7 +10,8 @@ export interface ClienteML {
   lerNaCampanha(promocaoId: string, tipo: TipoPromocao, itemId: string): Promise<ItemNaCampanha | null>;
   lerOfertaNoItem(promocaoId: string, itemId: string): Promise<OfertaNoItem | null>;
   lerRelacoes(itemId: string): Promise<Relacoes>;
-  post(itemId: string, body: Record<string, unknown>): Promise<{ offer_id: string | null }>;
+  /** inicio/fim: start_date/end_date da resposta (janela da SMART_LIGHTNING, sem fuso = horário de Brasília). */
+  post(itemId: string, body: Record<string, unknown>): Promise<{ offer_id: string | null; inicio: string | null; fim: string | null }>;
   /** Alterar o deal_price de item DEAL já participando (spike 03/11: 200 e o preço muda na hora). */
   put(itemId: string, body: Record<string, unknown>): Promise<void>;
   del(itemId: string, query: string): Promise<void>;
@@ -77,11 +78,12 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       const status = str(x.status);
       // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
       if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
-      // LIGHTNING: o id da oferta vem em ref_id e o estoque exigido em stock.min; DEAL/SMART não leem nenhum dos dois.
+      // LIGHTNING: o id da oferta vem em ref_id e o estoque exigido em stock.min; SMART_LIGHTNING só lê o stock.min;
+      // os demais não leem nenhum dos dois.
       const lgh = tipo === 'LIGHTNING';
       return { status, preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
         offer_id: str(x.offer_id) ?? (lgh ? oferta(x.ref_id) : null),
-        estoque_min: lgh ? num(obj(x.stock).min) : null, preco: num(x.price) };
+        estoque_min: lgh || tipo === 'SMART_LIGHTNING' ? num(obj(x.stock).min) : null, preco: num(x.price) };
     },
 
     async lerOfertaNoItem(promocaoId, itemId) {
@@ -113,7 +115,8 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       const r = await chamar('POST', `/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`, body);
       if (r.status !== 200 && r.status !== 201) throw await falha(r);
       // SMART devolve o offer_id NOVO (OFFER-...) — é ele que a saída usa; DEAL não traz offer_id.
-      return { offer_id: str(((await r.json().catch(() => null)) as Obj | null)?.offer_id) };
+      const j = (await r.json().catch(() => null)) as Obj | null;
+      return { offer_id: str(j?.offer_id), inicio: str(j?.start_date), fim: str(j?.end_date) };
     },
 
     async put(itemId, body) {

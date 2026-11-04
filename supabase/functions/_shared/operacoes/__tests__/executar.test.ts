@@ -19,7 +19,7 @@ const conv = (x: Partial<ItemNaCampanha> = {}): ItemNaCampanha =>
 
 function montar(itens: Linha[], opts: {
   campanha?: (id: string, chamada: number) => ItemNaCampanha | null;
-  post?: (id: string) => { offer_id: string | null };
+  post?: (id: string) => { offer_id: string | null; inicio?: string | null; fim?: string | null };
   put?: (id: string) => void;
   oferta?: (id: string, chamada: number) => OfertaNoItem | null;
   semaforo?: Semaforo | null;
@@ -40,7 +40,7 @@ function montar(itens: Linha[], opts: {
       return opts.oferta ? opts.oferta(id, n) : null;
     }),
     lerRelacoes: vi.fn(async () => ({ catalog_listing: false, relacionados: [], disponivel: 180 })),
-    post: vi.fn(async (id: string) => (opts.post ? opts.post(id) : { offer_id: null })),
+    post: vi.fn(async (id: string) => ({ offer_id: null, inicio: null, fim: null, ...opts.post?.(id) })),
     put: vi.fn(async (id: string) => { if (opts.put) opts.put(id); }),
     del: vi.fn(async () => {}),
   };
@@ -65,6 +65,13 @@ function montar(itens: Linha[], opts: {
     espelharStatusCentral: vi.fn(async () => {}),
     espelharPreco: vi.fn(async () => {}),
     recontarCentral: vi.fn(async () => {}),
+    adesaoRecente: vi.fn(async (_p: string, _id: string) => false),
+    adquirirEscrita: vi.fn(async (_o: string, id: string, c: Partial<Linha>) => {
+      const it = itens.find((i) => i.ml_item_id === id)!;
+      if (it.status !== 'enviando' || it.etapa) return false;
+      Object.assign(it, c);
+      return true;
+    }),
     continuar: vi.fn(async (_s?: number) => {}),
     agendarConferencia: vi.fn(async (_s: number) => {}),
     concluir: vi.fn(async () => {}),
@@ -578,3 +585,579 @@ describe('conferir', () => {
     expect(deps.concluir).not.toHaveBeenCalled();
   });
 });
+
+// Payloads do spike 03/11 (plano 2026-11-03-promo-smart-lightning-price-matching).
+describe('ofertas de preço fixo', () => {
+  const ERRO_ADESAO = 'Não foi possível confirmar a adesão no ML. Confira no Seller Center.';
+  // Status da campanha de propósito oposto ao do item: o espelho não pode usar o da campanha.
+  const SL: OperacaoRow = { ...DEAL_ADERIR, promocao_id: 'P-MLB18055120', promocao_tipo: 'SMART_LIGHTNING', promocao_status: 'started' };
+  const PM: OperacaoRow = { ...DEAL_ADERIR, promocao_id: 'P-MLB18099366', promocao_tipo: 'PRICE_MATCHING', promocao_status: 'pending' };
+  const SAIR_PM: OperacaoRow = { ...PM, acao: 'sair' };
+  const SAIR_SL: OperacaoRow = { ...SL, acao: 'sair' };
+  const convSL = (x: Partial<ItemNaCampanha> = {}) => conv({ preco_min: null, preco_max: null, offer_id: 'CANDIDATE-MLB1-1', estoque_min: 5, preco: 64, ...x });
+  const convPM = (x: Partial<ItemNaCampanha> = {}) => conv({ preco_min: null, preco_max: null, offer_id: 'CANDIDATE-MLB1-2', preco: 69.98, ...x });
+  const part = (status: string, preco = 69.98) => conv({ status, preco_min: null, preco_max: null, offer_id: 'OFFER-MLB1-9', preco });
+  const etapa = { etapa: 'escrita_pedida' as const };
+  const ordem = (f: unknown, n = 0) => vi.mocked(f as () => void).mock.invocationCallOrder[n];
+  const RETRY_SEG = [12, 148, 1800]; // intervalos do QStash entre as 4 entregas de uma mensagem
+  /** Relógio + claim de 2 min + fila do QStash: 500 reentrega a mesma mensagem (até 4 entregas), `continuar` publica outra. */
+  function comFila(op: OperacaoRow, itens: Linha[], opts: Parameters<typeof montar>[1] = {}) {
+    const m = montar(itens, opts);
+    const { deps, avancar } = m;
+    const tocado = new Map<string, number>();
+    const acha = (id: string) => itens.find((i) => i.ml_item_id === id)!;
+    const toca = (id: string) => tocado.set(id, deps.agora());
+    const livre = (i: Linha) => i.status === 'pendente'
+      || (i.status === 'enviando' && deps.agora() - (tocado.get(i.ml_item_id) ?? 0) > 120_000);
+    deps.reivindicar.mockImplementation(async (_o, id) => {
+      if (!livre(acha(id))) return false;
+      acha(id).status = 'enviando';
+      toca(id);
+      return true;
+    });
+    deps.itensPendentes.mockImplementation(async (_o, limite) => itens.filter(livre).slice(0, limite).map((i) => ({ ...i })));
+    deps.gravarItem.mockImplementation(async (_o, id, c) => { Object.assign(acha(id), c); toca(id); });
+    deps.adquirirEscrita.mockImplementation(async (_o, id, c) => {
+      if (acha(id).status !== 'enviando' || acha(id).etapa) return false;
+      Object.assign(acha(id), c);
+      toca(id);
+      return true;
+    });
+    const fila = [{ em: deps.agora(), entrega: 1 }];
+    deps.continuar.mockImplementation(async (seg = 0) => { fila.push({ em: deps.agora() + seg * 1000, entrega: 1 }); });
+    const rodar = async () => {
+      const respostas: number[] = [];
+      let mortas = 0;
+      while (fila.length) {
+        expect(respostas.length).toBeLessThan(40);
+        fila.sort((a, b) => a.em - b.em);
+        const msg = fila.shift()!;
+        avancar(Math.max(0, msg.em - deps.agora()));
+        try {
+          await executar(op, deps, OPTS);
+          respostas.push(200);
+        } catch {
+          respostas.push(500);
+          if (msg.entrega < 4) fila.push({ em: deps.agora() + RETRY_SEG[msg.entrega - 1] * 1000, entrega: msg.entrega + 1 });
+          else mortas++;
+        }
+      }
+      return { respostas, mortas };
+    };
+    return { ...m, rodar, tocado };
+  }
+
+  describe('aderir', () => {
+    it('SMART_LIGHTNING: etapa antes do POST, stock.min, janela do POST, espelho pending com a releitura em candidate', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL(),
+        post: () => ({ offer_id: 'OFFER-MLB1-9', inicio: '2026-11-04T12:00:00', fim: '2026-11-04T23:59:59' }) });
+      await executar(SL, deps, OPTS);
+      expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-MLB18055120', promotion_type: 'SMART_LIGHTNING', offer_id: 'CANDIDATE-MLB1-1', stock: 5 });
+      expect(deps.adquirirEscrita).toHaveBeenCalledWith('op1', 'MLB1', { etapa: 'escrita_pedida' });
+      expect(ordem(deps.adquirirEscrita)).toBeLessThan(ordem(ml.post));
+      expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-MLB1-9', etapa: 'ml_confirmado', mensagem: 'Agendada: 04/11 12:00–23:59' });
+      expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18055120', 'SMART_LIGHTNING', 'MLB1', 'pending');
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18055120', 'MLB1', 64);
+      expect(ml.lerOfertaNoItem).not.toHaveBeenCalled();
+    });
+
+    it('PRICE_MATCHING: POST sem stock, sem mensagem de janela, espelho started com a releitura em candidate', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: () => convPM(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      await executar(PM, deps, OPTS);
+      expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-MLB18099366', promotion_type: 'PRICE_MATCHING', offer_id: 'CANDIDATE-MLB1-2' });
+      expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null });
+      expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18099366', 'PRICE_MATCHING', 'MLB1', 'started');
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 69.98);
+    });
+
+    it('releitura já participando vale mais que o padrão do tipo', async () => {
+      const { deps } = montar([item('MLB1', { preco: 64 })], { campanha: (_id, n) => (n === 1 ? convSL() : part('started', 64)) });
+      await executar(SL, deps, OPTS);
+      expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18055120', 'SMART_LIGHTNING', 'MLB1', 'started');
+    });
+
+    it('Review Focus 1: oferta mudou de preço → mudou, sem etapa e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: () => convPM({ preco: 59.9 }) });
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O preço da oferta mudou: agora 59,90' });
+      expect(itens[0].etapa).toBeUndefined();
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('Review Focus 2: preço fresco < 19 com risco confirmado → bloqueado, sem POST', async () => {
+      const itens = [item('MLB1', { preco: 18.5, confirmado_risco: true })];
+      const { deps, ml } = montar(itens, { campanha: () => convPM({ preco: 18.5 }) });
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'bloqueado', mensagem: 'Abaixo de R$ 19 o comprador perde o frete grátis' });
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('SMART_LIGHTNING sem stock.min → erro, sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL({ estoque_min: null }) });
+      await executar(SL, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'O ML não informou o estoque mínimo da oferta' });
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('semáforo piorou sem risco confirmado → mudou, sem etapa e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL(), semaforo: 'vermelho' });
+      await executar(SL, deps, OPTS);
+      expect(itens[0].status).toBe('mudou');
+      expect(itens[0].etapa).toBeUndefined();
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('falha ao gravar a etapa → erro sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      deps.adquirirEscrita.mockRejectedValueOnce(new Error('db'));
+      await executar(SL, deps, OPTS);
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(itens[0].status).toBe('erro');
+    });
+
+    it('adesão recente de outra operação → mudou, sem etapa e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      deps.adesaoRecente.mockResolvedValue(true);
+      await executar(SL, deps, OPTS);
+      expect(deps.adesaoRecente).toHaveBeenCalledWith('P-MLB18055120', 'MLB1');
+      expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'Adesão recente ainda propagando no ML. Aguarde alguns minutos e tente de novo.' });
+      expect(itens[0].etapa).toBeUndefined();
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('segunda operação com o espelho da primeira falho: sem POST na janela de 30 min; depois dela posta', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const op1 = comFila(SL, a, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      op1.deps.espelharStatusCentral.mockRejectedValue(new Error('db'));
+      await op1.rodar();
+      expect(a[0].status).toBe('aplicado');
+
+      const segunda = (esperaMs: number) => {
+        const b = [item('MLB1', { preco: 64 })];
+        const op = comFila({ ...SL, id: 'op2' }, b, { campanha: () => convSL() });
+        op.avancar(esperaMs);
+        // Mesmo predicado de deps.adesaoRecente: `aplicado` há menos de 30 min.
+        op.deps.adesaoRecente.mockImplementation(async () => op.deps.agora() - op1.tocado.get('MLB1')! < 1_800_000);
+        return { b, op };
+      };
+      const cedo = segunda(60_000);
+      await cedo.op.rodar();
+      expect(cedo.b[0].status).toBe('mudou');
+      expect(cedo.op.ml.post).not.toHaveBeenCalled();
+
+      const tarde = segunda(31 * 60_000);
+      await tarde.op.rodar();
+      expect(tarde.b[0].status).toBe('aplicado');
+      expect(tarde.op.ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('dois workers: claim vencido antes da etapa → um só POST, e quem perdeu não mexe no item', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, avancar, rodar } = comFila(SL, itens, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      deps.semaforoAtual.mockImplementationOnce(async () => {
+        avancar(180_000); // worker A parado: o claim vence e o worker B faz o item inteiro
+        await executar(SL, deps, OPTS);
+        return 'verde';
+      });
+      await rodar();
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9' });
+    });
+
+    it('contraexemplo: B conclui aplicado, A volta do semáforo com piora → linha segue aplicado e a trava vale', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const op1 = comFila(SL, a, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      op1.deps.semaforoAtual.mockImplementationOnce(async () => {
+        op1.avancar(180_000);
+        await executar(SL, op1.deps, OPTS);
+        return 'vermelho';
+      });
+      await op1.rodar();
+      expect(op1.ml.post).toHaveBeenCalledTimes(1);
+      expect(a[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9', mensagem: null });
+
+      const b = [item('MLB1', { preco: 64 })];
+      const op2 = comFila({ ...SL, id: 'op2' }, b, { campanha: () => convSL() });
+      op2.avancar(240_000);
+      // Mesmo filtro de deps.adesaoRecente sobre a linha da 1ª operação.
+      op2.deps.adesaoRecente.mockImplementation(async () => ['aplicado', 'ja_estava'].includes(a[0].status) || a[0].etapa === 'escrita_pedida');
+      await op2.rodar();
+      expect(b[0].status).toBe('mudou');
+      expect(op2.ml.post).not.toHaveBeenCalled();
+    });
+
+    it('late worker: Central sumiu no semáforo ou adesaoRecente não trocam o resultado', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const x = comFila(SL, a, { campanha: () => convSL() });
+      x.deps.semaforoAtual.mockImplementationOnce(async () => {
+        x.avancar(180_000);
+        await executar(SL, x.deps, OPTS);
+        return null;
+      });
+      await x.rodar();
+      expect(a[0].status).toBe('aplicado');
+
+      const b = [item('MLB1', { preco: 64 })];
+      const y = comFila(SL, b, { campanha: () => convSL() });
+      y.deps.adesaoRecente.mockImplementationOnce(async () => {
+        y.avancar(180_000);
+        await executar(SL, y.deps, OPTS);
+        return true;
+      });
+      await y.rodar();
+      expect(b[0].status).toBe('aplicado');
+    });
+
+    it.each([['mudou', () => convSL({ preco: 50 })], ['ja_estava', () => part('pending', 64)]])('late worker: leitura velha que daria %s não troca o resultado', async (_n, leitura) => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => {
+        Object.assign(itens[0], { status: 'aplicado', etapa: 'ml_confirmado' }); // B conclui durante a leitura de A
+        return leitura();
+      } });
+      await rodar();
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado' });
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('late worker: exceção antes da escrita não vira erro por cima do aplicado', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, avancar, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.lerRelacoes).mockImplementationOnce(async () => {
+        avancar(180_000);
+        await executar(SL, deps, OPTS);
+        throw new Error('ML 500 em /items');
+      });
+      await rodar();
+      expect(itens[0].status).toBe('aplicado');
+      expect(ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('exceção antes da escrita sem concorrência → erro com a mensagem; 403 → RECONECTAR e encerra o resto', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const x = montar(a, { campanha: () => convSL() });
+      vi.mocked(x.ml.lerRelacoes).mockRejectedValue(new Error('ML 500 em /items'));
+      await executar(SL, x.deps, OPTS);
+      expect(a[0]).toMatchObject({ status: 'erro', mensagem: 'ML 500 em /items' });
+
+      const b = [item('MLB1', { preco: 64 }), item('MLB2', { preco: 64 })];
+      const y = montar(b, { campanha: () => convSL() });
+      vi.mocked(y.ml.lerRelacoes).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
+      await executar(SL, y.deps, OPTS);
+      expect(b.map((i) => [i.status, i.mensagem])).toEqual([['erro', RECONECTAR], ['erro', RECONECTAR]]);
+      expect(y.ml.post).not.toHaveBeenCalled();
+    });
+
+    it('etapa de outro worker gravada e ainda enviando: quem perdeu não posta e a operação continua', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      deps.adquirirEscrita.mockResolvedValueOnce(false);
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: true });
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(deps.continuar).toHaveBeenCalledWith(150);
+    });
+
+    it('4xx claro do ML → erro com a mensagem do ML', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error('ML 400: oferta inválida'));
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: false });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: oferta inválida', etapa: null });
+    });
+
+    it('403 → RECONECTAR (fatal), como nos outros tipos', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
+      await executar(SL, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR, etapa: null });
+    });
+
+    it.each(['timeout', 'ML 500: x', 'ML 429: x'])('resultado incerto (%s): sem 500, continuação publicada, um só POST, etapa mantida', async (msg) => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error(msg));
+      const r = await rodar();
+      expect(r).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(deps.continuar).toHaveBeenCalledWith(150);
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[0].etapa).toBe('escrita_pedida');
+    });
+
+    it('fila: 4 itens com timeout na mesma mensagem não a matam; nenhum POST repetido', async () => {
+      const itens = ['MLB1', 'MLB2', 'MLB3', 'MLB4'].map((id) => item(id, { preco: 64 }));
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      const r = await rodar();
+      expect(r.mortas).toBe(0);
+      expect(r.respostas).not.toContain(500);
+      expect(deps.continuar).toHaveBeenNthCalledWith(1, 150);
+      expect(ml.post).toHaveBeenCalledTimes(4);
+      expect(new Set(vi.mocked(ml.post).mock.calls.map((c) => c[0])).size).toBe(4);
+      expect(itens.every((i) => i.status === 'erro' && i.etapa === 'escrita_pedida')).toBe(true);
+      expect(deps.concluir).toHaveBeenCalledTimes(1);
+    });
+
+    it('crash ao gravar pós-POST: 500; a reentrega continua e confirma sem novo POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => (n === 1 ? convSL() : part('pending', 64)), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      expect((await rodar()).respostas).toEqual([500, 200, 200]);
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9' });
+    });
+
+    it('DEAL não grava etapa e falha incerta segue virando erro', async () => {
+      const itens = [item('MLB1', { preco: 12 })];
+      const { deps, ml } = montar(itens);
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await executar(DEAL_ADERIR, deps, OPTS)).toEqual({ processados: 1, continuou: false });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'timeout' });
+      expect(itens[0].etapa).toBeUndefined();
+      expect(deps.adesaoRecente).not.toHaveBeenCalled();
+      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retomada de aderir', () => {
+    it('participando → aplicado com o offer_id lido + espelhos, sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64, ...etapa })];
+      const { deps, ml } = montar(itens, { campanha: () => part('pending', 64) });
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: false });
+      expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null, offer_id: 'OFFER-MLB1-9', etapa: 'ml_confirmado' });
+      expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18055120', 'SMART_LIGHTNING', 'MLB1', 'pending');
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18055120', 'MLB1', 64);
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it.each([['candidate', () => convSL()], ['fora da campanha', () => null]])('%s: conta a tentativa e continua com 200, sem POST', async (_n, campanha) => {
+      const itens = [item('MLB1', { preco: 64, ...etapa })];
+      const { deps, ml } = montar(itens, { campanha });
+      expect(await executar(SL, deps, OPTS)).toEqual({ processados: 1, continuou: true });
+      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida', conferencias: 1 });
+      expect(deps.continuar).toHaveBeenCalledWith(150);
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(ml.lerRelacoes).not.toHaveBeenCalled();
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('não espera por outro item: o laço segue para os próximos', async () => {
+      const itens = [item('MLB1', { preco: 64, ...etapa }), item('MLB2', { preco: 64 })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      await executar(SL, deps, OPTS);
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(itens[1].status).toBe('aplicado');
+    });
+
+    it('fila: ML sempre candidate → continuações com 200 e erro na 5ª tentativa', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(deps.continuar.mock.calls).toEqual([[150], [150], [150], [150], [150]]);
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(deps.concluir).toHaveBeenCalledTimes(1);
+    });
+
+    it('fila: confirma depois do atraso do ML, sem novo POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => (n <= 2 ? convSL() : part('pending', 64)) });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200], mortas: 0 });
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', conferencias: 1 });
+      expect(ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('fila: leitura sempre falhando gasta as mesmas 5 tentativas, sem 500 e sem POST', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => {
+        if (n > 1) throw new Error('ML 500 em /seller-promotions/promotions');
+        return convSL();
+      } });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
+      expect(ml.post).toHaveBeenCalledTimes(1);
+      expect(deps.concluir).toHaveBeenCalledTimes(1);
+    });
+
+    it('fila: lote em retomada não esgota as entregas da mensagem', async () => {
+      const itens = ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5', 'MLB6'].map((id) => item(id, { preco: 64, ...etapa }));
+      const { ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      const r = await rodar();
+      expect(r.mortas).toBe(0);
+      expect(r.respostas).not.toContain(500);
+      expect(itens.every((i) => i.status === 'erro' && i.etapa === 'escrita_pedida')).toBe(true);
+      expect(ml.post).not.toHaveBeenCalled();
+    });
+
+    it('falha ao gravar a tentativa → 500 e fica enviando; 401/403 na leitura segue fatal', async () => {
+      const a = [item('MLB1', { preco: 64, ...etapa })];
+      const x = montar(a, { campanha: () => convSL() });
+      x.deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      await expect(executar(SL, x.deps, OPTS)).rejects.toThrow('db');
+      expect(a[0]).toMatchObject({ status: 'enviando', conferencias: 0 });
+
+      const b = [item('MLB1', { preco: 64, ...etapa })];
+      const y = montar(b);
+      vi.mocked(y.ml.lerNaCampanha).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
+      await executar(SL, y.deps, OPTS);
+      expect(b[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR, etapa: 'escrita_pedida' });
+      expect(y.ml.post).not.toHaveBeenCalled();
+    });
+
+    it('etapa gravada em DEAL não muda o caminho (a retomada é só dos tipos novos)', async () => {
+      const itens = [item('MLB1', { preco: 12, ...etapa })];
+      const { deps, ml } = montar(itens);
+      await executar(DEAL_ADERIR, deps, OPTS);
+      expect(ml.post).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('sair', () => {
+    it('grava etapa + OFFER observado antes do DELETE e entra na escada', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml } = montar(itens, { campanha: () => part('started') });
+      await executar(SAIR_PM, deps, OPTS);
+      expect(deps.adquirirEscrita).toHaveBeenCalledWith('op1', 'MLB1', { etapa: 'escrita_pedida', offer_id: 'OFFER-MLB1-9' });
+      expect(ordem(deps.adquirirEscrita)).toBeLessThan(ordem(ml.del));
+      expect(deps.adesaoRecente).not.toHaveBeenCalled();
+      expect(ml.del).toHaveBeenCalledWith('MLB1', 'promotion_type=PRICE_MATCHING&promotion_id=P-MLB18099366&offer_id=OFFER-MLB1-9&app_version=v2');
+      expect(itens[0]).toMatchObject({ status: 'saida_solicitada', conferencias: 0, proxima_conferencia: new Date(T0 + 300_000).toISOString() });
+      expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
+    });
+
+    it('Review Focus 3: candidate sem evidência → mudou; sem DELETE, sem espelho, nunca ja_estava', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml } = montar(itens, { campanha: () => convSL() });
+      await executar(SAIR_SL, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O ML ainda mostra este anúncio como convidado. Se aderiu agora há pouco, aguarde 2 minutos e tente de novo.' });
+      expect(ml.del).not.toHaveBeenCalled();
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('4xx claro → erro com a mensagem do ML', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml } = montar(itens, { campanha: () => part('started') });
+      vi.mocked(ml.del).mockRejectedValue(new Error('ML 400: não pode'));
+      await executar(SAIR_PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 400: não pode' });
+    });
+
+    it('fila: timeout no DELETE, reentrega com candidate → aplicado + saiu, sem novo DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: (_id, n) => (n === 1 ? part('started') : convPM({ preco: 72 })) });
+      vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [200, 200], mortas: 0 });
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' });
+      expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18099366', 'PRICE_MATCHING', 'MLB1', 'saiu');
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 72);
+      expect(ordem(deps.espelharPreco)).toBeLessThan(ordem(deps.espelharStatusCentral));
+    });
+
+    it('fila: timeout no DELETE e leitura sempre falhando → escada de 24 h, sem novo DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: (_id, n) => {
+        if (n > 1) throw new Error('ML 500 em /seller-promotions/promotions');
+        return part('started');
+      } });
+      vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
+      expect(await rodar()).toEqual({ respostas: [200, 200], mortas: 0 });
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0].status).toBe('saida_solicitada');
+      expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
+    });
+
+    it.each([['participando', () => part('started')], ['fora da campanha', () => null]])('retomada %s → saida_solicitada com a escada, sem DELETE', async (_n, campanha) => {
+      const itens = [item('MLB1', { preco: null, ...etapa })];
+      const { deps, ml } = montar(itens, { campanha });
+      await executar(SAIR_PM, deps, OPTS);
+      expect(ml.del).not.toHaveBeenCalled();
+      expect(itens[0]).toMatchObject({ status: 'saida_solicitada', conferencias: 0, saida_pedida_em: new Date(T0).toISOString(), mensagem: 'Saída pedida ao ML; aguardando confirmação' });
+      expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('fila: crash ao gravar pós-DELETE não repete o DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: () => part('started') });
+      deps.gravarItem.mockRejectedValueOnce(new Error('db'));
+      expect((await rodar()).respostas).toEqual([500, 200, 200]);
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0].status).toBe('saida_solicitada');
+    });
+
+    it('dois workers: claim vencido antes da etapa → um só DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps, ml, avancar, rodar } = comFila(SAIR_PM, itens, { campanha: () => part('started') });
+      const adquirir = deps.adquirirEscrita.getMockImplementation()!;
+      deps.adquirirEscrita.mockImplementationOnce(async (...a) => {
+        avancar(180_000); // worker A parado: o claim vence e o worker B faz o item inteiro
+        await executar(SAIR_PM, deps, OPTS);
+        return adquirir(...a);
+      });
+      await rodar();
+      expect(ml.del).toHaveBeenCalledTimes(1);
+      expect(itens[0].status).toBe('saida_solicitada');
+    });
+
+    it('DEAL/SMART seguem sem etapa antes do DELETE', async () => {
+      const itens = [item('MLB1', { preco: null })];
+      const { deps } = montar(itens, { campanha: () => conv({ status: 'started', offer_id: 'OFFER-1' }) });
+      await executar(SAIR_SMART, deps, OPTS);
+      expect(itens[0].etapa).toBeUndefined();
+      expect(itens[0].status).toBe('saida_solicitada');
+      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('conferir', () => {
+    const vencido = () => item('MLB1', { preco: null, status: 'saida_solicitada', saida_pedida_em: new Date(T0 - H).toISOString(), proxima_conferencia: new Date(T0).toISOString() });
+
+    it('candidate confirma; preço do convite espelhado ANTES do status (espelharPreco só grava em participando)', async () => {
+      const itens = [vencido()];
+      const { deps } = montar(itens, { campanha: () => convPM({ preco: 72 }) });
+      expect(await conferir(SAIR_PM, deps)).toEqual({ confirmados: 1, pendentes: 0 });
+      expect(itens[0].status).toBe('aplicado');
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 72);
+      expect(ordem(deps.espelharPreco)).toBeLessThan(ordem(deps.espelharStatusCentral));
+    });
+
+    it('sem preço no convite → não espelha preço; falha no espelho de preço não trava a saída', async () => {
+      const a = montar([vencido()], { campanha: () => convSL({ preco: null }) });
+      await conferir(SAIR_SL, a.deps);
+      expect(a.deps.espelharPreco).not.toHaveBeenCalled();
+      expect(a.deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18055120', 'SMART_LIGHTNING', 'MLB1', 'saiu');
+
+      const b = montar([vencido()], { campanha: () => convSL() });
+      b.deps.espelharPreco.mockRejectedValue(new Error('db'));
+      expect(await conferir(SAIR_SL, b.deps)).toEqual({ confirmados: 1, pendentes: 0 });
+      expect(b.deps.espelharStatusCentral).toHaveBeenCalled();
+    });
+
+    it('null não confirma (regra da Relâmpago): reagenda', async () => {
+      const itens = [vencido()];
+      const { deps } = montar(itens, { campanha: () => null });
+      expect(await conferir(SAIR_SL, deps)).toEqual({ confirmados: 0, pendentes: 1 });
+      expect(itens[0].status).toBe('saida_solicitada');
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('DEAL não espelha preço ao confirmar a saída', async () => {
+      const itens = [vencido()];
+      const { deps } = montar(itens, { campanha: () => conv({ preco: 50 }) });
+      await conferir(SAIR, deps);
+      expect(deps.espelharPreco).not.toHaveBeenCalled();
+    });
+  });
+});
+

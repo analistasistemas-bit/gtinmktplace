@@ -59,6 +59,20 @@ O corte é só do aviso. O ramo que repõe continua chamando a RPC sempre, porqu
 tombstone `cancelamento_sem_baixa` que impede uma execução `paid` atrasada de baixar um pedido já
 cancelado (D-19).
 
+**5. Emenda 03/11/2026: claim `cancel_purchase` gera um aviso só.** Medido na Hairfly (pedido
+`2000019283366562`, claim `5605436658`): o comprador pede o cancelamento e o mediador do ML fecha
+em cerca de 3 minutos, sem ação disponível para o vendedor (4 casos em 90 dias, média 3 min). O
+operador recebia "Nova reclamação… aja dentro do prazo" e depois "Confira o que voltou", dois
+textos que não descrevem o caso.
+
+O `sync-devolucao` deixa de avisar `cancel_purchase`, e o aviso desta decisão ganha texto próprio
+quando o pedido tem esse claim. A decisão de repor **não muda** (decisão 3): o estoque continua
+sem reposição automática, e o texto mantém o pedido de entrada manual sem afirmar que a mercadoria
+não saiu. Falha ao ler o claim cai no texto genérico, nunca cala o aviso.
+
+Custo aceito: `cancel_purchase` que o ML não concluir não gera alerta no Telegram; continua visível
+em Faturamento › Devoluções. Cancelamento que cai no ramo de reposição segue sem aviso, como já era.
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver

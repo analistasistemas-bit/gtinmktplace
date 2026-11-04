@@ -206,3 +206,85 @@ describe('decidir — alterar_preco', () => {
       .toMatchObject({ tipo: 'put' });
   });
 });
+
+// Payloads do spike 03/11 (plano 2026-11-03-promo-smart-lightning-price-matching).
+describe('decidir — ofertas de preço fixo', () => {
+  const SL = 'P-MLB18055120', PM = 'P-MLB18099366';
+  const convSL = { status: 'candidate', preco_min: null, preco_max: null, offer_id: 'CANDIDATE-MLB5048402257-1', estoque_min: 5, preco: 64 };
+  const convPM = { status: 'candidate', preco_min: null, preco_max: null, offer_id: 'CANDIDATE-MLB5114275523-1', estoque_min: null, preco: 69.98 };
+  const rel = (disponivel: number | null = 197) => ({ catalog_listing: false, relacionados: [] as { id: string; catalog_listing: boolean }[], disponivel });
+  const sl = (preco: number | null, f: object = convSL, r: ReturnType<typeof rel> | null = rel()) =>
+    decidir('aderir', 'SMART_LIGHTNING', SL, pedido(preco), f as typeof convSL, r);
+  const pm = (preco: number | null, f: object = convPM) =>
+    decidir('aderir', 'PRICE_MATCHING', PM, pedido(preco), f as typeof convPM, rel(null));
+  const fimCom = (status: string, mensagem: string) => ({ tipo: 'fim', status, mensagem });
+
+  it('SMART_LIGHTNING: POST com offer_id CANDIDATE e stock = stock.min, sem deal_price', () => {
+    expect(sl(64)).toEqual({ tipo: 'post', body: {
+      promotion_id: SL, promotion_type: 'SMART_LIGHTNING', offer_id: 'CANDIDATE-MLB5048402257-1', stock: 5 } });
+  });
+  it('PRICE_MATCHING: POST só com offer_id (sem stock), mesmo sem estoque informado', () => {
+    expect(pm(69.98)).toEqual({ tipo: 'post', body: {
+      promotion_id: PM, promotion_type: 'PRICE_MATCHING', offer_id: 'CANDIDATE-MLB5114275523-1' } });
+  });
+  it('offer_id ausente ou que não é CANDIDATE- → erro', () => {
+    const e = fimCom('erro', 'O ML não informou a oferta deste convite');
+    expect(pm(69.98, { ...convPM, offer_id: null })).toEqual(e);
+    expect(pm(69.98, { ...convPM, offer_id: 'OFFER-1' })).toEqual(e);
+  });
+  it('preço fresco ausente → erro, nunca POST às cegas', () => {
+    expect(pm(69.98, { ...convPM, preco: null })).toEqual(fimCom('erro', 'O ML não informou o preço da oferta'));
+  });
+  it('Review Focus 1: preço mudou (em centavos) ou pedido sem preço → mudou', () => {
+    const e = fimCom('mudou', 'O preço da oferta mudou: agora 69,98');
+    expect(pm(69.97)).toEqual(e);
+    expect(pm(null)).toEqual(e);
+    expect(pm(69.98000001).tipo).toBe('post'); // mesmo centavo
+  });
+  it('Review Focus 2: preço fresco abaixo de R$ 19 → bloqueado; 19 passa', () => {
+    expect(pm(18.99, { ...convPM, preco: 18.99 })).toEqual(fimCom('bloqueado', 'Abaixo de R$ 19 o comprador perde o frete grátis'));
+    expect(sl(18.99, { ...convSL, preco: 18.99 })).toEqual(fimCom('bloqueado', 'Abaixo de R$ 19 o comprador perde o frete grátis'));
+    expect(pm(19, { ...convPM, preco: 19 }).tipo).toBe('post');
+  });
+  it('SMART_LIGHTNING sem stock.min → erro; disponível ausente ou menor → bloqueado', () => {
+    expect(sl(64, { ...convSL, estoque_min: null })).toEqual(fimCom('erro', 'O ML não informou o estoque mínimo da oferta'));
+    expect(sl(64, convSL, rel(null))).toEqual(fimCom('bloqueado', 'O ML não informou o estoque disponível do anúncio'));
+    expect(sl(64, convSL, null)).toEqual(fimCom('bloqueado', 'O ML não informou o estoque disponível do anúncio'));
+    expect(sl(64, convSL, rel(4))).toEqual(fimCom('bloqueado', 'Estoque disponível (4) menor que o mínimo da oferta (5)'));
+    expect(sl(64, convSL, rel(5)).tipo).toBe('post');
+  });
+  it('checks comuns valem antes: participando → ja_estava; par de catálogo → bloqueado', () => {
+    expect(pm(69.98, { ...convPM, status: 'started', offer_id: 'OFFER-1' })).toEqual({ tipo: 'fim', status: 'ja_estava', mensagem: null });
+    const r = { catalog_listing: false, relacionados: [{ id: 'MLB7', catalog_listing: true }], disponivel: 9 };
+    expect(sl(64, convSL, r)).toMatchObject({ tipo: 'fim', status: 'bloqueado' });
+  });
+
+  describe('sair', () => {
+    const sair = (t: 'SMART_LIGHTNING' | 'PRICE_MATCHING', f: object | null) =>
+      decidir('sair', t, 'P-1', pedido(null), f as typeof convSL | null, null);
+    const part = { ...convPM, status: 'started', offer_id: 'OFFER-MLB1-9' };
+    it('Review Focus 3: candidate → mudou pedindo nova tentativa; nunca ja_estava', () => {
+      for (const t of ['SMART_LIGHTNING', 'PRICE_MATCHING'] as const) {
+        expect(sair(t, convPM)).toEqual(fimCom('mudou', 'O ML ainda mostra este anúncio como convidado. Se aderiu agora há pouco, aguarde 2 minutos e tente de novo.'));
+      }
+    });
+    it('fora da campanha ou status estranho → erro', () => {
+      const e = fimCom('erro', 'O ML não mostra este anúncio na campanha. Confira no Seller Center.');
+      expect(sair('PRICE_MATCHING', null)).toEqual(e);
+      expect(sair('PRICE_MATCHING', { ...part, status: 'finished' })).toEqual(e);
+    });
+    it('participando sem OFFER- → erro', () => {
+      expect(sair('SMART_LIGHTNING', { ...part, offer_id: 'CANDIDATE-1' })).toEqual(fimCom('erro', 'O ML não informou a oferta deste anúncio'));
+    });
+    it('participando → DELETE com a query do spike (pending ou started)', () => {
+      expect(sair('PRICE_MATCHING', part)).toEqual({ tipo: 'delete',
+        query: 'promotion_type=PRICE_MATCHING&promotion_id=P-1&offer_id=OFFER-MLB1-9&app_version=v2' });
+      expect(sair('SMART_LIGHTNING', { ...part, status: 'pending' })).toEqual({ tipo: 'delete',
+        query: 'promotion_type=SMART_LIGHTNING&promotion_id=P-1&offer_id=OFFER-MLB1-9&app_version=v2' });
+    });
+  });
+  it('alterar preço segue só em DEAL', () => {
+    expect(decidir('alterar_preco', 'PRICE_MATCHING', PM, pedido(70), { ...convPM, status: 'started' }, null))
+      .toMatchObject({ tipo: 'fim', status: 'bloqueado' });
+  });
+});

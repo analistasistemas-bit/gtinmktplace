@@ -1,5 +1,26 @@
 # PubliAI — Tasks
 
+## SMART_LIGHTNING e PRICE_MATCHING pelo app + aviso de tipo novo (emenda ADR-0174) — 2026-11-03
+
+- [x] Spike autorizado e desfeito (Avil `MLB5048402257`, DSA `MLB5114275523`): 201 nos dois; saída confirma em ≤ 5 min.
+- [x] Plano e diff revisados pelo Codex; motor, aviso de tipo novo (`integracao`, fora de `alertas_promocoes_ativo`) e front.
+- [x] Main `4fbc5004` (CI verde). Migration `20261103234235` aplicada em 04/11; `operacoes-massa` v38, `sincronizar-promocoes` v34, `ads-campanhas` v17, `resumo-diario` v14, `telegram-bot` v14.
+- [x] Sync da Avil pós-deploy: SMART_LIGHTNING (9 convidados), Relâmpago e SMART sem erro; nenhum aviso falso de tipo novo.
+- [ ] 1ª adesão real em cada tipo (Diego). Conferir as queries `adesaoRecente`/`adquirirEscrita` nesse uso.
+
+## Pós-venda: claim `cancel_purchase` gera um aviso só (emenda ADR-0121) — 2026-11-03
+
+- [x] `sync-devolucao` não manda "Nova reclamação" para `cancel_purchase`, que o ML fecha sozinho em ~3 min.
+- [x] Aviso de cancelamento com texto próprio quando o pedido tem esse claim; a regra de reposição não mudou.
+
+## Nota de compra: etapa fiscal toda preenchida (emenda ADR-0181 D-10) — 2026-11-03
+
+- [x] Leitor do XML lê grupo ICMS, CSOSN/CST, CEST, nFCI e UF do emitente; `icms-entrada.ts` classifica ST / sem ST / exceção.
+- [x] Produto novo a partir da nota chega com NCM, origem NF-e e binária, FCI, CSOSN (500 com ST, padrão da empresa sem ST), CEST e descrição; exceção fica vazia com escolha obrigatória.
+- [x] Avisos e confirmações: CEST ausente, compra de outra UF, CSOSN divergente em produto existente; "Conferi" cai se o campo mudar.
+- [ ] Diego: 1º cadastro real pelo fluxo na Daludi Shop (card Empresa e módulo Fiscal já prontos desde 01/11); conferir o produto salvo.
+- [ ] Se passar a comprar de fora do estado: tabela de NCMs com antecipação, classificada pelo contador.
+
 ## Promoções e Publicados: ajustes pós-uso real (só front) — 2026-11-03
 
 - [x] Aura + raio de borda em todos os diálogos `processando` (`ui/dialog`, `ui/alert-dialog`); diálogos roláveis (kit, kit virtual, adicionar variação, estender grade) rolam num filho (main `99c2091c`).
@@ -66,7 +87,7 @@
 - [x] Fatia 2: números aprovados pelo Diego em 03/11 (10 catálogos/min por usuário, teto 120 chamadas ML/min, lotes de 5) e desenho econômico de Redis (cache no navegador; Redis só contadores e comissão em lote).
 - [x] Fatia 2: Tasks 8–10 (cotas Redis por lote, enriquecimento de catálogo, cache no navegador, Mini-bloco completo e resumo "Catálogos e vendedores").
 - [x] Fatia 2, Task 11 — **lote por página** (emenda ADR-0189 2026-11-03-b): teste real do Diego mostrou espera de minutos ("Aguardando próxima janela"); engenharia reversa Avant/JoomPulse (banco de mercado / PDP oculta — ambos descartados); spike aprovado (50 catálogos ~3 s, 0 429, CPU < 100 ms). Uma requisição por página (≤50 catálogos, pool 16/4, deadline 8 s), cota 20 páginas/min por usuário+org, teto global 1.000 chamadas ML/min, 4–9 comandos Redis por busca, parcial terminal com "Tentar novamente" (Retry-After). Edge `extensao` v24 em 03/11. Busca real do Diego: 47–48 catálogos em ~5,7 s, CPU ≤ 151 ms.
-- [ ] Publicar o ZIP 0.5.0 na Web Store (Diego).
+- [x] ZIP 0.5.0 publicado na Web Store em 03/11 (não listado).
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
 

@@ -42,6 +42,9 @@ export interface DepsCancelamento {
     admin: SupabaseClient,
     p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
   ) => Promise<boolean>;
+  cancelamentoPeloComprador: (
+    admin: SupabaseClient, p: { orgId: string; orderId: string | number },
+  ) => Promise<boolean>;
   reservarNotificacao: (
     admin: SupabaseClient, orgId: string, userId: string | null, entidade: string, chave: string,
   ) => Promise<boolean>;
@@ -110,12 +113,19 @@ export async function tratarPedidoCancelado(
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
     }
+    // Falha de leitura cai no texto genérico: o aviso já foi reservado e não pode se perder.
+    const peloComprador = await deps.cancelamentoPeloComprador(admin, { orgId: p.orgId, orderId: p.orderId })
+      .catch(() => false);
     const situacaoEnvio = st === null ? 'Envio: não deu para consultar' : `Envio: ${LABEL_ENVIO[st] ?? st}`;
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
-      `📦 Pedido ${p.orderId} cancelado\n\n${situacaoEnvio}\n`
-      + 'Não dá para confirmar que a mercadoria não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
-      + 'Confira o que voltou e dê entrada manual em Estoque.',
+      peloComprador
+        ? `🚫 Comprador cancelou o pedido ${p.orderId}\n\n`
+          + 'O ML já resolveu: não precisa responder nada.\n\n'
+          + 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.'
+        : `📦 Pedido ${p.orderId} cancelado\n\n${situacaoEnvio}\n`
+          + 'Não dá para confirmar que a mercadoria não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
+          + 'Confira o que voltou e dê entrada manual em Estoque.',
     );
     return 'avisado';
   } catch (e) {

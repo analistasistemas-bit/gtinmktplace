@@ -32,10 +32,10 @@ describe('definirFator', () => {
   const z = { vProd: 240, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vII: 0, vIPIDevol: 0, vFCPST: 0, vNF: 240 };
   const nota: NotaCompraLida = {
     chave: '26261011222333000181550010000010511000030324', numero: 1, serie: 1, modelo: 55, tipoNf: 1,
-    emitidaEm: '2026-10-13T00:00:00-03:00', emitenteCnpj: '11222333000181', emitenteNome: 'F',
+    emitidaEm: '2026-10-13T00:00:00-03:00', emitenteCnpj: '11222333000181', emitenteNome: 'F', emitenteUf: null,
     destinatarioCnpj: '11444777000161', totais: z, assinada: false, cStat: 100,
     itens: [{ nItem: 1, cProd: 'X', xProd: 'Meia', ncm: null, cfop: '5102', gtin: null, uCom: 'CX', qCom: 2,
-      vProd: 240, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0 }],
+      vProd: 240, vFrete: 0, vSeg: 0, vDesc: 0, vOutro: 0, vIPI: 0, vST: 0, vFCPST: 0, orig: 0, icmsGrupo: null, csosn: null, cstIcms: null, cest: null, nFci: null }],
   };
   it('fator novo limpa as linhas não travadas, preserva as travadas e o semear usa o custo novo', () => {
     const previas = [{ nItem: 1, codigo: 'T1', quantidade: 3, custo: 5 }];

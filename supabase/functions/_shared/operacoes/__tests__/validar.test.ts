@@ -42,9 +42,9 @@ describe('semaforoReal', () => {
 });
 
 describe('validarPedido', () => {
-  it('tipo fora de DEAL/SMART/LIGHTNING → erro', async () => {
+  it('tipo sem contrato no motor → erro', async () => {
     const r = await validarPedido('aderir', 'OUTRO', [{ ml_item_id: 'MLB1', preco: 15 }], central(linha()), semExato);
-    expect(r).toEqual({ ok: false, erro: 'Só promoções DEAL, SMART e Relâmpago aceitam operação em massa.' });
+    expect(r).toEqual({ ok: false, erro: 'Este tipo de promoção ainda não aceita operação em massa.' });
   });
   describe('LIGHTNING aderir', () => {
     // Faixa da Relâmpago: 8,70 a 26,10; sugerido 24,65 = preço avaliado.
@@ -168,5 +168,51 @@ describe('validarPedido — alterar_preco', () => {
       .toMatchObject({ ok: false, itens: [{ semaforo: 'vermelho' }] });
     expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 11, confirmado_risco: true }], central(part()), exatoVermelho))
       .toMatchObject({ ok: true });
+  });
+});
+
+describe('validarPedido — ofertas de preço fixo', () => {
+  const tipos = ['SMART_LIGHTNING', 'PRICE_MATCHING'] as const;
+  // Como no spike: convidado sem min/max/sugerido, preço da oferta em preco_promo (= avaliado).
+  const oferta = (o: Partial<LinhaCentral> = {}) => linha({ preco_min: null, preco_max: null, preco_sugerido: null, preco_promo: 64, preco_avaliado: 64, ...o });
+  const pedir = (t: string, preco: number | null | undefined, l: LinhaCentral, confirmado_risco = false) =>
+    validarPedido('aderir', t, [{ ml_item_id: 'MLB1', preco, confirmado_risco }], central(l), semExato);
+  const recusado = (motivo: string) => ({ ok: false, itens: [{ ml_item_id: 'MLB1', motivo }] });
+
+  it('preço exibido = Central → aceita e grava o preço do pedido', async () => {
+    for (const t of tipos) {
+      expect(await pedir(t, 64, oferta())).toEqual({ ok: true, itens: [
+        { ml_item_id: 'MLB1', titulo: 'Caneca', preco: 64, semaforo: 'verde', confirmado_risco: false }] });
+    }
+  });
+  it('Review Focus 5: Central sem preço → recusa, mesmo com preço no pedido', async () => {
+    for (const t of tipos) {
+      expect(await pedir(t, 64, oferta({ preco_promo: null }))).toMatchObject(recusado('O ML não informou o preço da oferta'));
+    }
+  });
+  it('preço ausente ou diferente em centavos → recusa com o preço atual', async () => {
+    for (const t of tipos) {
+      for (const p of [undefined, null, 63.99, Number.NaN]) {
+        expect(await pedir(t, p, oferta())).toMatchObject(recusado('O preço da oferta mudou: agora 64,00'));
+      }
+    }
+  });
+  it('abaixo de R$ 19: recusa antes do semáforo, mesmo com risco confirmado', async () => {
+    for (const t of tipos) {
+      expect(await pedir(t, 18.99, oferta({ preco_promo: 18.99, preco_avaliado: null }), true))
+        .toMatchObject(recusado('Abaixo de R$ 19 o comprador perde o frete grátis'));
+    }
+  });
+  it('vermelho exige risco confirmado', async () => {
+    const vermelha = oferta({ preco_promo: 20, preco_avaliado: 20, projecao: [cor({ custo: 30, piso: 32 })] });
+    expect(await pedir('PRICE_MATCHING', 20, vermelha)).toMatchObject({ ok: false, itens: [{ semaforo: 'vermelho' }] });
+    expect(await pedir('PRICE_MATCHING', 20, vermelha, true)).toMatchObject({ ok: true });
+  });
+  it('sair: só exige estar participando', async () => {
+    const r = await validarPedido('sair', 'SMART_LIGHTNING', [{ ml_item_id: 'MLB1' }], central(oferta({ status: 'pending' })), semExato);
+    expect(r).toMatchObject({ ok: true, itens: [{ preco: null, semaforo: null }] });
+  });
+  it('SMART segue sem exigir preço no pedido', async () => {
+    expect(await validarPedido('aderir', 'SMART', [{ ml_item_id: 'MLB1' }], central(oferta()), semExato)).toMatchObject({ ok: true, itens: [{ preco: 64 }] });
   });
 });

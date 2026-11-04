@@ -104,8 +104,9 @@ function montarRetentativa(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCen
   const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));
   const ids = itensOp.filter((i) => i.status === 'erro').map((i) => i.ml_item_id);
   const { itens, bloqueados } = itensDoLog(acao, ids, itensCentral, porLog, MOTIVO_NAO_RETENTAVEL);
-  // SMART: o preço é do ML (POST só com offer_id); sair não tem preço.
-  const comPreco = acao === 'alterar_preco' || (acao === 'aderir' && op.promocao_tipo !== 'SMART');
+  // Preço do log só onde o operador o escolheu (DEAL/LIGHTNING aderir, alterar preço); SMART e as ofertas fixas
+  // (SMART_LIGHTNING, PRICE_MATCHING) têm preço do ML: a retentativa usa o preço atual da Central; sair não tem preço.
+  const comPreco = acao === 'alterar_preco' || (acao === 'aderir' && (op.promocao_tipo === 'DEAL' || op.promocao_tipo === 'LIGHTNING'));
   const simulados = comPreco ? new Map<string, number>() : undefined;
   for (const id of ids) {
     const preco = porLog.get(id)?.preco;

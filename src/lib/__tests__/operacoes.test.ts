@@ -78,6 +78,11 @@ describe('montarPreview', () => {
     expect(linha).toMatchObject({ preco: 25, estoqueMin: 5 });
   });
 
+  it.each(['SMART_LIGHTNING', 'PRICE_MATCHING'] as const)('%s aderir usa o preço da oferta, nunca o sugerido nulo', (tipo) => {
+    const [linha] = montarPreview('aderir', tipo, [item({ preco_promo: 64, preco_sugerido: null, estoque_min: 5 })]);
+    expect(linha).toMatchObject({ preco: 64, estoqueMin: 5 });
+  });
+
   it('SMART aderir usa o preço da oferta (preco_promo)', () => {
     const it1 = item({ preco_promo: 80, preco_sugerido: 999 });
     const [linha] = montarPreview('aderir', 'SMART', [it1]);

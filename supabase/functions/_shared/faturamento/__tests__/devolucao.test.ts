@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
+import { avisaNovaDevolucao,
   mapearDevolucao, traduzirReason, normalizarRevisoes, playerDaConta, acoesDaConta, vezDe,
   revisaoPendente, colunasLidas, linhaParaUpsert, type ClaimML, type ExtrasClaim, type Leitura, type ReturnML,
 } from '../devolucao';
@@ -181,5 +181,16 @@ describe('linhaParaUpsert (objeto final)', () => {
   it('detalhe/revisões falhas → sem as respectivas colunas', () => {
     const o = montar(ok(RET), extras({ detalhe: FALHA, revisoes: FALHA }));
     for (const c of ['detalhe', 'prazo', 'vez_de', 'revisao_pendente', 'revisao_status']) expect(o).not.toHaveProperty(c);
+  });
+});
+
+// Emenda ADR-0121 (03/11/2026): o ML fecha cancel_purchase sozinho em ~3 min; quem avisa é o
+// tratamento de cancelamento. Os demais tipos seguem avisando.
+describe('avisaNovaDevolucao', () => {
+  it('cancel_purchase não vira "Nova reclamação"', () => {
+    expect(avisaNovaDevolucao('cancel_purchase')).toBe(false);
+  });
+  it.each(['mediations', 'returns', 'return', null])('%s continua avisando', (tipo) => {
+    expect(avisaNovaDevolucao(tipo)).toBe(true);
   });
 });

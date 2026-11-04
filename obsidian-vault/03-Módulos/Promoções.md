@@ -78,6 +78,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Após aderir o item fica `pending` com a janela que o ML define (mensagem "Agendada: dd/mm hh:mm–hh:mm"); saída confirma quando volta a convidado (≤ 5 min no spike).
 - Central: convidado Relâmpago usa faixa e sugerido da visão por item do ML (o `price` do convite não serve); sync com teto de 40 itens/mensagem.
 
+### SMART_LIGHTNING e Preço competitivo (emenda 2026-11-03)
+
+- Ofertas de preço fixo do ML: sem edição, com piso de R$ 19 e revalidação do preço antes de escrever. SMART_LIGHTNING reserva o estoque mínimo e agenda 12 h; Preço competitivo (PRICE_MATCHING) **entra no ar na hora**.
+- Depois de aderir, o ML leva ~2 min para refletir: nova adesão ao mesmo anúncio fica barrada por 30 min.
+- Tipo de campanha que o app não sabe ativar: aviso uma vez por org (Telegram/sino, categoria Integração) e mensagem na tela indicando o Seller Center.
+
 ### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)
 
 - "Alterar preço N" na aba **Em promoção** (com busca título/MLB/SKU) e na aba **Participando** da campanha; mesmo painel da adesão (Desconto % / Preço R$ → Aplicar a todos, recebe·lucro·margem do servidor).

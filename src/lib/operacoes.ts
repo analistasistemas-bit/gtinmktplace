@@ -59,10 +59,10 @@ export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, it
   // Achado Codex (diff): mapa vazio (todos ignorados) ainda é simulação ativa — nada sai marcado no sugerido.
   const comSimulacao = (acao === 'aderir' || acao === 'alterar_preco') && simulados != null;
   return itens.map((it) => {
-    // Alterar: parte do preço vigente da oferta; aderir: sugerido (DEAL/Relâmpago) ou o da oferta (SMART).
+    // Alterar: parte do preço vigente da oferta; aderir: sugerido (DEAL/Relâmpago) ou o da oferta (SMART, SMART_LIGHTNING, PRICE_MATCHING).
     const padrao = acao === 'sair' ? it.preco_promo
       : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
-      : tipo !== 'SMART' ? it.preco_sugerido : it.preco_promo;
+      : tipo === 'DEAL' || tipo === 'LIGHTNING' ? it.preco_sugerido : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {

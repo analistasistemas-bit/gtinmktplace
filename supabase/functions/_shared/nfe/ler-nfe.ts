@@ -52,6 +52,8 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
     const ide = bloco(inf.corpo, 'ide');
     const emit = bloco(inf.corpo, 'emit');
     const dest = bloco(inf.corpo, 'dest');
+    const uf = texto(bloco(emit, 'enderEmit'), 'UF')?.toUpperCase() ?? null;
+    const ufEmitente = uf && /^[A-Z]{2}$/.test(uf) ? uf : null;
     const tot = bloco(inf.corpo, 'ICMSTot');
     // Protocolo é associado à NF-e pela chave; protocolo sem status NÃO é "sem protocolo".
     const temProtocolo = new RegExp(`<${PFX}protNFe\\b`).test(xml);
@@ -73,6 +75,7 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
       const ipi = bloco(imposto, 'IPI');
       const gtin = texto(prod, 'cEAN');
       const orig = texto(icms, 'orig');
+      const cest = texto(prod, 'CEST');
       const nItem = Number(det.attrs.match(/nItem="(\d+)"/)?.[1] ?? texto(det.corpo, 'nItem'));
       if (!Number.isInteger(nItem) || nItem < 1) throw new ErroLeitura('Item sem nItem válido.');
       return {
@@ -85,6 +88,9 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
         vDesc: numero(prod, 'vDesc'), vOutro: numero(prod, 'vOutro'),
         vIPI: numero(ipi, 'vIPI'), vST: numero(icms, 'vICMSST'), vFCPST: numero(icms, 'vFCPST'),
         orig: orig === null ? null : Number(orig),
+        icmsGrupo: icms?.match(new RegExp(`<${PFX}([A-Za-z_][\\w.-]*)`))?.[1] ?? null, // 1º filho, qualquer nome
+        csosn: texto(icms, 'CSOSN'), cstIcms: texto(icms, 'CST'),
+        cest: cest && /^\d{7}$/.test(cest) ? cest : null, nFci: texto(prod, 'nFCI'),
       };
     });
 
@@ -102,6 +108,7 @@ export function lerNfe(entrada: string): { ok: true; nota: NotaCompraLida } | { 
         modelo: numero(ide, 'mod', true), tipoNf: numero(ide, 'tpNF', true),
         emitidaEm: obrig(ide, 'dhEmi'),
         emitenteCnpj: obrig(emit, 'CNPJ'), emitenteNome: obrig(emit, 'xNome'),
+        emitenteUf: ufEmitente,
         destinatarioCnpj: texto(dest, 'CNPJ') ?? '',
         totais,
         assinada: new RegExp(`<${PFX}Signature\\b`).test(xml),
