@@ -8,7 +8,7 @@ import type { ContagemPromo, SemaforoPromo } from '@/lib/promocoes';
 // Mesmos tons/ícones do SemaforoPreco (src/components/semaforo-preco.tsx).
 export const SEMAFORO_UI: Record<SemaforoPromo, { tone: StatusTone; label: string; Icon: typeof CircleCheck; dot: string; text: string }> = {
   verde: { tone: 'success', label: 'Vale a pena', Icon: CircleCheck, dot: 'bg-success', text: 'text-success' },
-  amarelo: { tone: 'warning', label: 'Abaixo do mínimo', Icon: CircleAlert, dot: 'bg-warning', text: 'text-warning' },
+  amarelo: { tone: 'warning', label: 'Abaixo do piso', Icon: CircleAlert, dot: 'bg-warning', text: 'text-warning' },
   vermelho: { tone: 'danger', label: 'Prejuízo', Icon: CircleX, dot: 'bg-danger', text: 'text-danger' },
   indisponivel: { tone: 'neutral', label: 'Sem líquido', Icon: CircleHelp, dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
 };
