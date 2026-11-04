@@ -24,7 +24,7 @@ export interface OpcaoCampanha {
 export type FaixaSugestao = 'quase_vendendo' | 'invisivel';
 export interface Sugestao {
   chave: string; titulo: string; thumbnail: string | null; faixa: FaixaSugestao; unidades: number; visitas: number;
-  estoque: number | null; anunciosConvidados: number; vendasAbaixo: number; vendasEsperadas: number; oportunidade: number;
+  estoque: number | null; anunciosConvidados: number; vendasAbaixo: number; vendasEsperadas: number; unidadesOk: number; oportunidade: number;
   recomendada: OpcaoCampanha; alternativas: OpcaoCampanha[];
 }
 export interface ResultadoSugestoes {
@@ -140,7 +140,7 @@ export function montarSugestoes(e: {
 
     const sugestao: Sugestao = {
       chave, faixa, visitas, estoque, recomendada, alternativas, vendasAbaixo,
-      vendasEsperadas: visitasPorUnidade == null ? 0 : visitas / visitasPorUnidade,
+      vendasEsperadas: visitasPorUnidade == null ? 0 : visitas / visitasPorUnidade, unidadesOk,
       titulo: formatarNomeProduto(sinais.find((s) => s.nome_produto)?.nome_produto ?? convites[0].titulo) || convites[0].ml_item_id,
       thumbnail: convites.find((c) => c.thumbnail)?.thumbnail ?? null,
       unidades: soma(sinais, (s) => s.unidades_30d),

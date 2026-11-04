@@ -26,7 +26,7 @@ const opcao = (o: Partial<OpcaoCampanha> = {}): OpcaoCampanha => ({
 });
 const sugestao = (o: Partial<Sugestao> = {}): Sugestao => ({
   chave: 'p:1', titulo: 'Jaqueta', thumbnail: null, faixa: 'quase_vendendo', unidades: 0, visitas: 212, estoque: 36,
-  anunciosConvidados: 1, vendasAbaixo: 8.4, vendasEsperadas: 8.4, oportunidade: 50.4, recomendada: opcao(), alternativas: [], ...o,
+  anunciosConvidados: 1, vendasAbaixo: 8.4, vendasEsperadas: 8.4, unidadesOk: 0, oportunidade: 50.4, recomendada: opcao(), alternativas: [], ...o,
 });
 const dados = (o: Partial<ResultadoSugestoes> = {}): ResultadoSugestoes => ({ quaseVendendo: [], invisivel: [], dispensadas: [], visitasPorUnidade: 23.9, ...o });
 const carregar = (d: ResultadoSugestoes | undefined, extra = {}) =>
@@ -48,6 +48,12 @@ describe('ListaSugestoes', () => {
     carregar(undefined, { isLoading: true });
     renderLista();
     expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Analisando vendas, visitas e campanhas…');
+  });
+
+  it('compara vendas e expectativa na mesma base (dias com coleta ok)', () => {
+    carregar(dados({ quaseVendendo: [sugestao({ unidades: 4, unidadesOk: 1, vendasEsperadas: 3.07 })] }));
+    renderLista();
+    expect(screen.getByText('1 de ~3')).toBeInTheDocument();
   });
 
   it('duas faixas, Quase vendendo primeiro, com o motivo e vendas abaixo do esperado', () => {

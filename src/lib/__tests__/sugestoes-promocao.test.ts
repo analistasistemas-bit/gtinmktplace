@@ -162,7 +162,7 @@ describe('montarSugestoes', () => {
 
   it('conversão ignora dia pendente, corte usa todas as unidades', () => {
     const r = montar({ sinais: [conta, sinal({ visitas_ok: 100, unidades_ok: 1, unidades_30d: 4 })] });
-    expect(r.quaseVendendo[0]).toMatchObject({ unidades: 4 });
+    expect(r.quaseVendendo[0]).toMatchObject({ unidades: 4, unidadesOk: 1 });
     expect(r.quaseVendendo[0].vendasAbaixo).toBeCloseTo(100 / r.visitasPorUnidade! - 1, 5);
     expect(r.quaseVendendo[0].vendasEsperadas).toBeCloseTo(100 / r.visitasPorUnidade!, 5);
   });
