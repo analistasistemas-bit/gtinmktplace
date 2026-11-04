@@ -342,7 +342,7 @@ it('fatia 2.1, caso cheio: cidade/UF + ponto de reputação, frete na linha do g
   renderizarMiniBlocoDaBusca(c, meta, ok(50, 23.4) as never, 50, vistaDoCard(c, cheio()), AGORA,
     { frete: { estado: 'ok', valor: 23.45, expiraEm: AGORA + 1 } });
   expect(linhas21()).toEqual([
-    'Loja Boa· Platinum· São José dos Campos/SPⓘLoja oficialPatrocinado',
+    'Loja Boa· Platinum· São José dos Campos/SPⓘLoja oficial',
     'Clássicocomissão na sua contaR$ 7,10 (14%)ⓘ',
     'Giro mín.R$ 5 milⓘFrete cotadoR$ 23,45ⓘ',
     '9 vendedores·catálogohá 120 diasⓘ',

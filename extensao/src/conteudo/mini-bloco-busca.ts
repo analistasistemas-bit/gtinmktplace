@@ -189,7 +189,8 @@ export function renderizarMiniBlocoDaBusca(
     } else extra('v', 'Perfil não carregado');
   }
   if (card.lojaOficial) topo.append(el('span', 'c ambar', 'Loja oficial'));
-  if (oc.patrocinado) topo.append(el('span', 'c rosa', 'Patrocinado'));
+  // Meu anúncio já diz "patrocinado" na linha própria: o selo seria repetido (economiza uma linha).
+  if (oc.patrocinado && metadados?.proprio !== true) topo.append(el('span', 'c rosa', 'Patrocinado'));
 
   // 2. Oferta exata: tipo · comissão na sua conta (estado na mesma linha). Sem a oferta: processamento ou parcial terminal.
   const parcial = (motivo: string) => {
