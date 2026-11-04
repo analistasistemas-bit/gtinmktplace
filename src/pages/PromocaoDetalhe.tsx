@@ -78,11 +78,15 @@ function ateQuanto(r: ItemPromocao, { tooltip }: { tooltip: boolean }) {
   if (r.preco_min == null || r.preco_max == null) return '—';
   const a = ateQuantoDaLinha(r);
   if (a.motivo === 'nenhum') {
-    if (!tooltip) return <span className="text-xs font-medium text-muted-foreground">Piso fora da faixa</span>;
+    // O alvo é max(piso, custo): com custo acima do piso, o que falta cobrir é o custo, não o mínimo cadastrado.
+    const custo = r.projecao.some((c) => c.ate_quanto_motivo === 'nenhum' && c.custo != null && c.piso != null && c.custo > c.piso);
+    const rotulo = custo ? 'Custo fora da faixa' : 'Piso fora da faixa';
+    const classe = cn('text-xs font-medium', custo ? 'text-danger' : 'text-muted-foreground');
+    if (!tooltip) return <span className={classe}>{rotulo}</span>;
     return (
       <Tooltip>
-        <TooltipTrigger className="text-xs font-medium text-muted-foreground">Piso fora da faixa</TooltipTrigger>
-        <TooltipContent>Nem o maior preço da faixa atinge seu líquido mínimo. Não significa prejuízo: confira o lucro antes de aderir.</TooltipContent>
+        <TooltipTrigger className={classe}>{rotulo}</TooltipTrigger>
+        <TooltipContent>{custo ? 'Nem o maior preço da faixa cobre o custo.' : 'Nem o maior preço da faixa atinge seu líquido mínimo. Confira o lucro antes de aderir.'}</TooltipContent>
       </Tooltip>
     );
   }

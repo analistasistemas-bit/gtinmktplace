@@ -74,6 +74,17 @@ describe('PromocaoDetalhe', () => {
     expect(screen.queryByText('Sem preço viável')).toBeNull();
   });
 
+  it('custo acima do piso e sem cobertura na faixa aparece como custo, em vermelho', () => {
+    const semCusto = { ...item, projecao: item.projecao.map((c) => ({ ...c, custo: 50, piso: 30, ate_quanto_motivo: 'nenhum' })) } as ItemPromocao;
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [semCusto], isLoading: false } as never);
+
+    renderDetalhe();
+
+    screen.getAllByText('Custo fora da faixa').forEach((r) => expect(r.className).toContain('text-danger'));
+    expect(screen.queryByText('Piso fora da faixa')).toBeNull();
+  });
+
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
