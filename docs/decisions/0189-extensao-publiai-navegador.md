@@ -378,7 +378,8 @@ o preço lido (`event_data.price`), com o frete da conta da organização, impos
    só no formato `+N disponíveis`, até 40 caracteres.
 4. **Frete cotado da oferta** (informação, fora da margem). Edge: `GET /items/{id}/shipping_options?zip_code=01310100`
    com o token da conexão (medido em 25/10: HTTP 200 para item de terceiro, `list_cost` 32,45 em todas as opções);
-   `list_cost` da opção `recommended` (senão a primeira), cache de 6 h por conta ML + org + item (D-18). Consulta
+   `list_cost` da opção `recommended` (senão a primeira; emenda 04/11: recomendada com 0 e outra opção com valor,
+   caso medido em Full rápido, usa a primeira com valor), cache de 6 h por conta ML + org + item (D-18). Consulta
    própria com 2,5 s no total e nenhuma nova tentativa (nem em 429). Falha ou valor ausente → indisponível, nunca zero,
    e não aparece; `null` no anúncio próprio. Só para cliente com protocolo 2: sem protocolo (0.2.x) não há cotação e o
    corpo segue byte a byte o anterior. A busca não cota. Painel: "Frete cotado deste anúncio: R$ 32,45

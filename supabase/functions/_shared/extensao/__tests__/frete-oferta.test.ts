@@ -11,6 +11,14 @@ describe('freteDaRespostaShipping (auditoria × Avant, 25/10)', () => {
     expect(freteDaRespostaShipping({ options: [{ list_cost: 0, display: 'recommended' }] })).toEqual({ estado: 'ok', valor: 0 });
   });
 
+  it('recomendada com list_cost 0 (Full rápido, medido 04/11): vale a 1ª opção com valor; todas 0 seguem 0', () => {
+    expect(freteDaRespostaShipping({ options: [
+      { list_cost: 0, base_cost: 9.99, display: 'recommended' }, { list_cost: 0, display: 'always' }, { list_cost: 8.45, base_cost: 8.7, display: 'always' }, { list_cost: 12.99, display: 'always' },
+    ] })).toEqual({ estado: 'ok', valor: 8.45 });
+    expect(freteDaRespostaShipping({ options: [{ list_cost: 0, display: 'recommended' }, { list_cost: 0, display: 'always' }] })).toEqual({ estado: 'ok', valor: 0 });
+    expect(freteDaRespostaShipping({ options: [{ list_cost: 0, display: 'recommended' }, { list_cost: '8', display: 'always' }, { list_cost: -1 }] })).toEqual({ estado: 'ok', valor: 0 });
+  });
+
   it('falha de leitura ou list_cost ausente/não numérico → indisponível (nunca zero)', () => {
     for (const r of [null, {}, { options: [] }, { options: [{ cost: 10 }] }, { options: [{ list_cost: '32.45' }] }, { options: [{ list_cost: -1 }] }, { options: [{ list_cost: NaN }] }]) {
       expect(freteDaRespostaShipping(r)).toEqual(INDISPONIVEL);

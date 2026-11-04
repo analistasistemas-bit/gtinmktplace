@@ -262,14 +262,17 @@ export const QTD_NAO_CONFIRMADA = 'quantidade por anúncio não confirmada';
 export const CEP_FRETE_OFERTA = '01310100';
 
 /** /items/{id}/shipping_options → list_cost da opção "recommended" (senão a primeira); falha ou valor
- *  ausente/não numérico → indisponível, nunca zero (D-7). Medido em 25/10: 200 p/ item de terceiro. */
+ *  ausente/não numérico → indisponível, nunca zero (D-7). Medido em 25/10: 200 p/ item de terceiro.
+ *  Recomendada com 0 e outra opção com valor (Full rápido, medido 04/11): vale a 1ª com valor. */
 /** Cache do frete da oferta por conta ML + org + item (D-18: consultas com a credencial da conta). */
 export const chaveFreteOferta = (conta: string, orgId: string, mlItemId: string) => `ext:frof:v2:${conta}:${orgId}:${mlItemId}:${CEP_FRETE_OFERTA}`;
 
 export function freteDaRespostaShipping(r: unknown): Disponivel<number> {
   const opcoes = (r as { options?: unknown } | null)?.options;
   const lista = Array.isArray(opcoes) ? (opcoes as { display?: unknown; list_cost?: unknown }[]) : [];
-  const v = (lista.find((o) => o?.display === 'recommended') ?? lista[0])?.list_cost;
+  const principal = (lista.find((o) => o?.display === 'recommended') ?? lista[0])?.list_cost;
+  const comValor = lista.map((o) => o?.list_cost).find((c) => typeof c === 'number' && Number.isFinite(c) && c > 0);
+  const v = principal === 0 ? comValor ?? 0 : principal;
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? { estado: 'ok', valor: v } : { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
 }
 

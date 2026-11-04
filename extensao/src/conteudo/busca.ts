@@ -96,14 +96,16 @@ function aplicarBlocos(): void {
   const vivos = new Set<Element>();
   // Preço analisado por item = o do card agregado (1º preço legível na ordem da página), o mesmo que o SW manda à edge.
   // ponytail: lido do DOM atual; se o scroll trouxer o 1º preço numa leitura e outro antes dele na seguinte, diverge.
-  const precoAnalisado = new Map(lerBusca(document).map((c) => [c.itemId, c.preco]));
+  const agregados = new Map(lerBusca(document).map((c) => [c.itemId, c]));
   for (const card of cardsElegiveis(document)) {
     const c = lerCard(card);
     const preco = doCard(card, '.poly-component__price');
     if (!c || !preco?.parentElement) continue;
     const meta = metadados[c.itemId], res = resultados[c.itemId];
-    const pa = precoAnalisado.get(c.itemId) ?? c.preco;
-    const vista = vistaDoCard(c, enriquecimento);
+    const ag = agregados.get(c.itemId);
+    const pa = ag?.preco ?? c.preco;
+    // Catálogo do item agregado: o patrocinado passa por click1 e não tem o /p/ que o orgânico da mesma página traz.
+    const vista = vistaDoCard(ag ? { ...c, catalogProductId: ag.catalogProductId, identidadeConflitante: ag.identidadeConflitante, preco: pa } : c, enriquecimento);
     // Frete só da ocorrência ao preço analisado (o cotado); outra aparição com outro preço não o herda.
     const frete = c.preco !== null && c.preco === pa ? vistaDoFrete(c, pa, enriquecimento) : null;
     const assinatura = JSON.stringify([c, meta ?? null, res ?? null, pa, vista, frete]);

@@ -64,6 +64,28 @@ it('enriquecimento do catálogo chega com os resultados e entra no bloco do card
   ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
 });
 
+it('patrocinado sem /p/ herda o catálogo do orgânico do mesmo item; sozinho na página continua sem catálogo', async () => {
+  const primeiro = document.querySelector('.poly-card')!;
+  const ad = primeiro.cloneNode(true) as HTMLElement;
+  ad.querySelector('a.poly-component__title')!.setAttribute('href', 'https://click1.mercadolivre.com.br/mclics/clicks/external/MLB/count?a=x&pdp_filters=item_id%3AMLB5321956667#is_advertising=true&position=1&type=pad');
+  primeiro.after(ad);
+  const link = primeiro.querySelector('a.poly-component__title')!;
+  const href = link.getAttribute('href')!;
+  link.setAttribute('href', 'https://www.mercadolivre.com.br/p/MLB1000000#wid=MLB5321956667');
+  const enriquecimento = { catalogos: { MLB1000000: { ofertas: { estado: 'ok', total: 4, lidas: 4, vendedoresIdentificados: 4, ofertasSemVendedor: 0, completa: true, exatas: {} } } }, vendedores: {}, tentarAposEm: null, falhou: false, indisponivel: null };
+  const enviarMsg = () => ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {}, enriquecimento });
+  enviarMsg();
+  expect(blocos()).toHaveLength(2);
+  expect(blocos().every((h) => raizes.get(h)?.textContent?.includes('4 vendedores'))).toBe(true);
+  link.setAttribute('href', href);
+  primeiro.remove();
+  enviarMsg();
+  expect(textoDosBlocos()).not.toContain('4 vendedores');
+  ad.after(primeiro);
+  ad.remove();
+  ouvinte({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {} });
+});
+
 it('fatia 2.1: frete cotado ao preço do card; cotação vencida some do bloco; marca e % dos pisos nunca no card', () => {
   const msg = (expiraEm: number) => ({ tipo: 'publiai:busca-resultados', url: aqui(), geracao: G, resultados: {},
     // `participacao` de SW antigo é ignorada (a % dos pisos é só do painel).
