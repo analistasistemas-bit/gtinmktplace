@@ -83,6 +83,39 @@ describe('Você recebe por venda ao aderir', () => {
     expect(screen.getByText('Conta feita na cor de menor líquido: Bege.')).toBeInTheDocument();
   });
 
+  it('editar o preço recalcula sozinho e a conta volta no preço novo', async () => {
+    simularAsync.mockReset().mockResolvedValue([{ ml_item_id: 'MLB1', status: 'ok', preco: 120, pior_semaforo: 'amarelo',
+      projecao: [cor({ custo: 63.4, comissao_pct: 11.5, frete: 16.95, aliquota_pct: 8, liquido: 79.65, semaforo: 'amarelo' })] }]);
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const campo = screen.getByLabelText('Preço de MLB1');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '120,00');
+    expect(screen.getByText('Calculando o que você recebe…')).toBeInTheDocument();
+    expect(await screen.findByText(/R\$\s79,65/, {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(simularAsync).toHaveBeenLastCalledWith({ promocao_id: expect.anything(), itens: [{ ml_item_id: 'MLB1', preco: 120 }] });
+  });
+
+  it('falha no cálculo automático avisa na linha, sem ficar calculando para sempre', async () => {
+    simularAsync.mockReset().mockRejectedValue(new Error('fora do ar'));
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const campo = screen.getByLabelText('Preço de MLB1');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '120,00');
+    expect(await screen.findByText('Não foi possível calcular agora.', {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(screen.queryByText('Calculando o que você recebe…')).toBeNull();
+  });
+
+  it('servidor sem conta para o anúncio não deixa a linha calculando para sempre', async () => {
+    simularAsync.mockReset().mockResolvedValue([{ ml_item_id: 'MLB1', status: 'ok', preco: 120, pior_semaforo: 'indisponivel',
+      projecao: [cor({ liquido: null, semaforo: 'indisponivel', motivo: 'kit_divergente' })] }]);
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const campo = screen.getByLabelText('Preço de MLB1');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '120,00');
+    expect(await screen.findByText('Conta indisponível para este anúncio.', {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(screen.queryByText('Calculando o que você recebe…')).toBeNull();
+  });
+
   it('sair não mostra preço atual nem a conta', () => {
     renderPreview({ acao: 'sair', tipo: 'DEAL', itens: [tarifado({ status: 'started' })] });
     expect(screen.queryByText(/Preço atual/)).toBeNull();
@@ -403,6 +436,16 @@ describe('PreviewOperacao', () => {
   });
 
   // ADR-0194 D-9: adesão vinda de sugestão leva a marcação; adesão comum não manda o campo.
+  it('em sequência de campanhas mostra o passo e, ao executar, segue para a próxima sem sair da tela', async () => {
+    const user = userEvent.setup();
+    const aoConcluir = vi.fn(); const onClose = vi.fn();
+    renderPreview({ tipo: 'SMART', itens: [item()], passo: { atual: 1, total: 2 }, aoConcluir, onClose });
+    expect(screen.getByText(/Campanha 1 de 2/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    expect(aoConcluir).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('repassa a marcação de origem só quando vem de sugestão', async () => {
     const user = userEvent.setup();
     const sugestao = { faixa: 'quase_vendendo' as const, oportunidade: 12.5, chave: 'p:1' };

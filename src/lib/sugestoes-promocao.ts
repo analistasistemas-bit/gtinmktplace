@@ -71,6 +71,14 @@ function escolher(opcoes: OpcaoCampanha[]): { recomendada: OpcaoCampanha; altern
   return { recomendada, alternativas: opcoes.filter((o) => o !== recomendada).sort((a, b) => b.descontoPct - a.descontoPct) };
 }
 
+/** Duas campanhas com anúncio em comum e período que se cruza; data desconhecida conta como cruzamento. */
+export function periodosCoincidem(opcoes: OpcaoCampanha[]): boolean {
+  const cruza = (a: Promocao, b: Promocao) => a.inicio == null || a.fim == null || b.inicio == null || b.fim == null
+    || (Date.parse(a.inicio) < Date.parse(b.fim) && Date.parse(b.inicio) < Date.parse(a.fim));
+  return opcoes.some((a, i) => opcoes.slice(i + 1).some((b) =>
+    cruza(a.promocao, b.promocao) && a.itens.some((x) => b.itens.some((y) => y.ml_item_id === x.ml_item_id))));
+}
+
 export function montarSugestoes(e: {
   convites: ConvitePromocao[]; participacoes: Participacao[]; promocoes: Promocao[]; sinais: SinalAnuncio[];
   dispensas: Dispensa[]; agoraMs: number;

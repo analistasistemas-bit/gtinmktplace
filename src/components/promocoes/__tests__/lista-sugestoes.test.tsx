@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -122,6 +122,54 @@ describe('ListaSugestoes', () => {
     expect(screen.queryByText('Jaqueta')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Reativar Regata' }));
     expect(reativar).toHaveBeenCalledWith('p:9');
+  });
+
+  describe('várias campanhas', () => {
+    const dealB = opcao({ promocao: { ...promo('C2', 'Black Friday'), inicio: '2026-11-12T03:00:00Z', fim: '2026-12-01T03:00:00Z' } as Promocao });
+    const dealA = opcao({ promocao: { ...promo('C1', '11.11 da Black'), inicio: '2026-10-19T03:00:00Z', fim: '2026-11-12T03:00:00Z' } as Promocao });
+
+    it('marca as campanhas de uma vez e confirma uma depois da outra, na ordem das datas', async () => {
+      carregar(dados({ quaseVendendo: [sugestao({ recomendada: dealB, alternativas: [dealA] })] }));
+      renderLista();
+      await userEvent.click(screen.getByRole('button', { name: 'Aderir Jaqueta' }));
+      expect(screen.getByRole('checkbox', { name: /Black Friday/ })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: /11\.11 da Black/ })).not.toBeChecked();
+      await userEvent.click(screen.getByRole('checkbox', { name: /11\.11 da Black/ }));
+      expect(screen.queryByText(/o ML aplica o menor preço/)).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Continuar (2)' }));
+      const primeiro = preview.mock.calls.at(-1)![0] as { promocaoId: string; passo: unknown; aoConcluir: () => void; sugestao: unknown };
+      expect(primeiro).toMatchObject({ promocaoId: 'C1', passo: { atual: 1, total: 2 }, sugestao: expect.objectContaining({ chave: 'p:1' }) });
+      act(() => primeiro.aoConcluir());
+      const segundo = preview.mock.calls.at(-1)![0] as { promocaoId: string; aoConcluir?: unknown };
+      expect(segundo).toMatchObject({ promocaoId: 'C2', passo: { atual: 2, total: 2 } });
+      expect(segundo.aoConcluir).toBeUndefined();
+    });
+
+    it('sem nenhuma marcada não continua', async () => {
+      carregar(dados({ quaseVendendo: [sugestao({ recomendada: dealB, alternativas: [dealA] })] }));
+      renderLista();
+      await userEvent.click(screen.getByRole('button', { name: 'Aderir Jaqueta' }));
+      await userEvent.click(screen.getByRole('checkbox', { name: /Black Friday/ }));
+      expect(screen.getByRole('button', { name: 'Continuar (0)' })).toBeDisabled();
+    });
+
+    it('avisa quando os períodos coincidem no mesmo anúncio', async () => {
+      const sobreposta = opcao({ promocao: { ...promo('C3', 'Outra'), inicio: '2026-11-01T03:00:00Z', fim: '2026-11-20T03:00:00Z' } as Promocao });
+      carregar(dados({ quaseVendendo: [sugestao({ recomendada: dealA, alternativas: [sobreposta] })] }));
+      renderLista();
+      await userEvent.click(screen.getByRole('button', { name: 'Aderir Jaqueta' }));
+      await userEvent.click(screen.getByRole('checkbox', { name: /Outra/ }));
+      expect(screen.getByText(/o ML aplica o menor preço/)).toBeInTheDocument();
+    });
+
+    it('SMART escolhida segue direto para o painel, uma campanha só', async () => {
+      const smart = opcao({ promocao: promo('C9', 'Impulsione', 'SMART') });
+      carregar(dados({ quaseVendendo: [sugestao({ recomendada: smart, alternativas: [dealA, dealB] })] }));
+      renderLista();
+      await userEvent.click(screen.getByRole('button', { name: 'Aderir Jaqueta' }));
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(preview.mock.calls.at(-1)![0]).toMatchObject({ promocaoId: 'C9' });
+    });
   });
 
   it('sem permissão não mostra Aderir nem Dispensar', () => {

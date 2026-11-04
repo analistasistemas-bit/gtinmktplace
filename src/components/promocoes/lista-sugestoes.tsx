@@ -13,6 +13,7 @@ import { useDispensarSugestao, useReativarSugestao, useSugestoesPromocao } from 
 import { ehTipoOperavel, rotuloTipo } from '@/lib/promocoes';
 import type { OpcaoCampanha, Sugestao } from '@/lib/sugestoes-promocao';
 import { CardSugestao } from './card-sugestao';
+import { EscolherCampanhas } from './escolher-campanhas';
 import { PreviewOperacao } from './preview-operacao';
 
 const TAMANHOS = [20, 50, 100];
@@ -52,7 +53,8 @@ export function ListaSugestoes() {
   const dispensar = useDispensarSugestao();
   const reativar = useReativarSugestao();
   const [visao, setVisao] = useState<'sugestoes' | 'dispensados'>('sugestoes');
-  const [aderindo, setAderindo] = useState<{ s: Sugestao; opcao: OpcaoCampanha } | null>(null);
+  const [escolhendo, setEscolhendo] = useState<{ s: Sugestao; inicial: OpcaoCampanha; opcoes: OpcaoCampanha[] } | null>(null);
+  const [fila, setFila] = useState<{ s: Sugestao; opcoes: OpcaoCampanha[]; i: number } | null>(null);
 
   if (isError) {
     return (
@@ -75,13 +77,20 @@ export function ListaSugestoes() {
   const comConversao = data.visitasPorUnidade != null;
   const ocupado = dispensar.isPending || reativar.isPending;
   const verDispensados = visao === 'dispensados' && data.dispensadas.length > 0;
+  // Várias de uma vez só em DEAL: preço enviado e sem reserva de estoque. SMART e Relâmpago seguem uma por vez.
+  function aderir(s: Sugestao, opcao: OpcaoCampanha) {
+    const deals = [s.recomendada, ...s.alternativas].filter((o) => o.promocao.tipo === 'DEAL');
+    if (opcao.promocao.tipo === 'DEAL' && deals.length > 1) setEscolhendo({ s, inicial: opcao, opcoes: deals });
+    else setFila({ s, opcoes: [opcao], i: 0 });
+  }
   const card = (s: Sugestao, dispensada = false) => (
     <CardSugestao key={s.chave} s={s} podeExecutar={podeExecutar} comConversao={comConversao} dispensada={dispensada} ocupado={ocupado}
-      onAderir={(opcao) => setAderindo({ s, opcao })}
+      onAderir={(opcao) => aderir(s, opcao)}
       onDispensar={() => void mudar(() => dispensar.mutateAsync(s.chave), 'Sugestão dispensada por 30 dias.')}
       onReativar={() => void mudar(() => reativar.mutateAsync(s.chave), 'Sugestão reativada.')} />
   );
   const vazio = data.quaseVendendo.length === 0 && data.invisivel.length === 0;
+  const aderindo = fila?.opcoes[fila.i];
 
   return (
     <div className="mt-4 flex flex-col gap-4">
@@ -119,12 +128,18 @@ export function ListaSugestoes() {
         </>
       )}
 
-      {aderindo && (
-        <PreviewOperacao acao="aderir" tipo={ehTipoOperavel(aderindo.opcao.promocao.tipo) ? aderindo.opcao.promocao.tipo : 'DEAL'}
-          promocaoId={aderindo.opcao.promocao.promocao_id}
-          promocaoNome={aderindo.opcao.promocao.nome ?? rotuloTipo(aderindo.opcao.promocao.tipo)}
-          itens={aderindo.opcao.itens} aberto onClose={() => setAderindo(null)} onSucesso={() => setAderindo(null)}
-          sugestao={{ faixa: aderindo.s.faixa, oportunidade: Math.round(aderindo.s.oportunidade * 100) / 100, chave: aderindo.s.chave }} />
+      {escolhendo && (
+        <EscolherCampanhas s={escolhendo.s} opcoes={escolhendo.opcoes} inicial={escolhendo.inicial} onClose={() => setEscolhendo(null)}
+          onContinuar={(opcoes) => { setEscolhendo(null); setFila({ s: escolhendo.s, opcoes, i: 0 }); }} />
+      )}
+      {fila && aderindo && (
+        <PreviewOperacao key={aderindo.promocao.promocao_id} acao="aderir" tipo={ehTipoOperavel(aderindo.promocao.tipo) ? aderindo.promocao.tipo : 'DEAL'}
+          promocaoId={aderindo.promocao.promocao_id}
+          promocaoNome={aderindo.promocao.nome ?? rotuloTipo(aderindo.promocao.tipo)}
+          itens={aderindo.itens} aberto onClose={() => setFila(null)} onSucesso={() => setFila(null)}
+          passo={fila.opcoes.length > 1 ? { atual: fila.i + 1, total: fila.opcoes.length } : undefined}
+          aoConcluir={fila.i < fila.opcoes.length - 1 ? () => setFila({ ...fila, i: fila.i + 1 }) : undefined}
+          sugestao={{ faixa: fila.s.faixa, oportunidade: Math.round(fila.s.oportunidade * 100) / 100, chave: fila.s.chave }} />
       )}
     </div>
   );

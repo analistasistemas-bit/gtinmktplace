@@ -41,6 +41,10 @@ A Central lista campanhas e o operador escolhe anúncios dentro de cada uma. Nad
 
 Pedido do Diego: "~3 vendas abaixo do esperado" ao lado de "0 vendas" confundia. O card passa a mostrar "Vendeu 0 · esperado ~3, pela média da conta" (`vendasEsperadas` = visitas do produto nos dias `ok` ÷ visitas por unidade da conta; as vendas usam a mesma base de dias `ok`). A ordem por Oportunidade (D-5) não muda: `vendasAbaixo` segue só ordenando. O card mostra o preço atual (`preco_original`). O painel de adesão mostra o preço atual e o "Você recebe por venda" com comissão, imposto, frete, lucro, margem e markup, no tipo real do anúncio (Clássico ou Premium, de `ml_promocao_itens.listing_type_id`). A conta sai da projeção do servidor, sem chamada nova ao ML; com várias cores, vale a cor de menor líquido.
 
+## Emenda 2026-11-04 (2): várias campanhas no Aderir
+
+Produto com duas ou mais campanhas DEAL abre uma escolha com caixas de marcação (a recomendada vem marcada). Cada campanha marcada é confirmada no painel de sempre, em sequência e por ordem de data ("Campanha 1 de 2"), e vira uma operação própria com a mesma marca `sugestao`. Na tela de resultado (D-9), contar por `chave` e não por operação. Decisão a partir da revisão do Codex: só DEAL, porque o preço vai no pedido e não há reserva de estoque. SMART pode aderir por oferta mudada e Relâmpago não coordena reserva entre campanhas, então seguem uma por vez. A confirmação em sequência dispensa coordenação no servidor; envio simultâneo do mesmo anúncio não foi testado no ML. Campanhas com período cruzado no mesmo anúncio mostram aviso: o ML aplica o menor preço (ADR-0170), e data desconhecida conta como cruzamento. Depois da primeira adesão o produto sai da lista (D-3), então a campanha não marcada só volta pela Central.
+
 ## Alternativas descartadas
 
 - **Só vendas:** mistura problema de preço com problema de exposição.

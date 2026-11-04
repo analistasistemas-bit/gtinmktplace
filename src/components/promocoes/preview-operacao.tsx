@@ -33,6 +33,7 @@ interface LinhaEditavel extends LinhaPreview {
 }
 
 const PRECO_MINIMO_RELAMPAGO = 19;
+const ESPERA_DIGITACAO_MS = 500;
 const formatarInput = (n: number | null) => (n == null ? '' : n.toFixed(2).replace('.', ','));
 const centavos = (n: number) => Math.round(n * 100);
 const exatoVale = (l: LinhaEditavel) => l.exato != null && l.preco != null && centavos(l.exato.preco) === centavos(l.preco);
@@ -67,7 +68,7 @@ function textoRisco(vermelho: number, indisponivel: number): string {
   return partes.join(' e ');
 }
 
-export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados, sugestao }: {
+export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis, simulados, sugestao, passo, aoConcluir }: {
   acao: AcaoPromocao; tipo: TipoPromocaoOperavel; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
@@ -77,6 +78,10 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   simulados?: Map<string, number>;
   /** Marcação de origem quando a adesão nasce de uma sugestão (ADR-0194 D-9). */
   sugestao?: MarcaSugestao;
+  /** Sequência de campanhas (ADR-0194, emenda 2026-11-04): posição desta confirmação. */
+  passo?: { atual: number; total: number };
+  /** Há próxima campanha: ao criar a operação, segue para ela em vez de fechar e ir para Operações. */
+  aoConcluir?: () => void;
 }) {
   const podeExecutar = usePodeExecutarOperacao();
   const criar = useCriarOperacao();
@@ -86,9 +91,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
 
   // Achado Codex: cálculo pendente de uma abertura anterior não toca as linhas da nova (nem segue para o próximo lote).
   const geracao = useRef(0);
+  const digitando = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   // Reabrir com preview novo (item mudou, ou trocou o grupo aderir/sair): recomeça do zero.
   useEffect(() => {
     geracao.current++;
+    digitando.current.forEach(clearTimeout);
     if (!aberto) return;
     const novas = construirLinhas(acao, tipo, itens, naoRevertiveis, simulados);
     setLinhas(novas);
@@ -122,7 +129,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     setLinhas((prev) => prev.map((l) => (l.ml_item_id === id ? { ...l, marcado: !l.marcado } : l)));
   }
   function editarPreco(id: string, texto: string) {
-    setLinhas((prev) => prev.map((l) => (l.ml_item_id === id ? aplicarPreco(l, texto, itens) : l)));
+    const novas = linhas.map((l) => (l.ml_item_id === id ? aplicarPreco(l, texto, itens) : l));
+    setLinhas(novas);
+    // Recalcula sozinho quando o operador para de digitar; a resposta só vale para a linha ainda nesse preço.
+    clearTimeout(digitando.current.get(id));
+    digitando.current.set(id, setTimeout(() => void calcularExato(novas.filter((l) => l.ml_item_id === id)), ESPERA_DIGITACAO_MS));
   }
   function usarAteQuanto(id: string) {
     const novos = linhas.map((l) => (l.ml_item_id === id && l.ateQuanto != null ? aplicarPreco(l, formatarInput(l.ateQuanto), itens) : l));
@@ -165,7 +176,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
       try {
         res = await simularM.mutateAsync({ promocao_id: promocaoId, itens: lote });
       } catch (e) {
-        if (g === geracao.current) toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
+        if (g === geracao.current) {
+          toast.error(e instanceof Error ? e.message : 'Não foi possível calcular o lucro agora.');
+          const falhou = new Set(lote.map((p) => p.ml_item_id));
+          setLinhas((prev) => prev.map((l) => (falhou.has(l.ml_item_id) ? { ...l, avisoCalculo: 'Não foi possível calcular agora.' } : l)));
+        }
         return;
       }
       if (g !== geracao.current || !Array.isArray(res)) return;
@@ -179,7 +194,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
         if (r.status === 'ignorado') return { ...l, exato: null, avisoCalculo: r.motivo };
         const it = itens.find((x) => x.ml_item_id === l.ml_item_id);
         const s = it ? resumoLucro(it, r) : null;
-        return { ...l, semaforo: r.pior_semaforo, exato: s ? { preco: r.preco, ...s, semaforo: r.pior_semaforo } : null, avisoCalculo: undefined };
+        return { ...l, semaforo: r.pior_semaforo, exato: s ? { preco: r.preco, ...s, semaforo: r.pior_semaforo } : null, avisoCalculo: s ? undefined : 'Conta indisponível para este anúncio.' };
       }));
     }
   }
@@ -195,6 +210,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     try {
       await criar.mutateAsync({ acao, promocao_id: promocaoId, origem_id: origemId ?? null, itens: pedido, ...(sugestao ? { sugestao } : {}) });
       toast.success(`Operação iniciada: ${pedido.length} anúncios`);
+      if (aoConcluir) { aoConcluir(); return; }
       onSucesso?.();
       onClose();
       navigate('/promocoes?aba=operacoes');
@@ -223,7 +239,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
       <SheetContent className="flex w-full flex-col sm:max-w-2xl">
         <SheetHeader>
           <SheetTitle>{titulo}</SheetTitle>
-          <SheetDescription>{marcadas.length} de {linhas.length} selecionados para enviar.</SheetDescription>
+          <SheetDescription>{passo && `Campanha ${passo.atual} de ${passo.total} · `}{marcadas.length} de {linhas.length} selecionados para enviar.</SheetDescription>
         </SheetHeader>
         {podeEditarPreco && (
           <div className="flex flex-col gap-2 border-b px-4 pb-3">
@@ -310,6 +326,8 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                     </div>
                     {exatoVale(l) ? detalhe(l) : l.avisoCalculo ? (
                       <p className="text-xs text-danger">{l.avisoCalculo}</p>
+                    ) : l.preco != null && l.preco > 0 ? (
+                      <p className="text-xs text-muted-foreground">Calculando o que você recebe…</p>
                     ) : null}
                     {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
                     {acimaDoOriginal(l) && <span className="text-xs text-danger">Precisa ser menor que o preço original ({fmtBRL(originalDe(l.ml_item_id)!)})</span>}

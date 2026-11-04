@@ -16,7 +16,7 @@ function precoDaOpcao(o: OpcaoCampanha, campo: 'preco_avaliado' | 'preco_origina
   return menor === maior ? fmtBRL(menor) : `${fmtBRL(menor)} a ${fmtBRL(maior)}`;
 }
 
-function ResumoCampanha({ o }: { o: OpcaoCampanha }) {
+export function ResumoCampanha({ o }: { o: OpcaoCampanha }) {
   return (
     <span className="tabular-nums">
       {precoDaOpcao(o)} · −{Math.round(o.descontoPct)}% · lucro {fmtBRL(o.lucroPorVenda)} por venda
