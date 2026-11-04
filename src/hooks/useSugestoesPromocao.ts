@@ -1,5 +1,5 @@
 // ADR-0194 — dados da aba Sugestões: junta as leituras do banco e aplica a regra pura. Nenhuma chamada ao ML.
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { buscarTodasPaginas } from '@/lib/paginacao-supabase';
@@ -9,6 +9,7 @@ import { lerErroEdge } from '@/hooks/useOperacoes';
 import { useParticipacoes, usePromocoes } from '@/hooks/usePromocoes';
 
 const QK_DISPENSAS = ['promocoes', 'sugestoes-dispensas'] as const;
+const QK_SINAIS = ['promocoes', 'sugestoes-sinais'] as const;
 
 /** Paginado por GET: RPC por POST ignora o header Range (teto de 1.000 linhas do PostgREST). */
 function fetchSinais(): Promise<SinalAnuncio[]> {
@@ -31,8 +32,18 @@ export function useSugestoesPromocao() {
       .filter((p) => !ehCupom(p.tipo) && ehTipoOperavel(p.tipo) && ['ativas', 'futuras'].includes(abaDa(p, agora) ?? ''))
       .map((p) => p.promocao_id).sort();
   }, [promocoes.data]);
-  const convites = useQuery({ queryKey: ['promocoes', 'convites', ids], queryFn: () => fetchConvites(ids), enabled: !!promocoes.data, staleTime: 60_000 });
-  const sinais = useQuery({ queryKey: ['promocoes', 'sugestoes-sinais'], queryFn: fetchSinais, staleTime: 60_000 });
+  // "Atualizar agora" termina depois da invalidação: a marca do sync é o que avisa que há dados novos.
+  const marcaSync = useMemo(() => (promocoes.data ?? []).reduce((m, p) => ((p.itens_sincronizados_em ?? '') > m ? p.itens_sincronizados_em! : m), ''), [promocoes.data]);
+  const qc = useQueryClient();
+  const marcaAnterior = useRef(marcaSync);
+  useEffect(() => {
+    if (marcaAnterior.current === marcaSync) return;
+    marcaAnterior.current = marcaSync;
+    void qc.invalidateQueries({ queryKey: ['promocoes', 'participacoes-todas'] });
+    void qc.invalidateQueries({ queryKey: QK_SINAIS });
+  }, [marcaSync, qc]);
+  const convites = useQuery({ queryKey: ['promocoes', 'convites', ids, marcaSync], queryFn: () => fetchConvites(ids), enabled: !!promocoes.data, staleTime: 60_000, placeholderData: (anterior) => anterior });
+  const sinais = useQuery({ queryKey: QK_SINAIS, queryFn: fetchSinais, staleTime: 60_000 });
   const dispensas = useQuery({ queryKey: QK_DISPENSAS, queryFn: fetchDispensas, staleTime: 60_000 });
 
   const fontes = [promocoes, participacoes, convites, sinais, dispensas];

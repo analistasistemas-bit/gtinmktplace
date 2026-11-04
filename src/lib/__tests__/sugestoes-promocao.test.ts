@@ -186,6 +186,17 @@ describe('montarSugestoes', () => {
     expect(r.invisivel[0].anunciosConvidados).toBe(2);
   });
 
+  it('catálogo sem produto próprio herda o do normal e soma os sinais dos dois', () => {
+    const catalogo = sinal({ ml_item_id: 'MLBC', codigo_pai: null, estoque_produto: null, nome_produto: null, unidades_30d: 3, unidades_ok: 3 });
+    const convites = [convite({ ml_item_id: 'MLBC', anuncio_normal_id: 'MLB1' })];
+    const fora = montar({ convites, sinais: [conta, catalogo, sinal({ unidades_30d: 2, unidades_ok: 2 })] });
+    expect([...fora.quaseVendendo, ...fora.invisivel]).toEqual([]);
+    const zerado = montar({ convites, sinais: [conta, { ...catalogo, unidades_30d: 0, unidades_ok: 0 }, sinal({ estoque_produto: 0 })] });
+    expect([...zerado.quaseVendendo, ...zerado.invisivel]).toEqual([]);
+    const dentro = montar({ convites, sinais: [conta, { ...catalogo, visitas_ok: 10, unidades_30d: 1, unidades_ok: 1 }, sinal({ visitas_ok: 5 })] });
+    expect(dentro.invisivel[0]).toMatchObject({ chave: 'p:P1', visitas: 15, unidades: 1 });
+  });
+
   it('sem vínculo vale o anúncio sozinho', () => {
     const r = montar({ sinais: [conta, sinal({ codigo_pai: null, estoque_produto: null, nome_produto: null })] });
     expect(r.invisivel[0].chave).toBe('a:MLB1');
@@ -194,7 +205,7 @@ describe('montarSugestoes', () => {
 
   it('título em maiúsculas sai legível', () => {
     const r = montar({ sinais: [conta, sinal({ nome_produto: 'LINHA PARA COSTURA' })] });
-    expect(r.invisivel[0].titulo).toBe('Linha Para Costura');
+    expect(r.invisivel[0].titulo).toBe('Linha para Costura');
   });
 
   it('ordena por oportunidade, desempate por visitas', () => {

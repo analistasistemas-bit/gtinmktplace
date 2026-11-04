@@ -13,13 +13,14 @@ vi.mock('@/lib/promocoes', async () => ({ ...(await vi.importActual<typeof impor
 const from = vi.fn();
 vi.mock('@/lib/supabase', () => ({ supabase: { from: (t: string) => from(t), rpc: vi.fn(), functions: { invoke: vi.fn() } } }));
 
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
-);
+let client: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 const ok = (data: unknown) => ({ data, isLoading: false, isError: false, refetch: vi.fn() }) as never;
 
 describe('useSugestoesPromocao', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     vi.mocked(usePromocoes).mockReturnValue(ok([]));
     vi.mocked(useParticipacoes).mockReturnValue(ok([]));
     vi.mocked(fetchConvites).mockResolvedValue([]);
@@ -31,6 +32,19 @@ describe('useSugestoesPromocao', () => {
     const { result } = renderHook(() => useSugestoesPromocao(), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(result.current.isError).toBe(false);
+  });
+
+  it('sync novo relê convites e sinais, mesmo com as mesmas campanhas', async () => {
+    const promocao = (marca: string) => ({ promocao_id: 'C1', tipo: 'DEAL', status: 'started', fim: null, itens_sincronizados_em: marca });
+    vi.mocked(usePromocoes).mockReturnValue(ok([promocao('2026-11-03T10:00:00Z')]));
+    const { result, rerender } = renderHook(() => useSugestoesPromocao(), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    const convites = vi.mocked(fetchConvites).mock.calls.length;
+    const sinais = vi.mocked(buscarTodasPaginas).mock.calls.length;
+    vi.mocked(usePromocoes).mockReturnValue(ok([promocao('2026-11-04T10:00:00Z')]));
+    rerender();
+    await waitFor(() => expect(vi.mocked(fetchConvites).mock.calls.length).toBe(convites + 1));
+    await waitFor(() => expect(vi.mocked(buscarTodasPaginas).mock.calls.length).toBeGreaterThan(sinais));
   });
 
   it('falha nos sinais não vira lista vazia', async () => {

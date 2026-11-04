@@ -83,19 +83,28 @@ export function montarSugestoes(e: {
   const unidadesConta = soma(e.sinais, (s) => s.unidades_ok);
   const visitasPorUnidade = unidadesConta > 0 ? soma(e.sinais, (s) => s.visitas_ok) / unidadesConta : null;
 
-  const chaveDoSinal = (s: SinalAnuncio) => (s.codigo_pai ? `p:${s.codigo_pai}` : `a:${s.ml_item_id}`);
+  // Par de catálogo: sem produto próprio, a linha do catálogo herda o do normal e os sinais dos dois somam.
+  const paiDoCatalogo = new Map<string, string>();
+  for (const c of [...e.convites, ...e.participacoes]) {
+    const pai = c.anuncio_normal_id ? sinalDe.get(c.anuncio_normal_id)?.codigo_pai : null;
+    if (pai && !sinalDe.get(c.ml_item_id)?.codigo_pai) paiDoCatalogo.set(c.ml_item_id, pai);
+  }
+  const chaveDoAnuncio = (id: string) => {
+    const pai = sinalDe.get(id)?.codigo_pai ?? paiDoCatalogo.get(id);
+    return pai ? `p:${pai}` : `a:${id}`;
+  };
   const sinaisDa = new Map<string, SinalAnuncio[]>();
-  for (const s of e.sinais) sinaisDa.set(chaveDoSinal(s), [...(sinaisDa.get(chaveDoSinal(s)) ?? []), s]);
-
-  // Par de catálogo: a linha do catálogo cai no produto do normal.
+  for (const s of e.sinais) {
+    const chave = chaveDoAnuncio(s.ml_item_id);
+    sinaisDa.set(chave, [...(sinaisDa.get(chave) ?? []), s]);
+  }
   const sinalDoConvite = (c: ConvitePromocao) => sinalDe.get(c.ml_item_id) ?? (c.anuncio_normal_id ? sinalDe.get(c.anuncio_normal_id) : undefined);
   const grupos = new Map<string, ConvitePromocao[]>();
   for (const c of e.convites) {
     const p = vivas.get(c.promocao_id);
     if (!p || !ehTipoOperavel(p.tipo) || participa.has(c.ml_item_id) || !linhaValida(c, p)) continue;
-    const s = sinalDoConvite(c);
-    if (s && !s.ativo) continue;
-    const chave = s ? chaveDoSinal(s) : `a:${c.ml_item_id}`;
+    if (sinalDoConvite(c)?.ativo === false) continue;
+    const chave = sinalDe.has(c.ml_item_id) || !c.anuncio_normal_id ? chaveDoAnuncio(c.ml_item_id) : chaveDoAnuncio(c.anuncio_normal_id);
     grupos.set(chave, [...(grupos.get(chave) ?? []), c]);
   }
 
