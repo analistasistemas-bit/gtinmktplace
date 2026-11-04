@@ -1,4 +1,4 @@
-// ADR-0194 — linha de uma sugestão: motivo, campanha recomendada, lucro e ações.
+// ADR-0194: linha de uma sugestão: motivo, campanha recomendada, lucro e ações.
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,10 +43,10 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
           ? <img src={s.thumbnail} alt="" className="size-12 shrink-0 rounded-md object-cover" loading="lazy" />
           : <div className="size-12 shrink-0 rounded-md bg-muted" aria-hidden />}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium" title={s.titulo}>{s.titulo}</p>
+          <p className="line-clamp-2 font-medium sm:line-clamp-1" title={s.titulo}>{s.titulo}</p>
           <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
             <span>{plural(s.visitas, 'visita', 'visitas')}, {plural(s.unidades, 'venda', 'vendas')} em 30 dias</span>
-            {s.estoque != null && <span>Estoque {s.estoque.toLocaleString('pt-BR')}</span>}
+            {s.estoque != null && <><span aria-hidden>·</span><span>Estoque {s.estoque.toLocaleString('pt-BR')}</span></>}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-medium">{opcao.promocao.nome ?? rotuloTipo(opcao.promocao.tipo)}</span>
@@ -58,7 +58,7 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
           )}
           {outras.length > 0 && (
             <button type="button" onClick={() => setAbrirOutras((v) => !v)} aria-expanded={abrirOutras}
-              className="mt-1 inline-flex min-h-6 items-center gap-1 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className="mt-1 inline-flex min-h-11 items-center gap-1 rounded-sm text-xs sm:min-h-6 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               +{outras.length} {outras.length === 1 ? 'campanha' : 'campanhas'}
               <ChevronDown className={cn('size-3.5 transition-transform motion-reduce:transition-none', abrirOutras && 'rotate-180')} aria-hidden />
             </button>
@@ -73,7 +73,7 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
                     <ResumoCampanha o={o} />
                     {o.semaforo === 'amarelo' && <span>· abaixo do piso</span>}
                     {podeExecutar && (
-                      <Button variant="link" size="sm" className="h-auto p-0 text-xs" aria-label={`Usar ${nome}`}
+                      <Button variant="link" size="sm" className="min-h-11 p-0 text-xs sm:h-auto sm:min-h-0" aria-label={`Usar ${nome}`}
                         onClick={() => { setEscolhida(o.promocao.promocao_id); setAbrirOutras(false); }}>Usar</Button>
                     )}
                   </li>

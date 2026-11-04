@@ -1,4 +1,4 @@
-// ADR-0194 — aba Sugestões: produtos que vendem pouco, com campanha para aderir. Duas faixas, por vendas e visitas.
+// ADR-0194: aba Sugestões: produtos que vendem pouco, com campanha para aderir. Duas faixas, por vendas e visitas.
 import { useId, useRef, useState } from 'react';
 import { Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';

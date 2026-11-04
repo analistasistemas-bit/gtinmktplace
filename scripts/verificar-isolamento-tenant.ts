@@ -242,6 +242,23 @@ async function main() {
     } catch (e) {
       assert(false, 'edge publicar-familias respondeu', String(e));
     }
+
+    // 5d. Dispensa de sugestão (ADR-0194 D-8): membro sem admin recebe 403 e nada é gravado.
+    try {
+      const { data: sess } = await cliB.auth.getSession();
+      for (const etapa of ['dispensar_sugestao', 'reativar_sugestao']) {
+        const resp = await fetch(`${URL}/functions/v1/operacoes-massa`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${sess.session?.access_token}`, apikey: ANON!, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ etapa, chave: 'p:ISO-403' }),
+        });
+        assert(resp.status === 403, `edge operacoes-massa: ${etapa} sem admin responde 403`, `status=${resp.status}`);
+      }
+      const { count } = await svc.from('promocao_sugestoes_dispensadas').select('*', { count: 'exact', head: true }).eq('org_id', B.orgId).eq('chave', 'p:ISO-403');
+      assert(count === 0, 'edge operacoes-massa: dispensa negada não grava linha', `linhas=${count}`);
+    } catch (e) {
+      assert(false, 'edge operacoes-massa respondeu', String(e));
+    }
   } else {
     console.log('[--skip-edges] asserções de edge function puladas (ensaio local).');
   }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BadgePercent } from 'lucide-react';
@@ -43,6 +43,11 @@ export default function Promocoes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const abaParam = searchParams.get('aba');
   const aba: AbaTela = ABAS.includes(abaParam as AbaTela) ? (abaParam as AbaTela) : 'ativas';
+  // No celular as abas rolam: a ativa não pode ficar fora da vista ao chegar pelo link.
+  const abasRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    abasRef.current?.querySelector('[data-state="active"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [aba, promocoes.data]);
   const setAba = (v: string) => setSearchParams((prev) => {
     const p = new URLSearchParams(prev);
     if (v === 'ativas') p.delete('aba'); else p.set('aba', v);
@@ -99,6 +104,7 @@ export default function Promocoes() {
         </div>
       ) : temDados && (
         <Tabs value={aba} onValueChange={setAba}>
+          <div ref={abasRef} className="max-w-full">
           <TabsList className="max-w-full justify-start overflow-x-auto [scrollbar-width:none]">
             <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
             <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
@@ -107,6 +113,7 @@ export default function Promocoes() {
             <TabsTrigger value="sugestoes">Sugestões</TabsTrigger>
             <TabsTrigger value="operacoes">Operações</TabsTrigger>
           </TabsList>
+          </div>
           {aba === 'operacoes' ? (
             <ListaOperacoes filtro="promocao" />
           ) : aba === 'participando' ? (
