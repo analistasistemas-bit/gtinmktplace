@@ -4,7 +4,8 @@
 
 - [x] Spike autorizado e desfeito (Avil `MLB5048402257`, DSA `MLB5114275523`): 201 nos dois; saída confirma em ≤ 5 min.
 - [x] Plano e diff revisados pelo Codex; motor, aviso de tipo novo (`integracao`, fora de `alertas_promocoes_ativo`) e front.
-- [ ] Migration `20261103234235_operacoes_massa_tipos_oferta` aplicada e edges redeployadas.
+- [x] Main `4fbc5004` (CI verde). Migration `20261103234235` aplicada em 04/11; `operacoes-massa` v38, `sincronizar-promocoes` v34, `ads-campanhas` v17, `resumo-diario` v14, `telegram-bot` v14.
+- [x] Sync da Avil pós-deploy: SMART_LIGHTNING (9 convidados), Relâmpago e SMART sem erro; nenhum aviso falso de tipo novo.
 - [ ] 1ª adesão real em cada tipo (Diego). Conferir as queries `adesaoRecente`/`adquirirEscrita` nesse uso.
 
 ## Pós-venda: claim `cancel_purchase` gera um aviso só (emenda ADR-0121) — 2026-11-03
