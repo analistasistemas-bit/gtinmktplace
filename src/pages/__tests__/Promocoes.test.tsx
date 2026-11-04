@@ -54,11 +54,12 @@ describe('Promocoes', () => {
     vi.mocked(useCanalAtivo).mockReturnValue({ canal: 'todos', setCanal: vi.fn(), habilitados: ['mercado_livre'] } as never);
   });
 
-  it('com as duas queries carregando, não mostra o painel de estado de sync (sem flash contraditório com o skeleton)', () => {
+  it('com as duas queries carregando, mostra a logo pulsando e não o painel de estado de sync (sem flash contraditório)', async () => {
     vi.mocked(usePromocoes).mockReturnValue(QUERY_PENDENTE as never);
     vi.mocked(useEstadoSyncPromocoes).mockReturnValue(QUERY_PENDENTE as never);
     renderPromocoes();
 
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo as campanhas…');
     expect(screen.queryByText('Ainda não buscamos as promoções desta conta.')).toBeNull();
   });
 

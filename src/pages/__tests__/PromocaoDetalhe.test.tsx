@@ -50,6 +50,17 @@ function renderDetalhe() {
 }
 
 describe('PromocaoDetalhe', () => {
+  it('carregando os anúncios mostra a logo PubliAI pulsando uma vez só, sem tabela nem blocos cinza', async () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: undefined, isLoading: true } as never);
+
+    renderDetalhe();
+
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo os anúncios da campanha…');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByTestId('lista-mobile')).toBeNull();
+  });
+
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);

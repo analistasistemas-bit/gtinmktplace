@@ -11,7 +11,7 @@ import { BorderTrail } from '@/components/ui/border-trail';
 import '@/components/ui/glow-effect.css';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
@@ -282,11 +282,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
   }
 
   if (operacoes.isLoading) {
-    return (
-      <div className="mt-4 flex flex-col gap-3">
-        {[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
-      </div>
-    );
+    return <CarregandoMarca className="mt-4" rotulo="Carregando" mensagem="Lendo as operações…" />;
   }
   if ((operacoes.data ?? []).length === 0) {
     return (

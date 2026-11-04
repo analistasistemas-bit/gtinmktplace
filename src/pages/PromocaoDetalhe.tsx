@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
@@ -357,10 +357,12 @@ export default function PromocaoDetalhe() {
       {/* Achado 1 (revisão): quem rola é este bloco, não a página — a BarraSelecao (abaixo, fora
           do scroll) fica sempre visível, presa ao rodapé da área visível. */}
       <div className="flex-1 overflow-y-auto">
+        {itens.isLoading ? (
+          <CarregandoMarca rotulo="Carregando" mensagem="Lendo os anúncios da campanha…" />
+        ) : (<>
         <div className="hidden overflow-x-auto md:block">
           <DataTable
             columns={colunas} rows={linhas} rowKey={(r) => r.ml_item_id}
-            loading={itens.isLoading} skeletonRows={8}
             defaultSort={{ key: 'semaforo', dir: 'asc' }}
             onRowClick={setAberto}
             empty={<p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>}
@@ -377,10 +379,11 @@ export default function PromocaoDetalhe() {
             </div>
           )}
           <ListaMobile
-            linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto} simInfo={simInfo}
+            linhas={linhasMobile} onAbrir={setAberto} simInfo={simInfo}
             podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
           />
         </div>
+        </>)}
       </div>
       <BarraSelecao
         convidados={convidadosSelecionados.length} participando={participandoSelecionados.length}
@@ -410,18 +413,11 @@ export default function PromocaoDetalhe() {
 }
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
-function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, onToggle, simInfo }: {
-  linhas: ItemPromocao[]; loading: boolean; onAbrir: (r: ItemPromocao) => void;
+function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo }: {
+  linhas: ItemPromocao[]; onAbrir: (r: ItemPromocao) => void;
   simInfo: (r: ItemPromocao) => { aviso: string | null } | undefined;
   podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;
 }) {
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={`sk-${i}`} className="h-28 rounded-xl" />)}
-      </div>
-    );
-  }
   if (linhas.length === 0) {
     return <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>;
   }

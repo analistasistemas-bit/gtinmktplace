@@ -10,7 +10,7 @@ import { usePaginacao } from '@/hooks/usePaginacao';
 import { filtrarPorBusca } from '@/lib/promocao-simulacao';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { useParticipacoes, usePromocoes } from '@/hooks/usePromocoes';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
@@ -38,7 +38,7 @@ export function ListaParticipando() {
   );
 
   if (promocoes.isLoading || participacoes.isLoading) {
-    return <div className="mt-4 flex flex-col gap-4">{[0, 1].map((i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+    return <CarregandoMarca className="mt-4" rotulo="Carregando" mensagem="Lendo os anúncios em promoção…" />;
   }
   if (promocoes.isError || participacoes.isError) {
     return <EmptyState icon={BadgePercent} title="Não foi possível carregar os anúncios em promoção." description="Tente atualizar a página." className="mt-4" />;

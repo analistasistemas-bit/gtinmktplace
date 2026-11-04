@@ -89,6 +89,12 @@ function renderLista(filtro?: 'promocao' | 'publicados') {
 }
 
 describe('ListaOperacoes', () => {
+  it('carregando mostra a logo PubliAI pulsando, não blocos cinza', async () => {
+    vi.mocked(useOperacoes).mockReturnValue({ data: undefined, isLoading: true } as never);
+    renderLista('promocao');
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo as operações…');
+  });
+
   it('lista vazia na aba de Publicados aponta para a aba Anúncios', () => {
     vi.mocked(useOperacoes).mockReturnValue({ data: [], isLoading: false } as never);
     renderLista('publicados');

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePaginacao } from '@/hooks/usePaginacao';
 import { usePodeExecutarOperacao } from '@/hooks/useOperacoes';
@@ -61,7 +61,7 @@ export function ListaSugestoes() {
     );
   }
   if (isLoading || !data) {
-    return <div className="mt-4 flex flex-col gap-4">{[0, 1].map((i) => <Skeleton key={i} className="h-56 rounded-xl" />)}</div>;
+    return <CarregandoMarca className="mt-4" rotulo="Carregando" mensagem="Analisando vendas, visitas e campanhas…" />;
   }
 
   async function mudar(acao: () => Promise<unknown>, sucesso: string) {

@@ -44,6 +44,12 @@ describe('ListaSugestoes', () => {
     vi.mocked(usePodeExecutarOperacao).mockReturnValue(true);
   });
 
+  it('carregando mostra a logo PubliAI pulsando, não blocos cinza', async () => {
+    carregar(undefined, { isLoading: true });
+    renderLista();
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Analisando vendas, visitas e campanhas…');
+  });
+
   it('duas faixas, Quase vendendo primeiro, com o motivo e vendas abaixo do esperado', () => {
     carregar(dados({ quaseVendendo: [sugestao()], invisivel: [sugestao({ chave: 'p:2', titulo: 'Regata', faixa: 'invisivel', visitas: 4, vendasAbaixo: 0.1 })] }));
     renderLista();

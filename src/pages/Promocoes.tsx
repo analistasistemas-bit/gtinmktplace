@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { BadgePercent } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
@@ -102,9 +102,7 @@ export default function Promocoes() {
       )}
 
       {promocoes.isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-[228px] rounded-xl" />)}
-        </div>
+        <CarregandoMarca rotulo="Carregando" mensagem="Lendo as campanhas…" />
       ) : temDados && (
         <Tabs value={aba} onValueChange={setAba}>
           <div ref={abasRef} className="max-w-full">

@@ -44,6 +44,12 @@ describe('ListaParticipando', () => {
     ], isLoading: false } as never);
   });
 
+  it('carregando mostra a logo PubliAI pulsando, não blocos cinza', async () => {
+    vi.mocked(useParticipacoes).mockReturnValue({ data: undefined, isLoading: true } as never);
+    renderLista();
+    expect(await screen.findByRole('status', { name: 'Carregando' })).toHaveTextContent('Lendo os anúncios em promoção…');
+  });
+
   it('um bloco por campanha; par de catálogo aparece com o MLB do normal', () => {
     renderLista();
     expect(screen.getByRole('heading', { name: '10.10' })).toBeTruthy();
