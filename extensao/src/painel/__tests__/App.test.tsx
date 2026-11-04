@@ -277,9 +277,32 @@ describe('App', () => {
     await avisar({ tipo: 'publiai:ativacao', ativa: true, logado: true, geracao: 1 });
     const leituras = sendMessage.mock.calls.map(([m]) => m as { tipo: string; abrindo?: boolean }).filter((m) => m.tipo === 'publiai:estado-extensao');
     expect(leituras).toEqual([
+      { tipo: 'publiai:estado-extensao', abrindo: false },
       { tipo: 'publiai:estado-extensao', abrindo: true },
       { tipo: 'publiai:estado-extensao', abrindo: false },
     ]);
+  });
+
+  it('abre com o estado local sem esperar a edge; sessão recusada depois leva ao login; falha da conferência não derruba a tela', async () => {
+    let conferir!: (v: unknown) => void;
+    const sendMessage = vi.fn((m: { tipo: string; abrindo?: boolean }) => {
+      if (m.tipo === 'publiai:estado-extensao') return m.abrindo ? new Promise((r) => { conferir = r; }) : Promise.resolve(EXT);
+      return Promise.resolve(m.tipo === 'publiai:estado-da-aba' ? { entrada: ENTRADA, resposta: { ok: false, erro: 'modulo_desligado' } } : undefined);
+    });
+    vi.stubGlobal('chrome', {
+      tabs: { query: vi.fn(async () => [{ id: 7 }]), onActivated: { addListener: vi.fn(), removeListener: vi.fn() } },
+      runtime: { sendMessage, onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
+    });
+    await act(async () => { render(<App />); });
+    screen.getByText('A extensão não está habilitada para sua empresa'); // conferência ainda pendente
+    await act(async () => { conferir({ ...EXT, logado: false, perfil: null }); });
+    expect(screen.queryByText('A extensão não está habilitada para sua empresa')).toBeNull();
+    screen.getByLabelText('E-mail');
+    cleanup();
+    await act(async () => { render(<App />); });
+    await act(async () => { conferir(undefined); });
+    screen.getByText('A extensão não está habilitada para sua empresa');
+    expect(screen.queryByText('Sem resposta da extensão')).toBeNull();
   });
 
   it('fix 3: resposta pendente da geração 1 resolvida após a troca não mexe no DOM da geração 2', async () => {

@@ -48,7 +48,9 @@ function useEstadoExt() {
       e = undefined;
     }
     if (minha !== seq.current) return; // chegou uma leitura mais nova
-    mostrar(e && typeof e.geracao === 'number' ? e : null);
+    const valido = e && typeof e.geracao === 'number';
+    if (!valido && abrindo && vigente.current !== null) return; // conferência falhou: fica o que já está na tela
+    mostrar(valido ? e : null);
   }, [mostrar]);
   const aplicar = useCallback((e: EstadoExt) => { seq.current++; mostrar(e); }, [mostrar]);
   const suspender = useCallback((sim: boolean) => { suspenso.current = sim; seq.current++; }, []);
@@ -61,7 +63,9 @@ function useEstadoExt() {
       void reler();
     };
     chrome.runtime.onMessage.addListener(aoAviso);
-    void reler(true);
+    // Abre com o estado local e confere a sessão depois: a edge leva ~2 s fria e não pode segurar a tela.
+    // Sessão recusada ou identidade nova chegam pela releitura e pelo aviso conta-mudou; todo comando segue validado na edge.
+    void reler().then(() => reler(true));
     return () => chrome.runtime.onMessage.removeListener(aoAviso);
   }, [reler, mostrar]);
   const geracaoVigente = useCallback(() => vigente.current, []);
