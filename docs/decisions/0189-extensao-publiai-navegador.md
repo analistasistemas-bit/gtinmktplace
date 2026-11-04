@@ -432,3 +432,14 @@ chave existente (conta + categoria + tipo + preço exato), lida em lote com `MGE
 > A edge consulta exclusivamente a API oficial, com concorrência limitada e orçamento global fail-closed reservado por página. Spike hospedado (03/11): 50 catálogos por requisição, pool de 16 (4 na comissão), teto global de 1.000 chamadas ML/min. Perfis são deduplicados por vendedor das ofertas exatas. Comissão usa um MGET na chave financeira existente; misses calculados pelo enriquecimento ficam somente no navegador. Falhas e limites encerram a rodada com resultado parcial, sem retomada automática por janela.
 >
 > Permanecem D-1, ausência de cache Redis de produto/oferta/perfil, proibição de PDP oculta e evasão de antibot, isolamento do cache por identidade e conta ML, procedência da oferta exata e identificação de “comissão na sua conta”. Nenhuma escrita é feita no ML. Distribuição depende dos gates de CPU, Redis, 429, cobertura e tempo da Task 11.
+
+## Emenda 2026-11-04: abertura do painel sem esperar a edge fria
+
+`publiai:estado-extensao` com `abrindo` conferia a sessão na edge antes de responder, e a consulta `sessao` leva ~2 s com a
+edge fria. Agora o SW só espera se a edge não confirmou a mesma identidade nos últimos 10 minutos
+(`identidadeConferida` em `storage.session`, marcada em toda resposta conferida). A conferência roda igual em segundo
+plano; troca de identidade, 401 e `sem_acesso` limpam as abas e chegam por `conta-mudou`.
+
+Abrir sempre com o estado local foi recusado na revisão: mostraria dados da org anterior sem prova recente. Risco
+residual aceito: troca de org nos 10 minutos após a prova aparece até a conferência terminar. Todo comando segue
+validado na edge.
