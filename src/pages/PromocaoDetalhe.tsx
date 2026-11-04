@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useSimularPrecos } from '@/hooks/useOperacoes';
 import { parsePreco } from '@/lib/operacoes';
 import {
-  MAX_SIMULAR, aplicarSimulacao, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao, type ModoAlvo,
+  AVISO_DESCONTO, MAX_SIMULAR, aplicarSimulacao, descontoInvalido, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao, type ModoAlvo,
 } from '@/lib/promocao-simulacao';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -102,7 +102,7 @@ export default function PromocaoDetalhe() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
   const [busca, setBusca] = useState('');
-  const [modo, setModo] = useState<ModoAlvo>('desconto');
+  const [modo, setModo] = useState<ModoAlvo>('preco');
   const [valorTexto, setValorTexto] = useState('');
   const [simulacao, setSimulacao] = useState<Simulacao | null>(null);
   const simularM = useSimularPrecos();
@@ -321,8 +321,8 @@ export default function PromocaoDetalhe() {
           <div className="flex flex-wrap items-center gap-2">
             <Tabs value={modo} onValueChange={(v) => setModo(v as ModoAlvo)}>
               <TabsList aria-label="Aplicar desconto ou preço">
-                <TabsTrigger value="desconto">Desconto %</TabsTrigger>
                 <TabsTrigger value="preco">Preço R$</TabsTrigger>
+                <TabsTrigger value="desconto">Desconto %</TabsTrigger>
               </TabsList>
             </Tabs>
             <Input
@@ -332,10 +332,11 @@ export default function PromocaoDetalhe() {
             />
             <Button
               onClick={simularSelecionados}
-              disabled={valor == null || alvoSimulacao.length === 0 || simularM.isPending}>
+              disabled={valor == null || descontoInvalido(modo, valor) || alvoSimulacao.length === 0 || simularM.isPending}>
               {simularM.isPending ? 'Calculando…' : `Simular ${alvoSimulacao.length || ''}`.trim()}
             </Button>
             {simulacao && <Button variant="ghost" onClick={limparSimulacao}>Limpar simulação</Button>}
+            {descontoInvalido(modo, valor) && <p className="w-full text-xs text-danger">{AVISO_DESCONTO}</p>}
           </div>
         )}
       </div>

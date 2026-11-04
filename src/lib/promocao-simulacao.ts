@@ -32,6 +32,10 @@ export function precoAlvo(it: ItemPromocao, modo: ModoAlvo, valor: number): numb
   return Math.round(it.preco_original * (1 - valor / 100) * 100) / 100;
 }
 
+/** Preço digitado com o seletor em Desconto %: 159,90 viraria desconto de 159,9%. */
+export const descontoInvalido = (modo: ModoAlvo, valor: number | null) => modo === 'desconto' && valor != null && (valor <= 0 || valor >= 100);
+export const AVISO_DESCONTO = 'Desconto vai até 99%. Para digitar o preço, escolha Preço R$.';
+
 /** Mesmas travas de `operacoes/validar.ts` (o preview bloqueia; aqui só avisa). */
 export function foraDaFaixa(it: ItemPromocao, preco: number, tipo: string): string | null {
   if (it.preco_min != null && it.preco_max != null && (preco < it.preco_min || preco > it.preco_max)) {

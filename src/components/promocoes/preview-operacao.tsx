@@ -16,7 +16,7 @@ import {
   type AcaoPromocao, type LinhaPreview,
 } from '@/lib/operacoes';
 import { ehOfertaFixa, type ItemPromocao } from '@/lib/promocoes';
-import { MAX_SIMULAR, precoAlvo, resumoLucro, type ModoAlvo, type ResumoLucro } from '@/lib/promocao-simulacao';
+import { AVISO_DESCONTO, MAX_SIMULAR, descontoInvalido, precoAlvo, resumoLucro, type ModoAlvo, type ResumoLucro } from '@/lib/promocao-simulacao';
 import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrecos, type MarcaSugestao } from '@/hooks/useOperacoes';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
@@ -152,7 +152,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   }
 
   // Mesmo desconto % ou preço para todas as variações marcadas (pedido do Diego, 03/11).
-  const [modo, setModo] = useState<ModoAlvo>('desconto');
+  const [modo, setModo] = useState<ModoAlvo>('preco');
   const [valorTexto, setValorTexto] = useState('');
   const simularM = useSimularPrecos();
   const valor = parsePreco(valorTexto);
@@ -252,8 +252,8 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
             <div className="flex flex-wrap items-center gap-2">
               <Tabs value={modo} onValueChange={(v) => setModo(v as ModoAlvo)}>
                 <TabsList aria-label="Aplicar desconto ou preço aos marcados">
-                  <TabsTrigger value="desconto">Desconto %</TabsTrigger>
                   <TabsTrigger value="preco">Preço R$</TabsTrigger>
+                  <TabsTrigger value="desconto">Desconto %</TabsTrigger>
                 </TabsList>
               </Tabs>
               <Input
@@ -262,7 +262,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                 aria-label={modo === 'desconto' ? 'Desconto em % para todos' : 'Preço em reais para todos'}
                 className="w-28 tabular-nums"
               />
-              <Button type="button" size="sm" onClick={aplicarATodos} disabled={valor == null || editaveis.length === 0 || simularM.isPending}>
+              <Button type="button" size="sm" onClick={aplicarATodos} disabled={valor == null || descontoInvalido(modo, valor) || editaveis.length === 0 || simularM.isPending}>
                 Aplicar a todos
               </Button>
               {faltaCalcular && (
@@ -271,6 +271,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                 </Button>
               )}
             </div>
+            {descontoInvalido(modo, valor) && <p className="text-xs text-danger">{AVISO_DESCONTO}</p>}
             {linhas.some((l) => l.ateQuanto != null) && (
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={usarAteQuantoTodos}>

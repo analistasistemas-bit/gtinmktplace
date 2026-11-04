@@ -133,7 +133,7 @@ export function ListaSugestoes() {
           onContinuar={(opcoes) => { setEscolhendo(null); setFila({ s: escolhendo.s, opcoes, i: 0 }); }} />
       )}
       {fila && aderindo && (
-        <PreviewOperacao key={aderindo.promocao.promocao_id} acao="aderir" tipo={ehTipoOperavel(aderindo.promocao.tipo) ? aderindo.promocao.tipo : 'DEAL'}
+        <PreviewOperacao acao="aderir" tipo={ehTipoOperavel(aderindo.promocao.tipo) ? aderindo.promocao.tipo : 'DEAL'}
           promocaoId={aderindo.promocao.promocao_id}
           promocaoNome={aderindo.promocao.nome ?? rotuloTipo(aderindo.promocao.tipo)}
           itens={aderindo.itens} aberto onClose={() => setFila(null)} onSucesso={() => setFila(null)}

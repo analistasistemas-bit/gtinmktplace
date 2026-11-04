@@ -196,6 +196,16 @@ describe('PromocaoDetalhe', () => {
       expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
     });
 
+    it('preço digitado em Desconto % avisa na hora e não simula', async () => {
+      const user = userEvent.setup();
+      const tabela = montar();
+      await user.click(tabela.getByLabelText('Selecionar MLB1'));
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
+      await user.type(screen.getByLabelText('Desconto em %'), '159,90');
+      expect(screen.getByText('Desconto vai até 99%. Para digitar o preço, escolha Preço R$.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Simular 1' })).toBeDisabled();
+    });
+
     it('simula o desconto no servidor e mostra o líquido devolvido; Aderir usa o preço simulado', async () => {
       const user = userEvent.setup();
       const invoke = fns.invoke.mockResolvedValue({
@@ -203,6 +213,7 @@ describe('PromocaoDetalhe', () => {
       } as never);
       const tabela = montar();
       await user.click(tabela.getByLabelText('Selecionar MLB1'));
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
       await user.type(screen.getByLabelText('Desconto em %'), '10');
       await user.click(screen.getByRole('button', { name: 'Simular 1' }));
 
@@ -223,6 +234,7 @@ describe('PromocaoDetalhe', () => {
       const invoke = fns.invoke.mockReturnValue(new Promise((r) => { responder = r; }) as never);
       const tabela = montar();
       await user.click(tabela.getByLabelText('Selecionar MLB1'));
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
       await user.type(screen.getByLabelText('Desconto em %'), '10');
       await user.click(screen.getByRole('button', { name: 'Simular 1' }));
       await user.click(screen.getByRole('tab', { name: 'Participando' }));

@@ -127,6 +127,32 @@ describe('Você recebe por venda ao aderir', () => {
     expect(simularAsync).not.toHaveBeenCalled();
   });
 
+  it('Preço R$ vem primeiro e já selecionado', () => {
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const abas = screen.getAllByRole('tab');
+    expect(abas.map((a) => a.textContent)).toEqual(['Preço R$', 'Desconto %']);
+    expect(abas[0]).toHaveAttribute('data-state', 'active');
+  });
+
+  it('preço digitado em Desconto % avisa na hora e não aplica', async () => {
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    await userEvent.click(screen.getByRole('tab', { name: 'Desconto %' }));
+    await userEvent.type(screen.getByLabelText('Desconto em % para todos'), '159,90');
+    expect(screen.getByText('Desconto vai até 99%. Para digitar o preço, escolha Preço R$.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aplicar a todos' })).toBeDisabled();
+  });
+
+  it('a campanha seguinte mantém o modo e o valor digitados', async () => {
+    const painel = (promocaoId: string, itens: ItemPromocao[]) => (
+      <MemoryRouter><PreviewOperacao acao="aderir" tipo="DEAL" promocaoId={promocaoId} promocaoNome={promocaoId} itens={itens} aberto onClose={() => {}} /></MemoryRouter>
+    );
+    const { rerender } = render(painel('C1', [tarifado()]));
+    await userEvent.type(screen.getByLabelText('Preço em reais para todos'), '159,90');
+    rerender(painel('C2', [tarifado({ preco_sugerido: 140, preco_avaliado: 140 })]));
+    expect(screen.getByLabelText('Preço em reais para todos')).toHaveValue('159,90');
+    expect(screen.getByLabelText('Preço de MLB1')).toHaveValue('140,00');
+  });
+
   it('sair não mostra preço atual nem a conta', () => {
     renderPreview({ acao: 'sair', tipo: 'DEAL', itens: [tarifado({ status: 'started' })] });
     expect(screen.queryByText(/Preço atual/)).toBeNull();
@@ -352,6 +378,7 @@ describe('PreviewOperacao', () => {
       expect(screen.getByText('Alterar preço em Campanha X')).toBeInTheDocument();
       expect(screen.getByLabelText('Preço de A')).toHaveValue('49,90');
       expect(screen.getByLabelText('Selecionar A')).toBeChecked();
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
       await user.type(screen.getByLabelText('Desconto em % para todos'), '40');
       await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
       expect(screen.getByLabelText('Preço de A')).toHaveValue('43,95'); // 73,25 × 0,60
@@ -403,6 +430,7 @@ describe('PreviewOperacao', () => {
       // abre com o lucro do preço sugerido (projeção do sync = mesmo preço)
       expect(screen.getAllByText(/R\$ 25,80/)).toHaveLength(2); // 44,30 − 18,50
 
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
       await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
       await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
 
@@ -419,6 +447,7 @@ describe('PreviewOperacao', () => {
         projecao: [cor({ ...tarifa, custo: 18.5, piso: 28.5, liquido: 10, semaforo: 'vermelho' })],
       })));
       renderPreview({ itens: [variacao('A')] });
+      await user.click(screen.getByRole('tab', { name: 'Desconto %' }));
       await user.type(screen.getByLabelText('Desconto em % para todos'), '20');
       await user.click(screen.getByRole('button', { name: 'Aplicar a todos' }));
       expect(await screen.findByText('Prejuízo')).toBeInTheDocument();
