@@ -3,7 +3,7 @@
 import { ehParticipando } from '../promocoes/projecao.ts';
 import type { Semaforo } from '../promocoes/tipos.ts';
 import { decidir, piorou } from './decidir.ts';
-import { agendarOuConcluir, FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
+import { agendarOuConcluir, FalhaPosEscrita, gravarPos, laco, mensagemDe, type DepsLaco } from './laco.ts';
 import { type ClienteML, SemEscritaPromocoes } from './ml.ts';
 import { type Acao, type CamposItem, type ItemNaCampanha, type ItemRow, ofertaFixaNova, type TipoPromocao } from './tipos.ts';
 
@@ -26,7 +26,8 @@ export interface DepsExecutar extends DepsLaco {
   recontarCentral(promocaoId: string): Promise<void>;
   /** Ofertas fixas: outra operação aderiu a este item há pouco (`candidate` ainda não prova nada). */
   adesaoRecente(promocaoId: string, mlItemId: string): Promise<boolean>;
-  /** Ofertas fixas: grava a etapa só se o item segue `enviando` sem etapa; false = outro worker já escreveu ou escreve. */
+  /** Ofertas fixas: grava `campos` (etapa, ou o desfecho sem escrita) só se o item segue `enviando` sem etapa; false =
+   *  outro worker já escreveu, escreve ou concluiu. */
   adquirirEscrita(operacaoId: string, mlItemId: string, campos: Partial<CamposItem>): Promise<boolean>;
 }
 
@@ -91,8 +92,13 @@ const recusaDefinitiva = (e: unknown) => {
   const status = Number(/^ML (\d{3})/.exec(e instanceof Error ? e.message : '')?.[1]);
   return status >= 400 && status < 500 && status !== 429;
 };
-/** Escrita de oferta fixa com etapa gravada: recusa clara vira erro; o resto é incerto (item fica `enviando`, retry relê). */
-const escritaIncerta = (e: unknown) => (e instanceof SemEscritaPromocoes || recusaDefinitiva(e) ? e : new FalhaPosEscrita(e));
+/** Escrita de oferta fixa com etapa gravada: recusa clara vira erro. O resto é incerto: sem lançar, o item fica `enviando`,
+ *  `finalizar` continua e a retomada confere (500 aqui mataria a mensagem com 4 timeouts seguidos). */
+const escritaIncerta = (id: string, e: unknown) => {
+  if (e instanceof SemEscritaPromocoes || recusaDefinitiva(e)) return false;
+  console.warn('[operacoes] escrita incerta', { ml_item_id: id, erro: mensagemDe(e) });
+  return true;
+};
 
 /** Saída confirmada: o novo convite pode ter outro preço e o sync é 1×/dia. O preço vem ANTES do status: espelharPreco
  *  só grava em linha participando, e o espelho `saiu` a devolve a candidate. */
@@ -191,7 +197,7 @@ async function alterarPreco(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, fr
   await espelharPrecoSeguro(deps, op, id, it.preco!);
 }
 
-async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): Promise<void> {
+async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, posse = { escrita: false }): Promise<void> {
   const { ml } = deps;
   const id = it.ml_item_id;
   // Achado Codex P1: na retomada de uma escrita (etapa gravada), falha de leitura não pode virar `erro` — o PUT pode
@@ -199,6 +205,11 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   const fixa = ofertaFixaNova(op.promocao_tipo);
   if (fixa && op.acao !== 'alterar_preco' && it.etapa === 'escrita_pedida') return retomarOfertaFixa(op, it, deps);
   const retomada = op.acao === 'alterar_preco' && it.etapa === 'escrita_pedida';
+  // Desfecho antes da escrita: nas ofertas fixas só vale com a posse; worker atrasado não troca o resultado de quem escreveu.
+  const encerrar = (campos: Partial<CamposItem>): Promise<boolean> => (fixa
+    ? deps.adquirirEscrita(op.id, id, campos)
+    : deps.gravarItem(op.id, id, campos).then(() => true));
+  const adquirir = async (campos: Partial<CamposItem>) => (posse.escrita = await deps.adquirirEscrita(op.id, id, campos));
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
     .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
@@ -210,10 +221,13 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, fresco, relacoes, oferta);
 
   if (d.tipo === 'fim') {
-    if (d.status !== 'ja_estava') return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
+    if (d.status !== 'ja_estava') {
+      await encerrar({ status: d.status, mensagem: d.mensagem });
+      return;
+    }
     // Retry depois de crash pós-escrita cai aqui: grava o offer_id do SMART e acerta o espelho.
     if (op.acao === 'aderir') {
-      await deps.gravarItem(op.id, id, { status: 'ja_estava', mensagem: null, ...(fresco?.offer_id ? { offer_id: fresco.offer_id } : {}) });
+      if (!(await encerrar({ status: 'ja_estava', mensagem: null, ...(fresco?.offer_id ? { offer_id: fresco.offer_id } : {}) }))) return;
       return espelhar(deps, op, id, espelhoAderido(op, fresco));
     }
     await deps.gravarItem(op.id, id, { status: 'ja_estava', mensagem: null });
@@ -222,30 +236,40 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
 
   if (d.tipo === 'delete') {
     // Não adquiriu: outro worker escreve ou já escreveu; se ele morrer, o claim vencido traz o item de volta como retomada.
-    if (fixa && !(await deps.adquirirEscrita(op.id, id, { etapa: 'escrita_pedida', offer_id: fresco?.offer_id ?? null }))) return;
-    await ml.del(id, d.query).catch((e) => { throw fixa ? escritaIncerta(e) : e; });
+    if (fixa && !(await adquirir({ etapa: 'escrita_pedida', offer_id: fresco?.offer_id ?? null }))) return;
+    try {
+      await ml.del(id, d.query);
+    } catch (e) {
+      if (fixa && escritaIncerta(id, e)) return;
+      throw e;
+    }
     return aguardarSaida(deps, op, id);
   }
 
   // Decisão 5 do ADR: resultado pior que o do preview só entra com risco confirmado.
   if (!it.confirmado_risco) {
     const atual = await deps.semaforoAtual(op.promocao_id, id, it.preco);
-    if (atual === null) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: SAIU_DA_CENTRAL });
+    if (atual === null) { await encerrar({ status: 'mudou', mensagem: SAIU_DA_CENTRAL }); return; }
     // ponytail: semáforo gravado ausente conta como verde (qualquer piora barra).
-    if (piorou(it.semaforo ?? 'verde', atual)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: PIOROU });
+    if (piorou(it.semaforo ?? 'verde', atual)) { await encerrar({ status: 'mudou', mensagem: PIOROU }); return; }
   }
 
   if (fixa) {
-    if (await deps.adesaoRecente(op.promocao_id, id)) return deps.gravarItem(op.id, id, { status: 'mudou', mensagem: ADESAO_RECENTE });
-    if (!(await deps.adquirirEscrita(op.id, id, { etapa: 'escrita_pedida' }))) return;
+    if (await deps.adesaoRecente(op.promocao_id, id)) { await encerrar({ status: 'mudou', mensagem: ADESAO_RECENTE }); return; }
+    if (!(await adquirir({ etapa: 'escrita_pedida' }))) return;
   }
-  const { offer_id, inicio, fim } = await ml.post(id, d.body).catch(async (e) => {
-    if (!fixa) throw e;
-    const incerta = escritaIncerta(e);
-    // Recusa clara: nada foi escrito; sem isto adesaoRecente seguraria a nova tentativa como se a adesão propagasse.
-    if (incerta === e) await deps.gravarItem(op.id, id, { etapa: null }).catch(() => {});
-    throw incerta;
-  });
+  let resposta: Awaited<ReturnType<ClienteML['post']>>;
+  try {
+    resposta = await ml.post(id, d.body);
+  } catch (e) {
+    if (fixa) {
+      if (escritaIncerta(id, e)) return;
+      // Recusa clara: nada foi escrito; sem isto adesaoRecente seguraria a nova tentativa como se a adesão propagasse.
+      await deps.gravarItem(op.id, id, { etapa: null }).catch(() => {});
+    }
+    throw e;
+  }
+  const { offer_id, inicio, fim } = resposta;
   await gravarPos(deps.gravarItem(op.id, id, {
     status: 'aplicado', offer_id, mensagem: op.promocao_tipo === 'SMART_LIGHTNING' ? mensagemJanela(inicio, fim) : null,
     ...(fixa ? { etapa: 'ml_confirmado' as const } : {}),
@@ -264,11 +288,25 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): 
   if (it.preco != null && op.promocao_tipo !== 'SMART') await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
 }
 
+/** Oferta fixa: exceção antes de adquirir a escrita também só encerra com a posse (o laço gravaria `erro` por cima). */
+async function processarOfertaFixa(op: OperacaoRow, it: ItemRow, deps: DepsExecutar): Promise<void> {
+  const posse = { escrita: it.etapa != null };
+  try {
+    await processarItem(op, it, deps, posse);
+  } catch (e) {
+    if (posse.escrita) throw e;
+    const fatal = e instanceof SemEscritaPromocoes;
+    await gravarPos(deps.adquirirEscrita(op.id, it.ml_item_id, { status: 'erro', mensagem: fatal ? RECONECTAR : mensagemDe(e) }).then(() => {}));
+    if (fatal) throw Object.assign(e, { jaGravado: true });
+  }
+}
+
 export function executar(
   op: OperacaoRow, deps: DepsExecutar, opts: { limiteMs: number; lote: number; maxItens?: number },
 ): Promise<{ processados: number; continuou: boolean }> {
   // Sem permissão de escrita em promoções: nada mais passa nesta conta — encerra este e todos os restantes.
-  return laco(op.id, deps, opts, (it) => processarItem(op, it, deps),
+  const processar = ofertaFixaNova(op.promocao_tipo) ? processarOfertaFixa : processarItem;
+  return laco(op.id, deps, opts, (it) => processar(op, it, deps),
     { eh: (e) => e instanceof SemEscritaPromocoes, mensagem: RECONECTAR })
     .then(async (r) => {
       // Contagem do card da campanha ("Participando") acompanha o espelho — senão fica até o próximo sync.

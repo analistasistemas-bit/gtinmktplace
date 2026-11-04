@@ -23,8 +23,10 @@ const ITENS = 'operacoes_massa_itens';
 const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
 export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
-/** O ML reflete a adesão em ~2 min: passado isto, `candidate` volta a ser confiável. */
-const JANELA_PROPAGACAO_MS = 10 * 60_000;
+// ponytail: teto por tempo. Passados 30 min, `candidate` é aceito como verdade (o ML reflete em ~2 min) e nova adesão posta.
+// Sem expiração não dá: o ML devolve o mesmo CANDIDATE após a saída, e quem sai pelo Seller Center ficaria travado para
+// sempre. Upgrade: persistir o CANDIDATE usado e liberar só com saída observada.
+const JANELA_PROPAGACAO_MS = 30 * 60_000;
 
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
 export const urlOperacoes = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/operacoes-massa`;

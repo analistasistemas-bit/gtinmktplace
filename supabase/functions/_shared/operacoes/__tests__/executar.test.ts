@@ -729,11 +729,10 @@ describe('ofertas de preço fixo', () => {
       expect(deps.adesaoRecente).toHaveBeenCalledWith('P-MLB18055120', 'MLB1');
       expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'Adesão recente ainda propagando no ML. Aguarde alguns minutos e tente de novo.' });
       expect(itens[0].etapa).toBeUndefined();
-      expect(deps.adquirirEscrita).not.toHaveBeenCalled();
       expect(ml.post).not.toHaveBeenCalled();
     });
 
-    it('segunda operação com o espelho da primeira falho: sem POST na janela de 10 min; depois dela posta', async () => {
+    it('segunda operação com o espelho da primeira falho: sem POST na janela de 30 min; depois dela posta', async () => {
       const a = [item('MLB1', { preco: 64 })];
       const op1 = comFila(SL, a, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
       op1.deps.espelharStatusCentral.mockRejectedValue(new Error('db'));
@@ -744,8 +743,8 @@ describe('ofertas de preço fixo', () => {
         const b = [item('MLB1', { preco: 64 })];
         const op = comFila({ ...SL, id: 'op2' }, b, { campanha: () => convSL() });
         op.avancar(esperaMs);
-        // Mesmo predicado de deps.adesaoRecente: `aplicado` há menos de 10 min.
-        op.deps.adesaoRecente.mockImplementation(async () => op.deps.agora() - op1.tocado.get('MLB1')! < 600_000);
+        // Mesmo predicado de deps.adesaoRecente: `aplicado` há menos de 30 min.
+        op.deps.adesaoRecente.mockImplementation(async () => op.deps.agora() - op1.tocado.get('MLB1')! < 1_800_000);
         return { b, op };
       };
       const cedo = segunda(60_000);
@@ -753,7 +752,7 @@ describe('ofertas de preço fixo', () => {
       expect(cedo.b[0].status).toBe('mudou');
       expect(cedo.op.ml.post).not.toHaveBeenCalled();
 
-      const tarde = segunda(11 * 60_000);
+      const tarde = segunda(31 * 60_000);
       await tarde.op.rodar();
       expect(tarde.b[0].status).toBe('aplicado');
       expect(tarde.op.ml.post).toHaveBeenCalledTimes(1);
@@ -770,6 +769,90 @@ describe('ofertas de preço fixo', () => {
       await rodar();
       expect(ml.post).toHaveBeenCalledTimes(1);
       expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9' });
+    });
+
+    it('contraexemplo: B conclui aplicado, A volta do semáforo com piora → linha segue aplicado e a trava vale', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const op1 = comFila(SL, a, { campanha: () => convSL(), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      op1.deps.semaforoAtual.mockImplementationOnce(async () => {
+        op1.avancar(180_000);
+        await executar(SL, op1.deps, OPTS);
+        return 'vermelho';
+      });
+      await op1.rodar();
+      expect(op1.ml.post).toHaveBeenCalledTimes(1);
+      expect(a[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', offer_id: 'OFFER-MLB1-9', mensagem: null });
+
+      const b = [item('MLB1', { preco: 64 })];
+      const op2 = comFila({ ...SL, id: 'op2' }, b, { campanha: () => convSL() });
+      op2.avancar(240_000);
+      // Mesmo filtro de deps.adesaoRecente sobre a linha da 1ª operação.
+      op2.deps.adesaoRecente.mockImplementation(async () => ['aplicado', 'ja_estava'].includes(a[0].status) || a[0].etapa === 'escrita_pedida');
+      await op2.rodar();
+      expect(b[0].status).toBe('mudou');
+      expect(op2.ml.post).not.toHaveBeenCalled();
+    });
+
+    it('late worker: Central sumiu no semáforo ou adesaoRecente não trocam o resultado', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const x = comFila(SL, a, { campanha: () => convSL() });
+      x.deps.semaforoAtual.mockImplementationOnce(async () => {
+        x.avancar(180_000);
+        await executar(SL, x.deps, OPTS);
+        return null;
+      });
+      await x.rodar();
+      expect(a[0].status).toBe('aplicado');
+
+      const b = [item('MLB1', { preco: 64 })];
+      const y = comFila(SL, b, { campanha: () => convSL() });
+      y.deps.adesaoRecente.mockImplementationOnce(async () => {
+        y.avancar(180_000);
+        await executar(SL, y.deps, OPTS);
+        return true;
+      });
+      await y.rodar();
+      expect(b[0].status).toBe('aplicado');
+    });
+
+    it.each([['mudou', () => convSL({ preco: 50 })], ['ja_estava', () => part('pending', 64)]])('late worker: leitura velha que daria %s não troca o resultado', async (_n, leitura) => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => {
+        Object.assign(itens[0], { status: 'aplicado', etapa: 'ml_confirmado' }); // B conclui durante a leitura de A
+        return leitura();
+      } });
+      await rodar();
+      expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado' });
+      expect(ml.post).not.toHaveBeenCalled();
+      expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+    });
+
+    it('late worker: exceção antes da escrita não vira erro por cima do aplicado', async () => {
+      const itens = [item('MLB1', { preco: 64 })];
+      const { deps, ml, avancar, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.lerRelacoes).mockImplementationOnce(async () => {
+        avancar(180_000);
+        await executar(SL, deps, OPTS);
+        throw new Error('ML 500 em /items');
+      });
+      await rodar();
+      expect(itens[0].status).toBe('aplicado');
+      expect(ml.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('exceção antes da escrita sem concorrência → erro com a mensagem; 403 → RECONECTAR e encerra o resto', async () => {
+      const a = [item('MLB1', { preco: 64 })];
+      const x = montar(a, { campanha: () => convSL() });
+      vi.mocked(x.ml.lerRelacoes).mockRejectedValue(new Error('ML 500 em /items'));
+      await executar(SL, x.deps, OPTS);
+      expect(a[0]).toMatchObject({ status: 'erro', mensagem: 'ML 500 em /items' });
+
+      const b = [item('MLB1', { preco: 64 }), item('MLB2', { preco: 64 })];
+      const y = montar(b, { campanha: () => convSL() });
+      vi.mocked(y.ml.lerRelacoes).mockRejectedValue(new SemEscritaPromocoes('ML 403'));
+      await executar(SL, y.deps, OPTS);
+      expect(b.map((i) => [i.status, i.mensagem])).toEqual([['erro', RECONECTAR], ['erro', RECONECTAR]]);
+      expect(y.ml.post).not.toHaveBeenCalled();
     });
 
     it('etapa de outro worker gravada e ainda enviando: quem perdeu não posta e a operação continua', async () => {
@@ -797,15 +880,29 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'erro', mensagem: RECONECTAR, etapa: null });
     });
 
-    it.each(['timeout', 'ML 500: x', 'ML 429: x'])('resultado incerto (%s): um só 500, um só POST, etapa mantida', async (msg) => {
+    it.each(['timeout', 'ML 500: x', 'ML 429: x'])('resultado incerto (%s): sem 500, continuação publicada, um só POST, etapa mantida', async (msg) => {
       const itens = [item('MLB1', { preco: 64 })];
-      const { ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
       vi.mocked(ml.post).mockRejectedValue(new Error(msg));
       const r = await rodar();
-      expect(r.respostas.filter((x) => x === 500)).toHaveLength(1);
-      expect(r.respostas[0]).toBe(500);
+      expect(r).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(deps.continuar).toHaveBeenCalledWith(150);
       expect(ml.post).toHaveBeenCalledTimes(1);
       expect(itens[0].etapa).toBe('escrita_pedida');
+    });
+
+    it('fila: 4 itens com timeout na mesma mensagem não a matam; nenhum POST repetido', async () => {
+      const itens = ['MLB1', 'MLB2', 'MLB3', 'MLB4'].map((id) => item(id, { preco: 64 }));
+      const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
+      vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
+      const r = await rodar();
+      expect(r.mortas).toBe(0);
+      expect(r.respostas).not.toContain(500);
+      expect(deps.continuar).toHaveBeenNthCalledWith(1, 150);
+      expect(ml.post).toHaveBeenCalledTimes(4);
+      expect(new Set(vi.mocked(ml.post).mock.calls.map((c) => c[0])).size).toBe(4);
+      expect(itens.every((i) => i.status === 'erro' && i.etapa === 'escrita_pedida')).toBe(true);
+      expect(deps.concluir).toHaveBeenCalledTimes(1);
     });
 
     it('crash ao gravar pós-POST: 500; a reentrega continua e confirma sem novo POST', async () => {
@@ -859,11 +956,11 @@ describe('ofertas de preço fixo', () => {
       expect(itens[1].status).toBe('aplicado');
     });
 
-    it('fila: ML sempre candidate → um só 500 (o POST incerto), continuações com 200 e erro na 5ª tentativa', async () => {
+    it('fila: ML sempre candidate → continuações com 200 e erro na 5ª tentativa', async () => {
       const itens = [item('MLB1', { preco: 64 })];
       const { deps, ml, rodar } = comFila(SL, itens, { campanha: () => convSL() });
       vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
-      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
       expect(deps.continuar.mock.calls).toEqual([[150], [150], [150], [150], [150]]);
       expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
       expect(ml.post).toHaveBeenCalledTimes(1);
@@ -874,7 +971,7 @@ describe('ofertas de preço fixo', () => {
       const itens = [item('MLB1', { preco: 64 })];
       const { ml, rodar } = comFila(SL, itens, { campanha: (_id, n) => (n <= 2 ? convSL() : part('pending', 64)) });
       vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
-      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200], mortas: 0 });
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200], mortas: 0 });
       expect(itens[0]).toMatchObject({ status: 'aplicado', etapa: 'ml_confirmado', conferencias: 1 });
       expect(ml.post).toHaveBeenCalledTimes(1);
     });
@@ -886,7 +983,7 @@ describe('ofertas de preço fixo', () => {
         return convSL();
       } });
       vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
-      expect(await rodar()).toEqual({ respostas: [500, 200, 200, 200, 200, 200, 200], mortas: 0 });
+      expect(await rodar()).toEqual({ respostas: [200, 200, 200, 200, 200, 200], mortas: 0 });
       expect(itens[0]).toMatchObject({ status: 'erro', mensagem: ERRO_ADESAO, conferencias: 5, etapa: 'escrita_pedida' });
       expect(ml.post).toHaveBeenCalledTimes(1);
       expect(deps.concluir).toHaveBeenCalledTimes(1);
@@ -959,7 +1056,7 @@ describe('ofertas de preço fixo', () => {
       const itens = [item('MLB1', { preco: null })];
       const { deps, ml, rodar } = comFila(SAIR_PM, itens, { campanha: (_id, n) => (n === 1 ? part('started') : convPM({ preco: 72 })) });
       vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
-      expect(await rodar()).toEqual({ respostas: [500, 200, 200], mortas: 0 });
+      expect(await rodar()).toEqual({ respostas: [200, 200], mortas: 0 });
       expect(ml.del).toHaveBeenCalledTimes(1);
       expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null, etapa: 'ml_confirmado' });
       expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18099366', 'PRICE_MATCHING', 'MLB1', 'saiu');
@@ -974,7 +1071,7 @@ describe('ofertas de preço fixo', () => {
         return part('started');
       } });
       vi.mocked(ml.del).mockRejectedValue(new Error('timeout'));
-      expect(await rodar()).toEqual({ respostas: [500, 200, 200], mortas: 0 });
+      expect(await rodar()).toEqual({ respostas: [200, 200], mortas: 0 });
       expect(ml.del).toHaveBeenCalledTimes(1);
       expect(itens[0].status).toBe('saida_solicitada');
       expect(deps.agendarConferencia).toHaveBeenCalledWith(300);
