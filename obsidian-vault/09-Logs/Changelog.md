@@ -11,6 +11,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-03
 
+- **SMART_LIGHTNING e Preço competitivo pelo app** (emenda ADR-0174): motor com escrita idempotente, piso R$ 19, aviso de tipo novo e tela. Migration `20261103234235`.
 - **Nota de compra: etapa fiscal toda preenchida** (emenda ADR-0181 D-10): produto novo chega com NCM, origem, FCI, CSOSN, CEST e descrição; operador só confere. Regras validadas pelo contador da Daludi Shop e pelo Codex. Exceção de ICMS exige escolha manual; origem binária pré-selecionada só com módulo fiscal.
 - **Dashboard: pausados de família UP** (só front, main `9a112d6b`): KPIs agregam os SKUs como a tela Publicados; SKU principal zerado não conta mais a família como pausada. Ver [[Problemas Resolvidos]].
 - **Promoções/Publicados pós-uso real** (só front): 1ª alteração de preço em massa real validada (Zaven, 13 jaquetas a R$ 43,90); aura + raio em todos os diálogos `processando` (`99c2091c`); aba Em promoção paginada e em ordem de descrição + fim da página sem faixa preta (`<main>` relative, `bb2c0555`); selo "· N sem estoque" em Publicados (`f929b980`); "Tentar novamente N com erro" nas operações de promoção (`9a9485d7`).

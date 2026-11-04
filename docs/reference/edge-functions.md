@@ -1908,7 +1908,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Operações em massa (ADR-0174) — código pronto, deploy pendente
 - **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de
-  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`/`LIGHTNING` — Relâmpago desde
+  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`/`LIGHTNING`/`SMART_LIGHTNING`/`PRICE_MATCHING` — os dois últimos desde 03/11/2026, oferta de preço fixo; Relâmpago desde
   02/11/2026, emenda ADR-0174: preço do pedido, faixa fechada, piso R$ 19, `stock` = `stock.min`, leitura em duas visões). Código em
   `supabase/functions/_shared/operacoes/` (`validar`, `decidir`, `executar`, `ml`, `deps`, `falhas`,
   `tipos`). Dois modos:

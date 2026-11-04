@@ -291,7 +291,11 @@ hora**. As visões seguem `candidate` por ~2 min após o POST. `DELETE ?promotio
 2. **Piso R$ 19** também nestes dois tipos, independente de risco confirmado.
 3. **Estoque** (SMART_LIGHTNING) = `stock.min`; ausente → erro; disponível menor → bloqueado.
 4. **Idempotência:** por causa do atraso de ~2 min, `candidate` não prova nada logo após escrever. `etapa` gravada
-   antes do POST/DELETE; retomada nunca repete a escrita. Sem evidência anterior, sair com `candidate` vira `mudou`.
+   antes do POST/DELETE, com aquisição atômica (`status='enviando' AND etapa IS NULL`); retomada nunca repete a
+   escrita e escrita incerta não derruba a mensagem do QStash. Sem evidência anterior, sair com `candidate` vira
+   `mudou`. Nova adesão ao mesmo anúncio fica barrada por 30 min (`JANELA_PROPAGACAO_MS`). Teto conhecido: passados
+   30 min, `candidate` vale como verdade. Trava sem expiração descartada: o ML devolve o mesmo `CANDIDATE` após a
+   saída, então não há evidência de saída feita no Seller Center e o anúncio ficaria bloqueado para sempre.
 5. **Aviso de tipo novo:** categoria `integracao` por org com `opcoes.chave`, fora de `alertas_promocoes_ativo`
    (desligado em todas as orgs) e sem reserva prévia (reserva sem entrega calaria o aviso para sempre).
 6. Constraint `operacoes_massa_promocao_tipo_check` aceita os dois tipos.
