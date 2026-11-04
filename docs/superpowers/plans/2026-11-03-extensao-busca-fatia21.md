@@ -54,3 +54,11 @@ Fora (sem dado ou exige banco de mercado): vendas estimadas, ritmo/mês, visitas
 7. **REDs adicionais:** os da tabela da revisão (mapeamento, frete/reserva, cache/isolamento, participação, compatibilidade 0.3.2/0.4.2/0.5.0 com zero fretes sem pedido, UI 320/400/600/zoom 150%, teclado).
 
 8. **Spike (§7 do documento de medições):** frete com fila própria de **8** (não 4), iniciando na **fase 1** em paralelo a produtos/ofertas (id do item vem do card); pool total 24 (16 existentes + 8 frete); dados existentes mantêm prioridade de orçamento. Sobrepõe o item 2 quanto a sublimite e fase.
+
+## Decisões finais (03/11, prevalecem sobre os itens acima)
+
+- **Diego (Mini-bloco):** o card mostra cidade/UF, ponto de reputação e "Frete cotado R$ X" (na linha do giro); **marca e "% dos pisos observados" ficam só no painel**, calculados pelo painel a partir dos cards da geração (`busca-resumo.ts`), sem propagação pelo SW.
+- **Limite visual aprovado:** no caso cheio (catálogo + frete + Meu anúncio + Minha margem + Loja oficial + Patrocinado), o card de 260 px fica com **no máximo 1 linha renderizada a mais que a 0.5.0** (medido: 9 → 10; 210 px 12 → 14; sem overflow em 210/260 e zoom 150%). O selo "Patrocinado" não se repete quando "Meu anúncio · … patrocinado" já aparece. A meta anterior de ≤6/≤7 linhas era inviável (a 0.5.0 já tinha 9).
+- **Custo por busca:** página com mais de 50 itens com preço pode exigir uma segunda rodada (≈ +4–9 comandos Redis e +1 unidade da cota de páginas). Aceito: continua em centavos por mês.
+- **Rótulo do frete:** "Frete cotado R$ X"; o CEP 01310-100 fica no ⓘ (espaço do card).
+- **Frete indisponível:** a edge não distingue "sem opção de envio" de timeout/5xx; todo frete indisponível permite "Tentar novamente".
