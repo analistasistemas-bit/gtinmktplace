@@ -37,6 +37,10 @@ A Central lista campanhas e o operador escolhe anúncios dentro de cada uma. Nad
 
 85 sugestões: 6 Quase vendendo e 79 Invisível. RPC em ~130 ms, lista na tela em ~830 ms. Por produto o número cai muito frente aos 59 anúncios medidos no grilling, porque somar visitas e vendas do produto e exigir vendas abaixo do esperado separa o que antes parecia fraco anúncio a anúncio. Filtros de cobertura, idade, estoque e ativo tiram no máximo 4.
 
+## Emenda 2026-11-04: clareza do card e do painel Aderir
+
+Pedido do Diego: "~3 vendas abaixo do esperado" ao lado de "0 vendas" confundia. O card passa a mostrar "0 de ~3 vendas esperadas pela média da conta" (`vendasEsperadas` = visitas do produto nos dias `ok` ÷ visitas por unidade da conta). A ordem por Oportunidade (D-5) não muda: `vendasAbaixo` segue só ordenando. O card mostra o preço atual (`preco_original`). O painel de adesão mostra o preço atual e o "Você recebe por venda" com comissão, imposto, frete, lucro, margem e markup, no tipo real do anúncio (Clássico ou Premium, de `ml_promocao_itens.listing_type_id`). A conta sai da projeção do servidor, sem chamada nova ao ML; com várias cores, vale a cor de menor líquido.
+
 ## Alternativas descartadas
 
 - **Só vendas:** mistura problema de preço com problema de exposição.

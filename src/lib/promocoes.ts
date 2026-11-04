@@ -39,6 +39,8 @@ export interface ItemPromocao {
   projecao: CorProjetada[]; pior_semaforo: SemaforoPromo;
   /** Linha do catálogo exibida com a cara do normal do mesmo User Product (ADR-0174, emenda 2026-10-05). */
   anuncio_normal_id?: string | null;
+  /** Tipo do anúncio no ML: gold_special (Clássico) ou gold_pro (Premium). */
+  listing_type_id?: string | null;
 }
 /** Item participando, com a campanha (aba "Em promoção"). */
 export type Participacao = ItemPromocao & { promocao_id: string };
@@ -170,7 +172,7 @@ export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo
 }
 
 const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em, rodada_em_curso';
-const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo, anuncio_normal_id';
+const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo, anuncio_normal_id, listing_type_id';
 
 export async function fetchPromocoes(): Promise<Promocao[]> {
   const { data, error } = await supabase.from('ml_promocoes').select(COLS_PROMO)

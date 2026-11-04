@@ -26,7 +26,7 @@ const opcao = (o: Partial<OpcaoCampanha> = {}): OpcaoCampanha => ({
 });
 const sugestao = (o: Partial<Sugestao> = {}): Sugestao => ({
   chave: 'p:1', titulo: 'Jaqueta', thumbnail: null, faixa: 'quase_vendendo', unidades: 0, visitas: 212, estoque: 36,
-  anunciosConvidados: 1, vendasAbaixo: 8.4, oportunidade: 50.4, recomendada: opcao(), alternativas: [], ...o,
+  anunciosConvidados: 1, vendasAbaixo: 8.4, vendasEsperadas: 8.4, oportunidade: 50.4, recomendada: opcao(), alternativas: [], ...o,
 });
 const dados = (o: Partial<ResultadoSugestoes> = {}): ResultadoSugestoes => ({ quaseVendendo: [], invisivel: [], dispensadas: [], visitasPorUnidade: 23.9, ...o });
 const carregar = (d: ResultadoSugestoes | undefined, extra = {}) =>
@@ -58,8 +58,9 @@ describe('ListaSugestoes', () => {
     expect(titulos[1]).toContain('Invisível');
     const quase = screen.getByRole('region', { name: /Quase vendendo/ });
     expect(within(quase).getByText('212 visitas, 0 vendas em 30 dias')).toBeInTheDocument();
-    expect(within(quase).getByText('~8')).toBeInTheDocument();
-    expect(within(quase).getByText('vendas abaixo do esperado')).toBeInTheDocument();
+    expect(within(quase).getByText('0 de ~8')).toBeInTheDocument();
+    expect(within(quase).getByText('vendas esperadas pela média da conta')).toBeInTheDocument();
+    expect(within(quase).getByText(/Preço atual R\$\s73,25/)).toBeInTheDocument();
     expect(within(quase).getByText('Estoque 36')).toBeInTheDocument();
     expect(screen.queryByText(/R\$.*\/mês/)).toBeNull();
     expect(within(screen.getByRole('region', { name: /Invisível/ })).getByText('Poucas visitas')).toBeInTheDocument();

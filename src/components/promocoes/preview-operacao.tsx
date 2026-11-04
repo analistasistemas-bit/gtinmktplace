@@ -16,17 +16,18 @@ import {
   type AcaoPromocao, type LinhaPreview,
 } from '@/lib/operacoes';
 import { ehOfertaFixa, type ItemPromocao } from '@/lib/promocoes';
-import { MAX_SIMULAR, precoAlvo, resumoLucro, type ModoAlvo } from '@/lib/promocao-simulacao';
+import { MAX_SIMULAR, precoAlvo, resumoLucro, type ModoAlvo, type ResumoLucro } from '@/lib/promocao-simulacao';
 import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrecos, type MarcaSugestao } from '@/hooks/useOperacoes';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
+import { DetalheRecebe } from './detalhe-recebe';
 
-type Exato = { preco: number; recebe: number; lucro: number; margem: number | null; semaforo: LinhaPreview['semaforo'] };
+type Exato = ResumoLucro & { preco: number; semaforo: LinhaPreview['semaforo'] };
 interface LinhaEditavel extends LinhaPreview {
   precoTexto: string;
   motivoBloqueio?: string;
   motivoErro?: string;
-  /** Recebe/lucro/margem calculados no servidor NESTE preço; só vale enquanto o preço da linha for o mesmo. */
+  /** Conta calculada no servidor NESTE preço; só vale enquanto o preço da linha for o mesmo. */
   exato?: Exato | null;
   avisoCalculo?: string;
 }
@@ -35,7 +36,6 @@ const PRECO_MINIMO_RELAMPAGO = 19;
 const formatarInput = (n: number | null) => (n == null ? '' : n.toFixed(2).replace('.', ','));
 const centavos = (n: number) => Math.round(n * 100);
 const exatoVale = (l: LinhaEditavel) => l.exato != null && l.preco != null && centavos(l.exato.preco) === centavos(l.preco);
-const pctInt = (n: number) => `${Math.round(n * 100)}%`;
 
 function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): LinhaEditavel {
   const preco = parsePreco(texto);
@@ -102,6 +102,10 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   // Alterar preço (emenda 2026-11-03): só campanhas tradicionais aceitam PUT do deal_price.
   const podeEditarPreco = (acao === 'aderir' && (tipo === 'DEAL' || tipo === 'LIGHTNING')) || (acao === 'alterar_preco' && tipo === 'DEAL');
   const originalDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.preco_original ?? null;
+  const detalhe = (l: LinhaEditavel) => {
+    const it = itens.find((i) => i.ml_item_id === l.ml_item_id);
+    return <DetalheRecebe r={l.exato!} preco={l.exato!.preco} original={it?.preco_original ?? null} listingType={it?.listing_type_id} variasCores={(it?.projecao.length ?? 0) > 1} />;
+  };
   const acimaDoOriginal = (l: LinhaEditavel) => acao === 'alterar_preco' && l.preco != null && originalDe(l.ml_item_id) != null && l.preco >= originalDe(l.ml_item_id)!;
   const minimoRelampago = (l: LinhaEditavel) => tipo === 'LIGHTNING' && l.preco != null && l.preco < PRECO_MINIMO_RELAMPAGO;
   // Oferta fixa do ML (SMART_LIGHTNING, PRICE_MATCHING): preço travado e enviado; o piso de R$ 19 vale só para aderir.
@@ -274,6 +278,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{formatarNomeProduto(l.titulo) || l.ml_item_id}</p>
                     <p className="text-xs text-muted-foreground">{l.rotulo ?? l.ml_item_id}</p>
+                    {acao === 'aderir' && originalDe(l.ml_item_id) != null && (
+                      <p className="text-xs tabular-nums text-muted-foreground">Preço atual <span className="font-medium text-foreground">{fmtBRL(originalDe(l.ml_item_id)!)}</span></p>
+                    )}
                     {l.motivoBloqueio && <p className="text-xs text-muted-foreground">{l.motivoBloqueio}</p>}
                     {l.motivoErro && <p className="text-xs text-danger">{l.motivoErro}</p>}
                   </div>
@@ -301,16 +308,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                         </Button>
                       )}
                     </div>
-                    {exatoVale(l) ? (
-                      <p className="text-xs tabular-nums text-muted-foreground">
-                        recebe <span className="font-medium text-foreground">{fmtBRL(l.exato!.recebe)}</span>
-                        {' · '}
-                        <span className={l.exato!.lucro < 0 ? 'text-destructive' : 'text-success'}>
-                          {l.exato!.lucro < 0 ? 'prejuízo' : 'lucro'} <span className="font-semibold">{fmtBRL(l.exato!.lucro)}</span>
-                        </span>
-                        {' · margem '}<span className="font-medium text-foreground">{l.exato!.margem != null ? pctInt(l.exato!.margem) : '—'}</span>
-                      </p>
-                    ) : l.avisoCalculo ? (
+                    {exatoVale(l) ? detalhe(l) : l.avisoCalculo ? (
                       <p className="text-xs text-danger">{l.avisoCalculo}</p>
                     ) : null}
                     {semFaixa(l) && <span className="text-xs text-danger">O ML não informou a faixa de preço deste anúncio</span>}
@@ -324,6 +322,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                     {ofertaFixa && acao === 'aderir' && <span className={cn('text-xs', pisoOfertaFixa(l) ? 'text-danger' : 'text-muted-foreground')}>Mínimo R$ 19,00 (frete grátis)</span>}
                     {tipo === 'SMART_LIGHTNING' && l.estoqueMin != null && <span className="text-xs text-muted-foreground">Reserva {l.estoqueMin} un.</span>}
                     {tipo === 'PRICE_MATCHING' && acao === 'aderir' && <span className="text-xs text-muted-foreground">Entra no ar assim que você confirmar.</span>}
+                    {acao === 'aderir' && exatoVale(l) && detalhe(l)}
                   </div>
                 )}
               </li>

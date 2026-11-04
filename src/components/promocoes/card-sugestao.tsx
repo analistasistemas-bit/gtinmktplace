@@ -10,8 +10,8 @@ import type { OpcaoCampanha, Sugestao } from '@/lib/sugestoes-promocao';
 
 const plural = (n: number, um: string, varios: string) => `${n.toLocaleString('pt-BR')} ${n === 1 ? um : varios}`;
 
-function precoDaOpcao(o: OpcaoCampanha) {
-  const precos = o.itens.map((i) => i.preco_avaliado!);
+function precoDaOpcao(o: OpcaoCampanha, campo: 'preco_avaliado' | 'preco_original' = 'preco_avaliado') {
+  const precos = o.itens.map((i) => i[campo]!);
   const [menor, maior] = [Math.min(...precos), Math.max(...precos)];
   return menor === maior ? fmtBRL(menor) : `${fmtBRL(menor)} a ${fmtBRL(maior)}`;
 }
@@ -47,6 +47,7 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
           <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
             <span>{plural(s.visitas, 'visita', 'visitas')}, {plural(s.unidades, 'venda', 'vendas')} em 30 dias</span>
             {s.estoque != null && <><span aria-hidden>·</span><span>Estoque {s.estoque.toLocaleString('pt-BR')}</span></>}
+            <span aria-hidden>·</span><span className="tabular-nums">Preço atual {precoDaOpcao(opcao, 'preco_original')}</span>
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-medium">{opcao.promocao.nome ?? rotuloTipo(opcao.promocao.tipo)}</span>
@@ -87,8 +88,8 @@ export function CardSugestao({ s, podeExecutar, comConversao, dispensada, ocupad
       <div className="flex shrink-0 items-center justify-between gap-4 sm:flex-col sm:items-end sm:gap-2">
         {quase && comConversao ? (
           <p className="leading-tight sm:text-right">
-            <span className="block text-xl font-semibold tabular-nums">~{Math.max(1, Math.round(s.vendasAbaixo))}</span>
-            <span className="block text-xs text-muted-foreground">vendas abaixo do esperado</span>
+            <span className="block text-xl font-semibold tabular-nums">{s.unidades.toLocaleString('pt-BR')} de ~{Math.round(s.vendasEsperadas)}</span>
+            <span className="block text-xs text-muted-foreground">vendas esperadas pela média da conta</span>
           </p>
         ) : !quase ? <p className="text-xs text-muted-foreground">Poucas visitas</p> : <span />}
         {podeExecutar && (

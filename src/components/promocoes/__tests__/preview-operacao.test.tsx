@@ -46,6 +46,50 @@ beforeEach(() => {
   vi.mocked(toast.error).mockClear();
 });
 
+describe('Você recebe por venda ao aderir', () => {
+  const tarifado = (o: Partial<ItemPromocao> = {}) => item({
+    preco_original: 154.55, preco_sugerido: 134.45, preco_avaliado: 134.45, preco_min: 30.92, preco_max: 149.91,
+    listing_type_id: 'gold_special', pior_semaforo: 'amarelo',
+    projecao: [cor({ custo: 63.4, comissao_pct: 11.5, frete: 16.95, aliquota_pct: 8, liquido: 91.28, semaforo: 'amarelo' })], ...o,
+  });
+
+  it('mostra preço atual, tipo do anúncio e o detalhe da conta', () => {
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    expect(screen.getByText(/Preço atual/)).toHaveTextContent(/R\$\s154,55/);
+    expect(screen.getByText('Clássico')).toBeInTheDocument();
+    expect(screen.getByText(/comissão/)).toHaveTextContent(/−R\$\s15,46 \(11,5%\)/);
+    expect(screen.getByText(/imposto/)).toHaveTextContent(/−R\$\s10,76 \(8%\)/);
+    expect(screen.getByText(/Já desconta o frete grátis/)).toHaveTextContent(/−R\$\s16,95/);
+    expect(screen.getByText(/preço na campanha/)).toHaveTextContent(/R\$\s134,45 \(−13%\).*R\$\s63,40/);
+    expect(screen.getByText(/margem/)).toHaveTextContent(/R\$\s27,88.*21%.*44%/);
+  });
+
+  it('anúncio premium mostra Premium', () => {
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado({ listing_type_id: 'gold_pro' })] });
+    expect(screen.getByText('Premium')).toBeInTheDocument();
+    expect(screen.queryByText('Clássico')).toBeNull();
+  });
+
+  it('oferta de preço fixo também mostra a conta completa', () => {
+    renderPreview({ acao: 'aderir', tipo: 'SMART', itens: [tarifado({ preco_promo: 134.45 })] });
+    expect(screen.getByText(/comissão/)).toBeInTheDocument();
+  });
+
+  it('com várias cores avisa qual cor a conta considera', () => {
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado({ projecao: [
+      cor({ variation_id: 1, cor: 'Azul', custo: 60, comissao_pct: 11.5, frete: 16.95, aliquota_pct: 8, liquido: 95, semaforo: 'amarelo' }),
+      cor({ variation_id: 2, cor: 'Bege', custo: 63.4, comissao_pct: 11.5, frete: 16.95, aliquota_pct: 8, liquido: 91.28, semaforo: 'amarelo' }),
+    ] })] });
+    expect(screen.getByText('Conta feita na cor de menor líquido: Bege.')).toBeInTheDocument();
+  });
+
+  it('sair não mostra preço atual nem a conta', () => {
+    renderPreview({ acao: 'sair', tipo: 'DEAL', itens: [tarifado({ status: 'started' })] });
+    expect(screen.queryByText(/Preço atual/)).toBeNull();
+    expect(screen.queryByText(/comissão/)).toBeNull();
+  });
+});
+
 function renderPreview(props: Partial<Parameters<typeof PreviewOperacao>[0]> = {}) {
   return render(
     <MemoryRouter>

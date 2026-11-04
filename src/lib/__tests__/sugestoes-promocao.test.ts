@@ -164,6 +164,7 @@ describe('montarSugestoes', () => {
     const r = montar({ sinais: [conta, sinal({ visitas_ok: 100, unidades_ok: 1, unidades_30d: 4 })] });
     expect(r.quaseVendendo[0]).toMatchObject({ unidades: 4 });
     expect(r.quaseVendendo[0].vendasAbaixo).toBeCloseTo(100 / r.visitasPorUnidade! - 1, 5);
+    expect(r.quaseVendendo[0].vendasEsperadas).toBeCloseTo(100 / r.visitasPorUnidade!, 5);
   });
 
   it('dispensa vigente vai para dispensadas; expirada volta; chave velha não quebra', () => {
