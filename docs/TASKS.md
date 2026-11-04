@@ -6,7 +6,7 @@
 - [x] Migration `20261104010745`; `sincronizar-promocoes` grava `date_created`; `operacoes-massa` com dispensa e marcação de origem.
 - [x] 1ª adesão real pela aba (04/11): operações concluídas com `operacoes_massa.sugestao`; `anuncio_criado_em` 100% preenchido nas campanhas vivas.
 - [x] Logo pulsando nos carregamentos da Central (main `93faafcf`).
-- [x] Card com preço atual e "Vendeu 0 · esperado ~3"; painel Aderir com a conta completa no tipo real do anúncio (main `ee39f58c`, `8fdb2bee`).
+- [x] Card com preço atual e "Vendeu 0 · esperado ~3"; painel Aderir com a conta completa no tipo real do anúncio (commits `da1fd1d8`, `88a618d8`).
 - [x] Adesão a várias campanhas DEAL em sequência, recálculo ao editar o preço (main `e0456edd`). 1ª sequência real validada em 04/11: `MLB4919087243` na 11.11 e na Black Friday.
 - [x] Preço R$ como padrão nas duas telas e valor mantido entre campanhas (main `78060d8c`).
 - [x] "Até quanto descer": "Piso fora da faixa" e "Custo fora da faixa" no lugar de "Sem preço viável" (main `4072bd67`).
