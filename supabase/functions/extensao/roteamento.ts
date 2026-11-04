@@ -36,6 +36,7 @@ export const MAX_CATALOGOS_ENRIQUECER = 50;
 export const MAX_ITENS_POR_CATALOGO = 50; // casar item × oferta não custa chamada ML
 export const MAX_ITENS_ENRIQUECER = 50; // itens distintos no pedido inteiro
 export const MAX_PERFIS_PEDIDO = 50; // deduplicados por seller_id na página inteira
+export const MAX_FRETES_PEDIDO = 50; // (item, preço) distintos; um shipping_options por item
 const MAX_ENTRADAS_ENRIQUECER = 100; // tetos brutos (antes do dedupe), só anti-abuso de parsing
 const MAX_ENTRADAS_ITENS = 100;
 const MAX_PERFIS_EM_CACHE = 100;
@@ -153,6 +154,18 @@ const sellerIds = (v: unknown, max: number): number[] | null => {
   return [...new Set(v as number[])];
 };
 
+/** Fretes pedidos (fatia 2.1): ausente = undefined (cliente 0.5.0, zero shipping_options); dedupe por item+preço. */
+function fretesPedidos(v: unknown): { itemId: string; preco: number }[] | null | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.length > MAX_ENTRADAS_ITENS) return null;
+  const lidos = new Map<string, { itemId: string; preco: number }>();
+  for (const f of v as Record<string, unknown>[]) {
+    if (!f || typeof f !== 'object' || !mlb(f.itemId) || typeof f.preco !== 'number' || !Number.isFinite(f.preco) || f.preco <= 0) return null;
+    lidos.set(`${f.itemId}|${f.preco}`, { itemId: f.itemId, preco: f.preco });
+  }
+  return lidos.size > MAX_FRETES_PEDIDO ? null : [...lidos.values()];
+}
+
 /** Pedido parcial do navegador: por catálogo só os componentes vencidos lá (ausente = ambos). Catálogo repetido
  *  vira um (debita uma vez), com componentes e itens unidos. */
 function enriquecimento(b: Record<string, unknown>): Pedido | null {
@@ -161,7 +174,8 @@ function enriquecimento(b: Record<string, unknown>): Pedido | null {
   const perfis = sellerIds(b.perfis, MAX_PERFIS_PEDIDO);
   const perfisEmCache = sellerIds(b.perfisEmCache, MAX_PERFIS_EM_CACHE);
   // `perfisRestantes` (saldo de 20 por busca, SW até a Task 11.3) é aceito e ignorado: o limite agora é por página.
-  if (!perfis || !perfisEmCache) return null;
+  const fretes = fretesPedidos(b.fretes);
+  if (!perfis || !perfisEmCache || fretes === null) return null;
   const lidos = new Map<string, CatalogoPedido>();
   for (const c of catalogos as Record<string, unknown>[]) {
     if (!c || typeof c !== 'object' || !mlb(c.catalogProductId)) return null;
@@ -177,11 +191,11 @@ function enriquecimento(b: Record<string, unknown>): Pedido | null {
     if (atual.itens.length > MAX_ITENS_POR_CATALOGO) return null;
     lidos.set(c.catalogProductId, atual);
   }
-  if (lidos.size > MAX_CATALOGOS_ENRIQUECER || (lidos.size === 0 && perfis.length === 0)) return null;
+  if (lidos.size > MAX_CATALOGOS_ENRIQUECER || (lidos.size === 0 && perfis.length === 0 && !fretes?.length)) return null;
   if ([...lidos.values()].reduce((n, c) => n + c.itens.length, 0) > MAX_ITENS_ENRIQUECER) return null;
   // Ordem estável dos componentes (o servidor despacha produto antes de ofertas).
   const catalogosLidos = [...lidos.values()].map((c) => ({ ...c, componentes: (['produto', 'ofertas'] as const).filter((x) => c.componentes.includes(x)) }));
-  return { acao: 'enriquecer_catalogos_busca', catalogos: catalogosLidos, perfis, perfisEmCache };
+  return { acao: 'enriquecer_catalogos_busca', catalogos: catalogosLidos, perfis, perfisEmCache, ...(fretes === undefined ? {} : { fretes }) };
 }
 
 function utc(agora: Date, comMinuto: boolean): string {

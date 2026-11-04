@@ -828,6 +828,28 @@ describe('extensao — enriquecer_catalogos_busca (Task 9)', () => {
     log.mockRestore();
   });
 
+  it('pedido da 0.5.0 (sem fretes): zero shipping_options, sem chave `fretes`; marca/cidade/reputação aditivas', async () => {
+    const j = await (await post(PEDIDO)).json();
+    expect(urls.some((u) => u.includes('shipping_options'))).toBe(false);
+    expect(j.valor).not.toHaveProperty('fretes');
+    expect(j.valor.catalogos[0].produto).toMatchObject({ marca: null });
+    expect(j.valor.vendedores[0]).toMatchObject({ cidade: null, reputacao: null });
+  });
+
+  it('fretes pedidos chegam ao enriquecimento: um shipping_options por item, cotação do CEP de referência', async () => {
+    const f0 = vi.mocked(fetch);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      if (url.includes('shipping_options')) { urls.push(url); return new Response(JSON.stringify({ options: [{ display: 'recommended', list_cost: 21.9 }] })); }
+      return f0(url, init);
+    }));
+    const j = await (await post({ ...PEDIDO, fretes: [{ itemId: 'MLB10', preco: 10 }] })).json();
+    expect(urls.filter((u) => u.includes('shipping_options'))).toEqual([`${ML}/items/MLB10/shipping_options?zip_code=01310100`]);
+    expect(j.valor.fretes).toEqual([{ itemId: 'MLB10', preco: 10, frete: { estado: 'ok', valor: 21.9 }, expiraEm: expect.any(String) }]);
+    expect(j.valor.custo).toMatchObject({ chamadasMl: 5 });
+    expect(redisSet).not.toHaveBeenCalled();
+    expect(redisGet).not.toHaveBeenCalled();
+  });
+
   it('devolve a impressão opaca da conta ML (chave do cache do navegador): estável por conta, nunca o id cru', async () => {
     const a = (await (await post(PEDIDO)).json()).valor.conta;
     expect(a).toMatch(/^[0-9a-f]{16}$/);

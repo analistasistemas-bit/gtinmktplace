@@ -2,7 +2,7 @@
 // fetch do cliente REST real (conta comandos de verdade) + ML falso injetado (uma tentativa por chamada, assíncrono
 // para medir simultaneidade) + relógio controlado (deadline e virada do minuto).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { enriquecerCatalogosBusca, vendedorDoUsuario, type DepsEnriquecimento, type PedidoEnriquecimento, type RespostaMl } from '../enriquecimento-busca.ts';
+import { enriquecerCatalogosBusca, marcaDoProduto, vendedorDoUsuario, type DepsEnriquecimento, type PedidoEnriquecimento, type RespostaMl } from '../enriquecimento-busca.ts';
 import { chaveComissao } from '../../../extensao/roteamento.ts';
 
 const db = new Map<string, string | number>();
@@ -40,7 +40,7 @@ let respostasMl: Map<string, RespostaMl>;
 let urlsMl: string[];
 let timeouts: number[];
 let agoraMs: number;
-let ativos: number; let maxAtivos: number; let ativosLp: number; let maxLp: number;
+let ativos: number; let maxAtivos: number; let ativosLp: number; let maxLp: number; let ativosFr: number; let maxFr: number;
 /** Chamado a cada GET despachado (avança o relógio, aborta, …). */
 let aoChamar: (url: string) => void;
 let extra: Partial<DepsEnriquecimento>;
@@ -52,10 +52,12 @@ function deps(): DepsEnriquecimento {
     getMl: async (url, timeoutMs) => {
       urlsMl.push(url); timeouts.push(timeoutMs); aoChamar(url);
       const lp = url.includes('listing_prices');
+      const fr = url.includes('shipping_options');
       ativos++; maxAtivos = Math.max(maxAtivos, ativos);
       if (lp) { ativosLp++; maxLp = Math.max(maxLp, ativosLp); }
+      if (fr) { ativosFr++; maxFr = Math.max(maxFr, ativosFr); }
       await new Promise((r) => setTimeout(r, 1));
-      ativos--; if (lp) ativosLp--;
+      ativos--; if (lp) ativosLp--; if (fr) ativosFr--;
       return respostasMl.get(url) ?? { status: 0, corpo: null };
     },
     ...extra,
@@ -84,7 +86,7 @@ const exatasDe = (c: unknown) => (c as { ofertas: { exatas: Record<string, unkno
 
 beforeEach(() => {
   db.clear(); comandos = []; redisFora = false; falharPrefixo = null; lento = null; respostasMl = new Map(); urlsMl = []; timeouts = []; agoraMs = AGORA.getTime();
-  ativos = 0; maxAtivos = 0; ativosLp = 0; maxLp = 0; aoChamar = () => {}; extra = {};
+  ativos = 0; maxAtivos = 0; ativosLp = 0; maxLp = 0; ativosFr = 0; maxFr = 0; aoChamar = () => {}; extra = {};
   vi.stubGlobal('fetch', fetchRedis);
   vi.stubGlobal('Deno', { env: { get: (k: string) => (k === 'UPSTASH_REDIS_REST_URL' ? 'https://r.test' : 'tok') } });
 });
@@ -92,14 +94,46 @@ beforeEach(() => {
 describe('vendedorDoUsuario (perfil de terceiro, sem exigir transactions.total)', () => {
   it('medalha explícita, UF e nome', () => {
     expect(vendedorDoUsuario({ nickname: 'X', address: { state: 'BR-RJ' }, seller_reputation: { power_seller_status: 'platinum' } }))
-      .toEqual({ nome: 'X', medalha: 'platinum', uf: 'RJ' });
+      .toEqual({ nome: 'X', medalha: 'platinum', uf: 'RJ', cidade: null, reputacao: null });
   });
   it('vendedor sem transações ainda traz medalha e UF', () => {
     expect(vendedorDoUsuario({ nickname: 'X', address: { state: 'SP' }, seller_reputation: { power_seller_status: 'silver' } }))
-      .toEqual({ nome: 'X', medalha: 'silver', uf: 'SP' });
+      .toEqual({ nome: 'X', medalha: 'silver', uf: 'SP', cidade: null, reputacao: null });
   });
   it('power_seller_status null explícito → "sem"', () => {
     expect(vendedorDoUsuario({ seller_reputation: { power_seller_status: null } }).medalha).toBe('sem');
+  });
+  it('cidade cadastrada e cor do termômetro (level_id) quando presentes', () => {
+    expect(vendedorDoUsuario({ address: { city: ' Campinas ', state: 'BR-SP' }, seller_reputation: { level_id: '4_light_green' } }))
+      .toMatchObject({ cidade: 'Campinas', uf: 'SP', reputacao: '4_light_green' });
+    for (const l of ['1_red', '2_orange', '3_yellow', '4_light_green', '5_green']) {
+      expect(vendedorDoUsuario({ seller_reputation: { level_id: l } }).reputacao).toBe(l);
+    }
+  });
+  it.each([
+    ['level_id fora da lista', { seller_reputation: { level_id: 'newbie' } }],
+    ['level_id null', { seller_reputation: { level_id: null } }],
+    ['level_id número', { seller_reputation: { level_id: 5 } }],
+    ['cidade vazia', { address: { city: '  ' } }],
+    ['cidade objeto', { address: { city: { name: 'X' } } }],
+  ])('%s → null (desconhecido nunca vira verde nem cidade inventada)', (_n, corpo) => {
+    expect(vendedorDoUsuario(corpo)).toMatchObject({ cidade: null, reputacao: null });
+  });
+});
+
+describe('marcaDoProduto (atributo BRAND de /products)', () => {
+  it('value_name do BRAND, aparado', () => {
+    expect(marcaDoProduto({ attributes: [{ id: 'COLOR', value_name: 'Azul' }, { id: 'BRAND', value_name: ' Zaven ' }] })).toBe('Zaven');
+  });
+  it.each([
+    ['sem BRAND', { attributes: [{ id: 'MODEL', value_name: 'X' }] }],
+    ['BRAND vazio', { attributes: [{ id: 'BRAND', value_name: '' }] }],
+    ['BRAND null', { attributes: [{ id: 'BRAND', value_name: null }] }],
+    ['attributes ausente', {}],
+    ['attributes não lista', { attributes: { id: 'BRAND' } }],
+    ['corpo null', null],
+  ])('%s → null', (_n, corpo) => {
+    expect(marcaDoProduto(corpo)).toBeNull();
   });
   it.each([
     ['ausente', { seller_reputation: {} }],
@@ -107,20 +141,20 @@ describe('vendedorDoUsuario (perfil de terceiro, sem exigir transactions.total)'
     ['sem reputação', {}],
     ['corpo inválido', null],
   ])('status %s → null (desconhecido, nunca "sem")', (_n, corpo) => {
-    expect(vendedorDoUsuario(corpo)).toEqual({ nome: null, medalha: null, uf: null });
+    expect(vendedorDoUsuario(corpo)).toEqual({ nome: null, medalha: null, uf: null, cidade: null, reputacao: null });
   });
 });
 
 describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
   it('catálogo completo: data, vendedores únicos, oferta exata com categoria/tipo/vendedor/comissão', async () => {
-    respostasMl.set(`${ML}/products/MLB1`, ok({ id: 'MLB1', date_created: '2024-01-02T00:00:00Z', buy_box_winner: { item_id: 'MLB9' } }));
+    respostasMl.set(`${ML}/products/MLB1`, ok({ id: 'MLB1', date_created: '2024-01-02T00:00:00Z', buy_box_winner: { item_id: 'MLB9' }, attributes: [{ id: 'BRAND', value_name: 'Zaven' }] }));
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7), oferta('MLB11', 7), oferta('MLB12', 8, { category_id: 'MLB6', listing_type_id: 'gold_pro' })]));
     respostasMl.set(`${ML}/users/8`, usuario(8));
     respostasMl.set(urlLp(150, 'MLB6', 'gold_pro'), ok(LP_OK));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB12', preco: 150 }])]));
     expect(r.catalogos).toEqual([{
       catalogProductId: 'MLB1', estado: 'ok', retomarEm: null, consultadoEm: AGORA.toISOString(),
-      produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', expiraEm: MAIS_6H },
+      produto: { estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', marca: 'Zaven', expiraEm: MAIS_6H },
       ofertas: {
         estado: 'ok', expiraEm: MAIS_60S, total: 3, lidas: 3, vendedoresIdentificados: 2, ofertasSemVendedor: 0, completa: true,
         exatas: [{
@@ -129,7 +163,8 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
         }],
       },
     }]);
-    expect(r.vendedores).toEqual([{ sellerId: 8, estado: 'ok', nome: 'V8', medalha: 'gold', uf: 'SP', expiraEm: MAIS_24H }]);
+    expect(r.vendedores).toEqual([{ sellerId: 8, estado: 'ok', nome: 'V8', medalha: 'gold', uf: 'SP', cidade: null, reputacao: null, expiraEm: MAIS_24H }]);
+    expect(r).not.toHaveProperty('fretes'); // sem pedido de frete: forma da 0.5.0
     // "ganhador" nunca vem de /products (regra 6)
     expect(JSON.stringify(r)).not.toMatch(/winner|ganhador|MLB9/);
     // só o perfil do vendedor da oferta exata
@@ -175,7 +210,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
     respostasMl.set(`${ML}/products/MLB1/items?limit=100`, ofertas([oferta('MLB10', 7)]));
     respostasMl.set(`${ML}/users/7`, usuario(7));
     const r = await run(pedido([cat('MLB1', [{ itemId: 'MLB99', preco: 10 }])]));
-    expect(r.catalogos[0].produto).toEqual({ estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', expiraEm: MAIS_6H });
+    expect(r.catalogos[0].produto).toEqual({ estado: 'ok', criadoEm: '2024-01-02T00:00:00Z', marca: null, expiraEm: MAIS_6H });
     expect(r.catalogos[0].ofertas).toMatchObject({ estado: 'ok', total: 1, vendedoresIdentificados: 1,
       exatas: [{ itemId: 'MLB99', estado: 'nao_encontrada', motivo: 'oferta não está entre as ofertas do catálogo' }] });
     expect(urlsMl.some((u) => u.includes('/users/') || u.includes('listing_prices'))).toBe(false);
@@ -244,7 +279,7 @@ describe('enriquecerCatalogosBusca — componentes e ofertas exatas', () => {
   it('pedido só de perfis (ofertas em cache no navegador): debita 1 página', async () => {
     respostasMl.set(`${ML}/users/40`, usuario(40, { power_seller_status: null }));
     const r = await run(pedido([], { perfis: [40] }));
-    expect(r.vendedores).toEqual([{ sellerId: 40, estado: 'ok', nome: 'V40', medalha: 'sem', uf: 'SP', expiraEm: MAIS_24H }]);
+    expect(r.vendedores).toEqual([{ sellerId: 40, estado: 'ok', nome: 'V40', medalha: 'sem', uf: 'SP', cidade: null, reputacao: null, expiraEm: MAIS_24H }]);
     expect(db.get(CHAVE_PAG)).toBe(1);
   });
 });
@@ -274,6 +309,10 @@ describe('página inteira numa requisição (pool contínuo, reserva única)', (
     expect(ops()).toEqual(['INCRBY', 'EXPIRE', 'INCRBY', 'EXPIRE', 'MGET']);
     expect(comandos[2]).toEqual(['INCRBY', CHAVE_ML, 200]);
     expect(r.custo.comandosRedis).toBe(comandos.length);
+    // pedido da 0.5.0 (sem `fretes`): zero shipping_options e nenhum campo de frete na resposta
+    expect(contar('shipping_options')).toBe(0);
+    expect(r).not.toHaveProperty('fretes');
+    expect(maxAtivos).toBe(16);
   });
 
   it('página típica (50 catálogos, 40 vendedores): 40 /users, reserva 200, usa 190, devolve 10 uma vez → 6 comandos', async () => {
@@ -561,5 +600,181 @@ describe('Rodada 1 (revisão): prazo em todo I/O, MGET falho, Retry-After', () =
     expect((await run(p)).tentarAposEm).toBe('2026-11-03T14:07:30.000Z');
     respostasMl = new Map();
     expect((await run(pagina(2))).tentarAposEm).toBeNull();
+  });
+});
+
+describe('frete da oferta (fatia 2.1): fila própria de 8, fase 1, prioridade dos componentes existentes', () => {
+  const urlFr = (item: string) => `${ML}/items/${item}/shipping_options?zip_code=01310100`;
+  const SHIP = (custo: number) => ok({ options: [{ display: 'always', list_cost: 99 }, { display: 'recommended', list_cost: custo }] });
+  /** Fretes do item exato de cada card da `pagina(n)` (MLB{1000+i}0), preço igual ao do card. */
+  const comFretes = (p: PedidoEnriquecimento) => {
+    const fretes = p.catalogos.map((c) => ({ itemId: c.itens[0].itemId, preco: c.itens[0].preco }));
+    fretes.forEach((f, i) => respostasMl.set(urlFr(f.itemId), SHIP(20 + i)));
+    return { ...p, fretes };
+  };
+  const IND_FR = { estado: 'indisponivel', motivo: 'frete da oferta indisponível' };
+  const IND_REDIS = { estado: 'indisponivel', motivo: 'serviço indisponível agora' };
+  const igual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+  it('50 catálogos + 50 fretes frios: pool 24 (frete 8, comissão 4), reserva 250, mesmos comandos Redis', async () => {
+    const r = await run(comFretes(pagina(50)));
+    expect(maxAtivos).toBe(24);
+    expect(maxFr).toBe(8);
+    expect(maxLp).toBe(4);
+    expect(contar('shipping_options')).toBe(50);
+    expect(r.custo.chamadasMl).toBe(250);
+    expect(ops()).toEqual(['INCRBY', 'EXPIRE', 'INCRBY', 'EXPIRE', 'MGET']);
+    expect(comandos[2]).toEqual(['INCRBY', CHAVE_ML, 250]);
+    expect(r.custo.comandosRedis).toBe(comandos.length);
+    expect(r.fretes).toHaveLength(50);
+    expect(r.fretes![3]).toEqual({ itemId: 'MLB10030', preco: 13, frete: { estado: 'ok', valor: 23 }, expiraEm: MAIS_6H });
+    expect(r.catalogos.every((c) => c.produto?.estado === 'ok' && c.ofertas?.estado === 'ok')).toBe(true);
+    expect(r.vendedores.every((v) => v.estado === 'ok')).toBe(true);
+  });
+
+  it('frete começa na fase 1: os primeiros GETs da página já são shipping_options', async () => {
+    await run(comFretes(pagina(5)));
+    expect(urlsMl.slice(0, 5).every((u) => u.includes('shipping_options'))).toBe(true);
+    expect(urlsMl.indexOf(`${ML}/products/MLB1000`)).toBeLessThan(urlsMl.indexOf(`${ML}/users/100`));
+  });
+
+  it('dedupe: mesmo item com dois preços = um GET, duas entradas com o mesmo valor; reserva conta o item uma vez', async () => {
+    respostasMl.set(urlFr('MLB77'), SHIP(31));
+    const r = await run(pedido([], { fretes: [{ itemId: 'MLB77', preco: 10 }, { itemId: 'MLB77', preco: 12 }] }));
+    expect(urlsMl).toEqual([urlFr('MLB77')]);
+    expect(r.fretes).toEqual([
+      { itemId: 'MLB77', preco: 10, frete: { estado: 'ok', valor: 31 }, expiraEm: MAIS_6H },
+      { itemId: 'MLB77', preco: 12, frete: { estado: 'ok', valor: 31 }, expiraEm: MAIS_6H },
+    ]);
+    expect(comandos[2]).toEqual(['INCRBY', CHAVE_ML, 1]);
+    expect(db.get(CHAVE_PAG)).toBe(1); // pedido só de frete debita uma página
+  });
+
+  it.each([
+    ['424 (sem cotação)', { status: 424, corpo: { message: 'x' } }],
+    ['404', { status: 404, corpo: { message: 'not found' } }],
+    ['timeout/rede', { status: 0, corpo: null }],
+    ['200 sem opções', { status: 200, corpo: { options: [] } }],
+    ['200 list_cost não numérico', { status: 200, corpo: { options: [{ display: 'recommended', list_cost: '9' }] } }],
+  ])('%s → indisponível com motivo, sem expiração, nunca zero', async (_n, resp) => {
+    respostasMl.set(urlFr('MLB77'), resp);
+    const r = await run(pedido([], { fretes: [{ itemId: 'MLB77', preco: 10 }] }));
+    expect(r.fretes).toEqual([{ itemId: 'MLB77', preco: 10, frete: IND_FR, expiraEm: null }]);
+    expect(r.custo.chamadasMl).toBe(1);
+  });
+
+  it('sem "recommended": primeira opção', async () => {
+    respostasMl.set(urlFr('MLB77'), ok({ options: [{ display: 'always', list_cost: 17.5 }, { list_cost: 3 }] }));
+    const r = await run(pedido([], { fretes: [{ itemId: 'MLB77', preco: 10 }] }));
+    expect(r.fretes![0].frete).toEqual({ estado: 'ok', valor: 17.5 });
+  });
+
+  it('429 em frete: para só os despachos novos de frete; produtos, perfis e comissões entregues', async () => {
+    const p = comFretes(pagina(20));
+    for (const f of p.fretes) respostasMl.set(urlFr(f.itemId), { status: 429, corpo: null });
+    const r = await run(p);
+    expect(contar('shipping_options')).toBe(8); // 1ª leva da fila própria
+    expect(r.fretes!.every((f) => igual(f.frete, IND_ML) && f.expiraEm === null)).toBe(true);
+    expect(r.catalogos.every((c) => c.produto?.estado === 'ok' && c.ofertas?.estado === 'ok')).toBe(true);
+    expect(r.vendedores.every((v) => v.estado === 'ok')).toBe(true);
+    expect(r.catalogos.flatMap((c) => exatasDe(c)).every((e) => (e.comissaoNaSuaConta as { estado: string }).estado === 'ok')).toBe(true);
+  });
+
+  it('concessão parcial: componentes existentes primeiro; frete só com o que sobra', async () => {
+    db.set(CHAVE_ML, 800); // sobram 200 = o limite dos componentes de 50 catálogos
+    const r = await run(comFretes(pagina(50)));
+    expect(contar('shipping_options')).toBe(0);
+    expect(r.fretes!.every((f) => igual(f.frete, IND_ORC))).toBe(true);
+    expect(r.catalogos.every((c) => c.produto?.estado === 'ok' && c.ofertas?.estado === 'ok')).toBe(true);
+    expect(r.vendedores.every((v) => v.estado === 'ok')).toBe(true);
+
+    db.clear(); comandos = []; urlsMl = [];
+    db.set(CHAVE_ML, 790); // 210: sobram 10 para frete
+    const r2 = await run(comFretes(pagina(50)));
+    expect(contar('shipping_options')).toBe(10);
+    expect(r2.fretes!.filter((f) => f.frete.estado === 'ok')).toHaveLength(10);
+    expect(r2.fretes!.slice(10).every((f) => igual(f.frete, IND_ORC))).toBe(true);
+    expect(db.get(CHAVE_ML)).toBe(1000);
+  });
+
+  it('reserva nunca passa de 250', async () => {
+    const p = comFretes(pagina(50));
+    await run({ ...p, perfis: Array.from({ length: 50 }, (_, i) => 900 + i) });
+    expect(comandos[2]).toEqual(['INCRBY', CHAVE_ML, 250]);
+  });
+
+  it('deadline: frete não despachado fica "tempo esgotado"', async () => {
+    extra.prazo = AGORA.getTime() + 8000;
+    aoChamar = () => { agoraMs += 1000; };
+    const r = await run(pedido([], { fretes: Array.from({ length: 10 }, (_, i) => ({ itemId: `MLB${70 + i}`, preco: 10 })) }));
+    expect(contar('shipping_options')).toBe(8);
+    expect(r.fretes!.slice(8).map((f) => f.frete)).toEqual([IND_TEMPO, IND_TEMPO]);
+    expect(timeouts.at(-1)).toBe(500);
+  });
+
+  it('cancelamento: nenhum frete novo depois do abort', async () => {
+    const ctl = new AbortController();
+    extra.sinal = ctl.signal;
+    let n = 0;
+    aoChamar = () => { if (++n === 3) ctl.abort(); };
+    const r = await run(pedido([], { fretes: Array.from({ length: 12 }, (_, i) => ({ itemId: `MLB${70 + i}`, preco: 10 })) }));
+    expect(urlsMl).toHaveLength(3);
+    expect(r.fretes!.slice(3).map((f) => f.frete)).toEqual(Array(9).fill({ estado: 'indisponivel', motivo: 'consulta cancelada' }));
+  });
+
+  it('virada do minuto UTC com frete e fase 1 em paralelo: as duas filas retomam, sem travar', async () => {
+    agoraMs = new Date('2026-11-03T14:05:59.500Z').getTime();
+    aoChamar = () => { agoraMs += 50; };
+    // Virada lenta (DECRBY 10 ms): a outra fila termina os GETs em voo durante a virada e fica com 0 ativos —
+    // só retoma se a virada reacordar TODAS as bombas.
+    const original = fetchRedis.getMockImplementation()!;
+    fetchRedis.mockImplementation(async (url, init) => {
+      if (String(init.body).includes('"DECRBY"')) await new Promise((ok) => setTimeout(ok, 10));
+      return original(url, init);
+    });
+    const r = await run(comFretes(pagina(12))).finally(() => fetchRedis.mockImplementation(original));
+    expect(r.fretes!.every((f) => f.frete.estado === 'ok')).toBe(true);
+    expect(r.catalogos.every((c) => c.produto?.estado === 'ok' && c.ofertas?.estado === 'ok')).toBe(true);
+    expect(ops().slice(0, 5)).toEqual(['INCRBY', 'EXPIRE', 'INCRBY', 'EXPIRE', 'DECRBY']);
+    // tudo o que saiu foi debitado numa das duas chaves, e só isso
+    expect(Number(db.get(CHAVE_ML)) + Number(db.get('ext:mlapp:202611031406'))).toBe(r.custo.chamadasMl);
+    expect(r.custo.comandosRedis).toBe(comandos.length);
+  }, 2000);
+
+  it('MGET falho: nenhum frete despachado depois dele; o resto fica "serviço indisponível agora"', async () => {
+    falharPrefixo = 'ext:lp:';
+    let mget = false;
+    const depois: string[] = [];
+    aoChamar = (u) => { if (mget && u.includes('shipping_options')) depois.push(u); };
+    const original = fetchRedis.getMockImplementation()!;
+    fetchRedis.mockImplementation(async (url, init) => {
+      if (String(init.body).includes('"MGET"')) mget = true;
+      return original(url, init);
+    });
+    try {
+      const p = comFretes(pagina(2));
+      const extras = Array.from({ length: 40 }, (_, i) => ({ itemId: `MLB${5000 + i}`, preco: 10 }));
+      for (const f of extras) respostasMl.set(urlFr(f.itemId), SHIP(5));
+      const r = await run({ ...p, fretes: [...p.fretes, ...extras] });
+      expect(depois).toEqual([]);
+      expect(r.fretes!.some((f) => igual(f.frete, IND_REDIS))).toBe(true);
+      expect(r.fretes!.every((f) => f.frete.estado === 'ok' || igual(f.frete, IND_REDIS))).toBe(true);
+      expect(db.get(CHAVE_ML)).toBe(r.custo.chamadasMl); // não despachado devolvido
+    } finally {
+      fetchRedis.mockImplementation(original);
+    }
+  });
+
+  it('cota de páginas recusada: fretes indisponíveis sem nada consultado', async () => {
+    db.set(CHAVE_PAG, 20);
+    const r = await run(pedido([], { fretes: [{ itemId: 'MLB77', preco: 10 }] }));
+    expect(r.fretes).toEqual([{ itemId: 'MLB77', preco: 10, frete: { estado: 'indisponivel', motivo: 'limite de páginas por minuto' }, expiraEm: null }]);
+    expect(urlsMl).toEqual([]);
+  });
+
+  it('fretes: [] explícito = nenhum shipping_options, resposta com lista vazia', async () => {
+    const r = await run({ ...pagina(2), fretes: [] });
+    expect(contar('shipping_options')).toBe(0);
+    expect(r.fretes).toEqual([]);
   });
 });

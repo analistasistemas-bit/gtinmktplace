@@ -460,10 +460,10 @@ async function executar(p: Pedido, admin: SupabaseClient, ctx: Contexto, protoco
       const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
       if (!conexao?.contaExternaId) return SEM_CONEXAO;
       const token = await getValidAccessTokenConexao(conexao);
-      const { catalogos, perfis, perfisEmCache } = p;
+      const { catalogos, perfis, perfisEmCache, fretes } = p;
       const conta = String(conexao.contaExternaId);
       // Prazo de 8 s desde a entrada na edge (inclui autenticação); cliente desconectado = nada novo ao ML.
-      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache }, {
+      const r = await enriquecerCatalogosBusca(orgId, userId, { catalogos, perfis, perfisEmCache, fretes }, {
         conta, agora: () => new Date(), prazo: req.entrada + PRAZO_ENRIQUECIMENTO_MS, sinal: req.sinal,
         getMl: (url, timeoutMs) => getMlUmaVez(url, token, timeoutMs, req.sinal),
       });

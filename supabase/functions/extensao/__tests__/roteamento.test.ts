@@ -460,6 +460,29 @@ describe('enriquecer_catalogos_busca (Task 9, Revisão 03/11)', () => {
     expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 3 })).not.toHaveProperty('perfisRestantes');
     expect(validarPedido({ acao: E, catalogos: [c('MLB1')], perfisRestantes: 'x' })).not.toBeNull();
   });
+  it('fretes (fatia 2.1): ausente fica ausente (0.5.0); dedupe por item+preço; só fretes vale; ≤ 50 distintos', () => {
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')] })).not.toHaveProperty('fretes');
+    const f = (itemId: string, preco = 10) => ({ itemId, preco });
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], fretes: [f('MLB10'), f('MLB10'), f('MLB10', 12)] }))
+      .toMatchObject({ fretes: [f('MLB10'), f('MLB10', 12)] });
+    expect(validarPedido({ acao: E, catalogos: [], fretes: [f('MLB10')] })).toEqual({ acao: E, catalogos: [], perfis: [], perfisEmCache: [], fretes: [f('MLB10')] });
+    expect(validarPedido({ acao: E, catalogos: [], fretes: [] })).toBeNull(); // pedido vazio
+    expect(validarPedido({ acao: E, catalogos: [c('MLB1')], fretes: [] })).toMatchObject({ fretes: [] });
+    const n = (k: number) => Array.from({ length: k }, (_, i) => f(`MLB${100 + i}`));
+    expect(validarPedido({ acao: E, catalogos: [], fretes: n(50) })).toMatchObject({ fretes: { length: 50 } });
+    expect(validarPedido({ acao: E, catalogos: [], fretes: n(51) })).toBeNull();
+    expect(validarPedido({ acao: E, catalogos: [], fretes: [...n(50), ...n(50)] })).toMatchObject({ fretes: { length: 50 } });
+    expect(validarPedido({ acao: E, catalogos: [], fretes: Array(101).fill(f('MLB10')) })).toBeNull(); // teto bruto
+  });
+  it.each([
+    ['fretes não lista', { catalogos: [c('MLB1')], fretes: { itemId: 'MLB10', preco: 1 } }],
+    ['frete item inválido', { catalogos: [c('MLB1')], fretes: [{ itemId: 'X', preco: 1 }] }],
+    ['frete preço ≤ 0', { catalogos: [c('MLB1')], fretes: [{ itemId: 'MLB10', preco: 0 }] }],
+    ['frete preço não finito', { catalogos: [c('MLB1')], fretes: [{ itemId: 'MLB10', preco: Infinity }] }],
+    ['frete null', { catalogos: [c('MLB1')], fretes: [null] }],
+  ])('recusa %s', (_n, corpo) => {
+    expect(validarPedido({ acao: E, ...corpo })).toBeNull();
+  });
   it.each([
     ['vazio', { catalogos: [] }],
     ['sem catalogos', {}],

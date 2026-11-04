@@ -2,12 +2,15 @@
 // lote por página). Para catálogos identificados nos cards (inclusive de concorrente): /products/{id},
 // /products/{id}/items e /users/{seller} com a conta da org, mais a comissão "na sua conta" da oferta exata do card.
 // - A página inteira numa requisição: 1 unidade da cota de páginas, UMA reserva do orçamento global (limite
-//   superior, fases 1 e 2), pool contínuo de 16 (listing_prices ≤ 4), deadline de 8 s desde a entrada na edge.
+//   superior, fases 1 e 2 + fretes), pool contínuo de 16 (listing_prices ≤ 4) + fila de frete de 8 (fatia 2.1,
+//   só quando o pedido traz `fretes`), deadline de 8 s desde a entrada na edge.
 // - Sem cache Redis de produto/ofertas/perfil (o cache é do navegador). Comissão: UM MGET da chave existente
 //   (`chaveComissao`); miss é calculado e só devolvido (o navegador guarda; os produtores financeiros enchem o Redis).
 // - Resultado parcial é terminal: o que não deu para consultar volta `indisponivel` com motivo, sem retomada.
 // - Nada inventado: vendedor/categoria/tipo/comissão só da oferta cujo item_id = item do card.
-import { chaveComissao, comissaoDaListingPrice, dataDoProduto, MAX_PERFIS_PEDIDO } from '../../extensao/roteamento.ts';
+import {
+  CEP_FRETE_OFERTA, chaveComissao, comissaoDaListingPrice, dataDoProduto, freteDaRespostaShipping, MAX_PERFIS_PEDIDO,
+} from '../../extensao/roteamento.ts';
 import { leituraCompletaDaFicha } from '../pulse/parse.ts';
 import type { ListingPriceML } from '../ml/tarifa.ts';
 import { redisMget } from '../redis/client.ts';
@@ -20,7 +23,8 @@ import { sinalComPrazo } from './enriquecimento-busca-io.ts';
 const ML = 'https://api.mercadolibre.com';
 const POOL = 16; // chamadas ML simultâneas
 const POOL_COMISSAO = 4; // listing_prices simultâneas, dentro das 16
-const MAX_RESERVA = 200;
+const POOL_FRETE = 8; // shipping_options simultâneas, fila própria FORA das 16 (spike §7): total 24
+const MAX_RESERVA = 250; // 200 dos componentes existentes + 50 fretes
 const PRAZO_MS = 8000; // desde a entrada na edge (o index passa o instante; sem ele, desde o início daqui)
 const TIMEOUT_GET_MS = 3000;
 const FOLGA_RESPOSTA_MS = 500; // nenhum GET passa de prazo − folga: sobra tempo para montar a resposta
@@ -32,6 +36,8 @@ const CATEGORIA = /^MLB\d{1,20}$/;
 const TTL_PRODUTO_MS = 6 * 3600_000;
 const TTL_OFERTAS_MS = 60_000;
 const TTL_PERFIL_MS = 24 * 3600_000;
+const TTL_FRETE_MS = 6 * 3600_000;
+const REPUTACOES = new Set(['1_red', '2_orange', '3_yellow', '4_light_green', '5_green']);
 
 export const MOTIVO = {
   limiteMl: 'limite do Mercado Livre', // 429 na família do endpoint: ninguém mais dela é despachado nesta rodada
@@ -51,6 +57,8 @@ export interface PedidoEnriquecimento {
   perfis: number[];
   /** Vendedores com perfil válido no cache do navegador: não são consultados. */
   perfisEmCache: number[];
+  /** Fretes cotados pelo item exato do card (fatia 2.1). Ausente = nenhum shipping_options (cliente 0.5.0). */
+  fretes?: { itemId: string; preco: number }[];
 }
 
 /** `tentarApos` (ms): Retry-After de um 429, quando veio. */
@@ -69,7 +77,9 @@ export interface DepsEnriquecimento {
 
 type Ind = { estado: 'indisponivel'; motivo: string };
 export type Medalha = 'silver' | 'gold' | 'platinum' | 'sem';
-export interface VendedorBusca { nome: string | null; medalha: Medalha | null; uf: string | null }
+export type Reputacao = '1_red' | '2_orange' | '3_yellow' | '4_light_green' | '5_green';
+/** cidade = cidade cadastrada do vendedor (não prova origem do envio); reputacao = cor do termômetro do ML. */
+export interface VendedorBusca { nome: string | null; medalha: Medalha | null; uf: string | null; cidade: string | null; reputacao: Reputacao | null }
 
 export type OfertaExata =
   | {
@@ -89,7 +99,7 @@ export interface CatalogoEnriquecido {
   retomarEm: null;
   /** null = nada consultado. */
   consultadoEm: string | null;
-  produto?: { estado: 'ok'; criadoEm: string | null; expiraEm: string } | Ind;
+  produto?: { estado: 'ok'; criadoEm: string | null; marca: string | null; expiraEm: string } | Ind;
   ofertas?: {
     estado: 'ok'; expiraEm: string; total: number | null; lidas: number;
     vendedoresIdentificados: number; ofertasSemVendedor: number;
@@ -102,10 +112,15 @@ export type VendedorEnriquecido =
   | ({ sellerId: number; estado: 'ok'; expiraEm: string } & VendedorBusca)
   | ({ sellerId: number } & Ind);
 
+/** Frete cotado (CEP_FRETE_OFERTA) do item exato do card; expiraEm só quando ok. */
+export interface FreteEnriquecido { itemId: string; preco: number; frete: Disponivel<number>; expiraEm: string | null }
+
 export interface RespostaEnriquecimento {
   consultadoEm: string;
   catalogos: CatalogoEnriquecido[];
   vendedores: VendedorEnriquecido[];
+  /** Só quando o pedido trouxe `fretes` (a forma da 0.5.0 não muda). */
+  fretes?: FreteEnriquecido[];
   custo: { comandosRedis: number; chamadasMl: number };
   /** Maior Retry-After dos 429 desta rodada (ISO); null = nenhum 429 com Retry-After. Só para o "Tentar novamente". */
   tentarAposEm: string | null;
@@ -117,6 +132,14 @@ type NoPrazo = <T>(f: (sinal: AbortSignal) => Promise<T>) => Promise<T>;
 const registro = (v: unknown) => (typeof v === 'object' && v != null && !Array.isArray(v) ? v as Record<string, unknown> : null);
 const ind = (motivo: string): Ind => ({ estado: 'indisponivel', motivo });
 
+const textoOuNulo = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+
+/** /products/{id} → `attributes[id=BRAND].value_name`; ausente/vazio = null. */
+export function marcaDoProduto(corpo: unknown): string | null {
+  const attrs = registro(corpo)?.attributes;
+  return Array.isArray(attrs) ? textoOuNulo(registro(attrs.find((a) => registro(a)?.id === 'BRAND'))?.value_name) : null;
+}
+
 function ufOuNulo(v: unknown): string | null {
   const e = typeof v === 'string' ? v : registro(v)?.id;
   if (typeof e !== 'string') return null;
@@ -124,7 +147,7 @@ function ufOuNulo(v: unknown): string | null {
   return /^[A-Z]{2}$/.test(s) ? s : null;
 }
 
-/** /users/{id} de terceiro → nome, medalha, UF. Não exige `transactions.total` (normalizarPerfilVendedor exige).
+/** /users/{id} de terceiro → nome, medalha, UF, cidade, reputação (level_id fora da lista = null). Não exige `transactions.total` (normalizarPerfilVendedor exige).
  *  "sem" só com `power_seller_status: null` explícito; ausente ou desconhecido = null. */
 export function vendedorDoUsuario(corpo: unknown): VendedorBusca {
   const b = registro(corpo);
@@ -134,6 +157,8 @@ export function vendedorDoUsuario(corpo: unknown): VendedorBusca {
     nome: typeof b?.nickname === 'string' ? b.nickname : null,
     medalha: st === null ? 'sem' : typeof st === 'string' && MEDALHAS.has(st) ? st as Medalha : null,
     uf: ufOuNulo(registro(b?.address)?.state),
+    cidade: textoOuNulo(registro(b?.address)?.city),
+    reputacao: typeof rep?.level_id === 'string' && REPUTACOES.has(rep.level_id) ? rep.level_id as Reputacao : null,
   };
 }
 
@@ -163,61 +188,74 @@ const respostaOk = (r: Resultado, motivo: string): RespostaMl | Ind =>
 
 const sellerValido = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : null);
 
-type Familia = 'produto' | 'ofertas' | 'perfil' | 'comissao';
+type Familia = 'produto' | 'ofertas' | 'perfil' | 'comissao' | 'frete';
 interface Tarefa { url: string; familia: Familia }
+/** Saldo da reserva: `geral` (componentes existentes, pool 16) tem prioridade sobre `frete` (fila própria de 8). */
+type Conta = 'geral' | 'frete';
 
-/** Despacho da página com UMA reserva do orçamento global compartilhada pelas fases. Nunca despacha além do
- *  saldo; 429 numa família fecha só ela; deadline e cancelamento param os despachos novos. Minuto UTC virou com
- *  saldo → devolve o saldo na chave antiga e re-reserva na nova (uma virada por vez). */
+/** Despacho da página com UMA reserva do orçamento global compartilhada pelas fases e pela fila de frete. Nunca
+ *  despacha além do saldo; 429 numa família fecha só ela; deadline e cancelamento param os despachos novos.
+ *  Minuto UTC virou com saldo → devolve o saldo na chave antiga e re-reserva na nova (uma virada por vez; ao fim
+ *  dela TODAS as bombas vivas voltam a rodar). */
 function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamadasMl: number }, prazo: number, noPrazo: NoPrazo) {
   let reserva: ReservaOrcamentoMl = { concedidas: 0, chave: '' };
-  let saldo = 0;
+  const saldo: Record<Conta, number> = { geral: 0, frete: 0 };
   let virada: Promise<void> | null = null;
+  let parada: string | null = null;
   let tentarApos = 0;
   const fechadas = new Set<Familia>();
+  const bombas = new Set<() => void>();
+
+  /** Concessão parcial: os componentes existentes ficam com até `geralMax`; o frete, só com o que sobra. */
+  const dividir = (concedidas: number, geralMax: number) => {
+    saldo.geral = Math.min(concedidas, geralMax);
+    saldo.frete = concedidas - saldo.geral;
+  };
 
   async function virar(agora: Date) {
-    const pedir = saldo;
-    await noPrazo((s) => devolverOrcamentoMl(reserva, saldo, agora, custo, s));
-    saldo = 0;
+    const geral = saldo.geral;
+    const pedir = saldo.geral + saldo.frete;
+    await noPrazo((s) => devolverOrcamentoMl(reserva, pedir, agora, custo, s));
+    saldo.geral = 0; saldo.frete = 0;
     reserva = await noPrazo((s) => reservarOrcamentoMl(pedir, agora, custo, s));
-    saldo = reserva.concedidas;
+    dividir(reserva.concedidas, geral);
   }
 
-  const bloqueio = (f: Familia, restanteMs: number): string | null =>
+  const bloqueio = (f: Familia, conta: Conta, restanteMs: number): string | null =>
     deps.sinal?.aborted ? MOTIVO.cancelada
-    : fechadas.has(f) ? MOTIVO.limiteMl
+    : parada ?? (fechadas.has(f) ? MOTIVO.limiteMl
     : restanteMs < MIN_GET_MS ? MOTIVO.tempo
-    : saldo <= 0 ? MOTIVO.orcamento
-    : null;
+    : saldo[conta] <= 0 ? MOTIVO.orcamento
+    : null);
 
-  /** Pool contínuo: uma resposta lenta segura só a própria vaga. Tarefas além do saldo atual (na ordem dada)
-   *  ficam sem orçamento desde já: prioridade fase 1 → perfis → comissões. */
-  function executar(tarefas: Tarefa[]): Promise<Resultado[]> {
+  /** Pool contínuo: uma resposta lenta segura só a própria vaga. Tarefas além do saldo atual da conta (na ordem
+   *  dada) ficam sem orçamento desde já: prioridade fase 1 → perfis → comissões. Conta `frete` = pool próprio de 8. */
+  function executar(tarefas: Tarefa[], conta: Conta = 'geral'): Promise<Resultado[]> {
+    const pool = conta === 'frete' ? POOL_FRETE : POOL;
     const out: Resultado[] = new Array(tarefas.length);
     const filas: { geral: number[]; comissao: number[] } = { geral: [], comissao: [] };
     tarefas.forEach((t, i) => {
-      if (i >= saldo) out[i] = ind(MOTIVO.orcamento);
+      if (i >= saldo[conta]) out[i] = ind(MOTIVO.orcamento);
       else (t.familia === 'comissao' ? filas.comissao : filas.geral).push(i);
     });
     let ativos = 0;
     let ativosComissao = 0;
     return new Promise((fim) => {
       const bombear = () => {
-        while (!virada && ativos < POOL) {
+        while (!virada && ativos < pool) {
           const fila = filas.comissao.length && ativosComissao < POOL_COMISSAO ? filas.comissao : filas.geral.length ? filas.geral : null;
           if (!fila) break;
           const agora = deps.agora();
-          if (saldo > 0 && chaveOrcamentoMl(agora) !== reserva.chave) {
-            virada = virar(agora).finally(() => { virada = null; bombear(); });
+          if (saldo.geral + saldo.frete > 0 && chaveOrcamentoMl(agora) !== reserva.chave) {
+            virada = virar(agora).finally(() => { virada = null; for (const b of [...bombas]) b(); });
             return;
           }
           const i = fila.shift()!;
           const t = tarefas[i];
           const restante = prazo - agora.getTime() - FOLGA_RESPOSTA_MS;
-          const m = bloqueio(t.familia, restante);
+          const m = bloqueio(t.familia, conta, restante);
           if (m) { out[i] = ind(m); continue; }
-          saldo--; custo.chamadasMl++; ativos++;
+          saldo[conta]--; custo.chamadasMl++; ativos++;
           const comissao = t.familia === 'comissao';
           if (comissao) ativosComissao++;
           // Despacho síncrono (o executor roda já); lançamento síncrono vira rejeição.
@@ -230,26 +268,36 @@ function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamad
               bombear();
             });
         }
-        if (!virada && ativos === 0 && !filas.geral.length && !filas.comissao.length) fim(out);
+        if (!virada && ativos === 0 && !filas.geral.length && !filas.comissao.length) { bombas.delete(bombear); fim(out); }
       };
+      bombas.add(bombear);
       bombear();
     });
   }
 
   return {
-    async reservar(unidades: number) {
+    async reservar(unidades: number, geralMax: number) {
       reserva = await noPrazo((s) => reservarOrcamentoMl(unidades, deps.agora(), custo, s));
-      saldo = reserva.concedidas;
+      dividir(reserva.concedidas, geralMax);
     },
     executar,
+    /** Nenhum despacho novo em nenhuma fila (MGET falho: Redis incerto). O que já saiu segue. */
+    parar(motivo: string) { parada = motivo; },
     /** Fim da página: devolve só o não despachado, uma vez, na chave da reserva vigente. */
     async devolver() {
-      if (saldo > 0) await noPrazo((s) => devolverOrcamentoMl(reserva, saldo, deps.agora(), custo, s));
-      saldo = 0;
+      const n = saldo.geral + saldo.frete;
+      if (n > 0) await noPrazo((s) => devolverOrcamentoMl(reserva, n, deps.agora(), custo, s));
+      saldo.geral = 0; saldo.frete = 0;
     },
     tentarAposEm: () => (tentarApos > 0 ? new Date(tentarApos).toISOString() : null),
   };
 }
+
+/** shipping_options → frete (parser puro `freteDaRespostaShipping`); 429 = limite; outro não-200 = indisponível. */
+const freteDe = (r: Resultado): Disponivel<number> => {
+  const x = respostaOk(r, 'frete da oferta indisponível');
+  return naoDespachado(x) ? x : freteDaRespostaShipping(x.corpo);
+};
 
 export async function enriquecerCatalogosBusca(
   orgId: string, userId: string, p: PedidoEnriquecimento, deps: DepsEnriquecimento,
@@ -260,6 +308,15 @@ export async function enriquecerCatalogosBusca(
   const em = (ms: number) => new Date(inicio.getTime() + ms).toISOString();
   const emCache = new Set(p.perfisEmCache);
   const explicitos = [...new Set(p.perfis)].filter((s) => !emCache.has(s));
+  // Um GET por item distinto (a URL não leva preço); o resultado vale para cada (item, preço) pedido.
+  const itensFrete = [...new Set((p.fretes ?? []).map((f) => f.itemId))];
+  const fretesCom = (de: (itemId: string) => Disponivel<number>): Pick<RespostaEnriquecimento, 'fretes'> =>
+    p.fretes === undefined ? {} : {
+      fretes: p.fretes.map(({ itemId, preco }) => {
+        const frete = de(itemId);
+        return { itemId, preco, frete, expiraEm: frete.estado === 'ok' ? em(TTL_FRETE_MS) : null };
+      }),
+    };
 
   // Todo I/O da página (Redis e ML) cabe no prazo contado da entrada na edge.
   const prazo = deps.prazo ?? inicio.getTime() + PRAZO_MS;
@@ -276,6 +333,7 @@ export async function enriquecerCatalogosBusca(
       consultadoEm,
       catalogos: p.catalogos.map((c) => ({ catalogProductId: c.catalogProductId, estado: 'indisponivel', motivo, retomarEm: null, consultadoEm: null })),
       vendedores: explicitos.map((sellerId) => ({ sellerId, ...ind(motivo) })),
+      ...fretesCom(() => ind(motivo)),
       custo,
       tentarAposEm: null,
     };
@@ -287,11 +345,18 @@ export async function enriquecerCatalogosBusca(
   ]);
   // Limite superior: perfis e comissões só saem de itens de catálogos com ofertas pedidas.
   const itensComOfertas = p.catalogos.reduce((n, c) => n + (c.componentes.includes('ofertas') ? c.itens.length : 0), 0);
-  const limite = Math.min(MAX_RESERVA, urls1.length + Math.min(MAX_PERFIS_PEDIDO, explicitos.length + itensComOfertas) + itensComOfertas);
+  const limiteGeral = urls1.length + Math.min(MAX_PERFIS_PEDIDO, explicitos.length + itensComOfertas) + itensComOfertas;
+  const limite = Math.min(MAX_RESERVA, limiteGeral + itensFrete.length);
 
   const despacho = criarDespacho(deps, custo, prazo, noPrazo);
+  let pFretes: Promise<Resultado[]> = Promise.resolve([]);
   try {
-    await despacho.reservar(limite);
+    await despacho.reservar(limite, limiteGeral);
+
+    // Frete: fila própria (8) desde já, em paralelo às fases 1 e 2 (o id do item vem do card).
+    pFretes = despacho.executar(
+      itensFrete.map((id) => ({ url: `${ML}/items/${id}/shipping_options?zip_code=${CEP_FRETE_OFERTA}`, familia: 'frete' as const })), 'frete',
+    );
 
     // Fase 1: /products e /products/items dos componentes pedidos.
     const r1 = await despacho.executar(urls1);
@@ -304,7 +369,7 @@ export async function enriquecerCatalogosBusca(
         c,
         produto: pr === undefined ? undefined
           : naoDespachado(pr) ? pr
-          : { estado: 'ok' as const, criadoEm: dataDoProduto(pr.corpo), expiraEm: em(TTL_PRODUTO_MS) },
+          : { estado: 'ok' as const, criadoEm: dataDoProduto(pr.corpo), marca: marcaDoProduto(pr.corpo), expiraEm: em(TTL_PRODUTO_MS) },
         ofertas: ofertas === undefined ? undefined : projetarOfertas(ofertas),
       };
     });
@@ -336,6 +401,7 @@ export async function enriquecerCatalogosBusca(
     if (chaves.length) {
       custo.comandosRedis++;
       const hits = await noPrazo((s) => redisMget(chaves, s)).catch(() => { redisFalhou = true; return []; });
+      if (redisFalhou) despacho.parar(MOTIVO.redis); // inclui os fretes ainda não despachados
       hits.forEach((h, i) => {
         try { const v = h ? JSON.parse(h) : null; if (v?.estado === 'ok' && v.valor) comissoes.set(chaves[i], v); } catch { /* miss */ }
       });
@@ -393,8 +459,11 @@ export async function enriquecerCatalogosBusca(
       return out;
     });
 
-    return { consultadoEm, catalogos, vendedores, custo, tentarAposEm: despacho.tentarAposEm() };
+    const rf = await pFretes;
+    const porItem = new Map(itensFrete.map((id, i) => [id, freteDe(rf[i])]));
+    return { consultadoEm, catalogos, vendedores, ...fretesCom((id) => porItem.get(id)!), custo, tentarAposEm: despacho.tentarAposEm() };
   } finally {
+    await pFretes; // nunca rejeita; nada de devolver saldo com frete ainda despachando
     await despacho.devolver();
   }
 }
