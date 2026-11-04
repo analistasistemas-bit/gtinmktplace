@@ -741,6 +741,44 @@ describe('frete da oferta (fatia 2.1): fila própria de 8, fase 1, prioridade do
     expect(r.custo.comandosRedis).toBe(comandos.length);
   }, 2000);
 
+  it('virada disparada pela fila de frete em voo quando a fase 2 começa: perfis e comissões não viram "orçamento"', async () => {
+    agoraMs = new Date('2026-11-03T14:05:59.990Z').getTime();
+    const base = deps().getMl;
+    let fretesProntos = 0;
+    extra = {
+      getMl: async (url, t) => {
+        const r = await base(url, t);
+        const frete = url.includes('shipping_options');
+        if (frete) await new Promise((ok) => setTimeout(ok, 15));
+        // 1º frete pronto (fase 1 já acabou; o MGET está em voo): o minuto vira e o despacho seguinte do frete
+        // dispara a virada, que ainda está re-reservando quando a fase 2 começa.
+        if (frete && ++fretesProntos === 1) agoraMs = new Date('2026-11-03T14:06:00.100Z').getTime();
+        return r;
+      },
+    };
+    const original = fetchRedis.getMockImplementation()!;
+    // O saldo fica zerado entre a devolução (DECRBY) e a re-reserva (INCRBY): atrasar a re-reserva abre a janela.
+    let devolveu = false;
+    fetchRedis.mockImplementation(async (url, init) => {
+      const corpo = String(init.body);
+      if (corpo.includes('"MGET"')) await new Promise((ok) => setTimeout(ok, 30));
+      if (corpo.includes('"DECRBY"')) devolveu = true;
+      else if (devolveu && corpo.includes('"INCRBY"')) await new Promise((ok) => setTimeout(ok, 50));
+      return original(url, init);
+    });
+    try {
+      const p = comFretes(pagina(2));
+      const extras = Array.from({ length: 10 }, (_, i) => ({ itemId: `MLB${6000 + i}`, preco: 10 }));
+      for (const f of extras) respostasMl.set(urlFr(f.itemId), SHIP(5));
+      const r = await run({ ...p, fretes: [...p.fretes, ...extras] });
+      expect(ops()).toContain('DECRBY'); // a virada aconteceu
+      expect(r.vendedores.every((v) => v.perfil?.estado === 'ok' || v.estado === 'ok')).toBe(true);
+      expect(JSON.stringify(r)).not.toContain('orçamento do app esgotado');
+    } finally {
+      fetchRedis.mockImplementation(original);
+    }
+  }, 3000);
+
   it('MGET falho: nenhum frete despachado depois dele; o resto fica "serviço indisponível agora"', async () => {
     falharPrefixo = 'ext:lp:';
     let mget = false;

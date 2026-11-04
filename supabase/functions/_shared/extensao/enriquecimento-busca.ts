@@ -230,7 +230,9 @@ function criarDespacho(deps: DepsEnriquecimento, custo: ContadorRedis & { chamad
 
   /** Pool contínuo: uma resposta lenta segura só a própria vaga. Tarefas além do saldo atual da conta (na ordem
    *  dada) ficam sem orçamento desde já: prioridade fase 1 → perfis → comissões. Conta `frete` = pool próprio de 8. */
-  function executar(tarefas: Tarefa[], conta: Conta = 'geral'): Promise<Resultado[]> {
+  async function executar(tarefas: Tarefa[], conta: Conta = 'geral'): Promise<Resultado[]> {
+    // Virada de minuto em voo (disparada pela fila de frete) zera o saldo até re-reservar: repartir só depois dela.
+    while (virada) await virada;
     const pool = conta === 'frete' ? POOL_FRETE : POOL;
     const out: Resultado[] = new Array(tarefas.length);
     const filas: { geral: number[]; comissao: number[] } = { geral: [], comissao: [] };
