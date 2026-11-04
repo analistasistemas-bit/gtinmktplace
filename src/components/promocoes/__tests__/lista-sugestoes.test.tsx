@@ -145,6 +145,19 @@ describe('ListaSugestoes', () => {
       expect(segundo.aoConcluir).toBeUndefined();
     });
 
+    it('resposta atrasada não reabre a fila que o operador fechou', async () => {
+      carregar(dados({ quaseVendendo: [sugestao({ recomendada: dealB, alternativas: [dealA] })] }));
+      renderLista();
+      await userEvent.click(screen.getByRole('button', { name: 'Aderir Jaqueta' }));
+      await userEvent.click(screen.getByRole('checkbox', { name: /11\.11 da Black/ }));
+      await userEvent.click(screen.getByRole('button', { name: 'Continuar (2)' }));
+      const p = preview.mock.calls.at(-1)![0] as { onClose: () => void; aoConcluir: () => void };
+      act(() => p.onClose());
+      preview.mockClear();
+      act(() => p.aoConcluir());
+      expect(preview).not.toHaveBeenCalled();
+    });
+
     it('sem nenhuma marcada não continua', async () => {
       carregar(dados({ quaseVendendo: [sugestao({ recomendada: dealB, alternativas: [dealA] })] }));
       renderLista();

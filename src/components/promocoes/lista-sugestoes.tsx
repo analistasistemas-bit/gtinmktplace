@@ -138,7 +138,7 @@ export function ListaSugestoes() {
           promocaoNome={aderindo.promocao.nome ?? rotuloTipo(aderindo.promocao.tipo)}
           itens={aderindo.itens} aberto onClose={() => setFila(null)} onSucesso={() => setFila(null)}
           passo={fila.opcoes.length > 1 ? { atual: fila.i + 1, total: fila.opcoes.length } : undefined}
-          aoConcluir={fila.i < fila.opcoes.length - 1 ? () => setFila({ ...fila, i: fila.i + 1 }) : undefined}
+          aoConcluir={fila.i < fila.opcoes.length - 1 ? () => setFila((atual) => (atual === fila ? { ...fila, i: fila.i + 1 } : atual)) : undefined}
           sugestao={{ faixa: fila.s.faixa, oportunidade: Math.round(fila.s.oportunidade * 100) / 100, chave: fila.s.chave }} />
       )}
     </div>

@@ -92,6 +92,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   // Achado Codex: cálculo pendente de uma abertura anterior não toca as linhas da nova (nem segue para o próximo lote).
   const geracao = useRef(0);
   const digitando = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Fechou o painel: nada pendente segue calculando nem avisa de um painel que não existe mais.
+  useEffect(() => {
+    const timers = digitando.current;
+    return () => { geracao.current++; timers.forEach(clearTimeout); };
+  }, []);
   // Reabrir com preview novo (item mudou, ou trocou o grupo aderir/sair): recomeça do zero.
   useEffect(() => {
     geracao.current++;

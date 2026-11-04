@@ -116,6 +116,17 @@ describe('Você recebe por venda ao aderir', () => {
     expect(screen.queryByText('Calculando o que você recebe…')).toBeNull();
   });
 
+  it('fechar o painel cancela o recálculo pendente', async () => {
+    simularAsync.mockReset().mockResolvedValue([]);
+    const { unmount } = renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const campo = screen.getByLabelText('Preço de MLB1');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '120,00');
+    unmount();
+    await new Promise((r) => { setTimeout(r, 700); });
+    expect(simularAsync).not.toHaveBeenCalled();
+  });
+
   it('sair não mostra preço atual nem a conta', () => {
     renderPreview({ acao: 'sair', tipo: 'DEAL', itens: [tarifado({ status: 'started' })] });
     expect(screen.queryByText(/Preço atual/)).toBeNull();
