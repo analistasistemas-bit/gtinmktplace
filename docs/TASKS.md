@@ -111,7 +111,7 @@
 - [x] 0.5.1 publicada em 04/11 **quebrada**: zip gerado em worktree sem `.env.local` (`fetch("undefined/functions/v1/extensao")`), nenhuma chamada chegava à edge. Corrigida na 0.5.2; pacote agora só por `pnpm --dir extensao pacote`, que reprova sem a URL do Supabase.
 - [x] 0.5.2 publicada e validada em busca real em 04/11: cidade/UF, reputação, frete cotado, página em ~6 s, 6 comandos Redis. A validação achou dois bugs, corrigidos na 0.5.3: patrocinado sem `/p/` ignorava o catálogo do orgânico do mesmo item; frete R$ 0,00 quando a opção recomendada do Full vinha zerada.
 - [x] 0.5.3 publicada e validada em busca real em 04/11: patrocinado com dados, frete sem zero, painel com % dos pisos, frete e reputação.
-- [ ] 0.5.4: painel não espera a edge se ela confirmou a identidade nos últimos 10 min; medalha · cidade/UF abaixo do nome no card. Enviar `publiai-extensao-0.5.4.zip` à Web Store (Diego) e conferir o tempo de abertura.
+- [x] 0.5.4 publicada e validada em busca real em 04/11: medalha · cidade/UF abaixo do nome, marca e % dos pisos por produto no painel; página em 4–5 s, 6 comandos Redis, sem erro. Tempo de abertura do painel no Chrome do Diego ainda sem retorno.
 - [-] Fatia 3 (simulação sem vínculo) suspensa: a página do produto já simula com custo digitado.
 
 ## Daludi Shop PF→PJ e fiscal no ML (ADR-0135) — 2026-11-01
