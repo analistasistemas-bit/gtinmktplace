@@ -3,7 +3,7 @@
 import { acoesDaConta, playerDaConta, revisaoPendente, vezDe } from './devolucao.ts';
 import { lerClaimCompleto } from './devolucoes-io.ts';
 import {
-  mapearResolucoes, montarHistorico, motivosRevisao, ofertasReembolso,
+  mapearAcoesFeitas, mapearResolucoes, montarHistorico, motivosRevisao, ofertasReembolso,
   type DetalheReclamacao,
 } from './posvenda.ts';
 
@@ -45,11 +45,12 @@ export async function lerDetalheReclamacao(
   const pendente = revisaoPendente(acoesPend, extras.revisoes);
 
   const v1 = `${API}/v1/claims/${claimId}`;
-  const [msgs, hist, resol, custo, motivos, parcial] = await Promise.all([
+  const [msgs, hist, resol, custo, feitas, motivos, parcial] = await Promise.all([
     ler(token, `${v1}/messages`),
     ler(token, `${v1}/status-history`),
     ler(token, `${v1}/expected-resolutions`),
     ler(token, `${v1}/charges/return-cost`),
+    ler(token, `${v1}/actions-history`),
     pendente ? ler(token, `${API}/v1/returns/reasons?flow=seller_return_failed&claim_id=${claimId}`) : null,
     acoes.includes('allow_partial_refund') ? ler(token, `${v1}/partial-refund/available-offers`) : null,
   ]);
@@ -66,6 +67,7 @@ export async function lerDetalheReclamacao(
   const resolBody = info(resol, 'resolucoes');
   const custoBody = info(custo, 'custo_devolucao') as { amount?: unknown } | null;
   const msgsBody = info(msgs, 'historico');
+  const feitasBody = info(feitas, 'acoes_feitas');
   const histBody = hist.ok ? hist.body : null;
   if (!hist.ok && msgs.ok) incompleto.push('historico'); // (msgs falho já registrou)
 
@@ -94,6 +96,7 @@ export async function lerDetalheReclamacao(
     pedidos_devolucao: ret.valor?.pedidos ?? [],
     motivos_falha_revisao: motivosRevisao(motivosBody),
     reembolso_parcial: ofertasReembolso(parcialBody),
+    acoes_feitas: mapearAcoesFeitas(feitasBody),
     incompleto,
   };
 }

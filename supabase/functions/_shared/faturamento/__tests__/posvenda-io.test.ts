@@ -23,6 +23,7 @@ const base = {
   '/claims/9/status-history': { body: [] },
   '/claims/9/expected-resolutions': { body: [] },
   '/charges/return-cost': { body: { amount: 0 } },
+  '/claims/9/actions-history': { body: [{ action_name: 'allow_return', player_role: 'respondent', date_created: '2026-11-04T08:41:18.000-04:00' }] },
   '/claims/9': { body: CLAIM },
 };
 
@@ -38,6 +39,17 @@ describe('lerDetalheReclamacao', () => {
   it('revisões do return com 500 → lança (não vira "nenhuma pendente")', async () => {
     fakeFetch({ ...base, '/returns/5/reviews': { status: 500 } });
     await expect(lerDetalheReclamacao('t', '9', '7')).rejects.toThrow(/revis/i);
+  });
+  it('lê as ações já feitas no claim (actions-history)', async () => {
+    fakeFetch(base);
+    const d = await lerDetalheReclamacao('t', '9', '7');
+    expect(d.acoes_feitas).toEqual([{ acao: 'allow_return', papel: 'respondent', data: '2026-11-04T08:41:18.000-04:00' }]);
+  });
+  it('actions-history 500 → vazio e incompleto', async () => {
+    fakeFetch({ ...base, '/claims/9/actions-history': { status: 500 } });
+    const d = await lerDetalheReclamacao('t', '9', '7');
+    expect(d.acoes_feitas).toEqual([]);
+    expect(d.incompleto).toContain('acoes_feitas');
   });
   it('return-cost 500 → custo null e incompleto', async () => {
     fakeFetch({ ...base, '/charges/return-cost': { status: 500 } });

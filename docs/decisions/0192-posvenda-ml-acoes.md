@@ -81,3 +81,11 @@ privileges do projeto concedem TRUNCATE, que RLS não cobre (precedente
 - Estado otimista na UI: divergiria do ML (ex.: "Revisada" local x "Último dia" no ML).
 - Admin-only para reembolso: rejeitado pelo Diego.
 - Guardar fotos em storage próprio: dado de comprador sem necessidade.
+
+## Emenda 2026-11-04 — confirmação de "Autorizar devolução"
+
+A confirmação exigia `return_id` novo, mas o return só nasce quando o comprador inicia a devolução
+(medido: `allow-return` responde 200 só com as resoluções, e `claims/{id}/returns` segue 404). A
+tentativa ficava em `enviada` com o diálogo girando, embora o ML já mostrasse "Reclamação com
+devolução habilitada". A evidência positiva agora é `claims/{id}/actions-history`: `allow_return`
+do `respondent` após o POST (folga de 60 s: o ML grava em segundos). `return_id` novo segue valendo.

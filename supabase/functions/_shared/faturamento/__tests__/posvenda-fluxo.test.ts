@@ -16,7 +16,7 @@ const det = (over: Partial<DetalheReclamacao> = {}): DetalheReclamacao => ({
   comprador_quer: 'refund', resolucoes: [], resolucao_final: null, afeta_reputacao: null, custo_devolucao: null,
   historico: [], acoes: ['refund', 'open_dispute', 'return_review_ok', 'return_review_fail', 'send_message_to_complainant'],
   revisoes: [{ order_id: 500, seller_status: 'pending' }], pedidos_devolucao: [500], motivos_falha_revisao: [],
-  reembolso_parcial: null, incompleto: [], ...over,
+  reembolso_parcial: null, acoes_feitas: [], incompleto: [], ...over,
 });
 
 /** Espera a execução concorrente chegar a um ponto (macrotarefas, sem relógio real). */

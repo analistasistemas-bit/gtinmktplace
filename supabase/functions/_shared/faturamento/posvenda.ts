@@ -24,6 +24,9 @@ export interface Resolucao {
   criada_em: string; atualizada_em: string;
 }
 
+/** Linha de `claims/{id}/actions-history`. */
+export interface AcaoFeita { acao: string; papel: string; data: string }
+
 export interface DetalheReclamacao {
   claim_id: number;
   return_id: number | null;
@@ -44,6 +47,7 @@ export interface DetalheReclamacao {
   pedidos_devolucao: number[];
   motivos_falha_revisao: MotivoRevisao[];
   reembolso_parcial: ReembolsoParcial | null;
+  acoes_feitas: AcaoFeita[];
   /** Leituras só informativas que falharam (campo correspondente vem null/vazio). */
   incompleto: string[];
 }
@@ -144,6 +148,15 @@ export function ofertasReembolso(resp: unknown): ReembolsoParcial | null {
   }
   const min = (Array.isArray(r.restrictions) ? r.restrictions : []).map(obj).find((x) => x?.type === 'minimum');
   return { ofertas, minimo: num(min?.percentage) };
+}
+
+/** GET claims/{id}/actions-history → ações já executadas no claim. */
+export function mapearAcoesFeitas(resp: unknown): AcaoFeita[] {
+  if (!Array.isArray(resp)) return [];
+  return resp.flatMap((a) => {
+    const acao = str(obj(a)?.action_name), papel = str(obj(a)?.player_role), data = str(obj(a)?.date_created);
+    return acao && papel && data ? [{ acao, papel, data }] : [];
+  });
 }
 
 /** GET claims/{id}/expected-resolutions → resoluções esperadas (percentual da oferta fica em `detalhes`). */
@@ -303,6 +316,9 @@ export interface TentativaEfeito { payload: CorpoAcao; post_em: string; http_sta
 
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
 const RESOLUCAO_ACEITA = new Set(['accepted', 'applied']);
+// ML grava em segundos e o post_em vem do nosso relógio. Sem risco de pegar ação antiga: a ação só
+// é enviada se estava em `available_actions`, e ela sai de lá depois de feita.
+const FOLGA_RELOGIO_MS = 60_000;
 const mesmaResolucao = (a: Resolucao, b: Resolucao) => a.papel === b.papel && a.tipo === b.tipo && a.criada_em === b.criada_em;
 
 /** Evidência POSITIVA e específica de que o efeito da NOSSA tentativa está no ML.
@@ -357,7 +373,12 @@ export function efeitoConfirmado(
     const pct = (r: Resolucao) => Number(r.detalhes.find((x) => x.chave === 'percentage')?.valor);
     return ofertas.some((r) => pct(r) === t.payload.percentual) ? 'confirmado' : 'nao';
   }
-  if (acao === 'autorizar_devolucao') return antes.return_id == null && depois.return_id != null ? 'confirmado' : 'nao';
+  if (acao === 'autorizar_devolucao') {
+    // O return só nasce quando o comprador inicia a devolução (dias depois); a prova do nosso efeito é o histórico.
+    const feita = depois.acoes_feitas.some((a) => a.papel === 'respondent' && ACAO_ML[acao].includes(a.acao)
+      && ms(a.data) >= post - FOLGA_RELOGIO_MS);
+    return feita || (antes.return_id == null && depois.return_id != null) ? 'confirmado' : 'nao';
+  }
   return antes.stage === 'claim' && depois.stage === 'dispute' ? 'confirmado' : 'nao';
 }
 

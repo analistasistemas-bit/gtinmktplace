@@ -15,7 +15,7 @@ const det = (over: Partial<DetalheReclamacao> = {}): DetalheReclamacao => ({
   estado: { titulo: null, descricao: null, problema: null, prazo: null, vez_de: 'vendedor' },
   comprador_quer: null, resolucoes: [], resolucao_final: null, afeta_reputacao: null, custo_devolucao: null,
   historico: [], acoes: [], revisoes: [], pedidos_devolucao: [500], motivos_falha_revisao: [],
-  reembolso_parcial: null, incompleto: [], ...over,
+  reembolso_parcial: null, acoes_feitas: [], incompleto: [], ...over,
 });
 const MOTIVOS = [
   { id: 'SRF2', texto: 'avariado', exige_foto: true, aplica: ['order'] },
@@ -199,6 +199,20 @@ describe('efeitoConfirmado', () => {
     expect(efeitoConfirmado('reembolso_parcial', det(), det({ resolucoes: [oferta('50.0')] }), tent({ percentual: 50 }))).toBe('confirmado');
     expect(efeitoConfirmado('reembolso_parcial', det(), det({ resolucoes: [oferta('35.0')] }), tent({ percentual: 50 }))).toBe('nao');
     expect(efeitoConfirmado('reembolso_parcial', det(), det(), tent({ percentual: 50 }))).toBe('nao');
+  });
+  it('autorizar_devolucao: allow_return do vendedor no histórico confirma sem return_id (comprador ainda não iniciou)', () => {
+    const t = { payload: {}, post_em: '2026-11-04T12:41:17.570Z', http_status: 200 };
+    const feita = { acao: 'allow_return', papel: 'respondent', data: '2026-11-04T08:41:18.000-04:00' };
+    expect(efeitoConfirmado('autorizar_devolucao', det({ return_id: null }), det({ return_id: null, acoes_feitas: [feita] }), t)).toBe('confirmado');
+    // ML grava em segundos truncados: pode cair antes do post_em (milissegundos, relógio nosso).
+    expect(efeitoConfirmado('autorizar_devolucao', det({ return_id: null }), det({ return_id: null, acoes_feitas: [{ ...feita, data: '2026-11-04T08:41:17.000-04:00' }] }), t)).toBe('confirmado');
+  });
+  it('autorizar_devolucao: histórico de outro papel, outra ação ou antigo não confirma', () => {
+    const t = { payload: {}, post_em: '2026-11-04T12:41:17.570Z', http_status: 200 };
+    const feita = { acao: 'allow_return', papel: 'respondent', data: '2026-11-04T08:41:18.000-04:00' };
+    for (const f of [{ ...feita, papel: 'complainant' }, { ...feita, acao: 'send_message_to_complainant' }, { ...feita, data: '2026-11-03T08:41:18.000-04:00' }]) {
+      expect(efeitoConfirmado('autorizar_devolucao', det({ return_id: null }), det({ return_id: null, acoes_feitas: [f] }), t)).toBe('nao');
+    }
   });
   it('autorizar_devolucao: return_id passou a existir; abrir_disputa: claim → dispute', () => {
     expect(efeitoConfirmado('autorizar_devolucao', det({ return_id: null }), det({ return_id: 88 }), tent({}))).toBe('confirmado');
