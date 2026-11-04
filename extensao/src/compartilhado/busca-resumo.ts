@@ -57,7 +57,8 @@ export function participacaoNosPisos(cards: CardBusca[]): { porItem: Record<stri
   for (const c of cards) porItem[c.itemId] = null;
   for (const [k, g] of grupos) {
     const p = pisoDe.get(k);
-    for (const c of g) porItem[c.itemId] = p !== undefined && soma > 0 ? p / soma : null;
+    // Card sem piso próprio mostra "—" mesmo com o grupo no denominador (pelo piso de um irmão).
+    for (const c of g) porItem[c.itemId] = p !== undefined && soma > 0 && pisoDosVendidos(c.vendidosTexto) !== null ? p / soma : null;
   }
   return { porItem, cobertura, grupos: grupos.size };
 }
