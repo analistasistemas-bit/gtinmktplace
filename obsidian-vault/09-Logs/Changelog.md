@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-03
+atualizado: 2026-11-04
 ---
 
 # Changelog
@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-04
 
+- **Clareza no Aderir** ([[0194-sugestoes-de-promocao|ADR-0194]], emendas): preço atual no card e no painel, "Vendeu 0 · esperado ~3", conta completa em Clássico ou Premium, adesão a várias campanhas DEAL em sequência, recálculo ao editar o preço, Preço R$ como padrão, "Piso fora da faixa" e "Custo fora da faixa". Logo pulsando nos carregamentos da Central.
+- **Custo em Publicados** ([[0185-republicar-e-kit-pela-familia-vigente|ADR-0185]], emenda): painel e exportação liam o custo da família mais antiga (Avil: 1.340 de 3.295 SKUs diferentes); agora usam o mais recente por SKU.
 - **Sugestões de promoção** ([[0194-sugestoes-de-promocao|ADR-0194]]): aba nova na Central com produtos que vendem pouco e têm convite, em duas faixas (Quase vendendo, Invisível), ordem por Oportunidade, Aderir por card e Dispensar por 30 dias. Migration `20261104010745`. Avil: 85 sugestões.
 
 ## 2026-11-03

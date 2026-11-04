@@ -98,6 +98,9 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Regra pura em `src/lib/sugestoes-promocao.ts`, sobre a RPC `sugestoes_promocao_sinais` e os convites. Sem chamada ao ML.
 - Verde e amarelo (selo "Abaixo do piso"), lucro maior que zero. Campanha recomendada = maior desconto; até 2 pontos é empate e ganha o lucro.
 - Dispensar vale 30 dias para a org. Adesão vinda de sugestão fica marcada em `operacoes_massa.sugestao` para medir depois.
+- Card mostra preço atual e "Vendeu 0 · esperado ~3, pela média da conta". Painel Aderir mostra preço atual e o "Você recebe por venda" no tipo real do anúncio (Clássico ou Premium), a partir da projeção do servidor.
+- Produto com 2+ campanhas DEAL abre a escolha com caixas de marcação; cada uma é confirmada no painel, em sequência, e vira uma operação própria. SMART e Relâmpago seguem uma por vez. Período cruzado no mesmo anúncio mostra aviso: o ML aplica o menor preço.
+- Comissão e frete mudam por faixa de preço do ML: a conta do Aderir pode diferir da de Publicados no mesmo anúncio porque os preços são outros.
 
 ### Aba Em promoção e Operações (2026-11-03, só front)
 

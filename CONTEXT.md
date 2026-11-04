@@ -169,5 +169,5 @@ Produto com menos de 5 unidades vendidas nos últimos 30 dias, somando todos os 
 _Evitar_: baixo giro (que olha duas janelas de 30 dias e exclui quem vendeu zero).
 
 **Oportunidade**:
-Estimativa do lucro das vendas que as visitas dos anúncios da campanha recomendada deveriam ter gerado na conversão média da conta e não geraram. Só ordena as sugestões: mede distância da média, não o que a promoção recupera, e por isso a tela mostra vendas abaixo do esperado, não um valor em reais.
+Estimativa do lucro das vendas que as visitas dos anúncios da campanha recomendada deveriam ter gerado na conversão média da conta e não geraram. Só ordena as sugestões: mede distância da média, não o que a promoção recupera, e por isso a tela mostra quanto vendeu e quanto seria esperado pela média da conta, não um valor em reais.
 _Evitar_: dinheiro parado, potencial garantido.
