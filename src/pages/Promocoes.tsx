@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
+import { deslocamentoHorizontal } from '@/lib/utils';
 import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/hooks/usePromocoes';
 import { abaDa, avisoAtualizacao, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
@@ -46,7 +47,9 @@ export default function Promocoes() {
   // No celular as abas rolam: a ativa não pode ficar fora da vista ao chegar pelo link.
   const abasRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    abasRef.current?.querySelector('[data-state="active"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    const lista = abasRef.current?.querySelector('[role="tablist"]');
+    const ativa = lista?.querySelector('[data-state="active"]');
+    if (lista && ativa) lista.scrollLeft += deslocamentoHorizontal(lista.getBoundingClientRect(), ativa.getBoundingClientRect());
   }, [aba, promocoes.data]);
   const setAba = (v: string) => setSearchParams((prev) => {
     const p = new URLSearchParams(prev);
