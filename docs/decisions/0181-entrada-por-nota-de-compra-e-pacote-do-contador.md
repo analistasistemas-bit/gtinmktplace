@@ -311,10 +311,15 @@ mas depende da API do ML no momento da exportação.
 
 ## Pendências de verificação (pós-implementação)
 
-- **`fiscal_information.title` -> `xProd`:** a descrição fiscal é gravada e enviada, mas a afirmação "sai
-  na nota" segue **não verificada**. Verificar na primeira venda faturada da Zaven:
-  `GET /users/3760134495/invoices/orders/{order_id}`, abrir o XML e comparar o `xProd` com a
-  `descricao_fiscal` da família. Registrar o resultado aqui.
+- **`fiscal_information.title` -> `xProd`:** **verificado em 05/11/2026** numa nota real do Faturador: a
+  descrição impressa no DANFE é idêntica ao `title` de `GET /items/fiscal_information/{sku}`, e não ao
+  título do anúncio. `GET /users/{id}/invoices/orders/{id}` deu 403 com o id do pacote; a prova veio do DANFE.
+- **Emenda D-5 (05/11/2026) — o `title` é montado por SKU.** A descrição continua campo da família, mas
+  ela é gravada SKU a SKU no ML. Família criada com uma cor no nome e que depois ganhou outras imprimia a
+  cor antiga na nota de todas as variações. Agora, se o texto citar uma cor de qualquer versão do produto
+  (inclusive de variação excluída da publicação), o push troca pela cor do SKU; SKU sem cor perde a citação;
+  texto neutro não muda. *Rejeitado:* anexar cor em todo SKU, porque alteraria a nota de todas as famílias com
+  texto neutro sem necessidade. Limite: cor fora do cadastro da família não é reconhecida.
 - **storage-js 2.110.0:** a mensagem de objeto duplicado no upload foi lida do `deno.lock`; confirmar em
   runtime que o reenvio do mesmo XML devolve `ja_existia`.
 - Validação em runtime (org Zaven, concorrência em duas abas, desfazer) e deploy: ver

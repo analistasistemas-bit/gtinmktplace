@@ -30,10 +30,17 @@ Deno.serve(async (req) => {
     // vincular-catalogo/vinculacao.ts), processar.ts converte em 500 pro QStash retentar.
     listarVariacoes: async (admin, familiaId) => {
       const { data, error } = await admin.from('variacoes')
-        .select('codigo, gtin, peso_gramas, ml_variation_id')
+        .select('codigo, gtin, peso_gramas, ml_variation_id, cor')
         .eq('familia_id', familiaId).eq('excluida_da_publicacao', false);
       if (error) throw new Error(`listarVariacoes: ${error.message}`);
       return data ?? [];
+    },
+    listarCoresProduto: async (admin, orgId, codigoPai) => {
+      const { data, error } = await admin.from('variacoes')
+        .select('cor, familias!inner(org_id, codigo_pai)')
+        .eq('familias.org_id', orgId).eq('familias.codigo_pai', codigoPai).not('cor', 'is', null);
+      if (error) throw new Error(`listarCoresProduto: ${error.message}`);
+      return (data ?? []).map((v) => v.cor as string);
     },
     // C1: filhos User Products (ADR-0088) + partições do split — Task 8 extraiu pra _shared/fiscal/can-invoice.ts,
     // reusado também pela reconciliação de monitorar-moderados.

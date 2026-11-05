@@ -17,6 +17,9 @@ export interface DepsFiscal {
   resolverConexao: (admin: SupabaseClient, orgId: string, canal: string) => Promise<{ id: string } | null>;
   getToken: (conexao: unknown) => Promise<string>;
   listarVariacoes: (admin: SupabaseClient, familiaId: string) => Promise<VariacaoFiscalPush[]>;
+  /** Emenda D-5 do ADR-0181: cores de TODAS as versões do produto, excluídas da publicação inclusive.
+   *  Versões diferentes gravam o mesmo SKU no ML; com cores parciais, a mais velha desfaria a troca. */
+  listarCoresProduto: (admin: SupabaseClient, orgId: string, codigoPai: string) => Promise<string[]>;
   /** Fix round 2 (C1): itens por SKU — filhos User Products (ADR-0088) ou partições do split
    *  (C1, auditoria 19/10). [] = Legacy (1 item só). */
   listarItensFiscais: (
@@ -104,8 +107,10 @@ export async function processarSincronizacaoFiscal(
   // vira decisão definitiva, sempre 500 pro QStash retentar, sem tocar can_invoice.
   let variacoes: VariacaoFiscalPush[];
   let itensUP: ItemUP[];
+  let coresFamilia: string[];
   try {
     variacoes = await deps.listarVariacoes(admin, familia.id);
+    coresFamilia = await deps.listarCoresProduto(admin, familia.org_id, familia.codigo_pai);
     // C1: rota UP tem um item ML POR SKU (anuncios_externos_itens); familias.ml_item_id só guarda
     // o 1º item da partição 0 — usá-lo pra TODOS os SKUs afirmaria fiscal no item errado. Família
     // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
@@ -131,7 +136,7 @@ export async function processarSincronizacaoFiscal(
     for (const v of variacoes) {
       const payload = montarFiscalInformation(familia as FamiliaFiscalPush, v, {
         origin_type: empresa.origin_type,
-      });
+      }, coresFamilia);
       await deps.portas.empurrarFiscalSku(token, payload);
       const itemId = itemIdDoSku(v.codigo);
       if (itemId) {

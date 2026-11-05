@@ -27,12 +27,27 @@ export interface FamiliaFiscalPush {
 }
 export interface VariacaoFiscalPush {
   codigo: string; gtin: string | null; peso_gramas: number | null; ml_variation_id: string | null;
+  cor?: string | null;
+}
+
+/** Emenda ADR-0181 D-5 (05/11/2026): o `title` vira o xProd da nota e é gravado por SKU. Texto da
+ *  família que cita uma cor dela (nome herdado de quando só existia aquela cor) sairia igual em
+ *  todas as variações; aqui a cor citada vira a do SKU. Texto neutro não muda.
+ *  ponytail: só reconhece cores cadastradas na família ("Short Azul" com cor "Azul Claro" passa). */
+function tituloDoSku(texto: string, corSku: string | null | undefined, coresFamilia: string[]): string {
+  const cores = [...new Set(coresFamilia.map((c) => c.trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+    .map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (cores.length === 0) return texto;
+  const citada = new RegExp(`(?<![\\p{L}\\p{N}])(?:${cores.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+  return texto.replace(citada, corSku?.trim() ?? '').replace(/\s+/g, ' ').trim() || texto;
 }
 
 export function montarFiscalInformation(
   familia: FamiliaFiscalPush,
   variacao: VariacaoFiscalPush,
   empresa: { origin_type: string | null },
+  coresFamilia: string[] = [],
 ): Record<string, unknown> {
   const tax: Record<string, unknown> = {
     ncm: familia.ncm,
@@ -53,7 +68,7 @@ export function montarFiscalInformation(
   if (ean && !ean.startsWith('3000') && gtinValido(ean)) tax.ean = ean;
   return {
     sku: variacao.codigo,
-    title: familia.descricao_fiscal?.trim() || familia.nome_pai,
+    title: tituloDoSku(familia.descricao_fiscal?.trim() || familia.nome_pai, variacao.cor, coresFamilia),
     type: 'single',
     measurement_unit: (familia.unidade ?? 'UN').toUpperCase().trim(),
     origin_type: empresa.origin_type,

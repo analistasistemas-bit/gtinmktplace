@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Nota do Faturador com a cor de outra variação (emenda D-5 do ADR-0181) — 2026-11-05
+
+- [x] `title` do `fiscal_information` montado por SKU: cor da família citada no texto vira a cor do SKU.
+- [x] `title` → `xProd` verificado em nota real (pendência do ADR-0181).
+- [ ] Deploy de `sincronizar-fiscal-ml` e re-push da família afetada, conferindo o `title` no ML.
+
 ## Configurações › Fiscal — 2026-11-04
 
 - [x] Gravação automática repete até 2x em falha de rede: o cliente Supabase não repete POST e a queda aparecia como "Não salvou" com `[object Object]` (nenhum erro no servidor). Mensagem legível; não repete se a org mudou.

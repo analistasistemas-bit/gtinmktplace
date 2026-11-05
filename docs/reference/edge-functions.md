@@ -1360,7 +1360,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
-  `fiscal_information` (NCM, CSOSN, CEST, FCI, EX-TIPI, EAN, peso) por SKU, vincula cada SKU ao
+  `fiscal_information` (NCM, CSOSN, CEST, FCI, EX-TIPI, EAN, peso) por SKU, com o `title` (xProd da
+  nota) trocando a cor da família citada pela cor do SKU (emenda D-5 do ADR-0181), vincula cada SKU ao
   item ML certo e lê `can_invoice`, gravando o semáforo (`familias.can_invoice` +
   `can_invoice_causa` + `can_invoice_em`, `fiscal_sincronizado_em`). Enfileirado por
   `publish-familia-ml` e `update-familia-ml` só quando `exigirFiscalCompletoSePreciso` (D-7)

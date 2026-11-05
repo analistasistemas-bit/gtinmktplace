@@ -15,6 +15,7 @@ function deps(opts: {
   empresaOverride?: Record<string, unknown> | null;
   itensUP?: Array<{ sku: string; item_externo_id: string | null }>;
   variacoesOverride?: typeof variacoes;
+  coresProduto?: string[];
   orgErro?: string;
   empresaErro?: string;
   /** ADR-0187: retorno de ncm_consultar — default 'vigente'. */
@@ -79,6 +80,7 @@ function deps(opts: {
     resolverConexao: vi.fn(async () => ({ id: 'cx1' })),
     getToken: vi.fn(async () => 'tok'),
     listarVariacoes: vi.fn(async () => opts.variacoesOverride ?? variacoes),
+    listarCoresProduto: vi.fn(async () => opts.coresProduto ?? []),
     listarItensFiscais: vi.fn(async () => opts.itensUP ?? []),
     portas: {
       empurrarFiscalSku: vi.fn(async () => {}),
@@ -97,6 +99,29 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     const d = deps();
     await processarSincronizacaoFiscal(d as never, { familia_id: 'f1', split: true });
     expect(d.listarItensFiscais).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), true);
+  });
+
+  it('emenda D-5: cada SKU leva a própria cor, com as cores de todas as versões do produto', async () => {
+    const v = (codigo: string, cor: string) => ({ codigo, gtin: null, peso_gramas: null, ml_variation_id: null, cor });
+    const d = deps({
+      familiaOverride: { nome_pai: 'Short Bermuda Preto' },
+      variacoesOverride: [v('A1', 'Azul Claro'), v('C1', 'Caqui')] as never,
+      coresProduto: ['Preto', 'Azul Claro', 'Caqui'],
+    });
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(d.listarCoresProduto).toHaveBeenCalledWith(expect.anything(), 'o1', 'CP1');
+    const enviados = d.portas.empurrarFiscalSku.mock.calls.map((c: unknown[]) => c[1] as { sku: string; title: string });
+    expect(enviados.map((p) => [p.sku, p.title])).toEqual([
+      ['A1', 'Short Bermuda Azul Claro'], ['C1', 'Short Bermuda Caqui'],
+    ]);
+  });
+
+  it('emenda D-5: erro ao ler as cores vira 500 sem empurrar nada', async () => {
+    const d = deps();
+    d.listarCoresProduto.mockRejectedValueOnce(new Error('fora do ar'));
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
   });
 
   it('caminho feliz: empurra cada SKU, vincula, lê can_invoice e persiste', async () => {

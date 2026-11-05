@@ -86,6 +86,43 @@ describe('montarFiscalInformation (payload puro)', () => {
     expect(t(null)).toBe('Short Masculino Tactel Praia');
     expect(t('  ')).toBe('Short Masculino Tactel Praia');
   });
+
+  describe('title por SKU (emenda D-5): a nota nunca cita cor de outra variação', () => {
+    const base = { unidade: 'UN', ncm: '62034200', cest: null, origem_nfe: 0, fci: null, ex_tipi: null,
+      tributacao_icms: '102', descricao_fiscal: null };
+    const cores = ['Preto', 'Azul Claro', 'Caqui'];
+    const t = (nome: string, cor: string | null, familiaCores = cores) => montarFiscalInformation(
+      { ...base, nome_pai: nome },
+      { codigo: 'S1', gtin: null, peso_gramas: null, ml_variation_id: null, cor },
+      { origin_type: 'reseller' }, familiaCores,
+    ).title;
+
+    it('troca a cor citada pela cor do SKU (incidente Zaven 00000145)', () => {
+      expect(t('Short Bermuda Mauricinho Masculino Preto', 'Azul Claro')).toBe('Short Bermuda Mauricinho Masculino Azul Claro');
+      expect(t('Short Bermuda Mauricinho Masculino Preto', 'Preto')).toBe('Short Bermuda Mauricinho Masculino Preto');
+    });
+
+    it('texto neutro não muda', () => {
+      expect(t('Short masculino', 'Azul Claro')).toBe('Short masculino');
+    });
+
+    it('ignora caixa e não casa pedaço de palavra', () => {
+      expect(t('SHORT PRETO', 'Caqui')).toBe('SHORT Caqui');
+      expect(t('Short Pretoria', 'Caqui')).toBe('Short Pretoria');
+    });
+
+    it('prefere a cor mais longa', () => {
+      expect(t('Short Preto Mesclado', 'Caqui', ['Preto', 'Preto Mesclado', 'Caqui'])).toBe('Short Caqui');
+    });
+
+    it('SKU sem cor: tira a cor citada', () => {
+      expect(t('Short Preto Masculino', null)).toBe('Short Masculino');
+    });
+
+    it('nunca envia título vazio', () => {
+      expect(t('Preto', null)).toBe('Preto');
+    });
+  });
 });
 
 describe('empurrarFiscalSku (upsert POST→409→PUT)', () => {
