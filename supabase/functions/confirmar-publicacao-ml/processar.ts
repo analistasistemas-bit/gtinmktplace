@@ -48,19 +48,21 @@ async function lerItens(
 /** Soma do ledger por SKU na janela. null quando a consulta falha: sem ela não dá para julgar. */
 async function lerMovimentos(
   admin: SupabaseClient, orgId: string, skus: string[], versao: string,
-): Promise<Record<string, number> | null> {
+): Promise<{ total: Record<string, number>; ml: Record<string, number> } | null> {
   const desde = new Date(Date.parse(versao) - FOLGA_MOVIMENTOS_MS).toISOString();
   const { data, error } = await admin.from('estoque_movimentos')
-    .select('codigo, quantidade').eq('org_id', orgId).in('codigo', skus).gte('criado_em', desde);
+    .select('codigo, quantidade, motivo, canal_origem').eq('org_id', orgId).in('codigo', skus).gte('criado_em', desde);
   if (error) {
     console.error(`conferência: ledger falhou (org ${orgId}):`, error.message);
     return null;
   }
-  const soma: Record<string, number> = {};
-  for (const m of (data ?? []) as Array<{ codigo: string; quantidade: number }>) {
-    soma[m.codigo] = (soma[m.codigo] ?? 0) + m.quantidade;
+  const total: Record<string, number> = {};
+  const ml: Record<string, number> = {};
+  for (const m of (data ?? []) as Array<{ codigo: string; quantidade: number; motivo: string; canal_origem: string | null }>) {
+    total[m.codigo] = (total[m.codigo] ?? 0) + m.quantidade;
+    if (m.motivo === 'venda' && m.canal_origem === 'mercado_livre') ml[m.codigo] = (ml[m.codigo] ?? 0) + m.quantidade;
   }
-  return soma;
+  return { total, ml };
 }
 
 function observadoDe(l: LinhaConfirmacao, lido: EstoqueItem): Record<string, number | null> {
@@ -123,7 +125,7 @@ export async function processarConfirmacao(
       continue;
     }
     const observado = observadoDe(l, lido);
-    const avaliacao = avaliarConfirmacao({ enviado: l.enviado, observado, movimentos });
+    const avaliacao = avaliarConfirmacao({ enviado: l.enviado, observado, movimentos: movimentos.total, movimentosMl: movimentos.ml });
     const passo = proximoPasso({ ...avaliacao, leituraFalhou: false, tentativa: job.tentativa });
     if ('reler' in passo) { reler = passo.reler; pendentes.push(l); continue; }
     await fechar(l, { status: passo.status, observado, divergentes: avaliacao.divergentes });

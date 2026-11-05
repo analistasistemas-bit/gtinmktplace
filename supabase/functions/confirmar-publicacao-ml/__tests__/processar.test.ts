@@ -260,12 +260,22 @@ describe('processarConfirmacao — veredito (ADR-0195)', () => {
   it('escrita não aplicada na 3: falhou mesmo com movimento', async () => {
     const f = fakeAdmin({
       linhas: [linhaBase({ tentativas: 2, enviado: { A: { qtd: 10, anterior: 15, variacao_id: '11' } } })],
-      movimentos: [{ codigo: 'A', quantidade: 5 }],
+      movimentos: [{ codigo: 'A', quantidade: 3 }],
     });
     const d = deps(f.admin, { lerEstoqueItens: lerOk(15) as never });
     await processarConfirmacao(d, { ...JOB, tentativa: 3 });
     expect(f.desfechos()[0].payload).toMatchObject({ status: 'falhou' });
     expect(d.notificarCategoria).toHaveBeenCalledTimes(1);
+  });
+
+  it('venda no ML depois do PUT aplicado, voltando ao saldo anterior: confirmado', async () => {
+    const f = fakeAdmin({
+      linhas: [linhaBase({ enviado: { A: { qtd: 10, anterior: 8, variacao_id: '11' } } })],
+      movimentos: [{ codigo: 'A', quantidade: -2, motivo: 'venda', canal_origem: 'mercado_livre' }],
+    });
+    const d = deps(f.admin, { lerEstoqueItens: lerOk(8) as never });
+    await processarConfirmacao(d, JOB);
+    expect(f.desfechos()[0].payload).toMatchObject({ status: 'confirmado' });
   });
 
   it('só toca em confirmacoes_ml: nenhuma escrita em outra tabela, nenhum conector nas dependências', async () => {

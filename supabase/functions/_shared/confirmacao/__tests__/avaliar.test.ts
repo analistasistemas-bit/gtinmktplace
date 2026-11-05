@@ -47,8 +47,8 @@ describe('avaliarConfirmacao (ADR-0195)', () => {
     expect(avaliar(env(1164), 1163, -1).ok).toBe(true);
   });
 
-  it('escrita ignorada é divergente mesmo com entrada no ledger', () => {
-    const r = avaliar(env(10, 15), 15, 5);
+  it('escrita ignorada é divergente mesmo com movimento que não a explica', () => {
+    const r = avaliar(env(10, 15), 15, 3);
     expect(r.ok).toBe(false);
     expect(r.naoAplicada).toBe(true);
     expect(r.divergentes).toEqual([{ sku: 'A', enviado: 10, observado: 15 }]);
@@ -79,6 +79,34 @@ describe('avaliarConfirmacao (ADR-0195)', () => {
     });
     expect(r.divergentes.map((d) => d.sku)).toEqual(['B']);
     expect(r.explicavelPorMovimento).toBe(false);
+  });
+});
+
+describe('avaliarConfirmacao — venda no ML × escrita ignorada', () => {
+  const e = (qtd: number, anterior: number) => ({ qtd, anterior, variacao_id: null });
+
+  it('venda de 2 depois do PUT aplicado, voltando ao saldo anterior, não é escrita ignorada', () => {
+    const r = avaliarConfirmacao({
+      enviado: { A: e(10, 8) }, observado: { A: 8 }, movimentos: { A: -2 }, movimentosMl: { A: -2 },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('PUT ignorado e venda: ML em anterior + venda é escrita não aplicada', () => {
+    const r = avaliarConfirmacao({
+      enviado: { A: e(10, 8) }, observado: { A: 6 }, movimentos: { A: -2 }, movimentosMl: { A: -2 },
+    });
+    expect(r).toMatchObject({ ok: false, naoAplicada: true });
+  });
+
+  it('saldo igual ao anterior sem movimento é escrita não aplicada', () => {
+    const r = avaliarConfirmacao({ enviado: { A: e(10, 15) }, observado: { A: 15 }, movimentos: {} });
+    expect(r).toMatchObject({ ok: false, naoAplicada: true });
+  });
+
+  it('entrada do app torna ambíguo: nunca confirmado, e explicável em vez de falha', () => {
+    const r = avaliarConfirmacao({ enviado: { A: e(10, 15) }, observado: { A: 15 }, movimentos: { A: 5 } });
+    expect(r).toMatchObject({ ok: false, naoAplicada: false, explicavelPorMovimento: true });
   });
 });
 

@@ -233,6 +233,9 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // ADR-0195: grava o que foi ao ML e agenda a conferência. Não lança; retry que reescreve faz
     // upsert com `enviado_em` novo, e o job desta escrita perde o claim.
     const conferir = async (enviadoEm: string, itens: ItemConfirmar[]): Promise<void> => {
+      // Kit: o saldo deriva do produto base e o ledger baixa o SKU base, não o do kit (ADR-0151).
+      // Conferir geraria falso alarme a cada venda.
+      if (familia.kit_base_codigo_pai) return;
       await registrarConfirmacao(admin, {
         orgId: familia.org_id as string, loteId: job.lote_id, familiaId: job.familia_id,
         codigoPai: familia.codigo_pai as string, enviadoEm, itens,

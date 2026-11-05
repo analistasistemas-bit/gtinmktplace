@@ -18,6 +18,8 @@ export function avaliarConfirmacao(a: {
   enviado: Record<string, EnviadoSku>;
   observado: Record<string, number | null>;
   movimentos: Record<string, number>;
+  /** Parte de `movimentos` que veio de venda no próprio ML: ela mexe no saldo do canal com ou sem o PUT. */
+  movimentosMl?: Record<string, number>;
 }): Avaliacao {
   const divergentes: Divergente[] = [];
   let naoAplicada = false;
@@ -25,12 +27,21 @@ export function avaliarConfirmacao(a: {
   for (const [sku, { qtd, anterior }] of Object.entries(a.enviado)) {
     const observado = a.observado[sku] ?? null;
     const movimento = a.movimentos[sku] ?? 0;
+    const vendaMl = a.movimentosMl?.[sku] ?? 0;
+    // PUT ignorado deixa o ML em `anterior + vendas do ML`; PUT aplicado, em `enviado + vendas do ML`.
     // Vem antes da conta com movimentos: entrada no ledger poderia "explicar" o saldo velho
-    // (enviado 10, anterior 15, entrada +5) e esconder justamente a escrita perdida.
-    const ignorada = anterior !== null && observado === anterior && anterior !== qtd;
-    if (!ignorada && (observado === qtd || observado === qtd + movimento)) continue;
+    // (enviado 10, anterior 15, entrada +5) e esconder a escrita perdida. Nesse caso não dá para
+    // separar os dois cenários: fica explicável (inconclusivo), nunca confirmado.
+    const ignorada = anterior !== null && anterior !== qtd
+      && observado === anterior + vendaMl && observado !== qtd + vendaMl;
+    if (ignorada) {
+      divergentes.push({ sku, enviado: qtd, observado });
+      if (observado === qtd + movimento) explicavelPorMovimento = true;
+      else naoAplicada = true;
+      continue;
+    }
+    if (observado === qtd || observado === qtd + movimento || observado === qtd + vendaMl) continue;
     divergentes.push({ sku, enviado: qtd, observado });
-    naoAplicada ||= ignorada;
     explicavelPorMovimento ||= movimento !== 0;
   }
   return { ok: divergentes.length === 0, naoAplicada, explicavelPorMovimento, divergentes };

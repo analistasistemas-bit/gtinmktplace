@@ -155,6 +155,17 @@ describe('processarAtualizacaoFamilia — registra a conferência no ML (ADR-019
     expect(agendarSpy).toHaveBeenCalledWith('fam-1', conferencia().enviadoEm);
   });
 
+  it('kit vinculado não entra na conferência: o ledger baixa o SKU base, não o do kit', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, kit_base_codigo_pai: '00000001', kit_multiplicador: 2 } });
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementationOnce(async () => (
+      { ok: true, valor: { variacoesExternas: { V1: 'MLV1' }, precoVivo: null, enviados: ENVIADO } }
+    ));
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(registrarSpy).not.toHaveBeenCalled();
+    expect(agendarSpy).not.toHaveBeenCalled();
+  });
+
   it('Legacy item plano: modelo item', async () => {
     const { admin } = fakeAdmin();
     const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockResolvedValueOnce({
