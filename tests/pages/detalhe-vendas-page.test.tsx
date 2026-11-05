@@ -52,4 +52,15 @@ describe('DetalheVendas', () => {
     expect(screen.getByText('Linha Linhanyl 150')).toBeInTheDocument();
     expect(screen.getByText('Fita Externa')).toBeInTheDocument();
   });
+
+  it('vindo de Publicados com mes_atual, o botão "Mês atual" aparece e fica ativo', () => {
+    render(
+      <MemoryRouter initialEntries={['/publicados/vendas?periodo=mes_atual']}>
+        <DetalheVendas />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/mês atual\./i)).toBeInTheDocument();
+    const botao = screen.getByRole('button', { name: 'Mês atual' });
+    expect(botao).toHaveAttribute('data-variant', 'default');
+  });
 });

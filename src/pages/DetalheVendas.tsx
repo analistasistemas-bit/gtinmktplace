@@ -350,7 +350,7 @@ export default function DetalheVendas() {
       />
 
       <div className="mb-4">
-        <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} carregando={isFetching} />
+        <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} mostrarMesAtual carregando={isFetching} />
       </div>
 
       {isError && (

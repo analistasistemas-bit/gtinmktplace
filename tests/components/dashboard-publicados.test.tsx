@@ -30,6 +30,17 @@ describe('DashboardPublicados', () => {
     expect(link.getAttribute('href')).toContain('dias=30');
   });
 
+  it('"Mês atual" aplica o período', async () => {
+    const { onPeriodo } = setup({ tipo: 'preset', dias: 30 });
+    await userEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+    expect(onPeriodo).toHaveBeenCalledWith({ tipo: 'mes_atual' });
+  });
+
+  it('com mes_atual ativo, o link do Faturamento carrega periodo=mes_atual', () => {
+    setup({ tipo: 'mes_atual' });
+    expect(screen.getByRole('link', { name: /faturamento/i }).getAttribute('href')).toContain('periodo=mes_atual');
+  });
+
   it('clicar em Personalizado mostra De/Até e OK, mas NÃO refaz a busca ainda', async () => {
     const { onPeriodo } = setup({ tipo: 'preset', dias: 30 });
     await userEvent.click(screen.getByRole('button', { name: /personalizado/i }));
