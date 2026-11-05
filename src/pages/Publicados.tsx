@@ -50,7 +50,7 @@ import { useCatalogoEmRisco } from '@/hooks/useCatalogoEmRisco';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
-import { resolverJanela, type Periodo } from '@/lib/metricas';
+import { MES_ATUAL, resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { PainelAnalise } from '@/components/painel-analise';
 import { fetchFamiliaComCustoRecente } from '@/lib/queries';
@@ -1088,7 +1088,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const [refazendoKitId, setRefazendoKitId] = useState<string | null>(null);
   const [refazerDeKit, setRefazerDeKit] = useState<KitVirtualParaRefazer | null>(null);
 
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [periodo, setPeriodo] = useState<Periodo>(MES_ATUAL);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
   // Via useResumoVendas (não calcularResumo direto): é ele que passa o mapa canônico, sem o qual as

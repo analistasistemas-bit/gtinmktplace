@@ -2,7 +2,7 @@
 
 ## Filtro "Mês atual" em Publicados — 2026-11-05
 
-- [x] Botão "Mês atual" em Publicados e no Detalhe de vendas: reusa `mostrarMesAtual` do `SeletorPeriodo`; o período segue pelo card Faturamento. Padrão da tela continua 30 dias. Só frontend.
+- [x] Botão "Mês atual" em Publicados e no Detalhe de vendas: reusa `mostrarMesAtual` do `SeletorPeriodo`; o período segue pelo card Faturamento. Publicados abre em "Mês atual" por padrão; Encalhados segue o período. Só frontend.
 
 ## `publicado` sem escrita no ML (ADR-0195, Entrega 1) — 2026-11-05
 

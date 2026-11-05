@@ -261,6 +261,17 @@ describe('Publicados', () => {
     mockHooksPadrao();
   });
 
+  it('abre com "Mês atual" selecionado', () => {
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Mês atual' })).toHaveAttribute('data-variant', 'default');
+    expect(screen.getByRole('button', { name: '30 dias' })).toHaveAttribute('data-variant', 'outline');
+  });
+
   it('oferece Cola no filtro de tipos', () => {
     render(
       <MemoryRouter>
