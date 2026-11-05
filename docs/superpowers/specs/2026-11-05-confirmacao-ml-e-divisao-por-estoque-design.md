@@ -25,7 +25,7 @@ Pedidos de Diego:
 
 - Nenhuma família termina `publicado` sem ter enviado o que foi pedido.
 - Depois de cada escrita, o operador vê na tela se o ML confirmou.
-- Família acima do limite: o sistema detecta e monta a divisão sozinho, e o operador aprova.
+- Família acima do limite: publicação nova nasce dividida; anúncio publicado segue com teto e aviso.
 - Fita corrigida em produção, com os 77 SKUs conferidos no ML.
 
 ## Fora de escopo
@@ -111,16 +111,22 @@ lote e família: sino e Telegram sem repetir.
 
 ## Entrega 3 — Divisão automática por estoque
 
-**Regra geral (qualquer família, qualquer org):** um anúncio com soma real acima de 99.999 é dividido. Hoje
-`particionar.ts` só olha contagem e preço, e `decidir-split.ts` só desvia para split por cores ou preço.
+**Opção escolhida (Diego, 05/11):** a Entrega 3 é o sistema pronto para o teto, no plano
+`docs/superpowers/plans/2026-11-05-entrega-3a-pronto-para-o-teto.md`. Nenhuma cor muda de anúncio.
 
-**Detecção:** o sinal é `confirmacoes_ml.capados > 0` (Entrega 2). A família segue no atalho com teto, que só atualiza
-saldo (ADR-0089 intacto), e o resumo do lote oferece a divisão. Publicação nova nasce dividida: `decidirSplit` considera a
-soma no CREATE. O protocolo de bloqueio, erro e identidade está no plano da Entrega 3.
+**Publicação nova (qualquer família, qualquer org):** `decidirSplit` considera a soma no CREATE e `particionarPorPreco`
+limita a partição pela soma, só com formato `legacy` confirmado. `user_products` ou cache vazio segue o `publish`, com
+teto e aviso. UPDATE nunca passa a dividir por soma em somente estoque.
 
-**Fora de lote** (entrada de nota, ajuste, push): nesta entrega não abre divisão. O teto protege o anúncio e o sino
-avisa uma vez ("anúncio passou do limite; a divisão será proposta na próxima planilha"). A Avil repõe por planilha, e a
-Revisão é presa a lote; aprovação fora de lote é tela nova sem caso real hoje.
+**Anúncio publicado:** segue no atalho com teto, que só atualiza saldo (ADR-0089 intacto). O teto vale também no push, e
+o sino avisa uma vez por anúncio, com a chave `teto:<item>`, vinda do push, da conferência (`confirmacoes_ml.capados`) ou
+do CREATE.
+
+### Movimentação de cores (adiada)
+
+O restante desta seção descreve a opção adiada, com 4 riscos abertos no ADR-0195: push adiado durável, venda com webhook
+atrasado antes do zeramento, vínculo antigo de custo e herança em lote aberto. Plano em
+`docs/superpowers/plans/2026-11-05-entrega-3-divisao-por-estoque.md`.
 
 **Plano de divisão (função pura, nova, com teste):** dado anúncios atuais, estoque real e vendas, escolhe as cores a mover.
 
@@ -162,8 +168,8 @@ partição sempre vai ao worker de split, então o UPDATE comum não regrava o m
 Consequência: ela segue ocupando vaga das 100 no anúncio de origem, então `particionar` passa a contar as variações
 reais do anúncio, não só o mapa local.
 
-**Exceção formal à ancoragem:** ADR-0048 diz que cor publicada nunca migra. A ADR-0195 abre a exceção só para divisão
-por estoque aprovada pelo operador.
+**Exceção à ancoragem:** ADR-0048 diz que cor publicada nunca migra. Mover cores exigiria abrir essa exceção; a ADR-0195
+não abre, porque a movimentação está adiada.
 
 **Teto continua como proteção:** entre a detecção e a aprovação, e quando o saldo volta a subir depois. E passa a valer
 também em `atualizarEstoque` (push), que hoje envia sem aplicar o teto. Sem leitura extra: o push já faz `buscarItemML`,
@@ -175,17 +181,15 @@ fiscal do SKU no item novo (`enfileirarSincronizacaoFiscal` com `split: true`); 
 
 ## Ordem
 
-Entrega 1 → merge e deploy → Fita corrigida. Entrega 2 → merge e deploy. Entrega 3 → merge, deploy, plano da Linha
-aprovado por Diego na Revisão. Cada entrega com TDD, revisão de diff pelo Codex, CI verde e deploy das edges/migrations.
+Entrega 1 → merge e deploy → Fita corrigida. Entrega 2 → merge e deploy. Entrega 3 → merge e deploy. Cada entrega com TDD, revisão de diff pelo Codex, CI verde e deploy das edges/migrations.
 
 ## Decisões tomadas pelo agente (Diego pode vetar)
 
-- Um clique de aprovação na divisão, por causa da regra de revisão humana.
-- Cor movida fica zerada na origem, em vez de excluída.
+- Movimentação adiada: um clique de aprovação na divisão, por causa da regra de revisão humana.
+- Movimentação adiada: cor movida fica zerada na origem, em vez de excluída.
 - Conferir por `/items/bulk` só o que foi tocado, sem varredura global.
 - Movimentos do ledger explicam diferença sem virar falso alarme; 3 tentativas antes de `falhou`.
-- Critério de escolha das cores: sem venda primeiro, maior estoque depois; sem dado conta como vendida.
-- Divisão nasce só no lote de planilha; fora de lote, teto e aviso.
+- Movimentação adiada: critério de escolha das cores, sem venda primeiro, maior estoque depois; sem dado conta como vendida.
 - Criação UP pendente se resolve manualmente, sem botão de limpeza.
 
 ## Deixado para quem implementar

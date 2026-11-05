@@ -23,9 +23,14 @@ Na mesma leitura, 61 cores da Linha 1500MT (`02835002`) estavam em 1.164 no ML p
    é erro. Cor sem linha filha segue ignorada enquanto houver alvo (ADR-0104 §4).
 2. **Confirmação no canal.** `publicado` significa que o worker terminou. A conferência pós-escrita compara o ML com
    o valor enviado e mostra o resultado na tela. Ela só lê: nunca reenvia estoque sozinha.
-3. **Divisão por estoque.** Anúncio acima de 99.999 é dividido: o sistema detecta e monta o plano, e o operador aprova
-   com um clique. Exceção à ancoragem do ADR-0048, só nesse caso: a cor movida fica zerada na origem e passa a viver no
-   destino. O teto segue como proteção até a aprovação.
+3. **Divisão por estoque.** Publicação nova acima de 99.999 divide por soma, só com formato `legacy` confirmado em
+   `ml_formato_publicacao` para a conexão e a categoria. `user_products` ou cache vazio segue o `publish`, com teto e
+   aviso: o split não tem a saga UP. Cor sozinha acima do limite fica em partição própria, com teto.
+   Anúncio já publicado segue com teto, que passa a valer também no push, e aviso uma vez por anúncio. Nenhuma cor muda
+   de partição: o ADR-0048 fica intacto.
+   A movimentação de cores entre anúncios fica adiada, com 4 riscos abertos: push adiado durável, venda com webhook
+   atrasado antes do zeramento, vínculo antigo de custo e herança em lote aberto. Plano em
+   `docs/superpowers/plans/2026-11-05-entrega-3-divisao-por-estoque.md`.
 
 ## Alternativas rejeitadas
 
@@ -38,4 +43,6 @@ Na mesma leitura, 61 cores da Linha 1500MT (`02835002`) estavam em 1.164 no ML p
 
 - `publicado` deixa de esconder falha de escrita; o operador vê confirmação ou erro.
 - Criação UP interrompida antes de gravar qualquer ID exige correção manual.
-- Divisão aprovada cria anúncio novo sem histórico para as cores movidas.
+- Publicação nova acima do limite nasce em N anúncios, sem saldo escondido.
+- Anúncio publicado acima do limite segue mostrando menos que o saldo real até a movimentação existir. A Linha 1500MT
+  (`02835002`) fica nesse caso.

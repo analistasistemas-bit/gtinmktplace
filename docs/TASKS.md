@@ -13,7 +13,9 @@
 - [ ] Conferir os 77 SKUs da Fita depois da próxima planilha normal (Diego não vai subir mini-planilha).
 - [x] Entrega 2: `confirmacoes_ml` + `confirmar-publicacao-ml`; resumo no Progresso e no relatório; falha avisa no sino.
 - [ ] Validar o resumo da conferência com print no próximo lote real.
-- [ ] Entrega 3: divisão automática por estoque (Linha 1500MT `02835002`).
+- [ ] Entrega 3 (plano 3a): publicação nova dividida por soma, teto no push, aviso de anúncio acima do limite. Código na branch; falta revisão do Codex, merge e deploy.
+- [ ] Movimentação de cores entre anúncios adiada, com 4 riscos abertos no ADR-0195 (Linha 1500MT `02835002` segue com teto e aviso).
+- [ ] Mapas de `anuncios_externos` poluídos na partição 0 em 3 famílias (`02835002`: 18 SKUs, `02841240`: 2, `02841290`: 1). Limpeza exige autorização das linhas.
 
 ## Nota do Faturador com a cor de outra variação (emenda D-5 do ADR-0181) — 2026-11-05
 
