@@ -31,6 +31,21 @@ export function montarMensagemFamiliaSemItem(a: { produto: string | null; codigo
     + `Produto ${a.codigoPai}: ${a.qtdCores} cor(es) sem anúncio confirmado. Nada foi enviado; precisa de correção manual.`;
 }
 
+/** ADR-0195: o ML seguiu diferente do enviado depois das 3 leituras. Cita até 10 SKUs. */
+export function montarMensagemConfirmacaoFalhou(a: {
+  produto: string | null;
+  codigoPai: string;
+  divergentes: Array<{ sku: string; enviado: number; observado: number | null }>;
+}): string {
+  const nome = a.produto?.trim() || a.codigoPai;
+  const resto = a.divergentes.length - 10;
+  return blocos(
+    [`⚠️ Estoque não confirmado no Mercado Livre: ${nome}`, `Produto ${a.codigoPai}: ${a.divergentes.length} SKU(s) diferente(s) do enviado.`],
+    a.divergentes.slice(0, 10).map((d) => `• ${d.sku}: enviado ${d.enviado}, no ML ${d.observado ?? 'sem leitura'}`),
+    resto > 0 ? [`E mais ${resto} SKU(s).`] : [],
+  );
+}
+
 export function montarMensagemEstoqueZerado(a: EstoqueZeradoAlerta): string {
   const nome = a.produto?.trim() || a.codigoPai;
   const cabecalho = a.produtoInteiroZerado

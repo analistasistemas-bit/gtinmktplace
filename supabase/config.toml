@@ -229,6 +229,9 @@ verify_jwt = true
 # ADR-0135: worker QStash do push fiscal (fiscal_information + can_invoice).
 [functions.sincronizar-fiscal-ml]
 verify_jwt = false
+# ADR-0195: conferência pós-escrita no ML, chamada pelo QStash. Só lê o ML.
+[functions.confirmar-publicacao-ml]
+verify_jwt = false
 # ADR-0186: corrige a marca (BRAND) de anúncios já publicados de org com marca própria — QStash.
 [functions.sincronizar-marca-ml]
 verify_jwt = false

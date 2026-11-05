@@ -1,11 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { montarMensagemEstoqueZerado, montarMensagemVoltaAoAr } from '../estoque';
+import { montarMensagemConfirmacaoFalhou, montarMensagemEstoqueZerado, montarMensagemVoltaAoAr } from '../estoque';
 
 const base = {
   produto: 'Sabonete Líquido Nivea 200ml',
   codigoPai: '00000028',
   permalink: 'https://produto.mercadolivre.com.br/MLB5040504553',
 };
+
+describe('montarMensagemConfirmacaoFalhou (ADR-0195)', () => {
+  const divergentes = Array.from({ length: 12 }, (_, i) => ({ sku: `S${i}`, enviado: 10, observado: i === 0 ? null : 7 }));
+
+  it('cita até 10 SKUs, com enviado e observado', () => {
+    const m = montarMensagemConfirmacaoFalhou({ produto: 'Fita', codigoPai: '000', divergentes });
+    expect(m).toContain('Fita');
+    expect(m).toContain('12 SKU(s)');
+    expect(m).toContain('• S0: enviado 10, no ML sem leitura');
+    expect(m).toContain('• S9: enviado 10, no ML 7');
+    expect(m).not.toContain('S10');
+    expect(m).toContain('E mais 2 SKU(s).');
+  });
+
+  it('sem nome cai no código e sem excedente não fala em mais', () => {
+    const m = montarMensagemConfirmacaoFalhou({ produto: null, codigoPai: '000', divergentes: divergentes.slice(0, 1) });
+    expect(m).toContain('Mercado Livre: 000');
+    expect(m).not.toContain('E mais');
+  });
+});
 
 describe('montarMensagemEstoqueZerado', () => {
   it('produto inteiro zerado avisa que o anúncio foi pausado e como voltar', () => {

@@ -47,6 +47,7 @@
 | **Estoque (ADR-0094, Bloco A)** ||||
 | sincronizar-estoque | false | QStash (fila serial por org) | sim (push absoluto) |
 | reconciliar-estoque | false | QStash schedule | sim (escopo restrito ao ledger) |
+| confirmar-publicacao-ml | false | QStash (atraso, fora da fila serial; ADR-0195) | sim (claim por `enviado_em` e tentativa) |
 | **Estoque (ADR-0094, Bloco B — módulo pago)** ||||
 | cadastrar-produto | **true** | HTTP (frontend) | sim (guard 409 + ref no estoque inicial) |
 | entrada-estoque | **true** | HTTP (frontend) | sim (`ref` de idempotência obrigatória) |
@@ -999,6 +1000,15 @@ mesmo por engano.
   (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`). O re-push do passo 2 vai **sem** `reativar` de propósito:
   ele alcança produto com movimento recente, e reativar ali traria de volta um anúncio pausado à
   mão sem ninguém ter reposto nada (ADR-0111).
+
+### Conferência no Mercado Livre (ADR-0195)
+- **confirmar-publicacao-ml** *(worker QStash, `verify_jwt=false`, fora da fila serial)* — relê os
+  itens escritos por `update-familia-ml` e `publicar-split-ml` (`/items/bulk`, `lerEstoqueItens`) e
+  compara com o valor enviado, somando os movimentos do ledger desde `enviado_em - 5 min`. Só lê:
+  nunca escreve no ML nem reenvia estoque. Leituras com atraso de 60, 180 e 600 s; fecha
+  `confirmacoes_ml` em `confirmado`, `inconclusivo` ou `falhou`. `falhou` avisa em `estoque`
+  (sino e Telegram) com chave por família e versão. Claim atômico por `enviado_em` e `tentativas`:
+  entrega dupla, reentrega e job de escrita antiga encerram sem efeito.
 
 ### Estoque (ADR-0094, Bloco B — módulo pago `estoque`, EM PRODUÇÃO 2026-07-29)
 
