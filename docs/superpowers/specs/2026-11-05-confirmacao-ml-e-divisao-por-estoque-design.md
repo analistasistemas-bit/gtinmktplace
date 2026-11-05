@@ -114,8 +114,9 @@ lote e família: sino e Telegram sem repetir.
 **Regra geral (qualquer família, qualquer org):** um anúncio com soma real acima de 99.999 é dividido. Hoje
 `particionar.ts` só olha contagem e preço, e `decidir-split.ts` só desvia para split por cores ou preço.
 
-**Detecção:** `decidirSplit` passa a considerar a soma de estoque por partição. O ingest/`familiaPublicavel` marca a
-família como "precisa dividir"; ela sai do atalho de `Progresso` (ADR-0089 promete não criar nada) e vai para a Revisão.
+**Detecção:** o sinal é `confirmacoes_ml.capados > 0` (Entrega 2). A família segue no atalho com teto, que só atualiza
+saldo (ADR-0089 intacto), e o resumo do lote oferece a divisão. Publicação nova nasce dividida: `decidirSplit` considera a
+soma no CREATE. O protocolo de bloqueio, erro e identidade está no plano da Entrega 3.
 
 **Fora de lote** (entrada de nota, ajuste, push): nesta entrega não abre divisão. O teto protege o anúncio e o sino
 avisa uma vez ("anúncio passou do limite; a divisão será proposta na próxima planilha"). A Avil repõe por planilha, e a
