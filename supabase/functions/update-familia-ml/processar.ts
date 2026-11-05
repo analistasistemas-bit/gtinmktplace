@@ -259,11 +259,18 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
         // família tem anúncio no ar, e "sem ID" não prova que ele é Legacy: nada é escrito. Sem esta
         // trava, somente-estoque terminava `publicado` sem enviar nada, e "Atualizar tudo" criaria
         // todos os itens com o anúncio antigo vendendo.
+        // Filho retirado com item também prova família UP real (a saga pode reativá-lo), por isso
+        // o `some` olha todos os filhos, não só os vivos.
         const vivos = itensUP.filter((i) => !i.retirado);
-        if (vivos.length > 0 && !vivos.some((i) => i.item_externo_id)) {
+        if (vivos.length > 0 && !itensUP.some((i) => i.item_externo_id)) {
           const mensagem = `Criação em User Products pendente: ${vivos.length} cor(es) sem anúncio no `
             + 'Mercado Livre. Nada foi enviado. Este produto precisa de correção manual antes de atualizar.';
-          await admin.from('familias').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', job.familia_id);
+          const { error: errGravar } = await admin.from('familias')
+            .update({ status: 'erro', erro_mensagem: mensagem }).eq('id', job.familia_id);
+          // Sem o erro gravado a família fica `publicando` e prende o lote: retenta.
+          if (errGravar) {
+            throw Object.assign(new Error(`gravar erro da família: ${errGravar.message}`), { retentavel: true });
+          }
           await finalizarLote(job.lote_id);
           await avisarSemItem(vivos.length);
           return { tipo: 'erro', mensagem };

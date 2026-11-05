@@ -45,6 +45,7 @@ function fakeAdmin(over: {
   itensUP?: Record<string, unknown>[];
   raizErr?: boolean;   // simula erro na query de roteamento (raiz UP)
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
+  familiaUpdateErr?: boolean; // ADR-0195: gravar em familias falha
   lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
   modulosHabilitados?: string[];
   org?: { marca_padrao: string | null; marca_propria: boolean }; // ADR-0186
@@ -88,6 +89,9 @@ function fakeAdmin(over: {
       },
       then: (resolve: (v: unknown) => unknown) => {
         if (rec.op === 'update') writes.push({ table, payload: rec.payload, filters: rec.filters });
+        if (rec.op === 'update' && table === 'familias' && over.familiaUpdateErr) {
+          return Promise.resolve({ data: null, error: { message: 'boom-familia' } }).then(resolve);
+        }
         if (table === 'anuncios_externos_itens' && over.itensErr) return Promise.resolve({ data: null, error: { message: 'boom-itens' } }).then(resolve);
         return Promise.resolve({ data: rec.op === 'update' ? null : ler(), error: null }).then(resolve);
       },
@@ -204,6 +208,33 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
       const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
       expect(r.tipo).toBe('erro');
     });
+  });
+
+  it('filho retirado com item real e outro pendente → composição legítima, segue o caminho UP', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null },
+      itensUP: [
+        { id: 'a', item_externo_id: 'MLB-A', retirado: true },
+        { id: 'b', item_externo_id: null, retirado: false },
+      ],
+    });
+    const upArgs: unknown[] = [];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a); return { estado: 'ok', adicionadas: 1 }; },
+    });
+    await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(upArgs).toHaveLength(1);
+  });
+
+  it('falha ao gravar o erro da trava → retry, não encerra como erro com a família presa', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null },
+      itensUP: [{ id: 'a', item_externo_id: null, retirado: false }],
+      familiaUpdateErr: true,
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('retry');
+    expect(notificarCategoriaSpy).not.toHaveBeenCalled();
   });
 
   it('filhos todos retirados e sem item → não é criação pendente: segue o caminho UP', async () => {

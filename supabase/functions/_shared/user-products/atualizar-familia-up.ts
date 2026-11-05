@@ -663,7 +663,12 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const { skus } = resultado;
     const mensagem = `UPDATE bloqueado: ${skus.length} cor(es) sem anúncio confirmado no Mercado Livre `
       + `(${skus.slice(0, 10).join(', ')}${skus.length > 10 ? '…' : ''}). Nada foi enviado.`;
-    await admin.from('familias').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', familia.id);
+    const { error: errGravar } = await admin.from('familias')
+      .update({ status: 'erro', erro_mensagem: mensagem }).eq('id', familia.id);
+    // Sem o erro gravado a família fica `publicando` e prende o lote: o worker retenta.
+    if (errGravar) {
+      throw Object.assign(new Error(`gravar erro da família: ${errGravar.message}`), { retentavel: true });
+    }
     return { estado: 'erro', mensagem, semItem: skus.length };
   }
   // erro terminal (family_id divergente, busca ambígua, item errado, filho em estado terminal).
