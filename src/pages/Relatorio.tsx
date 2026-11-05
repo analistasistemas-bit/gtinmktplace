@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Progress } from '@/components/ui/progress';
 import { JornadaLote } from '@/components/jornada-lote';
+import { ResumoConfirmacaoMl } from '@/components/lotes/resumo-confirmacao-ml';
 import { resultadoPublicacao } from '@/lib/jornada';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
@@ -61,6 +62,7 @@ export default function Relatorio() {
     <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/' }, { label: `Lote #${lote.numero}` }]} />
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
+      {loteId && <ResumoConfirmacaoMl loteId={loteId} />}
       <div className="mb-6">
         {/* Contadores das famílias (não os do lote): é a mesma fonte dos cartões logo abaixo,
             então o stepper nunca diz "Publicado" ao lado de "0 publicada(s) · 1 com erro". */}
@@ -154,7 +156,7 @@ export default function Relatorio() {
               )}
               {f.status === 'erro' && (
                 <>
-                  <span className="max-w-xs truncate text-destructive" title={f.erroMensagem ?? ''}>{f.erroMensagem ?? 'erro'}</span>
+                  <span className="max-w-md break-words text-destructive">{f.erroMensagem ?? 'erro'}</span>
                   <Button size="sm" variant="outline" onClick={() => nav(`/revisao/${loteId}`)}>Editar e tentar de novo</Button>
                 </>
               )}

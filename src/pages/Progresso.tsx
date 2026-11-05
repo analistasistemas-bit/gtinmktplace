@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { JornadaLote } from '@/components/jornada-lote';
+import { ResumoConfirmacaoMl } from '@/components/lotes/resumo-confirmacao-ml';
 import { resultadoPublicacao } from '@/lib/jornada';
 import { totalAnomalias } from '@/lib/tipos-dominio';
 import { familiasElegiveisEstoqueRapido, deveExibirGateEstoqueRapido } from '@/lib/estoque-rapido';
@@ -157,6 +158,7 @@ export default function Progresso() {
           </span>
         </div>
       )}
+      {loteId && <ResumoConfirmacaoMl loteId={loteId} />}
       <Progress value={pct} className="h-2" />
       <ul className="mt-6 space-y-1 text-sm">
         {familias.map((f) => (

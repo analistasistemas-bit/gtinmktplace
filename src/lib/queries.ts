@@ -33,6 +33,7 @@ export const QK = {
   lote: (loteId: string) => ['lote', loteId] as const,
   familias: (loteId: string) => ['familias', loteId] as const,
   familiasResumo: (loteId: string) => ['familias-resumo', loteId] as const,
+  confirmacoesMl: (loteId: string) => ['confirmacoes-ml', loteId] as const,
   familia: (familiaId: string) => ['familia', familiaId] as const,
   publicados: ['publicados'] as const,
   notasCompra: ['notas-compra'] as const,
