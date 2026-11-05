@@ -88,11 +88,12 @@ export async function processarConfirmacao(
   if (linhas.length === 0) return { status: 200, body: { skip: true } };
 
   const verificadoEm = deps.agora();
-  const fechar = async (l: LinhaConfirmacao, campos: Record<string, unknown>): Promise<void> => {
+  const fechar = async (l: LinhaConfirmacao, campos: Record<string, unknown>): Promise<boolean> => {
     // Os filtros protegem contra upsert de uma escrita nova entre o claim e aqui.
-    const { error: errFechar } = await admin.from(TABELA).update({ ...campos, verificado_em: verificadoEm })
-      .eq('id', l.id).eq('enviado_em', job.versao).eq('status', 'aguardando');
+    const { data: fechadas, error: errFechar } = await admin.from(TABELA).update({ ...campos, verificado_em: verificadoEm })
+      .eq('id', l.id).eq('enviado_em', job.versao).eq('status', 'aguardando').select('id');
     if (errFechar) console.error(`conferência: fechar ${l.id} falhou:`, errFechar.message);
+    return (fechadas ?? []).length > 0;
   };
 
   // Outra família (lote mais novo) escreveu depois no mesmo item: a conferência é dela.
@@ -128,8 +129,9 @@ export async function processarConfirmacao(
     const avaliacao = avaliarConfirmacao({ enviado: l.enviado, observado, movimentos: movimentos.total, movimentosMl: movimentos.ml });
     const passo = proximoPasso({ ...avaliacao, leituraFalhou: false, tentativa: job.tentativa });
     if ('reler' in passo) { reler = passo.reler; pendentes.push(l); continue; }
-    await fechar(l, { status: passo.status, observado, divergentes: avaliacao.divergentes });
-    if (passo.status === 'falhou') falhas.push(...avaliacao.divergentes);
+    const fechou = await fechar(l, { status: passo.status, observado, divergentes: avaliacao.divergentes });
+    // Sem fechamento a versão foi superada por upsert novo: quem avisa é a conferência dela.
+    if (fechou && passo.status === 'falhou') falhas.push(...avaliacao.divergentes);
   }
 
   if (pendentes.length > 0) {

@@ -104,9 +104,24 @@ describe('avaliarConfirmacao — venda no ML × escrita ignorada', () => {
     expect(r).toMatchObject({ ok: false, naoAplicada: true });
   });
 
-  it('entrada do app torna ambíguo: nunca confirmado, e explicável em vez de falha', () => {
+  it('saldo anterior com entrada do app segue escrita não aplicada: nunca esconde a falha', () => {
     const r = avaliarConfirmacao({ enviado: { A: e(10, 15) }, observado: { A: 15 }, movimentos: { A: 5 } });
-    expect(r).toMatchObject({ ok: false, naoAplicada: false, explicavelPorMovimento: true });
+    expect(r).toMatchObject({ ok: false, naoAplicada: true });
+  });
+
+  it('observado igual ao enviado é ok, mesmo com venda que coincidiria com a assinatura', () => {
+    const r = avaliarConfirmacao({
+      enviado: { A: e(10, 15) }, observado: { A: 10 }, movimentos: { A: -5 }, movimentosMl: { A: -5 },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('movimento de A não torna explicável o divergente B sem movimento', () => {
+    const r = avaliarConfirmacao({
+      enviado: { A: e(10, 10), B: e(5, 5) }, observado: { A: 3, B: 1 }, movimentos: { A: -2 },
+    });
+    expect(r.divergentes).toHaveLength(2);
+    expect(r.explicavelPorMovimento).toBe(false);
   });
 });
 

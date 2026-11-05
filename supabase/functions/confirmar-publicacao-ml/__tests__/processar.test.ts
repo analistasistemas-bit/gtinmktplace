@@ -15,7 +15,8 @@ interface Consulta { tabela: string; op: string; payload?: Linha; filtros: Array
 
 function fakeAdmin(o: {
   linhas?: Linha[]; claimErro?: boolean; maisNovas?: Linha[];
-  movimentos?: Array<{ codigo: string; quantidade: number }>; movimentosErro?: boolean; nome?: string;
+  movimentos?: Array<{ codigo: string; quantidade: number; motivo?: string; canal_origem?: string }>; movimentosErro?: boolean; nome?: string;
+  fechamentoPerdido?: boolean; // upsert novo entre o claim e o fechamento
 } = {}) {
   const consultas: Consulta[] = [];
   const resolver = (c: Consulta) => {
@@ -24,6 +25,7 @@ function fakeAdmin(o: {
       const tentativas = c.filtros.find((f) => f[1] === 'tentativas')?.[2];
       return { data: (o.linhas ?? []).filter((l) => l.tentativas === tentativas), error: null };
     }
+    if (c.tabela === 'confirmacoes_ml' && c.op === 'update') return { data: o.fechamentoPerdido ? [] : [{ id: 'x' }], error: null };
     if (c.tabela === 'confirmacoes_ml' && c.op === 'select') return { data: o.maisNovas ?? [], error: null };
     if (c.tabela === 'estoque_movimentos') {
       return o.movimentosErro ? { data: null, error: { message: 'boom' } } : { data: o.movimentos ?? [], error: null };
@@ -266,6 +268,13 @@ describe('processarConfirmacao — veredito (ADR-0195)', () => {
     await processarConfirmacao(d, { ...JOB, tentativa: 3 });
     expect(f.desfechos()[0].payload).toMatchObject({ status: 'falhou' });
     expect(d.notificarCategoria).toHaveBeenCalledTimes(1);
+  });
+
+  it('versão superada entre o claim e o fechamento não notifica', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ tentativas: 2 })], fechamentoPerdido: true });
+    const d = deps(f.admin, { lerEstoqueItens: lerOk(7) as never });
+    await processarConfirmacao(d, { ...JOB, tentativa: 3 });
+    expect(d.notificarCategoria).not.toHaveBeenCalled();
   });
 
   it('venda no ML depois do PUT aplicado, voltando ao saldo anterior: confirmado', async () => {

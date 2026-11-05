@@ -5,8 +5,10 @@
 - [x] Lote #68 da Avil conferido no ML por SKU: Fita N.2 (`00446050`) sem estoque desde 03/08, família `publicado` com raiz UP órfã.
 - [x] Trava no `update-familia-ml`: filhos sem nenhum item real viram erro antes de escrever, em somente estoque e "Atualizar tudo".
 - [x] `atualizarComposicao`: somente estoque sem filho ativo vira `reposicao_sem_item`; aviso na categoria `estoque`.
-- [ ] Limpar a raiz órfã e reenviar a Fita por mini-planilha; conferir os 77 SKUs.
-- [ ] Entrega 2: confirmação no ML e aviso na tela.
+- [x] Raiz órfã da Fita apagada em 05/11, com autorização das linhas (só Avil: 1 raiz + 77 filhas).
+- [ ] Conferir os 77 SKUs da Fita depois da próxima planilha normal (Diego não vai subir mini-planilha).
+- [x] Entrega 2: `confirmacoes_ml` + `confirmar-publicacao-ml`; resumo no Progresso e no relatório; falha avisa no sino.
+- [ ] Validar o resumo da conferência com print no próximo lote real.
 - [ ] Entrega 3: divisão automática por estoque (Linha 1500MT `02835002`).
 
 ## Nota do Faturador com a cor de outra variação (emenda D-5 do ADR-0181) — 2026-11-05
