@@ -208,6 +208,8 @@ Deno.serve(async (req) => {
     const particionamento = particionarPorPreco({
       cores: variacoesComFoto.map((v) => ({
         sku: v.codigo, cor: v.cor, precoCentavos: precoCentavos(v.preco_publicacao),
+        // ADR-0195: "somente estoque" nunca divide por soma.
+        estoque: job.somenteEstoque ? undefined : v.estoque,
       })),
       ancoragem,
       faixaVivaPorParticao,

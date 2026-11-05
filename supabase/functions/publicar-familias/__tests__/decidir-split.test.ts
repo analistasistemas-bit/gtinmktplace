@@ -110,3 +110,26 @@ describe('decidirSplit — família com tamanho (ADR-0167)', () => {
     expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0, temTamanho: false })).toBe(true);
   });
 });
+
+// ADR-0195 — publicação nova acima do teto do ML nasce dividida. Quem chama só passa a soma em
+// CREATE com formato `legacy` confirmado.
+describe('decidirSplit — soma de estoque no CREATE (ADR-0195)', () => {
+  const uniforme = { qtdCores: 2, precosCentavos: [1000, 1000], qtdParticoes: 0 };
+
+  it('soma 100.000 com 2 cores → split', () => {
+    expect(decidirSplit({ ...uniforme, somaEstoqueCreate: 100_000 })).toBe(true);
+  });
+  it('soma 99.999 → caminho normal', () => {
+    expect(decidirSplit({ ...uniforme, somaEstoqueCreate: 99_999 })).toBe(false);
+  });
+  it('UP ou com tamanho não dividem por soma', () => {
+    expect(decidirSplit({ ...uniforme, somaEstoqueCreate: 100_000, ehUP: true })).toBe(false);
+    expect(decidirSplit({ ...uniforme, somaEstoqueCreate: 100_000, temTamanho: true })).toBe(false);
+  });
+  it('1 cor não tem o que dividir', () => {
+    expect(decidirSplit({ qtdCores: 1, precosCentavos: [1000], qtdParticoes: 0, somaEstoqueCreate: 150_000 })).toBe(false);
+  });
+  it('sem a soma, nada muda', () => {
+    expect(decidirSplit(uniforme)).toBe(false);
+  });
+});

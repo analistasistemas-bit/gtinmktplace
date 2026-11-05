@@ -131,3 +131,48 @@ describe('particionarPorPreco', () => {
     expect(r.mapa.get('A')).toBe(0);
   });
 });
+
+// ADR-0195 — a soma de estoque limita a partição, como a contagem de cores.
+describe('particionarPorPreco — soma de estoque (ADR-0195)', () => {
+  const e = (sku: string, cor: string, estoque?: number) => ({ sku, cor, precoCentavos: 1000, estoque });
+
+  it('cores novas com 60.000 + 60.000 → partições 0 e 1', () => {
+    const r = particionarPorPreco({ ...base, cores: [e('A', 'Azul', 60_000), e('B', 'Rosa', 60_000)] });
+    expect(r.mapa.get('A')).toBe(0);
+    expect(r.mapa.get('B')).toBe(1);
+    expect(r.precoPorParticao.get(1)).toBe(1000);
+  });
+
+  it('soma exata no limite fica na mesma partição', () => {
+    const r = particionarPorPreco({ ...base, cores: [e('A', 'Azul', 60_000), e('B', 'Rosa', 39_999)] });
+    expect(r.mapa.get('B')).toBe(0);
+  });
+
+  it('ancorada conta na soma', () => {
+    const r = particionarPorPreco({
+      ...base,
+      cores: [e('A', 'Azul', 90_000), e('N', 'Verde', 20_000)],
+      ancoragem: new Map([['A', 0]]),
+    });
+    expect(r.mapa.get('A')).toBe(0);
+    expect(r.mapa.get('N')).toBe(1);
+  });
+
+  it('cor de 150.000 cabe sozinha em partição vazia, e a seguinte vai para outra', () => {
+    const r = particionarPorPreco({ ...base, cores: [e('A', 'Azul', 150_000), e('B', 'Rosa', 10)] });
+    expect(r.conflitos).toEqual([]);
+    expect(r.mapa.get('A')).toBe(0);
+    expect(r.mapa.get('B')).toBe(1);
+  });
+
+  it('cor zerada não abre anúncio: acompanha a partição cheia', () => {
+    const r = particionarPorPreco({ ...base, cores: [e('A', 'Azul', 150_000), e('B', 'Rosa', 0)] });
+    expect(r.mapa.get('B')).toBe(0);
+  });
+
+  it('sem `estoque`, o resultado é o de hoje', () => {
+    const r = particionarPorPreco({ ...base, cores: [e('A', 'Azul'), e('B', 'Rosa')] });
+    expect(r.mapa.get('A')).toBe(0);
+    expect(r.mapa.get('B')).toBe(0);
+  });
+});

@@ -21,6 +21,16 @@ describe('montarAncoragem', () => {
   });
 });
 
+describe('montarAncoragem — SKU em duas partições (ADR-0195)', () => {
+  // O espelho antigo do catálogo só poluiu a partição 0: a maior é onde a cor vive.
+  it('a partição maior vence, em qualquer ordem de entrada', () => {
+    const p0 = { particao: 0, variacoes_externas: { a: {} } };
+    const p1 = { particao: 1, variacoes_externas: { a: {} } };
+    expect(montarAncoragem([p0, p1]).get('a')).toBe(1);
+    expect(montarAncoragem([p1, p0]).get('a')).toBe(1);
+  });
+});
+
 describe('ancoragem + particionar (estabilidade do update)', () => {
   it('cor ancorada não migra quando entra cor nova', () => {
     // anúncio 0 já tem 'a'; anúncio 1 já tem 'z' (alfabeticamente depois)

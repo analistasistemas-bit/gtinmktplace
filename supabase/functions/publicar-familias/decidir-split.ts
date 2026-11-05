@@ -1,5 +1,6 @@
 // Roteamento publish/update × split (ADR-0048 + ADR-0078 F2). Puro e idempotente.
 import { MAX_VARIACOES_ML } from '../_shared/split/particionar.ts';
+import { LIMITE_ESTOQUE_ML } from '../_shared/split/capar-estoque.ts';
 
 export function decidirSplit(p: {
   qtdCores: number;
@@ -40,12 +41,18 @@ export function decidirSplit(p: {
    * diferentes, 1ª publicação). Sem isto, essa família cairia no split worker (Legacy puro).
    */
   temTamanho?: boolean;
+  /**
+   * ADR-0195 — soma do estoque da família. Quem chama só passa em CREATE com formato `legacy`
+   * confirmado: o split não tem a saga UP, e anúncio publicado segue com teto e aviso.
+   */
+  somaEstoqueCreate?: number;
 }): boolean {
   if (p.qtdCores > MAX_VARIACOES_ML) return true; // ADR-0048 (comportamento atual)
   if (p.qtdParticoes > 1) return true; // já dividido: só o split worker conhece as N partições
   // Os dois gatilhos acima valem para UP também: cap de cores é limite do ML, e família já dividida
   // em N partições continua sendo assunto do split worker (ADR-0105 §7).
   if (p.ehUP || p.temTamanho) return false;
+  if (p.qtdCores > 1 && (p.somaEstoqueCreate ?? 0) > LIMITE_ESTOQUE_ML) return true;
   if (p.somenteEstoque) return false; // nenhum preço sai → divergência não divide nada
   const distintos = new Set(p.precosCentavos.filter((c): c is number => c != null));
   return distintos.size > 1; // ADR-0078 F2: divergência de preço (só Legacy)

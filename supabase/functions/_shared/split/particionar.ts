@@ -4,8 +4,11 @@
 //   migra, então o UPDATE não embaralha o que já está no ar.
 // - Cores novas: ordenadas por nome de cor (alfabético, tie por sku), preenchem a partição de
 //   menor índice com espaço (< MAX); sem espaço, abre a próxima partição.
-// O estoque NÃO entra aqui (a partição é só por contagem); o teto de 99.999 é garantido por
-// `caparEstoque` no payload de cada anúncio.
+// O estoque NÃO entra em `particionar` (só contagem). Em `particionarPorPreco` a soma limita a cor
+// nova quando `estoque` vem (ADR-0195); o teto de 99.999 segue garantido por `caparEstoque` no
+// payload de cada anúncio.
+
+import { LIMITE_ESTOQUE_ML } from './capar-estoque.ts';
 
 export interface CorParticionavel {
   sku: string;
@@ -59,7 +62,7 @@ export function particionar(
 // Chave de particionamento passa a ser a faixa de preço; dentro do grupo vale a regra
 // alfabética/100 atual. Ancorada nunca migra (invariante #4); cruzar faixa = conflito LOUD.
 
-export interface CorComPreco { sku: string; cor: string | null; precoCentavos: number | null; }
+export interface CorComPreco { sku: string; cor: string | null; precoCentavos: number | null; estoque?: number; }
 export interface ParticionarPorPrecoInput {
   cores: CorComPreco[];
   ancoragem: Map<string, number>;
@@ -77,9 +80,11 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
   const max = input.max ?? MAX_VARIACOES_ML;
   const mapa = new Map<string, number>();
   const count = new Map<number, number>();
+  const soma = new Map<number, number>();
   const precoPorParticao = new Map<number, number | null>();
   const conflitos: string[] = [];
   let maxParticao = -1;
+  const estoqueDe = (c: CorComPreco) => Math.max(0, c.estoque ?? 0);
 
   // 1. Ancoradas ficam onde estão (ADR-0048).
   const ancoradasPorParticao = new Map<number, CorComPreco[]>();
@@ -88,6 +93,7 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
     if (p == null) continue;
     mapa.set(cor.sku, p);
     count.set(p, (count.get(p) ?? 0) + 1);
+    soma.set(p, (soma.get(p) ?? 0) + estoqueDe(cor));
     if (p > maxParticao) maxParticao = p;
     (ancoradasPorParticao.get(p) ?? ancoradasPorParticao.set(p, []).get(p)!).push(cor);
   }
@@ -127,9 +133,12 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
       continue;
     }
     // Menor partição cuja faixa casa e tem espaço (desempate determinístico do spec).
+    // ADR-0195: espaço inclui a soma. Cor zerada não pesa, e sozinha não abriria anúncio.
+    const estoque = estoqueDe(cor);
+    const cabe = (p: number) => estoque === 0 || (soma.get(p) ?? 0) + estoque <= LIMITE_ESTOQUE_ML;
     let alvo = -1;
     for (let p = 0; p <= maxParticao; p++) {
-      if (precoPorParticao.get(p) === cor.precoCentavos && (count.get(p) ?? 0) < max) {
+      if (precoPorParticao.get(p) === cor.precoCentavos && (count.get(p) ?? 0) < max && cabe(p)) {
         alvo = p;
         break;
       }
@@ -144,6 +153,7 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
     }
     mapa.set(cor.sku, alvo);
     count.set(alvo, (count.get(alvo) ?? 0) + 1);
+    soma.set(alvo, (soma.get(alvo) ?? 0) + estoque);
   }
 
   return { mapa, precoPorParticao, conflitos };

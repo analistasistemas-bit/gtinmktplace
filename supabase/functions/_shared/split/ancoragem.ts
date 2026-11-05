@@ -10,7 +10,8 @@ export interface LinhaAnuncioParticao {
 
 export function montarAncoragem(linhas: LinhaAnuncioParticao[]): Map<string, number> {
   const m = new Map<string, number>();
-  for (const l of linhas) {
+  // ADR-0195: o espelho antigo do catálogo só poluiu a partição 0, então a maior vence SKU duplicado.
+  for (const l of [...linhas].sort((a, b) => a.particao - b.particao)) {
     for (const sku of Object.keys(l.variacoes_externas ?? {})) {
       m.set(sku, l.particao);
     }

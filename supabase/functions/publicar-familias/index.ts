@@ -11,6 +11,8 @@ import { garantirAnuncioExterno, claimAnuncioExterno } from '../_shared/anuncios
 import { separarCanais } from '../_shared/canais/selecao.ts';
 import { resolverSomenteEstoque } from './somente-estoque.ts';
 import { decidirSplit } from './decidir-split.ts';
+import { familiasFormatoLegacy } from './formato-legacy.ts';
+import { LIMITE_ESTOQUE_ML } from '../_shared/split/capar-estoque.ts';
 import { precoCentavos } from '../_shared/preco/grupos.ts';
 import { reservarFamilias, mensagemTudoRecusado, type FamiliaRecusada } from './reservar.ts';
 
@@ -80,9 +82,10 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     const precosPorFamilia = new Map<string, Array<number | null>>();
     // ADR-0167: família com QUALQUER variação de tamanho nunca é Legacy — ver decidir-split.ts.
     const temTamanhoPorFamilia = new Set<string>();
+    const somaEstoquePorFamilia = new Map<string, number>();
     if (idsParaEnfileirar.length > 0) {
       const { data: vrs, error: errVrs } = await admin.from('variacoes')
-        .select('familia_id, preco_publicacao, tamanho')
+        .select('familia_id, preco_publicacao, tamanho, estoque')
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
       if (errVrs) {
         await auditarOperacaoSuporte(admin, context, target, 'failed');
@@ -92,6 +95,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         (precosPorFamilia.get(v.familia_id) ?? precosPorFamilia.set(v.familia_id, []).get(v.familia_id)!)
           .push(precoCentavos(v.preco_publicacao));
         if (v.tamanho) temTamanhoPorFamilia.add(v.familia_id);
+        somaEstoquePorFamilia.set(v.familia_id, (somaEstoquePorFamilia.get(v.familia_id) ?? 0) + Math.max(0, v.estoque ?? 0));
       }
     }
     const paiPorFamilia = new Map(todas.map((f) => [f.id as string, f.codigo_pai as string]));
@@ -127,7 +131,12 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       }
       for (const r of itensUP ?? []) paisUP.add(r.codigo_pai as string);
     }
-    const ehSplit = (familiaId: string, somenteEstoque = false) => {
+    // ADR-0195: CREATE acima do teto só divide com formato `legacy` confirmado. Sem isso segue o
+    // `publish`: o split não tem a saga UP, e o publish avisa se sair cortado.
+    const acimaDoTeto = (novos ?? []).map((f) => f.id as string)
+      .filter((id) => (somaEstoquePorFamilia.get(id) ?? 0) > LIMITE_ESTOQUE_ML);
+    const formatoLegacy = await familiasFormatoLegacy(admin, orgId, acimaDoTeto);
+    const ehSplit = (familiaId: string, somenteEstoque = false, somaEstoqueCreate?: number) => {
       const precos = precosPorFamilia.get(familiaId) ?? [];
       const pai = paiPorFamilia.get(familiaId) ?? '';
       return decidirSplit({
@@ -137,6 +146,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         ehUP: paisUP.has(pai),
         temTamanho: temTamanhoPorFamilia.has(familiaId),
         somenteEstoque,
+        somaEstoqueCreate,
       });
     };
 
@@ -146,7 +156,8 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     const aEnfileirar = [
       ...(novos ?? []).map((f) => ({
         f,
-        alvo: (ehSplit(f.id) ? 'split' : 'publish') as AlvoPublicacao,
+        alvo: (ehSplit(f.id, false, formatoLegacy.has(f.id) ? somaEstoquePorFamilia.get(f.id) : undefined)
+          ? 'split' : 'publish') as AlvoPublicacao,
         job: { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType },
       })),
       ...(updates ?? []).map((f) => {
