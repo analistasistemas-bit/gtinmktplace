@@ -139,6 +139,10 @@ Regime Normal (`tax_rules` completo) · IE por UF (`state_registry`) · adaptado
 ADR-0181 (aceito; Plano 1 em produção desde 2026-10-16; pacote do contador no Plano 2) — descrição fiscal própria, distribuição na grade exata,
 vínculo de fornecedor, custo da nota × custo real, fiscal da nota como sugestão confirmada,
 export mensal (compras, inventário, XMLs de venda ao vivo do ML).
+
+**Descrição na nota:** `fiscal_information.title` é o xProd do Faturador (verificado em nota real em 2026-11-05), não o
+título do anúncio. É gravado por SKU: se o texto da família citar uma cor do produto, o push troca pela cor do SKU
+(emenda ADR-0181 D-5). Texto neutro sai igual em todas as variações.
 Plano 2a (vendas) EM PRODUÇÃO desde 2026-10-16 (main `8694964e`; edge `baixar-notas-venda` v1): um zip por
 mês com os XMLs do download por período do ML (sem CT-e) + relatório xlsx/PDF, classificados pelo conteúdo do XML
 (CFOP de venda/devolução, cancelamento 135/155, CC-e 135), sem gravar nada. Cobertura: nota emitida fora do ML e não

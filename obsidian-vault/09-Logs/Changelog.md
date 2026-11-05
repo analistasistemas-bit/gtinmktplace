@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-04
+atualizado: 2026-11-05
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-11-04
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-05
+
+- **Nota do Faturador com a cor do SKU** (emenda ADR-0181 D-5, main `0ff8783e`): `fiscal_information.title` vira o xProd e é gravado por SKU, mas vinha da família; cor citada no texto agora vira a cor do SKU. `sincronizar-fiscal-ml` v25, `monitorar-moderados` v105. Auditoria no ML: 308 SKUs de Zaven e Daludi sem divergência. Ver [[Problemas Resolvidos]].
 
 ## 2026-11-04
 

@@ -10,6 +10,12 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Nota fiscal com a cor de outra variação (2026-11-05)** — Zaven: pedido Azul Claro saiu no DANFE como Preto, com o
+  SKU certo. **Raiz:** `fiscal_information.title` é o xProd da nota e vinha da família (`descricao_fiscal || nome_pai`);
+  a família tinha "Preto" no nome e ganhou outras cores por UPDATE. **Fix:** cor do produto citada no texto vira a do SKU,
+  com as cores de todas as versões (emenda ADR-0181 D-5, main `0ff8783e`). Re-push: o ML aceita trocar o `title` de SKU
+  existente. Nota já emitida não muda.
+
 - **Dashboard avisava "2 anúncios pausados" e Publicados não mostrava nenhum (2026-11-03)** — Zaven: 14 publicados,
   12 ativos no Dashboard × 14/14 em Publicados. **Raiz:** o ML pausa sozinho o SKU que zera; `calcularKpisDashboard`
   olhava só o `mlItemId` (SKU principal), enquanto Publicados agrega a família UP (ativo se qualquer SKU está ativo).
