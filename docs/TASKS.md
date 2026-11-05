@@ -4,7 +4,8 @@
 
 - [x] `title` do `fiscal_information` montado por SKU: cor da família citada no texto vira a cor do SKU.
 - [x] `title` → `xProd` verificado em nota real (pendência do ADR-0181).
-- [ ] Deploy de `sincronizar-fiscal-ml` e re-push da família afetada, conferindo o `title` no ML.
+- [x] Main `0ff8783e`; `sincronizar-fiscal-ml` v25, `monitorar-moderados` v105. Re-push da família afetada: os 9 SKUs com o `title` da própria cor no ML, `can_invoice` true.
+- [ ] Conferir a descrição na próxima nota emitida de um SKU Azul Claro ou Caqui.
 
 ## Configurações › Fiscal — 2026-11-04
 
