@@ -49,7 +49,7 @@ class FakeConnector implements ChannelConnector {
     _ctx: ContextoCanal,
     itemExternoId: string,
     estoques: EstoquePorSku[],
-  ): Promise<ResultadoCanal<void>> {
+  ): Promise<ResultadoCanal<{ capados?: number }>> {
     this.registrar('atualizarEstoque', { itemExternoId, estoques });
     const f = this.consumirFalha();
     if (f) {

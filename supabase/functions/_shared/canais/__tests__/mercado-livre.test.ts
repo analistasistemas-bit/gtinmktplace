@@ -709,3 +709,63 @@ describe.each(['code', 'status_code'] as const)('atualizarStatus propaga para o 
     expect(puts).toEqual([{ id: 'MLB8', status: 'active' }, { id: 'MLB1', status: 'active' }]);
   });
 });
+
+// ADR-0195 — o push passa a respeitar o teto do ML, sempre sobre o payload completo do item.
+describe('atualizarEstoque com teto (ADR-0195)', () => {
+  const variacao = (id: number, sku: string | null, qtd: number) => ({
+    id, seller_custom_field: sku, available_quantity: qtd, price: 25, picture_ids: [],
+    attribute_combinations: [{ id: 'COLOR', value_name: `Cor ${id}` }],
+  });
+  const item = (...variations: unknown[]) => ({ id: 'MLB1', status: 'active', variations, pictures: [] });
+  const soma = (put: { variations: Array<{ available_quantity: number }> }) =>
+    put.variations.reduce((t, v) => t + v.available_quantity, 0);
+
+  it('soma acima do limite: payload total sob o teto e `capados` = SKUs pedidos cortados', async () => {
+    const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, 'B', 60_000)));
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 70_000 }]);
+    expect(res.ok).toBe(true);
+    expect(res.valor).toEqual({ capados: 1 });
+    expect(soma(getPut())).toBeLessThanOrEqual(99_999);
+  });
+
+  it('variação fora do pedido também entra no teto, e a zerada segue 0', async () => {
+    const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, 'B', 90_000), variacao(3, 'C', 0)));
+    await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 90_000 }]);
+    const porId = new Map(getPut().variations.map((v: { id: number; available_quantity: number }) => [v.id, v.available_quantity]));
+    expect(porId.get(2)).toBeLessThan(90_000);
+    expect(porId.get(3)).toBe(0);
+    expect(soma(getPut())).toBeLessThanOrEqual(99_999);
+  });
+
+  it('variação sem SKU conta na soma, sem colidir chave', async () => {
+    const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, null, 60_000), variacao(3, null, 30_000)));
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 40_000 }]);
+    expect(res.valor).toEqual({ capados: 1 });
+    expect(getPut().variations).toHaveLength(3);
+    expect(soma(getPut())).toBeLessThanOrEqual(99_999);
+    expect(getPut().variations.find((v: { id: number }) => v.id === 3).available_quantity).toBe(30_000);
+  });
+
+  it('soma dentro do limite: payload igual ao de hoje, sem `capados`', async () => {
+    const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, null, 60_000)));
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 39_999 }]);
+    expect(res).toEqual({ ok: true });
+    expect(getPut().variations).toEqual([
+      { id: 1, available_quantity: 39_999 }, { id: 2, available_quantity: 60_000 },
+    ]);
+  });
+
+  it('item plano com 120.000 → 99.999 e `capados: 1`', async () => {
+    const getPut = stubFetch(item());
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 120_000 }]);
+    expect(res.valor).toEqual({ capados: 1 });
+    expect(getPut().available_quantity).toBe(99_999);
+  });
+
+  it('item plano dentro do limite segue sem `capados`', async () => {
+    const getPut = stubFetch(item());
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 99_999 }]);
+    expect(res).toEqual({ ok: true });
+    expect(getPut().available_quantity).toBe(99_999);
+  });
+});

@@ -245,13 +245,14 @@ export interface ChannelConnector {
    * Push de estoque por VALOR ABSOLUTO para um anúncio já publicado (E6b, ADR-0094).
    * `estoques` cobre apenas os SKUs que vivem neste item externo — quem resolve isso
    * é o worker, que conhece split (ADR-0048) e user products (ADR-0088).
+   * `capados` (ADR-0195): SKUs pedidos que saíram cortados pelo teto do canal.
    * Não lança: erros viram ResultadoCanal.erro.
    */
   atualizarEstoque(
     ctx: ContextoCanal,
     itemExternoId: string,
     estoques: EstoquePorSku[],
-  ): Promise<ResultadoCanal<void>>;
+  ): Promise<ResultadoCanal<{ capados?: number }>>;
   /** Sincroniza a descrição ao vivo (resolve + push). Retorna a descrição a persistir, ou null se nada mudou. */
   sincronizarDescricao(ctx: ContextoCanal, itemExternoId: string, descricaoAtual: string, cores: string[]): Promise<string | null>;
   /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */

@@ -18,7 +18,7 @@ import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import { subirFotoML } from '../ml/fotos.ts';
 import { aplicarPxQ, type FaixaAtacado } from '../ml/atacado.ts';
 import { mapearVariacoesExternas, mapearVariacoesPorSku, classificarErroCanal } from './mapeamento.ts';
-import { caparEstoque } from '../split/capar-estoque.ts';
+import { caparEstoque, LIMITE_ESTOQUE_ML } from '../split/capar-estoque.ts';
 import type { EnviadoSku } from '../confirmacao/avaliar.ts';
 
 function chunk<T>(arr: T[], n: number): T[][] {
@@ -361,7 +361,7 @@ export const mercadoLivreConnector: ChannelConnector = {
     ctx: ContextoCanal,
     itemExternoId: string,
     estoques: EstoquePorSku[],
-  ): Promise<ResultadoCanal<void>> {
+  ): Promise<ResultadoCanal<{ capados?: number }>> {
     if (estoques.length === 0) return { ok: true };
     const token = await ctx.getToken();
     try {
@@ -406,15 +406,29 @@ export const mercadoLivreConnector: ChannelConnector = {
             },
           };
         }
-        await atualizarItemPlanoML(token, itemExternoId, { available_quantity: estoques[0].estoque });
-        return { ok: true };
+        const pedido = estoques[0].estoque;
+        await atualizarItemPlanoML(token, itemExternoId, { available_quantity: Math.min(pedido, LIMITE_ESTOQUE_ML) });
+        return pedido > LIMITE_ESTOQUE_ML ? { ok: true, valor: { capados: 1 } } : { ok: true };
       }
 
       // Item com variações: reenvia TODAS (o ML deleta as omitidas), só available_quantity.
       const desejados = estoques.map((e) => ({ codigo: e.sku, estoque: e.estoque }));
       const variations = montarVariacoesUpdate(atual.variations, desejados, undefined, null, undefined, true);
-      await atualizarItemML(token, itemExternoId, variations);
-      return { ok: true };
+      if (variations.reduce((s, v) => s + v.available_quantity, 0) <= LIMITE_ESTOQUE_ML) {
+        await atualizarItemML(token, itemExternoId, variations);
+        return { ok: true };
+      }
+      // ADR-0195: o ML soma o anúncio inteiro, então o teto vale para todo o payload. Chave por id
+      // porque variação viva pode não ter SKU. `capados` conta só o que o push pediu.
+      const teto = caparEstoque(variations.map((v) => ({ sku: String(v.id), estoque: v.available_quantity })));
+      const capadas = variations.map((v) => ({ ...v, available_quantity: teto.get(String(v.id))! }));
+      await atualizarItemML(token, itemExternoId, capadas);
+      const pedidos = new Map(desejados.map((d) => [d.codigo, d.estoque]));
+      const capados = atual.variations.filter((a, i) => {
+        const pedido = pedidos.get(a.seller_custom_field ?? '');
+        return pedido != null && capadas[i].available_quantity < pedido;
+      }).length;
+      return { ok: true, valor: { capados } };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };
     }
