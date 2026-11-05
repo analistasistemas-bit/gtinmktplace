@@ -1569,6 +1569,18 @@ e `confirmar_inventario(p_org, p_id, p_versao, p_user)`. Job `pg_cron` `inventar
 
 ---
 
+## Conferência no Mercado Livre (ADR-0195)
+
+### `confirmacoes_ml`
+Uma linha por família e item escrito: `lote_id`, `familia_id`, `codigo_pai`, `item_externo_id`,
+`modelo` (`variacoes|item`), `enviado` (`{sku: {qtd, anterior, variacao_id}}`, valor depois do teto),
+`observado`, `divergentes` (`[{sku, enviado, observado}]`), `capados`, `status`
+(`aguardando|confirmado|inconclusivo|falhou`), `tentativas`, `enviado_em`, `verificado_em`.
+`unique (familia_id, item_externo_id)`. `enviado_em` é a versão da escrita (capturado antes do PUT):
+o upsert de uma escrita nova invalida os jobs da anterior. RLS de `select` por
+`org_id = current_org_id()`; escrita só por service role (`update-familia-ml`, `publicar-split-ml`,
+`confirmar-publicacao-ml`).
+
 ## Storage
 
 Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram

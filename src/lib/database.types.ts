@@ -326,6 +326,82 @@ export type Database = {
           },
         ]
       }
+      confirmacoes_ml: {
+        Row: {
+          capados: number
+          codigo_pai: string
+          divergentes: Json
+          enviado: Json
+          enviado_em: string
+          familia_id: string
+          id: string
+          item_externo_id: string
+          lote_id: string
+          modelo: string
+          observado: Json | null
+          org_id: string
+          status: string
+          tentativas: number
+          verificado_em: string | null
+        }
+        Insert: {
+          capados?: number
+          codigo_pai: string
+          divergentes?: Json
+          enviado: Json
+          enviado_em: string
+          familia_id: string
+          id?: string
+          item_externo_id: string
+          lote_id: string
+          modelo: string
+          observado?: Json | null
+          org_id: string
+          status?: string
+          tentativas?: number
+          verificado_em?: string | null
+        }
+        Update: {
+          capados?: number
+          codigo_pai?: string
+          divergentes?: Json
+          enviado?: Json
+          enviado_em?: string
+          familia_id?: string
+          id?: string
+          item_externo_id?: string
+          lote_id?: string
+          modelo?: string
+          observado?: Json | null
+          org_id?: string
+          status?: string
+          tentativas?: number
+          verificado_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confirmacoes_ml_familia_id_fkey"
+            columns: ["familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confirmacoes_ml_lote_id_fkey"
+            columns: ["lote_id"]
+            isOneToOne: false
+            referencedRelation: "lotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confirmacoes_ml_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresa_fiscal: {
         Row: {
           atualizado_em: string
