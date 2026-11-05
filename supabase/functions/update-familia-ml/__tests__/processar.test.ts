@@ -120,7 +120,7 @@ beforeEach(() => {
 
 describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   it('família COM linhas em anuncios_externos_itens → caminho UP; Legacy (atualizarAnuncio) NUNCA chamado', async () => {
-    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1' }] });
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
     const upArgs: unknown[] = [];
     let finalizou = false;
     const deps = baseDeps(admin, {
@@ -134,6 +134,49 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     expect(finalizou).toBe(true);
   });
 
+  // ADR-0195 — lote #68: 77 filhos sem item sobre um anúncio Legacy vivo. Em somente estoque ninguém
+  // escrevia e a família terminava `publicado`; em "Atualizar tudo" a saga criaria 77 anúncios.
+  describe.each([[true], [false]])('criação UP pendente (somenteEstoque=%s)', (somenteEstoque) => {
+    it('raiz com filhos e nenhum item real → erro; nada no ML; nunca publicado', async () => {
+      const { admin, writes } = fakeAdmin({
+        raizUP: { id: 'root-1', titulo: 'T', criado_em: null },
+        itensUP: [
+          { id: 'a', item_externo_id: null, retirado: false },
+          { id: 'b', item_externo_id: null, retirado: false },
+        ],
+      });
+      const upArgs: unknown[] = [];
+      let finalizou = false;
+      const deps = baseDeps(admin, {
+        atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a); return { estado: 'ok', adicionadas: 0 }; },
+        finalizarLote: async () => { finalizou = true; },
+      });
+      const r = await processarAtualizacaoFamilia(deps, { ...JOB, somenteEstoque }, { tentativas: 0 });
+      expect(r.tipo).toBe('erro');
+      expect(upArgs).toHaveLength(0);
+      expect(fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio')).toHaveLength(0);
+      const familia = writes.filter((w) => w.table === 'familias').map((w) => w.payload);
+      expect(familia).toContainEqual(expect.objectContaining({
+        status: 'erro', erro_mensagem: expect.stringMatching(/^Criação em User Products pendente: 2 cor/),
+      }));
+      expect(familia.some((p) => p.status === 'publicado')).toBe(false);
+      expect(finalizou).toBe(true);
+    });
+  });
+
+  it('filhos todos retirados e sem item → não é criação pendente: segue o caminho UP', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null },
+      itensUP: [{ id: 'a', item_externo_id: null, retirado: true }],
+    });
+    const upArgs: unknown[] = [];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a); return { estado: 'ok', adicionadas: 0 }; },
+    });
+    await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(upArgs).toHaveLength(1);
+  });
+
   // ADR-0160 (I1/I2) — a trava de preço uniforme saiu de antes do roteamento e foi para dentro do
   // ramo Legacy. Estes dois testes vivem no WORKER de propósito: os testes de unidade do guard
   // continuariam verdes se alguém devolvesse a chamada para antes do roteamento, e o efeito seria
@@ -145,7 +188,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
       { ...VAR_CASADA, codigo: 'V2', ml_variation_id: null, preco_publicacao: 45.5 },
     ];
     const { admin } = fakeAdmin({
-      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }],
       variacoes: divergentes,
     });
     const upArgs: Array<Record<string, unknown>> = [];
@@ -177,7 +220,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   // da saga continuaria verde porque recebe o parâmetro diretamente.
   it('I10: fluxo "adicionar variação" propaga preservarPublicadas para a rota UP', async () => {
     const { admin } = fakeAdmin({
-      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }],
       lote: { origem: 'manual' },
     });
     const upArgs: Array<Record<string, unknown>> = [];
@@ -190,7 +233,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
 
   it('lote normal (não-manual) não liga preservarPublicadas na rota UP', async () => {
     const { admin } = fakeAdmin({
-      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }],
     });
     const upArgs: Array<Record<string, unknown>> = [];
     const deps = baseDeps(admin, {
@@ -203,7 +246,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   it('fix round 1: rota UP com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
     const { admin } = fakeAdmin({
       familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'],
-      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1' }],
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }],
     });
     const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
     const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
@@ -214,7 +257,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   it('fix round 1: rota UP sem módulo fiscal → NÃO enfileira o push fiscal', async () => {
     const { admin } = fakeAdmin({
       familia: FAMILIA_FISCAL_OK, modulosHabilitados: [],
-      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1' }],
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }],
     });
     const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
     const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
@@ -223,7 +266,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   });
 
   it('UP retry (mudança de composição incompleta) → tipo retry, NÃO finaliza lote nem marca erro', async () => {
-    const { admin, writes } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1' }] });
+    const { admin, writes } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
     let finalizou = false;
     const deps = baseDeps(admin, {
       atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'retry', mensagem: 'retomando' }),
@@ -236,7 +279,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   });
 
   it('UP erro terminal → tipo erro, finaliza lote', async () => {
-    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1' }] });
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
     let finalizou = false;
     const deps = baseDeps(admin, {
       atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'erro', mensagem: 'desagrupada' }),
@@ -307,7 +350,7 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
 
   // Fix 4b — o orçamento de tentativas do worker chega até a mini-saga UP.
   it('tentativas é repassado a atualizarUP (orçamento de retry do incompleto)', async () => {
-    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1' }] });
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
     let tentativasVistas = -1;
     const deps = baseDeps(admin, {
       atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { tentativasVistas = a.tentativas; return { estado: 'ok', adicionadas: 0 }; },

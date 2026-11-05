@@ -71,12 +71,14 @@ ocorrência em todas as orgs, um botão de limpeza seria código para um caso s�
 **Limpeza em produção (Diego autorizou em 05/11)**, nesta ordem:
 
 1. Deploy da correção.
-2. Conferir que a família `2dce54a0-e81d-4e53-810e-6c63150bc2b4` (lote #68) segue `publicado`. O claim de publicação
-   é o status `publicando`; sem ele não há job em voo.
-3. Salvar cópia das 78 linhas com `org_id`.
-4. Apagar a raiz (`73690294-642a-43c8-a36b-0ac540497834`); a única FK é `anuncios_externos_itens`, com `ON DELETE CASCADE`.
-5. Voltar essa família para `pronto`. Ela mantém `operacao=UPDATE` e `ml_item_id=MLB6937855624`, então o claim UPDATE a pega e não há CREATE nem anúncio duplicado.
-6. Diego clica no atalho "Atualizar estoque" do lote #68, que força `somente_estoque` (ADR-0089).
+2. Prévia das linhas exatas com organização e `org_id`, e ok de Diego sobre elas (AGENTS.md). Pré-condições: família
+   mais recente `UPDATE`, `ml_item_id=MLB6937855624`, status diferente de `publicando` (é o claim; sem ele não há job em voo).
+3. Salvar cópia das 78 linhas.
+4. Apagar a raiz (`73690294-642a-43c8-a36b-0ac540497834`) com filtro de `org_id`; a única FK é
+   `anuncios_externos_itens`, com `ON DELETE CASCADE`. Leitura entre organizações depois.
+5. Reenviar com **mini-planilha só dessa família** pelo upload normal. `familias` e `lotes` não recebem escrita direta
+   (proibida pelo AGENTS.md). O ingest herda `ml_item_id` como UPDATE, sem CREATE nem anúncio duplicado.
+6. Diego clica em "Atualizar estoque (1)", que força `somente_estoque` (ADR-0089).
 7. Conferir os 77 SKUs no ML. `espelharAnuncioExterno` recria a raiz já com o item.
 
 Já verificado em 05/11: busca por SKU na conta AVILBV devolve só `MLB6937855624` para os 77. A escrita no ML sai pelo
@@ -147,6 +149,13 @@ Tirar o SKU do mapa da origem é o que impede o reabastecimento: `resolverAlvosP
 `montarVariacoesUpdate` reenvia as variações fora do pedido com o saldo vivo (0). O worker de split só manda ao anúncio
 as cores da partição dele. A baixa de venda é por SKU, então não muda; a cor zerada não vende. Família com mais de uma
 partição sempre vai ao worker de split, então o UPDATE comum não regrava o mapa da origem.
+
+**Lacunas apontadas pelo Codex, obrigatórias no plano desta entrega:**
+
+- `vincular-catalogo/index.ts:124` espelha todas as variações na partição 0 e pode reinserir o SKU movido.
+- Mapa vazio manda todos os SKUs no push (`alvos.ts:58`): esvaziar a origem a reabasteceria. A origem nunca pode ficar sem SKU no mapa.
+- Consultar o estado da movimentação não basta: jobs em voo precisam terminar antes do zeramento.
+- O retry precisa recuperar criação remota cujo ID não foi persistido (adotar por SKU, como a saga UP), e pertencimento e mapas mudam juntos.
 
 **A cor fica zerada no anúncio de origem, não excluída:** apagar é irreversível e o ML recusa em variação com venda.
 Consequência: ela segue ocupando vaga das 100 no anúncio de origem, então `particionar` passa a contar as variações

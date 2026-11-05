@@ -13,6 +13,8 @@
 ## Global Constraints
 
 - Escrita no ML só pelo fluxo do app. Nenhum PUT manual.
+- Nunca alterar `lotes`, `familias`, `variacoes` ou `estoque_movimentos` por SQL direto (AGENTS.md). Outra mutação de tenant exige prévia, ok das linhas exatas, filtro por `org_id` e leitura entre organizações depois.
+- `skusDesejados=[]` fica fora da trava de propósito: o worker recusa variações vazias, e só o reconciliador passa override vazio, para uma família esvaziada de verdade.
 - Nenhuma família termina `publicado` sem ter enviado o que foi pedido.
 - Cor sem linha filha em somente-estoque segue ignorada enquanto houver alvo (ADR-0104 §4).
 - Deploy: mudança em `_shared/` redeploya todas as funções afetadas, conferindo versão e `verify_jwt` (`update-familia-ml`, `reconciliar-convergencia-up` são `verify_jwt=false` no `supabase/config.toml`; reconferir o bloco de cada uma).
@@ -196,11 +198,20 @@ Expected: PASS nos dois.
 
 `supabase functions deploy update-familia-ml reconciliar-convergencia-up --project-ref txvncrgkoynoxwopfkbp` mais toda função que importe `_shared/user-products/atualizar-familia-up.ts` ou `_shared/notificacoes/estoque.ts` (listar com grep antes). Expected: versão nova ativa e `verify_jwt` igual ao `config.toml`.
 
-- [ ] **Step 4: Limpeza (autorizada por Diego em 05/11), com a sequência do desenho**
+- [ ] **Step 4: Prévia da limpeza e autorização das linhas exatas (AGENTS.md, Production tenant data)**
 
-Confirmar `familias.status='publicado'` em `2dce54a0-e81d-4e53-810e-6c63150bc2b4`, salvar as 78 linhas em JSON fora do repositório, apagar `anuncios_externos` id `73690294-642a-43c8-a36b-0ac540497834` com filtro de `org_id`, conferir 0 linhas restantes, e `update familias set status='pronto', erro_mensagem=null where id=...`.
-Expected: lote #68 mostra `Atualizar estoque (1)`.
+Leitura apenas. Mostrar a Diego: organização Avil, `org_id` `a72ea303-5559-4a35-9aff-daa12cd1de12`, raiz `73690294-642a-43c8-a36b-0ac540497834` e as 77 filhas (status, `item_externo_id` null). Conferir as pré-condições: família mais recente com `operacao='UPDATE'`, `ml_item_id='MLB6937855624'`, status diferente de `publicando`; nenhuma filha com item. Salvar as 78 linhas em JSON fora do repositório. Só seguir com o ok de Diego sobre essas linhas.
 
-- [ ] **Step 5: Diego clica; conferir**
+- [ ] **Step 5: Apagar a raiz**
 
-Reusar a leitura por SKU (`/items/bulk`, GET). Expected: 77/77 iguais à planilha, descontadas vendas do ledger, e `last_updated` de `MLB6937855624` de hoje. Registrar em `docs/TASKS.md`.
+`delete from anuncios_externos where id='73690294-...' and org_id='a72ea303-...' and item_externo_id is null` (uma org só; filhas caem por cascata). **Não** tocar `familias`, `lotes` ou `variacoes`.
+Expected: 0 linhas da raiz e das filhas; leitura entre organizações mostra a contagem das outras orgs igual à de antes.
+
+- [ ] **Step 6: Reenvio pelo fluxo do app**
+
+Gerar mini-planilha só com o pai `00446050` e suas 77 linhas, a partir do arquivo do lote #68, mantendo cabeçalho e colunas. Diego sobe a planilha e clica em `Atualizar estoque (1)`. Ingest cria família `UPDATE` herdando `ml_item_id`; sem raiz, vai pelo Legacy.
+Expected: lote novo com 1 família `UPDATE`, nenhum CREATE.
+
+- [ ] **Step 7: Conferir**
+
+Leitura por SKU (`/items/bulk`, GET). Expected: 77/77 iguais à planilha, descontadas vendas do ledger, e `last_updated` de `MLB6937855624` de hoje. Registrar em `docs/TASKS.md`.
