@@ -129,7 +129,8 @@ export type ResultadoComposicao =
   | { tipo: 'erro'; codigo: 'familia_up_desagrupada' }
   | { tipo: 'erro'; codigo: 'busca_ambigua' }
   | { tipo: 'erro'; codigo: 'estado_remoto_inesperado' }
-  | { tipo: 'erro'; codigo: 'filho_em_estado_terminal'; sku: string; status: StatusFilho };
+  | { tipo: 'erro'; codigo: 'filho_em_estado_terminal'; sku: string; status: StatusFilho }
+  | { tipo: 'erro'; codigo: 'reposicao_sem_item'; skus: string[] };  // ADR-0195
 
 /**
  * ADR-0157 — atributos a reenviar na reposição, calculados UMA vez por família.
@@ -230,6 +231,25 @@ export async function atualizarComposicao(
     if (f.status === 'ativo' && f.itemExternoId) continue;   // já ativo → nada a fazer
     if (BLOQUEIO_REATIVACAO.has(f.status) || (f.status === 'pausado' && !f.retirado)) {
       return { tipo: 'erro', codigo: 'filho_em_estado_terminal', sku: f.sku, status: f.status };
+    }
+  }
+
+  // ADR-0195: em somente-estoque ninguém cria nem retoma filho, então SKU reservado sem item ativo
+  // (ou nenhum alvo) não tem para onde ir. Seguir devolveria `sem_mudanca` e a família terminaria
+  // `publicado` sem escrita. Falha antes de qualquer PUT, com as reservas intactas. Cor sem linha
+  // filha continua ignorada enquanto houver alvo (ADR-0104 §4).
+  if (soRepor) {
+    const ativo = (sku: string) => {
+      const f = filhoPorSku.get(sku);
+      return !!f && !f.retirado && f.status === 'ativo' && !!f.itemExternoId;
+    };
+    const naoProntos = desejados.filter((sku) => {
+      const f = filhoPorSku.get(sku);
+      return !!f && !f.retirado && !ativo(sku);
+    });
+    if (naoProntos.length > 0) return { tipo: 'erro', codigo: 'reposicao_sem_item', skus: naoProntos };
+    if (desejados.length > 0 && !desejados.some(ativo)) {
+      return { tipo: 'erro', codigo: 'reposicao_sem_item', skus: desejados };
     }
   }
 

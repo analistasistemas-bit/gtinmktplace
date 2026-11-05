@@ -97,7 +97,7 @@ export interface AtualizarFamiliaUPArgs {
 export type ResultadoAtualizarUP =
   | { estado: 'ok'; adicionadas: number }
   | { estado: 'retry'; mensagem: string }
-  | { estado: 'erro'; mensagem: string };
+  | { estado: 'erro'; mensagem: string; semItem?: number };  // semItem: ADR-0195, cores sem anúncio
 
 const num = (v: number | string | null | undefined): number | null =>
   v == null ? null : Number(v);
@@ -657,6 +657,14 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const m = 'UPDATE não convergiu: a confirmação por GET não fechou após várias tentativas (item deletado, outro vendedor ou 404 persistente). Intervenção manual necessária.';
     await admin.from('familias').update({ status: 'erro', erro_mensagem: m }).eq('id', familia.id);
     return { estado: 'erro', mensagem: m };
+  }
+  // ADR-0195: membro próprio do tipo, tratado antes da cadeia para `.sku`/`.status` seguirem discriminados.
+  if (resultado.codigo === 'reposicao_sem_item') {
+    const { skus } = resultado;
+    const mensagem = `UPDATE bloqueado: ${skus.length} cor(es) sem anúncio confirmado no Mercado Livre `
+      + `(${skus.slice(0, 10).join(', ')}${skus.length > 10 ? '…' : ''}). Nada foi enviado.`;
+    await admin.from('familias').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', familia.id);
+    return { estado: 'erro', mensagem, semItem: skus.length };
   }
   // erro terminal (family_id divergente, busca ambígua, item errado, filho em estado terminal).
   const msg = resultado.codigo === 'familia_up_desagrupada'

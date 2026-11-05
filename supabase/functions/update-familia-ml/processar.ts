@@ -28,6 +28,7 @@ import type { FetchLike } from '../_shared/ml/buscar-item.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemFamiliaSemItem } from '../_shared/notificacoes/estoque.ts';
 import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
@@ -213,6 +214,19 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     if (raizErr) throw new Error(`roteamento UP (raiz): ${raizErr.message}`);
     // ADR-0186 — marca própria da org: BRAND = marca da org nos dois caminhos (UP e Legacy).
 
+    // ADR-0195: best-effort, o erro já está gravado na família. A chave evita repetir no sino.
+    const avisarSemItem = async (qtdCores: number): Promise<void> => {
+      try {
+        await notificarCategoria(admin, familia.org_id as string, 'estoque', montarMensagemFamiliaSemItem({
+          produto: (familia.nome_pai as string | null) ?? null,
+          codigoPai: familia.codigo_pai as string,
+          qtdCores,
+        }), { chave: `up-sem-item:${job.familia_id}` });
+      } catch (e) {
+        console.error('aviso de família sem item falhou:', (e as Error).message);
+      }
+    };
+
     // Entrega a família à mini-saga de composição. Usada por DOIS caminhos: o atalho local (linhas
     // filhas já existem) e, depois da adoção, o caminho de família migrada pelo ML (ADR-0104).
     const rodarUP = async (raiz: { id: string; titulo: string | null }): Promise<ResultadoProcessar> => {
@@ -232,6 +246,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
         }
         return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: r.adicionadas };
       }
+      if (r.semItem) await avisarSemItem(r.semItem);
       return { tipo: 'erro', mensagem: r.mensagem };
     };
 
@@ -250,6 +265,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
             + 'Mercado Livre. Nada foi enviado. Este produto precisa de correção manual antes de atualizar.';
           await admin.from('familias').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', job.familia_id);
           await finalizarLote(job.lote_id);
+          await avisarSemItem(vivos.length);
           return { tipo: 'erro', mensagem };
         }
         return await rodarUP(raizUP as { id: string; titulo: string | null });

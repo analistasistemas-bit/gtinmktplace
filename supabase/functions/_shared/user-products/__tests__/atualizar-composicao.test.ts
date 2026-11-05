@@ -278,6 +278,52 @@ describe('atualizarComposicao — somenteEstoque nunca muda composição (ADR-01
     expect(w.chamadas.iniciarComposicao).toEqual([]);
   });
 
+  // ADR-0195 — regressão do lote #68 (Fita N.2): sem isto a família terminava `publicado` sem escrita.
+  it('regressão Fita: 77 filhos sem item → erro, zero PUT, nunca sem_mudanca', async () => {
+    const skus = Array.from({ length: 77 }, (_, i) => `S${i}`);
+    const seed: FilhoComp[] = skus.map((sku) => ({ sku, status: 'pendente', retirado: false, itemExternoId: null, familyId: null }));
+    const w = fakeMundo({ seed });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: skus, estoquePorSku: Object.fromEntries(skus.map((s) => [s, 5])), somenteEstoque: true,
+    }));
+    expect(r).toMatchObject({ tipo: 'erro', codigo: 'reposicao_sem_item' });
+    expect((r as { skus: string[] }).skus).toHaveLength(77);
+    expect(w.chamadas.repor).toEqual([]);
+    expect(w.chamadas.criarPlano).toEqual([]);
+    expect(w.db.get('S0')).toMatchObject({ status: 'pendente' }); // reserva preservada
+  });
+
+  it('parcial: A ativo e B criacao_incerta → erro com [B], e A não recebe PUT', async () => {
+    const w = fakeMundo({ seed: [
+      filho('A', 'MLB1'),
+      { sku: 'B', status: 'criacao_incerta', retirado: false, itemExternoId: null, familyId: null },
+    ] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A', 'B'], estoquePorSku: { A: 5, B: 9 }, somenteEstoque: true,
+    }));
+    expect(r).toEqual({ tipo: 'erro', codigo: 'reposicao_sem_item', skus: ['B'] });
+    expect(w.chamadas.repor).toEqual([]);
+  });
+
+  it('nenhuma linha filha para os SKUs desejados → erro, não sem_mudanca', async () => {
+    const w = fakeMundo({ seed: [] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['X'], estoquePorSku: { X: 1 }, somenteEstoque: true,
+    }));
+    expect(r).toEqual({ tipo: 'erro', codigo: 'reposicao_sem_item', skus: ['X'] });
+  });
+
+  it('fora de somenteEstoque, filho pendente segue retomável', async () => {
+    const w = fakeMundo({ seed: [
+      filho('A', 'MLB1'),
+      { sku: 'B', status: 'pendente', retirado: false, itemExternoId: null, familyId: null },
+    ] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A', 'B'], estoquePorSku: { A: 5, B: 9 }, somenteEstoque: false,
+    }));
+    expect(r.tipo).toBe('concluido');
+  });
+
   // Regressão inversa: fora de somenteEstoque a composição continua valendo (ADR-0088 intacto).
   it('"Atualizar tudo" com a MESMA entrada continua retirando a cor ausente', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });

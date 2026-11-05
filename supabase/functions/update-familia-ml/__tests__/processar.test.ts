@@ -164,6 +164,48 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     });
   });
 
+  describe('ADR-0195: aviso de família sem item', () => {
+    const raizOrfa = {
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null },
+      itensUP: [{ id: 'a', item_externo_id: null, retirado: false }],
+    };
+
+    it('trava do roteamento avisa na categoria estoque, com chave por família', async () => {
+      const { admin } = fakeAdmin(raizOrfa);
+      await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+      expect(notificarCategoriaSpy).toHaveBeenCalledTimes(1);
+      const [, , categoria, texto, opcoes] = notificarCategoriaSpy.mock.calls[0];
+      expect(categoria).toBe('estoque');
+      expect(texto).toContain('Estoque não enviado ao Mercado Livre');
+      expect(opcoes).toEqual({ chave: `up-sem-item:${JOB.familia_id}` });
+    });
+
+    it('saga devolvendo semItem também avisa', async () => {
+      const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
+      const deps = baseDeps(admin, {
+        atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'erro', mensagem: 'm', semItem: 3 }),
+      });
+      await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+      expect(notificarCategoriaSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('erro comum da saga não avisa', async () => {
+      const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
+      const deps = baseDeps(admin, {
+        atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'erro', mensagem: 'm' }),
+      });
+      await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+      expect(notificarCategoriaSpy).not.toHaveBeenCalled();
+    });
+
+    it('falha ao notificar não muda o resultado', async () => {
+      notificarCategoriaSpy.mockRejectedValueOnce(new Error('telegram fora'));
+      const { admin } = fakeAdmin(raizOrfa);
+      const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+      expect(r.tipo).toBe('erro');
+    });
+  });
+
   it('filhos todos retirados e sem item → não é criação pendente: segue o caminho UP', async () => {
     const { admin } = fakeAdmin({
       raizUP: { id: 'root-1', titulo: 'T', criado_em: null },

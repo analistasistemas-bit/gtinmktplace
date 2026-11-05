@@ -53,4 +53,5 @@ Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela comp
 - [ADR-0191](0191-produto-unico-pai-vazio.md) — Produto único na planilha: `PAI` vazio sem filhos vira anúncio de 1 SKU (emenda ADR-0013).
 - [ADR-0192](0192-posvenda-ml-acoes.md) — Pós-venda do ML: ações de escrita (revisão, reclamação, mensagem), trava anti-duplicação e leitura sincronizada (proposto).
 - [ADR-0194](0194-sugestoes-de-promocao.md) — Sugestões de promoção: duas faixas por vendas e visitas, por produto, ordem por Oportunidade, dispensa por 30 dias (aceito).
+- [ADR-0195](0195-confirmacao-no-canal-e-divisao-por-estoque.md) — `publicado` exige escrita real, confirmação no canal e divisão de anúncio por estoque com aprovação do operador.
 - [ADR-0193](0193-relatorio-mensal-do-cliente-e-fechamento-automatico.md) — Relatório mensal do cliente (PDF de prestação de contas), fechamento automático no dia 01 e Central premium (aceito).

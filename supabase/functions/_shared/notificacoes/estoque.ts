@@ -24,6 +24,13 @@ function rotulo(v: VariacaoZerada): string {
   return nome ? `${nome} (${v.codigo})` : v.codigo;
 }
 
+/** ADR-0195: a família tem cores sem anúncio no canal, e nada foi escrito. */
+export function montarMensagemFamiliaSemItem(a: { produto: string | null; codigoPai: string; qtdCores: number }): string {
+  const nome = a.produto?.trim() || a.codigoPai;
+  return `⚠️ Estoque não enviado ao Mercado Livre: ${nome}\n`
+    + `Produto ${a.codigoPai}: ${a.qtdCores} cor(es) sem anúncio confirmado. Nada foi enviado; precisa de correção manual.`;
+}
+
 export function montarMensagemEstoqueZerado(a: EstoqueZeradoAlerta): string {
   const nome = a.produto?.trim() || a.codigoPai;
   const cabecalho = a.produtoInteiroZerado
