@@ -224,6 +224,29 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(enfileirarSincronizacaoFiscal).not.toHaveBeenCalled();
   });
 
+  // ADR-0195: sem isto `decidirSplit` nunca veria `legacy` e a divisão por soma não dispararia.
+  it('CREATE multi-cor aceito com variations prova formato legacy', async () => {
+    const { admin } = fakeAdmin({ variacoes: multiCor() });
+    const { repo, salvos } = fakeFormatoRepo();
+    const r = await processarFamiliaML(baseDeps(admin, { formatoRepo: repo }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(salvos).toEqual([{ formato: 'legacy' }]);
+  });
+
+  it('CREATE de 1 cor não prova formato', async () => {
+    const { admin } = fakeAdmin();
+    const { repo, salvos } = fakeFormatoRepo();
+    await processarFamiliaML(baseDeps(admin, { formatoRepo: repo }), JOB, { tentativas: 0 });
+    expect(salvos).toEqual([]);
+  });
+
+  it('falha ao gravar o formato não derruba a publicação', async () => {
+    const { admin } = fakeAdmin({ variacoes: multiCor() });
+    const repo = { buscar: async () => null, salvar: async () => { throw new Error('boom'); } };
+    const r = await processarFamiliaML(baseDeps(admin, { formatoRepo: repo }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+  });
+
   it('multi-cor, cache desconhecido, ML rejeita variations (FORMATO_INCOMPATIVEL) → confirma cache + saga → publicado', async () => {
     const { admin } = fakeAdmin({ variacoes: multiCor() });
     fakeConnector.falharProximo('FORMATO_INCOMPATIVEL', false);

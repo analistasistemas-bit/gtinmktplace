@@ -281,6 +281,16 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     }
     const ref = res.valor!;
 
+    // ADR-0195: multi-cor aceito com `variations` prova Legacy, e é esse registro que libera a divisão
+    // por soma em `publicar-familias`. 1 cor não prova nada: item plano também passa. Best-effort.
+    if (anuncio.variacoes.length > 1 && conexao && categoria) {
+      try {
+        await confirmarFormatoPublicacao(formatoRepo, conexao.id, categoria, 'legacy');
+      } catch (e) {
+        console.error('gravar formato legacy falhou:', (e as Error).message);
+      }
+    }
+
     const { error: upErr } = await admin.from('familias').update({
       ml_item_id: ref.itemExternoId,
       ml_permalink: ref.permalink,

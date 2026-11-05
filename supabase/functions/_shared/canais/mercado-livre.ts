@@ -419,15 +419,11 @@ export const mercadoLivreConnector: ChannelConnector = {
         return { ok: true };
       }
       // ADR-0195: o ML soma o anúncio inteiro, então o teto vale para todo o payload. Chave por id
-      // porque variação viva pode não ter SKU. `capados` conta só o que o push pediu.
+      // porque variação viva pode não ter SKU. `capados` conta todo corte, pedido ou não: é o aviso.
       const teto = caparEstoque(variations.map((v) => ({ sku: String(v.id), estoque: v.available_quantity })));
       const capadas = variations.map((v) => ({ ...v, available_quantity: teto.get(String(v.id))! }));
       await atualizarItemML(token, itemExternoId, capadas);
-      const pedidos = new Map(desejados.map((d) => [d.codigo, d.estoque]));
-      const capados = atual.variations.filter((a, i) => {
-        const pedido = pedidos.get(a.seller_custom_field ?? '');
-        return pedido != null && capadas[i].available_quantity < pedido;
-      }).length;
+      const capados = capadas.filter((v, i) => v.available_quantity < variations[i].available_quantity).length;
       return { ok: true, valor: { capados } };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };

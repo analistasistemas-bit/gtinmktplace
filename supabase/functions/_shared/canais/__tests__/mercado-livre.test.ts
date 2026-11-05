@@ -720,11 +720,11 @@ describe('atualizarEstoque com teto (ADR-0195)', () => {
   const soma = (put: { variations: Array<{ available_quantity: number }> }) =>
     put.variations.reduce((t, v) => t + v.available_quantity, 0);
 
-  it('soma acima do limite: payload total sob o teto e `capados` = SKUs pedidos cortados', async () => {
+  it('soma acima do limite: payload total sob o teto e `capados` = variações cortadas', async () => {
     const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, 'B', 60_000)));
     const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 70_000 }]);
     expect(res.ok).toBe(true);
-    expect(res.valor).toEqual({ capados: 1 });
+    expect(res.valor).toEqual({ capados: 2 });
     expect(soma(getPut())).toBeLessThanOrEqual(99_999);
   });
 
@@ -737,10 +737,16 @@ describe('atualizarEstoque com teto (ADR-0195)', () => {
     expect(soma(getPut())).toBeLessThanOrEqual(99_999);
   });
 
+  it('corte só em variação fora do pedido também conta: o aviso não some', async () => {
+    stubFetch(item(variacao(1, 'A', 10), variacao(2, 'B', 150_000)));
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 5 }]);
+    expect(res.valor).toEqual({ capados: 1 });
+  });
+
   it('variação sem SKU conta na soma, sem colidir chave', async () => {
     const getPut = stubFetch(item(variacao(1, 'A', 10), variacao(2, null, 60_000), variacao(3, null, 30_000)));
     const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A', estoque: 40_000 }]);
-    expect(res.valor).toEqual({ capados: 1 });
+    expect(res.valor).toEqual({ capados: 2 });
     expect(getPut().variations).toHaveLength(3);
     expect(soma(getPut())).toBeLessThanOrEqual(99_999);
     expect(getPut().variations.find((v: { id: number }) => v.id === 3).available_quantity).toBe(30_000);
