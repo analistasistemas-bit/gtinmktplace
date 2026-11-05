@@ -264,6 +264,25 @@ export async function enfileirarVinculacaoCatalogo(
 }
 
 /**
+ * ADR-0195 — conferência pós-escrita no ML. Fora da fila serial: só lê. `versao` é o `enviado_em`
+ * da escrita e `tentativa` o número da leitura: juntos são o claim do worker, então entrega dupla
+ * ou job de escrita antiga encerra sem efeito.
+ */
+export interface ConfirmarJob { familia_id: string; tentativa: number; versao: string }
+
+export async function enfileirarConfirmacao(job: ConfirmarJob, delaySeconds = 60): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/confirmar-publicacao-ml`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: job satisfies ConfirmarJob,
+    delay: delaySeconds,
+    retries: 3,
+  });
+  return messageId;
+}
+
+/**
  * ADR-0161 — acompanhamento da migração "preço por variação" (UPtin).
  *
  * O job carrega `{org_id, codigo_pai}`, **nunca `familia_id`**: o estado mora na raiz

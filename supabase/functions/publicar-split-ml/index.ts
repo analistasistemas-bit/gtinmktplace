@@ -30,6 +30,7 @@ import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem-revinculo.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
+import { agendarConfirmacao, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -97,6 +98,10 @@ Deno.serve(async (req) => {
   // criada/atualizada NESTE attempt — o push fiscal precisa sair também em erro parcial.
   let fiscalAtivo = false;
   let particaoNoAr = false;
+  // ADR-0195: uma versão para todas as partições, porque o job confere a família inteira. Capturada
+  // antes de qualquer PUT.
+  const enviadoEm = new Date().toISOString();
+  let conferenciaRegistrada = false;
 
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
@@ -402,6 +407,15 @@ Deno.serve(async (req) => {
           throw err;
         }
         particaoNoAr = true;
+        // Por partição, logo depois do PUT: falha numa partição seguinte não perde a conferência desta.
+        const itemConferir = itemConfirmarLegacy(itemExternoId, res.valor!, coresP);
+        if (itemConferir) {
+          await registrarConfirmacao(admin, {
+            orgId: familia.org_id as string, loteId: job.lote_id, familiaId: job.familia_id,
+            codigoPai: familia.codigo_pai as string, enviadoEm, itens: [itemConferir],
+          });
+          conferenciaRegistrada = true;
+        }
         const persistidas = new Set<string>();
         for (const [codigo, variationId] of Object.entries(res.valor!.variacoesExternas)) {
           if (novas.some((v) => v.codigo === codigo)) {
@@ -492,6 +506,7 @@ Deno.serve(async (req) => {
     await admin.from('familias').update({
       status: 'publicado', publicado_em: new Date().toISOString(),
     }).eq('id', job.familia_id);
+    if (conferenciaRegistrada) await agendarConfirmacao(job.familia_id, enviadoEm);
     // C1 (auditoria 19/10): D-8 valia só no publish/update normal; o split nunca empurrava o fiscal
     // (SKU nascia sem dados fiscais no ML). Falha de enqueue NUNCA desfaz a publicação (§3 ADR-0135);
     // o worker vincula cada SKU no item da sua partição (listarItensFiscais).
@@ -517,6 +532,7 @@ Deno.serve(async (req) => {
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
     }).eq('id', job.familia_id);
+    if (conferenciaRegistrada) await agendarConfirmacao(job.familia_id, enviadoEm);
     // C1: erro definitivo DEPOIS de partição(ões) já no ar — o que subiu precisa do push fiscal.
     if (fiscalAtivo && particaoNoAr) {
       try { await enfileirarSincronizacaoFiscal(job.familia_id, { split: true }); }

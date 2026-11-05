@@ -19,6 +19,7 @@ import { subirFotoML } from '../ml/fotos.ts';
 import { aplicarPxQ, type FaixaAtacado } from '../ml/atacado.ts';
 import { mapearVariacoesExternas, mapearVariacoesPorSku, classificarErroCanal } from './mapeamento.ts';
 import { caparEstoque } from '../split/capar-estoque.ts';
+import type { EnviadoSku } from '../confirmacao/avaliar.ts';
 
 function chunk<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -260,6 +261,11 @@ export const mercadoLivreConnector: ChannelConnector = {
           valor: {
             variacoesExternas: { [existente.sku]: a.itemExternoId },
             precoVivo: atual.price,
+            ...(a.preservarPublicadas ? {} : {
+              enviados: {
+                [existente.sku]: { qtd: estoqueDesejado, anterior: atual.availableQuantity, variacao_id: null },
+              },
+            }),
           },
         };
       }
@@ -326,7 +332,23 @@ export const mercadoLivreConnector: ChannelConnector = {
         const refetch = await buscarItemML(token, a.itemExternoId);
         varsParaCasar = refetch.variations;
       }
-      return { ok: true, valor: { variacoesExternas: mapearVariacoesPorSku(varsParaCasar), precoVivo } };
+      const variacoesExternas = mapearVariacoesPorSku(varsParaCasar);
+      if (a.preservarPublicadas) return { ok: true, valor: { variacoesExternas, precoVivo } };
+      // ADR-0195: SKU pedido que não está no anúncio não recebeu escrita (`montarVariacoesUpdate` só
+      // percorre as vivas). Entra sem variação para a conferência acusar em vez de passar em silêncio.
+      const vivaPorSku = new Map(atual.variations.map((v) => [v.seller_custom_field, v]));
+      const enviados: Record<string, EnviadoSku> = {};
+      for (const d of desejados) {
+        const viva = vivaPorSku.get(d.codigo);
+        enviados[d.codigo] = {
+          qtd: d.estoque, anterior: viva?.available_quantity ?? null, variacao_id: viva ? String(viva.id) : null,
+        };
+      }
+      for (const n of a.novas) {
+        const id = variacoesExternas[n.sku];
+        if (id) enviados[n.sku] = { qtd: capUpd.get(n.sku) ?? n.estoque, anterior: null, variacao_id: id };
+      }
+      return { ok: true, valor: { variacoesExternas, precoVivo, enviados } };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };
     }

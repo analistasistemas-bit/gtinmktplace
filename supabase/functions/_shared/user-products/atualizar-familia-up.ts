@@ -21,6 +21,7 @@ import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { forcarMarcaDoProduto } from '../categoria/marca-org.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
+import type { ItemConfirmar } from '../confirmacao/registrar.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
 import {
@@ -95,7 +96,7 @@ export interface AtualizarFamiliaUPArgs {
 }
 
 export type ResultadoAtualizarUP =
-  | { estado: 'ok'; adicionadas: number }
+  | { estado: 'ok'; adicionadas: number; enviados?: ItemConfirmar[] }  // enviados: ADR-0195, para a conferência
   | { estado: 'retry'; mensagem: string }
   | { estado: 'erro'; mensagem: string; semItem?: number };  // semItem: ADR-0195, cores sem anúncio
 
@@ -603,6 +604,28 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     }
   };
 
+  // ADR-0195: cada filho ativo é um item, sem teto e sem GET pré-PUT (`anterior` null). A saga já
+  // terminou: falha aqui só perde a conferência, nunca a publicação.
+  const itensEnviados = async (): Promise<ItemConfirmar[] | undefined> => {
+    try {
+      const { data, error } = await admin.from(ITENS)
+        .select('sku, item_externo_id, retirado, status').eq('anuncio_externo_id', rootId);
+      if (error) throw new Error(error.message);
+      const desejados = new Set(skusDesejados);
+      return ((data ?? []) as Array<Record<string, unknown>>)
+        .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id && desejados.has(f.sku as string))
+        .map((f) => ({
+          itemExternoId: f.item_externo_id as string,
+          modelo: 'item' as const,
+          enviado: { [f.sku as string]: { qtd: estoquePorSku[f.sku as string] ?? 0, anterior: null, variacao_id: null } },
+          capados: 0,
+        }));
+    } catch (e) {
+      console.error(`itens da conferência falharam (${familia.id}):`, (e as Error).message);
+      return undefined;
+    }
+  };
+
   let resultado: ResultadoComposicao;
   try {
     resultado = await executarSaga(portas, {
@@ -640,7 +663,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     // Fix 5: efeitos que o UPDATE Legacy já faz — best-effort, não derrubam o desfecho ok.
     await efeitosPosComposicao(criadas, resultado.tipo === 'concluido');
     await admin.from('familias').update({ status: 'publicado', publicado_em: now() }).eq('id', familia.id);
-    return { estado: 'ok', adicionadas };
+    const enviados = args.preservarPublicadas ? undefined : await itensEnviados();
+    return { estado: 'ok', adicionadas, ...(enviados?.length ? { enviados } : {}) };
   }
   if (resultado.tipo === 'incompleto') {
     // Fix 4b: transiente por confirmação-por-GET não fechada. Enquanto houver orçamento de retry,

@@ -13,6 +13,15 @@ vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: e
 const { notificarCategoriaSpy } = vi.hoisted(() => ({ notificarCategoriaSpy: vi.fn() }));
 vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: notificarCategoriaSpy }));
 
+// ADR-0195: spies por cima das funções reais, para o teste de falha passar pelo try/catch de verdade.
+const { registrarSpy, agendarSpy } = vi.hoisted(() => ({ registrarSpy: vi.fn(), agendarSpy: vi.fn() }));
+vi.mock('../../_shared/confirmacao/registrar.ts', async (original) => {
+  const real = await original<typeof import('../../_shared/confirmacao/registrar')>();
+  registrarSpy.mockImplementation(real.registrarConfirmacao);
+  agendarSpy.mockImplementation(real.agendarConfirmacao);
+  return { ...real, registrarConfirmacao: registrarSpy, agendarConfirmacao: agendarSpy };
+});
+
 import { processarAtualizacaoFamilia, mensagemNotificacaoAddVariacao, type ProcessarDeps } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { ResultadoAtualizarUP } from '../../_shared/user-products/atualizar-familia-up';
@@ -120,6 +129,91 @@ function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDe
 beforeEach(() => {
   fakeConnector.reset(); enfileirarSpy.mockReset(); espelharSpy.mockReset();
   notificarCategoriaSpy.mockReset(); enfileirarFiscalSpy.mockClear();
+  registrarSpy.mockClear(); agendarSpy.mockClear();
+});
+
+describe('processarAtualizacaoFamilia — registra a conferência no ML (ADR-0195)', () => {
+  const ENVIADO = { V1: { qtd: 3, anterior: 9, variacao_id: 'MLV1' } };
+  const conferencia = () => registrarSpy.mock.calls[0][1];
+
+  it('Legacy: registra modelo variacoes, capados e agenda com a mesma versão, capturada antes do PUT', async () => {
+    const { admin } = fakeAdmin();
+    let antesDoPut = '';
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementationOnce(async () => {
+      antesDoPut = new Date().toISOString();
+      return { ok: true, valor: { variacoesExternas: { V1: 'MLV1' }, precoVivo: null, enviados: ENVIADO } };
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(r.tipo).toBe('ok');
+    expect(conferencia()).toMatchObject({
+      orgId: 'org-1', loteId: 'lote-1', familiaId: 'fam-1', codigoPai: '03103331',
+      itens: [{ itemExternoId: 'MLB-EXISTENTE', modelo: 'variacoes', enviado: ENVIADO, capados: 1 }],
+    });
+    expect(conferencia().enviadoEm <= antesDoPut).toBe(true);
+    expect(agendarSpy).toHaveBeenCalledTimes(1);
+    expect(agendarSpy).toHaveBeenCalledWith('fam-1', conferencia().enviadoEm);
+  });
+
+  it('Legacy item plano: modelo item', async () => {
+    const { admin } = fakeAdmin();
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockResolvedValueOnce({
+      ok: true,
+      valor: { variacoesExternas: { V1: 'MLB-EXISTENTE' }, precoVivo: null, enviados: { V1: { qtd: 5, anterior: 2, variacao_id: null } } },
+    });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(conferencia().itens[0]).toMatchObject({ modelo: 'item', capados: 0 });
+  });
+
+  it('sem enviados (fluxo Adicionar variação) não registra nem agenda', async () => {
+    const { admin } = fakeAdmin();
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(registrarSpy).not.toHaveBeenCalled();
+    expect(agendarSpy).not.toHaveBeenCalled();
+  });
+
+  it('falha ao registrar e ao agendar não muda o desfecho', async () => {
+    // O fakeAdmin não tem upsert e o mock de queue.ts não tem enfileirarConfirmacao: as duas reais falham por dentro.
+    const { admin } = fakeAdmin();
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockResolvedValueOnce({
+      ok: true, valor: { variacoesExternas: { V1: 'MLV1' }, precoVivo: null, enviados: ENVIADO },
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(registrarSpy).toHaveBeenCalledTimes(1);
+    expect(r).toEqual({ tipo: 'ok', itemExternoId: 'MLB-EXISTENTE', novas: 0 });
+  });
+
+  it('UP: registra um item por filho e agenda; versão capturada antes da saga', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
+    let antesDaSaga = '';
+    const enviados = [
+      { itemExternoId: 'MLB-IT1', modelo: 'item' as const, capados: 0, enviado: { V1: { qtd: 5, anterior: null, variacao_id: null } } },
+    ];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => {
+        antesDaSaga = new Date().toISOString();
+        return { estado: 'ok', adicionadas: 0, enviados };
+      },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(conferencia().itens).toEqual(enviados);
+    expect(conferencia().enviadoEm <= antesDaSaga).toBe(true);
+    expect(agendarSpy).toHaveBeenCalledWith('fam-1', conferencia().enviadoEm);
+  });
+
+  it('UP em retry ou erro não registra', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
+    await processarAtualizacaoFamilia(baseDeps(admin, {
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'retry', mensagem: 'x' }),
+    }), JOB, { tentativas: 0 });
+    await processarAtualizacaoFamilia(baseDeps(admin, {
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'erro', mensagem: 'x' }),
+    }), JOB, { tentativas: 0 });
+    expect(registrarSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {

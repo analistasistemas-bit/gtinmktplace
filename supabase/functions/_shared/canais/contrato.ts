@@ -2,6 +2,7 @@
 // E6 (ADR-0061): os tipos canônicos do payload são donos AQUI (o contrato), não em
 // ml/*. Os módulos ML re-exportam para não quebrar imports existentes (inversão de
 // dependência: o canal genérico não depende do ML).
+import type { EnviadoSku } from '../confirmacao/avaliar.ts';
 
 /** Atributo de item no formato canônico: catálogo por id ou personalizado por name. */
 export interface AtributoItem {
@@ -199,6 +200,9 @@ export interface ResultadoAtualizacao {
   /** Preço vivo do anúncio (do GET pré-PUT), p/ o worker gravar preco_publicado_ml em "só estoque"
    *  sem um 2º GET (ADR-0078 F1). null quando nenhuma variação viva tinha price. */
   precoVivo: number | null;
+  /** ADR-0195: o que foi ao canal por SKU, depois do teto. Ausente quando a escrita não mexe em
+   *  estoque (`preservarPublicadas`). */
+  enviados?: Record<string, EnviadoSku>;
 }
 
 /** Um item que vendeu mas está fora do escopo do app (publicado direto no canal). */

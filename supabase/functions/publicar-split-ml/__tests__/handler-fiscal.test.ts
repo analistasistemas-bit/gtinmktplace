@@ -14,6 +14,8 @@ const f = vi.hoisted(() => ({
   espelhos: [] as Array<Array<{ codigo: string }>>,
   conn: {} as Record<string, (...a: unknown[]) => unknown>,
   enfileirarFiscal: vi.fn(async (_id: string, _opts?: { split?: boolean }) => 'msg'),
+  registrar: vi.fn(async (_admin: unknown, _a: { enviadoEm: string; itens: Array<Record<string, unknown>> }) => {}),
+  agendar: vi.fn(async (_id: string, _versao: string) => {}),
 }));
 
 const FAMILIA = {
@@ -85,6 +87,11 @@ vi.mock('../../_shared/anuncios/espelhar.ts', () => ({
   espelharAnuncioExterno: vi.fn(async (_a: unknown, _f: unknown, vars: Array<{ codigo: string }>) => { f.espelhos.push(vars); }),
 }));
 vi.mock('../../_shared/update/fluxo-add-variacao.ts', () => ({ ehFluxoAddVariacao: vi.fn(async () => false) }));
+vi.mock('../../_shared/confirmacao/registrar.ts', async (original) => ({
+  ...(await original<typeof import('../../_shared/confirmacao/registrar')>()),
+  registrarConfirmacao: f.registrar,
+  agendarConfirmacao: f.agendar,
+}));
 
 let handler: (req: Request) => Promise<Response>;
 let fetchSpy: ReturnType<typeof vi.fn>;
@@ -96,6 +103,7 @@ beforeAll(async () => {
 beforeEach(() => {
   f.ncm = 'vencido'; f.escritas = []; f.chamadasML = []; f.rpcs = []; f.variacoes = []; f.linhas = []; f.conn = {}; f.espelhos = [];
   f.enfileirarFiscal = vi.fn(async () => 'msg');
+  f.registrar.mockClear(); f.agendar.mockClear();
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -249,5 +257,75 @@ describe('publicar-split-ml — push fiscal pós-publicação (C1)', () => {
     await post();
     expect(f.escritas.some((w) => w.tabela === 'familias' && w.payload.status === 'erro')).toBe(true);
     expect(f.enfileirarFiscal).not.toHaveBeenCalled();
+  });
+});
+
+describe('publicar-split-ml — conferência no ML (ADR-0195)', () => {
+  const particao = (p: number, item: string, skus: string[]) => ({
+    particao: p, item_externo_id: item, permalink: null, titulo: 'T', atacado_status: null,
+    variacoes_externas: Object.fromEntries(skus.map((s) => [s, { id: `VAR-${s}` }])),
+  });
+  const corDe = (sku: string, estoque: number) => ({
+    id: sku, codigo: sku, cor: sku, estoque, preco_publicacao: 10, preco_publicado_ml: 10,
+    ml_picture_id: 'P', imagem_path: null, gtin: null, ml_variation_id: `VAR-${sku}`,
+  });
+  const ok = (sku: string, qtd: number) => ({
+    ok: true,
+    valor: {
+      variacoesExternas: { [sku]: `VAR-${sku}` }, precoVivo: 10,
+      enviados: { [sku]: { qtd, anterior: 1, variacao_id: `VAR-${sku}` } },
+    },
+  });
+  const cenario = () => {
+    f.variacoes = [corDe('A', 120000), corDe('B', 2)];
+    f.linhas = [particao(0, 'MLB-P0', ['A']), particao(1, 'MLB-P1', ['B'])];
+  };
+
+  it('registra cada partição logo depois de escrita e agenda uma vez, com a mesma versão', async () => {
+    cenario();
+    f.conn.atualizarAnuncio = async (_ctx: unknown, a: unknown) => {
+      const item = (a as { itemExternoId: string }).itemExternoId;
+      return item === 'MLB-P0' ? ok('A', 99999) : ok('B', 2);
+    };
+    await post({ somenteEstoque: true });
+    expect(f.registrar).toHaveBeenCalledTimes(2);
+    const [p0, p1] = f.registrar.mock.calls.map((c) => c[1]);
+    expect(p0.itens).toEqual([expect.objectContaining({ itemExternoId: 'MLB-P0', modelo: 'variacoes', capados: 1 })]);
+    expect(p1.itens).toEqual([expect.objectContaining({ itemExternoId: 'MLB-P1', capados: 0 })]);
+    expect(p1.enviadoEm).toBe(p0.enviadoEm);
+    expect(f.agendar).toHaveBeenCalledTimes(1);
+    expect(f.agendar).toHaveBeenCalledWith('fam-1', p0.enviadoEm);
+  });
+
+  it('erro definitivo depois de uma partição escrita: agenda no catch o que já foi', async () => {
+    cenario();
+    f.conn.atualizarAnuncio = async (_ctx: unknown, a: unknown) => (
+      (a as { itemExternoId: string }).itemExternoId === 'MLB-P0'
+        ? ok('A', 99999)
+        : { ok: false, erro: { status: 400, retentavel: false, mensagemOperador: 'ML recusou' } }
+    );
+    await post({ somenteEstoque: true });
+    expect(f.registrar).toHaveBeenCalledTimes(1);
+    expect(f.agendar).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro retentável não agenda: a próxima tentativa reescreve', async () => {
+    cenario();
+    f.conn.atualizarAnuncio = async (_ctx: unknown, a: unknown) => (
+      (a as { itemExternoId: string }).itemExternoId === 'MLB-P0'
+        ? ok('A', 99999)
+        : { ok: false, erro: { status: 503, retentavel: true, mensagemOperador: 'ML fora' } }
+    );
+    const r = await post({ somenteEstoque: true });
+    expect(r.status).toBe(500);
+    expect(f.agendar).not.toHaveBeenCalled();
+  });
+
+  it('erro antes de escrever: nada registrado nem agendado', async () => {
+    cenario();
+    f.conn.atualizarAnuncio = async () => ({ ok: false, erro: { status: 400, retentavel: false, mensagemOperador: 'ML recusou' } });
+    await post({ somenteEstoque: true });
+    expect(f.registrar).not.toHaveBeenCalled();
+    expect(f.agendar).not.toHaveBeenCalled();
   });
 });

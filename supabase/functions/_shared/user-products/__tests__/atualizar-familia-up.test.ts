@@ -531,6 +531,57 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
 // travada em mudando_composicao=true. Precisa convergir pro skus_esperados JÁ GRAVADO na raiz
 // (o snapshot da mutação interrompida), não pro que `variacoes` diz agora — senão o reconciliador
 // poderia reintroduzir uma cor que o operador já tinha decidido remover num UPDATE mais recente.
+describe('atualizarFamiliaUP — devolve o que enviou para a conferência (ADR-0195)', () => {
+  const filhos = [
+    { sku: 'A', item_externo_id: 'MLB-A', retirado: false, status: 'ativo' },
+    { sku: 'B', item_externo_id: 'MLB-B', retirado: false, status: 'ativo' },
+    { sku: 'C', item_externo_id: 'MLB-C', retirado: true, status: 'pausado' },
+    { sku: 'D', item_externo_id: null, retirado: false, status: 'pendente' },
+    { sku: 'FORA', item_externo_id: 'MLB-F', retirado: false, status: 'ativo' },
+  ];
+  const variacoes = [
+    { codigo: 'A', cor: 'Azul', estoque: 3 }, { codigo: 'B', cor: 'Bege', estoque: 0 },
+    { codigo: 'C', cor: 'Cinza', estoque: 9 }, { codigo: 'D', cor: 'Dourado', estoque: 9 },
+  ] as never;
+
+  it.each(['sem_mudanca', 'concluido'] as const)('%s: um item por filho ativo desejado', async (tipo) => {
+    const { admin } = fakeAdmin(filhos);
+    const r = await atualizarFamiliaUP(args({
+      admin, variacoes, somenteEstoque: true,
+      executarSaga: async () => (tipo === 'concluido' ? { tipo, criadas: [] } : { tipo }),
+    }));
+    expect(r).toMatchObject({
+      estado: 'ok',
+      enviados: [
+        { itemExternoId: 'MLB-A', modelo: 'item', capados: 0, enviado: { A: { qtd: 3, anterior: null, variacao_id: null } } },
+        { itemExternoId: 'MLB-B', modelo: 'item', capados: 0, enviado: { B: { qtd: 0, anterior: null, variacao_id: null } } },
+      ],
+    });
+  });
+
+  it('Adicionar variação não registra', async () => {
+    const { admin } = fakeAdmin(filhos);
+    const r = await atualizarFamiliaUP(args({
+      admin, variacoes, preservarPublicadas: true, executarSaga: async () => ({ tipo: 'sem_mudanca' }),
+    }));
+    expect(r).toMatchObject({ estado: 'ok' });
+    expect((r as { enviados?: unknown }).enviados).toBeUndefined();
+  });
+
+  it('falha ao ler os filhos não derruba o desfecho', async () => {
+    const base = fakeAdmin(filhos).admin as unknown as { from: (t: string) => unknown; storage: unknown };
+    const admin = {
+      ...base,
+      from: (t: string) => (t === 'anuncios_externos_itens'
+        ? { select: () => ({ eq: async () => ({ data: null, error: { message: 'boom' } }) }) }
+        : base.from(t)),
+    } as never;
+    const r = await atualizarFamiliaUP(args({ admin, variacoes, somenteEstoque: true, executarSaga: async () => ({ tipo: 'sem_mudanca' }) }));
+    expect(r).toMatchObject({ estado: 'ok' });
+    expect((r as { enviados?: unknown }).enviados).toBeUndefined();
+  });
+});
+
 describe('atualizarFamiliaUP — skusDesejadosOverride (reconciliador de convergência)', () => {
   it('quando fornecido, executarSaga recebe o override em vez de variacoes.map(codigo)', async () => {
     const { admin } = fakeAdmin();

@@ -216,6 +216,63 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
   });
 });
 
+describe('atualizarAnuncio devolve o que enviou (ADR-0195)', () => {
+  const variacao = (id: number, sku: string, qtd: number) => ({
+    id, seller_custom_field: sku, available_quantity: qtd, price: 10, picture_ids: [], attribute_combinations: [],
+  });
+  const get = { id: 'MLB1', status: 'active', variations: [variacao(1, 'A', 5), variacao(2, 'B', 6), variacao(3, 'C', 7)], pictures: [] };
+  const base: AtualizacaoCanonica = {
+    itemExternoId: 'MLB1',
+    existentes: [{ sku: 'A', estoque: 90000, cor: null }, { sku: 'B', estoque: 90000, cor: null }, { sku: 'C', estoque: 10, cor: null }],
+    novas: [],
+    capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+    marca: null, dimensoes: null, precoFamilia: null, somenteEstoque: true,
+  };
+
+  it('soma acima de 99.999: enviados traz os valores cortados e o saldo anterior do GET', async () => {
+    const put = stubFetch(get);
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, base);
+    expect(res.valor?.enviados).toEqual({
+      A: { qtd: 49994, anterior: 5, variacao_id: '1' },
+      B: { qtd: 49994, anterior: 6, variacao_id: '2' },
+      C: { qtd: 10, anterior: 7, variacao_id: '3' },
+    });
+    expect(put().variations.map((v: { available_quantity: number }) => v.available_quantity)).toEqual([49994, 49994, 10]);
+  });
+
+  it('SKU pedido que não está no anúncio não recebeu escrita: entra sem variação, para a conferência acusar', async () => {
+    stubFetch(get);
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, {
+      ...base, existentes: [{ sku: 'Z', estoque: 4, cor: null }],
+    });
+    expect(res.valor?.enviados).toEqual({ Z: { qtd: 4, anterior: null, variacao_id: null } });
+  });
+
+  it('cor nova entra com o id casado no refetch', async () => {
+    stubFetch({ ...get, variations: [...get.variations, variacao(4, 'N', 2)] });
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, {
+      ...base,
+      existentes: [{ sku: 'A', estoque: 1, cor: null }],
+      novas: [{ sku: 'N', cor: 'Azul', estoque: 2, preco: 10, gtin: null, fotoId: null }],
+      somenteEstoque: false,
+    });
+    expect(res.valor?.enviados?.N).toEqual({ qtd: 2, anterior: null, variacao_id: '4' });
+  });
+
+  it('item plano: enviados com o SKU único', async () => {
+    stubFetch({ id: 'MLB1', status: 'active', variations: [], pictures: [], price: 100, available_quantity: 10 });
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, { ...base, existentes: [{ sku: 'A', estoque: 15, cor: null }] });
+    expect(res.valor?.enviados).toEqual({ A: { qtd: 15, anterior: 10, variacao_id: null } });
+  });
+
+  it('preservarPublicadas não escreve estoque: sem enviados', async () => {
+    stubFetch(get);
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, { ...base, preservarPublicadas: true });
+    expect(res.ok).toBe(true);
+    expect(res.valor?.enviados).toBeUndefined();
+  });
+});
+
 describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
   const anuncioBase: AnuncioCanonico = {
     titulo: 'Kit Agulha Crochê',

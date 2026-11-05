@@ -32,6 +32,9 @@ import { montarMensagemFamiliaSemItem } from '../_shared/notificacoes/estoque.ts
 import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
+import {
+  agendarConfirmacao, itemConfirmarLegacy, registrarConfirmacao, type ItemConfirmar,
+} from '../_shared/confirmacao/registrar.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -227,15 +230,27 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       }
     };
 
+    // ADR-0195: grava o que foi ao ML e agenda a conferência. Não lança; retry que reescreve faz
+    // upsert com `enviado_em` novo, e o job desta escrita perde o claim.
+    const conferir = async (enviadoEm: string, itens: ItemConfirmar[]): Promise<void> => {
+      await registrarConfirmacao(admin, {
+        orgId: familia.org_id as string, loteId: job.lote_id, familiaId: job.familia_id,
+        codigoPai: familia.codigo_pai as string, enviadoEm, itens,
+      });
+      await agendarConfirmacao(job.familia_id, enviadoEm);
+    };
+
     // Entrega a família à mini-saga de composição. Usada por DOIS caminhos: o atalho local (linhas
     // filhas já existem) e, depois da adoção, o caminho de família migrada pelo ML (ADR-0104).
     const rodarUP = async (raiz: { id: string; titulo: string | null }): Promise<ResultadoProcessar> => {
       if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      const enviadoEm = new Date().toISOString();
       const r = await atualizarUP({
         admin, conn, ctx, conexao, familia, raiz: raiz as never, variacoes: variacoes as never,
         somenteEstoque: !!job.somenteEstoque, preservarPublicadas, tentativas, marcaProduto: (familia.marca as string | null) ?? null,
       });
       if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
+      if (r.estado === 'ok' && r.enviados) await conferir(enviadoEm, r.enviados);
       await finalizarLote(job.lote_id);
       if (r.estado === 'ok') {
         // ADR-0135 (fix round 1): rota UP também enfileira — o ML replica fiscal_information
@@ -365,6 +380,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // O conector encapsula o GET estado → montar variações/novas → PUT → refetch → casar
     // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
     // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
+    const enviadoEm = new Date().toISOString();
     const res = await conn.atualizarAnuncio(ctx, {
       itemExternoId: familia.ml_item_id,
       existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
@@ -500,6 +516,10 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       (err as { retentavel?: boolean }).retentavel = e.retentavel;
       throw err;
     }
+
+    // Logo depois do PUT: se algo abaixo falhar, o estoque já foi ao ML e a conferência continua valendo.
+    const itemConferir = itemConfirmarLegacy(familia.ml_item_id, res.valor!, variacoes);
+    if (itemConferir) await conferir(enviadoEm, [itemConferir]);
 
     // Casa o ml_variation_id das cores novas (idempotente). variacoesExternas: sku → id externo.
     const persistidas = new Set<string>();
