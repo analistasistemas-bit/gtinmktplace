@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarMensagemConfirmacaoFalhou, montarMensagemEstoqueZerado, montarMensagemVoltaAoAr } from '../estoque';
+import { montarMensagemConfirmacaoFalhou, montarMensagemEstoqueZerado, montarMensagemTetoAnuncio, montarMensagemVoltaAoAr } from '../estoque';
 
 const base = {
   produto: 'Sabonete Líquido Nivea 200ml',
@@ -83,5 +83,14 @@ describe('montarMensagemVoltaAoAr', () => {
     expect(m).toContain('Voltou ao ar');
     expect(m).toContain(base.produto);
     expect(m).toContain(base.permalink);
+  });
+});
+
+describe('montarMensagemTetoAnuncio (ADR-0195)', () => {
+  it('cita produto, anúncio e quantas cores aparecem com menos estoque', () => {
+    expect(montarMensagemTetoAnuncio({ codigoPai: '02835002', itemExternoId: 'MLB1', capados: 3 })).toBe(
+      '📦 Anúncio acima do limite do Mercado Livre: produto 02835002, anúncio MLB1.\n'
+      + '3 cor(es) aparecem com menos estoque no anúncio. O saldo real segue no PubliAI.',
+    );
   });
 });

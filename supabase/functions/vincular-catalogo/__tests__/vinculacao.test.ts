@@ -5,6 +5,7 @@ import {
   rodarVinculacaoCatalogo,
   guardKitVinculado,
   anuncioSemVariacao,
+  variacoesDoEspelho,
 } from '../vinculacao';
 
 // Fake admin configurável por tabela; cada query é thenable e devolve o dataset da tabela.
@@ -208,5 +209,27 @@ describe('anuncioSemVariacao — alerta no-match fala do anúncio, não de "vari
   it('UP com 1 item só é sem variação; com 2+ itens não', () => {
     expect(anuncioSemVariacao({ tipo: 'up', mlItemId: 'MLB1', qtdItensUP: 1 })).toBe(true);
     expect(anuncioSemVariacao({ tipo: 'up', mlItemId: 'MLB1', qtdItensUP: 2 })).toBe(false);
+  });
+});
+
+describe('variacoesDoEspelho (ADR-0195)', () => {
+  const vars = [{ codigo: 'A' }, { codigo: 'B' }, { codigo: 'C' }];
+
+  it('família de 1 partição segue com todas as variações', () => {
+    expect(variacoesDoEspelho(vars, [{ particao: 0, variacoes_externas: { A: {} } }])).toEqual(vars);
+    expect(variacoesDoEspelho(vars, [])).toEqual(vars);
+  });
+
+  it('família com 2+ partições espelha só os SKUs do mapa da partição 0', () => {
+    expect(variacoesDoEspelho(vars, [
+      { particao: 1, variacoes_externas: { B: {}, C: {} } },
+      { particao: 0, variacoes_externas: { A: {} } },
+    ])).toEqual([{ codigo: 'A' }]);
+  });
+
+  it('mapa nulo não espelha nada', () => {
+    expect(variacoesDoEspelho(vars, [
+      { particao: 0, variacoes_externas: null }, { particao: 1, variacoes_externas: { B: {} } },
+    ])).toEqual([]);
   });
 });

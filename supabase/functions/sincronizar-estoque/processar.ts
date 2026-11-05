@@ -15,7 +15,7 @@ import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import {
-  montarMensagemEstoqueZerado, montarMensagemVoltaAoAr, type VariacaoZerada,
+  montarMensagemEstoqueZerado, montarMensagemTetoAnuncio, montarMensagemVoltaAoAr, type VariacaoZerada,
 } from '../_shared/notificacoes/estoque.ts';
 
 /**
@@ -407,6 +407,13 @@ export async function processarSincronizacao(
         continue;
       }
       const r = await conn.atualizarEstoque({ getToken }, alvo.itemExternoId, alvo.estoques);
+      // ADR-0195: uma vez por anúncio, e falha aqui nunca vira retentativa do push.
+      if (r.ok && r.valor?.capados) {
+        await notificar(admin, org_id, 'estoque', montarMensagemTetoAnuncio({
+          codigoPai: alvo.origem.codigoPai, itemExternoId: alvo.itemExternoId, capados: r.valor.capados,
+        }), { chave: `teto:${alvo.itemExternoId}` })
+          .catch((e) => console.error('estoque_alerta_teto_falhou', alvo.itemExternoId, String(e)));
+      }
       if (!r.ok && r.erro?.retentavel) retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}`);
       if (!r.ok && !r.erro?.retentavel) {
         console.error('estoque_push_definitivo', alvo.canal, alvo.itemExternoId, r.erro);

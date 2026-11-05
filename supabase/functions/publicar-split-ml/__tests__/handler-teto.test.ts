@@ -72,6 +72,8 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
   }),
 }));
 
+import { enfileirarConfirmacao } from '../../_shared/queue.ts';
+
 let handler: (req: Request) => Promise<Response>;
 beforeAll(async () => {
   vi.stubGlobal('Deno', { serve: f.serve, env: { get: () => 'http://localhost' } });
@@ -91,6 +93,7 @@ const cor = (codigo: string, nome: string, estoque: number, over: Linha = {}): L
 beforeEach(() => {
   f.familia = { ...FAMILIA }; f.linhas = []; f.criados = []; f.atualizados = []; f.confirmacoes = [];
   f.variacoes = [cor('A', 'Azul', 60_000), cor('B', 'Rosa', 60_000)];
+  vi.mocked(enfileirarConfirmacao).mockClear();
 });
 
 const rodar = async (job: Linha = {}) => {
@@ -123,5 +126,19 @@ describe('publicar-split-ml — divisão por soma (ADR-0195)', () => {
     await rodar({ somenteEstoque: true });
     expect(f.criados).toEqual([]);
     expect(f.atualizados.map((a) => a.novas.map((n) => n.sku))).toEqual([['N']]);
+  });
+});
+
+describe('publicar-split-ml — conferência do CREATE (ADR-0195)', () => {
+  it('registra o enviado depois do teto, com `capados`, e agenda a conferência', async () => {
+    f.variacoes = [cor('A', 'Azul', 150_000), cor('B', 'Rosa', 10)];
+    await rodar();
+    expect(f.confirmacoes.map((c) => c.item_externo_id)).toEqual(['MLB1', 'MLB2']);
+    expect(f.confirmacoes[0]).toMatchObject({
+      modelo: 'variacoes', capados: 1, status: 'aguardando',
+      enviado: { A: { qtd: 99_999, anterior: null, variacao_id: '100' } },
+    });
+    expect(f.confirmacoes[1]).toMatchObject({ capados: 0, enviado: { B: { qtd: 10, anterior: null, variacao_id: '200' } } });
+    expect(enfileirarConfirmacao).toHaveBeenCalledTimes(1);
   });
 });

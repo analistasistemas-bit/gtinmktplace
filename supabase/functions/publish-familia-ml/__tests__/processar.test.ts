@@ -545,3 +545,36 @@ describe('processarFamiliaML — NCM fora da tabela oficial (ADR-0187)', () => {
     expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
   });
 });
+
+describe('processarFamiliaML — CREATE cortado pelo teto (ADR-0195)', () => {
+  beforeEach(() => fakeConnector.reset());
+  const cores = (a: number, b: number) => multiCor().map((v, i) => ({ ...v, estoque: i === 0 ? a : b }));
+
+  it('soma acima do limite: avisa com a chave do anúncio', async () => {
+    const notificar = vi.fn(async () => 1);
+    const { admin } = fakeAdmin({ variacoes: cores(80_000, 80_000) });
+    const r = await processarFamiliaML(baseDeps(admin, { notificar }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    const item = (r as { itemExternoId: string }).itemExternoId;
+    expect(notificar).toHaveBeenCalledTimes(1);
+    expect(notificar).toHaveBeenCalledWith(
+      admin, FAMILIA_BASE.org_id, 'estoque', expect.stringContaining(`anúncio ${item}`), { chave: `teto:${item}` },
+    );
+  });
+
+  it('soma dentro do limite: não avisa', async () => {
+    const notificar = vi.fn(async () => 1);
+    const { admin } = fakeAdmin({ variacoes: cores(60_000, 39_999) });
+    await processarFamiliaML(baseDeps(admin, { notificar }), JOB, { tentativas: 0 });
+    expect(notificar).not.toHaveBeenCalled();
+  });
+
+  it('falha ao avisar não desfaz a publicação', async () => {
+    const notificar = vi.fn(async () => { throw new Error('fora do ar'); });
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { admin } = fakeAdmin({ variacoes: cores(80_000, 80_000) });
+    const r = await processarFamiliaML(baseDeps(admin, { notificar }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    erro.mockRestore();
+  });
+});

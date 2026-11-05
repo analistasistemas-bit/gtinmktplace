@@ -31,6 +31,12 @@ export function montarMensagemFamiliaSemItem(a: { produto: string | null; codigo
     + `Produto ${a.codigoPai}: ${a.qtdCores} cor(es) sem anúncio confirmado. Nada foi enviado; precisa de correção manual.`;
 }
 
+/** ADR-0195: o teto cortou o que o anúncio mostra; o saldo real não mudou. */
+export function montarMensagemTetoAnuncio(a: { codigoPai: string; itemExternoId: string; capados: number }): string {
+  return `📦 Anúncio acima do limite do Mercado Livre: produto ${a.codigoPai}, anúncio ${a.itemExternoId}.\n`
+    + `${a.capados} cor(es) aparecem com menos estoque no anúncio. O saldo real segue no PubliAI.`;
+}
+
 /** ADR-0195: o ML seguiu diferente do enviado depois das 3 leituras. Cita até 10 SKUs. */
 export function montarMensagemConfirmacaoFalhou(a: {
   produto: string | null;

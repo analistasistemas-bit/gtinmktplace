@@ -295,3 +295,52 @@ describe('processarConfirmacao — veredito (ADR-0195)', () => {
     expect(Object.keys(d).some((k) => /conn|conector|atualizar/i.test(k))).toBe(false);
   });
 });
+
+describe('processarConfirmacao — aviso de anúncio acima do limite (ADR-0195)', () => {
+  const avisos = (d: DepsConfirmacao) => (d.notificarCategoria as unknown as ReturnType<typeof vi.fn>).mock.calls
+    .filter((c) => (c[4] as { chave: string }).chave.startsWith('teto:'));
+
+  it('conferência fechada com `capados` avisa com a chave do anúncio', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 2 })] });
+    const d = deps(f.admin);
+    await processarConfirmacao(d, JOB);
+    expect(avisos(d)).toHaveLength(1);
+    expect(avisos(d)[0]).toEqual([
+      f.admin, 'org-1', 'estoque', expect.stringContaining('produto 000, anúncio MLB1'), { chave: 'teto:MLB1' },
+    ]);
+  });
+
+  it('leitura ainda pendente não avisa: só no fechamento', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 2 })] });
+    const d = deps(f.admin, { lerEstoqueItens: lerOk(7) as never });
+    await processarConfirmacao(d, JOB);
+    expect(avisos(d)).toEqual([]);
+  });
+
+  it('sem `capados` não avisa', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 0 })] });
+    const d = deps(f.admin);
+    await processarConfirmacao(d, JOB);
+    expect(avisos(d)).toEqual([]);
+  });
+
+  it('versão superada não avisa', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 2 })], maisNovas: [{ item_externo_id: 'MLB1' }] });
+    const d = deps(f.admin);
+    await processarConfirmacao(d, JOB);
+    expect(avisos(d)).toEqual([]);
+  });
+
+  it('fechamento perdido para upsert novo não avisa', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 2 })], fechamentoPerdido: true });
+    const d = deps(f.admin);
+    await processarConfirmacao(d, JOB);
+    expect(avisos(d)).toEqual([]);
+  });
+
+  it('falha ao notificar não derruba a conferência', async () => {
+    const f = fakeAdmin({ linhas: [linhaBase({ capados: 2 })] });
+    const d = deps(f.admin, { notificarCategoria: vi.fn(async () => { throw new Error('fora do ar'); }) as never });
+    expect((await processarConfirmacao(d, JOB)).status).toBe(200);
+  });
+});

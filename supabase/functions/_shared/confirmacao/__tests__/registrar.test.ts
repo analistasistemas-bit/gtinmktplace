@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { enfileirarSpy } = vi.hoisted(() => ({ enfileirarSpy: vi.fn(async () => 'msg') }));
 vi.mock('../../queue.ts', () => ({ enfileirarConfirmacao: enfileirarSpy }));
 
-import { agendarConfirmacao, itemConfirmarLegacy, registrarConfirmacao, type ItemConfirmar } from '../registrar';
+import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao, type ItemConfirmar } from '../registrar';
 
 const ITEM: ItemConfirmar = {
   itemExternoId: 'MLB1', modelo: 'variacoes', capados: 1,
@@ -82,5 +82,33 @@ describe('itemConfirmarLegacy (ADR-0195)', () => {
 
   it('sem enviados não há o que conferir', () => {
     expect(itemConfirmarLegacy('MLB1', { variacoesExternas: {}, precoVivo: null }, [])).toBeNull();
+  });
+});
+
+describe('itemConfirmarCriado (ADR-0195)', () => {
+  it('guarda o enviado depois do teto, sem saldo anterior, e conta os capados', () => {
+    const r = itemConfirmarCriado(
+      { itemExternoId: 'MLB1', variacoesExternas: { A: '11', B: '12', C: '13' } },
+      [{ sku: 'A', estoque: 80_000 }, { sku: 'B', estoque: 80_000 }, { sku: 'C', estoque: 0 }],
+    );
+    expect(r).toEqual({
+      itemExternoId: 'MLB1', modelo: 'variacoes', capados: 2,
+      enviado: {
+        A: { qtd: 49_999, anterior: null, variacao_id: '11' },
+        B: { qtd: 49_999, anterior: null, variacao_id: '12' },
+        C: { qtd: 0, anterior: null, variacao_id: '13' },
+      },
+    });
+  });
+
+  it('dentro do limite: enviado = pedido, capados 0', () => {
+    const r = itemConfirmarCriado({ itemExternoId: 'MLB1', variacoesExternas: { A: '11' } }, [{ sku: 'A', estoque: 5 }]);
+    expect(r.capados).toBe(0);
+    expect(r.enviado.A.qtd).toBe(5);
+  });
+
+  it('item plano confere pela raiz; SKU sem vínculo entra sem variação', () => {
+    expect(itemConfirmarCriado({ itemExternoId: 'MLB1', variacoesExternas: { A: 'MLB1' } }, [{ sku: 'A', estoque: 5 }]).modelo).toBe('item');
+    expect(itemConfirmarCriado({ itemExternoId: 'MLB1', variacoesExternas: {} }, [{ sku: 'A', estoque: 5 }]).enviado.A.variacao_id).toBeNull();
   });
 });

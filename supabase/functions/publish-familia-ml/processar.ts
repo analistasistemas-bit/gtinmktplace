@@ -25,6 +25,9 @@ import {
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { publicarFamiliaUP, type PublicarFamiliaUPArgs, type ResultadoUP } from '../_shared/user-products/publicar-familia-up.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+import { itemConfirmarCriado } from '../_shared/confirmacao/registrar.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemTetoAnuncio } from '../_shared/notificacoes/estoque.ts';
 
 export interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -42,6 +45,7 @@ export interface ProcessarDeps {
   formatoRepo?: FormatoRepo;
   publicarUP?: (args: PublicarFamiliaUPArgs) => Promise<ResultadoUP>;
   finalizarLote?: (loteId: string) => Promise<void>;
+  notificar?: typeof notificarCategoria;
 }
 export interface ProcessarOpts { tentativas: number }
 
@@ -347,6 +351,15 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       ml_permalink: ref.permalink ?? null,
       publicado_em: new Date().toISOString(),
     }, varsEspelho ?? []);
+
+    // ADR-0195: CREATE acima do teto sem formato `legacy` confirmado não divide e sai cortado.
+    const { capados } = itemConfirmarCriado(ref, anuncio.variacoes);
+    if (capados > 0) {
+      await (deps.notificar ?? notificarCategoria)(admin, familia.org_id, 'estoque', montarMensagemTetoAnuncio({
+        codigoPai: familia.codigo_pai, itemExternoId: ref.itemExternoId, capados,
+      }), { chave: `teto:${ref.itemExternoId}` })
+        .catch((e) => console.error(`aviso de teto falhou para ${ref.itemExternoId}:`, (e as Error).message));
+    }
 
     // ADR-0151 D-2 — sequenciamento: os kits marcados na Revisão só publicam DEPOIS que o
     // CREATE da base confirmou. Se a base falha, nenhum kit vai ao ar; o operador corrige e

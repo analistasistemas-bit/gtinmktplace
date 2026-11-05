@@ -611,3 +611,50 @@ describe('reativação de Kit Virtual na reposição', () => {
     expect(kitReativado()).toEqual([]);
   });
 });
+
+describe('aviso de anúncio acima do limite (ADR-0195)', () => {
+  const db = (): DB => ({
+    familia: { id: 'f1' },
+    variacoes: [{ codigo: 'A1', estoque: 120_000 }],
+    anuncios: [{ id: 'x', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { A1: {} } }],
+    itensUP: [],
+  });
+  const conector = (valor?: { capados?: number }) => (() => ({
+    capabilities: { atualizarEstoque: true },
+    atualizarEstoque: async () => ({ ok: true, valor }),
+  })) as unknown as DepsSincronizacao['getConnector'];
+
+  it('push com `capados` avisa na categoria estoque, chave por anúncio', async () => {
+    const notificar = vi.fn(async () => 1);
+    const r = await processarSincronizacao(deps(db(), { notificar, getConnector: conector({ capados: 2 }) }), JOB);
+    expect(r.status).toBe(200);
+    expect(notificar).toHaveBeenCalledWith(
+      expect.anything(), 'org-1', 'estoque', expect.stringContaining('produto P001, anúncio FK1'), { chave: 'teto:FK1' },
+    );
+  });
+
+  it('reentrega usa a mesma chave: quem deduplica é a notificação', async () => {
+    const notificar = vi.fn(async () => 1);
+    const d = deps(db(), { notificar, getConnector: conector({ capados: 2 }) });
+    await processarSincronizacao(d, JOB);
+    await processarSincronizacao(d, JOB);
+    const chaves = (notificar.mock.calls as unknown[][]).map((c) => c[4]);
+    expect(chaves).toEqual([{ chave: 'teto:FK1' }, { chave: 'teto:FK1' }]);
+  });
+
+  it('falha ao notificar não vira retentável', async () => {
+    const notificar = vi.fn(async () => { throw new Error('fora do ar'); });
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await processarSincronizacao(deps(db(), { notificar, getConnector: conector({ capados: 2 }) }), JOB);
+    expect(r.status).toBe(200);
+    expect(erro).toHaveBeenCalled();
+    erro.mockRestore();
+  });
+
+  it('sem `capados`: não avisa', async () => {
+    const notificar = vi.fn(async () => 1);
+    await processarSincronizacao(deps(db(), { notificar, getConnector: conector({ capados: 0 }) }), JOB);
+    await processarSincronizacao(deps(db(), { notificar, getConnector: conector() }), JOB);
+    expect(notificar).not.toHaveBeenCalled();
+  });
+});

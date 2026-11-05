@@ -30,7 +30,7 @@ import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem-revinculo.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
-import { agendarConfirmacao, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
+import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -328,6 +328,13 @@ Deno.serve(async (req) => {
           user_id: familia.user_id, org_id: familia.org_id, codigo_pai: familia.codigo_pai,
           ml_item_id: itemIdP, ml_permalink: permalinkP, publicado_em: new Date().toISOString(),
         }, varsRef, { particao: p, titulo: tituloP });
+
+        // ADR-0195: o CREATE entra na conferência, que também avisa se a partição saiu cortada.
+        await registrarConfirmacao(admin, {
+          orgId: familia.org_id as string, loteId: job.lote_id, familiaId: job.familia_id,
+          codigoPai: familia.codigo_pai as string, enviadoEm, itens: [itemConfirmarCriado(ref, anuncio.variacoes)],
+        });
+        conferenciaRegistrada = true;
 
         // ADR-0078 F1: no CREATE não há "só estoque" — grava o preço enviado por SKU
         // (preco_publicacao, base do badge "preço alterado"), espelhando o publish normal.

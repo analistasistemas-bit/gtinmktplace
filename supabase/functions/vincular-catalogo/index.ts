@@ -7,7 +7,7 @@ import { decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizar
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarMensagemCatalogoNoMatch, montarMensagemCatalogoAutoDivergente } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { rodarVinculacaoCatalogo, guardKitVinculado, anuncioSemVariacao, type FilhoCatalogoUP } from './vinculacao.ts';
+import { rodarVinculacaoCatalogo, guardKitVinculado, anuncioSemVariacao, variacoesDoEspelho, type FilhoCatalogoUP } from './vinculacao.ts';
 
 // `alertar` vive só no body do job (spec §1.4): estendido aqui por interseção para não tocar
 // queue.ts — mudar o arquivo compartilhado arrastaria a frota QStash inteira para o redeploy.
@@ -124,14 +124,22 @@ Deno.serve(async (req) => {
       const { data: varsEspelho } = await admin.from('variacoes')
         .select('codigo, cor, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status, excluida_da_publicacao')
         .eq('familia_id', job.familia_id);
-      await espelharAnuncioExterno(admin, {
-        user_id: familia.user_id,
-        org_id: familia.org_id,
-        codigo_pai: familia.codigo_pai,
-        ml_item_id: familia.ml_item_id,
-        ml_permalink: familia.ml_permalink ?? null,
-        publicado_em: familia.publicado_em ?? null,
-      }, varsEspelho ?? []);
+      const { data: particoes, error: errParticoes } = await admin.from('anuncios_externos')
+        .select('particao, variacoes_externas')
+        .eq('org_id', familia.org_id).eq('canal', CANAL).eq('codigo_pai', familia.codigo_pai);
+      // ADR-0195: sem saber as partições não espelha. O espelho é best-effort; poluir o mapa não é.
+      if (errParticoes) {
+        console.error(`vincular-catalogo: leitura das partições falhou para ${job.familia_id}:`, errParticoes.message);
+      } else {
+        await espelharAnuncioExterno(admin, {
+          user_id: familia.user_id,
+          org_id: familia.org_id,
+          codigo_pai: familia.codigo_pai,
+          ml_item_id: familia.ml_item_id,
+          ml_permalink: familia.ml_permalink ?? null,
+          publicado_em: familia.publicado_em ?? null,
+        }, variacoesDoEspelho(varsEspelho ?? [], particoes ?? []));
+      }
       cores = [...new Set((varsEspelho ?? [])
         .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto' || v.catalog_status === 'nao_elegivel' || v.catalog_status === 'pendente')
         .map((v) => (v as { cor?: string | null }).cor)

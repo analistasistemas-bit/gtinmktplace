@@ -4,7 +4,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { ConexaoCanal, resolverConexao } from '../_shared/canais/conexao.ts';
 import { avaliarConfirmacao, proximoPasso, type Divergente, type EnviadoSku } from '../_shared/confirmacao/avaliar.ts';
 import type { lerEstoqueItens, EstoqueItem } from '../_shared/ml/ler-estoque-itens.ts';
-import { montarMensagemConfirmacaoFalhou } from '../_shared/notificacoes/estoque.ts';
+import { montarMensagemConfirmacaoFalhou, montarMensagemTetoAnuncio } from '../_shared/notificacoes/estoque.ts';
 import type { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import type { ConfirmarJob, enfileirarConfirmacao } from '../_shared/queue.ts';
 
@@ -29,6 +29,7 @@ interface LinhaConfirmacao {
   item_externo_id: string;
   modelo: 'variacoes' | 'item';
   enviado: Record<string, EnviadoSku>;
+  capados: number;
 }
 
 /** Saldo vivo dos itens. Falha de conexão ou token vira leitura vazia, nunca veredito. */
@@ -96,6 +97,14 @@ export async function processarConfirmacao(
     return (fechadas ?? []).length > 0;
   };
 
+  // ADR-0195: só a versão vigente avisa do teto; a superada deixa para a conferência dela.
+  const acimaDoTeto: LinhaConfirmacao[] = [];
+  const fecharVigente = async (l: LinhaConfirmacao, campos: Record<string, unknown>): Promise<boolean> => {
+    const fechou = await fechar(l, campos);
+    if (fechou && l.capados > 0) acimaDoTeto.push(l);
+    return fechou;
+  };
+
   // Outra família (lote mais novo) escreveu depois no mesmo item: a conferência é dela.
   const orgId = linhas[0].org_id;
   const { data: maisNovas } = await admin.from(TABELA).select('item_externo_id')
@@ -122,14 +131,14 @@ export async function processarConfirmacao(
       const passo = proximoPasso({
         ok: false, naoAplicada: false, explicavelPorMovimento: false, leituraFalhou: true, tentativa: job.tentativa,
       });
-      if ('reler' in passo) { reler = passo.reler; pendentes.push(l); } else await fechar(l, { status: passo.status });
+      if ('reler' in passo) { reler = passo.reler; pendentes.push(l); } else await fecharVigente(l, { status: passo.status });
       continue;
     }
     const observado = observadoDe(l, lido);
     const avaliacao = avaliarConfirmacao({ enviado: l.enviado, observado, movimentos: movimentos.total, movimentosMl: movimentos.ml });
     const passo = proximoPasso({ ...avaliacao, leituraFalhou: false, tentativa: job.tentativa });
     if ('reler' in passo) { reler = passo.reler; pendentes.push(l); continue; }
-    const fechou = await fechar(l, { status: passo.status, observado, divergentes: avaliacao.divergentes });
+    const fechou = await fecharVigente(l, { status: passo.status, observado, divergentes: avaliacao.divergentes });
     // Sem fechamento a versão foi superada por upsert novo: quem avisa é a conferência dela.
     if (fechou && passo.status === 'falhou') falhas.push(...avaliacao.divergentes);
   }
@@ -139,7 +148,7 @@ export async function processarConfirmacao(
       await deps.enfileirarConfirmacao({ familia_id: job.familia_id, tentativa: job.tentativa + 1, versao: job.versao }, reler);
     } catch (e) {
       console.error(`conferência: reagendar falhou (${job.familia_id}):`, (e as Error).message);
-      for (const l of pendentes) await fechar(l, { status: 'inconclusivo' });
+      for (const l of pendentes) await fecharVigente(l, { status: 'inconclusivo' });
     }
   }
 
@@ -156,6 +165,16 @@ export async function processarConfirmacao(
       });
     } catch (e) {
       console.error(`conferência: aviso falhou (${job.familia_id}):`, (e as Error).message);
+    }
+  }
+
+  for (const l of acimaDoTeto) {
+    try {
+      await deps.notificarCategoria(admin, orgId, 'estoque', montarMensagemTetoAnuncio({
+        codigoPai: l.codigo_pai, itemExternoId: l.item_externo_id, capados: l.capados,
+      }), { chave: `teto:${l.item_externo_id}` });
+    } catch (e) {
+      console.error(`conferência: aviso de teto falhou (${l.item_externo_id}):`, (e as Error).message);
     }
   }
   return { status: 200, body: { ok: true } };

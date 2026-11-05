@@ -1,8 +1,9 @@
 // ADR-0195: grava o que o worker enviou e agenda a conferência. O anúncio já foi escrito quando isto
 // roda, então nada aqui derruba a publicação: linha sem job vira inconclusiva na tela pelo teto de 20 min.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import type { ResultadoAtualizacao } from '../canais/contrato.ts';
+import type { RefAnuncio, ResultadoAtualizacao } from '../canais/contrato.ts';
 import { enfileirarConfirmacao } from '../queue.ts';
+import { caparEstoque } from '../split/capar-estoque.ts';
 import type { EnviadoSku } from './avaliar.ts';
 
 export interface ItemConfirmar {
@@ -26,6 +27,22 @@ export function itemConfirmarLegacy(
     modelo: Object.values(r.variacoesExternas).includes(itemExternoId) ? 'item' : 'variacoes',
     enviado,
     capados: estoques.filter((v) => v.codigo in enviado && v.estoque > enviado[v.codigo].qtd).length,
+  };
+}
+
+/** Item recém-criado: o conector capa o CREATE com o mesmo `caparEstoque`, e não há saldo anterior. */
+export function itemConfirmarCriado(
+  ref: Pick<RefAnuncio, 'itemExternoId' | 'variacoesExternas'>,
+  variacoes: Array<{ sku: string; estoque: number }>,
+): ItemConfirmar {
+  const teto = caparEstoque(variacoes);
+  return {
+    itemExternoId: ref.itemExternoId,
+    modelo: Object.values(ref.variacoesExternas).includes(ref.itemExternoId) ? 'item' : 'variacoes',
+    enviado: Object.fromEntries(variacoes.map((v) => [
+      v.sku, { qtd: teto.get(v.sku)!, anterior: null, variacao_id: ref.variacoesExternas[v.sku] ?? null },
+    ])),
+    capados: variacoes.filter((v) => v.estoque > teto.get(v.sku)!).length,
   };
 }
 

@@ -107,6 +107,19 @@ export function anuncioSemVariacao(
   return publicadas.length === 1 && publicadas[0].ml_variation_id === a.mlItemId;
 }
 
+/**
+ * ADR-0195: o espelho do catálogo grava na partição 0. Em família dividida, só os SKUs do mapa dela:
+ * reinserir os das outras partições poluía o mapa e a ancoragem.
+ */
+export function variacoesDoEspelho<T extends { codigo: string }>(
+  variacoes: T[],
+  particoes: Array<{ particao: number; variacoes_externas: Record<string, unknown> | null }>,
+): T[] {
+  if (particoes.length < 2) return variacoes;
+  const mapa = particoes.find((p) => p.particao === 0)?.variacoes_externas ?? {};
+  return variacoes.filter((v) => v.codigo in mapa);
+}
+
 export interface RodarVinculacaoDeps {
   vincularUP?: typeof vincularItensCatalogoUP;
   vincularLegacy?: typeof vincularVariacoesCatalogo;
