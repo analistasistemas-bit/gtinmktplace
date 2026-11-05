@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## Filtro "Mês atual" em Publicados — 2026-11-05
+
+- [x] Botão "Mês atual" em Publicados e no Detalhe de vendas: reusa `mostrarMesAtual` do `SeletorPeriodo`; o período segue pelo card Faturamento. Padrão da tela continua 30 dias. Só frontend.
+
 ## `publicado` sem escrita no ML (ADR-0195, Entrega 1) — 2026-11-05
 
 - [x] Lote #68 da Avil conferido no ML por SKU: Fita N.2 (`00446050`) sem estoque desde 03/08, família `publicado` com raiz UP órfã.

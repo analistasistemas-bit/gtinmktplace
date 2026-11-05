@@ -42,7 +42,7 @@ export function DashboardPublicados({
 
   return (
     <div className="mb-5 space-y-3">
-      <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} carregando={carregando} />
+      <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} mostrarMesAtual carregando={carregando} />
 
       {aviso && (
         <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
