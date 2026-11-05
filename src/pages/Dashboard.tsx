@@ -27,7 +27,6 @@ import { CanalBadge } from '@/components/canal-badge';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 import { useCustos } from '@/hooks/useCustos';
-import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -104,19 +103,18 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const delta = (atual: number, anterior: number) => deltaCom(atual, anterior, rotuloAnterior(periodo));
 
-  const { resumo: r, isFetching, error } = useResumoVendas(janela, canalAtivo);
+  const { resumo: r, isFetching, error, canonicoPronto } = useResumoVendas(janela, canalAtivo);
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
   const vendasRaw = useVendas(janela, 'todos', canalAtivo); // mesma chave de cache do useResumoVendas → sem request extra
   const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
-  const { data: canonico } = useAnuncioCanonico(); // mesma chave do useResumoVendas → sem request extra
   const { data: mostrarLucro } = useMostrarLucroDashboard();
   const carregando = vendasRaw.isPending;
 
   // Catálogo + pendências cross-módulo
   const { data: lotes = [] } = useLotes();
-  const { data: publicados = [] } = usePublicados();
+  const { data: publicados = [], isPending: publicadosPendente } = usePublicados();
   const { data: statusData } = useStatusPublicados();
   const perguntasQ = usePerguntasNaoRespondidas();
   const devolucoesQ = useDevolucoes();
@@ -179,7 +177,9 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
     )),
     [vendasRawAnt.data, custos, aliquotas],
   );
-  const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5, canonico), [vendasRaw.data, canonico]);
+  // Sem o mapa canônico a soma por anúncio sai parcial e depois salta (mesma regra de Publicados).
+  const topCarregando = carregando || !canonicoPronto || publicadosPendente;
+  const top = useMemo(() => (canonicoPronto ? topProdutos(publicados, r.porItem) : []), [canonicoPronto, publicados, r.porItem]);
   // Mesma agregação por UF do menu Faturamento › Geografia (pedidos + valor no nível de pacote).
   const geoUf = useMemo(() => agruparPorGeografia(pedidos), [pedidos]);
   const uf = useMemo(
@@ -215,6 +215,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           <div className="flex items-center gap-3">
             <AoVivo isFetching={isFetching} />
             <BotaoExportar
+              disabled={topCarregando}
               temKpis
               pdfSempreCompleto
               montarReport={(config) => buildDashboardReport({
@@ -479,7 +480,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
             </Link>
           </div>
           {top.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Sem vendas no período.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">{topCarregando ? 'Carregando…' : 'Sem vendas no período.'}</p>
           ) : (
             <ol className="flex flex-col gap-2">
               {top.map((p, i) => (

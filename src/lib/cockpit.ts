@@ -4,8 +4,9 @@
 // de pendências cross-módulo. Testável (cockpit.test.ts).
 import type { Venda } from './faturamento';
 import type { VendaResumo } from './resumo-vendas';
-import { ehFaturavel, valorDoItem } from './resumo-vendas';
-import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
+import { ehFaturavel } from './resumo-vendas';
+import { vendasDoAnuncio, type PublicadoItem } from './publicados';
+import { calcularResumoPublicados } from './resumo-publicados';
 import { round2 } from './formato';
 
 export interface ProdutoTop {
@@ -15,29 +16,23 @@ export interface ProdutoTop {
   valor: number;
 }
 
-/** Top N anúncios por valor vendido (bruto) no período, das vendas faturáveis.
- *  `canonico` funde no anúncio dono a venda que entrou por um MLB que a tela não lista — anúncio de
- *  catálogo (vínculo) ou irmão legado (GTIN), ver `anuncio-canonico.ts`. O título exibido é sempre
- *  o do anúncio original. */
-export function topProdutos(vendas: Venda[], n = 5, canonico?: MapaCanonico): ProdutoTop[] {
-  const m = new Map<string, { titulo: string; tituloDono: string | null; unidades: number; valor: number }>();
-  for (const v of vendas) {
-    if (!ehFaturavel(v.status)) continue;
-    for (const it of v.itens) {
-      if (!it.ml_item_id) continue;
-      const chave = canonizarItem(it.ml_item_id, canonico, it.ean);
-      const acc = m.get(chave) ?? { titulo: it.titulo ?? chave, tituloDono: null, unidades: 0, valor: 0 };
-      if ((!acc.titulo || acc.titulo === chave) && it.titulo) acc.titulo = it.titulo;
-      if (it.ml_item_id === chave && it.titulo) acc.tituloDono ??= it.titulo;
-      acc.unidades += it.quantity;
-      acc.valor += valorDoItem(it);
-      m.set(chave, acc);
-    }
-  }
-  return [...m.entries()]
-    .map(([mlItemId, a]) => ({ mlItemId, titulo: a.tituloDono ?? a.titulo, unidades: a.unidades, valor: round2(a.valor) }))
-    .sort((a, b) => b.valor - a.valor)
-    .slice(0, n);
+/** Top 5 por valor vendido no período, com a mesma conta e o mesmo título do menu Publicados: uma
+ *  linha por anúncio, somando os MLBs de todas as cores. `porItem` vem do `useResumoVendas`, já
+ *  com catálogo e irmãos legados fundidos no anúncio dono (ver `anuncio-canonico.ts`). */
+export function topProdutos(
+  publicados: PublicadoItem[],
+  porItem: Record<string, { unidades: number; valor: number }>,
+): ProdutoTop[] {
+  const comVendas = publicados.map((p) => {
+    const v = vendasDoAnuncio(porItem, p.mlItemId, p.mlItemIdsUP);
+    return { ...p, unidadesVendidas: v?.unidades ?? null, valorVendido: v?.valor ?? null };
+  });
+  return calcularResumoPublicados(comVendas).topFat.map((p) => ({
+    mlItemId: p.mlItemId,
+    titulo: p.titulo,
+    unidades: p.unidadesVendidas ?? 0,
+    valor: round2(p.valorVendido ?? 0),
+  }));
 }
 
 /** uf → nº de pedidos faturáveis com aquela UF. Alimenta o mapa de calor (MapaBrasil). */

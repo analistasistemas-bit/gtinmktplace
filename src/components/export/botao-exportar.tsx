@@ -34,6 +34,8 @@ interface BotaoExportarProps {
   /** Tamanho do botão (default 'sm'). */
   size?: 'sm' | 'default';
   className?: string;
+  /** Bloqueia a exportação enquanto os dados do relatório ainda carregam. */
+  disabled?: boolean;
 }
 
 const ROTULO_FORMATO: Record<ExportFormato, string> = {
@@ -51,6 +53,7 @@ export function BotaoExportar({
   totalLinhas,
   size = 'sm',
   className,
+  disabled,
 }: BotaoExportarProps) {
   const [formato, setFormato] = useState<ExportFormato | null>(null);
   const [expandido, setExpandido] = useState(false);
@@ -100,7 +103,7 @@ export function BotaoExportar({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size={size} className={className}>
+          <Button variant="outline" size={size} className={className} disabled={disabled}>
             <Download data-icon="inline-start" />
             Exportar
           </Button>

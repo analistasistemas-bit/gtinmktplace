@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { calcularResumo } from '../resumo-vendas';
 import { topProdutos } from '../cockpit';
+import type { PublicadoItem } from '../publicados';
 import { montarDetalheVendas } from '../detalhe-vendas';
 import { montarMapaCanonico } from '../anuncio-canonico';
 import type { Venda, VendaItem } from '../faturamento';
@@ -53,7 +54,8 @@ describe('anúncio irmão legado (um MLB por cor)', () => {
   });
 
   it('topProdutos funde o irmão e mantém o título do anúncio dono', () => {
-    const top = topProdutos(vendas, 5, canonico);
+    const r = calcularResumo(vendas, undefined, undefined, Date.parse('2026-08-05T00:00:00Z'), undefined, canonico);
+    const top = topProdutos([{ familiaId: 'f', mlItemId: DONO, titulo: 'Tecido Helanca 10m' } as PublicadoItem], r.porItem);
     expect(top).toHaveLength(1);
     expect(top[0]).toMatchObject({ mlItemId: DONO, titulo: 'Tecido Helanca 10m', unidades: 34 });
   });

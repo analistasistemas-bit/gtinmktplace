@@ -1,12 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { topProdutos, vendasPorUf, calendarioCaixa, montarAtencao } from '../cockpit';
-import type { Venda, VendaItem } from '../faturamento';
+import type { Venda } from '../faturamento';
 import type { VendaResumo } from '../resumo-vendas';
+import type { PublicadoItem } from '../publicados';
 
-const item = (over: Partial<VendaItem>): VendaItem => ({
-  id: 'i', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, cor: null,
-  ean: null, quantity: 1, unit_price: 10, sale_fee: 1, is_publiai: true, ...over,
-});
 const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
@@ -18,31 +15,21 @@ const venda = (over: Partial<Venda>): Venda => ({
 });
 
 describe('topProdutos', () => {
-  it('soma unidades/valor por anúncio, ordena por valor desc e ignora não faturável', () => {
-    const top = topProdutos([
-      venda({ itens: [item({ ml_item_id: 'M', titulo: 'Linha', quantity: 2, unit_price: 10 })] }), // 20
-      venda({ itens: [item({ ml_item_id: 'N', titulo: 'Botão', quantity: 1, unit_price: 100 })] }), // 100
-      venda({ status: 'cancelled', itens: [item({ ml_item_id: 'M', quantity: 9, unit_price: 99 })] }), // ignora
-    ]);
-    expect(top.map((p) => p.mlItemId)).toEqual(['N', 'M']);
-    expect(top[1]).toMatchObject({ titulo: 'Linha', unidades: 2, valor: 20 });
+  const pub = (over: Partial<PublicadoItem>) => ({ familiaId: 'f', mlItemId: 'M', titulo: 't', ...over }) as PublicadoItem;
+
+  it('usa o título de Publicados e soma todos os MLBs da família (uma cor por MLB)', () => {
+    const top = topProdutos(
+      [pub({ familiaId: 'fita', mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', mlItemIdsUP: ['AMARELO', 'VERMELHO'] })],
+      { AMARELO: { unidades: 1, valor: 30 }, VERMELHO: { unidades: 4, valor: 120.5 } },
+    );
+    expect(top).toEqual([{ mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', unidades: 5, valor: 150.5 }]);
   });
 
-  it('funde a venda do anúncio de catálogo no anúncio dono, com o título do original', () => {
-    const top = topProdutos([
-      venda({ itens: [item({ ml_item_id: 'MEU', titulo: 'Protetor Eucerin', quantity: 3, unit_price: 100 })] }),
-      venda({ itens: [item({ ml_item_id: 'CAT', titulo: 'Eucerin (título do catálogo)', quantity: 2, unit_price: 100 })] }),
-    ], 5, { listings: { CAT: 'MEU' } });
-    expect(top).toHaveLength(1);
-    expect(top[0]).toMatchObject({ mlItemId: 'MEU', titulo: 'Protetor Eucerin', unidades: 5, valor: 500 });
-  });
-
-  it('sem mapa, mantém as duas linhas separadas (comportamento anterior)', () => {
-    const top = topProdutos([
-      venda({ itens: [item({ ml_item_id: 'MEU', quantity: 3, unit_price: 100 })] }),
-      venda({ itens: [item({ ml_item_id: 'CAT', quantity: 2, unit_price: 100 })] }),
-    ]);
-    expect(top).toHaveLength(2);
+  it('ordena por valor desc, limita a 5 e ignora anúncio sem venda', () => {
+    const ids = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const porItem = Object.fromEntries(ids.map((id, i) => [id, { unidades: 1, valor: (i + 1) * 10 }]));
+    const top = topProdutos([...ids, 'SEM_VENDA'].map((id) => pub({ familiaId: id, mlItemId: id })), porItem);
+    expect(top.map((p) => p.mlItemId)).toEqual(['F', 'E', 'D', 'C', 'B']);
   });
 });
 

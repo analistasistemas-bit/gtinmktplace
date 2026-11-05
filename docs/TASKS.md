@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## Top produtos do Dashboard igual a Publicados — 2026-11-05
+
+- [x] O card mostrava o título do MLB dono (ex.: "Amarelo Ouro") somando a família inteira, e os valores divergiam de Publicados. `topProdutos` agora usa `vendasDoAnuncio` + `calcularResumoPublicados`: mesmo nome e mesma conta nas duas telas e no PDF. Venda fora da lista de Publicados não entra no ranking. Exportar do Dashboard fica bloqueado até os dados carregarem. Só frontend.
+
 ## Filtro "Mês atual" em Publicados — 2026-11-05
 
 - [x] Botão "Mês atual" em Publicados e no Detalhe de vendas: reusa `mostrarMesAtual` do `SeletorPeriodo`; o período segue pelo card Faturamento. Publicados abre em "Mês atual" por padrão; Encalhados segue o período. Só frontend.
