@@ -69,6 +69,9 @@ const ANUNCIO = {
 };
 const VARIACAO = { catalog_product_id: 'MLBGUARDADA', gtin: '789', catalog_status: 'ficha_divergente' };
 
+const linha = (id: string, cpid: string, codigo = '001') =>
+  ({ id, catalog_product_id: cpid, codigo_pai: codigo, status: 'ativo' });
+
 const upsertDe = (e: ReturnType<typeof fakeAdmin>['escritas']) =>
   e.find((x) => x.op === 'upsert')?.valor as Array<Record<string, unknown>>;
 const updates = (e: ReturnType<typeof fakeAdmin>['escritas'], status: string) =>
@@ -79,14 +82,79 @@ afterEach(() => vi.unstubAllGlobals());
 describe('sincronizarRadar: ficha real do item', () => {
   it('troca a ficha guardada pela real equivalente, herdando o EAN, e arquiva a antiga', async () => {
     stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBREAL' }], { MLBREAL: FICHA_UNIDADE('MLBREAL') });
-    const { admin, escritas } = fakeAdmin({ anuncios_externos: [ANUNCIO], variacoes: [VARIACAO] });
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO], pulse_produtos: [linha('l1', 'MLBGUARDADA')],
+    });
 
     await sincronizarRadar(admin, 'org-1', 'tok');
 
     expect(upsertDe(escritas)).toEqual([expect.objectContaining({
       catalog_product_id: 'MLBREAL', codigo_pai: '001', gtin: '789', catalogo_status: 'vinculado',
     })]);
-    expect(updates(escritas, 'arquivado')[0].filtros).toMatchObject({ catalog_product_id: ['MLBGUARDADA'], origem: 'auto' });
+    expect(updates(escritas, 'arquivado')[0].filtros).toMatchObject({ id: ['l1'] });
+  });
+
+  it('trocas sucessivas: a ficha intermediária também sai do Radar', async () => {
+    stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBC' }], { MLBC: FICHA_UNIDADE('MLBC') });
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO],
+      pulse_produtos: [linha('b', 'MLBB'), linha('c', 'MLBC')],
+    });
+
+    await sincronizarRadar(admin, 'org-1', 'tok');
+
+    expect(updates(escritas, 'arquivado')[0].filtros).toMatchObject({ id: ['b'] });
+  });
+
+  it('item que voltou para a ficha guardada arquiva a ficha intermediária', async () => {
+    stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBGUARDADA' }]);
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO],
+      pulse_produtos: [linha('a', 'MLBGUARDADA'), linha('b', 'MLBB')],
+    });
+
+    await sincronizarRadar(admin, 'org-1', 'tok');
+
+    expect(updates(escritas, 'arquivado')[0].filtros).toMatchObject({ id: ['b'] });
+  });
+
+  it('ficha compartilhada sai quando todos os anúncios foram para outra', async () => {
+    stubML([
+      { id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBREAL' },
+      { id: 'MLB2', catalog_listing: true, catalog_product_id: 'MLBREAL' },
+    ], { MLBREAL: FICHA_UNIDADE('MLBREAL') });
+    const outro = { codigo_pai: '002', item_externo_id: 'MLB2', variacoes_externas: ANUNCIO.variacoes_externas };
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO, outro], variacoes: [VARIACAO], pulse_produtos: [linha('l1', 'MLBGUARDADA', '002')],
+    });
+
+    await sincronizarRadar(admin, 'org-1', 'tok');
+
+    expect(upsertDe(escritas).map((r) => r.catalog_product_id)).toEqual(['MLBREAL']);
+    expect(updates(escritas, 'arquivado')[0].filtros).toMatchObject({ id: ['l1'] });
+  });
+
+  it('linha pausada pelo operador não é arquivada na troca', async () => {
+    stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBREAL' }], { MLBREAL: FICHA_UNIDADE('MLBREAL') });
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO],
+      pulse_produtos: [{ ...linha('l1', 'MLBGUARDADA'), status: 'pausado' }],
+    });
+
+    await sincronizarRadar(admin, 'org-1', 'tok');
+
+    expect(updates(escritas, 'arquivado')).toEqual([]);
+  });
+
+  it('falha ao avaliar a ficha real não arquiva nenhuma linha', async () => {
+    stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBREAL' }]);
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO], pulse_produtos: [linha('b', 'MLBB')],
+    });
+
+    await sincronizarRadar(admin, 'org-1', 'tok');
+
+    expect(updates(escritas, 'arquivado')).toEqual([]);
   });
 
   it('ficha real não equivalente entra como ficha_divergente', async () => {
@@ -151,7 +219,9 @@ describe('sincronizarRadar: ficha real do item', () => {
 
   it('upsert que falha não arquiva a ficha antiga', async () => {
     stubML([{ id: 'MLB1', catalog_listing: true, catalog_product_id: 'MLBREAL' }], { MLBREAL: FICHA_UNIDADE('MLBREAL') });
-    const { admin, escritas } = fakeAdmin({ anuncios_externos: [ANUNCIO], variacoes: [VARIACAO] }, true);
+    const { admin, escritas } = fakeAdmin({
+      anuncios_externos: [ANUNCIO], variacoes: [VARIACAO], pulse_produtos: [linha('l1', 'MLBGUARDADA')],
+    }, true);
 
     await sincronizarRadar(admin, 'org-1', 'tok');
 

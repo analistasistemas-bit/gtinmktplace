@@ -536,9 +536,10 @@ do caminho UP: equivalente vira `vinculado`, não equivalente vira `ficha_diverg
 falha mantém a ficha guardada. Anúncio com várias variações ou partições fica como está. `variacoes`
 não é escrita: o Radar relê o ML todo dia, e catálogo e fiscal ficam fora desta mudança.
 
-**Decisão 2 — ciclo da linha substituída.** Ela é arquivada só depois de a nova ser gravada, e só se
-nenhum outro anúncio publicado usar a mesma ficha. Linha `auto` arquivada cuja ficha volta ao conjunto
-final é reativada com as falhas zeradas. `pausado` é decisão do operador e não muda.
+**Decisão 2 — ciclo da linha substituída.** Nos códigos cuja ficha o ML confirmou, linha `auto` fora
+do conjunto final é arquivada depois de a nova ser gravada. Ficha que outro anúncio não movido ainda
+usa continua. Linha `auto` arquivada cuja ficha volta ao conjunto final é reativada com as falhas
+zeradas. `pausado` é decisão do operador: não é arquivada na troca nem alterada na reativação.
 
 **Decisão 3 — preço fora da ficha.** Sem oferta nossa na ficha, com `catalogo_status='vinculado'`,
 anúncio plano e único e status `active` lido na mesma coleta, `meu_preco` vem de

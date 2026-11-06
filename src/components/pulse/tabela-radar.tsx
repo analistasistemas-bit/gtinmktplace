@@ -306,9 +306,9 @@ export function TabelaRadar({
       // (medido). Badge + tooltip devolve a linha ao ritmo das outras; nada de informação sai da
       // tela — a posição hipotética passa a viver no title/sr-only, junto do resto da conta.
       className: 'hidden xl:table-cell',
-      sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
+      sortValue: (p) => disputaCatalogo(resumo?.get(p.id), precoComparavel(p))?.posicao ?? null,
       cell: (p) => {
-        const d = disputaCatalogo(resumo?.get(p.id), p.meu_preco);
+        const d = disputaCatalogo(resumo?.get(p.id), precoComparavel(p));
         if (!d) {
           // Texto inalterado: a coluna `menor` já diz "Sem concorrente relevante"; sem o
           // "no catálogo" as duas células ficam idênticas e o teste da linha 110 acha duas.
@@ -321,7 +321,7 @@ export function TabelaRadar({
         // disputa que gerou a faixa (ADR-0147 D-5).
         const ajuda = [
           `${d.anunciosRelevantes} ${d.anunciosRelevantes === 1 ? 'anúncio relevante disputa' : 'anúncios relevantes disputam'} esta ficha, de ${faixa}.`,
-          d.posicao != null && p.meu_preco != null
+          d.posicao != null && precoComparavel(p) != null
             ? `Com o seu preço, você ficaria em ${d.posicao}º de ${d.totalComNosso}.`
             : null,
         ].filter(Boolean).join(' ');

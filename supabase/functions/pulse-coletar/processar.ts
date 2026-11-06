@@ -196,30 +196,41 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string, tok
   const planos = publicados.filter((a) => a.item_externo_id && porCodigo.get(a.codigo_pai) === 1
     && Object.keys(a.variacoes_externas ?? {}).length === 1);
   const fichaPorItem = await lerFichasDosItens(planos.map((a) => a.item_externo_id!), token);
-  const fichasReais = new Map<string, { status: string; guardada: string | null }>();
-  const substituidas = new Set<string>();
+  // Códigos cuja ficha o ML confirmou: só neles uma linha fora do conjunto final pode ser arquivada.
+  const codigosConfirmados = new Set<string>();
+  const trocas: Array<{ codigo: string; real: string; status: string; guardadas: Set<string> }> = [];
   for (const a of planos) {
     const real = fichaPorItem.get(a.item_externo_id!);
+    if (!real) continue;
     const guardadas = new Set([
       ...Object.values(a.variacoes_externas ?? {}).map((v) => v?.catalog_product_id).filter((c): c is string => !!c),
       ...[...porCpid.values()].filter((r) => r.codigo_pai === a.codigo_pai).map((r) => r.catalog_product_id),
     ]);
-    if (!real || guardadas.has(real)) continue;
+    if (guardadas.has(real)) { codigosConfirmados.add(a.codigo_pai); continue; }
     const avaliada = await avaliarFichaReal(a.item_externo_id!, token);
     if (avaliada?.cpid !== real) continue;
+    codigosConfirmados.add(a.codigo_pai);
+    trocas.push({ codigo: a.codigo_pai, real, status: avaliada.status, guardadas });
+  }
+  // Duas passadas: "outro anúncio ainda usa esta ficha" só se responde conhecendo todas as trocas.
+  const movidos = new Set(trocas.map((t) => t.codigo));
+  for (const { codigo, guardadas } of trocas) {
     for (const g of guardadas) {
-      const outro = publicados.find((o) => o.codigo_pai !== a.codigo_pai
+      const outro = publicados.find((o) => o.codigo_pai !== codigo && !movidos.has(o.codigo_pai)
         && Object.values(o.variacoes_externas ?? {}).some((v) => v?.catalog_product_id === g));
       if (outro) porCpid.set(g, { org_id: orgId, catalog_product_id: g, codigo_pai: outro.codigo_pai, origem: 'auto' });
-      else { porCpid.delete(g); substituidas.add(g); }
+      else porCpid.delete(g);
     }
-    porCpid.set(real, { org_id: orgId, catalog_product_id: real, codigo_pai: a.codigo_pai, origem: 'auto' });
-    fichasReais.set(real, { status: avaliada.status, guardada: [...guardadas][0] ?? null });
+  }
+  const fichasReais = new Map<string, { status: string; guardada: string | null }>();
+  for (const { codigo, real, status, guardadas } of trocas) {
+    porCpid.set(real, { org_id: orgId, catalog_product_id: real, codigo_pai: codigo, origem: 'auto' });
+    fichasReais.set(real, { status, guardada: [...guardadas][0] ?? null });
   }
 
   // GTIN por ficha: cada catalog_product_id corresponde a UMA variação (uma cor), então o EAN sai
   // de `variacoes.catalog_product_id`, não do código da família — que agrupa várias fichas.
-  const cpids = [...new Set([...porCpid.keys(), ...substituidas])];
+  const cpids = [...new Set([...porCpid.keys(), ...trocas.flatMap((t) => [...t.guardadas])])];
   const gtinPorCpid = new Map<string, string>();
   const statusPorCpid = new Map<string, string>();
   if (cpids.length > 0) {
@@ -248,6 +259,7 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string, tok
     ...(gtinPorCpid.has(r.catalog_product_id) ? { gtin: gtinPorCpid.get(r.catalog_product_id) } : {}),
     ...(statusPorCpid.has(r.catalog_product_id) ? { catalogo_status: statusPorCpid.get(r.catalog_product_id) } : {}),
   }));
+  let radarGravado = false;
   if (rows.length > 0) {
     // Sem 'status' nem 'titulo' no payload: o merge do PostgREST só sobrescreve as colunas
     // enviadas. Status preserva o ciclo de vida do operador; o título vem do ML (nome da ficha,
@@ -256,12 +268,7 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string, tok
     const { error } = await admin.from('pulse_produtos').upsert(rows, { onConflict: 'org_id,catalog_product_id' });
     if (error) console.warn('pulse-coletar: sincronizarRadar upsert falhou:', error.message);
     else {
-      // Só depois de a ficha nova existir. Uma ficha que outro item passou a usar não sai.
-      const sairam = [...substituidas].filter((c) => !porCpid.has(c));
-      if (sairam.length > 0) {
-        await admin.from('pulse_produtos').update({ status: 'arquivado' })
-          .eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado').in('catalog_product_id', sairam);
-      }
+      radarGravado = true;
       // `auto` só é arquivada pelo coletor, então voltar ao conjunto final desfaz isso. `pausado`,
       // que é decisão do operador, não entra no filtro.
       await admin.from('pulse_produtos').update({ status: 'ativo', coleta_falhas_seguidas: 0 })
@@ -273,13 +280,17 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string, tok
   // pior direção — produto além do teto nunca entraria na lista de candidatos e ficaria no radar
   // para sempre, mesmo depois de o anúncio sair do ar. O Pulse v2 (extensão) existe justamente
   // para multiplicar a contagem de linhas.
-  const ativosAuto = await paginarTudo<{ id: string; codigo_pai: string | null }>((de, ate) =>
+  const ativosAuto = await paginarTudo<{ id: string; codigo_pai: string | null; catalog_product_id: string; status: string }>((de, ate) =>
     admin.from('pulse_produtos')
-      .select('id, codigo_pai').eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado')
+      .select('id, codigo_pai, catalog_product_id, status').eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado')
       .order('id', { ascending: true }).range(de, ate)
   );
   const arquivar = ativosAuto
-    .filter((p) => !codigosPaiVistos.has(p.codigo_pai as string))
+    .filter((p) => !codigosPaiVistos.has(p.codigo_pai as string)
+      // Ficha que o item deixou (Errata 13). Só depois de gravar a nova, e `pausado` fica: é decisão
+      // do operador, e arquivar para reativar depois apagaria essa decisão.
+      || (radarGravado && codigosConfirmados.has(p.codigo_pai as string)
+        && !porCpid.has(p.catalog_product_id) && p.status !== 'pausado'))
     .map((p) => p.id);
   if (arquivar.length > 0) {
     await admin.from('pulse_produtos').update({ status: 'arquivado' }).in('id', arquivar);

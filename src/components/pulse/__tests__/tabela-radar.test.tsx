@@ -51,6 +51,11 @@ describe('TabelaRadar — preço fora da ficha (ADR-0147 Errata 5)', () => {
     expect(screen.queryByText('+17% mais caro')).not.toBeInTheDocument();
   });
 
+  it('não afirma posição hipotética na disputa', () => {
+    const { container } = renderRadar([{ ...produto, meu_preco_fora_da_ficha: true }], disputado);
+    expect(container.innerHTML).not.toMatch(/ficaria em/);
+  });
+
   it('preço na ficha não ganha rótulo', () => {
     renderRadar([produto], resumo);
     expect(screen.queryByText('fora da ficha')).not.toBeInTheDocument();
