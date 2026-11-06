@@ -154,6 +154,20 @@ _Evitar_: total de vendas, soma dos mínimos.
 Anúncio próprio que aparece entre os cards carregados de uma busca, com a posição observada naquela página (orgânica ou patrocinada). Não é ranking geral, e SKU vinculado não é anúncio próprio.
 _Evitar_: meu ranking, minha posição no ML.
 
+## Preço do anúncio
+
+**Preço base**:
+Preço do anúncio sem promoção, definido pelo vendedor. É o preço pelo qual o anúncio volta a vender quando a oferta termina.
+_Evitar_: preço do produto, preço cheio, preço original como termo de tela.
+
+**Preço da oferta**:
+Preço que o comprador paga enquanto o anúncio participa de uma promoção. Muda sem mexer no preço base, e vice-versa.
+_Evitar_: preço promocional como sinônimo de preço base reduzido, desconto.
+
+**Faixa de atacado**:
+Preço para comprador empresa a partir de uma quantidade mínima, sempre abaixo do preço base. A organização define o percentual por família; o canal guarda o valor em reais, que não acompanha sozinho o preço base.
+_Evitar_: desconto de atacado como sinônimo do valor em reais.
+
 ## Sugestões de promoção
 
 **Quase vendendo**:
