@@ -22,7 +22,7 @@ export function lerPreview(x: unknown): PedidoPreview | null {
   let ajuste: PedidoPreview['ajuste'] = null;
   if (b.ajuste != null) {
     const a = b.ajuste as Record<string, unknown>;
-    if ((a.tipo !== 'pct' && a.tipo !== 'reais') || (a.sentido !== '+' && a.sentido !== '-') || !numero(a.valor)) return null;
+    if ((a.tipo !== 'pct' && a.tipo !== 'reais' && a.tipo !== 'definir') || (a.sentido !== '+' && a.sentido !== '-') || !numero(a.valor)) return null;
     ajuste = { tipo: a.tipo, sentido: a.sentido, valor: a.valor };
   }
   let precos: Record<string, number> | undefined;

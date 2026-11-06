@@ -1,5 +1,6 @@
 // I5 — reajuste de preço em massa: tipos do núcleo puro (spec 2026-10-04, C1/C3/C4/C5).
-export type TipoAjuste = 'pct' | 'reais';
+export type TipoAjuste = 'pct' | 'reais' | 'definir';
+/** Em `definir`, `valor` é o preço final e `sentido` é ignorado (ADR-0196). */
 export interface Ajuste { tipo: TipoAjuste; sentido: '+' | '-'; valor: number }
 export type Semaforo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export interface CorAvaliada {

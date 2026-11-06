@@ -13,11 +13,16 @@ describe('lerPreview', () => {
     expect(lerPreview({ acao: 'reajustar', origem_id: U })).toMatchObject({ origem_id: U, familias: [], ml_item_ids: [], ajuste: null });
   });
 
+  it('aceita o tipo definir', () => {
+    expect(lerPreview({ acao: 'reajustar', ml_item_ids: ['MLB1'], ajuste: { tipo: 'definir', sentido: '+', valor: 10 } })?.ajuste?.tipo).toBe('definir');
+  });
+
   it.each([
     ['ação errada', { acao: 'pausar', ml_item_ids: ['MLB1'] }],
     ['família não uuid', { acao: 'reajustar', familias: ['x'] }],
     ['origem não uuid', { acao: 'reajustar', origem_id: 'x' }],
     ['ajuste inválido', { acao: 'reajustar', ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido: '*', valor: 5 } }],
+    ['tipo desconhecido', { acao: 'reajustar', ml_item_ids: ['MLB1'], ajuste: { tipo: 'outro', sentido: '+', valor: 5 } }],
     ['valor não numérico', { acao: 'reajustar', ml_item_ids: ['MLB1'], ajuste: { tipo: 'reais', sentido: '+', valor: '5' } }],
     ['preço não numérico', { acao: 'reajustar', ml_item_ids: ['MLB1'], precos: { MLB1: 'x' } }],
     ['seleção vazia', { acao: 'reajustar', ml_item_ids: [] }],

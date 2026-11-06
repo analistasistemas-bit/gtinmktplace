@@ -332,7 +332,7 @@ describe('Publicados — seleção em massa', () => {
     expect(screen.getByRole('button', { name: 'Reativar 0' })).toBeDisabled();
   });
 
-  it('Reajustar preço: UP manda a família, Legacy manda o MLB', async () => {
+  it('Alterar preço: UP manda a família, Legacy manda o MLB', async () => {
     const { data } = usePublicadosMock() as { data: PublicadoItem[] };
     usePublicadosMock.mockReturnValue({
       data: data.map((i) => (i.mlItemId === 'MLB1' ? { ...i, userProducts: true } : i)), isLoading: false, error: null, refetch: vi.fn(),
@@ -340,7 +340,7 @@ describe('Publicados — seleção em massa', () => {
     renderPagina();
     fireEvent.click(caixaTitulo('01'));
     fireEvent.click(caixaTitulo('02'));
-    fireEvent.click(screen.getByRole('button', { name: 'Reajustar preço (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar preço (2)' }));
     fireEvent.change(await screen.findByLabelText('Valor do ajuste'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ver preview' }));
     expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({
@@ -364,7 +364,7 @@ describe('Publicados — seleção em massa', () => {
     });
   });
 
-  it('Reajustar preço: partição Legacy de produto UP vai pelo MLB, sem mandar a família', async () => {
+  it('Alterar preço: partição Legacy de produto UP vai pelo MLB, sem mandar a família', async () => {
     const { data } = usePublicadosMock() as { data: PublicadoItem[] };
     // MLB1 = linha da família (UP); MLB2 = partição do mesmo produto (fetchPublicados marca userProducts:false).
     usePublicadosMock.mockReturnValue({
@@ -373,7 +373,7 @@ describe('Publicados — seleção em massa', () => {
     });
     renderPagina();
     fireEvent.click(caixaTitulo('02'));
-    fireEvent.click(screen.getByRole('button', { name: 'Reajustar preço (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar preço (1)' }));
     fireEvent.change(await screen.findByLabelText('Valor do ajuste'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ver preview' }));
     expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({

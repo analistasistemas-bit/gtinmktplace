@@ -30,13 +30,15 @@ export function reais(c: number): number {
   return c / 100;
 }
 
-/** Alvo em reais (2 casas) ou null se ≤ 0. pct: valor tem até 2 casas → pontos-base inteiros. */
+/** Alvo em reais (2 casas) ou null se ≤ 0. pct: valor tem até 2 casas → pontos-base inteiros. definir: o próprio valor. */
 export function calcularAlvo(base: number, a: Ajuste): number | null {
   const c = centavos(base);
   const s = a.sentido === '+' ? 1 : -1;
   const v = centavos(a.valor);
   let cent: number;
-  if (a.tipo === 'pct') {
+  if (a.tipo === 'definir') {
+    cent = v;
+  } else if (a.tipo === 'pct') {
     const q = c * (10000 + s * v);
     // half-up exato só vale para q ≥ 0; q < 0 cai em ≤ 0 → null
     cent = q <= 0 ? 0 : Math.floor((2 * q + 10000) / 20000);

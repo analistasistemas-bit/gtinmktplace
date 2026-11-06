@@ -35,4 +35,7 @@ describe('formatarAjuste', () => {
     expect(formatarAjuste(rs('+', 5))).toBe('+R$ 5,00');
     expect(formatarAjuste(rs('-', 0.1))).toBe('−R$ 0,10');
   });
+  it('definir, sem sinal', () => {
+    expect(formatarAjuste({ tipo: 'definir', sentido: '+', valor: 49.9 })).toBe('Definir R$ 49,90');
+  });
 });
