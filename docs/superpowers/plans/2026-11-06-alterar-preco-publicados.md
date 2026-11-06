@@ -395,6 +395,8 @@ expect(lerPreview({ ...p, atacado: { [uuid]: [{ min_unidades: 1, desconto_pct: 5
 
 ### Task 10: Fatia 2 — DEAL baixa a oferta antes
 
+**Suspensa até decisão do Diego.** Medição de 06/11: o ML recusa subir oferta DEAL (`PRICE_GT_CURRENT`), então compensar ou reverter oferta como descrito abaixo pode ser impossível. `top_deal_price` também precisa entrar na trava e no PUT. Revisar esta task e passar pelo Codex antes de executar.
+
 **Files:**
 - Modify: `reajuste/ofertas.ts`, `reajuste/ml.ts`, `reajuste/pedido.ts`, `reajuste/preview.ts`, `reajuste/executar.ts`, `reajuste/deps.ts`, `src/components/operacoes/preview-reajuste.tsx`
 - Test: `reajuste/__tests__/ofertas.test.ts`, `preview.test.ts`, `executar.test.ts`, `preview-reajuste.test.tsx`

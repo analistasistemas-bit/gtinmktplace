@@ -38,8 +38,18 @@ Outros fatos medidos:
 - A visão por item acompanha o novo base em até 30 s; a visão da campanha e o `regular_amount` de `sale_price` não
   acompanharam durante a observação. O preço riscado pode não mudar.
 
-**Não medido:** efeito depois de horas, Relâmpago `started`, Legacy com variações, duração da âncora de credibilidade,
-sair antes de baixar o base, par de catálogo e Kit Virtual.
+Segunda rodada (2026-11-06, autorizada pelo Diego):
+
+- As ofertas dos anúncios testados seguiam ativas horas depois.
+- Legacy com 12 variações (MLB4906994169): base ±R$ 1 em todas as variações, ofertas `started` e `pending` intactas.
+- **Oferta DEAL não sobe:** `PUT deal_price` acima do valor atual em DEAL `pending` (MLB7906365028) devolveu
+  `400 PRICE_GT_CURRENT`. Baixar uma oferta pode não ter volta sem sair e readerir. Em `started` não foi testado.
+- SMART (MLB7245326808): `DELETE` com o `OFFER-…` devolve 200 com corpo vazio; a visão da campanha fica `null` e
+  `sale_price` volta ao base em segundos. Depois de sair, o base aceitou ficar abaixo da oferta antiga.
+- Oferta pode ter `top_deal_price`, um segundo preço menor (MLB7906365074). `/prices` lista os dois como `promotion`.
+
+**Não medido:** Relâmpago `started`, duração da âncora de credibilidade, reconvite da SMART e readesão depois de
+baixar o base, oferta DEAL `started` subindo, par de catálogo e Kit Virtual.
 
 ## Decisão
 
