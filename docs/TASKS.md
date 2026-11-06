@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## Radar: nome do anúncio em ficha recusada (ADR-0119) — 2026-11-06
+
+- [x] Linha `ficha_divergente` mostrava o nome da ficha recusada, que pode ser de outro produto (Creme 500g da Hairfly aparecia como Kit Cadiveu). `fetchPulseProdutos` agora usa o `titulo_ml` da família mais recente. A linha continua no Radar, como define o ADR-0119. Só frontend.
+
 ## "Ficha sem nome" no Radar (ADR-0147 Errata 4) — 2026-11-06
 
 - [x] `pulse-coletar` tratava `/products/{id}/items` em 404 como falha de leitura: o produto nunca recebia nome nem snapshot e caía no backoff. Agora 404 com a ficha em 200 conta como catálogo sem ofertas: grava nome e snapshot, zera as falhas e desativa as ofertas guardadas sem alertar. Só `pulse-coletar`.

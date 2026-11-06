@@ -82,6 +82,29 @@ export interface PulseAlerta {
   pulse_produtos: { titulo: string | null; codigo_pai: string | null; catalog_product_id: string } | null;
 }
 
+/**
+ * Nome do nosso anúncio, por `codigo_pai`, nas linhas de ficha recusada pela trava de equivalência.
+ * O nome da ficha pode ser de outro produto (Hairfly, 06/11: Creme 500g exibido como Kit Cadiveu).
+ * Só afeta a exibição: leitura que falha mantém o nome da ficha em vez de derrubar o Radar.
+ */
+async function nomesDasFichasRecusadas(produtos: PulseProduto[]): Promise<Map<string, string>> {
+  const codigos = [...new Set(produtos
+    .filter((p) => p.catalogo_status === 'ficha_divergente' && p.codigo_pai)
+    .map((p) => p.codigo_pai as string))];
+  const nomes = new Map<string, string>();
+  if (codigos.length === 0) return nomes;
+  const { data } = await supabase.from('familias')
+    .select('codigo_pai, titulo_ml')
+    .in('codigo_pai', codigos)
+    .not('titulo_ml', 'is', null)
+    .order('criado_em', { ascending: false });
+  // Re-ingest deixa várias famílias com o mesmo código: a mais recente vem primeiro e vence.
+  for (const f of (data ?? []) as Array<{ codigo_pai: string; titulo_ml: string }>) {
+    if (!nomes.has(f.codigo_pai)) nomes.set(f.codigo_pai, f.titulo_ml);
+  }
+  return nomes;
+}
+
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // `meu_preco` vem do próprio radar: o coletor lê a nossa oferta na ficha, na mesma resposta das
   // concorrentes. A versão anterior derivava esse número das variações locais, que só são escritas
@@ -93,8 +116,11 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as PulseProduto[]).map((p) => ({
+  const produtos = (data ?? []) as PulseProduto[];
+  const nomesProprios = await nomesDasFichasRecusadas(produtos);
+  return produtos.map((p) => ({
     ...p,
+    titulo: (p.catalogo_status === 'ficha_divergente' && p.codigo_pai && nomesProprios.get(p.codigo_pai)) || p.titulo,
     meu_preco: p.meu_preco != null ? Number(p.meu_preco) : null,
     // `Number()` aqui é cinto de segurança barato, não correção de um defeito conhecido: medido em
     // 2026-08-17 contra a produção, o PostgREST serializa `numeric` como NÚMERO JSON, não como
