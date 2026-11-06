@@ -98,6 +98,12 @@ describe('filtrarProdutos — recortes dos KPIs', () => {
     expect(filtrarProdutos(lista, filtros({ foco: 'mais_caro' }), menorFixo(100))).toHaveLength(0);
   });
 
+  it('preço fora da ficha não entra em recorte nem conta como comparável (ADR-0147 Errata 5)', () => {
+    const lista = [produto({ id: 'fora', meu_preco: 120, meu_preco_fora_da_ficha: true })];
+    expect(filtrarProdutos(lista, filtros({ foco: 'mais_caro' }), menorFixo(100))).toEqual([]);
+    expect(contarPulse(lista, menorFixo(100))).toMatchObject({ comparaveis: 0, maisCaro: 0, menorPreco: 0 });
+  });
+
   it('sem menor relevante não compara ao menor preço apenas observado', () => {
     const mercado = { menor_observado: 36, menor_relevante: null };
     const menorRelevante = () => mercado.menor_relevante;

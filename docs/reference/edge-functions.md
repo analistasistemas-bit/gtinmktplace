@@ -1692,7 +1692,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   ver [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O
   dual-mode legado abaixo só volta se a flag for desligada (rollback).
   `/items` em 404 com a ficha em 200 é catálogo sem ofertas, não falha: grava nome e snapshot,
-  sem alerta (ADR-0147 Errata 4).
+  sem alerta (ADR-0147 Errata 4). No tier completo, `sincronizarRadar` segue a ficha real do item
+  plano e único, e sem oferta na ficha o preço vem de `/sale_price` (ADR-0119 Errata 13).
   Coletor server-side do radar de concorrência, dual-mode (mesmo padrão de
   `monitorar-moderados`): QStash (schedule) roda sem escopo de org — todas as conexões ML, tier do
   `body`; usuário logado (botão "Atualizar agora") escopa só a própria org, sempre tier `completo`,

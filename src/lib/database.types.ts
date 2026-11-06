@@ -4206,6 +4206,7 @@ export type Database = {
           meu_item_id: string | null
           meu_preco: number | null
           meu_preco_em: string | null
+          meu_preco_fora_da_ficha: boolean
           org_id: string
           origem: string
           ptw_aplicavel: boolean | null
@@ -4237,6 +4238,7 @@ export type Database = {
           meu_item_id?: string | null
           meu_preco?: number | null
           meu_preco_em?: string | null
+          meu_preco_fora_da_ficha?: boolean
           org_id: string
           origem?: string
           ptw_aplicavel?: boolean | null
@@ -4268,6 +4270,7 @@ export type Database = {
           meu_item_id?: string | null
           meu_preco?: number | null
           meu_preco_em?: string | null
+          meu_preco_fora_da_ficha?: boolean
           org_id?: string
           origem?: string
           ptw_aplicavel?: boolean | null

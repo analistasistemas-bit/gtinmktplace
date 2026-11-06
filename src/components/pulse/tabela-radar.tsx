@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { pausarPulseProduto, type ContextoMargem, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
-  classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
+  classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, precoComparavel, seloAnuncio,
 } from '@/lib/pulse-formato';
 import { insumoFaltante, margemEhEstimativa, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL } from '@/lib/formato';
@@ -66,7 +66,7 @@ export function TabelaRadar({
   });
 
   const menorDe = (p: PulseProduto) => resumo?.get(p.id)?.menorRelevante ?? null;
-  const posicaoDe = (p: PulseProduto) => posicaoVsMercado(p.meu_preco, menorDe(p));
+  const posicaoDe = (p: PulseProduto) => posicaoVsMercado(precoComparavel(p), menorDe(p));
 
   const contextoDe = (p: PulseProduto) => (p.codigo_pai ? contextos?.get(p.codigo_pai) : undefined);
   /** `null` quando qualquer insumo falta — a mesma resposta que o detalhe dá (regra LOUD). */
@@ -136,7 +136,17 @@ export function TabelaRadar({
       // — em branco, uma coluna de dinheiro lê como tela quebrada.
       cell: (p) =>
         p.meu_preco != null ? (
-          <span className="tabular-nums">{fmtBRL(p.meu_preco)}</span>
+          <>
+            <span className="tabular-nums">{fmtBRL(p.meu_preco)}</span>
+            {p.meu_preco_fora_da_ficha && (
+              <span
+                className="block cursor-help text-[10px] text-muted-foreground"
+                title="Preço do seu anúncio. Ele não está entre as ofertas desta ficha, então não entra na comparação com o mercado."
+              >
+                fora da ficha
+              </span>
+            )}
+          </>
         ) : (
           <span className="cursor-help text-muted-foreground" title={motivoSemPrecoProprio(p)}>
             —

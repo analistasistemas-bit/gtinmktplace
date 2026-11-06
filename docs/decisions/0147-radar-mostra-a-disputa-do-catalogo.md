@@ -193,6 +193,12 @@ duas leituras, continua sendo falha.
 DSA), e "concorrente saiu" hoje seria falso. Consequência aceita: se um 404 for passageiro, as
 ofertas voltam como `novo_concorrente` na leitura seguinte.
 
+## Errata 5 (2026-11-06) — preço fora da ficha não é posição
+
+A D-5 assume que o preço próprio é comparável na tela. Desde a Errata 13 do ADR-0119, `meu_preco` pode
+vir do anúncio fora da ficha (`meu_preco_fora_da_ficha = true`). Esse preço aparece com rótulo e
+alimenta a sobra, mas não gera "Sua posição" nem conta nos recortes "mais caro" e "menor preço".
+
 ## O que esta decisão NÃO resolve
 
 **A org continua fora dos catálogos.** Entrar (opt-in de `catalog_listing`) é decisão comercial do

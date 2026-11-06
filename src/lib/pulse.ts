@@ -25,6 +25,9 @@ export interface PulseProduto {
    */
   meu_preco: number | null;
   meu_preco_em: string | null;
+  /** `meu_preco` veio do anúncio, não de uma oferta nossa na ficha (ADR-0119 Errata 13): vale para a
+   *  sobra, mas não para a posição de mercado. */
+  meu_preco_fora_da_ficha?: boolean;
   /** Situação do NOSSO anúncio no ML (`active`, `paused`, `closed`…). Não é `status`, que é a
    *  situação do produto dentro do radar. `null` = ainda não lida. */
   anuncio_status: string | null;
@@ -111,7 +114,7 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await supabase.from('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, meu_preco_fora_da_ficha, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });

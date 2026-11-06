@@ -7,6 +7,8 @@ import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
+import { buscarProdutoCatalogoPorId, fichaEquivalente, lerCatalogoAutomatico } from '../_shared/ml/catalogo.ts';
+import { lerSalePriceML } from '../_shared/ml/sale-price.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -33,6 +35,7 @@ export interface ResultadoLote { produtos: number; gravadas: number; alertas: nu
 
 interface AnuncioPublicadoRow {
   codigo_pai: string;
+  item_externo_id: string | null;
   variacoes_externas: Record<string, { catalog_product_id?: string }> | null;
 }
 
@@ -42,6 +45,7 @@ interface PulseProdutoRow {
   codigo_pai: string | null;
   origem: 'auto' | 'manual';
   titulo: string | null;
+  catalogo_status: string | null;
 }
 
 /** Produto com as duas colunas de backoff (ADR-0173): presentes desde a mesma seleção de sempre,
@@ -88,10 +92,35 @@ export async function lerSituacaoAnuncios(ids: string[], token: string): Promise
   return infoPorItem;
 }
 
-export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
+/** Ficha em que o ML colocou cada item, nos itens que são anúncio de catálogo. Blocos de 20. */
+async function lerFichasDosItens(ids: string[], token: string): Promise<Map<string, string>> {
+  const fichaPorItem = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const json = await mlGet(`${API}${caminhoMultiget(lote, 'id,catalog_listing,catalog_product_id')}`, token);
+    const envelopes = comoEnvelopeAntigo(json, lote);
+    for (const e of (Array.isArray(envelopes) ? envelopes : []) as Array<{ code?: number; body?: Record<string, unknown> }>) {
+      const b = e.body;
+      if (e.code === 200 && b?.catalog_listing === true && typeof b.id === 'string' && typeof b.catalog_product_id === 'string') {
+        fichaPorItem.set(b.id, b.catalog_product_id);
+      }
+    }
+  }
+  return fichaPorItem;
+}
+
+/** Mesma trava do caminho UP (`vincularItensCatalogoUP`). Leitura que falha devolve null. */
+async function avaliarFichaReal(itemId: string, token: string): Promise<{ cpid: string; status: string } | null> {
+  const auto = await lerCatalogoAutomatico(token, itemId).catch(() => null);
+  const ficha = auto ? await buscarProdutoCatalogoPorId(token, auto.cpid).catch(() => null) : null;
+  if (!auto || !ficha) return null;
+  return { cpid: auto.cpid, status: fichaEquivalente(ficha, auto.esperado).ok ? 'vinculado' : 'ficha_divergente' };
+}
+
+export async function sincronizarRadar(admin: SupabaseClient, orgId: string, token: string): Promise<void> {
   const publicados = await paginarTudo<AnuncioPublicadoRow>((de, ate) =>
     admin.from('anuncios_externos')
-      .select('codigo_pai, variacoes_externas')
+      .select('codigo_pai, item_externo_id, variacoes_externas')
       .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('status', 'publicado')
       .range(de, ate),
   );
@@ -159,9 +188,38 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Pr
     }
   }
 
+  // Ficha real (ADR-0119 Errata 13): o ML pode ter convertido o item em anúncio de catálogo de outra
+  // ficha, e a guardada ser a que a trava recusou. Só anúncio plano e único do código: com várias
+  // variações ou partições, um item só não responde pelo código inteiro.
+  const porCodigo = new Map<string, number>();
+  for (const a of publicados) porCodigo.set(a.codigo_pai, (porCodigo.get(a.codigo_pai) ?? 0) + 1);
+  const planos = publicados.filter((a) => a.item_externo_id && porCodigo.get(a.codigo_pai) === 1
+    && Object.keys(a.variacoes_externas ?? {}).length === 1);
+  const fichaPorItem = await lerFichasDosItens(planos.map((a) => a.item_externo_id!), token);
+  const fichasReais = new Map<string, { status: string; guardada: string | null }>();
+  const substituidas = new Set<string>();
+  for (const a of planos) {
+    const real = fichaPorItem.get(a.item_externo_id!);
+    const guardadas = new Set([
+      ...Object.values(a.variacoes_externas ?? {}).map((v) => v?.catalog_product_id).filter((c): c is string => !!c),
+      ...[...porCpid.values()].filter((r) => r.codigo_pai === a.codigo_pai).map((r) => r.catalog_product_id),
+    ]);
+    if (!real || guardadas.has(real)) continue;
+    const avaliada = await avaliarFichaReal(a.item_externo_id!, token);
+    if (avaliada?.cpid !== real) continue;
+    for (const g of guardadas) {
+      const outro = publicados.find((o) => o.codigo_pai !== a.codigo_pai
+        && Object.values(o.variacoes_externas ?? {}).some((v) => v?.catalog_product_id === g));
+      if (outro) porCpid.set(g, { org_id: orgId, catalog_product_id: g, codigo_pai: outro.codigo_pai, origem: 'auto' });
+      else { porCpid.delete(g); substituidas.add(g); }
+    }
+    porCpid.set(real, { org_id: orgId, catalog_product_id: real, codigo_pai: a.codigo_pai, origem: 'auto' });
+    fichasReais.set(real, { status: avaliada.status, guardada: [...guardadas][0] ?? null });
+  }
+
   // GTIN por ficha: cada catalog_product_id corresponde a UMA variação (uma cor), então o EAN sai
   // de `variacoes.catalog_product_id`, não do código da família — que agrupa várias fichas.
-  const cpids = [...porCpid.keys()];
+  const cpids = [...new Set([...porCpid.keys(), ...substituidas])];
   const gtinPorCpid = new Map<string, string>();
   const statusPorCpid = new Map<string, string>();
   if (cpids.length > 0) {
@@ -178,6 +236,12 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Pr
       }
     }
   }
+  // A ficha real não está em `variacoes`: o EAN vem da guardada, e o status da trava acima.
+  for (const [real, { status, guardada }] of fichasReais) {
+    statusPorCpid.set(real, status);
+    const gtin = guardada ? gtinPorCpid.get(guardada) : undefined;
+    if (gtin) gtinPorCpid.set(real, gtin);
+  }
 
   const rows = [...porCpid.values()].map((r) => ({
     ...r,
@@ -191,6 +255,18 @@ export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Pr
     // `anuncios_externos.titulo` está vazio na maioria dos anúncios.
     const { error } = await admin.from('pulse_produtos').upsert(rows, { onConflict: 'org_id,catalog_product_id' });
     if (error) console.warn('pulse-coletar: sincronizarRadar upsert falhou:', error.message);
+    else {
+      // Só depois de a ficha nova existir. Uma ficha que outro item passou a usar não sai.
+      const sairam = [...substituidas].filter((c) => !porCpid.has(c));
+      if (sairam.length > 0) {
+        await admin.from('pulse_produtos').update({ status: 'arquivado' })
+          .eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado').in('catalog_product_id', sairam);
+      }
+      // `auto` só é arquivada pelo coletor, então voltar ao conjunto final desfaz isso. `pausado`,
+      // que é decisão do operador, não entra no filtro.
+      await admin.from('pulse_produtos').update({ status: 'ativo', coleta_falhas_seguidas: 0 })
+        .eq('org_id', orgId).eq('origem', 'auto').eq('status', 'arquivado').in('catalog_product_id', [...porCpid.keys()]);
+    }
   }
 
   // Paginado: o PostgREST trunca em ~1000 linhas sem avisar, e aqui o truncamento é silencioso na
@@ -477,6 +553,27 @@ export function elegivelPorBackoff(
 }
 
 /**
+ * Preço do nosso anúncio quando ele não está entre as ofertas da ficha (ADR-0119 Errata 13). Só
+ * anúncio plano e único do código: preço, comissão e frete têm que ser do mesmo item. A situação é
+ * lida na hora porque `anuncio_status` só é gravado depois deste passo, e só no tier completo.
+ */
+async function precoForaDaFicha(
+  admin: SupabaseClient, orgId: string, codigoPai: string, token: string,
+): Promise<{ item_id: string; preco: number } | null> {
+  const { data } = await admin.from('anuncios_externos')
+    .select('item_externo_id, variacoes_externas')
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('status', 'publicado').eq('codigo_pai', codigoPai)
+    .not('item_externo_id', 'is', null);
+  const anuncios = (data ?? []) as Array<Pick<AnuncioPublicadoRow, 'item_externo_id' | 'variacoes_externas'>>;
+  if (anuncios.length !== 1 || Object.keys(anuncios[0].variacoes_externas ?? {}).length !== 1) return null;
+  const itemId = anuncios[0].item_externo_id!;
+  const situacao = await lerSituacaoAnuncios([itemId], token);
+  if (situacao.get(itemId)?.status !== 'active') return null;
+  const venda = await lerSalePriceML(token, itemId);
+  return venda && venda.preco > 0 ? { item_id: itemId, preco: venda.preco } : null;
+}
+
+/**
  * Ofertas de uma ficha. `null` = falha de leitura. `ficha` preenchida = catálogo sem nenhum anúncio
  * ativo (ADR-0147 D-4): `/items` em 404 com a ficha respondendo. Só esse 404 prova a lista vazia,
  * por isso o fetch direto — `mlGet` devolve null em todo erro, e um 500 lido como "vazio" desativaria
@@ -614,7 +711,11 @@ export async function processarLoteProdutos(
     // mercado que não existe mais. Só chegamos aqui com a leitura da ficha bem-sucedida.
     // Lido ANTES do push porque a severidade do alerta compara contra ele (ADR-0133 D-3).
     const nossa = extrairNossaOferta(json, proprioSellerId);
-    if (nossa) precoEfetivoPorItem.set(nossa.item_id, nossa.preco);
+    const foraDaFicha = !nossa && produto.catalogo_status === 'vinculado' && produto.origem === 'auto' && produto.codigo_pai
+      ? await precoForaDaFicha(admin, orgId, produto.codigo_pai, token)
+      : null;
+    const vigente = nossa ?? foraDaFicha;
+    if (vigente) precoEfetivoPorItem.set(vigente.item_id, vigente.preco);
     // Ficha sem ofertas não alerta: as guardadas podem ser de semanas atrás (medido: 52 ofertas de
     // 14/09 na DSA, com a ficha em 404 desde então), e "concorrente saiu" hoje seria falso.
     if (!fichaSemOfertas) {
@@ -628,10 +729,11 @@ export async function processarLoteProdutos(
     // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
     // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
     const agora = new Date().toISOString();
-    const patch: Record<string, string | number | null> = {
+    const patch: Record<string, string | number | boolean | null> = {
       ultimo_snapshot_em: agora,
-      meu_item_id: nossa?.item_id ?? null,
-      meu_preco: nossa?.preco ?? null,
+      meu_item_id: vigente?.item_id ?? null,
+      meu_preco: vigente?.preco ?? null,
+      meu_preco_fora_da_ficha: foraDaFicha != null,
       // Carimba a LEITURA, não o achado. Só assim `meu_preco = null` distingue "olhamos a ficha e
       // não estamos nela" de "ainda não olhamos desde a atualização" — e a tela não afirma
       // "pausado ou sem estoque" sobre produto que a coleta nem chegou a alcançar (o teto de
@@ -902,11 +1004,11 @@ export async function processarColetaOrg(
 ): Promise<ResultadoColeta> {
   const ctx = await partes.prepararContexto(conexao, orgId);
 
-  if (tier === 'completo') await partes.sincronizarRadar(admin, orgId);
+  if (tier === 'completo') await partes.sincronizarRadar(admin, orgId, ctx.token);
 
   // 2) selecionar — sem filtro de backoff: é a rodada por org (passo.ts) que filtra.
   let query = admin.from('pulse_produtos')
-    .select('id, catalog_product_id, codigo_pai, origem, titulo, coleta_falhas_seguidas, coleta_tentativa_em')
+    .select('id, catalog_product_id, codigo_pai, origem, titulo, catalogo_status, coleta_falhas_seguidas, coleta_tentativa_em')
     .eq('org_id', orgId).eq('status', 'ativo')
     .order('ultimo_snapshot_em', { ascending: true, nullsFirst: true })
     .limit(maxProdutos);

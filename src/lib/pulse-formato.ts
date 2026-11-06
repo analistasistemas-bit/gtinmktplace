@@ -123,6 +123,11 @@ export function rotuloReputacao(nivel: string | null): string {
   return nivel ? rotulos[nivel] ?? 'Reputação não informada' : 'Reputação não informada';
 }
 
+/** Preço que pode ser comparado com o mercado: só a nossa oferta na ficha (ADR-0147 Errata 5). */
+export function precoComparavel(p: Pick<PulseProduto, 'meu_preco' | 'meu_preco_fora_da_ficha'>): number | null {
+  return p.meu_preco_fora_da_ficha ? null : p.meu_preco;
+}
+
 export interface Posicao {
   /** Diferença do nosso preço para o menor concorrente, em %. Negativo = estamos mais baratos. */
   deltaPct: number;

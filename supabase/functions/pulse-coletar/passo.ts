@@ -19,7 +19,7 @@ export interface DepsPulse {
   conexao(): Promise<ConexaoCanal | null>;
   /** Auth permanente → SemAcessoRodada (classificação fica em depsPulseReal, real). */
   contexto(cx: ConexaoCanal): Promise<ContextoColeta>;
-  sincronizarRadar(): Promise<void>;
+  sincronizarRadar(ctx: ContextoColeta): Promise<void>;
   /** Ativos, id > depoisDe, ordenados por id; tier quente só traz origem='auto'. */
   produtos(depoisDe: string, limite: number, tier: 'completo' | 'quente'): Promise<ProdutoColeta[]>;
   processarLote(ctx: ContextoColeta, produtos: ProdutoColeta[], tier: 'completo' | 'quente', baseline: boolean): Promise<ResultadoLote>;
@@ -68,7 +68,7 @@ export function passoPulse(deps: DepsPulse): Passo<ParamsPulse> {
 
     if (cursor === null) {
       if (params.tier === 'completo') {
-        await deps.sincronizarRadar();
+        await deps.sincronizarRadar(await deps.contexto(cx));
         return { proximo: gravarCursor({ etapa: 'produtos', pos: '' }), acumulado };
       }
       return etapaProdutos(deps, cx, params.tier, '', acumulado);

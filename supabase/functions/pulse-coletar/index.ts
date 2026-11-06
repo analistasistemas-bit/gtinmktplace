@@ -61,11 +61,11 @@ function depsPulseReal(admin: ReturnType<typeof adminClient>, orgId: string): De
       }
     },
 
-    sincronizarRadar: () => sincronizarRadar(admin, orgId),
+    sincronizarRadar: (ctx) => sincronizarRadar(admin, orgId, ctx.token),
 
     async produtos(depoisDe, limite, tier) {
       let q = admin.from('pulse_produtos')
-        .select('id, catalog_product_id, codigo_pai, origem, titulo, coleta_falhas_seguidas, coleta_tentativa_em')
+        .select('id, catalog_product_id, codigo_pai, origem, titulo, catalogo_status, coleta_falhas_seguidas, coleta_tentativa_em')
         .eq('org_id', orgId).eq('status', 'ativo')
         .order('id', { ascending: true }).limit(limite);
       if (depoisDe) q = q.gt('id', depoisDe);
