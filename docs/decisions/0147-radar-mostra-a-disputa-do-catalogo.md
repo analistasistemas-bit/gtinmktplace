@@ -178,6 +178,21 @@ catálogo, mas em `pulse_ofertas_atual` ele está preenchido — **1.059 `gold_s
 silencioso do PostgREST. Hoje são 495 linhas no total e no máximo 13 por vendedor — risco latente,
 longe do limite.
 
+## Errata 4 (2026-11-06) — o coletor passa a reconhecer a ficha sem ofertas
+
+A D-4 chamou de estado legítimo o `/items` em 404 com a ficha em 200, mas o `pulse-coletar` seguia
+tratando esse 404 como falha de leitura. O nome da ficha só era buscado depois da leitura das
+ofertas, então o produto nunca recebia nome nem snapshot: a tela mostrava "Ficha sem nome · coleta
+nunca" e o backoff do ADR-0173 suspendia a coleta (medido na Hairfly, na DSA e na Daludi em 05–06/11).
+
+**Decisão:** `/items` em 404 **com** `/products/{id}` respondendo conta como lista vazia. Grava nome
+e snapshot, zera as falhas e desativa as ofertas guardadas. Qualquer outro erro, inclusive 404 nas
+duas leituras, continua sendo falha.
+
+**Essa leitura não gera alerta.** As ofertas guardadas podem ser antigas (52 ofertas de 14/09 na
+DSA), e "concorrente saiu" hoje seria falso. Consequência aceita: se um 404 for passageiro, as
+ofertas voltam como `novo_concorrente` na leitura seguinte.
+
 ## O que esta decisão NÃO resolve
 
 **A org continua fora dos catálogos.** Entrar (opt-in de `catalog_listing`) é decisão comercial do

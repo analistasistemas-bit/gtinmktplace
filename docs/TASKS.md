@@ -1,5 +1,9 @@
 # PubliAI — Tasks
 
+## "Ficha sem nome" no Radar (ADR-0147 Errata 4) — 2026-11-06
+
+- [x] `pulse-coletar` tratava `/products/{id}/items` em 404 como falha de leitura: o produto nunca recebia nome nem snapshot e caía no backoff. Agora 404 com a ficha em 200 conta como catálogo sem ofertas: grava nome e snapshot, zera as falhas e desativa as ofertas guardadas sem alertar. Só `pulse-coletar`.
+
 ## Top produtos do Dashboard igual a Publicados — 2026-11-05
 
 - [x] O card mostrava o título do MLB dono (ex.: "Amarelo Ouro") somando a família inteira, e os valores divergiam de Publicados. `topProdutos` agora usa `vendasDoAnuncio` + `calcularResumoPublicados`: mesmo nome e mesma conta nas duas telas e no PDF. Venda fora da lista de Publicados não entra no ranking. Exportar do Dashboard fica bloqueado até os dados carregarem. Só frontend.

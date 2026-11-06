@@ -476,6 +476,39 @@ export function elegivelPorBackoff(
   return agoraMs - Date.parse(p.coleta_tentativa_em) >= DIAS_BACKOFF * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * Ofertas de uma ficha. `null` = falha de leitura. `ficha` preenchida = catálogo sem nenhum anúncio
+ * ativo (ADR-0147 D-4): `/items` em 404 com a ficha respondendo. Só esse 404 prova a lista vazia,
+ * por isso o fetch direto — `mlGet` devolve null em todo erro, e um 500 lido como "vazio" desativaria
+ * as ofertas guardadas. Mesma repetição do `mlGet` (429 e timeout, uma vez), aqui dentro para o 404
+ * da segunda tentativa não se perder.
+ */
+export async function lerOfertasDaFicha(
+  catalogProductId: string, token: string,
+): Promise<{ json: unknown; ficha: unknown | null } | null> {
+  const url = `${API}/products/${catalogProductId}/items?limit=100`;
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000),
+    }).catch(() => null);
+    if (resp?.status === 404) {
+      const ficha = await mlGet(`${API}/products/${catalogProductId}`, token);
+      return ficha === null ? null : { json: { results: [], paging: { total: 0 } }, ficha };
+    }
+    if (resp?.ok) {
+      const json = await resp.json().catch(() => null);
+      return json === null ? null : { json, ficha: null };
+    }
+    if (resp && resp.status !== 429) {
+      console.warn(`ML GET ${resp.status}: ${url}`);
+      return null;
+    }
+    if (resp && tentativa === 0) await new Promise((ok) => setTimeout(ok, 1500));
+  }
+  console.warn(`ML GET falhou: ${url}`);
+  return null;
+}
+
 /** Passos 3→7 sobre UM lote de produtos já selecionado (sem notificar — quem chama decide quando
  *  notificar, com ou sem chave). Extração mecânica dos mesmos passos de sempre; a única regra nova
  *  é o passo 3 registrar a falha de leitura para o backoff em vez de só pular o produto. */
@@ -499,15 +532,16 @@ export async function processarLoteProdutos(
   // 3) coletar por produto — pool(6): ofertas do catálogo → diff → grava/desativa idempotente.
   await pool(CONCORRENCIA, produtos, async (produto) => {
     // limit=100 explícito (é o default do ML, mas default não é contrato).
-    const json = await mlGet(`${API}/products/${produto.catalog_product_id}/items?limit=100`, token);
+    const leitura = await lerOfertasDaFicha(produto.catalog_product_id, token);
     // Falha de LEITURA não é "sem ofertas" (mesma trava de monitorar-moderados/catalogo.ts):
-    // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
+    // null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
     // ADR-0173: em vez de só pular, registra a falha (backoff) — o snapshot de hoje é preservado.
-    if (json === null) {
+    if (leitura === null) {
       const { error } = await admin.rpc('registrar_falha_coleta_pulse', { p_org: orgId, p_produto: produto.id });
       if (error) console.warn(`pulse-coletar: registrar_falha_coleta_pulse do produto ${produto.id} falhou:`, error.message);
       return;
     }
+    const { json, ficha: fichaSemOfertas } = leitura;
     const naoLidas = ofertasNaoLidas(json);
     const fichaCompleta = leituraCompletaDaFicha(json);
     if (naoLidas > 0) {
@@ -581,11 +615,15 @@ export async function processarLoteProdutos(
     // Lido ANTES do push porque a severidade do alerta compara contra ele (ADR-0133 D-3).
     const nossa = extrairNossaOferta(json, proprioSellerId);
     if (nossa) precoEfetivoPorItem.set(nossa.item_id, nossa.preco);
-    alertasPendentes.push({
-      produtoId: produto.id, anteriores, atuais, estadoGravado,
-      meuPreco: nossa?.preco ?? null,
-      fichaCompleta,
-    });
+    // Ficha sem ofertas não alerta: as guardadas podem ser de semanas atrás (medido: 52 ofertas de
+    // 14/09 na DSA, com a ficha em 404 desde então), e "concorrente saiu" hoje seria falso.
+    if (!fichaSemOfertas) {
+      alertasPendentes.push({
+        produtoId: produto.id, anteriores, atuais, estadoGravado,
+        meuPreco: nossa?.preco ?? null,
+        fichaCompleta,
+      });
+    }
     // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
     // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
     // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
@@ -604,7 +642,7 @@ export async function processarLoteProdutos(
       coleta_falhas_seguidas: 0,
     };
     if (!produto.titulo) {
-      const ficha = await mlGet(`${API}/products/${produto.catalog_product_id}`, token);
+      const ficha = fichaSemOfertas ?? await mlGet(`${API}/products/${produto.catalog_product_id}`, token);
       const nome = (ficha as { name?: string } | null)?.name;
       if (typeof nome === 'string' && nome.trim()) patch.titulo = nome.trim();
     }
