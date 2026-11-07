@@ -120,7 +120,7 @@ export function tituloOperacao(
   op: { acao: string; promocao_nome: string | null; promocao_id: string | null; origem_id?: string | null }, total: number,
 ): string {
   const anuncios = `${total} anúncio${total === 1 ? '' : 's'}`;
-  if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Reajustar preço de ${anuncios}`;
+  if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Alterar preço de ${anuncios}`;
   if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${anuncios}`;
   const nome = op.promocao_nome ?? op.promocao_id ?? '';
   if (op.acao === 'alterar_preco') return `${op.origem_id ? 'Reverter preço' : 'Alterar preço'} em ${nome}`;

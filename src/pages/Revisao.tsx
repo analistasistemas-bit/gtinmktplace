@@ -101,7 +101,7 @@ export function avisosParticipacaoPromocao(
     if (promocao) {
       avisos.push({
         id: f.id,
-        texto: `⚠️ ${f.titulo} participa da ${promocao}: mudar o preço pode tirar o anúncio da promoção.`,
+        texto: `⚠️ ${f.titulo} participa da ${promocao}. Mudar o preço para igual ou abaixo da oferta tira o anúncio da promoção.`,
       });
     }
   }

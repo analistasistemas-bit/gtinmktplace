@@ -201,8 +201,8 @@ describe('operações de status (emenda 2026-10-04)', () => {
 
 describe('reajuste de preço (I5)', () => {
   it('título: reajuste e reversão', () => {
-    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: null }, 12)).toBe('Reajustar preço de 12 anúncios');
-    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null }, 1)).toBe('Reajustar preço de 1 anúncio');
+    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: null }, 12)).toBe('Alterar preço de 12 anúncios');
+    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null }, 1)).toBe('Alterar preço de 1 anúncio');
     expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: 'OP0' }, 3)).toBe('Reverter reajuste de 3 anúncios');
     // origem_id não muda o título das outras ações
     expect(tituloOperacao({ acao: 'pausar', promocao_nome: null, promocao_id: null, origem_id: 'OP0' }, 2)).toBe('Pausar 2 anúncios');

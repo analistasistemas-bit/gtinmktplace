@@ -1830,12 +1830,13 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
           {reajuste?.pedido && (
             <PreviewReajuste
               pedido={reajuste.pedido}
+              familiaPorPai={Object.fromEntries(itensSelecionados.map((i) => [i.codigoPai, i.familiaId]))}
               onFechar={() => setReajuste(null)}
               onCriada={(id) => {
                 setReajuste(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
+                toast.success('Alteração de preço iniciada', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
               }}
             />
           )}

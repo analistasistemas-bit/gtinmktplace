@@ -18,8 +18,8 @@ import {
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import { calcularMarkup } from '@/lib/markup';
 import { parsePreco, tituloOperacao } from '@/lib/operacoes';
-import { MOTIVO_COR } from '@/lib/promocoes';
-import { formatarAjuste, maxDuasCasas, type CorAvaliada, type ItemPreview } from '@/lib/reajuste';
+import { MOTIVO_COR, rotuloTipo } from '@/lib/promocoes';
+import { formatarAjuste, maxDuasCasas, type CorAvaliada, type FaixaAtacado, type ItemPreview, type OfertaVigente } from '@/lib/reajuste';
 import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +32,81 @@ function piorCor(cores: CorAvaliada[]): CorAvaliada | null {
 const formatarInput = (n: number) => n.toFixed(2).replace('.', ',');
 const anuncios = (n: number) => `${n} anúncio${n === 1 ? '' : 's'}`;
 const nomeItem = (i: ItemPreview) => formatarNomeProduto(i.titulo) || i.ml_item_id;
+/** `avaliacao.cores` concatena as cores de todos os preços avaliados (base, faixas, ofertas): a lista de cores é a do base. */
+const coresDe = (i: ItemPreview): CorAvaliada[] =>
+  (i.precos_avaliados?.find((p) => p.tipo === 'base') ?? i.precos_avaliados?.[0])?.avaliacao.cores ?? i.avaliacao?.cores ?? [];
+const soAtacado = (i: ItemPreview) => !!i.passos?.length && !i.passos.some((p) => p.tipo === 'base');
+const mesmasFaixas = (a: FaixaAtacado[], b: FaixaAtacado[]) => a.length === b.length && a.every((f, k) => f.desconto_pct === b[k].desconto_pct);
+/** % atual da família: o do passo de faixas (config do produto); sem passo, deduzido das faixas vivas. */
+function descontosDe(i: ItemPreview): FaixaAtacado[] {
+  const passo = i.passos?.find((p) => p.tipo === 'faixas');
+  if (passo?.tipo === 'faixas' && passo.config?.length) return passo.config;
+  return (i.faixas_anteriores ?? []).map((f) => ({ min_unidades: f.min_unidades, desconto_pct: Math.round((1 - f.preco / i.preco_anterior) * 10000) / 100 }));
+}
+
+function OfertaLinha({ o, i }: { o: OfertaVigente; i: ItemPreview }) {
+  const passo = i.passos?.find((p) => (p.tipo === 'oferta' || p.tipo === 'saida') && p.oferta.chave === o.chave);
+  const quando = o.status === 'pending' ? 'Promoção agendada' : 'Em promoção';
+  return (
+    <li>
+      {o.preco != null ? `${quando} por ${fmtBRL(o.preco)}` : quando} · {rotuloTipo(o.tipo)}
+      {passo?.tipo === 'oferta' && <> · oferta muda para {fmtBRL(passo.alvo)}</>}
+      {passo?.tipo === 'saida' && ' · sai da promoção antes de mudar o preço'}
+    </li>
+  );
+}
+
+function FaixasItem({ i }: { i: ItemPreview }) {
+  return (
+    <div className="ml-7 text-xs">
+      <p className="text-muted-foreground">Atacado · semáforo por unidade</p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {(i.faixas_anteriores ?? []).map((f) => {
+          const alvo = i.faixas_alvo?.find((x) => x.min_unidades === f.min_unidades);
+          const av = i.precos_avaliados?.find((p) => p.tipo === 'faixa' && p.chave === String(f.min_unidades))?.avaliacao;
+          const pior = av ? piorCor(av.cores) : null;
+          const ui = av ? SEMAFORO_UI[av.pior] : null;
+          return (
+            <li key={f.min_unidades} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="tabular-nums">
+                {f.min_unidades}+ un.: {fmtBRL(f.preco)}{alvo ? ` → ${fmtBRL(alvo.preco)}` : ' (não muda)'}
+              </span>
+              <span className="flex items-center gap-2">
+                {pior && <LiquidoCor c={pior} />}
+                {ui && <ui.Icon className={cn('size-3.5', ui.text)} aria-label={`Faixa ${f.min_unidades}+ un.: ${ui.label}`} />}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function EditorAtacado({ pai, valor, n, desabilitado, versao, onMudar }: {
+  pai: string; valor: FaixaAtacado[]; n: number; desabilitado: boolean; versao: string; onMudar: (min: number, texto: string) => void;
+}) {
+  return (
+    <div className="ml-7 rounded-lg border bg-muted/30 p-2 text-xs">
+      <p className="font-medium">Desconto de atacado da família</p>
+      <div className="mt-1 flex flex-wrap gap-3">
+        {valor.map((f) => (
+          <label key={f.min_unidades} className="flex items-center gap-1.5">
+            {f.min_unidades}+ un.
+            <Input
+              key={`${versao}-${pai}-${f.min_unidades}`} defaultValue={formatarInput(f.desconto_pct)} inputMode="decimal" disabled={desabilitado}
+              aria-label={`Desconto de ${f.min_unidades}+ un. da família ${pai} (%)`} className="h-8 w-20"
+              onBlur={(e) => onMudar(f.min_unidades, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            />
+            %
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-muted-foreground">Vale para {n === 1 ? 'o' : 'os'} {anuncios(n)} desta família</p>
+    </div>
+  );
+}
 
 function LiquidoCor({ c }: { c: CorAvaliada }) {
   if (c.liquido == null || c.custo == null) return <span className="text-muted-foreground">{MOTIVO_COR[c.motivo ?? ''] ?? 'Sem cálculo'}</span>;
@@ -69,8 +144,10 @@ function useAgora(ativo: boolean) {
   return agora;
 }
 
-export function PreviewReajuste({ pedido, onFechar, onCriada }: {
+export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
   pedido: PedidoPreviewReajuste; onFechar: () => void; onCriada: (operacaoId: string) => void;
+  /** codigo_pai → id da família que o servidor chaveia em `atacado`; sem ele não há editor de %. */
+  familiaPorPai?: Record<string, string>;
 }) {
   const preview = usePreviewReajuste();
   const confirmar = useConfirmarReajuste();
@@ -80,6 +157,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   const [resp, setResp] = useState<RespostaPreviewReajuste | null>(null);
   const [erroPreview, setErroPreview] = useState<ErroOperacao | null>(null);
   const [precos, setPrecos] = useState<Record<string, number>>({});
+  const [atacado, setAtacado] = useState<Record<string, FaixaAtacado[]>>({});
   const [incluir, setIncluir] = useState<Record<string, boolean>>({});
   const [confVermelho, setConfVermelho] = useState(false);
   const [confSemDado, setConfSemDado] = useState(false);
@@ -92,12 +170,13 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   // Preview que falha não pode deixar a tela com um preço e o rascunho válido com outro: os preços editados
   // voltam aos do rascunho válido e o input remonta (versaoInput na key) com o preço dele.
   const precosValidos = useRef<Record<string, number>>({});
+  const atacadoValido = useRef<Record<string, FaixaAtacado[]>>({});
   const [versaoInput, setVersaoInput] = useState(0);
-  async function pedir(p: Record<string, number>) {
+  async function pedir(p: Record<string, number>, a: Record<string, FaixaAtacado[]> = atacado) {
     const id = ++ultimoPedido.current;
     setErroPreview(null);
     try {
-      const r = await preview.mutateAsync({ ...pedido, ...(Object.keys(p).length ? { precos: p } : {}) });
+      const r = await preview.mutateAsync({ ...pedido, ...(Object.keys(p).length ? { precos: p } : {}), ...(Object.keys(a).length ? { atacado: a } : {}) });
       if (id !== ultimoPedido.current) return;
       // Novo rascunho: confirmações zeradas (C5); mantém só o desmarque manual de item cujo preço não mudou
       // (🔴/⚪ seguem o padrão do rascunho novo: desmarcados).
@@ -106,11 +185,13 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
       setIncluir((s) => Object.fromEntries(Object.entries(s).filter(([ml, v]) => v === false && mesmoPreco.has(ml))));
       respAtual.current = r;
       precosValidos.current = p;
+      atacadoValido.current = a;
       setResp(r); setConfVermelho(false); setConfSemDado(false); setRecusas([]);
     } catch (e) {
       if (id !== ultimoPedido.current) return;
       setErroPreview(e instanceof ErroOperacao ? e : new ErroOperacao('Não foi possível calcular o preview.'));
       setPrecos(precosValidos.current);
+      setAtacado(atacadoValido.current);
       setVersaoInput((v) => v + 1);
     }
   }
@@ -135,6 +216,10 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   useEffect(() => { if (!temVermelho) setConfVermelho(false); }, [temVermelho]);
   useEffect(() => { if (!temSemDado) setConfSemDado(false); }, [temSemDado]);
 
+  // Um editor de % por produto, no primeiro anúncio dele que tem faixas.
+  const donoEditor = new Map<string, string>();
+  for (const i of elegiveis) if (i.faixas_anteriores?.length && !donoEditor.has(i.codigo_pai)) donoEditor.set(i.codigo_pai, i.ml_item_id);
+
   const expiraEm = resp?.expira_em ? Date.parse(resp.expira_em) : null;
   const agora = useAgora(expiraEm != null);
   const restanteS = expiraEm != null ? Math.max(0, Math.floor((expiraEm - agora) / 1000)) : null;
@@ -154,6 +239,23 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
     const novos = { ...precos, [i.ml_item_id]: v };
     setPrecos(novos);
     void pedir(novos);
+  }
+
+  function editarAtacado(familiaId: string, base: FaixaAtacado[], min: number, texto: string) {
+    const v = parsePreco(texto);
+    if (v == null || !(v > 0) || v >= 100 || !maxDuasCasas(v)) {
+      toast.error('Desconto inválido: use um valor entre 0 e 100, com até 2 casas.');
+      setVersaoInput((x) => x + 1);
+      return;
+    }
+    const atual = atacado[familiaId] ?? base;
+    const novo = atual.map((f) => (f.min_unidades === min ? { ...f, desconto_pct: v } : f));
+    if (mesmasFaixas(novo, atual)) return;
+    const { [familiaId]: _antes, ...resto } = atacado;
+    // Só a família com % diferente do vivo vai no pedido: mandar o igual expande a família inteira.
+    const novos = mesmasFaixas(novo, base) ? resto : { ...resto, [familiaId]: novo };
+    setAtacado(novos);
+    void pedir(precos, novos);
   }
 
   async function executar() {
@@ -187,7 +289,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
         <SheetHeader>
           <SheetTitle className="pr-8">{titulo}</SheetTitle>
           <SheetDescription>
-            {reverter ? 'Volta ao preço de antes do reajuste.' : pedido.ajuste ? `Ajuste ${formatarAjuste(pedido.ajuste)}` : null}
+            {reverter ? 'Volta ao preço de antes do reajuste.' : pedido.ajuste ? (pedido.ajuste.tipo === 'definir' ? formatarAjuste(pedido.ajuste) : `Ajuste ${formatarAjuste(pedido.ajuste)}`) : null}
             {restanteS != null && !expirado && (
               <> · Expira em {Math.floor(restanteS / 60)}:{String(restanteS % 60).padStart(2, '0')}</>
             )}
@@ -202,7 +304,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
               <p className="font-medium text-danger">{erroPreview.message}</p>
               {resp && <p>Não foi possível recalcular — o preço voltou ao do preview válido.</p>}
               {erroPreview.itens?.map((r) => <p key={r.ml_item_id}>{r.ml_item_id}: {r.motivo}</p>)}
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => void pedir(precos)}>Tentar de novo</Button>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => void pedir(precos, atacado)}>Tentar de novo</Button>
             </div>
           )}
 
@@ -213,7 +315,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
           {expirado && (
             <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
               <p>O preview expirou — gere de novo.</p>
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => void pedir(precos)} disabled={preview.isPending}>Gerar de novo</Button>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => void pedir(precos, atacado)} disabled={preview.isPending}>Gerar de novo</Button>
             </div>
           )}
 
@@ -232,7 +334,10 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
           {elegiveis.length > 0 && (
             <ul className="flex flex-col divide-y divide-border rounded-lg border" aria-label="Anúncios do reajuste">
               {elegiveis.map((i) => {
-                const pior = i.avaliacao ? piorCor(i.avaliacao.cores) : null;
+                const cores = coresDe(i);
+                const pior = i.avaliacao ? piorCor(cores) : null;
+                const familiaId = familiaPorPai?.[i.codigo_pai];
+                const mostraEditor = !reverter && !!familiaId && donoEditor.get(i.codigo_pai) === i.ml_item_id;
                 const aberto = abertos.has(i.ml_item_id);
                 return (
                   <li key={i.ml_item_id} className="flex flex-col gap-2 p-3">
@@ -248,6 +353,13 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
                       </div>
                       <PillsSemaforo item={i} />
                     </div>
+                    {!!i.ofertas?.length && (
+                      <div className="ml-7 text-xs">
+                        <ul className="flex flex-col gap-0.5 text-info">{i.ofertas.map((o) => <OfertaLinha key={o.chave} o={o} i={i} />)}</ul>
+                        <p className="mt-1 text-muted-foreground">O preço riscado pode não acompanhar o novo preço base</p>
+                      </div>
+                    )}
+                    {soAtacado(i) ? <p className="ml-7 text-sm font-medium">Só atacado</p> : (
                     <div className="ml-7 flex flex-wrap items-center gap-2 text-sm">
                       <span className="tabular-nums text-muted-foreground">{fmtBRL(i.preco_anterior)}</span>
                       <span aria-hidden>→</span>
@@ -263,20 +375,29 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
                         />
                       )}
                     </div>
+                    )}
                     {pior && <p className="ml-7 text-xs"><LiquidoCor c={pior} /></p>}
+                    {!!i.faixas_anteriores?.length && <FaixasItem i={i} />}
+                    {mostraEditor && (
+                      <EditorAtacado
+                        pai={i.codigo_pai} valor={atacado[familiaId!] ?? descontosDe(i)} desabilitado={ocupado}
+                        n={itens.filter((x) => x.codigo_pai === i.codigo_pai).length} versao={`${resp?.operacao_id}-${versaoInput}`}
+                        onMudar={(min, texto) => editarAtacado(familiaId!, descontosDe(i), min, texto)}
+                      />
+                    )}
                     {i.aviso && <p className="ml-7 text-xs text-warning">{i.aviso}</p>}
-                    {(i.avaliacao?.cores.length ?? 0) > 1 && (
+                    {cores.length > 1 && (
                       <div className="ml-7">
                         <Button
                           type="button" variant="ghost" size="xs" aria-expanded={aberto}
                           onClick={() => setAbertos((s) => { const n = new Set(s); if (aberto) n.delete(i.ml_item_id); else n.add(i.ml_item_id); return n; })}
                         >
                           <ChevronDown className={cn('transition-transform', aberto && 'rotate-180')} aria-hidden />
-                          {i.avaliacao!.cores.length} cores
+                          {cores.length} cores
                         </Button>
                         {aberto && (
                           <ul className="mt-1 flex flex-col gap-1 text-xs">
-                            {i.avaliacao!.cores.map((c, k) => {
+                            {cores.map((c, k) => {
                               const ui = SEMAFORO_UI[c.semaforo];
                               return (
                                 <li key={c.variation_id ?? k} className="flex flex-wrap items-center justify-between gap-2">
@@ -333,7 +454,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
           )}
           {resp?.operacao_id && (podeExecutar ? (
             <Button onClick={executar} disabled={!podeConfirmar}>
-              {reverter ? 'Reverter' : 'Reajustar'} {anuncios(incluidos.length)}
+              {reverter ? 'Reverter' : 'Alterar'} {anuncios(incluidos.length)}
             </Button>
           ) : (
             <p className="text-sm text-muted-foreground">Só administradores executam.</p>

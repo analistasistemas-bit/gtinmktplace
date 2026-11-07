@@ -3,6 +3,8 @@ import type { Ajuste } from '../../supabase/functions/_shared/operacoes/reajuste
 
 export { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from '../../supabase/functions/_shared/operacoes/reajuste/alvo.ts';
 export type { Ajuste, Avaliacao, CorAvaliada, TipoAjuste } from '../../supabase/functions/_shared/operacoes/reajuste/tipos.ts';
+export type { FaixaAtacado } from '../../supabase/functions/_shared/canais/contrato.ts';
+export type { OfertaVigente, PrecoAvaliado, Passo } from '../../supabase/functions/_shared/operacoes/reajuste/tipos.ts';
 export type { ItemPreview } from '../../supabase/functions/_shared/operacoes/reajuste/preview.ts';
 export type { Confirmacao } from '../../supabase/functions/_shared/operacoes/reajuste/pedido.ts';
 

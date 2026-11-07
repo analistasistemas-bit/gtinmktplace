@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/lib/database.types';
 import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import { QK } from '@/lib/queries';
-import type { Ajuste, Confirmacao, ItemPreview } from '@/lib/reajuste';
+import type { Ajuste, Confirmacao, FaixaAtacado, ItemPreview } from '@/lib/reajuste';
 import type { ResultadoSimulacao } from '@/lib/promocao-simulacao';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
@@ -196,6 +196,8 @@ export function useSimularPrecos() {
 /** I5 — pedido de preview do reajuste. Reverter = `origem_id` (sem `ajuste`); `precos` sobrescreve o alvo de itens editados. */
 export interface PedidoPreviewReajuste {
   familias?: string[]; ml_item_ids?: string[]; ajuste?: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null;
+  /** Novo % por família (id da família → faixas). Vale para todos os anúncios dela. */
+  atacado?: Record<string, FaixaAtacado[]>;
 }
 /** 201: rascunho gravado. 200 com `operacao_id: null`: nada a executar (tudo sem alteração/fora) — nada gravado. */
 export interface RespostaPreviewReajuste { operacao_id: string | null; itens: ItemPreview[]; expira_em?: string }
