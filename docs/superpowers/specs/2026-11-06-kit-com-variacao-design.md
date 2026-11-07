@@ -56,7 +56,7 @@ Este é o quarto sentido: **kit com variação**.
 4. Digita quantos kits montar em cada combinação e tamanho **[Diego]**. As colunas são os tamanhos
    reais da base. Rascunho aprovado pelo Diego em 06/11.
 5. Só vira anúncio o que tiver quantidade maior que 0 **[agente]**. Por isso não há teto de combinações.
-6. Define preço, meta e piso.
+6. Define o preço e, se quiser, liga **Vender só em kit** com a meta.
 7. **Simulador** de lucro, margem, markup e impostos, atualizado ao mudar o preço **[Diego]**.
 8. Prévia: título, descrição, foto por combinação, preço. Publica depois de conferir.
 
@@ -67,9 +67,9 @@ Botão **Gerenciar kit** na linha do kit em Publicados **[agente, aceito sem obj
 - Mostra saldo por combinação e tamanho.
 - **Montar mais:** só aumenta o saldo do anúncio existente, nunca cria anúncio novo **[Diego]**.
   Combinação ou tamanho nunca publicado vira item novo na mesma família, com foto própria.
-- **Desmontar:** as peças voltam ao unitário **[Diego]**. No modo automático, desmontar passa o kit
-  para manual até o operador religar, com aviso na tela, para o sistema não remontar **[Diego]**.
-- Trocar entre automático e manual, e alterar meta e piso.
+- **Desmontar:** as peças voltam ao unitário **[Diego]**. Com reposição automática ligada, desmontar
+  a desliga até o operador religar, com aviso na tela, para o sistema não remontar **[Diego]**.
+- Ligar e desligar Vender só em kit, a reposição automática e alterar a meta.
 
 ## Estoque
 
@@ -99,44 +99,48 @@ Consequências:
 São transferências de estoque entre SKUs, registradas no ledger com motivo próprio. As N cores
 mexem juntas, numa transação: nunca baixa parcial.
 
-Ordem obrigatória, para nunca existir oferta dupla:
+**Quarentena obrigatória [Diego, opção B]:** peça nunca sai de anúncio ativo. Isso vale nos dois
+sentidos, porque o kit também é anúncio que vende:
 
-- **Montar:** reduz o unitário → confirma no ML → aumenta o kit.
-- **Desmontar:** reduz o kit → confirma no ML → aumenta o unitário.
+- **Montar:** pausa os individuais de origem que estiverem ativos → confirma no ML → confere pedidos
+  → move as peças → aumenta o kit → reativa os individuais que a operação pausou.
+- **Desmontar:** pausa os itens do kit → confirma no ML → confere pedidos → move as peças → volta os
+  itens do kit que ainda têm saldo.
 
-"Confirma" é ler o saldo vivo: o 200 do QStash não prova escrita no canal. Falha no meio deixa a
-peça sem oferta, nunca em dois lugares, e precisa de recuperação automática ou alerta. Peça em
-trânsito não pode sumir do ledger.
+Peça guardada já está pausada: pula a pausa, mas não pula a conferência de pedidos.
 
-### Reposição automática [Diego]
+"Confirma" segue o Contrato de segurança, item 4. Falha no meio deixa a peça sem oferta, nunca em dois
+lugares, e gera alerta. Peça em trânsito não some do ledger.
 
-Configuração por kit:
+### Reposição [Diego, opção B]
 
-- **Meta:** quantos kits manter em cada combinação e tamanho publicado.
-- **Piso:** mínimo de peças que fica no unitário em cada cor e tamanho.
-- **Modo manual:** nada move sozinho; o sistema avisa no Telegram quando uma combinação acaba.
+| Situação do produto | Como repõe o kit |
+|---|---|
+| **Vender só em kit** ligado | Automático até a meta, usando as peças guardadas |
+| Individual ativo | Só **Montar mais**, manual, com quarentena. Telegram avisa quando uma combinação acaba |
 
-Dispara após venda do kit, entrada de mercadoria, cancelamento e ajuste manual. Move só o que deixa
-todas as cores acima do piso. Sem peça suficiente, o kit vende até zerar, sai do ar e volta sozinho
-quando houver peça.
+Motivo: com individual ativo, repor sozinho exigiria pausar anúncio que vende a cada reposição. Por
+isso não existe piso: a automação nunca tira peça de individual ativo.
 
-**Corrigido pela revisão do Codex:** uma venda durante a transferência produz no ML o mesmo número
-que a redução, então ler o saldo depois não prova nada. Isso vale também para o modo manual, ao
-contrário do que este documento dizia. Tratamento em "Contrato de segurança", item 1.
+**Meta:** quantos kits manter em cada combinação e tamanho publicado. Configurada por kit.
+
+A reposição automática dispara após venda do kit, entrada, cancelamento e ajuste. Sem peça suficiente,
+o kit vende até zerar, sai do ar e volta sozinho quando houver peça. Pode ser desligada, e o Telegram
+passa a avisar quando uma combinação acabar.
 
 Se várias combinações disputam peças, a distribuição é decisão do construtor, desde que seja
 determinística e registrada.
 
-**A tela de criar kit precisa explicar isso [Diego].** Meta, piso e modo manual ficam acompanhados
-de texto e exemplo na própria tela, para não confundir. Exemplo a exibir, usando os valores digitados
-pelo operador (Preto + Branco M, meta 3, piso 2):
+**A tela de criar kit precisa explicar isso [Diego].** Vender só em kit, meta e reposição ficam
+acompanhados de texto e exemplo na própria tela, para não confundir. Exemplo a exibir, usando os
+valores digitados pelo operador (Preto + Branco M, meta 3):
 
 | Situação | O que acontece |
 |---|---|
-| Vendeu 1 kit, saldo foi para 2, e o unitário tem 10 de cada | O sistema move 1 peça de cada cor para o kit |
-| O unitário de Preto M está em 2 | Não move, porque o piso protege o unitário; o kit vende até acabar |
+| Vendeu 1 kit, saldo foi para 2, e há peças guardadas das duas cores | O sistema move 1 peça de cada cor para o kit |
+| Acabou o Preto M guardado e sobrou Branco M | Não move; o kit vende até acabar, e o Branco M volta ao individual |
 | Chegou mercadoria | O sistema repõe os kits até a meta |
-| Kit zerou e o unitário está no piso | O kit sai do ar e volta sozinho quando entrar peça |
+| Kit zerou e falta peça | O kit sai do ar e volta sozinho quando entrar peça |
 
 ### Vender só em kit [Diego]
 
@@ -151,21 +155,21 @@ Cada SKU individual usado no kit fica em um destes estados:
 
 | Estado | Anúncio individual | Reposição do kit pode usar |
 |---|---|---|
-| **Normal** (opção desligada) | ativo | sim, respeitando o piso |
-| **Guardado** | pausado pelo kit | sim, piso 0 |
+| **Normal** (opção desligada) | ativo | não; só Montar mais, com quarentena |
+| **Guardado** | pausado pelo kit | sim |
 | **Sobra** | reativado | não, até voltar a guardado |
 
 Transições:
 
 1. **Ligar a opção:** Normal → Guardado. Só os SKUs usados no kit. A pausa é confirmada no ML antes de
-   o piso virar 0.
+   a reposição usar as peças.
 2. **Virar sobra:** Guardado → Sobra quando as peças do SKU não conseguem formar nenhuma combinação
    publicada, porque falta outra cor do mesmo tamanho. O sistema **reativa o individual e avisa no
    Telegram** **[Diego]**.
 3. **Sair da sobra:** Sobra → Guardado quando entrar a peça que faltava. Ordem obrigatória: pausa o
    individual → confirma no ML → só então monta kit. A peça vendida nesse meio fica fora da conta,
    porque a montagem relê o saldo depois da pausa confirmada.
-4. **Desligar a opção:** Guardado e Sobra → Normal. Reativa os individuais, e o piso volta ao anterior.
+4. **Desligar a opção:** Guardado e Sobra → Normal. Reativa os individuais que a opção pausou.
 
 **Entrada de estoque [Diego]:** toda entrada (nota, ajuste, cancelamento) consulta o estado do SKU
 antes de agir:
@@ -173,7 +177,7 @@ antes de agir:
 - **Guardado:** o anúncio individual **não reativa**, e a reposição monta até a meta. Exceção nova à
   regra de reativação do ADR-0111. O bloqueio vale para qualquer caminho de reativação.
 - **Sobra:** aplica a transição 3 se agora formar combinação; senão continua vendendo no individual.
-- **Normal:** regra atual, seguida da reposição respeitando o piso.
+- **Normal:** regra atual, sem reposição automática do kit.
 
 Falha ao consultar o estado nunca reativa nem monta: fica como está e alerta.
 
@@ -199,8 +203,9 @@ Valem para toda operação. Um furo em qualquer um reprova o desenho.
 Regras exigidas pela revisão adversarial do Codex (rodada 1, veredito REVISAR). Os números seguem
 os furos daquela revisão, e cada regra é obrigatória para o plano.
 
-1. **Origem vendável [decisão do Diego pendente]:** não transferir peça de anúncio ativo. O ML não
-   oferece redução condicional conhecida. Ver "Decisão pendente" abaixo.
+1. **Origem vendável [Diego, opção B]:** peça nunca sai de anúncio ativo. Toda transferência usa
+   quarentena, e a automação só usa peça guardada. Confirmar na documentação do ML se existe redução
+   condicional **[medir]**; existindo, isso não muda a regra sem nova decisão.
 2. **Compromissos antes de consumir:** depois da pausa confirmada, importar e baixar os pedidos
    anteriores à pausa, com referência idempotente. Com a conta incerta, bloquear montagem e qualquer
    push que aumente quantidade.
@@ -237,15 +242,8 @@ os furos daquela revisão, e cada regra é obrigatória para o plano.
     com outros kits e Full vale nos dois sentidos, durante todo o ciclo. A pausa abrange anúncios
     relacionados de catálogo.
 
-### Decisão pendente: como tirar peça de anúncio ativo
-
-- **A. Quarentena em toda transferência:** pausa o individual → confirma → confere pedidos → move →
-  reativa. Reposição em lotes para pausar menos.
-- **B. Automático só em "Vender só em kit":** com individual ativo, só há montagem manual com
-  quarentena.
-- **C. Aceitar a janela:** contraria o objetivo de não ter furo.
-
-Tempo fora do ar e efeito das pausas no ranking do ML **[medir]**.
+Tempo de quarentena e efeito das pausas no ranking do ML **[medir]**. Acontecem só em Montar mais,
+Desmontar e ao sair de Sobra.
 
 ## Publicação no ML
 
