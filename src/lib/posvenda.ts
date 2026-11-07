@@ -133,7 +133,8 @@ export async function buscarTentativasAtivas(): Promise<TentativaAtivaPosvenda[]
   const { data, error } = await supabase
     .from('ml_posvenda_acoes')
     .select('operacao_id, claim_id, return_id, recurso, acao, estado')
-    .in('estado', ['reservada', 'enviada', 'desconhecido']);
+    .in('estado', ['reservada', 'enviada', 'desconhecido'])
+    .not('claim_id', 'is', null);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as TentativaAtivaPosvenda[];
 }

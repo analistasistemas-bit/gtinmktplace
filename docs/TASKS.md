@@ -216,6 +216,7 @@ Em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish
 - [x] sync-mensagem ao reprocessar o evento `read` lê só a 1ª página do pack (Ruling R18) — paginar `buscarMensagensPackEstrito`. — **Resolvido 29/10 (main `e6bcee06`):** `paginarPack` compartilhado percorre o pack inteiro (dedupe por id, erro em página sem avanço ou incompleta com total válido, teto de 100 páginas).
 - [x] Revogar `anon` (e PUBLIC) de `resumo_mensagens_posvenda` (SECURITY DEFINER; anon recebe zeros hoje). — **Resolvido 29/10:** migration `20261029123501_posvenda_resumo_grants.sql` aplicada (anon sem execute, authenticated com).
 - [x] Regenerar `src/lib/database.types.ts` (editado à mão para `lida_ml_em` e a RPC). — **Resolvido 29/10:** regenerado do banco e casts de `ml_posvenda_acoes`/RPC removidos.
+- [x] Anexo nas mensagens pós-venda (em produção 07/11, main `3236f39a`): envio com JPG/PNG/PDF, exibição no balão, trava por pack e liberação manual (emendas aos ADR-0067 e 0192). Pendente: primeiro envio real pelo app e regenerar `database.types.ts` com `pack_id`.
 - [ ] Textos de confirmação de reembolso (`accepted`/`applied`) nunca observados no ML real — se divergirem e não houver outra prova (reembolso integral também confirma por claim fechado com resolução de reembolso posterior ao POST), a ação fica travada (lado seguro).
 
 ## Reposição de componente reativa Kit Virtual pausado (emenda ADR-0154/0111) — 2026-10-28

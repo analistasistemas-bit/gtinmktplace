@@ -6,7 +6,7 @@ function msg(direcao: 'recebida' | 'enviada', extra: Partial<Mensagem> = {}): Me
   return {
     id: Math.random().toString(), pack_id: 'p', order_id: 'o', message_id: Math.random().toString(), direcao, texto: 'x',
     item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null, order_status: 'paid',
-    data_ml: '2026-10-28T10:00:00Z', lida: false, lida_ml_em: null, ...extra,
+    data_ml: '2026-10-28T10:00:00Z', lida: false, lida_ml_em: null, anexos: [], ...extra,
   };
 }
 
@@ -15,7 +15,7 @@ function conversa(over: Partial<Conversa> & { ultimaMsg?: Mensagem; naoLidaML?: 
   return {
     pack_id: 'p', order_id: 'o', item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null,
     order_status: 'paid', mensagens: [m], aguardando: false, ultima: m.data_ml,
-    shipping_status: 'handling',
+    shipping_status: 'handling', envioPendente: null,
     idsNaoLidosML: over.naoLidaML === false ? [] : [m.message_id],
     ...over,
   } as Conversa;

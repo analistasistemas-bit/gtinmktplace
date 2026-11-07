@@ -383,10 +383,11 @@ export function efeitoConfirmado(
 }
 
 // --- Anexos (Task 6) ---
-export type DestinoAnexo = 'revisao' | 'mensagem';
+export type DestinoAnexo = 'revisao' | 'mensagem' | 'mensagem_pack';
 const TIPOS_ANEXO: Record<DestinoAnexo, string[]> = {
   revisao: ['image/jpeg', 'image/png'],
   mensagem: ['image/jpeg', 'image/png', 'application/pdf'],
+  mensagem_pack: ['image/jpeg', 'image/png', 'application/pdf'],
 };
 export const MAX_BYTES_ANEXO = 5 * 1024 * 1024;
 
@@ -402,6 +403,42 @@ export function validarArquivoAnexo(tipo: string, bytes: number, destino: Destin
 
 /** Identificador do anexo na resposta do ML (`file_name` na revisão, `filename` na mensagem). */
 export function nomeDoAnexo(resp: unknown, destino: DestinoAnexo): string | null {
-  const v = (resp as Record<string, unknown> | null)?.[destino === 'revisao' ? 'file_name' : 'filename'];
+  const campo = destino === 'revisao' ? 'file_name' : destino === 'mensagem_pack' ? 'id' : 'filename';
+  const v = (resp as Record<string, unknown> | null)?.[campo];
   return typeof v === 'string' && v ? v : null;
+}
+
+export interface AnexoMensagem {
+  filename: string;
+  original_filename: string | null;
+  type: string | null;
+  size: number | null;
+  potential_security_threat: boolean;
+}
+
+/** Procura o anexo `filename` nos `message_attachments` dos raws gravados da conversa. */
+export function anexoDaConversa(raws: unknown[], filename: string): AnexoMensagem | null {
+  for (const raw of raws) {
+    const lista = (raw as { message_attachments?: unknown } | null)?.message_attachments;
+    if (!Array.isArray(lista)) continue;
+    for (const a of lista as Array<Record<string, unknown> | null>) {
+      if (a?.filename !== filename) continue;
+      const str = (v: unknown) => (typeof v === 'string' ? v : null);
+      return {
+        filename,
+        original_filename: str(a.original_filename),
+        type: str(a.type),
+        size: typeof a.size === 'number' ? a.size : null,
+        potential_security_threat: a.potential_security_threat === true,
+      };
+    }
+  }
+  return null;
+}
+
+/** Motivo para NÃO servir o anexo ao navegador (ameaça sinalizada ou tipo fora da lista). null = liberado. */
+export function motivoDownloadBloqueado(a: AnexoMensagem): string | null {
+  if (a.potential_security_threat) return 'Anexo sinalizado como ameaça pelo Mercado Livre.';
+  if (!a.type || !TIPOS_ANEXO.mensagem_pack.includes(a.type)) return 'Tipo de anexo não permitido.';
+  return null;
 }

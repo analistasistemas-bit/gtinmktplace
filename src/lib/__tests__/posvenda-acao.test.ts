@@ -1,14 +1,33 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+const consulta = vi.hoisted(() => {
+  const q = {
+    select: vi.fn(() => q),
+    in: vi.fn(() => q),
+    not: vi.fn(async () => ({ data: [], error: null })),
+  };
+  return q;
+});
+
 vi.mock('../supabase', () => ({
-  supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) } },
+  supabase: {
+    auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) },
+    from: () => consulta,
+  },
 }));
 
-import { ehAcaoPendente, estadoTerminalDoErro, executarAcaoPosvenda, verificarAcaoPosvenda } from '../posvenda';
+import { buscarTentativasAtivas, ehAcaoPendente, estadoTerminalDoErro, executarAcaoPosvenda, verificarAcaoPosvenda } from '../posvenda';
 
 const OP = '11111111-1111-4111-8111-111111111111';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('buscarTentativasAtivas', () => {
+  it('ignora tentativas de pack: só linhas com claim_id', async () => {
+    await buscarTentativasAtivas();
+    expect(consulta.not).toHaveBeenCalledWith('claim_id', 'is', null);
+  });
+});
 
 describe('ehAcaoPendente', () => {
   it('409 em_andamento do posvenda-acao → pendente preservado pelo postEdge', async () => {

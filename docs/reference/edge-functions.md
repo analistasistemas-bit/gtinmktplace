@@ -81,7 +81,7 @@
 | sync-mensagem | false | QStash worker | sim (upsert) |
 | posvenda-detalhe | true | frontend (JWT, ADR-0192) | sim (só leitura no ML) |
 | posvenda-acao | true | frontend (JWT, ADR-0192) | sim (operacao_id + trava por recurso em ml_posvenda_acoes) |
-| posvenda-anexo | true | frontend (JWT, ADR-0192) | não (upload; sem efeito até a ação) |
+| posvenda-anexo | true | frontend (JWT, ADR-0192) | não (upload; sem efeito até a ação). Destino `mensagem_pack` (upload por pack) e download por POST `{pack_id, filename}` (emenda 07/11) |
 | marcar-mensagens-lidas-ml | true | frontend (JWT, ADR-0192) | sim (lida_ml_em monotônico) |
 | sync-devolucao | false | QStash worker | sim (upsert) |
 | responder-pergunta | true | HTTP (frontend) | não |
@@ -1573,7 +1573,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `blocked_by_claim` ou `blocked_by_mediation` (reclamação aberta bloqueia o chat pós-venda), devolve
   409 `codigo: 'reclamacao_aberta'` e o card troca a caixa de resposta pelo link da reclamação; a
   conversa sai de "aguardando" quando `ml_devolucoes` tem `mediations` aberta no pedido (emenda
-  ADR-0067, 01/11).
+  ADR-0067, 01/11). **Emenda 07/11:** aceita `anexo` (id do upload) e `operacao_id`; envia pela trava de
+  `ml_posvenda_acoes` (`mensagem:{pack_id}`, um envio em aberto por pack, nunca reenvia sozinha) e responde
+  `{estado, operacao_id, pendenteConfirmacao}`. `verificar: true` relê o ML sem POST; `liberar: true` grava
+  `inconclusiva` (decisão humana). Recusa do ML = HTTP 422, cancelamento = 409.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173:** desde 28/09,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   CODIGO_PEDIDO_CANCELADO,
   ERRO_PEDIDO_CANCELADO,
@@ -7,7 +7,6 @@ import {
   ERRO_EM_MEDIACAO,
   pedidoCancelado,
   resolverMetaPack,
-  responderMensagemPedido,
   upsertMensagens,
 } from '../mensagens-io';
 import type { MensagemML } from '../mensagem-mapper';
@@ -214,31 +213,6 @@ describe('resolverMetaPack', () => {
   });
 });
 
-describe('responderMensagemPedido', () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
-
-  it('resp.ok=false → lança com status e corpo truncado', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: () => Promise.resolve('Too many requests'.repeat(20)),
-    }));
-    await expect(responderMensagemPedido('token', 'pack-1', SELLER_ID, COMPRADOR_ID, 'Olá'))
-      .rejects.toThrow(/ML \/messages 429/);
-  });
-
-  it('resp.ok=true → resolve; URL usa ?tag=post_sale (sem /messages) e body é { from, to, text }', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') });
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(responderMensagemPedido('token', 'pack-1', SELLER_ID, COMPRADOR_ID, 'Olá, tudo bem?')).resolves.toBeUndefined();
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.mercadolibre.com/messages/packs/pack-1/sellers/999?tag=post_sale');
-    expect(JSON.parse(options.body as string)).toEqual({
-      from: { user_id: '999' }, to: { user_id: '111' }, text: 'Olá, tudo bem?',
-    });
-  });
-});
-
 describe('regras de envio pós-venda', () => {
   it('reconhece somente pedido cancelado', () => {
     expect(pedidoCancelado('cancelled')).toBe(true);
@@ -256,6 +230,11 @@ describe('regras de envio pós-venda', () => {
       '{"status_code":403,"code":"forbidden","message":"blocked_by_mediation","stacktrace":null}',
     )).toBe(ERRO_EM_MEDIACAO);
     expect(mensagemErroEnvioML(429, 'Too many requests')).toMatch(/ML \/messages 429/);
+  });
+
+  it('erro genérico leva o status e trunca o corpo em 200 caracteres', () => {
+    const msg = mensagemErroEnvioML(429, 'x'.repeat(500));
+    expect(msg).toBe(`ML /messages 429: ${'x'.repeat(200)}`);
   });
 });
 

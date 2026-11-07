@@ -119,14 +119,14 @@ export function normalizarCorpo(acao: AcaoPosvenda, b: BodyAcao): CorpoAcao | st
   return {};
 }
 
-async function sha256(s: string): Promise<string> {
+export async function sha256(s: string): Promise<string> {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 const hashDe = (acao: AcaoPosvenda, claimId: number, payload: CorpoAcao) => sha256(JSON.stringify({ acao, claimId, payload }));
 
 /** Desfecho HTTP do POST. 408 é ambíguo (pode ter processado) → desconhecido. */
-function classificar(status: number | null): EstadoAcao {
+export function classificar(status: number | null): EstadoAcao {
   if (status == null) return 'desconhecido';
   if (status >= 200 && status < 300) return 'enviada';
   if (status >= 400 && status < 500 && status !== 408) return 'recusada';
