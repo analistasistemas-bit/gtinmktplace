@@ -1249,7 +1249,9 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(await screen.findByLabelText('CEST')).toHaveValue('2805900');
     expect(screen.getByRole('combobox', { name: 'CSOSN' })).toHaveTextContent('500');
     expect(screen.getByText(/Nota do fornecedor com ST \(60\) — CSOSN 500\./)).toBeInTheDocument();
-    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(4);
+    // O CSOSN nunca é copiado do fornecedor (D-10): o selo dele não pode dizer que veio da nota.
+    expect(screen.getByText(/CSOSN de saída da empresa — confira/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(3);
 
     await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();

@@ -85,10 +85,10 @@ function soDigitos(v: string, max: number): string {
 }
 
 /** ADR-0181 D-10: selo dos campos que vieram da nota do fornecedor. */
-function SeloNota() {
+function SeloNota({ texto = 'Veio da nota do fornecedor — confira' }: { texto?: string }) {
   return (
     <StatusPill tone="info" className="w-fit">
-      <FileText className="h-3 w-3" /> Veio da nota do fornecedor — confira
+      <FileText className="h-3 w-3" /> {texto}
     </StatusPill>
   );
 }
@@ -229,7 +229,7 @@ export function EtapaFiscalForm({
               {CSOSN_OPCOES.map((o) => <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>)}
             </SelectContent>
           </Select>
-          {sugestaoDaNota && !!valor.tributacaoIcms && <SeloNota />}
+          {sugestaoDaNota && !!valor.tributacaoIcms && <SeloNota texto="CSOSN de saída da empresa — confira" />}
           {avisosNota?.classe === 'st' && (
             <AvisoNota>Nota do fornecedor com ST ({avisosNota.codigoFornecedor}) — CSOSN 500.</AvisoNota>
           )}

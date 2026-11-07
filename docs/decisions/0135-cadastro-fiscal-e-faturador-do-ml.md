@@ -104,7 +104,7 @@ auto-declaração — mostra a instrução do painel do ML e verifica o estado r
 Mantém o D-10 do ADR-0114: NCM, CSOSN/CST, CEST e origem não mudam com a cor. Campos novos em
 `familias`:
 
-- `ncm` (obrigatório para emitir) · `cest` (opcional, só com ST) · `origem_nfe` (0–8, obrigatório)
+- `ncm` (obrigatório para emitir) · `cest` (ver emenda de 2026-11-07) · `origem_nfe` (0–8, obrigatório)
   · `fci` (condicional a origem 3/5/8) · `ex_tipi` (opcional)
 - `tributacao_icms` (obrigatório) + `tributacao_icms_regime` (`simples` | `normal`) — o valor é
   CSOSN quando gravado sob Simples, CST quando sob Regime Normal, e o campo-irmão registra **qual
@@ -385,3 +385,11 @@ anúncio do PubliAI; a cópia ficava "Sem dados fiscais" e a venda feita nela tr
   Só vincula SKU de família da org com NCM; falha numa cópia não para as outras; não reenfileira
   push (sem duplicar o C4). Cópia nova fica até ~6 h sem fiscal; venda nesse intervalo usa
   "Adicionar dados fiscais" no pedido.
+
+## Emenda — 2026-11-07: CEST não depende de ST
+
+O D-4 dizia "`cest` (opcional, só com ST)". A regra correta, do contador da Daludi (ADR-0181 D-10) e
+da cláusula vigésima do Convênio ICMS 142/2018: mercadoria listada nos Anexos II a XXVI leva o CEST
+no documento fiscal **ainda que a operação não esteja sujeita à ST**. O campo segue opcional no
+sistema porque há NCM sem CEST, e o gate continua validando só o formato: a aplicabilidade CEST×NCM
+exige tabela própria, fora do escopo.

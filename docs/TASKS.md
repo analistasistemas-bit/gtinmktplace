@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Selo do CSOSN e regra do CEST (emenda ADR-0135) — 2026-11-07
+
+- [x] Selo do CSOSN na entrada por nota: "CSOSN de saída da empresa — confira", porque o valor nunca vem da nota (ADR-0181 D-10).
+- [x] ADR-0135 e vault: CEST não depende de ST (cláusula vigésima do Convênio ICMS 142/2018).
+- [ ] Revisar o CEST dos 26 produtos da Daludi sem o campo (lista para aprovação do Diego ou do contador).
+
 ## Piso de R$ 19 em toda campanha (emenda ADR-0174) — 2026-11-07
 
 Em produção desde 2026-11-07 (main `8d109728`; `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87).
