@@ -16,7 +16,8 @@ export async function aguardarSyncFiscal(
     await new Promise((r) => setTimeout(r, intervaloMs));
     const { data, error } = await supabase.from('familias').select('fiscal_sincronizado_em')
       .eq('org_id', fam.org_id).eq('codigo_pai', fam.codigo_pai).eq('status', 'publicado');
-    if (error || !data?.length) return false; // sem versão no ar não há push a esperar
+    if (error) continue; // falha transitória: tenta de novo até o teto
+    if (!data?.length) return false; // sem versão no ar não há push a esperar
     if (data.every((r) => r.fiscal_sincronizado_em)) return true;
   }
   return false;

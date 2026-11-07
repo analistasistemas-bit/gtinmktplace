@@ -80,6 +80,7 @@ Decisão do Diego:
 - **CEST que existe mas não casa com o NCM só gera aviso.** A tabela continua sugerindo, não decidindo
   o enquadramento.
 - O dialog fiscal de Publicados/Estoque passa a mostrar os candidatos do NCM, sem autopreencher.
-- Planilha (`ingest-lote`) e CEST vindo no XML seguem validados só pelo formato.
+- Vale também para CEST vindo no XML da nota: o ML recusa CEST inexistente qualquer que seja a origem.
+  Isso substitui a segunda frase do D-7. A planilha (`ingest-lote`) segue validada só pelo formato.
 - Risco aceito: um CEST criado por convênio novo antes do refresh da tabela é recusado até a migration
   de refresh; a saída é salvar sem CEST, que é opcional.
