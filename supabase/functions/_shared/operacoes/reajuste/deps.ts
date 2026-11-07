@@ -408,6 +408,11 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
     configAtacado: (variacaoIds) => configAtacado(admin, orgId, variacaoIds),
     familiasAtacado: (familiaIds) => familiasAtacado(admin, orgId, familiaIds),
 
+    async atacadoDoProduto(codigosPai) {
+      const linhas = await linhasDoProduto(admin, orgId, codigosPai);
+      return new Map(codigosPai.map((pai) => [pai, configDoProduto(linhas.filter((l) => l.codigo_pai === pai)).atacado]));
+    },
+
     async origemAtacado(origemId) {
       const { data, error } = await admin.from('operacoes_massa').select('atacado_familias').eq('org_id', orgId).eq('id', origemId).maybeSingle();
       falhou('origemAtacado', error);

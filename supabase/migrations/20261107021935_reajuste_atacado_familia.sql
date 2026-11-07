@@ -151,6 +151,32 @@ begin
 end;
 $function$;
 
+-- MLBs atuais da família, pela mesma regra de `expandir` em deps.ts: UP = SKUs não retirados; Legacy = a família + partições > 0.
+create function public.reajuste_mlbs_familia(p_org uuid, p_familia uuid)
+returns setof text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with f as (
+    select x.ml_item_id, x.codigo_pai from public.familias x where x.org_id = p_org and x.id = p_familia
+  ), raizes as (
+    select a.id, a.particao, a.item_externo_id from public.anuncios_externos a
+    join f on f.codigo_pai = a.codigo_pai
+    where a.org_id = p_org and a.canal = 'mercado_livre'
+  ), up as (
+    select i.item_externo_id from public.anuncios_externos_itens i
+    join raizes r on r.id = i.anuncio_externo_id
+    where i.org_id = p_org and not i.retirado and i.item_externo_id is not null
+  )
+  select item_externo_id from up
+  union
+  select f.ml_item_id from f where f.ml_item_id is not null and not exists (select 1 from up)
+  union
+  select r.item_externo_id from raizes r where r.particao > 0 and r.item_externo_id is not null and not exists (select 1 from up);
+$$;
+
 -- Confirmar: família inteira ou nada, e nenhuma operação entra em produto com edição de outra. Resto igual a 20261107001726.
 CREATE OR REPLACE FUNCTION public.reajuste_confirmar(p_org uuid, p_operacao uuid, p_confirmacoes jsonb)
  RETURNS text
@@ -168,6 +194,7 @@ declare
   v_pai text;
   v_algum boolean := false;
   v_familia text;
+  v_edicao uuid;
   v_ml text;
 begin
   select * into v_op from public.operacoes_massa o
@@ -221,11 +248,21 @@ begin
     if public.reajuste_atacado_dona(p_org, v_it.pai) is not null then
       return 'ocupado:' || v_it.ml_item_id;
     end if;
-    if exists (select 1 from jsonb_array_elements(coalesce(v_op.atacado_familias, '[]'::jsonb)) e
-               join public.familias f on f.org_id = p_org and f.id = (e->>'familia_id')::uuid
-               where f.codigo_pai = v_it.pai) then
+    v_edicao := null;
+    select f.id into v_edicao from jsonb_array_elements(coalesce(v_op.atacado_familias, '[]'::jsonb)) e
+    join public.familias f on f.org_id = p_org and f.id = (e->>'familia_id')::uuid
+    where f.codigo_pai = v_it.pai;
+    if v_edicao is not null then
       v_ml := public.reajuste_ativo_produto(p_org, v_it.pai);
       if v_ml is not null then return 'ocupado:' || v_ml; end if;
+      -- Anúncio publicado depois do preview ficaria com as faixas velhas e a família, com o % novo. O Reverter desfaz só o que
+      -- a origem aplicou: gerar de novo não incluiria o anúncio.
+      if v_op.origem_id is null and exists (
+           select 1 from public.reajuste_mlbs_familia(p_org, v_edicao) m(ml)
+           where not exists (select 1 from public.operacoes_massa_itens i
+                             where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = m.ml)) then
+        return 'expirado';
+      end if;
     end if;
   end loop;
 
@@ -406,6 +443,8 @@ $$;
 
 revoke execute on function public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean) from public, anon, authenticated;
 grant execute on function public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean) to service_role;
+revoke execute on function public.reajuste_mlbs_familia(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.reajuste_mlbs_familia(uuid, uuid) to service_role;
 revoke execute on function public.reajuste_atacado_dona(uuid, text) from public, anon, authenticated;
 revoke execute on function public.reajuste_atacado_concluir(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.reajuste_atacado_dona(uuid, text) to service_role;

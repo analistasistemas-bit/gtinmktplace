@@ -33,7 +33,9 @@ export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_
   situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null;
   ofertas: OfertaVigente[] | null; passos: Passo[] | null;
   /** Faixas vivas; `faixas_alvo` null = não mudam. */
-  faixas_anteriores: FaixaPreco[] | null; faixas_alvo: FaixaPreco[] | null }
+  faixas_anteriores: FaixaPreco[] | null; faixas_alvo: FaixaPreco[] | null;
+  /** Configuração completa do produto, com ou sem passo de faixas: o anúncio pode ter só parte das faixas. */
+  atacado_config: FaixaAtacado[] | null }
 // `restaurar` é o ÚNICO formato de estado: gravado na coluna `estado_anterior` (Task 7), lido pelo executor e enviado à RPC.
 export interface DepsPreview {
   expandir(familias: string[], mlItemIds: string[]): Promise<AlvoExpandido[]>;
@@ -52,6 +54,8 @@ export interface DepsPreview {
   familiasAtacado(familiaIds: string[]): Promise<Map<string, FamiliaAtacado>>;
   /** Edições de atacado da origem. */
   origemAtacado(origemId: string): Promise<EntradaAtacado[]>;
+  /** Configuração de cada produto; sem configuração, ou divergente, fica null. */
+  atacadoDoProduto(codigosPai: string[]): Promise<Map<string, FaixaAtacado[] | null>>;
 }
 
 export const MAX_MLBS = 500;
@@ -135,7 +139,7 @@ export async function montarPreview(
     itens.push({
       ml_item_id: ml, codigo_pai: o.codigo_pai, variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
       avaliacao: null, precos_avaliados: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null, ofertas: null, passos: null,
-      faixas_anteriores: null, faixas_alvo: null,
+      faixas_anteriores: null, faixas_alvo: null, atacado_config: null,
     });
   }
   // A família é a unidade: um MLB fora recusa todos, sem rascunho parcial.
@@ -156,6 +160,8 @@ export async function montarPreview(
       });
     }
   }
+  const configs = await deps.atacadoDoProduto([...new Set(itens.map((i) => i.codigo_pai).filter(Boolean))]);
+  for (const i of itens) i.atacado_config = configs.get(i.codigo_pai) ?? null;
   return { ok: true, itens, executaveis: itens.filter((i) => i.situacao === 'elegivel').length, atacado_familias };
 }
 
@@ -167,7 +173,7 @@ async function avaliarItem(
   const item: ItemPreview = {
     ml_item_id: ml, codigo_pai: a.codigo_pai, variacao_ids: [], titulo: a.titulo, sku: a.sku, preco_anterior: 0, preco: 0,
     avaliacao: null, precos_avaliados: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null, ofertas: null, passos: null,
-    faixas_anteriores: null, faixas_alvo: null,
+    faixas_anteriores: null, faixas_alvo: null, atacado_config: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
   if (ed?.grava && (ed.porCor || ed.lotesDivergentes)) return fora(orig ? MSG_ATACADO_MUDOU : ed.porCor ? MSG_ATACADO_POR_COR : MSG_ATACADO_ENTRE_LOTES);

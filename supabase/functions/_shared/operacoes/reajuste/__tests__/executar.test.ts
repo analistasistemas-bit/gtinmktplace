@@ -321,14 +321,23 @@ describe('executarReajuste — envio novo', () => {
     ['LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
     ['SMART_LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
     ['SMART_LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
-  ] as const)('%s com a mesma chave, %s → bloqueado, sem PUT', async (tipo, _n, doML, doBanco) => {
+  ] as const)('%s com a mesma chave, %s → aplica acima da oferta', async (tipo, _n, doML, doBanco) => {
     const r = (status: OfertaVigente['status']) => ({ ...of(39.9), tipo, status, chave: 'OFFER-1', offer_id: 'OFFER-1' });
     const itens = [item('A')];
     const deps = montar(itens, { A: plano(100) });
     deps.ml.lerOfertas.mockResolvedValue([r(doML)]);
     deps.ofertasBanco.mockResolvedValue(new Map([['A', [r(doBanco)]]]));
     await executarReajuste(OP, deps, OPTS);
-    expect(resumo(itens[0])).toEqual({ status: 'bloqueado', etapa: null, mensagem: 'Relâmpago em andamento fica fora do reajuste' });
+    expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: null });
+    expect(deps.ml.putPreco).toHaveBeenCalledWith('A', 110, null);
+  });
+
+  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s `started` no alvo ou acima → trava, sem PUT', async (tipo) => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: plano(100) });
+    deps.ml.lerOfertas.mockResolvedValue([{ ...of(110), tipo }]);
+    await executarReajuste(OP, deps, OPTS);
+    expect(itens[0].status).toBe('mudou');
     expect(deps.ml.putPreco).not.toHaveBeenCalled();
   });
 

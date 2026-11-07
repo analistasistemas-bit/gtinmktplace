@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { FaixaAtacado } from '../../../canais/contrato.ts';
 import type { ConfigMlb } from '../faixas.ts';
 import { oferta } from '../ofertas.ts';
 import { planejarPassos } from '../passos.ts';
@@ -31,6 +32,7 @@ function deps(o: {
   alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; ofertasML?: OfertaVigente[] | null; banco?: OfertaVigente[]; semBanco?: boolean; semaforo?: Semaforo[];
   estados?: Record<string, EstadoVariacao>; origem?: Awaited<ReturnType<DepsPreview['origem']>>;
   faixas?: FaixaPreco[] | null | Error; config?: ConfigMlb; familias?: Record<string, FamiliaAtacado>; origemAtacado?: EntradaAtacado[];
+  doProduto?: Record<string, FaixaAtacado[]>;
 } = {}): DepsPreview {
   return {
     expandir: vi.fn(async () => o.alvos ?? [alvo('MLB1')]),
@@ -58,6 +60,7 @@ function deps(o: {
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
     origemAtacado: vi.fn(async () => o.origemAtacado ?? []),
+    atacadoDoProduto: vi.fn(async () => new Map(Object.entries(o.doProduto ?? {}))),
     familiasAtacado: vi.fn(async (ids: string[]) => new Map(ids.map((id): [string, FamiliaAtacado] => [id, o.familias![id]]))),
   };
 }
@@ -131,7 +134,6 @@ describe('montarPreview — item', () => {
     ['promoção inconclusiva', { ofertasML: null }, 'Não foi possível conferir promoções — tente de novo'],
     ['banco sem o MLB pedido', { semBanco: true }, 'Não foi possível conferir promoções — tente de novo'],
     ['oferta sem preço comprovado', { banco: [of('P', null)] }, 'Não foi possível conferir promoções — tente de novo'],
-    ['Relâmpago em andamento', { ofertasML: [of('L', 50, { tipo: 'LIGHTNING' })] }, 'Relâmpago em andamento fica fora do reajuste'],
     ['alvo abaixo da oferta do ML', { ofertasML: [of('P', 120)] }, 'Preço igual ou abaixo da oferta de R$ 120,00 — ajuste a oferta antes'],
     ['alvo igual à oferta só do banco', { banco: [of('P', 110)] }, 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes'],
     ['família publicando', { alvos: [alvo('MLB1', { familiaPublicando: true })] }, 'Família em publicação/atualização'],
@@ -207,10 +209,28 @@ describe('montarPreview — ofertas', () => {
     ['LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
     ['SMART_LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
     ['SMART_LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
-  ] as const)('%s com a mesma chave, %s → fora', async (tipo, _n, doML, doBanco) => {
+  ] as const)('%s com a mesma chave, %s → `started` vence, elegível acima da oferta', async (tipo, _n, doML, doBanco) => {
     const r = (status: OfertaVigente['status']) => of('L', 39.9, { tipo, status, chave: 'OFFER-1', offer_id: 'OFFER-1' });
     const d = deps({ ofertasML: [r(doML)], banco: [r(doBanco)] });
-    expect(await um(pct(10), d)).toMatchObject({ situacao: 'fora', motivo: 'Relâmpago em andamento fica fora do reajuste', passos: null });
+    const i = await um(pct(10), d);
+    expect(i.situacao).toBe('elegivel');
+    expect(i.ofertas).toMatchObject([{ tipo, status: 'started' }]);
+  });
+
+  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s `started`: a trava segue valendo', async (tipo) => {
+    expect(await um(pct(10), deps({ ofertasML: [of('L', 110, { tipo })] })))
+      .toMatchObject({ situacao: 'fora', motivo: 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes', passos: null });
+  });
+
+  it('todo item traz a configuração completa do produto, mesmo sem passo de faixas', async () => {
+    const config = [{ min_unidades: 2, desconto_pct: 5 }, { min_unidades: 10, desconto_pct: 10 }];
+    const d = deps({ alvos: [alvo('MLB1', { codigo_pai: 'P' }), alvo('MLB2', { codigo_pai: 'P' }), alvo('MLB3', { codigo_pai: 'Q' })],
+      vivos: { MLB2: vivo({ status: 'closed' }) }, faixas: [{ min_unidades: 2, preco: 95 }], doProduto: { P: config } });
+    const r = await montarPreview(pct(10), d);
+    expect(r.ok && r.itens.map((i) => [i.situacao, i.passos?.map((p) => p.tipo) ?? null, i.atacado_config])).toEqual([
+      ['elegivel', ['base'], config], ['fora', null, config], ['elegivel', ['base'], null],
+    ]);
+    expect(d.atacadoDoProduto).toHaveBeenCalledWith(['P', 'Q']);
   });
 
   it('sem alteração não trava nem planeja', async () => {
@@ -367,7 +387,7 @@ describe('montarPreview — atacado (ADR-0196)', () => {
       expect(d.avaliar).toHaveBeenCalledWith('MLB1', 90);
     });
 
-    it('faixa sem dado (origem ausente): desmarcado, exige a confirmação ⚪', async () => {
+    it('faixa com avaliação indisponível: desmarcado, exige a confirmação ⚪', async () => {
       expect(await um(pct(10, '-'), comFaixa('indisponivel'))).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: false, tem_sem_dado: true } });
     });
 

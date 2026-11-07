@@ -76,6 +76,9 @@ describe('calcularAlvo — definir', () => {
     expect(calcularAlvo(56.45, { tipo: 'definir', sentido: '+', valor: 49.9 })).toBe(49.9);
     expect(calcularAlvo(56.45, { tipo: 'definir', sentido: '-', valor: 49.9 })).toBe(49.9);
   });
+  it('half-up na 3ª casa', () => {
+    expect(calcularAlvo(56.45, { tipo: 'definir', sentido: '+', valor: 1.005 })).toBe(1.01);
+  });
   it('valor ≤ 0 → null', () => {
     expect(calcularAlvo(56.45, { tipo: 'definir', sentido: '+', valor: 0 })).toBeNull();
     expect(calcularAlvo(56.45, { tipo: 'definir', sentido: '+', valor: -1 })).toBeNull();

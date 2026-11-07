@@ -38,12 +38,9 @@ const coresDe = (i: ItemPreview): CorAvaliada[] =>
   (i.precos_avaliados?.find((p) => p.tipo === 'base') ?? i.precos_avaliados?.[0])?.avaliacao.cores ?? i.avaliacao?.cores ?? [];
 const soAtacado = (i: ItemPreview) => !!i.passos?.length && !i.passos.some((p) => p.tipo === 'base');
 const mesmasFaixas = (a: FaixaAtacado[], b: FaixaAtacado[]) => a.length === b.length && a.every((f, k) => f.desconto_pct === b[k].desconto_pct);
-/** % atual da família: o do passo de faixas (config do produto); sem passo, deduzido das faixas vivas. */
-function descontosDe(i: ItemPreview): FaixaAtacado[] {
-  const passo = i.passos?.find((p) => p.tipo === 'faixas');
-  if (passo?.tipo === 'faixas' && passo.config?.length) return passo.config;
-  return (i.faixas_anteriores ?? []).map((f) => ({ min_unidades: f.min_unidades, desconto_pct: Math.round((1 - f.preco / i.preco_anterior) * 10000) / 100 }));
-}
+/** % atual da família: a config completa do produto, nunca as faixas do anúncio, que podem ser só parte dela.
+ *  O servidor exige as quantidades em ordem. */
+const descontosDe = (i: ItemPreview): FaixaAtacado[] => [...(i.atacado_config ?? [])].sort((a, b) => a.min_unidades - b.min_unidades);
 
 /** Quantidades com faixa viva ou nova: a edição do % pode criar faixa onde o anúncio não tinha. */
 const faixasDe = (i: ItemPreview) =>

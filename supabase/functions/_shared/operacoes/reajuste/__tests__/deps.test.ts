@@ -208,6 +208,7 @@ describe('depsPreview', () => {
       configAtacado: async () => ({ faixas: null, divergente: false }),
       origemAtacado: async () => [],
       familiasAtacado: async () => new Map(),
+      atacadoDoProduto: async () => new Map(),
       ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
       variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
       estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
@@ -248,7 +249,7 @@ describe('depsPreview', () => {
     const vivo = { preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
     const r = await montarPreview({ familias: [], ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }, {
       expandir: async () => [{ ml_item_id: 'MLB1', codigo_pai: 'P', variacao_ids: [], variacoes_ml_esperadas: null, sku: null, titulo: null, ehKit: false, familiaPublicando: false, migracaoPxv: false }],
-      origem: async () => null, origemAtacado: async () => [], familiasAtacado: async () => new Map(),
+      origem: async () => null, origemAtacado: async () => [], familiasAtacado: async () => new Map(), atacadoDoProduto: async () => new Map(),
       ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [{ min_unidades: 2, preco: 95 }], gravarFaixas: vi.fn() },
       configAtacado: depsPreview(f.admin, cxT, { reverter: false }).configAtacado,
       ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
@@ -282,6 +283,17 @@ describe('depsPreview', () => {
     expect(m.get('f4')).toEqual({ codigo_pai: 'P4', atacado: cinco, porCor: false, lotesDivergentes: false });
     for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', cxT.orgId]);
     expect(op(f.chamadas[2], 'not')).toEqual([['atacado', 'is', null]]);
+  });
+
+  it('atacadoDoProduto: a config de cada produto; divergente ou sem config → null; filtra por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin(() => [
+      { id: 'a', codigo_pai: 'P', atacado: null }, { id: 'b', codigo_pai: 'P', atacado: cinco },
+      { id: 'c', codigo_pai: 'Q', atacado: cinco }, { id: 'd', codigo_pai: 'Q', atacado: [] },
+    ]);
+    const m = await depsPreview(f.admin, cxT, { reverter: false }).atacadoDoProduto(['P', 'Q', 'R']);
+    expect([m.get('P'), m.get('Q'), m.get('R')]).toEqual([cinco, null, null]);
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
   });
 
   it('familiasAtacado: família de outra org → ForaDaOrg', async () => {

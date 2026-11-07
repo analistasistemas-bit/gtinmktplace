@@ -44,8 +44,8 @@ describe('motivoInelegivel', () => {
   it('promoção inconclusiva', () => {
     expect(motivoInelegivel({ ...ok(), ofertas: null })).toBe('Não foi possível conferir promoções — tente de novo');
   });
-  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s started fica fora (até o Teste 2); pending não', (tipo) => {
-    expect(motivoInelegivel({ ...ok(), ofertas: [{ ...o('L', 100), tipo }] })).toMatch(/Relâmpago/);
+  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s é elegível em `started` e `pending` (Teste 2, 07/11): quem barra é a trava', (tipo) => {
+    expect(motivoInelegivel({ ...ok(), ofertas: [{ ...o('L', 100), tipo }] })).toBeNull();
     expect(motivoInelegivel({ ...ok(), ofertas: [{ ...o('L', 100), tipo, status: 'pending' }] })).toBeNull();
   });
   it('família publicando', () => expect(motivoInelegivel({ ...ok(), familiaPublicando: true })).toBe('Família em publicação/atualização'));

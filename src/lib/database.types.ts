@@ -5521,6 +5521,10 @@ export type Database = {
         Args: { p_codigo_pai: string; p_org: string }
         Returns: string
       }
+      reajuste_mlbs_familia: {
+        Args: { p_familia: string; p_org: string }
+        Returns: string[]
+      }
       reajuste_ativo_produto: {
         Args: { p_codigo_pai: string; p_org: string }
         Returns: string

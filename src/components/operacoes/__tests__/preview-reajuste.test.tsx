@@ -33,7 +33,7 @@ function item(ml: string, over: Partial<ItemPreview> = {}): ItemPreview {
     ml_item_id: ml, codigo_pai: 'P1', variacao_ids: ['V1'], titulo: `Produto ${ml}`, sku: null,
     preco_anterior, preco: calcularAlvo(preco_anterior, ajuste)!, avaliacao: a, precos_avaliados: null, restaurar: [], variacoes_ml: null,
     situacao: 'elegivel', motivo: null, incluido: !(a.tem_vermelho || a.tem_sem_dado), aviso: null, ofertas: [], passos: [],
-    faixas_anteriores: [], faixas_alvo: null, ...over,
+    faixas_anteriores: [], faixas_alvo: null, atacado_config: null, ...over,
   };
 }
 const expira = () => new Date(Date.now() + 30 * 60_000).toISOString();
@@ -231,7 +231,7 @@ describe('PreviewReajuste', () => {
     const faixaAv = (min: number, c: Partial<CorAvaliada> = {}): PrecoAvaliado => ({ tipo: 'faixa', chave: String(min), preco: 1, avaliacao: avaliacao([cor(c)]) });
     const config = [{ min_unidades: 2, desconto_pct: 10 }];
     const comFaixas = (ml: string, over: Partial<ItemPreview> = {}) => item(ml, {
-      faixas_anteriores: [{ min_unidades: 2, preco: 146.52 }], faixas_alvo: [{ min_unidades: 2, preco: 138.9 }],
+      faixas_anteriores: [{ min_unidades: 2, preco: 146.52 }], faixas_alvo: [{ min_unidades: 2, preco: 138.9 }], atacado_config: config,
       passos: [{ tipo: 'base', anterior: 10, alvo: 11, estado: 'pendente' },
         { tipo: 'faixas', anterior: [{ min_unidades: 2, preco: 146.52 }], alvo: [{ min_unidades: 2, preco: 138.9 }], config, estado: 'pendente' }],
       precos_avaliados: [{ tipo: 'base', chave: 'base', preco: 11, avaliacao: avaliacao([cor()]) }, faixaAv(2, { semaforo: 'amarelo', liquido: 6 })],
@@ -291,6 +291,26 @@ describe('PreviewReajuste', () => {
       await userEvent.click(screen.getByLabelText('Incluir MLB3'));
       expect(screen.getByLabelText(/Assumo o prejuízo/)).not.toBeChecked();
       expect(botao()).toBeDisabled();
+    });
+
+    it('anúncio sem todas as faixas: o editor parte da config do produto e manda ela completa', async () => {
+      const cheia = [{ min_unidades: 10, desconto_pct: 10 }, { min_unidades: 2, desconto_pct: 5 }];
+      montar([item('MLB1', { faixas_anteriores: [{ min_unidades: 2, preco: 95 }], atacado_config: cheia, passos: [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }] })],
+        { familiaPorPai: { P1: 'FAM1' } });
+      const c2 = await screen.findByLabelText('Desconto de 2+ un. da família P1 (%)');
+      expect(screen.getByLabelText('Desconto de 10+ un. da família P1 (%)')).toHaveValue('10,00');
+      await userEvent.clear(c2);
+      await userEvent.type(c2, '6');
+      await userEvent.tab();
+      await waitFor(() => expect(previewMut).toHaveBeenLastCalledWith(expect.objectContaining({
+        atacado: { FAM1: [{ min_unidades: 2, desconto_pct: 6 }, { min_unidades: 10, desconto_pct: 10 }] },
+      })));
+    });
+
+    it('sem config no produto não há editor: faixa viva não vira %', async () => {
+      montar([item('MLB1', { faixas_anteriores: [{ min_unidades: 2, preco: 95 }], atacado_config: null })], { familiaPorPai: { P1: 'FAM1' } });
+      await screen.findByLabelText('Novo preço de MLB1');
+      expect(screen.queryByText('Desconto de atacado da família')).not.toBeInTheDocument();
     });
 
     it('10 → 15 → 10: o último pedido não leva atacado', async () => {

@@ -44,7 +44,7 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 select pg_temp.fid(n), '95000000-0000-0000-0000-000000000201', '95000000-0000-0000-0000-000000000101',
        '95000000-0000-0000-0000-000000000001', '095' || lpad(n::text, 5, '0'), 'Produto ' || n, 'UPDATE', 'pronto', 'nacional', gen_random_uuid(), 'MLB' || n || 'A',
        now() - interval '1 day', '[{"min_unidades":2,"desconto_pct":5}]'::jsonb
-from generate_series(1, 18) n;
+from generate_series(1, 20) n;
 -- Outros lotes: produto 13 com linha igual e sem config; 14 com cor própria em outra linha; 16 com config diferente;
 -- 17 com a linha pedida NULL e o lote antigo com config.
 insert into public.lotes (id, user_id, org_id, status, origem) values
@@ -62,6 +62,18 @@ from (values
 ) x(id, lote, pai, atacado);
 insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, atacado)
 select '95000000-0000-0000-0000-000000000402', '95000000-0000-0000-0000-000000000354', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', '09500014', 'A', 10, '[]'::jsonb;
+
+-- UP: produto 19 com os MLBs do rascunho; produto 20 ganha um anúncio depois do preview; um retirado não conta.
+insert into public.anuncios_externos (id, user_id, org_id, canal, codigo_pai, particao, item_externo_id) values
+  ('95000000-0000-0000-0000-000000000901', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'mercado_livre', '09500019', 0, null),
+  ('95000000-0000-0000-0000-000000000902', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'mercado_livre', '09500020', 0, null);
+insert into public.anuncios_externos_itens (anuncio_externo_id, org_id, sku, status, item_externo_id, retirado) values
+  ('95000000-0000-0000-0000-000000000901', '95000000-0000-0000-0000-000000000001', 'S19A', 'ativo', 'MLB19A', false),
+  ('95000000-0000-0000-0000-000000000901', '95000000-0000-0000-0000-000000000001', 'S19B', 'ativo', 'MLB19B', false),
+  ('95000000-0000-0000-0000-000000000901', '95000000-0000-0000-0000-000000000001', 'S19C', 'ativo', 'MLB19C', true),
+  ('95000000-0000-0000-0000-000000000902', '95000000-0000-0000-0000-000000000001', 'S20A', 'ativo', 'MLB20A', false),
+  ('95000000-0000-0000-0000-000000000902', '95000000-0000-0000-0000-000000000001', 'S20B', 'ativo', 'MLB20B', false),
+  ('95000000-0000-0000-0000-000000000902', '95000000-0000-0000-0000-000000000001', 'S20C', 'ativo', 'MLB20C', false);
 
 -- Segundo MLB do produto 9: a barreira do claim resolve o produto pelo MLB.
 insert into public.lotes (id, user_id, org_id, status, origem) values
@@ -270,6 +282,15 @@ begin
     (c3, v_org, 'MLB11C', 'pendente', 100, '09500011', pg_temp.passos('pendente'));
   v_t := public.reajuste_confirmar(v_org, c2, '[]'::jsonb);
   perform pg_temp.ok(v_t = 'ocupado:MLB11C', 'edição espera o outro reajuste do produto: ' || v_t);
+
+  -- Anúncio publicado depois do preview: o rascunho não cobre a família, expira.
+  perform pg_temp.op('95000000-0000-0000-0000-000000000704', 19, 'rascunho');
+  v_t := public.reajuste_confirmar(v_org, '95000000-0000-0000-0000-000000000704', '[]'::jsonb);
+  perform pg_temp.ok(v_t = 'ok', 'rascunho cobre os anúncios atuais: ' || v_t);
+  perform pg_temp.op('95000000-0000-0000-0000-000000000705', 20, 'rascunho');
+  v_t := public.reajuste_confirmar(v_org, '95000000-0000-0000-0000-000000000705', '[]'::jsonb);
+  perform pg_temp.ok(v_t = 'expirado', 'anúncio novo fora do rascunho: ' || v_t);
+  perform pg_temp.ok((select status from public.operacoes_massa where id = '95000000-0000-0000-0000-000000000705') = 'rascunho', 'expirado não confirma');
 
   -- Grants e search_path.
   perform pg_temp.ok(not has_function_privilege('authenticated', 'public.reajuste_atacado_concluir(uuid, uuid)', 'execute'), 'concluir sem authenticated');
