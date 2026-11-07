@@ -88,6 +88,14 @@ describe('variacao sem cor real', () => {
     expect(titulo).toContain('3,5mm');
   });
 
+  it('cor junto de calibre não apaga o calibre', () => {
+    const titulo = posProcessarTitulo(
+      slots({ produto: 'Agulha de Crochê', variacao: 'Dourado 3,5mm' }),
+      fonte('AGULHA DE CROCHE 3,5MM'),
+    );
+    expect(titulo).toContain('3,5mm');
+  });
+
   it('cor declarada no nome continua', () => {
     const titulo = posProcessarTitulo(
       slots({ produto: 'Alfinete', variacao: 'Dourado' }),

@@ -448,8 +448,9 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     // deletava, só substituía; devolver '' aqui funde famílias-irmãs sem cor que só diferem por
     // tamanho no mesmo título, e o ML derruba a segunda por duplicado.
     out.variacao = '';
-  } else if (extrairCorDoTexto([out.variacao]) && !jaContem(normalizar(fonte.nomePai), normalizar(out.variacao))) {
+  } else if (!/\d/.test(out.variacao) && extrairCorDoTexto([out.variacao]) && !jaContem(normalizar(fonte.nomePai), normalizar(out.variacao))) {
     // ADR-0197: sem cor real, cor que o nome não declara veio de embalagem ou ingrediente.
+    // Com número o slot leva calibre ou tamanho (CRITICAL-2) e fica.
     out.variacao = '';
   }
 
