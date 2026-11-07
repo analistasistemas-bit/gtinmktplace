@@ -152,23 +152,29 @@ describe('ofertasBanco', () => {
   const haMin = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
   const campanha = (status: string) => ({ tipo: 'DEAL', status, inicio: '2026-11-01T00:00:00+00:00', fim: '2026-11-30T00:00:00+00:00' });
   const promo = (o: Record<string, unknown> = {}) => ({
-    promocao_id: 'P1', ml_item_id: 'MLB1', status: 'started', preco_promo: '39.90', anuncio_normal_id: null, ml_promocoes: campanha('started'), ...o,
+    org_id: 'org', promocao_id: 'P1', ml_item_id: 'MLB1', status: 'started', preco_promo: '39.90', anuncio_normal_id: null, ml_promocoes: campanha('started'), ...o,
   });
   const operacao = (o: Record<string, unknown> = {}) => ({
-    promocao_id: 'P2', ml_item_id: 'MLB1', status: 'aplicado', etapa: null, preco: '45.50', offer_id: null, atualizado_em: haMin(5),
+    org_id: 'org', promocao_id: 'P2', ml_item_id: 'MLB1', status: 'aplicado', etapa: null, preco: '45.50', offer_id: null, atualizado_em: haMin(5),
     operacoes_massa: { acao: 'aderir', promocao_tipo: 'DEAL' }, ...o,
   });
   const filtro = (c: Chamada, coluna: string) => (op(c, 'in') as [string, string[]][]).find(([col]) => col === coluna)?.[1];
   // Aplica os filtros gravados: o teste prova o efeito no resultado, não só a chamada.
   const banco = (promos: Record<string, unknown>[], ops: Record<string, unknown>[] = []) => fakeAdmin((c) => {
+    const daOrg = (r: Record<string, unknown>) => (op(c, 'eq') as [string, unknown][]).some(([col, v]) => col === 'org_id' && v === r.org_id);
     const normais = filtro(c, 'anuncio_normal_id');
-    if (normais) return promos.filter((r) => normais.includes(r.anuncio_normal_id as string));
+    if (normais) return promos.filter((r) => daOrg(r) && normais.includes(r.anuncio_normal_id as string));
     const ids = filtro(c, 'ml_item_id') ?? [];
     if (c.tabela === 'operacoes_massa_itens') {
       const [[, desde]] = op(c, 'gt') as [[string, string]];
-      return ops.filter((r) => ids.includes(r.ml_item_id as string) && (r.atualizado_em as string) > desde);
+      const [[ou]] = op(c, 'or') as [[string]];
+      const etapa = /etapa\.eq\.(\w+)/.exec(ou)?.[1];
+      const status = /status\.in\.\(([^)]*)\)/.exec(ou)?.[1].split(',') ?? [];
+      return ops.filter((r) => daOrg(r) && ids.includes(r.ml_item_id as string) && (r.atualizado_em as string) > desde
+        && filtro(c, 'operacoes_massa.acao')?.includes((r.operacoes_massa as { acao: string }).acao)
+        && (r.etapa === etapa || status.includes(r.status as string)));
     }
-    return promos.filter((r) => ids.includes(r.ml_item_id as string) && filtro(c, 'status')?.includes(r.status as string)
+    return promos.filter((r) => daOrg(r) && ids.includes(r.ml_item_id as string) && filtro(c, 'status')?.includes(r.status as string)
       && filtro(c, 'ml_promocoes.status')?.includes((r.ml_promocoes as { status: string }).status));
   });
   const ler = (f: ReturnType<typeof banco>, ids = ['MLB1']) => depsPreview(f.admin, cx, { reverter: false }).ofertasBanco(ids);
@@ -207,17 +213,34 @@ describe('ofertasBanco', () => {
     expect(maiorOferta(r.get('MLB1')!)).toBeNull();
   });
 
+  it("aderir 'ja_estava' há 5 min, com a Central desatualizada → preço null → maiorOferta null", async () => {
+    const r = await ler(banco([promo({ status: 'candidate' })], [operacao({ status: 'ja_estava' })]));
+    expect(r.get('MLB1')).toMatchObject([{ promocao_id: 'P2', preco: null }]);
+    expect(maiorOferta(r.get('MLB1')!)).toBeNull();
+  });
+
+  it('não entram: outra ação, status sem escrita, outra org', async () => {
+    const sair = { operacoes_massa: { acao: 'sair', promocao_tipo: 'DEAL' } };
+    const r = await ler(banco([promo({ org_id: 'outra' })], [
+      operacao(sair), operacao({ ...sair, status: 'erro', etapa: 'escrita_pedida' }),
+      operacao({ operacoes_massa: { acao: 'reajustar', promocao_tipo: null } }),
+      operacao({ status: 'pendente' }), operacao({ status: 'erro' }), operacao({ status: 'mudou', etapa: 'ml_confirmado' }),
+      operacao({ org_id: 'outra' }),
+    ]));
+    expect(r.get('MLB1')).toEqual([]);
+  });
+
   it('mesma oferta em duas operações: uma só, com o maior preço', async () => {
     const r = await ler(banco([], [operacao({ offer_id: 'OFFER-1', preco: '41' }), operacao({ offer_id: 'OFFER-1', preco: '43' })]));
     expect(r.get('MLB1')?.map((o) => o.preco)).toEqual([43]);
   });
 
-  it('operações: só aderir/alterar_preco, com aplicado ou escrita pedida', async () => {
+  it('operações: só aderir/alterar_preco, com aplicado, ja_estava ou escrita pedida', async () => {
     const f = banco([]);
     await ler(f);
     const c = f.chamadas.find((x) => x.tabela === 'operacoes_massa_itens')!;
     expect(filtro(c, 'operacoes_massa.acao')).toEqual(['aderir', 'alterar_preco']);
-    expect(op(c, 'or')).toEqual([['etapa.eq.escrita_pedida,status.eq.aplicado']]);
+    expect(op(c, 'or')).toEqual([['etapa.eq.escrita_pedida,status.in.(aplicado,ja_estava)']]);
   });
 
   it('mais de 1000 linhas: pagina até o fim', async () => {

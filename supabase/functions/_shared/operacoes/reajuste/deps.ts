@@ -236,9 +236,10 @@ export async function ofertasBanco(admin: SupabaseClient, orgId: string, mlItemI
         .in('status', ['pending', 'started']).in('ml_promocoes.status', ['pending', 'started'])
         .order('promocao_id').order('ml_item_id').range(de, ate) as never),
       // Mesma proteção de adesaoRecente: `etapa` sem desfecho = a escrita pode ter ocorrido, em qualquer status.
+      // `ja_estava` vem de retry pós-adesão: o espelho na Central pode ter falhado e o preço gravado é o pedido.
       paginarTudo<LinhaOperacao>((de, ate) => admin.from(ITENS)
         .select('promocao_id, ml_item_id, status, etapa, preco, offer_id, operacoes_massa!inner(promocao_tipo)').eq('org_id', orgId).in('ml_item_id', b)
-        .in('operacoes_massa.acao', ['aderir', 'alterar_preco']).or('etapa.eq.escrita_pedida,status.eq.aplicado').gt('atualizado_em', desde)
+        .in('operacoes_massa.acao', ['aderir', 'alterar_preco']).or('etapa.eq.escrita_pedida,status.in.(aplicado,ja_estava)').gt('atualizado_em', desde)
         .order('operacao_id').order('ml_item_id').range(de, ate) as never),
     ]);
     for (const r of central) {
@@ -250,7 +251,7 @@ export async function ofertasBanco(admin: SupabaseClient, orgId: string, mlItemI
     for (const r of operacoes) {
       anotar(r.ml_item_id, oferta({
         promocao_id: r.promocao_id, tipo: r.operacoes_massa.promocao_tipo, status: 'pending',
-        preco: r.etapa === 'escrita_pedida' ? null : numOuNull(r.preco), offer_id: r.offer_id, inicio: null, fim: null,
+        preco: r.status === 'aplicado' && r.etapa !== 'escrita_pedida' ? numOuNull(r.preco) : null, offer_id: r.offer_id, inicio: null, fim: null,
       }));
     }
   }

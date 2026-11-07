@@ -297,6 +297,61 @@ describe('lerOfertas', () => {
     expect(await cli(vi.fn().mockResolvedValue(resp(200, [{ id: 'P', type: 'DEAL' }]))).lerOfertas('MLB1')).toBeNull();
   });
 
+  it.each([[''], ['paused_x']])('status %j na visão por item → null', async (status) => {
+    const f = vi.fn().mockResolvedValue(resp(200, [LGH, { id: 'P', type: 'DEAL', status }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+  });
+
+  it.each([[''], ['paused_x']])('status %j na visão da campanha → null', async (status) => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+  });
+
+  describe('paginação da visão da campanha', () => {
+    const CAND = [{ id: 'C1', type: 'SMART', status: 'candidate' }];
+    const pagina = (status: string, paging?: unknown) => resp(200, { results: [{ status, price: 80 }], paging });
+
+    it.each([['searchAfter'], ['search_after']])('oferta na página seguinte (%s) é lida', async (campo) => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { [campo]: 'c 1' }))
+        .mockResolvedValueOnce(pagina('started'));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ preco: 80 }]);
+      expect(f).toHaveBeenNthCalledWith(3, `${urlCand('C1', 'SMART')}&search_after=c%201`, GET);
+    });
+
+    it('cursor com página seguinte vazia → fim, sem ofertas', async () => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { searchAfter: 'c1' }))
+        .mockResolvedValueOnce(resp(200, { results: [], paging: { searchAfter: 'c2' } }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
+      expect(f).toHaveBeenCalledTimes(3);
+    });
+
+    it('falha na página seguinte → null', async () => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { searchAfter: 'c1' }))
+        .mockResolvedValueOnce(resp(500));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    });
+
+    it('cursor repetido com itens → null, sem laço', async () => {
+      const f = vi.fn().mockResolvedValueOnce(resp(200, CAND)).mockImplementation(async () => pagina('candidate', { searchAfter: 'c1' }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+      expect(f).toHaveBeenCalledTimes(3);
+    });
+
+    it('páginas sem fim → null', async () => {
+      let n = 0;
+      const f = vi.fn().mockResolvedValueOnce(resp(200, CAND)).mockImplementation(async () => pagina('candidate', { searchAfter: `c${++n}` }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    });
+  });
+
   it('candidate que a visão da campanha mostra started → oferta com o preço e o offer_id dela', async () => {
     const f = vi.fn()
       .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate', price: 90 }]))

@@ -17,6 +17,10 @@ export interface ClienteReajusteML {
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_PUT_MS = 15_000;
 const ATIVA = new Set(['pending', 'started']);
+/** Status fora desta lista (vazio inclusive) torna a leitura inconclusiva: não dá para dizer que a oferta não vale. */
+const STATUS_OFERTA = new Set([...ATIVA, 'candidate', 'finished']);
+// ponytail: teto da paginação por item_id (o ML devolve 1 linha); passou disso é inconclusivo, não "sem ofertas".
+const MAX_PAGINAS_CAMPANHA = 10;
 const semAcesso = (s: number) => s === 401 || s === 403;
 
 type ItemML = {
@@ -48,6 +52,23 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
   const getOferta = async (path: string) => {
     const r = await get(path);
     return r.status === 409 ? get(path) : r;
+  };
+  /** Todas as páginas do item na campanha; null se alguma não foi lida. O ML pode devolver cursor na última página. */
+  const itensNaCampanha = async (path: string): Promise<PromoML[] | null> => {
+    const itens: PromoML[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < MAX_PAGINAS_CAMPANHA; i++) {
+      const r: Response = await getOferta(cursor ? `${path}&search_after=${encodeURIComponent(cursor)}` : path);
+      if (r.status !== 200) return null;
+      const j = (await r.json()) as { results?: unknown; paging?: { searchAfter?: unknown; search_after?: unknown } } | null;
+      if (!Array.isArray(j?.results)) return null;
+      itens.push(...(j.results as PromoML[]));
+      const prox = texto(j.paging?.searchAfter) ?? texto(j.paging?.search_after);
+      if (!prox || !j.results.length) return itens;
+      if (prox === cursor) return null;
+      cursor = prox;
+    }
+    return null;
   };
 
   return {
@@ -129,17 +150,15 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
         if (!Array.isArray(promos)) return null;
         const ofertas: OfertaVigente[] = [];
         for (const p of promos as PromoML[]) {
-          if (typeof p?.status !== 'string') return null;
-          if (ATIVA.has(p.status)) ofertas.push(ofertaDe(p, p));
+          if (!STATUS_OFERTA.has(p?.status as string)) return null;
+          if (ATIVA.has(p.status as string)) ofertas.push(ofertaDe(p, p));
           // A visão por item atrasa: candidate aqui pode já participar. Sem id (PRICE_DISCOUNT) não é campanha.
           if (p.status !== 'candidate' || !texto(p.id)) continue;
-          const rc = await getOferta(`/seller-promotions/promotions/${encodeURIComponent(String(p.id))}/items?promotion_type=${encodeURIComponent(String(p.type))}&item_id=${id}&app_version=v2`);
-          if (rc.status !== 200) return null;
-          const itens = ((await rc.json()) as { results?: unknown })?.results;
-          if (!Array.isArray(itens)) return null;
-          for (const x of itens as PromoML[]) {
-            if (typeof x?.status !== 'string') return null; // sem status = inconclusivo
-            if (ATIVA.has(x.status)) ofertas.push(ofertaDe(p, x));
+          const itens = await itensNaCampanha(`/seller-promotions/promotions/${encodeURIComponent(String(p.id))}/items?promotion_type=${encodeURIComponent(String(p.type))}&item_id=${id}&app_version=v2`);
+          if (!itens) return null;
+          for (const x of itens) {
+            if (!STATUS_OFERTA.has(x?.status as string)) return null;
+            if (ATIVA.has(x.status as string)) ofertas.push(ofertaDe(p, x));
           }
         }
         return ofertas;
