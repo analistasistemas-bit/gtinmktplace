@@ -4,11 +4,13 @@
 // este form cobre — a edge continua sendo a autoridade final (400 com `erros[]`).
 import type { ReactNode } from 'react';
 import { AlertTriangle, FileText, Loader2, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusPill } from '@/components/ui/status-pill';
 import { CSOSN_OPCOES, ORIGENS_NFE_POR_ORIGEM } from '@/lib/fiscal';
 import type { NcmStatus } from '@/hooks/useNcmOficial';
+import type { CestOficial } from '@/hooks/useCestOficial';
 import type { AvisosFiscaisNota } from '@/components/estoque/dialog-cadastro-produto';
 
 export interface FiscalForm {
@@ -121,7 +123,7 @@ function NcmOficialInfo({ ncm, status, descricao }: { ncm: string; status: NcmSt
 
 export function EtapaFiscalForm({
   valor, origem, onMudar, sugestaoNcm, carregandoSugestao, onAplicarSugestao, csosnPadrao,
-  sugestaoDaNota, confirmacoes, onConfirmar, avisosNota, ncmOficial,
+  sugestaoDaNota, confirmacoes, onConfirmar, avisosNota, ncmOficial, cestOficial, cestNota,
 }: {
   valor: FiscalForm;
   origem: 'nacional' | 'importado' | null;
@@ -141,8 +143,13 @@ export function EtapaFiscalForm({
   /** ADR-0187: resultado de `useNcmOficial(valor.ncm)`, chamado pelo dialog (que também o passa
    *  a `fiscalCompleto`). */
   ncmOficial?: { status: NcmStatus; descricao: string | null };
+  /** ADR-0197: candidatos da tabela oficial, só quando o XML não trouxe CEST. */
+  cestOficial?: CestOficial;
+  /** CEST que veio do XML: o selo "Veio da nota" só vale para este valor. */
+  cestNota?: string;
 }) {
   const codigosOrigem = origem ? ORIGENS_NFE_POR_ORIGEM[origem] : [];
+  const candidatoCest = cestOficial?.candidatos.find((c) => c.cest === valor.cest);
   const sugerirCsosn = !valor.tributacaoIcms && !!csosnPadrao
     && CSOSN_OPCOES.some((o) => o.valor === csosnPadrao);
   const fciVisivel = ORIGENS_COM_FCI.includes(Number(valor.origemNfe));
@@ -279,16 +286,40 @@ export function EtapaFiscalForm({
             onChange={(e) => onMudar({ cest: soDigitos(e.target.value, 7) })}
           />
           <span className="text-xs text-muted-foreground">7 dígitos — opcional.</span>
-          {sugestaoDaNota && !!valor.cest && <SeloNota />}
+          {sugestaoDaNota && !!valor.cest && valor.cest === cestNota && <SeloNota />}
+          {candidatoCest && (
+            <>
+              <SeloNota texto="Sugerido pela tabela oficial — confira" />
+              <span className="text-xs text-muted-foreground">{candidatoCest.descricao}</span>
+            </>
+          )}
           {avisosNota && !valor.cest && (
             <>
-              <AvisoNota>A nota não trouxe CEST. Preencha se o NCM tiver CEST vigente.</AvisoNota>
+              <AvisoNota>
+                {cestOficial?.status === 'sem'
+                  ? 'A nota não trouxe CEST e este NCM não consta da tabela oficial. Preencha se o produto tiver CEST.'
+                  : 'A nota não trouxe CEST. Preencha se o produto tiver CEST vigente.'}
+              </AvisoNota>
+              {!!cestOficial?.candidatos.length && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">Tabela oficial — escolha pela descrição do produto:</span>
+                  {cestOficial.candidatos.map((c) => (
+                    <Button
+                      key={c.cest} type="button" variant="outline" size="sm"
+                      className="h-auto justify-start whitespace-normal py-1.5 text-left"
+                      onClick={() => onMudar({ cest: c.cest })}
+                    >
+                      {c.cest} — {c.descricao}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox" checked={conf.semCestVigente}
                   onChange={(e) => onConfirmar?.({ semCestVigente: e.target.checked })}
                 />
-                Este NCM não tem CEST vigente<span className="text-destructive" aria-hidden="true"> *</span>
+                Este produto não se enquadra em CEST<span className="text-destructive" aria-hidden="true"> *</span>
               </label>
             </>
           )}

@@ -391,5 +391,5 @@ anúncio do PubliAI; a cópia ficava "Sem dados fiscais" e a venda feita nela tr
 O D-4 dizia "`cest` (opcional, só com ST)". A regra correta, do contador da Daludi (ADR-0181 D-10) e
 da cláusula vigésima do Convênio ICMS 142/2018: mercadoria listada nos Anexos II a XXVI leva o CEST
 no documento fiscal **ainda que a operação não esteja sujeita à ST**. O campo segue opcional no
-sistema porque há NCM sem CEST, e o gate continua validando só o formato: a aplicabilidade CEST×NCM
-exige tabela própria, fora do escopo.
+sistema porque há NCM sem CEST, e o gate continua validando só o formato. A sugestão pela tabela
+oficial, na entrada por nota, está no ADR-0197.

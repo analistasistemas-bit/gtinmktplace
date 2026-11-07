@@ -41,6 +41,7 @@ import { ROTULOS } from '@/components/estoque/detalhes-sku';
 import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
+import { useSugestaoCest } from '@/hooks/useCestOficial';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
   type FiscalForm,
@@ -135,6 +136,11 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     setFiscal(depois);
     setConfirmacoes((c) => confirmacoesAposMudanca(c, fiscal, depois));
   }
+  // ADR-0197: só na entrada por nota, quando o XML não trouxe CEST.
+  const cestOficial = useSugestaoCest({
+    ativo: aberto && fiscalAtivo && !!inicial?.sugestaoDaNota && !inicial.fiscal?.cest,
+    ncm: fiscal.ncm, cest: fiscal.cest, mudar: mudarFiscal,
+  });
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   // Alias de leitura, sem dependência de nada — movido para antes do `useEffect` de reconciliação
@@ -582,6 +588,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
               confirmacoes={confirmacoes}
               onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
               avisosNota={inicial?.avisosNota}
+              cestOficial={cestOficial}
+              cestNota={inicial?.fiscal?.cest}
             />
           ) : passo0 ? (
             <div className="grid gap-3 sm:grid-cols-2">

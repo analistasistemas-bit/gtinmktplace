@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Tabela oficial de CEST (ADR-0197) — 2026-11-07
+
+- [x] `cest_oficial` e `cest_candidatos`, com gerador em `scripts/cest/`; migration testada em transação desfeita.
+- [x] Entrada por nota: preenche candidato único por NCM completo; mostra os demais; declaração mantida sem candidato.
+- [ ] `supabase db push` junto do merge na `main`.
+- [ ] Validar a tela com uma nota real da Daludi depois do deploy.
+
 ## Selo do CSOSN e regra do CEST (emenda ADR-0135) — 2026-11-07
 
 - [x] Selo do CSOSN na entrada por nota: "CSOSN de saída da empresa — confira", porque o valor nunca vem da nota (ADR-0181 D-10).
