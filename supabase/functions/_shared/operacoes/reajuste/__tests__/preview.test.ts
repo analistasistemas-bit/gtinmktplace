@@ -306,6 +306,18 @@ describe('montarPreview — atacado (ADR-0196)', () => {
     expect(tipos(i)).toEqual(['base']);
   });
 
+  it('configuração sem faixa viva: não cria faixas', async () => {
+    const i = await um(pct(10, '-'), deps({ config: { faixas: CINCO, divergente: false } }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: [], faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
+  it('[] com faixa viva: não apaga as faixas', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95), config: { faixas: [], divergente: false } }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: viva(95), faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
   it('sem atacado: faixas vazias, sem passo', async () => {
     expect(await um(pct(10), deps())).toMatchObject({ situacao: 'elegivel', faixas_anteriores: [], faixas_alvo: null });
   });
@@ -320,7 +332,7 @@ describe('montarPreview — atacado (ADR-0196)', () => {
 
   it('configuração com valor ilegível → fora, sem derrubar o lote', async () => {
     const config = { faixas: [{ min_unidades: 2, desconto_pct: NaN }], divergente: false };
-    expect(await um(pct(10), deps({ config }))).toMatchObject({ situacao: 'fora', passos: null });
+    expect(await um(pct(10), deps({ config, faixas: viva(95) }))).toMatchObject({ situacao: 'fora', passos: null });
   });
 
   it('conta sem acesso ao ler o atacado sobe, não vira 500 linhas fora', async () => {

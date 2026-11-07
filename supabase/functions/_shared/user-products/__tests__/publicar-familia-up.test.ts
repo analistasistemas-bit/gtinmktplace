@@ -204,6 +204,60 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
 // cada SKU, e gênero é obrigatório junto (Decisão 6). Sem tamanho em nenhuma variação (toda org
 // sem tipo de produto habilitado, INV-1), nada disto é acionado — coberto pelos testes acima, que
 // não setam `familia.genero` nem `variacoes[].tamanho` e continuam passando inalterados.
+// ADR-0196: o PxQ é por ITEM e o valor é absoluto. Com a base de outra cor, a mais barata ficaria
+// com faixa igual ou acima do próprio preço.
+describe('publicarFamiliaUP — atacado sobre o preço de cada item', () => {
+  const FAIXAS = [{ min_unidades: 3, desconto_pct: 8 }];
+  const FILHOS = [
+    { sku: 's-verde', item_externo_id: 'MLB1', permalink: null },
+    { sku: 's-azul', item_externo_id: 'MLB2', permalink: null },
+  ];
+  const cores = (verde: number | null, azul: number | null) => ({
+    ...ANUNCIO, variacoes: [{ ...ANUNCIO.variacoes[0], preco: verde }, { ...ANUNCIO.variacoes[1], preco: azul }],
+  }) as AnuncioCanonico;
+  async function publicar(anuncio: AnuncioCanonico, filhos: Record<string, unknown>[] = FILHOS, falhar = false) {
+    const aplicados: [string, number, unknown][] = [];
+    const conn = {
+      ...fakeConnector, capabilities: { ...fakeConnector.capabilities, atacado: true, descricaoSeparada: false },
+      aplicarAtacado: async (_c: unknown, id: string, base: number, f: unknown) => {
+        if (falhar) throw new Error('ML 500');
+        aplicados.push([id, base, f]);
+      },
+    };
+    const { admin, writes } = fakeAdmin(filhos);
+    await publicarFamiliaUP({
+      admin, conn: conn as never, ctx, conexao, familia: { ...FAMILIA, atacado: FAIXAS } as never, anuncio, categoriaId: 'MLB419782',
+      executarSaga: () => Promise.resolve({ estado: 'ativo', itemExternoId: 'MLB1', permalink: null } as never),
+    });
+    return { aplicados, atacado: writes.filter((w) => w.table === 'familias' && 'atacado_status' in w.payload).map((w) => w.payload) };
+  }
+
+  beforeEach(() => { fakeConnector.reset(); enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1'); });
+
+  it('cores com preços diferentes: cada item recebe as faixas sobre o próprio preço', async () => {
+    const r = await publicar(cores(10, 25));
+    expect(r.aplicados).toEqual([['MLB1', 10, FAIXAS], ['MLB2', 25, FAIXAS]]);
+    expect(r.atacado).toEqual([{ atacado_status: 'aplicado', atacado_erro: null }]);
+  });
+
+  it('item sem preço: não aplica em nenhum e grava erro', async () => {
+    const r = await publicar(cores(10, null));
+    expect(r.aplicados).toEqual([]);
+    expect(r.atacado).toMatchObject([{ atacado_status: 'erro' }]);
+    expect(String(r.atacado[0].atacado_erro)).toMatch(/preço-base/);
+  });
+
+  it('filho antigo fora desta publicação não recebe faixas nem vira erro', async () => {
+    const r = await publicar(cores(10, 25), [...FILHOS, { sku: 's-velho', item_externo_id: 'MLB9', permalink: null }]);
+    expect(r.aplicados.map(([id]) => id)).toEqual(['MLB1', 'MLB2']);
+    expect(r.atacado).toEqual([{ atacado_status: 'aplicado', atacado_erro: null }]);
+  });
+
+  it('falha ao aplicar grava erro', async () => {
+    expect((await publicar(cores(10, 25), FILHOS, true)).atacado).toMatchObject([{ atacado_status: 'erro' }]);
+  });
+});
+
 describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
   beforeEach(() => {
     fakeConnector.reset();

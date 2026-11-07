@@ -232,15 +232,19 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     }
 
     // Atacado (PxQ): cada item é um anúncio ML separado → aplica em TODOS os filhos (nunca só o 1º,
-    // senão as cores 2..N ficam sem PxQ). Best-effort; base = preço uniforme da família.
+    // senão as cores 2..N ficam sem PxQ). Best-effort. ADR-0196: a base é o preço do próprio item; a de
+    // outra cor deixaria a mais barata com faixa igual ou acima do preço. Sem preço, não aplica em nenhum.
     const faixas = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
     if (conn.capabilities.atacado && faixas.length > 0) {
-      const base = anuncio.variacoes.find((v) => v.preco != null)?.preco;
-      if (base != null) {
+      const itens = filhos.filter((f) => f.item_externo_id && varPorSku.has(f.sku));
+      if (itens.some((f) => varPorSku.get(f.sku)!.preco == null)) {
+        await admin.from('familias').update({
+          atacado_status: 'erro', atacado_erro: 'Atacado sem preço-base: uma ou mais cores sem preço',
+        }).eq('id', familia.id);
+      } else {
         let ok = true;
-        for (const f of filhos) {
-          if (!f.item_externo_id) continue;
-          try { await conn.aplicarAtacado(ctx, f.item_externo_id, Number(base), faixas); }
+        for (const f of itens) {
+          try { await conn.aplicarAtacado(ctx, f.item_externo_id!, Number(varPorSku.get(f.sku)!.preco), faixas); }
           catch (e) { ok = false; console.error(`atacado UP falhou (${f.item_externo_id}):`, e); }
         }
         await admin.from('familias').update(ok

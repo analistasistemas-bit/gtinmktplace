@@ -44,11 +44,14 @@ export function configDoMlb(variacoes: { atacado: unknown }[], familia: { atacad
   return { faixas: efetivas.find((f) => f !== null) ?? null, divergente: false };
 }
 
-/** `config` null ou sem faixas: as vivas seguem como estão. Com configuração, ela manda, inclusive [] (limpa). */
+const quantidades = (fs: { min_unidades: number }[]) => porQuantidade(fs).map((f) => f.min_unidades).join();
+
+/** Só recalcula as faixas que existem vivas, com as mesmas quantidades da configuração. Mudar preço nunca cria nem
+ *  apaga faixa: fora disso as vivas seguem como estão, inclusive com `[]`, e a que cruzar o alvo tira o item. */
 export function decidirFaixas(alvo: number, vivas: FaixaPreco[], config: ConfigMlb | null): DecisaoFaixas {
   if (config?.divergente) return { acao: 'fora', motivo: 'Atacado diferente entre cores — ajuste na Revisão' };
   const nenhuma: DecisaoFaixas = { acao: 'nenhuma', faixas_alvo: null };
-  if (!config?.faixas) {
+  if (!config?.faixas || quantidades(config.faixas) !== quantidades(vivas)) {
     return vivas.some((f) => centavos(f.preco) >= centavos(alvo))
       ? { acao: 'fora', motivo: 'Faixa de atacado ficaria acima do preço base' }
       : nenhuma;

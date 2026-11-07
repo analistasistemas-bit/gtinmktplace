@@ -100,15 +100,34 @@ describe('decidirFaixas', () => {
     expect(decidirFaixas(90, viva(85), cfg(null, true))).toEqual(fora);
     expect(decidirFaixas(90, [], cfg(null, true))).toEqual(fora);
   });
-  it('[] com faixa viva limpa as faixas', () => {
-    expect(decidirFaixas(90, viva(85), cfg([]))).toEqual({ acao: 'recalcular', faixas_alvo: [] });
+  it('[] com faixa viva: mantém, como sem configuração', () => {
+    expect(decidirFaixas(90, viva(85), cfg([]))).toEqual({ acao: 'nenhuma', faixas_alvo: null });
+    expect(decidirFaixas(120, viva(95), cfg([]))).toEqual({ acao: 'nenhuma', faixas_alvo: null });
+  });
+  it('[] com faixa viva cruzando → fora', () => {
+    expect(decidirFaixas(90, viva(95), cfg([]))).toEqual({ acao: 'fora', motivo: CRUZA });
+  });
+  it('configuração sem faixa viva: não cria faixas', () => {
+    expect(decidirFaixas(90, [], cfg(CINCO))).toEqual({ acao: 'nenhuma', faixas_alvo: null });
+  });
+  it('quantidades diferentes da configuração: não apaga nem cria faixa, mantém as vivas', () => {
+    const duas = [{ min_unidades: 2, preco: 85 }, { min_unidades: 10, preco: 80 }];
+    expect(decidirFaixas(90, duas, cfg(CINCO))).toEqual({ acao: 'nenhuma', faixas_alvo: null });
+    expect(decidirFaixas(82, duas, cfg(CINCO))).toEqual({ acao: 'fora', motivo: CRUZA });
+  });
+  it('ordem das faixas vivas não muda o casamento com a configuração', () => {
+    const config = [{ min_unidades: 2, desconto_pct: 5 }, { min_unidades: 10, desconto_pct: 10 }];
+    const vivas = [{ min_unidades: 10, preco: 90 }, { min_unidades: 2, preco: 95 }];
+    expect(decidirFaixas(50, vivas, cfg(config))).toEqual({
+      acao: 'recalcular', faixas_alvo: [{ min_unidades: 2, preco: 47.5 }, { min_unidades: 10, preco: 45 }],
+    });
   });
   it('[] sem faixa viva → nada', () => {
     expect(decidirFaixas(90, [], cfg([]))).toEqual({ acao: 'nenhuma', faixas_alvo: null });
   });
   it('configuração que não forma faixa válida → fora, sem gravar', () => {
-    const r = decidirFaixas(1, [], cfg([{ min_unidades: 2, desconto_pct: 0.1 }])); // R$ 1,00 com 0,1% = R$ 1,00
+    const r = decidirFaixas(1, viva(0.5), cfg([{ min_unidades: 2, desconto_pct: 0.1 }])); // R$ 1,00 com 0,1% = R$ 1,00
     expect(r).toEqual({ acao: 'fora', motivo: 'Faixa de atacado inválida para este preço — ajuste na Revisão' });
-    expect(decidirFaixas(100, [], cfg([{ min_unidades: 1, desconto_pct: 5 }])).acao).toBe('fora');
+    expect(decidirFaixas(100, [{ min_unidades: 1, preco: 90 }], cfg([{ min_unidades: 1, desconto_pct: 5 }])).acao).toBe('fora');
   });
 });

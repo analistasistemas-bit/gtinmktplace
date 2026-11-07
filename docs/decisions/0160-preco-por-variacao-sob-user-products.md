@@ -249,5 +249,5 @@ O [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md) retira a 
 UP: a invariante I5 e o primeiro item da seção 6 deixam de valer. Cada item recebe as faixas sobre o próprio preço, e
 item sem preço conhecido grava `atacado_status='erro'` sem aplicar em nenhum. No "Adicionar variação" (I10) só a cor nova
 recebe as faixas, porque o preço vivo das irmãs não é conhecido nesse caminho. A recusa de configuração por cor (I7)
-continua. A dívida 2 fica paga só nessa parte: a configuração segue família-level, e o CREATE UP
-(`publicar-familia-up.ts`) ainda usa o preço da primeira cor como base de todos os itens.
+continua. O CREATE UP (`publicar-familia-up.ts`) segue a mesma regra: cada item sobre o próprio preço, e item sem preço
+grava `erro` sem aplicar em nenhum. A dívida 2 fica paga só nessa parte: a configuração segue família-level.
