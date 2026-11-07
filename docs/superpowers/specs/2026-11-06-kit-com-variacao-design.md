@@ -138,6 +138,62 @@ pelo operador (Preto + Branco M, meta 3, piso 2):
 | Chegou mercadoria | O sistema repõe os kits até a meta |
 | Kit zerou e o unitário está no piso | O kit sai do ar e volta sozinho quando entrar peça |
 
+### Vender só em kit [Diego]
+
+Opção em Criar kit e Gerenciar kit, para produto que só compensa vender em kit. Restrita a admin,
+porque pausa anúncio (ADR-0060).
+
+As peças ficam **guardadas** no estoque individual, sem oferta, e a reposição monta kits até a meta
+conforme vendem. Não move tudo de uma vez: a mesma peça serve em várias combinações, e dividir antes
+prenderia peça em combinação parada **[Diego]**.
+
+Cada SKU individual usado no kit fica em um destes estados:
+
+| Estado | Anúncio individual | Reposição do kit pode usar |
+|---|---|---|
+| **Normal** (opção desligada) | ativo | sim, respeitando o piso |
+| **Guardado** | pausado pelo kit | sim, piso 0 |
+| **Sobra** | reativado | não, até voltar a guardado |
+
+Transições:
+
+1. **Ligar a opção:** Normal → Guardado. Só os SKUs usados no kit. A pausa é confirmada no ML antes de
+   o piso virar 0.
+2. **Virar sobra:** Guardado → Sobra quando as peças do SKU não conseguem formar nenhuma combinação
+   publicada, porque falta outra cor do mesmo tamanho. O sistema **reativa o individual e avisa no
+   Telegram** **[Diego]**.
+3. **Sair da sobra:** Sobra → Guardado quando entrar a peça que faltava. Ordem obrigatória: pausa o
+   individual → confirma no ML → só então monta kit. A peça vendida nesse meio fica fora da conta,
+   porque a montagem relê o saldo depois da pausa confirmada.
+4. **Desligar a opção:** Guardado e Sobra → Normal. Reativa os individuais, e o piso volta ao anterior.
+
+**Entrada de estoque [Diego]:** toda entrada (nota, ajuste, cancelamento) consulta o estado do SKU
+antes de agir:
+
+- **Guardado:** o anúncio individual **não reativa**, e a reposição monta até a meta. Exceção nova à
+  regra de reativação do ADR-0111. O bloqueio vale para qualquer caminho de reativação.
+- **Sobra:** aplica a transição 3 se agora formar combinação; senão continua vendendo no individual.
+- **Normal:** regra atual, seguida da reposição respeitando o piso.
+
+Falha ao consultar o estado nunca reativa nem monta: fica como está e alerta.
+
+Com o individual pausado não há venda concorrente, então a transferência em SKU guardado não tem
+o risco da janela. O risco residual aceito vale só para SKU Normal.
+
+Promoções: conferir o que acontece com individual pausado que está em campanha **[medir]**.
+
+## Invariantes de estoque
+
+Valem para toda operação. Um furo em qualquer um reprova o desenho.
+
+1. Cada peça está em um lugar só: individual, kit ou em trânsito.
+2. Soma de individual + kits + trânsito só muda por venda, entrada, ajuste ou estorno, nunca por
+   montar, desmontar ou repor.
+3. Nada aumenta oferta no ML antes de a redução correspondente estar confirmada.
+4. Falha deixa a peça sem oferta, nunca em duas ofertas, e gera alerta.
+5. Toda operação é idempotente e pode ser repetida sem mover peça duas vezes.
+6. Automático nunca desfaz decisão do operador: pausa manual, modo manual e desmontar.
+
 ## Publicação no ML
 
 - Uma família User Products. Cada combinação × tamanho é um item, igual às grades atuais.
