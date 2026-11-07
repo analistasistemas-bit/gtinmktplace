@@ -44,6 +44,41 @@ describe('extrairCorDoTexto — regressão lote #24', () => {
   });
 });
 
+describe('extrairCorDoTexto — cor composta fora do dicionário', () => {
+  it.each([
+    ['Coloração Creme Colore 7.7 - Marrom Dourado 125g', 'Marrom Dourado'],
+    ['Coloração Creme Colore 3.0 - Castanho Escuro 125g', 'Castanho Escuro'],
+    ['Coloração Creme Colore 4.0 - Castanho Médio 125g', 'Castanho Médio'],
+    ['Coloração Creme Colore 6.66 - Vermelho Intenso 125g', 'Vermelho Intenso'],
+    ['Coloração Creme Colore 1.0 - Preto Azulado 125g', 'Preto Azulado'],
+    ['FITA CETIM BUFALO N.3 16MM 152 (327) AZUL TURQUESA 50MT', 'Azul Turquesa'],
+    ['L.LIZA FINA 7195 CASTANHO-CLARO', 'Castanho Claro'],
+    ['LINHA CASTANHO MEDIO', 'Castanho Médio'],
+    ['Coloração Castanho Claro Dourado 125g', 'Castanho Claro Dourado'],
+    ['Tecido Azul Escuro 10 metros', 'Azul Escuro'],
+  ])('%s → %s', (nome, cor) => {
+    expect(extrairCorDoTexto([nome])).toBe(cor);
+  });
+
+  it('composta cadastrada no dicionário continua canônica', () => {
+    expect(extrairCorDoTexto(['Linha Azul Claro'])).toBe('Azul Claro');
+    expect(extrairCorDoTexto(['FITA VERMELHO ESCURO'])).toBe('Vermelho Escuro');
+  });
+
+  it('cor sem tom ao lado continua no dicionário', () => {
+    expect(extrairCorDoTexto(['Alfinete N.0 Dourado'])).toBe('Dourado');
+    expect(extrairCorDoTexto(['Linha Castanho'])).toBe('Marrom');
+  });
+
+  it('não une palavras de textos diferentes', () => {
+    expect(extrairCorDoTexto(['Linha Marrom', 'Dourado Premium'])).toBe('Dourado');
+  });
+
+  it('composta do nome do pai não troca a cor da variação', () => {
+    expect(extrairCorDeVariacao('Linha Preto', 'Linha Verde Escuro')).toBe('Preto');
+  });
+});
+
 describe('extrairCorDeVariacao', () => {
   // A descrição detalhada é prosa de marketing por família: contém cores incidentais
   // que não nomeiam a cor do produto. Documenta o falso positivo que motivou o helper.

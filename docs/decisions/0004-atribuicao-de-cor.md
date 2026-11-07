@@ -115,3 +115,20 @@ e o operador tinha que digitar de novo.
 O pipeline respeita a cor gravada sem qualquer mudança: `process-familia/index.ts` já faz
 `if (v.cor) return v;` antes de tentar as camadas de inferência — cor pré-gravada
 simplesmente pula a resolução automática, igual a qualquer outra origem.
+
+## Adendo (2026-11-07) — Cor composta fora do dicionário
+
+Lote de 07/11, `Coloração Creme Colore 7.7 - Marrom Dourado 125g`: `variacoes.cor` saiu
+`Dourado`, e o título repetiu. O dicionário testa o sinônimo mais longo primeiro e "dourado"
+(7 letras) ganha de "marrom" (6). O mesmo corte atingia `Castanho Escuro` → `Marrom`,
+`Vermelho Intenso` → `Vermelho` e `Azul Turquesa` → `Turquesa`.
+
+**Decisão:** antes de cair no sinônimo isolado, a Camada 1 procura matiz seguido de 1-2 tons
+(`COR_COMPOSTA` em `_shared/cor/extrair.ts`) e devolve a expressão literal do nome. Composta
+já cadastrada no dicionário continua canônica. Composta do nome do pai que não contém o termo
+achado é ignorada, para não trocar a cor da variação.
+
+Retroteste em 3.415 pares nome/cor de produção: 9 linhas mudam, nenhum falso positivo.
+Vale para CREATE e reprocessamento de variação sem cor; `if (v.cor) return v` preserva o que
+já foi gravado, então nada publicado muda. A cor literal pode não ter `value_id` no ML
+(`Dourado` tem, `Marrom Dourado` talvez não): o nome certo vale mais que o filtro de cor.

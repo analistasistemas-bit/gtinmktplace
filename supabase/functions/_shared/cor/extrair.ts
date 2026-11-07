@@ -20,14 +20,27 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Matiz seguido de 1-2 tons ("Marrom Dourado", "Castanho Claro Dourado"). Sem isto, o maior
+// sinônimo vence sozinho e a composta perde uma palavra: "Marrom Dourado" virava "Dourado".
+const TONS = 'clar[oa]|escur[oa]|m[eé]dio|intens[oa]|azulad[oa]|acinzentad[oa]|acobread[oa]|dourad[oa]|turquesa|petr[oó]leo';
+const COR_COMPOSTA = new RegExp(
+  `(?<![\\p{L}])(?:azul|verde|marrom|castanh[oa]|rosa|rox[oa]|vermelh[oa]|amarel[oa]|laranja|cinza|bege|pret[oa])` +
+    `(?:[\\s-]+(?:${TONS})){1,2}(?![\\p{L}])`,
+  'iu',
+);
+
 export function extrairCorDoTexto(textos: Array<string | null | undefined>): string | null {
   const conjunto = textos.filter((t): t is string => typeof t === 'string' && t.length > 0);
   if (conjunto.length === 0) return null;
   const corpus = conjunto.join(' | ');
-  for (const termo of TERMOS) {
-    if (termo.regex.test(corpus)) return termo.canonica;
+  const termo = TERMOS.find((t) => t.regex.test(corpus));
+  if (termo?.sinonimo.includes(' ')) return termo.canonica; // composta já cadastrada
+  const composta = COR_COMPOSTA.exec(corpus)?.[0];
+  // A composta precisa conter o termo achado: a do nome do pai não troca a cor da variação.
+  if (composta && (!termo || termo.regex.test(composta))) {
+    return composta.split(/[\s-]+/).map(palavraDeCor).join(' ');
   }
-  return null;
+  return termo?.canonica ?? null;
 }
 
 /**
@@ -77,6 +90,11 @@ function titleCase(palavra: string): string {
   return palavra.charAt(0).toUpperCase() + palavra.slice(1).toLowerCase();
 }
 
+function palavraDeCor(palavra: string): string {
+  const up = palavra.toUpperCase();
+  return ABREVIACOES_COR[up] ?? ACENTOS_COR[up] ?? titleCase(palavra);
+}
+
 /**
  * Produtos cujo NOME traz "{código} {cor}" (ex.: "... 1354 VERMELHO TOMATE 10MT"):
  * devolve o código e o nome literal da cor (abreviações expandidas + title-case).
@@ -106,11 +124,5 @@ export function extrairCorECodigo(nome: string): { cor: string; codigo: string }
   }
   // Corrida longa (ex.: "para uniforme e decoração") não é cor → cai no dicionário.
   if (palavras.length > MAX_PALAVRAS_COR) return null;
-  const cor = palavras
-    .map((p) => {
-      const up = p.toUpperCase();
-      return ABREVIACOES_COR[up] ?? ACENTOS_COR[up] ?? titleCase(p);
-    })
-    .join(' ');
-  return { cor, codigo };
+  return { cor: palavras.map(palavraDeCor).join(' '), codigo };
 }
