@@ -260,11 +260,41 @@ estoque de user product com versão, nunca `available_quantity` absoluto.**
    não estiver mais lá, aborta.
 
 O saldo do ML é a verdade da disponibilidade nessas operações: a origem só cede o que o ML ainda
-mostra. O ledger local nunca aumenta oferta sozinho. Divergência entre os dois bloqueia a operação e
-gera alerta.
+mostra. O ledger local nunca aumenta oferta sozinho.
 
-Isso vale também para push de entrada e reconciliação nesses SKUs: entrada soma delta, e não regrava
-total.
+**Exceção:** o CREATE de um item novo de kit envia saldo inicial no payload, porque ainda não existe
+versão. Só vale se as reduções que financiam esse saldo já estiverem confirmadas e com proteção
+contra criação duplicada.
+
+**Delta com identidade (revisão 3):** todo delta tem identidade durável por movimento, UP e local,
+incluindo entrada, ajuste, estorno e reconciliação. Reentrega não cria outro efeito. Resultado remoto
+incerto nunca autoriza reler e reaplicar com versão nova: exige identificar o efeito anterior, senão
+fica bloqueado com alerta. O job atual de estoque não carrega identidade de movimento e confia no
+push absoluto idempotente (`_shared/estoque/baixa.ts`), então precisa de contrato novo nesses SKUs.
+
+**Divergência entre ledger e ML (revisão 3):** é classificada em compromisso remoto, efeito local
+pendente, trânsito e diferença sem explicação. Efeito pendente identificado é aplicado uma única vez.
+Diferença sem explicação bloqueia e tem procedimento de recuperação pelo operador. Nunca vira delta
+calculado por `ledger − ML`.
+
+**Pausa preservada (revisão 3):** a escrita funciona mantendo a pausa exigida pela política, inclusive
+ao passar por saldo zero. Se a escrita exigir ativar ou causar reativação, a operação é proibida
+nessa configuração. Pausar depois não fecha a janela.
+
+Isso vale também para push de entrada e reconciliação nesses SKUs.
+
+**Caminhos de escrita absoluta a migrar (lista de aceitação):**
+
+| Caminho | Arquivo |
+|---|---|
+| Push de estoque em item plano, incluindo UP | `_shared/canais/mercado-livre.ts` |
+| UPDATE de item plano | `_shared/canais/mercado-livre.ts` |
+| UPDATE e reposição de filhos UP | `_shared/user-products/atualizar-composicao.ts`, `atualizar-familia-up.ts` |
+| Reconciliação diária | `reconciliar-estoque/index.ts` |
+| Convergência UP | `reconciliar-convergencia-up/processar.ts` |
+
+Trocar só o conector de push deixaria o UPDATE de composição fora da garantia. Sem fallback para
+`/items` nesses SKUs.
 
 **Só user product:** a API não existe para item Legacy (medido: `/stock` devolve 404 em item sem
 `user_product_id`). Base Legacy não pode gerar kit com variação.
@@ -274,13 +304,39 @@ um único local `selling_address`. O item da 5ª não é user product.
 
 **Portão: nada é construído sem provar [medir]:**
 
+Escrita, em anúncio indicado pelo Diego e sem Full:
+
 1. `PUT` com versão atual grava, e a versão sobe.
-2. `PUT` com versão velha devolve 409 e não grava. A doc diz isso; falta medir nas nossas contas.
-3. A doc lista o erro "seller with a single warehouse cannot update selling address stock". Nossas
-   contas têm um local: provar que o `PUT` é aceito.
-4. Uma venda real muda a versão e baixa a quantidade **no momento do pedido**, inclusive com pagamento
-   pendente. Medir por leitura, sem escrever: comparar criação do pedido com `last_updated` do estoque.
-5. Se 1 a 4 falharem, o desenho volta para revisão, porque não há prova contra venda concorrente.
+2. `PUT` com versão velha devolve 409 e não grava.
+3. Dois `PUT` concorrentes com a mesma versão: só um vence.
+4. O endpoint é aceito em conta de um local só, inclusive no primeiro kit criado. A doc restringe
+   `selling_address` por site e logística e lista o erro "seller with a single warehouse cannot update
+   selling address stock".
+
+Pausa:
+
+5. Redução e aumento em item com pausa do vendedor, passando por zero, mantêm a pausa.
+6. Reposição de item `out_of_stock` se comporta como esperado, em todos os itens relacionados.
+
+Compra, a mais importante. Exige compra real controlada, com autorização do Diego:
+
+7. Compra **entre o GET e o PUT**: o `PUT` com a versão anterior é recusado.
+8. Pagamento pendente e sua aprovação posterior: o saldo versionado já exclui a peça comprometida.
+9. Depois de uma redução, a oferta não vende além do novo saldo em nenhum item relacionado. A doc
+   descreve propagação assíncrona para condições de venda do UP.
+
+Timestamp é evidência auxiliar, não prova.
+
+Falha:
+
+10. Resposta perdida depois de aplicar, com venda intercalada e reentrega: exatamente um acréscimo, ou
+    bloqueado sem reaplicar.
+11. Entrada ainda não enviada, pedido pendente e transferência parcial convergem sem sobrescrever o
+    saldo do ML.
+
+**Regra de aprovação:** o saldo versionado precisa excluir todo compromisso que ainda possa consumir
+estoque, e compra e `PUT` condicional precisam disputar atomicamente a mesma disponibilidade. Se 1 a 9
+falharem, o desenho volta para revisão, porque não há prova contra venda concorrente.
 
 Se o portão passar, a quarentena pode deixar de ser necessária. Isso exige nova decisão do Diego e não
 muda a opção B sozinho.
