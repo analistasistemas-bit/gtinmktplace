@@ -1,7 +1,7 @@
 # Kit com variação — desenho
 
 **Data:** 2026-11-06
-**Status:** REABERTO em 07/11: portão reprovou no teste 4 (ver "Resultado do portão")
+**Status:** reescrito em 07/11 na opção B do Diego, com risco residual aceito; em revisão
 **Referência de mercado:** `MLBU5154491250` (Kit 4 Blusas, categoria MLB3112)
 
 Marcação: **[Diego]** decidido por ele. **[agente]** decisão do agente, sujeita a correção.
@@ -18,19 +18,18 @@ caminho com `x-version` é `seller_warehouse`, que exige conta multi-origem com 
 `warehouse_management`. Nenhuma das contas lidas tem essa tag. Em multi-origem, `available_quantity`
 em `/items` deixa de valer, então o push atual do PubliAI quebraria na conta inteira.
 
-As seções "Escrita de estoque por versão" e "Portão" ficam suspensas. Achado adicional: o estoque do
+Achado adicional: o estoque do
 user product é compartilhado com a cópia de catálogo (dois itens no mesmo UP).
 
-Caminhos abertos, pendentes de decisão do Diego:
+Kit Virtual foi descartado para roupa: a busca oficial de componentes devolveu `DISABLED_DOMAIN` em
+todos os itens de roupa da Daludi Shop (regatas e jaquetas), junto com falta de estoque; itens de
+outros domínios com estoque vieram `available`. Blusa não foi medida. `IS_NOT_ACTIVE_ERROR` mostra que
+componente precisa estar ativo. Nenhum kit de teste foi criado.
 
-- **A. Kit Virtual nativo: descartado para roupa (medido em 07/11).** A busca oficial de componentes
-  devolveu `DISABLED_DOMAIN` em todos os itens de roupa da Daludi Shop (regatas e jaquetas), em conjunto
-  com falta de estoque; os itens de outros domínios com estoque vieram `available`. Blusa não foi medida,
-  porque nenhuma conta lida tem blusa, mas o padrão é o mesmo. `IS_NOT_ACTIVE_ERROR` também mostra que
-  componente precisa estar ativo, o que conflitaria com Vender só em kit. Nenhum kit de teste foi criado.
-- **B. Grade própria sem versão:** pausa nos dois lados e espera, com risco residual aceito.
-- **C. Multi-origem:** mudança da conta inteira, a investigar.
+**Decisão do Diego (07/11):** opção B, grade própria com página única e risco residual aceito.
+Multi-origem fica fora, porque muda a conta inteira.
 
+## Por que existe
 
 Diego quer vender kits de cores diferentes do mesmo produto, como o anúncio de referência: uma
 página no ML onde o comprador escolhe a combinação de cores e depois o tamanho. Tudo nasce da tela
@@ -64,7 +63,7 @@ Este é o quarto sentido: **kit com variação**.
 
 ## O que seria fracasso, mesmo funcionando
 
-- Vender kit ou unitário sem a peça existir.
+- Vender kit ou unitário sem a peça existir, fora do risco residual aceito.
 - Publicar foto ou texto que o operador não viu.
 - Foto gerada mostrar peça diferente da real e isso passar sem aprovação.
 - Cobrar imagem de empresa sem o módulo ligado, ou gerar imagem sem registrar a cobrança.
@@ -102,8 +101,8 @@ Botão **Gerenciar kit** na linha do kit em Publicados **[agente, aceito sem obj
 
 A peça fica oferecida em um anúncio só. O kit tem **saldo próprio real**, diferente do kit vinculado,
 que deriva o saldo da base. O ML não vende além do saldo de cada anúncio, então a separação evita a
-venda duplicada **desde que nenhum push de saldo local restaure peça já vendida**. Por isso a garantia
-depende da "Escrita de estoque por versão"; sozinha, a separação não basta.
+venda duplicada **desde que nenhum push de saldo local restaure peça já vendida**. Por isso a proteção
+depende da "Escrita de estoque com anúncio pausado"; sozinha, a separação não basta.
 
 Isso substitui as regras anteriores de reserva de 1 unidade e saldo pelo mínimo das cores, que
 foram descartadas.
@@ -271,46 +270,65 @@ os furos daquela revisão, e cada regra é obrigatória para o plano.
 Tempo de quarentena e efeito das pausas no ranking do ML **[medir]**. Acontecem só em Montar mais,
 Desmontar e ao sair de Sobra.
 
-## Escrita de estoque por versão
+## Escrita de estoque com anúncio pausado
 
-Revisão 2 do Codex: pausar não basta. (a) Nenhuma espera prova que todo pedido anterior à pausa
-apareceu. (b) Escrever quantidade absoluta em destino ativo pode devolver uma peça vendida no instante
-da escrita. Regra que fecha os dois:
+O Brasil não tem escrita condicional sem multi-origem, então a proteção é não escrever em anúncio que
+possa vender.
 
-**Nos SKUs de kit e nos individuais usados em kit, toda mudança de quantidade no ML usa a API de
-estoque de user product com versão, nunca `available_quantity` absoluto.**
+**Regra:** nos SKUs de kit e nos individuais usados em kit, aumentar quantidade ou transferir peça só
+acontece com **todos os itens do user product pausados**, inclusive a cópia de catálogo. Reduzir
+quantidade em anúncio ativo é permitido.
 
-1. `GET /user-products/{id}/stock` devolve quantidade e `x-version`.
-2. Novo valor = **quantidade lida no ML** + delta da operação. Nunca o saldo local.
-3. `PUT /user-products/{id}/stock/type/selling_address` com `x-version`.
-4. 409 significa que houve mudança no meio: nada foi escrito. Relê, reavalia a operação e, se a peça
-   não estiver mais lá, aborta.
+Sequência de toda transferência (origem e destino):
 
-O saldo do ML é a verdade da disponibilidade nessas operações: a origem só cede o que o ML ainda
-mostra. O ledger local nunca aumenta oferta sozinho.
+1. Pausa todos os itens envolvidos e confirma por leitura.
+2. Espera o tempo de quarentena **T**.
+3. Importa pedidos do item e reserva os **não pagos** (`payment_required`, `payment_in_process`).
+4. Lê a quantidade em `/user-products/{id}/stock`, que é a verdade da disponibilidade.
+5. Calcula o valor final **uma única vez** e grava na saga. Retentativa reenvia o mesmo valor absoluto,
+   então a escrita fica idempotente sem precisar de delta.
+6. Escreve, relê e confirma quantidade e status.
+7. Reativa só o que a operação pausou.
 
-**Exceção:** o CREATE de um item novo de kit envia saldo inicial no payload, porque ainda não existe
-versão. Só vale se as reduções que financiam esse saldo já estiverem confirmadas e com proteção
-contra criação duplicada.
+**Medido em 07/11 (só leitura, DSA e Daludi, amostra pequena):** nas 9 amostras comparáveis, o estoque
+mudou de 0 a 6 segundos depois do pagamento, não na criação do pedido. O pagamento mais lento levou
+128 s. Os outros pedidos têm mudança posterior de estoque e não servem de amostra.
 
-**Delta com identidade (revisão 3):** todo delta tem identidade durável por movimento, UP e local,
-incluindo entrada, ajuste, estorno e reconciliação. Reentrega não cria outro efeito. Resultado remoto
-incerto nunca autoriza reler e reaplicar com versão nova: exige identificar o efeito anterior, senão
-fica bloqueado com alerta. O job atual de estoque não carrega identidade de movimento e confia no
-push absoluto idempotente (`_shared/estoque/baixa.ts`), então precisa de contrato novo nesses SKUs.
+**Consequência:** pedido não pago não aparece no saldo. Por isso o passo 3 existe, e T precisa cobrir o
+pagamento típico. Valor inicial de **T = 5 minutos**, configurável **[agente]**. T reduz o risco; não o
+prova inexistente.
 
-**Divergência entre ledger e ML (revisão 3):** é classificada em compromisso remoto, efeito local
-pendente, trânsito e diferença sem explicação. Efeito pendente identificado é aplicado uma única vez.
-Diferença sem explicação bloqueia e tem procedimento de recuperação pelo operador. Nunca vira delta
-calculado por `ledger − ML`.
+**Risco residual aceito pelo Diego:** pedido que paga depois de T e não apareceu no passo 3. Nesse
+caso a peça pode estar comprometida duas vezes. O sistema detecta pela baixa, alerta no Telegram e o
+operador resolve o pedido. Registrar toda ocorrência, para rever T com dado real.
 
-**Pausa preservada (revisão 3):** a escrita funciona mantendo a pausa exigida pela política, inclusive
-ao passar por saldo zero. Se a escrita exigir ativar ou causar reativação, a operação é proibida
-nessa configuração. Pausar depois não fecha a janela.
+**Risco existente, igual ao de hoje:** SKU individual ativo fora de transferência segue o push atual,
+com a mesma janela que já existe em todo produto. Não piora com o kit.
 
-Isso vale também para push de entrada e reconciliação nesses SKUs.
+**Kit ativo:** nenhum aumento de saldo com o item ativo. Cancelamento que devolve saldo ao kit entra na
+fila e usa a sequência acima, agrupado com a próxima reposição.
 
-**Caminhos de escrita absoluta a migrar (lista de aceitação):**
+**Pausa preservada:** a escrita precisa manter a pausa, inclusive ao passar por zero. Se reativar, a
+operação fica proibida nessa configuração.
+
+**Um local só:** só entra no kit SKU cujo `GET` mostra exclusivamente `selling_address`, revalidado em
+toda operação. Outro local bloqueia com alerta.
+
+**Estado Guardado não usa `status = pausado` no vínculo local [medir]:** `_shared/estoque/alvos.ts`
+tira item pausado do push, e isso não pode esconder um SKU da reconciliação.
+
+**Só user product:** base Legacy não gera kit, porque `/stock` devolve 404 em item sem
+`user_product_id`.
+
+**Divergência entre ledger e ML:** é classificada em compromisso remoto, efeito local pendente,
+trânsito e diferença sem explicação. Efeito pendente identificado é aplicado uma única vez. Diferença
+sem explicação bloqueia e tem procedimento de recuperação pelo operador. Nunca vira ajuste automático
+por `ledger − ML`.
+
+**Exceção:** o CREATE de item novo de kit envia saldo inicial no payload. Só vale se as reduções que
+financiam esse saldo já estiverem confirmadas e com proteção contra criação duplicada.
+
+**Caminhos de escrita que passam a consultar a regra (lista de aceitação):**
 
 | Caminho | Arquivo |
 |---|---|
@@ -320,64 +338,15 @@ Isso vale também para push de entrada e reconciliação nesses SKUs.
 | Reconciliação diária | `reconciliar-estoque/index.ts` |
 | Convergência UP | `reconciliar-convergencia-up/processar.ts` |
 
-Trocar só o conector de push deixaria o UPDATE de composição fora da garantia. Sem fallback para
-`/items` nesses SKUs.
+**Testes antes de construir [medir], com o que mostrar ao Diego antes de cada escrita:**
 
-**Um local só:** o `PUT` em `selling_address` altera um balde, e outro local com quantidade continua
-vendendo. Só entra no kit SKU cujo `GET` mostra exclusivamente `selling_address`. Isso é revalidado
-em toda operação, e outro local bloqueia com alerta. "Sem Full" não garante isso sozinho.
-
-**Estado Guardado não usa `status = pausado` no vínculo local [medir]:** `_shared/estoque/alvos.ts`
-tira item pausado do push, e isso não pode esconder um SKU da reconciliação.
-
-**Só user product:** a API não existe para item Legacy (medido: `/stock` devolve 404 em item sem
-`user_product_id`). Base Legacy não pode gerar kit com variação.
-
-**Medido em 06/11, só leitura:** em 4 das 5 contas conectadas, um user product devolveu `x-version` e
-um único local `selling_address`. O item da 5ª não é user product.
-
-**Portão: nada é construído sem provar [medir]:**
-
-Escrita, em anúncio indicado pelo Diego e sem Full:
-
-1. `PUT` com versão atual grava, e a versão sobe.
-2. `PUT` com versão velha devolve 409 e não grava.
-3. Dois `PUT` concorrentes com a mesma versão: só um vence.
-4. O endpoint é aceito em conta de um local só, inclusive no primeiro kit criado. A doc restringe
-   `selling_address` por site e logística e lista o erro "seller with a single warehouse cannot update
-   selling address stock".
-
-Pausa:
-
-5. Redução e aumento em item com pausa do vendedor, passando por zero, mantêm a pausa.
-6. Reposição em item `out_of_stock`: o ML religa sozinho quando a quantidade sobe (ADR-0111). **Reprova
-   se qualquer item que a política quer pausado ficar `active`.** Pausa do vendedor com saldo zero
-   também é medida. Vale para todos os itens relacionados.
-
-Compra, a mais importante. Exige compra real controlada, com autorização do Diego:
-
-7. Compra **entre o GET e o PUT**: o `PUT` com a versão anterior é recusado.
-8. Pagamento pendente: ler `locations[].quantity` de `/user-products/{id}/stock`, **o mesmo campo que o
-   `PUT` usa**, nunca `available_quantity`. Ler com o pagamento pendente e de novo depois da aprovação.
-   O campo precisa excluir a peça comprometida nas duas leituras, e a venda precisa mudar `x-version`.
-9. Depois de uma redução, a oferta não vende além do novo saldo em nenhum item relacionado. A doc
-   descreve propagação assíncrona para condições de venda do UP.
-
-Timestamp é evidência auxiliar, não prova.
-
-Falha:
-
-10. Resposta perdida depois de aplicar, com venda intercalada e reentrega: exatamente um acréscimo, ou
-    bloqueado sem reaplicar.
-11. Entrada ainda não enviada, pedido pendente e transferência parcial convergem sem sobrescrever o
-    saldo do ML.
-
-**Regra de aprovação:** o saldo versionado precisa excluir todo compromisso que ainda possa consumir
-estoque, e compra e `PUT` condicional precisam disputar atomicamente a mesma disponibilidade. Se 1 a 9
-falharem, o desenho volta para revisão, porque não há prova contra venda concorrente.
-
-Se o portão passar, a quarentena pode deixar de ser necessária. Isso exige nova decisão do Diego e não
-muda a opção B sozinho.
+1. Escrita de quantidade em item com pausa do vendedor mantém a pausa, nos dois itens do UP, inclusive
+   ao passar por zero. Reprova se qualquer item ficar `active`.
+2. Item `out_of_stock` com saldo subindo: o ML religa sozinho (ADR-0111). Reprova se isso ocorrer num
+   item que a política quer pausado.
+3. Pedido não pago aparece em `/orders/search` antes do pagamento. Se não aparecer, o passo 3 não protege
+   e o risco residual aumenta: voltar ao Diego com isso antes de construir.
+4. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
 
 ## Publicação no ML
 
