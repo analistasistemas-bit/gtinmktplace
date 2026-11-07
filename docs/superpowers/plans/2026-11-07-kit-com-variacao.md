@@ -38,6 +38,18 @@
 
 ---
 
+## Ordem de execução (recomendação do Codex, 07/11)
+
+Modo: subagentes **sequenciais**, com revisão bloqueante do Codex por task e revisão final da branch.
+
+- Ordem das tasks: 0 → 1 a 9 → 10 → 14 → 11 → 12 → 13 → 15 → 16 → 17. A Task 14 vem antes da tela, para a interface não expor reposição nem "Vender só em kit" sem backend pronto.
+- Conjuntos: 2–4 são um conjunto transacional, e 5–7 um conjunto de proteções. Cada task tem revisão própria, e cada conjunto ganha um teste integrado. Tasks 8–9 ganham teste integrado de venda, cancelamento e inventário.
+- Nunca em paralelo: implementação → revisão → correção → aprovação → próxima task; migrations dependentes.
+- Deploy nesta ordem: migrations → todas as edges e dependências → hashes conferidos → módulo → piloto autorizado.
+- Pendência crítica de estoque bloqueia avanço e ativação.
+
+---
+
 ## Fase 0 — Portão e ADR
 
 ### Task 0: Testes restantes e ADR-0197
