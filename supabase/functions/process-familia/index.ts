@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
     // Emenda ADR-0044 (2026-10-27): categoria sem COLOR → a cor que só o Vision achou é da
     // embalagem e vira indefinida. Categoria já conhecida (UPDATE/reprocesso): resolve aqui, antes
     // da copy e do UPDATE parcial; no CREATE a categoria só sai no passo 5c (ver passo 6).
-    // Inclui o veredito 'Outra' (ADR-0197): sem isso o produto simples o mandaria como COLOR ao ML.
+    // Inclui o veredito 'Outra' (ADR-0198): sem isso o produto simples o mandaria como COLOR ao ML.
     const corDaFoto = (v: { cor_origem: string | null }) => v.cor_origem === 'vision';
     // Categoria cujo schema foi de fato lido: o passo 6 só pula a checagem dela, não a de uma
     // categoria cuja leitura falhou aqui (token/rede) e pode dar certo depois.
@@ -568,7 +568,7 @@ Deno.serve(async (req) => {
     }
     const semCor = new Set(descartadas.map((v) => v.codigo));
     const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: corDescartada } : v));
-    // ADR-0197: só o NOME respalda cor. Na descrição, "CORANTE VERMELHO 33" é ingrediente.
+    // ADR-0198: só o NOME respalda cor. Na descrição, "CORANTE VERMELHO 33" é ingrediente.
     const coresDaFoto = descartadas.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c));
     const slotsTitulo = coresDaFoto.length
       ? removerCorDosSlots(copy.titulo_slots, coresDaFoto,

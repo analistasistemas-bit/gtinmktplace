@@ -144,7 +144,7 @@ cadastrado a partir do item da nota, com o módulo `fiscal` ligado. Spec:
 | CSOSN, entrada com ST | `500` | "Conferi" geral |
 | CSOSN, entrada sem ST | `csosn_padrao_revenda`; padrão nulo → vazio + aviso | "Conferi" geral |
 | CSOSN, exceção | Vazio, sem sugestão, com aviso do código do fornecedor | Escolha obrigatória |
-| CEST | XML, com qualquer CSOSN | Ausente → preencher ou marcar "Este NCM não tem CEST vigente" |
+| CEST | XML, com qualquer CSOSN; ausente → tabela oficial (ADR-0197) | Ausente sem sugestão → preencher ou marcar "Este produto não se enquadra em CEST" |
 | Fornecedor de outra UF | Aviso de possível ST por antecipação | "Conferi o CSOSN com o contador" |
 
 - **Entrada com ST:** grupo `ICMSST`, CSOSN 201/202/203/500 ou CST 10/30/60/70. Decide o código, não o
@@ -162,7 +162,7 @@ cadastrado a partir do item da nota, com o módulo `fiscal` ligado. Spec:
   não bloqueante na etapa de itens.
 - **Fora do escopo:** tabela de NCM com antecipação (o contador: só muda em compra de fora do estado; hoje
   a Daludi só compra dentro), CSOSN 101 para venda a contribuinte revendedor (CSOSN é do cadastro, não da
-  venda) e tabela oficial NCM→CEST.
+  venda). A tabela oficial NCM→CEST veio depois, no ADR-0197.
 
 **D-11 — Desfazer e cancelamento.** **Desfazer importação** é só para admin: reduz o saldo via
 `ajustar_estoque`, marca a nota como `desfeita` (não apaga) e é recusado listando os SKUs quando parte já

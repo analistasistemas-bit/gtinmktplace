@@ -47,7 +47,7 @@ export const ORDEM_LEITURA = [
 /**
  * Ordem de CORTE: quem sai primeiro quando estoura 60 chars. É o espelho da ordem de leitura —
  * o menos prioritário sai antes —, com uma troca: `marca` sai antes de `modelo`, porque numeração
- * e nome comercial distinguem o produto e a marca não (ADR-0197).
+ * e nome comercial distinguem o produto e a marca não (ADR-0198).
  *
  * Ordem de leitura e ordem de corte são contratos DISTINTOS de propósito: é o que permite
  * proteger `variacao` do corte sem tirá-la do lugar no texto. Quem decide o que é incortável

@@ -1249,7 +1249,9 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(await screen.findByLabelText('CEST')).toHaveValue('2805900');
     expect(screen.getByRole('combobox', { name: 'CSOSN' })).toHaveTextContent('500');
     expect(screen.getByText(/Nota do fornecedor com ST \(60\) — CSOSN 500\./)).toBeInTheDocument();
-    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(4);
+    // O CSOSN nunca é copiado do fornecedor (D-10): o selo dele não pode dizer que veio da nota.
+    expect(screen.getByText(/CSOSN de saída da empresa — confira/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(3);
 
     await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
@@ -1258,7 +1260,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
   });
 
-  it('sem CEST na nota: exige "Este NCM não tem CEST vigente"; digitar o CEST dispensa o checkbox', async () => {
+  it('sem CEST na nota: exige "Este produto não se enquadra em CEST"; digitar o CEST dispensa o checkbox', async () => {
     modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
     (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcNcmPadrao);
     (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
@@ -1275,13 +1277,74 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(await screen.findByText(/A nota não trouxe CEST/)).toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ }));
+    await user.click(screen.getByRole('checkbox', { name: /^Este produto não se enquadra em CEST/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
     // Digitar o CEST derruba "Conferi"; refeito, o checkbox de CEST deixou de ser exigido.
     await user.type(screen.getByLabelText('CEST'), '2805900');
-    expect(screen.queryByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /^Este produto não se enquadra em CEST/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
+  describe('ADR-0197: CEST pela tabela oficial', () => {
+    const rpcCest = (candidatos: object[]) => (fn: string, args: { p_codigos: string[] }) =>
+      fn === 'cest_candidatos' ? Promise.resolve({ data: candidatos, error: null }) : rpcNcmPadrao(fn, args);
+    const unico = { cest: '2001400', ncm_prefixo: '33049910', descricao: 'Cremes de beleza', exato: true };
+    const solar = { cest: '2001600', ncm_prefixo: '33049990', descricao: 'Preparações solares', exato: true };
+    const pele = { cest: '2001500', ncm_prefixo: '33049990', descricao: 'Cuidados da pele', exato: true };
+
+    async function abrir(candidatos: object[], cest?: string) {
+      modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockClear();
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation(rpcCest(candidatos));
+      (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ncm: null }, error: null });
+      const user = userEvent.setup();
+      renderNotaCom({
+        ...inicialNota,
+        fiscal: { ncm: '33049910', origemNfe: 0, tributacaoIcms: '102', ...(cest ? { cest } : {}) },
+        avisosNota: { classe: 'sem_st', codigoFornecedor: '00', interestadual: false, semPadrao: false },
+      });
+      await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+      await preencherEmbalagem(user, 1);
+      await user.click(screen.getByRole('button', { name: 'Avançar' }));
+      return user;
+    }
+
+    it('candidato único preenche com selo da tabela e descrição, e o "Conferi" segue obrigatório', async () => {
+      await abrir([unico]);
+      await waitFor(() => expect(screen.getByLabelText('CEST')).toHaveValue('2001400'));
+      expect(screen.getByText(/Sugerido pela tabela oficial — confira/)).toBeInTheDocument();
+      expect(screen.getByText('Cremes de beleza')).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ })).not.toBeChecked();
+      expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    });
+
+    it('vários candidatos não preenchem; o clique escolhe', async () => {
+      const user = await abrir([pele, solar]);
+      const botao = await screen.findByRole('button', { name: /2001600 — Preparações solares/ });
+      expect(screen.getByLabelText('CEST')).toHaveValue('');
+      await user.click(botao);
+      expect(screen.getByLabelText('CEST')).toHaveValue('2001600');
+      expect(screen.getByText(/Sugerido pela tabela oficial — confira/)).toBeInTheDocument();
+    });
+
+    it('nenhum candidato mantém a declaração obrigatória', async () => {
+      const user = await abrir([]);
+      expect(await screen.findByText(/não consta da tabela oficial/)).toBeInTheDocument();
+      await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
+      expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+      await user.click(screen.getByRole('checkbox', { name: /^Este produto não se enquadra em CEST/ }));
+      expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    });
+
+    it('CEST do XML não consulta a tabela; digitar outro valor tira o selo "Veio da nota"', async () => {
+      const user = await abrir([unico], '2805900');
+      expect(await screen.findByLabelText('CEST')).toHaveValue('2805900');
+      expect(vi.mocked(supabase.rpc).mock.calls.some(([fn]) => fn === 'cest_candidatos')).toBe(false);
+      const selos = screen.getAllByText(/Veio da nota do fornecedor/).length;
+      await user.type(screen.getByLabelText('CEST'), '{Backspace}1');
+      expect(screen.getAllByText(/Veio da nota do fornecedor/)).toHaveLength(selos - 1);
+    });
   });
 
   function elementoNota(aberto: boolean, inicial: CadastroInicial, qc: QueryClient) {
@@ -1366,7 +1429,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     });
   });
 
-  it('CEST veio da nota e o operador apaga: Cadastrar só libera com "Este NCM não tem CEST vigente"', async () => {
+  it('CEST veio da nota e o operador apaga: Cadastrar só libera com "Este produto não se enquadra em CEST"', async () => {
     prepararFiscal();
     const user = userEvent.setup();
     renderNotaCom({
@@ -1378,7 +1441,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     await user.clear(await screen.findByLabelText('CEST'));
     await user.click(screen.getByRole('checkbox', { name: /^Conferi os dados fiscais/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: /^Este NCM não tem CEST vigente/ }));
+    await user.click(screen.getByRole('checkbox', { name: /^Este produto não se enquadra em CEST/ }));
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 

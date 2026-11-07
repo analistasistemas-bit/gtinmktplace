@@ -55,5 +55,6 @@ Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela comp
 - [ADR-0194](0194-sugestoes-de-promocao.md) — Sugestões de promoção: duas faixas por vendas e visitas, por produto, ordem por Oportunidade, dispensa por 30 dias (aceito).
 - [ADR-0195](0195-confirmacao-no-canal-e-divisao-por-estoque.md) — `publicado` exige escrita real, confirmação no canal e divisão de anúncio por estoque com aprovação do operador.
 - [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md) — Alterar preço em Publicados: base muda sem sair da promoção se ficar acima da oferta; oferta e atacado na mesma tela (proposto).
-- [ADR-0197](0197-identidade-do-produto-no-titulo.md) — Identidade do produto no título: nome comercial em `modelo`, conector não é cor, produto simples sem cor, conferência na Revisão.
+- [ADR-0197](0197-tabela-oficial-cest.md) — Tabela oficial de CEST: quando o XML não traz CEST, a entrada por nota preenche o candidato único por NCM completo e mostra os demais para escolha; a declaração segue obrigatória sem candidato.
+- [ADR-0198](0198-identidade-do-produto-no-titulo.md) — Identidade do produto no título: nome comercial em `modelo`, conector não é cor, produto simples sem cor, conferência na Revisão.
 - [ADR-0193](0193-relatorio-mensal-do-cliente-e-fechamento-automatico.md) — Relatório mensal do cliente (PDF de prestação de contas), fechamento automático no dia 01 e Central premium (aceito).

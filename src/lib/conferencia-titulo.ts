@@ -1,6 +1,6 @@
 import type { Familia } from './tipos-dominio';
 
-// ADR-0197: conferência determinística do título na Revisão. A IA pode omitir o nome comercial
+// ADR-0198: conferência determinística do título na Revisão. A IA pode omitir o nome comercial
 // mesmo com o prompt certo, então o aviso não depende dela. Avisa, não bloqueia.
 
 const IGNORADAS = new Set([

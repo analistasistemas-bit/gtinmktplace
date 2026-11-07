@@ -97,7 +97,7 @@ interface FamiliaExpandedProps {
   focoCodigo?: string | null;
   onFocoConcluido?: () => void;
   ocultarSemEstoque?: boolean;
-  /** Outra família nova do lote tem o mesmo título (ADR-0197). */
+  /** Outra família nova do lote tem o mesmo título (ADR-0198). */
   tituloRepetido?: boolean;
 }
 

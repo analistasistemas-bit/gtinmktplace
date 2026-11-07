@@ -153,7 +153,7 @@ export interface Familia {
   loteId: string;
   codigoPai: string;
   titulo: string;
-  /** Nome da planilha: a Revisão confere o título contra ele (ADR-0197). */
+  /** Nome da planilha: a Revisão confere o título contra ele (ADR-0198). */
   nomePai?: string;
   descricao: string;
   operacao: OperacaoML;

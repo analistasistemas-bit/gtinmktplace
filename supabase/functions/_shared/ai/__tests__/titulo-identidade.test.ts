@@ -8,7 +8,7 @@ const fonte = (nomePai: string, extra: Partial<DadosFonteTitulo> = {}): DadosFon
 });
 const slots = (s: Partial<TituloSlots>): TituloSlots => ({ ...SLOTS_VAZIOS, ...s });
 
-// ADR-0197: títulos aprovados pelo Diego em 07/11/2026 para o lote de cosméticos.
+// ADR-0198: títulos aprovados pelo Diego em 07/11/2026 para o lote de cosméticos.
 describe('títulos de aceitação', () => {
   it.each([
     [

@@ -23,7 +23,7 @@ describe('categoriaAceitaCor', () => {
   });
 });
 
-describe('corSemAtributo (ADR-0197)', () => {
+describe('corSemAtributo (ADR-0198)', () => {
   it('produto simples no CREATE fica sem cor', () => {
     expect(corSemAtributo(1, 'outro', 'CREATE')).toBeNull();
   });

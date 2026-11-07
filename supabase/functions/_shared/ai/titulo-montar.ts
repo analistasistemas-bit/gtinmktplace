@@ -64,7 +64,7 @@ export interface ContextoCorte {
  */
 const REDUCOES: Partial<Record<SlotTitulo, (v: string) => string>> = {
   // "Creme para Pentear e Hidratar" → "Creme para Pentear": cede a 2ª função antes de cortar a
-  // identidade comercial em `modelo` (ADR-0197).
+  // identidade comercial em `modelo` (ADR-0198).
   produto: (v) => v.replace(/(\bpara\s+\p{L}+)\s+e\s+\p{L}+/iu, '$1'),
   // "100% Poliéster" → "Poliéster": mantém o material, larga o percentual.
   material: (v) => v.replace(/^\d+%\s*/, ''),

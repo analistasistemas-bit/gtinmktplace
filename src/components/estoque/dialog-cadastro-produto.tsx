@@ -36,6 +36,7 @@ import {
 } from '@/components/estoque/linha-variacao-form';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
+import { useSugestaoCest } from '@/hooks/useCestOficial';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
   type FiscalForm,
@@ -181,6 +182,11 @@ export function DialogCadastroProduto({
     setFiscal(depois);
     setConfirmacoes((c) => confirmacoesAposMudanca(c, fiscal, depois));
   }
+  // ADR-0197: só na entrada por nota, quando o XML não trouxe CEST.
+  const cestOficial = useSugestaoCest({
+    ativo: aberto && fiscalAtivo && !!inicial?.sugestaoDaNota && !inicial.fiscal?.cest,
+    ncm: fiscal.ncm, cest: fiscal.cest, mudar: mudarFiscal,
+  });
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
@@ -312,6 +318,8 @@ export function DialogCadastroProduto({
             confirmacoes={confirmacoes}
             onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
             avisosNota={inicial?.avisosNota}
+            cestOficial={cestOficial}
+            cestNota={inicial?.fiscal?.cest}
           />
         ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao

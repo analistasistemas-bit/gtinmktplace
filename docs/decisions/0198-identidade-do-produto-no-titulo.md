@@ -1,4 +1,4 @@
-# ADR-0197 — Identidade do produto no título e produto sem eixo de cor
+# ADR-0198 — Identidade do produto no título e produto sem eixo de cor
 
 **Status:** Aceito
 **Data:** 2026-11-07

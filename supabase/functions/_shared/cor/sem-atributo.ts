@@ -4,7 +4,7 @@ import type { AtributoSchema } from '../categoria/schema.ts';
 import { COR_VISION_INDEFINIDA } from './indefinida.ts';
 
 /**
- * Cor gravada quando a da foto é descartada (ADR-0197). Produto simples fica sem cor. O resto
+ * Cor gravada quando a da foto é descartada (ADR-0198). Produto simples fica sem cor. O resto
  * mantém a indefinida: aviamento, multivariação e UPDATE exigem cor, e nulo travaria a Revisão.
  */
 export function corSemAtributo(

@@ -139,7 +139,7 @@ describe('extrairCorDeVariacao', () => {
 import { extrairCorECodigo } from '../extrair';
 
 describe('extrairCorECodigo', () => {
-  it('"2 em 1" não é código + cor (ADR-0197)', () => {
+  it('"2 em 1" não é código + cor (ADR-0198)', () => {
     expect(extrairCorECodigo('Tanox Pop 1kg - Creme para pentear e hidratar 2 em 1')).toBeNull();
     expect(extrairCorECodigo('Creme 2 em 1 para pentear BRILHO UVA 1kg')).toBeNull();
   });

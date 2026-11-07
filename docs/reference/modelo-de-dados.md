@@ -1603,6 +1603,10 @@ organização** (`profiles.org_id = current_org_id()`, join por `storage.foldern
 INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration `20260527123422`
 + `20260705165828_e7_rls_org.sql`.*
 
+### `cest_oficial` (ADR-0197)
+
+Global, sem `org_id`; RLS só leitura para `authenticated`. Colunas: `cest`, `ncm_prefixo` (4 a 8 dígitos), `anexo`, `item`, `descricao`, `atualizado_em`. Chave `(cest, ncm_prefixo)`. Fonte: Convênio ICMS 142/2018, Anexos II a XXV. RPC `cest_candidatos(p_ncm)` devolve todas as correspondências, do prefixo mais longo ao mais curto.
+
 ### `ncm_oficial` (ADR-0187)
 Tabela global (sem `org_id`) da nomenclatura Siscomex: `codigo` (8 dígitos, PK), `descricao` (composta pelos ancestrais),
 `data_inicio`, `data_fim` (`31/12/9999` = sem fim), `atualizado_em`. RLS: só `select` para `authenticated`. Código extinto nunca é

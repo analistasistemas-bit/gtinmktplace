@@ -8,7 +8,7 @@
 
 **Tech Stack:** Deno edge functions, React, vitest.
 
-**Spec:** `docs/decisions/0197-identidade-do-produto-no-titulo.md`
+**Spec:** `docs/decisions/0198-identidade-do-produto-no-titulo.md`
 
 ## Global Constraints
 
