@@ -492,6 +492,20 @@ describe('avancarSaga', () => {
     expect(c.s.chamadas).not.toContain('active MLB-K');
   });
 
+  it('versão 7 autoriza, 8 bloqueia, 9 volta a permitir: repausa, porque vale só a versão exata', async () => {
+    const c = cenario();
+    // PUT active com a 7, política vai a 8 e a checagem posterior cai; antes da retomada, a 9 desbloqueia.
+    c.s.aoAtivar = (id) => { if (id === 'MLB-P') c.s.versaoPolitica = 8; };
+    let falhas = 1;
+    c.s.falhaPode = (codigo) => (codigo === 'P' && c.s.versaoPolitica === 8 && falhas-- > 0 ? new Error('banco fora') : null);
+    await rodar(c, (x) => falhas < 0 || (falhas === 0 && x.s.chamadas.includes('active MLB-P')));
+    c.s.versaoPolitica = 9;
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(pausadoNoFim(c, 'MLB-P')).toBe(true);
+    expect(c.s.chamadas.filter((x) => x.endsWith('MLB-P')).slice(-2)).toEqual(['active MLB-P', 'paused MLB-P']);
+  });
+
   it('PUT vai para um item aberto do UP e grava o destino (achado 7)', async () => {
     const c = cenario();
     c.s.ups['UP-B'].itens = [{ id: 'MLB-B0', status: 'closed', subStatus: [] }, ativo('MLB-B')];
