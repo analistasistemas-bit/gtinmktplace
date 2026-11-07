@@ -148,3 +148,13 @@ export async function alertarPublicacoesParadas(
   }
   return porOrg.size;
 }
+
+/**
+ * A exclusão `ativacao` (Task 6) vive só durante um PUT de status do operador e é solta no `finally`. Com mais
+ * de 1 h, a invocação morreu no meio: solta, senão as transferências desse SKU recebem `up_ocupado` para sempre.
+ */
+export async function soltarAtivacoesParadas(admin: SupabaseClient, agoraMs = Date.now()): Promise<void> {
+  const { error } = await admin.from('kit_exclusoes').delete()
+    .eq('dono_tipo', 'ativacao').lt('criado_em', new Date(agoraMs - PUBLICACAO_PARADA_MS).toISOString());
+  if (error) throw new Error(`kit_exclusoes: ${error.message}`);
+}

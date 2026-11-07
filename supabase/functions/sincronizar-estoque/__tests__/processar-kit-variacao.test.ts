@@ -153,6 +153,15 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(lidos).not.toContain('MLB-P1');
   });
 
+  it('Task 6: reativar=true não ativa o participante (nem a cópia de catálogo); o SKU comum reativa (ADR-0111)', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
+    await processarSincronizacao(m.deps, JOB);
+    const ativados = fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarStatus')
+      .map((c) => c.args as { itemExternoId: string; status: string });
+    expect(ativados).toEqual([{ itemExternoId: 'MLB-P2', status: 'ativo' }]);
+  });
+
   it('up_ocupado: não empurra o participante e devolve 500 para a fila repetir', async () => {
     const m = montar({
       modulos: ['kit_variacao'], componentes: ['P1'],

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { triarParticipantes, alertarPublicacoesParadas, type DepsTriagem } from '../transferencias.ts';
+import { triarParticipantes, alertarPublicacoesParadas, soltarAtivacoesParadas, type DepsTriagem } from '../transferencias.ts';
 
 // ADR-0197 (Task 5, ruling da dúvida 2): todo SKU participante, sem filtro de status local nem janela de
 // 24 h, é comparado com o ML; só a diferença vira transferência `entrada`.
@@ -24,15 +24,19 @@ function falso(b: Banco) {
   const from = (t: string) => {
     const filtros: Array<(r: Linha) => boolean> = [];
     let faixa: [number, number] = [0, 999];
+    let apagar = false;
     const api: Record<string, unknown> = {
       select: () => api, order: () => api,
+      delete: () => { apagar = true; return api; },
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return api; },
       in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return api; },
       lt: (c: string, v: string) => { filtros.push((r) => String(r[c]) < v); return api; },
       contains: (c: string, vs: unknown[]) => { filtros.push((r) => vs.every((v) => (r[c] as unknown[]).includes(v))); return api; },
       range: (de: number, ate: number) => { faixa = [de, ate]; return api; },
-      then: (res: (v: unknown) => unknown) =>
-        Promise.resolve({ data: tabelas[t].filter((r) => filtros.every((f) => f(r))).slice(faixa[0], faixa[1] + 1), error: null }).then(res),
+      then: (res: (v: unknown) => unknown) => {
+        if (apagar) tabelas[t] = tabelas[t].filter((r) => !filtros.every((f) => f(r)));
+        return Promise.resolve({ data: tabelas[t].filter((r) => filtros.every((f) => f(r))).slice(faixa[0], faixa[1] + 1), error: null }).then(res);
+      },
     };
     return api;
   };
@@ -40,7 +44,7 @@ function falso(b: Banco) {
     rpcs.push(args);
     return { data: b.rpc ? b.rpc(args) : { ok: true, id: `T-${rpcs.length}` }, error: null };
   };
-  return { admin: { from, rpc } as never, rpcs };
+  return { admin: { from, rpc } as never, rpcs, tabelas };
 }
 
 const fam = (criado_em: string) => ({ criado_em });
@@ -144,5 +148,20 @@ describe('alertarPublicacoesParadas', () => {
     expect(await alertarPublicacoesParadas(d.admin, alertar, Date.parse('2026-11-07T12:00:00.000Z'))).toBe(1);
     expect(alertar).toHaveBeenCalledTimes(1);
     expect(alertar).toHaveBeenCalledWith('O', expect.stringMatching(/P1(?!.*P2)/));
+  });
+});
+
+describe('soltarAtivacoesParadas (Task 6)', () => {
+  it('solta exclusão de ativação com mais de 1 h (invocação morta); recente e de outros donos ficam', async () => {
+    const f = falso({
+      ...BANCO,
+      exclusoes: [
+        { org_id: 'O', codigo: 'P1', dono_tipo: 'ativacao', criado_em: '2026-11-07T08:00:00.000Z' },
+        { org_id: 'O', codigo: 'P2', dono_tipo: 'ativacao', criado_em: '2026-11-07T11:50:00.000Z' },
+        { org_id: 'O', codigo: 'P3', dono_tipo: 'publicacao', criado_em: '2026-11-01T00:00:00.000Z' },
+      ],
+    });
+    await soltarAtivacoesParadas(f.admin, Date.parse('2026-11-07T12:00:00.000Z'));
+    expect(f.tabelas.kit_exclusoes.map((r) => r.codigo)).toEqual(['P2', 'P3']);
   });
 });

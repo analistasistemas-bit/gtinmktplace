@@ -99,3 +99,73 @@ export async function soltarExclusao(admin: SupabaseClient, orgId: string, donoI
   const { error } = await admin.rpc('kit_soltar_exclusao', { p_org: orgId, p_dono_id: donoId });
   if (error) throw new Error(`kit_soltar_exclusao: ${error.message}`);
 }
+
+export const MSG_KIT_EM_TRANSFERENCIA =
+  'SKU em transferência de kit com variação. Tente de novo quando a transferência terminar.';
+export const MSG_KIT_POLITICA_MUDOU = 'A política do kit deste SKU mudou agora. Tente de novo.';
+const MSG_KIT_MODERADO = 'Anúncio moderado ou encerrado no Mercado Livre: não é reativado.';
+
+export type PreparoStatus = { recusa: string } | { soltar: () => Promise<void> };
+const NADA: PreparoStatus = { soltar: async () => {} };
+
+async function politicaOperador(
+  admin: SupabaseClient, orgId: string, codigos: string[], bloquear: boolean, versoes?: Record<string, number>,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc('kit_politica_operador', {
+    p_org: orgId, p_codigos: codigos, p_bloquear: bloquear, ...(versoes ? { p_versoes: versoes } : {}),
+  });
+  if (error) throw new Error(`kit_politica_operador: ${error.message}`);
+  return (data as { ok?: boolean } | null)?.ok === true;
+}
+
+/**
+ * Pausar/reativar pelo operador (individual, massa e Reverter), só para SKU participante.
+ * - Pausar grava `bloqueio_operador` e incrementa a versão ANTES do PUT: a saga em curso perde a reativação.
+ * - Reativar passa por `podeReativar` (origem operador), pela leitura viva (moderado nunca), pela exclusão
+ *   `ativacao` (nunca no meio de uma transferência) e limpa o bloqueio só se a versão não mudou.
+ * Quem chama faz o PUT e depois `soltar()`. Falha de leitura lança: nada é ativado.
+ * Participante é sempre user product (Task 10), então o vínculo vem de `anuncios_externos_itens`.
+ */
+export async function prepararStatusOperador(
+  admin: SupabaseClient, orgId: string, mlItemId: string, alvo: 'ativo' | 'pausado', ligado: boolean,
+  lerStatusVivo?: () => Promise<string | null>,
+): Promise<PreparoStatus> {
+  if (!ligado) return NADA;
+  const { data, error } = await admin.from('anuncios_externos_itens').select('sku').eq('org_id', orgId)
+    .or(`item_externo_id.eq.${mlItemId},catalog_listing_id.eq.${mlItemId}`);
+  if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
+  const codigos = [...await skusParticipantes(admin, orgId, (data ?? []).map((r) => r.sku as string), true)];
+  if (codigos.length === 0) return NADA;
+
+  if (alvo === 'pausado') {
+    await politicaOperador(admin, orgId, codigos, true);
+    return NADA;
+  }
+
+  const politicas = await lerPoliticas(admin, orgId, codigos);
+  for (const c of codigos) {
+    const d = podeReativar({ politica: politicas.get(c) ?? null, origem: 'operador' });
+    if (!d.pode) return { recusa: d.motivo };
+  }
+  if (lerStatusVivo) {
+    const vivo = await lerStatusVivo();
+    if (vivo !== 'pausado' && vivo !== 'ativo') return { recusa: MSG_KIT_MODERADO };
+  }
+
+  const dono = crypto.randomUUID();
+  if (!(await adquirirExclusao(admin, orgId, codigos, 'ativacao', dono)).ok) return { recusa: MSG_KIT_EM_TRANSFERENCIA };
+  // ponytail: invocação morta entre adquirir e soltar deixa a exclusão; a reconciliação diária a solta.
+  const soltar = () => soltarExclusao(admin, orgId, dono)
+    .catch((e) => console.error('kit_soltar_ativacao_falhou', orgId, mlItemId, String(e)));
+  try {
+    const versoes = Object.fromEntries(codigos.map((c) => [c, politicas.get(c)?.versao ?? 0]));
+    if (!(await politicaOperador(admin, orgId, codigos, false, versoes))) {
+      await soltar();
+      return { recusa: MSG_KIT_POLITICA_MUDOU };
+    }
+  } catch (e) {
+    await soltar();
+    throw e;
+  }
+  return { soltar };
+}

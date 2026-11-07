@@ -2,6 +2,7 @@
 // propaga ao anúncio de catálogo relacionado antes do PUT do item). Status relido fresco antes de cada escrita.
 // No item de status, `saida_pedida_em` = "escrita pedida ao ML em" e `conferencias` = tentativas retentáveis.
 import type { ResultadoCanal, StatusAnuncioCanal } from '../canais/contrato.ts';
+import type { PreparoStatus } from '../kit-variacao/politica.ts';
 import { decidirStatus } from './decidir-status.ts';
 import { MSG_RECONECTAR } from './falhas.ts';
 import { gravarPos, laco, type DepsLaco } from './laco.ts';
@@ -15,6 +16,8 @@ export interface DepsStatus extends DepsLaco {
   /** Mensagem do guard de migração PxV (ADR-0161) ou null. */
   migracaoPxv(mlItemId: string): Promise<string | null>;
   atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
+  /** ADR-0197 (`prepararStatusOperador`): grava a pausa do operador ou autoriza a reativação de SKU de kit. */
+  prepararKit(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<PreparoStatus>;
   /** Fatal: todo item `pendente`/`enviando` da operação → `erro` com a mensagem. */
   encerrarRestantes(mensagem: string): Promise<void>;
 }
@@ -27,14 +30,28 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   const [atual, migracao] = await Promise.all([deps.lerStatus(id), deps.migracaoPxv(id)]);
   const d = decidirStatus(op.acao, atual, migracao);
   if (d.tipo === 'fim') {
+    // ADR-0197: item já pausado (pela saga, por exemplo) também recebe a pausa do operador; senão a saga o reativa.
+    if (op.acao === 'pausar' && d.status === 'ja_estava') await deps.prepararKit(id, 'pausado');
     // Recuperação: uma tentativa anterior já pediu a escrita e o anúncio está no alvo → foi esta operação
     // (sem isso o Reverter perderia o item). ponytail: se outra pessoa mudou o status entre a marca e o PUT,
     // conta como nosso — o Reverter revalida no ML antes de escrever.
     if (d.status === 'ja_estava' && it.saida_pedida_em) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
     return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
   }
+  // ADR-0197: Guardado, moderado ou SKU em transferência recusam (massa e Reverter); a pausa vai antes do PUT.
+  const kit = await deps.prepararKit(id, d.alvo);
+  if ('recusa' in kit) return deps.gravarItem(op.id, id, { status: 'bloqueado', mensagem: kit.recusa });
+  try {
+    return await escrever(op, it, d.alvo, deps);
+  } finally {
+    await kit.soltar();
+  }
+}
+
+async function escrever(op: OperacaoStatusRow, it: ItemRow, alvo: 'ativo' | 'pausado', deps: DepsStatus): Promise<void> {
+  const id = it.ml_item_id;
   if (!it.saida_pedida_em) await deps.gravarItem(op.id, id, { saida_pedida_em: new Date(deps.agora()).toISOString() });
-  const r = await deps.atualizarStatus(id, d.alvo);
+  const r = await deps.atualizarStatus(id, alvo);
   if (r.ok) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
   if (r.erro?.codigo === 'AUTENTICACAO') throw new SemAcessoStatusML(r.erro.mensagemOperador);
   const mensagem = r.erro?.mensagemOperador ?? MSG_FALHA_STATUS;

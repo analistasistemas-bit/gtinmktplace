@@ -36,6 +36,7 @@ function montar(itens: Linha[], status: Record<string, StatusAnuncioCanal | null
     atualizarStatus: vi.fn(async (id) => (opts.falhaCanal?.includes(id)
       ? { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'ML recusou', retentavel: false, status: 400 } }
       : { ok: true })) as DepsStatus['atualizarStatus'],
+    prepararKit: vi.fn(async () => ({ soltar: async () => {} })) as DepsStatus['prepararKit'],
     encerrarRestantes: vi.fn(async (mensagem: string) => {
       for (const i of itens) if (i.status === 'pendente' || i.status === 'enviando') Object.assign(i, { status: 'erro', mensagem });
     }),
@@ -171,5 +172,53 @@ describe('executarStatus', () => {
     expect(r).toEqual({ processados: 2, continuou: true });
     expect(deps.continuar).toHaveBeenCalledTimes(1);
     expect(deps.concluir).not.toHaveBeenCalled();
+  });
+});
+
+describe('executarStatus × kit com variação (Task 6)', () => {
+  it('reativar Guardado (ou Reverter de pausar): item bloqueado com o motivo, sem PUT', async () => {
+    const itens = [item('A'), item('B')];
+    const deps = montar(itens, { A: 'pausado', B: 'pausado' });
+    deps.prepararKit = vi.fn(async (id: string) => (id === 'A' ? { recusa: 'Desligue "Vender só em kit"' } : { soltar: async () => {} }));
+    await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
+    expect(itens.map((i) => [i.status, i.mensagem ?? null])).toEqual([['bloqueado', 'Desligue "Vender só em kit"'], ['aplicado', null]]);
+    expect(deps.atualizarStatus).toHaveBeenCalledTimes(1);
+    expect(deps.atualizarStatus).toHaveBeenCalledWith('B', 'ativo');
+    expect(deps.prepararKit).toHaveBeenCalledWith('A', 'ativo');
+  });
+
+  it('a política é gravada antes do PUT e a exclusão é solta depois, mesmo com falha do canal', async () => {
+    const ordem: string[] = [];
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' }, { falhaCanal: ['A'] });
+    deps.prepararKit = vi.fn(async () => { ordem.push('preparar'); return { soltar: async () => { ordem.push('soltar'); } }; });
+    deps.atualizarStatus = vi.fn(async () => { ordem.push('put'); return { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'x', retentavel: false, status: 400 } }; }) as DepsStatus['atualizarStatus'];
+    await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
+    expect(ordem).toEqual(['preparar', 'put', 'soltar']);
+  });
+
+  it('pausar item já pausado (pela saga, por exemplo) também grava a pausa do operador', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' });
+    await executarStatus(PAUSAR, deps, OPTS);
+    expect(itens[0].status).toBe('ja_estava');
+    expect(deps.prepararKit).toHaveBeenCalledWith('A', 'pausado');
+    expect(deps.atualizarStatus).not.toHaveBeenCalled();
+  });
+
+  it('reativar item já ativo não mexe na política', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'ativo' });
+    await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
+    expect(deps.prepararKit).not.toHaveBeenCalled();
+  });
+
+  it('leitura da política que lança: item em erro, sem PUT', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' });
+    deps.prepararKit = vi.fn(async () => { throw new Error('banco fora'); });
+    await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'banco fora' });
+    expect(deps.atualizarStatus).not.toHaveBeenCalled();
   });
 });

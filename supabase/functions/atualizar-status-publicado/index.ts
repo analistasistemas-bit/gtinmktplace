@@ -3,9 +3,10 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../_shared/user-products/guard-migracao-pxv.ts';
+import { EMBED_MODULOS, kitLigado, prepararStatusOperador } from '../_shared/kit-variacao/politica.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -31,7 +32,11 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   // Token da conexão ML da org (E7), não a do chamador, igual status-publicados.
-  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  // = `resolverConexao`, com o módulo da org embutido (ADR-0197): org sem kit não ganha consulta nova.
+  const { data: linhaConexao } = await admin.from('marketplace_connections')
+    .select(`id, org_id, canal, conta_externa_id, expires_at, ${EMBED_MODULOS}`)
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
+  const conexao = mapearConexao(linhaConexao ?? null);
   if (!conexao) {
     return new Response(JSON.stringify({ erro: 'Conecte sua conta ML nas Configurações.' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -49,7 +54,21 @@ Deno.serve(async (req) => {
 
   const conn = getConnector('mercado_livre');
   const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
-  const resultado = await conn.atualizarStatus(ctx, ml_item_id, status);
+  // ADR-0197: SKU de kit com variação. Guardado, moderado ou em transferência não reativa (409); a pausa do
+  // operador fica gravada antes do PUT.
+  const kit = await prepararStatusOperador(admin, orgId, ml_item_id, status, kitLigado(linhaConexao),
+    async () => (await conn.lerStatus(ctx, [ml_item_id]))[ml_item_id]?.status ?? null);
+  if ('recusa' in kit) {
+    await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'denied');
+    return new Response(JSON.stringify({ erro: kit.recusa }),
+      { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+  let resultado: Awaited<ReturnType<typeof conn.atualizarStatus>>;
+  try {
+    resultado = await conn.atualizarStatus(ctx, ml_item_id, status);
+  } finally {
+    await kit.soltar();
+  }
   if (!resultado.ok) {
     await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'failed');
     return new Response(

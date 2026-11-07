@@ -13,7 +13,9 @@ import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarSaga } f
 import { paginarTudo } from '../_shared/pagina.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
-import { alertarPublicacoesParadas, retomarTransferenciasParadas, triarParticipantes } from './transferencias.ts';
+import {
+  alertarPublicacoesParadas, retomarTransferenciasParadas, soltarAtivacoesParadas, triarParticipantes,
+} from './transferencias.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
@@ -151,6 +153,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error('reconciliar_kit_publicacoes_falhou', e);
   }
+  await soltarAtivacoesParadas(admin).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
 
   return new Response(
     JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas }),

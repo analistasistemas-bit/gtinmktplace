@@ -27,6 +27,7 @@ import {
 } from '../_shared/operacoes/falhas.ts';
 import type { Acao, AcaoStatus } from '../_shared/operacoes/tipos.ts';
 import { SemAcessoStatusML } from '../_shared/operacoes/ml-status.ts';
+import { EMBED_MODULOS, kitLigado } from '../_shared/kit-variacao/politica.ts';
 import { SemAcessoPromocoes } from '../_shared/promocoes/ml.ts';
 import { executarReajuste, type OperacaoReajusteRow } from '../_shared/operacoes/reajuste/executar.ts';
 import { montarPreview } from '../_shared/operacoes/reajuste/preview.ts';
@@ -71,7 +72,8 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
     return json({ ok: false, erro: 'mensagem inválida' });
   }
   const { data: linha, error } = await admin.from('operacoes_massa')
-    .select('id, org_id, acao, promocao_id, promocao_tipo, status, origem_id').eq('id', payload.operacao_id).maybeSingle();
+    .select(`id, org_id, acao, promocao_id, promocao_tipo, status, origem_id, ${EMBED_MODULOS}`)
+    .eq('id', payload.operacao_id).maybeSingle();
   if (error) throw new Error(`operacoes_massa: ${error.message}`);
   if (!linha) return json({ ok: false, erro: 'operação não encontrada' });
   if (linha.status === 'concluida') return json({ ok: true, ignorada: true });
@@ -109,7 +111,7 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
     const op: OperacaoStatusRow = { id: linha.id, org_id: linha.org_id, acao: linha.acao };
     const chave = req.headers.get('upstash-message-id') ?? crypto.randomUUID();
     // Sem etapa de conferência: o PUT de status é síncrono (qualquer etapa executa).
-    return json({ ok: true, ...(await executarStatus(op, depsStatus(admin, cx, op, chave), EXECUCAO)) });
+    return json({ ok: true, ...(await executarStatus(op, depsStatus(admin, cx, op, chave, kitLigado(linha)), EXECUCAO)) });
   }
 
   // Encerrar só com ausência REAL (módulo desligado, promoção encerrada, conta não conectada): erro de leitura
