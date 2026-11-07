@@ -1,7 +1,6 @@
 // ADR-0194 — Sugestões de promoção: regra pura. Entra o que o banco já tem (convites, participações, sinais por
 // anúncio, dispensas); sai a lista por faixa. Sem IO: o hook busca, a tela só desenha.
-import { abaDa, ehCupom, ehOfertaFixa, ehTipoOperavel, type ItemPromocao, type Participacao, type Promocao } from '@/lib/promocoes';
-import { PRECO_MIN_RELAMPAGO } from '@/lib/promocao-simulacao';
+import { abaDa, ehCupom, ehTipoOperavel, PRECO_MIN_PROMOCAO, type ItemPromocao, type Participacao, type Promocao } from '@/lib/promocoes';
 import { formatarNomeProduto } from '@/lib/texto';
 
 const VENDE_POUCO_ABAIXO_DE = 5;
@@ -45,10 +44,10 @@ function lucroDaLinha(c: ConvitePromocao): number | null {
   return menor;
 }
 
-function linhaValida(c: ConvitePromocao, p: Promocao): boolean {
+function linhaValida(c: ConvitePromocao): boolean {
   if (c.pior_semaforo !== 'verde' && c.pior_semaforo !== 'amarelo') return false;
   if (c.preco_avaliado == null || c.preco_original == null || c.preco_avaliado >= c.preco_original) return false;
-  if ((p.tipo === 'LIGHTNING' || ehOfertaFixa(p.tipo)) && c.preco_avaliado < PRECO_MIN_RELAMPAGO) return false;
+  if (c.preco_avaliado < PRECO_MIN_PROMOCAO) return false;
   const lucro = lucroDaLinha(c);
   return lucro != null && lucro > 0;
 }
@@ -110,7 +109,7 @@ export function montarSugestoes(e: {
   const grupos = new Map<string, ConvitePromocao[]>();
   for (const c of e.convites) {
     const p = vivas.get(c.promocao_id);
-    if (!p || !ehTipoOperavel(p.tipo) || participa.has(c.ml_item_id) || !linhaValida(c, p)) continue;
+    if (!p || !ehTipoOperavel(p.tipo) || participa.has(c.ml_item_id) || !linhaValida(c)) continue;
     if (sinalDoConvite(c)?.ativo === false) continue;
     const chave = sinalDe.has(c.ml_item_id) || !c.anuncio_normal_id ? chaveDoAnuncio(c.ml_item_id) : chaveDoAnuncio(c.anuncio_normal_id);
     grupos.set(chave, [...(grupos.get(chave) ?? []), c]);

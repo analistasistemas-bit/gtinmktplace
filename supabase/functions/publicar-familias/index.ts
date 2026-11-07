@@ -15,6 +15,7 @@ import { familiasFormatoLegacy } from './formato-legacy.ts';
 import { LIMITE_ESTOQUE_ML } from '../_shared/split/capar-estoque.ts';
 import { precoCentavos } from '../_shared/preco/grupos.ts';
 import { reservarFamilias, mensagemTudoRecusado, type FamiliaRecusada } from './reservar.ts';
+import { recusasDoLote } from '../_shared/publicacao/trava-oferta.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -47,18 +48,31 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
 
   // ─── Caminho ML (intocado — roda quando 'mercado_livre' está entre os canais) ───────────
   if (incluiML) {
+    // Trava da oferta (emenda ADR-0196): antes da reserva, para o produto recusado não mudar de status nem subir foto.
+    let recusasOferta: FamiliaRecusada[];
+    try {
+      recusasOferta = await recusasDoLote(admin, orgId, familia_ids, (id) =>
+        resolverSomenteEstoque(id, somenteEstoqueGlobal, somenteEstoqueOverrides));
+    } catch (e) {
+      await auditarOperacaoSuporte(admin, context, target, 'failed');
+      return new Response(`Erro ao conferir ofertas: ${(e as Error).message}`, { status: 500, headers: corsHeaders });
+    }
+    recusadas.push(...recusasOferta);
+    const reprovadas = new Set(recusasOferta.map((r) => r.familia_id));
+    const liberadas = (familia_ids as string[]).filter((id) => !reprovadas.has(id));
+
     // Claim CREATE: 'pronto'/'erro', ainda não publicado. Escopo da operação (sem filtro por
     // user.id): qualquer membro publica as famílias selecionadas (ADR-0047/0056).
     // Via RPC (spec reajuste C2): mesmos filtros de antes, sob o lock do produto; produto com
     // reajuste de preço em massa ativo volta em `recusadas`, intocado.
-    const { reservadas: novos, recusadas: recC, error: errC } = await reservarFamilias(admin, orgId, familia_ids, 'CREATE');
+    const { reservadas: novos, recusadas: recC, error: errC } = await reservarFamilias(admin, orgId, liberadas, 'CREATE');
     if (errC) {
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
     }
 
     // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
-    const { reservadas: updates, recusadas: recU, error: errU } = await reservarFamilias(admin, orgId, familia_ids, 'UPDATE');
+    const { reservadas: updates, recusadas: recU, error: errU } = await reservarFamilias(admin, orgId, liberadas, 'UPDATE');
     if (errU) {
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });

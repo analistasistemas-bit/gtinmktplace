@@ -179,3 +179,28 @@ Decisão:
 - Rede de segurança: `responder-mensagem` traduz o 403 `blocked_by_claim` (reclamação que ainda não
   sincronizou, ou outro tipo) em 409 `codigo: 'reclamacao_aberta'`; o card trava a resposta na hora.
 - Reclamação fechada → a conversa volta a ser respondível e a contar, sem ação manual.
+
+## Emenda 2026-11-07 — anexo na resposta e envio pela trava
+
+Mensagem pós-venda aceita um arquivo (JPG, PNG ou PDF, até 5 MB), com texto obrigatório. Desenho em
+`docs/superpowers/specs/2026-11-07-anexo-mensagens-posvenda-design.md`.
+
+- **Contrato medido (07/11, pedido real):** upload `POST /messages/attachments?tag=post_sale&site_id=MLB`
+  (multipart, campo `file`) devolve `{id}`; o envio segue `POST /messages/packs/{pack}/sellers/{seller}?tag=post_sale`
+  com `attachments:[id]`; a leitura traz `message_attachments[]` (`filename` = id do upload,
+  `original_filename`, `type`, `size`, `potential_security_threat`); o download é
+  `GET /messages/attachments/{filename}?tag=post_sale&site_id=MLB`. Não medidos: anexo sem texto, PDF e
+  download de anexo do comprador.
+- **Trava por pack:** `responder-mensagem` passa a enviar pela máquina de estados de `ml_posvenda_acoes`
+  (`recurso = mensagem:{pack_id}`, ADR-0192 emenda 07/11). `operacao_id` do clique, um envio em aberto por
+  pack, nunca reenvia sozinha. Resposta traz `estado`, `operacao_id` e `pendenteConfirmacao`; `verificar`
+  relê o ML sem novo POST. Recusa definitiva do ML volta como HTTP 422 (`recusada`), cancelamento como 409.
+- **Liberação manual:** com a trava mantida (estado incerto), a tela mostra "Conferir no Mercado Livre" e
+  "Já conferi, liberar envio", com confirmação; liberar grava `inconclusiva`. É decisão humana; a edge
+  nunca libera sozinha. A tela consulta a pendência do pack ao abrir a conversa.
+- **Download por POST:** `posvenda-anexo` recebe `pack_id` e `filename` por POST autenticado (o CORS
+  compartilhado só libera `POST, OPTIONS`). Só serve `filename` que conste em `raw->message_attachments`
+  de mensagem do pack na org, apenas JPG/PNG/PDF; arquivo com `potential_security_threat` não é baixado.
+  Os bytes não são guardados. Upload por pack usa o destino `mensagem_pack`.
+- **Exibição:** a lista traz `anexos`; o balão mostra miniatura ou cartão de PDF nos dois lados, e a
+  mensagem só com anexo deixa de aparecer vazia.

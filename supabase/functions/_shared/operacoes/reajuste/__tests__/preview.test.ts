@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type PedidoPreview } from '../preview.ts';
+import type { FaixaAtacado } from '../../../canais/contrato.ts';
+import type { ConfigMlb } from '../faixas.ts';
+import { oferta } from '../ofertas.ts';
+import { planejarPassos } from '../passos.ts';
+import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type EntradaAtacado, type FamiliaAtacado, type PedidoPreview } from '../preview.ts';
 import { resumir } from '../avaliacao.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
-import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, Semaforo, VivoItem } from '../tipos.ts';
+import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo, Semaforo, VivoItem } from '../tipos.ts';
+
+vi.mock('../passos.ts', async (original) => {
+  const m = await original<typeof import('../passos.ts')>();
+  return { ...m, planejarPassos: vi.fn(m.planejarPassos) };
+});
 
 const alvo = (ml: string, o: Partial<AlvoExpandido> = {}): AlvoExpandido => ({
   ml_item_id: ml, codigo_pai: `P-${ml}`, variacao_ids: [], variacoes_ml_esperadas: null, sku: `SKU-${ml}`, titulo: `T ${ml}`,
-  ehKit: false, temAtacado: false, promocaoBanco: false, familiaPublicando: false, migracaoPxv: false, ...o,
+  ehKit: false, familiaPublicando: false, migracaoPxv: false, ...o,
 });
 const vivo = (o: Partial<VivoItem> = {}): VivoItem => ({
   preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false, ...o,
@@ -15,11 +24,15 @@ const cor = (s: Semaforo): CorAvaliada => ({
   variation_id: null, sku: null, custo: 10, piso: 20, origem: 'nacional', aliquota_pct: 8, comissao_pct: 16, comissao_fixa: 0,
   frete: 10, liquido: 50, semaforo: s, motivo: null,
 });
+const of = (id: string, preco: number | null, o: Partial<OfertaVigente> = {}) =>
+  ({ ...oferta({ promocao_id: id, tipo: 'DEAL', status: 'started', preco, offer_id: null, inicio: null, fim: null }), ...o });
 const est = (preco: number | null, editado: boolean): EstadoVariacao => ({ preco_publicacao: preco, preco_editado_pelo_operador: editado });
 
 function deps(o: {
-  alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; promoML?: boolean | null; semaforo?: Semaforo[];
+  alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; ofertasML?: OfertaVigente[] | null; banco?: OfertaVigente[]; semBanco?: boolean; semaforo?: Semaforo[];
   estados?: Record<string, EstadoVariacao>; origem?: Awaited<ReturnType<DepsPreview['origem']>>;
+  faixas?: FaixaPreco[] | null | Error; config?: ConfigMlb; familias?: Record<string, FamiliaAtacado>; origemAtacado?: EntradaAtacado[];
+  doProduto?: Record<string, FaixaAtacado[]>;
 } = {}): DepsPreview {
   return {
     expandir: vi.fn(async () => o.alvos ?? [alvo('MLB1')]),
@@ -35,10 +48,20 @@ function deps(o: {
         return v;
       }),
       putPreco: vi.fn(),
-      participaPromocaoML: vi.fn(async () => (o.promoML === undefined ? false : o.promoML)),
+      lerOfertas: vi.fn(async () => (o.ofertasML === undefined ? [] : o.ofertasML)),
+      lerFaixas: vi.fn(async () => {
+        if (o.faixas instanceof Error) throw o.faixas;
+        return o.faixas === undefined ? [] : o.faixas;
+      }),
+      gravarFaixas: vi.fn(),
     },
+    configAtacado: vi.fn(async () => o.config ?? { faixas: null, divergente: false }),
+    ofertasBanco: vi.fn(async (ids: string[]) => new Map(o.semBanco ? [] : ids.map((id): [string, OfertaVigente[]] => [id, o.banco ?? []]))),
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
+    origemAtacado: vi.fn(async () => o.origemAtacado ?? []),
+    atacadoDoProduto: vi.fn(async () => new Map(Object.entries(o.doProduto ?? {}))),
+    familiasAtacado: vi.fn(async (ids: string[]) => new Map(ids.map((id): [string, FamiliaAtacado] => [id, o.familias![id]]))),
   };
 }
 const pct = (valor: number, sentido: '+' | '-' = '+'): PedidoPreview => ({ familias: [], ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido, valor } });
@@ -58,8 +81,8 @@ describe('montarPreview — pedido', () => {
   });
 
   it('dedup por MLB soma as flags de bloqueio (OU)', async () => {
-    const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1', { promocaoBanco: true })] }));
-    expect(r.ok && r.itens).toMatchObject([{ situacao: 'fora', motivo: 'Participando de promoção' }]);
+    const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1', { migracaoPxv: true })] }));
+    expect(r.ok && r.itens).toMatchObject([{ situacao: 'fora', motivo: 'Migração para preço por variação em curso' }]);
   });
 
   it('dedup por MLB', async () => {
@@ -108,10 +131,11 @@ describe('montarPreview — item', () => {
     ['inativo', { vivos: { MLB1: vivo({ status: 'closed' }) } }, 'Anúncio moderado, encerrado ou inativo'],
     ['kit', { alvos: [alvo('MLB1', { ehKit: true })] }, 'Kit Virtual não entra no reajuste'],
     ['catálogo', { vivos: { MLB1: vivo({ catalog_listing: true }) } }, 'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste'],
-    ['atacado', { alvos: [alvo('MLB1', { temAtacado: true })] }, 'Anúncio com preço de atacado fica fora do reajuste'],
-    ['promoção no banco, ML false', { alvos: [alvo('MLB1', { promocaoBanco: true })], promoML: false }, 'Participando de promoção'],
-    ['promoção no ML', { promoML: true }, 'Participando de promoção'],
-    ['promoção inconclusiva', { promoML: null }, 'Não foi possível conferir promoções — tente de novo'],
+    ['promoção inconclusiva', { ofertasML: null }, 'Não foi possível conferir promoções — tente de novo'],
+    ['banco sem o MLB pedido', { semBanco: true }, 'Não foi possível conferir promoções — tente de novo'],
+    ['oferta sem preço comprovado', { banco: [of('P', null)] }, 'Não foi possível conferir promoções — tente de novo'],
+    ['alvo abaixo da oferta do ML', { ofertasML: [of('P', 120)] }, 'Preço igual ou abaixo da oferta de R$ 120,00 — ajuste a oferta antes'],
+    ['alvo igual à oferta só do banco', { banco: [of('P', 110)] }, 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes'],
     ['família publicando', { alvos: [alvo('MLB1', { familiaPublicando: true })] }, 'Família em publicação/atualização'],
     ['migração PxV', { alvos: [alvo('MLB1', { migracaoPxv: true })] }, 'Migração para preço por variação em curso'],
     ['Legacy divergente', { vivos: { MLB1: vivo({ variacoes: [{ id: '1', preco: 100 }, { id: '2', preco: 90 }] }) } }, 'Variações com preços diferentes no ML'],
@@ -161,10 +185,74 @@ describe('montarPreview — item', () => {
   });
 });
 
+describe('montarPreview — ofertas', () => {
+  it('oferta abaixo do alvo: elegível, com as ofertas e o passo do base', async () => {
+    const it0 = await um(pct(10), deps({ ofertasML: [of('P', 80)] }));
+    expect(it0).toMatchObject({ situacao: 'elegivel', motivo: null, ofertas: [{ promocao_id: 'P', preco: 80 }] });
+    expect(it0.passos).toEqual([{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }]);
+  });
+
+  it('sem oferta: passo do base, ofertas vazias', async () => {
+    expect(await um(pct(10, '-'), deps())).toMatchObject({ situacao: 'elegivel', ofertas: [], passos: [{ tipo: 'base', anterior: 100, alvo: 90 }] });
+  });
+
+  it('une as fontes e consulta o banco uma vez só', async () => {
+    const d = deps({ alvos: [alvo('MLB1'), alvo('MLB2')], ofertasML: [of('P', 80)], banco: [of('Q', 90)] });
+    const r = await montarPreview({ ...pct(10), ml_item_ids: ['MLB1', 'MLB2'] }, d);
+    expect(r.ok && r.itens.map((i) => i.ofertas?.map((o) => o.promocao_id))).toEqual([['P', 'Q'], ['P', 'Q']]);
+    expect(d.ofertasBanco).toHaveBeenCalledTimes(1);
+    expect(d.ofertasBanco).toHaveBeenCalledWith(['MLB1', 'MLB2']);
+  });
+
+  it.each([
+    ['LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+    ['SMART_LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['SMART_LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+  ] as const)('%s com a mesma chave, %s → `started` vence, elegível acima da oferta', async (tipo, _n, doML, doBanco) => {
+    const r = (status: OfertaVigente['status']) => of('L', 39.9, { tipo, status, chave: 'OFFER-1', offer_id: 'OFFER-1' });
+    const d = deps({ ofertasML: [r(doML)], banco: [r(doBanco)] });
+    const i = await um(pct(10), d);
+    expect(i.situacao).toBe('elegivel');
+    expect(i.ofertas).toMatchObject([{ tipo, status: 'started' }]);
+  });
+
+  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s `started`: a trava segue valendo', async (tipo) => {
+    expect(await um(pct(10), deps({ ofertasML: [of('L', 110, { tipo })] })))
+      .toMatchObject({ situacao: 'fora', motivo: 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes', passos: null });
+  });
+
+  it('todo item traz a configuração completa do produto, mesmo sem passo de faixas', async () => {
+    const config = [{ min_unidades: 2, desconto_pct: 5 }, { min_unidades: 10, desconto_pct: 10 }];
+    const d = deps({ alvos: [alvo('MLB1', { codigo_pai: 'P' }), alvo('MLB2', { codigo_pai: 'P' }), alvo('MLB3', { codigo_pai: 'Q' })],
+      vivos: { MLB2: vivo({ status: 'closed' }) }, faixas: [{ min_unidades: 2, preco: 95 }], doProduto: { P: config } });
+    const r = await montarPreview(pct(10), d);
+    expect(r.ok && r.itens.map((i) => [i.situacao, i.passos?.map((p) => p.tipo) ?? null, i.atacado_config])).toEqual([
+      ['elegivel', ['base'], config], ['fora', null, config], ['elegivel', ['base'], null],
+    ]);
+    expect(d.atacadoDoProduto).toHaveBeenCalledWith(['P', 'Q']);
+  });
+
+  it('sem alteração não trava nem planeja', async () => {
+    expect(await um(pct(0), deps({ ofertasML: [of('P', 120)] }))).toMatchObject({ situacao: 'sem_alteracao', passos: null });
+  });
+
+  it('trava devolve fora com passos nulos', async () => {
+    expect(await um(pct(10), deps({ ofertasML: [of('P', 120)] }))).toMatchObject({ situacao: 'fora', passos: null, restaurar: null, incluido: false });
+  });
+
+  it('planejarPassos lança → fora com a mensagem, sem derrubar o preview', async () => {
+    vi.mocked(planejarPassos).mockImplementationOnce(() => { throw new Error('base 110 igual ou abaixo da oferta'); });
+    const d = deps();
+    expect(await um(pct(10), d)).toMatchObject({ situacao: 'fora', motivo: 'base 110 igual ou abaixo da oferta', passos: null, executaveis: 0 });
+    expect(d.avaliar).not.toHaveBeenCalled();
+  });
+});
+
 describe('montarPreview — Reverter', () => {
   // origem: 100 → 110; banco antes {100, false}, gravado {110, true}
   const restOrigem: EntradaRestauracao[] = [{ variacao_id: 'V-1', esperado: est(100, false), novo: est(110, true) }];
-  const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar: restOrigem }]]);
+  const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar: restOrigem, passos: [] }]]);
   const v110 = (ids = ['1'], preco = 110) => vivo({ preco, variacoes: ids.map((id) => ({ id, preco })) });
   const rev: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: { tipo: 'pct', sentido: '+', valor: 50 }, precos: { MLB1: 1.001 }, origem_id: 'op-1' };
 
@@ -174,6 +262,7 @@ describe('montarPreview — Reverter', () => {
     expect(it0).toMatchObject({ situacao: 'elegivel', preco_anterior: 110, preco: 100, variacao_ids: ['V-1'], codigo_pai: 'P-MLB1', executaveis: 1 });
     expect(it0.restaurar).toEqual([{ variacao_id: 'V-1', esperado: est(110, true), novo: est(100, false) }]);
     expect(it0.aviso).toContain('re-ingest');
+    expect(it0.passos).toEqual([{ tipo: 'base', anterior: 110, alvo: 100, estado: 'pendente' }]);
     expect(d.expandir).toHaveBeenCalledWith([], ['MLB1']);
     expect(d.variacoesDoMlb).toHaveBeenCalledWith('P-MLB1', 'MLB1', ['1']);
   });
@@ -183,6 +272,11 @@ describe('montarPreview — Reverter', () => {
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
   });
 
+  it('alvo igual ou abaixo de uma oferta → fora', async () => {
+    const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(110, true) }, origem, ofertasML: [of('P', 100)] });
+    expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Preço igual ou abaixo da oferta de R$ 100,00 — ajuste a oferta antes', passos: null });
+  });
+
   it('banco editado depois → não revertível', async () => {
     const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(112, true) }, origem });
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço foi editado depois do reajuste' });
@@ -190,7 +284,7 @@ describe('montarPreview — Reverter', () => {
 
   it('item da origem fora do cadastro → fora, não some', async () => {
     const r = await montarPreview(rev, deps({ alvos: [], origem }));
-    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', codigo_pai: 'P-MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro' }]);
+    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', codigo_pai: 'P-MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', ofertas: null, passos: null }]);
   });
 
   it.each([
@@ -204,5 +298,455 @@ describe('montarPreview — Reverter', () => {
 
   it('origem inexistente → recusa', async () => {
     expect(await montarPreview(rev, deps())).toEqual({ ok: false, erro: 'Operação de origem não encontrada' });
+  });
+});
+
+describe('montarPreview — atacado (ADR-0196)', () => {
+  const CINCO = [{ min_unidades: 2, desconto_pct: 5 }];
+  const viva = (preco: number): FaixaPreco[] => [{ min_unidades: 2, preco }];
+  const tipos = (i: { passos: { tipo: string }[] | null }) => i.passos?.map((p) => p.tipo);
+
+  it('anúncio com atacado deixa de ficar fora; descendo, grava as faixas antes do base', async () => {
+    const d = deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+    const i = await um(pct(10, '-'), d);
+    expect(i).toMatchObject({
+      situacao: 'elegivel', preco: 90, faixas_anteriores: viva(95), faixas_alvo: [{ min_unidades: 2, preco: 85.5 }],
+    });
+    expect(tipos(i)).toEqual(['faixas', 'base']);
+    expect(d.configAtacado).toHaveBeenCalledWith(['V-MLB1']);
+  });
+
+  it('subindo, grava as faixas depois do base', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } }));
+    expect(i.faixas_alvo).toEqual([{ min_unidades: 2, preco: 104.5 }]);
+    expect(tipos(i)).toEqual(['base', 'faixas']);
+  });
+
+  it('sem configuração e abaixo do alvo: mantém as faixas, sem passo', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95) }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: viva(95), faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
+  it('configuração sem faixa viva: não cria faixas', async () => {
+    const i = await um(pct(10, '-'), deps({ config: { faixas: CINCO, divergente: false } }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: [], faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
+  it('[] com faixa viva: não apaga as faixas', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95), config: { faixas: [], divergente: false } }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: viva(95), faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
+  it('sem atacado: faixas vazias, sem passo', async () => {
+    expect(await um(pct(10), deps())).toMatchObject({ situacao: 'elegivel', faixas_anteriores: [], faixas_alvo: null });
+  });
+
+  it.each<[string, Parameters<typeof deps>[0], string]>([
+    ['leitura inconclusiva', { faixas: null }, 'Não foi possível ler o atacado — tente de novo'],
+    ['faixa viva cruzando, sem configuração', { faixas: viva(95) }, 'Faixa de atacado ficaria acima do preço base'],
+    ['configuração divergente', { config: { faixas: null, divergente: true } }, 'Atacado diferente entre cores — ajuste na Revisão'],
+  ])('%s → fora', async (_n, o, motivo) => {
+    expect(await um(pct(10, '-'), deps(o))).toMatchObject({ situacao: 'fora', motivo, passos: null, faixas_alvo: null, executaveis: 0 });
+  });
+
+  it('configuração com valor ilegível → fora, sem derrubar o lote', async () => {
+    const config = { faixas: [{ min_unidades: 2, desconto_pct: NaN }], divergente: false };
+    expect(await um(pct(10), deps({ config, faixas: viva(95) }))).toMatchObject({ situacao: 'fora', passos: null });
+  });
+
+  it('conta sem acesso ao ler o atacado sobe, não vira 500 linhas fora', async () => {
+    await expect(montarPreview(pct(10), deps({ faixas: new SemAcessoStatusML('ML 403') }))).rejects.toBeInstanceOf(SemAcessoStatusML);
+  });
+
+  it('sem alteração não lê o atacado', async () => {
+    const d = deps({ faixas: null });
+    expect(await um(pct(0), d)).toMatchObject({ situacao: 'sem_alteracao' });
+    expect(d.ml.lerFaixas).not.toHaveBeenCalled();
+  });
+
+  describe('trava financeira de cada preço', () => {
+    // Avaliador por preço: a faixa de 85,50 dá `s`, os demais dão verde.
+    const comFaixa = (s: Semaforo) => {
+      const d = deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+      d.avaliar = vi.fn(async (_ml: string, preco: number) => resumir([cor(preco === 85.5 ? s : 'verde')]));
+      return d;
+    };
+
+    it('base verde com faixa em prejuízo: item desmarcado, exige confirmação, aviso por unidade', async () => {
+      const d = comFaixa('vermelho');
+      const i = await um(pct(10, '-'), d);
+      expect(i).toMatchObject({ situacao: 'elegivel', incluido: false, avaliacao: { pior: 'vermelho', tem_vermelho: true, tem_sem_dado: false } });
+      expect(i.aviso).toContain('lucro por unidade');
+      expect(i.precos_avaliados?.map((p) => [p.tipo, p.chave, p.preco, p.avaliacao.pior])).toEqual([
+        ['faixa', '2', 85.5, 'vermelho'], ['base', 'base', 90, 'verde'],
+      ]);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 85.5);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 90);
+    });
+
+    it('faixa com avaliação indisponível: desmarcado, exige a confirmação ⚪', async () => {
+      expect(await um(pct(10, '-'), comFaixa('indisponivel'))).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: false, tem_sem_dado: true } });
+    });
+
+    it('faixa abaixo do piso: agregado amarelo, segue incluído com o aviso', async () => {
+      const i = await um(pct(10, '-'), comFaixa('amarelo'));
+      expect(i).toMatchObject({ incluido: true, avaliacao: { pior: 'amarelo' } });
+      expect(i.aviso).toContain('🟡');
+      expect(i.aviso).toContain('lucro por unidade');
+    });
+
+    it('todos verdes: incluído, sem aviso', async () => {
+      expect(await um(pct(10, '-'), comFaixa('verde'))).toMatchObject({ incluido: true, aviso: null, avaliacao: { pior: 'verde' } });
+    });
+
+    it('faixa que não muda não é avaliada: nada é escrito nela', async () => {
+      const d = deps({ faixas: viva(95) });
+      const i = await um(pct(10), d);
+      expect(i.precos_avaliados?.map((p) => p.tipo)).toEqual(['base']);
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
+    });
+
+    it('só faixas em prejuízo: exige confirmação sem avaliar o base', async () => {
+      const faixas: Passo = { tipo: 'faixas', anterior: viva(95), alvo: [{ min_unidades: 2, preco: 85.5 }], config: null, estado: 'pendente' };
+      vi.mocked(planejarPassos).mockReturnValueOnce([faixas]);
+      const d = comFaixa('vermelho');
+      const i = await um(pct(10, '-'), d);
+      expect(i).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: true } });
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 85.5);
+    });
+
+    it('item fora ou sem alteração não tem preços avaliados', async () => {
+      expect(await um(pct(0), deps())).toMatchObject({ situacao: 'sem_alteracao', precos_avaliados: null });
+      expect(await um(pct(10, '-'), deps({ faixas: null }))).toMatchObject({ situacao: 'fora', precos_avaliados: null });
+    });
+  });
+
+  describe('Reverter', () => {
+    const restaurar: EntradaRestauracao[] = [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }];
+    const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar, passos: [] }]]);
+    const voltar: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' };
+    const base = { origem, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) } };
+
+    it('nunca gera passo de faixas, mesmo com configuração', async () => {
+      const d = deps({ ...base, faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+      const i = await um(voltar, d);
+      expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
+      expect(tipos(i)).toEqual(['base']);
+      expect(d.configAtacado).not.toHaveBeenCalled();
+    });
+
+    it('avalia o base restaurado e desmarca se der prejuízo', async () => {
+      const d = deps({ ...base, faixas: viva(95), semaforo: ['vermelho'] });
+      const i = await um(voltar, d);
+      expect(i).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: true } });
+      expect(i.precos_avaliados?.map((p) => [p.tipo, p.preco])).toEqual([['base', 100]]);
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
+    });
+
+    it('faixa viva que ficaria acima do base restaurado → fora', async () => {
+      expect(await um(voltar, deps({ ...base, faixas: viva(105) })))
+        .toMatchObject({ situacao: 'fora', motivo: 'Faixa de atacado ficaria acima do preço base' });
+    });
+
+    it('oferta nova acima do alvo antigo → fora', async () => {
+      expect(await um(voltar, deps({ ...base, faixas: viva(95), ofertasML: [of('P', 100)] })))
+        .toMatchObject({ situacao: 'fora', motivo: expect.stringContaining('Preço igual ou abaixo da oferta') });
+    });
+
+    describe('com faixas na origem', () => {
+      const passoFaixas = (estado: Passo['estado']): Passo => ({ tipo: 'faixas', anterior: viva(90), alvo: viva(99), config: CINCO, estado });
+      const cfg = { config: { faixas: CINCO, divergente: false } };
+      const baseOrigem: Passo = { tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' };
+      const comPassos = (passos: Passo[], o: { restaurar?: EntradaRestauracao[]; preco?: number } = {}) => new Map([['MLB1', {
+        codigo_pai: 'P-MLB1', preco_anterior: 100, preco: o.preco ?? 110, restaurar: o.restaurar ?? restaurar, passos,
+      }]]);
+
+      it('restaura as faixas que a origem deixou, com passos na ordem da descida', async () => {
+        const d = deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) });
+        const i = await um(voltar, d);
+        expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_anteriores: viva(99), faixas_alvo: viva(90) });
+        expect(tipos(i)).toEqual(['faixas', 'base']);
+        expect(i.passos?.[0]).toMatchObject({ anterior: viva(99), alvo: viva(90), config: CINCO, estado: 'pendente' });
+      });
+
+      it.each<[string, ConfigMlb]>([
+        ['outro %', { faixas: [{ min_unidades: 2, desconto_pct: 7 }], divergente: false }],
+        ['sem configuração', { faixas: null, divergente: false }],
+        ['cores divergentes', { faixas: null, divergente: true }],
+      ])('configuração mudou depois da origem, faixas vivas iguais (%s) → fora', async (_n, config) => {
+        expect(await um(voltar, deps({ ...base, config, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('faixas editadas depois da origem → fora', async () => {
+        expect(await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(98) })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('faixas apagadas depois da origem → fora', async () => {
+        expect(await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: [] })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('faixas que a origem não conseguiu gravar: reverte só o base', async () => {
+        const i = await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('pendente')]), faixas: viva(90) }));
+        expect(i).toMatchObject({ situacao: 'elegivel', faixas_alvo: null });
+        expect(tipos(i)).toEqual(['base']);
+      });
+
+      it('só faixas: não compara restaurar, não mexe em preço nem marca', async () => {
+        // `restaurar` preenchido e marca editada depois: nada disso importa, a origem não tocou o preço.
+        const d = deps({
+          ...cfg, origem: comPassos([passoFaixas('confirmado')], { preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) },
+          estados: { 'V-MLB1': est(123, false) }, faixas: viva(99),
+        });
+        const i = await um(voltar, d);
+        expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, preco_anterior: 100, restaurar: [], aviso: null });
+        expect(tipos(i)).toEqual(['faixas']);
+      });
+
+      it('só faixas com faixas editadas → fora', async () => {
+        const d = deps({ ...cfg, origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) }, faixas: viva(98) });
+        expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('só faixas com o preço mudado depois → fora', async () => {
+        const d = deps({ ...cfg, origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 105 }) }, faixas: viva(99) });
+        expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
+      });
+    });
+  });
+});
+
+describe('montarPreview — atacado por família', () => {
+  const F = 'f1';
+  const ANTES = [{ min_unidades: 2, desconto_pct: 5 }];
+  const NOVO = [{ min_unidades: 2, desconto_pct: 10 }];
+  const fam = (o: Partial<FamiliaAtacado> = {}): FamiliaAtacado => ({ codigo_pai: 'P', atacado: ANTES, porCor: false, lotesDivergentes: false, ...o });
+  const a = (ml: string, pai = 'P') => alvo(ml, { codigo_pai: pai });
+  const viva = (preco: number, min_unidades = 2): FaixaPreco[] => [{ min_unidades, preco }];
+  const cfg = { faixas: ANTES, divergente: false };
+  const edicao = (o: Partial<PedidoPreview> = {}): PedidoPreview => ({ familias: [], ml_item_ids: ['MLB1'], ajuste: null, atacado: { [F]: NOVO }, ...o });
+  /** Selecionados na primeira expansão; a família inteira na segunda. */
+  function comFamilia(selecionados: AlvoExpandido[], todos: AlvoExpandido[], o: Parameters<typeof deps>[0] = {}) {
+    const d = deps({ familias: { [F]: fam() }, config: cfg, faixas: viva(95), ...o });
+    vi.mocked(d.expandir).mockResolvedValueOnce(selecionados).mockResolvedValueOnce(todos);
+    return d;
+  }
+  const preview = async (p: PedidoPreview, d: DepsPreview) => {
+    const r = await montarPreview(p, d);
+    if (!r.ok) throw new Error(r.erro);
+    return { ...r, de: (ml: string) => r.itens.find((i) => i.ml_item_id === ml)! };
+  };
+
+  it('expande a família: o selecionado muda preço e faixas; o irmão entra só com faixas, sem fixar preço', async () => {
+    const d = comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')]);
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }), d);
+    expect(d.expandir).toHaveBeenNthCalledWith(1, [], ['MLB1']);
+    expect(d.expandir).toHaveBeenNthCalledWith(2, [F], []);
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', preco: 110, faixas_alvo: viva(99) });
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['base', 'faixas']);
+    expect(r.de('MLB2')).toMatchObject({ situacao: 'elegivel', preco: 100, preco_anterior: 100, faixas_alvo: viva(90), restaurar: [] });
+    expect(r.de('MLB2').passos).toEqual([{ tipo: 'faixas', anterior: viva(95), alvo: viva(90), config: ANTES, familia_id: F, estado: 'pendente' }]);
+    expect(r.de('MLB2').aviso).toContain('só as faixas');
+    expect(r.atacado_familias).toEqual([{ familia_id: F, novo: NOVO, esperado: ANTES, status: 'pendente', motivo: null }]);
+  });
+
+  it('sem ajuste: só as faixas, também no selecionado', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')]));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', restaurar: [], preco: 100 });
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['faixas']);
+  });
+
+  it('só o atacado no pedido: não expande seleção vazia', async () => {
+    const d = deps({ familias: { [F]: fam() }, config: cfg, faixas: viva(95), alvos: [a('MLB1')] });
+    await preview(edicao({ ml_item_ids: [] }), d);
+    expect(d.expandir).toHaveBeenCalledTimes(1);
+    expect(d.expandir).toHaveBeenCalledWith([F], []);
+  });
+
+  it('quantidades diferentes das vivas: recalcula, é o operador redefinindo', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: viva(80, 6) }));
+    expect(r.de('MLB1').faixas_alvo).toEqual(viva(90));
+  });
+
+  it('sem faixas vivas: a edição explícita cria', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: [] }));
+    expect(r.de('MLB1').passos).toMatchObject([{ tipo: 'faixas', anterior: [], alvo: viva(90) }]);
+  });
+
+  it('faixas vivas já iguais: mantém o passo, a conclusão exige todos confirmados', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: viva(90) }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel' });
+    expect(r.de('MLB1').passos).toMatchObject([{ tipo: 'faixas', anterior: viva(90), alvo: viva(90) }]);
+  });
+
+  it('família com atacado por cor → família inteira fora', async () => {
+    const motivo = 'Atacado por cor: ajuste na Revisão';
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }),
+      comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')], { familias: { [F]: fam({ porCor: true }) } }));
+    expect(r.itens.map((i) => [i.situacao, i.motivo])).toEqual([['fora', motivo], ['fora', motivo]]);
+    expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
+  });
+
+  it('MLB com lotes divergentes → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { faixas: null, divergente: true, lotesDivergentes: true } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
+  it('caminho normal com lotes divergentes → fora', async () => {
+    const i = await um(pct(10), deps({ config: { faixas: null, divergente: true, lotesDivergentes: true } }));
+    expect(i).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
+  it('cor do MLB com configuração própria, vinda de outra linha da família → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { ...cfg, porCor: true } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado por cor: ajuste na Revisão' });
+  });
+
+  it('MLB que não herda da família editada → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { faixas: NOVO, divergente: false } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
+  it('outro lote do produto com config diferente → família inteira fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')], { familias: { [F]: fam({ lotesDivergentes: true }) } }));
+    expect(r.itens.map((i) => i.motivo)).toEqual(['Atacado diferente entre lotes — ajuste na Revisão', 'Atacado diferente entre lotes — ajuste na Revisão']);
+    expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
+  });
+
+  it('1 MLB fora → edição recusada para a família, sem rascunho parcial; outra família segue', async () => {
+    const d = comFamilia([a('MLB1'), a('MLB3', 'Q')], [a('MLB1'), a('MLB2')], {
+      vivos: { MLB2: vivo({ status: 'closed' }) }, faixas: [], config: { faixas: null, divergente: false }, familias: { [F]: fam({ atacado: null }) },
+    });
+    const r = await preview(edicao({ ml_item_ids: ['MLB1', 'MLB3'], ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }), d);
+    expect(r.de('MLB2')).toMatchObject({ situacao: 'fora', motivo: 'Anúncio moderado, encerrado ou inativo' });
+    expect(r.de('MLB1')).toMatchObject({
+      situacao: 'fora', incluido: false, passos: null, restaurar: null, faixas_alvo: null,
+      motivo: 'Atacado da família recusado — MLB2: Anúncio moderado, encerrado ou inativo',
+    });
+    expect(r.de('MLB3')).toMatchObject({ situacao: 'elegivel' });
+    expect(r).toMatchObject({ executaveis: 1, atacado_familias: [] });
+  });
+
+  it('faixa que zeraria o preço → recusa a família', async () => {
+    const d = comFamilia([a('MLB1')], [a('MLB1')], { vivos: { MLB1: vivo({ preco: 0.01 }) } });
+    const r = await preview(edicao({ atacado: { [F]: [{ min_unidades: 2, desconto_pct: 99 }] } }), d);
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Faixa de atacado inválida para este preço — ajuste na Revisão' });
+  });
+
+  it('faixa nova nunca cruza o base no meio do caminho', async () => {
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '-', valor: 10 } }), comFamilia([a('MLB1')], [a('MLB1')]));
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['faixas', 'base']);
+    expect(r.de('MLB1').faixas_alvo).toEqual(viva(81));
+  });
+
+  it('desconto com mais de 2 casas → recusa', async () => {
+    expect(await montarPreview(edicao({ atacado: { [F]: [{ min_unidades: 2, desconto_pct: 5.005 }] } }), deps({ familias: { [F]: fam() } })))
+      .toEqual({ ok: false, erro: 'Use no máximo 2 casas decimais' });
+  });
+
+  it('duas famílias do mesmo produto → recusa', async () => {
+    const d = deps({ familias: { f1: fam(), f2: fam() } });
+    expect(await montarPreview(edicao({ atacado: { f1: NOVO, f2: NOVO } }), d)).toEqual({ ok: false, erro: 'Edite o atacado de uma família por produto' });
+  });
+
+  it('família sem anúncio → recusa, nunca grava a configuração no vazio', async () => {
+    const d = deps({ familias: { [F]: fam() }, alvos: [] });
+    expect(await montarPreview(edicao({ ml_item_ids: [] }), d)).toEqual({ ok: false, erro: 'Família sem anúncio publicado' });
+  });
+
+  describe('Reverter', () => {
+    const voltar: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' };
+    const passo = (estado: Passo['estado'] = 'confirmado'): Passo => ({ tipo: 'faixas', anterior: viva(95), alvo: viva(90), config: ANTES, familia_id: F, estado });
+    const origem = (...mls: string[]) => new Map(mls.map((ml) => [ml, { codigo_pai: 'P', preco_anterior: 100, preco: 100, restaurar: [], passos: [passo()] }]));
+    const entrada = (status: EntradaAtacado['status']): EntradaAtacado => ({ familia_id: F, novo: NOVO, esperado: ANTES, status, motivo: status === 'nao_aplicado' ? 'x' : null });
+    const dep = (status: EntradaAtacado['status'], o: Parameters<typeof deps>[0] = {}) => deps({
+      alvos: [a('MLB1'), a('MLB2')], origem: origem('MLB1', 'MLB2'), origemAtacado: [entrada(status)], familias: { [F]: fam({ atacado: NOVO }) },
+      config: { faixas: NOVO, divergente: false }, faixas: viva(90), ...o,
+    });
+
+    it('origem `aplicado`: exige a família em `novo` e restaura `esperado`', async () => {
+      const r = await preview(voltar, dep('aplicado'));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['elegivel', 'elegivel']);
+      expect(r.de('MLB1')).toMatchObject({ faixas_alvo: viva(95), restaurar: [] });
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: NOVO, familia_id: F, estado: 'pendente' }]);
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'pendente', motivo: null }]);
+    });
+
+    it('origem `aplicado`: leva o valor anterior de cada linha para a conclusão', async () => {
+      const anteriores = [{ id: 'l1', atacado: ANTES }, { id: 'l2', atacado: null }];
+      const r = await preview(voltar, dep('aplicado', { origemAtacado: [{ ...entrada('aplicado'), anteriores }] }));
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'pendente', motivo: null, restaurar: anteriores }]);
+    });
+
+    it('origem `aplicado`, família mudou → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { config: { faixas: ANTES, divergente: false } }));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['fora', 'fora']);
+      expect(r.de('MLB1').motivo).toContain('Não revertível: o atacado mudou depois da alteração');
+      expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
+    });
+
+    it('origem `aplicado`, um MLB não revertível → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { vivos: { MLB2: vivo({ status: 'closed' }) } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: expect.stringContaining('Atacado da família recusado') });
+      expect(r.atacado_familias).toEqual([]);
+    });
+
+    it('origem `nao_aplicado`: exige a família em `esperado`, desfaz os passos aplicados e não grava configuração', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', { config: { faixas: ANTES, divergente: false }, familias: { [F]: fam() } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', faixas_alvo: viva(95) });
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: ANTES, familia_id: F, estado: 'pendente' }]);
+      expect(r.atacado_familias).toEqual([]);
+    });
+
+    it('origem `nao_aplicado`, um MLB fora não recusa os outros', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', {
+        config: { faixas: ANTES, divergente: false }, familias: { [F]: fam() }, vivos: { MLB2: vivo({ status: 'closed' }) },
+      }));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['elegivel', 'fora']);
+    });
+
+    it('origem `nao_aplicado`, família fora de `esperado` → fora', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', { familias: { [F]: fam() } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+    });
+
+    it('origem `nao_aplicado`, item com faixas pendentes: confere a família e não recalcula', async () => {
+      const o = new Map([['MLB1', {
+        codigo_pai: 'P', preco_anterior: 100, preco: 110, passos: [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' }, passo('pendente')] as Passo[],
+        restaurar: [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }],
+      }]]);
+      const comum = { alvos: [a('MLB1')], origem: o, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) }, faixas: viva(95), familias: { [F]: fam() } };
+      const r = await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: ANTES, divergente: false } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'base', anterior: 110, alvo: 100, config: ANTES, estado: 'pendente' }]);
+      expect((await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: NOVO, divergente: false } }))).de('MLB1'))
+        .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+    });
+
+    it('origem `aplicado`, outro lote saiu de `novo` → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { familias: { [F]: fam({ atacado: NOVO, lotesDivergentes: true }) } }));
+      expect(r.itens.map((i) => i.motivo)).toEqual(['Não revertível: o atacado mudou depois da alteração', 'Não revertível: o atacado mudou depois da alteração']);
+      expect(r.atacado_familias).toEqual([]);
+    });
+
+    it('origem com entrada ainda pendente → recusa', async () => {
+      expect(await montarPreview(voltar, dep('pendente'))).toEqual({ ok: false, erro: 'A operação de origem ainda está em andamento' });
+    });
+
+    it('Reverter do Reverter: vale a entrada, não a configuração do passo', async () => {
+      const o = new Map([['MLB1', { codigo_pai: 'P', preco_anterior: 100, preco: 100, restaurar: [], passos: [{ ...passo(), config: NOVO, anterior: viva(90), alvo: viva(95) } as Passo] }]]);
+      const r = await preview(voltar, dep('aplicado', {
+        alvos: [a('MLB1')], origem: o, origemAtacado: [{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'aplicado', motivo: null }],
+        familias: { [F]: fam() }, config: cfg, faixas: viva(95),
+      }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', faixas_alvo: viva(90) });
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: NOVO, esperado: ANTES, status: 'pendente', motivo: null }]);
+    });
   });
 });

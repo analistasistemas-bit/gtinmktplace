@@ -31,9 +31,19 @@ export function ehParticipando(status: string): boolean {
 }
 
 /** Participando: o preço escolhido/no ar (`price`). Convidado: o sugerido da faixa, senão o preço da promoção. */
-export function precoAvaliado(it: { status: string; preco_sugerido: number | null; preco_promo: number | null }): number | null {
+/** Abaixo disto o comprador perde o frete grátis (regra do Diego), em qualquer tipo de campanha. */
+export const PRECO_MIN_PROMOCAO = 19;
+export const MSG_PISO_PROMOCAO = 'Abaixo de R$ 19 o comprador perde o frete grátis';
+
+export function precoAvaliado(it: {
+  status: string; preco_sugerido: number | null; preco_promo: number | null; preco_min?: number | null; preco_max?: number | null;
+}): number | null {
   if (ehParticipando(it.status)) return it.preco_promo ?? it.preco_sugerido ?? null;
-  return it.preco_sugerido ?? it.preco_promo ?? null;
+  const p = it.preco_sugerido ?? it.preco_promo ?? null;
+  if (p == null || p >= PRECO_MIN_PROMOCAO || it.preco_max == null) return p;
+  // Sugerido abaixo do piso: com faixa que alcança R$ 19, vale o desconto menor (pedido do Diego, 07/11).
+  const noPiso = Math.max(PRECO_MIN_PROMOCAO, it.preco_min ?? 0);
+  return noPiso <= it.preco_max ? noPiso : p;
 }
 
 export function liquidoNoPreco(preco: number, t: Tarifa, aliquotaPct: number): number {
@@ -65,12 +75,14 @@ export async function ateQuantoDescer(
   return melhor <= a.min ? { valor: null, motivo: 'qualquer' } : { valor: melhor, motivo: null };
 }
 
-/** Só convidado e participando contam — outro status do ML não é presumido. */
-export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>[]): Contagem {
+/** Só convidado e participando contam — outro status do ML não é presumido. Convidado abaixo do piso não aparece
+ *  na Central, então não conta; sem preço avaliado conta (espelha `convidadoAbaixoDoPiso` do front). */
+export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct' | 'preco_avaliado'>[]): Contagem {
   const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
   for (const l of linhas) {
     const participa = ehParticipando(l.status);
     if (!participa && l.status !== 'candidate') continue;
+    if (!participa && l.preco_avaliado != null && l.preco_avaliado < PRECO_MIN_PROMOCAO) continue;
     if (participa) c.participando++; else c.convidados++;
     c[l.pior_semaforo]++;
     if (participa && l.pior_semaforo === 'vermelho') c.participando_vermelho++;

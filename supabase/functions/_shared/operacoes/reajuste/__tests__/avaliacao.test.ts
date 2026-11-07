@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mudouAvaliacao, resumir } from '../avaliacao.ts';
-import type { CorAvaliada, Semaforo } from '../tipos.ts';
+import { avaliarPassos, mudouAvaliacao, mudouPrecos, resumir, resumirPrecos } from '../avaliacao.ts';
+import type { CorAvaliada, OfertaVigente, Passo, PrecoAvaliado, Semaforo } from '../tipos.ts';
 
 const cor = (semaforo: Semaforo, extra: Partial<CorAvaliada> = {}): CorAvaliada => ({
   variation_id: '1', sku: 'A', custo: 5, piso: 7, origem: 'nacional', aliquota_pct: 8, comissao_pct: 11.5,
@@ -69,5 +69,80 @@ describe('mudouAvaliacao', () => {
   it('origem diferente → true', () => {
     expect(mudouAvaliacao(resumir([cor('verde')]), resumir([cor('verde', { origem: 'importado' })]))).toBe(true);
     expect(mudouAvaliacao(resumir([cor('verde')]), resumir([cor('verde', { origem: null })]))).toBe(true);
+  });
+});
+
+const p = (tipo: PrecoAvaliado['tipo'], semaforo: Semaforo, extra: Partial<CorAvaliada> & { chave?: string } = {}): PrecoAvaliado => {
+  const { chave = tipo, ...c } = extra;
+  return { tipo, chave, preco: 90, avaliacao: resumir([cor(semaforo, c)]) };
+};
+
+describe('avaliarPassos', () => {
+  const oferta = { chave: 'P1:o1' } as OfertaVigente;
+  const avaliar = async (preco: number) => resumir([cor(preco < 80 ? 'vermelho' : 'verde')]);
+  const faixas: Passo = {
+    tipo: 'faixas', estado: 'pendente', config: null, anterior: [],
+    alvo: [{ min_unidades: 2, preco: 85.5 }, { min_unidades: 5, preco: 76.5 }],
+  };
+
+  it('avalia o alvo de base, de cada faixa e de cada oferta; saída não tem preço', async () => {
+    const r = await avaliarPassos([
+      { tipo: 'saida', oferta, estado: 'pendente' },
+      { tipo: 'oferta', oferta, anterior: 70, alvo: 75, estado: 'pendente' },
+      faixas,
+      { tipo: 'base', anterior: 100, alvo: 90, estado: 'pendente' },
+    ], avaliar);
+    expect(r.map(({ tipo, chave, preco, avaliacao }) => [tipo, chave, preco, avaliacao.pior])).toEqual([
+      ['oferta', 'P1:o1', 75, 'vermelho'],
+      ['faixa', '2', 85.5, 'verde'],
+      ['faixa', '5', 76.5, 'vermelho'],
+      ['base', 'base', 90, 'verde'],
+    ]);
+  });
+
+  it('só faixas: não avalia o base, e a faixa em prejuízo exige confirmação', async () => {
+    const r = await avaliarPassos([faixas], avaliar);
+    expect(r.map((x) => x.tipo)).toEqual(['faixa', 'faixa']);
+    expect(resumirPrecos(r).tem_vermelho).toBe(true);
+  });
+});
+
+describe('resumirPrecos', () => {
+  it('agrega por todos os preços, um não esconde o outro', () => {
+    expect(resumirPrecos([p('base', 'verde'), p('faixa', 'vermelho')]).tem_vermelho).toBe(true);
+    expect(resumirPrecos([p('base', 'verde'), p('oferta', 'indisponivel')]).tem_sem_dado).toBe(true);
+    expect(resumirPrecos([p('base', 'amarelo'), p('faixa', 'vermelho'), p('oferta', 'indisponivel')])).toMatchObject({
+      pior: 'vermelho', tem_vermelho: true, tem_sem_dado: true,
+    });
+    expect(resumirPrecos([p('base', 'verde'), p('faixa', 'amarelo')])).toMatchObject({ pior: 'amarelo', tem_vermelho: false, tem_sem_dado: false });
+  });
+  it('só o base: igual à avaliação dele', () => {
+    const b = p('base', 'verde');
+    expect(resumirPrecos([b])).toEqual(b.avaliacao);
+  });
+});
+
+describe('mudouPrecos', () => {
+  const lista = () => [p('base', 'verde'), p('faixa', 'verde', { chave: '2' })];
+  it('igual, em qualquer ordem → false', () => {
+    expect(mudouPrecos(lista(), lista())).toBe(false);
+    expect(mudouPrecos(lista(), [...lista()].reverse())).toBe(false);
+  });
+  it('semáforo e líquido não entram', () => {
+    expect(mudouPrecos([p('faixa', 'verde')], [p('faixa', 'vermelho', { liquido: -1 })])).toBe(false);
+  });
+  it('custo mudou em qualquer preço → true', () => {
+    expect(mudouPrecos([p('faixa', 'verde', { custo: 10 })], [p('faixa', 'verde', { custo: 12 })])).toBe(true);
+  });
+  it('conjunto diferente → true', () => {
+    expect(mudouPrecos(lista(), [p('base', 'verde')])).toBe(true);
+    expect(mudouPrecos([p('base', 'verde')], lista())).toBe(true);
+  });
+  it('mesma chave em tipos diferentes não casa', () => {
+    expect(mudouPrecos([p('faixa', 'verde', { chave: '2' })], [p('oferta', 'verde', { chave: '2' })])).toBe(true);
+  });
+  it('chave repetida → true (conservador)', () => {
+    const dup = [p('faixa', 'verde', { chave: '2' }), p('faixa', 'verde', { chave: '2' })];
+    expect(mudouPrecos(dup, dup)).toBe(true);
   });
 });

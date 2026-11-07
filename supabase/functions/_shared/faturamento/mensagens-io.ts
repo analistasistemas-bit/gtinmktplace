@@ -1,7 +1,6 @@
 // IO de mensagens pós-venda (ADR-0067): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { extrairMensagens, leiturasPorData, mapearMensagem, packDaMensagem, packsNaoLidos, type MensagemML } from './mensagem-mapper.ts';
-import { enviarMsgML } from '../ml/mensagem.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -109,6 +108,12 @@ export const lerPackMarcandoLido = (
   token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
 ): Promise<MensagemML[]> => paginarPack(token, packId, sellerId, true, f, false);
 
+/** Mesma leitura sem marcar como lida: qualquer erro lança, 403/404 inclusive. O envio usa como snapshot
+ *  e como conferência, e conversa vazia por engano passaria por "nada antes do POST". */
+export const lerPackSemMarcarLido = (
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+): Promise<MensagemML[]> => paginarPack(token, packId, sellerId, false, f, false);
+
 /** Mesma leitura, ESTRITA (ADR-0173), sem marcar como lida: 403/404 (pack sem mensagens/sem
  *  permissão) → []; qualquer outro não-2xx (429/5xx), página falha ou erro de rede → lança — o
  *  worker precisa distinguir "não há nada" de "a leitura falhou". */
@@ -212,17 +217,6 @@ export async function upsertMensagensEstrito(
   if (erroLida) throw new Error(`update ml_mensagens (lida_ml_em): ${erroLida}`);
 
   return { novasRecebidas };
-}
-
-/** Envia mensagem ao comprador e LANÇA em erro (reply interativo precisa avisar o operador). */
-export async function responderMensagemPedido(
-  token: string, packId: string | number, sellerId: string | number, buyerId: string | number, texto: string,
-): Promise<void> {
-  const resp = await enviarMsgML(token, packId, sellerId, buyerId, texto);
-  if (!resp.ok) {
-    const corpo = await resp.text().catch(() => '');
-    throw new Error(mensagemErroEnvioML(resp.status, corpo));
-  }
 }
 
 /** user_id do comprador no pack, lido de uma mensagem `recebida` já sincronizada — o `from` de

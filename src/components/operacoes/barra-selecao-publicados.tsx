@@ -12,7 +12,7 @@ export function BarraSelecaoPublicados({ ativos, pausados, onPausar, onReativar,
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={onPausar} disabled={ativos === 0}>Pausar {ativos}</Button>
         <Button size="sm" variant="outline" onClick={onReativar} disabled={pausados === 0}>Reativar {pausados}</Button>
-        <Button size="sm" variant="outline" onClick={onReajustar}>Reajustar preço ({total})</Button>
+        <Button size="sm" variant="outline" onClick={onReajustar}>Alterar preço ({total})</Button>
         <Button size="sm" variant="ghost" onClick={onLimpar}>Limpar</Button>
       </div>
     </div>

@@ -81,7 +81,7 @@
 | sync-mensagem | false | QStash worker | sim (upsert) |
 | posvenda-detalhe | true | frontend (JWT, ADR-0192) | sim (só leitura no ML) |
 | posvenda-acao | true | frontend (JWT, ADR-0192) | sim (operacao_id + trava por recurso em ml_posvenda_acoes) |
-| posvenda-anexo | true | frontend (JWT, ADR-0192) | não (upload; sem efeito até a ação) |
+| posvenda-anexo | true | frontend (JWT, ADR-0192) | não (upload; sem efeito até a ação). Destino `mensagem_pack` (upload por pack) e download por POST `{pack_id, filename}` (emenda 07/11) |
 | marcar-mensagens-lidas-ml | true | frontend (JWT, ADR-0192) | sim (lida_ml_em monotônico) |
 | sync-devolucao | false | QStash worker | sim (upsert) |
 | responder-pergunta | true | HTTP (frontend) | não |
@@ -109,10 +109,12 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(emenda ADR-0174, em produção desde 2026-11-07)* `operacoes-massa` recusa aderir e `alterar_preco` abaixo de R$ 19 em qualquer tipo (`PRECO_MIN_PROMOCAO`, `_shared/promocoes/projecao.ts`); `precoAvaliado` sobe para R$ 19 quando a faixa alcança; `contar` deixa convidado abaixo do piso fora da contagem. Versões: `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87 ||||
 | *(ADR-0194, 2026-11-04)* `operacoes-massa` ganha `etapa: 'dispensar_sugestao'`/`'reativar_sugestao'` (admin ou suporte full, módulo `promocoes`) e aceita `sugestao` na adesão, gravada em `operacoes_massa.sugestao`; `sincronizar-promocoes` grava `date_created` do ML em `ml_promocao_itens.anuncio_criado_em` ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
+| *(ADR-0196 Fatia 1, em produção desde 2026-11-07, v42)* `operacoes-massa` reajusta com oferta e atacado: "Definir preço R$", passos duráveis com `lease_token`, faixas de atacado; `publish-familia-ml`/`update-familia-ml` aplicam faixa sobre o preço de cada item ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Ads por grupo (ADR-0172, Fatia 2c)** ||||
@@ -576,6 +578,10 @@ mesmo por engano.
   Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
   direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
   modelos.
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** antes das reservas, UPDATE com
+  `ml_item_id` e sem "somente estoque" é conferido por `recusasDoLote` (`_shared/publicacao/trava-oferta.ts`), só onde
+  o preço novo fica abaixo do vivo. Reprovado volta em `recusadas` e não é reservado; os demais seguem. CREATE e
+  Adicionar variação não são conferidos. Leitura inconclusiva recusa com "tente de novo".
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01,
@@ -743,6 +749,10 @@ mesmo por engano.
   sobreviva um worker que comece um instante DEPOIS do claim — mitigado pela janela anti-corrida de
   15min. Schedule QStash criado em produção (2026-07-24): `*/15 * * * *`, 3 retries
   (`scd_5P1xe886r5SXj6ywwfUdEvY1stKn`).
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** confere por SKU antes da saga. SKU
+  reprovado ou inconclusivo vai em `semPrecoPara` (sem `price` no payload, inclusive filho `criado`), a composição
+  converge, o motivo vai em `familias.erro_mensagem` e o operador é avisado (`notificarCategoria`). Orçamento de 20 s
+  por raiz e 60 s por rodada; raízes restantes voltam `adiada`.
 - **publicar-split-ml** *(worker, split — ADR-0048 + ADR-0078 F2)* — produto que excede 100 cores,
   OU tem preços de publicação divergentes, OU já está particionado publica em N anúncios
   ("partições"); `publicar-familias` roteia esses três casos pra cá (`decidirSplit`, ver acima).
@@ -1563,7 +1573,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `blocked_by_claim` ou `blocked_by_mediation` (reclamação aberta bloqueia o chat pós-venda), devolve
   409 `codigo: 'reclamacao_aberta'` e o card troca a caixa de resposta pelo link da reclamação; a
   conversa sai de "aguardando" quando `ml_devolucoes` tem `mediations` aberta no pedido (emenda
-  ADR-0067, 01/11).
+  ADR-0067, 01/11). **Emenda 07/11:** aceita `anexo` (id do upload) e `operacao_id`; envia pela trava de
+  `ml_posvenda_acoes` (`mensagem:{pack_id}`, um envio em aberto por pack, nunca reenvia sozinha) e responde
+  `{estado, operacao_id, pendenteConfirmacao}`. `verificar: true` relê o ML sem POST; `liberar: true` grava
+  `inconclusiva` (decisão humana). Recusa do ML = HTTP 422, cancelamento = 409.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173:** desde 28/09,
@@ -1983,6 +1996,13 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **migrar-preco-por-variacao**: a reserva `solicitada` passa pela RPC `familia_reservar_migracao_pxv` (recusa produto com reajuste ativo).
 - **ingest-lote**: no UPDATE a cor casada herda `preco_editado_pelo_operador` (`preco-herdado.ts`, D15).
 - Deploy: ver [ADR-0178](../decisions/0178-reajuste-de-preco-em-massa.md) (Implementação).
+
+#### Alterar preço com oferta e atacado (ADR-0196, Fatia 1) — em produção desde 2026-11-07
+- **operacoes-massa**, `acao='reajustar'`: `TipoAjuste 'definir'` (preço R$ único); trava de oferta no preview e em `enviar` (nunca envia base igual ou abaixo de oferta vigente ou agendada; promoção deixa de excluir o anúncio); ofertas lidas por `lerOfertas`/`unirOfertas` (`reajuste/ofertas.ts`) e `GET /items/{id}/prices`.
+- **Passos duráveis** (`reajuste/passos.ts`, `operacoes_massa_itens.passos`): cada escrita vira passo com posse por `lease_token` (lease de 2 min, renovado a cada transição); sem o token nada grava (`sem_posse`). Escrita aceita que não pega depois de 3 tentativas falha o passo e compensa. Faixas de atacado (`reajuste/faixas.ts`) gravam antes de descer o base e depois de subir.
+- **Atacado por família:** `atacado_familias` na operação; `reajuste_atacado_concluir` grava `familias.atacado` por compare-and-set em todas as linhas do `codigo_pai`. `[]` com faixa viva não limpa; config sem faixa viva não cria.
+- **publish-familia-ml / update-familia-ml** (`_shared/user-products/atacado-por-item.ts`, `atualizar-familia-up.ts`, `publicar-familia-up.ts`): faixa calculada sobre o preço de cada item no UPDATE e no CREATE de UP. O UPDATE ainda baixa o base antes das faixas (lacuna conhecida, ADR-0196).
+- Deploy: `supabase db push` (4 migrations `20261107*`) antes das edges; redeployar `operacoes-massa`, `publish-familia-ml`, `update-familia-ml` e demais funções com `user-products`; conferir a versão ativa.
 
 ### Tráfego e oferta (ADR-0172, Fatia 2b)
 - **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde

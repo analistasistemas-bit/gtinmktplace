@@ -53,8 +53,8 @@ fixture() {
                         values ('$OP', '$ORG', '$MLB', 'pendente', '$PAI')" ;;
     conferindo_vencido) psql_ -c "insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai, etapa, proxima_conferencia)
                         values ('$OP', '$ORG', '$MLB', 'conferindo', '$PAI', 'escrita_pedida', now() - interval '1 minute')" ;;
-    enviando_parado) psql_ -c "insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai, atualizado_em)
-                        values ('$OP', '$ORG', '$MLB', 'enviando', '$PAI', now() - interval '5 minutes')" ;;
+    enviando_parado) psql_ -c "insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai, atualizado_em, lease_ate)
+                        values ('$OP', '$ORG', '$MLB', 'enviando', '$PAI', now() - interval '5 minutes', now() - interval '3 minutes')" ;;
   esac
 }
 aderir_pendente() {
@@ -84,7 +84,7 @@ fixture 01 pendente
 corrida "1 reajuste×publicação" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')" \
   "select motivo from public.familia_reservar_publicacao('$ORG', array['$F1']::uuid[], 'UPDATE')"
-[ "$A" = ok ] || falha "1: A"
+[ "${A%%:*}" = ok ] || falha "1: A"
 [ "$B" = "Há reajuste de preço em massa em andamento no anúncio $MLB" ] || falha "1: B"
 confere "(select status = 'pronto' from public.familias where id = '$F1')" "1: F1 devia continuar pronto"
 confere "$(item "status = 'enviando'")" "1: item enviando"
@@ -107,7 +107,7 @@ psql_ -c "insert into public.familias (id, lote_id, user_id, org_id, codigo_pai,
 corrida "3 reajuste×publicação F2" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')" \
   "select motivo from public.familia_reservar_publicacao('$ORG', array['$F2']::uuid[], 'UPDATE')"
-[ "$A" = ok ] || falha "3: A"
+[ "${A%%:*}" = ok ] || falha "3: A"
 [ "$B" = "Há reajuste de preço em massa em andamento no anúncio $MLB" ] || falha "3: B"
 confere "(select status = 'pronto' from public.familias where id = '$F2')" "3: F2 devia continuar pronto"
 
@@ -120,7 +120,7 @@ corrida "4 reajuste×aderir" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB');
    update public.operacoes_massa_itens set status = 'pendente' where operacao_id = '$AD'" \
   "select public.operacoes_massa_reivindicar('$ORG', '$AD', '$MLB')"
-[ "$A" = ok ] || falha "4: A"
+[ "${A%%:*}" = ok ] || falha "4: A"
 [ "$B" = f ] || falha "4: B"
 confere "(select status = 'mudou' and mensagem = 'Reajuste de preço em andamento neste anúncio' from public.operacoes_massa_itens where operacao_id = '$AD')" "4: aderir mudou"
 
@@ -143,7 +143,7 @@ fixture 06 pendente
 corrida "6a reajuste×PxV" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')" \
   "select public.familia_reservar_migracao_pxv('$ORG', '$PAI', '$CAMPOS')"
-[ "$A" = ok ] || falha "6a: A"
+[ "${A%%:*}" = ok ] || falha "6a: A"
 [ "$B" = "Há reajuste de preço em massa em andamento no anúncio $MLB" ] || falha "6a: B"
 confere "(select migracao_pxv_status is null from public.anuncios_externos where org_id = '$ORG' and codigo_pai = '$PAI')" "6a: raiz intocada"
 
@@ -154,7 +154,7 @@ corrida "6b PxV×reajuste" \
   "select public.familia_reservar_migracao_pxv('$ORG', '$PAI', '$CAMPOS');
    update public.operacoes_massa_itens set status = 'pendente' where operacao_id = '$OP'" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')"
-[ "$A" = ok ] || falha "6b: A"
+[ "${A%%:*}" = ok ] || falha "6b: A"
 [ "$B" = 'Migração para preço por variação em curso' ] || falha "6b: B"
 confere "(select migracao_pxv_status = 'solicitada' from public.anuncios_externos where org_id = '$ORG' and codigo_pai = '$PAI')" "6b: raiz solicitada"
 confere "$(item "status = 'bloqueado'")" "6b: item bloqueado"
@@ -164,20 +164,20 @@ fixture 08 conferindo_vencido
 corrida "7a retomada conferindo" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')"
-[ "$A" = ok ] || falha "7a: A"; [ "$B" = ocupado ] || falha "7a: B"
+[ "${A%%:*}" = ok ] || falha "7a: A"; [ "$B" = ocupado ] || falha "7a: B"
 confere "$(item "status = 'enviando' and etapa = 'escrita_pedida'")" "7a: enviando com etapa"
 fixture 09 enviando_parado
 corrida "7b retomada enviando parado" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')" \
   "select public.reajuste_reivindicar('$ORG', '$OP', '$MLB')"
-[ "$A" = ok ] || falha "7b: A"; [ "$B" = ocupado ] || falha "7b: B"
+[ "${A%%:*}" = ok ] || falha "7b: A"; [ "$B" = ocupado ] || falha "7b: B"
 confere "$(item "status = 'enviando' and atualizado_em > now() - interval '1 minute'")" "7b: enviando renovado"
 
 # 8. confirmar × confirmar da mesma operação.
 fixture 10 none
 psql_ -c "update public.operacoes_massa set status = 'rascunho', expira_em = now() + interval '30 minutes' where id = '$OP';
-          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai, avaliacao)
-          values ('$OP', '$ORG', '$MLB', 'rascunho', '$PAI', '{}')"
+          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai, avaliacao, passos)
+          values ('$OP', '$ORG', '$MLB', 'rascunho', '$PAI', '{}', '[]')"
 corrida "8 confirmar×confirmar" \
   "select public.reajuste_confirmar('$ORG', '$OP', '[]')" \
   "select public.reajuste_confirmar('$ORG', '$OP', '[]')"
@@ -190,9 +190,9 @@ fixture 11 none
 R2=$(u 11 504)
 psql_ -c "update public.operacoes_massa set status = 'rascunho', expira_em = now() + interval '30 minutes' where id = '$OP';
           insert into public.operacoes_massa (id, org_id, acao, status, expira_em) values ('$R2', '$ORG', 'reajustar', 'rascunho', now() + interval '30 minutes');
-          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao, codigo_pai) values
-            ('$OP', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI'), ('$OP', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI'),
-            ('$R2', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI'), ('$R2', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI')"
+          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao, codigo_pai, passos) values
+            ('$OP', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI', '[]'), ('$OP', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI', '[]'),
+            ('$R2', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI', '[]'), ('$R2', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI', '[]')"
 corrida "9 rascunhos sobrepostos" \
   "select public.reajuste_confirmar('$ORG', '$OP', '[]')" \
   "select public.reajuste_confirmar('$ORG', '$R2', '[]')"

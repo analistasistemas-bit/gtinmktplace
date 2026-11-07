@@ -44,6 +44,73 @@ describe('extrairCorDoTexto — regressão lote #24', () => {
   });
 });
 
+describe('extrairCorDoTexto — cor composta fora do dicionário', () => {
+  it.each([
+    ['Coloração Creme Colore 7.7 - Marrom Dourado 125g', 'Marrom Dourado'],
+    ['Coloração Creme Colore 3.0 - Castanho Escuro 125g', 'Castanho Escuro'],
+    ['Coloração Creme Colore 4.0 - Castanho Médio 125g', 'Castanho Médio'],
+    ['Coloração Creme Colore 6.66 - Vermelho Intenso 125g', 'Vermelho Intenso'],
+    ['Coloração Creme Colore 1.0 - Preto Azulado 125g', 'Preto Azulado'],
+    ['FITA CETIM BUFALO N.3 16MM 152 (327) AZUL TURQUESA 50MT', 'Azul Turquesa'],
+    ['L.LIZA FINA 7195 CASTANHO-CLARO', 'Castanho Claro'],
+    ['LINHA CASTANHO MEDIO', 'Castanho Médio'],
+    ['Coloração Castanho Claro Dourado 125g', 'Castanho Claro Dourado'],
+    ['Tecido Azul Escuro 10 metros', 'Azul Escuro'],
+    ['Coloração Creme Colore 6.0 - Louro Escuro 125g', 'Louro Escuro'],
+    ['Coloração Creme Colore 7.0 - Louro Médio 125g', 'Louro Médio'],
+    ['Coloração Louro Claro Dourado 125g', 'Louro Claro Dourado'],
+    ['L.LIZA FINA LOIRO-CLARO', 'Loiro Claro'],
+    ['Coloração Creme Colore 6.7 - Chocolate 125g', 'Chocolate'],
+    ['Coloração Marrom Chocolate 125g', 'Marrom Chocolate'],
+    ['Coloração Louro 125g', 'Louro'],
+    ['Peruca Loira Lisa', 'Loiro'],
+    ['Coloração Chocolate Escuro 125g', 'Chocolate Escuro'],
+    ['Coloração Chocolate Dourado 125g', 'Chocolate Dourado'],
+  ])('%s → %s', (nome, cor) => {
+    expect(extrairCorDoTexto([nome])).toBe(cor);
+  });
+
+  it.each([
+    ['Forma para chocolate vermelha', 'Vermelho'],
+    ['Shampoo roxo para cabelo loiro 300ml', 'Roxo'],
+    ['Shampoo para cabelo louro 300ml', null],
+    ['Shampoo para cabelos loiros 300ml', null],
+    ['Essência aroma chocolate 100ml', null],
+    ['Bala sabor chocolate', null],
+  ])('finalidade não é cor: %s → %s', (nome, cor) => {
+    expect(extrairCorDoTexto([nome])).toBe(cor);
+  });
+
+  it('composta cadastrada no dicionário continua canônica', () => {
+    expect(extrairCorDoTexto(['Linha Azul Claro'])).toBe('Azul Claro');
+    expect(extrairCorDoTexto(['FITA VERMELHO ESCURO'])).toBe('Vermelho Escuro');
+  });
+
+  it('cor sem tom ao lado continua no dicionário', () => {
+    expect(extrairCorDoTexto(['Alfinete N.0 Dourado'])).toBe('Dourado');
+    expect(extrairCorDoTexto(['Linha Castanho'])).toBe('Marrom');
+  });
+
+  it('não une palavras de textos diferentes', () => {
+    expect(extrairCorDoTexto(['Linha Marrom', 'Dourado Premium'])).toBe('Dourado');
+  });
+
+  it('composta do nome do pai não troca a cor da variação', () => {
+    expect(extrairCorDeVariacao('Linha Preto', 'Linha Verde Escuro')).toBe('Preto');
+    expect(extrairCorDeVariacao('Linha Dourado', 'Linha Marrom Dourado')).toBe('Dourado');
+    expect(extrairCorDeVariacao('Linha Preto', 'Linha Preto Azulado')).toBe('Preto');
+  });
+
+  it('composta do pai vale quando a variação não tem cor', () => {
+    expect(extrairCorDeVariacao('Coloração 125g', 'Coloração Marrom Dourado')).toBe('Marrom Dourado');
+  });
+
+  it('segundo tom não se perde depois de prefixo cadastrado', () => {
+    expect(extrairCorDoTexto(['Coloração Azul Claro Dourado 125g'])).toBe('Azul Claro Dourado');
+    expect(extrairCorDoTexto(['Vermelho Escuro Intenso'])).toBe('Vermelho Escuro Intenso');
+  });
+});
+
 describe('extrairCorDeVariacao', () => {
   // A descrição detalhada é prosa de marketing por família: contém cores incidentais
   // que não nomeiam a cor do produto. Documenta o falso positivo que motivou o helper.

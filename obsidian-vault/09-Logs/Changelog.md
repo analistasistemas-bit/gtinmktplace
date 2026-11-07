@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-05
+atualizado: 2026-11-07
 ---
 
 # Changelog
@@ -8,6 +8,13 @@ atualizado: 2026-11-05
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-07
+
+- **Anexo nas mensagens pós-venda** (emendas [[0067-mensagens-pos-venda-ml|ADR-0067]] e [[0192-posvenda-ml-acoes|ADR-0192]]): foto ou PDF até 5 MB junto com o texto na tela de Mensagens; anexos enviados e recebidos aparecem no histórico; envio passa pela trava de `ml_posvenda_acoes` por pack, com conferência e liberação manual. Em produção desde 2026-11-07 (main `3236f39a`).
+- **Piso de R$ 19 em toda campanha** (emenda [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): sugerido abaixo de R$ 19 com faixa que alcança o piso fica em R$ 19; o resto some de Sugestões, Convidados e da contagem; servidor recusa aderir, alterar preço e Reverter abaixo do piso em qualquer tipo. Antes só Relâmpago e ofertas fixas. Em produção desde 2026-11-07 (main `8d109728`).
+- **Trava da oferta no UPDATE** ([[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]], emenda; item 9 do [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): UPDATE recusa, com motivo, o produto cujo preço novo fica igual ou abaixo de oferta vigente ou agendada; os demais do lote seguem. Em produção desde 2026-11-07 (main `b663ea5d`). Limite aceito: oferta nova ou preço editado inline entre o clique e o worker não é detectado.
+- **Alterar preço com oferta e atacado, Fatia 1** ([[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]], Proposto): em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente. Fatia 2 suspensa (ML recusa subir oferta, `PRICE_GT_CURRENT`); Fatias 3 e 4 não feitas. Medido: Relâmpago `started` mantém a oferta; SMART sem reconvite em 2 h.
 
 ## 2026-11-05
 

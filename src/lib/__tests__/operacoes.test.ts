@@ -37,7 +37,7 @@ describe('parsePreco', () => {
 describe('montarPreview', () => {
   it('DEAL aderir marca só o verde e usa o sugerido', () => {
     const verde = item({ ml_item_id: 'V', preco_sugerido: 85, projecao: [cor({ custo: 5, piso: 10 })] });
-    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, projecao: [cor({ custo: 5, piso: 10 })] });
+    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_avaliado: 5, projecao: [cor({ custo: 5, piso: 10 })] });
     const linhas = montarPreview('aderir', 'DEAL', [verde, vermelho]);
     expect(linhas.find((l) => l.ml_item_id === 'V')).toMatchObject({ preco: 85, semaforo: 'verde', marcado: true });
     expect(linhas.find((l) => l.ml_item_id === 'R')).toMatchObject({ preco: 5, marcado: false });
@@ -56,6 +56,8 @@ describe('montarPreview', () => {
     const simulado = item({ ml_item_id: 'S', preco_sugerido: 100, projecao: p });
     const naoSimulado = item({ ml_item_id: 'N', preco_sugerido: 100, projecao: p });
     const linhas = montarPreview('aderir', 'DEAL', [simulado, naoSimulado], new Map([['S', 55]]));
+    expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
+    expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: null, preco_promo: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
     expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
     expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
     expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });
@@ -201,8 +203,8 @@ describe('operações de status (emenda 2026-10-04)', () => {
 
 describe('reajuste de preço (I5)', () => {
   it('título: reajuste e reversão', () => {
-    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: null }, 12)).toBe('Reajustar preço de 12 anúncios');
-    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null }, 1)).toBe('Reajustar preço de 1 anúncio');
+    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: null }, 12)).toBe('Alterar preço de 12 anúncios');
+    expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null }, 1)).toBe('Alterar preço de 1 anúncio');
     expect(tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: 'OP0' }, 3)).toBe('Reverter reajuste de 3 anúncios');
     // origem_id não muda o título das outras ações
     expect(tituloOperacao({ acao: 'pausar', promocao_nome: null, promocao_id: null, origem_id: 'OP0' }, 2)).toBe('Pausar 2 anúncios');
@@ -235,6 +237,25 @@ describe('precisaRetomar', () => {
     expect(precisaRetomar(reaj, [it_('conferindo', iso(-60_000), iso(0))], agora)).toBe(false);
     expect(precisaRetomar(reaj, [it_('enviando', null, iso(60_000))], agora)).toBe(false);
     expect(precisaRetomar(reaj, [it_('aplicado', null, iso(9e6))], agora)).toBe(false);
+  });
+  describe('edição de atacado sem conclusão', () => {
+    const entrada = (status: string) => ({ atacado_familias: [{ familia_id: 'f', status }] });
+    const terminal = [it_('aplicado', null, iso(3 * 60_000)), it_('erro', null, iso(9e6))];
+    it('entrada pendente com todos os itens encerrados → retomar, inclusive em operação concluída', () => {
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, terminal, agora)).toBe(true);
+      expect(precisaRetomar({ acao: 'reajustar', status: 'concluida', ...entrada('pendente') }, terminal, agora)).toBe(true);
+    });
+    it('execução normal não mostra o botão: item em andamento ou recém-encerrado', () => {
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('pendente', null, iso(0))], agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('conferindo', iso(-60_000), iso(0))], agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('aplicado', null, iso(30_000))], agora)).toBe(false);
+    });
+    it('entrada resolvida, rascunho ou outra ação → não', () => {
+      expect(precisaRetomar({ acao: 'reajustar', status: 'concluida', ...entrada('aplicado') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('nao_aplicado') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ acao: 'reajustar', status: 'rascunho', ...entrada('pendente') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ acao: 'pausar', status: 'concluida', ...entrada('pendente') }, terminal, agora)).toBe(false);
+    });
   });
   it('só reajuste executando', () => {
     const parado = [it_('conferindo', iso(9e6), iso(9e6))];

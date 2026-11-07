@@ -1,6 +1,6 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
-import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
+import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, PRECO_MIN_PROMOCAO, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
 /** `alterar_preco` (emenda 2026-11-03): PUT do deal_price de item DEAL já participando. */
@@ -62,7 +62,10 @@ export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, it
     // Alterar: parte do preço vigente da oferta; aderir: sugerido (DEAL/Relâmpago) ou o da oferta (SMART, SMART_LIGHTNING, PRICE_MATCHING).
     const padrao = acao === 'sair' ? it.preco_promo
       : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
-      : tipo === 'DEAL' || tipo === 'LIGHTNING' ? it.preco_sugerido : it.preco_promo;
+      : tipo === 'DEAL' || tipo === 'LIGHTNING'
+        // Sugerido abaixo do piso: o servidor já avaliou no menor preço permitido (R$ 19 ou o mínimo da faixa).
+        ? ((it.preco_sugerido ?? it.preco_promo ?? PRECO_MIN_PROMOCAO) < PRECO_MIN_PROMOCAO ? it.preco_avaliado : it.preco_sugerido)
+        : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
@@ -120,7 +123,7 @@ export function tituloOperacao(
   op: { acao: string; promocao_nome: string | null; promocao_id: string | null; origem_id?: string | null }, total: number,
 ): string {
   const anuncios = `${total} anúncio${total === 1 ? '' : 's'}`;
-  if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Reajustar preço de ${anuncios}`;
+  if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Alterar preço de ${anuncios}`;
   if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${anuncios}`;
   const nome = op.promocao_nome ?? op.promocao_id ?? '';
   if (op.acao === 'alterar_preco') return `${op.origem_id ? 'Reverter preço' : 'Alterar preço'} em ${nome}`;
@@ -128,16 +131,22 @@ export function tituloOperacao(
 }
 
 const PARADO_MS = 2 * 60_000; // mesmo limite de `enviando` parado na RPC reajuste_reivindicar
+const EM_ANDAMENTO = ['pendente', 'enviando', 'conferindo'];
 /** Retomar (C3): reajuste executando com item `conferindo` vencido ou `enviando` parado há mais de 2 min — sinal de
  *  que a mensagem QStash esgotou os retries. ponytail: a folga de 2 min no `conferindo` evita o botão piscar no
- *  intervalo normal entre `proxima_conferencia` e a entrega da mensagem agendada. */
+ *  intervalo normal entre `proxima_conferencia` e a entrega da mensagem agendada.
+ *  Também com edição de atacado sem desfecho e nenhum item em andamento: a família fica reservada até alguém concluir.
+ *  A entrada segue `pendente` durante toda a execução normal, daí exigir os itens encerrados há mais de 2 min. */
 export function precisaRetomar(
-  op: { acao: string; status: string },
+  op: { acao: string; status: string; atacado_familias?: unknown },
   itens: { status: string; proxima_conferencia: string | null; atualizado_em: string }[], agora: number,
 ): boolean {
-  if (op.acao !== 'reajustar' || op.status !== 'executando') return false;
+  if (op.acao !== 'reajustar' || (op.status !== 'executando' && op.status !== 'concluida')) return false;
   const antes = (iso: string | null) => iso != null && Date.parse(iso) < agora - PARADO_MS;
-  return itens.some((i) => (i.status === 'conferindo' && antes(i.proxima_conferencia)) || (i.status === 'enviando' && antes(i.atualizado_em)));
+  const familiaPresa = Array.isArray(op.atacado_familias) && op.atacado_familias.some((e: { status?: string }) => e?.status === 'pendente')
+    && itens.every((i) => !EM_ANDAMENTO.includes(i.status) && antes(i.atualizado_em));
+  if (op.status === 'concluida') return familiaPresa;
+  return familiaPresa || itens.some((i) => (i.status === 'conferindo' && antes(i.proxima_conferencia)) || (i.status === 'enviando' && antes(i.atualizado_em)));
 }
 
 /** N do título: reajuste conta só o que entrou (`incluido`) — fora, sem alteração e desmarcado no preview não. */

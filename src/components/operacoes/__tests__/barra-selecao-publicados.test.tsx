@@ -18,10 +18,10 @@ describe('BarraSelecaoPublicados', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Pausar 2' }));
     expect(onPausar).toHaveBeenCalled();
   });
-  it('Reajustar preço conta ativos + pausados', async () => {
+  it('Alterar preço conta ativos + pausados', async () => {
     const onReajustar = vi.fn();
     render(<BarraSelecaoPublicados ativos={2} pausados={3} {...props} onReajustar={onReajustar} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Reajustar preço (5)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar preço (5)' }));
     expect(onReajustar).toHaveBeenCalled();
   });
 });

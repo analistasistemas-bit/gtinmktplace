@@ -17,7 +17,8 @@ vi.mock('../../../promocoes/ml.ts', async (orig) => ({
   criarGetJson: () => vi.fn(),
   buscarItensML: async (_g: unknown, ids: string[]) => new Map(ids.map((id) => [id, m.itemML(id)])),
 }));
-import { criarAvaliador, depsLacoReajuste, depsPreview, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
+import { criarAvaliador, depsLacoReajuste, depsPreview, depsReajuste, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
+import { maiorOferta } from '../ofertas.ts';
 import { montarPreview } from '../preview.ts';
 import { linhasDoRascunho } from '../pedido.ts';
 import { resumir } from '../avaliacao.ts';
@@ -59,27 +60,55 @@ describe('depsLacoReajuste', () => {
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
   });
 
-  it('reivindicar: só a RPC (nada gravado aqui); ok → true, motivo/ocupado → false', async () => {
-    const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok' : 'Família em publicação/atualização — tente depois'));
+  it('concluir: fecha o atacado da família antes da operação; se a RPC falhar a operação segue aberta para a reentrega', async () => {
+    const f = fakeAdmin(() => null, () => ({ pendentes: 0 }));
+    await depsLacoReajuste(f.admin, OP, 'k').concluir();
+    expect(f.rpcs).toEqual([['reajuste_atacado_concluir', { p_org: 'org', p_operacao: 'op' }]]);
+    expect(f.chamadas.map((c) => c.tabela)).toEqual(['operacoes_massa']);
+
+    const erro = fakeAdmin();
+    erro.admin = { ...(erro.admin as object), rpc: async () => ({ data: null, error: { message: 'x' } }) } as never;
+    await expect(depsLacoReajuste(erro.admin, OP, 'k').concluir()).rejects.toThrow('reajuste_atacado_concluir: x');
+    expect(erro.chamadas).toEqual([]);
+  });
+
+  it('concluir: família ainda pendente mantém a operação aberta, a reserva não pode ficar órfã', async () => {
+    const f = fakeAdmin(() => null, () => ({ pendentes: 1 }));
+    await expect(depsLacoReajuste(f.admin, OP, 'k').concluir()).rejects.toThrow('atacado pendente');
+    expect(f.chamadas).toEqual([]);
+  });
+
+  it('reivindicar: só a RPC (nada gravado aqui); ok → token, motivo/ocupado → null', async () => {
+    const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok:token' : 'Família em publicação/atualização — tente depois'));
     const d = depsLacoReajuste(f.admin, OP, 'k');
-    expect(await d.reivindicar('op', 'A')).toBe(true);
-    expect(await d.reivindicar('op', 'B')).toBe(false);
+    expect(await d.reivindicar('op', 'A')).toBe('token');
+    expect(await d.reivindicar('op', 'B')).toBeNull();
     expect(f.rpcs.map(([fn]) => fn)).toEqual(['reajuste_reivindicar', 'reajuste_reivindicar']);
     expect(f.chamadas).toEqual([]);
   });
 
-  it('agendarConferenciaItem: conferindo, n+1, backoff 5 → teto 60 min, etapa preservada', async () => {
-    const f = fakeAdmin();
+  it('agendarConferenciaItem: pela RPC com token; conferindo, n+1, backoff 5 → teto 60 min, etapa preservada', async () => {
+    const f = fakeAdmin(() => [], () => true);
     const d = depsLacoReajuste(f.admin, OP, 'k');
     const antes = Date.now();
-    await d.agendarConferenciaItem('op', 'A', 0);
-    await d.agendarConferenciaItem('op', 'A', 9);
-    const [[p0], [p9]] = f.chamadas.map((c) => op(c, 'update')[0]) as [[Record<string, unknown>], [Record<string, unknown>]];
+    expect(await d.agendarConferenciaItem('op', 'A', 'tk', 0)).toBe(true);
+    await d.agendarConferenciaItem('op', 'A', 'tk', 9);
+    expect(f.chamadas).toEqual([]);
+    expect(f.rpcs[0]).toEqual(['reajuste_item_gravar', expect.objectContaining({ p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk' })]);
+    const [p0, p9] = f.rpcs.map(([, a]) => a.p_campos) as [Record<string, unknown>, Record<string, unknown>];
     expect(p0).toMatchObject({ status: 'conferindo', conferencias: 1, mensagem: MSG_AGUARDANDO });
     expect(p9).toMatchObject({ conferencias: 10 });
     expect(p0).not.toHaveProperty('etapa');
     const min = (p: Record<string, unknown>) => Math.round((Date.parse(p.proxima_conferencia as string) - antes) / 60_000);
     expect([min(p0), min(p9)]).toEqual([5, 60]);
+  });
+
+  it('gravarItem: pela RPC com token; false = sem posse', async () => {
+    const f = fakeAdmin(() => [], () => false);
+    const campos = { status: 'erro', mensagem: 'x' } as const;
+    expect(await depsLacoReajuste(f.admin, OP, 'k').gravarItem('op', 'A', 'tk', campos)).toBe(false);
+    expect(f.chamadas).toEqual([]);
+    expect(f.rpcs).toEqual([['reajuste_item_gravar', { p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_campos: campos }]]);
   });
 
   it('encerrarSemEtapa: sem etapa → erro; com etapa → conferindo agendado (inclui conferindo vencido)', async () => {
@@ -97,10 +126,68 @@ describe('depsLacoReajuste', () => {
   });
 });
 
+describe('depsReajuste', () => {
+  const cxT = { orgId: 'org', mlUserId: 'u', token: 't' };
+  const opRow = { id: 'op', org_id: 'org', origem_id: null };
+
+  it('marcarPasso: RPC com token e índice', async () => {
+    const f = fakeAdmin(() => [], () => true);
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').marcarPasso('op', 'A', 'tk', 1, 'confirmado')).toBe(true);
+    expect(f.rpcs).toEqual([['reajuste_passo_marcar', { p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_indice: 1, p_estado: 'confirmado' }]]);
+  });
+
+  it('marcarPasso: recusa da volta só vai quando houver', async () => {
+    const f = fakeAdmin(() => [], () => true);
+    const d = depsReajuste(f.admin, cxT, opRow, 'k');
+    await d.marcarPasso('op', 'A', 'tk', 0, 'volta_pedida');
+    await d.marcarPasso('op', 'A', 'tk', 0, 'volta_pendente', true);
+    expect(f.rpcs[0][1]).not.toHaveProperty('p_recusada');
+    expect(f.rpcs[1][1]).toMatchObject({ p_estado: 'volta_pendente', p_recusada: true });
+  });
+
+  it('persistir: RPC com token e mensagem; sem_posse volta como veio', async () => {
+    const f = fakeAdmin(() => [], () => 'sem_posse');
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').persistir('op', 'A', 'tk', 110, [], 'aviso')).toBe('sem_posse');
+    expect(f.rpcs).toEqual([['reajuste_persistir', {
+      p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_preco_confirmado: 110, p_restaurar: [], p_mensagem: 'aviso',
+    }]]);
+  });
+
+  it('configAtacado: mesma herança do preview', async () => {
+    const faixas = [{ min_unidades: 3, desconto_pct: 10 }];
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: faixas }]));
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').configAtacado(['v1'])).toEqual({ faixas, divergente: false, porCor: false });
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
+  });
+
+  it('lerItem traz passos e avaliacoes', async () => {
+    const passos = [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }];
+    const avaliacoes = [{ tipo: 'base', chave: 'base', preco: 110, avaliacao: null }];
+    const f = fakeAdmin(() => ({ preco: '110', preco_anterior: '100', conferencias: 2, passos, avaliacoes }));
+    const i = await depsReajuste(f.admin, cxT, opRow, 'k').lerItem('op', 'A');
+    expect(i).toMatchObject({ preco: 110, preco_anterior: 100, passos, avaliacoes });
+    expect(String(op(f.chamadas[0], 'select')[0][0])).toMatch(/\bpassos\b.*\bavaliacoes\b|\bavaliacoes\b.*\bpassos\b/);
+  });
+
+  it('lerItem sem passos → listas vazias', async () => {
+    const f = fakeAdmin(() => ({ preco: 110, preco_anterior: 100 }));
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').lerItem('op', 'A')).toMatchObject({ passos: [], avaliacoes: [] });
+  });
+});
+
 describe('depsPreview', () => {
   const cxT = { orgId: 'org', mlUserId: 'u', token: 't' };
   // MLB1 tem produto; MLB2 perdeu o produto (RPC null) e não é kit.
   const semProduto = () => fakeAdmin(() => [], (fn, a) => (fn === 'reajuste_codigo_pai' ? (a.p_ml_item === 'MLB1' ? 'P1' : null) : null));
+
+  it('origem traz os passos do item', async () => {
+    const passos = [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' }];
+    const f = fakeAdmin((c) => (c.tabela === 'operacoes_massa' ? { id: 'o' }
+      : [{ ml_item_id: 'A', preco: 110, preco_anterior: 100, passos }, { ml_item_id: 'B', preco: 110, preco_anterior: 100, passos: null }]));
+    const o = await depsPreview(f.admin, cxT, { reverter: true }).origem('o');
+    expect(o?.get('A')?.passos).toEqual(passos);
+    expect(o?.get('B')?.passos).toEqual([]);
+  });
 
   it('pedido do usuário com MLB sem produto → ForaDaOrg (400)', async () => {
     await expect(depsPreview(semProduto().admin, cxT, { reverter: false }).expandir([], ['MLB1', 'MLB2']))
@@ -110,14 +197,19 @@ describe('depsPreview', () => {
   it('Reverter com 2 aplicados, um sem produto → rascunho com um elegível e um fora', async () => {
     const restaurar = (v: string) => [{ variacao_id: v, esperado: { preco_publicacao: 100, preco_editado_pelo_operador: false }, novo: { preco_publicacao: 110, preco_editado_pelo_operador: true } }];
     const origem = new Map([
-      ['MLB1', { codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar: restaurar('v1') }],
-      ['MLB2', { codigo_pai: 'P2', preco_anterior: 100, preco: 110, restaurar: restaurar('v2') }],
+      ['MLB1', { codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar: restaurar('v1'), passos: [] }],
+      ['MLB2', { codigo_pai: 'P2', preco_anterior: 100, preco: 110, restaurar: restaurar('v2'), passos: [] }],
     ]);
     const vivo = { preco: 110, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
     const r = await montarPreview({ familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' }, {
       expandir: depsPreview(semProduto().admin, cxT, { reverter: true }).expandir,
       origem: async () => origem,
-      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), participaPromocaoML: async () => false },
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [], gravarFaixas: vi.fn() },
+      configAtacado: async () => ({ faixas: null, divergente: false }),
+      origemAtacado: async () => [],
+      familiasAtacado: async () => new Map(),
+      atacadoDoProduto: async () => new Map(),
+      ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
       variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
       estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
       avaliar: async () => resumir([]),
@@ -127,6 +219,92 @@ describe('depsPreview', () => {
     expect(itens.map((i) => [i.ml_item_id, i.situacao])).toEqual([['MLB1', 'elegivel'], ['MLB2', 'fora']]);
     expect(itens[1].motivo).toBe('Anúncio não encontrado no cadastro');
     expect(linhasDoRascunho(itens).map((l) => [l.status, l.codigo_pai])).toEqual([['rascunho', 'P1'], ['bloqueado', 'P2']]);
+  });
+
+  it('configAtacado: canônica NULL não esconde a config de lote antigo, filtrando por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes'
+      ? [{ atacado: null, familias: { codigo_pai: 'P' } }, { atacado: cinco, familias: { codigo_pai: 'P' } }]
+      : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: cinco }]));
+    expect(await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).toEqual({ faixas: cinco, divergente: false, porCor: true });
+    expect(f.chamadas[0].tabela).toBe('variacoes');
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[0], 'in')).toEqual([['id', ['v1', 'v2']]]);
+    expect(op(f.chamadas[1], 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[1], 'in')).toEqual([['codigo_pai', ['P']]]);
+  });
+
+  it('configAtacado: duas configs entre os lotes → lotes divergentes; cor com a própria não precisa do lote', async () => {
+    const lotes = [{ codigo_pai: 'P', atacado: [{ min_unidades: 2, desconto_pct: 5 }] }, { codigo_pai: 'P', atacado: [{ min_unidades: 2, desconto_pct: 10 }] }];
+    const herda = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : lotes));
+    expect(await depsPreview(herda.admin, cxT, { reverter: false }).configAtacado(['v1'])).toEqual({ faixas: null, divergente: true, lotesDivergentes: true, porCor: false });
+    const propria = [{ min_unidades: 3, desconto_pct: 1 }];
+    const cor = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: propria, familias: { codigo_pai: 'P' } }] : lotes));
+    expect(await depsPreview(cor.admin, cxT, { reverter: false }).configAtacado(['v1'])).toEqual({ faixas: propria, divergente: false, porCor: true });
+  });
+
+  it('caminho normal: canônica NULL e lote antigo com config recalcula as faixas, sem tocar em familias', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: cinco }]));
+    const vivo = { preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
+    const r = await montarPreview({ familias: [], ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }, {
+      expandir: async () => [{ ml_item_id: 'MLB1', codigo_pai: 'P', variacao_ids: [], variacoes_ml_esperadas: null, sku: null, titulo: null, ehKit: false, familiaPublicando: false, migracaoPxv: false }],
+      origem: async () => null, origemAtacado: async () => [], familiasAtacado: async () => new Map(), atacadoDoProduto: async () => new Map(),
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [{ min_unidades: 2, preco: 95 }], gravarFaixas: vi.fn() },
+      configAtacado: depsPreview(f.admin, cxT, { reverter: false }).configAtacado,
+      ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
+      variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
+      estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 100, preco_editado_pelo_operador: false }]]),
+      avaliar: async () => resumir([]),
+    });
+    expect(r.ok && r.itens[0]).toMatchObject({ situacao: 'elegivel', faixas_alvo: [{ min_unidades: 2, preco: 104.5 }] });
+    expect(r.ok && r.atacado_familias).toEqual([]);
+    expect(f.chamadas.flatMap((c) => c.ops.map(([n]) => n))).not.toContain('update');
+  });
+
+  it('familiasAtacado: olha todos os lotes do produto, filtrando por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const dez = [{ min_unidades: 2, desconto_pct: 10 }];
+    const linhas = [
+      { id: 'f1', codigo_pai: 'P1', atacado: cinco }, { id: 'f1b', codigo_pai: 'P1', atacado: cinco }, { id: 'f1c', codigo_pai: 'P1', atacado: null },
+      { id: 'f2', codigo_pai: 'P2', atacado: null }, { id: 'f2b', codigo_pai: 'P2', atacado: null },
+      { id: 'f3', codigo_pai: 'P3', atacado: cinco }, { id: 'f3b', codigo_pai: 'P3', atacado: dez },
+      { id: 'f4', codigo_pai: 'P4', atacado: null }, { id: 'f4b', codigo_pai: 'P4', atacado: cinco },
+    ];
+    const f = fakeAdmin((c) => {
+      if (c.tabela !== 'familias') return [{ familia_id: 'f2b' }];
+      return op(c, 'in')[0][0] === 'id' ? linhas.filter((l) => ['f1', 'f2', 'f3', 'f4'].includes(l.id)) : linhas;
+    });
+    // Canônica NULL (f4) enxerga a config do lote antigo.
+    const m = await depsPreview(f.admin, cxT, { reverter: false }).familiasAtacado(['f1', 'f2', 'f3', 'f4']);
+    expect(m.get('f1')).toEqual({ codigo_pai: 'P1', atacado: cinco, porCor: false, lotesDivergentes: false });
+    expect(m.get('f2')).toEqual({ codigo_pai: 'P2', atacado: null, porCor: true, lotesDivergentes: false });
+    expect(m.get('f3')).toMatchObject({ atacado: null, lotesDivergentes: true });
+    expect(m.get('f4')).toEqual({ codigo_pai: 'P4', atacado: cinco, porCor: false, lotesDivergentes: false });
+    for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[2], 'not')).toEqual([['atacado', 'is', null]]);
+  });
+
+  it('atacadoDoProduto: a config de cada produto; divergente ou sem config → null; filtra por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin(() => [
+      { id: 'a', codigo_pai: 'P', atacado: null }, { id: 'b', codigo_pai: 'P', atacado: cinco },
+      { id: 'c', codigo_pai: 'Q', atacado: cinco }, { id: 'd', codigo_pai: 'Q', atacado: [] },
+    ]);
+    const m = await depsPreview(f.admin, cxT, { reverter: false }).atacadoDoProduto(['P', 'Q', 'R']);
+    expect([m.get('P'), m.get('Q'), m.get('R')]).toEqual([cinco, null, null]);
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
+  });
+
+  it('familiasAtacado: família de outra org → ForaDaOrg', async () => {
+    await expect(depsPreview(fakeAdmin().admin, cxT, { reverter: false }).familiasAtacado(['f1'])).rejects.toEqual(new ForaDaOrg(['f1']));
+  });
+
+  it('origemAtacado: entradas da origem, nunca null', async () => {
+    const e = [{ familia_id: 'f', novo: [], esperado: null, status: 'aplicado', motivo: null }];
+    const d = (atacado_familias: unknown) => depsPreview(fakeAdmin(() => ({ atacado_familias })).admin, cxT, { reverter: true }).origemAtacado('o');
+    expect(await d(e)).toEqual(e);
+    expect(await d(null)).toEqual([]);
   });
 
   it('variacoesDoMlb não descarta linhas (plano/UP: ml_variation_id null → "")', async () => {
@@ -141,8 +319,115 @@ describe('depsPreview', () => {
     const f = fakeAdmin((c) => (c.tabela === 'operacoes_massa' ? { id: 'o' }
       : [{ ml_item_id: 'MLB1', codigo_pai: 'P1', preco: '110', preco_anterior: '100', estado_anterior: restaurar }]));
     const o = await depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }, { reverter: false }).origem('o');
-    expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar });
+    expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, passos: [], restaurar });
     expect(op(f.chamadas[1], 'eq')).toEqual(expect.arrayContaining([['org_id', 'org'], ['status', 'aplicado']]));
+  });
+});
+
+describe('ofertasBanco', () => {
+  const cx = { orgId: 'org', mlUserId: 'u', token: 't' };
+  const haMin = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const campanha = (status: string) => ({ tipo: 'DEAL', status, inicio: '2026-11-01T00:00:00+00:00', fim: '2026-11-30T00:00:00+00:00' });
+  const promo = (o: Record<string, unknown> = {}) => ({
+    org_id: 'org', promocao_id: 'P1', ml_item_id: 'MLB1', status: 'started', preco_promo: '39.90', anuncio_normal_id: null, ml_promocoes: campanha('started'), ...o,
+  });
+  const operacao = (o: Record<string, unknown> = {}) => ({
+    org_id: 'org', promocao_id: 'P2', ml_item_id: 'MLB1', status: 'aplicado', etapa: null, preco: '45.50', offer_id: null, atualizado_em: haMin(5),
+    operacoes_massa: { acao: 'aderir', promocao_tipo: 'DEAL' }, ...o,
+  });
+  const filtro = (c: Chamada, coluna: string) => (op(c, 'in') as [string, string[]][]).find(([col]) => col === coluna)?.[1];
+  // Aplica os filtros gravados: o teste prova o efeito no resultado, não só a chamada.
+  const banco = (promos: Record<string, unknown>[], ops: Record<string, unknown>[] = []) => fakeAdmin((c) => {
+    const daOrg = (r: Record<string, unknown>) => (op(c, 'eq') as [string, unknown][]).some(([col, v]) => col === 'org_id' && v === r.org_id);
+    const normais = filtro(c, 'anuncio_normal_id');
+    if (normais) return promos.filter((r) => daOrg(r) && normais.includes(r.anuncio_normal_id as string));
+    const ids = filtro(c, 'ml_item_id') ?? [];
+    if (c.tabela === 'operacoes_massa_itens') {
+      const [[, desde]] = op(c, 'gt') as [[string, string]];
+      const [[ou]] = op(c, 'or') as [[string]];
+      const etapa = /etapa\.eq\.(\w+)/.exec(ou)?.[1];
+      const status = /status\.in\.\(([^)]*)\)/.exec(ou)?.[1].split(',') ?? [];
+      return ops.filter((r) => daOrg(r) && ids.includes(r.ml_item_id as string) && (r.atualizado_em as string) > desde
+        && filtro(c, 'operacoes_massa.acao')?.includes((r.operacoes_massa as { acao: string }).acao)
+        && (r.etapa === etapa || status.includes(r.status as string)));
+    }
+    return promos.filter((r) => daOrg(r) && ids.includes(r.ml_item_id as string) && filtro(c, 'status')?.includes(r.status as string)
+      && filtro(c, 'ml_promocoes.status')?.includes((r.ml_promocoes as { status: string }).status));
+  });
+  const ler = (f: ReturnType<typeof banco>, ids = ['MLB1']) => depsPreview(f.admin, cx, { reverter: false }).ofertasBanco(ids);
+
+  it('oferta da Central entra com o preço do banco; id sem oferta vem vazio', async () => {
+    const f = banco([promo()]);
+    const r = await ler(f, ['MLB1', 'MLB2']);
+    expect(r.get('MLB1')).toEqual([{
+      chave: 'P1:2026-11-01T00:00:00+00:00', promocao_id: 'P1', tipo: 'DEAL', status: 'started', preco: 39.9, offer_id: null,
+      inicio: '2026-11-01T00:00:00+00:00', fim: '2026-11-30T00:00:00+00:00',
+    }]);
+    expect(r.get('MLB2')).toEqual([]);
+    for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', 'org']);
+  });
+
+  it("campanha 'finished' e item candidate não entram", async () => {
+    const r = await ler(banco([promo({ ml_promocoes: campanha('finished') }), promo({ promocao_id: 'P3', status: 'candidate' })]));
+    expect(r.get('MLB1')).toEqual([]);
+  });
+
+  it('par de catálogo: oferta e operação da linha do catálogo valem para o normal pedido', async () => {
+    const pares = [promo({ ml_item_id: 'MLBCAT', anuncio_normal_id: 'MLB1' }), promo({ promocao_id: 'P9', ml_item_id: 'MLBCAT', anuncio_normal_id: 'MLB1', status: 'candidate' })];
+    const r = await ler(banco(pares, [operacao({ ml_item_id: 'MLBCAT', etapa: 'escrita_pedida', status: 'erro' })]));
+    expect(r.get('MLB1')?.map((o) => o.promocao_id).sort()).toEqual(['P1', 'P2']);
+    expect([...r.keys()]).toEqual(['MLB1']);
+  });
+
+  it("aderir 'aplicado' há 5 min entra com o preço gravado; há 40 min não", async () => {
+    const r = await ler(banco([], [operacao(), operacao({ promocao_id: 'P3', atualizado_em: haMin(40) })]));
+    expect(r.get('MLB1')).toMatchObject([{ chave: 'P2:pending', promocao_id: 'P2', tipo: 'DEAL', status: 'pending', preco: 45.5 }]);
+  });
+
+  it("aderir 'erro' com etapa escrita_pedida há 5 min → preço null → maiorOferta null", async () => {
+    const r = await ler(banco([promo()], [operacao({ status: 'erro', etapa: 'escrita_pedida' })]));
+    expect(r.get('MLB1')).toHaveLength(2);
+    expect(maiorOferta(r.get('MLB1')!)).toBeNull();
+  });
+
+  it("aderir 'ja_estava' há 5 min, com a Central desatualizada → preço null → maiorOferta null", async () => {
+    const r = await ler(banco([promo({ status: 'candidate' })], [operacao({ status: 'ja_estava' })]));
+    expect(r.get('MLB1')).toMatchObject([{ promocao_id: 'P2', preco: null }]);
+    expect(maiorOferta(r.get('MLB1')!)).toBeNull();
+  });
+
+  it('não entram: outra ação, status sem escrita, outra org', async () => {
+    const sair = { operacoes_massa: { acao: 'sair', promocao_tipo: 'DEAL' } };
+    const r = await ler(banco([promo({ org_id: 'outra' })], [
+      operacao(sair), operacao({ ...sair, status: 'erro', etapa: 'escrita_pedida' }),
+      operacao({ operacoes_massa: { acao: 'reajustar', promocao_tipo: null } }),
+      operacao({ status: 'pendente' }), operacao({ status: 'erro' }), operacao({ status: 'mudou', etapa: 'ml_confirmado' }),
+      operacao({ org_id: 'outra' }),
+    ]));
+    expect(r.get('MLB1')).toEqual([]);
+  });
+
+  it('mesma oferta em duas operações: uma só, com o maior preço', async () => {
+    const r = await ler(banco([], [operacao({ offer_id: 'OFFER-1', preco: '41' }), operacao({ offer_id: 'OFFER-1', preco: '43' })]));
+    expect(r.get('MLB1')?.map((o) => o.preco)).toEqual([43]);
+  });
+
+  it('operações: só aderir/alterar_preco, com aplicado, ja_estava ou escrita pedida', async () => {
+    const f = banco([]);
+    await ler(f);
+    const c = f.chamadas.find((x) => x.tabela === 'operacoes_massa_itens')!;
+    expect(filtro(c, 'operacoes_massa.acao')).toEqual(['aderir', 'alterar_preco']);
+    expect(op(c, 'or')).toEqual([['etapa.eq.escrita_pedida,status.in.(aplicado,ja_estava)']]);
+  });
+
+  it('mais de 1000 linhas: pagina até o fim', async () => {
+    const pagina = Array.from({ length: 1000 }, (_, i) => promo({ promocao_id: `P${i}` }));
+    const f = fakeAdmin((c) => {
+      if (filtro(c, 'anuncio_normal_id') || c.tabela !== 'ml_promocao_itens') return [];
+      const [[de]] = op(c, 'range') as [[number]];
+      return de === 0 ? pagina : [promo({ promocao_id: 'ULTIMA' })];
+    });
+    expect((await ler(f)).get('MLB1')).toHaveLength(1001);
   });
 });
 

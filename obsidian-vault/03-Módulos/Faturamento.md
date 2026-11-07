@@ -16,8 +16,10 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
   (Reclamações, Devoluções, Mensagens). Reclamações e devoluções têm ações de escrita no ML
   (revisar devolução, responder dentro da reclamação com anexo, reembolsar, autorizar devolução,
   pedir mediação) com confirmação e trava anti-duplicação (`ml_posvenda_acoes`). O chat de
-  Mensagens por pack segue respondendo só texto por `responder-mensagem`, sem essa trava; abrir a
-  conversa marca a leitura também no ML.
+  Mensagens por pack responde por `responder-mensagem` pela mesma trava (`recurso = mensagem:{pack_id}`),
+  com um anexo opcional (JPG/PNG/PDF até 5 MB) e liberação manual quando o estado é incerto; anexos
+  recebidos e enviados aparecem no balão (emenda 07/11 aos ADR-0067 e ADR-0192). Abrir a conversa
+  marca a leitura também no ML.
   O webhook antigo de `messages`/`claims` nunca entregou nada — corrigido na emenda de 28/10 ao
   ADR-0067 (`messages` chega com id da mensagem; reclamação chega como `post_purchase`).
   Ver `docs/decisions/0192-posvenda-ml-acoes.md`.

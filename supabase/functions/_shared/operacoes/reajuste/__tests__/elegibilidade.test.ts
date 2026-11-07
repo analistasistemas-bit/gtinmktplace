@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type FatosElegibilidade, motivoInelegivel } from '../elegibilidade.ts';
+import { type FatosElegibilidade, motivoInelegivel, motivoTravaOferta } from '../elegibilidade.ts';
+import { oferta } from '../ofertas.ts';
+
+const o = (id: string, preco: number | null) => oferta({ promocao_id: id, tipo: 'DEAL', status: 'started', preco, offer_id: null, inicio: null, fim: null });
 
 const ok = (): FatosElegibilidade => ({
   vivo: { preco: 10, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false },
-  ehKit: false, temAtacado: false, promocaoBanco: false, promocaoML: false, familiaPublicando: false, migracaoPxv: false,
+  ehKit: false, ofertas: [], familiaPublicando: false, migracaoPxv: false,
 });
 const MODERADO = 'Anúncio moderado, encerrado ou inativo';
 
@@ -35,23 +38,22 @@ describe('motivoInelegivel', () => {
     expect(motivoInelegivel(a)).toBe(msg);
     expect(motivoInelegivel(b)).toBe(msg);
   });
-  it('atacado', () => expect(motivoInelegivel({ ...ok(), temAtacado: true })).toBe('Anúncio com preço de atacado fica fora do reajuste'));
-  it('promoção no banco ou no ML', () => {
-    expect(motivoInelegivel({ ...ok(), promocaoBanco: true })).toBe('Participando de promoção');
-    expect(motivoInelegivel({ ...ok(), promocaoML: true })).toBe('Participando de promoção');
+  it('oferta vigente deixa de excluir', () => {
+    expect(motivoInelegivel({ ...ok(), ofertas: [o('P', 39.9)] })).toBeNull();
   });
   it('promoção inconclusiva', () => {
-    expect(motivoInelegivel({ ...ok(), promocaoML: null })).toBe('Não foi possível conferir promoções — tente de novo');
+    expect(motivoInelegivel({ ...ok(), ofertas: null })).toBe('Não foi possível conferir promoções — tente de novo');
   });
-  it('promoção no banco vence a inconclusiva', () => {
-    expect(motivoInelegivel({ ...ok(), promocaoBanco: true, promocaoML: null })).toBe('Participando de promoção');
+  it.each(['LIGHTNING', 'SMART_LIGHTNING'])('%s é elegível em `started` e `pending` (Teste 2, 07/11): quem barra é a trava', (tipo) => {
+    expect(motivoInelegivel({ ...ok(), ofertas: [{ ...o('L', 100), tipo }] })).toBeNull();
+    expect(motivoInelegivel({ ...ok(), ofertas: [{ ...o('L', 100), tipo, status: 'pending' }] })).toBeNull();
   });
   it('família publicando', () => expect(motivoInelegivel({ ...ok(), familiaPublicando: true })).toBe('Família em publicação/atualização'));
   it('migração PxV', () => expect(motivoInelegivel({ ...ok(), migracaoPxv: true })).toBe('Migração para preço por variação em curso'));
-  it('ordem: moderado > kit > catálogo > atacado > promoção > inconclusiva > família > migração', () => {
+  it('ordem: moderado > kit > catálogo > inconclusiva > família > migração', () => {
     const t: FatosElegibilidade = {
       vivo: { preco: 10, variacoes: null, status: 'closed', sub_status: [], catalog_listing: true, tem_relacoes: true },
-      ehKit: true, temAtacado: true, promocaoBanco: true, promocaoML: null, familiaPublicando: true, migracaoPxv: true,
+      ehKit: true, ofertas: null, familiaPublicando: true, migracaoPxv: true,
     };
     expect(motivoInelegivel(t)).toBe(MODERADO);
     t.vivo.status = 'active';
@@ -59,14 +61,24 @@ describe('motivoInelegivel', () => {
     t.ehKit = false;
     expect(motivoInelegivel(t)).toBe('Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste');
     t.vivo.catalog_listing = false; t.vivo.tem_relacoes = false;
-    expect(motivoInelegivel(t)).toBe('Anúncio com preço de atacado fica fora do reajuste');
-    t.temAtacado = false;
-    expect(motivoInelegivel(t)).toBe('Participando de promoção');
-    t.promocaoBanco = false;
     expect(motivoInelegivel(t)).toBe('Não foi possível conferir promoções — tente de novo');
-    t.promocaoML = false;
+    t.ofertas = [];
     expect(motivoInelegivel(t)).toBe('Família em publicação/atualização');
     t.familiaPublicando = false;
     expect(motivoInelegivel(t)).toBe('Migração para preço por variação em curso');
+  });
+});
+
+describe('motivoTravaOferta', () => {
+  it('alvo igual ou abaixo da maior oferta trava; um centavo acima passa', () => {
+    expect(motivoTravaOferta(39.9, [o('P', 39.9)])).toBe('Preço igual ou abaixo da oferta de R$ 39,90 — ajuste a oferta antes');
+    expect(motivoTravaOferta(39.91, [o('P', 39.9)])).toBeNull();
+  });
+  it('vale a maior das ofertas', () => {
+    expect(motivoTravaOferta(50, [o('P', 39.9), o('Q', 1234.5)])).toMatch(/R\$ 1\.234,50/);
+  });
+  it('sem ofertas não trava', () => expect(motivoTravaOferta(10, [])).toBeNull());
+  it('oferta sem preço comprovado é inconclusiva', () => {
+    expect(motivoTravaOferta(500, [o('P', 39.9), o('Q', null)])).toBe('Não foi possível conferir promoções — tente de novo');
   });
 });

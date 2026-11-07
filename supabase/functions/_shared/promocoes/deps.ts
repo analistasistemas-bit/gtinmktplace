@@ -199,8 +199,8 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
       const del = await admin.from('ml_promocao_itens').delete()
         .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).lt('sincronizado_em', msg.rodada);
       falhou('concluir.delete', del.error);
-      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>>((de, ate) => admin.from('ml_promocao_itens')
-        .select('ml_item_id, status, pior_semaforo, ml_pct').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
+      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct' | 'preco_avaliado'>>((de, ate) => admin.from('ml_promocao_itens')
+        .select('ml_item_id, status, pior_semaforo, ml_pct, preco_avaliado').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
         .order('ml_item_id').range(de, ate) as never);
       // PostgREST compara timestamptz pelo instante: `eq` com o texto da mensagem funciona.
       const upd = await admin.from('ml_promocoes')

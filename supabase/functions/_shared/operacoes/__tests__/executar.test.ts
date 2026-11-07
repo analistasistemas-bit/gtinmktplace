@@ -11,7 +11,7 @@ const H = 3_600_000;
 
 type Linha = ItemRow & { mensagem?: string | null; offer_id?: string | null };
 const item = (id: string, x: Partial<Linha> = {}): Linha => ({
-  ml_item_id: id, preco: 10, status: 'pendente', conferencias: 0, semaforo: 'verde', confirmado_risco: false,
+  ml_item_id: id, preco: 20, status: 'pendente', conferencias: 0, semaforo: 'verde', confirmado_risco: false,
   proxima_conferencia: null, saida_pedida_em: null, ...x,
 });
 const conv = (x: Partial<ItemNaCampanha> = {}): ItemNaCampanha =>
@@ -99,10 +99,10 @@ describe('proximoIntervalo', () => {
 
 describe('executar — aderir', () => {
   it('DEAL: aplica, relê a campanha e espelha o status real com o tipo', async () => {
-    const itens = [item('MLB1', { preco: 12 })];
+    const itens = [item('MLB1', { preco: 19 })];
     const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? conv() : conv({ status: 'pending' })) });
     expect(await executar(DEAL_ADERIR, deps, OPTS)).toEqual({ processados: 1, continuou: false });
-    expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 12 });
+    expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 19 });
     expect(itens[0].status).toBe('aplicado');
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
     expect(deps.concluir).toHaveBeenCalledTimes(1);
@@ -111,11 +111,11 @@ describe('executar — aderir', () => {
 
   // Jaquetas da Zaven (03/11): aplicadas a R$ 49,90, Central seguia com R$ 63,72 e "0 participando" até o sync.
   it('espelha o preço aplicado e recalcula a contagem da campanha ao fim', async () => {
-    const itens = [item('MLB1', { preco: 12 }), item('MLB2', { preco: 12 })];
+    const itens = [item('MLB1', { preco: 19 }), item('MLB2', { preco: 19 })];
     const { deps } = montar(itens, { campanha: (_id, n) => (n % 2 === 1 ? conv() : conv({ status: 'started' })) });
     await executar(DEAL_ADERIR, deps, OPTS);
-    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 12);
-    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB2', 12);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB1', 19);
+    expect(deps.espelharPreco).toHaveBeenCalledWith('P-1', 'MLB2', 19);
     expect(deps.recontarCentral).toHaveBeenCalledTimes(1);
     expect(deps.recontarCentral).toHaveBeenCalledWith('P-1');
   });
@@ -123,8 +123,8 @@ describe('executar — aderir', () => {
   it('achado Codex P1: SMART não espelha preço (POST só leva offer_id; o preço é do ML), mesmo com preço do preview', async () => {
     const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
     // Fluxo real: validarPedido preenche o preço do SMART com o preco_promo do preview.
-    const itens = [item('MLB1', { preco: 15 })];
-    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1' }), post: () => ({ offer_id: 'O-1' }) });
+    const itens = [item('MLB1', { preco: 19.5 })];
+    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1', preco: 30 }), post: () => ({ offer_id: 'O-1' }) });
     deps.recontarCentral.mockRejectedValue(new Error('db'));
     expect(await executar(op, deps, OPTS)).toEqual({ processados: 1, continuou: false });
     expect(deps.espelharPreco).not.toHaveBeenCalled();
@@ -153,7 +153,7 @@ describe('executar — aderir', () => {
     const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
     const itens = [item('MLB1', { preco: null })];
     const { deps, ml } = montar(itens, {
-      campanha: () => conv({ offer_id: 'CANDIDATE-MLB1-1' }), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      campanha: () => conv({ offer_id: 'CANDIDATE-MLB1-1', preco: 30 }), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
     await executar(op, deps, OPTS);
     expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-1', promotion_type: 'SMART', offer_id: 'CANDIDATE-MLB1-1' });
     expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-MLB1-9' });
@@ -192,7 +192,7 @@ describe('executar — aderir', () => {
     const itens = [item('MLB1', { semaforo: 'amarelo' })];
     const { deps, ml } = montar(itens, { semaforo: 'vermelho' });
     await executar(DEAL_ADERIR, deps, OPTS);
-    expect(deps.semaforoAtual).toHaveBeenCalledWith('P-1', 'MLB1', 10);
+    expect(deps.semaforoAtual).toHaveBeenCalledWith('P-1', 'MLB1', 20);
     expect(ml.post).not.toHaveBeenCalled();
     expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O resultado piorou desde o preview' });
   });
@@ -915,7 +915,7 @@ describe('ofertas de preço fixo', () => {
     });
 
     it('DEAL não grava etapa e falha incerta segue virando erro', async () => {
-      const itens = [item('MLB1', { preco: 12 })];
+      const itens = [item('MLB1', { preco: 19 })];
       const { deps, ml } = montar(itens);
       vi.mocked(ml.post).mockRejectedValue(new Error('timeout'));
       expect(await executar(DEAL_ADERIR, deps, OPTS)).toEqual({ processados: 1, continuou: false });
@@ -1015,7 +1015,7 @@ describe('ofertas de preço fixo', () => {
     });
 
     it('etapa gravada em DEAL não muda o caminho (a retomada é só dos tipos novos)', async () => {
-      const itens = [item('MLB1', { preco: 12, ...etapa })];
+      const itens = [item('MLB1', { preco: 19, ...etapa })];
       const { deps, ml } = montar(itens);
       await executar(DEAL_ADERIR, deps, OPTS);
       expect(ml.post).toHaveBeenCalledTimes(1);

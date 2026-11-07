@@ -43,6 +43,9 @@ scope do momento da autorização.
 8. **Execução:** padrão do `sincronizar-promocoes` — QStash com continuação e orçamento de tempo por chamada.
 9. **Conflito com UPDATE:** a Revisão avisa quando a família tem anúncio participando de promoção ("mudar o
    preço pode tirar da promoção"); não bloqueia.
+   *Emenda 2026-11-07:* o UPDATE passa a recusar, com motivo, o produto cujo preço novo fica igual ou abaixo de oferta
+   vigente ou agendada (em produção desde 2026-11-07). A Revisão deixa de só avisar. Ver
+   [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md), emenda "Trava da oferta no UPDATE".
 10. **Prazo:** a 10.10 (adesão até 12/10) segue pelo Seller Center usando a Central para decidir. O motor mira as
     campanhas seguintes, sem atalho no spike nem na revisão.
 
@@ -55,6 +58,8 @@ scope do momento da autorização.
 3. Perguntas que o spike responde: payload aceito por tipo; erro com scope read-only; depois de sair da SMART, o
    ML inscreve de novo sozinho?; depois de sair, o anúncio volta a ser convidado?; mudar o preço base de item
    participando em DEAL: recusa ou remove?; rate limit de escrita.
+   *(Respondido em 2026-11-06 pelo [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md): base acima da
+   oferta não é recusado nem remove a oferta; base abaixo remove a oferta em até ~90 s.)*
 
 ### Resultado parcial do spike (2026-09-27, DSA, `MLB7553152348`)
 
@@ -299,6 +304,31 @@ hora**. As visões seguem `candidate` por ~2 min após o POST. `DELETE ?promotio
 5. **Aviso de tipo novo:** categoria `integracao` por org com `opcoes.chave`, fora de `alertas_promocoes_ativo`
    (desligado em todas as orgs) e sem reserva prévia (reserva sem entrega calaria o aviso para sempre).
 6. Constraint `operacoes_massa_promocao_tipo_check` aceita os dois tipos.
+
+## Emenda 2026-11-07 — piso de R$ 19 em todos os tipos de campanha
+
+A aba Sugestões oferecia a 11.11 (DEAL) a R$ 16,53 para produto de R$ 19,00: o piso valia só para Relâmpago e
+ofertas fixas. A razão do piso (abaixo de R$ 19 o frete é do comprador e pode custar mais que o produto) vale para
+qualquer campanha. Medido em 07/11 na org `a72ea303`: 373 de 905 convidados DEAL abaixo de R$ 19, 358 deles com
+preço original até R$ 19. Substitui o "Só Relâmpago" da emenda de 2026-11-02.
+
+1. **Desconto menor antes de esconder (pedido do Diego, 07/11):** sugerido abaixo de R$ 19 com faixa do ML que alcança
+   R$ 19 fica, avaliado em R$ 19 (ou no mínimo da faixa, se maior): `precoAvaliado` já projeta líquido e semáforo nesse
+   preço, e o painel abre nele. Vale para DEAL e Relâmpago; oferta de preço fixo não tem faixa.
+2. **Some da tela:** convidado que ainda fica abaixo de R$ 19 sai de Sugestões, da aba Convidados e da contagem da
+   campanha, em qualquer tipo. Sem preço avaliado fica (falta de dado não esconde).
+3. **Participante fica visível**, mesmo abaixo de R$ 19, para poder sair.
+4. **Trava no servidor:** aderir (DEAL, SMART) abaixo de R$ 19 é recusado na criação e na execução, mesmo com risco
+   confirmado. `alterar_preco` é recusado só na criação: a execução pode estar retomando um PUT já enviado, e
+   bloquear ali esconderia uma escrita incerta. Sair segue livre.
+5. **Reverter passa pela mesma trava:** voltar a preço abaixo de R$ 19 é recusado; o operador escolhe preço ≥ R$ 19
+   ou sai da campanha.
+6. **"Até quanto" para no piso:** o sync calcula na faixa real e limita o resultado a R$ 19, para o botão não sugerir
+   preço recusado. SMART sem preço da oferta não adere: sem ele o piso não é conferido.
+7. **Fora do escopo:** anúncios que já participam abaixo de R$ 19 não saem sozinhos, e o reajuste em massa
+   (ADR-0178) não passa por esta validação.
+8. **Implantação:** `preco_avaliado`, projeção e `ml_promocoes.contagem` são gravados, então só mudam quando o sync
+   roda. Depois do deploy, disparar `sincronizar-promocoes` em vez de esperar o cron diário.
 
 ## Consequências
 

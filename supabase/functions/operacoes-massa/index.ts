@@ -470,6 +470,7 @@ async function previewReajuste(admin: Admin, req: Request, bruto: unknown): Prom
   const expira_em = new Date(Date.now() + RASCUNHO_MS).toISOString();
   const { data: op, error: eOp } = await admin.from('operacoes_massa').insert({
     org_id: orgId, acao: 'reajustar', status: 'rascunho', expira_em, origem_id: pedido.origem_id ?? null, criado_por: userId,
+    atacado_familias: r.atacado_familias.length ? r.atacado_familias : null,
   }).select('id').single();
   if (eOp || !op) throw new Error(`criar rascunho: ${eOp?.message}`);
   const { error: eItens } = await admin.from('operacoes_massa_itens').insert(linhasDoRascunho(r.itens).map((i) => ({
@@ -531,13 +532,20 @@ async function retomarReajuste(admin: Admin, req: Request, bruto: unknown): Prom
   }
   const pedido = lerRetomar(bruto);
   if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
-  const { data, error } = await admin.from('operacoes_massa').select('acao, status')
+  const { data, error } = await admin.from('operacoes_massa').select('acao, status, atacado_familias')
     .eq('org_id', orgId).eq('id', pedido.operacao_id).maybeSingle();
   if (error) throw new Error(`operacoes_massa: ${error.message}`);
   const d = decidirRetomar(data);
   if (!d.ok) return json({ erro: d.erro }, d.status);
+  // Solta a família que já terminou, sem esperar os itens de outro produto que seguem em conferência.
+  const atacado = await admin.rpc('reajuste_atacado_concluir', { p_org: orgId, p_operacao: pedido.operacao_id });
+  if (atacado.error) throw new Error(`reajuste_atacado_concluir: ${atacado.error.message}`);
 
   const alvo = { type: 'operacao_massa', id: pedido.operacao_id } as const;
+  if (!d.publicar) {
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+    return json({ operacao_id: pedido.operacao_id });
+  }
   try {
     await qstashClient().publishJSON({
       url: urlOperacoes(), body: { etapa: 'executar', operacao_id: pedido.operacao_id }, retries: 3,

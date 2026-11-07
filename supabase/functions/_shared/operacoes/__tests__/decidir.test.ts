@@ -26,14 +26,18 @@ describe('decidir — aderir', () => {
   });
   it('o próprio de catálogo não é bloqueado', () => {
     const rel = { catalog_listing: true, relacionados: [{ id: 'MLB7', catalog_listing: true }] };
-    expect(decidir('aderir', 'DEAL', 'P-1', pedido(10), conv, rel).tipo).toBe('post');
+    expect(decidir('aderir', 'DEAL', 'P-1', pedido(19), { ...conv, preco_max: 50 }, rel).tipo).toBe('post');
   });
 });
 
 describe('decidir — aderir DEAL', () => {
   it('posta deal_price dentro da faixa', () => {
+    expect(decidir('aderir', 'DEAL', 'P-1', pedido(19), { ...conv, preco_max: 50 }, null))
+      .toEqual({ tipo: 'post', body: { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 19 } });
+  });
+  it('dentro da faixa mas abaixo de R$ 19 → bloqueado, sem POST', () => {
     expect(decidir('aderir', 'DEAL', 'P-1', pedido(18.99), conv, null))
-      .toEqual({ tipo: 'post', body: { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 18.99 } });
+      .toEqual({ tipo: 'fim', status: 'bloqueado', mensagem: 'Abaixo de R$ 19 o comprador perde o frete grátis' });
   });
   it('acima da faixa → mudou', () => {
     expect(decidir('aderir', 'DEAL', 'P-1', pedido(19.5), conv, null))
@@ -58,8 +62,16 @@ describe('decidir — aderir SMART', () => {
     expect(decidir('aderir', 'SMART', 'P-2', pedido(null), conv, null))
       .toEqual({ tipo: 'fim', status: 'erro', mensagem: 'O ML não informou a oferta deste convite' });
   });
-  it('posta offer_id do convite', () => {
+  it('preço vivo da oferta abaixo de R$ 19 → bloqueado, sem POST', () => {
+    expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9', preco: 18.5 }, null))
+      .toEqual({ tipo: 'fim', status: 'bloqueado', mensagem: 'Abaixo de R$ 19 o comprador perde o frete grátis' });
+  });
+  it('preço vivo ausente → erro, sem POST (sem ele o piso não é conferido)', () => {
     expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9' }, null))
+      .toEqual({ tipo: 'fim', status: 'erro', mensagem: 'O ML não informou o preço da oferta' });
+  });
+  it('posta offer_id do convite', () => {
+    expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9', preco: 30 }, null))
       .toEqual({ tipo: 'post', body: { promotion_id: 'P-2', promotion_type: 'SMART', offer_id: 'CANDIDATE-MLB1-9' } });
   });
 });
@@ -187,6 +199,9 @@ describe('decidir — alterar_preco', () => {
   it('participando com outro preço → PUT do deal_price', () => {
     expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(43.9), part, null))
       .toEqual({ tipo: 'put', body: { promotion_id: 'P-1', promotion_type: 'DEAL', deal_price: 43.9 } });
+  });
+  it('piso fica na criação: retomada de PUT já enviado não vira bloqueado (achado Codex)', () => {
+    expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(18.99), part, null).tipo).toBe('put');
   });
   it('preço vivo já é o pedido → ja_estava (idempotente: retry não escreve)', () => {
     expect(decidir('alterar_preco', 'DEAL', 'P-1', pedido(49.9), part, null)).toEqual({ tipo: 'fim', status: 'ja_estava', mensagem: null });

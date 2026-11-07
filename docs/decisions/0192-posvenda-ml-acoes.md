@@ -89,3 +89,19 @@ A confirmação exigia `return_id` novo, mas o return só nasce quando o comprad
 tentativa ficava em `enviada` com o diálogo girando, embora o ML já mostrasse "Reclamação com
 devolução habilitada". A evidência positiva agora é `claims/{id}/actions-history`: `allow_return`
 do `respondent` após o POST (folga de 60 s: o ML grava em segundos). `return_id` novo segue valendo.
+
+## Emenda 2026-11-07 — `ml_posvenda_acoes` também trava envio de mensagem por pack
+
+A tabela passa a registrar a tentativa de resposta de mensagem pós-venda (ADR-0067, emenda de 07/11),
+que não tem `claim_id`. Migration `20261107163534_posvenda_acoes_pack.sql`:
+- `claim_id` aceita null e entra `pack_id text`; o check `ml_posvenda_acoes_alvo_check` exige exatamente um
+  dos dois. Índices únicos e RLS não mudam (a trava segue por `org_id + recurso`, aqui `mensagem:{pack_id}`).
+- Fluxos de reclamação leem só linhas com `claim_id`; os de pack, só linhas com `pack_id`
+  (`posvenda-acao-io.ts` mudou, por isso `posvenda-acao` e `reconciliar-faturamento` são redeployadas).
+- **Confirmação:** id devolvido pelo POST quando houver; sem id, mensagem nova em relação ao snapshot
+  `antes` com texto e anexos correspondentes. Moderação `clean` confirma; `rejected` comprovada vira
+  `recusada` (HTTP 422); pendente ou ambígua mantém a trava.
+- **Saída da trava em pack:** a condição de reclamações (ação fora de `available_actions`) não existe aqui.
+  A liberação é manual e humana (`inconclusiva`), registrada na auditoria. Cliente sem `operacao_id`
+  (bundle antigo do PWA) não tem essa saída: o envio sem confirmação vira `inconclusiva` na hora, sem novo POST.
+- Anexos de mensagem não são guardados em storage próprio (decisão 7 segue valendo).

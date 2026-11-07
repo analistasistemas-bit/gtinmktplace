@@ -34,7 +34,7 @@ function op(over: Partial<OperacaoRow> = {}): OperacaoRow {
   return {
     id: 'OP1', org_id: 'ORG1', acao: 'aderir', promocao_id: 'P1', promocao_nome: 'Campanha X', promocao_tipo: 'DEAL',
     status: 'concluida', criado_em: '2026-09-01T10:00:00Z', criado_por: 'U1', concluido_em: '2026-09-01T10:05:00Z',
-    origem_id: null, expira_em: null, sugestao: null, itens: [], ...over,
+    origem_id: null, expira_em: null, sugestao: null, atacado_familias: null, itens: [], ...over,
   };
 }
 function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
@@ -44,6 +44,7 @@ function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
     conferencias: 0, proxima_conferencia: null, saida_pedida_em: null, atualizado_em: '2026-09-01T10:05:00Z',
     preco_anterior: null, etapa: null, confirmado_sem_dado: false, incluido: true, avaliacao: null,
     estado_anterior: null, variacoes_ml: null, variacao_ids: null, codigo_pai: null,
+    passos: null, lease_token: null, lease_ate: null, avaliacoes: null,
     ...over,
   };
 }
@@ -474,7 +475,7 @@ describe('ListaOperacoes', () => {
     it('título conta só os incluídos; status "Executando" só para executando', () => {
       vi.mocked(useOperacoes).mockReturnValue({ data: [reaj(), reaj({ id: 'OP2', status: 'concluida' })], isLoading: false } as never);
       renderLista();
-      expect(screen.getAllByText('Reajustar preço de 2 anúncios')).toHaveLength(2);
+      expect(screen.getAllByText('Alterar preço de 2 anúncios')).toHaveLength(2);
       expect(screen.getByText('1/2')).toBeInTheDocument(); // progresso só sobre os incluídos (aplicado + conferindo)
       // chips também só sobre os incluídos: bloqueado/ja_estava com incluido=false não aparecem
       expect(screen.queryByText(/^Bloqueado/)).not.toBeInTheDocument();
@@ -491,7 +492,7 @@ describe('ListaOperacoes', () => {
         itemLog({ ml_item_id: 'MLB2', status: 'conferindo', preco_anterior: 20, preco: 22 }),
       ] } as never);
       renderLista();
-      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
       expect(screen.getByText(/R\$\s10,00 → R\$\s11,00/)).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Reverter' }));
       expect(screen.getByTestId('preview-reajuste')).toHaveTextContent('{"origem_id":"OP1"}');
@@ -503,7 +504,7 @@ describe('ListaOperacoes', () => {
       vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
       vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: vencido })] } as never);
       renderLista();
-      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
       await user.click(screen.getByRole('button', { name: 'Retomar' }));
       expect(retomarMut).toHaveBeenCalledWith('OP1');
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Operação retomada'));
@@ -516,15 +517,39 @@ describe('ListaOperacoes', () => {
       vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
       vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: futuro })] } as never);
       const { unmount } = renderLista();
-      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
       expect(screen.queryByRole('button', { name: 'Retomar' })).not.toBeInTheDocument();
       unmount();
 
       vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: vencido })] } as never);
       vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
       renderLista();
-      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
       expect(screen.queryByRole('button', { name: 'Retomar' })).not.toBeInTheDocument();
+    });
+
+    it('detalhe: mensagem de faixas pendentes no item aplicado e atacado não confirmado com o motivo', async () => {
+      const user = userEvent.setup();
+      const familia = { familia_id: 'F1', novo: [], esperado: [], status: 'nao_aplicado', motivo: 'Atacado mudou depois do preview' };
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj({ status: 'concluida', atacado_familias: [familia] as never })], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [
+        itemLog({ ml_item_id: 'MLB1', status: 'aplicado', preco_anterior: 10, preco: 11, mensagem: 'Preço aplicado, mas as faixas de atacado não foram atualizadas' }),
+      ] } as never);
+      renderLista();
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
+      expect(screen.getByText('Preço aplicado, mas as faixas de atacado não foram atualizadas')).toBeInTheDocument();
+      expect(screen.getByText('Atacado da família não confirmado')).toBeInTheDocument();
+      expect(screen.getByText('Atacado mudou depois do preview')).toBeInTheDocument();
+    });
+
+    it('detalhe: atacado aplicado não mostra o aviso de não confirmado', async () => {
+      const user = userEvent.setup();
+      const familia = { familia_id: 'F1', novo: [], esperado: [], status: 'aplicado', motivo: null };
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj({ status: 'concluida', atacado_familias: [familia] as never })], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'aplicado' })] } as never);
+      renderLista();
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
+      expect(screen.queryByText('Atacado da família não confirmado')).not.toBeInTheDocument();
     });
 
     it('sem item aplicado não há Reverter', async () => {
@@ -532,7 +557,7 @@ describe('ListaOperacoes', () => {
       vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
       vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo' })] } as never);
       renderLista();
-      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByText('Alterar preço de 2 anúncios'));
       expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
     });
   });

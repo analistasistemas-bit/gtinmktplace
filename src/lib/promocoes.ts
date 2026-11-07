@@ -165,6 +165,12 @@ export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; moti
   return { valor: null, motivo: null };
 }
 
+/** Abaixo disto o comprador perde o frete grátis (regra do Diego), em qualquer tipo de campanha. */
+export const PRECO_MIN_PROMOCAO = 19;
+/** Convidado com preço de campanha abaixo do piso não aparece; participante fica, para poder sair. */
+export const convidadoAbaixoDoPiso = (i: Pick<ItemPromocao, 'status' | 'preco_avaliado'>) =>
+  i.status === 'candidate' && i.preco_avaliado != null && i.preco_avaliado < PRECO_MIN_PROMOCAO;
+
 /** Convidado = `candidate`; participando = `started` ou `pending` (inscrito em campanha futura); outro status não aparece. */
 export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo | null; participando: boolean }): ItemPromocao[] {
   return itens.filter((i) => (f.participando ? i.status === 'started' || i.status === 'pending' : i.status === 'candidate')

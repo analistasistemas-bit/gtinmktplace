@@ -1,4 +1,4 @@
-// I5 — diálogo do reajuste de preço em massa (Publicados): Aumentar/Diminuir × %/R$ + valor → preview no servidor.
+// I5 — diálogo do reajuste de preço em massa (Publicados): Aumentar/Diminuir × %/R$, ou Definir R$ (ADR-0196), + valor → preview no servidor.
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -26,23 +26,26 @@ export function DialogReajuste({ quantidade, onFechar, onVerPreview }: {
     <Dialog open onOpenChange={(o) => { if (!o) onFechar(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Reajustar preço</DialogTitle>
+          <DialogTitle>Alterar preço</DialogTitle>
           <DialogDescription>
             {quantidade} anúncio{quantidade === 1 ? '' : 's'} selecionado{quantidade === 1 ? '' : 's'}. Você confere cada preço no preview antes de executar.
           </DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
-          onSubmit={(e) => { e.preventDefault(); if (valido) onVerPreview({ tipo, sentido, valor: valor! }); }}
+          onSubmit={(e) => { e.preventDefault(); if (valido) onVerPreview({ tipo, sentido: tipo === 'definir' ? '+' : sentido, valor: valor! }); }}
         >
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Sentido">
-            <ChipFiltro ativo={sentido === '+'} onClick={() => setSentido('+')}>Aumentar</ChipFiltro>
-            <ChipFiltro ativo={sentido === '-'} onClick={() => setSentido('-')}>Diminuir</ChipFiltro>
-          </div>
+          {tipo !== 'definir' && (
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Sentido">
+              <ChipFiltro ativo={sentido === '+'} onClick={() => setSentido('+')}>Aumentar</ChipFiltro>
+              <ChipFiltro ativo={sentido === '-'} onClick={() => setSentido('-')}>Diminuir</ChipFiltro>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-2" role="group" aria-label="Tipo">
               <ChipFiltro ativo={tipo === 'pct'} onClick={() => setTipo('pct')}>%</ChipFiltro>
               <ChipFiltro ativo={tipo === 'reais'} onClick={() => setTipo('reais')}>R$</ChipFiltro>
+              <ChipFiltro ativo={tipo === 'definir'} onClick={() => setTipo('definir')}>Definir R$</ChipFiltro>
             </div>
             <Input
               value={texto} onChange={(e) => setTexto(e.target.value)} inputMode="decimal"

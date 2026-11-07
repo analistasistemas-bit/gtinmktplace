@@ -236,6 +236,9 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
     setAbertaId(null);
   }
 
+  // Edição do % de atacado que não chegou ao banco (`nao_aplicado`): o preço pode ter mudado e a família segue como estava.
+  const atacadoNaoConfirmado = (Array.isArray(opAberta?.atacado_familias) ? opAberta.atacado_familias as { familia_id: string; status?: string; motivo?: string | null }[] : [])
+    .filter((e) => e?.status === 'nao_aplicado');
   const retomar = useRetomarOperacao();
   const podeRetomar = podeExecutar && !!opAberta && precisaRetomar(opAberta, itensOp.data ?? [], Date.now());
   async function retomarOperacao() {
@@ -329,6 +332,16 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' | 'publicados' 
                   );
                 })}
               </ul>
+              {atacadoNaoConfirmado.length > 0 && (
+                <ul className="flex flex-col gap-1 border-t px-4 py-3 text-sm" aria-label="Atacado não confirmado">
+                  {atacadoNaoConfirmado.map((e) => (
+                    <li key={e.familia_id}>
+                      <p className="font-medium">Atacado da família não confirmado</p>
+                      {e.motivo && <p className="text-xs text-muted-foreground">{e.motivo}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {podeRetomar && (
                 <div className="flex items-center justify-between gap-3 border-t p-4">
                   <p className="text-sm text-muted-foreground">A conferência parou de rodar.</p>

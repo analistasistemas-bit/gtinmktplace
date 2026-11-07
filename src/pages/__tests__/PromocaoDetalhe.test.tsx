@@ -97,6 +97,31 @@ describe('PromocaoDetalhe', () => {
     expect(screen.getByText('10%')).toBeTruthy();
   });
 
+  it('convidado abaixo de R$ 19 some da aba; sem preço avaliado continua', () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    const abaixo = { ...item, ml_item_id: 'MLB2', titulo: 'Barato demais', preco_avaliado: 16.53 } as ItemPromocao;
+    const noPiso = { ...item, ml_item_id: 'MLB3', titulo: 'No piso', preco_avaliado: 19 } as ItemPromocao;
+    const semPreco = { ...item, ml_item_id: 'MLB4', titulo: 'Sem preço', preco_avaliado: null } as ItemPromocao;
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [abaixo, noPiso, semPreco], isLoading: false } as never);
+
+    renderDetalhe();
+
+    expect(screen.queryByText('Barato demais')).toBeNull();
+    expect(screen.getAllByText('No piso').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Sem preço').length).toBeGreaterThan(0);
+  });
+
+  it('participante abaixo de R$ 19 continua visível para poder sair', async () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    const participa = { ...item, status: 'started', titulo: 'Participa barato', preco_avaliado: 16.53 } as ItemPromocao;
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [participa], isLoading: false } as never);
+
+    renderDetalhe();
+    await userEvent.setup().click(screen.getByRole('tab', { name: /Participando/ }));
+
+    expect(screen.getAllByText('Participa barato').length).toBeGreaterThan(0);
+  });
+
   it('mostra líquido e markup no cartão mobile e abre o sheet ao clicar', async () => {
     const user = userEvent.setup();
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);

@@ -1,6 +1,7 @@
 // I5 C3 — decisão pura por item conforme a etapa gravada. Conferência (escrita_pedida) só lê, nunca reescreve.
 import { centavos } from './alvo.ts';
-import type { Etapa } from './tipos.ts';
+import { mesmasFaixas } from './faixas.ts';
+import type { Etapa, FaixaPreco, Passo } from './tipos.ts';
 
 export type Vivo = { kind: 'ok'; preco: number; todasIguais: boolean; composicao: string[] | null } | { kind: 'falhou' };
 export type DecisaoReajuste = { tipo: 'persistir' } | { tipo: 'escrever' } | { tipo: 'voltar_pendente' }
@@ -34,4 +35,16 @@ export function decidirReajuste(
     return { tipo: 'fim', status: 'mudou', mensagem: 'O preço mudou desde o preview' };
   }
   return { tipo: 'escrever' };
+}
+
+/** Onde o ML está para um passo com escrita pedida. Base: `vivo` de `lerVivo`; faixas: lista de `lerFaixas` (null = inconclusivo). */
+export function reconciliarPasso(passo: Passo, vivo: Vivo | FaixaPreco[] | null, composicao: string[] | null = null): 'alvo' | 'anterior' | 'indefinido' {
+  if (passo.tipo === 'faixas') {
+    if (!Array.isArray(vivo)) return 'indefinido';
+    return mesmasFaixas(vivo, passo.alvo) ? 'alvo' : mesmasFaixas(vivo, passo.anterior) ? 'anterior' : 'indefinido';
+  }
+  if (passo.tipo !== 'base') throw new Error(`passo ${passo.tipo} ainda não é executado (ADR-0196)`);
+  if (vivo === null || Array.isArray(vivo)) return 'indefinido';
+  const d = decidirReajuste('escrita_pedida', passo.alvo, passo.anterior, vivo, composicao);
+  return d.tipo === 'persistir' ? 'alvo' : d.tipo === 'voltar_pendente' ? 'anterior' : 'indefinido';
 }

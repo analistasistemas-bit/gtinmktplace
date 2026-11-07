@@ -9,6 +9,8 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { AtributoItem, ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
+import { criarClienteReajusteML } from '../operacoes/reajuste/ml.ts';
+import { aplicarAtacadoPorItem, type ItemAtacado } from './atacado-por-item.ts';
 import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
 import { criarItemML, atualizarSecaoCores } from '../ml/criar-item.ts';
 import { atualizarSecaoTamanhos, tamanhosDaGradeCopy } from '../ai/copywriter-prompt.ts';
@@ -82,6 +84,9 @@ export interface AtualizarFamiliaUPArgs {
    * promete mexer só na cor nova.
    */
   preservarPublicadas?: boolean;
+  /** Trava da oferta (emenda ADR-0196): SKUs cujo preço o reconciliador recusou. Ficam com o preço vivo em qualquer
+   *  status; `preservarPublicadas` só cobre filhos já ativos. */
+  semPrecoPara?: string[];
   /** Nº de tentativas do QStash (orçamento de retry do desfecho `incompleto`, Fix 4b). */
   tentativas: number;
   /** Reconciliador de convergência: converge pro `skus_esperados` JÁ GRAVADO na raiz (o snapshot
@@ -131,15 +136,6 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   for (const v of variacoes) {
     precoPorSku[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
   }
-  // Base do atacado (PxQ) e do LOUD de divergência. O PxQ é por ITEM na API do ML, e nesta entrega
-  // o atacado segue família-level (decisão de escopo): com preços divergentes não há base
-  // única legítima, então o caminho falha alto em vez de escolher uma cor arbitrária.
-  const precosDistintos = new Set(
-    variacoes.map((v) => (v.preco_publicacao != null ? Math.round(Number(v.preco_publicacao) * 100) : null))
-      .filter((c): c is number => c != null),
-  );
-  const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-  const precoFamilia = precoRaw != null ? Number(precoRaw) : null;
   // I7: cores cujo ATACADO difere do da família (ADR-0078 F2 grava config por variação quando os
   // preços divergem). O caminho UP só sabe aplicar a config família-level — honrar metade seria
   // publicar dinheiro diferente do configurado.
@@ -175,6 +171,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   if (args.preservarPublicadas) {
     for (const sku of jaAtivos) precoPorSku[sku] = null;
   }
+  const semPrecoPara = new Set(args.semPrecoPara);
+  for (const sku of semPrecoPara) precoPorSku[sku] = null;
 
   // aceitaEmptyGtin: lido do schema da categoria (como o CREATE/publish faz) p/ a cor nova.
   // `valoresCor` sai do MESMO schema: a cor nova precisa nascer com o `value_id` do dicionário
@@ -456,9 +454,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       await alertarFalhaLoud(`⚠️ Família ${familia.codigo_pai}: descrição/atacado NÃO sincronizados nesta rodada\n\nA consulta dos itens ativos falhou após mudança de composição.\nErro: ${finaisErr.message}`);
       return;
     }
-    const finais = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
+    const finaisComSku = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
       .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id)
-      .map((f) => f.item_externo_id as string);
+      .map((f) => ({ id: f.item_externo_id as string, sku: f.sku as string }));
+    const finais = finaisComSku.map((f) => f.id);
     // `concluido` só é retornado quando TODA cor desejada está confirmada `ativo` (senão a saga
     // devolve `incompleto`/`erro`) — logo finais=[] aqui só é alcançável com skusDesejados=[], ou
     // seja, a família ficaria sem nenhuma cor. Suportado pela SAGA (não é um estado que ela proíbe),
@@ -552,10 +551,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       const jaAplicado = familia.atacado_status === 'aplicado';
       const aplicandoFaixas = faixas.length > 0;
       if (aplicandoFaixas || jaAplicado) {
-        if (aplicandoFaixas && precoFamilia == null) {
-          const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
-        } else if (aplicandoFaixas && configPorCor.length > 0) {
+        if (aplicandoFaixas && configPorCor.length > 0) {
           // `aplicandoFaixas &&` é essencial: sem ele, uma família com `atacado_status='aplicado'` e
           // faixas REMOVIDAS (o operador desligou o atacado) caía aqui e nunca chegava ao ramo que
           // LIMPA o PxQ no ML. Resultado: o app diria "erro" e o Mercado Livre seguiria vendendo no
@@ -576,28 +572,30 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
             + 'atacado do Mercado Livre é único por família. Desligue o atacado desta família para '
             + 'que a configuração por cor deixe de valer.';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
-        } else if (aplicandoFaixas && precosDistintos.size > 1) {
-          // ADR-0160 (I5). O PxQ é por ITEM na API do ML e o valor é ABSOLUTO (ADR-0041): com
-          // preços diferentes entre as cores não existe base única legítima. Usar `precoFamilia`
-          // (a primeira cor) daria a todos os itens um preço B2B calculado sobre outra cor —
-          // desconto de atacado errado, em dinheiro, sem ninguém perceber. Nada financeiro pode
-          // defaultar em silêncio (ADR-0055): registra erro e não aplica.
-          //
-          // Sai desta trava quando o atacado passar a ser por variação (fora do escopo desta
-          // entrega, por decisão de 2026-09-08): aí a base é o preço do próprio item.
-          const m = 'Atacado não aplicado: as cores têm preços diferentes e o preço de atacado do '
-            + 'Mercado Livre é único por anúncio. Deixe o preço uniforme, ou desligue o atacado '
-            + 'nesta família.';
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else {
-          let ok = true;
-          for (const id of finais) {
-            try { await conn.aplicarAtacado(ctx, id, precoFamilia ?? 0, faixas); }
-            catch (e) { ok = false; console.error(`atacado UP (update) falhou (${id}):`, e); }
+          // ADR-0196: a base é o preço do próprio item. I10: cor já ativa não tem preço aqui, nem SKU da trava da
+          // oferta. Com faixas vivas fica como está; sem elas (ativada numa tentativa que falhou) entra pelo preço
+          // vivo. Leitura inconclusiva → preço nulo → erro. Limpar alcança todos e não depende de preço.
+          const itens: ItemAtacado[] = [];
+          for (const { id, sku } of finaisComSku) {
+            const precoRetido = semPrecoPara.has(sku) || (args.preservarPublicadas && jaAtivos.has(sku));
+            if (!aplicandoFaixas || !precoRetido) {
+              itens.push({ id, preco: precoPorSku[sku] ?? null });
+              continue;
+            }
+            try {
+              const ml = criarClienteReajusteML(await ctx.getToken());
+              const vivas = await ml.lerFaixas(id);
+              if (!vivas?.length) itens.push({ id, preco: vivas ? (await ml.lerVivo(id)).preco : null });
+            } catch (e) {
+              console.error(`atacado UP (update): leitura falhou (${id}):`, e);
+              itens.push({ id, preco: null });
+            }
           }
+          const erro = await aplicarAtacadoPorItem(conn, ctx, itens, faixas);
           await admin.from('familias')
-            .update(ok ? { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null }
-              : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' })
+            .update(erro ? { atacado_status: 'erro', atacado_erro: erro }
+              : { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null })
             .eq('id', familia.id);
         }
       }

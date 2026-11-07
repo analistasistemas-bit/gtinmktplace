@@ -1,6 +1,6 @@
 // Emenda ADR-0174 (2026-11-03) — busca e "mesmo preço/desconto" para um produto e suas variações no detalhe
 // da campanha. Regras puras; o líquido no preço escolhido vem SEMPRE do servidor (etapa 'simular').
-import { corDeReferencia, type ItemPromocao, type SemaforoPromo, type CorProjetada } from '@/lib/promocoes';
+import { corDeReferencia, PRECO_MIN_PROMOCAO, type ItemPromocao, type SemaforoPromo, type CorProjetada } from '@/lib/promocoes';
 
 export type ModoAlvo = 'desconto' | 'preco';
 export type ResultadoSimulacao =
@@ -9,7 +9,6 @@ export type ResultadoSimulacao =
 
 /** Mesmo teto do servidor (`_shared/operacoes/simular.ts#MAX_SIMULAR`). */
 export const MAX_SIMULAR = 50;
-export const PRECO_MIN_RELAMPAGO = 19;
 
 const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const reais = (n: number) => n.toFixed(2).replace('.', ',');
@@ -37,11 +36,11 @@ export const descontoInvalido = (modo: ModoAlvo, valor: number | null) => modo =
 export const AVISO_DESCONTO = 'Desconto vai até 99%. Para digitar o preço, escolha Preço R$.';
 
 /** Mesmas travas de `operacoes/validar.ts` (o preview bloqueia; aqui só avisa). */
-export function foraDaFaixa(it: ItemPromocao, preco: number, tipo: string): string | null {
+export function foraDaFaixa(it: ItemPromocao, preco: number): string | null {
   if (it.preco_min != null && it.preco_max != null && (preco < it.preco_min || preco > it.preco_max)) {
     return `Fora da faixa do ML (R$ ${reais(it.preco_min)} a R$ ${reais(it.preco_max)})`;
   }
-  if (tipo === 'LIGHTNING' && preco < PRECO_MIN_RELAMPAGO) return 'Abaixo de R$ 19 o comprador perde o frete grátis';
+  if (preco < PRECO_MIN_PROMOCAO) return 'Abaixo de R$ 19 o comprador perde o frete grátis';
   return null;
 }
 

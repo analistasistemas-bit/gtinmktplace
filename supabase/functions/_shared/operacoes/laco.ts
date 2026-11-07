@@ -43,7 +43,7 @@ async function finalizar(operacaoId: string, deps: DepsLaco, processados: number
 }
 
 /** Agenda a próxima conferência para quando o primeiro item vencer; sem itens → conclui. */
-export async function agendarOuConcluir(deps: DepsLaco, aConferir: ItemRow[]): Promise<void> {
+export async function agendarOuConcluir(deps: Pick<DepsLaco, 'agora' | 'agendarConferencia' | 'concluir'>, aConferir: ItemRow[]): Promise<void> {
   const vencimentos = aConferir.map((i) => Date.parse(i.proxima_conferencia ?? '')).filter(Number.isFinite);
   if (!vencimentos.length) return deps.concluir();
   await deps.agendarConferencia(Math.max(1, Math.ceil((Math.min(...vencimentos) - deps.agora()) / 1000)));

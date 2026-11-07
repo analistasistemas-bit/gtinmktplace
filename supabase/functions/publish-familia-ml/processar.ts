@@ -23,6 +23,7 @@ import {
   lerFormatoPublicacao, confirmarFormatoPublicacao, formatoRepoSupabase, type FormatoRepo,
 } from '../_shared/ml/formato-publicacao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { aplicarAtacadoPorItem, type ItemAtacado } from '../_shared/user-products/atacado-por-item.ts';
 import { publicarFamiliaUP, type PublicarFamiliaUPArgs, type ResultadoUP } from '../_shared/user-products/publicar-familia-up.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { itemConfirmarCriado } from '../_shared/confirmacao/registrar.ts';
@@ -79,6 +80,25 @@ async function limparCacheFotosFamilia(admin: SupabaseClient, familiaId: string)
   }).eq('id', familiaId);
 }
 
+/** Itens do anúncio no retry do atacado. UP: `ml_item_id` é só o 1º filho, cada filho tem o seu preço. Legacy: um item,
+ *  com preço único (ADR-0160); preços diferentes ficam sem base e viram erro. */
+async function itensDoAtacado(
+  admin: SupabaseClient, orgId: string, mlItemId: string, precos: Map<string, number | null>,
+): Promise<ItemAtacado[]> {
+  const tabela = () => admin.from('anuncios_externos_itens');
+  const raiz = await tabela().select('anuncio_externo_id').eq('org_id', orgId).eq('item_externo_id', mlItemId);
+  if (raiz.error) throw new Error(`atacado (retry): ${raiz.error.message}`);
+  const rootId = raiz.data?.[0]?.anuncio_externo_id;
+  if (!rootId) {
+    const distintos = new Set([...precos.values()].filter((p) => p !== null));
+    return [{ id: mlItemId, preco: distintos.size === 1 ? [...distintos][0] : null }];
+  }
+  const filhos = await tabela().select('sku, item_externo_id, status, retirado').eq('org_id', orgId).eq('anuncio_externo_id', rootId);
+  if (filhos.error) throw new Error(`atacado (retry): ${filhos.error.message}`);
+  return (filhos.data ?? []).filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id)
+    .map((f) => ({ id: f.item_externo_id as string, preco: precos.get(f.sku as string) ?? null }));
+}
+
 export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
   const formatoRepo = deps.formatoRepo ?? formatoRepoSupabase(admin);
@@ -110,21 +130,13 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       const faixasJa = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
       if (faixasJa.length > 0 && familia.atacado_status !== 'aplicado') {
         const { data: vs } = await admin.from('variacoes')
-          .select('preco_publicacao').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
-        const baseRaw = vs?.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-        const base = baseRaw != null ? Number(baseRaw) : null;
-        if (base != null) {
-          try {
-            await conn.aplicarAtacado(ctx, familia.ml_item_id, base, faixasJa);
-            await admin.from('familias').update({ atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
-          } catch (e) {
-            const m = e instanceof Error ? e.message : String(e);
-            console.error(`atacado (retry) falhou para ${familia.ml_item_id}:`, m);
-            await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
-          }
-        } else {
-          console.warn('atacado (retry): sem preco_publicacao nas variacoes para familia', job.familia_id);
-        }
+          .select('codigo, preco_publicacao').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
+        const precos = new Map((vs ?? []).map((v) => [v.codigo as string, v.preco_publicacao == null ? null : Number(v.preco_publicacao)]));
+        const itens = await itensDoAtacado(admin, familia.org_id, familia.ml_item_id, precos);
+        const erro = await aplicarAtacadoPorItem(conn, ctx, itens, faixasJa);
+        await admin.from('familias').update(erro
+          ? { atacado_status: 'erro', atacado_erro: erro }
+          : { atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
       }
     } catch (e) {
       console.error('atacado (bloco retry) falhou inesperadamente:', e instanceof Error ? e.message : String(e));

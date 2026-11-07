@@ -65,7 +65,7 @@ export function depsAcaoReal(admin: SupabaseClient, ctx: CtxAcao): DepsAcao {
     },
 
     async abertas({ limite, depoisId, giro }) {
-      let q = admin.from(T).select('*').eq('org_id', ctx.orgId)
+      let q = admin.from(T).select('*').eq('org_id', ctx.orgId).not('claim_id', 'is', null)
         .or('estado.in.(reservada,enviada,desconhecido),sync_pendente.eq.true');
       // Fan-out: keyset por id (uuid) — a página seguinte começa depois da última, mesmo travada.
       // Legado (giro): fila por atualizado_em — toda linha relida é tocada e vai para o fim.

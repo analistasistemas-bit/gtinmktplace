@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { reconciliarConvergencia, type PortasConvergencia, type ClaimResultado } from '../reconciliar-convergencia';
 
 // ADR-0088 — Reconciliador de CONVERGÊNCIA. Escopo desta entrega: só mudando_composicao=true
@@ -20,6 +20,26 @@ function fakePortas(over: Partial<PortasConvergencia> = {}): PortasConvergencia 
     ...over,
   };
 }
+
+describe('reconciliarConvergencia — orçamento de checagem da rodada', () => {
+  it('esgotado: as demais raízes ficam para a próxima rodada, sem claim (não gasta tentativa) e sem saga', async () => {
+    let resumidas = 0;
+    const portas = fakePortas({
+      orcamentoEsgotado: () => resumidas >= 1,
+      resumirComposicao: async () => { resumidas += 1; return { estado: 'ok' }; },
+    });
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await reconciliarConvergencia(portas, ['root-1', 'root-2', 'root-3']);
+    expect(r).toEqual([
+      { rootId: 'root-1', tipo: 'convergiu' }, { rootId: 'root-2', tipo: 'adiada' }, { rootId: 'root-3', tipo: 'adiada' },
+    ]);
+    expect(portas.claimados).toEqual(['root-1']);
+    expect(resumidas).toBe(1);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0]![0])).toMatch(/2 raiz/);
+    log.mockRestore();
+  });
+});
 
 describe('reconciliarConvergencia — claim atômico', () => {
   it('perde o claim (null) → tipo perdeu_claim, NUNCA chama resumirComposicao', async () => {

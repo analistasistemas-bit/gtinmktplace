@@ -123,109 +123,239 @@ describe('putPreco', () => {
   });
 });
 
-describe('participaPromocaoML', () => {
+describe('lerOfertas', () => {
   const URL_ITEM = `${API}/seller-promotions/items/MLB1?app_version=v2`;
   const urlCand = (pid: string, tipo: string) =>
     `${API}/seller-promotions/promotions/${pid}/items?promotion_type=${tipo}&item_id=MLB1&app_version=v2`;
   const GET = { headers: { Authorization: 'Bearer tok' } };
+  const LGH = {
+    id: 'LGH-MLB1000', type: 'LIGHTNING', status: 'pending', price: 131.97, original_price: 189.9, ref_id: 'OFFER-9',
+    start_date: '2026-11-07T00:00:00', finish_date: '2026-11-07T11:59:59',
+  };
 
-  it('started → true', async () => {
-    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'P1', type: 'DEAL', status: 'started' }]));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(true);
+  it('LGH pending → oferta com o preço, id da oferta em ref_id e janela', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [LGH]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([{
+      chave: 'OFFER-9', promocao_id: 'LGH-MLB1000', tipo: 'LIGHTNING', status: 'pending', preco: 131.97, offer_id: 'OFFER-9',
+      inicio: '2026-11-07T00:00:00', fim: '2026-11-07T11:59:59',
+    }]);
     expect(f).toHaveBeenCalledWith(URL_ITEM, GET);
+  });
+
+  it('duas ofertas na mesma Relâmpago, sem id → chaves distintas pela janela', async () => {
+    const semId = { ...LGH, ref_id: undefined };
+    const f = vi.fn().mockResolvedValue(resp(200, [semId, { ...semId, start_date: '2026-11-08T00:00:00', status: 'started' }]));
+    const r = await criarClienteReajusteML('tok', f).lerOfertas('MLB1');
+    expect(r?.map((x) => x.chave)).toEqual(['LGH-MLB1000:2026-11-07T00:00:00', 'LGH-MLB1000:2026-11-08T00:00:00']);
+  });
+
+  it('oferta sem preço utilizável → preço null (bloqueia), nunca descartada', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'D1', type: 'DEAL', status: 'started' }, { id: 'D2', type: 'DEAL', status: 'started', price: 0 }]));
+    expect((await criarClienteReajusteML('tok', f).lerOfertas('MLB1'))?.map((x) => x.preco)).toEqual([null, null]);
+  });
+
+  it('oferta ativa sem id de campanha continua contando', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'started', price: 50 }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ promocao_id: 'PRICE_DISCOUNT', preco: 50 }]);
+  });
+
+  it('finished e candidate sem id → sem ofertas, sem consultar campanha', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'P', type: 'DEAL', status: 'finished' }, { type: 'PRICE_DISCOUNT', status: 'candidate' }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
     expect(f).toHaveBeenCalledTimes(1);
   });
 
-  it('pending → true', async () => {
-    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'P1', type: 'DEAL', status: 'pending' }]));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(true);
-  });
-
-  it('lista vazia → false', async () => {
-    const f = vi.fn().mockResolvedValue(resp(200, []));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
-  });
-
-  it('candidate com visão da campanha started → true', async () => {
-    const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started' }] }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(true);
-    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
-  });
-
-  it('candidate com visão da campanha candidate → false', async () => {
-    const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }, { id: 'P2', type: 'DEAL', status: 'finished' }]))
-      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'candidate' }] }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
+  it('409 depois 200 → sucesso', async () => {
+    const f = vi.fn().mockResolvedValueOnce(resp(409)).mockResolvedValueOnce(resp(200, [LGH]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toHaveLength(1);
     expect(f).toHaveBeenCalledTimes(2);
   });
 
-  it('candidate com visão da campanha sem status → null (inconclusivo)', async () => {
-    const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', offer_id: 'OFFER-X' }] }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+  it('409 duas vezes → null, sem terceira tentativa', async () => {
+    const f = vi.fn().mockImplementation(async () => resp(409));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    expect(f).toHaveBeenCalledTimes(2);
   });
 
-  it('candidate com visão da campanha results vazio → false', async () => {
+  it.each([[500], [403], [404]])('%i → null', async (status) => {
+    const f = vi.fn().mockResolvedValue(resp(status));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetch lança, corpo não-lista ou entrada sem status → null', async () => {
+    const cli = (f: unknown) => criarClienteReajusteML('tok', f as typeof fetch);
+    expect(await cli(vi.fn().mockRejectedValue(new TypeError('network'))).lerOfertas('MLB1')).toBeNull();
+    expect(await cli(vi.fn().mockResolvedValue(resp(200, { erro: 'x' }))).lerOfertas('MLB1')).toBeNull();
+    expect(await cli(vi.fn().mockResolvedValue(resp(200, [{ id: 'P', type: 'DEAL' }]))).lerOfertas('MLB1')).toBeNull();
+  });
+
+  it.each([[''], ['paused_x']])('status %j na visão por item → null', async (status) => {
+    const f = vi.fn().mockResolvedValue(resp(200, [LGH, { id: 'P', type: 'DEAL', status }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+  });
+
+  it.each([[''], ['paused_x']])('status %j na visão da campanha → null', async (status) => {
     const f = vi.fn()
       .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+  });
+
+  describe('paginação da visão da campanha', () => {
+    const CAND = [{ id: 'C1', type: 'SMART', status: 'candidate' }];
+    const pagina = (status: string, paging?: unknown) => resp(200, { results: [{ status, price: 80 }], paging });
+
+    it.each([['searchAfter'], ['search_after']])('oferta na página seguinte (%s) é lida', async (campo) => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { [campo]: 'c 1' }))
+        .mockResolvedValueOnce(pagina('started'));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ preco: 80 }]);
+      expect(f).toHaveBeenNthCalledWith(3, `${urlCand('C1', 'SMART')}&search_after=c%201`, GET);
+    });
+
+    it('cursor com página seguinte vazia → fim, sem ofertas', async () => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { searchAfter: 'c1' }))
+        .mockResolvedValueOnce(resp(200, { results: [], paging: { searchAfter: 'c2' } }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
+      expect(f).toHaveBeenCalledTimes(3);
+    });
+
+    it('falha na página seguinte → null', async () => {
+      const f = vi.fn()
+        .mockResolvedValueOnce(resp(200, CAND))
+        .mockResolvedValueOnce(pagina('candidate', { searchAfter: 'c1' }))
+        .mockResolvedValueOnce(resp(500));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    });
+
+    it('cursor repetido com itens → null, sem laço', async () => {
+      const f = vi.fn().mockResolvedValueOnce(resp(200, CAND)).mockImplementation(async () => pagina('candidate', { searchAfter: 'c1' }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+      expect(f).toHaveBeenCalledTimes(3);
+    });
+
+    it('páginas sem fim → null', async () => {
+      let n = 0;
+      const f = vi.fn().mockResolvedValueOnce(resp(200, CAND)).mockImplementation(async () => pagina('candidate', { searchAfter: `c${++n}` }));
+      expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    });
+  });
+
+  it('candidate que a visão da campanha mostra started → oferta com o preço e o offer_id dela', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate', price: 90 }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started', price: 80, offer_id: 'OFFER-1' }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([
+      { chave: 'OFFER-1', promocao_id: 'C1', tipo: 'SMART', status: 'started', preco: 80, offer_id: 'OFFER-1' },
+    ]);
+    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
+  });
+
+  it('visão da campanha com CANDIDATE e OFFER do mesmo item → vale a participando', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'candidate', ref_id: 'CANDIDATE-1' }, { status: 'started', price: 80, ref_id: 'OFFER-1' }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ offer_id: 'OFFER-1', preco: 80 }]);
+  });
+
+  it('candidate que segue candidate, ou fora da campanha → sem ofertas', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }, { id: 'C2', type: 'DEAL', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'candidate' }] }))
       .mockResolvedValueOnce(resp(200, { results: [] }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
   });
 
-  it('falha na visão da campanha → null', async () => {
+  it('visão da campanha: 409 repete uma vez', async () => {
     const f = vi.fn()
       .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockResolvedValueOnce(resp(500));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+      .mockResolvedValueOnce(resp(409))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'started', price: 80 }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toHaveLength(1);
   });
 
-  it('visão da campanha lança → null', async () => {
+  it.each([
+    ['falha', () => resp(500)],
+    ['resultado sem status', () => resp(200, { results: [{ offer_id: 'OFFER-X' }] })],
+    ['corpo sem results', () => resp(200, {})],
+  ])('visão da campanha inconclusiva (%s) → null, mesmo com outra oferta lida', async (_nome, campanha) => {
     const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockRejectedValueOnce(new TypeError('network'));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+      .mockResolvedValueOnce(resp(200, [LGH, { id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(campanha());
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
   });
+});
 
-  it('404 na visão por item → null', async () => {
-    const f = vi.fn().mockResolvedValue(resp(404, { message: 'not found' }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+describe('lerFaixas', () => {
+  const b2b = (min: number | undefined, amount: unknown, type = 'standard') => ({
+    type, amount, conditions: { context_restrictions: ['channel_marketplace', 'user_type_business'], min_purchase_unit: min },
   });
+  const base = { type: 'standard', amount: 100, conditions: { context_restrictions: ['channel_marketplace'] } };
+  const ler = (r: Response | Error) => {
+    const f = vi.fn(async () => { if (r instanceof Error) throw r; return r; });
+    return { f, p: criarClienteReajusteML('tok', f as never).lerFaixas('MLB1') };
+  };
 
-  it('403 na visão por item → null', async () => {
-    const f = vi.fn().mockResolvedValue(resp(403));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+  it('só as faixas B2B, ordenadas; pede show-all-prices', async () => {
+    const promo = { type: 'promotion', amount: 80, conditions: { context_restrictions: ['channel_marketplace'] } };
+    const { f, p } = ler(resp(200, { id: 'MLB1', prices: [base, b2b(5, 90), promo, b2b(2, '95.5')] }));
+    expect(await p).toEqual([{ min_unidades: 2, preco: 95.5 }, { min_unidades: 5, preco: 90 }]);
+    expect(f).toHaveBeenCalledWith(`${API}/items/MLB1/prices`, { headers: { Authorization: 'Bearer tok', 'show-all-prices': 'TRUE' } });
   });
-
-  it('200 com corpo não-lista → null', async () => {
-    const f = vi.fn().mockResolvedValue(resp(200, { erro: 'x' }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+  it('promoção B2B não é faixa', async () => {
+    expect(await ler(resp(200, { prices: [base, b2b(undefined, 80, 'promotion')] })).p).toEqual([]);
   });
-
-  // ML real: PRICE_DISCOUNT candidate vem SEM id (desconto próprio possível, não campanha).
-  it('candidate sem id (PRICE_DISCOUNT) → false, sem consultar campanha', async () => {
-    const f = vi.fn().mockResolvedValue(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: '', type: 'X', status: 'candidate' }]));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
-    expect(f).toHaveBeenCalledTimes(1);
+  it('sem faixas → []', async () => expect(await ler(resp(200, { prices: [base] })).p).toEqual([]));
+  it.each([
+    ['status 500', () => resp(500)],
+    ['status 404', () => resp(404)],
+    ['corpo sem prices', () => resp(200, {})],
+    ['corpo vazio', () => resp(200)],
+    ['faixa B2B sem quantidade', () => resp(200, { prices: [b2b(undefined, 90)] })],
+    ['faixa B2B sem valor', () => resp(200, { prices: [b2b(2, null)] })],
+    ['rede', () => new Error('boom')],
+  ])('%s → null (inconclusivo)', async (_n, r) => expect(await ler(r()).p).toBeNull());
+  it.each([401, 403])('%i → SemAcessoStatusML', async (s) => {
+    await expect(ler(resp(s)).p).rejects.toBeInstanceOf(SemAcessoStatusML);
   });
+});
 
-  it('candidate sem id + candidate com id cuja campanha está started → true', async () => {
-    const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started' }] }));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(true);
-    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
-    expect(f).toHaveBeenCalledTimes(2);
+describe('gravarFaixas', () => {
+  const faixas = [{ min_unidades: 5, preco: 90 }, { min_unidades: 2, preco: 95.5 }];
+  const preco = (min_purchase_unit: number, amount: number) => ({
+    type: 'standard', amount, currency_id: 'BRL',
+    conditions: { context_restrictions: ['channel_marketplace', 'user_type_business'], min_purchase_unit },
   });
+  const gravar = (r: Response | Error, fs = faixas) => {
+    const f = vi.fn(async (_u: string, _i: RequestInit) => { if (r instanceof Error) throw r; return r; });
+    return { f, p: criarClienteReajusteML('tok', f as never).gravarFaixas('MLB1', fs) };
+  };
 
-  it('candidate sem id + candidate com id cuja campanha falha → null', async () => {
-    const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: 'C1', type: 'SMART', status: 'candidate' }]))
-      .mockResolvedValueOnce(resp(500));
-    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
-    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
+  it('POST full-replace, só as faixas, ordenadas', async () => {
+    const { f, p } = gravar(resp(201, {}));
+    expect(await p).toEqual({ kind: 'ok' });
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe(`${API}/items/MLB1/prices/standard/quantity`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ prices: [preco(2, 95.5), preco(5, 90)] });
+  });
+  it('[] limpa', async () => {
+    const { f, p } = gravar(resp(200, {}), []);
+    await p;
+    expect(JSON.parse(f.mock.calls[0][1].body as string)).toEqual({ prices: [] });
+  });
+  it('4xx → sem_escrita', async () => {
+    expect(await gravar(resp(400, { message: 'recusado' })).p).toEqual({ kind: 'sem_escrita', status: 400, mensagem: 'recusado' });
+  });
+  it('5xx e rede → desconhecido', async () => {
+    expect((await gravar(resp(502)).p).kind).toBe('desconhecido');
+    expect((await gravar(new Error('boom')).p).kind).toBe('desconhecido');
+  });
+  it.each([401, 403])('%i → SemAcessoStatusML', async (s) => {
+    await expect(gravar(resp(s)).p).rejects.toBeInstanceOf(SemAcessoStatusML);
   });
 });
