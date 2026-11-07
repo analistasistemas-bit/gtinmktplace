@@ -33,8 +33,8 @@ export interface DepsReajuste extends Omit<DepsLaco, 'reivindicar' | 'gravarItem
   reivindicar(operacaoId: string, mlItemId: string): Promise<string | null>;
   /** RPC `reajuste_item_gravar`. */
   gravarItem(operacaoId: string, mlItemId: string, token: string, campos: Partial<CamposItem>): Promise<boolean>;
-  /** RPC `reajuste_passo_marcar`. */
-  marcarPasso(operacaoId: string, mlItemId: string, token: string, indice: number, estado: EstadoPasso): Promise<boolean>;
+  /** RPC `reajuste_passo_marcar`. `recusada`: conta em `recusas_volta`. */
+  marcarPasso(operacaoId: string, mlItemId: string, token: string, indice: number, estado: EstadoPasso, recusada?: boolean): Promise<boolean>;
   /** Re-leitura APÓS o claim (etapa atual). `restaurar` = coluna `estado_anterior` (EntradaRestauracao[]). */
   lerItem(operacaoId: string, mlItemId: string): Promise<ItemReajuste>;
   /** Avaliação com tarifa fresca (C1, sem cache). */
@@ -60,6 +60,7 @@ export const MSG_NAO_APLICADO = 'Preço não aplicado pelo ML';
 export const MSG_FAIXAS_PENDENTES = 'Preço aplicado, mas as faixas de atacado não foram atualizadas';
 export const MSG_FAIXAS_MUDARAM = 'As faixas de atacado mudaram desde o preview — refaça o preview';
 export const MSG_COMPENSADO = 'Alteração desfeita — refaça o preview';
+export const MSG_FAIXAS_NAO_RESTAURADAS = 'Faixas de atacado não restauradas';
 const MSG_ATACADO_ILEGIVEL = 'Não foi possível ler o atacado — tente de novo';
 const MSG_FAIXAS_NAO_APLICADAS = 'Faixas de atacado não aplicadas pelo ML';
 const MSG_SEM_PASSOS = 'Preview anterior à execução por passos — refaça o preview';
@@ -91,9 +92,10 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
   const posse = (ok: boolean) => { if (!ok) throw new SemPosse(); };
   const gravar = async (c: Partial<CamposItem>) => posse(await deps.gravarItem(op.id, ml, token, c));
   const agendar = async () => posse(await deps.agendarConferenciaItem(op.id, ml, token, item.conferencias));
-  const marcar = async (i: number, estado: EstadoPasso) => {
-    posse(await deps.marcarPasso(op.id, ml, token, i, estado));
+  const marcar = async (i: number, estado: EstadoPasso, recusada = false) => {
+    posse(await (recusada ? deps.marcarPasso(op.id, ml, token, i, estado, true) : deps.marcarPasso(op.id, ml, token, i, estado)));
     passos[i].estado = estado;
+    if (recusada) passos[i].recusas_volta = (passos[i].recusas_volta ?? 0) + 1;
     if (estado === 'escrita_pedida') passos[i].tentativas = (passos[i].tentativas ?? 0) + 1;
     if (estado === 'escrita_pedida' || estado === 'volta_pedida') etapa = 'escrita_pedida';
   };
@@ -133,7 +135,8 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
   };
 
   /** Desfaz em ordem inversa. Só com tudo reconciliado e o base provado no anterior: as faixas de volta não podem cruzar
-   *  um base que desceu. Na dúvida, `conferindo`: nunca compensa sobre incerteza. */
+   *  um base que desceu. Na dúvida, `conferindo`: nunca compensa sobre incerteza. Recusa definitiva repete até o limite e
+   *  desiste com `erro`, soltando a reserva: só faixas chegam aqui, sempre abaixo do base. */
   const compensar = async (status: 'mudou' | 'erro', mensagem: string) => {
     if (passos.some((p) => p.estado === 'confirmado' || p.estado === 'volta_pendente')) {
       if (decidirReajuste(null, item.preco, item.preco_anterior, await lerBase(), composicao).tipo !== 'escrever') return agendar();
@@ -149,8 +152,16 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
         const acao = operar(p);
         let onde = reconciliarPasso(p, await acao.ler(), composicao);
         if (onde === 'alvo') {
+          const desistiu = () => (p.recusas_volta ?? 0) >= TENTATIVAS_REAJUSTE;
+          const desistir = () => gravar({ status: 'erro', etapa: null, mensagem: MSG_FAIXAS_NAO_RESTAURADAS });
+          if (desistiu()) return desistir();
           await marcar(i, 'volta_pedida');
-          if ((await acao.escrever(false)).kind !== 'ok') return agendar();
+          const r = await acao.escrever(false);
+          if (r.kind === 'sem_escrita') {
+            await marcar(i, 'volta_pendente', true);
+            return desistiu() ? desistir() : agendar();
+          }
+          if (r.kind !== 'ok') return agendar();
           onde = reconciliarPasso(p, await acao.ler(), composicao);
         }
         if (onde !== 'anterior') return agendar();
@@ -203,10 +214,13 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     const esperadas = passoFaixas && (passoFaixas.estado === 'confirmado' ? passoFaixas.alvo : passoFaixas.anterior);
     const faixasMudaram = op.origem_id ? MSG_ATACADO_MUDOU : MSG_FAIXAS_MUDARAM;
     if (esperadas && !mesmasFaixas(vivas, esperadas)) return { status: 'mudou', mensagem: faixasMudaram };
-    if (passoFaixas) {
+    // Sem passo de faixas, o Reverter de origem com edição leva a config no base.
+    const baseConferido = passos.find((p): p is Extract<Passo, { tipo: 'base' }> => p.tipo === 'base' && p.config !== undefined);
+    const conferida = passoFaixas ?? baseConferido;
+    if (conferida) {
       const config = await deps.configAtacado(item.variacao_ids);
-      if (passoFaixas.familia_id && config.porCor) return { status: 'mudou', mensagem: MSG_ATACADO_POR_COR };
-      if (config.divergente || !mesmaConfig(config.faixas, passoFaixas.config)) return { status: 'mudou', mensagem: faixasMudaram };
+      if ((baseConferido || passoFaixas?.familia_id) && config.porCor) return { status: 'mudou', mensagem: MSG_ATACADO_POR_COR };
+      if (config.divergente || !mesmaConfig(config.faixas, conferida.config ?? null)) return { status: 'mudou', mensagem: faixasMudaram };
     }
     const trava = motivoTravaOferta(item.preco, ofertas!);
     if (trava) return { status: 'mudou', mensagem: trava, inconclusiva: ofertas!.some((o) => o.preco === null) };

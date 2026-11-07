@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  executarReajuste, MSG_COMPENSADO, MSG_FAIXAS_MUDARAM, MSG_FAIXAS_PENDENTES, MSG_FINANCEIRO, MSG_NAO_APLICADO, MSG_SEM_CONFIRMACAO,
+  executarReajuste, MSG_COMPENSADO, MSG_FAIXAS_MUDARAM, MSG_FAIXAS_NAO_RESTAURADAS, MSG_FAIXAS_PENDENTES, MSG_FINANCEIRO, MSG_NAO_APLICADO, MSG_SEM_CONFIRMACAO,
   type DepsReajuste, type ItemReajuste, type OperacaoReajusteRow, type ResultadoPersistir,
 } from '../executar.ts';
 import { resumir } from '../avaliacao.ts';
@@ -78,13 +78,14 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>, atacado: Record<
       Object.assign(achar(id), campos);
       return true;
     }),
-    marcarPasso: vi.fn(async (_o: string, id: string, token: string, indice: number, estado: EstadoPasso) => {
+    marcarPasso: vi.fn(async (_o: string, id: string, token: string, indice: number, estado: EstadoPasso, recusada?: boolean) => {
       const i = achar(id);
       if (!dono(i, token)) return false;
       const naVolta = i.passos.some((p) => ['volta_pendente', 'volta_pedida', 'compensado'].includes(p.estado));
       if (naVolta && ['pendente', 'escrita_pedida', 'confirmado'].includes(estado)) throw new Error('em compensação não retoma a ida');
       i.passos[indice].estado = estado;
       if (estado === 'escrita_pedida') i.passos[indice].tentativas = (i.passos[indice].tentativas ?? 0) + 1;
+      if (recusada) i.passos[indice].recusas_volta = (i.passos[indice].recusas_volta ?? 0) + 1;
       if (estado === 'escrita_pedida' || estado === 'volta_pedida') i.etapa = 'escrita_pedida';
       return true;
     }),
@@ -1169,16 +1170,16 @@ describe('executarReajuste — passos', () => {
       expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida' });
     });
 
-    it.each<[string, ResultadoPut]>([
-      ['recusada', { kind: 'sem_escrita', status: 400, mensagem: 'não' }],
-      ['incerta', { kind: 'desconhecido', mensagem: 'timeout' }],
-    ])('escrita de volta %s → conferindo, reserva mantida', async (_n, r) => {
+    it.each<[string, ResultadoPut, EstadoPasso]>([
+      ['recusada', { kind: 'sem_escrita', status: 400, mensagem: 'não' }, 'volta_pendente'],
+      ['incerta', { kind: 'desconhecido', mensagem: 'timeout' }, 'volta_pedida'],
+    ])('escrita de volta %s → conferindo, reserva mantida', async (_n, r, estado) => {
       const itens = [descendo(['confirmado', 'pendente'])];
       const deps = montar(itens, { A: plano(100) }, { A: F72 });
       deps.ml.lerOfertas.mockResolvedValue([of(95)]);
       deps.ml.gravarFaixas.mockResolvedValue(r);
       await executarReajuste(OP, deps, OPTS);
-      expect(estados(itens[0])).toEqual(['volta_pedida', 'pendente']);
+      expect(estados(itens[0])).toEqual([estado, 'pendente']);
       expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida' });
       expect(deps.ml.putPreco).not.toHaveBeenCalled();
     });
@@ -1335,5 +1336,90 @@ describe('executarReajuste — atacado por família', () => {
     await executarReajuste(op, deps, OPTS);
     expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_ATACADO_MUDOU });
     expect(deps.ml.gravarFaixas).not.toHaveBeenCalled();
+  });
+
+  describe('Reverter de `nao_aplicado` só com base', () => {
+    const op = { ...OP, origem_id: 'o' };
+    const baseConferido: Passo = { ...base(110, 100), config: ANTES } as Passo;
+    const voltar = () => [item('A', { preco: 100, preco_anterior: 110, passos: [structuredClone(baseConferido)], avaliacoes: [precoBase(100)] })];
+
+    it('config intacta → reverte', async () => {
+      const itens = voltar();
+      const deps = montar(itens, { A: plano(110) });
+      deps.configAtacado.mockResolvedValue({ faixas: ANTES, divergente: false });
+      await executarReajuste(op, deps, OPTS);
+      expect(deps.ml.putPreco).toHaveBeenCalledWith('A', 100, null);
+      expect(itens[0].status).toBe('aplicado');
+    });
+
+    it.each<[string, ConfigMlb, string]>([
+      ['% mudou', { faixas: [{ min_unidades: 2, desconto_pct: 10 }], divergente: false }, MSG_ATACADO_MUDOU],
+      ['cor com config própria', { faixas: ANTES, divergente: false, porCor: true }, MSG_ATACADO_POR_COR],
+    ])('%s depois do preview → mudou, sem PUT', async (_n, config, mensagem) => {
+      const itens = voltar();
+      const deps = montar(itens, { A: plano(110) });
+      deps.configAtacado.mockResolvedValue(config);
+      await executarReajuste(op, deps, OPTS);
+      expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem });
+      expect(deps.ml.putPreco).not.toHaveBeenCalled();
+    });
+
+    it('base sem config da origem não consulta o atacado', async () => {
+      const itens = [item('A')];
+      const deps = montar(itens, { A: plano(100) });
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.configAtacado).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recusa na compensação', () => {
+    const novasDesc = [{ min_unidades: 2, preco: 85 }];
+    const descendo = () => [item('A', { preco: 90, preco_anterior: 100, passos: [daFamilia({ alvo: novasDesc }), base(100, 90)], avaliacoes: [precoFaixa(novasDesc[0]), precoBase(90)] })];
+    /** Roda até o item sair de `conferindo`, com a conferência vencida a cada rodada. */
+    async function rodadas(itens: Linha[], deps: ReturnType<typeof montar>, n: number) {
+      for (let i = 0; i < n && itens[0].status === 'conferindo'; i++) {
+        itens[0].proxima_conferencia = PASSADO;
+        await executarReajuste(OP, deps, OPTS);
+      }
+    }
+    const montarRecusa = (volta: ResultadoPut) => {
+      const itens = descendo();
+      const deps = montarFamilia(itens, { faixas: ANTES, divergente: false });
+      deps.ml.putPreco.mockResolvedValue({ kind: 'sem_escrita', status: 400, mensagem: 'recusado' });
+      const gravar = deps.ml.gravarFaixas.getMockImplementation()!;
+      deps.ml.gravarFaixas.mockImplementation(async (id, fs) => (fs === novasDesc || fs[0].preco === 85 ? gravar(id, fs) : volta));
+      return { itens, deps };
+    };
+    const voltas = (deps: ReturnType<typeof montar>) => deps.ml.gravarFaixas.mock.calls.filter(([, fs]) => fs[0].preco === 95).length;
+
+    it('recusa definitiva: repete até o limite, termina `erro` e solta a reserva', async () => {
+      const { itens, deps } = montarRecusa({ kind: 'sem_escrita', status: 400, mensagem: 'não' });
+      await executarReajuste(OP, deps, OPTS);
+      expect(itens[0].status).toBe('conferindo');
+      await rodadas(itens, deps, 8);
+      expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_FAIXAS_NAO_RESTAURADAS });
+      expect(voltas(deps)).toBe(3);
+      expect(deps.concluir).toHaveBeenCalled();
+      expect(deps.ml.putPreco).toHaveBeenCalledTimes(1);
+    });
+
+    it('volta incerta segue `conferindo`, sem limite', async () => {
+      const { itens, deps } = montarRecusa({ kind: 'desconhecido' });
+      await executarReajuste(OP, deps, OPTS);
+      await rodadas(itens, deps, 8);
+      expect(itens[0].status).toBe('conferindo');
+      expect(voltas(deps)).toBeGreaterThan(3);
+      expect(deps.concluir).not.toHaveBeenCalled();
+    });
+
+    it('recusa e depois aceita: compensa normalmente', async () => {
+      const { itens, deps } = montarRecusa({ kind: 'sem_escrita', status: 429, mensagem: 'não' });
+      await executarReajuste(OP, deps, OPTS);
+      const gravar = deps.ml.gravarFaixas;
+      gravar.mockImplementation(async () => ({ kind: 'ok' }));
+      deps.ml.lerFaixas.mockResolvedValue(vivas);
+      await rodadas(itens, deps, 3);
+      expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_COMPENSADO });
+    });
   });
 });

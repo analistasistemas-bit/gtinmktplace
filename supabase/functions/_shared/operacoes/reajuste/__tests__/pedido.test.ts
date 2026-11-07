@@ -133,7 +133,11 @@ describe('retomar', () => {
   });
 
   it('só reajuste executando da org', () => {
-    expect(decidirRetomar({ acao: 'reajustar', status: 'executando' })).toEqual({ ok: true });
+    expect(decidirRetomar({ acao: 'reajustar', status: 'executando' })).toEqual({ ok: true, publicar: true });
+    const pendente = [{ familia_id: U, status: 'pendente' }];
+    expect(decidirRetomar({ acao: 'reajustar', status: 'concluida', atacado_familias: pendente })).toEqual({ ok: true, publicar: false });
+    expect(decidirRetomar({ acao: 'reajustar', status: 'concluida', atacado_familias: [{ familia_id: U, status: 'aplicado' }] })).toMatchObject({ ok: false, status: 400 });
+    expect(decidirRetomar({ acao: 'reajustar', status: 'rascunho', atacado_familias: pendente })).toMatchObject({ ok: false, status: 400 });
     expect(decidirRetomar(null)).toMatchObject({ ok: false, status: 404 });
     expect(decidirRetomar({ acao: 'reajustar', status: 'concluida' })).toMatchObject({ ok: false, status: 400 });
     expect(decidirRetomar({ acao: 'reajustar', status: 'rascunho' })).toMatchObject({ ok: false, status: 400 });

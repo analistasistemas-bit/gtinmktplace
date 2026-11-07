@@ -218,14 +218,14 @@ begin
   perform pg_temp.ok((select bool_and(not has_function_privilege(r, f, 'execute') and has_function_privilege('service_role', f, 'execute'))
     from unnest(array['anon', 'authenticated', 'public']) r,
          unnest(array['public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb,text)',
-                      'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text)',
+                      'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text,boolean)',
                       'public.reajuste_item_gravar(uuid,uuid,text,uuid,jsonb)',
                       'public.reajuste_reivindicar(uuid,uuid,text)',
                       'public.reajuste_confirmar(uuid,uuid,jsonb)',
                       'public.operacoes_massa_reivindicar(uuid,uuid,text)']) f), 'execute só para service_role');
   perform pg_temp.ok((select bool_and(p.prosecdef and p.proconfig = array['search_path=""'])
     from pg_proc p where p.oid in ('public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb,text)'::regprocedure,
-      'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text)'::regprocedure,
+      'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text,boolean)'::regprocedure,
       'public.reajuste_item_gravar(uuid,uuid,text,uuid,jsonb)'::regprocedure)), 'definer com search_path vazio');
 end $$;
 rollback;

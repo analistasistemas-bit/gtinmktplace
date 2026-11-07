@@ -44,7 +44,23 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 select pg_temp.fid(n), '95000000-0000-0000-0000-000000000201', '95000000-0000-0000-0000-000000000101',
        '95000000-0000-0000-0000-000000000001', '095' || lpad(n::text, 5, '0'), 'Produto ' || n, 'UPDATE', 'pronto', 'nacional', gen_random_uuid(), 'MLB' || n || 'A',
        now() - interval '1 day', '[{"min_unidades":2,"desconto_pct":5}]'::jsonb
-from generate_series(1, 13) n;
+from generate_series(1, 15) n;
+-- Outros lotes: produto 13 com linha igual, sem config e com config diferente; produto 14 com cor própria em outra linha.
+insert into public.lotes (id, user_id, org_id, status, origem) values
+  ('95000000-0000-0000-0000-000000000203', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual'),
+  ('95000000-0000-0000-0000-000000000204', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual'),
+  ('95000000-0000-0000-0000-000000000205', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual');
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, status, origem, chave_cadastro, atacado)
+select x.id::uuid, x.lote::uuid, '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', x.pai, 'Outro lote', 'UPDATE', 'pronto', 'nacional', gen_random_uuid(), x.atacado::jsonb
+from (values
+  ('95000000-0000-0000-0000-000000000351', '95000000-0000-0000-0000-000000000203', '09500013', '[{"min_unidades":2,"desconto_pct":5}]'),
+  ('95000000-0000-0000-0000-000000000352', '95000000-0000-0000-0000-000000000204', '09500013', null),
+  ('95000000-0000-0000-0000-000000000353', '95000000-0000-0000-0000-000000000205', '09500013', '[{"min_unidades":3,"desconto_pct":7}]'),
+  ('95000000-0000-0000-0000-000000000354', '95000000-0000-0000-0000-000000000203', '09500014', '[{"min_unidades":2,"desconto_pct":5}]')
+) x(id, lote, pai, atacado);
+insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, atacado)
+select '95000000-0000-0000-0000-000000000402', '95000000-0000-0000-0000-000000000354', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', '09500014', 'A', 10, '[]'::jsonb;
+
 -- Segundo MLB do produto 9: a barreira do claim resolve o produto pelo MLB.
 insert into public.lotes (id, user_id, org_id, status, origem) values
   ('95000000-0000-0000-0000-000000000202', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual');
@@ -149,6 +165,54 @@ begin
   v_t := public.reajuste_reivindicar(v_org, b2, 'MLB9A');
   perform pg_temp.ok(v_t = 'Família com atacado em edição — tente depois', 'B não reivindica: ' || v_t);
   perform pg_temp.ok((select i.status from public.operacoes_massa_itens i where i.operacao_id = b2) = 'bloqueado', 'B fica bloqueado');
+end $$;
+
+-- Edição e Reverter com herança entre lotes; crash depois de concluir; recusa da volta.
+do $$
+declare
+  v_org uuid := '95000000-0000-0000-0000-000000000001';
+  e1 uuid := '95000000-0000-0000-0000-000000000801'; e2 uuid := '95000000-0000-0000-0000-000000000802';
+  e3 uuid := '95000000-0000-0000-0000-000000000803'; e4 uuid := '95000000-0000-0000-0000-000000000804';
+  v_cinco jsonb := '[{"min_unidades":2,"desconto_pct":5}]'; v_dez jsonb := '[{"min_unidades":2,"desconto_pct":10}]';
+  v_tok uuid := gen_random_uuid(); v_i public.operacoes_massa_itens;
+begin
+  perform pg_temp.op(e1, 13);
+  perform public.reajuste_atacado_concluir(v_org, e1);
+  perform pg_temp.ok(pg_temp.fam(13) = v_dez, 'edição: linha pedida');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_dez, 'edição: outro lote igual a esperado acompanha');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000352') is null, 'edição: lote sem config fica como está');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000353') = '[{"min_unidades":3,"desconto_pct":7}]'::jsonb, 'edição: config diferente não é tocada');
+
+  -- Reverter: o inverso, sobre as mesmas linhas.
+  insert into public.operacoes_massa (id, org_id, acao, status, origem_id, atacado_familias) values
+    (e2, v_org, 'reajustar', 'executando', e1, jsonb_build_array(jsonb_build_object('familia_id', pg_temp.fid(13), 'novo', v_cinco, 'esperado', v_dez, 'status', 'pendente', 'motivo', null)));
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, codigo_pai, passos) values
+    (e2, v_org, 'MLB13A', 'aplicado', 100, '09500013', pg_temp.passos('confirmado'));
+  perform public.reajuste_atacado_concluir(v_org, e2);
+  perform pg_temp.ok(pg_temp.fam(13) = v_cinco and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_cinco, 'Reverter: as duas linhas voltam');
+
+  -- Cor própria em outra linha do produto reprova.
+  perform pg_temp.op(e3, 14);
+  perform public.reajuste_atacado_concluir(v_org, e3);
+  perform pg_temp.ok(pg_temp.fam(14) = v_cinco and pg_temp.ent(e3)->>'motivo' = 'Atacado por cor: ajuste na Revisão', 'cor em outra linha: nao_aplicado');
+
+  -- Operação concluída com entrada pendente: segue reservando; o Retomar conclui e solta.
+  perform pg_temp.op(e4, 15, 'concluida');
+  perform pg_temp.ok(public.reajuste_ativo_produto(v_org, '09500015') is not null, 'concluída com pendente reserva');
+  perform public.reajuste_atacado_concluir(v_org, e4);
+  perform pg_temp.ok(pg_temp.fam(15) = v_dez and pg_temp.ent(e4)->>'status' = 'aplicado', 'concluída: conclui a família');
+  perform pg_temp.ok(public.reajuste_ativo_produto(v_org, '09500015') is null, 'concluída: solta a reserva');
+
+  -- Recusa definitiva na volta soma; sem o sinal, não.
+  update public.operacoes_massa_itens set status = 'enviando', lease_token = v_tok, passos = pg_temp.passos('volta_pedida') where operacao_id = e4 and ml_item_id = 'MLB15A';
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, e4, 'MLB15A', v_tok, 0, 'volta_pendente', true), 'recusa marca');
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, e4, 'MLB15A', v_tok, 0, 'volta_pedida'), 'volta pedida marca');
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, e4, 'MLB15A', v_tok, 0, 'volta_pendente'), 'reconciliação marca');
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, e4, 'MLB15A', v_tok, 0, 'volta_pendente', true), 'segunda recusa marca');
+  select * into v_i from public.operacoes_massa_itens i where i.operacao_id = e4 and i.ml_item_id = 'MLB15A';
+  perform pg_temp.ok((v_i.passos->0->>'recusas_volta')::int = 2 and v_i.passos->0->>'estado' = 'volta_pendente', 'só a recusa conta');
+  perform pg_temp.ok(not has_function_privilege('authenticated', 'public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean)', 'execute'), 'marcar sem authenticated');
+  perform pg_temp.ok(has_function_privilege('service_role', 'public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean)', 'execute'), 'marcar com service_role');
 end $$;
 
 -- Confirmar: família parcial e dona da edição.

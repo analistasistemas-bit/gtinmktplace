@@ -136,6 +136,15 @@ describe('depsReajuste', () => {
     expect(f.rpcs).toEqual([['reajuste_passo_marcar', { p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_indice: 1, p_estado: 'confirmado' }]]);
   });
 
+  it('marcarPasso: recusa da volta só vai quando houver', async () => {
+    const f = fakeAdmin(() => [], () => true);
+    const d = depsReajuste(f.admin, cxT, opRow, 'k');
+    await d.marcarPasso('op', 'A', 'tk', 0, 'volta_pedida');
+    await d.marcarPasso('op', 'A', 'tk', 0, 'volta_pendente', true);
+    expect(f.rpcs[0][1]).not.toHaveProperty('p_recusada');
+    expect(f.rpcs[1][1]).toMatchObject({ p_estado: 'volta_pendente', p_recusada: true });
+  });
+
   it('persistir: RPC com token e mensagem; sem_posse volta como veio', async () => {
     const f = fakeAdmin(() => [], () => 'sem_posse');
     expect(await depsReajuste(f.admin, cxT, opRow, 'k').persistir('op', 'A', 'tk', 110, [], 'aviso')).toBe('sem_posse');
@@ -225,16 +234,27 @@ describe('depsPreview', () => {
     expect((await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).divergente).toBe(true);
   });
 
-  it('familiasAtacado: família, config crua e se há atacado por cor, filtrando por org', async () => {
+  it('familiasAtacado: olha todos os lotes do produto, filtrando por org', async () => {
     const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
-    const f = fakeAdmin((c) => (c.tabela === 'familias'
-      ? [{ id: 'f1', codigo_pai: 'P1', atacado: cinco }, { id: 'f2', codigo_pai: 'P2', atacado: null }]
-      : [{ familia_id: 'f2' }]));
-    const m = await depsPreview(f.admin, cxT, { reverter: false }).familiasAtacado(['f1', 'f2']);
-    expect(m.get('f1')).toEqual({ codigo_pai: 'P1', atacado: cinco, porCor: false });
-    expect(m.get('f2')).toEqual({ codigo_pai: 'P2', atacado: null, porCor: true });
+    const dez = [{ min_unidades: 2, desconto_pct: 10 }];
+    const linhas = [
+      { id: 'f1', codigo_pai: 'P1', atacado: cinco }, { id: 'f1b', codigo_pai: 'P1', atacado: cinco }, { id: 'f1c', codigo_pai: 'P1', atacado: null },
+      { id: 'f2', codigo_pai: 'P2', atacado: null }, { id: 'f2b', codigo_pai: 'P2', atacado: null },
+      { id: 'f3', codigo_pai: 'P3', atacado: cinco }, { id: 'f3b', codigo_pai: 'P3', atacado: dez },
+      { id: 'f4', codigo_pai: 'P4', atacado: null }, { id: 'f4b', codigo_pai: 'P4', atacado: cinco },
+    ];
+    const f = fakeAdmin((c) => {
+      if (c.tabela !== 'familias') return [{ familia_id: 'f2b' }];
+      return op(c, 'in')[0][0] === 'id' ? linhas.filter((l) => ['f1', 'f2', 'f3', 'f4'].includes(l.id)) : linhas;
+    });
+    const m = await depsPreview(f.admin, cxT, { reverter: false }).familiasAtacado(['f1', 'f2', 'f3', 'f4']);
+    // Lote sem config (null) não é config diferente: é o caso comum e fica como está.
+    expect(m.get('f1')).toEqual({ codigo_pai: 'P1', atacado: cinco, porCor: false, lotesDivergentes: false });
+    expect(m.get('f2')).toEqual({ codigo_pai: 'P2', atacado: null, porCor: true, lotesDivergentes: false });
+    expect(m.get('f3')).toMatchObject({ lotesDivergentes: true });
+    expect(m.get('f4')).toMatchObject({ lotesDivergentes: true });
     for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', cxT.orgId]);
-    expect(op(f.chamadas[1], 'not')).toEqual([['atacado', 'is', null]]);
+    expect(op(f.chamadas[2], 'not')).toEqual([['atacado', 'is', null]]);
   });
 
   it('familiasAtacado: família de outra org → ForaDaOrg', async () => {

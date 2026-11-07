@@ -7,7 +7,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
 import { avaliarPassos, resumirPrecos } from './avaliacao.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
-import { decidirFaixas, mesmaConfig, mesmasFaixas, MSG_ATACADO_ENTRE_CORES, MSG_ATACADO_MUDOU, MSG_ATACADO_POR_COR, type ConfigMlb } from './faixas.ts';
+import { decidirFaixas, mesmaConfig, mesmasFaixas, MSG_ATACADO_ENTRE_CORES, MSG_ATACADO_ENTRE_LOTES, MSG_ATACADO_MUDOU, MSG_ATACADO_POR_COR, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { ehFaixas, planejarPassos } from './passos.ts';
@@ -18,7 +18,8 @@ export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajus
   atacado?: Record<string, FaixaAtacado[]>; origem_id?: string | null }
 /** Entrada de `operacoes_massa.atacado_familias`. `esperado`: `familias.atacado` no preview, para o compare-and-set. */
 export interface EntradaAtacado { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; status: 'pendente' | 'aplicado' | 'nao_aplicado'; motivo: string | null }
-export interface FamiliaAtacado { codigo_pai: string; atacado: FaixaAtacado[] | null; porCor: boolean }
+/** `porCor` e `lotesDivergentes` olham todas as linhas do produto. Lote sem configuração não diverge. */
+export interface FamiliaAtacado { codigo_pai: string; atacado: FaixaAtacado[] | null; porCor: boolean; lotesDivergentes: boolean }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
   sku: string | null; titulo: string | null; ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
 export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; titulo: string | null; sku: string | null;
@@ -58,7 +59,7 @@ const AVISO_IRMAO = 'Atacado da família: neste anúncio mudam só as faixas.';
 const AVISO_D10 = 'Reverter: o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest.';
 
 /** Edição de atacado que alcança um produto. `grava` false: Reverter de origem `nao_aplicado`, só confere a família. */
-type Edicao = { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; porCor: boolean; grava: boolean };
+type Edicao = { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; porCor: boolean; lotesDivergentes: boolean; grava: boolean };
 export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[]; passos: Passo[] };
 const mesmoEstado = (a: EstadoVariacao, b: EstadoVariacao) =>
   a.preco_editado_pelo_operador === b.preco_editado_pelo_operador &&
@@ -81,15 +82,15 @@ export async function montarPreview(
     if (entradas.some((e) => e.status === 'pendente')) return { ok: false, erro: 'A operação de origem ainda está em andamento' };
     // `aplicado` troca os lados; `nao_aplicado` não mudou a família e só as faixas aplicadas voltam.
     pedidas = entradas.map((e) => (e.status === 'aplicado'
-      ? { familia_id: e.familia_id, novo: e.esperado, esperado: e.novo, porCor: false, grava: true }
-      : { familia_id: e.familia_id, novo: null, esperado: e.esperado, porCor: false, grava: false }));
+      ? { familia_id: e.familia_id, novo: e.esperado, esperado: e.novo, porCor: false, lotesDivergentes: false, grava: true }
+      : { familia_id: e.familia_id, novo: null, esperado: e.esperado, porCor: false, lotesDivergentes: false, grava: false }));
   } else {
     const descontos = Object.values(p.atacado ?? {}).flat().map((f) => f.desconto_pct);
     const valores = [...(p.ajuste ? [p.ajuste.valor] : []), ...Object.values(p.precos ?? {}), ...descontos];
     if (!valores.every(maxDuasCasas)) return { ok: false, erro: 'Use no máximo 2 casas decimais' };
     if (p.ajuste && p.ajuste.valor < 0) return { ok: false, erro: 'Ajuste inválido' };
     alvos = p.familias.length || p.ml_item_ids.length ? await deps.expandir(p.familias, p.ml_item_ids) : [];
-    pedidas = Object.entries(p.atacado ?? {}).map(([familia_id, novo]) => ({ familia_id, novo, esperado: null, porCor: false, grava: true }));
+    pedidas = Object.entries(p.atacado ?? {}).map(([familia_id, novo]) => ({ familia_id, novo, esperado: null, porCor: false, lotesDivergentes: false, grava: true }));
   }
 
   // Por codigo_pai: é a identidade do item na reserva e na conclusão.
@@ -98,7 +99,7 @@ export async function montarPreview(
   for (const e of pedidas) {
     const f = familias.get(e.familia_id)!;
     if (edicoes.has(f.codigo_pai)) return { ok: false, erro: 'Edite o atacado de uma família por produto' };
-    edicoes.set(f.codigo_pai, { ...e, esperado: p.origem_id ? e.esperado : f.atacado, porCor: f.porCor });
+    edicoes.set(f.codigo_pai, { ...e, esperado: p.origem_id ? e.esperado : f.atacado, porCor: f.porCor, lotesDivergentes: f.lotesDivergentes });
   }
   const selecionados = new Set(alvos.map((a) => a.ml_item_id));
   if (!p.origem_id && pedidas.length) alvos = [...alvos, ...await deps.expandir(pedidas.map((e) => e.familia_id), [])];
@@ -165,7 +166,7 @@ async function avaliarItem(
     faixas_anteriores: null, faixas_alvo: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
-  if (ed?.porCor && ed.grava) return fora(orig ? MSG_ATACADO_MUDOU : MSG_ATACADO_POR_COR);
+  if (ed?.grava && (ed.porCor || ed.lotesDivergentes)) return fora(orig ? MSG_ATACADO_MUDOU : ed.porCor ? MSG_ATACADO_POR_COR : MSG_ATACADO_ENTRE_LOTES);
   // Reverter não redefine a configuração: desfaz o que a origem deixou.
   const editando = !!ed && !orig;
   const irmao = editando && !selecionado;
@@ -235,7 +236,7 @@ async function avaliarItem(
   // Reverter não recalcula as faixas: volta às que a origem trocou, ou só não deixa o base restaurado passar por elas.
   const config = orig && !faixasOrigem && !ed ? null : await deps.configAtacado(ids);
   if (ed && (config!.divergente || config!.porCor || !mesmaConfig(config!.faixas, ed.esperado))) {
-    return fora(orig ? MSG_ATACADO_MUDOU : config!.porCor ? MSG_ATACADO_POR_COR : MSG_ATACADO_ENTRE_CORES);
+    return fora(orig ? MSG_ATACADO_MUDOU : config!.porCor ? MSG_ATACADO_POR_COR : config!.divergente ? MSG_ATACADO_ENTRE_CORES : MSG_ATACADO_ENTRE_LOTES);
   }
   // Com edição na origem vale a entrada: a config do passo é a de antes dela.
   if (faixasOrigem && (!mesmasFaixas(vivas, faixasOrigem.alvo) || config!.divergente || (!ed && !mesmaConfig(config!.faixas, faixasOrigem.config)))) {
@@ -255,7 +256,7 @@ async function avaliarItem(
     }
     passos = planejarPassos({
       base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: vivas, faixasAlvo: faixas_alvo, faixasConfig: config?.faixas ?? null,
-      faixasFamilia: ed?.grava ? ed.familia_id : undefined,
+      faixasFamilia: ed?.familia_id, conferirConfig: !!orig && !!ed,
     });
   } catch (e) {
     return fora(mensagemDe(e));

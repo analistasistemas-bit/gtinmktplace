@@ -236,6 +236,25 @@ describe('precisaRetomar', () => {
     expect(precisaRetomar(reaj, [it_('enviando', null, iso(60_000))], agora)).toBe(false);
     expect(precisaRetomar(reaj, [it_('aplicado', null, iso(9e6))], agora)).toBe(false);
   });
+  describe('edição de atacado sem conclusão', () => {
+    const entrada = (status: string) => ({ atacado_familias: [{ familia_id: 'f', status }] });
+    const terminal = [it_('aplicado', null, iso(3 * 60_000)), it_('erro', null, iso(9e6))];
+    it('entrada pendente com todos os itens encerrados → retomar, inclusive em operação concluída', () => {
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, terminal, agora)).toBe(true);
+      expect(precisaRetomar({ acao: 'reajustar', status: 'concluida', ...entrada('pendente') }, terminal, agora)).toBe(true);
+    });
+    it('execução normal não mostra o botão: item em andamento ou recém-encerrado', () => {
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('pendente', null, iso(0))], agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('conferindo', iso(-60_000), iso(0))], agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('pendente') }, [it_('aplicado', null, iso(30_000))], agora)).toBe(false);
+    });
+    it('entrada resolvida, rascunho ou outra ação → não', () => {
+      expect(precisaRetomar({ acao: 'reajustar', status: 'concluida', ...entrada('aplicado') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ ...reaj, ...entrada('nao_aplicado') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ acao: 'reajustar', status: 'rascunho', ...entrada('pendente') }, terminal, agora)).toBe(false);
+      expect(precisaRetomar({ acao: 'pausar', status: 'concluida', ...entrada('pendente') }, terminal, agora)).toBe(false);
+    });
+  });
   it('só reajuste executando', () => {
     const parado = [it_('conferindo', iso(9e6), iso(9e6))];
     expect(precisaRetomar({ acao: 'reajustar', status: 'concluida' }, parado, agora)).toBe(false);

@@ -506,7 +506,7 @@ describe('montarPreview — atacado por família', () => {
   const F = 'f1';
   const ANTES = [{ min_unidades: 2, desconto_pct: 5 }];
   const NOVO = [{ min_unidades: 2, desconto_pct: 10 }];
-  const fam = (o: Partial<FamiliaAtacado> = {}): FamiliaAtacado => ({ codigo_pai: 'P', atacado: ANTES, porCor: false, ...o });
+  const fam = (o: Partial<FamiliaAtacado> = {}): FamiliaAtacado => ({ codigo_pai: 'P', atacado: ANTES, porCor: false, lotesDivergentes: false, ...o });
   const a = (ml: string, pai = 'P') => alvo(ml, { codigo_pai: pai });
   const viva = (preco: number, min_unidades = 2): FaixaPreco[] => [{ min_unidades, preco }];
   const cfg = { faixas: ANTES, divergente: false };
@@ -580,7 +580,13 @@ describe('montarPreview — atacado por família', () => {
 
   it('MLB que não herda da família editada → fora', async () => {
     const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { faixas: NOVO, divergente: false } }));
-    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre cores — ajuste na Revisão' });
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
+  it('outro lote do produto com config diferente → família inteira fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')], { familias: { [F]: fam({ lotesDivergentes: true }) } }));
+    expect(r.itens.map((i) => i.motivo)).toEqual(['Atacado diferente entre lotes — ajuste na Revisão', 'Atacado diferente entre lotes — ajuste na Revisão']);
+    expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
   });
 
   it('1 MLB fora → edição recusada para a família, sem rascunho parcial; outra família segue', async () => {
@@ -658,7 +664,7 @@ describe('montarPreview — atacado por família', () => {
     it('origem `nao_aplicado`: exige a família em `esperado`, desfaz os passos aplicados e não grava configuração', async () => {
       const r = await preview(voltar, dep('nao_aplicado', { config: { faixas: ANTES, divergente: false }, familias: { [F]: fam() } }));
       expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', faixas_alvo: viva(95) });
-      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: ANTES, estado: 'pendente' }]);
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: ANTES, familia_id: F, estado: 'pendente' }]);
       expect(r.atacado_familias).toEqual([]);
     });
 
@@ -682,9 +688,15 @@ describe('montarPreview — atacado por família', () => {
       const comum = { alvos: [a('MLB1')], origem: o, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) }, faixas: viva(95), familias: { [F]: fam() } };
       const r = await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: ANTES, divergente: false } }));
       expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
-      expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['base']);
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'base', anterior: 110, alvo: 100, config: ANTES, estado: 'pendente' }]);
       expect((await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: NOVO, divergente: false } }))).de('MLB1'))
         .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+    });
+
+    it('origem `aplicado`, outro lote saiu de `novo` → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { familias: { [F]: fam({ atacado: NOVO, lotesDivergentes: true }) } }));
+      expect(r.itens.map((i) => i.motivo)).toEqual(['Não revertível: o atacado mudou depois da alteração', 'Não revertível: o atacado mudou depois da alteração']);
+      expect(r.atacado_familias).toEqual([]);
     });
 
     it('origem com entrada ainda pendente → recusa', async () => {

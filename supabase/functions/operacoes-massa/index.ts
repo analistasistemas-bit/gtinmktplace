@@ -532,7 +532,7 @@ async function retomarReajuste(admin: Admin, req: Request, bruto: unknown): Prom
   }
   const pedido = lerRetomar(bruto);
   if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
-  const { data, error } = await admin.from('operacoes_massa').select('acao, status')
+  const { data, error } = await admin.from('operacoes_massa').select('acao, status, atacado_familias')
     .eq('org_id', orgId).eq('id', pedido.operacao_id).maybeSingle();
   if (error) throw new Error(`operacoes_massa: ${error.message}`);
   const d = decidirRetomar(data);
@@ -542,6 +542,10 @@ async function retomarReajuste(admin: Admin, req: Request, bruto: unknown): Prom
   if (atacado.error) throw new Error(`reajuste_atacado_concluir: ${atacado.error.message}`);
 
   const alvo = { type: 'operacao_massa', id: pedido.operacao_id } as const;
+  if (!d.publicar) {
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+    return json({ operacao_id: pedido.operacao_id });
+  }
   try {
     await qstashClient().publishJSON({
       url: urlOperacoes(), body: { etapa: 'executar', operacao_id: pedido.operacao_id }, retries: 3,

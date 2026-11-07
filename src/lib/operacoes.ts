@@ -128,16 +128,22 @@ export function tituloOperacao(
 }
 
 const PARADO_MS = 2 * 60_000; // mesmo limite de `enviando` parado na RPC reajuste_reivindicar
+const EM_ANDAMENTO = ['pendente', 'enviando', 'conferindo'];
 /** Retomar (C3): reajuste executando com item `conferindo` vencido ou `enviando` parado há mais de 2 min — sinal de
  *  que a mensagem QStash esgotou os retries. ponytail: a folga de 2 min no `conferindo` evita o botão piscar no
- *  intervalo normal entre `proxima_conferencia` e a entrega da mensagem agendada. */
+ *  intervalo normal entre `proxima_conferencia` e a entrega da mensagem agendada.
+ *  Também com edição de atacado sem desfecho e nenhum item em andamento: a família fica reservada até alguém concluir.
+ *  A entrada segue `pendente` durante toda a execução normal, daí exigir os itens encerrados há mais de 2 min. */
 export function precisaRetomar(
-  op: { acao: string; status: string },
+  op: { acao: string; status: string; atacado_familias?: unknown },
   itens: { status: string; proxima_conferencia: string | null; atualizado_em: string }[], agora: number,
 ): boolean {
-  if (op.acao !== 'reajustar' || op.status !== 'executando') return false;
+  if (op.acao !== 'reajustar' || (op.status !== 'executando' && op.status !== 'concluida')) return false;
   const antes = (iso: string | null) => iso != null && Date.parse(iso) < agora - PARADO_MS;
-  return itens.some((i) => (i.status === 'conferindo' && antes(i.proxima_conferencia)) || (i.status === 'enviando' && antes(i.atualizado_em)));
+  const familiaPresa = Array.isArray(op.atacado_familias) && op.atacado_familias.some((e: { status?: string }) => e?.status === 'pendente')
+    && itens.every((i) => !EM_ANDAMENTO.includes(i.status) && antes(i.atualizado_em));
+  if (op.status === 'concluida') return familiaPresa;
+  return familiaPresa || itens.some((i) => (i.status === 'conferindo' && antes(i.proxima_conferencia)) || (i.status === 'enviando' && antes(i.atualizado_em)));
 }
 
 /** N do título: reajuste conta só o que entrou (`incluido`) — fora, sem alteração e desmarcado no preview não. */

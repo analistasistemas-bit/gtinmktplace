@@ -105,14 +105,15 @@ export const lerRetomar = (x: unknown): { operacao_id: string } | null => {
   return b && ehUuid(b.operacao_id) ? { operacao_id: b.operacao_id } : null;
 };
 
-/** Retomar (C3): só reajuste `executando` da org (null = não achou nesta org). */
-export function decidirRetomar(op: { acao: string; status: string } | null):
-  | { ok: true } | { ok: false; status: 400 | 404; erro: string } {
+/** Retomar (C3): reajuste `executando` da org (null = não achou nesta org), ou concluído com edição de atacado sem desfecho:
+ *  aí basta `reajuste_atacado_concluir`, não há item a executar (`publicar` false). */
+export function decidirRetomar(op: { acao: string; status: string; atacado_familias?: unknown } | null):
+  | { ok: true; publicar: boolean } | { ok: false; status: 400 | 404; erro: string } {
   if (!op) return { ok: false, status: 404, erro: 'Operação não encontrada.' };
-  if (op.acao !== 'reajustar' || op.status !== 'executando') {
-    return { ok: false, status: 400, erro: 'Só um reajuste em execução pode ser retomado.' };
-  }
-  return { ok: true };
+  if (op.acao === 'reajustar' && op.status === 'executando') return { ok: true, publicar: true };
+  const pendente = Array.isArray(op.atacado_familias) && op.atacado_familias.some((e: { status?: string }) => e?.status === 'pendente');
+  if (op.acao === 'reajustar' && op.status === 'concluida' && pendente) return { ok: true, publicar: false };
+  return { ok: false, status: 400, erro: 'Só um reajuste em execução pode ser retomado.' };
 }
 
 /** Id novo por minuto: o `executar_<op>_0` estável engoliria a retomada; 2 cliques no mesmo minuto viram 1. */

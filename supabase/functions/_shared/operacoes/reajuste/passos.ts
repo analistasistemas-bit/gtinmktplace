@@ -17,6 +17,8 @@ export interface EntradaPassos {
   faixasConfig: FaixaAtacado[] | null;
   /** Família cujo % está sendo editado. */
   faixasFamilia?: string;
+  /** Sem passo de faixas, o base leva `faixasConfig` para a execução conferir. */
+  conferirConfig?: boolean;
 }
 export interface Estado { base: number; ofertas: OfertaVigente[]; faixas: FaixaPreco[] }
 
@@ -62,7 +64,9 @@ export function planejarPassos(e: EntradaPassos): Passo[] {
     tipo: 'faixas', anterior: e.faixasAntes, alvo: e.faixasAlvo, config: e.faixasConfig,
     ...(e.faixasFamilia ? { familia_id: e.faixasFamilia } : {}), estado: 'pendente',
   }] : [];
-  const base: Passo[] = semAlteracao(e.base, e.alvo) ? [] : [{ tipo: 'base', anterior: e.base, alvo: e.alvo, estado: 'pendente' }];
+  const base: Passo[] = semAlteracao(e.base, e.alvo) ? [] : [{
+    tipo: 'base', anterior: e.base, alvo: e.alvo, ...(e.conferirConfig && !e.faixasAlvo ? { config: e.faixasConfig } : {}), estado: 'pendente',
+  }];
   const subindo = centavos(e.alvo) > centavos(e.base);
   const passos = subindo ? [...saidas, ...base, ...ofertas, ...faixas] : [...saidas, ...ofertas, ...faixas, ...base];
 

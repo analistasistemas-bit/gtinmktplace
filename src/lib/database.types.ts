@@ -5542,6 +5542,7 @@ export type Database = {
       }
       reajuste_passo_marcar: {
         Args: {
+          p_recusada?: boolean
           p_estado: string
           p_indice: number
           p_ml_item: string

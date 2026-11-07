@@ -7,6 +7,7 @@ export const MAX_FAIXAS = 5;
 export const MSG_ATACADO_MUDOU = 'Não revertível: o atacado mudou depois da alteração';
 export const MSG_ATACADO_POR_COR = 'Atacado por cor: ajuste na Revisão';
 export const MSG_ATACADO_ENTRE_CORES = 'Atacado diferente entre cores — ajuste na Revisão';
+export const MSG_ATACADO_ENTRE_LOTES = 'Atacado diferente entre lotes — ajuste na Revisão';
 
 /** `faixas` null = nada configurado; [] = explicitamente sem atacado. `porCor`: alguma cor tem configuração própria. */
 export interface ConfigMlb { faixas: FaixaAtacado[] | null; divergente: boolean; porCor?: boolean }

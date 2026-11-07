@@ -1,6 +1,6 @@
 -- ADR-0196 — edição do % do atacado por família. `atacado_familias` guarda, por família, a configuração nova e a esperada:
--- [{ familia_id, novo, esperado, status: pendente|aplicado|nao_aplicado, motivo }]. A entrada `pendente` de operação em
--- execução reserva o produto até `reajuste_atacado_concluir`, mesmo com todos os itens encerrados.
+-- [{ familia_id, novo, esperado, status: pendente|aplicado|nao_aplicado, motivo }]. A entrada `pendente` de operação
+-- confirmada reserva o produto até `reajuste_atacado_concluir`, mesmo com todos os itens encerrados ou a operação concluída.
 alter table public.operacoes_massa add column atacado_familias jsonb;
 
 -- Operação dona da edição pendente no produto, ou null. Rascunho não reserva.
@@ -17,7 +17,7 @@ begin
   from public.operacoes_massa o
   cross join lateral jsonb_array_elements(o.atacado_familias) e
   join public.familias f on f.org_id = p_org and f.id = (e->>'familia_id')::uuid
-  where o.org_id = p_org and o.acao = 'reajustar' and o.status = 'executando' and o.atacado_familias is not null
+  where o.org_id = p_org and o.acao = 'reajustar' and o.status <> 'rascunho' and o.atacado_familias is not null
     and e->>'status' = 'pendente' and f.codigo_pai = p_codigo_pai
   limit 1;
   return v_op;
@@ -266,7 +266,8 @@ end;
 $function$;
 
 -- Fim da operação: grava `familias.atacado` por compare-and-set só se todos os itens da família terminaram `aplicado` com o
--- passo `faixas` confirmado. `MSG_FAIXAS_PENDENTES` reprova por aí: ela só existe com o passo não confirmado. Senão
+-- passo `faixas` confirmado. Grava em toda linha do produto igual a `esperado`: os MLBs herdam de qualquer lote, e o
+-- Reverter faz o inverso. Lote sem configuração fica como está. `MSG_FAIXAS_PENDENTES` reprova por aí: ela só existe com o passo não confirmado. Senão
 -- `nao_aplicado`; as faixas novas ficam nos anúncios que deram certo e o próximo UPDATE volta a seguir a família.
 -- Item em andamento mantém a entrada `pendente`. Idempotente. Devolve { pendentes, atacado_familias }.
 create function public.reajuste_atacado_concluir(p_org uuid, p_operacao uuid)
@@ -316,7 +317,8 @@ begin
                           where p->>'tipo' = 'faixas' and p->>'estado' = 'confirmado'))) then
           v_motivo := 'Nem todos os anúncios da família terminaram com o atacado aplicado';
         elsif exists (select 1 from public.variacoes v
-                      where v.org_id = p_org and v.familia_id = (v_e->>'familia_id')::uuid and v.atacado is not null) then
+                      join public.familias f on f.id = v.familia_id and f.org_id = p_org and f.codigo_pai = v_pai
+                      where v.org_id = p_org and v.atacado is not null) then
           v_motivo := 'Atacado por cor: ajuste na Revisão';
         elsif not exists (select 1 from public.familias f
                           where f.org_id = p_org and f.id = (v_e->>'familia_id')::uuid
@@ -326,7 +328,7 @@ begin
 
         if v_motivo is null then
           update public.familias f set atacado = nullif(v_e->'novo', 'null'::jsonb)
-          where f.org_id = p_org and f.id = (v_e->>'familia_id')::uuid;
+          where f.org_id = p_org and f.codigo_pai = v_pai and coalesce(f.atacado, 'null'::jsonb) = v_e->'esperado';
           v_e := v_e || '{"status":"aplicado"}'::jsonb;
         else
           v_e := v_e || jsonb_build_object('status', 'nao_aplicado', 'motivo', v_motivo);
@@ -341,6 +343,59 @@ begin
 end;
 $$;
 
+-- `p_recusada`: a escrita de volta foi recusada de forma definitiva. Só isso conta em `recusas_volta`; o executor desiste no
+-- limite. Volta incerta não conta: nada prova que o ML recusou. Resto igual a 20261107020152.
+drop function public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text);
+create function public.reajuste_passo_marcar(p_org uuid, p_operacao uuid, p_ml_item text, p_token uuid,
+                                             p_indice integer, p_estado text, p_recusada boolean default false)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_it public.operacoes_massa_itens%rowtype;
+begin
+  select * into v_it from public.operacoes_massa_itens i
+  where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item
+  for update;
+  if not found or v_it.status <> 'enviando' or not coalesce(v_it.lease_token = p_token, false) then
+    return false;
+  end if;
+
+  -- `null not in (...)` é null e passaria; to_jsonb(null) faria o jsonb_set apagar `passos`.
+  if p_estado is null or p_estado not in ('pendente','escrita_pedida','confirmado','volta_pendente','volta_pedida','compensado') then
+    raise exception 'reajuste_passo_marcar: estado desconhecido: %', p_estado;
+  end if;
+  if p_indice is null or p_indice < 0 or p_indice >= coalesce(jsonb_array_length(v_it.passos), 0) then
+    raise exception 'reajuste_passo_marcar: passo % não existe em %', p_indice, p_ml_item;
+  end if;
+  -- Item com passo em estado de volta nunca retoma a ida.
+  if p_estado in ('pendente','escrita_pedida','confirmado') and exists (
+       select 1 from jsonb_array_elements(v_it.passos) p
+       where p->>'estado' in ('volta_pendente','volta_pedida','compensado')) then
+    raise exception 'reajuste_passo_marcar: % em compensação não retoma a ida', p_ml_item;
+  end if;
+
+  update public.operacoes_massa_itens i
+  set passos = jsonb_set(
+        case when p_estado = 'escrita_pedida'
+             then jsonb_set(i.passos, array[p_indice::text, 'tentativas'],
+                            to_jsonb(coalesce((i.passos->p_indice->>'tentativas')::integer, 0) + 1))
+             when p_recusada
+             then jsonb_set(i.passos, array[p_indice::text, 'recusas_volta'],
+                            to_jsonb(coalesce((i.passos->p_indice->>'recusas_volta')::integer, 0) + 1))
+             else i.passos end,
+        array[p_indice::text, 'estado'], to_jsonb(p_estado)),
+      etapa = case when p_estado in ('escrita_pedida','volta_pedida') then 'escrita_pedida' else i.etapa end,
+      lease_ate = now() + interval '2 minutes', atualizado_em = now()
+  where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item;
+  return true;
+end;
+$$;
+
+revoke execute on function public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean) from public, anon, authenticated;
+grant execute on function public.reajuste_passo_marcar(uuid, uuid, text, uuid, integer, text, boolean) to service_role;
 revoke execute on function public.reajuste_atacado_dona(uuid, text) from public, anon, authenticated;
 revoke execute on function public.reajuste_atacado_concluir(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.reajuste_atacado_dona(uuid, text) to service_role;

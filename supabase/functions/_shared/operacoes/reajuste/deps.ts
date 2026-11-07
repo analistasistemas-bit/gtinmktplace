@@ -335,19 +335,37 @@ async function configAtacado(admin: SupabaseClient, orgId: string, variacaoIds: 
   };
 }
 
-/** Família pedida na edição do atacado; id fora da org → ForaDaOrg. */
+/** Família pedida na edição do atacado; id fora da org → ForaDaOrg. Um produto tem várias linhas (lotes) e o MLB herda de
+ *  qualquer uma: cor própria e config diferente valem para todas. Lote sem configuração não é config diferente. */
 async function familiasAtacado(admin: SupabaseClient, orgId: string, familiaIds: string[]): Promise<Map<string, FamiliaAtacado>> {
   const out = new Map<string, FamiliaAtacado>();
   for (const b of blocos(familiaIds)) {
     const { data, error } = await admin.from('familias').select('id, codigo_pai, atacado').eq('org_id', orgId).in('id', b);
     falhou('familias.atacado', error);
-    for (const f of data ?? []) out.set(String(f.id), { codigo_pai: String(f.codigo_pai), atacado: (f.atacado ?? null) as FamiliaAtacado['atacado'], porCor: false });
-    const cores = await admin.from('variacoes').select('familia_id').eq('org_id', orgId).in('familia_id', b).not('atacado', 'is', null);
-    falhou('variacoes.atacado', cores.error);
-    for (const v of cores.data ?? []) out.get(String(v.familia_id))!.porCor = true;
+    for (const f of data ?? []) {
+      out.set(String(f.id), { codigo_pai: String(f.codigo_pai), atacado: (f.atacado ?? null) as FamiliaAtacado['atacado'], porCor: false, lotesDivergentes: false });
+    }
   }
   const faltam = familiaIds.filter((id) => !out.has(id));
   if (faltam.length) throw new ForaDaOrg(faltam);
+
+  const linhas: { id: string; codigo_pai: string; atacado: unknown }[] = [];
+  for (const b of blocos([...new Set([...out.values()].map((f) => f.codigo_pai))])) {
+    linhas.push(...await paginarTudo<(typeof linhas)[number]>((de, ate) => admin.from('familias').select('id, codigo_pai, atacado')
+      .eq('org_id', orgId).in('codigo_pai', b).order('id').range(de, ate) as never));
+  }
+  const paiDaLinha = new Map(linhas.map((l) => [l.id, l.codigo_pai]));
+  const comCor = new Set<string>();
+  for (const b of blocos([...paiDaLinha.keys()])) {
+    const { data, error } = await admin.from('variacoes').select('familia_id').eq('org_id', orgId).in('familia_id', b).not('atacado', 'is', null);
+    falhou('variacoes.atacado', error);
+    for (const v of data ?? []) comCor.add(paiDaLinha.get(String(v.familia_id))!);
+  }
+  for (const f of out.values()) {
+    f.porCor = comCor.has(f.codigo_pai);
+    // Igualdade estrita, a mesma do compare-and-set da conclusão.
+    f.lotesDivergentes = linhas.some((l) => l.codigo_pai === f.codigo_pai && l.atacado != null && JSON.stringify(l.atacado) !== JSON.stringify(f.atacado));
+  }
   return out;
 }
 
@@ -438,9 +456,10 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
       return { ehKit: f.ehKit, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
     },
 
-    async marcarPasso(operacaoId, mlItemId, token, indice, estado) {
+    async marcarPasso(operacaoId, mlItemId, token, indice, estado, recusada) {
       const { data, error } = await admin.rpc('reajuste_passo_marcar', {
         p_org: orgId, p_operacao: operacaoId, p_ml_item: mlItemId, p_token: token, p_indice: indice, p_estado: estado,
+        ...(recusada ? { p_recusada: true } : {}),
       });
       falhou('reajuste_passo_marcar', error);
       return data === true;
