@@ -83,6 +83,16 @@ create function pg_temp.movs(p_transf uuid) returns bigint language sql as $$
   select count(*) from public.estoque_movimentos where transferencia_id = p_transf
 $$;
 
+-- `itens` corrompido de propósito, para provar a defesa das RPCs. Desde a migration kit_variacao_saga o
+-- trigger `kit_transferencias_itens_imutavel` recusa essa troca depois da reserva; aqui ele é desligado
+-- só durante o update, como dono da tabela.
+create function pg_temp.forcar_itens(p_id uuid, p_itens jsonb) returns void language plpgsql security definer as $$
+begin
+  alter table public.kit_transferencias disable trigger user;
+  update public.kit_transferencias set itens = p_itens where id = p_id;
+  alter table public.kit_transferencias enable trigger user;
+end $$;
+
 create function pg_temp.transf(p_org uuid, p_kit uuid, p_tipo text, p_itens jsonb) returns uuid language sql as $$
   insert into public.kit_transferencias (org_id, kit_id, tipo, versao_politica, itens)
   values (p_org, p_kit, p_tipo, 1, p_itens) returning id
@@ -407,18 +417,18 @@ begin
   perform pg_temp.afirmar(r = '{"ok": true, "aplicado": true}', 'reserva disjunta: ' || r::text);
   perform pg_temp.afirmar(pg_temp.movs(t2) = 4, 'reserva disjunta deveria mover 4 SKUs');
   antes := pg_temp.saldos(c.org);
-  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)) where id = t2;
+  perform pg_temp.forcar_itens(t2, jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)));
   r := public.kit_creditar_transferencia(c.org, t2);
   perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito sem a combinação retirada: ' || r::text);
   perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 4, 'crédito divergente gravou');
   -- Sentido inverso: itens com combinação a mais do que saiu.
-  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
-    jsonb_build_object('codigo', K4, 'quantidade', 1), jsonb_build_object('codigo', K2, 'quantidade', 1)) where id = t2;
+  perform pg_temp.forcar_itens(t2, jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
+    jsonb_build_object('codigo', K4, 'quantidade', 1), jsonb_build_object('codigo', K2, 'quantidade', 1)));
   r := public.kit_creditar_transferencia(c.org, t2);
   perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito com combinação a mais: ' || r::text);
   perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 4, 'crédito a mais gravou');
   -- Cancelar lê o ledger, não `itens`: devolve tudo, inclusive o que saiu da lista.
-  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)) where id = t2;
+  perform pg_temp.forcar_itens(t2, jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)));
   r := public.kit_cancelar_transferencia(c.org, t2);
   perform pg_temp.afirmar(r = '{"ok": true, "aplicado": true}', 'cancelar com itens alterados: ' || r::text);
   perform pg_temp.afirmar(pg_temp.movs(t2) = 8, 'cancelar não devolveu os 4 SKUs');
@@ -432,8 +442,8 @@ begin
   r := public.kit_reservar_transferencia(c.org, t2);
   perform pg_temp.afirmar((r->>'ok')::boolean, 'reserva antes de acrescentar: ' || r::text);
   antes := pg_temp.saldos(c.org);
-  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
-    jsonb_build_object('codigo', K4, 'quantidade', 1)) where id = t2;
+  perform pg_temp.forcar_itens(t2, jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
+    jsonb_build_object('codigo', K4, 'quantidade', 1)));
   r := public.kit_creditar_transferencia(c.org, t2);
   perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito com combinação disjunta a mais: ' || r::text);
   perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 2, 'crédito disjunto a mais gravou');

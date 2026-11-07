@@ -1632,10 +1632,14 @@ PK `(org_id, codigo, kit_id)`: quais kits em "só em kit" usam o SKU.
 A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
 (`montar|desmontar|repor|cancelamento|sair_sobra|entrada`), `passo` (default `pausar`), `estado`
 (`ativa|concluida|travada|abortada`), `versao_politica`, `itens jsonb`, `alerta`, `execucao_token`,
-`execucao_ate` (claim atômico), `criado_em`, `passo_em`.
+`execucao_ate` (claim atômico), `criado_em`, `passo_em`. `itens` é imutável depois da reserva (trigger
+`kit_transferencias_itens_imutavel`: recusa mudança se a transferência tem `kit_saida`).
+*Saga: `_shared/kit-variacao/saga.ts`, worker `kit-transferencia`; migration `20261107212019_kit_variacao_saga.sql`.*
 
 ### `kit_transferencia_alvos`
-PK `(transferencia_id, up_id)`, `item_ids text[]`, `qtd_passo1`, `valor_anterior`, `valor_alvo`,
+PK `(transferencia_id, up_id)`, `codigo`, `papel` (`origem|destino`), `delta` (peças ou kits com sinal,
+calculado pela RPC de criação), `item_ids text[]`, `qtd_passo1`, `passo1_em`, `ids_passo1 text[]`
+(pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo`,
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
 recebido), `escrita_em`, `confirmada_em`.
 
@@ -1644,13 +1648,29 @@ Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono reso
 (`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.
 
 ### Funções
-Ambas só `service_role`.
+Todas só `service_role`. As de transferência são `security definer`, dono `estoque_rpc_executor`,
+`search_path` vazio. Contrato de `itens`: `[{codigo, quantidade}]`; em montar, repor e desmontar,
+`codigo` é SKU de kit e `quantidade` é em kits (migration `20261107192458_kit_variacao_rpc.sql`).
 
 - `kit_variacao_recusa_desligar(p_org)` devolve o motivo para recusar desligar o módulo, ou `null`:
   transferência `ativa` ou `travada`, ou SKU de kit com saldo em `variacoes`.
 - `set_modulos_org_seguro(p_org, p_modulos)` trava a linha de `organizations` com `for update`, valida
   a recusa e grava `modulos_habilitados` numa transação. Devolve `{ok}` ou `{ok:false, motivo}`.
   Quem cria transferência precisa travar a mesma linha (`for share`) e revalidar o módulo.
+- `kit_criar_transferencia(p_org, p_kit, p_tipo, p_itens, p_alvos)` trava a org com `for share`, revalida
+  o módulo e, numa transação, cria transferência, alvos e exclusão (com `up_id`). `versao_politica` é a
+  soma das `sku_politica_kit.versao` dos códigos dos alvos. Devolve `{ok, id}` ou `{ok:false, motivo}`:
+  `modulo_desligado`, `alvos_invalidos` ou `up_ocupado` (com `codigo`), sem gravar nada.
+- `kit_reivindicar_execucao(p_org, p_transferencia, p_token, p_prazo_s)`: claim de uma invocação da saga
+  no relógio do banco; só em `ativa` e com prazo anterior vencido.
+- `kit_reservar_transferencia(p_org, p_transferencia)` grava `kit_saida` nas origens, tudo ou nada;
+  `kit_creditar_transferencia` grava `kit_entrada` no destino se o ledger bate com `itens`;
+  `kit_cancelar_transferencia` devolve à origem o que saiu e não chegou. Devolvem `{ok, aplicado}` ou
+  `{ok:false, motivo}`.
+- `kit_adquirir_exclusao(p_org, p_codigos, p_dono_tipo, p_dono_id)` (tudo ou nada, em ordem de código) e
+  `kit_soltar_exclusao(p_org, p_dono_id)`.
+- `registrar_entrada` e `ajustar_estoque` recusam (`23514`, `sku_em_transferencia`) SKU em transferência
+  `ativa` ou `travada`.
 
 ## Storage
 

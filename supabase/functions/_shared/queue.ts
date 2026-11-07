@@ -345,3 +345,21 @@ export async function enfileirarSincronizacaoMarca(job: SincronizarMarcaJobFila,
   });
   return messageId;
 }
+
+/** ADR-0197: um passo da saga de transferência de kit (worker kit-transferencia). */
+export interface KitTransferenciaJob { transferencia_id: string; org_id: string }
+
+/**
+ * Fora de fila serial: o claim (`kit_reivindicar_execucao`) serializa a transferência e a exclusão separa
+ * transferências, então a quarentena (`delay` de T) não segura escrita de ninguém. Passo que lança
+ * devolve 500 e o QStash repete; claim e estado gravado tornam a repetição segura.
+ */
+export async function enfileirarSaga(id: string, orgId: string, delaySegundos = 0): Promise<void> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  await qstashClient().publishJSON({
+    url: `${url}/functions/v1/kit-transferencia`,
+    body: { transferencia_id: id, org_id: orgId } satisfies KitTransferenciaJob,
+    ...(delaySegundos > 0 ? { delay: delaySegundos } : {}),
+    retries: 3,
+  });
+}

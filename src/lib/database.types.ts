@@ -1202,11 +1202,16 @@ export type Database = {
       }
       kit_transferencia_alvos: {
         Row: {
+          codigo: string | null
           confirmada_em: string | null
+          delta: number | null
           escrita_em: string | null
+          ids_passo1: string[] | null
           intencao_escrita_em: string | null
           item_ids: string[]
           org_id: string
+          papel: string | null
+          passo1_em: string | null
           pausado_pela_saga: string[]
           qtd_passo1: number | null
           recusa_definitiva_em: string | null
@@ -1216,11 +1221,16 @@ export type Database = {
           valor_anterior: number | null
         }
         Insert: {
+          codigo?: string | null
           confirmada_em?: string | null
+          delta?: number | null
           escrita_em?: string | null
+          ids_passo1?: string[] | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
           org_id: string
+          papel?: string | null
+          passo1_em?: string | null
           pausado_pela_saga?: string[]
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
@@ -1230,11 +1240,16 @@ export type Database = {
           valor_anterior?: number | null
         }
         Update: {
+          codigo?: string | null
           confirmada_em?: string | null
+          delta?: number | null
           escrita_em?: string | null
+          ids_passo1?: string[] | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
           org_id?: string
+          papel?: string | null
+          passo1_em?: string | null
           pausado_pela_saga?: string[]
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
@@ -5647,6 +5662,34 @@ export type Database = {
       inventario_orgs_elegiveis: { Args: never; Returns: string[] }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      kit_adquirir_exclusao: {
+        Args: { p_codigos: string[]; p_dono_id: string; p_dono_tipo: string; p_org: string }
+        Returns: Json
+      }
+      kit_cancelar_transferencia: {
+        Args: { p_org: string; p_transferencia: string }
+        Returns: Json
+      }
+      kit_creditar_transferencia: {
+        Args: { p_org: string; p_transferencia: string }
+        Returns: Json
+      }
+      kit_criar_transferencia: {
+        Args: { p_alvos: Json; p_itens: Json; p_kit: string; p_org: string; p_tipo: string }
+        Returns: Json
+      }
+      kit_reivindicar_execucao: {
+        Args: { p_org: string; p_prazo_s: number; p_token: string; p_transferencia: string }
+        Returns: boolean
+      }
+      kit_reservar_transferencia: {
+        Args: { p_org: string; p_transferencia: string }
+        Returns: Json
+      }
+      kit_soltar_exclusao: {
+        Args: { p_dono_id: string; p_org: string }
+        Returns: undefined
+      }
       kit_variacao_recusa_desligar: {
         Args: { p_org: string }
         Returns: string
