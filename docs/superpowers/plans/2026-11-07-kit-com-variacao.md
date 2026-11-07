@@ -63,6 +63,8 @@ Nada nesta fase muda org sem kit. Toda checagem começa por "SKU participa de ki
 **Files:**
 - Create: `supabase/migrations/<ts>_kit_variacao_schema.sql`
 - Modify: `src/lib/database.types.ts`, `src/lib/modulos.ts`, `supabase/functions/usuarios/index.ts`, `docs/reference/modelo-de-dados.md`
+
+`set_modulos_org` recusa desligar `kit_variacao` com kit que tenha saldo ou transferência aberta.
 - Test: `supabase/tests/kit_variacao_schema.sql`
 
 **Interfaces — Produces:**
@@ -77,7 +79,7 @@ Nada nesta fase muda org sem kit. Toda checagem começa por "SKU participa de ki
 | `kit_transferencias` | `id, org_id, kit_id, tipo` (`montar, desmontar, repor, cancelamento, sair_sobra, entrada`), `passo, estado` (`ativa, concluida, travada, abortada`), `versao_politica, itens jsonb, alerta, criado_em, passo_em` |
 | `kit_transferencia_alvos` | `transferencia_id, up_id, item_ids text[], qtd_passo1, valor_anterior, valor_alvo, pausado_pela_saga text[], escrita_em, confirmada_em` |
 
-Índice único parcial em `kit_transferencia_alvos (org_id, up_id)` para transferência ativa: é a exclusão por UP.
+Índice único parcial em `kit_transferencia_alvos (org_id, up_id)` para transferência `ativa` **ou `travada`**: é a exclusão por UP. UP travado continua excluído até o operador resolver. Colunas extras em `kit_transferencias`: `execucao_token, execucao_ate` (claim atômico). Em `kit_transferencia_alvos`: `intencao_escrita_em, recusa_definitiva_em` (intenção gravada antes do PUT).
 
 `estoque_movimentos`: motivos novos `kit_saida`, `kit_entrada`; coluna `transferencia_id uuid`; índice único `(transferencia_id, codigo, motivo)`.
 
@@ -96,13 +98,15 @@ RLS por `org_id` em todas; escrita só por service role.
 - Test: `supabase/tests/kit_variacao_rpc.sql`
 
 **Interfaces — Produces:**
-- `kit_reservar_transferencia(p_org uuid, p_transferencia uuid) returns jsonb`: trava `variacoes` dos SKUs em ordem de `codigo`, revalida disponível, grava `kit_saida` nas origens. Insuficiência devolve `{ok:false, motivo:'peca_insuficiente', codigo}` sem gravar nada.
+- `kit_reservar_transferencia(p_org uuid, p_transferencia uuid) returns jsonb`: trava `variacoes` dos SKUs em ordem de `codigo`, revalida disponível, trânsito e **capacidade até a meta** do kit, grava `kit_saida` nas origens. Insuficiência devolve `{ok:false, motivo:'peca_insuficiente', codigo}` sem gravar nada.
 - `kit_creditar_transferencia(p_org uuid, p_transferencia uuid) returns jsonb`: grava `kit_entrada` no destino.
 - `kit_cancelar_transferencia(p_org uuid, p_transferencia uuid) returns jsonb`: devolve o que saiu e não chegou.
 
+`registrar_entrada` e `ajustar_estoque` recusam com `sku_em_transferencia` quando o SKU tem transferência `ativa` ou `travada`: o operador repete depois. `baixar_estoque` e `estornar_estoque` nunca recusam, porque venda é sagrada; a saga relê no `confirmar`.
+
 Peça em trânsito é a soma de `kit_saida` sem `kit_entrada` da mesma transferência. Unidade de `kit_entrada` em SKU de kit é **kit**; o total em peças vem da composição (invariante 2).
 
-- [ ] **Step 1:** Testes SQL: reserva move N cores juntas; cor sem saldo aborta sem movimento nenhum; duas chamadas iguais aplicam uma vez; total em peças igual antes e depois de reservar, creditar e cancelar; duas transferências concorrentes no mesmo SKU: uma recebe `peca_insuficiente`.
+- [ ] **Step 1:** Testes SQL: reserva move N cores juntas; cor sem saldo aborta sem movimento nenhum; duas chamadas iguais aplicam uma vez; total em peças igual antes e depois de reservar, creditar e cancelar; duas transferências concorrentes no mesmo SKU: uma recebe `peca_insuficiente`; capacidade acima da meta recusa; entrada e ajuste durante transferência recusam; venda durante transferência aplica.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar, com dono `estoque_rpc_executor` e grants antes da troca de dono. Sem `greatest(0, …)`.
 - [ ] **Step 4:** Rodar. Esperado: `TESTE_OK`.
@@ -129,9 +133,9 @@ export async function lerOferta(token: string, upId: string): Promise<OfertaUP>;
 export async function listarPendentes(token: string, seller: string): Promise<PedidoPendente[]>;
 ```
 
-`listarPendentes` pagina `GET /orders/search/pending`. Só conta pedido com pagamento `pending`. `lerOferta` soma `locations[].quantity` e lista itens do UP via `users/{id}/items/search?user_product_id=`.
+`importarPedidosDoItem(admin, orgId, itemIds)` reusa `registrarBaixaVenda`: todo pedido pago do item é baixado de forma idempotente **antes** do cálculo. `listarPendentes` pagina `GET /orders/search/pending`. Só conta pedido com pagamento `pending`. `lerOferta` soma `locations[].quantity` e lista itens do UP via `users/{id}/items/search?user_product_id=`.
 
-- [ ] **Step 1:** Testes: pagamento `cancelled`/`rejected` não reserva; `pending` reserva a quantidade do item (Review Focus 2); pedido pago reserva até `qtdAgora < qtdPasso1`; pedido com vários itens conta só os do UP; leitura com falha devolve `duvida: true`; segundo local devolve `somenteSellingAddress: false`.
+- [ ] **Step 1:** Testes: pagamento `cancelled`/`rejected` não reserva; `pending` reserva a quantidade do item (Review Focus 2); pedido pago reserva até `qtdAgora < qtdPasso1`; pedido com vários itens conta só os do UP; leitura com falha devolve `duvida: true`; pedido parcialmente conciliado segue reservado; pagamento perto de T segue reservado; importar duas vezes baixa uma; segundo local devolve `somenteSellingAddress: false`.
 - [ ] **Step 2:** Rodar `pnpm test -- conciliacao`. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -153,16 +157,16 @@ export async function enfileirarSaga(id: string, orgId: string, delaySegundos?: 
 export async function criarTransferencia(admin, input): Promise<{ id: string } | { motivo: string }>;
 ```
 
-Um passo por invocação, com avanço condicional (`update … where passo = esperado`), então reentrega não repete. `aguardar` agenda com `delay` de T, sem segurar a fila serial. `criarTransferencia` grava alvos; conflito no índice do UP devolve `{motivo:'up_ocupado'}` e o chamador reagenda.
+Um passo por invocação. Cada invocação reivindica a execução atomicamente (`execucao_token` com prazo), e reentrega simultânea sai sem agir. `aguardar` agenda com `delay` de T, sem segurar a fila serial. `criarTransferencia` grava alvos; conflito no índice do UP devolve `{motivo:'up_ocupado'}` e o chamador reagenda.
 
 Regras por passo, da spec "Escrita de estoque com anúncio pausado":
 - `pausar`: `lerOferta`, grava `qtd_passo1`, pausa e registra em `pausado_pela_saga` só o que estava ativo. Exige `somenteSellingAddress` e `paused_by_seller` em todos.
 - `calcular`: grava `valor_anterior` e `valor_alvo` uma única vez; `kit_reservar_transferencia` roda aqui.
-- `escrever`: `PUT /items` `available_quantity`. 4xx permite repetir. Timeout grava `resultado_incerto`.
-- `confirmar`: leitura igual a `valor_alvo` conclui e chama `kit_creditar_transferencia`. Incerto com outro número: `estado='travada'`, alerta, sem reenvio.
+- `escrever`: grava `intencao_escrita_em` **antes** do `PUT /items`. 4xx grava `recusa_definitiva_em` e permite repetir. Retomada com intenção e sem recusa registrada é resultado incerto: nunca reenvia, vai para `confirmar`.
+- `confirmar`: leitura igual a `valor_alvo` conclui. Antes do crédito, exige identidade do UP, pausa vigente e **todas** as reduções que financiam o aumento confirmadas; só então `kit_creditar_transferencia`. Incerto com outro número: `estado='travada'`, alerta, sem reenvio.
 - `reativar`: só itens de `pausado_pela_saga`, se a política vigente permitir e a versão bater.
 
-- [ ] **Step 1:** Testes, com `deps` falsos: sequência feliz; reentrega do mesmo passo não duplica; timeout com leitura igual ao alvo conclui; timeout com leitura igual ao anterior trava sem reenviar (caso do Grok); 4xx repete; `duvida` na conciliação bloqueia; `versao_politica` velha aborta sem reativar; item com pausa manual antes da saga não é reativado (Review Focus 1); item moderado durante a saga trava e nunca reativa (Review Focus 3); segunda transferência no mesmo UP recebe `up_ocupado` (Review Focus 4); `out_of_stock` sem `paused_by_seller` não passa de `pausar`.
+- [ ] **Step 1:** Testes, com `deps` falsos: sequência feliz; reentrega do mesmo passo não duplica; timeout com leitura igual ao alvo conclui; timeout com leitura igual ao anterior trava sem reenviar (caso do Grok); 4xx repete; `duvida` na conciliação bloqueia; `versao_politica` velha aborta sem reativar; item com pausa manual antes da saga não é reativado (Review Focus 1); item moderado durante a saga trava e nunca reativa (Review Focus 3); segunda transferência no mesmo UP recebe `up_ocupado` (Review Focus 4); UP `travada` segue ocupado; queda depois do PUT e antes de persistir a resposta não reenvia; duas invocações simultâneas agem uma vez; crédito espera todas as reduções; `out_of_stock` sem `paused_by_seller` não passa de `pausar`.
 - [ ] **Step 2:** Rodar `pnpm test -- saga`. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -172,7 +176,7 @@ Regras por passo, da spec "Escrita de estoque com anúncio pausado":
 
 **Files:**
 - Create: `supabase/functions/_shared/kit-variacao/politica.ts`
-- Modify: `supabase/functions/sincronizar-estoque/processar.ts`, `supabase/functions/_shared/user-products/atualizar-composicao.ts`, `supabase/functions/_shared/user-products/atualizar-familia-up.ts`, `supabase/functions/reconciliar-estoque/index.ts`, `supabase/functions/reconciliar-convergencia-up/processar.ts`, `supabase/functions/_shared/canais/mercado-livre.ts`
+- Modify: `supabase/functions/sincronizar-estoque/processar.ts`, `supabase/functions/_shared/user-products/atualizar-composicao.ts`, `supabase/functions/_shared/user-products/atualizar-familia-up.ts`, `supabase/functions/reconciliar-estoque/index.ts`, `supabase/functions/reconciliar-convergencia-up/processar.ts`, `supabase/functions/_shared/canais/mercado-livre.ts`, `supabase/functions/_shared/user-products/publicar-grupo.ts`, `supabase/functions/_shared/user-products/portas-supabase.ts`, `supabase/functions/publicar-split-ml/index.ts`, `supabase/functions/ajustar-estoque/processar.ts`, `supabase/functions/entrada-estoque/processar.ts`
 - Test: `supabase/functions/_shared/kit-variacao/__tests__/politica.test.ts`, testes existentes de cada caminho
 
 **Interfaces — Produces:**
@@ -183,11 +187,13 @@ export function podeEscreverQuantidade(p: { participa: boolean; origem: 'saga' |
 export function podeReativar(p: { politica: PoliticaSku | null; origem: 'saga' | 'operador' | 'automatico' }): DecisaoReativar;
 ```
 
-Falha de leitura em `skusParticipantes` lança: quem chama não escreve e alerta.
+Org sem módulo sai antes de qualquer consulta nova. Falha ao ler o módulo ou os participantes lança: quem chama não escreve, e o retry da fila repete.
+
+CREATE e ativação também passam pela guarda: `publicar-grupo.ts:216`, `portas-supabase.ts:83` e `:98`, e `publicar-split-ml/index.ts:316` validam a versão da política logo antes da chamada remota, e não publicam snapshot anterior à transferência.
 
 SKU participante fora da saga: `sincronizar-estoque` retira do push e chama `criarTransferencia` tipo `entrada`, para entrada, ajuste e estorno. Os demais caminhos omitem `available_quantity` do payload. Reconciliação diária reprocessa transferências `ativa` sem limite de 24 h.
 
-- [ ] **Step 1:** Testes: em `sincronizar-estoque`, SKU participante não gera alvo e cria transferência; SKU comum segue igual (teste de regressão); falha de leitura não escreve; `atualizar-composicao` não leva `available_quantity` em SKU participante; reconciliação pega transferência parada há 2 dias.
+- [ ] **Step 1:** Testes: em `sincronizar-estoque`, SKU participante não gera alvo e cria transferência; SKU comum segue igual (teste de regressão); falha de leitura não escreve; `atualizar-composicao` não leva `available_quantity` em SKU participante; reconciliação pega transferência parada há 2 dias; org sem módulo não faz consulta nova e segue igual; publicação antiga, Reenviar, split e retomada concorrentes à transferência não escrevem; entrada recusada mostra mensagem ao operador.
 - [ ] **Step 2:** Rodar `pnpm test -- politica sincronizar-estoque atualizar-composicao`. Esperado: falha.
 - [ ] **Step 3:** Implementar nos 5 caminhos da tabela da spec.
 - [ ] **Step 4:** Rodar. Esperado: PASS, com testes antigos intactos.
@@ -214,9 +220,9 @@ Todo caminho que ativa anúncio chama `podeReativar`. Guardado: `reativar` do jo
 - Modify: `supabase/functions/ingest-lote/index.ts`, `supabase/functions/adicionar-variacoes-familia/index.ts`, `supabase/functions/remover-publicado/processar.ts`, `supabase/functions/criar-kit-vinculado/processar.ts`, `supabase/functions/criar-kit-virtual/*`
 - Test: `supabase/tests/kit_variacao_guards.sql`, testes das edges
 
-Regras: `ingest-lote` e `adicionar-variacoes-familia` não trazem saldo de planilha nem de snapshot em SKU participante: o saldo da nova cópia é lido e gravado dentro de RPC sob o lock do SKU, recusando se houver transferência ativa. `preparar_republicacao` e `remover-publicado` recusam com kit, trânsito ou estorno pendente. Exclusão de cor e `limpar_movimentos_orfaos` preservam movimentos de SKU em composição. Criar kit vinculado ou Kit Virtual sobre base em kit com variação é recusado, e o inverso também (`base_em_kit`).
+Regras: `ingest-lote` e `adicionar-variacoes-familia` não trazem saldo de planilha nem de snapshot em SKU participante: o saldo da nova cópia é lido e gravado dentro de RPC sob o lock do SKU, recusando se houver transferência ativa. `preparar_republicacao` e `remover-publicado` recusam só com transferência ativa ou travada; fora disso preservam política e composição e incrementam `versao`, invalidando trabalhos antigos. Exclusão de cor e `limpar_movimentos_orfaos` preservam movimentos de SKU em composição. Criar kit vinculado ou Kit Virtual sobre base em kit com variação é recusado, e o inverso também (`base_em_kit`).
 
-- [ ] **Step 1:** Testes: planilha com `ESTOQUE` diferente não altera saldo de SKU participante; adicionar variação concorrente com transferência recusa; excluir cor em composição falha; republicar com trânsito recusa; Kit Virtual recusado nos dois sentidos.
+- [ ] **Step 1:** Testes: planilha com `ESTOQUE` diferente não altera saldo de SKU participante; adicionar variação concorrente com transferência recusa; excluir cor em composição falha; republicar com trânsito recusa; republicar sem trânsito preserva composição e invalida job velho; Kit Virtual recusado nos dois sentidos.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -228,9 +234,9 @@ Regras: `ingest-lote` e `adicionar-variacoes-familia` não trazem saldo de plani
 - Modify: `supabase/functions/_shared/estoque/baixa.ts`, `supabase/functions/_shared/estoque/cancelamento.ts`, `supabase/functions/_shared/estoque/kit.ts`
 - Test: `supabase/functions/_shared/estoque/__tests__/`
 
-`resolverOrigemEstoque` continua neutro para este kit, porque o predicado é `kit_multiplicador`. Venda baixa o SKU do kit. Cancelamento dentro do ADR-0121 credita o saldo local e cria transferência `cancelamento`, mesmo com `reposicao_auto = false`. Fora do ADR-0121, só o aviso existente. Falha de crédito não devolve `reposto`: fica pendente com retry (corrige `falhas` descartadas em `cancelamento.ts:97`). Telegram avisa saldo zero do kit em modo manual.
+`resolverOrigemEstoque` continua neutro para este kit, porque o predicado é `kit_multiplicador`. Venda baixa o SKU do kit. Cancelamento dentro do ADR-0121 credita o saldo local e cria transferência `cancelamento`, mesmo com `reposicao_auto = false`. Fora do ADR-0121, só o aviso existente. Só para SKU participante: falha de crédito não devolve `reposto` e fica pendente com retry. Os demais SKUs seguem o `cancelamento.ts:97` atual, sem mudança. Telegram avisa saldo zero do kit em modo manual.
 
-- [ ] **Step 1:** Testes: venda baixa só o SKU do kit; cancelamento pré-despacho credita e agenda; pós-despacho não credita; falha mantém pendente; SKU retirado segue creditável.
+- [ ] **Step 1:** Testes: venda baixa só o SKU do kit; cancelamento pré-despacho credita e agenda; pós-despacho não credita; falha mantém pendente; SKU retirado segue creditável; SKU comum e org sem módulo mantêm o resultado de hoje.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -242,9 +248,9 @@ Regras: `ingest-lote` e `adicionar-variacoes-familia` não trazem saldo de plani
 - Create: `supabase/migrations/<ts>_kit_variacao_inventario.sql`
 - Test: `supabase/tests/kit_variacao_inventario.sql`
 
-Replay de `20261016233218_adr181_inventario_calculo.sql` reconhece `kit_saida`/`kit_entrada` preservando quantidade por componente, custo e nota de origem. Kit de 2 peças conta 2 peças.
+Replay de `20261016233218_adr181_inventario_calculo.sql` reconhece `kit_saida`/`kit_entrada` em montagem, desmontagem, cancelamento e trânsito, preservando quantidade por componente, custo e nota de origem. Kit de 2 peças conta 2 peças.
 
-- [ ] **Step 1:** Teste: entrada com nota de P e B, montar 1 kit: inventário segue com 1 P e 1 B valorizados e com a nota; trânsito também conta.
+- [ ] **Step 1:** Teste: entrada com nota de P e B, montar 1 kit: inventário segue com 1 P e 1 B valorizados e com a nota; trânsito também conta; desmontar devolve a nota; venda e cancelamento do kit mantêm a conta.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: `TESTE_OK`.
@@ -288,12 +294,12 @@ Fiscal: SKU de kit herda NCM e origem da base e passa pelo fluxo de `tax_informa
 
 **Files:**
 - Create: `supabase/functions/gerar-texto-kit/index.ts`
-- Modify: `supabase/functions/_shared/ai/copywriter-prompt.ts`
+- Modify: `supabase/functions/_shared/ai/copywriter-prompt.ts`, `supabase/functions/reprocessar-familia/index.ts`, `supabase/functions/process-familia/index.ts`
 - Test: `supabase/functions/gerar-texto-kit/__tests__/`
 
-Etapa própria, com `resolverModeloTexto`, chamada pela prévia. Não usa `process-familia`; a trava de `reprocessar-familia` cobre este kit.
+Etapa própria, com `resolverModeloTexto`, chamada pela prévia. Não usa `process-familia`. As travas de `reprocessar-familia` e `process-familia/index.ts:85` hoje só olham `kit_multiplicador`: estender para família de `kits_variacao`.
 
-- [ ] **Step 1:** Testes: título contém "Kit N"; limite de 60 caracteres; `reprocessar-familia` recusa família deste kit.
+- [ ] **Step 1:** Testes: título contém "Kit N"; limite de 60 caracteres; `reprocessar-familia` e `process-familia` recusam família deste kit.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -344,9 +350,9 @@ Layout do rascunho aprovado em 06/11: cores, peças por kit, tabela combinação
 export function planejarReposicao(p: FotoKit): { moves: Move[]; sobras: string[]; voltarGuardado: string[] };
 ```
 
-Função pura sobre fotografia consistente. Ordem determinística: maior falta para a meta, depois `codigo`. Cor em Sobra conta como disponível. Não vira Sobra com transferência pendente. Dispara em lote após venda, entrada, cancelamento e ajuste, com agrupamento por kit. Ligar a opção confirma a pausa antes de usar peças. Desligar kit remove só a reivindicação dele; SKU só volta a Normal sem reivindicação. Automação só desfaz a pausa que fez. Virar Sobra reativa e avisa no Telegram.
+Função pura sobre fotografia consistente. Ordem determinística: maior falta para a meta, depois `codigo`. Cor em Sobra conta como disponível. Não vira Sobra com transferência pendente. Dispara em lote após venda, entrada, cancelamento e ajuste, com agrupamento por kit. Sobra → Guardado reserva os parceiros na mesma transação, antes de pausar. Ligar a opção confirma a pausa antes de usar peças. Desligar kit remove só a reivindicação dele; SKU só volta a Normal sem reivindicação. Automação só desfaz a pausa que fez. Virar Sobra reativa e avisa no Telegram.
 
-- [ ] **Step 1:** Testes: meta 3 com saldo 2 move 1; falta de parceiro vira sobra e reativa; entrada do parceiro devolve a Guardado antes de montar; dois kits, desligar um mantém Guardado; pausa manual anterior não é reativada ao desligar; decisão velha é rejeitada por versão.
+- [ ] **Step 1:** Testes: meta 3 com saldo 2 move 1; falta de parceiro vira sobra e reativa; entrada do parceiro reserva, devolve a Guardado e só então monta; parceiro consumido no meio não deixa SKU preso em Guardado; dois kits, desligar um mantém Guardado; pausa manual anterior não é reativada ao desligar; decisão velha é rejeitada por versão.
 - [ ] **Step 2:** Rodar. Esperado: falha.
 - [ ] **Step 3:** Implementar.
 - [ ] **Step 4:** Rodar. Esperado: PASS.
@@ -397,5 +403,5 @@ Espelha `platform_sonar_deliveries`: `platform_image_deliveries` (`org_id, month
 - [ ] **Step 1:** Skill `docs-update-checklist`: `docs/reference/edge-functions.md`, `modelo-de-dados.md`, `TASKS.md`, `project-status.md`, vault.
 - [ ] **Step 2:** Skill `graphify-update-maintenance`.
 - [ ] **Step 3:** `pnpm preflight`. Revisão final Codex `gpt-6.1-sol` high do diff, e Grok 4.7 xhigh.
-- [ ] **Step 4:** Com pedido do Diego: merge fast-forward, `supabase db push`, deploy das edges, conferir versão.
+- [ ] **Step 4:** Com pedido do Diego: merge fast-forward e `supabase db push`. Listar por `grep` toda edge que importa `_shared/` alterado, deployar todas, conferir hash por `functions download` antes de ligar qualquer módulo. Jobs antigos na fila são invalidados pela versão da política.
 - [ ] **Step 5:** Ligar `kit_variacao` só na DSA ou Daludi e criar o primeiro kit real com Diego, com 1 combinação. Conferir invariante 2 por SQL antes e depois.
