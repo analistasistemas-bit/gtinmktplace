@@ -204,8 +204,7 @@ Regras exigidas pela revisão adversarial do Codex (rodada 1, veredito REVISAR).
 os furos daquela revisão, e cada regra é obrigatória para o plano.
 
 1. **Origem vendável [Diego, opção B]:** peça nunca sai de anúncio ativo. Toda transferência usa
-   quarentena, e a automação só usa peça guardada. Confirmar na documentação do ML se existe redução
-   condicional **[medir]**; existindo, isso não muda a regra sem nova decisão.
+   quarentena, e a automação só usa peça guardada.
 2. **Compromissos antes de consumir:** depois da pausa confirmada, importar e baixar os pedidos
    anteriores à pausa, com referência idempotente. Com a conta incerta, bloquear montagem e qualquer
    push que aumente quantidade.
@@ -244,6 +243,47 @@ os furos daquela revisão, e cada regra é obrigatória para o plano.
 
 Tempo de quarentena e efeito das pausas no ranking do ML **[medir]**. Acontecem só em Montar mais,
 Desmontar e ao sair de Sobra.
+
+## Escrita de estoque por versão
+
+Revisão 2 do Codex: pausar não basta. (a) Nenhuma espera prova que todo pedido anterior à pausa
+apareceu. (b) Escrever quantidade absoluta em destino ativo pode devolver uma peça vendida no instante
+da escrita. Regra que fecha os dois:
+
+**Nos SKUs de kit e nos individuais usados em kit, toda mudança de quantidade no ML usa a API de
+estoque de user product com versão, nunca `available_quantity` absoluto.**
+
+1. `GET /user-products/{id}/stock` devolve quantidade e `x-version`.
+2. Novo valor = **quantidade lida no ML** + delta da operação. Nunca o saldo local.
+3. `PUT /user-products/{id}/stock/type/selling_address` com `x-version`.
+4. 409 significa que houve mudança no meio: nada foi escrito. Relê, reavalia a operação e, se a peça
+   não estiver mais lá, aborta.
+
+O saldo do ML é a verdade da disponibilidade nessas operações: a origem só cede o que o ML ainda
+mostra. O ledger local nunca aumenta oferta sozinho. Divergência entre os dois bloqueia a operação e
+gera alerta.
+
+Isso vale também para push de entrada e reconciliação nesses SKUs: entrada soma delta, e não regrava
+total.
+
+**Só user product:** a API não existe para item Legacy (medido: `/stock` devolve 404 em item sem
+`user_product_id`). Base Legacy não pode gerar kit com variação.
+
+**Medido em 06/11, só leitura:** em 4 das 5 contas conectadas, um user product devolveu `x-version` e
+um único local `selling_address`. O item da 5ª não é user product.
+
+**Portão: nada é construído sem provar [medir]:**
+
+1. `PUT` com versão atual grava, e a versão sobe.
+2. `PUT` com versão velha devolve 409 e não grava. A doc diz isso; falta medir nas nossas contas.
+3. A doc lista o erro "seller with a single warehouse cannot update selling address stock". Nossas
+   contas têm um local: provar que o `PUT` é aceito.
+4. Uma venda real muda a versão e baixa a quantidade **no momento do pedido**, inclusive com pagamento
+   pendente. Medir por leitura, sem escrever: comparar criação do pedido com `last_updated` do estoque.
+5. Se 1 a 4 falharem, o desenho volta para revisão, porque não há prova contra venda concorrente.
+
+Se o portão passar, a quarentena pode deixar de ser necessária. Isso exige nova decisão do Diego e não
+muda a opção B sozinho.
 
 ## Publicação no ML
 
