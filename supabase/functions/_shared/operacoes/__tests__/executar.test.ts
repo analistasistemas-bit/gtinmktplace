@@ -124,7 +124,7 @@ describe('executar — aderir', () => {
     const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
     // Fluxo real: validarPedido preenche o preço do SMART com o preco_promo do preview.
     const itens = [item('MLB1', { preco: 19.5 })];
-    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1' }), post: () => ({ offer_id: 'O-1' }) });
+    const { deps } = montar(itens, { campanha: () => conv({ offer_id: 'C-1', preco: 30 }), post: () => ({ offer_id: 'O-1' }) });
     deps.recontarCentral.mockRejectedValue(new Error('db'));
     expect(await executar(op, deps, OPTS)).toEqual({ processados: 1, continuou: false });
     expect(deps.espelharPreco).not.toHaveBeenCalled();
@@ -153,7 +153,7 @@ describe('executar — aderir', () => {
     const op: OperacaoRow = { ...DEAL_ADERIR, promocao_tipo: 'SMART' };
     const itens = [item('MLB1', { preco: null })];
     const { deps, ml } = montar(itens, {
-      campanha: () => conv({ offer_id: 'CANDIDATE-MLB1-1' }), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
+      campanha: () => conv({ offer_id: 'CANDIDATE-MLB1-1', preco: 30 }), post: () => ({ offer_id: 'OFFER-MLB1-9' }) });
     await executar(op, deps, OPTS);
     expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'P-1', promotion_type: 'SMART', offer_id: 'CANDIDATE-MLB1-1' });
     expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-MLB1-9' });

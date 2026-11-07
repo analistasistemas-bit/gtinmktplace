@@ -144,7 +144,8 @@ export function decidir(
   }
 
   if (!fresco.offer_id) return fim('erro', 'O ML não informou a oferta deste convite');
-  if (fresco.preco != null && fresco.preco < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
+  if (fresco.preco == null) return fim('erro', 'O ML não informou o preço da oferta');
+  if (fresco.preco < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
   return { tipo: 'post', body: { promotion_id: promocaoId, promotion_type: 'SMART', offer_id: fresco.offer_id } };
 }
 

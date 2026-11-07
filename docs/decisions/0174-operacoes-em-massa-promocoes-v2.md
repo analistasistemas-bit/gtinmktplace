@@ -320,7 +320,8 @@ preço original até R$ 19. Substitui o "Só Relâmpago" da emenda de 2026-11-02
    bloquear ali esconderia uma escrita incerta. Sair segue livre.
 5. **Reverter passa pela mesma trava:** voltar a preço abaixo de R$ 19 é recusado; o operador escolhe preço ≥ R$ 19
    ou sai da campanha.
-6. **"Até quanto" para no piso:** o sync calcula a partir de R$ 19, para o botão não sugerir preço recusado.
+6. **"Até quanto" para no piso:** o sync calcula na faixa real e limita o resultado a R$ 19, para o botão não sugerir
+   preço recusado. SMART sem preço da oferta não adere: sem ele o piso não é conferido.
 7. **Fora do escopo:** anúncios que já participam abaixo de R$ 19 não saem sozinhos, e o reajuste em massa
    (ADR-0178) não passa por esta validação.
 8. **Implantação:** `preco_avaliado`, projeção e `ml_promocoes.contagem` são gravados, então só mudam quando o sync

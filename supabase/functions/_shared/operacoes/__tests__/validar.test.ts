@@ -92,6 +92,10 @@ describe('validarPedido', () => {
       const r = await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 18.99, confirmado_risco: true }], central(linha({ status: 'started', preco_original: 60 })), semExato);
       expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: MOTIVO }]);
     });
+    it('SMART aderir sem preço da oferta recusa, mesmo com risco confirmado', async () => {
+      const r = await validarPedido('aderir', 'SMART', [{ ml_item_id: 'MLB1', confirmado_risco: true }], central(linha({ preco_promo: null })), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'O ML não informou o preço da oferta' }]);
+    });
     it('sair continua livre abaixo de 19', async () => {
       const r = await validarPedido('sair', 'DEAL', [{ ml_item_id: 'MLB1' }], central(linha({ status: 'started', preco_promo: 16.53 })), semExato);
       expect(r.ok).toBe(true);

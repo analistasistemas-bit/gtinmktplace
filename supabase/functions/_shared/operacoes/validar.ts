@@ -135,7 +135,8 @@ export async function validarPedido(
       preco = it.preco;
     } else {
       preco = l.preco_promo; // SMART: o preço é o da oferta do ML (informativo)
-      if (preco != null && preco < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
+      if (preco == null) { recusar('O ML não informou o preço da oferta'); continue; }
+      if (preco < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
     }
     // Trava financeira: vermelho/indisponivel só entra com o risco confirmado (checkbox separado no preview).
     const s = await semaforoReal(l, preco, exato);

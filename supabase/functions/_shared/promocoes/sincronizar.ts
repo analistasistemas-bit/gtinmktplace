@@ -106,9 +106,9 @@ async function projetarCor(
   let ate: { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } = { valor: null, motivo: null };
   if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
     try {
-      // Abaixo do piso de R$ 19 ninguém adere: o "até quanto" para nele. Faixa toda abaixo fica como veio (item oculto).
-      const min = Math.min(Math.max(it.preco_min, PRECO_MIN_PROMOCAO), it.preco_max);
-      ate = await ateQuantoDescer({ piso, custo, aliquotaPct, min, max: it.preco_max }, tarifaNo);
+      ate = await ateQuantoDescer({ piso, custo, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
+      // Calcula na faixa real (subir o mínimo viraria um falso "qualquer preço") e só então para no piso de R$ 19.
+      if (ate.valor != null && ate.valor < PRECO_MIN_PROMOCAO && it.preco_max >= PRECO_MIN_PROMOCAO) ate = { valor: PRECO_MIN_PROMOCAO, motivo: null };
     } catch (e) {
       // sem "até quanto"; o líquido no preço avaliado continua válido
       console.warn('[promocoes] até quanto indisponível', { ml_item_id: it.ml_item_id, variation_id: c.variation_id, erro: mensagem(e) });

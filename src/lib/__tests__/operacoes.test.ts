@@ -57,6 +57,7 @@ describe('montarPreview', () => {
     const naoSimulado = item({ ml_item_id: 'N', preco_sugerido: 100, projecao: p });
     const linhas = montarPreview('aderir', 'DEAL', [simulado, naoSimulado], new Map([['S', 55]]));
     expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
+    expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: null, preco_promo: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
     expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
     expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
     expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });

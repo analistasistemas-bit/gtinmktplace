@@ -64,7 +64,7 @@ export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, it
       : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
       : tipo === 'DEAL' || tipo === 'LIGHTNING'
         // Sugerido abaixo do piso: o servidor já avaliou no menor preço permitido (R$ 19 ou o mínimo da faixa).
-        ? (it.preco_sugerido != null && it.preco_sugerido < PRECO_MIN_PROMOCAO ? it.preco_avaliado : it.preco_sugerido)
+        ? ((it.preco_sugerido ?? it.preco_promo ?? PRECO_MIN_PROMOCAO) < PRECO_MIN_PROMOCAO ? it.preco_avaliado : it.preco_sugerido)
         : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);

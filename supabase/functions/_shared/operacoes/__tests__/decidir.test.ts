@@ -66,8 +66,12 @@ describe('decidir — aderir SMART', () => {
     expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9', preco: 18.5 }, null))
       .toEqual({ tipo: 'fim', status: 'bloqueado', mensagem: 'Abaixo de R$ 19 o comprador perde o frete grátis' });
   });
-  it('posta offer_id do convite', () => {
+  it('preço vivo ausente → erro, sem POST (sem ele o piso não é conferido)', () => {
     expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9' }, null))
+      .toEqual({ tipo: 'fim', status: 'erro', mensagem: 'O ML não informou o preço da oferta' });
+  });
+  it('posta offer_id do convite', () => {
+    expect(decidir('aderir', 'SMART', 'P-2', pedido(null), { ...conv, offer_id: 'CANDIDATE-MLB1-9', preco: 30 }, null))
       .toEqual({ tipo: 'post', body: { promotion_id: 'P-2', promotion_type: 'SMART', offer_id: 'CANDIDATE-MLB1-9' } });
   });
 });
