@@ -43,12 +43,13 @@ describe('precoAlvo', () => {
 
 describe('foraDaFaixa', () => {
   it('fora de [min, max] do ML', () => {
-    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 39.99, 'DEAL')).toMatch(/faixa do ML/);
-    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 70.01, 'DEAL')).toMatch(/faixa do ML/);
-    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 50, 'DEAL')).toBeNull();
+    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 39.99)).toMatch(/faixa do ML/);
+    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 70.01)).toMatch(/faixa do ML/);
+    expect(foraDaFaixa(item({ ml_item_id: 'A' }), 50)).toBeNull();
   });
-  it('Relâmpago abaixo de R$ 19', () => {
-    expect(foraDaFaixa(item({ ml_item_id: 'A', preco_min: 10 }), 18.9, 'LIGHTNING')).toMatch(/R\$ 19/);
+  it('abaixo de R$ 19 em qualquer tipo', () => {
+    expect(foraDaFaixa(item({ ml_item_id: 'A', preco_min: 10 }), 18.9)).toMatch(/R\$ 19/);
+    expect(foraDaFaixa(item({ ml_item_id: 'A', preco_min: 10 }), 19)).toBeNull();
   });
 });
 

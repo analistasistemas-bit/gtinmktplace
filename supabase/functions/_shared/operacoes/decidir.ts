@@ -1,9 +1,8 @@
 // ADR-0174 — decisão pura por item: dada a leitura fresca da campanha, o que fazer no ML (ou encerrar).
 // Idempotente por construção: item já participando nunca é postado de novo.
-import { ehParticipando } from '../promocoes/projecao.ts';
+import { ehParticipando, MSG_PISO_PROMOCAO, PRECO_MIN_PROMOCAO } from '../promocoes/projecao.ts';
 import type { Semaforo } from '../promocoes/tipos.ts';
 import { type Acao, type Decisao, type ItemNaCampanha, type OfertaNoItem, ofertaFixaNova, type PedidoItem, type Relacoes, type TipoPromocao } from './tipos.ts';
-import { PRECO_MIN_RELAMPAGO } from './validar.ts';
 
 const fim = (status: Extract<Decisao, { tipo: 'fim' }>['status'], mensagem: string | null = null): Decisao =>
   ({ tipo: 'fim', status, mensagem });
@@ -25,7 +24,7 @@ function aderirRelampago(
   const max = oferta.preco_max;
   if (min === null || max === null) return fim('erro', 'O ML não informou a faixa de preço deste anúncio');
   if (p === null || p < min || p > max) return faixaMudou(min, max);
-  if (p < PRECO_MIN_RELAMPAGO) return fim('bloqueado', 'Abaixo de R$ 19 o comprador perde o frete grátis');
+  if (p < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
 
   const e1 = fresco.estoque_min, e2 = oferta.estoque_min;
   if ((e1 === null && e2 === null) || (e1 !== null && e2 !== null && e1 !== e2)) {
@@ -61,7 +60,7 @@ function aderirOfertaFixa(
   const vivo = fresco.preco ?? null;
   if (vivo === null) return fim('erro', 'O ML não informou o preço da oferta');
   if (p === null || centavos(vivo) !== centavos(p)) return fim('mudou', `O preço da oferta mudou: agora ${reais(vivo)}`);
-  if (vivo < PRECO_MIN_RELAMPAGO) return fim('bloqueado', 'Abaixo de R$ 19 o comprador perde o frete grátis');
+  if (vivo < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
   const body = { promotion_id: promocaoId, promotion_type: tipo, offer_id: fresco.offer_id };
   if (tipo === 'PRICE_MATCHING') return { tipo: 'post', body };
 
@@ -140,10 +139,13 @@ export function decidir(
     const fora = p === null || (min !== null && max !== null && (p < min || p > max));
     // ponytail: preço nulo com faixa desconhecida reusa a mensagem de faixa; min/max null viram "?".
     if (fora) return faixaMudou(min, max);
+    if (p < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
     return { tipo: 'post', body: { promotion_id: promocaoId, promotion_type: 'DEAL', deal_price: p } };
   }
 
   if (!fresco.offer_id) return fim('erro', 'O ML não informou a oferta deste convite');
+  if (fresco.preco == null) return fim('erro', 'O ML não informou o preço da oferta');
+  if (fresco.preco < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);
   return { tipo: 'post', body: { promotion_id: promocaoId, promotion_type: 'SMART', offer_id: fresco.offer_id } };
 }
 

@@ -46,6 +46,35 @@ beforeEach(() => {
   vi.mocked(toast.error).mockClear();
 });
 
+describe('piso de R$ 19 fora da Relâmpago', () => {
+  const enviar = () => screen.getByRole('button', { name: /Enviar para o ML|Confirmar|Executar/ });
+  const deal = (o: Partial<ItemPromocao> = {}) => item({ ml_item_id: 'D', preco_sugerido: 30, preco_avaliado: 30, preco_min: 10, preco_max: 50, ...o });
+
+  it('DEAL: 18,99 bloqueia o envio e mostra o mínimo', async () => {
+    const user = userEvent.setup();
+    renderPreview({ tipo: 'DEAL', itens: [deal()] });
+    const input = screen.getByLabelText('Preço de D');
+    await user.clear(input);
+    await user.type(input, '18,99');
+    expect(screen.getByText('Mínimo R$ 19,00 (frete grátis)')).toHaveClass('text-danger');
+    expect(enviar()).toBeDisabled();
+  });
+
+  it('alterar preço: 18,99 bloqueia o envio', async () => {
+    const user = userEvent.setup();
+    renderPreview({ tipo: 'DEAL', acao: 'alterar_preco', itens: [deal({ status: 'started' })] });
+    const input = screen.getByLabelText('Preço de D');
+    await user.clear(input);
+    await user.type(input, '18,99');
+    expect(enviar()).toBeDisabled();
+  });
+
+  it('SMART: oferta abaixo de 19 bloqueia o envio', () => {
+    renderPreview({ tipo: 'SMART', itens: [item({ ml_item_id: 'S', preco_promo: 18, preco_sugerido: 18, preco_avaliado: 18 })] });
+    expect(enviar()).toBeDisabled();
+  });
+});
+
 describe('Você recebe por venda ao aderir', () => {
   const tarifado = (o: Partial<ItemPromocao> = {}) => item({
     preco_original: 154.55, preco_sugerido: 134.45, preco_avaliado: 134.45, preco_min: 30.92, preco_max: 149.91,
@@ -183,14 +212,14 @@ describe('PreviewOperacao', () => {
 
   it('digitar preço fora da faixa desabilita Executar', async () => {
     const user = userEvent.setup();
-    const verde = item({ ml_item_id: 'V', preco_sugerido: 10, preco_min: 7, preco_max: 18.99, projecao: [cor({ custo: 5, piso: 8 })] });
+    const verde = item({ ml_item_id: 'V', preco_sugerido: 20, preco_min: 7, preco_max: 30, projecao: [cor({ custo: 5, piso: 8 })] });
     renderPreview({ itens: [verde] });
 
     expect(screen.getByRole('button', { name: 'Executar' })).not.toBeDisabled();
 
     const input = screen.getByLabelText('Preço de V');
     await user.clear(input);
-    await user.type(input, '19,50');
+    await user.type(input, '30,50');
 
     expect(screen.getByRole('button', { name: 'Executar' })).toBeDisabled();
   });
@@ -251,7 +280,7 @@ describe('PreviewOperacao', () => {
 
   it('item vermelho marcado exige o checkbox de risco para habilitar Executar', async () => {
     const user = userEvent.setup();
-    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_min: 1, preco_max: 90, projecao: [cor({ custo: 5, piso: 10 })] });
+    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 20, preco_min: 1, preco_max: 90, projecao: [cor({ custo: 25, piso: 30 })] });
     renderPreview({ itens: [vermelho] });
 
     await user.click(screen.getByLabelText('Selecionar R'));
@@ -314,14 +343,14 @@ describe('PreviewOperacao', () => {
 
   it('Executar chama a mutation com {acao, promocao_id, itens}', async () => {
     const user = userEvent.setup();
-    const verde = item({ ml_item_id: 'V', preco_sugerido: 10, preco_min: 7, preco_max: 18.99, projecao: [cor({ custo: 5, piso: 8 })] });
+    const verde = item({ ml_item_id: 'V', preco_sugerido: 20, preco_min: 7, preco_max: 30, projecao: [cor({ custo: 5, piso: 8 })] });
     renderPreview({ itens: [verde], promocaoId: 'P9' });
 
     await user.click(screen.getByRole('button', { name: 'Executar' }));
 
     expect(mutateAsync).toHaveBeenCalledWith({
       acao: 'aderir', promocao_id: 'P9', origem_id: null,
-      itens: [{ ml_item_id: 'V', preco: 10, confirmado_risco: false }],
+      itens: [{ ml_item_id: 'V', preco: 20, confirmado_risco: false }],
     });
     expect(toast.success).toHaveBeenCalledWith('Operação iniciada: 1 anúncios');
   });
@@ -330,7 +359,7 @@ describe('PreviewOperacao', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     const onSucesso = vi.fn();
-    const verde = item({ ml_item_id: 'V', preco_sugerido: 10, preco_min: 7, preco_max: 18.99, projecao: [cor({ custo: 5, piso: 8 })] });
+    const verde = item({ ml_item_id: 'V', preco_sugerido: 20, preco_min: 7, preco_max: 30, projecao: [cor({ custo: 5, piso: 8 })] });
     renderPreview({ itens: [verde], onClose, onSucesso });
 
     await user.click(screen.getByRole('button', { name: 'Executar' }));

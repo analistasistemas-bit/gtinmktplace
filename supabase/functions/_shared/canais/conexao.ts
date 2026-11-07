@@ -28,6 +28,15 @@ export async function resolverConexaoPorId(admin: SupabaseClient, id: string, or
   return cx && (!orgId || cx.orgId === orgId) ? cx : null;
 }
 
+/** Como `resolverConexao`, mas erro de leitura lança: null aqui é ausência confirmada, nunca falha. */
+export async function resolverConexaoEstrita(admin: SupabaseClient, orgId: string, canal: string): Promise<ConexaoCanal | null> {
+  const { data, error } = await admin.from('marketplace_connections')
+    .select('id, org_id, canal, conta_externa_id, expires_at')
+    .eq('org_id', orgId).eq('canal', canal).maybeSingle();
+  if (error) throw new Error(`ler conexão: ${error.message}`);
+  return mapearConexao(data ?? null);
+}
+
 /** Conexão da ORG para o canal (null = org não conectou o canal). */
 export async function resolverConexao(admin: SupabaseClient, orgId: string, canal: string): Promise<ConexaoCanal | null> {
   const { data } = await admin.from('marketplace_connections')

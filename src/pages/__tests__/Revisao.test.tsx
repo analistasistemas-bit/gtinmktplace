@@ -142,7 +142,7 @@ describe('avisosParticipacaoPromocao (Task 9, ADR-0174 decisão 9)', () => {
     );
 
     expect(avisos).toEqual([
-      { id: 'fam-1', texto: '⚠️ Tênis Azul participa da Ofertas Relâmpago. Mudar o preço para igual ou abaixo da oferta tira o anúncio da promoção.' },
+      { id: 'fam-1', texto: '⚠️ Tênis Azul participa da Ofertas Relâmpago. Preço igual ou abaixo da oferta será recusado.' },
     ]);
   });
 
@@ -163,7 +163,7 @@ describe('avisosParticipacaoPromocao (Task 9, ADR-0174 decisão 9)', () => {
     const avisos = avisosParticipacaoPromocao([familiaUp], itensUp, participacoes, semSomenteEstoque);
 
     expect(avisos).toEqual([
-      { id: 'fam-up', texto: '⚠️ Camiseta P/M/G participa da Semana do Consumidor. Mudar o preço para igual ou abaixo da oferta tira o anúncio da promoção.' },
+      { id: 'fam-up', texto: '⚠️ Camiseta P/M/G participa da Semana do Consumidor. Preço igual ou abaixo da oferta será recusado.' },
     ]);
   });
 
@@ -230,7 +230,7 @@ describe('avisosParticipacaoPromocao (Task 9, ADR-0174 decisão 9)', () => {
     );
 
     expect(avisos).toEqual([
-      { id: 'fam-excecao-atualiza', texto: '⚠️ Produto teste participa da Ofertas Relâmpago. Mudar o preço para igual ou abaixo da oferta tira o anúncio da promoção.' },
+      { id: 'fam-excecao-atualiza', texto: '⚠️ Produto teste participa da Ofertas Relâmpago. Preço igual ou abaixo da oferta será recusado.' },
     ]);
   });
 });

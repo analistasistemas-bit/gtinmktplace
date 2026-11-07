@@ -152,3 +152,35 @@ base por segundos (mais, se falhar). É fluxo preexistente, fora do escopo desta
 - Fatias 3 (SMART e Relâmpago em etapas) e 4 (catálogo, Kit Virtual, Legacy com variações): não feitas.
 - Deploy pendente: `db push` das 4 migrations antes das edges; redeployar `operacoes-massa`, `publish-familia-ml`,
   `update-familia-ml` e as funções que usam `user-products`. Medir custo do preview e da escrita antes.
+
+## Emenda 2026-11-07 — Trava da oferta no UPDATE
+
+**Status:** em produção desde 2026-11-07 (main `b663ea5d`; `publicar-familias` v58, `reconciliar-convergencia-up` v86, `update-familia-ml` v157, `operacoes-massa` v43). Plano:
+`docs/superpowers/plans/2026-11-07-trava-oferta-update.md`.
+
+**Decisão (Diego, 2026-11-07):** o UPDATE de publicação recusa, com motivo, o produto que levaria o preço base a igual
+ou abaixo de uma oferta vigente ou agendada. Só esse produto: os demais do lote seguem. "Somente estoque" continua
+disponível. Emenda o item 9 do ADR-0174, que só avisava.
+
+**Como funciona**
+
+- `publicar-familias` confere antes de reservar (`_shared/publicacao/trava-oferta.ts`). Lê o preço vivo em lote
+  (`/items/bulk`) e só lê as ofertas dos MLB cujo preço novo fica abaixo do vivo, porque o UPDATE herda o preço no ar
+  (ADR-0016, adendo 2026-10-16). Produto recusado não é reservado nem enfileirado e volta em `recusadas`.
+- Motivo: `Preço igual ou abaixo da oferta de R$ X — ajuste a oferta antes`. Leitura inconclusiva recusa com
+  `Não foi possível conferir promoções — tente de novo`. Orçamento de 20 s por requisição; o que não foi conferido
+  recusa. MLB encerrado sai dos alvos, sem recusa.
+- Não confere: CREATE, "somente estoque" (global ou por família) e Adicionar variação, que preserva os preços publicados.
+- Reconciliador (`reconciliar-convergencia-up`): o SKU reprovado entra em `semPrecoPara`, a composição converge sem
+  enviar o preço dele e o operador é avisado. O preço retido não volta sozinho: só sobe num próximo UPDATE.
+- Revisão: o aviso passou a dizer `Preço igual ou abaixo da oferta será recusado.`
+
+**Limite aceito:** oferta nova, ou preço editado inline, entre o clique e o worker normal não é detectado.
+
+**Descartado:** trava dentro dos workers. Eles têm várias formas de escrever preço, recusar dentro deles prende
+retomadas de saga e a migração para User Products (`MIGRADO_PARA_UP`) só é descoberta no meio.
+
+**Item restante:** o UPDATE ainda grava o base antes das faixas (lacuna acima, pendente de decisão).
+
+**Deploy pendente:** `publicar-familias`, `reconciliar-convergencia-up`, `update-familia-ml` (usa `atualizar-familia-up.ts`)
+e as demais funções que importam `conexao.ts`; conferir o grafo de imports e as versões pós-deploy.

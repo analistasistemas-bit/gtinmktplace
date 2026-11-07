@@ -115,3 +115,22 @@ e o operador tinha que digitar de novo.
 O pipeline respeita a cor gravada sem qualquer mudança: `process-familia/index.ts` já faz
 `if (v.cor) return v;` antes de tentar as camadas de inferência — cor pré-gravada
 simplesmente pula a resolução automática, igual a qualquer outra origem.
+
+## Adendo (2026-11-07) — Cor composta fora do dicionário
+
+Lote de 07/11, `Coloração Creme Colore 7.7 - Marrom Dourado 125g`: `variacoes.cor` saiu
+`Dourado`, e o título repetiu. O dicionário testa o sinônimo mais longo primeiro e "dourado"
+(7 letras) ganha de "marrom" (6). O mesmo corte atingia `Castanho Escuro` → `Marrom`,
+`Vermelho Intenso` → `Vermelho` e `Azul Turquesa` → `Turquesa`.
+
+**Decisão:** antes de cair no sinônimo isolado, a Camada 1 procura matiz seguido de 1-2 tons
+(`COR_COMPOSTA` em `_shared/cor/extrair.ts`) e devolve a expressão literal do nome. Composta
+já cadastrada no dicionário continua canônica. `extrairCorDeVariacao` lê o nome da variação
+antes do nome do pai, para a composta do pai não trocar a cor da variação.
+
+Retroteste em 2.547 pares de origem `descricao`: compostas corrigidas, 4 linhas deixam de herdar a cor do pai (`PINK 167` com pai `BRANCA` era `Branco`), nenhum falso positivo.
+Vale para CREATE e reprocessamento de variação sem cor; `if (v.cor) return v` preserva o que
+já foi gravado, então nada publicado muda. A cor literal pode não ter `value_id` no ML
+(`Dourado` tem, `Marrom Dourado` talvez não): o nome certo vale mais que o filtro de cor.
+
+No mesmo dia, `Louro`, `Loiro` e `Chocolate` entraram no dicionário: sem a palavra, o nome caía no Vision e voltava `Outra`. `Louro` e `Loiro` ficam separados para manter a grafia do nome. Retroteste: 27 linhas com essas palavras, só as 3 colorações mudam. Essas palavras não contam como cor quando indicam finalidade (`para cabelo loiro`, `forma para chocolate`, `sabor chocolate`): o nome cai na cor real ou no Vision.

@@ -103,6 +103,13 @@ describe('projetarItem', () => {
     expect(l.projecao[0].ate_quanto).toBeCloseTo(36.6, 2);
   });
 
+  it('sugerido abaixo do piso com faixa que alcança R$ 19: avalia em R$ 19 e o até quanto não desce dele', async () => {
+    const cad = montarCadastro([linhaVar({ id: 'a', custo: 5, preco: 8 })], []);
+    const l = await projetarItem(item({ preco_min: 5, preco_max: 60, preco_sugerido: 18.61 }), itemMl(), cad, aliq, async () => tarifa10);
+    expect(l.preco_avaliado).toBe(19);
+    expect(l.projecao[0]).toMatchObject({ ate_quanto: 19, ate_quanto_motivo: null });
+  });
+
   it('participando com faixa: avalia no preço que está no ar, não no sugerido', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a' })], []);
     const l = await projetarItem(item({ status: 'started', preco_promo: 42, preco_sugerido: 45, preco_min: 20, preco_max: 60 }), itemMl(), cad, aliq, async () => tarifa10);

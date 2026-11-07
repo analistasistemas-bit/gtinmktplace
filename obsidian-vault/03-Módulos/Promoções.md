@@ -84,6 +84,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Depois de aderir, o ML leva ~2 min para refletir: nova adesão ao mesmo anúncio fica barrada por 30 min.
 - Tipo de campanha que o app não sabe ativar: aviso uma vez por org (Telegram/sino, categoria Integração) e mensagem na tela indicando o Seller Center.
 
+### Piso de R$ 19 em toda campanha (emenda 2026-11-07)
+
+- Se o sugerido do ML fica abaixo de R$ 19 mas a faixa alcança R$ 19, o anúncio fica, com R$ 19,00 como preço (desconto menor). Só DEAL e Relâmpago: oferta de preço fixo não tem faixa.
+- Convidado que não alcança R$ 19 não aparece em Sugestões nem em Convidados e não entra na contagem, em qualquer tipo. Abaixo disso o frete é do comprador e pode custar mais que o produto.
+- Quem já participa continua visível para poder sair. Aderir, alterar preço e Reverter abaixo de R$ 19 são recusados, mesmo com "Aderir mesmo assim".
+
 ### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)
 
 - "Alterar preço N" na aba **Em promoção** (com busca título/MLB/SKU) e na aba **Participando** da campanha; mesmo painel da adesão (Desconto % / Preço R$ → Aplicar a todos, recebe·lucro·margem do servidor).
@@ -133,6 +139,13 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Execução por passos com posse por token; faixas de atacado gravam antes de descer o base e depois de subir. O % do atacado vale para a família inteira (config efetiva = a única não nula entre as linhas do produto).
 - `[]` com faixa viva não limpa; config sem faixa viva não cria. Faixa sobre o preço do item no UPDATE e CREATE de UP.
 - Lacuna: o UPDATE de publicação baixa o base antes das faixas. Fatia 2 (DEAL baixa a oferta) suspensa: o ML recusa subir oferta (`PRICE_GT_CURRENT`). Fatias 3 e 4 não feitas.
+- Ver [[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]].
+
+#### Trava da oferta no UPDATE (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07)
+
+- Decisão do Diego: o UPDATE recusa, com motivo, o produto que levaria o base a igual ou abaixo de oferta vigente ou agendada. Só esse produto; os demais do lote seguem; "somente estoque" continua disponível. Emenda o item 9 do ADR-0174, que só avisava.
+- A checagem roda em `publicar-familias`, antes da reserva, só onde o preço novo fica abaixo do vivo. No reconciliador, o SKU reprovado vai em `semPrecoPara`, a composição converge e o operador é avisado.
+- Limite aceito: oferta nova, ou preço editado inline, entre o clique e o worker normal não é detectado. Trava nos workers foi descartada.
 - Ver [[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]].
 
 ## Correções de 2026-10-04

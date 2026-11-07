@@ -107,7 +107,7 @@ describe('montarSugestoes', () => {
     expect([...r.quaseVendendo, ...r.invisivel]).toEqual([]);
   });
 
-  it('exclui tipo não operável, campanha encerrada e Relâmpago abaixo de 19', () => {
+  it('exclui tipo não operável, campanha encerrada e qualquer campanha abaixo de 19', () => {
     const vazio = (p: Promocao, c = convite()) => {
       const r = montar({ promocoes: [p], convites: [c] });
       return [...r.quaseVendendo, ...r.invisivel];
@@ -116,6 +116,18 @@ describe('montarSugestoes', () => {
     expect(vazio(promo({ status: 'finished' }))).toEqual([]);
     expect(vazio(promo({ tipo: 'LIGHTNING' }), convite({ preco_avaliado: 18.9 }))).toEqual([]);
     expect(vazio(promo({ tipo: 'LIGHTNING' }), convite({ preco_avaliado: 19 }))).toHaveLength(1);
+    expect(vazio(promo({ tipo: 'DEAL' }), convite({ preco_avaliado: 16.53, preco_original: 19 }))).toEqual([]);
+    expect(vazio(promo({ tipo: 'SMART' }), convite({ preco_avaliado: 18.99 }))).toEqual([]);
+    expect(vazio(promo({ tipo: 'DEAL' }), convite({ preco_avaliado: 19 }))).toHaveLength(1);
+  });
+
+  it('campanha abaixo de 19 não vira alternativa do produto', () => {
+    const r = montar({
+      promocoes: [promo(), promo({ promocao_id: 'C2' })],
+      convites: [convite(), convite({ promocao_id: 'C2', preco_avaliado: 18 })],
+    });
+    expect(r.invisivel[0].recomendada.promocao.promocao_id).toBe('C1');
+    expect(r.invisivel[0].alternativas).toEqual([]);
   });
 
   it('anúncio inativo não entra; estoque zero e cobertura baixa saem; estoque desconhecido entra', () => {

@@ -5,7 +5,7 @@ import type { Passo } from './reajuste/tipos.ts';
 /** `alterar_preco` (emenda 2026-11-03): PUT do deal_price de item DEAL já participando. */
 export type Acao = 'aderir' | 'sair' | 'alterar_preco';
 export type TipoPromocao = 'DEAL' | 'SMART' | 'LIGHTNING' | 'SMART_LIGHTNING' | 'PRICE_MATCHING';
-/** Emenda 2026-11-03: ofertas de preço fixo com preço revalidado, piso R$ 19, etapa durável e saída só por `candidate`. */
+/** Emenda 2026-11-03: ofertas de preço fixo com preço revalidado, etapa durável e saída só por `candidate`. */
 export const ofertaFixaNova = (t: string): t is 'SMART_LIGHTNING' | 'PRICE_MATCHING' =>
   t === 'SMART_LIGHTNING' || t === 'PRICE_MATCHING';
 export type StatusItem =

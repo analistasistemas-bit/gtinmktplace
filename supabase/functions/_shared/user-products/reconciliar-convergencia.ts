@@ -42,6 +42,8 @@ export interface PortasConvergencia {
    *  mapeamento incompleto→retry/erro (e a limpeza de `mudando_composicao` no esgotamento) já é
    *  feito INTEIRAMENTE dentro de `atualizarFamiliaUP` — não duplica essa lógica aqui. */
   resumirComposicao(claim: ClaimResultado): Promise<{ estado: 'ok' | 'retry' | 'erro' }>;
+  /** Trava da oferta: orçamento de checagem da rodada acabou. Olhado ANTES do claim, que gasta tentativa. */
+  orcamentoEsgotado?(): boolean;
 }
 
 export type ResultadoRaiz =
@@ -49,6 +51,8 @@ export type ResultadoRaiz =
   | { rootId: string; tipo: 'retry' }
   | { rootId: string; tipo: 'erro'; motivo: string }
   | { rootId: string; tipo: 'perdeu_claim' }
+  /** Orçamento de checagem esgotado: nada foi tocado, e a próxima rodada a lista de novo. */
+  | { rootId: string; tipo: 'adiada' }
   /** Raiz travada mas sem `mudando_composicao_familia_id` gravado — só possível pra episódios
    *  iniciados ANTES desta migration (dado histórico, não deveria acontecer em produção nova).
    *  Nunca adivinha a família por recência (achado real de revisão): fica pendente/ignorada,
@@ -61,7 +65,13 @@ export async function reconciliarConvergencia(
 ): Promise<ResultadoRaiz[]> {
   const resultados: ResultadoRaiz[] = [];
 
-  for (const rootId of rootIds) {
+  for (const [i, rootId] of rootIds.entries()) {
+    if (portas.orcamentoEsgotado?.()) {
+      const adiadas = rootIds.slice(i);
+      console.warn(`reconciliarConvergencia: orçamento de checagem esgotado, ${adiadas.length} raiz(es) para a próxima rodada`);
+      resultados.push(...adiadas.map((id) => ({ rootId: id, tipo: 'adiada' as const })));
+      break;
+    }
     try {
       const claim = await portas.claim(rootId);
       if (!claim) { resultados.push({ rootId, tipo: 'perdeu_claim' }); continue; }

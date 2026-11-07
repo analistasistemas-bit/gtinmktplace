@@ -37,7 +37,7 @@ describe('parsePreco', () => {
 describe('montarPreview', () => {
   it('DEAL aderir marca só o verde e usa o sugerido', () => {
     const verde = item({ ml_item_id: 'V', preco_sugerido: 85, projecao: [cor({ custo: 5, piso: 10 })] });
-    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, projecao: [cor({ custo: 5, piso: 10 })] });
+    const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_avaliado: 5, projecao: [cor({ custo: 5, piso: 10 })] });
     const linhas = montarPreview('aderir', 'DEAL', [verde, vermelho]);
     expect(linhas.find((l) => l.ml_item_id === 'V')).toMatchObject({ preco: 85, semaforo: 'verde', marcado: true });
     expect(linhas.find((l) => l.ml_item_id === 'R')).toMatchObject({ preco: 5, marcado: false });
@@ -56,6 +56,8 @@ describe('montarPreview', () => {
     const simulado = item({ ml_item_id: 'S', preco_sugerido: 100, projecao: p });
     const naoSimulado = item({ ml_item_id: 'N', preco_sugerido: 100, projecao: p });
     const linhas = montarPreview('aderir', 'DEAL', [simulado, naoSimulado], new Map([['S', 55]]));
+    expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
+    expect(montarPreview('aderir', 'DEAL', [item({ preco_sugerido: null, preco_promo: 18.61, preco_avaliado: 19 })])[0].preco).toBe(19);
     expect(linhas.find((l) => l.ml_item_id === 'S')).toMatchObject({ preco: 55, marcado: false });
     expect(linhas.find((l) => l.ml_item_id === 'S')?.semaforo).not.toBe('verde');
     expect(linhas.find((l) => l.ml_item_id === 'N')).toMatchObject({ preco: 100, semaforo: 'verde', marcado: false });

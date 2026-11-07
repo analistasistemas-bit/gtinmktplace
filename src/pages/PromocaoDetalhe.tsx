@@ -24,7 +24,7 @@ import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { ehTipoOperavel, type AcaoPromocao } from '@/lib/operacoes';
 import {
-  URL_PROMOCOES_ML, ehTipoSoSellerCenter, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
+  URL_PROMOCOES_ML, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
@@ -124,7 +124,8 @@ export default function PromocaoDetalhe() {
   const podeAlterar = podeSelecionar && promo.tipo === 'DEAL';
   // Achado Codex (diff): sobre o item ATUAL (refetch traz status/faixa/reserva novos), só preço, projeção e semáforo
   // simulados — e só enquanto o item mantém o status de quando foi simulado (mudou → a simulação não vale mais).
-  const itensVisao = useMemo(() => (itens.data ?? []).map((i) => {
+  // Piso sobre o preço do sync, antes da simulação: simular abaixo de R$ 19 avisa, não some com a linha.
+  const itensVisao = useMemo(() => (itens.data ?? []).filter((i) => !convidadoAbaixoDoPiso(i)).map((i) => {
     const s = simulacao?.itens.get(i.ml_item_id);
     return s && s.status === i.status ? sobreporSimulacao(i, s) : i;
   }), [itens.data, simulacao]);
@@ -189,7 +190,7 @@ export default function PromocaoDetalhe() {
 
   const simInfo = (r: ItemPromocao) => {
     const p = simulacao?.precos.get(r.ml_item_id);
-    return p == null || !promo ? undefined : { aviso: foraDaFaixa(r, p, promo.tipo) };
+    return p == null ? undefined : { aviso: foraDaFaixa(r, p) };
   };
 
   const colunas: Column<ItemPromocao>[] = [

@@ -44,6 +44,27 @@ describe('precoAvaliado', () => {
   });
 });
 
+describe('precoAvaliado no piso de R$ 19', () => {
+  const conv = (o: object) => ({ status: 'candidate', preco_sugerido: 18.61, preco_promo: null, preco_min: 4.38, preco_max: 19.7, ...o });
+  it('sugerido abaixo do piso e faixa alcança R$ 19 → R$ 19', () => {
+    expect(precoAvaliado(conv({}))).toBe(19);
+    expect(precoAvaliado(conv({ preco_max: 19 }))).toBe(19);
+  });
+  it('mínimo da faixa acima de R$ 19 → o mínimo', () => {
+    expect(precoAvaliado(conv({ preco_min: 19.5 }))).toBe(19.5);
+  });
+  it('faixa não alcança R$ 19 → mantém o sugerido (fica escondido)', () => {
+    expect(precoAvaliado(conv({ preco_max: 18.77 }))).toBe(18.61);
+  });
+  it('oferta de preço fixo, sem faixa, não muda', () => {
+    expect(precoAvaliado(conv({ preco_sugerido: null, preco_promo: 18.24, preco_min: null, preco_max: null }))).toBe(18.24);
+  });
+  it('sugerido já acima do piso e participante não mudam', () => {
+    expect(precoAvaliado(conv({ preco_sugerido: 25 }))).toBe(25);
+    expect(precoAvaliado(conv({ status: 'started', preco_promo: 16.53 }))).toBe(16.53);
+  });
+});
+
 describe('liquidoNoPreco', () => {
   it('preço − comissão% − fixa − frete − imposto (mesma conta do liquidoClassico)', () => {
     // 100 − 12 − 6,25 − 20 − 8 = 53,75
@@ -107,6 +128,13 @@ describe('contar', () => {
     ])).toEqual({
       convidados: 2, convidados_verde: 1, participando: 3, verde: 2, amarelo: 1, vermelho: 1, indisponivel: 1,
       participando_vermelho: 1, ml_pct_max: null,
+    });
+  });
+
+  it('convidado abaixo de R$ 19 não conta; participante e convidado sem preço contam', () => {
+    const l = (status: string, preco_avaliado: number | null) => ({ status, pior_semaforo: 'verde', preco_avaliado }) as LinhaItem;
+    expect(contar([l('candidate', 18.99), l('candidate', 19), l('candidate', null), l('started', 16.53)])).toMatchObject({
+      convidados: 2, convidados_verde: 2, participando: 1, verde: 3,
     });
   });
 

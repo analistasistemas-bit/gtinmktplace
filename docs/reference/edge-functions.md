@@ -109,6 +109,7 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(emenda ADR-0174, em produção desde 2026-11-07)* `operacoes-massa` recusa aderir e `alterar_preco` abaixo de R$ 19 em qualquer tipo (`PRECO_MIN_PROMOCAO`, `_shared/promocoes/projecao.ts`); `precoAvaliado` sobe para R$ 19 quando a faixa alcança; `contar` deixa convidado abaixo do piso fora da contagem. Versões: `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87 ||||
 | *(ADR-0194, 2026-11-04)* `operacoes-massa` ganha `etapa: 'dispensar_sugestao'`/`'reativar_sugestao'` (admin ou suporte full, módulo `promocoes`) e aceita `sugestao` na adesão, gravada em `operacoes_massa.sugestao`; `sincronizar-promocoes` grava `date_created` do ML em `ml_promocao_itens.anuncio_criado_em` ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
@@ -577,6 +578,10 @@ mesmo por engano.
   Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
   direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
   modelos.
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** antes das reservas, UPDATE com
+  `ml_item_id` e sem "somente estoque" é conferido por `recusasDoLote` (`_shared/publicacao/trava-oferta.ts`), só onde
+  o preço novo fica abaixo do vivo. Reprovado volta em `recusadas` e não é reservado; os demais seguem. CREATE e
+  Adicionar variação não são conferidos. Leitura inconclusiva recusa com "tente de novo".
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01,
@@ -744,6 +749,10 @@ mesmo por engano.
   sobreviva um worker que comece um instante DEPOIS do claim — mitigado pela janela anti-corrida de
   15min. Schedule QStash criado em produção (2026-07-24): `*/15 * * * *`, 3 retries
   (`scd_5P1xe886r5SXj6ywwfUdEvY1stKn`).
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** confere por SKU antes da saga. SKU
+  reprovado ou inconclusivo vai em `semPrecoPara` (sem `price` no payload, inclusive filho `criado`), a composição
+  converge, o motivo vai em `familias.erro_mensagem` e o operador é avisado (`notificarCategoria`). Orçamento de 20 s
+  por raiz e 60 s por rodada; raízes restantes voltam `adiada`.
 - **publicar-split-ml** *(worker, split — ADR-0048 + ADR-0078 F2)* — produto que excede 100 cores,
   OU tem preços de publicação divergentes, OU já está particionado publica em N anúncios
   ("partições"); `publicar-familias` roteia esses três casos pra cá (`decidirSplit`, ver acima).

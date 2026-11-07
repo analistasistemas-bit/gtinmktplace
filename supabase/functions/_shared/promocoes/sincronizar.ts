@@ -4,7 +4,7 @@ import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverPack, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM, type OfertaRelampago } from './ml.ts';
 import { papelNoPar, relacionadosFaltando } from './pares.ts';
-import { ateQuantoDescer, ehParticipando, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
+import { ateQuantoDescer, ehParticipando, liquidoNoPreco, PRECO_MIN_PROMOCAO, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
 import type {
   Aliquotas, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
 } from './tipos.ts';
@@ -107,6 +107,8 @@ async function projetarCor(
   if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
     try {
       ate = await ateQuantoDescer({ piso, custo, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
+      // Calcula na faixa real (subir o mínimo viraria um falso "qualquer preço") e só então para no piso de R$ 19.
+      if (ate.valor != null && ate.valor < PRECO_MIN_PROMOCAO && it.preco_max >= PRECO_MIN_PROMOCAO) ate = { valor: PRECO_MIN_PROMOCAO, motivo: null };
     } catch (e) {
       // sem "até quanto"; o líquido no preço avaliado continua válido
       console.warn('[promocoes] até quanto indisponível', { ml_item_id: it.ml_item_id, variation_id: c.variation_id, erro: mensagem(e) });

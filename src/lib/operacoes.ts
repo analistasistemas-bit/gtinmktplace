@@ -1,6 +1,6 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
-import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
+import { ateQuantoDaLinha, ehTipoOperavel, mlbExibido, PRECO_MIN_PROMOCAO, rotuloMlb, type TipoPromocaoOperavel, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
 /** `alterar_preco` (emenda 2026-11-03): PUT do deal_price de item DEAL já participando. */
@@ -62,7 +62,10 @@ export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, it
     // Alterar: parte do preço vigente da oferta; aderir: sugerido (DEAL/Relâmpago) ou o da oferta (SMART, SMART_LIGHTNING, PRICE_MATCHING).
     const padrao = acao === 'sair' ? it.preco_promo
       : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
-      : tipo === 'DEAL' || tipo === 'LIGHTNING' ? it.preco_sugerido : it.preco_promo;
+      : tipo === 'DEAL' || tipo === 'LIGHTNING'
+        // Sugerido abaixo do piso: o servidor já avaliou no menor preço permitido (R$ 19 ou o mínimo da faixa).
+        ? ((it.preco_sugerido ?? it.preco_promo ?? PRECO_MIN_PROMOCAO) < PRECO_MIN_PROMOCAO ? it.preco_avaliado : it.preco_sugerido)
+        : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);
     return {
