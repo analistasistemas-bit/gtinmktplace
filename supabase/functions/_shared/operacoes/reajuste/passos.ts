@@ -13,8 +13,10 @@ export interface EntradaPassos {
   faixasAntes: FaixaPreco[];
   /** null = faixas não mudam. */
   faixasAlvo: FaixaPreco[] | null;
-  /** Configuração efetiva do atacado: o Reverter exige a mesma. */
+  /** Configuração efetiva do atacado: a execução exige a mesma. */
   faixasConfig: FaixaAtacado[] | null;
+  /** Família cujo % está sendo editado. */
+  faixasFamilia?: string;
 }
 export interface Estado { base: number; ofertas: OfertaVigente[]; faixas: FaixaPreco[] }
 
@@ -56,7 +58,10 @@ export function planejarPassos(e: EntradaPassos): Passo[] {
     if (oferta.preco === null) throw new Error(`oferta ${oferta.chave} sem preço comprovado`);
     return { tipo: 'oferta', oferta, anterior: oferta.preco, alvo: e.ofertasNovas[oferta.chave], estado: 'pendente' };
   });
-  const faixas: Passo[] = e.faixasAlvo ? [{ tipo: 'faixas', anterior: e.faixasAntes, alvo: e.faixasAlvo, config: e.faixasConfig, estado: 'pendente' }] : [];
+  const faixas: Passo[] = e.faixasAlvo ? [{
+    tipo: 'faixas', anterior: e.faixasAntes, alvo: e.faixasAlvo, config: e.faixasConfig,
+    ...(e.faixasFamilia ? { familia_id: e.faixasFamilia } : {}), estado: 'pendente',
+  }] : [];
   const base: Passo[] = semAlteracao(e.base, e.alvo) ? [] : [{ tipo: 'base', anterior: e.base, alvo: e.alvo, estado: 'pendente' }];
   const subindo = centavos(e.alvo) > centavos(e.base);
   const passos = subindo ? [...saidas, ...base, ...ofertas, ...faixas] : [...saidas, ...ofertas, ...faixas, ...base];

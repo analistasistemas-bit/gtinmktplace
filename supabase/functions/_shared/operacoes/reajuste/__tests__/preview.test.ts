@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ConfigMlb } from '../faixas.ts';
 import { oferta } from '../ofertas.ts';
 import { planejarPassos } from '../passos.ts';
-import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type PedidoPreview } from '../preview.ts';
+import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type EntradaAtacado, type FamiliaAtacado, type PedidoPreview } from '../preview.ts';
 import { resumir } from '../avaliacao.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
 import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo, Semaforo, VivoItem } from '../tipos.ts';
@@ -30,7 +30,7 @@ const est = (preco: number | null, editado: boolean): EstadoVariacao => ({ preco
 function deps(o: {
   alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; ofertasML?: OfertaVigente[] | null; banco?: OfertaVigente[]; semBanco?: boolean; semaforo?: Semaforo[];
   estados?: Record<string, EstadoVariacao>; origem?: Awaited<ReturnType<DepsPreview['origem']>>;
-  faixas?: FaixaPreco[] | null | Error; config?: ConfigMlb;
+  faixas?: FaixaPreco[] | null | Error; config?: ConfigMlb; familias?: Record<string, FamiliaAtacado>; origemAtacado?: EntradaAtacado[];
 } = {}): DepsPreview {
   return {
     expandir: vi.fn(async () => o.alvos ?? [alvo('MLB1')]),
@@ -57,6 +57,8 @@ function deps(o: {
     ofertasBanco: vi.fn(async (ids: string[]) => new Map(o.semBanco ? [] : ids.map((id): [string, OfertaVigente[]] => [id, o.banco ?? []]))),
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
+    origemAtacado: vi.fn(async () => o.origemAtacado ?? []),
+    familiasAtacado: vi.fn(async (ids: string[]) => new Map(ids.map((id): [string, FamiliaAtacado] => [id, o.familias![id]]))),
   };
 }
 const pct = (valor: number, sentido: '+' | '-' = '+'): PedidoPreview => ({ familias: [], ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido, valor } });
@@ -496,6 +498,207 @@ describe('montarPreview — atacado (ADR-0196)', () => {
         const d = deps({ ...cfg, origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 105 }) }, faixas: viva(99) });
         expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
       });
+    });
+  });
+});
+
+describe('montarPreview — atacado por família', () => {
+  const F = 'f1';
+  const ANTES = [{ min_unidades: 2, desconto_pct: 5 }];
+  const NOVO = [{ min_unidades: 2, desconto_pct: 10 }];
+  const fam = (o: Partial<FamiliaAtacado> = {}): FamiliaAtacado => ({ codigo_pai: 'P', atacado: ANTES, porCor: false, ...o });
+  const a = (ml: string, pai = 'P') => alvo(ml, { codigo_pai: pai });
+  const viva = (preco: number, min_unidades = 2): FaixaPreco[] => [{ min_unidades, preco }];
+  const cfg = { faixas: ANTES, divergente: false };
+  const edicao = (o: Partial<PedidoPreview> = {}): PedidoPreview => ({ familias: [], ml_item_ids: ['MLB1'], ajuste: null, atacado: { [F]: NOVO }, ...o });
+  /** Selecionados na primeira expansão; a família inteira na segunda. */
+  function comFamilia(selecionados: AlvoExpandido[], todos: AlvoExpandido[], o: Parameters<typeof deps>[0] = {}) {
+    const d = deps({ familias: { [F]: fam() }, config: cfg, faixas: viva(95), ...o });
+    vi.mocked(d.expandir).mockResolvedValueOnce(selecionados).mockResolvedValueOnce(todos);
+    return d;
+  }
+  const preview = async (p: PedidoPreview, d: DepsPreview) => {
+    const r = await montarPreview(p, d);
+    if (!r.ok) throw new Error(r.erro);
+    return { ...r, de: (ml: string) => r.itens.find((i) => i.ml_item_id === ml)! };
+  };
+
+  it('expande a família: o selecionado muda preço e faixas; o irmão entra só com faixas, sem fixar preço', async () => {
+    const d = comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')]);
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }), d);
+    expect(d.expandir).toHaveBeenNthCalledWith(1, [], ['MLB1']);
+    expect(d.expandir).toHaveBeenNthCalledWith(2, [F], []);
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', preco: 110, faixas_alvo: viva(99) });
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['base', 'faixas']);
+    expect(r.de('MLB2')).toMatchObject({ situacao: 'elegivel', preco: 100, preco_anterior: 100, faixas_alvo: viva(90), restaurar: [] });
+    expect(r.de('MLB2').passos).toEqual([{ tipo: 'faixas', anterior: viva(95), alvo: viva(90), config: ANTES, familia_id: F, estado: 'pendente' }]);
+    expect(r.de('MLB2').aviso).toContain('só as faixas');
+    expect(r.atacado_familias).toEqual([{ familia_id: F, novo: NOVO, esperado: ANTES, status: 'pendente', motivo: null }]);
+  });
+
+  it('sem ajuste: só as faixas, também no selecionado', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')]));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', restaurar: [], preco: 100 });
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['faixas']);
+  });
+
+  it('só o atacado no pedido: não expande seleção vazia', async () => {
+    const d = deps({ familias: { [F]: fam() }, config: cfg, faixas: viva(95), alvos: [a('MLB1')] });
+    await preview(edicao({ ml_item_ids: [] }), d);
+    expect(d.expandir).toHaveBeenCalledTimes(1);
+    expect(d.expandir).toHaveBeenCalledWith([F], []);
+  });
+
+  it('quantidades diferentes das vivas: recalcula, é o operador redefinindo', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: viva(80, 6) }));
+    expect(r.de('MLB1').faixas_alvo).toEqual(viva(90));
+  });
+
+  it('sem faixas vivas: a edição explícita cria', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: [] }));
+    expect(r.de('MLB1').passos).toMatchObject([{ tipo: 'faixas', anterior: [], alvo: viva(90) }]);
+  });
+
+  it('faixas vivas já iguais: mantém o passo, a conclusão exige todos confirmados', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { faixas: viva(90) }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel' });
+    expect(r.de('MLB1').passos).toMatchObject([{ tipo: 'faixas', anterior: viva(90), alvo: viva(90) }]);
+  });
+
+  it('família com atacado por cor → família inteira fora', async () => {
+    const motivo = 'Atacado por cor: ajuste na Revisão';
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }),
+      comFamilia([a('MLB1')], [a('MLB1'), a('MLB2')], { familias: { [F]: fam({ porCor: true }) } }));
+    expect(r.itens.map((i) => [i.situacao, i.motivo])).toEqual([['fora', motivo], ['fora', motivo]]);
+    expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
+  });
+
+  it('cor do MLB com configuração própria, vinda de outra linha da família → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { ...cfg, porCor: true } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado por cor: ajuste na Revisão' });
+  });
+
+  it('MLB que não herda da família editada → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { faixas: NOVO, divergente: false } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre cores — ajuste na Revisão' });
+  });
+
+  it('1 MLB fora → edição recusada para a família, sem rascunho parcial; outra família segue', async () => {
+    const d = comFamilia([a('MLB1'), a('MLB3', 'Q')], [a('MLB1'), a('MLB2')], {
+      vivos: { MLB2: vivo({ status: 'closed' }) }, faixas: [], config: { faixas: null, divergente: false }, familias: { [F]: fam({ atacado: null }) },
+    });
+    const r = await preview(edicao({ ml_item_ids: ['MLB1', 'MLB3'], ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }), d);
+    expect(r.de('MLB2')).toMatchObject({ situacao: 'fora', motivo: 'Anúncio moderado, encerrado ou inativo' });
+    expect(r.de('MLB1')).toMatchObject({
+      situacao: 'fora', incluido: false, passos: null, restaurar: null, faixas_alvo: null,
+      motivo: 'Atacado da família recusado — MLB2: Anúncio moderado, encerrado ou inativo',
+    });
+    expect(r.de('MLB3')).toMatchObject({ situacao: 'elegivel' });
+    expect(r).toMatchObject({ executaveis: 1, atacado_familias: [] });
+  });
+
+  it('faixa que zeraria o preço → recusa a família', async () => {
+    const d = comFamilia([a('MLB1')], [a('MLB1')], { vivos: { MLB1: vivo({ preco: 0.01 }) } });
+    const r = await preview(edicao({ atacado: { [F]: [{ min_unidades: 2, desconto_pct: 99 }] } }), d);
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Faixa de atacado inválida para este preço — ajuste na Revisão' });
+  });
+
+  it('faixa nova nunca cruza o base no meio do caminho', async () => {
+    const r = await preview(edicao({ ajuste: { tipo: 'pct', sentido: '-', valor: 10 } }), comFamilia([a('MLB1')], [a('MLB1')]));
+    expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['faixas', 'base']);
+    expect(r.de('MLB1').faixas_alvo).toEqual(viva(81));
+  });
+
+  it('desconto com mais de 2 casas → recusa', async () => {
+    expect(await montarPreview(edicao({ atacado: { [F]: [{ min_unidades: 2, desconto_pct: 5.005 }] } }), deps({ familias: { [F]: fam() } })))
+      .toEqual({ ok: false, erro: 'Use no máximo 2 casas decimais' });
+  });
+
+  it('duas famílias do mesmo produto → recusa', async () => {
+    const d = deps({ familias: { f1: fam(), f2: fam() } });
+    expect(await montarPreview(edicao({ atacado: { f1: NOVO, f2: NOVO } }), d)).toEqual({ ok: false, erro: 'Edite o atacado de uma família por produto' });
+  });
+
+  it('família sem anúncio → recusa, nunca grava a configuração no vazio', async () => {
+    const d = deps({ familias: { [F]: fam() }, alvos: [] });
+    expect(await montarPreview(edicao({ ml_item_ids: [] }), d)).toEqual({ ok: false, erro: 'Família sem anúncio publicado' });
+  });
+
+  describe('Reverter', () => {
+    const voltar: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' };
+    const passo = (estado: Passo['estado'] = 'confirmado'): Passo => ({ tipo: 'faixas', anterior: viva(95), alvo: viva(90), config: ANTES, familia_id: F, estado });
+    const origem = (...mls: string[]) => new Map(mls.map((ml) => [ml, { codigo_pai: 'P', preco_anterior: 100, preco: 100, restaurar: [], passos: [passo()] }]));
+    const entrada = (status: EntradaAtacado['status']): EntradaAtacado => ({ familia_id: F, novo: NOVO, esperado: ANTES, status, motivo: status === 'nao_aplicado' ? 'x' : null });
+    const dep = (status: EntradaAtacado['status'], o: Parameters<typeof deps>[0] = {}) => deps({
+      alvos: [a('MLB1'), a('MLB2')], origem: origem('MLB1', 'MLB2'), origemAtacado: [entrada(status)], familias: { [F]: fam({ atacado: NOVO }) },
+      config: { faixas: NOVO, divergente: false }, faixas: viva(90), ...o,
+    });
+
+    it('origem `aplicado`: exige a família em `novo` e restaura `esperado`', async () => {
+      const r = await preview(voltar, dep('aplicado'));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['elegivel', 'elegivel']);
+      expect(r.de('MLB1')).toMatchObject({ faixas_alvo: viva(95), restaurar: [] });
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: NOVO, familia_id: F, estado: 'pendente' }]);
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'pendente', motivo: null }]);
+    });
+
+    it('origem `aplicado`, família mudou → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { config: { faixas: ANTES, divergente: false } }));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['fora', 'fora']);
+      expect(r.de('MLB1').motivo).toContain('Não revertível: o atacado mudou depois da alteração');
+      expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
+    });
+
+    it('origem `aplicado`, um MLB não revertível → família inteira fora', async () => {
+      const r = await preview(voltar, dep('aplicado', { vivos: { MLB2: vivo({ status: 'closed' }) } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: expect.stringContaining('Atacado da família recusado') });
+      expect(r.atacado_familias).toEqual([]);
+    });
+
+    it('origem `nao_aplicado`: exige a família em `esperado`, desfaz os passos aplicados e não grava configuração', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', { config: { faixas: ANTES, divergente: false }, familias: { [F]: fam() } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', faixas_alvo: viva(95) });
+      expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: ANTES, estado: 'pendente' }]);
+      expect(r.atacado_familias).toEqual([]);
+    });
+
+    it('origem `nao_aplicado`, um MLB fora não recusa os outros', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', {
+        config: { faixas: ANTES, divergente: false }, familias: { [F]: fam() }, vivos: { MLB2: vivo({ status: 'closed' }) },
+      }));
+      expect(r.itens.map((i) => i.situacao)).toEqual(['elegivel', 'fora']);
+    });
+
+    it('origem `nao_aplicado`, família fora de `esperado` → fora', async () => {
+      const r = await preview(voltar, dep('nao_aplicado', { familias: { [F]: fam() } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+    });
+
+    it('origem `nao_aplicado`, item com faixas pendentes: confere a família e não recalcula', async () => {
+      const o = new Map([['MLB1', {
+        codigo_pai: 'P', preco_anterior: 100, preco: 110, passos: [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' }, passo('pendente')] as Passo[],
+        restaurar: [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }],
+      }]]);
+      const comum = { alvos: [a('MLB1')], origem: o, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) }, faixas: viva(95), familias: { [F]: fam() } };
+      const r = await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: ANTES, divergente: false } }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
+      expect(r.de('MLB1').passos?.map((p) => p.tipo)).toEqual(['base']);
+      expect((await preview(voltar, dep('nao_aplicado', { ...comum, config: { faixas: NOVO, divergente: false } }))).de('MLB1'))
+        .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+    });
+
+    it('origem com entrada ainda pendente → recusa', async () => {
+      expect(await montarPreview(voltar, dep('pendente'))).toEqual({ ok: false, erro: 'A operação de origem ainda está em andamento' });
+    });
+
+    it('Reverter do Reverter: vale a entrada, não a configuração do passo', async () => {
+      const o = new Map([['MLB1', { codigo_pai: 'P', preco_anterior: 100, preco: 100, restaurar: [], passos: [{ ...passo(), config: NOVO, anterior: viva(90), alvo: viva(95) } as Passo] }]]);
+      const r = await preview(voltar, dep('aplicado', {
+        alvos: [a('MLB1')], origem: o, origemAtacado: [{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'aplicado', motivo: null }],
+        familias: { [F]: fam() }, config: cfg, faixas: viva(95),
+      }));
+      expect(r.de('MLB1')).toMatchObject({ situacao: 'elegivel', faixas_alvo: viva(90) });
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: NOVO, esperado: ANTES, status: 'pendente', motivo: null }]);
     });
   });
 });

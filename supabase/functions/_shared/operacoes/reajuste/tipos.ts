@@ -25,11 +25,12 @@ export interface OfertaVigente {
 export interface FaixaPreco { min_unidades: number; preco: number }
 /** Item com passo em estado de volta nunca retoma a ida. */
 export type EstadoPasso = 'pendente' | 'escrita_pedida' | 'confirmado' | 'volta_pendente' | 'volta_pedida' | 'compensado';
-/** `tentativas`: escritas pedidas, contadas por `reajuste_passo_marcar`. `config`: configuração efetiva do atacado no preview. */
+/** `tentativas`: escritas pedidas, contadas por `reajuste_passo_marcar`. `config`: configuração efetiva do atacado no preview.
+ *  `familia_id`: o passo faz parte da edição do % dessa família. */
 export type Passo = (
   | { tipo: 'saida'; oferta: OfertaVigente; estado: EstadoPasso }
   | { tipo: 'oferta'; oferta: OfertaVigente; anterior: number; alvo: number; estado: EstadoPasso }
-  | { tipo: 'faixas'; anterior: FaixaPreco[]; alvo: FaixaPreco[]; config: FaixaAtacado[] | null; estado: EstadoPasso }
+  | { tipo: 'faixas'; anterior: FaixaPreco[]; alvo: FaixaPreco[]; config: FaixaAtacado[] | null; familia_id?: string; estado: EstadoPasso }
   | { tipo: 'base'; anterior: number; alvo: number; estado: EstadoPasso }
 ) & { tentativas?: number };
 export interface VivoItem {

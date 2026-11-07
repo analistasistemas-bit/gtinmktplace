@@ -1,5 +1,7 @@
 // I5 — leitura dos pedidos do usuário (preview/confirmar) e tradução do resultado de `reajuste_confirmar`.
 // Puro (vitest). Fronteira de confiança: tudo que vai para `.in()`/RPC sai daqui validado.
+import type { FaixaAtacado } from '../../canais/contrato.ts';
+import { MAX_FAIXAS } from './faixas.ts';
 import { MAX_MLBS, type ItemPreview, type PedidoPreview } from './preview.ts';
 
 export interface Confirmacao { ml_item_id: string; risco: boolean; sem_dado: boolean; incluir?: boolean }
@@ -9,6 +11,19 @@ const ehUuid = (x: unknown): x is string => typeof x === 'string' && UUID.test(x
 const textos = (x: unknown, ok: (s: string) => boolean): string[] | null =>
   x == null ? [] : Array.isArray(x) && x.length <= MAX_MLBS && x.every((s) => typeof s === 'string' && ok(s)) ? [...new Set(x as string[])] : null;
 const numero = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+/** Faixas de uma família, sem campo estranho; null = inválidas. A remoção do atacado não passa por aqui. */
+function faixasDoPedido(x: unknown): FaixaAtacado[] | null {
+  if (!Array.isArray(x) || !x.length || x.length > MAX_FAIXAS) return null;
+  const faixas: FaixaAtacado[] = [];
+  for (const f of x as Record<string, unknown>[]) {
+    const { min_unidades, desconto_pct } = f ?? {};
+    if (!Number.isInteger(min_unidades) || (min_unidades as number) < 2 || !numero(desconto_pct) || desconto_pct <= 0 || desconto_pct >= 100) return null;
+    if (faixas.length && (min_unidades as number) <= faixas[faixas.length - 1].min_unidades) return null;
+    faixas.push({ min_unidades: min_unidades as number, desconto_pct });
+  }
+  return faixas;
+}
 
 export function lerPreview(x: unknown): PedidoPreview | null {
   const b = x as Record<string, unknown> | null;
@@ -32,8 +47,15 @@ export function lerPreview(x: unknown): PedidoPreview | null {
     if (ps.length > MAX_MLBS || !ps.every(([, v]) => numero(v))) return null;
     precos = Object.fromEntries(ps) as Record<string, number>;
   }
-  if (!origem_id && !familias.length && !ml_item_ids.length) return null;
-  return { familias, ml_item_ids, ajuste, ...(precos ? { precos } : {}), origem_id };
+  let atacado: PedidoPreview['atacado'];
+  if (b.atacado != null) {
+    if (typeof b.atacado !== 'object' || Array.isArray(b.atacado)) return null;
+    const fs = Object.entries(b.atacado as Record<string, unknown>).map(([id, v]) => [id, faixasDoPedido(v)] as const);
+    if (fs.length > MAX_MLBS || !fs.every(([id, v]) => UUID.test(id) && v)) return null;
+    if (fs.length) atacado = Object.fromEntries(fs) as PedidoPreview['atacado'];
+  }
+  if (!origem_id && !familias.length && !ml_item_ids.length && !atacado) return null;
+  return { familias, ml_item_ids, ajuste, ...(precos ? { precos } : {}), ...(atacado ? { atacado } : {}), origem_id };
 }
 
 export function lerConfirmar(x: unknown): { operacao_id: string; confirmacoes: Confirmacao[] } | null {
@@ -54,12 +76,13 @@ export function lerConfirmar(x: unknown): { operacao_id: string; confirmacoes: C
 export const MSG_EXPIRADO = 'O preview expirou — gere de novo';
 export const MSG_CONFIRMAR_RISCO = 'Confirme o risco deste anúncio';
 export const MSG_OCUPADO = 'Algum destes anúncios já está numa operação em andamento.';
+export const MSG_FAMILIA_PARCIAL = 'O atacado vale para a família inteira: inclua todos os anúncios dela ou refaça o preview';
 const MSG_SEM_PRODUTO = 'Anúncio não encontrado nesta organização';
 
 /** Retorno de `reajuste_confirmar` ou mensagem do P0001 que ela levanta → publicar, ou a resposta de erro. */
 export function respostaConfirmar(r: string):
   | { publicar: true }
-  | { publicar: false; status: 400 | 409; corpo: { erro: string; itens?: { ml_item_id: string; motivo: string }[] } } {
+  | { publicar: false; status: 400 | 409; corpo: { erro: string; itens?: { ml_item_id: string; motivo: string }[]; familia_id?: string } } {
   if (r === 'ok' || r === 'ja_confirmada') return { publicar: true };
   const item = (prefixo: string) => (r.startsWith(prefixo) ? r.slice(prefixo.length) : null);
   let ml: string | null;
@@ -72,6 +95,7 @@ export function respostaConfirmar(r: string):
   if ((ml = item('sem_produto:')) !== null) {
     return { publicar: false, status: 400, corpo: { erro: MSG_SEM_PRODUTO, itens: [{ ml_item_id: ml, motivo: MSG_SEM_PRODUTO }] } };
   }
+  if ((ml = item('familia_parcial:')) !== null) return { publicar: false, status: 400, corpo: { erro: MSG_FAMILIA_PARCIAL, familia_id: ml } };
   if (r === 'expirado') return { publicar: false, status: 400, corpo: { erro: MSG_EXPIRADO } };
   return { publicar: false, status: 400, corpo: { erro: 'Nada a executar neste preview — gere de novo.' } };
 }

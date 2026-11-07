@@ -11,7 +11,7 @@ import { centavos, reais } from './alvo.ts';
 import { avaliarPassos, mudouPrecos, resumirPrecos } from './avaliacao.ts';
 import { decidirReajuste, reconciliarPasso, type Vivo } from './decidir.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
-import { mesmaConfig, mesmasFaixas, MSG_ATACADO_MUDOU, type ConfigMlb } from './faixas.ts';
+import { mesmaConfig, mesmasFaixas, MSG_ATACADO_MUDOU, MSG_ATACADO_POR_COR, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { ehFaixas, estadosIntermediarios, violacao } from './passos.ts';
@@ -141,6 +141,11 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
       for (let i = passos.length - 1; i >= 0; i--) {
         const p = passos[i];
         if (p.estado !== 'volta_pendente') continue;
+        // Edição de família com faixas já iguais: nada foi mudado, nada a desfazer.
+        if (ehFaixas(p) && mesmasFaixas(p.alvo, p.anterior)) {
+          await marcar(i, 'compensado');
+          continue;
+        }
         const acao = operar(p);
         let onde = reconciliarPasso(p, await acao.ler(), composicao);
         if (onde === 'alvo') {
@@ -196,10 +201,12 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     if (vivas === null) return { status: 'bloqueado', mensagem: MSG_ATACADO_ILEGIVEL, inconclusiva: true };
     const passoFaixas = passos.find(ehFaixas);
     const esperadas = passoFaixas && (passoFaixas.estado === 'confirmado' ? passoFaixas.alvo : passoFaixas.anterior);
-    if (esperadas && !mesmasFaixas(vivas, esperadas)) return { status: 'mudou', mensagem: op.origem_id ? MSG_ATACADO_MUDOU : MSG_FAIXAS_MUDARAM };
-    if (op.origem_id && passoFaixas) {
+    const faixasMudaram = op.origem_id ? MSG_ATACADO_MUDOU : MSG_FAIXAS_MUDARAM;
+    if (esperadas && !mesmasFaixas(vivas, esperadas)) return { status: 'mudou', mensagem: faixasMudaram };
+    if (passoFaixas) {
       const config = await deps.configAtacado(item.variacao_ids);
-      if (config.divergente || !mesmaConfig(config.faixas, passoFaixas.config)) return { status: 'mudou', mensagem: MSG_ATACADO_MUDOU };
+      if (passoFaixas.familia_id && config.porCor) return { status: 'mudou', mensagem: MSG_ATACADO_POR_COR };
+      if (config.divergente || !mesmaConfig(config.faixas, passoFaixas.config)) return { status: 'mudou', mensagem: faixasMudaram };
     }
     const trava = motivoTravaOferta(item.preco, ofertas!);
     if (trava) return { status: 'mudou', mensagem: trava, inconclusiva: ofertas!.some((o) => o.preco === null) };

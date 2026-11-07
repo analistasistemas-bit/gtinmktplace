@@ -60,6 +60,24 @@ describe('depsLacoReajuste', () => {
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
   });
 
+  it('concluir: fecha o atacado da família antes da operação; se a RPC falhar a operação segue aberta para a reentrega', async () => {
+    const f = fakeAdmin(() => null, () => ({ pendentes: 0 }));
+    await depsLacoReajuste(f.admin, OP, 'k').concluir();
+    expect(f.rpcs).toEqual([['reajuste_atacado_concluir', { p_org: 'org', p_operacao: 'op' }]]);
+    expect(f.chamadas.map((c) => c.tabela)).toEqual(['operacoes_massa']);
+
+    const erro = fakeAdmin();
+    erro.admin = { ...(erro.admin as object), rpc: async () => ({ data: null, error: { message: 'x' } }) } as never;
+    await expect(depsLacoReajuste(erro.admin, OP, 'k').concluir()).rejects.toThrow('reajuste_atacado_concluir: x');
+    expect(erro.chamadas).toEqual([]);
+  });
+
+  it('concluir: família ainda pendente mantém a operação aberta, a reserva não pode ficar órfã', async () => {
+    const f = fakeAdmin(() => null, () => ({ pendentes: 1 }));
+    await expect(depsLacoReajuste(f.admin, OP, 'k').concluir()).rejects.toThrow('atacado pendente');
+    expect(f.chamadas).toEqual([]);
+  });
+
   it('reivindicar: só a RPC (nada gravado aqui); ok → token, motivo/ocupado → null', async () => {
     const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok:token' : 'Família em publicação/atualização — tente depois'));
     const d = depsLacoReajuste(f.admin, OP, 'k');
@@ -129,7 +147,7 @@ describe('depsReajuste', () => {
   it('configAtacado: mesma herança do preview', async () => {
     const faixas = [{ min_unidades: 3, desconto_pct: 10 }];
     const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: faixas } }]);
-    expect(await depsReajuste(f.admin, cxT, opRow, 'k').configAtacado(['v1'])).toEqual({ faixas, divergente: false });
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').configAtacado(['v1'])).toEqual({ faixas, divergente: false, porCor: false });
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
   });
 
@@ -179,6 +197,8 @@ describe('depsPreview', () => {
       origem: async () => origem,
       ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [], gravarFaixas: vi.fn() },
       configAtacado: async () => ({ faixas: null, divergente: false }),
+      origemAtacado: async () => [],
+      familiasAtacado: async () => new Map(),
       ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
       variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
       estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
@@ -194,7 +214,7 @@ describe('depsPreview', () => {
   it('configAtacado: cada cor herda da própria família, filtrando por org', async () => {
     const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
     const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: cinco } }, { atacado: cinco, familias: { atacado: null } }]);
-    expect(await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).toEqual({ faixas: cinco, divergente: false });
+    expect(await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).toEqual({ faixas: cinco, divergente: false, porCor: true });
     expect(f.chamadas[0].tabela).toBe('variacoes');
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
     expect(op(f.chamadas[0], 'in')).toEqual([['id', ['v1', 'v2']]]);
@@ -203,6 +223,29 @@ describe('depsPreview', () => {
   it('configAtacado: famílias com atacado diferente divergem', async () => {
     const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: [{ min_unidades: 2, desconto_pct: 5 }] } }, { atacado: null, familias: { atacado: null } }]);
     expect((await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).divergente).toBe(true);
+  });
+
+  it('familiasAtacado: família, config crua e se há atacado por cor, filtrando por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin((c) => (c.tabela === 'familias'
+      ? [{ id: 'f1', codigo_pai: 'P1', atacado: cinco }, { id: 'f2', codigo_pai: 'P2', atacado: null }]
+      : [{ familia_id: 'f2' }]));
+    const m = await depsPreview(f.admin, cxT, { reverter: false }).familiasAtacado(['f1', 'f2']);
+    expect(m.get('f1')).toEqual({ codigo_pai: 'P1', atacado: cinco, porCor: false });
+    expect(m.get('f2')).toEqual({ codigo_pai: 'P2', atacado: null, porCor: true });
+    for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[1], 'not')).toEqual([['atacado', 'is', null]]);
+  });
+
+  it('familiasAtacado: família de outra org → ForaDaOrg', async () => {
+    await expect(depsPreview(fakeAdmin().admin, cxT, { reverter: false }).familiasAtacado(['f1'])).rejects.toEqual(new ForaDaOrg(['f1']));
+  });
+
+  it('origemAtacado: entradas da origem, nunca null', async () => {
+    const e = [{ familia_id: 'f', novo: [], esperado: null, status: 'aplicado', motivo: null }];
+    const d = (atacado_familias: unknown) => depsPreview(fakeAdmin(() => ({ atacado_familias })).admin, cxT, { reverter: true }).origemAtacado('o');
+    expect(await d(e)).toEqual(e);
+    expect(await d(null)).toEqual([]);
   });
 
   it('variacoesDoMlb não descarta linhas (plano/UP: ml_variation_id null → "")', async () => {

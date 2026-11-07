@@ -4,7 +4,7 @@ import {
   type DepsReajuste, type ItemReajuste, type OperacaoReajusteRow, type ResultadoPersistir,
 } from '../executar.ts';
 import { resumir } from '../avaliacao.ts';
-import { MSG_ATACADO_MUDOU, type ConfigMlb } from '../faixas.ts';
+import { MSG_ATACADO_MUDOU, MSG_ATACADO_POR_COR, type ConfigMlb } from '../faixas.ts';
 import { MSG_RECONECTAR } from '../../falhas.ts';
 import type { FaixaAtacado } from '../../../canais/contrato.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
@@ -1250,5 +1250,90 @@ describe('executarReajuste — passos', () => {
       expect(deps.persistir).not.toHaveBeenCalled();
       expect(itens[0].status).toBe('aplicado');
     });
+  });
+});
+
+describe('executarReajuste — atacado por família', () => {
+  const ANTES = [{ min_unidades: 2, desconto_pct: 5 }];
+  const vivas = [{ min_unidades: 2, preco: 95 }];
+  const novas = [{ min_unidades: 2, preco: 90 }];
+  const daFamilia = (o: Partial<Extract<Passo, { tipo: 'faixas' }>> = {}): Passo => ({ ...(faixas(vivas, novas, 'pendente', ANTES) as Extract<Passo, { tipo: 'faixas' }>), familia_id: 'f', ...o });
+  const irmao = (o: Partial<Linha> = {}) => item('A', { preco: 100, preco_anterior: 100, restaurar: [], passos: [daFamilia()], avaliacoes: [precoFaixa(novas[0])], ...o });
+  const montarFamilia = (itens: Linha[], config: ConfigMlb) => {
+    const deps = montar(itens, { A: plano(100) }, { A: structuredClone(vivas) });
+    deps.configAtacado.mockResolvedValue(config);
+    return deps;
+  };
+
+  it('anúncio irmão entra como só faixas, sem fixar preço', async () => {
+    const itens = [irmao()];
+    const deps = montarFamilia(itens, { faixas: ANTES, divergente: false });
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: null });
+    expect(deps.ml.gravarFaixas).toHaveBeenCalledWith('A', novas);
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+    expect(deps.persistir).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, ConfigMlb, string]>([
+    ['% mudou', { faixas: [{ min_unidades: 2, desconto_pct: 7 }], divergente: false }, MSG_FAIXAS_MUDARAM],
+    ['cores divergentes', { faixas: null, divergente: true }, MSG_FAIXAS_MUDARAM],
+    ['cor com config própria', { faixas: ANTES, divergente: false, porCor: true }, MSG_ATACADO_POR_COR],
+  ])('ida: configuração revalidada antes de escrever (%s) → mudou, nada escrito', async (_n, config, mensagem) => {
+    const itens = [irmao()];
+    const deps = montarFamilia(itens, config);
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem });
+    expect(deps.ml.gravarFaixas).not.toHaveBeenCalled();
+  });
+
+  it('ida fora de edição: a mesma revalidação, cor com config igual passa', async () => {
+    const f = faixas(vivas, novas, 'pendente', ANTES);
+    const itens = [irmao({ passos: [f] })];
+    const deps = montarFamilia(itens, { faixas: ANTES, divergente: false, porCor: true });
+    await executarReajuste(OP, deps, OPTS);
+    expect(itens[0].status).toBe('aplicado');
+  });
+
+  it('cor ganhou config depois das faixas: desfaz antes do base, nunca conclui pela metade', async () => {
+    const itens = [item('A', { preco: 90, preco_anterior: 100, passos: [daFamilia({ alvo: [{ min_unidades: 2, preco: 85 }] }), base(100, 90)], avaliacoes: [precoFaixa({ min_unidades: 2, preco: 85 }), precoBase(90)] })];
+    const deps = montarFamilia(itens, { faixas: ANTES, divergente: false });
+    deps.configAtacado.mockResolvedValueOnce({ faixas: ANTES, divergente: false }).mockResolvedValue({ faixas: ANTES, divergente: false, porCor: true });
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_ATACADO_POR_COR });
+    expect(deps.ml.gravarFaixas.mock.calls.map(([, fs]) => fs)).toEqual([[{ min_unidades: 2, preco: 85 }], vivas]);
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+  });
+
+  it('faixas já iguais não têm volta: compensar não reescreve nem fica preso', async () => {
+    const itens = [item('A', { preco: 99, preco_anterior: 100, passos: [daFamilia({ alvo: vivas }), base(100, 99)], avaliacoes: [precoFaixa(vivas[0]), precoBase(99)] })];
+    const deps = montarFamilia(itens, { faixas: ANTES, divergente: false });
+    deps.ml.putPreco.mockResolvedValue({ kind: 'sem_escrita', status: 400, mensagem: 'recusado' });
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: 'recusado' });
+    expect(deps.ml.gravarFaixas).toHaveBeenCalledTimes(1);
+    expect(itens[0].passos[0].estado).toBe('compensado');
+  });
+
+  it('Reverter de `nao_aplicado`: desfaz as faixas aplicadas e não mexe em preço', async () => {
+    const op = { ...OP, origem_id: 'o' };
+    const itens = [irmao({ passos: [faixas(novas, vivas, 'pendente', ANTES)], avaliacoes: [precoFaixa(vivas[0])] })];
+    const deps = montar(itens, { A: plano(100) }, { A: structuredClone(novas) });
+    deps.configAtacado.mockResolvedValue({ faixas: ANTES, divergente: false });
+    await executarReajuste(op, deps, OPTS);
+    expect(itens[0].status).toBe('aplicado');
+    expect(deps.ml.gravarFaixas).toHaveBeenCalledWith('A', vivas);
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+    expect(deps.persistir).not.toHaveBeenCalled();
+  });
+
+  it('Reverter: família mudou sob a reserva → mudou', async () => {
+    const op = { ...OP, origem_id: 'o' };
+    const itens = [irmao({ passos: [faixas(novas, vivas, 'pendente', ANTES)], avaliacoes: [precoFaixa(vivas[0])] })];
+    const deps = montar(itens, { A: plano(100) }, { A: structuredClone(novas) });
+    deps.configAtacado.mockResolvedValue({ faixas: [{ min_unidades: 2, desconto_pct: 10 }], divergente: false });
+    await executarReajuste(op, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_ATACADO_MUDOU });
+    expect(deps.ml.gravarFaixas).not.toHaveBeenCalled();
   });
 });

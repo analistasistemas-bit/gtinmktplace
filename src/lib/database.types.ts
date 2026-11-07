@@ -3045,6 +3045,7 @@ export type Database = {
       operacoes_massa: {
         Row: {
           acao: string
+          atacado_familias: Json | null
           concluido_em: string | null
           criado_em: string
           criado_por: string | null
@@ -3060,6 +3061,7 @@ export type Database = {
         }
         Insert: {
           acao: string
+          atacado_familias?: Json | null
           concluido_em?: string | null
           criado_em?: string
           criado_por?: string | null
@@ -3075,6 +3077,7 @@ export type Database = {
         }
         Update: {
           acao?: string
+          atacado_familias?: Json | null
           concluido_em?: string | null
           criado_em?: string
           criado_por?: string | null
@@ -5507,6 +5510,14 @@ export type Database = {
         Returns: number
       }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
+      reajuste_atacado_concluir: {
+        Args: { p_operacao: string; p_org: string }
+        Returns: Json
+      }
+      reajuste_atacado_dona: {
+        Args: { p_codigo_pai: string; p_org: string }
+        Returns: string
+      }
       reajuste_ativo_produto: {
         Args: { p_codigo_pai: string; p_org: string }
         Returns: string

@@ -17,7 +17,7 @@ import type { DepsReajuste, ItemReajuste, OperacaoReajusteRow, ResultadoPersisti
 import { configDoMlb, type ConfigMlb } from './faixas.ts';
 import { criarClienteReajusteML } from './ml.ts';
 import { oferta, unirOfertas } from './ofertas.ts';
-import type { AlvoExpandido, DepsPreview, Origem } from './preview.ts';
+import type { AlvoExpandido, DepsPreview, EntradaAtacado, FamiliaAtacado, Origem } from './preview.ts';
 import type { Avaliacao, CorAvaliada, EstadoVariacao, OfertaVigente } from './tipos.ts';
 
 const ITENS = 'operacoes_massa_itens';
@@ -57,9 +57,19 @@ export function depsLacoReajuste(admin: SupabaseClient, op: { id: string; org_id
     falhou('reajuste_item_gravar', error);
     return data === true;
   };
+  const doLaco = depsLaco(admin, op, chave);
   return {
-    ...depsLaco(admin, op, chave),
+    ...doLaco,
     gravarItem,
+
+    // Antes de concluir: a falha relança (500) e a operação segue `executando`, para a reentrega ou o Retomar repetirem.
+    async concluir() {
+      const { data, error } = await admin.rpc('reajuste_atacado_concluir', { p_org: op.org_id, p_operacao: op.id });
+      falhou('reajuste_atacado_concluir', error);
+      // Concluir aqui deixaria a reserva da família sem ninguém para soltar.
+      if ((data as { pendentes: number }).pendentes > 0) throw new Error(`atacado pendente na operação ${op.id}`);
+      await doLaco.concluir();
+    },
 
     // Só a RPC: ela grava a recusa sob os locks. 'ocupado' ou motivo → null.
     async reivindicar(operacaoId, mlItemId) {
@@ -319,7 +329,26 @@ async function configAtacado(admin: SupabaseClient, orgId: string, variacaoIds: 
     falhou('configAtacado', error);
     linhas.push(...((data ?? []) as unknown as typeof linhas));
   }
-  return configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null });
+  return {
+    ...configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null }),
+    porCor: linhas.some((l) => l.atacado != null),
+  };
+}
+
+/** Família pedida na edição do atacado; id fora da org → ForaDaOrg. */
+async function familiasAtacado(admin: SupabaseClient, orgId: string, familiaIds: string[]): Promise<Map<string, FamiliaAtacado>> {
+  const out = new Map<string, FamiliaAtacado>();
+  for (const b of blocos(familiaIds)) {
+    const { data, error } = await admin.from('familias').select('id, codigo_pai, atacado').eq('org_id', orgId).in('id', b);
+    falhou('familias.atacado', error);
+    for (const f of data ?? []) out.set(String(f.id), { codigo_pai: String(f.codigo_pai), atacado: (f.atacado ?? null) as FamiliaAtacado['atacado'], porCor: false });
+    const cores = await admin.from('variacoes').select('familia_id').eq('org_id', orgId).in('familia_id', b).not('atacado', 'is', null);
+    falhou('variacoes.atacado', cores.error);
+    for (const v of cores.data ?? []) out.get(String(v.familia_id))!.porCor = true;
+  }
+  const faltam = familiaIds.filter((id) => !out.has(id));
+  if (faltam.length) throw new ForaDaOrg(faltam);
+  return out;
 }
 
 /** `reverter` = preview com origem_id (os MLBs vêm da origem, não do usuário). */
@@ -353,6 +382,13 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
     },
 
     configAtacado: (variacaoIds) => configAtacado(admin, orgId, variacaoIds),
+    familiasAtacado: (familiaIds) => familiasAtacado(admin, orgId, familiaIds),
+
+    async origemAtacado(origemId) {
+      const { data, error } = await admin.from('operacoes_massa').select('atacado_familias').eq('org_id', orgId).eq('id', origemId).maybeSingle();
+      falhou('origemAtacado', error);
+      return (data?.atacado_familias ?? []) as unknown as EntradaAtacado[];
+    },
 
     ml: criarClienteReajusteML(cx.token),
     avaliar: criarAvaliador(admin, cx),

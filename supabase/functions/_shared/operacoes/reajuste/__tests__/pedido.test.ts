@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  decidirRetomar, idRetomada, lerConfirmar, lerPreview, lerRetomar, linhasDoRascunho, MSG_CONFIRMAR_RISCO, MSG_EXPIRADO, respostaConfirmar,
+  decidirRetomar, idRetomada, lerConfirmar, lerPreview, lerRetomar, linhasDoRascunho, MSG_CONFIRMAR_RISCO, MSG_EXPIRADO, MSG_FAMILIA_PARCIAL, respostaConfirmar,
 } from '../pedido.ts';
 import type { ItemPreview } from '../preview.ts';
 
@@ -32,6 +32,41 @@ describe('lerPreview', () => {
   });
 });
 
+describe('lerPreview — atacado por família', () => {
+  const p = { acao: 'reajustar', ml_item_ids: ['MLB1'] };
+  const faixa = (min_unidades: unknown, desconto_pct: unknown) => ({ min_unidades, desconto_pct });
+
+  it('aceita até 5 faixas crescentes, sem carregar campo estranho', () => {
+    const fs = [2, 3, 4, 5, 6].map((q) => faixa(q, 5));
+    expect(lerPreview({ ...p, atacado: { [U]: fs.map((f) => ({ ...f, x: 1 })) } })?.atacado).toEqual({ [U]: fs });
+  });
+  it('só o atacado basta como pedido', () => {
+    expect(lerPreview({ acao: 'reajustar', atacado: { [U]: [faixa(2, 5)] } })?.atacado).toEqual({ [U]: [faixa(2, 5)] });
+  });
+  it('sem atacado a chave não aparece', () => {
+    expect(lerPreview(p)).not.toHaveProperty('atacado');
+    expect(lerPreview({ ...p, atacado: {} })).not.toHaveProperty('atacado');
+  });
+  it.each([
+    ['1 unidade', { [U]: [faixa(1, 5)] }],
+    ['quantidade fracionada', { [U]: [faixa(2.5, 5)] }],
+    ['fora de ordem', { [U]: [faixa(3, 5), faixa(2, 5)] }],
+    ['quantidade repetida', { [U]: [faixa(2, 5), faixa(2, 6)] }],
+    ['6 faixas', { [U]: [2, 3, 4, 5, 6, 7].map((q) => faixa(q, 5)) }],
+    ['sem faixas', { [U]: [] }],
+    ['desconto 0', { [U]: [faixa(2, 0)] }],
+    ['desconto 100', { [U]: [faixa(2, 100)] }],
+    ['desconto não numérico', { [U]: [faixa(2, '5')] }],
+    ['família não uuid', { x: [faixa(2, 5)] }],
+    ['não é objeto', [faixa(2, 5)]],
+  ])('recusa: %s', (_n, atacado) => {
+    expect(lerPreview({ ...p, atacado })).toBeNull();
+  });
+  it('recusa só atacado vazio', () => {
+    expect(lerPreview({ acao: 'reajustar', atacado: {} })).toBeNull();
+  });
+});
+
 describe('lerConfirmar', () => {
   it('normaliza confirmações e preserva incluir omitido (a RPC usa o incluido do rascunho)', () => {
     expect(lerConfirmar({ operacao_id: U, confirmacoes: [{ ml_item_id: 'MLB1', risco: true }, { ml_item_id: 'MLB2', incluir: false }] })).toEqual({
@@ -58,6 +93,7 @@ describe('respostaConfirmar', () => {
     expect(respostaConfirmar('ocupado:MLB3')).toMatchObject({ status: 409, corpo: { itens: [{ ml_item_id: 'MLB3' }] } });
     expect(respostaConfirmar('sem_produto:MLB4')).toMatchObject({ status: 400, corpo: { itens: [{ ml_item_id: 'MLB4' }] } });
     expect(respostaConfirmar('nenhum')).toMatchObject({ publicar: false, status: 400 });
+    expect(respostaConfirmar(`familia_parcial:${U}`)).toEqual({ publicar: false, status: 400, corpo: { erro: MSG_FAMILIA_PARCIAL, familia_id: U } });
   });
 });
 
