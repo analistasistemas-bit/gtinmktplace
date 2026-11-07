@@ -7426,3 +7426,5 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 
 
 - [x] **Cor composta preservada na Camada 1** (2026-11-07, adendo ADR-0004) — `Marrom Dourado` virava `Dourado` porque o dicionário testa o sinônimo mais longo primeiro; `Castanho Escuro`, `Vermelho Intenso` e `Azul Turquesa` perdiam palavra do mesmo jeito. `extrairCorDoTexto` agora mantém matiz + 1-2 tons literal. Retroteste em 2.547 pares de origem `descricao`: compostas corrigidas, 4 linhas deixam de herdar a cor do pai (`PINK 167` com pai `BRANCA` era `Branco`), nenhum falso positivo. Não é retroativo. Deploy: `process-familia`.
+
+- [x] **Louro, Loiro e Chocolate no dicionário de cores** (2026-11-07, adendo ADR-0004) — colorações `Louro Escuro`, `Louro Médio` e `Chocolate` saíam `Outra` pelo Vision. Não é retroativo. Deploy: `process-familia`.

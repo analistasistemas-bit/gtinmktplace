@@ -56,6 +56,14 @@ describe('extrairCorDoTexto — cor composta fora do dicionário', () => {
     ['LINHA CASTANHO MEDIO', 'Castanho Médio'],
     ['Coloração Castanho Claro Dourado 125g', 'Castanho Claro Dourado'],
     ['Tecido Azul Escuro 10 metros', 'Azul Escuro'],
+    ['Coloração Creme Colore 6.0 - Louro Escuro 125g', 'Louro Escuro'],
+    ['Coloração Creme Colore 7.0 - Louro Médio 125g', 'Louro Médio'],
+    ['Coloração Louro Claro Dourado 125g', 'Louro Claro Dourado'],
+    ['L.LIZA FINA LOIRO-CLARO', 'Loiro Claro'],
+    ['Coloração Creme Colore 6.7 - Chocolate 125g', 'Chocolate'],
+    ['Coloração Marrom Chocolate 125g', 'Marrom Chocolate'],
+    ['Coloração Louro 125g', 'Louro'],
+    ['Peruca Loira Lisa', 'Loiro'],
   ])('%s → %s', (nome, cor) => {
     expect(extrairCorDoTexto([nome])).toBe(cor);
   });

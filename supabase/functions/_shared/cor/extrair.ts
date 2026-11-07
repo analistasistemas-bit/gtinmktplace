@@ -22,9 +22,9 @@ function escapeRegex(str: string): string {
 
 // Matiz seguido de 1-2 tons ("Marrom Dourado", "Castanho Claro Dourado"). Sem isto, o maior
 // sinônimo vence sozinho e a composta perde uma palavra: "Marrom Dourado" virava "Dourado".
-const TONS = 'clar[oa]|escur[oa]|m[eé]dio|intens[oa]|azulad[oa]|acinzentad[oa]|acobread[oa]|dourad[oa]|turquesa|petr[oó]leo';
+const TONS = 'clar[oa]|escur[oa]|m[eé]dio|intens[oa]|azulad[oa]|acinzentad[oa]|acobread[oa]|dourad[oa]|turquesa|petr[oó]leo|chocolate';
 const COR_COMPOSTA = new RegExp(
-  `(?<![\\p{L}])(?:azul|verde|marrom|castanh[oa]|rosa|rox[oa]|vermelh[oa]|amarel[oa]|laranja|cinza|bege|pret[oa])` +
+  `(?<![\\p{L}])(?:azul|verde|marrom|castanh[oa]|lour[oa]|loir[oa]|rosa|rox[oa]|vermelh[oa]|amarel[oa]|laranja|cinza|bege|pret[oa])` +
     `(?:[\\s-]+(?:${TONS})){1,2}(?![\\p{L}])`,
   'iu',
 );

@@ -132,3 +132,5 @@ Retroteste em 2.547 pares de origem `descricao`: compostas corrigidas, 4 linhas 
 Vale para CREATE e reprocessamento de variação sem cor; `if (v.cor) return v` preserva o que
 já foi gravado, então nada publicado muda. A cor literal pode não ter `value_id` no ML
 (`Dourado` tem, `Marrom Dourado` talvez não): o nome certo vale mais que o filtro de cor.
+
+No mesmo dia, `Louro`, `Loiro` e `Chocolate` entraram no dicionário: sem a palavra, o nome caía no Vision e voltava `Outra`. `Louro` e `Loiro` ficam separados para manter a grafia do nome. Retroteste: 27 linhas com essas palavras, só as 3 colorações mudam.
