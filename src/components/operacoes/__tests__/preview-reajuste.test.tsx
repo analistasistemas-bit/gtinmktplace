@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PreviewReajuste } from '../preview-reajuste';
+import { usePromocoes } from '@/hooks/usePromocoes';
 import { ErroOperacao, useConfirmarReajuste, usePodeExecutarOperacao, usePreviewReajuste } from '@/hooks/useOperacoes';
 import { calcularAlvo, type Avaliacao, type CorAvaliada, type ItemPreview, type OfertaVigente, type PrecoAvaliado } from '@/lib/reajuste';
 
+vi.mock('@/hooks/usePromocoes', () => ({ usePromocoes: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/hooks/useOperacoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOperacoes')>('@/hooks/useOperacoes');
@@ -44,6 +46,9 @@ beforeEach(() => {
   vi.mocked(usePreviewReajuste).mockReturnValue({ mutateAsync: previewMut, isPending: false } as never);
   vi.mocked(useConfirmarReajuste).mockReturnValue({ mutateAsync: confirmarMut, isPending: false } as never);
   vi.mocked(usePodeExecutarOperacao).mockReturnValue(true);
+  vi.mocked(usePromocoes).mockReturnValue({ data: [
+    { promocao_id: 'P-1', nome: '11.11 da Black', tipo: 'DEAL' }, { promocao_id: 'P-2', nome: 'Semana do Consumidor', tipo: 'DEAL' },
+  ] } as never);
 });
 
 const vermelho = () => item('MLB2', { avaliacao: avaliacao([cor({ semaforo: 'vermelho', liquido: 4 })]) });
@@ -234,8 +239,9 @@ describe('PreviewReajuste', () => {
     });
 
     it('lista cada oferta vigente, inclusive 2+, e avisa do preço riscado', async () => {
-      montar([item('MLB1', { ofertas: [oferta(), oferta({ chave: 'O2', tipo: 'LIGHTNING', preco: 35 })] })]);
-      expect(await screen.findByText(/Em promoção por R\$\s39,90 · Campanha/)).toBeInTheDocument();
+      montar([item('MLB1', { ofertas: [oferta(), oferta({ chave: 'O3', promocao_id: 'P-2', preco: 37 }), oferta({ chave: 'O2', promocao_id: 'P-9', tipo: 'LIGHTNING', preco: 35 })] })]);
+      expect(await screen.findByText(/Em promoção por R\$\s39,90 · 11\.11 da Black/)).toBeInTheDocument();
+      expect(screen.getByText(/Em promoção por R\$\s37,00 · Semana do Consumidor/)).toBeInTheDocument();
       expect(screen.getByText(/Em promoção por R\$\s35,00 · Relâmpago/)).toBeInTheDocument();
       expect(screen.getByText('O preço riscado pode não acompanhar o novo preço base')).toBeInTheDocument();
     });
@@ -282,14 +288,57 @@ describe('PreviewReajuste', () => {
       }));
       await waitFor(() => expect(screen.getByLabelText('Incluir MLB3')).not.toBeChecked());
       expect(screen.queryByText(/Assumo o prejuízo/)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByLabelText('Incluir MLB3'));
+      expect(screen.getByLabelText(/Assumo o prejuízo/)).not.toBeChecked();
+      expect(botao()).toBeDisabled();
     });
 
-    it('voltar ao % original não manda atacado', async () => {
+    it('10 → 15 → 10: o último pedido não leva atacado', async () => {
       montar([comFaixas('MLB1')], { familiaPorPai: { P1: 'FAM1' } });
+      previewMut.mockResolvedValueOnce({ operacao_id: 'OP2', itens: [comFaixas('MLB1')], expira_em: expira() });
       const campo = await screen.findByLabelText('Desconto de 2+ un. da família P1 (%)');
       await userEvent.clear(campo);
-      await userEvent.type(campo, '10{Enter}');
-      expect(previewMut).toHaveBeenCalledTimes(1);
+      await userEvent.type(campo, '15{Enter}');
+      await waitFor(() => expect(previewMut).toHaveBeenCalledTimes(2));
+      expect(previewMut).toHaveBeenLastCalledWith({ ml_item_ids: ['MLB1'], ajuste, atacado: { FAM1: [{ min_unidades: 2, desconto_pct: 15 }] } });
+      previewMut.mockResolvedValueOnce({ operacao_id: 'OP3', itens: [comFaixas('MLB1')], expira_em: expira() });
+      await waitFor(() => expect(screen.getByLabelText('Desconto de 2+ un. da família P1 (%)')).toHaveValue('15,00'));
+      const campo2 = screen.getByLabelText('Desconto de 2+ un. da família P1 (%)');
+      await userEvent.clear(campo2);
+      await userEvent.type(campo2, '10{Enter}');
+      await waitFor(() => expect(previewMut).toHaveBeenCalledTimes(3));
+      expect(previewMut).toHaveBeenLastCalledWith({ ml_item_ids: ['MLB1'], ajuste });
+    });
+
+    it('edição que deixa a família fora mantém o editor para corrigir ou remover', async () => {
+      const fora = (ml: string) => item(ml, { situacao: 'fora', incluido: false, avaliacao: null, motivo: 'Atacado da família recusado' });
+      montar([comFaixas('MLB1'), comFaixas('MLB2')], { familiaPorPai: { P1: 'FAM1' } });
+      previewMut.mockResolvedValueOnce({ operacao_id: 'OP2', itens: [fora('MLB1'), fora('MLB2')] });
+      const campo = await screen.findByLabelText('Desconto de 2+ un. da família P1 (%)');
+      await userEvent.clear(campo);
+      await userEvent.type(campo, '15{Enter}');
+      await waitFor(() => expect(screen.getAllByText(/Atacado da família recusado/).length).toBe(2));
+      const editor = await screen.findByLabelText('Desconto de 2+ un. da família P1 (%)');
+      expect(editor).toHaveValue('15,00');
+      previewMut.mockResolvedValueOnce({ operacao_id: 'OP3', itens: [comFaixas('MLB1'), comFaixas('MLB2')], expira_em: expira() });
+      await userEvent.clear(editor);
+      await userEvent.type(editor, '10{Enter}');
+      await waitFor(() => expect(previewMut).toHaveBeenLastCalledWith({ ml_item_ids: ['MLB1', 'MLB2'], ajuste }));
+    });
+
+    it('faixas novas criadas pela edição aparecem antes de confirmar, com semáforo', async () => {
+      montar([item('MLB1', {
+        faixas_anteriores: [{ min_unidades: 2, preco: 100 }], faixas_alvo: [{ min_unidades: 2, preco: 90 }, { min_unidades: 5, preco: 80 }],
+        precos_avaliados: [faixaAv(2), faixaAv(5, { semaforo: 'vermelho', liquido: 1 })],
+      })]);
+      expect(await screen.findByText(/2\+ un\.: R\$\s100,00 → R\$\s90,00/)).toBeInTheDocument();
+      expect(screen.getByText(/5\+ un\.: nova faixa → R\$\s80,00/)).toBeInTheDocument();
+      expect(screen.getByLabelText('Faixa 5+ un.: Prejuízo')).toBeInTheDocument();
+    });
+
+    it('irmão sem faixa viva e com faixas criadas mostra as faixas novas', async () => {
+      montar([item('MLB1', { faixas_anteriores: [], faixas_alvo: [{ min_unidades: 2, preco: 90 }], precos_avaliados: [faixaAv(2)] })]);
+      expect(await screen.findByText(/2\+ un\.: nova faixa → R\$\s90,00/)).toBeInTheDocument();
     });
 
     it('% inválido não pede preview', async () => {

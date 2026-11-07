@@ -19,6 +19,7 @@ import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import { calcularMarkup } from '@/lib/markup';
 import { parsePreco, tituloOperacao } from '@/lib/operacoes';
 import { MOTIVO_COR, rotuloTipo } from '@/lib/promocoes';
+import { usePromocoes } from '@/hooks/usePromocoes';
 import { formatarAjuste, maxDuasCasas, type CorAvaliada, type FaixaAtacado, type ItemPreview, type OfertaVigente } from '@/lib/reajuste';
 import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
@@ -44,12 +45,16 @@ function descontosDe(i: ItemPreview): FaixaAtacado[] {
   return (i.faixas_anteriores ?? []).map((f) => ({ min_unidades: f.min_unidades, desconto_pct: Math.round((1 - f.preco / i.preco_anterior) * 10000) / 100 }));
 }
 
-function OfertaLinha({ o, i }: { o: OfertaVigente; i: ItemPreview }) {
+/** Quantidades com faixa viva ou nova: a edição do % pode criar faixa onde o anúncio não tinha. */
+const faixasDe = (i: ItemPreview) =>
+  [...new Set([...(i.faixas_anteriores ?? []), ...(i.faixas_alvo ?? [])].map((f) => f.min_unidades))].sort((a, b) => a - b);
+
+function OfertaLinha({ o, i, nome }: { o: OfertaVigente; i: ItemPreview; nome: string | undefined }) {
   const passo = i.passos?.find((p) => (p.tipo === 'oferta' || p.tipo === 'saida') && p.oferta.chave === o.chave);
   const quando = o.status === 'pending' ? 'Promoção agendada' : 'Em promoção';
   return (
     <li>
-      {o.preco != null ? `${quando} por ${fmtBRL(o.preco)}` : quando} · {rotuloTipo(o.tipo)}
+      {o.preco != null ? `${quando} por ${fmtBRL(o.preco)}` : quando} · {nome ?? rotuloTipo(o.tipo)}
       {passo?.tipo === 'oferta' && <> · oferta muda para {fmtBRL(passo.alvo)}</>}
       {passo?.tipo === 'saida' && ' · sai da promoção antes de mudar o preço'}
     </li>
@@ -61,15 +66,16 @@ function FaixasItem({ i }: { i: ItemPreview }) {
     <div className="ml-7 text-xs">
       <p className="text-muted-foreground">Atacado · semáforo por unidade</p>
       <ul className="mt-1 flex flex-col gap-1">
-        {(i.faixas_anteriores ?? []).map((f) => {
-          const alvo = i.faixas_alvo?.find((x) => x.min_unidades === f.min_unidades);
-          const av = i.precos_avaliados?.find((p) => p.tipo === 'faixa' && p.chave === String(f.min_unidades))?.avaliacao;
+        {faixasDe(i).map((min) => {
+          const f = { min_unidades: min, preco: i.faixas_anteriores?.find((x) => x.min_unidades === min)?.preco ?? null };
+          const alvo = i.faixas_alvo?.find((x) => x.min_unidades === min);
+          const av = i.precos_avaliados?.find((p) => p.tipo === 'faixa' && p.chave === String(min))?.avaliacao;
           const pior = av ? piorCor(av.cores) : null;
           const ui = av ? SEMAFORO_UI[av.pior] : null;
           return (
             <li key={f.min_unidades} className="flex flex-wrap items-center justify-between gap-2">
               <span className="tabular-nums">
-                {f.min_unidades}+ un.: {fmtBRL(f.preco)}{alvo ? ` → ${fmtBRL(alvo.preco)}` : ' (não muda)'}
+                {f.min_unidades}+ un.: {f.preco == null ? 'nova faixa' : fmtBRL(f.preco)}{alvo ? ` → ${fmtBRL(alvo.preco)}` : ' (não muda)'}
               </span>
               <span className="flex items-center gap-2">
                 {pior && <LiquidoCor c={pior} />}
@@ -158,6 +164,10 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
   const [erroPreview, setErroPreview] = useState<ErroOperacao | null>(null);
   const [precos, setPrecos] = useState<Record<string, number>>({});
   const [atacado, setAtacado] = useState<Record<string, FaixaAtacado[]>>({});
+  const { data: promocoes } = usePromocoes();
+  const nomePromocao = new Map((promocoes ?? []).filter((p) => p.nome).map((p) => [p.promocao_id, p.nome as string]));
+  // % vivo de cada família, guardado quando o editor aparece: sobrevive a um preview em que a família fica fora.
+  const basesAtacado = useRef<Record<string, FaixaAtacado[]>>({});
   const [incluir, setIncluir] = useState<Record<string, boolean>>({});
   const [confVermelho, setConfVermelho] = useState(false);
   const [confSemDado, setConfSemDado] = useState(false);
@@ -216,9 +226,18 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
   useEffect(() => { if (!temVermelho) setConfVermelho(false); }, [temVermelho]);
   useEffect(() => { if (!temSemDado) setConfSemDado(false); }, [temSemDado]);
 
-  // Um editor de % por produto, no primeiro anúncio dele que tem faixas.
+  // Um editor de % por produto, no primeiro anúncio dele que tem faixas (viva ou nova).
   const donoEditor = new Map<string, string>();
-  for (const i of elegiveis) if (i.faixas_anteriores?.length && !donoEditor.has(i.codigo_pai)) donoEditor.set(i.codigo_pai, i.ml_item_id);
+  for (const i of elegiveis) {
+    const fid = familiaPorPai?.[i.codigo_pai];
+    if (!fid || donoEditor.has(i.codigo_pai) || !faixasDe(i).length || !descontosDe(i).length) continue;
+    donoEditor.set(i.codigo_pai, i.ml_item_id);
+    basesAtacado.current[fid] ??= descontosDe(i);
+  }
+  // Família editada cujos anúncios saíram do preview (ficou `fora`): o editor continua para corrigir ou remover.
+  const comEditor = new Set([...donoEditor.keys()].map((pai) => familiaPorPai?.[pai]));
+  const paiDaFamilia = (fid: string) => Object.entries(familiaPorPai ?? {}).find(([, v]) => v === fid)?.[0] ?? fid;
+  const editadasSemItem = Object.keys(atacado).filter((fid) => !comEditor.has(fid) && basesAtacado.current[fid]);
 
   const expiraEm = resp?.expira_em ? Date.parse(resp.expira_em) : null;
   const agora = useAgora(expiraEm != null);
@@ -331,6 +350,14 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
             </ul>
           )}
 
+          {!reverter && editadasSemItem.map((fid) => (
+            <EditorAtacado
+              key={fid} pai={paiDaFamilia(fid)} valor={atacado[fid]} desabilitado={ocupado}
+              n={itens.filter((x) => x.codigo_pai === paiDaFamilia(fid)).length} versao={`${resp?.operacao_id}-${versaoInput}`}
+              onMudar={(min, texto) => editarAtacado(fid, basesAtacado.current[fid], min, texto)}
+            />
+          ))}
+
           {elegiveis.length > 0 && (
             <ul className="flex flex-col divide-y divide-border rounded-lg border" aria-label="Anúncios do reajuste">
               {elegiveis.map((i) => {
@@ -355,7 +382,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
                     </div>
                     {!!i.ofertas?.length && (
                       <div className="ml-7 text-xs">
-                        <ul className="flex flex-col gap-0.5 text-info">{i.ofertas.map((o) => <OfertaLinha key={o.chave} o={o} i={i} />)}</ul>
+                        <ul className="flex flex-col gap-0.5 text-info">{i.ofertas.map((o) => <OfertaLinha key={o.chave} o={o} i={i} nome={nomePromocao.get(o.promocao_id)} />)}</ul>
                         <p className="mt-1 text-muted-foreground">O preço riscado pode não acompanhar o novo preço base</p>
                       </div>
                     )}
@@ -377,12 +404,12 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
                     </div>
                     )}
                     {pior && <p className="ml-7 text-xs"><LiquidoCor c={pior} /></p>}
-                    {!!i.faixas_anteriores?.length && <FaixasItem i={i} />}
+                    {faixasDe(i).length > 0 && <FaixasItem i={i} />}
                     {mostraEditor && (
                       <EditorAtacado
-                        pai={i.codigo_pai} valor={atacado[familiaId!] ?? descontosDe(i)} desabilitado={ocupado}
+                        pai={i.codigo_pai} valor={atacado[familiaId!] ?? basesAtacado.current[familiaId!]} desabilitado={ocupado}
                         n={itens.filter((x) => x.codigo_pai === i.codigo_pai).length} versao={`${resp?.operacao_id}-${versaoInput}`}
-                        onMudar={(min, texto) => editarAtacado(familiaId!, descontosDe(i), min, texto)}
+                        onMudar={(min, texto) => editarAtacado(familiaId!, basesAtacado.current[familiaId!], min, texto)}
                       />
                     )}
                     {i.aviso && <p className="ml-7 text-xs text-warning">{i.aviso}</p>}
