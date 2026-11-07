@@ -49,6 +49,8 @@ export interface PublicarFamiliaUPArgs {
   lerSchemaAtributosFn?: typeof lerSchemaAtributos;
   /** ADR-0197: leitura do UP para confirmar a publicação de SKU de kit com variação. */
   lerOfertaFn?: typeof lerOferta;
+  /** ADR-0197: `sku_politica_kit.versao` de cada SKU de kit, capturada ao enfileirar (Publicar/Reenviar). */
+  versoesKit?: Record<string, number>;
   now?: () => string;
 }
 
@@ -66,9 +68,9 @@ function ordenarPorCor<T extends { sku: string; cor: string | null }>(vs: T[]): 
 }
 
 /**
- * ADR-0197: identidade (o item é do UP gravado), estado `active` e quantidade igual à publicada, por
- * leitura do ML. Qualquer falha ou diferença devolve false.
- * ponytail: venda entre a ativação e a leitura também dá false; o custo é manter a exclusão até o Reenviar.
+ * ADR-0197: identidade (o item é do UP gravado), estado `active` e quantidade do UP no ML que não passa do
+ * saldo local relido sob a exclusão, por leitura do ML. Qualquer falha ou excesso devolve false.
+ * Abaixo do local é o lado seguro (venda já baixada no ML, entrada pendente); a triagem diária reconcilia.
  */
 async function confirmarNoMl(
   args: PublicarFamiliaUPArgs, rootId: string, codigos: string[],
@@ -85,7 +87,8 @@ async function confirmarNoMl(
       if (!f?.item_externo_id || !f.user_product_id) return false;
       const oferta = await ler(token, f.user_product_id as string, [f.item_externo_id as string]);
       const item = oferta.itens.find((i) => i.id === f.item_externo_id);
-      if (item?.status !== 'active' || oferta.quantidade !== varPorSku.get(codigo)?.estoque) return false;
+      const local = varPorSku.get(codigo)?.estoque;
+      if (item?.status !== 'active' || local == null || oferta.quantidade > local) return false;
     }
     return true;
   } catch (e) {
@@ -93,6 +96,9 @@ async function confirmarNoMl(
     return false;
   }
 }
+
+/** Recusa definitiva da política do kit: vira `erro` com a mensagem, nunca `compensacao_pendente`. */
+class RecusaKit extends Error {}
 
 export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<ResultadoUP> {
   const { admin, conn, ctx, conexao, familia, anuncio, categoriaId } = args;
@@ -193,16 +199,33 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
 
-  // ADR-0197: SKU de kit com variação só é criado ou ativado com a exclusão do SKU (dono = raiz, estável
-  // no retry), mantida durante a saga. Sob a exclusão: a política é validada (Guardado, bloqueios e versão
-  // diferente da lida junto com o snapshot recusam) e o saldo é relido, porque o do snapshot pode ser
-  // anterior a uma transferência. A política é conferida de novo antes de cada CREATE e de cada ativação:
-  // pausa do operador não passa pela exclusão.
+  // ADR-0197: SKU de kit com variação. Só CREATE de item novo segue por aqui, com a exclusão do SKU
+  // (dono = raiz, estável no retry) mantida até a confirmação no ML. Item que já existe ou que a busca
+  // adotaria é da saga do kit (Gerenciar kit): recusa, exceto a retomada da própria publicação (a
+  // exclusão já era deste dono antes da tentativa). Sob a exclusão: versão da política igual à capturada
+  // ao enfileirar, `podeReativar` e saldo relido da variação canônica. A política é conferida de novo
+  // antes de cada CREATE e antes de começar a ativar, fora do try da ativação do `publicarGrupo`.
   const participantes = await skusParticipantes(admin, familia.org_id, skus, kitLigado(familia));
   const codigosKit = [...participantes];
+  const ehKit = participantes.size > 0;
   let validarPolitica = async () => {};
-  if (participantes.size > 0) {
-    const doTrabalho = await lerPoliticas(admin, familia.org_id, codigosKit);
+  let retomada = new Set<string>();
+  let criouParticipante = false;
+  const recusar = async (mensagem: string, soltar: boolean): Promise<ResultadoUP> => {
+    if (soltar) await soltarExclusao(admin, familia.org_id, rootId);
+    await admin.from('familias').update({ status: 'erro', erro_mensagem: mensagem }).eq('id', familia.id);
+    return { estado: 'erro', mensagem };
+  };
+  if (ehKit) {
+    const versoes = args.versoesKit;
+    if (!versoes) {
+      return recusar(`${codigosKit.join(', ')}: SKU em kit com variação numa publicação enfileirada sem a versão da `
+        + 'política. Publique de novo.', false);
+    }
+    const { data: minhas, error: errMinhas } = await admin.from('kit_exclusoes').select('codigo')
+      .eq('org_id', familia.org_id).eq('dono_id', rootId);
+    if (errMinhas) throw new Error(`kit_exclusoes: ${errMinhas.message}`);
+    retomada = new Set((minhas ?? []).map((m) => m.codigo as string));
     const ex = await adquirirExclusao(admin, familia.org_id, codigosKit, 'publicacao', rootId);
     if (!ex.ok) {
       throw new Error(`${ex.codigo ?? ex.motivo} está em transferência de kit com variação; a publicação tenta de novo depois.`);
@@ -211,27 +234,40 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
       const vigente = await lerPoliticas(admin, familia.org_id, codigosKit);
       for (const codigo of codigosKit) {
         const p = vigente.get(codigo) ?? null;
-        if ((p?.versao ?? 0) !== (doTrabalho.get(codigo)?.versao ?? 0)) {
-          throw new Error(`${codigo}: a política do kit com variação mudou desde a leitura da publicação; tenta de novo.`);
+        if ((p?.versao ?? 0) !== versoes[codigo]) {
+          throw new RecusaKit(`${codigo}: a política do kit com variação mudou desde que a publicação foi enfileirada. `
+            + 'Publique de novo.');
         }
         const d = podeReativar({ politica: p, origem: 'automatico' });
-        if (!d.pode) {
-          throw Object.assign(new Error(`${codigo}: ${d.motivo} A publicação não ativa este SKU.`), { status: 400 });
-        }
+        if (!d.pode) throw new RecusaKit(`${codigo}: ${d.motivo} A publicação não ativa este SKU.`);
       }
     };
     try {
       await validarPolitica();
-      const { data, error } = await admin.from('variacoes').select('codigo, estoque')
-        .eq('familia_id', familia.id).in('codigo', codigosKit);
+      const { data: filhos, error: errFilhos } = await admin.from('anuncios_externos_itens')
+        .select('sku, item_externo_id').eq('anuncio_externo_id', rootId).in('sku', codigosKit);
+      if (errFilhos) throw new Error(`anuncios_externos_itens: ${errFilhos.message}`);
+      const existentes = (filhos ?? []).filter((f) => f.item_externo_id && !retomada.has(f.sku as string));
+      if (existentes.length > 0) {
+        throw new RecusaKit(`${existentes.map((f) => f.sku).join(', ')}: SKU em kit com variação já tem anúncio no `
+          + 'Mercado Livre. Use Gerenciar kit.');
+      }
+      // Variação canônica da org (família mais recente), a mesma que a saga e o ledger usam.
+      const { data, error } = await admin.from('variacoes').select('codigo, estoque, familias!inner(criado_em)')
+        .eq('org_id', familia.org_id).in('codigo', codigosKit)
+        .order('criado_em', { referencedTable: 'familias', ascending: false });
       if (error) throw new Error(`variacoes (saldo sob exclusão): ${error.message}`);
+      const vistos = new Set<string>();
       for (const r of data ?? []) {
+        if (vistos.has(r.codigo as string)) continue;
+        vistos.add(r.codigo as string);
         const v = varPorSku.get(r.codigo as string);
         if (v) varPorSku.set(v.sku, { ...v, estoque: r.estoque as number });
       }
     } catch (e) {
-      // Nada foi ao ML ainda: soltar é seguro.
-      await soltarExclusao(admin, familia.org_id, rootId);
+      // Nada desta tentativa foi ao ML: solta, a menos que uma tentativa anterior tenha criado o item.
+      if (e instanceof RecusaKit) return recusar(e.message, retomada.size === 0);
+      if (retomada.size === 0) await soltarExclusao(admin, familia.org_id, rootId);
       throw e;
     }
   }
@@ -265,24 +301,56 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     admin, getToken: ctx.getToken, sellerId: conexao.contaExternaId ?? '',
     orgId: familia.org_id, categoriaId, familyName, desdeMs, montarPayloadPlano,
   });
-  if (participantes.size > 0) {
-    const { criarPlano, mudarStatus } = portas;
-    portas.criarPlano = async (sku) => { await validarPolitica(); return criarPlano(sku); };
-    portas.mudarStatus = async (id, status) => {
-      if (status === 'ativo') await validarPolitica();
-      return mudarStatus(id, status);
+  if (ehKit) {
+    const { criarPlano, buscarPorSku, salvarEstadoDesejado } = portas;
+    portas.buscarPorSku = async (sku) => {
+      const b = await buscarPorSku(sku);
+      if (b.tipo === 'um' && participantes.has(sku) && !retomada.has(sku)) {
+        throw new RecusaKit(`${sku}: SKU em kit com variação já tem anúncio no Mercado Livre. Use Gerenciar kit.`);
+      }
+      return b;
+    };
+    portas.criarPlano = async (sku) => {
+      await validarPolitica();
+      const r = await criarPlano(sku);
+      if (participantes.has(sku)) criouParticipante = true;
+      return r;
+    };
+    // Antes do primeiro `active`, fora do try da ativação: recusa nunca vira `compensacao_pendente`.
+    portas.salvarEstadoDesejado = async (id, estado) => {
+      if (estado === 'ativando') await validarPolitica();
+      return salvarEstadoDesejado(id, estado);
     };
   }
 
   // 3. Roda a saga "tudo ou pausa".
-  const resultado = await executarSaga(portas, { anuncioExternoId: rootId, skusEsperados: skus });
+  let resultado: ResultadoSaga;
+  try {
+    resultado = await executarSaga(portas, { anuncioExternoId: rootId, skusEsperados: skus });
+  } catch (e) {
+    // Recusa da política: definitiva. Solta só se nenhum item de kit foi criado (nem agora, nem antes).
+    if (e instanceof RecusaKit) return recusar(e.message, !criouParticipante && retomada.size === 0);
+    throw e;
+  }
   // A exclusão só sai com o resultado confirmado no ML. Saga que lança, estado diferente de `ativo` ou
-  // leitura divergente mantêm a linha em `kit_exclusoes`: a próxima tentativa (Reenviar, mesmo dono)
-  // readquire e solta ao confirmar, e a reconciliação diária alerta exclusão de publicação parada.
-  if (participantes.size > 0) {
-    const confirmado = resultado.estado === 'ativo' && await confirmarNoMl(args, rootId, codigosKit, varPorSku);
+  // leitura divergente mantêm a linha em `kit_exclusoes`: o Reenviar (mesmo dono) retoma e solta ao
+  // confirmar, e a reconciliação diária alerta exclusão de publicação parada.
+  let confirmado = true;
+  if (ehKit) {
+    confirmado = resultado.estado === 'ativo' && await confirmarNoMl(args, rootId, codigosKit, varPorSku);
     if (confirmado) await soltarExclusao(admin, familia.org_id, rootId);
     else console.error('kit_publicacao_exclusao_mantida', familia.org_id, rootId, resultado.estado);
+  }
+  if (resultado.estado === 'ativo' && !confirmado) {
+    // Não vira `publicado` (o Reenviar some e o worker cairia em `ja_publicado`): pausa os itens de kit,
+    // grava erro e deixa a exclusão com este dono para a retomada.
+    const { data: itensKit } = await admin.from('anuncios_externos_itens').select('item_externo_id')
+      .eq('anuncio_externo_id', rootId).in('sku', codigosKit);
+    for (const i of itensKit ?? []) {
+      if (i.item_externo_id) await portas.mudarStatus(i.item_externo_id as string, 'pausado').catch(() => {});
+    }
+    return recusar('Kit com variação: o Mercado Livre não confirmou item ativo e quantidade dentro do saldo. '
+      + 'Os itens do kit ficaram pausados e reservados para esta publicação. Use Reenviar.', false);
   }
 
   // 4. Só `ativo` libera publicado; qualquer outro estado NÃO é publicação concluída.

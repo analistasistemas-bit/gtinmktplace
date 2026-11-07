@@ -66,26 +66,26 @@ async function triarOrg(deps: DepsTriagem, orgId: string): Promise<number> {
   const saldo = new Map<string, { estoque: number; criado: string }>();
   const itens: Array<Record<string, unknown>> = [];
   for (const bloco of blocos(codigos)) {
-    const { data: vs, error: e1 } = await admin.from('variacoes')
-      .select('codigo, estoque, familias!inner(criado_em)').eq('org_id', orgId).in('codigo', bloco);
-    if (e1) throw new Error(`variacoes: ${e1.message}`);
-    for (const v of vs ?? []) {
+    // Paginado: um SKU acumula uma variação por lote importado, e o PostgREST corta em 1.000 linhas.
+    const vs = await paginarTudo<Record<string, unknown>>((de, ate) => admin.from('variacoes')
+      .select('id, codigo, estoque, familias!inner(criado_em)').eq('org_id', orgId).in('codigo', bloco)
+      .order('id').range(de, ate));
+    for (const v of vs) {
       const criado = String((v.familias as { criado_em?: string } | null)?.criado_em ?? '');
       const atual = saldo.get(v.codigo as string);
       if (!atual || criado > atual.criado) saldo.set(v.codigo as string, { estoque: Number(v.estoque ?? 0), criado });
     }
-    const { data: is, error: e2 } = await admin.from('anuncios_externos_itens')
-      .select('sku, item_externo_id, user_product_id, catalog_listing_id, retirado').eq('org_id', orgId).in('sku', bloco);
-    if (e2) throw new Error(`anuncios_externos_itens: ${e2.message}`);
-    itens.push(...(is ?? []));
+    // Item retirado (cor tirada do anúncio de propósito) não é oferta: fica de fora.
+    itens.push(...await paginarTudo<Record<string, unknown>>((de, ate) => admin.from('anuncios_externos_itens')
+      .select('id, sku, item_externo_id, user_product_id, catalog_listing_id').eq('org_id', orgId).in('sku', bloco)
+      .eq('retirado', false).order('id').range(de, ate)));
   }
 
   let criadas = 0;
   const semUp: string[] = [];
   for (const codigo of codigos) {
-    // Sem filtro de status local: só o item retirado de propósito fica atrás do vivo.
-    const doSku = itens.filter((i) => i.sku === codigo && i.user_product_id && i.item_externo_id)
-      .sort((a, b) => Number(!!a.retirado) - Number(!!b.retirado));
+    // Sem filtro de status local; retirado já ficou de fora na leitura.
+    const doSku = itens.filter((i) => i.sku === codigo && i.user_product_id && i.item_externo_id);
     const local = saldo.get(codigo);
     if (!local) continue;              // SKU de kit em rascunho, sem variação: nada a ofertar.
     if (doSku.length === 0) { semUp.push(codigo); continue; }

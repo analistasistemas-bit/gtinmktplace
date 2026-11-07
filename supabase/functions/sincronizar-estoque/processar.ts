@@ -251,11 +251,13 @@ async function lerFamiliaComSaldo(
   };
 }
 
-/** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela. */
+/** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela.
+ *  `inativos`: filho UP que o push descarta só pelo status local (não retirado, com item). Só interessa ao
+ *  kit com variação (ADR-0197): participante nessa situação vira transferência, não some em silêncio. */
 async function alvosDaFamilia(
   admin: SupabaseClient, orgId: string, codigoPai: string,
   estoquePorSku: Record<string, number>, canalOrigem: string | null,
-): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean }> {
+): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean; inativos: AlvoPush[] }> {
   const { data: anuncios } = await admin.from('anuncios_externos')
     .select('id, canal, item_externo_id, variacoes_externas')
     .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('status', 'publicado');
@@ -268,7 +270,17 @@ async function alvosDaFamilia(
   const alvos = resolverAlvosPush(
     (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canalOrigem,
   );
-  return { alvos, temAnuncio: (anuncios ?? []).length > 0 };
+  const canalDe = new Map((anuncios ?? []).map((a) => [a.id as string, a.canal as string]));
+  const inativos: AlvoPush[] = [];
+  for (const i of itensUP ?? []) {
+    const canal = canalDe.get(i.anuncio_externo_id as string);
+    if (!canal || (canalOrigem !== null && canal === canalOrigem)) continue;
+    if (i.retirado || i.status === 'ativo' || !i.item_externo_id) continue;
+    const estoque = estoquePorSku[i.sku as string];
+    if (estoque === undefined) continue;
+    inativos.push({ canal, itemExternoId: i.item_externo_id as string, estoques: [{ sku: i.sku as string, estoque }] });
+  }
+  return { alvos, temAnuncio: (anuncios ?? []).length > 0, inativos };
 }
 
 /**
@@ -279,13 +291,16 @@ async function alvosDaFamilia(
  */
 async function devolverAoOutbox(admin: SupabaseClient, orgId: string, codigos: string[]): Promise<void> {
   try {
-    const { data, error } = await admin.from('estoque_movimentos').select('id, codigo, criado_em')
-      .eq('org_id', orgId).in('codigo', codigos).order('criado_em', { ascending: false });
+    // Só push local (entrada, ajuste, estorno): venda do ML (`push_canal_origem`) e movimento da saga
+    // (`transferencia_id`) nunca são reabertos. "Último" pela ordem do ledger, não pelo relógio.
+    const { data, error } = await admin.from('estoque_movimentos').select('id, codigo, ordem')
+      .eq('org_id', orgId).in('codigo', codigos).is('push_canal_origem', null).is('transferencia_id', null)
+      .order('ordem', { ascending: false });
     if (error) throw new Error(error.message);
-    const ultimo = new Map<string, { id: string; criado: string }>();
+    const ultimo = new Map<string, { id: string; ordem: number }>();
     for (const m of data ?? []) {
       const atual = ultimo.get(m.codigo as string);
-      if (!atual || String(m.criado_em) > atual.criado) ultimo.set(m.codigo as string, { id: m.id as string, criado: String(m.criado_em) });
+      if (!atual || Number(m.ordem) > atual.ordem) ultimo.set(m.codigo as string, { id: m.id as string, ordem: Number(m.ordem) });
     }
     const ids = [...ultimo.values()].map((u) => u.id);
     if (ids.length === 0) return;
@@ -410,7 +425,7 @@ export async function processarSincronizacao(
   const estoqueBaseParaPush = job.skus && job.skus.length > 0
     ? Object.fromEntries(Object.entries(base.estoquePorSku).filter(([sku]) => job.skus!.includes(sku)))
     : base.estoquePorSku;
-  const { alvos: alvosBase, temAnuncio: baseTemAnuncio } =
+  const { alvos: alvosBase, temAnuncio: baseTemAnuncio, inativos } =
     await alvosDaFamilia(admin, org_id, codigoPaiBase, estoqueBaseParaPush, exclusao);
   // Cada alvo carrega a origem (base ou kit) de quem o gerou — sem isto, o aviso de "voltou ao
   // ar" (ADR-0111) não teria como saber, no laço de push abaixo, se quem reativou foi a base ou
@@ -453,14 +468,17 @@ export async function processarSincronizacao(
   // 3) ADR-0197: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
   // sai inteiro: num item com variações o conector regravaria as demais com a quantidade lida.
   const retentaveis: string[] = [];
-  if (alvos.length > 0) {
+  // Filho de participante fora de `ativo` no vínculo local também entra: o push o descartaria em silêncio.
+  if (alvos.length + inativos.length > 0) {
     const participantes = await skusParticipantes(
-      admin, org_id, [...new Set(alvos.flatMap((a) => a.estoques.map((e) => e.sku)))], kitLigado(familiaDoJob),
+      admin, org_id, [...new Set([...alvos, ...inativos].flatMap((a) => a.estoques.map((e) => e.sku)))],
+      kitLigado(familiaDoJob),
     );
-    const fora = alvos.filter((a) =>
-      a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' })));
+    const naoEscreve = (a: AlvoPush) =>
+      a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' }));
+    const fora = [...alvos.filter(naoEscreve), ...inativos.filter(naoEscreve)];
     if (fora.length > 0) {
-      alvos.splice(0, alvos.length, ...alvos.filter((a) => !fora.includes(a)));
+      alvos.splice(0, alvos.length, ...alvos.filter((a) => !naoEscreve(a)));
       if (!job.sem_transferencia_kit) {
         const r = await transferirParaSaga(deps, org_id, fora, participantes);
         if (r) retentaveis.push(r);

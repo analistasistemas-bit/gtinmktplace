@@ -31,7 +31,11 @@ import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemTetoAnuncio } from '../_shared/notificacoes/estoque.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
-export interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
+export interface Job {
+  familia_id: string; lote_id: string; listing_type_id?: string;
+  /** ADR-0197: versão da política dos SKUs de kit, capturada no enfileiramento (publicar-familias). */
+  versoes_kit?: Record<string, number>;
+}
 
 export type ResultadoProcessar =
   | { tipo: 'familia_inexistente' }
@@ -213,7 +217,10 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
         const schema = await lerSchemaAtributos(await ctx.getToken(), categoria!);
         if (schema.length) aceitaEmptyGtin = schema.some((s) => s.id === 'EMPTY_GTIN_REASON');
       } catch { /* fallback hard-coded do montarPayloadItem */ }
-      const r = await publicarUP({ admin, conn, ctx, conexao: conexao!, familia, anuncio, categoriaId: categoria!, aceitaEmptyGtin });
+      const r = await publicarUP({
+        admin, conn, ctx, conexao: conexao!, familia, anuncio, categoriaId: categoria!, aceitaEmptyGtin,
+        versoesKit: job.versoes_kit,
+      });
       await finalizarLote(job.lote_id);
       if (r.estado === 'ativo') {
         // ADR-0135 (fix round 1): rota UP também enfileira — o ML replica fiscal_information

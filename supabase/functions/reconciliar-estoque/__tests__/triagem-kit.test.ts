@@ -107,6 +107,29 @@ describe('triarParticipantes', () => {
   });
 });
 
+describe('triarParticipantes — volume e retirados', () => {
+  it('mais de 1.000 variações históricas do SKU: pagina e acha a canônica', async () => {
+    const historico = Array.from({ length: 1500 }, (_, i) => ({
+      org_id: 'O', codigo: 'P2', estoque: 100 + i, familias: fam(`2025-01-01T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`),
+    }));
+    // A canônica (mais recente) fica depois da linha 1.000: ML 4 × local 4, sem transferência.
+    const b: Banco = { ...BANCO, componentes: [{ org_id: 'O', codigo: 'P2' }], kitSkus: [],
+      variacoes: [...historico, { org_id: 'O', codigo: 'P2', estoque: 4, familias: fam('2026-06-01') }] };
+    const { d, rpcs } = deps(b);
+    await triarParticipantes(d);
+    expect(rpcs).toEqual([]);
+  });
+
+  it('item retirado não serve de alvo: SKU só com item retirado alerta como sem UP', async () => {
+    const b: Banco = { ...BANCO, itens: BANCO.itens.map((i) => (i.sku === 'P2' ? { ...i, retirado: true } : i)) };
+    const ler = vi.fn(async (_o: string, up: string) => (up === 'UP-P2' ? 0 : ML[up]));
+    const { d, rpcs } = deps(b, { lerQuantidade: ler });
+    await triarParticipantes(d);
+    expect(rpcs.map((r) => (r.p_itens as Array<{ codigo: string }>)[0].codigo)).toEqual(['P1']);
+    expect(d.alertar).toHaveBeenCalledWith('O', expect.stringMatching(/P2/));
+  });
+});
+
 describe('alertarPublicacoesParadas', () => {
   it('alerta exclusão de publicação com mais de 1 h, agrupada por org; recente e de transferência ficam de fora', async () => {
     const { d } = deps({

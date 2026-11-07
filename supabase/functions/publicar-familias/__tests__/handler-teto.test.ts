@@ -12,7 +12,9 @@ const f = vi.hoisted(() => ({
   conexao: null as Record<string, unknown> | null,
   formatoErro: false,
   leituras: [] as string[],
-  enfileirados: [] as Array<{ alvo: string; job: { familia_id: string } }>,
+  enfileirados: [] as Array<{ alvo: string; job: { familia_id: string; versoes_kit?: Record<string, number> } }>,
+  componentes: [] as string[],
+  politicas: [] as Array<Record<string, unknown>>,
 }));
 
 function builder(tabela: string) {
@@ -21,6 +23,8 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
     if (tabela === 'marketplace_connections') return { data: f.conexao, error: null };
     if (tabela === 'familias') return { data: [{ id: 'fam-1', categoria_ml_id: 'MLB1' }], error: null };
+    if (tabela === 'kit_variacao_componentes') return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
+    if (tabela === 'sku_politica_kit') return { data: f.politicas, error: null };
     if (tabela === 'ml_formato_publicacao') {
       return f.formatoErro ? { data: null, error: { message: 'fora do ar' } } : { data: f.formatos, error: null };
     }
@@ -69,7 +73,7 @@ beforeEach(() => {
   f.variacoes = [cor(60_000), cor(60_000)];
   f.formatos = [{ categoria_id: 'MLB1', formato: 'legacy' }];
   f.conexao = { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 's', expires_at: null };
-  f.formatoErro = false; f.leituras = []; f.enfileirados = [];
+  f.formatoErro = false; f.leituras = []; f.enfileirados = []; f.componentes = []; f.politicas = [];
 });
 
 const publicar = async () => {
@@ -118,5 +122,36 @@ describe('publicar-familias — CREATE acima do teto (ADR-0195)', () => {
     f.create = []; f.update = [FAMILIA];
     expect(await publicar()).toEqual(['update']);
     expect(f.leituras).not.toContain('ml_formato_publicacao');
+  });
+});
+
+// ADR-0197 (Task 5): a versão da política de cada SKU de kit é capturada no enfileiramento, e a publicação
+// a compara sob a exclusão. Org sem o módulo: nenhuma leitura de kit e job igual ao de hoje.
+describe('publicar-familias — versão da política do kit no job', () => {
+  const comModulo = (codigo: string, modulos: string[]): Linha => ({
+    ...cor(10), codigo, organizations: { modulos_habilitados: modulos },
+  });
+
+  it('CREATE de SKU de kit leva versoes_kit no job', async () => {
+    f.variacoes = [comModulo('V1', ['kit_variacao']), comModulo('V2', ['kit_variacao'])];
+    f.componentes = ['V1'];
+    f.politicas = [{ codigo: 'V1', versao: 7 }];
+    expect(await publicar()).toEqual(['publish']);
+    expect(f.enfileirados[0].job.versoes_kit).toEqual({ V1: 7 });
+  });
+
+  it('SKU de kit sem linha de política: versão 0', async () => {
+    f.variacoes = [comModulo('V1', ['kit_variacao'])];
+    f.componentes = ['V1'];
+    await publicar();
+    expect(f.enfileirados[0].job.versoes_kit).toEqual({ V1: 0 });
+  });
+
+  it('org sem o módulo: job sem versoes_kit e nenhuma leitura de kit', async () => {
+    f.variacoes = [comModulo('V1', [])];
+    f.componentes = ['V1'];
+    await publicar();
+    expect(f.enfileirados[0].job.versoes_kit).toBeUndefined();
+    expect(f.leituras.filter((t) => t.startsWith('kit_') || t === 'sku_politica_kit')).toEqual([]);
   });
 });

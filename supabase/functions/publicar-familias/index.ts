@@ -16,6 +16,7 @@ import { LIMITE_ESTOQUE_ML } from '../_shared/split/capar-estoque.ts';
 import { precoCentavos } from '../_shared/preco/grupos.ts';
 import { reservarFamilias, mensagemTudoRecusado, type FamiliaRecusada } from './reservar.ts';
 import { recusasDoLote } from '../_shared/publicacao/trava-oferta.ts';
+import { EMBED_MODULOS, kitLigado, versoesKit } from '../_shared/kit-variacao/politica.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -97,9 +98,12 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     // ADR-0167: família com QUALQUER variação de tamanho nunca é Legacy — ver decidir-split.ts.
     const temTamanhoPorFamilia = new Set<string>();
     const somaEstoquePorFamilia = new Map<string, number>();
+    const codigosPorFamilia = new Map<string, string[]>();
+    let kitNaOrg = false;
     if (idsParaEnfileirar.length > 0) {
+      // ADR-0197: `codigo` e o módulo da org (embed, sem consulta nova) para capturar a versão da política do kit.
       const { data: vrs, error: errVrs } = await admin.from('variacoes')
-        .select('familia_id, preco_publicacao, tamanho, estoque')
+        .select(`familia_id, codigo, preco_publicacao, tamanho, estoque, ${EMBED_MODULOS}`)
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
       if (errVrs) {
         await auditarOperacaoSuporte(admin, context, target, 'failed');
@@ -110,8 +114,23 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
           .push(precoCentavos(v.preco_publicacao));
         if (v.tamanho) temTamanhoPorFamilia.add(v.familia_id);
         somaEstoquePorFamilia.set(v.familia_id, (somaEstoquePorFamilia.get(v.familia_id) ?? 0) + Math.max(0, v.estoque ?? 0));
+        (codigosPorFamilia.get(v.familia_id) ?? codigosPorFamilia.set(v.familia_id, []).get(v.familia_id)!).push(v.codigo);
+        if (kitLigado(v)) kitNaOrg = true;
       }
     }
+    // ADR-0197: versão da política de cada SKU de kit do CREATE, comparada pela publicação sob a exclusão.
+    let versoes: Record<string, number> = {};
+    try {
+      const codigosNovos = (novos ?? []).flatMap((f) => codigosPorFamilia.get(f.id as string) ?? []);
+      versoes = await versoesKit(admin, orgId, codigosNovos, kitNaOrg);
+    } catch (e) {
+      await auditarOperacaoSuporte(admin, context, target, 'failed');
+      return new Response(`Erro ao ler a política do kit: ${(e as Error).message}`, { status: 500, headers: corsHeaders });
+    }
+    const versoesDaFamilia = (familiaId: string) => {
+      const doKit = (codigosPorFamilia.get(familiaId) ?? []).filter((c) => c in versoes);
+      return doKit.length > 0 ? { versoes_kit: Object.fromEntries(doKit.map((c) => [c, versoes[c]])) } : {};
+    };
     const paiPorFamilia = new Map(todas.map((f) => [f.id as string, f.codigo_pai as string]));
     const particoesPorPai = new Map<string, number>();
     if (todas.length > 0) {
@@ -172,7 +191,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         f,
         alvo: (ehSplit(f.id, false, formatoLegacy.has(f.id) ? somaEstoquePorFamilia.get(f.id) : undefined)
           ? 'split' : 'publish') as AlvoPublicacao,
-        job: { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType },
+        job: { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType, ...versoesDaFamilia(f.id as string) },
       })),
       ...(updates ?? []).map((f) => {
         // ADR-0078 F1: propaga a escolha "somente estoque" resolvida por família (global±override).

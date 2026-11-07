@@ -54,6 +54,19 @@ export async function lerPoliticas(
   return new Map((data ?? []).map((r) => [r.codigo as string, r as unknown as PoliticaSku]));
 }
 
+/**
+ * Versão da política de cada SKU de kit entre `codigos`, capturada ao enfileirar a publicação (0 = sem
+ * linha). A publicação compara sob a exclusão: mudou desde o enfileiramento, recusa.
+ */
+export async function versoesKit(
+  admin: SupabaseClient, orgId: string, codigos: string[], ligado: boolean,
+): Promise<Record<string, number>> {
+  const participantes = [...await skusParticipantes(admin, orgId, codigos, ligado)];
+  if (participantes.length === 0) return {};
+  const politicas = await lerPoliticas(admin, orgId, participantes);
+  return Object.fromEntries(participantes.map((c) => [c, politicas.get(c)?.versao ?? 0]));
+}
+
 export type DecisaoReativar = { pode: true } | { pode: false; motivo: string };
 
 /** Moderação e retirada nunca são desfeitas; guardado não reativa; pausa do operador só ele desfaz. */

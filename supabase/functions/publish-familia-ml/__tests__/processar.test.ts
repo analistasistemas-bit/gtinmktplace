@@ -323,6 +323,15 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(JSON.stringify(r)).toMatch(/kit com variação/);
   });
 
+  it('repassa a versão da política capturada no enfileiramento à saga UP', async () => {
+    const { admin } = fakeAdmin({ variacoes: multiCor() });
+    const { repo } = fakeFormatoRepo('user_products');
+    let visto: unknown;
+    const deps = baseDeps(admin, { formatoRepo: repo, publicarUP: async (a) => { visto = a.versoesKit; return { estado: 'ativo', itemExternoId: 'X', permalink: null }; } });
+    await processarFamiliaML(deps, { ...JOB, versoes_kit: { V1: 3 } }, { tentativas: 0 });
+    expect(visto).toEqual({ V1: 3 });
+  });
+
   it('mesmo SKU em org sem o módulo: publica como hoje', async () => {
     const { admin } = fakeAdmin({ kitComponentes: ['V1'] });
     const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });

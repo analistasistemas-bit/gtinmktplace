@@ -15,6 +15,8 @@ interface Banco {
   falhar?: string;
   rpc?: Record<string, unknown>;
   semUp?: boolean;
+  /** Item local de P1 fora de `ativo` (pausado no vínculo): `resolverAlvosPush` o descartaria. */
+  p1Pausado?: boolean;
 }
 
 const ITENS = [
@@ -23,11 +25,19 @@ const ITENS = [
 ];
 
 function fakeAdmin(b: Banco) {
-  // Outbox: o último movimento de P1 é o m2; m9 é de outro SKU.
+  // Outbox de P1, na ordem do ledger: m1 entrada, m2 entrada (o último push local), m3 venda do ML e m4
+  // movimento da saga, ambos posteriores e que nunca podem ser reabertos. m9 é de outro SKU. `criado_em`
+  // fora de ordem de propósito: quem manda é `ordem`.
+  const mov = (id: string, codigo: string, ordem: number, criado: string, extra: Record<string, unknown> = {}) => ({
+    id, org_id: 'O', codigo, codigo_pai: 'PAI', ordem, criado_em: criado, push_enfileirado_em: `${id}-marcado`,
+    push_canal_origem: null, transferencia_id: null, ...extra,
+  });
   const movs: Array<Record<string, unknown>> = [
-    { id: 'm1', org_id: 'O', codigo: 'P1', codigo_pai: 'PAI', criado_em: '2026-11-07T10:00:00Z', push_enfileirado_em: '2026-11-07T10:00:01Z' },
-    { id: 'm2', org_id: 'O', codigo: 'P1', codigo_pai: 'PAI', criado_em: '2026-11-07T11:00:00Z', push_enfileirado_em: '2026-11-07T11:00:01Z' },
-    { id: 'm9', org_id: 'O', codigo: 'P2', codigo_pai: 'PAI', criado_em: '2026-11-07T11:30:00Z', push_enfileirado_em: '2026-11-07T11:30:01Z' },
+    mov('m1', 'P1', 1, '2026-11-07T12:00:00Z'),
+    mov('m2', 'P1', 2, '2026-11-07T10:00:00Z'),
+    mov('m3', 'P1', 3, '2026-11-07T11:00:00Z', { push_canal_origem: 'mercado_livre' }),
+    mov('m4', 'P1', 4, '2026-11-07T11:10:00Z', { transferencia_id: 'T0' }),
+    mov('m9', 'P2', 5, '2026-11-07T11:30:00Z'),
   ];
   const consultas: string[] = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
@@ -47,7 +57,9 @@ function fakeAdmin(b: Banco) {
         case 'anuncios_externos':
           return { data: [{ id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null }], error: null };
         case 'anuncios_externos_itens':
-          return { data: ITENS.map((r) => (b.semUp ? { ...r, user_product_id: null } : r)).filter((r) => filtros.every((f) => f(r))), error: null };
+          return { data: ITENS.map((r) => (b.semUp ? { ...r, user_product_id: null } : r))
+            .map((r) => (b.p1Pausado && r.sku === 'P1' ? { ...r, status: 'pausado' } : r))
+            .filter((r) => filtros.every((f) => f(r))), error: null };
         case 'kit_variacao_skus': return { data: [], error: null };
         case 'kit_variacao_componentes':
           return { data: b.componentes.map((codigo) => ({ codigo, org_id: 'O' })).filter((r) => filtros.every((f) => f(r))), error: null };
@@ -64,7 +76,8 @@ function fakeAdmin(b: Banco) {
       update: (v: Record<string, unknown>) => { patch = v; return api; },
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return api; },
       in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return api; },
-      is: () => api, gt: () => api, not: () => { kitsVinculados = true; return api; },
+      is: (c: string, v: unknown) => { filtros.push((r) => !(c in r) || (r[c] ?? null) === v); return api; },
+      gt: () => api, not: () => { kitsVinculados = true; return api; },
       order: () => api, limit: () => api,
       maybeSingle: async () => ler(),
       then: (res: (v: unknown) => unknown) => Promise.resolve(ler()).then(res),
@@ -115,6 +128,22 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.enfileirarSaga).toHaveBeenCalledWith('T1', 'O');
   });
 
+  it('participante com item local fora de ativo não some: vira transferência', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], p1Pausado: true });
+    const r = await processarSincronizacao(m.deps, JOB);
+    expect(r.status).toBe(200);
+    expect(pushes()).toEqual(['MLB-P2']);
+    expect(m.rpcs.find((x) => x.nome === 'kit_criar_transferencia')?.args.p_alvos)
+      .toEqual([{ codigo: 'P1', up_id: 'UP-P1', item_ids: ['MLB-P1', 'MLB-P1C'] }]);
+  });
+
+  it('SKU comum com item fora de ativo segue fora do push, como hoje', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: [], p1Pausado: true });
+    await processarSincronizacao(m.deps, JOB);
+    expect(pushes()).toEqual(['MLB-P2']);
+    expect(m.rpcs).toEqual([]);
+  });
+
   it('participante não é reativado pelo push (só os alvos empurrados)', async () => {
     fakeConnector.statusVivo = 'pausado';
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
@@ -135,7 +164,7 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.enfileirarSaga).not.toHaveBeenCalled();
     // A intenção volta ao outbox: só o último movimento do SKU recusado, nenhum outro.
     expect(m.movs.map((x) => [x.id, x.push_enfileirado_em])).toEqual([
-      ['m1', '2026-11-07T10:00:01Z'], ['m2', null], ['m9', '2026-11-07T11:30:01Z'],
+      ['m1', 'm1-marcado'], ['m2', null], ['m3', 'm3-marcado'], ['m4', 'm4-marcado'], ['m9', 'm9-marcado'],
     ]);
   });
 

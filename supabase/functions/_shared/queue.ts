@@ -34,6 +34,8 @@ export interface ProcessFamiliaJob {
   // ADR-0078 F1: quando true, o worker de update/split repõe só estoque (não empurra preço).
   // `enfileirarPublicacoes` serializa o job inteiro no body → propaga sozinho.
   somenteEstoque?: boolean;
+  /** ADR-0197: versão da política de cada SKU de kit com variação no enfileiramento (só CREATE). */
+  versoes_kit?: Record<string, number>;
 }
 
 export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string> {
