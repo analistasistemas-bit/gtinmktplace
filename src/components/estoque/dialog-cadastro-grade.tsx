@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useMarcaOrg } from '@/hooks/useMarcaOrg';
+import { CampoMarca } from './campo-marca';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
@@ -102,11 +103,12 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const [descricaoPai, setDescricaoPai] = useState('');
   const [unidade, setUnidade] = useState('UN');
   const [fornecedor, setFornecedor] = useState('');
-  // ADR-0188: marca só existe na org com marca própria; `null` = não editada → vale a da org.
+  // ADR-0188: `null` = não editada → vale a da org (só existe com marca própria). Emenda 2026-11-07:
+  // campo em toda org; obrigatório com marca própria ou na nota (o emitente é revendedor).
   const { data: marcaOrg } = useMarcaOrg();
-  const marcaPropria = !!marcaOrg?.marca_propria;
+  const marcaObrigatoria = !!marcaOrg?.marca_propria || origemNota;
   const [marcaEditada, setMarcaEditada] = useState<string | null>(null);
-  const marca = marcaEditada ?? marcaOrg?.marca_padrao ?? '';
+  const marca = marcaEditada ?? (marcaOrg?.marca_propria ? marcaOrg.marca_padrao : null) ?? '';
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador precisa
   // escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
@@ -183,7 +185,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     setNomePai(inicial.nomePai ?? '');
     setDescricaoPai(inicial.descricaoPai ?? '');
     setFornecedor(inicial.fornecedor ?? '');
-    setMarcaEditada(null);
+    setMarcaEditada(inicial.marca ?? null);
     setUnidade(inicial.unidade ?? 'UN');
     setCabecalho({
       ...CABECALHO_VAZIO,
@@ -429,7 +431,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const qNota = comQuantidadeNota ? inicial?.quantidadeNota : undefined;
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
-  const podeSalvar = !!nomePai.trim() && !!origem && (!marcaPropria || !!marca.trim()) && !!genero && !!grade && linhas.length > 0
+  const podeSalvar = !!nomePai.trim() && !!origem && (!marcaObrigatoria || !!marca.trim()) && !!genero && !!grade && linhas.length > 0
     && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, r[c])));
   // Único motivo de `podeSalvar=false` que ficou SEM sinal na tela depois do fix pós-revisão da
   // Task 9 (borda/texto de erro só aparecem com valor não-vazio, matando o "muro vermelho"):
@@ -469,7 +471,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     }));
     const loteId = await api.salvar(
       montarPayload(
-        { nomePai, descricaoPai, unidade, fornecedor, origem, genero, gradeTamanho: grade, ...(marcaPropria ? { marca } : {}) },
+        { nomePai, descricaoPai, unidade, fornecedor, origem, genero, gradeTamanho: grade, ...(marca.trim() ? { marca } : {}) },
         variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined, origemNota, inicial?.refNota,
         comQuantidadeNota ? inicial?.fatorNota : undefined,
       ),
@@ -671,16 +673,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                   <label htmlFor="grade-fornecedor" className="text-sm font-medium">Fornecedor</label>
                   <Input id="grade-fornecedor" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
                 </div>
-                {marcaPropria && (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="flex items-baseline gap-1 text-sm font-medium">
-                      <label htmlFor="grade-marca">Marca</label>
-                      <span className="text-destructive" aria-hidden="true">*</span>
-                    </span>
-                    <Input id="grade-marca" value={marca} onChange={(e) => setMarcaEditada(e.target.value)} />
-                    {!marca.trim() && <span className="text-xs text-destructive">Informe a marca.</span>}
-                  </div>
-                )}
+                <CampoMarca id="grade-marca" valor={marca} onChange={setMarcaEditada} obrigatoria={marcaObrigatoria} />
                 <div className="flex flex-col gap-1.5">
                   <span className="flex items-baseline gap-1 text-sm font-medium">
                     <label htmlFor="grade-genero">Gênero</label>

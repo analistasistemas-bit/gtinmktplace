@@ -81,17 +81,14 @@ describe('montarLinhasProduto', () => {
     chaveCadastro: '11111111-1111-1111-1111-111111111111',
   };
 
-  // ADR-0188: a marca escolhida no cadastro só vale na org com marca própria; sem ela a coluna é
-  // omitida e o trigger `familias_marca_default` decide (marca da org, ou null fora dela).
-  it('marca escolhida na org com marca própria vai para a família', () => {
-    expect(montarLinhasProduto({ ...valido, marca: ' Lacoste ' }, { ...ctx, marcaPropria: true }).familia.marca).toBe('Lacoste');
+  // ADR-0188 (emenda 2026-11-07): a marca preenchida no cadastro vai para a família em qualquer org;
+  // vazia, a coluna é omitida e o trigger `familias_marca_default` decide (marca da org, ou null fora dela).
+  it('marca preenchida vai para a família', () => {
+    expect(montarLinhasProduto({ ...valido, marca: ' Lacoste ' }, ctx).familia.marca).toBe('Lacoste');
   });
-  it('sem marca escolhida (ou só espaços, ou front antigo) a coluna é omitida — o banco aplica a da org', () => {
-    expect(montarLinhasProduto({ ...valido, marca: '  ' }, { ...ctx, marcaPropria: true }).familia).not.toHaveProperty('marca');
-    expect(montarLinhasProduto(valido, { ...ctx, marcaPropria: true }).familia).not.toHaveProperty('marca');
-  });
-  it('org sem marca própria ignora o campo marca', () => {
-    expect(montarLinhasProduto({ ...valido, marca: 'X' }, ctx).familia).not.toHaveProperty('marca');
+  it('sem marca (ou só espaços, ou front antigo) a coluna é omitida — o banco decide', () => {
+    expect(montarLinhasProduto({ ...valido, marca: '  ' }, ctx).familia).not.toHaveProperty('marca');
+    expect(montarLinhasProduto(valido, ctx).familia).not.toHaveProperty('marca');
   });
 
   it('família nasce como CREATE e pendente', () => {
@@ -186,7 +183,7 @@ describe('origemNota (ADR-0181 D-4)', () => {
   });
 
   it('origemNota sem estoque inicial (ausente ou 0) é válido', () => {
-    expect(validarProdutoNovo({ ...valido, origemNota: true,
+    expect(validarProdutoNovo({ ...valido, origemNota: true, marca: 'Eucerin',
       variacoes: [{ ...valido.variacoes[0], estoqueInicial: undefined }, { ...valido.variacoes[1], estoqueInicial: 0 }] }))
       .toEqual([]);
   });
@@ -225,6 +222,25 @@ describe('grade e gênero (ADR-0182)', () => {
   });
 });
 
+// Emenda ADR-0188 (2026-11-07): o emitente da nota é revendedor — cair no fornecedor publicava a
+// drogaria como BRAND/MANUFACTURER e o ML bloqueou o anúncio. Cadastro pela nota exige a marca.
+describe('marca no cadastro pela nota', () => {
+  const daNota = {
+    ...valido, origemNota: true, refNota: `nfe:${'1'.repeat(44)}:1`,
+    variacoes: valido.variacoes.map((v) => ({ ...v, estoqueInicial: 0 })),
+  };
+  it('sem marca FALHA', () => {
+    expect(validarProdutoNovo(daNota).map((x) => x.campo)).toContain('marca');
+    expect(validarProdutoNovo({ ...daNota, marca: '  ' }).map((x) => x.campo)).toContain('marca');
+  });
+  it('com marca é válido', () => {
+    expect(validarProdutoNovo({ ...daNota, marca: 'Eucerin' })).toEqual([]);
+  });
+  it('cadastro manual continua sem exigir marca', () => {
+    expect(validarProdutoNovo(valido)).toEqual([]);
+  });
+});
+
 describe('refNota (ADR-0181 emenda)', () => {
   const ref = (n: number) => `nfe:${'1'.repeat(44)}:${n}`;
   const ctx = {
@@ -234,7 +250,7 @@ describe('refNota (ADR-0181 emenda)', () => {
   };
 
   it('origemNota + refNota válida: sem erro', () => {
-    expect(validarProdutoNovo({ ...valido, origemNota: true, refNota: ref(2),
+    expect(validarProdutoNovo({ ...valido, origemNota: true, marca: 'Eucerin', refNota: ref(2),
       variacoes: valido.variacoes.map((v) => ({ ...v, estoqueInicial: undefined })) })).toEqual([]);
   });
   it('refNota sem origemNota: erro no campo refNota', () => {
@@ -260,7 +276,7 @@ describe('quantidadeNota / fatorNota (sugestão de distribuição, ADR-0181 emen
   const ref = (n: number) => `nfe:${'1'.repeat(44)}:${n}`;
   const semEstoque = valido.variacoes.map((v) => ({ ...v, estoqueInicial: undefined }));
   const daNota = (quantidades: Array<number | undefined>, extra: Partial<ProdutoEntrada> = {}): ProdutoEntrada => ({
-    ...valido, origemNota: true, refNota: ref(2), fatorNota: 1,
+    ...valido, origemNota: true, marca: 'Eucerin', refNota: ref(2), fatorNota: 1,
     variacoes: semEstoque.map((v, i) => ({ ...v, quantidadeNota: quantidades[i] })),
     ...extra,
   });

@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Campo Marca / Fabricante no cadastro (emenda ADR-0188) — 2026-11-07
+
+- [x] Campo em toda org (cadastro simples e grade), grava `familias.marca` → BRAND/MANUFACTURER no ML.
+- [x] Obrigatório no cadastro pela nota (o emitente é revenda); a edge `cadastrar-produto` recusa nota sem marca.
+- [ ] Deploy da edge `cadastrar-produto` e validação com uma nota real.
+
 ## Tabela oficial de CEST (ADR-0197) — 2026-11-07
 
 Em produção desde 2026-11-07 (main `079297d1`; migration `20261107192533_adr197_cest_oficial`).

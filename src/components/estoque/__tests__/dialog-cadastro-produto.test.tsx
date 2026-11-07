@@ -1137,6 +1137,7 @@ describe('DialogCadastroProduto — irParaRevisaoAoConcluir', () => {
 describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
   const inicialNota: CadastroInicial = {
     nomePai: 'Short masculino', descricaoFiscal: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA',
+    marca: 'Marca Teste',
     custo: 10, fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '' },
     origemSugerida: 'nacional', sugestaoDaNota: true, refNota: `nfe:${'1'.repeat(44)}:1`,
   };
@@ -1187,6 +1188,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     await waitFor(() => expect(cadastrarProdutoMock.mock.calls.length).toBe(antes + 1));
     const payload = cadastrarProdutoMock.mock.calls.at(-1)![0];
     expect(payload.origemNota).toBe(true);
+    expect(payload.marca).toBe('Marca Teste');
     expect(payload.refNota).toBe(`nfe:${'1'.repeat(44)}:1`);
     expect(payload.origem).toBe('nacional');
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
@@ -1195,6 +1197,22 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     // Etapa de fotos: só "Fechar" — "Ir para a Revisão" sairia do assistente da nota.
     expect(await screen.findByRole('button', { name: 'Fechar' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ir para a Revisão' })).not.toBeInTheDocument();
+  });
+
+  // Emenda ADR-0188 (2026-11-07): o fornecedor da nota é revendedor — sem marca, o ML recebia a
+  // drogaria como BRAND/MANUFACTURER. Na nota a marca é obrigatória e nasce vazia.
+  it('marca vazia na nota trava o Cadastrar e pede a marca', async () => {
+    const user = userEvent.setup();
+    const { marca: _sem, ...semMarca } = inicialNota;
+    renderNotaCom(semMarca);
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue('');
+    expect(screen.getByText('Informe a marca.')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '25');
+    await preencherEmbalagem(user, 1);
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.type(screen.getByLabelText(/^Marca/), 'Eucerin');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
   it('avisoSemGrade mostra como habilitar a grade', () => {
@@ -1462,14 +1480,26 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
 describe('DialogCadastroProduto — marca própria (ADR-0188)', () => {
   afterEach(() => { cadastrarProdutoMock.mockClear(); marcaOrgMock.mockReturnValue({ data: undefined }); });
 
-  it('sem marca própria: não mostra o campo nem manda marca', async () => {
+  it('sem marca própria: campo opcional e vazio não manda marca', async () => {
     marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
     const user = userEvent.setup();
     renderDialog();
-    expect(screen.queryByLabelText(/^Marca/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue('');
+    expect(screen.queryByText('Informe a marca.')).not.toBeInTheDocument();
     await preencherEEnviar(user, 'Produto');
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     expect(cadastrarProdutoMock.mock.calls[0][0]).not.toHaveProperty('marca');
+  });
+
+  // Emenda 2026-11-07: a marca preenchida é a que vai ao ML (BRAND/MANUFACTURER), em qualquer org.
+  it('sem marca própria: marca preenchida vai no payload', async () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText(/^Marca/), 'Eucerin');
+    await preencherEEnviar(user, 'Produto');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    expect(cadastrarProdutoMock.mock.calls[0][0].marca).toBe('Eucerin');
   });
 
   it('com marca própria: campo pré-preenchido, editável, vai no payload', async () => {

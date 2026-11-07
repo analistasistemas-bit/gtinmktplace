@@ -985,7 +985,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
           <DialogCadastroGrade
             aberto onFechar={onFechar} origemNota onCadastrado={onCadastrado}
             inicial={{ nomePai: 'Short masculino', fornecedor: 'FORNECEDOR TESTE LTDA', custo: 10,
-              origemSugerida: 'importado', sugestaoDaNota: true, fiscal: { tributacaoIcms: '' }, refNota: `nfe:${'1'.repeat(44)}:2` }}
+              origemSugerida: 'importado', sugestaoDaNota: true, marca: 'Marca Teste', fiscal: { tributacaoIcms: '' }, refNota: `nfe:${'1'.repeat(44)}:2` }}
           />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -1027,7 +1027,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <DialogCadastroGrade aberto onFechar={() => {}} origemNota
-            inicial={{ nomePai: 'Short', sugestaoDaNota: true, origemSugerida: 'importado', fiscal: { ncm: '62034900', origemNfe: 2, tributacaoIcms: '' } }} />
+            inicial={{ nomePai: 'Short', sugestaoDaNota: true, marca: 'Marca Teste', origemSugerida: 'importado', fiscal: { ncm: '62034900', origemNfe: 2, tributacaoIcms: '' } }} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -1039,7 +1039,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <DialogCadastroGrade aberto onFechar={() => {}} origemNota
-            inicial={{ nomePai: 'Short', sugestaoDaNota: true, origemSugerida: 'importado' }} />
+            inicial={{ nomePai: 'Short', sugestaoDaNota: true, marca: 'Marca Teste', origemSugerida: 'importado' }} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -1056,7 +1056,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <DialogCadastroGrade aberto onFechar={() => {}} origemNota
-            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, origemSugerida: 'nacional',
+            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, marca: 'Marca Teste', origemSugerida: 'nacional',
               fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '102' },
               avisosNota: { classe: 'sem_st', codigoFornecedor: '102', interestadual: false, semPadrao: false },
               refNota: `nfe:${'1'.repeat(44)}:2` }} />
@@ -1097,7 +1097,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter>
           <DialogCadastroGrade aberto onFechar={() => {}} origemNota
-            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, origemSugerida: 'nacional',
+            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, marca: 'Marca Teste', origemSugerida: 'nacional',
               fiscal: { ncm: '62034900', origemNfe: 0, tributacaoIcms: '102' },
               avisosNota: { classe: 'sem_st', codigoFornecedor: '102', interestadual: false, semPadrao: false },
               refNota: `nfe:${'1'.repeat(44)}:2` }} />
@@ -1133,7 +1133,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     );
   }
   const inicialG = {
-    nomePai: 'Short', custo: 10, sugestaoDaNota: true, origemSugerida: 'nacional' as const,
+    nomePai: 'Short', custo: 10, sugestaoDaNota: true, marca: 'Marca Teste', origemSugerida: 'nacional' as const,
     fiscal: { ncm: '62034900', origemNfe: 5, tributacaoIcms: '500', cest: '2805900', fci: 'B01F70AF-10BF-4B1F-848C-65FF57F616FE' },
     avisosNota: { classe: 'st' as const, codigoFornecedor: '60', interestadual: false, semPadrao: false },
     refNota: `nfe:${'1'.repeat(44)}:2`,
@@ -1236,7 +1236,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
         <MemoryRouter>
           <DialogCadastroGrade
             aberto onFechar={() => {}} origemNota onCadastrado={onCadastrado}
-            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, fiscal: { tributacaoIcms: '' },
+            inicial={{ nomePai: 'Short', custo: 10, sugestaoDaNota: true, marca: 'Marca Teste', fiscal: { tributacaoIcms: '' },
               refNota: `nfe:${'1'.repeat(44)}:2`, quantidadeNota: 3, fatorNota: 1 }}
           />
         </MemoryRouter>
@@ -1284,7 +1284,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter><DialogCadastroGrade aberto onFechar={() => {}} origemNota inicial={{ sugestaoDaNota: true }} /></MemoryRouter>
+        <MemoryRouter><DialogCadastroGrade aberto onFechar={() => {}} origemNota inicial={{ sugestaoDaNota: true, marca: 'Marca Teste' }} /></MemoryRouter>
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
@@ -1398,10 +1398,24 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
 });
 
 describe('DialogCadastroGrade — marca própria (ADR-0188)', () => {
-  it('sem marca própria: sem campo Marca', () => {
+  it('sem marca própria: campo opcional e vazio', () => {
     marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
     renderGrade();
-    expect(screen.queryByLabelText(/^Marca/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue('');
+    expect(screen.queryByText('Informe a marca.')).not.toBeInTheDocument();
+  });
+
+  // Emenda 2026-11-07: na nota o emitente é revendedor — marca obrigatória e nasce vazia.
+  it('na nota sem marca: pede a marca', () => {
+    marcaOrgMock.mockReturnValue({ data: { marca_propria: false, marca_padrao: null } });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><DialogCadastroGrade aberto onFechar={() => {}} origemNota inicial={{ nomePai: 'Short', sugestaoDaNota: true }} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue('');
+    expect(screen.getByText('Informe a marca.')).toBeInTheDocument();
   });
 
   it('com marca própria: pré-preenchida, obrigatória e enviada no payload', async () => {
