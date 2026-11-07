@@ -49,8 +49,9 @@ enquadramento: o multivitamínico 21069030 casa por prefixo com CESTs de bebidas
 5. **Preenchimento controlado:** toda escrita passa por `mudarFiscal`, que já derruba o "Conferi".
    Apagar o CEST sugerido não o devolve, e digitação manual nunca é sobrescrita. Trocar o NCM limpa o
    CEST que a tabela preencheu e reavalia.
-6. **Selo pela origem real:** "Veio da nota" só aparece quando o valor bate com o XML; candidato da
-   tabela leva "Sugerido pela tabela oficial — confira"; valor digitado não leva selo.
+6. **Selo pelo valor:** "Veio da nota" só aparece quando o valor bate com o XML. Valor que consta dos
+   candidatos leva "Sugerido pela tabela oficial — confira" com a descrição, mesmo se digitado, porque
+   a descrição ajuda a conferir. Valor fora dos candidatos não leva selo.
 7. **Sem mudança no gate:** publicação e `camposFiscaisFaltantes` seguem validando só o formato. CEST
    vindo no XML não é conferido contra a tabela.
 8. **Anomalias da fonte são explícitas:** o gerador falha em anomalia desconhecida. Vírgula final é
