@@ -5542,6 +5542,7 @@ export type Database = {
       }
       reajuste_persistir: {
         Args: {
+          p_mensagem?: string
           p_ml_item: string
           p_operacao: string
           p_org: string

@@ -6,10 +6,10 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
 import { avaliarPassos, resumirPrecos } from './avaliacao.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
-import { decidirFaixas, type ConfigMlb } from './faixas.ts';
+import { decidirFaixas, mesmasFaixas, MSG_ATACADO_MUDOU, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
-import { planejarPassos } from './passos.ts';
+import { ehFaixas, planejarPassos } from './passos.ts';
 import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo, PrecoAvaliado } from './tipos.ts';
 
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
@@ -31,7 +31,7 @@ export interface DepsPreview {
   estadoVariacoes(variacaoIds: string[]): Promise<Map<string, EstadoVariacao>>;
   ml: ClienteReajusteML;
   avaliar(mlItemId: string, preco: number): Promise<Avaliacao>;
-  /** Itens `aplicado` da origem; `restaurar` = o `estado_anterior` gravado nela (esperado = antes, novo = gravado). */
+  /** Itens `aplicado` da origem; `restaurar` = o `estado_anterior` gravado nela (esperado = antes, novo = gravado). `passos` vazio = origem anterior ao ADR-0196. */
   origem(origemId: string): Promise<Map<string, Origem> | null>;
   /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
   ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
@@ -46,7 +46,7 @@ const AVISO_AMARELO = '🟡 Abaixo do piso em alguma cor';
 const AVISO_FAIXA = 'Atacado: o alerta considera o lucro por unidade.';
 const AVISO_D10 = 'Reverter: o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest.';
 
-export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] };
+export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[]; passos: Passo[] };
 const mesmoEstado = (a: EstadoVariacao, b: EstadoVariacao) =>
   a.preco_editado_pelo_operador === b.preco_editado_pelo_operador &&
   (a.preco_publicacao === null || b.preco_publicacao === null
@@ -107,6 +107,10 @@ async function avaliarItem(
     faixas_anteriores: null, faixas_alvo: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
+  // Faixa que a origem não confirmou não mudou: nada a desfazer.
+  const faixasOrigem = orig?.passos.filter(ehFaixas).find((x) => x.estado === 'confirmado');
+  // Só faixas não tocou preço nem marca: não há o que comparar em `restaurar`.
+  const soFaixas = !!orig?.passos.length && !orig.passos.some((x) => x.tipo === 'base');
 
   let vivo;
   try {
@@ -137,7 +141,7 @@ async function avaliarItem(
   const casadas = await deps.variacoesDoMlb(a.codigo_pai, ml, item.variacoes_ml ?? []);
   const semCasar = !casadas.length || casadas.some((c) => !c.variacao_id);
   let ids = [...new Set(casadas.map((c) => c.variacao_id as string))].sort();
-  if (orig) {
+  if (orig && !soFaixas) {
     const daOrigem = [...new Set(orig.restaurar.map((r) => r.variacao_id))].sort();
     if (semCasar || ids.join('\u0000') !== daOrigem.join('\u0000')) {
       return fora('Não revertível: as variações do anúncio mudaram depois do reajuste');
@@ -160,12 +164,13 @@ async function avaliarItem(
   }
   if (alvo === null) return fora('Preço resultante inválido');
   item.preco = alvo;
-  if (semAlteracao(base, alvo)) return { ...item, situacao: 'sem_alteracao' };
+  if (semAlteracao(base, alvo) && !faixasOrigem) return { ...item, situacao: 'sem_alteracao' };
 
   // Leituras fora do try abaixo: conta sem acesso sobe, não vira motivo do item.
   const vivas = item.faixas_anteriores = await deps.ml.lerFaixas(ml);
   if (vivas === null) return fora('Não foi possível ler o atacado — tente de novo');
-  // Reverter não recalcula as faixas, só não deixa o base restaurado passar por elas.
+  if (faixasOrigem && !mesmasFaixas(vivas, faixasOrigem.alvo)) return fora(MSG_ATACADO_MUDOU);
+  // Reverter não recalcula as faixas: volta às que a origem trocou, ou só não deixa o base restaurado passar por elas.
   const config = orig ? null : await deps.configAtacado(ids);
 
   let passos: Passo[];
@@ -173,9 +178,12 @@ async function avaliarItem(
   try {
     const trava = motivoTravaOferta(alvo, ofertas!);
     if (trava) return fora(trava);
-    const decisao = decidirFaixas(alvo, vivas, config);
-    if (decisao.acao === 'fora') return fora(decisao.motivo);
-    faixas_alvo = decisao.faixas_alvo;
+    if (faixasOrigem) faixas_alvo = faixasOrigem.anterior;
+    else {
+      const decisao = decidirFaixas(alvo, vivas, config);
+      if (decisao.acao === 'fora') return fora(decisao.motivo);
+      faixas_alvo = decisao.faixas_alvo;
+    }
     passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: vivas, faixasAlvo: faixas_alvo });
   } catch (e) {
     return fora(mensagemDe(e));
@@ -184,7 +192,7 @@ async function avaliarItem(
   const precos_avaliados = await avaliarPassos(passos, (preco) => deps.avaliar(ml, preco));
   const avaliacao = resumirPrecos(precos_avaliados);
   const faixaEmAlerta = precos_avaliados.some((x) => x.tipo === 'faixa' && x.avaliacao.pior !== 'verde');
-  const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, faixaEmAlerta ? AVISO_FAIXA : null, orig ? AVISO_D10 : null].filter(Boolean);
+  const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, faixaEmAlerta ? AVISO_FAIXA : null, orig && !soFaixas ? AVISO_D10 : null].filter(Boolean);
   return {
     ...item, situacao: 'elegivel', avaliacao, precos_avaliados, passos, faixas_alvo,
     restaurar: orig

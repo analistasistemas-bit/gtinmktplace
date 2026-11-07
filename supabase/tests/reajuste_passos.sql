@@ -126,11 +126,13 @@ begin
   perform pg_temp.ok((pg_temp.item(v_op, 'MLBP1')).etapa = 'escrita_pedida', 'retomada preserva a etapa');
 
   -- Persistir com o token; item `aplicado` não aceita mais transição nem claim.
-  perform pg_temp.ok(public.reajuste_persistir(v_org, v_op, 'MLBP1', v_t2, 110, v_rest) = 'ok', 'persistir com o token');
+  perform pg_temp.ok(public.reajuste_persistir(v_org, v_op, 'MLBP1', v_t2, 110, v_rest, 'faixas pendentes') = 'ok', 'persistir com o token');
   perform pg_temp.ok((select preco_publicacao = 110 and preco_publicado_ml = 110 from public.variacoes where id = v_var), 'persistir grava a variação');
   v_depois := pg_temp.item(v_op, 'MLBP1');
   perform pg_temp.ok(v_depois.status = 'aplicado' and v_depois.etapa is null, 'item aplicado');
+  perform pg_temp.ok(v_depois.mensagem = 'faixas pendentes', 'aplicado guarda a mensagem');
   perform pg_temp.ok(public.reajuste_persistir(v_org, v_op, 'MLBP1', v_t2, 110, v_rest) = 'ja_aplicado', 'repetir persistir → ja_aplicado');
+  perform pg_temp.ok((pg_temp.item(v_op, 'MLBP1')).mensagem = 'faixas pendentes', 'repetir não apaga a mensagem');
   perform pg_temp.ok(not public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t2, 1, 'confirmado'), 'aplicado: marcar false');
   perform pg_temp.ok(not public.reajuste_item_gravar(v_org, v_op, 'MLBP1', v_t2, '{"status":"erro"}'), 'aplicado: gravar false');
   perform pg_temp.ok(public.reajuste_reivindicar(v_org, v_op, 'MLBP1') = 'ocupado', 'aplicado: sem claim');
@@ -207,16 +209,17 @@ begin
 
   -- Contrato das funções.
   perform pg_temp.ok(to_regprocedure('public.reajuste_persistir(uuid,uuid,text,numeric,jsonb)') is null, 'assinatura antiga de persistir removida');
+  perform pg_temp.ok(to_regprocedure('public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb)') is null, 'assinatura sem mensagem removida');
   perform pg_temp.ok((select bool_and(not has_function_privilege(r, f, 'execute') and has_function_privilege('service_role', f, 'execute'))
     from unnest(array['anon', 'authenticated', 'public']) r,
-         unnest(array['public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb)',
+         unnest(array['public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb,text)',
                       'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text)',
                       'public.reajuste_item_gravar(uuid,uuid,text,uuid,jsonb)',
                       'public.reajuste_reivindicar(uuid,uuid,text)',
                       'public.reajuste_confirmar(uuid,uuid,jsonb)',
                       'public.operacoes_massa_reivindicar(uuid,uuid,text)']) f), 'execute só para service_role');
   perform pg_temp.ok((select bool_and(p.prosecdef and p.proconfig = array['search_path=""'])
-    from pg_proc p where p.oid in ('public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb)'::regprocedure,
+    from pg_proc p where p.oid in ('public.reajuste_persistir(uuid,uuid,text,uuid,numeric,jsonb,text)'::regprocedure,
       'public.reajuste_passo_marcar(uuid,uuid,text,uuid,integer,text)'::regprocedure,
       'public.reajuste_item_gravar(uuid,uuid,text,uuid,jsonb)'::regprocedure)), 'definer com search_path vazio');
 end $$;

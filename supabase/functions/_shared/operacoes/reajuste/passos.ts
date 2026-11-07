@@ -15,6 +15,8 @@ export interface EntradaPassos {
 }
 export interface Estado { base: number; ofertas: OfertaVigente[]; faixas: FaixaPreco[] }
 
+export const ehFaixas = (p: Passo): p is Extract<Passo, { tipo: 'faixas' }> => p.tipo === 'faixas';
+
 export function violacao({ base, ofertas, faixas }: Estado): string | null {
   const b = centavos(base);
   for (const o of ofertas) {

@@ -23,7 +23,7 @@ import type { Avaliacao, CorAvaliada, EstadoVariacao, OfertaVigente } from './ti
 const ITENS = 'operacoes_massa_itens';
 const COLS_LACO = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em';
 // Literal único: o parser de tipos do select do supabase-js não lê concatenação.
-const COLS_ITEM = 'ml_item_id, status, preco, preco_anterior, etapa, conferencias, avaliacao, estado_anterior, variacoes_ml, confirmado_risco, confirmado_sem_dado, codigo_pai, variacao_ids';
+const COLS_ITEM = 'ml_item_id, status, preco, preco_anterior, etapa, conferencias, avaliacoes, passos, estado_anterior, variacoes_ml, confirmado_risco, confirmado_sem_dado, codigo_pai, variacao_ids';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC reajuste_reivindicar
 const BACKOFF_MIN = [5, 10, 20, 40, 60];
 /** Conta sem acesso: itens com etapa voltam a ser conferidos neste intervalo (retomam sozinhos após reconectar). */
@@ -42,21 +42,31 @@ export class ForaDaOrg extends Error {
   constructor(readonly ids: string[]) { super(`Fora da organização: ${ids.join(', ')}`); }
 }
 
-type DepsBanco = DepsLaco & Pick<DepsReajuste, 'agendarConferenciaItem' | 'encerrarSemEtapa'>;
+type DepsBanco = Omit<DepsLaco, 'reivindicar' | 'gravarItem'> &
+  Pick<DepsReajuste, 'reivindicar' | 'gravarItem' | 'agendarConferenciaItem' | 'encerrarSemEtapa'>;
 
 /** Laço do reajuste sem conexão ML (também usado no encerramento por conta sem acesso, etapa.ts). */
 export function depsLacoReajuste(admin: SupabaseClient, op: { id: string; org_id: string }, chave: string): DepsBanco {
   const itens = () => admin.from(ITENS);
   const linhas = (data: unknown): ItemRow[] => ((data ?? []) as Record<string, unknown>[])
     .map((r) => ({ ...(r as unknown as ItemRow), preco: numOuNull(r.preco) }));
+  const gravarItem: DepsReajuste['gravarItem'] = async (operacaoId, mlItemId, token, campos) => {
+    const { data, error } = await admin.rpc('reajuste_item_gravar', {
+      p_org: op.org_id, p_operacao: operacaoId, p_ml_item: mlItemId, p_token: token, p_campos: campos,
+    });
+    falhou('reajuste_item_gravar', error);
+    return data === true;
+  };
   return {
     ...depsLaco(admin, op, chave),
+    gravarItem,
 
-    // Só a RPC: ela grava a recusa sob os locks. 'ocupado' ou motivo → false.
+    // Só a RPC: ela grava a recusa sob os locks. 'ocupado' ou motivo → null.
     async reivindicar(operacaoId, mlItemId) {
       const { data, error } = await admin.rpc('reajuste_reivindicar', { p_org: op.org_id, p_operacao: operacaoId, p_ml_item: mlItemId });
       falhou('reajuste_reivindicar', error);
-      return String(data).startsWith('ok:');
+      const r = String(data);
+      return r.startsWith('ok:') ? r.slice(3) : null;
     },
 
     async itensPendentes(_operacaoId, limite) {
@@ -78,12 +88,11 @@ export function depsLacoReajuste(admin: SupabaseClient, op: { id: string; org_id
       return linhas(data);
     },
 
-    async agendarConferenciaItem(_operacaoId, mlItemId, conferencias) {
-      const { error } = await itens().update({
+    agendarConferenciaItem(operacaoId, mlItemId, token, conferencias) {
+      return gravarItem(operacaoId, mlItemId, token, {
         status: 'conferindo', conferencias: conferencias + 1, mensagem: MSG_AGUARDANDO,
-        proxima_conferencia: emMin(BACKOFF_MIN[Math.min(conferencias, BACKOFF_MIN.length - 1)]), atualizado_em: agoraIso(),
-      }).eq('org_id', op.org_id).eq('operacao_id', op.id).eq('ml_item_id', mlItemId);
-      falhou('agendarConferenciaItem', error);
+        proxima_conferencia: emMin(BACKOFF_MIN[Math.min(conferencias, BACKOFF_MIN.length - 1)]),
+      });
     },
 
     async encerrarSemEtapa(_operacaoId, mensagem) {
@@ -351,12 +360,12 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
         .eq('org_id', orgId).eq('id', origemId).eq('acao', 'reajustar').maybeSingle();
       falhou('origem', error);
       if (!op) return null;
-      const r = await admin.from(ITENS).select('ml_item_id, codigo_pai, preco, preco_anterior, estado_anterior')
+      const r = await admin.from(ITENS).select('ml_item_id, codigo_pai, preco, preco_anterior, estado_anterior, passos')
         .eq('org_id', orgId).eq('operacao_id', origemId).eq('status', 'aplicado');
       falhou('itens da origem', r.error);
       return new Map((r.data ?? []).map((i): [string, Origem] => [String(i.ml_item_id), {
         codigo_pai: (i.codigo_pai as string | null) ?? '', preco_anterior: Number(i.preco_anterior), preco: Number(i.preco),
-        restaurar: (i.estado_anterior ?? []) as Origem['restaurar'],
+        restaurar: (i.estado_anterior ?? []) as Origem['restaurar'], passos: (i.passos ?? []) as Origem['passos'],
       }]));
     },
   };
@@ -378,6 +387,7 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
       return {
         ...(r as unknown as ItemReajuste), preco: Number(r.preco), preco_anterior: Number(r.preco_anterior),
         conferencias: Number(r.conferencias ?? 0), restaurar: (r.estado_anterior ?? []) as ItemReajuste['restaurar'],
+        passos: (r.passos ?? []) as ItemReajuste['passos'], avaliacoes: (r.avaliacoes ?? []) as ItemReajuste['avaliacoes'],
         variacoes_ml: (r.variacoes_ml as string[] | null) ?? null, variacao_ids: (r.variacao_ids as string[] | null) ?? [],
         codigo_pai: (r.codigo_pai as string | null) ?? '', confirmado_risco: r.confirmado_risco === true,
         confirmado_sem_dado: r.confirmado_sem_dado === true,
@@ -389,9 +399,18 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
       return { ehKit: f.ehKit, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
     },
 
-    async persistir(operacaoId, mlItemId, precoConfirmado, restaurar) {
+    async marcarPasso(operacaoId, mlItemId, token, indice, estado) {
+      const { data, error } = await admin.rpc('reajuste_passo_marcar', {
+        p_org: orgId, p_operacao: operacaoId, p_ml_item: mlItemId, p_token: token, p_indice: indice, p_estado: estado,
+      });
+      falhou('reajuste_passo_marcar', error);
+      return data === true;
+    },
+
+    async persistir(operacaoId, mlItemId, token, precoConfirmado, restaurar, mensagem) {
       const { data, error } = await admin.rpc('reajuste_persistir', {
-        p_org: orgId, p_operacao: operacaoId, p_ml_item: mlItemId, p_preco_confirmado: precoConfirmado, p_restaurar: restaurar,
+        p_org: orgId, p_operacao: operacaoId, p_ml_item: mlItemId, p_token: token, p_preco_confirmado: precoConfirmado,
+        p_restaurar: restaurar, p_mensagem: mensagem,
       });
       falhou('reajuste_persistir', error);
       return data as ResultadoPersistir;

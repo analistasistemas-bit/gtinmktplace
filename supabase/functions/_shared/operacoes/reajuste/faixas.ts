@@ -4,6 +4,7 @@ import { calcularAlvo, centavos } from './alvo.ts';
 import type { FaixaPreco } from './tipos.ts';
 
 const MAX_FAIXAS = 5;
+export const MSG_ATACADO_MUDOU = 'Não revertível: o atacado mudou depois da alteração';
 
 /** `faixas` null = nada configurado; [] = explicitamente sem atacado. */
 export interface ConfigMlb { faixas: FaixaAtacado[] | null; divergente: boolean }

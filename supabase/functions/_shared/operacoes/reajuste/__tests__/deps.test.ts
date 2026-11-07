@@ -17,7 +17,7 @@ vi.mock('../../../promocoes/ml.ts', async (orig) => ({
   criarGetJson: () => vi.fn(),
   buscarItensML: async (_g: unknown, ids: string[]) => new Map(ids.map((id) => [id, m.itemML(id)])),
 }));
-import { criarAvaliador, depsLacoReajuste, depsPreview, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
+import { criarAvaliador, depsLacoReajuste, depsPreview, depsReajuste, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
 import { maiorOferta } from '../ofertas.ts';
 import { montarPreview } from '../preview.ts';
 import { linhasDoRascunho } from '../pedido.ts';
@@ -60,27 +60,37 @@ describe('depsLacoReajuste', () => {
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
   });
 
-  it('reivindicar: só a RPC (nada gravado aqui); ok → true, motivo/ocupado → false', async () => {
+  it('reivindicar: só a RPC (nada gravado aqui); ok → token, motivo/ocupado → null', async () => {
     const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok:token' : 'Família em publicação/atualização — tente depois'));
     const d = depsLacoReajuste(f.admin, OP, 'k');
-    expect(await d.reivindicar('op', 'A')).toBe(true);
-    expect(await d.reivindicar('op', 'B')).toBe(false);
+    expect(await d.reivindicar('op', 'A')).toBe('token');
+    expect(await d.reivindicar('op', 'B')).toBeNull();
     expect(f.rpcs.map(([fn]) => fn)).toEqual(['reajuste_reivindicar', 'reajuste_reivindicar']);
     expect(f.chamadas).toEqual([]);
   });
 
-  it('agendarConferenciaItem: conferindo, n+1, backoff 5 → teto 60 min, etapa preservada', async () => {
-    const f = fakeAdmin();
+  it('agendarConferenciaItem: pela RPC com token; conferindo, n+1, backoff 5 → teto 60 min, etapa preservada', async () => {
+    const f = fakeAdmin(() => [], () => true);
     const d = depsLacoReajuste(f.admin, OP, 'k');
     const antes = Date.now();
-    await d.agendarConferenciaItem('op', 'A', 0);
-    await d.agendarConferenciaItem('op', 'A', 9);
-    const [[p0], [p9]] = f.chamadas.map((c) => op(c, 'update')[0]) as [[Record<string, unknown>], [Record<string, unknown>]];
+    expect(await d.agendarConferenciaItem('op', 'A', 'tk', 0)).toBe(true);
+    await d.agendarConferenciaItem('op', 'A', 'tk', 9);
+    expect(f.chamadas).toEqual([]);
+    expect(f.rpcs[0]).toEqual(['reajuste_item_gravar', expect.objectContaining({ p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk' })]);
+    const [p0, p9] = f.rpcs.map(([, a]) => a.p_campos) as [Record<string, unknown>, Record<string, unknown>];
     expect(p0).toMatchObject({ status: 'conferindo', conferencias: 1, mensagem: MSG_AGUARDANDO });
     expect(p9).toMatchObject({ conferencias: 10 });
     expect(p0).not.toHaveProperty('etapa');
     const min = (p: Record<string, unknown>) => Math.round((Date.parse(p.proxima_conferencia as string) - antes) / 60_000);
     expect([min(p0), min(p9)]).toEqual([5, 60]);
+  });
+
+  it('gravarItem: pela RPC com token; false = sem posse', async () => {
+    const f = fakeAdmin(() => [], () => false);
+    const campos = { status: 'erro', mensagem: 'x' } as const;
+    expect(await depsLacoReajuste(f.admin, OP, 'k').gravarItem('op', 'A', 'tk', campos)).toBe(false);
+    expect(f.chamadas).toEqual([]);
+    expect(f.rpcs).toEqual([['reajuste_item_gravar', { p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_campos: campos }]]);
   });
 
   it('encerrarSemEtapa: sem etapa → erro; com etapa → conferindo agendado (inclui conferindo vencido)', async () => {
@@ -98,10 +108,52 @@ describe('depsLacoReajuste', () => {
   });
 });
 
+describe('depsReajuste', () => {
+  const cxT = { orgId: 'org', mlUserId: 'u', token: 't' };
+  const opRow = { id: 'op', org_id: 'org', origem_id: null };
+
+  it('marcarPasso: RPC com token e índice', async () => {
+    const f = fakeAdmin(() => [], () => true);
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').marcarPasso('op', 'A', 'tk', 1, 'confirmado')).toBe(true);
+    expect(f.rpcs).toEqual([['reajuste_passo_marcar', { p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_indice: 1, p_estado: 'confirmado' }]]);
+  });
+
+  it('persistir: RPC com token e mensagem; sem_posse volta como veio', async () => {
+    const f = fakeAdmin(() => [], () => 'sem_posse');
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').persistir('op', 'A', 'tk', 110, [], 'aviso')).toBe('sem_posse');
+    expect(f.rpcs).toEqual([['reajuste_persistir', {
+      p_org: 'org', p_operacao: 'op', p_ml_item: 'A', p_token: 'tk', p_preco_confirmado: 110, p_restaurar: [], p_mensagem: 'aviso',
+    }]]);
+  });
+
+  it('lerItem traz passos e avaliacoes', async () => {
+    const passos = [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }];
+    const avaliacoes = [{ tipo: 'base', chave: 'base', preco: 110, avaliacao: null }];
+    const f = fakeAdmin(() => ({ preco: '110', preco_anterior: '100', conferencias: 2, passos, avaliacoes }));
+    const i = await depsReajuste(f.admin, cxT, opRow, 'k').lerItem('op', 'A');
+    expect(i).toMatchObject({ preco: 110, preco_anterior: 100, passos, avaliacoes });
+    expect(String(op(f.chamadas[0], 'select')[0][0])).toMatch(/\bpassos\b.*\bavaliacoes\b|\bavaliacoes\b.*\bpassos\b/);
+  });
+
+  it('lerItem sem passos → listas vazias', async () => {
+    const f = fakeAdmin(() => ({ preco: 110, preco_anterior: 100 }));
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').lerItem('op', 'A')).toMatchObject({ passos: [], avaliacoes: [] });
+  });
+});
+
 describe('depsPreview', () => {
   const cxT = { orgId: 'org', mlUserId: 'u', token: 't' };
   // MLB1 tem produto; MLB2 perdeu o produto (RPC null) e não é kit.
   const semProduto = () => fakeAdmin(() => [], (fn, a) => (fn === 'reajuste_codigo_pai' ? (a.p_ml_item === 'MLB1' ? 'P1' : null) : null));
+
+  it('origem traz os passos do item', async () => {
+    const passos = [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' }];
+    const f = fakeAdmin((c) => (c.tabela === 'operacoes_massa' ? { id: 'o' }
+      : [{ ml_item_id: 'A', preco: 110, preco_anterior: 100, passos }, { ml_item_id: 'B', preco: 110, preco_anterior: 100, passos: null }]));
+    const o = await depsPreview(f.admin, cxT, { reverter: true }).origem('o');
+    expect(o?.get('A')?.passos).toEqual(passos);
+    expect(o?.get('B')?.passos).toEqual([]);
+  });
 
   it('pedido do usuário com MLB sem produto → ForaDaOrg (400)', async () => {
     await expect(depsPreview(semProduto().admin, cxT, { reverter: false }).expandir([], ['MLB1', 'MLB2']))
@@ -111,8 +163,8 @@ describe('depsPreview', () => {
   it('Reverter com 2 aplicados, um sem produto → rascunho com um elegível e um fora', async () => {
     const restaurar = (v: string) => [{ variacao_id: v, esperado: { preco_publicacao: 100, preco_editado_pelo_operador: false }, novo: { preco_publicacao: 110, preco_editado_pelo_operador: true } }];
     const origem = new Map([
-      ['MLB1', { codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar: restaurar('v1') }],
-      ['MLB2', { codigo_pai: 'P2', preco_anterior: 100, preco: 110, restaurar: restaurar('v2') }],
+      ['MLB1', { codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar: restaurar('v1'), passos: [] }],
+      ['MLB2', { codigo_pai: 'P2', preco_anterior: 100, preco: 110, restaurar: restaurar('v2'), passos: [] }],
     ]);
     const vivo = { preco: 110, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
     const r = await montarPreview({ familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' }, {
@@ -158,7 +210,7 @@ describe('depsPreview', () => {
     const f = fakeAdmin((c) => (c.tabela === 'operacoes_massa' ? { id: 'o' }
       : [{ ml_item_id: 'MLB1', codigo_pai: 'P1', preco: '110', preco_anterior: '100', estado_anterior: restaurar }]));
     const o = await depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }, { reverter: false }).origem('o');
-    expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar });
+    expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, passos: [], restaurar });
     expect(op(f.chamadas[1], 'eq')).toEqual(expect.arrayContaining([['org_id', 'org'], ['status', 'aplicado']]));
   });
 });

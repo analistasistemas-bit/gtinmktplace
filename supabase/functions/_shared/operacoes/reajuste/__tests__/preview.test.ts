@@ -230,7 +230,7 @@ describe('montarPreview — ofertas', () => {
 describe('montarPreview — Reverter', () => {
   // origem: 100 → 110; banco antes {100, false}, gravado {110, true}
   const restOrigem: EntradaRestauracao[] = [{ variacao_id: 'V-1', esperado: est(100, false), novo: est(110, true) }];
-  const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar: restOrigem }]]);
+  const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar: restOrigem, passos: [] }]]);
   const v110 = (ids = ['1'], preco = 110) => vivo({ preco, variacoes: ids.map((id) => ({ id, preco })) });
   const rev: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: { tipo: 'pct', sentido: '+', valor: 50 }, precos: { MLB1: 1.001 }, origem_id: 'op-1' };
 
@@ -405,7 +405,7 @@ describe('montarPreview — atacado (ADR-0196)', () => {
 
   describe('Reverter', () => {
     const restaurar: EntradaRestauracao[] = [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }];
-    const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar }]]);
+    const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar, passos: [] }]]);
     const voltar: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' };
     const base = { origem, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) } };
 
@@ -428,6 +428,64 @@ describe('montarPreview — atacado (ADR-0196)', () => {
     it('faixa viva que ficaria acima do base restaurado → fora', async () => {
       expect(await um(voltar, deps({ ...base, faixas: viva(105) })))
         .toMatchObject({ situacao: 'fora', motivo: 'Faixa de atacado ficaria acima do preço base' });
+    });
+
+    it('oferta nova acima do alvo antigo → fora', async () => {
+      expect(await um(voltar, deps({ ...base, faixas: viva(95), ofertasML: [of('P', 100)] })))
+        .toMatchObject({ situacao: 'fora', motivo: expect.stringContaining('Preço igual ou abaixo da oferta') });
+    });
+
+    describe('com faixas na origem', () => {
+      const passoFaixas = (estado: Passo['estado']): Passo => ({ tipo: 'faixas', anterior: viva(90), alvo: viva(99), estado });
+      const baseOrigem: Passo = { tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' };
+      const comPassos = (passos: Passo[], o: { restaurar?: EntradaRestauracao[]; preco?: number } = {}) => new Map([['MLB1', {
+        codigo_pai: 'P-MLB1', preco_anterior: 100, preco: o.preco ?? 110, restaurar: o.restaurar ?? restaurar, passos,
+      }]]);
+
+      it('restaura as faixas que a origem deixou, com passos na ordem da descida', async () => {
+        const d = deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) });
+        const i = await um(voltar, d);
+        expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_anteriores: viva(99), faixas_alvo: viva(90) });
+        expect(tipos(i)).toEqual(['faixas', 'base']);
+        expect(i.passos?.[0]).toMatchObject({ anterior: viva(99), alvo: viva(90), estado: 'pendente' });
+        expect(d.configAtacado).not.toHaveBeenCalled();
+      });
+
+      it('faixas editadas depois da origem → fora', async () => {
+        expect(await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(98) })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('faixas apagadas depois da origem → fora', async () => {
+        expect(await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: [] })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('faixas que a origem não conseguiu gravar: reverte só o base', async () => {
+        const i = await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('pendente')]), faixas: viva(90) }));
+        expect(i).toMatchObject({ situacao: 'elegivel', faixas_alvo: null });
+        expect(tipos(i)).toEqual(['base']);
+      });
+
+      it('só faixas: não compara restaurar, não mexe em preço nem marca', async () => {
+        const d = deps({
+          origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) },
+          estados: { 'V-MLB1': est(123, true) }, faixas: viva(99),
+        });
+        const i = await um(voltar, d);
+        expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, preco_anterior: 100, restaurar: [], aviso: null });
+        expect(tipos(i)).toEqual(['faixas']);
+      });
+
+      it('só faixas com faixas editadas → fora', async () => {
+        const d = deps({ origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) }, faixas: viva(98) });
+        expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
+      });
+
+      it('só faixas com o preço mudado depois → fora', async () => {
+        const d = deps({ origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 105 }) }, faixas: viva(99) });
+        expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
+      });
     });
   });
 });

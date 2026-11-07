@@ -10,7 +10,7 @@ export interface DepsEtapaReajuste<Cx> {
   /** null = org sem conta ML (ausência real); erro de leitura/refresh lança. */
   conexao(): Promise<Cx | null>;
   /** Só banco (sem conexão ML): o `itensAConferir` tem de enxergar `conferindo`. */
-  banco: DepsLaco & Pick<DepsReajuste, 'encerrarSemEtapa'>;
+  banco: Pick<DepsLaco, 'agora' | 'agendarConferencia' | 'concluir' | 'itensAConferir'> & Pick<DepsReajuste, 'encerrarSemEtapa'>;
   executar(cx: Cx): Promise<Resultado>;
 }
 
