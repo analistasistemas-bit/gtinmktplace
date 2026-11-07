@@ -44,7 +44,9 @@ com `potential_security_threat`; 4 recebidas sem texto.
    `montarReqMsgML` só inclui `attachments` quando há anexo.
 4. **Exibição:** a lista passa a trazer `anexos:raw->message_attachments`, sem coluna nova. O
    balão mostra miniatura de imagem ou cartão de PDF com nome e tamanho, para os dois lados.
-5. **Download:** `GET` autenticado em `posvenda-anexo` com `pack_id` e `filename`. A edge só
+5. **Download:** `POST` autenticado com JSON em `posvenda-anexo`, com `pack_id` e `filename`
+   (POST porque o CORS compartilhado só libera `POST, OPTIONS`; mudá-lo exigiria redeployar todas
+   as edges). A edge só
    busca o arquivo se `filename` constar em `raw->message_attachments` de uma mensagem desse pack
    na org do usuário, e devolve o `type` gravado. Nunca aceita URL. Bytes não são guardados
    (ADR-0192, decisão 7). O front busca com JWT, cria um blob URL e só carrega a miniatura com a
