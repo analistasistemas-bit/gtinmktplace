@@ -66,7 +66,8 @@ Botão **Gerenciar kit** na linha do kit em Publicados **[agente, aceito sem obj
 - Mostra saldo por combinação e tamanho.
 - **Montar mais:** só aumenta o saldo do anúncio existente, nunca cria anúncio novo **[Diego]**.
   Combinação ou tamanho nunca publicado vira item novo na mesma família, com foto própria.
-- **Desmontar:** as peças voltam ao unitário **[Diego]**.
+- **Desmontar:** as peças voltam ao unitário **[Diego]**. No modo automático, desmontar passa o kit
+  para manual até o operador religar, com aviso na tela, para o sistema não remontar **[Diego]**.
 - Trocar entre automático e manual, e alterar meta e piso.
 
 ## Estoque
