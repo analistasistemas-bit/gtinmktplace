@@ -31,6 +31,10 @@ alter table public.kit_transferencia_alvos add column if not exists recusas inte
 -- Obrigação de conferir/repausar item depois de um PUT `active`, gravada antes dele. Finalizar recusa
 -- enquanto houver: a compensação sobrevive a queda, erro e resposta incerta.
 alter table public.kit_transferencia_alvos add column if not exists repausar text[] not null default '{}';
+-- Fase da escrita pelo sinal de (valor_alvo − ML lido no cálculo), gravada uma vez: redução primeiro,
+-- aumento só depois de todas as reduções confirmadas. Local à frente do ML (entrada, ajuste) é aumento.
+alter table public.kit_transferencia_alvos add column if not exists fase text
+  check (fase in ('reducao', 'aumento', 'nenhuma'));
 
 grant insert on public.kit_transferencias to estoque_rpc_executor;
 grant select, insert on public.kit_transferencia_alvos to estoque_rpc_executor;
@@ -225,7 +229,7 @@ begin
   v := jsonb_populate_record(v, p_patch);
   update public.kit_transferencia_alvos a set
     qtd_passo1 = v.qtd_passo1, passo1_em = v.passo1_em, ids_passo1 = v.ids_passo1,
-    valor_anterior = coalesce(a.valor_anterior, v.valor_anterior), valor_alvo = coalesce(a.valor_alvo, v.valor_alvo),
+    valor_anterior = coalesce(a.valor_anterior, v.valor_anterior), valor_alvo = coalesce(a.valor_alvo, v.valor_alvo), fase = coalesce(a.fase, v.fase),
     pausado_pela_saga = v.pausado_pela_saga, intencao_escrita_em = v.intencao_escrita_em,
     recusa_definitiva_em = v.recusa_definitiva_em, escrita_em = v.escrita_em, confirmada_em = v.confirmada_em,
     item_escrita = v.item_escrita, recusas = v.recusas, repausar = v.repausar

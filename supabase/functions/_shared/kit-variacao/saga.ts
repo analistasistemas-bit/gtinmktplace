@@ -4,7 +4,8 @@
 //
 // Regras que não podem quebrar:
 // - Resultado incerto nunca reenvia PUT. Só a recusa 4xx (gravada) permite repetir, até 5 vezes.
-// - Nada aumenta oferta antes de todas as origens confirmadas por leitura (invariante 3).
+// - Nada aumenta oferta antes de todas as reduções confirmadas por leitura (invariante 3). A fase de cada
+//   alvo sai do sinal de `valor_alvo − ML lido`, não de origem/destino: local à frente do ML é aumento.
 // - Todo PUT é precedido por releitura: identidade, um local só, pausa vigente, quantidade igual à do cálculo.
 // - Toda gravação passa por RPC que exige o token e o prazo da execução e a posse da exclusão; e a
 //   execução para sozinha antes do prazo, para não fazer efeito remoto depois que outra pegou o claim.
@@ -55,7 +56,13 @@ export interface AlvoSaga {
   recusas: number;
   /** Itens com obrigação de conferir ou repausar depois de um PUT `active`; finalizar recusa enquanto houver. */
   repausar: string[];
+  /** Pelo sinal de `valor_alvo − valor_anterior`, gravado uma vez no cálculo. `nenhuma` não escreve e confirma com as reduções. */
+  fase: 'reducao' | 'aumento' | 'nenhuma' | null;
 }
+
+type Fase = 'reducao' | 'aumento';
+/** Redução e `nenhuma` andam juntas: as duas precisam de leitura igual ao alvo antes de qualquer aumento. */
+const naFase = (a: AlvoSaga, f: Fase) => (f === 'aumento' ? a.fase === 'aumento' : a.fase !== 'aumento');
 
 export interface ResultadoImportacao {
   pagos: PedidoPago[];
@@ -329,11 +336,6 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     if (reserva.reservado > 0) {
       return reagendar(ctx, `${alvo.codigo}: ${reserva.reservado} peça(s) comprometida(s) com pedido em aberto`);
     }
-    // Com pedidos conciliados, local e ML têm de bater. Diferença sem explicação nunca vira escrita.
-    const local = await ctx.deps.repo.saldoLocal(alvo.codigo);
-    if (local !== oferta.quantidade) {
-      return reagendar(ctx, `${alvo.codigo}: saldo local ${local}, ML ${oferta.quantidade}; diferença sem explicação`, REAGENDAR_S, true);
-    }
   }
   return avancar(ctx, 'calcular');
 }
@@ -351,6 +353,7 @@ async function calcular(ctx: Ctx): Promise<ResultadoPasso> {
   }
 
   // Valor final gravado uma vez: na origem, o saldo local já sem a reserva; no destino, o local mais o que chega.
+  // Local à frente do ML é efeito local pendente (entrada, ajuste, estorno): vira aumento, nunca antes das reduções.
   for (const alvo of pendentes) {
     const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
     const problema = problemaDaOferta(alvo, oferta, true);
@@ -358,19 +361,20 @@ async function calcular(ctx: Ctx): Promise<ResultadoPasso> {
     const local = await ctx.deps.repo.saldoLocal(alvo.codigo);
     const valorAlvo = alvo.papel === 'destino' ? local + alvo.delta : local;
     if (valorAlvo < 0) return travar(ctx, `${alvo.codigo}: valor final negativo (${valorAlvo})`);
-    await salvarAlvo(ctx, alvo, { valor_anterior: oferta.quantidade, valor_alvo: valorAlvo });
+    const fase = valorAlvo < oferta.quantidade ? 'reducao' : valorAlvo > oferta.quantidade ? 'aumento' : 'nenhuma';
+    await salvarAlvo(ctx, alvo, { valor_anterior: oferta.quantidade, valor_alvo: valorAlvo, fase });
   }
   return avancar(ctx, 'reduzir');
 }
 
 /** `reduzir` e `aumentar`. Intenção gravada antes do PUT; com intenção e sem recusa, nunca reenvia. */
-async function escrever(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga): Promise<ResultadoPasso> {
-  if (papel === 'destino') {
-    const solta = ctx.alvos.find((a) => a.papel === 'origem' && !a.confirmada_em);
-    if (solta) return travar(ctx, `${solta.codigo}: origem não confirmada antes do aumento`);
+async function escrever(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<ResultadoPasso> {
+  if (fase === 'aumento') {
+    const solta = ctx.alvos.find((a) => naFase(a, 'reducao') && !a.confirmada_em);
+    if (solta) return travar(ctx, `${solta.codigo}: redução não confirmada antes do aumento`);
   }
   const recusas: string[] = [];
-  for (const alvo of ctx.alvos.filter((a) => a.papel === papel)) {
+  for (const alvo of ctx.alvos.filter((a) => naFase(a, fase))) {
     if (alvo.confirmada_em || alvo.valor_alvo === null || alvo.valor_alvo === alvo.valor_anterior) continue;
     if (alvo.intencao_escrita_em && !alvo.recusa_definitiva_em) continue;
 
@@ -407,8 +411,8 @@ async function escrever(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga):
 }
 
 /** Leitura igual ao valor gravado conclui. Outro número, inclusive o anterior, trava (spec, passo 6). */
-async function confirmar(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga): Promise<ResultadoPasso> {
-  for (const alvo of ctx.alvos.filter((a) => a.papel === papel && !a.confirmada_em)) {
+async function confirmar(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<ResultadoPasso> {
+  for (const alvo of ctx.alvos.filter((a) => naFase(a, fase) && !a.confirmada_em)) {
     const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
     const problema = problemaDaOferta(alvo, oferta, true);
     if (problema) return travar(ctx, problema);
@@ -417,7 +421,7 @@ async function confirmar(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga)
     }
     await salvarAlvo(ctx, alvo, { confirmada_em: iso(ctx) });
   }
-  if (papel === 'destino') {
+  if (fase === 'aumento') {
     const r = await ledger(ctx, 'creditar');
     if (!r.ok) return travar(ctx, `crédito recusado: ${r.motivo}`);
   }
@@ -491,10 +495,10 @@ const PASSOS: Record<PassoSaga, (ctx: Ctx) => Promise<ResultadoPasso>> = {
   aguardar,
   conciliar,
   calcular,
-  reduzir: (ctx) => escrever(ctx, 'origem', 'confirmar_reducao'),
-  confirmar_reducao: (ctx) => confirmar(ctx, 'origem', 'aumentar'),
-  aumentar: (ctx) => escrever(ctx, 'destino', 'confirmar_aumento'),
-  confirmar_aumento: (ctx) => confirmar(ctx, 'destino', 'reativar'),
+  reduzir: (ctx) => escrever(ctx, 'reducao', 'confirmar_reducao'),
+  confirmar_reducao: (ctx) => confirmar(ctx, 'reducao', 'aumentar'),
+  aumentar: (ctx) => escrever(ctx, 'aumento', 'confirmar_aumento'),
+  confirmar_aumento: (ctx) => confirmar(ctx, 'aumento', 'reativar'),
   reativar,
   fim: () => Promise.resolve({ passo: 'fim', acao: 'concluida' }),
 };

@@ -18,7 +18,7 @@ function alvo(up_id: string, codigo: string, papel: 'origem' | 'destino', delta:
   return {
     up_id, codigo, papel, delta, item_ids, qtd_passo1: null, passo1_em: null, ids_passo1: null,
     valor_anterior: null, valor_alvo: null, pausado_pela_saga: [], intencao_escrita_em: null,
-    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [],
+    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [], fase: null,
   };
 }
 
@@ -366,18 +366,6 @@ describe('avancarSaga', () => {
     expect(c.s.t.estado).toBe('concluida');
   });
 
-  it('saldo local diferente do ML bloqueia com um alerta só (achado 1)', async () => {
-    const c = cenario();
-    c.s.saldo.P = 10;
-    await rodar(c, noPasso('conciliar'));
-    for (let i = 0; i < 3; i++) expect((await passo(c)).acao).toBe('reagendada');
-    expect(c.s.t.passo).toBe('conciliar');
-    expect(c.s.rpcs).toEqual([]);
-    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
-    expect(c.s.alertas).toHaveLength(1);
-    expect(c.s.alertas[0]).toMatch(/P: saldo local 10, ML 5/);
-  });
-
   it('execução com prazo vencido não grava alvo nem chama PUT (achado 2)', async () => {
     const c = cenario();
     await rodar(c, noPasso('reduzir'));
@@ -504,6 +492,63 @@ describe('avancarSaga', () => {
     expect(c.s.t.estado).toBe('concluida');
     expect(pausadoNoFim(c, 'MLB-P')).toBe(true);
     expect(c.s.chamadas.filter((x) => x.endsWith('MLB-P')).slice(-2)).toEqual(['active MLB-P', 'paused MLB-P']);
+  });
+
+  // Emenda pós-Task 5: fase pelo sinal de (valor_alvo − ML lido no cálculo), não por origem/destino.
+  const reducoesConfirmadasNoAumento = (c: Cenario) => {
+    const vistos: boolean[] = [];
+    const put = c.deps.ml.putQuantidade;
+    c.deps.ml.putQuantidade = async (itemId, q) => {
+      const alvo = c.s.alvos.find((a) => a.item_ids.includes(itemId))!;
+      if (alvo.fase === 'aumento') vistos.push(c.s.alvos.filter((a) => a.fase === 'reducao').every((a) => a.confirmada_em));
+      return put(itemId, q);
+    };
+    return vistos;
+  };
+
+  it('entrada pura (local 10, ML 5) escreve 10 na fase de aumento', async () => {
+    const c = cenario();
+    c.s.t.tipo = 'entrada';
+    Object.assign(c.s.ups, { 'UP-A': { quantidade: 5, itens: [ativo('MLB-A')] } });
+    c.s.saldo.A = 10;
+    c.s.alvos.splice(0, 3, alvo('UP-A', 'A', 'destino', 0, ['MLB-A']));
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alvos[0]).toMatchObject({ fase: 'aumento', valor_anterior: 5, valor_alvo: 10 });
+    expect(c.s.chamadas.filter((x) => x.startsWith('qtd'))).toEqual(['qtd MLB-A 10']);
+  });
+
+  it('montar com origem cujo local ficou acima do ML: o aumento dela vem depois das reduções', async () => {
+    const c = cenario();
+    c.s.saldo.P = 7;   // local 7, ML 5: depois da reserva, alvo 6 > 5
+    const vistos = reducoesConfirmadasNoAumento(c);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alvos.map((a) => a.fase)).toEqual(['aumento', 'reducao', 'aumento']);
+    expect(c.s.chamadas.filter((x) => x.startsWith('qtd'))).toEqual(['qtd MLB-B 4', 'qtd MLB-P 6', 'qtd MLB-K 3']);
+    expect(vistos).toEqual([true, true]);
+  });
+
+  it('local 10 × ML 5 com transferência de 1 nunca aumenta antes das reduções confirmadas', async () => {
+    const c = cenario();
+    c.s.saldo.P = 10;
+    const vistos = reducoesConfirmadasNoAumento(c);
+    // Redução de B fica incerta e a leitura diverge: trava sem nenhum aumento.
+    c.s.falhaPut = (id) => (id === 'MLB-B' ? { erro: new TypeError('timeout'), aplica: false } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(vistos).toEqual([]);
+    expect(c.s.chamadas.filter((x) => x.startsWith('qtd'))).toEqual(['qtd MLB-B 4']);
+  });
+
+  it('ML acima do local é redução, inclusive no destino', async () => {
+    const c = cenario();
+    c.s.ups['UP-K'].quantidade = 5;   // local 2 + 1 = 3 < 5
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alvos.map((a) => a.fase)).toEqual(['reducao', 'reducao', 'reducao']);
+    expect(c.s.chamadas.filter((x) => x.startsWith('qtd'))).toEqual(['qtd MLB-P 4', 'qtd MLB-B 4', 'qtd MLB-K 3']);
+    expect(c.s.rpcs).toContain('creditar');
   });
 
   it('PUT vai para um item aberto do UP e grava o destino (achado 7)', async () => {
