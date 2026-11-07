@@ -13,6 +13,11 @@ vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: vi.
 // com a raiz ainda travada em mudando_composicao=true).
 const atualizarFamiliaUPMock = vi.hoisted(() => vi.fn());
 vi.mock('../../_shared/user-products/atualizar-familia-up.ts', () => ({ atualizarFamiliaUP: atualizarFamiliaUPMock }));
+const recusasPorOfertaMock = vi.hoisted(() => vi.fn(async (): Promise<{ familia_id: string; motivo: string }[]> => []));
+vi.mock('../../_shared/publicacao/trava-oferta.ts', async (original) => ({
+  ...(await original<typeof import('../../_shared/publicacao/trava-oferta.ts')>()),
+  recusasPorOferta: recusasPorOfertaMock,
+}));
 
 import { criarPortasConvergencia, listarRaizesTravadas } from '../processar';
 
@@ -187,6 +192,70 @@ describe('criarPortasConvergencia — resumirComposicao (rede de segurança do s
     const resultado = await portas.resumirComposicao(CLAIM_OK);
     expect(resultado).toEqual({ estado: 'retry' });
     expect(updates.some((u) => u.tabela === 'anuncios_externos')).toBe(false);
+  });
+});
+
+describe('criarPortasConvergencia — resumirComposicao (trava da oferta)', () => {
+  const MOTIVO = 'Preço igual ou abaixo da oferta de R$ 80,00 — ajuste a oferta antes';
+  const INCONCLUSIVA = 'Não foi possível conferir promoções — tente de novo';
+  const filas = (lote: unknown = LOTE_PLANILHA) => ({
+    familias: [FAMILIA_OK], lotes: [lote], marketplace_connections: [CONEXAO_OK],
+    variacoes: [[{ codigo: 'A', preco_publicacao: 70 }, { codigo: 'B', preco_publicacao: '90.00' }, { codigo: 'FORA', preco_publicacao: 1 }]],
+    anuncios_externos_itens: [[
+      { sku: 'A', item_externo_id: 'MLB1' }, { sku: 'B', item_externo_id: 'MLB2' }, { sku: 'FORA', item_externo_id: 'MLB3' },
+    ]],
+  });
+  const resumir = (admin: unknown) => criarPortasConvergencia(admin as never, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK);
+  const semErros = (updates: { tabela: string }[]) => updates.filter((u) => u.tabela === 'familias');
+
+  it('confere um alvo por SKU esperado, com o preço da própria cor', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([]);
+    await resumir(fakeAdmin(filas()).admin);
+    expect(recusasPorOfertaMock.mock.calls[0]![0 as never]).toEqual([
+      { familia_id: 'A', itens: [{ ml_item_id: 'MLB1', preco: 70 }] },
+      { familia_id: 'B', itens: [{ ml_item_id: 'MLB2', preco: 90 }] },
+    ]);
+  });
+
+  it('alvo aprovado → comportamento atual: saga sem semPrecoPara e nada gravado em familias', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([]);
+    const { admin, updates } = fakeAdmin(filas());
+    expect(await resumir(admin)).toEqual({ estado: 'ok' });
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].semPrecoPara).toEqual([]);
+    expect(semErros(updates)).toEqual([]);
+  });
+
+  it('reprovado ou inconclusivo → saga com semPrecoPara, composição concluída e motivo em familias', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'A', motivo: MOTIVO }, { familia_id: 'B', motivo: INCONCLUSIVA }]);
+    const { admin, updates } = fakeAdmin(filas());
+    expect(await resumir(admin)).toEqual({ estado: 'ok' });
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].semPrecoPara).toEqual(['A', 'B']);
+    expect(updates).toContainEqual({
+      tabela: 'anuncios_externos',
+      payload: { mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null },
+    });
+    expect(semErros(updates)).toEqual([{
+      tabela: 'familias', payload: { erro_mensagem: `Preço não enviado (A, B): ${MOTIVO}; ${INCONCLUSIVA}` },
+    }]);
+  });
+
+  it('saga sem convergir não grava o motivo: a próxima rodada confere de novo', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'A', motivo: MOTIVO }]);
+    const { admin, updates } = fakeAdmin(filas());
+    await resumir(admin);
+    expect(semErros(updates)).toEqual([]);
+  });
+
+  it('fluxo Adicionar variação não confere', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset();
+    await resumir(fakeAdmin(filas({ origem: 'manual' })).admin);
+    expect(recusasPorOfertaMock).not.toHaveBeenCalled();
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].semPrecoPara).toEqual([]);
   });
 });
 

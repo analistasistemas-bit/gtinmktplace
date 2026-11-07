@@ -9,7 +9,7 @@ const { notificarSpy } = vi.hoisted(() => ({ notificarSpy: vi.fn() }));
 vi.mock('../../notificacoes/config.ts', () => ({ notificarCategoria: notificarSpy }));
 
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs } from '../atualizar-familia-up';
-import type { PortasComposicao, ResultadoComposicao } from '../atualizar-composicao';
+import { atualizarComposicao, type FilhoComp, type PortasComposicao, type ResultadoComposicao } from '../atualizar-composicao';
 
 type Write = { table: string; payload: Record<string, unknown> };
 
@@ -393,6 +393,38 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(entradaVista!.precoPorSku.A).toBe(10);
   });
 
+  // Trava da oferta (emenda ADR-0196): `preservarPublicadas` só cobre os ativos; o reprovado pode estar
+  // em qualquer status. Saga real, para provar o payload de reposição.
+  it('semPrecoPara: SKU reprovado sai sem price na reposição, ativo, criado ou readicionado', async () => {
+    const filhos: FilhoComp[] = [
+      { sku: 'ATIVO', status: 'ativo', retirado: false, itemExternoId: 'MLB1', familyId: 'F' },
+      { sku: 'CRIADO', status: 'criado', retirado: false, itemExternoId: 'MLB2', familyId: 'F' },
+      { sku: 'READD', status: 'pausado', retirado: true, itemExternoId: 'MLB3', familyId: 'F' },
+      { sku: 'LIVRE', status: 'ativo', retirado: false, itemExternoId: 'MLB4', familyId: 'F' },
+    ];
+    const repostos: Record<string, { price?: number }> = {};
+    const nada = async () => {};
+    const portas = {
+      listar: async () => filhos, iniciarComposicao: nada, limparComposicao: nada, salvarConfirmacao: nada,
+      ativar: nada, confirmarPreco: nada,
+      marcarAtivo: async (sku: string) => { Object.assign(filhos.find((f) => f.sku === sku)!, { status: 'ativo', retirado: false }); },
+      confirmar: async () => ({ ok: true, status: 'active', familyId: 'F' }),
+      repor: async (id: string, patch: { price?: number }) => { repostos[id] = patch; },
+    } as unknown as PortasComposicao;
+    const cor = (codigo: string, preco_publicacao: number) => ({ codigo, cor: codigo, estoque: 1, preco_publicacao, gtin: null, imagem_path: null, ml_picture_id: null });
+    const { admin } = fakeAdmin(filhos.map((f) => ({ sku: f.sku, status: f.status, retirado: f.retirado, item_externo_id: f.itemExternoId, family_id: f.familyId })));
+    await atualizarFamiliaUP(args({
+      admin, semPrecoPara: ['ATIVO', 'CRIADO', 'READD'],
+      variacoes: [cor('ATIVO', 10), cor('CRIADO', 20), cor('READD', 30), cor('LIVRE', 40)] as never,
+      executarSaga: (_p, e) => atualizarComposicao(portas, e),
+    }));
+    expect(Object.keys(repostos).sort()).toEqual(['MLB1', 'MLB2', 'MLB3', 'MLB4']);
+    expect(repostos.MLB1).not.toHaveProperty('price');
+    expect(repostos.MLB2).not.toHaveProperty('price');
+    expect(repostos.MLB3).not.toHaveProperty('price');
+    expect(repostos.MLB4!.price).toBe(40);
+  });
+
   // ADR-0160 (I5) / ADR-0196 — o PxQ do ML é por ITEM e o valor é ABSOLUTO (ADR-0041): cada cor recebe
   // as faixas sobre o próprio preço. Base de outra cor seria dinheiro errado, em silêncio.
   it('I5: preços divergentes + atacado ativo → cada item recebe as faixas sobre o próprio preço', async () => {
@@ -475,6 +507,22 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
       executarSaga,
     }));
     expect(conn.atacados.map((a) => [a.itemExternoId, a.precoBase])).toEqual([['MLB2', 25]]);
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'aplicado')).toBeDefined();
+  });
+
+  it('semPrecoPara: SKU reprovado mantém as faixas vivas, ou entra pelo preço vivo, e o atacado não vira erro', async () => {
+    mlVivo({ MLB1: { preco: 10, faixas: true }, MLB2: { preco: 20 } });
+    const conn = fakeConn({ atacado: true });
+    const filho = (sku: string, item_externo_id: string) => ({ sku, status: 'ativo', retirado: false, item_externo_id, family_id: 'F' });
+    const { admin, writes } = fakeAdmin([filho('A', 'MLB1'), filho('B', 'MLB2'), filho('C', 'MLB3')]);
+    const cor = (codigo: string, preco_publicacao: number) => ({ codigo, cor: codigo, estoque: 1, preco_publicacao, gtin: null, imagem_path: null, ml_picture_id: null });
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never, semPrecoPara: ['A', 'B'],
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
+      variacoes: [cor('A', 5), cor('B', 5), cor('C', 30)] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.atacados.map((a) => [a.itemExternoId, a.precoBase])).toEqual([['MLB2', 20], ['MLB3', 30]]);
     expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'aplicado')).toBeDefined();
   });
 

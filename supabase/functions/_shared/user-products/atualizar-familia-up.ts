@@ -84,6 +84,9 @@ export interface AtualizarFamiliaUPArgs {
    * promete mexer só na cor nova.
    */
   preservarPublicadas?: boolean;
+  /** Trava da oferta (emenda ADR-0196): SKUs cujo preço o reconciliador recusou. Ficam com o preço vivo em qualquer
+   *  status; `preservarPublicadas` só cobre filhos já ativos. */
+  semPrecoPara?: string[];
   /** Nº de tentativas do QStash (orçamento de retry do desfecho `incompleto`, Fix 4b). */
   tentativas: number;
   /** Reconciliador de convergência: converge pro `skus_esperados` JÁ GRAVADO na raiz (o snapshot
@@ -168,6 +171,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   if (args.preservarPublicadas) {
     for (const sku of jaAtivos) precoPorSku[sku] = null;
   }
+  const semPrecoPara = new Set(args.semPrecoPara);
+  for (const sku of semPrecoPara) precoPorSku[sku] = null;
 
   // aceitaEmptyGtin: lido do schema da categoria (como o CREATE/publish faz) p/ a cor nova.
   // `valoresCor` sai do MESMO schema: a cor nova precisa nascer com o `value_id` do dicionário
@@ -568,12 +573,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
             + 'que a configuração por cor deixe de valer.';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else {
-          // ADR-0196: a base é o preço do próprio item. I10: cor já ativa não tem preço aqui. Com faixas vivas fica
-          // como está; sem elas (ativada numa tentativa que falhou) entra pelo preço vivo. Leitura inconclusiva →
-          // preço nulo → erro. Limpar alcança todos e não depende de preço.
+          // ADR-0196: a base é o preço do próprio item. I10: cor já ativa não tem preço aqui, nem SKU da trava da
+          // oferta. Com faixas vivas fica como está; sem elas (ativada numa tentativa que falhou) entra pelo preço
+          // vivo. Leitura inconclusiva → preço nulo → erro. Limpar alcança todos e não depende de preço.
           const itens: ItemAtacado[] = [];
           for (const { id, sku } of finaisComSku) {
-            if (!aplicandoFaixas || !args.preservarPublicadas || !jaAtivos.has(sku)) {
+            const precoRetido = semPrecoPara.has(sku) || (args.preservarPublicadas && jaAtivos.has(sku));
+            if (!aplicandoFaixas || !precoRetido) {
               itens.push({ id, preco: precoPorSku[sku] ?? null });
               continue;
             }

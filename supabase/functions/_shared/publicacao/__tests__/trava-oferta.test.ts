@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { oferta } from '../../operacoes/reajuste/ofertas';
 import type { OfertaVigente } from '../../operacoes/reajuste/tipos';
-import { lerPrecosVivos, recusasPorOferta, type DepsTravaOferta } from '../trava-oferta';
+import { alvosPorSku, lerPrecosVivos, montarAlvo, recusasPorOferta, type DepsTravaOferta } from '../trava-oferta';
 
-// A cadeia real de ofertasBanco puxa npm:qstash.
+// A cadeia real de ofertasBanco puxa npm:qstash; a do token, Deno.
 vi.mock('../../queue.ts', () => ({}));
+vi.mock('../../ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'tok' }));
 
 const INCONCLUSIVA = 'Não foi possível conferir promoções — tente de novo';
 const motivoOferta = (valor: string) => `Preço igual ou abaixo da oferta de R$ ${valor} — ajuste a oferta antes`;
@@ -142,6 +143,70 @@ describe('recusasPorOferta', () => {
     const d = deps({});
     expect(await recusasPorOferta([], d)).toEqual([]);
     expect(d.precosVivos).not.toHaveBeenCalled();
+  });
+});
+
+describe('montagem dos alvos', () => {
+  const FAMILIA = { id: 'f1', ml_item_id: 'MLB-F' };
+  const v = (codigo: string, preco_publicacao: number | string | null) => ({ codigo, preco_publicacao });
+  const linha = (particao: number, item_externo_id: string | null, ...skus: string[]) => ({
+    particao, item_externo_id, variacoes_externas: Object.fromEntries(skus.map((s) => [s, {}])),
+  });
+  const item = (sku: string, item_externo_id: string | null) => ({ sku, item_externo_id });
+
+  it('Legacy sem linha em anuncios_externos: ml_item_id com o preço da família', () => {
+    expect(montarAlvo(FAMILIA, [v('A', '50.00'), v('B', '50.00')], [], []))
+      .toEqual({ familia_id: 'f1', itens: [{ ml_item_id: 'MLB-F', preco: 50 }] });
+  });
+
+  it('Legacy com 1 linha: ml_item_id da família, mesmo com mapa vazio', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50)], [linha(0, 'MLB-OUTRO')], []))
+      .toEqual({ familia_id: 'f1', itens: [{ ml_item_id: 'MLB-F', preco: 50 }] });
+  });
+
+  it('Legacy com cor nova mais barata: a cor nova não entra no anúncio publicado', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('NOVA', 10)], [linha(0, 'MLB-F', 'A')], []).itens)
+      .toEqual([{ ml_item_id: 'MLB-F', preco: 50 }]);
+  });
+
+  it('Legacy sem preço: sem alvo', () => {
+    expect(montarAlvo(FAMILIA, [v('A', null)], [], []).itens).toEqual([]);
+  });
+
+  it('UP: um alvo por item, com o preço da cor, qualquer que seja o status do filho', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('B', 60)], [linha(0, null)], [item('A', 'MLB1'), item('B', 'MLB2')]).itens)
+      .toEqual([{ ml_item_id: 'MLB1', preco: 50 }, { ml_item_id: 'MLB2', preco: 60 }]);
+  });
+
+  it('UP: preço nulo, item sem id e item que sai da composição não entram', () => {
+    expect(montarAlvo(FAMILIA, [v('A', null), v('B', 60), v('C', 70)], [linha(0, null)], [
+      item('A', 'MLB1'), item('B', null), item('C', 'MLB3'), item('SAIU', 'MLB4'),
+    ]).itens).toEqual([{ ml_item_id: 'MLB3', preco: 70 }]);
+  });
+
+  it('UP só com filhos reservados: sem alvo (o worker recusa)', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50)], [linha(0, null)], [item('A', null)]).itens).toEqual([]);
+  });
+
+  it('partições: um alvo por anúncio, com o menor preço das cores dele', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('B', 40), v('C', 90), v('NOVA', 1)], [
+      linha(0, 'MLB-P0', 'A', 'B'), linha(1, 'MLB-P1', 'C'),
+    ], []).itens).toEqual([{ ml_item_id: 'MLB-P0', preco: 40 }, { ml_item_id: 'MLB-P1', preco: 90 }]);
+  });
+
+  it('partições: a 0 herda o ml_item_id; partição sem item ou sem cor incluída não entra', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('C', 90)], [
+      linha(0, null, 'A'), linha(1, null, 'C'), linha(2, 'MLB-P2', 'EXCLUIDA'),
+    ], []).itens).toEqual([{ ml_item_id: 'MLB-F', preco: 50 }]);
+  });
+
+  it('partições vencem os itens UP: quem escreve é o split', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('C', 90)], [linha(0, 'MLB-P0', 'A'), linha(1, 'MLB-P1', 'C')], [item('A', 'MLB1')]).itens)
+      .toEqual([{ ml_item_id: 'MLB-P0', preco: 50 }, { ml_item_id: 'MLB-P1', preco: 90 }]);
+  });
+
+  it('alvosPorSku: identifica o alvo pelo SKU', () => {
+    expect(alvosPorSku([v('A', 50)], [item('A', 'MLB1')])).toEqual([{ familia_id: 'A', itens: [{ ml_item_id: 'MLB1', preco: 50 }] }]);
   });
 });
 

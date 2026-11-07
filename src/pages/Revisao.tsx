@@ -77,7 +77,7 @@ export function filtrarFamilias(
   });
 }
 
-/** Task 9 (ADR-0174 decisão 9): aviso — não bloqueia — na Revisão quando uma família UPDATE com
+/** Task 9 (ADR-0174 decisão 9): aviso na Revisão (quem recusa é o `publicar-familias`) quando uma família UPDATE com
  *  preço alterado tem algum anúncio participando (`started`/`pending`) de campanha do ML. Um
  *  aviso por família (a primeira campanha achada entre os MLBs dela). `itensUp` são os MLBs por
  *  cor de família User Products (`anuncios_externos_itens.item_externo_id`, chave `codigoPai`) —
@@ -101,7 +101,7 @@ export function avisosParticipacaoPromocao(
     if (promocao) {
       avisos.push({
         id: f.id,
-        texto: `⚠️ ${f.titulo} participa da ${promocao}. Mudar o preço para igual ou abaixo da oferta tira o anúncio da promoção.`,
+        texto: `⚠️ ${f.titulo} participa da ${promocao}. Preço igual ou abaixo da oferta será recusado.`,
       });
     }
   }

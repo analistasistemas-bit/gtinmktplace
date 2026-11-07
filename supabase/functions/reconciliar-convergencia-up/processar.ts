@@ -7,6 +7,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
+import { alvosPorSku, depsTravaOferta, recusasPorOferta } from '../_shared/publicacao/trava-oferta.ts';
 import { atualizarFamiliaUP, type VariacaoUP } from '../_shared/user-products/atualizar-familia-up.ts';
 import {
   reconciliarConvergencia, type PortasConvergencia, type ClaimResultado, type ResultadoRaiz,
@@ -99,11 +100,26 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
       const conn = getConnector(CANAL);
       const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
 
+      // Trava da oferta (emenda ADR-0196): a composição precisa convergir, então o SKU reprovado não recusa a retomada,
+      // só fica com o preço vivo. Adicionar variação não confere, como em publicar-familias.
+      let recusas: { familia_id: string; motivo: string }[] = [];
+      if (!preservarPublicadas) {
+        const { data: itens, error: itensErr } = await admin.from('anuncios_externos_itens')
+          .select('sku, item_externo_id').eq('anuncio_externo_id', claim.rootId);
+        if (itensErr) throw new Error(`consultar itens (${claim.rootId}): ${itensErr.message}`);
+        const esperados = new Set(claim.skusEsperados);
+        recusas = await recusasPorOferta(
+          alvosPorSku(variacoes.filter((v) => esperados.has(v.codigo)), itens ?? []),
+          depsTravaOferta(admin, claim.orgId, ctx.getToken),
+        );
+      }
+      const semPrecoPara = recusas.map((r) => r.familia_id);
+
       const resultado = await atualizarFamiliaUP({
         admin, conn, ctx, conexao, familia,
         raiz: { id: claim.rootId, titulo: claim.titulo, criado_em: claim.criadoEm },
         variacoes, somenteEstoque: false, tentativas: claim.tentativas,
-        skusDesejadosOverride: claim.skusEsperados, preservarPublicadas,
+        skusDesejadosOverride: claim.skusEsperados, preservarPublicadas, semPrecoPara,
         marcaProduto: (familia.marca as string | null) ?? null, // ADR-0188
       });
       // Rede de segurança (revisão adversarial, 2ª rodada — achado real): se o crash original
@@ -124,6 +140,13 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         // falsa convergência, e no caminho sem_mudanca o orçamento de tentativas nem se aplica,
         // reclaim eterno). O catch em reconciliarConvergencia já mapeia exceção pra tipo:'erro'.
         if (limpezaErr) throw new Error(`limpeza de segurança falhou (${claim.rootId}): ${limpezaErr.message}`);
+        if (recusas.length > 0) {
+          const motivos = [...new Set(recusas.map((r) => r.motivo))].join('; ');
+          const { error: motivoErr } = await admin.from('familias')
+            .update({ erro_mensagem: `Preço não enviado (${semPrecoPara.join(', ')}): ${motivos}` }).eq('id', familia.id);
+          // A composição já convergiu: falhar aqui só perde o registro.
+          if (motivoErr) console.error(`motivo da trava de oferta não gravado (${familia.id}):`, motivoErr.message);
+        }
       }
       return { estado: resultado.estado };
     },
