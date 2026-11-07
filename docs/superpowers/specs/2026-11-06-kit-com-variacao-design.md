@@ -1,13 +1,35 @@
 # Kit com variação — desenho
 
 **Data:** 2026-11-06
-**Status:** aguardando aprovação do Diego
+**Status:** REABERTO em 07/11: portão reprovou no teste 4 (ver "Resultado do portão")
 **Referência de mercado:** `MLBU5154491250` (Kit 4 Blusas, categoria MLB3112)
 
 Marcação: **[Diego]** decidido por ele. **[agente]** decisão do agente, sujeita a correção.
 **[medir]** depende de teste antes de construir.
 
-## Por que existe
+## Resultado do portão (07/11/2026)
+
+**Reprovado.** `PUT /user-products/MLBU5717637056/stock/type/selling_address` com `x-version` correto
+devolveu `400 "the site is blocked for modifications to the selling address"`, na conta DSA, em item
+pausado. Nada foi gravado: versão 5 e saldo 5 antes e depois. Testes 1 a 3 não chegaram a rodar.
+
+Pela documentação, a escrita em `selling_address` só existe na Argentina e no Chile. No Brasil, o
+caminho com `x-version` é `seller_warehouse`, que exige conta multi-origem com tag
+`warehouse_management`. Nenhuma das contas lidas tem essa tag. Em multi-origem, `available_quantity`
+em `/items` deixa de valer, então o push atual do PubliAI quebraria na conta inteira.
+
+As seções "Escrita de estoque por versão" e "Portão" ficam suspensas. Achado adicional: o estoque do
+user product é compartilhado com a cópia de catálogo (dois itens no mesmo UP).
+
+Caminhos abertos, pendentes de decisão do Diego:
+
+- **A. Kit Virtual nativo:** o ML calcula o estoque a partir dos componentes, sem transferência. Dúvidas:
+  um kit por combinação × tamanho vira anúncio separado, e não há atributos de cor e tamanho no payload
+  de `POST /items/kits`. Falta testar se kits com o mesmo `family_name` agrupam no seletor, e se
+  compra e cálculo do estoque virtual são atômicos.
+- **B. Grade própria sem versão:** pausa nos dois lados e espera, com risco residual aceito.
+- **C. Multi-origem:** mudança da conta inteira, a investigar.
+
 
 Diego quer vender kits de cores diferentes do mesmo produto, como o anúncio de referência: uma
 página no ML onde o comprador escolhe a combinação de cores e depois o tamanho. Tudo nasce da tela
