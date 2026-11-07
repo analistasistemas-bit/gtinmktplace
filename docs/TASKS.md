@@ -2,9 +2,11 @@
 
 ## Tabela oficial de CEST (ADR-0197) — 2026-11-07
 
+Em produção desde 2026-11-07 (main `079297d1`; migration `20261107192533_adr197_cest_oficial`).
+
 - [x] `cest_oficial` e `cest_candidatos`, com gerador em `scripts/cest/`; migration testada em transação desfeita.
 - [x] Entrada por nota: preenche candidato único por NCM completo; mostra os demais; declaração mantida sem candidato.
-- [ ] `supabase db push` junto do merge na `main`.
+- [x] `supabase db push`: 1.200 pares, `cest_candidatos` conferida como `authenticated`.
 - [ ] Validar a tela com uma nota real da Daludi depois do deploy.
 
 ## Selo do CSOSN e regra do CEST (emenda ADR-0135) — 2026-11-07
