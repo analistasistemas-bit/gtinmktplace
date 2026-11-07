@@ -34,7 +34,8 @@ from (values
   ('97000000-0000-0000-0000-000000000301'::uuid, '09700003'),   -- azul
   ('97000000-0000-0000-0000-000000000301'::uuid, '09700004'),   -- fora de qualquer kit
   ('97000000-0000-0000-0000-000000000302'::uuid, '09710001'),   -- kit preto + branco
-  ('97000000-0000-0000-0000-000000000302'::uuid, '09710002')    -- kit preto + 2 azuis
+  ('97000000-0000-0000-0000-000000000302'::uuid, '09710002'),   -- kit preto + 2 azuis
+  ('97000000-0000-0000-0000-000000000302'::uuid, '09710003')    -- kit azul + avulsa: disjunto do primeiro
 ) x(f, c);
 
 create temp table ctx on commit drop as
@@ -42,7 +43,7 @@ select '97000000-0000-0000-0000-000000000001'::uuid as org,
        '97000000-0000-0000-0000-000000000002'::uuid as outra_org,
        '97000000-0000-0000-0000-000000000101'::uuid as usuario,
        gen_random_uuid() as kit, gen_random_uuid() as outro_kit,
-       gen_random_uuid() as k1, gen_random_uuid() as k2, gen_random_uuid() as k3;
+       gen_random_uuid() as k1, gen_random_uuid() as k2, gen_random_uuid() as k3, gen_random_uuid() as k4;
 grant select on ctx to service_role;
 
 -- Total em peças por SKU individual, escrito à parte das RPCs (invariante 2): individual + saldo do
@@ -138,6 +139,17 @@ declare
   c record; r jsonb; t1 uuid; t2 uuid; t3 uuid; t4 uuid; t5 uuid; t6 uuid; t7 uuid; t8 uuid; t9 uuid;
   P constant text := '09700001'; B constant text := '09700002'; A constant text := '09700003';
   L constant text := '09700004'; K1 constant text := '09710001'; K2 constant text := '09710002';
+  K4 constant text := '09710003'; tl bigint; saldos_antes text; l_antes integer;
+  custo_p numeric; custo_l numeric; id_nota uuid;
+  nota jsonb := jsonb_build_object('chave', '26261011222333000181550010000010521000030324', 'numero', 1052, 'serie', 1,
+    'emitente_cnpj', '11222333000181', 'emitente_nome', 'Fornecedor Teste', 'emitida_em', '2026-10-13T15:57:33-03:00',
+    'valor_total', 20, 'assinada', false, 'xml_path', 'kit-rpc/x.xml', 'xml_sha256', 'abc');
+  -- P antes de L: a recusa em L precisa desfazer o que P já gravou.
+  itens_nota jsonb := '[{"n_item":1,"cprod":"REF KIT","xprod":"Blusa","ncm":"62034900","cfop":"5102","gtin":null,
+    "ucom":"PC","qcom":2,"fator_conversao":1,"v_prod":20,"v_frete":0,"v_seg":0,"v_desc":0,"v_outro":0,"v_ipi":0,"v_st":0,
+    "rateio":{},"orig":0,"codigo_pai":"09700000",
+    "distribuicao":[{"codigo":"09700001","quantidade":1,"custo_aquisicao_unit":10,"custo_precificacao_unit":14},
+                    {"codigo":"09700004","quantidade":1,"custo_aquisicao_unit":10,"custo_precificacao_unit":14}]}]';
   antes text; tp bigint; tb bigint; ta bigint; dono uuid := gen_random_uuid(); outro uuid := gen_random_uuid();
 begin
   select * into c from ctx;
@@ -148,11 +160,12 @@ begin
   insert into public.kit_variacao_skus (id, org_id, kit_id, codigo, tamanho, cores, rotulo_cor)
   values (c.k1, c.org, c.kit, K1, 'M', array['Preto','Branco'], 'Preto + Branco'),
          (c.k2, c.org, c.kit, K2, 'M', array['Preto','Azul'], 'Preto + Azul'),
-         (c.k3, c.org, c.outro_kit, '09720001', 'M', array['Preto','Branco'], 'Outro kit');
+         (c.k3, c.org, c.outro_kit, '09720001', 'M', array['Preto','Branco'], 'Outro kit'),
+         (c.k4, c.org, c.kit, K4, 'M', array['Azul','Lilás'], 'Azul + Lilás');
   -- K2 leva 2 azuis: prova a multiplicação pela composição.
   insert into public.kit_variacao_componentes (kit_sku_id, org_id, codigo, quantidade)
   values (c.k1, c.org, P, 1), (c.k1, c.org, B, 1), (c.k2, c.org, P, 1), (c.k2, c.org, A, 2),
-         (c.k3, c.org, P, 1);
+         (c.k3, c.org, P, 1), (c.k4, c.org, A, 1), (c.k4, c.org, L, 1);
 
   perform public.registrar_entrada(c.org, P, 10, null, null, null, c.usuario, 'kit-teste:p');
   perform public.registrar_entrada(c.org, B, 5, null, null, null, c.usuario, 'kit-teste:b');
@@ -383,6 +396,98 @@ begin
   r := public.kit_reservar_transferencia(c.org, t2);
   perform pg_temp.afirmar(r = '{"ok": false, "motivo": "transferencia_fechada"}', 'reserva de abortada: ' || r::text);
 
+  -- `itens` alterado depois da reserva: crédito compara origens e ledger nos dois sentidos. Retirar a
+  -- combinação disjunta deixaria A e L sem destino, com o trânsito sumindo da conta.
+  t2 := pg_temp.transf(c.org, c.kit, 'montar', jsonb_build_array(
+    jsonb_build_object('codigo', K1, 'quantidade', 1), jsonb_build_object('codigo', K4, 'quantidade', 1)));
+  tp := pg_temp.total_pecas(c.org, P); tb := pg_temp.total_pecas(c.org, B);
+  ta := pg_temp.total_pecas(c.org, A); tl := pg_temp.total_pecas(c.org, L);
+  saldos_antes := pg_temp.saldos(c.org);
+  r := public.kit_reservar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": true, "aplicado": true}', 'reserva disjunta: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.movs(t2) = 4, 'reserva disjunta deveria mover 4 SKUs');
+  antes := pg_temp.saldos(c.org);
+  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)) where id = t2;
+  r := public.kit_creditar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito sem a combinação retirada: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 4, 'crédito divergente gravou');
+  -- Sentido inverso: itens com combinação a mais do que saiu.
+  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
+    jsonb_build_object('codigo', K4, 'quantidade', 1), jsonb_build_object('codigo', K2, 'quantidade', 1)) where id = t2;
+  r := public.kit_creditar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito com combinação a mais: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 4, 'crédito a mais gravou');
+  -- Cancelar lê o ledger, não `itens`: devolve tudo, inclusive o que saiu da lista.
+  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)) where id = t2;
+  r := public.kit_cancelar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": true, "aplicado": true}', 'cancelar com itens alterados: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.movs(t2) = 8, 'cancelar não devolveu os 4 SKUs');
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = saldos_antes, 'saldo das origens não voltou');
+  perform pg_temp.afirmar(pg_temp.total_pecas(c.org, P) = tp and pg_temp.total_pecas(c.org, B) = tb
+    and pg_temp.total_pecas(c.org, A) = ta and pg_temp.total_pecas(c.org, L) = tl, 'peça sumiu com itens alterados');
+  update public.kit_transferencias set estado = 'abortada' where id = t2;
+
+  -- Combinação disjunta acrescentada: tudo que o ledger tem bate; só origens menos ledger acusa.
+  t2 := pg_temp.transf(c.org, c.kit, 'montar', jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)));
+  r := public.kit_reservar_transferencia(c.org, t2);
+  perform pg_temp.afirmar((r->>'ok')::boolean, 'reserva antes de acrescentar: ' || r::text);
+  antes := pg_temp.saldos(c.org);
+  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1),
+    jsonb_build_object('codigo', K4, 'quantidade', 1)) where id = t2;
+  r := public.kit_creditar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": false, "motivo": "sem_reserva"}', 'crédito com combinação disjunta a mais: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes and pg_temp.movs(t2) = 2, 'crédito disjunto a mais gravou');
+  r := public.kit_cancelar_transferencia(c.org, t2);
+  perform pg_temp.afirmar(r = '{"ok": true, "aplicado": true}', 'cancelar depois de acrescentar: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = saldos_antes, 'cancelar não restaurou');
+  update public.kit_transferencias set estado = 'abortada' where id = t2;
+
+  -- Nota de compra com SKU bloqueado: recusa desfaz cabeçalho, itens, distribuição, vínculo, custo e ledger.
+  select custo into custo_p from public.variacoes where org_id = c.org and codigo = P;
+  select custo into custo_l from public.variacoes where org_id = c.org and codigo = L;
+  t3 := pg_temp.transf(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', L)));
+  antes := pg_temp.saldos(c.org);
+  begin
+    perform public.importar_nota_compra(c.org, c.usuario, nota, itens_nota);
+    raise exception 'FALHA: nota importou com SKU bloqueado';
+  exception when check_violation then
+    if sqlerrm not like 'sku_em_transferencia%' then raise; end if;
+  end;
+  perform pg_temp.afirmar(not exists (select 1 from public.notas_compra where org_id = c.org), 'cabeçalho da nota ficou');
+  perform pg_temp.afirmar(not exists (select 1 from public.notas_compra_itens where org_id = c.org), 'item da nota ficou');
+  perform pg_temp.afirmar(not exists (select 1 from public.notas_compra_distribuicao where org_id = c.org), 'distribuição ficou');
+  perform pg_temp.afirmar(not exists (select 1 from public.vinculos_fornecedor where org_id = c.org), 'vínculo de fornecedor ficou');
+  perform pg_temp.afirmar(not exists (select 1 from public.estoque_movimentos
+    where org_id = c.org and referencia_externa like 'nfe:%'), 'referência da nota ficou no ledger');
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes, 'nota recusada mexeu no saldo');
+  perform pg_temp.afirmar((select custo is not distinct from custo_p from public.variacoes where org_id = c.org and codigo = P)
+    and (select custo is not distinct from custo_l from public.variacoes where org_id = c.org and codigo = L),
+    'nota recusada mexeu no custo');
+  -- O operador repete depois da transferência: a mesma nota entra inteira.
+  update public.kit_transferencias set estado = 'concluida' where id = t3;
+  l_antes := pg_temp.saldo(c.org, L);
+  id_nota := (public.importar_nota_compra(c.org, c.usuario, nota, itens_nota)->>'nota_id')::uuid;
+  perform pg_temp.afirmar(pg_temp.saldo(c.org, L) = l_antes + 1 and (select custo = 14 from public.variacoes
+    where org_id = c.org and codigo = L), 'repetir a nota não aplicou');
+
+  -- Desfazer com SKU bloqueado: P vem antes de L, e o ajuste de P precisa voltar.
+  t3 := pg_temp.transf(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', L)));
+  antes := pg_temp.saldos(c.org);
+  begin
+    perform public.desfazer_nota_compra(c.org, c.usuario, id_nota, 'desfeita');
+    raise exception 'FALHA: desfazer passou com SKU bloqueado';
+  exception when check_violation then
+    if sqlerrm not like 'sku_em_transferencia%' then raise; end if;
+  end;
+  perform pg_temp.afirmar((select status = 'importada' and desfeita_em is null and desfeita_por is null
+    from public.notas_compra where id = id_nota), 'cabeçalho mudou no desfazer recusado');
+  perform pg_temp.afirmar(not exists (select 1 from public.estoque_movimentos
+    where org_id = c.org and referencia_externa like 'nfe-desfazer:%'), 'referência do desfazer ficou no ledger');
+  perform pg_temp.afirmar(pg_temp.saldos(c.org) = antes, 'desfazer recusado mexeu no saldo');
+  update public.kit_transferencias set estado = 'concluida' where id = t3;
+  perform public.desfazer_nota_compra(c.org, c.usuario, id_nota, 'desfeita');
+  perform pg_temp.afirmar((select status = 'desfeita' from public.notas_compra where id = id_nota), 'repetir o desfazer não aplicou');
+
   -- Exclusão: tudo ou nada, em ordem de código; o dono repete sem conflito.
   r := public.kit_adquirir_exclusao(c.org, array[L, P], 'transferencia', dono);
   perform pg_temp.afirmar(r = '{"ok": true}', 'adquirir: ' || r::text);
@@ -431,6 +536,76 @@ begin
                            where org_id = c.org and motivo in ('kit_saida', 'kit_entrada')
                              and (push_enfileirado_em is null or transferencia_id is null)),
     'movimento de kit sem push_enfileirado_em');
+end $$;
+reset role;
+
+-- Inventário com SKU bloqueado. Org PJ própria: a foto exige empresa fiscal.
+insert into public.organizations (id, nome, slug, tipo_pessoa, modulos_habilitados, is_test) values
+  ('97000000-0000-0000-0000-000000000003', 'Kit RPC inv', 'kit-rpc-inv', 'pj', '{estoque,kit_variacao}', true);
+insert into public.empresa_fiscal (org_id, cnpj, inscricao_estadual, razao_social) values
+  ('97000000-0000-0000-0000-000000000003', '11444777000161', '555555555', 'Empresa Inv Teste');
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('97000000-0000-0000-0000-000000000103', 'kit-rpc-inv@teste.local', '{"org_id":"97000000-0000-0000-0000-000000000003"}'::jsonb);
+insert into public.profiles (id, org_id, is_active, email, nome) values
+  ('97000000-0000-0000-0000-000000000103', '97000000-0000-0000-0000-000000000003', true, 'kit-rpc-inv@teste.local', 'Operador')
+on conflict (id) do update set org_id = excluded.org_id, is_active = true, email = excluded.email, nome = excluded.nome;
+insert into public.lotes (id, user_id, org_id, status, origem) values
+  ('97000000-0000-0000-0000-000000000203', '97000000-0000-0000-0000-000000000103',
+   '97000000-0000-0000-0000-000000000003', 'processando', 'planilha');
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, ncm, unidade, criado_em) values
+  ('97000000-0000-0000-0000-000000000303', '97000000-0000-0000-0000-000000000203',
+   '97000000-0000-0000-0000-000000000103', '97000000-0000-0000-0000-000000000003',
+   '09730000', 'Blusa inv', 'CREATE', 'nacional', gen_random_uuid(), '62034900', 'UN', '2026-01-01 00:00+00');
+insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque, custo)
+select '97000000-0000-0000-0000-000000000303', '97000000-0000-0000-0000-000000000103',
+       '97000000-0000-0000-0000-000000000003', c, c, c, 'M', 50, 10, 12.34
+from unnest(array['09730001', '09730002', '09730003']) c;
+do $$
+begin
+  if public.gerar_foto_inventario_org('97000000-0000-0000-0000-000000000003', '2026-12-31', 'manual') <> 'gerada' then
+    raise exception 'FALHA: foto não gerada';
+  end if;
+end $$;
+
+set local role service_role;
+do $$
+declare o constant uuid := '97000000-0000-0000-0000-000000000003';
+  u constant uuid := '97000000-0000-0000-0000-000000000103';
+  v_id uuid; t uuid; antes text; codigo_bloq text;
+begin
+  select id into v_id from public.inventarios where org_id = o and data_base = '2026-12-31';
+  -- 1: falta, por ajuste. 2: sobra, por entrada. 3: falta, por ajuste.
+  perform public.salvar_contagem_inventario(o, v_id, 0,
+    '[{"codigo":"09730001","quantidade_contada":8,"justificativa":"quebra"},
+      {"codigo":"09730002","quantidade_contada":12,"justificativa":"achado"},
+      {"codigo":"09730003","quantidade_contada":7,"justificativa":"quebra"}]');
+  antes := pg_temp.saldos(o);
+
+  -- 3 bloqueado: recusa no ajuste, depois de 1 e 2 já aplicados. 2 bloqueado: recusa na entrada.
+  foreach codigo_bloq in array array['09730003', '09730002'] loop
+    t := pg_temp.transf(o, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', codigo_bloq)));
+    begin
+      perform public.confirmar_inventario(o, v_id, 1, u);
+      raise exception 'FALHA: inventário confirmou com % bloqueado', codigo_bloq;
+    exception when check_violation then
+      if sqlerrm not like 'sku_em_transferencia%' then raise; end if;
+    end;
+    perform pg_temp.afirmar((select status = 'aberto' and confirmado_por is null and confirmado_em is null and versao = 1
+      from public.inventarios where id = v_id), 'cabeçalho do inventário mudou com ' || codigo_bloq);
+    perform pg_temp.afirmar(not exists (select 1 from public.inventarios_itens
+      where inventario_id = v_id and (qtd_final is not null or valor_final is not null)), 'item final gravado com ' || codigo_bloq);
+    perform pg_temp.afirmar(not exists (select 1 from public.estoque_movimentos
+      where org_id = o and referencia_externa like 'inventario:%'), 'referência do inventário ficou com ' || codigo_bloq);
+    perform pg_temp.afirmar(pg_temp.saldos(o) = antes, 'inventário recusado mexeu no saldo com ' || codigo_bloq);
+    perform pg_temp.afirmar((select bool_and(custo = 12.34) from public.variacoes where org_id = o),
+      'inventário recusado mexeu no custo com ' || codigo_bloq);
+    update public.kit_transferencias set estado = 'concluida' where id = t;
+  end loop;
+
+  -- Sem transferência, a mesma confirmação passa inteira.
+  perform public.confirmar_inventario(o, v_id, 1, u);
+  perform pg_temp.afirmar((select status = 'confirmado' from public.inventarios where id = v_id), 'repetir não confirmou');
+  perform pg_temp.afirmar(pg_temp.saldos(o) = '09730001=8,09730002=12,09730003=7', 'saldo final: ' || pg_temp.saldos(o));
 end $$;
 reset role;
 

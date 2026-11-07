@@ -13,6 +13,9 @@
 --
 -- Ordem de locks em todas: organização (quando trava), transferência, `variacoes` por `codigo`.
 --
+-- Capacidade: `kits_variacao.meta` limita só `repor`. É o alvo da automação; `montar` e `desmontar` são
+-- decisão do operador e não respeitam meta, que nasce 0.
+--
 -- `db push` não roda em transação: cada statement é re-executável. Se morrer no meio, conferir o
 -- membership de postgres em estoque_rpc_executor (ver 20260903002527).
 
@@ -282,15 +285,24 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'transferencia_fechada');
   end if;
 
-  -- Crédito só do que saiu, e na mesma quantidade: `itens` alterado depois da reserva criaria peça.
+  -- Origens calculadas e ledger precisam ser iguais nos dois sentidos. `itens` alterado depois da
+  -- reserva criaria peça (origem a mais) ou deixaria peça sem destino, sumindo do trânsito (a menos).
   if not exists (select 1 from public.estoque_movimentos
                  where transferencia_id = p_transferencia and motivo = 'kit_saida')
     or exists (
-      select 1 from public.kit_transferencia_movimentos(p_org, p_transferencia) m
-      where m.papel = 'origem' and not exists (
-        select 1 from public.estoque_movimentos e
-        where e.transferencia_id = p_transferencia and e.motivo = 'kit_saida'
-          and e.codigo = m.codigo and e.quantidade = -m.quantidade)
+      (select m.codigo, m.quantidade
+       from public.kit_transferencia_movimentos(p_org, p_transferencia) m where m.papel = 'origem'
+       except
+       select e.codigo, -e.quantidade
+       from public.estoque_movimentos e
+       where e.transferencia_id = p_transferencia and e.motivo = 'kit_saida')
+      union all
+      (select e.codigo, -e.quantidade
+       from public.estoque_movimentos e
+       where e.transferencia_id = p_transferencia and e.motivo = 'kit_saida'
+       except
+       select m.codigo, m.quantidade
+       from public.kit_transferencia_movimentos(p_org, p_transferencia) m where m.papel = 'origem')
     ) then
     return jsonb_build_object('ok', false, 'motivo', 'sem_reserva');
   end if;
@@ -307,8 +319,8 @@ begin
   return jsonb_build_object('ok', true, 'aplicado', true);
 end $$;
 
--- Devolve à origem o que saiu e não chegou, pelo delta do ledger. Sem checar `estado` nem o módulo:
--- peça em trânsito precisa conseguir voltar em qualquer situação.
+-- Devolve à origem o que saiu e não chegou, pelo delta do ledger. Sem checar `estado`, módulo nem
+-- `itens`: peça em trânsito precisa conseguir voltar em qualquer situação, e só o ledger diz o que saiu.
 create or replace function public.kit_cancelar_transferencia(p_org uuid, p_transferencia uuid)
 returns jsonb language plpgsql security definer set search_path = ''
 as $$
