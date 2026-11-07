@@ -373,7 +373,16 @@ SKU Guardado nunca recebe `reativar`.
    criado. O estoque seguiu em 6: o ML não reserva peça para pedido não pago. O código Pix vale 15 minutos.
 4. Pagamento perto de T e baixa durante a escrita ou a retentativa: a conciliação do passo 3 segura.
 5. Cancelamento de kit com reposição automática desligada credita e agenda.
-6. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
+6. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir". **Parcial em 07/11:** 37
+   chamadas de `POST /items/validate` na Daludi, sem criar nada: `COLOR` em texto só com `value_name` passa
+   sem `error` em Blusas, Jaquetas e Regatas, com ou sem `MAIN_COLOR`, até 255 caracteres. `SIZE` sem guia
+   reprova (`2610`), e guia de outro vendedor também (`2617`), então a base precisa de guia própria. Falta
+   a publicação real, que prova seletor e agrupamento.
+7. **Imagem por IA, medido em 07/11 (3 gerações, Jaqueta Daludi, `gemini-2.5-flash-image`):** custo cerca de
+   US$ 0,039 por imagem. Cor e fundo corretos, mas **modelagem não fiel**: gola alta e sem elástico na
+   barra, com o original cropped e barra elástica. Saída de 832×1248, abaixo do ideal. Entrada era foto com
+   modelo, o que pode piorar. O ML oferece "Gerar fotos com IA" e pede que o vendedor confira que o produto
+   não foi alterado; não foi achada proibição, com leitura limitada por 403.
 
 ## Publicação no ML
 
