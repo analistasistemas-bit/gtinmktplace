@@ -11,7 +11,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush, type AlvoPush } from '../_shared/estoque/alvos.ts';
 import { listarKitsVivos, resolverOrigemEstoque, saldoDoKit } from '../_shared/estoque/kit.ts';
-import { podeEscreverQuantidade, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { EMBED_MODULOS, kitLigado, podeEscreverQuantidade, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
@@ -295,8 +295,14 @@ async function transferirParaSaga(
     });
   }
   // Sem escrita e sem transferência: SKU comum preso num item com participante, ou participante sem UP.
+  // Não termina em silêncio: o operador precisa saber que esse saldo não chegou ao ML.
+  const alertar = (texto: string) => (deps.notificar ?? notificarCategoria)(deps.admin, orgId, 'estoque', texto)
+    .catch((e) => console.error('kit_alerta_falhou', orgId, String(e)));
   const semSaida = fora.flatMap((a) => a.estoques.map((e) => e.sku)).filter((s) => !alvos.some((a) => a.codigo === s));
-  if (semSaida.length > 0) console.error('kit_sku_fora_do_push_sem_transferencia', orgId, semSaida);
+  if (semSaida.length > 0) {
+    await alertar(`Kit com variação: saldo de ${semSaida.join(', ')} não foi ao Mercado Livre (sem user product `
+      + 'ou anúncio com variações). Confira o vínculo do anúncio.');
+  }
   if (alvos.length === 0) return null;
 
   const r = await criarTransferencia(deps.admin, {
@@ -309,7 +315,10 @@ async function transferirParaSaga(
     return null;
   }
   console.error('kit_transferencia_entrada_recusada', orgId, r.motivo);
-  return r.motivo === 'alvos_invalidos' ? null : `kit:${r.motivo}`;
+  if (r.motivo !== 'alvos_invalidos') return `kit:${r.motivo}`;
+  await alertar(`Kit com variação: a entrada de ${alvos.map((a) => a.codigo).join(', ')} não virou transferência `
+    + '(alvos inválidos). O saldo não foi ao Mercado Livre.');
+  return null;
 }
 
 export async function processarSincronizacao(
@@ -325,10 +334,13 @@ export async function processarSincronizacao(
   // entrada/ajuste em SKU de kit são recusados no banco), mas se acontecesse, o kit seria
   // tratado como produto e o push mandaria a coluna crua `estoque = 0` para um anúncio vivo.
   let codigoPaiBase = codigo_pai;
-  const { data: familiaDoJob } = await admin.from('familias')
-    .select('kit_base_codigo_pai, kit_multiplicador')
+  // ADR-0197: o módulo da org vem embutido nesta leitura, para org sem kit não ganhar consulta nova.
+  // Erro aqui lança: sem saber o módulo, nenhum push.
+  const { data: familiaDoJob, error: erroFamiliaDoJob } = await admin.from('familias')
+    .select(`kit_base_codigo_pai, kit_multiplicador, ${EMBED_MODULOS}`)
     .eq('org_id', org_id).eq('codigo_pai', codigo_pai)
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (erroFamiliaDoJob) throw new Error(`familias: ${erroFamiliaDoJob.message}`);
   if (familiaDoJob?.kit_multiplicador != null && familiaDoJob.kit_base_codigo_pai) {
     console.log('estoque_push_job_de_kit_redirecionado', codigo_pai, '->', familiaDoJob.kit_base_codigo_pai);
     codigoPaiBase = familiaDoJob.kit_base_codigo_pai as string;
@@ -409,7 +421,7 @@ export async function processarSincronizacao(
   const retentaveis: string[] = [];
   if (alvos.length > 0) {
     const participantes = await skusParticipantes(
-      admin, org_id, [...new Set(alvos.flatMap((a) => a.estoques.map((e) => e.sku)))],
+      admin, org_id, [...new Set(alvos.flatMap((a) => a.estoques.map((e) => e.sku)))], kitLigado(familiaDoJob),
     );
     const fora = alvos.filter((a) =>
       a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' })));

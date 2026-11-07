@@ -391,9 +391,6 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
         ...(admin as Record<string, unknown>),
         from: (t: string) => {
           lidas.push(t);
-          if (t === 'organizations') {
-            return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { modulos_habilitados: modulos }, error: null }) }) }) };
-          }
           if (t.startsWith('kit_variacao_')) {
             return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 'A' }] : [], error: null }) }) }) };
           }
@@ -403,6 +400,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
       let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
       const r = await atualizarFamiliaUP(args({
         admin: kitAdmin as never, variacoes: variacoes as never,
+        familia: { ...FAMILIA, organizations: { modulos_habilitados: modulos } } as never,
         executarSaga: async (_p, e) => { entradaVista = e; return { tipo: 'sem_mudanca' }; },
       }));
       return { r, entradaVista: entradaVista!, lidas };
@@ -415,7 +413,8 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     const sem = await rodar([]);
     expect([...(sem.entradaVista.participantes ?? [])]).toEqual([]);
     expect(sem.r.estado === 'ok' && sem.r.enviados?.map((e) => e.itemExternoId)).toEqual(['MLB1', 'MLB2']);
-    expect(sem.lidas.filter((t) => t.startsWith('kit_'))).toEqual([]);
+    expect(sem.lidas.filter((t) => t.startsWith('kit_') || t === 'organizations')).toEqual([]);
+    expect(sem.lidas.length).toBe(com.lidas.length - 2);
   });
 
   it('sem preservarPublicadas o UPDATE comum segue empurrando preço em todas', async () => {

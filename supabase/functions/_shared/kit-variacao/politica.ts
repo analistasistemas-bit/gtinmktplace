@@ -1,16 +1,27 @@
 // ADR-0197: quem pode escrever quantidade e reativar anúncio de SKU que participa de kit com variação.
 // Participa o SKU de kit (`kit_variacao_skus`) e o individual usado em kit (`kit_variacao_componentes`).
-// Org sem o módulo `kit_variacao` não participa de nada e não consulta tabela de kit.
+// Org sem o módulo `kit_variacao` não faz consulta nova: o estado do módulo vem embutido na leitura de
+// família que o caminho já faz (`EMBED_MODULOS`), e `skusParticipantes` sai antes de tocar o banco.
 // Falha de leitura lança: quem chama não escreve, e o retry da fila repete.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { moduloHabilitadoStrict } from '../produto/modulo.ts';
+
+/** Acrescentar ao `select` de `familias` que o caminho já faz (FK única `familias_org_id_fkey`). */
+export const EMBED_MODULOS = 'organizations(modulos_habilitados)';
+
+/** Lê o módulo de uma linha de `familias` lida com `EMBED_MODULOS`. Sem o embed, desligado. */
+export function kitLigado(familia: unknown): boolean {
+  // PostgREST devolve objeto num to-one; o supabase-js sem tipos gerados o declara como lista. Aceita os dois.
+  const org = (familia as { organizations?: unknown } | null)?.organizations;
+  const m = ((Array.isArray(org) ? org[0] : org) as { modulos_habilitados?: unknown } | null | undefined)
+    ?.modulos_habilitados;
+  return Array.isArray(m) && m.includes('kit_variacao');
+}
 
 export async function skusParticipantes(
-  admin: SupabaseClient, orgId: string, skus: string[],
+  admin: SupabaseClient, orgId: string, skus: string[], ligado: boolean,
 ): Promise<Set<string>> {
   const out = new Set<string>();
-  if (skus.length === 0) return out;
-  if (!(await moduloHabilitadoStrict(admin, orgId, 'kit_variacao'))) return out;
+  if (!ligado || skus.length === 0) return out;
   // ponytail: qualquer kit conta, inclusive rascunho; errar para o lado da saga só custa uma pausa de T.
   for (const tabela of ['kit_variacao_skus', 'kit_variacao_componentes']) {
     const { data, error } = await admin.from(tabela).select('codigo').eq('org_id', orgId).in('codigo', skus);
@@ -30,6 +41,17 @@ export interface PoliticaSku {
   bloqueio_operador: boolean;
   bloqueio_moderacao: boolean;
   bloqueio_retirada: boolean;
+}
+
+/** Política vigente por SKU. SKU sem linha não aparece no mapa (equivale a `null`, versão 0). */
+export async function lerPoliticas(
+  admin: SupabaseClient, orgId: string, skus: string[],
+): Promise<Map<string, PoliticaSku>> {
+  const { data, error } = await admin.from('sku_politica_kit')
+    .select('codigo, estado, versao, bloqueio_operador, bloqueio_moderacao, bloqueio_retirada')
+    .eq('org_id', orgId).in('codigo', skus);
+  if (error) throw new Error(`sku_politica_kit: ${error.message}`);
+  return new Map((data ?? []).map((r) => [r.codigo as string, r as unknown as PoliticaSku]));
 }
 
 export type DecisaoReativar = { pode: true } | { pode: false; motivo: string };

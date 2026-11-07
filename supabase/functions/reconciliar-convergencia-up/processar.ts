@@ -8,6 +8,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import {
   alvosPorSku, depsTravaOferta, filhoAtivo, mensagemPrecoMantido, ORCAMENTO_MS, recusasPorOferta, type ItemUPAlvo,
 } from '../_shared/publicacao/trava-oferta.ts';
@@ -67,15 +68,16 @@ export function criarPortasConvergencia(
       // Família EXATA do episódio (nunca inferida por recência, revisão adversarial) — a mesma
       // que o worker normal do UPDATE usaria se o operador clicasse "Reenviar" agora.
       const { data: familiaRow, error: famErr } = await admin.from('familias')
-        .select('id, org_id, codigo_pai, nome_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id, marca')
+        .select(`id, org_id, codigo_pai, nome_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id, marca, ${EMBED_MODULOS}`)
         .eq('id', claim.familiaId as string).maybeSingle();
       if (famErr) throw new Error(`resolver família (${claim.familiaId}): ${famErr.message}`);
       if (!familiaRow) throw new Error(`família ${claim.familiaId} não encontrada (referenciada pela raiz mas já apagada?)`);
-      const familia = familiaRow as {
+      const familia = familiaRow as unknown as {
         id: string; org_id: string; codigo_pai: string; nome_pai?: string | null; categoria_ml_id: string | null; descricao_ml: string | null;
         atributos_ml?: unknown; capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null;
         capa3_ml_picture_id: string | null; atacado?: unknown; atacado_status?: string | null;
         genero?: string | null; grade_tamanho?: string | null; lote_id: string; marca?: string | null;
+        organizations?: { modulos_habilitados: string[] | null } | null;
       };
 
       const { data: variacoesRaw, error: varErr } = await admin.from('variacoes')

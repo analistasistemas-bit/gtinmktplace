@@ -13,7 +13,11 @@ import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarSaga } f
 import { paginarTudo } from '../_shared/pagina.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
-import { retomarTransferenciasParadas } from './transferencias.ts';
+import { alertarPublicacoesParadas, retomarTransferenciasParadas, triarParticipantes } from './transferencias.ts';
+import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
 const MAX_PAGINAS = 5;
@@ -111,16 +115,45 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 3) ADR-0197: transferência de kit ativa e parada, de qualquer idade, volta para a fila.
+  // 3) ADR-0197: kit com variação. Transferência parada volta para a fila; todo SKU participante tem o
+  //    saldo comparado com o ML (só leitura) e a diferença vira transferência `entrada`; publicação que
+  //    segura a exclusão sem confirmação gera alerta.
+  const alertar = async (orgId: string, texto: string) => { await notificarCategoria(admin, orgId, 'estoque', texto); };
+  const tokens = new Map<string, Promise<string>>();
+  const token = (orgId: string) => {
+    if (!tokens.has(orgId)) {
+      tokens.set(orgId, (async () => {
+        const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+        if (!cx) throw new Error('org sem conexão com o Mercado Livre');
+        return await getValidAccessTokenConexao(cx);
+      })());
+    }
+    return tokens.get(orgId)!;
+  };
   let transferencias = 0;
+  let triadas = 0;
+  let publicacoesParadas = 0;
   try {
     transferencias = await retomarTransferenciasParadas(admin, enfileirarSaga);
   } catch (e) {
     console.error('reconciliar_transferencias_falhou', e);
   }
+  try {
+    triadas = await triarParticipantes({
+      admin, enfileirarSaga, alertar,
+      lerQuantidade: async (orgId, upId, itemIds) => (await lerOferta(await token(orgId), upId, itemIds)).quantidade,
+    });
+  } catch (e) {
+    console.error('reconciliar_kit_triagem_falhou', e);
+  }
+  try {
+    publicacoesParadas = await alertarPublicacoesParadas(admin, alertar);
+  } catch (e) {
+    console.error('reconciliar_kit_publicacoes_falhou', e);
+  }
 
   return new Response(
-    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias }),
+    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 });

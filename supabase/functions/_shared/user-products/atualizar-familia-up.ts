@@ -26,7 +26,7 @@ import { notificarCategoria } from '../notificacoes/config.ts';
 import type { ItemConfirmar } from '../confirmacao/registrar.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
-import { skusParticipantes } from '../kit-variacao/politica.ts';
+import { kitLigado, skusParticipantes } from '../kit-variacao/politica.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
 } from './atualizar-composicao.ts';
@@ -64,6 +64,8 @@ export interface AtualizarFamiliaUPArgs {
     genero?: string | null;
     /** ADR-0182 D2. null = família legada (inferência só Letras/Calçado). */
     grade_tamanho?: string | null;
+    /** ADR-0197: embed `EMBED_MODULOS` da leitura da família; ausente = módulo desligado. */
+    organizations?: { modulos_habilitados: string[] | null } | null;
   };
   raiz: RaizUP;
   variacoes: VariacaoUP[];
@@ -131,7 +133,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
   // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Vale também para a convergência,
   // que chega aqui. Falha de leitura lança antes de qualquer escrita no ML.
-  const participantes = await skusParticipantes(admin, familia.org_id, skusDesejados);
+  const participantes = await skusParticipantes(admin, familia.org_id, skusDesejados, kitLigado(familia));
   // ADR-0160: preço POR SKU. Antes daqui saía `variacoes.find(v => v.preco_publicacao != null)` —
   // o primeiro preço não-nulo virava "o preço da família" e era empurrado a todos os itens irmãos,
   // achatando qualquer diferenciação. Sob User Products cada cor é um item ML próprio: preço

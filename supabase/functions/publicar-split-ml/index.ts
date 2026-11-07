@@ -31,7 +31,7 @@ import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
-import { skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -69,7 +69,8 @@ Deno.serve(async (req) => {
   catch { return new Response('Body inválido', { status: 400, headers: corsHeaders }); }
 
   const admin = adminClient();
-  const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
+  // ADR-0197: o módulo da org vem embutido (sem consulta nova).
+  const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
 
   // Idempotência: só processa o claim ativo ('publicando'). Re-entrega do QStash após o lote já
@@ -136,7 +137,7 @@ Deno.serve(async (req) => {
     // ADR-0197: kit com variação só existe em user products. A partição Legacy escreveria quantidade
     // (CREATE e reposição) fora da saga do kit: recusa antes de qualquer chamada ao ML.
     const participantes = await skusParticipantes(
-      admin, familia.org_id as string, variacoes.map((v) => v.codigo as string),
+      admin, familia.org_id as string, variacoes.map((v) => v.codigo as string), kitLigado(familia),
     );
     if (participantes.size > 0) {
       const err = new Error(

@@ -17,7 +17,7 @@ import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualizarUP } from '../_shared/user-products/atualizar-familia-up.ts';
-import { skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 import {
   adotarFamiliaMigrada, type PortasAdocao, type EntradaAdocao, type ResultadoAdocao,
 } from '../_shared/user-products/adotar-familia-migrada.ts';
@@ -110,7 +110,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
-  const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
+  // ADR-0197: o módulo da org vem embutido (sem consulta nova); `atualizarFamiliaUP` lê o mesmo embed.
+  const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return { tipo: 'familia_inexistente' };
 
   const conexao = await resolverConexao(admin, familia.org_id, 'mercado_livre');
@@ -387,7 +388,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     const enviadoEm = new Date().toISOString();
     // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Falha de leitura lança antes do PUT.
     const skusSemQuantidade = [...await skusParticipantes(
-      admin, familia.org_id as string, [...casadas, ...novasComFoto].map((v) => v.codigo as string),
+      admin, familia.org_id as string, [...casadas, ...novasComFoto].map((v) => v.codigo as string), kitLigado(familia),
     )];
     const res = await conn.atualizarAnuncio(ctx, {
       itemExternoId: familia.ml_item_id,

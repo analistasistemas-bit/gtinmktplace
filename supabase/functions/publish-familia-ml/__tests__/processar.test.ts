@@ -28,6 +28,7 @@ function fakeAdmin(over: {
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
   filhosUP?: Record<string, unknown>[]; // anuncios_externos_itens (família UP já publicada)
   filhosErro?: boolean;
+  kitComponentes?: string[]; // ADR-0197: SKUs usados em kit com variação
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
@@ -70,6 +71,9 @@ function fakeAdmin(over: {
         // Claim do encadeamento de kits: update em `familias` filtrado por `kit_base_codigo_pai`.
         if (table === 'familias' && rec.op === 'update' && 'kit_base_codigo_pai' in rec.filters) {
           return Promise.resolve({ data: kitsReclamados, error: null }).then(resolve);
+        }
+        if (table === 'kit_variacao_componentes') {
+          return Promise.resolve({ data: (over.kitComponentes ?? []).map((codigo) => ({ codigo })), error: null }).then(resolve);
         }
         if (table === 'anuncios_externos_itens') {
           return Promise.resolve(over.filhosErro ? { data: null, error: { message: 'boom' } } : { data: over.filhosUP ?? [], error: null }).then(resolve);
@@ -303,6 +307,25 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     const deps = baseDeps(admin, { publicarUP: async () => { upChamado = true; return { estado: 'ativo', itemExternoId: 'X', permalink: null }; } });
     const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
     expect(upChamado).toBe(false);
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
+    expect(r.tipo).toBe('ok');
+  });
+
+  // ADR-0197 (Task 5, crítico 3): o desvio de item plano criaria o participante com available_quantity
+  // fora da saga e da exclusão. Recusa antes do POST.
+  it('1 SKU sem tamanho participante de kit com variação: recusa antes do POST', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, organizations: { modulos_habilitados: ['kit_variacao'] } }, kitComponentes: ['V1'],
+    });
+    const deps = baseDeps(admin, { publicarUP: async () => { throw new Error('não deveria ir à saga'); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 }).catch((e: Error) => ({ tipo: 'lancou', mensagem: e.message }));
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
+    expect(JSON.stringify(r)).toMatch(/kit com variação/);
+  });
+
+  it('mesmo SKU em org sem o módulo: publica como hoje', async () => {
+    const { admin } = fakeAdmin({ kitComponentes: ['V1'] });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
     expect(r.tipo).toBe('ok');
   });

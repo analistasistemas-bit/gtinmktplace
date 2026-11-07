@@ -32,6 +32,7 @@ function fakeAdmin(childRows: Record<string, unknown>[]) {
       upsert: (payload: Record<string, unknown>) => { rec.op = 'upsert'; rec.payload = payload; writes.push({ ...rec }); return api; },
       update: (payload: Record<string, unknown>) => { rec.op = 'update'; rec.payload = payload; return api; },
       eq: (col: string, val: unknown) => { rec.filters[col] = val; return api; },
+      in: () => api,
       maybeSingle: async () => ({ data: { id: 'root-1', criado_em: '2026-07-22T00:00:00Z' }, error: null }),
       then: (resolve: (v: unknown) => unknown) => {
         if (rec.op === 'update') writes.push({ ...rec });
@@ -205,21 +206,37 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
 describe('publicarFamiliaUP — kit com variação', () => {
   beforeEach(() => { criarPortasSpy.mockReset(); });
 
-  function comKit(o: { modulos: string[]; adquirir?: Record<string, unknown> }) {
-    const { admin, writes } = fakeAdmin([]);
+  type Pol = { codigo: string; estado: string; versao: number; bloqueio_operador: boolean; bloqueio_moderacao: boolean; bloqueio_retirada: boolean };
+  const pol = (x: Partial<Pol> = {}): Pol => ({
+    codigo: 's-verde', estado: 'normal', versao: 1, bloqueio_operador: false, bloqueio_moderacao: false, bloqueio_retirada: false, ...x,
+  });
+
+  /** `politicas`: o que cada leitura de sku_politica_kit devolve, em ordem (a última se repete). */
+  function comKit(o: { adquirir?: Record<string, unknown>; politicas?: Pol[][] } = {}) {
+    const { admin, writes } = fakeAdmin([
+      { sku: 's-verde', item_externo_id: 'MLB1', user_product_id: 'UP1', permalink: 'p1' },
+      { sku: 's-azul', item_externo_id: 'MLB2', user_product_id: 'UP2', permalink: 'p2' },
+    ]);
     const eventos: string[] = [];
+    const politicas = o.politicas ?? [[]];
+    let nPol = 0;
     const kitAdmin = {
       from: (t: string) => {
-        if (t === 'organizations') {
-          return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { modulos_habilitados: o.modulos }, error: null }) }) }) };
-        }
         if (t === 'kit_variacao_componentes' || t === 'kit_variacao_skus') {
-          eventos.push(`ler:${t}`);
           return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 's-verde' }] : [], error: null }) }) }) };
+        }
+        if (t === 'sku_politica_kit') {
+          return { select: () => ({ eq: () => ({ in: async () => {
+            eventos.push('politica');
+            return { data: politicas[Math.min(nPol++, politicas.length - 1)], error: null };
+          } }) }) };
         }
         if (t === 'variacoes') {
           // Saldo relido sob a exclusão: uma transferência levou 4 das 5 peças depois do snapshot.
-          return { select: () => ({ eq: () => ({ in: async () => { eventos.push('reler'); return { data: [{ codigo: 's-verde', estoque: 1 }], error: null }; } }) }) };
+          return {
+            select: () => ({ eq: () => ({ in: async () => { eventos.push('reler'); return { data: [{ codigo: 's-verde', estoque: 1 }], error: null }; } }) }),
+            update: (v: unknown) => ((admin as { from: (t: string) => { update: (v: unknown) => unknown } }).from(t)).update(v),
+          };
         }
         return (admin as { from: (t: string) => unknown }).from(t);
       },
@@ -231,42 +248,118 @@ describe('publicarFamiliaUP — kit com variação', () => {
     return { admin: kitAdmin as never, writes, eventos };
   }
 
-  const rodar = (admin: never, saga: () => Promise<ResultadoSaga>) => publicarFamiliaUP({
-    admin, conn: fakeConnector as never, ctx, conexao,
-    familia: FAMILIA as never, anuncio: ANUNCIO, categoriaId: 'MLB419782',
-    executarSaga: saga,
-  });
+  const KIT = { ...FAMILIA, organizations: { modulos_habilitados: ['kit_variacao'] } };
+  const oferta = (quantidade: number, status = 'active') => vi.fn(async (_t: string, up: string, ids: string[]) => ({
+    upId: up, versao: 1, locais: [], somenteSellingAddress: true,
+    quantidade, itens: ids.map((id) => ({ id, status, subStatus: [] as string[] })),
+  }));
 
-  it('adquire a exclusão do participante antes da saga, publica o saldo relido e solta depois', async () => {
-    const k = comKit({ modulos: ['kit_variacao'] });
-    await rodar(k.admin, async () => { k.eventos.push('saga'); return { estado: 'compensacao_pendente' }; });
-    expect(k.eventos.filter((e) => !e.startsWith('ler:'))).toEqual([
+  const rodar = (admin: never, saga: (p: never) => Promise<ResultadoSaga>, over: Record<string, unknown> = {}) => publicarFamiliaUP({
+    admin, conn: fakeConnector as never, ctx, conexao,
+    familia: KIT as never, anuncio: ANUNCIO, categoriaId: 'MLB419782',
+    executarSaga: saga as never, lerOfertaFn: oferta(1) as never, ...over,
+  });
+  const soltou = (e: string[]) => e.some((x) => x.startsWith('kit_soltar_exclusao'));
+
+  it('exclusão antes da política e do saldo; ativo confirmado no ML solta', async () => {
+    const k = comKit();
+    const ler = oferta(1);
+    await rodar(k.admin, async () => { k.eventos.push('saga'); return { estado: 'ativo' }; }, { lerOfertaFn: ler });
+    expect(k.eventos).toEqual([
+      'politica',
       'kit_adquirir_exclusao:{"p_org":"org-1","p_codigos":["s-verde"],"p_dono_tipo":"publicacao","p_dono_id":"root-1"}',
+      'politica',
       'reler',
       'saga',
       'kit_soltar_exclusao:{"p_org":"org-1","p_dono_id":"root-1"}',
     ]);
+    expect(ler).toHaveBeenCalledWith('tok', 'UP1', ['MLB1']);
     const montar = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (s: string) => { available_quantity: number } }).montarPayloadPlano;
     expect(montar('s-verde').available_quantity).toBe(1);
     expect(montar('s-azul').available_quantity).toBe(3);
   });
 
+  it('ativo sem confirmação (quantidade no ML diferente da publicada) mantém a exclusão', async () => {
+    const k = comKit();
+    await rodar(k.admin, async () => ({ estado: 'ativo' }), { lerOfertaFn: oferta(5) });
+    expect(soltou(k.eventos)).toBe(false);
+  });
+
+  it('item não ativo no ML ou leitura que falha mantém a exclusão', async () => {
+    const k = comKit();
+    await rodar(k.admin, async () => ({ estado: 'ativo' }), { lerOfertaFn: oferta(1, 'paused') });
+    expect(soltou(k.eventos)).toBe(false);
+    const k2 = comKit();
+    await rodar(k2.admin, async () => ({ estado: 'ativo' }), { lerOfertaFn: async () => { throw new Error('ML 500'); } });
+    expect(soltou(k2.eventos)).toBe(false);
+  });
+
+  it('compensacao_pendente (resultado ambíguo) mantém a exclusão', async () => {
+    const k = comKit();
+    await rodar(k.admin, async () => ({ estado: 'compensacao_pendente' }));
+    expect(soltou(k.eventos)).toBe(false);
+  });
+
   it('SKU ocupado por transferência: não roda a saga e lança para a fila repetir', async () => {
-    const k = comKit({ modulos: ['kit_variacao'], adquirir: { ok: false, codigo: 's-verde' } });
+    const k = comKit({ adquirir: { ok: false, codigo: 's-verde' } });
     const saga = vi.fn(async () => ({ estado: 'ativo' as const }));
     await expect(rodar(k.admin, saga)).rejects.toThrow(/s-verde/);
     expect(saga).not.toHaveBeenCalled();
   });
 
   it('saga que lança (resultado incerto) mantém a exclusão', async () => {
-    const k = comKit({ modulos: ['kit_variacao'] });
+    const k = comKit();
     await expect(rodar(k.admin, async () => { throw new Error('timeout no POST'); })).rejects.toThrow();
-    expect(k.eventos.some((e) => e.startsWith('kit_soltar_exclusao'))).toBe(false);
+    expect(soltou(k.eventos)).toBe(false);
   });
 
-  it('org sem o módulo: nenhuma exclusão, nenhuma leitura de kit, snapshot como hoje', async () => {
-    const k = comKit({ modulos: [] });
-    await rodar(k.admin, async () => ({ estado: 'compensacao_pendente' }));
+  it.each([
+    ['guardado', pol({ estado: 'guardado' })],
+    ['pausa do operador', pol({ bloqueio_operador: true })],
+    ['moderado', pol({ bloqueio_moderacao: true })],
+  ])('%s: recusa sem rodar a saga e solta a exclusão (nada foi ao ML)', async (_n, p) => {
+    const k = comKit({ politicas: [[p]] });
+    const saga = vi.fn(async () => ({ estado: 'ativo' as const }));
+    await expect(rodar(k.admin, saga)).rejects.toThrow(/s-verde/);
+    expect(saga).not.toHaveBeenCalled();
+    expect(soltou(k.eventos)).toBe(true);
+  });
+
+  it('trabalho antigo: versão da política mudou até a exclusão → recusa sem saga', async () => {
+    const k = comKit({ politicas: [[pol({ versao: 1 })], [pol({ versao: 2 })]] });
+    const saga = vi.fn(async () => ({ estado: 'ativo' as const }));
+    await expect(rodar(k.admin, saga)).rejects.toThrow(/política/);
+    expect(saga).not.toHaveBeenCalled();
+  });
+
+  it('política que muda durante a saga: CREATE e ativação conferem antes, e nada chega ao ML', async () => {
+    const fetchSpy = vi.fn();
+    try {
+      const k = comKit({ politicas: [[pol()], [pol()], [pol({ estado: 'guardado', versao: 2 })]] });
+      await expect(rodar(k.admin, async (portas: { mudarStatus: (id: string, s: string) => Promise<void> }) => {
+        vi.stubGlobal('fetch', fetchSpy);
+        await portas.mudarStatus('MLB1', 'ativo');
+        return { estado: 'ativo' };
+      })).rejects.toThrow(/política/);
+      vi.unstubAllGlobals();
+      const k2 = comKit({ politicas: [[pol()], [pol()], [pol({ bloqueio_operador: true })]] });
+      await expect(rodar(k2.admin, async (portas: { criarPlano: (s: string) => Promise<unknown> }) => {
+        vi.stubGlobal('fetch', fetchSpy);
+        await portas.criarPlano('s-verde');
+        return { estado: 'ativo' };
+      })).rejects.toThrow(/operador/);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(k2.eventos.some((x) => x.startsWith('kit_soltar_exclusao'))).toBe(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('org sem o módulo: nenhuma exclusão, nenhuma leitura nova, snapshot como hoje', async () => {
+    const k = comKit();
+    await publicarFamiliaUP({
+      admin: k.admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, organizations: { modulos_habilitados: [] } } as never, anuncio: ANUNCIO, categoriaId: 'MLB419782',
+      executarSaga: async () => ({ estado: 'compensacao_pendente' }),
+    });
     expect(k.eventos).toEqual([]);
     const montar = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (s: string) => { available_quantity: number } }).montarPayloadPlano;
     expect(montar('s-verde').available_quantity).toBe(5);

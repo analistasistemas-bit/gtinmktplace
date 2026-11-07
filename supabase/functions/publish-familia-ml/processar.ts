@@ -29,6 +29,7 @@ import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { itemConfirmarCriado } from '../_shared/confirmacao/registrar.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemTetoAnuncio } from '../_shared/notificacoes/estoque.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
 export interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -106,7 +107,8 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
-  const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
+  // ADR-0197: o módulo da org vem embutido (sem consulta nova); `publicarFamiliaUP` lê o mesmo embed.
+  const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return { tipo: 'familia_inexistente' };
 
   const conexao = await resolverConexao(admin, familia.org_id, 'mercado_livre');
@@ -259,6 +261,20 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     // Sondar exigiria criar um anúncio real (o ML não tem sandbox). A mensagem do guard ensina a
     // saída: publicar uniforme uma vez semeia o cache, e a partir daí a categoria roteia para UP.
     garantirPrecoUniforme(variacoes, 'CREATE');
+
+    // ADR-0197: o CREATE Legacy (inclusive o item plano de 1 SKU) publicaria quantidade de SKU de kit com
+    // variação fora da exclusão e da política. Só a saga UP é protegida: aqui recusa antes do POST.
+    const participantes = await skusParticipantes(
+      admin, familia.org_id as string, anuncio.variacoes.map((v) => v.sku), kitLigado(familia),
+    );
+    if (participantes.size > 0) {
+      const err = new Error(
+        `${[...participantes].join(', ')} participa(m) de kit com variação, que só é publicado como user products: `
+        + 'o anúncio Legacy não foi criado. Nada foi enviado ao Mercado Livre.',
+      ) as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     const res = await conn.criarAnuncio(ctx, anuncio);
     if (!res.ok) {

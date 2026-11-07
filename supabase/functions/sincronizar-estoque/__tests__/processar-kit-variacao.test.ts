@@ -14,6 +14,7 @@ interface Banco {
   componentes: string[];
   falhar?: string;
   rpc?: Record<string, unknown>;
+  semUp?: boolean;
 }
 
 const ITENS = [
@@ -32,12 +33,14 @@ function fakeAdmin(b: Banco) {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
       if (kitsVinculados) return { data: [], error: null };
       switch (tabela) {
-        case 'organizations': return { data: { modulos_habilitados: b.modulos }, error: null };
-        case 'familias': return { data: { id: 'F', nome_pai: 'Blusa', ml_permalink: null }, error: null };
+        // ADR-0197: o módulo chega embutido na leitura de família que o caminho já faz.
+        case 'familias':
+          return { data: { id: 'F', nome_pai: 'Blusa', ml_permalink: null, organizations: { modulos_habilitados: b.modulos } }, error: null };
         case 'variacoes': return { data: [{ codigo: 'P1', estoque: 4 }, { codigo: 'P2', estoque: 6 }], error: null };
         case 'anuncios_externos':
           return { data: [{ id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null }], error: null };
-        case 'anuncios_externos_itens': return { data: ITENS.filter((r) => filtros.every((f) => f(r))), error: null };
+        case 'anuncios_externos_itens':
+          return { data: ITENS.map((r) => (b.semUp ? { ...r, user_product_id: null } : r)).filter((r) => filtros.every((f) => f(r))), error: null };
         case 'kit_variacao_skus': return { data: [], error: null };
         case 'kit_variacao_componentes':
           return { data: b.componentes.map((codigo) => ({ codigo, org_id: 'O' })).filter((r) => filtros.every((f) => f(r))), error: null };
@@ -66,15 +69,16 @@ function fakeAdmin(b: Banco) {
 function montar(b: Banco) {
   const f = fakeAdmin(b);
   const enfileirarSaga = vi.fn(async () => {});
+  const notificar = vi.fn(async () => {});
   const deps: DepsSincronizacao = {
     admin: f.admin,
     resolverConexao: (async () => ({ id: 'c' })) as never,
     getConnector: (() => fakeConnector as unknown as ChannelConnector) as never,
     fabricarToken: () => () => Promise.resolve('tok'),
-    notificar: (async () => {}) as never,
+    notificar: notificar as never,
     enfileirarSaga,
   };
-  return { deps, enfileirarSaga, ...f };
+  return { deps, enfileirarSaga, notificar, ...f };
 }
 
 const pushes = () => fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarEstoque')
@@ -119,7 +123,7 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.enfileirarSaga).not.toHaveBeenCalled();
   });
 
-  it.each(['organizations', 'kit_variacao_componentes'])('falha ao ler %s lança antes de qualquer push', async (t) => {
+  it.each(['familias', 'kit_variacao_componentes'])('falha ao ler %s lança antes de qualquer push', async (t) => {
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], falhar: t });
     await expect(processarSincronizacao(m.deps, JOB)).rejects.toThrow();
     expect(pushes()).toEqual([]);
@@ -133,12 +137,33 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.rpcs).toEqual([]);
   });
 
+  it('participante sem UP: sem push, sem transferência, com alerta', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], semUp: true });
+    await processarSincronizacao(m.deps, JOB);
+    expect(pushes()).not.toContain('MLB-P1');
+    expect(m.rpcs).toEqual([]);
+    expect(m.notificar).toHaveBeenCalledWith(expect.anything(), 'O', 'estoque', expect.stringContaining('P1'));
+  });
+
+  it('alvos_invalidos: alerta em vez de sucesso silencioso', async () => {
+    const m = montar({
+      modulos: ['kit_variacao'], componentes: ['P1'],
+      rpc: { kit_criar_transferencia: { ok: false, motivo: 'alvos_invalidos' } },
+    });
+    await processarSincronizacao(m.deps, JOB);
+    expect(m.notificar).toHaveBeenCalledWith(expect.anything(), 'O', 'estoque', expect.stringContaining('P1'));
+  });
+
   it('org sem o módulo: empurra tudo como hoje e não lê tabela de kit', async () => {
     const m = montar({ modulos: [], componentes: ['P1'] });
     const r = await processarSincronizacao(m.deps, JOB);
     expect(r.status).toBe(200);
     expect(pushes()).toEqual(['MLB-P1', 'MLB-P2']);
-    expect(m.consultas.filter((t) => t.startsWith('kit_'))).toEqual([]);
+    // Exatamente as consultas de antes da Task 5: nenhuma nova, nem a do módulo.
+    expect(m.consultas).toEqual([
+      'familias', 'familias', 'variacoes', 'familias', 'anuncios_externos', 'anuncios_externos_itens',
+      'estoque_movimentos',
+    ]);
     expect(m.rpcs).toEqual([]);
   });
 

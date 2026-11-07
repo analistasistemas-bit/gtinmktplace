@@ -17,11 +17,10 @@ const f = vi.hoisted(() => ({
 
 function builder(tabela: string) {
   const resolver = (): { data: unknown; error: null } => {
-    if (tabela === 'familias') return { data: f.familia, error: null };
+    if (tabela === 'familias') return { data: { ...f.familia, organizations: { modulos_habilitados: f.modulos } }, error: null };
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
     if (tabela === 'anuncios_externos') return { data: f.linhas, error: null };
     if (tabela === 'lotes') return { data: { origem: 'planilha' }, error: null };
-    if (tabela === 'organizations') return { data: { modulos_habilitados: f.modulos }, error: null };
     if (tabela === 'kit_variacao_componentes') return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
     return { data: [], error: null };
   };

@@ -860,7 +860,9 @@ describe('UPDATE Legacy × kit com variação (ADR-0197)', () => {
     (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { skusSemQuantidade?: string[] }).skusSemQuantidade;
 
   it('SKU participante vai ao conector como sem quantidade', async () => {
-    const { admin } = fakeAdmin({ modulosHabilitados: ['kit_variacao'], kitComponentes: ['V1'] });
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, organizations: { modulos_habilitados: ['kit_variacao'] } }, kitComponentes: ['V1'],
+    });
     await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(skusSemQuantidade()).toEqual(['V1']);
   });

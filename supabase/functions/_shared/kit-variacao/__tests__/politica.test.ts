@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  skusParticipantes, podeEscreverQuantidade, podeReativar, adquirirExclusao, soltarExclusao, type PoliticaSku,
+  skusParticipantes, podeEscreverQuantidade, podeReativar, adquirirExclusao, soltarExclusao, kitLigado, lerPoliticas,
+  type PoliticaSku,
 } from '../politica.ts';
 
 interface Banco {
   modulos: string[] | null;
   kitSkus?: Array<{ org_id: string; codigo: string }>;
   componentes?: Array<{ org_id: string; codigo: string }>;
+  politicas?: Array<Record<string, unknown>>;
   falhar?: string;
   rpc?: Record<string, unknown>;
 }
@@ -22,7 +24,8 @@ function falso(b: Banco) {
     const ler = () => {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
       if (tabela === 'organizations') return { data: b.modulos === null ? null : { modulos_habilitados: b.modulos }, error: null };
-      const linhas = (tabela === 'kit_variacao_skus' ? b.kitSkus : b.componentes) ?? [];
+      const linhas = (tabela === 'kit_variacao_skus' ? b.kitSkus
+        : tabela === 'sku_politica_kit' ? b.politicas : b.componentes) ?? [];
       return { data: linhas.filter((r) => filtros.every((f) => f(r))), error: null };
     };
     const api: Record<string, unknown> = {
@@ -42,31 +45,52 @@ function falso(b: Banco) {
   return { admin: { from, rpc } as unknown as SupabaseClient, consultas, rpcs };
 }
 
+describe('kitLigado', () => {
+  it('lê o módulo do embed de organizations na linha de família; sem embed, desligado', () => {
+    expect(kitLigado({ organizations: { modulos_habilitados: ['kit_variacao'] } })).toBe(true);
+    expect(kitLigado({ organizations: { modulos_habilitados: ['fiscal'] } })).toBe(false);
+    expect(kitLigado({ organizations: null })).toBe(false);
+    expect(kitLigado({})).toBe(false);
+    expect(kitLigado(null)).toBe(false);
+    expect(kitLigado({ organizations: [{ modulos_habilitados: ['kit_variacao'] }] })).toBe(true);
+  });
+});
+
 describe('skusParticipantes', () => {
-  it('org sem o módulo: só lê o módulo, nenhuma tabela de kit', async () => {
-    const f = falso({ modulos: ['fiscal'], kitSkus: [{ org_id: 'O', codigo: 'A' }] });
-    expect(await skusParticipantes(f.admin, 'O', ['A'])).toEqual(new Set());
-    expect(f.consultas).toEqual(['organizations']);
+  it('módulo desligado: nenhuma consulta', async () => {
+    const f = falso({ modulos: null, kitSkus: [{ org_id: 'O', codigo: 'A' }] });
+    expect(await skusParticipantes(f.admin, 'O', ['A'], false)).toEqual(new Set());
+    expect(f.consultas).toEqual([]);
   });
 
   it('lista vazia não consulta nada', async () => {
-    const f = falso({ modulos: ['kit_variacao'] });
-    expect(await skusParticipantes(f.admin, 'O', [])).toEqual(new Set());
+    const f = falso({ modulos: null });
+    expect(await skusParticipantes(f.admin, 'O', [], true)).toEqual(new Set());
     expect(f.consultas).toEqual([]);
   });
 
   it('participa quem é SKU de kit ou componente de kit, só da própria org', async () => {
     const f = falso({
-      modulos: ['kit_variacao'],
+      modulos: null,
       kitSkus: [{ org_id: 'O', codigo: 'K1' }, { org_id: 'X', codigo: 'C' }],
       componentes: [{ org_id: 'O', codigo: 'P1' }, { org_id: 'O', codigo: 'P1' }, { org_id: 'X', codigo: 'B' }],
     });
-    expect(await skusParticipantes(f.admin, 'O', ['K1', 'P1', 'B', 'C', 'Z'])).toEqual(new Set(['K1', 'P1']));
+    expect(await skusParticipantes(f.admin, 'O', ['K1', 'P1', 'B', 'C', 'Z'], true)).toEqual(new Set(['K1', 'P1']));
+    expect(f.consultas).toEqual(['kit_variacao_skus', 'kit_variacao_componentes']);
   });
 
-  it.each(['organizations', 'kit_variacao_skus', 'kit_variacao_componentes'])('falha ao ler %s lança', async (t) => {
-    const f = falso({ modulos: ['kit_variacao'], falhar: t });
-    await expect(skusParticipantes(f.admin, 'O', ['A'])).rejects.toThrow();
+  it.each(['kit_variacao_skus', 'kit_variacao_componentes'])('falha ao ler %s lança', async (t) => {
+    const f = falso({ modulos: null, falhar: t });
+    await expect(skusParticipantes(f.admin, 'O', ['A'], true)).rejects.toThrow();
+  });
+});
+
+describe('lerPoliticas', () => {
+  it('mapa por código; erro lança', async () => {
+    const f = falso({ modulos: null, politicas: [{ org_id: 'O', codigo: 'A', estado: 'guardado', versao: 3 }] });
+    expect((await lerPoliticas(f.admin, 'O', ['A', 'B'])).get('A')?.estado).toBe('guardado');
+    const g = falso({ modulos: null, falhar: 'sku_politica_kit' });
+    await expect(lerPoliticas(g.admin, 'O', ['A'])).rejects.toThrow();
   });
 });
 
