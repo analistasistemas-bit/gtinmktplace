@@ -42,12 +42,17 @@ export async function recusasPorOferta(
   if (!itens.length) return [];
   const limite = Date.now() + orcamentoMs;
   /** null em exceção, em timeout e com o orçamento vencido, sem iniciar a leitura. */
+  // O timer pode disparar antes do `limite` medido por Date.now(): quem esgota o orçamento marca aqui.
+  let esgotado = false;
   const comPrazo = async <T>(ler: () => Promise<T>, tetoMs = Infinity): Promise<T | null> => {
-    const ms = Math.min(tetoMs, limite - Date.now());
-    if (ms <= 0) return null;
+    const resto = limite - Date.now();
+    const ms = Math.min(tetoMs, resto);
+    if (esgotado || ms <= 0) return null;
     let t: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([ler(), new Promise<null>((ok) => { t = setTimeout(() => ok(null), ms); })]);
+      return await Promise.race([ler(), new Promise<null>((ok) => {
+        t = setTimeout(() => { esgotado ||= ms === resto; ok(null); }, ms);
+      })]);
     } catch (e) {
       console.error('trava de oferta: leitura falhou:', e);
       return null;
