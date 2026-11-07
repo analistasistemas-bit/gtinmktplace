@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Piso de R$ 19 em toda campanha (emenda ADR-0174) — 2026-11-07
+
+Em produção desde 2026-11-07 (main `8d109728`; `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87).
+
+- [x] Sugerido abaixo de R$ 19 com faixa que alcança o piso fica em R$ 19; o resto some de Sugestões, Convidados e da contagem; servidor recusa aderir e alterar preço abaixo do piso. Participante segue visível.
+- [x] Sync manual após o deploy: cartão e lista batem (11.11 237, Black Friday 271, Relâmpago 139). 16 convites da Avil subiram para R$ 19.
+- [x] Tela conferida no app publicado com linhas reais injetadas (aba Convidados e painel de Aderir, sem executar).
+- [ ] Conferir a 1ª adesão real a R$ 19 e a aba Sugestões com a conta da Avil.
+
 ## Trava da oferta no UPDATE (ADR-0196, emenda) — 2026-11-07
 
 Em produção desde 2026-11-07 (main `b663ea5d`).

@@ -109,7 +109,7 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
-| *(emenda ADR-0174, 2026-11-07)* `operacoes-massa` recusa aderir e `alterar_preco` abaixo de R$ 19 em qualquer tipo (`PRECO_MIN_PROMOCAO`, `_shared/promocoes/projecao.ts`); `contar` deixa convidado abaixo do piso fora da contagem ||||
+| *(emenda ADR-0174, em produção desde 2026-11-07)* `operacoes-massa` recusa aderir e `alterar_preco` abaixo de R$ 19 em qualquer tipo (`PRECO_MIN_PROMOCAO`, `_shared/promocoes/projecao.ts`); `precoAvaliado` sobe para R$ 19 quando a faixa alcança; `contar` deixa convidado abaixo do piso fora da contagem. Versões: `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87 ||||
 | *(ADR-0194, 2026-11-04)* `operacoes-massa` ganha `etapa: 'dispensar_sugestao'`/`'reativar_sugestao'` (admin ou suporte full, módulo `promocoes`) e aceita `sugestao` na adesão, gravada em `operacoes_massa.sugestao`; `sincronizar-promocoes` grava `date_created` do ML em `ml_promocao_itens.anuncio_criado_em` ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
