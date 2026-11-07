@@ -10,8 +10,8 @@
 **Design:** `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md`
 **Decisores:** GPT-6 Astra como representante do Diego (delegação explícita em 2026-10-04).
 **Emenda (2026-11-07):** o [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md) emenda o item 5 e as
-"Alternativas descartadas": promoção, atacado, catálogo e Kit deixam de ser exclusões. Fatia 1 na branch
-`worktree-grill-alterar-preco`, não deployada; até o deploy vale o texto abaixo.
+"Alternativas descartadas": promoção, atacado, catálogo e Kit deixam de ser exclusões. Fatia 1 em produção
+desde 2026-11-07.
 
 ## Contexto
 

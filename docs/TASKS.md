@@ -2,7 +2,7 @@
 
 ## Alterar preço em Publicados com oferta e atacado (ADR-0196, Fatia 1) — 2026-11-07
 
-Na branch `worktree-grill-alterar-preco`. Não deployada, não mergeada, não validada em produção.
+Em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente.
 
 - [x] Definir preço R$, trava de oferta, passos duráveis com posse por token, faixas de atacado antes/depois do base, edição do % por família, faixa sobre o preço do item no UPDATE e CREATE de UP. 4 migrations `20261107*`.
 - [x] Medição: Relâmpago `started` (MLB7244917852) mantém a oferta com o base alterado; SMART sem reconvite em 2 h; âncora da Zaven durou mais de 2 h.

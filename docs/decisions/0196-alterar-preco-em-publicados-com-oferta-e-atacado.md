@@ -1,6 +1,6 @@
 # ADR-0196 — Alterar preço em Publicados, com oferta e atacado na mesma tela
 
-**Status:** Proposto (2026-11-06) — decisões de produto fechadas com o Diego; Fatia 1 implementada na branch `worktree-grill-alterar-preco` (não deployada, não mergeada, não validada em produção)
+**Status:** Proposto (2026-11-06) — decisões de produto fechadas com o Diego; Fatia 1 em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente
 **Data:** 2026-11-06
 **Decisor:** Diego
 **Relacionado:** [ADR-0178](0178-reajuste-de-preco-em-massa.md) (emenda os itens 5 e "Alternativas descartadas"),
@@ -112,7 +112,7 @@ Se um teste contrariar uma decisão, o caso volta para decisão do Diego antes d
 
 ## Implementação da Fatia 1 (2026-11-07)
 
-Está na branch `worktree-grill-alterar-preco`. **Não deployada, não mergeada e não validada em produção.** Plano:
+**Fatia 1 em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente.** Tela conferida com dados injetados em 1440 e 390 px. Plano:
 `docs/superpowers/plans/2026-11-06-alterar-preco-publicados.md`.
 
 **O que entrou**

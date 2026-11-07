@@ -1055,7 +1055,7 @@ RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por 
 - RPCs (todas `service_role` only; identidade de serialização `(org_id, codigo_pai)`, locks produto → MLB): `reajuste_codigo_pai(p_org, p_ml_item)`, `reajuste_ativo_produto(p_org, p_codigo_pai)`, `reajuste_trava_produto`, `reajuste_reivindicar(p_org, p_operacao, p_ml_item)` (item com `etapa` = retomada: trava pelo `codigo_pai` gravado no item e nunca recusa por "não encontrado" — o vínculo pode ter sido removido depois da escrita no ML), `reajuste_variacoes_do_mlb(p_org, p_codigo_pai, p_ml_item, p_ml_variation_ids)`, `reajuste_confirmar(p_org, p_operacao, p_confirmacoes)`, `reajuste_persistir(p_org, p_operacao, p_ml_item, numeric, jsonb)`, `familia_reservar_publicacao(p_org, p_familia_ids, p_operacao)`, `familia_reservar_migracao_pxv(p_org, p_codigo_pai, p_campos)`. `operacoes_massa_reivindicar` foi substituída (`aderir` ganha lock do MLB e a barreira do reajuste).
 - Efeito em `variacoes`: confirmado no ML → `preco_publicacao` = novo, `preco_editado_pelo_operador = true`, `preco_publicado_ml` = confirmado.
 
-#### Passos, posse e atacado por família (ADR-0196, Fatia 1) — migrations na branch `worktree-grill-alterar-preco`, NÃO aplicadas
+#### Passos, posse e atacado por família (ADR-0196, Fatia 1) — aplicadas em 2026-11-07
 
 *Migrations `20261107001726_reajuste_passos.sql`, `20261107014545_reajuste_persistir_mensagem.sql`, `20261107020152_reajuste_passo_tentativas.sql` e `20261107021935_reajuste_atacado_familia.sql`.*
 
