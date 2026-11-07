@@ -155,7 +155,7 @@ base por segundos (mais, se falhar). É fluxo preexistente, fora do escopo desta
 
 ## Emenda 2026-11-07 — Trava da oferta no UPDATE
 
-**Status:** implementada na branch `worktree-trava-oferta-update`; não deployada, não mergeada. Plano:
+**Status:** em produção desde 2026-11-07 (main `b663ea5d`; `publicar-familias` v57, `reconciliar-convergencia-up` v85, `update-familia-ml` v157, `operacoes-massa` v43). Plano:
 `docs/superpowers/plans/2026-11-07-trava-oferta-update.md`.
 
 **Decisão (Diego, 2026-11-07):** o UPDATE de publicação recusa, com motivo, o produto que levaria o preço base a igual

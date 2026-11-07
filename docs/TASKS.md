@@ -2,7 +2,7 @@
 
 ## Trava da oferta no UPDATE (ADR-0196, emenda) — 2026-11-07
 
-Implementada na branch `worktree-trava-oferta-update`; não deployada, não mergeada.
+Em produção desde 2026-11-07 (main `b663ea5d`).
 
 - [x] `publicar-familias` recusa, antes de reservar, o produto cujo preço novo fica igual ou abaixo de oferta vigente ou agendada; os demais do lote seguem. "Somente estoque" segue disponível. Reconciliador: SKU reprovado em `semPrecoPara`, composição converge, operador avisado. Plano em `docs/superpowers/plans/2026-11-07-trava-oferta-update.md`.
 - [ ] Revisão do diff pelo Codex `gpt-6.1-sol` high.

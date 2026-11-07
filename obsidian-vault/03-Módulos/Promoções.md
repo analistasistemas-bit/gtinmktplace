@@ -135,7 +135,7 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Lacuna: o UPDATE de publicação baixa o base antes das faixas. Fatia 2 (DEAL baixa a oferta) suspensa: o ML recusa subir oferta (`PRICE_GT_CURRENT`). Fatias 3 e 4 não feitas.
 - Ver [[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]].
 
-#### Trava da oferta no UPDATE (ADR-0196, emenda 2026-11-07 — implementada, não deployada)
+#### Trava da oferta no UPDATE (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07)
 
 - Decisão do Diego: o UPDATE recusa, com motivo, o produto que levaria o base a igual ou abaixo de oferta vigente ou agendada. Só esse produto; os demais do lote seguem; "somente estoque" continua disponível. Emenda o item 9 do ADR-0174, que só avisava.
 - A checagem roda em `publicar-familias`, antes da reserva, só onde o preço novo fica abaixo do vivo. No reconciliador, o SKU reprovado vai em `semPrecoPara`, a composição converge e o operador é avisado.

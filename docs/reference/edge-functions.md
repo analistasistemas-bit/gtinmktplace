@@ -577,7 +577,7 @@ mesmo por engano.
   Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
   direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
   modelos.
-  **Trava da oferta (ADR-0196, emenda 2026-11-07 — implementada, não deployada):** antes das reservas, UPDATE com
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** antes das reservas, UPDATE com
   `ml_item_id` e sem "somente estoque" é conferido por `recusasDoLote` (`_shared/publicacao/trava-oferta.ts`), só onde
   o preço novo fica abaixo do vivo. Reprovado volta em `recusadas` e não é reservado; os demais seguem. CREATE e
   Adicionar variação não são conferidos. Leitura inconclusiva recusa com "tente de novo".
@@ -748,7 +748,7 @@ mesmo por engano.
   sobreviva um worker que comece um instante DEPOIS do claim — mitigado pela janela anti-corrida de
   15min. Schedule QStash criado em produção (2026-07-24): `*/15 * * * *`, 3 retries
   (`scd_5P1xe886r5SXj6ywwfUdEvY1stKn`).
-  **Trava da oferta (ADR-0196, emenda 2026-11-07 — implementada, não deployada):** confere por SKU antes da saga. SKU
+  **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** confere por SKU antes da saga. SKU
   reprovado ou inconclusivo vai em `semPrecoPara` (sem `price` no payload, inclusive filho `criado`), a composição
   converge, o motivo vai em `familias.erro_mensagem` e o operador é avisado (`notificarCategoria`). Orçamento de 20 s
   por raiz e 60 s por rodada; raízes restantes voltam `adiada`.

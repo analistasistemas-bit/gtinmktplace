@@ -44,7 +44,7 @@ scope do momento da autorização.
 9. **Conflito com UPDATE:** a Revisão avisa quando a família tem anúncio participando de promoção ("mudar o
    preço pode tirar da promoção"); não bloqueia.
    *Emenda 2026-11-07:* o UPDATE passa a recusar, com motivo, o produto cujo preço novo fica igual ou abaixo de oferta
-   vigente ou agendada (implementada na branch, não deployada). A Revisão deixa de só avisar. Ver
+   vigente ou agendada (em produção desde 2026-11-07). A Revisão deixa de só avisar. Ver
    [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md), emenda "Trava da oferta no UPDATE".
 10. **Prazo:** a 10.10 (adesão até 12/10) segue pelo Seller Center usando a Central para decidir. O motor mira as
     campanhas seguintes, sem atalho no spike nem na revisão.
