@@ -962,6 +962,9 @@ fetch), `http_status` (null se não houve resposta), `resposta_ml`, `sync_penden
 - **Índices únicos:** `ml_posvenda_acoes_operacao_uniq (org_id, operacao_id)` e o parcial
   `ml_posvenda_acoes_trava_uniq (org_id, recurso) where estado in ('reservada','enviada','desconhecido')`
   — no máximo uma tentativa em aberto por `recurso`. Mais `ml_posvenda_acoes_claim_idx (org_id, claim_id, criado_em desc)`.
+- **Alvo (emenda 07/11, migration `20261107163534_posvenda_acoes_pack.sql`):** `claim_id` aceita null e
+  `pack_id text` é nova; o check `ml_posvenda_acoes_alvo_check` exige exatamente um dos dois. Tentativa de
+  mensagem por pack usa `pack_id` e `recurso = mensagem:{pack_id}`.
 - **RLS/grants:** RLS ligada; policy `select` por `org_id = current_org_id()`; `revoke all` de
   `anon, authenticated` e `grant select` só para `authenticated` (default privileges dão TRUNCATE,
   que RLS não cobre). Escrita só por `service_role` (edges).
