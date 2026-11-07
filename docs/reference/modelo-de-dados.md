@@ -1638,7 +1638,7 @@ A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
 
 ### `kit_transferencia_alvos`
 PK `(transferencia_id, up_id)`, `codigo`, `papel` (`origem|destino`), `delta` (peças ou kits com sinal,
-calculado pela RPC de criação), `item_ids text[]`, `qtd_passo1`, `passo1_em`, `ids_passo1 text[]`
+calculado pela RPC de criação), `item_ids text[]` (o PUT de quantidade vai para `item_ids[0]`: item principal primeiro), `qtd_passo1`, `passo1_em`, `ids_passo1 text[]`
 (pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo`,
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
 recebido), `escrita_em`, `confirmada_em`.

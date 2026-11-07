@@ -146,6 +146,16 @@ function problemaDaOferta(alvo: AlvoSaga, o: OfertaUP, exigirPausa: boolean): st
   return null;
 }
 
+/** Alerta nunca derruba o passo: o registro durável é a coluna `alerta`, e um erro aqui reagendaria
+ * por cima de travada ou abortada, ou perderia o alerta de uma baixa já aplicada. */
+async function alertar(ctx: Ctx, texto: string): Promise<void> {
+  try {
+    await ctx.deps.alertar(texto);
+  } catch (e) {
+    console.error(`kit-transferencia ${ctx.t.id}: alerta não enviado: ${mensagem(e)}: ${texto}`);
+  }
+}
+
 async function mudar(ctx: Ctx, passo: PassoSaga, delayS: number, extra: Partial<TransferenciaSaga> = {}): Promise<void> {
   await ctx.deps.repo.salvarTransferencia(ctx.t.id, ctx.token, { passo, passo_em: iso(ctx), ...extra });
   await ctx.deps.enfileirar(ctx.t.id, delayS);
@@ -164,7 +174,7 @@ async function reagendar(ctx: Ctx, motivo: string, delayS = REAGENDAR_S): Promis
 /** Sem reenvio e sem soltar a exclusão: a peça fica sem oferta até o operador resolver. */
 async function travar(ctx: Ctx, motivo: string): Promise<ResultadoPasso> {
   await ctx.deps.repo.salvarTransferencia(ctx.t.id, ctx.token, { estado: 'travada', alerta: motivo, passo_em: iso(ctx) });
-  await ctx.deps.alertar(`Transferência de kit travada no passo ${ctx.t.passo}: ${motivo}. O anúncio fica pausado até alguém resolver.`);
+  await alertar(ctx, `Transferência de kit travada no passo ${ctx.t.passo}: ${motivo}. O anúncio fica pausado até alguém resolver.`);
   return { passo: ctx.t.passo, acao: 'travada', motivo };
 }
 
@@ -178,7 +188,7 @@ async function abortarSemReativar(ctx: Ctx, motivo: string): Promise<ResultadoPa
   await rpcOk(ctx, 'kit_cancelar_transferencia');
   await rpcOk(ctx, 'kit_soltar_exclusao');
   await ctx.deps.repo.salvarTransferencia(ctx.t.id, ctx.token, { estado: 'abortada', passo: 'fim', alerta: motivo, passo_em: iso(ctx) });
-  await ctx.deps.alertar(`Transferência de kit abortada: ${motivo}. Nada foi reativado.`);
+  await alertar(ctx, `Transferência de kit abortada: ${motivo}. Nada foi reativado.`);
   return { passo: 'fim', acao: 'abortada', motivo };
 }
 
@@ -251,15 +261,15 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     // Depois da importação o sync-venda vê a referência aplicada e não alerta mais: alerta aqui.
     for (const { orderId, resultado } of imp.baixas) {
       for (const v of resultado.vendaAcimaSaldo) {
-        await ctx.deps.alertar(`Kit: venda acima do saldo em ${v.codigo} (pedido ${orderId}): pedia ${v.pedido}, havia ${v.anterior}.`);
+        await alertar(ctx, `Kit: venda acima do saldo em ${v.codigo} (pedido ${orderId}): pedia ${v.pedido}, havia ${v.anterior}.`);
       }
       for (const v of resultado.desyncMl) {
-        await ctx.deps.alertar(`Kit: ML vendeu ${v.codigo} com o PubliAI em zero (pedido ${orderId}).`);
+        await alertar(ctx, `Kit: ML vendeu ${v.codigo} com o PubliAI em zero (pedido ${orderId}).`);
       }
     }
     if (imp.falhas.length > 0) {
       const motivo = `pedidos sem baixa: ${imp.falhas.join('; ')}`;
-      await ctx.deps.alertar(`Transferência de kit bloqueada: ${motivo}.`);
+      await alertar(ctx, `Transferência de kit bloqueada: ${motivo}.`);
       return reagendar(ctx, motivo);
     }
 
@@ -333,7 +343,7 @@ async function escrever(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga):
   }
   if (recusas.length > 0) {
     const motivo = `ML recusou a quantidade: ${recusas.join('; ')}`;
-    await ctx.deps.alertar(`Transferência de kit: ${motivo}. Nova tentativa em ${REAGENDAR_S} s.`);
+    await alertar(ctx, `Transferência de kit: ${motivo}. Nova tentativa em ${REAGENDAR_S} s.`);
     return reagendar(ctx, motivo);
   }
   return avancar(ctx, proximo, CONFIRMAR_APOS_S);
@@ -364,7 +374,7 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
   let alerta = ctx.t.alerta;
   if (politica.versao !== ctx.t.versao_politica) {
     alerta = `${MOTIVO_POLITICA}: nada foi reativado`;
-    await ctx.deps.alertar(`Transferência de kit terminou, mas ${alerta}.`);
+    await alertar(ctx, `Transferência de kit terminou, mas ${alerta}.`);
   } else {
     for (const alvo of ctx.alvos) {
       if (alvo.pausado_pela_saga.length === 0 || politica.semReativar.includes(alvo.codigo)) continue;

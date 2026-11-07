@@ -235,6 +235,15 @@ describe('avancarSaga', () => {
     expect(c.s.alertas).toHaveLength(1);
   });
 
+  it('alerta que falha não apaga o motivo da trava nem o passo', async () => {
+    const c = cenario();
+    c.s.falhaPut = (id) => (id === 'MLB-P' ? { erro: new TypeError('network timeout'), aplica: false } : null);
+    c.deps.alertar = async () => { throw new Error('telegram fora'); };
+    await rodar(c);
+    expect(c.s.t).toMatchObject({ estado: 'travada', passo: 'confirmar_reducao' });
+    expect(c.s.t.alerta).toMatch(/P: ML com 5, esperado 4/);
+  });
+
   it('408 também é incerto: não reenvia', async () => {
     const c = cenario();
     c.s.falhaPut = (id) => (id === 'MLB-P' ? { erro: new MLApiError(408, 'timeout'), aplica: false } : null);
