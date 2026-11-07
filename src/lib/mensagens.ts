@@ -102,6 +102,18 @@ async function preencherEnvioPendente(conversas: Conversa[]): Promise<void> {
   for (const c of conversas) c.envioPendente = porPack.get(c.pack_id) ?? null;
 }
 
+/** Envio ativo de um pack (ao abrir o card). Vazio ou erro de leitura -> null: a tela segue. */
+export async function buscarEnvioPendente(pack_id: string): Promise<EnvioPendente | null> {
+  const { data, error } = await supabase.from('ml_posvenda_acoes')
+    .select('pack_id, operacao_id, estado')
+    .filter('pack_id', 'eq', pack_id) // pack_id ainda fora de database.types.ts
+    .in('estado', ESTADOS_ATIVOS)
+    .limit(1);
+  if (error) return null;
+  const a = ((data ?? []) as unknown as EnvioPendente[])[0];
+  return a ? { operacao_id: a.operacao_id, estado: a.estado } : null;
+}
+
 /** Lê as mensagens (cronológica) e agrupa por pack. Conversas aguardando resposta primeiro. */
 export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
@@ -117,7 +129,7 @@ export async function buscarConversas(): Promise<Conversa[]> {
     .limit(1000);
   if (error) throw new Error(error.message);
   const lista = ((data ?? []) as unknown as Mensagem[]).reverse();
-  for (const m of lista) m.anexos = m.anexos ?? [];
+  for (const m of lista) m.anexos = Array.isArray(m.anexos) ? m.anexos : [];
 
   const porPack = new Map<string, Conversa>();
   for (const m of lista) {

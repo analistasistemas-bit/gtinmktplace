@@ -4,8 +4,9 @@ import type { Mensagem } from '../mensagens';
 // buscarConversas agora encadeia .order().limit(1000) e reverte o array (plan 036) — o mock
 // representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
 // controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
-const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes, mockSelectMsg, mockEnvio } = vi.hoisted(() => ({
+const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes, mockSelectMsg, mockEnvio, mockEnvioUm } = vi.hoisted(() => ({
   mockSelectMsg: vi.fn(),
+  mockEnvioUm: vi.fn(),
   mockEnvio: vi.fn(async () => ({ data: [] as Array<{ pack_id: string; operacao_id: string; estado: string }>, error: null as null | { message: string } })),
   mockLimit: vi.fn(), mockDataOrder: vi.fn(), mockMessageIdOrder: vi.fn(),
   mockReclamacoes: vi.fn(async () => ({ data: [] as Array<{ order_id: number }>, error: null })),
@@ -15,7 +16,7 @@ vi.mock('@/lib/supabase', () => ({
     from: (tabela: string) => tabela === 'ml_devolucoes' ? ({
       select: () => ({ eq: () => ({ eq: mockReclamacoes }) }),
     }) : tabela === 'ml_posvenda_acoes' ? ({
-      select: () => ({ in: () => ({ not: mockEnvio }) }),
+      select: () => ({ in: () => ({ not: mockEnvio }), filter: () => ({ in: () => ({ limit: mockEnvioUm }) }) }),
     }) : tabela === 'ml_vendas' ? ({
       select: () => ({ in: async () => ({ data: [], error: null }) }),
     }) : ({
@@ -39,7 +40,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-const { buscarConversas } = await import('../mensagens');
+const { buscarConversas, buscarEnvioPendente } = await import('../mensagens');
 
 const msg = (over: Partial<Mensagem>): Mensagem => ({
   id: over.id ?? 'id-1',
@@ -241,5 +242,26 @@ describe('buscarConversas', () => {
     mockLimit.mockResolvedValueOnce({ data: [msg({})], error: null });
     const [c] = await buscarConversas();
     expect(c.envioPendente).toBeNull();
+  });
+
+  it('anexos que não é array vira []', async () => {
+    mockLimit.mockResolvedValueOnce({ data: [msg({ anexos: { filename: 'x' } as never })], error: null });
+    const [c] = await buscarConversas();
+    expect(c.mensagens[0].anexos).toEqual([]);
+  });
+});
+
+describe('buscarEnvioPendente', () => {
+  it('achou', async () => {
+    mockEnvioUm.mockResolvedValueOnce({ data: [{ pack_id: 'p1', operacao_id: 'op-1', estado: 'enviada' }], error: null });
+    expect(await buscarEnvioPendente('p1')).toEqual({ operacao_id: 'op-1', estado: 'enviada' });
+  });
+  it('vazio -> null', async () => {
+    mockEnvioUm.mockResolvedValueOnce({ data: [], error: null });
+    expect(await buscarEnvioPendente('p1')).toBeNull();
+  });
+  it('erro -> null', async () => {
+    mockEnvioUm.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    expect(await buscarEnvioPendente('p1')).toBeNull();
   });
 });
