@@ -99,9 +99,10 @@ function deps(orgId: string): DepsSaga {
     ml: {
       lerOferta: async (upId, esperados) => lerOferta((await ml()).token, upId, esperados, f),
       listarPendentes: async () => { const c = await ml(); return listarPendentes(c.token, c.seller, f); },
-      importarPedidos: async (itemIds, desde, idsPasso1) => {
+      importarPedidos: async (itemIds, desde, idsPasso1, antesDeBaixar) => {
         const c = await ml();
-        return importarPedidosDoItem(admin, orgId, itemIds, { token: c.token, seller: c.seller, desde, idsPasso1, fetch: f });
+        return importarPedidosDoItem(admin, orgId, itemIds,
+          { token: c.token, seller: c.seller, desde, idsPasso1, fetch: f, signal: prazo, antesDeBaixar });
       },
       putQuantidade: (itemId, quantidade) => putItem(itemId, { available_quantity: quantidade }),
       putStatus: (itemId, status) => putItem(itemId, { status }),

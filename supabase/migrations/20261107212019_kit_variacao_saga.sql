@@ -28,6 +28,9 @@ alter table public.kit_transferencia_alvos add column if not exists ids_passo1 t
 -- tentativa incerta. `recusas` conta 4xx: na 5ª a saga trava.
 alter table public.kit_transferencia_alvos add column if not exists item_escrita text;
 alter table public.kit_transferencia_alvos add column if not exists recusas integer not null default 0;
+-- Obrigação de conferir/repausar item depois de um PUT `active`, gravada antes dele. Finalizar recusa
+-- enquanto houver: a compensação sobrevive a queda, erro e resposta incerta.
+alter table public.kit_transferencia_alvos add column if not exists repausar text[] not null default '{}';
 
 grant insert on public.kit_transferencias to estoque_rpc_executor;
 grant select, insert on public.kit_transferencia_alvos to estoque_rpc_executor;
@@ -225,7 +228,7 @@ begin
     valor_anterior = coalesce(a.valor_anterior, v.valor_anterior), valor_alvo = coalesce(a.valor_alvo, v.valor_alvo),
     pausado_pela_saga = v.pausado_pela_saga, intencao_escrita_em = v.intencao_escrita_em,
     recusa_definitiva_em = v.recusa_definitiva_em, escrita_em = v.escrita_em, confirmada_em = v.confirmada_em,
-    item_escrita = v.item_escrita, recusas = v.recusas
+    item_escrita = v.item_escrita, recusas = v.recusas, repausar = v.repausar
   where a.transferencia_id = p_transferencia and a.org_id = p_org and a.up_id = p_up;
 end $$;
 
@@ -252,6 +255,10 @@ begin
     raise exception 'kit_saga_finalizar: estado inválido %', p_estado;
   end if;
   perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  if exists (select 1 from public.kit_transferencia_alvos
+             where transferencia_id = p_transferencia and org_id = p_org and cardinality(repausar) > 0) then
+    raise exception 'kit_repausa_pendente: transferência % tem item a repausar', p_transferencia using errcode = 'KX005';
+  end if;
   delete from public.kit_exclusoes where org_id = p_org and dono_tipo = 'transferencia' and dono_id = p_transferencia;
   update public.kit_transferencias
   set estado = p_estado, passo = 'fim', alerta = coalesce(p_alerta, alerta), passo_em = now(),

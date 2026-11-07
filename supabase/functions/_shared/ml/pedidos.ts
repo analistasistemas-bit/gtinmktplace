@@ -26,12 +26,12 @@ export function extrairGtin(item: ItemComAtributos | null | undefined): string |
 export async function buscarGtinsDosItens(
   token: string,
   itemIds: string[],
-  opts: { estrito?: boolean } = {},
+  opts: { estrito?: boolean; signal?: AbortSignal } = {},
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   if (itemIds.length === 0) return out;
   const headers = { Authorization: `Bearer ${token}` };
-  const signal = AbortSignal.timeout(25_000);
+  const signal = opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000);
 
   for (let i = 0; i < itemIds.length; i += 20) {
     const bloco = itemIds.slice(i, i + 20);

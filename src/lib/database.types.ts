@@ -1217,6 +1217,7 @@ export type Database = {
           qtd_passo1: number | null
           recusa_definitiva_em: string | null
           recusas: number
+          repausar: string[]
           transferencia_id: string
           up_id: string
           valor_alvo: number | null
@@ -1238,6 +1239,7 @@ export type Database = {
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
           recusas?: number
+          repausar?: string[]
           transferencia_id: string
           up_id: string
           valor_alvo?: number | null
@@ -1259,6 +1261,7 @@ export type Database = {
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
           recusas?: number
+          repausar?: string[]
           transferencia_id?: string
           up_id?: string
           valor_alvo?: number | null

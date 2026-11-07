@@ -252,6 +252,12 @@ begin
   perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_finalizar(%L, %L, %L, %L, null)',
     c.org, t1, gen_random_uuid(), 'concluida')) like '%kit_execucao_vencida%', 'finalizou com outro token');
   perform pg_temp.afirmar((select count(*) = 3 from public.kit_exclusoes where dono_id = t1), 'exclusão saiu sem finalizar');
+  -- Repausa pendente: finalizar recusa e a exclusão fica (achado 6 da rodada 2).
+  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-K1', '{"repausar": ["MLB-K1"]}');
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_finalizar(%L, %L, %L, %L, null)',
+    c.org, t1, tok, 'concluida')) like '%kit_repausa_pendente%', 'finalizou com repausa pendente');
+  perform pg_temp.afirmar((select count(*) = 3 from public.kit_exclusoes where dono_id = t1), 'repausa pendente soltou a exclusão');
+  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-K1', '{"repausar": []}');
   perform public.kit_saga_finalizar(c.org, t1, tok, 'concluida', 'fim');
   perform pg_temp.afirmar((select estado = 'concluida' and passo = 'fim' and execucao_token is null
                            from public.kit_transferencias where id = t1), 'finalizar não gravou o estado');

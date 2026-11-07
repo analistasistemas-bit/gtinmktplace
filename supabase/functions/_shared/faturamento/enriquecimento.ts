@@ -110,7 +110,7 @@ export async function carregarLiquidoMPDoPedido(
 
 /** ml_item_id → GTIN, só p/ itens cujo id NÃO está no escopo (vendas de catálogo). */
 export async function carregarGtinsFallback(
-  token: string, pedidos: PedidoML[], idsPubliai: Set<string>, opts: { estrito?: boolean } = {},
+  token: string, pedidos: PedidoML[], idsPubliai: Set<string>, opts: { estrito?: boolean; signal?: AbortSignal } = {},
 ): Promise<Map<string, string>> {
   const ids = new Set<string>();
   for (const p of pedidos) {

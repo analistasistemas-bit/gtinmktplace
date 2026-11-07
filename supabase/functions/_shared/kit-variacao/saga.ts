@@ -53,6 +53,8 @@ export interface AlvoSaga {
   item_escrita: string | null;
   /** Recusas 4xx recebidas. */
   recusas: number;
+  /** Itens com obrigação de conferir ou repausar depois de um PUT `active`; finalizar recusa enquanto houver. */
+  repausar: string[];
 }
 
 export interface ResultadoImportacao {
@@ -85,7 +87,8 @@ export interface DepsSaga {
   ml: {
     lerOferta(upId: string, esperados: string[]): Promise<OfertaUP>;
     listarPendentes(): Promise<PedidoPendente[]>;
-    importarPedidos(itemIds: string[], desde: string, idsPasso1: string[]): Promise<ResultadoImportacao>;
+    /** `antesDeBaixar` roda logo antes de cada baixa e lança se o prazo venceu. */
+    importarPedidos(itemIds: string[], desde: string, idsPasso1: string[], antesDeBaixar: () => void): Promise<ResultadoImportacao>;
     putQuantidade(itemId: string, quantidade: number): Promise<void>;
     putStatus(itemId: string, status: 'paused' | 'active'): Promise<void>;
   };
@@ -298,8 +301,9 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     const passo1 = Date.parse(alvo.passo1_em ?? '');
     if (Number.isNaN(passo1) || !alvo.ids_passo1) throw new Error(`${alvo.codigo}: sem passo 1 gravado`);
     const itemIds = oferta.itens.map((i) => i.id);
-    vivo(ctx);   // a importação baixa estoque
-    const imp = await ctx.deps.ml.importarPedidos(itemIds, new Date(passo1 - JANELA_PEDIDOS_MS).toISOString(), alvo.ids_passo1);
+    // A importação baixa estoque: o prazo é conferido antes de cada baixa, não só na entrada.
+    const imp = await ctx.deps.ml.importarPedidos(
+      itemIds, new Date(passo1 - JANELA_PEDIDOS_MS).toISOString(), alvo.ids_passo1, () => vivo(ctx));
     // Depois da importação o sync-venda vê a referência aplicada e não alerta mais: alerta aqui.
     for (const { orderId, resultado } of imp.baixas) {
       for (const v of resultado.vendaAcimaSaldo) {
@@ -420,28 +424,59 @@ async function confirmar(ctx: Ctx, papel: AlvoSaga['papel'], proximo: PassoSaga)
   return avancar(ctx, proximo);
 }
 
+/** Repausa; a falha vira alerta específico e reagenda, com a obrigação já gravada. */
+async function repausar(ctx: Ctx, itemId: string): Promise<void> {
+  try {
+    await putStatus(ctx, itemId, 'paused');
+  } catch (e) {
+    await alertar(ctx, `Transferência de kit: repausa de ${itemId} falhou (${mensagem(e)}). O item pode estar ativo contra a política; nova tentativa em ${REAGENDAR_S} s.`);
+    throw e;
+  }
+}
+
 async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
   // Chega aqui concluída (todos confirmados) ou abortada antes da reserva.
   const estado = ctx.alvos.every((a) => a.confirmada_em) ? 'concluida' : 'abortada';
   const seguem: string[] = [];
+  let repausou = false;
+  const semObrigacao = (alvo: AlvoSaga, id: string) => salvarAlvo(ctx, alvo, { repausar: alvo.repausar.filter((x) => x !== id) });
+
   for (const alvo of ctx.alvos) {
-    if (alvo.pausado_pela_saga.length === 0) continue;
+    if (alvo.pausado_pela_saga.length === 0 && alvo.repausar.length === 0) continue;
     const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
     for (const item of oferta.itens) {
-      // Moderação nunca é desfeita; item já ativo não recebe escrita.
-      if (!alvo.pausado_pela_saga.includes(item.id) || encerrado(item) || moderado(item) || !pausadoPeloVendedor(item)) continue;
-      // Política travada e conferida logo antes do PUT, e relida depois: mudou no meio, a pausa volta.
-      if (!(await podeReativar(ctx, alvo.codigo))) {
-        seguem.push(item.id);
+      const pendente = alvo.repausar.includes(item.id);
+      if (!alvo.pausado_pela_saga.includes(item.id) && !pendente) continue;
+      // Moderação nunca é desfeita, e item encerrado ou moderado não vende: nada a repausar.
+      if (encerrado(item) || moderado(item)) {
+        if (pendente) await semObrigacao(alvo, item.id);
         continue;
       }
-      await putStatus(ctx, item.id, 'active');
-      if (!(await podeReativar(ctx, alvo.codigo))) {
-        await putStatus(ctx, item.id, 'paused');
+      if (pausadoPeloVendedor(item)) {
+        if (pendente) await semObrigacao(alvo, item.id);   // repausa confirmada pela leitura
+        if (!(await podeReativar(ctx, alvo.codigo))) {
+          seguem.push(item.id);
+          continue;
+        }
+        // Obrigação gravada antes do PUT: resposta incerta ou queda daqui em diante é retomada.
+        await salvarAlvo(ctx, alvo, { repausar: [...alvo.repausar, item.id] });
+        await putStatus(ctx, item.id, 'active');
+      } else if (!pendente) {
+        continue;   // ativo e sem obrigação: não foi a saga que deixou assim agora
+      }
+      // Política relida depois do PUT (ou na retomada de um PUT incerto): mudou, a pausa volta.
+      if (await podeReativar(ctx, alvo.codigo)) {
+        await semObrigacao(alvo, item.id);
+      } else {
         seguem.push(item.id);
+        await repausar(ctx, item.id);
+        repausou = true;
       }
     }
   }
+  // A repausa só vale confirmada pela leitura; até lá, finalizar recusa.
+  if (repausou) return reagendar(ctx, 'confirmando a repausa', CONFIRMAR_APOS_S);
+
   let alerta = ctx.t.alerta;
   if (seguem.length > 0) {
     alerta = `política não autoriza reativar: ${seguem.join(', ')} seguem pausados`;

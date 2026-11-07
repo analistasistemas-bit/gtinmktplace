@@ -1644,7 +1644,8 @@ calculado pela RPC de criação), `item_ids text[]` (o PUT de quantidade vai par
 (pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo` (os dois gravam uma vez),
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
 recebido), `escrita_em`, `confirmada_em`, `item_escrita` (item aberto que recebe o PUT; não muda em tentativa
-incerta), `recusas` (4xx recebidos; na 5ª a saga trava). Escrita só por `kit_saga_salvar_alvo`.
+incerta), `recusas` (4xx recebidos; na 5ª a saga trava), `repausar text[]` (itens a conferir ou repausar depois de
+um PUT `active`, gravados antes dele; `kit_saga_finalizar` recusa com `kit_repausa_pendente` enquanto houver). Escrita só por `kit_saga_salvar_alvo`.
 
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`

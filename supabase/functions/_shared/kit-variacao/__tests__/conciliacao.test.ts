@@ -393,6 +393,16 @@ describe('importarPedidosDoItem', () => {
     expect(baixas).toEqual([{ ref: refBaixa('mercado_livre', 10, 'SKU-1'), qtd: 2 }]);
   });
 
+  it('prazo vencido no meio da importação: nenhuma baixa depois do vencimento (Task 4, achado 2)', async () => {
+    const { admin, baixas } = fakeAdmin();
+    let chamadas = 0;
+    const antesDeBaixar = () => { if (++chamadas > 1) throw new Error('prazo da execução vencido'); };
+    await expect(importarPedidosDoItem(admin, 'org', ['MLB1'],
+      { ...deps(orders([pedidoML(10), pedidoML(11)])), antesDeBaixar })).rejects.toThrow(/prazo/);
+    expect(baixas.map((b) => b.ref)).toEqual([refBaixa('mercado_livre', 10, 'SKU-1')]);
+    expect(chamadas).toBe(2);
+  });
+
   it('devolve os pagos do item e ignora não pago, compra da conta e outro item', async () => {
     const { admin, baixas } = fakeAdmin();
     const certo = pedidoML(10);

@@ -143,7 +143,13 @@ export async function importarPedidosDoItem(
   admin: SupabaseClient,
   orgId: string,
   itemIds: string[],
-  deps: { token: string; seller: string; desde: string; idsPasso1: string[]; fetch?: typeof fetch },
+  deps: {
+    token: string; seller: string; desde: string; idsPasso1: string[]; fetch?: typeof fetch;
+    /** Prazo de quem chama: aborta também os GETs de GTIN. */
+    signal?: AbortSignal;
+    /** Chamado logo antes de cada baixa; lança para parar sem novo efeito (prazo da saga vencido). */
+    antesDeBaixar?: () => void;
+  },
 ): Promise<{
   pagos: PedidoPago[];
   naoPagos: PedidoPendente[];
@@ -168,12 +174,13 @@ export async function importarPedidosDoItem(
 
   // `userId` só serve quando falta a org.
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, '', orgId, { estrito: true });
-  const gtinPorItem = await carregarGtinsFallback(deps.token, pagos, idsPubliai, { estrito: true });
+  const gtinPorItem = await carregarGtinsFallback(deps.token, pagos, idsPubliai, { estrito: true, signal: deps.signal });
 
   const falhas: string[] = [];
   const baixas: Array<{ orderId: string; resultado: ResultadoBaixaVenda }> = [];
   for (const pedido of pagos) {
     const { itens } = mapearPedidoParaVenda(pedido, { idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem });
+    deps.antesDeBaixar?.();
     const resultado = await registrarBaixaVenda(admin, { orgId, canal: 'mercado_livre', orderId: pedido.id, itens });
     baixas.push({ orderId: String(pedido.id), resultado });
     falhas.push(

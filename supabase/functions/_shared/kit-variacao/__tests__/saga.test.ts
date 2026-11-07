@@ -18,7 +18,7 @@ function alvo(up_id: string, codigo: string, papel: 'origem' | 'destino', delta:
   return {
     up_id, codigo, papel, delta, item_ids, qtd_passo1: null, passo1_em: null, ids_passo1: null,
     valor_anterior: null, valor_alvo: null, pausado_pela_saga: [], intencao_escrita_em: null,
-    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0,
+    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [],
   };
 }
 
@@ -60,6 +60,14 @@ function cenario() {
     aoLer: (_upId: string) => {},
     aoAtivar: (_itemId: string) => {},
     aoSalvarAlvo: (_patch: Partial<AlvoSaga>) => {},
+    /** Falha injetada no PUT de status (e se aplica antes). */
+    falhaStatus: (_itemId: string, _status: string): { erro: Error; aplica: boolean } | null => null,
+    /** Falha injetada em `podeReativar`. */
+    falhaPode: (_codigo: string): Error | null => null,
+    /** Baixas que a importação faz, cada uma depois de `antesDeBaixar`; o relógio anda `passoBaixaMs` entre elas. */
+    baixasNaImportacao: 0,
+    passoBaixaMs: 0,
+    baixasFeitas: 0,
     reservado: false,
     creditado: false,
     /** Falha injetada no PUT de quantidade: devolve o erro a lançar (e se aplica antes) ou null. */
@@ -106,6 +114,8 @@ function cenario() {
       async finalizar(_id, token, estado, alerta) {
         if (s.falhaFinalizar) { const e = s.falhaFinalizar; s.falhaFinalizar = null; throw e; }
         validar(token);
+        // Espelho de kit_saga_finalizar: repausa pendente recusa.
+        if (s.alvos.some((a) => a.repausar.length > 0)) throw new Error('kit_repausa_pendente');
         s.rpcs.push('finalizar');
         s.exclusaoSolta = true;
         Object.assign(s.t, { estado, passo: 'fim', alerta: alerta ?? s.t.alerta });
@@ -124,6 +134,8 @@ function cenario() {
       },
       async podeReativar(_id, token, codigo) {
         validar(token);
+        const erro = s.falhaPode(codigo);
+        if (erro) throw erro;
         return s.versaoPolitica === s.t.versao_politica && !s.semReativar.includes(codigo);
       },
       async liberar(_id, token) {
@@ -151,7 +163,12 @@ function cenario() {
       async listarPendentes() {
         return s.pendentes;
       },
-      async importarPedidos() {
+      async importarPedidos(_itemIds, _desde, _ids, antesDeBaixar) {
+        for (let i = 0; i < s.baixasNaImportacao; i++) {
+          antesDeBaixar();
+          s.baixasFeitas++;
+          s.agora += s.passoBaixaMs;
+        }
         return { pagos: [], naoPagos: [], falhas: s.falhasImportacao, baixas: s.baixas };
       },
       async putQuantidade(itemId, q) {
@@ -163,6 +180,8 @@ function cenario() {
       async putStatus(itemId, status) {
         s.chamadas.push(`${status} ${itemId}`);
         if (s.pausaIgnorada.has(itemId)) return;
+        const f = s.falhaStatus(itemId, status);
+        if (f && !f.aplica) throw f.erro;
         const i = itemPorId(itemId);
         if (status === 'paused') {
           i.status = 'paused';
@@ -172,6 +191,7 @@ function cenario() {
           i.status = 'active';
           i.subStatus = i.subStatus.filter((x) => x !== 'paused_by_seller');
         }
+        if (f) throw f.erro;
       },
     },
     async enfileirar(_id, delayS) { s.filas.push(delayS); },
@@ -417,6 +437,59 @@ describe('avancarSaga', () => {
     expect(c.s.chamadas.slice(-2)).toEqual(['active MLB-P', 'paused MLB-P']);
     expect(c.s.chamadas).not.toContain('active MLB-K');
     expect(c.s.alertas).toHaveLength(1);
+  });
+
+  it('prazo que vence no meio da importação não faz baixa depois (achado 2)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.baixasNaImportacao = 3;
+    c.s.passoBaixaMs = 70_000;
+    await expect(avancarSaga(c.deps, 'T1')).rejects.toThrow(/prazo/);
+    expect(c.s.baixasFeitas).toBe(2);
+  });
+
+  const politicaMudaAoAtivarP = (c: Cenario) => {
+    c.s.aoAtivar = (id) => { if (id === 'MLB-P') c.s.versaoPolitica = 8; };
+  };
+  const pausadoNoFim = (c: Cenario, id: string) =>
+    Object.values(c.s.ups).flatMap((u) => u.itens).find((i) => i.id === id)!.subStatus.includes('paused_by_seller');
+
+  it('repausa que falha é retomada e só então a saga finaliza (achado 6)', async () => {
+    const c = cenario();
+    politicaMudaAoAtivarP(c);
+    let falhas = 1;
+    c.s.falhaStatus = (id, st) => (id === 'MLB-P' && st === 'paused' && c.s.versaoPolitica === 8 && falhas-- > 0
+      ? { erro: new MLApiError(500, 'fora'), aplica: false } : null);
+    await rodar(c, (x) => x.s.chamadas.filter((y) => y === 'paused MLB-P').length === 2);
+    expect(c.s.t.estado).toBe('ativa');
+    expect(c.s.exclusaoSolta).toBe(false);
+    expect(c.s.alertas.join()).toMatch(/repausa de MLB-P falhou/);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(pausadoNoFim(c, 'MLB-P')).toBe(true);
+    expect(c.s.alvos[0].repausar).toEqual([]);
+  });
+
+  it('checagem depois do PUT active que lança vira repausa na retomada (achado 6)', async () => {
+    const c = cenario();
+    let ativou = false;
+    c.s.aoAtivar = (id) => { if (id === 'MLB-P') { ativou = true; c.s.versaoPolitica = 8; } };
+    let falhas = 1;
+    c.s.falhaPode = (codigo) => (codigo === 'P' && ativou && falhas-- > 0 ? new Error('banco fora') : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(pausadoNoFim(c, 'MLB-P')).toBe(true);
+    expect(c.s.chamadas.filter((x) => x.endsWith('MLB-P')).slice(-2)).toEqual(['active MLB-P', 'paused MLB-P']);
+  });
+
+  it('PUT active incerto com a política mudada é repausado (achado 6)', async () => {
+    const c = cenario();
+    politicaMudaAoAtivarP(c);
+    c.s.falhaStatus = (id, st) => (id === 'MLB-P' && st === 'active' ? { erro: new TypeError('timeout'), aplica: true } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(pausadoNoFim(c, 'MLB-P')).toBe(true);
+    expect(c.s.chamadas).not.toContain('active MLB-K');
   });
 
   it('PUT vai para um item aberto do UP e grava o destino (achado 7)', async () => {
