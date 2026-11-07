@@ -124,18 +124,13 @@ Consequências:
 São transferências de estoque entre SKUs, registradas no ledger com motivo próprio. As N cores
 mexem juntas, numa transação: nunca baixa parcial.
 
-**Quarentena obrigatória [Diego, opção B]:** peça nunca sai de anúncio ativo. Isso vale nos dois
-sentidos, porque o kit também é anúncio que vende:
+**Quarentena obrigatória [Diego, opção B]:** peça nunca sai de anúncio ativo. Toda operação (montar,
+desmontar, repor, cancelamento em kit, sair de Sobra) usa a **mesma sequência**, sobre origem e destino
+juntos, descrita em "Escrita de estoque com anúncio pausado". Peça guardada já está pausada: pula a
+pausa, mas não pula o resto.
 
-- **Montar:** pausa os individuais de origem que estiverem ativos → confirma no ML → confere pedidos
-  → move as peças → aumenta o kit → reativa os individuais que a operação pausou.
-- **Desmontar:** pausa os itens do kit → confirma no ML → confere pedidos → move as peças → volta os
-  itens do kit que ainda têm saldo.
-
-Peça guardada já está pausada: pula a pausa, mas não pula a conferência de pedidos.
-
-"Confirma" segue o Contrato de segurança, item 4. Falha no meio deixa a peça sem oferta, nunca em dois
-lugares, e gera alerta. Peça em trânsito não some do ledger.
+Falha no meio deixa a peça sem oferta, nunca em dois lugares, e gera alerta. Peça em trânsito não some
+do ledger.
 
 ### Reposição [Diego, opção B]
 
@@ -275,15 +270,21 @@ Desmontar e ao sair de Sobra.
 O Brasil não tem escrita condicional sem multi-origem, então a proteção é não escrever em anúncio que
 possa vender.
 
-**Regra:** nos SKUs de kit e nos individuais usados em kit, aumentar quantidade ou transferir peça só
-acontece com **todos os itens do user product pausados**, inclusive a cópia de catálogo. Reduzir
-quantidade em anúncio ativo é permitido.
+**Regra:** nos user products participantes (SKUs de kit e individuais usados em kit), **todo `PUT`
+absoluto de quantidade exige todos os itens do UP pausados e a conciliação abaixo**, inclusive a cópia de
+catálogo, inclusive reduções e push fora de transferência. Uma redução calculada vira aumento se houver
+venda entre a leitura e a escrita, então não há exceção para reduzir.
 
-Sequência de toda transferência (origem e destino):
+Na prática, venda não gera escrita: o ML já baixou. O que gera é entrada, ajuste e cancelamento. Entrada
+em SKU de kit com individual ativo pausa aquele individual pelo tempo T, em lote **[agente]**.
+
+Sequência única (origem e destino):
 
 1. Pausa todos os itens envolvidos e confirma por leitura.
 2. Espera o tempo de quarentena **T**.
-3. Importa pedidos do item e reserva os **não pagos** (`payment_required`, `payment_in_process`).
+3. Importa pedidos do item e reserva os **não pagos** (`payment_required`, `payment_in_process`) e os
+   **pagos sem baixa conciliada**: pedido pago só deixa de reservar quando o `last_updated` do estoque
+   é posterior ao pagamento. Na dúvida sobre a conta, bloqueia transferência e aumento.
 4. Lê a quantidade em `/user-products/{id}/stock`, que é a verdade da disponibilidade.
 5. Calcula o valor final **uma única vez** e grava na saga. Retentativa reenvia o mesmo valor absoluto,
    então a escrita fica idempotente sem precisar de delta.
@@ -298,15 +299,12 @@ mudou de 0 a 6 segundos depois do pagamento, não na criação do pedido. O paga
 pagamento típico. Valor inicial de **T = 5 minutos**, configurável **[agente]**. T reduz o risco; não o
 prova inexistente.
 
-**Risco residual aceito pelo Diego:** pedido que paga depois de T e não apareceu no passo 3. Nesse
-caso a peça pode estar comprometida duas vezes. O sistema detecta pela baixa, alerta no Telegram e o
+**Risco residual aceito pelo Diego:** pedido que paga depois de T e não apareceu no passo 3, ou baixa
+que o ML atrasa além do que o passo 3 detecta. Nesse caso a peça pode estar comprometida duas vezes. O sistema detecta pela baixa, alerta no Telegram e o
 operador resolve o pedido. Registrar toda ocorrência, para rever T com dado real.
 
-**Risco existente, igual ao de hoje:** SKU individual ativo fora de transferência segue o push atual,
-com a mesma janela que já existe em todo produto. Não piora com o kit.
-
-**Kit ativo:** nenhum aumento de saldo com o item ativo. Cancelamento que devolve saldo ao kit entra na
-fila e usa a sequência acima, agrupado com a próxima reposição.
+**Kit ativo:** nenhuma escrita de quantidade com o item ativo. Cancelamento credita o saldo local do kit
+na hora e agenda a sequência acima, **mesmo com reposição automática desligada**.
 
 **Pausa preservada:** a escrita precisa manter a pausa, inclusive ao passar por zero. Se reativar, a
 operação fica proibida nessa configuração.
@@ -346,7 +344,9 @@ financiam esse saldo já estiverem confirmadas e com proteção contra criação
    item que a política quer pausado.
 3. Pedido não pago aparece em `/orders/search` antes do pagamento. Se não aparecer, o passo 3 não protege
    e o risco residual aumenta: voltar ao Diego com isso antes de construir.
-4. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
+4. Pagamento perto de T e baixa durante a escrita ou a retentativa: a conciliação do passo 3 segura.
+5. Cancelamento de kit com reposição automática desligada credita e agenda.
+6. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
 
 ## Publicação no ML
 
