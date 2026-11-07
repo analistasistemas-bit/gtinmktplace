@@ -85,7 +85,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0071 | [UNITS_PER_PACK real força SALE_FORMAT=Kit](../../docs/decisions/0071-units-per-pack-forca-sale-format-kit.md) |
 | 0072 | [Título — duplicação de tipo de produto/cor por checagem exata demais](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md) |
 | 0073 | ["N CORES" no título conta como quantidade de UNITS_PER_PACK](../../docs/decisions/0073-cores-conta-como-unidade-no-kit.md) |
-| 0074 | [Seleção de modelo de IA (texto e imagem) por organização, via tela Configurações](../../docs/decisions/0074-selecao-de-modelo-ia-por-organizacao.md) |
+| 0074 | [Seleção de modelo de IA (texto e imagem) por organização, via tela Configurações](../../docs/decisions/0074-selecao-de-modelo-ia-por-organizacao.md) — adendo 07/11: `openai/gpt-6-luna` é o padrão de todas as orgs. |
 | 0075 | [Piso de R$12,55 (abismo de tarifa fixa) também no ramo competitivo](../../docs/decisions/0075-piso-tarifa-fixa-no-ramo-competitivo.md) |
 | 0076 | [Gross-up itera o frete por variação até o preço estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
 | 0077 | [Registry híbrido para UI multi-marketplace (frontend + `canais_habilitados` por org)](../../docs/decisions/0077-registry-hibrido-menus-multicanal.md) |

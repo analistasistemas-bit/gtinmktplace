@@ -193,7 +193,7 @@ docs/
 - **Backend / DB / Storage / Auth:** Supabase (Postgres + Edge Functions + Storage + Realtime)
 - **Hospedagem do frontend:** Render Static Site
 - **Fila + cache:** Upstash QStash (fila assíncrona com retry) + Upstash Redis (cache de concorrência)
-- **IA:** OpenRouter (gateway compatível com OpenAI SDK) com modelos OpenAI — GPT-4o-mini (copy) + GPT-4o Vision (detecção de cor por foto) — ver ADR-0010
+- **IA:** OpenRouter (gateway compatível com OpenAI SDK) com modelos OpenAI — GPT-6 Luna (texto: copy, categoria, atributos, resposta, NCM; escolha por org) + GPT-4o Vision (detecção de cor por foto) — ver ADR-0010 e ADR-0074
 - **Integração externa:** Mercado Livre API (OAuth 2.0)
 
 ## Autoria
