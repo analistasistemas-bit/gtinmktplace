@@ -105,3 +105,24 @@ describe('validarNcmDaEntrada (ADR-0187)', () => {
     await expect(validarNcmDaEntrada(admin, entrada, true)).rejects.toThrow();
   });
 });
+
+// Emenda D-7 do ADR-0197: CEST inexistente é recusado no cadastro (ML recusa com 10088).
+describe('validarNcmDaEntrada — CEST na tabela oficial', () => {
+  const fakeAdmin = (cestExiste: boolean) => ({
+    rpc: async (_fn: string, args: { p_codigos: string[] }) =>
+      ({ data: args.p_codigos.map((codigo) => ({ codigo, vigente: true })), error: null }),
+    from: () => {
+      const api = { select: () => api, eq: () => api, limit: async () => ({ data: cestExiste ? [{ cest: 'x' }] : [], error: null }) };
+      return api;
+    },
+  } as never);
+  const comCest = (cest: string): ProdutoEntrada => ({ ...entrada, fiscal: { ...entrada.fiscal!, cest } });
+
+  it('CEST inexistente → mensagem', async () => {
+    expect(await validarNcmDaEntrada(fakeAdmin(false), comCest('3304999'), true))
+      .toEqual([expect.stringMatching(/CEST 3304999 não existe/)]);
+  });
+  it('CEST existente → []', async () => {
+    expect(await validarNcmDaEntrada(fakeAdmin(true), comCest('2001500'), true)).toEqual([]);
+  });
+});

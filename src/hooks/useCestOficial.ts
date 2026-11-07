@@ -33,6 +33,27 @@ export function useCestOficial(ncm: string, ativo: boolean): CestOficial {
   return { status: classificarCest(q.data), candidatos };
 }
 
+/** Emenda D-7 do ADR-0197: CEST precisa existir em `cest_oficial` (o ML recusa com 10088). Espelho da
+ *  edge (`_shared/fiscal/cest-oficial.ts`), que segue sendo a autoridade. */
+export type CestExisteStatus = 'vazio' | 'carregando' | 'ok' | 'inexistente' | 'erro';
+
+export function useCestExiste(cest: string): CestExisteStatus {
+  const habilitado = /^\d{7}$/.test(cest);
+  const q = useQuery({
+    queryKey: ['cest-existe', cest],
+    enabled: habilitado,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cest_oficial').select('cest').eq('cest', cest).limit(1);
+      if (error) throw error;
+      return (data ?? []).length > 0;
+    },
+  });
+  if (!habilitado) return 'vazio';
+  if (q.isError) return 'erro';
+  if (q.isPending) return 'carregando';
+  return q.data ? 'ok' : 'inexistente';
+}
+
 /** Aplica o candidato único uma vez por NCM e por abertura. `mudar` deve ser o `mudarFiscal` do dialog,
  *  que derruba o "Conferi". Apagar o valor não o devolve; digitação nunca é sobrescrita; trocar o NCM
  *  limpa o valor que a tabela preencheu (D-5). */

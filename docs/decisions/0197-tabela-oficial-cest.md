@@ -67,3 +67,19 @@ enquadramento: o multivitamínico 21069030 casa por prefixo com CESTs de bebidas
   declaração obrigatória segura o caso.
 - Tela Fiscal, cadastro sem nota e planilha ficam como estão.
 - O repo é público e o dado também.
+
+## Emenda D-7 (2026-11-07) — CEST inexistente trava o salvamento
+
+Caso real: o 00000208 da Daludi foi salvo com CEST `3304999`, que não existe no convênio. O ML recusou
+o push (`10088 Invalid cest`) e o anúncio ficou "Fiscal pendente", com o motivo visível só no tooltip.
+Decisão do Diego:
+
+- **CEST que não existe em `cest_oficial` é recusado ao salvar**, no dialog (botão travado, erro no
+  campo) e nas edges `atualizar-fiscal-familia` e `cadastrar-produto` (`_shared/fiscal/cest-oficial.ts`,
+  400 com a mensagem; erro de leitura falha fechado).
+- **CEST que existe mas não casa com o NCM só gera aviso.** A tabela continua sugerindo, não decidindo
+  o enquadramento.
+- O dialog fiscal de Publicados/Estoque passa a mostrar os candidatos do NCM, sem autopreencher.
+- Planilha (`ingest-lote`) e CEST vindo no XML seguem validados só pelo formato.
+- Risco aceito: um CEST criado por convênio novo antes do refresh da tabela é recusado até a migration
+  de refresh; a saída é salvar sem CEST, que é opcional.

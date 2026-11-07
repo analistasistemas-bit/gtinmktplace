@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { camposFiscaisFaltantes, UNIDADES_FISCAIS } from '../_shared/fiscal/validar.ts';
 import { lerRegimeFiscalOrg } from '../_shared/fiscal/regime.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
+import { cestInexistente } from '../_shared/fiscal/cest-oficial.ts';
 
 export interface EntradaFiscal {
   familiaId: string;
@@ -93,6 +94,9 @@ export async function processarAtualizacaoFiscal(
   try {
     const invalidos = await ncmsInvalidos(admin, [f.ncm]);
     if (invalidos.length) return { tipo: 'invalido', erros: invalidos.map(mensagemNcm) };
+    // ADR-0197 (emenda D-7): CEST inexistente é recusado pelo ML (10088) — barra aqui.
+    const cestErro = await cestInexistente(admin, f.cest);
+    if (cestErro) return { tipo: 'invalido', erros: [cestErro] };
   } catch (e) {
     return { tipo: 'falha', mensagem: (e as Error).message };
   }

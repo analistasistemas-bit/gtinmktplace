@@ -24,6 +24,12 @@ vi.mock('@/lib/produtos-saldo', () => ({
   ProdutoJaExisteError: class extends Error {},
   CadastroResultadoAmbiguoError: class extends Error {},
 }));
+// Emenda D-7 do ADR-0197: a existência do CEST tem teste próprio (etapa-fiscal-form); aqui todo CEST existe.
+vi.mock('@/hooks/useCestOficial', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/useCestOficial')>()),
+  useCestExiste: (cest: string) => (/^\d{7}$/.test(cest) ? 'ok' : 'vazio'),
+}));
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },

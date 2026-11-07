@@ -60,12 +60,38 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
     expect(screen.getByText(texto)).toBeInTheDocument();
   });
   it('fiscalCompleto exige ncm 8 dígitos + origemNfe coerente + csosn + NCM oficial ok', () => {
-    expect(fiscalCompleto(fiscalVazio(), 'nacional', 'ok')).toBe(false);
-    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', 'ok')).toBe(true);
+    expect(fiscalCompleto(fiscalVazio(), 'nacional', 'ok', 'vazio')).toBe(false);
+    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', 'ok', 'vazio')).toBe(true);
     for (const st of ['incompleto', 'carregando', 'inexistente', 'vencido', 'erro'] as const) {
-      expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', st)).toBe(false);
+      expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional', st, 'vazio')).toBe(false);
     }
-    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '1', tributacaoIcms: '102' }, 'nacional', 'ok')).toBe(false);
+    expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '1', tributacaoIcms: '102' }, 'nacional', 'ok', 'vazio')).toBe(false);
+  });
+
+  // Emenda D-7 do ADR-0197 — caso real 07/11 (00000208): ML recusou "Invalid cest: 3304999".
+  it('fiscalCompleto trava CEST fora da tabela oficial (e enquanto verifica)', () => {
+    const f = { ...fiscalVazio(), ncm: '33049990', origemNfe: '0', tributacaoIcms: '102', cest: '3304999' };
+    expect(fiscalCompleto(f, 'nacional', 'ok', 'ok')).toBe(true);
+    for (const st of ['inexistente', 'carregando', 'erro'] as const) {
+      expect(fiscalCompleto(f, 'nacional', 'ok', st)).toBe(false);
+    }
+  });
+  it('mostra erro de CEST inexistente', () => {
+    render(<EtapaFiscalForm valor={{ ...fiscalVazio(), ncm: '33049990', cest: '3304999' }} origem="nacional" onMudar={vi.fn()}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} cestExiste="inexistente" />);
+    expect(screen.getByText('CEST 3304999 não existe na tabela oficial')).toBeInTheDocument();
+  });
+  it('fora da nota: candidatos do NCM viram atalho e CEST de outro NCM só avisa', async () => {
+    const onMudar = vi.fn();
+    const cestOficial = { status: 'varios' as const, candidatos: [
+      { cest: '2001500', ncm_prefixo: '33049990', descricao: 'Outros produtos de beleza', exato: true },
+      { cest: '2001600', ncm_prefixo: '33049990', descricao: 'Preparações solares', exato: true },
+    ] };
+    render(<EtapaFiscalForm valor={{ ...fiscalVazio(), ncm: '33049990', cest: '2001400' }} origem="nacional" onMudar={onMudar}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()} cestOficial={cestOficial} cestExiste="ok" />);
+    expect(screen.getByText(/CEST 2001400 não consta para o NCM 33049990/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /2001500/ }));
+    expect(onMudar).toHaveBeenCalledWith({ cest: '2001500' });
   });
 
   // F2, fix round 1: trocar de uma origem que exige FCI (3/5/8) para uma que não exige

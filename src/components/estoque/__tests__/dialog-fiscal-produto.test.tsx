@@ -27,6 +27,10 @@ function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
   });
 }
 
+// Espera do push ao ML (fila): padrão = não concluiu; o teste do recarregamento força `true`.
+const aguardarSync = vi.fn((_id: string) => Promise.resolve(false));
+vi.mock('@/lib/aguardar-sync-fiscal', () => ({ aguardarSyncFiscal: (id: string) => aguardarSync(id) }));
+
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 const toastWarning = vi.fn();
@@ -165,6 +169,23 @@ describe('DialogFiscalProduto — Salvar', () => {
     expect(toastSuccess).toHaveBeenCalledWith('✓ Fiscal salvo');
     expect(onSalvo).toHaveBeenCalled();
     expect(onFechar).toHaveBeenCalled();
+  });
+
+  // Pedido do Diego 07/11: o status fiscal (can_invoice) chega pela fila depois do save — a tela
+  // recarrega sozinha quando o worker conclui, sem F5.
+  it('recarrega de novo (onSalvo) quando o push ao ML conclui', async () => {
+    aguardarSync.mockResolvedValueOnce(true);
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockImplementation((fn: string) => {
+      if (fn === 'atualizar-fiscal-familia') return Promise.resolve({ data: { ok: true, pushEnfileirado: true, versoesPublicadas: 1 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    const onSalvo = vi.fn();
+    const user = userEvent.setup();
+    renderDialog({ onSalvo });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(onSalvo).toHaveBeenCalledTimes(2));
+    expect(aguardarSync).toHaveBeenCalledWith('fam-1');
   });
 
   // M3 (auditoria fiscal 19/10): push não enfileirado com versão publicada (ou contagem desconhecida)

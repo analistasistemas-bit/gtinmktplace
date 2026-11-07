@@ -41,7 +41,7 @@ import { ROTULOS } from '@/components/estoque/detalhes-sku';
 import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
-import { useSugestaoCest } from '@/hooks/useCestOficial';
+import { useCestExiste, useSugestaoCest } from '@/hooks/useCestOficial';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
   type FiscalForm,
@@ -128,6 +128,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   const [etapaFiscal, setEtapaFiscal] = useState(false);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
   const ncmOficial = useNcmOficial(fiscal.ncm);
+  const cestExiste = useCestExiste(fiscal.cest);
   // ADR-0181 D-10: confirmação ativa do NCM/origem vindos da nota.
   const [confirmacoes, setConfirmacoes] = useState(CONFIRMACOES_VAZIAS);
   // Toda mudança fiscal (inclusive "aplicar sugestão") passa por aqui: derruba as confirmações do que mudou.
@@ -589,6 +590,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
               onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
               avisosNota={inicial?.avisosNota}
               cestOficial={cestOficial}
+              cestExiste={cestExiste}
               cestNota={inicial?.fiscal?.cest}
             />
           ) : passo0 ? (
@@ -889,7 +891,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 </Button>
                 <Button
                   onClick={submeter}
-                  disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
+                  disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status, cestExiste) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
                 >
                   {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>
