@@ -23,10 +23,11 @@ user product é compartilhado com a cópia de catálogo (dois itens no mesmo UP)
 
 Caminhos abertos, pendentes de decisão do Diego:
 
-- **A. Kit Virtual nativo:** o ML calcula o estoque a partir dos componentes, sem transferência. Dúvidas:
-  um kit por combinação × tamanho vira anúncio separado, e não há atributos de cor e tamanho no payload
-  de `POST /items/kits`. Falta testar se kits com o mesmo `family_name` agrupam no seletor, e se
-  compra e cálculo do estoque virtual são atômicos.
+- **A. Kit Virtual nativo: descartado para roupa (medido em 07/11).** A busca oficial de componentes
+  devolveu `DISABLED_DOMAIN` em todos os itens de roupa da Daludi Shop (regatas e jaquetas), em conjunto
+  com falta de estoque; os itens de outros domínios com estoque vieram `available`. Blusa não foi medida,
+  porque nenhuma conta lida tem blusa, mas o padrão é o mesmo. `IS_NOT_ACTIVE_ERROR` também mostra que
+  componente precisa estar ativo, o que conflitaria com Vender só em kit. Nenhum kit de teste foi criado.
 - **B. Grade própria sem versão:** pausa nos dois lados e espera, com risco residual aceito.
 - **C. Multi-origem:** mudança da conta inteira, a investigar.
 
