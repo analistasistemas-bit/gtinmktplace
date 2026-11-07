@@ -4,7 +4,7 @@ import { maiorOferta } from './ofertas.ts';
 import type { OfertaVigente, VivoItem } from './tipos.ts';
 
 export interface FatosElegibilidade {
-  vivo: VivoItem; ehKit: boolean; temAtacado: boolean;
+  vivo: VivoItem; ehKit: boolean;
   ofertas: OfertaVigente[] | null;   // ML ao vivo unido ao banco (null = inconclusiva)
   familiaPublicando: boolean; migracaoPxv: boolean;
 }
@@ -20,7 +20,6 @@ export function motivoInelegivel(f: FatosElegibilidade): string | null {
   }
   if (f.ehKit) return 'Kit Virtual não entra no reajuste';
   if (f.vivo.catalog_listing || f.vivo.tem_relacoes) return 'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste';
-  if (f.temAtacado) return 'Anúncio com preço de atacado fica fora do reajuste';
   if (f.ofertas === null) return MSG_INCONCLUSIVA;
   // Sai quando o Teste 2 passar: mudar o base com Relâmpago `started` ainda não foi medido (ADR-0196).
   if (f.ofertas.some((o) => o.status === 'started' && RELAMPAGO.has(o.tipo))) return 'Relâmpago em andamento fica fora do reajuste';

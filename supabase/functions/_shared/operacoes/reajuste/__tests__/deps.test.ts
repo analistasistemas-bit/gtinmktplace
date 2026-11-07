@@ -118,7 +118,8 @@ describe('depsPreview', () => {
     const r = await montarPreview({ familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' }, {
       expandir: depsPreview(semProduto().admin, cxT, { reverter: true }).expandir,
       origem: async () => origem,
-      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [] },
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [], gravarFaixas: vi.fn() },
+      configAtacado: async () => ({ faixas: null, divergente: false }),
       ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
       variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
       estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
@@ -129,6 +130,20 @@ describe('depsPreview', () => {
     expect(itens.map((i) => [i.ml_item_id, i.situacao])).toEqual([['MLB1', 'elegivel'], ['MLB2', 'fora']]);
     expect(itens[1].motivo).toBe('Anúncio não encontrado no cadastro');
     expect(linhasDoRascunho(itens).map((l) => [l.status, l.codigo_pai])).toEqual([['rascunho', 'P1'], ['bloqueado', 'P2']]);
+  });
+
+  it('configAtacado: cada cor herda da própria família, filtrando por org', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: cinco } }, { atacado: cinco, familias: { atacado: null } }]);
+    expect(await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).toEqual({ faixas: cinco, divergente: false });
+    expect(f.chamadas[0].tabela).toBe('variacoes');
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[0], 'in')).toEqual([['id', ['v1', 'v2']]]);
+  });
+
+  it('configAtacado: famílias com atacado diferente divergem', async () => {
+    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: [{ min_unidades: 2, desconto_pct: 5 }] } }, { atacado: null, familias: { atacado: null } }]);
+    expect((await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).divergente).toBe(true);
   });
 
   it('variacoesDoMlb não descarta linhas (plano/UP: ml_variation_id null → "")', async () => {

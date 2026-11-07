@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ConfigMlb } from '../faixas.ts';
 import { oferta } from '../ofertas.ts';
 import { planejarPassos } from '../passos.ts';
 import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type PedidoPreview } from '../preview.ts';
 import { resumir } from '../avaliacao.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
-import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, OfertaVigente, Semaforo, VivoItem } from '../tipos.ts';
+import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Semaforo, VivoItem } from '../tipos.ts';
 
 vi.mock('../passos.ts', async (original) => {
   const m = await original<typeof import('../passos.ts')>();
@@ -13,7 +14,7 @@ vi.mock('../passos.ts', async (original) => {
 
 const alvo = (ml: string, o: Partial<AlvoExpandido> = {}): AlvoExpandido => ({
   ml_item_id: ml, codigo_pai: `P-${ml}`, variacao_ids: [], variacoes_ml_esperadas: null, sku: `SKU-${ml}`, titulo: `T ${ml}`,
-  ehKit: false, temAtacado: false, familiaPublicando: false, migracaoPxv: false, ...o,
+  ehKit: false, familiaPublicando: false, migracaoPxv: false, ...o,
 });
 const vivo = (o: Partial<VivoItem> = {}): VivoItem => ({
   preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false, ...o,
@@ -29,6 +30,7 @@ const est = (preco: number | null, editado: boolean): EstadoVariacao => ({ preco
 function deps(o: {
   alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; ofertasML?: OfertaVigente[] | null; banco?: OfertaVigente[]; semBanco?: boolean; semaforo?: Semaforo[];
   estados?: Record<string, EstadoVariacao>; origem?: Awaited<ReturnType<DepsPreview['origem']>>;
+  faixas?: FaixaPreco[] | null | Error; config?: ConfigMlb;
 } = {}): DepsPreview {
   return {
     expandir: vi.fn(async () => o.alvos ?? [alvo('MLB1')]),
@@ -45,7 +47,13 @@ function deps(o: {
       }),
       putPreco: vi.fn(),
       lerOfertas: vi.fn(async () => (o.ofertasML === undefined ? [] : o.ofertasML)),
+      lerFaixas: vi.fn(async () => {
+        if (o.faixas instanceof Error) throw o.faixas;
+        return o.faixas === undefined ? [] : o.faixas;
+      }),
+      gravarFaixas: vi.fn(),
     },
+    configAtacado: vi.fn(async () => o.config ?? { faixas: null, divergente: false }),
     ofertasBanco: vi.fn(async (ids: string[]) => new Map(o.semBanco ? [] : ids.map((id): [string, OfertaVigente[]] => [id, o.banco ?? []]))),
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
@@ -118,7 +126,6 @@ describe('montarPreview — item', () => {
     ['inativo', { vivos: { MLB1: vivo({ status: 'closed' }) } }, 'Anúncio moderado, encerrado ou inativo'],
     ['kit', { alvos: [alvo('MLB1', { ehKit: true })] }, 'Kit Virtual não entra no reajuste'],
     ['catálogo', { vivos: { MLB1: vivo({ catalog_listing: true }) } }, 'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste'],
-    ['atacado', { alvos: [alvo('MLB1', { temAtacado: true })] }, 'Anúncio com preço de atacado fica fora do reajuste'],
     ['promoção inconclusiva', { ofertasML: null }, 'Não foi possível conferir promoções — tente de novo'],
     ['banco sem o MLB pedido', { semBanco: true }, 'Não foi possível conferir promoções — tente de novo'],
     ['oferta sem preço comprovado', { banco: [of('P', null)] }, 'Não foi possível conferir promoções — tente de novo'],
@@ -269,5 +276,80 @@ describe('montarPreview — Reverter', () => {
 
   it('origem inexistente → recusa', async () => {
     expect(await montarPreview(rev, deps())).toEqual({ ok: false, erro: 'Operação de origem não encontrada' });
+  });
+});
+
+describe('montarPreview — atacado (ADR-0196)', () => {
+  const CINCO = [{ min_unidades: 2, desconto_pct: 5 }];
+  const viva = (preco: number): FaixaPreco[] => [{ min_unidades: 2, preco }];
+  const tipos = (i: { passos: { tipo: string }[] | null }) => i.passos?.map((p) => p.tipo);
+
+  it('anúncio com atacado deixa de ficar fora; descendo, grava as faixas antes do base', async () => {
+    const d = deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+    const i = await um(pct(10, '-'), d);
+    expect(i).toMatchObject({
+      situacao: 'elegivel', preco: 90, faixas_anteriores: viva(95), faixas_alvo: [{ min_unidades: 2, preco: 85.5 }],
+    });
+    expect(tipos(i)).toEqual(['faixas', 'base']);
+    expect(d.configAtacado).toHaveBeenCalledWith(['V-MLB1']);
+  });
+
+  it('subindo, grava as faixas depois do base', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } }));
+    expect(i.faixas_alvo).toEqual([{ min_unidades: 2, preco: 104.5 }]);
+    expect(tipos(i)).toEqual(['base', 'faixas']);
+  });
+
+  it('sem configuração e abaixo do alvo: mantém as faixas, sem passo', async () => {
+    const i = await um(pct(10), deps({ faixas: viva(95) }));
+    expect(i).toMatchObject({ situacao: 'elegivel', faixas_anteriores: viva(95), faixas_alvo: null });
+    expect(tipos(i)).toEqual(['base']);
+  });
+
+  it('sem atacado: faixas vazias, sem passo', async () => {
+    expect(await um(pct(10), deps())).toMatchObject({ situacao: 'elegivel', faixas_anteriores: [], faixas_alvo: null });
+  });
+
+  it.each<[string, Parameters<typeof deps>[0], string]>([
+    ['leitura inconclusiva', { faixas: null }, 'Não foi possível ler o atacado — tente de novo'],
+    ['faixa viva cruzando, sem configuração', { faixas: viva(95) }, 'Faixa de atacado ficaria acima do preço base'],
+    ['configuração divergente', { config: { faixas: null, divergente: true } }, 'Atacado diferente entre cores — ajuste na Revisão'],
+  ])('%s → fora', async (_n, o, motivo) => {
+    expect(await um(pct(10, '-'), deps(o))).toMatchObject({ situacao: 'fora', motivo, passos: null, faixas_alvo: null, executaveis: 0 });
+  });
+
+  it('configuração com valor ilegível → fora, sem derrubar o lote', async () => {
+    const config = { faixas: [{ min_unidades: 2, desconto_pct: NaN }], divergente: false };
+    expect(await um(pct(10), deps({ config }))).toMatchObject({ situacao: 'fora', passos: null });
+  });
+
+  it('conta sem acesso ao ler o atacado sobe, não vira 500 linhas fora', async () => {
+    await expect(montarPreview(pct(10), deps({ faixas: new SemAcessoStatusML('ML 403') }))).rejects.toBeInstanceOf(SemAcessoStatusML);
+  });
+
+  it('sem alteração não lê o atacado', async () => {
+    const d = deps({ faixas: null });
+    expect(await um(pct(0), d)).toMatchObject({ situacao: 'sem_alteracao' });
+    expect(d.ml.lerFaixas).not.toHaveBeenCalled();
+  });
+
+  describe('Reverter', () => {
+    const restaurar: EntradaRestauracao[] = [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }];
+    const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar }]]);
+    const voltar: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' };
+    const base = { origem, vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-MLB1': est(110, true) } };
+
+    it('nunca gera passo de faixas, mesmo com configuração', async () => {
+      const d = deps({ ...base, faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+      const i = await um(voltar, d);
+      expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
+      expect(tipos(i)).toEqual(['base']);
+      expect(d.configAtacado).not.toHaveBeenCalled();
+    });
+
+    it('faixa viva que ficaria acima do base restaurado → fora', async () => {
+      expect(await um(voltar, deps({ ...base, faixas: viva(105) })))
+        .toMatchObject({ situacao: 'fora', motivo: 'Faixa de atacado ficaria acima do preço base' });
+    });
   });
 });

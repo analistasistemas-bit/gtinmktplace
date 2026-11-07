@@ -40,16 +40,21 @@ function fakeAdmin(filhos: Record<string, unknown>[] = []) {
 // falharDescricaoPara: itemExternoIds cujo garantirDescricao deve rejeitar (simula push falho).
 function fakeConn(caps: { descricaoSeparada?: boolean; atacado?: boolean; falharDescricaoPara?: string[] } = {}) {
   const chamadas: Array<{ metodo: string; itemExternoId: string; texto?: string }> = [];
+  const atacados: Array<{ itemExternoId: string; precoBase: number; faixas: unknown[] }> = [];
   const falhar = new Set(caps.falharDescricaoPara ?? []);
   return {
     capabilities: { variacoes: true, descricaoSeparada: !!caps.descricaoSeparada, catalogo: false, desconto: false, atacado: !!caps.atacado, dimensoesPacote: true },
     chamadas,
+    atacados,
     subirFoto: async () => 'PIC',
     garantirDescricao: async (_ctx: unknown, itemExternoId: string, texto: string) => {
       chamadas.push({ metodo: 'garantirDescricao', itemExternoId, texto });
       if (falhar.has(itemExternoId)) throw new Error(`push falhou (${itemExternoId})`);
     },
-    aplicarAtacado: async (_ctx: unknown, itemExternoId: string) => { chamadas.push({ metodo: 'aplicarAtacado', itemExternoId }); },
+    aplicarAtacado: async (_ctx: unknown, itemExternoId: string, precoBase: number, faixas: unknown[]) => {
+      chamadas.push({ metodo: 'aplicarAtacado', itemExternoId });
+      atacados.push({ itemExternoId, precoBase, faixas });
+    },
     sincronizarDescricao: async () => null,
   };
 }
@@ -387,14 +392,9 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(entradaVista!.precoPorSku.A).toBe(10);
   });
 
-  // ADR-0160 (I5) — atacado com preços divergentes é dinheiro errado, em silêncio.
-  //
-  // O PxQ do ML é por ITEM e o valor é ABSOLUTO (ADR-0041). Com preços diferentes entre as cores
-  // não existe base única legítima: aplicar `precoFamilia` (a primeira cor) daria a TODOS os itens
-  // um preço B2B calculado sobre outra cor. Nesta entrega o atacado segue família-level, então o
-  // caminho falha alto em vez de escolher uma cor arbitrária — nada financeiro defaulta em silêncio
-  // (ADR-0055).
-  it('I5: preços divergentes + atacado ativo → NÃO aplica PxQ e grava atacado_status=erro', async () => {
+  // ADR-0160 (I5) / ADR-0196 — o PxQ do ML é por ITEM e o valor é ABSOLUTO (ADR-0041): cada cor recebe
+  // as faixas sobre o próprio preço. Base de outra cor seria dinheiro errado, em silêncio.
+  it('I5: preços divergentes + atacado ativo → cada item recebe as faixas sobre o próprio preço', async () => {
     const conn = fakeConn({ atacado: true });
     const { admin, writes } = fakeAdmin([
       { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
@@ -409,10 +409,75 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
       ] as never,
       executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
     }));
-    expect(conn.chamadas.filter((c: { metodo: string }) => c.metodo === 'aplicarAtacado')).toEqual([]);
+    const faixas = [{ min_unidades: 3, desconto_pct: 8 }];
+    expect(conn.atacados).toEqual([
+      { itemExternoId: 'MLB1', precoBase: 10, faixas },
+      { itemExternoId: 'MLB2', precoBase: 25, faixas },
+    ]);
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro')).toBeUndefined();
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'aplicado')).toBeDefined();
+  });
+
+  // Sem o preço do próprio item não há base legítima: a cor vizinha daria valor B2B de outra cor.
+  it('item sem preço → não aplica em nenhum e grava atacado_status=erro', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin, writes } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+      { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
+        { codigo: 'B', cor: 'Rosa', estoque: 1, preco_publicacao: null, gtin: null, imagem_path: null, ml_picture_id: null },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.atacados).toEqual([]);
     const erro = writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro');
-    expect(erro).toBeDefined();
-    expect(String(erro!.payload.atacado_erro)).toMatch(/preços diferentes/i);
+    expect(String(erro?.payload.atacado_erro)).toMatch(/preço-base/);
+  });
+
+  // I10: a irmã ativa fica no preço vivo, que o caminho não conhece; o PxQ dela segue valendo sobre ele.
+  it('Adicionar variação: aplica o PxQ só na cor nova, sobre o preço dela', async () => {
+    const conn = fakeConn({ atacado: true });
+    const nova: Record<string, unknown> = { sku: 'B', status: 'pendente', retirado: false, item_externo_id: null, family_id: null };
+    const { admin, writes } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }, nova]);
+    const executarSaga = async (): Promise<ResultadoComposicao> => {
+      Object.assign(nova, { status: 'ativo', item_externo_id: 'MLB2', family_id: 'F' });
+      return { tipo: 'concluido', criadas: ['B'] };
+    };
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never, preservarPublicadas: true,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
+        { codigo: 'B', cor: 'Rosa', estoque: 1, preco_publicacao: 25, gtin: null, imagem_path: null, ml_picture_id: null },
+      ] as never,
+      executarSaga,
+    }));
+    expect(conn.atacados.map((a) => [a.itemExternoId, a.precoBase])).toEqual([['MLB2', 25]]);
+    // A cor nova não prova as irmãs: o status da família fica como estava.
+    expect(writes.find((w) => w.table === 'familias' && 'atacado_status' in w.payload)).toBeUndefined();
+  });
+
+  it('faixas removidas limpam todos os itens, mesmo sem preço conhecido', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+      { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never, preservarPublicadas: true,
+      familia: { ...FAMILIA, atacado: [], atacado_status: 'aplicado' } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: null, gtin: null, imagem_path: null, ml_picture_id: null },
+        { codigo: 'B', cor: 'Rosa', estoque: 1, preco_publicacao: 25, gtin: null, imagem_path: null, ml_picture_id: null },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.atacados.map((a) => [a.itemExternoId, a.faixas])).toEqual([['MLB1', []], ['MLB2', []]]);
   });
 
   // Regressão inversa: preço uniforme continua aplicando PxQ normalmente em todos os itens.

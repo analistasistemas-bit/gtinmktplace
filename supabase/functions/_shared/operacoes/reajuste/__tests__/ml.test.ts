@@ -289,3 +289,73 @@ describe('lerOfertas', () => {
     expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
   });
 });
+
+describe('lerFaixas', () => {
+  const b2b = (min: number | undefined, amount: unknown, type = 'standard') => ({
+    type, amount, conditions: { context_restrictions: ['channel_marketplace', 'user_type_business'], min_purchase_unit: min },
+  });
+  const base = { type: 'standard', amount: 100, conditions: { context_restrictions: ['channel_marketplace'] } };
+  const ler = (r: Response | Error) => {
+    const f = vi.fn(async () => { if (r instanceof Error) throw r; return r; });
+    return { f, p: criarClienteReajusteML('tok', f as never).lerFaixas('MLB1') };
+  };
+
+  it('só as faixas B2B, ordenadas; pede show-all-prices', async () => {
+    const promo = { type: 'promotion', amount: 80, conditions: { context_restrictions: ['channel_marketplace'] } };
+    const { f, p } = ler(resp(200, { id: 'MLB1', prices: [base, b2b(5, 90), promo, b2b(2, '95.5')] }));
+    expect(await p).toEqual([{ min_unidades: 2, preco: 95.5 }, { min_unidades: 5, preco: 90 }]);
+    expect(f).toHaveBeenCalledWith(`${API}/items/MLB1/prices`, { headers: { Authorization: 'Bearer tok', 'show-all-prices': 'TRUE' } });
+  });
+  it('promoção B2B não é faixa', async () => {
+    expect(await ler(resp(200, { prices: [base, b2b(undefined, 80, 'promotion')] })).p).toEqual([]);
+  });
+  it('sem faixas → []', async () => expect(await ler(resp(200, { prices: [base] })).p).toEqual([]));
+  it.each([
+    ['status 500', () => resp(500)],
+    ['status 404', () => resp(404)],
+    ['corpo sem prices', () => resp(200, {})],
+    ['corpo vazio', () => resp(200)],
+    ['faixa B2B sem quantidade', () => resp(200, { prices: [b2b(undefined, 90)] })],
+    ['faixa B2B sem valor', () => resp(200, { prices: [b2b(2, null)] })],
+    ['rede', () => new Error('boom')],
+  ])('%s → null (inconclusivo)', async (_n, r) => expect(await ler(r()).p).toBeNull());
+  it.each([401, 403])('%i → SemAcessoStatusML', async (s) => {
+    await expect(ler(resp(s)).p).rejects.toBeInstanceOf(SemAcessoStatusML);
+  });
+});
+
+describe('gravarFaixas', () => {
+  const faixas = [{ min_unidades: 5, preco: 90 }, { min_unidades: 2, preco: 95.5 }];
+  const preco = (min_purchase_unit: number, amount: number) => ({
+    type: 'standard', amount, currency_id: 'BRL',
+    conditions: { context_restrictions: ['channel_marketplace', 'user_type_business'], min_purchase_unit },
+  });
+  const gravar = (r: Response | Error, fs = faixas) => {
+    const f = vi.fn(async (_u: string, _i: RequestInit) => { if (r instanceof Error) throw r; return r; });
+    return { f, p: criarClienteReajusteML('tok', f as never).gravarFaixas('MLB1', fs) };
+  };
+
+  it('POST full-replace, só as faixas, ordenadas', async () => {
+    const { f, p } = gravar(resp(201, {}));
+    expect(await p).toEqual({ kind: 'ok' });
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe(`${API}/items/MLB1/prices/standard/quantity`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ prices: [preco(2, 95.5), preco(5, 90)] });
+  });
+  it('[] limpa', async () => {
+    const { f, p } = gravar(resp(200, {}), []);
+    await p;
+    expect(JSON.parse(f.mock.calls[0][1].body as string)).toEqual({ prices: [] });
+  });
+  it('4xx → sem_escrita', async () => {
+    expect(await gravar(resp(400, { message: 'recusado' })).p).toEqual({ kind: 'sem_escrita', status: 400, mensagem: 'recusado' });
+  });
+  it('5xx e rede → desconhecido', async () => {
+    expect((await gravar(resp(502)).p).kind).toBe('desconhecido');
+    expect((await gravar(new Error('boom')).p).kind).toBe('desconhecido');
+  });
+  it.each([401, 403])('%i → SemAcessoStatusML', async (s) => {
+    await expect(gravar(resp(s)).p).rejects.toBeInstanceOf(SemAcessoStatusML);
+  });
+});

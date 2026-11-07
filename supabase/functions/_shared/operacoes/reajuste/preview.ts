@@ -5,18 +5,21 @@ import { mensagemDe } from '../laco.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
+import { decidirFaixas, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { planejarPassos } from './passos.ts';
-import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, OfertaVigente, Passo } from './tipos.ts';
+import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo } from './tipos.ts';
 
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
-  sku: string | null; titulo: string | null; ehKit: boolean; temAtacado: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
+  sku: string | null; titulo: string | null; ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
 export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; titulo: string | null; sku: string | null;
   preco_anterior: number; preco: number; avaliacao: Avaliacao | null; restaurar: EntradaRestauracao[] | null; variacoes_ml: string[] | null;
   situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null;
-  ofertas: OfertaVigente[] | null; passos: Passo[] | null }
+  ofertas: OfertaVigente[] | null; passos: Passo[] | null;
+  /** Faixas vivas; `faixas_alvo` null = não mudam. */
+  faixas_anteriores: FaixaPreco[] | null; faixas_alvo: FaixaPreco[] | null }
 // `restaurar` é o ÚNICO formato de estado: gravado na coluna `estado_anterior` (Task 7), lido pelo executor e enviado à RPC.
 export interface DepsPreview {
   expandir(familias: string[], mlItemIds: string[]): Promise<AlvoExpandido[]>;
@@ -29,6 +32,8 @@ export interface DepsPreview {
   origem(origemId: string): Promise<Map<string, Origem> | null>;
   /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
   ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
+  /** Configuração de atacado das variações casadas do MLB. */
+  configAtacado(variacaoIds: string[]): Promise<ConfigMlb>;
 }
 
 export const MAX_MLBS = 500;
@@ -65,7 +70,7 @@ export async function montarPreview(
   for (const a of alvos) {
     const b = porMl.get(a.ml_item_id);
     porMl.set(a.ml_item_id, !b ? a : {
-      ...b, ehKit: b.ehKit || a.ehKit, temAtacado: b.temAtacado || a.temAtacado,
+      ...b, ehKit: b.ehKit || a.ehKit,
       familiaPublicando: b.familiaPublicando || a.familiaPublicando, migracaoPxv: b.migracaoPxv || a.migracaoPxv,
     });
   }
@@ -82,6 +87,7 @@ export async function montarPreview(
     itens.push({
       ml_item_id: ml, codigo_pai: o.codigo_pai, variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
       avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null, ofertas: null, passos: null,
+      faixas_anteriores: null, faixas_alvo: null,
     });
   }
   return { ok: true, itens, executaveis: itens.filter((i) => i.situacao === 'elegivel').length };
@@ -94,6 +100,7 @@ async function avaliarItem(
   const item: ItemPreview = {
     ml_item_id: ml, codigo_pai: a.codigo_pai, variacao_ids: [], titulo: a.titulo, sku: a.sku, preco_anterior: 0, preco: 0,
     avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null, ofertas: null, passos: null,
+    faixas_anteriores: null, faixas_alvo: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
 
@@ -117,7 +124,7 @@ async function avaliarItem(
 
   const ofertas = item.ofertas = unirOfertas([await deps.ml.lerOfertas(ml), doBanco]);
   const motivo = motivoInelegivel({
-    vivo, ehKit: a.ehKit, temAtacado: a.temAtacado, ofertas, familiaPublicando: a.familiaPublicando, migracaoPxv: a.migracaoPxv,
+    vivo, ehKit: a.ehKit, ofertas, familiaPublicando: a.familiaPublicando, migracaoPxv: a.migracaoPxv,
   });
   if (motivo) return fora(motivo);
 
@@ -151,11 +158,21 @@ async function avaliarItem(
   item.preco = alvo;
   if (semAlteracao(base, alvo)) return { ...item, situacao: 'sem_alteracao' };
 
+  // Leituras fora do try abaixo: conta sem acesso sobe, não vira motivo do item.
+  const vivas = item.faixas_anteriores = await deps.ml.lerFaixas(ml);
+  if (vivas === null) return fora('Não foi possível ler o atacado — tente de novo');
+  // Reverter não recalcula as faixas, só não deixa o base restaurado passar por elas.
+  const config = orig ? null : await deps.configAtacado(ids);
+
   let passos: Passo[];
+  let faixas_alvo: FaixaPreco[] | null;
   try {
     const trava = motivoTravaOferta(alvo, ofertas!);
     if (trava) return fora(trava);
-    passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: [], faixasAlvo: null });
+    const decisao = decidirFaixas(alvo, vivas, config);
+    if (decisao.acao === 'fora') return fora(decisao.motivo);
+    faixas_alvo = decisao.faixas_alvo;
+    passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: vivas, faixasAlvo: faixas_alvo });
   } catch (e) {
     return fora(mensagemDe(e));
   }
@@ -163,7 +180,7 @@ async function avaliarItem(
   const avaliacao = await deps.avaliar(ml, alvo);
   const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, orig ? AVISO_D10 : null].filter(Boolean);
   return {
-    ...item, situacao: 'elegivel', avaliacao, passos,
+    ...item, situacao: 'elegivel', avaliacao, passos, faixas_alvo,
     restaurar: orig
       ? orig.restaurar.map((r) => ({ variacao_id: r.variacao_id, esperado: r.novo, novo: r.esperado }))
       : ids.map((id) => ({ variacao_id: id, esperado: estados.get(id)!, novo: { preco_publicacao: alvo, preco_editado_pelo_operador: true } })),

@@ -30,7 +30,8 @@ function item(ml: string, over: Partial<ItemPreview> = {}): ItemPreview {
   return {
     ml_item_id: ml, codigo_pai: 'P1', variacao_ids: ['V1'], titulo: `Produto ${ml}`, sku: null,
     preco_anterior, preco: calcularAlvo(preco_anterior, ajuste)!, avaliacao: a, restaurar: [], variacoes_ml: null,
-    situacao: 'elegivel', motivo: null, incluido: !(a.tem_vermelho || a.tem_sem_dado), aviso: null, ofertas: [], passos: [], ...over,
+    situacao: 'elegivel', motivo: null, incluido: !(a.tem_vermelho || a.tem_sem_dado), aviso: null, ofertas: [], passos: [],
+    faixas_anteriores: [], faixas_alvo: null, ...over,
   };
 }
 const expira = () => new Date(Date.now() + 30 * 60_000).toISOString();

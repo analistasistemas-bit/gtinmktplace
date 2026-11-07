@@ -72,7 +72,7 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>) {
     ofertasBanco: vi.fn(async (ids: string[]) => new Map(ids.map((id): [string, OfertaVigente[]] => [id, []]))),
     lerItem: vi.fn(async (_o: string, id: string) => ({ ...achar(id) })),
     avaliarFresco: vi.fn(async () => AVAL),
-    fatos: vi.fn(async () => ({ ehKit: false, temAtacado: false, familiaPublicando: false, migracaoPxv: false })),
+    fatos: vi.fn(async () => ({ ehKit: false, familiaPublicando: false, migracaoPxv: false })),
     persistir: vi.fn(async (_o: string, id: string) => {
       const i = achar(id);
       if (i.status === 'aplicado') return 'ja_aplicado' as const;

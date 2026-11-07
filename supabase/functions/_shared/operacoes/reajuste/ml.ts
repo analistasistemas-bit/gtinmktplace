@@ -1,9 +1,9 @@
-// I5 — cliente ML do reajuste de preço em massa. Única escrita: o PUT de preço (Legacy: mesmo preço em
-// todas as variações; plano/UP: {price}). 401/403 → SemAcessoStatusML (reconectar a conta).
+// I5 — cliente ML do reajuste de preço em massa. Escritas: o PUT de preço (Legacy: mesmo preço em todas as
+// variações; plano/UP: {price}) e o POST das faixas de atacado. 401/403 → SemAcessoStatusML (reconectar a conta).
 import { caminhoMultiget, comoEnvelopeAntigo } from '../../ml/multiget.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import { oferta } from './ofertas.ts';
-import type { OfertaVigente, VivoItem } from './tipos.ts';
+import type { FaixaPreco, OfertaVigente, VivoItem } from './tipos.ts';
 
 export type ResultadoPut = { kind: 'ok' } | { kind: 'sem_escrita'; status: number; mensagem: string } | { kind: 'desconhecido'; mensagem: string };
 export interface ClienteReajusteML {
@@ -11,10 +11,15 @@ export interface ClienteReajusteML {
   putPreco(itemId: string, alvo: number, variacaoIds: string[] | null): Promise<ResultadoPut>;
   /** null = inconclusivo, nunca "sem ofertas". */
   lerOfertas(itemId: string): Promise<OfertaVigente[] | null>;
+  /** Faixas B2B vivas, por quantidade. null = inconclusivo, nunca "sem faixas". */
+  lerFaixas(itemId: string): Promise<FaixaPreco[] | null>;
+  /** Full-replace: o conjunto substitui o anterior; [] limpa. */
+  gravarFaixas(itemId: string, faixas: FaixaPreco[]): Promise<ResultadoPut>;
 }
 
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_PUT_MS = 15_000;
+const RESTRICOES_B2B = ['channel_marketplace', 'user_type_business'];
 const ATIVA = new Set(['pending', 'started']);
 /** Status fora desta lista (vazio inclusive) torna a leitura inconclusiva: não dá para dizer que a oferta não vale. */
 const STATUS_OFERTA = new Set([...ATIVA, 'candidate', 'finished']);
@@ -31,6 +36,8 @@ type PromoML = {
   start_date?: unknown; finish_date?: unknown;
 };
 
+type PrecoML = { type?: unknown; amount?: unknown; conditions?: { context_restrictions?: unknown; min_purchase_unit?: unknown } };
+
 const texto = (x: unknown) => (typeof x === 'string' && x ? x : null);
 const precoPositivo = (x: unknown) => { const n = Number(x); return x != null && Number.isFinite(n) && n > 0 ? n : null; };
 
@@ -43,6 +50,22 @@ const ofertaDe = (promo: PromoML, x: PromoML) => {
     inicio: texto(x.start_date) ?? texto(promo.start_date), fim: texto(x.finish_date) ?? texto(promo.finish_date),
   });
 };
+
+/** null se o corpo não é legível, ou se alguma faixa B2B não traz quantidade ou valor. Oferta B2B não é faixa. */
+function faixasDe(corpo: unknown): FaixaPreco[] | null {
+  const precos = (corpo as { prices?: unknown } | null)?.prices;
+  if (!Array.isArray(precos)) return null;
+  const faixas: FaixaPreco[] = [];
+  for (const p of precos as PrecoML[]) {
+    const restricoes = p?.conditions?.context_restrictions;
+    if (p?.type !== 'standard' || !Array.isArray(restricoes) || !restricoes.includes('user_type_business')) continue;
+    const preco = precoPositivo(p.amount);
+    const min_unidades = Number(p.conditions?.min_purchase_unit);
+    if (preco === null || !Number.isInteger(min_unidades) || min_unidades < 1) return null;
+    faixas.push({ min_unidades, preco });
+  }
+  return faixas.sort((a, b) => a.min_unidades - b.min_unidades);
+}
 
 export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): ClienteReajusteML {
   const auth = { Authorization: `Bearer ${token}` };
@@ -69,6 +92,27 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
     }
     return null;
   };
+  const escrever = async (method: string, path: string, body: unknown, acao: string): Promise<ResultadoPut> => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), TIMEOUT_PUT_MS);
+    let r: Response;
+    try {
+      r = await f(`${API}${path}`, {
+        method, headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal,
+      });
+    } catch (e) {
+      return { kind: 'desconhecido', mensagem: e instanceof Error ? e.message : String(e) };
+    } finally {
+      clearTimeout(t);
+    }
+    if (r.status === 200 || r.status === 201) return { kind: 'ok' };
+    if (semAcesso(r.status)) throw new SemAcessoStatusML(`ML ${r.status} ao ${acao}`);
+    const msg = await r.json().then((j) => (j as { message?: unknown })?.message, () => undefined);
+    const mensagem = typeof msg === 'string' && msg ? msg : `ML ${r.status}`;
+    // ponytail: 5xx e demais → desconhecido (a escrita pode ter acontecido; quem chama relê o vivo).
+    if (r.status >= 400 && r.status < 500) return { kind: 'sem_escrita', status: r.status, mensagem };
+    return { kind: 'desconhecido', mensagem };
+  };
 
   return {
     async lerVivo(itemId) {
@@ -91,29 +135,31 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
       };
     },
 
-    async putPreco(itemId, alvo, variacaoIds) {
+    putPreco(itemId, alvo, variacaoIds) {
       const body = variacaoIds
         ? { variations: variacaoIds.map((id) => ({ id: Number(id), price: alvo })) }
         : { price: alvo };
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), TIMEOUT_PUT_MS);
+      return escrever('PUT', `/items/${encodeURIComponent(itemId)}`, body, 'alterar o preço');
+    },
+
+    async lerFaixas(itemId) {
       let r: Response;
       try {
-        r = await f(`${API}/items/${encodeURIComponent(itemId)}`, {
-          method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal,
-        });
-      } catch (e) {
-        return { kind: 'desconhecido', mensagem: e instanceof Error ? e.message : String(e) };
-      } finally {
-        clearTimeout(t);
+        r = await f(`${API}/items/${encodeURIComponent(itemId)}/prices`, { headers: { ...auth, 'show-all-prices': 'TRUE' } });
+      } catch {
+        return null;
       }
-      if (r.status === 200 || r.status === 201) return { kind: 'ok' };
-      if (semAcesso(r.status)) throw new SemAcessoStatusML(`ML ${r.status} ao alterar o preço`);
-      const msg = await r.json().then((j) => (j as { message?: unknown })?.message, () => undefined);
-      const mensagem = typeof msg === 'string' && msg ? msg : `ML ${r.status}`;
-      // ponytail: 5xx e demais → desconhecido (a escrita pode ter acontecido; quem chama relê o vivo).
-      if (r.status >= 400 && r.status < 500) return { kind: 'sem_escrita', status: r.status, mensagem };
-      return { kind: 'desconhecido', mensagem };
+      if (semAcesso(r.status)) throw new SemAcessoStatusML(`ML ${r.status} ao ler o atacado`);
+      if (r.status !== 200) return null;
+      return faixasDe(await r.json().catch(() => null));
+    },
+
+    gravarFaixas(itemId, faixas) {
+      const prices = [...faixas].sort((a, b) => a.min_unidades - b.min_unidades).map((x) => ({
+        type: 'standard', amount: x.preco, currency_id: 'BRL',
+        conditions: { context_restrictions: RESTRICOES_B2B, min_purchase_unit: x.min_unidades },
+      }));
+      return escrever('POST', `/items/${encodeURIComponent(itemId)}/prices/standard/quantity`, { prices }, 'gravar o atacado');
     },
 
     async lerOfertas(itemId) {

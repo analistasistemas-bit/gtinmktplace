@@ -131,15 +131,6 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   for (const v of variacoes) {
     precoPorSku[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
   }
-  // Base do atacado (PxQ) e do LOUD de divergência. O PxQ é por ITEM na API do ML, e nesta entrega
-  // o atacado segue família-level (decisão de escopo): com preços divergentes não há base
-  // única legítima, então o caminho falha alto em vez de escolher uma cor arbitrária.
-  const precosDistintos = new Set(
-    variacoes.map((v) => (v.preco_publicacao != null ? Math.round(Number(v.preco_publicacao) * 100) : null))
-      .filter((c): c is number => c != null),
-  );
-  const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-  const precoFamilia = precoRaw != null ? Number(precoRaw) : null;
   // I7: cores cujo ATACADO difere do da família (ADR-0078 F2 grava config por variação quando os
   // preços divergem). O caminho UP só sabe aplicar a config família-level — honrar metade seria
   // publicar dinheiro diferente do configurado.
@@ -456,9 +447,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       await alertarFalhaLoud(`⚠️ Família ${familia.codigo_pai}: descrição/atacado NÃO sincronizados nesta rodada\n\nA consulta dos itens ativos falhou após mudança de composição.\nErro: ${finaisErr.message}`);
       return;
     }
-    const finais = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
+    const finaisComSku = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
       .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id)
-      .map((f) => f.item_externo_id as string);
+      .map((f) => ({ id: f.item_externo_id as string, sku: f.sku as string }));
+    const finais = finaisComSku.map((f) => f.id);
     // `concluido` só é retornado quando TODA cor desejada está confirmada `ativo` (senão a saga
     // devolve `incompleto`/`erro`) — logo finais=[] aqui só é alcançável com skusDesejados=[], ou
     // seja, a família ficaria sem nenhuma cor. Suportado pela SAGA (não é um estado que ela proíbe),
@@ -552,7 +544,12 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       const jaAplicado = familia.atacado_status === 'aplicado';
       const aplicandoFaixas = faixas.length > 0;
       if (aplicandoFaixas || jaAplicado) {
-        if (aplicandoFaixas && precoFamilia == null) {
+        // ADR-0196: o PxQ é por ITEM e o valor é absoluto (ADR-0041), logo a base é o preço do próprio
+        // item. I10: a irmã preservada fica no preço vivo, que aqui é desconhecido; o PxQ dela segue
+        // valendo sobre esse preço, e só a cor nova recebe as faixas. Limpar não depende de preço.
+        const soCorNova = aplicandoFaixas && !!args.preservarPublicadas;
+        const alvosAtacado = soCorNova ? finaisComSku.filter((f) => !jaAtivos.has(f.sku)) : finaisComSku;
+        if (aplicandoFaixas && alvosAtacado.some((f) => precoPorSku[f.sku] == null)) {
           const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else if (aplicandoFaixas && configPorCor.length > 0) {
@@ -576,29 +573,19 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
             + 'atacado do Mercado Livre é único por família. Desligue o atacado desta família para '
             + 'que a configuração por cor deixe de valer.';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
-        } else if (aplicandoFaixas && precosDistintos.size > 1) {
-          // ADR-0160 (I5). O PxQ é por ITEM na API do ML e o valor é ABSOLUTO (ADR-0041): com
-          // preços diferentes entre as cores não existe base única legítima. Usar `precoFamilia`
-          // (a primeira cor) daria a todos os itens um preço B2B calculado sobre outra cor —
-          // desconto de atacado errado, em dinheiro, sem ninguém perceber. Nada financeiro pode
-          // defaultar em silêncio (ADR-0055): registra erro e não aplica.
-          //
-          // Sai desta trava quando o atacado passar a ser por variação (fora do escopo desta
-          // entrega, por decisão de 2026-09-08): aí a base é o preço do próprio item.
-          const m = 'Atacado não aplicado: as cores têm preços diferentes e o preço de atacado do '
-            + 'Mercado Livre é único por anúncio. Deixe o preço uniforme, ou desligue o atacado '
-            + 'nesta família.';
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else {
           let ok = true;
-          for (const id of finais) {
-            try { await conn.aplicarAtacado(ctx, id, precoFamilia ?? 0, faixas); }
+          for (const { id, sku } of alvosAtacado) {
+            try { await conn.aplicarAtacado(ctx, id, precoPorSku[sku] ?? 0, faixas); }
             catch (e) { ok = false; console.error(`atacado UP (update) falhou (${id}):`, e); }
           }
-          await admin.from('familias')
-            .update(ok ? { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null }
-              : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' })
-            .eq('id', familia.id);
+          // Só a cor nova deu certo: isso não prova as irmãs, e um `erro` delas tem de continuar visível.
+          if (!ok || !soCorNova) {
+            await admin.from('familias')
+              .update(ok ? { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null }
+                : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' })
+              .eq('id', familia.id);
+          }
         }
       }
     }

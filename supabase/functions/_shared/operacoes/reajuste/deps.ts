@@ -14,6 +14,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import type { ItemRow } from '../tipos.ts';
 import { resumir } from './avaliacao.ts';
 import type { DepsReajuste, ItemReajuste, OperacaoReajusteRow, ResultadoPersistir } from './executar.ts';
+import { configDoMlb } from './faixas.ts';
 import { criarClienteReajusteML } from './ml.ts';
 import { oferta, unirOfertas } from './ofertas.ts';
 import type { AlvoExpandido, DepsPreview, Origem } from './preview.ts';
@@ -35,8 +36,6 @@ const numOuNull = (x: unknown) => (x == null ? null : Number(x));
 const agoraIso = () => new Date().toISOString();
 const emMin = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 const blocos = <T>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / BLOCO) }, (_, i) => xs.slice(i * BLOCO, (i + 1) * BLOCO));
-/** null = sem atacado; [] = explicitamente sem; qualquer outra coisa conta como atacado (conservador). */
-const temFaixas = (x: unknown) => x != null && !(Array.isArray(x) && x.length === 0);
 
 /** Ids pedidos que não são anúncios desta org (nada é cortado em silêncio, D11). */
 export class ForaDaOrg extends Error {
@@ -135,15 +134,14 @@ export function criarAvaliador(admin: SupabaseClient, cx: Cx): (mlItemId: string
   };
 }
 
-type Flags = Pick<AlvoExpandido, 'ehKit' | 'temAtacado' | 'familiaPublicando' | 'migracaoPxv' | 'titulo'>;
+type Flags = Pick<AlvoExpandido, 'ehKit' | 'familiaPublicando' | 'migracaoPxv' | 'titulo'>;
 
-/** Fatos de bloqueio por MLB, em lote. Com `variacaoIds` (execução) o atacado é o das cores do item; sem (preview)
- *  é o da família canônica do produto — a execução reconfere com as cores casadas. */
-async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string; pai: string; variacaoIds?: string[] }[]): Promise<Map<string, Flags>> {
+/** Fatos de bloqueio por MLB, em lote. */
+async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string; pai: string }[]): Promise<Map<string, Flags>> {
   const mls = [...new Set(alvos.map((a) => a.ml))];
   const pais = [...new Set(alvos.map((a) => a.pai).filter(Boolean))];
   const kits = new Set<string>(), pxv = new Set<string>();
-  const familias: { id: string; codigo_pai: string; status: string; atacado: unknown; titulo_ml: string | null }[] = [];
+  const familias: { codigo_pai: string; status: string; titulo_ml: string | null }[] = [];
   for (const b of blocos(mls)) {
     const k = await admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).eq('status', 'publicado').in('ml_item_id', b);
     falhou('kits_virtuais', k.error);
@@ -152,7 +150,7 @@ async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string
   for (const b of blocos(pais)) {
     const [f, a] = await Promise.all([
       // ponytail: histórico de famílias do produto vem inteiro (dezenas de linhas); filtrar se crescer.
-      admin.from('familias').select('id, codigo_pai, status, atacado, titulo_ml')
+      admin.from('familias').select('codigo_pai, status, titulo_ml')
         .eq('org_id', orgId).in('codigo_pai', b).order('publicado_em', { ascending: false, nullsFirst: false }).order('criado_em', { ascending: false }),
       admin.from('anuncios_externos').select('codigo_pai').eq('org_id', orgId).eq('canal', 'mercado_livre')
         .in('codigo_pai', b).in('migracao_pxv_status', ['solicitada', 'em_andamento']),
@@ -164,35 +162,12 @@ async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string
   }
   const canonica = new Map<string, (typeof familias)[number]>();
   for (const f of familias) if (!canonica.has(f.codigo_pai)) canonica.set(f.codigo_pai, f); // já ordenadas
-  const porId = new Map(familias.map((f) => [f.id, f]));
-
-  // Atacado das cores: por id (execução) ou das famílias canônicas (preview).
-  const famDeVariacao = new Map<string, string>();
-  const variacaoComAtacado = new Set<string>(), familiaComAtacadoNaCor = new Set<string>();
-  const ids = [...new Set(alvos.flatMap((a) => a.variacaoIds ?? []))];
-  for (const b of blocos(ids)) {
-    const { data, error } = await admin.from('variacoes').select('id, familia_id, atacado').eq('org_id', orgId).in('id', b);
-    falhou('variacoes', error);
-    for (const r of data ?? []) {
-      famDeVariacao.set(String(r.id), String(r.familia_id));
-      if (temFaixas(r.atacado)) variacaoComAtacado.add(String(r.id));
-    }
-  }
-  const canonicas = alvos.some((a) => !a.variacaoIds) ? [...canonica.values()].map((f) => f.id) : [];
-  for (const b of blocos(canonicas)) {
-    const { data, error } = await admin.from('variacoes').select('familia_id, atacado').eq('org_id', orgId).in('familia_id', b).not('atacado', 'is', null);
-    falhou('variacoes.atacado', error);
-    for (const r of data ?? []) if (temFaixas(r.atacado)) familiaComAtacadoNaCor.add(String(r.familia_id));
-  }
 
   const out = new Map<string, Flags>();
   for (const a of alvos) {
     const can = canonica.get(a.pai);
-    const atacado = a.variacaoIds
-      ? a.variacaoIds.some((v) => variacaoComAtacado.has(v) || temFaixas(porId.get(famDeVariacao.get(v) ?? '')?.atacado))
-      : !!can && (temFaixas(can.atacado) || familiaComAtacadoNaCor.has(can.id));
     out.set(a.ml, {
-      ehKit: kits.has(a.ml), temAtacado: atacado,
+      ehKit: kits.has(a.ml),
       familiaPublicando: familias.some((f) => f.codigo_pai === a.pai && f.status === 'publicando'),
       migracaoPxv: pxv.has(a.pai), titulo: can?.titulo_ml ?? null,
     });
@@ -357,6 +332,17 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
       return out;
     },
 
+    // O casamento pode cair em lotes diferentes: cada cor herda da própria família, por isso a herança sai aqui.
+    async configAtacado(variacaoIds) {
+      const linhas: { atacado: unknown; familias: { atacado: unknown } }[] = [];
+      for (const b of blocos(variacaoIds)) {
+        const { data, error } = await admin.from('variacoes').select('atacado, familias!inner(atacado)').eq('org_id', orgId).in('id', b);
+        falhou('configAtacado', error);
+        linhas.push(...((data ?? []) as unknown as typeof linhas));
+      }
+      return configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null });
+    },
+
     ml: criarClienteReajusteML(cx.token),
     avaliar: criarAvaliador(admin, cx),
 
@@ -399,8 +385,8 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
     },
 
     async fatos(item) {
-      const f = (await flagsDe(admin, orgId, [{ ml: item.ml_item_id, pai: item.codigo_pai, variacaoIds: item.variacao_ids }])).get(item.ml_item_id)!;
-      return { ehKit: f.ehKit, temAtacado: f.temAtacado, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
+      const f = (await flagsDe(admin, orgId, [{ ml: item.ml_item_id, pai: item.codigo_pai }])).get(item.ml_item_id)!;
+      return { ehKit: f.ehKit, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
     },
 
     async persistir(operacaoId, mlItemId, precoConfirmado, restaurar) {

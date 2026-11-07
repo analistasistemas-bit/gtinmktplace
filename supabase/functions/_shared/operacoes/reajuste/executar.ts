@@ -28,7 +28,7 @@ export interface DepsReajuste extends DepsLaco {
   lerItem(operacaoId: string, mlItemId: string): Promise<ItemReajuste>;
   /** Avaliação com tarifa fresca (C1, sem cache). */
   avaliarFresco(mlItemId: string, preco: number): Promise<Avaliacao>;
-  fatos(item: ItemReajuste): Promise<{ ehKit: boolean; temAtacado: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
+  fatos(item: ItemReajuste): Promise<{ ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
   /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
   ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
   /** RPC `reajuste_persistir`: grava variações + item `aplicado` (ou `erro` no conflito) atomicamente. */

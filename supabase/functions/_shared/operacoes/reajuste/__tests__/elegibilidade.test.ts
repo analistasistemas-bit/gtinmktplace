@@ -6,7 +6,7 @@ const o = (id: string, preco: number | null) => oferta({ promocao_id: id, tipo: 
 
 const ok = (): FatosElegibilidade => ({
   vivo: { preco: 10, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false },
-  ehKit: false, temAtacado: false, ofertas: [], familiaPublicando: false, migracaoPxv: false,
+  ehKit: false, ofertas: [], familiaPublicando: false, migracaoPxv: false,
 });
 const MODERADO = 'Anúncio moderado, encerrado ou inativo';
 
@@ -38,7 +38,6 @@ describe('motivoInelegivel', () => {
     expect(motivoInelegivel(a)).toBe(msg);
     expect(motivoInelegivel(b)).toBe(msg);
   });
-  it('atacado', () => expect(motivoInelegivel({ ...ok(), temAtacado: true })).toBe('Anúncio com preço de atacado fica fora do reajuste'));
   it('oferta vigente deixa de excluir', () => {
     expect(motivoInelegivel({ ...ok(), ofertas: [o('P', 39.9)] })).toBeNull();
   });
@@ -51,10 +50,10 @@ describe('motivoInelegivel', () => {
   });
   it('família publicando', () => expect(motivoInelegivel({ ...ok(), familiaPublicando: true })).toBe('Família em publicação/atualização'));
   it('migração PxV', () => expect(motivoInelegivel({ ...ok(), migracaoPxv: true })).toBe('Migração para preço por variação em curso'));
-  it('ordem: moderado > kit > catálogo > atacado > inconclusiva > família > migração', () => {
+  it('ordem: moderado > kit > catálogo > inconclusiva > família > migração', () => {
     const t: FatosElegibilidade = {
       vivo: { preco: 10, variacoes: null, status: 'closed', sub_status: [], catalog_listing: true, tem_relacoes: true },
-      ehKit: true, temAtacado: true, ofertas: null, familiaPublicando: true, migracaoPxv: true,
+      ehKit: true, ofertas: null, familiaPublicando: true, migracaoPxv: true,
     };
     expect(motivoInelegivel(t)).toBe(MODERADO);
     t.vivo.status = 'active';
@@ -62,8 +61,6 @@ describe('motivoInelegivel', () => {
     t.ehKit = false;
     expect(motivoInelegivel(t)).toBe('Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste');
     t.vivo.catalog_listing = false; t.vivo.tem_relacoes = false;
-    expect(motivoInelegivel(t)).toBe('Anúncio com preço de atacado fica fora do reajuste');
-    t.temAtacado = false;
     expect(motivoInelegivel(t)).toBe('Não foi possível conferir promoções — tente de novo');
     t.ofertas = [];
     expect(motivoInelegivel(t)).toBe('Família em publicação/atualização');
