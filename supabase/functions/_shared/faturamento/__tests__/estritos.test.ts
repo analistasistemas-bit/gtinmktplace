@@ -112,6 +112,13 @@ describe('buscarPedidosPeriodoEstrito', () => {
       .rejects.toThrow(/paging\.total/);
   });
 
+  it('total: 0 sem results lança: resposta sem lista não prova que não há pedido', async () => {
+    const semResults = { ok: true, status: 200, json: async () => ({ paging: { total: 0 } }) };
+    const f = vi.fn().mockResolvedValueOnce(ME).mockResolvedValueOnce(semResults);
+    await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch))
+      .rejects.toThrow(/results/);
+  });
+
   it('total: 0 e página vazia → lista vazia (total 0 é um total válido)', async () => {
     const f = vi.fn().mockResolvedValueOnce(ME).mockResolvedValueOnce(pagina([], 0));
     await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch)).resolves.toEqual([]);

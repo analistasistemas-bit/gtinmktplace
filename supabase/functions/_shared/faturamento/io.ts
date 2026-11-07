@@ -44,12 +44,14 @@ export interface Catalogo {
  *  equivalente Deno de `buscarTodasPaginas` (src/lib/paginacao-supabase.ts). Sem isso, contas com
  *  mais de 1000 variações perdem produtos silenciosamente no casamento por GTIN/código. */
 async function paginarTudo<T>(
-  pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null }>,
+  pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error?: { message: string } | null }>,
+  estrito = false,
   tamanho = 1000,
 ): Promise<T[]> {
   const todas: T[] = [];
   for (let de = 0; ; de += tamanho) {
-    const { data } = await pagina(de, de + tamanho - 1);
+    const { data, error } = await pagina(de, de + tamanho - 1);
+    if (estrito && error) throw new Error(`carregar catálogo: ${error.message}`);
     const lote = data ?? [];
     todas.push(...lote);
     if (lote.length < tamanho) break;
@@ -66,8 +68,15 @@ async function paginarTudo<T>(
  * DSA foi cadastrado por um usuário e a conexão do ML pertence a outro; as vendas vinham com
  * `is_publiai = false` e SEM código, então 12 unidades venderam sem baixar estoque.
  * Só cai de volta para o `user_id` quando não há conexão para resolver a org.
+ *
+ * `estrito`: erro em qualquer página lança, em vez de devolver catálogo incompleto. Quem deriva a
+ * referência de baixa precisa dele: sem o catálogo o código cai no SKU do pedido, e o mesmo pedido
+ * ganha outra referência.
  */
-export async function carregarCatalogo(admin: SupabaseClient, userId: string, orgConhecida?: string | null): Promise<Catalogo> {
+export async function carregarCatalogo(
+  admin: SupabaseClient, userId: string, orgConhecida?: string | null, opts: { estrito?: boolean } = {},
+): Promise<Catalogo> {
+  const estrito = opts.estrito ?? false;
   // `orgConhecida` (já resolvida pelo chamador) evita `resolverOrgPorUserId`, que falha quando o
   // mesmo criador tem conexões em duas orgs.
   const orgId = orgConhecida ?? await resolverOrgPorUserId(admin, userId);
@@ -80,6 +89,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string, or
     (de, ate) => admin.from('familias')
       .select('id, ml_item_id, codigo_pai').eq(colEscopo, valEscopo)
       .not('ml_item_id', 'is', null).range(de, ate),
+    estrito,
   );
   const famPorId = new Map<string, { mlItemId: string; codigoPai: string | null }>();
   const idsPubliai = new Set<string>();
@@ -94,6 +104,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string, or
       // catalog_listing_id: o MLB do anúncio de catálogo (ADR-0021) — ver o bloco no loop abaixo.
       .select('familia_id, codigo, gtin, ml_variation_id, catalog_listing_id, custo, atualizado_em')
       .eq(colEscopo, valEscopo).range(de, ate),
+    estrito,
   );
   // Linhas de custo montadas ANTES do filtro de família publicada abaixo: uma variação de família
   // ainda não publicada não tem ml_item_id, mas seu código/GTIN continuam válidos para casar a
@@ -149,6 +160,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string, or
         // (venda.ts §2), que depende de um GET best-effort no ML.
         .select('item_externo_id, sku, catalog_listing_id')
         .eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate),
+      estrito,
     );
     fundirItensUP(
       { idsPubliai, codPorItem, eanPorItem, infoPorGtin },
@@ -174,6 +186,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string, or
       (de, ate) => admin.from('anuncios_externos')
         .select('ml_item_id_anterior, migracao_pxv_snapshot')
         .eq('org_id', orgId).not('ml_item_id_anterior', 'is', null).range(de, ate),
+      estrito,
     );
     fundirAnunciosMigrados(
       { idsPubliai, codPorVar, eanPorVar },
@@ -359,7 +372,10 @@ export async function buscarPedidosPeriodoEstrito(
     });
     const resp = await f(`${API}/orders/search?${params}`, { headers });
     if (!resp.ok) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-    const { pedidos: results, totalBruto } = parsePaginaBusca(await resp.json());
+    const corpo = await resp.json();
+    // `parsePaginaBusca` troca `results` ausente por lista vazia, e com `total: 0` isso seria "sem pedido".
+    if (!Array.isArray(corpo?.results)) throw new Error('ML /orders: página sem results');
+    const { pedidos: results, totalBruto } = parsePaginaBusca(corpo);
     // null/undefined (incl. explícito `paging.total: null`) ou não numérico: sem total confiável
     // não dá pra provar cobertura — lança em vez de aceitar a página como se fosse tudo.
     if (totalBruto == null || !Number.isFinite(Number(totalBruto))) {

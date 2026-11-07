@@ -32,6 +32,38 @@ function criarAdminFake(conexao: { org_id: string } | null) {
 const ORG = 'org-1111';
 const USER = 'user-2222';
 
+/** `variacoes` responde uma página cheia e erra na seguinte. */
+function adminComFalhaNaPagina2() {
+  let chamadas = 0;
+  const query = (tabela: string) => {
+    const alvo = {
+      select: () => alvo,
+      not: () => alvo,
+      eq: () => alvo,
+      range: () => {
+        if (tabela !== 'variacoes') return Promise.resolve({ data: [], error: null });
+        chamadas += 1;
+        return Promise.resolve(chamadas === 1
+          ? { data: Array.from({ length: 1000 }, () => ({ familia_id: 'f', codigo: 'SKU' })), error: null }
+          : { data: null, error: { message: 'timeout na página 2' } });
+      },
+    };
+    return alvo;
+  };
+  return { from: query };
+}
+
+describe('carregarCatalogo — estrito', () => {
+  it('sucesso seguido de falha lança no modo estrito', async () => {
+    await expect(carregarCatalogo(adminComFalhaNaPagina2() as never, USER, ORG, { estrito: true }))
+      .rejects.toThrow('timeout na página 2');
+  });
+
+  it('sem o modo estrito segue tolerante, para os chamadores atuais', async () => {
+    await expect(carregarCatalogo(adminComFalhaNaPagina2() as never, USER, ORG)).resolves.toBeDefined();
+  });
+});
+
 describe('carregarCatalogo — escopo', () => {
   it('filtra famílias e variações por org_id quando há conexão', async () => {
     const admin = criarAdminFake({ org_id: ORG });

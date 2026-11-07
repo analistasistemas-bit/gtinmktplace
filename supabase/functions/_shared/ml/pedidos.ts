@@ -21,10 +21,12 @@ export function extrairGtin(item: ItemComAtributos | null | undefined): string |
  * GTIN de cada anúncio (ml_item_id → gtin) via /items multiget em lote (20 por chamada). Usado
  * só para os anúncios que não casaram custo por variação/item (fallback). Resiliente: bloco que
  * falha é ignorado (aqueles anúncios ficam sem markup). Devolve só os que têm GTIN.
+ * `estrito`: bloco ou item não lido lança, para quem deriva a referência de baixa a partir do GTIN.
  */
 export async function buscarGtinsDosItens(
   token: string,
   itemIds: string[],
+  opts: { estrito?: boolean } = {},
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   if (itemIds.length === 0) return out;
@@ -36,16 +38,26 @@ export async function buscarGtinsDosItens(
     try {
       const url = `${API}${caminhoMultiget(bloco, 'id,attributes')}`;
       const resp = await fetch(url, { headers, signal });
-      if (!resp.ok) continue;
+      if (!resp.ok) {
+        if (opts.estrito) throw new Error(`ML /items/bulk ${resp.status}`);
+        continue;
+      }
       const arr = comoEnvelopeAntigo(await resp.json(), bloco); // [{ code, body: { id, attributes } }] (ADR-0177)
-      if (!Array.isArray(arr)) continue;
+      if (!Array.isArray(arr)) {
+        if (opts.estrito) throw new Error('ML /items/bulk: resposta inesperada');
+        continue;
+      }
       for (const e of arr) {
-        if (e?.code !== 200) continue;
+        if (e?.code !== 200) {
+          if (opts.estrito) throw new Error(`ML /items/bulk: item não lido (${e?.code})`);
+          continue;
+        }
         const id = e?.body?.id;
         const gtin = extrairGtin(e?.body);
         if (id && gtin) out[id] = gtin;
       }
-    } catch {
+    } catch (e) {
+      if (opts.estrito) throw e;
       // Bloco indisponível: aqueles anúncios ficam sem GTIN → sem markup. Não derruba os demais.
       continue;
     }

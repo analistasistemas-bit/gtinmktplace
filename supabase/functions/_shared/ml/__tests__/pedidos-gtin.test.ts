@@ -6,6 +6,21 @@ import ids from './fixtures/bulk-pedidos-pxv-cores-ids.json' with { type: 'json'
 afterEach(() => vi.unstubAllGlobals());
 
 // ADR-0177: GTIN do faturamento (markup) lido pelo /items/bulk — mesma saída do endpoint antigo.
+describe('buscarGtinsDosItens estrito', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('bloco com erro lança no modo estrito e é ignorado sem ele', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
+    await expect(buscarGtinsDosItens('t', ['MLB1'], { estrito: true })).rejects.toThrow();
+    await expect(buscarGtinsDosItens('t', ['MLB1'])).resolves.toEqual({});
+  });
+
+  it('item não lido no bulk lança no modo estrito', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{ status_code: 500 }]))));
+    await expect(buscarGtinsDosItens('t', ['MLB1'], { estrito: true })).rejects.toThrow();
+  });
+});
+
 describe('buscarGtinsDosItens via bulk', () => {
   it('URL do bulk e GTINs iguais aos do envelope antigo, nos mesmos ids', async () => {
     const urls: string[] = [];

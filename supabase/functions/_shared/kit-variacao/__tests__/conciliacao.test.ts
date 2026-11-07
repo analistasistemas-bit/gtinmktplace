@@ -1,19 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { calcularReserva, pagosDesde, type PedidoPago, type PedidoPendente } from '../conciliacao.ts';
+import { calcularReserva, idsDoItem, pagosDesde, type PedidoPago, type PedidoPendente } from '../conciliacao.ts';
 import { importarPedidosDoItem, lerOferta, listarPendentes } from '../ml-oferta.ts';
 import { refBaixa } from '../../estoque/baixa.ts';
+import { carregarCatalogo } from '../../faturamento/io.ts';
 
 // Só o catálogo é falso: a busca de pedidos, o mapeamento e `registrarBaixaVenda` são os reais.
 vi.mock('../../faturamento/io.ts', async (original) => ({
   ...(await original<typeof import('../../faturamento/io.ts')>()),
-  carregarCatalogo: async () => ({
+  carregarCatalogo: vi.fn(async () => ({
     idsPubliai: new Set(['MLB1', 'MLB2']),
     codigoResolver: (id: string | null) => (id === 'MLB1' ? 'SKU-1' : id === 'MLB2' ? 'SKU-2' : null),
     eanResolver: () => null,
     infoPorGtin: new Map(),
     custoVigenteResolver: () => null,
-  }),
+  })),
 }));
 
 const UP = ['MLB1', 'MLB1C'];
@@ -24,7 +25,7 @@ const pendente = (id: number, status: string, ...itens: ReturnType<typeof item>[
 const pago = (id: number, ...itens: ReturnType<typeof item>[]): PedidoPago => ({
   id, order_items: itens, date_closed: '2026-11-07T12:00:00.000-03:00',
 });
-const base = { itemIds: UP, pendentes: [], pagosRecentes: [], qtdPasso1: 5, qtdAgora: 5 };
+const base = { itemIds: UP, pendentes: [], pagosRecentes: [], idsPasso1: [], qtdPasso1: 5, qtdAgora: 5 };
 
 describe('calcularReserva', () => {
   it.each(['cancelled', 'rejected'])('pagamento %s não reserva', (status) => {
@@ -93,6 +94,7 @@ describe('calcularReserva', () => {
   it.each([
     ['pendentes', { pendentes: null }],
     ['pagos', { pagosRecentes: null }],
+    ['ids do passo 1', { idsPasso1: null }],
     ['quantidade do passo 1', { qtdPasso1: null }],
     ['quantidade atual', { qtdAgora: null }],
     ['quantidade não finita', { qtdAgora: Number.NaN }],
@@ -110,6 +112,43 @@ describe('calcularReserva', () => {
     expect(calcularReserva({ ...base, pendentes: [p] }).duvida).toBe(true);
   });
 
+  it('pedido do passo 1 sem cobertura devolve dúvida', () => {
+    expect(calcularReserva({ ...base, idsPasso1: ['9'] }).duvida).toBe(true);
+  });
+
+  it('pedido do passo 1 coberto por pendente ou por pago não gera dúvida', () => {
+    expect(calcularReserva({
+      ...base, idsPasso1: ['1', '2'],
+      pendentes: [pendente(1, 'pending', item('MLB1', 1))],
+      pagosRecentes: [pago(2, item('MLB1', 1))],
+    })).toEqual({ reservado: 2, duvida: false });
+  });
+
+  it('pago na quarentena recuperado pelo id não solta outro pago ainda sem baixa', () => {
+    expect(calcularReserva({
+      ...base, idsPasso1: ['1'], qtdAgora: 4,
+      pagosRecentes: [pago(1, item('MLB1', 1)), pago(2, item('MLB1', 1))],
+    })).toEqual({ reservado: 2, duvida: false });
+  });
+
+  it('pedido cancelado recuperado pelo id cobre o passo 1 e não reserva', () => {
+    const cancelado = { ...pendente(1, 'refunded', item('MLB1', 2)), status: 'cancelled' };
+    expect(calcularReserva({ ...base, idsPasso1: ['1'], pendentes: [cancelado] }))
+      .toEqual({ reservado: 0, duvida: false });
+  });
+
+  it('pedido na lista e recuperado pelo id conta uma vez, com a leitura mais nova', () => {
+    expect(calcularReserva({
+      ...base,
+      pendentes: [pendente(1, 'pending', item('MLB1', 2)), pendente(1, 'cancelled', item('MLB1', 2))],
+    })).toEqual({ reservado: 0, duvida: false });
+  });
+
+  it.each([['ilegível', 'ontem'], ['ausente', null]])('pago com data %s devolve dúvida', (_nome, data) => {
+    const r = calcularReserva({ ...base, pagosRecentes: [{ ...pago(1, item('MLB1', 1)), date_closed: data }] });
+    expect(r.duvida).toBe(true);
+  });
+
   it('saldo que subiu sem explicação devolve dúvida', () => {
     expect(calcularReserva({ ...base, qtdAgora: 6 }).duvida).toBe(true);
   });
@@ -119,7 +158,26 @@ describe('calcularReserva', () => {
   });
 });
 
+describe('idsDoItem', () => {
+  it('guarda os pedidos do UP com qualquer pagamento, porque rejected pode tentar de novo', () => {
+    expect(idsDoItem(UP, [
+      pendente(1, 'pending', item('MLB1', 1)),
+      pendente(2, 'rejected', item('MLB9', 1), item('MLB1C', 1)),
+      pendente(3, 'pending', item('MLB9', 1)),
+    ])).toEqual(['1', '2']);
+  });
+});
+
 describe('pagosDesde', () => {
+  it('limite inválido lança, em vez de descartar os pagos', () => {
+    expect(() => pagosDesde([pago(1)], 'ontem')).toThrow();
+  });
+
+  it('conserva pedido de data ilegível, para calcularReserva devolver dúvida', () => {
+    const ilegivel = { ...pago(1), date_closed: 'ontem' };
+    expect(pagosDesde([ilegivel], '2026-11-07T11:00:00.000-03:00')).toEqual([ilegivel]);
+  });
+
   it('descarta o pago antes do instante, mantém o posterior e o sem data', () => {
     const antigo = { ...pago(1), date_closed: '2026-11-07T10:00:00.000-03:00' };
     const recente = { ...pago(2), date_closed: '2026-11-07T12:00:00.000-03:00' };
@@ -158,7 +216,7 @@ const rotasOferta = (sobre: Array<[string, () => Response]> = []): Array<[string
 describe('lerOferta', () => {
   it('soma os locais, lê x-version e lista os itens do UP', async () => {
     const { f, chamadas } = fakeFetch(rotasOferta());
-    await expect(lerOferta('tok', 'MLBU1', f)).resolves.toEqual({
+    await expect(lerOferta('tok', 'MLBU1', UP, f)).resolves.toEqual({
       upId: 'MLBU1', versao: 8, quantidade: 4,
       locais: [{ type: 'selling_address', quantity: 4 }],
       itens: [
@@ -170,16 +228,32 @@ describe('lerOferta', () => {
     expect(chamadas.some((u) => u.includes('user_product_id=MLBU1'))).toBe(true);
   });
 
+  it('item fora dos esperados entra na oferta, como a cópia de catálogo nova', async () => {
+    const { f } = fakeFetch(rotasOferta());
+    const oferta = await lerOferta('tok', 'MLBU1', ['MLB1'], f);
+    expect(oferta.itens.map((i) => i.id)).toEqual(['MLB1', 'MLB1C']);
+  });
+
+  it('item esperado que a busca não devolveu lança', async () => {
+    const { f } = fakeFetch(rotasOferta());
+    await expect(lerOferta('tok', 'MLBU1', [...UP, 'MLB1D'], f)).rejects.toThrow('MLB1D');
+  });
+
+  it('sem item esperado lança: não há como provar a busca', async () => {
+    const { f } = fakeFetch(rotasOferta());
+    await expect(lerOferta('tok', 'MLBU1', [], f)).rejects.toThrow();
+  });
+
   it('segundo local devolve somenteSellingAddress false, mesmo com quantidade 0', async () => {
     const { f } = fakeFetch(rotasOferta([['/stock', estoque([
       { type: 'selling_address', quantity: 4 }, { type: 'meli_facility', quantity: 0 },
     ])]]));
-    await expect(lerOferta('tok', 'MLBU1', f)).resolves.toMatchObject({ quantidade: 4, somenteSellingAddress: false });
+    await expect(lerOferta('tok', 'MLBU1', UP, f)).resolves.toMatchObject({ quantidade: 4, somenteSellingAddress: false });
   });
 
   it('sem local nenhum não é somenteSellingAddress', async () => {
     const { f } = fakeFetch(rotasOferta([['/stock', estoque([])]]));
-    await expect(lerOferta('tok', 'MLBU1', f)).resolves.toMatchObject({ quantidade: 0, somenteSellingAddress: false });
+    await expect(lerOferta('tok', 'MLBU1', UP, f)).resolves.toMatchObject({ quantidade: 0, somenteSellingAddress: false });
   });
 
   it.each<[string, Array<[string, () => Response]>]>([
@@ -204,11 +278,11 @@ describe('lerOferta', () => {
     ['bulk com status inesperado', [['/items/bulk', () => json({}, { status: 500 })]]],
   ])('%s lança', async (_nome, sobre) => {
     const { f } = fakeFetch(rotasOferta(sobre));
-    await expect(lerOferta('tok', 'MLBU1', f)).rejects.toThrow();
+    await expect(lerOferta('tok', 'MLBU1', UP, f)).rejects.toThrow();
   });
 
   it('falha de rede lança', async () => {
-    await expect(lerOferta('tok', 'MLBU1', (() => Promise.reject(new Error('rede'))) as unknown as typeof fetch))
+    await expect(lerOferta('tok', 'MLBU1', UP, (() => Promise.reject(new Error('rede'))) as unknown as typeof fetch))
       .rejects.toThrow('rede');
   });
 });
@@ -264,6 +338,7 @@ function fakeAdmin(opts: { erroRpc?: string } = {}) {
     const self: any = {
       select: () => self, eq: () => self, is: () => self, neq: () => self, order: () => self, limit: () => self,
       update: () => self,
+      insert: () => Promise.resolve({ error: null }),
       maybeSingle: () => Promise.resolve({
         data: { familias: { codigo_pai: 'PAI-1', kit_base_codigo_pai: null, kit_multiplicador: null } }, error: null,
       }),
@@ -298,7 +373,17 @@ describe('importarPedidosDoItem', () => {
     ['/users/me', () => json({ id: 77 })],
     ['/orders/search', () => json({ results, paging: { total: results.length } })],
   ]).f;
-  const deps = (f: typeof fetch) => ({ token: 'tok', seller: '77', desde: '2026-11-04T00:00:00.000-03:00', fetch: f });
+  const deps = (f: typeof fetch, idsPasso1: string[] = []) => ({
+    token: 'tok', seller: '77', desde: '2026-11-04T00:00:00.000-03:00', idsPasso1, fetch: f,
+  });
+  /** Janela sem pedido nenhum, e `GET /orders/{id}` respondendo pela rota. */
+  const porId = (id: string, resposta: () => Response) => fakeFetch([
+    ['/users/me', () => json({ id: 77 })],
+    ['/orders/search', () => json({ results: [], paging: { total: 0 } })],
+    [`/orders/${id}`, resposta],
+  ]).f;
+
+  afterEach(() => { vi.unstubAllGlobals(); });
 
   it('importar duas vezes baixa uma, com a mesma referência do sync-venda', async () => {
     const { admin, baixas } = fakeAdmin();
@@ -343,6 +428,70 @@ describe('importarPedidosDoItem', () => {
     const { admin } = fakeAdmin();
     const r = await importarPedidosDoItem(admin, 'org', ['MLB1'], deps(orders([pedidoML(10)])));
     expect(r.baixas).toEqual([expect.objectContaining({ orderId: '10' })]);
+  });
+
+  it('pedido do passo 1 pago fora da janela é recuperado pelo id, baixado e devolvido', async () => {
+    const { admin, baixas } = fakeAdmin();
+    const r = await importarPedidosDoItem(admin, 'org', ['MLB1'], deps(porId('20', () => json(pedidoML(20))), ['20']));
+    expect(r.pagos.map((o) => o.id)).toEqual([20]);
+    expect(baixas).toEqual([{ ref: refBaixa('mercado_livre', 20, 'SKU-1'), qtd: 2 }]);
+  });
+
+  it('pedido do passo 1 não pago volta em naoPagos, sem baixa', async () => {
+    const { admin, baixas } = fakeAdmin();
+    const aberto = pedidoML(20, { status: 'payment_required', payments: [{ status: 'pending' }] });
+    const r = await importarPedidosDoItem(admin, 'org', ['MLB1'], deps(porId('20', () => json(aberto)), ['20']));
+    expect(r.pagos).toEqual([]);
+    expect(r.naoPagos).toEqual([aberto]);
+    expect(baixas).toEqual([]);
+  });
+
+  it('pedido visto na janela e no passo 1 baixa uma vez, com a leitura por id', async () => {
+    const { admin, baixas } = fakeAdmin();
+    const { f } = fakeFetch([
+      ['/users/me', () => json({ id: 77 })],
+      ['/orders/search', () => json({ results: [pedidoML(20, { status: 'payment_required' })], paging: { total: 1 } })],
+      ['/orders/20', () => json(pedidoML(20))],
+    ]);
+    const r = await importarPedidosDoItem(admin, 'org', ['MLB1'], deps(f, ['20']));
+    expect(r.pagos.map((o) => o.status)).toEqual(['paid']);
+    expect(baixas).toHaveLength(1);
+  });
+
+  it.each<[string, () => Response]>([
+    ['status inesperado', () => json({}, { status: 500 })],
+    ['pedido de outra conta', () => json(pedidoML(20, { seller: { id: 99 } }))],
+    ['outro pedido na resposta', () => json(pedidoML(21))],
+    ['pedido sem status', () => json(pedidoML(20, { status: undefined }))],
+  ])('pedido do passo 1 com %s lança, sem baixar nada', async (_nome, resposta) => {
+    const { admin, baixas } = fakeAdmin();
+    await expect(importarPedidosDoItem(admin, 'org', ['MLB1'], deps(porId('20', resposta), ['20']))).rejects.toThrow();
+    expect(baixas).toEqual([]);
+  });
+
+  it('catálogo é carregado no modo estrito, e a falha impede a baixa', async () => {
+    const { admin, baixas } = fakeAdmin();
+    vi.mocked(carregarCatalogo).mockRejectedValueOnce(new Error('página 2 falhou'));
+    await expect(importarPedidosDoItem(admin, 'org', ['MLB1'], deps(orders([pedidoML(10)])))).rejects.toThrow('página 2');
+    expect(vi.mocked(carregarCatalogo)).toHaveBeenLastCalledWith(admin, '', 'org', { estrito: true });
+    expect(baixas).toEqual([]);
+  });
+
+  it('falha ao ler o GTIN de item fora do catálogo impede a baixa', async () => {
+    const { admin, baixas } = fakeAdmin();
+    vi.stubGlobal('fetch', vi.fn(async () => json({}, { status: 500 })));
+    const pedido = pedidoML(10, { order_items: [item('MLB1', 1), item('MLB9', 1)] });
+    await expect(importarPedidosDoItem(admin, 'org', ['MLB1'], deps(orders([pedido])))).rejects.toThrow();
+    expect(baixas).toEqual([]);
+  });
+
+  it('item sem SKU aparece em falhas, para virar dúvida', async () => {
+    const { admin } = fakeAdmin();
+    vi.stubGlobal('fetch', vi.fn(async () => json([])));
+    const r = await importarPedidosDoItem(admin, 'org', ['MLB1'], deps(orders([
+      pedidoML(10, { order_items: [item('MLB1', 1), item('MLB9', 1)] }),
+    ])));
+    expect(r.falhas).toEqual(['pedido 10: sem SKU: MLB9']);
   });
 
   it('falha na leitura dos pedidos lança', async () => {

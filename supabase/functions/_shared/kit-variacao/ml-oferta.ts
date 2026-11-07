@@ -4,7 +4,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { registrarBaixaVenda, type ResultadoBaixaVenda } from '../estoque/baixa.ts';
 import { carregarGtinsFallback } from '../faturamento/enriquecimento.ts';
 import { buscarPedidosPeriodoEstrito, carregarCatalogo, TETO_PEDIDOS_JANELA } from '../faturamento/io.ts';
-import { ehVendaDaConta, mapearPedidoParaVenda } from '../faturamento/venda.ts';
+import { ehVendaDaConta, mapearPedidoParaVenda, type PedidoML } from '../faturamento/venda.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import type { PedidoPago, PedidoPendente } from './conciliacao.ts';
@@ -74,7 +74,15 @@ async function lerStatusItens(f: typeof fetch, token: string, upId: string, ids:
   return itens;
 }
 
-export async function lerOferta(token: string, upId: string, f: typeof fetch = fetch): Promise<OfertaUP> {
+/**
+ * `esperados`: itens que o PubliAI conhece neste UP. Busca filtrada que devolve só parte do UP passa
+ * pelo `paging.total`, e item que faltasse ficaria ativo durante a escrita. Item a mais é aceito.
+ * Item `closed` vem na oferta: quem chama não tem como pausá-lo (medido em 07/11).
+ */
+export async function lerOferta(
+  token: string, upId: string, esperados: string[], f: typeof fetch = fetch,
+): Promise<OfertaUP> {
+  if (esperados.length === 0) throw new Error(`UP ${upId}: sem itens esperados`);
   const resp = await getML(f, token, `/user-products/${encodeURIComponent(upId)}/stock`);
   const versao = Number(resp.headers.get('x-version') ?? NaN);
   if (!Number.isFinite(versao)) throw new Error(`UP ${upId}: sem x-version`);
@@ -83,6 +91,8 @@ export async function lerOferta(token: string, upId: string, f: typeof fetch = f
     throw new Error(`UP ${upId}: locations inválido`);
   }
   const itens = await lerStatusItens(f, token, upId, await listarItensDoUp(f, token, upId));
+  const faltando = esperados.filter((id) => !itens.some((i) => i.id === id));
+  if (faltando.length > 0) throw new Error(`UP ${upId}: busca sem ${faltando.join(', ')}`);
   return {
     upId, versao, locais, itens,
     quantidade: locais.reduce((soma, l) => soma + l.quantity, 0),
@@ -92,8 +102,8 @@ export async function lerOferta(token: string, upId: string, f: typeof fetch = f
 
 /**
  * Pedidos não pagos da conta, inteiros: só `/orders/search/pending` os enxerga. Devolve também os
- * abandonados, que `calcularReserva` descarta pelo pagamento. Eles nunca saem da lista, então o
- * teto pode ser atingido com o tempo: nesse caso lança, e a saga fica em dúvida.
+ * abandonados, que `calcularReserva` descarta pelo pagamento. Medido em 07/11: 14 na Daludi e 4 na
+ * DSA. Acima do teto lança, e a saga fica em dúvida.
  */
 export async function listarPendentes(token: string, seller: string, f: typeof fetch = fetch): Promise<PedidoPendente[]> {
   const pedidos = new Map<string, PedidoPendente>();
@@ -114,14 +124,18 @@ export async function listarPendentes(token: string, seller: string, f: typeof f
 }
 
 /**
- * Baixa cada pedido pago do item criado desde `desde`, sem esperar o webhook. A idempotência vem da
- * referência de `registrarBaixaVenda`, por isso os `itens` saem do mesmo mapeamento do sync-venda:
- * outro código de SKU viraria outra referência e baixaria duas vezes.
+ * Baixa cada pedido pago do item, sem esperar o webhook. A idempotência vem da referência de
+ * `registrarBaixaVenda`, por isso os `itens` saem do mesmo mapeamento do sync-venda, com catálogo e
+ * GTIN estritos: outro código de SKU viraria outra referência e baixaria duas vezes.
  *
- * `desde` é obrigatório: pedido anterior ao ledger não tem referência, e baixá-lo agora tiraria
- * saldo que já saiu. Quem chama passa `pagos` por `pagosDesde` antes de `calcularReserva`; `falhas`
- * não vazio é dúvida, mesmo em item fora do UP. `baixas` traz os alertas de saldo, que o sync-venda
- * não repete, porque para ele a referência já estará aplicada.
+ * Duas coberturas. `desde` limita a varredura por data de criação e é obrigatório: pedido anterior
+ * ao ledger não tem referência, e baixá-lo agora tiraria saldo que já saiu. `idsPasso1` (de
+ * `idsDoItem`) é relido um a um por `GET /orders/{id}`, porque pedido criado antes de `desde` e pago
+ * na quarentena não está na varredura; qualquer falha nessa leitura lança.
+ *
+ * Quem chama passa `pagos` por `pagosDesde` e soma `naoPagos` à lista de `listarPendentes` antes de
+ * `calcularReserva`. `falhas` não vazio é dúvida, mesmo em item fora do UP. `baixas` traz os alertas
+ * de saldo, que o sync-venda não repete, porque para ele a referência já estará aplicada.
  *
  * Não despacha push: o movimento fica no outbox, como quando o sync-venda cai depois da baixa.
  */
@@ -129,20 +143,32 @@ export async function importarPedidosDoItem(
   admin: SupabaseClient,
   orgId: string,
   itemIds: string[],
-  deps: { token: string; seller: string; desde: string; fetch?: typeof fetch },
-): Promise<{ pagos: PedidoPago[]; falhas: string[]; baixas: Array<{ orderId: string; resultado: ResultadoBaixaVenda }> }> {
+  deps: { token: string; seller: string; desde: string; idsPasso1: string[]; fetch?: typeof fetch },
+): Promise<{
+  pagos: PedidoPago[];
+  naoPagos: PedidoPendente[];
+  falhas: string[];
+  baixas: Array<{ orderId: string; resultado: ResultadoBaixaVenda }>;
+}> {
+  const f = deps.fetch ?? fetch;
   const doUp = new Set(itemIds);
   // Filtra aqui: `item=` em /orders/search não está medido.
-  const pedidos = await buscarPedidosPeriodoEstrito(
-    deps.token, { desde: deps.desde, ate: new Date().toISOString() }, deps.fetch ?? fetch,
-  );
-  const pagos = pedidos.filter((o) => o.status === 'paid' && ehVendaDaConta(o, deps.seller)
+  const janela = await buscarPedidosPeriodoEstrito(deps.token, { desde: deps.desde, ate: new Date().toISOString() }, f);
+  const porId = new Map(janela.map((o) => [String(o.id), o]));
+  const naoPagos: PedidoPendente[] = [];
+  for (const id of deps.idsPasso1) {
+    const o = await (await getML(f, deps.token, `/orders/${encodeURIComponent(id)}`)).json() as PedidoML;
+    if (String(o?.id) !== id || !o.status || !ehVendaDaConta(o, deps.seller)) throw new Error(`ML /orders/${id}: resposta inesperada`);
+    porId.set(id, o);
+    if (o.status !== 'paid') naoPagos.push(o);
+  }
+  const pagos = [...porId.values()].filter((o) => o.status === 'paid' && ehVendaDaConta(o, deps.seller)
     && (o.order_items ?? []).some((oi) => doUp.has(oi?.item?.id ?? '')));
-  if (pagos.length === 0) return { pagos: [], falhas: [], baixas: [] };
+  if (pagos.length === 0) return { pagos: [], naoPagos, falhas: [], baixas: [] };
 
   // `userId` só serve quando falta a org.
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, '', orgId);
-  const gtinPorItem = await carregarGtinsFallback(deps.token, pagos, idsPubliai);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, '', orgId, { estrito: true });
+  const gtinPorItem = await carregarGtinsFallback(deps.token, pagos, idsPubliai, { estrito: true });
 
   const falhas: string[] = [];
   const baixas: Array<{ orderId: string; resultado: ResultadoBaixaVenda }> = [];
@@ -156,5 +182,5 @@ export async function importarPedidosDoItem(
       ...resultado.skuDesconhecido.map((x) => `pedido ${pedido.id}: SKU fora do catálogo: ${x.codigo}`),
     );
   }
-  return { pagos, falhas, baixas };
+  return { pagos, naoPagos, falhas, baixas };
 }
