@@ -16,6 +16,9 @@ export const MOTIVOS_MOVIMENTO = [
   'venda_cancelada_antes',
   // ADR-0110: redução manual de saldo (venda física, perda, fim de estoque).
   'ajuste',
+  // ADR-0197: peça saindo da origem e chegando ao destino numa transferência de kit.
+  'kit_saida',
+  'kit_entrada',
 ] as const;
 
 export type MotivoMovimento = (typeof MOTIVOS_MOVIMENTO)[number];
@@ -44,6 +47,8 @@ const ROTULO_MOTIVO: Record<MotivoMovimento, string> = {
   cancelamento_sem_baixa: 'Cancelamento sem baixa',
   venda_cancelada_antes: 'Venda cancelada antes da baixa',
   ajuste: 'Ajuste manual',
+  kit_saida: 'Saída para kit',
+  kit_entrada: 'Entrada por kit',
 };
 
 /** Motivo → texto do operador. Motivo desconhecido devolve o próprio identificador

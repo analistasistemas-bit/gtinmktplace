@@ -6,6 +6,7 @@ import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
 import { sanearTiposProduto } from './tipos-produto.ts';
 import { executarArquivamento } from './arquivar-org.ts';
 import { executarMarcaOrg } from './marca-org.ts';
+import { MODULOS_VALIDOS, recusaDesligarKitVariacao } from './modulos-org.ts';
 import { registrarWebhookTelegram } from '../_shared/notificacoes/gerencial/registrar-webhook.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
@@ -228,8 +229,6 @@ Deno.serve(async (req) => {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const alvo = String(body.org_id ?? '');
       if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
-      // Mesmos ids do registry do frontend (src/lib/modulos.ts) — manter em sincronia.
-      const MODULOS_VALIDOS = ['estoque', 'pulse', 'fiscal', 'promocoes', 'ads', 'extensao'];
       const modulos = Array.isArray(body.modulos)
         ? (body.modulos as string[]).filter((m) => MODULOS_VALIDOS.includes(m))
         : [];
@@ -251,6 +250,9 @@ Deno.serve(async (req) => {
           return json({ error: `Módulo fiscal não pode ser ligado:\n- ${pendencias.join('\n- ')}` }, 400);
         }
       }
+      const recusaKit = await recusaDesligarKitVariacao(
+        modulos, () => db.rpc('kit_variacao_recusa_desligar', { p_org: alvo }));
+      if (recusaKit) return json(recusaKit.body, recusaKit.status);
       // Diferente de set_canais_org: NÃO há módulo obrigatório. Lista vazia é estado
       // válido (org sem nenhum módulo) e é o default de toda org.
       const modulosUnicos = [...new Set(modulos)];

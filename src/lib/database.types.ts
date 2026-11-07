@@ -518,6 +518,7 @@ export type Database = {
           quantidade: number
           quantidade_pedida: number | null
           referencia_externa: string | null
+          transferencia_id: string | null
         }
         Insert: {
           alertado_em?: string | null
@@ -542,6 +543,7 @@ export type Database = {
           quantidade: number
           quantidade_pedida?: number | null
           referencia_externa?: string | null
+          transferencia_id?: string | null
         }
         Update: {
           alertado_em?: string | null
@@ -566,8 +568,16 @@ export type Database = {
           quantidade?: number
           quantidade_pedida?: number | null
           referencia_externa?: string | null
+          transferencia_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "estoque_movimentos_transferencia_fk"
+            columns: ["transferencia_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kit_transferencias"
+            referencedColumns: ["id", "org_id"]
+          },
           {
             foreignKeyName: "estoque_movimentos_org_id_fkey"
             columns: ["org_id"]
@@ -1152,6 +1162,298 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventarios"
             referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      kit_exclusoes: {
+        Row: {
+          codigo: string
+          criado_em: string
+          dono_id: string
+          dono_tipo: string
+          org_id: string
+          up_id: string | null
+        }
+        Insert: {
+          codigo: string
+          criado_em?: string
+          dono_id: string
+          dono_tipo: string
+          org_id: string
+          up_id?: string | null
+        }
+        Update: {
+          codigo?: string
+          criado_em?: string
+          dono_id?: string
+          dono_tipo?: string
+          org_id?: string
+          up_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_exclusoes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kit_transferencia_alvos: {
+        Row: {
+          confirmada_em: string | null
+          escrita_em: string | null
+          intencao_escrita_em: string | null
+          item_ids: string[]
+          org_id: string
+          pausado_pela_saga: string[]
+          qtd_passo1: number | null
+          recusa_definitiva_em: string | null
+          transferencia_id: string
+          up_id: string
+          valor_alvo: number | null
+          valor_anterior: number | null
+        }
+        Insert: {
+          confirmada_em?: string | null
+          escrita_em?: string | null
+          intencao_escrita_em?: string | null
+          item_ids?: string[]
+          org_id: string
+          pausado_pela_saga?: string[]
+          qtd_passo1?: number | null
+          recusa_definitiva_em?: string | null
+          transferencia_id: string
+          up_id: string
+          valor_alvo?: number | null
+          valor_anterior?: number | null
+        }
+        Update: {
+          confirmada_em?: string | null
+          escrita_em?: string | null
+          intencao_escrita_em?: string | null
+          item_ids?: string[]
+          org_id?: string
+          pausado_pela_saga?: string[]
+          qtd_passo1?: number | null
+          recusa_definitiva_em?: string | null
+          transferencia_id?: string
+          up_id?: string
+          valor_alvo?: number | null
+          valor_anterior?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_transferencia_alvos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kit_transferencia_alvos_transferencia_fk"
+            columns: ["transferencia_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kit_transferencias"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      kit_transferencias: {
+        Row: {
+          alerta: string | null
+          criado_em: string
+          estado: string
+          execucao_ate: string | null
+          execucao_token: string | null
+          id: string
+          itens: Json
+          kit_id: string | null
+          org_id: string
+          passo: string
+          passo_em: string
+          tipo: string
+          versao_politica: number
+        }
+        Insert: {
+          alerta?: string | null
+          criado_em?: string
+          estado?: string
+          execucao_ate?: string | null
+          execucao_token?: string | null
+          id?: string
+          itens?: Json
+          kit_id?: string | null
+          org_id: string
+          passo?: string
+          passo_em?: string
+          tipo: string
+          versao_politica: number
+        }
+        Update: {
+          alerta?: string | null
+          criado_em?: string
+          estado?: string
+          execucao_ate?: string | null
+          execucao_token?: string | null
+          id?: string
+          itens?: Json
+          kit_id?: string | null
+          org_id?: string
+          passo?: string
+          passo_em?: string
+          tipo?: string
+          versao_politica?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_transferencias_kit_fk"
+            columns: ["kit_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kits_variacao"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "kit_transferencias_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kit_variacao_componentes: {
+        Row: {
+          codigo: string
+          kit_sku_id: string
+          org_id: string
+          quantidade: number
+        }
+        Insert: {
+          codigo: string
+          kit_sku_id: string
+          org_id: string
+          quantidade: number
+        }
+        Update: {
+          codigo?: string
+          kit_sku_id?: string
+          org_id?: string
+          quantidade?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_variacao_componentes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kit_variacao_componentes_sku_fk"
+            columns: ["kit_sku_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kit_variacao_skus"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      kit_variacao_skus: {
+        Row: {
+          codigo: string
+          cores: string[]
+          id: string
+          kit_id: string
+          org_id: string
+          rotulo_cor: string
+          tamanho: string
+        }
+        Insert: {
+          codigo: string
+          cores: string[]
+          id?: string
+          kit_id: string
+          org_id: string
+          rotulo_cor: string
+          tamanho: string
+        }
+        Update: {
+          codigo?: string
+          cores?: string[]
+          id?: string
+          kit_id?: string
+          org_id?: string
+          rotulo_cor?: string
+          tamanho?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_variacao_skus_kit_fk"
+            columns: ["kit_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kits_variacao"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "kit_variacao_skus_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kits_variacao: {
+        Row: {
+          codigo_pai_base: string
+          codigo_pai_kit: string
+          criado_em: string
+          id: string
+          meta: number
+          org_id: string
+          pecas_por_kit: number
+          preco: number
+          reposicao_auto: boolean
+          so_em_kit: boolean
+          status: string
+          versao: number
+        }
+        Insert: {
+          codigo_pai_base: string
+          codigo_pai_kit: string
+          criado_em?: string
+          id?: string
+          meta?: number
+          org_id: string
+          pecas_por_kit: number
+          preco: number
+          reposicao_auto?: boolean
+          so_em_kit?: boolean
+          status?: string
+          versao?: number
+        }
+        Update: {
+          codigo_pai_base?: string
+          codigo_pai_kit?: string
+          criado_em?: string
+          id?: string
+          meta?: number
+          org_id?: string
+          pecas_por_kit?: number
+          preco?: number
+          reposicao_auto?: boolean
+          so_em_kit?: boolean
+          status?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kits_variacao_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4360,6 +4662,77 @@ export type Database = {
           },
         ]
       }
+      sku_politica_kit: {
+        Row: {
+          bloqueio_moderacao: boolean
+          bloqueio_operador: boolean
+          bloqueio_retirada: boolean
+          codigo: string
+          estado: string
+          org_id: string
+          versao: number
+        }
+        Insert: {
+          bloqueio_moderacao?: boolean
+          bloqueio_operador?: boolean
+          bloqueio_retirada?: boolean
+          codigo: string
+          estado?: string
+          org_id: string
+          versao?: number
+        }
+        Update: {
+          bloqueio_moderacao?: boolean
+          bloqueio_operador?: boolean
+          bloqueio_retirada?: boolean
+          codigo?: string
+          estado?: string
+          org_id?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sku_politica_kit_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sku_reivindicacoes_kit: {
+        Row: {
+          codigo: string
+          kit_id: string
+          org_id: string
+        }
+        Insert: {
+          codigo: string
+          kit_id: string
+          org_id: string
+        }
+        Update: {
+          codigo?: string
+          kit_id?: string
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sku_reivindicacoes_kit_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_reivindicacoes_kit_kit_fk"
+            columns: ["kit_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kits_variacao"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
       sonar_snapshots: {
         Row: {
           catalog_product_id: string | null
@@ -5274,6 +5647,10 @@ export type Database = {
       inventario_orgs_elegiveis: { Args: never; Returns: string[] }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      kit_variacao_recusa_desligar: {
+        Args: { p_org: string }
+        Returns: string
+      }
       liberar_execucao: {
         Args: { p_erro: string; p_job: string; p_lease: string; p_org: string }
         Returns: undefined

@@ -61,6 +61,8 @@ entrada de mercadoria). Default vazio: habilitar é sempre ato explícito do sup
 obrigatório** — lista vazia é estado válido. Lida pelo front via RPC `modulos_habilitados_da_org()`
 (`security definer`, sem parâmetro de propósito: não existe caminho para ler os módulos de outra
 org; `revoke all from public`, `grant execute to authenticated`).
+`set_modulos_org` recusa desligar `kit_variacao` com kit que tenha saldo ou transferência aberta
+(ADR-0197, RPC `kit_variacao_recusa_desligar`).
 Esconder o menu é **navegação**, não fronteira de segurança (ADR-0047): o gate real são as edges
 `cadastrar-produto` e `entrada-estoque`, que respondem 403 para org sem o módulo.
 
@@ -630,7 +632,7 @@ pedido pediu, auditoria/alerta de venda-sem-saldo), `motivo` (check: `venda`, `e
 `estorno_venda`, `venda_sku_nao_encontrado`, `estorno_sku_nao_encontrado`, `cancelamento_sem_baixa`
 — tombstone de cancelamento que chegou antes da baixa existir —, `venda_cancelada_antes`,
 `ajuste` — redução manual, ADR-0110; `quantidade` sempre `<= 0`, e `0` quando o operador conferiu
-sem mudar nada),
+sem mudar nada, `kit_saida` e `kit_entrada` — transferência de kit, ADR-0197),
 `canal_origem`, `referencia_externa` (idempotência), `custo_unitario numeric(12,2)` (só em
 `entrada`), `documento` (NF do fornecedor), `observacao`, `estoque_anterior`, `estoque_resultante`,
 **`push_enfileirado_em`** (outbox no próprio ledger: marca quando o push foi de fato aceito pelo
@@ -650,6 +652,9 @@ Não há coluna de "anúncio de origem": a Decisão 7 foi revisada para **não**
 quando há kit vinculado (o push é absoluto e recalculado, então reempurrar tudo dá o mesmo
 resultado por 1-2 chamadas de API a mais).
 
+**`transferencia_id`** (ADR-0197: FK composta para `kit_transferencias`; nula em todo movimento que
+não é de transferência de kit).
+
 Índices:
 - **`estoque_movimentos_ref_uniq`** — unique **parcial** `(org_id, referencia_externa) where
   referencia_externa is not null`: idempotência (referência nula não bloqueia nada, então a baixa
@@ -660,6 +665,9 @@ resultado por 1-2 chamadas de API a mais).
   and codigo_pai <> ''`: varredura do outbox.
 - `estoque_movimentos_zerados_nao_alertados` — `(org_id, codigo_pai) where estoque_resultante = 0
   and estoque_anterior > 0 and alertado_em is null`: candidatos ao alerta de estoque zerado.
+- **`estoque_movimentos_transferencia_uniq`** — unique `(transferencia_id, codigo, motivo)`:
+  idempotência da saga do kit. Total de propósito: nulos não colidem e `on conflict` não precisa de
+  predicado.
 
 RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated using org_id =
 (select current_org_id())`); **sem policy de escrita** — só `service_role`, via as RPCs abaixo.
@@ -1594,6 +1602,50 @@ Uma linha por família e item escrito: `lote_id`, `familia_id`, `codigo_pai`, `i
 o upsert de uma escrita nova invalida os jobs da anterior. RLS de `select` por
 `org_id = current_org_id()`; escrita só por service role (`update-familia-ml`, `publicar-split-ml`,
 `confirmar-publicacao-ml`).
+
+## Kit com variação (ADR-0197)
+
+Cores combinadas × tamanho numa família User Products, com saldo próprio do kit em `variacoes`.
+Chave de vínculo é `(org_id, codigo)`. Toda tabela tem `org_id`, com FK composta nas filhas. RLS de
+`select` por `org_id = current_org_id()`; escrita só por service role.
+*Migration `20261107190209_kit_variacao_schema.sql`.*
+
+### `kits_variacao`
+`codigo_pai_base`, `codigo_pai_kit` (único por org), `pecas_por_kit` (2 a 6), `preco`, `so_em_kit`,
+`reposicao_auto`, `meta` (`>= 0`), `versao`, `status` (default `rascunho`, sem check), `criado_em`.
+
+### `kit_variacao_skus`
+`kit_id`, `codigo` (único por org), `tamanho`, `cores text[]`, `rotulo_cor`.
+
+### `kit_variacao_componentes`
+PK `(kit_sku_id, codigo)`, `quantidade` (peças em 1 kit). Imutável: trigger recusa `update` e
+`delete`, inclusive para o service role, e a FK sem cascade impede apagar o SKU do kit.
+
+### `sku_politica_kit`
+PK `(org_id, codigo)`, `estado` (`normal|guardado|sobra`), `versao`, `bloqueio_operador`,
+`bloqueio_moderacao`, `bloqueio_retirada`.
+
+### `sku_reivindicacoes_kit`
+PK `(org_id, codigo, kit_id)`: quais kits em "só em kit" usam o SKU.
+
+### `kit_transferencias`
+A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
+(`montar|desmontar|repor|cancelamento|sair_sobra|entrada`), `passo` (default `pausar`), `estado`
+(`ativa|concluida|travada|abortada`), `versao_politica`, `itens jsonb`, `alerta`, `execucao_token`,
+`execucao_ate` (claim atômico), `criado_em`, `passo_em`.
+
+### `kit_transferencia_alvos`
+PK `(transferencia_id, up_id)`, `item_ids text[]`, `qtd_passo1`, `valor_anterior`, `valor_alvo`,
+`pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
+recebido), `escrita_em`, `confirmada_em`.
+
+### `kit_exclusoes`
+Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
+(`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.
+
+### Função
+`kit_variacao_recusa_desligar(p_org)` devolve o motivo para recusar desligar o módulo, ou `null`:
+transferência `ativa` ou `travada`, ou SKU de kit com saldo em `variacoes`. Só `service_role`.
 
 ## Storage
 
