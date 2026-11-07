@@ -6075,6 +6075,10 @@ export type Database = {
         Args: { p_id: string; p_itens: Json; p_org: string; p_versao: number }
         Returns: number
       }
+      set_modulos_org_seguro: {
+        Args: { p_modulos: string[]; p_org: string }
+        Returns: Json
+      }
       skus_estoque_org: { Args: never; Returns: Json[] }
       start_support_session: {
         Args: { p_now: string; p_request_id: string; p_requester_id: string }

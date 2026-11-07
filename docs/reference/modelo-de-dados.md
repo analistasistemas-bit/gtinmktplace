@@ -61,8 +61,8 @@ entrada de mercadoria). Default vazio: habilitar é sempre ato explícito do sup
 obrigatório** — lista vazia é estado válido. Lida pelo front via RPC `modulos_habilitados_da_org()`
 (`security definer`, sem parâmetro de propósito: não existe caminho para ler os módulos de outra
 org; `revoke all from public`, `grant execute to authenticated`).
-`set_modulos_org` recusa desligar `kit_variacao` com kit que tenha saldo ou transferência aberta
-(ADR-0197, RPC `kit_variacao_recusa_desligar`).
+`set_modulos_org` grava pela RPC `set_modulos_org_seguro`, que recusa desligar `kit_variacao` com kit
+que tenha saldo ou transferência aberta (ADR-0197).
 Esconder o menu é **navegação**, não fronteira de segurança (ADR-0047): o gate real são as edges
 `cadastrar-produto` e `entrada-estoque`, que respondem 403 para org sem o módulo.
 
@@ -1643,9 +1643,14 @@ recebido), `escrita_em`, `confirmada_em`.
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
 (`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.
 
-### Função
-`kit_variacao_recusa_desligar(p_org)` devolve o motivo para recusar desligar o módulo, ou `null`:
-transferência `ativa` ou `travada`, ou SKU de kit com saldo em `variacoes`. Só `service_role`.
+### Funções
+Ambas só `service_role`.
+
+- `kit_variacao_recusa_desligar(p_org)` devolve o motivo para recusar desligar o módulo, ou `null`:
+  transferência `ativa` ou `travada`, ou SKU de kit com saldo em `variacoes`.
+- `set_modulos_org_seguro(p_org, p_modulos)` trava a linha de `organizations` com `for update`, valida
+  a recusa e grava `modulos_habilitados` numa transação. Devolve `{ok}` ou `{ok:false, motivo}`.
+  Quem cria transferência precisa travar a mesma linha (`for share`) e revalidar o módulo.
 
 ## Storage
 

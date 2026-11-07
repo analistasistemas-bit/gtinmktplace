@@ -190,6 +190,40 @@ $$;
 revoke all on function public.kit_variacao_recusa_desligar(uuid) from public, anon, authenticated;
 grant execute on function public.kit_variacao_recusa_desligar(uuid) to service_role;
 
+-- Única escrita de `modulos_habilitados` pela edge `usuarios`: trava, valida e grava numa transação,
+-- para nenhuma transferência abrir entre a validação e a gravação.
+--
+-- CONTRATO DOS ESCRITORES DE SAGA (criarTransferencia, Tasks 2 e 4): na mesma transação em que criam
+-- a transferência, travar esta mesma linha (`select modulos_habilitados from public.organizations
+-- where id = p_org for share`) e revalidar que `kit_variacao` segue ligado. O insert sozinho não
+-- basta: a FK espera este lock, mas depois grava com o módulo já desligado.
+-- `for share` e não `for update`: transferências simultâneas não devem se enfileirar entre si.
+create or replace function public.set_modulos_org_seguro(p_org uuid, p_modulos text[])
+returns jsonb language plpgsql set search_path = ''
+as $$
+declare v_recusa text;
+begin
+  perform 1 from public.organizations where id = p_org for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'Empresa não encontrada.');
+  end if;
+
+  if not ('kit_variacao' = any(p_modulos)) then
+    v_recusa := public.kit_variacao_recusa_desligar(p_org);
+    if v_recusa is not null then
+      return jsonb_build_object('ok', false, 'motivo', v_recusa);
+    end if;
+  end if;
+
+  update public.organizations
+  set modulos_habilitados = p_modulos, atualizado_em = now()
+  where id = p_org;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function public.set_modulos_org_seguro(uuid, text[]) from public, anon, authenticated;
+grant execute on function public.set_modulos_org_seguro(uuid, text[]) to service_role;
+
 -- RLS e grants.
 alter table public.kits_variacao            enable row level security;
 alter table public.kit_variacao_skus        enable row level security;

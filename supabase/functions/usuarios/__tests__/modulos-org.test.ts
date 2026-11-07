@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MODULOS_VALIDOS, recusaDesligarKitVariacao } from '../modulos-org.ts';
+import { MODULOS_VALIDOS, gravarModulosOrg } from '../modulos-org.ts';
 import { MODULOS } from '../../../../src/lib/modulos';
 
 describe('MODULOS_VALIDOS', () => {
@@ -11,26 +11,17 @@ describe('MODULOS_VALIDOS', () => {
   });
 });
 
-describe('recusaDesligarKitVariacao (ADR-0197)', () => {
-  it('módulo mantido: não consulta o banco', async () => {
-    const consultar = vi.fn();
-    expect(await recusaDesligarKitVariacao(['kit_variacao'], consultar)).toBeNull();
-    expect(consultar).not.toHaveBeenCalled();
-  });
-  it('sem kit ativo: libera', async () => {
-    const consultar = vi.fn().mockResolvedValue({ data: null, error: null });
-    expect(await recusaDesligarKitVariacao(['estoque'], consultar)).toBeNull();
+describe('gravarModulosOrg (ADR-0197)', () => {
+  it('gravou: 200', async () => {
+    const chamar = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    expect(await gravarModulosOrg(chamar)).toEqual({ status: 200, body: { ok: true } });
   });
   it('kit com saldo ou transferência aberta: 409 com o motivo do banco', async () => {
-    const consultar = vi.fn().mockResolvedValue({ data: 'Há kit com saldo.', error: null });
-    expect(await recusaDesligarKitVariacao([], consultar)).toEqual({
-      status: 409, body: { error: 'Há kit com saldo.' },
-    });
+    const chamar = vi.fn().mockResolvedValue({ data: { ok: false, motivo: 'Há kit com saldo.' }, error: null });
+    expect(await gravarModulosOrg(chamar)).toEqual({ status: 409, body: { error: 'Há kit com saldo.' } });
   });
-  it('falha na consulta: recusa, nunca desliga no escuro', async () => {
-    const consultar = vi.fn().mockResolvedValue({ data: null, error: { message: 'timeout' } });
-    const r = await recusaDesligarKitVariacao([], consultar);
-    expect(r?.status).toBe(500);
-    expect(r?.body.error).toContain('timeout');
+  it('erro do banco: 400 com a mensagem, como o update direto fazia', async () => {
+    const chamar = vi.fn().mockResolvedValue({ data: null, error: { message: 'fiscal_exige_pj' } });
+    expect(await gravarModulosOrg(chamar)).toEqual({ status: 400, body: { error: 'fiscal_exige_pj' } });
   });
 });

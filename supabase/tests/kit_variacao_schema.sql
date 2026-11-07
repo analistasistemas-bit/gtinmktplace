@@ -19,7 +19,7 @@ grant select on ctx to authenticated, service_role;
 
 set local role service_role;
 do $$
-declare c record; v text; n int;
+declare c record; v text; n int; r jsonb; antes text[];
 begin
   select * into c from ctx;
   if c.user_a is null or c.user_b is null then raise exception 'fixtures ausentes: %', c; end if;
@@ -158,6 +158,14 @@ begin
   if public.kit_variacao_recusa_desligar(c.org_a) is null then
     raise exception 'transferência travada não recusou';
   end if;
+  select modulos_habilitados into antes from public.organizations where id = c.org_a;
+  r := public.set_modulos_org_seguro(c.org_a, array['estoque']);
+  if (r->>'ok')::boolean or r->>'motivo' not like '%transferência%' then
+    raise exception 'RPC não recusou transferência aberta: %', r;
+  end if;
+  if (select modulos_habilitados from public.organizations where id = c.org_a) is distinct from antes then
+    raise exception 'RPC gravou módulos mesmo recusando';
+  end if;
   update public.kit_transferencias set estado = 'concluida' where id = c.transf;
   if public.kit_variacao_recusa_desligar(c.org_a) is not null then
     raise exception 'kit sem saldo nem transferência recusou: %', public.kit_variacao_recusa_desligar(c.org_a);
@@ -166,6 +174,37 @@ begin
   values (c.org_a, c.kit, c.sku_com_saldo, 'G', array['Preto','Branco'], 'Preto + Branco');
   if public.kit_variacao_recusa_desligar(c.org_a) is null then
     raise exception 'kit com saldo não recusou';
+  end if;
+
+  -- RPC: manter o módulo grava mesmo com saldo; retirá-lo com saldo recusa sem gravar.
+  r := public.set_modulos_org_seguro(c.org_a, array['kit_variacao']);
+  if not (r->>'ok')::boolean then raise exception 'manter o módulo recusou: %', r; end if;
+  if (select modulos_habilitados from public.organizations where id = c.org_a) is distinct from array['kit_variacao'] then
+    raise exception 'RPC não gravou os módulos';
+  end if;
+  r := public.set_modulos_org_seguro(c.org_a, array[]::text[]);
+  if (r->>'ok')::boolean or r->>'motivo' not like '%saldo%' then
+    raise exception 'RPC não recusou kit com saldo: %', r;
+  end if;
+  if (select modulos_habilitados from public.organizations where id = c.org_a) is distinct from array['kit_variacao'] then
+    raise exception 'RPC gravou módulos mesmo recusando saldo';
+  end if;
+  r := public.set_modulos_org_seguro(gen_random_uuid(), array[]::text[]);
+  if (r->>'ok')::boolean then raise exception 'org inexistente aceita: %', r; end if;
+
+  -- Sem kit com saldo nem transferência aberta, desligar passa pela RPC. A linha do SKU com saldo
+  -- sai antes: ela não tem composição, então o delete é livre.
+  delete from public.kit_variacao_skus where org_id = c.org_a and codigo = c.sku_com_saldo;
+  r := public.set_modulos_org_seguro(c.org_a, array[]::text[]);
+  if not (r->>'ok')::boolean then raise exception 'desligar sem pendência recusou: %', r; end if;
+
+  -- Corrida: concorrência real de duas sessões não cabe em transação desfeita. Aqui a prova é a
+  -- leitura do corpo: trava a linha antes de validar, e valida antes de gravar.
+  select lower(pg_get_functiondef('public.set_modulos_org_seguro(uuid, text[])'::regprocedure)) into v;
+  if position('for update' in v) = 0
+    or position('for update' in v) > position('kit_variacao_recusa_desligar' in v)
+    or position('kit_variacao_recusa_desligar' in v) > position('update public.organizations' in v) then
+    raise exception 'set_modulos_org_seguro fora da ordem trava, valida, grava';
   end if;
 end $$;
 reset role;
@@ -201,6 +240,11 @@ begin
   begin
     perform public.kit_variacao_recusa_desligar(c.org_a);
     raise exception 'authenticated conseguiu executar kit_variacao_recusa_desligar';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.set_modulos_org_seguro(c.org_a, array[]::text[]);
+    raise exception 'authenticated conseguiu executar set_modulos_org_seguro';
   exception when insufficient_privilege then null;
   end;
 end $$;
