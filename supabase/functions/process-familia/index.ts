@@ -25,8 +25,8 @@ import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, faltanteKitSemContagem, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
-import { inputCategoriaDaFamilia, categoriaPorCatalogo } from './categoria-familia.ts';
-import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha } from '../_shared/ml/catalogo.ts';
+import { inputCategoriaDaFamilia, categoriaPorCatalogo, categoriaPorBuscaCatalogo } from './categoria-familia.ts';
+import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha, buscarFichasCatalogoPorTexto } from '../_shared/ml/catalogo.ts';
 import { buscarCategoriaPreditor, buscarDominioCategoria, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
 import { calcularSugestaoCatalogo, type SugestaoCatalogoPersistir } from './sugestao-catalogo.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -313,8 +313,12 @@ Deno.serve(async (req) => {
     // produto de catálogo NÃO é exposto pela API (só domain_id), por isso vamos pelo nome.
     // Os candidatos passam pelo MESMO desempate do resolver (ADR-0026 emenda 2026-10-17).
     // Resiliente: falha/rede/só genérico/abstenção → mantém o resultado do preditor textual.
-    if ((cat.origem === 'generico' || cat.origem === 'manual') && concorrencia.product_name && token) {
-      const porCatalogo = await categoriaPorCatalogo(inputCategoria, concorrencia.product_name, depsCategoria);
+    // Sem nome de catálogo (GTIN não casou): resgate pela busca textual (ADR-0026 emenda 2026-11-07).
+    if ((cat.origem === 'generico' || cat.origem === 'manual') && token) {
+      const tokenCatalogo = token;
+      const porCatalogo = concorrencia.product_name
+        ? await categoriaPorCatalogo(inputCategoria, concorrencia.product_name, depsCategoria)
+        : await categoriaPorBuscaCatalogo(inputCategoria, depsCategoria, (nome) => buscarFichasCatalogoPorTexto(tokenCatalogo, nome));
       if (porCatalogo) {
         categoriaMlId = porCatalogo.categoriaId;
         categoriaNome = porCatalogo.categoriaNome;

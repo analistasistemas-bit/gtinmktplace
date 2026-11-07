@@ -112,3 +112,24 @@ sem o público, e a IA escolheu o de bebê. Categorias-irmãs do mesmo domínio 
   sem desempate. Agora ele passa pelo **mesmo** desempate (`escolherEntreCandidatos`). Abstenção, só
   genérico ou falha mantêm o resultado textual, como antes.
 - A pista forte de vertical (ferramenta elétrica) não muda.
+
+## Emenda 2026-11-07 — resgate de categoria pela busca textual no catálogo
+
+**Caso:** família 00000204, "EUCERIN DUO PACK AQUAPHOR 18G", sem descrição. O `domain_discovery` trouxe
+só Protetores solares e a IA se absteve (3 de 3). O resgate pelo nome do catálogo não rodou porque o EAN
+saiu do catálogo do ML (`product_identifier` com total 0). A família ficou sem categoria, o preço pulou
+comissão e frete, e a Revisão mostrou prejuízo.
+
+**Decisão:** quando o resultado é manual ou genérico e não há nome de catálogo por GTIN, buscar fichas por
+texto (`/products/search?q=`) e usar essas fichas só como pista de categoria:
+- aceita no máximo 5 fichas que compartilhem 2 ou mais palavras de 4+ letras com o nome;
+- roda o preditor no nome de cada ficha e mantém só candidatos do domínio dessas fichas;
+- passa pelo mesmo desempate, mas exige escolha confirmada pela IA. Abstenção ou falha técnica mantêm o
+  resultado textual.
+
+As fichas achadas por texto **não** contam como concorrência (ADR-0014).
+
+**Medição (gpt-4.1-mini):** o caso real deu `MLB1262` em 5 de 5, e um nome sem sentido seguiu manual. Sem
+os dois filtros, o caso real ia para creme de bebê em 5 de 5 e o nome sem sentido para Kits de Ferramentas.
+Em 24 famílias reais: 17 iguais à categoria final, 3 diferentes e 4 sem candidato. O resgate só roda em
+famílias que ficariam sem categoria, e a Revisão continua sendo o portão final.

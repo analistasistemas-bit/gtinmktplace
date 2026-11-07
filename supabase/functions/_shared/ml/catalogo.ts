@@ -337,6 +337,19 @@ export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string |
   return parseProdutoCatalogoBusca(json);
 }
 
+export interface FichaBusca { nome: string; domainId: string; }
+
+export function parseFichasBusca(json: unknown): FichaBusca[] {
+  const results = (json as { results?: Array<{ name?: unknown; domain_id?: unknown }> } | null)?.results ?? [];
+  return results.flatMap((r) =>
+    typeof r.name === 'string' && typeof r.domain_id === 'string' ? [{ nome: r.name, domainId: r.domain_id }] : []);
+}
+
+/** Fichas de catálogo por texto. Serve só de pista de categoria: nunca para contar concorrentes (ADR-0014). */
+export async function buscarFichasCatalogoPorTexto(token: string, nome: string): Promise<FichaBusca[]> {
+  return parseFichasBusca(await mlGet(`${API}/products/search?status=active&site_id=MLB&q=${encodeURIComponent(nome)}`, token));
+}
+
 /** Lê o comprimento (LENGTH) do NOSSO item publicado — base de comparação da trava de metragem. */
 export async function buscarEsperadoDoItem(token: string, itemId: string): Promise<EsperadoProduto> {
   return parseEsperadoItem(await mlGet(`${API}/items/${itemId}?include_attributes=all`, token));
