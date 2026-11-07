@@ -1,5 +1,5 @@
 import {
-  extrairContagem, extrairLargura, extrairMetragem, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
+  extrairContagem, extrairLargura, extrairMetragem, NUM, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
 } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
 import { ORDEM_LEITURA, ORDEM_LEITURA_GRADE, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
@@ -59,7 +59,7 @@ const RE_DIMENSAO_COMPOSTA = /\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(?:\s*[xX]
 // garantir um dado (bug real: "FITAS VELUDO 25MM CORES C/1MT" não tem a palavra LARGURA perto do
 // 25MM, então extrairLargura devolve null e o 25mm que a IA extraiu corretamente era descartado
 // — 13 famílias de fitas/bordado/pompom colapsavam em 4 títulos por perder o discriminador).
-const RE_MEDIDA_SIMPLES = /\d+(?:,\d+)?\s*(?:mm|cm|m)\b/gi;
+const RE_MEDIDA_SIMPLES = new RegExp(`${NUM}\\s*(?:mm|cm|m)\\b`, 'gi');
 
 // Versão global de RE_DIMENSAO_COMPOSTA só pra mascarar "10X15CM" durante a canonicalização de
 // unidade abaixo — a dimensão composta é tratada em outro guard (aplicarGuardsTitulo) e não pode
@@ -79,15 +79,15 @@ const RE_DIMENSAO_COMPOSTA_G = new RegExp(RE_DIMENSAO_COMPOSTA.source, 'gi');
 // de roupa (P/M/G/GG) e com a convenção de fornecedor "L.CLEA" deste catálogo — fora do que o
 // plano pediu, e um "3 G" ou "5 L.CLEA" virando "3g"/"5l.CLEA" seria pior que o bug original.
 const CONVERSOES_UNIDADE: Array<[RegExp, string]> = [
-  [/(\d+(?:,\d+)?)\s*(?:MILIMETROS|MILÍMETROS|MM)\b/gi, 'mm'],
-  [/(\d+(?:,\d+)?)\s*(?:CENTIMETROS|CENTÍMETROS|CM)\b/gi, 'cm'],
-  [/(\d+(?:,\d+)?)\s*(?:MILILITROS|ML)\b/gi, 'ml'],
-  [/(\d+(?:,\d+)?)\s*(?:METROS|METRO|MTS|MT)\b/gi, 'm'],
-  [/(\d+(?:,\d+)?)\s*(?:GRAMAS|GRAMA|GR)\b/gi, 'g'],
-  [/(\d+(?:,\d+)?)\s*(?:QUILOS|QUILO|KG)\b/gi, 'kg'],
-  [/(\d+(?:,\d+)?)\s*(?:LITROS|LITRO|LT)\b/gi, 'l'],
-  [/(\d+(?:,\d+)?)\s*(?:UNIDADES|UNIDADE|UNDS|UNID|UND|UN)\b/gi, 'un'],
-  [/(\d+(?:,\d+)?)\s*(?:PEÇAS|PECAS|PEÇA|PECA|PÇS|PCS|PC)\b/gi, 'pc'],
+  [new RegExp(String.raw`(${NUM})\s*(?:MILIMETROS|MILÍMETROS|MM)\b`, 'gi'), 'mm'],
+  [new RegExp(String.raw`(${NUM})\s*(?:CENTIMETROS|CENTÍMETROS|CM)\b`, 'gi'), 'cm'],
+  [new RegExp(String.raw`(${NUM})\s*(?:MILILITROS|ML)\b`, 'gi'), 'ml'],
+  [new RegExp(String.raw`(${NUM})\s*(?:METROS|METRO|MTS|MT)\b`, 'gi'), 'm'],
+  [new RegExp(String.raw`(${NUM})\s*(?:GRAMAS|GRAMA|GR)\b`, 'gi'), 'g'],
+  [new RegExp(String.raw`(${NUM})\s*(?:QUILOS|QUILO|KG)\b`, 'gi'), 'kg'],
+  [new RegExp(String.raw`(${NUM})\s*(?:LITROS|LITRO|LT)\b`, 'gi'), 'l'],
+  [new RegExp(String.raw`(${NUM})\s*(?:UNIDADES|UNIDADE|UNDS|UNID|UND|UN)\b`, 'gi'), 'un'],
+  [new RegExp(String.raw`(${NUM})\s*(?:PEÇAS|PECAS|PEÇA|PECA|PÇS|PCS|PC)\b`, 'gi'), 'pc'],
 ];
 
 // Mesmos alvos de comprimento de CONVERSOES_UNIDADE, mas sem exigir dígito antes — usada só pra
