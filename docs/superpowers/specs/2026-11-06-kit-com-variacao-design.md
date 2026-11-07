@@ -69,6 +69,8 @@ Botão **Gerenciar kit** na linha do kit em Publicados **[agente, aceito sem obj
   Combinação ou tamanho nunca publicado vira item novo na mesma família, com foto própria.
 - **Desmontar:** as peças voltam ao unitário **[Diego]**. Com reposição automática ligada, desmontar
   a desliga até o operador religar, com aviso na tela, para o sistema não remontar **[Diego]**.
+  Com Vender só em kit ligado, as peças voltam como **guardadas, sem oferta**. A tela diz isso e
+  pergunta se quer desligar a opção, o que reativa os individuais **[agente]**.
 - Ligar e desligar Vender só em kit, a reposição automática e alterar a meta.
 
 ## Estoque
@@ -76,8 +78,9 @@ Botão **Gerenciar kit** na linha do kit em Publicados **[agente, aceito sem obj
 ### Modelo: estoque separado [Diego]
 
 A peça fica oferecida em um anúncio só. O kit tem **saldo próprio real**, diferente do kit vinculado,
-que deriva o saldo da base. Como o ML não vende além do saldo de cada anúncio, a janela entre venda
-e atualização deixa de causar venda duplicada.
+que deriva o saldo da base. O ML não vende além do saldo de cada anúncio, então a separação evita a
+venda duplicada **desde que nenhum push de saldo local restaure peça já vendida**. Por isso a garantia
+depende da "Escrita de estoque por versão"; sozinha, a separação não basta.
 
 Isso substitui as regras anteriores de reserva de 1 unidade e saldo pelo mínimo das cores, que
 foram descartadas.
@@ -191,8 +194,9 @@ Promoções: conferir o que acontece com individual pausado que está em campanh
 Valem para toda operação. Um furo em qualquer um reprova o desenho.
 
 1. Cada peça está em um lugar só: individual, kit ou em trânsito.
-2. Soma de individual + kits + trânsito só muda por venda, entrada, ajuste ou estorno, nunca por
-   montar, desmontar ou repor.
+2. O total é contado **em peças, por SKU individual**: individual + peças dentro de kits (saldo do kit
+   × composição) + trânsito. Esse total só muda por venda, entrada, ajuste ou estorno, nunca por
+   montar, desmontar ou repor. O kit nunca entra como 1 unidade na conta.
 3. Nada aumenta oferta no ML antes de a redução correspondente estar confirmada.
 4. Falha deixa a peça sem oferta, nunca em duas ofertas, e gera alerta.
 5. Toda operação é idempotente e pode ser repetida sem mover peça duas vezes.
@@ -296,6 +300,13 @@ Isso vale também para push de entrada e reconciliação nesses SKUs.
 Trocar só o conector de push deixaria o UPDATE de composição fora da garantia. Sem fallback para
 `/items` nesses SKUs.
 
+**Um local só:** o `PUT` em `selling_address` altera um balde, e outro local com quantidade continua
+vendendo. Só entra no kit SKU cujo `GET` mostra exclusivamente `selling_address`. Isso é revalidado
+em toda operação, e outro local bloqueia com alerta. "Sem Full" não garante isso sozinho.
+
+**Estado Guardado não usa `status = pausado` no vínculo local [medir]:** `_shared/estoque/alvos.ts`
+tira item pausado do push, e isso não pode esconder um SKU da reconciliação.
+
 **Só user product:** a API não existe para item Legacy (medido: `/stock` devolve 404 em item sem
 `user_product_id`). Base Legacy não pode gerar kit com variação.
 
@@ -316,12 +327,16 @@ Escrita, em anúncio indicado pelo Diego e sem Full:
 Pausa:
 
 5. Redução e aumento em item com pausa do vendedor, passando por zero, mantêm a pausa.
-6. Reposição de item `out_of_stock` se comporta como esperado, em todos os itens relacionados.
+6. Reposição em item `out_of_stock`: o ML religa sozinho quando a quantidade sobe (ADR-0111). **Reprova
+   se qualquer item que a política quer pausado ficar `active`.** Pausa do vendedor com saldo zero
+   também é medida. Vale para todos os itens relacionados.
 
 Compra, a mais importante. Exige compra real controlada, com autorização do Diego:
 
 7. Compra **entre o GET e o PUT**: o `PUT` com a versão anterior é recusado.
-8. Pagamento pendente e sua aprovação posterior: o saldo versionado já exclui a peça comprometida.
+8. Pagamento pendente: ler `locations[].quantity` de `/user-products/{id}/stock`, **o mesmo campo que o
+   `PUT` usa**, nunca `available_quantity`. Ler com o pagamento pendente e de novo depois da aprovação.
+   O campo precisa excluir a peça comprometida nas duas leituras, e a venda precisa mudar `x-version`.
 9. Depois de uma redução, a oferta não vende além do novo saldo em nenhum item relacionado. A doc
    descreve propagação assíncrona para condições de venda do UP.
 
