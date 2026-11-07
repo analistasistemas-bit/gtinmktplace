@@ -18,7 +18,7 @@ function alvo(up_id: string, codigo: string, papel: 'origem' | 'destino', delta:
   return {
     up_id, codigo, papel, delta, item_ids, qtd_passo1: null, passo1_em: null, ids_passo1: null,
     valor_anterior: null, valor_alvo: null, pausado_pela_saga: [], intencao_escrita_em: null,
-    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null,
+    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0,
   };
 }
 
@@ -53,6 +53,13 @@ function cenario() {
     alertas: [] as string[],
     filas: [] as number[],
     token: null as string | null,
+    execucaoAte: 0,
+    exclusaoSolta: false,
+    falhaFinalizar: null as Error | null,
+    /** Chamado a cada leitura do ML: o teste muda o mundo no meio de um passo. */
+    aoLer: (_upId: string) => {},
+    aoAtivar: (_itemId: string) => {},
+    aoSalvarAlvo: (_patch: Partial<AlvoSaga>) => {},
     reservado: false,
     creditado: false,
     /** Falha injetada no PUT de quantidade: devolve o erro a lançar (e se aplica antes) ou null. */
@@ -63,50 +70,75 @@ function cenario() {
     seq: 0,
   };
 
+  // Espelho de kit_saga_validar: token, prazo vigente, estado e exclusão.
+  const validar = (token: string) => {
+    if (token !== s.token || s.agora >= s.execucaoAte || s.t.estado !== 'ativa' || s.exclusaoSolta) {
+      throw new Error('kit_execucao_vencida');
+    }
+  };
   const upDoItem = (itemId: string) => Object.values(ups).find((u) => u.itens.some((i) => i.id === itemId))!;
   const itemPorId = (itemId: string) => upDoItem(itemId).itens.find((i) => i.id === itemId)!;
 
   const deps: DepsSaga = {
     repo: {
-      async reivindicar(_id, token) {
-        if (s.token !== null || s.t.estado !== 'ativa') return false;
+      async reivindicar(_id, token, prazoS) {
+        if (s.t.estado !== 'ativa' || (s.token !== null && s.agora < s.execucaoAte)) return false;
         s.token = token;
+        s.execucaoAte = s.agora + prazoS * 1000;
         return true;
       },
       async carregar() {
         return { transferencia: structuredClone(s.t), alvos: structuredClone(s.alvos) };
       },
       async salvarTransferencia(_id, token, patch) {
-        if (token !== s.token) throw new Error('perdeu a execução');
-        Object.assign(s.t, patch);
+        validar(token);
+        if (patch.passo) s.t.passo = patch.passo;
+        if (patch.alerta) s.t.alerta = patch.alerta;
+        if (patch.travar) s.t.estado = 'travada';
       },
-      async salvarAlvo(_id, upId, patch) {
+      async salvarAlvo(_id, token, upId, patch) {
         const erro = s.falhaSalvarAlvo(patch);
         if (erro) throw erro;
+        validar(token);
         Object.assign(s.alvos.find((a) => a.up_id === upId)!, structuredClone(patch));
+        s.aoSalvarAlvo(patch);
       },
-      async liberar(_id, token) {
-        if (s.token === token) s.token = null;
+      async finalizar(_id, token, estado, alerta) {
+        if (s.falhaFinalizar) { const e = s.falhaFinalizar; s.falhaFinalizar = null; throw e; }
+        validar(token);
+        s.rpcs.push('finalizar');
+        s.exclusaoSolta = true;
+        Object.assign(s.t, { estado, passo: 'fim', alerta: alerta ?? s.t.alerta });
+        s.token = null;
       },
-      async politica() {
-        return { versao: s.versaoPolitica, semReativar: s.semReativar };
-      },
-      async saldoLocal(codigo) {
-        return s.saldo[codigo];
-      },
-      async rpc(nome) {
-        s.rpcs.push(nome);
-        if (nome === 'kit_reservar_transferencia' && !s.reservado) {
+      async ledger(_id, token, op) {
+        validar(token);
+        s.rpcs.push(op);
+        if (op === 'reservar' && !s.reservado) {
           s.reservado = true; s.saldo.P -= 1; s.saldo.B -= 1;
         }
-        if (nome === 'kit_creditar_transferencia' && !s.creditado) {
+        if (op === 'creditar' && !s.creditado) {
           s.creditado = true; s.saldo.K += 1;
         }
         return { ok: true };
       },
+      async podeReativar(_id, token, codigo) {
+        validar(token);
+        return s.versaoPolitica === s.t.versao_politica && !s.semReativar.includes(codigo);
+      },
+      async liberar(_id, token) {
+        if (s.token === token) s.token = null;
+      },
+      async versaoPolitica() {
+        return s.versaoPolitica;
+      },
+      async saldoLocal(codigo) {
+        return s.saldo[codigo];
+      },
     },
     ml: {
       async lerOferta(upId, esperados) {
+        s.aoLer(upId);
         const u = ups[upId];
         for (const id of esperados) if (!u.itens.some((i) => i.id === id)) throw new Error(`sem ${id}`);
         const locais = (u.locais ?? ['selling_address']).map((type) => ({ type, quantity: u.quantidade }));
@@ -136,6 +168,7 @@ function cenario() {
           i.status = 'paused';
           if (!i.subStatus.includes('paused_by_seller')) i.subStatus.push('paused_by_seller');
         } else {
+          s.aoAtivar(itemId);
           i.status = 'active';
           i.subStatus = i.subStatus.filter((x) => x !== 'paused_by_seller');
         }
@@ -182,7 +215,7 @@ describe('avancarSaga', () => {
       'qtd MLB-P 4', 'qtd MLB-B 4', 'qtd MLB-K 3',
       'active MLB-P', 'active MLB-B', 'active MLB-BC', 'active MLB-K',
     ]);
-    expect(c.s.rpcs).toEqual(['kit_reservar_transferencia', 'kit_creditar_transferencia', 'kit_soltar_exclusao']);
+    expect(c.s.rpcs).toEqual(['reservar', 'creditar', 'finalizar']);
     expect(c.s.alvos.map((a) => [a.valor_anterior, a.valor_alvo])).toEqual([[5, 4], [5, 4], [2, 3]]);
     // Quarentena: nenhuma conciliação antes de T depois da pausa confirmada.
     expect(c.s.filas).toContain(T);
@@ -230,7 +263,7 @@ describe('avancarSaga', () => {
     expect(c.s.t.alerta).toMatch(/P/);
     expect(qtdPuts(c, 'MLB-P')).toBe(1);
     expect(qtdPuts(c, 'MLB-K')).toBe(0);
-    expect(c.s.rpcs).not.toContain('kit_soltar_exclusao');
+    expect(c.s.rpcs).not.toContain('finalizar');
     expect(c.s.chamadas.some((x) => x.startsWith('active'))).toBe(false);
     expect(c.s.alertas).toHaveLength(1);
   });
@@ -299,17 +332,113 @@ describe('avancarSaga', () => {
     expect(c.s.alertas.join()).toMatch(/acima do saldo em P \(pedido 5\)/);
   });
 
-  it('pedido pendente que come a peça da origem aborta sem reservar', async () => {
+  it('pedido pendente do UP bloqueia até sair da lista, sem reservar nem escrever (achado 1)', async () => {
+    // Pendente conhecido que paga antes do PUT: local cai, ML cai, e o alvo congelado ofereceria uma peça a mais.
     const c = cenario();
-    c.s.saldo.P = 1;
     await rodar(c, noPasso('conciliar'));
     c.s.pendentes = [{ id: 1, order_items: [{ item: { id: 'MLB-P' }, quantity: 1 }], payments: [{ status: 'pending' }] } as PedidoPendente];
-    await rodar(c);
-    expect(c.s.t.estado).toBe('abortada');
-    expect(c.s.rpcs).not.toContain('kit_reservar_transferencia');
+    for (let i = 0; i < 3; i++) expect((await passo(c)).acao).toBe('reagendada');
+    expect(c.s.t.passo).toBe('conciliar');
+    expect(c.s.rpcs).toEqual([]);
     expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
-    // Aborto comum devolve ao ar o que a saga pausou.
+    c.s.pendentes = [];
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+  });
+
+  it('saldo local diferente do ML bloqueia com um alerta só (achado 1)', async () => {
+    const c = cenario();
+    c.s.saldo.P = 10;
+    await rodar(c, noPasso('conciliar'));
+    for (let i = 0; i < 3; i++) expect((await passo(c)).acao).toBe('reagendada');
+    expect(c.s.t.passo).toBe('conciliar');
+    expect(c.s.rpcs).toEqual([]);
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.alertas[0]).toMatch(/P: saldo local 10, ML 5/);
+  });
+
+  it('execução com prazo vencido não grava alvo nem chama PUT (achado 2)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reduzir'));
+    // A leitura antes do PUT demora mais que o lease: outra execução pode ter o claim.
+    c.s.aoLer = () => { c.s.agora += 200_000; c.s.aoLer = () => {}; };
+    await expect(avancarSaga(c.deps, 'T1')).rejects.toThrow(/prazo|vencida/);
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+    expect(c.s.alvos.every((a) => a.intencao_escrita_em === null)).toBe(true);
+  });
+
+  it('prazo da invocação vencido entre a intenção e o PUT não envia (achado 2)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reduzir'));
+    // Dentro do lease (180 s), fora do prazo da invocação (120 s): só a checagem local segura o PUT.
+    c.s.aoSalvarAlvo = (patch) => { if ('intencao_escrita_em' in patch) c.s.agora += 130_000; };
+    await expect(avancarSaga(c.deps, 'T1')).rejects.toThrow(/prazo/);
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+  });
+
+  it('pausa perdida depois do cálculo bloqueia o PUT e mantém a exclusão (achado 4)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reduzir'));
+    c.s.ups['UP-P'].itens[0] = ativo('MLB-P');
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.t.alerta).toMatch(/MLB-P perdeu a pausa/);
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+    expect(c.s.exclusaoSolta).toBe(false);
+  });
+
+  it('quantidade do ML que mudou depois do cálculo bloqueia o PUT (achado 4)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reduzir'));
+    c.s.ups['UP-P'].quantidade = 4;
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+  });
+
+  it('falha ao finalizar não solta a exclusão nem conclui pela metade (achado 5)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reativar'));
+    c.s.falhaFinalizar = new Error('conexão caiu');
+    expect((await passo(c)).acao).toBe('reagendada');
+    expect(c.s.t.estado).toBe('ativa');
+    expect(c.s.exclusaoSolta).toBe(false);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
     expect(c.s.chamadas.filter((x) => x.startsWith('active')).length).toBe(4);
+  });
+
+  it('política que muda durante a reativação repausa o item e para (achado 6)', async () => {
+    const c = cenario();
+    c.s.aoAtivar = (id) => { if (id === 'MLB-P') c.s.versaoPolitica = 8; };
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.chamadas.slice(-2)).toEqual(['active MLB-P', 'paused MLB-P']);
+    expect(c.s.chamadas).not.toContain('active MLB-K');
+    expect(c.s.alertas).toHaveLength(1);
+  });
+
+  it('PUT vai para um item aberto do UP e grava o destino (achado 7)', async () => {
+    const c = cenario();
+    c.s.ups['UP-B'].itens = [{ id: 'MLB-B0', status: 'closed', subStatus: [] }, ativo('MLB-B')];
+    c.s.alvos[1].item_ids = ['MLB-B0', 'MLB-B'];
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(qtdPuts(c, 'MLB-B0')).toBe(0);
+    expect(qtdPuts(c, 'MLB-B')).toBe(1);
+    expect(c.s.alvos[1].item_escrita).toBe('MLB-B');
+  });
+
+  it('5ª recusa 4xx trava com um alerta só e mantém a exclusão (achado 7)', async () => {
+    const c = cenario();
+    c.s.falhaPut = (id) => (id === 'MLB-P' ? { erro: new MLApiError(400, 'recusado'), aplica: false } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(qtdPuts(c, 'MLB-P')).toBe(5);
+    expect(c.s.alvos[0].recusas).toBe(5);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.exclusaoSolta).toBe(false);
   });
 
   it('versao_politica velha aborta sem reativar', async () => {
@@ -319,7 +448,7 @@ describe('avancarSaga', () => {
     await rodar(c);
     expect(c.s.t.estado).toBe('abortada');
     expect(c.s.chamadas.some((x) => x.startsWith('active') || x.startsWith('qtd'))).toBe(false);
-    expect(c.s.rpcs).toEqual(['kit_cancelar_transferencia', 'kit_soltar_exclusao']);
+    expect(c.s.rpcs).toEqual(['cancelar', 'finalizar']);
   });
 
   it('política que muda antes do início aborta sem pausar nada', async () => {
@@ -378,7 +507,7 @@ describe('avancarSaga', () => {
     expect(c.s.t.estado).toBe('travada');
     expect(c.s.t.alerta).toMatch(/MLB-K moderado/);
     expect(c.s.chamadas.some((x) => x.startsWith('active') || x.startsWith('qtd'))).toBe(false);
-    expect(c.s.rpcs).not.toContain('kit_soltar_exclusao');
+    expect(c.s.rpcs).not.toContain('finalizar');
     expect(await passo(c)).toMatchObject({ acao: 'ocupada' });
   });
 
@@ -415,7 +544,7 @@ describe('avancarSaga', () => {
     await passo(d);
     expect(d.s.t.estado).toBe('travada');
     expect(d.s.chamadas.filter((x) => x.startsWith('qtd MLB-K'))).toEqual([]);
-    expect(d.s.rpcs).not.toContain('kit_creditar_transferencia');
+    expect(d.s.rpcs).not.toContain('creditar');
   });
 
   it('out_of_stock sem paused_by_seller não passa de pausar', async () => {

@@ -24,6 +24,10 @@ alter table public.kit_transferencia_alvos add column if not exists delta intege
 -- Passo 1 da conciliação (Task 3): instante da leitura que confirmou a pausa e pedidos pendentes nela.
 alter table public.kit_transferencia_alvos add column if not exists passo1_em timestamptz;
 alter table public.kit_transferencia_alvos add column if not exists ids_passo1 text[];
+-- Item que recebe o PUT de quantidade, escolhido aberto na leitura antes da escrita; nunca muda numa
+-- tentativa incerta. `recusas` conta 4xx: na 5ª a saga trava.
+alter table public.kit_transferencia_alvos add column if not exists item_escrita text;
+alter table public.kit_transferencia_alvos add column if not exists recusas integer not null default 0;
 
 grant insert on public.kit_transferencias to estoque_rpc_executor;
 grant select, insert on public.kit_transferencia_alvos to estoque_rpc_executor;
@@ -134,32 +138,180 @@ as $$
   select exists (select 1 from u)
 $$;
 
--- Depois da reserva, `itens` não muda: trocar destinos mantendo as origens passaria no crédito
--- (ressalva da Task 2) e creditaria SKU de kit diferente do reservado.
-create or replace function public.kit_transferencias_itens_imutavel()
+-- Composição congelada desde a criação: alvos, deltas e exclusões saíram de `itens`, `tipo` e `kit_id`.
+-- Mudar qualquer um deixaria o destino recebendo um número e o crédito outro.
+create or replace function public.kit_transferencias_imutavel()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
-  if exists (select 1 from public.estoque_movimentos
-             where transferencia_id = old.id and motivo = 'kit_saida') then
-    raise exception 'itens da transferência % é imutável depois da reserva (ADR-0197).', old.id
-      using errcode = 'restrict_violation';
-  end if;
-  return new;
+  raise exception 'itens, tipo e kit_id da transferência % são imutáveis (ADR-0197).', old.id
+    using errcode = 'restrict_violation';
 end $$;
 
-drop trigger if exists kit_transferencias_itens_imutavel on public.kit_transferencias;
-create trigger kit_transferencias_itens_imutavel
-  before update of itens on public.kit_transferencias
-  for each row when (old.itens is distinct from new.itens)
-  execute procedure public.kit_transferencias_itens_imutavel();
+drop trigger if exists kit_transferencias_imutavel on public.kit_transferencias;
+create trigger kit_transferencias_imutavel
+  before update of itens, tipo, kit_id on public.kit_transferencias
+  for each row when (old.itens is distinct from new.itens or old.tipo is distinct from new.tipo
+                     or old.kit_id is distinct from new.kit_id)
+  execute procedure public.kit_transferencias_imutavel();
+
+-- `versao_politica` é soma: só prova "nada mudou" se a soma for monotônica. Versão não decresce, e a
+-- linha de SKU em transferência aberta não é apagada nem trocada de código.
+create or replace function public.sku_politica_kit_monotonica()
+returns trigger language plpgsql set search_path = ''
+as $$
+begin
+  if tg_op = 'UPDATE' and new.versao < old.versao then
+    raise exception 'sku_politica_kit: versão não pode decrescer (% para %).', old.versao, new.versao
+      using errcode = 'restrict_violation';
+  end if;
+  if (tg_op = 'DELETE' or new.org_id <> old.org_id or new.codigo <> old.codigo) and exists (
+    select 1 from public.kit_transferencia_alvos a
+    join public.kit_transferencias t on t.id = a.transferencia_id and t.org_id = a.org_id
+    where a.org_id = old.org_id and a.codigo = old.codigo and t.estado in ('ativa', 'travada')
+  ) then
+    raise exception 'sku_politica_kit: % está em transferência aberta.', old.codigo using errcode = 'restrict_violation';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+
+drop trigger if exists sku_politica_kit_monotonica on public.sku_politica_kit;
+create trigger sku_politica_kit_monotonica
+  before update or delete on public.sku_politica_kit
+  for each row execute procedure public.sku_politica_kit_monotonica();
+
+-- Escritas da saga. Todas exigem transferência `ativa`, token da execução, prazo vigente (relógio real,
+-- não o início da transação) e a exclusão de todos os alvos ainda com este dono. Execução vencida, cujo
+-- claim outra pegou, não grava nada. Invoker: só service_role executa.
+create or replace function public.kit_saga_validar(p_org uuid, p_transferencia uuid, p_token uuid)
+returns void language plpgsql set search_path = ''
+as $$
+begin
+  perform 1 from public.kit_transferencias
+  where id = p_transferencia and org_id = p_org and estado = 'ativa'
+    and execucao_token = p_token and execucao_ate > clock_timestamp()
+  for update;
+  if not found then
+    raise exception 'kit_execucao_vencida: transferência % sem claim vigente para este token', p_transferencia
+      using errcode = 'KX003';
+  end if;
+  if exists (
+    select 1 from public.kit_transferencia_alvos a
+    where a.transferencia_id = p_transferencia and a.org_id = p_org and not exists (
+      select 1 from public.kit_exclusoes x
+      where x.org_id = p_org and x.codigo = a.codigo and x.dono_tipo = 'transferencia' and x.dono_id = p_transferencia)
+  ) then
+    raise exception 'kit_exclusao_perdida: transferência % sem a exclusão de todos os alvos', p_transferencia
+      using errcode = 'KX004';
+  end if;
+end $$;
+
+-- Só as colunas da saga mudam; código, papel, delta, UP e itens nunca. Valor anterior e alvo gravam uma vez.
+create or replace function public.kit_saga_salvar_alvo(
+  p_org uuid, p_transferencia uuid, p_token uuid, p_up text, p_patch jsonb
+) returns void language plpgsql set search_path = ''
+as $$
+declare v public.kit_transferencia_alvos%rowtype;
+begin
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  select * into v from public.kit_transferencia_alvos
+  where transferencia_id = p_transferencia and org_id = p_org and up_id = p_up for update;
+  if not found then
+    raise exception 'kit_saga_salvar_alvo: alvo % não encontrado', p_up;
+  end if;
+  v := jsonb_populate_record(v, p_patch);
+  update public.kit_transferencia_alvos a set
+    qtd_passo1 = v.qtd_passo1, passo1_em = v.passo1_em, ids_passo1 = v.ids_passo1,
+    valor_anterior = coalesce(a.valor_anterior, v.valor_anterior), valor_alvo = coalesce(a.valor_alvo, v.valor_alvo),
+    pausado_pela_saga = v.pausado_pela_saga, intencao_escrita_em = v.intencao_escrita_em,
+    recusa_definitiva_em = v.recusa_definitiva_em, escrita_em = v.escrita_em, confirmada_em = v.confirmada_em,
+    item_escrita = v.item_escrita, recusas = v.recusas
+  where a.transferencia_id = p_transferencia and a.org_id = p_org and a.up_id = p_up;
+end $$;
+
+-- Passo, alerta e trava. Fechar (concluida/abortada) só por kit_saga_finalizar.
+create or replace function public.kit_saga_salvar_transferencia(
+  p_org uuid, p_transferencia uuid, p_token uuid, p_passo text, p_alerta text, p_travar boolean
+) returns void language plpgsql set search_path = ''
+as $$
+begin
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  update public.kit_transferencias
+  set passo = coalesce(p_passo, passo), alerta = coalesce(p_alerta, alerta), passo_em = now(),
+      estado = case when p_travar then 'travada' else estado end
+  where id = p_transferencia and org_id = p_org;
+end $$;
+
+-- Estado final e exclusões numa transação: a exclusão nunca sai antes de a saga fechar.
+create or replace function public.kit_saga_finalizar(
+  p_org uuid, p_transferencia uuid, p_token uuid, p_estado text, p_alerta text
+) returns void language plpgsql set search_path = ''
+as $$
+begin
+  if p_estado not in ('concluida', 'abortada') then
+    raise exception 'kit_saga_finalizar: estado inválido %', p_estado;
+  end if;
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  delete from public.kit_exclusoes where org_id = p_org and dono_tipo = 'transferencia' and dono_id = p_transferencia;
+  update public.kit_transferencias
+  set estado = p_estado, passo = 'fim', alerta = coalesce(p_alerta, alerta), passo_em = now(),
+      execucao_token = null, execucao_ate = null
+  where id = p_transferencia and org_id = p_org;
+end $$;
+
+-- Ledger pela saga. Ordem de locks das RPCs da Task 2: org, depois transferência.
+create or replace function public.kit_saga_ledger(p_org uuid, p_transferencia uuid, p_token uuid, p_op text)
+returns jsonb language plpgsql set search_path = ''
+as $$
+begin
+  perform 1 from public.organizations where id = p_org for share;
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  if p_op = 'reservar' then return public.kit_reservar_transferencia(p_org, p_transferencia); end if;
+  if p_op = 'creditar' then return public.kit_creditar_transferencia(p_org, p_transferencia); end if;
+  if p_op = 'cancelar' then return public.kit_cancelar_transferencia(p_org, p_transferencia); end if;
+  raise exception 'kit_saga_ledger: operação inválida %', p_op;
+end $$;
+
+-- Autoriza reativar um SKU logo antes do PUT: trava as linhas de política dos alvos e confere a versão
+-- somada e os bloqueios do SKU. A saga relê depois do PUT e repausa se a política mudou no meio.
+create or replace function public.kit_saga_pode_reativar(p_org uuid, p_transferencia uuid, p_token uuid, p_codigo text)
+returns boolean language plpgsql set search_path = ''
+as $$
+declare v_codigos text[]; v_soma integer; v_versao integer;
+begin
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  select versao_politica into v_versao from public.kit_transferencias where id = p_transferencia;
+  select array_agg(codigo order by codigo) into v_codigos from public.kit_transferencia_alvos
+  where transferencia_id = p_transferencia and org_id = p_org;
+  perform 1 from public.sku_politica_kit
+  where org_id = p_org and codigo = any(v_codigos) order by codigo for update;
+  select coalesce(sum(versao), 0) into v_soma from public.sku_politica_kit
+  where org_id = p_org and codigo = any(v_codigos);
+  return v_soma = v_versao and not exists (
+    select 1 from public.sku_politica_kit
+    where org_id = p_org and codigo = p_codigo
+      and (estado = 'guardado' or bloqueio_operador or bloqueio_moderacao or bloqueio_retirada));
+end $$;
 
 -- ACL antes da troca de dono (20260811203500).
 revoke all on function public.kit_criar_transferencia(uuid, uuid, text, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.kit_criar_transferencia(uuid, uuid, text, jsonb, jsonb) to service_role;
 revoke all on function public.kit_reivindicar_execucao(uuid, uuid, uuid, integer) from public, anon, authenticated;
 grant execute on function public.kit_reivindicar_execucao(uuid, uuid, uuid, integer) to service_role;
-revoke all on function public.kit_transferencias_itens_imutavel() from public, anon, authenticated;
+revoke all on function public.kit_transferencias_imutavel() from public, anon, authenticated;
+revoke all on function public.sku_politica_kit_monotonica() from public, anon, authenticated;
+revoke all on function public.kit_saga_validar(uuid, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.kit_saga_salvar_alvo(uuid, uuid, uuid, text, jsonb) from public, anon, authenticated;
+revoke all on function public.kit_saga_salvar_transferencia(uuid, uuid, uuid, text, text, boolean) from public, anon, authenticated;
+revoke all on function public.kit_saga_finalizar(uuid, uuid, uuid, text, text) from public, anon, authenticated;
+revoke all on function public.kit_saga_ledger(uuid, uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.kit_saga_pode_reativar(uuid, uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.kit_saga_validar(uuid, uuid, uuid) to service_role;
+grant execute on function public.kit_saga_salvar_alvo(uuid, uuid, uuid, text, jsonb) to service_role;
+grant execute on function public.kit_saga_salvar_transferencia(uuid, uuid, uuid, text, text, boolean) to service_role;
+grant execute on function public.kit_saga_finalizar(uuid, uuid, uuid, text, text) to service_role;
+grant execute on function public.kit_saga_ledger(uuid, uuid, uuid, text) to service_role;
+grant execute on function public.kit_saga_pode_reativar(uuid, uuid, uuid, text) to service_role;
 
 alter function public.kit_criar_transferencia(uuid, uuid, text, jsonb, jsonb) owner to estoque_rpc_executor;
 

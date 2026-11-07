@@ -40,6 +40,14 @@ select '97100000-0000-0000-0000-000000000001'::uuid as org,
        gen_random_uuid() as kit, gen_random_uuid() as k1, gen_random_uuid() as k2, gen_random_uuid() as k3;
 grant select on ctx to service_role;
 
+create function pg_temp.erro(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+
 create function pg_temp.afirmar(p_cond boolean, p_msg text) returns void language plpgsql as $$
 begin
   if p_cond is not true then raise exception 'FALHA: %', p_msg; end if;
@@ -69,7 +77,12 @@ begin
 
   foreach f in array array[
     'public.kit_criar_transferencia(uuid, uuid, text, jsonb, jsonb)',
-    'public.kit_reivindicar_execucao(uuid, uuid, uuid, integer)'
+    'public.kit_reivindicar_execucao(uuid, uuid, uuid, integer)',
+    'public.kit_saga_salvar_alvo(uuid, uuid, uuid, text, jsonb)',
+    'public.kit_saga_salvar_transferencia(uuid, uuid, uuid, text, text, boolean)',
+    'public.kit_saga_finalizar(uuid, uuid, uuid, text, text)',
+    'public.kit_saga_ledger(uuid, uuid, uuid, text)',
+    'public.kit_saga_pode_reativar(uuid, uuid, uuid, text)'
   ] loop
     perform pg_temp.afirmar(not has_function_privilege('anon', f, 'execute'), f || ' exposta a anon');
     perform pg_temp.afirmar(not has_function_privilege('authenticated', f, 'execute'), f || ' exposta a authenticated');
@@ -175,21 +188,76 @@ begin
   update public.kit_transferencias set execucao_ate = null, estado = 'travada' where id = t2;
   perform pg_temp.afirmar(not public.kit_reivindicar_execucao(c.org, t2, gen_random_uuid(), 60), 'claim em travada');
 
-  -- `itens` muda antes da reserva; depois, nem trocando destinos com as mesmas origens.
-  update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)) where id = t1;
-  r := public.kit_reservar_transferencia(c.org, t1);
-  perform pg_temp.afirmar((r->>'aplicado')::boolean, 'reserva: ' || r::text);
-  ok := false;
-  begin
-    update public.kit_transferencias set itens = jsonb_build_array(jsonb_build_object('codigo', K3, 'quantidade', 1)) where id = t1;
-  exception when others then
-    ok := sqlerrm like '%imutável%';
-  end;
-  perform pg_temp.afirmar(ok, 'troca de destino com as mesmas origens passou depois da reserva');
-  perform pg_temp.afirmar((select itens->0->>'codigo' = K1 from public.kit_transferencias where id = t1), 'itens mudou');
+  -- Composição imutável desde a criação: os alvos e seus deltas saíram dela (achado 3 do Codex).
+  perform pg_temp.afirmar(pg_temp.erro(format('update public.kit_transferencias set itens = %L where id = %L',
+    jsonb_build_array(jsonb_build_object('codigo', K1, 'quantidade', 1)), t1)) like '%imutáveis%', 'itens mudou antes da reserva');
+  perform pg_temp.afirmar(pg_temp.erro(format('update public.kit_transferencias set tipo = %L where id = %L', 'repor', t1))
+    like '%imutáveis%', 'tipo mudou');
+  perform pg_temp.afirmar(pg_temp.erro(format('update public.kit_transferencias set kit_id = null where id = %L', t1))
+    is not null, 'kit_id mudou');
   -- Passo e estado seguem graváveis.
-  update public.kit_transferencias set passo = 'reduzir', estado = 'travada', alerta = 'x' where id = t1;
-  perform pg_temp.afirmar((select passo = 'reduzir' from public.kit_transferencias where id = t1), 'passo não gravou');
+  update public.kit_transferencias set passo = 'pausar', alerta = 'x', execucao_token = null, execucao_ate = null where id = t1;
+  perform pg_temp.afirmar(public.kit_reivindicar_execucao(c.org, t1, tok, 60), 'claim de t1');
+
+  -- Toda escrita da saga exige o token vigente (achado 2).
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_salvar_alvo(%L, %L, %L, %L, %L)',
+    c.org, t1, gen_random_uuid(), 'UP-P', '{"qtd_passo1": 5}')) like '%kit_execucao_vencida%', 'alvo gravado com outro token');
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_ledger(%L, %L, %L, %L)',
+    c.org, t1, gen_random_uuid(), 'reservar')) like '%kit_execucao_vencida%', 'reserva com outro token');
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_salvar_transferencia(%L, %L, %L, %L, null, false)',
+    c.org, t1, gen_random_uuid(), 'reduzir')) like '%kit_execucao_vencida%', 'passo gravado com outro token');
+  -- Com o token: grava, ignora colunas fora da saga e não regrava o valor final.
+  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-P', '{"qtd_passo1": 5, "valor_anterior": 5, "valor_alvo": 3, "papel": "destino", "delta": 9, "up_id": "X"}');
+  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-P', '{"valor_anterior": 7, "valor_alvo": 1, "recusas": 2, "item_escrita": "MLB-P"}');
+  perform pg_temp.afirmar((select qtd_passo1 = 5 and valor_anterior = 5 and valor_alvo = 3 and papel = 'origem' and delta = -2
+                                  and recusas = 2 and item_escrita = 'MLB-P'
+                           from public.kit_transferencia_alvos where transferencia_id = t1 and up_id = 'UP-P'), 'alvo gravado errado');
+  perform public.kit_saga_salvar_transferencia(c.org, t1, tok, 'reduzir', 'alerta y', false);
+  perform pg_temp.afirmar((select passo = 'reduzir' and alerta = 'alerta y' and estado = 'ativa'
+                           from public.kit_transferencias where id = t1), 'passo não gravou');
+
+  -- Ledger pela saga: só com o token.
+  r := public.kit_saga_ledger(c.org, t1, tok, 'reservar');
+  perform pg_temp.afirmar((r->>'aplicado')::boolean, 'reserva: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.erro(format('update public.kit_transferencias set itens = %L where id = %L',
+    jsonb_build_array(jsonb_build_object('codigo', K3, 'quantidade', 2)), t1)) like '%imutáveis%',
+    'troca de destino com as mesmas origens passou depois da reserva');
+
+  -- Exclusão perdida bloqueia qualquer escrita.
+  delete from public.kit_exclusoes where org_id = c.org and codigo = B and dono_id = t1;
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_salvar_alvo(%L, %L, %L, %L, %L)',
+    c.org, t1, tok, 'UP-P', '{"qtd_passo1": 6}')) like '%kit_exclusao_perdida%', 'escreveu sem a exclusão');
+  insert into public.kit_exclusoes (org_id, codigo, up_id, dono_tipo, dono_id) values (c.org, B, 'UP-B', 'transferencia', t1);
+
+  -- Reativação: versão e bloqueios vigentes, com a linha travada (achado 6).
+  perform pg_temp.afirmar(public.kit_saga_pode_reativar(c.org, t1, tok, P), 'reativar recusado com versão igual');
+  update public.sku_politica_kit set bloqueio_operador = true where org_id = c.org and codigo = B;
+  perform pg_temp.afirmar(not public.kit_saga_pode_reativar(c.org, t1, tok, B), 'reativou SKU bloqueado');
+  perform pg_temp.afirmar(public.kit_saga_pode_reativar(c.org, t1, tok, P), 'bloqueio de outro SKU recusou');
+  update public.sku_politica_kit set versao = 4 where org_id = c.org and codigo = P;
+  perform pg_temp.afirmar(not public.kit_saga_pode_reativar(c.org, t1, tok, P), 'reativou com versão nova');
+  -- Versão só cresce, e a linha de SKU em transferência aberta não some: a soma é monotônica.
+  perform pg_temp.afirmar(pg_temp.erro(format('update public.sku_politica_kit set versao = 1 where org_id = %L and codigo = %L', c.org, P))
+    like '%versão%', 'versão decresceu');
+  perform pg_temp.afirmar(pg_temp.erro(format('delete from public.sku_politica_kit where org_id = %L and codigo = %L', c.org, P))
+    like '%transferência%', 'política apagada com transferência aberta');
+
+  -- Prazo vencido: nada grava.
+  update public.kit_transferencias set execucao_ate = now() - interval '1 second' where id = t1;
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_salvar_alvo(%L, %L, %L, %L, %L)',
+    c.org, t1, tok, 'UP-P', '{"qtd_passo1": 6}')) like '%kit_execucao_vencida%', 'gravou com prazo vencido');
+  update public.kit_transferencias set execucao_ate = now() + interval '1 minute' where id = t1;
+
+  -- Finalizar: estado e exclusões juntos, só com o token (achado 5).
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_finalizar(%L, %L, %L, %L, null)',
+    c.org, t1, gen_random_uuid(), 'concluida')) like '%kit_execucao_vencida%', 'finalizou com outro token');
+  perform pg_temp.afirmar((select count(*) = 3 from public.kit_exclusoes where dono_id = t1), 'exclusão saiu sem finalizar');
+  perform public.kit_saga_finalizar(c.org, t1, tok, 'concluida', 'fim');
+  perform pg_temp.afirmar((select estado = 'concluida' and passo = 'fim' and execucao_token is null
+                           from public.kit_transferencias where id = t1), 'finalizar não gravou o estado');
+  perform pg_temp.afirmar(not exists (select 1 from public.kit_exclusoes where dono_id = t1), 'finalizar não soltou a exclusão');
+  -- Fechada, a política volta a poder ser apagada.
+  delete from public.sku_politica_kit where org_id = c.org and codigo = P;
 end $$;
 reset role;
 

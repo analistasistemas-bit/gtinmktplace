@@ -1207,6 +1207,7 @@ export type Database = {
           delta: number | null
           escrita_em: string | null
           ids_passo1: string[] | null
+          item_escrita: string | null
           intencao_escrita_em: string | null
           item_ids: string[]
           org_id: string
@@ -1215,6 +1216,7 @@ export type Database = {
           pausado_pela_saga: string[]
           qtd_passo1: number | null
           recusa_definitiva_em: string | null
+          recusas: number
           transferencia_id: string
           up_id: string
           valor_alvo: number | null
@@ -1226,6 +1228,7 @@ export type Database = {
           delta?: number | null
           escrita_em?: string | null
           ids_passo1?: string[] | null
+          item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
           org_id: string
@@ -1234,6 +1237,7 @@ export type Database = {
           pausado_pela_saga?: string[]
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
+          recusas?: number
           transferencia_id: string
           up_id: string
           valor_alvo?: number | null
@@ -1245,6 +1249,7 @@ export type Database = {
           delta?: number | null
           escrita_em?: string | null
           ids_passo1?: string[] | null
+          item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
           org_id?: string
@@ -1253,6 +1258,7 @@ export type Database = {
           pausado_pela_saga?: string[]
           qtd_passo1?: number | null
           recusa_definitiva_em?: string | null
+          recusas?: number
           transferencia_id?: string
           up_id?: string
           valor_alvo?: number | null
@@ -5685,6 +5691,30 @@ export type Database = {
       kit_reservar_transferencia: {
         Args: { p_org: string; p_transferencia: string }
         Returns: Json
+      }
+      kit_saga_finalizar: {
+        Args: { p_alerta: string; p_estado: string; p_org: string; p_token: string; p_transferencia: string }
+        Returns: undefined
+      }
+      kit_saga_ledger: {
+        Args: { p_op: string; p_org: string; p_token: string; p_transferencia: string }
+        Returns: Json
+      }
+      kit_saga_pode_reativar: {
+        Args: { p_codigo: string; p_org: string; p_token: string; p_transferencia: string }
+        Returns: boolean
+      }
+      kit_saga_salvar_alvo: {
+        Args: { p_org: string; p_patch: Json; p_token: string; p_transferencia: string; p_up: string }
+        Returns: undefined
+      }
+      kit_saga_salvar_transferencia: {
+        Args: { p_alerta: string; p_org: string; p_passo: string; p_token: string; p_transferencia: string; p_travar: boolean }
+        Returns: undefined
+      }
+      kit_saga_validar: {
+        Args: { p_org: string; p_token: string; p_transferencia: string }
+        Returns: undefined
       }
       kit_soltar_exclusao: {
         Args: { p_dono_id: string; p_org: string }

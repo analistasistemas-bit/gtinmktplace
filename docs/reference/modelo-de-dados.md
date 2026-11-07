@@ -1623,7 +1623,9 @@ PK `(kit_sku_id, codigo)`, `quantidade` (peças em 1 kit). Imutável: trigger re
 
 ### `sku_politica_kit`
 PK `(org_id, codigo)`, `estado` (`normal|guardado|sobra`), `versao`, `bloqueio_operador`,
-`bloqueio_moderacao`, `bloqueio_retirada`.
+`bloqueio_moderacao`, `bloqueio_retirada`. Trigger `sku_politica_kit_monotonica`: `versao` não decresce, e a linha
+de SKU em transferência aberta não é apagada nem muda de código. É o que torna a soma de versões
+(`kit_transferencias.versao_politica`) uma prova de "nada mudou".
 
 ### `sku_reivindicacoes_kit`
 PK `(org_id, codigo, kit_id)`: quais kits em "só em kit" usam o SKU.
@@ -1632,16 +1634,17 @@ PK `(org_id, codigo, kit_id)`: quais kits em "só em kit" usam o SKU.
 A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
 (`montar|desmontar|repor|cancelamento|sair_sobra|entrada`), `passo` (default `pausar`), `estado`
 (`ativa|concluida|travada|abortada`), `versao_politica`, `itens jsonb`, `alerta`, `execucao_token`,
-`execucao_ate` (claim atômico), `criado_em`, `passo_em`. `itens` é imutável depois da reserva (trigger
-`kit_transferencias_itens_imutavel`: recusa mudança se a transferência tem `kit_saida`).
+`execucao_ate` (claim atômico), `criado_em`, `passo_em`. `itens`, `tipo` e `kit_id` são imutáveis desde a
+criação (trigger `kit_transferencias_imutavel`): alvos, deltas e exclusões saíram deles.
 *Saga: `_shared/kit-variacao/saga.ts`, worker `kit-transferencia`; migration `20261107212019_kit_variacao_saga.sql`.*
 
 ### `kit_transferencia_alvos`
 PK `(transferencia_id, up_id)`, `codigo`, `papel` (`origem|destino`), `delta` (peças ou kits com sinal,
 calculado pela RPC de criação), `item_ids text[]` (o PUT de quantidade vai para `item_ids[0]`: item principal primeiro), `qtd_passo1`, `passo1_em`, `ids_passo1 text[]`
-(pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo`,
+(pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo` (os dois gravam uma vez),
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
-recebido), `escrita_em`, `confirmada_em`.
+recebido), `escrita_em`, `confirmada_em`, `item_escrita` (item aberto que recebe o PUT; não muda em tentativa
+incerta), `recusas` (4xx recebidos; na 5ª a saga trava). Escrita só por `kit_saga_salvar_alvo`.
 
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
@@ -1663,6 +1666,12 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   `modulo_desligado`, `alvos_invalidos` ou `up_ocupado` (com `codigo`), sem gravar nada.
 - `kit_reivindicar_execucao(p_org, p_transferencia, p_token, p_prazo_s)`: claim de uma invocação da saga
   no relógio do banco; só em `ativa` e com prazo anterior vencido.
+- Escritas da saga, todas por `kit_saga_validar` (transferência `ativa`, token do claim, prazo vigente pelo
+  relógio real e exclusão de todos os alvos com este dono; senão `kit_execucao_vencida`/`kit_exclusao_perdida`):
+  `kit_saga_salvar_alvo` (só colunas da saga), `kit_saga_salvar_transferencia` (passo, alerta, trava),
+  `kit_saga_ledger` (reservar, creditar ou cancelar), `kit_saga_finalizar` (estado final e exclusões na
+  mesma transação) e `kit_saga_pode_reativar` (trava a política dos alvos, confere a soma e os bloqueios
+  do SKU). Invoker, só `service_role`.
 - `kit_reservar_transferencia(p_org, p_transferencia)` grava `kit_saida` nas origens, tudo ou nada;
   `kit_creditar_transferencia` grava `kit_entrada` no destino se o ledger bate com `itens`;
   `kit_cancelar_transferencia` devolve à origem o que saiu e não chegou. Devolvem `{ok, aplicado}` ou
