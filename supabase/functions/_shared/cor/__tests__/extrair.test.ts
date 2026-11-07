@@ -139,6 +139,17 @@ describe('extrairCorDeVariacao', () => {
 import { extrairCorECodigo } from '../extrair';
 
 describe('extrairCorECodigo', () => {
+  it('"2 em 1" não é código + cor (ADR-0197)', () => {
+    expect(extrairCorECodigo('Tanox Pop 1kg - Creme para pentear e hidratar 2 em 1')).toBeNull();
+    expect(extrairCorECodigo('Creme 2 em 1 para pentear BRILHO UVA 1kg')).toBeNull();
+  });
+  it('código + cor antes de um "2 em 1" continua valendo', () => {
+    expect(extrairCorECodigo('FITA 1370 CACAU 2 EM 1')).toEqual({ cor: 'Cacau', codigo: '1370' });
+  });
+  it('cor seguida de número continua valendo', () => {
+    expect(extrairCorECodigo('BARBANTE ALGODAO CONES 4/6 21 ROSA PINK 570'))
+      .toEqual({ cor: 'Rosa Pink', codigo: '21' });
+  });
   it('código + cor literal (perde nada): VERMELHO TOMATE', () => {
     expect(extrairCorECodigo('FITA CETIM PROGRESSO N.1 1354 VERMELHO TOMATE 10MT'))
       .toEqual({ cor: 'Vermelho Tomate', codigo: '1354' });

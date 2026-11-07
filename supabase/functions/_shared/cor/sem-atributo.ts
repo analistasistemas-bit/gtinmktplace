@@ -1,6 +1,19 @@
 // Emenda ADR-0044 (2026-10-27): em categoria do ML sem atributo de cor, a cor que só o Vision
 // achou é a da embalagem (shampoo "Preto"), não do produto — não entra em título nem descrição.
 import type { AtributoSchema } from '../categoria/schema.ts';
+import { COR_VISION_INDEFINIDA } from './indefinida.ts';
+
+/**
+ * Cor gravada quando a da foto é descartada (ADR-0197). Produto simples fica sem cor. O resto
+ * mantém a indefinida: aviamento, multivariação e UPDATE exigem cor, e nulo travaria a Revisão.
+ */
+export function corSemAtributo(
+  nVariacoes: number,
+  tipoAviamento: string | null | undefined,
+  operacao: string | null | undefined,
+): string | null {
+  return nVariacoes === 1 && tipoAviamento === 'outro' && operacao === 'CREATE' ? null : COR_VISION_INDEFINIDA;
+}
 
 /** Lista vazia = schema não lido (sem token/erro): mantém o comportamento anterior. */
 export function categoriaAceitaCor(schema: AtributoSchema[]): boolean {

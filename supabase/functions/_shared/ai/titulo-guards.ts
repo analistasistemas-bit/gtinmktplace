@@ -4,6 +4,7 @@ import {
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
 import { ORDEM_LEITURA, ORDEM_LEITURA_GRADE, TODOS_SLOTS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
+import { extrairCorDoTexto } from '../cor/extrair.ts';
 
 export interface DadosFonteTitulo {
   nomePai: string;
@@ -446,6 +447,9 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     // apagado só porque não existe exatamente uma cor — o garantirCorTitulo antigo nunca
     // deletava, só substituía; devolver '' aqui funde famílias-irmãs sem cor que só diferem por
     // tamanho no mesmo título, e o ML derruba a segunda por duplicado.
+    out.variacao = '';
+  } else if (extrairCorDoTexto([out.variacao]) && !jaContem(normalizar(fonte.nomePai), normalizar(out.variacao))) {
+    // ADR-0197: sem cor real, cor que o nome não declara veio de embalagem ou ingrediente.
     out.variacao = '';
   }
 

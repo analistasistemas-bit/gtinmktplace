@@ -9,8 +9,8 @@ import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
-import { ehCorIndefinida, COR_VISION_INDEFINIDA } from '../_shared/cor/indefinida.ts';
-import { categoriaAceitaCor, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
+import { categoriaAceitaCor, corSemAtributo, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero, grade_tamanho')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, tipo_aviamento, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero, grade_tamanho')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -209,7 +209,11 @@ Deno.serve(async (req) => {
       return !categoriaAceitaCor(schema);
     };
     const resolvidas = resolvidasBrutas.some(corDaFoto) && await descartaCorDaFoto(claimed.categoria_ml_id)
-      ? resolvidasBrutas.map((v) => (corDaFoto(v) ? { ...v, cor: COR_VISION_INDEFINIDA } : v))
+      ? resolvidasBrutas.map((v) => {
+        if (!corDaFoto(v)) return v;
+        const cor = corSemAtributo(resolvidasBrutas.length, claimed.tipo_aviamento, claimed.operacao);
+        return { ...v, cor, cor_origem: cor ? v.cor_origem : null };
+      })
       : resolvidasBrutas;
 
     // 4. Persistir cores (UPDATE em batch — só as que mudaram)
@@ -555,16 +559,19 @@ Deno.serve(async (req) => {
       && await descartaCorDaFoto(categoriaMlId)
       ? resolvidas.filter(corDaFoto)
       : [];
+    const corDescartada = corSemAtributo(resolvidas.length, tipo, claimed.operacao);
     if (descartadas.length) {
       const { error: corErr } = await admin.from('variacoes')
-        .update({ cor: COR_VISION_INDEFINIDA }).in('id', descartadas.map((v) => v.id));
+        .update(corDescartada ? { cor: corDescartada } : { cor: null, cor_origem: null })
+        .in('id', descartadas.map((v) => v.id));
       if (corErr) throw new Error(`Cor sem atributo: ${corErr.message}`);
     }
     const semCor = new Set(descartadas.map((v) => v.codigo));
-    const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: COR_VISION_INDEFINIDA } : v));
+    const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: corDescartada } : v));
+    // ADR-0197: só o NOME respalda cor. Na descrição, "CORANTE VERMELHO 33" é ingrediente.
     const slotsTitulo = descartadas.length
       ? removerCorDosSlots(copy.titulo_slots, descartadas.map((v) => v.cor as string),
-        `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
+        [claimed.nome_pai, ...resolvidas.map((v) => v.nome ?? '')].join(' '))
       : copy.titulo_slots;
     const descricaoBase = descartadas.length
       ? removerCorDaDescricao(copy.descricao, descartadas.map((v) => v.cor as string),

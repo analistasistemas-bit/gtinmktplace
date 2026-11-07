@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaAceitaCor, removerCorDoSlot, removerCorDosSlots, removerCorDaDescricao } from '../sem-atributo';
+import { categoriaAceitaCor, corSemAtributo, removerCorDoSlot, removerCorDosSlots, removerCorDaDescricao } from '../sem-atributo';
 import { posProcessarDescricao } from '../../ai/copywriter-prompt';
 import type { AtributoSchema } from '../../categoria/schema';
 
@@ -20,6 +20,21 @@ describe('categoriaAceitaCor', () => {
 
   it('schema vazio = não lido → mantém o comportamento atual (aceita)', () => {
     expect(categoriaAceitaCor([])).toBe(true);
+  });
+});
+
+describe('corSemAtributo (ADR-0197)', () => {
+  it('produto simples no CREATE fica sem cor', () => {
+    expect(corSemAtributo(1, 'outro', 'CREATE')).toBeNull();
+  });
+
+  it.each([
+    [1, 'fita', 'CREATE'],
+    [2, 'outro', 'CREATE'],
+    [1, 'outro', 'UPDATE'],
+    [1, null, 'CREATE'],
+  ])('%s variação, tipo %s, %s mantém a cor indefinida', (n, tipo, operacao) => {
+    expect(corSemAtributo(n, tipo, operacao)).toBe('Outra');
   });
 });
 
