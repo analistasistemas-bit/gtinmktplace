@@ -44,6 +44,7 @@ function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
     conferencias: 0, proxima_conferencia: null, saida_pedida_em: null, atualizado_em: '2026-09-01T10:05:00Z',
     preco_anterior: null, etapa: null, confirmado_sem_dado: false, incluido: true, avaliacao: null,
     estado_anterior: null, variacoes_ml: null, variacao_ids: null, codigo_pai: null,
+    passos: null, lease_token: null, lease_ate: null, avaliacoes: null,
     ...over,
   };
 }

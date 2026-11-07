@@ -61,7 +61,7 @@ describe('depsLacoReajuste', () => {
   });
 
   it('reivindicar: só a RPC (nada gravado aqui); ok → true, motivo/ocupado → false', async () => {
-    const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok' : 'Família em publicação/atualização — tente depois'));
+    const f = fakeAdmin(() => [], (_fn, a) => (a.p_ml_item === 'A' ? 'ok:token' : 'Família em publicação/atualização — tente depois'));
     const d = depsLacoReajuste(f.admin, OP, 'k');
     expect(await d.reivindicar('op', 'A')).toBe(true);
     expect(await d.reivindicar('op', 'B')).toBe(false);

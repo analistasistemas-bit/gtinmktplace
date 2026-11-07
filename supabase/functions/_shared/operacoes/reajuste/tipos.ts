@@ -18,6 +18,14 @@ export interface OfertaVigente {
   chave: string; promocao_id: string; tipo: string; status: 'started' | 'pending'; preco: number | null;
   offer_id: string | null; inicio: string | null; fim: string | null;
 }
+export interface FaixaPreco { min_unidades: number; preco: number }
+/** Item com passo em estado de volta nunca retoma a ida. */
+export type EstadoPasso = 'pendente' | 'escrita_pedida' | 'confirmado' | 'volta_pendente' | 'volta_pedida' | 'compensado';
+export type Passo =
+  | { tipo: 'saida'; oferta: OfertaVigente; estado: EstadoPasso }
+  | { tipo: 'oferta'; oferta: OfertaVigente; anterior: number; alvo: number; estado: EstadoPasso }
+  | { tipo: 'faixas'; anterior: FaixaPreco[]; alvo: FaixaPreco[]; estado: EstadoPasso }
+  | { tipo: 'base'; anterior: number; alvo: number; estado: EstadoPasso };
 export interface VivoItem {
   preco: number | null; variacoes: { id: string; preco: number }[] | null; status: string;
   sub_status: string[]; catalog_listing: boolean; tem_relacoes: boolean;

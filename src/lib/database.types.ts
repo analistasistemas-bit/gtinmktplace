@@ -3109,6 +3109,7 @@ export type Database = {
         Row: {
           atualizado_em: string
           avaliacao: Json | null
+          avaliacoes: Json | null
           codigo_pai: string | null
           conferencias: number
           confirmado_risco: boolean
@@ -3116,11 +3117,14 @@ export type Database = {
           estado_anterior: Json | null
           etapa: string | null
           incluido: boolean
+          lease_ate: string | null
+          lease_token: string | null
           mensagem: string | null
           ml_item_id: string
           offer_id: string | null
           operacao_id: string
           org_id: string
+          passos: Json | null
           preco: number | null
           preco_anterior: number | null
           promocao_id: string | null
@@ -3135,6 +3139,7 @@ export type Database = {
         Insert: {
           atualizado_em?: string
           avaliacao?: Json | null
+          avaliacoes?: Json | null
           codigo_pai?: string | null
           conferencias?: number
           confirmado_risco?: boolean
@@ -3142,11 +3147,14 @@ export type Database = {
           estado_anterior?: Json | null
           etapa?: string | null
           incluido?: boolean
+          lease_ate?: string | null
+          lease_token?: string | null
           mensagem?: string | null
           ml_item_id: string
           offer_id?: string | null
           operacao_id: string
           org_id: string
+          passos?: Json | null
           preco?: number | null
           preco_anterior?: number | null
           promocao_id?: string | null
@@ -3161,6 +3169,7 @@ export type Database = {
         Update: {
           atualizado_em?: string
           avaliacao?: Json | null
+          avaliacoes?: Json | null
           codigo_pai?: string | null
           conferencias?: number
           confirmado_risco?: boolean
@@ -3168,11 +3177,14 @@ export type Database = {
           estado_anterior?: Json | null
           etapa?: string | null
           incluido?: boolean
+          lease_ate?: string | null
+          lease_token?: string | null
           mensagem?: string | null
           ml_item_id?: string
           offer_id?: string | null
           operacao_id?: string
           org_id?: string
+          passos?: Json | null
           preco?: number | null
           preco_anterior?: number | null
           promocao_id?: string | null
@@ -5507,6 +5519,27 @@ export type Database = {
         Args: { p_confirmacoes: Json; p_operacao: string; p_org: string }
         Returns: string
       }
+      reajuste_item_gravar: {
+        Args: {
+          p_campos: Json
+          p_ml_item: string
+          p_operacao: string
+          p_org: string
+          p_token: string
+        }
+        Returns: boolean
+      }
+      reajuste_passo_marcar: {
+        Args: {
+          p_estado: string
+          p_indice: number
+          p_ml_item: string
+          p_operacao: string
+          p_org: string
+          p_token: string
+        }
+        Returns: boolean
+      }
       reajuste_persistir: {
         Args: {
           p_ml_item: string
@@ -5514,6 +5547,7 @@ export type Database = {
           p_org: string
           p_preco_confirmado: number
           p_restaurar: Json
+          p_token: string
         }
         Returns: string
       }

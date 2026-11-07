@@ -57,7 +57,7 @@ export function depsLacoReajuste(admin: SupabaseClient, op: { id: string; org_id
     async reivindicar(operacaoId, mlItemId) {
       const { data, error } = await admin.rpc('reajuste_reivindicar', { p_org: op.org_id, p_operacao: operacaoId, p_ml_item: mlItemId });
       falhou('reajuste_reivindicar', error);
-      return data === 'ok';
+      return String(data).startsWith('ok:');
     },
 
     async itensPendentes(_operacaoId, limite) {
