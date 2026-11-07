@@ -10,18 +10,18 @@ import { AbaMensagens } from '../aba-mensagens';
 const conversa = (naoLidas: string[], aguardando = true) => ({
   pack_id: 'pack-2', order_id: 'order-2', item_titulo: 'Produto 2', item_id: 'MLB2',
   comprador_nome: null, comprador_nick: 'NICK_2', order_status: 'paid', aguardando,
-  ultima: '2026-07-10T10:00:00Z', shipping_status: 'delivered', idsNaoLidosML: naoLidas,
+  ultima: '2026-07-10T10:00:00Z', shipping_status: 'delivered', idsNaoLidosML: naoLidas, reclamacaoAberta: false, envioPendente: null,
   mensagens: [{
     id: 'message-2', pack_id: 'pack-2', order_id: 'order-2', message_id: 'm2', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto 2', item_id: 'MLB2', comprador_nome: null, comprador_nick: 'NICK_2',
-    order_status: 'paid', data_ml: '2026-07-10T10:00:00Z', lida: false, lida_ml_em: naoLidas.length ? null : '2026-07-10T11:00:00Z',
+    order_status: 'paid', data_ml: '2026-07-10T10:00:00Z', lida: false, lida_ml_em: naoLidas.length ? null : '2026-07-10T11:00:00Z', anexos: [],
   }],
 });
 
 let lidaNoML = false;
 let respondida = false;
 const buscarConversasMock = vi.fn(async () => [conversa(lidaNoML ? [] : ['m2'], !respondida)]);
-const responderMock = vi.fn(async () => { respondida = true; });
+const responderMock = vi.fn(async () => { respondida = true; return { ok: true, estado: 'confirmada', operacao_id: 'op', pendenteConfirmacao: false }; });
 const marcarLidasMock = vi.fn(async () => { lidaNoML = true; return { ok: true }; });
 
 vi.mock('@/lib/mensagens', async (importOriginal) => ({
@@ -31,6 +31,7 @@ vi.mock('@/lib/mensagens', async (importOriginal) => ({
     naoLidas: { aPreparar: 0, aCaminho: 0, entregues: 1, total: 1 }, lidas: { semResponder: 0, respondidas: 0 },
   }),
   marcarMensagensLidasML: () => marcarLidasMock(),
+  buscarEnvioPendente: async () => null,
   responderMensagem: () => responderMock(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));

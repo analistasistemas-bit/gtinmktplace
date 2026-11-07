@@ -16,6 +16,7 @@ vi.mock('@/lib/mensagens', async (importOriginal) => {
     responderMensagem: (...args: unknown[]) => responderMensagemMock(...args),
     dispensarConversa: (...args: unknown[]) => dispensarConversaMock(...args),
     marcarMensagensLidasML: (...args: unknown[]) => marcarLidasMock(...args),
+    buscarEnvioPendente: async () => null,
   };
 });
 
@@ -36,22 +37,22 @@ function conversaBase(id: number, aguardando: boolean) {
   return {
     pack_id: packId, order_id: `order-${id}`, item_titulo: `Produto ${id}`, item_id: `MLB${id}`,
     comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', aguardando,
-    ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false,
+    ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
       item_titulo: `Produto ${id}`, item_id: `MLB${id}`, comprador_nome: null, comprador_nick: `NICK_${id}`,
-      order_status: 'paid', data_ml: '2026-07-10T10:00:00Z', lida: !aguardando, lida_ml_em: '2026-07-10T11:00:00Z',
+      order_status: 'paid', data_ml: '2026-07-10T10:00:00Z', lida: !aguardando, lida_ml_em: '2026-07-10T11:00:00Z', anexos: [],
     }],
   };
 }
 
 const PACK_1_CANCELADA = {
   pack_id: 'pack-1', order_id: 'order-1', item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null,
-  comprador_nick: 'MARIA_01', order_status: 'cancelled', aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false,
+  comprador_nick: 'MARIA_01', order_status: 'cancelled', aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
-    order_status: 'cancelled', data_ml: '2026-07-10T10:00:00Z', lida: false, lida_ml_em: '2026-07-10T11:00:00Z',
+    order_status: 'cancelled', data_ml: '2026-07-10T10:00:00Z', lida: false, lida_ml_em: '2026-07-10T11:00:00Z', anexos: [],
   }],
 };
 
@@ -164,7 +165,7 @@ describe('AbaMensagens', () => {
 
     await userEvent.click(responderBtn);
 
-    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Mensagem de teste');
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Mensagem de teste', { operacao_id: expect.any(String), anexo: null });
     expect(toast.info).toHaveBeenCalledWith('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
     expect(within(card).getByText('Pedido cancelado')).toBeInTheDocument();
     expect(textarea).toBeDisabled();
@@ -239,7 +240,7 @@ describe('AbaMensagens', () => {
 
     await userEvent.click(responderBtn);
 
-    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Outra mensagem');
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Outra mensagem', { operacao_id: expect.any(String), anexo: null });
     expect(toast.error).toHaveBeenCalledWith('Falha ao enviar: Falha de conexão com a API');
     expect(within(card).queryByText('Pedido cancelado')).not.toBeInTheDocument();
     expect(textarea).not.toBeDisabled();
@@ -276,7 +277,7 @@ describe('AbaMensagens', () => {
 
   it('Enter envia uma vez só, mesmo apertado de novo com o envio pendente; Shift+Enter não envia', async () => {
     let concluir!: () => void;
-    responderMensagemMock.mockImplementationOnce(() => new Promise<void>((r) => { concluir = r; }));
+    responderMensagemMock.mockImplementationOnce(() => new Promise((r) => { concluir = () => r({ ok: true, estado: 'confirmada', operacao_id: 'op', pendenteConfirmacao: false }); }));
     renderAba();
     const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
     await abrir(card);
@@ -286,7 +287,7 @@ describe('AbaMensagens', () => {
     expect(responderMensagemMock).not.toHaveBeenCalled();
     await userEvent.type(textarea, '{Enter}{Enter}');
     expect(responderMensagemMock).toHaveBeenCalledTimes(1);
-    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Oi\ntudo bem');
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Oi\ntudo bem', { operacao_id: expect.any(String), anexo: null });
     concluir();
   });
 

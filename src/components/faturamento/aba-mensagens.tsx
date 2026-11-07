@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sparkles, Send, MessagesSquare, ExternalLink, Check, LifeBuoy } from 'lucide-react';
+import { Sparkles, Send, MessagesSquare, ExternalLink, Check, LifeBuoy, Paperclip, X, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens, useResumoMensagens } from '@/hooks/useMensagens';
 import {
-  responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, ehReclamacaoAberta, marcarMensagensLidasML, type Conversa,
+  responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, ehReclamacaoAberta, marcarMensagensLidasML,
+  verificarEnvio, liberarEnvio, enviarAnexoMensagem, buscarEnvioPendente, type Conversa, type EnvioPendente, type RespostaEnvio,
 } from '@/lib/mensagens';
+import type { ErroEdge } from '@/lib/edge';
 import { baldeDaConversa, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
 import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
 import { urlVendaML } from '@/lib/ml-status';
@@ -16,8 +18,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { AnexoMensagem } from './anexo-mensagem';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
+
+const TIPOS_ACEITOS = ['image/jpeg', 'image/png', 'application/pdf'];
+const LIMITE_ANEXO = 5 * 1024 * 1024;
+const chaveDe = (texto: string, f: File | null) => `${texto}\u0000${f ? `${f.name}:${f.size}:${f.lastModified}` : ''}`;
 
 const fmtHora = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -37,12 +48,22 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const [reclamacaoLocal, setReclamacaoLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
   const marcandoRef = useRef(false);
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  // undefined = vale o cache da lista (c.envioPendente, até 60 s defasado); null = sem pendência.
+  const [pendenteLocal, setPendenteLocal] = useState<EnvioPendente | null | undefined>(undefined);
+  const [resolvendo, setResolvendo] = useState(false);
+  const [confirmandoLiberar, setConfirmandoLiberar] = useState(false);
+  const inputArquivo = useRef<HTMLInputElement>(null);
+  // Tentativa em curso: o mesmo texto+arquivo reaproveita operacao_id e o anexo já enviado.
+  const tentativaRef = useRef<{ operacao_id: string; anexo: string | null; chave: string } | null>(null);
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
   const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
+  // Pedido cancelado tem precedência: não há o que conferir.
+  const pendente = cancelada ? null : pendenteLocal !== undefined ? pendenteLocal : c.envioPendente;
   // A trava local (409) cai quando o banco confirma o fechamento (aberta → fechada); antes disso o
   // dado pode só não ter sincronizado, então "false" sozinho não a solta.
   const reclamacaoAntes = useRef(c.reclamacaoAberta);
@@ -68,6 +89,9 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
     const abrindo = !aberto;
     onAberto(abrindo);
     if (!abrindo) return;
+    // Cache da lista pode estar defasado: confirma a pendência ao abrir. Só aplica achado positivo
+    // (leitura que falha devolve null e não pode apagar uma pendência real).
+    void buscarEnvioPendente(c.pack_id).then((p) => { if (p && !enviandoRef.current) setPendenteLocal(p); });
     // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado COM SUCESSO
     // neste pack (mapa no AbaMensagens: sobrevive a paginar/filtrar, que desmontam o card).
     const chave = [...c.idsNaoLidosML].sort().join(',');
@@ -96,19 +120,48 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
     } finally { setSugerindo(false); }
   }
 
+  function escolherArquivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo
+    if (!f) return;
+    if (!TIPOS_ACEITOS.includes(f.type)) { toast.error('Formato não aceito. Use JPG, PNG ou PDF.'); return; }
+    if (f.size > LIMITE_ANEXO) { toast.error('O arquivo passa de 5 MB.'); return; }
+    setArquivo(f);
+  }
+
+  async function aposConfirmada() {
+    toast.success('Mensagem enviada.');
+    setTexto('');
+    setArquivo(null);
+    tentativaRef.current = null;
+    setPendenteLocal(null);
+    onAberto(false); // respondida: solta a fixação para sair de "Aguardando" no refetch
+    await qc.invalidateQueries({ queryKey: ['mensagens'] });
+    await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+  }
+
   async function responder() {
     const t = texto.trim();
     if (!t || enviandoRef.current) return;
     enviandoRef.current = true;
     setEnviando(true);
     try {
-      await responderMensagem(c.pack_id, t);
-      toast.success('Mensagem enviada.');
-      setTexto('');
-      onAberto(false); // respondida: solta a fixação para sair de "Aguardando" no refetch
-      await qc.invalidateQueries({ queryKey: ['mensagens'] });
-      await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+      const chave = chaveDe(t, arquivo);
+      if (tentativaRef.current?.chave !== chave) tentativaRef.current = { operacao_id: crypto.randomUUID(), anexo: null, chave };
+      const tentativa = tentativaRef.current;
+      if (arquivo && !tentativa.anexo) {
+        try { tentativa.anexo = await enviarAnexoMensagem(c.pack_id, arquivo); }
+        catch (e) { toast.error(`Falha ao enviar o arquivo: ${(e as Error).message}`); return; }
+      }
+      const r = await responderMensagem(c.pack_id, t, { operacao_id: tentativa.operacao_id, anexo: tentativa.anexo });
+      if (r.estado === 'confirmada') await aposConfirmada();
+      else {
+        // Sem confirmação do ML: não é sucesso. Mantém texto/arquivo e trava novo envio.
+        setPendenteLocal({ operacao_id: r.operacao_id, estado: r.estado });
+        toast.info('O envio ainda não foi confirmado. Confira no Mercado Livre.');
+      }
     } catch (e) {
+      const err = e as ErroEdge;
       if (ehReclamacaoAberta(e)) {
         setReclamacaoLocal(true);
         toast.info('Este pedido tem reclamação aberta no Mercado Livre: responda pela reclamação.');
@@ -119,10 +172,47 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         toast.info('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
         await qc.invalidateQueries({ queryKey: ['mensagens'] });
         await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+      } else if (err.pendente) {
+        setPendenteLocal(err.pendente as EnvioPendente);
+        toast.info('Já existe um envio em andamento nesta conversa. Confira no Mercado Livre.');
       } else {
-        toast.error(`Falha ao enviar: ${(e as Error).message}`);
+        if (err.estado === 'recusada' || err.estado === 'cancelada') tentativaRef.current = null; // recusa é definitiva: próxima vez, operação nova
+        toast.error(`Falha ao enviar: ${err.message}`);
       }
     } finally { enviandoRef.current = false; setEnviando(false); }
+  }
+
+  async function conferir() {
+    if (!pendente || resolvendo) return;
+    setResolvendo(true);
+    try {
+      const r: RespostaEnvio = await verificarEnvio(c.pack_id, pendente.operacao_id);
+      if (r.estado === 'confirmada') await aposConfirmada();
+      else if (r.pendenteConfirmacao) {
+        setPendenteLocal({ operacao_id: r.operacao_id, estado: r.estado });
+        toast.info('Ainda sem confirmação do Mercado Livre.');
+      } else {
+        setPendenteLocal(null);
+        toast.info('O envio não foi confirmado. Você pode enviar de novo.');
+      }
+    } catch (e) {
+      if ((e as ErroEdge).estado === 'recusada' || (e as ErroEdge).estado === 'cancelada') { tentativaRef.current = null; setPendenteLocal(null); }
+      toast.error(`Falha ao conferir: ${(e as Error).message}`);
+    } finally { setResolvendo(false); }
+  }
+
+  async function liberar() {
+    if (!pendente || resolvendo) return;
+    setResolvendo(true);
+    try {
+      await liberarEnvio(c.pack_id, pendente.operacao_id);
+      tentativaRef.current = null; // a operação liberada não volta: o próximo envio é novo
+      setPendenteLocal(null);
+      toast.info('Envio liberado. Seu texto foi mantido.');
+      await qc.invalidateQueries({ queryKey: ['mensagens'] });
+    } catch (e) {
+      toast.error(`Falha ao liberar: ${(e as Error).message}`);
+    } finally { setResolvendo(false); }
   }
 
   async function dispensar() {
@@ -204,6 +294,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
               l.m.direcao === 'enviada' ? 'bg-wa-enviada' : 'bg-wa-recebida',
               l.cauda && (l.m.direcao === 'enviada' ? 'wa-cauda-enviada rounded-tr-none' : 'wa-cauda-recebida rounded-tl-none'),
             )}>
+              {l.m.anexos.map((a) => <AnexoMensagem key={a.filename} packId={c.pack_id} anexo={a} />)}
               <p className="whitespace-pre-wrap break-words">
                 <span className="sr-only">{l.m.direcao === 'enviada' ? 'Você:' : `${cliente}:`} </span>
                 {l.m.texto.trimEnd()}
@@ -229,8 +320,54 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
             <a href="#/faturamento?aba=posvenda&sub=reclamacoes">Ver reclamação</a>
           </Button>
         </div>
+      ) : pendente ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t px-4 py-3 text-sm">
+          <Clock className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            Envio sem confirmação. Veja no Mercado Livre se a mensagem chegou ao comprador antes de enviar de novo.
+          </span>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={conferir} disabled={resolvendo}>
+            {resolvendo ? 'Conferindo…' : 'Conferir no Mercado Livre'}
+          </Button>
+          <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setConfirmandoLiberar(true)} disabled={resolvendo}>
+            Já conferi, liberar envio
+          </Button>
+          <AlertDialog open={confirmandoLiberar} onOpenChange={setConfirmandoLiberar}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Liberar novo envio?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se a mensagem já chegou ao comprador, um novo envio vai duplicá-la. Libere só depois de conferir no Mercado Livre.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Voltar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void liberar()}>Liberar envio</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       ) : (
-      <div className="flex items-end gap-2 border-t px-3 py-2.5">
+      <div className="border-t px-3 py-2.5">
+        {arquivo && (
+          <div className="mb-2 flex min-w-0">
+            <span className="flex min-w-0 max-w-full items-center gap-2 rounded-full bg-muted py-1 pl-3 pr-1 text-xs">
+              <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{arquivo.name}</span>
+              <button
+                type="button"
+                onClick={() => setArquivo(null)}
+                disabled={enviando}
+                aria-label="Remover anexo"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded-full hover:bg-background"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          </div>
+        )}
+      <div className="flex items-end gap-2">
+        <input ref={inputArquivo} type="file" accept={TIPOS_ACEITOS.join(',')} onChange={escolherArquivo} className="hidden" aria-label="Escolher arquivo" />
         <Button
           variant="ghost"
           size="icon"
@@ -241,6 +378,17 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
           title="Sugerir resposta (IA)"
         >
           <Sparkles className={cn('h-5 w-5', sugerindo && 'animate-pulse')} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 rounded-full"
+          onClick={() => inputArquivo.current?.click()}
+          disabled={cancelada || enviando}
+          aria-label="Anexar arquivo"
+          title="Anexar imagem ou PDF (até 5 MB)"
+        >
+          <Paperclip className="h-5 w-5" />
         </Button>
         <div className="relative min-w-0 flex-1">
           <Textarea
@@ -271,6 +419,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         >
           <Send className={cn('h-4 w-4', enviando && 'animate-pulse')} />
         </Button>
+      </div>
       </div>
       )}
       </>}
