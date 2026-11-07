@@ -94,7 +94,7 @@ end $$;
 set local role service_role;
 do $$
 declare
-  c record; r jsonb; t1 uuid; t2 uuid; t3 uuid; antes text; ok boolean; tok uuid := gen_random_uuid();
+  c record; r jsonb; t1 uuid; t2 uuid; t3 uuid; antes text; ok boolean; tok uuid := gen_random_uuid(); tok3 uuid := gen_random_uuid(); o bigint;
   P constant text := '09800001'; B constant text := '09800002'; A constant text := '09800003';
   K1 constant text := '09810001'; K2 constant text := '09810002'; K3 constant text := '09810003';
   alvos_k1 jsonb := '[{"codigo":"09800001","up_id":"UP-P","item_ids":["MLB-P"]},
@@ -264,6 +264,45 @@ begin
   perform pg_temp.afirmar(not exists (select 1 from public.kit_exclusoes where dono_id = t1), 'finalizar não soltou a exclusão');
   -- Fechada, a política volta a poder ser apagada.
   delete from public.sku_politica_kit where org_id = c.org and codigo = P;
+
+  -- Marca d'água e efeito local pendente (Emenda 2).
+  perform pg_temp.afirmar((select count(*) > 0 and bool_and(ordem is not null) from public.estoque_movimentos where transferencia_id = t1),
+    'movimento de transferência sem ordem');
+  perform public.registrar_entrada(c.org, K2, 3, null, null, null, c.usuario, 'kit-saga:k2');
+  r := public.kit_criar_transferencia(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', K2, 'quantidade', 1)),
+    '[{"codigo":"09810002","up_id":"UP-K2","item_ids":["MLB-K2"]}]');
+  t3 := (r->>'id')::uuid;
+  perform pg_temp.afirmar(public.kit_reivindicar_execucao(c.org, t3, tok3, 60), 'claim t3');
+  perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_conferir_saldo(%L, %L, %L, %L)', c.org, t3, gen_random_uuid(), K2))
+    like '%kit_execucao_vencida%', 'conferiu com outro token');
+  -- Sem marca: só os movimentos desta transferência contam (nenhum); a saga exige local = ML.
+  r := public.kit_saga_conferir_saldo(c.org, t3, tok3, K2);
+  o := (r->>'ordem')::bigint;
+  perform pg_temp.afirmar(r->'marca' = 'null'::jsonb and (r->>'saldo')::int = 3 and (r->>'pendente')::int = 0, 'sem marca: ' || r::text);
+  perform pg_temp.afirmar(o = (select max(ordem) from public.estoque_movimentos where org_id = c.org and codigo = K2) and o > 0,
+    'ordem lida não é a última do SKU: ' || r::text);
+  -- Com marca anterior à entrada: a entrada é o efeito pendente.
+  insert into public.kit_marca_ml (org_id, codigo, ordem) values (c.org, K2, 0);
+  r := public.kit_saga_conferir_saldo(c.org, t3, tok3, K2);
+  perform pg_temp.afirmar((r->>'pendente')::int = 3, 'entrada pendente: ' || r::text);
+  -- Confirmar o alvo avança a marca até a ordem lida no cálculo; o mesmo efeito não volta.
+  perform public.kit_saga_salvar_alvo(c.org, t3, tok3, 'UP-K2',
+    jsonb_build_object('valor_anterior', 0, 'valor_alvo', 3, 'fase', 'aumento', 'marca_ordem', o));
+  perform public.kit_saga_salvar_alvo(c.org, t3, tok3, 'UP-K2', jsonb_build_object('confirmada_em', now()));
+  perform pg_temp.afirmar((select ordem = o from public.kit_marca_ml where org_id = c.org and codigo = K2), 'marca não avançou');
+  r := public.kit_saga_conferir_saldo(c.org, t3, tok3, K2);
+  perform pg_temp.afirmar((r->>'pendente')::int = 0, 'efeito aplicado duas vezes: ' || r::text);
+  -- Movimento de transferência com o alvo confirmado já está no ML; estorno posterior à marca fica pendente; venda nunca.
+  insert into public.estoque_movimentos (org_id, codigo, codigo_pai, quantidade, motivo, transferencia_id, ordem)
+  values (c.org, K2, '09810000', 1, 'kit_entrada', t3, o + 1000),
+         (c.org, K2, '09810000', 2, 'estorno_venda', null, o + 1001),
+         (c.org, K2, '09810000', -1, 'venda', null, o + 1002);
+  r := public.kit_saga_conferir_saldo(c.org, t3, tok3, K2);
+  perform pg_temp.afirmar((r->>'pendente')::int = 2 and (r->>'ordem')::bigint = o + 1002, 'estorno depois da marca: ' || r::text);
+  -- Marca não recua.
+  update public.kit_transferencia_alvos set confirmada_em = null where transferencia_id = t3;
+  perform public.kit_saga_salvar_alvo(c.org, t3, tok3, 'UP-K2', jsonb_build_object('confirmada_em', now()));
+  perform pg_temp.afirmar((select ordem = o from public.kit_marca_ml where org_id = c.org and codigo = K2), 'marca recuou');
 
   -- Task 5: publicação segura a exclusão durante a chamada remota. Transferência que começa nesse
   -- intervalo recebe up_ocupado; o retry da publicação (mesmo dono) readquire; solta, a transferência entra.

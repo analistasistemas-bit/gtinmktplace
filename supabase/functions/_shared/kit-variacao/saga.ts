@@ -58,6 +58,17 @@ export interface AlvoSaga {
   repausar: string[];
   /** Pelo sinal de `valor_alvo − valor_anterior`, gravado uma vez no cálculo. `nenhuma` não escreve e confirma com as reduções. */
   fase: 'reducao' | 'aumento' | 'nenhuma' | null;
+  /** `estoque_movimentos.ordem` lida sob o lock do saldo no cálculo; vira a marca d'água do SKU na confirmação. */
+  marca_ordem: number | null;
+}
+
+/** Saldo do SKU com o efeito local pendente desde a marca d'água (`kit_saga_conferir_saldo`). */
+export interface SaldoConferido {
+  saldo: number;
+  /** Nula: o SKU nunca teve valor confirmado pela saga. */
+  marca: number | null;
+  pendente: number;
+  ordem: number;
 }
 
 type Fase = 'reducao' | 'aumento';
@@ -88,8 +99,8 @@ export interface DepsSaga {
     liberar(id: string, token: string): Promise<void>;
     /** Soma das versões de `sku_politica_kit` dos códigos, a mesma da criação. */
     versaoPolitica(codigos: string[]): Promise<number>;
-    /** Saldo da variação canônica do código. */
-    saldoLocal(codigo: string): Promise<number>;
+    /** Saldo travado, marca d'água e efeito pendente do SKU; valida token, prazo e exclusão. */
+    conferirSaldo(id: string, token: string, codigo: string): Promise<SaldoConferido>;
   };
   ml: {
     lerOferta(upId: string, esperados: string[]): Promise<OfertaUP>;
@@ -171,6 +182,22 @@ async function putStatus(ctx: Ctx, itemId: string, status: 'paused' | 'active'):
   vivo(ctx);
   await ctx.deps.ml.putStatus(itemId, status);
 }
+async function conferirSaldo(ctx: Ctx, codigo: string): Promise<SaldoConferido> {
+  vivo(ctx);
+  return await ctx.deps.repo.conferirSaldo(ctx.t.id, ctx.token, codigo);
+}
+
+/**
+ * Spec "Divergência entre ledger e ML": local − ML tem de ser exatamente o efeito local pendente (entrada,
+ * ajuste, estorno e transferência depois da marca). Sem marca, o pendente é só o desta transferência, então
+ * a saga exige local igual ao ML. Nunca ajusta por ledger − ML: o que não se explica trava.
+ */
+function divergencia(alvo: AlvoSaga, c: SaldoConferido, ml: number): string | null {
+  if (c.saldo - ml === c.pendente) return null;
+  return `${alvo.codigo}: divergência sem explicação entre ledger e ML (local ${c.saldo}, ML ${ml}, efeito pendente ${c.pendente}`
+    + `${c.marca === null ? ', SKU sem marca: exige local igual ao ML' : ''})`;
+}
+
 async function podeReativar(ctx: Ctx, codigo: string): Promise<boolean> {
   vivo(ctx);
   return await ctx.deps.repo.podeReativar(ctx.t.id, ctx.token, codigo);
@@ -336,6 +363,9 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     if (reserva.reservado > 0) {
       return reagendar(ctx, `${alvo.codigo}: ${reserva.reservado} peça(s) comprometida(s) com pedido em aberto`);
     }
+    // Antes de reservar: divergência sem explicação trava sem mover peça.
+    const div = divergencia(alvo, await conferirSaldo(ctx, alvo.codigo), oferta.quantidade);
+    if (div) return travar(ctx, div);
   }
   return avancar(ctx, 'calcular');
 }
@@ -358,11 +388,14 @@ async function calcular(ctx: Ctx): Promise<ResultadoPasso> {
     const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
     const problema = problemaDaOferta(alvo, oferta, true);
     if (problema) return travar(ctx, problema);
-    const local = await ctx.deps.repo.saldoLocal(alvo.codigo);
-    const valorAlvo = alvo.papel === 'destino' ? local + alvo.delta : local;
+    // Depois da reserva o pendente inclui o próprio kit_saida, e o saldo também: a conta segue fechando.
+    const c = await conferirSaldo(ctx, alvo.codigo);
+    const div = divergencia(alvo, c, oferta.quantidade);
+    if (div) return travar(ctx, div);
+    const valorAlvo = alvo.papel === 'destino' ? c.saldo + alvo.delta : c.saldo;
     if (valorAlvo < 0) return travar(ctx, `${alvo.codigo}: valor final negativo (${valorAlvo})`);
     const fase = valorAlvo < oferta.quantidade ? 'reducao' : valorAlvo > oferta.quantidade ? 'aumento' : 'nenhuma';
-    await salvarAlvo(ctx, alvo, { valor_anterior: oferta.quantidade, valor_alvo: valorAlvo, fase });
+    await salvarAlvo(ctx, alvo, { valor_anterior: oferta.quantidade, valor_alvo: valorAlvo, fase, marca_ordem: c.ordem });
   }
   return avancar(ctx, 'reduzir');
 }

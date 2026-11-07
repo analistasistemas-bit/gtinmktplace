@@ -1645,7 +1645,16 @@ calculado pela RPC de criação), `item_ids text[]` (o PUT de quantidade vai par
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
 recebido), `escrita_em`, `confirmada_em`, `item_escrita` (item aberto que recebe o PUT; não muda em tentativa
 incerta), `recusas` (4xx recebidos; na 5ª a saga trava), `repausar text[]` (itens a conferir ou repausar depois de
-um PUT `active`, gravados antes dele; `kit_saga_finalizar` recusa com `kit_repausa_pendente` enquanto houver). Escrita só por `kit_saga_salvar_alvo`.
+um PUT `active`, gravados antes dele; `kit_saga_finalizar` recusa com `kit_repausa_pendente` enquanto houver), `fase`
+(`reducao|aumento|nenhuma`, pelo sinal de `valor_alvo` − ML lido no cálculo, gravada uma vez; aumento só depois de todas as
+reduções confirmadas), `marca_ordem` (maior `estoque_movimentos.ordem` do SKU lida sob o lock do saldo no cálculo; vira a
+marca d'água na confirmação). Escrita só por `kit_saga_salvar_alvo`.
+
+### `kit_marca_ml`
+Marca d'água por SKU participante: PK `(org_id, codigo)`, `ordem` (maior `estoque_movimentos.ordem` já incluída num valor
+confirmado no ML), `atualizado_em`. Avança, nunca recua, quando `kit_saga_salvar_alvo` grava `confirmada_em`. Efeito local
+pendente = entrada, ajuste, estorno de venda e `kit_saida`/`kit_entrada` depois dela, menos os de transferência com o alvo do
+SKU confirmado. Venda fica fora: baixa o ML e o local. RLS de `select` por org; escrita só pela RPC.
 
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
@@ -1673,6 +1682,10 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   `kit_saga_ledger` (reservar, creditar ou cancelar), `kit_saga_finalizar` (estado final e exclusões na
   mesma transação) e `kit_saga_pode_reativar` (trava a política dos alvos, confere a soma e os bloqueios
   do SKU). Invoker, só `service_role`.
+- `kit_saga_conferir_saldo(p_org, p_transferencia, p_token, p_codigo)`: com a variação canônica travada, devolve `saldo`,
+  `marca`, `pendente` e `ordem`. A saga só segue se `saldo − ML = pendente` (sem marca, `pendente` é só o desta
+  transferência, ou seja, local = ML); senão trava com "divergência sem explicação". Nunca ajusta por ledger − ML.
+- `kit_aplicar_movimento` grava `ordem` na inserção (o trigger de ADR-0181 só numera no update).
 - `kit_reservar_transferencia(p_org, p_transferencia)` grava `kit_saida` nas origens, tudo ou nada;
   `kit_creditar_transferencia` grava `kit_entrada` no destino se o ledger bate com `itens`;
   `kit_cancelar_transferencia` devolve à origem o que saiu e não chegou. Devolvem `{ok, aplicado}` ou

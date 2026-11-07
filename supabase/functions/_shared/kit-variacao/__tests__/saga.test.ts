@@ -18,7 +18,7 @@ function alvo(up_id: string, codigo: string, papel: 'origem' | 'destino', delta:
   return {
     up_id, codigo, papel, delta, item_ids, qtd_passo1: null, passo1_em: null, ids_passo1: null,
     valor_anterior: null, valor_alvo: null, pausado_pela_saga: [], intencao_escrita_em: null,
-    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [], fase: null,
+    recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [], fase: null, marca_ordem: null,
   };
 }
 
@@ -76,6 +76,25 @@ function cenario() {
     pausaIgnorada: new Set<string>(),
     falhaSalvarAlvo: (_patch: Partial<AlvoSaga>): Error | null => null,
     seq: 0,
+    /** Ledger falso: só o que a marca d'água olha. */
+    movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
+    ordemSeq: 100,
+    marca: {} as Record<string, number>,
+    mov(codigo: string, qtd: number, motivo: string, transf: string | null = null) {
+      s.movs.push({ codigo, qtd, motivo, transf, ordem: ++s.ordemSeq });
+    },
+    /** Espelho de kit_saga_conferir_saldo. */
+    conferir(codigo: string) {
+      const marca = codigo in s.marca ? s.marca[codigo] : null;
+      const ordem = Math.max(0, ...s.movs.filter((m) => m.codigo === codigo).map((m) => m.ordem));
+      const confirmado = (m: { transf: string | null }) =>
+        m.transf === s.t.id && !!s.alvos.find((a) => a.codigo === codigo)?.confirmada_em;
+      const pendente = s.movs
+        .filter((m) => m.codigo === codigo && ['entrada', 'ajuste', 'estorno_venda', 'kit_saida', 'kit_entrada'].includes(m.motivo))
+        .filter((m) => (m.transf === s.t.id || (marca !== null && m.ordem > marca)) && !confirmado(m))
+        .reduce((soma, m) => soma + m.qtd, 0);
+      return { saldo: s.saldo[codigo], marca, pendente, ordem };
+    },
   };
 
   // Espelho de kit_saga_validar: token, prazo vigente, estado e exclusão.
@@ -108,7 +127,13 @@ function cenario() {
         const erro = s.falhaSalvarAlvo(patch);
         if (erro) throw erro;
         validar(token);
-        Object.assign(s.alvos.find((a) => a.up_id === upId)!, structuredClone(patch));
+        const a = s.alvos.find((x) => x.up_id === upId)!;
+        // Espelho de kit_saga_salvar_alvo: confirmar avança a marca, que nunca recua.
+        if (!a.confirmada_em && patch.confirmada_em) {
+          const o = a.marca_ordem ?? patch.marca_ordem!;
+          s.marca[a.codigo] = Math.max(s.marca[a.codigo] ?? 0, o);
+        }
+        Object.assign(a, structuredClone(patch));
         s.aoSalvarAlvo(patch);
       },
       async finalizar(_id, token, estado, alerta) {
@@ -126,9 +151,11 @@ function cenario() {
         s.rpcs.push(op);
         if (op === 'reservar' && !s.reservado) {
           s.reservado = true; s.saldo.P -= 1; s.saldo.B -= 1;
+          s.mov('P', -1, 'kit_saida', s.t.id); s.mov('B', -1, 'kit_saida', s.t.id);
         }
         if (op === 'creditar' && !s.creditado) {
           s.creditado = true; s.saldo.K += 1;
+          s.mov('K', 1, 'kit_entrada', s.t.id);
         }
         return { ok: true };
       },
@@ -144,8 +171,9 @@ function cenario() {
       async versaoPolitica() {
         return s.versaoPolitica;
       },
-      async saldoLocal(codigo) {
-        return s.saldo[codigo];
+      async conferirSaldo(_id, token, codigo) {
+        validar(token);
+        return s.conferir(codigo);
       },
     },
     ml: {
@@ -511,6 +539,8 @@ describe('avancarSaga', () => {
     c.s.t.tipo = 'entrada';
     Object.assign(c.s.ups, { 'UP-A': { quantidade: 5, itens: [ativo('MLB-A')] } });
     c.s.saldo.A = 10;
+    c.s.marca.A = 0;
+    c.s.mov('A', 5, 'entrada');
     c.s.alvos.splice(0, 3, alvo('UP-A', 'A', 'destino', 0, ['MLB-A']));
     await rodar(c);
     expect(c.s.t.estado).toBe('concluida');
@@ -521,6 +551,8 @@ describe('avancarSaga', () => {
   it('montar com origem cujo local ficou acima do ML: o aumento dela vem depois das reduções', async () => {
     const c = cenario();
     c.s.saldo.P = 7;   // local 7, ML 5: depois da reserva, alvo 6 > 5
+    c.s.marca.P = 0;
+    c.s.mov('P', 2, 'entrada');
     const vistos = reducoesConfirmadasNoAumento(c);
     await rodar(c);
     expect(c.s.t.estado).toBe('concluida');
@@ -532,6 +564,8 @@ describe('avancarSaga', () => {
   it('local 10 × ML 5 com transferência de 1 nunca aumenta antes das reduções confirmadas', async () => {
     const c = cenario();
     c.s.saldo.P = 10;
+    c.s.marca.P = 0;
+    c.s.mov('P', 5, 'entrada');
     const vistos = reducoesConfirmadasNoAumento(c);
     // Redução de B fica incerta e a leitura diverge: trava sem nenhum aumento.
     c.s.falhaPut = (id) => (id === 'MLB-B' ? { erro: new TypeError('timeout'), aplica: false } : null);
@@ -544,11 +578,102 @@ describe('avancarSaga', () => {
   it('ML acima do local é redução, inclusive no destino', async () => {
     const c = cenario();
     c.s.ups['UP-K'].quantidade = 5;   // local 2 + 1 = 3 < 5
+    c.s.marca.K = 0;
+    c.s.mov('K', -3, 'ajuste');
     await rodar(c);
     expect(c.s.t.estado).toBe('concluida');
     expect(c.s.alvos.map((a) => a.fase)).toEqual(['reducao', 'reducao', 'reducao']);
     expect(c.s.chamadas.filter((x) => x.startsWith('qtd'))).toEqual(['qtd MLB-P 4', 'qtd MLB-B 4', 'qtd MLB-K 3']);
     expect(c.s.rpcs).toContain('creditar');
+  });
+
+  // Emenda 2: divergência ledger × ML classificada pela marca d'água (spec, "Divergência entre ledger e ML").
+  const travouPorDivergencia = (c: Cenario) => {
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.t.alerta).toMatch(/divergência sem explicação/);
+    expect(c.s.rpcs).not.toContain('reservar');
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+    expect(c.s.exclusaoSolta).toBe(false);
+  };
+
+  it('diferença sem movimento trava, sem reservar nem escrever', async () => {
+    const c = cenario();
+    c.s.saldo.P = 7;
+    c.s.marca.P = 0;
+    await rodar(c);
+    travouPorDivergencia(c);
+  });
+
+  it('entrada mais uma diferença sem explicação trava', async () => {
+    const c = cenario();
+    c.s.saldo.P = 10;   // ML 5: diferença 5, efeito pendente só 3
+    c.s.marca.P = 0;
+    c.s.mov('P', 3, 'entrada');
+    await rodar(c);
+    travouPorDivergencia(c);
+  });
+
+  it('SKU sem marca exige local igual ao ML', async () => {
+    const c = cenario();
+    c.s.saldo.P = 7;
+    c.s.mov('P', 2, 'entrada');   // sem marca, nem a entrada explica
+    await rodar(c);
+    travouPorDivergencia(c);
+  });
+
+  it('SKU sem marca com local igual ao ML segue, e a confirmação grava a marca', async () => {
+    const c = cenario();
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    // Origem: até o próprio kit_saida, lido sob o lock no cálculo. Destino: idem; o crédito vem depois e já está no ML.
+    expect(c.s.marca).toEqual({ P: c.s.alvos[0].marca_ordem, B: c.s.alvos[1].marca_ordem, K: c.s.alvos[2].marca_ordem });
+    expect(['P', 'B', 'K'].map((x) => c.s.conferir(x).pendente)).toEqual([0, 0, 0]);
+  });
+
+  it('a marca avança na confirmação e o mesmo efeito não é aplicado duas vezes', async () => {
+    const c = cenario();
+    c.s.t.tipo = 'entrada';
+    Object.assign(c.s.ups, { 'UP-A': { quantidade: 5, itens: [ativo('MLB-A')] } });
+    c.s.saldo.A = 10;
+    c.s.marca.A = 0;
+    c.s.mov('A', 5, 'entrada');
+    const ordemEntrada = c.s.ordemSeq;
+    c.s.alvos.splice(0, 3, alvo('UP-A', 'A', 'destino', 0, ['MLB-A']));
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.marca.A).toBe(ordemEntrada);
+    // Nova transferência com o ML de volta a 5: a entrada já aplicada não explica mais nada.
+    Object.assign(c.s.t, { id: 'T2', estado: 'ativa', passo: 'pausar', alerta: null });
+    c.s.alvos.splice(0, 1, alvo('UP-A', 'A', 'destino', 0, ['MLB-A']));
+    c.s.exclusaoSolta = false;
+    c.s.ups['UP-A'].quantidade = 5;
+    c.s.chamadas.length = 0;
+    c.s.rpcs.length = 0;
+    await rodar(c);
+    travouPorDivergencia(c);
+  });
+
+  it('diferença que surge entre a conciliação e o cálculo trava antes de gravar o alvo', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('calcular'));
+    c.s.saldo.B += 1;   // saldo mudou sem movimento no ledger
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.t.alerta).toMatch(/B: divergência sem explicação/);
+    expect(c.s.alvos[1].valor_alvo).toBeNull();
+    expect(c.s.chamadas.some((x) => x.startsWith('qtd'))).toBe(false);
+  });
+
+  it('estorno durante a transferência, depois do cálculo, fica pendente para a próxima', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('reduzir'));
+    c.s.saldo.P += 1;
+    c.s.mov('P', 1, 'estorno_venda');
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.ups['UP-P'].quantidade).toBe(4);
+    expect(c.s.conferir('P').pendente).toBe(1);
+    expect(c.s.conferir('P').saldo - c.s.ups['UP-P'].quantidade).toBe(1);
   });
 
   it('PUT vai para um item aberto do UP e grava o destino (achado 7)', async () => {

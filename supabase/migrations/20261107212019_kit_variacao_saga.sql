@@ -35,6 +35,29 @@ alter table public.kit_transferencia_alvos add column if not exists repausar tex
 -- aumento só depois de todas as reduções confirmadas. Local à frente do ML (entrada, ajuste) é aumento.
 alter table public.kit_transferencia_alvos add column if not exists fase text
   check (fase in ('reducao', 'aumento', 'nenhuma'));
+-- `estoque_movimentos.ordem` máxima do SKU, lida sob o lock do saldo no cálculo: tudo até ela está em `valor_alvo`.
+-- Vira a marca d'água do SKU quando o alvo é confirmado.
+alter table public.kit_transferencia_alvos add column if not exists marca_ordem bigint;
+
+-- Marca d'água por SKU participante: maior `estoque_movimentos.ordem` já incluída num valor confirmado no ML.
+-- Spec "Divergência entre ledger e ML": efeito local pendente é o que veio depois dela; o resto bloqueia.
+-- `ordem` (ADR-0181) é sequência atribuída sob a trava da variação, então ordena o ledger por SKU;
+-- `criado_em` é o início da transação e o `id` é UUID, nenhum dos dois serve.
+create table if not exists public.kit_marca_ml (
+  org_id        uuid not null references public.organizations(id),
+  codigo        text not null,
+  ordem         bigint not null,
+  atualizado_em timestamptz not null default now(),
+  primary key (org_id, codigo)
+);
+alter table public.kit_marca_ml enable row level security;
+drop policy if exists "kit_marca_ml: select org" on public.kit_marca_ml;
+create policy "kit_marca_ml: select org" on public.kit_marca_ml for select to authenticated
+  using (org_id = (select public.current_org_id()));
+revoke all on public.kit_marca_ml from anon;
+revoke insert, update, delete, truncate, references, trigger on public.kit_marca_ml from authenticated;
+grant select on public.kit_marca_ml to authenticated;
+grant all on public.kit_marca_ml to service_role;
 
 grant insert on public.kit_transferencias to estoque_rpc_executor;
 grant select, insert on public.kit_transferencia_alvos to estoque_rpc_executor;
@@ -218,7 +241,7 @@ create or replace function public.kit_saga_salvar_alvo(
   p_org uuid, p_transferencia uuid, p_token uuid, p_up text, p_patch jsonb
 ) returns void language plpgsql set search_path = ''
 as $$
-declare v public.kit_transferencia_alvos%rowtype;
+declare v public.kit_transferencia_alvos%rowtype; v_confirmada timestamptz;
 begin
   perform public.kit_saga_validar(p_org, p_transferencia, p_token);
   select * into v from public.kit_transferencia_alvos
@@ -226,10 +249,23 @@ begin
   if not found then
     raise exception 'kit_saga_salvar_alvo: alvo % não encontrado', p_up;
   end if;
+  v_confirmada := v.confirmada_em;
   v := jsonb_populate_record(v, p_patch);
+  -- Confirmar o alvo avança a marca d'água do SKU na mesma transação: o efeito não é aplicado duas vezes.
+  if v_confirmada is null and v.confirmada_em is not null then
+    select coalesce(a.marca_ordem, v.marca_ordem) into v.marca_ordem from public.kit_transferencia_alvos a
+    where a.transferencia_id = p_transferencia and a.org_id = p_org and a.up_id = p_up;
+    if v.marca_ordem is null then
+      raise exception 'kit_saga_salvar_alvo: alvo % confirmado sem marca_ordem', p_up;
+    end if;
+    insert into public.kit_marca_ml (org_id, codigo, ordem) values (p_org, v.codigo, v.marca_ordem)
+    on conflict (org_id, codigo) do update
+      set ordem = greatest(public.kit_marca_ml.ordem, excluded.ordem), atualizado_em = now();
+  end if;
   update public.kit_transferencia_alvos a set
     qtd_passo1 = v.qtd_passo1, passo1_em = v.passo1_em, ids_passo1 = v.ids_passo1,
     valor_anterior = coalesce(a.valor_anterior, v.valor_anterior), valor_alvo = coalesce(a.valor_alvo, v.valor_alvo), fase = coalesce(a.fase, v.fase),
+    marca_ordem = coalesce(a.marca_ordem, v.marca_ordem),
     pausado_pela_saga = v.pausado_pela_saga, intencao_escrita_em = v.intencao_escrita_em,
     recusa_definitiva_em = v.recusa_definitiva_em, escrita_em = v.escrita_em, confirmada_em = v.confirmada_em,
     item_escrita = v.item_escrita, recusas = v.recusas, repausar = v.repausar
@@ -283,6 +319,63 @@ begin
   raise exception 'kit_saga_ledger: operação inválida %', p_op;
 end $$;
 
+-- Saldo, marca e efeito local pendente do SKU, com o saldo travado (a ordem lida cobre tudo que está nele).
+-- Efeito pendente = soma dos movimentos de entrada, ajuste, estorno de venda e transferência de kit:
+--   - desta transferência e, com marca, os posteriores a ela;
+--   - menos os de transferência cujo alvo deste SKU já foi confirmado: esses já estão no ML.
+-- Venda fica fora: baixa o ML na hora e o local na importação, antes do cálculo. Sem marca, só os desta
+-- transferência contam: a saga exige local igual ao ML. Nunca vira ajuste automático por ledger − ML.
+create or replace function public.kit_saga_conferir_saldo(p_org uuid, p_transferencia uuid, p_token uuid, p_codigo text)
+returns jsonb language plpgsql set search_path = ''
+as $$
+declare v_id uuid; v_saldo integer; v_marca bigint; v_ordem bigint; v_pendente bigint;
+begin
+  perform public.kit_saga_validar(p_org, p_transferencia, p_token);
+  select v.id into v_id from public.variacoes v join public.familias f on f.id = v.familia_id
+  where v.org_id = p_org and v.codigo = p_codigo order by f.criado_em desc limit 1;
+  if v_id is null then
+    raise exception 'kit_saga_conferir_saldo: SKU % não encontrado', p_codigo;
+  end if;
+  select estoque into v_saldo from public.variacoes where id = v_id for update;
+  select ordem into v_marca from public.kit_marca_ml where org_id = p_org and codigo = p_codigo;
+  select coalesce(max(ordem), 0) into v_ordem from public.estoque_movimentos
+  where org_id = p_org and codigo = p_codigo;
+  select coalesce(sum(m.quantidade), 0) into v_pendente from public.estoque_movimentos m
+  where m.org_id = p_org and m.codigo = p_codigo
+    and m.motivo in ('entrada', 'ajuste', 'estorno_venda', 'kit_saida', 'kit_entrada')
+    and (m.transferencia_id = p_transferencia or (v_marca is not null and m.ordem > v_marca))
+    and not exists (
+      select 1 from public.kit_transferencia_alvos a
+      where a.transferencia_id = m.transferencia_id and a.org_id = p_org and a.codigo = p_codigo
+        and a.confirmada_em is not null);
+  return jsonb_build_object('saldo', v_saldo, 'marca', v_marca, 'pendente', v_pendente, 'ordem', v_ordem);
+end $$;
+
+-- Movimento de transferência entra no ledger já com saldo: o trigger de `ordem` (ADR-0181) só numera no
+-- update, então aqui a ordem é atribuída na inserção, sob a mesma trava da variação. Corpo de
+-- 20261107192458 mais a coluna `ordem`.
+create or replace function public.kit_aplicar_movimento(
+  p_org uuid, p_transferencia uuid, p_codigo text, p_delta integer, p_motivo text
+) returns void language plpgsql set search_path = ''
+as $$
+declare v_sku record; v_novo integer;
+begin
+  select * into v_sku from public.kit_sku_travado(p_org, p_codigo);
+  if v_sku.p_id is null then
+    raise exception 'kit_aplicar_movimento: SKU % não encontrado na organização', p_codigo;
+  end if;
+
+  update public.variacoes set estoque = estoque + p_delta
+  where id = v_sku.p_id
+  returning estoque into v_novo;
+
+  insert into public.estoque_movimentos
+    (org_id, codigo, codigo_pai, quantidade, motivo, transferencia_id,
+     estoque_anterior, estoque_resultante, push_enfileirado_em, ordem)
+  values (p_org, p_codigo, v_sku.p_pai, p_delta, p_motivo, p_transferencia,
+          v_sku.p_estoque, v_novo, now(), nextval('public.estoque_movimentos_ordem_seq'));
+end $$;
+
 -- Autoriza reativar um SKU logo antes do PUT: trava as linhas de política dos alvos e confere a versão
 -- somada e os bloqueios do SKU. A saga relê depois do PUT e repausa se a política mudou no meio.
 create or replace function public.kit_saga_pode_reativar(p_org uuid, p_transferencia uuid, p_token uuid, p_codigo text)
@@ -317,12 +410,14 @@ revoke all on function public.kit_saga_salvar_transferencia(uuid, uuid, uuid, te
 revoke all on function public.kit_saga_finalizar(uuid, uuid, uuid, text, text) from public, anon, authenticated;
 revoke all on function public.kit_saga_ledger(uuid, uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.kit_saga_pode_reativar(uuid, uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.kit_saga_conferir_saldo(uuid, uuid, uuid, text) from public, anon, authenticated;
 grant execute on function public.kit_saga_validar(uuid, uuid, uuid) to service_role;
 grant execute on function public.kit_saga_salvar_alvo(uuid, uuid, uuid, text, jsonb) to service_role;
 grant execute on function public.kit_saga_salvar_transferencia(uuid, uuid, uuid, text, text, boolean) to service_role;
 grant execute on function public.kit_saga_finalizar(uuid, uuid, uuid, text, text) to service_role;
 grant execute on function public.kit_saga_ledger(uuid, uuid, uuid, text) to service_role;
 grant execute on function public.kit_saga_pode_reativar(uuid, uuid, uuid, text) to service_role;
+grant execute on function public.kit_saga_conferir_saldo(uuid, uuid, uuid, text) to service_role;
 
 alter function public.kit_criar_transferencia(uuid, uuid, text, jsonb, jsonb) owner to estoque_rpc_executor;
 

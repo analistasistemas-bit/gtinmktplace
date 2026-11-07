@@ -1200,16 +1200,47 @@ export type Database = {
           },
         ]
       }
+      kit_marca_ml: {
+        Row: {
+          atualizado_em: string
+          codigo: string
+          ordem: number
+          org_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          codigo: string
+          ordem: number
+          org_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          codigo?: string
+          ordem?: number
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kit_marca_ml_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kit_transferencia_alvos: {
         Row: {
           codigo: string | null
           confirmada_em: string | null
           delta: number | null
           escrita_em: string | null
+          fase: string | null
           ids_passo1: string[] | null
           item_escrita: string | null
           intencao_escrita_em: string | null
           item_ids: string[]
+          marca_ordem: number | null
           org_id: string
           papel: string | null
           passo1_em: string | null
@@ -1228,10 +1259,12 @@ export type Database = {
           confirmada_em?: string | null
           delta?: number | null
           escrita_em?: string | null
+          fase?: string | null
           ids_passo1?: string[] | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
+          marca_ordem?: number | null
           org_id: string
           papel?: string | null
           passo1_em?: string | null
@@ -1250,10 +1283,12 @@ export type Database = {
           confirmada_em?: string | null
           delta?: number | null
           escrita_em?: string | null
+          fase?: string | null
           ids_passo1?: string[] | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
+          marca_ordem?: number | null
           org_id?: string
           papel?: string | null
           passo1_em?: string | null
@@ -5693,6 +5728,10 @@ export type Database = {
       }
       kit_reservar_transferencia: {
         Args: { p_org: string; p_transferencia: string }
+        Returns: Json
+      }
+      kit_saga_conferir_saldo: {
+        Args: { p_codigo: string; p_org: string; p_token: string; p_transferencia: string }
         Returns: Json
       }
       kit_saga_finalizar: {

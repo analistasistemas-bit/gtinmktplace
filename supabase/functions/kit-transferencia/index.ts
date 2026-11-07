@@ -87,13 +87,9 @@ function deps(orgId: string): DepsSaga {
           .eq('org_id', orgId).in('codigo', codigos), 'ler política') ?? [];
         return linhas.reduce((soma, p) => soma + p.versao, 0);
       },
-      async saldoLocal(codigo) {
-        // Variação canônica: família mais recente, como kit_sku_travado.
-        const linhas = exigir(await admin.from('variacoes').select('estoque, familias!inner(criado_em)')
-          .eq('org_id', orgId).eq('codigo', codigo), 'ler saldo') as unknown as
-          Array<{ estoque: number; familias: { criado_em: string } }>;
-        if (!linhas?.length) throw new Error(`SKU ${codigo} não encontrado`);
-        return linhas.reduce((a, b) => (b.familias.criado_em > a.familias.criado_em ? b : a)).estoque;
+      async conferirSaldo(id, token, codigo) {
+        return exigir(await admin.rpc('kit_saga_conferir_saldo', { ...base(id, token), p_codigo: codigo }), 'conferir saldo') as
+          { saldo: number; marca: number | null; pendente: number; ordem: number };
       },
     },
     ml: {
