@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configDoMlb, decidirFaixas, faixasDoAlvo, faixasValidas, mesmasFaixas } from '../faixas.ts';
+import { configDoMlb, configDoProduto, decidirFaixas, faixasDoAlvo, faixasValidas, mesmasFaixas } from '../faixas.ts';
 
 const CINCO = [{ min_unidades: 2, desconto_pct: 5 }];
 const CRUZA = 'Faixa de atacado ficaria acima do preço base';
@@ -130,5 +130,31 @@ describe('decidirFaixas', () => {
     const r = decidirFaixas(1, viva(0.5), cfg([{ min_unidades: 2, desconto_pct: 0.1 }])); // R$ 1,00 com 0,1% = R$ 1,00
     expect(r).toEqual({ acao: 'fora', motivo: 'Faixa de atacado inválida para este preço — ajuste na Revisão' });
     expect(decidirFaixas(100, [{ min_unidades: 1, preco: 90 }], cfg([{ min_unidades: 1, desconto_pct: 5 }])).acao).toBe('fora');
+  });
+});
+
+describe('configDoProduto', () => {
+  const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+  const dez = [{ min_unidades: 2, desconto_pct: 10 }];
+  const l = (...xs: unknown[]) => xs.map((atacado) => ({ atacado }));
+  it('a única não nula vale, mesmo com a canônica NULL', () => {
+    expect(configDoProduto(l(null, cinco, null, cinco))).toEqual({ atacado: cinco, divergente: false });
+  });
+  it('[] conta como configuração', () => {
+    expect(configDoProduto(l(null, []))).toEqual({ atacado: [], divergente: false });
+    expect(configDoProduto(l(cinco, []))).toEqual({ atacado: null, divergente: true });
+  });
+  it('todas NULL → sem configuração', () => {
+    expect(configDoProduto(l(null, null))).toEqual({ atacado: null, divergente: false });
+  });
+  it('duas configurações → diverge', () => {
+    expect(configDoProduto(l(cinco, dez))).toEqual({ atacado: null, divergente: true });
+  });
+});
+
+describe('decidirFaixas — lotes divergentes', () => {
+  it('fora com a mensagem de lotes', () => {
+    expect(decidirFaixas(100, [], { faixas: null, divergente: true, lotesDivergentes: true }))
+      .toEqual({ acao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
   });
 });

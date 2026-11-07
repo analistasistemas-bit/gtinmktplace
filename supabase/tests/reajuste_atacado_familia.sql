@@ -44,8 +44,9 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 select pg_temp.fid(n), '95000000-0000-0000-0000-000000000201', '95000000-0000-0000-0000-000000000101',
        '95000000-0000-0000-0000-000000000001', '095' || lpad(n::text, 5, '0'), 'Produto ' || n, 'UPDATE', 'pronto', 'nacional', gen_random_uuid(), 'MLB' || n || 'A',
        now() - interval '1 day', '[{"min_unidades":2,"desconto_pct":5}]'::jsonb
-from generate_series(1, 15) n;
--- Outros lotes: produto 13 com linha igual, sem config e com config diferente; produto 14 com cor própria em outra linha.
+from generate_series(1, 17) n;
+-- Outros lotes: produto 13 com linha igual e sem config; 14 com cor própria em outra linha; 16 com config diferente;
+-- 17 com a linha pedida NULL e o lote antigo com config.
 insert into public.lotes (id, user_id, org_id, status, origem) values
   ('95000000-0000-0000-0000-000000000203', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual'),
   ('95000000-0000-0000-0000-000000000204', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'processando', 'manual'),
@@ -55,7 +56,8 @@ select x.id::uuid, x.lote::uuid, '95000000-0000-0000-0000-000000000101', '950000
 from (values
   ('95000000-0000-0000-0000-000000000351', '95000000-0000-0000-0000-000000000203', '09500013', '[{"min_unidades":2,"desconto_pct":5}]'),
   ('95000000-0000-0000-0000-000000000352', '95000000-0000-0000-0000-000000000204', '09500013', null),
-  ('95000000-0000-0000-0000-000000000353', '95000000-0000-0000-0000-000000000205', '09500013', '[{"min_unidades":3,"desconto_pct":7}]'),
+  ('95000000-0000-0000-0000-000000000353', '95000000-0000-0000-0000-000000000205', '09500016', '[{"min_unidades":3,"desconto_pct":7}]'),
+  ('95000000-0000-0000-0000-000000000355', '95000000-0000-0000-0000-000000000203', '09500017', '[{"min_unidades":2,"desconto_pct":5}]'),
   ('95000000-0000-0000-0000-000000000354', '95000000-0000-0000-0000-000000000203', '09500014', '[{"min_unidades":2,"desconto_pct":5}]')
 ) x(id, lote, pai, atacado);
 insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, atacado)
@@ -173,6 +175,8 @@ declare
   v_org uuid := '95000000-0000-0000-0000-000000000001';
   e1 uuid := '95000000-0000-0000-0000-000000000801'; e2 uuid := '95000000-0000-0000-0000-000000000802';
   e3 uuid := '95000000-0000-0000-0000-000000000803'; e4 uuid := '95000000-0000-0000-0000-000000000804';
+  e5 uuid := '95000000-0000-0000-0000-000000000805'; e6 uuid := '95000000-0000-0000-0000-000000000806';
+  e7 uuid := '95000000-0000-0000-0000-000000000807';
   v_cinco jsonb := '[{"min_unidades":2,"desconto_pct":5}]'; v_dez jsonb := '[{"min_unidades":2,"desconto_pct":10}]';
   v_tok uuid := gen_random_uuid(); v_i public.operacoes_massa_itens;
 begin
@@ -180,16 +184,37 @@ begin
   perform public.reajuste_atacado_concluir(v_org, e1);
   perform pg_temp.ok(pg_temp.fam(13) = v_dez, 'edição: linha pedida');
   perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_dez, 'edição: outro lote igual a esperado acompanha');
-  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000352') is null, 'edição: lote sem config fica como está');
-  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000353') = '[{"min_unidades":3,"desconto_pct":7}]'::jsonb, 'edição: config diferente não é tocada');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000352') = v_dez, 'edição: lote NULL recebe a config nova');
+  perform pg_temp.ok(jsonb_array_length(pg_temp.ent(e1)->'anteriores') = 3, 'edição: guarda o valor de cada linha');
 
   -- Reverter: o inverso, sobre as mesmas linhas.
   insert into public.operacoes_massa (id, org_id, acao, status, origem_id, atacado_familias) values
-    (e2, v_org, 'reajustar', 'executando', e1, jsonb_build_array(jsonb_build_object('familia_id', pg_temp.fid(13), 'novo', v_cinco, 'esperado', v_dez, 'status', 'pendente', 'motivo', null)));
+    (e2, v_org, 'reajustar', 'executando', e1, jsonb_build_array(jsonb_build_object('familia_id', pg_temp.fid(13), 'novo', v_cinco, 'esperado', v_dez, 'status', 'pendente', 'motivo', null,
+      'restaurar', pg_temp.ent(e1)->'anteriores')));
   insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, codigo_pai, passos) values
     (e2, v_org, 'MLB13A', 'aplicado', 100, '09500013', pg_temp.passos('confirmado'));
   perform public.reajuste_atacado_concluir(v_org, e2);
-  perform pg_temp.ok(pg_temp.fam(13) = v_cinco and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_cinco, 'Reverter: as duas linhas voltam');
+  perform pg_temp.ok(pg_temp.fam(13) = v_cinco and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_cinco, 'Reverter: as linhas com config voltam');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000352') is null, 'Reverter: a linha NULL volta a NULL');
+
+  -- Lote com outra config: nada é escrito.
+  perform pg_temp.op(e5, 16);
+  perform public.reajuste_atacado_concluir(v_org, e5);
+  perform pg_temp.ok(pg_temp.fam(16) = v_cinco and pg_temp.ent(e5)->>'status' = 'nao_aplicado' and pg_temp.ent(e5)->>'motivo' like '%mudou%', 'lote diferente: nao_aplicado');
+  perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000353') = '[{"min_unidades":3,"desconto_pct":7}]'::jsonb, 'lote diferente: intacto');
+
+  -- Linha pedida NULL, `esperado` vindo do lote antigo: a edição alcança e grava as duas.
+  update public.familias set atacado = null where id = pg_temp.fid(17);
+  perform pg_temp.op(e6, 17);
+  perform public.reajuste_atacado_concluir(v_org, e6);
+  perform pg_temp.ok(pg_temp.fam(17) = v_dez and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000355') = v_dez, 'canônica NULL: grava todas');
+  insert into public.operacoes_massa (id, org_id, acao, status, origem_id, atacado_familias) values
+    (e7, v_org, 'reajustar', 'executando', e6, jsonb_build_array(jsonb_build_object('familia_id', pg_temp.fid(17), 'novo', v_cinco, 'esperado', v_dez, 'status', 'pendente', 'motivo', null,
+      'restaurar', pg_temp.ent(e6)->'anteriores')));
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, codigo_pai, passos) values
+    (e7, v_org, 'MLB17A', 'aplicado', 100, '09500017', pg_temp.passos('confirmado'));
+  perform public.reajuste_atacado_concluir(v_org, e7);
+  perform pg_temp.ok(pg_temp.fam(17) is null and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000355') = v_cinco, 'canônica NULL: Reverter restaura cada linha');
 
   -- Cor própria em outra linha do produto reprova.
   perform pg_temp.op(e3, 14);

@@ -155,7 +155,7 @@ describe('depsReajuste', () => {
 
   it('configAtacado: mesma herança do preview', async () => {
     const faixas = [{ min_unidades: 3, desconto_pct: 10 }];
-    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: faixas } }]);
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: faixas }]));
     expect(await depsReajuste(f.admin, cxT, opRow, 'k').configAtacado(['v1'])).toEqual({ faixas, divergente: false, porCor: false });
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
   });
@@ -220,18 +220,45 @@ describe('depsPreview', () => {
     expect(linhasDoRascunho(itens).map((l) => [l.status, l.codigo_pai])).toEqual([['rascunho', 'P1'], ['bloqueado', 'P2']]);
   });
 
-  it('configAtacado: cada cor herda da própria família, filtrando por org', async () => {
+  it('configAtacado: canônica NULL não esconde a config de lote antigo, filtrando por org', async () => {
     const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
-    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: cinco } }, { atacado: cinco, familias: { atacado: null } }]);
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes'
+      ? [{ atacado: null, familias: { codigo_pai: 'P' } }, { atacado: cinco, familias: { codigo_pai: 'P' } }]
+      : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: cinco }]));
     expect(await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).toEqual({ faixas: cinco, divergente: false, porCor: true });
     expect(f.chamadas[0].tabela).toBe('variacoes');
     expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', cxT.orgId]);
     expect(op(f.chamadas[0], 'in')).toEqual([['id', ['v1', 'v2']]]);
+    expect(op(f.chamadas[1], 'eq')).toContainEqual(['org_id', cxT.orgId]);
+    expect(op(f.chamadas[1], 'in')).toEqual([['codigo_pai', ['P']]]);
   });
 
-  it('configAtacado: famílias com atacado diferente divergem', async () => {
-    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: [{ min_unidades: 2, desconto_pct: 5 }] } }, { atacado: null, familias: { atacado: null } }]);
-    expect((await depsPreview(f.admin, cxT, { reverter: false }).configAtacado(['v1', 'v2'])).divergente).toBe(true);
+  it('configAtacado: duas configs entre os lotes → lotes divergentes; cor com a própria não precisa do lote', async () => {
+    const lotes = [{ codigo_pai: 'P', atacado: [{ min_unidades: 2, desconto_pct: 5 }] }, { codigo_pai: 'P', atacado: [{ min_unidades: 2, desconto_pct: 10 }] }];
+    const herda = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : lotes));
+    expect(await depsPreview(herda.admin, cxT, { reverter: false }).configAtacado(['v1'])).toEqual({ faixas: null, divergente: true, lotesDivergentes: true, porCor: false });
+    const propria = [{ min_unidades: 3, desconto_pct: 1 }];
+    const cor = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: propria, familias: { codigo_pai: 'P' } }] : lotes));
+    expect(await depsPreview(cor.admin, cxT, { reverter: false }).configAtacado(['v1'])).toEqual({ faixas: propria, divergente: false, porCor: true });
+  });
+
+  it('caminho normal: canônica NULL e lote antigo com config recalcula as faixas, sem tocar em familias', async () => {
+    const cinco = [{ min_unidades: 2, desconto_pct: 5 }];
+    const f = fakeAdmin((c) => (c.tabela === 'variacoes' ? [{ atacado: null, familias: { codigo_pai: 'P' } }] : [{ codigo_pai: 'P', atacado: null }, { codigo_pai: 'P', atacado: cinco }]));
+    const vivo = { preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
+    const r = await montarPreview({ familias: [], ml_item_ids: ['MLB1'], ajuste: { tipo: 'pct', sentido: '+', valor: 10 } }, {
+      expandir: async () => [{ ml_item_id: 'MLB1', codigo_pai: 'P', variacao_ids: [], variacoes_ml_esperadas: null, sku: null, titulo: null, ehKit: false, familiaPublicando: false, migracaoPxv: false }],
+      origem: async () => null, origemAtacado: async () => [], familiasAtacado: async () => new Map(),
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [], lerFaixas: async () => [{ min_unidades: 2, preco: 95 }], gravarFaixas: vi.fn() },
+      configAtacado: depsPreview(f.admin, cxT, { reverter: false }).configAtacado,
+      ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
+      variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
+      estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 100, preco_editado_pelo_operador: false }]]),
+      avaliar: async () => resumir([]),
+    });
+    expect(r.ok && r.itens[0]).toMatchObject({ situacao: 'elegivel', faixas_alvo: [{ min_unidades: 2, preco: 104.5 }] });
+    expect(r.ok && r.atacado_familias).toEqual([]);
+    expect(f.chamadas.flatMap((c) => c.ops.map(([n]) => n))).not.toContain('update');
   });
 
   it('familiasAtacado: olha todos os lotes do produto, filtrando por org', async () => {
@@ -247,12 +274,12 @@ describe('depsPreview', () => {
       if (c.tabela !== 'familias') return [{ familia_id: 'f2b' }];
       return op(c, 'in')[0][0] === 'id' ? linhas.filter((l) => ['f1', 'f2', 'f3', 'f4'].includes(l.id)) : linhas;
     });
+    // Canônica NULL (f4) enxerga a config do lote antigo.
     const m = await depsPreview(f.admin, cxT, { reverter: false }).familiasAtacado(['f1', 'f2', 'f3', 'f4']);
-    // Lote sem config (null) não é config diferente: é o caso comum e fica como está.
     expect(m.get('f1')).toEqual({ codigo_pai: 'P1', atacado: cinco, porCor: false, lotesDivergentes: false });
     expect(m.get('f2')).toEqual({ codigo_pai: 'P2', atacado: null, porCor: true, lotesDivergentes: false });
-    expect(m.get('f3')).toMatchObject({ lotesDivergentes: true });
-    expect(m.get('f4')).toMatchObject({ lotesDivergentes: true });
+    expect(m.get('f3')).toMatchObject({ atacado: null, lotesDivergentes: true });
+    expect(m.get('f4')).toEqual({ codigo_pai: 'P4', atacado: cinco, porCor: false, lotesDivergentes: false });
     for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', cxT.orgId]);
     expect(op(f.chamadas[2], 'not')).toEqual([['atacado', 'is', null]]);
   });

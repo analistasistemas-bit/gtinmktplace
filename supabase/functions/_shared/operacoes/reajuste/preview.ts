@@ -16,9 +16,13 @@ import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, FaixaPreco,
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>;
   /** Novo % por família: vale para todos os MLBs dela. */
   atacado?: Record<string, FaixaAtacado[]>; origem_id?: string | null }
-/** Entrada de `operacoes_massa.atacado_familias`. `esperado`: `familias.atacado` no preview, para o compare-and-set. */
-export interface EntradaAtacado { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; status: 'pendente' | 'aplicado' | 'nao_aplicado'; motivo: string | null }
-/** `porCor` e `lotesDivergentes` olham todas as linhas do produto. Lote sem configuração não diverge. */
+/** Valor de uma linha de `familias` antes da conclusão. */
+export interface LinhaAtacado { id: string; atacado: FaixaAtacado[] | null }
+/** Entrada de `operacoes_massa.atacado_familias`. `esperado`: configuração do produto no preview, para o compare-and-set.
+ *  `anteriores`: gravado na conclusão. `restaurar`: no Reverter, os `anteriores` da origem. */
+export interface EntradaAtacado { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; status: 'pendente' | 'aplicado' | 'nao_aplicado'; motivo: string | null;
+  anteriores?: LinhaAtacado[]; restaurar?: LinhaAtacado[] }
+/** `atacado`: configuração do produto (`configDoProduto`). `porCor` e `lotesDivergentes` olham todas as linhas dele. */
 export interface FamiliaAtacado { codigo_pai: string; atacado: FaixaAtacado[] | null; porCor: boolean; lotesDivergentes: boolean }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
   sku: string | null; titulo: string | null; ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
@@ -59,7 +63,7 @@ const AVISO_IRMAO = 'Atacado da família: neste anúncio mudam só as faixas.';
 const AVISO_D10 = 'Reverter: o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest.';
 
 /** Edição de atacado que alcança um produto. `grava` false: Reverter de origem `nao_aplicado`, só confere a família. */
-type Edicao = { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; porCor: boolean; lotesDivergentes: boolean; grava: boolean };
+type Edicao = { familia_id: string; novo: FaixaAtacado[] | null; esperado: FaixaAtacado[] | null; porCor: boolean; lotesDivergentes: boolean; grava: boolean; restaurar?: LinhaAtacado[] };
 export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[]; passos: Passo[] };
 const mesmoEstado = (a: EstadoVariacao, b: EstadoVariacao) =>
   a.preco_editado_pelo_operador === b.preco_editado_pelo_operador &&
@@ -82,7 +86,7 @@ export async function montarPreview(
     if (entradas.some((e) => e.status === 'pendente')) return { ok: false, erro: 'A operação de origem ainda está em andamento' };
     // `aplicado` troca os lados; `nao_aplicado` não mudou a família e só as faixas aplicadas voltam.
     pedidas = entradas.map((e) => (e.status === 'aplicado'
-      ? { familia_id: e.familia_id, novo: e.esperado, esperado: e.novo, porCor: false, lotesDivergentes: false, grava: true }
+      ? { familia_id: e.familia_id, novo: e.esperado, esperado: e.novo, porCor: false, lotesDivergentes: false, grava: true, restaurar: e.anteriores }
       : { familia_id: e.familia_id, novo: null, esperado: e.esperado, porCor: false, lotesDivergentes: false, grava: false }));
   } else {
     const descontos = Object.values(p.atacado ?? {}).flat().map((f) => f.desconto_pct);
@@ -141,7 +145,7 @@ export async function montarPreview(
     const doPai = itens.filter((i) => i.codigo_pai === pai);
     const ruim = doPai.find((i) => i.situacao === 'fora');
     if (!ruim) {
-      atacado_familias.push({ familia_id: e.familia_id, novo: e.novo, esperado: e.esperado, status: 'pendente', motivo: null });
+      atacado_familias.push({ familia_id: e.familia_id, novo: e.novo, esperado: e.esperado, status: 'pendente', motivo: null, ...(e.restaurar ? { restaurar: e.restaurar } : {}) });
       continue;
     }
     for (const i of doPai) {
@@ -236,7 +240,7 @@ async function avaliarItem(
   // Reverter não recalcula as faixas: volta às que a origem trocou, ou só não deixa o base restaurado passar por elas.
   const config = orig && !faixasOrigem && !ed ? null : await deps.configAtacado(ids);
   if (ed && (config!.divergente || config!.porCor || !mesmaConfig(config!.faixas, ed.esperado))) {
-    return fora(orig ? MSG_ATACADO_MUDOU : config!.porCor ? MSG_ATACADO_POR_COR : config!.divergente ? MSG_ATACADO_ENTRE_CORES : MSG_ATACADO_ENTRE_LOTES);
+    return fora(orig ? MSG_ATACADO_MUDOU : config!.porCor ? MSG_ATACADO_POR_COR : config!.divergente && !config!.lotesDivergentes ? MSG_ATACADO_ENTRE_CORES : MSG_ATACADO_ENTRE_LOTES);
   }
   // Com edição na origem vale a entrada: a config do passo é a de antes dela.
   if (faixasOrigem && (!mesmasFaixas(vivas, faixasOrigem.alvo) || config!.divergente || (!ed && !mesmaConfig(config!.faixas, faixasOrigem.config)))) {

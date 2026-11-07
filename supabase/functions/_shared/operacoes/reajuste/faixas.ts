@@ -9,8 +9,9 @@ export const MSG_ATACADO_POR_COR = 'Atacado por cor: ajuste na Revisão';
 export const MSG_ATACADO_ENTRE_CORES = 'Atacado diferente entre cores — ajuste na Revisão';
 export const MSG_ATACADO_ENTRE_LOTES = 'Atacado diferente entre lotes — ajuste na Revisão';
 
-/** `faixas` null = nada configurado; [] = explicitamente sem atacado. `porCor`: alguma cor tem configuração própria. */
-export interface ConfigMlb { faixas: FaixaAtacado[] | null; divergente: boolean; porCor?: boolean }
+/** `faixas` null = nada configurado; [] = explicitamente sem atacado. `porCor`: alguma cor tem configuração própria.
+ *  `lotesDivergentes` vem sempre com `divergente`. */
+export interface ConfigMlb { faixas: FaixaAtacado[] | null; divergente: boolean; porCor?: boolean; lotesDivergentes?: boolean }
 export type DecisaoFaixas =
   | { acao: 'nenhuma' | 'recalcular'; faixas_alvo: FaixaPreco[] | null }
   | { acao: 'fora'; motivo: string };
@@ -49,6 +50,12 @@ export function configDoMlb(variacoes: { atacado: unknown }[], familia: { atacad
   return { faixas: efetivas.find((f) => f !== null) ?? null, divergente: false };
 }
 
+/** Configuração do produto: a única não nula entre as linhas (lotes) dele. A canônica costuma ser NULL e não a esconde. */
+export function configDoProduto(linhas: { atacado: unknown }[]): { atacado: FaixaAtacado[] | null; divergente: boolean } {
+  const unicas = new Map(linhas.filter((l) => l.atacado != null).map((l) => [JSON.stringify(l.atacado), l.atacado as FaixaAtacado[]]));
+  return unicas.size > 1 ? { atacado: null, divergente: true } : { atacado: [...unicas.values()][0] ?? null, divergente: false };
+}
+
 const quantidades = (fs: { min_unidades: number }[]) => porQuantidade(fs).map((f) => f.min_unidades).join();
 
 /** Só recalcula as faixas que existem vivas, com as mesmas quantidades da configuração. Mudar preço nunca cria nem
@@ -56,7 +63,7 @@ const quantidades = (fs: { min_unidades: number }[]) => porQuantidade(fs).map((f
  *  `editando`: o operador redefiniu o % da família, então as faixas seguem a configuração, com ou sem vivas. Sempre há
  *  passo, porque a conclusão da família exige todos confirmados. */
 export function decidirFaixas(alvo: number, vivas: FaixaPreco[], config: ConfigMlb | null, editando = false): DecisaoFaixas {
-  if (config?.divergente) return { acao: 'fora', motivo: MSG_ATACADO_ENTRE_CORES };
+  if (config?.divergente) return { acao: 'fora', motivo: config.lotesDivergentes ? MSG_ATACADO_ENTRE_LOTES : MSG_ATACADO_ENTRE_CORES };
   const nenhuma: DecisaoFaixas = { acao: 'nenhuma', faixas_alvo: null };
   if (!config?.faixas || (!editando && quantidades(config.faixas) !== quantidades(vivas))) {
     return vivas.some((f) => centavos(f.preco) >= centavos(alvo))

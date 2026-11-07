@@ -1279,6 +1279,7 @@ describe('executarReajuste — atacado por família', () => {
   it.each<[string, ConfigMlb, string]>([
     ['% mudou', { faixas: [{ min_unidades: 2, desconto_pct: 7 }], divergente: false }, MSG_FAIXAS_MUDARAM],
     ['cores divergentes', { faixas: null, divergente: true }, MSG_FAIXAS_MUDARAM],
+    ['lotes divergentes', { faixas: null, divergente: true, lotesDivergentes: true }, MSG_FAIXAS_MUDARAM],
     ['cor com config própria', { faixas: ANTES, divergente: false, porCor: true }, MSG_ATACADO_POR_COR],
   ])('ida: configuração revalidada antes de escrever (%s) → mudou, nada escrito', async (_n, config, mensagem) => {
     const itens = [irmao()];

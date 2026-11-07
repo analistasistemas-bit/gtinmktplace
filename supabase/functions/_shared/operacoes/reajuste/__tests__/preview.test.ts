@@ -573,6 +573,16 @@ describe('montarPreview — atacado por família', () => {
     expect(r).toMatchObject({ executaveis: 0, atacado_familias: [] });
   });
 
+  it('MLB com lotes divergentes → fora', async () => {
+    const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { faixas: null, divergente: true, lotesDivergentes: true } }));
+    expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
+  it('caminho normal com lotes divergentes → fora', async () => {
+    const i = await um(pct(10), deps({ config: { faixas: null, divergente: true, lotesDivergentes: true } }));
+    expect(i).toMatchObject({ situacao: 'fora', motivo: 'Atacado diferente entre lotes — ajuste na Revisão' });
+  });
+
   it('cor do MLB com configuração própria, vinda de outra linha da família → fora', async () => {
     const r = await preview(edicao(), comFamilia([a('MLB1')], [a('MLB1')], { config: { ...cfg, porCor: true } }));
     expect(r.de('MLB1')).toMatchObject({ situacao: 'fora', motivo: 'Atacado por cor: ajuste na Revisão' });
@@ -646,6 +656,12 @@ describe('montarPreview — atacado por família', () => {
       expect(r.de('MLB1')).toMatchObject({ faixas_alvo: viva(95), restaurar: [] });
       expect(r.de('MLB1').passos).toEqual([{ tipo: 'faixas', anterior: viva(90), alvo: viva(95), config: NOVO, familia_id: F, estado: 'pendente' }]);
       expect(r.atacado_familias).toEqual([{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'pendente', motivo: null }]);
+    });
+
+    it('origem `aplicado`: leva o valor anterior de cada linha para a conclusão', async () => {
+      const anteriores = [{ id: 'l1', atacado: ANTES }, { id: 'l2', atacado: null }];
+      const r = await preview(voltar, dep('aplicado', { origemAtacado: [{ ...entrada('aplicado'), anteriores }] }));
+      expect(r.atacado_familias).toEqual([{ familia_id: F, novo: ANTES, esperado: NOVO, status: 'pendente', motivo: null, restaurar: anteriores }]);
     });
 
     it('origem `aplicado`, família mudou → família inteira fora', async () => {

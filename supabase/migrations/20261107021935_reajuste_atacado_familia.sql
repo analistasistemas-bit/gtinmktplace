@@ -266,8 +266,9 @@ end;
 $function$;
 
 -- Fim da operação: grava `familias.atacado` por compare-and-set só se todos os itens da família terminaram `aplicado` com o
--- passo `faixas` confirmado. Grava em toda linha do produto igual a `esperado`: os MLBs herdam de qualquer lote, e o
--- Reverter faz o inverso. Lote sem configuração fica como está. `MSG_FAIXAS_PENDENTES` reprova por aí: ela só existe com o passo não confirmado. Senão
+-- passo `faixas` confirmado. Grava em todas as linhas do produto, inclusive as NULL: `esperado` é a configuração do produto
+-- (a única não nula entre as linhas), e linha com outro valor reprova. `anteriores` guarda o valor de cada linha; no Reverter
+-- ele vem em `restaurar`, para a linha NULL voltar a NULL. `MSG_FAIXAS_PENDENTES` reprova por aí: ela só existe com o passo não confirmado. Senão
 -- `nao_aplicado`; as faixas novas ficam nos anúncios que deram certo e o próximo UPDATE volta a seguir a família.
 -- Item em andamento mantém a entrada `pendente`. Idempotente. Devolve { pendentes, atacado_familias }.
 create function public.reajuste_atacado_concluir(p_org uuid, p_operacao uuid)
@@ -283,6 +284,7 @@ declare
   v_novas jsonb := '[]'::jsonb;
   v_pendentes integer := 0;
   v_motivo text;
+  v_anteriores jsonb;
 begin
   select * into v_op from public.operacoes_massa o
   where o.org_id = p_org and o.id = p_operacao and o.acao = 'reajustar';
@@ -320,16 +322,20 @@ begin
                       join public.familias f on f.id = v.familia_id and f.org_id = p_org and f.codigo_pai = v_pai
                       where v.org_id = p_org and v.atacado is not null) then
           v_motivo := 'Atacado por cor: ajuste na Revisão';
-        elsif not exists (select 1 from public.familias f
-                          where f.org_id = p_org and f.id = (v_e->>'familia_id')::uuid
-                            and coalesce(f.atacado, 'null'::jsonb) = v_e->'esperado') then
+        elsif exists (select 1 from public.familias f
+                      where f.org_id = p_org and f.codigo_pai = v_pai and f.atacado is not null
+                        and f.atacado is distinct from v_e->'esperado') then
           v_motivo := 'A configuração de atacado da família mudou durante a operação';
         end if;
 
         if v_motivo is null then
-          update public.familias f set atacado = nullif(v_e->'novo', 'null'::jsonb)
-          where f.org_id = p_org and f.codigo_pai = v_pai and coalesce(f.atacado, 'null'::jsonb) = v_e->'esperado';
-          v_e := v_e || '{"status":"aplicado"}'::jsonb;
+          select jsonb_agg(jsonb_build_object('id', f.id, 'atacado', f.atacado) order by f.id) into v_anteriores
+          from public.familias f where f.org_id = p_org and f.codigo_pai = v_pai;
+          -- Linha fora de `restaurar` (lote novo) recebe `novo`.
+          update public.familias f
+          set atacado = nullif(coalesce((select a->'atacado' from jsonb_array_elements(v_e->'restaurar') a where a->>'id' = f.id::text), v_e->'novo'), 'null'::jsonb)
+          where f.org_id = p_org and f.codigo_pai = v_pai;
+          v_e := v_e || jsonb_build_object('status', 'aplicado', 'anteriores', v_anteriores);
         else
           v_e := v_e || jsonb_build_object('status', 'nao_aplicado', 'motivo', v_motivo);
         end if;

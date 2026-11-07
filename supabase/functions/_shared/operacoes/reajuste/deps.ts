@@ -14,7 +14,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import type { ItemRow } from '../tipos.ts';
 import { resumir } from './avaliacao.ts';
 import type { DepsReajuste, ItemReajuste, OperacaoReajusteRow, ResultadoPersistir } from './executar.ts';
-import { configDoMlb, type ConfigMlb } from './faixas.ts';
+import { configDoMlb, configDoProduto, type ConfigMlb } from './faixas.ts';
 import { criarClienteReajusteML } from './ml.ts';
 import { oferta, unirOfertas } from './ofertas.ts';
 import type { AlvoExpandido, DepsPreview, EntradaAtacado, FamiliaAtacado, Origem } from './preview.ts';
@@ -321,39 +321,47 @@ async function expandir(
   }));
 }
 
-/** O casamento pode cair em lotes diferentes: cada cor herda da própria família, por isso a herança sai aqui. */
-async function configAtacado(admin: SupabaseClient, orgId: string, variacaoIds: string[]): Promise<ConfigMlb> {
-  const linhas: { atacado: unknown; familias: { atacado: unknown } }[] = [];
-  for (const b of blocos(variacaoIds)) {
-    const { data, error } = await admin.from('variacoes').select('atacado, familias!inner(atacado)').eq('org_id', orgId).in('id', b);
-    falhou('configAtacado', error);
-    linhas.push(...((data ?? []) as unknown as typeof linhas));
-  }
-  return {
-    ...configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null }),
-    porCor: linhas.some((l) => l.atacado != null),
-  };
-}
+type LinhaFamilia = { id: string; codigo_pai: string; atacado: unknown };
 
-/** Família pedida na edição do atacado; id fora da org → ForaDaOrg. Um produto tem várias linhas (lotes) e o MLB herda de
- *  qualquer uma: cor própria e config diferente valem para todas. Lote sem configuração não é config diferente. */
-async function familiasAtacado(admin: SupabaseClient, orgId: string, familiaIds: string[]): Promise<Map<string, FamiliaAtacado>> {
-  const out = new Map<string, FamiliaAtacado>();
-  for (const b of blocos(familiaIds)) {
-    const { data, error } = await admin.from('familias').select('id, codigo_pai, atacado').eq('org_id', orgId).in('id', b);
-    falhou('familias.atacado', error);
-    for (const f of data ?? []) {
-      out.set(String(f.id), { codigo_pai: String(f.codigo_pai), atacado: (f.atacado ?? null) as FamiliaAtacado['atacado'], porCor: false, lotesDivergentes: false });
-    }
-  }
-  const faltam = familiaIds.filter((id) => !out.has(id));
-  if (faltam.length) throw new ForaDaOrg(faltam);
-
-  const linhas: { id: string; codigo_pai: string; atacado: unknown }[] = [];
-  for (const b of blocos([...new Set([...out.values()].map((f) => f.codigo_pai))])) {
-    linhas.push(...await paginarTudo<(typeof linhas)[number]>((de, ate) => admin.from('familias').select('id, codigo_pai, atacado')
+/** Todas as linhas (lotes) dos produtos. */
+async function linhasDoProduto(admin: SupabaseClient, orgId: string, pais: string[]): Promise<LinhaFamilia[]> {
+  const linhas: LinhaFamilia[] = [];
+  for (const b of blocos([...new Set(pais)])) {
+    linhas.push(...await paginarTudo<LinhaFamilia>((de, ate) => admin.from('familias').select('id, codigo_pai, atacado')
       .eq('org_id', orgId).in('codigo_pai', b).order('id').range(de, ate) as never));
   }
+  return linhas;
+}
+
+/** Cor sem configuração própria herda a do produto. */
+async function configAtacado(admin: SupabaseClient, orgId: string, variacaoIds: string[]): Promise<ConfigMlb> {
+  const cores: { atacado: unknown; familias: { codigo_pai: string } }[] = [];
+  for (const b of blocos(variacaoIds)) {
+    const { data, error } = await admin.from('variacoes').select('atacado, familias!inner(codigo_pai)').eq('org_id', orgId).in('id', b);
+    falhou('configAtacado', error);
+    cores.push(...((data ?? []) as unknown as typeof cores));
+  }
+  const linhas = await linhasDoProduto(admin, orgId, cores.map((c) => c.familias.codigo_pai));
+  const doProduto = (pai: string) => configDoProduto(linhas.filter((l) => l.codigo_pai === pai));
+  const porCor = cores.some((c) => c.atacado != null);
+  if (cores.some((c) => c.atacado == null && doProduto(c.familias.codigo_pai).divergente)) {
+    return { faixas: null, divergente: true, lotesDivergentes: true, porCor };
+  }
+  return { ...configDoMlb(cores.map((c) => ({ atacado: c.atacado ?? doProduto(c.familias.codigo_pai).atacado })), { atacado: null }), porCor };
+}
+
+/** Família pedida na edição do atacado; id fora da org → ForaDaOrg. */
+async function familiasAtacado(admin: SupabaseClient, orgId: string, familiaIds: string[]): Promise<Map<string, FamiliaAtacado>> {
+  const pais = new Map<string, string>();
+  for (const b of blocos(familiaIds)) {
+    const { data, error } = await admin.from('familias').select('id, codigo_pai').eq('org_id', orgId).in('id', b);
+    falhou('familias.atacado', error);
+    for (const f of data ?? []) pais.set(String(f.id), String(f.codigo_pai));
+  }
+  const faltam = familiaIds.filter((id) => !pais.has(id));
+  if (faltam.length) throw new ForaDaOrg(faltam);
+
+  const linhas = await linhasDoProduto(admin, orgId, [...pais.values()]);
   const paiDaLinha = new Map(linhas.map((l) => [l.id, l.codigo_pai]));
   const comCor = new Set<string>();
   for (const b of blocos([...paiDaLinha.keys()])) {
@@ -361,12 +369,10 @@ async function familiasAtacado(admin: SupabaseClient, orgId: string, familiaIds:
     falhou('variacoes.atacado', error);
     for (const v of data ?? []) comCor.add(paiDaLinha.get(String(v.familia_id))!);
   }
-  for (const f of out.values()) {
-    f.porCor = comCor.has(f.codigo_pai);
-    // Igualdade estrita, a mesma do compare-and-set da conclusão.
-    f.lotesDivergentes = linhas.some((l) => l.codigo_pai === f.codigo_pai && l.atacado != null && JSON.stringify(l.atacado) !== JSON.stringify(f.atacado));
-  }
-  return out;
+  return new Map([...pais].map(([id, pai]) => {
+    const c = configDoProduto(linhas.filter((l) => l.codigo_pai === pai));
+    return [id, { codigo_pai: pai, atacado: c.atacado, porCor: comCor.has(pai), lotesDivergentes: c.divergente }];
+  }));
 }
 
 /** `reverter` = preview com origem_id (os MLBs vêm da origem, não do usuário). */
