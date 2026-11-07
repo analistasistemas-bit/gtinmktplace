@@ -289,7 +289,9 @@ Sequência única (origem e destino):
 1. Lê a quantidade, pausa todos os itens do UP que receberá a escrita e confirma por leitura. A pausa
    só vale se `sub_status` for pausa do vendedor: `out_of_stock` religa sozinho quando o saldo sobe.
 2. Espera o tempo de quarentena **T**.
-3. Importa pedidos do item e reserva os **não pagos** (`payment_required`, `payment_in_process`) e os
+3. Importa pedidos do item e reserva os **não pagos**, lidos em `GET /orders/search/pending`, filtrando
+   pedido do item com pagamento `pending` (pedido abandonado fica `payment_required` para sempre, com
+   pagamento `cancelled` ou `rejected`, e não reserva). Reserva também os
    **pagos sem baixa conciliada**. Pedido pago segue reservado até a **quantidade lida** cair em relação
    à leitura feita no passo 1. `last_updated` não solta reserva: não está medido que ele anda só quando
    a quantidade muda. Na dúvida sobre a conta, bloqueia transferência e aumento.
@@ -306,8 +308,8 @@ Sequência única (origem e destino):
 mudou de 0 a 6 segundos depois do pagamento, não na criação do pedido. O pagamento mais lento levou
 128 s. Os outros pedidos têm mudança posterior de estoque e não servem de amostra.
 
-**Consequência:** pedido não pago não aparece no saldo. Por isso o passo 3 existe, e T precisa cobrir o
-pagamento típico. Valor inicial de **T = 5 minutos**, configurável **[agente]**. T reduz o risco; não o
+**Consequência:** pedido não pago não aparece no saldo, mas aparece em `/orders/search/pending`, então o
+passo 3 enxerga o Pix de até 15 minutos sem depender de T. T cobre o intervalo até o pedido aparecer ali. Valor inicial de **T = 5 minutos**, configurável **[agente]**. T reduz o risco; não o
 prova inexistente.
 
 **Risco residual aceito pelo Diego:** pedido que paga depois de T e não apareceu no passo 3, ou baixa
@@ -365,10 +367,10 @@ SKU Guardado nunca recebe `reativar`.
    `PUT status=paused` e ficou com `out_of_stock` + `paused_by_seller`. `PUT status=active` removeu a pausa
    do vendedor e devolveu só `out_of_stock`. Com o teste 1, isso mostra que item zerado pode ser protegido
    antes de receber saldo. Regra: guardar item exige `paused_by_seller` presente antes de qualquer escrita.
-3. Pedido não pago aparece em `/orders/search` antes do pagamento. Se não aparecer, o passo 3 não protege
-   e o risco residual aumenta: voltar ao Diego com isso antes de construir. **Em andamento:** em cerca de
-   1.500 pedidos de DSA e Daludi, nenhum está hoje em `payment_required` ou `payment_in_process`, o que não
-   prova nada, porque pedido antigo já mudou de status. Monitoração só de leitura de pedidos novos.
+3. **Passou em 07/11 (compra real com Pix sem pagar, Daludi, pedido `2000019395998300`).** Pedido não pago
+   **não** aparece em `/orders/search`, nem filtrando por `order.status`, mas aparece em
+   `/orders/search/pending` como `payment_required` com pagamento `pending`, menos de 1 minuto depois de
+   criado. O estoque seguiu em 6: o ML não reserva peça para pedido não pago. O código Pix vale 15 minutos.
 4. Pagamento perto de T e baixa durante a escrita ou a retentativa: a conciliação do passo 3 segura.
 5. Cancelamento de kit com reposição automática desligada credita e agenda.
 6. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
