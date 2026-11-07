@@ -35,6 +35,26 @@ describe('unirOfertas', () => {
     expect(unirOfertas([[o('A', null)], [o('A', 38)]])).toEqual([o('A', null)]);
   });
 
+  it('mesma chave: started vence pending no empate de preço, em qualquer ordem', () => {
+    const pendente = { ...o('A', 39.9), status: 'pending' as const };
+    expect(unirOfertas([[pendente], [o('A', 39.9)]])).toEqual([o('A', 39.9)]);
+    expect(unirOfertas([[o('A', 39.9)], [pendente]])).toEqual([o('A', 39.9)]);
+  });
+
+  it('mesma chave: started vence mesmo quando o preço vem do registro pending', () => {
+    const maior = { ...o('A', 45), status: 'pending' as const };
+    const semPreco = { ...o('A', null), status: 'pending' as const };
+    expect(unirOfertas([[o('A', 39.9)], [maior]])).toEqual([o('A', 45)]);
+    expect(unirOfertas([[maior], [o('A', 39.9)]])).toEqual([o('A', 45)]);
+    expect(unirOfertas([[o('A', 39.9)], [semPreco]])).toEqual([o('A', null)]);
+    expect(unirOfertas([[semPreco], [o('A', 39.9)]])).toEqual([o('A', null)]);
+  });
+
+  it('mesma chave nas duas fontes como pending continua pending', () => {
+    const pendente = { ...o('A', 39.9), status: 'pending' as const };
+    expect(unirOfertas([[pendente], [pendente]])).toEqual([pendente]);
+  });
+
   it('mesma campanha, ofertas distintas', () => {
     expect(unirOfertas([[o('A', 19)], [o('B', 24)]])?.length).toBe(2);
   });

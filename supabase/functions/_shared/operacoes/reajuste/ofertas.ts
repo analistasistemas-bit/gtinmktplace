@@ -10,14 +10,15 @@ export function oferta(o: Omit<OfertaVigente, 'chave'>): OfertaVigente {
 const vence = (nova: OfertaVigente, atual: OfertaVigente) =>
   atual.preco !== null && (nova.preco === null || centavos(nova.preco) > centavos(atual.preco));
 
-/** null se alguma fonte é inconclusiva. Mesma chave: o maior preço; preço nulo vence. */
+/** null se alguma fonte é inconclusiva. Mesma chave: o maior preço, preço nulo vence; `started` vence `pending`, qualquer que seja o preço. */
 export function unirOfertas(fontes: (OfertaVigente[] | null)[]): OfertaVigente[] | null {
   const porChave = new Map<string, OfertaVigente>();
   for (const fonte of fontes) {
     if (fonte === null) return null;
     for (const o of fonte) {
       const atual = porChave.get(o.chave);
-      if (!atual || vence(o, atual)) porChave.set(o.chave, o);
+      const status = atual?.status === 'started' ? atual.status : o.status;
+      porChave.set(o.chave, { ...(!atual || vence(o, atual) ? o : atual), status });
     }
   }
   return [...porChave.values()];

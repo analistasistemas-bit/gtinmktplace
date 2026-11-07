@@ -273,6 +273,22 @@ describe('executarReajuste — envio novo', () => {
     expect(deps.ml.putPreco).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+    ['SMART_LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['SMART_LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+  ] as const)('%s com a mesma chave, %s → bloqueado, sem PUT', async (tipo, _n, doML, doBanco) => {
+    const r = (status: OfertaVigente['status']) => ({ ...of(39.9), tipo, status, chave: 'OFFER-1', offer_id: 'OFFER-1' });
+    const itens = [item('A')];
+    const deps = montar(itens, { A: plano(100) });
+    deps.ml.lerOfertas.mockResolvedValue([r(doML)]);
+    deps.ofertasBanco.mockResolvedValue(new Map([['A', [r(doBanco)]]]));
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'bloqueado', etapa: null, mensagem: 'Relâmpago em andamento fica fora do reajuste' });
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+  });
+
   it('oferta abaixo do alvo não impede a escrita', async () => {
     const itens = [item('A')];
     const deps = montar(itens, { A: plano(100) });

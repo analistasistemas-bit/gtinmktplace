@@ -193,6 +193,17 @@ describe('montarPreview — ofertas', () => {
     expect(d.ofertasBanco).toHaveBeenCalledWith(['MLB1', 'MLB2']);
   });
 
+  it.each([
+    ['LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+    ['SMART_LIGHTNING', 'ML pending, banco started', 'pending', 'started'],
+    ['SMART_LIGHTNING', 'ML started, banco pending', 'started', 'pending'],
+  ] as const)('%s com a mesma chave, %s → fora', async (tipo, _n, doML, doBanco) => {
+    const r = (status: OfertaVigente['status']) => of('L', 39.9, { tipo, status, chave: 'OFFER-1', offer_id: 'OFFER-1' });
+    const d = deps({ ofertasML: [r(doML)], banco: [r(doBanco)] });
+    expect(await um(pct(10), d)).toMatchObject({ situacao: 'fora', motivo: 'Relâmpago em andamento fica fora do reajuste', passos: null });
+  });
+
   it('sem alteração não trava nem planeja', async () => {
     expect(await um(pct(0), deps({ ofertasML: [of('P', 120)] }))).toMatchObject({ situacao: 'sem_alteracao', passos: null });
   });
