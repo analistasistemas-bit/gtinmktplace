@@ -170,7 +170,7 @@ export async function enfileirarSaga(id: string, orgId: string, delaySegundos?: 
 export async function criarTransferencia(admin, input): Promise<{ id: string } | { motivo: string }>;
 ```
 
-Um passo por invocação. Cada invocação reivindica a execução atomicamente (`execucao_token` com prazo), e reentrega simultânea sai sem agir. `aguardar` agenda com `delay` de T, sem segurar a fila serial. `criarTransferencia` grava alvos e adquire a exclusão; conflito devolve `{motivo:'up_ocupado'}` e o chamador reagenda.
+Um passo por invocação. Cada invocação reivindica a execução atomicamente (`execucao_token` com prazo), e reentrega simultânea sai sem agir. `aguardar` agenda com `delay` de T, sem segurar a fila serial. `criarTransferencia` nasce numa RPC que trava a org com `for share`, valida o módulo e cria transferência e exclusão na mesma transação. `itens` fica imutável no banco depois da reserva, com teste de troca de destinos mantendo as mesmas origens. Grava alvos e adquire a exclusão; conflito devolve `{motivo:'up_ocupado'}` e o chamador reagenda.
 
 Regras por passo, da spec "Escrita de estoque com anúncio pausado":
 - `pausar`: `lerOferta`, grava `qtd_passo1`, pausa e registra em `pausado_pela_saga` só o que estava ativo. Exige `somenteSellingAddress` e `paused_by_seller` em todos.
@@ -419,4 +419,5 @@ Espelha `platform_sonar_deliveries`: `platform_image_deliveries` (`org_id, month
 - [ ] **Step 2:** Skill `graphify-update-maintenance`.
 - [ ] **Step 3:** `pnpm preflight`. Revisão final Codex `gpt-6.1-sol` high do diff, e Grok 4.7 xhigh.
 - [ ] **Step 4:** Com pedido do Diego: merge fast-forward e `supabase db push`. Gerar o manifesto pela **união** de edges novas, edges alteradas diretamente (inclusive `usuarios`) e dependentes transitivos de todo `_shared/` alterado. Deployar todas e conferir o hash de cada bundle por `functions download` antes de ligar qualquer módulo. Jobs antigos na fila são invalidados pela versão da política.
+- [ ] **Step 4b (portão obrigatório):** rodar `supabase/tests/kit_variacao_rpc_concorrencia.sh` e demais testes de duas sessões em banco local com todas as migrations, integralmente verdes. Sem isso, o módulo não liga.
 - [ ] **Step 5:** Ligar `kit_variacao` só na DSA ou Daludi e criar o primeiro kit real com Diego, com 1 combinação. Conferir invariante 2 por SQL antes e depois.
