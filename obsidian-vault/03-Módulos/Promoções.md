@@ -86,7 +86,8 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 
 ### Piso de R$ 19 em toda campanha (emenda 2026-11-07)
 
-- Convidado com preço de campanha abaixo de R$ 19 não aparece em Sugestões nem em Convidados e não entra na contagem, em qualquer tipo. Abaixo disso o frete é do comprador e pode custar mais que o produto.
+- Se o sugerido do ML fica abaixo de R$ 19 mas a faixa alcança R$ 19, o anúncio fica, com R$ 19,00 como preço (desconto menor). Só DEAL e Relâmpago: oferta de preço fixo não tem faixa.
+- Convidado que não alcança R$ 19 não aparece em Sugestões nem em Convidados e não entra na contagem, em qualquer tipo. Abaixo disso o frete é do comprador e pode custar mais que o produto.
 - Quem já participa continua visível para poder sair. Aderir, alterar preço e Reverter abaixo de R$ 19 são recusados, mesmo com "Aderir mesmo assim".
 
 ### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)

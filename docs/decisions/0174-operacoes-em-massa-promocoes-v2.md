@@ -309,20 +309,22 @@ ofertas fixas. A razão do piso (abaixo de R$ 19 o frete é do comprador e pode 
 qualquer campanha. Medido em 07/11 na org `a72ea303`: 373 de 905 convidados DEAL abaixo de R$ 19, 358 deles com
 preço original até R$ 19. Substitui o "Só Relâmpago" da emenda de 2026-11-02.
 
-1. **Some da tela:** convidado com `preco_avaliado` abaixo de R$ 19 sai de Sugestões, da aba Convidados e da
-   contagem da campanha, em qualquer tipo. R$ 19,00 exatos ficam. Sem preço avaliado fica (falta de dado não esconde).
-2. **Participante fica visível**, mesmo abaixo de R$ 19, para poder sair.
-3. **Trava no servidor:** aderir (DEAL, SMART) abaixo de R$ 19 é recusado na criação e na execução, mesmo com risco
+1. **Desconto menor antes de esconder (pedido do Diego, 07/11):** sugerido abaixo de R$ 19 com faixa do ML que alcança
+   R$ 19 fica, avaliado em R$ 19 (ou no mínimo da faixa, se maior): `precoAvaliado` já projeta líquido e semáforo nesse
+   preço, e o painel abre nele. Vale para DEAL e Relâmpago; oferta de preço fixo não tem faixa.
+2. **Some da tela:** convidado que ainda fica abaixo de R$ 19 sai de Sugestões, da aba Convidados e da contagem da
+   campanha, em qualquer tipo. Sem preço avaliado fica (falta de dado não esconde).
+3. **Participante fica visível**, mesmo abaixo de R$ 19, para poder sair.
+4. **Trava no servidor:** aderir (DEAL, SMART) abaixo de R$ 19 é recusado na criação e na execução, mesmo com risco
    confirmado. `alterar_preco` é recusado só na criação: a execução pode estar retomando um PUT já enviado, e
    bloquear ali esconderia uma escrita incerta. Sair segue livre.
-4. **Reverter passa pela mesma trava:** voltar a preço abaixo de R$ 19 é recusado; o operador escolhe preço ≥ R$ 19
+5. **Reverter passa pela mesma trava:** voltar a preço abaixo de R$ 19 é recusado; o operador escolhe preço ≥ R$ 19
    ou sai da campanha.
-5. **Teto aceito:** a regra olha o preço sugerido. Anúncio com sugerido abaixo do piso mas faixa que alcança R$ 19
-   também some (19 na Avil, DEAL e Relâmpago somados), embora coubesse com desconto menor.
-6. **Fora do escopo:** anúncios que já participam abaixo de R$ 19 não saem sozinhos, e o reajuste em massa
+6. **"Até quanto" para no piso:** o sync calcula a partir de R$ 19, para o botão não sugerir preço recusado.
+7. **Fora do escopo:** anúncios que já participam abaixo de R$ 19 não saem sozinhos, e o reajuste em massa
    (ADR-0178) não passa por esta validação.
-7. **Implantação:** `ml_promocoes.contagem` é gravada, então o cartão da campanha só muda quando o sync roda. Depois
-   do deploy, disparar `sincronizar-promocoes` em vez de esperar o cron diário.
+8. **Implantação:** `preco_avaliado`, projeção e `ml_promocoes.contagem` são gravados, então só mudam quando o sync
+   roda. Depois do deploy, disparar `sincronizar-promocoes` em vez de esperar o cron diário.
 
 ## Consequências
 

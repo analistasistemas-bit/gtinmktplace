@@ -35,9 +35,15 @@ export function ehParticipando(status: string): boolean {
 export const PRECO_MIN_PROMOCAO = 19;
 export const MSG_PISO_PROMOCAO = 'Abaixo de R$ 19 o comprador perde o frete grátis';
 
-export function precoAvaliado(it: { status: string; preco_sugerido: number | null; preco_promo: number | null }): number | null {
+export function precoAvaliado(it: {
+  status: string; preco_sugerido: number | null; preco_promo: number | null; preco_min?: number | null; preco_max?: number | null;
+}): number | null {
   if (ehParticipando(it.status)) return it.preco_promo ?? it.preco_sugerido ?? null;
-  return it.preco_sugerido ?? it.preco_promo ?? null;
+  const p = it.preco_sugerido ?? it.preco_promo ?? null;
+  if (p == null || p >= PRECO_MIN_PROMOCAO || it.preco_max == null) return p;
+  // Sugerido abaixo do piso: com faixa que alcança R$ 19, vale o desconto menor (pedido do Diego, 07/11).
+  const noPiso = Math.max(PRECO_MIN_PROMOCAO, it.preco_min ?? 0);
+  return noPiso <= it.preco_max ? noPiso : p;
 }
 
 export function liquidoNoPreco(preco: number, t: Tarifa, aliquotaPct: number): number {
