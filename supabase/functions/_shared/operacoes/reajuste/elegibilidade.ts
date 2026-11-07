@@ -11,7 +11,7 @@ export interface FatosElegibilidade {
 
 const STATUS_OK = new Set(['active', 'paused']);
 const SUB_STATUS_BLOQUEIA = new Set(['forbidden', 'waiting_for_patch', 'poor_quality_thumbnail', 'poor_quality_picture']);
-const MSG_INCONCLUSIVA = 'Não foi possível conferir promoções — tente de novo';
+export const MSG_INCONCLUSIVA ='Não foi possível conferir promoções — tente de novo';
 
 export function motivoInelegivel(f: FatosElegibilidade): string | null {
   if (!STATUS_OK.has(f.vivo.status) || f.vivo.sub_status.some((s) => SUB_STATUS_BLOQUEIA.has(s))) {
