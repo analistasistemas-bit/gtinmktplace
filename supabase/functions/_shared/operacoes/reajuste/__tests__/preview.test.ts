@@ -388,7 +388,7 @@ describe('montarPreview — atacado (ADR-0196)', () => {
     });
 
     it('só faixas em prejuízo: exige confirmação sem avaliar o base', async () => {
-      const faixas: Passo = { tipo: 'faixas', anterior: viva(95), alvo: [{ min_unidades: 2, preco: 85.5 }], estado: 'pendente' };
+      const faixas: Passo = { tipo: 'faixas', anterior: viva(95), alvo: [{ min_unidades: 2, preco: 85.5 }], config: null, estado: 'pendente' };
       vi.mocked(planejarPassos).mockReturnValueOnce([faixas]);
       const d = comFaixa('vermelho');
       const i = await um(pct(10, '-'), d);
@@ -436,41 +436,51 @@ describe('montarPreview — atacado (ADR-0196)', () => {
     });
 
     describe('com faixas na origem', () => {
-      const passoFaixas = (estado: Passo['estado']): Passo => ({ tipo: 'faixas', anterior: viva(90), alvo: viva(99), estado });
+      const passoFaixas = (estado: Passo['estado']): Passo => ({ tipo: 'faixas', anterior: viva(90), alvo: viva(99), config: CINCO, estado });
+      const cfg = { config: { faixas: CINCO, divergente: false } };
       const baseOrigem: Passo = { tipo: 'base', anterior: 100, alvo: 110, estado: 'confirmado' };
       const comPassos = (passos: Passo[], o: { restaurar?: EntradaRestauracao[]; preco?: number } = {}) => new Map([['MLB1', {
         codigo_pai: 'P-MLB1', preco_anterior: 100, preco: o.preco ?? 110, restaurar: o.restaurar ?? restaurar, passos,
       }]]);
 
       it('restaura as faixas que a origem deixou, com passos na ordem da descida', async () => {
-        const d = deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) });
+        const d = deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) });
         const i = await um(voltar, d);
         expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_anteriores: viva(99), faixas_alvo: viva(90) });
         expect(tipos(i)).toEqual(['faixas', 'base']);
-        expect(i.passos?.[0]).toMatchObject({ anterior: viva(99), alvo: viva(90), estado: 'pendente' });
-        expect(d.configAtacado).not.toHaveBeenCalled();
+        expect(i.passos?.[0]).toMatchObject({ anterior: viva(99), alvo: viva(90), config: CINCO, estado: 'pendente' });
+      });
+
+      it.each<[string, ConfigMlb]>([
+        ['outro %', { faixas: [{ min_unidades: 2, desconto_pct: 7 }], divergente: false }],
+        ['sem configuração', { faixas: null, divergente: false }],
+        ['cores divergentes', { faixas: null, divergente: true }],
+      ])('configuração mudou depois da origem, faixas vivas iguais (%s) → fora', async (_n, config) => {
+        expect(await um(voltar, deps({ ...base, config, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(99) })))
+          .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
       });
 
       it('faixas editadas depois da origem → fora', async () => {
-        expect(await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(98) })))
+        expect(await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: viva(98) })))
           .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
       });
 
       it('faixas apagadas depois da origem → fora', async () => {
-        expect(await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: [] })))
+        expect(await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('confirmado')]), faixas: [] })))
           .toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
       });
 
       it('faixas que a origem não conseguiu gravar: reverte só o base', async () => {
-        const i = await um(voltar, deps({ ...base, origem: comPassos([baseOrigem, passoFaixas('pendente')]), faixas: viva(90) }));
+        const i = await um(voltar, deps({ ...base, ...cfg, origem: comPassos([baseOrigem, passoFaixas('pendente')]), faixas: viva(90) }));
         expect(i).toMatchObject({ situacao: 'elegivel', faixas_alvo: null });
         expect(tipos(i)).toEqual(['base']);
       });
 
       it('só faixas: não compara restaurar, não mexe em preço nem marca', async () => {
+        // `restaurar` preenchido e marca editada depois: nada disso importa, a origem não tocou o preço.
         const d = deps({
-          origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) },
-          estados: { 'V-MLB1': est(123, true) }, faixas: viva(99),
+          ...cfg, origem: comPassos([passoFaixas('confirmado')], { preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) },
+          estados: { 'V-MLB1': est(123, false) }, faixas: viva(99),
         });
         const i = await um(voltar, d);
         expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, preco_anterior: 100, restaurar: [], aviso: null });
@@ -478,12 +488,12 @@ describe('montarPreview — atacado (ADR-0196)', () => {
       });
 
       it('só faixas com faixas editadas → fora', async () => {
-        const d = deps({ origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) }, faixas: viva(98) });
+        const d = deps({ ...cfg, origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 100 }) }, faixas: viva(98) });
         expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o atacado mudou depois da alteração' });
       });
 
       it('só faixas com o preço mudado depois → fora', async () => {
-        const d = deps({ origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 105 }) }, faixas: viva(99) });
+        const d = deps({ ...cfg, origem: comPassos([passoFaixas('confirmado')], { restaurar: [], preco: 100 }), vivos: { MLB1: vivo({ preco: 105 }) }, faixas: viva(99) });
         expect(await um(voltar, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
       });
     });

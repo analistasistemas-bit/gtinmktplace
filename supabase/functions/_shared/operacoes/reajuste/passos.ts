@@ -1,5 +1,6 @@
 // ADR-0196 — plano de escrita de um item: a ordem dos passos garante, em cada estado intermediário, base acima de toda
 // oferta (decisão 3) e toda faixa abaixo do base (decisão 7).
+import type { FaixaAtacado } from '../../canais/contrato.ts';
 import { centavos, semAlteracao } from './alvo.ts';
 import type { FaixaPreco, OfertaVigente, Passo } from './tipos.ts';
 
@@ -12,6 +13,8 @@ export interface EntradaPassos {
   faixasAntes: FaixaPreco[];
   /** null = faixas não mudam. */
   faixasAlvo: FaixaPreco[] | null;
+  /** Configuração efetiva do atacado: o Reverter exige a mesma. */
+  faixasConfig: FaixaAtacado[] | null;
 }
 export interface Estado { base: number; ofertas: OfertaVigente[]; faixas: FaixaPreco[] }
 
@@ -53,7 +56,7 @@ export function planejarPassos(e: EntradaPassos): Passo[] {
     if (oferta.preco === null) throw new Error(`oferta ${oferta.chave} sem preço comprovado`);
     return { tipo: 'oferta', oferta, anterior: oferta.preco, alvo: e.ofertasNovas[oferta.chave], estado: 'pendente' };
   });
-  const faixas: Passo[] = e.faixasAlvo ? [{ tipo: 'faixas', anterior: e.faixasAntes, alvo: e.faixasAlvo, estado: 'pendente' }] : [];
+  const faixas: Passo[] = e.faixasAlvo ? [{ tipo: 'faixas', anterior: e.faixasAntes, alvo: e.faixasAlvo, config: e.faixasConfig, estado: 'pendente' }] : [];
   const base: Passo[] = semAlteracao(e.base, e.alvo) ? [] : [{ tipo: 'base', anterior: e.base, alvo: e.alvo, estado: 'pendente' }];
   const subindo = centavos(e.alvo) > centavos(e.base);
   const passos = subindo ? [...saidas, ...base, ...ofertas, ...faixas] : [...saidas, ...ofertas, ...faixas, ...base];

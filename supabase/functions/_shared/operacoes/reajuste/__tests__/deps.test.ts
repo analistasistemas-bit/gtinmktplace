@@ -126,6 +126,13 @@ describe('depsReajuste', () => {
     }]]);
   });
 
+  it('configAtacado: mesma herança do preview', async () => {
+    const faixas = [{ min_unidades: 3, desconto_pct: 10 }];
+    const f = fakeAdmin(() => [{ atacado: null, familias: { atacado: faixas } }]);
+    expect(await depsReajuste(f.admin, cxT, opRow, 'k').configAtacado(['v1'])).toEqual({ faixas, divergente: false });
+    expect(op(f.chamadas[0], 'eq')).toContainEqual(['org_id', 'org']);
+  });
+
   it('lerItem traz passos e avaliacoes', async () => {
     const passos = [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }];
     const avaliacoes = [{ tipo: 'base', chave: 'base', preco: 110, avaliacao: null }];

@@ -3,7 +3,7 @@
 // só compensa; (3) revalida antes de cada nova escrita; (4) escreve e confirma por GET. `ml_confirmado` → só persiste.
 // Depois do claim, falha num item com etapa (escrita possível) relança (FalhaPosEscrita → 500 → QStash reentrega; o item
 // fica `enviando` e volta como "enviando parado"). Toda transição leva o token do claim: sem posse, o worker para.
-import { gravarPos, FalhaPosEscrita, laco, mensagemDe, type DepsLaco } from '../laco.ts';
+import { FalhaPosEscrita, laco, mensagemDe, type DepsLaco } from '../laco.ts';
 import { MSG_RECONECTAR } from '../falhas.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import type { CamposItem, StatusItem } from '../tipos.ts';
@@ -11,7 +11,7 @@ import { centavos, reais } from './alvo.ts';
 import { avaliarPassos, mudouPrecos, resumirPrecos } from './avaliacao.ts';
 import { decidirReajuste, reconciliarPasso, type Vivo } from './decidir.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
-import { mesmasFaixas, MSG_ATACADO_MUDOU } from './faixas.ts';
+import { mesmaConfig, mesmasFaixas, MSG_ATACADO_MUDOU, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { ehFaixas, estadosIntermediarios, violacao } from './passos.ts';
@@ -40,6 +40,8 @@ export interface DepsReajuste extends Omit<DepsLaco, 'reivindicar' | 'gravarItem
   /** Avaliação com tarifa fresca (C1, sem cache). */
   avaliarFresco(mlItemId: string, preco: number): Promise<Avaliacao>;
   fatos(item: ItemReajuste): Promise<{ ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
+  /** Configuração de atacado atual das variações do MLB. */
+  configAtacado(variacaoIds: string[]): Promise<ConfigMlb>;
   /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
   ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
   /** RPC `reajuste_persistir`: grava variações + item `aplicado` com `mensagem` (ou `erro` no conflito) atomicamente. */
@@ -64,7 +66,7 @@ const MSG_SEM_PASSOS = 'Preview anterior à execução por passos — refaça o 
 
 /** Outro worker reivindicou o item: para tudo, sem gravar nem escrever. */
 class SemPosse extends Error {}
-/** `retentar`: leitura falhou. `inconclusiva`: leitura sem resposta, sem nada contra o item. */
+/** `retentar`: leitura falhou, sem nada escrito volta a tentar. `inconclusiva`: não se sabe o estado do ML; nunca vira escrita. */
 type Reprovacao = { status: StatusItem | 'retentar'; mensagem: string; inconclusiva?: boolean };
 
 const FALHOU: Vivo = { kind: 'falhou' };
@@ -92,6 +94,7 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
   const marcar = async (i: number, estado: EstadoPasso) => {
     posse(await deps.marcarPasso(op.id, ml, token, i, estado));
     passos[i].estado = estado;
+    if (estado === 'escrita_pedida') passos[i].tentativas = (passos[i].tentativas ?? 0) + 1;
     if (estado === 'escrita_pedida' || estado === 'volta_pedida') etapa = 'escrita_pedida';
   };
   const algumConfirmado = () => passos.some((p) => p.estado === 'confirmado');
@@ -122,6 +125,7 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     if (r === 'sem_posse') throw new SemPosse();
     if (r === 'estado_invalido') throw new FalhaPosEscrita(new Error(`reajuste_persistir: estado inválido (${ml})`));
   };
+  /** Só com todos os passos confirmados: faixa pendente vai por `persistir`, e a etapa segue `escrita_pedida` até lá. */
   const concluir = async () => {
     etapa = 'ml_confirmado';
     await gravar({ etapa });
@@ -158,11 +162,16 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     gravar({ conferencias: item.conferencias + 1, mensagem, ...(algumConfirmado() ? {} : { etapa: null }) });
   /** Passo que não foi escrito. Base já confirmado não compensa: esgotadas as tentativas, conclui com o aviso. */
   const falhar = (mensagem: string, retentavel: boolean) => {
-    if (baseConfirmado()) return temTentativa ? retentar(mensagem) : concluir();
+    if (baseConfirmado()) return temTentativa ? retentar(mensagem) : persistir();
     return retentavel && temTentativa ? retentar(mensagem) : compensar('erro', mensagem);
   };
+  /** N escritas e o valor segue no `anterior`, provado por GET: o passo falha como não escrito. */
+  const esgotou = (p: Passo) => (p.tentativas ?? 0) >= TENTATIVAS_REAJUSTE;
+  const naoAplicado = () => (baseConfirmado() ? persistir() : compensar('erro', MSG_NAO_APLICADO));
   const reprovar = ({ status, mensagem, inconclusiva }: Reprovacao) => {
-    if (status === 'retentar' || baseConfirmado() || (inconclusiva && algumConfirmado())) return falhar(mensagem, true);
+    // Dúvida com passo escrito espera, sem limite: esgotar tentativas não pode transformar incerteza em escrita.
+    if (inconclusiva && algumConfirmado()) return agendar();
+    if (status === 'retentar' || baseConfirmado()) return falhar(mensagem, true);
     return algumConfirmado() ? compensar('mudou', mensagem) : gravar({ status, etapa: null, mensagem });
   };
 
@@ -173,7 +182,7 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
       atual = await deps.ml.lerVivo(ml);
     } catch (e) {
       if (e instanceof SemAcessoStatusML) throw e;
-      return { status: 'retentar', mensagem: mensagemDe(e) };
+      return { status: 'retentar', mensagem: mensagemDe(e), inconclusiva: true };
     }
     const [doML, banco, fatos, vivas] = await Promise.all([deps.ml.lerOfertas(ml), deps.ofertasBanco([ml]), deps.fatos(item), deps.ml.lerFaixas(ml)]);
     const ofertas = unirOfertas([doML, banco.get(ml) ?? null]);
@@ -181,15 +190,19 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     if (motivo) return { status: 'bloqueado', mensagem: motivo, inconclusiva: ofertas === null };
     const baseAgora = baseConfirmado() ? item.preco : item.preco_anterior;
     const d = decidirReajuste(null, item.preco, baseAgora, vivoDe(atual), composicao);
-    if (d.tipo === 'fim') return { status: d.status, mensagem: d.mensagem };
+    if (d.tipo === 'fim') return { status: d.status, mensagem: d.mensagem, inconclusiva: d.status === 'erro' };
     if (d.tipo !== 'escrever') throw new Error(`decisão inesperada no envio: ${d.tipo}`);
 
     if (vivas === null) return { status: 'bloqueado', mensagem: MSG_ATACADO_ILEGIVEL, inconclusiva: true };
     const passoFaixas = passos.find(ehFaixas);
     const esperadas = passoFaixas && (passoFaixas.estado === 'confirmado' ? passoFaixas.alvo : passoFaixas.anterior);
     if (esperadas && !mesmasFaixas(vivas, esperadas)) return { status: 'mudou', mensagem: op.origem_id ? MSG_ATACADO_MUDOU : MSG_FAIXAS_MUDARAM };
+    if (op.origem_id && passoFaixas) {
+      const config = await deps.configAtacado(item.variacao_ids);
+      if (config.divergente || !mesmaConfig(config.faixas, passoFaixas.config)) return { status: 'mudou', mensagem: MSG_ATACADO_MUDOU };
+    }
     const trava = motivoTravaOferta(item.preco, ofertas!);
-    if (trava) return { status: 'mudou', mensagem: trava };
+    if (trava) return { status: 'mudou', mensagem: trava, inconclusiva: ofertas!.some((o) => o.preco === null) };
     const violada = estadosIntermediarios(baseAgora, ofertas!, vivas, passos).map(violacao).find(Boolean);
     if (violada) return { status: 'mudou', mensagem: violada };
 
@@ -219,9 +232,11 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
         if (d?.tipo === 'fim' && d.status === 'erro' && !algumConfirmado()) return gravar({ status: 'erro', etapa: null, mensagem: d.mensagem });
         return agendar();
       }
-      await marcar(i, p.estado === 'escrita_pedida'
+      const estado = p.estado === 'escrita_pedida'
         ? (onde === 'alvo' ? 'confirmado' : 'pendente')
-        : (onde === 'alvo' ? 'volta_pendente' : 'compensado'));
+        : (onde === 'alvo' ? 'volta_pendente' : 'compensado');
+      await marcar(i, estado);
+      if (estado === 'pendente' && esgotou(p)) return naoAplicado();
     }
     if (passos.some((p) => p.estado === 'volta_pendente' || p.estado === 'compensado')) return compensar('mudou', MSG_COMPENSADO);
     // Provado que nada foi escrito: volta à fila com tentativas zeradas (conferencias acumulou agendamentos) e passa de
@@ -249,7 +264,7 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
       }
       if (p.tipo === 'faixas' && onde === 'anterior') {
         await marcar(i, 'pendente');
-        return falhar(MSG_FAIXAS_NAO_APLICADAS, true);
+        return esgotou(p) ? naoAplicado() : falhar(MSG_FAIXAS_NAO_APLICADAS, true);
       }
       // Base depois de um PUT 200, nada mais escrito: mesma regra da conferência, sem voltar_pendente aqui.
       const leuBase = p.tipo === 'base' && (lido as Vivo).kind === 'ok';
@@ -262,12 +277,19 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     await avancar();
   } catch (e) {
     if (e instanceof SemPosse) return;
-    if (etapa === null || e instanceof FalhaPosEscrita) throw e;
+    if (e instanceof FalhaPosEscrita) throw e;
     if (e instanceof SemAcessoStatusML) {
-      // Fatal com escrita possível: o item fica `conferindo` (reserva mantida) e o laço não o marca `erro`.
-      await gravarPos(agendar().catch((erro) => { if (!(erro instanceof SemPosse)) throw erro; }));
+      // Com escrita possível o item fica `conferindo` (reserva mantida). Gravar aqui, e não no laço, prova a posse antes do
+      // fatal: sem ela o worker para, porque `encerrarSemEtapa` não olha token e mexeria no item do sucessor.
+      try {
+        await (etapa === null ? gravar({ status: 'erro', mensagem: MSG_RECONECTAR }) : agendar());
+      } catch (erro) {
+        if (erro instanceof SemPosse) return;
+        throw new FalhaPosEscrita(erro);
+      }
       throw Object.assign(e, { jaGravado: true });
     }
+    if (etapa === null) throw e;
     throw new FalhaPosEscrita(e);
   }
 }

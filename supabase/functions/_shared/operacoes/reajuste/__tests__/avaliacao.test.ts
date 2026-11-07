@@ -81,7 +81,7 @@ describe('avaliarPassos', () => {
   const oferta = { chave: 'P1:o1' } as OfertaVigente;
   const avaliar = async (preco: number) => resumir([cor(preco < 80 ? 'vermelho' : 'verde')]);
   const faixas: Passo = {
-    tipo: 'faixas', estado: 'pendente', anterior: [],
+    tipo: 'faixas', estado: 'pendente', config: null, anterior: [],
     alvo: [{ min_unidades: 2, preco: 85.5 }, { min_unidades: 5, preco: 76.5 }],
   };
 

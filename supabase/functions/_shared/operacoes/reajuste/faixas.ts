@@ -37,6 +37,7 @@ export function mesmasFaixas(a: FaixaPreco[], b: FaixaPreco[]): boolean {
 
 const comoFaixas = (x: unknown) => (Array.isArray(x) ? (x as FaixaAtacado[]) : null);
 const chaveConfig = (fs: FaixaAtacado[] | null) => JSON.stringify(porQuantidade(fs ?? []).map((f) => [f.min_unidades, f.desconto_pct]));
+export const mesmaConfig = (a: FaixaAtacado[] | null, b: FaixaAtacado[] | null) => chaveConfig(a) === chaveConfig(b);
 
 /** Configuração única do anúncio. Cor sem configuração e cor com [] são iguais: nenhuma tem atacado. */
 export function configDoMlb(variacoes: { atacado: unknown }[], familia: { atacado: unknown }): ConfigMlb {

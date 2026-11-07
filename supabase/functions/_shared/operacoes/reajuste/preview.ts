@@ -6,7 +6,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
 import { avaliarPassos, resumirPrecos } from './avaliacao.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
-import { decidirFaixas, mesmasFaixas, MSG_ATACADO_MUDOU, type ConfigMlb } from './faixas.ts';
+import { decidirFaixas, mesmaConfig, mesmasFaixas, MSG_ATACADO_MUDOU, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { ehFaixas, planejarPassos } from './passos.ts';
@@ -154,7 +154,7 @@ async function avaliarItem(
 
   let alvo: number | null;
   if (orig) {
-    if (orig.restaurar.some((r) => !mesmoEstado(estados.get(r.variacao_id)!, r.novo))) {
+    if (!soFaixas && orig.restaurar.some((r) => !mesmoEstado(estados.get(r.variacao_id)!, r.novo))) {
       return fora('Não revertível: o preço foi editado depois do reajuste');
     }
     alvo = orig.preco_anterior;
@@ -169,9 +169,11 @@ async function avaliarItem(
   // Leituras fora do try abaixo: conta sem acesso sobe, não vira motivo do item.
   const vivas = item.faixas_anteriores = await deps.ml.lerFaixas(ml);
   if (vivas === null) return fora('Não foi possível ler o atacado — tente de novo');
-  if (faixasOrigem && !mesmasFaixas(vivas, faixasOrigem.alvo)) return fora(MSG_ATACADO_MUDOU);
   // Reverter não recalcula as faixas: volta às que a origem trocou, ou só não deixa o base restaurado passar por elas.
-  const config = orig ? null : await deps.configAtacado(ids);
+  const config = orig && !faixasOrigem ? null : await deps.configAtacado(ids);
+  if (faixasOrigem && (!mesmasFaixas(vivas, faixasOrigem.alvo) || config!.divergente || !mesmaConfig(config!.faixas, faixasOrigem.config))) {
+    return fora(MSG_ATACADO_MUDOU);
+  }
 
   let passos: Passo[];
   let faixas_alvo: FaixaPreco[] | null;
@@ -184,7 +186,7 @@ async function avaliarItem(
       if (decisao.acao === 'fora') return fora(decisao.motivo);
       faixas_alvo = decisao.faixas_alvo;
     }
-    passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: vivas, faixasAlvo: faixas_alvo });
+    passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: vivas, faixasAlvo: faixas_alvo, faixasConfig: config?.faixas ?? null });
   } catch (e) {
     return fora(mensagemDe(e));
   }
@@ -195,7 +197,7 @@ async function avaliarItem(
   const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, faixaEmAlerta ? AVISO_FAIXA : null, orig && !soFaixas ? AVISO_D10 : null].filter(Boolean);
   return {
     ...item, situacao: 'elegivel', avaliacao, precos_avaliados, passos, faixas_alvo,
-    restaurar: orig
+    restaurar: soFaixas ? [] : orig
       ? orig.restaurar.map((r) => ({ variacao_id: r.variacao_id, esperado: r.novo, novo: r.esperado }))
       : ids.map((id) => ({ variacao_id: id, esperado: estados.get(id)!, novo: { preco_publicacao: alvo, preco_editado_pelo_operador: true } })),
     incluido: !(avaliacao.tem_vermelho || avaliacao.tem_sem_dado), // D7: 🔴/⚪ entram desmarcados

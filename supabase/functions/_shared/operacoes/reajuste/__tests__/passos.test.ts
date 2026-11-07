@@ -6,7 +6,7 @@ import type { FaixaPreco, OfertaVigente, Passo } from '../tipos.ts';
 const o = (chave: string, preco: number | null): OfertaVigente =>
   oferta({ promocao_id: chave, tipo: 'DEAL', status: 'started', preco, offer_id: chave, inicio: null, fim: null });
 const f = (preco: number): FaixaPreco[] => [{ min_unidades: 2, preco }];
-const e: EntradaPassos = { base: 100, alvo: 100, ofertas: [], ofertasNovas: {}, sair: [], faixasAntes: [], faixasAlvo: null };
+const e: EntradaPassos = { base: 100, alvo: 100, ofertas: [], ofertasNovas: {}, sair: [], faixasAntes: [], faixasAlvo: null, faixasConfig: null };
 const tipos = (p: Passo[]) => p.map((x) => x.tipo);
 
 describe('planejarPassos', () => {
@@ -33,9 +33,14 @@ describe('planejarPassos', () => {
     const p = planejarPassos({ ...e, base: 100, alvo: 40, ofertas: [o('A', 50)], ofertasNovas: { A: 30 }, faixasAntes: f(35), faixasAlvo: f(20) });
     expect(p).toEqual([
       { tipo: 'oferta', oferta: o('A', 50), anterior: 50, alvo: 30, estado: 'pendente' },
-      { tipo: 'faixas', anterior: f(35), alvo: f(20), estado: 'pendente' },
+      { tipo: 'faixas', anterior: f(35), alvo: f(20), config: null, estado: 'pendente' },
       { tipo: 'base', anterior: 100, alvo: 40, estado: 'pendente' },
     ]);
+  });
+
+  it('o passo de faixas guarda a configuração efetiva', () => {
+    const config = [{ min_unidades: 3, desconto_pct: 10 }];
+    expect(planejarPassos({ ...e, base: 100, alvo: 80, faixasAlvo: f(70), faixasConfig: config })[0]).toMatchObject({ tipo: 'faixas', config });
   });
 
   it('lança se algum estado viola as invariantes', () => {

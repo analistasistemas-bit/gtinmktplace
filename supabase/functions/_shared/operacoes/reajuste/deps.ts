@@ -14,7 +14,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import type { ItemRow } from '../tipos.ts';
 import { resumir } from './avaliacao.ts';
 import type { DepsReajuste, ItemReajuste, OperacaoReajusteRow, ResultadoPersistir } from './executar.ts';
-import { configDoMlb } from './faixas.ts';
+import { configDoMlb, type ConfigMlb } from './faixas.ts';
 import { criarClienteReajusteML } from './ml.ts';
 import { oferta, unirOfertas } from './ofertas.ts';
 import type { AlvoExpandido, DepsPreview, Origem } from './preview.ts';
@@ -311,6 +311,17 @@ async function expandir(
   }));
 }
 
+/** O casamento pode cair em lotes diferentes: cada cor herda da própria família, por isso a herança sai aqui. */
+async function configAtacado(admin: SupabaseClient, orgId: string, variacaoIds: string[]): Promise<ConfigMlb> {
+  const linhas: { atacado: unknown; familias: { atacado: unknown } }[] = [];
+  for (const b of blocos(variacaoIds)) {
+    const { data, error } = await admin.from('variacoes').select('atacado, familias!inner(atacado)').eq('org_id', orgId).in('id', b);
+    falhou('configAtacado', error);
+    linhas.push(...((data ?? []) as unknown as typeof linhas));
+  }
+  return configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null });
+}
+
 /** `reverter` = preview com origem_id (os MLBs vêm da origem, não do usuário). */
 export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boolean }): DepsPreview {
   const orgId = cx.orgId;
@@ -341,16 +352,7 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
       return out;
     },
 
-    // O casamento pode cair em lotes diferentes: cada cor herda da própria família, por isso a herança sai aqui.
-    async configAtacado(variacaoIds) {
-      const linhas: { atacado: unknown; familias: { atacado: unknown } }[] = [];
-      for (const b of blocos(variacaoIds)) {
-        const { data, error } = await admin.from('variacoes').select('atacado, familias!inner(atacado)').eq('org_id', orgId).in('id', b);
-        falhou('configAtacado', error);
-        linhas.push(...((data ?? []) as unknown as typeof linhas));
-      }
-      return configDoMlb(linhas.map((l) => ({ atacado: l.atacado ?? l.familias.atacado })), { atacado: null });
-    },
+    configAtacado: (variacaoIds) => configAtacado(admin, orgId, variacaoIds),
 
     ml: criarClienteReajusteML(cx.token),
     avaliar: criarAvaliador(admin, cx),
@@ -378,6 +380,7 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
     ml: criarClienteReajusteML(cx.token),
     avaliarFresco: criarAvaliador(admin, cx),
     ofertasBanco: (mlItemIds) => ofertasBanco(admin, orgId, mlItemIds),
+    configAtacado: (variacaoIds) => configAtacado(admin, orgId, variacaoIds),
 
     async lerItem(operacaoId, mlItemId): Promise<ItemReajuste> {
       const { data: r, error } = await admin.from(ITENS).select(COLS_ITEM)

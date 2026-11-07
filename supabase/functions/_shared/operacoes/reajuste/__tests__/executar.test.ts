@@ -4,8 +4,9 @@ import {
   type DepsReajuste, type ItemReajuste, type OperacaoReajusteRow, type ResultadoPersistir,
 } from '../executar.ts';
 import { resumir } from '../avaliacao.ts';
-import { MSG_ATACADO_MUDOU } from '../faixas.ts';
+import { MSG_ATACADO_MUDOU, type ConfigMlb } from '../faixas.ts';
 import { MSG_RECONECTAR } from '../../falhas.ts';
+import type { FaixaAtacado } from '../../../canais/contrato.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
 import type { ResultadoPut } from '../ml.ts';
 import { oferta } from '../ofertas.ts';
@@ -27,7 +28,7 @@ const RESTAURAR: EntradaRestauracao[] = [{
   novo: { preco_publicacao: 110, preco_editado_pelo_operador: true },
 }];
 const base = (anterior: number, alvo: number, estado: EstadoPasso = 'pendente'): Passo => ({ tipo: 'base', anterior, alvo, estado });
-const faixas = (anterior: FaixaPreco[], alvo: FaixaPreco[], estado: EstadoPasso = 'pendente'): Passo => ({ tipo: 'faixas', anterior, alvo, estado });
+const faixas = (anterior: FaixaPreco[], alvo: FaixaPreco[], estado: EstadoPasso = 'pendente', config: FaixaAtacado[] | null = null): Passo => ({ tipo: 'faixas', anterior, alvo, config, estado });
 const precoBase = (preco: number, avaliacao = AVAL): PrecoAvaliado => ({ tipo: 'base', chave: 'base', preco, avaliacao });
 const precoFaixa = (f: FaixaPreco, avaliacao = AVAL): PrecoAvaliado => ({ tipo: 'faixa', chave: String(f.min_unidades), preco: f.preco, avaliacao });
 const ESTADO_DA_ETAPA = { escrita_pedida: 'escrita_pedida', ml_confirmado: 'confirmado' } as const;
@@ -83,6 +84,7 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>, atacado: Record<
       const naVolta = i.passos.some((p) => ['volta_pendente', 'volta_pedida', 'compensado'].includes(p.estado));
       if (naVolta && ['pendente', 'escrita_pedida', 'confirmado'].includes(estado)) throw new Error('em compensação não retoma a ida');
       i.passos[indice].estado = estado;
+      if (estado === 'escrita_pedida') i.passos[indice].tentativas = (i.passos[indice].tentativas ?? 0) + 1;
       if (estado === 'escrita_pedida' || estado === 'volta_pedida') i.etapa = 'escrita_pedida';
       return true;
     }),
@@ -106,6 +108,7 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>, atacado: Record<
     lerItem: vi.fn(async (_o: string, id: string) => structuredClone(achar(id))),
     avaliarFresco: vi.fn(async () => AVAL),
     fatos: vi.fn(async () => ({ ehKit: false, familiaPublicando: false, migracaoPxv: false })),
+    configAtacado: vi.fn(async (_ids: string[]): Promise<ConfigMlb> => ({ faixas: null, divergente: false })),
     persistir: vi.fn(async (_o: string, id: string, token: string, _p: number, _r: EntradaRestauracao[], mensagem: string | null): Promise<ResultadoPersistir> => {
       const i = achar(id);
       if (i.lease !== token) return 'sem_posse';
@@ -686,6 +689,21 @@ describe('executarReajuste — passos', () => {
       expect(deps.gravarItem).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['com etapa', () => descendo(['confirmado', 'pendente'])],
+      ['sem etapa', () => descendo()],
+    ])('SemAcesso depois de perder a posse (%s): não encerra nada', async (_n, novo) => {
+      const itens = [novo()];
+      const deps = montar(itens, { A: plano(100) }, { A: F72 });
+      deps.ml.lerFaixas.mockImplementation(async () => {
+        itens[0].lease = 'sucessor';
+        throw new SemAcessoStatusML('ML 401');
+      });
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.encerrarSemEtapa).not.toHaveBeenCalled();
+      expect(itens[0]).toMatchObject({ status: 'enviando', lease: 'sucessor' });
+    });
+
     it('caminho de erro do laço usa o token: exceção vira erro só para o dono', async () => {
       const itens = [item('A'), item('B')];
       const deps = montar(itens, { A: plano(100), B: plano(100) });
@@ -733,13 +751,35 @@ describe('executarReajuste — passos', () => {
       expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_FINANCEIRO });
     });
 
-    it('leitura de ofertas inconclusiva com faixas escritas → não escreve o base, retenta', async () => {
-      const itens = [descendo(['confirmado', 'pendente'])];
-      const deps = montar(itens, { A: plano(100) }, { A: F72 });
+    it.each<[string, (d: ReturnType<typeof montar>) => void]>([
+      ['ofertas null', (d) => d.ml.lerOfertas.mockResolvedValue(null)],
+      ['oferta sem preço', (d) => d.ml.lerOfertas.mockResolvedValue([of(null)])],
+      ['atacado ilegível', (d) => d.ml.lerFaixas.mockResolvedValue(null)],
+      ['anúncio ilegível', (d) => d.ml.lerVivo.mockRejectedValue(new Error('ML 500'))],
+      ['preço ilegível', (d) => d.ml.lerVivo.mockResolvedValue({ ...plano(100), preco: null })],
+    ])('%s com faixas escritas: nunca compensa, fica conferindo além das tentativas', async (_n, inconclusivo) => {
+      const itens = [descendo(['confirmado', 'pendente'], { conferencias: 2 })];
+      const atacado = { A: F72 };
+      const deps = montar(itens, { A: plano(100) }, atacado);
+      inconclusivo(deps);
+      for (const n of [3, 4, 5, 6]) {
+        await executarReajuste(OP, deps, OPTS);
+        semEscrita(deps);
+        expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida', conferencias: n });
+        expect(estados(itens[0])).toEqual(['confirmado', 'pendente']);
+        itens[0].proxima_conferencia = PASSADO;
+      }
+      expect(atacado.A).toEqual(F72);
+    });
+
+    it('inconclusivo com o base confirmado: conferindo, sem concluir', async () => {
+      const itens = [subindo(['confirmado', 'pendente'], { conferencias: 2 })];
+      const deps = montar(itens, { A: plano(110) }, { A: F80 });
       deps.ml.lerOfertas.mockResolvedValue(null);
       await executarReajuste(OP, deps, OPTS);
       semEscrita(deps);
-      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida', conferencias: 1 });
+      expect(deps.persistir).not.toHaveBeenCalled();
+      expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida' });
     });
 
     it('faixas confirmadas e tudo igual → segue para o base', async () => {
@@ -962,12 +1002,83 @@ describe('executarReajuste — passos', () => {
       expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: MSG_FAIXAS_PENDENTES });
     });
 
-    it('retomada ml_confirmado com faixas pendentes mantém a mensagem', async () => {
-      const itens = [subindo(['confirmado', 'pendente'], { etapa: 'ml_confirmado' })];
+    it('faixas esgotadas: persiste direto, nunca grava ml_confirmado com passo pendente', async () => {
+      const itens = [subindo(['confirmado', 'pendente'], { conferencias: 2 })];
       const deps = montar(itens, { A: plano(110) }, { A: F80 });
+      deps.ml.gravarFaixas.mockResolvedValue({ kind: 'sem_escrita', status: 400, mensagem: 'não' });
       await executarReajuste(OP, deps, OPTS);
-      expect(deps.ml.lerVivo).not.toHaveBeenCalled();
+      expect(deps.gravarItem).not.toHaveBeenCalledWith('op', 'A', T, { etapa: 'ml_confirmado' });
       expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: MSG_FAIXAS_PENDENTES });
+    });
+
+    it('crash antes do persist com faixas esgotadas: segue escrita_pedida e a retomada regrava as faixas', async () => {
+      const itens = [subindo(['confirmado', 'pendente'], { conferencias: 2 })];
+      const atacado = { A: F80 };
+      const deps = montar(itens, { A: plano(110) }, atacado);
+      deps.ml.gravarFaixas.mockResolvedValueOnce({ kind: 'sem_escrita', status: 400, mensagem: 'não' });
+      deps.persistir.mockRejectedValueOnce(new Error('db fora'));
+      await expect(executarReajuste(OP, deps, OPTS)).rejects.toThrow('db fora');
+      expect(itens[0]).toMatchObject({ status: 'enviando', etapa: 'escrita_pedida' });
+      itens[0].parado = true;
+      await executarReajuste(OP, deps, OPTS);
+      expect(atacado.A).toEqual(F88);
+      expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: null });
+    });
+
+    it('PUT 200 sem efeito com faixas escritas: 3 escritas, depois compensa e termina erro', async () => {
+      const itens = [descendo()];
+      const atacado = { A: F80 };
+      const deps = montar(itens, { A: plano(100) }, atacado);
+      deps.ml.putPreco.mockResolvedValue({ kind: 'ok' });
+      for (const n of [1, 2, 3]) {
+        await executarReajuste(OP, deps, OPTS);
+        expect(deps.ml.putPreco).toHaveBeenCalledTimes(n);
+        expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida' });
+        expect(itens[0].passos[1].tentativas).toBe(n);
+        itens[0].proxima_conferencia = PASSADO;
+      }
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.ml.putPreco).toHaveBeenCalledTimes(3);
+      expect(atacado.A).toEqual(F80);
+      expect(estados(itens[0])).toEqual(['compensado', 'pendente']);
+      expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
+    });
+
+    it('PUT desconhecido sem efeito, sem mais nada escrito: 3 escritas, depois erro', async () => {
+      const itens = [item('A')];
+      const deps = montar(itens, { A: plano(100) });
+      deps.ml.putPreco.mockResolvedValue({ kind: 'desconhecido', mensagem: 'timeout' });
+      for (const n of [1, 2, 3]) {
+        await executarReajuste(OP, deps, OPTS);
+        expect(deps.ml.putPreco).toHaveBeenCalledTimes(n);
+        itens[0].proxima_conferencia = PASSADO;
+      }
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.ml.putPreco).toHaveBeenCalledTimes(3);
+      expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
+    });
+
+    it('faixas sem efeito com o base confirmado: 3 escritas, depois aplicado com o aviso', async () => {
+      const itens = [subindo(['confirmado', 'pendente'])];
+      const deps = montar(itens, { A: plano(110) }, { A: F80 });
+      deps.ml.gravarFaixas.mockResolvedValue({ kind: 'desconhecido', mensagem: 'timeout' });
+      for (const n of [1, 2, 3]) {
+        await executarReajuste(OP, deps, OPTS);
+        expect(deps.ml.gravarFaixas).toHaveBeenCalledTimes(n);
+        itens[0].proxima_conferencia = PASSADO;
+      }
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.ml.gravarFaixas).toHaveBeenCalledTimes(3);
+      expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: MSG_FAIXAS_PENDENTES });
+    });
+
+    it('escrita incerta que aplicou conta como confirmada, sem novo PUT', async () => {
+      const itens = [descendo(['confirmado', 'escrita_pedida'], { conferencias: 5 })];
+      itens[0].passos[1].tentativas = 3;
+      const deps = montar(itens, { A: plano(90) }, { A: F72 });
+      await executarReajuste(OP, deps, OPTS);
+      semEscrita(deps);
+      expect(itens[0].status).toBe('aplicado');
     });
   });
 
@@ -1015,6 +1126,29 @@ describe('executarReajuste — passos', () => {
       await executarReajuste(REV, deps, OPTS);
       expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_ATACADO_MUDOU });
       semEscrita(deps);
+    });
+
+    it.each<[string, ConfigMlb]>([
+      ['outro %', { faixas: [{ min_unidades: 3, desconto_pct: 7 }], divergente: false }],
+      ['cores divergentes', { faixas: null, divergente: true }],
+    ])('configuração mudou depois do preview, faixas vivas iguais (%s) → mudou, nenhuma escrita', async (_n, config) => {
+      const C = [{ min_unidades: 3, desconto_pct: 20 }];
+      const itens = [item('A', { preco: 100, preco_anterior: 110, passos: [faixas(F88, F80, 'pendente', C), base(110, 100)], avaliacoes: [precoFaixa(F80[0]), precoBase(100)] })];
+      const deps = montar(itens, { A: plano(110) }, { A: F88 });
+      deps.configAtacado.mockResolvedValue(config);
+      await executarReajuste(REV, deps, OPTS);
+      expect(deps.configAtacado).toHaveBeenCalledWith(['va']);
+      expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: MSG_ATACADO_MUDOU });
+      semEscrita(deps);
+    });
+
+    it('configuração igual → executa', async () => {
+      const C = [{ min_unidades: 3, desconto_pct: 20 }];
+      const itens = [item('A', { preco: 100, preco_anterior: 110, passos: [faixas(F88, F80, 'pendente', C), base(110, 100)], avaliacoes: [precoFaixa(F80[0]), precoBase(100)] })];
+      const deps = montar(itens, { A: plano(110) }, { A: F88 });
+      deps.configAtacado.mockResolvedValue({ faixas: C, divergente: false });
+      await executarReajuste(REV, deps, OPTS);
+      expect(itens[0].status).toBe('aplicado');
     });
 
     it.each([

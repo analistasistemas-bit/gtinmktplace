@@ -71,6 +71,11 @@ begin
   perform pg_temp.ok(v_depois.passos->0->>'estado' = 'escrita_pedida' and v_depois.passos->1->>'estado' = 'pendente', 'só o passo do índice muda');
   perform pg_temp.ok(v_depois.etapa = 'escrita_pedida', 'escrita_pedida grava etapa');
   perform pg_temp.ok(v_depois.lease_ate = now() + interval '2 minutes' and v_depois.atualizado_em = now(), 'marcar renova o lease');
+  perform pg_temp.ok(((pg_temp.item(v_op, 'MLBP1')).passos->0->>'tentativas')::int = 1, 'escrita_pedida conta a tentativa');
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, 0, 'pendente'), 'pendente → true');
+  perform pg_temp.ok(((pg_temp.item(v_op, 'MLBP1')).passos->0->>'tentativas')::int = 1, 'pendente não conta');
+  perform pg_temp.ok(public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, 0, 'escrita_pedida'), 'segunda escrita → true');
+  perform pg_temp.ok(((pg_temp.item(v_op, 'MLBP1')).passos->0->>'tentativas')::int = 2 and (pg_temp.item(v_op, 'MLBP1')).passos->0->>'estado' = 'escrita_pedida', 'segunda tentativa contada');
   perform pg_temp.ok(public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, 0, 'confirmado'), 'confirmado → true');
   perform pg_temp.ok((pg_temp.item(v_op, 'MLBP1')).etapa = 'escrita_pedida', 'confirmado não limpa a etapa');
 

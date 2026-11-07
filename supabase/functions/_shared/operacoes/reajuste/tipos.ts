@@ -1,4 +1,6 @@
 // I5 — reajuste de preço em massa: tipos do núcleo puro (spec 2026-10-04, C1/C3/C4/C5).
+import type { FaixaAtacado } from '../../canais/contrato.ts';
+
 export type TipoAjuste = 'pct' | 'reais' | 'definir';
 /** Em `definir`, `valor` é o preço final e `sentido` é ignorado (ADR-0196). */
 export interface Ajuste { tipo: TipoAjuste; sentido: '+' | '-'; valor: number }
@@ -23,11 +25,13 @@ export interface OfertaVigente {
 export interface FaixaPreco { min_unidades: number; preco: number }
 /** Item com passo em estado de volta nunca retoma a ida. */
 export type EstadoPasso = 'pendente' | 'escrita_pedida' | 'confirmado' | 'volta_pendente' | 'volta_pedida' | 'compensado';
-export type Passo =
+/** `tentativas`: escritas pedidas, contadas por `reajuste_passo_marcar`. `config`: configuração efetiva do atacado no preview. */
+export type Passo = (
   | { tipo: 'saida'; oferta: OfertaVigente; estado: EstadoPasso }
   | { tipo: 'oferta'; oferta: OfertaVigente; anterior: number; alvo: number; estado: EstadoPasso }
-  | { tipo: 'faixas'; anterior: FaixaPreco[]; alvo: FaixaPreco[]; estado: EstadoPasso }
-  | { tipo: 'base'; anterior: number; alvo: number; estado: EstadoPasso };
+  | { tipo: 'faixas'; anterior: FaixaPreco[]; alvo: FaixaPreco[]; config: FaixaAtacado[] | null; estado: EstadoPasso }
+  | { tipo: 'base'; anterior: number; alvo: number; estado: EstadoPasso }
+) & { tentativas?: number };
 export interface VivoItem {
   preco: number | null; variacoes: { id: string; preco: number }[] | null; status: string;
   sub_status: string[]; catalog_listing: boolean; tem_relacoes: boolean;
