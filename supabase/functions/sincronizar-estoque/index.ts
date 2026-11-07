@@ -2,7 +2,7 @@
 // que vive em processar.ts com dependências injetadas para ser testável.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSaga } from '../_shared/queue.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
   }
 
   const r = await processarSincronizacao(
-    { admin: adminClient(), resolverConexao, getConnector, fabricarToken: fabricarTokenPadrao },
+    { admin: adminClient(), resolverConexao, getConnector, fabricarToken: fabricarTokenPadrao, enfileirarSaga },
     job,
   );
   return new Response(JSON.stringify(r.body), {

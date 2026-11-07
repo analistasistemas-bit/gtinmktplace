@@ -61,6 +61,7 @@ function fakeAdmin(over: {
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
+  kitComponentes?: string[]; // ADR-0197: SKUs usados em kit com variação
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -82,6 +83,7 @@ function fakeAdmin(over: {
       if (table === 'anuncios_externos') return raizUP;
       if (table === 'anuncios_externos_itens') return itensUP;
       if (table === 'lotes') return lote;
+      if (table === 'kit_variacao_componentes') return (over.kitComponentes ?? []).map((codigo) => ({ codigo }));
       return null;
     };
     const api: Record<string, unknown> = {
@@ -850,6 +852,23 @@ describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283
     const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(r.tipo).toBe('ok');
     expect(argsDoUpdate().pesoLiquidoGramas).toBeNull();
+  });
+});
+
+describe('UPDATE Legacy × kit com variação (ADR-0197)', () => {
+  const skusSemQuantidade = () =>
+    (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { skusSemQuantidade?: string[] }).skusSemQuantidade;
+
+  it('SKU participante vai ao conector como sem quantidade', async () => {
+    const { admin } = fakeAdmin({ modulosHabilitados: ['kit_variacao'], kitComponentes: ['V1'] });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(skusSemQuantidade()).toEqual(['V1']);
+  });
+
+  it('org sem o módulo: lista vazia, comportamento de hoje', async () => {
+    const { admin } = fakeAdmin({ kitComponentes: ['V1'] });
+    await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(skusSemQuantidade()).toEqual([]);
   });
 });
 

@@ -113,7 +113,7 @@ export async function atualizarItemPlanoML(
   itemId: string,
   // `attributes` só aparece quando há divergência a corrigir (ADR-0157) — o PUT de reposição
   // comum segue exatamente como era.
-  patch: { price?: number; available_quantity: number; attributes?: readonly AtributoItem[] },
+  patch: { price?: number; available_quantity?: number; attributes?: readonly AtributoItem[] },
 ): Promise<void> {
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',

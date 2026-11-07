@@ -16,6 +16,7 @@ import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, ty
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
+import { adquirirExclusao, skusParticipantes, soltarExclusao } from '../kit-variacao/politica.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -158,6 +159,24 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
 
+  // ADR-0197: SKU de kit com variação só é criado ou ativado com a exclusão do SKU, adquirida antes de
+  // ler o saldo e mantida durante a saga. O saldo é relido sob a exclusão: o do snapshot do job pode ser
+  // anterior a uma transferência e ofereceria peça que já mudou de lugar. Dono = raiz (estável no retry).
+  const participantes = await skusParticipantes(admin, familia.org_id, skus);
+  if (participantes.size > 0) {
+    const ex = await adquirirExclusao(admin, familia.org_id, [...participantes], 'publicacao', rootId);
+    if (!ex.ok) {
+      throw new Error(`${ex.codigo ?? ex.motivo} está em transferência de kit com variação; a publicação tenta de novo depois.`);
+    }
+    const { data, error } = await admin.from('variacoes').select('codigo, estoque')
+      .eq('familia_id', familia.id).in('codigo', [...participantes]);
+    if (error) throw new Error(`variacoes (saldo sob exclusão): ${error.message}`);
+    for (const r of data ?? []) {
+      const v = varPorSku.get(r.codigo as string);
+      if (v) varPorSku.set(v.sku, { ...v, estoque: r.estoque as number });
+    }
+  }
+
   const montarPayloadPlano = (sku: string) => {
     const v = varPorSku.get(sku)!;
     // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o
@@ -190,6 +209,8 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
 
   // 3. Roda a saga "tudo ou pausa".
   const resultado = await executarSaga(portas, { anuncioExternoId: rootId, skusEsperados: skus });
+  // Saga que lança deixou resultado remoto incerto: a exclusão fica até o retry (mesmo dono) concluir.
+  if (participantes.size > 0) await soltarExclusao(admin, familia.org_id, rootId);
 
   // 4. Só `ativo` libera publicado; qualquer outro estado NÃO é publicação concluída.
   if (resultado.estado === 'ativo') {

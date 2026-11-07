@@ -264,6 +264,22 @@ begin
   perform pg_temp.afirmar(not exists (select 1 from public.kit_exclusoes where dono_id = t1), 'finalizar não soltou a exclusão');
   -- Fechada, a política volta a poder ser apagada.
   delete from public.sku_politica_kit where org_id = c.org and codigo = P;
+
+  -- Task 5: publicação segura a exclusão durante a chamada remota. Transferência que começa nesse
+  -- intervalo recebe up_ocupado; o retry da publicação (mesmo dono) readquire; solta, a transferência entra.
+  r := public.kit_adquirir_exclusao(c.org, array[P], 'publicacao', tok);
+  perform pg_temp.afirmar((r->>'ok')::boolean, 'publicação não adquiriu: ' || r::text);
+  antes := pg_temp.linhas(c.org);
+  r := public.kit_criar_transferencia(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', P, 'quantidade', 0)),
+    '[{"codigo":"09800001","up_id":"UP-P","item_ids":["MLB-P"]}]');
+  perform pg_temp.afirmar(r->>'motivo' = 'up_ocupado', 'transferência furou a publicação: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = antes, 'conflito com publicação gravou');
+  r := public.kit_adquirir_exclusao(c.org, array[P], 'publicacao', tok);
+  perform pg_temp.afirmar((r->>'ok')::boolean, 'retry da publicação não readquiriu: ' || r::text);
+  perform public.kit_soltar_exclusao(c.org, tok);
+  r := public.kit_criar_transferencia(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', P, 'quantidade', 0)),
+    '[{"codigo":"09800001","up_id":"UP-P","item_ids":["MLB-P"]}]');
+  perform pg_temp.afirmar((r->>'ok')::boolean, 'transferência depois da publicação: ' || r::text);
 end $$;
 reset role;
 

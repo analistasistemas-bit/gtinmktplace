@@ -11,6 +11,8 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush, type AlvoPush } from '../_shared/estoque/alvos.ts';
 import { listarKitsVivos, resolverOrigemEstoque, saldoDoKit } from '../_shared/estoque/kit.ts';
+import { podeEscreverQuantidade, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -40,6 +42,8 @@ export interface DepsSincronizacao {
   fabricarToken: (canal: string, conexao: unknown) => (() => Promise<string>) | null;
   /** Injetável para o teste ver o texto do alerta sem Telegram nem tabela (ADR-0134). */
   notificar?: typeof notificarCategoria;
+  /** ADR-0197: `enfileirarSaga` de queue.ts (injetado: o qstash não carrega no vitest). */
+  enfileirarSaga: (transferenciaId: string, orgId: string) => Promise<void>;
 }
 
 export interface RespostaSincronizacao { status: number; body: Record<string, unknown> }
@@ -267,6 +271,47 @@ async function alvosDaFamilia(
   return { alvos, temAnuncio: (anuncios ?? []).length > 0 };
 }
 
+/**
+ * ADR-0197: entrada, ajuste e estorno de SKU participante viram transferência `entrada`, que escreve o
+ * saldo local só com o UP pausado e conciliado. Devolve a chave retentável, ou null.
+ * `up_ocupado`: outra transferência ou publicação tem o SKU; a fila repete.
+ */
+async function transferirParaSaga(
+  deps: DepsSincronizacao, orgId: string, fora: AlvoPush[], participantes: Set<string>,
+): Promise<string | null> {
+  const itemIds = fora.map((a) => a.itemExternoId);
+  const { data, error } = await deps.admin.from('anuncios_externos_itens')
+    .select('sku, item_externo_id, user_product_id, catalog_listing_id')
+    .eq('org_id', orgId).in('item_externo_id', itemIds);
+  if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
+  const alvos: Array<{ codigo: string; upId: string; itemIds: string[] }> = [];
+  for (const i of data ?? []) {
+    const codigo = i.sku as string;
+    // Kit com variação só existe em user products (spec): sem UP não há como escrever com segurança.
+    if (!participantes.has(codigo) || !i.user_product_id || alvos.some((a) => a.codigo === codigo)) continue;
+    alvos.push({
+      codigo, upId: i.user_product_id as string,
+      itemIds: [i.item_externo_id as string, ...(i.catalog_listing_id ? [i.catalog_listing_id as string] : [])],
+    });
+  }
+  // Sem escrita e sem transferência: SKU comum preso num item com participante, ou participante sem UP.
+  const semSaida = fora.flatMap((a) => a.estoques.map((e) => e.sku)).filter((s) => !alvos.some((a) => a.codigo === s));
+  if (semSaida.length > 0) console.error('kit_sku_fora_do_push_sem_transferencia', orgId, semSaida);
+  if (alvos.length === 0) return null;
+
+  const r = await criarTransferencia(deps.admin, {
+    orgId, kitId: null, tipo: 'entrada',
+    itens: alvos.map((a) => ({ codigo: a.codigo, quantidade: 0 })),
+    alvos,
+  });
+  if ('id' in r) {
+    await deps.enfileirarSaga(r.id, orgId);
+    return null;
+  }
+  console.error('kit_transferencia_entrada_recusada', orgId, r.motivo);
+  return r.motivo === 'alvos_invalidos' ? null : `kit:${r.motivo}`;
+}
+
 export async function processarSincronizacao(
   deps: DepsSincronizacao, job: SincronizarEstoqueJob,
 ): Promise<RespostaSincronizacao> {
@@ -359,6 +404,24 @@ export async function processarSincronizacao(
     temAnuncio = temAnuncio || r.temAnuncio;
   }
 
+  // 3) ADR-0197: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
+  // sai inteiro: num item com variações o conector regravaria as demais com a quantidade lida.
+  const retentaveis: string[] = [];
+  if (alvos.length > 0) {
+    const participantes = await skusParticipantes(
+      admin, org_id, [...new Set(alvos.flatMap((a) => a.estoques.map((e) => e.sku)))],
+    );
+    const fora = alvos.filter((a) =>
+      a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' })));
+    if (fora.length > 0) {
+      alvos.splice(0, alvos.length, ...alvos.filter((a) => !fora.includes(a)));
+      if (!job.sem_transferencia_kit) {
+        const r = await transferirParaSaga(deps, org_id, fora, participantes);
+        if (r) retentaveis.push(r);
+      }
+    }
+  }
+
   const notificar = deps.notificar ?? notificarCategoria;
   const ctxAlerta: ContextoAlerta = {
     orgId: org_id,
@@ -369,14 +432,14 @@ export async function processarSincronizacao(
     estoquePorSku: base.estoquePorSku,
     temAnuncio,
   };
+  if (alvos.length === 0 && retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
   if (alvos.length === 0) {
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
     await alertarEstoqueZerado(admin, notificar, ctxAlerta);
     return { status: 200, body: { ok: true, alvos: 0 } };
   }
 
-  // 3) Push absoluto, um alvo por vez. Falha de um canal nunca afeta outro.
-  const retentaveis: string[] = [];
+  // 4) Push absoluto, um alvo por vez. Falha de um canal nunca afeta outro.
   // Chave = codigo_pai de quem reativou (base ou kit) — Map dedupa User Products (N filhos da
   // MESMA família reativando no mesmo run geram 1 entrada só, ADR-0088).
   const reativados = new Map<string, Origem>();

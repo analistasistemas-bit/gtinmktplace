@@ -26,6 +26,7 @@ import { notificarCategoria } from '../notificacoes/config.ts';
 import type { ItemConfirmar } from '../confirmacao/registrar.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type ChartSemGuia, type Genero } from '../ml/size-chart.ts';
 import { gradeDaFamilia } from '../produto/tipos-produto-valores.ts';
+import { skusParticipantes } from '../kit-variacao/politica.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
 } from './atualizar-composicao.ts';
@@ -128,6 +129,9 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   const skusDesejados = args.skusDesejadosOverride ?? variacoes.map((v) => v.codigo);
   const estoquePorSku: Record<string, number> = {};
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
+  // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Vale também para a convergência,
+  // que chega aqui. Falha de leitura lança antes de qualquer escrita no ML.
+  const participantes = await skusParticipantes(admin, familia.org_id, skusDesejados);
   // ADR-0160: preço POR SKU. Antes daqui saía `variacoes.find(v => v.preco_publicacao != null)` —
   // o primeiro preço não-nulo virava "o preço da família" e era empurrado a todos os itens irmãos,
   // achatando qualquer diferenciação. Sob User Products cada cor é um item ML próprio: preço
@@ -611,7 +615,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       if (error) throw new Error(error.message);
       const desejados = new Set(skusDesejados);
       return ((data ?? []) as Array<Record<string, unknown>>)
-        .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id && desejados.has(f.sku as string))
+        .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id && desejados.has(f.sku as string)
+          && !participantes.has(f.sku as string))
         .map((f) => ({
           itemExternoId: f.item_externo_id as string,
           modelo: 'item' as const,
@@ -627,7 +632,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   let resultado: ResultadoComposicao;
   try {
     resultado = await executarSaga(portas, {
-      skusDesejados, estoquePorSku, precoPorSku, somenteEstoque, familyIdEsperado,
+      skusDesejados, estoquePorSku, precoPorSku, somenteEstoque, familyIdEsperado, participantes,
       // I10: "adicionar variação" também não reescreve a ficha das irmãs (ADR-0157 manda os
       // atributos divergentes na reposição). Preservar preço e reescrever atributos seria meia
       // promessa — o fluxo diz que só a cor nova é tocada.

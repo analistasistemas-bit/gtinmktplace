@@ -31,6 +31,7 @@ import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
+import { skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -129,6 +130,19 @@ Deno.serve(async (req) => {
 
     if (!variacoes || variacoes.length === 0) {
       const err = new Error('Sem cores incluídas para publicar') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    // ADR-0197: kit com variação só existe em user products. A partição Legacy escreveria quantidade
+    // (CREATE e reposição) fora da saga do kit: recusa antes de qualquer chamada ao ML.
+    const participantes = await skusParticipantes(
+      admin, familia.org_id as string, variacoes.map((v) => v.codigo as string),
+    );
+    if (participantes.size > 0) {
+      const err = new Error(
+        `${[...participantes].join(', ')} participa(m) de kit com variação, que só existe em user products: `
+        + 'a publicação dividida não escreve quantidade dessas cores. Nada foi enviado ao Mercado Livre.',
+      ) as Error & { status?: number };
       err.status = 400;
       throw err;
     }

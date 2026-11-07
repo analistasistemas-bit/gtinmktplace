@@ -70,7 +70,7 @@ export interface PortasComposicao {
   pausar(itemExternoId: string): Promise<void>;
   repor(
     itemExternoId: string,
-    patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] },
+    patch: { available_quantity?: number; price?: number; attributes?: AtributoItem[] },
   ): Promise<void>;
   /**
    * ADR-0160 (I4) — grava `variacoes.preco_publicado_ml` do SKU, logo APÓS o PUT daquele item.
@@ -115,6 +115,8 @@ export interface EntradaComposicao {
   atributosFamilia?: unknown;
   /** family_id das cores existentes (validação da cor nova). null → sem validação (sem cor viva). */
   familyIdEsperado: string | null;
+  /** ADR-0197: SKUs de kit com variação. Quantidade deles só a saga escreve; ausente = nenhum. */
+  participantes?: ReadonlySet<string>;
 }
 
 export type ResultadoComposicao =
@@ -184,11 +186,13 @@ async function reposicao(portas: PortasComposicao, entrada: EntradaComposicao, d
     // `"price":"29.90"`.
     const precoBruto = entrada.precoPorSku[f.sku];
     const preco = precoBruto == null ? null : Number(precoBruto);
-    const patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] } =
+    const patch: { available_quantity?: number; price?: number; attributes?: AtributoItem[] } =
       entrada.somenteEstoque || preco == null
         ? { available_quantity: estoque }
         : { available_quantity: estoque, price: preco };
     if (attrs.length > 0) patch.attributes = attrs;
+    if (entrada.participantes?.has(f.sku)) delete patch.available_quantity;
+    if (Object.keys(patch).length === 0) continue;
     await portas.repor(f.itemExternoId!, patch);
     // I4/I8: só confirma o que ACABOU de subir. Em `somenteEstoque` (preço ausente do patch) o
     // valor anterior continua sendo a verdade — nada a regravar, e nenhum GET extra para descobrir.
@@ -257,6 +261,17 @@ export async function atualizarComposicao(
   // garante retomada: uma cor deixada em 'criado'/'criacao_incerta' por crash é reprocessada.
   const jaAtivos = new Set(naoRetirados.filter((f) => f.status === 'ativo' && f.itemExternoId).map((f) => f.sku));
   const paraAdicionar = soRepor ? [] : desejados.filter((sku) => !jaAtivos.has(sku));
+
+  // ADR-0197: criar ou reativar item de SKU participante publicaria o saldo do snapshot fora da saga.
+  const participantesNovos = paraAdicionar.filter((sku) => entrada.participantes?.has(sku));
+  if (participantesNovos.length > 0) {
+    const e = new Error(
+      `${participantesNovos.join(', ')} participa(m) de kit com variação: criar ou reativar o anúncio dessa cor `
+      + 'por aqui publicaria saldo fora da transferência do kit. Nada foi enviado ao Mercado Livre. (400)',
+    ) as Error & { status?: number };
+    e.status = 400;
+    throw e;
+  }
 
   if (paraRetirar.length === 0 && paraAdicionar.length === 0) {
     await reposicao(portas, entrada, desejadosSet);

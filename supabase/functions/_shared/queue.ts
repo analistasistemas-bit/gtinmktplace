@@ -210,6 +210,12 @@ export interface SincronizarEstoqueJob {
    * inteiro = comportamento de sempre; as variações fora da lista ficam intocadas no anúncio.
    */
   skus?: string[];
+  /**
+   * ADR-0197: a reconciliação diária reempurra todo produto com movimento recente. Em SKU de kit com
+   * variação isso viraria uma transferência (pausa de T) por dia sem nada a escrever: o job só tira o
+   * SKU do push. Entrada, ajuste e estorno chegam sem o campo e criam a transferência.
+   */
+  sem_transferencia_kit?: boolean;
 }
 
 /** Fila serial de estoque por org: pushes absolutos precisam chegar em ordem. */

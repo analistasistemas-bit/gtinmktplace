@@ -115,6 +115,33 @@ function entrada(over: Partial<EntradaComposicao> = {}): EntradaComposicao {
   };
 }
 
+describe('atualizarComposicao — kit com variação (ADR-0197)', () => {
+  it('SKU participante não leva available_quantity; o comum segue igual', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    const r = await atualizarComposicao(w.portas, entrada({ participantes: new Set(['A']) }));
+    expect(r.tipo).toBe('sem_mudanca');
+    expect(w.chamadas.repor).toEqual([
+      { id: 'MLB1', patch: { price: 29.9 } },
+      { id: 'MLB2', patch: { available_quantity: 20, price: 29.9 } },
+    ]);
+  });
+
+  it('somente estoque: participante fica sem PUT nenhum', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ somenteEstoque: true, participantes: new Set(['A']) }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB2', patch: { available_quantity: 20 } }]);
+  });
+
+  it('cor nova ou readicionada participante: recusa antes de qualquer escrita', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2', { status: 'pausado', retirado: true })] });
+    await expect(atualizarComposicao(w.portas, entrada({ participantes: new Set(['B']) })))
+      .rejects.toThrow(/kit com variação/);
+    expect(w.chamadas.iniciarComposicao).toEqual([]);
+    expect(w.chamadas.ativar).toEqual([]);
+    expect(w.chamadas.repor).toEqual([]);
+  });
+});
+
 describe('atualizarComposicao — reposição pura (sem mudança de composição)', () => {
   it('N cores ativas: só repõe estoque/preço, nenhuma criação/pausa', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });

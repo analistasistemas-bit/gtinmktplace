@@ -17,6 +17,7 @@ import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualizarUP } from '../_shared/user-products/atualizar-familia-up.ts';
+import { skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 import {
   adotarFamiliaMigrada, type PortasAdocao, type EntradaAdocao, type ResultadoAdocao,
 } from '../_shared/user-products/adotar-familia-migrada.ts';
@@ -384,6 +385,10 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
     // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
     const enviadoEm = new Date().toISOString();
+    // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Falha de leitura lança antes do PUT.
+    const skusSemQuantidade = [...await skusParticipantes(
+      admin, familia.org_id as string, [...casadas, ...novasComFoto].map((v) => v.codigo as string),
+    )];
     const res = await conn.atualizarAnuncio(ctx, {
       itemExternoId: familia.ml_item_id,
       existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
@@ -401,6 +406,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       precoFamilia,
       somenteEstoque: job.somenteEstoque,
       preservarPublicadas,
+      skusSemQuantidade,
     });
     if (!res.ok) {
       const e = res.erro!;

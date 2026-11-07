@@ -9,10 +9,11 @@
 // aplicar a baixa; isso NÃO existe hoje e está registrado como fora de escopo.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarSaga } from '../_shared/queue.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
+import { retomarTransferenciasParadas } from './transferencias.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
 const MAX_PAGINAS = 5;
@@ -100,8 +101,9 @@ Deno.serve(async (req) => {
   for (const chave of alvos) {
     const [orgId, codigoPai] = chave.split('|');
     try {
+      // ADR-0197: SKU de kit com variação sai do reempurrão sem abrir transferência (a saga é o push dele).
       await enfileirarSincronizacaoEstoque(
-        { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
+        { org_id: orgId, codigo_pai: codigoPai, canal_origem: null, sem_transferencia_kit: true }, orgId,
       );
       enfileirados++;
     } catch (e) {
@@ -109,8 +111,16 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 3) ADR-0197: transferência de kit ativa e parada, de qualquer idade, volta para a fila.
+  let transferencias = 0;
+  try {
+    transferencias = await retomarTransferenciasParadas(admin, enfileirarSaga);
+  } catch (e) {
+    console.error('reconciliar_transferencias_falhou', e);
+  }
+
   return new Response(
-    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size }),
+    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 });

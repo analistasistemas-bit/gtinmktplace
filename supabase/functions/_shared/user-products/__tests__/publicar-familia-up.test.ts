@@ -200,6 +200,79 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
   });
 });
 
+// ADR-0197 (Task 5): CREATE e ativação de SKU de kit com variação seguram a exclusão do SKU durante a saga e
+// publicam o saldo relido sob a exclusão, nunca o do snapshot do job.
+describe('publicarFamiliaUP — kit com variação', () => {
+  beforeEach(() => { criarPortasSpy.mockReset(); });
+
+  function comKit(o: { modulos: string[]; adquirir?: Record<string, unknown> }) {
+    const { admin, writes } = fakeAdmin([]);
+    const eventos: string[] = [];
+    const kitAdmin = {
+      from: (t: string) => {
+        if (t === 'organizations') {
+          return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { modulos_habilitados: o.modulos }, error: null }) }) }) };
+        }
+        if (t === 'kit_variacao_componentes' || t === 'kit_variacao_skus') {
+          eventos.push(`ler:${t}`);
+          return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 's-verde' }] : [], error: null }) }) }) };
+        }
+        if (t === 'variacoes') {
+          // Saldo relido sob a exclusão: uma transferência levou 4 das 5 peças depois do snapshot.
+          return { select: () => ({ eq: () => ({ in: async () => { eventos.push('reler'); return { data: [{ codigo: 's-verde', estoque: 1 }], error: null }; } }) }) };
+        }
+        return (admin as { from: (t: string) => unknown }).from(t);
+      },
+      rpc: async (nome: string, a: Record<string, unknown>) => {
+        eventos.push(`${nome}:${JSON.stringify(a)}`);
+        return { data: nome === 'kit_adquirir_exclusao' ? (o.adquirir ?? { ok: true }) : null, error: null };
+      },
+    };
+    return { admin: kitAdmin as never, writes, eventos };
+  }
+
+  const rodar = (admin: never, saga: () => Promise<ResultadoSaga>) => publicarFamiliaUP({
+    admin, conn: fakeConnector as never, ctx, conexao,
+    familia: FAMILIA as never, anuncio: ANUNCIO, categoriaId: 'MLB419782',
+    executarSaga: saga,
+  });
+
+  it('adquire a exclusão do participante antes da saga, publica o saldo relido e solta depois', async () => {
+    const k = comKit({ modulos: ['kit_variacao'] });
+    await rodar(k.admin, async () => { k.eventos.push('saga'); return { estado: 'compensacao_pendente' }; });
+    expect(k.eventos.filter((e) => !e.startsWith('ler:'))).toEqual([
+      'kit_adquirir_exclusao:{"p_org":"org-1","p_codigos":["s-verde"],"p_dono_tipo":"publicacao","p_dono_id":"root-1"}',
+      'reler',
+      'saga',
+      'kit_soltar_exclusao:{"p_org":"org-1","p_dono_id":"root-1"}',
+    ]);
+    const montar = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (s: string) => { available_quantity: number } }).montarPayloadPlano;
+    expect(montar('s-verde').available_quantity).toBe(1);
+    expect(montar('s-azul').available_quantity).toBe(3);
+  });
+
+  it('SKU ocupado por transferência: não roda a saga e lança para a fila repetir', async () => {
+    const k = comKit({ modulos: ['kit_variacao'], adquirir: { ok: false, codigo: 's-verde' } });
+    const saga = vi.fn(async () => ({ estado: 'ativo' as const }));
+    await expect(rodar(k.admin, saga)).rejects.toThrow(/s-verde/);
+    expect(saga).not.toHaveBeenCalled();
+  });
+
+  it('saga que lança (resultado incerto) mantém a exclusão', async () => {
+    const k = comKit({ modulos: ['kit_variacao'] });
+    await expect(rodar(k.admin, async () => { throw new Error('timeout no POST'); })).rejects.toThrow();
+    expect(k.eventos.some((e) => e.startsWith('kit_soltar_exclusao'))).toBe(false);
+  });
+
+  it('org sem o módulo: nenhuma exclusão, nenhuma leitura de kit, snapshot como hoje', async () => {
+    const k = comKit({ modulos: [] });
+    await rodar(k.admin, async () => ({ estado: 'compensacao_pendente' }));
+    expect(k.eventos).toEqual([]);
+    const montar = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (s: string) => { available_quantity: number } }).montarPayloadPlano;
+    expect(montar('s-verde').available_quantity).toBe(5);
+  });
+});
+
 // ADR-0167: família com tamanho precisa resolver o guia de medidas ANTES de montar o payload de
 // cada SKU, e gênero é obrigatório junto (Decisão 6). Sem tamanho em nenhuma variação (toda org
 // sem tipo de produto habilitado, INV-1), nada disto é acionado — coberto pelos testes acima, que

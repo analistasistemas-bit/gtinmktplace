@@ -11,6 +11,8 @@ const f = vi.hoisted(() => ({
   criados: [] as Array<{ titulo: string; variacoes: Array<{ sku: string; estoque: number }> }>,
   atualizados: [] as Array<{ itemExternoId: string; novas: Array<{ sku: string }> }>,
   confirmacoes: [] as Array<Record<string, unknown>>,
+  modulos: [] as string[],
+  componentes: [] as string[],
 }));
 
 function builder(tabela: string) {
@@ -19,6 +21,8 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
     if (tabela === 'anuncios_externos') return { data: f.linhas, error: null };
     if (tabela === 'lotes') return { data: { origem: 'planilha' }, error: null };
+    if (tabela === 'organizations') return { data: { modulos_habilitados: f.modulos }, error: null };
+    if (tabela === 'kit_variacao_componentes') return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
     return { data: [], error: null };
   };
   const q: Record<string, unknown> = {
@@ -92,6 +96,7 @@ const cor = (codigo: string, nome: string, estoque: number, over: Linha = {}): L
 
 beforeEach(() => {
   f.familia = { ...FAMILIA }; f.linhas = []; f.criados = []; f.atualizados = []; f.confirmacoes = [];
+  f.modulos = []; f.componentes = [];
   f.variacoes = [cor('A', 'Azul', 60_000), cor('B', 'Rosa', 60_000)];
   vi.mocked(enfileirarConfirmacao).mockClear();
 });
@@ -140,5 +145,23 @@ describe('publicar-split-ml — conferência do CREATE (ADR-0195)', () => {
     });
     expect(f.confirmacoes[1]).toMatchObject({ capados: 0, enviado: { B: { qtd: 10, anterior: null, variacao_id: '200' } } });
     expect(enfileirarConfirmacao).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ADR-0197: kit com variação só existe em user products; o split Legacy nunca escreve quantidade dele.
+describe('publicar-split-ml — kit com variação', () => {
+  it('cor participante: recusa antes de criar ou atualizar qualquer partição', async () => {
+    f.modulos = ['kit_variacao']; f.componentes = ['A'];
+    await handler(new Request('http://localhost', {
+      method: 'POST', body: JSON.stringify({ familia_id: 'fam-1', lote_id: 'lote-1' }),
+    }));
+    expect(f.criados).toEqual([]);
+    expect(f.atualizados).toEqual([]);
+  });
+
+  it('org sem o módulo publica como hoje', async () => {
+    f.componentes = ['A'];
+    await rodar();
+    expect(f.criados).toHaveLength(2);
   });
 });

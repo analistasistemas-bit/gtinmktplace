@@ -214,6 +214,44 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
     expect(res.ok).toBe(false);
     expect(putChamado).toBe(false);
   });
+
+  // ADR-0197: quantidade de SKU de kit com variação só a saga escreve.
+  it('SKU sem quantidade (kit com variação): PUT plano só com price; sem price, nenhum PUT', async () => {
+    const puts: unknown[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') { puts.push(JSON.parse(init.body as string)); return Promise.resolve(new Response('{}', { status: 200 })); }
+      return Promise.resolve(new Response(JSON.stringify({ id: 'MLB1', variations: [], pictures: [], price: 100, available_quantity: 10 }), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      itemExternoId: 'MLB1', existentes: [{ sku: 'A1', estoque: 20, cor: 'Prata' }], novas: [],
+      capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+      marca: null, dimensoes: null, precoFamilia: 130, skusSemQuantidade: ['A1'],
+    };
+    const r1 = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(puts).toEqual([{ price: 130 }]);
+    expect(r1.valor?.enviados).toBeUndefined();
+    const r2 = await mercadoLivreConnector.atualizarAnuncio(ctxFake, { ...atualiz, somenteEstoque: true });
+    expect(r2.ok).toBe(true);
+    expect(puts).toHaveLength(1);
+  });
+
+  it('SKU sem quantidade em item com variações: recusa sem PUT (reenviar as variações regravaria a quantidade lida)', async () => {
+    let putChamado = false;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') putChamado = true;
+      return Promise.resolve(new Response(JSON.stringify({
+        id: 'MLB1', variations: [{ id: 1, seller_custom_field: 'A1', available_quantity: 3, price: 10, picture_ids: [], attribute_combinations: [] }], pictures: [],
+      }), { status: 200 }));
+    }) as typeof fetch;
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, {
+      itemExternoId: 'MLB1', existentes: [{ sku: 'A1', estoque: 5, cor: null }], novas: [],
+      capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+      marca: null, dimensoes: null, precoFamilia: null, somenteEstoque: true, skusSemQuantidade: ['A1'],
+    });
+    expect(res.ok).toBe(false);
+    expect(res.erro?.retentavel).toBe(false);
+    expect(putChamado).toBe(false);
+  });
 });
 
 describe('atualizarAnuncio devolve o que enviou (ADR-0195)', () => {

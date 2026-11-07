@@ -378,6 +378,46 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(entradaVista!.atributosFamilia).toBeUndefined();
   });
 
+  it('ADR-0197: participante de kit chega à saga e fica fora da conferência; org sem módulo, nenhum', async () => {
+    const filhos = [
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+      { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },
+    ];
+    const variacoes = ['A', 'B'].map((codigo) => ({ codigo, cor: codigo, estoque: 3, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null }));
+    const rodar = async (modulos: string[]) => {
+      const { admin } = fakeAdmin(filhos);
+      const lidas: string[] = [];
+      const kitAdmin = {
+        ...(admin as Record<string, unknown>),
+        from: (t: string) => {
+          lidas.push(t);
+          if (t === 'organizations') {
+            return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { modulos_habilitados: modulos }, error: null }) }) }) };
+          }
+          if (t.startsWith('kit_variacao_')) {
+            return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 'A' }] : [], error: null }) }) }) };
+          }
+          return (admin as { from: (t: string) => unknown }).from(t);
+        },
+      };
+      let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
+      const r = await atualizarFamiliaUP(args({
+        admin: kitAdmin as never, variacoes: variacoes as never,
+        executarSaga: async (_p, e) => { entradaVista = e; return { tipo: 'sem_mudanca' }; },
+      }));
+      return { r, entradaVista: entradaVista!, lidas };
+    };
+
+    const com = await rodar(['kit_variacao']);
+    expect([...(com.entradaVista.participantes ?? [])]).toEqual(['A']);
+    expect(com.r.estado === 'ok' && com.r.enviados?.map((e) => e.itemExternoId)).toEqual(['MLB2']);
+
+    const sem = await rodar([]);
+    expect([...(sem.entradaVista.participantes ?? [])]).toEqual([]);
+    expect(sem.r.estado === 'ok' && sem.r.enviados?.map((e) => e.itemExternoId)).toEqual(['MLB1', 'MLB2']);
+    expect(sem.lidas.filter((t) => t.startsWith('kit_'))).toEqual([]);
+  });
+
   it('sem preservarPublicadas o UPDATE comum segue empurrando preço em todas', async () => {
     let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
     const { admin } = fakeAdmin([

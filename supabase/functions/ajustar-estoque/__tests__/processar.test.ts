@@ -103,6 +103,15 @@ describe('processarAjuste', () => {
     expect(r.pushOk).toBe(false);
   });
 
+  // ADR-0197: a recusa vem da RPC (guard sku_em_transferencia) e o texto chega ao operador sem push.
+  it('ajuste recusado por transferência de kit: mensagem ao operador e nenhum push', async () => {
+    const msg = 'sku_em_transferencia: A2 está em transferência de kit. Repita a operação depois.';
+    const d = deps({ rpc: async () => ({ data: null, error: { message: msg } }) });
+    const r = await processarAjuste(d, { ...base, itens: [{ codigo: 'A2', novoSaldo: 3 }] });
+    expect(r.resultados).toEqual([{ codigo: 'A2', estoque: null, duplicada: false, erro: msg }]);
+    expect(d.filas).toEqual([]);
+  });
+
   it('não enfileira push para item que falhou', async () => {
     const d = deps({ rpc: async () => ({ data: null, error: { message: 'SKU não encontrado' } }) });
     const r = await processarAjuste(d, { ...base, itens: [{ codigo: 'A', novoSaldo: 0 }] });

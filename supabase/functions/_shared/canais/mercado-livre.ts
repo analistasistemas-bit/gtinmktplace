@@ -252,22 +252,34 @@ export const mercadoLivreConnector: ChannelConnector = {
         const precoDesejado = a.somenteEstoque
           ? undefined
           : (a.precoFamilia ?? undefined);
-        await atualizarItemPlanoML(token, a.itemExternoId, {
-          available_quantity: estoqueDesejado,
-          ...(precoDesejado != null ? { price: precoDesejado } : {}),
-        });
+        const semQuantidade = !!a.skusSemQuantidade?.includes(existente.sku);
+        if (!semQuantidade || precoDesejado != null) {
+          await atualizarItemPlanoML(token, a.itemExternoId, {
+            ...(semQuantidade ? {} : { available_quantity: estoqueDesejado }),
+            ...(precoDesejado != null ? { price: precoDesejado } : {}),
+          });
+        }
         return {
           ok: true,
           valor: {
             variacoesExternas: { [existente.sku]: a.itemExternoId },
             precoVivo: atual.price,
-            ...(a.preservarPublicadas ? {} : {
+            ...(a.preservarPublicadas || semQuantidade ? {} : {
               enviados: {
                 [existente.sku]: { qtd: estoqueDesejado, anterior: atual.availableQuantity, variacao_id: null },
               },
             }),
           },
         };
+      }
+      // ADR-0197: kit com variação só existe em user products; chegar aqui com um participante é erro.
+      const participante = [...a.existentes, ...a.novas].find((v) => a.skusSemQuantidade?.includes(v.sku));
+      if (participante) {
+        return { ok: false, erro: {
+          codigo: 'ESTOQUE', retentavel: false, status: 400,
+          mensagemOperador: `${participante.sku} participa de kit com variação e está num anúncio com variações: `
+            + 'a quantidade dele só pode ser escrita pela transferência do kit. Nada foi enviado.',
+        } };
       }
       // Cap de estoque (ADR-0048): teto sobre o conjunto enviado (existentes + novas) p/ a soma
       // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.

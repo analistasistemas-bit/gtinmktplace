@@ -184,6 +184,9 @@ export interface AtualizacaoCanonica {
    *  depois de um PUT inteiro ser recusado com "You cannot change attribute combinations if the
    *  variation has bids" ao adicionar uma cor. */
   preservarPublicadas?: boolean;
+  /** ADR-0197: SKUs de kit com variação, cuja quantidade só a saga escreve. O item plano vai sem
+   *  `available_quantity`; o item com variações recusa, porque reenviar as variações regravaria a lida. */
+  skusSemQuantidade?: string[];
   /**
    * Kit vinculado (ADR-0151): peso líquido total do kit em gramas, para sincronizar `NET_WEIGHT`
    * ("Peso líquido" na ficha "Formato de venda") junto com o frete. null/ausente → não envia
