@@ -272,6 +272,31 @@ async function alvosDaFamilia(
 }
 
 /**
+ * ADR-0197: a transferência não nasceu (recusa retentável ou erro). Zera `push_enfileirado_em` do último
+ * movimento de cada SKU, para o outbox (sync-venda e reconciliação) enfileirar o push de novo, independente
+ * dos 3 retries da fila. Não enfileira nada aqui: o ritmo é o do outbox, sem laço quente. A triagem diária
+ * segue como rede. Falha aqui só loga: o job já vai devolver 500.
+ */
+async function devolverAoOutbox(admin: SupabaseClient, orgId: string, codigos: string[]): Promise<void> {
+  try {
+    const { data, error } = await admin.from('estoque_movimentos').select('id, codigo, criado_em')
+      .eq('org_id', orgId).in('codigo', codigos).order('criado_em', { ascending: false });
+    if (error) throw new Error(error.message);
+    const ultimo = new Map<string, { id: string; criado: string }>();
+    for (const m of data ?? []) {
+      const atual = ultimo.get(m.codigo as string);
+      if (!atual || String(m.criado_em) > atual.criado) ultimo.set(m.codigo as string, { id: m.id as string, criado: String(m.criado_em) });
+    }
+    const ids = [...ultimo.values()].map((u) => u.id);
+    if (ids.length === 0) return;
+    const { error: e2 } = await admin.from('estoque_movimentos').update({ push_enfileirado_em: null }).in('id', ids);
+    if (e2) throw new Error(e2.message);
+  } catch (e) {
+    console.error('kit_outbox_devolver_falhou', orgId, codigos, String(e));
+  }
+}
+
+/**
  * ADR-0197: entrada, ajuste e estorno de SKU participante viram transferência `entrada`, que escreve o
  * saldo local só com o UP pausado e conciliado. Devolve a chave retentável, ou null.
  * `up_ocupado`: outra transferência ou publicação tem o SKU; a fila repete.
@@ -305,17 +330,26 @@ async function transferirParaSaga(
   }
   if (alvos.length === 0) return null;
 
-  const r = await criarTransferencia(deps.admin, {
-    orgId, kitId: null, tipo: 'entrada',
-    itens: alvos.map((a) => ({ codigo: a.codigo, quantidade: 0 })),
-    alvos,
-  });
+  let r: Awaited<ReturnType<typeof criarTransferencia>>;
+  try {
+    r = await criarTransferencia(deps.admin, {
+      orgId, kitId: null, tipo: 'entrada',
+      itens: alvos.map((a) => ({ codigo: a.codigo, quantidade: 0 })),
+      alvos,
+    });
+  } catch (e) {
+    await devolverAoOutbox(deps.admin, orgId, alvos.map((a) => a.codigo));
+    throw e;
+  }
   if ('id' in r) {
     await deps.enfileirarSaga(r.id, orgId);
     return null;
   }
   console.error('kit_transferencia_entrada_recusada', orgId, r.motivo);
-  if (r.motivo !== 'alvos_invalidos') return `kit:${r.motivo}`;
+  if (r.motivo !== 'alvos_invalidos') {
+    await devolverAoOutbox(deps.admin, orgId, alvos.map((a) => a.codigo));
+    return `kit:${r.motivo}`;
+  }
   await alertar(`Kit com variação: a entrada de ${alvos.map((a) => a.codigo).join(', ')} não virou transferência `
     + '(alvos inválidos). O saldo não foi ao Mercado Livre.');
   return null;

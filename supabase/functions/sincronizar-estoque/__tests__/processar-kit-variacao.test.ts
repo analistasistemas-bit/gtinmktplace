@@ -23,12 +23,19 @@ const ITENS = [
 ];
 
 function fakeAdmin(b: Banco) {
+  // Outbox: o último movimento de P1 é o m2; m9 é de outro SKU.
+  const movs: Array<Record<string, unknown>> = [
+    { id: 'm1', org_id: 'O', codigo: 'P1', codigo_pai: 'PAI', criado_em: '2026-11-07T10:00:00Z', push_enfileirado_em: '2026-11-07T10:00:01Z' },
+    { id: 'm2', org_id: 'O', codigo: 'P1', codigo_pai: 'PAI', criado_em: '2026-11-07T11:00:00Z', push_enfileirado_em: '2026-11-07T11:00:01Z' },
+    { id: 'm9', org_id: 'O', codigo: 'P2', codigo_pai: 'PAI', criado_em: '2026-11-07T11:30:00Z', push_enfileirado_em: '2026-11-07T11:30:01Z' },
+  ];
   const consultas: string[] = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
   const from = (tabela: string) => {
     consultas.push(tabela);
     const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
     let kitsVinculados = false;
+    let patch: Record<string, unknown> | null = null;
     const ler = () => {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
       if (kitsVinculados) return { data: [], error: null };
@@ -44,12 +51,17 @@ function fakeAdmin(b: Banco) {
         case 'kit_variacao_skus': return { data: [], error: null };
         case 'kit_variacao_componentes':
           return { data: b.componentes.map((codigo) => ({ codigo, org_id: 'O' })).filter((r) => filtros.every((f) => f(r))), error: null };
+        case 'estoque_movimentos': {
+          const alvo = movs.filter((r) => filtros.every((f) => f(r)));
+          if (patch) alvo.forEach((r) => Object.assign(r, patch));
+          return { data: alvo.map((r) => ({ ...r })), error: null };
+        }
         default: return { data: [], error: null };
       }
     };
     const api: Record<string, unknown> = {
       select: () => api,
-      update: () => api,
+      update: (v: Record<string, unknown>) => { patch = v; return api; },
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return api; },
       in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return api; },
       is: () => api, gt: () => api, not: () => { kitsVinculados = true; return api; },
@@ -63,7 +75,7 @@ function fakeAdmin(b: Banco) {
     rpcs.push({ nome, args });
     return { data: b.rpc?.[nome] ?? { ok: true, id: 'T1' }, error: null };
   };
-  return { admin: { from, rpc } as never, consultas, rpcs };
+  return { admin: { from, rpc } as never, consultas, rpcs, movs };
 }
 
 function montar(b: Banco) {
@@ -121,6 +133,23 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(r.status).toBe(500);
     expect(pushes()).toEqual(['MLB-P2']);
     expect(m.enfileirarSaga).not.toHaveBeenCalled();
+    // A intenção volta ao outbox: só o último movimento do SKU recusado, nenhum outro.
+    expect(m.movs.map((x) => [x.id, x.push_enfileirado_em])).toEqual([
+      ['m1', '2026-11-07T10:00:01Z'], ['m2', null], ['m9', '2026-11-07T11:30:01Z'],
+    ]);
+  });
+
+  it('transferência criada: o outbox não é tocado', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
+    await processarSincronizacao(m.deps, JOB);
+    expect(m.movs.every((x) => x.push_enfileirado_em !== null)).toBe(true);
+  });
+
+  it('criarTransferencia que lança também devolve a intenção ao outbox e relança', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
+    m.deps.admin = { ...(m.deps.admin as object), rpc: async () => ({ data: null, error: { message: 'timeout' } }) } as never;
+    await expect(processarSincronizacao(m.deps, JOB)).rejects.toThrow(/timeout/);
+    expect(m.movs.find((x) => x.id === 'm2')!.push_enfileirado_em).toBeNull();
   });
 
   it.each(['familias', 'kit_variacao_componentes'])('falha ao ler %s lança antes de qualquer push', async (t) => {
