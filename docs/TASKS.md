@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Trava da oferta no UPDATE (ADR-0196, emenda) — 2026-11-07
+
+Implementada na branch `worktree-trava-oferta-update`; não deployada, não mergeada.
+
+- [x] `publicar-familias` recusa, antes de reservar, o produto cujo preço novo fica igual ou abaixo de oferta vigente ou agendada; os demais do lote seguem. "Somente estoque" segue disponível. Reconciliador: SKU reprovado em `semPrecoPara`, composição converge, operador avisado. Plano em `docs/superpowers/plans/2026-11-07-trava-oferta-update.md`.
+- [ ] Revisão do diff pelo Codex `gpt-6.1-sol` high.
+- [ ] Deploy (só com OK do Diego): `publicar-familias`, `reconciliar-convergencia-up`, `update-familia-ml` e o que o grafo de imports apontar (`conexao.ts`); conferir versões. Depois merge fast-forward com CI verde.
+- [ ] Item restante: o UPDATE grava o base antes das faixas (ADR-0196, lacuna conhecida).
+
 ## Alterar preço em Publicados com oferta e atacado (ADR-0196, Fatia 1) — 2026-11-07
 
 Em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente.

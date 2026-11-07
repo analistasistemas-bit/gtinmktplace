@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-05
+atualizado: 2026-11-07
 ---
 
 # Changelog
@@ -11,6 +11,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-07
 
+- **Trava da oferta no UPDATE** ([[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]], emenda; item 9 do [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): UPDATE recusa, com motivo, o produto cujo preço novo fica igual ou abaixo de oferta vigente ou agendada; os demais do lote seguem. Implementada na branch `worktree-trava-oferta-update`, não deployada, não mergeada. Limite aceito: oferta nova ou preço editado inline entre o clique e o worker não é detectado.
 - **Alterar preço com oferta e atacado, Fatia 1** ([[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]], Proposto): em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente. Fatia 2 suspensa (ML recusa subir oferta, `PRICE_GT_CURRENT`); Fatias 3 e 4 não feitas. Medido: Relâmpago `started` mantém a oferta; SMART sem reconvite em 2 h.
 
 ## 2026-11-05
