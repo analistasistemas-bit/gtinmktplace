@@ -110,6 +110,13 @@ describe('contar', () => {
     });
   });
 
+  it('convidado abaixo de R$ 19 não conta; participante e convidado sem preço contam', () => {
+    const l = (status: string, preco_avaliado: number | null) => ({ status, pior_semaforo: 'verde', preco_avaliado }) as LinhaItem;
+    expect(contar([l('candidate', 18.99), l('candidate', 19), l('candidate', null), l('started', 16.53)])).toMatchObject({
+      convidados: 2, convidados_verde: 2, participando: 1, verde: 3,
+    });
+  });
+
   it('ml_pct_max = maior parte bancada pelo ML entre os anúncios contados', () => {
     const l = (status: string, ml_pct: number | null) => ({ status, pior_semaforo: 'verde', ml_pct }) as LinhaItem;
     expect(contar([l('candidate', 30), l('started', 10), l('candidate', null)]).ml_pct_max).toBe(30);

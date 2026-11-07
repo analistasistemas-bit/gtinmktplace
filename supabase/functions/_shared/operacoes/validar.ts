@@ -1,5 +1,5 @@
 // ADR-0174 — validação do pedido de operação em massa (criação). Puro: a tarifa exata entra por parâmetro.
-import { ehParticipando, liquidoNoPreco, semaforo, semaforoDaLinha } from '../promocoes/projecao.ts';
+import { ehParticipando, liquidoNoPreco, MSG_PISO_PROMOCAO, PRECO_MIN_PROMOCAO, semaforo, semaforoDaLinha } from '../promocoes/projecao.ts';
 import type { ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import { type Acao, ofertaFixaNova } from './tipos.ts';
 
@@ -20,8 +20,6 @@ export interface Recusa { ml_item_id: string; motivo: string; semaforo?: Semafor
 export type SemaforoExato = (linha: LinhaCentral, preco: number) => Promise<Semaforo>;
 
 export const MAX_ITENS = 500;
-/** Abaixo disto o comprador perde o frete grátis (regra do Diego): LIGHTNING, SMART_LIGHTNING e PRICE_MATCHING. */
-export const PRECO_MIN_RELAMPAGO = 19;
 const TIPOS = new Set(['DEAL', 'SMART', 'LIGHTNING', 'SMART_LIGHTNING', 'PRICE_MATCHING']);
 const reais = (n: number) => n.toFixed(2).replace('.', ',');
 const centavos = (n: number) => Math.round(n * 100);
@@ -99,6 +97,7 @@ export async function validarPedido(
         recusar(`O preço da promoção precisa ser menor que o original (${reais(l.preco_original)})`);
         continue;
       }
+      if (preco < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
       const s = await semaforoReal(l, preco, exato);
       if ((s === 'vermelho' || s === 'indisponivel') && !confirmado) {
         recusar('Resultado vermelho ou sem cálculo: confirme o risco para incluir', s);
@@ -124,18 +123,19 @@ export async function validarPedido(
         recusar(`Preço fora da faixa do ML (${reais(l.preco_min)} a ${reais(l.preco_max)})`);
         continue;
       }
-      // Piso da Relâmpago fica antes do semáforo: risco confirmado não libera.
-      if (tipo === 'LIGHTNING' && p < PRECO_MIN_RELAMPAGO) { recusar('Abaixo de R$ 19 o comprador perde o frete grátis'); continue; }
+      // Piso fica antes do semáforo: risco confirmado não libera.
+      if (p < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
       preco = p;
     } else if (ofertaFixaNova(tipo)) {
       // Preço fixo do ML: o exibido no preview (it.preco) precisa ser o da Central; decidir compara com a leitura fresca.
       const atual = l.preco_promo;
       if (atual == null) { recusar('O ML não informou o preço da oferta'); continue; }
       if (typeof it.preco !== 'number' || centavos(it.preco) !== centavos(atual)) { recusar(`O preço da oferta mudou: agora ${reais(atual)}`); continue; }
-      if (atual < PRECO_MIN_RELAMPAGO) { recusar('Abaixo de R$ 19 o comprador perde o frete grátis'); continue; }
+      if (atual < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
       preco = it.preco;
     } else {
       preco = l.preco_promo; // SMART: o preço é o da oferta do ML (informativo)
+      if (preco != null && preco < PRECO_MIN_PROMOCAO) { recusar(MSG_PISO_PROMOCAO); continue; }
     }
     // Trava financeira: vermelho/indisponivel só entra com o risco confirmado (checkbox separado no preview).
     const s = await semaforoReal(l, preco, exato);

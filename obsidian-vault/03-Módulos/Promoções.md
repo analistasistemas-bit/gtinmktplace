@@ -84,6 +84,11 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Depois de aderir, o ML leva ~2 min para refletir: nova adesão ao mesmo anúncio fica barrada por 30 min.
 - Tipo de campanha que o app não sabe ativar: aviso uma vez por org (Telegram/sino, categoria Integração) e mensagem na tela indicando o Seller Center.
 
+### Piso de R$ 19 em toda campanha (emenda 2026-11-07)
+
+- Convidado com preço de campanha abaixo de R$ 19 não aparece em Sugestões nem em Convidados e não entra na contagem, em qualquer tipo. Abaixo disso o frete é do comprador e pode custar mais que o produto.
+- Quem já participa continua visível para poder sair. Aderir, alterar preço e Reverter abaixo de R$ 19 são recusados, mesmo com "Aderir mesmo assim".
+
 ### Alterar preço de quem já participa (emenda 2026-11-03, só DEAL)
 
 - "Alterar preço N" na aba **Em promoção** (com busca título/MLB/SKU) e na aba **Participando** da campanha; mesmo painel da adesão (Desconto % / Preço R$ → Aplicar a todos, recebe·lucro·margem do servidor).

@@ -75,6 +75,28 @@ describe('validarPedido', () => {
     expect(await validarPedido('aderir', 'DEAL', muitos, central(), semExato))
       .toEqual({ ok: false, erro: 'No máximo 500 anúncios por operação.' });
   });
+  describe('piso de R$ 19 em todos os tipos', () => {
+    const MOTIVO = 'Abaixo de R$ 19 o comprador perde o frete grátis';
+    const faixa = { preco_min: 7, preco_max: 50, preco_original: 60 };
+    it('DEAL aderir: 18,99 recusa, mesmo com risco confirmado; 19 passa', async () => {
+      const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 18.99, confirmado_risco: true }], central(linha(faixa)), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: MOTIVO }]);
+      const ok = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19 }], central(linha({ ...faixa, preco_avaliado: 19 })), semExato);
+      expect(ok.ok).toBe(true);
+    });
+    it('SMART aderir: oferta abaixo de 19 recusa', async () => {
+      const r = await validarPedido('aderir', 'SMART', [{ ml_item_id: 'MLB1', confirmado_risco: true }], central(linha({ preco_promo: 18 })), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: MOTIVO }]);
+    });
+    it('alterar_preco: 18,99 recusa, mesmo com risco confirmado', async () => {
+      const r = await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 18.99, confirmado_risco: true }], central(linha({ status: 'started', preco_original: 60 })), semExato);
+      expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: MOTIVO }]);
+    });
+    it('sair continua livre abaixo de 19', async () => {
+      const r = await validarPedido('sair', 'DEAL', [{ ml_item_id: 'MLB1' }], central(linha({ status: 'started', preco_promo: 16.53 })), semExato);
+      expect(r.ok).toBe(true);
+    });
+  });
   it('DEAL: preço fora da faixa ou ausente → motivo', async () => {
     const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19.5 }], central(linha()), semExato);
     expect(r).toEqual({ ok: false, erro: 'Alguns anúncios não podem entrar na operação.',
@@ -84,15 +106,15 @@ describe('validarPedido', () => {
   });
   it('vermelho sem confirmação → motivo com o semáforo real; com confirmação → ok', async () => {
     const exato = async (): Promise<Semaforo> => 'vermelho';
-    const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 12 }], central(linha()), exato);
+    const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19 }], central(linha({ preco_max: 50 })), exato);
     expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', semaforo: 'vermelho',
       motivo: 'Resultado vermelho ou sem cálculo: confirme o risco para incluir' }]);
-    const ok = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 12, confirmado_risco: true }], central(linha()), exato);
-    expect(ok).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 12, semaforo: 'vermelho', confirmado_risco: true }] });
+    const ok = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19, confirmado_risco: true }], central(linha({ preco_max: 50 })), exato);
+    expect(ok).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 19, semaforo: 'vermelho', confirmado_risco: true }] });
   });
   it('indisponivel também exige confirmação', async () => {
-    const l = linha({ projecao: [cor({ custo: null })] });
-    const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 15 }], central(l), semExato);
+    const l = linha({ projecao: [cor({ custo: null })], preco_max: 50, preco_avaliado: 19 });
+    const r = await validarPedido('aderir', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19 }], central(l), semExato);
     expect(r.ok === false && r.itens?.[0].semaforo).toBe('indisponivel');
   });
   it('sair de item convidado → motivo; sair de participando não pede semáforo', async () => {
@@ -106,13 +128,13 @@ describe('validarPedido', () => {
     expect(r.ok === false && r.itens?.[0].motivo).toBe('O anúncio não está como Convidado nesta promoção');
   });
   it('SMART aderir usa preco_promo (ignora o preço enviado)', async () => {
-    const l = linha({ preco_sugerido: null, preco_promo: 15, preco_avaliado: 15, preco_min: null, preco_max: null });
+    const l = linha({ preco_sugerido: null, preco_promo: 19, preco_avaliado: 19, preco_min: null, preco_max: null });
     const r = await validarPedido('aderir', 'SMART', [{ ml_item_id: 'MLB1', preco: 3 }], central(l), semExato);
-    expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 15, semaforo: 'verde', confirmado_risco: false }] });
+    expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 19, semaforo: 'verde', confirmado_risco: false }] });
   });
   it('fora da Central e repetido → motivo', async () => {
     const r = await validarPedido('aderir', 'DEAL',
-      [{ ml_item_id: 'MLB1', preco: 15 }, { ml_item_id: 'MLB1', preco: 15 }, { ml_item_id: 'MLB9', preco: 15 }], central(linha()), semExato);
+      [{ ml_item_id: 'MLB1', preco: 19 }, { ml_item_id: 'MLB1', preco: 19 }, { ml_item_id: 'MLB9', preco: 19 }], central(linha({ preco_max: 50, preco_avaliado: 19 })), semExato);
     expect(r.ok === false && r.itens).toEqual([
       { ml_item_id: 'MLB1', motivo: 'Anúncio repetido no pedido' },
       { ml_item_id: 'MLB9', motivo: 'O anúncio não está nesta promoção na Central' },
@@ -149,8 +171,8 @@ describe('validarPedido — alterar_preco', () => {
   const exatoVerde = vi.fn(async () => 'verde' as Semaforo);
 
   it('participando DEAL: aceita, preço normalizado a centavos e semáforo exato no preço novo', async () => {
-    const r = await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 15.004 }], central(part()), exatoVerde);
-    expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 15, semaforo: 'verde', confirmado_risco: false }] });
+    const r = await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19.004 }], central(part()), exatoVerde);
+    expect(r).toEqual({ ok: true, itens: [{ ml_item_id: 'MLB1', titulo: 'Caneca', preco: 19, semaforo: 'verde', confirmado_risco: false }] });
   });
   it('não DEAL, convidado, sem preço ou preço ≥ original → recusa com motivo', async () => {
     expect(await validarPedido('alterar_preco', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 15 }], central(part()), exatoVerde))
@@ -164,9 +186,9 @@ describe('validarPedido — alterar_preco', () => {
   });
   it('trava financeira: vermelho sem risco confirmado → recusa; com risco → aceita', async () => {
     const exatoVermelho = vi.fn(async () => 'vermelho' as Semaforo);
-    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 11 }], central(part()), exatoVermelho))
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19 }], central(part()), exatoVermelho))
       .toMatchObject({ ok: false, itens: [{ semaforo: 'vermelho' }] });
-    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 11, confirmado_risco: true }], central(part()), exatoVermelho))
+    expect(await validarPedido('alterar_preco', 'DEAL', [{ ml_item_id: 'MLB1', preco: 19, confirmado_risco: true }], central(part()), exatoVermelho))
       .toMatchObject({ ok: true });
   });
 });

@@ -11,6 +11,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-07
 
+- **Piso de R$ 19 em toda campanha** (emenda [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): convidado abaixo de R$ 19 some de Sugestões, Convidados e da contagem; servidor recusa aderir, alterar preço e Reverter abaixo do piso em qualquer tipo. Antes só Relâmpago e ofertas fixas.
 - **Alterar preço com oferta e atacado, Fatia 1** ([[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]], Proposto): em produção desde 2026-11-07 (main `47fe66f5`; `operacoes-massa` v42, `publish-familia-ml` v156, `update-familia-ml` v156, `reconciliar-convergencia-up` v84); 1ª operação real pendente. Fatia 2 suspensa (ML recusa subir oferta, `PRICE_GT_CURRENT`); Fatias 3 e 4 não feitas. Medido: Relâmpago `started` mantém a oferta; SMART sem reconvite em 2 h.
 
 ## 2026-11-05
