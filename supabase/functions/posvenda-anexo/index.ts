@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
   catch { return erro('Falha ao falar com o Mercado Livre. Tente de novo.', 502); }
 
   if (resp.status === 403) return erro('Reconecte a conta do Mercado Livre em Configurações → Conexões (falta permissão de escrita).', 403);
-  if (resp.status === 404) return erro('Reclamação não encontrada no Mercado Livre.', 404);
+  if (resp.status === 404) return erro(porPack ? 'Anexo não aceito pelo Mercado Livre.' : 'Reclamação não encontrada no Mercado Livre.', 404);
   if (!resp.ok) return erro(`O ML recusou o arquivo (${resp.status}).`, 502);
   const nome = nomeDoAnexo(await resp.json().catch(() => null), destino as DestinoAnexo);
   if (!nome) return erro('O ML não devolveu o identificador do anexo', 502);

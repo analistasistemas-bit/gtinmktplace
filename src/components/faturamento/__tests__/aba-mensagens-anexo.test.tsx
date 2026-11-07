@@ -210,6 +210,33 @@ describe('envio de resposta', () => {
     await waitFor(() => expect(responderMock).toHaveBeenCalledTimes(2));
     expect(responderMock.mock.calls[1][2].operacao_id).not.toBe(responderMock.mock.calls[0][2].operacao_id);
   });
+
+  it('conferir_nao_confirmada_encerra_a_operacao_e_o_proximo_envio_e_novo', async () => {
+    responderMock.mockResolvedValueOnce(resp('enviada', true)).mockResolvedValueOnce(resp('confirmada'));
+    verificarMock.mockResolvedValueOnce(resp('inconclusiva'));
+    renderAba(); await abrir();
+    await userEvent.type(caixa(), 'Oi');
+    await userEvent.click(enviar());
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Conferir no Mercado Livre' }));
+    await waitFor(() => expect(verificarMock).toHaveBeenCalled());
+    await userEvent.click(await within(card()).findByRole('button', { name: 'Responder' }));
+    await waitFor(() => expect(responderMock).toHaveBeenCalledTimes(2));
+    expect(responderMock.mock.calls[1][2].operacao_id).not.toBe(responderMock.mock.calls[0][2].operacao_id);
+  });
+
+  it('busca_atrasada_nao_recoloca_pendencia_depois_de_liberar', async () => {
+    CONVERSAS = [conversa({ envioPendente: PENDENTE })];
+    let resolver: (v: unknown) => void = () => {};
+    buscarPendenteMock.mockReturnValue(new Promise((r) => { resolver = r; }));
+    liberarMock.mockResolvedValueOnce(resp('inconclusiva'));
+    renderAba(); await abrir();
+    await userEvent.click(within(card()).getByRole('button', { name: 'Já conferi, liberar envio' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Liberar envio' }));
+    expect(await within(card()).findByRole('textbox')).toBeInTheDocument();
+    resolver(PENDENTE);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(card()).getByRole('textbox')).toBeInTheDocument();
+  });
 });
 
 describe('seleção de arquivo', () => {
@@ -276,5 +303,13 @@ describe('anexo recebido no balão', () => {
     expect(baixarMock).not.toHaveBeenCalled();
     await abrir();
     await waitFor(() => expect(baixarMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('recolher_a_conversa_revoga_a_miniatura', async () => {
+    CONVERSAS = [conversa({}, 'Olá', [anexoImg])];
+    renderAba(); await abrir();
+    await within(card()).findByRole('img', { name: 'foto-defeito.png' });
+    await userEvent.click(within(card()).getByRole('button', { name: 'Recolher' }));
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:teste'));
   });
 });

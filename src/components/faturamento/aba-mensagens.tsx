@@ -56,6 +56,8 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const inputArquivo = useRef<HTMLInputElement>(null);
   // Tentativa em curso: o mesmo texto+arquivo reaproveita operacao_id e o anexo já enviado.
   const tentativaRef = useRef<{ operacao_id: string; anexo: string | null; chave: string } | null>(null);
+  // Conta conferir/liberar: resposta atrasada de buscarEnvioPendente não desfaz o que eles resolveram.
+  const resolucoesRef = useRef(0);
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
@@ -91,7 +93,10 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
     if (!abrindo) return;
     // Cache da lista pode estar defasado: confirma a pendência ao abrir. Só aplica achado positivo
     // (leitura que falha devolve null e não pode apagar uma pendência real).
-    void buscarEnvioPendente(c.pack_id).then((p) => { if (p && !enviandoRef.current) setPendenteLocal(p); });
+    const resolucoes = resolucoesRef.current;
+    void buscarEnvioPendente(c.pack_id).then((p) => {
+      if (p && !enviandoRef.current && resolucoesRef.current === resolucoes) setPendenteLocal(p);
+    });
     // Só chama o ML quando há recebida não lida lá E o conjunto difere do último marcado COM SUCESSO
     // neste pack (mapa no AbaMensagens: sobrevive a paginar/filtrar, que desmontam o card).
     const chave = [...c.idsNaoLidosML].sort().join(',');
@@ -184,6 +189,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
 
   async function conferir() {
     if (!pendente || resolvendo) return;
+    resolucoesRef.current++;
     setResolvendo(true);
     try {
       const r: RespostaEnvio = await verificarEnvio(c.pack_id, pendente.operacao_id);
@@ -192,17 +198,23 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         setPendenteLocal({ operacao_id: r.operacao_id, estado: r.estado });
         toast.info('Ainda sem confirmação do Mercado Livre.');
       } else {
+        tentativaRef.current = null; // operação encerrada: o próximo envio precisa de operacao_id novo
         setPendenteLocal(null);
         toast.info('O envio não foi confirmado. Você pode enviar de novo.');
+        await qc.invalidateQueries({ queryKey: ['mensagens'] });
       }
     } catch (e) {
-      if ((e as ErroEdge).estado === 'recusada' || (e as ErroEdge).estado === 'cancelada') { tentativaRef.current = null; setPendenteLocal(null); }
+      if ((e as ErroEdge).estado === 'recusada' || (e as ErroEdge).estado === 'cancelada') {
+        tentativaRef.current = null; setPendenteLocal(null);
+        await qc.invalidateQueries({ queryKey: ['mensagens'] });
+      }
       toast.error(`Falha ao conferir: ${(e as Error).message}`);
     } finally { setResolvendo(false); }
   }
 
   async function liberar() {
     if (!pendente || resolvendo) return;
+    resolucoesRef.current++;
     setResolvendo(true);
     try {
       await liberarEnvio(c.pack_id, pendente.operacao_id);
