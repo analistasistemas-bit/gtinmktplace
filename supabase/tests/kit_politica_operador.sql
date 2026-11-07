@@ -53,9 +53,16 @@ begin
   perform pg_temp.afirmar(pg_temp.pol('A') = '5/false', 'reativar sem bloqueio é idempotente');
 end $$;
 
--- Só o service role executa.
+-- Só o service role executa. E o embed `organizations(modulos_habilitados)` que as edges acrescentam às leituras
+-- de marketplace_connections e operacoes_massa precisa de exatamente uma FK para organizations em cada tabela.
 do $$
 begin
+  perform pg_temp.afirmar((select count(*) from pg_constraint where contype = 'f'
+    and conrelid = 'public.marketplace_connections'::regclass and confrelid = 'public.organizations'::regclass) = 1,
+    'marketplace_connections: uma FK para organizations');
+  perform pg_temp.afirmar((select count(*) from pg_constraint where contype = 'f'
+    and conrelid = 'public.operacoes_massa'::regclass and confrelid = 'public.organizations'::regclass) = 1,
+    'operacoes_massa: uma FK para organizations');
   perform pg_temp.afirmar(not has_function_privilege('authenticated',
     'public.kit_politica_operador(uuid, text[], boolean, jsonb)', 'execute'), 'authenticated não executa');
   perform pg_temp.afirmar(has_function_privilege('service_role',
