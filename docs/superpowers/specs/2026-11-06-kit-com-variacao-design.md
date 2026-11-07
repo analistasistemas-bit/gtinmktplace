@@ -378,6 +378,10 @@ SKU Guardado nunca recebe `reativar`.
    sem `error` em Blusas, Jaquetas e Regatas, com ou sem `MAIN_COLOR`, até 255 caracteres. `SIZE` sem guia
    reprova (`2610`), e guia de outro vendedor também (`2617`), então a base precisa de guia própria. Falta
    a publicação real, que prova seletor e agrupamento.
+   **Publicação real, 07/11, inconclusiva (Daludi, 4 itens):** o ML aceitou com 201 e deu o mesmo `family_id`
+   aos 4, mas em minutos todos foram para `under_review` / `waiting_for_patch`, e a página `/up` não abriu.
+   Seletor não foi visto. Causa não identificada: as fotos vieram de `MLB5265172927`, item `forbidden`, e o
+   título tinha "Teste"; a cor combinada não pode ser descartada. Itens excluídos em seguida, sem venda.
 7. **Imagem por IA, medido em 07/11 (3 gerações, Jaqueta Daludi, `gemini-2.5-flash-image`):** custo cerca de
    US$ 0,039 por imagem. Cor e fundo corretos, mas **modelagem não fiel**: gola alta e sem elástico na
    barra, com o original cropped e barra elástica. Saída de 832×1248, abaixo do ideal. Entrada era foto com

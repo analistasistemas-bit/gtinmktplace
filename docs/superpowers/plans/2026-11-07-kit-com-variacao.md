@@ -386,7 +386,7 @@ Só executa se a Task 0 aprovar imagem por IA.
 - Modify: `supabase/functions/_shared/ai/tokens.ts`, `src/components/configuracoes/secao-ia.tsx`, `src/components/kit-variacao/dialog-criar-kit-variacao.tsx`
 - Test: `supabase/functions/_shared/ai/__tests__/imagem.test.ts`
 
-Exige módulo `imagem_ia` e usa `ai_model_imagem`. Conferir o `check` de `20260713120000_ai_model_por_org.sql`, que aceita só um slug. Modelos de imagem entram em `PRECOS`. Texto de Configurações deixa de dizer "não usado".
+Exige módulo `imagem_ia` e usa `ai_model_imagem`. Modelo padrão: `google/gemini-nano-banana-2.1` **[Diego, 07/11]**, incluído em `src/lib/ai-modelos.ts`. Migration amplia o `check` de `20260713120000_ai_model_por_org.sql`, que aceita só um slug. O pedido à IA precisa descrever a peça, porque isso mudou o resultado no teste; descrever por visão antes de gerar. Saída adequada ao ML (vertical ou quadrada). Modelos de imagem entram em `PRECOS`. Texto de Configurações deixa de dizer "não usado".
 
 - [ ] **Step 1:** Testes: org sem módulo recebe 403; custo maior que zero; foto gerada não publica sem aprovação.
 - [ ] **Step 2:** Rodar. Esperado: falha.
