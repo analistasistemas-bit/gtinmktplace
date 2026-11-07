@@ -44,7 +44,7 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 select pg_temp.fid(n), '95000000-0000-0000-0000-000000000201', '95000000-0000-0000-0000-000000000101',
        '95000000-0000-0000-0000-000000000001', '095' || lpad(n::text, 5, '0'), 'Produto ' || n, 'UPDATE', 'pronto', 'nacional', gen_random_uuid(), 'MLB' || n || 'A',
        now() - interval '1 day', '[{"min_unidades":2,"desconto_pct":5}]'::jsonb
-from generate_series(1, 17) n;
+from generate_series(1, 18) n;
 -- Outros lotes: produto 13 com linha igual e sem config; 14 com cor própria em outra linha; 16 com config diferente;
 -- 17 com a linha pedida NULL e o lote antigo com config.
 insert into public.lotes (id, user_id, org_id, status, origem) values
@@ -176,7 +176,7 @@ declare
   e1 uuid := '95000000-0000-0000-0000-000000000801'; e2 uuid := '95000000-0000-0000-0000-000000000802';
   e3 uuid := '95000000-0000-0000-0000-000000000803'; e4 uuid := '95000000-0000-0000-0000-000000000804';
   e5 uuid := '95000000-0000-0000-0000-000000000805'; e6 uuid := '95000000-0000-0000-0000-000000000806';
-  e7 uuid := '95000000-0000-0000-0000-000000000807';
+  e7 uuid := '95000000-0000-0000-0000-000000000807'; e8 uuid := '95000000-0000-0000-0000-000000000808';
   v_cinco jsonb := '[{"min_unidades":2,"desconto_pct":5}]'; v_dez jsonb := '[{"min_unidades":2,"desconto_pct":10}]';
   v_tok uuid := gen_random_uuid(); v_i public.operacoes_massa_itens;
 begin
@@ -196,6 +196,12 @@ begin
   perform public.reajuste_atacado_concluir(v_org, e2);
   perform pg_temp.ok(pg_temp.fam(13) = v_cinco and (select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000351') = v_cinco, 'Reverter: as linhas com config voltam');
   perform pg_temp.ok((select f.atacado from public.familias f where f.id = '95000000-0000-0000-0000-000000000352') is null, 'Reverter: a linha NULL volta a NULL');
+
+  -- Revisão desligou o atacado depois do último passo: todas as linhas NULL com `esperado` não nulo → não sobrescreve.
+  perform pg_temp.op(e8, 18);
+  update public.familias set atacado = null where id = pg_temp.fid(18);
+  perform public.reajuste_atacado_concluir(v_org, e8);
+  perform pg_temp.ok(pg_temp.fam(18) is null and pg_temp.ent(e8)->>'status' = 'nao_aplicado' and pg_temp.ent(e8)->>'motivo' like '%mudou%', 'atacado desligado: nao_aplicado');
 
   -- Lote com outra config: nada é escrito.
   perform pg_temp.op(e5, 16);

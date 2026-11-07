@@ -324,7 +324,11 @@ begin
           v_motivo := 'Atacado por cor: ajuste na Revisão';
         elsif exists (select 1 from public.familias f
                       where f.org_id = p_org and f.codigo_pai = v_pai and f.atacado is not null
-                        and f.atacado is distinct from v_e->'esperado') then
+                        and f.atacado is distinct from v_e->'esperado')
+           -- Todas NULL com `esperado` não nulo: a Revisão desligou o atacado no meio da operação.
+           or (v_e->'esperado' <> 'null'::jsonb and not exists (
+                 select 1 from public.familias f
+                 where f.org_id = p_org and f.codigo_pai = v_pai and f.atacado = v_e->'esperado')) then
           v_motivo := 'A configuração de atacado da família mudou durante a operação';
         end if;
 
