@@ -127,6 +127,14 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Só o preço vai ao ML; o banco guarda o novo valor com a marca "Preço fixado pelo operador" (Revisão: "Voltar ao automático" remove). Promoção ativa (pending/started), Kit Virtual, catálogo, PxV e atacado PxQ ficam de fora; produto com reajuste ativo recusa publicar/UPDATE/migrar PxV.
 - Ver `docs/reference/edge-functions.md` (operacoes-massa) e ADR-0178.
 
+#### Alterar preço com oferta e atacado (ADR-0196, Fatia 1 — na branch `worktree-grill-alterar-preco`, NÃO deployada)
+
+- Reajustar ganha "Definir preço R$" e a tela de alterar preço em Publicados, com ofertas vigentes e editor de atacado. Promoção deixa de excluir o anúncio; a trava impede base igual ou abaixo de oferta vigente ou agendada.
+- Execução por passos com posse por token; faixas de atacado gravam antes de descer o base e depois de subir. O % do atacado vale para a família inteira (config efetiva = a única não nula entre as linhas do produto).
+- `[]` com faixa viva não limpa; config sem faixa viva não cria. Faixa sobre o preço do item no UPDATE e CREATE de UP.
+- Lacuna: o UPDATE de publicação baixa o base antes das faixas. Fatia 2 (DEAL baixa a oferta) suspensa: o ML recusa subir oferta (`PRICE_GT_CURRENT`). Fatias 3 e 4 não feitas.
+- Ver [[0196-alterar-preco-em-publicados-com-oferta-e-atacado|ADR-0196]].
+
 ## Correções de 2026-10-04
 
 - **Relâmpago duplicada** (`7cc6332d`): o ML lista o mesmo anúncio 2× (oferta genérica com estoque +

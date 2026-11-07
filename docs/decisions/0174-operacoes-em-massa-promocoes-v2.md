@@ -55,6 +55,8 @@ scope do momento da autorização.
 3. Perguntas que o spike responde: payload aceito por tipo; erro com scope read-only; depois de sair da SMART, o
    ML inscreve de novo sozinho?; depois de sair, o anúncio volta a ser convidado?; mudar o preço base de item
    participando em DEAL: recusa ou remove?; rate limit de escrita.
+   *(Respondido em 2026-11-06 pelo [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md): base acima da
+   oferta não é recusado nem remove a oferta; base abaixo remove a oferta em até ~90 s.)*
 
 ### Resultado parcial do spike (2026-09-27, DSA, `MLB7553152348`)
 

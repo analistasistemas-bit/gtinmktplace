@@ -1,6 +1,6 @@
 # ADR-0196 — Alterar preço em Publicados, com oferta e atacado na mesma tela
 
-**Status:** Proposto (2026-11-06) — decisões de produto fechadas com o Diego; implementação não iniciada
+**Status:** Proposto (2026-11-06) — decisões de produto fechadas com o Diego; Fatia 1 implementada na branch `worktree-grill-alterar-preco` (não deployada, não mergeada, não validada em produção)
 **Data:** 2026-11-06
 **Decisor:** Diego
 **Relacionado:** [ADR-0178](0178-reajuste-de-preco-em-massa.md) (emenda os itens 5 e "Alternativas descartadas"),
@@ -48,8 +48,14 @@ Segunda rodada (2026-11-06, autorizada pelo Diego):
   `sale_price` volta ao base em segundos. Depois de sair, o base aceitou ficar abaixo da oferta antiga.
 - Oferta pode ter `top_deal_price`, um segundo preço menor (MLB7906365074). `/prices` lista os dois como `promotion`.
 
-**Não medido:** Relâmpago `started`, duração da âncora de credibilidade, reconvite da SMART e readesão depois de
-baixar o base, oferta DEAL `started` subindo, par de catálogo e Kit Virtual.
+Terceira rodada (2026-11-07):
+
+- **Relâmpago `started` (MLB7244917852, 07/11 00:20 BRT):** base +R$ 1 e restaurado; a oferta `started` seguiu
+  intacta em 131,97.
+- **SMART (MLB7245326808):** sem reconvite depois de 2 h.
+- **Âncora de credibilidade (Zaven, MLB5473206895):** durou mais de 2 h.
+
+**Não medido:** readesão depois de baixar o base, oferta DEAL `started` subindo, par de catálogo e Kit Virtual.
 
 ## Decisão
 
@@ -103,3 +109,46 @@ Se um teste contrariar uma decisão, o caso volta para decisão do Diego antes d
 - **Sair sempre da promoção:** lento, desnecessário acima da oferta e com risco de não voltar à campanha.
 - **Deixar o ML remover a oferta:** a volta ao preço antigo foi recusada por credibilidade.
 - **Atacado em R$ por anúncio:** diverge do % da família e o próximo UPDATE sobrescreveria.
+
+## Implementação da Fatia 1 (2026-11-07)
+
+Está na branch `worktree-grill-alterar-preco`. **Não deployada, não mergeada e não validada em produção.** Plano:
+`docs/superpowers/plans/2026-11-06-alterar-preco-publicados.md`.
+
+**O que entrou**
+
+- Definir preço R$ no preview do Reajustar (`TipoAjuste 'definir'`) e tela de alterar preço em Publicados, com ofertas
+  vigentes, editor de atacado e faixas.
+- Trava de oferta: o base nunca é enviado igual ou abaixo de uma oferta vigente ou agendada, em qualquer tipo.
+  Promoção deixou de excluir o anúncio. Relâmpago `started` também entra (medido em 07/11).
+- Execução por passos duráveis (`operacoes_massa_itens.passos`), com posse por `lease_token` e `lease_ate`; sem o
+  token nada grava. Escrita que o ML aceita e não aplica, depois de 3 tentativas provadas, falha o passo e compensa.
+- Atacado: faixas gravadas antes de descer o base e depois de subir (invariante da decisão 7). Edição do % por
+  família em `operacoes_massa.atacado_familias`, concluída por `reajuste_atacado_concluir`.
+- UP UPDATE e CREATE aplicam as faixas sobre o preço de cada item.
+- Migrations: `20261107001726`, `20261107014545`, `20261107020152`, `20261107021935`.
+
+**Decisões da execução**
+
+- **Config efetiva do produto:** a única não nula entre as linhas do mesmo `codigo_pai` (em 93 de 104 produtos com
+  atacado a linha canônica é NULL). A edição grava em todas as linhas, inclusive NULL; linha com outro valor recusa.
+  Custo se errado: o próximo UPDATE passa a aplicar atacado em produto cuja linha mais recente era NULL.
+- **`[]` com faixa viva não limpa; config sem faixa viva não cria.** Alterar preço nunca apaga nem inventa faixa. O
+  recálculo só ocorre com as mesmas quantidades entre config e faixas vivas.
+- **Faixas sobre o preço do item** no UPDATE e no CREATE de UP, para a cor barata não ficar com faixa acima do base.
+- **Compensação:** recusa definitiva depois de 3 tentativas termina `erro` e libera a reserva; as faixas seguem abaixo
+  do base. Faixas desistidas depois do base persistem direto, sem `ml_confirmado`. O passo `faixas` guarda a `config`
+  efetiva para o Reverter comparar.
+- **`temAtacado`** saiu de `motivoInelegivel` junto com a gravação de faixas pelo executor, sem commit intermediário
+  que liberasse atacado sem faixas.
+
+**Lacuna conhecida:** o UPDATE de publicação baixa o base antes das faixas, então a faixa pode ficar igual ou acima do
+base por segundos (mais, se falhar). É fluxo preexistente, fora do escopo desta operação; decisão do Diego pendente.
+
+**Fatias**
+
+- Fatia 2 (DEAL baixa a oferta antes do base): **suspensa**. O ML recusa subir oferta (`400 PRICE_GT_CURRENT`), então
+  a volta prometida ao operador não seria possível.
+- Fatias 3 (SMART e Relâmpago em etapas) e 4 (catálogo, Kit Virtual, Legacy com variações): não feitas.
+- Deploy pendente: `db push` das 4 migrations antes das edges; redeployar `operacoes-massa`, `publish-familia-ml`,
+  `update-familia-ml` e as funções que usam `user-products`. Medir custo do preview e da escrita antes.

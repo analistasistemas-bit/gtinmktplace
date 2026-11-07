@@ -1055,6 +1055,15 @@ RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por 
 - RPCs (todas `service_role` only; identidade de serialização `(org_id, codigo_pai)`, locks produto → MLB): `reajuste_codigo_pai(p_org, p_ml_item)`, `reajuste_ativo_produto(p_org, p_codigo_pai)`, `reajuste_trava_produto`, `reajuste_reivindicar(p_org, p_operacao, p_ml_item)` (item com `etapa` = retomada: trava pelo `codigo_pai` gravado no item e nunca recusa por "não encontrado" — o vínculo pode ter sido removido depois da escrita no ML), `reajuste_variacoes_do_mlb(p_org, p_codigo_pai, p_ml_item, p_ml_variation_ids)`, `reajuste_confirmar(p_org, p_operacao, p_confirmacoes)`, `reajuste_persistir(p_org, p_operacao, p_ml_item, numeric, jsonb)`, `familia_reservar_publicacao(p_org, p_familia_ids, p_operacao)`, `familia_reservar_migracao_pxv(p_org, p_codigo_pai, p_campos)`. `operacoes_massa_reivindicar` foi substituída (`aderir` ganha lock do MLB e a barreira do reajuste).
 - Efeito em `variacoes`: confirmado no ML → `preco_publicacao` = novo, `preco_editado_pelo_operador = true`, `preco_publicado_ml` = confirmado.
 
+#### Passos, posse e atacado por família (ADR-0196, Fatia 1) — migrations na branch `worktree-grill-alterar-preco`, NÃO aplicadas
+
+*Migrations `20261107001726_reajuste_passos.sql`, `20261107014545_reajuste_persistir_mensagem.sql`, `20261107020152_reajuste_passo_tentativas.sql` e `20261107021935_reajuste_atacado_familia.sql`.*
+
+- `operacoes_massa_itens`: `passos` jsonb (estado de cada escrita), `lease_token` uuid e `lease_ate` timestamptz (posse de 2 min, renovada a cada transição; sem o token nada grava), `avaliacoes` jsonb.
+- `operacoes_massa`: `atacado_familias` jsonb, `[{familia_id, novo, esperado, status: pendente|aplicado|nao_aplicado, motivo}]`. Entrada `pendente` de operação confirmada reserva o produto até `reajuste_atacado_concluir`.
+- RPCs novas (`service_role` only): `reajuste_passo_marcar` (transição de passo; `false` = sem posse; conta `tentativas`; `p_recusada` conta `recusas_volta`), `reajuste_item_gravar` (grava só as chaves enviadas), `reajuste_atacado_dona(p_org, p_codigo_pai)`, `reajuste_mlbs_familia(p_org, p_familia)`, `reajuste_atacado_concluir(p_org, p_operacao)` (compare-and-set de `familias.atacado` em todas as linhas do `codigo_pai`; devolve `{pendentes, atacado_familias}`).
+- RPCs substituídas: `reajuste_reivindicar` (devolve `ok:<token>`), `operacoes_massa_reivindicar`, `reajuste_confirmar` (família inteira ou nada), `reajuste_ativo_produto` (considera a edição de atacado pendente), `reajuste_persistir` (ganha `p_token` e `p_mensagem`; devolve `sem_posse`).
+
 ## Tráfego e oferta (ADR-0172, Fatia 2b)
 
 Visitas por dia e preço de oferta observado por MLB, coletados pelo worker `coletar-trafego-ml`

@@ -113,6 +113,7 @@
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha `etapa: 'simular'` (qualquer membro, só leitura, ≤ 50 anúncios): líquido exato num preço escolhido via `criarProjecaoExata` ||||
 | *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
+| *(ADR-0196 Fatia 1, na branch `worktree-grill-alterar-preco`, NÃO deployada)* `operacoes-massa` reajusta com oferta e atacado: "Definir preço R$", passos duráveis com `lease_token`, faixas de atacado; `publish-familia-ml`/`update-familia-ml` aplicam faixa sobre o preço de cada item ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Ads por grupo (ADR-0172, Fatia 2c)** ||||
@@ -1983,6 +1984,13 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **migrar-preco-por-variacao**: a reserva `solicitada` passa pela RPC `familia_reservar_migracao_pxv` (recusa produto com reajuste ativo).
 - **ingest-lote**: no UPDATE a cor casada herda `preco_editado_pelo_operador` (`preco-herdado.ts`, D15).
 - Deploy: ver [ADR-0178](../decisions/0178-reajuste-de-preco-em-massa.md) (Implementação).
+
+#### Alterar preço com oferta e atacado (ADR-0196, Fatia 1) — na branch `worktree-grill-alterar-preco`, NÃO deployada
+- **operacoes-massa**, `acao='reajustar'`: `TipoAjuste 'definir'` (preço R$ único); trava de oferta no preview e em `enviar` (nunca envia base igual ou abaixo de oferta vigente ou agendada; promoção deixa de excluir o anúncio); ofertas lidas por `lerOfertas`/`unirOfertas` (`reajuste/ofertas.ts`) e `GET /items/{id}/prices`.
+- **Passos duráveis** (`reajuste/passos.ts`, `operacoes_massa_itens.passos`): cada escrita vira passo com posse por `lease_token` (lease de 2 min, renovado a cada transição); sem o token nada grava (`sem_posse`). Escrita aceita que não pega depois de 3 tentativas falha o passo e compensa. Faixas de atacado (`reajuste/faixas.ts`) gravam antes de descer o base e depois de subir.
+- **Atacado por família:** `atacado_familias` na operação; `reajuste_atacado_concluir` grava `familias.atacado` por compare-and-set em todas as linhas do `codigo_pai`. `[]` com faixa viva não limpa; config sem faixa viva não cria.
+- **publish-familia-ml / update-familia-ml** (`_shared/user-products/atacado-por-item.ts`, `atualizar-familia-up.ts`, `publicar-familia-up.ts`): faixa calculada sobre o preço de cada item no UPDATE e no CREATE de UP. O UPDATE ainda baixa o base antes das faixas (lacuna conhecida, ADR-0196).
+- Deploy: `supabase db push` (4 migrations `20261107*`) antes das edges; redeployar `operacoes-massa`, `publish-familia-ml`, `update-familia-ml` e demais funções com `user-products`; conferir a versão ativa.
 
 ### Tráfego e oferta (ADR-0172, Fatia 2b)
 - **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde

@@ -1,5 +1,17 @@
 # PubliAI — Tasks
 
+## Alterar preço em Publicados com oferta e atacado (ADR-0196, Fatia 1) — 2026-11-07
+
+Na branch `worktree-grill-alterar-preco`. Não deployada, não mergeada, não validada em produção.
+
+- [x] Definir preço R$, trava de oferta, passos duráveis com posse por token, faixas de atacado antes/depois do base, edição do % por família, faixa sobre o preço do item no UPDATE e CREATE de UP. 4 migrations `20261107*`.
+- [x] Medição: Relâmpago `started` (MLB7244917852) mantém a oferta com o base alterado; SMART sem reconvite em 2 h; âncora da Zaven durou mais de 2 h.
+- [ ] Deploy: `supabase db push`, depois `operacoes-massa`, `publish-familia-ml`, `update-familia-ml` e funções com `user-products`; conferir versões.
+- [ ] Medir custo do preview e da escrita; screenshot real da tela; validação em produção.
+- [ ] Diego decidir: config efetiva do produto (única não nula entre as linhas) e o UPDATE que baixa o base antes das faixas.
+- [ ] Fatia 2 (DEAL baixa a oferta antes do base): suspensa, o ML recusa subir oferta (`PRICE_GT_CURRENT`).
+- [ ] Fatias 3 e 4 (SMART/Relâmpago em etapas; catálogo, Kit Virtual, Legacy com variações).
+
 ## Radar segue a ficha real do anúncio (ADR-0119 Errata 13) — 2026-11-06
 
 - [x] `sincronizarRadar` troca a ficha guardada pela ficha real do item (anúncio plano e único), com a trava de equivalência. A substituída é arquivada e volta sozinha. Sem oferta na ficha, `meu_preco` vem de `/sale_price` com `meu_preco_fora_da_ficha`: entra na sobra, não em posição, recortes ou alertas. Migration + `pulse-coletar` + frontend.
