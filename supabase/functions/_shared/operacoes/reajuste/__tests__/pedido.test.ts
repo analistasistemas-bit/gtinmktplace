@@ -66,17 +66,19 @@ describe('linhasDoRascunho', () => {
     ml_item_id: 'MLB1', codigo_pai: 'P1', variacao_ids: ['v1'], titulo: 'T', sku: null, preco_anterior: 100, preco: 110,
     avaliacao: { cores: [], pior: 'vermelho', tem_vermelho: true, tem_sem_dado: false },
     restaurar: [{ variacao_id: 'v1', esperado: { preco_publicacao: 100, preco_editado_pelo_operador: false }, novo: { preco_publicacao: 110, preco_editado_pelo_operador: true } }],
-    variacoes_ml: ['1'], situacao: 'elegivel', motivo: null, incluido: false, aviso: null,
+    variacoes_ml: ['1'], situacao: 'elegivel', motivo: null, incluido: false, aviso: null, ofertas: [],
+    passos: [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }],
   };
   it('status por situação; estado_anterior = restaurar; codigo_pai sempre gravado', () => {
     const [el, fora, igual] = linhasDoRascunho([
       base,
-      { ...base, ml_item_id: 'MLB2', situacao: 'fora', motivo: 'Kit', preco: 0, preco_anterior: 0, avaliacao: null, restaurar: null },
-      { ...base, ml_item_id: 'MLB3', situacao: 'sem_alteracao', preco: 100, avaliacao: null, restaurar: null },
+      { ...base, ml_item_id: 'MLB2', situacao: 'fora', motivo: 'Kit', preco: 0, preco_anterior: 0, avaliacao: null, restaurar: null, passos: null },
+      { ...base, ml_item_id: 'MLB3', situacao: 'sem_alteracao', preco: 100, avaliacao: null, restaurar: null, passos: null },
     ]);
-    expect(el).toMatchObject({ status: 'rascunho', estado_anterior: base.restaurar, codigo_pai: 'P1', semaforo: 'vermelho', incluido: false, preco: 110, preco_anterior: 100, variacao_ids: ['v1'] });
-    expect(fora).toMatchObject({ status: 'bloqueado', mensagem: 'Kit', preco: null, codigo_pai: 'P1', semaforo: null });
-    expect(igual).toMatchObject({ status: 'ja_estava', codigo_pai: 'P1' });
+    expect(el).toMatchObject({ status: 'rascunho', estado_anterior: base.restaurar, codigo_pai: 'P1', semaforo: 'vermelho', incluido: false, preco: 110, preco_anterior: 100, variacao_ids: ['v1'], passos: base.passos });
+    expect(el).not.toHaveProperty('ofertas');
+    expect(fora).toMatchObject({ status: 'bloqueado', mensagem: 'Kit', preco: null, codigo_pai: 'P1', semaforo: null, passos: null });
+    expect(igual).toMatchObject({ status: 'ja_estava', codigo_pai: 'P1', passos: null });
   });
 });
 

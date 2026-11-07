@@ -1,18 +1,22 @@
 // I5 — preview do reajuste no servidor (spec 2026-10-04: C1, C4, C5, D7, D10). Só leitura: monta os itens do
 // rascunho; quem grava (ou não, se executaveis = 0) é a edge (Task 7).
 import { pool } from '../../concorrencia/pool.ts';
+import { mensagemDe } from '../laco.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
-import { motivoInelegivel } from './elegibilidade.ts';
+import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
 import type { ClienteReajusteML } from './ml.ts';
-import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, OfertaVigente } from './tipos.ts';
+import { unirOfertas } from './ofertas.ts';
+import { planejarPassos } from './passos.ts';
+import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, OfertaVigente, Passo } from './tipos.ts';
 
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
-  sku: string | null; titulo: string | null; ehKit: boolean; temAtacado: boolean; promocaoBanco: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
+  sku: string | null; titulo: string | null; ehKit: boolean; temAtacado: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
 export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; titulo: string | null; sku: string | null;
   preco_anterior: number; preco: number; avaliacao: Avaliacao | null; restaurar: EntradaRestauracao[] | null; variacoes_ml: string[] | null;
-  situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null }
+  situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null;
+  ofertas: OfertaVigente[] | null; passos: Passo[] | null }
 // `restaurar` é o ÚNICO formato de estado: gravado na coluna `estado_anterior` (Task 7), lido pelo executor e enviado à RPC.
 export interface DepsPreview {
   expandir(familias: string[], mlItemIds: string[]): Promise<AlvoExpandido[]>;
@@ -61,7 +65,7 @@ export async function montarPreview(
   for (const a of alvos) {
     const b = porMl.get(a.ml_item_id);
     porMl.set(a.ml_item_id, !b ? a : {
-      ...b, ehKit: b.ehKit || a.ehKit, temAtacado: b.temAtacado || a.temAtacado, promocaoBanco: b.promocaoBanco || a.promocaoBanco,
+      ...b, ehKit: b.ehKit || a.ehKit, temAtacado: b.temAtacado || a.temAtacado,
       familiaPublicando: b.familiaPublicando || a.familiaPublicando, migracaoPxv: b.migracaoPxv || a.migracaoPxv,
     });
   }
@@ -69,24 +73,27 @@ export async function montarPreview(
   if (unicos.length > MAX_MLBS) {
     return { ok: false, erro: `No máximo ${MAX_MLBS} anúncios por operação (a seleção expandiu para ${unicos.length}).` };
   }
-  const itens = await pool(PARALELISMO, unicos, (a) => avaliarItem(a, p, deps, origem?.get(a.ml_item_id) ?? null));
+  const banco = await deps.ofertasBanco(unicos.map((a) => a.ml_item_id));
+  const itens = await pool(PARALELISMO, unicos, (a) => avaliarItem(a, p, deps, origem?.get(a.ml_item_id) ?? null, banco.get(a.ml_item_id) ?? null));
   // Reverter: item da origem que sumiu do cadastro aparece como não revertível, não some em silêncio.
   for (const ml of origem?.keys() ?? []) {
     if (unicos.some((a) => a.ml_item_id === ml)) continue;
     const o = origem!.get(ml)!;
     itens.push({
       ml_item_id: ml, codigo_pai: o.codigo_pai, variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
-      avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null,
+      avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null, ofertas: null, passos: null,
     });
   }
   return { ok: true, itens, executaveis: itens.filter((i) => i.situacao === 'elegivel').length };
 }
 
-async function avaliarItem(a: AlvoExpandido, p: PedidoPreview, deps: DepsPreview, orig: Origem | null): Promise<ItemPreview> {
+async function avaliarItem(
+  a: AlvoExpandido, p: PedidoPreview, deps: DepsPreview, orig: Origem | null, doBanco: OfertaVigente[] | null,
+): Promise<ItemPreview> {
   const ml = a.ml_item_id;
   const item: ItemPreview = {
     ml_item_id: ml, codigo_pai: a.codigo_pai, variacao_ids: [], titulo: a.titulo, sku: a.sku, preco_anterior: 0, preco: 0,
-    avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null,
+    avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null, ofertas: null, passos: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
 
@@ -108,9 +115,9 @@ async function avaliarItem(a: AlvoExpandido, p: PedidoPreview, deps: DepsPreview
   }
   if (orig && centavos(base) !== centavos(orig.preco)) return fora('Não revertível: o preço mudou depois do reajuste');
 
+  const ofertas = item.ofertas = unirOfertas([await deps.ml.lerOfertas(ml), doBanco]);
   const motivo = motivoInelegivel({
-    vivo, ehKit: a.ehKit, temAtacado: a.temAtacado, promocaoBanco: a.promocaoBanco,
-    promocaoML: await deps.ml.participaPromocaoML(ml), familiaPublicando: a.familiaPublicando, migracaoPxv: a.migracaoPxv,
+    vivo, ehKit: a.ehKit, temAtacado: a.temAtacado, ofertas, familiaPublicando: a.familiaPublicando, migracaoPxv: a.migracaoPxv,
   });
   if (motivo) return fora(motivo);
 
@@ -144,10 +151,19 @@ async function avaliarItem(a: AlvoExpandido, p: PedidoPreview, deps: DepsPreview
   item.preco = alvo;
   if (semAlteracao(base, alvo)) return { ...item, situacao: 'sem_alteracao' };
 
+  let passos: Passo[];
+  try {
+    const trava = motivoTravaOferta(alvo, ofertas!);
+    if (trava) return fora(trava);
+    passos = planejarPassos({ base, alvo, ofertas: ofertas!, ofertasNovas: {}, sair: [], faixasAntes: [], faixasAlvo: null });
+  } catch (e) {
+    return fora(mensagemDe(e));
+  }
+
   const avaliacao = await deps.avaliar(ml, alvo);
   const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, orig ? AVISO_D10 : null].filter(Boolean);
   return {
-    ...item, situacao: 'elegivel', avaliacao,
+    ...item, situacao: 'elegivel', avaliacao, passos,
     restaurar: orig
       ? orig.restaurar.map((r) => ({ variacao_id: r.variacao_id, esperado: r.novo, novo: r.esperado }))
       : ids.map((id) => ({ variacao_id: id, esperado: estados.get(id)!, novo: { preco_publicacao: alvo, preco_editado_pelo_operador: true } })),

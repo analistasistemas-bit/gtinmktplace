@@ -9,7 +9,6 @@ export type ResultadoPut = { kind: 'ok' } | { kind: 'sem_escrita'; status: numbe
 export interface ClienteReajusteML {
   lerVivo(itemId: string): Promise<VivoItem>;
   putPreco(itemId: string, alvo: number, variacaoIds: string[] | null): Promise<ResultadoPut>;
-  participaPromocaoML(itemId: string): Promise<boolean | null>;
   /** null = inconclusivo, nunca "sem ofertas". */
   lerOfertas(itemId: string): Promise<OfertaVigente[] | null>;
 }
@@ -115,30 +114,6 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
       // ponytail: 5xx e demais → desconhecido (a escrita pode ter acontecido; quem chama relê o vivo).
       if (r.status >= 400 && r.status < 500) return { kind: 'sem_escrita', status: r.status, mensagem };
       return { kind: 'desconhecido', mensagem };
-    },
-
-    async participaPromocaoML(itemId) {
-      const id = encodeURIComponent(itemId);
-      try {
-        const r = await get(`/seller-promotions/items/${id}?app_version=v2`);
-        if (r.status !== 200) return null;
-        const lista = await r.json();
-        if (!Array.isArray(lista)) return null;
-        const promos = lista as { id?: unknown; type?: unknown; status?: unknown }[];
-        if (promos.some((p) => ATIVA.has(String(p?.status)))) return true;
-        for (const p of promos.filter((p) => p?.status === 'candidate')) {
-          // Candidate sem id (ex.: PRICE_DISCOUNT = desconto próprio possível) não é campanha e não participa.
-          if (typeof p.id !== 'string' || !p.id) continue;
-          const rc = await get(`/seller-promotions/promotions/${encodeURIComponent(p.id)}/items?promotion_type=${encodeURIComponent(String(p.type))}&item_id=${id}&app_version=v2`);
-          if (rc.status !== 200) return null;
-          const r0 = ((await rc.json()) as { results?: { status?: unknown }[] | null })?.results?.[0];
-          if (r0 && typeof r0.status !== 'string') return null; // sem status = inconclusivo, nunca "não participa"
-          if (r0 && ATIVA.has(r0.status as string)) return true;
-        }
-        return false;
-      } catch {
-        return null;
-      }
     },
 
     async lerOfertas(itemId) {

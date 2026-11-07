@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
+import { oferta } from '../ofertas.ts';
+import { planejarPassos } from '../passos.ts';
 import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type PedidoPreview } from '../preview.ts';
 import { resumir } from '../avaliacao.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
-import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, Semaforo, VivoItem } from '../tipos.ts';
+import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, OfertaVigente, Semaforo, VivoItem } from '../tipos.ts';
+
+vi.mock('../passos.ts', async (original) => {
+  const m = await original<typeof import('../passos.ts')>();
+  return { ...m, planejarPassos: vi.fn(m.planejarPassos) };
+});
 
 const alvo = (ml: string, o: Partial<AlvoExpandido> = {}): AlvoExpandido => ({
   ml_item_id: ml, codigo_pai: `P-${ml}`, variacao_ids: [], variacoes_ml_esperadas: null, sku: `SKU-${ml}`, titulo: `T ${ml}`,
-  ehKit: false, temAtacado: false, promocaoBanco: false, familiaPublicando: false, migracaoPxv: false, ...o,
+  ehKit: false, temAtacado: false, familiaPublicando: false, migracaoPxv: false, ...o,
 });
 const vivo = (o: Partial<VivoItem> = {}): VivoItem => ({
   preco: 100, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false, ...o,
@@ -15,10 +22,12 @@ const cor = (s: Semaforo): CorAvaliada => ({
   variation_id: null, sku: null, custo: 10, piso: 20, origem: 'nacional', aliquota_pct: 8, comissao_pct: 16, comissao_fixa: 0,
   frete: 10, liquido: 50, semaforo: s, motivo: null,
 });
+const of = (id: string, preco: number | null, o: Partial<OfertaVigente> = {}) =>
+  ({ ...oferta({ promocao_id: id, tipo: 'DEAL', status: 'started', preco, offer_id: null, inicio: null, fim: null }), ...o });
 const est = (preco: number | null, editado: boolean): EstadoVariacao => ({ preco_publicacao: preco, preco_editado_pelo_operador: editado });
 
 function deps(o: {
-  alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; promoML?: boolean | null; semaforo?: Semaforo[];
+  alvos?: AlvoExpandido[]; vivos?: Record<string, VivoItem | Error>; ofertasML?: OfertaVigente[] | null; banco?: OfertaVigente[]; semBanco?: boolean; semaforo?: Semaforo[];
   estados?: Record<string, EstadoVariacao>; origem?: Awaited<ReturnType<DepsPreview['origem']>>;
 } = {}): DepsPreview {
   return {
@@ -35,10 +44,9 @@ function deps(o: {
         return v;
       }),
       putPreco: vi.fn(),
-      participaPromocaoML: vi.fn(async () => (o.promoML === undefined ? false : o.promoML)),
-      lerOfertas: vi.fn(async () => []),
+      lerOfertas: vi.fn(async () => (o.ofertasML === undefined ? [] : o.ofertasML)),
     },
-    ofertasBanco: vi.fn(async () => new Map()),
+    ofertasBanco: vi.fn(async (ids: string[]) => new Map(o.semBanco ? [] : ids.map((id): [string, OfertaVigente[]] => [id, o.banco ?? []]))),
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
   };
@@ -60,8 +68,8 @@ describe('montarPreview — pedido', () => {
   });
 
   it('dedup por MLB soma as flags de bloqueio (OU)', async () => {
-    const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1', { promocaoBanco: true })] }));
-    expect(r.ok && r.itens).toMatchObject([{ situacao: 'fora', motivo: 'Participando de promoção' }]);
+    const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1', { migracaoPxv: true })] }));
+    expect(r.ok && r.itens).toMatchObject([{ situacao: 'fora', motivo: 'Migração para preço por variação em curso' }]);
   });
 
   it('dedup por MLB', async () => {
@@ -111,9 +119,12 @@ describe('montarPreview — item', () => {
     ['kit', { alvos: [alvo('MLB1', { ehKit: true })] }, 'Kit Virtual não entra no reajuste'],
     ['catálogo', { vivos: { MLB1: vivo({ catalog_listing: true }) } }, 'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste'],
     ['atacado', { alvos: [alvo('MLB1', { temAtacado: true })] }, 'Anúncio com preço de atacado fica fora do reajuste'],
-    ['promoção no banco, ML false', { alvos: [alvo('MLB1', { promocaoBanco: true })], promoML: false }, 'Participando de promoção'],
-    ['promoção no ML', { promoML: true }, 'Participando de promoção'],
-    ['promoção inconclusiva', { promoML: null }, 'Não foi possível conferir promoções — tente de novo'],
+    ['promoção inconclusiva', { ofertasML: null }, 'Não foi possível conferir promoções — tente de novo'],
+    ['banco sem o MLB pedido', { semBanco: true }, 'Não foi possível conferir promoções — tente de novo'],
+    ['oferta sem preço comprovado', { banco: [of('P', null)] }, 'Não foi possível conferir promoções — tente de novo'],
+    ['Relâmpago em andamento', { ofertasML: [of('L', 50, { tipo: 'LIGHTNING' })] }, 'Relâmpago em andamento fica fora do reajuste'],
+    ['alvo abaixo da oferta do ML', { ofertasML: [of('P', 120)] }, 'Preço igual ou abaixo da oferta de R$ 120,00 — ajuste a oferta antes'],
+    ['alvo igual à oferta só do banco', { banco: [of('P', 110)] }, 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes'],
     ['família publicando', { alvos: [alvo('MLB1', { familiaPublicando: true })] }, 'Família em publicação/atualização'],
     ['migração PxV', { alvos: [alvo('MLB1', { migracaoPxv: true })] }, 'Migração para preço por variação em curso'],
     ['Legacy divergente', { vivos: { MLB1: vivo({ variacoes: [{ id: '1', preco: 100 }, { id: '2', preco: 90 }] }) } }, 'Variações com preços diferentes no ML'],
@@ -163,6 +174,41 @@ describe('montarPreview — item', () => {
   });
 });
 
+describe('montarPreview — ofertas', () => {
+  it('oferta abaixo do alvo: elegível, com as ofertas e o passo do base', async () => {
+    const it0 = await um(pct(10), deps({ ofertasML: [of('P', 80)] }));
+    expect(it0).toMatchObject({ situacao: 'elegivel', motivo: null, ofertas: [{ promocao_id: 'P', preco: 80 }] });
+    expect(it0.passos).toEqual([{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }]);
+  });
+
+  it('sem oferta: passo do base, ofertas vazias', async () => {
+    expect(await um(pct(10, '-'), deps())).toMatchObject({ situacao: 'elegivel', ofertas: [], passos: [{ tipo: 'base', anterior: 100, alvo: 90 }] });
+  });
+
+  it('une as fontes e consulta o banco uma vez só', async () => {
+    const d = deps({ alvos: [alvo('MLB1'), alvo('MLB2')], ofertasML: [of('P', 80)], banco: [of('Q', 90)] });
+    const r = await montarPreview({ ...pct(10), ml_item_ids: ['MLB1', 'MLB2'] }, d);
+    expect(r.ok && r.itens.map((i) => i.ofertas?.map((o) => o.promocao_id))).toEqual([['P', 'Q'], ['P', 'Q']]);
+    expect(d.ofertasBanco).toHaveBeenCalledTimes(1);
+    expect(d.ofertasBanco).toHaveBeenCalledWith(['MLB1', 'MLB2']);
+  });
+
+  it('sem alteração não trava nem planeja', async () => {
+    expect(await um(pct(0), deps({ ofertasML: [of('P', 120)] }))).toMatchObject({ situacao: 'sem_alteracao', passos: null });
+  });
+
+  it('trava devolve fora com passos nulos', async () => {
+    expect(await um(pct(10), deps({ ofertasML: [of('P', 120)] }))).toMatchObject({ situacao: 'fora', passos: null, restaurar: null, incluido: false });
+  });
+
+  it('planejarPassos lança → fora com a mensagem, sem derrubar o preview', async () => {
+    vi.mocked(planejarPassos).mockImplementationOnce(() => { throw new Error('base 110 igual ou abaixo da oferta'); });
+    const d = deps();
+    expect(await um(pct(10), d)).toMatchObject({ situacao: 'fora', motivo: 'base 110 igual ou abaixo da oferta', passos: null, executaveis: 0 });
+    expect(d.avaliar).not.toHaveBeenCalled();
+  });
+});
+
 describe('montarPreview — Reverter', () => {
   // origem: 100 → 110; banco antes {100, false}, gravado {110, true}
   const restOrigem: EntradaRestauracao[] = [{ variacao_id: 'V-1', esperado: est(100, false), novo: est(110, true) }];
@@ -176,6 +222,7 @@ describe('montarPreview — Reverter', () => {
     expect(it0).toMatchObject({ situacao: 'elegivel', preco_anterior: 110, preco: 100, variacao_ids: ['V-1'], codigo_pai: 'P-MLB1', executaveis: 1 });
     expect(it0.restaurar).toEqual([{ variacao_id: 'V-1', esperado: est(110, true), novo: est(100, false) }]);
     expect(it0.aviso).toContain('re-ingest');
+    expect(it0.passos).toEqual([{ tipo: 'base', anterior: 110, alvo: 100, estado: 'pendente' }]);
     expect(d.expandir).toHaveBeenCalledWith([], ['MLB1']);
     expect(d.variacoesDoMlb).toHaveBeenCalledWith('P-MLB1', 'MLB1', ['1']);
   });
@@ -185,6 +232,11 @@ describe('montarPreview — Reverter', () => {
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
   });
 
+  it('alvo igual ou abaixo de uma oferta → fora', async () => {
+    const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(110, true) }, origem, ofertasML: [of('P', 100)] });
+    expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Preço igual ou abaixo da oferta de R$ 100,00 — ajuste a oferta antes', passos: null });
+  });
+
   it('banco editado depois → não revertível', async () => {
     const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(112, true) }, origem });
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço foi editado depois do reajuste' });
@@ -192,7 +244,7 @@ describe('montarPreview — Reverter', () => {
 
   it('item da origem fora do cadastro → fora, não some', async () => {
     const r = await montarPreview(rev, deps({ alvos: [], origem }));
-    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', codigo_pai: 'P-MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro' }]);
+    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', codigo_pai: 'P-MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', ofertas: null, passos: null }]);
   });
 
   it.each([

@@ -103,6 +103,6 @@ export function linhasDoRascunho(itens: ItemPreview[]) {
     // 0 = preço não lido (item fora): nulo no banco.
     preco: i.preco || null, preco_anterior: i.preco_anterior || null, mensagem: i.motivo ?? i.aviso,
     semaforo: i.avaliacao?.pior ?? null, confirmado_risco: false, incluido: i.incluido, avaliacao: i.avaliacao,
-    estado_anterior: i.restaurar, variacoes_ml: i.variacoes_ml, variacao_ids: i.variacao_ids, codigo_pai: i.codigo_pai || null,
+    estado_anterior: i.restaurar, variacoes_ml: i.variacoes_ml, variacao_ids: i.variacao_ids, codigo_pai: i.codigo_pai || null, passos: i.passos,
   }));
 }

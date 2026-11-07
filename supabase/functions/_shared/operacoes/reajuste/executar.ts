@@ -9,9 +9,10 @@ import type { CamposItem, StatusItem } from '../tipos.ts';
 import { centavos, reais } from './alvo.ts';
 import { mudouAvaliacao } from './avaliacao.ts';
 import { decidirReajuste, type Vivo } from './decidir.ts';
-import { motivoInelegivel } from './elegibilidade.ts';
+import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
 import type { ClienteReajusteML } from './ml.ts';
-import type { Avaliacao, EntradaRestauracao, Etapa, VivoItem } from './tipos.ts';
+import { unirOfertas } from './ofertas.ts';
+import type { Avaliacao, EntradaRestauracao, Etapa, OfertaVigente, VivoItem } from './tipos.ts';
 
 export interface OperacaoReajusteRow { id: string; org_id: string; origem_id: string | null }
 export interface ItemReajuste {
@@ -27,7 +28,9 @@ export interface DepsReajuste extends DepsLaco {
   lerItem(operacaoId: string, mlItemId: string): Promise<ItemReajuste>;
   /** Avaliação com tarifa fresca (C1, sem cache). */
   avaliarFresco(mlItemId: string, preco: number): Promise<Avaliacao>;
-  fatos(item: ItemReajuste): Promise<{ ehKit: boolean; temAtacado: boolean; promocaoBanco: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
+  fatos(item: ItemReajuste): Promise<{ ehKit: boolean; temAtacado: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
+  /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
+  ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
   /** RPC `reajuste_persistir`: grava variações + item `aplicado` (ou `erro` no conflito) atomicamente. */
   persistir(operacaoId: string, mlItemId: string, precoConfirmado: number, restaurar: EntradaRestauracao[]): Promise<ResultadoPersistir>;
   /** Item → `conferindo` (etapa preservada), `conferencias` = n + 1, `proxima_conferencia` = agora + backoff(n)
@@ -104,8 +107,9 @@ async function processar(operacaoId: string, ml: string, deps: DepsReajuste): Pr
       if (e instanceof SemAcessoStatusML) throw e;
       return retentar(mensagemDe(e));
     }
-    const [promocaoML, fatos] = await Promise.all([deps.ml.participaPromocaoML(ml), deps.fatos(item)]);
-    const motivo = motivoInelegivel({ vivo: atual, promocaoML, ...fatos });
+    const [doML, banco, fatos] = await Promise.all([deps.ml.lerOfertas(ml), deps.ofertasBanco([ml]), deps.fatos(item)]);
+    const ofertas = unirOfertas([doML, banco.get(ml) ?? null]);
+    const motivo = motivoInelegivel({ vivo: atual, ofertas, ...fatos });
     if (motivo) return gravar({ status: 'bloqueado', mensagem: motivo });
     const d = decidirReajuste(null, item.preco, item.preco_anterior, vivoDe(atual), item.variacoes_ml);
     if (d.tipo === 'fim') return gravar({ status: d.status, mensagem: d.mensagem });
@@ -117,6 +121,8 @@ async function processar(operacaoId: string, ml: string, deps: DepsReajuste): Pr
     if ((fresca.tem_vermelho && !item.confirmado_risco) || (fresca.tem_sem_dado && !item.confirmado_sem_dado)) {
       return gravar({ status: 'mudou', mensagem: MSG_SEM_CONFIRMACAO });
     }
+    const trava = motivoTravaOferta(item.preco, ofertas!);
+    if (trava) return gravar({ status: 'mudou', mensagem: trava });
 
     etapa = 'escrita_pedida';
     await gravar({ etapa });

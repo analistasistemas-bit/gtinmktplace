@@ -135,24 +135,19 @@ export function criarAvaliador(admin: SupabaseClient, cx: Cx): (mlItemId: string
   };
 }
 
-type Flags = Pick<AlvoExpandido, 'ehKit' | 'temAtacado' | 'promocaoBanco' | 'familiaPublicando' | 'migracaoPxv' | 'titulo'>;
+type Flags = Pick<AlvoExpandido, 'ehKit' | 'temAtacado' | 'familiaPublicando' | 'migracaoPxv' | 'titulo'>;
 
 /** Fatos de bloqueio por MLB, em lote. Com `variacaoIds` (execução) o atacado é o das cores do item; sem (preview)
  *  é o da família canônica do produto — a execução reconfere com as cores casadas. */
 async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string; pai: string; variacaoIds?: string[] }[]): Promise<Map<string, Flags>> {
   const mls = [...new Set(alvos.map((a) => a.ml))];
   const pais = [...new Set(alvos.map((a) => a.pai).filter(Boolean))];
-  const kits = new Set<string>(), promo = new Set<string>(), pxv = new Set<string>();
+  const kits = new Set<string>(), pxv = new Set<string>();
   const familias: { id: string; codigo_pai: string; status: string; atacado: unknown; titulo_ml: string | null }[] = [];
   for (const b of blocos(mls)) {
-    const [k, p] = await Promise.all([
-      admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).eq('status', 'publicado').in('ml_item_id', b),
-      admin.from('ml_promocao_itens').select('ml_item_id').eq('org_id', orgId).in('status', ['pending', 'started']).in('ml_item_id', b),
-    ]);
+    const k = await admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).eq('status', 'publicado').in('ml_item_id', b);
     falhou('kits_virtuais', k.error);
-    falhou('ml_promocao_itens', p.error);
     for (const r of k.data ?? []) kits.add(String(r.ml_item_id));
-    for (const r of p.data ?? []) promo.add(String(r.ml_item_id));
   }
   for (const b of blocos(pais)) {
     const [f, a] = await Promise.all([
@@ -197,7 +192,7 @@ async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string
       ? a.variacaoIds.some((v) => variacaoComAtacado.has(v) || temFaixas(porId.get(famDeVariacao.get(v) ?? '')?.atacado))
       : !!can && (temFaixas(can.atacado) || familiaComAtacadoNaCor.has(can.id));
     out.set(a.ml, {
-      ehKit: kits.has(a.ml), temAtacado: atacado, promocaoBanco: promo.has(a.ml),
+      ehKit: kits.has(a.ml), temAtacado: atacado,
       familiaPublicando: familias.some((f) => f.codigo_pai === a.pai && f.status === 'publicando'),
       migracaoPxv: pxv.has(a.pai), titulo: can?.titulo_ml ?? null,
     });
@@ -387,6 +382,7 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
     ...depsLacoReajuste(admin, op, chave),
     ml: criarClienteReajusteML(cx.token),
     avaliarFresco: criarAvaliador(admin, cx),
+    ofertasBanco: (mlItemIds) => ofertasBanco(admin, orgId, mlItemIds),
 
     async lerItem(operacaoId, mlItemId): Promise<ItemReajuste> {
       const { data: r, error } = await admin.from(ITENS).select(COLS_ITEM)
@@ -404,7 +400,7 @@ export function depsReajuste(admin: SupabaseClient, cx: Cx, op: OperacaoReajuste
 
     async fatos(item) {
       const f = (await flagsDe(admin, orgId, [{ ml: item.ml_item_id, pai: item.codigo_pai, variacaoIds: item.variacao_ids }])).get(item.ml_item_id)!;
-      return { ehKit: f.ehKit, temAtacado: f.temAtacado, promocaoBanco: f.promocaoBanco, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
+      return { ehKit: f.ehKit, temAtacado: f.temAtacado, familiaPublicando: f.familiaPublicando, migracaoPxv: f.migracaoPxv };
     },
 
     async persistir(operacaoId, mlItemId, precoConfirmado, restaurar) {

@@ -118,7 +118,8 @@ describe('depsPreview', () => {
     const r = await montarPreview({ familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' }, {
       expandir: depsPreview(semProduto().admin, cxT, { reverter: true }).expandir,
       origem: async () => origem,
-      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), participaPromocaoML: async () => false },
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), lerOfertas: async () => [] },
+      ofertasBanco: async (ids) => new Map(ids.map((id) => [id, []])),
       variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
       estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
       avaliar: async () => resumir([]),

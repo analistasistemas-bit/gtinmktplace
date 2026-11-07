@@ -7,7 +7,8 @@ import { resumir } from '../avaliacao.ts';
 import { MSG_RECONECTAR } from '../../falhas.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
 import type { ResultadoPut } from '../ml.ts';
-import type { CorAvaliada, EntradaRestauracao, VivoItem } from '../tipos.ts';
+import { oferta } from '../ofertas.ts';
+import type { CorAvaliada, EntradaRestauracao, OfertaVigente, VivoItem } from '../tipos.ts';
 import type { ItemRow } from '../../tipos.ts';
 
 const AGORA = Date.parse('2026-10-04T12:00:00Z');
@@ -66,12 +67,12 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>) {
         aplicar(id, alvo, ids);
         return { kind: 'ok' };
       }),
-      participaPromocaoML: vi.fn(async (): Promise<boolean | null> => false),
-      lerOfertas: vi.fn(async () => []),
+      lerOfertas: vi.fn(async (_id: string): Promise<OfertaVigente[] | null> => []),
     },
+    ofertasBanco: vi.fn(async (ids: string[]) => new Map(ids.map((id): [string, OfertaVigente[]] => [id, []]))),
     lerItem: vi.fn(async (_o: string, id: string) => ({ ...achar(id) })),
     avaliarFresco: vi.fn(async () => AVAL),
-    fatos: vi.fn(async () => ({ ehKit: false, temAtacado: false, promocaoBanco: false, familiaPublicando: false, migracaoPxv: false })),
+    fatos: vi.fn(async () => ({ ehKit: false, temAtacado: false, familiaPublicando: false, migracaoPxv: false })),
     persistir: vi.fn(async (_o: string, id: string) => {
       const i = achar(id);
       if (i.status === 'aplicado') return 'ja_aplicado' as const;
@@ -91,6 +92,7 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>) {
 }
 const OP: OperacaoReajusteRow = { id: 'op', org_id: 'o', origem_id: null };
 const OPTS = { limiteMs: 60_000, lote: 10, maxItens: 100 };
+const of = (preco: number | null) => oferta({ promocao_id: 'P', tipo: 'DEAL', status: 'started', preco, offer_id: null, inicio: null, fim: null });
 const resumo = (i: Linha) => ({ status: i.status, etapa: i.etapa, mensagem: i.mensagem ?? null });
 
 describe('executarReajuste — envio novo', () => {
@@ -237,16 +239,47 @@ describe('executarReajuste — envio novo', () => {
     expect(deps.ml.putPreco).not.toHaveBeenCalled();
   });
 
-  it('inelegível na execução (promoção fresca) → bloqueado; preço vivo mudou → mudou', async () => {
+  it('inelegível na execução (ofertas inconclusivas) → bloqueado sem PUT; preço vivo mudou → mudou', async () => {
     const itens = [item('A'), item('B')];
     const deps = montar(itens, { A: plano(100), B: plano(105) });
-    deps.ml.participaPromocaoML.mockImplementation(async (id: string) => id === 'A');
+    deps.ml.lerOfertas.mockImplementation(async (id: string) => (id === 'A' ? null : []));
     await executarReajuste(OP, deps, OPTS);
     expect(itens.map(resumo)).toEqual([
-      { status: 'bloqueado', etapa: null, mensagem: 'Participando de promoção' },
+      { status: 'bloqueado', etapa: null, mensagem: 'Não foi possível conferir promoções — tente de novo' },
       { status: 'mudou', etapa: null, mensagem: 'O preço mudou desde o preview' },
     ]);
     expect(deps.ml.putPreco).not.toHaveBeenCalled();
+  });
+
+  it('banco sem o MLB pedido → bloqueado, sem PUT', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: plano(100) });
+    deps.ofertasBanco.mockResolvedValue(new Map());
+    await executarReajuste(OP, deps, OPTS);
+    expect(itens[0].status).toBe('bloqueado');
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['do ML', 'ml'],
+    ['só do banco', 'banco'],
+  ])('oferta %s igual ou acima do alvo → mudou com o motivo, sem etapa nem PUT', async (_n, fonte) => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: plano(100) });
+    if (fonte === 'ml') deps.ml.lerOfertas.mockResolvedValue([of(110)]);
+    else deps.ofertasBanco.mockResolvedValue(new Map([['A', [of(110)]]]));
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'mudou', etapa: null, mensagem: 'Preço igual ou abaixo da oferta de R$ 110,00 — ajuste a oferta antes' });
+    expect(deps.ml.putPreco).not.toHaveBeenCalled();
+  });
+
+  it('oferta abaixo do alvo não impede a escrita', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: plano(100) });
+    deps.ml.lerOfertas.mockResolvedValue([of(80)]);
+    await executarReajuste(OP, deps, OPTS);
+    expect(deps.ml.putPreco).toHaveBeenCalledWith('A', 110, null);
+    expect(itens[0].status).toBe('aplicado');
   });
 
   it('leitura falha sem etapa → retentável (enviando, tentativa contada), nunca escreve', async () => {
@@ -282,11 +315,11 @@ describe('executarReajuste — recuperação', () => {
   ])('conferência acha o alvo → aplicado sem checar elegibilidade (promoção %s)', async (_n, promo) => {
     const itens = [conferindo()];
     const deps = montar(itens, { A: plano(110) });
-    deps.ml.participaPromocaoML.mockImplementation(promo);
+    deps.ml.lerOfertas.mockImplementation(promo);
     await executarReajuste(OP, deps, OPTS);
     expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: null });
     expect(deps.ml.putPreco).not.toHaveBeenCalled();
-    expect(deps.ml.participaPromocaoML).not.toHaveBeenCalled();
+    expect(deps.ml.lerOfertas).not.toHaveBeenCalled();
   });
 
   it('conferência acha o anterior → pendente sem etapa; o reenvio passa pelo fluxo normal', async () => {
@@ -294,7 +327,7 @@ describe('executarReajuste — recuperação', () => {
     const deps = montar(itens, { A: plano(100) });
     await executarReajuste(OP, deps, OPTS);
     expect(deps.gravarItem).toHaveBeenCalledWith('op', 'A', { status: 'pendente', etapa: null, mensagem: null, conferencias: 0 });
-    expect(deps.ml.participaPromocaoML).toHaveBeenCalledTimes(1); // elegibilidade no reenvio
+    expect(deps.ml.lerOfertas).toHaveBeenCalledTimes(1); // elegibilidade no reenvio
     expect(deps.ml.putPreco).toHaveBeenCalledTimes(1);
     expect(itens[0].status).toBe('aplicado');
   });
