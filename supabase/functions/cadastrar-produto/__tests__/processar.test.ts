@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aplicaEstoqueInicial, entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
-  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem, refNotaDiverge, sugestaoDiverge,
+  validarTamanhosDaEntrada, variacoesDivergem, gradeOuGeneroDivergem, refNotaDiverge, sugestaoDiverge, marcaDiverge,
 } from '../processar.ts';
 
 describe('sugestaoDiverge (retry, ADR-0181 emenda 2026-10-17)', () => {
@@ -490,6 +490,19 @@ describe('grade de tamanhos (ADR-0182)', () => {
       expect(gradeOuGeneroDivergem(entradaGrade(['P']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(false);
       expect(gradeOuGeneroDivergem(entradaGrade(['34']), { grade_tamanho: null, genero: 'masculino' }, ['P'])).toBe(true);
     });
+  });
+});
+
+// Emenda ADR-0188 (2026-11-07): marca corrigida entre tentativas não pode virar 200 com a antiga
+// (ela é a BRAND/MANUFACTURER no ML). Sem marca no payload = não decide (trigger/front antigo).
+describe('marcaDiverge (retry)', () => {
+  it('só diverge quando a entrada traz marca diferente da gravada', () => {
+    expect(marcaDiverge('Eucerin', 'Nivea')).toBe(true);
+    expect(marcaDiverge(null, 'Nivea')).toBe(true);
+    expect(marcaDiverge('Eucerin', ' Eucerin ')).toBe(false);
+    expect(marcaDiverge('Zaven', undefined)).toBe(false);
+    expect(marcaDiverge('Zaven', '  ')).toBe(false);
+    expect(marcaDiverge(null, undefined)).toBe(false);
   });
 });
 

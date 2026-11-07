@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao } from '../validar';
+import { validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, errosMarcaDaNota } from '../validar';
 import type { ProdutoEntrada } from '../validar';
 
 const valido: ProdutoEntrada = {
@@ -224,20 +224,19 @@ describe('grade e gênero (ADR-0182)', () => {
 
 // Emenda ADR-0188 (2026-11-07): o emitente da nota é revendedor — cair no fornecedor publicava a
 // drogaria como BRAND/MANUFACTURER e o ML bloqueou o anúncio. Cadastro pela nota exige a marca.
-describe('marca no cadastro pela nota', () => {
-  const daNota = {
-    ...valido, origemNota: true, refNota: `nfe:${'1'.repeat(44)}:1`,
-    variacoes: valido.variacoes.map((v) => ({ ...v, estoqueInicial: 0 })),
-  };
-  it('sem marca FALHA', () => {
-    expect(validarProdutoNovo(daNota).map((x) => x.campo)).toContain('marca');
-    expect(validarProdutoNovo({ ...daNota, marca: '  ' }).map((x) => x.campo)).toContain('marca');
+// Fora de `validarProdutoNovo` de propósito: a edge só cobra na CRIAÇÃO, depois do lookup da chave —
+// o retry de uma família já gravada (front antigo sem o campo) precisa recuperar, não virar 400.
+describe('errosMarcaDaNota', () => {
+  const daNota = { ...valido, origemNota: true };
+  it('nota sem marca FALHA', () => {
+    expect(errosMarcaDaNota(daNota).map((x) => x.campo)).toEqual(['marca']);
+    expect(errosMarcaDaNota({ ...daNota, marca: '  ' }).map((x) => x.campo)).toEqual(['marca']);
   });
-  it('com marca é válido', () => {
-    expect(validarProdutoNovo({ ...daNota, marca: 'Eucerin' })).toEqual([]);
+  it('nota com marca é válida', () => {
+    expect(errosMarcaDaNota({ ...daNota, marca: 'Eucerin' })).toEqual([]);
   });
-  it('cadastro manual continua sem exigir marca', () => {
-    expect(validarProdutoNovo(valido)).toEqual([]);
+  it('cadastro manual não exige marca', () => {
+    expect(errosMarcaDaNota(valido)).toEqual([]);
   });
 });
 

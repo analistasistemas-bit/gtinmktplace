@@ -95,6 +95,14 @@ const ORIGENS_VALIDAS = ['nacional', 'importado'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Emenda ADR-0188 (2026-11-07): o emitente da nota é revendedor, nunca a marca — sem marca o envio
+ *  ao ML caía no fornecedor (BRAND/MANUFACTURER) e o anúncio foi bloqueado. Fora de `validarProdutoNovo`
+ *  porque a edge só cobra na CRIAÇÃO: o retry de família já gravada (front antigo) precisa recuperar. */
+export function errosMarcaDaNota(p: ProdutoEntrada): ErroValidacao[] {
+  if (p.origemNota !== true || (typeof p.marca === 'string' && p.marca.trim())) return [];
+  return [{ campo: 'marca', mensagem: 'Informe a marca do fabricante — o fornecedor da nota não é a marca.' }];
+}
+
 export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
   if (!p.nomePai?.trim()) erros.push({ campo: 'nomePai', mensagem: 'Nome do produto é obrigatório.' });
@@ -115,11 +123,6 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
       erros.push({ campo: `variacoes[${i}].quantidadeNota`, mensagem: 'Quantidade da nota deve ser inteiro ≥ 0, só no cadastro pela nota.' });
     }
   });
-  // Emenda ADR-0188 (2026-11-07): o emitente da nota é revendedor, nunca a marca — sem marca o
-  // envio ao ML caía no fornecedor (BRAND/MANUFACTURER = a drogaria) e o anúncio foi bloqueado.
-  if (p.origemNota === true && !(typeof p.marca === 'string' && p.marca.trim())) {
-    erros.push({ campo: 'marca', mensagem: 'Informe a marca do fabricante — o fornecedor da nota não é a marca.' });
-  }
   if (p.fatorNota === undefined && (p.variacoes ?? []).some((v) => (v.quantidadeNota ?? 0) > 0)) {
     erros.push({ campo: 'fatorNota', mensagem: 'Informe o fator da nota junto da quantidade da nota.' });
   }

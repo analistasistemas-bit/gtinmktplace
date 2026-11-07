@@ -53,7 +53,9 @@ emitente — uma revenda —, que foi ao ML como BRAND e MANUFACTURER; o anúnci
    quando preenchido. É ele que vai ao ML como BRAND e MANUFACTURER (a ordem `marca → fornecedor` não muda).
 2. Obrigatório na org com marca própria (como antes, pré-preenchido com a marca da org) e no cadastro pela
    nota (nasce vazio: o prefill nunca copia o emitente). Fora disso, vazio = fornecedor, como sempre.
-3. A edge `cadastrar-produto` recusa `origemNota` sem marca (`validarProdutoNovo`) e grava a marca
-   preenchida em qualquer org (`montarLinhasProduto` deixa de depender de `marca_propria`).
+3. A edge `cadastrar-produto` recusa `origemNota` sem marca (`errosMarcaDaNota`) só no ramo de criação —
+   o retry de família já gravada recupera mesmo vindo de front antigo — e grava a marca preenchida em
+   qualquer org (`montarLinhasProduto` deixa de depender de `marca_propria`). Retry com marca diferente da
+   gravada é divergência (409, `marcaDiverge`).
 
 Sem migration: a coluna, o trigger `familias_marca_default` e a proteção de UPDATE seguem iguais.

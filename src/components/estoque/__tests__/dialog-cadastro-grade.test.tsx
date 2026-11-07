@@ -1011,6 +1011,7 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     const payload = cadastrarProdutoMock.mock.calls[0][0];
     expect(payload.origemNota).toBe(true);
+    expect(payload.marca).toBe('Marca Teste');
     expect(payload.refNota).toBe(`nfe:${'1'.repeat(44)}:2`);
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
     expect(payload.variacoes[0].custo).toBe(10);
