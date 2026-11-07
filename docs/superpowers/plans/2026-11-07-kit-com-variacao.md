@@ -295,7 +295,7 @@ export interface CriarKitVariacaoInput {
 }
 ```
 
-Valida: módulo, base user product, `somenteSellingAddress`, sem Full, sem outro kit, cores distintas, preço > 0. Só `quantidade > 0` vira SKU. `proximo_codigo_produto()` para códigos, `familias` com `status='pronto'` em lote técnico, como `criar-kit-vinculado`. Custo e peso somados; altura × N. O CREATE é o passo `aumentar` da saga: saldo inicial só depois de `confirmar_reducao`, com proteção contra criação duplicada. Item novo fica na mesma família.
+Valida: módulo, base user product, `somenteSellingAddress`, sem Full, sem outro kit, cores distintas, preço > 0, guia de tamanhos da própria conta, e nenhuma foto usada em item moderado (`under_review`, `forbidden`, `waiting_for_patch`): no teste de 07/11, as fotos de item `forbidden` foram a causa provável de revisão imediata. Depois de publicar, a tela avisa que o seletor do ML leva minutos para juntar os itens. Só `quantidade > 0` vira SKU. `proximo_codigo_produto()` para códigos, `familias` com `status='pronto'` em lote técnico, como `criar-kit-vinculado`. Custo e peso somados; altura × N. O CREATE é o passo `aumentar` da saga: saldo inicial só depois de `confirmar_reducao`, com proteção contra criação duplicada. Item novo fica na mesma família.
 
 Fiscal: SKU de kit herda NCM e origem da base e passa pelo fluxo de `tax_information` por SKU, com `title` próprio (memória `reference_ml_title_fiscal_xprod`). Cada combinação tem peso e custo do kit, e custo congelado de venda (ADR-0109) usa esse custo.
 

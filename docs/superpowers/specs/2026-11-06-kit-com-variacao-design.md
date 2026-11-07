@@ -382,6 +382,12 @@ SKU Guardado nunca recebe `reativar`.
    aos 4, mas em minutos todos foram para `under_review` / `waiting_for_patch`, e a página `/up` não abriu.
    Seletor não foi visto. Causa não identificada: as fotos vieram de `MLB5265172927`, item `forbidden`, e o
    título tinha "Teste"; a cor combinada não pode ser descartada. Itens excluídos em seguida, sem venda.
+   **Repetição, 07/11, passou (Daludi, 4 itens, família `Kit 3 Jaquetas Corta Vento Feminina`):** com fotos
+   fora de itens moderados e título normal, os 4 ficaram ativos, sem revisão, enquanto estiveram no ar. A
+   página `/up` mostrou as 2 combinações e M e G, com foto e rótulo próprios por combinação, tamanho separado
+   e Guia de tamanhos. O seletor levou minutos para juntar os itens: primeiro 1 combinação, depois as
+   demais marcadas como "Sem estoque" por um tempo, depois normais. Itens excluídos, sem venda.
+   **Regra nova:** nunca usar foto de item moderado no kit. Isso entra na validação da criação.
 7. **Imagem por IA, medido em 07/11 (3 gerações, Jaqueta Daludi, `gemini-2.5-flash-image`):** custo cerca de
    US$ 0,039 por imagem. Cor e fundo corretos, mas **modelagem não fiel**: gola alta e sem elástico na
    barra, com o original cropped e barra elástica. Saída de 832×1248, abaixo do ideal. Entrada era foto com
