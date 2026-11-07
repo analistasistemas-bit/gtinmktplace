@@ -314,6 +314,11 @@ prova inexistente.
 que o ML atrasa além do que o passo 3 detecta. Nesse caso a peça pode estar comprometida duas vezes. O sistema detecta pela baixa, alerta no Telegram e o
 operador resolve o pedido. Registrar toda ocorrência, para rever T com dado real.
 
+**Alcance [Diego]:** quarentena, bloqueio de reativação e demais regras desta seção valem só para SKUs
+participantes de kit com variação. Os demais produtos seguem o fluxo atual, incluindo a reativação por
+reposição do ADR-0111. O comportamento do ML em si, de manter a pausa ao receber saldo, vale para todo
+anúncio; isso é do ML, não muda nada no PubliAI.
+
 **Kit ativo:** nenhuma escrita de quantidade com o item ativo. Cancelamento dentro do ADR-0121 credita o
 saldo local do kit na hora e agenda a sequência acima, **mesmo com reposição automática desligada**.
 
@@ -356,10 +361,14 @@ SKU Guardado nunca recebe `reativar`.
    manteve os dois itens do UP pausados. Em zero, `sub_status` ficou `out_of_stock` + `paused_by_seller`;
    ao subir, voltou a só `paused_by_seller`. Uma escrita no item atualiza o UP e a cópia de catálogo, e
    `x-version` subiu a cada escrita (5 → 8). A pausa vale enquanto `paused_by_seller` estiver presente.
-2. Item `out_of_stock` com saldo subindo: o ML religa sozinho (ADR-0111). Reprova se isso ocorrer num
-   item que a política quer pausado.
+2. **Passou em 07/11 (DSA, `MLB5001755829`, sem mexer em saldo).** Item só com `out_of_stock` aceitou
+   `PUT status=paused` e ficou com `out_of_stock` + `paused_by_seller`. `PUT status=active` removeu a pausa
+   do vendedor e devolveu só `out_of_stock`. Com o teste 1, isso mostra que item zerado pode ser protegido
+   antes de receber saldo. Regra: guardar item exige `paused_by_seller` presente antes de qualquer escrita.
 3. Pedido não pago aparece em `/orders/search` antes do pagamento. Se não aparecer, o passo 3 não protege
-   e o risco residual aumenta: voltar ao Diego com isso antes de construir.
+   e o risco residual aumenta: voltar ao Diego com isso antes de construir. **Em andamento:** em cerca de
+   1.500 pedidos de DSA e Daludi, nenhum está hoje em `payment_required` ou `payment_in_process`, o que não
+   prova nada, porque pedido antigo já mudou de status. Monitoração só de leitura de pedidos novos.
 4. Pagamento perto de T e baixa durante a escrita ou a retentativa: a conciliação do passo 3 segura.
 5. Cancelamento de kit com reposição automática desligada credita e agenda.
 6. COLOR combinada, agrupamento e seletor, conforme "Testes antes de construir".
