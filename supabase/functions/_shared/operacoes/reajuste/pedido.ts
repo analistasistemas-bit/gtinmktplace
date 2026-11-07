@@ -102,7 +102,7 @@ export function linhasDoRascunho(itens: ItemPreview[]) {
     promocao_id: null, ml_item_id: i.ml_item_id, titulo: i.titulo, status: STATUS_RASCUNHO[i.situacao],
     // 0 = preço não lido (item fora): nulo no banco.
     preco: i.preco || null, preco_anterior: i.preco_anterior || null, mensagem: i.motivo ?? i.aviso,
-    semaforo: i.avaliacao?.pior ?? null, confirmado_risco: false, incluido: i.incluido, avaliacao: i.avaliacao,
+    semaforo: i.avaliacao?.pior ?? null, confirmado_risco: false, incluido: i.incluido, avaliacao: i.avaliacao, avaliacoes: i.precos_avaliados,
     estado_anterior: i.restaurar, variacoes_ml: i.variacoes_ml, variacao_ids: i.variacao_ids, codigo_pai: i.codigo_pai || null, passos: i.passos,
   }));
 }

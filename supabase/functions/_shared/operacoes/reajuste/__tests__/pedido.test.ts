@@ -69,6 +69,13 @@ describe('linhasDoRascunho', () => {
     variacoes_ml: ['1'], situacao: 'elegivel', motivo: null, incluido: false, aviso: null, ofertas: [],
     passos: [{ tipo: 'base', anterior: 100, alvo: 110, estado: 'pendente' }],
   };
+  it('avaliacoes = preços avaliados; avaliacao segue o agregado que reajuste_confirmar lê', () => {
+    const precos_avaliados = [{ tipo: 'faixa' as const, chave: '2', preco: 85.5, avaliacao: base.avaliacao! }];
+    const [l] = linhasDoRascunho([{ ...base, precos_avaliados }]);
+    expect(l).toMatchObject({ avaliacoes: precos_avaliados, avaliacao: base.avaliacao });
+    expect(l).not.toHaveProperty('precos_avaliados');
+  });
+
   it('status por situação; estado_anterior = restaurar; codigo_pai sempre gravado', () => {
     const [el, fora, igual] = linhasDoRascunho([
       base,

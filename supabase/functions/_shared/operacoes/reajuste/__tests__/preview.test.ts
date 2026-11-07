@@ -5,7 +5,7 @@ import { planejarPassos } from '../passos.ts';
 import { MAX_MLBS, montarPreview, type AlvoExpandido, type DepsPreview, type PedidoPreview } from '../preview.ts';
 import { resumir } from '../avaliacao.ts';
 import { SemAcessoStatusML } from '../../ml-status.ts';
-import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Semaforo, VivoItem } from '../tipos.ts';
+import type { CorAvaliada, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo, Semaforo, VivoItem } from '../tipos.ts';
 
 vi.mock('../passos.ts', async (original) => {
   const m = await original<typeof import('../passos.ts')>();
@@ -345,6 +345,64 @@ describe('montarPreview — atacado (ADR-0196)', () => {
     expect(d.ml.lerFaixas).not.toHaveBeenCalled();
   });
 
+  describe('trava financeira de cada preço', () => {
+    // Avaliador por preço: a faixa de 85,50 dá `s`, os demais dão verde.
+    const comFaixa = (s: Semaforo) => {
+      const d = deps({ faixas: viva(95), config: { faixas: CINCO, divergente: false } });
+      d.avaliar = vi.fn(async (_ml: string, preco: number) => resumir([cor(preco === 85.5 ? s : 'verde')]));
+      return d;
+    };
+
+    it('base verde com faixa em prejuízo: item desmarcado, exige confirmação, aviso por unidade', async () => {
+      const d = comFaixa('vermelho');
+      const i = await um(pct(10, '-'), d);
+      expect(i).toMatchObject({ situacao: 'elegivel', incluido: false, avaliacao: { pior: 'vermelho', tem_vermelho: true, tem_sem_dado: false } });
+      expect(i.aviso).toContain('lucro por unidade');
+      expect(i.precos_avaliados?.map((p) => [p.tipo, p.chave, p.preco, p.avaliacao.pior])).toEqual([
+        ['faixa', '2', 85.5, 'vermelho'], ['base', 'base', 90, 'verde'],
+      ]);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 85.5);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 90);
+    });
+
+    it('faixa sem dado (origem ausente): desmarcado, exige a confirmação ⚪', async () => {
+      expect(await um(pct(10, '-'), comFaixa('indisponivel'))).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: false, tem_sem_dado: true } });
+    });
+
+    it('faixa abaixo do piso: agregado amarelo, segue incluído com o aviso', async () => {
+      const i = await um(pct(10, '-'), comFaixa('amarelo'));
+      expect(i).toMatchObject({ incluido: true, avaliacao: { pior: 'amarelo' } });
+      expect(i.aviso).toContain('🟡');
+      expect(i.aviso).toContain('lucro por unidade');
+    });
+
+    it('todos verdes: incluído, sem aviso', async () => {
+      expect(await um(pct(10, '-'), comFaixa('verde'))).toMatchObject({ incluido: true, aviso: null, avaliacao: { pior: 'verde' } });
+    });
+
+    it('faixa que não muda não é avaliada: nada é escrito nela', async () => {
+      const d = deps({ faixas: viva(95) });
+      const i = await um(pct(10), d);
+      expect(i.precos_avaliados?.map((p) => p.tipo)).toEqual(['base']);
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
+    });
+
+    it('só faixas em prejuízo: exige confirmação sem avaliar o base', async () => {
+      const faixas: Passo = { tipo: 'faixas', anterior: viva(95), alvo: [{ min_unidades: 2, preco: 85.5 }], estado: 'pendente' };
+      vi.mocked(planejarPassos).mockReturnValueOnce([faixas]);
+      const d = comFaixa('vermelho');
+      const i = await um(pct(10, '-'), d);
+      expect(i).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: true } });
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
+      expect(d.avaliar).toHaveBeenCalledWith('MLB1', 85.5);
+    });
+
+    it('item fora ou sem alteração não tem preços avaliados', async () => {
+      expect(await um(pct(0), deps())).toMatchObject({ situacao: 'sem_alteracao', precos_avaliados: null });
+      expect(await um(pct(10, '-'), deps({ faixas: null }))).toMatchObject({ situacao: 'fora', precos_avaliados: null });
+    });
+  });
+
   describe('Reverter', () => {
     const restaurar: EntradaRestauracao[] = [{ variacao_id: 'V-MLB1', esperado: est(100, false), novo: est(110, true) }];
     const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar }]]);
@@ -357,6 +415,14 @@ describe('montarPreview — atacado (ADR-0196)', () => {
       expect(i).toMatchObject({ situacao: 'elegivel', preco: 100, faixas_alvo: null });
       expect(tipos(i)).toEqual(['base']);
       expect(d.configAtacado).not.toHaveBeenCalled();
+    });
+
+    it('avalia o base restaurado e desmarca se der prejuízo', async () => {
+      const d = deps({ ...base, faixas: viva(95), semaforo: ['vermelho'] });
+      const i = await um(voltar, d);
+      expect(i).toMatchObject({ incluido: false, avaliacao: { tem_vermelho: true } });
+      expect(i.precos_avaliados?.map((p) => [p.tipo, p.preco])).toEqual([['base', 100]]);
+      expect(d.avaliar).toHaveBeenCalledTimes(1);
     });
 
     it('faixa viva que ficaria acima do base restaurado → fora', async () => {

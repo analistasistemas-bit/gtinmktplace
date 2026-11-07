@@ -29,7 +29,7 @@ function item(ml: string, over: Partial<ItemPreview> = {}): ItemPreview {
   const a = over.avaliacao ?? avaliacao([cor()]);
   return {
     ml_item_id: ml, codigo_pai: 'P1', variacao_ids: ['V1'], titulo: `Produto ${ml}`, sku: null,
-    preco_anterior, preco: calcularAlvo(preco_anterior, ajuste)!, avaliacao: a, restaurar: [], variacoes_ml: null,
+    preco_anterior, preco: calcularAlvo(preco_anterior, ajuste)!, avaliacao: a, precos_avaliados: null, restaurar: [], variacoes_ml: null,
     situacao: 'elegivel', motivo: null, incluido: !(a.tem_vermelho || a.tem_sem_dado), aviso: null, ofertas: [], passos: [],
     faixas_anteriores: [], faixas_alvo: null, ...over,
   };

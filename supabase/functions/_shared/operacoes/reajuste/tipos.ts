@@ -9,6 +9,8 @@ export interface CorAvaliada {
   frete: number | null; liquido: number | null; semaforo: Semaforo; motivo: string | null;
 }
 export interface Avaliacao { cores: CorAvaliada[]; pior: Semaforo; tem_vermelho: boolean; tem_sem_dado: boolean }
+/** Avaliação de um preço que será escrito. `chave`: 'base', `min_unidades` da faixa ou `chave` da oferta. */
+export interface PrecoAvaliado { tipo: 'base' | 'faixa' | 'oferta'; chave: string; preco: number; avaliacao: Avaliacao }
 export interface EstadoVariacao { preco_publicacao: number | null; preco_editado_pelo_operador: boolean }
 /** Tipo ÚNICO usado no preview, executor e RPC. */
 export interface EntradaRestauracao { variacao_id: string; esperado: EstadoVariacao; novo: EstadoVariacao }

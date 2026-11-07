@@ -4,18 +4,21 @@ import { pool } from '../../concorrencia/pool.ts';
 import { mensagemDe } from '../laco.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
+import { avaliarPassos, resumirPrecos } from './avaliacao.ts';
 import { motivoInelegivel, motivoTravaOferta } from './elegibilidade.ts';
 import { decidirFaixas, type ConfigMlb } from './faixas.ts';
 import type { ClienteReajusteML } from './ml.ts';
 import { unirOfertas } from './ofertas.ts';
 import { planejarPassos } from './passos.ts';
-import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo } from './tipos.ts';
+import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, FaixaPreco, OfertaVigente, Passo, PrecoAvaliado } from './tipos.ts';
 
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
   sku: string | null; titulo: string | null; ehKit: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
 export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; titulo: string | null; sku: string | null;
-  preco_anterior: number; preco: number; avaliacao: Avaliacao | null; restaurar: EntradaRestauracao[] | null; variacoes_ml: string[] | null;
+  preco_anterior: number; preco: number;
+  /** Agregado de `precos_avaliados`. */
+  avaliacao: Avaliacao | null; precos_avaliados: PrecoAvaliado[] | null; restaurar: EntradaRestauracao[] | null; variacoes_ml: string[] | null;
   situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null;
   ofertas: OfertaVigente[] | null; passos: Passo[] | null;
   /** Faixas vivas; `faixas_alvo` null = não mudam. */
@@ -40,6 +43,7 @@ export const MAX_MLBS = 500;
 const PARALELISMO = 5;
 const SEM_CASAMENTO = 'Não foi possível casar todas as variações do anúncio com o cadastro';
 const AVISO_AMARELO = '🟡 Abaixo do piso em alguma cor';
+const AVISO_FAIXA = 'Atacado: o alerta considera o lucro por unidade.';
 const AVISO_D10 = 'Reverter: o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest.';
 
 export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] };
@@ -86,7 +90,7 @@ export async function montarPreview(
     const o = origem!.get(ml)!;
     itens.push({
       ml_item_id: ml, codigo_pai: o.codigo_pai, variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
-      avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null, ofertas: null, passos: null,
+      avaliacao: null, precos_avaliados: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null, ofertas: null, passos: null,
       faixas_anteriores: null, faixas_alvo: null,
     });
   }
@@ -99,7 +103,7 @@ async function avaliarItem(
   const ml = a.ml_item_id;
   const item: ItemPreview = {
     ml_item_id: ml, codigo_pai: a.codigo_pai, variacao_ids: [], titulo: a.titulo, sku: a.sku, preco_anterior: 0, preco: 0,
-    avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null, ofertas: null, passos: null,
+    avaliacao: null, precos_avaliados: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: null, incluido: false, aviso: null, ofertas: null, passos: null,
     faixas_anteriores: null, faixas_alvo: null,
   };
   const fora = (motivo: string): ItemPreview => ({ ...item, motivo });
@@ -177,10 +181,12 @@ async function avaliarItem(
     return fora(mensagemDe(e));
   }
 
-  const avaliacao = await deps.avaliar(ml, alvo);
-  const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, orig ? AVISO_D10 : null].filter(Boolean);
+  const precos_avaliados = await avaliarPassos(passos, (preco) => deps.avaliar(ml, preco));
+  const avaliacao = resumirPrecos(precos_avaliados);
+  const faixaEmAlerta = precos_avaliados.some((x) => x.tipo === 'faixa' && x.avaliacao.pior !== 'verde');
+  const avisos = [avaliacao.pior === 'amarelo' ? AVISO_AMARELO : null, faixaEmAlerta ? AVISO_FAIXA : null, orig ? AVISO_D10 : null].filter(Boolean);
   return {
-    ...item, situacao: 'elegivel', avaliacao, passos, faixas_alvo,
+    ...item, situacao: 'elegivel', avaliacao, precos_avaliados, passos, faixas_alvo,
     restaurar: orig
       ? orig.restaurar.map((r) => ({ variacao_id: r.variacao_id, esperado: r.novo, novo: r.esperado }))
       : ids.map((id) => ({ variacao_id: id, esperado: estados.get(id)!, novo: { preco_publicacao: alvo, preco_editado_pelo_operador: true } })),
