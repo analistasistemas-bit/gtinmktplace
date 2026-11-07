@@ -547,3 +547,7 @@ unidade (o par de catálogo do kit — caso original deste ADR). O financeiro (`
 operação); reaproveitar `kit_multiplicador` (exige `kit_base_codigo_pai` e N em 2..6); heurística por preço (chute).
 **Risco aceito:** produto com custo da **unidade** cadastrado e anúncio próprio vendendo várias juntas sairia com
 custo subestimado — fora da regra da operação.
+
+## Emenda 2026-11-07 — Kit com variação
+
+O kit com variação (ADR-0197) gera título e descrição por IA, em etapa própria que diz que é kit e quantas peças. Isso difere da Decisão 3 deste ADR, que vale só para o kit vinculado. O kit vinculado não muda.

@@ -161,3 +161,7 @@ orgs fixadas no modelo antigo), `MODELO_COPY` em `_shared/ai/modelos.ts`, tabela
 
 Detalhe operacional confirmado na época: **não existe secret `AI_MODEL_COPY` no projeto**, então
 o default do código é o que vale em produção para orgs com `ai_model_texto` nulo.
+
+## Emenda 2026-11-07 — Imagem deixa de ser dormente
+
+Quando a Fase 4 do kit com variação for entregue (ADR-0197), `ai_model_imagem` passa a ser usado, para empresas com o módulo `imagem_ia`. Modelo padrão `google/gemini-nano-banana-2.1`. Até lá o campo segue dormente.

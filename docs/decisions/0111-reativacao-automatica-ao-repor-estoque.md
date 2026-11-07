@@ -72,3 +72,7 @@ alcança o ML (`canal_origem` exclui o canal que originou o movimento), então o
 
 A reposição de um componente também reativa o Kit Virtual pausado (ADR-0154), desde que todos os
 componentes tenham saldo. Ver a emenda de 2026-10-28 no ADR-0154.
+
+## Emenda 2026-11-07 — SKU Guardado não reativa
+
+SKU em estado Guardado de um kit com variação (ADR-0197) não é reativado pela reposição de estoque: a entrada alimenta a reposição do kit até a meta. Vale só para SKUs participantes de kit com variação; os demais seguem este ADR.
