@@ -520,6 +520,33 @@ O `—` continua sendo a resposta certa para a maioria das linhas enquanto custo
 estiverem cadastrados — e isso é informação, não falha: a coluna passa a **denunciar** produto sem
 custo cadastrado, que hoje ninguém vê.
 
+## Errata 13 (2026-11-06) — o Radar segue a ficha real do anúncio, e o preço fora da ficha ganha fonte
+
+**Contexto medido (Hairfly, 06/11, via JoomPulse, logs e banco; sem API autenticada).** O Creme 500g
+(Legacy) tinha gravada a ficha achada por GTIN e recusada pela trava (Kit Cadiveu), mas o ML havia
+convertido o próprio item em anúncio de catálogo de outra ficha. O Radar vigiava a ficha errada, sem
+preço, sem sobra e sem as ofertas reais. O Creme 80g está fora do catálogo, com preço R$ 21,90 contra
+base R$ 25,55. No 500g a distância é de R$ 53,90 contra R$ 75,30: o preço base não serve nem como
+estimativa, e a Errata 4 segue valendo.
+
+**Decisão 1 — a ficha do Radar vem do item, quando o ML diz qual é.** No tier completo,
+`sincronizarRadar` lê `catalog_listing` e `catalog_product_id` dos anúncios planos e únicos do código.
+Ficha real diferente da guardada substitui a guardada, depois de passar pela mesma `fichaEquivalente`
+do caminho UP: equivalente vira `vinculado`, não equivalente vira `ficha_divergente`. Leitura que
+falha mantém a ficha guardada. Anúncio com várias variações ou partições fica como está. `variacoes`
+não é escrita: o Radar relê o ML todo dia, e catálogo e fiscal ficam fora desta mudança.
+
+**Decisão 2 — ciclo da linha substituída.** Nos códigos cuja ficha o ML confirmou, linha `auto` fora
+do conjunto final é arquivada depois de a nova ser gravada. Ficha que outro anúncio não movido ainda
+usa continua. Linha `auto` arquivada cuja ficha volta ao conjunto final é reativada com as falhas
+zeradas. `pausado` é decisão do operador: não é arquivada na troca nem alterada na reativação.
+
+**Decisão 3 — preço fora da ficha.** Sem oferta nossa na ficha, com `catalogo_status='vinculado'`,
+anúncio plano e único e status `active` lido na mesma coleta, `meu_preco` vem de
+`/items/{id}/sale_price`, o preço que o comprador paga, e `meu_preco_fora_da_ficha` fica `true`. Esse
+preço alimenta a sobra e a comissão, mas não entra em posição, recortes ou alertas: a Errata 4 define
+que a comparação de mercado usa a nossa oferta na ficha. `ficha_divergente` segue com `—`.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

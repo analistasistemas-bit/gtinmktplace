@@ -2,7 +2,7 @@
 // estes mesmos filtros, então a contagem exibida e a lista filtrada precisam sair da MESMA regra.
 // Duplicar a condição no card e na lista é como um KPI passa a mostrar 12 e a lista devolver 9.
 import type { PulseProduto } from './pulse';
-import { posicaoVsMercado } from './pulse-formato';
+import { posicaoVsMercado, precoComparavel } from './pulse-formato';
 import { normalizarParaBusca } from './texto';
 
 /** Recorte ativado ao clicar num KPI. `null` = sem recorte. */
@@ -38,7 +38,7 @@ function casaBusca(p: PulseProduto, termo: string): boolean {
 
 function casaFoco(p: PulseProduto, foco: FocoPulse, menorRelevante: number | null): boolean {
   if (foco === 'sem_vinculo') return !!p.catalogo_status && p.catalogo_status !== 'vinculado';
-  const pos = posicaoVsMercado(p.meu_preco, menorRelevante);
+  const pos = posicaoVsMercado(precoComparavel(p), menorRelevante);
   if (!pos) return false; // sem comparação não entra em recorte de posição — nem como "barato"
   // Mesmo limiar de "Empatado" da coluna Sua posição: diferença abaixo de 0,5% não é vantagem
   // nem problema, e contá-la encheria os dois recortes com produtos praticamente no mesmo preço.
@@ -91,7 +91,7 @@ export function contarPulse(
   for (const p of produtos) {
     const menor = menorRelevanteDe(p);
     if (casaFoco(p, 'sem_vinculo', menor)) semVinculo++;
-    if (posicaoVsMercado(p.meu_preco, menor)) comparaveis++;
+    if (posicaoVsMercado(precoComparavel(p), menor)) comparaveis++;
     if (casaFoco(p, 'mais_caro', menor)) maisCaro++;
     if (casaFoco(p, 'menor_preco', menor)) menorPreco++;
   }

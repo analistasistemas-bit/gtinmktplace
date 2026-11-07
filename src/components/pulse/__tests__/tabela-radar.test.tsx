@@ -42,6 +42,26 @@ const renderRadar = (
   );
 };
 
+describe('TabelaRadar — preço fora da ficha (ADR-0147 Errata 5)', () => {
+  it('mostra o preço com rótulo e sem badge de posição', () => {
+    renderRadar([{ ...produto, meu_preco_fora_da_ficha: true }], resumo);
+
+    expect(screen.getByText(/R\$\s*81,99/)).toBeInTheDocument();
+    expect(screen.getByText('fora da ficha')).toBeInTheDocument();
+    expect(screen.queryByText('+17% mais caro')).not.toBeInTheDocument();
+  });
+
+  it('não afirma posição hipotética na disputa', () => {
+    const { container } = renderRadar([{ ...produto, meu_preco_fora_da_ficha: true }], disputado);
+    expect(container.innerHTML).not.toMatch(/ficaria em/);
+  });
+
+  it('preço na ficha não ganha rótulo', () => {
+    renderRadar([produto], resumo);
+    expect(screen.queryByText('fora da ficha')).not.toBeInTheDocument();
+  });
+});
+
 describe('TabelaRadar — mercado relevante', () => {
   it('exibe o menor relevante, nunca o menor observado', () => {
     renderRadar([produto], resumo);

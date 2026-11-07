@@ -53,7 +53,7 @@ describe('processarColetaOrg (caminho manual/legado) — caracterização', () =
     const r = await processarColetaOrg(admin, CX, 'org-1', 'completo', 50, false, partes);
 
     expect(partes.prepararContexto).toHaveBeenCalledWith(CX, 'org-1');
-    expect(partes.sincronizarRadar).toHaveBeenCalledWith(admin, 'org-1');
+    expect(partes.sincronizarRadar).toHaveBeenCalledWith(admin, 'org-1', 'tok');
     // Sem filtro de backoff: as 2 linhas (uma com 5 falhas seguidas) chegam inteiras.
     expect((partes.processarLoteProdutos as ReturnType<typeof vi.fn>).mock.calls[0][3]).toHaveLength(2);
     expect(partes.notificarRodadaPulse).not.toHaveBeenCalled(); // alertas:0 no mock

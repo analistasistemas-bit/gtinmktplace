@@ -25,6 +25,9 @@ export interface PulseProduto {
    */
   meu_preco: number | null;
   meu_preco_em: string | null;
+  /** `meu_preco` veio do anúncio, não de uma oferta nossa na ficha (ADR-0119 Errata 13): vale para a
+   *  sobra, mas não para a posição de mercado. */
+  meu_preco_fora_da_ficha?: boolean;
   /** Situação do NOSSO anúncio no ML (`active`, `paused`, `closed`…). Não é `status`, que é a
    *  situação do produto dentro do radar. `null` = ainda não lida. */
   anuncio_status: string | null;
@@ -82,19 +85,45 @@ export interface PulseAlerta {
   pulse_produtos: { titulo: string | null; codigo_pai: string | null; catalog_product_id: string } | null;
 }
 
+/**
+ * Nome do nosso anúncio, por `codigo_pai`, nas linhas de ficha recusada pela trava de equivalência.
+ * O nome da ficha pode ser de outro produto (Hairfly, 06/11: Creme 500g exibido como Kit Cadiveu).
+ * Só afeta a exibição: leitura que falha mantém o nome da ficha em vez de derrubar o Radar.
+ */
+async function nomesDasFichasRecusadas(produtos: PulseProduto[]): Promise<Map<string, string>> {
+  const codigos = [...new Set(produtos
+    .filter((p) => p.catalogo_status === 'ficha_divergente' && p.codigo_pai)
+    .map((p) => p.codigo_pai as string))];
+  const nomes = new Map<string, string>();
+  if (codigos.length === 0) return nomes;
+  const { data } = await supabase.from('familias')
+    .select('codigo_pai, titulo_ml')
+    .in('codigo_pai', codigos)
+    .not('titulo_ml', 'is', null)
+    .order('criado_em', { ascending: false });
+  // Re-ingest deixa várias famílias com o mesmo código: a mais recente vem primeiro e vence.
+  for (const f of (data ?? []) as Array<{ codigo_pai: string; titulo_ml: string }>) {
+    if (!nomes.has(f.codigo_pai)) nomes.set(f.codigo_pai, f.titulo_ml);
+  }
+  return nomes;
+}
+
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // `meu_preco` vem do próprio radar: o coletor lê a nossa oferta na ficha, na mesma resposta das
   // concorrentes. A versão anterior derivava esse número das variações locais, que só são escritas
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await supabase.from('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, meu_preco_fora_da_ficha, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as PulseProduto[]).map((p) => ({
+  const produtos = (data ?? []) as PulseProduto[];
+  const nomesProprios = await nomesDasFichasRecusadas(produtos);
+  return produtos.map((p) => ({
     ...p,
+    titulo: (p.catalogo_status === 'ficha_divergente' && p.codigo_pai && nomesProprios.get(p.codigo_pai)) || p.titulo,
     meu_preco: p.meu_preco != null ? Number(p.meu_preco) : null,
     // `Number()` aqui é cinto de segurança barato, não correção de um defeito conhecido: medido em
     // 2026-08-17 contra a produção, o PostgREST serializa `numeric` como NÚMERO JSON, não como

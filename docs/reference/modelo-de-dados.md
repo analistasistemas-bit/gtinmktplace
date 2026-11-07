@@ -1312,6 +1312,8 @@ usa o preço efetivo (`meu_preco`, com promoção) quando o conhece para o mesmo
 rótulo "estimativa" nessa coluna, nunca em `meu_preco`: com promoção os dois divergem, e ancorar no
 lugar errado fazia o número sair sem rótulo. `null` = linha anterior à Errata 7, tratada como
 estimativa.
+`meu_preco_fora_da_ficha` — `true` quando `meu_preco` veio de `/sale_price`, com o anúncio fora da
+ficha: vale para a sobra, não para a posição (ADR-0119 Errata 13).
 `meu_item_id`/`meu_preco`/`meu_preco_em` — preço **vivo** da nossa oferta na ficha, extraído da
 mesma resposta de `/products/{id}/items` que traz as concorrentes (Errata 4 do ADR-0119). `null`
 quando não temos oferta ativa lá (pausado, sem estoque, sem vínculo); com split vence o menor preço

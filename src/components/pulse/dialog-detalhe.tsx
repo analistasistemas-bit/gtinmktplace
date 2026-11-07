@@ -22,7 +22,7 @@ import {
   porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa, insumoFaltante,
 } from '@/lib/pulse-margem';
 import {
-  classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
+  classeTom, motivoSemPrecoProprio, posicaoVsMercado, precoComparavel, reputacao, rotuloMotivoQualificacao,
   rotuloReputacao, rotuloStatusQualificacao, tipoAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
@@ -163,7 +163,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   // Uma fonte só: a nossa oferta viva na ficha. Antes o preço local vinha primeiro e vencia o
   // vivo, então o detalhe mostrava um valor defasado e a margem simulada herdava o erro.
   const meuPreco = produto?.meu_preco ?? null;
-  const posicao = posicaoVsMercado(meuPreco, menorConcorrente);
+  const posicao = posicaoVsMercado(produto ? precoComparavel(produto) : null, menorConcorrente);
   const precoInput = precoEditado ?? (meuPreco != null ? String(meuPreco) : '');
   const precoSimulado = parseNumeroPtBr(precoInput);
   const faltando = produto?.codigo_pai && !contextoCarregando ? insumoFaltante(contexto, produto) : null;
