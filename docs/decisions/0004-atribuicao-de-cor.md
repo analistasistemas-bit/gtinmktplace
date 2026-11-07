@@ -125,10 +125,10 @@ Lote de 07/11, `Coloração Creme Colore 7.7 - Marrom Dourado 125g`: `variacoes.
 
 **Decisão:** antes de cair no sinônimo isolado, a Camada 1 procura matiz seguido de 1-2 tons
 (`COR_COMPOSTA` em `_shared/cor/extrair.ts`) e devolve a expressão literal do nome. Composta
-já cadastrada no dicionário continua canônica. Composta do nome do pai que não contém o termo
-achado é ignorada, para não trocar a cor da variação.
+já cadastrada no dicionário continua canônica. `extrairCorDeVariacao` lê o nome da variação
+antes do nome do pai, para a composta do pai não trocar a cor da variação.
 
-Retroteste em 3.415 pares nome/cor de produção: 9 linhas mudam, nenhum falso positivo.
+Retroteste em 2.547 pares de origem `descricao`: compostas corrigidas, 4 linhas deixam de herdar a cor do pai (`PINK 167` com pai `BRANCA` era `Branco`), nenhum falso positivo.
 Vale para CREATE e reprocessamento de variação sem cor; `if (v.cor) return v` preserva o que
 já foi gravado, então nada publicado muda. A cor literal pode não ter `value_id` no ML
 (`Dourado` tem, `Marrom Dourado` talvez não): o nome certo vale mais que o filtro de cor.

@@ -76,6 +76,17 @@ describe('extrairCorDoTexto — cor composta fora do dicionário', () => {
 
   it('composta do nome do pai não troca a cor da variação', () => {
     expect(extrairCorDeVariacao('Linha Preto', 'Linha Verde Escuro')).toBe('Preto');
+    expect(extrairCorDeVariacao('Linha Dourado', 'Linha Marrom Dourado')).toBe('Dourado');
+    expect(extrairCorDeVariacao('Linha Preto', 'Linha Preto Azulado')).toBe('Preto');
+  });
+
+  it('composta do pai vale quando a variação não tem cor', () => {
+    expect(extrairCorDeVariacao('Coloração 125g', 'Coloração Marrom Dourado')).toBe('Marrom Dourado');
+  });
+
+  it('segundo tom não se perde depois de prefixo cadastrado', () => {
+    expect(extrairCorDoTexto(['Coloração Azul Claro Dourado 125g'])).toBe('Azul Claro Dourado');
+    expect(extrairCorDoTexto(['Vermelho Escuro Intenso'])).toBe('Vermelho Escuro Intenso');
   });
 });
 

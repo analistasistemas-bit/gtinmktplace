@@ -34,13 +34,10 @@ export function extrairCorDoTexto(textos: Array<string | null | undefined>): str
   if (conjunto.length === 0) return null;
   const corpus = conjunto.join(' | ');
   const termo = TERMOS.find((t) => t.regex.test(corpus));
-  if (termo?.sinonimo.includes(' ')) return termo.canonica; // composta já cadastrada
   const composta = COR_COMPOSTA.exec(corpus)?.[0];
-  // A composta precisa conter o termo achado: a do nome do pai não troca a cor da variação.
-  if (composta && (!termo || termo.regex.test(composta))) {
-    return composta.split(/[\s-]+/).map(palavraDeCor).join(' ');
-  }
-  return termo?.canonica ?? null;
+  // Empate de tamanho = composta já cadastrada ("Azul Claro"): vale a forma canônica.
+  if (!composta || (termo && termo.sinonimo.length >= composta.length)) return termo?.canonica ?? null;
+  return composta.split(/[\s-]+/).map(palavraDeCor).join(' ');
 }
 
 /**
@@ -54,7 +51,8 @@ export function extrairCorDeVariacao(
   nomeVariacao: string | null | undefined,
   nomePai: string | null | undefined,
 ): string | null {
-  return extrairCorDoTexto([nomeVariacao, nomePai]);
+  // Variação primeiro: a composta do pai ("Marrom Dourado") não troca a cor dela ("Dourado").
+  return extrairCorDoTexto([nomeVariacao]) ?? extrairCorDoTexto([nomePai]);
 }
 
 // Mapa de abreviações comuns de cor (chave em MAIÚSCULAS) → forma por extenso.
