@@ -246,8 +246,9 @@ atacado; a menção a `exibir_com_desconto` nelas está desatualizada.
 ## Errata (2026-11-06)
 
 O [ADR-0196](0196-alterar-preco-em-publicados-com-oferta-e-atacado.md) retira a recusa por preços divergentes no UPDATE
-UP: a invariante I5 e o primeiro item da seção 6 deixam de valer. Cada item recebe as faixas sobre o próprio preço, e
-item sem preço conhecido grava `atacado_status='erro'` sem aplicar em nenhum. No "Adicionar variação" (I10) só a cor nova
-recebe as faixas, porque o preço vivo das irmãs não é conhecido nesse caminho. A recusa de configuração por cor (I7)
-continua. O CREATE UP (`publicar-familia-up.ts`) segue a mesma regra: cada item sobre o próprio preço, e item sem preço
-grava `erro` sem aplicar em nenhum. A dívida 2 fica paga só nessa parte: a configuração segue família-level.
+UP: a invariante I5 e o primeiro item da seção 6 deixam de valer. Cada item recebe as faixas sobre o próprio preço.
+Item sem preço conhecido, ou com valor arredondado igual ou acima do preço, grava `atacado_status='erro'` sem aplicar em
+nenhum. No "Adicionar variação" (I10) a irmã com faixas vivas fica como está; cor ativa sem faixas, como a ativada numa
+tentativa que falhou, recebe as faixas sobre o preço vivo. A recusa de configuração por cor (I7) continua. O CREATE UP
+(`publicar-familia-up.ts`) e o retry de `publish-familia-ml` seguem a mesma regra por item
+(`user-products/atacado-por-item.ts`). A dívida 2 fica paga só nessa parte: a configuração segue família-level.

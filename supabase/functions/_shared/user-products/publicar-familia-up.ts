@@ -6,6 +6,7 @@
 // (cache hit) ou o ML rejeitou o payload `variations` (FORMATO_INCOMPATIVEL).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { AnuncioCanonico, ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
+import { aplicarAtacadoPorItem } from './atacado-por-item.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './publicar-grupo.ts';
@@ -236,21 +237,14 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     // outra cor deixaria a mais barata com faixa igual ou acima do preço. Sem preço, não aplica em nenhum.
     const faixas = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
     if (conn.capabilities.atacado && faixas.length > 0) {
-      const itens = filhos.filter((f) => f.item_externo_id && varPorSku.has(f.sku));
-      if (itens.some((f) => varPorSku.get(f.sku)!.preco == null)) {
-        await admin.from('familias').update({
-          atacado_status: 'erro', atacado_erro: 'Atacado sem preço-base: uma ou mais cores sem preço',
-        }).eq('id', familia.id);
-      } else {
-        let ok = true;
-        for (const f of itens) {
-          try { await conn.aplicarAtacado(ctx, f.item_externo_id!, Number(varPorSku.get(f.sku)!.preco), faixas); }
-          catch (e) { ok = false; console.error(`atacado UP falhou (${f.item_externo_id}):`, e); }
-        }
-        await admin.from('familias').update(ok
-          ? { atacado_status: 'aplicado', atacado_erro: null }
-          : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' }).eq('id', familia.id);
-      }
+      const itens = filhos.filter((f) => f.item_externo_id && varPorSku.has(f.sku)).map((f) => {
+        const preco = varPorSku.get(f.sku)!.preco;
+        return { id: f.item_externo_id!, preco: preco == null ? null : Number(preco) };
+      });
+      const erro = await aplicarAtacadoPorItem(conn, ctx, itens, faixas);
+      await admin.from('familias').update(erro
+        ? { atacado_status: 'erro', atacado_erro: erro }
+        : { atacado_status: 'aplicado', atacado_erro: null }).eq('id', familia.id);
     }
 
     // Vinculação ao catálogo (ADR-0021/0088 F2): deferida via QStash, espelhando o Legacy

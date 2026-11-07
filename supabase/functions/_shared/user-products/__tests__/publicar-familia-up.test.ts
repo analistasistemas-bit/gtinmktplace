@@ -253,6 +253,23 @@ describe('publicarFamiliaUP — atacado sobre o preço de cada item', () => {
     expect(r.atacado).toEqual([{ atacado_status: 'aplicado', atacado_erro: null }]);
   });
 
+  it('faixa arredondada igual ao base: não envia e grava erro', async () => {
+    const aplicados: unknown[] = [];
+    const conn = {
+      ...fakeConnector, capabilities: { ...fakeConnector.capabilities, atacado: true, descricaoSeparada: false },
+      aplicarAtacado: async (...a: unknown[]) => { aplicados.push(a); },
+    };
+    const { admin, writes } = fakeAdmin(FILHOS);
+    await publicarFamiliaUP({
+      admin, conn: conn as never, ctx, conexao, categoriaId: 'MLB419782', anuncio: cores(1, 50),
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 0.1 }] } as never,
+      executarSaga: () => Promise.resolve({ estado: 'ativo', itemExternoId: 'MLB1', permalink: null } as never),
+    });
+    expect(aplicados).toEqual([]);
+    const erro = writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro');
+    expect(String(erro?.payload.atacado_erro)).toMatch(/igual ou acima/);
+  });
+
   it('falha ao aplicar grava erro', async () => {
     expect((await publicar(cores(10, 25), FILHOS, true)).atacado).toMatchObject([{ atacado_status: 'erro' }]);
   });

@@ -8,6 +8,7 @@ describe('faixasDoAlvo', () => {
   it('% sobre o alvo, em centavos half-up', () => {
     expect(faixasDoAlvo(100, CINCO)).toEqual([{ min_unidades: 2, preco: 95 }]);
     expect(faixasDoAlvo(10.01, CINCO)).toEqual([{ min_unidades: 2, preco: 9.51 }]); // 9,5095
+    expect(faixasDoAlvo(2.01, [{ min_unidades: 2, desconto_pct: 50 }])).toEqual([{ min_unidades: 2, preco: 1.01 }]); // empate: 1,005
   });
   it('ordena por quantidade', () => {
     expect(faixasDoAlvo(100, [{ min_unidades: 5, desconto_pct: 10 }, ...CINCO]).map((f) => f.min_unidades)).toEqual([2, 5]);

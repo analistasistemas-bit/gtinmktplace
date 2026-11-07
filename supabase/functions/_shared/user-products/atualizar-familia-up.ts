@@ -9,6 +9,8 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { AtributoItem, ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
+import { criarClienteReajusteML } from '../operacoes/reajuste/ml.ts';
+import { aplicarAtacadoPorItem, type ItemAtacado } from './atacado-por-item.ts';
 import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
 import { criarItemML, atualizarSecaoCores } from '../ml/criar-item.ts';
 import { atualizarSecaoTamanhos, tamanhosDaGradeCopy } from '../ai/copywriter-prompt.ts';
@@ -544,15 +546,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       const jaAplicado = familia.atacado_status === 'aplicado';
       const aplicandoFaixas = faixas.length > 0;
       if (aplicandoFaixas || jaAplicado) {
-        // ADR-0196: o PxQ é por ITEM e o valor é absoluto (ADR-0041), logo a base é o preço do próprio
-        // item. I10: a irmã preservada fica no preço vivo, que aqui é desconhecido; o PxQ dela segue
-        // valendo sobre esse preço, e só a cor nova recebe as faixas. Limpar não depende de preço.
-        const soCorNova = aplicandoFaixas && !!args.preservarPublicadas;
-        const alvosAtacado = soCorNova ? finaisComSku.filter((f) => !jaAtivos.has(f.sku)) : finaisComSku;
-        if (aplicandoFaixas && alvosAtacado.some((f) => precoPorSku[f.sku] == null)) {
-          const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
-        } else if (aplicandoFaixas && configPorCor.length > 0) {
+        if (aplicandoFaixas && configPorCor.length > 0) {
           // `aplicandoFaixas &&` é essencial: sem ele, uma família com `atacado_status='aplicado'` e
           // faixas REMOVIDAS (o operador desligou o atacado) caía aqui e nunca chegava ao ramo que
           // LIMPA o PxQ no ML. Resultado: o app diria "erro" e o Mercado Livre seguiria vendendo no
@@ -574,18 +568,29 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
             + 'que a configuração por cor deixe de valer.';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else {
-          let ok = true;
-          for (const { id, sku } of alvosAtacado) {
-            try { await conn.aplicarAtacado(ctx, id, precoPorSku[sku] ?? 0, faixas); }
-            catch (e) { ok = false; console.error(`atacado UP (update) falhou (${id}):`, e); }
+          // ADR-0196: a base é o preço do próprio item. I10: cor já ativa não tem preço aqui. Com faixas vivas fica
+          // como está; sem elas (ativada numa tentativa que falhou) entra pelo preço vivo. Leitura inconclusiva →
+          // preço nulo → erro. Limpar alcança todos e não depende de preço.
+          const itens: ItemAtacado[] = [];
+          for (const { id, sku } of finaisComSku) {
+            if (!aplicandoFaixas || !args.preservarPublicadas || !jaAtivos.has(sku)) {
+              itens.push({ id, preco: precoPorSku[sku] ?? null });
+              continue;
+            }
+            try {
+              const ml = criarClienteReajusteML(await ctx.getToken());
+              const vivas = await ml.lerFaixas(id);
+              if (!vivas?.length) itens.push({ id, preco: vivas ? (await ml.lerVivo(id)).preco : null });
+            } catch (e) {
+              console.error(`atacado UP (update): leitura falhou (${id}):`, e);
+              itens.push({ id, preco: null });
+            }
           }
-          // Só a cor nova deu certo: isso não prova as irmãs, e um `erro` delas tem de continuar visível.
-          if (!ok || !soCorNova) {
-            await admin.from('familias')
-              .update(ok ? { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null }
-                : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' })
-              .eq('id', familia.id);
-          }
+          const erro = await aplicarAtacadoPorItem(conn, ctx, itens, faixas);
+          await admin.from('familias')
+            .update(erro ? { atacado_status: 'erro', atacado_erro: erro }
+              : { atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null })
+            .eq('id', familia.id);
         }
       }
     }

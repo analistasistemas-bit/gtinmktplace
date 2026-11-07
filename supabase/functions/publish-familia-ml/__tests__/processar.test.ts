@@ -26,6 +26,8 @@ function fakeAdmin(over: {
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
+  filhosUP?: Record<string, unknown>[]; // anuncios_externos_itens (família UP já publicada)
+  filhosErro?: boolean;
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
@@ -68,6 +70,9 @@ function fakeAdmin(over: {
         // Claim do encadeamento de kits: update em `familias` filtrado por `kit_base_codigo_pai`.
         if (table === 'familias' && rec.op === 'update' && 'kit_base_codigo_pai' in rec.filters) {
           return Promise.resolve({ data: kitsReclamados, error: null }).then(resolve);
+        }
+        if (table === 'anuncios_externos_itens') {
+          return Promise.resolve(over.filhosErro ? { data: null, error: { message: 'boom' } } : { data: over.filhosUP ?? [], error: null }).then(resolve);
         }
         if (rec.op === 'update') writes.push({ table, payload: rec.payload, filters: rec.filters });
         return Promise.resolve({ data: rec.op === 'update' ? null : ler(), error: null }).then(resolve);
@@ -599,5 +604,69 @@ describe('processarFamiliaML — CREATE cortado pelo teto (ADR-0195)', () => {
     const r = await processarFamiliaML(baseDeps(admin, { notificar }), JOB, { tentativas: 0 });
     expect(r.tipo).toBe('ok');
     erro.mockRestore();
+  });
+});
+
+// ADR-0196: `familias.ml_item_id` em UP é só o 1º filho. Faixa é por item e sobre o preço dele.
+describe('processarFamiliaML — retry do atacado em família já publicada', () => {
+  const FAIXAS = [{ min_unidades: 2, desconto_pct: 5 }];
+  const familia = { ...FAMILIA_BASE, ml_item_id: 'MLB2', atacado: FAIXAS, atacado_status: 'erro', descricao_ml: null };
+  const filho = (sku: string, item_externo_id: string, o: Record<string, unknown> = {}) =>
+    ({ anuncio_externo_id: 'root-1', sku, item_externo_id, status: 'ativo', retirado: false, ...o });
+  const variacoes = [{ ...VAR_BASE, codigo: 'V1', preco_publicacao: 100 }, { ...VAR_BASE, codigo: 'V2', preco_publicacao: 80 }];
+
+  async function rodar(over: Parameters<typeof fakeAdmin>[0], falhar?: string) {
+    const aplicados: [string, number][] = [];
+    const conn = {
+      ...fakeConnector, capabilities: { ...fakeConnector.capabilities, atacado: true },
+      aplicarAtacado: async (_c: unknown, id: string, base: number) => {
+        if (id === falhar) throw new Error('ML 500');
+        aplicados.push([id, base]);
+      },
+    };
+    const { admin, writes } = fakeAdmin({ familia, variacoes, ...over });
+    const r = await processarFamiliaML(baseDeps(admin, { conn: conn as never }), JOB, { tentativas: 0 } as never);
+    return { r, aplicados, status: writes.filter((w) => w.table === 'familias' && 'atacado_status' in w.payload).map((w) => w.payload) };
+  }
+
+  it('UP: cada filho sobre o próprio preço, mesmo com a 1ª variação mais cara', async () => {
+    const { r, aplicados, status } = await rodar({ filhosUP: [filho('V1', 'MLB1'), filho('V2', 'MLB2')] });
+    expect(r.tipo).toBe('ja_publicado');
+    expect(aplicados).toEqual([['MLB1', 100], ['MLB2', 80]]);
+    expect(status).toEqual([{ atacado_status: 'aplicado', atacado_erro: null }]);
+  });
+
+  it('UP: filho retirado ou sem item fica de fora', async () => {
+    const { aplicados } = await rodar({ filhosUP: [filho('V2', 'MLB2'), filho('V1', 'MLB1', { retirado: true }), filho('V3', null as never)] });
+    expect(aplicados).toEqual([['MLB2', 80]]);
+  });
+
+  it('UP: falha em um filho não vira aplicado', async () => {
+    const { status } = await rodar({ filhosUP: [filho('V1', 'MLB1'), filho('V2', 'MLB2')] }, 'MLB1');
+    expect(status).toMatchObject([{ atacado_status: 'erro' }]);
+  });
+
+  it('UP: filho sem preço → erro, nada enviado', async () => {
+    const { aplicados, status } = await rodar({ filhosUP: [filho('V1', 'MLB1'), filho('V9', 'MLB2')] });
+    expect(aplicados).toEqual([]);
+    expect(status).toMatchObject([{ atacado_status: 'erro' }]);
+  });
+
+  it('leitura dos filhos falhou: não trata como Legacy nem grava status', async () => {
+    const { aplicados, status } = await rodar({ filhosErro: true });
+    expect(aplicados).toEqual([]);
+    expect(status).toEqual([]);
+  });
+
+  it('Legacy: o item único com preço uniforme', async () => {
+    const { aplicados, status } = await rodar({ variacoes: [{ ...VAR_BASE, preco_publicacao: 80 }, { ...VAR_BASE, codigo: 'V2', preco_publicacao: 80 }] });
+    expect(aplicados).toEqual([['MLB2', 80]]);
+    expect(status).toEqual([{ atacado_status: 'aplicado', atacado_erro: null }]);
+  });
+
+  it('Legacy com preços diferentes: não escolhe uma base', async () => {
+    const { aplicados, status } = await rodar({});
+    expect(aplicados).toEqual([]);
+    expect(status).toMatchObject([{ atacado_status: 'erro' }]);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 // queue.ts puxa QStash — mockado. O spy prova o reenfileirar de catálogo (Fix 5).
 const { enfileirarSpy } = vi.hoisted(() => ({ enfileirarSpy: vi.fn() }));
@@ -78,6 +78,7 @@ function args(over: Partial<AtualizarFamiliaUPArgs> = {}): AtualizarFamiliaUPArg
 }
 
 beforeEach(() => { enfileirarSpy.mockReset(); notificarSpy.mockReset(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 // Fix 1 — exceção genérica no meio da composição limpa mudando_composicao (senão fica escondido).
 describe('atualizarFamiliaUP — Fix 1: exceção genérica na saga limpa mudando_composicao', () => {
@@ -439,8 +440,24 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(String(erro?.payload.atacado_erro)).toMatch(/preço-base/);
   });
 
-  // I10: a irmã ativa fica no preço vivo, que o caminho não conhece; o PxQ dela segue valendo sobre ele.
-  it('Adicionar variação: aplica o PxQ só na cor nova, sobre o preço dela', async () => {
+  // Faixa viva e preço vivo por item, no formato real das APIs do ML.
+  function mlVivo(itens: Record<string, { preco: number; faixas?: boolean } | 'falha'>) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const id = /\/items\/(MLB\d+)\/prices/.exec(url)?.[1] ?? /ids=(MLB\d+)/.exec(url)?.[1] ?? '';
+      const x = itens[id];
+      if (x === 'falha' || !x) return new Response(null, { status: 500 });
+      if (url.includes('/prices')) {
+        const b2b = { type: 'standard', amount: x.preco * 0.9, conditions: { context_restrictions: ['user_type_business'], min_purchase_unit: 3 } };
+        return new Response(JSON.stringify({ prices: x.faixas ? [b2b] : [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([{ status_code: 200, body: { id, price: x.preco, status: 'active' } }]), { status: 200 });
+    }));
+  }
+
+  // I10: a irmã com faixas fica como está. A cor ativada numa tentativa que falhou é "ativa" no retry, mas
+  // sem faixas, e por isso entra pelo preço vivo.
+  it('Adicionar variação: aplica na cor nova, e a irmã com faixas fica intacta', async () => {
+    mlVivo({ MLB1: { preco: 10, faixas: true } });
     const conn = fakeConn({ atacado: true });
     const nova: Record<string, unknown> = { sku: 'B', status: 'pendente', retirado: false, item_externo_id: null, family_id: null };
     const { admin, writes } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }, nova]);
@@ -458,8 +475,65 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
       executarSaga,
     }));
     expect(conn.atacados.map((a) => [a.itemExternoId, a.precoBase])).toEqual([['MLB2', 25]]);
-    // A cor nova não prova as irmãs: o status da família fica como estava.
-    expect(writes.find((w) => w.table === 'familias' && 'atacado_status' in w.payload)).toBeUndefined();
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'aplicado')).toBeDefined();
+  });
+
+  it('Adicionar variação em duas tentativas: a cor ativada na que falhou recebe as faixas no retry', async () => {
+    mlVivo({ MLB1: { preco: 10, faixas: true }, MLB2: { preco: 25 }, MLB3: { preco: 30 } });
+    const conn = fakeConn({ atacado: true });
+    const b: Record<string, unknown> = { sku: 'B', status: 'pendente', retirado: false, item_externo_id: null, family_id: null };
+    const c: Record<string, unknown> = { sku: 'C', status: 'pendente', retirado: false, item_externo_id: null, family_id: null };
+    const { admin } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }, b, c]);
+    const cor = (codigo: string, preco_publicacao: number) => ({ codigo, cor: codigo, estoque: 1, preco_publicacao, gtin: null, imagem_path: null, ml_picture_id: null });
+    const tentativa = (executarSaga: () => Promise<ResultadoComposicao>) => atualizarFamiliaUP(args({
+      admin, conn: conn as never, preservarPublicadas: true,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
+      variacoes: [cor('A', 10), cor('B', 25), cor('C', 30)] as never, executarSaga,
+    }));
+
+    const r1 = await tentativa(async () => {
+      Object.assign(b, { status: 'ativo', item_externo_id: 'MLB2', family_id: 'F' });
+      return { tipo: 'incompleto' };
+    });
+    expect(r1.estado).toBe('retry');
+    expect(conn.atacados).toEqual([]);
+
+    await tentativa(async () => {
+      Object.assign(c, { status: 'ativo', item_externo_id: 'MLB3', family_id: 'F' });
+      return { tipo: 'concluido', criadas: ['C'] };
+    });
+    expect(conn.atacados.map((a) => [a.itemExternoId, a.precoBase])).toEqual([['MLB2', 25], ['MLB3', 30]]);
+  });
+
+  it('Adicionar variação: leitura inconclusiva da irmã → erro, sem enviar', async () => {
+    mlVivo({ MLB1: 'falha' });
+    const conn = fakeConn({ atacado: true });
+    const { admin, writes } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never, preservarPublicadas: true,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
+      variacoes: [{ codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null }] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.atacados).toEqual([]);
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro')).toBeDefined();
+  });
+
+  // R$ 1,00 com 0,1% arredonda para R$ 1,00: faixa igual ao base (conta real do payload).
+  it('faixa arredondada igual ao base: não envia e grava erro', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin, writes } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 0.1 }] } as never,
+      variacoes: [{ codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 1, gtin: null, imagem_path: null, ml_picture_id: null }] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.atacados).toEqual([]);
+    const erro = writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro');
+    expect(String(erro?.payload.atacado_erro)).toMatch(/igual ou acima/);
   });
 
   it('faixas removidas limpam todos os itens, mesmo sem preço conhecido', async () => {
