@@ -48,6 +48,13 @@ describe('planejarPassos', () => {
     expect(() => planejarPassos({ ...e, base: 100, alvo: 120, ofertas: [o('A', 90)], ofertasNovas: { A: 130 } })).toThrow(/oferta/);
   });
 
+  it('sem mudança de base só aceita faixas', () => {
+    const ofertas = [o('A', 50)];
+    expect(() => planejarPassos({ ...e, ofertas, ofertasNovas: { A: 30 } })).toThrow(/só faixas/);
+    expect(() => planejarPassos({ ...e, ofertas, sair: ['A'] })).toThrow(/só faixas/);
+    expect(() => planejarPassos({ ...e, base: 39.9, alvo: 39.9, ofertas, sair: ['A'], faixasAlvo: f(30) })).toThrow(/só faixas/);
+  });
+
   it('oferta sem preço comprovado bloqueia, mesmo com novo valor; a saída a remove', () => {
     expect(() => planejarPassos({ ...e, base: 100, alvo: 120, ofertas: [o('A', null)] })).toThrow(/oferta/);
     expect(() => planejarPassos({ ...e, base: 100, alvo: 80, ofertas: [o('A', null)], ofertasNovas: { A: 70 } })).toThrow(/oferta/);

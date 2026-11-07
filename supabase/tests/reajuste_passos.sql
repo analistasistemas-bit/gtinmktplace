@@ -27,8 +27,8 @@ insert into public.lotes (id, user_id, org_id, status, origem) values
   ('94000000-0000-0000-0000-000000000201', '94000000-0000-0000-0000-000000000101', '94000000-0000-0000-0000-000000000001', 'processando', 'manual');
 insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, status, origem, chave_cadastro, ml_item_id, publicado_em)
 select '94000000-0000-0000-0000-000000000201', '94000000-0000-0000-0000-000000000101', '94000000-0000-0000-0000-000000000001',
-       '0940000' || n, 'Produto ' || n, 'CREATE', 'publicado', 'nacional', gen_random_uuid(), 'MLBP' || n, now() - interval '1 day'
-from generate_series(1, 9) n;
+       '094' || lpad(n::text, 5, '0'), 'Produto ' || n, 'CREATE', 'publicado', 'nacional', gen_random_uuid(), 'MLBP' || n, now() - interval '1 day'
+from generate_series(1, 11) n;
 insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, preco_publicacao, preco_editado_pelo_operador, ml_variation_id)
 select '94000000-0000-0000-0000-000000000401', f.id, f.user_id, f.org_id, '09400011', 'A', 10, 100, false, 'VA'
 from public.familias f where f.ml_item_id = 'MLBP1' and f.org_id = '94000000-0000-0000-0000-000000000001';
@@ -36,10 +36,10 @@ from public.familias f where f.ml_item_id = 'MLBP1' and f.org_id = '94000000-000
 insert into public.operacoes_massa (id, org_id, acao, status) values
   ('94000000-0000-0000-0000-000000000501', '94000000-0000-0000-0000-000000000001', 'reajustar', 'executando');
 insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, codigo_pai, variacao_ids, passos)
-select '94000000-0000-0000-0000-000000000501', '94000000-0000-0000-0000-000000000001', 'MLBP' || n, 'pendente', 110, '0940000' || n,
+select '94000000-0000-0000-0000-000000000501', '94000000-0000-0000-0000-000000000001', 'MLBP' || n, 'pendente', 110, '094' || lpad(n::text, 5, '0'),
        array['94000000-0000-0000-0000-000000000401']::uuid[],
        '[{"tipo":"faixas","anterior":[],"alvo":[],"estado":"pendente"},{"tipo":"base","anterior":100,"alvo":110,"estado":"pendente"}]'::jsonb
-from generate_series(1, 9) n;
+from generate_series(1, 11) n;
 
 do $$
 declare
@@ -81,6 +81,14 @@ begin
   v_erro := false;
   begin perform public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, 0, 'feito'); exception when raise_exception then v_erro := true; end;
   perform pg_temp.ok(v_erro, 'estado desconhecido lança');
+  v_antes := pg_temp.item(v_op, 'MLBP1');
+  v_erro := false;
+  begin perform public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, 0, null); exception when raise_exception then v_erro := true; end;
+  perform pg_temp.ok(v_erro, 'estado nulo lança');
+  v_erro := false;
+  begin perform public.reajuste_passo_marcar(v_org, v_op, 'MLBP1', v_t1, null, 'confirmado'); exception when raise_exception then v_erro := true; end;
+  perform pg_temp.ok(v_erro, 'índice nulo lança');
+  perform pg_temp.ok(to_jsonb(pg_temp.item(v_op, 'MLBP1')) = to_jsonb(v_antes), 'estado e índice nulos preservam o item');
 
   -- Lease vencido permite novo claim; o token antigo perde a posse e nada grava.
   update public.operacoes_massa_itens set lease_ate = now() - interval '1 second' where operacao_id = v_op and ml_item_id = 'MLBP1';
@@ -155,6 +163,16 @@ begin
   insert into public.operacoes_massa_itens (operacao_id, org_id, promocao_id, ml_item_id, status) values (v_sair, v_org, 'P-SAIR', 'MLB-SEM-REAJUSTE', 'pendente');
   perform pg_temp.ok(public.operacoes_massa_reivindicar(v_org, v_sair, 'MLB-SEM-REAJUSTE'), 'sair sem reajuste segue');
   perform pg_temp.ok((pg_temp.item(v_sair, 'MLB-SEM-REAJUSTE')).status = 'enviando', 'sair enviando');
+
+  -- Retomada: a escrita pode ter saído sem etapa, então a reserva da promoção fica até a reconciliação.
+  insert into public.operacoes_massa_itens (operacao_id, org_id, promocao_id, ml_item_id, status, atualizado_em) values
+    (v_sair, v_org, 'P-SAIR', 'MLBP10', 'enviando', now() - interval '3 minutes'),
+    (v_aderir, v_org, 'P-ADERIR', 'MLBP11', 'enviando', now() - interval '3 minutes');
+  perform pg_temp.ok(public.operacoes_massa_reivindicar(v_org, v_sair, 'MLBP10'), 'sair enviando parado retoma com reajuste pendente');
+  perform pg_temp.ok((pg_temp.item(v_sair, 'MLBP10')).status = 'enviando', 'sair retomado segue enviando');
+  perform pg_temp.ok(public.reajuste_reivindicar(v_org, v_op, 'MLBP10') = v_motivo, 'sair retomado barra o reajuste');
+  perform pg_temp.ok(public.operacoes_massa_reivindicar(v_org, v_aderir, 'MLBP11'), 'aderir enviando parado retoma com reajuste pendente');
+  perform pg_temp.ok(public.reajuste_reivindicar(v_org, v_op, 'MLBP11') = v_motivo, 'aderir retomado barra o reajuste');
 
   -- Barreira: promoção recém-aplicada (o ML atrasa) e escrita possível.
   insert into public.operacoes_massa_itens (operacao_id, org_id, promocao_id, ml_item_id, status, atualizado_em)

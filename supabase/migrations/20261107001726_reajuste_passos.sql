@@ -127,7 +127,9 @@ begin
                          or (v_it.status = 'enviando' and v_it.atualizado_em < now() - interval '2 minutes')) then
       return false;
     end if;
-    if exists (select 1 from public.operacoes_massa_itens i
+    -- Só `pendente`: `enviando` parado pode já ter escrito no ML sem etapa. Virar `mudou` soltaria a reserva antes da
+    -- reconciliação. Ele só convive com reajuste `pendente`, que segue barrado por este item.
+    if v_it.status = 'pendente' and exists (select 1 from public.operacoes_massa_itens i
                join public.operacoes_massa o on o.id = i.operacao_id and o.org_id = p_org and o.acao = 'reajustar'
                where i.org_id = p_org and i.ml_item_id = p_ml_item
                  and i.status in ('pendente','enviando','conferindo')) then
@@ -163,7 +165,8 @@ begin
     return false;
   end if;
 
-  if p_estado not in ('pendente','escrita_pedida','confirmado','volta_pendente','volta_pedida','compensado') then
+  -- `null not in (...)` é null e passaria; to_jsonb(null) faria o jsonb_set apagar `passos`.
+  if p_estado is null or p_estado not in ('pendente','escrita_pedida','confirmado','volta_pendente','volta_pedida','compensado') then
     raise exception 'reajuste_passo_marcar: estado desconhecido: %', p_estado;
   end if;
   if p_indice is null or p_indice < 0 or p_indice >= coalesce(jsonb_array_length(v_it.passos), 0) then

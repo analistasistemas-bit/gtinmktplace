@@ -39,8 +39,12 @@ export function estadosIntermediarios(base: number, ofertas: OfertaVigente[], fa
   });
 }
 
-/** Descendo: saídas, ofertas, faixas, base. Subindo: base, ofertas, faixas. Lança se algum estado viola as invariantes. */
+/** Descendo: saídas, ofertas, faixas, base. Subindo: base, ofertas, faixas. Sem mudança de base: só faixas; oferta ou saída
+ *  pedida nesse caso lança. Lança se algum estado viola as invariantes. */
 export function planejarPassos(e: EntradaPassos): Passo[] {
+  if (semAlteracao(e.base, e.alvo) && (e.sair.length || Object.keys(e.ofertasNovas).length)) {
+    throw new Error('sem mudança de base: só faixas');
+  }
   const saidas = e.ofertas.filter((o) => e.sair.includes(o.chave)).map((oferta): Passo => ({ tipo: 'saida', oferta, estado: 'pendente' }));
   const ofertas = e.ofertas.filter((o) => o.chave in e.ofertasNovas).map((oferta): Passo => {
     // O passo substitui o preço no estado seguinte: sem esta trava, a oferta sem preço escaparia de `violacao`.
