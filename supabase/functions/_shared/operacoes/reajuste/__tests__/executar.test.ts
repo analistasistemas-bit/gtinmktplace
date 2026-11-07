@@ -67,6 +67,7 @@ function montar(itens: Linha[], vivo: Record<string, VivoItem>) {
         return { kind: 'ok' };
       }),
       participaPromocaoML: vi.fn(async (): Promise<boolean | null> => false),
+      lerOfertas: vi.fn(async () => []),
     },
     lerItem: vi.fn(async (_o: string, id: string) => ({ ...achar(id) })),
     avaliarFresco: vi.fn(async () => AVAL),

@@ -13,6 +13,11 @@ export interface EstadoVariacao { preco_publicacao: number | null; preco_editado
 /** Tipo ÚNICO usado no preview, executor e RPC. */
 export interface EntradaRestauracao { variacao_id: string; esperado: EstadoVariacao; novo: EstadoVariacao }
 export type Etapa = 'escrita_pedida' | 'ml_confirmado' | null;
+/** `preco` null = oferta sem preço comprovado: bloqueia a escrita. A Relâmpago pode ter várias na mesma campanha (ADR-0196). */
+export interface OfertaVigente {
+  chave: string; promocao_id: string; tipo: string; status: 'started' | 'pending'; preco: number | null;
+  offer_id: string | null; inicio: string | null; fim: string | null;
+}
 export interface VivoItem {
   preco: number | null; variacoes: { id: string; preco: number }[] | null; status: string;
   sub_status: string[]; catalog_listing: boolean; tem_relacoes: boolean;

@@ -2,13 +2,16 @@
 // todas as variações; plano/UP: {price}). 401/403 → SemAcessoStatusML (reconectar a conta).
 import { caminhoMultiget, comoEnvelopeAntigo } from '../../ml/multiget.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
-import type { VivoItem } from './tipos.ts';
+import { oferta } from './ofertas.ts';
+import type { OfertaVigente, VivoItem } from './tipos.ts';
 
 export type ResultadoPut = { kind: 'ok' } | { kind: 'sem_escrita'; status: number; mensagem: string } | { kind: 'desconhecido'; mensagem: string };
 export interface ClienteReajusteML {
   lerVivo(itemId: string): Promise<VivoItem>;
   putPreco(itemId: string, alvo: number, variacaoIds: string[] | null): Promise<ResultadoPut>;
   participaPromocaoML(itemId: string): Promise<boolean | null>;
+  /** null = inconclusivo, nunca "sem ofertas". */
+  lerOfertas(itemId: string): Promise<OfertaVigente[] | null>;
 }
 
 const API = 'https://api.mercadolibre.com';
@@ -20,10 +23,32 @@ type ItemML = {
   price?: unknown; status?: unknown; sub_status?: unknown; catalog_listing?: unknown;
   variations?: { id: unknown; price: unknown }[]; item_relations?: unknown[];
 };
+type PromoML = {
+  id?: unknown; type?: unknown; status?: unknown; price?: unknown; offer_id?: unknown; ref_id?: unknown;
+  start_date?: unknown; finish_date?: unknown;
+};
+
+const texto = (x: unknown) => (typeof x === 'string' && x ? x : null);
+const precoPositivo = (x: unknown) => { const n = Number(x); return x != null && Number.isFinite(n) && n > 0 ? n : null; };
+
+/** `promo` é a entrada da visão por item; `x` traz status e preço (ela mesma, ou o item na visão da campanha). */
+const ofertaDe = (promo: PromoML, x: PromoML) => {
+  const ref = texto(x.ref_id);
+  return oferta({
+    promocao_id: texto(promo.id) ?? String(promo.type), tipo: String(promo.type), status: x.status as OfertaVigente['status'],
+    preco: precoPositivo(x.price), offer_id: texto(x.offer_id) ?? (ref?.startsWith('OFFER-') ? ref : null),
+    inicio: texto(x.start_date) ?? texto(promo.start_date), fim: texto(x.finish_date) ?? texto(promo.finish_date),
+  });
+};
 
 export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): ClienteReajusteML {
   const auth = { Authorization: `Bearer ${token}` };
   const get = (path: string) => f(`${API}${path}`, { headers: auth });
+  // /seller-promotions responde 409 transitório.
+  const getOferta = async (path: string) => {
+    const r = await get(path);
+    return r.status === 409 ? get(path) : r;
+  };
 
   return {
     async lerVivo(itemId) {
@@ -90,6 +115,34 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
           if (r0 && ATIVA.has(r0.status as string)) return true;
         }
         return false;
+      } catch {
+        return null;
+      }
+    },
+
+    async lerOfertas(itemId) {
+      const id = encodeURIComponent(itemId);
+      try {
+        const r = await getOferta(`/seller-promotions/items/${id}?app_version=v2`);
+        if (r.status !== 200) return null;
+        const promos = await r.json();
+        if (!Array.isArray(promos)) return null;
+        const ofertas: OfertaVigente[] = [];
+        for (const p of promos as PromoML[]) {
+          if (typeof p?.status !== 'string') return null;
+          if (ATIVA.has(p.status)) ofertas.push(ofertaDe(p, p));
+          // A visão por item atrasa: candidate aqui pode já participar. Sem id (PRICE_DISCOUNT) não é campanha.
+          if (p.status !== 'candidate' || !texto(p.id)) continue;
+          const rc = await getOferta(`/seller-promotions/promotions/${encodeURIComponent(String(p.id))}/items?promotion_type=${encodeURIComponent(String(p.type))}&item_id=${id}&app_version=v2`);
+          if (rc.status !== 200) return null;
+          const itens = ((await rc.json()) as { results?: unknown })?.results;
+          if (!Array.isArray(itens)) return null;
+          for (const x of itens as PromoML[]) {
+            if (typeof x?.status !== 'string') return null; // sem status = inconclusivo
+            if (ATIVA.has(x.status)) ofertas.push(ofertaDe(p, x));
+          }
+        }
+        return ofertas;
       } catch {
         return null;
       }

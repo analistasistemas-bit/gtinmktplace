@@ -18,6 +18,7 @@ vi.mock('../../../promocoes/ml.ts', async (orig) => ({
   buscarItensML: async (_g: unknown, ids: string[]) => new Map(ids.map((id) => [id, m.itemML(id)])),
 }));
 import { criarAvaliador, depsLacoReajuste, depsPreview, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
+import { maiorOferta } from '../ofertas.ts';
 import { montarPreview } from '../preview.ts';
 import { linhasDoRascunho } from '../pedido.ts';
 import { resumir } from '../avaliacao.ts';
@@ -143,6 +144,90 @@ describe('depsPreview', () => {
     const o = await depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }, { reverter: false }).origem('o');
     expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar });
     expect(op(f.chamadas[1], 'eq')).toEqual(expect.arrayContaining([['org_id', 'org'], ['status', 'aplicado']]));
+  });
+});
+
+describe('ofertasBanco', () => {
+  const cx = { orgId: 'org', mlUserId: 'u', token: 't' };
+  const haMin = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const campanha = (status: string) => ({ tipo: 'DEAL', status, inicio: '2026-11-01T00:00:00+00:00', fim: '2026-11-30T00:00:00+00:00' });
+  const promo = (o: Record<string, unknown> = {}) => ({
+    promocao_id: 'P1', ml_item_id: 'MLB1', status: 'started', preco_promo: '39.90', anuncio_normal_id: null, ml_promocoes: campanha('started'), ...o,
+  });
+  const operacao = (o: Record<string, unknown> = {}) => ({
+    promocao_id: 'P2', ml_item_id: 'MLB1', status: 'aplicado', etapa: null, preco: '45.50', offer_id: null, atualizado_em: haMin(5),
+    operacoes_massa: { acao: 'aderir', promocao_tipo: 'DEAL' }, ...o,
+  });
+  const filtro = (c: Chamada, coluna: string) => (op(c, 'in') as [string, string[]][]).find(([col]) => col === coluna)?.[1];
+  // Aplica os filtros gravados: o teste prova o efeito no resultado, não só a chamada.
+  const banco = (promos: Record<string, unknown>[], ops: Record<string, unknown>[] = []) => fakeAdmin((c) => {
+    const normais = filtro(c, 'anuncio_normal_id');
+    if (normais) return promos.filter((r) => normais.includes(r.anuncio_normal_id as string));
+    const ids = filtro(c, 'ml_item_id') ?? [];
+    if (c.tabela === 'operacoes_massa_itens') {
+      const [[, desde]] = op(c, 'gt') as [[string, string]];
+      return ops.filter((r) => ids.includes(r.ml_item_id as string) && (r.atualizado_em as string) > desde);
+    }
+    return promos.filter((r) => ids.includes(r.ml_item_id as string) && filtro(c, 'status')?.includes(r.status as string)
+      && filtro(c, 'ml_promocoes.status')?.includes((r.ml_promocoes as { status: string }).status));
+  });
+  const ler = (f: ReturnType<typeof banco>, ids = ['MLB1']) => depsPreview(f.admin, cx, { reverter: false }).ofertasBanco(ids);
+
+  it('oferta da Central entra com o preço do banco; id sem oferta vem vazio', async () => {
+    const f = banco([promo()]);
+    const r = await ler(f, ['MLB1', 'MLB2']);
+    expect(r.get('MLB1')).toEqual([{
+      chave: 'P1:2026-11-01T00:00:00+00:00', promocao_id: 'P1', tipo: 'DEAL', status: 'started', preco: 39.9, offer_id: null,
+      inicio: '2026-11-01T00:00:00+00:00', fim: '2026-11-30T00:00:00+00:00',
+    }]);
+    expect(r.get('MLB2')).toEqual([]);
+    for (const c of f.chamadas) expect(op(c, 'eq')).toContainEqual(['org_id', 'org']);
+  });
+
+  it("campanha 'finished' e item candidate não entram", async () => {
+    const r = await ler(banco([promo({ ml_promocoes: campanha('finished') }), promo({ promocao_id: 'P3', status: 'candidate' })]));
+    expect(r.get('MLB1')).toEqual([]);
+  });
+
+  it('par de catálogo: oferta e operação da linha do catálogo valem para o normal pedido', async () => {
+    const pares = [promo({ ml_item_id: 'MLBCAT', anuncio_normal_id: 'MLB1' }), promo({ promocao_id: 'P9', ml_item_id: 'MLBCAT', anuncio_normal_id: 'MLB1', status: 'candidate' })];
+    const r = await ler(banco(pares, [operacao({ ml_item_id: 'MLBCAT', etapa: 'escrita_pedida', status: 'erro' })]));
+    expect(r.get('MLB1')?.map((o) => o.promocao_id).sort()).toEqual(['P1', 'P2']);
+    expect([...r.keys()]).toEqual(['MLB1']);
+  });
+
+  it("aderir 'aplicado' há 5 min entra com o preço gravado; há 40 min não", async () => {
+    const r = await ler(banco([], [operacao(), operacao({ promocao_id: 'P3', atualizado_em: haMin(40) })]));
+    expect(r.get('MLB1')).toMatchObject([{ chave: 'P2:pending', promocao_id: 'P2', tipo: 'DEAL', status: 'pending', preco: 45.5 }]);
+  });
+
+  it("aderir 'erro' com etapa escrita_pedida há 5 min → preço null → maiorOferta null", async () => {
+    const r = await ler(banco([promo()], [operacao({ status: 'erro', etapa: 'escrita_pedida' })]));
+    expect(r.get('MLB1')).toHaveLength(2);
+    expect(maiorOferta(r.get('MLB1')!)).toBeNull();
+  });
+
+  it('mesma oferta em duas operações: uma só, com o maior preço', async () => {
+    const r = await ler(banco([], [operacao({ offer_id: 'OFFER-1', preco: '41' }), operacao({ offer_id: 'OFFER-1', preco: '43' })]));
+    expect(r.get('MLB1')?.map((o) => o.preco)).toEqual([43]);
+  });
+
+  it('operações: só aderir/alterar_preco, com aplicado ou escrita pedida', async () => {
+    const f = banco([]);
+    await ler(f);
+    const c = f.chamadas.find((x) => x.tabela === 'operacoes_massa_itens')!;
+    expect(filtro(c, 'operacoes_massa.acao')).toEqual(['aderir', 'alterar_preco']);
+    expect(op(c, 'or')).toEqual([['etapa.eq.escrita_pedida,status.eq.aplicado']]);
+  });
+
+  it('mais de 1000 linhas: pagina até o fim', async () => {
+    const pagina = Array.from({ length: 1000 }, (_, i) => promo({ promocao_id: `P${i}` }));
+    const f = fakeAdmin((c) => {
+      if (filtro(c, 'anuncio_normal_id') || c.tabela !== 'ml_promocao_itens') return [];
+      const [[de]] = op(c, 'range') as [[number]];
+      return de === 0 ? pagina : [promo({ promocao_id: 'ULTIMA' })];
+    });
+    expect((await ler(f)).get('MLB1')).toHaveLength(1001);
   });
 });
 

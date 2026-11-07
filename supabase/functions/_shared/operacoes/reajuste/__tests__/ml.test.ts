@@ -229,3 +229,115 @@ describe('participaPromocaoML', () => {
     expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
   });
 });
+
+describe('lerOfertas', () => {
+  const URL_ITEM = `${API}/seller-promotions/items/MLB1?app_version=v2`;
+  const urlCand = (pid: string, tipo: string) =>
+    `${API}/seller-promotions/promotions/${pid}/items?promotion_type=${tipo}&item_id=MLB1&app_version=v2`;
+  const GET = { headers: { Authorization: 'Bearer tok' } };
+  const LGH = {
+    id: 'LGH-MLB1000', type: 'LIGHTNING', status: 'pending', price: 131.97, original_price: 189.9, ref_id: 'OFFER-9',
+    start_date: '2026-11-07T00:00:00', finish_date: '2026-11-07T11:59:59',
+  };
+
+  it('LGH pending → oferta com o preço, id da oferta em ref_id e janela', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [LGH]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([{
+      chave: 'OFFER-9', promocao_id: 'LGH-MLB1000', tipo: 'LIGHTNING', status: 'pending', preco: 131.97, offer_id: 'OFFER-9',
+      inicio: '2026-11-07T00:00:00', fim: '2026-11-07T11:59:59',
+    }]);
+    expect(f).toHaveBeenCalledWith(URL_ITEM, GET);
+  });
+
+  it('duas ofertas na mesma Relâmpago, sem id → chaves distintas pela janela', async () => {
+    const semId = { ...LGH, ref_id: undefined };
+    const f = vi.fn().mockResolvedValue(resp(200, [semId, { ...semId, start_date: '2026-11-08T00:00:00', status: 'started' }]));
+    const r = await criarClienteReajusteML('tok', f).lerOfertas('MLB1');
+    expect(r?.map((x) => x.chave)).toEqual(['LGH-MLB1000:2026-11-07T00:00:00', 'LGH-MLB1000:2026-11-08T00:00:00']);
+  });
+
+  it('oferta sem preço utilizável → preço null (bloqueia), nunca descartada', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'D1', type: 'DEAL', status: 'started' }, { id: 'D2', type: 'DEAL', status: 'started', price: 0 }]));
+    expect((await criarClienteReajusteML('tok', f).lerOfertas('MLB1'))?.map((x) => x.preco)).toEqual([null, null]);
+  });
+
+  it('oferta ativa sem id de campanha continua contando', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'started', price: 50 }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ promocao_id: 'PRICE_DISCOUNT', preco: 50 }]);
+  });
+
+  it('finished e candidate sem id → sem ofertas, sem consultar campanha', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ id: 'P', type: 'DEAL', status: 'finished' }, { type: 'PRICE_DISCOUNT', status: 'candidate' }]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 depois 200 → sucesso', async () => {
+    const f = vi.fn().mockResolvedValueOnce(resp(409)).mockResolvedValueOnce(resp(200, [LGH]));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toHaveLength(1);
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it('409 duas vezes → null, sem terceira tentativa', async () => {
+    const f = vi.fn().mockImplementation(async () => resp(409));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([[500], [403], [404]])('%i → null', async (status) => {
+    const f = vi.fn().mockResolvedValue(resp(status));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetch lança, corpo não-lista ou entrada sem status → null', async () => {
+    const cli = (f: unknown) => criarClienteReajusteML('tok', f as typeof fetch);
+    expect(await cli(vi.fn().mockRejectedValue(new TypeError('network'))).lerOfertas('MLB1')).toBeNull();
+    expect(await cli(vi.fn().mockResolvedValue(resp(200, { erro: 'x' }))).lerOfertas('MLB1')).toBeNull();
+    expect(await cli(vi.fn().mockResolvedValue(resp(200, [{ id: 'P', type: 'DEAL' }]))).lerOfertas('MLB1')).toBeNull();
+  });
+
+  it('candidate que a visão da campanha mostra started → oferta com o preço e o offer_id dela', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate', price: 90 }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started', price: 80, offer_id: 'OFFER-1' }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([
+      { chave: 'OFFER-1', promocao_id: 'C1', tipo: 'SMART', status: 'started', preco: 80, offer_id: 'OFFER-1' },
+    ]);
+    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
+  });
+
+  it('visão da campanha com CANDIDATE e OFFER do mesmo item → vale a participando', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'candidate', ref_id: 'CANDIDATE-1' }, { status: 'started', price: 80, ref_id: 'OFFER-1' }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toMatchObject([{ offer_id: 'OFFER-1', preco: 80 }]);
+  });
+
+  it('candidate que segue candidate, ou fora da campanha → sem ofertas', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }, { id: 'C2', type: 'DEAL', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'candidate' }] }))
+      .mockResolvedValueOnce(resp(200, { results: [] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toEqual([]);
+  });
+
+  it('visão da campanha: 409 repete uma vez', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(409))
+      .mockResolvedValueOnce(resp(200, { results: [{ status: 'started', price: 80 }] }));
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toHaveLength(1);
+  });
+
+  it.each([
+    ['falha', () => resp(500)],
+    ['resultado sem status', () => resp(200, { results: [{ offer_id: 'OFFER-X' }] })],
+    ['corpo sem results', () => resp(200, {})],
+  ])('visão da campanha inconclusiva (%s) → null, mesmo com outra oferta lida', async (_nome, campanha) => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [LGH, { id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(campanha());
+    expect(await criarClienteReajusteML('tok', f).lerOfertas('MLB1')).toBeNull();
+  });
+});

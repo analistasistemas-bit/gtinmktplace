@@ -36,7 +36,9 @@ function deps(o: {
       }),
       putPreco: vi.fn(),
       participaPromocaoML: vi.fn(async () => (o.promoML === undefined ? false : o.promoML)),
+      lerOfertas: vi.fn(async () => []),
     },
+    ofertasBanco: vi.fn(async () => new Map()),
     avaliar: vi.fn(async () => resumir((o.semaforo ?? ['verde']).map(cor))),
     origem: vi.fn(async () => (o.origem === undefined ? null : o.origem)),
   };

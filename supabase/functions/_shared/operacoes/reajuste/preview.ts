@@ -5,7 +5,7 @@ import { SemAcessoStatusML } from '../ml-status.ts';
 import { calcularAlvo, centavos, maxDuasCasas, reais, semAlteracao } from './alvo.ts';
 import { motivoInelegivel } from './elegibilidade.ts';
 import type { ClienteReajusteML } from './ml.ts';
-import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao } from './tipos.ts';
+import type { Ajuste, Avaliacao, EntradaRestauracao, EstadoVariacao, OfertaVigente } from './tipos.ts';
 
 export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
 export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
@@ -23,6 +23,8 @@ export interface DepsPreview {
   avaliar(mlItemId: string, preco: number): Promise<Avaliacao>;
   /** Itens `aplicado` da origem; `restaurar` = o `estado_anterior` gravado nela (esperado = antes, novo = gravado). */
   origem(origemId: string): Promise<Map<string, Origem> | null>;
+  /** Ofertas por MLB pedido segundo a Central e as escritas recentes do app; todo id pedido vem na resposta. */
+  ofertasBanco(mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>>;
 }
 
 export const MAX_MLBS = 500;

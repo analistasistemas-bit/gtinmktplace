@@ -2,20 +2,22 @@
 // etapa.ts (vitest). Service role ignora RLS → toda query filtra por org_id.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { pool } from '../../concorrencia/pool.ts';
+import { paginarTudo } from '../../pagina.ts';
 import { buscarItensML, criarGetJson, SemAcessoPromocoes } from '../../promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas, type Cx } from '../../promocoes/deps.ts';
 import { projetarItem } from '../../promocoes/sincronizar.ts';
 import type { Cadastro } from '../../promocoes/cadastro.ts';
 import type { Aliquotas, ItemML } from '../../promocoes/tipos.ts';
-import { depsLaco } from '../deps.ts';
+import { depsLaco, JANELA_PROPAGACAO_MS } from '../deps.ts';
 import type { DepsLaco } from '../laco.ts';
 import { SemAcessoStatusML } from '../ml-status.ts';
 import type { ItemRow } from '../tipos.ts';
 import { resumir } from './avaliacao.ts';
 import type { DepsReajuste, ItemReajuste, OperacaoReajusteRow, ResultadoPersistir } from './executar.ts';
 import { criarClienteReajusteML } from './ml.ts';
+import { oferta, unirOfertas } from './ofertas.ts';
 import type { AlvoExpandido, DepsPreview, Origem } from './preview.ts';
-import type { Avaliacao, CorAvaliada, EstadoVariacao } from './tipos.ts';
+import type { Avaliacao, CorAvaliada, EstadoVariacao, OfertaVigente } from './tipos.ts';
 
 const ITENS = 'operacoes_massa_itens';
 const COLS_LACO = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em';
@@ -203,6 +205,58 @@ async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string
   return out;
 }
 
+type LinhaOferta = {
+  promocao_id: string; ml_item_id: string; status: OfertaVigente['status']; preco_promo: unknown;
+  ml_promocoes: { tipo: string; inicio: string | null; fim: string | null };
+};
+type LinhaOperacao = {
+  promocao_id: string; ml_item_id: string; status: string; etapa: string | null; preco: unknown; offer_id: string | null;
+  operacoes_massa: { promocao_tipo: string };
+};
+
+/** Ofertas por MLB pedido, segundo a Central e as escritas recentes do app (a visão do ML atrasa minutos). Banco
+ *  desatualizado bloqueia a mais, e isso é aceito: a saída é o "Atualizar agora" da Central. */
+export async function ofertasBanco(admin: SupabaseClient, orgId: string, mlItemIds: string[]): Promise<Map<string, OfertaVigente[]>> {
+  // MLB lido → MLBs pedidos que ele protege. Promoção e operação do par ficam no catálogo, com o normal em anuncio_normal_id.
+  const protege = new Map(mlItemIds.map((ml) => [ml, new Set([ml])]));
+  for (const b of blocos(mlItemIds)) {
+    const pares = await paginarTudo<{ ml_item_id: string; anuncio_normal_id: string }>((de, ate) =>
+      admin.from('ml_promocao_itens').select('ml_item_id, anuncio_normal_id').eq('org_id', orgId).in('anuncio_normal_id', b)
+        .order('promocao_id').order('ml_item_id').range(de, ate) as never);
+    for (const p of pares) protege.set(p.ml_item_id, (protege.get(p.ml_item_id) ?? new Set()).add(p.anuncio_normal_id));
+  }
+
+  const achadas = new Map(mlItemIds.map((ml): [string, OfertaVigente[]] => [ml, []]));
+  const anotar = (ml: string, o: OfertaVigente) => { for (const alvo of protege.get(ml) ?? []) achadas.get(alvo)!.push(o); };
+  const desde = new Date(Date.now() - JANELA_PROPAGACAO_MS).toISOString();
+  for (const b of blocos([...protege.keys()])) {
+    const [central, operacoes] = await Promise.all([
+      paginarTudo<LinhaOferta>((de, ate) => admin.from('ml_promocao_itens')
+        .select('promocao_id, ml_item_id, status, preco_promo, ml_promocoes!inner(tipo, inicio, fim)').eq('org_id', orgId).in('ml_item_id', b)
+        .in('status', ['pending', 'started']).in('ml_promocoes.status', ['pending', 'started'])
+        .order('promocao_id').order('ml_item_id').range(de, ate) as never),
+      // Mesma proteção de adesaoRecente: `etapa` sem desfecho = a escrita pode ter ocorrido, em qualquer status.
+      paginarTudo<LinhaOperacao>((de, ate) => admin.from(ITENS)
+        .select('promocao_id, ml_item_id, status, etapa, preco, offer_id, operacoes_massa!inner(promocao_tipo)').eq('org_id', orgId).in('ml_item_id', b)
+        .in('operacoes_massa.acao', ['aderir', 'alterar_preco']).or('etapa.eq.escrita_pedida,status.eq.aplicado').gt('atualizado_em', desde)
+        .order('operacao_id').order('ml_item_id').range(de, ate) as never),
+    ]);
+    for (const r of central) {
+      anotar(r.ml_item_id, oferta({
+        promocao_id: r.promocao_id, tipo: r.ml_promocoes.tipo, status: r.status, preco: numOuNull(r.preco_promo),
+        offer_id: null, inicio: r.ml_promocoes.inicio, fim: r.ml_promocoes.fim,
+      }));
+    }
+    for (const r of operacoes) {
+      anotar(r.ml_item_id, oferta({
+        promocao_id: r.promocao_id, tipo: r.operacoes_massa.promocao_tipo, status: 'pending',
+        preco: r.etapa === 'escrita_pedida' ? null : numOuNull(r.preco), offer_id: r.offer_id, inicio: null, fim: null,
+      }));
+    }
+  }
+  return new Map([...achadas].map(([ml, os]) => [ml, unirOfertas([os])!]));
+}
+
 /** Família → todos os MLBs do produto (UP: SKUs não retirados; Legacy: a família + partições > 0); MLB solto → produto
  *  pela mesma regra da RPC (reajuste_codigo_pai). Kit Virtual entra sem produto (o preview o tira com motivo). */
 async function expandir(
@@ -282,6 +336,7 @@ export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boo
   const orgId = cx.orgId;
   return {
     expandir: (familias, mlItemIds) => expandir(admin, orgId, familias, mlItemIds, opts.reverter),
+    ofertasBanco: (mlItemIds) => ofertasBanco(admin, orgId, mlItemIds),
 
     // Uma linha POR id pedido (a RPC garante); plano/UP vem com ml_variation_id null → '' (nunca filtrar).
     async variacoesDoMlb(codigoPai, mlItem, mlVariationIds) {
