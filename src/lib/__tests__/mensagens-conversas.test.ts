@@ -4,7 +4,9 @@ import type { Mensagem } from '../mensagens';
 // buscarConversas agora encadeia .order().limit(1000) e reverte o array (plan 036) — o mock
 // representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
 // controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
-const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes } = vi.hoisted(() => ({
+const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes, mockSelectMsg, mockEnvio } = vi.hoisted(() => ({
+  mockSelectMsg: vi.fn(),
+  mockEnvio: vi.fn(async () => ({ data: [] as Array<{ pack_id: string; operacao_id: string; estado: string }>, error: null as null | { message: string } })),
   mockLimit: vi.fn(), mockDataOrder: vi.fn(), mockMessageIdOrder: vi.fn(),
   mockReclamacoes: vi.fn(async () => ({ data: [] as Array<{ order_id: number }>, error: null })),
 }));
@@ -12,10 +14,14 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (tabela: string) => tabela === 'ml_devolucoes' ? ({
       select: () => ({ eq: () => ({ eq: mockReclamacoes }) }),
+    }) : tabela === 'ml_posvenda_acoes' ? ({
+      select: () => ({ in: () => ({ not: mockEnvio }) }),
     }) : tabela === 'ml_vendas' ? ({
       select: () => ({ in: async () => ({ data: [], error: null }) }),
     }) : ({
-      select: () => ({
+      select: (cols: string) => {
+        mockSelectMsg(cols);
+        return {
         order: (...args: unknown[]) => {
           mockDataOrder(...args);
           const query = {
@@ -27,7 +33,8 @@ vi.mock('@/lib/supabase', () => ({
           };
           return query;
         },
-      }),
+        };
+      },
     }),
   },
 }));
@@ -51,6 +58,7 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
   data_ml: 'data_ml' in over ? (over.data_ml as string | null) : '2026-07-10T10:00:00Z',
   lida: over.lida ?? false,
   lida_ml_em: over.lida_ml_em ?? null,
+  anexos: over.anexos ?? [],
 });
 
 describe('buscarConversas', () => {
@@ -207,5 +215,31 @@ describe('buscarConversas', () => {
     mockLimit.mockResolvedValueOnce({ data: [msg({ pack_id: '555', order_id: null })], error: null });
     const [c] = await buscarConversas();
     expect(c.reclamacaoAberta).toBe(true);
+  });
+
+  it('select inclui os anexos do raw; anexos null vira []', async () => {
+    mockLimit.mockResolvedValueOnce({
+      data: [msg({ anexos: null as never }), msg({ id: '2', message_id: 'm2', pack_id: 'p2', anexos: [{ filename: 'a.pdf' }] as never })],
+      error: null,
+    });
+    const conversas = await buscarConversas();
+    expect(mockSelectMsg).toHaveBeenLastCalledWith(expect.stringContaining('anexos:raw->message_attachments'));
+    expect(conversas.find((c) => c.pack_id === 'pack-1')!.mensagens[0].anexos).toEqual([]);
+    expect(conversas.find((c) => c.pack_id === 'p2')!.mensagens[0].anexos).toHaveLength(1);
+  });
+
+  it('envioPendente vem de ml_posvenda_acoes ativa do pack; demais ficam null', async () => {
+    mockEnvio.mockResolvedValueOnce({ data: [{ pack_id: 'p1', operacao_id: 'op-1', estado: 'desconhecido' }], error: null });
+    mockLimit.mockResolvedValueOnce({ data: [msg({ pack_id: 'p1' }), msg({ id: '2', message_id: 'm2', pack_id: 'p2' })], error: null });
+    const conversas = await buscarConversas();
+    expect(conversas.find((c) => c.pack_id === 'p1')!.envioPendente).toEqual({ operacao_id: 'op-1', estado: 'desconhecido' });
+    expect(conversas.find((c) => c.pack_id === 'p2')!.envioPendente).toBeNull();
+  });
+
+  it('falha ao ler ml_posvenda_acoes deixa envioPendente null e a lista segue', async () => {
+    mockEnvio.mockResolvedValueOnce({ data: null as never, error: { message: 'boom' } });
+    mockLimit.mockResolvedValueOnce({ data: [msg({})], error: null });
+    const [c] = await buscarConversas();
+    expect(c.envioPendente).toBeNull();
   });
 });
