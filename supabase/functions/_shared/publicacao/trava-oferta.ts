@@ -3,7 +3,7 @@
 // 2026-10-16), então só preço editado para baixo cria o risco, e isso se decide antes de enfileirar.
 // Limite aceito: oferta nova, ou preço editado inline, entre o clique e o worker não é detectado.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { resolverConexao } from '../canais/conexao.ts';
+import { resolverConexaoEstrita } from '../canais/conexao.ts';
 import { pool } from '../concorrencia/pool.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import { getValidAccessTokenConexao } from '../ml/token.ts';
@@ -20,14 +20,16 @@ import { ehFluxoAddVariacao } from '../update/fluxo-add-variacao.ts';
 const CANAL = 'mercado_livre';
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_LEITURA_MS = 10_000;
-const ORCAMENTO_MS = 20_000;
+export const ORCAMENTO_MS = 20_000;
 const PARALELO = 5;
 const BLOCO_MULTIGET = 20;
+/** Anúncio `closed`: não tem oferta a perder, e o worker é quem procura o sucessor. */
+export const ENCERRADO = 'encerrado';
 
 export interface AlvoFamilia { familia_id: string; itens: { ml_item_id: string; preco: number }[] }
 export interface DepsTravaOferta {
-  /** null = sem preço conferido (sem resposta, 404 ou anúncio encerrado). */
-  precosVivos(ids: string[]): Promise<Map<string, number | null>>;
+  /** null = sem preço conferido (sem resposta ou 404). */
+  precosVivos(ids: string[]): Promise<Map<string, number | null | typeof ENCERRADO>>;
   lerOfertas(id: string): Promise<OfertaVigente[] | null>;
   ofertasBanco(ids: string[]): Promise<Map<string, OfertaVigente[]>>;
 }
@@ -59,7 +61,7 @@ export async function recusasPorOferta(
   const vivo = (id: string) => vivos?.get(id) ?? null;
   const desce = (i: AlvoFamilia['itens'][number]) => {
     const v = vivo(i.ml_item_id);
-    return v !== null && centavos(i.preco) < centavos(v);
+    return v !== null && v !== ENCERRADO && centavos(i.preco) < centavos(v);
   };
 
   const descendo = [...new Set(itens.filter(desce).map((i) => i.ml_item_id))];
@@ -70,7 +72,9 @@ export async function recusasPorOferta(
   });
 
   const motivoDo = (i: AlvoFamilia['itens'][number]): string | null => {
-    if (vivo(i.ml_item_id) === null) return MSG_INCONCLUSIVA;
+    const v = vivo(i.ml_item_id);
+    if (v === ENCERRADO) return null;
+    if (v === null) return MSG_INCONCLUSIVA;
     if (!desce(i)) return null;
     const unidas = ofertas.get(i.ml_item_id) ?? null;
     return unidas === null ? MSG_INCONCLUSIVA : motivoTravaOferta(i.preco, unidas);
@@ -83,9 +87,11 @@ export async function recusasPorOferta(
 
 type LinhaBulk = { code?: number; body?: { id?: unknown; price?: unknown; status?: unknown } };
 
-/** Bloco que falha deixa nulos só os seus itens. Anúncio encerrado não tem preço a conferir. */
-export async function lerPrecosVivos(token: string, ids: string[], f: typeof fetch = fetch): Promise<Map<string, number | null>> {
-  const precos = new Map<string, number | null>(ids.map((id) => [id, null]));
+/** Bloco que falha deixa nulos só os seus itens. */
+export async function lerPrecosVivos(
+  token: string, ids: string[], f: typeof fetch = fetch,
+): Promise<Map<string, number | null | typeof ENCERRADO>> {
+  const precos = new Map<string, number | null | typeof ENCERRADO>(ids.map((id) => [id, null]));
   const blocos = Array.from({ length: Math.ceil(ids.length / BLOCO_MULTIGET) }, (_, i) => ids.slice(i * BLOCO_MULTIGET, (i + 1) * BLOCO_MULTIGET));
   await pool(PARALELO, blocos, async (bloco) => {
     try {
@@ -95,10 +101,10 @@ export async function lerPrecosVivos(token: string, ids: string[], f: typeof fet
       if (!r.ok) throw new Error(`ML ${r.status}`);
       const linhas = comoEnvelopeAntigo(await r.json(), bloco);
       for (const l of (Array.isArray(linhas) ? linhas : []) as LinhaBulk[]) {
-        const preco = Number(l?.body?.price);
-        if (l?.code === 200 && l.body?.price != null && Number.isFinite(preco) && l.body.status !== 'closed') {
-          precos.set(String(l.body.id), preco);
-        }
+        if (l?.code !== 200 || !l.body) continue;
+        const preco = Number(l.body.price);
+        if (l.body.status === 'closed') precos.set(String(l.body.id), ENCERRADO);
+        else if (l.body.price != null && Number.isFinite(preco)) precos.set(String(l.body.id), preco);
       }
     } catch (e) {
       console.error(`trava de oferta: multiget de ${bloco.length} itens falhou:`, e);
@@ -118,8 +124,17 @@ export function depsTravaOferta(admin: SupabaseClient, orgId: string, getToken: 
 }
 
 export interface VariacaoAlvo { codigo: string; preco_publicacao: number | string | null }
-export interface ItemUPAlvo { sku: string; item_externo_id: string | null }
+export interface ItemUPAlvo { sku: string; item_externo_id: string | null; status: string; retirado: boolean }
 export type LinhaAlvo = LinhaAnuncioParticao & { item_externo_id: string | null };
+
+/** Mesmo critério do `jaAtivos` da saga: no Adicionar variação (`preservarPublicadas`), só este filho fica sem preço. */
+export const filhoAtivo = (i: ItemUPAlvo) => !i.retirado && i.status === 'ativo' && !!i.item_externo_id;
+
+export function mensagemPrecoMantido(a: { produto: string | null; codigoPai: string; recusas: { familia_id: string; motivo: string }[] }): string {
+  const motivos = [...new Set(a.recusas.map((r) => r.motivo))].join('; ');
+  return `⚠️ Preço mantido no Mercado Livre: ${a.produto?.trim() || a.codigoPai}\n`
+    + `Cores ${a.recusas.map((r) => r.familia_id).join(', ')}: ${motivos}`;
+}
 
 const precoDe = (v: VariacaoAlvo) => (v.preco_publicacao == null ? null : Number(v.preco_publicacao));
 function menorPreco(variacoes: VariacaoAlvo[]): number | null {
@@ -138,14 +153,18 @@ export function alvosPorSku(variacoes: VariacaoAlvo[], itens: ItemUPAlvo[]): Alv
 }
 
 /** Mesmo roteamento dos workers: N partições → split (preço por anúncio), itens UP → saga (preço por cor), senão Legacy.
- *  Legacy cobre a família que o ML migrou e o app ainda não adotou: sem mapa de cores, compara o preço da família com o MLB. */
+ *  Legacy cobre a família que o ML migrou e o app ainda não adotou: sem mapa de cores, compara o preço da família com o MLB.
+ *  `preservarPublicadas` (Adicionar variação): só o filho UP não ativo recebe preço; o resto mantém o publicado. */
 export function montarAlvo(
   familia: { id: string; ml_item_id: string }, variacoes: VariacaoAlvo[], linhas: LinhaAlvo[], itens: ItemUPAlvo[],
+  preservarPublicadas = false,
 ): AlvoFamilia {
   const dividida = linhas.length > 1;
   if (!dividida && itens.length) {
-    return { familia_id: familia.id, itens: alvosPorSku(variacoes, itens).flatMap((a) => a.itens) };
+    const recebem = preservarPublicadas ? itens.filter((i) => !filhoAtivo(i)) : itens;
+    return { familia_id: familia.id, itens: alvosPorSku(variacoes, recebem).flatMap((a) => a.itens) };
   }
+  if (preservarPublicadas) return { familia_id: familia.id, itens: [] };
   const ancoragem = montarAncoragem(linhas);
   const anuncios = linhas.length ? linhas : [{ particao: 0, item_externo_id: null, variacoes_externas: null }];
   return {
@@ -162,26 +181,21 @@ export function montarAlvo(
 
 type FamiliaLote = { id: string; lote_id: string; codigo_pai: string; ml_item_id: string | null; operacao: string; status: string };
 
-/** Recusas de um pedido de publicação. Confere só o que a reserva UPDATE pegaria, sem "somente estoque" e fora do
- *  Adicionar variação (lote manual), que preserva os preços publicados. Org sem conexão: o worker já trata.
- *  Erro de banco lança: quem chama não reserva nada. */
+/** Recusas de um pedido de publicação. Confere só o que a reserva UPDATE pegaria, sem "somente estoque"; no Adicionar
+ *  variação (lote manual), só o que recebe preço. Org sem conexão: o worker já trata; falha ao ler a conexão recusa.
+ *  Erro nas demais leituras do banco lança: quem chama não reserva nada. */
 export async function recusasDoLote(
   admin: SupabaseClient, orgId: string, familiaIds: string[], somenteEstoque: (familiaId: string) => boolean,
 ): Promise<{ familia_id: string; motivo: string }[]> {
   const { data, error } = await admin.from('familias')
     .select('id, lote_id, codigo_pai, ml_item_id, operacao, status').in('id', familiaIds).eq('org_id', orgId);
   if (error) throw new Error(`carregar famílias: ${error.message}`);
-  const candidatas = ((data ?? []) as FamiliaLote[]).filter((f) =>
+  const familias = ((data ?? []) as FamiliaLote[]).filter((f) =>
     f.operacao === 'UPDATE' && f.ml_item_id && ['pronto', 'erro'].includes(f.status) && !somenteEstoque(f.id));
-  if (!candidatas.length) return [];
-
-  const lotes = [...new Set(candidatas.map((f) => f.lote_id))];
-  const manuais = await Promise.all(lotes.map((l) => ehFluxoAddVariacao(admin, l)));
-  const familias = candidatas.filter((f) => !manuais[lotes.indexOf(f.lote_id)]);
   if (!familias.length) return [];
 
-  const conexao = await resolverConexao(admin, orgId, CANAL);
-  if (!conexao) return [];
+  const lotes = [...new Set(familias.map((f) => f.lote_id))];
+  const manuais = await Promise.all(lotes.map((l) => ehFluxoAddVariacao(admin, l)));
 
   // Paginado: lote grande passa do teto do PostgREST, e item cortado em silêncio ficaria sem conferir.
   const variacoes = await paginarTudo<VariacaoAlvo & { familia_id: string }>((de, ate) => admin.from('variacoes')
@@ -193,7 +207,7 @@ export async function recusasDoLote(
   const raizes = linhas.filter((l) => l.particao === 0).map((l) => l.id);
   const itens = raizes.length
     ? await paginarTudo<ItemUPAlvo & { anuncio_externo_id: string }>((de, ate) => admin.from('anuncios_externos_itens')
-      .select('anuncio_externo_id, sku, item_externo_id').in('anuncio_externo_id', raizes).order('id').range(de, ate) as never)
+      .select('anuncio_externo_id, sku, item_externo_id, status, retirado').in('anuncio_externo_id', raizes).order('id').range(de, ate) as never)
     : [];
 
   const alvos = familias.map((f) => {
@@ -201,8 +215,16 @@ export async function recusasDoLote(
     const raiz = doPai.find((l) => l.particao === 0)?.id;
     return montarAlvo(
       { id: f.id, ml_item_id: f.ml_item_id! }, variacoes.filter((v) => v.familia_id === f.id), doPai,
-      itens.filter((i) => i.anuncio_externo_id === raiz),
+      itens.filter((i) => i.anuncio_externo_id === raiz), manuais[lotes.indexOf(f.lote_id)],
     );
-  });
+  }).filter((a) => a.itens.length);
+  if (!alvos.length) return [];
+
+  const conexao = await resolverConexaoEstrita(admin, orgId, CANAL).catch((e: Error) => e);
+  if (conexao instanceof Error) {
+    console.error('trava de oferta:', conexao.message);
+    return alvos.map((a) => ({ familia_id: a.familia_id, motivo: MSG_INCONCLUSIVA }));
+  }
+  if (!conexao) return [];
   return recusasPorOferta(alvos, depsTravaOferta(admin, orgId, () => getValidAccessTokenConexao(conexao)));
 }

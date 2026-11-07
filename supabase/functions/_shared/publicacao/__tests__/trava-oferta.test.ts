@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { oferta } from '../../operacoes/reajuste/ofertas';
 import type { OfertaVigente } from '../../operacoes/reajuste/tipos';
-import { alvosPorSku, lerPrecosVivos, montarAlvo, recusasPorOferta, type DepsTravaOferta } from '../trava-oferta';
+import {
+  alvosPorSku, ENCERRADO, filhoAtivo, lerPrecosVivos, mensagemPrecoMantido, montarAlvo, recusasPorOferta, type DepsTravaOferta,
+} from '../trava-oferta';
 
 // A cadeia real de ofertasBanco puxa npm:qstash; a do token, Deno.
 vi.mock('../../queue.ts', () => ({}));
@@ -13,7 +15,7 @@ const motivoOferta = (valor: string) => `Preço igual ou abaixo da oferta de R$ 
 const deal = (preco: number | null, id = 'P1'): OfertaVigente =>
   oferta({ promocao_id: id, tipo: 'DEAL', status: 'started', preco, offer_id: null, inicio: null, fim: null });
 
-function deps(vivos: Record<string, number | null>, over: Partial<DepsTravaOferta> = {}) {
+function deps(vivos: Record<string, number | null | typeof ENCERRADO>, over: Partial<DepsTravaOferta> = {}) {
   return {
     precosVivos: vi.fn(async () => new Map(Object.entries(vivos))),
     lerOfertas: vi.fn(async (): Promise<OfertaVigente[] | null> => []),
@@ -65,6 +67,18 @@ describe('recusasPorOferta', () => {
     const d = deps({ MLB1: null });
     expect(await recusasPorOferta([alvo('f1', ['MLB1', 90])], d)).toEqual([{ familia_id: 'f1', motivo: INCONCLUSIVA }]);
     expect(d.lerOfertas).not.toHaveBeenCalled();
+  });
+
+  it('MLB encerrado sai dos alvos: sem recusa e sem ler ofertas', async () => {
+    const d = deps({ MLB1: ENCERRADO });
+    expect(await recusasPorOferta([alvo('f1', ['MLB1', 1])], d)).toEqual([]);
+    expect(d.lerOfertas).not.toHaveBeenCalled();
+  });
+
+  it('MLB encerrado não salva o irmão reprovado', async () => {
+    const d = deps({ MLB1: ENCERRADO, MLB2: 100 }, { lerOfertas: vi.fn(async () => [deal(80)]) });
+    expect(await recusasPorOferta([alvo('f1', ['MLB1', 70], ['MLB2', 70])], d))
+      .toEqual([{ familia_id: 'f1', motivo: motivoOferta('80,00') }]);
   });
 
   it('item fora da resposta de preços recusa só a família dele', async () => {
@@ -152,7 +166,7 @@ describe('montagem dos alvos', () => {
   const linha = (particao: number, item_externo_id: string | null, ...skus: string[]) => ({
     particao, item_externo_id, variacoes_externas: Object.fromEntries(skus.map((s) => [s, {}])),
   });
-  const item = (sku: string, item_externo_id: string | null) => ({ sku, item_externo_id });
+  const item = (sku: string, item_externo_id: string | null, status = 'ativo', retirado = false) => ({ sku, item_externo_id, status, retirado });
 
   it('Legacy sem linha em anuncios_externos: ml_item_id com o preço da família', () => {
     expect(montarAlvo(FAMILIA, [v('A', '50.00'), v('B', '50.00')], [], []))
@@ -205,8 +219,41 @@ describe('montagem dos alvos', () => {
       .toEqual([{ ml_item_id: 'MLB-P0', preco: 50 }, { ml_item_id: 'MLB-P1', preco: 90 }]);
   });
 
+  it('Adicionar variação: só entra quem recebe preço; ativo preservado e cor sem item ficam fora', () => {
+    const itens = [item('ATIVO', 'MLB1'), item('CRIADO', 'MLB2', 'criado'), item('READD', 'MLB3', 'pausado', true), item('NOVA', null, 'pendente')];
+    const variacoes = [v('ATIVO', 10), v('CRIADO', 20), v('READD', 30), v('NOVA', 40)];
+    expect(montarAlvo(FAMILIA, variacoes, [linha(0, null)], itens, true).itens)
+      .toEqual([{ ml_item_id: 'MLB2', preco: 20 }, { ml_item_id: 'MLB3', preco: 30 }]);
+  });
+
+  it('Adicionar variação: Legacy e partições preservam o preço publicado, sem alvo', () => {
+    expect(montarAlvo(FAMILIA, [v('A', 50)], [], [], true).itens).toEqual([]);
+    expect(montarAlvo(FAMILIA, [v('A', 50), v('C', 90)], [linha(0, 'MLB-P0', 'A'), linha(1, 'MLB-P1', 'C')], [item('A', 'MLB1', 'criado')], true).itens)
+      .toEqual([]);
+  });
+
+  it('filhoAtivo: mesmo critério do jaAtivos da saga', () => {
+    expect(filhoAtivo(item('A', 'MLB1'))).toBe(true);
+    expect(filhoAtivo(item('A', 'MLB1', 'criado'))).toBe(false);
+    expect(filhoAtivo(item('A', 'MLB1', 'ativo', true))).toBe(false);
+    expect(filhoAtivo(item('A', null))).toBe(false);
+  });
+
   it('alvosPorSku: identifica o alvo pelo SKU', () => {
     expect(alvosPorSku([v('A', 50)], [item('A', 'MLB1')])).toEqual([{ familia_id: 'A', itens: [{ ml_item_id: 'MLB1', preco: 50 }] }]);
+  });
+});
+
+describe('mensagemPrecoMantido', () => {
+  it('leva o nome do produto, os SKUs e o motivo com o valor da oferta, sem repetir motivo', () => {
+    expect(mensagemPrecoMantido({ produto: 'Tênis Azul', codigoPai: '000', recusas: [
+      { familia_id: 'A', motivo: motivoOferta('80,00') }, { familia_id: 'B', motivo: motivoOferta('80,00') },
+    ] })).toBe(`⚠️ Preço mantido no Mercado Livre: Tênis Azul\nCores A, B: ${motivoOferta('80,00')}`);
+  });
+
+  it('sem nome usa o código do produto', () => {
+    expect(mensagemPrecoMantido({ produto: null, codigoPai: '000', recusas: [{ familia_id: 'A', motivo: INCONCLUSIVA }] }))
+      .toBe(`⚠️ Preço mantido no Mercado Livre: 000\nCores A: ${INCONCLUSIVA}`);
   });
 });
 
@@ -226,10 +273,12 @@ describe('lerPrecosVivos', () => {
     expect(m.get('MLB24')).toBe(10);
   });
 
-  it('encerrado, 404 e preço ausente ficam nulos', async () => {
-    const f = vi.fn(async () => resposta([linha('MLB1', 10, 'closed'), { status_code: 404 }, linha('MLB3', null), linha('MLB4', 20, 'paused')]));
-    const m = await lerPrecosVivos('tok', ['MLB1', 'MLB2', 'MLB3', 'MLB4'], f as never);
-    expect([...m]).toEqual([['MLB1', null], ['MLB2', null], ['MLB3', null], ['MLB4', 20]]);
+  it('encerrado é marcado, com ou sem preço; 404 e preço ausente ficam nulos', async () => {
+    const f = vi.fn(async () => resposta([
+      linha('MLB1', 10, 'closed'), { status_code: 404 }, linha('MLB3', null), linha('MLB4', 20, 'paused'), linha('MLB5', null, 'closed'),
+    ]));
+    const m = await lerPrecosVivos('tok', ['MLB1', 'MLB2', 'MLB3', 'MLB4', 'MLB5'], f as never);
+    expect([...m]).toEqual([['MLB1', ENCERRADO], ['MLB2', null], ['MLB3', null], ['MLB4', 20], ['MLB5', ENCERRADO]]);
   });
 
   it('bloco com erro ou exceção deixa nulos só os itens dele', async () => {

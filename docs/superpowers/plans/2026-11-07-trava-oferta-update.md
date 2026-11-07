@@ -27,7 +27,7 @@
 1. Família UP com preços diferentes por cor: cada MLB compara com o preço da própria cor, por SKU.
 2. Família em partições: cada partição compara com o preço das suas cores.
 3. Lote com CREATE e UPDATE misturados: CREATE nunca é barrado.
-4. MLB encerrado ou sem resposta do ML: recusa com motivo, sem derrubar o lote.
+4. MLB encerrado sai dos alvos, sem recusa: não há oferta a perder, e o worker procura o sucessor. MLB sem resposta do ML: recusa com motivo, sem derrubar o lote.
 5. `somente_estoque_overrides` por família: vale a mesma resolução de `resolverSomenteEstoque`.
 
 ---
@@ -42,7 +42,7 @@
 **Interfaces:**
 - Produces:
   - `AlvoFamilia { familia_id: string; itens: { ml_item_id: string; preco: number }[] }`
-  - `DepsTravaOferta { precosVivos(ids: string[]): Promise<Map<string, number | null>>; lerOfertas(id: string): Promise<OfertaVigente[] | null>; ofertasBanco(ids: string[]): Promise<Map<string, OfertaVigente[]>> }`
+  - `DepsTravaOferta { precosVivos(ids: string[]): Promise<Map<string, number | null | typeof ENCERRADO>>; lerOfertas(id: string): Promise<OfertaVigente[] | null>; ofertasBanco(ids: string[]): Promise<Map<string, OfertaVigente[]>> }`
   - `recusasPorOferta(alvos: AlvoFamilia[], deps: DepsTravaOferta): Promise<{ familia_id: string; motivo: string }[]>`: nunca lança por item; `precosVivos` usa `/items/bulk`; preço vivo nulo em item alvo = inconclusivo.
 
 - [ ] **Step 1: Escrever os testes**

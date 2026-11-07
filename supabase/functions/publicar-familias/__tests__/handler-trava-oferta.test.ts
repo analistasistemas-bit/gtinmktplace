@@ -14,6 +14,7 @@ const f = vi.hoisted(() => ({
   reservas: [] as Array<{ operacao: string; ids: string[] }>,
   enfileirados: [] as Array<{ alvo: string; job: { familia_id: string } }>,
   vivos: {} as Record<string, unknown>,
+  encerrados: [] as string[],
   ofertas: {} as Record<string, unknown>,
   leiturasML: [] as string[],
 }));
@@ -80,7 +81,7 @@ beforeAll(async () => {
     f.leiturasML.push(url.pathname);
     if (url.pathname === '/items/bulk') {
       return new Response(JSON.stringify(url.searchParams.get('ids')!.split(',').map((id) => (
-        id in f.vivos ? { status_code: 200, body: { id, price: f.vivos[id], status: 'active' } } : { status_code: 404 }
+        id in f.vivos ? { status_code: 200, body: { id, price: f.vivos[id], status: f.encerrados.includes(id) ? 'closed' : 'active' } } : { status_code: 404 }
       ))));
     }
     const id = url.pathname.split('/').pop()!;
@@ -105,8 +106,8 @@ beforeEach(() => {
   f.variacoes = [cor('a', 'A1', 70), cor('b', 'B1', 70)];
   f.anuncios = []; f.itens = []; f.origens = {}; f.erroEm = null;
   f.conexao = { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 's', expires_at: null };
-  f.reservas = []; f.enfileirados = []; f.leiturasML = [];
-  f.vivos = { 'MLB-a': 100, 'MLB-b': 100 };
+  f.reservas = []; f.enfileirados = []; f.leiturasML = []; f.encerrados = [];
+  f.vivos ={ 'MLB-a': 100, 'MLB-b': 100 };
   f.ofertas = { 'MLB-a': dealDe(80) };
 });
 
@@ -181,8 +182,8 @@ describe('publicar-familias — trava da oferta', () => {
     f.familias = [update('a')];
     f.anuncios = [{ id: 'raiz-a', codigo_pai: 'pai-a', particao: 0, item_externo_id: null, variacoes_externas: null }];
     f.itens = [
-      { anuncio_externo_id: 'raiz-a', sku: 'A1', item_externo_id: 'MLB-1' },
-      { anuncio_externo_id: 'raiz-a', sku: 'A2', item_externo_id: 'MLB-2' },
+      { anuncio_externo_id: 'raiz-a', sku: 'A1', item_externo_id: 'MLB-1', status: 'ativo', retirado: false },
+      { anuncio_externo_id: 'raiz-a', sku: 'A2', item_externo_id: 'MLB-2', status: 'ativo', retirado: false },
     ];
     f.variacoes = [cor('a', 'A1', 90), cor('a', 'A2', 70)];
     f.vivos = { 'MLB-1': 100, 'MLB-2': 100 };
@@ -209,7 +210,7 @@ describe('publicar-familias — trava da oferta', () => {
     expect(await r.text()).toBe(MOTIVO);
   });
 
-  it('chamada de Adicionar variação (lote manual) não confere', async () => {
+  it('Adicionar variação em Legacy (lote manual): preço publicado preservado, nada a conferir', async () => {
     f.origens = { 'lote-a': 'manual', 'lote-b': 'manual' };
     const { corpo } = await publicar();
     expect(corpo!.recusadas).toEqual([]);
@@ -217,11 +218,66 @@ describe('publicar-familias — trava da oferta', () => {
     expect(enfileiradas()).toEqual(['a', 'b']);
   });
 
+  describe('Adicionar variação em UP (lote manual)', () => {
+    beforeEach(() => {
+      f.familias = [update('a')];
+      f.origens = { 'lote-a': 'manual' };
+      f.anuncios = [{ id: 'raiz-a', codigo_pai: 'pai-a', particao: 0, item_externo_id: null, variacoes_externas: null }];
+      f.variacoes = [cor('a', 'ATIVO', 70), cor('a', 'VOLTA', 70)];
+      f.vivos = { 'MLB-1': 100, 'MLB-2': 100 };
+    });
+    const filhos = (volta: Linha) => [
+      { anuncio_externo_id: 'raiz-a', sku: 'ATIVO', item_externo_id: 'MLB-1', status: 'ativo', retirado: false },
+      { anuncio_externo_id: 'raiz-a', sku: 'VOLTA', item_externo_id: 'MLB-2', ...volta },
+    ];
+
+    it('filho criado ou readicionado recebe preço: é conferido e recusado', async () => {
+      f.ofertas = { 'MLB-2': dealDe(80) };
+      for (const volta of [{ status: 'criado', retirado: false }, { status: 'pausado', retirado: true }]) {
+        f.itens = filhos(volta);
+        const { r } = await publicar();
+        expect(r.status).toBe(409);
+        expect(await r.text()).toBe(MOTIVO);
+      }
+    });
+
+    it('filho ativo é preservado: a oferta dele não recusa e ele nem é lido', async () => {
+      f.itens = filhos({ status: 'criado', retirado: false });
+      f.ofertas = { 'MLB-1': dealDe(80) };
+      expect((await publicar()).r.status).toBe(200);
+      expect(f.leiturasML).not.toContain('/seller-promotions/items/MLB-1');
+    });
+  });
+
   it('org sem conexão ML segue sem recusa nova', async () => {
     f.conexao = null;
     const { corpo } = await publicar();
     expect(corpo!.recusadas).toEqual([]);
     expect(f.leiturasML).toEqual([]);
+    expect(enfileiradas()).toEqual(['a', 'b']);
+  });
+
+  it('erro ao ler a conexão recusa as famílias conferíveis, sem liberar o UPDATE', async () => {
+    f.erroEm = 'marketplace_connections';
+    const { r } = await publicar();
+    expect(r.status).toBe(409);
+    expect(await r.text()).toBe(INCONCLUSIVA);
+    expect(reservadosEm('UPDATE')).toEqual([]);
+    expect(f.enfileirados).toEqual([]);
+  });
+
+  it('erro ao ler a conexão não recusa família sem nada a conferir', async () => {
+    f.erroEm = 'marketplace_connections';
+    f.origens = { 'lote-a': 'manual' };
+    const { corpo } = await publicar();
+    expect(corpo!.recusadas).toEqual([{ familia_id: 'b', motivo: INCONCLUSIVA }]);
+    expect(enfileiradas()).toEqual(['a']);
+  });
+
+  it('MLB encerrado não recusa: segue para o worker, que procura o sucessor', async () => {
+    f.encerrados = ['MLB-a'];
+    const { corpo } = await publicar();
+    expect(corpo!.recusadas).toEqual([]);
     expect(enfileiradas()).toEqual(['a', 'b']);
   });
 

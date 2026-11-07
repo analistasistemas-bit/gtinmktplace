@@ -7,13 +7,18 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
-import { alvosPorSku, depsTravaOferta, recusasPorOferta } from '../_shared/publicacao/trava-oferta.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import {
+  alvosPorSku, depsTravaOferta, filhoAtivo, mensagemPrecoMantido, ORCAMENTO_MS, recusasPorOferta, type ItemUPAlvo,
+} from '../_shared/publicacao/trava-oferta.ts';
 import { atualizarFamiliaUP, type VariacaoUP } from '../_shared/user-products/atualizar-familia-up.ts';
 import {
   reconciliarConvergencia, type PortasConvergencia, type ClaimResultado, type ResultadoRaiz,
 } from '../_shared/user-products/reconciliar-convergencia.ts';
 
 export const CANAL = 'mercado_livre';
+/** Trava da oferta: teto de tempo das checagens na rodada inteira, não por raiz. */
+const ORCAMENTO_CHECAGEM_RODADA_MS = 60_000;
 
 export interface ListarDeps { admin: SupabaseClient; orgsArquivadas: Set<string> }
 
@@ -31,8 +36,12 @@ export async function listarRaizesTravadas(deps: ListarDeps, limite: string): Pr
   return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
 }
 
-export function criarPortasConvergencia(admin: SupabaseClient, limite: string): PortasConvergencia {
+export function criarPortasConvergencia(
+  admin: SupabaseClient, limite: string, orcamentoChecagemMs = ORCAMENTO_CHECAGEM_RODADA_MS,
+): PortasConvergencia {
+  let checagemRestanteMs = orcamentoChecagemMs;
   return {
+    orcamentoEsgotado: () => checagemRestanteMs <= 0,
     claim: async (rootId) => {
       // Re-checa mudando_composicao=true + atualizado_em ainda velho DENTRO do mesmo UPDATE que
       // incrementa reconciliacao_tentativas (RPC) — zero linhas = null = perdeu o claim (outra
@@ -58,12 +67,12 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
       // Família EXATA do episódio (nunca inferida por recência, revisão adversarial) — a mesma
       // que o worker normal do UPDATE usaria se o operador clicasse "Reenviar" agora.
       const { data: familiaRow, error: famErr } = await admin.from('familias')
-        .select('id, org_id, codigo_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id, marca')
+        .select('id, org_id, codigo_pai, nome_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, grade_tamanho, lote_id, marca')
         .eq('id', claim.familiaId as string).maybeSingle();
       if (famErr) throw new Error(`resolver família (${claim.familiaId}): ${famErr.message}`);
       if (!familiaRow) throw new Error(`família ${claim.familiaId} não encontrada (referenciada pela raiz mas já apagada?)`);
       const familia = familiaRow as {
-        id: string; org_id: string; codigo_pai: string; categoria_ml_id: string | null; descricao_ml: string | null;
+        id: string; org_id: string; codigo_pai: string; nome_pai?: string | null; categoria_ml_id: string | null; descricao_ml: string | null;
         atributos_ml?: unknown; capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null;
         capa3_ml_picture_id: string | null; atacado?: unknown; atacado_status?: string | null;
         genero?: string | null; grade_tamanho?: string | null; lote_id: string; marca?: string | null;
@@ -101,17 +110,24 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
       const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
 
       // Trava da oferta (emenda ADR-0196): a composição precisa convergir, então o SKU reprovado não recusa a retomada,
-      // só fica com o preço vivo. Adicionar variação não confere, como em publicar-familias.
+      // só fica com o preço vivo. No Adicionar variação, confere só quem recebe preço, como em publicar-familias.
+      const { data: itensRaw, error: itensErr } = await admin.from('anuncios_externos_itens')
+        .select('sku, item_externo_id, status, retirado').eq('anuncio_externo_id', claim.rootId);
+      if (itensErr) throw new Error(`consultar itens (${claim.rootId}): ${itensErr.message}`);
+      const itens = (itensRaw ?? []) as ItemUPAlvo[];
+      const esperados = new Set(claim.skusEsperados);
+      const alvos = alvosPorSku(
+        variacoes.filter((v) => esperados.has(v.codigo)),
+        preservarPublicadas ? itens.filter((i) => !filhoAtivo(i)) : itens,
+      );
       let recusas: { familia_id: string; motivo: string }[] = [];
-      if (!preservarPublicadas) {
-        const { data: itens, error: itensErr } = await admin.from('anuncios_externos_itens')
-          .select('sku, item_externo_id').eq('anuncio_externo_id', claim.rootId);
-        if (itensErr) throw new Error(`consultar itens (${claim.rootId}): ${itensErr.message}`);
-        const esperados = new Set(claim.skusEsperados);
+      if (alvos.length > 0) {
+        const inicio = Date.now();
+        // Se o orçamento acabar no meio, o que faltou volta inconclusivo e fica sem preço.
         recusas = await recusasPorOferta(
-          alvosPorSku(variacoes.filter((v) => esperados.has(v.codigo)), itens ?? []),
-          depsTravaOferta(admin, claim.orgId, ctx.getToken),
+          alvos, depsTravaOferta(admin, claim.orgId, ctx.getToken), Math.min(ORCAMENTO_MS, checagemRestanteMs),
         );
+        checagemRestanteMs -= Date.now() - inicio;
       }
       const semPrecoPara = recusas.map((r) => r.familia_id);
 
@@ -146,6 +162,14 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
             .update({ erro_mensagem: `Preço não enviado (${semPrecoPara.join(', ')}): ${motivos}` }).eq('id', familia.id);
           // A composição já convergiu: falhar aqui só perde o registro.
           if (motivoErr) console.error(`motivo da trava de oferta não gravado (${familia.id}):`, motivoErr.message);
+          // A família terminou `publicado`, e a tela só mostra `erro_mensagem` em `erro`: o aviso é o que o operador vê.
+          try {
+            await notificarCategoria(admin, claim.orgId, 'integracao', mensagemPrecoMantido({
+              produto: familia.nome_pai ?? null, codigoPai: familia.codigo_pai, recusas,
+            }), { chave: `trava-oferta:${familia.id}:${claim.tentativas}` });
+          } catch (e) {
+            console.error(`aviso da trava de oferta falhou (${familia.id}):`, (e as Error).message);
+          }
         }
       }
       return { estado: resultado.estado };

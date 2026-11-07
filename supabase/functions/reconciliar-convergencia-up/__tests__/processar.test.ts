@@ -5,7 +5,8 @@ import { describe, it, expect, vi } from 'vitest';
 // atualizar-familia-up/__tests__ e update-familia-ml/__tests__/processar.test.ts).
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
 vi.mock('../../_shared/queue.ts', () => ({ enfileirarVinculacaoCatalogo: vi.fn() }));
-vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: vi.fn() }));
+const notificarCategoriaMock = vi.hoisted(() => vi.fn());
+vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: notificarCategoriaMock }));
 
 // atualizarFamiliaUP é a saga real (exaustivamente testada em atualizar-familia-up.test.ts) —
 // mockada aqui pra isolar SÓ a rede de segurança deste adapter (achado real, revisão adversarial
@@ -242,20 +243,97 @@ describe('criarPortasConvergencia — resumirComposicao (trava da oferta)', () =
     }]);
   });
 
-  it('saga sem convergir não grava o motivo: a próxima rodada confere de novo', async () => {
+  it('reprovado avisa o operador no app, com produto e oferta, uma vez por família e rodada', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'A', motivo: MOTIVO }]);
+    notificarCategoriaMock.mockReset();
+    const f = { ...filas(), familias: [{ ...FAMILIA_OK, nome_pai: 'Tênis Azul' }] };
+    await resumir(fakeAdmin(f).admin);
+    expect(notificarCategoriaMock).toHaveBeenCalledTimes(1);
+    expect(notificarCategoriaMock.mock.calls[0]!.slice(1)).toEqual([
+      'org-1', 'integracao', `⚠️ Preço mantido no Mercado Livre: Tênis Azul\nCores A: ${MOTIVO}`, { chave: 'trava-oferta:fam-1:0' },
+    ]);
+  });
+
+  it('falha ao avisar não desfaz a convergência', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'A', motivo: MOTIVO }]);
+    notificarCategoriaMock.mockReset().mockRejectedValueOnce(new Error('sem rede'));
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await resumir(fakeAdmin(filas()).admin)).toEqual({ estado: 'ok' });
+    expect(erro).toHaveBeenCalled();
+    erro.mockRestore();
+  });
+
+  it('sem recusa não avisa', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([]);
+    notificarCategoriaMock.mockReset();
+    await resumir(fakeAdmin(filas()).admin);
+    expect(notificarCategoriaMock).not.toHaveBeenCalled();
+  });
+
+  it('saga sem convergir não grava nem avisa: a próxima rodada confere de novo', async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
     recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'A', motivo: MOTIVO }]);
+    notificarCategoriaMock.mockReset();
     const { admin, updates } = fakeAdmin(filas());
     await resumir(admin);
     expect(semErros(updates)).toEqual([]);
+    expect(notificarCategoriaMock).not.toHaveBeenCalled();
   });
 
-  it('fluxo Adicionar variação não confere', async () => {
+  it('fluxo Adicionar variação confere só quem recebe preço: filho ativo é preservado', async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
-    recusasPorOfertaMock.mockReset();
-    await resumir(fakeAdmin(filas({ origem: 'manual' })).admin);
-    expect(recusasPorOfertaMock).not.toHaveBeenCalled();
-    expect(atualizarFamiliaUPMock.mock.calls[0]![0].semPrecoPara).toEqual([]);
+    recusasPorOfertaMock.mockReset().mockResolvedValueOnce([{ familia_id: 'B', motivo: MOTIVO }]);
+    const f = {
+      ...filas({ origem: 'manual' }),
+      anuncios_externos_itens: [[
+        { sku: 'A', item_externo_id: 'MLB1', status: 'ativo', retirado: false },
+        { sku: 'B', item_externo_id: 'MLB2', status: 'pausado', retirado: true },
+      ]],
+    };
+    await resumir(fakeAdmin(f).admin);
+    expect(recusasPorOfertaMock.mock.calls[0]![0 as never]).toEqual([{ familia_id: 'B', itens: [{ ml_item_id: 'MLB2', preco: 90 }] }]);
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].semPrecoPara).toEqual(['B']);
+  });
+
+  describe('orçamento único da rodada', () => {
+    const aguardar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+    it('o orçamento de cada raiz é o que sobrou da rodada, no máximo 20 s', async () => {
+      atualizarFamiliaUPMock.mockReset().mockResolvedValue({ estado: 'ok' });
+      recusasPorOfertaMock.mockReset().mockResolvedValue([]);
+      await criarPortasConvergencia(fakeAdmin(filas()).admin, 'x').resumirComposicao(CLAIM_OK);
+      expect(recusasPorOfertaMock.mock.calls[0]![2 as never]).toBe(20_000);
+
+      recusasPorOfertaMock.mockClear();
+      await criarPortasConvergencia(fakeAdmin(filas()).admin, 'x', 500).resumirComposicao(CLAIM_OK);
+      expect(recusasPorOfertaMock.mock.calls[0]![2 as never]).toBe(500);
+    });
+
+    it('o tempo gasto nas checagens acumula entre as raízes e esgota a rodada', async () => {
+      atualizarFamiliaUPMock.mockReset().mockResolvedValue({ estado: 'ok' });
+      recusasPorOfertaMock.mockReset().mockImplementation(async () => { await aguardar(30); return []; });
+      const { admin } = fakeAdmin({ ...filas(), familias: [FAMILIA_OK, FAMILIA_OK], lotes: [LOTE_PLANILHA, LOTE_PLANILHA],
+        marketplace_connections: [CONEXAO_OK, CONEXAO_OK], variacoes: [filas().variacoes[0], filas().variacoes[0]],
+        anuncios_externos_itens: [filas().anuncios_externos_itens[0], filas().anuncios_externos_itens[0]] });
+      const portas = criarPortasConvergencia(admin, 'x', 50);
+      expect(portas.orcamentoEsgotado!()).toBe(false);
+      await portas.resumirComposicao(CLAIM_OK);
+      expect(portas.orcamentoEsgotado!()).toBe(false);
+      await portas.resumirComposicao(CLAIM_OK);
+      expect(portas.orcamentoEsgotado!()).toBe(true);
+    });
+
+    it('raiz sem nada a conferir não gasta orçamento', async () => {
+      atualizarFamiliaUPMock.mockReset().mockResolvedValue({ estado: 'ok' });
+      recusasPorOfertaMock.mockReset().mockImplementation(async () => { await aguardar(20); return []; });
+      const portas = criarPortasConvergencia(fakeAdmin({ ...filas(), anuncios_externos_itens: [[]] }).admin, 'x', 5);
+      await portas.resumirComposicao(CLAIM_OK);
+      expect(recusasPorOfertaMock).not.toHaveBeenCalled();
+      expect(portas.orcamentoEsgotado!()).toBe(false);
+    });
   });
 });
 

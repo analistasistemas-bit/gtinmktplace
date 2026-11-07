@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
     retry: resultados.filter((r) => r.tipo === 'retry').length,
     erro: resultados.filter((r) => r.tipo === 'erro').length,
     perderamClaim: resultados.filter((r) => r.tipo === 'perdeu_claim').length,
+    adiadas: resultados.filter((r) => r.tipo === 'adiada').length,
   };
   return new Response(JSON.stringify({ ok: true, ...resumo }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
