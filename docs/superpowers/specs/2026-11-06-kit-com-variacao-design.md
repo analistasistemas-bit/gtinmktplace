@@ -57,7 +57,8 @@ Este é o quarto sentido: **kit com variação**.
    reais da base. Rascunho aprovado pelo Diego em 06/11.
 5. Só vira anúncio o que tiver quantidade maior que 0 **[agente]**. Por isso não há teto de combinações.
 6. Define preço, meta e piso.
-7. Prévia: título, descrição, foto por combinação, preço. Publica depois de conferir.
+7. **Simulador** de lucro, margem, markup e impostos, atualizado ao mudar o preço **[Diego]**.
+8. Prévia: título, descrição, foto por combinação, preço. Publica depois de conferir.
 
 ### Gerenciar
 
@@ -151,6 +152,27 @@ pelo operador (Preto + Branco M, meta 3, piso 2):
   unitários **[agente]**.
 - A troca de tamanho pode levar a outra combinação quando faltar item: mesmo "pulo" que Diego aceitou
   em 20/09 para os unitários.
+
+## Simulador antes de publicar [Diego]
+
+O operador precisa saber se o kit dá lucro antes de confirmar. Mesma leitura do simulador de
+Promoções: "Você recebe por venda", com comissão, imposto, lucro, margem e markup.
+
+Reaproveitar `DetalheRecebe`, `calcularTarifaML` (edge `calcular-tarifa-ml`) e os resumos de lucro de
+Promoções, sem criar outra fórmula **[agente]**.
+
+- **Tarifa e frete:** cotação oficial com preço, categoria, dimensões e peso **do kit**, nunca da
+  blusa unitária. Comissão e frete mudam por faixa de preço, então recotar ao mudar o preço.
+- **Custo:** soma dos custos vigentes das peças de cada combinação e tamanho. Usar o custo mais
+  recente, não o da família mais antiga (ADR-0185).
+- **Imposto:** alíquota por origem (ADR-0055). Sem alíquota confirmada, o simulador avisa e não
+  presume valor.
+- **Preço único, custo variável:** peças de custos diferentes dão lucro diferente. Mostrar a pior
+  combinação em destaque e o lucro de cada uma ao expandir **[agente]**.
+- **Prejuízo:** resultado em vermelho e confirmação explícita para seguir. Não bloqueia **[agente]**.
+- **Cotação indisponível:** dizer que não foi possível calcular, nunca mostrar lucro estimado como
+  exato. Publicar exige confirmação explícita **[agente]**.
+- A cobrança das imagens é custo único da criação e aparece à parte, fora do lucro por venda **[agente]**.
 
 ## Texto por IA [Diego]
 
