@@ -150,8 +150,8 @@ const rotasOferta = (sobre: Array<[string, () => Response]> = []): Array<[string
   ['/users/me', () => json({ id: 77 })],
   ['/users/77/items/search', () => json({ results: ['MLB1', 'MLB1C'], paging: { total: 2 } })],
   ['/items/bulk', () => json([
-    { status_code: 200, body: { id: 'MLB1', status: 'paused', sub_status: ['paused_by_seller'] } },
-    { status_code: 200, body: { id: 'MLB1C', status: 'active', sub_status: [] } },
+    { status_code: 200, body: { id: 'MLB1', user_product_id: 'MLBU1', status: 'paused', sub_status: ['paused_by_seller'] } },
+    { status_code: 200, body: { id: 'MLB1C', user_product_id: 'MLBU1', status: 'active', sub_status: [] } },
   ])],
 ];
 
@@ -193,7 +193,13 @@ describe('lerOferta', () => {
     ['busca truncada', [['/items/search', () => json({ results: ['MLB1'], paging: { total: 2 } })]]],
     ['busca sem paging.total', [['/items/search', () => json({ results: ['MLB1'] })]]],
     ['bulk com item não lido', [['/items/bulk', () => json([
-      { status_code: 200, body: { id: 'MLB1', status: 'paused', sub_status: [] } }, { status_code: 404 },
+      { status_code: 200, body: { id: 'MLB1', user_product_id: 'MLBU1', status: 'paused', sub_status: [] } },
+      { status_code: 404 },
+    ])]]],
+    // ADR-0105: a busca do ML ignora em silêncio filtro que não conhece e devolve a conta inteira.
+    ['item de outro UP na busca', [['/items/bulk', () => json([
+      { status_code: 200, body: { id: 'MLB1', user_product_id: 'MLBU1', status: 'paused', sub_status: [] } },
+      { status_code: 200, body: { id: 'MLB1C', user_product_id: 'MLBU2', status: 'active', sub_status: [] } },
     ])]]],
     ['bulk com status inesperado', [['/items/bulk', () => json({}, { status: 500 })]]],
   ])('%s lança', async (_nome, sobre) => {

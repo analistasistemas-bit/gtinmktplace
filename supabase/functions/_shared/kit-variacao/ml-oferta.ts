@@ -57,15 +57,17 @@ async function listarItensDoUp(f: typeof fetch, token: string, upId: string): Pr
   }
 }
 
-async function lerStatusItens(f: typeof fetch, token: string, ids: string[]): Promise<OfertaUP['itens']> {
+async function lerStatusItens(f: typeof fetch, token: string, upId: string, ids: string[]): Promise<OfertaUP['itens']> {
   const itens: OfertaUP['itens'] = [];
   for (let i = 0; i < ids.length; i += 20) {
     const bloco = ids.slice(i, i + 20);
-    const resp = await getML(f, token, caminhoMultiget(bloco, 'id,status,sub_status'));
+    const resp = await getML(f, token, caminhoMultiget(bloco, 'id,user_product_id,status,sub_status'));
     const entradas = comoEnvelopeAntigo(await resp.json(), bloco);
     if (!Array.isArray(entradas) || entradas.length !== bloco.length) throw new Error('ML /items/bulk: resposta inesperada');
     for (const { code, body } of entradas) {
       if (code !== 200 || !body?.id || !body.status) throw new Error(`ML /items/bulk: item não lido (${code})`);
+      // A busca ignora em silêncio filtro que não conhece (ADR-0105): sem isto, a saga pausaria a conta.
+      if (body.user_product_id !== upId) throw new Error(`UP ${upId}: busca trouxe ${body.id} de outro UP`);
       itens.push({ id: body.id, status: body.status, subStatus: body.sub_status ?? [] });
     }
   }
@@ -80,7 +82,7 @@ export async function lerOferta(token: string, upId: string, f: typeof fetch = f
   if (!Array.isArray(locais) || locais.some((l) => typeof l?.quantity !== 'number')) {
     throw new Error(`UP ${upId}: locations inválido`);
   }
-  const itens = await lerStatusItens(f, token, await listarItensDoUp(f, token, upId));
+  const itens = await lerStatusItens(f, token, upId, await listarItensDoUp(f, token, upId));
   return {
     upId, versao, locais, itens,
     quantidade: locais.reduce((soma, l) => soma + l.quantity, 0),
