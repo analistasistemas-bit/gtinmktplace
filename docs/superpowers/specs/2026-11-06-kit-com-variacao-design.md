@@ -383,6 +383,10 @@ SKU Guardado nunca recebe `reativar`.
    barra, com o original cropped e barra elástica. Saída de 832×1248, abaixo do ideal. Entrada era foto com
    modelo, o que pode piorar. O ML oferece "Gerar fotos com IA" e pede que o vendedor confira que o produto
    não foi alterado; não foi achada proibição, com leitura limitada por 403.
+   **Comparação de modelos, mesmas fotos e mesmo pedido:** `gemini-nano-banana-2.1` (US$ 0,041 por imagem,
+   896×1200) e `gemini-3-pro-image` (US$ 0,143, 848×1264) mantêm barra e punhos elásticos e gola, bem
+   superiores ao `gemini-2.5-flash-image`. `gpt-5.4-image-2` falhou no provedor. Amostra de 1 por modelo.
+   Modelo recomendado para seguir: `gemini-nano-banana-2.1`, a confirmar com Diego.
 
 ## Publicação no ML
 
