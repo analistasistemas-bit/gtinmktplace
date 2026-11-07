@@ -120,9 +120,9 @@ Dispara após venda do kit, entrada de mercadoria, cancelamento e ajuste manual.
 todas as cores acima do piso. Sem peça suficiente, o kit vende até zerar, sai do ar e volta sozinho
 quando houver peça.
 
-**Risco aceito pelo Diego:** venda do unitário durante a transferência pode gravar saldo desatualizado
-no ML. O sistema lê o saldo vivo antes de mover, o que reduz mas não zera. O modo manual não tem
-esse risco. Transferências rodam na fila serial por organização (`estoque-{orgId}`) **[agente]**.
+**Corrigido pela revisão do Codex:** uma venda durante a transferência produz no ML o mesmo número
+que a redução, então ler o saldo depois não prova nada. Isso vale também para o modo manual, ao
+contrário do que este documento dizia. Tratamento em "Contrato de segurança", item 1.
 
 Se várias combinações disputam peças, a distribuição é decisão do construtor, desde que seja
 determinística e registrada.
@@ -177,8 +177,8 @@ antes de agir:
 
 Falha ao consultar o estado nunca reativa nem monta: fica como está e alerta.
 
-Com o individual pausado não há venda concorrente, então a transferência em SKU guardado não tem
-o risco da janela. O risco residual aceito vale só para SKU Normal.
+Pausado não recebe venda nova, mas uma venda anterior à pausa pode ainda não ter chegado. O SKU
+guardado também precisa da conferência de pedidos antes de ser usado (Contrato de segurança, item 2).
 
 Promoções: conferir o que acontece com individual pausado que está em campanha **[medir]**.
 
@@ -193,6 +193,59 @@ Valem para toda operação. Um furo em qualquer um reprova o desenho.
 4. Falha deixa a peça sem oferta, nunca em duas ofertas, e gera alerta.
 5. Toda operação é idempotente e pode ser repetida sem mover peça duas vezes.
 6. Automático nunca desfaz decisão do operador: pausa manual, modo manual e desmontar.
+
+## Contrato de segurança
+
+Regras exigidas pela revisão adversarial do Codex (rodada 1, veredito REVISAR). Os números seguem
+os furos daquela revisão, e cada regra é obrigatória para o plano.
+
+1. **Origem vendável [decisão do Diego pendente]:** não transferir peça de anúncio ativo. O ML não
+   oferece redução condicional conhecida. Ver "Decisão pendente" abaixo.
+2. **Compromissos antes de consumir:** depois da pausa confirmada, importar e baixar os pedidos
+   anteriores à pausa, com referência idempotente. Com a conta incerta, bloquear montagem e qualquer
+   push que aumente quantidade.
+3. **Exclusão única por SKU:** escrita de quantidade, criação de oferta e mudança de identidade desses
+   SKUs passam pela mesma exclusão, com versão validada logo antes da escrita. Snapshot anterior à
+   transferência não publica. Vale para `publish-ml-*` e `estoque-*`.
+4. **Confirmação durável:** registro por transferência e alvo, com quantidade e identidade lidas depois
+   da escrita. HTTP 200 e job entregue não contam. Resultado ambíguo mantém o destino bloqueado e
+   gera alerta durável.
+5. **Reconciliação:** primeiro reconcilia pedidos, depois oferta. Aumentar quantidade no canal exige
+   disponibilidade comprovada. Transferência pendente é reconciliada sem limite de 24 horas.
+6. **Intenção do operador:** pausa manual, modo manual e desmontar ficam gravados com versão da
+   política. Jobs antigos são invalidados. Movimento positivo sozinho não autoriza reativar.
+7. **Todo caminho de reativação consulta a política:** individual, massa, UP, composição, convergência,
+   retry e Reverter. Reativar Guardado à mão executa antes a transição segura.
+8. **Saldo pertence ao SKU estável:** UPDATE, adicionar variação e planilha não substituem saldo nem
+   política por snapshot. A troca de família canônica preserva tudo atomicamente.
+9. **Cancelamento:** credita o SKU e a composição vendidos, mesmo após retirada ou republicação. O
+   saldo segue visível e desmontável. Falha fica pendente com retry durável.
+10. **Inventário:** montagem, trânsito e desmontagem preservam quantidade por componente, custo e nota
+    de origem. O inventário fiscal reconhece essas transferências.
+11. **Transferência é uma saga durável:** identidade única, composição congelada, etapas persistidas e
+    movimentos protegidos por constraint. Resultado remoto incerto não compensa antes de resolver.
+12. **Reserva numa transação:** todos os componentes e a capacidade até a meta, com locks em ordem
+    estável. Insuficiência aborta tudo. Proibido aplicar parcialmente com `greatest(0, …)`.
+13. **Guardado ↔ Sobra:** decide sobre fotografia consistente das combinações afetadas. Reserva os
+    parceiros antes de voltar a Guardado. Decisão velha é rejeitada por versão. Não vira Sobra com
+    transferência pendente. Cor em Sobra conta como disponível na avaliação conjunta.
+14. **Política agregada por SKU:** cada kit registra sua reivindicação, e os bloqueios são separados por
+    motivo: operador, kit, moderação, retirada. Desligar um kit remove só a dele. A automação só
+    desfaz pausa que ela fez. Moderação nunca é desfeita.
+15. **Composição durável:** exclusão física e limpeza ficam bloqueadas com kit, trânsito ou estorno
+    pendente. Republicar preserva política e composição e invalida trabalhos antigos. Incompatibilidade
+    com outros kits e Full vale nos dois sentidos, durante todo o ciclo. A pausa abrange anúncios
+    relacionados de catálogo.
+
+### Decisão pendente: como tirar peça de anúncio ativo
+
+- **A. Quarentena em toda transferência:** pausa o individual → confirma → confere pedidos → move →
+  reativa. Reposição em lotes para pausar menos.
+- **B. Automático só em "Vender só em kit":** com individual ativo, só há montagem manual com
+  quarentena.
+- **C. Aceitar a janela:** contraria o objetivo de não ter furo.
+
+Tempo fora do ar e efeito das pausas no ranking do ML **[medir]**.
 
 ## Publicação no ML
 
