@@ -17,7 +17,7 @@ export function montarReqMsgML(
 }
 
 /** POST de mensagem pós-venda ao ML. Retorna a Response crua — usado pelo reply interativo
- *  (`responderMensagemPedido`, que relança em erro). */
+ *  (`depsMensagemReal`, que classifica a resposta). */
 export async function enviarMsgML(
   token: string, packId: string | number, sellerId: string | number, buyerId: string | number, texto: string,
   anexo?: string | null,
