@@ -98,6 +98,62 @@ const emTimeout = async (c: ReturnType<typeof cenario>) => {
   return await enviarMensagem(c.deps, c.entrada(OP1));
 };
 
+describe('cliente sem operacao_id (legado)', () => {
+  const legado = (c: ReturnType<typeof cenario>, op = OP1) => enviarMensagem(c.deps, { ...c.entrada(op), legado: true });
+  const INCERTO = 'Não foi possível confirmar o envio. Confira no Mercado Livre antes de enviar de novo.';
+
+  it('legado_timeout_vira_inconclusiva_e_502_e_nao_trava', async () => {
+    const c = cenario();
+    c.ctl.resposta = { status: null, body: null };
+    expect(await legado(c)).toMatchObject({ http: 502, ok: false, estado: 'inconclusiva', pendenteConfirmacao: false, erro: INCERTO });
+    expect(c.linha(OP1).estado).toBe('inconclusiva');
+    expect(c.ml.posts).toHaveLength(1);
+    c.ctl.resposta = { status: 200, body: { id: 'm2', message_moderation: { status: 'clean' } } };
+    expect(await legado(c, OP2)).toMatchObject({ ok: true, estado: 'confirmada' });
+  });
+
+  it.each([500, 408])('legado_%i_tambem_responde_502', async (status) => {
+    const c = cenario();
+    c.ctl.resposta = { status, body: null };
+    expect(await legado(c)).toMatchObject({ http: 502, ok: false, estado: 'inconclusiva', erro: INCERTO });
+  });
+
+  it('legado_2xx_sem_clean_responde_ok_e_nao_trava', async () => {
+    const c = cenario();
+    c.ctl.resposta = { status: 200, body: { id: 'm1', message_moderation: { status: 'pending' } } };
+    expect(await legado(c)).toMatchObject({ http: 200, ok: true, estado: 'inconclusiva', pendenteConfirmacao: false });
+    expect(c.linha(OP1).estado).toBe('inconclusiva');
+    expect(c.ml.posts).toHaveLength(1);
+    c.ctl.resposta = { status: 200, body: { id: 'm2', message_moderation: { status: 'clean' } } };
+    expect(await legado(c, OP2)).toMatchObject({ ok: true, estado: 'confirmada' });
+  });
+
+  it('legado_clean_confirma_normal', async () => {
+    const c = cenario();
+    expect(await legado(c)).toEqual({ http: 200, ok: true, estado: 'confirmada', operacao_id: OP1, pendenteConfirmacao: false });
+  });
+
+  it('legado_recusa_4xx_segue_recusada', async () => {
+    const c = cenario();
+    c.ctl.resposta = { status: 400, body: { message: 'x' } };
+    expect(await legado(c)).toMatchObject({ http: 422, ok: false, estado: 'recusada', erro: 'recusado 400' });
+  });
+
+  it('legado_com_envio_em_aberto_no_pack_segue_409', async () => {
+    const c = cenario();
+    await emTimeout(c);
+    expect(await legado(c, OP2)).toMatchObject({ http: 409, codigo: 'em_andamento', pendente: { operacao_id: OP1, estado: 'desconhecido' } });
+    expect(c.linha(OP1).estado).toBe('desconhecido');
+    expect(c.ml.posts).toHaveLength(1);
+  });
+
+  it('sem_legado_timeout_mantem_desconhecido', async () => {
+    const c = cenario();
+    expect(await emTimeout(c)).toMatchObject({ http: 200, ok: true, estado: 'desconhecido', pendenteConfirmacao: true });
+    expect(c.linha(OP1).estado).toBe('desconhecido');
+  });
+});
+
 describe('enviarMensagem', () => {
   it('envia_e_confirma_com_clean_sem_reler', async () => {
     const c = cenario();

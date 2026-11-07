@@ -23,7 +23,7 @@
 
 ## Review Focus
 
-1. Bundle antigo do PWA envia só `{pack_id, text}`: o envio de texto continua funcionando (edge gera `operacao_id`). Limite aceito: sem chave estável, esse cliente não ganha idempotência entre cliques, igual a hoje; a trava cobre só tentativas simultâneas. Não é regressão e some quando o bundle atualiza.
+1. Bundle antigo do PWA envia só `{pack_id, text}`: a edge gera `operacao_id` e passa `legado: true`. Esse cliente não tem Conferir nem Liberar, então o envio sem confirmação vira `inconclusiva`, sem novo POST e nunca `cancelada`, e não deixa trava. Com 2xx responde `ok: true`, `estado: 'inconclusiva'`, `pendenteConfirmacao: false` e roda o re-sync de `confirmada`. Sem 2xx (timeout, rede, 5xx, 408) responde 502 com `Não foi possível confirmar o envio. Confira no Mercado Livre antes de enviar de novo.`. `conflito_recurso` segue 409 `em_andamento`, recusa 4xx segue igual e cliente com `operacao_id` não muda. Limite aceito: sem chave estável, esse cliente não ganha idempotência entre cliques; some quando o bundle atualiza.
 2. Foto do iPhone em HEIC ou arquivo com `type` vazio: recusa com mensagem clara, texto digitado preservado.
 3. Recarregar a página durante envio incerto: ao reabrir, a tela mostra o estado pendente e não libera novo envio.
 4. Anexo antigo que o ML não devolve mais (404): cartão "Arquivo indisponível", sem imagem quebrada.
@@ -193,5 +193,5 @@ Sequência de `enviarMensagem`: operação conhecida → compara pack e hash, se
 - [ ] **Step 2: Rodar `pnpm preflight`.** Esperado: PASS.
 - [ ] **Step 3: Revisão do diff pelo Codex gpt-6.1-sol high.** Corrigir achados.
 - [ ] **Step 4: Validar a tela em runtime real, em sessão isolada, com print:** miniatura de anexo já existente, chip, cartão de PDF, tema escuro.
-- [ ] **Step 5: Com pedido de merge do Diego:** `supabase db push`; `supabase functions deploy posvenda-anexo responder-mensagem posvenda-acao reconciliar-faturamento`; conferir versões; push e merge fast-forward. `posvenda-acao` e `reconciliar-faturamento` entram porque `posvenda-acao-io.ts` mudou.
+- [ ] **Step 5: Com pedido de merge do Diego:** `supabase db push`; `supabase functions deploy posvenda-acao reconciliar-faturamento`; `supabase functions deploy responder-mensagem posvenda-anexo`; `supabase functions deploy sync-mensagem marcar-mensagens-lidas-ml backfill-faturamento posvenda-detalhe`; conferir versões; push e merge fast-forward. `posvenda-acao` e `reconciliar-faturamento` entram porque `posvenda-acao-io.ts` mudou; o último grupo, por causa dos arquivos de `_shared/` alterados.
 - [ ] **Step 6: Diego faz o primeiro envio real pelo app.**

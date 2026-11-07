@@ -102,5 +102,6 @@ que não tem `claim_id`. Migration `20261107163534_posvenda_acoes_pack.sql`:
   `antes` com texto e anexos correspondentes. Moderação `clean` confirma; `rejected` comprovada vira
   `recusada` (HTTP 422); pendente ou ambígua mantém a trava.
 - **Saída da trava em pack:** a condição de reclamações (ação fora de `available_actions`) não existe aqui.
-  A liberação é manual e humana (`inconclusiva`), registrada na auditoria.
+  A liberação é manual e humana (`inconclusiva`), registrada na auditoria. Cliente sem `operacao_id`
+  (bundle antigo do PWA) não tem essa saída: o envio sem confirmação vira `inconclusiva` na hora, sem novo POST.
 - Anexos de mensagem não são guardados em storage próprio (decisão 7 segue valendo).

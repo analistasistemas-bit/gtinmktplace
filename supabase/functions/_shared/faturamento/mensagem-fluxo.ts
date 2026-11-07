@@ -13,6 +13,7 @@ import { classificar, ESTADOS_ATIVOS, MSG_MODERACAO, MSG_TRAVA, sha256, type Est
 export type EstadoEnvio = EstadoAcao;
 
 export const MSG_LIBERADO = 'Liberado pelo operador após conferir no Mercado Livre.';
+const MSG_LEGADO_INCERTO = 'Não foi possível confirmar o envio. Confira no Mercado Livre antes de enviar de novo.';
 const RESERVA_EXPIRA_MS = 2 * 60_000;
 
 export interface PayloadMensagem { texto: string; anexo: string | null }
@@ -111,8 +112,20 @@ async function enviar(deps: DepsMensagem, t: TentativaMensagem): Promise<Resulta
   return resultado(await conferir(deps, apos ?? await reler(deps, marcada)));
 }
 
+/** Cliente sem `operacao_id` (bundle antigo) não tem Conferir nem Liberar: não pode deixar a trava ativa.
+ *  Nunca `cancelada`, pois a mensagem pode ter saído. */
+async function encerrarLegado(deps: DepsMensagem, inicial: TentativaMensagem): Promise<ResultadoEnvio> {
+  const t = await reler(deps, inicial);
+  if (!ESTADOS_ATIVOS.includes(t.estado) || (t.estado === 'reservada' && !t.post_em)) return resultado(t);
+  const c = await deps.atualizar(t.id, { estado: t.estado }, { estado: 'inconclusiva', erro: MSG_LEGADO_INCERTO });
+  if (!c) return resultado(await reler(deps, t));
+  const aceita = c.http_status != null && c.http_status >= 200 && c.http_status < 300;
+  return aceita ? resultado(c) : { ...resultado(c, 502), ok: false };
+}
+
 export async function enviarMensagem(
-  deps: DepsMensagem, e: { orgId: string; userId: string; packId: string; operacaoId: string; payload: PayloadMensagem },
+  deps: DepsMensagem,
+  e: { orgId: string; userId: string; packId: string; operacaoId: string; payload: PayloadMensagem; legado?: boolean },
 ): Promise<ResultadoEnvio> {
   const hash = await sha256(JSON.stringify({ packId: e.packId, payload: e.payload }));
   // Operação conhecida: nunca executa de novo.
@@ -135,7 +148,8 @@ export async function enviarMensagem(
     const p = await deps.ativaDoRecurso(recurso);
     return { ...falha(409, MSG_TRAVA, 'em_andamento'), pendente: p && { operacao_id: p.operacao_id, estado: p.estado } };
   }
-  return await enviar(deps, r);
+  const res = await enviar(deps, r);
+  return e.legado && res.pendenteConfirmacao ? await encerrarLegado(deps, r) : res;
 }
 
 /** "Conferir": nunca faz POST. `reservada` recente pode estar com a edge no meio do envio → não toca. */

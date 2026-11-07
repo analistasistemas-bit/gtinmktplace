@@ -181,6 +181,44 @@ describe('responder-mensagem — envio pelo fluxo', () => {
     expect(entrada.operacaoId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
+  it('body sem operacao_id passa legado: true; com operacao_id não passa', async () => {
+    fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
+
+    await chamar({ pack_id: '10', text: 'Olá' });
+    expect(fronteiras.enviar.mock.calls[0][1].legado).toBe(true);
+
+    await chamar({ pack_id: '10', text: 'Olá', operacao_id: OP });
+    expect(fronteiras.enviar.mock.calls[1][1]).not.toHaveProperty('legado');
+  });
+
+  it('legado inconclusiva com ok: re-sincroniza como confirmada e tolera falha', async () => {
+    fronteiras.enviar.mockResolvedValue(sucesso('inconclusiva', { erro: 'Não confirmado.' }));
+    fronteiras.buscarPack.mockResolvedValueOnce([{ id: 'm1' }]);
+
+    const response = await chamar({ pack_id: '10', text: 'Olá' });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, estado: 'inconclusiva', operacao_id: OP, pendenteConfirmacao: false });
+    expect(fronteiras.upsert).toHaveBeenCalled();
+
+    fronteiras.buscarPack.mockRejectedValueOnce(new Error('rede caiu'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await chamar({ pack_id: '10', text: 'Olá' })).status).toBe(200);
+    log.mockRestore();
+  });
+
+  it('legado sem 2xx: 502 com o erro do fluxo, sem re-sync', async () => {
+    fronteiras.enviar.mockResolvedValue({
+      http: 502, ok: false, estado: 'inconclusiva', operacao_id: OP, pendenteConfirmacao: false, erro: 'Não foi possível confirmar o envio.',
+    });
+
+    const response = await chamar({ pack_id: '10', text: 'Olá' });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ ok: false, erro: 'Não foi possível confirmar o envio.' });
+    expect(fronteiras.buscarPack).not.toHaveBeenCalled();
+  });
+
   it('confirmada: re-sincroniza e responde o contrato novo', async () => {
     fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
     fronteiras.buscarPack.mockResolvedValue([{ id: 'm1' }]);

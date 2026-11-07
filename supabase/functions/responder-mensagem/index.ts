@@ -84,6 +84,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
 
   const deps = depsMensagemReal(admin, { orgId, packId, sellerId, buyerId, token });
   const operacaoId = (operacaoInformada as string | null | undefined) ?? crypto.randomUUID();
+  const legado = operacaoInformada == null; // bundle antigo do PWA: sem Conferir nem Liberar.
   let r: ResultadoEnvio;
   try {
     r = verificar ? await verificarEnvio(deps, packId, operacaoId)
@@ -91,6 +92,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       : await enviarMensagem(deps, {
         orgId, userId: context.userId, packId, operacaoId,
         payload: { texto: text, anexo: (anexo as string | null | undefined) ?? null }, // ordem e forma entram no payload_hash.
+        ...(legado ? { legado } : {}),
       });
   } catch (e) {
     // Erro de banco no meio: o estado gravado é a verdade; "Conferir" com o mesmo operacao_id retoma sem POST.
@@ -121,7 +123,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
 
   // Re-busca o pack (captura a mensagem enviada) e marca as recebidas como lidas (limpa o badge).
   // A mensagem já saiu: falha aqui não reabre o envio.
-  if (r.estado === 'confirmada' && dono) {
+  if ((r.estado === 'confirmada' || (legado && r.estado === 'inconclusiva')) && dono) {
     try {
       const msgs = await buscarMensagensPack(token, packId, sellerId);
       if (msgs.length) {
