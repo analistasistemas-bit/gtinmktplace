@@ -7446,3 +7446,5 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 - [x] **Louro, Loiro e Chocolate no dicionário de cores** (2026-11-07, adendo ADR-0004) — colorações `Louro Escuro`, `Louro Médio` e `Chocolate` saíam `Outra` pelo Vision. Não é retroativo. Deploy: `process-familia`.
 
 - [x] **Identidade do produto no título** (2026-11-07, [ADR-0198](decisions/0198-identidade-do-produto-no-titulo.md)) — "2 em 1" deixa de virar cor, ingrediente deixa de respaldar cor, nome comercial vai para `modelo` e é o último a sair no corte. Produto simples em categoria sem `COLOR` fica sem cor no CREATE. Revisão avisa palavra do nome fora do título e título repetido no lote. Medido no modelo real: 0 de 40 falhas. Não é retroativo. Deploy: funções que importam `_shared/ai/titulo-pos.ts`.
+
+- [x] **`openai/gpt-6-luna` como modelo de texto padrão** (2026-11-07, adendo ADR-0074) — medido contra o `gpt-4.1-mini`: 76 de 76 copies sem falha, nome comercial 40 de 40, menos da metade do custo. Limite da copy sobe para 45 s. Vale para todas as orgs. `gpt-4.1-mini` fica como saída de emergência.

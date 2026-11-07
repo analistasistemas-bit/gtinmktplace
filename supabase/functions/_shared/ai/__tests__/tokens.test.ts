@@ -42,6 +42,13 @@ describe('custoCentavos', () => {
     }
   });
 
+  it('gpt-6-luna está em PRECOS (emenda ADR-0074) — sem ele a família sairia com custo zero', () => {
+    // 1M input = $0.10 = 10 centavos
+    expect(custoCentavos('openai/gpt-6-luna', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(10);
+    // 1M output = $0.50 = 50 centavos
+    expect(custoCentavos('openai/gpt-6-luna', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(50);
+  });
+
   it('gpt-4.1-mini está em PRECOS (ADR-0098) — sem ele a família sairia com custo zero', () => {
     // 1M input = $0.40 = 40 centavos
     expect(custoCentavos('openai/gpt-4.1-mini', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(40);

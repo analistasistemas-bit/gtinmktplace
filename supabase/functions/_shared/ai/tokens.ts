@@ -8,7 +8,9 @@ interface PrecoModelo {
 const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'openai/gpt-4o': { input: 0.0025, output: 0.01 },
-  // GPT-4.1-mini (padrão desde o ADR-0098): $0.40/1M in · $1.60/1M out.
+  // GPT-6 Luna (padrão desde a emenda de 07/11/2026 ao ADR-0074): $0.10/1M in · $0.50/1M out.
+  'openai/gpt-6-luna': { input: 0.0001, output: 0.0005 },
+  // GPT-4.1-mini (padrão do ADR-0098 até 07/11/2026): $0.40/1M in · $1.60/1M out.
   'openai/gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
   // DeepSeek V4 Flash saiu da lista (ADR-0098): devolvia JSON truncado sob json_schema
   // strict, e gerarCopy é a única etapa de IA sem fallback resiliente (ADR-0030).
