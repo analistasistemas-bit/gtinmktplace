@@ -24,15 +24,18 @@ function escapeRegex(str: string): string {
 // sinônimo vence sozinho e a composta perde uma palavra: "Marrom Dourado" virava "Dourado".
 const TONS = 'clar[oa]|escur[oa]|m[eé]dio|intens[oa]|azulad[oa]|acinzentad[oa]|acobread[oa]|dourad[oa]|turquesa|petr[oó]leo|chocolate';
 const COR_COMPOSTA = new RegExp(
-  `(?<![\\p{L}])(?:azul|verde|marrom|castanh[oa]|lour[oa]|loir[oa]|rosa|rox[oa]|vermelh[oa]|amarel[oa]|laranja|cinza|bege|pret[oa])` +
+  `(?<![\\p{L}])(?:azul|verde|marrom|castanh[oa]|lour[oa]|loir[oa]|chocolate|rosa|rox[oa]|vermelh[oa]|amarel[oa]|laranja|cinza|bege|pret[oa])` +
     `(?:[\\s-]+(?:${TONS})){1,2}(?![\\p{L}])`,
   'iu',
 );
+// "Shampoo para cabelo loiro", "forma para chocolate": finalidade, não cor do produto.
+const FINALIDADE =
+  /(?<![\p{L}])(?:para|p\/|sabor|aroma|cabelos?)\s+(?:cabelos?\s+)?(?:lour[oa]s?|loir[oa]s?|chocolate)(?![\p{L}])/giu;
 
 export function extrairCorDoTexto(textos: Array<string | null | undefined>): string | null {
   const conjunto = textos.filter((t): t is string => typeof t === 'string' && t.length > 0);
   if (conjunto.length === 0) return null;
-  const corpus = conjunto.join(' | ');
+  const corpus = conjunto.join(' | ').replace(FINALIDADE, ' ');
   const termo = TERMOS.find((t) => t.regex.test(corpus));
   const composta = COR_COMPOSTA.exec(corpus)?.[0];
   // Empate de tamanho = composta já cadastrada ("Azul Claro"): vale a forma canônica.

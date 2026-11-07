@@ -64,7 +64,20 @@ describe('extrairCorDoTexto — cor composta fora do dicionário', () => {
     ['Coloração Marrom Chocolate 125g', 'Marrom Chocolate'],
     ['Coloração Louro 125g', 'Louro'],
     ['Peruca Loira Lisa', 'Loiro'],
+    ['Coloração Chocolate Escuro 125g', 'Chocolate Escuro'],
+    ['Coloração Chocolate Dourado 125g', 'Chocolate Dourado'],
   ])('%s → %s', (nome, cor) => {
+    expect(extrairCorDoTexto([nome])).toBe(cor);
+  });
+
+  it.each([
+    ['Forma para chocolate vermelha', 'Vermelho'],
+    ['Shampoo roxo para cabelo loiro 300ml', 'Roxo'],
+    ['Shampoo para cabelo louro 300ml', null],
+    ['Shampoo para cabelos loiros 300ml', null],
+    ['Essência aroma chocolate 100ml', null],
+    ['Bala sabor chocolate', null],
+  ])('finalidade não é cor: %s → %s', (nome, cor) => {
     expect(extrairCorDoTexto([nome])).toBe(cor);
   });
 
