@@ -352,8 +352,10 @@ SKU Guardado nunca recebe `reativar`.
 
 **Testes antes de construir [medir], com o que mostrar ao Diego antes de cada escrita:**
 
-1. Escrita de quantidade em item com pausa do vendedor mantém a pausa, nos dois itens do UP, inclusive
-   ao passar por zero. Reprova se qualquer item ficar `active`.
+1. **Passou em 07/11 (DSA, `MLB5471674559`).** `PUT /items` com `available_quantity` em 5 → 4 → 0 → 5
+   manteve os dois itens do UP pausados. Em zero, `sub_status` ficou `out_of_stock` + `paused_by_seller`;
+   ao subir, voltou a só `paused_by_seller`. Uma escrita no item atualiza o UP e a cópia de catálogo, e
+   `x-version` subiu a cada escrita (5 → 8). A pausa vale enquanto `paused_by_seller` estiver presente.
 2. Item `out_of_stock` com saldo subindo: o ML religa sozinho (ADR-0111). Reprova se isso ocorrer num
    item que a política quer pausado.
 3. Pedido não pago aparece em `/orders/search` antes do pagamento. Se não aparecer, o passo 3 não protege
