@@ -14,7 +14,7 @@ alter table public.configuracoes
 
 update public.configuracoes
   set ai_model_texto = 'openai/gpt-6-luna'
-  where ai_model_texto = 'openai/gpt-4.1-mini';
+  where ai_model_texto in ('openai/gpt-4.1-mini', 'openai/gpt-4o-mini');
 
 -- Todo slug aqui precisa existir em _shared/ai/tokens.ts::PRECOS. Estender exige nova migration.
 -- gpt-4.1-mini e gpt-4o-mini seguem selecionáveis como saída de emergência.
