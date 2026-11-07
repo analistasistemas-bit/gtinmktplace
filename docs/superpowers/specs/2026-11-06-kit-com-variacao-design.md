@@ -157,7 +157,7 @@ valores digitados pelo operador (Preto + Branco M, meta 3):
 
 | Situação | O que acontece |
 |---|---|
-| Vendeu 1 kit, saldo foi para 2, e há peças guardadas das duas cores | O sistema move 1 peça de cada cor para o kit |
+| Vendeu 1 kit, saldo foi para 2, e há peças guardadas das duas cores | O sistema move 1 peça de cada cor para o kit. Esse kit sai do ar por alguns minutos durante a reposição |
 | Acabou o Preto M guardado e sobrou Branco M | Não move; o kit vende até acabar, e o Branco M volta ao individual |
 | Chegou mercadoria | O sistema repõe os kits até a meta |
 | Kit zerou e falta peça | O kit sai do ar e volta sozinho quando entrar peça |
@@ -243,8 +243,10 @@ os furos daquela revisão, e cada regra é obrigatória para o plano.
    retry e Reverter. Reativar Guardado à mão executa antes a transição segura.
 8. **Saldo pertence ao SKU estável:** UPDATE, adicionar variação e planilha não substituem saldo nem
    política por snapshot. A troca de família canônica preserva tudo atomicamente.
-9. **Cancelamento:** credita o SKU e a composição vendidos, mesmo após retirada ou republicação. O
-   saldo segue visível e desmontável. Falha fica pendente com retry durável.
+9. **Cancelamento:** crédito automático só nos casos que o ADR-0121 permite, ou seja, cancelamento
+   comprovadamente anterior ao despacho. Quando o crédito é devido, vale para o SKU e a composição
+   vendidos, mesmo após retirada ou republicação, e o saldo segue visível e desmontável. Falha fica
+   pendente com retry durável. Pós-despacho e devolução não creditam: seguem o aviso existente.
 10. **Inventário:** montagem, trânsito e desmontagem preservam quantidade por componente, custo e nota
     de origem. O inventário fiscal reconhece essas transferências.
 11. **Transferência é uma saga durável:** identidade única, composição congelada, etapas persistidas e
@@ -262,8 +264,8 @@ os furos daquela revisão, e cada regra é obrigatória para o plano.
     com outros kits e Full vale nos dois sentidos, durante todo o ciclo. A pausa abrange anúncios
     relacionados de catálogo.
 
-Tempo de quarentena e efeito das pausas no ranking do ML **[medir]**. Acontecem só em Montar mais,
-Desmontar e ao sair de Sobra.
+Tempo de quarentena e efeito das pausas no ranking do ML **[medir]**. Acontecem em Montar mais,
+Desmontar, sair de Sobra, reposição automática do kit, cancelamento e entrada em peça usada em kit.
 
 ## Escrita de estoque com anúncio pausado
 
@@ -275,20 +277,27 @@ absoluto de quantidade exige todos os itens do UP pausados e a conciliação aba
 catálogo, inclusive reduções e push fora de transferência. Uma redução calculada vira aumento se houver
 venda entre a leitura e a escrita, então não há exceção para reduzir.
 
-Na prática, venda não gera escrita: o ML já baixou. O que gera é entrada, ajuste e cancelamento. Entrada
-em SKU de kit com individual ativo pausa aquele individual pelo tempo T, em lote **[agente]**.
+Na prática, venda não gera escrita: o ML já baixou. O que gera é entrada, ajuste e cancelamento. Só pausa
+o UP que recebe a escrita: entrada em peça individual ativa pausa esse individual por T, em lote
+**[agente]**; escrita no kit não pausa individual.
+
+**Cada reposição automática tira do ar por T os itens do kit que recebem saldo**, porque item ativo não
+recebe escrita. Reposição é agrupada em lotes, para isso acontecer poucas vezes **[agente]**.
 
 Sequência única (origem e destino):
 
-1. Pausa todos os itens envolvidos e confirma por leitura.
+1. Lê a quantidade, pausa todos os itens do UP que receberá a escrita e confirma por leitura. A pausa
+   só vale se `sub_status` for pausa do vendedor: `out_of_stock` religa sozinho quando o saldo sobe.
 2. Espera o tempo de quarentena **T**.
 3. Importa pedidos do item e reserva os **não pagos** (`payment_required`, `payment_in_process`) e os
-   **pagos sem baixa conciliada**: pedido pago só deixa de reservar quando o `last_updated` do estoque
-   é posterior ao pagamento. Na dúvida sobre a conta, bloqueia transferência e aumento.
+   **pagos sem baixa conciliada**. Pedido pago segue reservado até a **quantidade lida** cair em relação
+   à leitura feita no passo 1. `last_updated` não solta reserva: não está medido que ele anda só quando
+   a quantidade muda. Na dúvida sobre a conta, bloqueia transferência e aumento.
 4. Lê a quantidade em `/user-products/{id}/stock`, que é a verdade da disponibilidade.
-5. Calcula o valor final **uma única vez** e grava na saga. Retentativa reenvia o mesmo valor absoluto,
-   então a escrita fica idempotente sem precisar de delta.
-6. Escreve, relê e confirma quantidade e status.
+5. Calcula o valor final **uma única vez** e grava na saga, junto com o valor anterior.
+6. Escreve, relê e confirma quantidade e status. **Retentativa nunca é cega:** relê antes. Se a leitura
+   for o valor anterior, não gravou e pode reenviar. Se for o valor da saga, gravou e segue. Qualquer
+   outro número trava a operação e gera alerta, porque uma venda pode ter sido descontada no meio.
 7. Reativa só o que a operação pausou.
 
 **Medido em 07/11 (só leitura, DSA e Daludi, amostra pequena):** nas 9 amostras comparáveis, o estoque
@@ -303,8 +312,8 @@ prova inexistente.
 que o ML atrasa além do que o passo 3 detecta. Nesse caso a peça pode estar comprometida duas vezes. O sistema detecta pela baixa, alerta no Telegram e o
 operador resolve o pedido. Registrar toda ocorrência, para rever T com dado real.
 
-**Kit ativo:** nenhuma escrita de quantidade com o item ativo. Cancelamento credita o saldo local do kit
-na hora e agenda a sequência acima, **mesmo com reposição automática desligada**.
+**Kit ativo:** nenhuma escrita de quantidade com o item ativo. Cancelamento dentro do ADR-0121 credita o
+saldo local do kit na hora e agenda a sequência acima, **mesmo com reposição automática desligada**.
 
 **Pausa preservada:** a escrita precisa manter a pausa, inclusive ao passar por zero. Se reativar, a
 operação fica proibida nessa configuração.
@@ -335,6 +344,9 @@ financiam esse saldo já estiverem confirmadas e com proteção contra criação
 | UPDATE e reposição de filhos UP | `_shared/user-products/atualizar-composicao.ts`, `atualizar-familia-up.ts` |
 | Reconciliação diária | `reconciliar-estoque/index.ts` |
 | Convergência UP | `reconciliar-convergencia-up/processar.ts` |
+| Push e reativação por reposição | `sincronizar-estoque/processar.ts` |
+
+SKU Guardado nunca recebe `reativar`.
 
 **Testes antes de construir [medir], com o que mostrar ao Diego antes de cada escrita:**
 
