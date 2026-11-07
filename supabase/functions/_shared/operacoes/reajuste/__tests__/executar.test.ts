@@ -1044,6 +1044,81 @@ describe('executarReajuste — passos', () => {
       expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
     });
 
+    it.each<[string, () => Linha, number]>([
+      ['com faixas escritas', () => descendo(), 1],
+      ['sem mais nada escrito', () => item('A'), 0],
+    ])('crash entre marcar pendente e tratar o esgotamento (%s): exatamente 3 escritas, depois falha', async (_n, novo, indice) => {
+      const itens = [novo()];
+      const atacado = { A: F80 };
+      const deps = montar(itens, { A: plano(100) }, atacado);
+      deps.ml.putPreco.mockResolvedValue({ kind: 'desconhecido', mensagem: 'timeout' });
+      for (let n = 0; n < 3; n++) {
+        await executarReajuste(OP, deps, OPTS);
+        itens[0].proxima_conferencia = PASSADO;
+      }
+      const marcar = deps.marcarPasso.getMockImplementation()!;
+      deps.marcarPasso.mockImplementationOnce(async (...args) => {
+        await marcar(...args);
+        throw new Error('worker morreu');
+      });
+      await expect(executarReajuste(OP, deps, OPTS)).rejects.toThrow('worker morreu');
+      expect(itens[0].passos[indice]).toMatchObject({ estado: 'pendente', tentativas: 3 });
+      itens[0].parado = true;
+      await executarReajuste(OP, deps, OPTS);
+      expect(deps.ml.putPreco).toHaveBeenCalledTimes(3);
+      expect(itens[0].passos[indice].tentativas).toBe(3);
+      expect(atacado.A).toEqual(F80);
+      expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
+    });
+
+    describe('passo pendente esgotado: não escreve, reconcilia por GET', () => {
+      const esgotado = () => {
+        const i = descendo(['confirmado', 'pendente']);
+        i.passos[1].tentativas = 3;
+        return i;
+      };
+
+      it('no alvo → confirmado, sem ler ofertas', async () => {
+        const itens = [esgotado()];
+        const deps = montar(itens, { A: plano(90) }, { A: F72 });
+        await executarReajuste(OP, deps, OPTS);
+        semEscrita(deps);
+        expect(deps.ml.lerOfertas).not.toHaveBeenCalled();
+        expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: null });
+      });
+
+      it('no anterior → compensa, erro', async () => {
+        const itens = [esgotado()];
+        const deps = montar(itens, { A: plano(100) }, { A: F72 });
+        await executarReajuste(OP, deps, OPTS);
+        expect(deps.ml.putPreco).not.toHaveBeenCalled();
+        expect(deps.ml.gravarFaixas.mock.calls).toEqual([['A', F80]]);
+        expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
+      });
+
+      it.each<[string, (d: ReturnType<typeof montar>) => void]>([
+        ['terceiro valor', (d) => d.ml.lerVivo.mockResolvedValue(plano(95))],
+        ['ilegível', (d) => d.ml.lerVivo.mockRejectedValue(new Error('ML 500'))],
+      ])('%s → conferindo, nada escrito', async (_n, leitura) => {
+        const itens = [esgotado()];
+        const deps = montar(itens, { A: plano(100) }, { A: F72 });
+        leitura(deps);
+        await executarReajuste(OP, deps, OPTS);
+        semEscrita(deps);
+        expect(itens[0]).toMatchObject({ status: 'conferindo', etapa: 'escrita_pedida' });
+        expect(estados(itens[0])).toEqual(['confirmado', 'pendente']);
+      });
+
+      it('faixas esgotadas com o base confirmado, no anterior → aplicado com o aviso', async () => {
+        const itens = [subindo(['confirmado', 'pendente'])];
+        itens[0].passos[1].tentativas = 3;
+        const deps = montar(itens, { A: plano(110) }, { A: F80 });
+        await executarReajuste(OP, deps, OPTS);
+        semEscrita(deps);
+        expect(resumo(itens[0])).toEqual({ status: 'aplicado', etapa: null, mensagem: MSG_FAIXAS_PENDENTES });
+      });
+    });
+
     it('PUT desconhecido sem efeito, sem mais nada escrito: 3 escritas, depois erro', async () => {
       const itens = [item('A')];
       const deps = montar(itens, { A: plano(100) });

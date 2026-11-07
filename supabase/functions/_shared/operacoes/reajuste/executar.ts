@@ -246,6 +246,14 @@ async function processar(op: OperacaoReajusteRow, ml: string, token: string, dep
     for (const [i, p] of passos.entries()) {
       if (p.estado !== 'pendente') continue;
       const acao = operar(p);
+      // Trava antes de toda escrita: um crash depois de marcar `pendente` chega aqui sem passar pela reconciliação.
+      if (esgotou(p)) {
+        const onde = reconciliarPasso(p, await acao.ler(), composicao);
+        if (onde === 'anterior') return naoAplicado();
+        if (onde === 'indefinido') return agendar();
+        await marcar(i, 'confirmado');
+        continue;
+      }
       const reprovada = await revalidarPasso(i);
       if (reprovada) return reprovar(reprovada);
 
