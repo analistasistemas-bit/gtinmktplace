@@ -295,9 +295,11 @@ Sequência única (origem e destino):
    a quantidade muda. Na dúvida sobre a conta, bloqueia transferência e aumento.
 4. Lê a quantidade em `/user-products/{id}/stock`, que é a verdade da disponibilidade.
 5. Calcula o valor final **uma única vez** e grava na saga, junto com o valor anterior.
-6. Escreve, relê e confirma quantidade e status. **Retentativa nunca é cega:** relê antes. Se a leitura
-   for o valor anterior, não gravou e pode reenviar. Se for o valor da saga, gravou e segue. Qualquer
-   outro número trava a operação e gera alerta, porque uma venda pode ter sido descontada no meio.
+6. Escreve, relê e confirma quantidade e status. **Resultado incerto nunca reenvia.** Só a recusa
+   definitiva do ML (resposta 4xx recebida) permite repetir. Em timeout ou erro de rede, a leitura igual
+   ao valor da saga conclui. Qualquer outro número, inclusive o valor anterior, trava a operação com
+   alerta: gravar e vender a mesma quantidade devolve o saldo anterior, e isso não se distingue de
+   "não gravou". A peça fica sem oferta até o operador resolver.
 7. Reativa só o que a operação pausou.
 
 **Medido em 07/11 (só leitura, DSA e Daludi, amostra pequena):** nas 9 amostras comparáveis, o estoque
