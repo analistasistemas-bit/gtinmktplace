@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
         } catch { tituloBase = nomePai; } // título inviável: o nome da base, cortado em posProcessarTituloKit
       }
     }
-    dados = { descricaoBase, tituloBase, nomeBase: nomePai, pecas, coresBase, coresKit: cores, tamanhosKit };
+    dados = { descricaoBase, tituloBase, nomeBase: nomePai, pecas, coresBase, coresKit: cores, tamanhosKit, tamanhosBase: [...tamanhosBase] };
     aberturaBruta = await ia(SYSTEM_KIT_VARIACAO, montarUserPromptKit(dados), { type: 'json_object' }, 30_000);
   } catch (e) {
     return await falhou(e);
