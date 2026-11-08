@@ -81,9 +81,14 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
   const estado = erroLeitura ? 'indisponivel' : carregando ? 'calculando' : sim.estado;
   const precisaConfirmar = erroLeitura || sim.precisaConfirmar;
 
-  const [confirmado, setConfirmado] = useState(false);
-  // Confirmação vale para o preço e a conta que o operador viu.
-  useEffect(() => { setConfirmado(false); }, [preco, estado, sim.semAliquota]);
+  // A confirmação vale só para a conta exibida: mudou preço, tipo, combinação ou lucro, vale de novo no
+  // mesmo render (um effect de reset deixaria um onPodeSeguir(true) escapar com a conta nova).
+  const chaveConta = [
+    centavos(preco), tipo, estado, sim.semAliquota, erroLeitura,
+    ...sim.linhas.map((l) => `${l.rotulo}#${l.tamanho}:${l.resumo ? centavos(l.resumo.lucro) : l.motivo}`),
+  ].join('|');
+  const [confirmadoEm, setConfirmadoEm] = useState<string | null>(null);
+  const confirmado = confirmadoEm === chaveConta;
   const pode = estado !== 'calculando' && (!precisaConfirmar || confirmado);
   useEffect(() => { onPodeSeguir?.(pode); }, [pode, onPodeSeguir]);
 
@@ -141,7 +146,7 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
               : 'Lucro calculado sem imposto.'}
           </p>
           <label htmlFor="kit-seguir-mesmo-assim" className="mt-2 flex items-center gap-2">
-            <Checkbox id="kit-seguir-mesmo-assim" checked={confirmado} onCheckedChange={(v) => setConfirmado(!!v)} />
+            <Checkbox id="kit-seguir-mesmo-assim" checked={confirmado} onCheckedChange={(v) => setConfirmadoEm(v ? chaveConta : null)} />
             Seguir mesmo assim
           </label>
         </div>

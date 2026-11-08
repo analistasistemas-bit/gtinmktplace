@@ -23,9 +23,11 @@ vi.mock('@/hooks/useFamilia', () => ({
 
 function tarifa(preco: number, frete: number, aliquotaPct: number): Tarifa {
   const imposto = Math.round(preco * aliquotaPct) / 100;
-  const comissao = Math.round(preco * 12) / 100;
-  const tipo = { comissao, percentual: 12, fixa: 0, imposto, recebe: Math.round((preco - comissao - frete - imposto) * 100) / 100 };
-  return { classico: tipo, premium: tipo, frete, proveniencia: 'official' };
+  const tipo = (pct: number) => {
+    const comissao = Math.round(preco * pct) / 100;
+    return { comissao, percentual: pct, fixa: 0, imposto, recebe: Math.round((preco - comissao - frete - imposto) * 100) / 100 };
+  };
+  return { classico: tipo(12), premium: tipo(17), frete, proveniencia: 'official' };
 }
 
 const props = {
@@ -36,11 +38,14 @@ const props = {
   ],
 };
 
+type Extra = Partial<Pick<Parameters<typeof SimuladorKit>[0], 'tipo' | 'quantidades'>>;
 function renderSim(preco: number, onPodeSeguir = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ui = (p: number) => <QueryClientProvider client={qc}><SimuladorKit {...props} preco={p} onPodeSeguir={onPodeSeguir} /></QueryClientProvider>;
+  const ui = (p: number, extra: Extra = {}) => (
+    <QueryClientProvider client={qc}><SimuladorKit {...props} {...extra} preco={p} onPodeSeguir={onPodeSeguir} /></QueryClientProvider>
+  );
   const r = render(ui(preco));
-  return { ...r, mudarPreco: (p: number) => r.rerender(ui(p)), onPodeSeguir };
+  return { ...r, mudarPreco: (p: number) => r.rerender(ui(p)), mudar: (extra: Extra) => r.rerender(ui(preco, extra)), onPodeSeguir };
 }
 
 describe('SimuladorKit', () => {
@@ -103,5 +108,19 @@ describe('SimuladorKit', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Ver lucro de cada combinação/ }));
     expect(screen.getByText(/Preto e Branco · M/)).toBeInTheDocument();
     expect(screen.getByText(/lucro R\$ 25,00/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['tipo de anúncio', { tipo: 'gold_pro' as const }],
+    ['combinações', { quantidades: [{ cores: ['Branco', 'Marrom'], tamanho: 'M', quantidade: 1 }] }],
+  ])('confirmação de prejuízo não sobrevive à troca de %s', async (_nome, extra) => {
+    const { onPodeSeguir, mudar } = renderSim(70);
+    await userEvent.click(await screen.findByLabelText('Seguir mesmo assim'));
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(true));
+    const antes = onPodeSeguir.mock.calls.length;
+    mudar(extra);
+    await screen.findByText(/dá prejuízo/);
+    expect(screen.getByLabelText('Seguir mesmo assim')).not.toBeChecked();
+    expect(onPodeSeguir.mock.calls.slice(antes).some(([v]) => v === true)).toBe(false);
   });
 });
