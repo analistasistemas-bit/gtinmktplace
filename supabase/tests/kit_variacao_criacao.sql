@@ -62,7 +62,7 @@ do $$
 declare
   c record; r jsonb; r2 jsonb; t uuid; tok uuid := gen_random_uuid(); o bigint;
   P constant text := '09900001'; B constant text := '09900002'; K constant text := '09910001';
-  kit jsonb := '{"codigo_pai_base":"09900000","codigo_pai_kit":"09910000","pecas_por_kit":2,"preco":99.9,"meta":0}';
+  kit jsonb := '{"codigo_pai_base":"09900000","codigo_pai_kit":"09910000","pecas_por_kit":2,"preco":99.9,"meta":0,"listing_type_id":"gold_pro"}';
   skus jsonb := '[{"codigo":"09910001","tamanho":"M","cores":["Preto","Branco"],"rotulo_cor":"Preto e Branco",
                    "quantidade":2,"componentes":[{"codigo":"09900001","quantidade":1},{"codigo":"09900002","quantidade":1}]}]';
   alvos jsonb := '[{"codigo":"09900001","up_id":"UP-P","item_ids":["MLB-P"]},
@@ -101,8 +101,8 @@ begin
   perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/1/3/1/3', 'linhas da criação: ' || pg_temp.linhas(c.org));
   perform pg_temp.afirmar((select ordem from public.kit_marca_ml where org_id = c.org and codigo = P) = o, 'marca de P');
   perform pg_temp.afirmar((select ordem from public.kit_marca_ml where org_id = c.org and codigo = K) = 0, 'marca do kit');
-  perform pg_temp.afirmar((select so_em_kit = false and status = 'publicando' from public.kits_variacao where org_id = c.org),
-    'kit nasce publicando, sem só em kit');
+  perform pg_temp.afirmar((select so_em_kit = false and status = 'publicando' and listing_type_id = 'gold_pro'
+                           from public.kits_variacao where org_id = c.org), 'kit nasce publicando, sem só em kit, com o tipo');
   perform pg_temp.afirmar((select criar and up_id = 'criar:' || K and item_ids = '{}' and papel = 'destino' and delta = 2
                            from public.kit_transferencia_alvos where transferencia_id = t and codigo = K), 'alvo criar do kit');
   perform pg_temp.afirmar((select not criar and up_id = 'UP-B' and delta = -2

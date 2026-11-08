@@ -20,6 +20,7 @@ import { enfileirarSaga } from '../_shared/queue.ts';
 import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
+import { getConnector } from '../_shared/canais/registry.ts';
 import {
   criarKitVariacao, itemModerado, type CriarKitVariacaoInput, type DepsCriarKitVariacao,
 } from './processar.ts';
@@ -157,6 +158,12 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
       await garantirChart(admin, token, id, familia.categoria_ml_id as string, familia.genero as Genero, tamanhos, grade);
     },
 
+    async subirFoto(path) {
+      const { data, error } = await admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2);
+      if (error || !data) throw new Error(error?.message ?? 'foto não encontrada');
+      return await getConnector('mercado_livre').subirFoto({ getToken: async () => (await ml()).token }, data.signedUrl);
+    },
+
     async reservarCodigos(qtd) {
       for (const resync of [false, true]) {
         const ultimo = await ler(admin.rpc('proximo_codigo_produto', { p_org: orgId, p_qtd: qtd, ...(resync ? { p_resync: true } : {}) }),
@@ -208,6 +215,7 @@ function parse(body: Linha): CriarKitVariacaoInput | null {
     })),
     titulo: body.titulo, descricao: body.descricao, fotos: body.fotos as Record<string, string>,
     soEmKit: body.so_em_kit === true, meta: typeof body.meta === 'number' ? body.meta : 0, chaveCadastro: body.chave_cadastro,
+    ...(body.listing_type_id != null ? { listingTypeId: body.listing_type_id as CriarKitVariacaoInput['listingTypeId'] } : {}),
   };
 }
 

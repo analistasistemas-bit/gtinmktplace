@@ -46,6 +46,7 @@ function cenario() {
     existente: null as { kitId: string; transferenciaId: string | null } | null,
     rpc: { ok: true, kit_id: 'KIT1', transferencia_id: 'T1' } as ResultadoRpcKit,
     erroFiscal: null as string | null,
+    fotoQuebrada: null as string | null,
     familias: [] as Linha[],
     variacoesGravadas: [] as Linha[],
     kits: [] as Array<Parameters<DepsCriarKitVariacao['gravar']['kit']>[0]>,
@@ -68,6 +69,7 @@ function cenario() {
     exigirFiscal: async () => { if (s.erroFiscal) throw new Error(s.erroFiscal); },
     lerSchema: async () => s.schema,
     garantirGuia: async () => {},
+    subirFoto: async (path) => { if (s.fotoQuebrada === path) throw new Error('Object not found'); return `PIC-${path}`; },
     reservarCodigos: async (qtd) => ({
       codigoPai: '00002000', codigos: Array.from({ length: qtd - 1 }, (_, i) => `0000200${i + 1}`),
     }),
@@ -114,7 +116,9 @@ describe('criarKitVariacao', () => {
     expect(k.skus.map((x) => [x.codigo, x.quantidade, (x.componentes as Linha[]).map((y) => y.codigo)])).toEqual([
       ['00002001', 2, ['P-M', 'B-M']], ['00002002', 1, ['P-G', 'B-G']],
     ]);
-    expect(k.kit).toMatchObject({ codigo_pai_base: '00001000', codigo_pai_kit: '00002000', pecas_por_kit: 2, preco: 89.9 });
+    expect(k.kit).toMatchObject({
+      codigo_pai_base: '00001000', codigo_pai_kit: '00002000', pecas_por_kit: 2, preco: 89.9, listing_type_id: 'gold_special',
+    });
     // Alvos das origens com a cópia de catálogo; baseline lido no ML.
     expect(k.alvos).toContainEqual({ codigo: 'B-M', up_id: 'UP-B-M', item_ids: ['MLB-B-M', 'MLB-CAT-B-M'] });
     expect(k.baseline).toContainEqual({ codigo: 'P-G', ml: 10 });
@@ -126,7 +130,7 @@ describe('criarKitVariacao', () => {
     await criarKitVariacao(c.deps, pedido());
     expect(c.s.variacoesGravadas[0]).toMatchObject({
       custo: 39.75, peso_gramas: 400, altura_cm: 6, largura_cm: 25, comprimento_cm: 30,
-      estoque: 0, gtin: null, preco_publicacao: 89.9, imagem_path: 'kits/pb.jpg', ml_picture_id: null,
+      estoque: 0, gtin: null, preco_publicacao: 89.9, imagem_path: 'kits/pb.jpg', ml_picture_id: 'PIC-kits/pb.jpg',
     });
   });
 
@@ -180,6 +184,17 @@ describe('criarKitVariacao', () => {
     c.s.moderadas = ['kits/pb.jpg'];
     expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'foto_moderada' });
     expect(semGravacao(c)).toBe(0);
+  });
+
+  it('foto que não sobe ao ML recusa antes de gravar; tipo de anúncio vai para o kit', async () => {
+    const c = cenario();
+    c.s.fotoQuebrada = 'kits/pb.jpg';
+    expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'foto_invalida' });
+    expect(semGravacao(c)).toBe(0);
+    const d = cenario();
+    await criarKitVariacao(d.deps, pedido({ listingTypeId: 'gold_pro' }));
+    expect(d.s.kits[0].kit).toMatchObject({ listing_type_id: 'gold_pro' });
+    expect(await criarKitVariacao(d.deps, pedido({ listingTypeId: 'free' as never }))).toMatchObject({ motivo: 'tipo_anuncio_invalido' });
   });
 
   it('combinação publicada sem foto recusa', async () => {

@@ -119,7 +119,7 @@ function deps(orgId: string): DepsSaga {
       putQuantidade: (itemId, quantidade) => putItem(itemId, { available_quantity: quantidade }),
       putStatus: (itemId, status) => putItem(itemId, { status }),
       async prepararItem(codigo, quantidade) {
-        const { familia, variacao } = await kitDoSku(admin, orgId, codigo);
+        const { familia, variacao, listingTypeId } = await kitDoSku(admin, orgId, codigo);
         const { token, cx } = await ml();
         const categoriaId = familia.categoria_ml_id as string;
         let aceitaEmptyGtin: boolean | undefined;
@@ -128,7 +128,7 @@ function deps(orgId: string): DepsSaga {
           if (schema.length) aceitaEmptyGtin = schema.some((a) => a.id === 'EMPTY_GTIN_REASON');
         } catch { /* fallback do montarPayloadItem, como em publish-familia-ml */ }
         // Sobe a foto da combinação (ou reusa o picture_id) e resolve a guia de tamanhos da própria conta.
-        const anuncio = await montarAnuncioCanonico(admin, conn, ctxCanal, familia as never, [variacao as never]);
+        const anuncio = await montarAnuncioCanonico(admin, conn, ctxCanal, familia as never, [variacao as never], listingTypeId);
         const { montar } = await prepararPayloadUP({
           admin, ctx: ctxCanal, conexao: cx, familia: familia as never, anuncio, categoriaId, aceitaEmptyGtin,
         });
@@ -177,13 +177,16 @@ async function kitDoSku(admin: SupabaseClient, orgId: string, codigo: string) {
     return data;
   };
   const sku = await ler(admin.from('kit_variacao_skus').select('kit_id').eq('org_id', orgId).eq('codigo', codigo).single(), 'SKU de kit');
-  const kit = await ler(admin.from('kits_variacao').select('id, codigo_pai_kit').eq('id', sku.kit_id).single(), 'kit');
+  const kit = await ler(admin.from('kits_variacao').select('id, codigo_pai_kit, listing_type_id').eq('id', sku.kit_id).single(), 'kit');
   const familia = await ler(admin.from('familias').select('*').eq('org_id', orgId).eq('codigo_pai', kit.codigo_pai_kit)
     .order('criado_em', { ascending: false }).limit(1).single(), 'família do kit') as Record<string, unknown>;
   const variacao = await ler(admin.from('variacoes').select('*').eq('familia_id', familia.id as string).eq('codigo', codigo).single(),
     'variação do kit') as Record<string, unknown>;
   const skus = await ler(admin.from('kit_variacao_skus').select('codigo').eq('kit_id', kit.id), 'SKUs do kit');
-  return { kitId: kit.id as string, familia, variacao, skus: skus.map((x) => x.codigo as string) };
+  return {
+    kitId: kit.id as string, listingTypeId: kit.listing_type_id as string, familia, variacao,
+    skus: skus.map((x) => x.codigo as string),
+  };
 }
 
 /**

@@ -18,4 +18,6 @@ export interface CriarKitVariacaoInput {
   meta: number;
   /** Idempotência: o mesmo clique repetido devolve o kit já criado. */
   chaveCadastro: string;
+  /** Clássico (padrão) ou Premium. */
+  listingTypeId?: 'gold_special' | 'gold_pro';
 }

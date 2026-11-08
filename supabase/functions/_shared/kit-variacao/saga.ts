@@ -501,16 +501,18 @@ async function escrever(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<Resul
  * Busca por SKU antes de todo POST: achou, adota. Criação incerta (intenção sem recusa) nunca posta de novo:
  * espera a busca mostrar o item até `JANELA_BUSCA_CRIADO_MS` e depois trava. Só a recusa 4xx deixa repetir.
  * Criado ou adotado: registra o vínculo local e pausa (item em `pausado_pela_saga` antes do PUT); a
- * confirmação lê a quantidade e a reativação devolve o item, se a política deixar.
+ * confirmação lê a quantidade e a reativação devolve o item, se a política deixar. `escrita_em` só é gravado
+ * depois do registro e da pausa: é o marcador para a próxima invocação não refazer o que já fez.
  */
 async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto' | ResultadoPasso> {
+  if (alvo.item_criado && alvo.escrita_em) return 'pronto';
   let criou = false;
   if (!alvo.item_criado) {
     const busca = await ctx.deps.ml.buscarItemCriado(alvo.codigo);
     if (busca.tipo === 'ambiguo') return travar(ctx, `${alvo.codigo}: busca por SKU ambígua; nenhum item novo é criado`);
     if (busca.tipo === 'um') {
       await salvarAlvo(ctx, alvo, {
-        item_criado: busca.itemId, up_criado: busca.upId, escrita_em: iso(ctx),
+        item_criado: busca.itemId, up_criado: busca.upId,
         pausado_pela_saga: [...new Set([...alvo.pausado_pela_saga, busca.itemId])],
       });
     } else if (alvo.intencao_escrita_em && !alvo.recusa_definitiva_em) {
@@ -520,7 +522,13 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       return travar(ctx, `${alvo.codigo}: criação incerta e o item não apareceu na busca; nenhum outro é criado`);
     } else {
       // Foto, guia e payload antes da intenção: o que demora não come o prazo entre a intenção e o POST.
-      const postar = await ctx.deps.ml.prepararItem(alvo.codigo, alvo.valor_alvo!);
+      // Falha aqui não foi ao ML: reagenda com alerta (as peças já saíram dos individuais e estão sem oferta).
+      let postar: () => Promise<{ itemId: string; upId: string }>;
+      try {
+        postar = await ctx.deps.ml.prepararItem(alvo.codigo, alvo.valor_alvo!);
+      } catch (e) {
+        return reagendar(ctx, `${alvo.codigo}: não foi possível preparar o item: ${mensagem(e)}`, REAGENDAR_S, true);
+      }
       if (ctx.limite - ctx.deps.agora().getTime() < FOLGA_CRIAR_MS) return avancar(ctx, ctx.t.passo, 0);
       await salvarAlvo(ctx, alvo, { intencao_escrita_em: iso(ctx), recusa_definitiva_em: null });
       let criado: { itemId: string; upId: string };
@@ -537,7 +545,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
         return reagendar(ctx, `${alvo.codigo}: ML recusou criar o item: ${mensagem(e)}`, REAGENDAR_S, true);
       }
       await salvarAlvo(ctx, alvo, {
-        item_criado: criado.itemId, up_criado: criado.upId, escrita_em: iso(ctx),
+        item_criado: criado.itemId, up_criado: criado.upId,
         pausado_pela_saga: [...new Set([...alvo.pausado_pela_saga, criado.itemId])],
       });
       criou = true;
@@ -548,6 +556,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   if (!reg.ok) return travar(ctx, `${alvo.codigo}: item ${alvo.item_criado} criado, mas ${reg.motivo}`);
   // O ML cria ativo: pausa até confirmar a quantidade; a reativação é da política, como nos outros alvos.
   await putStatus(ctx, alvo.item_criado!, 'paused');
+  await salvarAlvo(ctx, alvo, { escrita_em: iso(ctx) });
   return criou ? 'criou' : 'pronto';
 }
 

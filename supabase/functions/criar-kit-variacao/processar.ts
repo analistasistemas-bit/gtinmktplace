@@ -32,6 +32,8 @@ export interface CriarKitVariacaoInput {
   soEmKit: boolean;
   meta: number;
   chaveCadastro: string;
+  /** Clássico (padrão, como em `publicar-familias`) ou Premium: muda a comissão que o simulador cota. */
+  listingTypeId?: 'gold_special' | 'gold_pro';
 }
 
 type Linha = Record<string, unknown>;
@@ -64,6 +66,8 @@ export interface DepsCriarKitVariacao {
   /** Resolve (ou cria) a guia de tamanhos da própria conta para a categoria e os tamanhos; lança se não der. */
   garantirGuia(familia: Linha, tamanhos: string[]): Promise<void>;
   reservarCodigos(qtd: number): Promise<{ codigoPai: string; codigos: string[] }>;
+  /** Sobe a foto ao ML e devolve o `picture_id`; lança se o caminho não existe ou o ML recusa. */
+  subirFoto(path: string): Promise<string>;
   gravar: {
     lote(): Promise<string>;
     familia(linha: Linha): Promise<string>;
@@ -103,6 +107,9 @@ function validarPedido(input: CriarKitVariacaoInput): string | { combinacoes: Om
   if (!texto(input.titulo) || input.titulo.length > 60) return 'titulo_invalido';
   if (!texto(input.descricao)) return 'descricao_vazia';
   if (!Number.isInteger(input.meta) || input.meta < 0) return 'meta_invalida';
+  if (input.listingTypeId != null && input.listingTypeId !== 'gold_special' && input.listingTypeId !== 'gold_pro') {
+    return 'tipo_anuncio_invalido';
+  }
   // ponytail: a transição Normal → Guardado (pausar os individuais) é da Task 14; até lá o kit nasce sem a opção.
   if (input.soEmKit) return 'so_em_kit_indisponivel';
   const vistas = new Set<string>();
@@ -143,7 +150,8 @@ export function montarFamiliaKitVariacao(
 
 /** SKU de kit: custo e peso somados das peças, altura × N (ADR-0151), estoque 0 até o crédito da saga. */
 export function montarVariacaoKitVariacao(
-  combinacao: Combinacao, ctx: { familiaId: string; codigo: string; preco: number; foto: string; pecas: number },
+  combinacao: Combinacao,
+  ctx: { familiaId: string; codigo: string; preco: number; foto: string; pictureId: string; pecas: number },
 ): Linha {
   const [primeira] = combinacao.componentes;
   const clone = Object.fromEntries(Object.entries(primeira).filter(([k]) => !(STRIP_VARIACAO_KIT as readonly string[]).includes(k)));
@@ -159,7 +167,7 @@ export function montarVariacaoKitVariacao(
     altura_cm: num(primeira.altura_cm) == null ? null : Number(primeira.altura_cm) * ctx.pecas,
     largura_cm: num(primeira.largura_cm), comprimento_cm: num(primeira.comprimento_cm),
     preco: ctx.preco, preco_publicacao: ctx.preco, preco_editado_pelo_operador: true, preco_publicado_ml: null,
-    imagem_path: ctx.foto, ml_picture_id: null, ml_variation_id: null,
+    imagem_path: ctx.foto, ml_picture_id: ctx.pictureId, ml_variation_id: null,
     catalog_product_id: null, catalog_listing_id: null, catalog_status: 'pendente', catalog_erro: null,
     excluida_da_publicacao: false, atacado: null,
   };
@@ -241,6 +249,16 @@ export async function criarKitVariacao(
     return recusa('foto_moderada', `Foto usada em anúncio moderado no Mercado Livre: ${moderadas.join(', ')}. Use outra.`);
   }
 
+  // A foto sobe agora: depois das reduções da saga, um caminho inválido deixaria as peças sem oferta.
+  const pictureIds = new Map<string, string>();
+  for (const path of paths) {
+    try {
+      pictureIds.set(path, await deps.subirFoto(path));
+    } catch (e) {
+      return recusa('foto_invalida', `Foto ${path}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   try {
     await deps.exigirFiscal(familia);
   } catch (e) {
@@ -279,7 +297,8 @@ export async function criarKitVariacao(
     }));
     for (const [i, c] of combinacoes.entries()) {
       await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
-        familiaId, codigo: codigos[i], preco: input.preco, foto: input.fotos[c.rotulo], pecas: input.pecasPorKit,
+        familiaId, codigo: codigos[i], preco: input.preco, foto: input.fotos[c.rotulo],
+        pictureId: pictureIds.get(input.fotos[c.rotulo])!, pecas: input.pecasPorKit,
       }));
     }
   } catch (e) {
@@ -291,7 +310,7 @@ export async function criarKitVariacao(
     chave: input.chaveCadastro,
     kit: {
       codigo_pai_base: familia.codigo_pai, codigo_pai_kit: codigoPai, pecas_por_kit: input.pecasPorKit,
-      preco: input.preco, meta: input.meta,
+      preco: input.preco, meta: input.meta, listing_type_id: input.listingTypeId ?? 'gold_special',
     },
     skus: combinacoes.map((c, i) => ({
       codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,

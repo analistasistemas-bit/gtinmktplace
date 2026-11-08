@@ -85,6 +85,9 @@ function cenario() {
     aoBuscar: () => {},
     registros: [] as string[],
     registroFalha: null as string | null,
+    aoRegistrar: () => {},
+    falhaPreparar: null as Error | null,
+    criados: {} as Record<string, { itemId: string; upId: string }>,
     /** Ledger falso: só o que a marca d'água olha. */
     movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
     ordemSeq: 100,
@@ -185,6 +188,7 @@ function cenario() {
         return s.conferir(codigo);
       },
       async registrarItem(codigo, itemId, upId) {
+        s.aoRegistrar();
         s.registros.push(`${codigo} ${itemId} ${upId}`);
         return s.registroFalha ? { ok: false, motivo: s.registroFalha } : { ok: true };
       },
@@ -218,24 +222,26 @@ function cenario() {
         if (!f || f.aplica) upDoItem(itemId).quantidade = q;
         if (f) throw f.erro;
       },
-      prepararItem: async (codigo, quantidade) => async () => {
-        s.chamadas.push(`criar ${codigo} ${quantidade}`);
-        const f = s.falhaCriar(++s.criacoes);
-        if (!f || f.aplica) {
-          const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length + 1;
-          ups[`UP-NOVO${n}`] = { quantidade, itens: [ativo(`MLB-NOVO${n}`)] };
-        }
-        if (f) throw f.erro;
-        const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length;
-        return { itemId: `MLB-NOVO${n}`, upId: `UP-NOVO${n}` };
+      async prepararItem(codigo, quantidade) {
+        if (s.falhaPreparar) throw s.falhaPreparar;
+        return async () => {
+          s.chamadas.push(`criar ${codigo} ${quantidade}`);
+          const f = s.falhaCriar(++s.criacoes);
+          if (!f || f.aplica) {
+            const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length + 1;
+            ups[`UP-NOVO${n}`] = { quantidade, itens: [ativo(`MLB-NOVO${n}`)] };
+            s.criados[codigo] = { itemId: `MLB-NOVO${n}`, upId: `UP-NOVO${n}` };
+          }
+          if (f) throw f.erro;
+          return s.criados[codigo];
+        };
       },
-      async buscarItemCriado(_codigo) {
+      async buscarItemCriado(codigo) {
         s.aoBuscar();
         if (s.buscaAmbigua) return { tipo: 'ambiguo' as const };
-        const ids = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO'));
-        if (ids.length === 0 || !s.buscaVe) return { tipo: 'nenhum' as const };
-        if (ids.length > 1) return { tipo: 'ambiguo' as const };
-        return { tipo: 'um' as const, itemId: ups[ids[0]].itens[0].id, upId: ids[0] };
+        const c = s.criados[codigo];
+        if (!c || !s.buscaVe) return { tipo: 'nenhum' as const };
+        return { tipo: 'um' as const, ...c };
       },
       async putStatus(itemId, status) {
         s.chamadas.push(`${status} ${itemId}`);
@@ -980,6 +986,31 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.t.estado).toBe('travada');
     expect(c.s.t.alerta).toMatch(/family_id divergente/);
     expect(c.s.rpcs).not.toContain('creditar');
+  });
+
+  it('kit com 20 SKUs: item já registrado não é refeito, e cada invocação cria o seu', async () => {
+    const c = cenarioCriar();
+    c.s.alvos.splice(2, 1);
+    for (let i = 1; i <= 20; i++) {
+      c.s.saldo[`K${i}`] = 0;
+      c.s.alvos.push({ ...alvo(`criar:K${i}`, `K${i}`, 'destino', 1, []), criar: true });
+    }
+    c.s.aoRegistrar = () => { c.s.agora += 4_000; };
+    await rodar(c, undefined, 200);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(20);
+    expect(c.s.registros).toHaveLength(20);
+  });
+
+  it('falha ao preparar o item (foto, guia) alerta e não posta', async () => {
+    const c = cenarioCriar();
+    c.s.falhaPreparar = new Error('foto recusada');
+    await rodar(c, (x) => x.s.t.passo === 'aumentar' && x.s.alertas.length > 0);
+    await passo(c);
+    expect(criacoes(c)).toBe(0);
+    expect(c.s.alvos[2].intencao_escrita_em).toBeNull();
+    expect(c.s.alertas.filter((a) => /K: não foi possível preparar o item: foto recusada/.test(a))).toHaveLength(1);
+    expect(c.s.t.estado).toBe('ativa');
   });
 
   it('pouco prazo na invocação não grava intenção nem posta', async () => {

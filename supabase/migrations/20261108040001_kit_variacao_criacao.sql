@@ -14,6 +14,9 @@ grant estoque_rpc_executor to postgres;
 grant usage, create on schema public to estoque_rpc_executor;
 
 alter table public.kits_variacao add column if not exists chave_cadastro uuid;
+-- Tipo de anúncio dos itens do kit (Clássico/Premium muda a comissão): escolhido na criação, como em publicar-familias.
+alter table public.kits_variacao add column if not exists listing_type_id text not null default 'gold_special'
+  check (listing_type_id in ('gold_special', 'gold_pro'));
 create unique index if not exists kits_variacao_chave_idx on public.kits_variacao (org_id, chave_cadastro);
 
 alter table public.kit_transferencia_alvos add column if not exists criar boolean not null default false;
@@ -153,7 +156,7 @@ end $$;
 -- edge (`p_baseline`, SKU de kit = 0). Diferente recusa sem gravar nada: a saga travaria na primeira entrada.
 -- SKU que já tem marca (participante de outro kit) a mantém.
 --
--- p_kit      = {"codigo_pai_base","codigo_pai_kit","pecas_por_kit","preco","meta"}
+-- p_kit      = {"codigo_pai_base","codigo_pai_kit","pecas_por_kit","preco","meta","listing_type_id"}
 -- p_skus     = [{"codigo","tamanho","cores":[...],"rotulo_cor","quantidade","componentes":[{"codigo","quantidade"}]}]
 -- p_baseline = [{"codigo","ml"}] dos componentes
 -- p_alvos    = alvos das origens, como `kit_criar_transferencia` ([{"codigo","up_id","item_ids"}])
@@ -187,9 +190,11 @@ begin
   end if;
 
   begin
-    insert into public.kits_variacao (org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco, meta, status, chave_cadastro)
+    insert into public.kits_variacao
+      (org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco, meta, status, chave_cadastro, listing_type_id)
     values (p_org, p_kit->>'codigo_pai_base', p_kit->>'codigo_pai_kit', (p_kit->>'pecas_por_kit')::smallint,
-            (p_kit->>'preco')::numeric, coalesce((p_kit->>'meta')::integer, 0), 'publicando', p_chave)
+            (p_kit->>'preco')::numeric, coalesce((p_kit->>'meta')::integer, 0), 'publicando', p_chave,
+            coalesce(p_kit->>'listing_type_id', 'gold_special'))
     returning id into v_kit;
 
     for v_s in select * from jsonb_array_elements(p_skus) loop

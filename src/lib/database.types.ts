@@ -1479,6 +1479,7 @@ export type Database = {
           codigo_pai_kit: string
           criado_em: string
           id: string
+          listing_type_id: string
           meta: number
           org_id: string
           pecas_por_kit: number
@@ -1494,6 +1495,7 @@ export type Database = {
           codigo_pai_kit: string
           criado_em?: string
           id?: string
+          listing_type_id?: string
           meta?: number
           org_id: string
           pecas_por_kit: number
@@ -1509,6 +1511,7 @@ export type Database = {
           codigo_pai_kit?: string
           criado_em?: string
           id?: string
+          listing_type_id?: string
           meta?: number
           org_id?: string
           pecas_por_kit?: number
