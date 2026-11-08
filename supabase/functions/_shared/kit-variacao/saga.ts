@@ -125,7 +125,10 @@ export interface DepsSaga {
     registrarItem(codigo: string, itemId: string, upId: string): Promise<{ ok: boolean; motivo?: string }>;
   };
   ml: {
+    /** Lança erro com `buscaVazia: true` quando a busca por UP não traz item nenhum (indexação logo depois do CREATE). */
     lerOferta(upId: string, esperados: string[]): Promise<OfertaUP>;
+    /** Leitura direta dos itens (`GET /items`), sem a busca por UP; lança se algum não for do UP. */
+    lerItens(upId: string, ids: string[]): Promise<OfertaUP['itens']>;
     listarPendentes(): Promise<PedidoPendente[]>;
     /** `antesDeBaixar` roda logo antes de cada baixa e lança se o prazo venceu. */
     importarPedidos(itemIds: string[], desde: string, idsPasso1: string[], antesDeBaixar: () => void): Promise<ResultadoImportacao>;
@@ -164,6 +167,8 @@ export const REAGENDAR_S = 60;
 export const MAX_RECUSAS = 5;
 /** Leitura de confirmação logo depois da escrita. */
 const CONFIRMAR_APOS_S = 5;
+/** Busca por UP vazia logo depois do CREATE é indexação do ML: espera sem alerta até aqui, depois alerta. */
+export const JANELA_INDEXACAO_MS = 5 * 60_000;
 /** Criação incerta: quanto tempo a busca por SKU tem para mostrar o item antes de travar (indexação do ML). */
 export const JANELA_BUSCA_CRIADO_MS = 15 * 60_000;
 /** Folga mínima de prazo para gravar a intenção e postar: sem ela, o corte do prazo vira criação incerta. */
@@ -298,9 +303,11 @@ async function avancar(ctx: Ctx, passo: PassoSaga, delayS = 0): Promise<Resultad
 }
 
 /** `avisar`: manda alerta só quando o motivo é novo, para bloqueio longo não repetir a cada minuto. */
-async function reagendar(ctx: Ctx, motivo: string, delayS = REAGENDAR_S, avisar = false): Promise<ResultadoPasso> {
+async function reagendar(
+  ctx: Ctx, motivo: string, delayS = REAGENDAR_S, avisar = false, texto = `Transferência de kit bloqueada: ${motivo}.`,
+): Promise<ResultadoPasso> {
   await mudar(ctx, ctx.t.passo, delayS, motivo);
-  if (avisar && ctx.t.alerta !== motivo) await alertar(ctx, `Transferência de kit bloqueada: ${motivo}.`);
+  if (avisar && ctx.t.alerta !== motivo) await alertar(ctx, texto);
   return { passo: ctx.t.passo, acao: 'reagendada', motivo };
 }
 
@@ -605,9 +612,24 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   // é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto, e falha ou recusa do registro nunca
   // deixa item vendável. Cada item entra em `pausado_pela_saga` antes do PUT; a reativação segue a política.
   // O principal (já em `pausado_pela_saga`) é pausado antes de qualquer leitura: a descoberta do UP pode lançar logo
-  // depois do CREATE (busca ainda sem o item, stock, multiget). Toda falha desta obrigação, inclusive de leitura,
-  // entra no backoff com alerta escalonado, nunca no reagendamento genérico.
-  const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  // depois do CREATE (stock, multiget). Toda falha desta obrigação, inclusive de leitura, entra no backoff com
+  // alerta escalonado, nunca no reagendamento genérico. Exceção: a busca por UP vazia (o ML leva segundos para
+  // indexar o item novo). Aí a pausa do principal se confirma por leitura direta do item (o id veio no POST) e,
+  // pausado, a saga espera a busca sem alerta até `JANELA_INDEXACAO_MS`: as cópias de catálogo só aparecem na
+  // busca, então nada é registrado antes dela.
+  const abertosSoltos = (itens: ItemOferta[]) => itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  let indexando = false;
+  const lerCriado = async () => {
+    if (!indexando) {
+      try {
+        return (await ler(ctx, alvo)).itens;
+      } catch (e) {
+        if ((e as { buscaVazia?: unknown } | null)?.buscaVazia !== true) throw e;
+        indexando = true;
+      }
+    }
+    return ctx.deps.ml.lerItens(alvo.up_criado!, [alvo.item_criado!]);
+  };
   // A pausa antecipada do principal é best-effort: recusada (ex.: `closed`) ou falha, a descoberta segue para pausar
   // as cópias. O que decide o registro é a leitura: nenhum item aberto sem `paused_by_seller` (closed não vende).
   // Erro por item: nenhuma falha (PUT recusado, gravação local) impede tentar os demais itens abertos. Os erros se
@@ -625,7 +647,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   await pausar(alvo.item_criado!);
   let ainda: string[];
   try {
-    const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+    const soltos = abertosSoltos(await lerCriado()).map((i) => i.id);
     const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
     if (novos.length > 0) {
       // Sem a gravação, a pausa vale assim mesmo: item pausado fora de `pausado_pela_saga` só não é reativado.
@@ -636,13 +658,21 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       }
     }
     for (const id of soltos) if (!tentados.has(id)) await pausar(id);
-    ainda = soltos.length > 0 ? abertosSoltos(await ler(ctx, alvo)).map((i) => i.id) : [];
+    ainda = soltos.length > 0 ? abertosSoltos(await lerCriado()).map((i) => i.id) : [];
   } catch (e) {
     erros.push(`leitura do UP: ${mensagem(e)}`);
     ainda = [alvo.item_criado!];
   }
-  if (ainda.length > 0) {
-    return aguardarPausaCriada(ctx, alvo, [`${ainda.join(', ')}${erros.length > 0 ? ` (${erros.join('; ')})` : ''}`]);
+  const comErros = erros.length > 0 ? ` (${erros.join('; ')})` : '';
+  if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, `${ainda.join(', ')}${comErros} ainda vendável`);
+  if (indexando) {
+    const decorrido = decorridoPausa(ctx, alvo);
+    if (decorrido < JANELA_INDEXACAO_MS) {
+      return reagendar(ctx, `${alvo.codigo}: ${alvo.item_criado} pausado; aguardando o ML indexar o item na busca do UP`,
+        atrasoPausaCriada(decorrido));
+    }
+    return aguardarPausaCriada(ctx, alvo,
+      `${alvo.item_criado} pausado, mas busca do UP ainda sem o item: cópias de catálogo não conferidas${comErros}`);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
@@ -657,18 +687,26 @@ export function atrasoPausaCriada(decorridoMs: number): number {
   return min < 1 ? CONFIRMAR_APOS_S : min < 5 ? 30 : min < 15 ? REAGENDAR_S : 300;
 }
 
+function decorridoPausa(ctx: Ctx, alvo: AlvoSaga): number {
+  const inicio = Date.parse(alvo.intencao_escrita_em ?? '');
+  return Number.isNaN(inicio) ? 0 : Math.max(0, ctx.deps.agora().getTime() - inicio);
+}
+
 /**
  * Pausa do item criado ainda não confirmada: a obrigação continua (nada é registrado), com backoff, e o alerta se
- * repete a cada faixa de tempo (1, 5 e 15 min, depois a cada hora), porque o motivo muda com a faixa.
+ * repete a cada faixa de tempo (1, 5 e 15 min, depois a cada hora), porque o motivo muda com a faixa. Antes de
+ * 15 min (backoff ainda subindo) é espera; daí em diante, com o backoff no teto, a transferência está bloqueada.
  */
-function aguardarPausaCriada(ctx: Ctx, alvo: AlvoSaga, soltos: string[]): Promise<ResultadoPasso> {
-  const inicio = Date.parse(alvo.intencao_escrita_em ?? '');
-  const decorrido = Number.isNaN(inicio) ? 0 : Math.max(0, ctx.deps.agora().getTime() - inicio);
+function aguardarPausaCriada(ctx: Ctx, alvo: AlvoSaga, detalhe: string): Promise<ResultadoPasso> {
+  const decorrido = decorridoPausa(ctx, alvo);
   const min = Math.floor(decorrido / 60_000);
   const faixa = min < 1 ? 'agora' : min < 5 ? 'há 1 min' : min < 15 ? 'há 5 min' : min < 60 ? 'há 15 min'
     : `há ${Math.floor(min / 60)} h`;
-  return reagendar(ctx, `${alvo.codigo}: pausa do item criado não confirmada (${soltos.join(', ')} ainda vendável, ${faixa})`,
-    atrasoPausaCriada(decorrido), true);
+  const motivo = `${alvo.codigo}: pausa do item criado não confirmada (${detalhe}, ${faixa})`;
+  const texto = min < 15
+    ? `Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit (tentando de novo): ${motivo}.`
+    : `Transferência de kit bloqueada: ${motivo}.`;
+  return reagendar(ctx, motivo, atrasoPausaCriada(decorrido), true, texto);
 }
 
 /** Leitura igual ao valor gravado conclui. Outro número, inclusive o anterior, trava (spec, passo 6). */

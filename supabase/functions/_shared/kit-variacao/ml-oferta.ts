@@ -53,8 +53,11 @@ async function listarItensDoUp(f: typeof fetch, token: string, upId: string): Pr
     const pagina: string[] = json.results ?? [];
     pagina.forEach((id) => ids.add(id));
     if (ids.size === total && total > 0) return [...ids];
-    // Sem item, "todos os itens pausados" passaria por vacuidade na saga.
-    if (pagina.length === 0) throw new Error(`UP ${upId}: ${ids.size} de ${total} itens lidos`);
+    // Sem item, "todos os itens pausados" passaria por vacuidade na saga. Busca toda vazia é a indexação do ML
+    // logo depois do CREATE (segundos): marcada, para a saga esperar sem alerta (continua sendo erro para todos).
+    if (pagina.length === 0) {
+      throw Object.assign(new Error(`UP ${upId}: ${ids.size} de ${total} itens lidos`), { buscaVazia: total === 0 });
+    }
     if (offset + LIMITE_PAGINA >= total) throw new Error(`UP ${upId}: busca truncada, ${ids.size} de ${total}`);
   }
 }
@@ -74,6 +77,11 @@ async function lerStatusItens(f: typeof fetch, token: string, upId: string, ids:
     }
   }
   return itens;
+}
+
+/** Leitura direta dos itens (`/items/bulk`), sem a busca por UP; lança se algum não vier do UP. */
+export function lerItens(token: string, upId: string, ids: string[], f: typeof fetch = fetch): Promise<OfertaUP['itens']> {
+  return lerStatusItens(f, token, upId, ids);
 }
 
 /**

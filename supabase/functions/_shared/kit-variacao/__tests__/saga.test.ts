@@ -94,6 +94,10 @@ function cenario() {
     aoRegistrar: () => {},
     falhaPreparar: null as Error | null,
     copiaNoCriado: false,
+    /** Buscas por UP que ainda voltam vazias (indexação do ML logo depois do CREATE), por UP. */
+    buscaVazia: {} as Record<string, number>,
+    /** Itens lidos direto (`GET /items`), sem a busca por UP. */
+    lidosDireto: [] as string[],
     criados: {} as Record<string, { itemId: string; upId: string }>,
     /** Ledger falso: só o que a marca d'água olha. */
     movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
@@ -207,6 +211,10 @@ function cenario() {
     ml: {
       async lerOferta(upId, esperados) {
         s.aoLer(upId);
+        if ((s.buscaVazia[upId] ?? 0) > 0) {
+          s.buscaVazia[upId]--;
+          throw Object.assign(new Error(`UP ${upId}: 0 de 0 itens lidos`), { buscaVazia: true });
+        }
         const u = ups[upId];
         for (const id of esperados) if (!u.itens.some((i) => i.id === id)) throw new Error(`sem ${id}`);
         const locais = (u.locais ?? ['selling_address']).map((type) => ({ type, quantity: u.quantidade }));
@@ -215,6 +223,11 @@ function cenario() {
           itens: structuredClone(u.itens),
           somenteSellingAddress: locais.every((l) => l.type === 'selling_address'),
         };
+      },
+      async lerItens(upId, ids) {
+        s.lidosDireto.push(...ids);
+        for (const id of ids) if (!ups[upId]?.itens.some((i) => i.id === id)) throw new Error(`${id} fora de ${upId}`);
+        return structuredClone(ids.map(itemPorId));
       },
       async listarPendentes() {
         return s.pendentes;
@@ -1198,6 +1211,61 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     await rodar(c, undefined, 80);
     expect(c.s.t.estado).toBe('concluida');
     expect(c.s.registros).toHaveLength(1);
+  });
+
+  it('busca do UP vazia logo depois do CREATE (indexação): pausa confirmada por GET do item, sem alerta, conclui depois', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = 2;
+    await rodar(c, (x) => criacoes(x) === 1);
+    // A pausa do principal se confirma pela leitura direta, mesmo sem a busca: nada registrado enquanto a busca
+    // não mostrar o UP (as cópias de catálogo só aparecem nela).
+    expect(c.s.lidosDireto).toContain('MLB-NOVO1');
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).toContain('paused_by_seller');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.filas.at(-1)).toBe(5);
+    expect(c.s.alertas).toEqual([]);
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toEqual(['K MLB-NOVO1 UP-NOVO1']);
+    expect(c.s.alertas).toEqual([]);
+  });
+
+  it('busca do UP vazia e GET do item ainda ativo: não registra, reagenda e avisa que está aguardando (sem "bloqueada")', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = Infinity;
+    c.s.pausaIgnorada.add('MLB-NOVO1');
+    await rodar(c, (x) => criacoes(x) === 1);
+    expect(c.s.lidosDireto).toContain('MLB-NOVO1');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.t.estado).toBe('ativa');
+    expect(c.s.filas.at(-1)).toBe(5);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.alertas[0]).toMatch(/^Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit \(tentando de novo\): K: pausa do item criado não confirmada \(MLB-NOVO1 ainda vendável/);
+    expect(c.s.alertas.join()).not.toMatch(/bloqueada/);
+    c.s.pausaIgnorada.delete('MLB-NOVO1');
+    c.s.buscaVazia['UP-NOVO1'] = 0;
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toHaveLength(1);
+  });
+
+  it('busca do UP que nunca mostra o item: o silêncio da indexação tem prazo; depois alerta, e só vira "bloqueada" com 15 min', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = Infinity;
+    await rodar(c, (x) => criacoes(x) === 1);
+    expect(c.s.alertas).toEqual([]);
+    for (let i = 0; i < 40; i++) await passo(c);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.t.passo).toBe('aumentar');
+    const alertas = c.s.alertas.filter((a) => a.includes('K: pausa do item criado não confirmada'));
+    expect(alertas.length).toBeGreaterThanOrEqual(2);
+    expect(alertas[0]).toMatch(/^Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit \(tentando de novo\): .*busca do UP ainda sem o item/);
+    expect(alertas.at(-1)).toMatch(/^Transferência de kit bloqueada: .*busca do UP ainda sem o item/);
+    c.s.buscaVazia['UP-NOVO1'] = 0;
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
   });
 
   it('registro que lança: o item criado é pausado e confirmado antes; a retomada não deixa vendável', async () => {
