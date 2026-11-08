@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BillingStatement, CommercialTerms } from '@/lib/platform-admin';
 import { buildBillingReport } from '@/lib/export/platform-billing';
+import { fmtBRL } from '@/lib/formato';
 
 const statement: BillingStatement = {
   id: 'statement-1',
@@ -123,6 +124,21 @@ describe('buildBillingReport', () => {
     expect(report.blocos?.find((block) => block.titulo === 'Fontes conciliadas')?.itens[0]).toMatchObject({
       label: 'sale-1',
     });
+  });
+
+  it('imagens IA: quantidade e preço unitário só quando o snapshot traz a linha', () => {
+    const semLinha = buildBillingReport(statement).blocos?.flatMap((block) => block.itens) ?? [];
+    expect(semLinha.some((item) => item.label.startsWith('Imagens IA') || item.label.includes('imagem IA'))).toBe(false);
+
+    const comLinha = buildBillingReport({
+      ...statement,
+      lines: [...statement.lines, {
+        key: 'image_ia', label: 'Imagens IA', quantity: 3, unit_cents: 50, amount_cents: 150,
+        source_type: 'image_deliveries', source_id: null,
+      }],
+    }).blocos?.flatMap((block) => block.itens) ?? [];
+    expect(comLinha).toContainEqual({ label: 'Imagens IA', valor: '3' });
+    expect(comLinha).toContainEqual({ label: 'Preço unitário imagem IA', valor: fmtBRL(0.5) });
   });
 
   it('permanece idêntico quando condições atuais mudam fora do snapshot', () => {

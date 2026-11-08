@@ -27,6 +27,15 @@ function buildSnapshotBlocks(statement: BillingStatement): BlocoResumo[] {
     },
   ];
 
+  // Linha só existe com preço > 0 ou uso no mês; snapshot anterior à cobrança de imagem não a traz.
+  const image = statement.lines.find((line) => line.key === 'image_ia');
+  if (image) {
+    blocks[0].itens.push(
+      { label: 'Imagens IA', valor: String(image.quantity ?? 0) },
+      { label: 'Preço unitário imagem IA', valor: fmtBRL((image.unit_cents ?? 0) / 100) },
+    );
+  }
+
   if (statement.sources.length > 0) {
     blocks.push({
       titulo: 'Fontes conciliadas',
