@@ -106,7 +106,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     setConfirmadoRisco(false);
     // Achado Codex P2 (alterar preço): preço inicial sem cálculo válido (Reverter, simulação parcial) já abre
     // calculando no servidor — nunca mostra o lucro de outro preço.
-    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado));
+    // Convite de outro horário (Relâmpago): a projeção gravada é do preço participando → calcula no servidor também.
+    const convites = new Set(itens.filter((i) => i.convite_aberto).map((i) => i.ml_item_id));
+    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado || convites.has(l.ml_item_id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recomeça só quando o preview muda (podeEditarPreco deriva de acao/tipo)
   }, [aberto, acao, tipo, itens, naoRevertiveis, simulados]);
 

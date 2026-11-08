@@ -34,6 +34,13 @@ describe('simular', () => {
     expect(r).toEqual([{ ml_item_id: 'MLB1', status: 'simulado', preco: 63.5, projecao: [expect.anything()], pior_semaforo: 'verde' }]);
   });
 
+  it('Relâmpago participando com convite de outro horário e sem faixa → ignorado (emenda 2026-11-08 (2))', async () => {
+    const r = await simular([{ ml_item_id: 'C', preco: 50 }],
+      central(linha({ ml_item_id: 'C', status: 'pending', convite_aberto: true, preco_min: null, preco_max: null })),
+      async (l, p) => projetarOk(l, p));
+    expect(r[0].status).toBe('ignorado');
+  });
+
   it('fora da Central, encerrado ou convidado sem faixa do ML → ignorado com motivo, sem projetar', async () => {
     let chamadas = 0;
     const r = await simular(

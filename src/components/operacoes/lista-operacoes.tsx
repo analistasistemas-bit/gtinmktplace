@@ -90,7 +90,8 @@ function itensDoLog(
   const bloqueados = new Map<string, string>();
   const itens = ids.map((id) => {
     const atual = itemAtualOuStub(id, porCentral, porLog.get(id)!);
-    const ok = acao === 'aderir' ? atual.status === 'candidate' : atual.status === 'started' || atual.status === 'pending';
+    // Relâmpago: participando com convite de outro horário também é aderível (emenda 2026-11-08 (2)).
+    const ok = acao === 'aderir' ? atual.status === 'candidate' || !!atual.convite_aberto : atual.status === 'started' || atual.status === 'pending';
     if (!ok) bloqueados.set(id, motivo);
     return atual;
   });

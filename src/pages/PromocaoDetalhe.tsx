@@ -117,6 +117,9 @@ export default function PromocaoDetalhe() {
   const [participando, setParticipando] = useState(false);
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  // Convite de outro horário (Relâmpago) está nas duas abas: vale a aba em que foi marcado (revisão Gemini) — marcado
+  // em Convidados é Aderir, em Participando é Sair; trocar de aba nunca troca a ação.
+  const [convitesMarcados, setConvitesMarcados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
   const [busca, setBusca] = useState('');
   const [pai, setPai] = useState<string | null>(null);
@@ -155,8 +158,8 @@ export default function PromocaoDetalhe() {
   const selecionadosItens = useMemo(() => itensVisao.filter((i) => selecionados.has(i.ml_item_id)), [itensVisao, selecionados]);
   // Convite de outro horário (Relâmpago) está nas duas abas: conta como convidado em Convidados e como participante
   // em Participando, nunca nos dois (o mesmo clique não oferece Aderir e Sair).
-  const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate' || (!participando && i.convite_aberto));
-  const participandoSelecionados = selecionadosItens.filter((i) => (i.status === 'started' || i.status === 'pending') && !(!participando && i.convite_aberto));
+  const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate' || convitesMarcados.has(i.ml_item_id));
+  const participandoSelecionados = selecionadosItens.filter((i) => (i.status === 'started' || i.status === 'pending') && !convitesMarcados.has(i.ml_item_id));
   const todosMarcadosNoFiltro = linhas.length > 0 && linhas.every((r) => selecionados.has(r.ml_item_id));
   // A simulação age sobre o grupo da aba: convidados (aderir) ou participantes (alterar preço).
   const alvoSimulacao = participando ? participandoSelecionados : convidadosSelecionados;
@@ -189,7 +192,17 @@ export default function PromocaoDetalhe() {
     }
   }
 
+  function marcarConvites(ids: string[], marcar: boolean) {
+    const convites = ids.filter((id) => itensVisao.some((i) => i.ml_item_id === id && i.convite_aberto));
+    if (!convites.length) return;
+    setConvitesMarcados((prev) => {
+      const novo = new Set(prev);
+      for (const id of convites) { if (marcar && !participando) novo.add(id); else novo.delete(id); }
+      return novo;
+    });
+  }
   function alternarItem(id: string) {
+    marcarConvites([id], !selecionados.has(id));
     setSelecionados((prev) => {
       const novo = new Set(prev);
       if (novo.has(id)) novo.delete(id); else novo.add(id);
@@ -197,6 +210,7 @@ export default function PromocaoDetalhe() {
     });
   }
   function alternarTodos(marcar: boolean) {
+    marcarConvites(linhas.map((r) => r.ml_item_id), marcar);
     setSelecionados((prev) => {
       const novo = new Set(prev);
       for (const r of linhas) { if (marcar) novo.add(r.ml_item_id); else novo.delete(r.ml_item_id); }

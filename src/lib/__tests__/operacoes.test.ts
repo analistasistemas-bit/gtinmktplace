@@ -35,6 +35,14 @@ describe('parsePreco', () => {
 });
 
 describe('montarPreview', () => {
+  it('Relâmpago com convite de outro horário e sugerido < 19: abre no piso da faixa do convite, não no preço participando', () => {
+    const [l] = montarPreview('aderir', 'LIGHTNING', [item({
+      ml_item_id: 'C', status: 'pending', convite_aberto: true, preco_promo: 24.45, preco_avaliado: 24.45,
+      preco_sugerido: 17, preco_min: 8, preco_max: 25,
+    })]);
+    expect(l.preco).toBe(19);
+  });
+
   it('DEAL aderir marca só o verde e usa o sugerido', () => {
     const verde = item({ ml_item_id: 'V', preco_sugerido: 85, projecao: [cor({ custo: 5, piso: 10 })] });
     const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_avaliado: 5, projecao: [cor({ custo: 5, piso: 10 })] });
