@@ -181,6 +181,43 @@ describe('montarTextoKit — guardas da abertura da IA', () => {
   });
 });
 
+describe('montarTextoKit — guardas contra dado inventado (revisão Codex 08/11)', () => {
+  const com = (p: string) => montarTextoKit(dados(), { ...IA_BOA, paragrafos: [IA_BOA.paragrafos[0], p] }).descricao;
+  it('cor que não existe na base (nem no kit) é descartada', () => {
+    expect(com('Também combina com a cor Rosa.')).not.toContain('Rosa');
+  });
+  it('material ou propriedade que a base não cita é descartado', () => {
+    expect(com('Tecido em seda impermeável.')).not.toContain('seda');
+    expect(com('Feito em algodão macio.')).not.toContain('algodão macio');
+  });
+  it('número só vale com a mesma unidade/palavra da base ("80%" não autoriza "80 bolsos")', () => {
+    expect(com('São 80 bolsos funcionais.')).not.toContain('80 bolsos');
+    expect(com('Composição de 80% fibra e 20% poliéster.')).toContain('80% fibra e 20% poliéster');
+  });
+  it('falsos positivos da medição: número no nome da cor do kit e número seguido de preposição', () => {
+    const base = BASE.replace('• Estilo: Casual', '• Estilo: Casual\n• Proteção UV: 30');
+    const d = montarTextoKit(dados({ descricaoBase: base, coresBase: [...CORES_BASE, 'Estampa 4', 'Estampa 5'], coresKit: ['Estampa 4', 'Estampa 5'] }), {
+      ...IA_BOA, paragrafos: ['O kit traz 2 shorts nas cores Estampa 4 e Estampa 5.'], fechamento: 'Compre o kit com proteção fator 30 para os dias de sol.',
+    }).descricao;
+    expect(d).toContain('O kit traz 2 shorts nas cores Estampa 4 e Estampa 5.');
+    expect(d).toContain('Compre o kit com proteção fator 30 para os dias de sol.');
+  });
+  it('material que a base cita passa', () => {
+    expect(com('O poliéster da composição ajuda no conforto.')).toContain('O poliéster da composição');
+  });
+});
+
+describe('montarTextoKit — fallback da base sem cor/tamanho fora do kit', () => {
+  it('frase da abertura da base que cita cor ou tamanho fora do kit sai', () => {
+    const base = BASE.replace('diversas ocasiões.\n\nCom cós',
+      'diversas ocasiões. Disponível em Verde Claro. Vai até o tamanho GG.\n\nCom cós');
+    const d = montarTextoKit(dados({ descricaoBase: base, tamanhosBase: ['P', 'M', 'G', 'GG'] }), { cabecalho: '', paragrafos: [], fechamento: '' }).descricao;
+    expect(d).not.toContain('Verde Claro');
+    expect(d).not.toContain('GG');
+    expect(d).toContain('O Short Masculino Mauricinho é uma peça casual');
+  });
+});
+
 describe('montarTextoKit — bullet com cor fora do kit', () => {
   it('sai inteiro do POR QUE ESCOLHER (flexão preto/preta)', () => {
     const base = BASE.replace('✔ Bolsos funcionais', '✔ Cor preta, versátil para combinações\n✔ Bolsos funcionais');

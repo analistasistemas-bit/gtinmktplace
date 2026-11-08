@@ -60,7 +60,7 @@ const casos: Caso[] = bases.map((b, i) => {
   return {
     base: b,
     dados: {
-      descricaoBase: b.descricao_ml, tituloBase: b.titulo_ml ?? b.nome_pai, nomeBase: b.nome_pai, pecas, coresBase, coresKit, tamanhosKit,
+      descricaoBase: b.descricao_ml, tituloBase: b.titulo_ml ?? b.nome_pai, nomeBase: b.nome_pai, pecas, coresBase, coresKit, tamanhosKit, tamanhosBase: todos,
     },
   };
 });
