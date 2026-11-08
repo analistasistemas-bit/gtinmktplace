@@ -43,6 +43,18 @@ begin
   end;
   perform pg_temp.afirmar(recusou, 'request_id repetido aceito');
 
+  -- `pendente_upload` (gerada, upload em curso; não cobrável) também exige caminho e custo > 0.
+  begin
+    update public.kit_variacao_imagens set status = 'pendente_upload' where request_id = r;
+    recusou := false;
+  exception when check_violation then recusou := true;
+  end;
+  perform pg_temp.afirmar(recusou, 'pendente_upload sem caminho nem custo aceito');
+  update public.kit_variacao_imagens set status = 'pendente_upload', storage_path = o || '/kit-variacao-ia/x.png', custo_usd = 0.041
+   where request_id = r;
+  perform pg_temp.afirmar(found, 'pendente_upload completo recusado');
+  update public.kit_variacao_imagens set status = 'pendente', storage_path = null, custo_usd = null where request_id = r;
+
   -- `gerada` (cobrável) exige imagem guardada e custo > 0.
   begin
     update public.kit_variacao_imagens set status = 'gerada' where request_id = r;

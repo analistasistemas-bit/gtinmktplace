@@ -12,7 +12,7 @@ import { gerarFotoKitEdge } from '@/lib/kit-variacao-edge';
 import { cn } from '@/lib/utils';
 
 /** Falha definitiva: o mesmo pedido falharia de novo; o próximo clique é pedido novo. */
-const DEFINITIVAS = new Set(['imagem_inadequada', 'pedido_diferente']);
+const DEFINITIVAS = new Set(['imagem_inadequada', 'pedido_diferente', 'falha_storage']);
 
 export interface FotoGerada { path: string; url: string | null }
 /** Arquivo enviado pelo operador ou foto gerada por IA já aprovada. */

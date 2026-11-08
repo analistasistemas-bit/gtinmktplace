@@ -144,7 +144,22 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     // Mesmo pedido = mesma base e as mesmas cores na mesma ordem; senão nunca devolve a foto de outro produto.
     if (ja.familia_base_id !== familiaBaseId || JSON.stringify(ja.cores) !== JSON.stringify(cores) || ja.rotulo !== rotulo) return json({ error: 'request_id já usado em outra combinação.', motivo: 'pedido_diferente' }, 409);
     if (ja.status === 'pendente') return json({ error: 'Esta foto ainda está sendo gerada.', motivo: 'em_andamento' }, 409);
-    if (ja.status !== 'gerada') return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);
+    if (ja.status === 'pendente_upload') {
+      // Upload que estourou o prazo: a imagem já foi gerada (e paga ao provedor). Nunca gera de novo: confere o objeto
+      // no caminho determinístico. Existe → `gerada` (cobrável). Não existe → `recusada` (a plataforma absorve).
+      const caminho = String(ja.storage_path);
+      const corte = caminho.lastIndexOf('/');
+      const nome = caminho.slice(corte + 1);
+      const { data: lista, error: errLista } = await admin.storage.from('imagens').list(caminho.slice(0, corte), { search: nome });
+      if (errLista) { logErro('upload', errLista); return json({ error: 'Falha ao conferir a foto gerada. Tente novamente.' }, 500); }
+      const existe = (lista ?? []).some((o: { name: string }) => o.name === nome);
+      const { error: errFin } = await tabela().update({ status: existe ? 'gerada' : 'recusada', atualizado_em: new Date().toISOString() })
+        .eq('org_id', orgId).eq('request_id', requestId).eq('status', 'pendente_upload');
+      if (errFin) { logErro('registro', errFin); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
+      if (!existe) return json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
+    } else if (ja.status !== 'gerada') {
+      return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);
+    }
     const { data: assinada } = await admin.storage.from('imagens').createSignedUrl(ja.storage_path as string, 60 * 60 * 2);
     return json({ request_id: requestId, path: ja.storage_path, url: assinada?.signedUrl ?? null, custo_centavos: centavos(Number(ja.custo_usd)), existente: true });
   }
@@ -232,21 +247,31 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   if (!adequadaAoML(dimensoesImagem(gerada.bytes))) {
     return await recusar('A foto gerada não serve ao Mercado Livre (precisa ser vertical ou quadrada). Gere outra.', 'imagem_inadequada');
   }
+  // Caminho determinístico por (org, request_id), gravado com o custo ANTES do upload (`pendente_upload`, não cobrável):
+  // se o upload estourar o prazo e terminar depois, a repetição do mesmo pedido acha o objeto e finaliza.
   const path = `${orgId}/kit-variacao-ia/${requestId}.${gerada.ext}`;
+  const { error: errPre } = await comPrazo(tabela().update({
+    status: 'pendente_upload', storage_path: path, custo_usd: custoUsd, atualizado_em: new Date().toISOString(),
+  }).eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
+  if (errPre) { logErro('registro', errPre); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
   let errUp: unknown = null;
   try {
     ({ error: errUp } = await comPrazo(admin.storage.from('imagens').upload(path, new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }), {
       contentType: gerada.mime, upsert: true,
     }), fatiaFinal(6_000)));
-  } catch (e) { errUp = e; }
+  } catch (e) {
+    // Sem resposta no prazo: o upload pode terminar depois. Fica `pendente_upload`; o cliente repete o mesmo pedido.
+    logErro('upload', e);
+    await auditar(target, 'failed');
+    return json({ error: 'A foto está sendo guardada. Tente de novo em instantes: a mesma foto é recuperada.', motivo: 'prazo' }, 503);
+  }
   if (errUp) {
     logErro('upload', errUp);
     return await recusar('Não foi possível guardar a foto gerada. Tente novamente.', 'falha_storage');
   }
   // Prazo aqui rejeita e vira 503 `prazo` no topo: o cliente repete o mesmo pedido e recupera a geração, se gravou.
-  const { error: errFim } = await comPrazo(tabela().update({
-    status: 'gerada', storage_path: path, custo_usd: custoUsd, atualizado_em: new Date().toISOString(),
-  }).eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
+  const { error: errFim } = await comPrazo(tabela().update({ status: 'gerada', atualizado_em: new Date().toISOString() })
+    .eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
   if (errFim) {
     // Sem o registro não há entrega (fail-closed): a imagem não sai sem a cobrança.
     logErro('registro', errFim);

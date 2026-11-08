@@ -5,8 +5,10 @@
 --    `src/lib/ai-modelos.ts::MODELOS_IMAGEM` e em `_shared/ai/tokens.ts::PRECOS`.
 -- 2. `kit_variacao_imagens`: registro durável de cada geração, idempotente por (org, request_id). A edge
 --    `gerar-foto-kit` reserva a linha (`pendente`) antes de chamar a IA; falha do provedor apaga a reserva (nada a
---    cobrar); imagem entregue ao operador vira `gerada` com o custo real do provedor; imagem gerada mas imprópria
---    para o ML (ou que não subiu ao storage) vira `recusada`, com o custo real e fora da cobrança.
+--    cobrar). Imagem gerada: grava custo e caminho determinístico como `pendente_upload` (não cobrável) e sobe ao
+--    storage; guardada vira `gerada`. Upload que estoura o prazo fica `pendente_upload`: a repetição do mesmo
+--    request_id confere o objeto (existe → `gerada`; não existe → `recusada`), nunca gera de novo. Imagem imprópria
+--    para o ML ou recusada pelo storage vira `recusada`, com o custo real e fora da cobrança.
 --    A cobrança (Task 16) conta só `status = 'gerada'`, inclusive a imagem que o operador descartou.
 -- Escrita só por service role. Re-executável (`db push` não roda em transação).
 
@@ -24,7 +26,7 @@ create table if not exists public.kit_variacao_imagens (
   id              uuid primary key default gen_random_uuid(),
   org_id          uuid not null references public.organizations(id),
   request_id      uuid not null,
-  status          text not null default 'pendente' check (status in ('pendente', 'gerada', 'recusada')),
+  status          text not null default 'pendente' check (status in ('pendente', 'pendente_upload', 'gerada', 'recusada')),
   familia_base_id uuid not null,
   cores           text[] not null,
   rotulo          text not null,
@@ -36,7 +38,7 @@ create table if not exists public.kit_variacao_imagens (
   criado_em       timestamptz not null default now(),
   atualizado_em   timestamptz not null default now(),
   unique (org_id, request_id),
-  check (status <> 'gerada' or (storage_path is not null and custo_usd is not null and custo_usd > 0))
+  check (status not in ('gerada', 'pendente_upload') or (storage_path is not null and custo_usd is not null and custo_usd > 0))
 );
 create index if not exists kit_variacao_imagens_cobranca_idx
   on public.kit_variacao_imagens (org_id, criado_em) where status = 'gerada';

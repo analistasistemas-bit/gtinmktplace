@@ -18,6 +18,8 @@ const f = vi.hoisted(() => ({
   atrasoModeracaoMs: 0,
   atrasoImagemMs: 0,
   uploadTrava: false,
+  uploadAtrasoMs: 0,
+  objetos: new Set<string>(),
   codigoErro: undefined as unknown,
   deslocamento: 0,
   imagemB64: '',
@@ -125,8 +127,14 @@ vi.mock('../../_shared/supabase.ts', () => ({
         download: async (p: string) => (f.downloads.push(p), { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null }),
         upload: (p: string) => {
           f.uploads.push(p);
-          return f.uploadTrava ? new Promise(() => {}) : Promise.resolve({ data: { path: p }, error: null });
+          if (f.uploadTrava) return new Promise(() => {});
+          const fim = () => { f.objetos.add(p); return { data: { path: p }, error: null }; };
+          return f.uploadAtrasoMs ? new Promise((res) => setTimeout(() => res(fim()), f.uploadAtrasoMs)) : Promise.resolve(fim());
         },
+        list: async (pasta: string, o: { search: string }) => ({
+          data: [...f.objetos].filter((x) => x.startsWith(`${pasta}/${o.search}`)).map((x) => ({ name: x.slice(pasta.length + 1) })),
+          error: null,
+        }),
         createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://x/${p}?t=1` }, error: null }),
       }),
     },
@@ -145,7 +153,8 @@ const REQ = '11111111-1111-4111-8111-111111111111';
 beforeEach(() => {
   f.admin = true; f.modulos = ['kit_variacao', 'imagem_ia']; f.moderadas = []; f.moderacaoFalha = false;
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0;
-  f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined;
+  f.uploadAtrasoMs = 0; f.objetos = new Set(); f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -270,6 +279,41 @@ describe('gerar-foto-kit', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('upload de 7 s estoura o limite: fica pendente_upload (não cobrável); a repetição acha o objeto e finaliza gerada, sem gerar de novo', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let primeira: Response | undefined;
+    try {
+      f.uploadAtrasoMs = 7_000;
+      void post(ok).then((r) => { primeira = r; });
+      for (let i = 0; i < 10; i++) { await vi.advanceTimersByTimeAsync(1_000); f.deslocamento += 1_000; }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(primeira!.status).toBe(503);
+    expect((await primeira!.json()).motivo).toBe('prazo');
+    expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload', storage_path: `org-1/kit-variacao-ia/${REQ}.png` });
+    expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
+    expect(f.objetos.has(`org-1/kit-variacao-ia/${REQ}.png`)).toBe(true);   // o upload terminou depois
+
+    const r = await post(ok);
+    expect(r.status).toBe(200);
+    expect((await r.json()).path).toBe(`org-1/kit-variacao-ia/${REQ}.png`);
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
+    expect(f.chamadasImagem).toHaveLength(1);
+  });
+
+  it('pendente_upload sem objeto no storage: recusada (sem cobrança), nunca gera de novo', async () => {
+    f.linhas.push({
+      org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
+      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date().toISOString(),
+    });
+    const r = await post(ok);
+    expect(r.status).toBe(502);
+    expect((await r.json()).motivo).toBe('falha_storage');
+    expect(f.linhas[0]).toMatchObject({ status: 'recusada' });
+    expect(f.chamadasImagem).toHaveLength(0);
   });
 
   it('request_id em andamento → 409, sem IA', async () => {
