@@ -240,4 +240,48 @@ describe('DialogGerenciarKit', () => {
     await user.click(screen.getByRole('button', { name: 'Desmontar' }));
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Desmontar 1 kit?');
   });
+
+  it('resposta perdida → releitura 8 → repetição → a ação seguinte usa a versão autoritativa (sem presumir +1)', async () => {
+    const user = userEvent.setup();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (versao: number) => (
+      <QueryClientProvider client={qc}>
+        <DialogGerenciarKit kit={{ ...kitBase, versao }} open onOpenChange={() => {}} isAdmin />
+      </QueryClientProvider>
+    );
+    // 1ª: a RPC gravou (versão 7 → 8), mas a resposta se perdeu.
+    vi.mocked(gerenciarKitEdge).mockResolvedValueOnce({ ok: false, motivo: 'rede', mensagem: 'Failed to fetch' });
+    const r = render(ui(7));
+    await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
+    await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+    await user.click(screen.getByRole('button', { name: 'Montar' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    // Releitura: o kit chega com a versão 8.
+    r.rerender(ui(8));
+    // Repetição: a RPC devolve a transferência original e a versão autoritativa (8, sem incremento).
+    vi.mocked(gerenciarKitEdge).mockResolvedValueOnce({ ok: true, existente: true, transferenciaId: 'T1', versao: 8 });
+    await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+    await user.click(screen.getByRole('button', { name: 'Montar' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[1][0]).toMatchObject({ versao: 8, chave: vi.mocked(gerenciarKitEdge).mock.calls[0][0].chave });
+    // Ação seguinte: vai com 8 (a RPC aceitaria), não 9.
+    await user.clear(screen.getByLabelText('Meta'));
+    await user.type(screen.getByLabelText('Meta'), '5');
+    await user.click(screen.getByRole('button', { name: 'Salvar meta' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[2][0]).toMatchObject({ acao: 'alterar_meta', versao: 8 });
+  });
+
+  it('resposta de sucesso sem versão não incrementa por conta própria', async () => {
+    const user = userEvent.setup();
+    vi.mocked(gerenciarKitEdge).mockResolvedValueOnce({ ok: true });
+    abrir({ soEmKit: true, reposicaoAuto: true });
+    await user.clear(screen.getByLabelText('Meta'));
+    await user.type(screen.getByLabelText('Meta'), '5');
+    await user.click(screen.getByRole('button', { name: 'Salvar meta' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('switch', { name: 'Reposição automática' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[1][0]).toMatchObject({ versao: 7 });
+  });
 });

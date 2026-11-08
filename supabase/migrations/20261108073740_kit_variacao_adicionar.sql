@@ -41,7 +41,9 @@ begin
       if v_ja.pedido_hash is distinct from p_hash or v_ja.kit_id is distinct from p_kit then
         return jsonb_build_object('ok', false, 'motivo', 'pedido_diferente');
       end if;
-      return jsonb_build_object('ok', true, 'existente', true, 'transferencia_id', v_ja.id);
+      -- Versão autoritativa também na repetição: a tela adota a do banco, nunca presume.
+      return jsonb_build_object('ok', true, 'existente', true, 'transferencia_id', v_ja.id,
+        'versao', (select versao from public.kits_variacao where id = p_kit and org_id = p_org));
     end if;
   end if;
 
@@ -134,7 +136,8 @@ begin
     if v_ja.pedido_hash is distinct from p_hash or v_ja.kit_id is distinct from p_kit then
       return jsonb_build_object('ok', false, 'motivo', 'pedido_diferente');
     end if;
-    return jsonb_build_object('ok', true, 'existente', true, 'kit_id', p_kit, 'transferencia_id', v_ja.id);
+    return jsonb_build_object('ok', true, 'existente', true, 'kit_id', p_kit, 'transferencia_id', v_ja.id,
+      'versao', (select versao from public.kits_variacao where id = p_kit and org_id = p_org));
   end if;
 
   -- Trava o kit: duas adições concorrentes (chaves diferentes) não criam a mesma combinação duas vezes.
@@ -269,7 +272,8 @@ begin
       return jsonb_build_object('ok', false, 'motivo', 'combinacao_existente');
   end;
 
-  return jsonb_build_object('ok', true, 'kit_id', p_kit, 'transferencia_id', v_t->>'id');
+  return jsonb_build_object('ok', true, 'kit_id', p_kit, 'transferencia_id', v_t->>'id',
+    'versao', (select versao from public.kits_variacao where id = p_kit));
 end $$;
 
 revoke all on function public.kit_variacao_adicionar(uuid, uuid, integer, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)

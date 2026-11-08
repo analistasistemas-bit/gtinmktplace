@@ -102,6 +102,7 @@ begin
   -- Meta: CAS e efeito juntos, versão + 1.
   r := public.kit_variacao_gerenciar(c.org, k, 'alterar_meta', v, null, null, 4, null, null, false);
   perform pg_temp.afirmar((r->>'ok')::boolean and (select meta = 4 and versao = v + 1 from public.kits_variacao where id = k), 'meta: ' || r::text);
+  perform pg_temp.afirmar((r->>'versao')::integer = v + 1, 'meta sem a versão nova: ' || r::text);
   v := v + 1;
 
   -- Reposição sem "Vender só em kit": recusa sem consumir a versão.
@@ -120,6 +121,9 @@ begin
   select count(*) into n from public.kit_transferencias where org_id = c.org;
   r2 := public.kit_variacao_gerenciar(c.org, k, 'montar', v - 1, ch, 'HM', null, itens, alvos, false);
   perform pg_temp.afirmar((r2->>'existente')::boolean and r2->>'transferencia_id' = t::text, 'repetição: ' || r2::text);
+  -- A repetição devolve a versão autoritativa (a tela adota; nunca presume).
+  perform pg_temp.afirmar((r2->>'versao')::integer = (select versao from public.kits_variacao where id = k) and (r2->>'versao')::integer = v,
+    'repetição sem a versão atual: ' || r2::text);
   perform pg_temp.afirmar((select count(*) from public.kit_transferencias where org_id = c.org) = n, 'repetição criou outra');
   r2 := public.kit_variacao_gerenciar(c.org, k, 'montar', v, ch, 'OUTRO', null, itens, alvos, false);
   perform pg_temp.afirmar(r2->>'motivo' = 'pedido_diferente', 'outro pedido com a mesma chave: ' || r2::text);

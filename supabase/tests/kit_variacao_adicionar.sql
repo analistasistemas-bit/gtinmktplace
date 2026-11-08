@@ -159,6 +159,8 @@ begin
   -- Mesma chave: a mesma transferência, nada novo.
   r2 := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1', novos, existentes, baseline, alvos);
   perform pg_temp.afirmar((r2->>'existente')::boolean and r2->>'transferencia_id' = t::text, 'idempotência: ' || r2::text);
+  perform pg_temp.afirmar((r->>'versao')::integer = v + 1 and (r2->>'versao')::integer = v + 1,
+    'versão autoritativa no sucesso e na repetição: ' || r::text || ' ' || r2::text);
   perform pg_temp.afirmar(pg_temp.linhas(c.org) = '2/5/2/5/5', 'repetição gravou de novo');
   -- Mesma chave, outro pedido: recusa.
   r2 := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H2', novos, existentes, baseline, alvos);

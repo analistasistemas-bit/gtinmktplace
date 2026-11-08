@@ -37,7 +37,7 @@ export function adicionarAoKitEdge(p: {
   kitId: string; versao: number; quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
   fotos: Record<string, string>; chaveCadastro: string;
 }) {
-  return invocar<{ transferenciaId?: string; aviso?: string }>('criar-kit-variacao', {
+  return invocar<{ transferenciaId?: string; aviso?: string; versao?: number }>('criar-kit-variacao', {
     kit_id: p.kitId, versao: p.versao, quantidades: p.quantidades, fotos: p.fotos, chave_cadastro: p.chaveCadastro,
   });
 }
@@ -68,7 +68,7 @@ export function gerenciarKitEdge(p: {
   /** Desmontar: desliga também "Vender só em kit", na mesma transação. */
   desligarSoEmKit?: boolean;
 }) {
-  return invocar<{ transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; versao?: number }>(
+  return invocar<{ transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; existente?: boolean; versao?: number }>(
     'gerenciar-kit-variacao',
     {
       kit_id: p.kitId, acao: p.acao, versao: p.versao, meta: p.meta, itens: p.itens, chave: p.chave,

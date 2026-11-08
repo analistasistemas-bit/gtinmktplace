@@ -134,8 +134,8 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
       toast.error('Não foi possível concluir', { description: r.mensagem });
       return { ok: false };
     }
-    // Toda decisão aceita incrementa a versão do kit; a RPC devolve a nova (a releitura chega depois).
-    setVersao((x) => (typeof r.versao === 'number' ? r.versao : x + 1));
+    // A versão autoritativa vem da RPC (também na repetição idempotente); nunca é presumida aqui.
+    if (typeof r.versao === 'number') setVersao(r.versao);
     operacao.current = null;
     return { ok: true, reposicaoDesligada: r.reposicaoDesligada };
   }
@@ -178,7 +178,10 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
       });
       ok = r.ok;
       if (!r.ok) toast.error('Não foi possível concluir', { description: r.mensagem });
-      else { setVersao((x) => x + 1); operacao.current = null; enviadas.current.clear(); }
+      else {
+        if (typeof r.versao === 'number') setVersao(r.versao);
+        operacao.current = null; enviadas.current.clear();
+      }
     }
     if (ok) {
       setQtd({}); setNovaQtd({}); setFotos({});

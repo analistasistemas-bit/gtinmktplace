@@ -54,6 +54,8 @@ export interface BaseKit {
 export interface ResultadoRpcKit {
   ok: boolean; motivo?: string; codigo?: string; mensagem?: string;
   kit_id?: string; transferencia_id?: string; existente?: boolean;
+  /** `kit_variacao_adicionar`: versão do kit depois da operação (também na repetição). */
+  versao?: number;
 }
 
 /** Cadastro parcial de uma tentativa anterior com a mesma chave (família gravada, kit não). */
@@ -148,7 +150,7 @@ export interface DepsAdicao {
 export interface SkuKitCriado { codigo: string; rotulo: string; tamanho: string; quantidade: number }
 
 export type ResultadoCriarKitVariacao =
-  | { ok: true; kitId: string; transferenciaId: string; existente: boolean; codigoPai?: string; skus?: SkuKitCriado[] }
+  | { ok: true; kitId: string; transferenciaId: string; existente: boolean; codigoPai?: string; skus?: SkuKitCriado[]; versao?: number }
   | { ok: false; motivo: string; mensagem?: string };
 
 const recusa = (motivo: string, mensagem?: string): ResultadoCriarKitVariacao => ({ ok: false, motivo, mensagem });
@@ -735,7 +737,7 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
   }
   await deps.enfileirarSaga(r.transferencia_id);
   return {
-    ok: true, kitId: kit.kitId, transferenciaId: r.transferencia_id, existente: !!r.existente,
+    ok: true, kitId: kit.kitId, transferenciaId: r.transferencia_id, existente: !!r.existente, versao: r.versao,
     skus: novas.map((c, i) => ({ codigo: codigos[i], rotulo: c.rotulo, tamanho: c.tamanho, quantidade: c.quantidade })),
   };
 }
