@@ -90,7 +90,9 @@ function DialogContent({
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
-            className="absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none"
+            // Com aura + raio, o traço reto no topo só somava efeito: fica só para leitor de tela.
+            // No destrutivo (sem aura nem raio) a barra é o único sinal visível.
+            className={destrutivo ? "absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none" : "sr-only"}
           />
         )}
         {children}
