@@ -53,6 +53,9 @@ descrição do anúncio. O cliente que pedir paga por imagem.
 12. **Fato confirmado vem de pessoa:** planilha e atributos editados pelo operador. Título, descrição e atributos
     escritos por IA aparecem como "sugerido" e só viram fato com um clique do operador (registrado por família).
     Aceitar tudo o que está no anúncio publicado foi descartado: a IA confirmaria a própria invenção.
+13. **Retenção:** arquivos (Storage, bucket `imagens`, nunca no banco) de imagens aprovadas ou aplicadas ficam
+    para sempre (reaplicar, reverter, auditar cobrança); não aprovadas são apagadas após 30 dias. A linha no banco,
+    com custo e histórico, é preservada.
 
 ## Alternativas descartadas
 
