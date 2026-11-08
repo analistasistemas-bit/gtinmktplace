@@ -162,8 +162,17 @@ R9.3 Aplicar (só admin, §8) [REV][OP]:
 
 1. ~~Texto de marketing~~ — decidido: composto pelo sistema (R6.3).
 2. ~~Verificação por visão~~ — decidido: só alerta, nada escondido (R8.5).
-3. Medição Nano Banana × modelos Higgsfield com estas regras.
-4. Limites de fotos por categoria lidos com token válido do app.
+3. ~~Medição de modelos~~ — feita em 08/11 (3 produtos × 3 missões × 6 modelos, cenas sem texto, ~US$ 2):
+   fiéis = Nano Banana 2.1, Grok Imagine 2, Qwen Image 3 Edit; Marketing Studio apagou o texto de uma etiqueta;
+   Ideogram 4 e Soul 2 i2i trocam o produto. Nano Banana ~11 s; Higgsfield 40–85 s com 4 falhas em 45 pedidos
+   (3 timeouts > 5 min). O Nano Banana reescreveu o texto de uma etiqueta (COR: MULT → COR: ROSA BEBÊ): a
+   verificação por visão (R8.5) precisa comparar o texto da embalagem com a referência.
+4. ~~Limites de fotos~~ — medido em 08/11: o limite que vale num item com variações é **por variação**
+   (`max_pictures_per_item_var` = 10 nas categorias testadas; `max_pictures_per_item` = 12 vale para item sem
+   variações). Um anúncio real está ativo com 76 fotos em 11 variações. Galeria de 7 por cor cabe; "adicionar"
+   cabe só se a cor tiver até 3 fotos.
+5. Referência (achado da medição): usar a foto **da própria cor**, nunca a capa multicolor; quando a 1ª foto atual
+   já é imagem gerada (com painéis ou texto), preferir a foto original do produto.
 
 ## 11. Testes obrigatórios antes de liberar [REV]
 
