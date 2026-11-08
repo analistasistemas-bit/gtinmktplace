@@ -45,6 +45,11 @@ descrição do anúncio. O cliente que pedir paga por imagem.
 10. **Verificação por visão só alerta:** toda imagem é conferida e recebe alertas (cor, produto, texto na cena),
     mas nada é escondido nem gerado de novo sozinho; o operador decide e a imagem exibida é faturável. Esconder
     reprovadas foi descartado: a verificação do kit reprovou imagem boa no teste de 08/11.
+11. **Moda sem texto sobreposto:** nas categorias de Moda do ML (partes de cima e de baixo, vestidos e macacões,
+    roupa íntima e de praia e afins) a galeria não leva texto em nenhuma imagem — as páginas oficiais do ML proíbem
+    textos acrescentados e medidas na imagem. As missões viram fotos nos planos que o ML pede (frente, costas, corpo
+    inteiro, em uso, detalhe do tecido); benefícios e ficha técnica ficam fora (já estão nos atributos). Demais
+    categorias seguem com texto composto. Lista de categorias de Moda fixa em código, revisada quando o ML mudar.
 
 ## Alternativas descartadas
 

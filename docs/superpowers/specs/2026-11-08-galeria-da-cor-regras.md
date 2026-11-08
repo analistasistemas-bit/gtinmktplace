@@ -91,6 +91,12 @@ R5.3 [REV] **Só tetos, nunca pisos:** até 3 benefícios (≤6 palavras), até 
 sem fato elegível não é oferecida. "Como usar" só usa passos já escritos nos dados da família; sem eles, vira guia
 de escolha ou conteúdo da embalagem com fatos confirmados, ou não é oferecida [A1][A2].
 
+R5.5 **Moda (ADR-0201 §11):** em categorias de Moda, nenhuma imagem leva texto sobreposto. Missões de Moda:
+1 Capa · 2 Em uso (corpo inteiro, sem cortar o corpo) · 3 De costas · 4 Lateral ou caimento · 5 Detalhe do tecido/
+acabamento (recorte da foto real, R3.3) · 6 Combinação/contexto · 7 Detalhe de alça, gola ou costura. Só vistas
+sustentadas pelas referências (R3.2): sem foto de costas, a missão "de costas" não é oferecida. Fontes oficiais:
+páginas "Requisitos de fotos" do ML para partes de cima, partes de baixo, vestidos e macacões, roupa íntima e praia.
+
 R5.4 [A1][A2][Diego] Todo prompt de imagem, das sete missões, termina **literalmente** com o bloco técnico, sem
 cortar nem reescrever:
 `photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus,
