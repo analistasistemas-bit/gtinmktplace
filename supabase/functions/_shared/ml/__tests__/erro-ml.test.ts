@@ -23,6 +23,16 @@ describe('humanizarErroML', () => {
     expect(msg).toContain('BRAND');
   });
 
+  it('foto com status ERROR (arquivo pesado) → diz para trocar a imagem por uma menor', () => {
+    // Caso real 08/11 (Hairfly, PAI 00119571): PNG de 37 MB / 5394×6544 px recusado pelo ML.
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.pictures.invalid', message: 'Picture id 989020-MLB121060606717_112026 cannot be added because it has status ERROR.' }] };
+    const msg = humanizarErroML(400, json);
+    expect(msg).toMatch(/^Problema nas fotos/); // mantém a limpeza do cache de fotos (ehErroDefinitivoFoto)
+    expect(msg).toContain('10 MB');
+    expect(msg).toMatch(/troque a foto/i);
+    expect(msg).toContain('Reenviar');
+  });
+
   it('código desconhecido cai para a mensagem específica do ML (não "Validation error")', () => {
     const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.something.weird', message: 'Algo específico aconteceu' }] };
     expect(humanizarErroML(400, json)).toContain('Algo específico aconteceu');
