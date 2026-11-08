@@ -68,6 +68,26 @@ describe('compararKit', () => {
     expect(compararKit(141.8, l).fimPromocao).toBeNull();
   });
 
+  it('sem preço digitado: mantém a pior combinação (referência visível), sem desconto nem aviso', () => {
+    const c = compararKit(0, linhas);
+    expect(c.pior?.rotulo).toBe('Preto e Branco');
+    expect(c).toMatchObject({ descontoNormal: null, descontoPromocao: null, maisCaro: false, fimPromocao: null });
+  });
+
+  it('fim da promoção só das combinações em que o kit sai mais caro', () => {
+    const m = new Map([
+      ['A-M', { normal: 44.5, promocao: null, fimPromocao: null }],
+      ['B-M', { normal: 44.5, promocao: null, fimPromocao: null }],
+      ['P-M', { normal: 71.9, promocao: 50, fimPromocao: '2026-11-15T03:00:00Z' }],
+    ]);
+    const l = [
+      { rotulo: 'Azul e Branco', tamanho: 'M', soma: somaAvulsa(pecas, m, ['Azul', 'Branco'], 'M') }, // 89, sem promoção
+      { rotulo: 'Preto e Azul', tamanho: 'M', soma: somaAvulsa(pecas, m, ['Preto', 'Azul'], 'M') }, // 94,50 em promoção
+    ];
+    expect(compararKit(90, l)).toMatchObject({ maisCaro: true, referencia: 89, fimPromocao: null });
+    expect(compararKit(95, l)).toMatchObject({ maisCaro: true, fimPromocao: '2026-11-15T03:00:00Z' });
+  });
+
   it('alguma soma indisponível: semComparacao, e as comparáveis continuam valendo', () => {
     const l = [...linhas, { rotulo: 'Preto e Azul', tamanho: 'G', soma: somaAvulsa(pecas, precos, ['Preto', 'Azul'], 'G') }];
     expect(compararKit(50, l)).toMatchObject({ semComparacao: true, maisCaro: false });

@@ -87,9 +87,11 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
 
   // Preço avulso: leitura nova do ML a cada abertura.
   const [abertura, setAbertura] = useState<string | null>(null);
+  // Chave nova já no render que abre (um effect deixaria a 1ª leitura sair com a chave da abertura anterior).
+  const [abertoVisto, setAbertoVisto] = useState(false);
+  if (open !== abertoVisto) { setAbertoVisto(open); setAbertura(open ? crypto.randomUUID() : null); }
   useEffect(() => {
     if (!open) return;
-    setAbertura(crypto.randomUUID());
     setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setNovoAberto(false);
     operacao.current = null;
     enviadas.current.clear();
@@ -132,7 +134,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
   const maximo = (cores: string[], tamanho: string) => maximoPorCelula(pecasBase, { cores, tamanho }, pedidos);
   // Combinação ou tamanho novo sai com o preço do kit: a mesma referência do avulso da criação (só informativa).
   const precosQ = usePrecoAvulsoKit(open && novoAberto && baseId ? baseId : null, abertura);
-  const linhasAvulso = novos.map((n) => ({ rotulo: n.rotulo, tamanho: n.tamanho, soma: somaAvulsa(pecasBase, precosQ.data, n.cores, n.tamanho) }));
+  const linhasAvulso = novos.map((n) => ({ rotulo: n.rotulo, tamanho: n.tamanho, soma: somaAvulsa(pecasBase, precosQ.isError ? undefined : precosQ.data, n.cores, n.tamanho) }));
   const comparacaoNovos = compararKit(kit.preco, linhasAvulso);
 
   // Conferência só de leitura das peças da base (a RPC continua validando): por código de peça, não por nome de cor.
@@ -475,7 +477,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
                       )}
                       {novos.length > 0 && (
                         <ComparacaoAvulso
-                          c={comparacaoNovos} preco={kit.preco} lendo={precosQ.isFetching} erro={precosQ.isError}
+                          c={comparacaoNovos} preco={kit.preco} lendo={precosQ.isPending || precosQ.isFetching} erro={precosQ.isError}
                           pecas={kit.pecasPorKit} linhas={linhasAvulso}
                         />
                       )}

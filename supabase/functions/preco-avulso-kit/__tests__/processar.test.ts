@@ -71,6 +71,16 @@ describe('lerPrecosAvulsos', () => {
     expect(falhou.A).toEqual({ normal: 71.9, promocao: 41.9, fim_promocao: null });
   });
 
+  it('Relâmpago: casa a oferta vencedora pelo ref_id', async () => {
+    const { get } = api({
+      '/items/bulk': bulk([['MLB1', 71.9]]),
+      '/items/MLB1/sale_price': venda(39.9, 71.9, { promotion_id: 'OFFER-MLB1-77', campaign_id: 'P-MLB9' }),
+      '/seller-promotions/items/MLB1': [{ id: 'LGH-1', type: 'LIGHTNING', ref_id: 'OFFER-MLB1-77', status: 'started', finish_date: '2026-11-09T02:59:00Z' }],
+    });
+    const r = await lerPrecosAvulsos(get, [{ sku: 'A', item_id: 'MLB1' }]);
+    expect(r.A.fim_promocao).toBe('2026-11-09T02:59:00Z');
+  });
+
   it('mesmo item em dois SKUs: uma leitura de sale_price só', async () => {
     const { get, chamadas } = api({ '/items/bulk': bulk([['MLB2', 69.9]]), '/items/MLB2/sale_price': venda(69.9, null) });
     const r = await lerPrecosAvulsos(get, [{ sku: 'A', item_id: 'MLB2' }, { sku: 'A2', item_id: 'MLB2' }]);

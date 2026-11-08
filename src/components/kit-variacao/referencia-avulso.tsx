@@ -1,5 +1,6 @@
 // ADR-0200 (adendo 08/11): preço avulso das peças ao lado do preço do kit. Só informativo: compara preços de venda
 // (o lucro segue no simulador) e nunca muda o preço sozinho.
+import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { fmtBRL } from '@/lib/formato';
 import type { ComparacaoKit, LinhaAvulsa, SomaAvulsa } from '@/lib/kit-preco-avulso';
@@ -27,41 +28,45 @@ export function CelulaAvulso({ soma, lendo, rotulo }: { soma: SomaAvulsa; lendo:
   );
 }
 
-/** Kit ≥ soma avulsa: o comprador pode preferir as peças separadas. */
-export function AvisoAvulso({ c, pecas }: { c: ComparacaoKit; pecas: number }) {
-  if (!c.maisCaro && !c.semComparacao) return null;
+/** Caixa amarela do sistema (a mesma do "Imposto fora da conta" do simulador). */
+function CaixaAviso({ children }: { children: ReactNode }) {
   return (
     <div role="alert" className="flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs text-warning">
       <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
-      <div className="grid gap-1">
-        {c.maisCaro && c.referencia != null && (
-          <p>
-            O kit sai mais caro que comprar as {pecas} peças avulsas{c.pior?.soma.temPromocao ? ' na promoção atual' : ' no preço atual'}
-            {' '}({fmtBRL(c.referencia)}). O comprador pode preferir o avulso.
-          </p>
-        )}
-        {c.maisCaro && c.fimPromocao && (
-          <p>A promoção da peça termina em {diaMes(c.fimPromocao)}. Depois disso a comparação muda.</p>
-        )}
-        {c.semComparacao && (
-          <p>Não foi possível comparar com o preço avulso de todas as combinações ({INDISPONIVEL}).</p>
-        )}
-      </div>
+      <div className="grid gap-1">{children}</div>
     </div>
   );
 }
 
+/** Kit ≥ soma avulsa: o comprador pode preferir as peças separadas. `confirmar` (etapa 3) vai dentro do card. */
+export function AvisoAvulso({ c, pecas, confirmar }: { c: ComparacaoKit; pecas: number; confirmar?: ReactNode }) {
+  if (!c.maisCaro && !c.semComparacao) return null;
+  return (
+    <CaixaAviso>
+      {c.maisCaro && c.referencia != null && (
+        <p>
+          O kit sai mais caro que comprar as {pecas} peças avulsas{c.pior?.soma.temPromocao ? ' na promoção atual' : ' no preço atual'}
+          {' '}({fmtBRL(c.referencia)}). O comprador pode preferir o avulso.
+        </p>
+      )}
+      {c.maisCaro && c.fimPromocao && (
+        <p>A promoção da peça termina em {diaMes(c.fimPromocao)}. Depois disso a comparação muda.</p>
+      )}
+      {c.semComparacao && (
+        <p>Não foi possível comparar com o preço avulso de todas as combinações ({INDISPONIVEL}).</p>
+      )}
+      {c.maisCaro && confirmar}
+    </CaixaAviso>
+  );
+}
+
 /** Etapas 2 e 3 e Gerenciar: referência da pior combinação e o desconto do kit; com `linhas`, uma por combinação. */
-export function ComparacaoAvulso({ c, preco, lendo, erro, linhas, pecas }: {
-  c: ComparacaoKit; preco: number; lendo: boolean; erro: boolean; pecas: number; linhas?: LinhaAvulsa[];
+export function ComparacaoAvulso({ c, preco, lendo, erro, linhas, pecas, confirmar }: {
+  c: ComparacaoKit; preco: number; lendo: boolean; erro: boolean; pecas: number; linhas?: LinhaAvulsa[]; confirmar?: ReactNode;
 }) {
   if (lendo) return <p className="text-xs text-muted-foreground" role="status">Lendo o preço avulso das peças no Mercado Livre…</p>;
   if (erro || !c.pior) {
-    return (
-      <div className="grid gap-1">
-        <p className="text-xs text-muted-foreground">Preço avulso indisponível: não foi possível comparar o kit com as peças separadas.</p>
-      </div>
-    );
+    return <CaixaAviso><p>Preço avulso indisponível: não foi possível comparar o kit com as peças separadas.</p></CaixaAviso>;
   }
   const { pior } = c;
   return (
@@ -82,7 +87,7 @@ export function ComparacaoAvulso({ c, preco, lendo, erro, linhas, pecas }: {
         <ul className="divide-y divide-border rounded-md border text-xs" aria-label="Preço avulso por combinação">
           {linhas.map((l) => {
             const ehPior = l === pior;
-            const cara = l.soma.disponivel && Math.round(preco * 100) >= Math.round(l.soma.promocao * 100);
+            const cara = preco > 0 && l.soma.disponivel && Math.round(preco * 100) >= Math.round(l.soma.promocao * 100);
             return (
               <li key={`${l.rotulo}#${l.tamanho}`} className={cn('flex items-center justify-between gap-2 px-2 py-1.5 tabular-nums', ehPior && 'bg-muted/50')}>
                 <span className="min-w-0 truncate">{l.rotulo} · {l.tamanho}{ehPior && <span className="ml-1 text-muted-foreground">(pior)</span>}</span>
@@ -96,7 +101,7 @@ export function ComparacaoAvulso({ c, preco, lendo, erro, linhas, pecas }: {
           })}
         </ul>
       )}
-      <AvisoAvulso c={c} pecas={pecas} />
+      <AvisoAvulso c={c} pecas={pecas} confirmar={confirmar} />
     </div>
   );
 }

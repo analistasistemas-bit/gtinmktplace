@@ -39,8 +39,10 @@ async function fimDaOferta(get: GetML, itemId: string, meta: Obj): Promise<strin
   if (ids.size === 0) return null;
   try {
     const lista = await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`);
-    const oferta = (Array.isArray(lista) ? (lista as Obj[]) : []).find((p) => p.status === 'started'
-      && (ids.has(p.id as string) || ids.has(p.offer_id as string)));
+    // Relâmpago traz o OFFER- em `ref_id` (ver operacoes/reajuste/ml.ts). Casada com a oferta vencedora do /sale_price,
+    // a visão por item pode ainda dizer `candidate`: aceita também.
+    const oferta = (Array.isArray(lista) ? (lista as Obj[]) : []).find((p) => (p.status === 'started' || p.status === 'candidate')
+      && [p.id, p.offer_id, p.ref_id].some((x) => typeof x === 'string' && ids.has(x)));
     return typeof oferta?.finish_date === 'string' && oferta.finish_date ? oferta.finish_date : null;
   } catch (e) {
     console.warn('preco_avulso_fim_promocao_falhou', itemId, String(e));

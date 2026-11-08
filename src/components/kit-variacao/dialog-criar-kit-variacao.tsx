@@ -89,12 +89,14 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const enviadas = useRef(new Map<string, { file: File; path: string }>());
   // Preço avulso das peças: uma leitura nova do ML por abertura (a chave da query muda a cada vez).
   const [abertura, setAbertura] = useState<string | null>(null);
+  // Chave nova já no render que abre (um effect deixaria a 1ª leitura sair com a chave da abertura anterior).
+  const [abertoVisto, setAbertoVisto] = useState(false);
+  if (open !== abertoVisto) { setAbertoVisto(open); setAbertura(open ? crypto.randomUUID() : null); }
   const precosQ = usePrecoAvulsoKit(open ? familiaBaseId : null, abertura);
 
   useEffect(() => {
     if (!open) return;
     chave.current = crypto.randomUUID();
-    setAbertura(chave.current);
     enviadas.current.clear();
     setEtapa('montagem'); setCores([]); setPecas(2); setQtd({}); setPreco(''); setTipo('gold_special');
     setTitulo(''); setDescricao(''); setPrevia(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
@@ -142,8 +144,10 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
 
   const precoNum = Number(preco.replace(',', '.'));
   // Kit × peças avulsas, só nas células com quantidade: o que vira anúncio.
-  const lendoAvulso = precosQ.isFetching || (!!abertura && !precosQ.isFetched);
-  const somaDe = (cs: string[], t: string) => somaAvulsa(variacoes, precosQ.data, cs, t);
+  const lendoAvulso = open && (precosQ.isPending || precosQ.isFetching);
+  // Refetch com erro conserva o dado anterior no react-query: erro nunca compara com preço velho.
+  const precosAvulsos = precosQ.isError ? undefined : precosQ.data;
+  const somaDe = (cs: string[], t: string) => somaAvulsa(variacoes, precosAvulsos, cs, t);
   const linhasAvulso = quantidades.map((q) => ({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, soma: somaDe(q.cores, q.tamanho) }));
   const comparacao = compararKit(precoNum, linhasAvulso);
   // "Criar mesmo assim" vale só para o preço e as combinações vistos: mudou um deles, confirma de novo (no render,
@@ -548,16 +552,18 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                 />
               </div>
               <section aria-label="Preço avulso das peças" className="grid gap-2">
-                <ComparacaoAvulso c={comparacao} preco={precoNum} lendo={lendoAvulso} erro={precosQ.isError} pecas={pecas} linhas={linhasAvulso} />
-                {comparacao.maisCaro && !lendoAvulso && (
-                  <label htmlFor="kit-criar-mesmo-assim" className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      id="kit-criar-mesmo-assim" checked={avulsoConfirmadoEm === chaveAvulso}
-                      onCheckedChange={(v) => setAvulsoConfirmadoEm(v ? chaveAvulso : null)}
-                    />
-                    Criar mesmo assim
-                  </label>
-                )}
+                <ComparacaoAvulso
+                  c={comparacao} preco={precoNum} lendo={lendoAvulso} erro={precosQ.isError} pecas={pecas} linhas={linhasAvulso}
+                  confirmar={(
+                    <label htmlFor="kit-criar-mesmo-assim" className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                      <Checkbox
+                        id="kit-criar-mesmo-assim" checked={avulsoConfirmadoEm === chaveAvulso}
+                        onCheckedChange={(v) => setAvulsoConfirmadoEm(v ? chaveAvulso : null)}
+                      />
+                      Criar mesmo assim
+                    </label>
+                  )}
+                />
               </section>
               <SimuladorKit
                 familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}

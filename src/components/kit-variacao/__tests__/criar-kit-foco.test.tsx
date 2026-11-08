@@ -30,6 +30,7 @@ vi.mock('@/components/kit-variacao/simulador-kit', () => ({
   },
 }));
 vi.mock('@/lib/kit-variacao-edge', () => ({
+  fetchPrecoAvulsoKit: vi.fn(async () => new Map()),
   criarKitVariacaoEdge: vi.fn(async () => ({ ok: true, kit_id: 'K1' })),
   enviarFotoKit: vi.fn(async (pasta: string, rotulo: string) => `ORG/${pasta}/${rotulo}.jpg`),
   gerarTextoKitEdge: vi.fn(async () => ({ ok: true, titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 peças.', previa_id: 'PV1' })),

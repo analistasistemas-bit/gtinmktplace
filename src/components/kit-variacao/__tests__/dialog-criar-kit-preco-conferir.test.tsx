@@ -23,6 +23,7 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => (
 const aliquotas = { data: { nacional: 8, importado: 16, confirmada: true }, isLoading: false, isError: false, isFetched: true };
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliquotas }));
 vi.mock('@/lib/kit-variacao-edge', () => ({
+  fetchPrecoAvulsoKit: vi.fn(async () => new Map()),
   criarKitVariacaoEdge: vi.fn(async () => ({ ok: true, kit_id: 'K1' })),
   enviarFotoKit: vi.fn(async () => 'ORG/x.jpg'),
   gerarTextoKitEdge: vi.fn(async () => ({ ok: true, titulo: 'Kit 2 Blusas', descricao: 'Kit com 2 peças.', previa_id: 'PV1' })),

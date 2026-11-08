@@ -60,14 +60,20 @@ const desconto = (preco: number, soma: number) => (soma > 0 ? Math.round((1 - pr
 export function compararKit(preco: number, linhas: LinhaAvulsa[]): ComparacaoKit {
   const ok = linhas.filter((l) => l.soma.disponivel);
   const semComparacao = ok.length < linhas.length;
-  if (ok.length === 0 || !(preco > 0)) {
-    return { pior: null, descontoNormal: null, descontoPromocao: null, maisCaro: false, referencia: null, fimPromocao: null, semComparacao };
-  }
-  const pior = ok.reduce((a, b) => (b.soma.promocao < a.soma.promocao ? b : a));
+  const vazio = { pior: null, descontoNormal: null, descontoPromocao: null, maisCaro: false, referencia: null, fimPromocao: null, semComparacao };
+  if (ok.length === 0) return vazio;
+  // Empate em centavos: a combinação em promoção (a que pode mudar quando a promoção acabar).
+  const pior = ok.reduce((a, b) => {
+    const d = centavos(b.soma.promocao) - centavos(a.soma.promocao);
+    return d < 0 || (d === 0 && b.soma.temPromocao && !a.soma.temPromocao) ? b : a;
+  });
+  // Sem preço digitado: a referência continua visível para o operador decidir.
+  if (!(preco > 0)) return { ...vazio, pior };
   // Em centavos: 91,80 digitado contra soma 91,80 é "igual", não um float acima ou abaixo.
   const caras = ok.filter((l) => centavos(preco) >= centavos(l.soma.promocao));
   const maisCaro = caras.length > 0;
-  const fims = ok.map((l) => l.soma.fimPromocao).filter((f): f is string => !!f).sort();
+  // A data só vale para a promoção que torna o kit mais caro.
+  const fims = caras.map((l) => l.soma.fimPromocao).filter((f): f is string => !!f).sort();
   return {
     pior,
     descontoNormal: desconto(preco, pior.soma.normal),
