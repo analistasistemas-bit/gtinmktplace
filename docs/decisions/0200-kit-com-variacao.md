@@ -156,7 +156,8 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    `user_product_id`: item + cópia de catálogo), nunca vindos da edge. SKU do kit sem UP fica fora dos alvos, mas a
    exclusão dele é adquirida com o mesmo dono na mesma transação. Kit sem nenhum alvo (nada chegou ao ML) encerra ali
    mesmo, na mesma transação (passo 4), depois de adquirir a exclusão de todos os SKUs com um dono só da transação
-   (publicação em curso recusa com `up_ocupado`) e soltá-la no fim.
+   (publicação em curso recusa com `up_ocupado`) e soltá-la no fim. Kit `publicado` sem nenhum vínculo recusa
+   (`sem_vinculo`): o vínculo sumiu (republicação) e os itens antigos não seriam fechados.
 3. **Worker.** `kit-transferencia` despacha `tipo='encerrar'` para um módulo próprio (`_shared/kit-variacao/encerrar.ts`)
    antes do pipeline de quantidade, com o mesmo claim por `execucao_token` e as mesmas RPCs validadas por token,
    prazo e exclusão. Cada invocação, para cada alvo ainda não confirmado: grava o início da obrigação
@@ -201,7 +202,10 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    componentes dela.
 6. **Kit encerrando ou encerrado não muda mais.** Triggers de rede. Os de `kit_transferencias` e `kit_exclusoes`
    travam os kits envolvidos (`for share`, em ordem de id) antes de ler o status: quem esperou o `for update` de
-   `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio.
+   `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio. Exceção: a exclusão da
+   republicação não trava o kit (ela segura `familias` FOR UPDATE e `kit_variacao_adicionar` faz kit → família:
+   deadlock); contra o encerramento ela é serializada pela própria linha de exclusão, e a republicação que termina
+   antes deixa o kit sem vínculo, que o encerramento recusa.
    - `kits_variacao`: recusa sair de `encerrando`/`encerrado` (só `encerrando → encerrado`) e ligar
      `so_em_kit`/`reposicao_auto` (cobre ligar, adicionar com SKU novo, montar via gerenciar);
    - `kit_transferencias` (`security definer`: o executor não lê `kits_variacao`): recusa transferência que não seja a

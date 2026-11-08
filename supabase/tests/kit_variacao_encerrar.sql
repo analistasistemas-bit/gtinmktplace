@@ -325,6 +325,19 @@ begin
 end $$;
 reset role;
 
+-- Kit publicado sem vínculo local (republicação no meio): recusa, os itens antigos não seriam fechados.
+set local role service_role;
+do $$
+declare c record; r jsonb;
+begin
+  select * into c from ctx;
+  r := public.kit_variacao_encerrar(c.org, c.kit2, (select versao from public.kits_variacao where id = c.kit2));
+  perform pg_temp.afirmar(r->>'motivo' = 'sem_vinculo', 'publicado sem vínculo recusa: ' || r::text);
+  perform pg_temp.afirmar((select status from public.kits_variacao where id = c.kit2) = 'publicado', 'kit 2 intacto');
+  -- Republicação não trava o kit (evita o ciclo com adicionar), mas segue recusada em kit encerrado.
+end $$;
+reset role;
+
 -- Módulo desligado: nada.
 update public.organizations set modulos_habilitados = '{}' where id = (select org from ctx);
 do $$

@@ -278,11 +278,16 @@ begin
   if new.dono_tipo = 'transferencia' then
     return new;
   end if;
-  -- Mesmo lock da guarda de transferência: espera o encerramento em curso e lê o status commitado.
-  perform 1 from public.kits_variacao k
-  where k.org_id = new.org_id
-    and k.id in (select s.kit_id from public.kit_variacao_skus s where s.org_id = new.org_id and s.codigo = new.codigo)
-  order by k.id for share;
+  -- Mesmo lock da guarda de transferência: espera o encerramento em curso e lê o status commitado. A republicação
+  -- não trava: ela segura `familias` FOR UPDATE, e `kit_variacao_adicionar` (kit FOR UPDATE, depois FK da variação
+  -- nova na família) fecharia um ciclo. Contra o encerramento, ela é serializada pela própria exclusão (os dois
+  -- disputam a mesma linha) e, se terminar antes, o encerramento sem vínculo recusa (`sem_vinculo`).
+  if new.dono_tipo <> 'republicacao' then
+    perform 1 from public.kits_variacao k
+    where k.org_id = new.org_id
+      and k.id in (select s.kit_id from public.kit_variacao_skus s where s.org_id = new.org_id and s.codigo = new.codigo)
+    order by k.id for share;
+  end if;
   if exists (
     select 1 from public.kit_variacao_skus s join public.kits_variacao k on k.id = s.kit_id and k.org_id = s.org_id
     where s.org_id = new.org_id and s.codigo = new.codigo and k.status in ('encerrando', 'encerrado')
@@ -323,7 +328,7 @@ create or replace function public.kit_variacao_encerrar(p_org uuid, p_kit uuid, 
 returns jsonb language plpgsql set search_path = ''
 as $$
 declare v_kit public.kits_variacao%rowtype; v_skus text[]; v_alvos jsonb; v_sem_alvo text[]; v_cod text;
-        v_t jsonb; v_id uuid; v_r jsonb;
+        v_t jsonb; v_id uuid; v_r jsonb; v_antes text;
 begin
   perform 1 from public.organizations where id = p_org and 'kit_variacao' = any(modulos_habilitados) for share;
   if not found then
@@ -374,11 +379,17 @@ begin
   v_sem_alvo := array(select c from unnest(v_skus) c
                       where not exists (select 1 from jsonb_array_elements(v_alvos) a where a->>'codigo' = c) order by c);
 
+  v_antes := v_kit.status;
   begin
     update public.kits_variacao set status = 'encerrando', reposicao_auto = false, versao = versao + 1
     where id = p_kit returning * into v_kit;
 
     if jsonb_array_length(v_alvos) = 0 then
+      -- Kit publicado sempre tem vínculo: sem nenhum, o vínculo sumiu (republicação) e os itens antigos não seriam
+      -- fechados. Recusa; o operador confere o anúncio.
+      if v_antes = 'publicado' then
+        raise exception 'sem_vinculo' using errcode = 'KX040';
+      end if;
       -- Nada chegou ao ML: encerra aqui mesmo. A exclusão de todos os SKUs (dono só desta transação) recusa
       -- publicação em curso, que a segura até confirmar o resultado; a nova espera o lock do kit (guarda acima).
       v_id := gen_random_uuid();
