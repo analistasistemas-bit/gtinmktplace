@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   selecionarBaixas, refBaixa, selecionarSemSku, refSemSku,
-  registrarBaixaVenda, classificarBaixaSemSaldo, estornarVendaCancelada,
+  registrarBaixaVenda, classificarBaixaSemSaldo, estornarVendaCancelada, comRetryConcorrencia,
 } from '../baixa';
 
 describe('selecionarBaixas', () => {
@@ -258,6 +258,22 @@ describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
     const r = await registrarBaixaVenda(admin as never, pedido);
     expect(chamadas).toBe(3);
     expect(r.falhas).toHaveLength(1);
+  });
+
+  it('comRetryConcorrencia (INSERT de variação do ingest/adicionar): 40001 e 40P01 repetem; outro erro não', async () => {
+    const seq = (erros: Array<{ code: string } | null>) => {
+      let n = 0;
+      return { f: () => Promise.resolve({ error: erros[n++] ?? null }), n: () => n };
+    };
+    const a = seq([{ code: '40001' }, null]);
+    expect((await comRetryConcorrencia(a.f)).error).toBeNull();
+    expect(a.n()).toBe(2);
+    const b = seq([{ code: '40P01' }, { code: '40P01' }, { code: '40P01' }, null]);
+    expect((await comRetryConcorrencia(b.f)).error).toEqual({ code: '40P01' });
+    expect(b.n()).toBe(3);
+    const c = seq([{ code: '23514' }, null]);
+    expect((await comRetryConcorrencia(c.f)).error).toEqual({ code: '23514' });
+    expect(c.n()).toBe(1);
   });
 
   it('estorno com canonica_trocou também repete', async () => {

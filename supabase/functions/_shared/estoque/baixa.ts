@@ -261,9 +261,22 @@ async function registrarVendaSemSku(
  * lock. A RPC desfez tudo (nem a referência ficou), e repetir resolve a cópia nova. Até 3 tentativas; depois
  * vira falha comum, reaplicada no próximo evento do pedido.
  */
-async function rpcEstoque(admin: SupabaseClient, nome: string, args: Record<string, unknown>) {
-  let r = await admin.rpc(nome, args);
-  for (let i = 1; i < 3 && r.error?.message?.startsWith('canonica_trocou'); i++) r = await admin.rpc(nome, args);
+function rpcEstoque(admin: SupabaseClient, nome: string, args: Record<string, unknown>) {
+  return comRetryConcorrencia(() => admin.rpc(nome, args));
+}
+
+/**
+ * ADR-0197: 40001 (`canonica_trocou`, inclusive do trigger de cópia de `variacoes`) e 40P01 (deadlock) já
+ * desfizeram a transação inteira do statement; repetir a chamada é seguro. Até 3 tentativas, depois devolve o
+ * último erro para o chamador falhar de forma retentável.
+ */
+export async function comRetryConcorrencia<T extends { error: { code?: string; message?: string } | null }>(
+  f: () => PromiseLike<T>,
+): Promise<T> {
+  const retentavel = (e: T['error']) =>
+    !!e && (e.code === '40001' || e.code === '40P01' || !!e.message?.startsWith('canonica_trocou'));
+  let r = await f();
+  for (let i = 1; i < 3 && retentavel(r.error); i++) r = await f();
   return r;
 }
 

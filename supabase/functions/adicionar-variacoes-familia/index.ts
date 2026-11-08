@@ -15,6 +15,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { comRetryConcorrencia } from '../_shared/estoque/baixa.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
   aplicarEstoqueInicial, checarNcmDaFamilia, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirIncompleto, decidirRetry,
@@ -384,7 +385,10 @@ Deno.serve(async (req) => {
   // `montarVariacaoNova` produzem o MESMO conjunto de chaves (invariante documentado em
   // processar.ts e travado por teste). Chave presente em uma origem e ausente na outra vira
   // NULL explícito na linha que não a tem — não o DEFAULT da coluna — e estoura nas NOT NULL.
-  const { error: varErr } = await admin.from('variacoes').insert([...clonesVariacoes, ...novasVariacoes]);
+  // ADR-0197: 40001/40P01 do trigger de cópia de SKU em kit com variação repetem a inserção inteira.
+  const { error: varErr } = await comRetryConcorrencia(
+    () => admin.from('variacoes').insert([...clonesVariacoes, ...novasVariacoes]),
+  );
   if (varErr) {
     await admin.from('familias').delete().eq('id', familiaId);
     // Mesma limpeza do famErr acima: lote dedicado sem família não deve sobrar na tela Lotes.
@@ -393,6 +397,9 @@ Deno.serve(async (req) => {
     // ADR-0197: o trigger `variacoes_kit_saldo_copia` grava o saldo da cópia de SKU em kit com variação
     // e recusa com transferência aberta — espera, não falha do sistema.
     if (varErr.message.startsWith('sku_em_transferencia')) return json({ error: varErr.message }, 409);
+    if (varErr.code === '40001' || varErr.code === '40P01') {
+      return json({ error: 'Estoque deste produto mudou durante a gravação. Tente novamente.' }, 409);
+    }
     return json({ error: varErr.message }, 500);
   }
 

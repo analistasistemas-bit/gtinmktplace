@@ -116,36 +116,53 @@ SOMA=$(psql_ -c "select coalesce(sum(versao), 0) from public.sku_politica_kit wh
 [ "$(psql_ -c "select versao_politica from public.kit_transferencias where org_id = '$ORG' and estado = 'ativa'")" != "$SOMA" ] \
   || falha "3: a transferência devia nascer com a versão anterior à republicação"
 
-# 4. Fix round 2: duas cópias concorrentes + venda. A insere V1 e segura 3 s; B (t=1) insere V2 e espera a canônica
-#    V0; ao acordar, B revalida, trava V1 (agora canônica) e segura mais 3 s; a venda S (t=4.5) resolve V1 e espera
-#    B. Depois do commit de B, S recebe canonica_trocou e a repetição baixa V2. Sem a revalidação, B copiaria o
-#    saldo de V0 e S teria baixado V1 sozinha: o saldo final voltaria ao valor anterior à venda.
+# 4. Fix rounds 2–3: duas cópias concorrentes + venda. A insere V1 e segura 3 s; B (t=1) insere V2 e espera a
+#    canônica V0. A commita: B acorda com V0, que já não é a canônica, e recusa com canonica_trocou (40001) sem
+#    pegar outro lock. A venda S (t=3.5) baixa V1. O chamador repete B (comRetryConcorrencia), que copia V1 já
+#    baixada. Sem a recusa, B copiaria V0 e o saldo voltaria ao valor anterior à venda.
 F3=97300000-0000-0000-0000-0000000000f3
 F4=97300000-0000-0000-0000-0000000000f4
+F5=97300000-0000-0000-0000-0000000000f5
+OUT_B=$(mktemp)
 psql_ -c "update public.kit_transferencias set estado = 'abortada' where org_id = '$ORG';
           delete from public.kit_exclusoes where org_id = '$ORG';
           insert into public.lotes (id, user_id, org_id, status, origem) values
-            ('$F3', '$USR', '$ORG', 'processando', 'planilha'), ('$F4', '$USR', '$ORG', 'processando', 'planilha');" > /dev/null
+            ('$F3', '$USR', '$ORG', 'processando', 'planilha'), ('$F4', '$USR', '$ORG', 'processando', 'planilha'),
+            ('$F5', '$USR', '$ORG', 'processando', 'planilha');" > /dev/null
 ANTES=$(saldo 09950002)
 copia() {
   echo "begin;
     insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em, ml_item_id, status)
-      values ('$1', '$1', '$USR', '$ORG', '09950000', 'Base conc', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '$2', 'MLB9950', 'pronto');
+      values ('$1', '$1', '$USR', '$ORG', '09950000', 'Base conc', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '$2', 'MLB9950', 'pronto')
+      on conflict (id) do nothing;
     insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, preco, estoque)
       values ('$1', '$USR', '$ORG', '09950002', 'B', 'B', 50, 999);
-    select pg_sleep(3); commit;"
+    select pg_sleep(${3:-0}); commit;"
 }
-psql_ -c "$(copia "$F3" '1 hour')" > /dev/null 2>&1 &
+psql_ -c "$(copia "$F3" '1 hour' 3)" > /dev/null 2>&1 &
 PA=$!
 sleep 1
-psql_ -c "$(copia "$F4" '2 hours')" > /dev/null 2>&1 &
-PB=$!
-sleep 3.5
-set +e; S_OUT=$(psql_ -c "select public.baixar_estoque('$ORG', '09950002', 1, 'mercado_livre', 'conc-4')" 2>&1); set -e
+set +e; psql_ -v VERBOSITY=verbose -c "$(copia "$F4" '2 hours')" > "$OUT_B" 2>&1; B_RC=$?; set -e
 wait "$PA" || falha "4: cópia A falhou"
-wait "$PB" || falha "4: cópia B falhou"
-echo "$S_OUT" | grep -q 'canonica_trocou' || falha "4: a venda devia esperar B e receber canonica_trocou ($S_OUT)"
+[ "$B_RC" -ne 0 ] && grep -q '40001' "$OUT_B" || falha "4: B devia recusar com 40001 ($(cat "$OUT_B"))"
+grep -q '40P01' "$OUT_B" && falha "4: deadlock"
 psql_ -c "select public.baixar_estoque('$ORG', '09950002', 1, 'mercado_livre', 'conc-4')" > /dev/null
+psql_ -c "$(copia "$F4" '2 hours')" > /dev/null || falha "4: a repetição de B devia gravar"
 [ "$(saldo 09950002)" = $((ANTES - 1)) ] || falha "4: saldo final $(saldo 09950002), esperado $((ANTES - 1))"
+
+# 5. Fix round 3: cópia × exclusão. D apaga a canônica V2 (trava V2 e depois V1, para onde leva o saldo) e segura
+#    3 s; E (t=1) insere V3 e espera V2. D commita: E acorda numa linha apagada, recusa com 40001 sem pegar outro
+#    lock (nada de 40P01), e a repetição copia V1 com o saldo transportado.
+ANTES=$(saldo 09950002)
+psql_ -c "begin; delete from public.variacoes where familia_id = '$F4' and codigo = '09950002'; select pg_sleep(3); commit;" > "$OUT_A" 2>&1 &
+PD=$!
+sleep 1
+set +e; psql_ -v VERBOSITY=verbose -c "$(copia "$F5" '3 hours')" > "$OUT_B" 2>&1; E_RC=$?; set -e
+wait "$PD" || { cat "$OUT_A"; falha "5: exclusão D falhou"; }
+grep -q '40P01' "$OUT_B" && falha "5: deadlock entre cópia e exclusão"
+[ "$E_RC" -ne 0 ] && grep -q '40001' "$OUT_B" || falha "5: E devia recusar com 40001 ($(cat "$OUT_B"))"
+psql_ -c "$(copia "$F5" '3 hours')" > /dev/null || falha "5: a repetição de E devia gravar"
+[ "$(saldo 09950002)" = "$ANTES" ] || falha "5: saldo $(saldo 09950002), esperado $ANTES (transportado pela exclusão)"
+rm -f "$OUT_B"
 
 echo "kit_variacao_guards_concorrencia: OK"

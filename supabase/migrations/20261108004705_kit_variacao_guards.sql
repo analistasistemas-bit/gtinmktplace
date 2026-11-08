@@ -48,16 +48,20 @@ begin
     return new;
   end if;
 
-  -- `kit_sku_travado` resolve o id antes de esperar o lock. Se outra cópia commitou nessa espera, a linha
-  -- travada já não é a canônica: trava a nova e confere de novo. Sem isto, uma cópia concorrente copiaria o
-  -- saldo velho e, sendo a mais recente, apagaria uma venda já baixada na cópia intermediária.
-  loop
-    select * into v_sku from public.kit_sku_travado(new.org_id, new.codigo);
-    exit when v_sku.p_id is null;
+  -- `kit_sku_travado` resolve o id antes de esperar o lock. Se outra cópia commitou (ou a canônica foi
+  -- apagada) nessa espera, a linha travada já não é a canônica: recusa com o erro retentável, sem pegar
+  -- outro lock — travar a nova aqui segurando a velha faria ciclo com o transporte de saldo da exclusão
+  -- (que trava a apagada e depois a próxima). Sem a recusa, a cópia copiaria o saldo velho e, sendo a mais
+  -- recente, apagaria uma venda já baixada na cópia intermediária. Os chamadores do INSERT repetem.
+  select * into v_sku from public.kit_sku_travado(new.org_id, new.codigo);
+  if v_sku.p_id is not null then
     select v.id into v_canonica from public.variacoes v join public.familias f on f.id = v.familia_id
     where v.org_id = new.org_id and v.codigo = new.codigo order by f.criado_em desc limit 1;
-    exit when v_canonica = v_sku.p_id;
-  end loop;
+    if v_canonica is distinct from v_sku.p_id then
+      raise exception 'canonica_trocou: a cópia canônica de % mudou durante a operação. Repita.', new.codigo
+        using errcode = '40001';
+    end if;
+  end if;
   if public.kit_sku_em_transferencia(new.org_id, new.codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit com variação. Repita depois que ela terminar.', new.codigo
       using errcode = '23514';

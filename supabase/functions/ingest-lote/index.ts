@@ -28,6 +28,7 @@ import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { comRetryConcorrencia } from '../_shared/estoque/baixa.ts';
 // @deno-types="../_shared/vendor/xlsx.d.ts"
 import * as XLSX from '../_shared/vendor/xlsx.mjs';
 
@@ -418,7 +419,8 @@ Deno.serve(async (req) => {
     }
     for (const subset of [variacoesCreate, variacoesUpdate]) {
       if (subset.length === 0) continue;
-      const { error: varErr } = await admin.from('variacoes').insert(subset);
+      // ADR-0197: o trigger de cópia de SKU em kit com variação recusa com 40001 se a canônica trocou na espera.
+      const { error: varErr } = await comRetryConcorrencia(() => admin.from('variacoes').insert(subset));
       if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
     }
 

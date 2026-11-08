@@ -7,6 +7,8 @@ type Linha = Record<string, unknown>;
 const f = vi.hoisted(() => ({
   serve: vi.fn(),
   erroVariacoes: null as { code: string; message: string } | null,
+  // Erros por tentativa (consumidos em ordem); vazio cai em `erroVariacoes`.
+  errosVariacoes: [] as Array<{ code: string; message: string }>,
   escritas: [] as Array<{ tabela: string; op: string }>,
 }));
 
@@ -21,7 +23,10 @@ function builder(tabela: string) {
   const resolver = (): { data: unknown; error: unknown } => {
     if (op !== 'select') {
       f.escritas.push({ tabela, op });
-      if (tabela === 'variacoes' && op === 'insert' && f.erroVariacoes) return { data: null, error: f.erroVariacoes };
+      if (tabela === 'variacoes' && op === 'insert') {
+        const e = f.errosVariacoes.shift() ?? f.erroVariacoes;
+        if (e) return { data: null, error: e };
+      }
       return { data: { id: 'novo' }, error: null };
     }
     // codigosJaUsados: `.in(...)` sem colisão.
@@ -78,7 +83,7 @@ beforeAll(async () => {
 });
 let fetchSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  f.erroVariacoes = null; f.escritas = [];
+  f.erroVariacoes = null; f.errosVariacoes = []; f.escritas = [];
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -100,6 +105,25 @@ describe('adicionar-variacoes-familia — SKU em transferência de kit com varia
     expect(f.escritas).toEqual(expect.arrayContaining([
       { tabela: 'familias', op: 'delete' }, { tabela: 'lotes', op: 'delete' },
     ]));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Fix round 3: o trigger de cópia recusa com 40001 quando a canônica trocou durante a espera do lock.
+  it('40001 na 1ª tentativa do insert: repete e segue publicando', async () => {
+    f.errosVariacoes = [{ code: '40001', message: 'canonica_trocou: a cópia canônica de 00000001 mudou durante a operação. Repita.' }];
+    const r = await post();
+    expect(r.status).toBe(200);
+    expect(f.escritas.filter((e) => e.tabela === 'variacoes' && e.op === 'insert')).toHaveLength(2);
+    expect(f.escritas).not.toContainEqual({ tabela: 'familias', op: 'delete' });
+  });
+
+  it('40P01 (deadlock) três vezes: desfaz e devolve 409 para repetir', async () => {
+    const dl = { code: '40P01', message: 'deadlock detected' };
+    f.errosVariacoes = [dl, dl, dl];
+    const r = await post();
+    expect(r.status).toBe(409);
+    expect(f.escritas.filter((e) => e.tabela === 'variacoes' && e.op === 'insert')).toHaveLength(3);
+    expect(f.escritas).toEqual(expect.arrayContaining([{ tabela: 'familias', op: 'delete' }]));
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
