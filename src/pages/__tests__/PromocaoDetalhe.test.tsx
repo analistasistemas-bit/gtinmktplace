@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -83,6 +83,22 @@ describe('PromocaoDetalhe', () => {
 
     screen.getAllByText('Custo fora da faixa').forEach((r) => expect(r.className).toContain('text-danger'));
     expect(screen.queryByText('Piso fora da faixa')).toBeNull();
+  });
+
+  it('convidado de campanha de preço fixo mostra "Preço fixo"; Relâmpago sem faixa e sem líquido seguem com —', () => {
+    const fixo = { ...item, preco_min: null, preco_max: null } as ItemPromocao;
+    const semLiquido = { ...fixo, ml_item_id: 'MLB2', projecao: fixo.projecao.map((c) => ({ ...c, liquido: null })) } as ItemPromocao;
+    for (const tipo of ['SMART', 'SMART_LIGHTNING', 'PRICE_MATCHING']) {
+      vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo }], isLoading: false } as never);
+      vi.mocked(useItensPromocao).mockReturnValue({ data: [fixo, semLiquido], isLoading: false } as never);
+      renderDetalhe();
+      expect(screen.getAllByText('Preço fixo')).toHaveLength(1);
+      cleanup();
+    }
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'LIGHTNING' }], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [fixo], isLoading: false } as never);
+    renderDetalhe();
+    expect(screen.queryByText('Preço fixo')).toBeNull();
   });
 
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {
